@@ -37,8 +37,8 @@
 - WebGPU 点云渲染继续保持默认关闭的实验功能：同一 NVIDIA 设备上的三轮 warm geometry、warm RGB、精修首帧、缓存 owner、CPU depth payload 与 GPU RSS plateau 均已通过；跨轮深度数组残留也已修复。主透视视图与三正交视图共用唯一 renderer/context，空闲时停止提交；Chromium GPU 进程受控丢失后会卸载这一 canvas 并自动重建完整 Legacy Scene，这验证了显存压力最终触发 device lost 时的熔断路径，但未主动制造不可控的物理 OOM。
   当前没有 NVIDIA、Intel/AMD 两类 GPU 的可用测试设备，跨厂商验证明确记为 `not tested`；它不阻塞
   本地性能与回退链路继续收口，但在硬件可用并完成验证前不得移除实验标记或默认启用。
-- Scene Track 已支持同帧 3D 主成员与按相机 role 区分的持久化人工 bbox，标定采用可追溯 revision，3D Quality 能冻结并治理投影残差，KITTI 优先使用所选相机的人工框。后续多模态几何扩展集中在相机 polygon / mask、跨相机批量复核和标定管理 UI。
-- nuScenes 已形成可信导出合同：只允许真实来源和完整 Scene，生成官方 13 表关键帧子集并以指纹 manifest 回源原始媒体。官方 benchmark ontology / split 映射与多相机 COCO 派生 2D 继续独立立项。
+- Scene Track 已支持同帧 3D 主成员与按相机 role 区分的持久化人工 bbox，标定采用可追溯 revision，3D Quality 能冻结并治理投影残差，KITTI 优先使用所选相机的人工框；Multi-camera COCO 可把全部相机的人工 2D 真值合并导出并以指纹 manifest 可信回源。后续多模态几何扩展集中在相机 polygon / mask、跨相机批量复核和标定管理 UI。
+- nuScenes 已形成可信导出合同：只允许真实来源和完整 Scene，生成官方 13 表关键帧子集并以指纹 manifest 回源原始媒体。官方 benchmark ontology / split 映射继续独立立项。
 
 ## 独立 Epic
 

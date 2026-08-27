@@ -397,6 +397,7 @@ describe("ExportModal", () => {
     render(<ExportModalHarness projectId="p5" projectTypeKey="lidar" />);
 
     expect(screen.getByText("KITTI 3D")).toBeInTheDocument();
+    expect(screen.getByText("Multi-camera COCO")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^nuScenes/ })).toBeEnabled();
     expect(screen.getByText("Point Mask")).toBeInTheDocument();
     expect(screen.queryByText("COCO")).not.toBeInTheDocument();
@@ -440,6 +441,28 @@ describe("ExportModal", () => {
     expect(projectsApi.exportProject).toHaveBeenCalledWith("p-nuscenes", ["nuscenes"], {
       includeAttributes: true,
     });
+  });
+
+  it("多相机 COCO 单独选中时自动预检且不要求 KITTI 相机", async () => {
+    render(<ExportModalHarness projectId="p-multicamera-coco" projectTypeKey="lidar" />);
+
+    fireEvent.click(screen.getByText("AAP JSON"));
+    fireEvent.click(screen.getByText("Multi-camera COCO"));
+    await screen.findByText("预检通过 · 39 帧");
+    expect(screen.queryByLabelText("KITTI 投影相机")).not.toBeInTheDocument();
+    submitExport();
+
+    await waitFor(() => expect(projectsApi.exportProject).toHaveBeenCalled());
+    expect(projectsApi.preflightLidarExport).toHaveBeenCalledWith(
+      "p-multicamera-coco",
+      ["coco-multicamera"],
+      undefined,
+    );
+    expect(projectsApi.exportProject).toHaveBeenCalledWith(
+      "p-multicamera-coco",
+      ["coco-multicamera"],
+      { includeAttributes: true },
+    );
   });
 
   it("点云 KITTI 预检问题会定位展示并阻止入队", async () => {

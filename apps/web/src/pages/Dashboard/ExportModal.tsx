@@ -133,6 +133,11 @@ const LIDAR_OPTIONS: TargetOption[] = [
     description: "逐帧 label_2 + calib，输出 KITTI camera 坐标。",
   },
   {
+    value: "coco-multicamera",
+    label: "Multi-camera COCO",
+    description: "合并全部相机的持久化人工 2D 框，不使用 3D 投影补齐。",
+  },
+  {
     value: "nuscenes",
     label: "nuScenes",
     description: "官方 13 表 + 原始媒体清单，仅允许完整可信的 nuScenes Scene。",
@@ -317,7 +322,12 @@ function ExportForm({
   }, [scopeMode, selectedTaskId]);
 
   useEffect(() => {
-    if (!isLidarProject || (!targets.includes("kitti") && !targets.includes("nuscenes"))) {
+    if (
+      !isLidarProject ||
+      (!targets.includes("coco-multicamera") &&
+        !targets.includes("kitti") &&
+        !targets.includes("nuscenes"))
+    ) {
       setLidarPreflight(null);
       setLidarPreflightLoading(false);
       return;
@@ -569,67 +579,73 @@ function ExportForm({
           )}
         </div>
       </div>
-      {isLidarProject && (targets.includes("kitti") || targets.includes("nuscenes")) && (
-        <div className="flex flex-col gap-2 rounded-md border border-border bg-muted px-3 py-2.5">
-          {targets.includes("kitti") && (
-            <>
-              <label htmlFor="kitti-camera-role" className="text-xs font-semibold text-foreground">
-                KITTI 投影相机
-              </label>
-              <select
-                id="kitti-camera-role"
-                value={kittiCameraRole}
-                onChange={(event) => setKittiCameraRole(event.target.value)}
-                className="rounded-sm border border-border bg-card px-3 py-2 text-xs text-foreground"
-              >
-                <option value="">请选择相机通道</option>
-                {(lidarPreflight?.camera_roles ?? []).map((role) => (
-                  <option key={role} value={role}>
-                    {role.replace(/^camera_/, "")}
-                  </option>
-                ))}
-              </select>
-            </>
-          )}
-          {lidarPreflightLoading && (
-            <div className="text-xs text-muted-foreground">正在核对全部点云帧…</div>
-          )}
-          {lidarPreflight && !lidarPreflightLoading && (
-            <div
-              className={cn(
-                "flex flex-col gap-1.5 rounded-sm border px-2.5 py-2 text-xs",
-                lidarPreflight.ready
-                  ? "border-status-success/40 bg-status-success/10"
-                  : "border-status-danger/40 bg-status-danger/10",
-              )}
-              data-testid="lidar-export-preflight"
-            >
-              <div className="font-semibold text-foreground">
-                {lidarPreflight.ready
-                  ? `预检通过 · ${lidarPreflight.checked_tasks} 帧`
-                  : `预检阻止 · ${lidarPreflight.issue_count} 个问题`}
-              </div>
-              {lidarPreflight.issues.slice(0, 8).map((issue, index) => (
-                <div
-                  key={`${issue.code}-${issue.task_id ?? "global"}-${index}`}
-                  className="text-muted-foreground"
+      {isLidarProject &&
+        (targets.includes("coco-multicamera") ||
+          targets.includes("kitti") ||
+          targets.includes("nuscenes")) && (
+          <div className="flex flex-col gap-2 rounded-md border border-border bg-muted px-3 py-2.5">
+            {targets.includes("kitti") && (
+              <>
+                <label
+                  htmlFor="kitti-camera-role"
+                  className="text-xs font-semibold text-foreground"
                 >
-                  <code className="text-foreground">{issue.code}</code>
-                  {issue.task_display_id || issue.frame_key
-                    ? ` · ${issue.task_display_id ?? issue.frame_key}`
-                    : ""}
-                  {` · ${issue.message}`}
+                  KITTI 投影相机
+                </label>
+                <select
+                  id="kitti-camera-role"
+                  value={kittiCameraRole}
+                  onChange={(event) => setKittiCameraRole(event.target.value)}
+                  className="rounded-sm border border-border bg-card px-3 py-2 text-xs text-foreground"
+                >
+                  <option value="">请选择相机通道</option>
+                  {(lidarPreflight?.camera_roles ?? []).map((role) => (
+                    <option key={role} value={role}>
+                      {role.replace(/^camera_/, "")}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+            {lidarPreflightLoading && (
+              <div className="text-xs text-muted-foreground">正在核对全部点云帧…</div>
+            )}
+            {lidarPreflight && !lidarPreflightLoading && (
+              <div
+                className={cn(
+                  "flex flex-col gap-1.5 rounded-sm border px-2.5 py-2 text-xs",
+                  lidarPreflight.ready
+                    ? "border-status-success/40 bg-status-success/10"
+                    : "border-status-danger/40 bg-status-danger/10",
+                )}
+                data-testid="lidar-export-preflight"
+              >
+                <div className="font-semibold text-foreground">
+                  {lidarPreflight.ready
+                    ? `预检通过 · ${lidarPreflight.checked_tasks} 帧`
+                    : `预检阻止 · ${lidarPreflight.issue_count} 个问题`}
                 </div>
-              ))}
-              {(lidarPreflight.issue_count > 8 || lidarPreflight.issues_truncated) && (
-                <div className="text-muted-foreground">
-                  仅显示前 8 项；预检共发现 {lidarPreflight.issue_count} 项。
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
+                {lidarPreflight.issues.slice(0, 8).map((issue, index) => (
+                  <div
+                    key={`${issue.code}-${issue.task_id ?? "global"}-${index}`}
+                    className="text-muted-foreground"
+                  >
+                    <code className="text-foreground">{issue.code}</code>
+                    {issue.task_display_id || issue.frame_key
+                      ? ` · ${issue.task_display_id ?? issue.frame_key}`
+                      : ""}
+                    {` · ${issue.message}`}
+                  </div>
+                ))}
+                {(lidarPreflight.issue_count > 8 || lidarPreflight.issues_truncated) && (
+                  <div className="text-muted-foreground">
+                    仅显示前 8 项；预检共发现 {lidarPreflight.issue_count} 项。
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       {isVideoProject && (
         <div className="flex flex-col gap-2 rounded-md border border-border bg-muted px-3 py-2.5">
           <label htmlFor="video-export-scope" className="text-xs font-semibold text-foreground">
@@ -942,7 +958,9 @@ function ExportForm({
             !scopeValid ||
             preflight?.loss_class === "unsupported" ||
             (isLidarProject &&
-              (targets.includes("kitti") || targets.includes("nuscenes")) &&
+              (targets.includes("coco-multicamera") ||
+                targets.includes("kitti") ||
+                targets.includes("nuscenes")) &&
               ((targets.includes("kitti") && !kittiCameraRole) ||
                 lidarPreflightLoading ||
                 !lidarPreflight?.ready))

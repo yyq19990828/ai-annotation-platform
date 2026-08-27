@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import os
 import uuid
+import zipfile
 
 import pytest
 from sqlalchemy import select
@@ -9,6 +13,7 @@ from app.db.models.annotation import Annotation
 from app.db.models.dataset import Dataset, DatasetItem, Scene
 from app.db.models.scene_track import SceneTrack
 from app.db.models.task import Task
+from app.db.models.task_dataset_item_link import TaskDatasetItemLink
 from app.schemas._jsonb_types import SensorCalibration
 from app.schemas.multicamera_annotation import NormalizedCameraBbox
 from app.services.multicamera_annotation import (
@@ -20,12 +25,15 @@ from app.services.multicamera_annotation import (
     restore_camera_member,
     update_camera_member,
 )
+from app.services.exporting.lidar_preflight import preflight_lidar_export
+from app.services.exporting.packaging import build_export_zip
 from app.services.scene_track_domain import bind_annotation_to_scene_track
 from app.services.sensor_calibration import (
     calibration_digest,
     update_calibration,
 )
 from app.services.task_dataset_link import link_items
+from app.workers.export import _multicamera_coco_scope_digest
 from tests.factory import create_project
 
 
@@ -251,6 +259,181 @@ async def test_camera_member_lifecycle_and_calibration_staleness(
     )
     assert member.is_active is True
     assert track.revision == 5
+
+
+async def test_multicamera_coco_preflight_allows_stale_manual_relation(
+    db_session, super_admin, monkeypatch
+):
+    user, _ = super_admin
+    task, camera, source, track = await _seed(db_session, user.id)
+    baseline = _calibration()
+    baseline_digest = calibration_digest(baseline)
+    camera.file_size = 14
+    await create_camera_member(
+        db_session,
+        task=task,
+        actor_id=user.id,
+        source_annotation_id=source.id,
+        camera_role="camera_front",
+        bbox=NormalizedCameraBbox(x=0.1, y=0.2, w=0.3, h=0.4),
+        visibility="visible",
+        expected_track_revision=track.revision,
+        expected_calibration_revision=1,
+        expected_calibration_digest=baseline_digest,
+    )
+    await update_calibration(
+        db_session,
+        dataset_item_id=camera.id,
+        calibration=_calibration(cx=120),
+        expected_revision=1,
+        expected_digest=baseline_digest,
+        actor_id=user.id,
+    )
+    monkeypatch.setattr(
+        "app.services.exporting.lidar_preflight.storage_service.verify_upload",
+        lambda key, bucket: {"ContentLength": 14},
+    )
+
+    report = await preflight_lidar_export(
+        db_session,
+        project_id=task.project_id,
+        batch_id=None,
+        targets=["coco-multicamera"],
+        options=None,
+    )
+
+    assert report.ready is True
+    assert report.checked_tasks == 1
+    assert report.camera_roles == ["camera_front"]
+    assert report.issues == []
+
+
+async def test_multicamera_coco_preflight_rejects_unsafe_role_path(
+    db_session, super_admin, monkeypatch
+):
+    user, _ = super_admin
+    task, camera, _source, _track = await _seed(db_session, user.id)
+    camera.file_size = 14
+    link = await db_session.scalar(
+        select(TaskDatasetItemLink).where(
+            TaskDatasetItemLink.task_id == task.id,
+            TaskDatasetItemLink.role == "camera_front",
+        )
+    )
+    assert link is not None
+    link.role = "camera_front/../escape"
+    monkeypatch.setattr(
+        "app.services.exporting.lidar_preflight.storage_service.verify_upload",
+        lambda key, bucket: {"ContentLength": 14},
+    )
+
+    report = await preflight_lidar_export(
+        db_session,
+        project_id=task.project_id,
+        batch_id=None,
+        targets=["coco-multicamera"],
+        options=None,
+    )
+
+    assert report.ready is False
+    assert "multicamera_coco_camera_item_invalid" in {
+        issue.code for issue in report.issues
+    }
+
+
+async def test_multicamera_coco_package_contains_trusted_media_contract(
+    db_session, super_admin, monkeypatch
+):
+    user, _ = super_admin
+    task, camera, source, track = await _seed(db_session, user.id)
+    payload = b"trusted-image"
+    camera.file_size = len(payload)
+    primary_item = await db_session.get(DatasetItem, task.dataset_item_id)
+    assert primary_item is not None
+    primary_item.file_path = ""
+    digest = calibration_digest(_calibration())
+    await create_camera_member(
+        db_session,
+        task=task,
+        actor_id=user.id,
+        source_annotation_id=source.id,
+        camera_role="camera_front",
+        bbox=NormalizedCameraBbox(x=0.1, y=0.2, w=0.3, h=0.4),
+        visibility="visible",
+        expected_track_revision=track.revision,
+        expected_calibration_revision=1,
+        expected_calibration_digest=digest,
+    )
+    monkeypatch.setattr(
+        "app.services.exporting.packaging._hash_dataset_object",
+        lambda key: (len(payload), hashlib.sha256(payload).hexdigest()),
+    )
+
+    def trusted_download_url(key, **_kwargs):
+        assert key == camera.file_path
+        return "https://storage.test/trusted"
+
+    monkeypatch.setattr(
+        "app.services.exporting.packaging.storage_service.generate_download_url",
+        trusted_download_url,
+    )
+
+    zip_path, file_count, _size = await build_export_zip(
+        db_session,
+        task.project_id,
+        batch_id=None,
+        targets=["coco-multicamera"],
+        include_attributes=True,
+        video_frame_mode="keyframes",
+    )
+    try:
+        with zipfile.ZipFile(zip_path) as archive:
+            annotations = json.loads(archive.read("annotations.json"))
+            manifest = json.loads(archive.read("media_manifest.json"))
+            report = json.loads(archive.read("export_report.json"))
+            assert "fetch_media.py" in archive.namelist()
+            assert annotations["aap"]["derived_projection_fallback"] is False
+            assert annotations["images"][0]["file_name"] == (
+                f"images/camera_front/{task.id}/front.jpg"
+            )
+            assert annotations["annotations"][0]["relation_status"] == "current"
+            assert manifest["contract"] == "multicamera-coco-media-v1"
+            assert manifest["media"][0]["source_file_size"] == len(payload)
+            assert (
+                manifest["media"][0]["source_sha256"]
+                == hashlib.sha256(payload).hexdigest()
+            )
+            assert report == {
+                "annotations_by_role": {"camera_front": 1},
+                "derived_bbox_count": 0,
+                "images": 1,
+                "images_by_role": {"camera_front": 1},
+                "manual_bbox_count": 1,
+                "negative_images": 0,
+                "stale_relation_count": 0,
+            }
+        assert file_count == 1
+    finally:
+        os.unlink(zip_path)
+
+
+async def test_multicamera_coco_cache_digest_tracks_media_etag(
+    db_session, super_admin, monkeypatch
+):
+    user, _ = super_admin
+    task, camera, _source, _track = await _seed(db_session, user.id)
+    camera.file_size = 14
+    state = {"etag": "etag-one"}
+    monkeypatch.setattr(
+        "app.workers.export.storage_service.verify_upload",
+        lambda key, bucket: {"ContentLength": 14, "ETag": state["etag"]},
+    )
+
+    first = await _multicamera_coco_scope_digest(db_session, task.project_id, None)
+    state["etag"] = "etag-two"
+    second = await _multicamera_coco_scope_digest(db_session, task.project_id, None)
+
+    assert first != second
 
 
 async def test_camera_member_update_rejects_track_and_calibration_conflicts(

@@ -143,7 +143,7 @@ GET /tasks/{id}/point-cloud/manifest   (project.data_type=="lidar"，否则 409)
 
 点云 KITTI 不直接把平台 ISO 框当成 camera frame。导出按每个 task 的主点云 Dataset 读取 `axis_convention`，先用 `R_normᵀ` 把 ISO 角点映射回数据源 LiDAR 轴，再依次应用用户显式选择的 camera role 对应 `extrinsic`、可选 `rect` 与 `intrinsic`。`label_2` 的二维框来自近裁剪面裁剪后的 8 角点 / 12 边投影；`location` 使用相机坐标下的底面中心，完全不可见对象进入 `export_report.json`。
 
-项目和批次导出在创建 `AsyncJob` 前共用严格预检，worker 在查缓存和打包前重复检查。缺主点云、未声明或不可信的轴约定、缺所选相机帧、非法标定、缺图像宽高都会返回稳定 issue code；不得用 identity matrix、`.unverified` 文件或负数 bbox 代替失败。nuScenes 还会校验真实 scene / log / map、完整 sample 链、逐传感器位姿与时钟、原媒体指纹和完整 Scene 范围，任一缺口都拒绝。
+项目和批次导出在创建 `AsyncJob` 前共用严格预检，worker 在查缓存和打包前重复检查。缺主点云、未声明或不可信的轴约定、缺所选相机帧、非法标定、缺图像宽高都会返回稳定 issue code；不得用 identity matrix、`.unverified` 文件或负数 bbox 代替失败。Multi-camera COCO 不要求主点云轴约定，但会严格校验相机 link、媒体对象、归一化人工 bbox、类别以及 2D 成员与活跃 3D 成员、SceneTrack 的身份闭合；标定变化只将关系标为 stale，不改写独立 2D 真值。nuScenes 还会校验真实 scene / log / map、完整 sample 链、逐传感器位姿与时钟、原媒体指纹和完整 Scene 范围，任一缺口都拒绝。
 
 前端(双画布架构,ADR-0031):`project.type_key === "lidar"` → `WorkbenchStageHost` 的 `3d` 分支 → lazy `ThreeDWorkbench`(独立 `vendor-three` chunk,不进主 bundle)。裸 Three.js 封装 `PointCloudScene`，由持久 Worker 解析 PCD、归一化轴向、抽稀并生成高度色；主透视视图与 Top / Side / Front 三正交视图使用同一个 renderer、canvas 和图形 context，通过 viewport / scissor 分 pass 绘制，并由事件驱动 scheduler 在状态稳定后停止提交。四视图共享点云 geometry 的 GPU attribute、backend、相机纹理和 device-lost 生命周期；不同相机仍各自执行一次 render pass。默认使用 Legacy WebGL2，设置中的本地实验开关可启用异步 WebGPU renderer、实例化点精灵和相机纹理直采样；切帧时旧实例立即归零，场景级实例缓冲与固定六路相机采样 TSL 拓扑继续复用，只更新点属性、纹理和标定 uniform。实验路径只生成 GPU 需要的 depth-only 遮挡栅格，并在 8 MiB / 8-key LRU 中与相邻帧预取合并，Legacy 和 WebGL2 fallback 不触发该预取。初始化失败或 device lost 会回退 Legacy。模块在 `apps/web/src/pages/Workbench/stages/three-d/`,与 Konva `stage/` 隔离。
 

@@ -12,7 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.annotation import Annotation
 from app.db.models.dataset import Dataset, DatasetItem, Scene
+from app.db.models.project import Project
 from app.db.models.scene_pose import SceneFramePose
+from app.db.models.scene_track import SceneTrack
 from app.db.models.task import Task
 from app.db.models.task_dataset_item_link import TaskDatasetItemLink
 from app.schemas._jsonb_types import SensorCalibration
@@ -22,6 +24,7 @@ from app.schemas.export import (
     LidarExportPreflightResponse,
 )
 from app.services.axis_convention import R_NORM
+from app.services.project import derive_classes_list
 from app.services.sensor_calibration import resolve_calibration_states
 from app.services.storage import storage_service
 
@@ -33,6 +36,10 @@ MAX_NUSCENES_EXPORT_BOXES = 30_000
 MAX_NUSCENES_POINT_BOX_TESTS = 100_000_000
 MAX_NUSCENES_PCD_BYTES_PER_FRAME = 256 * 1024 * 1024
 MAX_NUSCENES_PCD_BYTES_TOTAL = 4 * 1024 * 1024 * 1024
+MAX_MULTICAMERA_COCO_IMAGES = 20_000
+MAX_MULTICAMERA_COCO_ANNOTATIONS = 100_000
+MAX_MULTICAMERA_COCO_MEDIA_BYTES = 20 * 1024 * 1024 * 1024
+MAX_MULTICAMERA_COCO_MEDIA_BYTES_PER_IMAGE = 256 * 1024 * 1024
 
 
 class LidarExportPreflightFailed(ValueError):
@@ -145,6 +152,24 @@ def _box_geometry_is_valid(raw: object) -> bool:
     )
 
 
+def _normalized_bbox_is_valid(raw: object) -> bool:
+    if not isinstance(raw, dict) or raw.get("type") != "bbox":
+        return False
+    try:
+        x, y, width, height = (float(raw[key]) for key in ("x", "y", "w", "h"))
+    except (KeyError, TypeError, ValueError):
+        return False
+    return (
+        all(math.isfinite(value) for value in (x, y, width, height))
+        and x >= 0
+        and y >= 0
+        and width > 0
+        and height > 0
+        and x + width <= 1 + 1e-9
+        and y + height <= 1 + 1e-9
+    )
+
+
 def _source_scene_is_valid(raw: dict) -> bool:
     try:
         sample_count = int(raw.get("nbr_samples"))
@@ -198,7 +223,8 @@ async def preflight_lidar_export(
 
     needs_kitti = "kitti" in targets
     needs_nuscenes = "nuscenes" in targets
-    if not needs_kitti and not needs_nuscenes:
+    needs_multicamera_coco = "coco-multicamera" in targets
+    if not needs_kitti and not needs_nuscenes and not needs_multicamera_coco:
         return LidarExportPreflightResponse(
             ready=issue_count == 0,
             camera_roles=[],
@@ -215,6 +241,29 @@ async def preflight_lidar_export(
     task_count = int(
         (await db.scalar(select(func.count(Task.id)).where(*task_scope))) or 0
     )
+    if needs_multicamera_coco and task_count == 0:
+        add_issue(
+            LidarExportIssue(
+                code="multicamera_coco_export_empty",
+                message="多相机 COCO 导出范围内没有任务",
+            )
+        )
+    if needs_multicamera_coco and task_count > MAX_MULTICAMERA_COCO_IMAGES:
+        add_issue(
+            LidarExportIssue(
+                code="multicamera_coco_export_too_large",
+                message="多相机 COCO 导出任务数已超过 20,000 张相机图预算",
+            )
+        )
+        return LidarExportPreflightResponse(
+            ready=False,
+            camera_roles=[],
+            selected_camera_role=selected_role,
+            checked_tasks=task_count,
+            issue_count=issue_count,
+            issues_truncated=False,
+            issues=issues,
+        )
     if needs_nuscenes:
         if task_count == 0:
             add_issue(
@@ -277,8 +326,12 @@ async def preflight_lidar_export(
         task_query = task_query.where(Task.batch_id == batch_id)
     task_rows = list((await db.execute(task_query)).all())
     tasks = [row[0] for row in task_rows]
+    tasks_by_id = {task.id: task for task in tasks}
     task_ids = [task.id for task in tasks]
     links_by_task: dict[uuid.UUID, dict[str, DatasetItem]] = {}
+    camera_link_rows_by_task: dict[
+        uuid.UUID, list[tuple[TaskDatasetItemLink, DatasetItem]]
+    ] = {}
     camera_roles: set[str] = set()
     for start in range(0, len(task_ids), PREFLIGHT_LINK_CHUNK_SIZE):
         chunk_ids = task_ids[start : start + PREFLIGHT_LINK_CHUNK_SIZE]
@@ -298,6 +351,9 @@ async def preflight_lidar_export(
             links_by_task.setdefault(link.task_id, {})[link.role] = item
             if link.role.startswith("camera_"):
                 camera_roles.add(link.role)
+                camera_link_rows_by_task.setdefault(link.task_id, []).append(
+                    (link, item)
+                )
 
     if needs_kitti and selected_role is None:
         add_issue(
@@ -314,6 +370,313 @@ async def preflight_lidar_export(
                 camera_role=selected_role,
             )
         )
+
+    if needs_multicamera_coco:
+        project = await db.get(Project, project_id)
+        known_classes = set(
+            derive_classes_list(project.tool_bindings) if project is not None else []
+        )
+        camera_image_count = sum(
+            len(rows) for rows in camera_link_rows_by_task.values()
+        )
+        total_media_bytes = 0
+        camera_assets: dict[uuid.UUID, tuple[DatasetItem, dict]] = {}
+        for task in tasks:
+            common = {
+                "task_id": task.id,
+                "task_display_id": task.display_id,
+                "frame_key": _frame_key(task, None),
+            }
+            rows = camera_link_rows_by_task.get(task.id, [])
+            if not rows:
+                add_issue(
+                    LidarExportIssue(
+                        code="multicamera_coco_camera_missing",
+                        message="当前任务没有关联相机图像",
+                        **common,
+                    )
+                )
+                continue
+            seen_item_roles: dict[uuid.UUID, str] = {}
+            for link, item in rows:
+                previous_role = seen_item_roles.setdefault(item.id, link.role)
+                if previous_role != link.role:
+                    add_issue(
+                        LidarExportIssue(
+                            code="multicamera_coco_camera_link_duplicate",
+                            message=(
+                                f"同一图像同时绑定为 {previous_role} 与 {link.role}"
+                            ),
+                            camera_role=link.role,
+                            **common,
+                        )
+                    )
+                try:
+                    file_size = int(item.file_size or 0)
+                except (TypeError, ValueError):
+                    file_size = 0
+                total_media_bytes += max(file_size, 0)
+                source_basename = PurePosixPath(item.file_path or "").name
+                export_rel_path = f"images/{link.role}/{task.id}/{source_basename}"
+                if (
+                    item.file_type != "image"
+                    or not item.file_path
+                    or source_basename in {"", ".", ".."}
+                    or not _source_path_is_safe(export_rel_path)
+                    or not item.width
+                    or item.width <= 0
+                    or not item.height
+                    or item.height <= 0
+                    or file_size <= 0
+                ):
+                    add_issue(
+                        LidarExportIssue(
+                            code="multicamera_coco_camera_item_invalid",
+                            message=f"相机通道 {link.role} 的媒体类型、路径、宽高或大小无效",
+                            camera_role=link.role,
+                            **common,
+                        )
+                    )
+                if file_size > MAX_MULTICAMERA_COCO_MEDIA_BYTES_PER_IMAGE:
+                    add_issue(
+                        LidarExportIssue(
+                            code="multicamera_coco_export_too_large",
+                            message=f"相机通道 {link.role} 的单图大小超过 256 MiB",
+                            camera_role=link.role,
+                            **common,
+                        )
+                    )
+                if item.file_path and _source_path_is_safe(export_rel_path):
+                    camera_assets.setdefault(
+                        item.id, (item, common | {"camera_role": link.role})
+                    )
+
+        manual_member_count = 0
+        for start in range(0, len(task_ids), PREFLIGHT_LINK_CHUNK_SIZE):
+            manual_member_count += int(
+                (
+                    await db.scalar(
+                        select(func.count(Annotation.id)).where(
+                            Annotation.task_id.in_(
+                                task_ids[start : start + PREFLIGHT_LINK_CHUNK_SIZE]
+                            ),
+                            Annotation.sensor_role.is_not(None),
+                            Annotation.source == "manual",
+                            Annotation.geometry["type"].as_string() == "bbox",
+                            Annotation.is_active.is_(True),
+                            Annotation.was_cancelled.is_(False),
+                        )
+                    )
+                )
+                or 0
+            )
+        multicamera_scope_too_large = (
+            camera_image_count > MAX_MULTICAMERA_COCO_IMAGES
+            or manual_member_count > MAX_MULTICAMERA_COCO_ANNOTATIONS
+            or total_media_bytes > MAX_MULTICAMERA_COCO_MEDIA_BYTES
+        )
+        if multicamera_scope_too_large:
+            add_issue(
+                LidarExportIssue(
+                    code="multicamera_coco_export_too_large",
+                    message=(
+                        "多相机 COCO 导出超过 20,000 张图、100,000 个框或 "
+                        "20 GiB 媒体预算"
+                    ),
+                )
+            )
+        else:
+            manual_members: list[Annotation] = []
+            for start in range(0, len(task_ids), PREFLIGHT_LINK_CHUNK_SIZE):
+                manual_members.extend(
+                    list(
+                        (
+                            await db.execute(
+                                select(Annotation).where(
+                                    Annotation.task_id.in_(
+                                        task_ids[
+                                            start : start + PREFLIGHT_LINK_CHUNK_SIZE
+                                        ]
+                                    ),
+                                    Annotation.sensor_role.is_not(None),
+                                    Annotation.source == "manual",
+                                    Annotation.geometry["type"].as_string() == "bbox",
+                                    Annotation.is_active.is_(True),
+                                    Annotation.was_cancelled.is_(False),
+                                )
+                            )
+                        ).scalars()
+                    )
+                )
+
+            scene_track_ids = {
+                member.scene_track_id
+                for member in manual_members
+                if member.scene_track_id is not None
+            }
+            ordered_scene_track_ids = sorted(scene_track_ids, key=str)
+            scene_tracks: dict[uuid.UUID, SceneTrack] = {}
+            for start in range(
+                0, len(ordered_scene_track_ids), PREFLIGHT_LINK_CHUNK_SIZE
+            ):
+                tracks = (
+                    await db.execute(
+                        select(SceneTrack).where(
+                            SceneTrack.id.in_(
+                                ordered_scene_track_ids[
+                                    start : start + PREFLIGHT_LINK_CHUNK_SIZE
+                                ]
+                            ),
+                            SceneTrack.project_id == project_id,
+                        )
+                    )
+                ).scalars()
+                scene_tracks.update({track.id: track for track in tracks})
+            parents_by_key: dict[tuple[uuid.UUID, uuid.UUID], list[Annotation]] = {}
+            for start in range(
+                0, len(ordered_scene_track_ids), PREFLIGHT_LINK_CHUNK_SIZE
+            ):
+                parents = (
+                    await db.execute(
+                        select(Annotation)
+                        .join(Task, Task.id == Annotation.task_id)
+                        .where(
+                            *task_scope,
+                            Annotation.scene_track_id.in_(
+                                ordered_scene_track_ids[
+                                    start : start + PREFLIGHT_LINK_CHUNK_SIZE
+                                ]
+                            ),
+                            Annotation.geometry["type"].as_string() == "box_3d",
+                            Annotation.is_active.is_(True),
+                            Annotation.was_cancelled.is_(False),
+                        )
+                    )
+                ).scalars()
+                for parent in parents:
+                    parents_by_key.setdefault(
+                        (parent.task_id, parent.scene_track_id), []
+                    ).append(parent)
+            member_items = {
+                member.sensor_dataset_item_id: camera_assets[
+                    member.sensor_dataset_item_id
+                ][0]
+                for member in manual_members
+                if member.sensor_dataset_item_id in camera_assets
+            }
+            try:
+                await resolve_calibration_states(db, list(member_items.values()))
+            except (ValueError, TypeError):
+                add_issue(
+                    LidarExportIssue(
+                        code="multicamera_coco_calibration_invalid",
+                        message="人工相机框关联的当前相机标定无效",
+                    )
+                )
+
+            for member in manual_members:
+                task = tasks_by_id[member.task_id]
+                common = {
+                    "task_id": task.id,
+                    "task_display_id": task.display_id,
+                    "frame_key": _frame_key(task, None),
+                    "camera_role": member.sensor_role,
+                }
+                linked_item = links_by_task.get(task.id, {}).get(
+                    str(member.sensor_role)
+                )
+                if (
+                    linked_item is None
+                    or member.sensor_dataset_item_id != linked_item.id
+                    or member.project_id != project_id
+                    or member.scene_track_id is None
+                    or not member.track_id
+                    or member.sensor_visibility is None
+                    or member.calibration_revision is None
+                    or member.calibration_revision < 1
+                    or not isinstance(member.calibration_digest, str)
+                    or len(member.calibration_digest) != 64
+                    or any(
+                        char not in "0123456789abcdef"
+                        for char in member.calibration_digest.lower()
+                    )
+                ):
+                    add_issue(
+                        LidarExportIssue(
+                            code="multicamera_coco_member_context_invalid",
+                            message=f"人工相机框 {member.id} 的传感器上下文不闭合",
+                            **common,
+                        )
+                    )
+                if not _normalized_bbox_is_valid(member.geometry):
+                    add_issue(
+                        LidarExportIssue(
+                            code="multicamera_coco_bbox_invalid",
+                            message=f"人工相机框 {member.id} 的归一化 bbox 无效",
+                            **common,
+                        )
+                    )
+                if member.class_name not in known_classes:
+                    add_issue(
+                        LidarExportIssue(
+                            code="multicamera_coco_category_unknown",
+                            message=f"人工相机框 {member.id} 的类别不在项目类别表中",
+                            **common,
+                        )
+                    )
+                parents = parents_by_key.get(
+                    (member.task_id, member.scene_track_id), []
+                )
+                scene_track = scene_tracks.get(member.scene_track_id)
+                parent_valid = (
+                    len(parents) == 1
+                    and parents[0].project_id == project_id
+                    and parents[0].class_name == member.class_name
+                    and parents[0].track_id == member.track_id
+                    and scene_track is not None
+                    and scene_track.project_id == project_id
+                    and scene_track.retired_at is None
+                    and scene_track.class_name == member.class_name
+                    and scene_track.track_id == member.track_id
+                )
+                if not parent_valid:
+                    add_issue(
+                        LidarExportIssue(
+                            code="multicamera_coco_parent_invalid",
+                            message=f"人工相机框 {member.id} 缺少一致的活跃 3D 主成员",
+                            **common,
+                        )
+                    )
+
+        async def verify_camera_asset(
+            item: DatasetItem, common: dict
+        ) -> tuple[DatasetItem, dict, dict | None]:
+            head = await asyncio.to_thread(
+                storage_service.verify_upload,
+                item.file_path,
+                storage_service.datasets_bucket,
+            )
+            return item, common, head
+
+        asset_rows = [] if multicamera_scope_too_large else list(camera_assets.values())
+        for start in range(0, len(asset_rows), 32):
+            verified = await asyncio.gather(
+                *[
+                    verify_camera_asset(item, common)
+                    for item, common in asset_rows[start : start + 32]
+                ]
+            )
+            for item, common, head in verified:
+                if head is None or int(head.get("ContentLength", -1)) != int(
+                    item.file_size or -1
+                ):
+                    add_issue(
+                        LidarExportIssue(
+                            code="multicamera_coco_media_drift",
+                            message="相机媒体不存在或对象大小与 DatasetItem 不一致",
+                            **common,
+                        )
+                    )
 
     scene_ids = {
         item.scene_id
@@ -508,41 +871,44 @@ async def preflight_lidar_export(
                     **common,
                 )
             )
-        if primary_item is None:
-            add_issue(
-                LidarExportIssue(
-                    code="primary_lidar_missing",
-                    message="任务缺少主点云数据项",
-                    **common,
+        if needs_kitti or needs_nuscenes:
+            if primary_item is None:
+                add_issue(
+                    LidarExportIssue(
+                        code="primary_lidar_missing",
+                        message="任务缺少主点云数据项",
+                        **common,
+                    )
                 )
+            convention = (
+                (dataset.metadata_ or {}).get("axis_convention") if dataset else None
             )
-        convention = (
-            (dataset.metadata_ or {}).get("axis_convention") if dataset else None
-        )
-        if convention is None:
-            add_issue(
-                LidarExportIssue(
-                    code="axis_convention_missing",
-                    message="主点云数据集缺少 axis_convention",
-                    **common,
+            if convention is None:
+                add_issue(
+                    LidarExportIssue(
+                        code="axis_convention_missing",
+                        message="主点云数据集缺少 axis_convention",
+                        **common,
+                    )
                 )
-            )
-        elif convention == "raw" or convention not in R_NORM:
-            add_issue(
-                LidarExportIssue(
-                    code="axis_convention_untrusted",
-                    message=f"axis_convention={convention!s} 无法用于可信坐标反变换",
-                    **common,
+            elif convention == "raw" or convention not in R_NORM:
+                add_issue(
+                    LidarExportIssue(
+                        code="axis_convention_untrusted",
+                        message=(
+                            f"axis_convention={convention!s} 无法用于可信坐标反变换"
+                        ),
+                        **common,
+                    )
                 )
-            )
-        elif needs_nuscenes and convention != "iso_8855":
-            add_issue(
-                LidarExportIssue(
-                    code="nuscenes_axis_convention_invalid",
-                    message="nuScenes ego 源必须使用 iso_8855 坐标约定",
-                    **common,
+            elif needs_nuscenes and convention != "iso_8855":
+                add_issue(
+                    LidarExportIssue(
+                        code="nuscenes_axis_convention_invalid",
+                        message="nuScenes ego 源必须使用 iso_8855 坐标约定",
+                        **common,
+                    )
                 )
-            )
 
         if needs_kitti and selected_role is not None:
             camera_item = links_by_task.get(task.id, {}).get(selected_role)

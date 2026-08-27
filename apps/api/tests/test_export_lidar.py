@@ -9,6 +9,7 @@ import uuid
 import zipfile
 
 import pytest
+from pycocotools.coco import COCO
 from sqlalchemy import func, select
 
 from app.db.models.annotation import Annotation
@@ -21,9 +22,11 @@ from app.schemas.export import LidarExportOptions
 from app.services.exporting.lidar import (
     LidarCameraExportCtx,
     LidarFrameExportCtx,
+    MulticameraCocoImageCtx,
     NuScenesSensorExportCtx,
     build_kitti_lidar_frame,
     build_kitti_lidar_label_lines,
+    build_multicamera_coco,
     build_nuscenes_frame_records,
     build_pointmask_label_bytes,
 )
@@ -147,6 +150,119 @@ def test_nuscenes_fetch_script_rejects_unsafe_paths_and_verifies_downloads(
     assert namespace["main"]() == 1
     assert destination.read_bytes() == b"corrupt"
     assert list(destination.parent.glob(".aap-download-*")) == []
+
+    fingerprint = hashlib.sha256(source.read_bytes()).hexdigest()
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "media": [
+                    {
+                        "rel_path": "samples/LIDAR_TOP/source.bin",
+                        "presigned_url": source.as_uri(),
+                        "source_file_size": source.stat().st_size,
+                        "source_sha256": fingerprint,
+                    },
+                    {
+                        "rel_path": "samples/LIDAR_TOP/source.bin",
+                        "presigned_url": source.as_uri(),
+                        "source_file_size": source.stat().st_size,
+                        "source_sha256": fingerprint,
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    assert namespace["main"]() == 1
+
+    manifest_path.write_text(
+        json.dumps({"media": [{"rel_path": "samples/missing-url.bin"}]}),
+        encoding="utf-8",
+    )
+    assert namespace["main"]() == 1
+
+
+def test_multicamera_coco_is_deterministic_and_pycocotools_compatible():
+    task_front = uuid.UUID("10000000-0000-0000-0000-000000000001")
+    task_back = uuid.UUID("10000000-0000-0000-0000-000000000002")
+    scene_track_id = uuid.UUID("20000000-0000-0000-0000-000000000001")
+    member = _ann(
+        task_id=task_front,
+        geometry={"type": "bbox", "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4},
+        attributes={"weather": "rain"},
+        track_id="trk_car",
+    )
+    member.id = uuid.UUID("30000000-0000-0000-0000-000000000001")
+    member.source = "manual"
+    member.version = 4
+    member.scene_track_id = scene_track_id
+    member.sensor_role = "camera_front"
+    member.sensor_dataset_item_id = uuid.UUID("40000000-0000-0000-0000-000000000001")
+    member.sensor_visibility = "visible"
+    member.calibration_revision = 1
+    member.calibration_digest = "a" * 64
+
+    images = [
+        MulticameraCocoImageCtx(
+            task_id=task_back,
+            dataset_item_id=uuid.UUID("40000000-0000-0000-0000-000000000002"),
+            sensor_role="camera_back",
+            file_name=f"images/camera_back/{task_back}/frame.jpg",
+            width=320,
+            height=200,
+        ),
+        MulticameraCocoImageCtx(
+            task_id=task_front,
+            dataset_item_id=member.sensor_dataset_item_id,
+            sensor_role="camera_front",
+            file_name=f"images/camera_front/{task_front}/frame.jpg",
+            width=200,
+            height=100,
+            members=[member],
+            scene_id=uuid.UUID("50000000-0000-0000-0000-000000000001"),
+            frame_index=7,
+            current_calibration_revision=2,
+            current_calibration_digest="b" * 64,
+        ),
+    ]
+
+    first = build_multicamera_coco(
+        images,
+        classes=["car", "pedestrian"],
+        include_attributes=True,
+        allowed_attribute_keys={"weather"},
+    )
+    second = build_multicamera_coco(
+        list(reversed(images)),
+        classes=["car", "pedestrian"],
+        include_attributes=True,
+        allowed_attribute_keys={"weather"},
+    )
+
+    assert first.document == second.document
+    assert first.image_count == 2
+    assert first.annotation_count == 1
+    assert first.stale_relation_count == 1
+    assert first.document["annotations"][0]["bbox"] == pytest.approx([20, 20, 60, 40])
+    assert first.document["annotations"][0]["relation_status"] == "stale"
+    assert all(row["id"] <= (1 << 53) - 1 for row in first.document["images"])
+    coco = COCO()
+    coco.dataset = first.document
+    coco.createIndex()
+    assert set(coco.imgs) == {row["id"] for row in first.document["images"]}
+    negative = next(
+        row for row in first.document["images"] if row["sensor_role"] == "camera_back"
+    )
+    assert coco.getAnnIds(imgIds=[negative["id"]]) == []
+
+    member.sensor_role = "camera_back"
+    with pytest.raises(ValueError, match="multicamera_coco_member_context_invalid"):
+        build_multicamera_coco(
+            images,
+            classes=["car", "pedestrian"],
+            include_attributes=True,
+            allowed_attribute_keys={"weather"},
+        )
 
 
 def test_kitti_lidar_label_projects_bbox_and_camera_bottom_center():
@@ -559,11 +675,28 @@ async def test_failed_lidar_preflight_creates_no_async_job(
         json={"lidar": {"kitti_camera_role": "camera_front"}},
         headers={"Authorization": f"Bearer {token}"},
     )
+    coco_preflight_response = await httpx_client_bound.post(
+        f"/api/v1/projects/{project.id}/exports/lidar:preflight",
+        json={"targets": ["coco-multicamera"]},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    coco_response = await httpx_client_bound.post(
+        f"/api/v1/projects/{project.id}/export?targets=coco-multicamera",
+        headers={"Authorization": f"Bearer {token}"},
+    )
 
     assert preflight_response.status_code == 200
     assert preflight_response.json()["issues"][0]["code"] == "kitti_camera_required"
     assert response.status_code == 409
     assert response.json()["detail"]["ready"] is False
+    assert coco_preflight_response.status_code == 200
+    assert coco_preflight_response.json()["issues"][0]["code"] == (
+        "multicamera_coco_export_empty"
+    )
+    assert coco_response.status_code == 409
+    assert coco_response.json()["detail"]["issues"][0]["code"] == (
+        "multicamera_coco_export_empty"
+    )
     assert dispatched is False
     job_count = await db_session.scalar(
         select(func.count(AsyncJob.id)).where(AsyncJob.project_id == project.id)
@@ -850,9 +983,8 @@ async def test_lidar_export_zip_writes_standard_targets(
 
 
 def test_clean_export_targets_filters_lidar_targets():
-    assert clean_export_targets(["kitti", "pointmask", "kitti"], data_type="lidar") == [
-        "kitti",
-        "pointmask",
-    ]
+    assert clean_export_targets(
+        ["coco-multicamera", "kitti", "pointmask", "kitti"], data_type="lidar"
+    ) == ["coco-multicamera", "kitti", "pointmask"]
     with pytest.raises(ValueError, match="lidar project"):
         clean_export_targets(["coco"], data_type="lidar")

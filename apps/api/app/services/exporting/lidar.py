@@ -77,6 +77,31 @@ class LidarFrameExportCtx:
 
 
 @dataclass(frozen=True)
+class MulticameraCocoImageCtx:
+    task_id: uuid.UUID
+    dataset_item_id: uuid.UUID
+    sensor_role: str
+    file_name: str
+    width: int
+    height: int
+    members: list[Annotation] = field(default_factory=list)
+    scene_id: uuid.UUID | None = None
+    frame_index: int | None = None
+    current_calibration_revision: int | None = None
+    current_calibration_digest: str | None = None
+
+
+@dataclass(frozen=True)
+class MulticameraCocoExportResult:
+    document: dict[str, Any]
+    image_count: int
+    annotation_count: int
+    stale_relation_count: int
+    images_by_role: dict[str, int]
+    annotations_by_role: dict[str, int]
+
+
+@dataclass(frozen=True)
 class KittiSkippedAnnotation:
     annotation_id: str
     class_name: str
@@ -89,6 +114,194 @@ class KittiFrameExportResult:
     skipped: list[KittiSkippedAnnotation]
     manual_bbox_count: int = 0
     derived_bbox_count: int = 0
+
+
+_JS_SAFE_INTEGER_MAX = (1 << 53) - 1
+
+
+def _stable_coco_id(kind: str, identity: str, seen: dict[int, str]) -> int:
+    digest = hashlib.sha256(f"{kind}\0{identity}".encode()).digest()
+    value = int.from_bytes(digest[:7], "big") >> 3
+    value = value or 1
+    if value > _JS_SAFE_INTEGER_MAX:
+        raise ValueError("coco_id_not_javascript_safe")
+    previous = seen.setdefault(value, identity)
+    if previous != identity:
+        raise ValueError(f"coco_id_collision:{kind}:{value}")
+    return value
+
+
+def build_multicamera_coco(
+    images: list[MulticameraCocoImageCtx],
+    *,
+    classes: list[str],
+    include_attributes: bool,
+    allowed_attribute_keys: set[str],
+) -> MulticameraCocoExportResult:
+    """Build one deterministic COCO Instances document from manual camera members."""
+
+    category_ids = {name: index + 1 for index, name in enumerate(classes)}
+    if len(category_ids) != len(classes):
+        raise ValueError("coco_category_duplicate")
+    seen_image_ids: dict[int, str] = {}
+    seen_annotation_ids: dict[int, str] = {}
+    coco_images: list[dict[str, Any]] = []
+    coco_annotations: list[dict[str, Any]] = []
+    images_by_role: dict[str, int] = {}
+    annotations_by_role: dict[str, int] = {}
+    stale_relation_count = 0
+
+    ordered_images = sorted(
+        images,
+        key=lambda image: (
+            image.sensor_role,
+            str(image.task_id),
+            str(image.dataset_item_id),
+        ),
+    )
+    for image in ordered_images:
+        if image.width <= 0 or image.height <= 0:
+            raise ValueError(
+                f"multicamera_coco_image_size_invalid:{image.dataset_item_id}"
+            )
+        image_identity = f"{image.task_id}:{image.dataset_item_id}:{image.sensor_role}"
+        image_id = _stable_coco_id("image", image_identity, seen_image_ids)
+        image_row: dict[str, Any] = {
+            "id": image_id,
+            "file_name": image.file_name,
+            "width": image.width,
+            "height": image.height,
+            "task_id": str(image.task_id),
+            "dataset_item_id": str(image.dataset_item_id),
+            "sensor_role": image.sensor_role,
+        }
+        if image.scene_id is not None:
+            image_row["scene_id"] = str(image.scene_id)
+        if image.frame_index is not None:
+            image_row["frame_index"] = image.frame_index
+        coco_images.append(image_row)
+        images_by_role[image.sensor_role] = images_by_role.get(image.sensor_role, 0) + 1
+
+        for member in sorted(image.members, key=lambda annotation: str(annotation.id)):
+            geometry = member.geometry or {}
+            if geometry.get("type") != "bbox":
+                raise ValueError(f"multicamera_coco_bbox_invalid:{member.id}")
+            try:
+                normalized_x = float(geometry["x"])
+                normalized_y = float(geometry["y"])
+                normalized_width = float(geometry["w"])
+                normalized_height = float(geometry["h"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError(f"multicamera_coco_bbox_invalid:{member.id}") from exc
+            if (
+                not all(
+                    math.isfinite(value)
+                    for value in (
+                        normalized_x,
+                        normalized_y,
+                        normalized_width,
+                        normalized_height,
+                    )
+                )
+                or normalized_x < 0
+                or normalized_y < 0
+                or normalized_width <= 0
+                or normalized_height <= 0
+                or normalized_x + normalized_width > 1 + 1e-9
+                or normalized_y + normalized_height > 1 + 1e-9
+            ):
+                raise ValueError(f"multicamera_coco_bbox_invalid:{member.id}")
+            if (
+                member.task_id != image.task_id
+                or member.sensor_role != image.sensor_role
+                or member.sensor_dataset_item_id != image.dataset_item_id
+                or member.scene_track_id is None
+                or not member.track_id
+                or member.sensor_visibility is None
+                or member.calibration_revision is None
+                or member.calibration_revision < 1
+                or member.calibration_digest is None
+                or len(member.calibration_digest) != 64
+                or any(
+                    char not in "0123456789abcdef"
+                    for char in member.calibration_digest.lower()
+                )
+            ):
+                raise ValueError(f"multicamera_coco_member_context_invalid:{member.id}")
+            x = normalized_x * image.width
+            y = normalized_y * image.height
+            width = normalized_width * image.width
+            height = normalized_height * image.height
+            category_id = category_ids.get(str(member.class_name))
+            if category_id is None:
+                raise ValueError(f"multicamera_coco_category_unknown:{member.id}")
+            annotation_identity = f"{member.id}:{member.version}"
+            annotation_id = _stable_coco_id(
+                "annotation", annotation_identity, seen_annotation_ids
+            )
+            relation_status = (
+                "current"
+                if image.current_calibration_digest is not None
+                and member.calibration_digest == image.current_calibration_digest
+                else "stale"
+            )
+            if relation_status == "stale":
+                stale_relation_count += 1
+            annotation_row: dict[str, Any] = {
+                "id": annotation_id,
+                "image_id": image_id,
+                "category_id": category_id,
+                "bbox": [x, y, width, height],
+                "area": width * height,
+                "iscrowd": 0,
+                "annotation_id": str(member.id),
+                "scene_track_id": str(member.scene_track_id),
+                "track_id": member.track_id,
+                "sensor_role": image.sensor_role,
+                "sensor_visibility": member.sensor_visibility,
+                "calibration_revision": member.calibration_revision,
+                "calibration_digest": member.calibration_digest,
+                "current_calibration_revision": image.current_calibration_revision,
+                "current_calibration_digest": image.current_calibration_digest,
+                "relation_status": relation_status,
+            }
+            if include_attributes:
+                annotation_row["attributes"] = {
+                    key: value
+                    for key, value in (member.attributes or {}).items()
+                    if key in allowed_attribute_keys
+                }
+            coco_annotations.append(annotation_row)
+            annotations_by_role[image.sensor_role] = (
+                annotations_by_role.get(image.sensor_role, 0) + 1
+            )
+
+    document = {
+        "info": {
+            "description": "AAP trusted multi-camera manual bbox export",
+            "version": "1",
+        },
+        "licenses": [],
+        "images": coco_images,
+        "annotations": coco_annotations,
+        "categories": [
+            {"id": category_ids[name], "name": name, "supercategory": ""}
+            for name in classes
+        ],
+        "aap": {
+            "contract": "multicamera-coco-manual-bbox-v1",
+            "annotation_source": "persistent_manual_camera_bbox",
+            "derived_projection_fallback": False,
+        },
+    }
+    return MulticameraCocoExportResult(
+        document=document,
+        image_count=len(coco_images),
+        annotation_count=len(coco_annotations),
+        stale_relation_count=stale_relation_count,
+        images_by_role=dict(sorted(images_by_role.items())),
+        annotations_by_role=dict(sorted(annotations_by_role.items())),
+    )
 
 
 def _wrap_pi(value: float) -> float:

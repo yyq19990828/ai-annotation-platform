@@ -81,7 +81,7 @@ AI Annotation Platform 把项目管理、Data Manager、多模态标注工作台
     </td>
     <td width="33%" valign="top">
       <strong>Review & Data Delivery</strong><br>
-      Data Manager 任务 / 对象 / 轨迹视图、审核反馈，以及 COCO、YOLO、DAVIS、MOT、KITTI、Point Mask 等导出。
+      Data Manager 任务 / 对象 / 轨迹视图、审核反馈，以及 COCO、YOLO、DAVIS、MOT、KITTI、Multi-camera COCO、Point Mask 等导出。
     </td>
   </tr>
 </table>

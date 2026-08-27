@@ -14,7 +14,7 @@ last_reviewed: 2026-08-27
 
 项目 Dashboard 的「导出」入口会打开居中的导出弹窗。导出目标可多选，一次导出产出**一个**压缩包：勾选单个目标时落包根，勾选多个目标时各目标落各自的 `{target}/` 子目录。
 
-图片项目可选 **COCO / YOLO 检测 / YOLO 旋转框 / YOLO 分割 / Label Studio Brush / 逐实例 Binary PNG / Indexed PNG / AAP JSON**；视频轨迹项目可选 **Video JSON / YOLO 逐帧检测 / YOLO 逐帧分割 / COCO 逐帧分割 / DAVIS Mask / YouTube-VOS / MOTS / AAP JSON / MOT / KITTI**；点云项目可选 **AAP JSON / KITTI 3D / nuScenes / Point Mask**。nuScenes 只允许来源真实且包含完整 Scene 的数据入队。
+图片项目可选 **COCO / YOLO 检测 / YOLO 旋转框 / YOLO 分割 / Label Studio Brush / 逐实例 Binary PNG / Indexed PNG / AAP JSON**；视频轨迹项目可选 **Video JSON / YOLO 逐帧检测 / YOLO 逐帧分割 / COCO 逐帧分割 / DAVIS Mask / YouTube-VOS / MOTS / AAP JSON / MOT / KITTI**；点云项目可选 **AAP JSON / Multi-camera COCO / KITTI 3D / nuScenes / Point Mask**。nuScenes 只允许来源真实且包含完整 Scene 的数据入队。
 
 > **YOLO 拆三个变体（几何映射不同）**：`YOLO 检测`(det) 导矩形框、`YOLO 旋转框`(obb) 导 rotated_bbox 四角、`YOLO 分割`(seg) 导 polygon / mask 多边形。每个变体只取匹配的几何，其余跳过。
 
@@ -43,6 +43,7 @@ last_reviewed: 2026-08-27
 | 视频轨迹     | MOT 16/17/20       | `mot`                         | 多目标跟踪评测（trackeval）                                         |
 | 视频轨迹     | KITTI Tracking     | `kitti`                       | KITTI 跟踪工具链                                                    |
 | **点云**     | AAP JSON           | `aap_json`                    | 点云跨实例无损迁移 / 备份（保留 3D 几何）                           |
+| 点云         | Multi-camera COCO  | `coco-multicamera`            | 把全部相机的持久化人工 2D 框合并为 COCO 训练集                      |
 | 点云         | KITTI 3D           | `kitti`                       | KITTI 3D 检测训练前处理（KITTI camera 坐标）                        |
 | 点云         | nuScenes           | `nuscenes`                    | 官方 devkit 可加载的完整 Scene 关键帧表集                           |
 | 点云         | Point Mask         | `pointmask`                   | 逐点语义分割训练前处理                                              |
@@ -90,7 +91,15 @@ COCO 导入接受 polygon、uncompressed RLE 和 compressed RLE。Label Studio �
 
 > **重复导出走缓存**：一周内对**同一范围（项目 / 批次）+ 同一组导出目标 + 同一参数**、且标注与项目类别 / 属性配置均未变化的重复导出会**瞬间完成**（复用上次生成的产物）。目标集合顺序无关（勾选顺序不影响命中）。只要标注、类别 / 属性定义、导出选项或格式 adapter 合同发生变化，就会重新生成。多个相同的未命中请求只会构建一份产物，其余任务等待并复用它。
 
-导出会自动跳过当前类别定义中不存在的孤儿标注，并只导出当前 attribute schema 内的用户属性 key。项目设置里删除类别 / 属性不会立即破坏已有标注；导出层会先兜底收敛，避免 schema 与 data 不一致。
+## 点云 Multi-camera COCO
+
+`coco-multicamera` 把导出范围内全部相机 role 合并为一个标准 COCO Instances `annotations.json`。它只读取已经在相机视图中保存的人工 bbox，不会拿 3D 投影框补齐缺失标注；每个已关联相机图都会进入 `images[]`，因此没有人工框的图仍是明确的负样本。
+
+图像路径固定为 `images/{sensor_role}/{task_uuid}/{原文件名}`。COCO 标准字段之外还会保留任务、DatasetItem、相机 role、Scene、帧、SceneTrack、track、可见性和标定关系；普通 COCO 工具可忽略这些扩展字段。如果人工框保存后标定发生变化，框仍按独立 2D 真值导出，并以 `relation_status=stale` 和报告计数提示关系已过期。
+
+ZIP 同时包含 `media_manifest.json`、`fetch_media.py`、`export_report.json` 和 README。运行回源脚本后，图片会按 `file_name` 物化；脚本会校验路径、文件大小和 SHA-256，先下载到临时文件，校验成功后再原子替换。预检会阻止空范围、缺相机 link、同图重复绑定多个 role、坏尺寸、坏 bbox、未知类别、2D/3D/SceneTrack 身份不闭合和对象大小漂移。单次上限为 20,000 张相机图、100,000 个人工框、20 GiB 媒体总量及单图 256 MiB。
+
+普通图片和视频目标会自动跳过当前类别定义中不存在的孤儿标注，并只导出当前 attribute schema 内的用户属性 key。Multi-camera COCO 为保证 2D/3D 身份合同完整，会在预检阶段拒绝未知类别，不会静默跳过。
 
 ## 图片产物形态：仅标注 + 回源脚本（不含图片本体）
 

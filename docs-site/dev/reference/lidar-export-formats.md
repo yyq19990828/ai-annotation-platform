@@ -8,16 +8,17 @@ last_reviewed: 2026-08-27
 
 # LiDAR Export Formats
 
-LiDAR projects expose four trusted targets. nuScenes uses a stricter source
+LiDAR projects expose five trusted targets. nuScenes uses a stricter source
 contract than the other targets and only accepts complete scenes imported from
 real nuScenes tables and media.
 
-| Target      | Purpose                       | Coordinate frame        |
-| ----------- | ----------------------------- | ----------------------- |
-| `aap_json`  | Platform-native lossless JSON | API `axis_frame` option |
-| `kitti`     | KITTI 3D detection labels     | Selected KITTI camera   |
-| `nuscenes`  | nuScenes keyframe table set   | Global nuScenes frame   |
-| `pointmask` | Per-point semantic labels     | Point index order       |
+| Target             | Purpose                                | Coordinate frame        |
+| ------------------ | -------------------------------------- | ----------------------- |
+| `aap_json`         | Platform-native lossless JSON          | API `axis_frame` option |
+| `coco-multicamera` | Merged manual camera bbox COCO dataset | Image pixels            |
+| `kitti`            | KITTI 3D detection labels              | Selected KITTI camera   |
+| `nuscenes`         | nuScenes keyframe table set            | Global nuScenes frame   |
+| `pointmask`        | Per-point semantic labels              | Point index order       |
 
 These targets are pure serializers. AAP JSON preserves SceneTrack camera members,
 their visibility, and the calibration revision relationship by camera role.
@@ -88,6 +89,35 @@ The calibration file always contains the selected camera's real `P2`,
 `R0_rect`, and `Tr_velo_to_cam`. No identity fallback or `.unverified` filename
 exists.
 
+## Multi-camera COCO
+
+`coco-multicamera` writes one COCO Instances `annotations.json` for every linked
+camera role in the selected project or batch. It exports only active persistent
+manual camera bbox members. It never derives a missing 2D label from a 3D box,
+and linked images without manual members remain in `images[]` as negative
+samples.
+
+Each `file_name` is
+`images/{sensor_role}/{task_uuid}/{source_basename}`. Standard COCO consumers can
+ignore the additional task, dataset item, sensor role, Scene, frame, SceneTrack,
+track, visibility, and calibration relation fields. IDs are deterministic
+JavaScript-safe integers derived from stable identities, with collision checks.
+When calibration has changed since a member was saved, the annotation remains
+valid 2D truth and reports `relation_status=stale`.
+
+The package also contains `media_manifest.json`, `fetch_media.py`,
+`export_report.json`, and a README. The worker streams every image to calculate
+its actual size and SHA-256. The fetch script rejects unsafe or duplicate paths,
+verifies existing and downloaded files, downloads through a temporary file, and
+atomically replaces the destination only after verification.
+
+Preflight requires a non-empty task scope, at least one camera link per task,
+unique item-to-role bindings within a task, valid image dimensions and object
+size, normalized finite positive bbox geometry, known categories, and a closed
+manual member → active 3D member → SceneTrack identity. It checks object storage
+size before a job is created. A request is limited to 20,000 linked camera
+images, 100,000 manual boxes, 20 GiB total media, and 256 MiB per image.
+
 ## nuScenes JSON
 
 `nuscenes` writes the 13 core tables under `v1.0-aap/`, plus
@@ -130,7 +160,7 @@ guaranteed for the point cloud referenced by `pointclouds_manifest.json`.
 The registry still recognizes these LiDAR identifiers:
 
 ```text
-aap_json, kitti, nuscenes, pointmask
+aap_json, coco-multicamera, kitti, nuscenes, pointmask
 ```
 
 nuScenes additionally requires its strict source and complete-scene preflight.

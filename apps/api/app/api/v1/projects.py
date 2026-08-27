@@ -1308,7 +1308,7 @@ async def export_project(
         " / label-studio-brush / binary-png / indexed-png / aap_json"
         " / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis"
         " / youtube-vos / mots / mot / kitti"
-        " / nuscenes / pointmask"
+        " / coco-multicamera / nuscenes / pointmask"
         "（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
     ),
     include_attributes: bool = Query(
