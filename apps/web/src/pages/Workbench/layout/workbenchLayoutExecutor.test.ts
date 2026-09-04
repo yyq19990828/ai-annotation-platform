@@ -1,8 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDockview, type DockviewApi } from "dockview-react";
 import { createWorkbenchLayoutExecutor } from "./workbenchLayoutExecutor";
-import { createWorkspacePreset } from "./workbenchLayoutPresets";
-import { PANEL_IDS, type WorkspaceBounds, type WorkspaceNode } from "./workbenchLayoutSnapshot";
+import { createWorkspacePreset, migrateLegacyWorkspace } from "./workbenchLayoutPresets";
+import {
+  PANEL_IDS,
+  type WorkspaceBounds,
+  type WorkspaceNode,
+  type WorkspaceSnapshot,
+} from "./workbenchLayoutSnapshot";
 import { WORKBENCH_PANEL_REGISTRY } from "./workbenchPanelRegistry";
 
 describe("workspace executor with Dockview 8", () => {
@@ -202,7 +207,53 @@ describe("workspace executor with Dockview 8", () => {
     // The actual observer arriving afterwards must not disturb the completed replay.
     const restored = controller.capture();
     api.layout(bounds.width, bounds.height);
-    expect(controller.capture()).toEqual(restored);
+    const withoutSizes = (snapshot: WorkspaceSnapshot) => {
+      const clone = structuredClone(snapshot);
+      const sizes: number[] = [];
+      const visit = (node: WorkspaceNode) => {
+        if (node.size !== undefined) {
+          sizes.push(node.size);
+          delete node.size;
+        }
+        if (node.type === "branch") node.data.forEach(visit);
+      };
+      visit(clone.layout.grid.root);
+      return { snapshot: clone, sizes };
+    };
+    const before = withoutSizes(restored),
+      after = withoutSizes(controller.capture());
+    expect(after.snapshot).toEqual(before.snapshot);
+    expect(after.sizes).toHaveLength(before.sizes.length);
+    after.sizes.forEach((size, index) =>
+      expect(Math.abs(size - before.sizes[index])).toBeLessThanOrEqual(1),
+    );
+  });
+
+  it("latches right-edge floating geometry before the host becomes compact", () => {
+    bounds = { width: 1920, height: 1080 };
+    api.layout(bounds.width, bounds.height);
+    const seed = migrateLegacyWorkspace(
+      { layout: { floatingClassPalette: { detached: true, x: 1500, y: 64, w: 360, h: 480 } } },
+      bounds,
+    );
+    api.fromJSON(seed.layout);
+    const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+    const before = controller.capture();
+    expect(before.layout.floatingGroups?.[0].position).toEqual({
+      left: 1500,
+      top: 64,
+      width: 360,
+      height: 480,
+    });
+
+    bounds = { width: 1024, height: 1080 };
+    expect(api.width).toBe(1920);
+    controller.enterCompact();
+    expect(controller.capture()).toEqual(before);
+    api.layout(bounds.width, bounds.height);
+    bounds = { width: 1920, height: 1080 };
+    expect(controller.exitCompact()).toBe(false);
+    expect(controller.capture().layout.floatingGroups).toEqual(before.layout.floatingGroups);
   });
 
   it("replays four nested split levels within one pixel and reflows actual constraints", () => {

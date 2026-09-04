@@ -157,10 +157,10 @@ export function createWorkbenchLayoutExecutor(
       if (!group.panels.length && !except.includes(group.id) && group.id !== "canvas")
         api.removeGroup(group);
   }
-  function rawSnapshot(): WorkspaceSnapshot {
+  function rawSnapshot(bounds: WorkspaceBounds = getBounds()): WorkspaceSnapshot {
     const layout = api.toJSON();
     if (layout.activeGroup === "parking") layout.activeGroup = "canvas";
-    return sanitizeWorkspaceSnapshot({ layout, returns }, getBounds());
+    return sanitizeWorkspaceSnapshot({ layout, returns }, bounds);
   }
   function remember(id: SidePanelId) {
     const item = panel(id),
@@ -552,7 +552,9 @@ export function createWorkbenchLayoutExecutor(
     },
     enterCompact() {
       if (desktop) return;
-      desktop = rawSnapshot();
+      // The host may already be narrow while Dockview still contains the desktop tree.
+      // Latch floating/return rectangles in that tree's coordinate space before projecting it.
+      desktop = rawSnapshot({ width: api.width, height: api.height });
       pendingShows.clear();
       api.exitMaximizedGroup();
       for (const id of PANEL_IDS) if (id !== "canvas") move(id, ensureParking());
