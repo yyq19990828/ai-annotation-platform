@@ -68,5 +68,5 @@ primitive 固定为 1 pixel，直接搬用 `PointsMaterial` 会丢失现有可�
 
 ## Notes
 
-- 实施与性能门：`docs/plans/2026-08-24-v0.24.5-3d-webgpu-renderer-pilot.md`
+- 实施与性能门：`docs/plans/archive/2026-08-24-v0.24.5-3d-webgpu-renderer-pilot.md`
 - 外部证据：`docs/research/22-supervisely-cvat-workbench.md`

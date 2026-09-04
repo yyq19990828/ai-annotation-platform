@@ -9,12 +9,12 @@
 > Finalization: 实施前必须执行 [`backlog/README.md`](README.md) 的“转定稿门”并先批准数据真值 ADR
 >
 > Superseded scope: 相机 bbox 成员、sensor context、标定 revision、投影残差与 KITTI lineage
-> 已由 [`v0.24.15`](../2026-08-26-v0.24.15-persistent-multicamera-members.md) 实施。
+> 已由 [`v0.24.15`](../archive/2026-08-26-v0.24.15-persistent-multicamera-members.md) 实施。
 > 本草案只保留相机 polygon / mask 等尚未排期的后续研究边界。
 
 ## 1. 推荐结论
 
-推荐让同一 scene 对象的人工 3D cuboid、点掩码和各相机人工 2D 几何继续作为**各自可版本化的 Annotation 成员**，共同挂到 [`SceneTrack`](../2026-08-25-v0.24.11-3d-track-domain-foundation.md)；现有 `track_id` 保留为稳定外部键和成员查询合同，另用显式 sensor context 记录成员属于哪一个 dataset item / camera role / calibration revision。
+推荐让同一 scene 对象的人工 3D cuboid、点掩码和各相机人工 2D 几何继续作为**各自可版本化的 Annotation 成员**，共同挂到 [`SceneTrack`](../archive/2026-08-25-v0.24.11-3d-track-domain-foundation.md)；现有 `track_id` 保留为稳定外部键和成员查询合同，另用显式 sensor context 记录成员属于哪一个 dataset item / camera role / calibration revision。
 
 人工 3D 与人工 2D 成员是并列真值。3D 实时投影只是关联证据，绝不自动覆盖人工 2D；人工 2D 编辑也不在欠约束情况下自动改 3D。冲突通过残差、issue 和用户决定解决。
 

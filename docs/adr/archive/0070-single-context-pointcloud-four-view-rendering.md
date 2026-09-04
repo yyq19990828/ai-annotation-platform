@@ -66,6 +66,6 @@ atlas 会多出 offscreen texture 与一次合成，没有对应收益，拒绝�
 
 ## Notes
 
-- 实施与验收：`docs/plans/2026-08-25-v0.24.12-3d-four-view-render-coordinator.md`
+- 实施与验收：`docs/plans/archive/2026-08-25-v0.24.12-3d-four-view-render-coordinator.md`
 - 被部分替代的实验决策：`docs/adr/0068-experimental-webgpu-pointcloud-renderer.md`
 - Three.js 官方模式：单 canvas 配合 viewport / scissor 渲染多个视图；不同 WebGL context 无法共享资源。

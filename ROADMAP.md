@@ -32,7 +32,7 @@
 
 ### 3D 标注工作台 0.24.x
 
-详见[v0.24.x 3D 标注工作台优化 Epic](docs/plans/2026-08-14-v0.24.x-3d-workbench-optimization-epic.md)。
+详见[v0.24.x 3D 标注工作台优化 Epic](docs/plans/archive/2026-08-14-v0.24.x-3d-workbench-optimization-epic.md)。
 
 - WebGPU 点云渲染继续保持默认关闭的实验功能：同一 NVIDIA 设备上的三轮 warm geometry、warm RGB、精修首帧、缓存 owner、CPU depth payload 与 GPU RSS plateau 均已通过；跨轮深度数组残留也已修复。主透视视图与三正交视图共用唯一 renderer/context，空闲时停止提交；Chromium GPU 进程受控丢失后会卸载这一 canvas 并自动重建完整 Legacy Scene，这验证了显存压力最终触发 device lost 时的熔断路径，但未主动制造不可控的物理 OOM。
   当前没有 NVIDIA、Intel/AMD 两类 GPU 的可用测试设备，跨厂商验证明确记为 `not tested`；它不阻塞
@@ -123,7 +123,7 @@
 - [长期规划（12 个月以外）](ROADMAP/2026-05-12-long-term-strategy.md)
 - [CVAT / Label Studio 取经合集](ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)
 - [视频工作台路线](ROADMAP/2026-05-21-video-workbench-roadmap.md)
-- [v0.24.x 3D 标注工作台优化 Epic](docs/plans/2026-08-14-v0.24.x-3d-workbench-optimization-epic.md)
+- [v0.24.x 3D 标注工作台优化 Epic](docs/plans/archive/2026-08-14-v0.24.x-3d-workbench-optimization-epic.md)
 
 架构反模式与决策底线统一维护在
 [取经合集 §6](ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md#6-避坑清单保持当前选择不要走回头路)，
