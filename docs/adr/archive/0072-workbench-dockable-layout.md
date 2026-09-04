@@ -29,6 +29,8 @@
 
 当前题 AI、视频追踪、3D 三视图、相机面板、PSR、选中信息卡和桌宠继续使用原有 Stage overlay，`AIInspectorPanel` 与 `DiscussionPanel` 内部业务 tab 不拆分。
 
+主题样式挂在包住 Dockview grid 和同级 render overlay 的宿主节点。只有 canvas 的 render overlay 移除引擎默认的 `contain`、`transform` 和独立层叠上下文，让现有 viewport-fixed 工具继续使用视口坐标；面板仍由引擎的 left / top / width / height 定位。浮窗层级低于应用菜单，保证浮窗内的布局命令可点击。
+
 ### 快照格式与兼容
 
 沿用 `user.preferences.workbench.layout`，新增 `workspace = { engine: "dockview@8", contexts }`。六个 context 为 `annotate|review × image|video|3d`，各自保存原子信封 `{ schemaVersion, snapshot }`；`snapshot` 包含清洗后的引擎 `layout` 与隐藏面板的 `returns`，不保存业务 params。

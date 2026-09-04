@@ -158,7 +158,28 @@ export function createWorkbenchLayoutExecutor(
         api.removeGroup(group);
   }
   function rawSnapshot(bounds: WorkspaceBounds = getBounds()): WorkspaceSnapshot {
-    const layout = api.toJSON();
+    const layout = api.toJSON() as unknown as WorkspaceSnapshot["layout"];
+    // Dockview can leave a zero-sized empty branch after moving the last legacy sibling.
+    // Normalize engine output only; imported snapshots still use the strict parser.
+    function prune(node: typeof layout.grid.root) {
+      if (node.type !== "branch") return;
+      node.data.forEach(prune);
+      node.data = node.data.filter(
+        (child) => !(child.type === "branch" && child.data.length === 0 && child.size === 0),
+      );
+    }
+    prune(layout.grid.root);
+    if (layout.grid.maximizedNode) {
+      const findCanvas = (
+        node: typeof layout.grid.root,
+        path: number[] = [],
+      ): number[] | undefined => {
+        if (node.type === "leaf") return node.data.id === "canvas" ? path : undefined;
+        return node.data.map((child, index) => findCanvas(child, [...path, index])).find(Boolean);
+      };
+      const location = findCanvas(layout.grid.root);
+      if (location) layout.grid.maximizedNode.location = location;
+    }
     if (layout.activeGroup === "parking") layout.activeGroup = "canvas";
     return sanitizeWorkspaceSnapshot({ layout, returns }, bounds);
   }

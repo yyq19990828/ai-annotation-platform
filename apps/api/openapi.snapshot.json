@@ -34990,6 +34990,16 @@
                 "type": "null"
               }
             ]
+          },
+          "workspace": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkbenchWorkspacePreferences"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "title": "WorkbenchLayoutPreferences",
@@ -35158,6 +35168,566 @@
           }
         },
         "title": "WorkbenchVideoPreferences",
+        "type": "object"
+      },
+      "WorkbenchWorkspacePreferences": {
+        "additionalProperties": false,
+        "properties": {
+          "contexts": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/WorkspaceContextEnvelope"
+            },
+            "maxProperties": 6,
+            "propertyNames": {
+              "enum": [
+                "annotate:image",
+                "annotate:video",
+                "annotate:3d",
+                "review:image",
+                "review:video",
+                "review:3d"
+              ]
+            },
+            "title": "Contexts",
+            "type": "object"
+          },
+          "engine": {
+            "const": "dockview@8",
+            "title": "Engine",
+            "type": "string"
+          }
+        },
+        "required": [
+          "engine",
+          "contexts"
+        ],
+        "title": "WorkbenchWorkspacePreferences",
+        "type": "object"
+      },
+      "WorkspaceBranch": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "branch": "#/components/schemas/WorkspaceBranch",
+                  "leaf": "#/components/schemas/WorkspaceLeaf"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/WorkspaceLeaf"
+                },
+                {
+                  "$ref": "#/components/schemas/WorkspaceBranch"
+                }
+              ]
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Data",
+            "type": "array"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "type": {
+            "const": "branch",
+            "title": "Type",
+            "type": "string"
+          },
+          "visible": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visible"
+          }
+        },
+        "required": [
+          "type",
+          "data"
+        ],
+        "title": "WorkspaceBranch",
+        "type": "object"
+      },
+      "WorkspaceContextEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "schemaVersion": {
+            "enum": [
+              1,
+              2,
+              3
+            ],
+            "title": "Schemaversion",
+            "type": "integer"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/WorkspaceSnapshot"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "snapshot"
+        ],
+        "title": "WorkspaceContextEnvelope",
+        "type": "object"
+      },
+      "WorkspaceFloatingGroup": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/WorkspaceGroup"
+          },
+          "position": {
+            "$ref": "#/components/schemas/WorkspacePosition"
+          }
+        },
+        "required": [
+          "data",
+          "position"
+        ],
+        "title": "WorkspaceFloatingGroup",
+        "type": "object"
+      },
+      "WorkspaceGrid": {
+        "additionalProperties": false,
+        "properties": {
+          "height": {
+            "exclusiveMinimum": 0.0,
+            "title": "Height",
+            "type": "number"
+          },
+          "maximizedNode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkspaceMaximizedNode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "orientation": {
+            "enum": [
+              "HORIZONTAL",
+              "VERTICAL"
+            ],
+            "title": "Orientation",
+            "type": "string"
+          },
+          "root": {
+            "discriminator": {
+              "mapping": {
+                "branch": "#/components/schemas/WorkspaceBranch",
+                "leaf": "#/components/schemas/WorkspaceLeaf"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/WorkspaceLeaf"
+              },
+              {
+                "$ref": "#/components/schemas/WorkspaceBranch"
+              }
+            ],
+            "title": "Root"
+          },
+          "width": {
+            "exclusiveMinimum": 0.0,
+            "title": "Width",
+            "type": "number"
+          }
+        },
+        "required": [
+          "root",
+          "width",
+          "height",
+          "orientation"
+        ],
+        "title": "WorkspaceGrid",
+        "type": "object"
+      },
+      "WorkspaceGroup": {
+        "additionalProperties": false,
+        "properties": {
+          "activeView": {
+            "anyOf": [
+              {
+                "enum": [
+                  "canvas",
+                  "task-queue",
+                  "class-palette",
+                  "inspector",
+                  "discussion",
+                  "ai-task",
+                  "video-tracker"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activeview"
+          },
+          "hideHeader": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hideheader"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "locked": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "const": "no-drop-target",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locked"
+          },
+          "views": {
+            "items": {
+              "enum": [
+                "canvas",
+                "task-queue",
+                "class-palette",
+                "inspector",
+                "discussion",
+                "ai-task",
+                "video-tracker"
+              ],
+              "type": "string"
+            },
+            "maxItems": 7,
+            "title": "Views",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "views"
+        ],
+        "title": "WorkspaceGroup",
+        "type": "object"
+      },
+      "WorkspaceLayout": {
+        "additionalProperties": false,
+        "properties": {
+          "activeGroup": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activegroup"
+          },
+          "floatingGroups": {
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceFloatingGroup"
+            },
+            "maxItems": 7,
+            "title": "Floatinggroups",
+            "type": "array"
+          },
+          "grid": {
+            "$ref": "#/components/schemas/WorkspaceGrid"
+          },
+          "panels": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/WorkspacePanel"
+            },
+            "maxProperties": 7,
+            "minProperties": 5,
+            "propertyNames": {
+              "enum": [
+                "canvas",
+                "task-queue",
+                "class-palette",
+                "inspector",
+                "discussion",
+                "ai-task",
+                "video-tracker"
+              ]
+            },
+            "title": "Panels",
+            "type": "object"
+          }
+        },
+        "required": [
+          "grid",
+          "panels"
+        ],
+        "title": "WorkspaceLayout",
+        "type": "object"
+      },
+      "WorkspaceLeaf": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/WorkspaceGroup"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "type": {
+            "const": "leaf",
+            "title": "Type",
+            "type": "string"
+          },
+          "visible": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visible"
+          }
+        },
+        "required": [
+          "type",
+          "data"
+        ],
+        "title": "WorkspaceLeaf",
+        "type": "object"
+      },
+      "WorkspaceMaximizedNode": {
+        "additionalProperties": false,
+        "properties": {
+          "location": {
+            "items": {
+              "maximum": 7.0,
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "maxItems": 12,
+            "title": "Location",
+            "type": "array"
+          }
+        },
+        "required": [
+          "location"
+        ],
+        "title": "WorkspaceMaximizedNode",
+        "type": "object"
+      },
+      "WorkspacePanel": {
+        "additionalProperties": false,
+        "properties": {
+          "contentComponent": {
+            "const": "workbench-panel",
+            "title": "Contentcomponent",
+            "type": "string"
+          },
+          "id": {
+            "enum": [
+              "canvas",
+              "task-queue",
+              "class-palette",
+              "inspector",
+              "discussion",
+              "ai-task",
+              "video-tracker"
+            ],
+            "title": "Id",
+            "type": "string"
+          },
+          "renderer": {
+            "enum": [
+              "always",
+              "onlyWhenVisible"
+            ],
+            "title": "Renderer",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "id",
+          "contentComponent",
+          "renderer"
+        ],
+        "title": "WorkspacePanel",
+        "type": "object"
+      },
+      "WorkspacePosition": {
+        "additionalProperties": false,
+        "properties": {
+          "height": {
+            "exclusiveMinimum": 0.0,
+            "title": "Height",
+            "type": "number"
+          },
+          "left": {
+            "title": "Left",
+            "type": "number"
+          },
+          "top": {
+            "title": "Top",
+            "type": "number"
+          },
+          "width": {
+            "exclusiveMinimum": 0.0,
+            "title": "Width",
+            "type": "number"
+          }
+        },
+        "required": [
+          "left",
+          "top",
+          "width",
+          "height"
+        ],
+        "title": "WorkspacePosition",
+        "type": "object"
+      },
+      "WorkspaceReturn": {
+        "additionalProperties": false,
+        "properties": {
+          "group": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$",
+            "title": "Group",
+            "type": "string"
+          },
+          "index": {
+            "maximum": 6.0,
+            "minimum": 0.0,
+            "title": "Index",
+            "type": "integer"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkspacePosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "group",
+          "index"
+        ],
+        "title": "WorkspaceReturn",
+        "type": "object"
+      },
+      "WorkspaceSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "layout": {
+            "$ref": "#/components/schemas/WorkspaceLayout"
+          },
+          "returns": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/WorkspaceReturn"
+            },
+            "maxProperties": 6,
+            "propertyNames": {
+              "enum": [
+                "canvas",
+                "task-queue",
+                "class-palette",
+                "inspector",
+                "discussion",
+                "ai-task",
+                "video-tracker"
+              ]
+            },
+            "title": "Returns",
+            "type": "object"
+          },
+          "visibilityIntent": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "enum": [
+                    "shown",
+                    "hidden"
+                  ],
+                  "type": "string"
+                },
+                "propertyNames": {
+                  "enum": [
+                    "ai-task",
+                    "video-tracker"
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visibilityintent"
+          }
+        },
+        "required": [
+          "layout",
+          "returns"
+        ],
+        "title": "WorkspaceSnapshot",
         "type": "object"
       }
     },
@@ -38836,7 +39406,7 @@
         ]
       },
       "patch": {
-        "description": "更新 preferences，按顶层子树（workbench / ai）合并，未提交的子树保持不变。\n\npydantic forbid extra 防脏写入。改为子树级合并（而非整体替换）后，工作台渲染偏好与\nAI 工具参数偏好可各自独立保存，互不覆盖。workbench 内部仍由前端提交全量子树；\n单独 PATCH layout 会覆盖旧 workbench 渲染字段。\n\n入参收 raw dict：先过 legacy 平铺键提升器 + 移除键剥离器（均 v0.16 移除）再手动走\npydantic 校验，校验失败按 FastAPI 原生 422 形态抛出。",
+        "description": "锁定最新用户偏好后深合并 PATCH；workspace context 原子替换且禁止版本降级。\n\n入参收 raw dict：先过 legacy 平铺键提升器 + 移除键剥离器（均 v0.16 移除）再手动走\npydantic 校验，校验失败按 FastAPI 原生 422 形态抛出。",
         "operationId": "update_preferences_api_v1_auth_me_preferences_patch",
         "requestBody": {
           "content": {

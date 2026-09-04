@@ -35,6 +35,15 @@ function groupFor(node: WorkspaceNode, id: PanelId): string | undefined {
   return node.data.map((child) => groupFor(child, id)).find(Boolean);
 }
 
+// Ignore floating-point arithmetic noise while retaining subpixel geometry checks.
+const preciseSnapshot = (snapshot: WorkspaceSnapshot | undefined) =>
+  snapshot &&
+  JSON.parse(
+    JSON.stringify(snapshot, (_key, value) =>
+      typeof value === "number" ? Number(value.toFixed(6)) : value,
+    ),
+  );
+
 /** Compare actual DOM objects, including the Konva media canvas, after every rearrangement. */
 async function rememberCanvas(page: Page, stageId: string) {
   const wrapper = panel(page, "canvas");
@@ -95,6 +104,7 @@ test("图片布局预设、面板隐藏和浮动保留画布及未发送讨论�
   expect((await created).ok()).toBe(true);
 
   const discussion = panel(page, "discussion");
+  await page.getByRole("button", { name: "收起浮窗", exact: true }).click();
   await discussion.getByRole("tab", { name: "评论", exact: true }).click();
   const editor = discussion.locator('[contenteditable="true"]');
   await expect(editor).toBeVisible();
@@ -131,6 +141,30 @@ test("图片布局预设、面板隐藏和浮动保留画布及未发送讨论�
     .toBe(true);
   await sameCanvas();
   await sameDraft();
+  const floating = page.getByRole("dialog", { name: "讨论 / Issue", exact: true });
+  const oldRect = await floating.boundingBox();
+  const handle = await floating.locator(".dv-resize-handle-bottomright").boundingBox();
+  if (!oldRect || !handle) throw new Error("Floating resize handle has no bounds");
+  await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(handle.x + handle.width / 2 + 80, handle.y + handle.height / 2 + 40, {
+    steps: 8,
+  });
+  await page.mouse.up();
+  await expect
+    .poll(async () => (await floating.boundingBox())?.width)
+    .toBeGreaterThan(oldRect.width + 60);
+  await expect
+    .poll(
+      async () =>
+        (await savedSnapshot(page, "annotate:image"))?.layout.floatingGroups?.find((group) =>
+          group.data?.views.includes("discussion"),
+        )?.position.width,
+    )
+    .toBeGreaterThan(oldRect.width + 60);
+  await panelCommand(page, "讨论 / Issue", "与标注详情合并为标签");
+  await sameCanvas();
+  await sameDraft();
   await panelCommand(page, "讨论 / Issue", "停靠到底部");
   await expect
     .poll(async () => {
@@ -138,6 +172,48 @@ test("图片布局预设、面板隐藏和浮动保留画布及未发送讨论�
       return snapshot && groupFor(snapshot.layout.grid.root, "discussion");
     })
     .toBe("dock-discussion");
+  await sameCanvas();
+  await sameDraft();
+
+  // Exercise native HTML drag/drop as well as the equivalent accessible menu commands.
+  await page.waitForTimeout(650);
+  const dragWrites: string[] = [];
+  const businessWrites: string[] = [];
+  page.on("request", (request) => {
+    if (!["POST", "PATCH", "DELETE"].includes(request.method())) return;
+    if (
+      request.url().includes("/preferences") &&
+      request.postDataJSON()?.workbench?.layout?.workspace
+    )
+      dragWrites.push(request.postData()!);
+    if (/\/tasks\/[^/]+(?:\/annotations)?$/.test(new URL(request.url()).pathname))
+      businessWrites.push(request.url());
+  });
+  await page
+    .getByRole("tab", { name: "任务队列", exact: true })
+    .dragTo(page.getByRole("tab", { name: "类别面板", exact: true }));
+  await expect
+    .poll(async () => {
+      const snapshot = await savedSnapshot(page, "annotate:image");
+      return (
+        snapshot &&
+        groupFor(snapshot.layout.grid.root, "task-queue") ===
+          groupFor(snapshot.layout.grid.root, "class-palette")
+      );
+    })
+    .toBe(true);
+  await page.waitForTimeout(650);
+  expect(dragWrites).toHaveLength(1);
+  const beforeRejectedDrop = await savedSnapshot(page, "annotate:image");
+  await page.getByRole("tab", { name: "类别面板", exact: true }).dragTo(stage);
+  await sameCanvas();
+  await page.waitForTimeout(650);
+  const afterRejectedDrop = await savedSnapshot(page, "annotate:image");
+  for (const id of ["canvas", "task-queue", "class-palette"] as const)
+    expect(groupFor(afterRejectedDrop!.layout.grid.root, id)).toBe(
+      groupFor(beforeRejectedDrop!.layout.grid.root, id),
+    );
+  expect(businessWrites).toEqual([]);
   await sameCanvas();
   await sameDraft();
 
@@ -150,6 +226,87 @@ test("图片布局预设、面板隐藏和浮动保留画布及未发送讨论�
   expect(
     groupFor((await savedSnapshot(page, "annotate:image"))!.layout.grid.root, "discussion"),
   ).toBe("dock-discussion");
+});
+
+test("标准和浮动布局使用日间与夜间语义主题", async ({ page, seed }) => {
+  test.setTimeout(90_000);
+  const data = await seed.reset();
+  await seed.injectToken(page, data.admin_email);
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await page.goto(`/projects/${data.project_id}/annotate?task=${data.task_ids[0]}`);
+  await expect(
+    page.getByTestId("workbench-stage").locator(".konvajs-content > canvas").first(),
+  ).toBeVisible();
+  await expect(page.getByTestId("workbench-stage")).toHaveAttribute("data-image-ready", "true");
+  await layoutCommand(page, "标准标注布局");
+  await page.mouse.move(0, 0);
+  await expect(page.locator("[data-sonner-toast]")).toHaveCount(0, { timeout: 12_000 });
+  const workspace = page.locator("[data-workbench-workspace]");
+  for (const floating of [false, true]) {
+    if (floating) await panelCommand(page, "讨论 / Issue", "浮动面板");
+    for (const theme of ["light", "dark"]) {
+      const current = await page.locator("html").getAttribute("data-theme");
+      if (current !== theme) await page.getByRole("button", { name: /当前.*切到/ }).click();
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+      await expect(workspace).toHaveScreenshot(
+        `workspace-${floating ? "floating" : "standard"}-${theme}.png`,
+        {
+          animations: "disabled",
+          maxDiffPixelRatio: 0.01,
+        },
+      );
+    }
+  }
+});
+
+test("预设撤销恢复自定义树，后续预设替换撤销点且紧凑模式清除撤销入口", async ({ page, seed }) => {
+  test.setTimeout(90_000);
+  const data = await seed.reset();
+  await seed.injectToken(page, data.admin_email);
+  await page.goto(`/projects/${data.project_id}/annotate?task=${data.task_ids[0]}`);
+  await layoutCommand(page, "标准标注布局");
+  const sameCanvas = await rememberCanvas(page, "workbench-stage");
+  await panelCommand(page, "任务队列", "与类别面板合并为标签");
+  await panelCommand(page, "标注详情", "隐藏面板");
+  await panelCommand(page, "讨论 / Issue", "浮动面板");
+  await page.waitForTimeout(650);
+  const custom = await savedSnapshot(page, "annotate:image");
+  await layoutCommand(page, "审核协作布局");
+  await page
+    .locator("[data-sonner-toast][data-removed='false']")
+    .getByRole("button", { name: "撤销", exact: true })
+    .click();
+  await expect
+    .poll(async () => preciseSnapshot(await savedSnapshot(page, "annotate:image")))
+    .toEqual(preciseSnapshot(custom));
+  await sameCanvas();
+
+  await layoutCommand(page, "标准标注布局");
+  await page.waitForTimeout(650);
+  const standard = await savedSnapshot(page, "annotate:image");
+  await layoutCommand(page, "审核协作布局");
+  await expect(page.locator("[data-sonner-toast][data-removed='false']")).toHaveCount(1);
+  await page
+    .locator("[data-sonner-toast][data-removed='false']")
+    .getByRole("button", { name: "撤销", exact: true })
+    .click();
+  await expect
+    .poll(async () => preciseSnapshot(await savedSnapshot(page, "annotate:image")))
+    .toEqual(preciseSnapshot(standard));
+  await layoutCommand(page, "审核协作布局");
+  await page.waitForTimeout(650);
+  const desktop = await savedSnapshot(page, "annotate:image");
+  await page.setViewportSize({ width: 1024, height: DESKTOP.height });
+  await expect(page.locator("[data-workbench-workspace]")).toHaveAttribute("data-compact", "true");
+  await expect(
+    page
+      .locator("[data-sonner-toast][data-removed='false']")
+      .getByRole("button", { name: "撤销", exact: true }),
+  ).toHaveCount(0);
+  await page.setViewportSize(DESKTOP);
+  await sameCanvas();
+  await page.waitForTimeout(650);
+  expect(await savedSnapshot(page, "annotate:image")).toEqual(desktop);
 });
 
 test("视频紧凑布局禁止桌面写入，退出后恢复浮窗与非零帧并保持同一画布和解码元素", async ({
@@ -171,9 +328,9 @@ test("视频紧凑布局禁止桌面写入，退出后恢复浮窗与非零帧�
       timeout: 20_000,
     })
     .toBeGreaterThanOrEqual(2);
-  await stage.hover();
+  await stage.click({ position: { x: 12, y: 12 } });
   for (let frame = 1; frame <= 3; frame += 1) {
-    await page.getByRole("button", { name: "下一帧", exact: true }).click();
+    await page.keyboard.press("ArrowRight");
     await expect(stage).toHaveAttribute("data-video-frame-index", String(frame));
   }
   await panelCommand(page, "讨论 / Issue", "浮动面板");

@@ -29,16 +29,20 @@ describe("workspace executor with Dockview 8", () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
       this: HTMLElement,
     ) {
-      if (this.classList.contains("dv-resize-container"))
+      if (
+        this.classList.contains("dv-resize-container") ||
+        this.classList.contains("dv-floating-overlay-host")
+      )
         return new DOMRect(
-          parseFloat(this.style.left) || 0,
-          parseFloat(this.style.top) || 0,
+          parseFloat(this.style.left || this.style.inset.split(/\s+/)[3]) || 0,
+          parseFloat(this.style.top || this.style.inset.split(/\s+/)[0]) || 0,
           parseFloat(this.style.width) || 0,
           parseFloat(this.style.height) || 0,
         );
       if (
         this === element ||
         this.classList.contains("dv-dockview") ||
+        this.firstElementChild?.classList.contains("dv-dockview") ||
         this.classList.contains("dv-shell")
       )
         return new DOMRect(0, 0, bounds.width, bounds.height);
@@ -254,6 +258,8 @@ describe("workspace executor with Dockview 8", () => {
     bounds = { width: 1920, height: 1080 };
     expect(controller.exitCompact()).toBe(false);
     expect(controller.capture().layout.floatingGroups).toEqual(before.layout.floatingGroups);
+    controller.applyPreset("focus");
+    expect(controller.capture().layout.grid.maximizedNode).toBeDefined();
   });
 
   it("replays four nested split levels within one pixel and reflows actual constraints", () => {

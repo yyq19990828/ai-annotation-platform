@@ -77,6 +77,42 @@ test.describe("workbench pointcloud smoke (WebGL go/no-go)", () => {
       })
       .toBe(0);
 
+    const rendererCanvas = viewport.locator(":scope > canvas");
+    const originalCanvas = await rendererCanvas.elementHandle();
+    const originalContext = await rendererCanvas.evaluateHandle((canvas) =>
+      (canvas as HTMLCanvasElement).getContext("webgl2"),
+    );
+    for (const preset of ["专注画布布局", "审核协作布局", "标准标注布局"]) {
+      await page.getByRole("button", { name: "布局", exact: true }).click();
+      await page.getByRole("menuitem", { name: preset, exact: true }).click();
+      expect(
+        await rendererCanvas.evaluate((node, original) => node === original, originalCanvas),
+      ).toBe(true);
+      expect(
+        await rendererCanvas.evaluate(
+          (node, original) => (node as HTMLCanvasElement).getContext("webgl2") === original,
+          originalContext,
+        ),
+      ).toBe(true);
+      await expect(viewport).toHaveAttribute("data-pointcloud-renderer-count", "1");
+    }
+    await page.setViewportSize({ width: 1024, height: 800 });
+    await expect(page.locator("[data-workbench-workspace]")).toHaveAttribute(
+      "data-compact",
+      "true",
+    );
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(page.locator("[data-workbench-workspace]")).toHaveAttribute(
+      "data-compact",
+      "false",
+    );
+    expect(
+      await rendererCanvas.evaluate((node, original) => node === original, originalCanvas),
+    ).toBe(true);
+    expect(
+      await originalContext.evaluate((context) => context !== null && !context.isContextLost()),
+    ).toBe(true);
+
     // 过滤掉与本验证无关的已知噪声(如第三方资源 404 / favicon),只对真错误失败。
     const fatal = consoleErrors.filter(
       (e) => !/favicon|net::ERR_|Download the React DevTools/i.test(e),

@@ -27,11 +27,13 @@ const config: Parameters<typeof defineConfig>[0] = {
     rollupOptions: {
       output: {
         // v0.6.5: 拆 vendor chunk，避免 v0.6.4 1.15MB 单 chunk 警告。
-        manualChunks: {
-          "vendor-konva": ["konva", "react-konva"],
-          "vendor-markdown": ["react-markdown"],
-          // v0.13.2 · three 仅点云 3D 模块用，独立 chunk（配合 lazy import 不进主 bundle）。
-          "vendor-three": ["three"],
+        manualChunks(id) {
+          if (/\/node_modules\/(?:react|react-dom|scheduler)\//.test(id)) return "vendor-react";
+          if (/\/node_modules\/(?:dockview|dockview-core|dockview-react)\//.test(id))
+            return "vendor-dockview";
+          if (/\/node_modules\/(?:konva|react-konva)\//.test(id)) return "vendor-konva";
+          if (id.includes("/node_modules/react-markdown/")) return "vendor-markdown";
+          if (id.includes("/node_modules/three/")) return "vendor-three";
         },
       },
     },

@@ -1,3 +1,7 @@
+import { copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 import { describe, it, expect } from "vitest";
 import { parseSize, fmt, globMatch } from "./check-bundle-size.mjs";
 
@@ -53,5 +57,36 @@ describe("globMatch", () => {
   it("正则元字符（`.`）按字面匹配，不当通配", () => {
     expect(globMatch("a.b.js", "axbxjs")).toBe(false);
     expect(globMatch("a.b.js", "a.b.js")).toBe(true);
+  });
+});
+
+describe("required chunk CLI gate", () => {
+  it("fails missing, duplicate or oversized required chunks and accepts exactly one", () => {
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), "aap-size-")));
+    try {
+      mkdirSync(join(dir, "scripts"));
+      mkdirSync(join(dir, "dist/assets"), { recursive: true });
+      copyFileSync(
+        join(process.cwd(), "scripts/check-bundle-size.mjs"),
+        join(dir, "scripts/check.mjs"),
+      );
+      writeFileSync(
+        join(dir, ".size-limit.json"),
+        JSON.stringify([
+          { name: "dockview", pattern: "vendor-dockview-*.js", required: true, max: "300 KB" },
+        ]),
+      );
+      const check = () => spawnSync(process.execPath, [join(dir, "scripts/check.mjs")]).status;
+      expect(check()).toBe(1);
+      writeFileSync(join(dir, "dist/assets/vendor-dockview-a.js"), "export {};");
+      expect(check()).toBe(0);
+      writeFileSync(join(dir, "dist/assets/vendor-dockview-b.js"), "export {};");
+      expect(check()).toBe(1);
+      rmSync(join(dir, "dist/assets/vendor-dockview-b.js"));
+      writeFileSync(join(dir, "dist/assets/vendor-dockview-a.js"), "x".repeat(300 * 1024 + 1));
+      expect(check()).toBe(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

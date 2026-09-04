@@ -44,3 +44,32 @@ describe("Topbar · AI 工具入口", () => {
     expect(onRunAi).toHaveBeenCalledTimes(1);
   });
 });
+
+it("gates layout buttons until preferences settle", () => {
+  const toggle = vi.fn();
+  render(
+    <Topbar
+      projectName="测试"
+      projectDisplayId="P-1"
+      task={undefined}
+      taskIdx={0}
+      taskTotal={1}
+      aiRunning={false}
+      isSubmitting={false}
+      onShowHotkeys={vi.fn()}
+      onRunAi={vi.fn()}
+      onPrev={vi.fn()}
+      onNext={vi.fn()}
+      onSubmit={vi.fn()}
+      leftSidebarOpen
+      rightSidebarOpen
+      onToggleLeftSidebar={toggle}
+      onToggleRightSidebar={toggle}
+      layoutDisabled
+      layoutMenuSlot={<button>布局</button>}
+    />,
+  );
+  expect(screen.getByRole("button", { name: "隐藏任务队列" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "隐藏标注详情" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "布局" })).toBeVisible();
+});

@@ -1,0 +1,70 @@
+.workspace {
+  --dv-overlay-z-index: 20;
+  --dv-group-view-background-color: var(--sc-card);
+  --dv-tabs-and-actions-container-background-color: var(--sc-muted);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--sc-card);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--sc-muted);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--sc-card);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--sc-muted);
+  --dv-activegroup-visiblepanel-tab-color: var(--sc-foreground);
+  --dv-activegroup-hiddenpanel-tab-color: var(--sc-muted-foreground);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--sc-foreground);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--sc-muted-foreground);
+  --dv-tab-divider-color: var(--sc-border);
+  --dv-separator-border: var(--sc-border);
+  --dv-active-sash-color: var(--sc-primary);
+  --dv-drag-over-background-color: var(--sc-accent);
+  --dv-drag-over-border-color: var(--sc-primary);
+  --dv-drag-over-border: 1px solid var(--sc-primary);
+  --dv-floating-group-border: 1px solid var(--sc-border);
+  --dv-floating-border: 1px solid var(--sc-border);
+  --dv-floating-titlebar-background-color: var(--sc-muted);
+  --dv-context-menu-background-color: var(--sc-popover);
+  --dv-context-menu-color: var(--sc-foreground);
+  --dv-tabs-and-actions-container-height: 32px;
+  --dv-tab-font-size: 12px;
+  --dv-border-radius: 0;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+}
+
+.workspace :global(.dv-tab) {
+  border-right: 1px solid var(--sc-border);
+}
+
+.workspace :global(.dv-resize-container) {
+  border: 1px solid var(--sc-border);
+}
+
+.locked :global(.dv-sash),
+.locked :global([class*="dv-resize-handle-"]),
+.compact :global([class*="dv-resize-handle-"]) {
+  pointer-events: none;
+}
+
+.panel {
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.panel[aria-hidden="true"] {
+  animation-play-state: paused;
+  pointer-events: none;
+}
+
+/* Canvas tools include viewport-fixed PSR/camera overlays. Keep their existing coordinate system. */
+.workspace :global(.dv-render-overlay:has([data-workbench-panel="canvas"])) {
+  contain: none;
+  transform: none;
+  will-change: auto;
+  isolation: auto;
+  z-index: auto;
+}
+
+.workspace :global(.dv-render-overlay),
+.workspace :global(.dv-resize-container) {
+  --dv-overlay-z-index: 20;
+}

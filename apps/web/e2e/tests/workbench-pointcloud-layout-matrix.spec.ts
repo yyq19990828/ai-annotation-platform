@@ -21,7 +21,8 @@ async function layoutCommand(page: Page, name: string) {
 }
 
 async function panelCommand(page: Page, title: string, name: string) {
-  await page.getByRole("button", { name: `${title}菜单`, exact: true }).click();
+  // Floating panels may cover a docked tab; its keyboard menu remains reachable.
+  await page.getByRole("button", { name: `${title}菜单`, exact: true }).press("Enter");
   const command = page.getByRole("menuitem", { name, exact: true });
   await expect(command).toBeEnabled();
   await command.click();

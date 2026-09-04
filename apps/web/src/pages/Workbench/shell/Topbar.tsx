@@ -28,6 +28,8 @@ interface TopbarProps {
   rightSidebarOpen?: boolean;
   onToggleLeftSidebar?: () => void;
   onToggleRightSidebar?: () => void;
+  layoutMenuSlot?: React.ReactNode;
+  layoutDisabled?: boolean;
   onRunAi: () => void;
   aiOpen?: boolean;
   aiDisabled?: boolean;
@@ -94,6 +96,8 @@ export function Topbar({
   rightSidebarOpen,
   onToggleLeftSidebar,
   onToggleRightSidebar,
+  layoutMenuSlot,
+  layoutDisabled = false,
   onRunAi,
   aiOpen = false,
   aiDisabled = false,
@@ -186,7 +190,8 @@ export function Topbar({
               variant="ghost"
               size="sm"
               onClick={onToggleLeftSidebar}
-              title={leftSidebarOpen ? "收起任务列表" : "展开任务列表"}
+              disabled={layoutDisabled}
+              title={leftSidebarOpen ? "隐藏任务队列" : "显示任务队列"}
               className={cn(
                 "justify-center w-7 h-7 p-0 border-transparent rounded-[var(--radius-sm)] bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground",
                 leftSidebarOpen && "text-foreground bg-transparent shadow-none",
@@ -452,12 +457,14 @@ export function Topbar({
             <Icon name="settings" size={14} />
           </Button>
         )}
+        {layoutMenuSlot}
         {onToggleRightSidebar && (
           <Button
             variant="ghost"
             size="sm"
             onClick={onToggleRightSidebar}
-            title={rightSidebarOpen ? "收起标注详情" : "展开标注详情"}
+            disabled={layoutDisabled}
+            title={rightSidebarOpen ? "隐藏标注详情" : "显示标注详情"}
             className={cn(
               "justify-center w-7 h-7 p-0 border-transparent rounded-[var(--radius-sm)] bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground",
               rightSidebarOpen && "text-foreground bg-transparent shadow-none",
