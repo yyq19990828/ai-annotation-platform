@@ -1,4 +1,5 @@
 import type { DockviewApi, DockviewGroupPanel } from "dockview-react";
+import { WORKBENCH_PANEL_REGISTRY } from "./workbenchPanelRegistry";
 import {
   createWorkspacePreset,
   PANEL_DEFAULT_POSITION,
@@ -198,10 +199,16 @@ export function createWorkbenchLayoutExecutor(
       existing && existing.id !== "canvas"
         ? existing
         : ensureGroup(id, "canvas", PANEL_DEFAULT_POSITION[id]);
+    const spec = WORKBENCH_PANEL_REGISTRY[id];
+    group.api.moveTo({
+      group: canvas(),
+      position: spec.defaultPosition === "below" ? "bottom" : spec.defaultPosition,
+      skipSetActive: true,
+    });
     group.api.setVisible(true);
     group.api.setSize({
-      width: id === "task-queue" || id === "class-palette" ? 220 : 360,
-      ...(id === "discussion" ? { height: 260 } : {}),
+      width: spec.width,
+      ...(id === "discussion" ? { height: spec.height } : {}),
     });
     return group;
   }
@@ -354,6 +361,33 @@ export function createWorkbenchLayoutExecutor(
       JSON.stringify(expectedParking)
     )
       throw new Error("Workspace replay changed hidden panels");
+    const actualFloats = api.toJSON().floatingGroups ?? [];
+    const expectedFloats = snapshot.layout.floatingGroups ?? [];
+    if (actualFloats.length !== expectedFloats.length)
+      throw new Error("Workspace replay changed floating groups");
+    for (const expected of expectedFloats) {
+      const actualFloat = actualFloats.find((f) => f.data?.id === expected.data?.id);
+      if (
+        !actualFloat?.data ||
+        JSON.stringify(actualFloat.data.views) !== JSON.stringify(expected.data?.views) ||
+        actualFloat.data.activeView !== expected.data?.activeView
+      )
+        throw new Error("Workspace replay changed floating tabs");
+      const p = actualFloat.position,
+        expectedPosition = expected.position as WorkspaceRect;
+      const measured: WorkspaceRect = {
+        width: p.width,
+        height: p.height,
+        left: "left" in p ? p.left : getBounds().width - p.right - p.width,
+        top: "top" in p ? p.top : getBounds().height - p.bottom - p.height,
+      };
+      if (
+        (["left", "top", "width", "height"] as const).some(
+          (key) => Math.abs(measured[key] - expectedPosition[key]) > 1,
+        )
+      )
+        throw new Error("Workspace floating replay exceeded one pixel tolerance");
+    }
   }
   function sizeTree(tree: Tree, bounds: WorkspaceBounds) {
     const sizes = new Map<string, WorkspaceRect>();

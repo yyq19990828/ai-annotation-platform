@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDockview, type DockviewApi } from "dockview-react";
 import { createWorkbenchLayoutExecutor } from "./workbenchLayoutExecutor";
 import { createWorkspacePreset } from "./workbenchLayoutPresets";
-import { PANEL_IDS, type WorkspaceBounds } from "./workbenchLayoutSnapshot";
+import { PANEL_IDS, type WorkspaceBounds, type WorkspaceNode } from "./workbenchLayoutSnapshot";
+import { WORKBENCH_PANEL_REGISTRY } from "./workbenchPanelRegistry";
 
 describe("workspace executor with Dockview 8", () => {
   let api: DockviewApi;
@@ -137,5 +138,76 @@ describe("workspace executor with Dockview 8", () => {
     controller.recover(createWorkspacePreset("standard", bounds));
     expect(controller.isCompact()).toBe(false);
     expect(api.getPanel("canvas")?.group.id).toBe("canvas");
+  });
+
+  it("replays four nested split levels within one pixel and reflows actual constraints", () => {
+    const leaf = (id: (typeof PANEL_IDS)[number], size: number): WorkspaceNode => ({
+      type: "leaf",
+      size,
+      data: {
+        id,
+        views: [id],
+        activeView: id,
+        ...(id === "canvas" ? { locked: true, hideHeader: true } : {}),
+      },
+    });
+    const seed = createWorkspacePreset("standard", bounds);
+    seed.layout.grid.root = {
+      type: "branch",
+      size: 900,
+      data: [
+        leaf("task-queue", 240),
+        {
+          type: "branch",
+          size: 1360,
+          data: [
+            leaf("inspector", 200),
+            {
+              type: "branch",
+              size: 700,
+              data: [
+                leaf("class-palette", 220),
+                {
+                  type: "branch",
+                  size: 1140,
+                  data: [leaf("canvas", 500), leaf("discussion", 200)],
+                },
+              ],
+            },
+          ],
+        },
+        {
+          type: "leaf",
+          size: 0,
+          visible: false,
+          data: { id: "parking", views: [], locked: "no-drop-target", hideHeader: true },
+        },
+      ],
+    };
+    api.fromJSON(seed.layout);
+    for (const item of api.panels) {
+      const spec = WORKBENCH_PANEL_REGISTRY[item.id as (typeof PANEL_IDS)[number]];
+      item.api.setConstraints({ minimumWidth: spec.minWidth, minimumHeight: spec.minHeight });
+    }
+    const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+    const dimensions = new Map(
+      api.groups
+        .filter((g) => g.id !== "parking")
+        .map((group) => [group.id, { width: group.api.width, height: group.api.height }]),
+    );
+    controller.enterCompact();
+    controller.show("inspector");
+    controller.exitCompact();
+    for (const [id, expected] of dimensions) {
+      const group = api.getGroup(id)!;
+      expect(Math.abs(group.api.width - expected.width)).toBeLessThanOrEqual(1);
+      expect(Math.abs(group.api.height - expected.height)).toBeLessThanOrEqual(1);
+    }
+    controller.enterCompact();
+    bounds = { width: 1280, height: 800 };
+    api.layout(bounds.width, bounds.height);
+    expect(() => controller.exitCompact()).not.toThrow();
+    expect(api.getPanel("canvas")!.group.api.width).toBeGreaterThanOrEqual(480);
+    expect(api.getPanel("canvas")!.group.api.height).toBeGreaterThanOrEqual(320);
   });
 });
