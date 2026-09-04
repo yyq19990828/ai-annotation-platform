@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import * as THREE from "three";
+import { describe, expect, it, vi } from "vitest";
+
+import type { Psr } from "./geometry/triview";
 
 import {
   clientRectToCanvasClipPath,
@@ -90,5 +93,47 @@ describe("PointCloudTriViewPass layout invalidation", () => {
     ).toBe(true);
 
     pass.dispose();
+  });
+
+  it("prewarms each WebGPU geometry once with the six-plane clipping topology", async () => {
+    const pass = new PointCloudTriViewPass("webgpu", 1);
+    const box: Psr = {
+      center: [0, 0, 0],
+      size: [4, 2, 2],
+      rotation: [0, 0, 0],
+    };
+    let finishCompile: (() => void) | undefined;
+    const compileAsync = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishCompile = resolve;
+        }),
+    );
+    const firstGeometry = new THREE.BufferGeometry().setAttribute(
+      "position",
+      new THREE.BufferAttribute(new Float32Array([0, 0, 0]), 3),
+    );
+
+    pass.setGeometry(firstGeometry);
+    pass.setActive(true);
+    const firstPrewarm = pass.prewarm({ compileAsync });
+    expect(pass.prewarm({ compileAsync })).toBeNull();
+    expect(compileAsync).toHaveBeenCalledTimes(1);
+    expect(pass.render({ compileAsync } as never, canvas)).toBe(0);
+
+    finishCompile?.();
+    await firstPrewarm;
+    expect(pass.prewarm({ compileAsync })).toBeNull();
+    pass.setBox(box);
+    expect(pass.prewarm({ compileAsync })).toBeNull();
+
+    const secondGeometry = firstGeometry.clone();
+    pass.setGeometry(secondGeometry);
+    expect(pass.prewarm({ compileAsync })).not.toBeNull();
+    expect(compileAsync).toHaveBeenCalledTimes(2);
+
+    pass.dispose();
+    firstGeometry.dispose();
+    secondGeometry.dispose();
   });
 });

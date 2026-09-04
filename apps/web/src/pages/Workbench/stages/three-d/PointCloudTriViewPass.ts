@@ -112,6 +112,12 @@ export function clientRectToRendererViewport(
   };
 }
 
+const TRI_VIEW_PREWARM_BOX: Psr = {
+  center: [0, 0, 0],
+  size: [1, 1, 1],
+  rotation: [0, 0, 0],
+};
+
 /** Orthographic point-cloud pass. Renderer, canvas and scheduling remain owned by PointCloudScene. */
 export class PointCloudTriViewPass {
   private readonly scene = new THREE.Scene();
@@ -131,6 +137,9 @@ export class PointCloudTriViewPass {
   private worldPointSize = 0.06;
   private active = false;
   private visible = true;
+  private geometryGeneration = 0;
+  private prewarmedGeneration = -1;
+  private prewarmPromise: Promise<void> | null = null;
 
   constructor(
     private readonly backend: PointCloudActualBackend,
@@ -159,6 +168,8 @@ export class PointCloudTriViewPass {
       return false;
     }
     this.removePoints();
+    this.geometryGeneration += 1;
+    this.prewarmPromise = null;
     this.geometry = geometry;
     if (!geometry) return true;
     if (this.material) {
@@ -175,6 +186,40 @@ export class PointCloudTriViewPass {
     this.scene.add(this.points);
     this.applyClippingPlanes();
     return true;
+  }
+
+  prewarm(renderer: Pick<PointCloudRenderer, "compileAsync">): Promise<void> | null {
+    if (
+      this.backend !== "webgpu" ||
+      this.prewarmedGeneration === this.geometryGeneration ||
+      this.prewarmPromise ||
+      !this.points
+    ) {
+      return null;
+    }
+    const usesPlaceholderBox = this.box === null;
+    const compileBox = this.box ?? TRI_VIEW_PREWARM_BOX;
+    if (usesPlaceholderBox) {
+      this.webGpuPointLayer?.setClippingPlanes(
+        boxLocalClipPlanes(compileBox.center, compileBox.size, compileBox.rotation, FRAME_MARGIN),
+      );
+    }
+    this.updateCamera("top", 1, compileBox);
+    const generation = this.geometryGeneration;
+    const promise = renderer
+      .compileAsync(this.scene, this.cameras.top)
+      .then(() => {
+        if (generation === this.geometryGeneration) this.prewarmedGeneration = generation;
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (usesPlaceholderBox && generation === this.geometryGeneration) {
+          this.applyClippingPlanes();
+        }
+        if (this.prewarmPromise === promise) this.prewarmPromise = null;
+      });
+    this.prewarmPromise = promise;
+    return promise;
   }
 
   setLayout(layout: TriViewClientLayout | null): boolean {
@@ -245,6 +290,7 @@ export class PointCloudTriViewPass {
     if (
       !this.active ||
       !this.visible ||
+      this.prewarmPromise ||
       !layout ||
       !box ||
       !this.points ||
@@ -314,8 +360,8 @@ export class PointCloudTriViewPass {
     this.webGpuPointLayer?.setClippingPlanes(planes);
   }
 
-  private updateCamera(view: TriView, aspect: number): void {
-    const box = this.cameraRef ?? this.box;
+  private updateCamera(view: TriView, aspect: number, boxOverride?: Psr): void {
+    const box = boxOverride ?? this.cameraRef ?? this.box;
     if (!box) return;
     const camera = this.cameras[view];
     const { u, v, normal } = VIEW_AXES[view];

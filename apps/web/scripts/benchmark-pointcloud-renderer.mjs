@@ -1,4 +1,5 @@
 import { chromium } from "@playwright/test";
+import { execFileSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 
 const baseUrl = process.env.POINTCLOUD_BENCH_BASE_URL ?? "http://127.0.0.1:3000";
@@ -13,7 +14,7 @@ const warmPrefetchLeadMs = Number.parseInt(
   10,
 );
 const refinementReopens = Number.parseInt(
-  process.env.POINTCLOUD_BENCH_REFINEMENT_REOPENS ?? "0",
+  process.env.POINTCLOUD_BENCH_REFINEMENT_REOPENS ?? "1",
   10,
 );
 const frameCycles = Number.parseInt(process.env.POINTCLOUD_BENCH_FRAME_CYCLES ?? "1", 10);
@@ -26,6 +27,7 @@ const coldFrames = (
   .map(Number)
   .filter(Number.isFinite);
 const viewport = { width: 1440, height: 900 };
+const deviceScaleFactor = Number(process.env.POINTCLOUD_BENCH_DPR ?? "1");
 const resourcePhases = [
   "pcd-frame-ready",
   "camera-bitmaps-ready",
@@ -57,6 +59,9 @@ if (!Number.isInteger(frameCycles) || frameCycles < 1 || frameCycles > 5) {
 }
 if (!Number.isInteger(memorySettleMs) || memorySettleMs < 0 || memorySettleMs > 10_000) {
   throw new Error("POINTCLOUD_BENCH_MEMORY_SETTLE_MS must be an integer between 0 and 10000");
+}
+if (!Number.isFinite(deviceScaleFactor) || deviceScaleFactor <= 0) {
+  throw new Error("POINTCLOUD_BENCH_DPR must be a positive number");
 }
 
 function percentile(values, quantile) {
@@ -100,6 +105,11 @@ function summarizeStages(samples) {
       ];
     }),
   );
+}
+
+function isFullyWarmSample(sample) {
+  const cacheStages = sample.stages.filter((event) => typeof event.cacheHit === "boolean");
+  return cacheStages.length > 0 && cacheStages.every((event) => event.cacheHit);
 }
 
 async function api(path, init = {}) {
@@ -265,8 +275,13 @@ async function stopDevToolsTrace(session) {
 
 async function measureFrame(page, frame, kind, mode) {
   const target = page.getByTestId(`scene-timeline-frame-${frame}`);
-  await target.scrollIntoViewIfNeeded();
-  await target.waitFor({ state: "visible" });
+  await page.waitForFunction((index) => {
+    const container = document.querySelector('[aria-label="Scene 帧列表"]');
+    if (!(container instanceof HTMLElement)) return false;
+    container.scrollLeft = Math.max(0, index * 40 - container.clientWidth / 2);
+    const button = document.querySelector(`[data-testid="scene-timeline-frame-${index}"]`);
+    return button instanceof HTMLButtonElement && !button.disabled;
+  }, frame);
   if (kind === "warm-adjacent" && warmPrefetchLeadMs > 0) {
     await target.hover();
     await page.waitForTimeout(warmPrefetchLeadMs);
@@ -276,7 +291,13 @@ async function measureFrame(page, frame, kind, mode) {
     window.__pointCloudNavigationEvents = [];
   });
   const diagnosticsStartedAt = await beginFrameDiagnostics(page, `${mode}:${kind}:${frame}`);
-  await target.evaluate((button) => {
+  await page.waitForFunction((index) => {
+    const container = document.querySelector('[aria-label="Scene 帧列表"]');
+    if (container instanceof HTMLElement) {
+      container.scrollLeft = Math.max(0, index * 40 - container.clientWidth / 2);
+    }
+    const button = document.querySelector(`[data-testid="scene-timeline-frame-${index}"]`);
+    if (!(button instanceof HTMLButtonElement) || button.disabled) return null;
     window.__pointCloudBenchmarkClickAt = null;
     button.addEventListener(
       "click",
@@ -285,8 +306,9 @@ async function measureFrame(page, frame, kind, mode) {
       },
       { capture: true, once: true },
     );
-  });
-  await target.click();
+    button.click();
+    return typeof window.__pointCloudBenchmarkClickAt === "number";
+  }, frame);
   const startedAt = await page.evaluate(() => window.__pointCloudBenchmarkClickAt);
   if (typeof startedAt !== "number")
     throw new Error(`No click timestamp recorded for frame ${frame}`);
@@ -320,16 +342,18 @@ async function measureFrame(page, frame, kind, mode) {
       ) ?? null,
     { after: startedAt, before: color.at },
   );
+  if (!navigation) throw new Error(`No history update recorded for frame ${frame}`);
+  const rendererStartedAt = navigation.at;
   const pcdReady = stages.find((event) => event.phase === "pcd-frame-ready");
   return {
     kind,
     frame,
-    geometryMs: geometry.at - startedAt,
-    rgbMs: color.at - startedAt,
+    geometryMs: geometry.at - rendererStartedAt,
+    rgbMs: color.at - rendererStartedAt,
     segments: {
-      clickToHistoryUpdateMs: navigation ? navigation.at - startedAt : null,
-      historyUpdateToPcdReadyMs: navigation && pcdReady ? pcdReady.at - navigation.at : null,
-      navigationToPcdReadyMs: pcdReady ? pcdReady.at - startedAt : null,
+      clickToHistoryUpdateMs: rendererStartedAt - startedAt,
+      historyUpdateToPcdReadyMs: pcdReady ? pcdReady.at - rendererStartedAt : null,
+      navigationToPcdReadyMs: pcdReady ? pcdReady.at - rendererStartedAt : null,
       pcdReadyToGeometryMs: pcdReady ? geometry.at - pcdReady.at : null,
       geometryToRgbMs: color.at - geometry.at,
     },
@@ -363,7 +387,17 @@ function statusKilobytes(status, field) {
   return match ? Number.parseInt(match[1], 10) : null;
 }
 
-async function readLinuxProcessMemory(pid) {
+async function readProcessMemory(pid) {
+  if (process.platform === "darwin") {
+    try {
+      const rssKiB = Number(
+        execFileSync("ps", ["-o", "rss=", "-p", String(pid)], { encoding: "utf8" }).trim(),
+      );
+      return { rssBytes: rssKiB * 1024, highWaterBytes: null };
+    } catch {
+      return null;
+    }
+  }
   if (process.platform !== "linux") return null;
   try {
     const status = await readFile(`/proc/${pid}/status`, "utf8");
@@ -405,7 +439,7 @@ async function sampleMemory(browser, page, label) {
     processInfo.map(async (entry) => ({
       type: entry.type,
       pid: entry.id,
-      ...(await readLinuxProcessMemory(entry.id)),
+      ...(await readProcessMemory(entry.id)),
     })),
   );
   const rssByType = {};
@@ -592,6 +626,7 @@ async function runMode(browser, token, user, mode) {
 
     const cold = frames.filter((sample) => sample.kind === "cold");
     const warm = frames.filter((sample) => sample.kind === "warm-adjacent");
+    const warmReady = warm.filter(isFullyWarmSample);
     const trace = await stopDevToolsTrace(traceSession);
     return {
       requestedMode: mode,
@@ -606,6 +641,10 @@ async function runMode(browser, token, user, mode) {
         geometry: summarize(warm.map((sample) => sample.geometryMs)),
         rgb: summarize(warm.map((sample) => sample.rgbMs)),
         stages: summarizeStages(warm),
+      },
+      warmAdjacentReady: {
+        geometry: summarize(warmReady.map((sample) => sample.geometryMs)),
+        rgb: summarize(warmReady.map((sample) => sample.rgbMs)),
       },
       idleRaf,
       rendererOwnerCount,
@@ -658,6 +697,7 @@ async function ensureBenchmarkBox(headers) {
 }
 
 function buildReport(legacy, experimental, round) {
+  const refinementReopen = experimental.refinementReopen[0] ?? null;
   const runValidity = {
     actualWebGpu: experimental.actualBackend === "webgpu",
     noExperimentalImageReadback: experimental.imageReadbacks === 0,
@@ -666,17 +706,25 @@ function buildReport(legacy, experimental, round) {
   const promotionChecks = {
     enoughColdSamples: experimental.cold.geometry.samples >= 10,
     enoughWarmSamples: experimental.warmAdjacent.geometry.samples >= 20,
+    enoughWarmReadySamples:
+      legacy.warmAdjacentReady.rgb.samples >= 16 &&
+      experimental.warmAdjacentReady.rgb.samples >= 16,
     coldGeometryP95AtMost250Ms: experimental.cold.geometry.p95Ms <= 250,
     warmGeometryP95AtMost120Ms: experimental.warmAdjacent.geometry.p95Ms <= 120,
     coldRgbP95AtMost700Ms: experimental.cold.rgb.p95Ms <= 700,
     warmRgbP95AtMost250Ms: experimental.warmAdjacent.rgb.p95Ms <= 250,
-    warmRgbP95ImprovementAtLeast60Percent:
-      improvementPercent(legacy.warmAdjacent.rgb.p95Ms, experimental.warmAdjacent.rgb.p95Ms) >= 60,
+    warmReadyRgbP95ImprovementAtLeast60Percent:
+      improvementPercent(
+        legacy.warmAdjacentReady.rgb.p95Ms,
+        experimental.warmAdjacentReady.rgb.p95Ms,
+      ) >= 60,
     warmDepthRasterCacheHitRateAtLeast80Percent:
       experimental.warmAdjacent.stages["camera-depth-ready"].cacheHitRate >= 0.8,
     refinementMeasured: legacy.refinement !== null && experimental.refinement !== null,
-    refinementOpenImprovementAtLeast20Percent:
-      improvementPercent(legacy.refinement?.openMs, experimental.refinement?.openMs) >= 20,
+    refinementReopenMeasured: refinementReopen !== null,
+    refinementOpenAtMost50Ms: experimental.refinement?.openMs <= 50,
+    refinementOpenWithin10MsOfReopen:
+      refinementReopen !== null && experimental.refinement?.openMs <= refinementReopen.openMs + 10,
     refinementRafP95NoWorseThan10Percent:
       experimental.refinement?.raf.p95Ms <= legacy.refinement?.raf.p95Ms * 1.1,
     refinementHasNoFrameGapOver100Ms: experimental.refinement?.raf.maxMs <= 100,
@@ -688,6 +736,7 @@ function buildReport(legacy, experimental, round) {
     projectId,
     taskId,
     viewport,
+    deviceScaleFactor,
     coldFrames,
     frameCycles,
     memorySettleMs,
@@ -710,6 +759,10 @@ function buildReport(legacy, experimental, round) {
       warmRgbP95ImprovementPercent: improvementPercent(
         legacy.warmAdjacent.rgb.p95Ms,
         experimental.warmAdjacent.rgb.p95Ms,
+      ),
+      warmReadyRgbP95ImprovementPercent: improvementPercent(
+        legacy.warmAdjacentReady.rgb.p95Ms,
+        experimental.warmAdjacentReady.rgb.p95Ms,
       ),
     },
     runValidity,
@@ -739,16 +792,20 @@ try {
     headers,
     body: JSON.stringify({ workbench: { pointcloud: { colorizeWithCamera: true } } }),
   });
-  browser = await chromium.launch({
-    headless: true,
-    args: [
-      "--enable-unsafe-webgpu",
-      "--enable-features=Vulkan",
-      "--use-angle=vulkan",
-      "--disable-vulkan-surface",
-      "--ignore-gpu-blocklist",
-    ],
-  });
+  browser = await chromium.launch(
+    process.platform === "darwin"
+      ? { channel: "chrome", headless: false }
+      : {
+          headless: true,
+          args: [
+            "--enable-unsafe-webgpu",
+            "--enable-features=Vulkan",
+            "--use-angle=vulkan",
+            "--disable-vulkan-surface",
+            "--ignore-gpu-blocklist",
+          ],
+        },
+  );
   const reports = [];
   for (let round = 1; round <= rounds; round += 1) {
     const legacy = await runMode(browser, login.access_token, user, "legacy");

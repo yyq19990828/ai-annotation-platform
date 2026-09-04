@@ -645,6 +645,7 @@ export class PointCloudScene {
     this.triViewPass.setVisible(options.visible ?? true);
     if (!reusedWebGpuLayer) this.scene.add(this.points);
     this.triViewPass.setGeometry(geom);
+    this.prewarmTriView();
     this.invalidateTri();
     this.viewCenter.fromArray(frame.viewCenter);
     this.viewRadius = frame.viewRadius;
@@ -872,7 +873,17 @@ export class PointCloudScene {
   }
 
   setTriViewBox(box: Psr | null): void {
-    if (this.triViewPass.setBox(box)) this.invalidateTri();
+    if (!this.triViewPass.setBox(box)) return;
+    this.prewarmTriView();
+    this.invalidateTri();
+  }
+
+  private prewarmTriView(): void {
+    const completion = this.triViewPass.prewarm(this.renderer);
+    if (!completion) return;
+    void completion.then(() => {
+      if (!this.disposed) this.invalidateTri();
+    });
   }
 
   setTriViewCameraRef(cameraRef: Psr | null): void {
