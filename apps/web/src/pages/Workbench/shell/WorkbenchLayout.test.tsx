@@ -2,10 +2,12 @@
 // 验证布局 shell 把 12 个子组件按预期插槽渲染, gridTemplateColumns 写入 CSS 变量,
 // 可选模块 (rejectModal / deleteConfirm / guidePanel) 不传时不渲染.
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { createRef, forwardRef } from "react";
 import type { VideoStageControls } from "../stage/videoStageControls";
+
+const workbenchStageHostMock = vi.hoisted(() => vi.fn());
 
 vi.mock("./TaskQueuePanel", () => ({
   TaskQueuePanel: ({ floatingSection }: { floatingSection?: "queue" | "palette" }) => (
@@ -30,7 +32,8 @@ vi.mock("./Topbar", () => ({
   Topbar: () => <div data-testid="topbar" />,
 }));
 vi.mock("./WorkbenchStageHost", () => ({
-  WorkbenchStageHost: forwardRef(function WorkbenchStageHost() {
+  WorkbenchStageHost: forwardRef(function WorkbenchStageHost(props, _ref) {
+    workbenchStageHostMock(props);
     return <div data-testid="stage-host" />;
   }),
 }));
@@ -324,6 +327,46 @@ describe("WorkbenchLayout", () => {
     expect(panel.style.getPropertyValue("--floating-panel-y")).toBe("268px");
     expect(panel.className).toContain("z-overlay-high");
     expect(screen.getByLabelText("工作台桌宠(可拖动)")).toBeTruthy();
+  });
+
+  it("shares the draggable pet anchor with the active stage", () => {
+    window.localStorage.setItem("workbench.pet.pos", JSON.stringify({ x: 500, y: 500 }));
+    render(
+      <WorkbenchLayout
+        {...baseProps}
+        pet={{
+          enabled: true,
+          context: {
+            selection: { count: 0, title: null, collapsed: false, sourceKind: "unknown" },
+            ai: { running: false, candidateCount: 0, backendOnline: true },
+            workflow: {
+              saving: false,
+              offline: false,
+              offlineQueueCount: 0,
+              readOnly: false,
+              reviewMode: false,
+            },
+            quality: { warningCount: 0, primaryWarning: null },
+            counts: { annotationCount: 0 },
+          },
+          onExpand: vi.fn(),
+        }}
+      />,
+    );
+
+    const stageProps = workbenchStageHostMock.mock.lastCall?.[0] as {
+      petDock?: {
+        enabled: boolean;
+        position: { x: number; y: number };
+        onPositionChange: (position: { x: number; y: number }) => void;
+      };
+    };
+    expect(stageProps.petDock).toEqual(
+      expect.objectContaining({ enabled: true, position: { x: 500, y: 500 } }),
+    );
+
+    act(() => stageProps.petDock?.onPositionChange({ x: 420, y: 360 }));
+    expect(window.localStorage.getItem("workbench.pet.pos")).toBe('{"x":420,"y":360}');
   });
 
   it("falls back to the text capsule when pet mode is disabled", () => {

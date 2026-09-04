@@ -64,6 +64,7 @@ import type { VideoMaskKeyframeActionHandlers } from "../stage/videoMaskKeyframe
 import type { MaskCompareTileStore } from "../stage/shared/maskCompareTileStore";
 import type { WorkbenchImageSource } from "../stage/imagePyramid";
 import type { RasterResourceCoordinator } from "../stage/shared/rasterResourceCoordinator";
+import type { WorkbenchPetDock } from "./pet/WorkbenchPet";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
@@ -338,6 +339,7 @@ interface WorkbenchStageHostProps {
   image?: WorkbenchStageHostImageProps;
   ai?: WorkbenchStageHostAiProps;
   editors?: WorkbenchStageHostEditorProps;
+  petDock?: WorkbenchPetDock;
 }
 
 function requireStageGroup<T>(group: T | undefined, groupName: string, stageKind: StageKind): T {
@@ -347,7 +349,7 @@ function requireStageGroup<T>(group: T | undefined, groupName: string, stageKind
 
 export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageHostProps>(
   function WorkbenchStageHost(props, ref) {
-    const { common, video, image, ai, editors } = props;
+    const { common, video, image, ai, editors, petDock } = props;
     const {
       stageKind,
       maskCompareStore,
@@ -560,6 +562,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
               onWorkbenchConfigChange={onWorkbenchConfigChange}
               onWorkbenchConfigUpdate={onWorkbenchConfigUpdate}
               box3dDefaultSize={stageProjectRenderingConfig?.box3dDefaultSize ?? null}
+              petDock={petDock}
             />
           </Suspense>
         ) : stageKind === "video" ? (

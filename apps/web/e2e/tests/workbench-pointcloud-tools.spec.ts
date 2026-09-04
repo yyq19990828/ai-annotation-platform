@@ -365,6 +365,11 @@ test.describe("workbench pointcloud tools (键盘 handler 守护)", () => {
     };
     expect(body.annotation_type).toBe("point_mask_3d");
     expect(body.geometry?.type).toBe("point_mask_3d");
+    await expect(page.getByTestId("three-d-selection-panel")).toHaveAttribute(
+      "data-pet-linked",
+      "true",
+    );
+    await expect(page.getByTestId("three-d-selection-panel-handle")).toBeVisible();
   });
 
   test("point-mask 多边形双击优先完成绘制，不触发框聚焦", async ({ page, seed }) => {

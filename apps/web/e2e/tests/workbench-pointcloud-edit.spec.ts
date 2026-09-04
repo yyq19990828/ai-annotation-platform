@@ -583,6 +583,52 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     // PSR 浮层默认折叠(usePsrFloatingPanel expanded=false),展开后才渲染 cx/cy/cz 输入。
     const expandBtn = page.getByLabel("展开详情");
     await expect(expandBtn).toBeVisible({ timeout: 5_000 });
+    const selectionPanel = page.getByTestId("three-d-selection-panel");
+    const selectionPanelHandle = page.getByTestId("three-d-selection-panel-handle");
+    const pet = page.getByLabel("工作台桌宠(可拖动)");
+    await expect(selectionPanel).toHaveAttribute("data-pet-linked", "true");
+    await expect(pet).toBeVisible();
+
+    const [panelAnchorBefore, petPositionBefore] = await Promise.all([
+      selectionPanel.evaluate((element) => ({
+        x: Number.parseFloat(element.style.getPropertyValue("--psr-pet-x")),
+        y: Number.parseFloat(element.style.getPropertyValue("--psr-pet-y")),
+      })),
+      pet.evaluate((element) => ({
+        x: Number.parseFloat(element.style.getPropertyValue("--pet-x")),
+        y: Number.parseFloat(element.style.getPropertyValue("--pet-y")),
+      })),
+    ]);
+    expect(panelAnchorBefore.x).toBeCloseTo(petPositionBefore.x + 28, 3);
+    expect(panelAnchorBefore.y).toBeCloseTo(petPositionBefore.y + 28, 3);
+
+    const handleBounds = await selectionPanelHandle.boundingBox();
+    if (!handleBounds) throw new Error("3D 选中信息栏拖柄 boundingBox 不可用");
+    await page.mouse.move(handleBounds.x + 8, handleBounds.y + handleBounds.height - 6);
+    await page.mouse.down();
+    await page.mouse.move(handleBounds.x + 32, handleBounds.y + handleBounds.height + 10, {
+      steps: 4,
+    });
+    await page.mouse.up();
+    await expect
+      .poll(async () => {
+        const [panelAnchor, petPosition] = await Promise.all([
+          selectionPanel.evaluate((element) => ({
+            x: Number.parseFloat(element.style.getPropertyValue("--psr-pet-x")),
+            y: Number.parseFloat(element.style.getPropertyValue("--psr-pet-y")),
+          })),
+          pet.evaluate((element) => ({
+            x: Number.parseFloat(element.style.getPropertyValue("--pet-x")),
+            y: Number.parseFloat(element.style.getPropertyValue("--pet-y")),
+          })),
+        ]);
+        return { panelAnchor, petPosition };
+      })
+      .toEqual({
+        panelAnchor: { x: panelAnchorBefore.x + 24, y: panelAnchorBefore.y + 16 },
+        petPosition: { x: petPositionBefore.x + 24, y: petPositionBefore.y + 16 },
+      });
+
     await expandBtn.click();
 
     const cx = page.getByLabel("cx", { exact: true });

@@ -54,6 +54,7 @@ import { useCameraAnnotationMembers } from "@/hooks/useCameraAnnotationMembers";
 import { AttributeForm } from "../../shell/AttributeForm";
 import { FloatingPanelShell, type FloatingPanelRect } from "../../shell/FloatingPanelShell";
 import { useDragMove, type FloatingPanelBounds } from "../../shell/useDragMove";
+import { WORKBENCH_PET_SIZE, type WorkbenchPetDock } from "../../shell/pet/WorkbenchPet";
 import { usePointCloudManifest } from "./usePointCloudManifest";
 import {
   type BoxPsr,
@@ -174,8 +175,12 @@ const MEASUREMENT_ACTIONS = "flex shrink-0 items-center gap-1";
 const ERR = "text-status-danger";
 const MISMATCH_BANNER =
   "absolute top-[calc(var(--top-toolbar-height)+24px)] left-3 z-local-4 flex flex-wrap items-center gap-2 max-w-[min(640px,calc(100%-24px))] px-2.5 py-1.5 text-status-caution text-xs bg-card border border-amber-600 dark:border-amber-400 rounded-md shadow-sm";
-const EDIT_PANEL =
-  "absolute top-3 right-3 w-[210px] translate-x-[var(--psr-dx)] translate-y-[var(--psr-dy)] flex flex-col gap-1.5 p-2.5 rounded-md bg-card border border-border shadow-sm text-xs text-foreground";
+const EDIT_PANEL_SURFACE =
+  "w-[210px] flex flex-col gap-1.5 p-2.5 rounded-md bg-card border shadow-sm text-xs text-foreground";
+const EDIT_PANEL_FLOATING =
+  "absolute top-3 right-3 translate-x-[var(--psr-dx)] translate-y-[var(--psr-dy)] border-border";
+const EDIT_PANEL_PET_LINKED =
+  "fixed left-[var(--psr-pet-x)] top-[var(--psr-pet-y)] z-overlay-high -translate-x-1/2 -translate-y-full border-brand shadow-md";
 const EDIT_PANEL_DRAGGING = "select-none";
 const EDIT_HEADER = "flex flex-col gap-1 cursor-grab";
 const DRAG_HINT = "shrink-0 text-muted-foreground";
@@ -297,6 +302,8 @@ interface ThreeDWorkbenchProps {
   onWorkbenchConfigChange: (patch: WorkbenchConfigPatch) => void;
   onWorkbenchConfigUpdate: (patch: WorkbenchConfigPatch) => Promise<void>;
   box3dDefaultSize?: [number, number, number] | null;
+  /** 桌宠开启时，让 3D 选中信息栏与桌宠共用拖动锚点。 */
+  petDock?: WorkbenchPetDock;
 }
 
 export function ThreeDWorkbench({
@@ -325,6 +332,7 @@ export function ThreeDWorkbench({
   onWorkbenchConfigChange,
   onWorkbenchConfigUpdate,
   box3dDefaultSize,
+  petDock,
 }: ThreeDWorkbenchProps) {
   useEffect(() => retainPointCloudComputeSession(), []);
   const { data: manifest, isLoading, error } = usePointCloudManifest(taskId, true);
@@ -1849,8 +1857,10 @@ export function ThreeDWorkbench({
   } | null>(null);
 
   // v0.15.21 · 选中框 PSR 面板:渐进展开 + 整体拖动,展开态与位置偏移按用户记忆(localStorage)。
-  const { psrPanel, psrDragging, onPsrHeaderPointerDown, togglePsrExpanded } =
-    usePsrFloatingPanel(userId);
+  const { psrPanel, psrDragging, onPsrHeaderPointerDown, togglePsrExpanded } = usePsrFloatingPanel(
+    userId,
+    petDock?.enabled ? petDock : null,
+  );
 
   const closeContextMenu = () => {
     contextMenu.close();
@@ -2703,10 +2713,25 @@ export function ThreeDWorkbench({
         } as CSSProperties)
       : undefined,
   );
-  const editPanelRef = useElementStyle<HTMLDivElement>({
-    "--psr-dx": `${psrPanel.dx}px`,
-    "--psr-dy": `${psrPanel.dy}px`,
-  } as CSSProperties);
+  const petLinked = petDock?.enabled === true;
+  const editPanelRef = useElementStyle<HTMLDivElement>(
+    petLinked
+      ? ({
+          "--psr-pet-x": `${petDock.position.x + WORKBENCH_PET_SIZE.w / 2}px`,
+          "--psr-pet-y": `${petDock.position.y + WORKBENCH_PET_SIZE.h / 2}px`,
+        } as CSSProperties)
+      : ({
+          "--psr-dx": `${psrPanel.dx}px`,
+          "--psr-dy": `${psrPanel.dy}px`,
+        } as CSSProperties),
+  );
+  const editPanelClass = [
+    EDIT_PANEL_SURFACE,
+    petLinked ? EDIT_PANEL_PET_LINKED : EDIT_PANEL_FLOATING,
+    psrDragging ? EDIT_PANEL_DRAGGING : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
   const triFloatTabRef = useElementStyle<HTMLDivElement>({
     "--tri-tab-x": `${triFloatPosition.x}px`,
     "--tri-tab-y": `${triFloatPosition.y}px`,
@@ -3089,17 +3114,18 @@ export function ThreeDWorkbench({
           </aside>
         )}
 
-        {/* 选中框 PSR 数值编辑面板(右上;头部可拖动 + 渐进展开) */}
+        {/* 选中框 PSR 数值编辑面板：桌宠开启时与其共用锚点，否则保持右上浮层。 */}
         {selectedBox && form && (
           <div
             ref={editPanelRef}
-            className={[EDIT_PANEL, psrDragging ? EDIT_PANEL_DRAGGING : ""]
-              .filter(Boolean)
-              .join(" ")}
+            className={editPanelClass}
+            data-testid="three-d-selection-panel"
+            data-pet-linked={petLinked || undefined}
           >
             <div
               className={psrDragging ? `${EDIT_HEADER} !cursor-grabbing` : EDIT_HEADER}
               onPointerDown={onPsrHeaderPointerDown}
+              data-testid="three-d-selection-panel-handle"
             >
               <div className={EDIT_TITLE}>
                 <Icon name="move" size={12} className={DRAG_HINT} />
@@ -3260,8 +3286,24 @@ export function ThreeDWorkbench({
         )}
 
         {selectedPointMask && selectedAnn && (
-          <div className={EDIT_PANEL}>
-            <div className={EDIT_TITLE}>
+          <div
+            ref={editPanelRef}
+            className={editPanelClass}
+            data-testid="three-d-selection-panel"
+            data-pet-linked={petLinked || undefined}
+          >
+            <div
+              className={
+                petLinked
+                  ? psrDragging
+                    ? `${EDIT_TITLE} cursor-grabbing`
+                    : `${EDIT_TITLE} cursor-grab`
+                  : EDIT_TITLE
+              }
+              onPointerDown={petLinked ? onPsrHeaderPointerDown : undefined}
+              data-testid={petLinked ? "three-d-selection-panel-handle" : undefined}
+            >
+              {petLinked && <Icon name="move" size={12} className={DRAG_HINT} />}
               {pointMaskClasses.length > 0 ? (
                 <select
                   className={CLASS_SELECT}

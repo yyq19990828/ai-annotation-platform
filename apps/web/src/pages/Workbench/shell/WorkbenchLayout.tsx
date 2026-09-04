@@ -35,6 +35,7 @@ import {
   WORKBENCH_PET_SIZE,
   readWorkbenchPetPosition,
   writeWorkbenchPetPosition,
+  type WorkbenchPetDock,
   type WorkbenchPetProps,
 } from "./pet/WorkbenchPet";
 import { SIDE_FLOATING_PANEL_MAX_SIZE, SIDE_FLOATING_PANEL_MIN_SIZE } from "./floatingPanelSizing";
@@ -165,9 +166,19 @@ export function WorkbenchLayout({
       : null;
 
   const setPetPosition = useCallback((next: FloatingPanelPoint) => {
-    setPetPositionState(next);
-    writeWorkbenchPetPosition(next);
+    const clamped = clampFloatingPosition(next, WORKBENCH_PET_SIZE);
+    setPetPositionState(clamped);
+    writeWorkbenchPetPosition(clamped);
   }, []);
+
+  const petDock = useMemo<WorkbenchPetDock>(
+    () => ({
+      enabled: Boolean(pet?.enabled),
+      position: petPosition,
+      onPositionChange: setPetPosition,
+    }),
+    [pet?.enabled, petPosition, setPetPosition],
+  );
 
   const onSplitResize = useCallback((next: number) => {
     const clamped = Math.round(next);
@@ -224,7 +235,7 @@ export function WorkbenchLayout({
         <div className="flex min-w-0 flex-col overflow-hidden">
           <WorkbenchBanners {...banners} />
           <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-            <WorkbenchStageHost ref={videoControlsRef} {...stageHost} />
+            <WorkbenchStageHost ref={videoControlsRef} {...stageHost} petDock={petDock} />
             {stageOverlay}
           </div>
           <StatusBar {...statusBar} />
