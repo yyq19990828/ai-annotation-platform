@@ -168,7 +168,7 @@ def _ffmpeg_encode(spec: dict[str, Any], frames_dir: Path, out: Path) -> None:
     ]
     if spec.get("vfr"):
         # VFR:累计增加每两个输入帧之间的时间,得到 1/30、2/30 秒交替且严格单调的 PTS。
-        cmd += ["-vf", "setpts=PTS+floor(N/2)", "-vsync", "vfr"]
+        cmd += ["-vf", "setpts=PTS+floor(N/2)", "-fps_mode", "vfr"]
     cmd.append(str(out))
     proc = subprocess.run(cmd, capture_output=True, text=True)
     if proc.returncode != 0:

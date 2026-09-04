@@ -1,6 +1,6 @@
 [project]
 name = "anno-api"
-version = "0.24.20"
+version = "0.25.0"
 requires-python = ">=3.11"
 dependencies = [
     "aap-protocol-v2",
@@ -44,9 +44,9 @@ dependencies = [
 aap-protocol-v2 = { path = "../_shared/protocol_v2", editable = true }
 
 [tool.uv]
-# nuScenes 1.1.11 pins a pre-Python-3.12 Shapely. The official repository's
-# Python 3.12 lock uses Shapely 2.x; keep the devkit test oracle installable.
-override-dependencies = ["shapely>=2.0"]
+# nuScenes 1.1.11 pins legacy Shapely and Matplotlib. Keep this test oracle
+# installable on supported Python versions and compatible with NumPy 2.
+override-dependencies = ["shapely>=2.0", "matplotlib>=3.9,<4"]
 
 [project.optional-dependencies]
 test = [
