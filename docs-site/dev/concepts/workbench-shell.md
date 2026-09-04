@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.21
 status: stable
-last_reviewed: 2026-07-14
+last_reviewed: 2026-09-05
 ---
 
 # 工作台 Shell 架构
@@ -16,13 +16,13 @@ WorkbenchShell
   -> WorkbenchLayout
        -> WorkbenchBanners
        -> Topbar
-       -> WorkbenchStageHost
-       -> stageOverlay（AI 追踪面板 / 候选审阅条）
-       -> StatusBar
-       -> TaskQueuePanel / ToolDock
-       -> 右栏 .rightSplit（列宽可拖拽）
-            -> .rightSplitTop: AIInspectorPanel（高度可拖拽）
-            -> .rightSplitBottom: DiscussionPanel
+       -> WorkbenchDockWorkspace
+            -> canvas: ToolDock / WorkbenchStageHost / StatusBar
+                 -> stageOverlay（AI 追踪面板 / 候选审阅条）
+            -> task-queue: TaskQueuePanel（任务队列）
+            -> class-palette: TaskQueuePanel（类别面板）
+            -> inspector: AIInspectorPanel
+            -> discussion: DiscussionPanel
   -> WorkbenchOverlays
 ```
 
@@ -84,66 +84,97 @@ type StageKind = "image" | "video" | "3d";
 
 视频 AI 追踪面板和候选审阅条使用 `WorkbenchLayout.stageOverlay`，相对中间 Stage 定位。顶部 `Topbar` 在视频任务中并列「追踪」与「AI 单题」入口，两个配置面板互斥。它们的位置 / 尺寸通过 `useFloatingPanelFrame` 保存到各自的 localStorage key，不属于下文的服务端 `workbench.layout` 偏好树。
 
-## 右栏：AI 检查器 + 讨论面板
+## 可停靠工作区
 
-右栏是一个上下两段的可调整布局（`WorkbenchLayout.tsx` 的 `.rightSplit`）：
+`WorkbenchDockWorkspace` 是 Dockview 的唯一 React 适配层。`workbenchPanelRegistry` 定义稳定面板 ID、渲染槽、生命周期和布局能力；`workbenchLayoutExecutor` 负责移动、停靠、浮动、隐藏、预设与紧凑布局重放。Shell 继续提供业务状态和回调，布局快照不保存 React props、工具、选择、任务、播放位置或编辑草稿。
 
-- **上段 `.rightSplitTop`**：`AIInspectorPanel`，与下段之间有一个上下拖拽 handle。上段高度持久化到 localStorage `workbench.rightSplit.topHeight`（默认 360px，范围 160–720px）。
-- **下段 `.rightSplitBottom`**：`DiscussionPanel`，承载评论 / 历史 / issue 的统一讨论入口。
-- **列宽拖拽 handle** 提升到 `.rightSplit` 全高层级，覆盖两段，不再只贴在 AI 检查器一侧。
-- **布局偏好**：左右栏开合、左右栏宽度、任务队列 / 类别面板 / 标注详情 / 讨论面板浮窗、3D 三视图浮层、2D 相机面板布局和点云主视角快照写入 `user.preferences.workbench.layout`；前端提交全量 `workbench` 子树，后端只做顶层 `workbench` / `ai` 合并。
-- **侧栏区块分离**：`TaskQueuePanel` 内的任务队列和类别面板、`AIInspectorPanel`、`DiscussionPanel` 都可由 `WorkbenchLayout` 改用 `FloatingPanelShell` 渲染。分离操作默认收起对应侧栏；后续展开只显示仍嵌入的区块，不会自动合并浮窗。合并回侧栏只恢复嵌入状态，不主动展开侧栏。若一侧两个区块都已分离，侧栏 toggle 是可见 no-op。
+| Panel ID        | 内容                            | 生命周期与约束                                                     |
+| --------------- | ------------------------------- | ------------------------------------------------------------------ |
+| `canvas`        | ToolDock、当前 Stage、StatusBar | `always`；独占固定 group，禁止移动、浮动、关闭或与其他面板组成标签 |
+| `task-queue`    | 任务队列                        | `onlyWhenVisible`；允许停靠、标签、浮动与隐藏                      |
+| `class-palette` | 类别面板                        | `onlyWhenVisible`；允许停靠、标签、浮动与隐藏                      |
+| `inspector`     | 标注详情、人工标注与 AI 候选    | `always`；隐藏时保留未完成的属性编辑                               |
+| `discussion`    | 评论、历史、Issue               | `always`；隐藏时保留未发送输入                                     |
 
-`DiscussionPanel`（`shell/DiscussionPanel.tsx`）有三个常驻 tab：
+外围面板可放到画布左、右或底部，也可与其他外围面板组成标签。同窗口浮窗可以包含标签，但浮窗内部不支持再次切分网格。所有拖放和菜单命令都受相同约束；画布 group 不接受中心放置，`parking` 不显示 header，也不接收用户拖放。适配层不提供 popout，不调用 `addPopoutGroup`，快照清洗也不保留外部窗口描述。
 
-| Tab      | 内容                             | 实现                                                       |
-| -------- | -------------------------------- | ---------------------------------------------------------- |
-| comments | 标注级 / 任务级评论              | 复用 `CommentsPanel`（`hideTabs` + `forceTab='comments'`） |
-| history  | 标注 / 任务级 audit 历史         | 复用 `CommentsPanel`（`forceTab='history'`）               |
-| issues   | `kind=issue` 反馈列表 + 图钉联动 | `DiscussionIssuesTab`                                      |
+隐藏面板时，executor 先记录原 group、tab index 与浮窗矩形，再移动同一实例到不可见的 `parking` group。恢复优先使用仍存在的合法返回位置，否则按 registry 默认区放置。布局入口不调用 `close` 或 `removePanel`；`always` 面板保持 DOM，隐藏时停止非必要的持续工作。
 
-图钉单击 / hover 会通过 `useActiveIssueStore` 的 `tabRequestTick` 自动把面板切到 issues tab。
+顶部“布局”菜单提供“标准标注”“专注画布”“审核协作”、面板列表和“重置当前布局”。专注画布使用现有 canvas group 的 maximize / restore。预设替换与一次会话级撤销都通过 executor 原位重排现有面板，不触发全树 `fromJSON`，也不改变标注内容和 Stage 的 React 身份。
 
-DiscussionPanel 是默认组件：旧 feature flag `DISCUSSION_PANEL_ENABLED` 与旧浮层 `IssueListPanel` 已删除。讨论面板与评论画布、issue 图钉的交互细节见 [审核模块](./review-module)。
+### 讨论面板与已有入口
 
-## 浮窗与布局偏好（v0.13.10）
+顶部原左栏按钮映射为任务队列的显示 / 隐藏与聚焦，原右栏按钮映射为标注详情，类别面板由“布局”菜单独立控制。Issue FAB、评论跳转和 `requestIssuesTab()` 先打开或聚焦 `discussion`，再切换其内部 tab。
 
-左右侧栏的四个区块（任务队列 / 类别面板 / 标注详情 / 讨论 Issue）与 3D 三视图都可分离为**同窗口浮窗**。所有浮窗 chrome 统一由 `shell/FloatingPanelShell` + `shell/useDragMove` 承载：顶栏拖动、右下角 resize、窗口 resize 时 clamp 回视口、边界防丢，以及合并回侧栏 / 关闭入口。`floatingPanelSizing.ts` 提供统一的最小尺寸与首次默认位置。
+`DiscussionPanel` 的内部业务 tab 保持原边界：
 
-### 状态契约
+| Tab      | 内容                            | 实现                                                  |
+| -------- | ------------------------------- | ----------------------------------------------------- |
+| comments | 标注级 / 任务级评论             | `CommentsPanel`（`hideTabs` + `forceTab='comments'`） |
+| history  | 标注 / 任务级 audit 历史        | `CommentsPanel`（`forceTab='history'`）               |
+| issues   | `kind=issue` 反馈列表与图钉联动 | `DiscussionIssuesTab`                                 |
 
-布局状态是 `user.preferences.workbench.layout`（`WorkbenchLayoutPreferences`，定义于 `apps/web/src/api/auth.ts`）：
+图钉和讨论入口通过 `useActiveIssueStore` 的 `tabRequestTick` 请求切到 issues tab。评论画布与图钉的业务交互见[审核模块](./review-module)。布局不拆分 `AIInspectorPanel` 或 `DiscussionPanel` 的内部业务 tab。
 
-| 字段                                                                                      | 类型                               | 含义                                                                               |
-| ----------------------------------------------------------------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------- |
-| `leftOpen` / `rightOpen`                                                                  | `boolean`                          | 左 / 右侧栏开合                                                                    |
-| `floatingTaskQueue` / `floatingClassPalette` / `floatingInspector` / `floatingDiscussion` | `FloatingPanelState`               | 四个侧栏区块的浮窗态                                                               |
-| `triViewFloat`                                                                            | `TriViewFloatState`                | 3D 三视图浮层态                                                                    |
-| `cameraPanels`                                                                            | `Record<string, CameraPanelState>` | 3D 悬浮相机面板位置 + 折叠态，按相机 role 分桶                                     |
-| `pointcloudCamera`                                                                        | `PointcloudCameraState｜null`      | 点云主视图相机快照；仅当 `workbench.pointcloud.persistCameraView` 开启时写入和恢复 |
+### 桌面与紧凑布局
 
-> 边栏宽度不再属于 layout 子树：旧的 `leftWidth` / `rightWidth`（像素，clamp 200–560 / 220–600）已替换为通用偏好 `workbench.common.leftWidthPct` / `rightWidthPct`（占工作台宽度的百分比，clamp 10–35%，默认 15%），拖拽分隔条与设置面板双向同步。详见 [设置参考](../../user-guide/reference/settings)。
+工作区宽度不超过 1024px 时，适配层在初始偏好读取结算后进入紧凑模式：先锁存已清洗的桌面快照，再把外围面板移到 `parking`；面板菜单每次只将一个现有实例放入 `compact-overlay` 同窗口浮窗。预设、重置、布局撤销、停靠、浮动与 resize 都禁用，进入紧凑模式时丢弃已有预设撤销点。
 
-`FloatingPanelState = { detached: boolean; x/y/w/h: number｜null }`；`TriViewFloatState` 把 `detached` 换成 `collapsed`（三视图常驻浮层，只折叠不分离）。`x/y/w/h` 为 `null` 表示尚未拖动过、用首次默认位置。`CameraPanelState = { x/y: number｜null; collapsed?: boolean }`（x/y 为 `null` = 未拖动、用默认贴边位）；某 role 无键 = 用默认位置 + 自动折叠态。早期版本用 `pcwb:cam-pos:*` / `pcwb:cam-collapsed:*` 两个 localStorage 键，v0.15.x 起迁移到此处由后端持久化，旧键首次加载时一次性迁移后清除。
+返回桌面宽度后，executor 以固定 canvas group 为锚点，使用 move / visibility / size API 重建原有 group、tab 顺序、活动标签、浮窗和隐藏状态。切换过程不使用 `fromJSON`，不重新挂载 Stage；3D 主视图和三视图继续遵守单 renderer / canvas 的约定。
 
-`PointcloudCameraState = { position: [x,y,z]; target: [x,y,z]; up: [x,y,z]; mode: "orbit" | "bev" }`。该字段是布局状态而非渲染偏好：开关 `workbench.pointcloud.persistCameraView` 控制是否记录，实际相机 pose 跟随 `setLayout({ pointcloudCamera })` 走同一条本地缓存 + 300ms PATCH 管线。
+紧凑投影、重放中间状态和临时 `compact-overlay` 都不提交给服务端。重放失败时保留桌面快照并进入只读标准布局；用户返回桌面宽度后显式重置，才允许写入恢复结果。小于 768px 的窗口继续显示现有阻断页。
 
-### 分离 / 合并状态机
+## 布局偏好与恢复
 
-- **分离**某区块时默认收起对应侧栏。
-- 之后**展开**侧栏只渲染仍嵌入的区块，不会把已分离浮窗自动收编。
-- **合并回侧栏**只把该区块恢复为嵌入态，不主动展开侧栏。
-- 若一侧两个区块都已分离，侧栏 toggle 是可见 no-op。
+可停靠布局存放于 `user.preferences.workbench.layout.workspace`：
 
-### localStorage ↔ 服务端同步
+```ts
+{
+  engine: "dockview@8",
+  contexts: {
+    "annotate:image": {
+      schemaVersion: 1,
+      snapshot: { layout: serializedDockview, returns: panelReturnPositions }
+    }
+  }
+}
+```
 
-`state/useWorkbenchConfig.ts` 是单一入口：
+context 是 `annotate|review × image|video|3d` 的六项闭集，按账号分别保存。`snapshot.layout` 只保留引擎布局字段，`returns` 只保留隐藏面板的 group、index 与可选浮窗矩形。
 
-- `setLayout()` 先本地立即生效并写 `localStorage`（key 见 `LAYOUT_STORAGE_KEYS`，作为离线 / 未登录兜底和远端缺省）。
-- 登录在线时再以 **300ms debounce** `PATCH /me/preferences`，提交**全量 `workbench` 子树**（不是只发 nested `layout`），避免覆盖同子树下的其它渲染偏好。后端只做顶层 `workbench` / `ai` 合并。
-- 远端值缺失字段用 `localStorage` / `DEFAULT_WORKBENCH_PREFERENCES` 逐字段兜底合并（`mergeFloatingPanelState` / `mergeTriViewFloatState`）。
+当前客户端只解释和写入 schema 1，核心面板固定为上述五项。读取到 schema 2、schema 3 或更高版本时显示只读标准布局，提示刷新到新版，不按 schema 1 解释原树，也不允许重置覆盖。损坏快照和引擎恢复失败同样使用只读标准布局，但允许用户在桌面模式显式重置。
 
-## 偏好四分树与设置抽屉（v0.15.3）
+`workbenchLayoutSnapshot` 对读写执行同一套清洗：UTF-8 JSON 上限 64 KiB；持久化最多 7 个 panel、7 个用户 group 和 1 个 parking group；schema 1 只接受五个核心 panel。非有限尺寸、非法 canvas、重复 panel 和不合法树会触发恢复路径，业务 params、popout 与不支持的引擎字段不进入快照。浮窗边界按工作区实际 client rect 夹取。
+
+### 单一写入者
+
+`useWorkbenchWorkspaceLayout` 独占当前 context 的 workspace 写入，复用 `useUserPreferences` 的账号级 React Query key 与请求缓存：
+
+1. 冷启动先读取 `workbench.<userId>.workspace.<context>` 本地缓存，但初始 preferences GET 和该账号尚在途的旧布局保存结算前，禁用全部布局 mutation，不发 workspace PATCH。
+2. 初始 GET 返回受支持、清洗通过且不同于本地的快照时，适配层最多进行一次 `fromJSON(remote, { reuseExistingPanels: true })` 回灌。初始化完成后的 refetch 不再替换当前树，GET 失败则沿用本地布局并显示提示，有效快照可以继续调整。
+3. 布局操作结束后防抖 300ms，只 PATCH 当前 context。一个请求在途时合并后续变化，只保留最新 dirty 快照，前一请求结束后再提交，避免响应乱序覆盖较新调整。
+4. 普通 PATCH 失败保留本地调整与 dirty 状态，不回滚用户看到的布局，也不循环重试；下一次调整可再次保存。`409 layout_schema_downgrade` 会丢弃待写内容并进入不可重置的只读状态。
+
+本地缓存按账号和 context 隔离，切换后取消旧 context 尚未发送的定时写入，旧请求回包不回灌新会话。`useWorkbenchConfig` 的 `setLayout`、`setFields` 和完整偏好保存继续负责其他字段，但所有旧 writer 的 PATCH 都剔除 workspace 副本。
+
+后端复用 `GET/PATCH /auth/me/preferences`。PATCH 在事务中锁定并刷新当前用户偏好，将 `workspace.contexts.<context>` 作为原子替换路径，锁内拒绝 schemaVersion 降级；不同 context 仍分别合并。同 context、同 schema 的多标签页和多设备采用最后一次写入生效，不引入 revision 或 ETag。部署时先上线后端 schema，再上线可写 workspace 的前端。
+
+### 初次迁移与保留字段
+
+没有当前 context 快照时，从旧左右栏开合、四个分离面板、栏宽和右栏 split 构造初始布局，并由 workspace owner 保存。转换后这些旧字段不再驱动 Docking UI，也不反向同步新树；旧字段与 localStorage key 保留供前端回滚使用，回滚恢复的是升级前的旧布局。
+
+下列布局状态仍由原有业务组件和 `useWorkbenchConfig` 管理：
+
+| 字段                | 作用                                           |
+| ------------------- | ---------------------------------------------- |
+| `floatingSelection` | 选中信息卡的位置、尺寸和折叠态                 |
+| `triViewFloat`      | 3D 三视图浮层位置、尺寸和折叠态                |
+| `cameraPanels`      | 按相机 role 保存 2D 相机面板布局               |
+| `pointcloudCamera`  | `persistCameraView` 开启时记录与恢复点云主视角 |
+
+当前题 AI、视频追踪、3D 三视图、相机面板、PSR、选中信息卡和桌宠继续位于各自 Stage overlay；Drawer、Modal 与 Toast 也不进入 Docking 树。
+
+## 偏好四分树与设置抽屉
 
 `user.preferences.workbench` 从平铺字段重构为四个模态子树 + 顶层 `layout`：
 

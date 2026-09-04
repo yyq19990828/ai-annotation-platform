@@ -58,17 +58,26 @@ function preferences(
   };
 }
 
-function setup(context: WorkspaceContext = "annotate:image") {
+function setup(context: WorkspaceContext = "annotate:image", paused = false) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   function wrapper({ children }: { children: ReactNode }) {
     return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   }
   return {
     client,
-    ...renderHook(({ currentContext }) => useWorkbenchWorkspaceLayout(currentContext, initial), {
-      wrapper,
-      initialProps: { currentContext: context },
-    }),
+    ...renderHook<
+      ReturnType<typeof useWorkbenchWorkspaceLayout>,
+      { currentContext: WorkspaceContext; paused?: boolean }
+    >(
+      ({
+        currentContext,
+        paused: isPaused,
+      }: {
+        currentContext: WorkspaceContext;
+        paused?: boolean;
+      }) => useWorkbenchWorkspaceLayout(currentContext, initial, initial, isPaused),
+      { wrapper, initialProps: { currentContext: context, paused } },
+    ),
   };
 }
 
@@ -225,6 +234,10 @@ describe("workspace layout owner", () => {
     expect(result.current.snapshot).toEqual(initial);
     expect(result.current.dirty).toBe(false);
     expect(result.current.reset(initial)).toBe(false);
+    const revision = result.current.restoreRevision;
+    act(() => result.current.failRestore());
+    expect(result.current.readOnlyReason).toBe("newer-schema");
+    expect(result.current.restoreRevision).toBe(revision);
     await act(async () => vi.advanceTimersByTimeAsync(1000));
     expect(mocks.patch).toHaveBeenCalledTimes(1);
   });
@@ -257,6 +270,87 @@ describe("workspace layout owner", () => {
     expect(result.current.readOnly).toBe(false);
     expect(mocks.patch).toHaveBeenCalledTimes(1);
   });
+
+  it("reports a restore failure once without creating repeated restore revisions", async () => {
+    const { result } = setup();
+    await waitFor(() => expect(result.current.initialized).toBe(true));
+    act(() => {
+      result.current.failRestore();
+      result.current.failRestore();
+    });
+    expect(result.current.readOnlyReason).toBe("restore-failed");
+    expect(result.current.restoreRevision).toBe(1);
+    act(() => result.current.failRestore());
+    expect(result.current.restoreRevision).toBe(1);
+  });
+
+  it("pauses initial desktop migration writes in compact mode and saves after resuming", async () => {
+    const remote = preferences();
+    remote.workbench.layout.workspace!.contexts = {};
+    mocks.get.mockResolvedValue(remote);
+    const { result, rerender } = setup("annotate:image", true);
+    await waitFor(() => expect(result.current.initialized).toBe(true));
+    vi.useFakeTimers();
+    await act(async () => vi.advanceTimersByTimeAsync(1000));
+    expect(result.current.dirty).toBe(true);
+    expect(mocks.patch).not.toHaveBeenCalled();
+    rerender({ currentContext: "annotate:image", paused: false });
+    await act(async () => vi.advanceTimersByTimeAsync(300));
+    expect(mocks.patch).toHaveBeenCalledTimes(1);
+    expect(
+      mocks.patch.mock.calls[0][0].workbench.layout.workspace.contexts["annotate:image"],
+    ).toEqual(v1());
+  });
+
+  it("waits for a previous context save and keeps its cache authoritative when returning", async () => {
+    const patch = deferred<UserPreferences>();
+    mocks.patch.mockReturnValue(patch.promise);
+    const remote = preferences();
+    remote.workbench.layout.workspace!.contexts["review:video"] = v1(changed);
+    mocks.get.mockResolvedValue(remote);
+    const { result, rerender, client } = setup();
+    await waitFor(() => expect(result.current.initialized).toBe(true));
+    vi.useFakeTimers();
+    act(() => result.current.save(latest));
+    await act(async () => vi.advanceTimersByTimeAsync(300));
+    rerender({ currentContext: "review:video" });
+    rerender({ currentContext: "annotate:image" });
+    expect(result.current.snapshot).toEqual(latest);
+    expect(result.current.initialized).toBe(false);
+    await act(async () => {
+      patch.resolve(preferences(v1(latest)));
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(result.current.initialized).toBe(true);
+    expect(result.current.snapshot).toEqual(latest);
+    expect(
+      client.getQueryData<UserPreferences>(userPreferencesQueryKey("u1"))?.workbench.layout
+        .workspace?.contexts["annotate:image"],
+    ).toEqual(v1(latest));
+  });
+
+  it.each([
+    "broken",
+    null,
+    { engine: "dockview@8" },
+    { engine: "dockview@8", contexts: [] },
+    { engine: "dockview@8", contexts: { "annotate:image": null } },
+    { engine: "dockview@8", contexts: { unexpected: v1() } },
+  ])(
+    "keeps malformed workspace wrappers read-only instead of crashing or migrating over them",
+    async (workspace) => {
+      const remote = preferences();
+      remote.workbench.layout.workspace = workspace as typeof remote.workbench.layout.workspace;
+      mocks.get.mockResolvedValue(remote);
+      const { result } = setup();
+      await waitFor(() => expect(result.current.initialized).toBe(true));
+      expect(result.current.readOnlyReason).toBe("invalid");
+      expect(result.current.snapshot).toEqual(initial);
+      expect(result.current.dirty).toBe(false);
+      expect(result.current.save(changed)).toBe(false);
+      expect(mocks.patch).not.toHaveBeenCalled();
+    },
+  );
 
   it("never writes a previous context's pending snapshot into a new context", async () => {
     const get = preferences();

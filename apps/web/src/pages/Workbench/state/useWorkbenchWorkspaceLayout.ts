@@ -6,6 +6,7 @@ import { useAuthStore } from "@/stores/authStore";
 import {
   readWorkspaceEnvelope,
   sanitizeWorkspaceSnapshot,
+  WORKSPACE_CONTEXTS,
   type WorkspaceContext,
   type WorkspaceSnapshot,
 } from "../layout/workbenchLayoutSnapshot";
@@ -25,11 +26,12 @@ interface WorkspaceSession {
   dirty: WorkspaceSnapshot | null;
   saving: boolean;
   active: boolean;
+  paused: boolean;
   timer: number | null;
 }
 
 // A route remount must also wait for the previous owner's request to finish.
-let activeWorkspaceRequest: Promise<UserPreferences> | null = null;
+let activeWorkspaceRequest: { userId: string; promise: Promise<UserPreferences> } | null = null;
 
 export function workspaceStorageKey(userId: string, context: WorkspaceContext): string {
   return `workbench.${userId}.workspace.${context}`;
@@ -62,6 +64,24 @@ function writeLocal(session: WorkspaceSession, snapshot: WorkspaceSnapshot): voi
   }
 }
 
+function contextEnvelope(workspace: unknown, context: WorkspaceContext): unknown {
+  if (workspace === undefined) return undefined;
+  if (!workspace || typeof workspace !== "object" || Array.isArray(workspace)) return false;
+  const value = workspace as Record<string, unknown>;
+  const contexts = value.contexts;
+  if (
+    value.engine !== "dockview@8" ||
+    !contexts ||
+    typeof contexts !== "object" ||
+    Array.isArray(contexts) ||
+    Object.keys(contexts).some((key) => !WORKSPACE_CONTEXTS.includes(key as WorkspaceContext))
+  )
+    return false;
+  if (!Object.prototype.hasOwnProperty.call(contexts, context)) return undefined;
+  // A present-but-empty envelope is corrupt, not a missing context to migrate over.
+  return (contexts as Record<string, unknown>)[context] ?? false;
+}
+
 function createSession(
   userId: string | undefined,
   context: WorkspaceContext,
@@ -81,6 +101,7 @@ function createSession(
     dirty: null,
     saving: false,
     active: false,
+    paused: false,
     timer: null,
   };
 }
@@ -102,6 +123,7 @@ export function useWorkbenchWorkspaceLayout(
   context: WorkspaceContext,
   fallbackSnapshot: WorkspaceSnapshot,
   standardSnapshot: WorkspaceSnapshot = fallbackSnapshot,
+  paused = false,
 ) {
   const userId = useAuthStore((state) => state.user?.id);
   const queryClient = useQueryClient();
@@ -112,12 +134,13 @@ export function useWorkbenchWorkspaceLayout(
     enabled: !!userId,
     staleTime: 5 * 60 * 1000,
   });
-  const [, refresh] = useReducer((value: number) => value + 1, 0);
+  const [revision, refresh] = useReducer((value: number) => value + 1, 0);
   const sessionRef = useRef<WorkspaceSession | null>(null);
   if (sessionRef.current?.userId !== userId || sessionRef.current?.context !== context) {
     sessionRef.current = createSession(userId, context, fallbackSnapshot, standardSnapshot);
   }
   const session = sessionRef.current!;
+  session.paused = paused;
 
   const isCurrent = useCallback(
     (candidate: WorkspaceSession) =>
@@ -133,6 +156,7 @@ export function useWorkbenchWorkspaceLayout(
         !isCurrent(candidate) ||
         !candidate.userId ||
         !candidate.initialized ||
+        candidate.paused ||
         candidate.readOnlyReason ||
         candidate.saving ||
         !candidate.dirty
@@ -142,12 +166,17 @@ export function useWorkbenchWorkspaceLayout(
       refresh();
       while (activeWorkspaceRequest) {
         try {
-          await activeWorkspaceRequest;
+          await activeWorkspaceRequest.promise;
         } catch {
           // The owner of that request reports its error; waiting does not retry it.
         }
       }
-      if (!isCurrent(candidate) || candidate.readOnlyReason || candidate.timer !== null) {
+      if (
+        !isCurrent(candidate) ||
+        candidate.readOnlyReason ||
+        candidate.paused ||
+        candidate.timer !== null
+      ) {
         candidate.saving = false;
         if (isCurrent(candidate)) refresh();
         return;
@@ -163,19 +192,19 @@ export function useWorkbenchWorkspaceLayout(
           },
         },
       });
-      activeWorkspaceRequest = request;
+      activeWorkspaceRequest = { userId: candidate.userId, promise: request };
       try {
         const response = await request;
-        if (!isCurrent(candidate)) return;
-        if (candidate.dirty === sent) candidate.dirty = null;
-        candidate.error = null;
+        if (candidate.userId !== useAuthStore.getState().user?.id) return;
         // Update only this context: another preferences writer may have changed siblings.
         queryClient.setQueryData<UserPreferences>(
           userPreferencesQueryKey(candidate.userId),
           (previous) => {
             if (!previous) return response;
-            const envelope = response.workbench?.layout?.workspace?.contexts[candidate.context];
-            if (!envelope) return previous;
+            const saved = readWorkspaceEnvelope(
+              contextEnvelope(response.workbench?.layout?.workspace, candidate.context),
+            );
+            if (!saved.snapshot) return previous;
             return {
               ...previous,
               workbench: {
@@ -186,7 +215,7 @@ export function useWorkbenchWorkspaceLayout(
                     engine: "dockview@8",
                     contexts: {
                       ...previous.workbench.layout.workspace?.contexts,
-                      [candidate.context]: envelope,
+                      [candidate.context]: { schemaVersion: 1, snapshot: saved.snapshot },
                     },
                   },
                 },
@@ -194,6 +223,9 @@ export function useWorkbenchWorkspaceLayout(
             };
           },
         );
+        if (!isCurrent(candidate)) return;
+        if (candidate.dirty === sent) candidate.dirty = null;
+        candidate.error = null;
       } catch (error) {
         if (!isCurrent(candidate)) return;
         if (isSchemaDowngrade(error)) {
@@ -222,6 +254,8 @@ export function useWorkbenchWorkspaceLayout(
   const schedule = useCallback(
     (candidate: WorkspaceSession) => {
       if (candidate.timer !== null) window.clearTimeout(candidate.timer);
+      candidate.timer = null;
+      if (candidate.paused) return;
       candidate.timer = window.setTimeout(() => {
         candidate.timer = null;
         void flush(candidate);
@@ -241,15 +275,23 @@ export function useWorkbenchWorkspaceLayout(
 
   useEffect(() => {
     if (!userId || session.initialized || query.isPending || query.isFetching) return;
+    if (activeWorkspaceRequest?.userId === userId) {
+      let cancelled = false;
+      void activeWorkspaceRequest.promise
+        .catch(() => undefined)
+        .then(() => {
+          if (!cancelled) refresh();
+        });
+      return () => {
+        cancelled = true;
+      };
+    }
     session.initialized = true;
     if (query.isError) {
       session.error = "暂时无法读取账号布局，当前使用本地布局。";
     } else {
       const workspace = query.data?.workbench?.layout?.workspace;
-      const envelope = workspace?.contexts[context];
-      const remote = readWorkspaceEnvelope(
-        workspace && workspace.engine !== "dockview@8" ? false : envelope,
-      );
+      const remote = readWorkspaceEnvelope(contextEnvelope(workspace, context));
       if (remote.readOnlyReason) {
         session.readOnlyReason = remote.readOnlyReason;
         session.snapshot = session.standard;
@@ -275,13 +317,28 @@ export function useWorkbenchWorkspaceLayout(
     query.isError,
     query.isFetching,
     query.isPending,
+    revision,
     schedule,
     session,
     userId,
   ]);
 
+  useEffect(() => {
+    if (paused && session.timer !== null) {
+      window.clearTimeout(session.timer);
+      session.timer = null;
+    } else if (!paused && session.initialized && session.dirty && !session.readOnlyReason) {
+      schedule(session);
+    }
+  }, [paused, schedule, session]);
+
   const failRestore = useCallback(() => {
-    if (!isCurrent(session)) return;
+    if (
+      !isCurrent(session) ||
+      session.readOnlyReason === "newer-schema" ||
+      session.readOnlyReason === "restore-failed"
+    )
+      return;
     session.readOnlyReason = "restore-failed";
     session.dirty = null;
     session.snapshot = session.standard;

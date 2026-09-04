@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import {
   authApi,
   DEFAULT_WORKBENCH_PREFERENCES,
@@ -9,6 +9,7 @@ import {
   type FloatingSelectionState,
   type PointcloudCameraState,
   type TriViewFloatState,
+  type UserPreferences,
   type WorkbenchCommonPreferences,
   type WorkbenchImagePreferences,
   type WorkbenchLayoutPreferences,
@@ -109,6 +110,24 @@ export function sanitizeForPersist(wb: WorkbenchPreferences): WorkbenchPreferenc
       triViewFloat: roundPanelRect(l.triViewFloat),
     },
   };
+}
+
+function cachePreferences(
+  client: QueryClient,
+  userId: string | null | undefined,
+  response: UserPreferences,
+): void {
+  client.setQueryData<UserPreferences>(userPreferencesQueryKey(userId), (previous) => {
+    const workspace = previous?.workbench?.layout?.workspace;
+    if (workspace === undefined) return response;
+    return {
+      ...response,
+      workbench: {
+        ...response.workbench,
+        layout: { ...response.workbench.layout, workspace },
+      },
+    };
+  });
 }
 
 function mergeUser(
@@ -564,7 +583,7 @@ export function useWorkbenchConfig(
         void authApi
           .updatePreferences({ workbench: sanitizeForPersist(userConfigRef.current) })
           .then((res) => {
-            queryClient.setQueryData(userPreferencesQueryKey(flushUserId), res);
+            cachePreferences(queryClient, flushUserId, res);
           })
           .catch(() => undefined);
       }
@@ -604,7 +623,7 @@ export function useWorkbenchConfig(
         });
         if (saveRevision !== saveRevisionRef.current) return;
         // v0.21.18 · 整份返回值回灌共享 query 缓存(PATCH 返回整份 preferences, 无子键覆盖风险)。
-        queryClient.setQueryData(userPreferencesQueryKey(userId), res);
+        cachePreferences(queryClient, userId, res);
         const saved = mergeUser(res.workbench, userId);
         userConfigRef.current = saved;
         setUserConfig(saved);
@@ -639,7 +658,7 @@ export function useWorkbenchConfig(
         .updatePreferences({ workbench: sanitizeForPersist(payload) })
         .then((res) => {
           if (saveRevision !== saveRevisionRef.current) return;
-          queryClient.setQueryData(userPreferencesQueryKey(userId), res);
+          cachePreferences(queryClient, userId, res);
           const saved = mergeUser(res.workbench, userId);
           userConfigRef.current = saved;
           setUserConfig(saved);

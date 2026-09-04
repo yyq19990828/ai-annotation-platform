@@ -33,6 +33,7 @@ vi.mock("@/stores/authStore", () => ({
 }));
 
 import { useWorkbenchConfig } from "./useWorkbenchConfig";
+import { userPreferencesQueryKey } from "./useUserPreferences";
 
 function wrapper({ children }: { children: ReactNode }) {
   const c = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -349,6 +350,39 @@ describe("useWorkbenchConfig · v0.15.3 setFields + 多实例广播", () => {
     for (const [payload] of mockUpdatePreferences.mock.calls) {
       expect(payload.workbench.layout).not.toHaveProperty("workspace");
     }
+    vi.useRealTimers();
+  });
+
+  it("a late legacy save response cannot replace a newer workspace cache", async () => {
+    const old = { workbench: { layout: { workspace: { engine: "dockview@8", contexts: {} } } } };
+    mockGetPreferences.mockResolvedValue(old);
+    let resolve!: (response: typeof old) => void;
+    mockUpdatePreferences.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { result } = renderHook(() => useWorkbenchConfig(), {
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      ),
+    });
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    vi.useFakeTimers();
+    act(() => result.current.setFields({ image: { controlPointsSize: 12 } }));
+    await act(async () => vi.advanceTimersByTimeAsync(300));
+    const workspace = {
+      engine: "dockview@8",
+      contexts: { "review:video": { schemaVersion: 2, snapshot: { updated: true } } },
+    };
+    act(() =>
+      client.setQueryData(userPreferencesQueryKey("u1"), { workbench: { layout: { workspace } } }),
+    );
+    await act(async () => resolve(old));
+    expect(client.getQueryData(userPreferencesQueryKey("u1"))).toMatchObject({
+      workbench: { layout: { workspace } },
+    });
     vi.useRealTimers();
   });
 
