@@ -782,8 +782,6 @@ async def list_issues(
     filters = [PointCloudQualityIssue.project_id == project_id]
     if allowed_task_ids is not None:
         filters.append(PointCloudQualityIssue.task_id.in_(allowed_task_ids))
-    if status:
-        filters.append(PointCloudQualityIssue.status == status)
     if severity:
         filters.append(PointCloudQualityIssue.severity == severity)
     if code:
@@ -808,6 +806,20 @@ async def list_issues(
                 PointCloudQualityIssue.frame_end >= frame,
             ]
         )
+    if status:
+        refresh_filters = list(filters)
+        if status == "stale":
+            refresh_filters.append(PointCloudQualityIssue.status != "stale")
+        else:
+            refresh_filters.append(PointCloudQualityIssue.status == status)
+        candidates = list(
+            (
+                await db.execute(select(PointCloudQualityIssue).where(*refresh_filters))
+            ).scalars()
+        )
+        await refresh_issue_staleness_bulk(db, candidates)
+        await db.flush()
+        filters.append(PointCloudQualityIssue.status == status)
     rows = list(
         (
             await db.execute(
@@ -823,10 +835,9 @@ async def list_issues(
             )
         ).scalars()
     )
-    await refresh_issue_staleness_bulk(db, rows)
-    await db.flush()
-    if status:
-        rows = [issue for issue in rows if issue.status == status]
+    if not status:
+        await refresh_issue_staleness_bulk(db, rows)
+        await db.flush()
     total = int(
         (
             await db.execute(

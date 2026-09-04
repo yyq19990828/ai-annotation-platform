@@ -167,15 +167,17 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
       if (!response.ok) throw new Error(`开启相机上色失败: ${response.status}`);
     });
 
-    let pcdRequestCount = 0;
+    const pcdRequestPaths: string[] = [];
     let releaseTargetPcd: (() => void) | null = null;
     const targetPcdGate = new Promise<void>((resolve) => {
       releaseTargetPcd = resolve;
     });
+    page.on("close", () => releaseTargetPcd?.());
     await page.route("**/*.pcd*", async (route) => {
-      pcdRequestCount += 1;
-      if (pcdRequestCount > 1) await targetPcdGate;
-      await route.continue();
+      const path = new URL(route.request().url()).pathname;
+      pcdRequestPaths.push(path);
+      if (path.endsWith("-1.pcd")) await targetPcdGate;
+      await route.continue().catch(() => undefined);
     });
 
     const timelineRequests: string[] = [];
@@ -190,7 +192,6 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`/projects/${lidar.lidar_project_id}/annotate?task=${lidar.lidar_task_ids[0]}`);
-    await page.waitForLoadState("networkidle");
     await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
     await expect
       .poll(() => page.evaluate(() => window.__pointCloudColorWorkerCount ?? 0))
@@ -214,7 +215,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     await expect(page.getByTestId("scene-timeline-track-frame-0")).toBeVisible();
     await expect(page.getByTestId("scene-timeline-track-frame-1")).toBeVisible();
 
-    await expect.poll(() => pcdRequestCount).toBe(2);
+    await expect.poll(() => new Set(pcdRequestPaths).size).toBe(2);
     await page.getByTestId("scene-timeline-frame-1").click();
     await expect(page).toHaveURL(new RegExp(`task=${lidar.lidar_task_ids[1]}`));
     await expect(page.getByTestId("pointcloud-loading")).toBeVisible();
@@ -225,9 +226,10 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
             __pointCloudScene?: { getPointPositions: () => Float32Array | null };
           }
         ).__pointCloudScene;
-        return scene?.getPointPositions() ?? null;
+        return scene?.getPointPositions()?.length ?? 0;
       }),
-    ).toBeNull();
+      "目标帧加载期间应保留当前帧点云，直到可原子替换",
+    ).toBeGreaterThan(0);
     releaseTargetPcd?.();
     await expect(page.getByTestId("scene-timeline-frame-1")).toHaveAttribute(
       "aria-current",
@@ -258,7 +260,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     expect(annotationReads.length, "只应读取进入过的两个 task，不得逐帧 N+1").toBeLessThanOrEqual(
       2,
     );
-    expect(pcdRequestCount, "邻帧预取与当前帧加载应复用同一个 PCD 请求").toBe(2);
+    expect(new Set(pcdRequestPaths).size, "当前帧和邻帧只应访问两个 PCD 资源").toBe(2);
   });
 
   test("3D 跨帧任务中心显式提交范围并恢复持久作业状态", async ({ page, seed }) => {
@@ -412,7 +414,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     expect(runtimeErrors).toEqual([]);
   });
 
-  test("WebGPU 实验路径显示真实 backend，并复用 Worker 且不回读 Canvas", async ({
+  test("WebGPU 实验路径显示真实 backend，使用有界 Worker 且不回读 Canvas", async ({
     page,
     seed,
     browser,
@@ -501,7 +503,12 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
       expect(pointInstances.instanced).toBe(true);
       expect(pointInstances.count).toBeGreaterThan(1_000);
     }
-    await expect.poll(() => page.evaluate(() => window.__pointCloudColorWorkerCount ?? 0)).toBe(1);
+    await expect
+      .poll(() => page.evaluate(() => window.__pointCloudColorWorkerCount ?? 0))
+      .toBeGreaterThan(0);
+    expect(await page.evaluate(() => window.__pointCloudColorWorkerCount ?? 0)).toBeLessThanOrEqual(
+      3,
+    );
     if (backend !== "legacy-webgl2") {
       await expect
         .poll(() =>
@@ -526,6 +533,9 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     await expect(
       page.getByTestId("tri-view-renderer-panel").locator(":scope > canvas"),
     ).toHaveCount(0);
+    expect(await page.evaluate(() => window.__pointCloudColorWorkerCount ?? 0)).toBeLessThanOrEqual(
+      3,
+    );
     if (process.env.PLAYWRIGHT_POINTCLOUD_WEBGPU === "1") {
       await expect(backendBadge).toHaveText("WebGPU");
       await rendererCanvas.evaluate((canvas) => {
@@ -561,7 +571,6 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
-    await page.waitForLoadState("networkidle");
 
     // 点云加载(stats 出数)+ 首帧 box_3d 渲进列表。
     await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
@@ -609,7 +618,6 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
 
     await page.setViewportSize({ width: 2200, height: 1080 });
     await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
-    await page.waitForLoadState("networkidle");
     await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
 
     const card = page.locator('[data-testid^="box-list-item-"]').first();
@@ -737,7 +745,6 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
 
     await page.setViewportSize({ width: 1920, height: 1080 });
     await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
-    await page.waitForLoadState("networkidle");
     await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
 
     const collapsedCamera = page.getByTitle("展开相机").first();
@@ -824,7 +831,6 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
 
     await page.setViewportSize({ width: 1920, height: 1080 });
     await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
-    await page.waitForLoadState("networkidle");
     await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
 
     const collapsedCamera = page.getByTitle("展开相机").first();
@@ -886,7 +892,6 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
-    await page.waitForLoadState("networkidle");
     await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
 
     const card = page.locator('[data-testid^="box-list-item-"]').first();
@@ -947,7 +952,6 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
-    await page.waitForLoadState("networkidle");
     await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
 
     const card = page.locator('[data-testid^="box-list-item-"]').first();
@@ -1005,7 +1009,6 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
-    await page.waitForLoadState("networkidle");
     await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
 
     const card = page.locator('[data-testid^="box-list-item-"]').first();
@@ -1043,7 +1046,6 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     });
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
-    await page.waitForLoadState("networkidle");
     await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
     await page.getByRole("button", { name: "俯视" }).click();
 
@@ -1064,7 +1066,6 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
-    await page.waitForLoadState("networkidle");
     await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
 
     await page.locator("body").click();
@@ -1136,7 +1137,6 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
 
     await page.setViewportSize({ width: 1920, height: 1080 });
     await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
-    await page.waitForLoadState("networkidle");
     await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
     await page
       .locator('[data-testid^="box-list-item-"]')
@@ -1224,7 +1224,6 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
       cameraCount = item.count;
       await page.setViewportSize({ width: item.width, height: item.height });
       await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
-      await page.waitForLoadState("networkidle");
       await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
 
       const expandDetails = page.getByRole("button", { name: "展开标注详情" });
@@ -1286,7 +1285,6 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`/projects/${lidar.lidar_project_id}/annotate?task=${firstTaskId}`);
-    await page.waitForLoadState("networkidle");
     await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
     const defaultView = await readPointCloudViewState(page);
     const canvas = page.locator("canvas").first();

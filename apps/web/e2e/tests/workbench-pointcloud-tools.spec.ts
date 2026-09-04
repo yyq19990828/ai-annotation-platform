@@ -19,7 +19,6 @@ test.describe("workbench pointcloud tools (键盘 handler 守护)", () => {
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
-    await page.waitForLoadState("networkidle");
     await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
 
     // 起始 1 框(seed 注入)。
@@ -148,7 +147,6 @@ test.describe("workbench pointcloud tools (键盘 handler 守护)", () => {
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
-    await page.waitForLoadState("networkidle");
     await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
 
     let failNext = true;
@@ -196,7 +194,6 @@ test.describe("workbench pointcloud tools (键盘 handler 守护)", () => {
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`/projects/${lidar.lidar_project_id}/annotate?task=${firstTaskId}`);
-    await page.waitForLoadState("networkidle");
     await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
 
     let releaseRequest: (() => void) | null = null;
@@ -256,7 +253,6 @@ test.describe("workbench pointcloud tools (键盘 handler 守护)", () => {
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
-    await page.waitForLoadState("networkidle");
     await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
 
     const payloadClasses: string[] = [];
@@ -299,7 +295,6 @@ test.describe("workbench pointcloud tools (键盘 handler 守护)", () => {
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
-    await page.waitForLoadState("networkidle");
     await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
 
     const card = page.locator('[data-testid^="box-list-item-"]').first();
@@ -331,7 +326,6 @@ test.describe("workbench pointcloud tools (键盘 handler 守护)", () => {
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
-    await page.waitForLoadState("networkidle");
     await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
 
     // P 键切 point-mask 工具(走合并键盘 effect:P→onSetThreeDTool("point-mask"))。
@@ -380,7 +374,6 @@ test.describe("workbench pointcloud tools (键盘 handler 守护)", () => {
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
-    await page.waitForLoadState("networkidle");
     await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
     await page.locator("body").click();
     await page.keyboard.press("p");
@@ -416,7 +409,6 @@ test.describe("workbench pointcloud tools (键盘 handler 守护)", () => {
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
-    await page.waitForLoadState("networkidle");
     await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
 
     let annotationMutationCount = 0;

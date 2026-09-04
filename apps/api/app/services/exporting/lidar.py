@@ -321,6 +321,14 @@ def _map_box_attributes(attrs: dict | None) -> BoxExportAttrs:
     return BoxExportAttrs(occluded=occluded)
 
 
+_KITTI_OCCLUSION_BY_SENSOR_VISIBILITY = {
+    "visible": 0,
+    "occluded": 1,
+    "truncated": 0,
+    "unknown": 3,
+}
+
+
 def _box_psr(geometry: dict) -> PsrDict:
     return {
         "center": [float(v) for v in (geometry.get("center") or [0, 0, 0])[:3]],
@@ -420,13 +428,20 @@ def build_kitti_lidar_frame(
         ry = _wrap_pi(math.atan2(-forward_camera[2], forward_camera[0]))
         alpha = _kitti_alpha(ry, x, z)
         attrs = _map_box_attributes(ann.attributes)
+        occluded = (
+            _KITTI_OCCLUSION_BY_SENSOR_VISIBILITY.get(
+                manual_member.sensor_visibility or "unknown", 3
+            )
+            if manual_member is not None
+            else attrs.occluded
+        )
         x1, y1, x2, y2 = bbox
         lines.append(
             " ".join(
                 [
                     str(ann.class_name),
                     f"{truncated:.6f}",
-                    str(attrs.occluded),
+                    str(occluded),
                     f"{alpha:.6f}",
                     f"{x1:.2f}",
                     f"{y1:.2f}",

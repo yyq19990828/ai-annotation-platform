@@ -514,7 +514,7 @@ async def _run_export(
                 )
                 options_payload: object = opts
                 scope_digests: dict[str, object] = {"request": opts}
-                if "nuscenes" in targets:
+                if {"kitti", "nuscenes"} & set(targets):
                     scope_digests[
                         "nuscenes_scope_digest"
                     ] = await _nuscenes_scope_digest(db, proj_uuid, batch_uuid)

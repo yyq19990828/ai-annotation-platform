@@ -297,7 +297,7 @@ def test_kitti_lidar_prefers_persistent_manual_camera_bbox() -> None:
     member.scene_track_id = scene_track_id
     member.sensor_role = "camera_front"
     member.sensor_dataset_item_id = uuid.uuid4()
-    member.sensor_visibility = "visible"
+    member.sensor_visibility = "occluded"
     member.calibration_revision = 1
     member.calibration_digest = "a" * 64
     member.is_active = True
@@ -312,6 +312,7 @@ def test_kitti_lidar_prefers_persistent_manual_camera_bbox() -> None:
 
     fields = result.lines[0].split()
     assert [float(value) for value in fields[4:8]] == pytest.approx([20, 24, 80, 72])
+    assert fields[2] == "1"
     assert result.manual_bbox_count == 1
     assert result.derived_bbox_count == 0
 

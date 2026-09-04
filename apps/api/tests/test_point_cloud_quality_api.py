@@ -21,6 +21,7 @@ from app.schemas.point_cloud_quality import (
 from app.services import async_job as async_job_svc
 from app.services.point_cloud_quality.service import (
     create_quality_run,
+    list_issues,
     refresh_issue_staleness,
 )
 from app.services.sensor_calibration import calibration_digest
@@ -237,6 +238,59 @@ async def test_projection_residual_scan_and_staleness(
     member.version += 1
     await db_session.flush()
     assert await refresh_issue_staleness(db_session, issue) is True
+
+
+async def test_issue_status_filter_refreshes_stale_rows_before_pagination(
+    db_session, super_admin
+):
+    user, _token = super_admin
+    project, scene, tasks, _track, annotations = await _seed_quality_scene(
+        db_session, owner_id=user.id
+    )
+    source = annotations[0]
+    common = {
+        "project_id": project.id,
+        "scene_id": scene.id,
+        "task_id": tasks[0].id,
+        "annotation_id": source.id,
+        "annotation_version": source.version,
+        "related_annotation_ids": [source.id],
+        "code": "low_point_count",
+        "frame_start": 0,
+        "frame_end": 0,
+        "metric": {"point_count": 0},
+        "threshold": {"minimum_points": 5},
+        "evidence": {},
+        "locator": {"task_id": str(tasks[0].id)},
+    }
+    stale_first = PointCloudQualityIssue(
+        **common,
+        source_versions={str(source.id): source.version + 1},
+        severity="blocker",
+        severity_rank=0,
+        dedupe_key="b" * 64,
+    )
+    valid_second = PointCloudQualityIssue(
+        **common,
+        source_versions={str(source.id): source.version},
+        severity="warning",
+        severity_rank=1,
+        dedupe_key="c" * 64,
+    )
+    db_session.add_all([stale_first, valid_second])
+    await db_session.flush()
+
+    rows, total = await list_issues(
+        db_session,
+        project_id=project.id,
+        status="open",
+        limit=1,
+        offset=0,
+    )
+
+    assert [row.id for row in rows] == [valid_second.id]
+    assert total == 1
+    assert stale_first.status == "stale"
 
 
 async def test_quality_run_singleflight_and_worker_track_findings(

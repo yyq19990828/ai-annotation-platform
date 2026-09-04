@@ -46,6 +46,7 @@ import {
 // 超过此点数按步长降采样渲染(大点云性能地基;真正 LOD/分块留后续切片)。
 const DEFAULT_DECIMATE_THRESHOLD = 500_000;
 const WEBGPU_MIN_POINT_CAPACITY = 65_536;
+const POINT_CLOUD_TEST_PROBES_ENABLED = import.meta.env.DEV || import.meta.env.MODE === "e2e";
 
 function webGpuPointCapacity(pointCount: number): number {
   let capacity = WEBGPU_MIN_POINT_CAPACITY;
@@ -258,7 +259,7 @@ export class PointCloudScene {
     surface: PointCloudRendererSurface,
   ) {
     this.container = container;
-    if (import.meta.env.DEV) {
+    if (POINT_CLOUD_TEST_PROBES_ENABLED) {
       (this.container as HTMLElement & { __pointCloudScene?: PointCloudScene }).__pointCloudScene =
         this;
     }
@@ -284,7 +285,7 @@ export class PointCloudScene {
     this.renderer.domElement.style.position = "absolute";
     this.renderer.domElement.style.inset = "0";
     this.triViewPass = new PointCloudTriViewPass(this.rendererStatus.actualBackend, pixelRatio);
-    if (import.meta.env.DEV) {
+    if (POINT_CLOUD_TEST_PROBES_ENABLED) {
       this.container.dataset.pointcloudRendererCount = "1";
       this.container.dataset.pointcloudSubmitCount = "0";
       this.container.dataset.pointcloudMainPassCount = "0";
@@ -362,7 +363,7 @@ export class PointCloudScene {
   }
 
   private markInvalidation(reason: string): void {
-    if (!import.meta.env.DEV) return;
+    if (!POINT_CLOUD_TEST_PROBES_ENABLED) return;
     this.container.dataset.pointcloudLastInvalidateReason = reason;
     this.container.dataset.pointcloudLastInvalidateAt = String(performance.now());
   }
@@ -415,7 +416,7 @@ export class PointCloudScene {
       this.renderer.setScissorTest(false);
       this.renderer.setViewport(0, 0, width, height);
     }
-    if (import.meta.env.DEV && mainPasses + triPasses > 0) {
+    if (POINT_CLOUD_TEST_PROBES_ENABLED && mainPasses + triPasses > 0) {
       this.renderSubmitCount += mainPasses + triPasses;
       this.mainPassCount += mainPasses;
       this.triPassCount += triPasses;
@@ -1618,7 +1619,7 @@ export class PointCloudScene {
     const debugContainer = this.container as HTMLElement & { __pointCloudScene?: PointCloudScene };
     const ownsDebugContainer = debugContainer.__pointCloudScene === this;
     if (ownsDebugContainer) delete debugContainer.__pointCloudScene;
-    if (import.meta.env.DEV && ownsDebugContainer) {
+    if (POINT_CLOUD_TEST_PROBES_ENABLED && ownsDebugContainer) {
       delete this.container.dataset.pointcloudRendererCount;
       delete this.container.dataset.pointcloudSubmitCount;
       delete this.container.dataset.pointcloudMainPassCount;

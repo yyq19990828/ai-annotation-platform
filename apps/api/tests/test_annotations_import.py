@@ -282,6 +282,53 @@ async def test_aap_camera_member_import_links_role_to_scene_track(
         ],
     }
 
+    missing_role_envelope = json.loads(json.dumps(envelope))
+    missing_role_envelope["tasks"][0]["annotations"] = [
+        missing_role_envelope["tasks"][0]["annotations"][0]
+    ]
+    missing_role_envelope["tasks"][0]["annotations"][0]["sensor_role"] = "camera_rear"
+    missing_role = await import_aap_json_annotations(
+        db_session,
+        project.id,
+        json.dumps(missing_role_envelope).encode(),
+        operator_user_id=user.id,
+        dry_run=True,
+    )
+    assert missing_role.imported == 0
+    assert missing_role.skipped == 1
+    assert "not linked to task" in missing_role.errors[0].reason
+
+    missing_primary_envelope = json.loads(json.dumps(envelope))
+    missing_primary_envelope["tasks"][0]["annotations"] = [
+        missing_primary_envelope["tasks"][0]["annotations"][0]
+    ]
+    missing_primary = await import_aap_json_annotations(
+        db_session,
+        project.id,
+        json.dumps(missing_primary_envelope).encode(),
+        operator_user_id=user.id,
+        dry_run=True,
+    )
+    assert missing_primary.imported == 0
+    assert missing_primary.skipped == 1
+    assert "has no primary 3D annotation" in missing_primary.errors[0].reason
+
+    dry_run_result = await import_aap_json_annotations(
+        db_session,
+        project.id,
+        json.dumps(envelope).encode(),
+        operator_user_id=user.id,
+        dry_run=True,
+    )
+    assert dry_run_result.imported == 2
+    assert dry_run_result.errors == []
+    assert (
+        await db_session.scalar(
+            select(func.count(Annotation.id)).where(Annotation.task_id == task.id)
+        )
+        == 0
+    )
+
     result = await import_aap_json_annotations(
         db_session,
         project.id,
@@ -320,6 +367,45 @@ async def test_aap_camera_member_import_links_role_to_scene_track(
     assert duplicate.imported == 1
     assert duplicate.skipped == 1
     assert any("already exists" in error.reason for error in duplicate.errors)
+
+    overwrite_missing_primary = await import_aap_json_annotations(
+        db_session,
+        project.id,
+        json.dumps(missing_primary_envelope).encode(),
+        operator_user_id=user.id,
+        overwrite=True,
+        dry_run=True,
+    )
+    assert overwrite_missing_primary.imported == 0
+    assert overwrite_missing_primary.skipped == 1
+    assert "has no primary 3D annotation" in overwrite_missing_primary.errors[0].reason
+
+    overwrite_dry_run = await import_aap_json_annotations(
+        db_session,
+        project.id,
+        json.dumps(envelope).encode(),
+        operator_user_id=user.id,
+        overwrite=True,
+        dry_run=True,
+    )
+    assert overwrite_dry_run.imported == 2
+    assert overwrite_dry_run.errors == []
+
+    overwritten = await import_aap_json_annotations(
+        db_session,
+        project.id,
+        json.dumps(envelope).encode(),
+        operator_user_id=user.id,
+        overwrite=True,
+    )
+    assert overwritten.imported == 2
+    assert overwritten.errors == []
+    assert (
+        await db_session.scalar(
+            select(func.count(Annotation.id)).where(Annotation.task_id == task.id)
+        )
+        == 2
+    )
 
 
 # ── append 默认语义 ──────────────────────────────────────────────────

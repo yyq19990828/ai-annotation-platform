@@ -15,7 +15,7 @@ import uuid
 from typing import Any
 
 from pydantic import TypeAdapter, ValidationError
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.annotation import Annotation
@@ -279,6 +279,8 @@ async def import_aap_json_annotations(
     purged_tasks: set[uuid.UUID] = set()
     affected_tasks: set[uuid.UUID] = set()
     stored_mask_keys: set[str] = set()
+    dry_run_primary_tracks: set[tuple[uuid.UUID, str]] = set()
+    dry_run_camera_members: set[tuple[uuid.UUID, str, str]] = set()
 
     # 预先查好 project，以便 class_name 软校验（避免逐条 db.get）
     project = await db.get(Project, project_id)
@@ -401,35 +403,29 @@ async def import_aap_json_annotations(
             if entry.user_id is not None:
                 attributes["_imported_user_id"] = str(entry.user_id)
 
-            # 7. dry_run: 只计数不入库
-            if dry_run:
-                result.imported += 1
-                continue
+            if not dry_run:
+                # 只在首条通过基础校验的 entry 即将写入时执行 overwrite，保持
+                # 正式导入既有的清理顺序；dry-run 在下方查询中模拟这次清理。
+                if overwrite and task.id not in purged_tasks:
+                    await _purge_imported_annotations(db, task.id)
+                    purged_tasks.add(task.id)
 
-            # 只在首条通过完整校验的 entry 即将写入时执行 overwrite，避免
-            # 缺对象 / 非法 RLE 把现有导入标注先删掉。
-            if overwrite and task.id not in purged_tasks:
-                await _purge_imported_annotations(db, task.id)
-                purged_tasks.add(task.id)
+                if mask_objects:
+                    unstored = [
+                        item
+                        for item in mask_objects
+                        if str(item[0]["object_key"]) not in stored_mask_keys
+                    ]
+                    await store_mask_reference_objects(
+                        db,
+                        entry.geometry,
+                        unstored,
+                        task_id=task.id,
+                    )
+                    stored_mask_keys.update(
+                        str(reference["object_key"]) for reference, _ in unstored
+                    )
 
-            if mask_objects:
-                unstored = [
-                    item
-                    for item in mask_objects
-                    if str(item[0]["object_key"]) not in stored_mask_keys
-                ]
-                await store_mask_reference_objects(
-                    db,
-                    entry.geometry,
-                    unstored,
-                    task_id=task.id,
-                )
-                stored_mask_keys.update(
-                    str(reference["object_key"]) for reference, _ in unstored
-                )
-
-            # 8. 构造 Annotation 行直接 db.add（不走 AnnotationService.create，
-            #    因为它会逐条触发 _update_task_stats 并可能推进 batch 状态）
             geometry, track_id = prepare_compact_track_identity(
                 entry.geometry, entry.track_id
             )
@@ -441,6 +437,7 @@ async def import_aap_json_annotations(
             sensor_item_id = None
             scene_track_id = None
             if entry.sensor_role is not None:
+                assert track_id is not None
                 sensor_item_id = await db.scalar(
                     select(TaskDatasetItemLink.dataset_item_id)
                     .where(TaskDatasetItemLink.task_id == task.id)
@@ -455,16 +452,30 @@ async def import_aap_json_annotations(
                     )
                     result.skipped += 1
                     continue
-                scene_track_id = await db.scalar(
+                primary_query = (
                     select(Annotation.scene_track_id)
                     .where(Annotation.task_id == task.id)
                     .where(Annotation.track_id == track_id)
                     .where(Annotation.sensor_role.is_(None))
                     .where(Annotation.scene_track_id.is_not(None))
                     .where(Annotation.is_active.is_(True))
-                    .limit(1)
                 )
-                if scene_track_id is None:
+                if dry_run and overwrite:
+                    primary_query = primary_query.where(
+                        func.coalesce(
+                            Annotation.attributes["_imported"].astext, "false"
+                        )
+                        != "true"
+                    )
+                scene_track_id = await db.scalar(primary_query.limit(1))
+                if (
+                    scene_track_id is None
+                    and (
+                        task.id,
+                        track_id,
+                    )
+                    not in dry_run_primary_tracks
+                ):
                     result.errors.append(
                         AAPImportErrorEntry(
                             task_match=match_dict,
@@ -475,16 +486,8 @@ async def import_aap_json_annotations(
                     )
                     result.skipped += 1
                     continue
-                existing_camera_member = await db.scalar(
-                    select(Annotation.id)
-                    .where(Annotation.task_id == task.id)
-                    .where(Annotation.scene_track_id == scene_track_id)
-                    .where(Annotation.sensor_role == entry.sensor_role)
-                    .where(Annotation.is_active.is_(True))
-                    .where(Annotation.was_cancelled.is_(False))
-                    .limit(1)
-                )
-                if existing_camera_member is not None:
+                camera_member_key = (task.id, track_id, entry.sensor_role)
+                if dry_run and camera_member_key in dry_run_camera_members:
                     result.errors.append(
                         AAPImportErrorEntry(
                             task_match=match_dict,
@@ -495,6 +498,48 @@ async def import_aap_json_annotations(
                     )
                     result.skipped += 1
                     continue
+                if scene_track_id is not None:
+                    camera_member_query = (
+                        select(Annotation.id)
+                        .where(Annotation.task_id == task.id)
+                        .where(Annotation.scene_track_id == scene_track_id)
+                        .where(Annotation.sensor_role == entry.sensor_role)
+                        .where(Annotation.is_active.is_(True))
+                        .where(Annotation.was_cancelled.is_(False))
+                    )
+                    if dry_run and overwrite:
+                        camera_member_query = camera_member_query.where(
+                            func.coalesce(
+                                Annotation.attributes["_imported"].astext, "false"
+                            )
+                            != "true"
+                        )
+                    existing_camera_member = await db.scalar(
+                        camera_member_query.limit(1)
+                    )
+                    if existing_camera_member is not None:
+                        result.errors.append(
+                            AAPImportErrorEntry(
+                                task_match=match_dict,
+                                reason=(
+                                    f"camera member for role '{entry.sensor_role}' already exists"
+                                ),
+                            )
+                        )
+                        result.skipped += 1
+                        continue
+
+            # 7. dry_run: 完成关系校验后只计数不入库
+            if dry_run:
+                if entry.sensor_role is not None:
+                    dry_run_camera_members.add((task.id, track_id, entry.sensor_role))
+                elif geometry.get("type") == "box_3d" and track_id is not None:
+                    dry_run_primary_tracks.add((task.id, track_id))
+                result.imported += 1
+                continue
+
+            # 8. 构造 Annotation 行直接 db.add（不走 AnnotationService.create，
+            #    因为它会逐条触发 _update_task_stats 并可能推进 batch 状态）
             ann_kwargs: dict[str, Any] = dict(
                 id=uuid.uuid4(),
                 task_id=task.id,

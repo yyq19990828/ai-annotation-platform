@@ -34,7 +34,6 @@ test.describe("workbench pointcloud smoke (WebGL go/no-go)", () => {
 
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
-    await page.waitForLoadState("networkidle");
 
     // 点云加载失败时状态栏出 "点云加载失败: ..."(WebGL/解码挂的早期信号)。
     await expect(page.getByText(/点云加载失败/)).toHaveCount(0);

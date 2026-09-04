@@ -107,9 +107,11 @@ def test_export_worker_registration_and_route_are_stable() -> None:
     assert celery_app.conf.task_routes[task_name] == {"queue": "export"}
 
 
+@pytest.mark.parametrize("targets", [["davis", "mots"], ["kitti"]])
 @pytest.mark.asyncio
 async def test_export_worker_cache_hit_skips_packaging(
     monkeypatch: pytest.MonkeyPatch,
+    targets: list[str],
 ) -> None:
     db = SimpleNamespace(commit=AsyncMock(), rollback=AsyncMock())
 
@@ -147,6 +149,12 @@ async def test_export_worker_cache_hit_skips_packaging(
         "_scope_fingerprint",
         AsyncMock(return_value=(datetime(2026, 7, 17, tzinfo=timezone.utc), 3)),
     )
+    lidar_scope_digest = AsyncMock(return_value="lidar-scope-digest")
+    monkeypatch.setattr(export_worker, "_nuscenes_scope_digest", lidar_scope_digest)
+    monkeypatch.setattr(
+        "app.services.exporting.lidar_preflight.assert_lidar_export_ready",
+        AsyncMock(),
+    )
     monkeypatch.setattr(
         export_worker,
         "_scope_naming",
@@ -183,16 +191,25 @@ async def test_export_worker_cache_hit_skips_packaging(
     await export_worker._run_export(
         project_id=project_id,
         batch_id=None,
-        targets=["davis", "mots"],
+        targets=targets,
         opts=opts,
         async_job_id=job_id,
         celery_task_id="celery-1",
     )
 
     mark_running.assert_awaited_once()
-    assert compute_cache_key.call_args.kwargs["options_digest"] == (
-        export_worker.canonical_digest(opts)
-    )
+    expected_options: object = opts
+    if "kitti" in targets:
+        expected_options = {
+            "request": opts,
+            "nuscenes_scope_digest": "lidar-scope-digest",
+        }
+        lidar_scope_digest.assert_awaited_once()
+    else:
+        lidar_scope_digest.assert_not_awaited()
+    assert compute_cache_key.call_args.kwargs[
+        "options_digest"
+    ] == export_worker.canonical_digest(expected_options)
     lookup.assert_awaited_once_with(
         db,
         "cache-key",

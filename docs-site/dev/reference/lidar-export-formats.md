@@ -80,8 +80,9 @@ that bbox takes precedence over the derived 2D projection. The 3D dimensions,
 location, and rotation still come from the 3D member. Without a manual member,
 the serializer keeps the derived projection path. `export_report.json` records
 `manual_bbox_count` and `derived_bbox_count` so downstream consumers can audit
-the source of every 2D box. Manual member visibility maps to KITTI occlusion;
-truncation stays tied to the image boundary.
+the source of every 2D box. Manual member visibility maps to KITTI occlusion as
+`visible=0`, `occluded=1`, `truncated=0`, and `unknown=3`; truncation stays tied
+to the image boundary.
 
 Objects fully behind the camera, outside the image, or projection-degenerate are
 omitted from `label_2` and listed with a stable reason in `export_report.json`.
