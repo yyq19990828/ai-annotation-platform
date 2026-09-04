@@ -520,8 +520,10 @@ export function createWorkbenchLayoutExecutor(
     float,
     applyPreset(preset) {
       if (desktop) return;
-      if (preset === "focus") canvas().api.maximize();
-      else replay(createWorkspacePreset(preset, getBounds()));
+      if (preset === "focus") {
+        if (api.hasMaximizedGroup()) api.exitMaximizedGroup();
+        else canvas().api.maximize();
+      } else replay(createWorkspacePreset(preset, getBounds()));
     },
     enterCompact() {
       if (desktop) return;

@@ -122,6 +122,9 @@ describe("workspace executor with Dockview 8", () => {
     const canvas = api.getPanel("canvas");
     controller.applyPreset("focus");
     expect(api.hasMaximizedGroup()).toBe(true);
+    controller.applyPreset("focus");
+    expect(api.hasMaximizedGroup()).toBe(false);
+    controller.applyPreset("focus");
     controller.show("inspector");
     expect(api.hasMaximizedGroup()).toBe(false);
     expect(api.getPanel("canvas")).toBe(canvas);
