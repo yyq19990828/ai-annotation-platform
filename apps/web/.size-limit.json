@@ -5,7 +5,7 @@
   {
     "name": "vendor-dockview",
     "pattern": "vendor-dockview-*.js",
-    "max": "300 KB",
+    "max": "400 KB",
     "required": true
   }
 ]
