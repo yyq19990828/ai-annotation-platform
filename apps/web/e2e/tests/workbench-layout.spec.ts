@@ -78,15 +78,20 @@ test("图片布局预设、面板隐藏和浮动保留画布及未发送讨论�
   const stage = page.getByTestId("workbench-stage");
   const box = await stage.boundingBox();
   if (!box) throw new Error("Image stage has no bounds");
-  const created = page.waitForResponse(
-    (response) =>
-      response.request().method() === "POST" &&
-      new URL(response.url()).pathname === `/api/v1/tasks/${data.task_ids[0]}/annotations`,
-  );
   await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.3);
   await page.mouse.down();
   await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.6, { steps: 8 });
   await page.mouse.up();
+  // The default drawing mode keeps a geometry draft until the user picks a class.
+  const picker = page.getByTestId("class-picker-popover");
+  await expect(picker).toBeVisible();
+  const created = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname === `/api/v1/tasks/${data.task_ids[0]}/annotations`,
+    { timeout: 15_000 },
+  );
+  await picker.getByText("car", { exact: true }).click();
   expect((await created).ok()).toBe(true);
 
   const discussion = panel(page, "discussion");
