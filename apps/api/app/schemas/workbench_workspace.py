@@ -209,8 +209,8 @@ class WorkspaceContextEnvelope(WorkspaceModel):
                     raise ValueError(
                         "canvas must be the only panel in a visible docked group"
                     )
-                if self.schemaVersion == 1 and group.id != "canvas":
-                    raise ValueError("schemaVersion 1 requires the stable canvas group")
+                if group.id != "canvas":
+                    raise ValueError("canvas requires the stable canvas group")
         if layout.grid.maximizedNode is not None:
             node = layout.grid.root
             for index in layout.grid.maximizedNode.location:

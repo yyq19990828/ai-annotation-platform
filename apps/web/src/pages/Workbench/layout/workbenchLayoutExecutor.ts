@@ -21,6 +21,7 @@ import {
 type SidePanelId = Exclude<PanelId, "canvas">;
 type DockPosition = "left" | "right" | "above" | "below";
 type Axis = "HORIZONTAL" | "VERTICAL";
+export type CanvasPlacement = "left" | "right" | "above" | "below" | "center";
 type Tree =
   | { group: WorkspaceGroup; size: number }
   | { axis: Axis; children: Tree[]; size: number };
@@ -44,6 +45,91 @@ function shape(tree: Tree): unknown {
 }
 function groupsIn(node: WorkspaceNode): WorkspaceGroup[] {
   return node.type === "leaf" ? [node.data] : node.data.flatMap(groupsIn);
+}
+function findNode(node: WorkspaceNode, id: string): WorkspaceNode | undefined {
+  if (node.type === "leaf") return node.data.id === id ? node : undefined;
+  return node.data.map((child) => findNode(child, id)).find(Boolean);
+}
+function takeCanvas(tree: Tree): { canvas: Tree | null; rest: Tree | null } {
+  if ("group" in tree)
+    return tree.group.id === "canvas" ? { canvas: tree, rest: null } : { canvas: null, rest: tree };
+  let canvas: Tree | null = null;
+  const children: Tree[] = [];
+  for (const child of tree.children) {
+    const taken = takeCanvas(child);
+    if (taken.canvas) {
+      if (canvas) throw new Error("Duplicate canvas tree");
+      canvas = taken.canvas;
+    }
+    if (taken.rest) children.push(taken.rest);
+  }
+  const rest =
+    children.length === 0
+      ? null
+      : children.length === 1
+        ? { ...children[0], size: tree.size }
+        : { ...tree, children };
+  return { canvas, rest };
+}
+function normalizeTree(tree: Tree): Tree {
+  if ("group" in tree) return tree;
+  const children = tree.children.flatMap((child) => {
+    const clean = normalizeTree(child);
+    if (!("axis" in clean) || clean.axis !== tree.axis) return [clean];
+    const total = clean.children.reduce((sum, item) => sum + (item.size || 1), 0);
+    return clean.children.map((item) => ({
+      ...item,
+      size: (clean.size * (item.size || 1)) / total,
+    }));
+  });
+  return children.length === 1 ? { ...children[0], size: tree.size } : { ...tree, children };
+}
+function nodeFromTree(tree: Tree): WorkspaceNode {
+  return "group" in tree
+    ? { type: "leaf", data: structuredClone(tree.group), size: tree.size }
+    : { type: "branch", data: tree.children.map(nodeFromTree), size: tree.size };
+}
+export function getCanvasPlacement(snapshot: WorkspaceSnapshot): CanvasPlacement {
+  const tree = treeFromNode(snapshot.layout.grid.root, snapshot.layout.grid.orientation);
+  if (!tree || "group" in tree) return "center";
+  const first = tree.children[0];
+  const last = tree.children[tree.children.length - 1];
+  if ("group" in first && first.group.id === "canvas")
+    return tree.axis === "HORIZONTAL" ? "left" : "above";
+  if ("group" in last && last.group.id === "canvas")
+    return tree.axis === "HORIZONTAL" ? "right" : "below";
+  return "center";
+}
+function placeCanvas(
+  input: WorkspaceSnapshot,
+  placement: Exclude<CanvasPlacement, "center">,
+  bounds: WorkspaceBounds,
+): WorkspaceSnapshot {
+  const snapshot = structuredClone(input);
+  const current = treeFromNode(snapshot.layout.grid.root, snapshot.layout.grid.orientation);
+  if (!current) throw new Error("Workspace has no visible tree");
+  const { canvas, rest } = takeCanvas(current);
+  if (!canvas) throw new Error("Workspace has no canvas");
+  if (!rest) return snapshot;
+  const horizontal = placement === "left" || placement === "right";
+  const extent = horizontal ? bounds.width : bounds.height;
+  const canvasSize = Math.max(horizontal ? 480 : 320, extent * 0.65);
+  canvas.size = canvasSize;
+  rest.size = Math.max(1, extent - canvasSize);
+  const root = normalizeTree({
+    axis: horizontal ? "HORIZONTAL" : "VERTICAL",
+    children: placement === "left" || placement === "above" ? [canvas, rest] : [rest, canvas],
+    size: horizontal ? bounds.height : bounds.width,
+  });
+  const node = nodeFromTree(root);
+  const parking = findNode(snapshot.layout.grid.root, "parking");
+  if (parking && node.type === "branch") node.data.push(structuredClone(parking));
+  snapshot.layout.grid.root = node;
+  snapshot.layout.grid.orientation = (
+    horizontal ? "HORIZONTAL" : "VERTICAL"
+  ) as WorkspaceSnapshot["layout"]["grid"]["orientation"];
+  delete snapshot.layout.grid.maximizedNode;
+  return sanitizeWorkspaceSnapshot(snapshot, bounds);
 }
 function insertionSteps(tree: Tree): { id: string; reference: string; direction: DockPosition }[] {
   const steps: { id: string; reference: string; direction: DockPosition }[] = [];
@@ -89,6 +175,9 @@ export interface WorkbenchLayoutExecutor {
   show(id: PanelId): void;
   hide(id: PanelId): void;
   dock(id: PanelId, position: "left" | "right" | "below"): void;
+  moveCanvas(position: "left" | "right" | "above" | "below"): void;
+  toggleCanvasMaximized(): void;
+  isCanvasMaximized(): boolean;
   tab(id: PanelId, target: PanelId): void;
   float(id: PanelId): void;
   applyPreset(preset: WorkspacePresetId): void;
@@ -562,6 +651,17 @@ export function createWorkbenchLayoutExecutor(
     show,
     hide,
     dock,
+    moveCanvas(position) {
+      if (desktop) return;
+      const next = placeCanvas(rawSnapshot(), position, getBounds());
+      replay(next);
+    },
+    toggleCanvasMaximized() {
+      if (desktop) return;
+      if (api.hasMaximizedGroup()) api.exitMaximizedGroup();
+      else canvas().api.maximize();
+    },
+    isCanvasMaximized: () => api.hasMaximizedGroup(),
     tab,
     float,
     applyPreset(preset) {
@@ -569,7 +669,11 @@ export function createWorkbenchLayoutExecutor(
       if (preset === "focus") {
         if (api.hasMaximizedGroup()) api.exitMaximizedGroup();
         else canvas().api.maximize();
-      } else replay(createWorkspacePreset(preset, getBounds()));
+      } else {
+        const placement = getCanvasPlacement(rawSnapshot());
+        const next = createWorkspacePreset(preset, getBounds());
+        replay(placement === "center" ? next : placeCanvas(next, placement, getBounds()));
+      }
     },
     enterCompact() {
       if (desktop) return;

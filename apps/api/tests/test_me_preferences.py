@@ -1379,14 +1379,18 @@ def test_workspace_rejects_invalid_grammar_and_resource_limits():
 def test_workspace_parking_movable_canvas_and_maximized_canvas():
     envelope = _workspace_envelope(2)
     grid = envelope["snapshot"]["layout"]["grid"]
-    grid["root"]["data"][0]["data"]["id"] = "moved-canvas"
-    envelope["snapshot"]["layout"]["activeGroup"] = "moved-canvas"
     grid["maximizedNode"] = {"location": [0]}
     right = grid["root"]["data"][1]
     right["data"]["id"] = "parking"
     right["data"]["hideHeader"] = True
     right["visible"] = False
     UserPreferences.model_validate(_workspace_patch(envelope))
+    moved = copy.deepcopy(envelope)
+    moved["snapshot"]["layout"]["grid"]["root"]["data"][0]["data"]["id"] = (
+        "moved-canvas"
+    )
+    with pytest.raises(ValidationError):
+        UserPreferences.model_validate(_workspace_patch(moved))
     right["visible"] = True
     with pytest.raises(ValidationError):
         UserPreferences.model_validate(_workspace_patch(envelope))

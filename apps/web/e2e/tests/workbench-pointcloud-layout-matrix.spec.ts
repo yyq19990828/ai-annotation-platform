@@ -4,6 +4,7 @@ import type {
   WorkspaceEnvelope,
   WorkspaceSnapshot,
 } from "../../src/pages/Workbench/layout/workbenchLayoutSnapshot";
+import { getCanvasPlacement } from "../../src/pages/Workbench/layout/workbenchLayoutExecutor";
 import { expect, test } from "../fixtures/seed";
 
 // This filename selects the pointcloud project, whose browser also supports image/video.
@@ -137,7 +138,7 @@ async function expectRenderedGroups(
 
 for (const mode of ["annotate", "review"] as const) {
   for (const kind of ["image", "video", "3d"] as const) {
-    test(`${mode}:${kind} 连续50次菜单重排保留画布，跨视口和紧凑模式后刷新恢复`, async ({
+    test(`${mode}:${kind} 连续54次菜单重排保留画布，跨视口和紧凑模式后刷新恢复`, async ({
       page,
       seed,
     }) => {
@@ -204,6 +205,10 @@ for (const mode of ["annotate", "review"] as const) {
           await sameCanvas();
         });
       }
+      for (const command of ["画布移到左侧", "画布移到右侧", "画布移到上方", "画布移到下方"]) {
+        await layoutCommand(page, command);
+        await sameCanvas();
+      }
       // The owner debounces by 300 ms; wait for the last command and its serial request.
       await page.waitForTimeout(650);
       await expect.poll(() => inFlight.size).toBe(0);
@@ -212,7 +217,8 @@ for (const mode of ["annotate", "review"] as const) {
         .poll(async () => (await savedContext(page, context))?.snapshot)
         .toEqual(latestSubmitted);
       const saved = await savedContext(page, context);
-      expect(saved.schemaVersion).toBe(1);
+      expect(saved.schemaVersion).toBe(2);
+      expect(getCanvasPlacement(saved.snapshot as WorkspaceSnapshot)).toBe("below");
       expect(writes.length).toBeGreaterThan(0);
       expect(writes.every((keys) => keys.length === 1 && keys[0] === context)).toBe(true);
       const desktopGroups = await renderedGroups(page);

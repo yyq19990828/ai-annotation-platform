@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDockview, type DockviewApi } from "dockview-react";
-import { createWorkbenchLayoutExecutor } from "./workbenchLayoutExecutor";
+import { createWorkbenchLayoutExecutor, getCanvasPlacement } from "./workbenchLayoutExecutor";
 import { createWorkspacePreset, migrateLegacyWorkspace } from "./workbenchLayoutPresets";
 import {
   PANEL_IDS,
@@ -159,6 +159,25 @@ describe("workspace executor with Dockview 8", () => {
     controller.show("inspector");
     expect(api.hasMaximizedGroup()).toBe(false);
     expect(api.getPanel("canvas")).toBe(canvas);
+  });
+
+  it("moves the existing canvas to every root edge and preserves that edge across presets", () => {
+    const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+    const identities = PANEL_IDS.map((id) => api.getPanel(id));
+    for (const position of ["left", "right", "above", "below"] as const) {
+      controller.moveCanvas(position);
+      const snapshot = controller.capture();
+      expect(getCanvasPlacement(snapshot)).toBe(position);
+      expect(api.getPanel("canvas")?.group.id).toBe("canvas");
+      expect(api.getPanel("canvas")?.group.panels.map((panel) => panel.id)).toEqual(["canvas"]);
+      expect(PANEL_IDS.map((id) => api.getPanel(id))).toEqual(identities);
+    }
+    controller.applyPreset("review");
+    expect(getCanvasPlacement(controller.capture())).toBe("below");
+    controller.toggleCanvasMaximized();
+    expect(controller.isCanvasMaximized()).toBe(true);
+    controller.toggleCanvasMaximized();
+    expect(controller.isCanvasMaximized()).toBe(false);
   });
 
   it("clears a failed compact latch only through explicit read-only recovery", () => {

@@ -136,6 +136,7 @@ const theme = { name: "workbench", className: "workbench-dock-theme" };
 const EMPTY_STATE: WorkbenchWorkspaceState = {
   taskQueueVisible: true,
   inspectorVisible: true,
+  canvasMaximized: false,
   taskQueueWidth: 220,
   inspectorWidth: 260,
   disabled: true,
@@ -218,6 +219,7 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
     const next = {
       taskQueueVisible: opened.includes("task-queue"),
       inspectorVisible: opened.includes("inspector"),
+      canvasMaximized: engine.isCanvasMaximized(),
       taskQueueWidth: api.getPanel("task-queue")?.api.width ?? 220,
       inspectorWidth: api.getPanel("inspector")?.api.width ?? 260,
       disabled: latest.current.owner.readOnly,
@@ -517,6 +519,26 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
           disabled: owner.readOnly,
           onSelect: () => commands.show(id),
         })),
+        { id: "separator-canvas", label: "", divider: true },
+        ...(
+          [
+            ["left", "画布移到左侧"],
+            ["right", "画布移到右侧"],
+            ["above", "画布移到上方"],
+            ["below", "画布移到下方"],
+          ] as const
+        ).map(([position, label]) => ({
+          id: `canvas-${position}`,
+          label,
+          disabled: owner.readOnly || compact,
+          onSelect: () => run((engine) => engine.moveCanvas(position)),
+        })),
+        {
+          id: "canvas-maximize",
+          label: view.canvasMaximized ? "恢复画布" : "最大化画布",
+          disabled: owner.readOnly || compact,
+          onSelect: () => run((engine) => engine.toggleCanvasMaximized()),
+        },
         { id: "separator-reset", label: "", divider: true },
         {
           id: "reset",

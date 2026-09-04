@@ -28,11 +28,12 @@ describe("workspace snapshot boundary", () => {
       });
       expect(clean.layout).not.toHaveProperty("popoutGroups");
       expect(readWorkspaceEnvelope({ schemaVersion: 1, snapshot: clean }).snapshot).toEqual(clean);
+      expect(readWorkspaceEnvelope({ schemaVersion: 2, snapshot: clean }).snapshot).toEqual(clean);
     }
   });
 
   it("does not interpret newer envelopes as v1", () => {
-    for (const schemaVersion of [2, 3, 4])
+    for (const schemaVersion of [3, 4])
       expect(readWorkspaceEnvelope({ schemaVersion, snapshot: {} })).toEqual({
         snapshot: null,
         readOnlyReason: "newer-schema",

@@ -40,6 +40,7 @@ const initial = createWorkspacePreset("standard");
 const changed = createWorkspacePreset("review");
 const latest = createWorkspacePreset("focus");
 const v1 = (snapshot = initial): WorkspaceEnvelope => ({ schemaVersion: 1, snapshot });
+const v2 = (snapshot = initial): WorkspaceEnvelope => ({ schemaVersion: 2, snapshot });
 
 function preferences(
   envelope: WorkspaceEnvelope | undefined = v1(),
@@ -165,7 +166,7 @@ describe("workspace layout owner", () => {
     expect(result.current.restoreRevision).toBe(0);
     await waitFor(() => expect(mocks.patch).toHaveBeenCalledTimes(1));
     expect(mocks.patch.mock.calls[0][0].workbench.layout.workspace.contexts).toEqual({
-      "annotate:image": v1(),
+      "annotate:image": v2(),
     });
   });
 
@@ -190,7 +191,7 @@ describe("workspace layout owner", () => {
     expect(mocks.patch).toHaveBeenCalledTimes(2);
     expect(mocks.patch.mock.calls[1][0]).toEqual({
       workbench: {
-        layout: { workspace: { engine: "dockview@8", contexts: { "annotate:image": v1(latest) } } },
+        layout: { workspace: { engine: "dockview@8", contexts: { "annotate:image": v2(latest) } } },
       },
     });
     expect(result.current.snapshot).toEqual(initial);
@@ -211,7 +212,7 @@ describe("workspace layout owner", () => {
     expect(result.current.readOnly).toBe(false);
     expect(
       JSON.parse(window.localStorage.getItem(workspaceStorageKey("u1", "annotate:image"))!),
-    ).toEqual(v1(changed));
+    ).toEqual(v2(changed));
     act(() => result.current.save(latest));
     await act(async () => vi.advanceTimersByTimeAsync(300));
     expect(result.current.dirty).toBe(false);
@@ -242,10 +243,12 @@ describe("workspace layout owner", () => {
     expect(mocks.patch).toHaveBeenCalledTimes(1);
   });
 
-  it.each([2, 3] as const)(
+  it.each([3, 4] as const)(
     "does not interpret a future schema %s as v1 or permit resetting it",
     async (schemaVersion) => {
-      mocks.get.mockResolvedValue(preferences({ schemaVersion, snapshot: { future: true } }));
+      mocks.get.mockResolvedValue(
+        preferences({ schemaVersion, snapshot: { future: true } } as unknown as WorkspaceEnvelope),
+      );
       const { result } = setup();
       await waitFor(() => expect(result.current.initialized).toBe(true));
       expect(result.current.readOnlyReason).toBe("newer-schema");
@@ -299,7 +302,7 @@ describe("workspace layout owner", () => {
     expect(mocks.patch).toHaveBeenCalledTimes(1);
     expect(
       mocks.patch.mock.calls[0][0].workbench.layout.workspace.contexts["annotate:image"],
-    ).toEqual(v1());
+    ).toEqual(v2());
   });
 
   it("waits for a previous context save and keeps its cache authoritative when returning", async () => {
@@ -326,7 +329,7 @@ describe("workspace layout owner", () => {
     expect(
       client.getQueryData<UserPreferences>(userPreferencesQueryKey("u1"))?.workbench.layout
         .workspace?.contexts["annotate:image"],
-    ).toEqual(v1(latest));
+    ).toEqual(v2(latest));
   });
 
   it.each([
@@ -367,7 +370,7 @@ describe("workspace layout owner", () => {
     expect(mocks.patch).not.toHaveBeenCalled();
     expect(
       JSON.parse(window.localStorage.getItem(workspaceStorageKey("u1", "annotate:image"))!),
-    ).toEqual(v1(changed));
+    ).toEqual(v2(changed));
   });
 
   it("isolates cache, initial hydration and in-flight callbacks when the account changes", async () => {

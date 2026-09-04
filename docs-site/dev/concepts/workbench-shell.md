@@ -88,15 +88,15 @@ type StageKind = "image" | "video" | "3d";
 
 `WorkbenchDockWorkspace` 是 Dockview 的唯一 React 适配层。`workbenchPanelRegistry` 定义稳定面板 ID、渲染槽、生命周期和布局能力；`workbenchLayoutExecutor` 负责移动、停靠、浮动、隐藏、预设与紧凑布局重放。Shell 继续提供业务状态和回调，布局快照不保存 React props、工具、选择、任务、播放位置或编辑草稿。
 
-| Panel ID        | 内容                            | 生命周期与约束                                                     |
-| --------------- | ------------------------------- | ------------------------------------------------------------------ |
-| `canvas`        | ToolDock、当前 Stage、StatusBar | `always`；独占固定 group，禁止移动、浮动、关闭或与其他面板组成标签 |
-| `task-queue`    | 任务队列                        | `onlyWhenVisible`；允许停靠、标签、浮动与隐藏                      |
-| `class-palette` | 类别面板                        | `onlyWhenVisible`；允许停靠、标签、浮动与隐藏                      |
-| `inspector`     | 标注详情、人工标注与 AI 候选    | `always`；隐藏时保留未完成的属性编辑                               |
-| `discussion`    | 评论、历史、Issue               | `always`；隐藏时保留未发送输入                                     |
+| Panel ID        | 内容                            | 生命周期与约束                                                       |
+| --------------- | ------------------------------- | -------------------------------------------------------------------- |
+| `canvas`        | ToolDock、当前 Stage、StatusBar | `always`；独占稳定 group，可从菜单换到根边缘，禁止浮动、关闭或标签化 |
+| `task-queue`    | 任务队列                        | `onlyWhenVisible`；允许停靠、标签、浮动与隐藏                        |
+| `class-palette` | 类别面板                        | `onlyWhenVisible`；允许停靠、标签、浮动与隐藏                        |
+| `inspector`     | 标注详情、人工标注与 AI 候选    | `always`；隐藏时保留未完成的属性编辑                                 |
+| `discussion`    | 评论、历史、Issue               | `always`；隐藏时保留未发送输入                                       |
 
-外围面板可放到画布左、右或底部，也可与其他外围面板组成标签。同窗口浮窗可以包含标签，但浮窗内部不支持再次切分网格。所有拖放和菜单命令都受相同约束；画布 group 不接受中心放置，`parking` 不显示 header，也不接收用户拖放。适配层不提供 popout，不调用 `addPopoutGroup`，快照清洗也不保留外部窗口描述。
+外围面板可放到画布左、右或底部，也可与其他外围面板组成标签。同窗口浮窗可以包含标签，但浮窗内部不支持再次切分网格。画布换位命令将同一个 `canvas` group 放到整棵可见树的左、右、上、下边缘；画布继续隐藏 header 并锁住原生拖放。`parking` 不显示 header，也不接收用户拖放。适配层不提供 popout，不调用 `addPopoutGroup`，快照清洗也不保留外部窗口描述。
 
 隐藏面板时，executor 先记录原 group、tab index 与浮窗矩形，再移动同一实例到不可见的 `parking` group。恢复优先使用仍存在的合法返回位置，否则按 registry 默认区放置。布局入口不调用 `close` 或 `removePanel`；`always` 面板保持 DOM，隐藏时停止非必要的持续工作。
 
@@ -133,7 +133,7 @@ type StageKind = "image" | "video" | "3d";
   engine: "dockview@8",
   contexts: {
     "annotate:image": {
-      schemaVersion: 1,
+      schemaVersion: 2,
       snapshot: { layout: serializedDockview, returns: panelReturnPositions }
     }
   }
@@ -142,9 +142,9 @@ type StageKind = "image" | "video" | "3d";
 
 context 是 `annotate|review × image|video|3d` 的六项闭集，按账号分别保存。`snapshot.layout` 只保留引擎布局字段，`returns` 只保留隐藏面板的 group、index 与可选浮窗矩形。
 
-当前客户端只解释和写入 schema 1，核心面板固定为上述五项。读取到 schema 2、schema 3 或更高版本时显示只读标准布局，提示刷新到新版，不按 schema 1 解释原树，也不允许重置覆盖。损坏快照和引擎恢复失败同样使用只读标准布局，但允许用户在桌面模式显式重置。
+当前客户端解释 schema 1 / 2 并统一写入 schema 2，核心面板固定为上述五项。schema 1 的合法树按原样读取，第一次布局变更后升级为 schema 2；schema 3 或更高版本显示只读标准布局，提示刷新到新版，也不允许重置覆盖。损坏快照和引擎恢复失败同样使用只读标准布局，但允许用户在桌面模式显式重置。
 
-`workbenchLayoutSnapshot` 对读写执行同一套清洗：UTF-8 JSON 上限 64 KiB；持久化最多 7 个 panel、7 个用户 group 和 1 个 parking group；schema 1 只接受五个核心 panel。非有限尺寸、非法 canvas、重复 panel 和不合法树会触发恢复路径，业务 params、popout 与不支持的引擎字段不进入快照。浮窗边界按工作区实际 client rect 夹取。
+`workbenchLayoutSnapshot` 对读写执行同一套清洗：UTF-8 JSON 上限 64 KiB；持久化最多 7 个 panel、7 个用户 group 和 1 个 parking group；schema 1 / 2 只接受五个核心 panel。非有限尺寸、非法 canvas、重复 panel 和不合法树会触发恢复路径，业务 params、popout 与不支持的引擎字段不进入快照。浮窗边界按工作区实际 client rect 夹取。
 
 ### 单一写入者
 

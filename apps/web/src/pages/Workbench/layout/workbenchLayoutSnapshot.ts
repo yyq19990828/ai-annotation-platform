@@ -59,9 +59,10 @@ export interface WorkspaceSnapshot {
   returns: Partial<Record<PanelId, PanelReturn>>;
 }
 export type WorkspaceEnvelope =
-  | { schemaVersion: 1; snapshot: WorkspaceSnapshot }
-  | { schemaVersion: 2 | 3; snapshot: unknown };
+  | { schemaVersion: 1 | 2; snapshot: WorkspaceSnapshot }
+  | { schemaVersion: 3; snapshot: unknown };
 export type WorkspaceReadOnlyReason = "invalid" | "newer-schema";
+export const WORKSPACE_SCHEMA_VERSION = 2 as const;
 
 const LIMIT = 64 * 1024;
 const ID = /^[a-zA-Z0-9_-]{1,64}$/;
@@ -291,9 +292,13 @@ export function readWorkspaceEnvelope(
   if (value === undefined || value === null) return { snapshot: null, readOnlyReason: null };
   try {
     const envelope = record(value);
-    if (typeof envelope.schemaVersion === "number" && envelope.schemaVersion > 1)
+    if (
+      typeof envelope.schemaVersion === "number" &&
+      envelope.schemaVersion > WORKSPACE_SCHEMA_VERSION
+    )
       return { snapshot: null, readOnlyReason: "newer-schema" };
-    if (envelope.schemaVersion !== 1) throw new Error("Unsupported layout schema");
+    if (envelope.schemaVersion !== 1 && envelope.schemaVersion !== 2)
+      throw new Error("Unsupported layout schema");
     return { snapshot: sanitizeWorkspaceSnapshot(envelope.snapshot, bounds), readOnlyReason: null };
   } catch {
     return { snapshot: null, readOnlyReason: "invalid" };

@@ -6,6 +6,7 @@ import { useAuthStore } from "@/stores/authStore";
 import {
   readWorkspaceEnvelope,
   sanitizeWorkspaceSnapshot,
+  WORKSPACE_SCHEMA_VERSION,
   WORKSPACE_CONTEXTS,
   type WorkspaceContext,
   type WorkspaceSnapshot,
@@ -57,7 +58,7 @@ function writeLocal(session: WorkspaceSession, snapshot: WorkspaceSnapshot): voi
   try {
     window.localStorage.setItem(
       workspaceStorageKey(session.userId, session.context),
-      JSON.stringify({ schemaVersion: 1, snapshot }),
+      JSON.stringify({ schemaVersion: WORKSPACE_SCHEMA_VERSION, snapshot }),
     );
   } catch {
     // Server persistence still works when browser storage is unavailable.
@@ -187,7 +188,9 @@ export function useWorkbenchWorkspaceLayout(
           layout: {
             workspace: {
               engine: "dockview@8",
-              contexts: { [candidate.context]: { schemaVersion: 1, snapshot: sent } },
+              contexts: {
+                [candidate.context]: { schemaVersion: WORKSPACE_SCHEMA_VERSION, snapshot: sent },
+              },
             },
           },
         },
@@ -215,7 +218,10 @@ export function useWorkbenchWorkspaceLayout(
                     engine: "dockview@8",
                     contexts: {
                       ...previous.workbench.layout.workspace?.contexts,
-                      [candidate.context]: { schemaVersion: 1, snapshot: saved.snapshot },
+                      [candidate.context]: {
+                        schemaVersion: WORKSPACE_SCHEMA_VERSION,
+                        snapshot: saved.snapshot,
+                      },
                     },
                   },
                 },

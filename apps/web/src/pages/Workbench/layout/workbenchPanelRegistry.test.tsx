@@ -3,10 +3,10 @@ import { PANEL_IDS } from "./workbenchLayoutSnapshot";
 import { PERIPHERAL_PANELS, WORKBENCH_PANEL_REGISTRY } from "./workbenchPanelRegistry";
 
 describe("workbench panel contract", () => {
-  it("keeps canvas fixed and draft panels mounted in all six contexts", () => {
+  it("allows constrained canvas docking and keeps draft panels mounted in all six contexts", () => {
     expect(Object.keys(WORKBENCH_PANEL_REGISTRY)).toEqual(PANEL_IDS);
     expect(WORKBENCH_PANEL_REGISTRY.canvas.capabilities).toEqual({
-      dock: false,
+      dock: true,
       tab: false,
       float: false,
       hide: false,

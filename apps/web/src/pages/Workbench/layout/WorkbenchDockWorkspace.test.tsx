@@ -3,8 +3,9 @@ import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { createRef, useEffect, useState } from "react";
 import type { DockviewApi } from "dockview-react";
 import { createWorkspacePreset } from "./workbenchLayoutPresets";
+import { getCanvasPlacement } from "./workbenchLayoutExecutor";
 import type { WorkbenchWorkspaceCommands } from "./workbenchPanelRegistry";
-import type { WorkspaceContext } from "./workbenchLayoutSnapshot";
+import type { WorkspaceContext, WorkspaceSnapshot } from "./workbenchLayoutSnapshot";
 
 const state = vi.hoisted(() => ({
   compact: false,
@@ -173,6 +174,31 @@ describe("stable Dockview React workspace", () => {
     view.rerender(fixture("annotate:image", commands));
     await waitFor(() => expect(state.api!.getPanel("task-queue")?.group.id).toBe("parking"));
     expect(screen.getByTestId("canvas-marker")).toBe(marker);
+    expect(mounts).toBe(1);
+  });
+
+  it("moves and maximizes the same canvas from the layout menu", async () => {
+    render(fixture());
+    const marker = await screen.findByTestId("canvas-marker");
+    for (const [command, placement] of [
+      ["画布移到左侧", "left"],
+      ["画布移到右侧", "right"],
+      ["画布移到上方", "above"],
+      ["画布移到下方", "below"],
+    ] as const) {
+      fireEvent.click(screen.getByRole("button", { name: "布局" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: command }));
+      const calls = (state.owner.save as ReturnType<typeof vi.fn>).mock.calls;
+      const saved = calls[calls.length - 1]?.[0];
+      expect(getCanvasPlacement(saved as WorkspaceSnapshot)).toBe(placement);
+      expect(screen.getByTestId("canvas-marker")).toBe(marker);
+    }
+    fireEvent.click(screen.getByRole("button", { name: "布局" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "最大化画布" }));
+    expect(state.api!.hasMaximizedGroup()).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "布局" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "恢复画布" }));
+    expect(state.api!.hasMaximizedGroup()).toBe(false);
     expect(mounts).toBe(1);
   });
 

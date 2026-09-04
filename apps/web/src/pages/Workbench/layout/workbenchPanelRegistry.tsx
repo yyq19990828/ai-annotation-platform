@@ -10,6 +10,7 @@ export interface WorkbenchWorkspaceCommands {
 export interface WorkbenchWorkspaceState {
   taskQueueVisible: boolean;
   inspectorVisible: boolean;
+  canvasMaximized: boolean;
   taskQueueWidth: number;
   inspectorWidth: number;
   disabled: boolean;
@@ -21,7 +22,7 @@ const SIDE_CAPABILITIES = { dock: true, tab: true, float: true, hide: true } as 
 export const WORKBENCH_PANEL_REGISTRY = {
   canvas: {
     ...PANEL_SCOPE,
-    capabilities: { dock: false, tab: false, float: false, hide: false },
+    capabilities: { dock: true, tab: false, float: false, hide: false },
     id: "canvas",
     title: "画布",
     renderer: "always",

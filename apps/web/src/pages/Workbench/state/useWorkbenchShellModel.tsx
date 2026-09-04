@@ -5450,6 +5450,7 @@ export function useWorkbenchShellModel({
   const [workspaceState, setWorkspaceState] = useState<WorkbenchWorkspaceState>({
     taskQueueVisible: true,
     inspectorVisible: true,
+    canvasMaximized: false,
     taskQueueWidth: 220,
     inspectorWidth: 260,
     disabled: true,
