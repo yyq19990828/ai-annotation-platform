@@ -94,7 +94,9 @@ function roundPanelRect<T>(panel: T): T {
 
 /** 持久化前对 layout 浮窗坐标取整，避免小数像素触发后端 int 校验 422。 */
 export function sanitizeForPersist(wb: WorkbenchPreferences): WorkbenchPreferences {
-  const l = wb.layout;
+  // Docking snapshots have their own writer; this legacy full-tree PATCH must never
+  // carry a stale workspace copied from an earlier preferences response.
+  const { workspace: _workspace, ...l } = wb.layout;
   return {
     ...wb,
     layout: {
@@ -379,6 +381,7 @@ function mergeLayout(
     ? (local.pointcloudCamera ?? remote?.pointcloudCamera)
     : (remote?.pointcloudCamera ?? local.pointcloudCamera);
   return {
+    workspace: merged.workspace,
     leftOpen: merged.leftOpen ?? DEFAULT_WORKBENCH_PREFERENCES.layout.leftOpen,
     rightOpen: merged.rightOpen ?? DEFAULT_WORKBENCH_PREFERENCES.layout.rightOpen,
     attrPanelCollapsed:

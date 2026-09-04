@@ -332,6 +332,26 @@ describe("useWorkbenchConfig · v0.15.3 setFields + 多实例广播", () => {
     vi.useRealTimers();
   });
 
+  it("keeps workspace in local config while both legacy setters omit it from PATCH", async () => {
+    const workspace = { engine: "dockview@8", contexts: {} };
+    mockGetPreferences.mockResolvedValue({ workbench: { layout: { workspace } } });
+    mockUpdatePreferences.mockImplementation(async (payload) => payload);
+    const { result } = renderHook(() => useWorkbenchConfig(), { wrapper });
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    expect(result.current.layout.workspace).toEqual(workspace);
+
+    vi.useFakeTimers();
+    act(() => result.current.setFields({ image: { controlPointsSize: 12 } }));
+    await act(async () => vi.advanceTimersByTimeAsync(300));
+    act(() => result.current.setLayout({ rightOpen: false }));
+    await act(async () => vi.advanceTimersByTimeAsync(300));
+    expect(mockUpdatePreferences).toHaveBeenCalledTimes(2);
+    for (const [payload] of mockUpdatePreferences.mock.calls) {
+      expect(payload.workbench.layout).not.toHaveProperty("workspace");
+    }
+    vi.useRealTimers();
+  });
+
   it("一个实例 setFields 后，另一实例(画布)同步收到新值 —— 抽屉实时预览链路", async () => {
     mockGetPreferences.mockResolvedValue({ workbench: {} });
     mockUpdatePreferences.mockImplementation(async (payload) => payload);

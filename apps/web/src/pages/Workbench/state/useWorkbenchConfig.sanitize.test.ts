@@ -6,6 +6,18 @@ import { sanitizeForPersist } from "./useWorkbenchConfig";
 // 整数（Pydantic int）；前端浮窗坐标来自 getBoundingClientRect / 指针位移，可能带小数，
 // 直接 PATCH 会被 int_from_float 拒（422）。sanitizeForPersist 在持久化前就地取整。
 describe("sanitizeForPersist", () => {
+  it("excludes workspace from every legacy writer without deleting its in-memory copy", () => {
+    const wb = {
+      ...DEFAULT_WORKBENCH_PREFERENCES,
+      layout: {
+        ...DEFAULT_WORKBENCH_PREFERENCES.layout,
+        workspace: { engine: "dockview@8" as const, contexts: {} },
+      },
+    };
+    expect(sanitizeForPersist(wb).layout).not.toHaveProperty("workspace");
+    expect(wb.layout.workspace).toEqual({ engine: "dockview@8", contexts: {} });
+  });
+
   it("把浮窗坐标小数取整为整数", () => {
     const wb = {
       ...DEFAULT_WORKBENCH_PREFERENCES,

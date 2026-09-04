@@ -1,4 +1,8 @@
 import { apiClient } from "./client";
+import type {
+  WorkspaceContext,
+  WorkspaceEnvelope,
+} from "@/pages/Workbench/layout/workbenchLayoutSnapshot";
 
 export interface LoginPayload {
   email: string;
@@ -221,7 +225,13 @@ export interface PointcloudCameraState {
   mode: "orbit" | "bev";
 }
 
+export interface WorkspacePreferences {
+  engine: "dockview@8";
+  contexts: Partial<Record<WorkspaceContext, WorkspaceEnvelope>>;
+}
+
 export interface WorkbenchLayoutPreferences {
+  workspace?: WorkspacePreferences;
   leftOpen: boolean;
   rightOpen: boolean;
   /** v0.20.19 · 右栏「标注详情」属性区折叠态(随账号持久)。 */
@@ -278,6 +288,12 @@ export interface UserPreferences {
   ai: AIToolPreferences;
   ui: UIPreferences;
 }
+
+export type UserPreferencesPatch = Omit<Partial<UserPreferences>, "workbench"> & {
+  workbench?: Omit<Partial<WorkbenchPreferences>, "layout"> & {
+    layout?: Partial<WorkbenchLayoutPreferences>;
+  };
+};
 
 export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
   common: {
@@ -416,6 +432,6 @@ export const authApi = {
   // v0.9.41 · 工作台偏好读写
   getPreferences: () => apiClient.get<UserPreferences>("/auth/me/preferences"),
   // 后端按顶层子树合并（exclude_unset），故可只提交单个子树（workbench 或 ai）。
-  updatePreferences: (payload: Partial<UserPreferences>) =>
+  updatePreferences: (payload: UserPreferencesPatch) =>
     apiClient.patch<UserPreferences>("/auth/me/preferences", payload),
 };
