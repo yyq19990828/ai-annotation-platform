@@ -16,11 +16,9 @@ export type AsyncJobKind =
   | "point_cloud_cross_frame"
   | string;
 
-/** 与后端 async_jobs.CANCELLABLE_KINDS 保持一致。 */
+/** 仅展示 worker 实际支持协作取消的作业。 */
 export const CANCELLABLE_ASYNC_JOB_KINDS = new Set<AsyncJobKind>([
   "batch_predict",
-  "predictions_import",
-  "audit_archive",
   "dataset_import",
   "mask_qc",
   "mask_repair",

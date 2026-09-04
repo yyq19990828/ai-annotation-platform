@@ -1911,6 +1911,11 @@ async def decide_tracker_job(
 
     touched: list[Annotation] = []
     instance_annotations = dict(state.get("instance_annotations") or {})
+    deferred_results = {
+        str(instance_id): [dict(row) for row in instance_rows if isinstance(row, dict)]
+        for instance_id, instance_rows in (staged.get("deferred_results") or {}).items()
+        if isinstance(instance_rows, list)
+    }
     if decision == "accept":
         grid_step = int(staged.get("grid_step", 1))
         by_instance: dict[str, list[TrackerFrameResult]] = defaultdict(list)
@@ -1926,17 +1931,22 @@ async def decide_tracker_job(
             discovered = annotation is None
             if discovered:
                 annotation = _new_discovered_track(target, output_geometry)
-            frames = {result.frame_index for result in by_instance[instance_id]}
+            instance_results = [
+                *_deserialize_results(deferred_results.pop(instance_id, [])),
+                *by_instance[instance_id],
+            ]
+            frames = {result.frame_index for result in instance_results}
             apply_tracker_results(
                 annotation,
                 job,
-                by_instance[instance_id],
+                instance_results,
                 grid_step,
                 output_geometry,
                 override_manual_frames=frames if override_manual else None,
             )
             if discovered:
                 if not _discovered_track_has_keyframes(annotation):
+                    deferred_results[instance_id] = _serialize_results(instance_results)
                     continue
                 db.add(annotation)
                 instance_annotations[instance_id] = str(annotation.id)
@@ -2018,7 +2028,11 @@ async def decide_tracker_job(
     job.revision = next_revision
     if remaining:
         job.status = VideoTrackerJobStatus.PARTIALLY_REVIEWED.value
-        job.staged_result = {**staged, "results": remaining}
+        job.staged_result = {
+            **staged,
+            "results": remaining,
+            "deferred_results": deferred_results,
+        }
     else:
         accepted_any = any(
             item.get("decision") == "accept"
@@ -2758,6 +2772,13 @@ async def run_tracker_job(
 
             if heartbeat_failed:
                 raise RuntimeError("tracker route lease heartbeat failed")
+
+            # Backend 响应数组不保证按帧有序；统一转为追踪方向的遍历顺序，
+            # 使窗口末尾几何和多实例跨窗关联都使用真实边界帧。
+            window_results.sort(
+                key=lambda result: result.frame_index,
+                reverse=window_direction == "backward",
+            )
 
             # 窗末: text-multiplex 关联 remap 窗内 obj_id → 跨窗全局 instance_id。
             if associate_multiplex:

@@ -1628,6 +1628,10 @@ class PreannotateRequest(BaseModel):
         for s in sorted(stages, key=lambda x: x.stage):
             if s.parent_stage is None:
                 continue
+            if s.parent_stage >= s.stage:
+                raise ValueError(
+                    f"stage {s.stage} 的 parent_stage={s.parent_stage} 必须小于子阶段序号"
+                )
             if s.parent_stage not in known_depth:
                 raise ValueError(
                     f"stage {s.stage} 的 parent_stage={s.parent_stage} 未在前面定义; "
@@ -1865,6 +1869,21 @@ async def trigger_preannotation(
 ):
     from app.services.ml_backend import MLBackendService
     from app.services.audit import AuditService
+    from app.workers.tasks import _build_predict_context, _retryable_request_context
+
+    retry_context = _build_predict_context(
+        prompt=body.prompt,
+        output_mode=body.output_mode,
+        params=body.params,
+        model_id=body.model_id,
+        task_type=body.task_type,
+        model_variants=body.model_variants,
+        class_filter=body.class_filter,
+        box_threshold=float(project.box_threshold),
+        text_threshold=float(project.text_threshold),
+    )
+    if retry_context is not None and _retryable_request_context(retry_context) is None:
+        raise HTTPException(status_code=422, detail="预标注模型上下文不能超过 8 KiB")
 
     svc = MLBackendService(db)
     source_backend_id = body.ml_backend_id

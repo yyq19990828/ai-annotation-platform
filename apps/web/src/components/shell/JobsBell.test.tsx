@@ -10,8 +10,6 @@ const mockCancel = vi.fn();
 vi.mock("@/api/asyncJobs", () => ({
   CANCELLABLE_ASYNC_JOB_KINDS: new Set([
     "batch_predict",
-    "predictions_import",
-    "audit_archive",
     "dataset_import",
     "mask_qc",
     "mask_repair",
@@ -134,11 +132,10 @@ describe("JobsBell", () => {
           ...baseRow,
           id: "j3",
           kind: "predictions_import",
-          status: "completed" as const,
-          progress_pct: 100,
         },
+        { ...baseRow, id: "j4", kind: "audit_archive" },
       ],
-      total: 3,
+      total: 4,
     });
     renderBell();
     fireEvent.click(await screen.findByTestId("jobs-bell-trigger"));
@@ -146,6 +143,7 @@ describe("JobsBell", () => {
     await waitFor(() => expect(mockCancel).toHaveBeenCalledWith("j1"));
     expect(screen.queryByTestId("job-cancel-j2")).toBeNull();
     expect(screen.queryByTestId("job-cancel-j3")).toBeNull();
+    expect(screen.queryByTestId("job-cancel-j4")).toBeNull();
   });
 
   // v0.11.17 · 筛选 + 终态 dismiss

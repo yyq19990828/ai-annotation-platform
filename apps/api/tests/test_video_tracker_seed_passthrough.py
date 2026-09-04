@@ -151,14 +151,18 @@ class _SingleInstanceWithoutPrimaryCaptureAdapter:
 
     model_key = "sam3_video_interactive"
 
-    def __init__(self) -> None:
+    def __init__(self, *, reverse_results: bool = False) -> None:
         self.windows: list[tuple[int, int, object, dict]] = []
+        self.reverse_results = reverse_results
 
     async def propagate(self, ctx: TrackerContext):
         self.windows.append(
             (ctx.from_frame, ctx.to_frame, ctx.seeds, ctx.source_geometry)
         )
-        for frame_index in range(ctx.from_frame, ctx.to_frame + 1):
+        frame_indices = list(range(ctx.from_frame, ctx.to_frame + 1))
+        if self.reverse_results:
+            frame_indices.reverse()
+        for frame_index in frame_indices:
             yield TrackerFrameResult(
                 frame_index=frame_index,
                 geometry={
@@ -175,10 +179,23 @@ class _SingleInstanceWithoutPrimaryCaptureAdapter:
             )
 
 
+@pytest.mark.parametrize(
+    ("direction", "reverse_results", "expected_boundary_x"),
+    [
+        ("forward", False, 1.0),
+        ("forward", True, 1.0),
+        ("backward", False, 2.0),
+    ],
+)
 async def test_single_instance_without_primary_continues_from_previous_window(
-    db_session, super_admin, monkeypatch
+    db_session,
+    super_admin,
+    monkeypatch,
+    direction,
+    reverse_results,
+    expected_boundary_x,
 ):
-    """无源单目标 PVS 的后续窗也必须拿到上一窗末帧几何。"""
+    """无源单目标 PVS 必须按追踪方向使用窗口边界帧续追。"""
     user, _ = super_admin
     task, item = await _make_video_task(db_session, user.id)
     seeds = [{"obj_id": 1, "points": [[0.5, 0.5, 1]]}]
@@ -190,7 +207,7 @@ async def test_single_instance_without_primary_continues_from_previous_window(
         created_by=user.id,
         status=VideoTrackerJobStatus.QUEUED.value,
         model_key="sam3_video_interactive",
-        direction="forward",
+        direction=direction,
         from_frame=0,
         to_frame=3,
         prompt={"seeds": seeds},
@@ -200,7 +217,9 @@ async def test_single_instance_without_primary_continues_from_previous_window(
     await db_session.commit()
 
     monkeypatch.setattr(settings, "video_tracker_sam3_window_size_frames", 2)
-    adapter = _SingleInstanceWithoutPrimaryCaptureAdapter()
+    adapter = _SingleInstanceWithoutPrimaryCaptureAdapter(
+        reverse_results=reverse_results
+    )
     monkeypatch.setattr(
         "app.services.video_tracking.runner.get_tracker_adapter",
         lambda _model_key: adapter,
@@ -214,7 +233,7 @@ async def test_single_instance_without_primary_continues_from_previous_window(
     assert job.status == "pending_review"
     assert adapter.windows[0][2] == seeds
     assert adapter.windows[1][2] is None
-    assert adapter.windows[1][3]["x"] == pytest.approx(1.0)
+    assert adapter.windows[1][3]["x"] == pytest.approx(expected_boundary_x)
 
 
 async def test_multi_instance_continuation_reseeds_each_instance(
