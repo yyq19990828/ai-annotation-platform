@@ -89,6 +89,7 @@ export interface WorkbenchLayoutExecutor {
   show(id: PanelId): void;
   hide(id: PanelId): void;
   dock(id: PanelId, position: "left" | "right" | "below"): void;
+  tab(id: PanelId, target: PanelId): void;
   float(id: PanelId): void;
   applyPreset(preset: WorkspacePresetId): void;
   enterCompact(): void;
@@ -314,6 +315,25 @@ export function createWorkbenchLayoutExecutor(
     panel(id).api.setActive();
     ensureParking();
   }
+  function tab(id: PanelId, target: PanelId) {
+    if (desktop || id === "canvas" || target === "canvas") return;
+    show(target);
+    const group = panel(target).group;
+    move(id, group);
+    group.api.setVisible(true);
+    const minimumWidth = Math.max(
+      ...group.panels.map((p) => WORKBENCH_PANEL_REGISTRY[p.id as PanelId].minWidth),
+    );
+    const minimumHeight = Math.max(
+      ...group.panels.map((p) => WORKBENCH_PANEL_REGISTRY[p.id as PanelId].minHeight),
+    );
+    group.api.setConstraints({
+      minimumWidth: Math.max(minimumWidth, group.api.location.type === "floating" ? 320 : 0),
+      minimumHeight: Math.max(minimumHeight, group.api.location.type === "floating" ? 320 : 0),
+    });
+    panel(id).api.setActive();
+    ensureParking();
+  }
   function replay(input: WorkspaceSnapshot) {
     const snapshot = sanitizeWorkspaceSnapshot(input, getBounds());
     const tree = treeFromNode(snapshot.layout.grid.root, snapshot.layout.grid.orientation);
@@ -517,6 +537,7 @@ export function createWorkbenchLayoutExecutor(
     show,
     hide,
     dock,
+    tab,
     float,
     applyPreset(preset) {
       if (desktop) return;

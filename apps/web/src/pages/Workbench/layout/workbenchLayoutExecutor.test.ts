@@ -91,6 +91,28 @@ describe("workspace executor with Dockview 8", () => {
     expect(api.getPanel("canvas")?.group.panels.map((p) => p.id)).toEqual(["canvas"]);
   });
 
+  it("merges existing panels into tabs through the menu command and guards canvas and compact mode", () => {
+    const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+    const discussion = api.getPanel("discussion"),
+      inspector = api.getPanel("inspector");
+    controller.hide("inspector");
+    controller.hide("discussion");
+    controller.tab("discussion", "inspector");
+    expect(api.getPanel("discussion")).toBe(discussion);
+    expect(api.getPanel("inspector")).toBe(inspector);
+    expect(discussion?.group).toBe(inspector?.group);
+    expect(discussion?.group.panels.map((p) => p.id)).toEqual(["inspector", "discussion"]);
+    expect(discussion?.api.isActive).toBe(true);
+    expect(discussion?.group.minimumWidth).toBeGreaterThanOrEqual(220);
+    controller.tab("discussion", "canvas");
+    controller.tab("canvas", "inspector");
+    expect(api.getPanel("canvas")?.group.panels.map((p) => p.id)).toEqual(["canvas"]);
+    controller.enterCompact();
+    controller.tab("task-queue", "class-palette");
+    expect(api.getPanel("task-queue")?.group.id).toBe("parking");
+    expect(api.groups.some((group) => group.id === "compact-overlay")).toBe(false);
+  });
+
   it("preserves nested splits, tab order, floats, hidden items and the seven-group limit", () => {
     const controller = createWorkbenchLayoutExecutor(api, () => bounds);
     controller.dock("class-palette", "below");
