@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from unittest.mock import AsyncMock, MagicMock
 import uuid
 import zipfile
 
@@ -10,7 +11,7 @@ import pytest
 from sqlalchemy import select
 
 from app.db.models.annotation import Annotation
-from app.db.models.dataset import Dataset, DatasetItem, Scene
+from app.db.models.dataset import Dataset, DatasetItem, Scene, SensorCalibrationRevision
 from app.db.models.scene_track import SceneTrack
 from app.db.models.task import Task
 from app.db.models.task_dataset_item_link import TaskDatasetItemLink
@@ -30,6 +31,7 @@ from app.services.exporting.packaging import build_export_zip
 from app.services.scene_track_domain import bind_annotation_to_scene_track
 from app.services.sensor_calibration import (
     calibration_digest,
+    list_calibration_revisions,
     update_calibration,
 )
 from app.services.task_dataset_link import link_items
@@ -531,3 +533,168 @@ async def test_camera_member_http_create_and_list(
     assert [item["id"] for item in body["items"]] == [member["id"]]
     assert body["track_revision"] == 2
     assert body["projected_bbox"] is not None
+
+
+async def test_calibration_history_keeps_virtual_baseline_and_append_only_order(
+    db_session, super_admin
+):
+    user, _ = super_admin
+    _task, camera, _source, _track = await _seed(db_session, user.id)
+
+    baseline = await list_calibration_revisions(db_session, camera)
+    assert [item.revision for item in baseline] == [1]
+    assert baseline[0].created_at is None
+    assert baseline[0].digest == calibration_digest(_calibration())
+
+    second = await update_calibration(
+        db_session,
+        dataset_item_id=camera.id,
+        calibration=_calibration(cx=110),
+        expected_revision=1,
+        expected_digest=baseline[0].digest,
+        actor_id=user.id,
+    )
+    await update_calibration(
+        db_session,
+        dataset_item_id=camera.id,
+        calibration=_calibration(cx=120),
+        expected_revision=second.revision,
+        expected_digest=second.digest,
+        actor_id=user.id,
+    )
+
+    history = await list_calibration_revisions(db_session, camera)
+    assert [item.revision for item in history] == [3, 2, 1]
+    assert [item.calibration.intrinsic[2] for item in history] == [120, 110, 100]
+    assert all(item.created_at is not None for item in history)
+
+
+async def test_virtual_calibration_history_uses_one_consistent_read():
+    item = DatasetItem(
+        id=uuid.uuid4(),
+        dataset_id=uuid.uuid4(),
+        file_name="front.jpg",
+        file_path="mm/front.jpg",
+        file_type="image",
+        metadata_={"calibration": _calibration().model_dump(mode="json")},
+    )
+    db = AsyncMock()
+    result = MagicMock()
+    result.scalars.return_value = []
+    db.execute.return_value = result
+
+    history = await list_calibration_revisions(db, item)
+
+    assert [entry.revision for entry in history] == [1]
+    assert history[0].created_at is None
+    db.execute.assert_awaited_once()
+
+
+async def test_camera_calibration_history_http_and_noop_update(
+    db_session, httpx_client, super_admin
+):
+    user, token = super_admin
+    task, camera, _source, _track = await _seed(db_session, user.id)
+    headers = {"Authorization": f"Bearer {token}"}
+    digest = calibration_digest(_calibration())
+    path = f"/api/v1/tasks/{task.id}/point-cloud/cameras/camera_front/calibration"
+    camera.width = None
+    camera.height = None
+    await db_session.flush()
+
+    initial = await httpx_client.get(path, headers=headers)
+    assert initial.status_code == 200, initial.text
+    assert initial.json()["current_revision"] == 1
+    assert [item["revision"] for item in initial.json()["items"]] == [1]
+
+    unchanged = await httpx_client.patch(
+        path,
+        headers=headers,
+        json={
+            "calibration": _calibration().model_dump(mode="json"),
+            "expected_revision": 1,
+            "expected_digest": digest,
+        },
+    )
+    assert unchanged.status_code == 200, unchanged.text
+    assert unchanged.json()["revision"] == 1
+    materialized = await db_session.scalar(
+        select(SensorCalibrationRevision.id).where(
+            SensorCalibrationRevision.dataset_item_id == camera.id
+        )
+    )
+    assert materialized is None
+
+    changed = await httpx_client.patch(
+        path,
+        headers=headers,
+        json={
+            "calibration": _calibration(cx=110).model_dump(mode="json"),
+            "expected_revision": 1,
+            "expected_digest": digest,
+        },
+    )
+    assert changed.status_code == 200, changed.text
+    assert changed.json()["revision"] == 2
+
+    history = await httpx_client.get(path, headers=headers)
+    assert history.status_code == 200, history.text
+    body = history.json()
+    assert body["current_revision"] == 2
+    assert [item["revision"] for item in body["items"]] == [2, 1]
+    assert str(camera.id) == body["items"][0]["dataset_item_id"]
+
+
+async def test_project_owner_cannot_update_cross_project_shared_calibration(
+    db_session, httpx_client, project_admin, super_admin
+):
+    owner, token = project_admin
+    other_owner, _ = super_admin
+    task, camera, _source, _track = await _seed(db_session, owner.id)
+    other_project = await create_project(
+        db_session, owner_id=other_owner.id, type_key="lidar"
+    )
+    other_project.data_type = "lidar"
+    other_task = Task(
+        project_id=other_project.id,
+        dataset_item_id=task.dataset_item_id,
+        display_id=f"T-MM-{uuid.uuid4().hex[:8]}",
+        file_name=task.file_name,
+        file_path=task.file_path,
+        file_type="point_cloud",
+        status="in_progress",
+    )
+    db_session.add(other_task)
+    await db_session.flush()
+    db_session.add(
+        TaskDatasetItemLink(
+            task_id=other_task.id,
+            dataset_item_id=camera.id,
+            role="camera_front",
+            sensor_name="CAM_FRONT",
+        )
+    )
+    await db_session.flush()
+
+    response = await httpx_client.patch(
+        f"/api/v1/tasks/{task.id}/point-cloud/cameras/camera_front/calibration",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "calibration": _calibration(cx=110).model_dump(mode="json"),
+            "expected_revision": 1,
+            "expected_digest": calibration_digest(_calibration()),
+        },
+    )
+
+    assert response.status_code == 403, response.text
+    assert response.json()["detail"] == (
+        "Only a super admin can update calibration shared across projects"
+    )
+    assert (
+        await db_session.scalar(
+            select(SensorCalibrationRevision.id).where(
+                SensorCalibrationRevision.dataset_item_id == camera.id
+            )
+        )
+        is None
+    )

@@ -27296,6 +27296,35 @@
         "title": "SensorCalibration",
         "type": "object"
       },
+      "SensorCalibrationHistoryOut": {
+        "properties": {
+          "current_digest": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Current Digest",
+            "type": "string"
+          },
+          "current_revision": {
+            "minimum": 1.0,
+            "title": "Current Revision",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SensorCalibrationRevisionOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "current_revision",
+          "current_digest",
+          "items"
+        ],
+        "title": "SensorCalibrationHistoryOut",
+        "type": "object"
+      },
       "SensorCalibrationRevisionOut": {
         "properties": {
           "calibration": {
@@ -35141,7 +35170,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.24.19"
+    "version": "0.24.20"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -54119,6 +54148,61 @@
       }
     },
     "/api/v1/tasks/{task_id}/point-cloud/cameras/{camera_role}/calibration": {
+      "get": {
+        "operationId": "get_camera_calibration_history_api_v1_tasks__task_id__point_cloud_cameras__camera_role__calibration_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "camera_role",
+            "required": true,
+            "schema": {
+              "title": "Camera Role",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SensorCalibrationHistoryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Camera Calibration History",
+        "tags": [
+          "tasks"
+        ]
+      },
       "patch": {
         "operationId": "patch_camera_calibration_api_v1_tasks__task_id__point_cloud_cameras__camera_role__calibration_patch",
         "parameters": [

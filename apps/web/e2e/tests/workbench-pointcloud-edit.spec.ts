@@ -816,6 +816,65 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     expect(boxPostCount).toBe(2);
   });
 
+  test("标定 revision 管理追加原始矩阵并保留历史", async ({ page, seed }) => {
+    test.setTimeout(60_000);
+    await seed.reset();
+    const lidar = await seed.seedLidar();
+    await seed.injectToken(page, "admin@e2e.test");
+
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
+    await page.waitForLoadState("networkidle");
+    await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
+
+    const collapsedCamera = page.getByTitle("展开相机").first();
+    if (await collapsedCamera.isVisible()) await collapsedCamera.click();
+    await page.getByTitle("放大相机").first().click();
+    await page.getByRole("button", { name: /标定 · R1/ }).click();
+
+    const sheet = page.getByRole("dialog", { name: "相机标定" });
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByText("虚拟基线")).toBeVisible();
+    await page.setViewportSize({ width: 375, height: 812 });
+    await expect(page.getByText("请切换到桌面端")).toBeVisible();
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
+      .toBe(true);
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await expect(sheet).toBeVisible();
+    await sheet.getByRole("button", { name: "编辑当前标定" }).click();
+    const editor = sheet.getByLabel("标定 JSON");
+    const draft = JSON.parse(await editor.inputValue()) as {
+      intrinsic: number[];
+      extrinsic: number[];
+      rect?: number[] | null;
+    };
+    draft.intrinsic[2] += 1;
+    await editor.fill(JSON.stringify(draft, null, 2));
+
+    const updateResponsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === "PATCH" &&
+        /\/point-cloud\/cameras\/camera_[^/]+\/calibration$/.test(new URL(response.url()).pathname),
+      { timeout: 10_000 },
+    );
+    await sheet.getByRole("button", { name: "追加 revision" }).click();
+    const updateResponse = await updateResponsePromise;
+    expect(updateResponse.ok(), await updateResponse.text()).toBe(true);
+    const requestBody = updateResponse.request().postDataJSON() as {
+      calibration: { intrinsic: number[]; extrinsic: number[]; rect?: number[] | null };
+      expected_revision: number;
+      expected_digest: string;
+    };
+    expect(requestBody.expected_revision).toBe(1);
+    expect(requestBody.calibration.extrinsic).toEqual(draft.extrinsic);
+    expect(requestBody.calibration.intrinsic).toEqual(draft.intrinsic);
+
+    await expect(sheet.getByText("当前", { exact: true })).toBeVisible();
+    await expect(sheet.getByText("Revision 2", { exact: true }).first()).toBeVisible();
+    await expect(sheet.getByText("Revision 1", { exact: true })).toBeVisible();
+  });
+
   // 一键贴合(Q 键):applyFit 写 setForm + 立即(非防抖)PATCH 落库 —— 守护 usePsrEditor
   // 另一类 setForm 写点(一键操作,区别于数值面板的防抖路径)。Q 键 effect 本身也是
   // 3D 合并键盘 handler 的一员,重构若动 Q 分支/applyFit↔form 接线,这条立刻报警。

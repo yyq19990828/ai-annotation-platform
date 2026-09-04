@@ -112,3 +112,9 @@ class SensorCalibrationRevisionOut(BaseModel):
     digest: str
     calibration: SensorCalibration
     created_at: datetime | None = None
+
+
+class SensorCalibrationHistoryOut(BaseModel):
+    current_revision: int = Field(ge=1)
+    current_digest: str = Field(min_length=64, max_length=64)
+    items: list[SensorCalibrationRevisionOut]

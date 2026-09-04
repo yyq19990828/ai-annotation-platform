@@ -85,6 +85,28 @@ async def load_camera_context(
     return context
 
 
+async def load_linked_camera_item(
+    db: AsyncSession, *, task: Task, camera_role: str
+) -> DatasetItem:
+    if not camera_role.startswith("camera_"):
+        raise MulticameraAnnotationError(
+            "camera_role_not_linked", "camera role is not linked to this task"
+        )
+    link = (
+        await db.execute(
+            select(TaskDatasetItemLink)
+            .where(TaskDatasetItemLink.task_id == task.id)
+            .where(TaskDatasetItemLink.role == camera_role)
+        )
+    ).scalar_one_or_none()
+    item = await db.get(DatasetItem, link.dataset_item_id) if link is not None else None
+    if item is None:
+        raise MulticameraAnnotationError(
+            "camera_role_not_linked", "camera role is not linked to this task"
+        )
+    return item
+
+
 async def load_camera_contexts(
     db: AsyncSession, *, task: Task, camera_roles: set[str]
 ) -> dict[str, CameraContext]:

@@ -128,6 +128,45 @@ async def resolve_calibration_states(
     return states
 
 
+async def list_calibration_revisions(
+    db: AsyncSession, item: DatasetItem
+) -> list[SensorCalibrationState]:
+    """Return append-only calibration snapshots newest first.
+
+    Legacy camera items without materialized history still expose their metadata
+    calibration as virtual revision 1, matching ``resolve_calibration_state``.
+    """
+    rows = list(
+        (
+            await db.execute(
+                select(SensorCalibrationRevision)
+                .where(SensorCalibrationRevision.dataset_item_id == item.id)
+                .order_by(SensorCalibrationRevision.revision.desc())
+            )
+        ).scalars()
+    )
+    if not rows:
+        calibration = _metadata_calibration(item)
+        return [
+            SensorCalibrationState(
+                dataset_item_id=item.id,
+                calibration=calibration,
+                revision=1,
+                digest=calibration_digest(calibration),
+            )
+        ]
+    return [
+        SensorCalibrationState(
+            dataset_item_id=item.id,
+            calibration=SensorCalibration.model_validate(row.calibration),
+            revision=row.revision,
+            digest=row.digest,
+            created_at=row.created_at,
+        )
+        for row in rows
+    ]
+
+
 async def update_calibration(
     db: AsyncSession,
     *,
@@ -158,6 +197,10 @@ async def update_calibration(
             "calibration_revision_conflict", "camera calibration changed"
         )
 
+    next_digest = calibration_digest(calibration)
+    if next_digest == current.digest:
+        return current
+
     existing_rows = await db.scalar(
         select(SensorCalibrationRevision.id)
         .where(SensorCalibrationRevision.dataset_item_id == item.id)
@@ -176,9 +219,6 @@ async def update_calibration(
         )
         await db.flush()
 
-    next_digest = calibration_digest(calibration)
-    if next_digest == current.digest:
-        return current
     row = SensorCalibrationRevision(
         id=uuid.uuid4(),
         dataset_item_id=item.id,

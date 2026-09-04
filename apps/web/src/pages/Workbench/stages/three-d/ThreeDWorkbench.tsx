@@ -77,6 +77,7 @@ import CameraProjectionView from "./CameraProjectionView";
 import FloatingCameraPanel from "./FloatingCameraPanel";
 import TriViewPanel from "./TriViewPanel";
 import { PointCloudQualityPanel } from "./PointCloudQualityPanel";
+import { SensorCalibrationSheet } from "./SensorCalibrationSheet";
 import type { TriSelected } from "./TriOrthoView";
 import { TRI_ZOOM_DEFAULT, clampTriZoom, type Psr, type TriView } from "./geometry/triview";
 import { psrToCorners } from "./geometry/box3d";
@@ -208,8 +209,9 @@ const CAM_MODAL_BODY =
   "relative w-fit max-w-[calc(100%-24px)] p-3 rounded-md border border-border bg-card shadow-sm";
 const CAM_MODAL_CLOSE =
   "absolute top-4 right-4 z-local-1 appearance-none px-2.5 py-1 rounded-sm border border-border bg-background text-foreground cursor-pointer text-xs hover:border-brand hover:text-brand";
+const CAM_MODAL_TOOL_GROUP = "absolute top-4 left-4 z-local-1 flex items-center gap-2";
 const CAM_MODAL_SEED =
-  "absolute top-4 left-4 z-local-1 appearance-none px-2.5 py-1 rounded-sm border border-border bg-background text-foreground cursor-pointer text-xs hover:border-brand hover:text-brand";
+  "appearance-none px-2.5 py-1 rounded-sm border border-border bg-background text-foreground cursor-pointer text-xs hover:border-brand hover:text-brand";
 const CAM_MODAL_SEED_ACTIVE = "!border-brand !bg-brand/10 !text-brand";
 const CAM_MODAL_MEMBER_BAR =
   "absolute bottom-9 left-4 right-4 z-local-1 flex flex-wrap items-center justify-center gap-2 pointer-events-none";
@@ -419,6 +421,7 @@ export function ThreeDWorkbench({
   const adjustedColorBufferRef = useRef<Float32Array | null>(null);
   // v0.13.7 · 放大查看的相机 role(L3);null = 无放大。点⛶开,ESC/遮罩/关闭钮收。
   const [enlargedRole, setEnlargedRole] = useState<string | null>(null);
+  const [calibrationSheetOpen, setCalibrationSheetOpen] = useState(false);
   // v0.15.24 · 放大相机模态里的「种框」模式:拖 2D 框 → 视锥选点 → 拟合 box_3d。仅放大视图启用。
   const [seedMode, setSeedMode] = useState(false);
   const [manualBboxMode, setManualBboxMode] = useState(false);
@@ -461,6 +464,7 @@ export function ThreeDWorkbench({
   const qualityAllowed =
     userRole === "super_admin" || userRole === "project_admin" || userRole === "reviewer";
   const qualityCanScanScene = userRole === "super_admin" || project?.owner_id === userId;
+  const canManageCalibration = userRole === "super_admin" || project?.owner_id === userId;
   const [qualityPanelOpen, setQualityPanelOpen] = useState(false);
   const qualitySafeFloatBounds = useMemo(() => {
     if (!triFloatBounds || !qualityPanelOpen) return triFloatBounds;
@@ -1998,6 +2002,10 @@ export function ThreeDWorkbench({
     () => (enlargedIndex >= 0 ? cameras[enlargedIndex] : null),
     [cameras, enlargedIndex],
   );
+  const enlargedCalibrationSource = useMemo(
+    () => manifest?.cameras.find((camera) => camera.role === enlargedRole) ?? null,
+    [enlargedRole, manifest?.cameras],
+  );
   const enlargedCameraMember = useMemo(
     () =>
       cameraMembers.data?.items.find(
@@ -2147,6 +2155,7 @@ export function ThreeDWorkbench({
   useEffect(() => {
     if (!enlargedRole) return;
     const onKey = (e: KeyboardEvent) => {
+      if (calibrationSheetOpen) return;
       if (e.key === "Escape") {
         if (seedMode) setSeedMode(false);
         else setEnlargedRole(null);
@@ -2160,10 +2169,13 @@ export function ThreeDWorkbench({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [cycleEnlargedCamera, enlargedRole, seedMode]);
+  }, [calibrationSheetOpen, cycleEnlargedCamera, enlargedRole, seedMode]);
   // v0.15.24 · 关闭放大浮层时复位种框模式(种框仅在放大视图内有意义)。
   useEffect(() => {
-    if (!enlargedRole) setSeedMode(false);
+    if (!enlargedRole) {
+      setSeedMode(false);
+      setCalibrationSheetOpen(false);
+    }
   }, [enlargedRole]);
   // v0.13.6 · 点云坐标(载帧后稳定);供相机视图建深度栅格。stats 变化即点云换帧。
   const pointPositions = useMemo(
@@ -3414,29 +3426,46 @@ export function ThreeDWorkbench({
               >
                 关闭 ✕
               </button>
-              {!readOnly && enlargedCam.calibration && boxPlaceClass && (
-                <button
-                  type="button"
-                  className={
-                    seedMode ? `${CAM_MODAL_SEED} ${CAM_MODAL_SEED_ACTIVE}` : CAM_MODAL_SEED
-                  }
-                  onClick={() => {
-                    setBoxCreationIssue(null);
-                    setManualBboxMode(false);
-                    setSeedMode((v) => !v);
-                  }}
-                  aria-pressed={seedMode}
-                  title="在相机图上拖一个 2D 框,自动在 3D 里生成框(视锥选点拟合)"
-                >
-                  {seedMode
-                    ? boxCreationSaving
-                      ? `正在保存 ${boxPlaceClass}`
-                      : boxCreationIssue
-                        ? `保存失败 · 重试 ${boxPlaceClass}`
-                        : `连续种框 · ${boxPlaceClass} · 拖矩形`
-                    : "种框 ⊹"}
-                </button>
-              )}
+              <div className={CAM_MODAL_TOOL_GROUP}>
+                {!readOnly && enlargedCam.calibration && boxPlaceClass && (
+                  <button
+                    type="button"
+                    className={
+                      seedMode ? `${CAM_MODAL_SEED} ${CAM_MODAL_SEED_ACTIVE}` : CAM_MODAL_SEED
+                    }
+                    onClick={() => {
+                      setBoxCreationIssue(null);
+                      setManualBboxMode(false);
+                      setSeedMode((v) => !v);
+                    }}
+                    aria-pressed={seedMode}
+                    title="在相机图上拖一个 2D 框,自动在 3D 里生成框(视锥选点拟合)"
+                  >
+                    {seedMode
+                      ? boxCreationSaving
+                        ? `正在保存 ${boxPlaceClass}`
+                        : boxCreationIssue
+                          ? `保存失败 · 重试 ${boxPlaceClass}`
+                          : `连续种框 · ${boxPlaceClass} · 拖矩形`
+                      : "种框 ⊹"}
+                  </button>
+                )}
+                {enlargedCalibrationSource?.calibration &&
+                  enlargedCalibrationSource.calibration_revision &&
+                  enlargedCalibrationSource.calibration_digest && (
+                    <button
+                      type="button"
+                      className={CAM_MODAL_SEED}
+                      onClick={() => {
+                        setSeedMode(false);
+                        setManualBboxMode(false);
+                        setCalibrationSheetOpen(true);
+                      }}
+                    >
+                      标定 · R{enlargedCalibrationSource.calibration_revision}
+                    </button>
+                  )}
+              </div>
               {cameras.length > 1 && (
                 <>
                   <button
@@ -3607,6 +3636,22 @@ export function ThreeDWorkbench({
             onLocate={handleLocateQualityIssue}
           />
         )}
+        {enlargedCalibrationSource?.calibration &&
+          enlargedCalibrationSource.calibration_revision &&
+          enlargedCalibrationSource.calibration_digest && (
+            <SensorCalibrationSheet
+              open={calibrationSheetOpen}
+              onOpenChange={setCalibrationSheetOpen}
+              taskId={taskId}
+              projectId={task?.project_id ?? null}
+              cameraName={enlargedCalibrationSource.name}
+              cameraRole={enlargedCalibrationSource.role}
+              calibration={enlargedCalibrationSource.calibration}
+              revision={enlargedCalibrationSource.calibration_revision}
+              digest={enlargedCalibrationSource.calibration_digest}
+              canManage={canManageCalibration}
+            />
+          )}
       </div>
       <SceneTimeline
         taskId={taskId}

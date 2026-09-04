@@ -23,6 +23,9 @@ import type {
   CameraAnnotationMemberUpdate,
   ImagePyramidRetryResponse,
   SceneTimelineResponse,
+  SensorCalibrationHistoryOut,
+  SensorCalibrationRevisionOut,
+  SensorCalibrationUpdate,
   TaskMaskCapabilitiesResponse,
 } from "./generated";
 import type {
@@ -399,6 +402,18 @@ export const tasksApi = {
   ) =>
     apiClient.post<CameraAnnotationMemberOut>(
       `/tasks/${taskId}/point-cloud/camera-members/${memberId}/restore`,
+      payload,
+    ),
+
+  getSensorCalibrationHistory: (taskId: string, cameraRole: string, init?: RequestInit) =>
+    apiClient.get<SensorCalibrationHistoryOut>(
+      `/tasks/${taskId}/point-cloud/cameras/${encodeURIComponent(cameraRole)}/calibration`,
+      init,
+    ),
+
+  updateSensorCalibration: (taskId: string, cameraRole: string, payload: SensorCalibrationUpdate) =>
+    apiClient.patch<SensorCalibrationRevisionOut>(
+      `/tasks/${taskId}/point-cloud/cameras/${encodeURIComponent(cameraRole)}/calibration`,
       payload,
     ),
 

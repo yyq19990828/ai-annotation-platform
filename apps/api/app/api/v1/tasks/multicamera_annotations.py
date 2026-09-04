@@ -4,6 +4,7 @@ from typing import NoReturn
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.tasks._shared import (
@@ -14,6 +15,8 @@ from app.api.v1.tasks._shared import (
 )
 from app.db.enums import UserRole
 from app.db.models.project import Project
+from app.db.models.task import Task
+from app.db.models.task_dataset_item_link import TaskDatasetItemLink
 from app.db.models.user import User
 from app.deps import get_current_user, get_db, require_roles, require_scopes
 from app.schemas.multicamera_annotation import (
@@ -23,6 +26,7 @@ from app.schemas.multicamera_annotation import (
     CameraAnnotationMemberOut,
     CameraAnnotationMemberRestore,
     CameraAnnotationMemberUpdate,
+    SensorCalibrationHistoryOut,
     SensorCalibrationRevisionOut,
     SensorCalibrationUpdate,
 )
@@ -33,12 +37,13 @@ from app.services.multicamera_annotation import (
     create_camera_member,
     delete_camera_member,
     list_camera_members,
-    load_camera_context,
+    load_linked_camera_item,
     restore_camera_member,
     update_camera_member,
 )
 from app.services.sensor_calibration import (
     SensorCalibrationError,
+    list_calibration_revisions,
     update_calibration,
 )
 
@@ -275,6 +280,40 @@ async def restore_deleted_camera_member(
     return out
 
 
+@router.get(
+    "/{task_id}/point-cloud/cameras/{camera_role}/calibration",
+    response_model=SensorCalibrationHistoryOut,
+)
+async def get_camera_calibration_history(
+    task_id: uuid.UUID,
+    camera_role: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    try:
+        item = await load_linked_camera_item(db, task=task, camera_role=camera_role)
+        revisions = await list_calibration_revisions(db, item)
+    except (MulticameraAnnotationError, SensorCalibrationError) as exc:
+        _raise_domain_error(exc)
+    current = revisions[0]
+    return SensorCalibrationHistoryOut(
+        current_revision=current.revision,
+        current_digest=current.digest,
+        items=[
+            SensorCalibrationRevisionOut(
+                dataset_item_id=revision.dataset_item_id,
+                revision=revision.revision,
+                digest=revision.digest,
+                calibration=revision.calibration,
+                created_at=revision.created_at,
+            )
+            for revision in revisions
+        ],
+    )
+
+
 @router.patch(
     "/{task_id}/point-cloud/cameras/{camera_role}/calibration",
     response_model=SensorCalibrationRevisionOut,
@@ -303,10 +342,26 @@ async def patch_camera_calibration(
             status_code=403, detail="Only the project owner can update calibration"
         )
     try:
-        context = await load_camera_context(db, task=task, camera_role=camera_role)
+        item = await load_linked_camera_item(db, task=task, camera_role=camera_role)
+    except (MulticameraAnnotationError, SensorCalibrationError) as exc:
+        _raise_domain_error(exc)
+    if current_user.role != UserRole.SUPER_ADMIN:
+        cross_project_id = await db.scalar(
+            select(Task.project_id)
+            .join(TaskDatasetItemLink, TaskDatasetItemLink.task_id == Task.id)
+            .where(TaskDatasetItemLink.dataset_item_id == item.id)
+            .where(Task.project_id != task.project_id)
+            .limit(1)
+        )
+        if cross_project_id is not None:
+            raise HTTPException(
+                status_code=403,
+                detail="Only a super admin can update calibration shared across projects",
+            )
+    try:
         state = await update_calibration(
             db,
-            dataset_item_id=context.item.id,
+            dataset_item_id=item.id,
             calibration=payload.calibration,
             expected_revision=payload.expected_revision,
             expected_digest=payload.expected_digest,
@@ -319,7 +374,7 @@ async def patch_camera_calibration(
         actor=current_user,
         action=AuditAction.SENSOR_CALIBRATION_UPDATE,
         target_type="dataset_item",
-        target_id=context.item.id,
+        target_id=item.id,
         request=request,
         status_code=200,
         detail={

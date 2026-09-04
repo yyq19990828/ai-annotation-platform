@@ -3,7 +3,7 @@ title: 点云联合标注数据模型
 audience: [developer]
 type: reference
 status: stable
-last_reviewed: 2026-08-26
+last_reviewed: 2026-08-27
 ---
 
 # 点云联合标注 · 后端数据模型
@@ -68,6 +68,17 @@ class DatasetItemMetadata(BaseModel):   # extra="allow" 保留其它 metadata ke
 ```
 
 `DatasetItemOut.metadata` 用 `DatasetItemMetadata` 出强类型(codegen 流到前端)。投影(v0.13.4)按 `task → camera link → DatasetItem.metadata_["calibration"]` 取标定:`extrinsic·[x,y,z,1] → 取 xyz → intrinsic·xyz → 透视除法 → 像素`。
+
+标定管理沿用 task visibility 与相机 role 解析边界：
+
+```text
+GET   /tasks/{task_id}/point-cloud/cameras/{camera_role}/calibration
+PATCH /tasks/{task_id}/point-cloud/cameras/{camera_role}/calibration
+```
+
+GET 返回当前 revision/digest 及降序完整快照。如果历史表尚无记录，响应仍包含从 metadata 读取的虚拟 revision 1，`created_at` 为 `null`。PATCH 只允许项目 owner 或 super admin，请求必须携带当前 expected revision/digest；跨项目复用同一相机 DatasetItem 时只允许 super admin 修改，避免一个项目的 owner 改变其他项目共享的数据集真值。冲突返回 409，不会自动重放。无变化更新返回当前快照且不新增历史行。
+
+工作台管理面板始终读写未经 ISO 轴约定变换的原始标定；投影渲染仍在独立派生链中对 extrinsic 做坐标归一化，不得把渲染矩阵回写为数据集真值。从旧快照“恢复”时也通过同一 PATCH 追加新 revision，不存在原地回滚端点。
 
 ## scene 导入数据流（v0.13.1）
 

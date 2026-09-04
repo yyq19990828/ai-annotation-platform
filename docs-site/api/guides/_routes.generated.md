@@ -573,6 +573,7 @@
 | PATCH | `/{task_id}/point-cloud/camera-members/{member_id}` |
 | DELETE | `/{task_id}/point-cloud/camera-members/{member_id}` |
 | POST | `/{task_id}/point-cloud/camera-members/{member_id}/restore` |
+| GET | `/{task_id}/point-cloud/cameras/{camera_role}/calibration` |
 | PATCH | `/{task_id}/point-cloud/cameras/{camera_role}/calibration` |
 
 ## `tasks/predictions.py`
@@ -689,4 +690,4 @@
 
 ---
 
-_共 64 模块 / 387 路由_
+_共 64 模块 / 388 路由_
