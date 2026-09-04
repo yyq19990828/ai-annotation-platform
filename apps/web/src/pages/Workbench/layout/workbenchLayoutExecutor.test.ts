@@ -20,6 +20,24 @@ describe("workspace executor with Dockview 8", () => {
     );
     element = document.createElement("div");
     document.body.append(element);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      if (this.classList.contains("dv-resize-container"))
+        return new DOMRect(
+          parseFloat(this.style.left) || 0,
+          parseFloat(this.style.top) || 0,
+          parseFloat(this.style.width) || 0,
+          parseFloat(this.style.height) || 0,
+        );
+      if (
+        this === element ||
+        this.classList.contains("dv-dockview") ||
+        this.classList.contains("dv-shell")
+      )
+        return new DOMRect(0, 0, bounds.width, bounds.height);
+      return new DOMRect();
+    });
     api = createDockview(element, {
       createComponent: () => ({ element: document.createElement("div"), init: () => undefined }),
       disableAutoResizing: true,
@@ -30,6 +48,7 @@ describe("workspace executor with Dockview 8", () => {
   afterEach(() => {
     api?.dispose();
     element?.remove();
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -105,5 +124,18 @@ describe("workspace executor with Dockview 8", () => {
     controller.show("inspector");
     expect(api.hasMaximizedGroup()).toBe(false);
     expect(api.getPanel("canvas")).toBe(canvas);
+  });
+
+  it("clears a failed compact latch only through explicit read-only recovery", () => {
+    const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+    controller.enterCompact();
+    vi.spyOn(api, "addGroup").mockImplementationOnce(() => {
+      throw new Error("restore failed");
+    });
+    expect(() => controller.exitCompact()).toThrow("restore failed");
+    expect(controller.isCompact()).toBe(true);
+    controller.recover(createWorkspacePreset("standard", bounds));
+    expect(controller.isCompact()).toBe(false);
+    expect(api.getPanel("canvas")?.group.id).toBe("canvas");
   });
 });

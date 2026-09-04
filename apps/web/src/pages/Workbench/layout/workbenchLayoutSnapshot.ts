@@ -176,8 +176,10 @@ export function sanitizeWorkspaceSnapshot(
       ...(node.size === undefined ? {} : { size: finite(node.size) }),
       ...(node.visible === false ? { visible: false } : {}),
     };
-    if (node.type === "leaf")
-      return { type: "leaf", data: parseGroup(node.data, false, visible, path), ...geometry };
+    if (node.type === "leaf") {
+      const data = parseGroup(node.data, false, visible, path);
+      return { type: "leaf", data, ...geometry, ...(data.id === "parking" ? { size: 0 } : {}) };
+    }
     if (
       node.type !== "branch" ||
       !Array.isArray(node.data) ||

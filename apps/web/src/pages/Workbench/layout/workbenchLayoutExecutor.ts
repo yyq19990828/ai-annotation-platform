@@ -83,6 +83,7 @@ function insertionSteps(tree: Tree): { id: string; reference: string; direction:
 export interface WorkbenchLayoutExecutor {
   capture(): WorkspaceSnapshot;
   restore(snapshot: WorkspaceSnapshot): void;
+  recover(snapshot: WorkspaceSnapshot): void;
   setReturns(returns: WorkspaceSnapshot["returns"]): void;
   show(id: PanelId): void;
   hide(id: PanelId): void;
@@ -207,6 +208,13 @@ export function createWorkbenchLayoutExecutor(
   function setFloat(group: DockviewGroupPanel, position: WorkspaceRect) {
     if (group.id === "canvas" || group.id === "parking")
       throw new Error("Reserved group cannot float");
+    if (group.id !== "compact-overlay")
+      group.api.setConstraints({
+        minimumWidth: Math.min(320, getBounds().width),
+        minimumHeight: Math.min(320, getBounds().height),
+        maximumWidth: 720,
+        maximumHeight: 900,
+      });
     if (group.api.location.type === "floating")
       group.api.moveTo({ group: canvas(), position: "right", skipSetActive: true });
     api.addFloatingGroup(group, {
@@ -348,23 +356,113 @@ export function createWorkbenchLayoutExecutor(
       throw new Error("Workspace replay changed hidden panels");
   }
   function sizeTree(tree: Tree, bounds: WorkspaceBounds) {
-    if ("group" in tree) {
-      getGroup(tree.group.id)?.api.setSize(bounds);
-      return;
-    }
-    const sum =
-      tree.children.reduce((total, child) => total + child.size, 0) || tree.children.length;
-    // Resize deepest splits first, then their ancestors through a representative leaf.
-    for (const child of tree.children) {
-      const size = (child.size || 1) / sum;
-      sizeTree(
-        child,
-        tree.axis === "HORIZONTAL"
-          ? { width: bounds.width * size, height: bounds.height }
-          : { width: bounds.width, height: bounds.height * size },
+    const sizes = new Map<string, WorkspaceRect>();
+    const limits = (node: Tree, dimension: "Width" | "Height", maximum = false): number => {
+      if ("group" in node) {
+        const group = getGroup(node.group.id)!;
+        return maximum ? group[`maximum${dimension}`] : group[`minimum${dimension}`];
+      }
+      const values = node.children.map((child) => limits(child, dimension, maximum));
+      const alongAxis = (node.axis === "HORIZONTAL") === (dimension === "Width");
+      return alongAxis
+        ? values.reduce((sum, size) => sum + size, 0)
+        : maximum
+          ? Math.min(...values)
+          : Math.max(...values);
+    };
+    function measure(node: Tree, box: WorkspaceRect) {
+      if ("group" in node) {
+        sizes.set(node.group.id, box);
+        return;
+      }
+      const dimension = node.axis === "HORIZONTAL" ? "Width" : "Height";
+      const axis = node.axis === "HORIZONTAL" ? "width" : "height";
+      const coordinate = node.axis === "HORIZONTAL" ? "left" : "top";
+      const minimum = node.children.map((child) => limits(child, dimension));
+      const maximum = node.children.map((child) => limits(child, dimension, true));
+      let available = Math.max(
+        box[axis],
+        minimum.reduce((sum, size) => sum + size, 0),
       );
+      const fixed = new Map<number, number>();
+      // Redistribute only space left after a child hits its registry constraint.
+      while (fixed.size < node.children.length) {
+        const weight = node.children.reduce(
+          (sum, child, index) => sum + (fixed.has(index) ? 0 : child.size || 1),
+          0,
+        );
+        const unclamped = available;
+        let changed = false;
+        node.children.forEach((child, index) => {
+          if (fixed.has(index)) return;
+          const requested = (unclamped * (child.size || 1)) / weight;
+          if (requested < minimum[index] || requested > maximum[index]) {
+            const size = Math.min(maximum[index], Math.max(minimum[index], requested));
+            fixed.set(index, size);
+            available -= size;
+            changed = true;
+          }
+        });
+        if (!changed) {
+          node.children.forEach((child, index) => {
+            if (!fixed.has(index)) fixed.set(index, (available * (child.size || 1)) / weight);
+          });
+        }
+      }
+      let offset = box[coordinate];
+      node.children.forEach((child, index) => {
+        const size = fixed.get(index)!;
+        measure(child, { ...box, [coordinate]: offset, [axis]: size });
+        offset += size;
+      });
+    }
+    measure(tree, { ...bounds, left: 0, top: 0 });
+    const constraints = [...sizes].map(([id, rect]) => {
+      const group = getGroup(id)!;
+      return {
+        group,
+        rect,
+        previous: {
+          minimumWidth: group.minimumWidth,
+          maximumWidth: group.maximumWidth,
+          minimumHeight: group.minimumHeight,
+          maximumHeight: group.maximumHeight,
+        },
+      };
+    });
+    // A leaf setSize only bubbles two levels in Dockview. Fixed leaf constraints
+    // aggregate through every ancestor, so deep splits restore without private APIs.
+    try {
+      for (const { group, rect } of constraints) {
+        group.api.setConstraints({
+          minimumWidth: rect.width,
+          maximumWidth: rect.width,
+          minimumHeight: rect.height,
+          maximumHeight: rect.height,
+        });
+        group.api.setSize({ width: rect.width, height: rect.height });
+      }
+    } finally {
+      for (const { group, previous } of constraints) group.api.setConstraints(previous);
+    }
+    for (const { group, rect } of constraints) {
+      if (
+        Math.abs(group.api.width - rect.width) > 1 ||
+        Math.abs(group.api.height - rect.height) > 1
+      )
+        throw new Error("Workspace replay exceeded one pixel tolerance");
+      const actual = group.api.boundingBox;
+      // jsdom has no client rectangles; the real browser gate also checks position.
+      if (
+        actual &&
+        actual.width > 0 &&
+        actual.height > 0 &&
+        (Math.abs(actual.left - rect.left) > 1 || Math.abs(actual.top - rect.top) > 1)
+      )
+        throw new Error("Workspace replay changed group position");
     }
   }
+
   return {
     capture() {
       if (desktop) return structuredClone(desktop);
@@ -372,6 +470,11 @@ export function createWorkbenchLayoutExecutor(
     },
     restore(snapshot) {
       if (desktop) throw new Error("Desktop restore is disabled in compact mode");
+      replay(snapshot);
+    },
+    recover(snapshot) {
+      desktop = null;
+      pendingShows.clear();
       replay(snapshot);
     },
     setReturns(value) {
