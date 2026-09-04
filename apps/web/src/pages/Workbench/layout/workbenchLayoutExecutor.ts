@@ -335,10 +335,14 @@ export function createWorkbenchLayoutExecutor(
     ensureParking();
   }
   function replay(input: WorkspaceSnapshot) {
-    const snapshot = sanitizeWorkspaceSnapshot(input, getBounds());
+    const bounds = getBounds();
+    const snapshot = sanitizeWorkspaceSnapshot(input, bounds);
     const tree = treeFromNode(snapshot.layout.grid.root, snapshot.layout.grid.orientation);
     if (!tree) throw new Error("Empty workspace tree");
     api.exitMaximizedGroup();
+    // Media-query layout effects can run before Dockview's ResizeObserver.
+    // Release temporary replay constraints against the current host, not its old compact size.
+    api.layout(bounds.width, bounds.height);
     for (const id of PANEL_IDS) if (id !== "canvas") move(id, ensureParking());
     removeEmptyGroups(["parking"]);
     for (const step of insertionSteps(tree)) ensureGroup(step.id, step.reference, step.direction);
@@ -369,7 +373,7 @@ export function createWorkbenchLayoutExecutor(
         api.getPanel(group.activeView)?.api.setActive();
     }
     getGroup(snapshot.layout.activeGroup ?? "canvas")?.api.setActive();
-    sizeTree(tree, getBounds());
+    sizeTree(tree, bounds);
     if (snapshot.layout.grid.maximizedNode) canvas().api.maximize();
     const actual = rawSnapshot();
     const actualTree = treeFromNode(actual.layout.grid.root, actual.layout.grid.orientation);

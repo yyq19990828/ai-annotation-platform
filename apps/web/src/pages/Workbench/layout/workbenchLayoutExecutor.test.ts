@@ -179,6 +179,32 @@ describe("workspace executor with Dockview 8", () => {
     expect(api.getPanel("class-palette")?.group.id).toBe("parking");
   });
 
+  it("replays against the new host size before a delayed Dockview ResizeObserver", () => {
+    const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+    controller.tab("discussion", "inspector");
+    controller.float("class-palette");
+    const originalCanvas = api.getPanel("canvas");
+    bounds = { width: 1024, height: 900 };
+    controller.enterCompact();
+    api.layout(bounds.width, bounds.height);
+    controller.show("task-queue");
+    controller.show("discussion");
+
+    // React observes the desktop media query before Dockview observes the resized element.
+    bounds = { width: 1920, height: 1080 };
+    expect(api.width).toBe(1024);
+    expect(() => controller.exitCompact()).not.toThrow();
+    expect(api.width).toBe(bounds.width);
+    expect(api.height).toBe(bounds.height);
+    expect(api.getPanel("canvas")).toBe(originalCanvas);
+    expect(api.getPanel("discussion")?.group).toBe(api.getPanel("inspector")?.group);
+    expect(api.getPanel("class-palette")?.api.location.type).toBe("floating");
+    // The actual observer arriving afterwards must not disturb the completed replay.
+    const restored = controller.capture();
+    api.layout(bounds.width, bounds.height);
+    expect(controller.capture()).toEqual(restored);
+  });
+
   it("replays four nested split levels within one pixel and reflows actual constraints", () => {
     const leaf = (id: (typeof PANEL_IDS)[number], size: number): WorkspaceNode => ({
       type: "leaf",
