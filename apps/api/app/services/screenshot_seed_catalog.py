@@ -35,6 +35,7 @@ from app.services.screenshot_seed_spec import (
     ProjectSpec,
     RecordingAnchorSpec,
     TaskSpec,
+    resolve_project_spec,
 )
 from app.services.storage import storage_service
 
@@ -195,6 +196,11 @@ async def _resolve_dataset_and_tasks(
         )
         return None, {}, {}
     dataset = expected[0]
+    try:
+        spec = resolve_project_spec(spec, dataset.id, dataset.metadata_)
+    except ValueError as exc:
+        issues.append(f"{prefix}: {exc}")
+        return dataset, {}, {}
     marker = (dataset.metadata_ or {}).get("seed")
     if not isinstance(marker, dict) or any(
         (

@@ -44,6 +44,7 @@ def _write_minimal_nuscenes(root: Path) -> None:
             {"token": "sensor-lidar", "modality": "lidar"},
             {"token": "sensor-camera", "modality": "camera"},
         ],
+        "map": [{"filename": "maps/map.png"}],
     }
     for name, table in rows.items():
         (metadata / f"{name}.json").write_text(json.dumps(table), encoding="utf-8")
@@ -53,6 +54,8 @@ def _write_minimal_nuscenes(root: Path) -> None:
     camera.parent.mkdir(parents=True)
     lidar.write_bytes(b"lidar")
     camera.write_bytes(b"camera")
+    (root / "maps").mkdir()
+    (root / "maps/map.png").write_bytes(b"map")
 
 
 def test_download_uses_resumable_parallel_parts(tmp_path, monkeypatch):
@@ -100,7 +103,15 @@ def test_extract_keeps_keyframes_and_skips_sweeps(tmp_path):
 
     fixture.validate_nuscenes_mini(prepared)
     assert (prepared / "samples/LIDAR_TOP/frame.pcd.bin").is_file()
+    assert (prepared / "maps/map.png").read_bytes() == b"map"
     assert not (prepared / "sweeps").exists()
+
+
+def test_validate_rejects_missing_map(tmp_path):
+    _write_minimal_nuscenes(tmp_path)
+    (tmp_path / "maps/map.png").unlink()
+    with pytest.raises(fixture.NuScenesFixtureError, match="map"):
+        fixture.validate_nuscenes_mini(tmp_path)
 
 
 def test_offline_requires_cached_archive_or_content(tmp_path):

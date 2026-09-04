@@ -375,6 +375,47 @@ async def test_catalog_returns_explicit_stable_logical_resources(
     assert "large_image_demo" not in body["projects"]
 
 
+async def test_nuscenes_uuid_storage_reconciles_and_resolves(db_session):
+    from app.services.screenshot_seed_catalog import build_screenshot_seed_catalog
+    from app.services.screenshot_seed_spec import resolve_project_spec
+    from app.services.storage import TRUSTED_NUSCENES_PREFIX
+
+    _, tasks = await _ready_profile(db_session)
+    dataset = await db_session.scalar(
+        select(Dataset).where(Dataset.display_id == "DS-PC-DEV")
+    )
+    root = f"{TRUSTED_NUSCENES_PREFIX}-{dataset.id.hex}"
+    spec = PROJECT_SPECS["pointcloud_demo"]
+    assert resolve_project_spec(spec, dataset.id, dataset.metadata_) is spec
+    with pytest.raises(ValueError, match="dataset UUID"):
+        resolve_project_spec(spec, uuid.uuid4(), {"source": {"storage_root": root}})
+    dataset.metadata_ = {
+        **dataset.metadata_,
+        "source": {"storage_root": root, "storage_layout": "uuid_v1"},
+    }
+    items = (
+        await db_session.scalars(
+            select(DatasetItem).where(DatasetItem.dataset_id == dataset.id)
+        )
+    ).all()
+    for item in items:
+        item.file_path = item.file_path.replace("nuscenes-mini/", f"{root}/", 1)
+        item.content_hash = hashlib.sha256(item.file_path.encode()).hexdigest()
+    for task in tasks["pointcloud_demo"].values():
+        task.file_path = task.file_path.replace("nuscenes-mini/", f"{root}/", 1)
+    await db_session.flush()
+    await reconcile_screenshot_seed(
+        db_session,
+        preparation=ScreenshotSeedPreparation(adopt_keys=frozenset()),
+        asset_sha256={key: "a" * 64 for key in PROJECT_SPECS},
+    )
+    catalog = await build_screenshot_seed_catalog(db_session)
+    assert len(catalog["projects"]["pointcloud_demo"]["tasks"]) == 39
+    assert catalog["projects"]["pointcloud_demo"]["tasks"]["frame_000"][
+        "file_path"
+    ].startswith(f"{root}/")
+
+
 async def test_catalog_ignores_soft_deleted_annotations(httpx_client, db_session):
     projects, tasks = await _ready_profile(db_session)
     project = projects["pointcloud_demo"]

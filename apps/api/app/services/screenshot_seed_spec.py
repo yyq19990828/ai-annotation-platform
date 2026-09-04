@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from uuid import UUID
 
 
 SEED_REVISION = "screenshots-2026-08-g"
@@ -82,6 +83,38 @@ class ProjectSpec:
     batches: tuple[BatchSpec, ...] = ()
     require_members: bool = False
     axis_convention: str | None = None
+
+
+def resolve_project_spec(
+    spec: ProjectSpec, dataset_id: UUID, metadata: dict | None
+) -> ProjectSpec:
+    """Resolve nuScenes logical paths within the importing dataset's namespace."""
+    if spec.storage_prefix != "nuscenes-mini/":
+        return spec
+    source = (metadata or {}).get("source")
+    root = source.get("storage_root") if isinstance(source, dict) else None
+    if root is None or root == "nuscenes-mini":
+        return spec
+    from app.services.storage import TRUSTED_NUSCENES_PREFIX
+
+    if root != f"{TRUSTED_NUSCENES_PREFIX}-{dataset_id.hex}":
+        raise ValueError("nuScenes seed storage_root does not match its dataset UUID")
+    prefix = f"{root}/"
+    return replace(
+        spec,
+        storage_prefix=prefix,
+        tasks=tuple(
+            replace(
+                task,
+                file_path=prefix + task.file_path.removeprefix(spec.storage_prefix),
+            )
+            for task in spec.tasks
+        ),
+        media_paths=tuple(
+            prefix + file_path.removeprefix(spec.storage_prefix)
+            for file_path in spec.media_paths
+        ),
+    )
 
 
 BACKEND_REQUIREMENTS = {
