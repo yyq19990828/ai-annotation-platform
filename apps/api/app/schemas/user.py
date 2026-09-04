@@ -3,6 +3,8 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from uuid import UUID
 from datetime import datetime
 
+from app.schemas.workbench_workspace import WorkbenchWorkspacePreferences
+
 
 class FloatingPanelState(BaseModel):
     """v0.13.10 · 工作台浮窗状态。像素默认由前端按窗口计算。"""
@@ -119,6 +121,14 @@ class WorkbenchLayoutPreferences(BaseModel):
     pointcloud_camera: PointcloudCameraState | None = Field(
         default=None, alias="pointcloudCamera"
     )
+    workspace: WorkbenchWorkspacePreferences | None = None
+
+    @field_validator("workspace", mode="before")
+    @classmethod
+    def _workspace_cannot_be_cleared(cls, value):
+        if value is None:
+            raise ValueError("workspace cannot be cleared; replace the current context")
+        return value
 
 
 class LabelContentByType(BaseModel):

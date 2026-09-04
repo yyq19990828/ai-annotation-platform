@@ -11,7 +11,9 @@ import copy
 import importlib.util
 from pathlib import Path
 
+import pytest
 import sqlalchemy as sa
+from pydantic import ValidationError
 
 from app.schemas.user import UserPreferences
 
@@ -1111,3 +1113,318 @@ def test_migration_0106_upgrade_idempotent():
     assert once is not None
     assert "showBoxLabels" not in once["workbench"]["image"]
     assert mod._upgrade_prefs(once) is None
+
+
+def _workspace_envelope(version=1):
+    panels = ["canvas", "task-queue", "class-palette", "inspector", "discussion"]
+    if version == 3:
+        panels += ["ai-task", "video-tracker"]
+    return {
+        "schemaVersion": version,
+        "snapshot": {
+            "layout": {
+                "grid": {
+                    "root": {
+                        "type": "branch",
+                        "data": [
+                            {
+                                "type": "leaf",
+                                "data": {"id": "canvas", "views": ["canvas"]},
+                            },
+                            {
+                                "type": "leaf",
+                                "data": {"id": "right", "views": panels[1:]},
+                            },
+                        ],
+                    },
+                    "width": 1440,
+                    "height": 900,
+                    "orientation": "HORIZONTAL",
+                },
+                "panels": {
+                    panel: {
+                        "id": panel,
+                        "contentComponent": "workbench-panel",
+                        "renderer": "always",
+                    }
+                    for panel in panels
+                },
+                "activeGroup": "canvas",
+            },
+            "returns": {},
+        },
+    }
+
+
+def _workspace_patch(envelope, context="annotate:image"):
+    return {
+        "workbench": {
+            "layout": {
+                "workspace": {
+                    "engine": "dockview@8",
+                    "contexts": {context: envelope},
+                }
+            }
+        }
+    }
+
+
+@pytest.mark.parametrize("version", [1, 2, 3])
+async def test_workspace_round_trip_versions_and_context_atomic_replace(
+    httpx_client, annotator, version
+):
+    _, token = annotator
+    envelope = _workspace_envelope(version)
+    if version == 3:
+        envelope["snapshot"]["visibilityIntent"] = {
+            "ai-task": "hidden",
+            "video-tracker": "shown",
+        }
+    response = await httpx_client.patch(
+        PREFS_URL, json=_workspace_patch(envelope), headers=_bearer(token)
+    )
+    assert response.status_code == 200, response.text
+    assert (
+        response.json()["workbench"]["layout"]["workspace"]["contexts"][
+            "annotate:image"
+        ]
+        == envelope
+    )
+
+    # A whole context replaces removed groups, return descriptors and optional keys.
+    old = copy.deepcopy(envelope)
+    old["snapshot"]["layout"]["floatingGroups"] = [
+        {
+            "data": {"id": "floating", "views": ["discussion"]},
+            "position": {"left": 20, "top": 30, "width": 360, "height": 480},
+        }
+    ]
+    old["snapshot"]["layout"]["grid"]["root"]["data"][1]["data"]["views"].remove(
+        "discussion"
+    )
+    old["snapshot"]["returns"] = {"discussion": {"group": "right", "index": 3}}
+    response = await httpx_client.patch(
+        PREFS_URL, json=_workspace_patch(old), headers=_bearer(token)
+    )
+    assert response.status_code == 200, response.text
+    response = await httpx_client.patch(
+        PREFS_URL, json=_workspace_patch(envelope), headers=_bearer(token)
+    )
+    assert response.status_code == 200, response.text
+    response = await httpx_client.get(PREFS_URL, headers=_bearer(token))
+    assert (
+        response.json()["workbench"]["layout"]["workspace"]["contexts"][
+            "annotate:image"
+        ]
+        == envelope
+    )
+
+
+async def test_workspace_schema_downgrade_rejects_entire_patch(httpx_client, annotator):
+    user, token = annotator
+    response = await httpx_client.patch(
+        PREFS_URL, json=_workspace_patch(_workspace_envelope(3)), headers=_bearer(token)
+    )
+    assert response.status_code == 200
+    previous = copy.deepcopy(user.preferences)
+    patch = _workspace_patch(_workspace_envelope(1))
+    patch["ui"] = {"theme": "dark"}
+    response = await httpx_client.patch(PREFS_URL, json=patch, headers=_bearer(token))
+    assert response.status_code == 409
+    assert response.json()["detail"] == "layout_schema_downgrade"
+    assert user.preferences == previous
+
+
+async def test_workspace_invalid_patch_returns_422_without_writing(
+    httpx_client, annotator
+):
+    user, token = annotator
+    previous = copy.deepcopy(user.preferences)
+    envelope = _workspace_envelope()
+    envelope["snapshot"]["layout"]["popoutGroups"] = []
+    response = await httpx_client.patch(
+        PREFS_URL, json=_workspace_patch(envelope), headers=_bearer(token)
+    )
+    assert response.status_code == 422
+    assert user.preferences == previous
+
+
+@pytest.mark.parametrize(
+    "workspace",
+    [
+        {
+            "engine": "dockview@8",
+            "contexts": {
+                "annotate:image": {
+                    "schemaVersion": 99,
+                    "snapshot": {"future": [1, 2, 3]},
+                }
+            },
+        },
+        {
+            "engine": "future-engine",
+            "contexts": {"annotate:image": {"schemaVersion": 1, "snapshot": "broken"}},
+        },
+    ],
+)
+async def test_workspace_get_and_unrelated_patch_preserve_unknown_or_corrupt_values(
+    httpx_client, annotator, db_session, workspace
+):
+    user, token = annotator
+    user.preferences = {
+        "workbench": {"layout": {"workspace": copy.deepcopy(workspace)}}
+    }
+    await db_session.flush()
+    response = await httpx_client.get(PREFS_URL, headers=_bearer(token))
+    assert response.status_code == 200
+    assert response.json()["workbench"]["layout"]["workspace"] == workspace
+    response = await httpx_client.patch(
+        PREFS_URL, json={"ui": {"theme": "dark"}}, headers=_bearer(token)
+    )
+    assert response.status_code == 200
+    assert response.json()["workbench"]["layout"]["workspace"] == workspace
+    assert user.preferences["workbench"]["layout"]["workspace"] == workspace
+
+
+def test_workspace_rejects_invalid_grammar_and_resource_limits():
+    envelope = _workspace_envelope()
+    invalid = []
+    for path, value in [
+        (("schemaVersion",), True),
+        (("schemaVersion",), 4),
+        (("snapshot", "layout", "grid", "width"), float("inf")),
+        (("snapshot", "layout", "grid", "height"), -1),
+        (("snapshot", "layout", "grid", "root", "data", 0, "data", "views"), []),
+        (
+            ("snapshot", "layout", "grid", "root", "data", 1, "data", "views"),
+            ["canvas"],
+        ),
+        (
+            ("snapshot", "layout", "grid", "root", "data", 0, "data", "id"),
+            "moved-canvas",
+        ),
+        (("snapshot", "layout", "grid", "root", "data", 1, "data", "id"), "canvas"),
+        (
+            ("snapshot", "layout", "grid", "root", "data", 1, "data", "id"),
+            "compact-overlay",
+        ),
+        (("snapshot", "layout", "grid", "root", "data", 1, "visible"), False),
+        (("snapshot", "layout", "grid", "maximizedNode"), {"location": [1]}),
+        (("snapshot", "layout", "grid", "maximizedNode"), {"location": [9]}),
+        (
+            ("snapshot", "layout", "panels", "canvas", "params"),
+            {"taskId": "business-data"},
+        ),
+        (("snapshot", "layout", "panels", "canvas", "renderer"), "onlyWhenVisible"),
+        (("snapshot", "layout", "panels", "inspector", "id"), "discussion"),
+        (("snapshot", "layout", "popoutGroups"), []),
+        (("snapshot", "layout", "edgeGroups"), {}),
+        (("snapshot", "layout", "activeGroup"), "missing"),
+        (("snapshot", "returns"), {"canvas": {"group": "right", "index": 0}}),
+        (("snapshot", "returns"), {"discussion": {"group": "parking", "index": 0}}),
+        (("snapshot", "returns"), {"discussion": {"group": "right", "index": -1}}),
+        (
+            ("snapshot", "returns"),
+            {"discussion": {"group": "right", "index": 0, "taskId": "business"}},
+        ),
+        (("snapshot", "visibilityIntent"), {"ai-task": "hidden"}),
+        (("snapshot", "unknown"), "x" * 65536),
+    ]:
+        changed = copy.deepcopy(envelope)
+        target = changed
+        for key in path[:-1]:
+            target = target[key]
+        target[path[-1]] = value
+        invalid.append(changed)
+    deep = copy.deepcopy(envelope)
+    for _ in range(13):
+        grid = deep["snapshot"]["layout"]["grid"]
+        grid["root"] = {"type": "branch", "data": [grid["root"]]}
+    invalid.append(deep)
+    for changed in invalid:
+        with pytest.raises(ValidationError):
+            UserPreferences.model_validate(_workspace_patch(changed))
+    for workspace in [
+        None,
+        {"engine": "dockview@9", "contexts": {}},
+        {"engine": "dockview@8", "contexts": {"unknown": envelope}},
+    ]:
+        with pytest.raises(ValidationError):
+            UserPreferences.model_validate(
+                {"workbench": {"layout": {"workspace": workspace}}}
+            )
+
+
+def test_workspace_parking_movable_canvas_and_maximized_canvas():
+    envelope = _workspace_envelope(2)
+    grid = envelope["snapshot"]["layout"]["grid"]
+    grid["root"]["data"][0]["data"]["id"] = "moved-canvas"
+    envelope["snapshot"]["layout"]["activeGroup"] = "moved-canvas"
+    grid["maximizedNode"] = {"location": [0]}
+    right = grid["root"]["data"][1]
+    right["data"]["id"] = "parking"
+    right["data"]["hideHeader"] = True
+    right["visible"] = False
+    UserPreferences.model_validate(_workspace_patch(envelope))
+    right["visible"] = True
+    with pytest.raises(ValidationError):
+        UserPreferences.model_validate(_workspace_patch(envelope))
+
+
+async def test_workspace_concurrent_context_writes_refresh_locked_identity(test_engine):
+    """Both callers authenticate before either write; each must merge the latest row."""
+    import asyncio
+    import uuid
+
+    from fastapi import HTTPException
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from app.api.v1.me import update_preferences
+    from app.db.models.user import User
+
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    user_id = uuid.uuid4()
+    async with maker() as setup:
+        setup.add(
+            User(
+                id=user_id,
+                email=f"workspace-{user_id}@test.local",
+                name="Workspace",
+                password_hash="unused",
+            )
+        )
+        await setup.commit()
+    try:
+        async with maker() as first, maker() as second:
+            user_a = await first.get(User, user_id)
+            user_b = await second.get(User, user_id)
+            await asyncio.gather(
+                update_preferences(
+                    _workspace_patch(_workspace_envelope(), "annotate:image"),
+                    first,
+                    user_a,
+                ),
+                update_preferences(
+                    _workspace_patch(_workspace_envelope(), "review:video"),
+                    second,
+                    user_b,
+                ),
+            )
+            await first.refresh(user_a)
+            assert set(
+                user_a.preferences["workbench"]["layout"]["workspace"]["contexts"]
+            ) == {"annotate:image", "review:video"}
+            # The second identity remains stale while the first upgrades a context.
+            await update_preferences(
+                _workspace_patch(_workspace_envelope(3)), first, user_a
+            )
+            with pytest.raises(HTTPException) as caught:
+                await update_preferences(
+                    _workspace_patch(_workspace_envelope()), second, user_b
+                )
+            assert caught.value.status_code == 409
+            await second.rollback()
+    finally:
+        async with maker() as cleanup:
+            await cleanup.execute(sa.delete(User).where(User.id == user_id))
+            await cleanup.commit()
