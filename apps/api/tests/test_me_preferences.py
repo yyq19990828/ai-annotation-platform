@@ -9,6 +9,7 @@
 
 import copy
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -1246,6 +1247,26 @@ async def test_workspace_invalid_patch_returns_422_without_writing(
         PREFS_URL, json=_workspace_patch(envelope), headers=_bearer(token)
     )
     assert response.status_code == 422
+    assert user.preferences == previous
+
+
+async def test_workspace_overflow_number_returns_422_without_writing(
+    httpx_client, annotator
+):
+    user, token = annotator
+    previous = copy.deepcopy(user.preferences)
+    # A valid JSON exponent overflows Python's float. Send raw HTTP JSON so the
+    # client's own finite-number encoder cannot reject it before reaching the API.
+    body = json.dumps(_workspace_patch(_workspace_envelope())).replace(
+        '"width": 1440', '"width": 1e309'
+    )
+    response = await httpx_client.patch(
+        PREFS_URL,
+        content=body,
+        headers={**_bearer(token), "Content-Type": "application/json"},
+    )
+    assert response.status_code == 422
+    assert "finite JSON values" in response.json()["detail"][0]["msg"]
     assert user.preferences == previous
 
 
