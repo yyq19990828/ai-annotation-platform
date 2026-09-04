@@ -70,7 +70,7 @@ describe("workspace executor with Dockview 8", () => {
     expect(api.getPanel("discussion")?.group.id).toBe("parking");
     controller.applyPreset("review");
     controller.dock("inspector", "below");
-    controller.exitCompact();
+    expect(controller.exitCompact()).toBe(false);
     expect(PANEL_IDS.map((id) => api.getPanel(id))).toEqual(identities);
     expect(api.groups.some((group) => group.id === "compact-overlay")).toBe(false);
     expect(fromJSON).not.toHaveBeenCalled();
@@ -138,6 +138,20 @@ describe("workspace executor with Dockview 8", () => {
     controller.recover(createWorkspacePreset("standard", bounds));
     expect(controller.isCompact()).toBe(false);
     expect(api.getPanel("canvas")?.group.id).toBe("canvas");
+  });
+
+  it("reports a write only for deferred visibility changes after compact replay", () => {
+    const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+    controller.applyPreset("review");
+    controller.enterCompact();
+    controller.show("task-queue");
+    expect(controller.exitCompact()).toBe(true);
+    expect(api.getPanel("task-queue")?.group.id).toBe("task-queue");
+    controller.enterCompact();
+    controller.show("class-palette");
+    controller.hide("class-palette");
+    expect(controller.exitCompact()).toBe(false);
+    expect(api.getPanel("class-palette")?.group.id).toBe("parking");
   });
 
   it("replays four nested split levels within one pixel and reflows actual constraints", () => {

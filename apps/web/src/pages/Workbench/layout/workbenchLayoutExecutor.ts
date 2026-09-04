@@ -92,7 +92,7 @@ export interface WorkbenchLayoutExecutor {
   float(id: PanelId): void;
   applyPreset(preset: WorkspacePresetId): void;
   enterCompact(): void;
-  exitCompact(): void;
+  exitCompact(): boolean;
   resizeCompact(): void;
   isCompact(): boolean;
   isVisible(id: PanelId): boolean;
@@ -533,13 +533,15 @@ export function createWorkbenchLayoutExecutor(
       canvas().api.setActive();
     },
     exitCompact() {
-      if (!desktop) return;
+      if (!desktop) return false;
       const saved = desktop;
       // Keep the latch if replay throws: the caller enters read-only recovery and never writes the projection.
       replay(saved);
       desktop = null;
+      const changed = pendingShows.size > 0;
       for (const id of pendingShows) show(id);
       pendingShows.clear();
+      return changed;
     },
     resizeCompact() {
       const active = getGroup("compact-overlay")?.activePanel?.id;
