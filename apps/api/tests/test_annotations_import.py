@@ -26,8 +26,13 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.annotation import Annotation
+from app.db.models.dataset import DatasetItem
 from app.db.models.project import Project
+from app.db.models.scene_track import SceneTrack, SceneTrackInterval
 from app.db.models.task import Task
+from app.services.annotations_import import import_aap_json_annotations
+from app.services.task_dataset_link import link_items
+from tests.test_track_operations import _seed_scene
 
 pytestmark = pytest.mark.asyncio
 
@@ -115,6 +120,292 @@ def _ann_entry(
     if confidence is not None:
         entry["confidence"] = confidence
     return entry
+
+
+async def test_aap_scene_track_intervals_and_temporal_roles_round_trip(
+    db_session, super_admin
+):
+    user, _ = super_admin
+    project, scene, tasks = await _seed_scene(
+        db_session, owner_id=user.id, frame_count=5
+    )
+    envelope = {
+        "schema_version": "1.5",
+        "exported_from": {"platform": "aap"},
+        "project": {"name": project.name, "type_key": project.type_key},
+        "scene_tracks": [
+            {
+                "track_id": "trk-imported-gap",
+                "scene_name": scene.name,
+                "class_name": "car",
+                "attributes": {"motion": "parked"},
+                "attributes_meta": {},
+                "intervals": [
+                    {"start_frame": 0, "end_frame": 0, "source": "imported"},
+                    {"start_frame": 4, "end_frame": 4, "source": "imported"},
+                ],
+            }
+        ],
+        "tasks": [
+            {
+                "task_match": {"display_id": tasks[frame].display_id},
+                "media_type": "lidar",
+                "annotations": [
+                    {
+                        "geometry": {
+                            "type": "box_3d",
+                            "center": [float(frame), 0.0, 0.0],
+                            "size": [4.0, 2.0, 1.5],
+                            "rotation": [0.0, 0.0, 0.0],
+                        },
+                        "class_name": "car",
+                        "tool_unit_id": "lidar_box_3d",
+                        "source": "manual",
+                        "track_id": "trk-imported-gap",
+                        "temporal_role": "keyframe" if frame == 0 else "sample",
+                    }
+                ],
+                "predictions": [],
+            }
+            for frame in (0, 4)
+        ],
+    }
+    result = await import_aap_json_annotations(
+        db_session,
+        project.id,
+        json.dumps(envelope).encode(),
+        operator_user_id=user.id,
+    )
+    assert result.imported == 2
+    assert result.errors == []
+    track = (
+        await db_session.execute(
+            select(SceneTrack).where(SceneTrack.track_id == "trk-imported-gap")
+        )
+    ).scalar_one()
+    assert track.attributes == {"motion": "parked"}
+    assert track.presence_mode == "explicit"
+    intervals = list(
+        (
+            await db_session.execute(
+                select(SceneTrackInterval)
+                .where(SceneTrackInterval.scene_track_id == track.id)
+                .order_by(SceneTrackInterval.start_frame)
+            )
+        ).scalars()
+    )
+    assert [(row.start_frame, row.end_frame) for row in intervals] == [(0, 0), (4, 4)]
+    members = list(
+        (
+            await db_session.execute(
+                select(Annotation)
+                .where(Annotation.scene_track_id == track.id)
+                .order_by(Annotation.task_id)
+            )
+        ).scalars()
+    )
+    assert {row.temporal_role for row in members} == {"keyframe", "sample"}
+
+
+async def test_aap_camera_member_import_links_role_to_scene_track(
+    db_session, super_admin
+):
+    user, _ = super_admin
+    project, scene, tasks = await _seed_scene(
+        db_session, owner_id=user.id, frame_count=1
+    )
+    task = tasks[0]
+    primary = await db_session.get(DatasetItem, task.dataset_item_id)
+    assert primary is not None
+    camera = DatasetItem(
+        dataset_id=primary.dataset_id,
+        file_name="front.jpg",
+        file_path="track-ops/front.jpg",
+        file_type="image",
+        width=1600,
+        height=900,
+        scene_id=scene.id,
+        frame_index=0,
+    )
+    db_session.add(camera)
+    await db_session.flush()
+    await link_items(
+        db_session,
+        task.id,
+        [(camera.id, "camera_front", "CAM_FRONT")],
+    )
+    digest = "a" * 64
+    envelope = {
+        "schema_version": "1.6",
+        "exported_from": {"platform": "aap"},
+        "project": {"name": project.name, "type_key": project.type_key},
+        "tasks": [
+            {
+                "task_match": {"display_id": task.display_id},
+                "media_type": "lidar",
+                # 相机成员故意放在前面，导入器仍应先建立主 3D SceneTrack。
+                "annotations": [
+                    {
+                        "geometry": {
+                            "type": "bbox",
+                            "x": 0.1,
+                            "y": 0.2,
+                            "w": 0.3,
+                            "h": 0.4,
+                        },
+                        "class_name": "car",
+                        "tool_unit_id": "lidar_box_3d",
+                        "source": "manual",
+                        "track_id": "trk-camera-import",
+                        "temporal_role": "sample",
+                        "sensor_role": "camera_front",
+                        "sensor_visibility": "occluded",
+                        "calibration_revision": 3,
+                        "calibration_digest": digest,
+                    },
+                    {
+                        "geometry": {
+                            "type": "box_3d",
+                            "center": [10.0, 0.0, 0.0],
+                            "size": [4.0, 2.0, 1.5],
+                            "rotation": [0.0, 0.0, 0.0],
+                        },
+                        "class_name": "car",
+                        "tool_unit_id": "lidar_box_3d",
+                        "source": "manual",
+                        "track_id": "trk-camera-import",
+                        "temporal_role": "keyframe",
+                    },
+                ],
+                "predictions": [],
+            }
+        ],
+    }
+
+    missing_role_envelope = json.loads(json.dumps(envelope))
+    missing_role_envelope["tasks"][0]["annotations"] = [
+        missing_role_envelope["tasks"][0]["annotations"][0]
+    ]
+    missing_role_envelope["tasks"][0]["annotations"][0]["sensor_role"] = "camera_rear"
+    missing_role = await import_aap_json_annotations(
+        db_session,
+        project.id,
+        json.dumps(missing_role_envelope).encode(),
+        operator_user_id=user.id,
+        dry_run=True,
+    )
+    assert missing_role.imported == 0
+    assert missing_role.skipped == 1
+    assert "not linked to task" in missing_role.errors[0].reason
+
+    missing_primary_envelope = json.loads(json.dumps(envelope))
+    missing_primary_envelope["tasks"][0]["annotations"] = [
+        missing_primary_envelope["tasks"][0]["annotations"][0]
+    ]
+    missing_primary = await import_aap_json_annotations(
+        db_session,
+        project.id,
+        json.dumps(missing_primary_envelope).encode(),
+        operator_user_id=user.id,
+        dry_run=True,
+    )
+    assert missing_primary.imported == 0
+    assert missing_primary.skipped == 1
+    assert "has no primary 3D annotation" in missing_primary.errors[0].reason
+
+    dry_run_result = await import_aap_json_annotations(
+        db_session,
+        project.id,
+        json.dumps(envelope).encode(),
+        operator_user_id=user.id,
+        dry_run=True,
+    )
+    assert dry_run_result.imported == 2
+    assert dry_run_result.errors == []
+    assert (
+        await db_session.scalar(
+            select(func.count(Annotation.id)).where(Annotation.task_id == task.id)
+        )
+        == 0
+    )
+
+    result = await import_aap_json_annotations(
+        db_session,
+        project.id,
+        json.dumps(envelope).encode(),
+        operator_user_id=user.id,
+    )
+
+    assert result.imported == 2
+    assert result.errors == []
+    rows = list(
+        (
+            await db_session.execute(
+                select(Annotation)
+                .where(Annotation.task_id == task.id)
+                .order_by(Annotation.sensor_role.nulls_first())
+            )
+        ).scalars()
+    )
+    assert len(rows) == 2
+    source, member = rows
+    assert member.scene_track_id == source.scene_track_id
+    assert member.sensor_dataset_item_id == camera.id
+    assert member.sensor_role == "camera_front"
+    assert member.sensor_visibility == "occluded"
+    assert member.calibration_revision == 3
+    assert member.calibration_digest == digest
+
+    duplicate = await import_aap_json_annotations(
+        db_session,
+        project.id,
+        json.dumps(envelope).encode(),
+        operator_user_id=user.id,
+    )
+    # Append mode keeps the existing primary-annotation semantics, but the
+    # per-camera uniqueness contract rejects a second active camera member.
+    assert duplicate.imported == 1
+    assert duplicate.skipped == 1
+    assert any("already exists" in error.reason for error in duplicate.errors)
+
+    overwrite_missing_primary = await import_aap_json_annotations(
+        db_session,
+        project.id,
+        json.dumps(missing_primary_envelope).encode(),
+        operator_user_id=user.id,
+        overwrite=True,
+        dry_run=True,
+    )
+    assert overwrite_missing_primary.imported == 0
+    assert overwrite_missing_primary.skipped == 1
+    assert "has no primary 3D annotation" in overwrite_missing_primary.errors[0].reason
+
+    overwrite_dry_run = await import_aap_json_annotations(
+        db_session,
+        project.id,
+        json.dumps(envelope).encode(),
+        operator_user_id=user.id,
+        overwrite=True,
+        dry_run=True,
+    )
+    assert overwrite_dry_run.imported == 2
+    assert overwrite_dry_run.errors == []
+
+    overwritten = await import_aap_json_annotations(
+        db_session,
+        project.id,
+        json.dumps(envelope).encode(),
+        operator_user_id=user.id,
+        overwrite=True,
+    )
+    assert overwritten.imported == 2
+    assert overwritten.errors == []
+    assert (
+        await db_session.scalar(
+            select(func.count(Annotation.id)).where(Annotation.task_id == task.id)
+        )
+        == 2
+    )
 
 
 # ── append 默认语义 ──────────────────────────────────────────────────

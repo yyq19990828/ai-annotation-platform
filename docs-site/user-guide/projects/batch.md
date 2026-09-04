@@ -210,9 +210,9 @@ owner 可以在批次行上点击锁定，为批次写入锁定原因。锁定�
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | 图片     | `coco`、`yolo`（= `yolo-det`）、`yolo-obb`（旋转框）、`yolo-seg`（实例分割）、`aap_json`、`voc`（仅单独导出，同步下载）                                            |
 | 视频     | `video_json`、`aap_json`、`mot`、`kitti`（tracking label）、`yolo-frames-det`、`yolo-frames-seg`、`coco-frames-seg`、`davis`（palette PNG）、`youtube-vos`、`mots` |
-| 3D 点云  | `aap_json`、`kitti`（3D label）、`nuscenes`、`pointmask`                                                                                                           |
+| 3D 点云  | `aap_json`、`coco-multicamera`（合并人工相机 bbox）、`kitti`（3D label）、`nuscenes`、`pointmask`                                                                  |
 
-点云 `aap_json` / `kitti` 导出支持 `axis_frame` 参数（`iso`（默认，平台内部坐标系）或 `source`（数据集原始传感器坐标系））。
+点云 `aap_json` 支持 `axis_frame` 参数（`iso`（默认，平台内部坐标系）或 `source`（数据集原始传感器坐标系））。Multi-camera COCO 会合并批次内全部相机 role 的持久化人工 bbox，并保留无框图作为负样本；媒体、bbox 与 SceneTrack 关系不可信时会在入队前拒绝。KITTI 必须显式选择相机通道，并通过逐帧标定与图像尺寸预检。nuScenes 只接受由 nuScenes 以 ego 坐标导入、包含完整 Scene 且保留原始媒体、地图、位姿和传感器合同的数据；批次只覆盖部分 Scene 时会在入队前拒绝。
 
 视频轨迹批次支持两种帧模式：
 

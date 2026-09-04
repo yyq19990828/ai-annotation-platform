@@ -28,6 +28,7 @@ from app.api.v1 import (
     ml_backends,
     ml_capabilities,
     mask_qc,
+    point_cloud_quality,
     mask_formats,
     notifications,
     predictions,
@@ -136,6 +137,7 @@ api_router.include_router(predictions.router, tags=["predictions"])
 # v0.10.16 · 统一异步任务表
 api_router.include_router(async_jobs.router, tags=["async-jobs"])
 api_router.include_router(mask_qc.router, tags=["mask-qc"])
+api_router.include_router(point_cloud_quality.router, tags=["point-cloud-quality"])
 api_router.include_router(mask_formats.router, tags=["mask-formats"])
 # v0.10.16 · DuckDB 离线分析面板（super_admin only）
 api_router.include_router(

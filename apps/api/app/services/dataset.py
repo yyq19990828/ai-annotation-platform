@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import logging
 import mimetypes
 import os
 import uuid
@@ -26,7 +27,7 @@ from app.services.project_kind import (
     media_kind_aliases,
     project_kind,
 )
-from app.services.storage import storage_service
+from app.services.storage import TRUSTED_NUSCENES_PREFIX, storage_service
 
 _STREAM_UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024
 _IMAGE_HEAD_BYTES = 256 * 1024
@@ -34,6 +35,16 @@ _IMAGE_HEAD_BYTES = 256 * 1024
 # v0.13.11 · 用于 DatasetService.update 区分「未传参」与「显式传 None」(后者表示清除
 # metadata_["axis_convention"]，回退到默认 iso_8855)。
 _UNSET: object = object()
+log = logging.getLogger(__name__)
+
+
+def ensure_dataset_storage_name_is_writable(name: str) -> None:
+    first_part = name.strip("/").split("/", 1)[0]
+    if first_part.startswith(TRUSTED_NUSCENES_PREFIX):
+        raise HTTPException(
+            status_code=422,
+            detail="Dataset name uses a reserved storage namespace",
+        )
 
 
 @dataclass(frozen=True)
@@ -61,6 +72,11 @@ class LinkProjectResult:
     link: ProjectDataset
     async_job_id: uuid.UUID | None = None
     created_tasks: int = 0
+
+
+@dataclass(frozen=True)
+class DatasetDeleteCleanup:
+    pyramid_asset_ids: tuple[uuid.UUID, ...]
 
 
 async def build_tasks_for_link(
@@ -284,6 +300,7 @@ class DatasetService:
         axis_convention: str | None = None,
         is_temporal: bool = False,
     ) -> Dataset:
+        ensure_dataset_storage_name_is_writable(name)
         ds_id = uuid.uuid4()
         display_id = await next_display_id(self.db, "datasets")
         kwargs: dict = {
@@ -317,6 +334,7 @@ class DatasetService:
         if not ds:
             return None
         if name is not None:
+            ensure_dataset_storage_name_is_writable(name)
             ds.name = name
         if description is not None:
             ds.description = description
@@ -332,12 +350,11 @@ class DatasetService:
         await self.db.flush()
         return ds
 
-    async def delete(self, dataset_id: uuid.UUID) -> bool:
+    async def delete(self, dataset_id: uuid.UUID) -> DatasetDeleteCleanup | None:
         ds = await self.db.get(Dataset, dataset_id)
         if not ds:
-            return False
+            return None
         from app.db.models.image_pyramid import ImagePyramidAsset
-        from app.services.image_pyramid import PYRAMID_PREFIX
 
         asset_ids = list(
             (
@@ -353,14 +370,22 @@ class DatasetService:
             .scalars()
             .all()
         )
-        for asset_id in asset_ids:
-            storage_service.delete_prefix(
-                f"{PYRAMID_PREFIX}/{asset_id}",
-                bucket=storage_service.media_cache_bucket,
-            )
         await self.db.delete(ds)
         await self.db.flush()
-        return True
+        return DatasetDeleteCleanup(pyramid_asset_ids=tuple(asset_ids))
+
+    @staticmethod
+    def cleanup_deleted_storage(cleanup: DatasetDeleteCleanup) -> None:
+        from app.services.image_pyramid import PYRAMID_PREFIX
+
+        for asset_id in cleanup.pyramid_asset_ids:
+            try:
+                storage_service.delete_prefix(
+                    f"{PYRAMID_PREFIX}/{asset_id}",
+                    bucket=storage_service.media_cache_bucket,
+                )
+            except Exception:  # noqa: BLE001
+                log.exception("failed to clean image pyramid asset %s", asset_id)
 
     # ── Items ───────────────────────────────────────────────────────────────
 
@@ -508,6 +533,14 @@ class DatasetService:
         if not ds:
             return IngestOutcome(
                 status="error", relpath=relpath, error="dataset missing"
+            )
+        try:
+            ensure_dataset_storage_name_is_writable(ds.name)
+        except HTTPException as exc:
+            return IngestOutcome(
+                status="error",
+                relpath=relpath,
+                error=str(exc.detail),
             )
 
         source_name = (
@@ -733,6 +766,7 @@ class DatasetService:
         ds = await self.db.get(Dataset, dataset_id)
         if not ds:
             return []
+        ensure_dataset_storage_name_is_writable(ds.name)
 
         prefix = f"{ds.name}/"
         objects = storage_service.list_objects(

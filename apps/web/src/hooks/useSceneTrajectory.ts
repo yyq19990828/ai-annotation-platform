@@ -12,7 +12,7 @@ import type { FramePose } from "@/api/generated/types.gen";
 export function useSceneTrajectory(sceneId: string | null | undefined) {
   const query = useQuery({
     queryKey: ["scene-trajectory", sceneId],
-    queryFn: () => scenesApi.getTrajectory(sceneId!),
+    queryFn: ({ signal }) => scenesApi.getTrajectory(sceneId!, { signal }),
     enabled: !!sceneId,
     staleTime: 30 * 60 * 1000,
   });

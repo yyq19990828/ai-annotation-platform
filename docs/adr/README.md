@@ -43,6 +43,7 @@
 - [0009](0009-task-events-table-and-partition.md) — task_events 表与按月分区方案
 - [0025](0025-webhook-event-envelope-versioning.md) — Webhook 事件信封与版本化（草案，未实现）
 - [0034](0034-lidar-axis-convention.md) — 点云数据集 lidar 坐标系约定：dataset 级声明 + 加载侧归一化
+- [0068](0068-experimental-webgpu-pointcloud-renderer.md) — 3D 点云采用默认关闭的 WebGPU 实验渲染路径
 
 ### 已采纳（Accepted，归档）
 
@@ -110,3 +111,7 @@
 - [0065](0065-keep-one-pass-raster-mask-webgpu-kernel.md) — Raster Mask WebGPU 保留 one-pass kernel，不采用可分离候选
 - [0066](archive/0066-video-segment-fragments-and-canonical-tracks.md) — 视频协同以 Segment Fragment 为写入真相，完整轨迹按边界决策派生
 - [0067](archive/0067-audit-bi-daily-materialized-view.md) — 审计 BI 采用日粒度物化与热数据补尾
+- [0068](0068-experimental-webgpu-pointcloud-renderer.md) — 3D 点云渲染器采用可回退的实验性 WebGPU 后端
+- [0069](archive/0069-scene-track-domain-and-lifecycle.md) — Scene Track 作为 3D 时序对象生命周期、存在区间与可逆命令的权威模型
+- [0070](archive/0070-single-context-pointcloud-four-view-rendering.md) — 点云四视图采用单 context 与事件驱动渲染
+- [0071](archive/0071-persistent-multicamera-annotation-members.md) — 多相机人工标注作为 SceneTrack 的持久成员

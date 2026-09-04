@@ -38,7 +38,7 @@ export function VideoTrackQualitySidebar({
   const queryClient = useQueryClient();
   const runsQuery = useQuery({
     queryKey: ["video-track-quality", taskId],
-    queryFn: () => videoTrackerApi.trackQuality(taskId),
+    queryFn: ({ signal }) => videoTrackerApi.trackQuality(taskId, { signal }),
     refetchInterval: (query) =>
       (query.state.data ?? []).some((run) => ["pending", "running"].includes(run.status))
         ? 3000
@@ -48,7 +48,7 @@ export function VideoTrackQualitySidebar({
   const selectedRunId = runId ?? runsQuery.data?.[0]?.id ?? null;
   const detailQuery = useQuery({
     queryKey: ["video-track-quality", taskId, selectedRunId],
-    queryFn: () => videoTrackerApi.trackQualityDetail(taskId, selectedRunId!),
+    queryFn: ({ signal }) => videoTrackerApi.trackQualityDetail(taskId, selectedRunId!, { signal }),
     enabled: !!selectedRunId,
   });
   const run = detailQuery.data;

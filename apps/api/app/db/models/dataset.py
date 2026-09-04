@@ -4,6 +4,7 @@ import uuid
 from sqlalchemy import (
     Boolean,
     BigInteger,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -128,6 +129,51 @@ class DatasetItem(Base):
             "idx_dataset_items_scene_frame",
             "scene_id",
             "frame_index",
+        ),
+    )
+
+
+class SensorCalibrationRevision(Base):
+    """Append-only calibration history for one camera DatasetItem."""
+
+    __tablename__ = "sensor_calibration_revisions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    dataset_item_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("dataset_items.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    digest: Mapped[str] = mapped_column(String(64), nullable=False)
+    calibration: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "revision >= 1",
+            name="ck_sensor_calibration_revisions_revision",
+        ),
+        CheckConstraint(
+            "char_length(digest) = 64",
+            name="ck_sensor_calibration_revisions_digest",
+        ),
+        UniqueConstraint(
+            "dataset_item_id",
+            "revision",
+            name="uq_sensor_calibration_revisions_item_revision",
+        ),
+        Index(
+            "ix_sensor_calibration_revisions_item_revision",
+            "dataset_item_id",
+            "revision",
         ),
     )
 

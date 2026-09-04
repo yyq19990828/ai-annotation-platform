@@ -4,7 +4,9 @@ import type { CSSProperties } from "react";
 import * as THREE from "three";
 import type { Box3DGeometry, SensorCalibration } from "@/types";
 import type { FloatingPanelRect } from "../../shell/FloatingPanelShell";
-import type { TriViewFloatState } from "@/api/auth";
+import type { FloatingPanelBounds } from "../../shell/useDragMove";
+import type { CameraPanelState, TriViewFloatState } from "@/api/auth";
+import type { WorkbenchLayoutPatch } from "@/pages/Workbench/state/useWorkbenchConfig";
 import type { Psr } from "./geometry/triview";
 import { cameraAnchor, type Anchor } from "./geometry/cameraAnchor";
 import type { CameraSample } from "./geometry/colorize";
@@ -24,6 +26,38 @@ export const TRI_FLOAT_DEFAULT_H = 440;
 export const TRI_TAB_DRAG_SIZE = { w: 96, h: 34 };
 // 收起标签拖动判定阈值:位移超过此值才算"拖动"(否则按点击展开),px。
 export const TRI_TAB_DRAG_THRESHOLD = 3;
+export type ThreeDLayoutPreset = "box-refinement" | "sensor-fusion" | "point-segmentation";
+
+export const THREE_D_LAYOUT_PRESETS: ReadonlyArray<{
+  id: ThreeDLayoutPreset;
+  label: string;
+  description: string;
+}> = [
+  { id: "box-refinement", label: "框体精修", description: "展开三视图，收起相机面板" },
+  { id: "sensor-fusion", label: "传感器融合", description: "收起三视图，恢复相机默认贴边" },
+  { id: "point-segmentation", label: "点级分割", description: "收起三视图和相机面板" },
+];
+
+/** 生成一次性恢复命令，不引入“当前预设”持久状态。 */
+export function buildThreeDLayoutPreset(
+  preset: ThreeDLayoutPreset,
+  cameraRoles: readonly string[],
+): Pick<WorkbenchLayoutPatch, "triViewFloat" | "cameraPanels"> {
+  const collapsedCameras: Record<string, CameraPanelState> = {};
+  for (const role of new Set(cameraRoles.filter(Boolean))) {
+    collapsedCameras[role] = { x: null, y: null, collapsed: true };
+  }
+  return {
+    triViewFloat: {
+      collapsed: preset !== "box-refinement",
+      x: null,
+      y: null,
+      w: null,
+      h: null,
+    },
+    cameraPanels: preset === "sensor-fusion" ? {} : collapsedCameras,
+  };
+}
 // v0.13.9 · 框选预览矩形位置/尺寸经 CSS custom property 注入(逐帧动态值)。
 export type BoxSelectRectVars = CSSProperties & {
   "--rect-l": string;
@@ -50,6 +84,40 @@ export function resolveTriViewFloatRect(
     w,
     h,
   };
+}
+
+/**
+ * 把相机面板统一放在一个 viewport 图层中，并用 even-odd polygon 挖掉三视图浮窗区域。
+ * 三视图点云仍由主 renderer canvas 绘制；裁掉相机图层后，透明正交视口会看到点云，
+ * 而不是 DOM 相机卡片。向外取整可覆盖亚像素边缘，避免拖动 / 缩放后的 1px 漏边。
+ */
+export function cameraLayerClipPath(
+  bounds: FloatingPanelBounds,
+  triView: FloatingPanelRect,
+): string | undefined {
+  const width = bounds.right - bounds.left;
+  const height = bounds.bottom - bounds.top;
+  if (width <= 0 || height <= 0) return undefined;
+
+  const left = Math.max(0, Math.floor(triView.x - bounds.left));
+  const top = Math.max(0, Math.floor(triView.y - bounds.top));
+  const right = Math.min(width, Math.ceil(triView.x + triView.w - bounds.left));
+  const bottom = Math.min(height, Math.ceil(triView.y + triView.h - bounds.top));
+  if (right <= left || bottom <= top) return undefined;
+
+  return [
+    "polygon(evenodd",
+    "0px 0px",
+    `${width}px 0px`,
+    `${width}px ${height}px`,
+    `0px ${height}px`,
+    "0px 0px",
+    `${left}px ${top}px`,
+    `${left}px ${bottom}px`,
+    `${right}px ${bottom}px`,
+    `${right}px ${top}px`,
+    `${left}px ${top}px)`,
+  ].join(", ");
 }
 
 export function resolveBox3dDefaultSize(
@@ -90,25 +158,44 @@ export function geometryConvention(
 export function loadCameraSample(
   imageUrl: string,
   calib: SensorCalibration,
+  signal?: AbortSignal,
 ): Promise<CameraSample | null> {
   return new Promise((resolve) => {
     const img = new Image();
+    let settled = false;
+    const finish = (sample: CameraSample | null) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", handleAbort);
+      img.onload = null;
+      img.onerror = null;
+      resolve(sample);
+    };
+    const handleAbort = () => {
+      img.src = "";
+      finish(null);
+    };
+    if (signal?.aborted) {
+      finish(null);
+      return;
+    }
+    signal?.addEventListener("abort", handleAbort, { once: true });
     img.crossOrigin = "anonymous";
     img.onload = () => {
       const canvas = document.createElement("canvas");
       canvas.width = img.naturalWidth;
       canvas.height = img.naturalHeight;
       const ctx = canvas.getContext("2d");
-      if (!ctx) return resolve(null);
+      if (!ctx) return finish(null);
       ctx.drawImage(img, 0, 0);
       try {
         const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        resolve({ calib, width: canvas.width, height: canvas.height, data });
+        finish({ calib, width: canvas.width, height: canvas.height, data });
       } catch {
-        resolve(null); // 跨域污染
+        finish(null); // 跨域污染
       }
     };
-    img.onerror = () => resolve(null);
+    img.onerror = () => finish(null);
     img.src = imageUrl;
   });
 }

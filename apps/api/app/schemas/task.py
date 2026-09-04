@@ -117,8 +117,13 @@ class TaskVideoManifestResponse(BaseModel):
 class PointCloudCameraOut(BaseModel):
     name: str
     role: str
+    dataset_item_id: UUID
     image_url: str
+    width: int | None = None
+    height: int | None = None
     calibration: SensorCalibration | None = None
+    calibration_revision: int | None = None
+    calibration_digest: str | None = None
 
 
 class TaskPointCloudManifestResponse(BaseModel):

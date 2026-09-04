@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import { useEffect } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { FloatingPanelShell } from "./FloatingPanelShell";
 
@@ -16,6 +17,43 @@ function setViewport(width: number, height: number) {
 }
 
 describe("FloatingPanelShell", () => {
+  it("hides a collapsed panel without unmounting its retained content", () => {
+    const cleanup = vi.fn();
+    function RetainedContent() {
+      useEffect(() => cleanup, []);
+      return <div>retained renderer</div>;
+    }
+    const sharedProps = {
+      title: "浮窗",
+      position: { x: 100, y: 100, w: 300, h: 300 },
+      onPositionChange: vi.fn(),
+      minSize: { w: 200, h: 240 },
+      maxSize: { w: 720, h: 900 },
+    };
+    const { rerender } = render(
+      <FloatingPanelShell {...sharedProps} collapsed={false}>
+        <RetainedContent />
+      </FloatingPanelShell>,
+    );
+
+    rerender(
+      <FloatingPanelShell {...sharedProps} collapsed>
+        <RetainedContent />
+      </FloatingPanelShell>,
+    );
+    const panel = screen.getByText("retained renderer").closest("section");
+    expect(panel).toHaveAttribute("aria-hidden", "true");
+    expect(panel).toHaveClass("invisible", "pointer-events-none");
+    expect(cleanup).not.toHaveBeenCalled();
+
+    rerender(
+      <FloatingPanelShell {...sharedProps} collapsed={false}>
+        <RetainedContent />
+      </FloatingPanelShell>,
+    );
+    expect(cleanup).not.toHaveBeenCalled();
+  });
+
   it("drags by the header and clamps inside the viewport", async () => {
     setViewport(800, 800);
     const onPositionChange = vi.fn();

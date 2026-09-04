@@ -147,6 +147,95 @@ describe("useVideoFramePreview", () => {
     expect(result.current.preview?.url).toBe("/frame-6.webp");
   });
 
+  it("快速 A→B→A 时不会让第一个 A 请求占住最终帧", async () => {
+    const calls: Array<{ frameIndex: number; signal: AbortSignal }> = [];
+    api.getVideoFrame.mockImplementation(
+      (_taskId, frameIndex, _params, init?: RequestInit) =>
+        new Promise((resolve) => {
+          const signal = init?.signal as AbortSignal;
+          calls.push({ frameIndex, signal });
+          if (calls.length === 3) {
+            resolve({
+              frame_index: frameIndex,
+              width: 320,
+              format: "webp",
+              status: "ready",
+              url: `/frame-${frameIndex}-latest.webp`,
+              retry_after: null,
+              error: null,
+            });
+          }
+        }),
+    );
+
+    const { result } = renderHook(() => useVideoFramePreview({ taskId: "task-1", maxFrame: 9 }));
+
+    act(() => result.current.previewFor(1));
+    await waitFor(() => expect(calls).toHaveLength(1));
+    act(() => result.current.previewFor(2));
+    await waitFor(() => expect(calls).toHaveLength(2));
+    act(() => result.current.previewFor(1));
+    await waitFor(() => expect(calls).toHaveLength(3));
+
+    expect(calls.slice(0, 2).every(({ signal }) => signal.aborted)).toBe(true);
+    await waitFor(() => expect(result.current.preview?.url).toBe("/frame-1-latest.webp"));
+  });
+
+  it("A→已缓存 B→A 会取消旧 A 并重新请求最终 A", async () => {
+    const foregroundSignals: AbortSignal[] = [];
+    let foregroundCall = 0;
+    api.prefetchVideoFrames.mockResolvedValueOnce({
+      dataset_item_id: "item-1",
+      task_id: "task-1",
+      frames: [
+        {
+          frame_index: 2,
+          width: 320,
+          format: "webp",
+          status: "ready",
+          url: "/frame-2-cached.webp",
+          retry_after: null,
+          error: null,
+        },
+      ],
+    });
+    api.getVideoFrame.mockImplementation((_taskId, frameIndex, _params, init?: RequestInit) => {
+      foregroundCall += 1;
+      const signal = init?.signal as AbortSignal;
+      foregroundSignals.push(signal);
+      if (foregroundCall === 2) {
+        return Promise.resolve({
+          frame_index: frameIndex,
+          width: 320,
+          format: "webp",
+          status: "ready",
+          url: "/frame-1-latest.webp",
+          retry_after: null,
+          error: null,
+        });
+      }
+      return new Promise((_, reject) => {
+        signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), {
+          once: true,
+        });
+      });
+    });
+
+    const { result } = renderHook(() => useVideoFramePreview({ taskId: "task-1", maxFrame: 9 }));
+    act(() => result.current.prefetch([2]));
+    await waitFor(() => expect(result.current.diagnostics.cacheSize).toBe(1));
+
+    act(() => result.current.previewFor(1));
+    await waitFor(() => expect(api.getVideoFrame).toHaveBeenCalledTimes(1));
+    act(() => result.current.previewFor(2));
+    await waitFor(() => expect(result.current.preview?.url).toBe("/frame-2-cached.webp"));
+    act(() => result.current.previewFor(1));
+
+    await waitFor(() => expect(api.getVideoFrame).toHaveBeenCalledTimes(2));
+    expect(foregroundSignals[0]?.aborted).toBe(true);
+    await waitFor(() => expect(result.current.preview?.url).toBe("/frame-1-latest.webp"));
+  });
+
   it("prefetches unique clamped frames without binding preview state", async () => {
     api.prefetchVideoFrames.mockResolvedValue({
       dataset_item_id: "item-1",
@@ -159,12 +248,60 @@ describe("useVideoFramePreview", () => {
     act(() => result.current.prefetch([1, 1, 20, -2]));
 
     await waitFor(() =>
-      expect(api.prefetchVideoFrames).toHaveBeenCalledWith("task-1", [1, 9, 0], {
-        width: 320,
-        format: "webp",
-      }),
+      expect(api.prefetchVideoFrames).toHaveBeenCalledWith(
+        "task-1",
+        [1, 9, 0],
+        { width: 320, format: "webp" },
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      ),
     );
     expect(result.current.preview).toBeNull();
+  });
+
+  it("切题时中止旧缩略帧与预取请求", async () => {
+    const foregroundSignals: AbortSignal[] = [];
+    const prefetchSignals: AbortSignal[] = [];
+    api.getVideoFrame.mockImplementation(
+      (_taskId, _frameIndex, _params, init?: RequestInit) =>
+        new Promise((_, reject) => {
+          const signal = init?.signal;
+          if (signal) {
+            foregroundSignals.push(signal);
+            signal.addEventListener(
+              "abort",
+              () => reject(new DOMException("aborted", "AbortError")),
+              { once: true },
+            );
+          }
+        }),
+    );
+    api.prefetchVideoFrames.mockImplementation(
+      (_taskId, _frames, _params, init?: RequestInit) =>
+        new Promise((_, reject) => {
+          const signal = init?.signal;
+          if (signal) {
+            prefetchSignals.push(signal);
+            signal.addEventListener(
+              "abort",
+              () => reject(new DOMException("aborted", "AbortError")),
+              { once: true },
+            );
+          }
+        }),
+    );
+
+    const { result, rerender } = renderHook(
+      ({ taskId }) => useVideoFramePreview({ taskId, maxFrame: 9 }),
+      { initialProps: { taskId: "task-1" } },
+    );
+    act(() => result.current.previewFor(4));
+    await waitFor(() => expect(foregroundSignals).toHaveLength(1));
+    await waitFor(() => expect(prefetchSignals.length).toBeGreaterThan(0));
+
+    rerender({ taskId: "task-2" });
+
+    expect(foregroundSignals[0]?.aborted).toBe(true);
+    expect(prefetchSignals.every((signal) => signal.aborted)).toBe(true);
   });
 
   it("disables frame preview for unsupported task frame-service routes", async () => {

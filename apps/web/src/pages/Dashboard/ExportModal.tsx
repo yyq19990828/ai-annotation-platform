@@ -3,6 +3,7 @@ import {
   projectsApi,
   type ExportOptions,
   type ExportTarget,
+  type LidarExportPreflight,
   type VideoExportScope,
   type VideoFrameMode,
 } from "@/api/projects";
@@ -28,6 +29,7 @@ interface TargetOption {
   value: ExportTarget;
   label: string;
   description: string;
+  disabled?: boolean;
 }
 
 // v0.10.43 · 多目标导出。图像项目：COCO / AAP 单选卡 + YOLO 三变体分组（几何映射不同）。
@@ -131,9 +133,14 @@ const LIDAR_OPTIONS: TargetOption[] = [
     description: "逐帧 label_2 + calib，输出 KITTI camera 坐标。",
   },
   {
+    value: "coco-multicamera",
+    label: "Multi-camera COCO",
+    description: "合并全部相机的持久化人工 2D 框，不使用 3D 投影补齐。",
+  },
+  {
     value: "nuscenes",
-    label: "nuScenes JSON",
-    description: "单帧 sample 风格，ego 坐标 + 占位 ego_pose。",
+    label: "nuScenes",
+    description: "官方 13 表 + 原始媒体清单，仅允许完整可信的 nuScenes Scene。",
   },
   {
     value: "pointmask",
@@ -185,8 +192,13 @@ function CheckCard({
     <button
       type="button"
       onClick={onToggle}
+      disabled={option.disabled}
       aria-pressed={active}
-      className={cn(OPTION_BUTTON_CLASS, active && OPTION_BUTTON_ACTIVE_CLASS)}
+      className={cn(
+        OPTION_BUTTON_CLASS,
+        active && OPTION_BUTTON_ACTIVE_CLASS,
+        option.disabled && "cursor-not-allowed opacity-55",
+      )}
     >
       <span
         className={cn(
@@ -245,6 +257,9 @@ function ExportForm({
   const [scopeError, setScopeError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [preflight, setPreflight] = useState<MaskFormatExportPreflight | null>(null);
+  const [lidarPreflight, setLidarPreflight] = useState<LidarExportPreflight | null>(null);
+  const [lidarPreflightLoading, setLidarPreflightLoading] = useState(false);
+  const [kittiCameraRole, setKittiCameraRole] = useState("");
   const [lossyConfirmed, setLossyConfirmed] = useState(false);
   const pushToast = useToastStore((s) => s.push);
 
@@ -305,6 +320,53 @@ function ExportForm({
       cancelled = true;
     };
   }, [scopeMode, selectedTaskId]);
+
+  useEffect(() => {
+    if (
+      !isLidarProject ||
+      (!targets.includes("coco-multicamera") &&
+        !targets.includes("kitti") &&
+        !targets.includes("nuscenes"))
+    ) {
+      setLidarPreflight(null);
+      setLidarPreflightLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLidarPreflightLoading(true);
+    projectsApi
+      .preflightLidarExport(projectId, targets, kittiCameraRole ? { kittiCameraRole } : undefined)
+      .then((report) => {
+        if (!cancelled) setLidarPreflight(report);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setLidarPreflight({
+          ready: false,
+          camera_roles: [],
+          selected_camera_role: kittiCameraRole || null,
+          checked_tasks: 0,
+          issue_count: 1,
+          issues_truncated: false,
+          issues: [
+            {
+              code: "preflight_request_failed",
+              message: error instanceof Error ? error.message : "LiDAR 导出预检失败",
+              task_id: null,
+              task_display_id: null,
+              frame_key: null,
+              camera_role: null,
+            },
+          ],
+        });
+      })
+      .finally(() => {
+        if (!cancelled) setLidarPreflightLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isLidarProject, kittiCameraRole, projectId, targets]);
 
   const startSegment = segments.find((segment) => segment.id === startSegmentId);
   const endSegment = segments.find((segment) => segment.id === endSegmentId);
@@ -397,19 +459,33 @@ function ExportForm({
           : {}),
         ...(targets.includes("mots") ? { motsFrameBase } : {}),
         ...(videoExportScope ? { scope: videoExportScope } : {}),
+        ...(isLidarProject && targets.includes("kitti") ? { lidar: { kittiCameraRole } } : {}),
       };
-      const checked =
-        preflight ?? (await maskFormatsApi.preflightExport(projectId, targets, options));
-      if (!preflight) setPreflight(checked);
-      if (checked.loss_class === "unsupported") {
-        pushToast({
-          msg: "当前导出计划包含不支持的标注",
-          sub: "请查看预检报告并调整格式或项目内容",
-          kind: "warning",
-        });
-        return;
+      if (isLidarProject) {
+        const checked = await projectsApi.preflightLidarExport(projectId, targets, options.lidar);
+        setLidarPreflight(checked);
+        if (!checked.ready) {
+          pushToast({
+            msg: "LiDAR 导出预检未通过",
+            sub: "请按问题清单补齐来源、Scene、位姿、媒体或标定合同",
+            kind: "warning",
+          });
+          return;
+        }
+      } else {
+        const checked =
+          preflight ?? (await maskFormatsApi.preflightExport(projectId, targets, options));
+        if (!preflight) setPreflight(checked);
+        if (checked.loss_class === "unsupported") {
+          pushToast({
+            msg: "当前导出计划包含不支持的标注",
+            sub: "请查看预检报告并调整格式或项目内容",
+            kind: "warning",
+          });
+          return;
+        }
+        if (checked.loss_class === "lossy" && !lossyConfirmed) return;
       }
-      if (checked.loss_class === "lossy" && !lossyConfirmed) return;
       await projectsApi.exportProject(projectId, targets, {
         ...options,
       });
@@ -503,6 +579,73 @@ function ExportForm({
           )}
         </div>
       </div>
+      {isLidarProject &&
+        (targets.includes("coco-multicamera") ||
+          targets.includes("kitti") ||
+          targets.includes("nuscenes")) && (
+          <div className="flex flex-col gap-2 rounded-md border border-border bg-muted px-3 py-2.5">
+            {targets.includes("kitti") && (
+              <>
+                <label
+                  htmlFor="kitti-camera-role"
+                  className="text-xs font-semibold text-foreground"
+                >
+                  KITTI 投影相机
+                </label>
+                <select
+                  id="kitti-camera-role"
+                  value={kittiCameraRole}
+                  onChange={(event) => setKittiCameraRole(event.target.value)}
+                  className="rounded-sm border border-border bg-card px-3 py-2 text-xs text-foreground"
+                >
+                  <option value="">请选择相机通道</option>
+                  {(lidarPreflight?.camera_roles ?? []).map((role) => (
+                    <option key={role} value={role}>
+                      {role.replace(/^camera_/, "")}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+            {lidarPreflightLoading && (
+              <div className="text-xs text-muted-foreground">正在核对全部点云帧…</div>
+            )}
+            {lidarPreflight && !lidarPreflightLoading && (
+              <div
+                className={cn(
+                  "flex flex-col gap-1.5 rounded-sm border px-2.5 py-2 text-xs",
+                  lidarPreflight.ready
+                    ? "border-status-success/40 bg-status-success/10"
+                    : "border-status-danger/40 bg-status-danger/10",
+                )}
+                data-testid="lidar-export-preflight"
+              >
+                <div className="font-semibold text-foreground">
+                  {lidarPreflight.ready
+                    ? `预检通过 · ${lidarPreflight.checked_tasks} 帧`
+                    : `预检阻止 · ${lidarPreflight.issue_count} 个问题`}
+                </div>
+                {lidarPreflight.issues.slice(0, 8).map((issue, index) => (
+                  <div
+                    key={`${issue.code}-${issue.task_id ?? "global"}-${index}`}
+                    className="text-muted-foreground"
+                  >
+                    <code className="text-foreground">{issue.code}</code>
+                    {issue.task_display_id || issue.frame_key
+                      ? ` · ${issue.task_display_id ?? issue.frame_key}`
+                      : ""}
+                    {` · ${issue.message}`}
+                  </div>
+                ))}
+                {(lidarPreflight.issue_count > 8 || lidarPreflight.issues_truncated) && (
+                  <div className="text-muted-foreground">
+                    仅显示前 8 项；预检共发现 {lidarPreflight.issue_count} 项。
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       {isVideoProject && (
         <div className="flex flex-col gap-2 rounded-md border border-border bg-muted px-3 py-2.5">
           <label htmlFor="video-export-scope" className="text-xs font-semibold text-foreground">
@@ -810,7 +953,17 @@ function ExportForm({
         <button
           type="button"
           disabled={
-            busy || targets.length === 0 || !scopeValid || preflight?.loss_class === "unsupported"
+            busy ||
+            targets.length === 0 ||
+            !scopeValid ||
+            preflight?.loss_class === "unsupported" ||
+            (isLidarProject &&
+              (targets.includes("coco-multicamera") ||
+                targets.includes("kitti") ||
+                targets.includes("nuscenes")) &&
+              ((targets.includes("kitti") && !kittiCameraRole) ||
+                lidarPreflightLoading ||
+                !lidarPreflight?.ready))
           }
           onClick={handleExport}
           className="cursor-pointer appearance-none rounded-sm border border-brand bg-brand px-3 py-2 text-xs font-semibold text-brand-foreground hover:bg-brand/90 disabled:cursor-wait disabled:opacity-60"

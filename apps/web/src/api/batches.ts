@@ -234,7 +234,10 @@ export const batchesApi = {
     }
     return apiClient.post<{ job_id: string }>(
       `/projects/${projectId}/batches/${batchId}/export?${params.toString()}`,
-      opts?.scope ? { scope: opts.scope } : {},
+      {
+        ...(opts?.scope ? { scope: opts.scope } : {}),
+        ...(opts?.lidar ? { lidar: { kitti_camera_role: opts.lidar.kittiCameraRole } } : {}),
+      },
     );
   },
 };

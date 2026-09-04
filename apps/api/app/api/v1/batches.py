@@ -30,7 +30,11 @@ from app.schemas.batch import (
     BulkBatchApprove,
     BulkBatchReject,
 )
-from app.schemas.export import ExportRequestBody
+from app.schemas.export import (
+    ExportRequestBody,
+    LidarExportPreflightRequest,
+    LidarExportPreflightResponse,
+)
 from app.services.batch import BatchService, assert_can_transition, REVERSE_TRANSITIONS
 from app.services.audit import AuditService, AuditAction
 from app.services.notification import NotificationService
@@ -847,6 +851,39 @@ async def list_batch_audit_logs(
     ]
 
 
+@router.post(
+    "/{batch_id}/exports/lidar:preflight",
+    response_model=LidarExportPreflightResponse,
+)
+async def preflight_batch_lidar_export(
+    project_id: uuid.UUID,
+    batch_id: uuid.UUID,
+    body: LidarExportPreflightRequest,
+    project: Project = Depends(require_project_visible),
+    db: AsyncSession = Depends(get_db),
+) -> LidarExportPreflightResponse:
+    if project.data_type != "lidar":
+        raise HTTPException(status_code=422, detail="project is not a lidar project")
+    batch = await BatchService(db).get(batch_id)
+    if not batch or batch.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Batch not found")
+    from app.services.exporting.packaging import clean_export_targets
+
+    try:
+        targets = clean_export_targets(body.targets, project.data_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    from app.services.exporting.lidar_preflight import preflight_lidar_export
+
+    return await preflight_lidar_export(
+        db,
+        project_id=project_id,
+        batch_id=batch_id,
+        targets=targets,
+        options=body.lidar,
+    )
+
+
 @router.post("/{batch_id}/export", status_code=202)
 async def export_batch(
     request: Request,
@@ -858,7 +895,7 @@ async def export_batch(
         description="导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json"
         " / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis"
         " / youtube-vos / mots / mot / kitti"
-        " / nuscenes / pointmask"
+        " / coco-multicamera / nuscenes / pointmask"
         "（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
     ),
     include_attributes: bool = Query(True),
@@ -895,6 +932,32 @@ async def export_batch(
     batch = await svc_batch.get(batch_id)
     if not batch or batch.project_id != project_id:
         raise HTTPException(status_code=404, detail="Batch not found")
+
+    lidar_options = body.lidar if body else None
+    lidar_options_payload = (
+        lidar_options.model_dump(mode="json", exclude_none=True)
+        if lidar_options
+        else None
+    )
+    if project.data_type == "lidar":
+        from app.services.exporting.lidar_preflight import (
+            LidarExportPreflightFailed,
+            assert_lidar_export_ready,
+        )
+
+        try:
+            await assert_lidar_export_ready(
+                db,
+                project_id=project_id,
+                batch_id=batch_id,
+                targets=targets,
+                options=lidar_options,
+            )
+        except LidarExportPreflightFailed as exc:
+            raise HTTPException(
+                status_code=409,
+                detail=exc.report.model_dump(mode="json"),
+            ) from exc
 
     from app.services.exporting.video_scope import normalize_video_export_scope
 
@@ -985,6 +1048,7 @@ async def export_batch(
                 if video_scope_payload
                 else {}
             ),
+            **({"lidar": lidar_options_payload} if lidar_options_payload else {}),
         },
     )
     await AuditService.log(
@@ -1014,6 +1078,7 @@ async def export_batch(
                     if video_scope_payload
                     else {}
                 ),
+                **({"lidar": lidar_options_payload} if lidar_options_payload else {}),
             },
         ),
     )
@@ -1034,6 +1099,7 @@ async def export_batch(
                 if video_scope_payload
                 else {}
             ),
+            **({"lidar": lidar_options_payload} if lidar_options_payload else {}),
         },
         async_job_id=str(job.id),
     )

@@ -159,6 +159,7 @@
 | POST | `/bulk-approve` |
 | POST | `/bulk-reject` |
 | GET | `/{batch_id}/audit-logs` |
+| POST | `/{batch_id}/exports/lidar:preflight` |
 | POST | `/{batch_id}/export` |
 
 ## `bug_reports.py`
@@ -368,6 +369,20 @@
 | GET | `/notification-preferences` |
 | PUT | `/notification-preferences` |
 
+## `point_cloud_quality.py`
+
+| Method | Path |
+|---|---|
+| POST | `/projects/{project_id}/point-cloud-quality/runs` |
+| GET | `/projects/{project_id}/point-cloud-quality/runs/{run_id}` |
+| GET | `/projects/{project_id}/point-cloud-quality/issues` |
+| GET | `/point-cloud-quality/issues/{issue_id}` |
+| PATCH | `/point-cloud-quality/issues/{issue_id}` |
+| POST | `/projects/{project_id}/point-cloud-quality/evaluations` |
+| GET | `/projects/{project_id}/point-cloud-quality/evaluations` |
+| GET | `/projects/{project_id}/point-cloud-quality/evaluations/{evaluation_id}` |
+| POST | `/projects/{project_id}/point-cloud-quality/evaluations/{evaluation_id}/promote` |
+
 ## `predictions.py`
 
 | Method | Path |
@@ -412,6 +427,7 @@
 | GET | `/{project_id}/members` |
 | POST | `/{project_id}/members` |
 | DELETE | `/{project_id}/members/{member_id}` |
+| POST | `/{project_id}/exports/lidar:preflight` |
 | POST | `/{project_id}/export` |
 | POST | `/{project_id}/preannotate` |
 | GET | `/{project_id}/orphan-tasks/preview` |
@@ -494,6 +510,14 @@
 | POST | `/{task_id}/annotations/{annotation_id}/video/convert-to-bboxes` |
 | DELETE | `/{task_id}/annotations/{annotation_id}` |
 
+## `tasks/cross_frame_jobs.py`
+
+| Method | Path |
+|---|---|
+| POST | `/{task_id}/cross-frame-jobs` |
+| GET | `/{task_id}/cross-frame-jobs` |
+| POST | `/{task_id}/cross-frame-jobs/{job_id}/retry-failed` |
+
 ## `tasks/image_pyramid.py`
 
 | Method | Path |
@@ -540,6 +564,18 @@
 |---|---|
 | POST | `/{task_id}/annotations/mask-mutations:commit` |
 
+## `tasks/multicamera_annotations.py`
+
+| Method | Path |
+|---|---|
+| GET | `/{task_id}/point-cloud/camera-members` |
+| POST | `/{task_id}/point-cloud/camera-members` |
+| PATCH | `/{task_id}/point-cloud/camera-members/{member_id}` |
+| DELETE | `/{task_id}/point-cloud/camera-members/{member_id}` |
+| POST | `/{task_id}/point-cloud/camera-members/{member_id}/restore` |
+| GET | `/{task_id}/point-cloud/cameras/{camera_role}/calibration` |
+| PATCH | `/{task_id}/point-cloud/cameras/{camera_role}/calibration` |
+
 ## `tasks/predictions.py`
 
 | Method | Path |
@@ -556,6 +592,26 @@
 | POST | `/{task_id}/review/claim` |
 | POST | `/{task_id}/review/approve` |
 | POST | `/{task_id}/review/reject` |
+
+## `tasks/scene_timeline.py`
+
+| Method | Path |
+|---|---|
+| GET | `/{task_id}/scene-timeline` |
+
+## `tasks/track_operations.py`
+
+| Method | Path |
+|---|---|
+| GET | `/{task_id}/scene-tracks/{track_id}` |
+| GET | `/{task_id}/scene-track-diagnostics` |
+| POST | `/{task_id}/scene-track-commands/preview` |
+| POST | `/{task_id}/scene-track-commands/execute` |
+| GET | `/{task_id}/scene-track-commands` |
+| POST | `/{task_id}/scene-track-commands/{operation_id}/revert` |
+| GET | `/{task_id}/track-operations/candidates` |
+| POST | `/{task_id}/track-operations/preview` |
+| POST | `/{task_id}/track-operations` |
 
 ## `tasks/video.py`
 
@@ -634,4 +690,4 @@
 
 ---
 
-_共 59 模块 / 357 路由_
+_共 64 模块 / 388 路由_

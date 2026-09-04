@@ -13,6 +13,7 @@ export type AsyncJobKind =
   | "prediction_retry"
   | "dataset_import"
   | "create_tasks"
+  | "point_cloud_cross_frame"
   | string;
 
 /** 仅展示 worker 实际支持协作取消的作业。 */
@@ -22,6 +23,7 @@ export const CANCELLABLE_ASYNC_JOB_KINDS = new Set<AsyncJobKind>([
   "mask_qc",
   "mask_repair",
   "mask_format_import",
+  "point_cloud_cross_frame",
 ]);
 
 export interface AsyncJob {
@@ -66,6 +68,16 @@ export interface AsyncJobListParams {
   offset?: number;
 }
 
+export interface CrossFrameJobCreate {
+  operation: "propagate";
+  scope: "selected" | "all";
+  annotation_ids: string[];
+  direction: "forward" | "backward";
+  start_frame: number;
+  end_frame: number;
+  conflict_policy: "skip_existing";
+}
+
 export const asyncJobsApi = {
   list: (params: AsyncJobListParams = {}) => {
     const q = new URLSearchParams();
@@ -89,4 +101,13 @@ export const asyncJobsApi = {
     apiClient.post<{ status: string; id: string }>(`/async-jobs/${id}/cancel`),
   retryFailed: (id: string) =>
     apiClient.post<AsyncJobRetryFailedResponse>(`/async-jobs/${id}/retry-failed`),
+  listCrossFrame: (taskId: string, limit = 20, init?: RequestInit) =>
+    apiClient.get<AsyncJobListResponse>(
+      `/tasks/${taskId}/cross-frame-jobs?limit=${encodeURIComponent(String(limit))}`,
+      init,
+    ),
+  createCrossFrame: (taskId: string, body: CrossFrameJobCreate) =>
+    apiClient.post<AsyncJob>(`/tasks/${taskId}/cross-frame-jobs`, body),
+  retryCrossFrame: (taskId: string, jobId: string) =>
+    apiClient.post<AsyncJob>(`/tasks/${taskId}/cross-frame-jobs/${jobId}/retry-failed`),
 };

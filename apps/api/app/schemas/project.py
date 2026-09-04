@@ -12,6 +12,7 @@ from app.schemas._jsonb_types import (
     validate_tool_bindings_keys,
 )
 from app.schemas.mask_qc import MaskQCConfig
+from app.schemas.point_cloud_quality import PointCloudQualityConfig
 from pydantic import field_validator
 
 
@@ -149,12 +150,22 @@ class ProjectUpdate(BaseModel):
     ai_interactive_enabled: bool | None = None
     raster_mask_native_editing_enabled: bool | None = None
     mask_qc_config: MaskQCConfig | None = None
+    point_cloud_quality_config: PointCloudQualityConfig | None = None
 
     @field_validator("mask_qc_config")
     @classmethod
     def _mask_qc_config_cannot_be_null(cls, value: MaskQCConfig | None) -> MaskQCConfig:
         if value is None:
             raise ValueError("mask_qc_config cannot be null")
+        return value
+
+    @field_validator("point_cloud_quality_config")
+    @classmethod
+    def _point_cloud_quality_config_cannot_be_null(
+        cls, value: PointCloudQualityConfig | None
+    ) -> PointCloudQualityConfig:
+        if value is None:
+            raise ValueError("point_cloud_quality_config cannot be null")
         return value
 
     # v0.10.10 · I17.3 · 项目级渲染配置覆盖；空 dict / 字段缺省 = 沿用用户级偏好
@@ -228,6 +239,9 @@ class ProjectOut(BaseModel):
     ai_interactive_enabled: bool = True
     raster_mask_native_editing_enabled: bool = True
     mask_qc_config: MaskQCConfig = Field(default_factory=MaskQCConfig)
+    point_cloud_quality_config: PointCloudQualityConfig = Field(
+        default_factory=PointCloudQualityConfig
+    )
     # v0.10.10 · I17.3 · 项目级渲染配置覆盖；空 dict 表示项目不覆盖任何字段
     rendering_config: ProjectRenderingConfig = ProjectRenderingConfig()
     # v0.10.29 · 视频帧逻辑采样配置; 空 dict (mode=none) 表示不采样.

@@ -36,6 +36,8 @@
   视频元数据、多几何 annotation schema、Konva Stage 与编辑边界
 - [Scene + frame_index 跨 task 帧序列地基](./scene-and-frame-index)：
   把 3D 点云逐帧 / 2D 抽帧序列 / 多段 mp4 拼接长录像统一到同一抽象
+- [Scene Track 与轨迹生命周期](./scene-track-lifecycle)：
+  3D Scene 对象身份、存在区间、时间角色、统一命令和可逆操作如何协作
 - [审核模块](./review-module)：
   Task review、batch review、角色矩阵与通知审计联动
 

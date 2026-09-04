@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-08-13
+last_reviewed: 2026-08-27
 ---
 
 # 导出
@@ -31,16 +31,26 @@ POST /api/v1/projects/{project_id}/batches/{batch_id}/export?targets=coco&includ
 Segment 模式把 `selection` 改为
 `{"kind":"segments","start_segment_id":"...","end_segment_id":"..."}`，并自动包含两端之间按索引连续的全部 segment。task 必须属于当前项目；批次导出时还必须属于当前批次。图片或点云项目传 `scope`、范围越界或 segment 不连续均返回 422。省略请求体时保持完整项目 / 批次导出。
 
+点云 KITTI 导出在请求体中显式选择相机 role：
+
+```json
+{
+  "lidar": { "kitti_camera_role": "camera_front" }
+}
+```
+
+创建任务前可调用 `POST /projects/{project_id}/exports/lidar:preflight`；批次使用 `POST /projects/{project_id}/batches/{batch_id}/exports/lidar:preflight`。请求体为 `{"targets":["kitti"],"lidar":{"kitti_camera_role":"camera_front"}}`；Multi-camera COCO 使用 `{"targets":["coco-multicamera"]}`，不需要选择单一相机。响应的 `camera_roles` 用于相机选择，`issues` 按 task / frame / camera 返回稳定 code；`ready=false` 时正式导出返回 409，且不会创建后台任务。
+
 参数：
 
-| 参数                   | 取值                                                 | 说明                                                                                                                                                                             |
-| ---------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `targets`              | 可重复，多选                                         | 图片目标、`aap_json`，以及视频专属 `video_json` / `yolo-frames-det` / `yolo-frames-seg` / `coco-frames-seg` / `davis` / `youtube-vos` / `mots` / `mot` / `kitti`；`voc` 仅可单选 |
-| `include_attributes`   | `true` / `false`                                     | 是否携带 `annotation.attributes` 与 `project.attribute_schema`                                                                                                                   |
-| `video_frame_mode`     | `keyframes` / `all_frames`                           | 仅 `video-track` 生效；默认 `keyframes`                                                                                                                                          |
-| `axis_frame`           | `iso` / `source`                                     | 仅影响导出中的 `box_3d` 几何；默认 `iso`（平台归一化 ISO 8855 PSR），`source` 反向映射回数据集 `axis_convention` 源系                                                            |
-| `video_overlap_policy` | `error` / `z_order` / `larger_area` / `smaller_area` | DAVIS / YouTube-VOS palette PNG 的实例重叠策略；默认阻止                                                                                                                         |
-| `mots_frame_base`      | `0` / `1`                                            | MOTS 输出帧号基准；默认 0-based                                                                                                                                                  |
+| 参数                   | 取值                                                 | 说明                                                                                                                  |
+| ---------------------- | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `targets`              | 可重复，多选                                         | 图片目标、`aap_json`、视频专属目标，以及点云 `coco-multicamera` / `kitti` / `nuscenes` / `pointmask`；`voc` 仅可单选  |
+| `include_attributes`   | `true` / `false`                                     | 是否携带 `annotation.attributes` 与 `project.attribute_schema`                                                        |
+| `video_frame_mode`     | `keyframes` / `all_frames`                           | 仅 `video-track` 生效；默认 `keyframes`                                                                               |
+| `axis_frame`           | `iso` / `source`                                     | 仅影响导出中的 `box_3d` 几何；默认 `iso`（平台归一化 ISO 8855 PSR），`source` 反向映射回数据集 `axis_convention` 源系 |
+| `video_overlap_policy` | `error` / `z_order` / `larger_area` / `smaller_area` | DAVIS / YouTube-VOS palette PNG 的实例重叠策略；默认阻止                                                              |
+| `mots_frame_base`      | `0` / `1`                                            | MOTS 输出帧号基准；默认 0-based                                                                                       |
 
 非 VOC 目标返回 `202 {job_id}`；勾选多个目标时产物 ZIP 内各目标落 `{target}/` 子目录，单目标落包根。`video-track` 项目只接受视频目标，选图片目标会返回 400。
 
@@ -63,6 +73,10 @@ Segment 模式把 `selection` 改为
 | **mots**              | 六列 MOTS 文本，Mask 使用 compressed COCO RLE                                                      |
 | **mot**               | MOT 16/17/20 tracking 评测格式，按采样网格重排帧号                                                 |
 | **kitti**             | KITTI Tracking 2D label 文本                                                                       |
+| **coco-multicamera**  | 全部相机持久化人工 bbox 的合并 COCO、可信媒体 manifest 与关系报告                                  |
+| **kitti（点云）**     | 所选相机的 KITTI `label_2`、真实 calibration 与可见性跳过报告                                      |
+| **nuscenes（点云）**  | 官方 13 表关键帧子集、原媒体 manifest 与回源脚本                                                   |
+| **pointmask**         | 点云逐点 little-endian uint32 类别标签                                                             |
 | **voc**               | Pascal VOC XML（仅同步单选）                                                                       |
 | **video tracks json** | `video-track` 专用 JSON（`video_json` 目标）                                                       |
 
@@ -128,6 +142,12 @@ schema 语义见 [视频标注工作台](/dev/concepts/video-annotation-workbenc
 - 目前仅 `aap_json` 目标携带 `box_3d`，会对标注与预测的 box 几何调用 `unapply_to_psr` 反向映射回该数据集的源系约定；其它格式与非 box 几何不受影响。
 - `source` 模式下每个被转换的几何额外带 `axis_frame: "source"` 与 `axis_convention: "<source>"`，便于消费方识别坐标系。
 - `axis_frame` 计入导出缓存 key：`iso` 与 `source` 是两份独立缓存产物。
+
+KITTI 不消费 `axis_frame`。它会先按每帧数据集的 `axis_convention` 把平台 ISO 框反变换回源 LiDAR 坐标，再应用 `lidar.kitti_camera_role` 对应的真实内外参，固定输出 KITTI camera 坐标。缺轴约定、相机帧、标定或图像宽高均由预检阻止；不生成 identity calibration、`.unverified` 文件或负数 bbox。完全不可见对象进入 `export_report.json`。
+
+`targets=coco-multicamera` 不依赖主点云轴约定或完整 Scene。它为每个相机 link 生成一个 COCO image，只导出持久化人工 bbox，并保留无框图作为负样本；不会用 3D 投影补框。预检会核对 link、媒体类型/宽高/对象大小、归一化 bbox、类别及 2D 成员与活跃 3D 成员、SceneTrack 的身份闭合。标定 digest 过期不会阻断独立 2D 真值，而是在 annotation 扩展字段和报告中标记 `stale`。单次范围最多 20,000 张相机图、100,000 个人工框、20 GiB 媒体总量和单图 256 MiB。worker 流式计算媒体 SHA-256；`fetch_media.py` 只会在大小与 SHA-256 校验成功后原子落盘。
+
+`targets=nuscenes` 只接受由 nuScenes 导入器以 ego / ISO 模式保全的完整 Scene。项目或批次预检会校验原始 scene / sample / sensor / pose / map 合同、标定指纹、原始资产指纹和完整帧范围；任一不符时返回 409 且不创建导出任务。单次范围最多包含 1000 帧和 30000 个有效 3D 框，单帧 PCD 不超过 256 MiB、总 PCD 不超过 4 GiB，精确框内点测试不超过 1 亿次；超限同样在预检阶段拒绝。产物是官方 devkit 可加载/查询的关键帧子集，不代表官方 benchmark 兼容。为保证已签发包在链接有效期内仍可物化，删除 Dataset 不会立即删除其冻结的可信来源资产。
 
 ## 权限
 

@@ -52,7 +52,7 @@ last_reviewed: 2026-08-15
 
 ```json
 {
-  "schema_version": "1.3",
+  "schema_version": "1.5",
   "tasks": [
     {
       "task_match": { "file_path": "animals/cat/001.jpg" },
@@ -76,7 +76,7 @@ last_reviewed: 2026-08-15
 - 视频 Mask 正文放在 `mask_objects`，向导会在预览时校验引用、尺寸和内容；`dry_run` 不会写 Prediction 或对象存储。正式导入后，Mask 仍是待审候选，不会直接成为标注。
 - 一条 `predictions[i]` 可以用 `shapes[]` 把多个 shape 合并写入同一条预测；`shapes` 与单 `geometry` 同时存在时 `shapes` 优先。同一 entry 的 shapes 必须同属 bbox、region（polygon / mask）或 polyline 中的一个工具单位，不能混合。
 
-坐标用归一化 `[0, 1]`。完整格式规范（含 `tool_bindings` / `attribute_schema` / `mask_objects` / 各几何字段）见 [导出格式 · AAP JSON](../reference/export-formats#aap-json-13无损)，本页不重复展开。
+坐标用归一化 `[0, 1]`。完整格式规范（含 `tool_bindings` / `attribute_schema` / `mask_objects` / `scene_tracks` / 各几何字段）见 [导出格式 · AAP JSON](../reference/export-formats#aap-json-15无损)，本页不重复展开。
 
 #### COCO Detection
 
@@ -153,7 +153,7 @@ Dashboard 项目卡片右下角 `⋮` → **「清理预测」**。
 
 - 入口在 Dashboard 项目卡片 / 列表行右下角 `⋮` → **「导出标注数据」**，打开导出弹窗，可选导出范围（整个项目 / 单个批次）与一个或多个目标格式。
 - 点击「开始导出」后任务进入后台队列；可在顶栏「后台任务」查看进度。完成行会列出项目、目标格式、ZIP 文件数与大小，并提供「下载」入口。
-- AAP JSON 是无损中间格式，能把 `predictions[]` 连同 `confidence` / `model_version` 带出，也能用 `annotations[]` + `mask_objects` 迁移视频栅格 mask track，常用于跨实例迁移与离线回填闭环。
+- AAP JSON 是无损中间格式，能把 `predictions[]` 连同 `confidence` / `model_version` 带出，也能用 `annotations[]` + `mask_objects` 迁移视频栅格 mask track，并用 `scene_tracks[]` 保留 3D 对象身份、存在模式、存在区间和时间角色，常用于跨实例迁移与离线回填闭环。
 
 <DocsVideo
   src="/media/datasets/background-export-download.mp4"

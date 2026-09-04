@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "source": {
+    "dataset": "nuScenes mini",
+    "scene": "scene-0061",
+    "payload_policy": "Downloaded by scripts/nuscenes_fixture.py into the user cache; no point-cloud payload is stored in this repository."
+  },
+  "baseline": {
+    "minimum_points": 5,
+    "size_mad_z": 4.5,
+    "ground_penetration_m": 0.2,
+    "ground_float_m": 0.45,
+    "temporal_center_jump_m": 4.0,
+    "temporal_size_change_ratio": 0.6,
+    "temporal_yaw_jump_rad": 0.8
+  },
+  "candidate": {
+    "minimum_points": 1,
+    "size_mad_z": 5.0,
+    "ground_penetration_m": 0.25,
+    "ground_float_m": 0.5,
+    "temporal_center_jump_m": 5.0,
+    "temporal_size_change_ratio": 0.7,
+    "temporal_yaw_jump_rad": 0.9
+  },
+  "samples": [
+    {
+      "code": "low_point_count",
+      "class_name": "car",
+      "metric": { "point_count": 0 },
+      "review_verdict": "confirmed"
+    },
+    {
+      "code": "low_point_count",
+      "class_name": "car",
+      "metric": { "point_count": 4 },
+      "review_verdict": "false_positive"
+    },
+    {
+      "code": "size_outlier",
+      "class_name": "car",
+      "metric": { "robust_z": [10.0, 1.0, 0.5] },
+      "review_verdict": "confirmed"
+    },
+    {
+      "code": "size_outlier",
+      "class_name": "car",
+      "metric": { "robust_z": [4.6, 1.0, 0.5] },
+      "review_verdict": "false_positive"
+    },
+    {
+      "code": "ground_clearance",
+      "class_name": "car",
+      "metric": { "clearance_m": 1.0 },
+      "review_verdict": "confirmed"
+    },
+    {
+      "code": "ground_clearance",
+      "class_name": "car",
+      "metric": { "clearance_m": 0.46 },
+      "review_verdict": "false_positive"
+    },
+    {
+      "code": "temporal_jump",
+      "class_name": "car",
+      "metric": {
+        "center_delta_m_per_frame": 10.0,
+        "size_change_ratio": 0.1,
+        "yaw_delta_rad_per_frame": 0.1
+      },
+      "review_verdict": "confirmed"
+    },
+    {
+      "code": "temporal_jump",
+      "class_name": "car",
+      "metric": {
+        "center_delta_m_per_frame": 4.2,
+        "size_change_ratio": 0.1,
+        "yaw_delta_rad_per_frame": 0.1
+      },
+      "review_verdict": "false_positive"
+    }
+  ],
+  "expected": {
+    "gate_status": "promote",
+    "changed_rule_count": 4,
+    "candidate_false_positive_rate": 0.0,
+    "candidate_confirmed_retention": 1.0
+  }
+}

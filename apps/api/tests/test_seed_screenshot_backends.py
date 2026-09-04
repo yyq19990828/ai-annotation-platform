@@ -154,13 +154,19 @@ async def test_reconcile_creates_exact_primary_and_enabled_bindings(
         geometries=["polygon"],
     )
     stale = _backend(url="http://backend.test:8999")
-    db_session.add_all([image, ocr, stale])
+    owned_stub = _backend(url="http://backend.test:9100")
+    owned_stub.source = "seed"
+    owned_stub.extra_params = {
+        "seed": {"managed_by": "screenshot-seed", "profile": "screenshots"}
+    }
+    db_session.add_all([image, ocr, stale, owned_stub])
     await db_session.flush()
     # v0.23.3 ADR-0050 · 每 registry 须有 singleton pool 才能被项目启用 / 主绑定。
     svc = MLBackendService(db_session)
     image_pool = await svc._create_singleton_pool(image)
     ocr_pool = await svc._create_singleton_pool(ocr)
     stale_pool = await svc._create_singleton_pool(stale)
+    owned_stub_pool = await svc._create_singleton_pool(owned_stub)
     db_session.add(
         ProjectMLBackendPool(
             project_id=projects["pointcloud_demo"].id,
@@ -193,6 +199,8 @@ async def test_reconcile_creates_exact_primary_and_enabled_bindings(
         }
     ]
     assert projects["pointcloud_demo"].ml_backend_pool_id is None
+    assert await db_session.get(MLBackendRegistry, owned_stub.id) is owned_stub
+    assert (await svc.get_pool(owned_stub_pool.id)).legacy_instance_id == owned_stub.id
     associations = list(
         (await db_session.execute(select(ProjectMLBackendPool))).scalars()
     )

@@ -14,7 +14,10 @@
 import { test, expect } from "../fixtures/seed";
 
 test.describe("workbench pointcloud smoke (WebGL go/no-go)", () => {
-  test("headless 加载并渲染最小点云,无 console error", async ({ page, seed }) => {
+  test("headless 加载并渲染 nuScenes 规模点云,四视图共享 renderer 且空闲停止提交", async ({
+    page,
+    seed,
+  }) => {
     await seed.reset();
     const lidar = await seed.seedLidar();
     // super_admin 可见全部项目/任务,免去 batch 可见性/分派的额外铺设。
@@ -31,20 +34,48 @@ test.describe("workbench pointcloud smoke (WebGL go/no-go)", () => {
 
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
-    await page.waitForLoadState("networkidle");
 
     // 点云加载失败时状态栏出 "点云加载失败: ..."(WebGL/解码挂的早期信号)。
     await expect(page.getByText(/点云加载失败/)).toHaveCount(0);
 
-    // 成功信号:loadPcd 完成 → stats 出数 → 状态栏渲染 "512 点"。这是 PointCloudScene
+    // 成功信号:loadPcd 完成 → stats 出数 → 状态栏渲染 seed 返回的真实点数。这是 PointCloudScene
     // 在 headless 真跑通 WebGL 的证据(渲染失败则 stats 永不 set,此断言超时)。
     const stats = page.getByTestId("pointcloud-stats");
     await expect(stats).toBeVisible({ timeout: 20_000 });
     await expect(stats).toContainText("点");
-    await expect(stats).toContainText("512");
+    expect(["nuscenes_mini", "nuscenes_profile"]).toContain(lidar.lidar_fixture_source);
+    expect(lidar.lidar_point_count).toBeGreaterThan(30_000);
+    await expect(stats).toContainText(lidar.lidar_point_count.toLocaleString());
 
-    // WebGL 真初始化了:页面里至少一个 <canvas>(Three.js renderer 挂载)。
-    await expect(page.locator("canvas").first()).toBeVisible();
+    // 主点云 viewport 只挂一个 Three renderer canvas；三视图 overlay 自己的 2D canvas 不计入。
+    const viewport = page.getByTestId("pc-viewport");
+    await expect(viewport.locator(":scope > canvas")).toHaveCount(1);
+    await expect(viewport).toHaveAttribute("data-pointcloud-renderer-count", "1");
+
+    const card = page.locator('[data-testid^="box-list-item-"]').first();
+    await card.click({ position: { x: 12, y: 16 } });
+    const openRefinement = page.getByRole("button", { name: "框体精修" });
+    if (await openRefinement.isVisible()) await openRefinement.click();
+    await expect(page.getByTestId("tri-view-renderer-panel")).toBeVisible();
+    await expect(
+      page.getByTestId("tri-view-renderer-panel").locator(":scope > canvas"),
+    ).toHaveCount(0);
+    await expect
+      .poll(async () =>
+        Number((await viewport.getAttribute("data-pointcloud-tri-pass-count")) ?? 0),
+      )
+      .toBeGreaterThan(0);
+
+    // 先给 OrbitControls 阻尼一段稳定时间，再验证主/三视图都不再产生 renderer.render 提交。
+    await page.waitForTimeout(300);
+    await expect
+      .poll(async () => {
+        const before = Number(await viewport.getAttribute("data-pointcloud-submit-count"));
+        await page.waitForTimeout(300);
+        const after = Number(await viewport.getAttribute("data-pointcloud-submit-count"));
+        return after - before;
+      })
+      .toBe(0);
 
     // 过滤掉与本验证无关的已知噪声(如第三方资源 404 / favicon),只对真错误失败。
     const fatal = consoleErrors.filter(

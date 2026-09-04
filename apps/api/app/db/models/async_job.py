@@ -36,6 +36,8 @@ class AsyncJobKind(str, enum.Enum):
     MASK_REPAIR = "mask_repair"  # 可恢复的 Mask 批量修复
     MASK_REPAIR_ROLLBACK = "mask_repair_rollback"  # 版本保护的批量回滚
     MASK_FORMAT_IMPORT = "mask_format_import"  # staged receipt 驱动的格式导入
+    POINT_CLOUD_CROSS_FRAME = "point_cloud_cross_frame"  # 3D Scene 跨帧传播
+    POINT_CLOUD_QUALITY = "point_cloud_quality"  # 3D 点云与 SceneTrack 质量扫描
 
 
 class AsyncJobStatus(str, enum.Enum):

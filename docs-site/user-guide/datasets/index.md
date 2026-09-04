@@ -33,11 +33,11 @@ last_reviewed: 2026-06-10
 
 ## 预测与导出
 
-| 我要做的事                                                | 去哪里                                            |
-| --------------------------------------------------------- | ------------------------------------------------- |
-| 导入外部模型预测 / 按来源清理预测                         | [导入 / 导出外部预测](./prediction-import-export) |
-| 使用平台启用的 ML Backend 批量生成预测                    | [AI 预标](../projects/ai-preannotate)             |
-| 导出标注成果（COCO / YOLO / nuScenes / KITTI / AAP JSON） | [数据导出格式](../reference/export-formats)       |
+| 我要做的事                                     | 去哪里                                            |
+| ---------------------------------------------- | ------------------------------------------------- |
+| 导入外部模型预测 / 按来源清理预测              | [导入 / 导出外部预测](./prediction-import-export) |
+| 使用平台启用的 ML Backend 批量生成预测         | [AI 预标](../projects/ai-preannotate)             |
+| 导出标注成果（COCO / YOLO / KITTI / AAP JSON） | [数据导出格式](../reference/export-formats)       |
 
 ## 几个关键概念
 

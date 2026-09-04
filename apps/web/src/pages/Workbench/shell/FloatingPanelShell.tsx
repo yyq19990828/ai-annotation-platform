@@ -32,6 +32,8 @@ interface FloatingPanelShellProps {
   onMergeBack?: () => void;
   onClose?: () => void;
   onCollapse?: () => void;
+  /** Keeps panel content mounted while excluding the collapsed shell from input and accessibility. */
+  collapsed?: boolean;
   variant?: "default" | "no-merge";
   className?: string;
   style?: CSSProperties;
@@ -76,6 +78,7 @@ export function FloatingPanelShell({
   onMergeBack,
   onClose,
   onCollapse,
+  collapsed = false,
   variant = "default",
   className,
   style,
@@ -168,6 +171,7 @@ export function FloatingPanelShell({
       className={[
         "fixed left-[var(--floating-panel-x)] top-[var(--floating-panel-y)] z-floating flex h-[var(--floating-panel-h)] w-[var(--floating-panel-w)] min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-border bg-card shadow-lg",
         (drag.isDragging || isResizing) && "select-none",
+        collapsed && "invisible pointer-events-none",
         className,
       ]
         .filter(Boolean)
@@ -182,6 +186,7 @@ export function FloatingPanelShell({
           ...style,
         } as FloatingPanelStyle
       }
+      aria-hidden={collapsed || undefined}
     >
       <div
         className="flex min-h-[34px] flex-none cursor-move touch-none items-center justify-between gap-2 border-b border-border bg-card px-2 py-1.5 text-muted-foreground"

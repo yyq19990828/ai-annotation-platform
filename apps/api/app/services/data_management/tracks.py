@@ -15,6 +15,7 @@ from sqlalchemy.orm import aliased
 from app.db.models.annotation import Annotation
 from app.db.models.dataset import DatasetItem, Scene
 from app.db.models.project import Project
+from app.db.models.scene_track import SceneTrack, SceneTrackInterval
 from app.db.models.task import Task
 from app.db.models.user import User
 from app.schemas.data_manager import (
@@ -241,6 +242,8 @@ def _scene_from_members(
     members: list[Any],
     project: Project,
     visible_frames_by_scene: dict[Any, set[int]] | None = None,
+    scene_track: SceneTrack | None = None,
+    presence_intervals: list[SceneTrackInterval] | None = None,
 ) -> DataManagerTrackOut:
     members = sorted(
         members,
@@ -263,8 +266,23 @@ def _scene_from_members(
     type_counts = Counter(row.annotation_type for row in members)
     source_counts = Counter(row.source for row in members)
     scene_ids = {row.scene_id for row in members if row.scene_id is not None}
-    start = min(frames) if frames and len(scene_ids) <= 1 else None
-    end = max(frames) if frames and len(scene_ids) <= 1 else None
+    declared_intervals = sorted(
+        presence_intervals or [], key=lambda row: row.start_frame
+    )
+    start = (
+        declared_intervals[0].start_frame
+        if declared_intervals
+        else min(frames)
+        if frames and len(scene_ids) <= 1
+        else None
+    )
+    finite_ends = [
+        row.end_frame for row in declared_intervals if row.end_frame is not None
+    ]
+    if declared_intervals:
+        end = max(finite_ends) if len(finite_ends) == len(declared_intervals) else None
+    else:
+        end = max(frames) if frames and len(scene_ids) <= 1 else None
     span = end - start + 1 if start is not None and end is not None else None
     attrs = [_clean_attributes(row.attributes) for row in members]
     common_attributes: dict[str, Any] = {}
@@ -291,12 +309,41 @@ def _scene_from_members(
         issues.append("inconsistent_attributes")
     if len(scene_ids) > 1:
         issues.append("multiple_scenes")
+    if scene_track is not None and any(
+        row.class_name != scene_track.class_name for row in members
+    ):
+        issues.append("track_identity_mismatch")
+    if declared_intervals:
+        outside_interval = any(
+            row.frame_index is not None
+            and not any(
+                interval.start_frame <= row.frame_index
+                and (
+                    interval.end_frame is None or row.frame_index <= interval.end_frame
+                )
+                for interval in declared_intervals
+            )
+            for row in members
+        )
+        if outside_interval:
+            issues.append("member_outside_interval")
     duplicates = max(len(members) - distinct_frames, 0)
     if duplicates:
         issues.append("duplicate_frame")
     origins = _attribute_origins(first.attributes, first.attributes_meta)
     expected_visible_frames = 0
-    if visible_frames_by_scene and start is not None and end is not None:
+    if visible_frames_by_scene and declared_intervals:
+        scene_id = next(iter(scene_ids), None)
+        expected_visible_frames = sum(
+            1
+            for frame in visible_frames_by_scene.get(scene_id, set())
+            if any(
+                interval.start_frame <= frame
+                and (interval.end_frame is None or frame <= interval.end_frame)
+                for interval in declared_intervals
+            )
+        )
+    elif visible_frames_by_scene and start is not None and end is not None:
         scene_id = next(iter(scene_ids), None)
         expected_visible_frames = sum(
             1
@@ -308,7 +355,13 @@ def _scene_from_members(
         track_ref=_encode_scene_ref(track_id),
         track_kind="scene",
         track_id=track_id,
-        class_name=class_counts.most_common(1)[0][0] if class_counts else None,
+        class_name=(
+            scene_track.class_name
+            if scene_track is not None
+            else class_counts.most_common(1)[0][0]
+            if class_counts
+            else None
+        ),
         tool_unit_id=unit_counts.most_common(1)[0][0] if unit_counts else None,
         annotation_type=type_counts.most_common(1)[0][0] if type_counts else None,
         start_frame=start,
@@ -319,7 +372,9 @@ def _scene_from_members(
         distinct_frame_count=distinct_frames,
         missing_frame_count=max(expected_visible_frames - distinct_frames, 0),
         duplicate_frame_count=duplicates,
-        keyframe_count=0,
+        keyframe_count=sum(
+            1 for row in members if getattr(row, "temporal_role", None) == "keyframe"
+        ),
         sources=DataManagerTrackSourceSummary(
             annotation_sources={
                 str(key): int(value) for key, value in source_counts.items()
@@ -531,10 +586,12 @@ class DataManagerTrackService:
                 scene.name.label("scene_name"),
                 item.frame_index,
                 Annotation.track_id,
+                Annotation.scene_track_id,
                 Annotation.class_name,
                 Annotation.tool_unit_id,
                 Annotation.annotation_type,
                 Annotation.source,
+                Annotation.temporal_role,
                 Annotation.attributes,
                 Annotation.attributes_meta,
             )
@@ -695,6 +752,42 @@ class DataManagerTrackService:
         grouped: dict[str, list[Any]] = defaultdict(list)
         for row in member_rows:
             grouped[str(row.track_id)].append(row)
+        linked_track_ids = {
+            row.scene_track_id for row in member_rows if row.scene_track_id is not None
+        }
+        scene_tracks = (
+            list(
+                (
+                    await self.db.execute(
+                        select(SceneTrack).where(SceneTrack.id.in_(linked_track_ids))
+                    )
+                ).scalars()
+            )
+            if linked_track_ids
+            else []
+        )
+        scene_track_by_external_id = {row.track_id: row for row in scene_tracks}
+        intervals = (
+            list(
+                (
+                    await self.db.execute(
+                        select(SceneTrackInterval)
+                        .where(SceneTrackInterval.scene_track_id.in_(linked_track_ids))
+                        .order_by(
+                            SceneTrackInterval.scene_track_id,
+                            SceneTrackInterval.start_frame,
+                        )
+                    )
+                ).scalars()
+            )
+            if linked_track_ids
+            else []
+        )
+        intervals_by_track_id: dict[uuid.UUID, list[SceneTrackInterval]] = defaultdict(
+            list
+        )
+        for interval in intervals:
+            intervals_by_track_id[interval.scene_track_id].append(interval)
         next_cursor = None
         if has_more and page_keys:
             last = page_keys[-1]
@@ -713,7 +806,16 @@ class DataManagerTrackService:
         return DataManagerTrackQueryResponse(
             items=[
                 _scene_from_members(
-                    str(track_id), grouped[str(track_id)], project, visible_frames
+                    str(track_id),
+                    grouped[str(track_id)],
+                    project,
+                    visible_frames,
+                    scene_track=scene_track_by_external_id.get(str(track_id)),
+                    presence_intervals=intervals_by_track_id.get(
+                        scene_track_by_external_id[str(track_id)].id, []
+                    )
+                    if str(track_id) in scene_track_by_external_id
+                    else [],
                 )
                 for track_id in ids
                 if grouped[str(track_id)]
@@ -800,7 +902,32 @@ class DataManagerTrackService:
             project=project,
             scene_ids={row.scene_id for row in rows if row.scene_id is not None},
         )
-        track = _scene_from_members(track_id, rows, project, visible_frames)
+        linked_id = next(
+            (row.scene_track_id for row in rows if row.scene_track_id is not None),
+            None,
+        )
+        scene_track = await self.db.get(SceneTrack, linked_id) if linked_id else None
+        presence_intervals = (
+            list(
+                (
+                    await self.db.execute(
+                        select(SceneTrackInterval)
+                        .where(SceneTrackInterval.scene_track_id == linked_id)
+                        .order_by(SceneTrackInterval.start_frame)
+                    )
+                ).scalars()
+            )
+            if linked_id
+            else []
+        )
+        track = _scene_from_members(
+            track_id,
+            rows,
+            project,
+            visible_frames,
+            scene_track=scene_track,
+            presence_intervals=presence_intervals,
+        )
         return DataManagerTrackDetailResponse(
             track=track,
             members=[

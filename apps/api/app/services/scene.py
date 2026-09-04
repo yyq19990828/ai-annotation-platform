@@ -18,11 +18,12 @@ from dataclasses import dataclass
 import uuid
 from typing import Iterable
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.dataset import DatasetItem, Scene
+from app.db.models.annotation import Annotation
 from app.db.models.task import Task
 from app.db.models.task_dataset_item_link import TaskDatasetItemLink
 from app.schemas.scene import NeighborInfo, NeighborsResponse
@@ -37,6 +38,32 @@ class TaskSceneFrame:
     scene_id: uuid.UUID | None
     scene_name: str | None
     frame_index: int | None
+
+
+@dataclass(frozen=True)
+class SceneTimelineTask:
+    task_id: uuid.UUID
+    status: str
+
+
+@dataclass(frozen=True)
+class SceneTimelineWindow:
+    scene_id: uuid.UUID
+    scene_name: str
+    current_frame_index: int
+    scene_start_frame: int
+    scene_end_frame: int
+    populated_frame_count: int
+    frame_tasks: dict[int, SceneTimelineTask]
+
+
+@dataclass(frozen=True)
+class SceneTimelineAnnotationSummary:
+    annotation_count: int
+    selected_annotation_id: uuid.UUID | None = None
+    selected_source: str | None = None
+    selected_class_name: str | None = None
+    selected_temporal_role: str | None = None
 
 
 class SceneNameConflict(ValueError):
@@ -276,6 +303,156 @@ async def get_scene_frame_task_map(
             continue
         frame_to_task.setdefault(fi, tid)
     return frame_to_task
+
+
+async def get_scene_timeline_window(
+    db: AsyncSession,
+    *,
+    task: Task,
+    start_frame: int,
+    end_frame: int,
+) -> SceneTimelineWindow | None:
+    """解析 task 所在 Scene，并只查询给定闭区间的 frame→task 映射。
+
+    直接 ``Task.dataset_item_id`` 关联优先；点云 ``primary_lidar`` link 仅补缺。
+    查询数量不随窗口帧数增长。
+    """
+    primary_item_id = await resolve_primary_item_id(db, task)
+    if primary_item_id is None:
+        return None
+    primary_item = await db.get(DatasetItem, primary_item_id)
+    if (
+        primary_item is None
+        or primary_item.scene_id is None
+        or primary_item.frame_index is None
+    ):
+        return None
+    scene = await db.get(Scene, primary_item.scene_id)
+    if scene is None:
+        return None
+
+    bounds = (
+        await db.execute(
+            select(
+                func.min(DatasetItem.frame_index),
+                func.max(DatasetItem.frame_index),
+                func.count(func.distinct(DatasetItem.frame_index)),
+            )
+            .where(DatasetItem.scene_id == scene.id)
+            .where(DatasetItem.frame_index.is_not(None))
+        )
+    ).one()
+    scene_start, scene_end, populated_count = bounds
+    if scene_start is None or scene_end is None:
+        return None
+
+    direct_rows = (
+        await db.execute(
+            select(DatasetItem.frame_index, Task.id, Task.status)
+            .join(Task, Task.dataset_item_id == DatasetItem.id)
+            .where(DatasetItem.scene_id == scene.id)
+            .where(Task.project_id == task.project_id)
+            .where(DatasetItem.frame_index.between(start_frame, end_frame))
+            .order_by(DatasetItem.frame_index, Task.id)
+        )
+    ).all()
+    frame_tasks: dict[int, SceneTimelineTask] = {}
+    for frame_index, task_id, status in direct_rows:
+        frame_tasks.setdefault(
+            frame_index, SceneTimelineTask(task_id=task_id, status=status)
+        )
+
+    link_rows = (
+        await db.execute(
+            select(DatasetItem.frame_index, Task.id, Task.status)
+            .join(
+                TaskDatasetItemLink,
+                TaskDatasetItemLink.dataset_item_id == DatasetItem.id,
+            )
+            .join(Task, Task.id == TaskDatasetItemLink.task_id)
+            .where(DatasetItem.scene_id == scene.id)
+            .where(Task.project_id == task.project_id)
+            .where(DatasetItem.frame_index.between(start_frame, end_frame))
+            .where(TaskDatasetItemLink.role == _PRIMARY_LIDAR_ROLE)
+            .order_by(DatasetItem.frame_index, Task.id)
+        )
+    ).all()
+    for frame_index, task_id, status in link_rows:
+        frame_tasks.setdefault(
+            frame_index, SceneTimelineTask(task_id=task_id, status=status)
+        )
+
+    return SceneTimelineWindow(
+        scene_id=scene.id,
+        scene_name=scene.name,
+        current_frame_index=primary_item.frame_index,
+        scene_start_frame=scene_start,
+        scene_end_frame=scene_end,
+        populated_frame_count=populated_count,
+        frame_tasks=frame_tasks,
+    )
+
+
+async def get_scene_timeline_annotation_summaries(
+    db: AsyncSession,
+    *,
+    task_ids: set[uuid.UUID],
+    track_id: str | None,
+) -> dict[uuid.UUID, SceneTimelineAnnotationSummary]:
+    """批量聚合可见 task 的 3D 标注数量与选中轨迹出现位置。"""
+    if not task_ids:
+        return {}
+
+    active_3d = (
+        Annotation.task_id.in_(task_ids),
+        Annotation.annotation_type.in_(("box_3d", "point_mask_3d")),
+        Annotation.is_active.is_(True),
+        Annotation.was_cancelled.is_(False),
+    )
+    count_rows = (
+        await db.execute(
+            select(Annotation.task_id, func.count(Annotation.id))
+            .where(*active_3d)
+            .group_by(Annotation.task_id)
+        )
+    ).all()
+    summaries = {
+        task_id: SceneTimelineAnnotationSummary(annotation_count=count)
+        for task_id, count in count_rows
+    }
+
+    if track_id:
+        track_rows = (
+            await db.execute(
+                select(
+                    Annotation.task_id,
+                    Annotation.id,
+                    Annotation.source,
+                    Annotation.class_name,
+                    Annotation.temporal_role,
+                )
+                .where(*active_3d)
+                .where(Annotation.track_id == track_id)
+                .order_by(Annotation.task_id, Annotation.created_at, Annotation.id)
+            )
+        ).all()
+        selected_by_task: dict[uuid.UUID, tuple[uuid.UUID, str, str, str]] = {}
+        for task_id, annotation_id, source, class_name, temporal_role in track_rows:
+            selected_by_task.setdefault(
+                task_id, (annotation_id, source, class_name, temporal_role)
+            )
+        for task_id, selected in selected_by_task.items():
+            current = summaries.get(
+                task_id, SceneTimelineAnnotationSummary(annotation_count=0)
+            )
+            summaries[task_id] = SceneTimelineAnnotationSummary(
+                annotation_count=current.annotation_count,
+                selected_annotation_id=selected[0],
+                selected_source=selected[1],
+                selected_class_name=selected[2],
+                selected_temporal_role=selected[3],
+            )
+    return summaries
 
 
 async def get_neighbors_for_task(

@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_WORKBENCH_PREFERENCES } from "@/api/auth";
 import { WEBCODECS_FLAG_STORAGE_KEY } from "../stage/useVideoChunkDecoder";
+import { POINT_CLOUD_WEBGPU_STORAGE_KEY } from "../state/workbenchSettingsFields";
 import type { LockableField } from "../state/useWorkbenchConfig";
 
 const mockSetFields = vi.fn();
@@ -67,7 +68,14 @@ describe("WorkbenchSettingsDrawer", () => {
     renderDrawer({ stageKind: "3d" });
     expect(screen.getByText("通用")).toBeTruthy();
     expect(screen.getByText("点云")).toBeTruthy();
+    expect(screen.getByText("实验特性")).toBeTruthy();
     expect(screen.getByText(/点大小/)).toBeTruthy();
+    const webgpu = within(
+      screen.getByTestId("setting-field-experiment.pointCloudWebGpuRenderer"),
+    ).getByRole("switch");
+    expect(webgpu.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(webgpu);
+    expect(window.localStorage.getItem(POINT_CLOUD_WEBGPU_STORAGE_KEY)).toBe("1");
     expect(screen.queryByText(/图像平滑/)).toBeNull();
   });
 

@@ -52,7 +52,7 @@ export type VideoTool =
   | "exemplar"
   | "magic-box";
 // v0.13.3-5 · 点云 3D 工作台工具态(双栈隔离,不复用 2D ToolId)。
-export type ThreeDTool = "select" | "box" | "point-mask";
+export type ThreeDTool = "select" | "box" | "point-mask" | "measure";
 
 /**
  * v0.10.2 · 派生型 SAM 子工具, 仅作 ImageStage / AIInspectorPanel 等老消费者的兼容外观.

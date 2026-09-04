@@ -85,7 +85,10 @@ PYTHONPATH=. uv run python scripts/backfill_scenes.py --dataset-id <uuid> --mode
 scene service 建 scene + 赋 frame_index,不依赖目录启发式 single-scene inference。
 不引入 nuscenes-devkit,只用 numpy + Pillow 自读 JSON。
 
-数据下载:https://www.nuscenes.org/nuscenes#download (取 Mini split)。
+`seed.py` 会从 nuScenes 官方地址下载 Mini split 到
+`$XDG_CACHE_HOME/ai-annotation-platform/nuscenes-mini`（未设置时使用 `~/.cache`），
+校验固定大小与 SHA-256 后只解压导入所需的 key-frame samples；下载支持分段续传。
+也可单独执行 `uv run python scripts/nuscenes_fixture.py` 预热缓存。
 
 ```bash
 cd apps/api
@@ -110,7 +113,8 @@ dataset 按 DS-NU-<name> 复用;同名 scene 已存在则跳过。详见脚本�
 - `seed_assets.py`:按 `seed-assets.toml` 下载固定版本素材，校验大小/SHA-256、安全解压并缓存
 - `seed_coco8.py`:真实 `third-party/coco8`(8 图)→ 图片检测项目 + 每图 Task + YOLO 框走 `import_yolo` 作**预标注**导入(非人工标注)
 - `seed_large_images.py`:校验 Web 侧现实大图清单，幂等创建 `P-LARGE-IMG` / `DS-LARGE-IMG`，并可入队、等待图片金字塔生成
-- `seed_pointcloud.py`:SUSTechPOINTS 点云 demo + `third-party/nuscenes-mini` scene-0061 → scene 模式项目并按 scene 建包(by_scene split)
+- `nuscenes_fixture.py`:从官方地址分段续传 nuScenes mini，在仓库外缓存并安全解压 key-frame samples
+- `seed_pointcloud.py`:nuScenes mini scene-0061 → 固定 dev 点云项目，并按 scene 建包（截图 profile 不建包）
 - `seed_scale.py`:大规模压测夹具种子
 - `import_images.py`:批量导入本地图片到 dataset
 - `bootstrap_admin.py`:从 ENV 建超管

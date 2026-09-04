@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import (
 from app.config import settings
 from app.db.models.async_job import AsyncJobStatus
 from app.db.models.mask_qc import MaskQCRun
+from app.db.models.point_cloud_quality import PointCloudQualityRun
 from app.db.models.mask_repair_batch import MaskRepairBatch
 from app.db.models.mask_format_import import MaskFormatImport
 from app.services import async_job as async_job_svc
@@ -56,6 +57,18 @@ async def _mark_failed(celery_task_id: str, error: str) -> None:
                     await db.execute(
                         select(MaskQCRun)
                         .where(MaskQCRun.async_job_id == aj.id)
+                        .with_for_update()
+                    )
+                ).scalar_one_or_none()
+                if run is not None and run.status in {"pending", "running"}:
+                    run.status = "failed"
+                    run.error_message = error[:4000]
+                    run.completed_at = datetime.now(timezone.utc)
+            elif aj.kind == "point_cloud_quality":
+                run = (
+                    await db.execute(
+                        select(PointCloudQualityRun)
+                        .where(PointCloudQualityRun.async_job_id == aj.id)
                         .with_for_update()
                     )
                 ).scalar_one_or_none()
@@ -114,6 +127,17 @@ async def _mark_cancelled(celery_task_id: str) -> None:
                     await db.execute(
                         select(MaskQCRun)
                         .where(MaskQCRun.async_job_id == aj.id)
+                        .with_for_update()
+                    )
+                ).scalar_one_or_none()
+                if run is not None and run.status in {"pending", "running"}:
+                    run.status = "cancelled"
+                    run.completed_at = datetime.now(timezone.utc)
+            elif aj.kind == "point_cloud_quality":
+                run = (
+                    await db.execute(
+                        select(PointCloudQualityRun)
+                        .where(PointCloudQualityRun.async_job_id == aj.id)
                         .with_for_update()
                     )
                 ).scalar_one_or_none()

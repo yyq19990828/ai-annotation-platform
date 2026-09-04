@@ -1,9 +1,12 @@
 FROM node:20-alpine AS build
 WORKDIR /app
+RUN apk add --no-cache bash
 RUN corepack enable && corepack prepare pnpm@latest --activate
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY apps/web/package.json apps/web/
+COPY scripts/install-git-hooks.sh scripts/
 RUN pnpm install --frozen-lockfile
+COPY apps/api/openapi.snapshot.json apps/api/capability-registry.snapshot.json apps/api/
 COPY apps/web apps/web
 ARG VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU=true
 ENV VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU=${VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU}

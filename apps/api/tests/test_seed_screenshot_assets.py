@@ -13,7 +13,6 @@ from scripts.seed_screenshot_assets import (
     GENERATED_REVISION,
     NUSCENES_CAMERA_SOURCE_IDS,
     NUSCENES_LIDAR_SOURCE_ID,
-    POINTCLOUD_SOURCE_IDS,
     ROAD_BOXES,
     ROAD_SOURCE_IDS,
     VIDEO_SOURCE_ID,
@@ -68,16 +67,6 @@ def _source_files(root: Path) -> dict[str, Path]:
     )
     result[VIDEO_SOURCE_ID] = video
 
-    for index, asset_id in enumerate(POINTCLOUD_SOURCE_IDS):
-        path = sources / f"capture-{index}.pcd"
-        path.write_text(
-            "# .PCD v0.7\nVERSION 0.7\nFIELDS x y z\nSIZE 4 4 4\n"
-            "TYPE F F F\nCOUNT 1 1 1\nWIDTH 1\nHEIGHT 1\n"
-            f"POINTS 1\nDATA ascii\n{index}.0 0.0 1.0\n",
-            encoding="ascii",
-        )
-        result[asset_id] = path
-
     lidar = sources / "nuscenes-lidar.pcd.bin"
     lidar.write_bytes(struct.pack("<fffff", 1.0, 2.0, 3.0, 0.5, 0.0))
     result[NUSCENES_LIDAR_SOURCE_ID] = lidar
@@ -128,16 +117,6 @@ def test_prepared_screenshot_assets_are_complete_deterministic_and_self_healing(
     assert len(first.content_sha256) == 64
     assert len(list(first.image_root.glob("images/*/*.jpg"))) == 8
     assert len(list(first.image_root.glob("labels/*/*.txt"))) == 8
-    assert len(list(first.pointcloud_root.glob("lidar/*.pcd"))) == 4
-    camera_images = sorted(first.pointcloud_root.glob("camera/front/*.jpg"))
-    assert len(camera_images) == 4
-    with Image.open(camera_images[0]) as camera:
-        assert camera.size == (1, 1)
-    calibration = json.loads(
-        first.pointcloud_root.joinpath("calib/camera/front.json").read_text()
-    )
-    assert len(calibration["extrinsic"]) == 16
-    assert len(calibration["intrinsic"]) == 9
     assert len(list(first.multicamera_pointcloud_root.glob("lidar/*.pcd"))) == 1
     assert len(list(first.multicamera_pointcloud_root.glob("camera/*/*.jpg"))) == 6
     calibrations = sorted(first.multicamera_pointcloud_root.glob("calib/camera/*.json"))

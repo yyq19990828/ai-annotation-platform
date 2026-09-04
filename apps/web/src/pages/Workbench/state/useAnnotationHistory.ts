@@ -201,6 +201,7 @@ export function useAnnotationHistory(taskId: string | undefined, handlers: Histo
     return restored?.redo ?? [];
   });
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
   const handlersRef = useRef(handlers);
   handlersRef.current = handlers;
 
@@ -286,36 +287,40 @@ export function useAnnotationHistory(taskId: string | undefined, handlers: Histo
   }, []);
 
   const undo = useCallback(async () => {
-    if (busy) return;
-    setUndoStack((stack) => {
-      const cmd = stack[stack.length - 1];
-      if (!cmd) return stack;
-      setBusy(true);
-      apply(cmd, "undo")
-        .then(() => setRedoStack((r) => [...r, cmd]))
-        .catch(() => {
-          /* swallow; 命令已从栈移除 */
-        })
-        .finally(() => setBusy(false));
-      return stack.slice(0, -1);
-    });
-  }, [apply, busy]);
+    if (busyRef.current) return;
+    const cmd = undoStack[undoStack.length - 1];
+    if (!cmd) return;
+    busyRef.current = true;
+    setBusy(true);
+    setUndoStack(undoStack.slice(0, -1));
+    try {
+      await apply(cmd, "undo");
+      setRedoStack((stack) => [...stack, cmd]);
+    } catch {
+      /* swallow; 命令已从栈移除 */
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }, [apply, undoStack]);
 
   const redo = useCallback(async () => {
-    if (busy) return;
-    setRedoStack((stack) => {
-      const cmd = stack[stack.length - 1];
-      if (!cmd) return stack;
-      setBusy(true);
-      apply(cmd, "redo")
-        .then(() => setUndoStack((u) => [...u, cmd]))
-        .catch(() => {
-          /* swallow */
-        })
-        .finally(() => setBusy(false));
-      return stack.slice(0, -1);
-    });
-  }, [apply, busy]);
+    if (busyRef.current) return;
+    const cmd = redoStack[redoStack.length - 1];
+    if (!cmd) return;
+    busyRef.current = true;
+    setBusy(true);
+    setRedoStack(redoStack.slice(0, -1));
+    try {
+      await apply(cmd, "redo");
+      setUndoStack((stack) => [...stack, cmd]);
+    } catch {
+      /* swallow */
+    } finally {
+      busyRef.current = false;
+      setBusy(false);
+    }
+  }, [apply, redoStack]);
 
   return {
     push,

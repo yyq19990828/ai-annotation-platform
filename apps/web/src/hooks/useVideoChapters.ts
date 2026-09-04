@@ -13,7 +13,8 @@ const chapterKey = (datasetItemId: string | null | undefined) =>
 export function useVideoChapters(datasetItemId: string | null | undefined) {
   return useQuery<VideoChapter[]>({
     queryKey: chapterKey(datasetItemId),
-    queryFn: () => (datasetItemId ? videoChaptersApi.list(datasetItemId) : Promise.resolve([])),
+    queryFn: ({ signal }) =>
+      datasetItemId ? videoChaptersApi.list(datasetItemId, { signal }) : Promise.resolve([]),
     enabled: Boolean(datasetItemId),
     staleTime: 30_000,
   });

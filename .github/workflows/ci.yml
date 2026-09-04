@@ -312,7 +312,7 @@ jobs:
         working-directory: apps/web
         env:
           OPENAPI_URL: ${{ github.workspace }}/apps/api/openapi.snapshot.json
-        run: pnpm build
+        run: pnpm build --mode e2e
       - name: Install Playwright browsers
         working-directory: apps/web
         run: pnpm exec playwright install --with-deps chromium

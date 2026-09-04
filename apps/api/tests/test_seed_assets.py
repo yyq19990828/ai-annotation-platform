@@ -129,10 +129,6 @@ def test_repository_manifest_records_public_docs_clearance():
     assert {asset.id for asset in assets if "screenshots" in asset.profiles} == {
         "auckland-traffic-1",
         "auckland-traffic-2",
-        "pcl-pairwise-capture-1",
-        "pcl-pairwise-capture-2",
-        "pcl-pairwise-capture-3",
-        "pcl-pairwise-capture-4",
         "nuscenes-demo-lidar",
         "nuscenes-demo-cam-front",
         "nuscenes-demo-cam-front-left",

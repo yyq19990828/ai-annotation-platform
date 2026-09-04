@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-SEED_REVISION = "screenshots-2026-08-f"
+SEED_REVISION = "screenshots-2026-08-g"
 SEED_MANAGED_BY = "screenshot-seed"
 USER_SPECS = {
     "admin": ("admin", "super_admin"),
@@ -392,32 +392,59 @@ PROJECT_SPECS = {
         display_id="P-PC-DEV",
         dataset_display_id="DS-PC-DEV",
         data_type="lidar",
-        storage_prefix="pc-scene-dev/",
+        storage_prefix="nuscenes-mini/",
         tasks=(
             TaskSpec(
                 "frame_000",
-                "pc-scene-dev/lidar/000000.pcd",
+                "nuscenes-mini/scene-0061/lidar/scene-0061_000000.pcd",
                 recording_anchors=(
                     RecordingAnchorSpec(
                         key="foreground_object",
                         label="object",
-                        bbox=(0.472, 0.566, 0.704, 0.982),
-                        point=(0.588, 0.774),
-                        provenance="reviewed-depth-frame-derived",
+                        bbox=(0.045, 0.245, 0.326, 0.758),
+                        point=(0.185, 0.5),
+                        provenance="reviewed-nuscenes-front-camera",
                     ),
                 ),
             ),
             *(
-                TaskSpec(f"frame_{index:03d}", f"pc-scene-dev/lidar/{index:06d}.pcd")
-                for index in range(1, 4)
+                TaskSpec(
+                    f"frame_{index:03d}",
+                    f"nuscenes-mini/scene-0061/lidar/scene-0061_{index:06d}.pcd",
+                )
+                for index in range(1, 39)
             ),
         ),
         media_paths=(
-            *(f"pc-scene-dev/lidar/{index:06d}.pcd" for index in range(4)),
-            *(f"pc-scene-dev/camera/front/{index:06d}.jpg" for index in range(4)),
-            "pc-scene-dev/calib/camera/front.json",
+            *(
+                f"nuscenes-mini/scene-0061/lidar/scene-0061_{index:06d}.pcd"
+                for index in range(39)
+            ),
+            *(
+                f"nuscenes-mini/scene-0061/camera/{channel}/scene-0061_{index:06d}.jpg"
+                for channel in (
+                    "CAM_FRONT",
+                    "CAM_FRONT_RIGHT",
+                    "CAM_BACK_RIGHT",
+                    "CAM_BACK",
+                    "CAM_BACK_LEFT",
+                    "CAM_FRONT_LEFT",
+                )
+                for index in range(39)
+            ),
+            *(
+                f"nuscenes-mini/scene-0061/calib/camera/{channel}.json"
+                for channel in (
+                    "CAM_FRONT",
+                    "CAM_FRONT_RIGHT",
+                    "CAM_BACK_RIGHT",
+                    "CAM_BACK",
+                    "CAM_BACK_LEFT",
+                    "CAM_FRONT_LEFT",
+                )
+            ),
         ),
-        axis_convention="opencv_camera",
+        axis_convention="iso_8855",
     ),
     "pointcloud_multicam_demo": ProjectSpec(
         display_id="P-PC-MULTI",

@@ -11,7 +11,12 @@ import { useMemo, useState } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
 import { useFeedbacks, usePatchFeedback, useDeleteFeedback } from "@/hooks/useFeedbacks";
-import type { FeedbackSeverity, FeedbackStatus, ListFeedbacksParams } from "@/api/feedbacks";
+import {
+  hasPixelAnchor,
+  type FeedbackSeverity,
+  type FeedbackStatus,
+  type ListFeedbacksParams,
+} from "@/api/feedbacks";
 import { useActiveIssueStore } from "../state/useActiveIssueStore";
 
 interface Props {
@@ -97,7 +102,8 @@ export function DiscussionIssuesTab({ projectId, taskId }: Props) {
       )}
 
       {filtered.map((it) => {
-        const hasPin = it.anchor_type === "pixel" && !!it.anchor_position;
+        const pixelAnchor = hasPixelAnchor(it) ? it.anchor_position : null;
+        const hasPin = pixelAnchor !== null;
         return (
           <div
             key={it.id}
@@ -133,13 +139,13 @@ export function DiscussionIssuesTab({ projectId, taskId }: Props) {
               )}
               {hasPin && (
                 <span className="text-2xs text-muted-foreground" title="像素锚点 · 单击定位">
-                  <Icon name="crosshair" size={11} /> ({it.anchor_position!.x.toFixed(2)},{" "}
-                  {it.anchor_position!.y.toFixed(2)})
+                  <Icon name="crosshair" size={11} /> ({pixelAnchor.x.toFixed(2)},{" "}
+                  {pixelAnchor.y.toFixed(2)})
                 </span>
               )}
-              {hasPin && typeof it.anchor_position!.frame === "number" && (
+              {pixelAnchor && typeof pixelAnchor.frame === "number" && (
                 <span className="text-2xs text-muted-foreground" title="所属帧 · 单击跳转">
-                  F{it.anchor_position!.frame}
+                  F{pixelAnchor.frame}
                 </span>
               )}
               <span className="ml-auto text-2xs text-muted-foreground">

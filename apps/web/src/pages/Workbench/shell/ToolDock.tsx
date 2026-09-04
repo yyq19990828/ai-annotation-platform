@@ -251,8 +251,21 @@ const THREE_D_TOOLS: Array<{
   desc: string;
 }> = [
   { id: "select", hotkey: "V", label: "选择", icon: "move", desc: "拾取 / 选中 3D 框" },
-  { id: "box", hotkey: "B", label: "放置框", icon: "rect", desc: "点地面放置新 3D 框" },
+  {
+    id: "box",
+    hotkey: "B",
+    label: "连续建框",
+    icon: "rect",
+    desc: "点击放置或拖框自动拟合；完成后继续待命",
+  },
   { id: "point-mask", hotkey: "P", label: "分割", icon: "scissors", desc: "框选点云生成 3D 分割" },
+  {
+    id: "measure",
+    hotkey: "M",
+    label: "测量",
+    icon: "ruler",
+    desc: "吸附点云测量三维距离、水平距离与高差",
+  },
 ];
 
 function unitForThreeDTool(tool: ThreeDTool): string | null {

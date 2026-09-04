@@ -23,6 +23,7 @@ celery_app = Celery(
         "app.workers.video_tracker",
         "app.workers.video_track_quality",
         "app.workers.mask_qc",
+        "app.workers.point_cloud_quality",
         "app.workers.mask_repair",
         "app.workers.mask_format_import",
         # v0.10.16 · async_jobs 兜底信号 + DuckDB 分析同步
@@ -36,6 +37,7 @@ celery_app = Celery(
         "app.workers.dataset_import",
         # v0.12.0 · B4 建任务异步化（大 dataset link → Celery 建 task）
         "app.workers.create_tasks",
+        "app.workers.cross_frame_job",
         # v0.10.25 · worker 心跳上报
         "app.workers.heartbeat",
         # v0.10.25 · predictions 月分区维护（ADR-0006 Stage 2）
@@ -82,6 +84,7 @@ celery_app.conf.update(
         "app.workers.video_tracker.run_video_tracker_job": {"queue": "gpu"},
         "app.workers.video_track_quality.run": {"queue": "media"},
         "app.workers.mask_qc.run_mask_qc": {"queue": "media"},
+        "app.workers.point_cloud_quality.run": {"queue": "media"},
         "app.workers.mask_repair.run_mask_repair": {"queue": "media"},
         "app.workers.mask_repair.rollback_mask_repair": {"queue": "media"},
         "app.workers.mask_format_import.run_mask_format_import": {"queue": "media"},
@@ -98,6 +101,7 @@ celery_app.conf.update(
         "app.workers.dataset_import.run_dataset_import": {"queue": "media"},
         # v0.12.0 · B4 建任务异步化走 default 队列
         "app.workers.create_tasks.run_create_tasks": {"queue": "default"},
+        "app.workers.cross_frame_job.run_cross_frame_job": {"queue": "default"},
         # v0.7.6 · audit 异步 INSERT 走独立队列，不与 ml/media 抢资源
         "app.workers.audit.persist_audit_entry": {"queue": "audit"},
         # v0.8.4 · task_events 批量 INSERT 走独立队列

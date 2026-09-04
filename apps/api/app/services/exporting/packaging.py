@@ -18,6 +18,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import json
 import math
 import os
@@ -29,28 +31,36 @@ from datetime import datetime, timezone
 from posixpath import splitext
 from typing import Any, AsyncIterator
 
+import numpy as np
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.annotation import Annotation
-from app.db.models.dataset import DatasetItem
+from app.db.models.dataset import DatasetItem, Scene
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.task_dataset_item_link import TaskDatasetItemLink
+from app.db.models.scene_pose import SceneFramePose
 from app.schemas._jsonb_types import SensorCalibration
 from app.services.exporting.service import (
     ExportService,
     UnsupportedExportError,
     _bbox_geometry,
 )
-from app.services.axis_convention import AxisFrame
+from app.services.axis_convention import AxisFrame, R_NORM
 from app.services.exporting.lidar import (
+    LidarCameraExportCtx,
     LidarFrameExportCtx,
-    build_kitti_lidar_label_lines,
+    MulticameraCocoImageCtx,
+    NuScenesSensorExportCtx,
+    build_multicamera_coco,
     build_nuscenes_frame_records,
+    build_kitti_lidar_frame,
     build_pointmask_label_bytes,
     category_map_json,
+    count_lidar_points_in_boxes,
 )
+from app.services.exporting.lidar_preflight import calibration_is_valid
 from app.services.exporting.video import (
     FALLBACK_H,
     FALLBACK_W,
@@ -78,6 +88,7 @@ from app.services.project import (
     derive_attribute_schema,
     derive_classes_list,
 )
+from app.services.sensor_calibration import resolve_calibration_states
 from app.services.storage import storage_service
 from app.services.mask_formats import registry as mask_format_registry
 from app.services.mask_formats.image_export import (
@@ -87,6 +98,7 @@ from app.services.mask_formats.image_export import (
     yolo_seg_lines_with_masks,
 )
 from app.services.raster_mask_storage import load_coco_rle
+from app.services.point_cloud_quality import parse_pcd_positions
 from app.config import settings
 from app.utils.raster_mask_rle import coco_rle_bbox_norm
 from app.services.video_frame_service import derive_sampled_frames, derive_step
@@ -119,7 +131,13 @@ async def _hydrate_mask_geometry_for_export(geometry: dict) -> dict:
     return hydrated
 
 
-LIDAR_EXPORT_TARGETS = {"aap_json", "kitti", "nuscenes", "pointmask"}
+LIDAR_EXPORT_TARGETS = {
+    "aap_json",
+    "coco-multicamera",
+    "kitti",
+    "nuscenes",
+    "pointmask",
+}
 
 # v0.10.43 · 多目标导出：图像目标（yolo 旧值=yolo-det）+ 视频目标 + voc（仅同步单目标）。
 IMAGE_EXPORT_TARGETS = {
@@ -298,6 +316,113 @@ def main() -> int:
 if __name__ == "__main__":
     sys.exit(main())
 '''
+
+
+_FETCH_TRUSTED_MEDIA_TEMPLATE = '''#!/usr/bin/env python3
+"""Materialize the exact trusted media tree from media_manifest.json."""
+import hashlib
+import json
+import os
+import sys
+import tempfile
+import urllib.request
+from datetime import datetime, timezone
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+
+def safe_destination(rel_path: str) -> str:
+    if (
+        not isinstance(rel_path, str)
+        or not rel_path
+        or "\\\\" in rel_path
+        or ":" in rel_path
+        or "\\0" in rel_path
+    ):
+        raise ValueError("unsafe media path")
+    parts = rel_path.split("/")
+    if any(part in ("", ".", "..") for part in parts):
+        raise ValueError("unsafe media path")
+    root = os.path.realpath(HERE)
+    destination = os.path.realpath(os.path.join(root, *parts))
+    if os.path.commonpath((root, destination)) != root or destination == root:
+        raise ValueError("unsafe media path")
+    return destination
+
+
+def file_matches(path: str, expected_size: int, expected_sha256: str) -> bool:
+    if not os.path.isfile(path) or os.path.getsize(path) != expected_size:
+        return False
+    digest = hashlib.sha256()
+    with open(path, "rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest() == expected_sha256
+
+
+def main() -> int:
+    with open(os.path.join(HERE, "media_manifest.json"), "r", encoding="utf-8") as f:
+        manifest = json.load(f)
+    expires_at = manifest.get("expires_at")
+    if expires_at and datetime.fromisoformat(expires_at) <= datetime.now(timezone.utc):
+        print("[!] 媒体链接已过期，请回平台重新导出。")
+        return 2
+    ok = 0
+    fail = 0
+    seen_destinations = set()
+    for item in manifest.get("media", []):
+        rel_path = item.get("rel_path")
+        url = item.get("presigned_url")
+        if not rel_path or not url:
+            print("[x] 下载失败 %s: missing media path or URL" % (rel_path,))
+            fail += 1
+            continue
+        temp_path = None
+        try:
+            expected_size = int(item["source_file_size"])
+            expected_sha256 = str(item["source_sha256"]).lower()
+            if (
+                expected_size < 0
+                or len(expected_sha256) != 64
+                or any(char not in "0123456789abcdef" for char in expected_sha256)
+            ):
+                raise ValueError("invalid media fingerprint")
+            dest = safe_destination(rel_path)
+            if dest in seen_destinations:
+                raise ValueError("duplicate media path")
+            seen_destinations.add(dest)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            if file_matches(dest, expected_size, expected_sha256):
+                ok += 1
+                continue
+            with tempfile.NamedTemporaryFile(
+                prefix=".aap-download-",
+                dir=os.path.dirname(dest),
+                delete=False,
+            ) as temp_file:
+                temp_path = temp_file.name
+            urllib.request.urlretrieve(url, temp_path)
+            if not file_matches(temp_path, expected_size, expected_sha256):
+                raise ValueError("downloaded media fingerprint mismatch")
+            os.replace(temp_path, dest)
+            temp_path = None
+            ok += 1
+        except Exception as exc:  # noqa: BLE001
+            print("[x] 下载失败 %s: %s" % (rel_path, exc))
+            fail += 1
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                os.unlink(temp_path)
+    print("[done] 可信媒体回源 成功 %d，失败 %d" % (ok, fail))
+    return 0 if fail == 0 else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+'''
+
+# Backward-compatible import surface for existing nuScenes script tests.
+_FETCH_NUSCENES_MEDIA_TEMPLATE = _FETCH_TRUSTED_MEDIA_TEMPLATE
 
 
 def _dataset_name_for_task(task: Task, item: DatasetItem | None) -> str:
@@ -568,6 +693,7 @@ async def build_export_zip(
                 batch_id=batch_id,
                 targets=targets,
                 include_attributes=include_attributes,
+                format_options=format_options or {},
             )
 
         classes_list = derive_classes_list(project.tool_bindings)
@@ -810,6 +936,8 @@ def _calibration_for_item(item: DatasetItem | None) -> SensorCalibration | None:
     raw = (item.metadata_ or {}).get("calibration")
     if raw is None:
         return None
+    if not calibration_is_valid(raw):
+        return None
     try:
         return SensorCalibration.model_validate(raw)
     except ValueError:
@@ -843,30 +971,17 @@ async def _load_lidar_link_items(
     return out
 
 
-def _kitti_calib_text(calib: SensorCalibration | None) -> str:
-    header = ""
-    if calib is None:
-        # 缺标定时仍写出单位矩阵占位, 但加显式警告 + 文件名标记 (.unverified),
-        # 避免下游误把它当真实标定做 3D→2D 投影得到错误结果。
-        header = (
-            "# AAP WARNING: no calibration found for this frame; the matrices "
-            "below are identity placeholders and MUST NOT be used for 3D->2D "
-            "projection.\n"
-        )
-        p2 = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]
-        r0 = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
-        tr = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]
+def _kitti_calib_text(calib: SensorCalibration) -> str:
+    k = [float(v) for v in calib.intrinsic]
+    p2 = [k[0], k[1], k[2], 0.0, k[3], k[4], k[5], 0.0, k[6], k[7], k[8], 0.0]
+    if calib.rect:
+        r = [float(v) for v in calib.rect]
+        r0 = [r[0], r[1], r[2], r[4], r[5], r[6], r[8], r[9], r[10]]
     else:
-        k = [float(v) for v in calib.intrinsic]
-        p2 = [k[0], k[1], k[2], 0.0, k[3], k[4], k[5], 0.0, k[6], k[7], k[8], 0.0]
-        if calib.rect:
-            r = [float(v) for v in calib.rect]
-            r0 = [r[0], r[1], r[2], r[4], r[5], r[6], r[8], r[9], r[10]]
-        else:
-            r0 = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]
-        e = [float(v) for v in calib.extrinsic]
-        tr = [e[0], e[1], e[2], e[3], e[4], e[5], e[6], e[7], e[8], e[9], e[10], e[11]]
-    return header + "\n".join(
+        r0 = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 1.0]
+    e = [float(v) for v in calib.extrinsic]
+    tr = [e[0], e[1], e[2], e[3], e[4], e[5], e[6], e[7], e[8], e[9], e[10], e[11]]
+    return "\n".join(
         [
             "P2: " + " ".join(f"{v:.12g}" for v in p2),
             "R0_rect: " + " ".join(f"{v:.12g}" for v in r0),
@@ -878,23 +993,96 @@ def _kitti_calib_text(calib: SensorCalibration | None) -> str:
 
 def _lidar_readme(target: str) -> str:
     common = (
-        "AAP LiDAR export v0.14.7\n"
+        "AAP LiDAR export\n"
         "Images and point clouds are referenced by presigned manifests; run the "
         "fetch scripts before training if local media is needed.\n"
         "point_mask_3d labels index the point order of the fetched point cloud.\n"
     )
-    if target == "nuscenes":
-        return (
-            common + "\nnuScenes note: this is a single-frame sample-style subset. "
-            "sample_annotation.translation is in AAP ego/ISO coordinates, and "
-            "ego_pose rows are identity placeholders because persisted global "
-            "ego poses are planned for v0.15.0.\n"
-        )
     if target == "kitti":
-        return common + "\nKITTI labels are exported in KITTI camera coordinates.\n"
+        return (
+            common + "\nKITTI label_2 and calib use the explicitly selected camera. "
+            "A persistent manual camera bbox is preferred over the derived projection; "
+            "export_report.json records both source counts. Fully invisible cuboids are "
+            "listed there as skipped.\n"
+        )
     if target == "pointmask":
         return common + "\nPointmask labels are little-endian uint32 class ids.\n"
+    if target == "nuscenes":
+        return (
+            "AAP trusted nuScenes keyframe export\n\n"
+            "This package is compatible with the official nuscenes-devkit load/query "
+            "contract after running fetch_nuscenes_media.py. It is not an official "
+            "detection/tracking benchmark split and does not map project categories to "
+            "the official ontology. JSON tables live in v1.0-aap/; media keeps its exact "
+            "source-relative path. Presigned media links expire at the time recorded in "
+            "media_manifest.json.\n"
+        )
+    if target == "coco-multicamera":
+        return (
+            "AAP trusted multi-camera COCO export\n\n"
+            "annotations.json contains only persistent manual camera bounding boxes; "
+            "it never fills missing labels from 3D projections. Every linked camera "
+            "image is included, so images without annotations remain valid negative "
+            "samples. Run fetch_media.py before training to materialize the exact "
+            "fingerprinted images at their COCO file_name paths.\n"
+        )
     return common
+
+
+def _read_dataset_object(key: str) -> bytes:
+    response = storage_service.client.get_object(
+        Bucket=storage_service.datasets_bucket,
+        Key=key,
+    )
+    body = response["Body"]
+    try:
+        return body.read()
+    finally:
+        close = getattr(body, "close", None)
+        if close is not None:
+            close()
+
+
+def _hash_dataset_object(key: str) -> tuple[int, str]:
+    response = storage_service.client.get_object(
+        Bucket=storage_service.datasets_bucket,
+        Key=key,
+    )
+    body = response["Body"]
+    size = 0
+    digest = hashlib.sha256()
+    try:
+        while chunk := body.read(1024 * 1024):
+            size += len(chunk)
+            digest.update(chunk)
+    finally:
+        close = getattr(body, "close", None)
+        if close is not None:
+            close()
+    return size, digest.hexdigest()
+
+
+def _trusted_media_entry(
+    *,
+    rel_path: str,
+    storage_key: str,
+    kind: str,
+    source_file_size: int,
+    source_sha256: str,
+    expires_iso: str,
+) -> dict[str, Any]:
+    return {
+        "rel_path": rel_path,
+        "kind": kind,
+        "source_file_size": source_file_size,
+        "source_sha256": source_sha256,
+        "presigned_url": storage_service.generate_download_url(
+            storage_key,
+            expires_in=PRESIGN_EXPIRES_SECONDS,
+            bucket=storage_service.datasets_bucket,
+        ),
+        "expires_at": expires_iso,
+    }
 
 
 async def _build_lidar_export_zip(
@@ -906,19 +1094,40 @@ async def _build_lidar_export_zip(
     batch_id: uuid.UUID | None,
     targets: list[str],
     include_attributes: bool,
+    format_options: dict[str, Any],
 ) -> tuple[str, int, int]:
     for target in targets:
         if target not in LIDAR_EXPORT_TARGETS:
             raise UnsupportedExportError(f"unsupported lidar export target: {target}")
+    lidar_options = format_options.get("lidar") or {}
+    selected_camera_role = lidar_options.get("kitti_camera_role")
+    if "kitti" in targets and not selected_camera_role:
+        raise UnsupportedExportError("kitti_camera_required")
 
     classes_list = derive_classes_list(project.tool_bindings)
     cat_map = {name: i + 1 for i, name in enumerate(classes_list)}
     attribute_schema = derive_attribute_schema(project.tool_bindings)
+    allowed_attribute_keys = {
+        field["key"]
+        for field in attribute_schema.get("fields") or []
+        if isinstance(field, dict) and field.get("key")
+    }
     multi = len(targets) > 1
+    needs_legacy_lidar_manifests = bool({"kitti", "pointmask"} & set(targets))
     file_count = 0
-    frames: list[LidarFrameExportCtx] = []
-    image_manifest: list[dict] = []
+    frame_count = 0
+    kitti_skipped: list[dict[str, str]] = []
+    kitti_exported_count = 0
+    kitti_manual_bbox_count = 0
+    kitti_derived_bbox_count = 0
+    image_manifest_all: list[dict] = []
+    image_manifest_selected: list[dict] = []
     pointcloud_manifest: list[dict] = []
+    nuscenes_frames: list[LidarFrameExportCtx] = []
+    nuscenes_media: dict[str, dict[str, Any]] = {}
+    multicamera_coco_images: list[MulticameraCocoImageCtx] = []
+    multicamera_coco_media: dict[str, dict[str, Any]] = {}
+    multicamera_media_fingerprints: dict[uuid.UUID, tuple[int, str]] = {}
     now = datetime.now(timezone.utc)
     expires_iso = datetime.fromtimestamp(
         now.timestamp() + PRESIGN_EXPIRES_SECONDS, tz=timezone.utc
@@ -933,7 +1142,105 @@ async def _build_lidar_export_zip(
             )
 
         async for tasks, ann_by_task, dataset_items in chunks:
+            task_ids = [task.id for task in tasks]
+            camera_members_by_task: dict[uuid.UUID, list[Annotation]] = {}
+            if task_ids:
+                camera_members = list(
+                    (
+                        await svc.db.execute(
+                            select(Annotation)
+                            .where(Annotation.task_id.in_(task_ids))
+                            .where(Annotation.sensor_role.is_not(None))
+                            .where(Annotation.geometry["type"].as_string() == "bbox")
+                            .where(Annotation.is_active.is_(True))
+                            .where(Annotation.was_cancelled.is_(False))
+                            .order_by(Annotation.task_id, Annotation.id)
+                        )
+                    ).scalars()
+                )
+                for member in camera_members:
+                    camera_members_by_task.setdefault(member.task_id, []).append(member)
             links_by_task = await _load_lidar_link_items(svc, tasks)
+            multicamera_calibration_states = {}
+            if "coco-multicamera" in targets:
+                camera_items_by_id = {
+                    item.id: item
+                    for linked in links_by_task.values()
+                    for role, (_link, item) in linked.items()
+                    if role.startswith("camera_")
+                }
+                new_media_items = [
+                    item
+                    for item_id, item in camera_items_by_id.items()
+                    if item_id not in multicamera_media_fingerprints
+                ]
+
+                async def hash_camera_item(
+                    item: DatasetItem,
+                ) -> tuple[DatasetItem, tuple[int, str]]:
+                    return item, await asyncio.to_thread(
+                        _hash_dataset_object, item.file_path
+                    )
+
+                for start in range(0, len(new_media_items), 4):
+                    hashed = await asyncio.gather(
+                        *[
+                            hash_camera_item(item)
+                            for item in new_media_items[start : start + 4]
+                        ]
+                    )
+                    for item, fingerprint in hashed:
+                        if fingerprint[0] != int(item.file_size or -1):
+                            raise UnsupportedExportError(
+                                f"multicamera_coco_media_drift:{item.id}"
+                            )
+                        multicamera_media_fingerprints[item.id] = fingerprint
+
+                member_item_ids = {
+                    member.sensor_dataset_item_id
+                    for members in camera_members_by_task.values()
+                    for member in members
+                    if member.source == "manual"
+                    and (member.geometry or {}).get("type") == "bbox"
+                    and member.sensor_dataset_item_id in camera_items_by_id
+                }
+                if member_item_ids:
+                    multicamera_calibration_states = await resolve_calibration_states(
+                        svc.db,
+                        [camera_items_by_id[item_id] for item_id in member_item_ids],
+                    )
+            axis_by_task = (
+                await svc._axis_convention_by_task(tasks)
+                if {"kitti", "nuscenes"} & set(targets)
+                else {}
+            )
+            scenes_by_id: dict[uuid.UUID, Scene] = {}
+            poses_by_frame: dict[tuple[uuid.UUID, int], SceneFramePose] = {}
+            if "nuscenes" in targets:
+                scene_ids = {
+                    item.scene_id
+                    for item in dataset_items.values()
+                    if item.scene_id is not None
+                }
+                if scene_ids:
+                    scenes_by_id = {
+                        scene.id: scene
+                        for scene in (
+                            await svc.db.execute(
+                                select(Scene).where(Scene.id.in_(scene_ids))
+                            )
+                        ).scalars()
+                    }
+                    poses_by_frame = {
+                        (pose.scene_id, pose.frame_index): pose
+                        for pose in (
+                            await svc.db.execute(
+                                select(SceneFramePose).where(
+                                    SceneFramePose.scene_id.in_(scene_ids)
+                                )
+                            )
+                        ).scalars()
+                    }
             for task in tasks:
                 linked = links_by_task.get(task.id, {})
                 fallback_item = (
@@ -944,18 +1251,34 @@ async def _build_lidar_export_zip(
                 primary_pair = linked.get("primary_lidar")
                 primary_item = primary_pair[1] if primary_pair else fallback_item
                 frame_key = _lidar_frame_key(task, primary_item)
-                cameras: dict[str, SensorCalibration] = {}
-                for role, (link, item) in linked.items():
-                    if not role.startswith("camera_"):
-                        continue
-                    cam = _camera_name(link)
-                    calib = _calibration_for_item(item)
-                    if calib is not None:
-                        cameras[cam] = calib
-                    image_manifest.append(
-                        {
+                cameras: dict[str, LidarCameraExportCtx] = {}
+                if needs_legacy_lidar_manifests:
+                    for role, (link, item) in linked.items():
+                        if not role.startswith("camera_"):
+                            continue
+                        cam = _camera_name(link)
+                        if "kitti" in targets:
+                            calib = _calibration_for_item(item)
+                            if (
+                                calib is not None
+                                and item.width is not None
+                                and item.width > 0
+                                and item.height is not None
+                                and item.height > 0
+                            ):
+                                cameras[role] = LidarCameraExportCtx(
+                                    role=role,
+                                    name=cam,
+                                    calibration=calib,
+                                    width=item.width,
+                                    height=item.height,
+                                )
+                        manifest_item = {
                             "camera": cam,
+                            "camera_role": role,
                             "frame": frame_key,
+                            "width": item.width,
+                            "height": item.height,
                             "rel_path": f"{cam}/{os.path.basename(item.file_path)}",
                             "dataset_id": str(item.dataset_id),
                             "presigned_url": storage_service.generate_download_url(
@@ -965,10 +1288,15 @@ async def _build_lidar_export_zip(
                             ),
                             "expires_at": expires_iso,
                         }
-                    )
-                    for target in targets:
-                        prefix = f"{target}/" if multi else ""
-                        if target in {"kitti", "nuscenes", "pointmask"}:
+                        image_manifest_all.append(manifest_item)
+                        if role == selected_camera_role:
+                            image_manifest_selected.append(manifest_item)
+                        for target in targets:
+                            if target == "kitti" and role != selected_camera_role:
+                                continue
+                            if target not in {"kitti", "pointmask"}:
+                                continue
+                            prefix = f"{target}/" if multi else ""
                             zf.writestr(f"{prefix}images/{cam}/", "")
                             zf.writestr(
                                 f"{prefix}calib_raw/{cam}/{frame_key}.json",
@@ -978,7 +1306,7 @@ async def _build_lidar_export_zip(
                                     indent=2,
                                 ),
                             )
-                if primary_item is not None:
+                if needs_legacy_lidar_manifests and primary_item is not None:
                     pointcloud_manifest.append(
                         {
                             "frame": frame_key,
@@ -993,30 +1321,232 @@ async def _build_lidar_export_zip(
                         }
                     )
                 anns = ann_by_task.get(task.id, [])
-                frames.append(
-                    LidarFrameExportCtx(
-                        task_id=task.id,
-                        frame_key=frame_key,
-                        annotations=anns,
-                        cameras=cameras,
+                if "coco-multicamera" in targets:
+                    task_members = camera_members_by_task.get(task.id, [])
+                    for role, (_link, item) in sorted(linked.items()):
+                        if not role.startswith("camera_"):
+                            continue
+                        members = [
+                            member
+                            for member in task_members
+                            if member.source == "manual"
+                            and member.sensor_role == role
+                            and member.sensor_dataset_item_id == item.id
+                            and (member.geometry or {}).get("type") == "bbox"
+                        ]
+                        source_basename = os.path.basename(item.file_path)
+                        rel_path = f"images/{role}/{task.id}/{source_basename}"
+                        size, sha256 = multicamera_media_fingerprints[item.id]
+                        entry = _trusted_media_entry(
+                            rel_path=rel_path,
+                            storage_key=item.file_path,
+                            kind="image",
+                            source_file_size=size,
+                            source_sha256=sha256,
+                            expires_iso=expires_iso,
+                        )
+                        entry.update(
+                            {
+                                "task_id": str(task.id),
+                                "dataset_item_id": str(item.id),
+                                "sensor_role": role,
+                            }
+                        )
+                        previous = multicamera_coco_media.setdefault(rel_path, entry)
+                        if previous["source_sha256"] != entry["source_sha256"]:
+                            raise UnsupportedExportError(
+                                f"multicamera_coco_media_path_collision:{rel_path}"
+                            )
+                        state = multicamera_calibration_states.get(item.id)
+                        scene_id = item.scene_id
+                        frame_index = item.frame_index
+                        if primary_item is not None:
+                            scene_id = scene_id or primary_item.scene_id
+                            if frame_index is None:
+                                frame_index = primary_item.frame_index
+                        multicamera_coco_images.append(
+                            MulticameraCocoImageCtx(
+                                task_id=task.id,
+                                dataset_item_id=item.id,
+                                sensor_role=role,
+                                file_name=rel_path,
+                                width=int(item.width),
+                                height=int(item.height),
+                                members=members,
+                                scene_id=scene_id,
+                                frame_index=frame_index,
+                                current_calibration_revision=(
+                                    state.revision if state is not None else None
+                                ),
+                                current_calibration_digest=(
+                                    state.digest if state is not None else None
+                                ),
+                            )
+                        )
+                if "nuscenes" in targets:
+                    if (
+                        primary_item is None
+                        or primary_item.scene_id is None
+                        or primary_item.frame_index is None
+                    ):
+                        raise UnsupportedExportError(
+                            f"nuscenes_scene_frame_missing:{task.id}"
+                        )
+                    scene = scenes_by_id.get(primary_item.scene_id)
+                    pose = poses_by_frame.get(
+                        (primary_item.scene_id, primary_item.frame_index)
                     )
-                )
+                    if scene is None or pose is None or pose.timestamp_us is None:
+                        raise UnsupportedExportError(
+                            f"nuscenes_frame_pose_missing:{task.id}"
+                        )
+                    source_primary = (primary_item.metadata_ or {}).get(
+                        "nuscenes_export"
+                    )
+                    if not isinstance(source_primary, dict):
+                        raise UnsupportedExportError(
+                            f"nuscenes_sensor_contract_missing:{task.id}"
+                        )
+                    sensor_items = {
+                        role: item for role, (_link, item) in linked.items()
+                    }
+                    sensor_items.setdefault("primary_lidar", primary_item)
+                    sensors: dict[str, NuScenesSensorExportCtx] = {}
+                    for role, item in sorted(sensor_items.items()):
+                        if role != "primary_lidar" and not role.startswith("camera_"):
+                            continue
+                        source = (item.metadata_ or {}).get("nuscenes_export")
+                        if not isinstance(source, dict):
+                            raise UnsupportedExportError(
+                                f"nuscenes_sensor_contract_missing:{task.id}:{role}"
+                            )
+                        sensors[role] = NuScenesSensorExportCtx(
+                            role=role,
+                            dataset_item_id=item.id,
+                            sample_data=dict(source["sample_data"]),
+                            calibrated_sensor=dict(source["calibrated_sensor"]),
+                            sensor=dict(source["sensor"]),
+                            ego_pose=dict(source["ego_pose"]),
+                            source_storage_key=str(source["source_storage_key"]),
+                        )
+                        rel_path = str(source["sample_data"]["filename"])
+                        entry = _trusted_media_entry(
+                            rel_path=rel_path,
+                            storage_key=str(source["source_storage_key"]),
+                            kind=str(source["sensor"]["modality"]),
+                            source_file_size=int(source["source_file_size"]),
+                            source_sha256=str(source["source_sha256"]),
+                            expires_iso=expires_iso,
+                        )
+                        previous = nuscenes_media.setdefault(rel_path, entry)
+                        if previous["source_sha256"] != entry["source_sha256"]:
+                            raise UnsupportedExportError(
+                                f"nuscenes_media_path_collision:{rel_path}"
+                            )
+                    scene_source = (scene.source_metadata or {}).get("nuscenes_export")
+                    if not isinstance(scene_source, dict):
+                        raise UnsupportedExportError(
+                            f"nuscenes_scene_contract_missing:{scene.id}"
+                        )
+                    map_rel = str(scene_source["map"]["filename"])
+                    map_entry = _trusted_media_entry(
+                        rel_path=map_rel,
+                        storage_key=str(scene_source["map_storage_key"]),
+                        kind="map",
+                        source_file_size=int(scene_source["map_file_size"]),
+                        source_sha256=str(scene_source["map_sha256"]),
+                        expires_iso=expires_iso,
+                    )
+                    previous_map = nuscenes_media.setdefault(map_rel, map_entry)
+                    if previous_map["source_sha256"] != map_entry["source_sha256"]:
+                        raise UnsupportedExportError(
+                            f"nuscenes_media_path_collision:{map_rel}"
+                        )
+                    axis_convention = axis_by_task.get(task.id)
+                    if axis_convention not in R_NORM:
+                        raise UnsupportedExportError(
+                            f"axis_convention_untrusted:{task.id}"
+                        )
+                    pcd_bytes = _read_dataset_object(primary_item.file_path)
+                    if (
+                        len(pcd_bytes) != primary_item.file_size
+                        or hashlib.sha256(pcd_bytes).hexdigest()
+                        != primary_item.content_hash
+                    ):
+                        raise UnsupportedExportError(
+                            f"nuscenes_platform_pcd_drift:{task.id}"
+                        )
+                    points = parse_pcd_positions(pcd_bytes)
+                    raw_lidar_points = int(source_primary["source_file_size"]) // 20
+                    if len(points) != raw_lidar_points:
+                        raise UnsupportedExportError(
+                            f"nuscenes_lidar_point_count_drift:{task.id}"
+                        )
+                    norm = np.asarray(
+                        R_NORM[axis_convention], dtype=np.float64
+                    ).reshape(3, 3)
+                    points_iso = np.asarray(points, dtype=np.float64) @ norm.T
+                    nuscenes_frames.append(
+                        LidarFrameExportCtx(
+                            task_id=task.id,
+                            frame_key=frame_key,
+                            annotations=anns,
+                            axis_convention=axis_convention,
+                            scene_id=scene.id,
+                            scene_name=scene.name,
+                            scene_source_metadata=dict(scene.source_metadata or {}),
+                            source_sample=dict(source_primary["sample"]),
+                            frame_index=primary_item.frame_index,
+                            timestamp_us=pose.timestamp_us,
+                            ego_translation=list(pose.ego_translation),
+                            ego_rotation=list(pose.ego_rotation),
+                            sensors=sensors,
+                            point_counts=count_lidar_points_in_boxes(points_iso, anns),
+                        )
+                    )
+                frame_count += 1
                 for target in targets:
                     prefix = f"{target}/" if multi else ""
                     if target == "kitti":
-                        first_calib = next(iter(cameras.values()), None)
-                        lines = build_kitti_lidar_label_lines(
+                        selected_camera = cameras.get(str(selected_camera_role))
+                        if selected_camera is None:
+                            raise UnsupportedExportError(
+                                f"camera_frame_missing:{selected_camera_role}:{task.id}"
+                            )
+                        axis_convention = axis_by_task.get(task.id)
+                        if (
+                            not axis_convention
+                            or axis_convention == "raw"
+                            or axis_convention not in R_NORM
+                        ):
+                            raise UnsupportedExportError(
+                                f"axis_convention_untrusted:{task.id}"
+                            )
+                        result = build_kitti_lidar_frame(
                             anns,
-                            calib_by_cam=cameras,
+                            camera=selected_camera,
+                            axis_convention=axis_convention,
+                            camera_members=camera_members_by_task.get(task.id, []),
                         )
                         zf.writestr(
-                            f"{prefix}label_2/{frame_key}.txt", "\n".join(lines)
+                            f"{prefix}label_2/{frame_key}.txt",
+                            "\n".join(result.lines),
                         )
-                        # 缺标定 → .unverified.txt, 让下游无法静默当真实标定消费。
-                        calib_suffix = "txt" if first_calib else "unverified.txt"
                         zf.writestr(
-                            f"{prefix}calib/{frame_key}.{calib_suffix}",
-                            _kitti_calib_text(first_calib),
+                            f"{prefix}calib/{frame_key}.txt",
+                            _kitti_calib_text(selected_camera.calibration),
+                        )
+                        kitti_exported_count += len(result.lines)
+                        kitti_manual_bbox_count += result.manual_bbox_count
+                        kitti_derived_bbox_count += result.derived_bbox_count
+                        kitti_skipped.extend(
+                            {
+                                "frame": frame_key,
+                                "annotation_id": skipped.annotation_id,
+                                "class_name": skipped.class_name,
+                                "reason": skipped.reason,
+                            }
+                            for skipped in result.skipped
                         )
                         zf.writestr(f"{prefix}velodyne/", "")
                         file_count += 1
@@ -1044,13 +1574,115 @@ async def _build_lidar_export_zip(
                     f"{prefix}annotations.json",
                     await svc.export_aap_json(project.id, batch_id=batch_id),
                 )
-                file_count += len(frames)
+                file_count += frame_count
+                continue
+            if target == "nuscenes":
+                records = build_nuscenes_frame_records(nuscenes_frames)
+                for table_name, rows in records.items():
+                    zf.writestr(
+                        f"{prefix}v1.0-aap/{table_name}.json",
+                        json.dumps(
+                            rows,
+                            ensure_ascii=False,
+                            sort_keys=True,
+                            separators=(",", ":"),
+                            allow_nan=False,
+                        ),
+                    )
+                zf.writestr(f"{prefix}README.txt", _lidar_readme(target))
+                zf.writestr(
+                    f"{prefix}media_manifest.json",
+                    json.dumps(
+                        {
+                            "contract": "nuscenes-devkit-load-query-keyframes-v1",
+                            "media": [
+                                nuscenes_media[path] for path in sorted(nuscenes_media)
+                            ],
+                            "expires_at": expires_iso,
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                        sort_keys=True,
+                    ),
+                )
+                zf.writestr(
+                    f"{prefix}fetch_nuscenes_media.py",
+                    _FETCH_NUSCENES_MEDIA_TEMPLATE,
+                )
+                file_count += len(nuscenes_frames)
+                continue
+            if target == "coco-multicamera":
+                result = build_multicamera_coco(
+                    multicamera_coco_images,
+                    classes=classes_list,
+                    include_attributes=include_attributes,
+                    allowed_attribute_keys=allowed_attribute_keys,
+                )
+                zf.writestr(
+                    f"{prefix}annotations.json",
+                    json.dumps(
+                        result.document,
+                        ensure_ascii=False,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        allow_nan=False,
+                    ),
+                )
+                zf.writestr(
+                    f"{prefix}media_manifest.json",
+                    json.dumps(
+                        {
+                            "contract": "multicamera-coco-media-v1",
+                            "media": [
+                                multicamera_coco_media[path]
+                                for path in sorted(multicamera_coco_media)
+                            ],
+                            "expires_at": expires_iso,
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                        sort_keys=True,
+                    ),
+                )
+                zf.writestr(f"{prefix}fetch_media.py", _FETCH_TRUSTED_MEDIA_TEMPLATE)
+                annotated_image_ids = {
+                    annotation["image_id"]
+                    for annotation in result.document["annotations"]
+                }
+                zf.writestr(
+                    f"{prefix}export_report.json",
+                    json.dumps(
+                        {
+                            "images": result.image_count,
+                            "negative_images": (
+                                result.image_count - len(annotated_image_ids)
+                            ),
+                            "manual_bbox_count": result.annotation_count,
+                            "derived_bbox_count": 0,
+                            "stale_relation_count": result.stale_relation_count,
+                            "images_by_role": result.images_by_role,
+                            "annotations_by_role": result.annotations_by_role,
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                        sort_keys=True,
+                    ),
+                )
+                zf.writestr(f"{prefix}README.txt", _lidar_readme(target))
+                file_count += result.image_count
                 continue
             zf.writestr(f"{prefix}README.txt", _lidar_readme(target))
             zf.writestr(
                 f"{prefix}images_manifest.json",
                 json.dumps(
-                    {"images": image_manifest, "expires_at": expires_iso},
+                    {
+                        "images": (
+                            image_manifest_selected
+                            if target == "kitti"
+                            else image_manifest_all
+                        ),
+                        "expires_at": expires_iso,
+                    },
                     ensure_ascii=False,
                     indent=2,
                 ),
@@ -1065,14 +1697,22 @@ async def _build_lidar_export_zip(
             )
             zf.writestr(f"{prefix}fetch_images.py", _FETCH_IMAGES_TEMPLATE)
             zf.writestr(f"{prefix}fetch_pointclouds.py", _FETCH_POINTCLOUDS_TEMPLATE)
-            if target == "nuscenes":
-                tables = build_nuscenes_frame_records(frames)
-                for name, rows in tables.items():
-                    zf.writestr(
-                        f"{prefix}{name}.json",
-                        json.dumps(rows, ensure_ascii=False, indent=2),
-                    )
-                file_count += len(frames)
+            if target == "kitti":
+                zf.writestr(
+                    f"{prefix}export_report.json",
+                    json.dumps(
+                        {
+                            "camera_role": selected_camera_role,
+                            "frames": frame_count,
+                            "exported_annotations": kitti_exported_count,
+                            "manual_bbox_count": kitti_manual_bbox_count,
+                            "derived_bbox_count": kitti_derived_bbox_count,
+                            "skipped_annotations": kitti_skipped,
+                        },
+                        ensure_ascii=False,
+                        indent=2,
+                    ),
+                )
             elif target == "pointmask":
                 zf.writestr(
                     f"{prefix}category_map.json", category_map_json(classes_list)

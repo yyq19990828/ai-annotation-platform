@@ -102,7 +102,6 @@ last_reviewed: 2026-07-12
 | `yolo-frames-det` | 视频                  | 逐帧展开为 YOLO 检测                  |
 | `mot`             | 视频                  | MOT 多目标跟踪格式                    |
 | `kitti`           | 视频 / 3D 点云        | 视频为 tracking label，3D 为 3D label |
-| `nuscenes`        | 3D 点云               | nuScenes 场景格式                     |
 | `pointmask`       | 3D 点云               | 点云点级掩码                          |
 
 详见 [数据导出格式](../reference/export-formats)。

@@ -27,11 +27,12 @@ build_pointcloud_tasks_for_link 的目录启发式 single-scene inference)。
 
 注意 `--scene-tokens` 实际匹配 scene.json 的 `name` 字段(如 scene-0061),不是 token。
 
-平台原生目录约定(storage key);帧 stem 用 <scene_name>_<idx 6位> 保证跨 scene 全局唯一
+平台原生目录约定(storage key);<storage_root> 由 Dataset UUID 派生，
+帧 stem 用 <scene_name>_<idx 6位> 保证跨 scene 全局唯一
 (group_frames 以文件名 stem 作帧键,多 scene 同号帧会撞键):
-    <dataset_name>/<scene_name>/lidar/<scene_name>_<idx 6位>.pcd            file_type=point_cloud
-    <dataset_name>/<scene_name>/camera/<CHANNEL>/<scene_name>_<idx 6位>.jpg  file_type=image
-    <dataset_name>/<scene_name>/calib/camera/<CHANNEL>.json                 file_type=other
+    <storage_root>/<scene_name>/lidar/<scene_name>_<idx 6位>.pcd            file_type=point_cloud
+    <storage_root>/<scene_name>/camera/<CHANNEL>/<scene_name>_<idx 6位>.jpg  file_type=image
+    <storage_root>/<scene_name>/calib/camera/<CHANNEL>.json                 file_type=other
 
 标定:本版用 **每个 scene 第 1 帧** 的标定对全 scene 通用(metadata 记
 timestamp_delta_us 备查;前端不消费;逐帧真补偿留 v0.15+)。
@@ -60,8 +61,9 @@ import argparse
 import asyncio
 import hashlib
 import json
+import math
 import uuid
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Literal
 
 import numpy as np
@@ -98,7 +100,17 @@ def _derived_display_id(prefix: str, name: str) -> str:
 # --------------------------------------------------------------------------- #
 def _load_table(meta_dir: Path, name: str) -> list[dict]:
     """读 <meta_dir>/<name>.json(nuScenes 表都是 list[dict])。"""
-    with (meta_dir / f"{name}.json").open(encoding="utf-8") as f:
+    root = meta_dir.resolve(strict=True)
+    path = (root / f"{name}.json").resolve(strict=True)
+    try:
+        path.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(
+            f"nuScenes metadata table escapes its root: {name}.json"
+        ) from exc
+    if not path.is_file():
+        raise FileNotFoundError(f"nuScenes 元数据表缺失: {path}")
+    with path.open(encoding="utf-8") as f:
         return json.load(f)
 
 
@@ -106,16 +118,127 @@ def _index_by_token(rows: list[dict]) -> dict[str, dict]:
     return {row["token"]: row for row in rows}
 
 
+def _camera_dimensions(sample_data: dict) -> tuple[int, int]:
+    width = int(sample_data.get("width") or 0)
+    height = int(sample_data.get("height") or 0)
+    if width <= 0 or height <= 0:
+        raise ValueError(
+            f"nuScenes camera sample_data {sample_data.get('token')!r} "
+            "has no valid width/height"
+        )
+    return width, height
+
+
+def _safe_source_path(filename: str) -> PurePosixPath:
+    raw = str(filename)
+    raw_parts = raw.split("/")
+    path = PurePosixPath(raw)
+    if (
+        path.is_absolute()
+        or not path.parts
+        or any(part in {"", ".", ".."} for part in raw_parts)
+        or "\\" in raw
+        or ":" in raw
+        or "\0" in raw
+    ):
+        raise ValueError(f"nuScenes source filename is unsafe: {filename!r}")
+    return path
+
+
+def _resolve_source_path(nuscenes_root: Path, filename: str) -> Path:
+    root = nuscenes_root.resolve(strict=True)
+    candidate = (root / _safe_source_path(filename)).resolve(strict=True)
+    try:
+        candidate.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(
+            f"nuScenes source path escapes its root: {filename!r}"
+        ) from exc
+    return candidate
+
+
+def _source_storage_key(storage_root: str, filename: str) -> str:
+    root = _safe_source_path(storage_root)
+    path = _safe_source_path(filename)
+    return "/".join((*root.parts, "_nuscenes", "source", *path.parts))
+
+
+def _map_for_log(rows: list[dict], log_token: str) -> dict:
+    matches = [row for row in rows if log_token in (row.get("log_tokens") or [])]
+    if len(matches) != 1:
+        raise ValueError(
+            f"nuScenes log {log_token!r} must reference exactly one map, got {len(matches)}"
+        )
+    return matches[0]
+
+
+def _source_context(
+    *,
+    sample: dict,
+    sample_data: dict,
+    calibrated_sensor: dict,
+    sensor: dict,
+    ego_pose: dict,
+    storage_key: str,
+    source_bytes: bytes,
+) -> dict:
+    return {
+        "sample": sample,
+        "sample_data": sample_data,
+        "calibrated_sensor": calibrated_sensor,
+        "sensor": sensor,
+        "ego_pose": ego_pose,
+        "source_storage_key": storage_key,
+        "source_file_size": len(source_bytes),
+        "source_sha256": hashlib.sha256(source_bytes).hexdigest(),
+    }
+
+
+def _assert_source_context_compatible(
+    existing: object,
+    *,
+    sample: dict,
+    sample_data: dict,
+    calibrated_sensor: dict,
+    sensor: dict,
+    ego_pose: dict,
+    source_bytes: bytes,
+) -> None:
+    if existing is None:
+        return
+    if not isinstance(existing, dict):
+        raise ValueError("existing nuScenes source context is invalid")
+    existing_sample = existing.get("sample")
+    existing_sample_data = existing.get("sample_data")
+    if (
+        not isinstance(existing_sample, dict)
+        or not isinstance(existing_sample_data, dict)
+        or existing_sample != sample
+        or existing_sample_data != sample_data
+        or existing.get("calibrated_sensor") != calibrated_sensor
+        or existing.get("sensor") != sensor
+        or existing.get("ego_pose") != ego_pose
+        or existing.get("source_sha256") != hashlib.sha256(source_bytes).hexdigest()
+    ):
+        raise ValueError(
+            f"existing scene source drift for sample_data {sample_data.get('token')!r}"
+        )
+
+
 # --------------------------------------------------------------------------- #
 # 几何:四元数 wxyz → 旋转矩阵;变换矩阵组装;lidar→camera 外参链
 # --------------------------------------------------------------------------- #
 def _quat_wxyz_to_rot(q: list[float]) -> np.ndarray:
     """nuScenes rotation 是 [w, x, y, z] 四元数 → 3x3 旋转矩阵。"""
-    w, x, y, z = q
-    n = w * w + x * x + y * y + z * z
-    if n < 1e-12:
-        return np.eye(3)
-    s = 2.0 / n
+    try:
+        values = [float(value) for value in q]
+        norm = math.hypot(*values)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("nuScenes quaternion is invalid") from exc
+    if len(values) != 4 or not math.isfinite(norm) or norm <= 1e-12:
+        raise ValueError("nuScenes quaternion is invalid")
+    w, x, y, z = (value / norm for value in values)
+    s = 2.0
     wx, wy, wz = s * w * x, s * w * y, s * w * z
     xx, xy, xz = s * x * x, s * x * y, s * x * z
     yy, yz, zz = s * y * y, s * y * z, s * z * z
@@ -190,18 +313,25 @@ def _compute_ego_to_cam_extrinsic(
 
 
 # --------------------------------------------------------------------------- #
-# .pcd.bin → ASCII PCD
+# .pcd.bin → binary PCD
 # --------------------------------------------------------------------------- #
-def _lidar_bin_to_ascii_pcd(
+PCD_ENCODING = "binary_xyz_f32"
+
+
+def _lidar_bin_to_binary_pcd(
     bin_path: Path,
     *,
     transform: np.ndarray | None = None,
 ) -> bytes:
     """nuScenes LIDAR_TOP .pcd.bin 是 float32 数组,每点 5 个 float (x y z intensity ring)。
-    只取前 3 列写成标准 ASCII PCD(x y z)。"""
+    只取前 3 列写成标准 little-endian binary PCD(x y z)。"""
     pts = np.fromfile(str(bin_path), dtype=np.float32).reshape(-1, 5)[:, :3]
     if transform is not None and pts.size:
         pts = pts @ transform[:3, :3].T + transform[:3, 3]
+    with np.errstate(over="ignore", invalid="ignore"):
+        pts = np.ascontiguousarray(pts, dtype="<f4")
+    if not np.isfinite(pts).all():
+        raise ValueError(f"nuScenes lidar contains non-finite points: {bin_path}")
     n = pts.shape[0]
     header = (
         "# .PCD v0.7 - Point Cloud Data file format\n"
@@ -214,11 +344,9 @@ def _lidar_bin_to_ascii_pcd(
         "HEIGHT 1\n"
         "VIEWPOINT 0 0 0 1 0 0 0\n"
         f"POINTS {n}\n"
-        "DATA ascii\n"
+        "DATA binary\n"
     )
-    lines = "\n".join(f"{p[0]} {p[1]} {p[2]}" for p in pts)
-    body = lines + ("\n" if n else "")
-    return (header + body).encode("utf-8")
+    return header.encode("ascii") + pts.tobytes(order="C")
 
 
 # --------------------------------------------------------------------------- #
@@ -228,12 +356,26 @@ def _ordered_samples(scene: dict, samples_by_token: dict[str, dict]) -> list[dic
     """从 first_sample_token 沿 next 链得到该 scene 全部 sample(按时间顺序)。"""
     out: list[dict] = []
     token = scene["first_sample_token"]
+    visited: set[str] = set()
     while token:
+        if token in visited:
+            raise ValueError(f"nuScenes sample chain contains a cycle at {token!r}")
+        visited.add(token)
         sample = samples_by_token.get(token)
         if sample is None:
-            break
+            raise ValueError(
+                f"nuScenes sample chain references missing token {token!r}"
+            )
         out.append(sample)
         token = sample.get("next") or ""
+    try:
+        expected_count = int(scene["nbr_samples"])
+    except (KeyError, OverflowError, TypeError, ValueError) as exc:
+        raise ValueError("nuScenes scene nbr_samples is invalid") from exc
+    if expected_count < 1 or len(out) != expected_count:
+        raise ValueError(
+            f"nuScenes sample chain length {len(out)} != nbr_samples {expected_count}"
+        )
     return out
 
 
@@ -267,6 +409,10 @@ async def import_nuscenes(
     owner_id: uuid.UUID,
     version: str = "v1.0-mini",
     frame: Literal["sensor", "ego"] = "ego",
+    dataset_display_id: str | None = None,
+    project_display_id: str | None = None,
+    project_name: str | None = None,
+    tool_bindings: dict | None = None,
 ) -> dict:
     """把 nuScenes 的若干 scene 转换并入库到一个共用 dataset。
 
@@ -282,7 +428,7 @@ async def import_nuscenes(
     调用方负责最终 commit(build_tasks_for_link 内部会 commit;参考 seed_pointcloud)。
     返回 {"dataset_id", "scenes": [{"name", "frames"}...], "total_items"}。
     """
-    from sqlalchemy import select
+    from sqlalchemy import func, select
 
     from app.db.models.dataset import Dataset, DatasetItem, ProjectDataset
     from app.db.models.project import Project
@@ -291,10 +437,10 @@ async def import_nuscenes(
     from app.services import scene_pose as scene_pose_svc
     from app.services.dataset import build_tasks_for_link
     from app.services.pointcloud_import import attach_calibration
-    from app.services.storage import storage_service
+    from app.services.storage import TRUSTED_NUSCENES_PREFIX, storage_service
 
-    meta_dir = nuscenes_root / version
-    if not meta_dir.exists():
+    meta_dir = _resolve_source_path(nuscenes_root, version)
+    if not meta_dir.is_dir():
         raise FileNotFoundError(f"nuScenes 元数据目录缺失: {meta_dir}")
 
     # 读 nuScenes 表 + 建索引
@@ -304,27 +450,81 @@ async def import_nuscenes(
     cs_by_token = _index_by_token(_load_table(meta_dir, "calibrated_sensor"))
     sensor_by_token = _index_by_token(_load_table(meta_dir, "sensor"))
     ego_by_token = _index_by_token(_load_table(meta_dir, "ego_pose"))
+    log_by_token = _index_by_token(_load_table(meta_dir, "log"))
+    maps_tbl = _load_table(meta_dir, "map")
 
     scene_by_name = {s["name"]: s for s in scenes_tbl}
     axis_convention = "iso_8855" if frame == "ego" else "apollo"
 
     # 1. ensure/复用 dataset(派生固定 display_id → 幂等)
-    display_id = _derived_display_id("DS-NU-", dataset_name)
+    display_id = dataset_display_id or _derived_display_id("DS-NU-", dataset_name)
     ds = await db.scalar(select(Dataset).where(Dataset.display_id == display_id))
+    needs_pcd_upgrade = False
     if ds is None:
+        dataset_id = uuid.uuid4()
+        storage_root = f"{TRUSTED_NUSCENES_PREFIX}-{dataset_id.hex}"
         ds = Dataset(
-            id=uuid.uuid4(),
+            id=dataset_id,
             display_id=display_id,
             name=dataset_name,
             data_type="point_cloud",
             is_temporal=True,
             created_by=owner_id,
-            metadata_={"axis_convention": axis_convention},
+            metadata_={
+                "axis_convention": axis_convention,
+                "source": {
+                    "format": "nuscenes",
+                    "version": version,
+                    "scenes": sorted(scene_names),
+                    "pcd_encoding": PCD_ENCODING,
+                    "storage_root": storage_root,
+                    "storage_layout": "uuid_v1",
+                },
+            },
         )
         db.add(ds)
         await db.flush()
     else:
         meta = dict(ds.metadata_ or {})
+        existing_source = meta.get("source")
+        stored_root = (
+            str(existing_source.get("storage_root"))
+            if isinstance(existing_source, dict) and existing_source.get("storage_root")
+            else None
+        )
+        storage_layout = (
+            str(existing_source.get("storage_layout"))
+            if isinstance(existing_source, dict)
+            and existing_source.get("storage_layout")
+            else None
+        )
+        expected_root = f"{TRUSTED_NUSCENES_PREFIX}-{ds.id.hex}"
+        uses_legacy_root = stored_root is None or (
+            storage_layout == "legacy_name" and stored_root == dataset_name
+        )
+        if (
+            stored_root is not None
+            and stored_root != expected_root
+            and not uses_legacy_root
+        ):
+            raise ValueError("nuScenes dataset storage_root does not match its UUID")
+        storage_root = stored_root or dataset_name
+        _safe_source_path(storage_root)
+        if uses_legacy_root:
+            conflicting_item = await db.scalar(
+                select(DatasetItem.id)
+                .where(DatasetItem.dataset_id != ds.id)
+                .where(DatasetItem.file_path.startswith(f"{storage_root}/"))
+                .limit(1)
+            )
+            if conflicting_item is not None:
+                raise ValueError(
+                    f"legacy nuScenes storage root {storage_root!r} is shared by "
+                    "another dataset; migrate it before re-import"
+                )
+        needs_pcd_upgrade = not isinstance(existing_source, dict) or (
+            existing_source.get("pcd_encoding") != PCD_ENCODING
+        )
         existing_axis = meta.get("axis_convention")
         if existing_axis and existing_axis != axis_convention:
             raise ValueError(
@@ -334,12 +534,22 @@ async def import_nuscenes(
             )
         if not existing_axis:
             meta["axis_convention"] = axis_convention
-            ds.metadata_ = meta
+        meta["source"] = {
+            "format": "nuscenes",
+            "version": version,
+            "scenes": sorted(scene_names),
+            "pcd_encoding": PCD_ENCODING,
+            "storage_root": storage_root,
+            "storage_layout": "legacy_name" if uses_legacy_root else "uuid_v1",
+        }
+        ds.metadata_ = meta
         ds.is_temporal = True
         await db.flush()
 
     bucket = storage_service.datasets_bucket
-    existing_scene_names = {s.name for s in await scene_svc.list_for_dataset(db, ds.id)}
+    existing_scenes = {
+        scene.name: scene for scene in await scene_svc.list_for_dataset(db, ds.id)
+    }
 
     report_scenes: list[dict] = []
     total_items = 0
@@ -352,12 +562,352 @@ async def import_nuscenes(
                 f"scene name {scene_name!r} 在 {meta_dir}/scene.json 中不存在"
             )
 
-        if scene_name in existing_scene_names:
-            # 幂等:同名 scene 已建过,跳过(仍记入报告)
+        if scene_name in existing_scenes:
+            # 幂等:同名 scene 已建过时保留 task / annotation；旧 ASCII PCD
+            # 只原位覆盖对象并同步 DB 大小与哈希；同时为旧相机条目
+            # 回填 nuScenes sample_data 中的像素尺寸，让投影与 2D 成员有可靠坐标基准。
             samples = _ordered_samples(scene_row, samples_by_token)
-            report_scenes.append(
-                {"name": scene_name, "frames": len(samples), "skipped": True}
+            scene = existing_scenes[scene_name]
+            log_row = log_by_token.get(scene_row.get("log_token"))
+            if log_row is None:
+                raise ValueError(
+                    f"scene {scene_name!r} references missing log {scene_row.get('log_token')!r}"
+                )
+            map_row = _map_for_log(maps_tbl, log_row["token"])
+            map_storage_key = _source_storage_key(storage_root, map_row["filename"])
+            map_bytes = _resolve_source_path(
+                nuscenes_root, map_row["filename"]
+            ).read_bytes()
+            map_sha256 = hashlib.sha256(map_bytes).hexdigest()
+            camera_items = list(
+                (
+                    await db.execute(
+                        select(DatasetItem)
+                        .where(DatasetItem.dataset_id == ds.id)
+                        .where(DatasetItem.scene_id == scene.id)
+                        .where(DatasetItem.file_type == "image")
+                    )
+                ).scalars()
             )
+            camera_by_path = {item.file_path: item for item in camera_items}
+            lidar_items = list(
+                (
+                    await db.execute(
+                        select(DatasetItem)
+                        .where(DatasetItem.dataset_id == ds.id)
+                        .where(DatasetItem.scene_id == scene.id)
+                        .where(DatasetItem.file_type == "point_cloud")
+                    )
+                ).scalars()
+            )
+            lidar_by_frame = {item.frame_index: item for item in lidar_items}
+            existing_scene_meta = scene.source_metadata or {}
+            if (
+                existing_scene_meta.get("scene_token") != scene_row["token"]
+                or existing_scene_meta.get("first_sample_token")
+                != scene_row["first_sample_token"]
+                or int(existing_scene_meta.get("frame_count") or -1) != len(samples)
+                or existing_scene_meta.get("frame") != frame
+            ):
+                raise ValueError(
+                    f"existing scene {scene_name!r} does not match the requested nuScenes source"
+                )
+            existing_scene_export = existing_scene_meta.get("nuscenes_export")
+            if existing_scene_export is not None:
+                existing_map = (
+                    existing_scene_export.get("map")
+                    if isinstance(existing_scene_export, dict)
+                    else None
+                )
+                existing_source_scene = (
+                    existing_scene_export.get("scene")
+                    if isinstance(existing_scene_export, dict)
+                    else None
+                )
+                existing_log = (
+                    existing_scene_export.get("log")
+                    if isinstance(existing_scene_export, dict)
+                    else None
+                )
+                existing_map_sha256 = (
+                    existing_scene_export.get("map_sha256")
+                    if isinstance(existing_scene_export, dict)
+                    else None
+                )
+                if (
+                    existing_map != map_row
+                    or existing_source_scene != scene_row
+                    or existing_log != log_row
+                    or existing_map_sha256 != map_sha256
+                ):
+                    raise ValueError(
+                        f"existing scene {scene_name!r} map or source contract drifted"
+                    )
+            if len(lidar_by_frame) != len(samples):
+                raise ValueError(
+                    f"scene {scene_name!r} 已存在的 lidar 帧数与 nuScenes 源不一致"
+                )
+            for frame_idx, sample in enumerate(samples):
+                frame_stem = f"{scene_name}_{frame_idx:06d}"
+                by_channel = _key_sample_data_by_channel(
+                    sample["token"], sample_data, cs_by_token, sensor_by_token
+                )
+                lidar_sd = next(
+                    (
+                        sd
+                        for sd in by_channel.values()
+                        if sensor_by_token[
+                            cs_by_token[sd["calibrated_sensor_token"]]["sensor_token"]
+                        ]["modality"]
+                        == "lidar"
+                    ),
+                    None,
+                )
+                lidar_item = lidar_by_frame.get(frame_idx)
+                if lidar_sd is None or lidar_item is None:
+                    raise ValueError(
+                        f"existing scene {scene_name!r} is missing lidar frame {frame_idx}"
+                    )
+                lidar_cs = cs_by_token[lidar_sd["calibrated_sensor_token"]]
+                lidar_sensor = sensor_by_token[lidar_cs["sensor_token"]]
+                lidar_ego = ego_by_token[lidar_sd["ego_pose_token"]]
+                raw_lidar_bytes = _resolve_source_path(
+                    nuscenes_root, lidar_sd["filename"]
+                ).read_bytes()
+                _assert_source_context_compatible(
+                    (lidar_item.metadata_ or {}).get("nuscenes_export"),
+                    sample=sample,
+                    sample_data=lidar_sd,
+                    calibrated_sensor=lidar_cs,
+                    sensor=lidar_sensor,
+                    ego_pose=lidar_ego,
+                    source_bytes=raw_lidar_bytes,
+                )
+                for channel, sd in by_channel.items():
+                    cs = cs_by_token[sd["calibrated_sensor_token"]]
+                    sensor = sensor_by_token[cs["sensor_token"]]
+                    if sensor["modality"] != "camera":
+                        continue
+                    camera_key = (
+                        f"{storage_root}/{scene_name}/camera/{channel}/{frame_stem}.jpg"
+                    )
+                    item = camera_by_path.get(camera_key)
+                    if item is None:
+                        raise ValueError(
+                            f"existing scene {scene_name!r} is missing camera {channel} "
+                            f"at frame {frame_idx}"
+                        )
+                    camera_ego = ego_by_token[sd["ego_pose_token"]]
+                    source_camera_bytes = _resolve_source_path(
+                        nuscenes_root, sd["filename"]
+                    ).read_bytes()
+                    _assert_source_context_compatible(
+                        (item.metadata_ or {}).get("nuscenes_export"),
+                        sample=sample,
+                        sample_data=sd,
+                        calibrated_sensor=cs,
+                        sensor=sensor,
+                        ego_pose=camera_ego,
+                        source_bytes=source_camera_bytes,
+                    )
+
+            storage_service.client.put_object(
+                Bucket=bucket,
+                Key=map_storage_key,
+                Body=map_bytes,
+                Metadata={"sha256": map_sha256},
+            )
+            scene.source_format = "nuscenes"
+            scene.source_metadata = {
+                **existing_scene_meta,
+                "scene_token": scene_row["token"],
+                "first_sample_token": scene_row["first_sample_token"],
+                "frame_count": len(samples),
+                "nuscenes_version": version,
+                "frame": frame,
+                "nuscenes_export": {
+                    "version": version,
+                    "scene": scene_row,
+                    "log": log_row,
+                    "map": map_row,
+                    "map_storage_key": map_storage_key,
+                    "map_file_size": len(map_bytes),
+                    "map_sha256": map_sha256,
+                },
+            }
+            needs_pcd_refresh = True
+            report_pcd_upgrade = needs_pcd_upgrade
+            backfilled_camera_dimensions = 0
+            frame_poses: list[FramePose] = []
+            for frame_idx, sample in enumerate(samples):
+                frame_stem = f"{scene_name}_{frame_idx:06d}"
+                by_channel = _key_sample_data_by_channel(
+                    sample["token"], sample_data, cs_by_token, sensor_by_token
+                )
+                lidar_sd = next(
+                    (
+                        sd
+                        for sd in by_channel.values()
+                        if sensor_by_token[
+                            cs_by_token[sd["calibrated_sensor_token"]]["sensor_token"]
+                        ]["modality"]
+                        == "lidar"
+                    ),
+                    None,
+                )
+                if lidar_sd is None:
+                    raise ValueError(
+                        f"scene {scene_name!r} sample {sample['token']!r} has no lidar keyframe"
+                    )
+                lidar_cs = cs_by_token[lidar_sd["calibrated_sensor_token"]]
+                lidar_sensor = sensor_by_token[lidar_cs["sensor_token"]]
+                lidar_ego = ego_by_token[lidar_sd["ego_pose_token"]]
+                raw_lidar_key = _source_storage_key(storage_root, lidar_sd["filename"])
+                raw_lidar_bytes = _resolve_source_path(
+                    nuscenes_root, lidar_sd["filename"]
+                ).read_bytes()
+                storage_service.client.put_object(
+                    Bucket=bucket,
+                    Key=raw_lidar_key,
+                    Body=raw_lidar_bytes,
+                    Metadata={"sha256": hashlib.sha256(raw_lidar_bytes).hexdigest()},
+                )
+                lidar_item = lidar_by_frame.get(frame_idx)
+                if lidar_item is None:
+                    raise ValueError(
+                        f"existing scene {scene_name!r} is missing lidar frame {frame_idx}"
+                    )
+                lidar_item.metadata_ = {
+                    **(lidar_item.metadata_ or {}),
+                    "nuscenes_export": _source_context(
+                        sample=sample,
+                        sample_data=lidar_sd,
+                        calibrated_sensor=lidar_cs,
+                        sensor=lidar_sensor,
+                        ego_pose=lidar_ego,
+                        storage_key=raw_lidar_key,
+                        source_bytes=raw_lidar_bytes,
+                    ),
+                }
+                frame_poses.append(
+                    FramePose(
+                        frame_index=frame_idx,
+                        timestamp_us=int(lidar_sd["timestamp"]),
+                        ego_translation=[float(v) for v in lidar_ego["translation"]],
+                        ego_rotation=[float(v) for v in lidar_ego["rotation"]],
+                        source_metadata={"ego_pose_token": lidar_sd["ego_pose_token"]},
+                    )
+                )
+                for channel, sd in by_channel.items():
+                    cs = cs_by_token[sd["calibrated_sensor_token"]]
+                    sensor = sensor_by_token[cs["sensor_token"]]
+                    if sensor["modality"] != "camera":
+                        continue
+                    camera_key = (
+                        f"{storage_root}/{scene_name}/camera/{channel}/{frame_stem}.jpg"
+                    )
+                    item = camera_by_path.get(camera_key)
+                    if item is None:
+                        continue
+                    source_camera_bytes = _resolve_source_path(
+                        nuscenes_root, sd["filename"]
+                    ).read_bytes()
+                    storage_service.client.put_object(
+                        Bucket=bucket,
+                        Key=item.file_path,
+                        Body=source_camera_bytes,
+                        Metadata={
+                            "sha256": hashlib.sha256(source_camera_bytes).hexdigest()
+                        },
+                    )
+                    if not item.width or not item.height:
+                        item.width, item.height = _camera_dimensions(sd)
+                        backfilled_camera_dimensions += 1
+                    item.metadata_ = {
+                        **(item.metadata_ or {}),
+                        "nuscenes_export": _source_context(
+                            sample=sample,
+                            sample_data=sd,
+                            calibrated_sensor=cs,
+                            sensor=sensor,
+                            ego_pose=ego_by_token[sd["ego_pose_token"]],
+                            storage_key=item.file_path,
+                            source_bytes=source_camera_bytes,
+                        ),
+                    }
+
+            await scene_pose_svc.upsert_frame_poses(
+                db, scene_id=scene.id, poses=frame_poses
+            )
+
+            upgraded_point_clouds = 0
+            if needs_pcd_refresh:
+                lidar_items = list(
+                    (
+                        await db.execute(
+                            select(DatasetItem)
+                            .where(DatasetItem.dataset_id == ds.id)
+                            .where(DatasetItem.scene_id == scene.id)
+                            .where(DatasetItem.file_type == "point_cloud")
+                        )
+                    ).scalars()
+                )
+                lidar_by_frame = {item.frame_index: item for item in lidar_items}
+                if len(lidar_by_frame) != len(samples):
+                    raise ValueError(
+                        f"scene {scene_name!r} 已存在的 lidar 帧数与 nuScenes 源不一致"
+                    )
+                for frame_idx, sample in enumerate(samples):
+                    by_channel = _key_sample_data_by_channel(
+                        sample["token"], sample_data, cs_by_token, sensor_by_token
+                    )
+                    lidar_sd = next(
+                        (
+                            sd
+                            for sd in by_channel.values()
+                            if sensor_by_token[
+                                cs_by_token[sd["calibrated_sensor_token"]][
+                                    "sensor_token"
+                                ]
+                            ]["modality"]
+                            == "lidar"
+                        ),
+                        None,
+                    )
+                    if lidar_sd is None:
+                        raise ValueError(
+                            f"scene {scene_name!r} sample {sample['token']!r} 无 lidar keyframe"
+                        )
+                    item = lidar_by_frame.get(frame_idx)
+                    if item is None:
+                        raise ValueError(
+                            f"scene {scene_name!r} 缺少 frame_index={frame_idx} 的 lidar item"
+                        )
+                    cs_lidar = cs_by_token[lidar_sd["calibrated_sensor_token"]]
+                    transform = _transform(
+                        cs_lidar["rotation"], cs_lidar["translation"]
+                    )
+                    pcd_bytes = _lidar_bin_to_binary_pcd(
+                        _resolve_source_path(nuscenes_root, lidar_sd["filename"]),
+                        transform=transform if frame == "ego" else None,
+                    )
+                    pcd_sha256 = hashlib.sha256(pcd_bytes).hexdigest()
+                    storage_service.client.put_object(
+                        Bucket=bucket,
+                        Key=item.file_path,
+                        Body=pcd_bytes,
+                        Metadata={"sha256": pcd_sha256},
+                    )
+                    item.file_size = len(pcd_bytes)
+                    item.content_hash = pcd_sha256
+                    if report_pcd_upgrade:
+                        upgraded_point_clouds += 1
+            report = {"name": scene_name, "frames": len(samples), "skipped": True}
+            if upgraded_point_clouds:
+                report["upgraded_point_clouds"] = upgraded_point_clouds
+            if backfilled_camera_dimensions:
+                report["backfilled_camera_dimensions"] = backfilled_camera_dimensions
+            report_scenes.append(report)
             continue
 
         samples = _ordered_samples(scene_row, samples_by_token)
@@ -365,6 +915,22 @@ async def import_nuscenes(
             raise ValueError(f"scene {scene_name!r} 无 sample(数据损坏?)")
 
         scene_token = scene_row["token"]
+        log_row = log_by_token.get(scene_row.get("log_token"))
+        if log_row is None:
+            raise ValueError(
+                f"scene {scene_name!r} references missing log {scene_row.get('log_token')!r}"
+            )
+        map_row = _map_for_log(maps_tbl, log_row["token"])
+        map_storage_key = _source_storage_key(storage_root, map_row["filename"])
+        map_bytes = _resolve_source_path(
+            nuscenes_root, map_row["filename"]
+        ).read_bytes()
+        storage_service.client.put_object(
+            Bucket=bucket,
+            Key=map_storage_key,
+            Body=map_bytes,
+            Metadata={"sha256": hashlib.sha256(map_bytes).hexdigest()},
+        )
         first_ts = samples[0]["timestamp"]
         last_ts = samples[-1]["timestamp"]
 
@@ -414,13 +980,27 @@ async def import_nuscenes(
                 cs_lidar["rotation"],
                 cs_lidar["translation"],
             )
-            pcd_bytes = _lidar_bin_to_ascii_pcd(
-                nuscenes_root / lidar_sd["filename"],
+            pcd_bytes = _lidar_bin_to_binary_pcd(
+                _resolve_source_path(nuscenes_root, lidar_sd["filename"]),
                 transform=T_ego_from_lidar if frame == "ego" else None,
             )
-            lidar_key = f"{dataset_name}/{scene_name}/lidar/{frame_stem}.pcd"
+            raw_lidar_key = _source_storage_key(storage_root, lidar_sd["filename"])
+            raw_lidar_bytes = _resolve_source_path(
+                nuscenes_root, lidar_sd["filename"]
+            ).read_bytes()
             storage_service.client.put_object(
-                Bucket=bucket, Key=lidar_key, Body=pcd_bytes
+                Bucket=bucket,
+                Key=raw_lidar_key,
+                Body=raw_lidar_bytes,
+                Metadata={"sha256": hashlib.sha256(raw_lidar_bytes).hexdigest()},
+            )
+            lidar_key = f"{storage_root}/{scene_name}/lidar/{frame_stem}.pcd"
+            pcd_sha256 = hashlib.sha256(pcd_bytes).hexdigest()
+            storage_service.client.put_object(
+                Bucket=bucket,
+                Key=lidar_key,
+                Body=pcd_bytes,
+                Metadata={"sha256": pcd_sha256},
             )
             lidar_item = DatasetItem(
                 dataset_id=ds.id,
@@ -428,6 +1008,18 @@ async def import_nuscenes(
                 file_path=lidar_key,
                 file_type="point_cloud",
                 file_size=len(pcd_bytes),
+                content_hash=pcd_sha256,
+                metadata_={
+                    "nuscenes_export": _source_context(
+                        sample=sample,
+                        sample_data=lidar_sd,
+                        calibrated_sensor=cs_lidar,
+                        sensor=sensor_by_token[cs_lidar["sensor_token"]],
+                        ego_pose=ego_lidar,
+                        storage_key=raw_lidar_key,
+                        source_bytes=raw_lidar_bytes,
+                    )
+                },
             )
             db.add(lidar_item)
             lidar_items.append(lidar_item)
@@ -439,19 +1031,39 @@ async def import_nuscenes(
                 if sensor_by_token[cs["sensor_token"]]["modality"] != "camera":
                     continue
 
-                jpg_bytes = (nuscenes_root / sd["filename"]).read_bytes()
+                jpg_bytes = _resolve_source_path(
+                    nuscenes_root, sd["filename"]
+                ).read_bytes()
                 cam_key = (
-                    f"{dataset_name}/{scene_name}/camera/{channel}/{frame_stem}.jpg"
+                    f"{storage_root}/{scene_name}/camera/{channel}/{frame_stem}.jpg"
                 )
                 storage_service.client.put_object(
-                    Bucket=bucket, Key=cam_key, Body=jpg_bytes
+                    Bucket=bucket,
+                    Key=cam_key,
+                    Body=jpg_bytes,
+                    Metadata={"sha256": hashlib.sha256(jpg_bytes).hexdigest()},
                 )
+                camera_width, camera_height = _camera_dimensions(sd)
                 cam_item = DatasetItem(
                     dataset_id=ds.id,
                     file_name=f"{frame_stem}.jpg",
                     file_path=cam_key,
                     file_type="image",
                     file_size=len(jpg_bytes),
+                    content_hash=hashlib.sha256(jpg_bytes).hexdigest(),
+                    width=camera_width,
+                    height=camera_height,
+                    metadata_={
+                        "nuscenes_export": _source_context(
+                            sample=sample,
+                            sample_data=sd,
+                            calibrated_sensor=cs,
+                            sensor=sensor_by_token[cs["sensor_token"]],
+                            ego_pose=ego_by_token[sd["ego_pose_token"]],
+                            storage_key=cam_key,
+                            source_bytes=jpg_bytes,
+                        )
+                    },
                 )
                 db.add(cam_item)
                 await db.flush()  # 拿 id 以填 shared_frame_items
@@ -481,7 +1093,7 @@ async def import_nuscenes(
                     intrinsic = [float(v) for row in intrinsic_3x3 for v in row]
                     calib_payload = {"extrinsic": extrinsic, "intrinsic": intrinsic}
                     calib_key = (
-                        f"{dataset_name}/{scene_name}/calib/camera/{channel}.json"
+                        f"{storage_root}/{scene_name}/calib/camera/{channel}.json"
                     )
                     calib_bytes = json.dumps(calib_payload).encode("utf-8")
                     storage_service.client.put_object(
@@ -493,6 +1105,7 @@ async def import_nuscenes(
                         file_path=calib_key,
                         file_type="other",
                         file_size=len(calib_bytes),
+                        content_hash=hashlib.sha256(calib_bytes).hexdigest(),
                     )
                     db.add(calib_item)
                     calib_items.append(calib_item)
@@ -517,6 +1130,15 @@ async def import_nuscenes(
                 "frame": frame,
                 # 标定用首帧近似;末帧与首帧的时间差,备查(前端不消费)。
                 "timestamp_delta_us": last_ts - first_ts,
+                "nuscenes_export": {
+                    "version": version,
+                    "scene": scene_row,
+                    "log": log_row,
+                    "map": map_row,
+                    "map_storage_key": map_storage_key,
+                    "map_file_size": len(map_bytes),
+                    "map_sha256": hashlib.sha256(map_bytes).hexdigest(),
+                },
             },
             created_by=owner_id,
         )
@@ -535,7 +1157,9 @@ async def import_nuscenes(
         report_scenes.append({"name": scene_name, "frames": len(samples)})
 
     # 3. 建/复用 lidar Project + ProjectDataset → build_tasks_for_link + attach_calibration
-    project_display_id = _derived_display_id("P-NU-", dataset_name)
+    project_display_id = project_display_id or _derived_display_id(
+        "P-NU-", dataset_name
+    )
     project = await db.scalar(
         select(Project).where(Project.display_id == project_display_id)
     )
@@ -543,14 +1167,14 @@ async def import_nuscenes(
         project = Project(
             id=uuid.uuid4(),
             display_id=project_display_id,
-            name=f"nuScenes {dataset_name}",
+            name=project_name or f"nuScenes {dataset_name}",
             type_label="点云检测",
             type_key="lidar",
             data_type="lidar",
             scene_mode=True,
             prefer_same_scene_continuation=True,
             owner_id=owner_id,
-            tool_bindings={},
+            tool_bindings=tool_bindings or {},
             ai_enabled=False,
         )
         db.add(project)
@@ -570,6 +1194,37 @@ async def import_nuscenes(
     # task 通过 dataset_item_id → scene_id 反查到 frame_index。
     await build_tasks_for_link(db, dataset_id=ds.id, project_id=project.id)
     await attach_calibration(db, dataset_id=ds.id)
+    from app.schemas._jsonb_types import SensorCalibration
+    from app.services.sensor_calibration import calibration_digest
+
+    camera_items = list(
+        (
+            await db.execute(
+                select(DatasetItem)
+                .where(DatasetItem.dataset_id == ds.id)
+                .where(DatasetItem.file_type == "image")
+            )
+        ).scalars()
+    )
+    for item in camera_items:
+        metadata = dict(item.metadata_ or {})
+        source = metadata.get("nuscenes_export")
+        calibration = metadata.get("calibration")
+        if not isinstance(source, dict) or calibration is None:
+            continue
+        source = dict(source)
+        source.setdefault(
+            "platform_calibration_digest",
+            calibration_digest(SensorCalibration.model_validate(calibration)),
+        )
+        metadata["nuscenes_export"] = source
+        item.metadata_ = metadata
+    ds.file_count = int(
+        await db.scalar(
+            select(func.count(DatasetItem.id)).where(DatasetItem.dataset_id == ds.id)
+        )
+        or 0
+    )
     await db.flush()
 
     return {

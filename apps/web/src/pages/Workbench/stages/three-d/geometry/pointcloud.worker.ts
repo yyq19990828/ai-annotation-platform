@@ -1,13 +1,31 @@
-import { colorizePoints, type CameraSample } from "./colorize";
-import { buildDepthRaster } from "./depthmap";
+import type { SensorCalibration } from "@/types";
 
-type PointcloudWorkerRequest = {
-  reqId: number;
-  kind: "colorize";
-  positions: Float32Array;
-  baseColors: Float32Array | null;
-  samples: CameraSample[];
-};
+import { colorizePoints, type CameraSample } from "./colorize";
+import { buildDepthRaster, buildGpuDepthRaster } from "./depthmap";
+import { decodePointCloudFrame } from "./pointcloudFrame";
+import type { LidarAxisConvention } from "./axisConvention";
+
+type PointcloudWorkerRequest =
+  | {
+      reqId: number;
+      kind: "decode_pcd";
+      buffer: ArrayBuffer;
+      convention: LidarAxisConvention;
+      decimateThreshold: number;
+    }
+  | {
+      reqId: number;
+      kind: "colorize";
+      positions: Float32Array;
+      baseColors: Float32Array | null;
+      samples: CameraSample[];
+    }
+  | {
+      reqId: number;
+      kind: "build_depth_rasters";
+      positions: Float32Array;
+      cameras: Array<{ calib: SensorCalibration; width: number; height: number }>;
+    };
 
 type WorkerScope = {
   onmessage: ((event: MessageEvent<PointcloudWorkerRequest>) => void) | null;
@@ -17,19 +35,41 @@ type WorkerScope = {
 const ctx = self as unknown as WorkerScope;
 
 ctx.onmessage = (event: MessageEvent<PointcloudWorkerRequest>) => {
-  const msg = event.data;
-  if (msg.kind !== "colorize") return;
+  const message = event.data;
   try {
-    const rasters = msg.samples.map((s) =>
-      buildDepthRaster(msg.positions, s.calib, s.width, s.height),
+    if (message.kind === "decode_pcd") {
+      const frame = decodePointCloudFrame(
+        message.buffer,
+        message.convention,
+        message.decimateThreshold,
+      );
+      ctx.postMessage({ reqId: message.reqId, ok: true, kind: message.kind, frame }, [
+        frame.positions.buffer,
+        frame.heightColors.buffer,
+      ]);
+      return;
+    }
+    if (message.kind === "build_depth_rasters") {
+      const rasters = message.cameras.map((camera) =>
+        buildGpuDepthRaster(message.positions, camera.calib, camera.width, camera.height),
+      );
+      ctx.postMessage({ reqId: message.reqId, ok: true, kind: message.kind, rasters }, [
+        ...rasters.map((raster) => raster.depth.buffer),
+      ]);
+      return;
+    }
+    const rasters = message.samples.map((sample) =>
+      buildDepthRaster(message.positions, sample.calib, sample.width, sample.height),
     );
-    const colors = colorizePoints(msg.positions, msg.baseColors, msg.samples, rasters);
-    ctx.postMessage({ reqId: msg.reqId, ok: true, colors }, [colors.buffer as Transferable]);
-  } catch (err) {
+    const colors = colorizePoints(message.positions, message.baseColors, message.samples, rasters);
+    ctx.postMessage({ reqId: message.reqId, ok: true, kind: message.kind, colors }, [
+      colors.buffer,
+    ]);
+  } catch (error) {
     ctx.postMessage({
-      reqId: msg.reqId,
+      reqId: message.reqId,
       ok: false,
-      error: err instanceof Error ? err.message : String(err),
+      error: error instanceof Error ? error.message : String(error),
     });
   }
 };

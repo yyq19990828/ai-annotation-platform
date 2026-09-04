@@ -49,7 +49,11 @@ describe("useFrameNeighbors", () => {
       wrapper: makeWrapper(),
     });
     await waitFor(() => expect(result.current.data).not.toBeNull());
-    expect(mockGetNeighbors).toHaveBeenCalledWith("t2", 1);
+    expect(mockGetNeighbors).toHaveBeenCalledWith(
+      "t2",
+      1,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
     expect(result.current.data?.next?.[0].task_id).toBe("t3");
   });
 });

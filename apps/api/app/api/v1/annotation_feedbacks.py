@@ -14,11 +14,15 @@ import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.tasks._shared import _assert_task_visible, _visible_task_ids
 from app.db.enums import UserRole
 from app.db.models.annotation_feedback import AnnotationFeedback
 from app.db.models.mask_qc import MaskQCIssue
+from app.db.models.point_cloud_quality import PointCloudQualityIssue
+from app.db.models.task import Task
 from app.db.models.user import User
 from app.deps import assert_project_visible, get_db, require_roles
 from app.schemas.annotation_feedback import (
@@ -31,6 +35,8 @@ from app.schemas.annotation_feedback import (
 from app.services.audit import AuditAction, AuditService
 from app.services.feedback import FeedbackService
 from app.services.mask_qc.service import effective_issue_status
+from app.services.point_cloud_quality.service import refresh_issue_staleness
+from app.services.scheduler import is_privileged_for_project
 from app.services.user_brief import resolve_briefs
 
 router = APIRouter()
@@ -71,6 +77,33 @@ async def _to_out(db: AsyncSession, entry: AnnotationFeedback) -> AnnotationFeed
     )
 
 
+def _serialize_anchor(payload: AnnotationFeedbackCreate) -> dict | None:
+    anchor = payload.anchor_position
+    if anchor is None:
+        return None
+    value = anchor.model_dump(mode="json")
+    if payload.anchor_type == "pixel":
+        for key in (
+            "point_cloud_quality_issue_id",
+            "scene_id",
+            "scene_track_id",
+            "auxiliary_layers",
+        ):
+            value.pop(key, None)
+    elif payload.anchor_type == "point_cloud":
+        value = {
+            key: value[key]
+            for key in (
+                "frame",
+                "point_cloud_quality_issue_id",
+                "scene_id",
+                "scene_track_id",
+                "auxiliary_layers",
+            )
+        }
+    return value
+
+
 @router.get("/feedbacks", response_model=AnnotationFeedbackListPage)
 async def list_feedbacks(
     project_id: uuid.UUID = Query(...),
@@ -84,7 +117,15 @@ async def list_feedbacks(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_roles(*_ALL)),
 ):
-    await assert_project_visible(project_id, db, user)
+    project = await assert_project_visible(project_id, db, user)
+    allowed_task_ids: set[uuid.UUID] | None = None
+    if not is_privileged_for_project(user, project):
+        project_task_ids = list(
+            (
+                await db.execute(select(Task.id).where(Task.project_id == project_id))
+            ).scalars()
+        )
+        allowed_task_ids = await _visible_task_ids(db, project, user, project_task_ids)
     svc = FeedbackService(db)
     rows, next_cursor = await svc.list_paged(
         project_id=project_id,
@@ -93,6 +134,7 @@ async def list_feedbacks(
         kind=kind,
         anchor_type=anchor_type,
         status=status,
+        allowed_task_ids=allowed_task_ids,
         cursor=cursor,
         limit=limit,
     )
@@ -171,6 +213,35 @@ async def create_feedback(
                 status_code=409,
                 detail={"reason": "mask_qc_issue_stale"},
             )
+    if anchor and anchor.point_cloud_quality_issue_id:
+        issue = await db.get(
+            PointCloudQualityIssue, anchor.point_cloud_quality_issue_id
+        )
+        if issue is None or issue.task_id is None:
+            raise HTTPException(status_code=404, detail="3D Quality issue not found")
+        issue_task = await db.get(Task, issue.task_id)
+        if issue_task is None:
+            raise HTTPException(status_code=404, detail="3D Quality issue not found")
+        await _assert_task_visible(db, issue_task, user)
+        locator = issue.locator or {}
+        if (
+            issue.project_id != payload.project_id
+            or issue.task_id != payload.task_id
+            or issue.annotation_id != payload.annotation_id
+            or issue.scene_id != anchor.scene_id
+            or issue.scene_track_id != anchor.scene_track_id
+            or issue.frame_start != anchor.frame
+            or locator.get("auxiliary_layers") != anchor.auxiliary_layers
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={"reason": "point_cloud_quality_feedback_anchor_conflict"},
+            )
+        if await refresh_issue_staleness(db, issue):
+            raise HTTPException(
+                status_code=409,
+                detail={"reason": "point_cloud_quality_issue_stale"},
+            )
     svc = FeedbackService(db)
     entry = await svc.create(
         author_id=user.id,
@@ -179,11 +250,7 @@ async def create_feedback(
         project_id=payload.project_id,
         task_id=payload.task_id,
         annotation_id=payload.annotation_id,
-        anchor_position=(
-            payload.anchor_position.model_dump(mode="json")
-            if payload.anchor_position
-            else None
-        ),
+        anchor_position=_serialize_anchor(payload),
         severity=payload.severity,
         title=payload.title,
         body=payload.body,
@@ -306,6 +373,30 @@ async def reply_feedback(
             raise HTTPException(
                 status_code=409,
                 detail={"reason": "mask_qc_issue_stale"},
+            )
+    point_cloud_quality_issue_id = (parent.anchor_position or {}).get(
+        "point_cloud_quality_issue_id"
+    )
+    if point_cloud_quality_issue_id:
+        issue = await db.get(
+            PointCloudQualityIssue, uuid.UUID(str(point_cloud_quality_issue_id))
+        )
+        if issue is None or issue.task_id is None:
+            raise HTTPException(
+                status_code=409,
+                detail={"reason": "point_cloud_quality_issue_stale"},
+            )
+        issue_task = await db.get(Task, issue.task_id)
+        if issue_task is None:
+            raise HTTPException(
+                status_code=409,
+                detail={"reason": "point_cloud_quality_issue_stale"},
+            )
+        await _assert_task_visible(db, issue_task, user)
+        if await refresh_issue_staleness(db, issue):
+            raise HTTPException(
+                status_code=409,
+                detail={"reason": "point_cloud_quality_issue_stale"},
             )
     svc = FeedbackService(db)
     # 子评论继承 parent 的 anchor; kind 强制为 comment.

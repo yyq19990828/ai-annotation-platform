@@ -3,13 +3,17 @@ from fastapi import APIRouter
 from app.api.v1.tasks import (
     annotations,
     ai_masks,
+    cross_frame_jobs,
     lifecycle,
     image_pyramid,
     locks,
     mask_capabilities,
     mask_mutations,
+    multicamera_annotations,
     predictions,
     review,
+    scene_timeline,
+    track_operations,
     video,
 )
 from app.api.v1.tasks import list as task_list
@@ -26,10 +30,14 @@ from app.api.v1.tasks._shared import (
 # 且对外路径与拆分前完全一致(/tasks 根列表端点)。
 router = APIRouter()
 router.include_router(task_list.router, prefix="/tasks")
+router.include_router(scene_timeline.router, prefix="/tasks")
+router.include_router(cross_frame_jobs.router, prefix="/tasks")
+router.include_router(track_operations.router, prefix="/tasks")
 router.include_router(video.router, prefix="/tasks")
 router.include_router(image_pyramid.router, prefix="/tasks")
 router.include_router(mask_capabilities.router, prefix="/tasks")
 router.include_router(mask_mutations.router, prefix="/tasks")
+router.include_router(multicamera_annotations.router, prefix="/tasks")
 router.include_router(annotations.router, prefix="/tasks")
 router.include_router(ai_masks.router, prefix="/tasks")
 router.include_router(predictions.router, prefix="/tasks")

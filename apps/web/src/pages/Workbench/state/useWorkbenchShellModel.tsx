@@ -52,7 +52,11 @@ import {
 } from "@/api/maskMutations";
 import { ApiError } from "@/api/client";
 import type { AnnotationConversionExecuteResponse } from "@/api/annotationConversions";
-import { videoTrackerApi } from "@/api/videoTracker";
+import {
+  videoTrackerApi,
+  type VideoTrackQualityIssue,
+  type VideoTrackQualityRun,
+} from "@/api/videoTracker";
 import { VideoTrackQualitySidebar } from "../sidebar/VideoTrackQualitySidebar";
 import { resolveCrossFrameNavigation } from "./crossFrameTarget";
 import { useBatches } from "@/hooks/useBatches";
@@ -187,6 +191,7 @@ import {
   workbenchImagePreviewUrl,
 } from "../stage/useWorkbenchImageSource";
 import { imageTileDeviceBudget, singleImageFitsDecodedBudget } from "../stage/imagePyramid";
+import { loadAbortableImage } from "../stage/useAbortableImage";
 import { WorkbenchOverlays } from "../shell/WorkbenchOverlays";
 import type { ClassPickerAttrEditing } from "../shell/ClassPickerPopover";
 import { WorkbenchLayout } from "../shell/WorkbenchLayout";
@@ -213,6 +218,11 @@ import {
   resolveWorkbenchReturnTo,
   updateWorkbenchUrlSearch,
 } from "@/utils/workbenchNavigation";
+import {
+  ensurePointCloudNavigationGeneration,
+  pointCloudNavigationGenerationForTask,
+  publishPointCloudNavigationTrace,
+} from "@/utils/pointCloudNavigationDiagnostics";
 import { getAll as offlineQueueGetAll, removeById as offlineQueueRemoveById } from "./offlineQueue";
 import { useWorkbenchOfflineQueue } from "./useWorkbenchOfflineQueue";
 import { useImageAnnotationActions } from "../stages/image/useImageAnnotationActions";
@@ -242,6 +252,7 @@ import {
   subtractMaskAlpha,
 } from "../stage/shared/geometry/maskMutationDraft";
 import {
+  LatestTaskNavigationScheduler,
   buildPipelineRunPayload,
   annotationsForTask,
   commitAfterNavigationGuard,
@@ -260,6 +271,8 @@ import { useWorkbenchSidebarSizing } from "./useWorkbenchSidebarSizing";
 import { useConflictResolution } from "./useConflictResolution";
 
 type WorkbenchShellMode = "annotate" | "review";
+
+const TASK_NAVIGATION_SETTLE_MS = 160;
 
 type PendingMaskAtomicDraft = {
   kind: MaskMutationOperation;
@@ -363,6 +376,27 @@ interface WorkbenchShellEmptyState {
   };
 }
 
+export interface LocalTaskUrlSyncDecision {
+  holdRequestedTask: boolean;
+  clearPendingTarget: boolean;
+}
+
+/**
+ * 判定 URL 中的 task 是外部导航意图，还是本地切题后尚未追上的旧值。
+ */
+export function resolveLocalTaskUrlSync(
+  requestedTaskId: string | null,
+  pendingLocalTaskId: string | null,
+): LocalTaskUrlSyncDecision {
+  if (!pendingLocalTaskId) {
+    return { holdRequestedTask: false, clearPendingTarget: false };
+  }
+  if (requestedTaskId === pendingLocalTaskId) {
+    return { holdRequestedTask: false, clearPendingTarget: true };
+  }
+  return { holdRequestedTask: true, clearPendingTarget: false };
+}
+
 interface WorkbenchShellReadyModel {
   kind: "ready";
   layout: ComponentProps<typeof WorkbenchLayout>;
@@ -413,12 +447,24 @@ export function useWorkbenchShellModel({
     [returnTo, currentPath],
   );
   const maskNavigationGuardRef = useRef<() => Promise<boolean>>(async () => true);
+  const taskNavigationSchedulerRef = useRef<LatestTaskNavigationScheduler | null>(null);
+  if (taskNavigationSchedulerRef.current === null) {
+    taskNavigationSchedulerRef.current = new LatestTaskNavigationScheduler(
+      TASK_NAVIGATION_SETTLE_MS,
+    );
+  }
+  const taskNavigationScheduler = taskNavigationSchedulerRef.current;
+  const pendingLocalTaskIdRef = useRef<string | null>(null);
   const maskInstanceTransitionInFlightRef = useRef(false);
   const maskInstanceCommitInFlightRef = useRef<Promise<boolean> | null>(null);
   const maskInstanceRefreshTokenRef = useRef<object | null>(null);
   const [maskInstanceCommitting, setMaskInstanceCommitting] = useState(false);
   const [maskInstanceRefreshing, setMaskInstanceRefreshing] = useState(false);
   const maskInstanceTransitionBusy = maskInstanceCommitting || maskInstanceRefreshing;
+  useEffect(() => {
+    taskNavigationScheduler.activate();
+    return () => taskNavigationScheduler.dispose();
+  }, [taskNavigationScheduler]);
   const onBack = useCallback(() => {
     void maskNavigationGuardRef.current().then((allowed) => {
       if (allowed) navigate(backTarget);
@@ -662,24 +708,76 @@ export function useWorkbenchShellModel({
   const taskId = task?.id;
   const currentTaskIdRef = useRef(taskId);
   currentTaskIdRef.current = taskId;
+  const navigationIdentityRef = useRef({
+    currentTaskId,
+    requestedTaskId,
+    resolvedTaskId: taskId ?? null,
+  });
+  navigationIdentityRef.current = {
+    currentTaskId,
+    requestedTaskId,
+    resolvedTaskId: taskId ?? null,
+  };
   const taskIdx = tasks.findIndex((t) => t.id === taskId);
   const selectTask = useCallback(
     async (
       id: string,
       opts: { replace?: boolean; signal?: AbortSignal } = {},
     ): Promise<boolean> => {
-      return commitAfterNavigationGuard(maskNavigationGuardRef.current, opts.signal, () => {
-        setCurrentTaskId(id);
-        setSelectedId(null);
-        updateUrl({
-          batchId: selectedBatchId,
+      const generation = ensurePointCloudNavigationGeneration(id, "shell");
+      const before = navigationIdentityRef.current;
+      publishPointCloudNavigationTrace({
+        source: "shell",
+        type: "select-start",
+        generation,
+        taskId: id,
+        targetTaskId: id,
+        currentTaskId: before.currentTaskId,
+        requestedTaskId: before.requestedTaskId,
+        resolvedTaskId: before.resolvedTaskId,
+        pending: true,
+      });
+      return taskNavigationScheduler.schedule(id, async (navigationSignal) => {
+        const allowed = await commitAfterNavigationGuard(
+          maskNavigationGuardRef.current,
+          [navigationSignal, opts.signal],
+          () => {
+            const current = navigationIdentityRef.current;
+            publishPointCloudNavigationTrace({
+              source: "shell",
+              type: "state-url-commit-requested",
+              generation,
+              taskId: id,
+              targetTaskId: id,
+              currentTaskId: current.currentTaskId,
+              requestedTaskId: current.requestedTaskId,
+              resolvedTaskId: current.resolvedTaskId,
+              pending: true,
+            });
+            pendingLocalTaskIdRef.current = current.requestedTaskId === id ? null : id;
+            setCurrentTaskId(id);
+            setSelectedId(null);
+            updateUrl({
+              batchId: selectedBatchId,
+              taskId: id,
+              replace: opts.replace,
+              maskGuardApproved: true,
+            });
+          },
+        );
+        publishPointCloudNavigationTrace({
+          source: "shell",
+          type: "select-resolved",
+          generation,
           taskId: id,
-          replace: opts.replace,
-          maskGuardApproved: true,
+          targetTaskId: id,
+          allowed,
+          pending: false,
         });
+        return allowed;
       });
     },
-    [selectedBatchId, setCurrentTaskId, setSelectedId, updateUrl],
+    [selectedBatchId, setCurrentTaskId, setSelectedId, taskNavigationScheduler, updateUrl],
   );
   const imageWidth = task?.image_width ?? null;
   const imageHeight = task?.image_height ?? null;
@@ -692,6 +790,27 @@ export function useWorkbenchShellModel({
   const workbenchImagePreview = workbenchImagePreviewUrl(workbenchImageSource);
   const isVideoTask = task?.file_type === "video" || currentProject?.type_key === "video-track";
   const stageKind = currentProject?.type_key === "lidar" ? "3d" : isVideoTask ? "video" : "image";
+  useEffect(() => {
+    const identityTaskId = taskId ?? currentTaskId ?? requestedTaskId;
+    if (!identityTaskId || stageKind !== "3d") return;
+    const generation =
+      pointCloudNavigationGenerationForTask(identityTaskId) ??
+      ensurePointCloudNavigationGeneration(identityTaskId, "shell");
+    publishPointCloudNavigationTrace({
+      source: "shell",
+      type: "identity",
+      generation,
+      taskId: identityTaskId,
+      currentTaskId,
+      requestedTaskId,
+      resolvedTaskId: taskId ?? null,
+      status:
+        currentTaskId === requestedTaskId && taskId === requestedTaskId
+          ? "aligned"
+          : "transitioning",
+      pending: directTaskQuery.isFetching,
+    });
+  }, [currentTaskId, directTaskQuery.isFetching, requestedTaskId, stageKind, taskId]);
   const maskCapabilities = useMaskCapabilities(taskId, !!taskId && !isVideoTask);
   const imageMaskSizeSupported =
     !imageWidth || !imageHeight || !maskCapabilities.data
@@ -713,7 +832,7 @@ export function useWorkbenchShellModel({
   const videoManifest = useVideoManifest(taskId, isVideoTask);
   const videoSegmentsQuery = useQuery({
     queryKey: ["video-segments", taskId],
-    queryFn: () => videoTrackerApi.segments(taskId as string),
+    queryFn: ({ signal }) => videoTrackerApi.segments(taskId as string, { signal }),
     enabled: isVideoTask && !!taskId,
     staleTime: 30_000,
   });
@@ -1093,6 +1212,28 @@ export function useWorkbenchShellModel({
 
   useEffect(() => {
     if (tasks.length === 0 && !directTaskQuery.data) return;
+    const localUrlSync = resolveLocalTaskUrlSync(requestedTaskId, pendingLocalTaskIdRef.current);
+    if (localUrlSync.clearPendingTarget) {
+      pendingLocalTaskIdRef.current = null;
+    }
+    if (localUrlSync.holdRequestedTask) {
+      const pendingTaskId = pendingLocalTaskIdRef.current;
+      if (pendingTaskId) {
+        publishPointCloudNavigationTrace({
+          source: "shell",
+          type: "stale-url-sync-held",
+          generation: pointCloudNavigationGenerationForTask(pendingTaskId),
+          taskId: pendingTaskId,
+          targetTaskId: pendingTaskId,
+          currentTaskId,
+          requestedTaskId,
+          resolvedTaskId: taskId ?? null,
+          status: "held",
+          pending: true,
+        });
+      }
+      return;
+    }
     if (requestedTaskId && tasks.some((t) => t.id === requestedTaskId)) {
       if (currentTaskId !== requestedTaskId) {
         setCurrentTaskId(requestedTaskId);
@@ -1121,6 +1262,7 @@ export function useWorkbenchShellModel({
     tasks,
     currentTaskId,
     requestedTaskId,
+    taskId,
     selectedBatchId,
     setCurrentTaskId,
     setSelectedId,
@@ -1138,6 +1280,7 @@ export function useWorkbenchShellModel({
     (batchId: string | null) => {
       void maskNavigationGuardRef.current().then((allowed) => {
         if (!allowed) return;
+        pendingLocalTaskIdRef.current = null;
         setSelectedBatchId(batchId);
         setCurrentTaskId(null);
         setSelectedId(null);
@@ -1166,7 +1309,57 @@ export function useWorkbenchShellModel({
   const [qualityPreviewAnnotations, setQualityPreviewAnnotations] = useState<
     AnnotationResponse[] | null
   >(null);
-  useEffect(() => setQualityPreviewAnnotations(null), [mode, taskId]);
+  const qualityPreviewRequestRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    qualityPreviewRequestRef.current?.abort();
+    qualityPreviewRequestRef.current = null;
+    setQualityPreviewAnnotations(null);
+    return () => {
+      qualityPreviewRequestRef.current?.abort();
+      qualityPreviewRequestRef.current = null;
+    };
+  }, [mode, taskId]);
+  const handlePreviewVideoQualityIssue = useCallback(
+    (run: VideoTrackQualityRun, issue: VideoTrackQualityIssue) => {
+      if (!taskId) return;
+      qualityPreviewRequestRef.current?.abort();
+      const controller = new AbortController();
+      qualityPreviewRequestRef.current = controller;
+      const requestedTaskId = taskId;
+      void Promise.all([
+        tasksApi.getAnnotations(requestedTaskId, run.left_segment_id, {
+          signal: controller.signal,
+        }),
+        tasksApi.getAnnotations(requestedTaskId, run.right_segment_id, {
+          signal: controller.signal,
+        }),
+      ])
+        .then(([left, right]) => {
+          if (controller.signal.aborted || currentTaskIdRef.current !== requestedTaskId) return;
+          setQualityPreviewAnnotations([...left, ...right]);
+          s.replaceSelected(
+            [issue.left_annotation_id, issue.right_annotation_id].filter(
+              (id): id is string => !!id,
+            ),
+          );
+          s.setVideoFrameIndex(issue.frame_start);
+        })
+        .catch((error: unknown) => {
+          if (controller.signal.aborted) return;
+          pushToast({
+            msg: "质量问题预览加载失败",
+            sub: error instanceof Error ? error.message : undefined,
+            kind: "error",
+          });
+        })
+        .finally(() => {
+          if (qualityPreviewRequestRef.current === controller) {
+            qualityPreviewRequestRef.current = null;
+          }
+        });
+    },
+    [pushToast, s, taskId],
+  );
   const {
     data: scopedAnnotationsData,
     refetch: refetchAnnotations,
@@ -2135,30 +2328,33 @@ export function useWorkbenchShellModel({
 
   useEffect(() => {
     const idx = tasks.findIndex((t) => t.id === taskId);
+    const controller = new AbortController();
     const prefetch = (t: TaskResponse | undefined) => {
       if (!t) return;
       if (!videoCollaborationEnabled) {
         queryClient.prefetchQuery({
           queryKey: ["annotations", t.id],
-          queryFn: () => tasksApi.getAnnotations(t.id),
+          queryFn: () => tasksApi.getAnnotations(t.id, undefined, { signal: controller.signal }),
         });
       }
       queryClient.prefetchInfiniteQuery({
         queryKey: ["predictions", t.id, undefined, debouncedConf, 100],
         initialPageParam: 0,
-        queryFn: () => predictionsApi.listByTask(t.id, undefined, debouncedConf, 100, 0),
+        queryFn: () =>
+          predictionsApi.listByTask(t.id, undefined, debouncedConf, 100, 0, {
+            signal: controller.signal,
+          }),
       });
       if (stageKind === "image" && t.image_pyramid && LARGE_IMAGE_TILES_ENABLED) {
         void queryClient
           .fetchQuery({
             queryKey: ["image-pyramid", t.id, t.image_pyramid.generation],
-            queryFn: ({ signal }) => tasksApi.getImagePyramid(t.id, { signal }),
+            queryFn: () => tasksApi.getImagePyramid(t.id, { signal: controller.signal }),
             staleTime: 30_000,
           })
           .then((pyramid) => {
             if (!pyramid.overview?.url) return;
-            const img = new Image();
-            img.src = pyramid.overview.url;
+            return loadAbortableImage(pyramid.overview.url, controller.signal);
           })
           .catch(() => {});
       } else if (stageKind === "image" && t.file_url && !t.image_pyramid?.required) {
@@ -2175,12 +2371,17 @@ export function useWorkbenchShellModel({
             : true;
         const url = t.thumbnail_url ?? (originalAllowed ? t.file_url : null);
         if (!url) return;
-        const img = new Image();
-        img.src = url;
+        void loadAbortableImage(url, controller.signal).catch(() => {});
       }
     };
-    prefetch(tasks[idx + 1]);
-    prefetch(tasks[idx - 1]);
+    const timer = window.setTimeout(() => {
+      prefetch(tasks[idx + 1]);
+      prefetch(tasks[idx - 1]);
+    }, TASK_NAVIGATION_SETTLE_MS);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
   }, [taskId, tasks, queryClient, debouncedConf, stageKind, videoCollaborationEnabled]);
 
   const aiRunning =
@@ -6175,13 +6376,17 @@ export function useWorkbenchShellModel({
         stageKind === "3d"
           ? s.threeDTool === "point-mask"
             ? "点云分割"
-            : "3D 框"
+            : s.threeDTool === "measure"
+              ? "测量"
+              : "3D 框"
           : TOOL_REGISTRY[s.tool].label,
       toolIcon:
         stageKind === "3d"
           ? s.threeDTool === "point-mask"
             ? "scissors"
-            : "rect"
+            : s.threeDTool === "measure"
+              ? "ruler"
+              : "rect"
           : TOOL_REGISTRY[s.tool].icon,
       activeClass: s.activeClass,
       recentClasses,
@@ -6334,6 +6539,7 @@ export function useWorkbenchShellModel({
         onCrossFramePropagateBatch: crossFramePropagateBatch,
         onCrossFramePropagateToTask: crossFramePropagateToTask,
         onCrossFrameInterpolate: crossFrameInterpolate,
+        onNavigateSceneFrame: navigateToCrossFrameTask,
         rightSidebarOpen: rightOpen,
         rightSidebarWidth: rightOpen ? rightPx : 0,
         workbenchLayout: s.workbenchLayout,
@@ -6861,20 +7067,7 @@ export function useWorkbenchShellModel({
                 <VideoTrackQualitySidebar
                   taskId={taskId}
                   onSeekFrame={s.setVideoFrameIndex}
-                  onPreviewIssue={(run, issue) => {
-                    void Promise.all([
-                      tasksApi.getAnnotations(taskId, run.left_segment_id),
-                      tasksApi.getAnnotations(taskId, run.right_segment_id),
-                    ]).then(([left, right]) => {
-                      setQualityPreviewAnnotations([...left, ...right]);
-                      s.replaceSelected(
-                        [issue.left_annotation_id, issue.right_annotation_id].filter(
-                          (id): id is string => !!id,
-                        ),
-                      );
-                      s.setVideoFrameIndex(issue.frame_start);
-                    });
-                  }}
+                  onPreviewIssue={handlePreviewVideoQualityIssue}
                 />
               )}
             </div>

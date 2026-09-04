@@ -66,14 +66,20 @@ export function WorkbenchSettingsDrawer({
 
   if (!open) return null;
 
-  const categories: WorkbenchSettingCategory[] =
-    stageKind === "video"
-      ? ["common", "video", "experiment"]
-      : ["common", STAGE_CATEGORY[stageKind]];
+  const categories: WorkbenchSettingCategory[] = [
+    "common",
+    STAGE_CATEGORY[stageKind],
+    "experiment",
+  ];
   const groups = categories
     .map((category) => ({
       category,
-      fields: WORKBENCH_SETTING_FIELDS.filter((f) => f.category === category && !f.hidden),
+      fields: WORKBENCH_SETTING_FIELDS.filter(
+        (f) =>
+          f.category === category &&
+          !f.hidden &&
+          (category !== "experiment" || !f.stageKinds || f.stageKinds.includes(stageKind)),
+      ),
     }))
     .filter((g) => g.fields.length > 0);
 

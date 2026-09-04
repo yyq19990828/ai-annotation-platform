@@ -74,6 +74,8 @@ Annotation 是“用户最终提交的结构化标注结果”。它不是工作
 | `parent_prediction_id` | 来自哪条 prediction，可空                                                                                                                                                                                                 |
 | `parent_annotation_id` | 父框 id，可空；表「车牌属于车」这类从属层级（仅一层，见下方父子约束）                                                                                                                                                     |
 | `track_id`             | 跨帧同一对象的通用标识（`String(64)`，可空，格式 `trk_<uuid.hex>`，几何类型无关）；由单一工厂 `_new_track_id()` 产出，propagate / interpolate / 导出 / 3D 前端统一读本列（见下方跨帧链）<!-- since v0.21.2 · ADR-0045 --> |
+| `scene_track_id`       | 3D Scene Track 成员外键；与冗余 `track_id` 双写并由诊断器检查一致性，图片和 compact video 可空                                                                                                                            |
+| `temporal_role`        | 时间角色：`keyframe` / `derived` / `sample`；与 `source` 正交，用于重算和生命周期影响判断                                                                                                                                 |
 | `lead_time`            | 标注耗时                                                                                                                                                                                                                  |
 | `attributes`           | 扩展属性                                                                                                                                                                                                                  |
 | `attributes_meta`      | 属性级溯源 sidecar，`{key: {origin, model_ref?}}`（只记 `origin=ai` 的键，见下方属性溯源）                                                                                                                                |
@@ -405,7 +407,7 @@ SAM / Tracker 重跑项只创建候选，不越过候选审阅直接改写 annot
 
 <!-- since v0.21.2 · ADR-0045 · 跨帧链键从 group_id 高位段迁移到独立 track_id 列，编组 / group_id 列已下线 -->
 
-`Annotation.track_id`（见上表）是跨帧延续的链键：同一物体在各帧的框共享同一个 `track_id` 形成一条链。源框无 `track_id` 时由 `_new_track_id()`（`services/annotation_propagation.py`）分配一个 `trk_<uuid.hex>` 并写回源框。区间插值据此找到链两端的关键帧。此前跨帧链借 `group_id` 高位段表达，随标注编组下线，`group_id` 列已删、跨帧语义统一到独立的 `track_id` 列。
+`Annotation.track_id`（见上表）是跨帧延续的兼容链键：同一物体在各帧的框共享一个 `track_id`。3D Scene 同时通过 `scene_track_id` 关联显式 Scene Track，由 Track 提供类别、存在区间和 revision；完整权威关系见 [Scene Track 与轨迹生命周期](./scene-track-lifecycle)。源框无 `track_id` 时由 `_new_track_id()`（`services/annotation_propagation.py`）分配一个 `trk_<uuid.hex>` 并写回源框。区间插值据此找到链两端的关键帧。此前跨帧链借 `group_id` 高位段表达，随标注编组下线，`group_id` 列已删、跨帧语义统一到独立的 `track_id` 列。
 
 <!-- migration 0118 · 紧凑视频轨迹 track_id 列/geometry 双写同步，Data Manager 跨 task track 检索依赖 -->
 
@@ -427,7 +429,7 @@ SAM / Tracker 重跑项只创建候选，不越过候选审阅直接改写 annot
 `POST /tasks/{task_id}/annotations/interpolate-range` → `interpolate_range()`，`InterpolateRangeRequest`：`track_id: str` + `to_task_id`。
 
 - 在同 `track_id` 链两端关键帧之间，给区间内每个有 task 的中间帧生成一个插值框（世界系线性内插中心 + slerp 朝向 + 线性尺寸，见 `interpolate_psr`）。
-- 生成框 `source="interpolated"`，便于审核按来源过滤 / 批量删。
+- 生成框 `source="interpolated"` 且 `temporal_role="derived"`，便于审核按来源过滤，也能与人工关键帧分开重算。
 - 幂等：中间帧已有同 `track_id` 标注则跳过；返回 `(created, motion_compensated, skipped_frames)`。
 - 任一帧缺 pose → 纯 ego 系插值（`motion_compensated=False`）。
 
