@@ -35,7 +35,7 @@ describe("Topbar · AI 工具入口", () => {
     expect(tracker.className).toBe(single.className);
     expect(tracker).toHaveAttribute("aria-pressed", "true");
     expect(tracker).toHaveAccessibleName("发现新目标");
-    expect(tracker).toHaveAttribute("title", "关闭画布级多目标追踪");
+    expect(tracker).toHaveAttribute("title", "聚焦画布级多目标追踪");
     expect(single).toHaveAttribute("aria-pressed", "false");
 
     fireEvent.click(tracker);

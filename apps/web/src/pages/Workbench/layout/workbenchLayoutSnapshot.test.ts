@@ -1,10 +1,31 @@
 import { describe, expect, it } from "vitest";
 import { createWorkspacePreset } from "./workbenchLayoutPresets";
 import {
+  PANEL_IDS,
   readWorkspaceEnvelope,
   sanitizeWorkspaceSnapshot,
   type WorkspaceNode,
+  type WorkspaceSnapshot,
 } from "./workbenchLayoutSnapshot";
+
+function legacySnapshot(snapshot: WorkspaceSnapshot): unknown {
+  const legacy = structuredClone(snapshot);
+  delete legacy.layout.panels["ai-task"];
+  delete legacy.layout.panels["video-tracker"];
+  delete (legacy as Partial<WorkspaceSnapshot>).visibilityIntent;
+  delete legacy.returns["ai-task"];
+  delete legacy.returns["video-tracker"];
+  const strip = (group: { views: string[]; activeView?: string }) => {
+    group.views = group.views.filter((id) => id !== "ai-task" && id !== "video-tracker");
+    if (group.activeView && !group.views.includes(group.activeView))
+      group.activeView = group.views[0];
+  };
+  const visit = (node: WorkspaceNode) =>
+    node.type === "branch" ? node.data.forEach(visit) : strip(node.data);
+  visit(legacy.layout.grid.root);
+  legacy.layout.floatingGroups?.forEach((group) => group.data && strip(group.data));
+  return legacy;
+}
 
 function canvasNode(node: WorkspaceNode): WorkspaceNode {
   if (node.type === "leaf") return node;
@@ -13,7 +34,7 @@ function canvasNode(node: WorkspaceNode): WorkspaceNode {
 
 describe("workspace snapshot boundary", () => {
   it("round trips all presets and pins trusted renderer metadata", () => {
-    for (const preset of ["standard", "focus", "review"] as const) {
+    for (const preset of ["standard", "focus", "review", "ai-review", "video-tracking"] as const) {
       const snapshot = createWorkspacePreset(preset);
       snapshot.layout.panels.canvas.params = { annotation: "private" };
       snapshot.layout.panels.canvas.contentComponent = "untrusted";
@@ -27,13 +48,20 @@ describe("workspace snapshot boundary", () => {
         renderer: "always",
       });
       expect(clean.layout).not.toHaveProperty("popoutGroups");
-      expect(readWorkspaceEnvelope({ schemaVersion: 1, snapshot: clean }).snapshot).toEqual(clean);
-      expect(readWorkspaceEnvelope({ schemaVersion: 2, snapshot: clean }).snapshot).toEqual(clean);
+      expect(readWorkspaceEnvelope({ schemaVersion: 3, snapshot: clean }).snapshot).toEqual(clean);
+      expect(Object.keys(clean.layout.panels)).toEqual(PANEL_IDS);
     }
+    const standard = createWorkspacePreset("standard");
+    expect(
+      readWorkspaceEnvelope({ schemaVersion: 1, snapshot: legacySnapshot(standard) }).snapshot,
+    ).toEqual(standard);
+    expect(
+      readWorkspaceEnvelope({ schemaVersion: 2, snapshot: legacySnapshot(standard) }).snapshot,
+    ).toEqual(standard);
   });
 
   it("does not interpret newer envelopes as v1", () => {
-    for (const schemaVersion of [3, 4])
+    for (const schemaVersion of [4, 5])
       expect(readWorkspaceEnvelope({ schemaVersion, snapshot: {} })).toEqual({
         snapshot: null,
         readOnlyReason: "newer-schema",

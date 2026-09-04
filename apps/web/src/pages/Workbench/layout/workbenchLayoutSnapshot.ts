@@ -6,14 +6,19 @@ export const PANEL_IDS = [
   "class-palette",
   "inspector",
   "discussion",
+  "ai-task",
+  "video-tracker",
 ] as const;
 export type PanelId = (typeof PANEL_IDS)[number];
+export type ToolPanelId = Extract<PanelId, "ai-task" | "video-tracker">;
 export const PANEL_TITLES: Record<PanelId, string> = {
   canvas: "画布",
   "task-queue": "任务队列",
   "class-palette": "类别面板",
   inspector: "标注详情",
   discussion: "讨论 / Issue",
+  "ai-task": "当前题 AI",
+  "video-tracker": "视频追踪",
 };
 export const WORKSPACE_CONTEXTS = [
   "annotate:image",
@@ -57,12 +62,11 @@ export type WorkspaceLayout = Omit<SerializedDockview, "grid"> & {
 export interface WorkspaceSnapshot {
   layout: WorkspaceLayout;
   returns: Partial<Record<PanelId, PanelReturn>>;
+  visibilityIntent: Record<ToolPanelId, "shown" | "hidden">;
 }
-export type WorkspaceEnvelope =
-  | { schemaVersion: 1 | 2; snapshot: WorkspaceSnapshot }
-  | { schemaVersion: 3; snapshot: unknown };
+export type WorkspaceEnvelope = { schemaVersion: 1 | 2 | 3; snapshot: unknown };
 export type WorkspaceReadOnlyReason = "invalid" | "newer-schema";
-export const WORKSPACE_SCHEMA_VERSION = 2 as const;
+export const WORKSPACE_SCHEMA_VERSION = 3 as const;
 
 const LIMIT = 64 * 1024;
 const ID = /^[a-zA-Z0-9_-]{1,64}$/;
@@ -235,6 +239,20 @@ export function sanitizeWorkspaceSnapshot(
       ];
     }),
   );
+  const rawIntent = input.visibilityIntent === undefined ? {} : record(input.visibilityIntent);
+  if (
+    Object.keys(rawIntent).some((id) => id !== "ai-task" && id !== "video-tracker") ||
+    Object.values(rawIntent).some((intent) => intent !== "shown" && intent !== "hidden")
+  )
+    throw new Error("Invalid tool panel visibility intent");
+  const visibilityIntent = Object.fromEntries(
+    (["ai-task", "video-tracker"] as const).map((id) => [
+      id,
+      (rawIntent[id] ?? (groupsInSnapshot(root, floatingGroups).get(id) ? "shown" : "hidden")) as
+        | "shown"
+        | "hidden",
+    ]),
+  ) as WorkspaceSnapshot["visibilityIntent"];
   const returns: WorkspaceSnapshot["returns"] = {};
   if (input.returns !== undefined) {
     for (const [id, value] of Object.entries(record(input.returns))) {
@@ -279,7 +297,74 @@ export function sanitizeWorkspaceSnapshot(
       ...(floatingGroups?.length ? { floatingGroups } : {}),
     },
     returns,
+    visibilityIntent,
   };
+}
+
+function groupsInSnapshot(
+  root: WorkspaceNode,
+  floatingGroups: Array<{ data: WorkspaceGroup }> | undefined,
+): Map<PanelId, string> {
+  const locations = new Map<PanelId, string>();
+  const visit = (node: WorkspaceNode) => {
+    if (node.type === "branch") return node.data.forEach(visit);
+    if (node.data.id !== "parking")
+      node.data.views.forEach((id) => locations.set(id, node.data.id));
+  };
+  visit(root);
+  floatingGroups?.forEach((group) =>
+    group.data.views.forEach((id) => locations.set(id, group.data.id)),
+  );
+  return locations;
+}
+
+function upgradeLegacySnapshot(value: unknown): unknown {
+  const snapshot = structuredClone(record(value));
+  const layout = record(snapshot.layout);
+  const grid = record(layout.grid);
+  const panels = record(layout.panels);
+  for (const id of ["ai-task", "video-tracker"] as const) panels[id] = { id };
+
+  const toolIds: ToolPanelId[] = ["ai-task", "video-tracker"];
+  const parking = {
+    type: "leaf",
+    data: {
+      id: "parking",
+      views: toolIds,
+      activeView: "ai-task",
+      locked: "no-drop-target",
+      hideHeader: true,
+    },
+    size: 0,
+    visible: false,
+  };
+  const findParking = (node: unknown): Record<string, unknown> | null => {
+    const parsed = record(node);
+    if (parsed.type === "leaf") {
+      const data = record(parsed.data);
+      return data.id === "parking" ? data : null;
+    }
+    if (parsed.type !== "branch" || !Array.isArray(parsed.data)) return null;
+    for (const child of parsed.data) {
+      const found = findParking(child);
+      if (found) return found;
+    }
+    return null;
+  };
+  const existingParking = findParking(grid.root);
+  if (existingParking) {
+    if (!Array.isArray(existingParking.views)) throw new Error("Invalid parking group");
+    existingParking.views.push(...toolIds);
+    existingParking.activeView ??= "ai-task";
+  } else {
+    const root = record(grid.root);
+    grid.root =
+      root.type === "branch" && Array.isArray(root.data)
+        ? { ...root, data: [...root.data, parking] }
+        : { type: "branch", data: [root, parking], size: root.size };
+  }
+  snapshot.visibilityIntent = { "ai-task": "hidden", "video-tracker": "hidden" };
+  return snapshot;
 }
 
 export function readWorkspaceEnvelope(
@@ -297,9 +382,19 @@ export function readWorkspaceEnvelope(
       envelope.schemaVersion > WORKSPACE_SCHEMA_VERSION
     )
       return { snapshot: null, readOnlyReason: "newer-schema" };
-    if (envelope.schemaVersion !== 1 && envelope.schemaVersion !== 2)
+    if (
+      envelope.schemaVersion !== 1 &&
+      envelope.schemaVersion !== 2 &&
+      envelope.schemaVersion !== 3
+    )
       throw new Error("Unsupported layout schema");
-    return { snapshot: sanitizeWorkspaceSnapshot(envelope.snapshot, bounds), readOnlyReason: null };
+    return {
+      snapshot: sanitizeWorkspaceSnapshot(
+        envelope.schemaVersion === 3 ? envelope.snapshot : upgradeLegacySnapshot(envelope.snapshot),
+        bounds,
+      ),
+      readOnlyReason: null,
+    };
   } catch {
     return { snapshot: null, readOnlyReason: "invalid" };
   }

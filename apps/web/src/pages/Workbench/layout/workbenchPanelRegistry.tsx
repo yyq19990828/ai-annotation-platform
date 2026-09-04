@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { PanelId } from "./workbenchLayoutSnapshot";
+import type { PanelId, WorkspaceContext } from "./workbenchLayoutSnapshot";
 
 export type WorkbenchPanelSlots = Record<PanelId, ReactNode>;
 export interface WorkbenchWorkspaceCommands {
@@ -10,6 +10,8 @@ export interface WorkbenchWorkspaceCommands {
 export interface WorkbenchWorkspaceState {
   taskQueueVisible: boolean;
   inspectorVisible: boolean;
+  aiTaskVisible: boolean;
+  videoTrackerVisible: boolean;
   canvasMaximized: boolean;
   taskQueueWidth: number;
   inspectorWidth: number;
@@ -85,6 +87,34 @@ export const WORKBENCH_PANEL_REGISTRY = {
     height: 240,
     closable: false,
   },
+  "ai-task": {
+    modes: ["annotate"],
+    stages: ["image", "video"],
+    capabilities: SIDE_CAPABILITIES,
+    id: "ai-task",
+    title: "当前题 AI",
+    renderer: "always",
+    defaultPosition: "right",
+    minWidth: 320,
+    minHeight: 320,
+    width: 360,
+    height: 520,
+    closable: false,
+  },
+  "video-tracker": {
+    modes: ["annotate"],
+    stages: ["video"],
+    capabilities: SIDE_CAPABILITIES,
+    id: "video-tracker",
+    title: "视频追踪",
+    renderer: "always",
+    defaultPosition: "right",
+    minWidth: 320,
+    minHeight: 320,
+    width: 360,
+    height: 520,
+    closable: false,
+  },
 } as const satisfies Record<
   PanelId,
   {
@@ -108,4 +138,14 @@ export const PERIPHERAL_PANELS = [
   "class-palette",
   "inspector",
   "discussion",
+  "ai-task",
+  "video-tracker",
 ] as const;
+
+export function panelSupportsContext(id: PanelId, context: WorkspaceContext): boolean {
+  const [mode, stage] = context.split(":");
+  const panel = WORKBENCH_PANEL_REGISTRY[id];
+  return (
+    panel.modes.some((value) => value === mode) && panel.stages.some((value) => value === stage)
+  );
+}

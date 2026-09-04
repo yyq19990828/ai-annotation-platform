@@ -91,8 +91,6 @@ import {
 } from "./useMaskQcReview";
 import type { MaskQcIssue } from "@/api/maskQc";
 import { usePredictionPropagation } from "./usePredictionPropagation";
-import { useAiPopoverFrame } from "./useAiPopoverFrame";
-import { useVideoTrackerPanelFrame } from "./useVideoTrackerPanelFrame";
 import { useAnnotationHistory, type VideoMaskFrameState } from "./useAnnotationHistory";
 import { useRecentClasses } from "./useRecentClasses";
 import { useSessionStats } from "./useSessionStats";
@@ -397,7 +395,7 @@ export function resolveLocalTaskUrlSync(
 
 interface WorkbenchShellReadyModel {
   kind: "ready";
-  layout: ComponentProps<typeof WorkbenchLayout>;
+  layout: Omit<ComponentProps<typeof WorkbenchLayout>, "videoTracker">;
   propagateDialog: ComponentProps<typeof VideoTrackerPropagateDialog>;
   maskCorrectionDialog: ComponentProps<typeof VideoMaskCorrectionDialog>;
   conversionDialog: ComponentProps<typeof MaskConversionDialog>;
@@ -663,16 +661,10 @@ export function useWorkbenchShellModel({
   const [showHotkeys, setShowHotkeys] = useState(false);
   // v0.15.3 · 工作台设置抽屉(齿轮菜单入口)。
   const [workbenchSettingsOpen, setWorkbenchSettingsOpen] = useState(false);
-  const [aiPopoverOpen, setAiPopoverOpen] = useState(false);
+  const workspaceCommands = useRef<WorkbenchWorkspaceCommands>(null);
   // v0.21.4 · 视频单题 AI(当前帧→图像 backend)是同步 fetch(非 triggerPreannotation mutation),
   // 单独一个运行态并入 aiRunning, 供 popover 转圈 + 防重复点击。
   const [videoFrameAiRunning, setVideoFrameAiRunning] = useState(false);
-  // v0.16.x 第 3 批 · AI 浮层位置/尺寸(+localStorage 持久化)抽到 useAiPopoverFrame;
-  // 开关 aiPopoverOpen 因切 task 时被关闭(与任务流纠缠)留壳层。
-  const { aiPopoverPosition, setAiPopoverPosition, aiPopoverSize, setAiPopoverSize } =
-    useAiPopoverFrame();
-  const { trackerPanelPosition, setTrackerPanelPosition, trackerPanelSize, setTrackerPanelSize } =
-    useVideoTrackerPanelFrame();
   const [stageGeom, setStageGeom] = useState<{
     imgW: number;
     imgH: number;
@@ -1023,8 +1015,6 @@ export function useWorkbenchShellModel({
 
   const openPropagateDialog = useCallback(
     (source: TrackerSourceAnnotation | TrackerSourceAnnotation[] | null) => {
-      // AI 单题与 AI 追踪共用顶部工具组；打开追踪时先收起单题面板，避免两个浮层叠加。
-      setAiPopoverOpen(false);
       // v0.22.2 · M2 · 归一化: null=无源, 单条=单源延展, ≥2 条=多选批量 (单 job 多源)。
       const list = Array.isArray(source) ? source : source ? [source] : [];
       setPropagateDialog({
@@ -1040,6 +1030,7 @@ export function useWorkbenchShellModel({
       setSeedAnchorFrame(null);
       setSeedCollecting(false);
       seedPrevToolRef.current = null;
+      workspaceCommands.current?.show("video-tracker");
     },
     [],
   );
@@ -1050,22 +1041,15 @@ export function useWorkbenchShellModel({
     setSeedObj(1);
     setSeedAnchorFrame(null);
     stopSeedCollecting();
+    workspaceCommands.current?.hide("video-tracker");
   }, [stopSeedCollecting]);
   const togglePropagateDialog = useCallback(() => {
-    if (propagateDialog) {
-      closePropagateDialog();
-      return;
-    }
-    openPropagateDialog(null);
-  }, [closePropagateDialog, openPropagateDialog, propagateDialog]);
+    if (propagateDialog) workspaceCommands.current?.show("video-tracker");
+    else openPropagateDialog(null);
+  }, [openPropagateDialog, propagateDialog]);
   const toggleAiPopover = useCallback(() => {
-    if (aiPopoverOpen) {
-      setAiPopoverOpen(false);
-      return;
-    }
-    closePropagateDialog();
-    setAiPopoverOpen(true);
-  }, [aiPopoverOpen, closePropagateDialog]);
+    workspaceCommands.current?.show("ai-task");
+  }, []);
   // v0.22.2 · U8 · 提交成功后不立即关闭对话框, 而就地转「追踪中…」进行态 (保留对话框显示进度,
   // 让位审阅条前给即时反馈)。清掉种子采集态 (与关闭同款), 但保留对话框记录并挂上 job id。
   const enterTrackingProgress = useCallback(
@@ -1195,7 +1179,8 @@ export function useWorkbenchShellModel({
 
   useEffect(() => {
     resetVideoStageUi();
-    setAiPopoverOpen(false);
+    workspaceCommands.current?.hide("ai-task");
+    closePropagateDialog();
     // 切 task / 切 batch 后, 丢弃指向其它 task 的待补选; 仅当新 task 正是
     // 跨帧 propagate 的目标时保留 (该补选逻辑见下方 annotationsData effect)。
     const pend = pendingCrossFrameSelectRef.current;
@@ -1205,7 +1190,7 @@ export function useWorkbenchShellModel({
     // pendingCrossFrameSelectRef 是 usePredictionPropagation 返回的稳定 useRef(声明在
     // 本 effect 下方,入依赖会 TDZ);ref 引用恒定不入依赖,行为与抽取前一致。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [taskId, resetVideoStageUi]);
+  }, [closePropagateDialog, taskId, resetVideoStageUi]);
 
   useEffect(() => {
     if (tasks.length === 0 && !directTaskQuery.data) return;
@@ -5446,15 +5431,25 @@ export function useWorkbenchShellModel({
     maskInteractionFrozen: maskCompareInteractionBlocked,
   });
 
-  const workspaceCommands = useRef<WorkbenchWorkspaceCommands>(null);
   const [workspaceState, setWorkspaceState] = useState<WorkbenchWorkspaceState>({
     taskQueueVisible: true,
     inspectorVisible: true,
+    aiTaskVisible: false,
+    videoTrackerVisible: false,
     canvasMaximized: false,
     taskQueueWidth: 220,
     inspectorWidth: 260,
     disabled: true,
   });
+  useEffect(() => {
+    if (
+      mode === "annotate" &&
+      isVideoTask &&
+      workspaceState.videoTrackerVisible &&
+      !propagateDialog
+    )
+      openPropagateDialog(null);
+  }, [isVideoTask, mode, openPropagateDialog, propagateDialog, workspaceState.videoTrackerVisible]);
   const setWorkbenchLayout = s.setWorkbenchLayout;
   const leftOpen = workspaceState.taskQueueVisible;
   const rightOpen = workspaceState.inspectorVisible;
@@ -6206,7 +6201,7 @@ export function useWorkbenchShellModel({
   const canPrepareMaskJoin =
     selectedMaskJoinCandidates.length >= 2 && (!isVideoTask || currentVideoSegment !== null);
 
-  const layout: ComponentProps<typeof WorkbenchLayout> = {
+  const layout: WorkbenchShellReadyModel["layout"] = {
     workspace: {
       context: `${mode}:${stageKind}`,
       legacy: {
@@ -6324,12 +6319,12 @@ export function useWorkbenchShellModel({
       rightSidebarOpen: rightOpen,
       onToggleLeftSidebar: toggleLeftSidebar,
       onToggleRightSidebar: toggleRightSidebar,
-      onRunAi: toggleAiPopover,
-      aiOpen: aiPopoverOpen,
+      onRunAi: stageKind === "3d" ? undefined : toggleAiPopover,
+      aiOpen: workspaceState.aiTaskVisible,
       // v0.21.4 · 视频项目也开放当前题 AI(单帧 → 图像 backend), 不再禁用工具栏 AI 按钮。
       aiDisabled: false,
       onToggleTracker: isVideoTask ? togglePropagateDialog : undefined,
-      trackerOpen: Boolean(propagateDialog),
+      trackerOpen: workspaceState.videoTrackerVisible,
       trackerRunning: Boolean(trackingJobId),
       onPrev: () => navigateTask("prev"),
       onNext: () => navigateTask("next"),
@@ -6929,19 +6924,15 @@ export function useWorkbenchShellModel({
     },
     aiPopover: {
       // v0.21.4 · 视频项目也开放当前题 AI(单帧 → 图像 backend), onRunAi 走帧路径。
-      open: aiPopoverOpen,
-      rightOffset: rightOpen ? rightPx + 44 : 44,
-      position: aiPopoverPosition,
-      onPositionChange: setAiPopoverPosition,
-      size: aiPopoverSize,
-      onSizeChange: setAiPopoverSize,
       aiModel,
       aiRunning,
       aiBoxCount: aiPopoverBoxCount,
       isVideoTask,
       confThreshold: s.confThreshold,
       aiTakeoverRate,
-      onClose: () => setAiPopoverOpen(false),
+      onClose: () => {
+        workspaceCommands.current?.hide("ai-task");
+      },
       // v0.21.4 · 视频走单帧路径(client 供图), 图像走既有 task 级 triggerPreannotation。
       onRunAi: isVideoTask ? handleRunVideoFrameAi : handleRunAi,
       // v0.18.28 · 项目存了编排时多给一个「按项目编排跑当前题」入口。
@@ -7087,10 +7078,7 @@ export function useWorkbenchShellModel({
 
   const propagateDialogProps: ComponentProps<typeof VideoTrackerPropagateDialog> = {
     open: Boolean(propagateDialog),
-    position: trackerPanelPosition,
-    onPositionChange: setTrackerPanelPosition,
-    size: trackerPanelSize,
-    onSizeChange: setTrackerPanelSize,
+    visible: workspaceState.videoTrackerVisible,
     // v0.21.27 · U-pvs-2 · 有落点后范围锚定首个落点帧 (seedAnchorFrame), 导航到别帧加修正点
     // 不移动传播范围; 无落点时跟随当前帧 (与现状一致)。
     frameIndex: seedAnchorFrame ?? s.videoFrameIndex,

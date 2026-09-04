@@ -291,12 +291,12 @@
 - [x] `public/media/ai/assisted-annotation.mp4` — 无侧边栏的真实 SAM3 Magic Box 粗框、候选收紧与类别确认 `[derived-mp4]`（P-COCO8）
 - [x] `images/sam/exemplar-interaction.gif` — 无侧边栏的真实 SAM3 Exemplar 车辆示例与全图相似候选 `[auto-gif]`（flow: `sam-tool-exemplar`，P-COCO8）
 - [ ] `images/sam/exemplar-yoloe-toolbar.png` — YOLOE exemplar 交互工具栏能力裁剪态；红框：仅正样例、无负框/叠加文本、输出形态 [manual]
-- [x] `images/sam/ai-inspector-panel.png` — 悬浮 AI 面板（Prompt/阈值滑块/变体选择） [auto]
+- [x] `images/sam/ai-inspector-panel.png` — 旧悬浮 AI 面板素材，已从用户指南撤下 [auto]
 - [ ] `images/workbench/current-task-project-pipeline.png` — 工作台「当前题 AI」面板按项目编排运行入口；红框：运行当前题（按项目编排 · N 阶段）按钮、项目编排来源提示 [manual]
 - [ ] `images/video-playback/sampling-config.png` — 项目设置帧采样配置区（mode/target_fps/frame_step） [manual]
 - [ ] `images/video-playback/chapter-sidebar.png` — 章节侧栏含彩色色带 + 章节列表 [manual]
-- [x] `images/video-propagate/ai-tracking-panel.png` — 画布右上追踪面板展示新版作用范围、真实 backend 提供方、方向、范围与种子摘要 `[auto]`（scene: `workbench/video-ai-tracking-panel`）
-- [x] `public/media/video/ai-tracker-panel.mp4` — 顶部打开 → 切换作用范围 → 拖动 / 缩放 → 关闭重开恢复 → 与 AI 单题互斥 `[derived-mp4]`
+- [x] `images/video-propagate/ai-tracking-panel.png` — 旧画布浮层素材，已从用户指南撤下 `[auto]`（scene: `workbench/video-ai-tracking-panel`）
+- [x] `public/media/video/ai-tracker-panel.mp4` — 旧互斥浮层素材，已从用户指南撤下；新流程脚本覆盖停靠、隐藏恢复与并存 `[derived-mp4]`
 - [ ] `images/video-propagate/tracker-job-badge.png` — 进度 badge + 取消按钮 [manual]
 - [x] `public/media/video/workbench-overview.mp4` — 视频工作台整体（时间轴 + 逐帧前进 + 播放）`[derived-mp4]`（开源 P-VIDEO-DEV，seed_video.py）
 - [~] ~~`images/workbench/video-track-trajectory.gif`~~ — **已由** `public/media/video/video-draw.mp4` **替代**：轨迹关键帧与插值完整流已迁移到 DocsVideo

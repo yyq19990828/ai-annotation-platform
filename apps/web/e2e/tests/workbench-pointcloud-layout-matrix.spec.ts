@@ -217,7 +217,7 @@ for (const mode of ["annotate", "review"] as const) {
         .poll(async () => (await savedContext(page, context))?.snapshot)
         .toEqual(latestSubmitted);
       const saved = await savedContext(page, context);
-      expect(saved.schemaVersion).toBe(2);
+      expect(saved.schemaVersion).toBe(3);
       expect(getCanvasPlacement(saved.snapshot as WorkspaceSnapshot)).toBe("below");
       expect(writes.length).toBeGreaterThan(0);
       expect(writes.every((keys) => keys.length === 1 && keys[0] === context)).toBe(true);

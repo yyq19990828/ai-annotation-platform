@@ -321,7 +321,13 @@ describe("workspace executor with Dockview 8", () => {
           type: "leaf",
           size: 0,
           visible: false,
-          data: { id: "parking", views: [], locked: "no-drop-target", hideHeader: true },
+          data: {
+            id: "parking",
+            views: ["ai-task", "video-tracker"],
+            activeView: "ai-task",
+            locked: "no-drop-target",
+            hideHeader: true,
+          },
         },
       ],
     };

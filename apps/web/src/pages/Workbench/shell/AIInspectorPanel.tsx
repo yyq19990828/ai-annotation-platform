@@ -22,7 +22,6 @@ import { displayClassName } from "../stage/colors";
 import { AttributeForm, getMissingRequired } from "./AttributeForm";
 import { PreannotateConfigForm } from "@/pages/AIPreAnnotate/components/PreannotateConfigForm";
 import { type PreannotateConfig } from "@/pages/AIPreAnnotate/components/usePreannotateConfig";
-import { SIDE_FLOATING_PANEL_MIN_SIZE, SIDE_FLOATING_PANEL_MAX_SIZE } from "./floatingPanelSizing";
 import {
   AI_PANEL_HEADER_CLASS,
   AI_PANEL_ICON_CLASS,
@@ -418,13 +417,6 @@ export function AIInspectorPanel({
 }
 
 interface AIPredictionPopoverProps {
-  open: boolean;
-  rightOffset: number;
-  position: { left: number; top: number } | null;
-  onPositionChange: (position: { left: number; top: number }) => void;
-  // v0.14.18 · 可缩放 (与浮出边栏一致): null = CSS 默认尺寸; 拖右下角后为显式 w/h.
-  size?: { w: number; h: number } | null;
-  onSizeChange?: (size: { w: number; h: number }) => void;
   aiModel: string;
   aiRunning: boolean;
   aiBoxCount: number;
@@ -461,12 +453,6 @@ interface AIPredictionPopoverProps {
 }
 
 export function AIPredictionPopover({
-  open,
-  rightOffset,
-  position,
-  onPositionChange,
-  size,
-  onSizeChange,
   aiModel,
   aiRunning,
   aiBoxCount,
@@ -492,9 +478,6 @@ export function AIPredictionPopover({
   onSelectBackend,
   projectMlBackendId,
 }: AIPredictionPopoverProps) {
-  const panelRef = useRef<HTMLDivElement | null>(null);
-  const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
-
   // 冷启动动态计时: variant 未 warm 且推理中 → 模型正载入显存。模型加载无原生进度
   // 信号(真·逐%拿不到), 故只给"已等 Xs"实时计时 + 静态经验区间, 不做误导性百分比。
   const coldStarting = aiRunning && isVariantWarmProp === false;
@@ -511,162 +494,18 @@ export function AIPredictionPopover({
     return () => window.clearInterval(id);
   }, [coldStarting]);
 
-  const handleDragStart = (evt: React.PointerEvent<HTMLDivElement>) => {
-    if ((evt.target as HTMLElement).closest("button")) return;
-    const rect = panelRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    dragOffsetRef.current = { x: evt.clientX - rect.left, y: evt.clientY - rect.top };
-    evt.currentTarget.setPointerCapture?.(evt.pointerId);
-    evt.preventDefault();
-  };
-
-  const handleDragMove = (evt: React.PointerEvent<HTMLDivElement>) => {
-    if (!dragOffsetRef.current) return;
-    const rect = panelRef.current?.getBoundingClientRect();
-    const width = rect?.width ?? 360;
-    const height = rect?.height ?? 260;
-    const maxLeft = Math.max(8, window.innerWidth - width - 8);
-    const maxTop = Math.max(8, window.innerHeight - height - 8);
-    onPositionChange({
-      left: Math.min(maxLeft, Math.max(8, evt.clientX - dragOffsetRef.current.x)),
-      top: Math.min(maxTop, Math.max(8, evt.clientY - dragOffsetRef.current.y)),
-    });
-  };
-
-  const handleDragEnd = () => {
-    dragOffsetRef.current = null;
-  };
-
-  // v0.14.18 · 右下角缩放 (与 FloatingPanelShell 同款 UX). 尺寸范围与浮出边栏一致
-  // (SIDE_FLOATING_PANEL_MIN/MAX_SIZE), 再按视口可用空间收窄上限.
-  const resizeStartRef = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
-  const handleResizeStart = (evt: React.PointerEvent<HTMLButtonElement>) => {
-    const rect = panelRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    // 默认右侧停靠在开始缩放时转成显式左上坐标，让右下角手柄跟随指针，位置也进入偏好记忆。
-    if (!position) onPositionChange({ left: Math.round(rect.left), top: Math.round(rect.top) });
-    resizeStartRef.current = { x: evt.clientX, y: evt.clientY, w: rect.width, h: rect.height };
-    evt.currentTarget.setPointerCapture?.(evt.pointerId);
-    evt.preventDefault();
-    evt.stopPropagation();
-  };
-  const handleResizeMove = (evt: React.PointerEvent<HTMLButtonElement>) => {
-    const s = resizeStartRef.current;
-    if (!s || !onSizeChange) return;
-    const rect = panelRef.current?.getBoundingClientRect();
-    const left = rect?.left ?? 0;
-    const top = rect?.top ?? 0;
-    const minW = SIDE_FLOATING_PANEL_MIN_SIZE.w;
-    const minH = SIDE_FLOATING_PANEL_MIN_SIZE.h;
-    const maxW = Math.max(
-      minW,
-      Math.min(SIDE_FLOATING_PANEL_MAX_SIZE.w, window.innerWidth - left - 8),
-    );
-    const maxH = Math.max(
-      minH,
-      Math.min(SIDE_FLOATING_PANEL_MAX_SIZE.h, window.innerHeight - top - 8),
-    );
-    onSizeChange({
-      w: Math.round(Math.min(maxW, Math.max(minW, s.w + evt.clientX - s.x))),
-      h: Math.round(Math.min(maxH, Math.max(minH, s.h + evt.clientY - s.y))),
-    });
-  };
-  const handleResizeEnd = () => {
-    resizeStartRef.current = null;
-  };
-
-  useEffect(() => {
-    const node = panelRef.current;
-    if (!node || !open) return;
-    const applyFrame = () => {
-      if (position) {
-        node.style.removeProperty("--ai-inspector-popover-right");
-      } else {
-        node.style.setProperty("--ai-inspector-popover-top", "58px");
-        node.style.setProperty("--ai-inspector-popover-right", `${rightOffset}px`);
-        node.style.removeProperty("--ai-inspector-popover-left");
-      }
-
-      const maxAvailableW = Math.max(1, window.innerWidth - 16);
-      const maxAvailableH = Math.max(1, window.innerHeight - 16);
-      const minW = Math.min(SIDE_FLOATING_PANEL_MIN_SIZE.w, maxAvailableW);
-      const minH = Math.min(SIDE_FLOATING_PANEL_MIN_SIZE.h, maxAvailableH);
-      const nextSize = size
-        ? {
-            w: Math.round(
-              Math.max(minW, Math.min(size.w, SIDE_FLOATING_PANEL_MAX_SIZE.w, maxAvailableW)),
-            ),
-            h: Math.round(
-              Math.max(minH, Math.min(size.h, SIDE_FLOATING_PANEL_MAX_SIZE.h, maxAvailableH)),
-            ),
-          }
-        : null;
-
-      if (nextSize) {
-        node.style.setProperty("--ai-inspector-popover-w", `${nextSize.w}px`);
-        node.style.setProperty("--ai-inspector-popover-h", `${nextSize.h}px`);
-        if ((nextSize.w !== size?.w || nextSize.h !== size?.h) && onSizeChange) {
-          onSizeChange(nextSize);
-        }
-      } else {
-        node.style.removeProperty("--ai-inspector-popover-w");
-        node.style.removeProperty("--ai-inspector-popover-h");
-      }
-
-      if (position) {
-        const rect = node.getBoundingClientRect();
-        const nextPosition = {
-          left: Math.round(
-            Math.max(8, Math.min(position.left, window.innerWidth - rect.width - 8)),
-          ),
-          top: Math.round(
-            Math.max(8, Math.min(position.top, window.innerHeight - rect.height - 8)),
-          ),
-        };
-        node.style.setProperty("--ai-inspector-popover-left", `${nextPosition.left}px`);
-        node.style.setProperty("--ai-inspector-popover-top", `${nextPosition.top}px`);
-        if (nextPosition.left !== position.left || nextPosition.top !== position.top) {
-          onPositionChange(nextPosition);
-        }
-      }
-    };
-
-    applyFrame();
-    window.addEventListener("resize", applyFrame);
-    return () => window.removeEventListener("resize", applyFrame);
-  }, [onPositionChange, onSizeChange, open, position, rightOffset, size]);
-
-  if (!open) return null;
-
   return (
     <div
-      ref={panelRef}
       data-testid="ai-prediction-popover"
-      className={cn(
-        AI_PANEL_SURFACE_CLASS,
-        "fixed z-popover flex flex-col",
-        "h-[var(--ai-inspector-popover-h,auto)] w-[var(--ai-inspector-popover-w,min(360px,calc(100vw-32px)))]",
-        "max-h-[calc(100vh-92px)] max-w-[calc(100vw-32px)]",
-        position
-          ? "top-[var(--ai-inspector-popover-top)] left-[var(--ai-inspector-popover-left)]"
-          : "top-[var(--ai-inspector-popover-top)] right-[var(--ai-inspector-popover-right)]",
-      )}
+      className={cn(AI_PANEL_SURFACE_CLASS, "flex h-full min-h-0 flex-col rounded-none border-0")}
     >
-      <div
-        onPointerDown={handleDragStart}
-        onPointerMove={handleDragMove}
-        onPointerUp={handleDragEnd}
-        onPointerCancel={handleDragEnd}
-        className={cn(AI_PANEL_HEADER_CLASS, "cursor-move touch-none")}
-        title="拖动 AI 面板"
-      >
+      <div className={AI_PANEL_HEADER_CLASS}>
         <div className="mb-2 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className={AI_PANEL_ICON_CLASS}>
               <Icon name="bot" size={14} />
             </span>
             <b className="text-sm">当前题 AI</b>
-            <Icon name="move" size={12} className="text-muted-foreground" />
           </div>
           <div className="flex items-center gap-1.5">
             <Badge variant="ai" dot={!aiRunning} className="gap-1 text-2xs">
@@ -823,22 +662,6 @@ export function AIPredictionPopover({
           )}
         </div>
       </div>
-      {/* v0.14.18 · 右下角缩放手柄 (与 FloatingPanelShell 同款). */}
-      {onSizeChange && (
-        <button
-          type="button"
-          className="absolute bottom-0 right-0 z-local-1 size-[18px] cursor-nwse-resize touch-none appearance-none border-0 bg-transparent p-0 text-muted-foreground hover:text-status-info"
-          onPointerDown={handleResizeStart}
-          onPointerMove={handleResizeMove}
-          onPointerUp={handleResizeEnd}
-          onPointerCancel={handleResizeEnd}
-          aria-label="调整 AI 面板尺寸"
-          title="拖拽调整尺寸"
-        >
-          <span className="pointer-events-none absolute bottom-1 right-1 h-px w-[9px] origin-right rotate-[-45deg] bg-current" />
-          <span className="pointer-events-none absolute bottom-2 right-1 h-px w-[5px] origin-right rotate-[-45deg] bg-current" />
-        </button>
-      )}
     </div>
   );
 }

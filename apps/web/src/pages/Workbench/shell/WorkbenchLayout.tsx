@@ -11,6 +11,7 @@ import {
 import { ConflictModal } from "@/components/workbench/ConflictModal";
 import { RejectReasonModal } from "@/pages/Review/RejectReasonModal";
 import type { VideoStageControls } from "../stage/videoStageControls";
+import { VideoTrackerPropagateDialog } from "../stage/VideoTrackerPropagateDialog";
 import { AIInspectorPanel, AIPredictionPopover } from "./AIInspectorPanel";
 import { DeleteConfirmModal } from "./DeleteConfirmModal";
 import { DiscussionPanel } from "./DiscussionPanel";
@@ -49,12 +50,13 @@ interface WorkbenchLayoutProps {
   banners: ComponentProps<typeof WorkbenchBanners>;
   topbar: ComponentProps<typeof Topbar>;
   stageHost: ComponentPropsWithoutRef<typeof WorkbenchStageHost>;
-  /** 相对中间画布居中的非模态浮层，例如视频 AI 追踪配置与候选审阅。 */
+  /** 保持锚定画布的审阅与 modal 层。 */
   stageOverlay?: ReactNode;
   videoControlsRef: Ref<VideoStageControls>;
   statusBar: ComponentProps<typeof StatusBar>;
   inspector: ComponentProps<typeof AIInspectorPanel>;
   aiPopover: ComponentProps<typeof AIPredictionPopover>;
+  videoTracker: ComponentProps<typeof VideoTrackerPropagateDialog>;
   hotkeys: ComponentProps<typeof HotkeyCheatSheet>;
   offlineQueue: ComponentProps<typeof OfflineQueueDrawer>;
   /** v0.15.3 · 工作台设置抽屉(齿轮菜单入口)。 */
@@ -107,6 +109,7 @@ export function WorkbenchLayout({
   statusBar,
   inspector,
   aiPopover,
+  videoTracker,
   hotkeys,
   offlineQueue,
   workbenchSettings,
@@ -195,6 +198,8 @@ export function WorkbenchLayout({
           ),
           inspector: <AIInspectorPanel {...inspector} open floating onDetach={undefined} />,
           discussion: <DiscussionPanel {...discussionPanel} floating onDetach={undefined} />,
+          "ai-task": <AIPredictionPopover {...aiPopover} />,
+          "video-tracker": <VideoTrackerPropagateDialog {...videoTracker} />,
         }}
       />
 
@@ -220,7 +225,6 @@ export function WorkbenchLayout({
         />
       )}
 
-      <AIPredictionPopover {...aiPopover} />
       <HotkeyCheatSheet {...hotkeys} />
       <OfflineQueueDrawer {...offlineQueue} />
       <WorkbenchSettingsDrawer {...workbenchSettings} />

@@ -31,12 +31,14 @@ import { createWorkbenchLayoutExecutor } from "./workbenchLayoutExecutor";
 import {
   createWorkspacePreset,
   migrateLegacyWorkspace,
+  presetSupportsContext,
   type WorkspacePresetId,
 } from "./workbenchLayoutPresets";
 import type { PanelId, WorkspaceContext } from "./workbenchLayoutSnapshot";
 import {
   PERIPHERAL_PANELS,
   WORKBENCH_PANEL_REGISTRY,
+  panelSupportsContext,
   type WorkbenchPanelSlots,
   type WorkbenchWorkspaceCommands,
   type WorkbenchWorkspaceState,
@@ -136,6 +138,8 @@ const theme = { name: "workbench", className: "workbench-dock-theme" };
 const EMPTY_STATE: WorkbenchWorkspaceState = {
   taskQueueVisible: true,
   inspectorVisible: true,
+  aiTaskVisible: false,
+  videoTrackerVisible: false,
   canvasMaximized: false,
   taskQueueWidth: 220,
   inspectorWidth: 260,
@@ -145,6 +149,8 @@ const PRESET_LABELS: Record<WorkspacePresetId, string> = {
   standard: "标准标注",
   focus: "专注画布",
   review: "审核协作",
+  "ai-review": "图片 AI 审阅",
+  "video-tracking": "视频追踪",
 };
 
 export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
@@ -153,6 +159,10 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
   const userId = user?.id;
   const legacyAccount = useRef(userId);
   const compact = useMediaQuery("(max-width: 1024px)");
+  const availablePanels = useMemo(
+    () => PERIPHERAL_PANELS.filter((id) => panelSupportsContext(id, context)),
+    [context],
+  );
   const host = useRef<HTMLDivElement>(null);
   const bounds = useCallback(
     () => ({
@@ -219,6 +229,8 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
     const next = {
       taskQueueVisible: opened.includes("task-queue"),
       inspectorVisible: opened.includes("inspector"),
+      aiTaskVisible: opened.includes("ai-task"),
+      videoTrackerVisible: opened.includes("video-tracker"),
       canvasMaximized: engine.isCanvasMaximized(),
       taskQueueWidth: api.getPanel("task-queue")?.api.width ?? 220,
       inspectorWidth: api.getPanel("inspector")?.api.width ?? 260,
@@ -274,12 +286,16 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
 
   const commands = useMemo<WorkbenchWorkspaceCommands>(
     () => ({
-      show: (id) => run((engine) => engine.show(id), true),
+      show: (id) => {
+        if (panelSupportsContext(id, context)) run((engine) => engine.show(id), true);
+      },
       hide: (id) => run((engine) => engine.hide(id), true),
-      toggle: (id) =>
-        run((engine) => (engine.isVisible(id) ? engine.hide(id) : engine.show(id)), true),
+      toggle: (id) => {
+        if (panelSupportsContext(id, context))
+          run((engine) => (engine.isVisible(id) ? engine.hide(id) : engine.show(id)), true);
+      },
     }),
-    [run],
+    [context, run],
   );
   useImperativeHandle(commandsRef, () => commands, [commands]);
 
@@ -332,12 +348,14 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
         disabled: owner.readOnly || compact || id === "canvas",
         onSelect: () => run((engine) => engine.dock(id, position)),
       })),
-      ...PERIPHERAL_PANELS.filter((target) => target !== id).map((target) => ({
-        id: `tab-${target}`,
-        label: `与${WORKBENCH_PANEL_REGISTRY[target].title}合并为标签`,
-        disabled: owner.readOnly || compact || id === "canvas",
-        onSelect: () => run((engine) => engine.tab(id, target)),
-      })),
+      ...availablePanels
+        .filter((target) => target !== id)
+        .map((target) => ({
+          id: `tab-${target}`,
+          label: `与${WORKBENCH_PANEL_REGISTRY[target].title}合并为标签`,
+          disabled: owner.readOnly || compact || id === "canvas",
+          onSelect: () => run((engine) => engine.tab(id, target)),
+        })),
       {
         id: "float",
         label: "浮动面板",
@@ -351,7 +369,7 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
         onSelect: () => commands.hide(id),
       },
     ],
-    [commands, compact, owner.readOnly, run],
+    [availablePanels, commands, compact, owner.readOnly, run],
   );
 
   useLayoutEffect(() => {
@@ -402,6 +420,7 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
         parking.header.hidden = true;
         parking.api.setVisible(false);
       }
+      for (const id of PERIPHERAL_PANELS) if (!availablePanels.includes(id)) engine.hide(id);
       if (compact && owner.initialized) engine.enterCompact();
       publish();
     } catch {
@@ -410,7 +429,7 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
     } finally {
       restoring.current = false;
     }
-  }, [api, bounds, compact, context, dismissUndo, owner, publish, userId]);
+  }, [api, availablePanels, bounds, compact, context, dismissUndo, owner, publish, userId]);
 
   useLayoutEffect(() => {
     const engine = executor.current;
@@ -505,14 +524,16 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
   const menu = (
     <DropdownMenu
       items={[
-        ...(Object.keys(PRESET_LABELS) as WorkspacePresetId[]).map((id) => ({
-          id,
-          label: `${PRESET_LABELS[id]}布局`,
-          disabled: owner.readOnly || compact,
-          onSelect: () => preset(id),
-        })),
+        ...(Object.keys(PRESET_LABELS) as WorkspacePresetId[])
+          .filter((id) => presetSupportsContext(id, context))
+          .map((id) => ({
+            id,
+            label: `${PRESET_LABELS[id]}布局`,
+            disabled: owner.readOnly || compact,
+            onSelect: () => preset(id),
+          })),
         { id: "separator", label: "", divider: true },
-        ...PERIPHERAL_PANELS.map((id) => ({
+        ...availablePanels.map((id) => ({
           id,
           label: WORKBENCH_PANEL_REGISTRY[id].title,
           active: visiblePanels.includes(id),

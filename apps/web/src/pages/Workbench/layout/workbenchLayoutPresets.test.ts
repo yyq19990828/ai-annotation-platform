@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createWorkspacePreset,
   migrateLegacyWorkspace,
+  presetSupportsContext,
   WORKSPACE_PRESETS,
 } from "./workbenchLayoutPresets";
 import { PANEL_IDS, WORKSPACE_CONTEXTS, type WorkspaceNode } from "./workbenchLayoutSnapshot";
@@ -10,7 +11,7 @@ const groups = (node: WorkspaceNode): { id: string; views: string[] }[] =>
   node.type === "leaf" ? [node.data] : node.data.flatMap(groups);
 
 describe("workspace presets", () => {
-  it("provides all five panels once in every context without business params", () => {
+  it("provides all seven panels once in every context without business params", () => {
     for (const context of WORKSPACE_CONTEXTS)
       for (const preset of WORKSPACE_PRESETS) {
         const snapshot = createWorkspacePreset(preset.id, { width: 1600, height: 900 }, context);
@@ -23,6 +24,13 @@ describe("workspace presets", () => {
           Object.values(snapshot.layout.panels).every((panel) => panel.params === undefined),
         ).toBe(true);
       }
+  });
+
+  it("offers tool presets only in their supported annotate context", () => {
+    expect(presetSupportsContext("ai-review", "annotate:image")).toBe(true);
+    expect(presetSupportsContext("ai-review", "review:image")).toBe(false);
+    expect(presetSupportsContext("video-tracking", "annotate:video")).toBe(true);
+    expect(presetSupportsContext("video-tracking", "review:video")).toBe(false);
   });
 
   it("uses maximize for focus and preserves a full desktop tree", () => {
@@ -44,6 +52,8 @@ describe("workspace presets", () => {
     const previous = structuredClone(legacy);
     const snapshot = migrateLegacyWorkspace(legacy, { width: 1600, height: 900 });
     expect(groups(snapshot.layout.grid.root).find((g) => g.id === "parking")?.views).toEqual([
+      "ai-task",
+      "video-tracker",
       "task-queue",
       "class-palette",
     ]);

@@ -18,11 +18,13 @@ WorkbenchShell
        -> Topbar
        -> WorkbenchDockWorkspace
             -> canvas: ToolDock / WorkbenchStageHost / StatusBar
-                 -> stageOverlay（AI 追踪面板 / 候选审阅条）
+                 -> stageOverlay（候选审阅条）
             -> task-queue: TaskQueuePanel（任务队列）
             -> class-palette: TaskQueuePanel（类别面板）
             -> inspector: AIInspectorPanel
             -> discussion: DiscussionPanel
+            -> ai-task: AIPredictionPopover
+            -> video-tracker: VideoTrackerPropagateDialog
   -> WorkbenchOverlays
 ```
 
@@ -82,7 +84,7 @@ type StageKind = "image" | "video" | "3d";
 
 这个边界保证视频 bbox / track 新建时也能显示 class picker，不再依赖 `ImageStage.overlay`。
 
-视频 AI 追踪面板和候选审阅条使用 `WorkbenchLayout.stageOverlay`，相对中间 Stage 定位。顶部 `Topbar` 在视频任务中并列「追踪」与「AI 单题」入口，两个配置面板互斥。它们的位置 / 尺寸通过 `useFloatingPanelFrame` 保存到各自的 localStorage key，不属于下文的服务端 `workbench.layout` 偏好树。
+视频候选审阅条仍使用 `WorkbenchLayout.stageOverlay`，相对中间 Stage 定位。当前题 AI 与视频追踪是独立 Dockview panel，视频标注中可以同时显示；打开入口会显示或聚焦已有实例，不创建第二份业务 session。
 
 ## 可停靠工作区
 
@@ -95,12 +97,14 @@ type StageKind = "image" | "video" | "3d";
 | `class-palette` | 类别面板                        | `onlyWhenVisible`；允许停靠、标签、浮动与隐藏                        |
 | `inspector`     | 标注详情、人工标注与 AI 候选    | `always`；隐藏时保留未完成的属性编辑                                 |
 | `discussion`    | 评论、历史、Issue               | `always`；隐藏时保留未发送输入                                       |
+| `ai-task`       | 当前题 AI 运行与候选审阅        | `always`；仅图片、视频标注 context 提供入口                          |
+| `video-tracker` | 视频追踪配置与运行              | `always`；仅视频标注 context 提供入口                                |
 
 外围面板可放到画布左、右或底部，也可与其他外围面板组成标签。同窗口浮窗可以包含标签，但浮窗内部不支持再次切分网格。画布换位命令将同一个 `canvas` group 放到整棵可见树的左、右、上、下边缘；画布继续隐藏 header 并锁住原生拖放。`parking` 不显示 header，也不接收用户拖放。适配层不提供 popout，不调用 `addPopoutGroup`，快照清洗也不保留外部窗口描述。
 
 隐藏面板时，executor 先记录原 group、tab index 与浮窗矩形，再移动同一实例到不可见的 `parking` group。恢复优先使用仍存在的合法返回位置，否则按 registry 默认区放置。布局入口不调用 `close` 或 `removePanel`；`always` 面板保持 DOM，隐藏时停止非必要的持续工作。
 
-顶部“布局”菜单提供“标准标注”“专注画布”“审核协作”、面板列表和“重置当前布局”。专注画布使用现有 canvas group 的 maximize / restore。预设替换与一次会话级撤销都通过 executor 原位重排现有面板，不触发全树 `fromJSON`，也不改变标注内容和 Stage 的 React 身份。
+顶部“布局”菜单提供“标准标注”“专注画布”“审核协作”，并按 context 提供“图片 AI 审阅”或“视频追踪”、面板列表和“重置当前布局”。专注画布使用现有 canvas group 的 maximize / restore。预设替换与一次会话级撤销都通过 executor 原位重排现有面板，不触发全树 `fromJSON`，也不改变标注内容和 Stage 的 React 身份。
 
 ### 讨论面板与已有入口
 
@@ -133,18 +137,22 @@ type StageKind = "image" | "video" | "3d";
   engine: "dockview@8",
   contexts: {
     "annotate:image": {
-      schemaVersion: 2,
-      snapshot: { layout: serializedDockview, returns: panelReturnPositions }
+      schemaVersion: 3,
+      snapshot: {
+        layout: serializedDockview,
+        returns: panelReturnPositions,
+        visibilityIntent: { "ai-task": "shown", "video-tracker": "hidden" }
+      }
     }
   }
 }
 ```
 
-context 是 `annotate|review × image|video|3d` 的六项闭集，按账号分别保存。`snapshot.layout` 只保留引擎布局字段，`returns` 只保留隐藏面板的 group、index 与可选浮窗矩形。
+context 是 `annotate|review × image|video|3d` 的六项闭集，按账号分别保存。`snapshot.layout` 只保留引擎布局字段，`returns` 只保留隐藏面板的 group、index 与可选浮窗矩形，`visibilityIntent` 记录两个工具面板的显示或隐藏意图。
 
-当前客户端解释 schema 1 / 2 并统一写入 schema 2，核心面板固定为上述五项。schema 1 的合法树按原样读取，第一次布局变更后升级为 schema 2；schema 3 或更高版本显示只读标准布局，提示刷新到新版，也不允许重置覆盖。损坏快照和引擎恢复失败同样使用只读标准布局，但允许用户在桌面模式显式重置。
+当前客户端解释 schema 1 / 2 / 3 并统一写入 schema 3。旧五面板快照第一次变更时补齐两个工具节点；schema 4 或更高版本显示只读标准布局，提示刷新到新版，也不允许重置覆盖。损坏快照和引擎恢复失败同样使用只读标准布局，但允许用户在桌面模式显式重置。
 
-`workbenchLayoutSnapshot` 对读写执行同一套清洗：UTF-8 JSON 上限 64 KiB；持久化最多 7 个 panel、7 个用户 group 和 1 个 parking group；schema 1 / 2 只接受五个核心 panel。非有限尺寸、非法 canvas、重复 panel 和不合法树会触发恢复路径，业务 params、popout 与不支持的引擎字段不进入快照。浮窗边界按工作区实际 client rect 夹取。
+`workbenchLayoutSnapshot` 对读写执行同一套清洗：UTF-8 JSON 上限 64 KiB；持久化最多 7 个 panel、7 个用户 group 和 1 个 parking group；schema 1 / 2 接受五个核心 panel，schema 3 恰好包含七个 panel。非有限尺寸、非法 canvas、重复 panel 和不合法树会触发恢复路径，业务 params、popout 与不支持的引擎字段不进入快照。浮窗边界按工作区实际 client rect 夹取。
 
 ### 单一写入者
 
@@ -172,7 +180,7 @@ context 是 `annotate|review × image|video|3d` 的六项闭集，按账号分�
 | `cameraPanels`      | 按相机 role 保存 2D 相机面板布局               |
 | `pointcloudCamera`  | `persistCameraView` 开启时记录与恢复点云主视角 |
 
-当前题 AI、视频追踪、3D 三视图、相机面板、PSR、选中信息卡和桌宠继续位于各自 Stage overlay；Drawer、Modal 与 Toast 也不进入 Docking 树。
+3D 三视图、相机面板、PSR、选中信息卡和桌宠继续位于各自 Stage overlay；Drawer、Modal、候选审阅条与 Toast 也不进入 Docking 树。
 
 ## 偏好四分树与设置抽屉
 

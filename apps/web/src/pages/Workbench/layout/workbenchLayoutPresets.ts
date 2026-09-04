@@ -14,6 +14,8 @@ export const WORKSPACE_PRESETS = [
   { id: "standard", title: "标准标注" },
   { id: "focus", title: "专注画布" },
   { id: "review", title: "审核协作" },
+  { id: "ai-review", title: "图片 AI 审阅", contexts: ["annotate:image"] },
+  { id: "video-tracking", title: "视频追踪", contexts: ["annotate:video"] },
 ] as const;
 export type WorkspacePresetId = (typeof WORKSPACE_PRESETS)[number]["id"];
 export const DEFAULT_WORKSPACE_BOUNDS: WorkspaceBounds = { width: 1440, height: 800 };
@@ -22,12 +24,20 @@ export const PANEL_DEFAULT_POSITION = {
   "class-palette": "left",
   inspector: "right",
   discussion: "below",
+  "ai-task": "right",
+  "video-tracker": "right",
 } as const;
 
-function leaf(id: string, views: PanelId[], size: number, hidden = false): WorkspaceNode {
+function leaf(
+  id: string,
+  views: PanelId[],
+  size: number,
+  hidden = false,
+  activeView: PanelId | undefined = views[0],
+): Extract<WorkspaceNode, { type: "leaf" }> {
   return {
     type: "leaf",
-    data: { id, views, ...(views.length ? { activeView: views[0] } : {}) },
+    data: { id, views, ...(activeView ? { activeView } : {}) },
     size,
     ...(hidden ? { visible: false } : {}),
   };
@@ -42,49 +52,89 @@ export function createWorkspacePreset(
   _context?: WorkspaceContext,
 ): WorkspaceSnapshot {
   const { width, height } = bounds;
-  const parking = leaf(
-    "parking",
-    preset === "review" ? ["task-queue", "class-palette"] : [],
-    0,
-    true,
-  );
-  const root =
+  const parked: PanelId[] =
     preset === "review"
+      ? ["task-queue", "class-palette", "ai-task", "video-tracker"]
+      : preset === "ai-review"
+        ? ["video-tracker"]
+        : preset === "video-tracking"
+          ? ["discussion", "ai-task"]
+          : ["ai-task", "video-tracker"];
+  const parking = leaf("parking", parked, 0, true);
+  const root =
+    preset === "ai-review"
       ? branch(
           [
             branch(
               [
-                leaf("canvas", ["canvas"], width * 0.65),
-                leaf("inspector", ["inspector"], width * 0.35),
+                leaf("task-tools", ["task-queue", "class-palette"], width * 0.16),
+                leaf("canvas", ["canvas"], width * 0.58),
+                leaf("inspector", ["inspector", "ai-task"], width * 0.26, false, "ai-task"),
               ],
-              height * 0.7,
+              height * 0.72,
             ),
-            leaf("discussion", ["discussion"], height * 0.3),
+            leaf("discussion", ["discussion"], height * 0.28),
             parking,
           ],
           width,
         )
-      : branch(
-          [
-            branch(
+      : preset === "video-tracking"
+        ? branch(
+            [
+              leaf("task-tools", ["task-queue", "class-palette"], width * 0.16),
+              leaf("canvas", ["canvas"], width * 0.58),
+              leaf(
+                "video-tracker",
+                ["video-tracker", "inspector"],
+                width * 0.26,
+                false,
+                "video-tracker",
+              ),
+              parking,
+            ],
+            height,
+          )
+        : preset === "review"
+          ? branch(
               [
-                leaf("task-queue", ["task-queue"], height * 0.55),
-                leaf("class-palette", ["class-palette"], height * 0.45),
+                branch(
+                  [
+                    leaf("canvas", ["canvas"], width * 0.65),
+                    leaf("inspector", ["inspector"], width * 0.35),
+                  ],
+                  height * 0.7,
+                ),
+                leaf("discussion", ["discussion"], height * 0.3),
+                parking,
               ],
-              width * 0.15,
-            ),
-            leaf("canvas", ["canvas"], width * 0.7),
-            branch(
+              width,
+            )
+          : branch(
               [
-                leaf("inspector", ["inspector"], Math.min(360, height * 0.65)),
-                leaf("discussion", ["discussion"], Math.max(height - 360, height * 0.35)),
+                branch(
+                  [
+                    leaf("task-queue", ["task-queue"], height * 0.55),
+                    leaf("class-palette", ["class-palette"], height * 0.45),
+                  ],
+                  width * 0.15,
+                ),
+                leaf("canvas", ["canvas"], width * 0.7),
+                branch(
+                  [
+                    leaf("inspector", ["inspector"], Math.min(360, height * 0.65)),
+                    leaf("discussion", ["discussion"], Math.max(height - 360, height * 0.35)),
+                  ],
+                  width * 0.15,
+                ),
+                parking,
               ],
-              width * 0.15,
-            ),
-            parking,
-          ],
-          height,
-        );
+              height,
+            );
+  const returns = Object.fromEntries(
+    parked
+      .filter((id) => id !== "ai-task" && id !== "video-tracker")
+      .map((id) => [id, { group: id, index: 0 }]),
+  );
   return sanitizeWorkspaceSnapshot(
     {
       layout: {
@@ -92,22 +142,26 @@ export function createWorkspacePreset(
           root,
           width,
           height,
-          orientation: preset === "review" ? "VERTICAL" : "HORIZONTAL",
+          orientation: preset === "review" || preset === "ai-review" ? "VERTICAL" : "HORIZONTAL",
           ...(preset === "focus" ? { maximizedNode: { location: [1] } } : {}),
         },
         panels: Object.fromEntries(PANEL_IDS.map((id) => [id, { id, title: PANEL_TITLES[id] }])),
-        activeGroup: "canvas",
+        activeGroup:
+          preset === "ai-review"
+            ? "inspector"
+            : preset === "video-tracking"
+              ? "video-tracker"
+              : "canvas",
       },
-      returns:
-        preset === "review"
-          ? {
-              "task-queue": { group: "task-queue", index: 0 },
-              "class-palette": { group: "class-palette", index: 0 },
-            }
-          : {},
+      returns,
     },
     bounds,
   );
+}
+
+export function presetSupportsContext(id: WorkspacePresetId, context: WorkspaceContext): boolean {
+  const preset = WORKSPACE_PRESETS.find((item) => item.id === id);
+  return !preset || !("contexts" in preset) || preset.contexts.some((item) => item === context);
 }
 
 interface LegacyFloatingPanel {

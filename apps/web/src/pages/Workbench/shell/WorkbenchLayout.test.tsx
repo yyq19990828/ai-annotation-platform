@@ -1,5 +1,5 @@
 // v0.10.18 · WorkbenchLayout focused render tests.
-// 验证布局 shell 把五个稳定面板交给工作区,
+// 验证布局 shell 把七个稳定面板交给工作区,
 // 可选模块 (rejectModal / deleteConfirm / guidePanel) 不传时不渲染.
 
 import { act, render, screen } from "@testing-library/react";
@@ -64,6 +64,9 @@ vi.mock("./AIInspectorPanel", () => ({
   ),
   AIPredictionPopover: () => <div data-testid="ai-popover" />,
 }));
+vi.mock("../stage/VideoTrackerPropagateDialog", () => ({
+  VideoTrackerPropagateDialog: () => <div data-testid="video-tracker" />,
+}));
 vi.mock("./DiscussionPanel", () => ({
   DiscussionPanel: ({ floating }: { floating?: boolean }) => (
     <div data-testid={floating ? "floating-discussion-panel" : "discussion-panel"} />
@@ -106,6 +109,7 @@ const baseProps = {
   statusBar: {} as never,
   inspector: baseInspectorProps as never,
   aiPopover: {} as never,
+  videoTracker: {} as never,
   hotkeys: {} as never,
   offlineQueue: {} as never,
   workbenchSettings: {} as never,
@@ -125,6 +129,7 @@ describe("WorkbenchLayout", () => {
     expect(screen.getByTestId("status-bar")).toBeTruthy();
     expect(screen.getByTestId("floating-inspector")).toBeTruthy();
     expect(screen.getByTestId("ai-popover")).toBeTruthy();
+    expect(screen.getByTestId("video-tracker")).toBeTruthy();
     expect(screen.getByTestId("hotkeys")).toBeTruthy();
     expect(screen.getByTestId("offline-queue")).toBeTruthy();
     expect(screen.getByTestId("workbench-settings-drawer")).toBeTruthy();

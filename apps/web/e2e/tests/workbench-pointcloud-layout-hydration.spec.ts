@@ -13,9 +13,9 @@ test("3D 本地树等待首次权威回灌，复用原生画布与 WebGL context
   await seed.injectToken(page, data.admin_email);
   await page.setViewportSize(DESKTOP);
 
-  const local = { schemaVersion: 1, snapshot: createWorkspacePreset("standard", DESKTOP) };
-  const remote = { schemaVersion: 1, snapshot: createWorkspacePreset("review", DESKTOP) };
-  const later = { schemaVersion: 1, snapshot: createWorkspacePreset("focus", DESKTOP) };
+  const local = { schemaVersion: 3, snapshot: createWorkspacePreset("standard", DESKTOP) };
+  const remote = { schemaVersion: 3, snapshot: createWorkspacePreset("review", DESKTOP) };
+  const later = { schemaVersion: 3, snapshot: createWorkspacePreset("focus", DESKTOP) };
   const storageKey = await page.evaluate((envelope) => {
     const auth = JSON.parse(localStorage.getItem("auth-storage")!);
     const key = `workbench.${auth.state.user.id}.workspace.annotate:3d`;

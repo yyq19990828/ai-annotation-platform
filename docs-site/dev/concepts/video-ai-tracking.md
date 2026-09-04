@@ -2,7 +2,7 @@
 audience: [dev]
 type: explanation
 status: stable
-last_reviewed: 2026-07-29
+last_reviewed: 2026-09-05
 ---
 
 # 视频 AI 追踪架构
@@ -55,9 +55,9 @@ tracker 先按能力确定请求所属服务池，再进入路由选择：
 
 ## 面板与布局状态
 
-AI 追踪与 AI 单题共用一套面板 chrome，但开关互斥：`togglePropagateDialog` 打开追踪前收起单题面板，`toggleAiPopover` 则先关闭追踪。追踪面板默认停靠画布右上，拖动与缩放都以 stage 的 `offsetParent` 为局部坐标系，而不是 viewport 坐标。画布或窗口收缩时，恢复的旧坐标和尺寸会被 clamp 回 8px 安全边界。
+AI 追踪与 AI 单题是两个独立的 Dockview panel，可以同时停靠、成组或浮动。顶部入口只显示或聚焦已有实例；布局隐藏不会关闭 tracker session、取消后台 job 或清空方向、范围与种子草稿，业务取消仍由面板内动作处理。
 
-`useFloatingPanelFrame` 是 AI 面板局部偏好的共用持久化层。`useVideoTrackerPanelFrame` 使用 `wb:video-tracker-panel-position` / `wb:video-tracker-panel-size`，`useAiPopoverFrame` 使用独立的 `wb:ai-popover-position` / `wb:ai-popover-size`。它们只保存 UI 位置与尺寸，不进入 job payload、annotation 或服务端工作台偏好。
+两个工具的空间状态进入账号级、按 context 保存的 `workbench.layout.workspace` schema 3。旧 `wb:video-tracker-panel-*` 与 `wb:ai-popover-*` 坐标 key 保留供旧构建回滚，新客户端不再读取、写入或上传它们。
 
 ## 两类追踪语义
 

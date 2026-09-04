@@ -1903,7 +1903,7 @@ test.describe("flow recordings", () => {
     await finalize(page, "video-mask-track-edit", undefined, drawTrim(win, t0));
   });
 
-  test("ai-tracker-panel — AI 追踪面板拖动缩放与互斥", async ({ page, seed }) => {
+  test("ai-tracker-panel — AI 与追踪面板停靠、隐藏恢复与并存", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
     const t0 = Date.now();
     await installScreenshotEnvironment(page);

@@ -17,15 +17,21 @@ vi.mock("../state/useWorkbenchShellModel", () => ({
   useWorkbenchShellModel: (...args: unknown[]) => mockUseWorkbenchShellModel(...args),
 }));
 vi.mock("./WorkbenchLayout", () => ({
-  WorkbenchLayout: ({ stageOverlay }: { stageOverlay?: React.ReactNode }) => (
-    <div data-testid="layout">{stageOverlay}</div>
+  WorkbenchLayout: ({
+    stageOverlay,
+    videoTracker,
+  }: {
+    stageOverlay?: React.ReactNode;
+    videoTracker?: unknown;
+  }) => (
+    <div data-testid="layout">
+      {Boolean(videoTracker) && <div data-testid="propagate-dialog" />}
+      {stageOverlay}
+    </div>
   ),
 }));
 vi.mock("./WorkbenchSkeleton", () => ({
   WorkbenchSkeleton: () => <div data-testid="skeleton" />,
-}));
-vi.mock("../stage/VideoTrackerPropagateDialog", () => ({
-  VideoTrackerPropagateDialog: () => <div data-testid="propagate-dialog" />,
 }));
 vi.mock("./IssueCreateModal", () => ({
   IssueCreateModal: () => <div data-testid="issue-create-modal" />,

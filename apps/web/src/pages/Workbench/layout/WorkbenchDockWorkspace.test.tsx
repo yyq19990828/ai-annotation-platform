@@ -68,6 +68,8 @@ function fixture(
         "class-palette": <p>类别</p>,
         inspector: <p>详情</p>,
         discussion: <Draft />,
+        "ai-task": <input aria-label="AI 草稿" defaultValue="保留" />,
+        "video-tracker": <input aria-label="追踪草稿" defaultValue="保留" />,
       }}
       renderTopbar={(menu) => <header>{menu}</header>}
     />
@@ -200,6 +202,26 @@ describe("stable Dockview React workspace", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "恢复画布" }));
     expect(state.api!.hasMaximizedGroup()).toBe(false);
     expect(mounts).toBe(1);
+  });
+
+  it("filters tool panels by context and hides them without unmounting content", async () => {
+    const commands = createRef<WorkbenchWorkspaceCommands>();
+    const view = render(fixture("annotate:video", commands));
+    fireEvent.click(await screen.findByRole("button", { name: "布局" }));
+    expect(screen.getByRole("menuitem", { name: "当前题 AI" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "视频追踪" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("menuitem", { name: "视频追踪" }));
+    const draft = screen.getByLabelText("追踪草稿");
+    act(() => commands.current!.hide("video-tracker"));
+    expect((draft.closest("[data-workbench-panel]") as HTMLElement).inert).toBe(true);
+    act(() => commands.current!.show("video-tracker"));
+    expect(screen.getByLabelText("追踪草稿")).toBe(draft);
+
+    view.rerender(fixture("review:video", commands));
+    fireEvent.click(screen.getByRole("button", { name: "布局" }));
+    expect(screen.queryByRole("menuitem", { name: "当前题 AI" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "视频追踪" })).toBeNull();
+    expect(screen.queryByRole("menuitem", { name: "视频追踪布局" })).toBeNull();
   });
 
   it("does not replay the previous context desktop after switching in compact mode", async () => {

@@ -30,10 +30,10 @@ interface TopbarProps {
   onToggleRightSidebar?: () => void;
   layoutMenuSlot?: React.ReactNode;
   layoutDisabled?: boolean;
-  onRunAi: () => void;
+  onRunAi?: () => void;
   aiOpen?: boolean;
   aiDisabled?: boolean;
-  /** 视频任务的画布级 AI 追踪入口；与 AI 单题面板互斥。 */
+  /** 视频任务的画布级 AI 追踪入口。 */
   onToggleTracker?: () => void;
   trackerOpen?: boolean;
   trackerRunning?: boolean;
@@ -387,7 +387,7 @@ export function Topbar({
                 aria-label="发现新目标"
                 aria-pressed={trackerOpen}
                 title={
-                  trackerOpen ? "关闭画布级多目标追踪" : "发现或播种多个新目标，不延展当前选中轨迹"
+                  trackerOpen ? "聚焦画布级多目标追踪" : "发现或播种多个新目标，不延展当前选中轨迹"
                 }
                 className="h-7 px-3"
                 data-testid="workbench-ai-tracker"
@@ -404,34 +404,30 @@ export function Topbar({
                 发现目标
               </Button>
             )}
-            <Button
-              variant="ai"
-              size="sm"
-              onClick={onRunAi}
-              aria-label="AI 单题"
-              aria-pressed={aiOpen}
-              disabled={aiDisabled}
-              title={
-                aiDisabled
-                  ? "视频任务暂不支持 AI"
-                  : aiOpen
-                    ? "关闭 AI 单题面板"
-                    : "打开 AI 单题面板"
-              }
-              className="h-7 px-3"
-              data-testid="workbench-ai-single"
-            >
-              {aiRunning ? (
-                <Icon
-                  name="loader2"
-                  size={13}
-                  className="animate-spin motion-reduce:animate-none"
-                />
-              ) : (
-                <Icon name="wandSparkles" size={13} />
-              )}
-              AI
-            </Button>
+            {onRunAi && (
+              <Button
+                variant="ai"
+                size="sm"
+                onClick={onRunAi}
+                aria-label="AI 单题"
+                aria-pressed={aiOpen}
+                disabled={aiDisabled}
+                title={aiOpen ? "聚焦 AI 单题面板" : "打开 AI 单题面板"}
+                className="h-7 px-3"
+                data-testid="workbench-ai-single"
+              >
+                {aiRunning ? (
+                  <Icon
+                    name="loader2"
+                    size={13}
+                    className="animate-spin motion-reduce:animate-none"
+                  />
+                ) : (
+                  <Icon name="wandSparkles" size={13} />
+                )}
+                AI
+              </Button>
+            )}
           </>
         )}
         <Button

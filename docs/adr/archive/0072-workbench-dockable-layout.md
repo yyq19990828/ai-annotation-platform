@@ -21,13 +21,13 @@
 
 ### 面板与生命周期
 
-核心面板固定为 `canvas`、`task-queue`、`class-palette`、`inspector`、`discussion`。画布独占稳定 `canvas` group，可通过菜单放到可见根树的左、右、上、下边缘，但不能原生拖动、隐藏、浮动、关闭或与其他面板组成标签。外围面板可在画布左、右、底部停靠，也可标签化或在当前工作区内浮动；浮窗支持单 group 的多个 tab，不接受浮窗内部的 edge split。
+面板集合固定为 `canvas`、`task-queue`、`class-palette`、`inspector`、`discussion`、`ai-task`、`video-tracker`。画布独占稳定 `canvas` group，可通过菜单放到可见根树的左、右、上、下边缘，但不能原生拖动、隐藏、浮动、关闭或与其他面板组成标签。外围面板可在画布左、右、底部停靠，也可标签化或在当前工作区内浮动；浮窗支持单 group 的多个 tab，不接受浮窗内部的 edge split。
 
-`canvas`、`inspector` 与 `discussion` 使用 `always` renderer 保留 DOM；任务队列和类别面板使用 `onlyWhenVisible`，从既有业务状态重建。隐藏时记录 group、index 和浮窗矩形，把同一 panel 移到不可见的 `parking` group，不调用 `close` 或 `removePanel`。
+`canvas`、`inspector`、`discussion`、`ai-task` 与 `video-tracker` 使用 `always` renderer 保留 DOM；任务队列和类别面板使用 `onlyWhenVisible`，从既有业务状态重建。隐藏时记录 group、index 和浮窗矩形，把同一 panel 移到不可见的 `parking` group，不调用 `close` 或 `removePanel`。
 
 “标准标注”和“审核协作”通过 executor 原位重排已有面板，“专注画布”最大化现有 canvas group。预设替换前保存一次会话级撤销点，不持久化活动预设 ID 或布局历史。工具、选择、任务、帧、播放状态和草稿不进入布局命令。
 
-当前题 AI、视频追踪、3D 三视图、相机面板、PSR、选中信息卡和桌宠继续使用原有 Stage overlay，`AIInspectorPanel` 与 `DiscussionPanel` 内部业务 tab 不拆分。
+当前题 AI 与视频追踪进入 Dockview；仅在适用的标注图片或视频 context 显示入口，其他 context 将结构节点留在 `parking`。3D 三视图、相机面板、PSR、选中信息卡和桌宠继续使用原有 Stage overlay，`AIInspectorPanel` 与 `DiscussionPanel` 内部业务 tab 不拆分。
 
 主题样式挂在包住 Dockview grid 和同级 render overlay 的宿主节点。只有 canvas 的 render overlay 移除引擎默认的 `contain`、`transform` 和独立层叠上下文，让现有 viewport-fixed 工具继续使用视口坐标；面板仍由引擎的 left / top / width / height 定位。浮窗层级低于应用菜单，保证浮窗内的布局命令可点击。
 
@@ -35,7 +35,7 @@
 
 沿用 `user.preferences.workbench.layout`，新增 `workspace = { engine: "dockview@8", contexts }`。六个 context 为 `annotate|review × image|video|3d`，各自保存原子信封 `{ schemaVersion, snapshot }`；`snapshot` 包含清洗后的引擎 `layout` 与隐藏面板的 `returns`，不保存业务 params。
 
-客户端解释 schema 1 / 2 并统一写入 schema 2，固定使用五个核心面板；schema 2 表示画布可在根边缘换位，仍保持稳定 group ID、单例、docked 与非标签约束。后端继续预留并验证 schema 3。旧客户端读取高于自身能力的版本时显示只读标准布局，提示刷新，不降级解释或重置原值。
+客户端解释 schema 1 / 2 / 3 并统一写入 schema 3。schema 1 固定五个核心面板与中心画布，schema 2 允许画布在根边缘换位，schema 3 固定七个面板并记录两个工具面板的可见性意图。旧客户端读取高于自身能力的版本时显示只读标准布局，提示刷新，不降级解释或重置原值。
 
 清洗限制 UTF-8 JSON 不超过 64 KiB、最多 7 个 panel、7 个用户 group 加 1 个 parking group，并按 schema 限制实际 panel 集合、canvas、树结构和有限尺寸。浮窗按当前工作区边界夹取，`compact-overlay` 不进入持久化快照。损坏快照或引擎恢复失败也进入只读标准布局，只有用户在桌面宽度显式重置后才写回；未来 schema 和服务端降级冲突始终禁止重置覆盖。
 
@@ -90,4 +90,4 @@
 - 核心代码：`apps/web/src/pages/Workbench/layout/`、`state/useWorkbenchWorkspaceLayout.ts`。
 - 偏好边界：`apps/web/src/api/auth.ts`、`apps/api/app/schemas/user.py`、`apps/api/app/api/v1/me.py`。
 - 画布换位资格门已放行菜单路径：executor 原位重放后，图片、视频和点云 Stage 保持同一 DOM / renderer / decoder。原生 header 拖动未放行；它需要额外的根边缘 drop 与 Stage pointer 隔离合同。
-- 本决策尚未扩展为七个业务面板；后续能力须以 schema 3 与单实例约束继续演进。
+- 当前题 AI 与视频追踪已通过单实例、隐藏恢复与并存资格门；旧坐标 key 保留供旧构建回滚，新客户端不再读取或写入它们。

@@ -305,6 +305,8 @@ export function createWorkbenchLayoutExecutor(
     removeEmptyGroups(["parking"]);
   }
   function defaultGroup(id: SidePanelId) {
+    if (id === "ai-task" && panel("inspector").group.id !== "parking")
+      return panel("inspector").group;
     const existing = getGroup(id);
     const group =
       existing && existing.id !== "canvas"
