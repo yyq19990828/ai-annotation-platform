@@ -76,7 +76,7 @@ export async function runPointcloudBillboardLabel(
     () =>
       (
         window as typeof window & { __pointcloudLabelTexts?: string[] }
-      ).__pointcloudLabelTexts?.some((text) => text === "object · 车辆 · 清晰可见"),
+      ).__pointcloudLabelTexts?.some((text) => text.endsWith("object · 车辆 · 清晰可见")),
     undefined,
     { timeout: 5_000 },
   );

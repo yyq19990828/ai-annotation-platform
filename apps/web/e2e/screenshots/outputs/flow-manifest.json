@@ -840,7 +840,7 @@
     "docs-site/public/media/ai/preannotate-poster.webp": {
       "asset_id": "ai-preannotate",
       "role": "poster",
-      "generated_at": "2026-08-15T06:08:51.870Z",
+      "generated_at": "2026-09-05T14:43:22.843Z",
       "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
       "source_worktree_dirty": true,
       "seed_revision": "screenshots-2026-08-e",
@@ -851,8 +851,8 @@
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
         "apps/web/scripts/derive-doc-media.mjs"
       ],
-      "sha256": "4cd910cfb4632d139ca4b12dc094204bd5080721373d56f6b047639b27e598d3",
-      "bytes": 2200,
+      "sha256": "3108ee02d4f573111d307f2be652d4b77b9d0e7f332d4118b89c01213a980f6a",
+      "bytes": 89466,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -865,6 +865,11 @@
         "runId": "20260815T001709Z-435b32ac23d6",
         "assetId": "ai-preannotate",
         "sha256": "ec18456d4f75a49c968b041408b655671650682496fa4f31b61aa65f93705509"
+      },
+      "postprocess": {
+        "source_video": "docs-site/public/media/ai/preannotate.mp4",
+        "poster_timestamp_seconds": 11.3,
+        "note": "Replaced loading skeleton with the completed preannotation result."
       }
     },
     "docs-site/public/media/ai/preannotate.mp4": {
@@ -1177,7 +1182,7 @@
     "docs-site/public/media/jobs/jobs-bell-active.mp4": {
       "asset_id": "jobs-bell-active",
       "role": "docs-video",
-      "generated_at": "2026-08-15T20:21:06.379Z",
+      "generated_at": "2026-09-05T14:43:22.845Z",
       "captured_commit": "34217c9c66a85a81a7e1ba354ce27ad7fd5f468b",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-f",
@@ -1189,20 +1194,25 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "docs-site/.vitepress/theme/components/DocsVideo.vue"
       ],
-      "sha256": "f6137241e30f461ac6cbfabe7534c79b3260658023c85dd24d08b26b772eadb9",
-      "bytes": 191260,
+      "sha256": "14c495feaa87b3183b556e5b68112f906e2c1d237c88f679724861d2e30710a7",
+      "bytes": 207488,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "30/1",
-        "duration_seconds": 12.534
+        "duration_seconds": 11.766667
       },
       "source_asset": {
         "runId": "20260815T201823Z-34217c9c66a8",
         "assetId": "jobs-bell-active",
         "sha256": "46edc9baf7addd16eafa06c7a3d951b7b9a3d13cb361241b171fd0de98c98350"
+      },
+      "postprocess": {
+        "input_sha256": "f6137241e30f461ac6cbfabe7534c79b3260658023c85dd24d08b26b772eadb9",
+        "trim_start_seconds": 0.75,
+        "note": "Removed login/loading pre-roll; retained the original capture and core interaction."
       }
     },
     "docs-site/public/media/jobs/video-tracker-job-states-poster.webp": {
@@ -1239,7 +1249,7 @@
     "docs-site/public/media/jobs/video-tracker-job-states.mp4": {
       "asset_id": "video-tracker-job-states",
       "role": "docs-video",
-      "generated_at": "2026-08-15T20:42:27.316Z",
+      "generated_at": "2026-09-05T14:43:22.877Z",
       "captured_commit": "361dd963410c44ed7569a303d4c02ff681d9bd7b",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-f",
@@ -1251,20 +1261,25 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "docs-site/.vitepress/theme/components/DocsVideo.vue"
       ],
-      "sha256": "1a8242f681870aa8a01ca20dbaf91b09e881082126eb51e5f4d7408f942a9064",
-      "bytes": 245273,
+      "sha256": "23e3816a070b2628ae9095ddaa9d5d44bb202a9704bea56f010401d995f734d0",
+      "bytes": 276482,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "30/1",
-        "duration_seconds": 16.734
+        "duration_seconds": 16.466667
       },
       "source_asset": {
         "runId": "20260815T204030Z-361dd963410c",
         "assetId": "video-tracker-job-states",
         "sha256": "fbdbd8e61c179119396588b35b1723237ea35a9933035ee975da0b86e3c87ca7"
+      },
+      "postprocess": {
+        "input_sha256": "1a8242f681870aa8a01ca20dbaf91b09e881082126eb51e5f4d7408f942a9064",
+        "trim_start_seconds": 0.25,
+        "note": "Removed login/loading pre-roll; retained the original capture and core interaction."
       }
     },
     "docs-site/public/media/large-image/mask-limit-poster.webp": {
@@ -1301,7 +1316,7 @@
     "docs-site/public/media/large-image/mask-limit.mp4": {
       "asset_id": "large-image-mask-limit",
       "role": "docs-video",
-      "generated_at": "2026-08-15T19:24:10.126Z",
+      "generated_at": "2026-09-05T14:43:22.906Z",
       "captured_commit": "b8ce1389a1352c164bdfa7325e6b5184cc9ded36",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-f",
@@ -1313,20 +1328,25 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "docs-site/.vitepress/theme/components/DocsVideo.vue"
       ],
-      "sha256": "b8f90ab8f94d0fafc87dff138e25edde768e9262f91938369c0354366a96b006",
-      "bytes": 856790,
+      "sha256": "3f317e59c1fc10d6e948c562495d296ed48d1dd522df63594ac938bfb01d2fd8",
+      "bytes": 952064,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "30/1",
-        "duration_seconds": 12.667
+        "duration_seconds": 12.166667
       },
       "source_asset": {
         "runId": "20260815T192214Z-b8ce1389a135",
         "assetId": "large-image-mask-limit",
         "sha256": "80e2171f81fe5f05f8df7d12ab4ffc70c79877056877a0afaf72e5d357da54f4"
+      },
+      "postprocess": {
+        "input_sha256": "b8f90ab8f94d0fafc87dff138e25edde768e9262f91938369c0354366a96b006",
+        "trim_start_seconds": 0.5,
+        "note": "Removed login/loading pre-roll; retained the original capture and core interaction."
       }
     },
     "docs-site/public/media/large-image/progressive-poster.webp": {
@@ -1640,20 +1660,19 @@
     "docs-site/public/media/pointcloud/billboard-label-poster.webp": {
       "asset_id": "pointcloud-billboard-label",
       "role": "poster",
-      "generated_at": "2026-08-15T22:45:45.541Z",
-      "captured_commit": "20808f2edfb49d0009ab0eaef037789618427bda",
-      "source_worktree_dirty": false,
-      "seed_revision": "screenshots-2026-08-f",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › pointcloud-billboard-label",
+      "generated_at": "2026-09-05T14:19:41.575Z",
+      "captured_commit": "269c3fedf03b843b521e7751c707842c7cb726f9",
+      "source_worktree_dirty": true,
+      "seed_revision": null,
+      "source": "apps/web/e2e/screenshots/flows/pointcloud-billboard-label.ts",
+      "test_title": "PR 71 browser replay: pointcloud-billboard-label",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/pointcloud-billboard-label.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+        "apps/api/app/services/screenshot_seed_spec.py"
       ],
-      "sha256": "318e60fab48d9c8ddbda7b478c0385e92dc5417bddff8ebb485623b2af35a74b",
-      "bytes": 21626,
+      "sha256": "220dba23b29f3f9b7d0920e9e22e0175a7e4d7846f1cffa5f4d49e5ea35a5488",
+      "bytes": 62762,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -1662,60 +1681,68 @@
         "fps": "25/1",
         "duration_seconds": null
       },
-      "source_asset": {
-        "runId": "20260815T224252Z-20808f2edfb4",
-        "assetId": "pointcloud-billboard-label",
-        "sha256": "ec65c999793aeb5e433f3f7f0322b5beed5d1dd7325423a900717855b85465f1"
-      }
+      "provenance": "targeted-browser-capture",
+      "fixture": {
+        "dataset": "nuscenes-mini",
+        "scene": "scene-0061",
+        "frame_indices": [
+          0
+        ],
+        "axis_convention": "iso_8855"
+      },
+      "note": "Captured from the PR frontend with the existing local nuScenes-mini fixture; the full screenshot seed catalog was not revalidated. Preferences were sandboxed in browser memory, and temporary annotations were deleted after recording. Documentation output only (1280x720, 30fps), not a 4K60 marketing master."
     },
     "docs-site/public/media/pointcloud/billboard-label.mp4": {
       "asset_id": "pointcloud-billboard-label",
       "role": "docs-video",
-      "generated_at": "2026-08-15T22:45:45.466Z",
-      "captured_commit": "20808f2edfb49d0009ab0eaef037789618427bda",
-      "source_worktree_dirty": false,
-      "seed_revision": "screenshots-2026-08-f",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › pointcloud-billboard-label",
+      "generated_at": "2026-09-05T14:19:41.575Z",
+      "captured_commit": "269c3fedf03b843b521e7751c707842c7cb726f9",
+      "source_worktree_dirty": true,
+      "seed_revision": null,
+      "source": "apps/web/e2e/screenshots/flows/pointcloud-billboard-label.ts",
+      "test_title": "PR 71 browser replay: pointcloud-billboard-label",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/pointcloud-billboard-label.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+        "apps/api/app/services/screenshot_seed_spec.py"
       ],
-      "sha256": "8b055c6d477625aee689bea71076fe5f223f42133dd23c016b5636e08e344844",
-      "bytes": 1163801,
+      "sha256": "7726f520804569864e2ebeeb30ab571d7fe31377140c9000cbf8c9834d53799b",
+      "bytes": 2476619,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "30/1",
-        "duration_seconds": 17.034
+        "duration_seconds": 14
       },
-      "source_asset": {
-        "runId": "20260815T224252Z-20808f2edfb4",
-        "assetId": "pointcloud-billboard-label",
-        "sha256": "ec65c999793aeb5e433f3f7f0322b5beed5d1dd7325423a900717855b85465f1"
-      }
+      "provenance": "targeted-browser-capture",
+      "fixture": {
+        "dataset": "nuscenes-mini",
+        "scene": "scene-0061",
+        "frame_indices": [
+          0
+        ],
+        "axis_convention": "iso_8855"
+      },
+      "note": "Captured from the PR frontend with the existing local nuScenes-mini fixture; the full screenshot seed catalog was not revalidated. Preferences were sandboxed in browser memory, and temporary annotations were deleted after recording. Documentation output only (1280x720, 30fps), not a 4K60 marketing master."
     },
     "docs-site/public/media/pointcloud/camera-seed-3d-box-poster.webp": {
       "asset_id": "pointcloud-camera-seed-3d-box",
       "role": "poster",
-      "generated_at": "2026-08-15T16:16:10.120Z",
-      "captured_commit": "4764bd9dc2d6f2bb94df37c1c22a0f95ca463055",
-      "source_worktree_dirty": false,
-      "seed_revision": "screenshots-2026-08-f",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › pointcloud-camera-seed-3d-box",
+      "generated_at": "2026-09-05T14:19:41.575Z",
+      "captured_commit": "269c3fedf03b843b521e7751c707842c7cb726f9",
+      "source_worktree_dirty": true,
+      "seed_revision": null,
+      "source": "apps/web/e2e/screenshots/flows/pointcloud-camera-seed-3d-box.ts",
+      "test_title": "PR 71 browser replay: pointcloud-camera-seed-3d-box",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/pointcloud-camera-seed-3d-box.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+        "apps/api/app/services/screenshot_seed_spec.py"
       ],
-      "sha256": "05c21d23544893ba9db82bb3b50efc4c58edf48df3ee1ea4a10fdc62ea762b5f",
-      "bytes": 51840,
+      "sha256": "cc62c511831a3458e94b03a2076795b1c69e75eeec4e49df12ab255963cb613d",
+      "bytes": 60054,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -1724,59 +1751,68 @@
         "fps": "25/1",
         "duration_seconds": null
       },
-      "source_asset": {
-        "runId": "20260815T161343Z-4764bd9dc2d6",
-        "assetId": "pointcloud-camera-seed-3d-box",
-        "sha256": "b1d197c1745ea657bd8464c0409f31ea271bf044116852b40419df3b04ea32f2"
-      }
+      "provenance": "targeted-browser-capture",
+      "fixture": {
+        "dataset": "nuscenes-mini",
+        "scene": "scene-0061",
+        "frame_indices": [
+          0
+        ],
+        "axis_convention": "iso_8855"
+      },
+      "note": "Captured from the PR frontend with the existing local nuScenes-mini fixture; the full screenshot seed catalog was not revalidated. Preferences were sandboxed in browser memory, and temporary annotations were deleted after recording. Documentation output only (1280x720, 30fps), not a 4K60 marketing master."
     },
     "docs-site/public/media/pointcloud/camera-seed-3d-box.mp4": {
       "asset_id": "pointcloud-camera-seed-3d-box",
       "role": "docs-video",
-      "generated_at": "2026-08-15T16:16:10.044Z",
-      "captured_commit": "4764bd9dc2d6f2bb94df37c1c22a0f95ca463055",
-      "source_worktree_dirty": false,
-      "seed_revision": "screenshots-2026-08-f",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › pointcloud-camera-seed-3d-box",
+      "generated_at": "2026-09-05T14:19:41.575Z",
+      "captured_commit": "269c3fedf03b843b521e7751c707842c7cb726f9",
+      "source_worktree_dirty": true,
+      "seed_revision": null,
+      "source": "apps/web/e2e/screenshots/flows/pointcloud-camera-seed-3d-box.ts",
+      "test_title": "PR 71 browser replay: pointcloud-camera-seed-3d-box",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/pointcloud-camera-seed-3d-box.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+        "apps/api/app/services/screenshot_seed_spec.py"
       ],
-      "sha256": "7b5a9b6a7bc8ad4bc74e76bf35097bb0cb920b0e9ed6b54a7dc7648654d62196",
-      "bytes": 418807,
+      "sha256": "a8005a89dde2aec83a6bc89c87cd6f139fbee19662fb1ba7bc3e1eef889d4989",
+      "bytes": 1444768,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "30/1",
-        "duration_seconds": 18.8
+        "duration_seconds": 18
       },
-      "source_asset": {
-        "runId": "20260815T161343Z-4764bd9dc2d6",
-        "assetId": "pointcloud-camera-seed-3d-box",
-        "sha256": "b1d197c1745ea657bd8464c0409f31ea271bf044116852b40419df3b04ea32f2"
-      }
+      "provenance": "targeted-browser-capture",
+      "fixture": {
+        "dataset": "nuscenes-mini",
+        "scene": "scene-0061",
+        "frame_indices": [
+          0
+        ],
+        "axis_convention": "iso_8855"
+      },
+      "note": "Captured from the PR frontend with the existing local nuScenes-mini fixture; the full screenshot seed catalog was not revalidated. Preferences were sandboxed in browser memory, and temporary annotations were deleted after recording. Documentation output only (1280x720, 30fps), not a 4K60 marketing master."
     },
     "docs-site/public/media/pointcloud/controls-poster.webp": {
       "asset_id": "pointcloud-controls",
       "role": "poster",
-      "generated_at": "2026-08-15T06:10:13.008Z",
-      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "generated_at": "2026-09-05T14:19:41.575Z",
+      "captured_commit": "269c3fedf03b843b521e7751c707842c7cb726f9",
       "source_worktree_dirty": true,
-      "seed_revision": "screenshots-2026-08-e",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › pointcloud-controls",
+      "seed_revision": null,
+      "source": "apps/web/e2e/screenshots/flows/pointcloud-controls.ts",
+      "test_title": "PR 71 browser replay: pointcloud-controls",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/pointcloud-controls.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/scripts/derive-doc-media.mjs"
+        "apps/api/app/services/screenshot_seed_spec.py"
       ],
-      "sha256": "52b45be2747396231c3c6fd68601d01f54e72a5cb916b442e815cdd76c0c4b7f",
-      "bytes": 41598,
+      "sha256": "10a1bfbcfc80dd524845e1dae76759a19d242e846f449157c6437ab8c267bd3a",
+      "bytes": 69764,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -1785,59 +1821,68 @@
         "fps": "25/1",
         "duration_seconds": null
       },
-      "source_asset": {
-        "runId": "20260815T001709Z-435b32ac23d6",
-        "assetId": "pointcloud-controls",
-        "sha256": "2047594a28b099d9b510bacd780cf3a5ba1bccb678afdd60eee81ef23729fbfe"
+      "provenance": "targeted-browser-capture",
+      "note": "Captured from the PR frontend with the existing local nuScenes-mini fixture; the full screenshot seed catalog was not revalidated. Preferences were sandboxed in browser memory, and temporary annotations were deleted after recording. Documentation output only (1280x720, 30fps), not a 4K60 marketing master.",
+      "fixture": {
+        "dataset": "nuscenes-mini",
+        "scene": "scene-0061",
+        "frame_indices": [
+          26
+        ],
+        "axis_convention": "iso_8855"
       }
     },
     "docs-site/public/media/pointcloud/controls.mp4": {
       "asset_id": "pointcloud-controls",
       "role": "docs-video",
-      "generated_at": "2026-08-15T06:10:12.952Z",
-      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "generated_at": "2026-09-05T14:19:41.575Z",
+      "captured_commit": "269c3fedf03b843b521e7751c707842c7cb726f9",
       "source_worktree_dirty": true,
-      "seed_revision": "screenshots-2026-08-e",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › pointcloud-controls",
+      "seed_revision": null,
+      "source": "apps/web/e2e/screenshots/flows/pointcloud-controls.ts",
+      "test_title": "PR 71 browser replay: pointcloud-controls",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/pointcloud-controls.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/scripts/derive-doc-media.mjs"
+        "apps/api/app/services/screenshot_seed_spec.py"
       ],
-      "sha256": "cb097f592bfe231ac75d19f6647484cd5ae3cbb9625d9045b88739d9c5f00839",
-      "bytes": 195467,
+      "sha256": "7dc99ea07e51ab32381b798a221781604f34b8945593a33418fb22f79e840915",
+      "bytes": 1471295,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "30/1",
-        "duration_seconds": 10.967
+        "duration_seconds": 11
       },
-      "source_asset": {
-        "runId": "20260815T001709Z-435b32ac23d6",
-        "assetId": "pointcloud-controls",
-        "sha256": "2047594a28b099d9b510bacd780cf3a5ba1bccb678afdd60eee81ef23729fbfe"
+      "provenance": "targeted-browser-capture",
+      "note": "Captured from the PR frontend with the existing local nuScenes-mini fixture; the full screenshot seed catalog was not revalidated. Preferences were sandboxed in browser memory, and temporary annotations were deleted after recording. Documentation output only (1280x720, 30fps), not a 4K60 marketing master.",
+      "fixture": {
+        "dataset": "nuscenes-mini",
+        "scene": "scene-0061",
+        "frame_indices": [
+          26
+        ],
+        "axis_convention": "iso_8855"
       }
     },
     "docs-site/public/media/pointcloud/crossframe-track-poster.webp": {
       "asset_id": "pointcloud-crossframe-track",
       "role": "poster",
-      "generated_at": "2026-08-15T16:45:25.293Z",
-      "captured_commit": "c9860dd87a13212662f70abbfb3470e8ae6a5390",
-      "source_worktree_dirty": false,
-      "seed_revision": "screenshots-2026-08-f",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › pointcloud-crossframe-track",
+      "generated_at": "2026-09-05T14:19:41.575Z",
+      "captured_commit": "269c3fedf03b843b521e7751c707842c7cb726f9",
+      "source_worktree_dirty": true,
+      "seed_revision": null,
+      "source": "apps/web/e2e/screenshots/flows/pointcloud-crossframe-track.ts",
+      "test_title": "PR 71 browser replay: pointcloud-crossframe-track",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/pointcloud-crossframe-track.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+        "apps/api/app/services/screenshot_seed_spec.py"
       ],
-      "sha256": "3c61d86af3a38ad12aa7234401ce31b3d12a1c991ddc93ddf1222e0cbf500e23",
-      "bytes": 37316,
+      "sha256": "3392edef0e4c8896789e1d5774dc3392dd52080ad3d9f1b33360b9c51d16ddb0",
+      "bytes": 64712,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -1846,59 +1891,72 @@
         "fps": "25/1",
         "duration_seconds": null
       },
-      "source_asset": {
-        "runId": "20260815T164247Z-c9860dd87a13",
-        "assetId": "pointcloud-crossframe-track",
-        "sha256": "bddec2e09941a12a64826687ea3022d1a3cd6eb14ea54e22fe423eaad9c3b063"
-      }
+      "provenance": "targeted-browser-capture",
+      "fixture": {
+        "dataset": "nuscenes-mini",
+        "scene": "scene-0061",
+        "frame_indices": [
+          0,
+          1,
+          2
+        ],
+        "axis_convention": "iso_8855"
+      },
+      "note": "Captured from the PR frontend with the existing local nuScenes-mini fixture; the full screenshot seed catalog was not revalidated. Preferences were sandboxed in browser memory, and temporary annotations were deleted after recording. Documentation output only (1280x720, 30fps), not a 4K60 marketing master."
     },
     "docs-site/public/media/pointcloud/crossframe-track.mp4": {
       "asset_id": "pointcloud-crossframe-track",
       "role": "docs-video",
-      "generated_at": "2026-08-15T16:45:25.221Z",
-      "captured_commit": "c9860dd87a13212662f70abbfb3470e8ae6a5390",
-      "source_worktree_dirty": false,
-      "seed_revision": "screenshots-2026-08-f",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › pointcloud-crossframe-track",
+      "generated_at": "2026-09-05T14:19:41.575Z",
+      "captured_commit": "269c3fedf03b843b521e7751c707842c7cb726f9",
+      "source_worktree_dirty": true,
+      "seed_revision": null,
+      "source": "apps/web/e2e/screenshots/flows/pointcloud-crossframe-track.ts",
+      "test_title": "PR 71 browser replay: pointcloud-crossframe-track",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/pointcloud-crossframe-track.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+        "apps/api/app/services/screenshot_seed_spec.py"
       ],
-      "sha256": "b0c40b85e832bc206a627e650eab7362b1e536eeb70102eb9525cfa719a53a8b",
-      "bytes": 440201,
+      "sha256": "95e0b7c773072e42448e5c41026180dac811841c9dad8e7122450e2a0c0c5638",
+      "bytes": 1725667,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "30/1",
-        "duration_seconds": 22.167
+        "duration_seconds": 22.166667
       },
-      "source_asset": {
-        "runId": "20260815T164247Z-c9860dd87a13",
-        "assetId": "pointcloud-crossframe-track",
-        "sha256": "bddec2e09941a12a64826687ea3022d1a3cd6eb14ea54e22fe423eaad9c3b063"
-      }
+      "provenance": "targeted-browser-capture",
+      "fixture": {
+        "dataset": "nuscenes-mini",
+        "scene": "scene-0061",
+        "frame_indices": [
+          0,
+          1,
+          2
+        ],
+        "axis_convention": "iso_8855"
+      },
+      "note": "Captured from the PR frontend with the existing local nuScenes-mini fixture; the full screenshot seed catalog was not revalidated. Preferences were sandboxed in browser memory, and temporary annotations were deleted after recording. Documentation output only (1280x720, 30fps), not a 4K60 marketing master."
     },
     "docs-site/public/media/pointcloud/orbit-poster.webp": {
       "asset_id": "pointcloud-view",
       "role": "poster",
-      "generated_at": "2026-08-15T06:10:17.389Z",
-      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "generated_at": "2026-09-05T14:19:41.575Z",
+      "captured_commit": "269c3fedf03b843b521e7751c707842c7cb726f9",
       "source_worktree_dirty": true,
-      "seed_revision": "screenshots-2026-08-e",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › pointcloud-view",
+      "seed_revision": null,
+      "source": "apps/web/e2e/screenshots/flows/pointcloud-view.ts",
+      "test_title": "PR 71 browser replay: pointcloud-view",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/pointcloud-view.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/scripts/derive-doc-media.mjs"
+        "apps/api/app/services/screenshot_seed_spec.py"
       ],
-      "sha256": "1bf89a9fd767b6f142de6dee5d6d304141dd9758b51b4d6c3b8ea108d45f2db4",
-      "bytes": 29304,
+      "sha256": "0e403b2a93c4c2968a460ebc2e1d03b756a67db37ed2d6f419972c0875d015ce",
+      "bytes": 60150,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -1907,41 +1965,51 @@
         "fps": "25/1",
         "duration_seconds": null
       },
-      "source_asset": {
-        "runId": "20260815T001709Z-435b32ac23d6",
-        "assetId": "pointcloud-view",
-        "sha256": "c1b7957d196caff7530ba042c9674a4cbd1b90218d70978b07fe10b3cec71d85"
-      }
+      "provenance": "targeted-browser-capture",
+      "fixture": {
+        "dataset": "nuscenes-mini",
+        "scene": "scene-0061",
+        "frame_indices": [
+          0
+        ],
+        "axis_convention": "iso_8855"
+      },
+      "note": "Captured from the PR frontend with the existing local nuScenes-mini fixture; the full screenshot seed catalog was not revalidated. Preferences were sandboxed in browser memory, and temporary annotations were deleted after recording. Documentation output only (1280x720, 30fps), not a 4K60 marketing master."
     },
     "docs-site/public/media/pointcloud/orbit.mp4": {
       "asset_id": "pointcloud-view",
       "role": "docs-video",
-      "generated_at": "2026-08-15T06:10:17.332Z",
-      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "generated_at": "2026-09-05T14:19:41.575Z",
+      "captured_commit": "269c3fedf03b843b521e7751c707842c7cb726f9",
       "source_worktree_dirty": true,
-      "seed_revision": "screenshots-2026-08-e",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › pointcloud-view",
+      "seed_revision": null,
+      "source": "apps/web/e2e/screenshots/flows/pointcloud-view.ts",
+      "test_title": "PR 71 browser replay: pointcloud-view",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/web/e2e/screenshots/flows/pointcloud-view.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/scripts/derive-doc-media.mjs"
+        "apps/api/app/services/screenshot_seed_spec.py"
       ],
-      "sha256": "1bb05b31f917c48caed0ff08236f3be125f21d47ac92bfd667adfd5cbbb62ca4",
-      "bytes": 1030566,
+      "sha256": "e9424a2e4e9bb58cdf8fa852d8c8f00afd7e60f58af6317824ec2aa13bedbc6c",
+      "bytes": 3174792,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "30/1",
-        "duration_seconds": 10.267
+        "duration_seconds": 11
       },
-      "source_asset": {
-        "runId": "20260815T001709Z-435b32ac23d6",
-        "assetId": "pointcloud-view",
-        "sha256": "c1b7957d196caff7530ba042c9674a4cbd1b90218d70978b07fe10b3cec71d85"
-      }
+      "provenance": "targeted-browser-capture",
+      "fixture": {
+        "dataset": "nuscenes-mini",
+        "scene": "scene-0061",
+        "frame_indices": [
+          0
+        ],
+        "axis_convention": "iso_8855"
+      },
+      "note": "Captured from the PR frontend with the existing local nuScenes-mini fixture; the full screenshot seed catalog was not revalidated. Preferences were sandboxed in browser memory, and temporary annotations were deleted after recording. Documentation output only (1280x720, 30fps), not a 4K60 marketing master."
     },
     "docs-site/public/media/polygon/draw-poster.webp": {
       "asset_id": "polygon-draw",
@@ -2225,7 +2293,7 @@
     "docs-site/public/media/projects/create-existing-resources.mp4": {
       "asset_id": "project-create-existing-resources",
       "role": "docs-video",
-      "generated_at": "2026-08-15T18:48:08.293Z",
+      "generated_at": "2026-09-05T14:43:22.948Z",
       "captured_commit": "3dc5e7237b8ef74075f0af00c0b493fe4dedec5a",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-f",
@@ -2237,20 +2305,25 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "docs-site/.vitepress/theme/components/DocsVideo.vue"
       ],
-      "sha256": "9498e4f57004cca1529ee8dd0e55c306d6abc8ab41c2a67c26f14c71a6249860",
-      "bytes": 302117,
+      "sha256": "4dcf733be102eab73f52632822f085bb2012613ec8869d50506217c89616462b",
+      "bytes": 324163,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "30/1",
-        "duration_seconds": 14.434
+        "duration_seconds": 13.933333
       },
       "source_asset": {
         "runId": "20260815T184557Z-3dc5e7237b8e",
         "assetId": "project-create-existing-resources",
         "sha256": "e939012e03c830c276aa203ba0bdf58737076366edef08bd3ff24d2cda18661e"
+      },
+      "postprocess": {
+        "input_sha256": "9498e4f57004cca1529ee8dd0e55c306d6abc8ab41c2a67c26f14c71a6249860",
+        "trim_start_seconds": 0.5,
+        "note": "Removed login/loading pre-roll; retained the original capture and core interaction."
       }
     },
     "docs-site/public/media/projects/ml-routing-poster.webp": {
@@ -2349,7 +2422,7 @@
     "docs-site/public/media/projects/project-actions-menu.mp4": {
       "asset_id": "project-actions-menu",
       "role": "docs-video",
-      "generated_at": "2026-08-15T20:08:49.030Z",
+      "generated_at": "2026-09-05T14:43:22.979Z",
       "captured_commit": "ebae1dbcaf809e4341be524377057012b3a013c1",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-f",
@@ -2361,20 +2434,25 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "docs-site/.vitepress/theme/components/DocsVideo.vue"
       ],
-      "sha256": "448f9de8fa45b87d0fcf8fc825050341dc4392fdef53c57309299d17851aecff",
-      "bytes": 166304,
+      "sha256": "58ad99c4f584bb87bef1a4af86b8d09f9b9fbd79d278d1f0fbc5ba599c7103d4",
+      "bytes": 190073,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "30/1",
-        "duration_seconds": 11.734
+        "duration_seconds": 11.233333
       },
       "source_asset": {
         "runId": "20260815T200721Z-ebae1dbcaf80",
         "assetId": "project-actions-menu",
         "sha256": "ecb4816d2da9e38832a8afb8fe386e1068473c2e338db75e39c5b13594227a9a"
+      },
+      "postprocess": {
+        "input_sha256": "448f9de8fa45b87d0fcf8fc825050341dc4392fdef53c57309299d17851aecff",
+        "trim_start_seconds": 0.5,
+        "note": "Removed login/loading pre-roll; retained the original capture and core interaction."
       }
     },
     "docs-site/public/media/review/reject-flow-poster.webp": {
@@ -2411,7 +2489,7 @@
     "docs-site/public/media/review/reject-flow.mp4": {
       "asset_id": "review-reject",
       "role": "docs-video",
-      "generated_at": "2026-08-15T18:22:01.787Z",
+      "generated_at": "2026-09-05T14:43:23.009Z",
       "captured_commit": "ffdfbb9941372ef82d6893cc65ee5ba900a0af78",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-f",
@@ -2423,20 +2501,25 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "docs-site/.vitepress/theme/components/DocsVideo.vue"
       ],
-      "sha256": "65195d64f45488098706824aa44b8731b86b5289f6fb052a6e08bcd333e136a4",
-      "bytes": 581410,
+      "sha256": "5c563b76d377143b7fc06665ed0eff100751d4728fba606e0b1d3c1fc74b6036",
+      "bytes": 712396,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "30/1",
-        "duration_seconds": 24.5
+        "duration_seconds": 24
       },
       "source_asset": {
         "runId": "20260815T181855Z-ffdfbb994137",
         "assetId": "review-reject",
         "sha256": "fcea29db274520c991036aa7878021ebe216320f9ae89a8514bb4fcc520ff70f"
+      },
+      "postprocess": {
+        "input_sha256": "65195d64f45488098706824aa44b8731b86b5289f6fb052a6e08bcd333e136a4",
+        "trim_start_seconds": 0.5,
+        "note": "Removed login/loading pre-roll; retained the original capture and core interaction."
       }
     },
     "docs-site/public/media/sam/smart-scribble-poster.webp": {
@@ -2535,7 +2618,7 @@
     "docs-site/public/media/superadmin/model-market/gpu-resources.mp4": {
       "asset_id": "model-market-gpu-resource-overview",
       "role": "docs-video",
-      "generated_at": "2026-08-15T19:43:11.240Z",
+      "generated_at": "2026-09-05T14:43:23.037Z",
       "captured_commit": "ad529d3a60e468f731f40ed5cfa4af7536e956d1",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-f",
@@ -2547,20 +2630,25 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "docs-site/.vitepress/theme/components/DocsVideo.vue"
       ],
-      "sha256": "def240a6863bdb03b8db6129b8392f8e04ccc3cdec3c2ddc5ea156dee0cc657a",
-      "bytes": 156314,
+      "sha256": "579155f37bb8387afe62ccf610141c9d7efaba4d292ac179a034ccb9fd73f504",
+      "bytes": 183457,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "30/1",
-        "duration_seconds": 11.567
+        "duration_seconds": 11.066667
       },
       "source_asset": {
         "runId": "20260815T194108Z-ad529d3a60e4",
         "assetId": "model-market-gpu-resource-overview",
         "sha256": "4d2b7fb874396213388100565070ea17299427bf7dcdc14ec9d5e9ae9811718f"
+      },
+      "postprocess": {
+        "input_sha256": "def240a6863bdb03b8db6129b8392f8e04ccc3cdec3c2ddc5ea156dee0cc657a",
+        "trim_start_seconds": 0.5,
+        "note": "Removed login/loading pre-roll; retained the original capture and core interaction."
       }
     },
     "docs-site/public/media/superadmin/model-market/runtime-data-sources-poster.webp": {
@@ -2597,7 +2685,7 @@
     "docs-site/public/media/superadmin/model-market/runtime-data-sources.mp4": {
       "asset_id": "model-market-runtime-partial-failure",
       "role": "docs-video",
-      "generated_at": "2026-08-15T19:06:17.434Z",
+      "generated_at": "2026-09-05T14:43:23.067Z",
       "captured_commit": "ea99b6990ad7ff3b89f309d80149c3f380447382",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-f",
@@ -2609,20 +2697,25 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "docs-site/.vitepress/theme/components/DocsVideo.vue"
       ],
-      "sha256": "737954df436f94e95348d60abe52e64e1ff41a4edfa5666c9b7dea90be7b5a8d",
-      "bytes": 167233,
+      "sha256": "fdbd2dced22505a1cea2edc24f8a9290eb81a15f14ff547185ee67b3602cda12",
+      "bytes": 189200,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "30/1",
-        "duration_seconds": 10.9
+        "duration_seconds": 10.4
       },
       "source_asset": {
         "runId": "20260815T190312Z-ea99b6990ad7",
         "assetId": "model-market-runtime-partial-failure",
         "sha256": "1b1e44e06c86348ea347ec284685087f0cb455bd10c0c00e2589ee8dca02720a"
+      },
+      "postprocess": {
+        "input_sha256": "737954df436f94e95348d60abe52e64e1ff41a4edfa5666c9b7dea90be7b5a8d",
+        "trim_start_seconds": 0.5,
+        "note": "Removed login/loading pre-roll; retained the original capture and core interaction."
       }
     },
     "docs-site/public/media/superadmin/model-market/runtime-pools-poster.webp": {
@@ -2659,7 +2752,7 @@
     "docs-site/public/media/superadmin/model-market/runtime-pools.mp4": {
       "asset_id": "model-market-runtime-pool",
       "role": "docs-video",
-      "generated_at": "2026-08-15T13:20:16.274Z",
+      "generated_at": "2026-09-05T14:43:23.097Z",
       "captured_commit": "39a690ed0857d840998bb0337923ec2405924a3e",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-e",
@@ -2671,20 +2764,25 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "docs-site/.vitepress/theme/components/DocsVideo.vue"
       ],
-      "sha256": "5d8a4fd34d3813c1f299d82e98996040bd6e068a43cf18e2486eda5b8b390aa7",
-      "bytes": 377589,
+      "sha256": "aaaae9b799a9b40bd3f616f2ca408196ff108ebdcd6e5ec0e31e9a3a8dd70087",
+      "bytes": 416009,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "30/1",
-        "duration_seconds": 21.467
+        "duration_seconds": 20.966667
       },
       "source_asset": {
         "runId": "20260815T131746Z-39a690ed0857",
         "assetId": "model-market-runtime-pool",
         "sha256": "f280c0e91f8cab82f2770a2a13d08045c0981da8e1294066b3ca3a9841952d5a"
+      },
+      "postprocess": {
+        "input_sha256": "5d8a4fd34d3813c1f299d82e98996040bd6e068a43cf18e2486eda5b8b390aa7",
+        "trim_start_seconds": 0.5,
+        "note": "Removed login/loading pre-roll; retained the original capture and core interaction."
       }
     },
     "docs-site/public/media/superadmin/model-market/video-pool-poster.webp": {
@@ -2721,7 +2819,7 @@
     "docs-site/public/media/superadmin/model-market/video-pool.mp4": {
       "asset_id": "model-market-video-pool",
       "role": "docs-video",
-      "generated_at": "2026-08-15T21:09:18.516Z",
+      "generated_at": "2026-09-05T14:43:23.128Z",
       "captured_commit": "62bf7055a13126371a0dd8f498c483a2fb710d5d",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-f",
@@ -2733,20 +2831,25 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "docs-site/.vitepress/theme/components/DocsVideo.vue"
       ],
-      "sha256": "3c0d2c3a063e28838355ad178e039e53fa16affd935f541629194fa2c3270181",
-      "bytes": 250409,
+      "sha256": "c768ef238ef3019e0f02267b9f92d1ab4751a8a27c9b958ecc4d5840b4008064",
+      "bytes": 267132,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "30/1",
-        "duration_seconds": 16.1
+        "duration_seconds": 15.6
       },
       "source_asset": {
         "runId": "20260815T210704Z-62bf7055a131",
         "assetId": "model-market-video-pool",
         "sha256": "23a6b394874712b4eac8b302ef5d11c1f943550b0ba602922b5333a2d06435b5"
+      },
+      "postprocess": {
+        "input_sha256": "3c0d2c3a063e28838355ad178e039e53fa16affd935f541629194fa2c3270181",
+        "trim_start_seconds": 0.5,
+        "note": "Removed login/loading pre-roll; retained the original capture and core interaction."
       }
     },
     "docs-site/public/media/superadmin/platform-overview-poster.webp": {
@@ -2783,7 +2886,7 @@
     "docs-site/public/media/superadmin/platform-overview.mp4": {
       "asset_id": "platform-overview",
       "role": "docs-video",
-      "generated_at": "2026-08-15T20:01:00.526Z",
+      "generated_at": "2026-09-05T14:43:23.159Z",
       "captured_commit": "c4efd2b8994807663a3af420af976608c86f706d",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-f",
@@ -2795,20 +2898,25 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "docs-site/.vitepress/theme/components/DocsVideo.vue"
       ],
-      "sha256": "5548c3979563eb3935496eaa64125a2c730dfe0cb27f33b99b978d7b008a2bfa",
-      "bytes": 482377,
+      "sha256": "ee5e724557fbfabc37670e4ceac01cf9688e6782b0a82689174d2425021ff478",
+      "bytes": 504280,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "30/1",
-        "duration_seconds": 20.634
+        "duration_seconds": 20.133333
       },
       "source_asset": {
         "runId": "20260815T195828Z-c4efd2b89948",
         "assetId": "platform-overview",
         "sha256": "deaa0571e5dda2e0809857bce2de9dc0dcb313fa9e6472a1e86e25a73d3fd44b"
+      },
+      "postprocess": {
+        "input_sha256": "5548c3979563eb3935496eaa64125a2c730dfe0cb27f33b99b978d7b008a2bfa",
+        "trim_start_seconds": 0.5,
+        "note": "Removed login/loading pre-roll; retained the original capture and core interaction."
       }
     },
     "docs-site/public/media/video/ai-tracker-panel-poster.webp": {
@@ -3089,7 +3197,7 @@
     "docs-site/public/media/video/propagate-track-vs-copy.mp4": {
       "asset_id": "video-propagate-track-vs-copy",
       "role": "docs-video",
-      "generated_at": "2026-08-15T22:26:19.615Z",
+      "generated_at": "2026-09-05T14:43:23.189Z",
       "captured_commit": "f96d182258889ff0bf0ff0204ffcece2ed1adc73",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-f",
@@ -3101,20 +3209,25 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "docs-site/.vitepress/theme/components/DocsVideo.vue"
       ],
-      "sha256": "7dca9a11070bb3f3075b830230f53bb00db0e111a1b612466b029f400d6d39b6",
-      "bytes": 960682,
+      "sha256": "edf1b8a5ef4dd91b88840dceeedc6b689f33ecff41736625e8a6935871a2b4c5",
+      "bytes": 1177151,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "30/1",
-        "duration_seconds": 23.167
+        "duration_seconds": 22.9
       },
       "source_asset": {
         "runId": "20260815T222220Z-f96d18225888",
         "assetId": "video-propagate-track-vs-copy",
         "sha256": "c31d223807bf7c336d23201cdc47fbb914a5522df457750c540c02e20fa9acb9"
+      },
+      "postprocess": {
+        "input_sha256": "7dca9a11070bb3f3075b830230f53bb00db0e111a1b612466b029f400d6d39b6",
+        "trim_start_seconds": 0.25,
+        "note": "Removed login/loading pre-roll; retained the original capture and core interaction."
       }
     },
     "docs-site/public/media/video/track-batch-propagate-poster.webp": {

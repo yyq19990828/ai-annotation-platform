@@ -1263,11 +1263,11 @@
       },
       "fixture": null,
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-08-e",
-      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "seed_revision": null,
+      "source_commit": "269c3fedf03b843b521e7751c707842c7cb726f9",
       "browser": {
         "name": "chromium",
-        "version": "147.0.7727.15"
+        "version": "152.0.7977.76"
       },
       "project": "desktop-light",
       "viewport": {
@@ -1276,11 +1276,12 @@
       },
       "theme": "light",
       "locale": "zh-CN",
-      "generated_at": "2026-08-15T06:33:19.854Z",
-      "provenance": "current-run",
-      "sha256": "09bbf0ab192ca8006f22e50491fa0decf89ea82b9a96e6ebbe4625e16a5c0e36",
+      "generated_at": "2026-09-05T13:58:24.275Z",
+      "provenance": "targeted-browser-capture",
+      "sha256": "1b926333a3e58e521be2a222a866f4fbcc3f4eb8511e021298a33778875b6ec6",
       "width": 1440,
-      "height": 900
+      "height": 900,
+      "note": "Captured from PR 71 frontend with the existing local screenshot demo data; seed catalog revision was not revalidated. Account preference changes were sandboxed in browser memory for the pointcloud recording."
     },
     "docs-site/user-guide/images/superadmin/analytics/heatmap.png": {
       "auto": true,

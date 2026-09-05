@@ -47,13 +47,13 @@ export async function runPointcloudCameraSeed3dBox(
   await page.waitForLoadState("domcontentloaded");
 
   await page.getByTestId("pc-viewport").waitFor({ timeout: 20_000 });
-  const expandCamera = page.getByTitle("展开相机").first();
-  await page
-    .locator('[title="展开相机"], [title="放大相机"]')
-    .first()
-    .waitFor({ state: "visible", timeout: 10_000 });
+  const frontCamera = page.locator("[data-floating-panel]").filter({
+    has: page.getByText(/^CAM_FRONT(?: · 正对)?$/),
+  });
+  await expect(frontCamera).toBeVisible({ timeout: 10_000 });
+  const expandCamera = frontCamera.getByTitle("展开相机", { exact: true });
   if (await expandCamera.isVisible()) await expandCamera.click();
-  const cameraImage = page.locator("[data-floating-panel] img").first();
+  const cameraImage = frontCamera.locator("img");
   await expect(cameraImage).toBeVisible({ timeout: 10_000 });
   await cameraImage.evaluate(async (image: HTMLImageElement) => {
     if (image.complete && image.naturalWidth > 0) return;
@@ -67,14 +67,14 @@ export async function runPointcloudCameraSeed3dBox(
   const drawStartMs = Date.now();
   await page.waitForTimeout(1_400);
 
-  await page.getByTitle("放大相机").first().click();
+  await frontCamera.getByTitle("放大相机", { exact: true }).click();
   const seedButton = page.getByRole("button", { name: "种框 ⊹" });
   await seedButton.waitFor({ state: "visible", timeout: 5_000 });
   const modalBody = page.getByRole("button", { name: "关闭 ✕" }).locator("..");
   await page.waitForTimeout(1_200);
   await seedButton.click();
 
-  const cameraCanvas = modalBody.locator('canvas[aria-label^="front 相机投影"]');
+  const cameraCanvas = modalBody.getByLabel("CAM_FRONT 相机投影", { exact: true });
   await expect(cameraCanvas).toBeVisible();
   const box = await cameraCanvas.boundingBox();
   if (!box) throw new Error("[pointcloud-camera-seed-3d-box] 放大相机画布不可见");
@@ -143,7 +143,7 @@ export async function runPointcloudCameraSeed3dBox(
 
   // 回到同步相机图完成因果闭环：初始 2D 提示已生成真实 3D 框，
   // 核对空间包围后，最后再展示该框稳定重投影到原目标。
-  await page.getByTitle("放大相机").first().click();
+  await frontCamera.getByTitle("放大相机", { exact: true }).click();
   await expect(page.getByRole("button", { name: "关闭 ✕" })).toBeVisible();
   await expect(page.getByRole("button", { name: "种框 ⊹" })).toBeVisible();
   await page.waitForTimeout(2_800);
