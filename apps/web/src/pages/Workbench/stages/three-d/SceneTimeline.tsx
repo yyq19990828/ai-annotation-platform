@@ -433,7 +433,7 @@ export function SceneTimeline({
     if (!expanded) return;
     virtualizer.measure();
     virtualizer.scrollToOffset(savedScrollRef.current);
-  }, [cellWidth, expanded, virtualizer]);
+  }, [cellWidth, expanded, taskId, virtualizer]);
 
   useEffect(() => {
     if (!expanded || !playbackActive || currentFrame == null) return;
@@ -471,6 +471,9 @@ export function SceneTimeline({
   );
 
   const cancelManual = useCallback(() => {
+    if (pointerPrefetchTimerRef.current !== null)
+      window.clearTimeout(pointerPrefetchTimerRef.current);
+    pointerPrefetchTimerRef.current = null;
     if (navigationTimerRef.current !== null) window.clearTimeout(navigationTimerRef.current);
     navigationTimerRef.current = null;
     pendingNavigationRef.current = null;
@@ -626,8 +629,10 @@ export function SceneTimeline({
           endFrame,
           selectedTrack ?? null,
         ],
-        queryFn: () =>
-          tasksApi.getSceneTimeline(taskId, startFrame, endFrame, selectedTrack, { signal }),
+        queryFn: ({ signal: querySignal }) =>
+          tasksApi.getSceneTimeline(taskId, startFrame, endFrame, selectedTrack, {
+            signal: querySignal,
+          }),
         staleTime: 30_000,
       });
       if (signal.aborted) throw new DOMException("Aborted", "AbortError");
@@ -884,6 +889,17 @@ export function SceneTimeline({
         : playbackActive
           ? "只读预览"
           : null);
+  const canNavigate = (direction: 1 | -1) => {
+    for (
+      let index = currentFrame + direction;
+      index >= sceneStart && index <= sceneEnd;
+      index += direction
+    ) {
+      const frame = frameByIndex.get(index);
+      if (!frame || (frame.state === "available" && frame.task_id)) return true;
+    }
+    return false;
+  };
   const playReason =
     playbackBlockedReason ??
     (query.isError ? "Scene 摘要加载失败，请重试" : null) ??
@@ -899,6 +915,7 @@ export function SceneTimeline({
       className="@container min-w-0 shrink-0 border-t border-border bg-card text-xs text-foreground"
       aria-label="3D Scene 时间轴"
       data-testid="three-d-scene-timeline"
+      data-scene-timeline
       data-expanded={expanded}
       tabIndex={0}
       onKeyDown={onKeyDown}
@@ -928,6 +945,7 @@ export function SceneTimeline({
               size="xs"
               variant="ghost"
               onClick={() => {
+                playback.pause();
                 onRetryFrame?.();
                 void query.refetch();
               }}
@@ -1023,7 +1041,7 @@ export function SceneTimeline({
                 variant="ghost"
                 className="size-6 p-0"
                 aria-label="上一帧"
-                disabled={currentFrame <= sceneStart}
+                disabled={!canNavigate(-1)}
                 onClick={() => void manualNavigate(currentFrame - 1, -1)}
               >
                 <Icon name="chevLeft" />
@@ -1054,7 +1072,7 @@ export function SceneTimeline({
                 variant="ghost"
                 className="size-6 p-0"
                 aria-label="下一帧"
-                disabled={currentFrame >= sceneEnd}
+                disabled={!canNavigate(1)}
                 onClick={() => void manualNavigate(currentFrame + 1, 1)}
               >
                 <Icon name="chevRight" />

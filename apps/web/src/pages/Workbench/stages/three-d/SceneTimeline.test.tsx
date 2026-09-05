@@ -480,4 +480,39 @@ describe("SceneTimeline", () => {
     );
     expect(navigate).not.toHaveBeenCalled();
   });
+  it("disables a boundary button when all remaining summaries are inaccessible", () => {
+    const data = timelineData();
+    data.current_frame_index = 1;
+    data.scene_end_frame = 2;
+    data.frames[0] = { ...data.frames[0], state: "unavailable", task_id: null };
+    useSceneTimelineMock.mockReturnValue({
+      data,
+      isError: false,
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+    renderTimeline({ taskId: "task-1", trackId: null, onNavigateFrame: vi.fn() }, false);
+    expect(screen.getByRole("button", { name: "上一帧" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "下一帧" })).toBeDisabled();
+  });
+
+  it("cancels queued hover prefetch before starting playback", async () => {
+    const onActiveChange = vi.fn();
+    renderTimeline({
+      taskId: "task-0",
+      trackId: null,
+      onNavigateFrame: vi.fn(),
+      frameState: { taskId: "task-0", status: "ready" },
+      onPlaybackActiveChange: onActiveChange,
+    });
+    await waitFor(() => expect(getPointCloudManifestMock).toHaveBeenCalled());
+    getPointCloudManifestMock.mockClear();
+    fireEvent.pointerEnter(screen.getByTestId("scene-timeline-frame-1"));
+    fireEvent.click(screen.getByTestId("scene-timeline-play"));
+    expect(onActiveChange).toHaveBeenCalledWith(true);
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 180));
+    });
+    expect(getPointCloudManifestMock).not.toHaveBeenCalled();
+  });
 });

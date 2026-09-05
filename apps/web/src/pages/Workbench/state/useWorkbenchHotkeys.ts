@@ -169,7 +169,9 @@ export function isWorkbenchInputFocused(el: EventTarget | null): boolean {
     el.tagName === "TEXTAREA" ||
     el.isContentEditable ||
     Boolean(
-      el.closest('[data-workbench-layout-control], [role="tab"], [role="menu"], [role="menuitem"]'),
+      el.closest(
+        '[data-workbench-layout-control], [data-scene-timeline], [role="tab"], [role="menu"], [role="menuitem"]',
+      ),
     )
   );
 }

@@ -39,6 +39,7 @@ interface TopbarProps {
   onPrev: () => void;
   onNext: () => void;
   onSubmit: () => void;
+  submitDisabled?: boolean;
   onSmartNextOpen?: () => void;
   onSmartNextUncertain?: () => void;
   /** v0.15.3 · 齿轮图标直接打开设置抽屉;缺省不渲染该项。 */
@@ -104,6 +105,7 @@ export function Topbar({
   onPrev,
   onNext,
   onSubmit,
+  submitDisabled = false,
   onSmartNextOpen,
   onSmartNextUncertain,
   onOpenWorkbenchSettings,
@@ -315,7 +317,7 @@ export function Topbar({
               variant="primary"
               size="sm"
               onClick={onSubmit}
-              disabled={isSubmitting}
+              disabled={isSubmitting || submitDisabled}
               data-testid="workbench-submit"
             >
               <Icon name="check" size={13} />

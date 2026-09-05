@@ -211,6 +211,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     const timeline = page.getByTestId("three-d-scene-timeline");
     await expect(timeline).toBeVisible({ timeout: 10_000 });
     await expect(timeline).toContainText("nuScenes mini scene-0061");
+    await page.getByTestId("scene-timeline-toggle").click();
     await expect(page.getByTestId("scene-timeline-frame-0")).toHaveAttribute(
       "aria-current",
       "step",

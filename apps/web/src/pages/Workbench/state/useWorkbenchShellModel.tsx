@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useIsMutating, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToastStore } from "@/components/ui/Toast";
 import { randomId } from "@/utils/id";
 import {
@@ -708,11 +708,25 @@ export function useWorkbenchShellModel({
     resolvedTaskId: taskId ?? null,
   };
   const taskIdx = tasks.findIndex((t) => t.id === taskId);
+  const [scenePlaybackActive, setScenePlaybackActive] = useState(false);
+  const scenePlaybackRef = useRef(false);
+  const scenePropagationPendingRef = useRef(false);
+  const [scenePropagationPending, setScenePropagationPending] = useState(false);
+  const pendingWorkbenchWrites = useIsMutating();
+  const setScenePlayback = useCallback(
+    (active: boolean) => {
+      if (active && (queryClient.isMutating() > 0 || scenePropagationPendingRef.current)) return;
+      scenePlaybackRef.current = active;
+      setScenePlaybackActive(active);
+    },
+    [queryClient],
+  );
   const selectTask = useCallback(
     async (
       id: string,
-      opts: { replace?: boolean; signal?: AbortSignal } = {},
+      opts: { replace?: boolean; signal?: AbortSignal; scenePreview?: boolean } = {},
     ): Promise<boolean> => {
+      if (!opts.scenePreview) setScenePlayback(false);
       const generation = ensurePointCloudNavigationGeneration(id, "shell");
       const before = navigationIdentityRef.current;
       publishPointCloudNavigationTrace({
@@ -766,7 +780,14 @@ export function useWorkbenchShellModel({
         return allowed;
       });
     },
-    [selectedBatchId, setCurrentTaskId, setSelectedId, taskNavigationScheduler, updateUrl],
+    [
+      selectedBatchId,
+      setCurrentTaskId,
+      setSelectedId,
+      taskNavigationScheduler,
+      updateUrl,
+      setScenePlayback,
+    ],
   );
   const imageWidth = task?.image_width ?? null;
   const imageHeight = task?.image_height ?? null;
@@ -1607,9 +1628,27 @@ export function useWorkbenchShellModel({
     connection: preannotationConn,
     retries: preannotationRetries,
   } = usePreannotationProgress(projectId);
-  const { lockError, lockConflict, remainingMs } = useTaskLock(
+  const sceneMayEdit =
+    mode === "annotate" && !!task && task.status !== "review" && task.status !== "completed";
+  const {
+    lockError,
+    lockConflict,
+    remainingMs,
+    isLocked: taskLockReady,
+  } = useTaskLock(
     taskId,
-    videoCollaborationResolved && !videoCollaborationEnabled,
+    videoCollaborationResolved &&
+      !videoCollaborationEnabled &&
+      (stageKind !== "3d" || (sceneMayEdit && !scenePlaybackActive)),
+  );
+  const sceneWriteBlocked =
+    stageKind === "3d" && (scenePlaybackActive || !sceneMayEdit || !taskLockReady);
+  useEffect(() => {
+    if (stageKind !== "3d") setScenePlayback(false);
+  }, [setScenePlayback, stageKind]);
+  const navigateScenePreview = useCallback(
+    (targetTaskId: string) => selectTask(targetTaskId, { scenePreview: true }),
+    [selectTask],
   );
   const [segmentLeaseError, setSegmentLeaseError] = useState<string | null>(null);
   const segmentLeaseRef = useRef<{ taskId: string; segmentId: string } | null>(null);
@@ -1709,10 +1748,10 @@ export function useWorkbenchShellModel({
   // pendingCrossFrameSelectRef 返回供上方两处 effect(切 task 清理 522 / 导航后补选 651)读写。
   const {
     pendingCrossFrameSelectRef,
-    crossFramePropagate,
-    crossFramePropagateBatch,
-    crossFramePropagateToTask,
-    crossFrameInterpolate,
+    crossFramePropagate: propagateSceneFrame,
+    crossFramePropagateBatch: propagateSceneBatch,
+    crossFramePropagateToTask: propagateSceneToTask,
+    crossFrameInterpolate: interpolateScene,
   } = usePredictionPropagation({
     taskId,
     selectedId: s.selectedId,
@@ -1720,6 +1759,41 @@ export function useWorkbenchShellModel({
     pushToast,
     queryClient,
   });
+
+  const runSceneWrite = useCallback(
+    async (write: () => Promise<void>) => {
+      if (scenePlaybackRef.current) {
+        setScenePlayback(false);
+        return;
+      }
+      if (sceneWriteBlocked || scenePropagationPendingRef.current) return;
+      scenePropagationPendingRef.current = true;
+      setScenePropagationPending(true);
+      try {
+        await write();
+      } finally {
+        scenePropagationPendingRef.current = false;
+        setScenePropagationPending(false);
+      }
+    },
+    [sceneWriteBlocked, setScenePlayback],
+  );
+  const crossFramePropagate = useCallback(
+    (direction: "next" | "prev") => runSceneWrite(() => propagateSceneFrame(direction)),
+    [propagateSceneFrame, runSceneWrite],
+  );
+  const crossFramePropagateBatch = useCallback(
+    (direction: "next" | "prev") => runSceneWrite(() => propagateSceneBatch(direction)),
+    [propagateSceneBatch, runSceneWrite],
+  );
+  const crossFramePropagateToTask = useCallback(
+    (target: string, frame: number) => runSceneWrite(() => propagateSceneToTask(target, frame)),
+    [propagateSceneToTask, runSceneWrite],
+  );
+  const crossFrameInterpolate = useCallback(
+    (track: string, target: string) => runSceneWrite(() => interpolateScene(track, target)),
+    [interpolateScene, runSceneWrite],
+  );
 
   // v0.14.18 · 交互线能力路由: 对每个注册后端拉 /setup 建 capIndex, 按当前工具 prompt 解析交互后端。
   // v0.18.31 · 交互后端选择的服务端持久化偏好 (按 project, 跨设备; 替代旧 localStorage)。
@@ -2499,7 +2573,8 @@ export function useWorkbenchShellModel({
   } = offlineQ;
 
   const isLockedForActions =
-    mode === "review"
+    sceneWriteBlocked ||
+    (mode === "review"
       ? task?.status === "completed" || videoCollaborationEnabled || !!lockConflict || !!lockError
       : task?.status === "review" ||
         task?.status === "completed" ||
@@ -2509,7 +2584,7 @@ export function useWorkbenchShellModel({
           (!activeVideoSegment ||
             activeVideoSegment.status === "completed" ||
             activeVideoSegment.locked_by !== meUserId ||
-            !!segmentLeaseError));
+            !!segmentLeaseError)));
   const maskEditorSize = resolveMaskEditorSize(
     isVideoTask,
     stageGeom,
@@ -5128,6 +5203,11 @@ export function useWorkbenchShellModel({
 
   const handleUpdateAttributes = useCallback(
     (annotationId: string, next: Record<string, unknown>) => {
+      if (scenePlaybackRef.current) {
+        setScenePlayback(false);
+        return;
+      }
+      if (isLockedForActions) return;
       const ann = annotationsRef.current.find((a) => a.id === annotationId);
       if (!ann) return;
       const before = { attributes: ann.attributes ?? {} };
@@ -5141,12 +5221,16 @@ export function useWorkbenchShellModel({
         },
       );
     },
-    [updateAnnotationMut, history],
+    [updateAnnotationMut, history, isLockedForActions, setScenePlayback],
   );
 
   const hoveredCommentShapes = useHoveredCommentStore(selectEffectiveShapes);
 
-  const { navigateTask, smartNext, handleSubmitTask } = useWorkbenchTaskFlow({
+  const {
+    navigateTask,
+    smartNext,
+    handleSubmitTask: submitTask,
+  } = useWorkbenchTaskFlow({
     taskId,
     task,
     tasks,
@@ -5162,6 +5246,10 @@ export function useWorkbenchShellModel({
     pushToast,
     submitTaskMut,
   });
+  const handleSubmitTask = useCallback(() => {
+    if (scenePlaybackRef.current || sceneWriteBlocked) return;
+    submitTask();
+  }, [sceneWriteBlocked, submitTask]);
 
   // v0.21.4 · 视频单题 AI: 抓当前帧 JPEG → 图像 backend(client 供图路径)→ 落单帧 video_bbox 候选。
   // 与图像的 handleRunAi 走不同路(那条投 task_id 让后端从 task URL 取图, 视频 task URL 是整段 mp4)。
@@ -5222,7 +5310,7 @@ export function useWorkbenchShellModel({
 
   const annotateModeState = useAnnotateMode({
     mode,
-    taskId,
+    taskId: scenePlaybackActive ? undefined : taskId,
     task,
     navigateTask,
     smartNext,
@@ -5232,14 +5320,14 @@ export function useWorkbenchShellModel({
   });
   const reviewModeState = useReviewMode({
     mode,
-    taskId,
+    taskId: scenePlaybackActive ? undefined : taskId,
     task,
     navigateTask,
     pushToast,
   });
   const modeState = mode === "review" ? reviewModeState : annotateModeState;
   const { topbarActions, bannerActions } = modeState;
-  const isLocked = modeState.isLocked;
+  const isLocked = modeState.isLocked || sceneWriteBlocked;
   // v0.21.13 · 章节 × 时间轴联动控制器 (状态/handler 声明在前, 此处 isLocked 就绪后组装并 gate 编辑)。
   const canEditChapters = !isLocked && isOwner;
   const videoTimelineChapterControls = useMemo<VideoTimelineChapterControls | undefined>(() => {
@@ -6301,7 +6389,7 @@ export function useWorkbenchShellModel({
       lockError,
       lockConflict,
       claimInfo: modeState.claimInfo,
-      canWithdraw: bannerActions.canWithdraw,
+      canWithdraw: !scenePlaybackActive && bannerActions.canWithdraw,
       isWithdrawing: bannerActions.isWithdrawing,
       isReopening: bannerActions.isReopening,
       isAcceptingRejection: bannerActions.isAcceptingRejection,
@@ -6318,6 +6406,7 @@ export function useWorkbenchShellModel({
       aiRunning,
       batchStatus: currentBatchStatus,
       isSubmitting: isSubmittingTask,
+      submitDisabled: sceneWriteBlocked,
       confThreshold: s.confThreshold,
       onShowHotkeys: () => setShowHotkeys(true),
       onBack,
@@ -6331,23 +6420,25 @@ export function useWorkbenchShellModel({
       trackerRunning: Boolean(trackingJobId),
       onPrev: () => navigateTask("prev"),
       onNext: () => navigateTask("next"),
-      onSubmit: videoCollaborationEnabled
-        ? submitActiveVideoSegment
-        : (topbarActions.onSubmit ?? handleSubmitTask),
+      onSubmit: sceneWriteBlocked
+        ? handleSubmitTask
+        : videoCollaborationEnabled
+          ? submitActiveVideoSegment
+          : (topbarActions.onSubmit ?? handleSubmitTask),
       onSmartNextOpen: topbarActions.onSmartNextOpen,
       onSmartNextUncertain: topbarActions.onSmartNextUncertain,
       onOpenWorkbenchSettings: () => setWorkbenchSettingsOpen(true),
-      canWithdraw: topbarActions.canWithdraw,
-      canReopen: topbarActions.canReopen,
+      canWithdraw: !scenePlaybackActive && topbarActions.canWithdraw,
+      canReopen: !scenePlaybackActive && topbarActions.canReopen,
       isWithdrawing: topbarActions.isWithdrawing,
       isReopening: topbarActions.isReopening,
       onWithdraw: topbarActions.onWithdraw,
       onReopen: topbarActions.onReopen,
       isSkipping: topbarActions.isSkipping,
-      onSkip: topbarActions.onSkip,
+      onSkip: scenePlaybackActive ? undefined : topbarActions.onSkip,
       mode,
-      onApprove: topbarActions.onApprove,
-      onReject: topbarActions.onReject,
+      onApprove: scenePlaybackActive ? undefined : topbarActions.onApprove,
+      onReject: scenePlaybackActive ? undefined : topbarActions.onReject,
       isApproving: topbarActions.isApproving,
       isRejecting: topbarActions.isRejecting,
       reviewInfoSlot: topbarActions.reviewInfoSlot,
@@ -6384,7 +6475,14 @@ export function useWorkbenchShellModel({
         onCrossFramePropagateBatch: crossFramePropagateBatch,
         onCrossFramePropagateToTask: crossFramePropagateToTask,
         onCrossFrameInterpolate: crossFrameInterpolate,
-        onNavigateSceneFrame: navigateToCrossFrameTask,
+        onNavigateSceneFrame: navigateScenePreview,
+        scenePlaybackActive,
+        onScenePlaybackActiveChange: setScenePlayback,
+        scenePlaybackBlockedReason: scenePropagationPending
+          ? "跨帧操作正在保存，请稍候"
+          : !scenePlaybackActive && pendingWorkbenchWrites > 0
+            ? "工作台正在保存，请稍候"
+            : null,
         rightSidebarOpen: rightOpen,
         rightSidebarWidth: rightOpen ? rightPx : 0,
         workbenchLayout: s.workbenchLayout,

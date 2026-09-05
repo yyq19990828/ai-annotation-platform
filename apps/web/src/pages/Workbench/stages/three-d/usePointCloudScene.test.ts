@@ -107,6 +107,43 @@ describe("usePointCloudScene camera continuity", () => {
     } as unknown as typeof ResizeObserver;
   });
 
+  it("retries a failed point cloud without recreating its renderer", async () => {
+    const sceneRef = { current: null };
+    const view = renderHook(() =>
+      usePointCloudScene({
+        viewportRef: { current: document.createElement("div") },
+        sceneRef: sceneRef as never,
+        pcdDecimate: 100,
+        pointSize: 0.06,
+        showGrid: true,
+        showAxisGizmo: true,
+        cameraDamping: 0.1,
+        persistCameraView: false,
+        pointCloudUrl: "retry.pcd",
+        continuityKey: "retry-scene",
+        axisConvention: "iso_8855",
+        boxes: [],
+        selectedId: null,
+        selectedPsrEditable: false,
+        pointcloudCamera: null,
+        onWorkbenchLayoutChange: vi.fn(),
+        onViewModeChange: vi.fn(),
+        onTransformPreview: vi.fn(),
+        onTransformCommit: vi.fn(),
+      }),
+    );
+    await waitFor(() => expect(view.result.current.loadedPointCloudUrl).toBe("retry.pcd"));
+    const scene = mockState.instances[0];
+    scene.loadPcd.mockRejectedValueOnce(new Error("decode failed"));
+    act(() => view.result.current.retryLoad());
+    await waitFor(() => expect(view.result.current.loadError).toBe("decode failed"));
+    act(() => view.result.current.retryLoad());
+    await waitFor(() => expect(view.result.current.loadedPointCloudUrl).toBe("retry.pcd"));
+    expect(view.result.current.loadError).toBeNull();
+    expect(mockState.instances).toHaveLength(1);
+    expect(scene.dispose).not.toHaveBeenCalled();
+  });
+
   it("moves the render surface and refreshes layout without recreating or reloading the scene", async () => {
     const container = document.createElement("div");
     const surface = document.createElement("div");

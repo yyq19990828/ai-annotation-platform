@@ -261,6 +261,9 @@ interface ThreeDWorkbenchProps {
   taskId: string | null;
   /** v0.13.3 · 锁定 task / viewer 角色时只读:不放置 / 不编辑 / 无 gizmo,仅看 + 选中查看数值。 */
   readOnly?: boolean;
+  playbackActive?: boolean;
+  onPlaybackActiveChange?: (active: boolean) => void;
+  playbackBlockedReason?: string | null;
   /** v0.13.3-5 · 壳层共享选中态(与标注列表 / 右栏面板同一份),驱动选中高亮 / gizmo / 数值面板。 */
   selectedId: string | null;
   selectedIds: string[];
@@ -300,7 +303,10 @@ interface ThreeDWorkbenchProps {
 
 export function ThreeDWorkbench({
   taskId,
-  readOnly = false,
+  readOnly: taskReadOnly = false,
+  playbackActive = false,
+  onPlaybackActiveChange,
+  playbackBlockedReason: shellPlaybackBlockedReason,
   selectedId,
   selectedIds,
   onSelectBox,
@@ -323,10 +329,57 @@ export function ThreeDWorkbench({
   box3dDefaultSize,
   petDock,
 }: ThreeDWorkbenchProps) {
+  const readOnly = taskReadOnly || playbackActive;
+  const writeAllowedRef = useRef(!readOnly);
+  writeAllowedRef.current = !readOnly;
+  // Capture before renderer and Shell shortcuts: the first editing gesture only pauses.
+  useEffect(() => {
+    if (!readOnly) return;
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.closest(
+          'input, textarea, select, [contenteditable="true"], [role="dialog"], [role="menu"], [role="tab"], [data-workbench-layout-control], [data-scene-timeline]',
+        )
+      )
+        return;
+      const key = event.key.toLowerCase();
+      const editing =
+        event.ctrlKey || event.metaKey
+          ? ["z", "y", "v", "d", "enter"].includes(key)
+          : [
+              "b",
+              "p",
+              "w",
+              "e",
+              "r",
+              "q",
+              "l",
+              "h",
+              "enter",
+              "delete",
+              "backspace",
+              "arrowleft",
+              "arrowright",
+              "arrowup",
+              "arrowdown",
+            ].includes(key);
+      if (!editing) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (playbackActive) onPlaybackActiveChange?.(false);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onPlaybackActiveChange, playbackActive, readOnly]);
   const dockLayout = useWorkbench3DLayout();
   const [cameraResetKey, setCameraResetKey] = useState(0);
   useEffect(() => retainPointCloudComputeSession(), []);
-  const { data: manifest, isLoading, error } = usePointCloudManifest(taskId, true);
+  const manifestQuery = usePointCloudManifest(taskId, true);
+  const { data: manifest, isLoading, error } = manifestQuery;
+  const retainedManifestRef = useRef(manifest);
+  if (manifest) retainedManifestRef.current = manifest;
+  const displayManifest = manifest ?? retainedManifestRef.current;
   const pushToast = useToastStore((st) => st.push);
   const userId = useAuthStore((s) => s.user?.id ?? null);
   const userRole = useAuthStore((s) => s.user?.role ?? null);
@@ -438,7 +491,8 @@ export function ThreeDWorkbench({
   const measurementIdRef = useRef(0);
   // 选中态来自壳层(selectedId / onSelectBox props),与标注列表 / 右栏面板共享同一份。
 
-  const { data: annotations } = useAnnotations(taskId ?? undefined);
+  const annotationsQuery = useAnnotations(taskId ?? undefined);
+  const { data: annotations } = annotationsQuery;
   const updateAnnotation = useUpdateAnnotation(taskId ?? undefined);
   const deleteAnnotation = useDeleteAnnotation(taskId ?? undefined);
   const createAnnotation = useCreateAnnotation(taskId ?? undefined);
@@ -851,6 +905,7 @@ export function ThreeDWorkbench({
 
   // gizmo 拖拽中只更新本地 PSR，三视图与相机投影跟随主框实时刷新。
   const handleTransformPreview = useCallback((id: string, psr: BoxPsr) => {
+    if (!writeAllowedRef.current) return;
     setForm(psrToForm(psr));
     setDraftPsr({ id, psr, source: "gizmo" });
   }, []);
@@ -858,6 +913,7 @@ export function ThreeDWorkbench({
   // gizmo 拖拽结束:清理预览并回写 PSR 表单 + 几何 PATCH 持久化。
   // 作为回调注入 usePointCloudScene —— form / mutate / history 仍由本壳组件持有,边界干净。
   const handleTransformCommit = useCallback((id: string, psr: BoxPsr) => {
+    if (!writeAllowedRef.current) return;
     setDraftPsr(null);
     setForm(psrToForm(psr));
     const ann = annotationsRef.current?.find((a) => a.id === id);
@@ -904,6 +960,7 @@ export function ThreeDWorkbench({
     isLoading: pointCloudLoading,
     loadedPointCloudUrl,
     rendererStatus,
+    retryLoad,
   } = usePointCloudScene({
     renderSurface: dockLayout?.renderSurface,
     layoutKey: dockLayout?.layoutKey,
@@ -917,10 +974,10 @@ export function ThreeDWorkbench({
     showAxisGizmo: workbenchPointcloud.showAxisGizmo,
     cameraDamping: workbenchPointcloud.cameraDamping,
     persistCameraView: workbenchPointcloud.persistCameraView,
-    pointCloudUrl: manifest?.point_cloud_url,
+    pointCloudUrl: displayManifest?.point_cloud_url,
     deferPointCloudDisplay: false,
-    continuityKey: manifest?.scene_id ?? taskId,
-    axisConvention,
+    continuityKey: displayManifest?.scene_id ?? displayManifest?.task_id ?? taskId,
+    axisConvention: displayManifest?.axis_convention ?? axisConvention,
     boxes: sceneBoxes,
     measurementPaths: measurementScenePaths,
     selectedId,
@@ -1109,13 +1166,15 @@ export function ThreeDWorkbench({
   // v0.16.x 第 3 批 · PSR 数值字段防抖落库管线抽到 usePsrPatchPipeline(单一职责、
   // 单消费者 handleField、不碰共享 form/setForm);完整 usePsrEditor 因 form 被多处共享
   // 无法干净切分(见计划 §5/§7),此处仅"缩小范围"抽这条管线。
-  const { schedulePatch } = usePsrPatchPipeline({
-    selectedId,
-    selectedAnn,
-    axisConvention,
-    updateAnnotation,
-    history,
-  });
+  const { schedulePatch, hasPendingPatch, hasInvalidDraft, isSaving, saveError } =
+    usePsrPatchPipeline({
+      form,
+      selectedId,
+      selectedAnn,
+      axisConvention,
+      updateAnnotation,
+      history,
+    });
 
   const handleField = useCallback(
     (k: PsrField, value: string) => {
@@ -1135,14 +1194,18 @@ export function ThreeDWorkbench({
       if (!selectedBox) return;
       setForm((prev) => {
         if (!prev) return prev;
-        return isPsrFieldBad(k, prev[k]) ? { ...prev, [k]: psrToForm(selectedBox)[k] } : prev;
+        if (!isPsrFieldBad(k, prev[k])) return prev;
+        const next = { ...prev, [k]: psrToForm(selectedBox)[k] };
+        schedulePatch(next);
+        return next;
       });
     },
-    [selectedBox],
+    [schedulePatch, selectedBox],
   );
 
   const updateAnnotationWithHistory = useCallback(
     (annotationId: string, before: AnnotationUpdatePayload, after: AnnotationUpdatePayload) => {
+      if (!writeAllowedRef.current) return;
       if (JSON.stringify(before) === JSON.stringify(after)) return;
       updateAnnotation.mutate({ annotationId, payload: after });
       history.push({ kind: "update", annotationId, before, after });
@@ -1311,6 +1374,7 @@ export function ThreeDWorkbench({
 
   // 锁定 / 解锁选中框(与列表 L 切换同源 is_locked;锁定后不可编辑,解锁需此按钮 / 列表)。
   const handleToggleLock = useCallback(() => {
+    if (!writeAllowedRef.current) return;
     if (!selectedId) return;
     updateAnnotation.mutate({
       annotationId: selectedId,
@@ -1320,6 +1384,7 @@ export function ThreeDWorkbench({
 
   // v0.15.20 · 隐藏 / 显示选中框(与右栏列表同源 is_hidden;仅可见性,渲染侧读 a.is_hidden)。
   const handleToggleHidden = useCallback(() => {
+    if (!writeAllowedRef.current) return;
     if (!selectedId) return;
     updateAnnotation.mutate({
       annotationId: selectedId,
@@ -1329,6 +1394,7 @@ export function ThreeDWorkbench({
 
   const submitBoxCreation = useCallback(
     (payload: AnnotationPayload) => {
+      if (!writeAllowedRef.current) return;
       if (boxCreationInFlightRef.current) return;
       const submittedTaskId = taskId;
       const revision = ++boxCreationRevisionRef.current;
@@ -1458,6 +1524,7 @@ export function ThreeDWorkbench({
 
   const applyPointMaskSelection = useCallback(
     (selected: PointMaskSelection | null, subtract: boolean) => {
+      if (!writeAllowedRef.current) return;
       if (!selected) return;
       const scene = sceneRef.current;
       if (selectedPointMaskEditable && selectedId && selectedPointMask) {
@@ -1580,6 +1647,7 @@ export function ThreeDWorkbench({
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       const key = e.key.toLowerCase();
       if (!["z", "y", "c", "v", "d"].includes(key)) return;
+      if (key !== "c" && !writeAllowedRef.current) return;
       e.preventDefault();
       e.stopImmediatePropagation();
       if (key === "z" && !e.shiftKey) {
@@ -1758,6 +1826,14 @@ export function ThreeDWorkbench({
   };
 
   const handleViewportClick = (e: React.MouseEvent) => {
+    if (playbackActive) {
+      const down = pointerDownRef.current;
+      pointerDownRef.current = null;
+      if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) <= DRAG_CLICK_TOL) {
+        onPlaybackActiveChange?.(false);
+      }
+      return;
+    }
     if (measuring) {
       if (
         (e.target !== viewportRef.current && !(e.target instanceof HTMLCanvasElement)) ||
@@ -1978,10 +2054,11 @@ export function ThreeDWorkbench({
   );
   useEffect(() => {
     setManualBboxMode(false);
-  }, [enlargedCam?.role, selectedAnn?.scene_track_id]);
+  }, [enlargedCam?.role, selectedAnn?.scene_track_id, readOnly]);
 
   const handleManualBboxCommit = useCallback(
     async (bbox: { x: number; y: number; w: number; h: number }) => {
+      if (!writeAllowedRef.current) return;
       if (
         !taskId ||
         !selectedAnn?.scene_track_id ||
@@ -2035,6 +2112,7 @@ export function ThreeDWorkbench({
 
   const handleManualVisibilityChange = useCallback(
     async (visibility: "visible" | "occluded" | "truncated" | "unknown") => {
+      if (!writeAllowedRef.current) return;
       if (
         !enlargedCameraMember ||
         !enlargedCam?.calibration_revision ||
@@ -2066,6 +2144,7 @@ export function ThreeDWorkbench({
   );
 
   const handleDeleteManualBbox = useCallback(async () => {
+    if (!writeAllowedRef.current) return;
     if (!enlargedCameraMember || !cameraMembers.data?.track_revision) return;
     if (!window.confirm(`删除 ${enlargedCam?.name ?? "当前相机"} 的 2D 成员？`)) return;
     try {
@@ -2272,7 +2351,20 @@ export function ThreeDWorkbench({
   // v0.13.4 · 跨模态高亮集合:选中框 + 同 track_id 成员。3D 主视图仍按 selected 单框高亮,
   // overlay 按本集合高亮(为未来同链 2D 框成员预留;孤立框 track_id 为空时退化为仅选中本身)。
   // v0.21.2 · ADR-0045 · 跨帧链按 track_id 认同一对象 (原 group_id 高位段)。
+  const [playbackTrackId, setPlaybackTrackId] = useState<string | null>(null);
   const selectedTrackId = selectedAnn?.track_id ?? null;
+  useEffect(() => {
+    if (!playbackActive || !playbackTrackId || !annotationsQuery.isSuccess) return;
+    const member = annotations?.find((annotation) => annotation.track_id === playbackTrackId);
+    if (member && member.id !== selectedId) onSelectBox(member.id);
+  }, [
+    annotations,
+    annotationsQuery.isSuccess,
+    onSelectBox,
+    playbackActive,
+    playbackTrackId,
+    selectedId,
+  ]);
   const highlightedIds = useMemo(() => {
     const s = new Set<string>();
     for (const id of selectedIds) s.add(id);
@@ -2689,8 +2781,80 @@ export function ThreeDWorkbench({
   const renderPsrPanel = (panel: ReactNode) =>
     petLinked ? createPortal(panel, document.body) : panel;
 
+  const [canvasVisible, setCanvasVisible] = useState(true);
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const measure = () => {
+      const rect = viewport.getBoundingClientRect();
+      setCanvasVisible(
+        rect.width > 0 &&
+          rect.height > 0 &&
+          (!dockLayout || dockLayout.getVisibleRegions(viewport).length > 0),
+      );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, [dockLayout]);
+  const frameError = error || annotationsQuery.error || loadError || rendererError;
+  const frameState = {
+    taskId,
+    status: frameError
+      ? ("error" as const)
+      : taskId &&
+          manifest?.task_id === taskId &&
+          annotationsQuery.isSuccess &&
+          manifest.point_cloud_url &&
+          loadedPointCloudUrl === manifest.point_cloud_url &&
+          stats &&
+          !pointCloudLoading
+        ? ("ready" as const)
+        : ("loading" as const),
+    error: frameError
+      ? String(frameError instanceof Error ? frameError.message : frameError)
+      : null,
+  };
+  const playbackBlockedReason =
+    shellPlaybackBlockedReason ||
+    (hasInvalidDraft
+      ? "请先修正或取消未完成的数值输入"
+      : hasPendingPatch
+        ? "数值修改正在等待保存"
+        : isSaving ||
+            createAnnotation.isPending ||
+            deleteAnnotation.isPending ||
+            history.busy ||
+            boxCreationSaving
+          ? "标注正在保存"
+          : saveError || createAnnotation.error || deleteAnnotation.error || boxCreationIssue
+            ? "标注保存失败，请先重试或修正"
+            : draftPsr || isBoxSelecting || psrDragging
+              ? "请先结束当前拖动"
+              : pointMaskPolygonPoints.length > 0 ||
+                  measurementDraft.length > 0 ||
+                  threeDTool === "box" ||
+                  threeDTool === "point-mask"
+                ? "请先完成或取消绘制，再切回选择工具"
+                : enlargedRole || calibrationSheetOpen || framePicker || classPickerAnchor
+                  ? "请先关闭编辑面板"
+                  : null);
+
   return (
-    <div className={ROOT}>
+    <div
+      className={ROOT}
+      data-scene-playback={playbackActive ? "playing" : "paused"}
+      data-scene-frame-state={frameState.status}
+      onPointerDownCapture={(event) => {
+        const target = event.target as HTMLElement;
+        if (playbackActive && target.closest('[data-testid="tri-view-renderer-panel"]')) {
+          event.preventDefault();
+          event.stopPropagation();
+          onPlaybackActiveChange?.(false);
+        }
+      }}
+    >
       <div ref={viewportWrapRef} className={VIEWPORT_WRAP}>
         <div
           ref={viewportRef}
@@ -3485,7 +3649,9 @@ export function ThreeDWorkbench({
                           <button
                             type="button"
                             className={manualBboxMode ? `${BTN} ${BTN_ACTIVE}` : BTN}
-                            disabled={cameraMembers.busy || !cameraMembers.data?.track_revision}
+                            disabled={
+                              readOnly || cameraMembers.busy || !cameraMembers.data?.track_revision
+                            }
                             onClick={() => {
                               setSeedMode(false);
                               setManualBboxMode((value) => !value);
@@ -3501,7 +3667,7 @@ export function ThreeDWorkbench({
                             <button
                               type="button"
                               className={BTN}
-                              disabled={cameraMembers.busy}
+                              disabled={readOnly || cameraMembers.busy}
                               onClick={() =>
                                 void handleManualBboxCommit(cameraMembers.data!.projected_bbox!)
                               }
@@ -3514,7 +3680,7 @@ export function ThreeDWorkbench({
                               <select
                                 className={SELECT_CTL}
                                 value={enlargedCameraMember.visibility}
-                                disabled={cameraMembers.busy}
+                                disabled={readOnly || cameraMembers.busy}
                                 aria-label="2D 成员可见性"
                                 onChange={(event) =>
                                   void handleManualVisibilityChange(
@@ -3541,7 +3707,7 @@ export function ThreeDWorkbench({
                                 <button
                                   type="button"
                                   className={BTN}
-                                  disabled={cameraMembers.busy}
+                                  disabled={readOnly || cameraMembers.busy}
                                   onClick={() =>
                                     void handleManualBboxCommit(enlargedCameraMember.bbox)
                                   }
@@ -3552,7 +3718,7 @@ export function ThreeDWorkbench({
                               <button
                                 type="button"
                                 className={DELETE_BTN}
-                                disabled={cameraMembers.busy}
+                                disabled={readOnly || cameraMembers.busy}
                                 onClick={() => void handleDeleteManualBbox()}
                               >
                                 删除 2D 框
@@ -3575,7 +3741,7 @@ export function ThreeDWorkbench({
                   pointPositions={pointPositions}
                   showDepth={depthOn}
                   seedMode={seedMode && !manualBboxMode}
-                  interactionDisabled={boxCreationSaving || cameraMembers.busy}
+                  interactionDisabled={readOnly || boxCreationSaving || cameraMembers.busy}
                   onSeedBox={handleSeedBox}
                   editableBox={
                     threeDTool === "select" && selectedPsrEditable && !seedMode && !manualBboxMode
@@ -3623,13 +3789,24 @@ export function ThreeDWorkbench({
               calibration={enlargedCalibrationSource.calibration}
               revision={enlargedCalibrationSource.calibration_revision}
               digest={enlargedCalibrationSource.calibration_digest}
-              canManage={canManageCalibration}
+              canManage={!readOnly && canManageCalibration}
             />
           )}
       </div>
       <SceneTimeline
         taskId={taskId}
-        trackId={selectedAnn?.track_id ?? null}
+        trackId={playbackActive ? (playbackTrackId ?? selectedTrackId) : selectedTrackId}
+        frameState={frameState}
+        onRetryFrame={() => {
+          void manifestQuery.refetch();
+          void annotationsQuery.refetch();
+          retryLoad();
+        }}
+        playbackActive={playbackActive}
+        onPlaybackActiveChange={onPlaybackActiveChange}
+        playbackBlockedReason={playbackBlockedReason}
+        onPlaybackTrackChange={setPlaybackTrackId}
+        visible={canvasVisible}
         prefetchDepthRasters={rendererStatus?.actualBackend === "webgpu"}
         prefetchDecimateThreshold={performanceConfig.pcdDecimate}
         selectedAnnotationIds={boxes

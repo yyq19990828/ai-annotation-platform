@@ -22,6 +22,11 @@ describe("useWorkbenchHotkeys module", () => {
 
     expect(isWorkbenchInputFocused(timeline)).toBe(false);
     expect(isWorkbenchInputFocused(textInput)).toBe(true);
+    const sceneTimeline = document.createElement("section");
+    sceneTimeline.dataset.sceneTimeline = "";
+    const playButton = document.createElement("button");
+    sceneTimeline.append(playButton);
+    expect(isWorkbenchInputFocused(playButton)).toBe(true);
   });
 
   it("does not send single-key annotation shortcuts from docking tabs or menus", () => {

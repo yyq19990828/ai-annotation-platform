@@ -94,6 +94,7 @@ interface UsePointCloudSceneResult {
   /** stats 所属的精确 URL，用于防止新 manifest 搭配旧点缓冲。 */
   loadedPointCloudUrl: string | null;
   rendererStatus: PointCloudRendererStatus | null;
+  retryLoad: () => void;
 }
 
 const RUNTIME_VIEW_TRANSFER_TTL_MS = 10_000;
@@ -158,6 +159,12 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
   const [rendererError, setRendererError] = useState<string | null>(null);
   const [rendererStatus, setRendererStatus] = useState<PointCloudRendererStatus | null>(null);
   const [rendererReadyVersion, setRendererReadyVersion] = useState(0);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [rendererAttempt, setRendererAttempt] = useState(0);
+  const retryLoad = useCallback(() => {
+    if (sceneRef.current) setLoadAttempt((value) => value + 1);
+    else setRendererAttempt((value) => value + 1);
+  }, [sceneRef]);
   const [rendererCircuitReason, setRendererCircuitReason] = useState<string | null>(null);
   const deferPointCloudDisplayRef = useRef(deferPointCloudDisplay);
   deferPointCloudDisplayRef.current = deferPointCloudDisplay;
@@ -270,7 +277,7 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
     };
     // rendererMode 在工作台打开时冻结；只有 page circuit 会触发同页重建。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rendererCircuitReason, rendererMode]);
+  }, [rendererCircuitReason, rendererMode, rendererAttempt]);
 
   useLayoutEffect(() => {
     const scene = sceneRef.current;
@@ -411,7 +418,7 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
         storeRuntimeViewTransfer(continuityKey, scene.getViewState());
       }
     };
-  }, [pointCloudUrl, continuityKey, axisConvention, rendererReadyVersion, sceneRef]);
+  }, [pointCloudUrl, continuityKey, axisConvention, rendererReadyVersion, sceneRef, loadAttempt]);
 
   // 同步 3D 框图层(标注 / 选中变化)。scene 在挂载 effect 里先建,本 effect 后跑。
   useEffect(() => {
@@ -457,5 +464,6 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
     isLoading: loadState.isLoading,
     loadedPointCloudUrl: loadState.loadedPointCloudUrl,
     rendererStatus,
+    retryLoad,
   };
 }

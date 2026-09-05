@@ -83,6 +83,14 @@ type StageKind = "image" | "video" | "3d";
 
 三视图管线预热、geometry generation、单帧调度及 device-lost 回退仍由现有渲染 owner 管理。布局移动不重建 Scene、不重复下载点云、不增加 renderer 或 GPU context。决策见 [ADR-0073](../adr/archive/0073-shared-surface-for-3d-docking)。
 
+### Scene 连续浏览
+
+Shell 持有当前会话的 `scenePlaybackActive`，将预览状态接到 `useTaskLock(enabled)` 和既有写操作边界。播放时停止心跳并释放旧锁；暂停后仅恢复当前帧的正常锁流程，在锁就绪前保持只读。锁请求按任务串行执行，取消后迟到的获取结果先释放，再允许同任务的新会话获取，防止旧清理释放新锁。
+
+`ThreeDWorkbench` 汇总 PSR 的防抖提交、无效输入、在途保存、绘制草稿和编辑面板，向 `SceneTimeline` 提供启动阻塞原因；同时用任务身份、标注查询和已加载点云 URL 派生 `loading/ready/error`。相机图和渐进上色不阻塞点云就绪。播放中的编辑快捷键或画布点击先暂停，本次手势不提交编辑。
+
+`SceneTimeline` 复用摘要窗口和唯一导航执行器，人工点选保留 160ms 合并，`useScenePlayback` 在目标帧就绪后按所选最高浏览速率停留，再串行导航。它以真实 Scene 身份区分内部切帧和外部跳转；页面隐藏、画布隐藏、资源错误或等待超过 15 秒均暂停，恢复后不自动播放。摘要每次最多 200 帧，展开轨道继续虚拟化，默认紧凑总览不假装掌握全 Scene 的标注密度。
+
 ### 3D 快捷键不走集中式 dispatchKey
 
 工作台的集中式快捷键派发（`hotkeys.ts` 的 `dispatchKey`，由 `useWorkbenchHotkeys` 全局注册）是为 2D 画布 / 视频设计的：`HotkeyAction` 联合类型只有 `setTool` / `arrowNudge` / `acceptAi` / `video*` / `submit` 等平面语义，没有 gizmo 模式、3D 工具、点云几何或相机切换。3D 的工具与编辑键（W/E/R gizmo、B/P/V 工具切换、Q 系列框拟合、Shift+→/← 跨帧延续、放大浮层 ←/→ 切相机、Delete/Backspace 删框）因此**由 `ThreeDWorkbench` 组件内 `addEventListener` 本地接管**，原因有三：
