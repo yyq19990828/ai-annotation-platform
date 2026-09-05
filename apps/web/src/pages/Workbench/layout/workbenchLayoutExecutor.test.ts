@@ -96,6 +96,18 @@ describe("workspace executor with Dockview 8", () => {
     expect(controller.capture().layout.grid.root).toEqual(before.layout.grid.root);
   });
 
+  it("returns cameras to a new dock if their former tab group has become floating", () => {
+    const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+    controller.setCameraPresentation("docked");
+    controller.tab("camera-view", "inspector");
+    controller.setCameraPresentation("floating");
+    controller.float("inspector");
+    controller.setCameraPresentation("docked");
+    expect(api.getPanel("camera-view")!.api.location.type).toBe("grid");
+    expect(api.getPanel("inspector")!.api.location.type).toBe("floating");
+    expect(controller.capture().cameraPresentation).toBe("docked");
+  });
+
   it("keeps camera modes, hidden intent and 3D presets independent of physical side projection", () => {
     const controller = createWorkbenchLayoutExecutor(api, () => bounds);
     controller.setCameraPresentation("docked");

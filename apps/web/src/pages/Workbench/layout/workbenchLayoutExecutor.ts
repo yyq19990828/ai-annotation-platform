@@ -822,6 +822,8 @@ export function createWorkbenchLayoutExecutor(
   }
   function restoreCameraDock(saved: PanelReturn) {
     const dock = saved.dock!;
+    let groupId = saved.group;
+    for (let index = 0; getGroup(groupId); index++) groupId = `camera-return-${index}`;
     const snapshot = rawSnapshot();
     const tree = treeFromNode(snapshot.layout.grid.root, snapshot.layout.grid.orientation, true)!;
     const members = (node: Tree): PanelId[] =>
@@ -844,7 +846,7 @@ export function createWorkbenchLayoutExecutor(
       const size = axis === "HORIZONTAL" ? dock.width : dock.height;
       const extent = axis === "HORIZONTAL" ? getBounds().width : getBounds().height;
       const camera: Tree = {
-        group: { id: saved.group, views: ["camera-view"], activeView: "camera-view" },
+        group: { id: groupId, views: ["camera-view"], activeView: "camera-view" },
         size,
       };
       const target = { ...node, size: Math.max(1, extent - size) };
@@ -872,9 +874,9 @@ export function createWorkbenchLayoutExecutor(
     snapshot.layout.grid.orientation =
       root.axis as WorkspaceSnapshot["layout"]["grid"]["orientation"];
     delete snapshot.layout.grid.maximizedNode;
-    snapshot.layout.activeGroup = saved.group;
+    snapshot.layout.activeGroup = groupId;
     replay(snapshot);
-    requestedDockSizes.set(saved.group, { width: dock.width, height: dock.height });
+    requestedDockSizes.set(groupId, { width: dock.width, height: dock.height });
   }
   function changeCameraPresentation(mode: CameraPresentation) {
     if (desktop) return;
