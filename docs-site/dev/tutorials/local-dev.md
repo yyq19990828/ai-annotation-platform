@@ -33,6 +33,42 @@ cd ../..
 docker compose up -d       # postgres / redis / minio / mailpit / workers / beat
 ```
 
+## Orca 工作树初始化
+
+仓库根目录的 `orca.yaml` 调用 `scripts/orca-worktree-setup.sh`，并等待 setup
+成功后启动 Agent。配置文件和脚本需要包含在新工作树使用的基准分支中。
+也可以在 Orca 的 **Settings → Repository → Hooks** 中，将本机 Setup 命令设为
+`bash "$ORCA_ROOT_PATH/scripts/orca-worktree-setup.sh"`，让尚未包含配置的分支复用主目录脚本。
+使用本机 Setup 命令时，同时将 Agent 启动策略设为等待 setup 完成。
+
+- `.env` 软链接到主目录；主目录缺少该文件时创建只含说明的空配置，保留应用默认值。
+  主目录已有 `.env.local` 时也会链接。修改共享文件会影响所有链接它的工作树。
+- pnpm 锁文件、工作区清单和三个 `package.json` 一致且主目录依赖齐全时，
+  `node_modules`、`apps/web/node_modules`、`docs-site/node_modules` 使用软链接。
+  不满足条件时在工作树内运行 `pnpm install --frozen-lockfile`。
+- `apps/api/.venv` 由 `uv sync --project apps/api --locked --extra test` 单独建立：
+  Python editable 包包含绝对源码路径，共享虚拟环境会误用主目录代码。
+- `pnpm codegen` 根据当前工作树的快照生成本地 API 类型，生成目录不共享。
+
+已有文件和目录不会被覆盖。工作树修改依赖后，先移除上述三个 `node_modules`
+软链接，再执行 `pnpm install --frozen-lockfile`；不要通过共享链接安装或更新依赖。
+无需另外配置 Orca 的 Worktree Shared Paths 或 `.worktreeinclude`。
+
+setup 只准备开发环境。基础设施沿用主目录已有服务，不自动运行 Docker、数据库迁移或
+开发服务器；并行启动服务时通过终端环境变量覆盖端口，例如
+`PORT=3002 API_PROXY_TARGET=http://127.0.0.1:8002 pnpm dev:web`。
+
+```bash
+# 显式运行仓库 setup，创建后再启动 Agent
+orca worktree create --name my-task --agent codex --setup run --json
+
+# 验证 hook 的软链接、幂等性和依赖隔离逻辑
+python3 scripts/test-orca-worktree-setup.py
+```
+
+参考：[Orca Hooks](https://www.onorca.dev/docs/agents/hooks-memory)、
+[工作树共享路径](https://www.onorca.dev/docs/model/worktrees)。
+
 ## 日常启动
 
 ```bash
