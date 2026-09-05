@@ -80,6 +80,10 @@ interface CameraProjectionViewProps {
   onManualBboxCommit?: (bbox: NormalizedCameraBbox) => void;
   /** 放大浮层使用内容宽度，并受父级可用空间约束；缩略图保持固定 190px。 */
   expanded?: boolean;
+  /** 停靠图库按可用宽度等比显示，不使用浮层的固定尺寸。 */
+  fitToPanel?: boolean;
+  /** 停靠面板隐藏或标签未激活时暂停投影和深度绘制。 */
+  visible?: boolean;
 }
 
 // 一个框至少有这么多可见角点才参与命中测试(避免擦边框误选)。
@@ -220,6 +224,8 @@ export function CameraProjectionView({
   manualBboxStale = false,
   onManualBboxCommit,
   expanded = false,
+  fitToPanel = false,
+  visible = true,
 }: CameraProjectionViewProps) {
   const imgRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -240,10 +246,12 @@ export function CameraProjectionView({
   const [raster, setRaster] = useState<DepthRaster | null>(null);
   const [natSize, setNatSize] = useState<{ w: number; h: number } | null>(null);
   const [loadedImageUrl, setLoadedImageUrl] = useState<string | null>(null);
+  const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
   const [hover, setHover] = useState<{ depth: number; point: [number, number, number] } | null>(
     null,
   );
-  const imageReady = loadedImageUrl === imageUrl;
+  const imageFailed = !imageUrl || failedImageUrl === imageUrl;
+  const imageReady = loadedImageUrl === imageUrl && !imageFailed;
 
   useEffect(() => {
     setNatSize(null);
@@ -252,15 +260,17 @@ export function CameraProjectionView({
 
   // 深度栅格:开关开 + 有点 + 有标定 + 知道原图尺寸时建一次(换帧/换相机重建);否则清空。
   useEffect(() => {
-    if (showDepth && pointPositions && calibration && natSize) {
+    if (!visible) return;
+    if (imageReady && showDepth && pointPositions && calibration && natSize) {
       setRaster(buildDepthRaster(pointPositions, calibration, natSize.w, natSize.h));
     } else {
       setRaster(null);
       setHover(null);
     }
-  }, [showDepth, pointPositions, calibration, natSize]);
+  }, [visible, imageReady, showDepth, pointPositions, calibration, natSize]);
 
   const draw = useCallback(() => {
+    if (!visible || !imageReady) return;
     const img = imgRef.current;
     const canvas = canvasRef.current;
     if (!img || !canvas) return;
@@ -458,6 +468,8 @@ export function CameraProjectionView({
       ctx.restore();
     }
   }, [
+    visible,
+    imageReady,
     boxes,
     calibration,
     editableBox,
@@ -495,16 +507,17 @@ export function CameraProjectionView({
   // 图尺寸变化(响应式布局 / 懒加载)重算缩放并重绘。
   useEffect(() => {
     const img = imgRef.current;
-    if (!img) return;
+    if (!img || !visible) return;
     const ro = new ResizeObserver(() => draw());
     ro.observe(img);
     return () => ro.disconnect();
-  }, [draw]);
+  }, [draw, visible]);
 
   // 图加载后记下原图分辨率(深度栅格 / 投影都基于 intrinsic 原图坐标)+ 重绘。
   const handleImgLoad = useCallback(() => {
     const img = imgRef.current;
     if (img?.naturalWidth) {
+      setFailedImageUrl(null);
       setLoadedImageUrl(imageUrl);
       setNatSize({ w: img.naturalWidth, h: img.naturalHeight });
     }
@@ -908,25 +921,38 @@ export function CameraProjectionView({
   );
 
   return (
-    <figure className={`${CAMERA_ITEM} ${expanded ? CAMERA_ITEM_EXPANDED : ""}`}>
-      <div className={`${CAMERA_VIEW} ${expanded ? CAMERA_VIEW_EXPANDED : CAMERA_VIEW_THUMBNAIL}`}>
+    <figure
+      className={`${CAMERA_ITEM} ${fitToPanel ? "min-w-0 w-full" : expanded ? CAMERA_ITEM_EXPANDED : ""}`}
+    >
+      <div
+        className={`${CAMERA_VIEW} ${fitToPanel ? "w-full" : expanded ? CAMERA_VIEW_EXPANDED : CAMERA_VIEW_THUMBNAIL}`}
+      >
         <img
           ref={imgRef}
-          src={imageUrl}
+          src={imageUrl || undefined}
           alt={name}
           className={`${CAMERA_IMG} ${
-            expanded ? CAMERA_IMG_EXPANDED : CAMERA_IMG_THUMBNAIL
+            fitToPanel
+              ? "h-auto w-full object-contain"
+              : expanded
+                ? CAMERA_IMG_EXPANDED
+                : CAMERA_IMG_THUMBNAIL
           } ${imageReady ? "" : "opacity-0"}`}
           loading="eager"
           decoding="async"
           onLoad={handleImgLoad}
+          onError={() => setFailedImageUrl(imageUrl)}
         />
-        {!imageReady && <span className={CAMERA_LOADING}>加载相机…</span>}
+        {!imageReady && (
+          <span className={CAMERA_LOADING} role="status">
+            {imageFailed ? (imageUrl ? "相机图像加载失败" : "当前帧无图像") : "加载相机…"}
+          </span>
+        )}
         <canvas
           ref={canvasRef}
           className={[
             CAMERA_CANVAS,
-            !imageReady && "pointer-events-none opacity-0",
+            (!imageReady || !visible) && "pointer-events-none opacity-0",
             (seedMode || manualBboxMode) && CAMERA_CANVAS_SEED,
             interactionDisabled && CAMERA_CANVAS_BLOCKED,
           ]
@@ -951,7 +977,7 @@ export function CameraProjectionView({
           onLostPointerCapture={() => cancelCameraEdit(canvasRef.current)}
         />
       </div>
-      <figcaption className={CAMERA_FIGCAPTION}>
+      <figcaption className={`${CAMERA_FIGCAPTION} ${fitToPanel ? "break-words" : ""}`}>
         {name}
         {bestForSelected && " · 正对"}
         {calibration ? "" : " · 无标定"}
