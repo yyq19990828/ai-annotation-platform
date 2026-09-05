@@ -86,9 +86,16 @@ async function beginEdit(page: Page, annotationId: string): Promise<void> {
   const row = page.getByTestId(`box-list-item-${annotationId}`);
   await expect(row).toBeVisible({ timeout: 15_000 });
   // 浮动选中卡可能合法覆盖右侧列表；强制派发列表选择事件，随后仍从可见操作按钮进入编辑。
+  // 编辑按钮必须取目标行专属的 user-refine-{id} (dispatchEvent 绕过 hover 浮出)：
+  // 多 mask 场景下全局 :visible 的「编辑 Mask」按钮可能属于其他行，导致编辑了错误对象。
   await row.click({ force: true });
-  await page.locator('button[aria-label="编辑 Mask"]:visible').last().click();
+  await page.getByTestId(`user-refine-${annotationId}`).dispatchEvent("click");
   await expect(page.getByTestId("mask-toolbar")).toContainText("就绪", { timeout: 15_000 });
+  // 就绪 ≠ 画布可交互：等媒体与 Konva 画布真正可见后再让用例做指针操作，
+  // 否则 fitted 前的合成指针事件被丢弃, 笔迹无声丢失。
+  const stage = page.getByTestId("workbench-stage");
+  await expect(stage).toHaveAttribute("data-image-ready", "true", { timeout: 15_000 });
+  await expect(stage.locator("canvas").first()).toBeVisible({ timeout: 15_000 });
 }
 
 async function imagePoint(page: Page, x: number, y: number): Promise<{ x: number; y: number }> {
@@ -108,11 +115,18 @@ async function clickPixel(page: Page, x: number, y: number): Promise<void> {
   await page.mouse.click(point.x, point.y);
 }
 
+async function waitToastsGone(page: Page): Promise<void> {
+  // sonner toast 挂在页面右上 (section[aria-live])，beginEdit 的提示 toast 会盖住
+  // 画布上部区域的笔迹落点，mousedown 被 toast 截获 → 整笔无声丢失。
+  await expect(page.locator("[data-sonner-toast]")).toHaveCount(0, { timeout: 10_000 });
+}
+
 async function paintStroke(
   page: Page,
   from: [number, number],
   to: [number, number],
 ): Promise<void> {
+  await waitToastsGone(page);
   const start = await imagePoint(page, from[0], from[1]);
   const end = await imagePoint(page, to[0], to[1]);
   await page.mouse.move(start.x, start.y);
@@ -556,8 +570,16 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     await openTask(page, seed, data, taskId);
     await beginEdit(page, primary.annotation_id);
     const toolbar = page.getByTestId("mask-toolbar");
-    await toolbar.getByTestId("mask-radius-slider").fill("2");
-    await paintStroke(page, [52, 5], [56, 8]);
+    const radiusSlider = toolbar.getByTestId("mask-radius-slider");
+    await radiusSlider.fill("2");
+    // 显式锁定笔刷形状 (默认即圆形): 与用例 1 相同的交互节奏, 让 slider/形状菜单的
+    // 渲染在画笔落下前完成, 避免过渡帧里 stage 几何与 Konva vp 不一致导致笔迹落空。
+    await expect(radiusSlider).toHaveValue("2");
+    await radiusSlider.blur();
+    await chooseAdvancedRadio(page, "圆形硬边");
+    // 起笔点 (50,8) 在浮动选择面板 (fixed, 默认停靠右上, 覆盖画布图片内 x>=51 区域)
+    // 之外: 落点被浮层截获时 mousedown 不会到达画布, 整笔无声丢失且不置 dirty。
+    await paintStroke(page, [50, 8], [55, 13]);
     const saved = page.waitForResponse(
       (response) =>
         response.url().endsWith(`/tasks/${taskId}/annotations/${primary.annotation_id}`) &&

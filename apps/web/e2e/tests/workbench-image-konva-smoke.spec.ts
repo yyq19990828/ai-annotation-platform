@@ -38,6 +38,9 @@ test.describe("workbench image konva smoke", () => {
 
     const stage = page.getByTestId("workbench-stage");
     await expect(stage).toBeVisible();
+    // 等媒体真正就绪再取 boundingBox：早于 ready 时 workspace 仍在初始布局过渡态,
+    // stage 宽度与稳态不同, 截图基线尺寸会漂移。
+    await expect(stage).toHaveAttribute("data-image-ready", "true", { timeout: 15_000 });
     const box = await stage.boundingBox();
     if (!box) throw new Error("workbench-stage boundingBox 不可用");
 
@@ -50,6 +53,13 @@ test.describe("workbench image konva smoke", () => {
     await page.mouse.down();
     await page.mouse.move(endX, endY, { steps: 8 });
     await page.mouse.up();
+
+    // afterBoxCreate 默认 pick_class → 松手后弹选类别窗;选 car 完成落库,
+    // 等 user-box-count=1 确保截到「画框已渲染」的稳态,而非过渡帧。
+    await expect(page.getByTestId("class-picker-popover")).toBeVisible({ timeout: 10_000 });
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("class-picker-popover")).toBeHidden();
+    await expect(stage).toHaveAttribute("data-user-box-count", "1", { timeout: 15_000 });
 
     // 等画布稳定,关动画
     await page.waitForTimeout(500);

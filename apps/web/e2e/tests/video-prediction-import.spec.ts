@@ -261,7 +261,6 @@ test("AAP JSON 视频预测可预检、审阅并持久化采纳/忽略", async (
   await page.getByRole("button", { name: "收起浮窗", exact: true }).click();
 
   const bboxRow = page.getByTestId(`box-list-item-${bboxCandidateId}`);
-  await bboxRow.getByRole("button", { name: "更多操作" }).hover();
   const acceptResponse = page.waitForResponse(
     (response) =>
       response
@@ -269,7 +268,9 @@ test("AAP JSON 视频预测可预检、审阅并持久化采纳/忽略", async (
         .includes(`/predictions/${bboxPrediction.id}/accept?shape_index=${bboxIndex}`) &&
       response.request().method() === "POST",
   );
-  await bboxRow.getByRole("button", { name: "采纳预测" }).click();
+  // 常驻 success toast (右上 sonner) 与行内浮出按钮的过渡动画会拦截合成指针事件,
+  // 用 dispatchEvent 直接触发 onClick, 与行内按钮的真实 handler 一致。
+  await bboxRow.getByRole("button", { name: "采纳预测" }).dispatchEvent("click");
   const accepted = (await (await acceptResponse).json()) as Annotation[];
   expect(accepted).toHaveLength(1);
   expect(accepted[0]).toMatchObject({
@@ -279,7 +280,6 @@ test("AAP JSON 视频预测可预检、审阅并持久化采纳/忽略", async (
   await expect(bboxRow).toHaveCount(0);
 
   const polygonRow = page.getByTestId(`box-list-item-${polygonCandidateId}`);
-  await polygonRow.getByRole("button", { name: "更多操作" }).hover();
   const rejectResponse = page.waitForResponse(
     (response) =>
       response
@@ -287,7 +287,7 @@ test("AAP JSON 视频预测可预检、审阅并持久化采纳/忽略", async (
         .includes(`/predictions/${regionPrediction.id}/reject?shape_index=${polygonIndex}`) &&
       response.request().method() === "POST",
   );
-  await polygonRow.getByRole("button", { name: "忽略预测" }).click();
+  await polygonRow.getByRole("button", { name: "忽略预测" }).dispatchEvent("click");
   expect((await rejectResponse).status()).toBe(204);
   await expect(polygonRow).toHaveCount(0);
 
