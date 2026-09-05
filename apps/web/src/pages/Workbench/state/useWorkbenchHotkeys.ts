@@ -10,6 +10,7 @@
 // AnnotationActions handler（state/useWorkbenchAnnotationActions.ts）。
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isWorkbenchSettingsInteractionBlocked } from "./workbenchSettingsInteraction";
 
 import { dispatchKey, ARROW_KEY_SET, hotkeyIgnoreToken } from "./hotkeys";
 import { nextInCategory, nextCategory } from "../stage/frameObjectCycle";
@@ -274,6 +275,15 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     nudgeOrigRef.current = new Map();
   }, [nudgeMap, updateMutation, history]);
 
+  // Disabled listeners cannot receive the held key's release. Settle it before detaching.
+  useEffect(() => {
+    if (!disabled) return;
+    setSpacePan(false);
+    videoSpaceDownRef.current = false;
+    videoSpaceDraggedRef.current = false;
+    flushNudges();
+  }, [disabled, flushNudges]);
+
   // polygon / polyline 专用键：Enter / Esc / Backspace
   // v0.10.28 · 两者共用 polygonDraftPoints 草稿；polygon Enter 需 ≥3 顶点（闭合），
   //            polyline Enter 需 ≥2 顶点（不闭合），分别走 submitPolygon / submitPolyline。
@@ -283,6 +293,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     const isPolyline = s.tool === "polyline";
     const minPts = isPolyline ? 2 : 3;
     const onKey = (e: KeyboardEvent) => {
+      if (isWorkbenchSettingsInteractionBlocked(e)) return;
       const t = e.target;
       if (
         t instanceof HTMLElement &&
@@ -322,6 +333,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     if (s.tool !== "mask") return;
     if (!maskEditor) return;
     const onKey = (e: KeyboardEvent) => {
+      if (isWorkbenchSettingsInteractionBlocked(e)) return;
       if (maskInteractionFrozen) return;
       const t = e.target;
       if (
@@ -464,6 +476,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     };
 
     const onKey = (e: KeyboardEvent) => {
+      if (isWorkbenchSettingsInteractionBlocked(e)) return;
       const modifiedToken = hotkeyIgnoreToken(e);
       if (ignoredKeys?.has(e.key) || (modifiedToken && ignoredKeys?.has(modifiedToken))) return;
       const attributeHotkey = (digit: string) => {
@@ -948,7 +961,9 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
       if (e.key === " ") {
         setSpacePan(false);
         if (videoMode && videoSpaceDownRef.current) {
-          if (!videoSpaceDraggedRef.current) videoControlsRef?.current?.togglePlayback();
+          if (!videoSpaceDraggedRef.current && !isWorkbenchSettingsInteractionBlocked(e)) {
+            videoControlsRef?.current?.togglePlayback();
+          }
           videoSpaceDownRef.current = false;
           videoSpaceDraggedRef.current = false;
         }

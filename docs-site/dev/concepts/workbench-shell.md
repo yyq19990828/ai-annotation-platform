@@ -84,6 +84,12 @@ type StageKind = "image" | "video" | "3d";
 
 视频 AI 追踪面板和候选审阅条使用 `WorkbenchLayout.stageOverlay`，相对中间 Stage 定位。顶部 `Topbar` 在视频任务中并列「追踪」与「AI 单题」入口，两个配置面板互斥。它们的位置 / 尺寸通过 `useFloatingPanelFrame` 保存到各自的 localStorage key，不属于下文的服务端 `workbench.layout` 偏好树。
 
+### 设置窗口的输入隔离
+
+设置窗口内容与遮罩带 `data-workbench-settings`，打开时 `data-state="open"`。独立的背景键盘和全局滚轮监听先调用 `isWorkbenchSettingsInteractionBlocked(event)`；窗口打开或事件的 `composedPath()` 包含设置标记时直接返回，不阻止传播，让设置自身的键盘、焦点与滚动行为继续工作。事件路径判断保留已卸载的标记，防止关闭设置的同一次事件落到背景。
+
+主快捷键还通过 `disabled` 暂停，开窗时清空空格平移与视频按住状态，并提交此前已有的方向键微移。`keyup`、`pointerup`、`mouseup` 中的释放和拖拽收尾继续执行。视频入口调用 `pausePlayback({ snapToGrid: false })`，暂停但不对齐采样网格、不切换帧；关闭设置后保持暂停。这一边界只负责设置窗口，不改变其它弹窗或后台任务的生命周期。
+
 ## 右栏：AI 检查器 + 讨论面板
 
 右栏是一个上下两段的可调整布局（`WorkbenchLayout.tsx` 的 `.rightSplit`）：

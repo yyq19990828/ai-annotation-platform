@@ -56,7 +56,7 @@ describe("useImageAnnotationActions module", () => {
     expect(hasUsableImageBounds({ x: 0.1, y: 0.2, w: 0.3, h: 0.4 })).toBe(true);
   });
 
-  it("取消图片 Mask 编辑后回到选择工具", () => {
+  it("取消 Mask 回选择，设置窗口内的候选键不影响背景 SAM", () => {
     const cancel = vi.fn();
     const setTool = vi.fn();
     const s = {
@@ -123,5 +123,36 @@ describe("useImageAnnotationActions module", () => {
 
     expect(cancel).toHaveBeenCalledTimes(1);
     expect(setTool).toHaveBeenCalledWith("select");
+
+    Object.assign(s, { tool: "smart-point" });
+    Object.assign(sam, {
+      canAcceptCandidates: true,
+      candidates: [
+        {
+          type: "polygonlabels",
+          points: [
+            [0, 0],
+            [1, 0],
+            [1, 1],
+          ],
+        },
+      ],
+    });
+    view.rerender();
+    const settings = document.createElement("button");
+    settings.dataset.workbenchSettings = "";
+    settings.dataset.state = "open";
+    document.body.append(settings);
+    act(() => {
+      for (const key of ["Enter", "Escape", "Tab", "r"]) {
+        settings.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+      }
+    });
+    expect(view.result.current.samPendingGeom).toBeNull();
+    expect(sam.cancel).not.toHaveBeenCalled();
+    expect(sam.cycle).not.toHaveBeenCalled();
+    settings.remove();
+    act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+    expect(sam.cancel).toHaveBeenCalledTimes(1);
   });
 });
