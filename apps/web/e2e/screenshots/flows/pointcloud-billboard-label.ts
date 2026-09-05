@@ -45,6 +45,7 @@ export async function runPointcloudBillboardLabel(
   const dialog = page.getByTestId("workbench-settings-dialog");
   await expect(dialog).toBeVisible();
 
+  await dialog.getByRole("tab", { name: "标注显示", exact: true }).click();
   const labelContent = page.getByTestId("setting-field-common.labelContent");
   await labelContent.scrollIntoViewIfNeeded();
   await labelContent.getByRole("tab", { name: "轨迹" }).click();

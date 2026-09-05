@@ -16,9 +16,18 @@ test("图像设置：外部关闭保存、搜索、焦点隔离及响应式布�
   const dialog = page.getByTestId("workbench-settings-dialog");
   const search = dialog.getByRole("textbox", { name: "搜索设置" });
   await expect(dialog.getByTestId("setting-field-common.leftWidthPct")).toBeVisible();
-  const imageTab = dialog.getByRole("tab", { name: "图片", exact: true });
-  await expect(imageTab).toBeInViewport();
-  expect((await imageTab.boundingBox())!.height).toBeLessThanOrEqual(44);
+  const canvasTab = dialog.getByRole("tab", { name: "画布与视角", exact: true });
+  await expect(canvasTab).toBeInViewport();
+  expect((await canvasTab.boundingBox())!.height).toBeLessThanOrEqual(44);
+  await expect(dialog.getByRole("tablist", { name: "设置分类" }).getByRole("tab")).toHaveText([
+    "界面布局",
+    "标注显示",
+    "编辑与辅助",
+    "画布与视角",
+    "播放与轨迹",
+    "性能与实验",
+  ]);
+  await dialog.getByRole("tab", { name: "标注显示", exact: true }).click();
   const labelTabs = dialog.getByRole("tablist", { name: "标签类型" });
   const firstSegment = await labelTabs
     .getByRole("tab", { name: "单帧", exact: true })
@@ -27,12 +36,30 @@ test("图像设置：外部关闭保存、搜索、焦点隔离及响应式布�
     .getByRole("tab", { name: "轨迹", exact: true })
     .boundingBox();
   expect(firstSegment!.y).toBe(secondSegment!.y);
+  await canvasTab.click();
+  await expect(dialog.getByTestId("setting-field-video.autoFitOnResize")).toHaveCount(1);
+  await expect(dialog.getByTestId("setting-field-pointcloud.pointSize")).toHaveCount(1);
   await page.screenshot({ path: info.outputPath("settings-desktop.png"), animations: "disabled" });
   await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
   await page.screenshot({ path: info.outputPath("settings-dark.png"), animations: "disabled" });
   await page.evaluate(() => document.documentElement.setAttribute("data-theme", "light"));
 
-  // 搜索结果跨当前任务可用分类；父开关随匹配的子项出现。
+  // 从图片任务编辑视频与点云偏好，所有改动都应保留到刷新之后。
+  await dialog.getByRole("tab", { name: "播放与轨迹", exact: true }).click();
+  const videoSaved = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/auth/me/preferences") && response.request().method() === "PATCH",
+  );
+  await dialog.getByRole("combobox", { name: "默认播放速率" }).selectOption("2");
+  expect((await videoSaved).ok()).toBe(true);
+  await canvasTab.click();
+  const gridSaved = page.waitForResponse(
+    (response) =>
+      response.url().endsWith("/auth/me/preferences") && response.request().method() === "PATCH",
+  );
+  await dialog.getByRole("switch", { name: "显示地面网格" }).click();
+  expect((await gridSaved).ok()).toBe(true);
+  // 全局搜索跨图片、视频和点云；父开关随匹配的子项出现。
   await search.fill("邻帧");
   await expect(dialog.getByTestId("setting-field-common.crossFrameOverlayEnabled")).toBeVisible();
   await search.fill("CSS");
@@ -51,8 +78,12 @@ test("图像设置：外部关闭保存、搜索、焦点隔离及响应式布�
   await page.reload();
   await boxTool.click();
   await trigger.click();
-  await dialog.getByRole("tab", { name: "图片", exact: true }).click();
+  await dialog.getByRole("tab", { name: "画布与视角", exact: true }).click();
   await expect(filter).toHaveValue("brightness(1.15)");
+  await expect(dialog.getByRole("switch", { name: "显示地面网格" })).not.toBeChecked();
+  await dialog.getByRole("tab", { name: "播放与轨迹", exact: true }).click();
+  await expect(dialog.getByRole("combobox", { name: "默认播放速率" })).toHaveValue("2");
+  await canvasTab.click();
   await dialog.focus();
   await page.keyboard.press("v");
   await page.keyboard.press("Delete");
@@ -67,6 +98,7 @@ test("图像设置：外部关闭保存、搜索、焦点隔离及响应式布�
   await expect.poll(() => select.evaluate((element) => element.matches(":open"))).toBe(false);
   await expect(select).toBeFocused();
 
+  await dialog.getByRole("tab", { name: "编辑与辅助", exact: true }).click();
   const slider = dialog.getByTestId("setting-field-image.controlPointsSize").getByRole("slider");
   await slider.scrollIntoViewIfNeeded();
   const bounds = await slider.boundingBox();
@@ -107,6 +139,7 @@ test("图像设置：外部关闭保存、搜索、焦点隔离及响应式布�
     await expect(dialog.getByRole("button", { name: "关闭设置" })).toBeInViewport();
   }
   await page.setViewportSize({ width: 375, height: 812 });
+  await dialog.getByRole("tab", { name: "性能与实验", exact: true }).click();
   await expect(dialog).toBeVisible();
   await expect
     .poll(() => dialog.evaluate((element) => element.scrollWidth <= element.clientWidth))
@@ -114,6 +147,18 @@ test("图像设置：外部关闭保存、搜索、焦点隔离及响应式布�
   await page.screenshot({ path: info.outputPath("settings-mobile.png"), animations: "disabled" });
   await dialog.getByRole("button", { name: "返回工作台" }).click();
   await expect(dialog).toBeHidden();
+
+  await page.goto("/settings");
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByRole("button", { name: "标注偏好", exact: true }).click();
+  await expect(page.getByTestId(/^setting-field-/)).toHaveCount(44);
+  await expect(page.getByText("画布与视角", { exact: true })).toBeVisible();
+  await page.screenshot({ path: info.outputPath("settings-personal.png"), animations: "disabled" });
+  await page.setViewportSize({ width: 375, height: 812 });
+  await page.screenshot({
+    path: info.outputPath("settings-personal-mobile.png"),
+    animations: "disabled",
+  });
   expect(errors).toEqual([]);
 });
 
@@ -136,8 +181,9 @@ test("视频设置：开窗暂停，设置键盘和滚轮不切帧", async ({ pa
     .toBe(true);
   const frame = await page.getByTestId("video-konva-stage").getAttribute("data-video-frame-index");
   const dialog = page.getByTestId("workbench-settings-dialog");
-  await dialog.getByRole("tab", { name: "视频", exact: true }).click();
-  await expect(dialog.getByTestId("setting-field-ui.secondary_bar_hidden")).toHaveCount(0);
+  await dialog.getByRole("tab", { name: "编辑与辅助", exact: true }).click();
+  await expect(dialog.getByTestId("setting-field-ui.secondary_bar_hidden")).toHaveCount(1);
+  await dialog.getByRole("tab", { name: "播放与轨迹", exact: true }).click();
   const step = dialog.getByTestId("setting-field-video.largeFrameStep").getByRole("combobox");
   await step.focus();
   await page.keyboard.press("ArrowRight");

@@ -2,6 +2,8 @@
 
 > Status: implemented
 >
+> 后续修订：用户要求取消模态隔离；原稿中的当前模态筛选方案已由文末「统一分类修订」取代。
+>
 > 探索日期：2026-09-05。源码基线：`0d462132`，探索开始时工作树干净。
 > 用户已于 2026-09-05 确认本计划并授权实施；包括点击窗口外部自动关闭。不包含发版。
 
@@ -403,3 +405,12 @@ rtk pnpm --filter @anno/web test:e2e e2e/tests/workbench-pointcloud-settings.spe
 - 正式文档：`docs-site/user-guide/workbench/settings.md`、`docs-site/user-guide/reference/settings.md`、`docs-site/dev/concepts/workbench-shell.md` 及相关当前指南已更新；`settings.generated.md` 从注册表重新生成（47 项），`CHANGELOG.md` 已写入 Unreleased。
 - 边界：浏览器验收使用 Chromium / SwiftShader；真实系统中文输入法、Safari/Firefox 与移动设备安全区未逐设备人工验收，组合输入事件和媒体/审核草稿隔离有现有单元测试覆盖。React Router future warnings 和故障注入用例的 offline 日志仍存在；未进行后端业务变更或发版。
 - 协作：输入隔离提交 `f8a1cf0c`、保存反馈提交 `fe1221c1` 已集成。两个临时工作树已移除，原代理分支因 cherry-pick 非祖先合并由 Orca 保留；`git cherry` 已验证没有遗漏补丁。
+
+## 统一分类修订
+
+用户在悬浮窗口落地后要求重新分类，并取消图片、视频、点云设置的隔离。
+
+- 用途导航定为「界面布局 / 标注显示 / 编辑与辅助 / 画布与视角 / 播放与轨迹 / 性能与实验」。导航与存储子树分离，所有 47 个已开放注册项和 2 个特殊项统一可见，个人页仍保留 44 个账号字段。
+- `stageKind` 不再传入设置窗口，实验字段的 `stageKinds` 过滤移除。图片二次推理开关也可从视频与点云任务修改；本机实验说明保留适用对象、URL 优先级及生效时间。
+- 统一的分组函数由窗口、搜索与个人页共用；文档生成器读取同一份分类和分组元数据。图片与视频自动适应仍保留独立设置值。
+- 已更新用户指南、开发文档、生成字段表、截图流程及 Unreleased。类型检查、字段/窗口/个人页测试通过；Chromium 的三个工作台场景验证了跨模态修改后刷新持久化，以及既有关闭、快捷键隔离和窄屏行为。

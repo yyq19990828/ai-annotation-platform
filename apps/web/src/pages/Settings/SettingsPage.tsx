@@ -22,12 +22,11 @@ import { SettingsFieldControl } from "@/pages/Workbench/components/SettingsField
 import { ApiKeysPanel } from "@/components/users/ApiKeysPanel";
 import { ConnectorAllowlistSettings } from "@/components/connections/ConnectorAllowlistSettings";
 import {
-  WORKBENCH_SETTING_CATEGORY_LABELS,
-  WORKBENCH_SETTING_FIELDS,
+  getVisibleWorkbenchSettingFields,
+  groupWorkbenchSettings,
   buildFieldPatch,
   getFieldValue,
   isLocalSettingField,
-  type WorkbenchSettingCategory,
   type WorkbenchSettingField,
   type WorkbenchSettingValue,
 } from "@/pages/Workbench/state/workbenchSettingsFields";
@@ -638,52 +637,50 @@ function WorkbenchPreferencesSection() {
     );
   };
 
-  // v0.15.3 · 注册表驱动的四分组(通用/图片/视频/点云);空分组(本版 video/pointcloud)
-  // 不渲染。与工作台设置窗口共用 WORKBENCH_SETTING_FIELDS + SettingsFieldControl。
-  const groups = (Object.keys(WORKBENCH_SETTING_CATEGORY_LABELS) as WorkbenchSettingCategory[])
-    .map((category) => ({
-      category,
-      fields: WORKBENCH_SETTING_FIELDS.filter(
-        (f) => f.category === category && !f.hidden && !isLocalSettingField(f),
-      ),
-    }))
-    .filter((g) => g.fields.length > 0);
+  const groups = groupWorkbenchSettings(
+    getVisibleWorkbenchSettingFields().filter((field) => !isLocalSettingField(field)),
+  );
 
   return (
     <Card>
       <SectionHeader title="标注偏好" />
       <div className={FORM_CLASS}>
-        {groups.map(({ category, fields }) => (
-          <div key={category} className="mt-2.5">
-            <div className={GROUP_LABEL_CLASS}>{WORKBENCH_SETTING_CATEGORY_LABELS[category]}</div>
-            <div className="flex flex-col gap-0.5">
-              {fields
-                .filter((field) => !field.parentKey)
-                .map((field) => {
-                  const fieldValue = getFieldValue(config, field);
-                  const childFields = fields.filter((child) => child.parentKey === field.key);
-                  return (
-                    <div key={field.key} className="flex flex-col gap-px">
-                      <SettingsFieldControl
-                        field={field}
-                        value={fieldValue}
-                        disabled={saving}
-                        onCommit={(value) => commit(field, value)}
-                      />
-                      {childFields.map((child) => (
-                        <SettingsFieldControl
-                          key={child.key}
-                          field={child}
-                          value={getFieldValue(config, child)}
-                          nested
-                          disabled={saving || !fieldValue}
-                          onCommit={(value) => commit(child, value)}
-                        />
-                      ))}
-                    </div>
-                  );
-                })}
-            </div>
+        {groups.map(({ key, label, sections }) => (
+          <div key={key} className="mt-2.5">
+            <div className="mb-3 text-sm font-semibold">{label}</div>
+            {sections.map(({ key: section, label: sectionLabel, fields }) => (
+              <section key={section} aria-label={sectionLabel} className="mb-3">
+                <div className={GROUP_LABEL_CLASS}>{sectionLabel}</div>
+                <div className="flex flex-col gap-0.5">
+                  {fields
+                    .filter((field) => !field.parentKey)
+                    .map((field) => {
+                      const fieldValue = getFieldValue(config, field);
+                      const childFields = fields.filter((child) => child.parentKey === field.key);
+                      return (
+                        <div key={field.key} className="flex flex-col gap-px">
+                          <SettingsFieldControl
+                            field={field}
+                            value={fieldValue}
+                            disabled={saving}
+                            onCommit={(value) => commit(field, value)}
+                          />
+                          {childFields.map((child) => (
+                            <SettingsFieldControl
+                              key={child.key}
+                              field={child}
+                              value={getFieldValue(config, child)}
+                              nested
+                              disabled={saving || !fieldValue}
+                              onCommit={(value) => commit(child, value)}
+                            />
+                          ))}
+                        </div>
+                      );
+                    })}
+                </div>
+              </section>
+            ))}
           </div>
         ))}
         {saving && <div className="text-xs text-muted-foreground">保存中…</div>}

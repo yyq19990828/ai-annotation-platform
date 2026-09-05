@@ -14,17 +14,17 @@ import {
   SettingsFieldControl,
   type SettingsControlField,
 } from "../components/SettingsFieldControl";
-import type { StageKind } from "../stages/types";
 import {
-  WORKBENCH_SETTING_CATEGORY_LABELS,
-  WORKBENCH_SETTING_SECTIONS,
+  WORKBENCH_SETTING_GROUPS,
   buildFieldPatch,
   filterWorkbenchSettings,
   getFieldValue,
+  groupWorkbenchSettings,
   getVisibleWorkbenchSettingFields,
   isLocalSettingField,
   lockableFieldName,
   type WorkbenchSettingCategory,
+  type WorkbenchSettingGroup,
   type WorkbenchSettingSection,
   type WorkbenchSettingValue,
 } from "../state/workbenchSettingsFields";
@@ -33,7 +33,6 @@ import { useWorkbenchConfig } from "../state/useWorkbenchConfig";
 interface WorkbenchSettingsDialogProps {
   open: boolean;
   onClose: () => void;
-  stageKind: StageKind;
   projectRenderingConfig?: ProjectRenderingConfig | null;
   hideOrphanAnnotations?: boolean;
   onToggleHideOrphans?: () => void;
@@ -43,7 +42,7 @@ interface WorkbenchSettingsDialogProps {
 
 interface SettingsEntry extends SettingsControlField {
   category: WorkbenchSettingCategory;
-  section?: WorkbenchSettingSection;
+  section: WorkbenchSettingSection;
   parentKey?: string;
   value: WorkbenchSettingValue;
   locked?: boolean;
@@ -51,18 +50,9 @@ interface SettingsEntry extends SettingsControlField {
   onCommit: (value: WorkbenchSettingValue) => void;
 }
 
-const CATEGORY_DESCRIPTIONS: Record<WorkbenchSettingCategory, string> = {
-  common: "布局、标注外观和操作偏好。",
-  image: "图像显示、绘制与 AI 辅助。",
-  video: "播放、画布与轨迹操作。",
-  pointcloud: "点云显示、相机视角和邻帧叠加。",
-  experiment: "当前任务可用的本机选项，部分更改需要刷新后生效。",
-};
-
 export function WorkbenchSettingsDialog({
   open,
   onClose,
-  stageKind,
   projectRenderingConfig,
   hideOrphanAnnotations,
   onToggleHideOrphans,
@@ -73,7 +63,7 @@ export function WorkbenchSettingsDialog({
   const { config, loaded, loadError, retryLoad, lockedFields, setFields } =
     useWorkbenchConfig(projectRenderingConfig);
   const [, refreshLocalFields] = useReducer((n: number) => n + 1, 0);
-  const [category, setCategory] = useState<WorkbenchSettingCategory>("common");
+  const [category, setCategory] = useState<WorkbenchSettingGroup>("layout");
   const [query, setQuery] = useState("");
   const contentRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -81,9 +71,8 @@ export function WorkbenchSettingsDialog({
   const composingRef = useRef(false);
   const overlayPointerRef = useRef(false);
   const desktop = useMediaQuery("(min-width: 768px)");
-  const visibleFields = getVisibleWorkbenchSettingFields(stageKind);
-  const categories = [...new Set(visibleFields.map((field) => field.category))];
-  const activeCategory = categories.includes(category) ? category : "common";
+  const visibleFields = getVisibleWorkbenchSettingFields();
+  const categories = Object.keys(WORKBENCH_SETTING_GROUPS) as WorkbenchSettingGroup[];
 
   useEffect(() => {
     if (!open) {
@@ -107,7 +96,7 @@ export function WorkbenchSettingsDialog({
   };
   const changeCategory = (next: string) => {
     commitFocusedSetting();
-    setCategory(next as WorkbenchSettingCategory);
+    setCategory(next as WorkbenchSettingGroup);
     setQuery("");
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
   };
@@ -139,22 +128,21 @@ export function WorkbenchSettingsDialog({
       value: hideOrphanAnnotations ?? false,
       onCommit: onToggleHideOrphans,
     });
-  if (stageKind === "image" && onToggleSecondaryBar)
+  if (onToggleSecondaryBar)
     entries.push({
       key: "ui.secondary_bar_hidden",
       category: "image",
       section: "ai",
       label: "二次推理面板",
-      description: "选中标注时显示二次推理工具条，随账号同步。",
+      description: "在图片任务选中标注时显示二次推理工具条，随账号同步。",
       control: { type: "toggle" },
       value: !(secondaryBarHidden ?? false),
       onCommit: onToggleSecondaryBar,
     });
   const searching = query.trim().length > 0;
-  const results = searching
-    ? filterWorkbenchSettings(entries, query)
-    : entries.filter((field) => field.category === activeCategory);
-  const resultCategories = searching ? categories : [activeCategory];
+  const resultGroups = groupWorkbenchSettings(
+    searching ? filterWorkbenchSettings(entries, query) : entries,
+  ).filter((group) => searching || group.key === category);
 
   return (
     <Dialog
@@ -232,7 +220,7 @@ export function WorkbenchSettingsDialog({
       >
         <DialogTitle className="sr-only">工作台设置</DialogTitle>
         <Tabs
-          value={activeCategory}
+          value={category}
           onValueChange={changeCategory}
           orientation={desktop ? "vertical" : "horizontal"}
           className="min-h-0 flex-1 gap-0"
@@ -280,11 +268,11 @@ export function WorkbenchSettingsDialog({
                   key={item}
                   value={item}
                   onClick={() => {
-                    if (searching && item === activeCategory) changeCategory(item);
+                    if (searching && item === category) changeCategory(item);
                   }}
                   className="h-10 flex-none px-3 transition-none data-[state=active]:bg-card data-[state=active]:shadow-none"
                 >
-                  {WORKBENCH_SETTING_CATEGORY_LABELS[item]}
+                  {WORKBENCH_SETTING_GROUPS[item].label}
                 </TabsTrigger>
               ))}
             </TabsList>
@@ -299,14 +287,16 @@ export function WorkbenchSettingsDialog({
               <span className="text-xs text-muted-foreground">更改自动保存</span>
             </footer>
           </aside>
-          <TabsContent value={activeCategory} className="m-0 flex min-h-0 min-w-0 flex-1 flex-col">
+          <TabsContent value={category} className="m-0 flex min-h-0 min-w-0 flex-1 flex-col">
             <header className="flex shrink-0 items-start justify-between gap-4 border-b border-border px-4 py-5 md:px-8 md:py-6">
               <div className="flex min-w-0 flex-col gap-1">
                 <h2 className="text-xl font-semibold">
-                  {searching ? "搜索结果" : WORKBENCH_SETTING_CATEGORY_LABELS[activeCategory]}
+                  {searching ? "搜索结果" : WORKBENCH_SETTING_GROUPS[category].label}
                 </h2>
                 <p className="text-sm text-muted-foreground">
-                  {searching ? "搜索当前任务可用的设置。" : CATEGORY_DESCRIPTIONS[activeCategory]}
+                  {searching
+                    ? "搜索全部工作台设置。"
+                    : WORKBENCH_SETTING_GROUPS[category].description}
                 </p>
               </div>
               <Button variant="ghost" size="icon" aria-label="关闭设置" onClick={close}>
@@ -330,7 +320,7 @@ export function WorkbenchSettingsDialog({
                     重试
                   </Button>
                 </Empty>
-              ) : !results.length ? (
+              ) : !resultGroups.length ? (
                 <Empty>
                   <EmptyHeader>
                     <EmptyTitle>没有找到相关设置</EmptyTitle>
@@ -340,22 +330,12 @@ export function WorkbenchSettingsDialog({
                   </Button>
                 </Empty>
               ) : (
-                resultCategories.map((resultCategory) => {
-                  const sections = (
-                    Object.keys(WORKBENCH_SETTING_SECTIONS) as WorkbenchSettingSection[]
-                  )
-                    .map((section) => ({
-                      section,
-                      fields: results.filter(
-                        (field) => field.category === resultCategory && field.section === section,
-                      ),
-                    }))
-                    .filter(({ fields }) => fields.length);
-                  return sections.map(({ section, fields }, index) => (
-                    <FieldSet key={`${resultCategory}.${section}`} className="gap-0 py-3">
+                resultGroups.flatMap((group) =>
+                  group.sections.map(({ key, label, fields }, index) => (
+                    <FieldSet key={key} className="gap-0 py-3">
                       <FieldLegend variant="label" className="mb-0 text-md">
-                        {searching ? `${WORKBENCH_SETTING_CATEGORY_LABELS[resultCategory]} / ` : ""}
-                        {WORKBENCH_SETTING_SECTIONS[section]}
+                        {searching ? `${group.label} / ` : ""}
+                        {label}
                       </FieldLegend>
                       <FieldGroup className="gap-0">
                         {fields.map((entry) => (
@@ -371,10 +351,10 @@ export function WorkbenchSettingsDialog({
                           />
                         ))}
                       </FieldGroup>
-                      {index < sections.length - 1 && <Separator className="mt-3" />}
+                      {index < group.sections.length - 1 && <Separator className="mt-3" />}
                     </FieldSet>
-                  ));
-                })
+                  )),
+                )
               )}
             </div>
             <footer className="flex shrink-0 justify-between border-t border-border px-4 py-3 pb-[max(12px,env(safe-area-inset-bottom))] text-xs text-muted-foreground md:hidden">

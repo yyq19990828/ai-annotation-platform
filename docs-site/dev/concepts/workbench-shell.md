@@ -165,8 +165,8 @@ workbench
 - **后端**：`apps/api/app/schemas/user.py` 四个子树 Model 均 `extra="forbid"`；存量 JSONB 由 alembic `0103` 数据迁移就地改写（up/down 可逆、幂等）。`update_preferences` 入口保留一层 legacy 平铺键提升器兼容窗口期旧 tab（v0.16 移除）。
 - **`ProjectRenderingConfig` 保持平铺**：项目侧不迁移；`useWorkbenchConfig.applyProjectOverride` 把平铺的项目覆盖映射到 `image.*` 子树字段,`lockedFields` 语义不变。
 - **字段注册表**：`state/workbenchSettingsFields.ts` 是设置 UI 的单一来源（key / 分类 / section 分组 / 控件类型 / 是否可锁定）。Settings 页「标注偏好」与工作台设置窗口共用它 + `components/SettingsFieldControl` 渲染，**新增设置项 = 后端子树加字段 → `auth.ts` 类型同步 → 注册表加一行 → 消费点读配置**。
-- **设置窗口**：`shell/WorkbenchSettingsDialog.tsx` 复用 Radix Dialog / Tabs。桌面居中双栏，窄屏全屏；显示「通用 + 当前模态 + 可用实验」，搜索匹配名称、说明、分组与选项，并保留命中子项的父开关。`section` 只影响展示，不改变存储键。`SettingsFieldControl` 的 `settings` 布局显示说明，个人页保留默认 `compact` 布局。
+- **设置窗口**：`shell/WorkbenchSettingsDialog.tsx` 复用 Radix Dialog / Tabs。桌面居中双栏，窄屏全屏；固定显示界面布局、标注显示、编辑与辅助、画布与视角、播放与轨迹、性能与实验六类，搜索匹配名称、说明、分组与选项，并保留命中子项的父开关。`WORKBENCH_SETTING_GROUPS` / `WORKBENCH_SETTING_SECTIONS` 和 `groupWorkbenchSettings()` 统一窗口、搜索与个人页的展示顺序，`category` 仍只表示原有偏好子树。窗口不接收 Stage 类型，不做模态可见性过滤。`SettingsFieldControl` 的 `settings` 布局显示说明，个人页保留默认 `compact` 布局。
 - **关闭与焦点**：`DialogContent.overlayProps` 为当前窗口配置遮罩层级和事件。仅从遮罩开始的完整点击触发关闭，避免滑块拖出窗口误关闭；关闭与切换分类前 blur 活跃字段。Dialog 接管焦点陷阱与恢复，组合输入期间不响应 Esc，背景输入按上文统一隔离。
-- **保存**：写路径仍走 `useWorkbenchConfig.setFields()`（本地立即生效、300ms 防抖 PATCH、卸载 flush）；各实例经模块广播同步，滑块提交后画布更新。hook 不随窗口关闭卸载；初次加载失败提供 `loadError` / `retryLoad` 并禁止写入，保存失败通过 toast 告知未同步。二次推理面板显隐沿用 `useSecondaryBarHiddenPref`，仅图片任务显示；隐藏孤儿标注仍是会话回调。
+- **保存**：写路径仍走 `useWorkbenchConfig.setFields()`（本地立即生效、300ms 防抖 PATCH、卸载 flush）；各实例经模块广播同步，滑块提交后画布更新。hook 不随窗口关闭卸载；初次加载失败提供 `loadError` / `retryLoad` 并禁止写入，保存失败通过 toast 告知未同步。二次推理面板显隐沿用 `useSecondaryBarHiddenPref`，各任务均可调整但仅影响图片工具条；隐藏孤儿标注仍是会话回调。
 
 <!-- history: DiscussionPanel and the split right rail shipped through the v0.11 workbench slices. FloatingPanelShell + layout preferences shipped in v0.13.10. The four-subtree preferences split + settings drawer shipped in v0.15.3. -->

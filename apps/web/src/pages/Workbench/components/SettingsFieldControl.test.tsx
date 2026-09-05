@@ -6,6 +6,7 @@ import type { WorkbenchSettingField } from "../state/workbenchSettingsFields";
 
 const toggleField: WorkbenchSettingField = {
   key: "image.smoothImage",
+  section: "imageDisplay",
   category: "image",
   label: "图像平滑",
   control: { type: "toggle", onText: "开", offText: "关" },
@@ -14,6 +15,7 @@ const toggleField: WorkbenchSettingField = {
 
 const sliderField: WorkbenchSettingField = {
   key: "image.controlPointsSize",
+  section: "drawing",
   category: "image",
   label: "控制点大小",
   description: "顶点拖拽手柄半径",
@@ -22,6 +24,7 @@ const sliderField: WorkbenchSettingField = {
 
 const selectField: WorkbenchSettingField = {
   key: "video.demo",
+  section: "playback",
   category: "video",
   label: "演示",
   control: {
@@ -35,6 +38,7 @@ const selectField: WorkbenchSettingField = {
 
 const numericSelectField: WorkbenchSettingField = {
   key: "image.zoomStepFactor",
+  section: "imageDisplay",
   category: "image",
   label: "滚轮缩放步长",
   control: {
@@ -48,6 +52,7 @@ const numericSelectField: WorkbenchSettingField = {
 
 const textField: WorkbenchSettingField = {
   key: "image.cssImageFilter",
+  section: "imageDisplay",
   category: "image",
   label: "CSS 图像滤镜",
   control: { type: "text", maxLength: 255, placeholder: "brightness(1.2)" },
@@ -55,6 +60,7 @@ const textField: WorkbenchSettingField = {
 
 const multiselectField: WorkbenchSettingField = {
   key: "common.labelContent",
+  section: "appearance",
   category: "common",
   label: "标签内容",
   control: {

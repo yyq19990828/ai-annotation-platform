@@ -7198,7 +7198,6 @@ export function useWorkbenchShellModel({
     workbenchSettings: {
       open: workbenchSettingsOpen,
       onClose: () => setWorkbenchSettingsOpen(false),
-      stageKind,
       projectRenderingConfig: currentProject?.rendering_config ?? null,
       hideOrphanAnnotations,
       onToggleHideOrphans: () => setHideOrphanAnnotations((value) => !value),

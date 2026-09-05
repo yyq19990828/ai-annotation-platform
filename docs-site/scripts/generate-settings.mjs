@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // 从 apps/web/src/pages/Workbench/state/workbenchSettingsFields.ts 的
-// WORKBENCH_SETTING_FIELDS(字段) + WORKBENCH_SETTING_CATEGORY_LABELS(分类标签),
+// WORKBENCH_SETTING_FIELDS(字段) + WORKBENCH_SETTING_GROUPS / SECTIONS(用途分类),
 // 以及 apps/web/src/api/auth.ts 的 DEFAULT_WORKBENCH_PREFERENCES(默认值),
 // 生成 docs-site/user-guide/workbench/settings.generated.md。
 //
@@ -93,18 +93,19 @@ function splitObjects(arrInner) {
 const fieldsText = readFileSync(fieldsSrc, "utf8");
 const authText = readFileSync(authSrc, "utf8");
 
-// 1. 分类标签
-const catInner = extractBraceBlock(fieldsText, /export const WORKBENCH_SETTING_CATEGORY_LABELS\b/);
-if (!catInner) {
-  console.error("[generate-settings] 未找到 WORKBENCH_SETTING_CATEGORY_LABELS,源结构是否变了？");
-  process.exit(1);
+// 1. 读取纯字面量的展示元数据，保留源文件顺序。
+function readPresentationMap(name) {
+  const inner = extractBraceBlock(fieldsText, new RegExp(`export const ${name}\\b`));
+  if (!inner) throw new Error(`[generate-settings] 未找到 ${name}`);
+  return [...inner.matchAll(/\b(\w+):\s*\{/g)].map((match) => {
+    const block = extractBraceBlock(inner, new RegExp(`\\b${match[1]}:\\s*\\{`));
+    const label = block?.match(new RegExp(`\\blabel:\\s*(${STR})`))?.[1];
+    if (!label) throw new Error(`[generate-settings] ${name}.${match[1]} 缺少标签`);
+    return { key: match[1], label: unquote(label), group: block.match(/\bgroup:\s*"(\w+)"/)?.[1] };
+  });
 }
-const categoryLabels = {};
-const categoryOrder = [];
-for (const m of catInner.matchAll(new RegExp(`(\\w+):\\s*(${STR})`, "g"))) {
-  categoryLabels[m[1]] = unquote(m[2]);
-  categoryOrder.push(m[1]);
-}
+const groups = readPresentationMap("WORKBENCH_SETTING_GROUPS");
+const sections = readPresentationMap("WORKBENCH_SETTING_SECTIONS");
 
 // 2. 字段数组
 const arrAnchor = fieldsText.match(/export const WORKBENCH_SETTING_FIELDS\b/);
@@ -149,6 +150,7 @@ const fields = [];
 for (const o of objs) {
   const key = o.match(/\bkey:\s*"([^"]+)"/)?.[1];
   const category = o.match(/\bcategory:\s*"(\w+)"/)?.[1];
+  const section = o.match(/\bsection:\s*"(\w+)"/)?.[1];
   const label = o.match(new RegExp(`\\blabel:\\s*(${STR})`))?.[1];
   if (!key || !category || !label) continue;
   const hidden = /\bhidden:\s*true/.test(o);
@@ -171,6 +173,7 @@ for (const o of objs) {
   fields.push({
     key,
     category,
+    section,
     name: key.slice(category.length + 1),
     label: unquote(label),
     description: descM ? unquote(descM[1]) : "",
@@ -182,6 +185,12 @@ for (const o of objs) {
 if (fields.length === 0) {
   console.error("[generate-settings] 解析到 0 个字段;regex 与源不匹配。");
   process.exit(1);
+}
+for (const field of fields) {
+  const section = sections.find((entry) => entry.key === field.section);
+  if (!section || !groups.some((group) => group.key === section.group)) {
+    throw new Error(`[generate-settings] ${field.key} 缺少有效用途分组`);
+  }
 }
 
 // 3. 默认值: 从 DEFAULT_WORKBENCH_PREFERENCES 的各分类子树解析扁平 name: value
@@ -238,18 +247,18 @@ lines.push("");
 
 const esc = (s) => s.replace(/\|/g, "\\|");
 
-for (const cat of categoryOrder) {
-  const list = fields.filter((f) => f.category === cat);
-  if (list.length === 0) continue;
-  lines.push(`### ${categoryLabels[cat]}`);
-  lines.push("");
-  lines.push("| 设置项 | 说明 | 默认 |");
-  lines.push("|---|---|---|");
-  for (const f of list) {
-    const label = f.parentKey ? `└ ${f.label}` : f.label;
-    lines.push(`| ${esc(label)} | ${esc(f.description)} | ${esc(renderDefault(f))} |`);
+for (const group of groups) {
+  lines.push(`### ${group.label}`, "");
+  for (const section of sections.filter((entry) => entry.group === group.key)) {
+    const list = fields.filter((field) => field.section === section.key);
+    if (list.length === 0) continue;
+    lines.push(`#### ${section.label}`, "", "| 设置项 | 说明 | 默认 |", "|---|---|---|");
+    for (const f of list) {
+      const label = f.parentKey ? `└ ${f.label}` : f.label;
+      lines.push(`| ${esc(label)} | ${esc(f.description)} | ${esc(renderDefault(f))} |`);
+    }
+    lines.push("");
   }
-  lines.push("");
 }
 
 emitGenerated({
