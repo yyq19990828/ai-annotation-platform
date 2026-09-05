@@ -39,6 +39,7 @@
 ### Added
 
 - 新增 Orca 工作树初始化 hook，共享 `.env` 和依赖一致时的 pnpm 目录，并独立准备 Python 环境与 API 类型，减少重复安装并避免跨分支源码混用。
+- 新增 Codex `SessionStart` hook，按 macOS、Windows 和 Linux 注入当前主机硬件摘要，帮助 agent 根据实际运行平台工作。
 
 ### Changed
 
