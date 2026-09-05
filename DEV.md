@@ -78,6 +78,11 @@ cd apps/api && uv sync --extra test && cd ../..
 agent 上下文。脚本只使用 Node.js 标准库和系统自带查询命令，支持 macOS、Windows
 和 Linux；未安装对应查询命令时仍会返回基础信息。
 
+项目级 hook 需要通过两层信任才会运行：先信任项目的 `.codex/` 配置层，再在 Codex
+中打开 `/hooks`，审核并信任当前 hook 定义。脚本或配置变更后哈希变化，需要重新审核。
+未信任项目、未批准 hook，或无法完成交互式信任的非交互环境会跳过该 hook，因此不会
+收到硬件上下文。
+
 ```bash
 node scripts/test-codex-session-start.mjs
 ```

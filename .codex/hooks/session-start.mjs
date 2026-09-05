@@ -64,7 +64,7 @@ function windowsHardware() {
       "-NoProfile",
       "-NonInteractive",
       "-Command",
-      "$ErrorActionPreference='SilentlyContinue'; Get-CimInstance Win32_VideoController | Select-Object Name,AdapterRAM | ConvertTo-Json -Compress",
+      "$ErrorActionPreference='SilentlyContinue'; Get-CimInstance Win32_VideoController | Select-Object Name | ConvertTo-Json -Compress",
     ],
     2_500,
   );
@@ -73,10 +73,7 @@ function windowsHardware() {
   try {
     return {
       gpu: asArray(JSON.parse(raw))
-        .map((gpu) => {
-          const memory = gpu.AdapterRAM ? ` (${gib(gpu.AdapterRAM)})` : "";
-          return `${gpu.Name}${memory}`;
-        })
+        .map((gpu) => gpu.Name)
         .filter(Boolean),
     };
   } catch {
