@@ -196,7 +196,6 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
   latest.current = { owner, compact, onStateChange: props.onStateChange };
   const [view, setView] = useState(EMPTY_STATE);
   const published = useRef(EMPTY_STATE);
-  const constraints = useRef(new WeakMap<object, string>());
   const [visiblePanels, setVisiblePanels] = useState<PanelId[]>([...PERIPHERAL_PANELS]);
   const restoring = useRef(false);
   const pointerDown = useRef(false);
@@ -208,23 +207,7 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
   const publish = useCallback(() => {
     const engine = executor.current;
     if (!api || !engine) return;
-    for (const group of api.groups) {
-      if (["parking", "compact-overlay"].includes(group.id) || !group.panels.length) continue;
-      const specs = group.panels.map((panel) => WORKBENCH_PANEL_REGISTRY[panel.id as PanelId]);
-      const floating = group.api.location.type === "floating";
-      const minimumWidth = Math.max(floating ? 320 : 0, ...specs.map((spec) => spec.minWidth));
-      const minimumHeight = Math.max(floating ? 320 : 0, ...specs.map((spec) => spec.minHeight));
-      const signature = `${minimumWidth}:${minimumHeight}:${floating}`;
-      if (constraints.current.get(group) !== signature) {
-        constraints.current.set(group, signature);
-        group.api.setConstraints({
-          minimumWidth,
-          minimumHeight,
-          maximumWidth: floating ? 720 : Number.POSITIVE_INFINITY,
-          maximumHeight: floating ? 900 : Number.POSITIVE_INFINITY,
-        });
-      }
-    }
+    engine.syncConstraints();
     const opened = PERIPHERAL_PANELS.filter((id) => engine.isVisible(id));
     const next = {
       taskQueueVisible: opened.includes("task-queue"),
@@ -391,6 +374,7 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
         : createWorkbenchLayoutExecutor(api, bounds);
     executor.current = engine;
     try {
+      let maximizeAfterHydration = false;
       // The only whole-tree restore seam: cold start and the settled initial authority.
       if (
         !previous ||
@@ -398,7 +382,11 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
         previous.session !== session ||
         !owner.readOnlyReason
       ) {
-        api.fromJSON(owner.snapshot.layout, { reuseExistingPanels: true });
+        if (engine.isCanvasMaximized()) engine.toggleCanvasMaximized();
+        const layout = structuredClone(owner.snapshot.layout);
+        maximizeAfterHydration = !!layout.grid.maximizedNode;
+        delete layout.grid.maximizedNode;
+        api.fromJSON(layout, { reuseExistingPanels: true });
         engine.setReturns(owner.snapshot.returns);
       } else {
         engine.recover(owner.snapshot);
@@ -421,6 +409,10 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
         parking.api.setVisible(false);
       }
       for (const id of PERIPHERAL_PANELS) if (!availablePanels.includes(id)) engine.hide(id);
+      if (maximizeAfterHydration) {
+        engine.syncConstraints();
+        engine.toggleCanvasMaximized();
+      }
       if (compact && owner.initialized) engine.enterCompact();
       publish();
     } catch {
@@ -459,6 +451,9 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
   useEffect(() => {
     if (!api) return;
     const blocked = () => latest.current.owner.readOnly || latest.current.compact;
+    let restoreDragSizes: ReturnType<Executor["preserveGridSizes"]> | undefined;
+    let movedPanel: string | undefined;
+    let movedGroup: string | undefined;
     const guardDrop = (event: DockviewWillDropEvent | DockviewWillShowOverlayLocationEvent) => {
       const source = event.getData();
       const target = event.group;
@@ -474,6 +469,25 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
         event.preventDefault();
     };
     const subscriptions = [
+      api.onWillMutateLayout((event) => {
+        if (
+          !blocked() &&
+          event.origin === "user" &&
+          ["move", "float", "remove"].includes(event.kind)
+        )
+          restoreDragSizes ??= executor.current?.preserveGridSizes();
+      }),
+      api.onDidMutateLayout(() => {
+        const restore = restoreDragSizes;
+        restoreDragSizes = undefined;
+        if (!restore) return;
+        try {
+          restore(movedPanel ? api.getPanel(movedPanel)?.group.id : movedGroup);
+        } catch {
+          latest.current.owner.failRestore();
+        }
+        movedPanel = movedGroup = undefined;
+      }),
       api.onWillDragPanel((event) => {
         if (blocked() || event.panel.id === "canvas") event.nativeEvent.preventDefault();
       }),
@@ -482,12 +496,23 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
           event.nativeEvent.preventDefault();
       }),
       api.onWillShowOverlay(guardDrop),
-      api.onWillDrop(guardDrop),
+      api.onWillDrop((event) => {
+        guardDrop(event);
+        if (!event.defaultPrevented) {
+          // Root-edge drops create a grid branch before Dockview emits its mutation event.
+          restoreDragSizes ??= executor.current?.preserveGridSizes();
+          const source = event.position !== "center" ? event.getData() : undefined;
+          movedPanel = source?.panelId ?? undefined;
+          movedGroup = source?.groupId;
+        }
+      }),
       api.onDidLayoutChange(persist),
       api.onDidActivePanelChange(persist),
       api.onDidMovePanel(persist),
     ];
     const release = () => {
+      restoreDragSizes = undefined;
+      movedPanel = movedGroup = undefined;
       pointerDown.current = false;
       persist();
     };

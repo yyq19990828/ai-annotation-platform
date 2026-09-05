@@ -101,14 +101,21 @@ beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
     this: HTMLElement,
   ) {
-    if (this.classList.contains("dv-resize-container"))
+    if (
+      this.classList.contains("dv-resize-container") ||
+      this.classList.contains("dv-floating-overlay-host")
+    )
       return new DOMRect(
-        parseFloat(this.style.left) || 0,
-        parseFloat(this.style.top) || 0,
+        parseFloat(this.style.left || this.style.inset.split(/\s+/)[3]) || 0,
+        parseFloat(this.style.top || this.style.inset.split(/\s+/)[0]) || 0,
         parseFloat(this.style.width) || 0,
         parseFloat(this.style.height) || 0,
       );
-    if (this.classList.contains("dv-dockview") || this.classList.contains("dv-shell"))
+    if (
+      this.classList.contains("dv-dockview") ||
+      this.firstElementChild?.classList.contains("dv-dockview") ||
+      this.classList.contains("dv-shell")
+    )
       return new DOMRect(0, 0, 1600, 900);
     return new DOMRect();
   });
@@ -123,6 +130,44 @@ afterEach(async () => {
 });
 
 describe("stable Dockview React workspace", () => {
+  it.each(["停靠到左侧", "停靠到右侧", "停靠到底部"])(
+    "keeps unrelated sidebar widths through %s and merging the panel back",
+    async (command) => {
+      const commands = createRef<WorkbenchWorkspaceCommands>();
+      render(fixture("annotate:image", commands));
+      await screen.findByTestId("canvas-marker");
+      act(() => commands.current!.show("ai-task"));
+      const panels = ["task-queue", "class-palette", "inspector", "discussion"].map(
+        (id) => state.api!.getPanel(id)!,
+      );
+      const widths = panels.map((panel) => panel.group.api.width);
+      fireEvent.click(screen.getByRole("button", { name: "当前题 AI菜单" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: command }));
+      expect(panels.map((panel) => panel.group.api.width)).toEqual(widths);
+      fireEvent.click(screen.getByRole("button", { name: "当前题 AI菜单" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: "与标注详情合并为标签" }));
+      expect(panels.map((panel) => panel.group.api.width)).toEqual(widths);
+      expect(state.owner.failRestore).not.toHaveBeenCalled();
+      expect(mounts).toBe(1);
+    },
+  );
+
+  it("preserves docked widths when the AI tab floats out of a narrow sidebar", async () => {
+    const commands = createRef<WorkbenchWorkspaceCommands>();
+    render(fixture("annotate:image", commands));
+    await screen.findByTestId("canvas-marker");
+    act(() => commands.current!.show("ai-task"));
+    const panels = ["task-queue", "canvas", "inspector", "discussion"].map(
+      (id) => state.api!.getPanel(id)!,
+    );
+    const widths = panels.map((panel) => panel.group.api.width);
+    fireEvent.click(screen.getByRole("button", { name: "当前题 AI菜单" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "浮动面板" }));
+    await waitFor(() => expect(state.api!.getPanel("ai-task")!.api.location.type).toBe("floating"));
+    expect(panels.map((panel) => panel.group.api.width)).toEqual(widths);
+    expect(state.owner.failRestore).not.toHaveBeenCalled();
+  });
+
   it.each([
     "annotate:image",
     "annotate:video",
@@ -201,6 +246,18 @@ describe("stable Dockview React workspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "布局" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "恢复画布" }));
     expect(state.api!.hasMaximizedGroup()).toBe(false);
+    expect(mounts).toBe(1);
+  });
+
+  it("restores sidebar sizes from a maximized saved layout on hydration", async () => {
+    state.owner.snapshot = createWorkspacePreset("focus", bounds);
+    render(fixture());
+    await screen.findByTestId("canvas-marker");
+    expect(state.api!.hasMaximizedGroup()).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "布局" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "恢复画布" }));
+    expect(state.api!.getPanel("inspector")!.group.api.width).toBe(240);
+    expect(state.owner.failRestore).not.toHaveBeenCalled();
     expect(mounts).toBe(1);
   });
 

@@ -1,4 +1,4 @@
-import type { DockviewApi, DockviewGroupPanel } from "dockview-react";
+import type { DockviewApi, DockviewGroupPanel, IDockviewPanel } from "dockview-react";
 import { WORKBENCH_PANEL_REGISTRY } from "./workbenchPanelRegistry";
 import {
   createWorkspacePreset,
@@ -168,6 +168,8 @@ function insertionSteps(tree: Tree): { id: string; reference: string; direction:
 }
 
 export interface WorkbenchLayoutExecutor {
+  preserveGridSizes(): (resizedGroup?: string) => void;
+  syncConstraints(): void;
   capture(): WorkspaceSnapshot;
   restore(snapshot: WorkspaceSnapshot): void;
   recover(snapshot: WorkspaceSnapshot): void;
@@ -195,7 +197,9 @@ export function createWorkbenchLayoutExecutor(
 ): WorkbenchLayoutExecutor {
   let returns: WorkspaceSnapshot["returns"] = {};
   let desktop: WorkspaceSnapshot | null = null;
+  let restoreMaximizedSizes: ReturnType<typeof rememberGridSizes> | undefined;
   const pendingShows = new Set<SidePanelId>();
+  const constraints = new WeakMap<object, string>();
   const getGroup = (id: string) => api.groups.find((group) => group.id === id);
   const canvas = () => {
     const group = getGroup("canvas");
@@ -213,6 +217,72 @@ export function createWorkbenchLayoutExecutor(
     if (!value) throw new Error(`Missing workspace panel: ${id}`);
     return value;
   };
+  function syncConstraints() {
+    for (const group of api.groups) {
+      if (["parking", "compact-overlay"].includes(group.id) || !group.panels.length) continue;
+      const specs = group.panels.map((item) => WORKBENCH_PANEL_REGISTRY[item.id as PanelId]);
+      const floating = group.api.location.type === "floating";
+      const minimumWidth = Math.max(floating ? 320 : 0, ...specs.map((spec) => spec.minWidth));
+      const minimumHeight = Math.max(floating ? 320 : 0, ...specs.map((spec) => spec.minHeight));
+      const signature = `${minimumWidth}:${minimumHeight}:${floating}`;
+      if (constraints.get(group) === signature) continue;
+      constraints.set(group, signature);
+      group.api.setConstraints({
+        minimumWidth,
+        minimumHeight,
+        maximumWidth: floating ? 720 : Number.POSITIVE_INFINITY,
+        maximumHeight: floating ? 900 : Number.POSITIVE_INFINITY,
+      });
+      // Dockview emits layout before updating its explicit group constraints.
+      if (!floating) group.api.setSize({ width: group.api.width, height: group.api.height });
+    }
+  }
+  function preserveGridSizes() {
+    if (desktop) return () => {};
+    if (api.hasMaximizedGroup()) {
+      const restore = restoreMaximizedSizes;
+      return (resizedGroup?: string) => {
+        if (api.hasMaximizedGroup()) return;
+        restoreMaximizedSizes = undefined;
+        restore?.(resizedGroup);
+      };
+    }
+    return rememberGridSizes();
+  }
+  function rememberGridSizes() {
+    const previous = new Map(
+      api.groups
+        .filter((group) => group.id !== "parking" && group.api.location.type === "grid")
+        .map((group) => [group.id, { width: group.api.width, height: group.api.height }]),
+    );
+    return (resizedGroup?: string, bounds = getBounds()) => {
+      if (api.hasMaximizedGroup()) return;
+      if (resizedGroup) previous.delete(resizedGroup);
+      syncConstraints();
+      const snapshot = rawSnapshot();
+      const tree = treeFromNode(snapshot.layout.grid.root, snapshot.layout.grid.orientation);
+      if (tree) sizeTree(tree, bounds, previous);
+    };
+  }
+  function maximizeCanvas() {
+    if (api.hasMaximizedGroup()) return;
+    restoreMaximizedSizes = rememberGridSizes();
+    canvas().api.maximize();
+  }
+  function exitCanvasMaximized() {
+    const restore = restoreMaximizedSizes;
+    restoreMaximizedSizes = undefined;
+    api.exitMaximizedGroup();
+    restore?.(undefined, { width: api.width, height: api.height });
+  }
+  function stable(action: () => void, resizedPanel?: PanelId, keepMaximized = false) {
+    const maximized = !desktop && keepMaximized && api.hasMaximizedGroup();
+    if (!desktop) exitCanvasMaximized();
+    const restoreSizes = preserveGridSizes();
+    action();
+    restoreSizes(resizedPanel ? panel(resizedPanel).group.id : undefined);
+    if (maximized) maximizeCanvas();
+  }
   function ensureParking() {
     const group =
       getGroup("parking") ??
@@ -247,7 +317,17 @@ export function createWorkbenchLayoutExecutor(
         api.removeGroup(group);
   }
   function rawSnapshot(bounds: WorkspaceBounds = getBounds()): WorkspaceSnapshot {
-    const layout = api.toJSON() as unknown as WorkspaceSnapshot["layout"];
+    // Dockview's serializer exits/reenters maximization and loses nested split sizes.
+    // Serialize the corrected desktop grid, then put the canvas back immediately.
+    const maximized = api.hasMaximizedGroup();
+    if (maximized) exitCanvasMaximized();
+    let layout: WorkspaceSnapshot["layout"];
+    try {
+      layout = api.toJSON() as unknown as WorkspaceSnapshot["layout"];
+    } finally {
+      if (maximized) maximizeCanvas();
+    }
+    if (maximized) layout.grid.maximizedNode = { location: [] };
     // Dockview can leave a zero-sized empty branch after moving the last legacy sibling.
     // Normalize engine output only; imported snapshots still use the strict parser.
     function prune(node: typeof layout.grid.root) {
@@ -325,9 +405,18 @@ export function createWorkbenchLayoutExecutor(
     });
     return group;
   }
-  function setFloat(group: DockviewGroupPanel, position: WorkspaceRect) {
-    if (group.id === "canvas" || group.id === "parking")
+  function setFloat(item: DockviewGroupPanel | IDockviewPanel, position: WorkspaceRect) {
+    if (item.id === "canvas" || item.id === "parking")
       throw new Error("Reserved group cannot float");
+    // Float panels directly: a temporary grid group redistributes the docked columns.
+    api.addFloatingGroup(item, {
+      x: position.left,
+      y: position.top,
+      width: position.width,
+      height: position.height,
+      position: { left: position.left, top: position.top },
+    });
+    const group = "group" in item ? item.group : item;
     if (group.id !== "compact-overlay")
       group.api.setConstraints({
         minimumWidth: Math.min(320, getBounds().width),
@@ -335,15 +424,6 @@ export function createWorkbenchLayoutExecutor(
         maximumWidth: 720,
         maximumHeight: 900,
       });
-    if (group.api.location.type === "floating")
-      group.api.moveTo({ group: canvas(), position: "right", skipSetActive: true });
-    api.addFloatingGroup(group, {
-      x: position.left,
-      y: position.top,
-      width: position.width,
-      height: position.height,
-      position: { left: position.left, top: position.top },
-    });
   }
   function compactShow(id: SidePanelId) {
     for (const other of PANEL_IDS)
@@ -383,7 +463,7 @@ export function createWorkbenchLayoutExecutor(
       compactShow(id);
       return;
     }
-    api.exitMaximizedGroup();
+    exitCanvasMaximized();
     const item = panel(id);
     if (item.group.id === "parking") {
       const saved = returns[id];
@@ -392,9 +472,10 @@ export function createWorkbenchLayoutExecutor(
         existing.api.setVisible(true);
         move(id, existing, saved.index);
       } else if (saved?.position) {
-        const target = ensureGroup(saved.group);
-        move(id, target, saved.index);
-        setFloat(target, clampWorkspaceRect(saved.position, getBounds()));
+        setFloat(item, clampWorkspaceRect(saved.position, getBounds()));
+        const previousGroup = saved.group;
+        for (const entry of Object.values(returns))
+          if (entry?.group === previousGroup) entry.group = item.group.id;
       } else move(id, defaultGroup(id));
     }
     item.api.setActive();
@@ -402,11 +483,12 @@ export function createWorkbenchLayoutExecutor(
   }
   function float(id: PanelId) {
     if (desktop || id === "canvas") return;
-    api.exitMaximizedGroup();
-    const group = ensureGroup(`float-${id}`);
-    move(id, group);
+    exitCanvasMaximized();
+    const item = panel(id);
     setFloat(
-      group,
+      item.group.api.location.type === "floating" && item.group.panels.length === 1
+        ? item.group
+        : item,
       clampWorkspaceRect({ left: 32, top: 32, width: 360, height: 480 }, getBounds()),
     );
     panel(id).api.setActive();
@@ -414,7 +496,7 @@ export function createWorkbenchLayoutExecutor(
   }
   function dock(id: PanelId, position: "left" | "right" | "below") {
     if (desktop || id === "canvas") return;
-    api.exitMaximizedGroup();
+    exitCanvasMaximized();
     const group = ensureGroup(`dock-${id}`, "canvas", position);
     move(id, group);
     group.api.moveTo({
@@ -451,7 +533,7 @@ export function createWorkbenchLayoutExecutor(
     const snapshot = sanitizeWorkspaceSnapshot(input, bounds);
     const tree = treeFromNode(snapshot.layout.grid.root, snapshot.layout.grid.orientation);
     if (!tree) throw new Error("Empty workspace tree");
-    api.exitMaximizedGroup();
+    exitCanvasMaximized();
     // Media-query layout effects can run before Dockview's ResizeObserver.
     // Release temporary replay constraints against the current host, not its old compact size.
     api.layout(bounds.width, bounds.height);
@@ -486,7 +568,7 @@ export function createWorkbenchLayoutExecutor(
     }
     getGroup(snapshot.layout.activeGroup ?? "canvas")?.api.setActive();
     sizeTree(tree, bounds);
-    if (snapshot.layout.grid.maximizedNode) canvas().api.maximize();
+    if (snapshot.layout.grid.maximizedNode) maximizeCanvas();
     const actual = rawSnapshot();
     const actualTree = treeFromNode(actual.layout.grid.root, actual.layout.grid.orientation);
     if (!actualTree || JSON.stringify(shape(actualTree)) !== JSON.stringify(shape(tree)))
@@ -525,8 +607,24 @@ export function createWorkbenchLayoutExecutor(
         throw new Error("Workspace floating replay exceeded one pixel tolerance");
     }
   }
-  function sizeTree(tree: Tree, bounds: WorkspaceBounds) {
+  function sizeTree(tree: Tree, bounds: WorkspaceBounds, previous?: Map<string, WorkspaceBounds>) {
     const sizes = new Map<string, WorkspaceRect>();
+    const containsCanvas = (node: Tree): boolean =>
+      "group" in node ? node.group.id === "canvas" : node.children.some(containsCanvas);
+    const hasPreviousSize = (node: Tree): boolean =>
+      "group" in node ? !!previous?.has(node.group.id) : node.children.some(hasPreviousSize);
+    const extent = (node: Tree, dimension: "width" | "height"): number => {
+      if ("group" in node)
+        return previous?.get(node.group.id)?.[dimension] ?? getGroup(node.group.id)!.api[dimension];
+      const alongAxis = (node.axis === "HORIZONTAL") === (dimension === "width");
+      // Stacking into an existing column/row inherits its cross-axis size, not
+      // the moved group's temporary size after Dockview redistributes the grid.
+      const retained = alongAxis ? [] : node.children.filter(hasPreviousSize);
+      const values = (retained.length ? retained : node.children).map((child) =>
+        extent(child, dimension),
+      );
+      return alongAxis ? values.reduce((sum, value) => sum + value, 0) : Math.max(...values);
+    };
     const limits = (node: Tree, dimension: "Width" | "Height", maximum = false): number => {
       if ("group" in node) {
         const group = getGroup(node.group.id)!;
@@ -554,18 +652,43 @@ export function createWorkbenchLayoutExecutor(
         box[axis],
         minimum.reduce((sum, size) => sum + size, 0),
       );
+      const weights = node.children.map((child) =>
+        previous ? extent(child, axis) : child.size || 1,
+      );
+      const canvasIndex = node.children.findIndex(containsCanvas);
+      if (previous && canvasIndex !== -1)
+        weights[canvasIndex] = Math.max(
+          1,
+          available -
+            weights.reduce((sum, value, index) => sum + (index === canvasIndex ? 0 : value), 0),
+        );
       const fixed = new Map<number, number>();
+      if (previous && canvasIndex !== -1) {
+        const requested = weights.map((value, index) =>
+          Math.min(maximum[index], Math.max(minimum[index], value)),
+        );
+        const sideSpace = requested.reduce(
+          (sum, value, index) => sum + (index === canvasIndex ? 0 : value),
+          0,
+        );
+        if (sideSpace + minimum[canvasIndex] <= available) {
+          requested.forEach((value, index) => {
+            if (index !== canvasIndex) fixed.set(index, value);
+          });
+          available -= sideSpace;
+        }
+      }
       // Redistribute only space left after a child hits its registry constraint.
       while (fixed.size < node.children.length) {
         const weight = node.children.reduce(
-          (sum, child, index) => sum + (fixed.has(index) ? 0 : child.size || 1),
+          (sum, _child, index) => sum + (fixed.has(index) ? 0 : weights[index]),
           0,
         );
         const unclamped = available;
         let changed = false;
         node.children.forEach((child, index) => {
           if (fixed.has(index)) return;
-          const requested = (unclamped * (child.size || 1)) / weight;
+          const requested = (unclamped * weights[index]) / weight;
           if (requested < minimum[index] || requested > maximum[index]) {
             const size = Math.min(maximum[index], Math.max(minimum[index], requested));
             fixed.set(index, size);
@@ -575,7 +698,7 @@ export function createWorkbenchLayoutExecutor(
         });
         if (!changed) {
           node.children.forEach((child, index) => {
-            if (!fixed.has(index)) fixed.set(index, (available * (child.size || 1)) / weight);
+            if (!fixed.has(index)) fixed.set(index, (available * weights[index]) / weight);
           });
         }
       }
@@ -634,6 +757,8 @@ export function createWorkbenchLayoutExecutor(
   }
 
   return {
+    preserveGridSizes,
+    syncConstraints,
     capture() {
       if (desktop) return structuredClone(desktop);
       return rawSnapshot();
@@ -650,9 +775,9 @@ export function createWorkbenchLayoutExecutor(
     setReturns(value) {
       returns = structuredClone(value);
     },
-    show,
-    hide,
-    dock,
+    show: (id) => stable(() => show(id)),
+    hide: (id) => stable(() => hide(id), undefined, true),
+    dock: (id, position) => stable(() => dock(id, position), id),
     moveCanvas(position) {
       if (desktop) return;
       const next = placeCanvas(rawSnapshot(), position, getBounds());
@@ -660,17 +785,17 @@ export function createWorkbenchLayoutExecutor(
     },
     toggleCanvasMaximized() {
       if (desktop) return;
-      if (api.hasMaximizedGroup()) api.exitMaximizedGroup();
-      else canvas().api.maximize();
+      if (api.hasMaximizedGroup()) exitCanvasMaximized();
+      else maximizeCanvas();
     },
     isCanvasMaximized: () => api.hasMaximizedGroup(),
-    tab,
-    float,
+    tab: (id, target) => stable(() => tab(id, target)),
+    float: (id) => stable(() => float(id)),
     applyPreset(preset) {
       if (desktop) return;
       if (preset === "focus") {
-        if (api.hasMaximizedGroup()) api.exitMaximizedGroup();
-        else canvas().api.maximize();
+        if (api.hasMaximizedGroup()) exitCanvasMaximized();
+        else maximizeCanvas();
       } else {
         const placement = getCanvasPlacement(rawSnapshot());
         const next = createWorkspacePreset(preset, getBounds());
@@ -683,7 +808,7 @@ export function createWorkbenchLayoutExecutor(
       // Latch floating/return rectangles in that tree's coordinate space before projecting it.
       desktop = rawSnapshot({ width: api.width, height: api.height });
       pendingShows.clear();
-      api.exitMaximizedGroup();
+      exitCanvasMaximized();
       for (const id of PANEL_IDS) if (id !== "canvas") move(id, ensureParking());
       ensureParking();
       canvas().api.setActive();
@@ -695,7 +820,10 @@ export function createWorkbenchLayoutExecutor(
       replay(saved);
       desktop = null;
       const changed = pendingShows.size > 0;
-      for (const id of pendingShows) show(id);
+      if (changed)
+        stable(() => {
+          for (const id of pendingShows) show(id);
+        });
       pendingShows.clear();
       return changed;
     },

@@ -148,6 +148,196 @@ describe("workspace executor with Dockview 8", () => {
     expect(api.groups.some((g) => g.id === "empty-two")).toBe(true);
   });
 
+  it.each([
+    "task-queue",
+    "class-palette",
+    "inspector",
+    "discussion",
+    "ai-task",
+    "video-tracker",
+  ] as const)(
+    "keeps docked widths when floating %s, repeating the command and reopening it",
+    (id) => {
+      const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+      if (id === "ai-task" || id === "video-tracker") controller.tab(id, "inspector");
+      const item = api.getPanel(id)!;
+      const widths = api.panels
+        .filter((panel) => panel.id !== id && panel.group.id !== "parking")
+        .map((panel) => [panel, panel.api.width] as const);
+      const expectWidths = () => {
+        expect(api.getPanel(id)).toBe(item);
+        expect(item.api.location.type).toBe("floating");
+        for (const [panel, width] of widths)
+          expect(panel.api.width, panel.id).toBeCloseTo(width, 0);
+      };
+      controller.float(id);
+      expectWidths();
+      controller.float(id);
+      expectWidths();
+      controller.hide(id);
+      controller.show(id);
+      expectWidths();
+    },
+  );
+
+  it("rejoins hidden floating tabs when their original group no longer exists", () => {
+    const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+    controller.float("discussion");
+    controller.tab("ai-task", "discussion");
+    controller.hide("ai-task");
+    controller.hide("discussion");
+    controller.show("discussion");
+    controller.show("ai-task");
+    const group = api.getPanel("discussion")!.group;
+    expect(group.api.location.type).toBe("floating");
+    expect(group.panels.map((panel) => panel.id)).toEqual(["discussion", "ai-task"]);
+  });
+
+  it.each(["left", "right", "below"] as const)(
+    "does not widen existing sidebars when docking a hidden panel %s",
+    (position) => {
+      const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+      const sidebars = ["task-queue", "class-palette", "inspector", "discussion"].map(
+        (id) => api.getPanel(id)!,
+      );
+      const widths = sidebars.map((panel) => panel.group.api.width);
+      controller.dock("ai-task", position);
+      expect(sidebars.map((panel) => panel.group.api.width)).toEqual(widths);
+    },
+  );
+
+  it.each(["task-queue", "class-palette", "inspector", "discussion", "video-tracker"] as const)(
+    "does not widen unrelated sidebars when showing %s",
+    (id) => {
+      const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+      controller.hide(id);
+      const sidebars = ["task-queue", "class-palette", "inspector", "discussion"]
+        .filter((other) => other !== id)
+        .map((other) => api.getPanel(other)!);
+      const widths = sidebars.map((panel) => panel.group.api.width);
+      controller.show(id);
+      expect(sidebars.map((panel) => panel.group.api.width)).toEqual(widths);
+    },
+  );
+
+  it("gives the canvas freed space when hiding the last panel in a sidebar", () => {
+    const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+    controller.hide("class-palette");
+    const rightWidth = api.getPanel("inspector")!.group.api.width;
+    const canvasWidth = api.getPanel("canvas")!.api.width;
+    controller.hide("task-queue");
+    expect(api.getPanel("inspector")!.group.api.width).toBe(rightWidth);
+    expect(api.getPanel("canvas")!.api.width).toBeGreaterThan(canvasWidth);
+  });
+
+  it("preserves sidebar width when hiding panels with the canvas maximized", () => {
+    const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+    controller.syncConstraints();
+    const rightWidth = api.getPanel("inspector")!.group.api.width;
+    controller.toggleCanvasMaximized();
+    controller.hide("class-palette");
+    controller.hide("task-queue");
+    expect(controller.isCanvasMaximized()).toBe(true);
+    controller.toggleCanvasMaximized();
+    expect(api.getPanel("inspector")!.group.api.width).toBe(rightWidth);
+  });
+
+  it("does not widen unrelated sidebars when merging tabs across columns", () => {
+    const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+    controller.hide("class-palette");
+    const rightWidth = api.getPanel("inspector")!.group.api.width;
+    controller.tab("task-queue", "inspector");
+    expect(api.getPanel("inspector")!.group.api.width).toBe(rightWidth);
+  });
+
+  it.each([
+    ["top", false, 300],
+    ["bottom", false, 450],
+    ["top", true, 450],
+    ["bottom", true, 300],
+  ] as const)(
+    "keeps target width when stacking %s (whole group: %s, source width: %s)",
+    (position, wholeGroup, sourceWidth) => {
+      const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+      controller.syncConstraints();
+      const item = api.getPanel("task-queue")!;
+      const target = api.getPanel("class-palette")!.group;
+      target.api.moveTo({ group: api.getPanel("canvas")!.group, position: "left" });
+      item.group.api.setSize({ width: sourceWidth });
+      target.api.setSize({ width: 400 });
+      const width = target.api.width;
+      const rightWidth = api.getPanel("inspector")!.group.api.width;
+      const canvasWidth = api.getPanel("canvas")!.group.api.width;
+      const restore = controller.preserveGridSizes();
+      (wholeGroup ? item.group.api : item.api).moveTo({ group: target, position });
+      restore(item.group.id);
+      expect(item.group).not.toBe(target);
+      expect(item.group.api.width).toBe(width);
+      expect(target.api.width).toBe(width);
+      expect(api.getPanel("discussion")!.group.api.width).toBe(rightWidth);
+      expect(api.getPanel("canvas")!.group.api.width).toBeGreaterThan(canvasWidth);
+    },
+  );
+
+  it.each(["left", "right"] as const)(
+    "keeps the target row height when moving another row to its %s",
+    (position) => {
+      const seed = createWorkspacePreset("standard", bounds);
+      const root = seed.layout.grid.root;
+      if (root.type !== "branch" || root.data[0].type !== "branch") throw new Error("Bad preset");
+      root.data = [...root.data[0].data, ...root.data.slice(1)];
+      root.data.forEach((node, index) => {
+        node.size = [180, 200, 320, 200, 0][index];
+      });
+      root.size = bounds.width;
+      seed.layout.grid.orientation = "VERTICAL" as typeof seed.layout.grid.orientation;
+      api.fromJSON(seed.layout);
+      const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+      controller.syncConstraints();
+      const item = api.getPanel("task-queue")!;
+      const target = api.getPanel("class-palette")!.group;
+      const height = target.api.height;
+      const canvasHeight = api.getPanel("canvas")!.group.api.height;
+      const restore = controller.preserveGridSizes();
+      item.api.moveTo({ group: target, position });
+      restore(item.group.id);
+      expect(item.group.api.height).toBe(height);
+      expect(target.api.height).toBe(height);
+      expect(api.getPanel("canvas")!.group.api.height).toBeGreaterThan(canvasHeight);
+    },
+  );
+
+  it.each(["left", "right", "above", "below"] as const)(
+    "preserves peripheral geometry when the canvas is at the %s edge",
+    (placement) => {
+      const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+      controller.syncConstraints();
+      controller.moveCanvas(placement);
+      controller.syncConstraints();
+      const panels = ["task-queue", "class-palette", "inspector", "discussion"].map(
+        (id) => api.getPanel(id)!,
+      );
+      const geometry = () => panels.map((panel) => [panel.group.api.width, panel.group.api.height]);
+      const before = geometry();
+      controller.dock("ai-task", "right");
+      expect(geometry()).toEqual(before);
+    },
+  );
+
+  it("preserves widths across the temporary root split used by native edge drops", () => {
+    const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+    controller.show("ai-task");
+    const panels = ["task-queue", "class-palette", "inspector", "discussion"].map(
+      (id) => api.getPanel(id)!,
+    );
+    const widths = panels.map((panel) => panel.group.api.width);
+    const restoreSizes = controller.preserveGridSizes();
+    const target = api.addGroup({ id: "edge-drop", direction: "left" });
+    api.getPanel("ai-task")!.api.moveTo({ group: target, position: "center" });
+    restoreSizes(target.id);
+    expect(panels.map((panel) => panel.group.api.width)).toEqual(widths);
+  });
+
   it("keeps focused canvas mounted while maximizing and restoring", () => {
     const controller = createWorkbenchLayoutExecutor(api, () => bounds);
     const canvas = api.getPanel("canvas");
@@ -159,6 +349,88 @@ describe("workspace executor with Dockview 8", () => {
     controller.show("inspector");
     expect(api.hasMaximizedGroup()).toBe(false);
     expect(api.getPanel("canvas")).toBe(canvas);
+  });
+
+  it.each(["toggle", "focus"] as const)(
+    "preserves grid sizes through repeated %s, capture and restore",
+    (command) => {
+      const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+      controller.syncConstraints();
+      const before = controller.capture();
+      const toggle = () =>
+        command === "toggle" ? controller.toggleCanvasMaximized() : controller.applyPreset("focus");
+      for (let cycle = 0; cycle < 3; cycle++) {
+        toggle();
+        for (let save = 0; save < 2; save++) {
+          const maximized = controller.capture();
+          expect(maximized.layout.grid.maximizedNode).toBeDefined();
+          expect(maximized.layout.grid.root).toEqual(before.layout.grid.root);
+          expect(controller.isCanvasMaximized()).toBe(true);
+        }
+        toggle();
+        expect(controller.capture().layout.grid.root).toEqual(before.layout.grid.root);
+      }
+      toggle();
+      const saved = controller.capture();
+      controller.applyPreset("review");
+      controller.restore(saved);
+      expect(controller.isCanvasMaximized()).toBe(true);
+      toggle();
+      expect(controller.capture().layout.grid.root).toEqual(before.layout.grid.root);
+    },
+  );
+
+  it("preserves maximized grid sizes across compact mode before the engine resizes", () => {
+    const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+    controller.syncConstraints();
+    const before = controller.capture();
+    controller.toggleCanvasMaximized();
+    bounds = { width: 1024, height: 900 };
+    controller.enterCompact();
+    expect(controller.capture().layout.grid.root).toEqual(before.layout.grid.root);
+    api.layout(bounds.width, bounds.height);
+    bounds = { width: 1600, height: 900 };
+    controller.exitCompact();
+    expect(controller.isCanvasMaximized()).toBe(true);
+    controller.toggleCanvasMaximized();
+    expect(controller.capture().layout.grid.root).toEqual(before.layout.grid.root);
+  });
+
+  it("preserves sidebars when a floating panel is dragged into the maximized grid", () => {
+    const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+    controller.float("ai-task");
+    const panels = ["task-queue", "class-palette", "inspector", "discussion"].map(
+      (id) => api.getPanel(id)!,
+    );
+    const widths = panels.map((panel) => panel.group.api.width);
+    controller.toggleCanvasMaximized();
+    const item = api.getPanel("ai-task")!;
+    const resizeFloat = controller.preserveGridSizes();
+    item.group.api.setSize({ width: 500, height: 400 });
+    resizeFloat();
+    expect(controller.isCanvasMaximized()).toBe(true);
+    expect(controller.capture().layout.floatingGroups?.[0].position).toMatchObject({
+      width: 500,
+      height: 400,
+    });
+    const restoreSizes = controller.preserveGridSizes();
+    item.api.moveTo({ group: api.getPanel("canvas")!.group, position: "left" });
+    restoreSizes(item.group.id);
+    expect(controller.isCanvasMaximized()).toBe(false);
+    expect(panels.map((panel) => panel.group.api.width)).toEqual(widths);
+  });
+
+  it("keeps sidebar widths when the workspace grows while maximized", () => {
+    const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+    controller.syncConstraints();
+    const rightWidth = api.getPanel("inspector")!.group.api.width;
+    controller.toggleCanvasMaximized();
+    bounds = { width: 1920, height: 1080 };
+    api.layout(bounds.width, bounds.height);
+    expect(controller.capture().layout.grid).toMatchObject(bounds);
+    controller.toggleCanvasMaximized();
+    expect(api.getPanel("inspector")!.group.api.width).toBe(rightWidth);
+    expect(api.getPanel("canvas")!.group.api.width).toBe(1920 - 240 - rightWidth);
   });
 
   it("moves the existing canvas to every root edge and preserves that edge across presets", () => {
@@ -196,9 +468,11 @@ describe("workspace executor with Dockview 8", () => {
   it("reports a write only for deferred visibility changes after compact replay", () => {
     const controller = createWorkbenchLayoutExecutor(api, () => bounds);
     controller.applyPreset("review");
+    const inspectorWidth = api.getPanel("inspector")!.group.api.width;
     controller.enterCompact();
     controller.show("task-queue");
     expect(controller.exitCompact()).toBe(true);
+    expect(api.getPanel("inspector")!.group.api.width).toBeCloseTo(inspectorWidth, 0);
     expect(api.getPanel("task-queue")?.group.id).toBe("task-queue");
     controller.enterCompact();
     controller.show("class-palette");
