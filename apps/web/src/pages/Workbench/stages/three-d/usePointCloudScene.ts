@@ -11,6 +11,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type MutableRefObject,
@@ -33,6 +34,7 @@ import type {
   PointCloudRendererMode,
   PointCloudRendererStatus,
 } from "./rendering/pointCloudRenderer";
+import type { PointCloudVisibleRegions } from "./PointCloudTriViewPass";
 import { cancelActivePointCloudFrameLoad } from "./pointCloudAssetCache";
 import { markPointCloudPaint } from "./pointCloudTiming";
 import { publishPointCloudResourceTrace } from "@/utils/pointCloudNavigationDiagnostics";
@@ -40,6 +42,11 @@ import { publishPointCloudResourceTrace } from "@/utils/pointCloudNavigationDiag
 interface UsePointCloudSceneParams {
   /** 渲染容器(壳组件持有的 DOM ref)。 */
   viewportRef: RefObject<HTMLDivElement | null>;
+  /** Optional workspace-wide canvas host; input and projection stay on viewportRef. */
+  renderSurface?: HTMLElement | null;
+  /** Changes after Dockview has measured and clipped moving/hidden groups. */
+  layoutKey?: string | number;
+  getVisibleRegions?: PointCloudVisibleRegions;
   /** 场景实例 ref —— 由壳组件持有(稳定),本 hook 负责其生命周期写入/清理;
    *  壳层各交互 handler(pickBox / placeOnGround / getPointPositions …)共用同一 ref。 */
   sceneRef: MutableRefObject<PointCloudScene | null>;
@@ -116,6 +123,9 @@ function takeRuntimeViewTransfer(continuityKey: string | null): PointCloudViewSt
 export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCloudSceneResult {
   const {
     viewportRef,
+    renderSurface = null,
+    layoutKey,
+    getVisibleRegions,
     sceneRef,
     pcdDecimate,
     rendererMode = "legacy",
@@ -169,6 +179,10 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
   const suspendCameraSaveRef = useRef(false);
   const loadSequenceRef = useRef(0);
   const loadedContinuityKeyRef = useRef<string | null>(null);
+  const renderSurfaceRef = useRef(renderSurface);
+  renderSurfaceRef.current = renderSurface;
+  const visibleRegionsRef = useRef(getVisibleRegions);
+  visibleRegionsRef.current = getVisibleRegions;
 
   const scheduleCameraViewSave = useCallback((view: PointCloudViewState) => {
     if (suspendCameraSaveRef.current) return;
@@ -198,6 +212,9 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
     setLoadState({ stats: null, loadedPointCloudUrl: null, isLoading: !!pointCloudUrl });
     const effectiveMode = rendererCircuitReason ? "legacy" : rendererMode;
     void PointCloudScene.create(container, {
+      renderSurface: renderSurfaceRef.current,
+      getVisibleRegions: (element) =>
+        visibleRegionsRef.current?.(element) ?? [element.getBoundingClientRect()],
       decimateThreshold: pcdDecimate,
       rendererMode: effectiveMode,
       onDeviceLost: (reason) => {
@@ -254,6 +271,19 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
     // rendererMode 在工作台打开时冻结；只有 page circuit 会触发同页重建。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rendererCircuitReason, rendererMode]);
+
+  useLayoutEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    scene.setRenderSurface(renderSurface);
+    const observer = new ResizeObserver(() => scene.resize());
+    if (renderSurface) observer.observe(renderSurface);
+    return () => observer.disconnect();
+  }, [renderSurface, rendererReadyVersion, sceneRef]);
+
+  useLayoutEffect(() => {
+    sceneRef.current?.resize();
+  }, [layoutKey, getVisibleRegions, rendererReadyVersion, sceneRef]);
 
   useEffect(() => {
     sceneRef.current?.setPointSize(pointSize);

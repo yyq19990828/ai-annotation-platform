@@ -16,8 +16,12 @@ import type { Psr, TriView } from "./geometry/triview";
 import { loadTimedDecodedPointCloudFrame } from "./pointCloudAssetCache";
 import {
   clientRectToCanvasClipPath,
+  clientRectToRendererScissors,
+  setClientCameraViewport,
+  subtractClientRect,
   PointCloudTriViewPass,
   type ClientRectSnapshot,
+  type PointCloudVisibleRegions,
   type TriViewClientLayout,
 } from "./PointCloudTriViewPass";
 import {
@@ -153,6 +157,8 @@ export interface PointCloudSceneOptions {
   decimateThreshold?: number;
   rendererMode?: PointCloudRendererMode;
   onDeviceLost?: (reason: string) => void;
+  renderSurface?: HTMLElement | null;
+  getVisibleRegions?: PointCloudVisibleRegions;
 }
 
 export class PointCloudScene {
@@ -180,6 +186,10 @@ export class PointCloudScene {
   private triPassCount = 0;
   private disposed = false;
   private container: HTMLElement;
+  private renderSurface: HTMLElement;
+  private getVisibleRegions?: PointCloudVisibleRegions;
+  private surfaceWidth = 0;
+  private surfaceHeight = 0;
 
   // v0.13.3 · 3D 框图层:每框一个 Group(线框 LineSegments + 半透明拾取 Mesh),
   // 用 boxToMatrix4 设矩阵。共享单位几何(边长 1),材质按框单独建(颜色不同)。
@@ -259,6 +269,8 @@ export class PointCloudScene {
     surface: PointCloudRendererSurface,
   ) {
     this.container = container;
+    this.renderSurface = options.renderSurface ?? container;
+    this.getVisibleRegions = options.getVisibleRegions;
     if (POINT_CLOUD_TEST_PROBES_ENABLED) {
       (this.container as HTMLElement & { __pointCloudScene?: PointCloudScene }).__pointCloudScene =
         this;
@@ -270,7 +282,9 @@ export class PointCloudScene {
     this.rendererStatus = surface.status;
     const pixelRatio = Math.min(window.devicePixelRatio, 2);
     this.renderer.setPixelRatio(pixelRatio);
-    this.renderer.setSize(w, h);
+    this.surfaceWidth = this.renderSurface.clientWidth;
+    this.surfaceHeight = this.renderSurface.clientHeight;
+    this.renderer.setSize(this.surfaceWidth, this.surfaceHeight);
     this.renderer.setClearColor(0x0b0d12, 1);
     if ("localClippingEnabled" in this.renderer) {
       (
@@ -279,11 +293,11 @@ export class PointCloudScene {
         }
       ).localClippingEnabled = true;
     }
-    container.appendChild(this.renderer.domElement);
-    // canvas 绝对填满 viewport，不建立额外布局；相机大图开启时可只提升
-    // 三视图面板矩形，其余主视图仍由 modal 遮住。
+    this.renderSurface.appendChild(this.renderer.domElement);
+    // The renderer fills its surface; the main viewport remains the input host.
     this.renderer.domElement.style.position = "absolute";
     this.renderer.domElement.style.inset = "0";
+    this.renderer.domElement.style.pointerEvents = "none";
     this.triViewPass = new PointCloudTriViewPass(this.rendererStatus.actualBackend, pixelRatio);
     if (POINT_CLOUD_TEST_PROBES_ENABLED) {
       this.container.dataset.pointcloudRendererCount = "1";
@@ -298,7 +312,7 @@ export class PointCloudScene {
     this.camera.position.set(0, -20, 12);
     this.camera.up.set(0, 0, 1); // 点云 z 朝上(自动驾驶惯例)
 
-    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls = new OrbitControls(this.camera, container);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.1;
     this.setOrbitMouseMode("orbit");
@@ -324,7 +338,7 @@ export class PointCloudScene {
     this.initAxisGizmo();
 
     // 变换 gizmo:在框 local 空间编辑(缩放/旋转沿框自身轴)。
-    this.transform = new TransformControls(this.camera, this.renderer.domElement);
+    this.transform = new TransformControls(this.camera, container);
     this.transform.setSpace("local");
     this.transform.addEventListener("objectChange", () => {
       this.invalidateMain("transform-object");
@@ -393,28 +407,67 @@ export class PointCloudScene {
     // 正交 pass 时清三视图区域可能先清掉完整 swapchain。任何可见 pass 变化都先恢复主 Scene，
     // 再叠三视图，避免缩放三视图后主画布黑屏，仍由 scheduler 合并为同一个 RAF。
     const { renderMain, renderTri } = resolvePointCloudRenderPlan(dirtyMask, controlsChanged);
-    const { clientWidth: width, clientHeight: height } = this.container;
-    let mainPasses = 0;
-    if (renderMain) {
-      this.updateTransformSize();
-      this.renderer.setScissorTest(false);
-      this.renderer.setViewport(0, 0, width, height);
-      this.renderer.render(this.scene, this.camera);
-      this.renderAxisGizmo();
-      mainPasses = 1;
+    const canvasRect = this.renderer.domElement.getBoundingClientRect();
+    const mainRect = this.container.getBoundingClientRect();
+    let mainRegions = this.getVisibleRegions?.(this.container) ?? [mainRect];
+    for (const region of this.triViewPass.getOccludingRegions()) {
+      mainRegions = mainRegions.flatMap((piece) => subtractClientRect(piece, region));
     }
+    let mainPasses = 0;
     let triPasses = 0;
-    if (renderTri) {
-      const domRect = this.renderer.domElement.getBoundingClientRect();
-      const canvasRect: ClientRectSnapshot = {
-        left: domRect.left,
-        top: domRect.top,
-        width: domRect.width,
-        height: domRect.height,
-      };
-      triPasses = this.triViewPass.render(this.renderer, canvasRect);
+    const previousAutoClear = this.renderer.autoClear;
+    this.renderer.autoClear = false;
+    try {
+      // Clear the shared surface once. WebGPU attachment clears are not restricted by scissor.
       this.renderer.setScissorTest(false);
-      this.renderer.setViewport(0, 0, width, height);
+      this.renderer.setViewport(0, 0, canvasRect.width, canvasRect.height);
+      this.renderer.clear(true, true, true);
+      if (renderMain) {
+        this.updateTransformSize();
+        const scissors = clientRectToRendererScissors(
+          mainRect,
+          canvasRect,
+          this.rendererStatus.actualBackend,
+          mainRegions,
+        );
+        if (scissors.length > 0) {
+          this.camera.aspect = mainRect.width / mainRect.height;
+          this.camera.updateProjectionMatrix();
+          // Three scales attenuated points by the complete canvas height, not this viewport.
+          const pointSize = (this.pointSize * mainRect.height) / canvasRect.height;
+          if (this.webGpuPointLayer) this.webGpuPointLayer.setPointSize(pointSize);
+          else if (this.points) {
+            ((this.points as THREE.Points).material as THREE.PointsMaterial).size = pointSize;
+          }
+          for (const neighbor of this.neighborPoints) {
+            if (neighbor.material) neighbor.material.size = pointSize * 0.8;
+            neighbor.webGpuLayer?.setPointSize(pointSize * 0.8);
+          }
+          const viewport = setClientCameraViewport(
+            this.camera,
+            mainRect,
+            canvasRect,
+            this.rendererStatus.actualBackend,
+          );
+          if (viewport) {
+            this.renderer.setScissorTest(true);
+            this.renderer.setViewport(viewport.x, viewport.y, viewport.width, viewport.height);
+            for (const scissor of scissors) {
+              this.renderer.setScissor(scissor.x, scissor.y, scissor.width, scissor.height);
+              this.renderer.render(this.scene, this.camera);
+              mainPasses += 1;
+            }
+            this.camera.clearViewOffset();
+            this.renderAxisGizmo(mainRect, canvasRect, mainRegions);
+          }
+        }
+      }
+      if (renderTri) triPasses = this.triViewPass.render(this.renderer, canvasRect);
+    } finally {
+      this.camera.clearViewOffset();
+      this.renderer.setScissorTest(false);
+      this.renderer.setViewport(0, 0, canvasRect.width, canvasRect.height);
+      this.renderer.autoClear = previousAutoClear;
     }
     if (POINT_CLOUD_TEST_PROBES_ENABLED && mainPasses + triPasses > 0) {
       this.renderSubmitCount += mainPasses + triPasses;
@@ -500,10 +553,13 @@ export class PointCloudScene {
     return sprite;
   }
 
-  private renderAxisGizmo() {
+  private renderAxisGizmo(
+    mainRect: ClientRectSnapshot,
+    canvasRect: ClientRectSnapshot,
+    mainRegions: readonly ClientRectSnapshot[],
+  ) {
     if (!this.axisGizmoVisible) return;
-    const w = this.container.clientWidth;
-    const h = this.container.clientHeight;
+    const { width: w, height: h } = mainRect;
     if (!w || !h) return;
     const size = Math.min(128, Math.max(96, Math.floor(Math.min(w, h) * 0.18)));
     const margin = 14;
@@ -516,17 +572,39 @@ export class PointCloudScene {
     this.axisCamera.updateProjectionMatrix();
 
     const r = this.renderer;
+    const rect = {
+      left: mainRect.left + margin,
+      top: mainRect.top + h - bottomMargin - size,
+      width: size,
+      height: size,
+    };
+    const scissors = clientRectToRendererScissors(
+      rect,
+      canvasRect,
+      this.rendererStatus.actualBackend,
+      mainRegions,
+    );
+    if (scissors.length === 0) return;
+    const viewport = setClientCameraViewport(
+      this.axisCamera,
+      rect,
+      canvasRect,
+      this.rendererStatus.actualBackend,
+    );
+    if (!viewport) return;
     const prevAutoClear = r.autoClear;
     r.autoClear = false;
     r.clearDepth();
     try {
       r.setScissorTest(true);
-      r.setViewport(margin, bottomMargin, size, size);
-      r.setScissor(margin, bottomMargin, size, size);
-      r.render(this.axisScene, this.axisCamera);
+      r.setViewport(viewport.x, viewport.y, viewport.width, viewport.height);
+      for (const scissor of scissors) {
+        r.setScissor(scissor.x, scissor.y, scissor.width, scissor.height);
+        r.render(this.axisScene, this.axisCamera);
+      }
     } finally {
       r.setScissorTest(false);
-      r.setViewport(0, 0, w, h);
+      this.axisCamera.clearViewOffset();
       r.autoClear = prevAutoClear;
     }
   }
@@ -737,7 +815,7 @@ export class PointCloudScene {
     x1: number,
     y1: number,
   ): { positions: Float32Array; indices: number[] } | null {
-    const rect = this.renderer.domElement.getBoundingClientRect();
+    const rect = this.container.getBoundingClientRect();
     const toNdcX = (cx: number) => ((cx - rect.left) / rect.width) * 2 - 1;
     const toNdcY = (cy: number) => -((cy - rect.top) / rect.height) * 2 + 1;
     // client y 越大 NDC y 越小 → 取 min/max 归一化矩形。
@@ -756,7 +834,7 @@ export class PointCloudScene {
     const positions = this.getPointPositions();
     if (!positions) return null;
     if (polygon.length < 3) return null;
-    const rect = this.renderer.domElement.getBoundingClientRect();
+    const rect = this.container.getBoundingClientRect();
     const toNdcX = (cx: number) => ((cx - rect.left) / rect.width) * 2 - 1;
     const toNdcY = (cy: number) => -((cy - rect.top) / rect.height) * 2 + 1;
     const ndcPolygon = polygon.map((p) => ({ x: toNdcX(p.x), y: toNdcY(p.y) }));
@@ -851,7 +929,7 @@ export class PointCloudScene {
 
   private syncTriViewCanvasLayer(): void {
     const canvas = this.renderer.domElement;
-    if (!this.triViewElevated || !this.triViewLayout) {
+    if (this.renderSurface !== this.container || !this.triViewElevated || !this.triViewLayout) {
       canvas.style.removeProperty("z-index");
       canvas.style.removeProperty("clip-path");
       return;
@@ -1131,12 +1209,28 @@ export class PointCloudScene {
     this.invalidateTri();
   }
 
+  /** Moving the surface never recreates the renderer, scene, geometry or interaction host. */
+  setRenderSurface(surface: HTMLElement | null): void {
+    const next = surface ?? this.container;
+    if (this.renderSurface === next) return;
+    this.renderSurface = next;
+    next.appendChild(this.renderer.domElement);
+    this.resize();
+  }
+
   resize() {
     const { clientWidth: w, clientHeight: h } = this.container;
-    if (!w || !h) return;
-    this.camera.aspect = w / h;
-    this.camera.updateProjectionMatrix();
-    this.renderer.setSize(w, h);
+    if (w > 0 && h > 0 && this.camera.aspect !== w / h) {
+      this.camera.aspect = w / h;
+      this.camera.updateProjectionMatrix();
+    }
+    const width = this.renderSurface.clientWidth;
+    const height = this.renderSurface.clientHeight;
+    if (width > 0 && height > 0 && (width !== this.surfaceWidth || height !== this.surfaceHeight)) {
+      this.surfaceWidth = width;
+      this.surfaceHeight = height;
+      this.renderer.setSize(width, height);
+    }
     this.syncTriViewCanvasLayer();
     this.invalidateAll("resize");
   }
@@ -1445,7 +1539,7 @@ export class PointCloudScene {
 
   /** 屏幕坐标射线拾取最近的框,返回其 id;未命中返回 null。 */
   pickBox(clientX: number, clientY: number): string | null {
-    const rect = this.renderer.domElement.getBoundingClientRect();
+    const rect = this.container.getBoundingClientRect();
     const ndc = new THREE.Vector2(
       ((clientX - rect.left) / rect.width) * 2 - 1,
       -((clientY - rect.top) / rect.height) * 2 + 1,
@@ -1461,7 +1555,7 @@ export class PointCloudScene {
 
   /** 屏幕坐标严格命中最近的渲染点；未命中不回落地面或自由空间。 */
   pickPoint(clientX: number, clientY: number): PointCloudPick | null {
-    const rect = this.renderer.domElement.getBoundingClientRect();
+    const rect = this.container.getBoundingClientRect();
     const ndc = new THREE.Vector2(
       ((clientX - rect.left) / rect.width) * 2 - 1,
       -((clientY - rect.top) / rect.height) * 2 + 1,
@@ -1542,7 +1636,7 @@ export class PointCloudScene {
    * 点云命中容差用 0.3m(默认 1m 太松,易抓到背景远点;0.3m 跟点云密度匹配)。
    */
   placeOnGround(clientX: number, clientY: number): [number, number, number] | null {
-    const rect = this.renderer.domElement.getBoundingClientRect();
+    const rect = this.container.getBoundingClientRect();
     const ndc = new THREE.Vector2(
       ((clientX - rect.left) / rect.width) * 2 - 1,
       -((clientY - rect.top) / rect.height) * 2 + 1,
@@ -1680,9 +1774,7 @@ export class PointCloudScene {
     // 时机不定)。dev 下 StrictMode 双调用 + 反复 HMR 会让旧 context 堆积到浏览器上限
     // (Chrome ~16),后续 new WebGLRenderer 报 "Error creating WebGL context"。
     // forceContextLoss() 主动触发 context loss,让浏览器立即回收。
-    if (this.renderer.domElement.parentElement === this.container) {
-      this.container.removeChild(this.renderer.domElement);
-    }
+    this.renderer.domElement.remove();
   }
 
   private disposeAxisGizmo() {

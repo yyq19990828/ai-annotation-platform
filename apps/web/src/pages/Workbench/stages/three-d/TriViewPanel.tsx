@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type { PointCloudScene } from "./PointCloudScene";
+import type { PointCloudVisibleRegions } from "./PointCloudTriViewPass";
 import { TriOrthoView, type TriSelected } from "./TriOrthoView";
 import type { TriView, Psr } from "./geometry/triview";
 
@@ -61,7 +62,8 @@ interface TriViewPanelProps {
   /** 是否可编辑 (任务非只读 且 框未锁定); false → 只读, overlay 不画 handle、不收事件。 */
   editable: boolean;
   /** 浮窗位置/尺寸变化键；fixed 浮窗移动不会触发 ResizeObserver。 */
-  layoutKey: string;
+  layoutKey: string | number;
+  getVisibleRegions?: PointCloudVisibleRegions;
   /** 折叠时注销可见 pass，展开后恢复。 */
   active?: boolean;
   /** 当前对象按视图记忆的缩放倍数。 */
@@ -105,6 +107,7 @@ export function TriViewPanel({
   selected,
   editable,
   layoutKey,
+  getVisibleRegions,
   active = true,
   zoomByView,
   onZoomChange,
@@ -134,8 +137,9 @@ export function TriViewPanel({
     scene.setTriViewLayout({
       panel: { left: pr.left, top: pr.top, width: pr.width, height: pr.height },
       views,
+      visibleRegions: active ? getVisibleRegions?.(panel) : [],
     });
-  }, [scene]);
+  }, [active, getVisibleRegions, scene]);
 
   // 挂载注册布局；浮窗 resize 与窗口 resize 重测，卸载恢复主 canvas 旧区域。
   useEffect(() => {

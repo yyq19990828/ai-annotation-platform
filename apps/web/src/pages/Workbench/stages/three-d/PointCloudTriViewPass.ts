@@ -32,7 +32,11 @@ export interface TriViewClientRect extends ClientRectSnapshot {
 export interface TriViewClientLayout {
   panel: ClientRectSnapshot;
   views: TriViewClientRect[];
+  /** Disjoint client-coordinate pieces after Dockview visibility and floating occlusion. */
+  visibleRegions?: readonly ClientRectSnapshot[];
 }
+
+export type PointCloudVisibleRegions = (element: HTMLElement) => readonly ClientRectSnapshot[];
 
 export interface RendererViewportRect {
   x: number;
@@ -64,10 +68,91 @@ function sameRect(a: ClientRectSnapshot, b: ClientRectSnapshot): boolean {
 function sameLayout(a: TriViewClientLayout | null, b: TriViewClientLayout | null): boolean {
   if (a === b) return true;
   if (!a || !b || !sameRect(a.panel, b.panel) || a.views.length !== b.views.length) return false;
+  const aRegions = a.visibleRegions ?? [a.panel];
+  const bRegions = b.visibleRegions ?? [b.panel];
+  if (
+    aRegions.length !== bRegions.length ||
+    !aRegions.every((rect, index) => sameRect(rect, bRegions[index]))
+  )
+    return false;
   return a.views.every((rect, index) => {
     const other = b.views[index];
     return rect.view === other.view && sameRect(rect, other);
   });
+}
+
+export function intersectClientRects(
+  a: ClientRectSnapshot,
+  b: ClientRectSnapshot,
+): ClientRectSnapshot | null {
+  const left = Math.max(a.left, b.left);
+  const top = Math.max(a.top, b.top);
+  const right = Math.min(a.left + a.width, b.left + b.width);
+  const bottom = Math.min(a.top + a.height, b.top + b.height);
+  return right > left && bottom > top
+    ? { left, top, width: right - left, height: bottom - top }
+    : null;
+}
+
+/** Returns disjoint pieces; overlapping occluders cannot reopen an earlier hole. */
+export function subtractClientRect(
+  rect: ClientRectSnapshot,
+  occluder: ClientRectSnapshot,
+): ClientRectSnapshot[] {
+  const overlap = intersectClientRects(rect, occluder);
+  if (!overlap) return [rect];
+  const right = rect.left + rect.width;
+  const bottom = rect.top + rect.height;
+  const overlapRight = overlap.left + overlap.width;
+  const overlapBottom = overlap.top + overlap.height;
+  return [
+    { left: rect.left, top: rect.top, width: rect.width, height: overlap.top - rect.top },
+    { left: rect.left, top: overlapBottom, width: rect.width, height: bottom - overlapBottom },
+    { left: rect.left, top: overlap.top, width: overlap.left - rect.left, height: overlap.height },
+    { left: overlapRight, top: overlap.top, width: right - overlapRight, height: overlap.height },
+  ].filter((piece) => piece.width > 0 && piece.height > 0);
+}
+
+/** Scissors clip visibility while the camera continues to frame the complete content rect. */
+export function clientRectToRendererScissors(
+  rect: ClientRectSnapshot,
+  canvasRect: ClientRectSnapshot,
+  backend: PointCloudActualBackend,
+  visibleRegions: readonly ClientRectSnapshot[] = [rect],
+): RendererViewportRect[] {
+  return visibleRegions.flatMap((region) => {
+    const visible = intersectClientRects(rect, region);
+    const scissor = visible && clientRectToRendererViewport(visible, canvasRect, backend);
+    return scissor ? [scissor] : [];
+  });
+}
+
+/** WebGPU requires an in-bounds viewport. A view offset preserves full-rect projection at edges. */
+export function setClientCameraViewport(
+  camera: THREE.PerspectiveCamera | THREE.OrthographicCamera,
+  rect: ClientRectSnapshot,
+  canvasRect: ClientRectSnapshot,
+  backend: PointCloudActualBackend,
+): RendererViewportRect | null {
+  const visible = intersectClientRects(rect, canvasRect);
+  if (!visible) return null;
+  camera.clearViewOffset();
+  if (
+    rect.left !== visible.left ||
+    rect.top !== visible.top ||
+    rect.width !== visible.width ||
+    rect.height !== visible.height
+  ) {
+    camera.setViewOffset(
+      rect.width,
+      rect.height,
+      visible.left - rect.left,
+      visible.top - rect.top,
+      visible.width,
+      visible.height,
+    );
+  }
+  return clientRectToRendererViewport(visible, canvasRect, backend);
 }
 
 /** Returns a CSS clip-path that exposes only the floating tri-view panel on the shared canvas. */
@@ -284,6 +369,10 @@ export class PointCloudTriViewPass {
     this.webGpuPointLayer?.setColorAdjust(adjust);
   }
 
+  getOccludingRegions(): readonly ClientRectSnapshot[] {
+    return this.active && this.layout ? (this.layout.visibleRegions ?? [this.layout.panel]) : [];
+  }
+
   render(renderer: PointCloudRenderer, canvasRect: ClientRectSnapshot): number {
     const layout = this.layout;
     const box = this.box;
@@ -300,44 +389,39 @@ export class PointCloudTriViewPass {
     }
 
     renderer.setScissorTest(true);
-    const panelViewport = clientRectToRendererViewport(layout.panel, canvasRect, this.backend);
-    if (panelViewport) {
-      renderer.setViewport(
-        panelViewport.x,
-        panelViewport.y,
-        panelViewport.width,
-        panelViewport.height,
-      );
-      renderer.setScissor(
-        panelViewport.x,
-        panelViewport.y,
-        panelViewport.width,
-        panelViewport.height,
-      );
-      renderer.clear(true, true, true);
-    }
-
     let passCount = 0;
     for (const rect of layout.views) {
-      const viewport = clientRectToRendererViewport(rect, canvasRect, this.backend);
+      const scissors = clientRectToRendererScissors(
+        rect,
+        canvasRect,
+        this.backend,
+        layout.visibleRegions,
+      );
+      if (scissors.length === 0) continue;
+      const aspect = rect.width / rect.height;
+      this.updateCamera(rect.view, aspect);
+      const camera = this.cameras[rect.view];
+      const viewport = setClientCameraViewport(camera, rect, canvasRect, this.backend);
       if (!viewport) continue;
       renderer.setViewport(viewport.x, viewport.y, viewport.width, viewport.height);
-      renderer.setScissor(viewport.x, viewport.y, viewport.width, viewport.height);
-      this.updateCamera(rect.view, viewport.width / viewport.height);
       const cameraBox = this.cameraRef ?? box;
       const { halfW } = frameOrtho(
         cameraBox.size,
         rect.view,
-        viewport.width / viewport.height,
+        aspect,
         FRAME_MARGIN,
         this.zoomByView[rect.view],
       );
-      const cssPixelsPerMeter = viewport.width / 2 / halfW;
+      const cssPixelsPerMeter = rect.width / 2 / halfW;
       const pointSize = Math.max(1, this.worldPointSize * cssPixelsPerMeter * this.pixelRatio);
       if (this.material) this.material.size = pointSize;
       this.webGpuPointLayer?.setPointSize(pointSize);
-      renderer.render(this.scene, this.cameras[rect.view]);
-      passCount += 1;
+      for (const scissor of scissors) {
+        renderer.setScissor(scissor.x, scissor.y, scissor.width, scissor.height);
+        renderer.render(this.scene, camera);
+        passCount += 1;
+      }
+      camera.clearViewOffset();
     }
     renderer.setScissorTest(false);
     return passCount;

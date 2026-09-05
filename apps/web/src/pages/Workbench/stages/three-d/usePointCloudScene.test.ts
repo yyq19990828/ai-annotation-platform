@@ -52,6 +52,7 @@ const mockState = vi.hoisted(() => {
     detachTransform = vi.fn();
     setTransformMode = vi.fn();
     resize = vi.fn();
+    setRenderSurface = vi.fn();
     dispose = vi.fn();
 
     static async create(
@@ -104,6 +105,50 @@ describe("usePointCloudScene camera continuity", () => {
       unobserve() {}
       disconnect() {}
     } as unknown as typeof ResizeObserver;
+  });
+
+  it("moves the render surface and refreshes layout without recreating or reloading the scene", async () => {
+    const container = document.createElement("div");
+    const surface = document.createElement("div");
+    const sceneRef = { current: null };
+    const viewportRef = { current: container };
+    const render = renderHook(
+      ({ renderSurface, layoutKey }) =>
+        usePointCloudScene({
+          viewportRef,
+          sceneRef: sceneRef as never,
+          renderSurface,
+          layoutKey,
+          pcdDecimate: 100,
+          pointSize: 0.06,
+          showGrid: true,
+          showAxisGizmo: true,
+          cameraDamping: 0.1,
+          persistCameraView: false,
+          pointCloudUrl: "frame-shared.pcd",
+          continuityKey: "shared-surface",
+          axisConvention: "iso_8855",
+          boxes: [],
+          selectedId: null,
+          selectedPsrEditable: false,
+          pointcloudCamera: null,
+          onWorkbenchLayoutChange: vi.fn(),
+          onViewModeChange: vi.fn(),
+          onTransformPreview: vi.fn(),
+          onTransformCommit: vi.fn(),
+        }),
+      { initialProps: { renderSurface: null as HTMLElement | null, layoutKey: 0 } },
+    );
+    await waitFor(() => expect(render.result.current.stats?.totalPoints).toBe(10));
+    const scene = mockState.instances[0];
+    const loadCount = scene.loadPcd.mock.calls.length;
+    render.rerender({ renderSurface: surface, layoutKey: 1 });
+    render.rerender({ renderSurface: surface, layoutKey: 2 });
+    expect(mockState.instances).toHaveLength(1);
+    expect(scene.setRenderSurface).toHaveBeenLastCalledWith(surface);
+    expect(scene.resize).toHaveBeenCalled();
+    expect(scene.loadPcd).toHaveBeenCalledTimes(loadCount);
+    expect(scene.dispose).not.toHaveBeenCalled();
   });
 
   it("Renderer 创建失败时结束加载并暴露明确错误", async () => {
