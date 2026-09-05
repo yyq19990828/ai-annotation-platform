@@ -258,6 +258,7 @@ test("AAP JSON 视频预测可预检、审阅并持久化采纳/忽略", async (
   const maskRow = page.getByTestId(`box-list-item-${maskCandidateId}`);
   await maskRow.click();
   await expect(maskRow).toHaveClass(/!border-brand/);
+  await page.getByRole("button", { name: "收起浮窗", exact: true }).click();
 
   const bboxRow = page.getByTestId(`box-list-item-${bboxCandidateId}`);
   await bboxRow.getByRole("button", { name: "更多操作" }).hover();

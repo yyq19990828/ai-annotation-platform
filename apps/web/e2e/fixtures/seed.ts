@@ -627,6 +627,7 @@ export class SeedAPI {
     const res = await this.seedLogin(email);
     if (!res.ok()) throw new Error(`seed/login failed: ${res.status()}`);
     const body = (await res.json()) as { access_token: string; user: unknown };
+    await this.setPetEnabled(email, false, body.access_token);
     const target = baseURL ?? process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3001";
     await page.goto(target);
     await page.evaluate(
@@ -640,6 +641,17 @@ export class SeedAPI {
       },
       { token: body.access_token, user: body.user },
     );
+  }
+
+  async setPetEnabled(email: string, enabled: boolean, token?: string): Promise<void> {
+    const authToken = token ?? (await this.accessToken(email));
+    const res = await this.request.patch(`${API_BASE}/api/v1/auth/me/preferences`, {
+      headers: { Authorization: `Bearer ${authToken}`, Connection: "close" },
+      data: { workbench: { common: { petEnabled: enabled } } },
+    });
+    if (!res.ok()) {
+      throw new Error(`preferences/pet-enabled failed: ${res.status()} ${await res.text()}`);
+    }
   }
 
   /** UI 路径登录：filling form + click 提交（auth spec 主用）。 */

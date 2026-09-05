@@ -113,6 +113,7 @@ test("视频 Mask 关键帧复制、outside、删除撤销与组件拆轨保持�
   const source = await seedVideoMask(request, fixture.rles.at(-1) ?? fixture.rle, taskId, token);
 
   await seed.injectToken(page, data.admin_email);
+  await seed.setPetEnabled(data.admin_email, true);
   await page.goto(`/projects/${data.project_id}/annotate?task=${taskId}`);
   await expect(page.getByTestId("video-konva-stage")).toBeVisible({ timeout: 20_000 });
   const row = page.getByTestId(`video-mask-track-${source.id}`);

@@ -457,6 +457,7 @@ test.describe("native Mask interactive candidate acceptance", () => {
     const fixture = await seed.nativeMaskCandidate(taskId);
     const routed = await routeNativeCandidate(page, fixture);
     await seed.injectToken(page, data.annotator_email);
+    await seed.setPetEnabled(data.annotator_email, true);
 
     const accepted = await generateAndAccept(page, data.project_id, taskId, "video");
     expect(accepted.annotation.annotation_type).toBe("video_track_mask");
@@ -487,6 +488,7 @@ test.describe("native Mask interactive candidate acceptance", () => {
     const fixture = await seed.nativeMaskCandidate(taskId);
     await routeNativeCandidate(page, fixture);
     await seed.injectToken(page, data.annotator_email);
+    await seed.setPetEnabled(data.annotator_email, true);
 
     const accepted = await generateAndAccept(page, data.project_id, taskId, "video");
     const annotationId = accepted.annotation.id;

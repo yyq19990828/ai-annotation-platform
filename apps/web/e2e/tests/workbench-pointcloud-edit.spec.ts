@@ -567,6 +567,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     await seed.reset();
     const lidar = await seed.seedLidar();
     await seed.injectToken(page, "admin@e2e.test");
+    await seed.setPetEnabled("admin@e2e.test", true);
 
     const consoleErrors: string[] = [];
     page.on("console", (msg) => {

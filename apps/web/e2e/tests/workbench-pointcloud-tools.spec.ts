@@ -323,6 +323,7 @@ test.describe("workbench pointcloud tools (键盘 handler 守护)", () => {
     await seed.reset();
     const lidar = await seed.seedLidar();
     await seed.injectToken(page, "admin@e2e.test");
+    await seed.setPetEnabled("admin@e2e.test", true);
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);

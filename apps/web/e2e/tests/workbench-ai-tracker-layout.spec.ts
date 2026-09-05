@@ -99,19 +99,23 @@ test("AI 与视频追踪使用同一 Dockview 工作区，隐藏和预设不重�
   await page.waitForTimeout(650);
   await expect
     .poll(async () => (await savedVideoWorkspace(page)).schemaVersion, { timeout: 20_000 })
-    .toBe(4);
+    .toBe(5);
   const saved = await savedVideoWorkspace(page);
   expect(Object.keys(saved.snapshot.layout.panels).sort()).toEqual([
     "ai-task",
+    "camera-view",
     "canvas",
     "class-palette",
     "discussion",
     "inspector",
     "task-queue",
+    "tri-view",
     "video-tracker",
   ]);
   expect(saved.snapshot.visibilityIntent).toEqual({
     "ai-task": "shown",
+    "camera-view": "hidden",
+    "tri-view": "hidden",
     "video-tracker": "shown",
   });
 });
