@@ -56,8 +56,10 @@ describe("usePsrPatchPipeline", () => {
   it("有效表单 250ms 后 PATCH 并入 history(box_3d)", () => {
     const { result, update, history } = setup();
     act(() => result.current.schedulePatch(VALID));
+    expect(result.current.hasPendingPatch).toBe(true);
     expect(update.mutate).not.toHaveBeenCalled(); // 防抖未到
     act(() => vi.advanceTimersByTime(250));
+    expect(result.current.hasPendingPatch).toBe(false);
     expect(update.mutate).toHaveBeenCalledTimes(1);
     expect(update.mutate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -71,8 +73,68 @@ describe("usePsrPatchPipeline", () => {
   it("非法表单(尺寸 0)不提交", () => {
     const { result, update } = setup();
     act(() => result.current.schedulePatch(INVALID));
+    expect(result.current.hasInvalidDraft).toBe(true);
     act(() => vi.advanceTimersByTime(250));
     expect(update.mutate).not.toHaveBeenCalled();
+  });
+
+  it("非法新值取消之前的有效 pending，计时和卸载都不提交旧表单", () => {
+    const { update, history } = mocks();
+    const { result, unmount } = renderHook(() =>
+      usePsrPatchPipeline({
+        selectedId: "a1",
+        selectedAnn: boxAnn(),
+        axisConvention: "iso_8855",
+        updateAnnotation: update,
+        history,
+      }),
+    );
+    act(() => result.current.schedulePatch(VALID));
+    act(() => result.current.schedulePatch(INVALID));
+    expect(result.current.hasPendingPatch).toBe(false);
+    expect(result.current.hasInvalidDraft).toBe(true);
+    act(() => vi.advanceTimersByTime(250));
+    unmount();
+    expect(update.mutate).not.toHaveBeenCalled();
+    expect(history.push).not.toHaveBeenCalled();
+  });
+
+  it("失焦恢复或外部表单重置后直接反映有效性，不自动提交", () => {
+    const { update, history } = mocks();
+    const { result, rerender } = renderHook(
+      ({ form }) =>
+        usePsrPatchPipeline({
+          selectedId: "a1",
+          selectedAnn: boxAnn(),
+          axisConvention: "iso_8855",
+          updateAnnotation: update,
+          history,
+          form,
+        }),
+      { initialProps: { form: INVALID } },
+    );
+    expect(result.current.hasInvalidDraft).toBe(true);
+    rerender({ form: VALID });
+    expect(result.current.hasInvalidDraft).toBe(false);
+    expect(update.mutate).not.toHaveBeenCalled();
+  });
+
+  it("修正非法值后恢复防抖提交，保存状态和错误向调用方暴露", () => {
+    const error = new Error("save failed");
+    const update = {
+      mutate: vi.fn(),
+      isPending: true,
+      error,
+    } as unknown as ReturnType<typeof useUpdateAnnotation>;
+    const { result } = setup({ updateAnnotation: update });
+    act(() => result.current.schedulePatch(INVALID));
+    act(() => result.current.schedulePatch(VALID));
+    expect(result.current.hasInvalidDraft).toBe(false);
+    expect(result.current.hasPendingPatch).toBe(true);
+    expect(result.current.isSaving).toBe(true);
+    expect(result.current.saveError).toBe(error);
+    act(() => vi.advanceTimersByTime(250));
+    expect(update.mutate).toHaveBeenCalledTimes(1);
   });
 
   it("连续调用只触发最后一次(250ms 防抖)", () => {
