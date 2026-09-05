@@ -4,9 +4,9 @@
   "review_profile": "visual-content-v1",
   "entries": {
     "docs-site/public/home/ai-assisted-annotation-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "2e42cab3e9b2c16053d359dc276c90838adf28062ea0695c16079d3bda67efd7",
       "watch_paths": [
@@ -19,9 +19,9 @@
       ]
     },
     "docs-site/public/home/ai-assisted-annotation.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "789912acd40c61c79d3c6bab93d14ec1229ddd40ddf9f46d19eca6dadc60cdac",
       "watch_paths": [
@@ -33,9 +33,9 @@
       ]
     },
     "docs-site/public/home/ai-assisted-annotation.webm": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "c6d8c9ab2a5aadb93f375ed12fa1ec193e762a498b7b07b233e04103d4bb7eab",
       "watch_paths": [
@@ -47,9 +47,9 @@
       ]
     },
     "docs-site/public/home/ocr-real-scene-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "ca43ebdd80b533d2e2614912a9a2a3070788cdae2224d62faaf8e961b8abe5dc",
       "watch_paths": [
@@ -61,9 +61,9 @@
       ]
     },
     "docs-site/public/home/ocr-real-scene.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "c190c297320287c1fa6bd729ebb1587e4ade65ab879a6794a7a3d791fd5f230c",
       "watch_paths": [
@@ -75,9 +75,9 @@
       ]
     },
     "docs-site/public/home/ocr-real-scene.webm": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "043ec1aa414431aecca910ccf5aaf6bdc5cd6d5dad2915140ba744ccdac7fdbb",
       "watch_paths": [
@@ -89,9 +89,9 @@
       ]
     },
     "docs-site/public/home/sam-tools/exemplar-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "2c0608c5ae99ba4ec8e6e827e8090800039ffabd9374e98715701a432d28e767",
       "watch_paths": [
@@ -103,9 +103,9 @@
       ]
     },
     "docs-site/public/home/sam-tools/exemplar.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "39c8c19905c18fece0fa51c4b07f7bc4364b483f8d2b84c2867f01834b61d50f",
       "watch_paths": [
@@ -117,9 +117,9 @@
       ]
     },
     "docs-site/public/home/sam-tools/exemplar.webm": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "b5a438f4b888f7accee339482c203b3c0e13114cf5b4dad2cd6ee9f643a6b47b",
       "watch_paths": [
@@ -131,9 +131,9 @@
       ]
     },
     "docs-site/public/home/sam-tools/smart-box-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "bd48c3de7f9303a13de11cb2a36eee54bcbbff64a73ebdae00299d511e288d71",
       "watch_paths": [
@@ -145,9 +145,9 @@
       ]
     },
     "docs-site/public/home/sam-tools/smart-box.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "31056198312e0b153a7e301c829175d24cfb0465888ac8c0d65c151841660f14",
       "watch_paths": [
@@ -159,9 +159,9 @@
       ]
     },
     "docs-site/public/home/sam-tools/smart-box.webm": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "53a43e6594ecdd330507b9b39ca231dce8cf9639ba9589d3eac3a47370d9594a",
       "watch_paths": [
@@ -173,9 +173,9 @@
       ]
     },
     "docs-site/public/home/sam-tools/smart-point-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "61bff2a94b390f22f74e7aa4b246b032599b1e8231dce3b7f16fde627993f28d",
       "watch_paths": [
@@ -187,9 +187,9 @@
       ]
     },
     "docs-site/public/home/sam-tools/smart-point.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "b31d8fcc03fdbef0adac0568cca060871933fe7ebd3789da2cba1a78e6c055d5",
       "watch_paths": [
@@ -201,9 +201,9 @@
       ]
     },
     "docs-site/public/home/sam-tools/smart-point.webm": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "eb2012b1983e6f8f7fca3873eed4fe4d55882fc2245676189f807e66cbf0b1c2",
       "watch_paths": [
@@ -215,9 +215,9 @@
       ]
     },
     "docs-site/public/media/ai/assisted-annotation-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "2e42cab3e9b2c16053d359dc276c90838adf28062ea0695c16079d3bda67efd7",
       "watch_paths": [
@@ -230,9 +230,9 @@
       ]
     },
     "docs-site/public/media/ai/assisted-annotation.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "789912acd40c61c79d3c6bab93d14ec1229ddd40ddf9f46d19eca6dadc60cdac",
       "watch_paths": [
@@ -245,9 +245,9 @@
       ]
     },
     "docs-site/public/media/ai/candidate-keyboard-review-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "968b60155a919ac9df98465b74bf03d9fec4926c65396b013baf16ec752f2e54",
       "watch_paths": [
@@ -259,9 +259,9 @@
       ]
     },
     "docs-site/public/media/ai/candidate-keyboard-review.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "b0448afe411e5744a610b1017baa24f7a2e8c2bc0274d807296ff66e389b4e02",
       "watch_paths": [
@@ -273,9 +273,9 @@
       ]
     },
     "docs-site/public/media/ai/candidate-review-lifecycle-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "65db92e835a2f604fe718ed184496ec961851ac491cb44aa016250789816cb79",
       "watch_paths": [
@@ -288,9 +288,9 @@
       ]
     },
     "docs-site/public/media/ai/candidate-review-lifecycle.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "0fb5fecadbe65bed180c27f8bb247024aa89b9a0565060fb170d7c7a2fbf4162",
       "watch_paths": [
@@ -303,9 +303,9 @@
       ]
     },
     "docs-site/public/media/ai/current-frame-video-inference-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "fa04e2865e8eb5497e33b7622ee220112e800ee58ae7c067cfd3fc28c700a570",
       "watch_paths": [
@@ -318,9 +318,9 @@
       ]
     },
     "docs-site/public/media/ai/current-frame-video-inference.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "fd17df838e9592d58fdecf907d039a4b83e63df37dff3d71a54cd41a70e71f0b",
       "watch_paths": [
@@ -333,9 +333,9 @@
       ]
     },
     "docs-site/public/media/ai/current-task-image-inference-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "f895fc4c95884279274218f849d6605233f54a5f493c8ae953fd933e1bcf85e4",
       "watch_paths": [
@@ -348,9 +348,9 @@
       ]
     },
     "docs-site/public/media/ai/current-task-image-inference.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "6474aa85b3d7df4f9da222d7b315b0269b6f92e40b3d27bbaacf63a5e9faa0a8",
       "watch_paths": [
@@ -363,9 +363,9 @@
       ]
     },
     "docs-site/public/media/ai/ocr-current-task-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "ca43ebdd80b533d2e2614912a9a2a3070788cdae2224d62faaf8e961b8abe5dc",
       "watch_paths": [
@@ -378,9 +378,9 @@
       ]
     },
     "docs-site/public/media/ai/ocr-current-task.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "c190c297320287c1fa6bd729ebb1587e4ade65ab879a6794a7a3d791fd5f230c",
       "watch_paths": [
@@ -393,11 +393,11 @@
       ]
     },
     "docs-site/public/media/ai/preannotate-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
-      "sha256": "3108ee02d4f573111d307f2be652d4b77b9d0e7f332d4118b89c01213a980f6a",
+      "sha256": "4cd910cfb4632d139ca4b12dc094204bd5080721373d56f6b047639b27e598d3",
       "watch_paths": [
         "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
@@ -407,9 +407,9 @@
       ]
     },
     "docs-site/public/media/ai/preannotate.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "0b7f6a8bb4fb9f5418f576d8f23c77764188abe0f0814eed6661cde00d8dd1a7",
       "watch_paths": [
@@ -421,9 +421,9 @@
       ]
     },
     "docs-site/public/media/ai/prediction-import-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "2b48c9c0035ff1791f55b8d2a29e542a14c82d76a628e43687a207ac1276ca79",
       "watch_paths": [
@@ -435,9 +435,9 @@
       ]
     },
     "docs-site/public/media/ai/prediction-import.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "d60114c39dae6cca9eb9b248005ee41cd2dbcf8a0d55e4b2d8ce7107ac59c3e4",
       "watch_paths": [
@@ -449,9 +449,9 @@
       ]
     },
     "docs-site/public/media/ai/secondary-inference-attribute-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "c4f445305076deff1ab742704c8afafec119fa9eb3bc88edd7aff625e7f7e6a5",
       "watch_paths": [
@@ -464,9 +464,9 @@
       ]
     },
     "docs-site/public/media/ai/secondary-inference-attribute.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "8fb47a24d974ae2be166c5cb67479b6c05491209a80741f012628b702f033738",
       "watch_paths": [
@@ -479,9 +479,9 @@
       ]
     },
     "docs-site/public/media/datasets/background-export-download-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "908a10556f372f23761b5660627e4c8e9a24778c688e4a5a3816d6da0fcbddff",
       "watch_paths": [
@@ -494,9 +494,9 @@
       ]
     },
     "docs-site/public/media/datasets/background-export-download.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "bd3f955b28b87a18faa186130f0e45f371531ab4757889020107e7909755152d",
       "watch_paths": [
@@ -509,9 +509,9 @@
       ]
     },
     "docs-site/public/media/datasets/storage-connector-create-test-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "1d622a5df01999291943c26fde3b1f3c9928b46d00ea20042b905123d2d5815f",
       "watch_paths": [
@@ -524,9 +524,9 @@
       ]
     },
     "docs-site/public/media/datasets/storage-connector-create-test.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "f5bd7f98b35b22a727753ea049c0f5e15f912a90c9fb98b2d28978ed8e73dbea",
       "watch_paths": [
@@ -539,9 +539,9 @@
       ]
     },
     "docs-site/public/media/jobs/jobs-bell-active-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "46c2333f9b4c6b87118fe324d8c421cce7d4c959b94f365bbf1250177ecd87f2",
       "watch_paths": [
@@ -554,11 +554,11 @@
       ]
     },
     "docs-site/public/media/jobs/jobs-bell-active.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
-      "sha256": "14c495feaa87b3183b556e5b68112f906e2c1d237c88f679724861d2e30710a7",
+      "sha256": "f6137241e30f461ac6cbfabe7534c79b3260658023c85dd24d08b26b772eadb9",
       "watch_paths": [
         "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
@@ -569,9 +569,9 @@
       ]
     },
     "docs-site/public/media/jobs/video-tracker-job-states-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "22fb3f8954e8ac8830034166a3831b8e682696cf1a4c4365b19e42b81d635c93",
       "watch_paths": [
@@ -584,11 +584,11 @@
       ]
     },
     "docs-site/public/media/jobs/video-tracker-job-states.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
-      "sha256": "23e3816a070b2628ae9095ddaa9d5d44bb202a9704bea56f010401d995f734d0",
+      "sha256": "1a8242f681870aa8a01ca20dbaf91b09e881082126eb51e5f4d7408f942a9064",
       "watch_paths": [
         "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
@@ -599,9 +599,9 @@
       ]
     },
     "docs-site/public/media/large-image/mask-limit-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "5e0e8ed2c30ae1691b2a16ad1df40ecc8481b2acca6028cd1a855da7cc085995",
       "watch_paths": [
@@ -614,11 +614,11 @@
       ]
     },
     "docs-site/public/media/large-image/mask-limit.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
-      "sha256": "3f317e59c1fc10d6e948c562495d296ed48d1dd522df63594ac938bfb01d2fd8",
+      "sha256": "b8f90ab8f94d0fafc87dff138e25edde768e9262f91938369c0354366a96b006",
       "watch_paths": [
         "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
@@ -629,9 +629,9 @@
       ]
     },
     "docs-site/public/media/large-image/progressive-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "3f904674ea800f9506b1e271cfcf957a6fbb37db5ce53423c454b390c80e6191",
       "watch_paths": [
@@ -643,9 +643,9 @@
       ]
     },
     "docs-site/public/media/large-image/progressive.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "0117318e62701ee5816eb964b3d304f6edc84c254c8387f0f94e1db2dae42a31",
       "watch_paths": [
@@ -657,9 +657,9 @@
       ]
     },
     "docs-site/public/media/large-image/pyramid-recovery-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "c71dd47f10ba4f420c8945dcf8bace52dda95efa0cd2be5a3eb035c2983e797b",
       "watch_paths": [
@@ -672,9 +672,9 @@
       ]
     },
     "docs-site/public/media/large-image/pyramid-recovery.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "be853a408ca4af448ff84b49a8a37596dd7f449c2b9fe81d6b1ad555b67951e7",
       "watch_paths": [
@@ -687,9 +687,9 @@
       ]
     },
     "docs-site/public/media/mask-brush/mask-draw-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "f5abbf135b211686c5ff7cb4d4cf9add5c42aa755fa776e3f95911098230b84a",
       "watch_paths": [
@@ -702,9 +702,9 @@
       ]
     },
     "docs-site/public/media/mask-brush/mask-draw.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "1c156942999fb17a6097f05dc796e7486a6a38285811267758b3da95776d112c",
       "watch_paths": [
@@ -717,9 +717,9 @@
       ]
     },
     "docs-site/public/media/pipeline/apply-project-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "38cd79f46a547279d114e1eeea258a391f93b1d6906bc81eddd8929f700b80a6",
       "watch_paths": [
@@ -732,9 +732,9 @@
       ]
     },
     "docs-site/public/media/pipeline/apply-project.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "74df131421e0feb561830d830048fd1fc09cad510a7eefcec571cb6447e717c3",
       "watch_paths": [
@@ -747,9 +747,9 @@
       ]
     },
     "docs-site/public/media/pipeline/template-create-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "6878a6d1c9ea567b38273f307cec0beff5da8a4b36cc2f5a10edb28c090a0fc1",
       "watch_paths": [
@@ -762,9 +762,9 @@
       ]
     },
     "docs-site/public/media/pipeline/template-create.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "18fd3eeff7d2a72a8e9f133c5b0c0b685f10297f7a9f38b792a3edb4a99e7e3c",
       "watch_paths": [
@@ -777,149 +777,155 @@
       ]
     },
     "docs-site/public/media/pointcloud/billboard-label-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
-      "sha256": "220dba23b29f3f9b7d0920e9e22e0175a7e4d7846f1cffa5f4d49e5ea35a5488",
+      "sha256": "318e60fab48d9c8ddbda7b478c0385e92dc5417bddff8ebb485623b2af35a74b",
       "watch_paths": [
-        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/e2e/screenshots/flows/pointcloud-billboard-label.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
         "docs-site/public/media/pointcloud/billboard-label-poster.webp",
         "docs-site/user-guide/workbench/3d-box.md"
       ]
     },
     "docs-site/public/media/pointcloud/billboard-label.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
-      "sha256": "7726f520804569864e2ebeeb30ab571d7fe31377140c9000cbf8c9834d53799b",
+      "sha256": "8b055c6d477625aee689bea71076fe5f223f42133dd23c016b5636e08e344844",
       "watch_paths": [
-        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/e2e/screenshots/flows/pointcloud-billboard-label.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
         "docs-site/public/media/pointcloud/billboard-label.mp4",
         "docs-site/user-guide/workbench/3d-box.md"
       ]
     },
     "docs-site/public/media/pointcloud/camera-seed-3d-box-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
-      "sha256": "cc62c511831a3458e94b03a2076795b1c69e75eeec4e49df12ab255963cb613d",
+      "sha256": "05c21d23544893ba9db82bb3b50efc4c58edf48df3ee1ea4a10fdc62ea762b5f",
       "watch_paths": [
-        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/e2e/screenshots/flows/pointcloud-camera-seed-3d-box.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
         "docs-site/public/media/pointcloud/camera-seed-3d-box-poster.webp",
         "docs-site/user-guide/workbench/pointcloud-projection.md"
       ]
     },
     "docs-site/public/media/pointcloud/camera-seed-3d-box.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
-      "sha256": "a8005a89dde2aec83a6bc89c87cd6f139fbee19662fb1ba7bc3e1eef889d4989",
+      "sha256": "7b5a9b6a7bc8ad4bc74e76bf35097bb0cb920b0e9ed6b54a7dc7648654d62196",
       "watch_paths": [
-        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/e2e/screenshots/flows/pointcloud-camera-seed-3d-box.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
         "docs-site/public/media/pointcloud/camera-seed-3d-box.mp4",
         "docs-site/user-guide/workbench/pointcloud-projection.md"
       ]
     },
     "docs-site/public/media/pointcloud/controls-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
-      "sha256": "10a1bfbcfc80dd524845e1dae76759a19d242e846f449157c6437ab8c267bd3a",
+      "sha256": "52b45be2747396231c3c6fd68601d01f54e72a5cb916b442e815cdd76c0c4b7f",
       "watch_paths": [
-        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/e2e/screenshots/flows/pointcloud-controls.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
         "docs-site/public/media/pointcloud/controls-poster.webp",
         "docs-site/user-guide/workbench/pointcloud-view.md"
       ]
     },
     "docs-site/public/media/pointcloud/controls.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
-      "sha256": "7dc99ea07e51ab32381b798a221781604f34b8945593a33418fb22f79e840915",
+      "sha256": "cb097f592bfe231ac75d19f6647484cd5ae3cbb9625d9045b88739d9c5f00839",
       "watch_paths": [
-        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/e2e/screenshots/flows/pointcloud-controls.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
         "docs-site/public/media/pointcloud/controls.mp4",
         "docs-site/user-guide/workbench/pointcloud-view.md"
       ]
     },
     "docs-site/public/media/pointcloud/crossframe-track-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
-      "sha256": "3392edef0e4c8896789e1d5774dc3392dd52080ad3d9f1b33360b9c51d16ddb0",
+      "sha256": "3c61d86af3a38ad12aa7234401ce31b3d12a1c991ddc93ddf1222e0cbf500e23",
       "watch_paths": [
-        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/e2e/screenshots/flows/pointcloud-crossframe-track.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
         "docs-site/public/media/pointcloud/crossframe-track-poster.webp",
         "docs-site/user-guide/workbench/pointcloud-crossframe.md"
       ]
     },
     "docs-site/public/media/pointcloud/crossframe-track.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
-      "sha256": "95e0b7c773072e42448e5c41026180dac811841c9dad8e7122450e2a0c0c5638",
+      "sha256": "b0c40b85e832bc206a627e650eab7362b1e536eeb70102eb9525cfa719a53a8b",
       "watch_paths": [
-        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/e2e/screenshots/flows/pointcloud-crossframe-track.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "docs-site/.vitepress/theme/components/DocsVideo.vue",
         "docs-site/public/media/pointcloud/crossframe-track.mp4",
         "docs-site/user-guide/workbench/pointcloud-crossframe.md"
       ]
     },
     "docs-site/public/media/pointcloud/orbit-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
-      "sha256": "0e403b2a93c4c2968a460ebc2e1d03b756a67db37ed2d6f419972c0875d015ce",
+      "sha256": "1bf89a9fd767b6f142de6dee5d6d304141dd9758b51b4d6c3b8ea108d45f2db4",
       "watch_paths": [
-        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/e2e/screenshots/flows/pointcloud-view.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
         "docs-site/public/media/pointcloud/orbit-poster.webp",
         "docs-site/user-guide/workbench/pointcloud-view.md"
       ]
     },
     "docs-site/public/media/pointcloud/orbit.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
-      "sha256": "e9424a2e4e9bb58cdf8fa852d8c8f00afd7e60f58af6317824ec2aa13bedbc6c",
+      "sha256": "1bb05b31f917c48caed0ff08236f3be125f21d47ac92bfd667adfd5cbbb62ca4",
       "watch_paths": [
-        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/e2e/screenshots/flows/pointcloud-view.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
         "docs-site/public/media/pointcloud/orbit.mp4",
         "docs-site/user-guide/workbench/pointcloud-view.md"
       ]
     },
     "docs-site/public/media/polygon/draw-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "49fe0d6b741c973231b306b2d9bb6847e4dcd98ca9526ea4d1ac140c1596795f",
       "watch_paths": [
@@ -932,9 +938,9 @@
       ]
     },
     "docs-site/public/media/polygon/draw.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "0d587a54b67e97824256d91da1f777fe2321401ee5902fe779604016cc9f5473",
       "watch_paths": [
@@ -947,9 +953,9 @@
       ]
     },
     "docs-site/public/media/polyline/draw-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "6b759aa7f9e5ccbbf7e16ced7c5bc7d75fde62777dabc06a89347550c50b5af9",
       "watch_paths": [
@@ -962,9 +968,9 @@
       ]
     },
     "docs-site/public/media/polyline/draw.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "1c1a09379b8588116a766d4d30729516c114a1bec96b04787e8e8cd287ffe511",
       "watch_paths": [
@@ -977,9 +983,9 @@
       ]
     },
     "docs-site/public/media/projects/ai-pre-variant-selector-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "ba70e2dc65d1d0d0bc2023bedb8042b4ea1e00c74a6801c2f5b9b48978cf66cc",
       "watch_paths": [
@@ -992,9 +998,9 @@
       ]
     },
     "docs-site/public/media/projects/ai-pre-variant-selector.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "2aa8762baa2c1b8be6b348572f67cb1085855cd8204b8b75daa25657f7abd605",
       "watch_paths": [
@@ -1007,9 +1013,9 @@
       ]
     },
     "docs-site/public/media/projects/batch-bulk-actions-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "2f19609166e5153faec62810c084761eee6fb99b82193ad0d3e69b91736e822d",
       "watch_paths": [
@@ -1022,9 +1028,9 @@
       ]
     },
     "docs-site/public/media/projects/batch-bulk-actions.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "44d23ffe5fbb9b8cc61fa3f59663753527fcf4b399975b1445414b531802389b",
       "watch_paths": [
@@ -1037,9 +1043,9 @@
       ]
     },
     "docs-site/public/media/projects/create-existing-resources-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "41946041e8b749e6d86c8fbde5802421a2fb898e7e01c05c714e6e988bc62f3a",
       "watch_paths": [
@@ -1052,11 +1058,11 @@
       ]
     },
     "docs-site/public/media/projects/create-existing-resources.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
-      "sha256": "4dcf733be102eab73f52632822f085bb2012613ec8869d50506217c89616462b",
+      "sha256": "9498e4f57004cca1529ee8dd0e55c306d6abc8ab41c2a67c26f14c71a6249860",
       "watch_paths": [
         "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
@@ -1067,9 +1073,9 @@
       ]
     },
     "docs-site/public/media/projects/ml-routing-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "d488ebcca65efb9c4f7cac59fdf80032b2e57cbe268b1bc5864506738ebf5e24",
       "watch_paths": [
@@ -1082,9 +1088,9 @@
       ]
     },
     "docs-site/public/media/projects/ml-routing.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "cdc9cb24570824d23ab5bcd0b57cf8b2188844e2d5d7d02a5db04a50cbaec048",
       "watch_paths": [
@@ -1097,9 +1103,9 @@
       ]
     },
     "docs-site/public/media/projects/project-actions-menu-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "ada1194799adff2f7c26ad0a99697d8e577cdd494e55d9b346f5f1a0ab438d05",
       "watch_paths": [
@@ -1112,11 +1118,11 @@
       ]
     },
     "docs-site/public/media/projects/project-actions-menu.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
-      "sha256": "58ad99c4f584bb87bef1a4af86b8d09f9b9fbd79d278d1f0fbc5ba599c7103d4",
+      "sha256": "448f9de8fa45b87d0fcf8fc825050341dc4392fdef53c57309299d17851aecff",
       "watch_paths": [
         "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
@@ -1127,9 +1133,9 @@
       ]
     },
     "docs-site/public/media/review/reject-flow-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "b9db95db1c7c8fb9b1004cecca9330fcadcbdda430c47bfa4a20e1721f076bed",
       "watch_paths": [
@@ -1142,11 +1148,11 @@
       ]
     },
     "docs-site/public/media/review/reject-flow.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
-      "sha256": "5c563b76d377143b7fc06665ed0eff100751d4728fba606e0b1d3c1fc74b6036",
+      "sha256": "65195d64f45488098706824aa44b8731b86b5289f6fb052a6e08bcd333e136a4",
       "watch_paths": [
         "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
@@ -1157,9 +1163,9 @@
       ]
     },
     "docs-site/public/media/sam/smart-scribble-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "1e0effc83ea16e7ca7d923d0f98105a4ff9cc7ae92ff493b12a7e4fbb7c7c5da",
       "watch_paths": [
@@ -1172,9 +1178,9 @@
       ]
     },
     "docs-site/public/media/sam/smart-scribble.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "97e559267cc6e48e04aad161077df2ebdd03312b71c973d24e716442f4504d5d",
       "watch_paths": [
@@ -1187,9 +1193,9 @@
       ]
     },
     "docs-site/public/media/superadmin/model-market/gpu-resources-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "f083921db116db9b869702134b99e43c9e4f848fc9307a1527276c9f22e61e99",
       "watch_paths": [
@@ -1202,11 +1208,11 @@
       ]
     },
     "docs-site/public/media/superadmin/model-market/gpu-resources.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
-      "sha256": "579155f37bb8387afe62ccf610141c9d7efaba4d292ac179a034ccb9fd73f504",
+      "sha256": "def240a6863bdb03b8db6129b8392f8e04ccc3cdec3c2ddc5ea156dee0cc657a",
       "watch_paths": [
         "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
@@ -1217,9 +1223,9 @@
       ]
     },
     "docs-site/public/media/superadmin/model-market/runtime-data-sources-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "04af062c2a01e6b374f469171d2db4c31be83420899b66d250b232895754b066",
       "watch_paths": [
@@ -1232,11 +1238,11 @@
       ]
     },
     "docs-site/public/media/superadmin/model-market/runtime-data-sources.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
-      "sha256": "fdbd2dced22505a1cea2edc24f8a9290eb81a15f14ff547185ee67b3602cda12",
+      "sha256": "737954df436f94e95348d60abe52e64e1ff41a4edfa5666c9b7dea90be7b5a8d",
       "watch_paths": [
         "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
@@ -1247,9 +1253,9 @@
       ]
     },
     "docs-site/public/media/superadmin/model-market/runtime-pools-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "21f71619b1e60da24afd3458640984025c2919ce0b5dc09ff848eac01987653d",
       "watch_paths": [
@@ -1262,11 +1268,11 @@
       ]
     },
     "docs-site/public/media/superadmin/model-market/runtime-pools.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
-      "sha256": "aaaae9b799a9b40bd3f616f2ca408196ff108ebdcd6e5ec0e31e9a3a8dd70087",
+      "sha256": "5d8a4fd34d3813c1f299d82e98996040bd6e068a43cf18e2486eda5b8b390aa7",
       "watch_paths": [
         "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
@@ -1277,9 +1283,9 @@
       ]
     },
     "docs-site/public/media/superadmin/model-market/video-pool-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "6913449e914f2ca28b582359945da02578904d2e45e94a82cdc4882d4200f7d3",
       "watch_paths": [
@@ -1292,11 +1298,11 @@
       ]
     },
     "docs-site/public/media/superadmin/model-market/video-pool.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
-      "sha256": "c768ef238ef3019e0f02267b9f92d1ab4751a8a27c9b958ecc4d5840b4008064",
+      "sha256": "3c0d2c3a063e28838355ad178e039e53fa16affd935f541629194fa2c3270181",
       "watch_paths": [
         "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
@@ -1307,9 +1313,9 @@
       ]
     },
     "docs-site/public/media/superadmin/platform-overview-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "14c0d72e88c1a8c66f624a38d30c6a4c3864fbf4ae6b831f0f8fdedf1498f0a4",
       "watch_paths": [
@@ -1322,11 +1328,11 @@
       ]
     },
     "docs-site/public/media/superadmin/platform-overview.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
-      "sha256": "ee5e724557fbfabc37670e4ceac01cf9688e6782b0a82689174d2425021ff478",
+      "sha256": "5548c3979563eb3935496eaa64125a2c730dfe0cb27f33b99b978d7b008a2bfa",
       "watch_paths": [
         "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
@@ -1337,9 +1343,9 @@
       ]
     },
     "docs-site/public/media/video/ai-tracker-panel-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
+      "verified_at": "2026-08-16T12:36:37.673Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "99d64e04403e64eba10608e351c8bf6874afb4477162e2f215cbd9d0e04e262a",
       "watch_paths": [
@@ -1351,9 +1357,9 @@
       ]
     },
     "docs-site/public/media/video/ai-tracker-panel.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
+      "verified_at": "2026-08-16T12:36:37.673Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "8b0b94d50582e17420ee4b988ef9457a0a57d71cb2934e96c96eb5d8024030ad",
       "watch_paths": [
@@ -1365,9 +1371,9 @@
       ]
     },
     "docs-site/public/media/video/mask-correction-propagate-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "760ebcd5163f2f18c131370b15f205cf683d8e3eb2c68977b88b82f79ecb9f77",
       "watch_paths": [
@@ -1380,9 +1386,9 @@
       ]
     },
     "docs-site/public/media/video/mask-correction-propagate.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "21f79a27f2b497d116a4b0f7507c225f10ced3bdcae084177f59e867eb967d0b",
       "watch_paths": [
@@ -1395,9 +1401,9 @@
       ]
     },
     "docs-site/public/media/video/mask-track-edit-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "ff7accf627ba9a75ab8cd91769573ea9a2b04488a56b6640e29b6176cc48d6ec",
       "watch_paths": [
@@ -1409,9 +1415,9 @@
       ]
     },
     "docs-site/public/media/video/mask-track-edit.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "a67265ee1bc093cffaa50edcc27a6583cddc97fdc5dced98f7030e915db15dd2",
       "watch_paths": [
@@ -1423,9 +1429,9 @@
       ]
     },
     "docs-site/public/media/video/prediction-density-navigation-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "397c4ee156bcd20b11faa5521acb19d14f9e15efc99121fb086ef34ad142ede7",
       "watch_paths": [
@@ -1438,9 +1444,9 @@
       ]
     },
     "docs-site/public/media/video/prediction-density-navigation.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "cb9f6a7f36b8d8f25e8fed356672ad5cf54a88a4d611608bd12333cbbf0bc73b",
       "watch_paths": [
@@ -1453,9 +1459,9 @@
       ]
     },
     "docs-site/public/media/video/propagate-track-vs-copy-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "2aad994eabc21a6c83c02a5083a8e06fd300065e17e81da6d3c2c1503ee2f903",
       "watch_paths": [
@@ -1468,11 +1474,11 @@
       ]
     },
     "docs-site/public/media/video/propagate-track-vs-copy.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
-      "sha256": "edf1b8a5ef4dd91b88840dceeedc6b689f33ecff41736625e8a6935871a2b4c5",
+      "sha256": "7dca9a11070bb3f3075b830230f53bb00db0e111a1b612466b029f400d6d39b6",
       "watch_paths": [
         "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
@@ -1483,9 +1489,9 @@
       ]
     },
     "docs-site/public/media/video/track-batch-propagate-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "c948f2ec97cb5aa5d00a7f5cb1c79b87e71a95f550acf0f01cc08a0d29719b3e",
       "watch_paths": [
@@ -1499,9 +1505,9 @@
       ]
     },
     "docs-site/public/media/video/track-batch-propagate.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "469ec7abb3145f57c9423ff5eeaf81292531e9aa02b3ba7d2ebfe38b33398e35",
       "watch_paths": [
@@ -1515,9 +1521,9 @@
       ]
     },
     "docs-site/public/media/video/tracker-box-seed-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "1d5f53618ef95db0f74a830077dd64c9d69069b5724b9debbc2772574b6ff079",
       "watch_paths": [
@@ -1529,9 +1535,9 @@
       ]
     },
     "docs-site/public/media/video/tracker-box-seed.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "decd5e6ccfb9c92099f8a377800825855b40ec9cfc3a2aaafc7361cccdc35189",
       "watch_paths": [
@@ -1543,9 +1549,9 @@
       ]
     },
     "docs-site/public/media/video/tracker-combo-discovery-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "6944c2653f7d54d19ccd59518508c6c4b20e51ca2a5aa1fb1f9c3d96a27bbbdc",
       "watch_paths": [
@@ -1558,9 +1564,9 @@
       ]
     },
     "docs-site/public/media/video/tracker-combo-discovery.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "02612037abddeffe0a30853c8daa0b7c296bb371f6dab56d29a245961b190004",
       "watch_paths": [
@@ -1573,9 +1579,9 @@
       ]
     },
     "docs-site/public/media/video/tracker-cross-frame-points-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "d02fca19b728e374dff6e17411c9ee411b1748c73cd07d2dac67b4870e043544",
       "watch_paths": [
@@ -1587,9 +1593,9 @@
       ]
     },
     "docs-site/public/media/video/tracker-cross-frame-points.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "780f4a23de3e97636b1f2a35e53afc8021bf9310e855ebb657fc254ed7272a6c",
       "watch_paths": [
@@ -1601,9 +1607,9 @@
       ]
     },
     "docs-site/public/media/video/tracker-positive-negative-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "47f039a723659648a39837759c7ae80a55a2d8bcca8eff6bb94467653001603c",
       "watch_paths": [
@@ -1616,9 +1622,9 @@
       ]
     },
     "docs-site/public/media/video/tracker-positive-negative.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "27be93514cbe6843072624155255ec20b58612a17d1c8be0eb133e44e1343eaf",
       "watch_paths": [
@@ -1631,9 +1637,9 @@
       ]
     },
     "docs-site/public/media/video/tracker-range-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "de35ba9e5d5600e1a1fa15dd09d5c0f2110d48692e7b2ca9591edee891208c37",
       "watch_paths": [
@@ -1645,9 +1651,9 @@
       ]
     },
     "docs-site/public/media/video/tracker-range.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "6f2873fd0f621f267085af5dafe7fa3f645c876a1ebfab7d090b85d31cb17d13",
       "watch_paths": [
@@ -1659,9 +1665,9 @@
       ]
     },
     "docs-site/public/media/video/tracker-text-discovery-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "1256dc27eb155abbe96b485c54ac7481f3d7201e53b2c4e2cb5322d2a780a1c0",
       "watch_paths": [
@@ -1674,9 +1680,9 @@
       ]
     },
     "docs-site/public/media/video/tracker-text-discovery.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "61f420cbc20d794b78e51f88ef73f941381374facb3574df339f94290ed2490d",
       "watch_paths": [
@@ -1689,9 +1695,9 @@
       ]
     },
     "docs-site/public/media/video/video-chapter-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "d9aee5532ad33b44016c4565448dcf5b873a9777f6024c59b91c366c6934c036",
       "watch_paths": [
@@ -1704,9 +1710,9 @@
       ]
     },
     "docs-site/public/media/video/video-chapter.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "6085c93e46bb3f48cad0ea08b8797e8a8c07b5b1bf981cfe28b1ce61a9fb82e5",
       "watch_paths": [
@@ -1719,9 +1725,9 @@
       ]
     },
     "docs-site/public/media/video/video-draw-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "ec573512649d3495342853631c5cde95cf2a4d79534bbeffeb12c17a6575488d",
       "watch_paths": [
@@ -1734,9 +1740,9 @@
       ]
     },
     "docs-site/public/media/video/video-draw.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "9eb73723c2bf39af62ff70aceaa1195dd33672997163e5abc77c0232e480d5bd",
       "watch_paths": [
@@ -1749,9 +1755,9 @@
       ]
     },
     "docs-site/public/media/video/video-timeline-zoom-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "19c44673b25fa040d85f48dd7e247e1cef0c633712c230675c8644b93205aa5a",
       "watch_paths": [
@@ -1764,9 +1770,9 @@
       ]
     },
     "docs-site/public/media/video/video-timeline-zoom.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "78b1f7006ce2fb502c176e77027a2f9cbd88b7fef9d8b587717fe849e5885e96",
       "watch_paths": [
@@ -1779,9 +1785,9 @@
       ]
     },
     "docs-site/public/media/video/video-track-carryover-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "4a1eb00cc1b18346babcd1ed4eba2f5f4934c72c2edaf2890af141e501edc1d7",
       "watch_paths": [
@@ -1794,9 +1800,9 @@
       ]
     },
     "docs-site/public/media/video/video-track-carryover.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "1aa4bc3b8813a3fca6d86406ba1ca29681438e9327f693ef6122d7298a6483c9",
       "watch_paths": [
@@ -1809,9 +1815,9 @@
       ]
     },
     "docs-site/public/media/video/workbench-overview-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "a698a3c91d53f6758feabeb2f2346d365c8db467e19389dc14d014215431e1ca",
       "watch_paths": [
@@ -1823,9 +1829,9 @@
       ]
     },
     "docs-site/public/media/video/workbench-overview.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "c8e3ab7fa449acfecb73932e92663b72809ff8b9b4e8ceb016f543006c3709a5",
       "watch_paths": [
@@ -1837,9 +1843,9 @@
       ]
     },
     "docs-site/public/media/workbench/hotkey-cheatsheet-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "a9bb01605b411f66106be3230b6eed8d19918a00a35aedb3130641c52d053f4a",
       "watch_paths": [
@@ -1852,9 +1858,9 @@
       ]
     },
     "docs-site/public/media/workbench/hotkey-cheatsheet.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "bf13e6c9bb648f43ba0faee0317da1fab65551ec395d6d59e7f0415df01c6216",
       "watch_paths": [
@@ -1867,9 +1873,9 @@
       ]
     },
     "docs-site/public/media/workbench/rotated-bbox-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "a93fa3baccaab29515e49c8388c016c867542d69c2904c11c681a3cb520f6377",
       "watch_paths": [
@@ -1882,9 +1888,9 @@
       ]
     },
     "docs-site/public/media/workbench/rotated-bbox.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "f2e8c29688ea278ff31997b48fa34adfbc6bb46a0310ae8cc6042b15dd6f4f48",
       "watch_paths": [
@@ -1897,9 +1903,9 @@
       ]
     },
     "docs-site/public/media/workflows/jobs-retry-recovery-poster.webp": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "4dd753026acab021785049ddf7b75453e9e8f379d8e98eeb5f9f5d866445a621",
       "watch_paths": [
@@ -1912,9 +1918,9 @@
       ]
     },
     "docs-site/public/media/workflows/jobs-retry-recovery.mp4": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "fbb4b97a331e4b1164ee68a479cbc9eb92c0938bea25e4e534d05d813e334874",
       "watch_paths": [
@@ -1950,8 +1956,8 @@
       ]
     },
     "docs-site/user-guide/images/export/format-select.png": {
-      "last_verified_commit": "538028ac81f84f24cf66a048e6ef627b13fea8f1",
-      "verified_at": "2026-09-04T06:41:36.781Z",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
       "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "6807b87219bdba490b23a3d6c455ad2c4d15239b0a24ce53838cc9b392ae9983",
@@ -2238,9 +2244,9 @@
       ]
     },
     "docs-site/user-guide/images/projects/tool-units-panel.png": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
+      "verified_at": "2026-08-16T12:36:37.673Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "0146df28cb3f7872a38a371254fc626127acaebf1d775d4854f6b363fab5938e",
       "watch_paths": [
@@ -2310,21 +2316,9 @@
         "docs-site/user-guide/review/index.md"
       ]
     },
-    "docs-site/user-guide/images/sam/ai-inspector-panel.png": {
-      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
-      "verified_at": "2026-08-16T12:36:37.673Z",
-      "reviewer": "yyq19990828",
-      "review_profile": "visual-content-v1",
-      "sha256": "072d45f4ed46b8ea258e675360469f2373b619434088f32a03f441f1021852cb",
-      "watch_paths": [
-        "apps/web/e2e/screenshots/scenes/workbench-ai.ts",
-        "docs-site/user-guide/images/sam/ai-inspector-panel.png",
-        "docs-site/user-guide/workbench/sam-tool.md"
-      ]
-    },
     "docs-site/user-guide/images/sam/exemplar-interaction.gif": {
-      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
-      "verified_at": "2026-08-16T12:36:37.673Z",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "5a2382afd63c03870e02c4877948354262f1ae03c3454ad0b3dea670233ff394",
@@ -2334,8 +2328,8 @@
       ]
     },
     "docs-site/user-guide/images/sam/exemplar-output-mode.png": {
-      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
-      "verified_at": "2026-08-16T12:36:37.673Z",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "14637735dfa584ae7fea4d9901129452052fff3cb7ee9cf4d8e0f99ba19b1249",
@@ -2346,8 +2340,8 @@
       ]
     },
     "docs-site/user-guide/images/sam/interactive-toolbar.png": {
-      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
-      "verified_at": "2026-08-16T12:36:37.673Z",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "90706edfa31a806c25b8337c326c5492666080e0c75a5dc7994634d0bc48f33e",
@@ -2358,8 +2352,8 @@
       ]
     },
     "docs-site/user-guide/images/sam/magic-box-toolbar.png": {
-      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
-      "verified_at": "2026-08-16T12:36:37.673Z",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "d0164d62edc02afa8e00ef7d659b3dbd5ef620705439fc6d1e5f40d92dad705c",
@@ -2370,8 +2364,8 @@
       ]
     },
     "docs-site/user-guide/images/sam/smart-box-interaction.gif": {
-      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
-      "verified_at": "2026-08-16T12:36:37.673Z",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "89e6e0edd0bc706404d34bd4a7e7b8f8cb5f66f676e5f61cfee732b47d8c7e34",
@@ -2381,8 +2375,8 @@
       ]
     },
     "docs-site/user-guide/images/sam/smart-point-interaction.gif": {
-      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
-      "verified_at": "2026-08-16T12:36:37.673Z",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "296c244ea843d20a269112d38fd39bccb924aa54d2b0eb625c29157ab018bae3",
@@ -2392,8 +2386,8 @@
       ]
     },
     "docs-site/user-guide/images/sam/smart-point-toolbar.png": {
-      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
-      "verified_at": "2026-08-16T12:36:37.673Z",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "057b36cb1ca114cc0b48350eeb74b307922ff95ce9fbafde2eecc564331c15a4",
@@ -2404,9 +2398,9 @@
       ]
     },
     "docs-site/user-guide/images/settings/my-feedback.png": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
+      "verified_at": "2026-08-16T12:36:37.673Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "f4ace023bbeab6b3f722f2cee48aa2afa5689ab764b9f126e137faa62957bba7",
       "watch_paths": [
@@ -2416,9 +2410,9 @@
       ]
     },
     "docs-site/user-guide/images/settings/notification-prefs.png": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
+      "verified_at": "2026-08-16T12:36:37.673Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "aa5dabf6e1c4da72bd2944e752e8f79091e022d312ce9e3835eef9274b6a97d1",
       "watch_paths": [
@@ -2428,9 +2422,9 @@
       ]
     },
     "docs-site/user-guide/images/settings/profile.png": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
+      "verified_at": "2026-08-16T12:36:37.673Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "1697443a2f748eb1578a3b4b1322c8b48ffc7249a8cc36c60b1acb6e543d3929",
       "watch_paths": [
@@ -2440,9 +2434,9 @@
       ]
     },
     "docs-site/user-guide/images/settings/system-smtp.png": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
+      "verified_at": "2026-08-16T12:36:37.673Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "aba908710eab1b3c7ef0cc0ff9426c19b173c641d53fa802c7c447bfce1cba9d",
       "watch_paths": [
@@ -2452,11 +2446,11 @@
       ]
     },
     "docs-site/user-guide/images/settings/workbench-prefs.png": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
+      "verified_at": "2026-08-16T12:36:37.673Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
-      "sha256": "1b926333a3e58e521be2a222a866f4fbcc3f4eb8511e021298a33778875b6ec6",
+      "sha256": "09bbf0ab192ca8006f22e50491fa0decf89ea82b9a96e6ebbe4625e16a5c0e36",
       "watch_paths": [
         "apps/web/e2e/screenshots/scenes/settings.ts",
         "docs-site/user-guide/images/settings/workbench-prefs.png",
@@ -2666,22 +2660,10 @@
         "docs-site/user-guide/superadmin/user-management.md"
       ]
     },
-    "docs-site/user-guide/images/video-propagate/ai-tracking-panel.png": {
-      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
-      "verified_at": "2026-08-16T12:36:37.673Z",
-      "reviewer": "yyq19990828",
-      "review_profile": "visual-content-v1",
-      "sha256": "f8d307851e6daf07d382fb9f51ff8283d30f09d9f50774a397a176356ba865ef",
-      "watch_paths": [
-        "apps/web/e2e/screenshots/scenes/workbench-media.ts",
-        "docs-site/user-guide/images/video-propagate/ai-tracking-panel.png",
-        "docs-site/user-guide/workbench/video-propagate.md"
-      ]
-    },
     "docs-site/user-guide/images/workbench/layout-overview.png": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "6218ce470273e5bd4c173f674e69ac59d2c38e4eab595c8fb8efecfe4e8b6631",
       "watch_paths": [
@@ -2703,9 +2685,9 @@
       ]
     },
     "docs-site/user-guide/images/workbench/pointcloud-real-scene.png": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
       "sha256": "9c9a8795036868af2118d88ea18b8ff883544baad410134bbb476790e2e09409",
       "watch_paths": [
@@ -2716,9 +2698,9 @@
       ]
     },
     "docs-site/user-guide/images/workbench/video-real-scene.png": {
-      "last_verified_commit": "2e7974c48c12f413bf171d21513adb0bb86e39f5",
-      "verified_at": "2026-09-05T14:45:37.370Z",
-      "reviewer": "codex",
+      "last_verified_commit": "fe5fcdf1c827fb65cf27d654e06eec26d5d6ffda",
+      "verified_at": "2026-09-05T00:00:00.000Z",
+      "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "bb4ce66d00b6f0102292509b161620e6adc567d5c4878ee68d39c7df0818901b",
       "watch_paths": [
