@@ -71,6 +71,17 @@ cd apps/api && uv sync --extra test && cd ../..
 # （用 uv tool 独立安装 pre-commit，勿 pip 装进项目 venv；否则 uv sync 会把它卸载）
 ```
 
+## Codex 会话启动硬件上下文
+
+仓库内的 `.codex/hooks.json` 会在 Codex 会话启动、恢复、清空或压缩后运行
+`.codex/hooks/session-start.mjs`，把当前机器的平台、CPU、内存和 GPU 摘要注入
+agent 上下文。脚本只使用 Node.js 标准库和系统自带查询命令，支持 macOS、Windows
+和 Linux；未安装对应查询命令时仍会返回基础信息。
+
+```bash
+node scripts/test-codex-session-start.mjs
+```
+
 ## 快速开始
 
 ### 1. 启动基础服务
