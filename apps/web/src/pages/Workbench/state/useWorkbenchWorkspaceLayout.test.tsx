@@ -399,6 +399,31 @@ describe("workspace layout owner", () => {
     ).toEqual(v5(latest));
   });
 
+  it("flushes a pending layout before switching contexts", async () => {
+    const patch = deferred<UserPreferences>();
+    mocks.patch.mockReturnValue(patch.promise);
+    const remote = preferences();
+    remote.workbench.layout.workspace!.contexts["review:video"] = v1(changed);
+    mocks.get.mockResolvedValue(remote);
+    const { result, rerender } = setup();
+    await waitFor(() => expect(result.current.initialized).toBe(true));
+    act(() => result.current.save(latest));
+
+    rerender({ currentContext: "review:video" });
+    expect(mocks.patch).toHaveBeenCalledTimes(1);
+    expect(mocks.patch.mock.calls[0][0].workbench.layout.workspace.contexts).toEqual({
+      "annotate:image": v5(latest),
+    });
+
+    rerender({ currentContext: "annotate:image" });
+    await act(async () => {
+      patch.resolve(preferences(v5(latest)));
+      await patch.promise;
+    });
+    await waitFor(() => expect(result.current.initialized).toBe(true));
+    expect(result.current.snapshot).toEqual(latest);
+  });
+
   it.each([
     "broken",
     null,
@@ -422,19 +447,18 @@ describe("workspace layout owner", () => {
     },
   );
 
-  it("never writes a previous context's pending snapshot into a new context", async () => {
+  it("flushes a previous context's pending snapshot before switching contexts", async () => {
     const get = preferences();
     get.workbench.layout.workspace!.contexts["review:video"] = v1(latest);
     mocks.get.mockResolvedValue(get);
     const { result, rerender } = setup();
     await waitFor(() => expect(result.current.initialized).toBe(true));
-    vi.useFakeTimers();
     act(() => result.current.save(changed));
     rerender({ currentContext: "review:video" });
+    await waitFor(() => expect(result.current.initialized).toBe(true));
     expect(result.current.snapshot).toEqual(latest);
     expect(result.current.dirty).toBe(false);
-    await act(async () => vi.advanceTimersByTimeAsync(300));
-    expect(mocks.patch).not.toHaveBeenCalled();
+    expect(mocks.patch).toHaveBeenCalledTimes(1);
     expect(
       JSON.parse(window.localStorage.getItem(workspaceStorageKey("u1", "annotate:image"))!),
     ).toEqual(v5(changed));

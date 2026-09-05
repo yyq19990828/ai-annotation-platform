@@ -160,14 +160,16 @@ export function useWorkbenchWorkspaceLayout(
   );
 
   const flush = useCallback(
-    async function flush(candidate: WorkspaceSession): Promise<void> {
+    async function flush(candidate: WorkspaceSession, retiring = false): Promise<void> {
       if (
-        !isCurrent(candidate) ||
+        (retiring
+          ? candidate.userId !== useAuthStore.getState().user?.id
+          : !isCurrent(candidate)) ||
         !candidate.userId ||
         !candidate.initialized ||
-        candidate.paused ||
+        (!retiring && candidate.paused) ||
         candidate.readOnlyReason ||
-        candidate.saving ||
+        (!retiring && candidate.saving) ||
         !candidate.dirty
       )
         return;
@@ -181,9 +183,11 @@ export function useWorkbenchWorkspaceLayout(
         }
       }
       if (
-        !isCurrent(candidate) ||
+        (retiring
+          ? candidate.userId !== useAuthStore.getState().user?.id
+          : !isCurrent(candidate)) ||
         candidate.readOnlyReason ||
-        candidate.paused ||
+        (!retiring && candidate.paused) ||
         candidate.timer !== null
       ) {
         candidate.saving = false;
@@ -281,11 +285,12 @@ export function useWorkbenchWorkspaceLayout(
   useEffect(() => {
     session.active = true;
     return () => {
-      session.active = false;
       if (session.timer !== null) window.clearTimeout(session.timer);
       session.timer = null;
+      if (session.dirty && !session.readOnlyReason) void flush(session, true);
+      session.active = false;
     };
-  }, [session]);
+  }, [flush, session]);
 
   useEffect(() => {
     if (!userId || session.initialized || query.isPending || query.isFetching) return;

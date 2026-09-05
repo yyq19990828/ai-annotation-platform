@@ -459,7 +459,7 @@ async function sampleMemory(browser, page, label) {
 }
 
 async function runMode(browser, token, user, mode) {
-  const context = await browser.newContext({ baseURL: baseUrl, viewport });
+  const context = await browser.newContext({ baseURL: baseUrl, viewport, deviceScaleFactor });
   // Layout commands are real UI operations, but benchmark-only changes must not
   // overwrite the account's workspace (including an originally absent context).
   let benchmarkPreferences = await api("/auth/me/preferences", {
