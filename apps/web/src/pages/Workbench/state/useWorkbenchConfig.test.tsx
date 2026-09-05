@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockGetPreferences = vi.hoisted(() => vi.fn());
 const mockUpdatePreferences = vi.hoisted(() => vi.fn());
+const mockPushToast = vi.hoisted(() => vi.fn());
 const mockAuthUser = vi.hoisted(() => ({
   current: { id: "u1" } as { id: string; preferences?: unknown },
 }));
@@ -30,6 +31,10 @@ vi.mock("@/stores/authStore", () => ({
     (selector: (s: { user: unknown }) => unknown) => selector({ user: mockAuthUser.current }),
     { getState: () => ({ user: mockAuthUser.current }) },
   ),
+}));
+
+vi.mock("@/components/ui/Toast", () => ({
+  useToastStore: { getState: () => ({ push: mockPushToast }) },
 }));
 
 import { useWorkbenchConfig } from "./useWorkbenchConfig";
@@ -344,5 +349,139 @@ describe("useWorkbenchConfig · v0.15.3 setFields + 多实例广播", () => {
       drawer.result.current.setFields({ image: { smoothImage: false } });
     });
     expect(canvas.result.current.config.image.smoothImage).toBe(false);
+  });
+});
+
+describe("useWorkbenchConfig · 设置读写失败与离开页面", () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+    mockAuthUser.current = { id: "u1" };
+    window.localStorage.clear();
+  });
+
+  it("加载中或首次读取失败不允许 setFields，重试成功后保留远端字段再写入", async () => {
+    const error = new Error("offline");
+    mockGetPreferences.mockRejectedValueOnce(error).mockResolvedValue({
+      workbench: { image: { cssImageFilter: "invert(1)", controlPointsSize: 9 } },
+    });
+    mockUpdatePreferences.mockImplementation(async (payload) => payload);
+    const { result, unmount } = renderHook(() => useWorkbenchConfig(), { wrapper });
+
+    act(() => result.current.setFields({ image: { controlPointsSize: 12 } }));
+    expect(result.current.config.image.controlPointsSize).toBe(6);
+    await waitFor(() => expect(result.current.loadError).toBe(error));
+    act(() => result.current.setFields({ image: { controlPointsSize: 12 } }));
+    expect(result.current.config.image.controlPointsSize).toBe(6);
+    expect(mockUpdatePreferences).not.toHaveBeenCalled();
+
+    act(() => result.current.retryLoad());
+    await waitFor(() => expect(result.current.config.image.controlPointsSize).toBe(9));
+    expect(result.current.loadError).toBeNull();
+    expect(result.current.loaded).toBe(true);
+    act(() => result.current.setFields({ image: { controlPointsSize: 12 } }));
+    unmount();
+    expect(mockUpdatePreferences).toHaveBeenCalledWith({
+      workbench: expect.objectContaining({
+        image: expect.objectContaining({ cssImageFilter: "invert(1)", controlPointsSize: 12 }),
+      }),
+    });
+  });
+
+  it("已有成功数据时，后台刷新失败仍允许基于该数据编辑", async () => {
+    mockGetPreferences.mockResolvedValueOnce({
+      workbench: { image: { cssImageFilter: "invert(1)" } },
+    });
+    mockUpdatePreferences.mockImplementation(async (payload) => payload);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { result, unmount } = renderHook(() => useWorkbenchConfig(), {
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      ),
+    });
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+
+    mockGetPreferences.mockRejectedValue(new Error("offline"));
+    act(() => result.current.retryLoad());
+    await waitFor(() =>
+      expect(client.getQueryState(["me", "preferences", "u1"])?.status).toBe("error"),
+    );
+    expect(result.current.loadError).toBeNull();
+    expect(result.current.loaded).toBe(true);
+    act(() => result.current.setFields({ image: { controlPointsSize: 12 } }));
+    expect(result.current.config.image.cssImageFilter).toBe("invert(1)");
+    expect(result.current.config.image.controlPointsSize).toBe(12);
+    unmount();
+  });
+
+  it("防抖保存失败提示且保留本地值，下一次修改重试完整配置", async () => {
+    mockGetPreferences.mockResolvedValue({ workbench: {} });
+    mockUpdatePreferences
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockImplementation(async (payload) => payload);
+    const { result } = renderHook(() => useWorkbenchConfig(), { wrapper });
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+
+    vi.useFakeTimers();
+    act(() => result.current.setFields({ image: { controlPointsSize: 12 } }));
+    await act(async () => vi.advanceTimersByTimeAsync(300));
+    expect(result.current.config.image.controlPointsSize).toBe(12);
+    expect(result.current.saving).toBe(false);
+    expect(mockPushToast).toHaveBeenCalledWith({
+      kind: "error",
+      msg: "工作台设置未同步",
+      sub: expect.stringContaining("保留本次修改"),
+    });
+
+    act(() => result.current.setFields({ image: { smoothImage: false } }));
+    await act(async () => vi.advanceTimersByTimeAsync(300));
+    expect(mockUpdatePreferences).toHaveBeenLastCalledWith({
+      workbench: expect.objectContaining({
+        image: expect.objectContaining({ controlPointsSize: 12, smoothImage: false }),
+      }),
+    });
+    expect(mockPushToast).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it("防抖结束前卸载会立即提交最后编辑，并更新共享缓存", async () => {
+    mockGetPreferences.mockResolvedValue({ workbench: {} });
+    mockUpdatePreferences.mockImplementation(async (payload) => payload);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { result, unmount } = renderHook(() => useWorkbenchConfig(), {
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      ),
+    });
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+
+    act(() => {
+      result.current.setFields({ image: { cssImageFilter: "invert(1)" } });
+      result.current.setFields({ image: { cssImageFilter: "grayscale(1)" } });
+    });
+    expect(mockUpdatePreferences).not.toHaveBeenCalled();
+    unmount();
+    expect(mockUpdatePreferences).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(client.getQueryData(["me", "preferences", "u1"])).toMatchObject({
+        workbench: { image: { cssImageFilter: "grayscale(1)" } },
+      }),
+    );
+  });
+
+  it("卸载后的 flush 失败仍显示提示", async () => {
+    mockGetPreferences.mockResolvedValue({ workbench: {} });
+    mockUpdatePreferences.mockRejectedValue(new Error("offline"));
+    const { result, unmount } = renderHook(() => useWorkbenchConfig(), { wrapper });
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    act(() => result.current.setFields({ image: { controlPointsSize: 12 } }));
+    unmount();
+    await waitFor(() =>
+      expect(mockPushToast).toHaveBeenCalledWith({
+        kind: "error",
+        msg: "工作台设置未同步",
+        sub: expect.stringContaining("离开页面前的修改保存失败"),
+      }),
+    );
   });
 });
