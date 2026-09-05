@@ -28,7 +28,7 @@ import { TaskQueuePanel } from "./TaskQueuePanel";
 import { ToolDock } from "./ToolDock";
 import { Topbar } from "./Topbar";
 import { WorkbenchBanners } from "./WorkbenchBanners";
-import { WorkbenchSettingsDrawer } from "./WorkbenchSettingsDrawer";
+import { WorkbenchSettingsDialog } from "./WorkbenchSettingsDialog";
 import { WorkbenchStageHost } from "./WorkbenchStageHost";
 import {
   WorkbenchPet,
@@ -78,8 +78,8 @@ interface WorkbenchLayoutProps {
   aiPopover: ComponentProps<typeof AIPredictionPopover>;
   hotkeys: ComponentProps<typeof HotkeyCheatSheet>;
   offlineQueue: ComponentProps<typeof OfflineQueueDrawer>;
-  /** v0.15.3 · 工作台设置抽屉(齿轮菜单入口)。 */
-  workbenchSettings: ComponentProps<typeof WorkbenchSettingsDrawer>;
+  /** v0.15.3 · 工作台设置窗口(齿轮菜单入口)。 */
+  workbenchSettings: ComponentProps<typeof WorkbenchSettingsDialog>;
   conflict: ComponentProps<typeof ConflictModal>;
   rejectModal?: ComponentProps<typeof RejectReasonModal>;
   deleteConfirm?: ComponentProps<typeof DeleteConfirmModal>;
@@ -368,7 +368,7 @@ export function WorkbenchLayout({
       <AIPredictionPopover {...aiPopover} />
       <HotkeyCheatSheet {...hotkeys} />
       <OfflineQueueDrawer {...offlineQueue} />
-      <WorkbenchSettingsDrawer {...workbenchSettings} />
+      <WorkbenchSettingsDialog {...workbenchSettings} />
       <ConflictModal {...conflict} />
       {rejectModal && <RejectReasonModal {...rejectModal} />}
       {deleteConfirm && <DeleteConfirmModal {...deleteConfirm} />}

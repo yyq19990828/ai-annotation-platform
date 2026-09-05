@@ -272,7 +272,7 @@
 - [ ] `images/workbench-pointcloud-projection/click-to-select-3d.png` — 点击投影框联动主视图高亮 [manual]
 - [x] `images/workbench/pointcloud-real-scene.png` — nuScenes 激光雷达 + 6 相机环绕布局全景 `[auto]`（scene: `workbench/pointcloud-real-scene`，P-PC-MULTI）
 - [x] `public/media/pointcloud/orbit.mp4` — 点云视图导航：收起两边栏后左键拖拽 orbit 环绕 + 滚轮缩放 `[derived-mp4]`（P-PC-DEV）
-- [x] `public/media/pointcloud/controls.mp4` — 工作台设置抽屉点云控件演示（相机上色 / 点大小 / 深度提示逐项切换）`[derived-mp4]`（P-PC-DEV）
+- [x] `public/media/pointcloud/controls.mp4` — 工作台设置窗口点云控件演示（相机上色 / 点大小 / 深度提示逐项切换）`[derived-mp4]`（P-PC-DEV）
 - [x] `images/workbench/pointcloud-rgb-colorize.png` — 相机上色前后对比（同上 `public/media/pointcloud/controls.mp4` 内含青蓝高度色→相机 RGB 的切换）`[derived-mp4]`
 - [ ] `images/workbench/pointcloud-depth-heatmap.png` — 深度热力图 + figcaption 深度读数（控件 GIF 已演示开关，相机视图悬停深度读数特写仍 [manual]） [manual]
 - [~] ~~`images/polygon/draw-in-progress.gif`~~ — **已由** `public/media/polygon/draw.mp4` **替代**：多边形绘制与提交完整流已迁移到 DocsVideo

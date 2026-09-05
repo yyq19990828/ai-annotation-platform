@@ -42,8 +42,8 @@ export async function runPointcloudBillboardLabel(
   await page.waitForTimeout(2_600);
 
   await page.getByRole("button", { name: "工作台设置" }).first().click();
-  const drawer = page.getByTestId("workbench-settings-drawer");
-  await expect(drawer).toBeVisible();
+  const dialog = page.getByTestId("workbench-settings-dialog");
+  await expect(dialog).toBeVisible();
 
   const labelContent = page.getByTestId("setting-field-common.labelContent");
   await labelContent.scrollIntoViewIfNeeded();
@@ -82,7 +82,7 @@ export async function runPointcloudBillboardLabel(
   await page.waitForTimeout(1_800);
 
   await page.keyboard.press("Escape");
-  await expect(drawer).toBeHidden();
+  await expect(dialog).toBeHidden();
   await page.waitForTimeout(900);
 
   const box = await viewport.boundingBox();

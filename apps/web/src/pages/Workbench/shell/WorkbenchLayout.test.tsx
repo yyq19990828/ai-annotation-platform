@@ -54,8 +54,8 @@ vi.mock("./HotkeyCheatSheet", () => ({
 vi.mock("./OfflineQueueDrawer", () => ({
   OfflineQueueDrawer: () => <div data-testid="offline-queue" />,
 }));
-vi.mock("./WorkbenchSettingsDrawer", () => ({
-  WorkbenchSettingsDrawer: () => <div data-testid="workbench-settings-drawer" />,
+vi.mock("./WorkbenchSettingsDialog", () => ({
+  WorkbenchSettingsDialog: () => <div data-testid="workbench-settings-dialog" />,
 }));
 vi.mock("@/components/workbench/ConflictModal", () => ({
   ConflictModal: () => <div data-testid="conflict" />,
@@ -106,7 +106,7 @@ describe("WorkbenchLayout", () => {
     expect(screen.getByTestId("ai-popover")).toBeTruthy();
     expect(screen.getByTestId("hotkeys")).toBeTruthy();
     expect(screen.getByTestId("offline-queue")).toBeTruthy();
-    expect(screen.getByTestId("workbench-settings-drawer")).toBeTruthy();
+    expect(screen.getByTestId("workbench-settings-dialog")).toBeTruthy();
     expect(screen.getByTestId("conflict")).toBeTruthy();
 
     // 可选项缺省时不渲染

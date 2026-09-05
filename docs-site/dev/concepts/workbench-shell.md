@@ -97,7 +97,7 @@ type StageKind = "image" | "video" | "3d";
 - **上段 `.rightSplitTop`**：`AIInspectorPanel`，与下段之间有一个上下拖拽 handle。上段高度持久化到 localStorage `workbench.rightSplit.topHeight`（默认 360px，范围 160–720px）。
 - **下段 `.rightSplitBottom`**：`DiscussionPanel`，承载评论 / 历史 / issue 的统一讨论入口。
 - **列宽拖拽 handle** 提升到 `.rightSplit` 全高层级，覆盖两段，不再只贴在 AI 检查器一侧。
-- **布局偏好**：左右栏开合、左右栏宽度、任务队列 / 类别面板 / 标注详情 / 讨论面板浮窗、3D 三视图浮层、2D 相机面板布局和点云主视角快照写入 `user.preferences.workbench.layout`；前端提交全量 `workbench` 子树，后端只做顶层 `workbench` / `ai` 合并。
+- **布局偏好**：左右栏开合、左右栏宽度、任务队列 / 类别面板 / 标注详情 / 讨论面板浮窗、3D 三视图浮层、2D 相机面板布局和点云主视角快照写入 `user.preferences.workbench.layout`；前端提交全量 `workbench` 子树，后端递归合并偏好字典，列表覆盖；`workbench.layout.cameraPanels` 按原子 map 替换。
 - **侧栏区块分离**：`TaskQueuePanel` 内的任务队列和类别面板、`AIInspectorPanel`、`DiscussionPanel` 都可由 `WorkbenchLayout` 改用 `FloatingPanelShell` 渲染。分离操作默认收起对应侧栏；后续展开只显示仍嵌入的区块，不会自动合并浮窗。合并回侧栏只恢复嵌入状态，不主动展开侧栏。若一侧两个区块都已分离，侧栏 toggle 是可见 no-op。
 
 `DiscussionPanel`（`shell/DiscussionPanel.tsx`）有三个常驻 tab：
@@ -146,10 +146,10 @@ DiscussionPanel 是默认组件：旧 feature flag `DISCUSSION_PANEL_ENABLED` �
 `state/useWorkbenchConfig.ts` 是单一入口：
 
 - `setLayout()` 先本地立即生效并写 `localStorage`（key 见 `LAYOUT_STORAGE_KEYS`，作为离线 / 未登录兜底和远端缺省）。
-- 登录在线时再以 **300ms debounce** `PATCH /me/preferences`，提交**全量 `workbench` 子树**（不是只发 nested `layout`），避免覆盖同子树下的其它渲染偏好。后端只做顶层 `workbench` / `ai` 合并。
+- 登录在线时再以 **300ms debounce** `PATCH /me/preferences`，提交**全量 `workbench` 子树**（不是只发 nested `layout`），避免覆盖同子树下的其它渲染偏好。后端递归合并偏好字典，列表覆盖；`workbench.layout.cameraPanels` 按原子 map 替换。
 - 远端值缺失字段用 `localStorage` / `DEFAULT_WORKBENCH_PREFERENCES` 逐字段兜底合并（`mergeFloatingPanelState` / `mergeTriViewFloatState`）。
 
-## 偏好四分树与设置抽屉（v0.15.3）
+## 偏好四分树与设置窗口
 
 `user.preferences.workbench` 从平铺字段重构为四个模态子树 + 顶层 `layout`：
 
@@ -164,7 +164,9 @@ workbench
 
 - **后端**：`apps/api/app/schemas/user.py` 四个子树 Model 均 `extra="forbid"`；存量 JSONB 由 alembic `0103` 数据迁移就地改写（up/down 可逆、幂等）。`update_preferences` 入口保留一层 legacy 平铺键提升器兼容窗口期旧 tab（v0.16 移除）。
 - **`ProjectRenderingConfig` 保持平铺**：项目侧不迁移；`useWorkbenchConfig.applyProjectOverride` 把平铺的项目覆盖映射到 `image.*` 子树字段,`lockedFields` 语义不变。
-- **字段注册表**：`state/workbenchSettingsFields.ts` 是设置 UI 的单一来源（key / 分类 / 控件类型 / 是否可锁定）。Settings 页「标注偏好」与工作台设置抽屉共用它 + `components/SettingsFieldControl` 渲染，**新增设置项 = 后端子树加字段 → `auth.ts` 类型同步 → 注册表加一行 → 消费点读配置**。
-- **设置抽屉**：`shell/WorkbenchSettingsDrawer.tsx`，齿轮菜单入口，只显示「通用 + 当前模态」分组。写路径走 `useWorkbenchConfig.setFields()`（本地立即生效 + 与 `setLayout` 共用的 300ms 防抖 PATCH 和卸载 flush）；多实例（抽屉 ↔ 画布）经模块级广播同步，实现拖滑块画布实时预览。
+- **字段注册表**：`state/workbenchSettingsFields.ts` 是设置 UI 的单一来源（key / 分类 / section 分组 / 控件类型 / 是否可锁定）。Settings 页「标注偏好」与工作台设置窗口共用它 + `components/SettingsFieldControl` 渲染，**新增设置项 = 后端子树加字段 → `auth.ts` 类型同步 → 注册表加一行 → 消费点读配置**。
+- **设置窗口**：`shell/WorkbenchSettingsDialog.tsx` 复用 Radix Dialog / Tabs。桌面居中双栏，窄屏全屏；显示「通用 + 当前模态 + 可用实验」，搜索匹配名称、说明、分组与选项，并保留命中子项的父开关。`section` 只影响展示，不改变存储键。`SettingsFieldControl` 的 `settings` 布局显示说明，个人页保留默认 `compact` 布局。
+- **关闭与焦点**：`DialogContent.overlayProps` 为当前窗口配置遮罩层级和事件。仅从遮罩开始的完整点击触发关闭，避免滑块拖出窗口误关闭；关闭与切换分类前 blur 活跃字段。Dialog 接管焦点陷阱与恢复，组合输入期间不响应 Esc，背景输入按上文统一隔离。
+- **保存**：写路径仍走 `useWorkbenchConfig.setFields()`（本地立即生效、300ms 防抖 PATCH、卸载 flush）；各实例经模块广播同步，滑块提交后画布更新。hook 不随窗口关闭卸载；初次加载失败提供 `loadError` / `retryLoad` 并禁止写入，保存失败通过 toast 告知未同步。二次推理面板显隐沿用 `useSecondaryBarHiddenPref`，仅图片任务显示；隐藏孤儿标注仍是会话回调。
 
 <!-- history: DiscussionPanel and the split right rail shipped through the v0.11 workbench slices. FloatingPanelShell + layout preferences shipped in v0.13.10. The four-subtree preferences split + settings drawer shipped in v0.15.3. -->

@@ -50,7 +50,7 @@ docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
 6. **config support / decoder error**：decoder 先请求 `prefer-hardware`，浏览器只是不接受该偏好时会去掉偏好重试；两次 `VideoDecoder.isConfigSupported` 都失败才进入 `codec_unsupported`（换 codec 或转码），`decode_failed` 表示实际解码异常。
 7. **阶段定位**：`lastQueueMs` 看前一条 session 命令阻塞，`lastCodecMs` 看 codec / session，`lastBitmapMs` 看 `createImageBitmap`，`lastPaintMs` 看 Konva 提交到真实 draw，`lastVisibleMs` 是请求到目标帧绘制完成的端到端时间；`paintedFrameIndex` 必须等于当前目标帧。不能用 GPU 合成状态推断 WebCodecs 已走硬件视频解码。
 8. **字节预算 / session reset / fallback reason**：诊断 `cache` 与 `counters` 看是否预算淘汰 / session 频繁 reset；后台预取不会触发 reset，前台后退 / 跨 GOP 才允许重建。`fallbackReason` 稳定即回退合同成立。
-9. **关闭精确解码回退**：执行 `localStorage.setItem('video.experimental.webcodecs', '0')` 后刷新，原生 `<video>` / 位图接管；恢复默认可删除该键或在设置抽屉重新开启。
+9. **关闭精确解码回退**：执行 `localStorage.setItem('video.experimental.webcodecs', '0')` 后刷新，原生 `<video>` / 位图接管；恢复默认可删除该键或在设置窗口重新开启。
 
 ## Chunk 一直 pending
 
