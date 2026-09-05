@@ -460,6 +460,36 @@ async function sampleMemory(browser, page, label) {
 
 async function runMode(browser, token, user, mode) {
   const context = await browser.newContext({ baseURL: baseUrl, viewport });
+  // Layout commands are real UI operations, but benchmark-only changes must not
+  // overwrite the account's workspace (including an originally absent context).
+  let benchmarkPreferences = await api("/auth/me/preferences", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  await context.route("**/api/v1/auth/me/preferences", async (route) => {
+    const request = route.request();
+    if (request.method() !== "PATCH") return route.continue();
+    const payload = request.postDataJSON();
+    const workspacePatch = payload.workbench?.layout?.workspace;
+    if (!workspacePatch) return route.continue();
+    const { workspace: _workspace, ...layout } = payload.workbench.layout;
+    const { layout: _layout, ...workbench } = payload.workbench;
+    const { workbench: _workbench, ...other } = payload;
+    if (Object.keys(layout).length || Object.keys(workbench).length || Object.keys(other).length) {
+      const response = await route.fetch({
+        postData: JSON.stringify({ ...other, workbench: { ...workbench, layout } }),
+      });
+      if (!response.ok()) return route.fulfill({ response });
+      benchmarkPreferences = await response.json();
+    }
+    benchmarkPreferences.workbench.layout.workspace = {
+      engine: "dockview@8",
+      contexts: {
+        ...benchmarkPreferences.workbench.layout.workspace?.contexts,
+        ...workspacePatch.contexts,
+      },
+    };
+    await route.fulfill({ json: benchmarkPreferences });
+  });
   await context.addInitScript(
     ({ accessToken, currentUser, enabled }) => {
       localStorage.setItem("token", accessToken);
@@ -562,23 +592,25 @@ async function runMode(browser, token, user, mode) {
       }
     }
     if ((await firstBox.count()) > 0) {
-      await firstBox.click({ position: { x: 12, y: 16 } });
-      const collapseRefinement = page.getByRole("button", { name: "收起浮窗" });
+      const collapseRefinement = page.getByRole("button", { name: "隐藏三视图精修", exact: true });
       if (await collapseRefinement.isVisible()) await collapseRefinement.click();
+      await firstBox.click({ position: { x: 12, y: 16 } });
       await waitForTwoFrames(page);
       const measureRefinement = async (label) => {
+        // Opening the menu is outside the visibility-to-first-render measurement.
+        await page.getByRole("button", { name: "布局", exact: true }).click();
+        const openRefinement = page.getByRole("menuitem", { name: "三视图精修", exact: true });
+        await openRefinement.waitFor({ state: "visible" });
         const diagnosticsStartedAt = await beginFrameDiagnostics(page, `${mode}:${label}`);
         const activeRenderCountBefore = Number(
           (await rendererViewport.getAttribute("data-pointcloud-tri-pass-count")) ?? "0",
         );
-        const startedAt = await page
-          .getByRole("button", { name: "框体精修" })
-          .evaluate((button) => {
-            const at = performance.now();
-            button.click();
-            return at;
-          });
-        await page.getByText("三视图精修").waitFor({ state: "visible" });
+        const startedAt = await openRefinement.evaluate((button) => {
+          const at = performance.now();
+          button.click();
+          return at;
+        });
+        await page.getByTestId("tri-view-renderer-panel").waitFor({ state: "visible" });
         await page.waitForFunction((previousCount) => {
           const viewport = document.querySelector('[data-testid="pc-viewport"]');
           return (
@@ -600,7 +632,7 @@ async function runMode(browser, token, user, mode) {
             diagnosticsCompletedAt,
           ),
         };
-        await page.getByRole("button", { name: "收起浮窗" }).click();
+        await page.getByRole("button", { name: "隐藏三视图精修", exact: true }).click();
         return result;
       };
       refinement = await measureRefinement("refinement");

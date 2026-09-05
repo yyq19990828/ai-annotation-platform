@@ -46,7 +46,7 @@ test.describe("workbench pointcloud tools (键盘 handler 守护)", () => {
     await expect(page.getByTestId("three-d-tool-btn-box")).toHaveAttribute("aria-pressed", "true");
 
     // 第一次保存故意挂起；期间第二次 pointer 必须被拒绝，不能排成并发 POST。
-    const canvas = page.locator("canvas").first();
+    const canvas = page.getByTestId("pc-viewport");
     await expect(canvas).toBeVisible();
     const box = await canvas.boundingBox();
     if (!box) throw new Error("canvas boundingBox 不可用");
@@ -161,7 +161,7 @@ test.describe("workbench pointcloud tools (键盘 handler 守护)", () => {
 
     await page.locator("body").click();
     await page.keyboard.press("b");
-    const canvas = page.locator("canvas").first();
+    const canvas = page.getByTestId("pc-viewport");
     const box = await canvas.boundingBox();
     if (!box) throw new Error("canvas boundingBox 不可用");
     const point = { x: box.x + box.width * 0.5, y: box.y + box.height * 0.55 };
@@ -211,7 +211,7 @@ test.describe("workbench pointcloud tools (键盘 handler 守护)", () => {
 
     await page.locator("body").click();
     await page.keyboard.press("b");
-    const canvas = page.locator("canvas").first();
+    const canvas = page.getByTestId("pc-viewport");
     const box = await canvas.boundingBox();
     if (!box) throw new Error("主点云 canvas boundingBox 不可用");
     await page.mouse.click(box.x + box.width * 0.5, box.y + box.height * 0.55);
@@ -265,7 +265,7 @@ test.describe("workbench pointcloud tools (键盘 handler 守护)", () => {
     await page.keyboard.press("b");
     const status = page.getByTestId("three-d-creation-status");
     await expect(status).toContainText("car");
-    const canvas = page.locator("canvas").first();
+    const canvas = page.getByTestId("pc-viewport");
     const box = await canvas.boundingBox();
     if (!box) throw new Error("主点云 canvas boundingBox 不可用");
     const point = { x: box.x + box.width * 0.5, y: box.y + box.height * 0.55 };
@@ -338,7 +338,7 @@ test.describe("workbench pointcloud tools (键盘 handler 守护)", () => {
     await modeSelect.selectOption("polygon");
 
     // canvas 上点 3 点围出大三角形(覆盖中心点云区,确保 selectPointMaskInScreenPolygon 命中点)。
-    const canvas = page.locator("canvas").first();
+    const canvas = page.getByTestId("pc-viewport");
     const box = await canvas.boundingBox();
     if (!box) throw new Error("canvas boundingBox 不可用");
     const at = (fx: number, fy: number): [number, number] => [
@@ -384,7 +384,7 @@ test.describe("workbench pointcloud tools (键盘 handler 守护)", () => {
     await page.keyboard.press("p");
     await page.getByTestId("pointmask-mode-select").selectOption("polygon");
 
-    const canvas = page.locator("canvas").first();
+    const canvas = page.getByTestId("pc-viewport");
     const box = await canvas.boundingBox();
     if (!box) throw new Error("canvas boundingBox 不可用");
     const at = (fx: number, fy: number): [number, number] => [

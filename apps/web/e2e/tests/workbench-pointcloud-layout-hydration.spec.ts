@@ -13,9 +13,9 @@ test("3D 本地树等待首次权威回灌，复用原生画布与 WebGL context
   await seed.injectToken(page, data.admin_email);
   await page.setViewportSize(DESKTOP);
 
-  const local = { schemaVersion: 3, snapshot: createWorkspacePreset("standard", DESKTOP) };
-  const remote = { schemaVersion: 3, snapshot: createWorkspacePreset("review", DESKTOP) };
-  const later = { schemaVersion: 3, snapshot: createWorkspacePreset("focus", DESKTOP) };
+  const local = { schemaVersion: 5, snapshot: createWorkspacePreset("standard", DESKTOP) };
+  const remote = { schemaVersion: 5, snapshot: createWorkspacePreset("review", DESKTOP) };
+  const later = { schemaVersion: 5, snapshot: createWorkspacePreset("focus", DESKTOP) };
   const storageKey = await page.evaluate((envelope) => {
     const auth = JSON.parse(localStorage.getItem("auth-storage")!);
     const key = `workbench.${auth.state.user.id}.workspace.annotate:3d`;
@@ -62,7 +62,7 @@ test("3D 本地树等待首次权威回灌，复用原生画布与 WebGL context
     await expect(stats).toContainText(lidar.lidar_point_count.toLocaleString());
     await expect(page.getByText(/点云加载失败/)).toHaveCount(0);
     const viewport = page.getByTestId("pc-viewport");
-    const canvas = viewport.locator(":scope > canvas");
+    const canvas = page.locator("[data-workbench-render-surface] > canvas");
     const wrapper = page.locator('[data-workbench-panel="canvas"]');
     const queue = page.locator('[data-workbench-panel="task-queue"]');
     const palette = page.locator('[data-workbench-panel="class-palette"]');
