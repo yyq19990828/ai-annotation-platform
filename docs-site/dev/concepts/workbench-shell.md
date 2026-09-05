@@ -137,7 +137,7 @@ type StageKind = "image" | "video" | "3d";
   engine: "dockview@8",
   contexts: {
     "annotate:image": {
-      schemaVersion: 3,
+      schemaVersion: 4,
       snapshot: {
         layout: serializedDockview,
         returns: panelReturnPositions,
@@ -150,9 +150,9 @@ type StageKind = "image" | "video" | "3d";
 
 context 是 `annotate|review × image|video|3d` 的六项闭集，按账号分别保存。`snapshot.layout` 只保留引擎布局字段，`returns` 只保留隐藏面板的 group、index 与可选浮窗矩形，`visibilityIntent` 记录两个工具面板的显示或隐藏意图。
 
-当前客户端解释 schema 1 / 2 / 3 并统一写入 schema 3。旧五面板快照第一次变更时补齐两个工具节点；schema 4 或更高版本显示只读标准布局，提示刷新到新版，也不允许重置覆盖。损坏快照和引擎恢复失败同样使用只读标准布局，但允许用户在桌面模式显式重置。
+当前客户端解释 schema 1 / 2 / 3 / 4 并统一写入 schema 4。旧五面板快照第一次变更时补齐两个工具节点；schema 5 或更高版本显示只读标准布局，提示刷新到新版，也不允许重置覆盖。损坏快照和引擎恢复失败同样使用只读标准布局，但允许用户在桌面模式显式重置。
 
-`workbenchLayoutSnapshot` 对读写执行同一套清洗：UTF-8 JSON 上限 64 KiB；持久化最多 7 个 panel、7 个用户 group 和 1 个 parking group；schema 1 / 2 接受五个核心 panel，schema 3 恰好包含七个 panel。非有限尺寸、非法 canvas、重复 panel 和不合法树会触发恢复路径，业务 params、popout 与不支持的引擎字段不进入快照。浮窗边界按工作区实际 client rect 夹取。
+`workbenchLayoutSnapshot` 对读写执行同一套清洗：UTF-8 JSON 上限 64 KiB；持久化最多 7 个 panel、7 个用户 group 和 1 个 parking group；schema 1 / 2 接受五个核心 panel，schema 3 / 4 恰好包含七个 panel。非有限尺寸、非法 canvas、重复 panel 和不合法树会触发恢复路径，业务 params、popout 与不支持的引擎字段不进入快照。浮窗边界按工作区实际 client rect 夹取。schema 4 允许外围停靠组保留位置并收起，canvas 及其祖先必须可见，活动组必须可见。左右区域由 canvas 祖先路径上的横向兄弟子树确定；收起前的尺寸写回隐藏节点的缓存尺寸，展开时由画布吸收空间变化。
 
 ### 单一写入者
 

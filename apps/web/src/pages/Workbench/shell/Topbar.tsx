@@ -8,6 +8,7 @@ import { BatchStatusBadge } from "@/components/badges/BatchStatusBadge";
 import { useTheme } from "@/hooks/useTheme";
 import type { TaskResponse } from "@/types";
 import type { VideoSegment } from "@/api/videoTracker";
+import type { WorkspaceSide, WorkspaceSideState } from "../layout/workbenchLayoutExecutor";
 
 interface TopbarProps {
   /** 项目名 + 展示 ID（如 P-0001）；显示在左侧 task id 前作为项目上下文。 */
@@ -24,10 +25,8 @@ interface TopbarProps {
   confThreshold?: number;
   onShowHotkeys: () => void;
   onBack?: () => void;
-  leftSidebarOpen?: boolean;
-  rightSidebarOpen?: boolean;
-  onToggleLeftSidebar?: () => void;
-  onToggleRightSidebar?: () => void;
+  onToggleSide?: (side: WorkspaceSide) => void;
+  sides?: Record<WorkspaceSide, WorkspaceSideState>;
   layoutMenuSlot?: React.ReactNode;
   layoutDisabled?: boolean;
   onRunAi?: () => void;
@@ -92,10 +91,8 @@ export function Topbar({
   confThreshold,
   onShowHotkeys,
   onBack,
-  leftSidebarOpen,
-  rightSidebarOpen,
-  onToggleLeftSidebar,
-  onToggleRightSidebar,
+  onToggleSide,
+  sides = { left: "empty", right: "empty" },
   layoutMenuSlot,
   layoutDisabled = false,
   onRunAi,
@@ -185,17 +182,20 @@ export function Topbar({
               返回
             </Button>
           )}
-          {onToggleLeftSidebar && (
+          {onToggleSide && (
             <Button
               variant="ghost"
               size="sm"
-              onClick={onToggleLeftSidebar}
-              disabled={layoutDisabled}
-              title={leftSidebarOpen ? "隐藏任务队列" : "显示任务队列"}
-              className={cn(
-                "justify-center w-7 h-7 p-0 border-transparent rounded-[var(--radius-sm)] bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground",
-                leftSidebarOpen && "text-foreground bg-transparent shadow-none",
-              )}
+              onClick={() => onToggleSide("left")}
+              disabled={layoutDisabled || sides.left === "empty"}
+              title={
+                sides.left === "empty"
+                  ? "画布左侧没有停靠面板"
+                  : `${sides.left === "open" ? "收起" : "展开"}画布左侧所有面板`
+              }
+              aria-label="左侧面板"
+              aria-expanded={sides.left === "open"}
+              className="justify-center w-7 h-7 p-0 border-transparent rounded-[var(--radius-sm)] bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground"
             >
               <Icon name="panelLeft" size={14} />
             </Button>
@@ -454,17 +454,20 @@ export function Topbar({
           </Button>
         )}
         {layoutMenuSlot}
-        {onToggleRightSidebar && (
+        {onToggleSide && (
           <Button
             variant="ghost"
             size="sm"
-            onClick={onToggleRightSidebar}
-            disabled={layoutDisabled}
-            title={rightSidebarOpen ? "隐藏标注详情" : "显示标注详情"}
-            className={cn(
-              "justify-center w-7 h-7 p-0 border-transparent rounded-[var(--radius-sm)] bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground",
-              rightSidebarOpen && "text-foreground bg-transparent shadow-none",
-            )}
+            onClick={() => onToggleSide("right")}
+            disabled={layoutDisabled || sides.right === "empty"}
+            title={
+              sides.right === "empty"
+                ? "画布右侧没有停靠面板"
+                : `${sides.right === "open" ? "收起" : "展开"}画布右侧所有面板`
+            }
+            aria-label="右侧面板"
+            aria-expanded={sides.right === "open"}
+            className="justify-center w-7 h-7 p-0 border-transparent rounded-[var(--radius-sm)] bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground"
           >
             <Icon name="panelRight" size={14} />
           </Button>

@@ -64,9 +64,9 @@ export interface WorkspaceSnapshot {
   returns: Partial<Record<PanelId, PanelReturn>>;
   visibilityIntent: Record<ToolPanelId, "shown" | "hidden">;
 }
-export type WorkspaceEnvelope = { schemaVersion: 1 | 2 | 3; snapshot: unknown };
+export type WorkspaceEnvelope = { schemaVersion: 1 | 2 | 3 | 4; snapshot: unknown };
 export type WorkspaceReadOnlyReason = "invalid" | "newer-schema";
-export const WORKSPACE_SCHEMA_VERSION = 3 as const;
+export const WORKSPACE_SCHEMA_VERSION = 4 as const;
 
 const LIMIT = 64 * 1024;
 const ID = /^[a-zA-Z0-9_-]{1,64}$/;
@@ -115,6 +115,7 @@ export function clampWorkspaceRect(
 export function sanitizeWorkspaceSnapshot(
   value: unknown,
   bounds?: WorkspaceBounds,
+  allowCollapsed = true,
 ): WorkspaceSnapshot {
   const json = JSON.stringify(value, (_key, item: unknown) => {
     if (typeof item === "number" && !Number.isFinite(item))
@@ -133,6 +134,7 @@ export function sanitizeWorkspaceSnapshot(
   if (orientation !== "HORIZONTAL" && orientation !== "VERTICAL")
     throw new Error("Invalid grid orientation");
   const ids = new Set<string>();
+  const visibleIds = new Set<string>();
   const panels = new Set<PanelId>();
   let nodes = 0;
   let canvasPath: number[] | undefined;
@@ -146,6 +148,7 @@ export function sanitizeWorkspaceSnapshot(
     const id = groupId(item.id);
     if (ids.has(id)) throw new Error("Duplicate layout group");
     ids.add(id);
+    if (visible) visibleIds.add(id);
     if (!Array.isArray(item.views) || item.views.some((p) => !isPanelId(p)))
       throw new Error("Unknown panel");
     const views = item.views as PanelId[];
@@ -160,7 +163,8 @@ export function sanitizeWorkspaceSnapshot(
     } else if (id === "canvas") throw new Error("Missing canvas");
     if (id === "parking" && (floating || visible))
       throw new Error("Parking must remain hidden and docked");
-    if (id !== "parking" && !visible) throw new Error("Only parking may be hidden");
+    if (!allowCollapsed && id !== "parking" && !visible)
+      throw new Error("Collapsed groups require schema 4");
     if (item.activeView !== undefined && !views.includes(item.activeView as PanelId))
       throw new Error("Invalid active tab");
     return {
@@ -279,7 +283,7 @@ export function sanitizeWorkspaceSnapshot(
   if (
     raw.activeGroup !== undefined &&
     (typeof raw.activeGroup !== "string" ||
-      !ids.has(raw.activeGroup) ||
+      !visibleIds.has(raw.activeGroup) ||
       raw.activeGroup === "parking")
   )
     throw new Error("Invalid active group");
@@ -385,13 +389,15 @@ export function readWorkspaceEnvelope(
     if (
       envelope.schemaVersion !== 1 &&
       envelope.schemaVersion !== 2 &&
-      envelope.schemaVersion !== 3
+      envelope.schemaVersion !== 3 &&
+      envelope.schemaVersion !== 4
     )
       throw new Error("Unsupported layout schema");
     return {
       snapshot: sanitizeWorkspaceSnapshot(
-        envelope.schemaVersion === 3 ? envelope.snapshot : upgradeLegacySnapshot(envelope.snapshot),
+        envelope.schemaVersion >= 3 ? envelope.snapshot : upgradeLegacySnapshot(envelope.snapshot),
         bounds,
+        envelope.schemaVersion >= 4,
       ),
       readOnlyReason: null,
     };

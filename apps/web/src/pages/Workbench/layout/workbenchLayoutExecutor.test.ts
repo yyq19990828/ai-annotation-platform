@@ -62,6 +62,96 @@ describe("workspace executor with Dockview 8", () => {
     vi.unstubAllGlobals();
   });
 
+  it("collapses physical sides without losing stacked sizes, even after restore and maximization", () => {
+    const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+    controller.moveCanvas("left");
+    const before = controller.capture();
+    const sizes = new Map(
+      api.groups.filter((g) => g.id !== "parking").map((g) => [g.id, [g.api.width, g.api.height]]),
+    );
+    expect(controller.getSides()).toEqual({ left: "empty", right: "open" });
+    controller.toggleSide("right");
+    expect(controller.getSides()).toEqual({ left: "empty", right: "collapsed" });
+    expect(api.getPanel("canvas")!.api.width).toBe(bounds.width);
+    const collapsed = controller.capture();
+    controller.toggleCanvasMaximized();
+    controller.toggleCanvasMaximized();
+    controller.enterCompact();
+    controller.exitCompact();
+    controller.restore(collapsed);
+    api.fromJSON(collapsed.layout, { reuseExistingPanels: true });
+    controller.setReturns(collapsed.returns);
+    controller.toggleSide("right");
+    expect(controller.capture().layout.grid.root).toEqual(before.layout.grid.root);
+    for (const [id, size] of sizes) {
+      const group = api.groups.find((g) => g.id === id)!;
+      expect([group.api.width, group.api.height]).toEqual(size);
+    }
+  });
+
+  it("uses the current physical side and preserves the opposite side and floats", () => {
+    const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+    controller.dock("task-queue", "right");
+    controller.dock("inspector", "left");
+    controller.float("discussion");
+    const before = controller.capture();
+    controller.toggleSide("left");
+    expect(controller.isVisible("task-queue")).toBe(true);
+    expect(controller.isVisible("inspector")).toBe(false);
+    expect(controller.isVisible("discussion")).toBe(true);
+    controller.show("inspector");
+    expect(controller.capture().layout.grid.root).toEqual(before.layout.grid.root);
+    controller.toggleSide("left");
+    controller.toggleSide("right");
+    controller.toggleSide("left");
+    controller.toggleSide("right");
+    expect(controller.capture().layout.grid.root).toEqual(before.layout.grid.root);
+    expect(controller.capture().layout.floatingGroups).toEqual(before.layout.floatingGroups);
+  });
+
+  it("can move the canvas while a side is collapsed and reopen it on the new side", () => {
+    const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+    controller.toggleSide("left");
+    controller.moveCanvas("left");
+    expect(controller.getSides()).toEqual({ left: "empty", right: "open" });
+    expect(controller.isVisible("task-queue")).toBe(false);
+    controller.toggleSide("right");
+    controller.toggleSide("right");
+    expect(controller.isVisible("task-queue")).toBe(true);
+    expect(controller.isVisible("class-palette")).toBe(true);
+  });
+
+  it("keeps physical side controls available after returning to a maximized desktop", () => {
+    const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+    controller.toggleSide("left");
+    const sides = controller.getSides();
+    controller.toggleCanvasMaximized();
+    controller.enterCompact();
+    controller.exitCompact();
+    expect(controller.isCanvasMaximized()).toBe(true);
+    expect(controller.getSides()).toEqual(sides);
+  });
+
+  it("expands a collapsed side when restoring a parked tab into its original group", () => {
+    const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+    controller.tab("discussion", "task-queue");
+    controller.hide("discussion");
+    controller.toggleSide("left");
+    controller.show("discussion");
+    expect(controller.isVisible("class-palette")).toBe(true);
+    expect(controller.isVisible("task-queue")).toBe(true);
+    expect(controller.isVisible("discussion")).toBe(true);
+  });
+
+  it("does not reuse an old column width when a removed group ID is recreated", () => {
+    const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+    api.getPanel("inspector")!.group.api.setSize({ width: 400 });
+    controller.setReturns(controller.capture().returns);
+    controller.hide("inspector");
+    controller.show("inspector");
+    expect(api.getPanel("inspector")!.api.width).toBe(240);
+  });
+
   it("replays presets and compact mode without recreating any panel", () => {
     const controller = createWorkbenchLayoutExecutor(api, () => bounds);
     const identities = PANEL_IDS.map((id) => api.getPanel(id));
@@ -336,10 +426,28 @@ describe("workspace executor with Dockview 8", () => {
     api.getPanel("ai-task")!.api.moveTo({ group: target, position: "center" });
     restoreSizes(target.id);
     expect(panels.map((panel) => panel.group.api.width)).toEqual(widths);
+    expect(target.api.width).toBe(Math.max(bounds.width * 0.15, target.minimumWidth));
+  });
+
+  it.each([1600, 1920])("starts new columns at 15 percent in a %spx workspace", (width) => {
+    bounds = { width, height: 900 };
+    api.layout(bounds.width, bounds.height);
+    const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+    controller.dock("class-palette", "left");
+    expect(api.getPanel("class-palette")!.group.api.width).toBe(Math.round(width * 0.15));
+    controller.hide("inspector");
+    controller.show("inspector");
+    expect(api.getPanel("inspector")!.group.api.width).toBe(Math.round(width * 0.15));
   });
 
   it("keeps focused canvas mounted while maximizing and restoring", () => {
     const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+    controller.syncConstraints();
+    controller.tab("task-queue", "class-palette");
+    controller.show("class-palette");
+    controller.moveCanvas("left");
+    const geometry = () => api.groups.map((group) => [group.id, group.api.width, group.api.height]);
+    const before = geometry();
     const canvas = api.getPanel("canvas");
     controller.applyPreset("focus");
     expect(api.hasMaximizedGroup()).toBe(true);
@@ -348,6 +456,12 @@ describe("workspace executor with Dockview 8", () => {
     controller.applyPreset("focus");
     controller.show("inspector");
     expect(api.hasMaximizedGroup()).toBe(false);
+    expect(geometry()).toEqual(before);
+    controller.show("task-queue");
+    controller.show("task-queue");
+    expect(api.getPanel("task-queue")!.group.activePanel?.id).toBe("task-queue");
+    expect(controller.isVisible("task-queue")).toBe(true);
+    expect(geometry()).toEqual(before);
     expect(api.getPanel("canvas")).toBe(canvas);
   });
 
@@ -432,6 +546,31 @@ describe("workspace executor with Dockview 8", () => {
     expect(api.getPanel("inspector")!.group.api.width).toBe(rightWidth);
     expect(api.getPanel("canvas")!.group.api.width).toBe(1920 - 240 - rightWidth);
   });
+
+  it.each(["preset", "left-maximize", "stack"] as const)(
+    "keeps splitters draggable after %s restores panel sizes",
+    (action) => {
+      const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+      controller.syncConstraints();
+      if (action === "preset") controller.applyPreset("standard");
+      else if (action === "left-maximize") {
+        controller.moveCanvas("left");
+        controller.toggleCanvasMaximized();
+        controller.toggleCanvasMaximized();
+      } else {
+        const item = api.getPanel("task-queue")!;
+        const restore = controller.preserveGridSizes();
+        item.api.moveTo({ group: api.getPanel("inspector")!.group, position: "bottom" });
+        restore(item.group.id);
+      }
+      const visibleGroups = api.groups.filter(
+        (group) => group.api.location.type === "grid" && group.api.isVisible,
+      );
+      expect(element.querySelectorAll(".dv-sash.dv-enabled")).toHaveLength(
+        visibleGroups.length - 1,
+      );
+    },
+  );
 
   it("moves the existing canvas to every root edge and preserves that edge across presets", () => {
     const controller = createWorkbenchLayoutExecutor(api, () => bounds);

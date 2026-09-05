@@ -141,7 +141,7 @@ class WorkspaceSnapshot(WorkspaceModel):
 
 
 class WorkspaceContextEnvelope(WorkspaceModel):
-    schemaVersion: Literal[1, 2, 3]
+    schemaVersion: Literal[1, 2, 3, 4]
     snapshot: WorkspaceSnapshot
 
     @field_validator("schemaVersion", mode="before")
@@ -155,15 +155,15 @@ class WorkspaceContextEnvelope(WorkspaceModel):
     def _version_grammar(self):
         snapshot = self.snapshot
         layout = snapshot.layout
-        expected = CORE_PANELS | TOOL_PANELS if self.schemaVersion == 3 else CORE_PANELS
+        expected = CORE_PANELS | TOOL_PANELS if self.schemaVersion >= 3 else CORE_PANELS
         if set(layout.panels) != expected:
             raise ValueError("panel set does not match schemaVersion")
         if any(key != panel.id for key, panel in layout.panels.items()):
             raise ValueError("panel map keys must match panel IDs")
         if layout.panels["canvas"].renderer != "always":
             raise ValueError("canvas must use the always renderer")
-        if snapshot.visibilityIntent is not None and self.schemaVersion != 3:
-            raise ValueError("visibilityIntent requires schemaVersion 3")
+        if snapshot.visibilityIntent is not None and self.schemaVersion < 3:
+            raise ValueError("visibilityIntent requires schemaVersion 3 or later")
         if "canvas" in snapshot.returns or not set(snapshot.returns) <= expected:
             raise ValueError("returns can only describe peripheral panels")
 
@@ -192,7 +192,8 @@ class WorkspaceContextEnvelope(WorkspaceModel):
         ):
             raise ValueError("workspace group IDs must be unique and within limits")
         if layout.activeGroup is not None and (
-            layout.activeGroup not in ids or layout.activeGroup == "parking"
+            layout.activeGroup
+            not in {group.id for group, _, visible in groups if visible}
         ):
             raise ValueError("activeGroup must reference a visible user group")
         views = [panel for group, _, _ in groups for panel in group.views]
@@ -202,7 +203,7 @@ class WorkspaceContextEnvelope(WorkspaceModel):
             if group.id == "parking":
                 if not docked or visible or group.hideHeader is not True:
                     raise ValueError("parking must be docked, invisible and headerless")
-            elif not visible:
+            elif not visible and self.schemaVersion < 4:
                 raise ValueError("hidden panels must use parking")
             if "canvas" in group.views:
                 if not docked or not visible or group.views != ["canvas"]:

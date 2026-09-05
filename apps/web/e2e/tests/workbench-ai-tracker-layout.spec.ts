@@ -99,7 +99,7 @@ test("AI 与视频追踪使用同一 Dockview 工作区，隐藏和预设不重�
   await page.waitForTimeout(650);
   await expect
     .poll(async () => (await savedVideoWorkspace(page)).schemaVersion, { timeout: 20_000 })
-    .toBe(3);
+    .toBe(4);
   const saved = await savedVideoWorkspace(page);
   expect(Object.keys(saved.snapshot.layout.panels).sort()).toEqual([
     "ai-task",

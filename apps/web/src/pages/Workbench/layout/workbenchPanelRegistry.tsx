@@ -1,13 +1,16 @@
 import type { ReactNode } from "react";
 import type { PanelId, WorkspaceContext } from "./workbenchLayoutSnapshot";
+import type { WorkspaceSide, WorkspaceSideState } from "./workbenchLayoutExecutor";
 
 export type WorkbenchPanelSlots = Record<PanelId, ReactNode>;
 export interface WorkbenchWorkspaceCommands {
   show(id: PanelId): void;
   hide(id: PanelId): void;
   toggle(id: PanelId): void;
+  toggleSide(side: WorkspaceSide): void;
 }
 export interface WorkbenchWorkspaceState {
+  sides: Record<WorkspaceSide, WorkspaceSideState>;
   taskQueueVisible: boolean;
   inspectorVisible: boolean;
   aiTaskVisible: boolean;

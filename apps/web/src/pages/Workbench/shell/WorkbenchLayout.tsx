@@ -167,8 +167,7 @@ export function WorkbenchLayout({
             {...topbar}
             layoutMenuSlot={menu}
             layoutDisabled={state.disabled}
-            leftSidebarOpen={state.taskQueueVisible}
-            rightSidebarOpen={state.inspectorVisible}
+            sides={state.sides}
           />
         )}
         slots={{

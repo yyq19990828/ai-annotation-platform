@@ -49,6 +49,7 @@ describe("workspace snapshot boundary", () => {
       });
       expect(clean.layout).not.toHaveProperty("popoutGroups");
       expect(readWorkspaceEnvelope({ schemaVersion: 3, snapshot: clean }).snapshot).toEqual(clean);
+      expect(readWorkspaceEnvelope({ schemaVersion: 4, snapshot: clean }).snapshot).toEqual(clean);
       expect(Object.keys(clean.layout.panels)).toEqual(PANEL_IDS);
     }
     const standard = createWorkspacePreset("standard");
@@ -60,8 +61,20 @@ describe("workspace snapshot boundary", () => {
     ).toEqual(standard);
   });
 
+  it("accepts collapsed sides only in schema 4 and rejects a hidden active group", () => {
+    const snapshot = createWorkspacePreset("standard");
+    const root = snapshot.layout.grid.root;
+    if (root.type !== "branch") throw new Error("Expected columns");
+    root.data[0].visible = false;
+    snapshot.layout.activeGroup = "canvas";
+    expect(readWorkspaceEnvelope({ schemaVersion: 4, snapshot }).snapshot).toEqual(snapshot);
+    expect(readWorkspaceEnvelope({ schemaVersion: 3, snapshot }).readOnlyReason).toBe("invalid");
+    snapshot.layout.activeGroup = "task-queue";
+    expect(() => sanitizeWorkspaceSnapshot(snapshot)).toThrow("Invalid active group");
+  });
+
   it("does not interpret newer envelopes as v1", () => {
-    for (const schemaVersion of [4, 5])
+    for (const schemaVersion of [5, 6])
       expect(readWorkspaceEnvelope({ schemaVersion, snapshot: {} })).toEqual({
         snapshot: null,
         readOnlyReason: "newer-schema",

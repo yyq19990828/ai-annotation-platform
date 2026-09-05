@@ -1118,7 +1118,7 @@ def test_migration_0106_upgrade_idempotent():
 
 def _workspace_envelope(version=1):
     panels = ["canvas", "task-queue", "class-palette", "inspector", "discussion"]
-    if version == 3:
+    if version >= 3:
         panels += ["ai-task", "video-tracker"]
     return {
         "schemaVersion": version,
@@ -1170,13 +1170,47 @@ def _workspace_patch(envelope, context="annotate:image"):
     }
 
 
-@pytest.mark.parametrize("version", [1, 2, 3])
+@pytest.mark.parametrize("branch", [False, True])
+async def test_workspace_collapsed_side_round_trip(httpx_client, annotator, branch):
+    _, token = annotator
+    envelope = _workspace_envelope(4)
+    root = envelope["snapshot"]["layout"]["grid"]["root"]
+    right = root["data"][1]
+    root["data"][1] = (
+        {"type": "branch", "data": [right], "size": 240} if branch else right
+    )
+    root["data"][1]["visible"] = False
+    response = await httpx_client.patch(
+        PREFS_URL, json=_workspace_patch(envelope), headers=_bearer(token)
+    )
+    assert response.status_code == 200, response.text
+    response = await httpx_client.get(PREFS_URL, headers=_bearer(token))
+    assert (
+        response.json()["workbench"]["layout"]["workspace"]["contexts"][
+            "annotate:image"
+        ]
+        == envelope
+    )
+    envelope["schemaVersion"] = 3
+    with pytest.raises(ValueError):
+        UserPreferences.model_validate(_workspace_patch(envelope))
+    envelope["schemaVersion"] = 4
+    envelope["snapshot"]["layout"]["activeGroup"] = "right"
+    with pytest.raises(ValueError):
+        UserPreferences.model_validate(_workspace_patch(envelope))
+    envelope["snapshot"]["layout"]["activeGroup"] = "canvas"
+    root["visible"] = False
+    with pytest.raises(ValueError):
+        UserPreferences.model_validate(_workspace_patch(envelope))
+
+
+@pytest.mark.parametrize("version", [1, 2, 3, 4])
 async def test_workspace_round_trip_versions_and_context_atomic_replace(
     httpx_client, annotator, version
 ):
     _, token = annotator
     envelope = _workspace_envelope(version)
-    if version == 3:
+    if version >= 3:
         envelope["snapshot"]["visibilityIntent"] = {
             "ai-task": "hidden",
             "video-tracker": "shown",
@@ -1221,14 +1255,19 @@ async def test_workspace_round_trip_versions_and_context_atomic_replace(
     )
 
 
-async def test_workspace_schema_downgrade_rejects_entire_patch(httpx_client, annotator):
+@pytest.mark.parametrize("current,older", [(3, 1), (4, 3)])
+async def test_workspace_schema_downgrade_rejects_entire_patch(
+    httpx_client, annotator, current, older
+):
     user, token = annotator
     response = await httpx_client.patch(
-        PREFS_URL, json=_workspace_patch(_workspace_envelope(3)), headers=_bearer(token)
+        PREFS_URL,
+        json=_workspace_patch(_workspace_envelope(current)),
+        headers=_bearer(token),
     )
     assert response.status_code == 200
     previous = copy.deepcopy(user.preferences)
-    patch = _workspace_patch(_workspace_envelope(1))
+    patch = _workspace_patch(_workspace_envelope(older))
     patch["ui"] = {"theme": "dark"}
     response = await httpx_client.patch(PREFS_URL, json=patch, headers=_bearer(token))
     assert response.status_code == 409
@@ -1312,7 +1351,7 @@ def test_workspace_rejects_invalid_grammar_and_resource_limits():
     invalid = []
     for path, value in [
         (("schemaVersion",), True),
-        (("schemaVersion",), 4),
+        (("schemaVersion",), 5),
         (("snapshot", "layout", "grid", "width"), float("inf")),
         (("snapshot", "layout", "grid", "height"), -1),
         (("snapshot", "layout", "grid", "root", "data", 0, "data", "views"), []),

@@ -136,6 +136,7 @@ function PanelTab({ api }: IDockviewPanelHeaderProps) {
 const components = { "workbench-panel": PanelContent };
 const theme = { name: "workbench", className: "workbench-dock-theme" };
 const EMPTY_STATE: WorkbenchWorkspaceState = {
+  sides: { left: "empty", right: "empty" },
   taskQueueVisible: true,
   inspectorVisible: true,
   aiTaskVisible: false,
@@ -210,6 +211,7 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
     engine.syncConstraints();
     const opened = PERIPHERAL_PANELS.filter((id) => engine.isVisible(id));
     const next = {
+      sides: engine.getSides(),
       taskQueueVisible: opened.includes("task-queue"),
       inspectorVisible: opened.includes("inspector"),
       aiTaskVisible: opened.includes("ai-task"),
@@ -269,6 +271,7 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
 
   const commands = useMemo<WorkbenchWorkspaceCommands>(
     () => ({
+      toggleSide: (side) => run((engine) => engine.toggleSide(side)),
       show: (id) => {
         if (panelSupportsContext(id, context)) run((engine) => engine.show(id), true);
       },

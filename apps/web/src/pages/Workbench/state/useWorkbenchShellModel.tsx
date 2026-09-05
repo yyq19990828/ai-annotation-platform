@@ -5432,6 +5432,7 @@ export function useWorkbenchShellModel({
   });
 
   const [workspaceState, setWorkspaceState] = useState<WorkbenchWorkspaceState>({
+    sides: { left: "empty", right: "empty" },
     taskQueueVisible: true,
     inspectorVisible: true,
     aiTaskVisible: false,
@@ -6025,8 +6026,10 @@ export function useWorkbenchShellModel({
     ],
   );
 
-  const toggleLeftSidebar = useCallback(() => workspaceCommands.current?.toggle("task-queue"), []);
-  const toggleRightSidebar = useCallback(() => workspaceCommands.current?.toggle("inspector"), []);
+  const toggleWorkspaceSide = useCallback(
+    (side: "left" | "right") => workspaceCommands.current?.toggleSide(side),
+    [],
+  );
 
   if (
     isProjectLoading ||
@@ -6315,10 +6318,7 @@ export function useWorkbenchShellModel({
       confThreshold: s.confThreshold,
       onShowHotkeys: () => setShowHotkeys(true),
       onBack,
-      leftSidebarOpen: leftOpen,
-      rightSidebarOpen: rightOpen,
-      onToggleLeftSidebar: toggleLeftSidebar,
-      onToggleRightSidebar: toggleRightSidebar,
+      onToggleSide: toggleWorkspaceSide,
       onRunAi: stageKind === "3d" ? undefined : toggleAiPopover,
       aiOpen: workspaceState.aiTaskVisible,
       // v0.21.4 · 视频项目也开放当前题 AI(单帧 → 图像 backend), 不再禁用工具栏 AI 按钮。

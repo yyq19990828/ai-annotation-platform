@@ -61,15 +61,40 @@ it("gates layout buttons until preferences settle", () => {
       onPrev={vi.fn()}
       onNext={vi.fn()}
       onSubmit={vi.fn()}
-      leftSidebarOpen
-      rightSidebarOpen
-      onToggleLeftSidebar={toggle}
-      onToggleRightSidebar={toggle}
+      onToggleSide={toggle}
+      sides={{ left: "open", right: "collapsed" }}
       layoutDisabled
       layoutMenuSlot={<button>布局</button>}
     />,
   );
-  expect(screen.getByRole("button", { name: "隐藏任务队列" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "隐藏标注详情" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "左侧面板" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "右侧面板" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "布局" })).toBeVisible();
+});
+
+it("labels physical sides, exposes expanded state, and disables an empty side", () => {
+  const toggle = vi.fn();
+  render(
+    <Topbar
+      projectName="测试"
+      projectDisplayId="P-1"
+      task={undefined}
+      taskIdx={0}
+      taskTotal={1}
+      aiRunning={false}
+      isSubmitting={false}
+      onShowHotkeys={vi.fn()}
+      onPrev={vi.fn()}
+      onNext={vi.fn()}
+      onSubmit={vi.fn()}
+      onToggleSide={toggle}
+      sides={{ left: "empty", right: "collapsed" }}
+    />,
+  );
+  expect(screen.getByRole("button", { name: "左侧面板" })).toBeDisabled();
+  const right = screen.getByRole("button", { name: "右侧面板" });
+  expect(right).toHaveAttribute("aria-expanded", "false");
+  expect(right).toHaveAttribute("title", "展开画布右侧所有面板");
+  fireEvent.click(right);
+  expect(toggle).toHaveBeenCalledWith("right");
 });

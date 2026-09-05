@@ -22,21 +22,78 @@ type SidePanelId = Exclude<PanelId, "canvas">;
 type DockPosition = "left" | "right" | "above" | "below";
 type Axis = "HORIZONTAL" | "VERTICAL";
 export type CanvasPlacement = "left" | "right" | "above" | "below" | "center";
-type Tree =
+export type WorkspaceSide = "left" | "right";
+export type WorkspaceSideState = "empty" | "open" | "collapsed";
+type Tree = (
   | { group: WorkspaceGroup; size: number }
-  | { axis: Axis; children: Tree[]; size: number };
+  | { axis: Axis; children: Tree[]; size: number }
+) & { visible?: boolean };
 const opposite = (axis: Axis): Axis => (axis === "HORIZONTAL" ? "VERTICAL" : "HORIZONTAL");
 
 /** Hidden parking takes no space; unary engine wrappers do not change a layout. */
-function treeFromNode(node: WorkspaceNode, axis: Axis): Tree | null {
+function treeFromNode(node: WorkspaceNode, axis: Axis, includeHidden = false): Tree | null {
+  if (!includeHidden && node.visible === false) return null;
+  const visibility = node.visible === false ? { visible: false } : {};
   if (node.type === "leaf")
-    return node.data.id === "parking" ? null : { group: node.data, size: node.size ?? 1 };
+    return node.data.id === "parking"
+      ? null
+      : { group: node.data, size: node.size ?? 1, ...visibility };
   const children = node.data
-    .map((child) => treeFromNode(child, opposite(axis)))
+    .map((child) => treeFromNode(child, opposite(axis), includeHidden))
     .filter((child): child is Tree => child !== null);
   if (!children.length) return null;
-  if (children.length === 1) return { ...children[0], size: node.size ?? children[0].size };
-  return { axis, children, size: node.size ?? 1 };
+  if (children.length === 1)
+    return { ...children[0], size: node.size ?? children[0].size, ...visibility };
+  return { axis, children, size: node.size ?? 1, ...visibility };
+}
+/** Serialized hidden nodes retain their last visible extent on the parent axis. */
+function gridSizes(snapshot: WorkspaceSnapshot): Map<string, WorkspaceBounds> {
+  const sizes = new Map<string, WorkspaceBounds>();
+  function visit(node: WorkspaceNode, axis: Axis, box: WorkspaceBounds) {
+    if (node.type === "leaf") {
+      if (node.data.id !== "parking") sizes.set(node.data.id, box);
+      return;
+    }
+    const dimension = axis === "HORIZONTAL" ? "width" : "height";
+    node.data.forEach((child) =>
+      visit(child, opposite(axis), { ...box, [dimension]: child.size ?? box[dimension] }),
+    );
+  }
+  visit(snapshot.layout.grid.root, snapshot.layout.grid.orientation, snapshot.layout.grid);
+  return sizes;
+}
+function sideGroups(snapshot: WorkspaceSnapshot, side: WorkspaceSide): string[] {
+  function visit(
+    node: WorkspaceNode,
+    axis: Axis,
+  ): { canvas: boolean; groups: string[]; side: string[] } {
+    if (node.type === "leaf")
+      return {
+        canvas: node.data.id === "canvas",
+        groups: node.data.id === "parking" ? [] : [node.data.id],
+        side: [],
+      };
+    const children = node.data.map((child) => visit(child, opposite(axis)));
+    const canvasIndex = children.findIndex((child) => child.canvas);
+    return {
+      canvas: canvasIndex !== -1,
+      groups: children.flatMap((child) => child.groups),
+      side:
+        canvasIndex === -1
+          ? []
+          : [
+              ...children[canvasIndex].side,
+              ...(axis === "HORIZONTAL"
+                ? children
+                    .filter((_child, index) =>
+                      side === "left" ? index < canvasIndex : index > canvasIndex,
+                    )
+                    .flatMap((child) => child.groups)
+                : []),
+            ],
+    };
+  }
+  return visit(snapshot.layout.grid.root, snapshot.layout.grid.orientation).side;
 }
 function shape(tree: Tree): unknown {
   return "group" in tree
@@ -75,7 +132,7 @@ function normalizeTree(tree: Tree): Tree {
   if ("group" in tree) return tree;
   const children = tree.children.flatMap((child) => {
     const clean = normalizeTree(child);
-    if (!("axis" in clean) || clean.axis !== tree.axis) return [clean];
+    if (!("axis" in clean) || clean.axis !== tree.axis || clean.visible === false) return [clean];
     const total = clean.children.reduce((sum, item) => sum + (item.size || 1), 0);
     return clean.children.map((item) => ({
       ...item,
@@ -85,12 +142,13 @@ function normalizeTree(tree: Tree): Tree {
   return children.length === 1 ? { ...children[0], size: tree.size } : { ...tree, children };
 }
 function nodeFromTree(tree: Tree): WorkspaceNode {
+  const visibility = tree.visible === false ? { visible: false } : {};
   return "group" in tree
-    ? { type: "leaf", data: structuredClone(tree.group), size: tree.size }
-    : { type: "branch", data: tree.children.map(nodeFromTree), size: tree.size };
+    ? { type: "leaf", data: structuredClone(tree.group), size: tree.size, ...visibility }
+    : { type: "branch", data: tree.children.map(nodeFromTree), size: tree.size, ...visibility };
 }
 export function getCanvasPlacement(snapshot: WorkspaceSnapshot): CanvasPlacement {
-  const tree = treeFromNode(snapshot.layout.grid.root, snapshot.layout.grid.orientation);
+  const tree = treeFromNode(snapshot.layout.grid.root, snapshot.layout.grid.orientation, true);
   if (!tree || "group" in tree) return "center";
   const first = tree.children[0];
   const last = tree.children[tree.children.length - 1];
@@ -106,7 +164,7 @@ function placeCanvas(
   bounds: WorkspaceBounds,
 ): WorkspaceSnapshot {
   const snapshot = structuredClone(input);
-  const current = treeFromNode(snapshot.layout.grid.root, snapshot.layout.grid.orientation);
+  const current = treeFromNode(snapshot.layout.grid.root, snapshot.layout.grid.orientation, true);
   if (!current) throw new Error("Workspace has no visible tree");
   const { canvas, rest } = takeCanvas(current);
   if (!canvas) throw new Error("Workspace has no canvas");
@@ -180,6 +238,8 @@ export interface WorkbenchLayoutExecutor {
   moveCanvas(position: "left" | "right" | "above" | "below"): void;
   toggleCanvasMaximized(): void;
   isCanvasMaximized(): boolean;
+  getSides(): Record<WorkspaceSide, WorkspaceSideState>;
+  toggleSide(side: WorkspaceSide): void;
   tab(id: PanelId, target: PanelId): void;
   float(id: PanelId): void;
   applyPreset(preset: WorkspacePresetId): void;
@@ -200,6 +260,8 @@ export function createWorkbenchLayoutExecutor(
   let restoreMaximizedSizes: ReturnType<typeof rememberGridSizes> | undefined;
   const pendingShows = new Set<SidePanelId>();
   const constraints = new WeakMap<object, string>();
+  let hiddenSizes = new Map<string, WorkspaceBounds>();
+  let maximizedSides: Record<WorkspaceSide, WorkspaceSideState> = { left: "empty", right: "empty" };
   const getGroup = (id: string) => api.groups.find((group) => group.id === id);
   const canvas = () => {
     const group = getGroup("canvas");
@@ -234,7 +296,8 @@ export function createWorkbenchLayoutExecutor(
         maximumHeight: floating ? 900 : Number.POSITIVE_INFINITY,
       });
       // Dockview emits layout before updating its explicit group constraints.
-      if (!floating) group.api.setSize({ width: group.api.width, height: group.api.height });
+      if (!floating && group.api.isVisible)
+        group.api.setSize({ width: group.api.width, height: group.api.height });
     }
   }
   function preserveGridSizes() {
@@ -252,9 +315,16 @@ export function createWorkbenchLayoutExecutor(
   function rememberGridSizes() {
     const previous = new Map(
       api.groups
-        .filter((group) => group.id !== "parking" && group.api.location.type === "grid")
+        .filter(
+          (group) =>
+            group.id !== "parking" && group.api.location.type === "grid" && group.api.isVisible,
+        )
         .map((group) => [group.id, { width: group.api.width, height: group.api.height }]),
     );
+    for (const [id, size] of hiddenSizes) {
+      const group = getGroup(id);
+      if (group?.api.location.type === "grid" && !group.api.isVisible) previous.set(id, size);
+    }
     return (resizedGroup?: string, bounds = getBounds()) => {
       if (api.hasMaximizedGroup()) return;
       if (resizedGroup) previous.delete(resizedGroup);
@@ -266,6 +336,7 @@ export function createWorkbenchLayoutExecutor(
   }
   function maximizeCanvas() {
     if (api.hasMaximizedGroup()) return;
+    maximizedSides = getSides(true);
     restoreMaximizedSizes = rememberGridSizes();
     canvas().api.maximize();
   }
@@ -338,6 +409,36 @@ export function createWorkbenchLayoutExecutor(
       );
     }
     prune(layout.grid.root);
+    // Hiding stacked groups one by one resizes the remaining siblings. Preserve
+    // the pre-collapse extents instead of serializing those intermediate sizes.
+    function restoreHiddenExtents(node: WorkspaceNode, axis: Axis): WorkspaceBounds {
+      if (node.type === "leaf") {
+        const size = hiddenSizes.get(node.data.id);
+        return (
+          size ?? {
+            width: getGroup(node.data.id)?.api.width ?? 0,
+            height: getGroup(node.data.id)?.api.height ?? 0,
+          }
+        );
+      }
+      const sizes = node.data.map((child) => {
+        const size = restoreHiddenExtents(child, opposite(axis));
+        if (child.visible === false && !(child.type === "leaf" && child.data.id === "parking"))
+          child.size = size[axis === "HORIZONTAL" ? "width" : "height"];
+        return size;
+      });
+      return {
+        width:
+          axis === "HORIZONTAL"
+            ? sizes.reduce((sum, size) => sum + size.width, 0)
+            : Math.max(...sizes.map((size) => size.width)),
+        height:
+          axis === "VERTICAL"
+            ? sizes.reduce((sum, size) => sum + size.height, 0)
+            : Math.max(...sizes.map((size) => size.height)),
+      };
+    }
+    if (hiddenSizes.size) restoreHiddenExtents(layout.grid.root, layout.grid.orientation);
     if (layout.grid.maximizedNode) {
       const findCanvas = (
         node: typeof layout.grid.root,
@@ -349,7 +450,8 @@ export function createWorkbenchLayoutExecutor(
       const location = findCanvas(layout.grid.root);
       if (location) layout.grid.maximizedNode.location = location;
     }
-    if (layout.activeGroup === "parking") layout.activeGroup = "canvas";
+    if (layout.activeGroup && !getGroup(layout.activeGroup)?.api.isVisible)
+      layout.activeGroup = "canvas";
     return sanitizeWorkspaceSnapshot({ layout, returns }, bounds);
   }
   function remember(id: SidePanelId) {
@@ -400,7 +502,7 @@ export function createWorkbenchLayoutExecutor(
     });
     group.api.setVisible(true);
     group.api.setSize({
-      width: spec.width,
+      width: Math.round(getBounds().width * 0.15),
       ...(id === "discussion" ? { height: spec.height } : {}),
     });
     return group;
@@ -455,9 +557,10 @@ export function createWorkbenchLayoutExecutor(
     }
     if (desktop) {
       if (
-        groupsIn(desktop.layout.grid.root)
-          .find((g) => g.id === "parking")
-          ?.views.includes(id)
+        !groupsIn(
+          nodeFromTree(treeFromNode(desktop.layout.grid.root, desktop.layout.grid.orientation)!),
+        ).some((g) => g.views.includes(id)) &&
+        !desktop.layout.floatingGroups?.some((group) => group.data?.views.includes(id))
       )
         pendingShows.add(id);
       compactShow(id);
@@ -469,17 +572,31 @@ export function createWorkbenchLayoutExecutor(
       const saved = returns[id];
       const existing = saved && getGroup(saved.group);
       if (existing && !["canvas", "parking", "compact-overlay"].includes(existing.id)) {
-        existing.api.setVisible(true);
+        revealGroup(existing);
         move(id, existing, saved.index);
       } else if (saved?.position) {
         setFloat(item, clampWorkspaceRect(saved.position, getBounds()));
         const previousGroup = saved.group;
         for (const entry of Object.values(returns))
           if (entry?.group === previousGroup) entry.group = item.group.id;
-      } else move(id, defaultGroup(id));
+      } else {
+        const target = defaultGroup(id);
+        revealGroup(target);
+        move(id, target);
+      }
     }
+    revealGroup(item.group);
     item.api.setActive();
     ensureParking();
+  }
+  function revealGroup(group: DockviewGroupPanel) {
+    if (group.api.isVisible) return;
+    const snapshot = rawSnapshot();
+    for (const side of ["left", "right"] as const) {
+      const ids = sideGroups(snapshot, side);
+      if (ids.includes(group.id)) ids.forEach((id) => getGroup(id)?.api.setVisible(true));
+    }
+    group.api.setVisible(true);
   }
   function float(id: PanelId) {
     if (desktop || id === "canvas") return;
@@ -505,7 +622,9 @@ export function createWorkbenchLayoutExecutor(
       skipSetActive: true,
     });
     group.api.setVisible(true);
-    group.api.setSize(position === "below" ? { height: 260 } : { width: 300 });
+    group.api.setSize(
+      position === "below" ? { height: 260 } : { width: Math.round(getBounds().width * 0.15) },
+    );
     panel(id).api.setActive();
     ensureParking();
   }
@@ -531,7 +650,7 @@ export function createWorkbenchLayoutExecutor(
   function replay(input: WorkspaceSnapshot) {
     const bounds = getBounds();
     const snapshot = sanitizeWorkspaceSnapshot(input, bounds);
-    const tree = treeFromNode(snapshot.layout.grid.root, snapshot.layout.grid.orientation);
+    const tree = treeFromNode(snapshot.layout.grid.root, snapshot.layout.grid.orientation, true);
     if (!tree) throw new Error("Empty workspace tree");
     exitCanvasMaximized();
     // Media-query layout effects can run before Dockview's ResizeObserver.
@@ -567,10 +686,20 @@ export function createWorkbenchLayoutExecutor(
         api.getPanel(group.activeView)?.api.setActive();
     }
     getGroup(snapshot.layout.activeGroup ?? "canvas")?.api.setActive();
-    sizeTree(tree, bounds);
+    hiddenSizes = gridSizes(snapshot);
+    sizeTree(tree, bounds, hiddenSizes);
+    const restoreSizes = rememberGridSizes();
+    function hideCollapsed(node: WorkspaceNode, visible = true) {
+      visible &&= node.visible !== false;
+      if (node.type === "branch") node.data.forEach((child) => hideCollapsed(child, visible));
+      else if (!visible) getGroup(node.data.id)?.api.setVisible(false);
+    }
+    hideCollapsed(snapshot.layout.grid.root);
+    restoreSizes();
+    getGroup(snapshot.layout.activeGroup ?? "canvas")?.api.setActive();
     if (snapshot.layout.grid.maximizedNode) maximizeCanvas();
     const actual = rawSnapshot();
-    const actualTree = treeFromNode(actual.layout.grid.root, actual.layout.grid.orientation);
+    const actualTree = treeFromNode(actual.layout.grid.root, actual.layout.grid.orientation, true);
     if (!actualTree || JSON.stringify(shape(actualTree)) !== JSON.stringify(shape(tree)))
       throw new Error("Workspace replay changed the group tree");
     const expectedParking = docked.find((g) => g.id === "parking")?.views ?? [];
@@ -615,7 +744,12 @@ export function createWorkbenchLayoutExecutor(
       "group" in node ? !!previous?.has(node.group.id) : node.children.some(hasPreviousSize);
     const extent = (node: Tree, dimension: "width" | "height"): number => {
       if ("group" in node)
-        return previous?.get(node.group.id)?.[dimension] ?? getGroup(node.group.id)!.api[dimension];
+        return (
+          previous?.get(node.group.id)?.[dimension] ??
+          (previous && dimension === "width"
+            ? Math.round(bounds.width * 0.15)
+            : getGroup(node.group.id)!.api[dimension])
+        );
       const alongAxis = (node.axis === "HORIZONTAL") === (dimension === "width");
       // Stacking into an existing column/row inherits its cross-axis size, not
       // the moved group's temporary size after Dockview redistributes the grid.
@@ -737,6 +871,10 @@ export function createWorkbenchLayoutExecutor(
       }
     } finally {
       for (const { group, previous } of constraints) group.api.setConstraints(previous);
+      // Constraint events fire before Dockview updates the group's explicit limits.
+      // Refresh every split after all temporary fixed sizes have been released.
+      for (const { group, rect } of constraints)
+        group.api.setSize({ width: rect.width, height: rect.height });
     }
     for (const { group, rect } of constraints) {
       if (
@@ -754,6 +892,22 @@ export function createWorkbenchLayoutExecutor(
       )
         throw new Error("Workspace replay changed group position");
     }
+  }
+
+  function getSides(restoringDesktop = false): Record<WorkspaceSide, WorkspaceSideState> {
+    if (desktop && !restoringDesktop) return { left: "empty", right: "empty" };
+    if (api.hasMaximizedGroup()) return maximizedSides;
+    const snapshot = rawSnapshot();
+    const visible = new Set(
+      groupsIn(
+        nodeFromTree(treeFromNode(snapshot.layout.grid.root, snapshot.layout.grid.orientation)!),
+      ).map((group) => group.id),
+    );
+    const state = (side: WorkspaceSide): WorkspaceSideState => {
+      const groups = sideGroups(snapshot, side);
+      return !groups.length ? "empty" : groups.some((id) => visible.has(id)) ? "open" : "collapsed";
+    };
+    return { left: state("left"), right: state("right") };
   }
 
   return {
@@ -774,6 +928,8 @@ export function createWorkbenchLayoutExecutor(
     },
     setReturns(value) {
       returns = structuredClone(value);
+      hiddenSizes.clear();
+      hiddenSizes = gridSizes(rawSnapshot());
     },
     show: (id) => stable(() => show(id)),
     hide: (id) => stable(() => hide(id), undefined, true),
@@ -789,6 +945,20 @@ export function createWorkbenchLayoutExecutor(
       else maximizeCanvas();
     },
     isCanvasMaximized: () => api.hasMaximizedGroup(),
+    getSides,
+    toggleSide(side) {
+      if (desktop) return;
+      exitCanvasMaximized();
+      const groups = sideGroups(rawSnapshot(), side).map((id) => getGroup(id)!);
+      const expand = !groups.some((group) => group.api.isVisible);
+      const restoreSizes = rememberGridSizes();
+      for (const group of groups)
+        if (group.api.isVisible)
+          hiddenSizes.set(group.id, { width: group.api.width, height: group.api.height });
+      for (const group of groups) group.api.setVisible(expand);
+      canvas().api.setActive();
+      restoreSizes();
+    },
     tab: (id, target) => stable(() => tab(id, target)),
     float: (id) => stable(() => float(id)),
     applyPreset(preset) {
