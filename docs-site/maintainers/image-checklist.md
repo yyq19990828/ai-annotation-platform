@@ -28,7 +28,7 @@
 
 ### 暗色工作台重录
 
-- [x] 图片工作台静态图：`workbench/layout-overview.png`、`mask-brush/toolbar-overview.png`、`sam/{smart-point-toolbar,interactive-toolbar,magic-box-toolbar,exemplar-output-mode,ai-inspector-panel}.png`、`workbench/ocr-real-scene.png`、`review/{workbench,reject-form}.png`
+- [x] 图片工作台静态图：`workbench/layout-overview.png`、`mask-brush/toolbar-overview.png`、`sam/{smart-point-toolbar,interactive-toolbar,magic-box-toolbar,exemplar-output-mode}.png`、`workbench/ocr-real-scene.png`、`review/{workbench,reject-form}.png`
 - [x] 图片工作台流程：短交互保留 GIF；Magic Box、OCR、AI 预标与候选审阅已迁移到 `public/media/**/*.mp4`
 - [x] 首页图片工作台媒体：`public/home/ai-assisted-annotation.*`、`public/home/sam-tools/{smart-point,smart-box,exemplar}.*` 与 `public/home/ocr-real-scene.*`，均由对应 4K60 母版派生 VP9 WebM、H.264 MP4 fallback 和 WebP 封面；OCR 母版中的 AI 面板停靠在主图右侧
 - [x] 首页 Hero 派生图：`theme/assets/home/hero/*.webp`，由对应用户手册截图生成
@@ -291,11 +291,9 @@
 - [x] `public/media/ai/assisted-annotation.mp4` — 无侧边栏的真实 SAM3 Magic Box 粗框、候选收紧与类别确认 `[derived-mp4]`（P-COCO8）
 - [x] `images/sam/exemplar-interaction.gif` — 无侧边栏的真实 SAM3 Exemplar 车辆示例与全图相似候选 `[auto-gif]`（flow: `sam-tool-exemplar`，P-COCO8）
 - [ ] `images/sam/exemplar-yoloe-toolbar.png` — YOLOE exemplar 交互工具栏能力裁剪态；红框：仅正样例、无负框/叠加文本、输出形态 [manual]
-- [x] `images/sam/ai-inspector-panel.png` — 旧悬浮 AI 面板素材，已从用户指南撤下 [auto]
 - [ ] `images/workbench/current-task-project-pipeline.png` — 工作台「当前题 AI」面板按项目编排运行入口；红框：运行当前题（按项目编排 · N 阶段）按钮、项目编排来源提示 [manual]
 - [ ] `images/video-playback/sampling-config.png` — 项目设置帧采样配置区（mode/target_fps/frame_step） [manual]
 - [ ] `images/video-playback/chapter-sidebar.png` — 章节侧栏含彩色色带 + 章节列表 [manual]
-- [x] `images/video-propagate/ai-tracking-panel.png` — 旧画布浮层素材，已从用户指南撤下 `[auto]`（scene: `workbench/video-ai-tracking-panel`）
 - [x] `public/media/video/ai-tracker-panel.mp4` — 旧互斥浮层素材，已从用户指南撤下；新流程脚本覆盖停靠、隐藏恢复与并存 `[derived-mp4]`
 - [ ] `images/video-propagate/tracker-job-badge.png` — 进度 badge + 取消按钮 [manual]
 - [x] `public/media/video/workbench-overview.mp4` — 视频工作台整体（时间轴 + 逐帧前进 + 播放）`[derived-mp4]`（开源 P-VIDEO-DEV，seed_video.py）

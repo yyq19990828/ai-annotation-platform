@@ -62,19 +62,22 @@ describe("useScenePlayback", () => {
     vi.restoreAllMocks();
   });
 
-  it.each([1, 2, 4] as ScenePlaybackRate[])("dwells at least 1000 / %s ms after ready", async (rate) => {
-    const { resolveNext, navigate } = setup({ rate });
-    await advance(1000 / rate - 1);
-    expect(resolveNext).not.toHaveBeenCalled();
-    await advance(1);
-    expect(resolveNext).toHaveBeenCalledWith({
-      taskId: "task-1",
-      restart: false,
-      signal: expect.any(AbortSignal),
-    });
-    expect(navigate).toHaveBeenCalledTimes(1);
-    expect(navigate).toHaveBeenCalledWith(nextFrame);
-  });
+  it.each([1, 2, 4] as ScenePlaybackRate[])(
+    "dwells at least 1000 / %s ms after ready",
+    async (rate) => {
+      const { resolveNext, navigate } = setup({ rate });
+      await advance(1000 / rate - 1);
+      expect(resolveNext).not.toHaveBeenCalled();
+      await advance(1);
+      expect(resolveNext).toHaveBeenCalledWith({
+        taskId: "task-1",
+        restart: false,
+        signal: expect.any(AbortSignal),
+      });
+      expect(navigate).toHaveBeenCalledTimes(1);
+      expect(navigate).toHaveBeenCalledWith(nextFrame);
+    },
+  );
 
   it("requires the target task and confirmed Scene before starting the next dwell", async () => {
     const { update, resolveNext, result } = setup({
@@ -112,7 +115,9 @@ describe("useScenePlayback", () => {
 
   it("keeps a pending target through a temporary null task and waits for its confirmed ready state", async () => {
     const pending = deferred<boolean>();
-    const { update, resolveNext, onActiveChange, result } = setup({ navigate: () => pending.promise });
+    const { update, resolveNext, onActiveChange, result } = setup({
+      navigate: () => pending.promise,
+    });
     await advance(500);
     update({ taskId: null, sceneId: undefined, frameState: { taskId: null, status: "loading" } });
     await advance(2_000);
@@ -206,7 +211,9 @@ describe("useScenePlayback", () => {
 
   it("times out one continuous wait across summary resolution, navigation, and resources", async () => {
     const summary = deferred<ScenePlaybackTarget | null>();
-    const { result, navigate, update, onActiveChange } = setup({ resolveNext: () => summary.promise });
+    const { result, navigate, update, onActiveChange } = setup({
+      resolveNext: () => summary.promise,
+    });
     await advance(500);
     await advance(10_000);
     await act(async () => summary.resolve(nextFrame));
@@ -218,7 +225,11 @@ describe("useScenePlayback", () => {
     expect(onActiveChange).toHaveBeenCalledTimes(1);
     expect(onActiveChange).toHaveBeenCalledWith(false);
     expect(result.current.error).toContain("15 秒");
-    update({ taskId: "task-2", sceneId: "scene-1", frameState: { taskId: "task-2", status: "ready" } });
+    update({
+      taskId: "task-2",
+      sceneId: "scene-1",
+      frameState: { taskId: "task-2", status: "ready" },
+    });
     await advance(1_000);
     expect(navigate).toHaveBeenCalledTimes(1);
   });
@@ -242,7 +253,9 @@ describe("useScenePlayback", () => {
     update({
       active: true,
       frameState: { taskId: "task-1", status: "ready" },
-      resolveNext: async () => { throw new Error("摘要请求失败"); },
+      resolveNext: async () => {
+        throw new Error("摘要请求失败");
+      },
     });
     await advance(500);
     expect(result.current.error).toBe("摘要请求失败");

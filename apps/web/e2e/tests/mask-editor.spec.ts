@@ -111,6 +111,7 @@ test.describe("mask editor (I11)", () => {
     ).toBeChecked();
 
     const stage = page.getByTestId("workbench-stage");
+    await expect(stage).toHaveAttribute("data-image-ready", "true", { timeout: 10_000 });
     const box = await stage.boundingBox();
     if (!box) throw new Error("stage boundingBox 不可用");
     // 真实 E2E 图片为 64x48；默认 16px 橡皮会把约 19x14px 的候选整个擦空。

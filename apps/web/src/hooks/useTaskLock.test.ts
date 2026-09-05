@@ -39,7 +39,9 @@ async function settle() {
 describe("useTaskLock", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.mocked(tasksApi.acquireLock).mockReset().mockImplementation(async (id) => lockFor(id));
+    vi.mocked(tasksApi.acquireLock)
+      .mockReset()
+      .mockImplementation(async (id) => lockFor(id));
     vi.mocked(tasksApi.heartbeatLock).mockReset().mockResolvedValue({ status: "renewed" });
     vi.mocked(tasksApi.releaseLockKeepalive).mockReset().mockResolvedValue(undefined);
   });
@@ -51,10 +53,9 @@ describe("useTaskLock", () => {
   });
 
   it("releases on preview and never acquires or heartbeats while disabled", async () => {
-    const { result, rerender } = renderHook(
-      ({ taskId, enabled }) => useTaskLock(taskId, enabled),
-      { initialProps: { taskId: "a", enabled: true } },
-    );
+    const { result, rerender } = renderHook(({ taskId, enabled }) => useTaskLock(taskId, enabled), {
+      initialProps: { taskId: "a", enabled: true },
+    });
     await settle();
     expect(result.current.isLocked).toBe(true);
     rerender({ taskId: "a", enabled: false });

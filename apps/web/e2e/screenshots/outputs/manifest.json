@@ -943,44 +943,6 @@
       "width": 1440,
       "height": 900
     },
-    "docs-site/user-guide/images/sam/ai-inspector-panel.png": {
-      "auto": true,
-      "target": "docs-site/user-guide/images/sam/ai-inspector-panel.png",
-      "scene": "sam/ai-inspector-panel",
-      "source": "apps/web/e2e/screenshots/scenes/workbench-ai.ts",
-      "capture": {
-        "kind": "locator",
-        "selector": "[data-testid=\"ai-prediction-popover\"]",
-        "padding": 8
-      },
-      "fixture": {
-        "project": "image_demo",
-        "task": "predicted",
-        "backend": "image_interactive",
-        "capabilities": [
-          "task:interactive_seg"
-        ]
-      },
-      "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-08-e",
-      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
-      "browser": {
-        "name": "chromium",
-        "version": "147.0.7727.15"
-      },
-      "project": "desktop-dark",
-      "viewport": {
-        "width": 1440,
-        "height": 900
-      },
-      "theme": "dark",
-      "locale": "zh-CN",
-      "generated_at": "2026-08-15T06:33:19.854Z",
-      "provenance": "current-run",
-      "sha256": "072d45f4ed46b8ea258e675360469f2373b619434088f32a03f441f1021852cb",
-      "width": 376,
-      "height": 824
-    },
     "docs-site/user-guide/images/sam/exemplar-output-mode.png": {
       "auto": true,
       "target": "docs-site/user-guide/images/sam/exemplar-output-mode.png",
@@ -1746,42 +1708,6 @@
       "generated_at": "2026-08-15T06:33:19.854Z",
       "provenance": "current-run",
       "sha256": "05b2dcf578c691b3611d71f7f97e4ed6e9140d7d65d343ebf5dd0e2012efe194",
-      "width": 1440,
-      "height": 900
-    },
-    "docs-site/user-guide/images/video-propagate/ai-tracking-panel.png": {
-      "auto": true,
-      "target": "docs-site/user-guide/images/video-propagate/ai-tracking-panel.png",
-      "scene": "workbench/video-ai-tracking-panel",
-      "source": "apps/web/e2e/screenshots/scenes/workbench-media.ts",
-      "capture": {
-        "kind": "viewport"
-      },
-      "fixture": {
-        "project": "video_demo",
-        "task": "tracking",
-        "backend": "video_tracker",
-        "capabilities": [
-          "task:tracker"
-        ]
-      },
-      "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-08-e",
-      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
-      "browser": {
-        "name": "chromium",
-        "version": "147.0.7727.15"
-      },
-      "project": "desktop-dark",
-      "viewport": {
-        "width": 1440,
-        "height": 900
-      },
-      "theme": "dark",
-      "locale": "zh-CN",
-      "generated_at": "2026-08-15T06:33:19.854Z",
-      "provenance": "current-run",
-      "sha256": "f8d307851e6daf07d382fb9f51ff8283d30f09d9f50774a397a176356ba865ef",
       "width": 1440,
       "height": 900
     },
