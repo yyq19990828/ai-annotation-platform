@@ -1,295 +1,140 @@
-# CLAUDE.md
+# Repository instructions
 
-Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
+`AGENTS.md` links to this file. Keep that link and maintain one shared set of instructions. Write this file in English; replies may use the user's language, and other files follow project conventions.
 
-**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+## Execution and decisions
 
-## 0. Write in English
+- Complete the requested outcome, including implementation, relevant docs, and verification. For multi-step work, state a brief plan with observable success criteria; execute small tasks directly.
+- Resolve routine, reversible choices from context and state consequential assumptions. Ask only when missing information materially changes correctness, scope, or authorization; continue independent work meanwhile.
+- Carry existing authorization forward. If approval is still needed, first prepare the authorized work for review. Do not add approval steps for hypothetical risks.
+- Subject to system and developer instructions, explicit user requests override this file and skill guidance. If a skill blocks progress, cite its exact file and instruction and explain why it applies.
+- Incorporate corrections and answer side questions while retaining the active objective, unless the user cancels or replaces it.
+- Report the result first, then relevant validation and remaining limitations. Use concise, plain language and readable agent messages; avoid repetitive updates and unnecessary formatting.
 
-**All content in this file (CLAUDE.md) must be written in English.** Do not mix in other languages. This rule applies only to CLAUDE.md itself — other docs, code comments, and commit messages follow the project's existing conventions, and replying to the user in their language is fine.
+## Understand before editing
 
-## 1. Think Before Coding
+- Read the affected code and relevant docs. Trace callers and shared behavior before fixing a bug; fix the cause where the affected paths converge.
+- Design for extensibility as well as current requirements. Reuse existing helpers, patterns, standard libraries, and installed dependencies when they fit; the smallest implementation is not always the preferred design.
+- Over-engineering is allowed to expand capabilities: introduce forward-looking abstractions, extension points, modular layers, and configuration even before multiple implementations or consumers exist. Briefly explain which extensions the design enables and its maintenance cost.
+- Keep added complexity connected to extension goals. Preserve compatibility, required validation, security, accessibility, and protection against data loss.
+- Refactoring and structural changes needed for the intended extension architecture are in scope. Match existing style, preserve unrelated work, and remove only imports, variables, or functions made unused by your changes. Mention relevant unrelated problems without silently fixing them.
+- Use `rg` / `rg --files` for focused searches. Read the documentation index below as a routing map, not a requirement to load every document.
 
-**Don't assume. Don't hide confusion. Surface tradeoffs.**
+## Verification and completion
 
-Before implementing:
+- Use checks that exercise changed behavior. For bugs and non-trivial logic, add or adapt the smallest meaningful regression check using existing test infrastructure.
+- For low-impact edits, inspect the diff and run applicable lightweight checks. Do not add tests that merely repeat the implementation.
+- Run required checks. Expand or repeat validation only after changes, failures, or unresolved concerns.
+- Check `git diff --check` and review the final diff for accidental changes. Distinguish passing checks from checks blocked by missing dependencies or services; never claim unrun checks passed.
+- The task is complete when the requested behavior, related docs, and relevant checks are handled. Report any remaining blocker precisely.
 
-- State your assumptions explicitly. If uncertain, ask.
-- If multiple interpretations exist, present them - don't pick silently.
-- If a simpler approach exists, say so. Push back when warranted.
-- If something is unclear, stop. Name what's confusing. Ask.
+## Parallel subagents and worktrees
 
-## 2. Simplicity First
+- Proactively delegate independent, bounded tasks when parallel work saves time or improves quality. Dispatch independent tasks together and keep useful work in the main process. Avoid duplicating the same investigation.
+- Read-only agents can share the checkout. Every code-modifying agent must have a separate worktree based on the current local `HEAD`, including unpushed commits.
+- Use native worktree isolation when available: in Claude Code, `isolation: "worktree"` and `.claude/settings.json` with `worktree.baseRef: "head"`. Otherwise, create the worktree explicitly before dispatch, give the agent its absolute path, and require all edits there. If isolation cannot be provided, do the edits in the main process.
+- Give each modifying agent a bounded scope and require a real commit on its `worktree-agent-*` branch before finishing. Its report must include the commit hash and summary.
+- The main process integrates those commits into the originating branch and runs validation in the environment that has the dependencies and services. Do not force `pnpm` / `uv run` checks in unequipped agent worktrees; verify that an environment exists if checks must run before integration.
+- `.claude/hooks/guard-worktree-paths.mjs` guards edit-tool writes only for Claude sessions inside `.claude/worktrees/`; it does not guard shell writes or other runtimes. Keep every agent's writes inside its assigned worktree regardless of hook coverage.
+- After successful integration, remove only the task's clean worktrees and merged branches with `git worktree remove`, `git worktree prune`, and `git branch -d`. Preserve unmerged or uncommitted work.
 
-**Minimum code that solves the problem. Nothing speculative.**
+## Frontend theme rules
 
-- No features beyond what was asked.
-- No abstractions for single-use code.
-- No "flexibility" or "configurability" that wasn't requested.
-- No error handling for impossible scenarios.
-- If you write 200 lines and it could be 50, rewrite it.
+The token source is `apps/web/src/styles/shadcn.css`; the palette reference is [design-system.md](docs-site/dev/reference/design-system.md). Tailwind semantic classes map to runtime `--sc-*` tokens through `@theme inline`.
 
-Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+1. Prefer semantic classes such as `bg-card`, `text-foreground`, `text-muted-foreground`, `border-border`, `bg-primary`, and `text-brand`.
+2. CSS modules may read `var(--sc-*)`, never legacy `var(--color-*)` variables.
+3. Do not put arbitrary or bare colors in `className`, including hex, `rgb(...)`, or `oklch(...)`. Canvas/data-domain colors and shadow/overlay-specific rgba are narrow exceptions.
+4. Use theme-aware status utilities such as `text-status-danger bg-status-danger-soft`. Status tokens already cover both themes; do not substitute paired hue classes such as `text-rose-600 dark:text-rose-400`.
+5. Dark mode uses `data-theme` and Tailwind `dark:` variants. Do not introduce a `.dark` selector.
 
-## 3. Surgical Changes
+`pnpm lint` includes the token gate. Run it separately with `pnpm --filter @anno/web lint:css-tokens` (`apps/web/scripts/check-tw-tokens.mjs`).
 
-**Touch only what you must. Clean up only your own mess.**
+## Documentation and changelog
 
-When editing existing code:
+Before each commit, check documentation impact and update affected docs in the same change:
 
-- Don't "improve" adjacent code, comments, or formatting.
-- Don't refactor things that aren't broken.
-- Match existing style, even if you'd do it differently.
-- If you notice unrelated dead code, mention it - don't delete it.
+| Change                      | Documentation to check or update                                    |
+| --------------------------- | ------------------------------------------------------------------- |
+| API                         | `docs-site/api/`, `README.md`                                       |
+| Feature or user-visible fix | `docs-site/user-guide/`, `CHANGELOG.md`                             |
+| Architecture                | `docs-site/dev/concepts/`; add an ADR in `docs/adr/` when warranted |
+| Environment variable        | `.env.example`, then `pnpm docs:gen-env-vars`; check `DEV.md`       |
+| Removed or renamed symbol   | Search all `*.md` for its old name and fix affected references      |
 
-When your changes create orphans:
+Docs describe the current system. Do not expose `vX.Y.Z` provenance in rendered prose, headings, or tables; use HTML comments or YAML frontmatter if needed. Exceptions: `CHANGELOG.md`, `docs/adr/**`, `docs-site/dev/adr/**`, and `*.generated.md`. Undotted versions such as Node v18+, `/v1/` routes, and the v2 protocol are allowed.
 
-- Remove imports/variables/functions that YOUR changes made unused.
-- Don't remove pre-existing dead code unless asked.
+`node scripts/check-doc-version-prefix.mjs --staged` is advisory, not a blocking gate.
 
-The test: Every changed line should trace directly to the user's request.
+`CHANGELOG.md` follows Keep a Changelog 1.1.0:
 
-## 4. Goal-Driven Execution
+- Put routine features and user-visible fixes under the top `## [Unreleased]` in the same commit as the change. Pure refactors, tests, formatting, and other work with no user impact may skip an entry.
+- Group entries in this order, omitting empty groups: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security` (level-three headings).
+- Explain what changed and why it matters; a fix names the user-visible symptom. Keep released sections newest first as `## [x.y.z] - YYYY-MM-DD`, without repeating version numbers in entry text.
 
-**Define success criteria. Loop until verified.**
+When creating a plan file in plan mode, use `yyyy-mm-dd-<topic>.md`; for version-related plans, use `yyyy-mm-dd-vx.y.z-<topic>.md`.
 
-Transform tasks into verifiable goals:
+## Releases
 
-- "Add validation" → "Write tests for invalid inputs, then make them pass"
-- "Fix the bug" → "Write a test that reproduces it, then make it pass"
-- "Refactor X" → "Ensure tests pass before and after"
+Only perform a version bump as part of a requested release. `CHANGELOG.md` is the version source of truth.
 
-For multi-step tasks, state a brief plan:
+1. Promote `## [Unreleased]` to `## [x.y.z] - YYYY-MM-DD` and add a fresh empty `## [Unreleased]` above it.
+2. In the same release commit, update `app_version` in `apps/api/app/config.py`, `[project].version` in `apps/api/pyproject.toml`, and `version` in `apps/web/package.json`.
+3. Regenerate the `anno-api` version in `apps/api/uv.lock` with `uv lock` or `uv sync` from `apps/api`; do not edit the lockfile by hand.
+4. Let the pre-commit hook regenerate `apps/api/openapi.snapshot.json`, including `info.version`; use `pnpm openapi:export` if the hook is unavailable, and verify with `pnpm openapi:check`. Do not hand-edit the snapshot or invoke `dump-openapi.py` for it. The docs build copies it to `docs-site/public/openapi.json`.
+5. Verify the running API reports the new version via `curl -s localhost:8000/health`; both FastAPI metadata and `/health` read `app_version`.
 
-```
-1. [Step] → verify: [check]
-2. [Step] → verify: [check]
-3. [Step] → verify: [check]
-```
+## Local runtime: reload, restart, or rebuild
 
-Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+Check the actual Compose services and mounts before acting. Code mounted into a container needs a process restart; code and dependencies baked into an image need a rebuild.
 
-## 5. Pre-Commit Documentation Check
+| Change                                                                                                                   | Action in the development environment                                                                          |
+| ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| Host API code under `apps/api/**`                                                                                        | `uvicorn --reload` reloads Python code                                                                         |
+| Frontend under `apps/web/src/**`                                                                                         | Vite HMR applies changes                                                                                       |
+| Source used by Celery                                                                                                    | Restart affected running workers and beat as applicable; Celery does not auto-reload                           |
+| Runtime `.env` values                                                                                                    | Recreate affected containers with `docker compose up -d <services>`; restart affected host processes           |
+| Alembic migration                                                                                                        | Apply `alembic upgrade head` in the configured API environment; restarting alone does not migrate the database |
+| Dependency manifests/locks, Dockerfile, `.dockerignore`, base image, build configuration, or source copied into an image | Rebuild and recreate affected services                                                                         |
 
-**Before every versioned commit, check whether related docs need to be updated in sync.**
-
-When the following changes occur, you must check the corresponding docs:
-
-- Added/changed API → check `docs-site/api/`, `README.md`
-- Added/changed feature → check `docs-site/user-guide/`, `CHANGELOG.md`
-- Architecture change → check `docs-site/dev/concepts/`, add an ADR if needed (`docs/adr/`)
-- Environment variable change → update `.env.example`, run `pnpm docs:gen-env-vars`, check `DEV.md`
-
-## 6. Frontend Color Rules (prevent dark-mode breakage)
-
-**Single source of truth: `apps/web/src/styles/shadcn.css`.**
-
-The app now uses Tailwind CSS plus shadcn/ui tokens. Neutral surfaces, text, borders, radius, focus rings, and canvas-only theme values live under `--sc-*`. Tailwind semantic classes are mapped from those runtime tokens in `@theme inline`.
-
-Follow these rules when writing component UI:
-
-1. **Use semantic classes first**: prefer `bg-card`, `text-foreground`, `text-muted-foreground`, `border-border`, `bg-primary`, `text-brand`, and the fixed semantic color palette documented in `docs-site/dev/reference/design-system.md`.
-2. **Use `--sc-*` in CSS modules**: remaining CSS modules may read `var(--sc-*)`; they must not read legacy `var(--color-*)` variables.
-3. **No arbitrary or bare colors in className**: do not write `bg-[#...]`, `text-[rgb(...)]`, `#hex`, `rgb(...)`, or `oklch(...)` in class names. Canvas/data-domain colors and shadow/overlay-specific rgba remain narrow exceptions.
-4. **Pair semantic light/dark text**: status text such as `text-rose-600` must include the matching `dark:text-rose-400` unless it is a non-text fill/dot.
-5. **Dark mode is data-theme driven**: use Tailwind `dark:` classes; do not introduce a `.dark` selector.
-
-**CI gate**: `pnpm lint` includes `node scripts/check-tw-tokens.mjs`. Run it standalone with `pnpm lint:css-tokens`.
-
-## 7. Plan File Naming Convention (in /plan mode)
-
-**All plan files must be prefixed with `yyyy-mm-dd-`. If version-related, prefix with `yyyy-mm-dd-vx.y.z`.**
-
-Examples: `2026-05-06-auth-refactor.md`, `2026-05-06-perf-optimization.md`
-
-## 8. Docker: rebuild vs restart
-
-**Rule of thumb: if the change lives inside the image, rebuild. If it lives in a mounted volume, just restart (or do nothing).**
-
-### No rebuild needed (restart only, or hot-reload)
-
-| Change                                                                   | Action                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Python business code under `apps/api/**` incl. `app/**` and `alembic/**` | dev API runs on host (`uvicorn --reload`) and auto-reloads. Since v0.10.25 the Celery `worker`/`beat` mounts `./apps/api:/app` source into the container (deps installed with `--system`, not under `/app`; an anonymous volume `/app/.venv` shadows the host venv), so **editing worker business code / adding an alembic migration only needs `docker restart`, no rebuild**. Celery has no `--reload`, so you still must restart after editing code. |
-| Frontend `apps/web/src/**` with vite dev server                          | HMR handles it                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| Runtime env vars in `.env`                                               | `docker compose up -d` (recreates container, does not rebuild image)                                                                                                                                                                                                                                                                                                                                                                                    |
-| DB schema changes via alembic                                            | `docker exec ... alembic upgrade head`                                                                                                                                                                                                                                                                                                                                                                                                                  |
-
-### Rebuild required (`docker compose build` or `up --build`)
-
-| Change                                                                    | Reason                                   |
-| ------------------------------------------------------------------------- | ---------------------------------------- |
-| `pyproject.toml` / `uv.lock` / `requirements.txt`                         | Dependencies are baked into image layers |
-| `package.json` / `pnpm-lock.yaml`                                         | Same                                     |
-| `Dockerfile`, `.dockerignore`                                             | Build steps changed                      |
-| Base image version (`FROM python:3.x`)                                    | Base layer changed                       |
-| `docker-compose.yml` `build:` block, build args, `COPY` paths             | Build context changed                    |
-| Code is NOT volume-mounted (production-style image with `COPY` of source) | Image holds a frozen snapshot            |
-
-### Quick reference
+Celery services mount `./apps/api:/app`, install dependencies outside that source mount, and mask the host `.venv` with an anonymous `/app/.venv` volume. Check `docker-compose.yml` for the affected default, GPU, CPU, export, image-pyramid, or GPU-control workers. Shared worker code can require restarting several services, not just `celery-worker`.
 
 ```bash
-# Business code only (dev with volume mount)
-docker restart ai-annotation-platform-celery-worker-1
+# Example for the default worker; select every affected service.
+docker compose restart celery-worker
 
-# Dependency or Dockerfile change
-docker compose build celery-worker && docker compose up -d celery-worker
-
-# Verify the running container actually has the latest code
-docker exec ai-annotation-platform-celery-worker-1 \
-  python -c "import inspect, app.workers.tasks as t; print(inspect.signature(t.batch_predict))"
+# When image contents change:
+docker compose build celery-worker
+docker compose up -d celery-worker
 ```
 
-**Common pitfall:** Celery workers silently run stale code after editing a task signature, because Celery has no `--reload` equivalent. Symptom is dispatch-time `TypeError` on new kwargs while source on disk looks correct. Always restart the worker container after editing files under `apps/api/app/workers/`.
+After changes under `apps/api/app/workers/`, restart affected running workers and verify the changed task or signature inside the running container. A dispatch-time `TypeError` about new keyword arguments can mean the worker still runs old code.
 
-## 9. Documentation Writing Style (no user-visible version numbers)
+## Frontend bug investigation
 
-**Docs must read as the CURRENT state of the system — not as a changelog.** A reader should never see a `vX.Y.Z`-style version number in the rendered page. When you update a doc after a code change, weave the change into the prose so the page describes how things work _now_; do not leave version annotations behind — neither changelog-style prefixes nor inline provenance:
+Use Chrome DevTools MCP when available, or the available browser tooling, to inspect recent API calls and console errors along with the affected flow.
 
-- ❌ `v1.2.3: added the foo flag`
-- ❌ `## v1.2.3` as a section heading in a guide/concept doc
-- ❌ `端点 X（v0.14.11）` / `**邮箱验证（v0.12.0+）**` — inline "since version" provenance in prose, headings, or tables
-
-If version provenance genuinely matters, record it where readers don't see it — an **HTML comment** or YAML **frontmatter** (both invisible in the rendered page):
-
-- ✅ `The foo flag controls X. <!-- since v1.2.3 -->`
-- ✅ frontmatter `since: v1.2.3`
-
-**Exempt** (version content is fine there): `CHANGELOG.md`, `docs/adr/**`, `docs-site/dev/adr/**`, generated `*.generated.md`; HTML comments and frontmatter anywhere. Version tokens without a dot are not flagged (e.g. "requires Node v18+", a `/v1/` route, "the v2 protocol").
-
-**Advisory check (does not block):** `scripts/check-doc-version-prefix.mjs` scans changed docs (`docs-site/**`, `README.md`, `DEV.md`) for this pattern. It runs as a `pre-commit` hook (`--staged`, prints a reminder, never fails) and in the `Claude Docs Impact` PR workflow (emits `::warning::` annotations + a `style_warnings` line in the PR comment). Run standalone: `node scripts/check-doc-version-prefix.mjs --staged`.
-
-## 10. Version Bump (keep all sources in sync)
-
-**`CHANGELOG.md` is the source of truth for the version number.** Several other files carry a copy of it and have historically drifted (they sat stale at `0.12.x` while CHANGELOG was already at `0.17.x`). When you cut a release, bump every copy to match CHANGELOG in the same commit.
-
-Edit by hand:
-
-- `CHANGELOG.md` — promote `## [Unreleased]` to the new `## [x.y.z] - date` section, then leave a fresh empty `## [Unreleased]` on top (see section 11 for the workflow). This section is the version-number truth.
-- `apps/api/app/config.py` — `app_version` (single runtime source: FastAPI title version **and** `/health` both read it).
-- `apps/api/pyproject.toml` — `[project].version`.
-- `apps/web/package.json` — `version`.
-
-Regenerated, do **not** hand-edit:
-
-- `apps/api/uv.lock` — `anno-api` version: refresh via `uv lock` (or `uv sync`) after editing pyproject.
-- `apps/api/openapi.snapshot.json` — `info.version`: regenerated by the pre-commit hook; the docs build copies this snapshot to `public/openapi.json` (do not run `dump-openapi.py` manually).
-
-Verify the running stack actually serves the new number: `curl -s localhost:8000/health` should report it.
-
-## 11. Changelog (Keep a Changelog 1.1.0)
-
-`CHANGELOG.md` follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/). Two non-negotiable rules:
-
-**Group every entry by change type.** Never dump everything under one `### Changed`. Use these headings, in this order, omitting empty ones:
-
-`### Added` · `### Changed` · `### Deprecated` · `### Removed` · `### Fixed` · `### Security`
-
-Write for humans, not machines: each entry says _what_ changed and _why_ it matters; a `Fixed` entry names the user-visible symptom. Keep the same `## [x.y.z] - YYYY-MM-DD` per-version section convention; latest version first; no version numbers in section bodies beyond the heading.
-
-**Daily changes land in `## [Unreleased]`, not in a dated section.** The top of the file always carries an `## [Unreleased]` block. Routine work — including ordinary bug fixes — adds its entry there under the right type heading _in the same commit as the code change_ (this supersedes the older "skip CHANGELOG for ordinary bug fixes" guidance). Trivial/no-user-impact churn (pure refactors, test-only, formatting) may still be skipped.
-
-**On release, fold and clear.** When cutting `x.y.z`, rename the `## [Unreleased]` heading to `## [x.y.z] - YYYY-MM-DD`, then add a new empty `## [Unreleased]` above it. Do the version-source bumps from section 10 in the same release commit.
-
-```
-## [Unreleased]
-
-## [0.20.0] - 2026-07-15
-### Added
-- ...
-### Fixed
-- ...
-```
-
-## Parallel Subagent Worktree Rule
-
-- When dispatching any subagent (the `Agent` tool) that will **modify code**, always pass `isolation: "worktree"` so the agent works in its own git worktree (auto-cleaned if it makes no changes).
-- Read-only / search-only subagents (e.g. `Explore`, pure lookups) do **not** need a worktree.
-- **When the main process spots independent, parallelizable tasks, proactively split them out and dispatch subagents to run in parallel** — don't serialize work that could run concurrently. Put the independent (dependency-free) subagent calls in a single message so they actually run concurrently.
-- **A code-modifying subagent MUST commit its work as a git commit before finishing** (a real commit on its `worktree-agent-*` branch, not just leftover uncommitted changes). State this explicitly in the subagent's prompt. This lets the main process merge/cherry-pick a clean branch instead of fishing uncommitted edits out of the worktree, and makes "what did this agent change" auditable via `git log`/`git diff`. The subagent should still report its commit hash + summary back.
-- **Worktree base**: code-modifying subagent worktrees branch from the current local `HEAD` (set `worktree.baseRef: "head"` in `.claude/settings.json`), so they inherit unpushed local commits. Without this they default to `origin/HEAD` and silently start stale.
-- **Subagent tests/validation run in the main process**: a code-modifying subagent edits files and commits its branch; it does **not** need to run `pnpm` / `uv run` checks. Run all validation in the **main process after** the branch is merged. (The subagent may still run `git` to commit — see above.)
-- **No forced testing inside a worktree (when the env isn't there)**: a worktree often lacks the running environment (Docker stack, installed deps, dev servers, DB), so don't force tests/validation to run inside it just to "prove" the change — a failure there usually means "no environment", not "broken code", and burns time chasing a false signal. **Strongly prefer merging the branch back into the pre-fork `HEAD` branch first, then test there**, where the real environment lives. If you genuinely must validate before merging, say so and confirm the env exists rather than assuming the worktree can run it.
-- **Worktree path-escape guard hook**: a `PreToolUse` hook (`.claude/hooks/guard-worktree-paths.mjs`, matcher `Edit|Write|MultiEdit|NotebookEdit`) denies any file write whose resolved target escapes the worktree subtree **only when the session cwd is inside `.claude/worktrees/`** — a safety net against harness path-resolution bugs leaking subagent edits into the main repo. Bash is intentionally NOT guarded (subagents need `git commit`, and an over-broad Bash ban also wedged the main agent). The main agent (cwd = repo root) is unaffected.
-- **After a subagent's branch is merged back into the main branch, remember to delete its local worktree** (`git worktree remove <path>`, plus `git worktree prune` and deleting the `worktree-agent-*` branch if needed) to avoid piling up locked leftovers under `.claude/worktrees/`.
-
-## Keep Docs in Sync
-
-- When code changes affect documented behavior, update the relevant docs **in the same change** — not in a follow-up.
-- Removed/renamed symbols → grep all `*.md` for the old name and fix every reference. Stale doc links are bugs.
-
----
-
-**These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
-
----
-
-## BUG Report Queries
-
-BUG reports submitted by users via the frontend BugReportDrawer are stored in the PostgreSQL `bug_reports` table.
-Since the local API has no ready-made auth token, query directly via psql inside Docker:
+Reports from `BugReportDrawer` live in PostgreSQL's `bug_reports` table. If no API token is available, use read-only queries in the active local Compose project:
 
 ```bash
-docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
+docker compose exec -T postgres psql -U user -d annotation -c \
   "SELECT display_id, title, severity, status, created_at FROM bug_reports ORDER BY created_at DESC LIMIT 20;"
-```
 
-To view full details (including description, API call log, console errors, etc.):
-
-```bash
-docker exec ai-annotation-platform-postgres-1 psql -U user -d annotation -c \
+docker compose exec -T postgres psql -U user -d annotation -c \
   "SELECT display_id, title, description, severity, status, route, browser_ua, recent_api_calls, recent_console_errors FROM bug_reports WHERE display_id = 'B-1';"
 ```
 
-## For frontend bugs, make good use of the chrome devtools MCP to inspect recent API calls and console errors to help locate the problem.
+## Documentation index
 
-## Project Documentation Index
+Consult only the entries needed for the task:
 
-Read the following docs before development to understand the whole project.
+- [README.md](README.md): product overview and setup; [DEV.md](DEV.md): local commands and development workflow; [CHANGELOG.md](CHANGELOG.md): unreleased and released changes.
+- [docs-site/user-guide/](docs-site/user-guide/): workbench, projects, review, and administration behavior.
+- [docs-site/dev/](docs-site/dev/): tutorials, concepts, how-to guides, references, and troubleshooting. Architecture lives in `dev/concepts/`; protocol and environment specifications in `dev/reference/`.
+- [docs-site/ops/](docs-site/ops/): deployment, observability, security, and runbooks; [docs-site/api/](docs-site/api/): generated API reference.
+- [docs/adr/README.md](docs/adr/README.md): architecture decisions; [docs/plans/README.md](docs/plans/README.md): implementation plans.
+- [docs/research/README.md](docs/research/README.md): research index for annotation tools, AI integration, datasets, multimodal fusion, and annotator performance.
 
-### Core Docs
+Preview the documentation with `pnpm docs:dev` (normally `http://localhost:5173`).
 
-- [README.md](README.md) — repository entry point
-- [DEV.md](DEV.md) — quick reference (full dev docs have moved to docs-site)
-- [CHANGELOG.md](CHANGELOG.md) — version change log + planned Roadmap
-
-### VitePress Documentation Site (docs-site/)
-
-Organized by the [Diátaxis](https://diataxis.fr/) framework, layered by role × task.
-
-- [docs-site/user-guide/](docs-site/user-guide/) — user manual (by function: workbench / projects / review / superadmin), audience-separated in the sidebar
-- [docs-site/dev/](docs-site/dev/) — dev docs (tutorials / concepts / how-to / reference / troubleshooting)
-- [docs-site/ops/](docs-site/ops/) — deployment & ops (deploy / observability / security / runbooks)
-- [docs-site/api/](docs-site/api/) — backend API docs (auto-rendered from OpenAPI)
-
-Key paths:
-
-- Architecture docs: `docs-site/dev/concepts/` (formerly `dev/architecture/`)
-- Protocol specs: `docs-site/dev/reference/` (includes env-vars.md / ml-backend-protocol.md)
-- Environment variable changes → update `.env.example` in sync, then run `pnpm docs:gen-env-vars` to regenerate `dev/reference/env-vars.md`
-
-Local preview: `pnpm docs:dev` → http://localhost:5173
-
-### Architecture Decisions (docs/adr/)
-
-- [README.md](docs/adr/README.md) — guide to writing ADRs
-- [0001-record-architecture-decisions.md](docs/adr/archive/0001-record-architecture-decisions.md)
-
-### Research Reports (docs/research/)
-
-- [README.md](docs/research/README.md) — research report summaries and overview
-- [01-label-studio.md](docs/research/01-label-studio.md) — Label Studio deep dive
-- [02-adala.md](docs/research/02-adala.md) — Adala LLM Agent framework analysis
-- [03-cvat.md](docs/research/03-cvat.md) — CVAT deep dive
-- [04-x-anylabeling.md](docs/research/04-x-anylabeling.md) — X-AnyLabeling analysis
-- [05-commercial.md](docs/research/05-commercial.md) — commercial product trends
-- [06-ai-patterns.md](docs/research/06-ai-patterns.md) — summary of AI integration patterns
-- [07-production-capabilities.md](docs/research/07-production-capabilities.md) — production-grade capability comparison
-- [08-comparison-matrix.md](docs/research/08-comparison-matrix.md) — feature comparison matrix
-- [09-recommendations.md](docs/research/09-recommendations.md) — adoption recommendations
-- [10-roadmap.md](docs/research/10-roadmap.md) — roadmap
-- [11-references.md](docs/research/11-references.md) — references
-- [12-large-dataset-batching.md](docs/research/12-large-dataset-batching.md) — large-dataset batching strategy
-- [13-simplify-tolerance-eval.md](docs/research/13-simplify-tolerance-eval.md) — mask→polygon simplify tolerance evaluation
-- [14-point-cloud-image-fusion.md](docs/research/14-point-cloud-image-fusion.md) — point-cloud + image joint annotation: fusion principles, tool comparison, and platform gap analysis
-- [15-annotator-performance.md](docs/research/15-annotator-performance.md) — annotator performance benchmarking: metric taxonomy from CVAT/Label Studio source + 6 commercial products, gap analysis (IAA/honeypot/project scoping/export)
+<!-- Behavioral guidance adapted from https://developers.openai.com/api/docs/guides/latest-model?model=gpt-6-astra, reviewed 2026-09-05. Project rules are maintained against this repository. -->
