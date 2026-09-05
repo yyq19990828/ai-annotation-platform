@@ -4,9 +4,21 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+import tomllib
 
 
 script = Path(__file__).with_name("orca-worktree-setup.sh").resolve()
+# Workspace startup must not compile legacy FreeType on Python 3.12 / Apple Silicon.
+lock = tomllib.loads((script.parent.parent / "apps/api/uv.lock").read_text())
+matplotlib = next(
+    package for package in lock["package"] if package["name"] == "matplotlib"
+)
+assert any(
+    "cp312-cp312-macosx_" in wheel["url"]
+    and wheel["url"].endswith(("_arm64.whl", "_universal2.whl"))
+    for wheel in matplotlib.get("wheels", [])
+), f"Matplotlib {matplotlib['version']} has no Python 3.12 macOS ARM64 wheel in uv.lock"
+
 with tempfile.TemporaryDirectory(prefix="orca setup ") as temporary:
     base = Path(temporary)
     root, worktree, binaries = (base / name for name in ("primary", "worktree", "bin"))
