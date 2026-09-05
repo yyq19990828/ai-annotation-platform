@@ -5,6 +5,7 @@
  * 旁边平铺各相机图(只读,不画投影框 —— 投影联动是 v0.13.4)。与 Konva 2D 工作台双栈隔离。
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { isWorkbenchSettingsInteractionBlocked } from "../../state/workbenchSettingsInteraction";
 import type { CSSProperties } from "react";
 
 import type {
@@ -969,6 +970,7 @@ export function ThreeDWorkbench({
   useEffect(() => {
     if (readOnly) return;
     const onKey = (e: KeyboardEvent) => {
+      if (isWorkbenchSettingsInteractionBlocked(e)) return;
       // v0.14.1 · 阻断按住 Shift+→ 的 auto-repeat: 否则连发多个 propagate POST,
       // 在目标帧造出共享同一新 track_id 的重复 annotation。
       if (e.repeat) return;
@@ -1093,6 +1095,7 @@ export function ThreeDWorkbench({
   // B/P/M 切工具；Enter 完成多边形或测量；V/Esc 回选择或取消当前测量草稿。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (isWorkbenchSettingsInteractionBlocked(e)) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
       if (e.key === "Enter" && measuring) {
@@ -1312,6 +1315,7 @@ export function ThreeDWorkbench({
   useEffect(() => {
     if (!selectedId || !selectedPsrEditable) return;
     const onKey = (e: KeyboardEvent) => {
+      if (isWorkbenchSettingsInteractionBlocked(e)) return;
       if (e.key !== "q" && e.key !== "Q") return;
       if (e.ctrlKey || e.metaKey) return;
       const t = e.target as HTMLElement | null;
@@ -1331,6 +1335,7 @@ export function ThreeDWorkbench({
   useEffect(() => {
     if (readOnly || selectedBoxIds.length === 0) return;
     const onKey = (e: KeyboardEvent) => {
+      if (isWorkbenchSettingsInteractionBlocked(e)) return;
       if (e.key !== "Delete" && e.key !== "Backspace") return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
@@ -1607,6 +1612,7 @@ export function ThreeDWorkbench({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (isWorkbenchSettingsInteractionBlocked(e)) return;
       if (!(e.ctrlKey || e.metaKey)) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
@@ -1725,6 +1731,7 @@ export function ThreeDWorkbench({
       lassoPointsRef.current = [];
     };
     const onCancelKey = (e: KeyboardEvent) => {
+      if (isWorkbenchSettingsInteractionBlocked(e)) return;
       if (e.key === "Escape") cancel();
     };
     const onContextMenu = (e: MouseEvent) => {
@@ -2155,6 +2162,7 @@ export function ThreeDWorkbench({
   useEffect(() => {
     if (!enlargedRole) return;
     const onKey = (e: KeyboardEvent) => {
+      if (isWorkbenchSettingsInteractionBlocked(e)) return;
       if (calibrationSheetOpen) return;
       if (e.key === "Escape") {
         if (seedMode) setSeedMode(false);

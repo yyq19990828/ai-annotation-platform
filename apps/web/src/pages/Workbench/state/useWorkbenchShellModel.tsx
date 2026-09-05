@@ -7,6 +7,7 @@ import {
   type ComponentProps,
   type ReactNode,
 } from "react";
+import { isWorkbenchSettingsInteractionBlocked } from "./workbenchSettingsInteraction";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToastStore } from "@/components/ui/Toast";
@@ -957,6 +958,7 @@ export function useWorkbenchShellModel({
     if (!isVideoTask) return;
     if (videoChaptersData.length === 0) return;
     const onKeyDown = (e: KeyboardEvent) => {
+      if (isWorkbenchSettingsInteractionBlocked(e)) return;
       if (e.key !== "PageUp" && e.key !== "PageDown") return;
       const active = document.activeElement;
       if (active instanceof HTMLElement) {
@@ -1492,6 +1494,7 @@ export function useWorkbenchShellModel({
   useEffect(() => {
     if (!isVideoTask) return;
     const onKey = (e: KeyboardEvent) => {
+      if (isWorkbenchSettingsInteractionBlocked(e)) return;
       if (e.key !== "T" || !e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
       const active = document.activeElement;
       if (active instanceof HTMLElement) {
@@ -4909,6 +4912,7 @@ export function useWorkbenchShellModel({
     // popover 打开时让位: 键盘归它 (Esc 关 popover, Enter 选类)。
     if (videoSamPendingAccept) return;
     const handler = (e: KeyboardEvent) => {
+      if (isWorkbenchSettingsInteractionBlocked(e)) return;
       const target = e.target as HTMLElement | null;
       if (
         target?.tagName === "INPUT" ||
@@ -5429,6 +5433,7 @@ export function useWorkbenchShellModel({
     submitPolyline,
     updateMutation: { mutate: (vars) => updateAnnotationMut.mutate(vars) },
     taskId,
+    disabled: workbenchSettingsOpen,
     ignoredKeys: stageKind === "3d" ? threeDOwnedKeys : undefined,
     videoMode: isVideoTask,
     samplingActive,
@@ -6491,7 +6496,10 @@ export function useWorkbenchShellModel({
         : (topbarActions.onSubmit ?? handleSubmitTask),
       onSmartNextOpen: topbarActions.onSmartNextOpen,
       onSmartNextUncertain: topbarActions.onSmartNextUncertain,
-      onOpenWorkbenchSettings: () => setWorkbenchSettingsOpen(true),
+      onOpenWorkbenchSettings: () => {
+        videoControlsRef.current?.pausePlayback({ snapToGrid: false });
+        setWorkbenchSettingsOpen(true);
+      },
       canWithdraw: topbarActions.canWithdraw,
       canReopen: topbarActions.canReopen,
       isWithdrawing: topbarActions.isWithdrawing,

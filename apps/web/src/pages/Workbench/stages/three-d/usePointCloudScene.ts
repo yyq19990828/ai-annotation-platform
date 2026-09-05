@@ -16,6 +16,7 @@ import {
   type MutableRefObject,
   type RefObject,
 } from "react";
+import { isWorkbenchSettingsInteractionBlocked } from "../../state/workbenchSettingsInteraction";
 
 import type { PointcloudCameraState } from "@/api/auth";
 import type { WorkbenchLayoutPatch } from "@/pages/Workbench/state/useWorkbenchConfig";
@@ -404,6 +405,7 @@ export function usePointCloudScene(params: UsePointCloudSceneParams): UsePointCl
   useEffect(() => {
     if (!selectedId || !selectedPsrEditable) return;
     const onKey = (e: KeyboardEvent) => {
+      if (isWorkbenchSettingsInteractionBlocked(e)) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
       const mode =
