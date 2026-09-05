@@ -4,6 +4,7 @@ import {
   SCENE_TIMELINE_MAX_WINDOW,
   densityRatio,
   timelineQueryRange,
+  timelineZoomOffset,
 } from "./sceneTimelineVirtualization";
 
 describe("sceneTimelineVirtualization", () => {
@@ -34,5 +35,16 @@ describe("sceneTimelineVirtualization", () => {
     expect(densityRatio(0, 10)).toBe(0);
     expect(densityRatio(5, 10)).toBe(0.5);
     expect(densityRatio(12, 10)).toBe(1);
+  });
+  it("keeps the current frame or manually browsed center fixed while zooming", () => {
+    const input = {
+      scrollLeft: 400,
+      viewportWidth: 600,
+      oldWidth: 40,
+      newWidth: 80,
+      currentIndex: 12,
+    };
+    expect(timelineZoomOffset({ ...input, followCurrent: true })).toBe(900);
+    expect(timelineZoomOffset({ ...input, followCurrent: false })).toBe(1100);
   });
 });

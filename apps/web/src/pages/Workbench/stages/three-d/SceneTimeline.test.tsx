@@ -6,15 +6,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SceneTimelineFrameSummary, SceneTimelineResponse } from "@/api/generated";
 
 const useSceneTimelineMock = vi.hoisted(() => vi.fn());
+const getSceneTimelineMock = vi.hoisted(() => vi.fn());
 const getPointCloudManifestMock = vi.hoisted(() => vi.fn());
 const prefetchPointCloudFrameAssetsMock = vi.hoisted(() => vi.fn());
 
 vi.mock("@/hooks/useSceneTimeline", () => ({
   useSceneTimeline: useSceneTimelineMock,
+  SCENE_TIMELINE_QUERY_KEY: "scene-timeline",
 }));
 
 vi.mock("@/api/tasks", () => ({
-  tasksApi: { getPointCloudManifest: getPointCloudManifestMock },
+  tasksApi: {
+    getPointCloudManifest: getPointCloudManifestMock,
+    getSceneTimeline: getSceneTimelineMock,
+  },
 }));
 
 vi.mock("./pointCloudAssetCache", () => ({
@@ -34,18 +39,23 @@ vi.mock("@tanstack/react-virtual", () => ({
       })),
     getTotalSize: () => count * 40,
     scrollToIndex: vi.fn(),
+    scrollToOffset: vi.fn(),
+    measure: vi.fn(),
   }),
 }));
 
 import { SceneTimeline } from "./SceneTimeline";
 
-function renderTimeline(props: ComponentProps<typeof SceneTimeline>) {
+function renderTimeline(props: ComponentProps<typeof SceneTimeline>, expand = true) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const rendered = render(
     <QueryClientProvider client={queryClient}>
       <SceneTimeline {...props} />
     </QueryClientProvider>,
   );
+  if (expand && screen.queryByTestId("scene-timeline-toggle"))
+    fireEvent.click(screen.getByTestId("scene-timeline-toggle"));
+  return rendered;
 }
 
 function timelineData(): SceneTimelineResponse & { frames: SceneTimelineFrameSummary[] } {
@@ -103,6 +113,7 @@ function timelineData(): SceneTimelineResponse & { frames: SceneTimelineFrameSum
 
 describe("SceneTimeline", () => {
   beforeEach(() => {
+    getSceneTimelineMock.mockReset().mockResolvedValue(timelineData());
     getPointCloudManifestMock.mockReset().mockResolvedValue({
       task_id: "task-1",
       point_cloud_url: "https://assets.test/frame-1.pcd",
@@ -143,7 +154,7 @@ describe("SceneTimeline", () => {
     expect(screen.getByTestId("scene-timeline-quality-1")).toBeTruthy();
     fireEvent.click(screen.getByTestId("scene-quality-open"));
     expect(openQuality).toHaveBeenCalledOnce();
-    expect(screen.getByText("3D 质检 · 3")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "3D 质检 · 3" })).toBeTruthy();
   });
 
   it("navigates to an available frame with the matching annotation", async () => {
@@ -214,6 +225,7 @@ describe("SceneTimeline", () => {
     );
 
     try {
+      fireEvent.click(screen.getByTestId("scene-timeline-toggle"));
       fireEvent.click(screen.getByTestId("scene-timeline-frame-1"));
       rendered.rerender(
         <QueryClientProvider client={queryClient}>
@@ -374,5 +386,98 @@ describe("SceneTimeline", () => {
       ),
     );
     expect(getPointCloudManifestMock.mock.calls.some(([id]) => id === "task-0")).toBe(false);
+  });
+  it("starts compact and commits a dragged seek only on release", async () => {
+    const navigate = vi.fn().mockResolvedValue(true);
+    renderTimeline({ taskId: "task-0", trackId: null, onNavigateFrame: navigate }, false);
+    expect(screen.queryByTestId("scene-timeline-virtual-canvas")).toBeNull();
+    const slider = screen.getByRole("slider", { name: "Scene 全段位置" });
+    fireEvent.pointerDown(slider);
+    fireEvent.change(slider, { target: { value: "1" } });
+    expect(slider).toHaveAttribute("aria-valuetext", "帧 1，共 10000 帧");
+    expect(navigate).not.toHaveBeenCalled();
+    fireEvent.pointerUp(slider);
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("task-1", "ann-1"));
+  });
+
+  it("uses actual nonzero frame numbers and queries unloaded exact targets", async () => {
+    const data = timelineData();
+    Object.assign(data, {
+      scene_start_frame: 100,
+      scene_end_frame: 138,
+      current_frame_index: 105,
+      frames: [],
+    });
+    useSceneTimelineMock.mockReturnValue({
+      data,
+      isError: false,
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+    getSceneTimelineMock.mockResolvedValue({
+      ...data,
+      frames: [{ ...timelineData().frames[1], frame_index: 130, task_id: "task-130" }],
+    });
+    const navigate = vi.fn().mockResolvedValue(true);
+    renderTimeline({ taskId: "task-105", trackId: null, onNavigateFrame: navigate }, false);
+    expect(screen.getByText("· 6/39")).toBeTruthy();
+    const input = screen.getByRole("textbox", { name: "Scene 帧号" });
+    fireEvent.change(input, { target: { value: "99" } });
+    fireEvent.submit(input.closest("form")!);
+    expect(screen.getByRole("status")).toHaveTextContent("请输入 100–138 范围内的整数帧号");
+    expect(getSceneTimelineMock).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: "130" } });
+    fireEvent.submit(input.closest("form")!);
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("task-130", "ann-1"));
+    expect(getSceneTimelineMock).toHaveBeenCalledWith(
+      "task-105",
+      130,
+      130,
+      null,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
+  it("skips inaccessible frames in bounded chunks without fetching their point clouds", async () => {
+    const data = timelineData();
+    Object.assign(data, { scene_end_frame: 401, frames: [data.frames[0]] });
+    useSceneTimelineMock.mockReturnValue({
+      data,
+      isError: false,
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+    getSceneTimelineMock.mockImplementation(async (_task: string, start: number, end: number) => ({
+      ...data,
+      frames: Array.from({ length: end - start + 1 }, (_, offset) => ({
+        ...timelineData().frames[2],
+        frame_index: start + offset,
+        state: start + offset === 201 ? "available" : "unavailable",
+        task_id: start + offset === 201 ? "task-201" : null,
+      })),
+    }));
+    const navigate = vi.fn().mockResolvedValue(true);
+    renderTimeline({ taskId: "task-0", trackId: null, onNavigateFrame: navigate }, false);
+    fireEvent.click(screen.getByRole("button", { name: "下一帧" }));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("task-201", null));
+    expect(getSceneTimelineMock.mock.calls.map((call) => [call[1], call[2]])).toEqual([
+      [1, 200],
+      [201, 400],
+    ]);
+    expect(screen.getByRole("status")).toHaveTextContent("已跳过 200 个缺失或不可访问帧");
+    expect(getPointCloudManifestMock).not.toHaveBeenCalled();
+  });
+
+  it("leaves an exact unavailable target in place and ignores input arrow shortcuts", async () => {
+    const navigate = vi.fn().mockResolvedValue(true);
+    renderTimeline({ taskId: "task-0", trackId: null, onNavigateFrame: navigate }, false);
+    const input = screen.getByRole("textbox", { name: "Scene 帧号" });
+    fireEvent.keyDown(input, { key: "ArrowRight" });
+    fireEvent.change(input, { target: { value: "2" } });
+    fireEvent.submit(input.closest("form")!);
+    await waitFor(() =>
+      expect(screen.getByRole("status")).toHaveTextContent("帧 2 缺失或不可访问"),
+    );
+    expect(navigate).not.toHaveBeenCalled();
   });
 });
