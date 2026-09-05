@@ -211,6 +211,18 @@ describe("SettingsPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /标注偏好/ }));
     expect(screen.getByText(/图像平滑/)).toBeInTheDocument();
     expect(screen.getAllByTestId(/^setting-field-/)).toHaveLength(44);
+    for (const label of [
+      "界面布局",
+      "标注显示",
+      "编辑与辅助",
+      "画布与视角",
+      "播放与轨迹",
+      "性能与实验",
+    ]) {
+      expect(screen.getByText(label)).toBeInTheDocument();
+    }
+    expect(screen.getByRole("region", { name: "图片画布" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "视频画布" })).toBeInTheDocument();
     expect(screen.queryByTestId("setting-field-image.snapToGrid")).not.toBeInTheDocument();
     expect(screen.queryAllByTestId(/^setting-field-experiment\./)).toHaveLength(0);
   });

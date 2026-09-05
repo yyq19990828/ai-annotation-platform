@@ -54,14 +54,12 @@ interface WorkbenchSettingFieldBase {
   parentKey?: `${WorkbenchSettingCategory}.${string}`;
   category: WorkbenchSettingCategory;
   /** 仅用于展示分组，不参与偏好存储。 */
-  section?: WorkbenchSettingSection;
+  section: WorkbenchSettingSection;
   label: string;
   description?: string;
   control: WorkbenchSettingControl;
   /** 注册但不渲染。v0.15.3 红线:不新增用户可感知项(snapToGrid 现状无设置 UI)。 */
   hidden?: boolean;
-  /** 实验字段在设置窗口中只显示给相关模态；个人设置页不展示本机实验项。 */
-  stageKinds?: Array<"image" | "video" | "3d">;
 }
 
 export interface WorkbenchPreferenceSettingField extends WorkbenchSettingFieldBase {
@@ -90,22 +88,35 @@ export const WORKBENCH_SETTING_CATEGORY_LABELS: Record<WorkbenchSettingCategory,
   experiment: "实验特性",
 };
 
+// 导航按用途组织，category 继续表示原有偏好存储子树。
+export const WORKBENCH_SETTING_GROUPS = {
+  layout: { label: "界面布局", description: "边栏宽度与工作台辅助显示。" },
+  appearance: { label: "标注显示", description: "标签、线条、填充和邻帧参考框。" },
+  editing: { label: "编辑与辅助", description: "标注操作、图片绘制和 AI 辅助工具。" },
+  canvas: { label: "画布与视角", description: "统一调整图片、视频和点云的显示与视角。" },
+  playback: { label: "播放与轨迹", description: "视频播放速度、时间轴步进与轨迹续写。" },
+  advanced: { label: "性能与实验", description: "资源用量和本机实验特性，按各项说明生效。" },
+} as const;
+
+export type WorkbenchSettingGroup = keyof typeof WORKBENCH_SETTING_GROUPS;
+
 export const WORKBENCH_SETTING_SECTIONS = {
-  layout: "工作台布局",
-  appearance: "标注外观",
-  behavior: "操作行为",
-  reference: "邻帧参考",
-  performance: "性能",
-  imageDisplay: "图像显示",
-  drawing: "绘制与编辑",
-  ai: "AI 辅助",
-  playback: "播放与画布",
-  tracking: "轨迹操作",
-  points: "点云显示",
-  color: "相机图像与上色",
-  camera: "视角与选择",
-  neighbors: "邻帧点云",
-  experiments: "本机选项",
+  layout: { label: "工作台布局", group: "layout" },
+  appearance: { label: "标注外观", group: "appearance" },
+  reference: { label: "邻帧参考框", group: "appearance" },
+  behavior: { label: "操作行为", group: "editing" },
+  drawing: { label: "图片绘制与编辑", group: "editing" },
+  ai: { label: "图片 AI 辅助", group: "editing" },
+  imageDisplay: { label: "图片画布", group: "canvas" },
+  videoDisplay: { label: "视频画布", group: "canvas" },
+  points: { label: "点云显示", group: "canvas" },
+  color: { label: "点云相机与上色", group: "canvas" },
+  camera: { label: "点云视角与选择", group: "canvas" },
+  neighbors: { label: "邻帧点云", group: "canvas" },
+  playback: { label: "视频播放", group: "playback" },
+  tracking: { label: "轨迹操作", group: "playback" },
+  performance: { label: "资源与性能", group: "advanced" },
+  experiments: { label: "本机实验特性", group: "advanced" },
 } as const;
 
 export type WorkbenchSettingSection = keyof typeof WORKBENCH_SETTING_SECTIONS;
@@ -477,7 +488,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "video.autoFitOnResize",
-    section: "playback",
+    section: "videoDisplay",
     category: "video",
     label: "自动适应大小",
     description: "展开、收起或拖宽边栏后自动让视频重新适应画布",
@@ -637,10 +648,9 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     section: "experiments",
     category: "experiment",
     storage: "local",
-    stageKinds: ["3d"],
     label: "3D WebGPU 渲染器",
     description:
-      "实验性、默认关闭；完整切换 3D 主视图和框体精修视图，刷新或重新打开 3D 任务后生效。实际后端会显示在 3D 状态栏",
+      "仅当前浏览器，默认关闭；切换点云主视图和框体精修视图的渲染器，刷新或重新打开点云任务后生效。实际后端显示在 3D 状态栏",
     control: { type: "toggle", onText: "实验已启用", offText: "Legacy" },
     read: () => readPointCloudWebGpuExperiment(),
     write: (value) => writePointCloudWebGpuExperiment(Boolean(value)),
@@ -650,10 +660,9 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     section: "experiments",
     category: "experiment",
     storage: "local",
-    stageKinds: ["video"],
     label: "WebCodecs 精确解码",
     description:
-      "默认开启；暂停、逐帧和 seek 优先精确解码，不支持时安全回退。刷新后生效；URL 的 webcodecs 参数优先于本机开关",
+      "仅当前浏览器，默认开启；视频暂停、逐帧和 seek 优先精确解码，不支持时安全回退。刷新后生效；URL 的 webcodecs 参数优先于本机开关",
     control: { type: "toggle" },
     read: () => readLocalBoolean(WEBCODECS_FLAG_STORAGE_KEY, WEBCODECS_DEFAULT_ENABLED),
     write: (value) => writeLocalBoolean(WEBCODECS_FLAG_STORAGE_KEY, value),
@@ -663,9 +672,8 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     section: "experiments",
     category: "experiment",
     storage: "local",
-    stageKinds: ["video"],
     label: "参考框运动预测",
-    description: "实验性,即时生效:选中轨迹当前帧无框时的参考框如何预测(默认取最近关键帧)",
+    description: "仅当前浏览器，即时生效；视频轨迹当前帧无框时的参考框预测方式，默认取最近关键帧",
     control: {
       type: "select",
       options: [
@@ -717,17 +725,39 @@ export function lockableFieldName(field: WorkbenchSettingField): LockableField |
   return field.key.slice(field.category.length + 1) as LockableField;
 }
 
-/** 所有设置入口的搜索都先接收各自的可见集合，隐藏项不会被搜索重新暴露。 */
-export function getVisibleWorkbenchSettingFields(stageKind: "image" | "video" | "3d") {
-  const category = stageKind === "3d" ? "pointcloud" : stageKind;
-  return WORKBENCH_SETTING_FIELDS.filter(
-    (field) =>
-      !field.hidden &&
-      (field.category === "common" ||
-        field.category === category ||
-        (field.category === "experiment" &&
-          (!field.stageKinds || field.stageKinds.includes(stageKind)))),
-  );
+/** 统一设置不按当前任务过滤；未开放的字段仍保持隐藏。 */
+export function getVisibleWorkbenchSettingFields() {
+  return WORKBENCH_SETTING_FIELDS.filter((field) => !field.hidden);
+}
+
+/** 窗口、搜索结果与个人页共用同一套展示顺序。 */
+export function groupWorkbenchSettings<T extends { section: WorkbenchSettingSection }>(
+  fields: readonly T[],
+) {
+  return (
+    Object.entries(WORKBENCH_SETTING_GROUPS) as [
+      WorkbenchSettingGroup,
+      (typeof WORKBENCH_SETTING_GROUPS)[WorkbenchSettingGroup],
+    ][]
+  )
+    .map(([key, group]) => ({
+      key,
+      ...group,
+      sections: (
+        Object.entries(WORKBENCH_SETTING_SECTIONS) as [
+          WorkbenchSettingSection,
+          (typeof WORKBENCH_SETTING_SECTIONS)[WorkbenchSettingSection],
+        ][]
+      )
+        .filter(([, section]) => section.group === key)
+        .map(([section, { label }]) => ({
+          key: section,
+          label,
+          fields: fields.filter((field) => field.section === section),
+        }))
+        .filter((section) => section.fields.length > 0),
+    }))
+    .filter((group) => group.sections.length > 0);
 }
 
 type SearchableSetting = Pick<
@@ -761,7 +791,8 @@ export function filterWorkbenchSettings<T extends SearchableSetting>(
           field.label,
           field.description,
           WORKBENCH_SETTING_CATEGORY_LABELS[field.category],
-          field.section && WORKBENCH_SETTING_SECTIONS[field.section],
+          WORKBENCH_SETTING_SECTIONS[field.section].label,
+          WORKBENCH_SETTING_GROUPS[WORKBENCH_SETTING_SECTIONS[field.section].group].label,
           ...options,
         ]
           .join(" ")

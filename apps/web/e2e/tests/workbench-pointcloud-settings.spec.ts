@@ -17,8 +17,11 @@ test("点云设置盖过精修面板，阻断工具键并保存点径", async ({
   await expect(page.getByTestId("tri-view-renderer-panel")).toBeVisible();
   await page.getByRole("button", { name: "工作台设置", exact: true }).click();
   const dialog = page.getByTestId("workbench-settings-dialog");
-  await dialog.getByRole("tab", { name: "点云", exact: true }).click();
+  await dialog.getByRole("tab", { name: "画布与视角", exact: true }).click();
   const size = dialog.getByTestId("setting-field-pointcloud.pointSize").getByRole("slider");
+  await expect(dialog.getByTestId("setting-field-image.cssImageFilter")).toHaveCount(1);
+  await expect(dialog.getByTestId("setting-field-video.autoFitOnResize")).toHaveCount(1);
+  await size.scrollIntoViewIfNeeded();
   await expect(size).toBeVisible();
   const parent = await dialog
     .getByTestId("setting-field-pointcloud.colorizeWithCamera")
@@ -46,6 +49,6 @@ test("点云设置盖过精修面板，阻断工具键并保存点径", async ({
   expect((await saved).ok()).toBe(true);
   await page.reload();
   await page.getByRole("button", { name: "工作台设置", exact: true }).click();
-  await dialog.getByRole("tab", { name: "点云", exact: true }).click();
+  await dialog.getByRole("tab", { name: "画布与视角", exact: true }).click();
   await expect(size).toHaveValue(value);
 });
