@@ -70,6 +70,8 @@ function fixture(
         discussion: <Draft />,
         "ai-task": <input aria-label="AI 草稿" defaultValue="保留" />,
         "video-tracker": <input aria-label="追踪草稿" defaultValue="保留" />,
+        "tri-view": null,
+        "camera-view": null,
       }}
       renderTopbar={(menu) => <header>{menu}</header>}
     />
@@ -130,6 +132,63 @@ afterEach(async () => {
 });
 
 describe("stable Dockview React workspace", () => {
+  it("header X hides only the active tab and restores its draft without remounting canvas", async () => {
+    const commands = createRef<WorkbenchWorkspaceCommands>();
+    render(fixture("annotate:image", commands));
+    const draft = await screen.findByLabelText("讨论草稿");
+    fireEvent.change(draft, { target: { value: "保留编辑" } });
+    act(() => {
+      state
+        .api!.getPanel("discussion")!
+        .api.moveTo({ group: state.api!.getPanel("inspector")!.group, position: "center" });
+      state.api!.getPanel("discussion")!.api.setActive();
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "隐藏讨论 / Issue" }));
+    await waitFor(() => expect(state.api!.getPanel("discussion")!.group.id).toBe("parking"));
+    expect(state.api!.getPanel("inspector")!.group.id).not.toBe("parking");
+    expect(screen.queryByRole("button", { name: "隐藏画布" })).toBeNull();
+    act(() => commands.current!.show("discussion"));
+    await waitFor(() => expect(screen.getByLabelText("讨论草稿")).toHaveValue("保留编辑"));
+    fireEvent.click(screen.getByRole("button", { name: "讨论 / Issue菜单" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "浮动面板" }));
+    await waitFor(() => {
+      expect(screen.getAllByRole("button", { name: "隐藏讨论 / Issue" })).toHaveLength(1);
+      expect(screen.getByRole("button", { name: "隐藏标注详情" })).toBeVisible();
+    });
+    expect(mounts).toBe(1);
+  });
+
+  it("keeps unfocused 3D panels visible and blocks Shift floating cameras", async () => {
+    const commands = createRef<WorkbenchWorkspaceCommands>();
+    render(fixture("annotate:3d", commands));
+    await screen.findByTestId("canvas-marker");
+    act(() => {
+      commands.current!.show("tri-view");
+      commands.current!.setCameraPresentation("docked");
+    });
+    await screen.findByRole("button", { name: "隐藏相机视图" });
+    const tri = document.querySelector('[data-workbench-panel="tri-view"]')!;
+    const canvas = document.querySelector('[data-workbench-panel="canvas"]')!;
+    await waitFor(() => {
+      expect(tri).toHaveAttribute("aria-hidden", "false");
+      expect(canvas).toHaveAttribute("aria-hidden", "false");
+    });
+    const tab = document.querySelector('[data-tab-panel-id="camera-view"]')!;
+    const pointer = new MouseEvent("pointerdown", {
+      bubbles: true,
+      cancelable: true,
+      shiftKey: true,
+    });
+    act(() => {
+      tab.dispatchEvent(pointer);
+    });
+    expect(pointer.defaultPrevented).toBe(true);
+    expect(state.api!.getPanel("camera-view")!.group.api.location.type).toBe("grid");
+    fireEvent.click(screen.getByRole("button", { name: "悬浮显示" }));
+    await waitFor(() => expect(state.api!.getPanel("camera-view")!.group.id).toBe("parking"));
+    expect(mounts).toBe(1);
+  });
+
   it.each(["停靠到左侧", "停靠到右侧", "停靠到底部"])(
     "keeps unrelated sidebar widths through %s and merging the panel back",
     async (command) => {

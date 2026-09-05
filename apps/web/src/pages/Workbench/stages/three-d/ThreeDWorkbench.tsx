@@ -5,7 +5,11 @@
  * 旁边平铺各相机图(只读,不画投影框 —— 投影联动是 v0.13.4)。与 Konva 2D 工作台双栈隔离。
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { viewportRegionClipPath } from "../../layout/workbenchViewportRegions";
+import { createPortal } from "react-dom";
+import { useWorkbench3DLayout } from "../../layout/Workbench3DLayoutContext";
+import { CameraDockPanel } from "./CameraDockPanel";
 
 import type {
   CameraPanelState,
@@ -52,8 +56,7 @@ import { usePointCloudQualityIssues } from "@/hooks/usePointCloudQuality";
 import { useCameraAnnotationMembers } from "@/hooks/useCameraAnnotationMembers";
 
 import { AttributeForm } from "../../shell/AttributeForm";
-import { FloatingPanelShell, type FloatingPanelRect } from "../../shell/FloatingPanelShell";
-import { useDragMove, type FloatingPanelBounds } from "../../shell/useDragMove";
+import type { FloatingPanelBounds } from "../../shell/useDragMove";
 import { WORKBENCH_PET_SIZE, type WorkbenchPetDock } from "../../shell/pet/WorkbenchPet";
 import { usePointCloudManifest } from "./usePointCloudManifest";
 import {
@@ -142,7 +145,7 @@ import {
 } from "./rendering/pointCloudRenderer";
 
 // v0.17.6 · Tailwind class constants (was ThreeDWorkbench.module.css).
-const ROOT = "flex flex-col size-full min-h-0 bg-background";
+const ROOT = "flex flex-col size-full min-h-0 bg-transparent";
 const VIEWPORT_WRAP = "relative flex-1 min-h-0";
 const VIEWPORT = "absolute inset-0";
 const PLACING = "cursor-crosshair";
@@ -153,7 +156,7 @@ const POINT_MASK_PATH_PREVIEW = "absolute inset-0 z-local-3 size-full pointer-ev
 const CONTROLS =
   "absolute top-3 left-3 z-local-4 flex max-w-[calc(100%-24px)] flex-col items-start gap-1.5 pointer-events-none";
 const CONTROL_BAR =
-  "flex flex-wrap items-center gap-3 max-w-full px-2.5 py-1.5 rounded-md bg-card border border-border shadow-sm pointer-events-auto";
+  "flex h-8 items-center gap-0.5 max-w-full px-0.5 rounded-md bg-card border border-border pointer-events-auto";
 const BTN =
   "appearance-none px-2.5 py-1 rounded-sm border border-border bg-background text-foreground cursor-pointer text-sm hover:border-brand hover:text-brand disabled:text-muted-foreground/65 disabled:cursor-not-allowed disabled:opacity-65";
 const BTN_ACTIVE = "!border-brand !bg-brand/10 !text-brand";
@@ -162,8 +165,6 @@ const SELECT_CTL =
   "appearance-none min-w-[84px] px-1.5 py-1 rounded-sm border border-border bg-background text-foreground text-xs";
 const FIT_GROUP =
   "grid grid-cols-2 items-center gap-1.5 py-1.5 border-y border-border [&_button]:w-full [&_button]:px-1.5 [&_button]:py-1 [&_button]:text-xs";
-const LAYOUT_PRESET_GROUP =
-  "flex items-center gap-1 max-w-full px-2.5 py-1.5 rounded-md bg-card border border-border shadow-sm pointer-events-auto";
 const STATUS_BAR =
   "absolute bottom-3 left-3.5 flex flex-wrap gap-2 max-w-[min(420px,calc(100%-28px))] px-2.5 py-1 rounded-sm bg-card border border-border text-xs text-muted-foreground";
 const MEASUREMENT_PANEL =
@@ -202,14 +203,12 @@ const EDIT_ROW =
   "flex gap-1.5 [&_input]:flex-1 [&_input]:min-w-0 [&_input]:px-1.5 [&_input]:py-1 [&_input]:rounded-sm [&_input]:border [&_input]:border-border [&_input]:bg-background [&_input]:text-foreground [&_input]:text-xs";
 const DELETE_BTN =
   "appearance-none mt-1.5 px-2.5 py-1 rounded-sm border border-rose-600 dark:border-rose-400 bg-transparent text-status-danger cursor-pointer text-xs hover:bg-rose-600 dark:hover:bg-rose-400 hover:text-white dark:hover:text-white";
-const TRI_FLOAT_TAB =
-  "fixed left-[var(--tri-tab-x)] top-[var(--tri-tab-y)] z-local-6 px-2.5 py-1.5 rounded-md border border-border bg-card shadow-sm text-foreground cursor-grab text-xs select-none touch-none hover:border-brand hover:text-brand";
-const TRI_FLOAT_TAB_DRAGGING = "!cursor-grabbing !border-brand shadow-md";
 const QUALITY_PANEL_WIDTH = 360;
 const CAMERA_LAYER = "absolute inset-0 z-local-3 pointer-events-none";
 const CAM_GROUP =
   "absolute flex gap-2.5 max-h-[calc(100%-var(--top-toolbar-height)-48px)] overflow-visible pointer-events-none [&>*]:pointer-events-auto";
-const CAM_MODAL = "absolute inset-0 z-base flex items-center justify-center bg-black/70";
+const CAM_MODAL =
+  "fixed left-[var(--camera-edit-left)] top-[var(--camera-edit-top)] w-[var(--camera-edit-width)] h-[var(--camera-edit-height)] z-workbench-modal flex items-center justify-center bg-black/70";
 const CAM_MODAL_BODY =
   "relative w-fit max-w-[calc(100%-24px)] p-3 rounded-md border border-border bg-card shadow-sm";
 const CAM_MODAL_CLOSE =
@@ -229,26 +228,19 @@ const CAM_MODAL_NEXT = "right-4";
 import {
   ANCHOR_CLASS,
   CAMERA_STACK_VISIBLE,
-  THREE_D_LAYOUT_PRESETS,
   IDENTITY_MATRIX,
   LIDAR_TOOL_UNIT,
   POINT_MASK_TOOL_UNIT,
   PSR_GROUPS,
   SEED_FALLBACK_RANGE_M,
-  TRI_TAB_DRAG_SIZE,
-  TRI_TAB_DRAG_THRESHOLD,
   boxGeometryFromPsr,
-  buildThreeDLayoutPreset,
-  cameraLayerClipPath,
   frontCameraForward,
   geometryConvention,
   isPsrFieldBad,
   loadCameraSample,
   psrToForm,
   resolveBox3dDefaultSize,
-  resolveTriViewFloatRect,
   sortedIndices,
-  type ThreeDLayoutPreset,
   type PsrField,
 } from "./ThreeDWorkbench.helpers";
 
@@ -320,9 +312,6 @@ export function ThreeDWorkbench({
   onCrossFramePropagateToTask,
   onCrossFrameInterpolate,
   onNavigateSceneFrame,
-  rightSidebarOpen,
-  rightSidebarWidth,
-  triViewFloat,
   cameraPanels,
   pointcloudCamera,
   onWorkbenchLayoutChange,
@@ -334,6 +323,8 @@ export function ThreeDWorkbench({
   box3dDefaultSize,
   petDock,
 }: ThreeDWorkbenchProps) {
+  const dockLayout = useWorkbench3DLayout();
+  const [cameraResetKey, setCameraResetKey] = useState(0);
   useEffect(() => retainPointCloudComputeSession(), []);
   const { data: manifest, isLoading, error } = usePointCloudManifest(taskId, true);
   const pushToast = useToastStore((st) => st.push);
@@ -534,52 +525,7 @@ export function ThreeDWorkbench({
     activeClass && pointMaskClasses.includes(activeClass)
       ? activeClass
       : (pointMaskClasses[0] ?? null);
-  const effectiveRightSidebarWidth = rightSidebarOpen ? rightSidebarWidth : 0;
-  const effectiveFloatingRightInset =
-    effectiveRightSidebarWidth + (qualityPanelOpen ? QUALITY_PANEL_WIDTH : 0);
-  const triFloatPosition = useMemo(
-    () => resolveTriViewFloatRect(triViewFloat, effectiveFloatingRightInset),
-    [effectiveFloatingRightInset, triViewFloat],
-  );
-  const triViewLayoutKey = `${triFloatPosition.x}:${triFloatPosition.y}:${triFloatPosition.w}:${triFloatPosition.h}`;
-  const updateTriViewFloat = useCallback(
-    (patch: Partial<FloatingPanelRect> & { collapsed?: boolean }) => {
-      onWorkbenchLayoutChange({
-        triViewFloat: {
-          ...triViewFloat,
-          ...patch,
-        },
-      });
-    },
-    [onWorkbenchLayoutChange, triViewFloat],
-  );
-
-  // 收起的「三视图 ▸」标签也可整体拖动:与展开面板共享记忆坐标(triViewFloat.x/y),
-  // 拖动落库位置;位移不过阈值则视为点击 → 展开。moved 区分二者,避免拖完误触发展开。
-  const triTabStartRef = useRef<{ x: number; y: number } | null>(null);
-  const triTabMovedRef = useRef(false);
-  const triTabDrag = useDragMove({
-    position: triFloatPosition,
-    size: TRI_TAB_DRAG_SIZE,
-    bounds: qualitySafeFloatBounds,
-    onStart: (pos) => {
-      triTabStartRef.current = pos;
-      triTabMovedRef.current = false;
-    },
-    onChange: (pos) => {
-      const start = triTabStartRef.current;
-      if (
-        start &&
-        (Math.abs(pos.x - start.x) > TRI_TAB_DRAG_THRESHOLD ||
-          Math.abs(pos.y - start.y) > TRI_TAB_DRAG_THRESHOLD)
-      ) {
-        triTabMovedRef.current = true;
-      }
-      updateTriViewFloat({ x: pos.x, y: pos.y });
-    },
-  });
-
-  // v0.16.x 第 2 批 · 相机面板位置/折叠落库 + 窄屏自动折叠 + 旧 localStorage 迁移,
+  // 相机面板位置/折叠落库与窄屏自动折叠，
   // 整簇抽到 useCameraPanels;viewportWrapRef 由壳层共用故传入。
   const {
     autoCollapseCameras,
@@ -587,6 +533,17 @@ export function ThreeDWorkbench({
     handleCameraPanelCollapsed,
     handleResetCameraPanels,
   } = useCameraPanels({ cameraPanels, onWorkbenchLayoutChange, viewportWrapRef });
+  const registerLayoutActions = dockLayout?.registerActions;
+  const cameraPresentation = dockLayout?.cameraPresentation ?? "floating";
+  useEffect(() => {
+    registerLayoutActions?.({
+      resetCameras: () => {
+        if (cameraPresentation === "floating") handleResetCameraPanels();
+        else setCameraResetKey((value) => value + 1);
+      },
+    });
+    return () => registerLayoutActions?.(null);
+  }, [cameraPresentation, handleResetCameraPanels, registerLayoutActions]);
 
   useLayoutEffect(() => {
     const controls = controlsRef.current;
@@ -638,7 +595,7 @@ export function ThreeDWorkbench({
       observer.disconnect();
       window.removeEventListener("resize", syncBounds);
     };
-  }, []);
+  }, [dockLayout?.layoutKey]);
 
   useEffect(() => {
     if (!workbenchConfigLoaded || !userId || typeof window === "undefined") return;
@@ -948,6 +905,9 @@ export function ThreeDWorkbench({
     loadedPointCloudUrl,
     rendererStatus,
   } = usePointCloudScene({
+    renderSurface: dockLayout?.renderSurface,
+    layoutKey: dockLayout?.layoutKey,
+    getVisibleRegions: dockLayout?.getVisibleRegions,
     viewportRef,
     sceneRef,
     pcdDecimate: performanceConfig.pcdDecimate,
@@ -1656,8 +1616,8 @@ export function ThreeDWorkbench({
 
   const handleViewportMouseDown = (e: React.MouseEvent) => {
     // 控件条、状态条和其他覆盖层都在 viewport DOM 内，事件会冒泡到这里。
-    // 持续建框时只接受主渲染 canvas 的 pointer，避免点「俯视」等控件误创建。
-    if (!(e.target instanceof HTMLCanvasElement)) return;
+    // 共享画布位于工作区底层，只接受主视图交互宿主（独立模式则为 canvas）的事件。
+    if (e.target !== viewportRef.current && !(e.target instanceof HTMLCanvasElement)) return;
     pointerDownRef.current = { x: e.clientX, y: e.clientY };
     if (e.button === 0 && e.detail === 1 && threeDTool === "select") {
       selectionBeforeDoubleClickRef.current = [...selectedIds];
@@ -1799,7 +1759,11 @@ export function ThreeDWorkbench({
 
   const handleViewportClick = (e: React.MouseEvent) => {
     if (measuring) {
-      if (!(e.target instanceof HTMLCanvasElement) || e.detail !== 1) return;
+      if (
+        (e.target !== viewportRef.current && !(e.target instanceof HTMLCanvasElement)) ||
+        e.detail !== 1
+      )
+        return;
       if (sceneRef.current?.shouldIgnoreClick()) return;
       const down = pointerDownRef.current;
       pointerDownRef.current = null;
@@ -1976,17 +1940,6 @@ export function ThreeDWorkbench({
         : c,
     );
   }, [manifest?.cameras, axisConvention]);
-  const handleApplyLayoutPreset = useCallback(
-    (preset: ThreeDLayoutPreset) => {
-      onWorkbenchLayoutChange(
-        buildThreeDLayoutPreset(
-          preset,
-          cameras.map((camera) => camera.role),
-        ),
-      );
-    },
-    [cameras, onWorkbenchLayoutChange],
-  );
   // v0.13.7 · 相机按物理朝向分组(悬浮环绕):每个 anchor 一个定位容器,同朝向沿边堆叠。
   const cameraGroups = useMemo(() => {
     const groups = new Map<Anchor, typeof cameras>();
@@ -2621,16 +2574,6 @@ export function ThreeDWorkbench({
         : null,
     [selectedBox, multiBoxSelected],
   );
-  const cameraLayerClip = useMemo(
-    () =>
-      triSelected && !triViewFloat.collapsed && triFloatBounds
-        ? cameraLayerClipPath(triFloatBounds, triFloatPosition)
-        : undefined,
-    [triFloatBounds, triFloatPosition, triSelected, triViewFloat.collapsed],
-  );
-  const cameraLayerRef = useElementStyle<HTMLDivElement>(
-    cameraLayerClip ? { clipPath: cameraLayerClip } : undefined,
-  );
   // v0.13.5 · 三视图拖边/角回写: 拖拽中 (commit=false) 只更新本地草稿 (实时四方同步);
   // 松手 (commit=true) 走与 gizmo 同一条 PATCH 管线持久化, 并清草稿 (乐观更新已写入缓存)。
   const handleEditPsr = useCallback(
@@ -2732,10 +2675,19 @@ export function ThreeDWorkbench({
   ]
     .filter(Boolean)
     .join(" ");
-  const triFloatTabRef = useElementStyle<HTMLDivElement>({
-    "--tri-tab-x": `${triFloatPosition.x}px`,
-    "--tri-tab-y": `${triFloatPosition.y}px`,
+  const modalRect = viewportWrapRef.current?.getBoundingClientRect();
+  const cameraModalRef = useElementStyle<HTMLDivElement>({
+    "--camera-edit-left": (modalRect?.left ?? 0) + "px",
+    "--camera-edit-top": (modalRect?.top ?? 0) + "px",
+    "--camera-edit-width": (modalRect?.width ?? 0) + "px",
+    "--camera-edit-height": (modalRect?.height ?? 0) + "px",
+    clipPath:
+      modalRect && viewportRef.current && dockLayout
+        ? viewportRegionClipPath(dockLayout.getVisibleRegions(viewportRef.current), modalRect)
+        : undefined,
   } as CSSProperties);
+  const renderPsrPanel = (panel: ReactNode) =>
+    petLinked ? createPortal(panel, document.body) : panel;
 
   return (
     <div className={ROOT}>
@@ -2790,30 +2742,28 @@ export function ThreeDWorkbench({
         {/* 控件浮条 */}
         <div ref={controlsRef} className={CONTROLS}>
           <div className={CONTROL_BAR}>
-            <button type="button" className={BTN} onClick={handleResetView}>
-              重置视角
-            </button>
-            <button
+            <Button
               type="button"
-              className={pointCloudViewMode === "bev" ? `${BTN} ${BTN_ACTIVE}` : BTN}
+              size="xs"
+              className="h-7"
+              variant={pointCloudViewMode === "bev" ? "primary" : "ghost"}
               onClick={handleBevView}
               aria-pressed={pointCloudViewMode === "bev"}
             >
               俯视
-            </button>
-            <button
-              type="button"
-              className={BTN}
-              onClick={handleResetCameraPanels}
-              title="恢复 2D 相机图默认贴边布局"
-            >
-              重置相机布局
-            </button>
-            {colorizing && (
-              <span className={SIZE_CTL} title="相机上色处理中">
-                相机上色…
-              </span>
-            )}
+            </Button>
+            <Tooltip name="重置视角" side="bottom">
+              <Button
+                type="button"
+                size="xs"
+                className="size-7 p-0"
+                variant="ghost"
+                aria-label="重置视角"
+                onClick={handleResetView}
+              >
+                <Icon name="rotate-ccw" size={14} />
+              </Button>
+            </Tooltip>
             {threeDTool === "point-mask" && (
               <label className={SIZE_CTL}>
                 选点
@@ -2837,23 +2787,6 @@ export function ThreeDWorkbench({
                 </select>
               </label>
             )}
-          </div>
-          <div className={LAYOUT_PRESET_GROUP} role="group" aria-label="3D 面板布局预设">
-            {THREE_D_LAYOUT_PRESETS.map((preset) => (
-              <Tooltip key={preset.id} name={preset.label} desc={preset.description} side="bottom">
-                <Button
-                  type="button"
-                  size="xs"
-                  variant="default"
-                  className="shrink-0"
-                  aria-label={`恢复${preset.label}布局`}
-                  data-testid={`3d-layout-preset-${preset.id}`}
-                  onClick={() => handleApplyLayoutPreset(preset.id)}
-                >
-                  {preset.label}
-                </Button>
-              </Tooltip>
-            ))}
           </div>
         </div>
 
@@ -2915,6 +2848,7 @@ export function ThreeDWorkbench({
 
         {/* 状态条 */}
         <div className={STATUS_BAR}>
+          {colorizing && <span>相机上色…</span>}
           {isLoading && <span>加载 manifest…</span>}
           {pointCloudLoading && <span data-testid="pointcloud-loading">加载点云…</span>}
           {error && <span className={ERR}>manifest 加载失败</span>}
@@ -3115,40 +3049,218 @@ export function ThreeDWorkbench({
         )}
 
         {/* 选中框 PSR 数值编辑面板：桌宠开启时与其共用锚点，否则保持右上浮层。 */}
-        {selectedBox && form && (
-          <div
-            ref={editPanelRef}
-            className={editPanelClass}
-            data-testid="three-d-selection-panel"
-            data-pet-linked={petLinked || undefined}
-          >
+        {selectedBox &&
+          form &&
+          renderPsrPanel(
             <div
-              className={psrDragging ? `${EDIT_HEADER} !cursor-grabbing` : EDIT_HEADER}
-              onPointerDown={onPsrHeaderPointerDown}
-              data-testid="three-d-selection-panel-handle"
+              ref={editPanelRef}
+              className={editPanelClass}
+              data-testid="three-d-selection-panel"
+              data-pet-linked={petLinked || undefined}
             >
-              <div className={EDIT_TITLE}>
-                <Icon name="move" size={12} className={DRAG_HINT} />
-                {boxClasses.length > 0 ? (
+              <div
+                className={psrDragging ? `${EDIT_HEADER} !cursor-grabbing` : EDIT_HEADER}
+                onPointerDown={onPsrHeaderPointerDown}
+                data-testid="three-d-selection-panel-handle"
+              >
+                <div className={EDIT_TITLE}>
+                  <Icon name="move" size={12} className={DRAG_HINT} />
+                  {boxClasses.length > 0 ? (
+                    <select
+                      className={CLASS_SELECT}
+                      value={selectedClass ?? ""}
+                      aria-label="框类别"
+                      disabled={!selectedEditable}
+                      onChange={(e) => handleChangeClass(e.target.value)}
+                    >
+                      {/* 当前类别若不在配置集合内(历史数据)仍可见,不丢选中项 */}
+                      {selectedClass && !boxClasses.includes(selectedClass) && (
+                        <option value={selectedClass}>{selectedClass}</option>
+                      )}
+                      {boxClasses.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span>3D 框 · {selectedClass ?? ""}</span>
+                  )}
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      className={selectedLocked ? `${LOCK_BTN} ${LOCK_BTN_ON}` : LOCK_BTN}
+                      aria-pressed={selectedLocked}
+                      onClick={handleToggleLock}
+                    >
+                      {selectedLocked ? "已锁定" : "锁定"}
+                    </button>
+                  )}
+                  {!readOnly && selectedBoxIds.length > 0 && (
+                    <button
+                      type="button"
+                      className={ICON_BTN}
+                      onClick={handleDeleteSelected}
+                      aria-label={
+                        multiBoxSelected ? `删除选中 ${selectedBoxIds.length} 个框` : "删除框"
+                      }
+                      title={multiBoxSelected ? `删除选中 ${selectedBoxIds.length} 个框` : "删除框"}
+                    >
+                      <Icon name="trash" size={14} />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className={ICON_BTN}
+                    onClick={togglePsrExpanded}
+                    aria-expanded={psrPanel.expanded}
+                    aria-label={psrPanel.expanded ? "收起详情" : "展开详情"}
+                    title={psrPanel.expanded ? "收起" : "展开"}
+                  >
+                    <Icon name={psrPanel.expanded ? "chevUp" : "chevDown"} size={14} />
+                  </button>
+                </div>
+                <div className={EDIT_SUMMARY}>
+                  {multiBoxSelected
+                    ? `${selectedBoxIds.length} 个框已选中`
+                    : `尺寸 ${selectedBox.size.map((n) => n.toFixed(2)).join(" × ")} m`}
+                </div>
+              </div>
+              {psrPanel.expanded && (
+                <div className={EDIT_BODY}>
+                  <div className={EDIT_GROUP_LABEL}>
+                    {readOnly
+                      ? "只读 · 锁定 / 审阅态"
+                      : multiBoxSelected
+                        ? `${selectedBoxIds.length} 个框已选中 · 可批量改类 / 删除`
+                        : selectedLocked
+                          ? "已锁定 · 点「已锁定」解锁后可编辑"
+                          : "拖 gizmo 或改数值 · W 平移 / E 转 / R 缩放"}
+                  </div>
+                  {/* v0.13.8 · 选中框自动贴合:Q 默认连击(收尺寸+贴地);
+                    Shift+Q 仅收尺寸;Alt+Q 仅贴地;朝向(实验)仅按钮触发。 */}
+                  {selectedPsrEditable && (
+                    <div className={FIT_GROUP} role="group" aria-label="自动贴合">
+                      <button
+                        type="button"
+                        className={BTN}
+                        onClick={handleFitDefault}
+                        title="贴合 (Q):收尺寸 + 贴地"
+                      >
+                        贴合
+                      </button>
+                      <button
+                        type="button"
+                        className={BTN}
+                        onClick={handleFitSize}
+                        title="只收尺寸 (Shift+Q)"
+                      >
+                        收尺寸
+                      </button>
+                      <button
+                        type="button"
+                        className={BTN}
+                        onClick={handleFitBottom}
+                        title="只贴地 (Alt+Q)"
+                      >
+                        贴地
+                      </button>
+                      <button
+                        type="button"
+                        className={BTN}
+                        onClick={handleFitYaw}
+                        title="贴朝向(实验):点云稀疏时主轴可能反转 180°"
+                      >
+                        朝向⚗
+                      </button>
+                    </div>
+                  )}
+                  {PSR_GROUPS.map((g) => (
+                    <div key={g.label}>
+                      <div className={EDIT_GROUP_LABEL_ROW}>
+                        <span className={EDIT_GROUP_LABEL}>{g.label}</span>
+                        {g.reset && selectedPsrEditable && (
+                          <button
+                            type="button"
+                            className={RESET_BTN}
+                            onClick={handleResetRotation}
+                            title="把偏航/俯仰/翻滚全部归零"
+                          >
+                            归零
+                          </button>
+                        )}
+                      </div>
+                      <div className={EDIT_ROW}>
+                        {g.keys.map((k) => (
+                          <input
+                            key={k}
+                            type="number"
+                            step={g.step}
+                            min={g.min}
+                            value={form[k]}
+                            aria-label={k}
+                            disabled={!selectedPsrEditable}
+                            onChange={(e) => handleField(k, e.target.value)}
+                            onBlur={() => handleFieldBlur(k)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {!multiBoxSelected && (
+                    <AttributeForm
+                      schema={boxAttributeSchema}
+                      className={selectedClass ?? ""}
+                      attributes={selectedAnn?.attributes ?? {}}
+                      readOnly={!selectedEditable}
+                      onChange={handleChangeAttributes}
+                    />
+                  )}
+                </div>
+              )}
+            </div>,
+          )}
+
+        {selectedPointMask &&
+          selectedAnn &&
+          renderPsrPanel(
+            <div
+              ref={editPanelRef}
+              className={editPanelClass}
+              data-testid="three-d-selection-panel"
+              data-pet-linked={petLinked || undefined}
+            >
+              <div
+                className={
+                  petLinked
+                    ? psrDragging
+                      ? `${EDIT_TITLE} cursor-grabbing`
+                      : `${EDIT_TITLE} cursor-grab`
+                    : EDIT_TITLE
+                }
+                onPointerDown={petLinked ? onPsrHeaderPointerDown : undefined}
+                data-testid={petLinked ? "three-d-selection-panel-handle" : undefined}
+              >
+                {petLinked && <Icon name="move" size={12} className={DRAG_HINT} />}
+                {pointMaskClasses.length > 0 ? (
                   <select
                     className={CLASS_SELECT}
                     value={selectedClass ?? ""}
-                    aria-label="框类别"
-                    disabled={!selectedEditable}
+                    aria-label="分割类别"
+                    disabled={!selectedPointMaskEditable}
                     onChange={(e) => handleChangeClass(e.target.value)}
                   >
-                    {/* 当前类别若不在配置集合内(历史数据)仍可见,不丢选中项 */}
-                    {selectedClass && !boxClasses.includes(selectedClass) && (
+                    {selectedClass && !pointMaskClasses.includes(selectedClass) && (
                       <option value={selectedClass}>{selectedClass}</option>
                     )}
-                    {boxClasses.map((c) => (
+                    {pointMaskClasses.map((c) => (
                       <option key={c} value={c}>
                         {c}
                       </option>
                     ))}
                   </select>
                 ) : (
-                  <span>3D 框 · {selectedClass ?? ""}</span>
+                  <span>点云分割 · {selectedClass ?? ""}</span>
                 )}
                 {!readOnly && (
                   <button
@@ -3160,509 +3272,329 @@ export function ThreeDWorkbench({
                     {selectedLocked ? "已锁定" : "锁定"}
                   </button>
                 )}
-                {!readOnly && selectedBoxIds.length > 0 && (
-                  <button
-                    type="button"
-                    className={ICON_BTN}
-                    onClick={handleDeleteSelected}
-                    aria-label={
-                      multiBoxSelected ? `删除选中 ${selectedBoxIds.length} 个框` : "删除框"
-                    }
-                    title={multiBoxSelected ? `删除选中 ${selectedBoxIds.length} 个框` : "删除框"}
-                  >
-                    <Icon name="trash" size={14} />
-                  </button>
-                )}
+              </div>
+              <div className={EDIT_GROUP_LABEL}>
+                {selectedPointMask.point_indices.length.toLocaleString()} 点 · P 后圈选加点,Alt
+                圈选减点
+              </div>
+              {!readOnly && selectedPointMaskEditable && (
                 <button
                   type="button"
-                  className={ICON_BTN}
-                  onClick={togglePsrExpanded}
-                  aria-expanded={psrPanel.expanded}
-                  aria-label={psrPanel.expanded ? "收起详情" : "展开详情"}
-                  title={psrPanel.expanded ? "收起" : "展开"}
+                  className={DELETE_BTN}
+                  onClick={() => {
+                    deleteAnnotation.mutate(selectedAnn.id);
+                    history.pushBatch([{ kind: "delete", annotation: selectedAnn }]);
+                    onSelectBox(null);
+                  }}
                 >
-                  <Icon name={psrPanel.expanded ? "chevUp" : "chevDown"} size={14} />
-                </button>
-              </div>
-              <div className={EDIT_SUMMARY}>
-                {multiBoxSelected
-                  ? `${selectedBoxIds.length} 个框已选中`
-                  : `尺寸 ${selectedBox.size.map((n) => n.toFixed(2)).join(" × ")} m`}
-              </div>
-            </div>
-            {psrPanel.expanded && (
-              <div className={EDIT_BODY}>
-                <div className={EDIT_GROUP_LABEL}>
-                  {readOnly
-                    ? "只读 · 锁定 / 审阅态"
-                    : multiBoxSelected
-                      ? `${selectedBoxIds.length} 个框已选中 · 可批量改类 / 删除`
-                      : selectedLocked
-                        ? "已锁定 · 点「已锁定」解锁后可编辑"
-                        : "拖 gizmo 或改数值 · W 平移 / E 转 / R 缩放"}
-                </div>
-                {/* v0.13.8 · 选中框自动贴合:Q 默认连击(收尺寸+贴地);
-                    Shift+Q 仅收尺寸;Alt+Q 仅贴地;朝向(实验)仅按钮触发。 */}
-                {selectedPsrEditable && (
-                  <div className={FIT_GROUP} role="group" aria-label="自动贴合">
-                    <button
-                      type="button"
-                      className={BTN}
-                      onClick={handleFitDefault}
-                      title="贴合 (Q):收尺寸 + 贴地"
-                    >
-                      贴合
-                    </button>
-                    <button
-                      type="button"
-                      className={BTN}
-                      onClick={handleFitSize}
-                      title="只收尺寸 (Shift+Q)"
-                    >
-                      收尺寸
-                    </button>
-                    <button
-                      type="button"
-                      className={BTN}
-                      onClick={handleFitBottom}
-                      title="只贴地 (Alt+Q)"
-                    >
-                      贴地
-                    </button>
-                    <button
-                      type="button"
-                      className={BTN}
-                      onClick={handleFitYaw}
-                      title="贴朝向(实验):点云稀疏时主轴可能反转 180°"
-                    >
-                      朝向⚗
-                    </button>
-                  </div>
-                )}
-                {PSR_GROUPS.map((g) => (
-                  <div key={g.label}>
-                    <div className={EDIT_GROUP_LABEL_ROW}>
-                      <span className={EDIT_GROUP_LABEL}>{g.label}</span>
-                      {g.reset && selectedPsrEditable && (
-                        <button
-                          type="button"
-                          className={RESET_BTN}
-                          onClick={handleResetRotation}
-                          title="把偏航/俯仰/翻滚全部归零"
-                        >
-                          归零
-                        </button>
-                      )}
-                    </div>
-                    <div className={EDIT_ROW}>
-                      {g.keys.map((k) => (
-                        <input
-                          key={k}
-                          type="number"
-                          step={g.step}
-                          min={g.min}
-                          value={form[k]}
-                          aria-label={k}
-                          disabled={!selectedPsrEditable}
-                          onChange={(e) => handleField(k, e.target.value)}
-                          onBlur={() => handleFieldBlur(k)}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-                {!multiBoxSelected && (
-                  <AttributeForm
-                    schema={boxAttributeSchema}
-                    className={selectedClass ?? ""}
-                    attributes={selectedAnn?.attributes ?? {}}
-                    readOnly={!selectedEditable}
-                    onChange={handleChangeAttributes}
-                  />
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {selectedPointMask && selectedAnn && (
-          <div
-            ref={editPanelRef}
-            className={editPanelClass}
-            data-testid="three-d-selection-panel"
-            data-pet-linked={petLinked || undefined}
-          >
-            <div
-              className={
-                petLinked
-                  ? psrDragging
-                    ? `${EDIT_TITLE} cursor-grabbing`
-                    : `${EDIT_TITLE} cursor-grab`
-                  : EDIT_TITLE
-              }
-              onPointerDown={petLinked ? onPsrHeaderPointerDown : undefined}
-              data-testid={petLinked ? "three-d-selection-panel-handle" : undefined}
-            >
-              {petLinked && <Icon name="move" size={12} className={DRAG_HINT} />}
-              {pointMaskClasses.length > 0 ? (
-                <select
-                  className={CLASS_SELECT}
-                  value={selectedClass ?? ""}
-                  aria-label="分割类别"
-                  disabled={!selectedPointMaskEditable}
-                  onChange={(e) => handleChangeClass(e.target.value)}
-                >
-                  {selectedClass && !pointMaskClasses.includes(selectedClass) && (
-                    <option value={selectedClass}>{selectedClass}</option>
-                  )}
-                  {pointMaskClasses.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <span>点云分割 · {selectedClass ?? ""}</span>
-              )}
-              {!readOnly && (
-                <button
-                  type="button"
-                  className={selectedLocked ? `${LOCK_BTN} ${LOCK_BTN_ON}` : LOCK_BTN}
-                  aria-pressed={selectedLocked}
-                  onClick={handleToggleLock}
-                >
-                  {selectedLocked ? "已锁定" : "锁定"}
+                  删除分割
                 </button>
               )}
-            </div>
-            <div className={EDIT_GROUP_LABEL}>
-              {selectedPointMask.point_indices.length.toLocaleString()} 点 · P 后圈选加点,Alt
-              圈选减点
-            </div>
-            {!readOnly && selectedPointMaskEditable && (
-              <button
-                type="button"
-                className={DELETE_BTN}
-                onClick={() => {
-                  deleteAnnotation.mutate(selectedAnn.id);
-                  history.pushBatch([{ kind: "delete", annotation: selectedAnn }]);
-                  onSelectBox(null);
-                }}
-              >
-                删除分割
-              </button>
-            )}
-          </div>
-        )}
+            </div>,
+          )}
 
-        {/* v0.13.7 · 三正交视图精修浮层(右下):选中框才浮出,可收成小标签。 */}
-        {triSelected && (
-          <FloatingPanelShell
-            title="三视图精修"
-            position={triFloatPosition}
-            onPositionChange={updateTriViewFloat}
-            onCollapse={() => updateTriViewFloat({ collapsed: true })}
-            collapsed={!triSelected || triViewFloat.collapsed}
-            variant="no-merge"
-            minSize={{ w: 200, h: 240 }}
-            maxSize={{ w: 480, h: 720 }}
-            bounds={qualitySafeFloatBounds}
-            className="!bg-transparent [&>div:nth-of-type(2)]:!bg-transparent"
-          >
-            {!triViewFloat.collapsed && (
+        {dockLayout?.targets["tri-view"] &&
+          createPortal(
+            <div className="flex h-full min-h-0 flex-col">
               <TriViewPanel
                 scene={sceneRef.current}
                 selected={triSelected}
                 editable={!!triSelected && selectedPsrEditable}
-                layoutKey={triViewLayoutKey}
+                active={dockLayout.panelVisible["tri-view"]}
+                layoutKey={dockLayout.layoutKey}
+                getVisibleRegions={dockLayout.getVisibleRegions}
                 zoomByView={triZoomByView}
                 onZoomChange={handleTriZoomChange}
                 onEditPsr={handleEditPsr}
               />
-            )}
-          </FloatingPanelShell>
-        )}
-        {triSelected && triViewFloat.collapsed && (
-          // 不能用 <button>/role=button:useDragMove 的 isInteractiveTarget 会拦掉其 pointerdown。
-          // 用 div + tabIndex 保留键盘可达;拖动经 handleProps,纯点击(未拖动)才展开。
-          <div
-            ref={triFloatTabRef}
-            tabIndex={0}
-            data-floating-panel
-            aria-label="展开三视图精修(可拖动)"
-            className={[TRI_FLOAT_TAB, triTabDrag.isDragging ? TRI_FLOAT_TAB_DRAGGING : ""]
-              .filter(Boolean)
-              .join(" ")}
-            {...triTabDrag.handleProps}
-            onClick={() => {
-              if (!triTabMovedRef.current) updateTriViewFloat({ collapsed: false });
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                updateTriViewFloat({ collapsed: false });
-              }
-            }}
-          >
-            三视图 ▸
-          </div>
-        )}
+            </div>,
+            dockLayout.targets["tri-view"],
+          )}
+        {dockLayout?.targets["camera-view"] &&
+          createPortal(
+            <CameraDockPanel
+              cameras={cameras}
+              boxes={boxes}
+              highlightedIds={highlightedIds}
+              onSelectBox={onSelectBox}
+              bestRole={bestCameraRole}
+              pointPositions={pointPositions}
+              showDepth={depthOn}
+              onEnlarge={setEnlargedRole}
+              visible={cameraPresentation === "docked" && dockLayout.panelVisible["camera-view"]}
+              loading={isLoading}
+              error={error ? "相机数据加载失败" : null}
+              resetKey={cameraResetKey}
+            />,
+            dockLayout.targets["camera-view"],
+          )}
 
         {/* v0.13.7 · 悬浮相机面板:按物理朝向贴主视图边缘,同朝向沿边堆叠。
             投影 overlay / 上色 / 深度命中沿用 CameraProjectionView,布局对其透明。 */}
-        <div ref={cameraLayerRef} className={CAMERA_LAYER} data-testid="camera-panel-layer">
-          {cameraGroups.map(([anchor, cams]) => (
-            <div key={anchor} className={`${CAM_GROUP} ${ANCHOR_CLASS[anchor]}`}>
-              {cams.map((cam, index) => (
-                <FloatingCameraPanel
-                  key={cam.role}
-                  role={cam.role}
-                  name={cam.name}
-                  imageUrl={cam.image_url}
-                  calibration={cam.calibration}
-                  boxes={boxes}
-                  highlightedIds={highlightedIds}
-                  onSelectBox={onSelectBox}
-                  bestForSelected={cam.role === bestCameraRole}
-                  pointPositions={pointPositions}
-                  showDepth={depthOn}
-                  onEnlarge={() => setEnlargedRole(cam.role)}
-                  autoCollapsed={autoCollapseCameras || index >= CAMERA_STACK_VISIBLE}
-                  dragBounds={qualitySafeFloatBounds}
-                  position={
-                    cameraPanels[cam.role]?.x != null && cameraPanels[cam.role]?.y != null
-                      ? {
-                          x: cameraPanels[cam.role]!.x!,
-                          y: cameraPanels[cam.role]!.y!,
-                        }
-                      : null
-                  }
-                  collapsed={cameraPanels[cam.role]?.collapsed}
-                  onPositionChange={handleCameraPanelPosition}
-                  onCollapsedChange={handleCameraPanelCollapsed}
-                />
-              ))}
-            </div>
-          ))}
-        </div>
+        {cameraPresentation === "floating" && (dockLayout?.cameraVisible ?? true) && (
+          <div className={CAMERA_LAYER} data-testid="camera-panel-layer">
+            {cameraGroups.map(([anchor, cams]) => (
+              <div key={anchor} className={`${CAM_GROUP} ${ANCHOR_CLASS[anchor]}`}>
+                {cams.map((cam, index) => (
+                  <FloatingCameraPanel
+                    key={cam.role}
+                    role={cam.role}
+                    name={cam.name}
+                    imageUrl={cam.image_url}
+                    calibration={cam.calibration}
+                    boxes={boxes}
+                    highlightedIds={highlightedIds}
+                    onSelectBox={onSelectBox}
+                    bestForSelected={cam.role === bestCameraRole}
+                    pointPositions={pointPositions}
+                    showDepth={depthOn}
+                    onEnlarge={() => setEnlargedRole(cam.role)}
+                    autoCollapsed={autoCollapseCameras || index >= CAMERA_STACK_VISIBLE}
+                    dragBounds={qualitySafeFloatBounds}
+                    position={
+                      cameraPanels[cam.role]?.x != null && cameraPanels[cam.role]?.y != null
+                        ? {
+                            x: cameraPanels[cam.role]!.x!,
+                            y: cameraPanels[cam.role]!.y!,
+                          }
+                        : null
+                    }
+                    collapsed={cameraPanels[cam.role]?.collapsed}
+                    onPositionChange={handleCameraPanelPosition}
+                    onCollapsedChange={handleCameraPanelCollapsed}
+                    onDockAll={
+                      dockLayout
+                        ? () => dockLayout.commands.setCameraPresentation("docked")
+                        : undefined
+                    }
+                    layoutDisabled={dockLayout?.disabled}
+                  />
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* v0.13.7 · 相机放大浮层(L3):点⛶弹大图,遮罩 / 关闭钮 / ESC 关闭。
             复用 CameraProjectionView(同 props,大尺寸),投影 / 上色 / 深度 overlay 一致。 */}
-        {enlargedCam && (
-          <div
-            className={CAM_MODAL}
-            data-testid="camera-modal"
-            onClick={() => setEnlargedRole(null)}
-            role="presentation"
-          >
+        {enlargedCam &&
+          createPortal(
             <div
-              className={CAM_MODAL_BODY}
-              data-testid="camera-modal-body"
-              onClick={(e) => e.stopPropagation()}
+              ref={cameraModalRef}
+              className={CAM_MODAL}
+              data-testid="camera-modal"
+              onClick={() => setEnlargedRole(null)}
               role="presentation"
             >
-              <button
-                type="button"
-                className={CAM_MODAL_CLOSE}
-                onClick={() => setEnlargedRole(null)}
+              <div
+                className={CAM_MODAL_BODY}
+                data-testid="camera-modal-body"
+                onClick={(e) => e.stopPropagation()}
+                role="presentation"
               >
-                关闭 ✕
-              </button>
-              <div className={CAM_MODAL_TOOL_GROUP}>
-                {!readOnly && enlargedCam.calibration && boxPlaceClass && (
-                  <button
-                    type="button"
-                    className={
-                      seedMode ? `${CAM_MODAL_SEED} ${CAM_MODAL_SEED_ACTIVE}` : CAM_MODAL_SEED
-                    }
-                    onClick={() => {
-                      setBoxCreationIssue(null);
-                      setManualBboxMode(false);
-                      setSeedMode((v) => !v);
-                    }}
-                    aria-pressed={seedMode}
-                    title="在相机图上拖一个 2D 框,自动在 3D 里生成框(视锥选点拟合)"
-                  >
-                    {seedMode
-                      ? boxCreationSaving
-                        ? `正在保存 ${boxPlaceClass}`
-                        : boxCreationIssue
-                          ? `保存失败 · 重试 ${boxPlaceClass}`
-                          : `连续种框 · ${boxPlaceClass} · 拖矩形`
-                      : "种框 ⊹"}
-                  </button>
-                )}
-                {enlargedCalibrationSource?.calibration &&
-                  enlargedCalibrationSource.calibration_revision &&
-                  enlargedCalibrationSource.calibration_digest && (
+                <button
+                  type="button"
+                  className={CAM_MODAL_CLOSE}
+                  onClick={() => setEnlargedRole(null)}
+                >
+                  关闭 ✕
+                </button>
+                <div className={CAM_MODAL_TOOL_GROUP}>
+                  {!readOnly && enlargedCam.calibration && boxPlaceClass && (
                     <button
                       type="button"
-                      className={CAM_MODAL_SEED}
+                      className={
+                        seedMode ? `${CAM_MODAL_SEED} ${CAM_MODAL_SEED_ACTIVE}` : CAM_MODAL_SEED
+                      }
                       onClick={() => {
-                        setSeedMode(false);
+                        setBoxCreationIssue(null);
                         setManualBboxMode(false);
-                        setCalibrationSheetOpen(true);
+                        setSeedMode((v) => !v);
                       }}
+                      aria-pressed={seedMode}
+                      title="在相机图上拖一个 2D 框,自动在 3D 里生成框(视锥选点拟合)"
                     >
-                      标定 · R{enlargedCalibrationSource.calibration_revision}
+                      {seedMode
+                        ? boxCreationSaving
+                          ? `正在保存 ${boxPlaceClass}`
+                          : boxCreationIssue
+                            ? `保存失败 · 重试 ${boxPlaceClass}`
+                            : `连续种框 · ${boxPlaceClass} · 拖矩形`
+                        : "种框 ⊹"}
                     </button>
                   )}
-              </div>
-              {cameras.length > 1 && (
-                <>
-                  <button
-                    type="button"
-                    className={`${CAM_MODAL_SWITCH} ${CAM_MODAL_PREV}`}
-                    onClick={() => cycleEnlargedCamera(-1)}
-                    title="上一视角"
-                  >
-                    ‹
-                  </button>
-                  <button
-                    type="button"
-                    className={`${CAM_MODAL_SWITCH} ${CAM_MODAL_NEXT}`}
-                    onClick={() => cycleEnlargedCamera(1)}
-                    title="下一视角"
-                  >
-                    ›
-                  </button>
-                </>
-              )}
-              {selectedAnn?.scene_track_id && enlargedCam.calibration && (
-                <div className={CAM_MODAL_MEMBER_BAR}>
-                  <div className={CAM_MODAL_MEMBER_CARD}>
-                    <span className="font-medium">多相机 2D 成员</span>
-                    {cameraMembers.query.isLoading ? (
-                      <span className="text-muted-foreground">读取中…</span>
-                    ) : cameraMembers.query.isError ? (
-                      <span
-                        role="alert"
-                        className="text-status-caution"
-                        title={
-                          cameraMembers.query.error instanceof Error
-                            ? cameraMembers.query.error.message
-                            : "请检查相机标定与图像尺寸"
-                        }
+                  {enlargedCalibrationSource?.calibration &&
+                    enlargedCalibrationSource.calibration_revision &&
+                    enlargedCalibrationSource.calibration_digest && (
+                      <button
+                        type="button"
+                        className={CAM_MODAL_SEED}
+                        onClick={() => {
+                          setSeedMode(false);
+                          setManualBboxMode(false);
+                          setCalibrationSheetOpen(true);
+                        }}
                       >
-                        2D 成员不可用：
-                        {cameraMembers.query.error instanceof Error
-                          ? cameraMembers.query.error.message
-                          : "上下文读取失败"}
-                      </span>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          className={manualBboxMode ? `${BTN} ${BTN_ACTIVE}` : BTN}
-                          disabled={cameraMembers.busy || !cameraMembers.data?.track_revision}
-                          onClick={() => {
-                            setSeedMode(false);
-                            setManualBboxMode((value) => !value);
-                          }}
+                        标定 · R{enlargedCalibrationSource.calibration_revision}
+                      </button>
+                    )}
+                </div>
+                {cameras.length > 1 && (
+                  <>
+                    <button
+                      type="button"
+                      className={`${CAM_MODAL_SWITCH} ${CAM_MODAL_PREV}`}
+                      onClick={() => cycleEnlargedCamera(-1)}
+                      title="上一视角"
+                    >
+                      ‹
+                    </button>
+                    <button
+                      type="button"
+                      className={`${CAM_MODAL_SWITCH} ${CAM_MODAL_NEXT}`}
+                      onClick={() => cycleEnlargedCamera(1)}
+                      title="下一视角"
+                    >
+                      ›
+                    </button>
+                  </>
+                )}
+                {selectedAnn?.scene_track_id && enlargedCam.calibration && (
+                  <div className={CAM_MODAL_MEMBER_BAR}>
+                    <div className={CAM_MODAL_MEMBER_CARD}>
+                      <span className="font-medium">多相机 2D 成员</span>
+                      {cameraMembers.query.isLoading ? (
+                        <span className="text-muted-foreground">读取中…</span>
+                      ) : cameraMembers.query.isError ? (
+                        <span
+                          role="alert"
+                          className="text-status-caution"
+                          title={
+                            cameraMembers.query.error instanceof Error
+                              ? cameraMembers.query.error.message
+                              : "请检查相机标定与图像尺寸"
+                          }
                         >
-                          {manualBboxMode
-                            ? "退出 2D 编辑"
-                            : enlargedCameraMember
-                              ? "编辑 2D 框"
-                              : "创建 2D 框"}
-                        </button>
-                        {!enlargedCameraMember && cameraMembers.data?.projected_bbox && (
+                          2D 成员不可用：
+                          {cameraMembers.query.error instanceof Error
+                            ? cameraMembers.query.error.message
+                            : "上下文读取失败"}
+                        </span>
+                      ) : (
+                        <>
                           <button
                             type="button"
-                            className={BTN}
-                            disabled={cameraMembers.busy}
-                            onClick={() =>
-                              void handleManualBboxCommit(cameraMembers.data!.projected_bbox!)
-                            }
+                            className={manualBboxMode ? `${BTN} ${BTN_ACTIVE}` : BTN}
+                            disabled={cameraMembers.busy || !cameraMembers.data?.track_revision}
+                            onClick={() => {
+                              setSeedMode(false);
+                              setManualBboxMode((value) => !value);
+                            }}
                           >
-                            采用当前投影
+                            {manualBboxMode
+                              ? "退出 2D 编辑"
+                              : enlargedCameraMember
+                                ? "编辑 2D 框"
+                                : "创建 2D 框"}
                           </button>
-                        )}
-                        {enlargedCameraMember && (
-                          <>
-                            <select
-                              className={SELECT_CTL}
-                              value={enlargedCameraMember.visibility}
-                              disabled={cameraMembers.busy}
-                              aria-label="2D 成员可见性"
-                              onChange={(event) =>
-                                void handleManualVisibilityChange(
-                                  event.target.value as
-                                    | "visible"
-                                    | "occluded"
-                                    | "truncated"
-                                    | "unknown",
-                                )
-                              }
-                            >
-                              <option value="visible">可见</option>
-                              <option value="occluded">遮挡</option>
-                              <option value="truncated">截断</option>
-                              <option value="unknown">未知</option>
-                            </select>
-                            {enlargedCameraMember.residual && (
-                              <span className="text-muted-foreground">
-                                IoU {enlargedCameraMember.residual.iou.toFixed(2)} · 边差{" "}
-                                {enlargedCameraMember.residual.max_edge_residual_px.toFixed(1)}px
-                              </span>
-                            )}
-                            {enlargedCameraMember.relation_status === "stale" && (
-                              <button
-                                type="button"
-                                className={BTN}
-                                disabled={cameraMembers.busy}
-                                onClick={() =>
-                                  void handleManualBboxCommit(enlargedCameraMember.bbox)
-                                }
-                              >
-                                标定已变更 · 重新确认
-                              </button>
-                            )}
+                          {!enlargedCameraMember && cameraMembers.data?.projected_bbox && (
                             <button
                               type="button"
-                              className={DELETE_BTN}
+                              className={BTN}
                               disabled={cameraMembers.busy}
-                              onClick={() => void handleDeleteManualBbox()}
+                              onClick={() =>
+                                void handleManualBboxCommit(cameraMembers.data!.projected_bbox!)
+                              }
                             >
-                              删除 2D 框
+                              采用当前投影
                             </button>
-                          </>
-                        )}
-                      </>
-                    )}
+                          )}
+                          {enlargedCameraMember && (
+                            <>
+                              <select
+                                className={SELECT_CTL}
+                                value={enlargedCameraMember.visibility}
+                                disabled={cameraMembers.busy}
+                                aria-label="2D 成员可见性"
+                                onChange={(event) =>
+                                  void handleManualVisibilityChange(
+                                    event.target.value as
+                                      | "visible"
+                                      | "occluded"
+                                      | "truncated"
+                                      | "unknown",
+                                  )
+                                }
+                              >
+                                <option value="visible">可见</option>
+                                <option value="occluded">遮挡</option>
+                                <option value="truncated">截断</option>
+                                <option value="unknown">未知</option>
+                              </select>
+                              {enlargedCameraMember.residual && (
+                                <span className="text-muted-foreground">
+                                  IoU {enlargedCameraMember.residual.iou.toFixed(2)} · 边差{" "}
+                                  {enlargedCameraMember.residual.max_edge_residual_px.toFixed(1)}px
+                                </span>
+                              )}
+                              {enlargedCameraMember.relation_status === "stale" && (
+                                <button
+                                  type="button"
+                                  className={BTN}
+                                  disabled={cameraMembers.busy}
+                                  onClick={() =>
+                                    void handleManualBboxCommit(enlargedCameraMember.bbox)
+                                  }
+                                >
+                                  标定已变更 · 重新确认
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                className={DELETE_BTN}
+                                disabled={cameraMembers.busy}
+                                onClick={() => void handleDeleteManualBbox()}
+                              >
+                                删除 2D 框
+                              </button>
+                            </>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
-              <CameraProjectionView
-                name={enlargedCam.name}
-                imageUrl={enlargedCam.image_url}
-                calibration={enlargedCam.calibration}
-                boxes={boxes}
-                highlightedIds={highlightedIds}
-                onSelectBox={onSelectBox}
-                bestForSelected={enlargedCam.role === bestCameraRole}
-                pointPositions={pointPositions}
-                showDepth={depthOn}
-                seedMode={seedMode && !manualBboxMode}
-                interactionDisabled={boxCreationSaving || cameraMembers.busy}
-                onSeedBox={handleSeedBox}
-                editableBox={
-                  threeDTool === "select" && selectedPsrEditable && !seedMode && !manualBboxMode
-                    ? selectedBox
-                    : null
-                }
-                onEditPsr={handleEditPsr}
-                onCancelEditPsr={handleCancelCameraEdit}
-                onEditError={handleCameraEditError}
-                manualBbox={enlargedCameraMember?.bbox ?? null}
-                manualBboxMode={manualBboxMode}
-                manualBboxStale={enlargedCameraMember?.relation_status === "stale"}
-                onManualBboxCommit={(bbox) => void handleManualBboxCommit(bbox)}
-                expanded
-              />
-            </div>
-          </div>
-        )}
+                )}
+                <CameraProjectionView
+                  name={enlargedCam.name}
+                  imageUrl={enlargedCam.image_url}
+                  calibration={enlargedCam.calibration}
+                  boxes={boxes}
+                  highlightedIds={highlightedIds}
+                  onSelectBox={onSelectBox}
+                  bestForSelected={enlargedCam.role === bestCameraRole}
+                  pointPositions={pointPositions}
+                  showDepth={depthOn}
+                  seedMode={seedMode && !manualBboxMode}
+                  interactionDisabled={boxCreationSaving || cameraMembers.busy}
+                  onSeedBox={handleSeedBox}
+                  editableBox={
+                    threeDTool === "select" && selectedPsrEditable && !seedMode && !manualBboxMode
+                      ? selectedBox
+                      : null
+                  }
+                  onEditPsr={handleEditPsr}
+                  onCancelEditPsr={handleCancelCameraEdit}
+                  onEditError={handleCameraEditError}
+                  manualBbox={enlargedCameraMember?.bbox ?? null}
+                  manualBboxMode={manualBboxMode}
+                  manualBboxStale={enlargedCameraMember?.relation_status === "stale"}
+                  onManualBboxCommit={(bbox) => void handleManualBboxCommit(bbox)}
+                  expanded
+                />
+              </div>
+            </div>,
+            document.body,
+          )}
         {qualityPanelOpen && project && manifest?.scene_id && (
           <PointCloudQualityPanel
             projectId={project.id}

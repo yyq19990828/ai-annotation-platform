@@ -9,6 +9,7 @@ beforeEach(() => {
     "ResizeObserver",
     class {
       observe() {}
+      unobserve() {}
       disconnect() {}
     },
   );
@@ -26,7 +27,6 @@ function galleryProps(): CameraDockPanelProps {
     highlightedIds: new Set(),
     onSelectBox: vi.fn(),
     onEnlarge: vi.fn(),
-    onFloat: vi.fn(),
   };
 }
 
@@ -42,8 +42,6 @@ describe("CameraDockPanel", () => {
     expect(screen.getByText("前置 · 正对 · 无标定")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "放大前置" }));
     expect(props.onEnlarge).toHaveBeenCalledWith("CAM_FRONT");
-    fireEvent.click(screen.getByRole("button", { name: "悬浮显示" }));
-    expect(props.onFloat).toHaveBeenCalledTimes(1);
 
     const scroll = screen.getByRole("region", { name: "前置" }).parentElement!.parentElement!;
     scroll.scrollTop = 200;
@@ -70,12 +68,11 @@ describe("CameraDockPanel", () => {
       <CameraDockPanel
         {...props}
         cameras={[{ role: "CAM_FRONT", name: "前置", image_url: "/front-1.jpg" }]}
-        layoutDisabled
       />,
     );
     expect(screen.getByRole("img")).toHaveAttribute("src", "/front-1.jpg");
     expect(screen.queryByRole("img", { name: "后置" })).toBeNull();
-    expect(screen.getByRole("button", { name: "悬浮显示" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "悬浮显示" })).toBeNull();
   });
 });
 

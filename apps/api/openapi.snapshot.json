@@ -35225,7 +35225,7 @@
                 }
               ]
             },
-            "maxItems": 8,
+            "maxItems": 10,
             "minItems": 1,
             "title": "Data",
             "type": "array"
@@ -35274,7 +35274,8 @@
               1,
               2,
               3,
-              4
+              4,
+              5
             ],
             "title": "Schemaversion",
             "type": "integer"
@@ -35288,6 +35289,77 @@
           "snapshot"
         ],
         "title": "WorkspaceContextEnvelope",
+        "type": "object"
+      },
+      "WorkspaceDockReturn": {
+        "additionalProperties": false,
+        "properties": {
+          "anchors": {
+            "items": {
+              "enum": [
+                "canvas",
+                "task-queue",
+                "class-palette",
+                "inspector",
+                "discussion",
+                "ai-task",
+                "video-tracker",
+                "tri-view",
+                "camera-view"
+              ],
+              "type": "string"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Anchors",
+            "type": "array"
+          },
+          "direction": {
+            "enum": [
+              "left",
+              "right",
+              "above",
+              "below"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "height": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 1000000.0,
+            "title": "Height",
+            "type": "number"
+          },
+          "reference": {
+            "enum": [
+              "canvas",
+              "task-queue",
+              "class-palette",
+              "inspector",
+              "discussion",
+              "ai-task",
+              "video-tracker",
+              "tri-view",
+              "camera-view"
+            ],
+            "title": "Reference",
+            "type": "string"
+          },
+          "width": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 1000000.0,
+            "title": "Width",
+            "type": "number"
+          }
+        },
+        "required": [
+          "reference",
+          "anchors",
+          "direction",
+          "width",
+          "height"
+        ],
+        "title": "WorkspaceDockReturn",
         "type": "object"
       },
       "WorkspaceFloatingGroup": {
@@ -35379,7 +35451,9 @@
                   "inspector",
                   "discussion",
                   "ai-task",
-                  "video-tracker"
+                  "video-tracker",
+                  "tri-view",
+                  "camera-view"
                 ],
                 "type": "string"
               },
@@ -35429,11 +35503,13 @@
                 "inspector",
                 "discussion",
                 "ai-task",
-                "video-tracker"
+                "video-tracker",
+                "tri-view",
+                "camera-view"
               ],
               "type": "string"
             },
-            "maxItems": 7,
+            "maxItems": 9,
             "title": "Views",
             "type": "array"
           }
@@ -35464,7 +35540,7 @@
             "items": {
               "$ref": "#/components/schemas/WorkspaceFloatingGroup"
             },
-            "maxItems": 7,
+            "maxItems": 9,
             "title": "Floatinggroups",
             "type": "array"
           },
@@ -35475,7 +35551,7 @@
             "additionalProperties": {
               "$ref": "#/components/schemas/WorkspacePanel"
             },
-            "maxProperties": 7,
+            "maxProperties": 9,
             "minProperties": 5,
             "propertyNames": {
               "enum": [
@@ -35485,7 +35561,9 @@
                 "inspector",
                 "discussion",
                 "ai-task",
-                "video-tracker"
+                "video-tracker",
+                "tri-view",
+                "camera-view"
               ]
             },
             "title": "Panels",
@@ -35546,7 +35624,7 @@
         "properties": {
           "location": {
             "items": {
-              "maximum": 7.0,
+              "maximum": 9.0,
               "minimum": 0.0,
               "type": "integer"
             },
@@ -35577,7 +35655,9 @@
               "inspector",
               "discussion",
               "ai-task",
-              "video-tracker"
+              "video-tracker",
+              "tri-view",
+              "camera-view"
             ],
             "title": "Id",
             "type": "string"
@@ -35645,13 +35725,23 @@
       "WorkspaceReturn": {
         "additionalProperties": false,
         "properties": {
+          "dock": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkspaceDockReturn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "group": {
             "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$",
             "title": "Group",
             "type": "string"
           },
           "index": {
-            "maximum": 6.0,
+            "maximum": 8.0,
             "minimum": 0.0,
             "title": "Index",
             "type": "integer"
@@ -35677,6 +35767,21 @@
       "WorkspaceSnapshot": {
         "additionalProperties": false,
         "properties": {
+          "cameraPresentation": {
+            "anyOf": [
+              {
+                "enum": [
+                  "floating",
+                  "docked"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Camerapresentation"
+          },
           "layout": {
             "$ref": "#/components/schemas/WorkspaceLayout"
           },
@@ -35684,7 +35789,7 @@
             "additionalProperties": {
               "$ref": "#/components/schemas/WorkspaceReturn"
             },
-            "maxProperties": 6,
+            "maxProperties": 8,
             "propertyNames": {
               "enum": [
                 "canvas",
@@ -35693,7 +35798,9 @@
                 "inspector",
                 "discussion",
                 "ai-task",
-                "video-tracker"
+                "video-tracker",
+                "tri-view",
+                "camera-view"
               ]
             },
             "title": "Returns",
@@ -35712,7 +35819,9 @@
                 "propertyNames": {
                   "enum": [
                     "ai-task",
-                    "video-tracker"
+                    "video-tracker",
+                    "tri-view",
+                    "camera-view"
                   ]
                 },
                 "type": "object"

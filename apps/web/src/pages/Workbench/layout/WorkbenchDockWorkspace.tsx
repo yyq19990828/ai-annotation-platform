@@ -16,12 +16,14 @@ import {
   type DockviewApi,
   type IDockviewPanelProps,
   type IDockviewPanelHeaderProps,
+  type IDockviewHeaderActionsProps,
   type DockviewWillShowOverlayLocationEvent,
   type DockviewWillDropEvent,
 } from "dockview-react";
 import { toast } from "sonner";
 import { DropdownMenu, type DropdownItem } from "@/components/ui/DropdownMenu";
 import { Icon } from "@/components/ui/Icon";
+import { Tooltip } from "@/components/ui/Tooltip";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useAuthStore } from "@/stores/authStore";
 import { cn } from "@/lib/utils";
@@ -45,6 +47,14 @@ import {
 } from "./workbenchPanelRegistry";
 import "dockview-react/dist/styles/dockview.css";
 import styles from "./WorkbenchDockWorkspace.module.css";
+import {
+  Workbench3DLayoutContext,
+  type ThreeDLayoutActions,
+  type ThreeDPanelId,
+  useWorkbench3DLayout,
+} from "./Workbench3DLayoutContext";
+import { createWorkbenchViewportRegions } from "./workbenchViewportRegions";
+import { THREE_D_LAYOUT_PRESETS } from "../stages/three-d/ThreeDWorkbench.helpers";
 
 export interface WorkbenchDockWorkspaceProps {
   context: WorkspaceContext;
@@ -62,17 +72,32 @@ const TabMenuContext = createContext<(id: PanelId) => DropdownItem[]>(() => []);
 // Dockview owns these stable React portals. Reparenting a panel does not recreate its content.
 function PanelContent({ api, containerApi }: IDockviewPanelProps) {
   const slots = useContext(SlotsContext)!;
+  const layout = useWorkbench3DLayout();
+  const setTarget = layout?.setTarget;
+  const setPanelVisible = layout?.setPanelVisible;
   const [visible, setVisible] = useState(api.isVisible);
   const element = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     if (element.current) element.current.inert = !visible;
-  }, [visible]);
+    if (api.id === "tri-view" || api.id === "camera-view") setPanelVisible?.(api.id, visible);
+  }, [api.id, setPanelVisible, visible]);
+  useLayoutEffect(() => {
+    if (api.id !== "tri-view" && api.id !== "camera-view") return;
+    setTarget?.(api.id, element.current);
+    return () => setTarget?.(api.id as ThreeDPanelId, null);
+  }, [api.id, setTarget]);
   useEffect(() => {
     const update = () =>
-      setVisible(api.group.id !== "parking" && api.isVisible && api.group.api.isVisible);
+      setVisible(
+        api.group.id !== "parking" &&
+          api.group.activePanel?.id === api.id &&
+          api.isVisible &&
+          api.group.api.isVisible,
+      );
     let groupVisibility = api.group.api.onDidVisibilityChange(update);
     const subscriptions = [
       api.onDidVisibilityChange(update),
+      api.onDidActiveChange(update),
       api.onDidGroupChange(() => {
         groupVisibility.dispose();
         groupVisibility = api.group.api.onDidVisibilityChange(update);
@@ -94,6 +119,53 @@ function PanelContent({ api, containerApi }: IDockviewPanelProps) {
       aria-hidden={!visible}
     >
       {slots[api.id as PanelId]}
+    </div>
+  );
+}
+
+function PanelHeaderActions({ group }: IDockviewHeaderActionsProps) {
+  const getItems = useContext(TabMenuContext);
+  const [id, setId] = useState(group.activePanel?.id as PanelId | undefined);
+  useEffect(() => {
+    const update = () => setId(group.activePanel?.id as PanelId | undefined);
+    const subscription = group.api.onDidActivePanelChange(update);
+    update();
+    return () => subscription.dispose();
+  }, [group]);
+  const layout = useWorkbench3DLayout();
+  if (!id || !WORKBENCH_PANEL_REGISTRY[id].capabilities.hide) return null;
+  const hide = getItems(id).find((item) => item.id === "hide");
+  return (
+    <div className="flex h-full items-center gap-1 pr-1" data-workbench-layout-control>
+      {id === "camera-view" && (
+        <button
+          type="button"
+          className="rounded-sm px-1 text-xs text-muted-foreground hover:bg-accent disabled:opacity-50"
+          disabled={layout?.disabled}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            layout?.commands.setCameraPresentation("floating");
+          }}
+        >
+          悬浮显示
+        </button>
+      )}
+      <Tooltip name={`隐藏${WORKBENCH_PANEL_REGISTRY[id].title}`} side="bottom">
+        <button
+          type="button"
+          aria-label={`隐藏${WORKBENCH_PANEL_REGISTRY[id].title}`}
+          disabled={hide?.disabled}
+          className="inline-flex size-6 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50"
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            hide?.onSelect?.();
+          }}
+        >
+          <Icon name="x" size={14} />
+        </button>
+      </Tooltip>
     </div>
   );
 }
@@ -141,6 +213,9 @@ const EMPTY_STATE: WorkbenchWorkspaceState = {
   inspectorVisible: true,
   aiTaskVisible: false,
   videoTrackerVisible: false,
+  triViewVisible: false,
+  cameraViewVisible: false,
+  cameraPresentation: "floating",
   canvasMaximized: false,
   taskQueueWidth: 220,
   inspectorWidth: 260,
@@ -165,6 +240,33 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
     [context],
   );
   const host = useRef<HTMLDivElement>(null);
+  const [renderSurface, setRenderSurface] = useState<HTMLDivElement | null>(null);
+  const [targets, setTargets] = useState<Record<ThreeDPanelId, HTMLDivElement | null>>({
+    "tri-view": null,
+    "camera-view": null,
+  });
+  const setTarget = useCallback((id: ThreeDPanelId, element: HTMLDivElement | null) => {
+    setTargets((previous) =>
+      previous[id] === element ? previous : { ...previous, [id]: element },
+    );
+  }, []);
+  const [panelVisible, setPanelVisibility] = useState<Record<ThreeDPanelId, boolean>>({
+    "tri-view": false,
+    "camera-view": false,
+  });
+  const setPanelVisible = useCallback((id: ThreeDPanelId, visible: boolean) => {
+    setPanelVisibility((previous) =>
+      previous[id] === visible ? previous : { ...previous, [id]: visible },
+    );
+  }, []);
+  const [layoutKey, setLayoutKey] = useState(0);
+  const regions = useRef<ReturnType<typeof createWorkbenchViewportRegions> | null>(null);
+  const getVisibleRegions = useCallback(
+    (element: HTMLElement) =>
+      regions.current?.getVisibleRegions(element) ?? [element.getBoundingClientRect()],
+    [],
+  );
+  const [threeDActions, registerActions] = useState<ThreeDLayoutActions | null>(null);
   const bounds = useCallback(
     () => ({
       width: host.current?.clientWidth || window.innerWidth,
@@ -216,6 +318,9 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
       inspectorVisible: opened.includes("inspector"),
       aiTaskVisible: opened.includes("ai-task"),
       videoTrackerVisible: opened.includes("video-tracker"),
+      triViewVisible: opened.includes("tri-view"),
+      cameraViewVisible: opened.includes("camera-view"),
+      cameraPresentation: engine.getCameraPresentation(),
       canvasMaximized: engine.isCanvasMaximized(),
       taskQueueWidth: api.getPanel("task-queue")?.api.width ?? 220,
       inspectorWidth: api.getPanel("inspector")?.api.width ?? 260,
@@ -272,6 +377,8 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
   const commands = useMemo<WorkbenchWorkspaceCommands>(
     () => ({
       toggleSide: (side) => run((engine) => engine.toggleSide(side)),
+      setCameraPresentation: (mode) => run((engine) => engine.setCameraPresentation(mode)),
+      applyThreeDPreset: (id) => run((engine) => engine.applyThreeDPreset(id)),
       show: (id) => {
         if (panelSupportsContext(id, context)) run((engine) => engine.show(id), true);
       },
@@ -345,7 +452,7 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
       {
         id: "float",
         label: "浮动面板",
-        disabled: owner.readOnly || compact || id === "canvas",
+        disabled: owner.readOnly || compact || !WORKBENCH_PANEL_REGISTRY[id].capabilities.float,
         onSelect: () => run((engine) => engine.float(id)),
       },
       {
@@ -385,6 +492,7 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
         previous.session !== session ||
         !owner.readOnlyReason
       ) {
+        engine.setPresentation(owner.snapshot);
         if (engine.isCanvasMaximized()) engine.toggleCanvasMaximized();
         const layout = structuredClone(owner.snapshot.layout);
         maximizeAfterHydration = !!layout.grid.maximizedNode;
@@ -392,6 +500,7 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
         api.fromJSON(layout, { reuseExistingPanels: true });
         engine.setReturns(owner.snapshot.returns);
       } else {
+        engine.setPresentation(owner.snapshot);
         engine.recover(owner.snapshot);
       }
       hydration.current = { api, session, revision: owner.restoreRevision };
@@ -454,6 +563,24 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
   useEffect(() => {
     if (!api) return;
     const blocked = () => latest.current.owner.readOnly || latest.current.compact;
+    const guardShiftFloat = (event: PointerEvent) => {
+      if (!event.shiftKey || !(event.target instanceof HTMLElement)) return;
+      const tab = event.target.closest<HTMLElement>(".dv-tab");
+      const groupSpace = event.target.closest(".dv-void-container");
+      const cameraGroup =
+        groupSpace &&
+        api.groups.some(
+          (group) =>
+            group.element.contains(groupSpace) &&
+            group.panels.some((panel) => panel.id === "camera-view"),
+        );
+      if (tab?.dataset.tabPanelId === "camera-view" || cameraGroup) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+    const workspaceHost = host.current;
+    workspaceHost?.addEventListener("pointerdown", guardShiftFloat, true);
     let restoreDragSizes: ReturnType<Executor["preserveGridSizes"]> | undefined;
     let movedPanel: string | undefined;
     let movedGroup: string | undefined;
@@ -467,6 +594,11 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
         target?.id === "parking" ||
         (target?.id === "canvas" && event.position === "center") ||
         target?.api.location.type === "popout" ||
+        (target?.api.location.type === "floating" &&
+          (source?.panelId === "camera-view" ||
+            api.groups
+              .find((group) => group.id === source?.groupId)
+              ?.panels.some((panel) => panel.id === "camera-view"))) ||
         (target?.api.location.type === "floating" && event.position !== "center")
       )
         event.preventDefault();
@@ -528,6 +660,7 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
       window.removeEventListener("pointerup", release);
       window.removeEventListener("dragend", release);
       window.removeEventListener("drop", release, true);
+      workspaceHost?.removeEventListener("pointerdown", guardShiftFloat, true);
       if (pendingFrame.current !== null) cancelAnimationFrame(pendingFrame.current);
     };
   }, [api, persist]);
@@ -541,6 +674,89 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
     return () => observer.disconnect();
   }, [api]);
   useEffect(() => dismissUndo, [dismissUndo]);
+  useLayoutEffect(() => {
+    if (!api || !host.current || !context.endsWith(":3d")) return;
+    const workspaceHost = host.current;
+    const geometry = createWorkbenchViewportRegions(api, workspaceHost);
+    regions.current = geometry;
+    let frame: number | null = null;
+    let disposed = false;
+    let signature = "";
+    const update = () => {
+      frame = null;
+      if (disposed) return;
+      const next = JSON.stringify([
+        api.groups.map((group) => {
+          const rect = group.element.getBoundingClientRect();
+          const floating = group.element.closest<HTMLElement>(".dv-resize-container");
+          return [
+            group.id,
+            group.activePanel?.id,
+            group.api.isVisible,
+            rect.x,
+            rect.y,
+            rect.width,
+            rect.height,
+            floating?.style.zIndex,
+          ];
+        }),
+        [...workspaceHost.querySelectorAll<HTMLElement>(".dv-render-overlay")].map((overlay) => {
+          const rect = overlay.getBoundingClientRect();
+          return [
+            rect.x,
+            rect.y,
+            rect.width,
+            rect.height,
+            overlay.style.display,
+            overlay.style.zIndex,
+          ];
+        }),
+      ]);
+      if (signature === next) return;
+      signature = next;
+      geometry.update();
+      setLayoutKey((value) => value + 1);
+    };
+    const schedule = () => {
+      if (!disposed && frame === null) frame = requestAnimationFrame(update);
+    };
+    const subscriptions = [
+      api.onDidLayoutChange(schedule),
+      api.onDidActivePanelChange(schedule),
+      api.onDidActiveGroupChange(schedule),
+    ];
+    const observer = new ResizeObserver(schedule);
+    observer.observe(host.current);
+    const movement = new MutationObserver((records) => {
+      if (
+        records.some(
+          (record) =>
+            record.type === "childList" ||
+            (record.target instanceof HTMLElement &&
+              record.target.matches(".dv-resize-container, .dv-render-overlay")),
+        )
+      )
+        schedule();
+    });
+    movement.observe(host.current, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["style", "aria-level"],
+    });
+    window.addEventListener("resize", schedule);
+    update();
+    return () => {
+      disposed = true;
+      if (frame !== null) cancelAnimationFrame(frame);
+      subscriptions.forEach((entry) => entry.dispose());
+      observer.disconnect();
+      movement.disconnect();
+      window.removeEventListener("resize", schedule);
+      geometry.dispose();
+      regions.current = null;
+    };
+  }, [api, context]);
   useEffect(
     () =>
       useActiveIssueStore.subscribe((next, previous) => {
@@ -561,6 +777,39 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
             onSelect: () => preset(id),
           })),
         { id: "separator", label: "", divider: true },
+        ...(context.endsWith(":3d")
+          ? [
+              ...THREE_D_LAYOUT_PRESETS.map((entry) => ({
+                id: `3d-${entry.id}`,
+                label: entry.label,
+                disabled: owner.readOnly || compact,
+                onSelect: () =>
+                  run((engine) => {
+                    const before = engine.capture();
+                    engine.applyThreeDPreset(entry.id);
+                    undo.current = toast(`已切换到${entry.label}`, {
+                      id: undo.current ?? undefined,
+                      duration: 8000,
+                      position: "bottom-center",
+                      action: {
+                        label: "撤销",
+                        onClick: () => run((current) => current.restore(before)),
+                      },
+                    });
+                  }),
+              })),
+              {
+                id: "camera-presentation",
+                label: view.cameraPresentation === "floating" ? "全部相机停靠" : "全部相机悬浮",
+                disabled: owner.readOnly || compact,
+                onSelect: () =>
+                  commands.setCameraPresentation(
+                    view.cameraPresentation === "floating" ? "docked" : "floating",
+                  ),
+              },
+              { id: "separator-3d", label: "", divider: true },
+            ]
+          : []),
         ...availablePanels.map((id) => ({
           id,
           label: WORKBENCH_PANEL_REGISTRY[id].title,
@@ -589,6 +838,16 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
           onSelect: () => run((engine) => engine.toggleCanvasMaximized()),
         },
         { id: "separator-reset", label: "", divider: true },
+        ...(context.endsWith(":3d")
+          ? [
+              {
+                id: "reset-cameras",
+                label: "恢复相机排列",
+                disabled: owner.readOnly || !threeDActions,
+                onSelect: () => threeDActions?.resetCameras(),
+              },
+            ]
+          : []),
         {
           id: "reset",
           label: "重置为标准布局",
@@ -613,66 +872,93 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
     />
   );
   return (
-    <SlotsContext.Provider value={slots}>
-      <TabMenuContext.Provider value={tabItems}>
-        {renderTopbar(menu, view)}
-        {(owner.error || owner.readOnlyReason) && (
-          <div
-            role="status"
-            className="flex shrink-0 items-center gap-2 border-b border-border bg-muted px-3 py-1 text-xs text-muted-foreground"
-          >
-            {owner.error ??
-              (owner.readOnlyReason === "newer-schema"
-                ? "此布局来自新版，当前使用只读标准布局。"
-                : "保存的布局无法恢复，请从布局菜单重置。")}
-          </div>
-        )}
-        <div
-          ref={host}
-          className={cn(
-            "min-h-0 min-w-0 flex-1 overflow-hidden",
-            styles.workspace,
-            owner.readOnly && styles.locked,
-            compact && styles.compact,
+    <Workbench3DLayoutContext.Provider
+      value={{
+        renderSurface,
+        targets,
+        setTarget,
+        panelVisible,
+        setPanelVisible,
+        layoutKey,
+        getVisibleRegions,
+        cameraPresentation: view.cameraPresentation,
+        cameraVisible: view.cameraViewVisible,
+        disabled: view.disabled || compact,
+        commands,
+        registerActions,
+      }}
+    >
+      <SlotsContext.Provider value={slots}>
+        <TabMenuContext.Provider value={tabItems}>
+          {renderTopbar(menu, view)}
+          {(owner.error || owner.readOnlyReason) && (
+            <div
+              role="status"
+              className="flex shrink-0 items-center gap-2 border-b border-border bg-muted px-3 py-1 text-xs text-muted-foreground"
+            >
+              {owner.error ??
+                (owner.readOnlyReason === "newer-schema"
+                  ? "此布局来自新版，当前使用只读标准布局。"
+                  : "保存的布局无法恢复，请从布局菜单重置。")}
+            </div>
           )}
-          data-workbench-workspace
-          data-compact={compact}
-          onPointerDownCapture={(event) => {
-            if (
-              (event.target as HTMLElement).closest(
-                '.dv-tab, .dv-tabs-and-actions-container, .dv-sash, [class*="dv-resize-handle-"]',
-              )
-            ) {
-              pointerDown.current = true;
-              interaction.current = true;
-            }
-          }}
-          onKeyDown={(event) => {
-            if (
-              (event.target as HTMLElement).closest(
-                '[role="tab"], [role="menu"], [role="menuitem"], [data-workbench-layout-control]',
-              )
-            ) {
-              interaction.current = true;
-              persist();
-              event.stopPropagation();
-            }
-          }}
-          onDoubleClick={(event) => {
-            if (!(event.target as HTMLElement).closest("[data-workbench-canvas]"))
-              event.stopPropagation();
-          }}
-        >
-          <DockviewReact
-            components={components}
-            defaultTabComponent={PanelTab}
-            theme={theme}
-            onReady={(event) => setApi(event.api)}
-            floatingGroupBounds="boundedWithinViewport"
-            floatingGroupDragHandle="tabbar"
-          />
-        </div>
-      </TabMenuContext.Provider>
-    </SlotsContext.Provider>
+          <div
+            ref={host}
+            className={cn(
+              "min-h-0 min-w-0 flex-1 overflow-hidden",
+              styles.workspace,
+              owner.readOnly && styles.locked,
+              compact && styles.compact,
+            )}
+            data-workbench-workspace
+            data-shared-3d={context.endsWith(":3d")}
+            data-compact={compact}
+            onPointerDownCapture={(event) => {
+              if (
+                (event.target as HTMLElement).closest(
+                  '.dv-tab, .dv-tabs-and-actions-container, .dv-sash, [class*="dv-resize-handle-"]',
+                )
+              ) {
+                pointerDown.current = true;
+                interaction.current = true;
+              }
+            }}
+            onKeyDown={(event) => {
+              if (
+                (event.target as HTMLElement).closest(
+                  '[role="tab"], [role="menu"], [role="menuitem"], [data-workbench-layout-control]',
+                )
+              ) {
+                interaction.current = true;
+                persist();
+                event.stopPropagation();
+              }
+            }}
+            onDoubleClick={(event) => {
+              if (!(event.target as HTMLElement).closest("[data-workbench-canvas]"))
+                event.stopPropagation();
+            }}
+          >
+            {context.endsWith(":3d") && (
+              <div
+                ref={setRenderSurface}
+                className={styles.renderSurface}
+                aria-hidden="true"
+                data-workbench-render-surface
+              />
+            )}
+            <DockviewReact
+              components={components}
+              defaultTabComponent={PanelTab}
+              rightHeaderActionsComponent={PanelHeaderActions}
+              theme={theme}
+              onReady={(event) => setApi(event.api)}
+              floatingGroupBounds="boundedWithinViewport"
+              floatingGroupDragHandle="tabbar"
+            />
+          </div>
+        </TabMenuContext.Provider>
+      </SlotsContext.Provider>
+    </Workbench3DLayoutContext.Provider>
   );
 }

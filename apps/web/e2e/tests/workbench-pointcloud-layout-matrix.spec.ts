@@ -162,9 +162,13 @@ test("3D 自由布局保留共享 renderer，三视图移出画布与相机整�
   await expect(tri).toBeVisible();
   const originalTri = await tri.elementHandle();
   await panelCommand(page, "三视图精修", "停靠到左侧");
-  const triBounds = await tri.boundingBox();
-  const canvasBounds = await page.getByTestId("pc-viewport").boundingBox();
-  expect(triBounds!.x + triBounds!.width).toBeLessThanOrEqual(canvasBounds!.x + 1);
+  await expect
+    .poll(async () => {
+      const triBounds = await tri.boundingBox();
+      const canvasBounds = await page.getByTestId("pc-viewport").boundingBox();
+      return triBounds!.x + triBounds!.width - canvasBounds!.x;
+    })
+    .toBeLessThanOrEqual(1);
   await expect
     .poll(async () =>
       Number(await page.getByTestId("pc-viewport").getAttribute("data-pointcloud-tri-pass-count")),

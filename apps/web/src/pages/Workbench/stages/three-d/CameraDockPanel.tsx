@@ -23,8 +23,6 @@ export interface CameraDockPanelProps {
   pointPositions?: Float32Array | null;
   showDepth?: boolean;
   onEnlarge?: (role: string) => void;
-  onFloat: () => void;
-  layoutDisabled?: boolean;
   visible?: boolean;
   loading?: boolean;
   error?: string | null;
@@ -54,8 +52,6 @@ export function CameraDockPanel({
   pointPositions,
   showDepth,
   onEnlarge,
-  onFloat,
-  layoutDisabled = false,
   visible = true,
   loading = false,
   error = null,
@@ -79,22 +75,6 @@ export function CameraDockPanel({
 
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col bg-background" data-camera-dock-panel>
-      <div className="flex h-8 shrink-0 items-center justify-end border-b border-border px-1">
-        <Button
-          type="button"
-          variant="ghost"
-          size="xs"
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={(event) => {
-            event.stopPropagation();
-            onFloat();
-          }}
-          disabled={layoutDisabled}
-        >
-          <Icon name="pictureInPicture" size={12} />
-          悬浮显示
-        </Button>
-      </div>
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-2">
         {loading || error || !cameras.length ? (
           <p className="m-0 px-2 py-6 text-center text-xs text-muted-foreground" role="status">

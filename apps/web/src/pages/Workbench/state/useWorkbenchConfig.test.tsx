@@ -259,12 +259,12 @@ describe("useWorkbenchConfig · v0.10.10 项目级覆盖", () => {
       '{"collapsed":true,"x":44}',
     );
     await waitFor(() => expect(mockUpdatePreferences).toHaveBeenCalled());
-    expect(mockUpdatePreferences.mock.calls.at(-1)![0].workbench.layout).not.toHaveProperty(
+    expect(mockUpdatePreferences.mock.calls.slice(-1)[0][0].workbench.layout).not.toHaveProperty(
       "triViewFloat",
     );
-    expect(mockUpdatePreferences.mock.calls.at(-1)![0].workbench.layout.cameraPanels.front.x).toBe(
-      120,
-    );
+    expect(
+      mockUpdatePreferences.mock.calls.slice(-1)[0][0].workbench.layout.cameraPanels.front.x,
+    ).toBe(120);
   });
 
   it("较早的布局保存晚返回时不覆盖更新后的相机面板状态", async () => {

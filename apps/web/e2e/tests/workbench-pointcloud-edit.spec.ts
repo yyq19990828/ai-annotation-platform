@@ -1282,6 +1282,9 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
         await rightSide.click();
       }
       if (item.selectBox) {
+        // A visible tri-view can make the physical right side partially open
+        // while the inspector is still hidden from the previous matrix case.
+        await layoutCommand(page, "标注详情");
         await page
           .locator('[data-testid^="box-list-item-"]')
           .first()

@@ -199,6 +199,8 @@ export function WorkbenchLayout({
           discussion: <DiscussionPanel {...discussionPanel} floating onDetach={undefined} />,
           "ai-task": <AIPredictionPopover {...aiPopover} />,
           "video-tracker": <VideoTrackerPropagateDialog {...videoTracker} />,
+          "tri-view": null,
+          "camera-view": null,
         }}
       />
 

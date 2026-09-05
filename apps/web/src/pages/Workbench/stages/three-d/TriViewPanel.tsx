@@ -132,7 +132,13 @@ export function TriViewPanel({
       const el = rowRefs.current[view];
       if (!el) continue;
       const b = el.getBoundingClientRect();
-      views.push({ view, left: b.left, top: b.top, width: b.width, height: b.height });
+      views.push({
+        view,
+        left: b.left + el.clientLeft,
+        top: b.top + el.clientTop,
+        width: el.clientWidth,
+        height: el.clientHeight,
+      });
     }
     scene.setTriViewLayout({
       panel: { left: pr.left, top: pr.top, width: pr.width, height: pr.height },
