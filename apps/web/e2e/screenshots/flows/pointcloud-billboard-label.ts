@@ -42,9 +42,10 @@ export async function runPointcloudBillboardLabel(
   await page.waitForTimeout(2_600);
 
   await page.getByRole("button", { name: "工作台设置" }).first().click();
-  const drawer = page.getByTestId("workbench-settings-drawer");
-  await expect(drawer).toBeVisible();
+  const dialog = page.getByTestId("workbench-settings-dialog");
+  await expect(dialog).toBeVisible();
 
+  await dialog.getByRole("tab", { name: "标注显示", exact: true }).click();
   const labelContent = page.getByTestId("setting-field-common.labelContent");
   await labelContent.scrollIntoViewIfNeeded();
   await labelContent.getByRole("tab", { name: "轨迹" }).click();
@@ -75,14 +76,14 @@ export async function runPointcloudBillboardLabel(
     () =>
       (
         window as typeof window & { __pointcloudLabelTexts?: string[] }
-      ).__pointcloudLabelTexts?.some((text) => text === "object · 车辆 · 清晰可见"),
+      ).__pointcloudLabelTexts?.some((text) => text.endsWith("object · 车辆 · 清晰可见")),
     undefined,
     { timeout: 5_000 },
   );
   await page.waitForTimeout(1_800);
 
   await page.keyboard.press("Escape");
-  await expect(drawer).toBeHidden();
+  await expect(dialog).toBeHidden();
   await page.waitForTimeout(900);
 
   const box = await viewport.boundingBox();

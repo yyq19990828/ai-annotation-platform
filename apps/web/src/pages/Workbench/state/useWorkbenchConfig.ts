@@ -18,6 +18,7 @@ import {
   type WorkbenchVideoPreferences,
 } from "@/api/auth";
 import type { ProjectRenderingConfig } from "@/api/projects";
+import { useToastStore } from "@/components/ui/Toast";
 import { useAuthStore } from "@/stores/authStore";
 import { useUserPreferences, userPreferencesQueryKey } from "./useUserPreferences";
 
@@ -61,9 +62,11 @@ interface WorkbenchConfigState {
   config: WorkbenchPreferences;
   layout: WorkbenchLayoutPreferences;
   loaded: boolean;
+  loadError: unknown | null;
+  retryLoad: () => void;
   saving: boolean;
   update: (patch: WorkbenchConfigPatch) => Promise<void>;
-  /** v0.15.3 · 设置抽屉写路径:本地立即生效 + 300ms 防抖 PATCH(与 setLayout 同款,共用卸载 flush)。 */
+  /** 设置窗口写路径:本地立即生效 + 300ms 防抖 PATCH(与 setLayout 共用卸载 flush)。 */
   setFields: (patch: WorkbenchConfigPatch) => void;
   setLayout: (patch: WorkbenchLayoutPatch) => void;
   /** v0.10.10 · I17.3 · 被项目级覆盖的字段名（用户级修改会立刻被合并覆盖）。 */
@@ -542,7 +545,12 @@ export function useWorkbenchConfig(
   const queryClient = useQueryClient();
   // v0.21.18 · 读路径接入共享 preferences query: 与 ai.* 四偏好 hook 复用同一
   // ["me","preferences",userId] GET, 消除首屏多个 useWorkbenchConfig 实例各自裸 fetch。
-  const { prefs, loaded } = useUserPreferences();
+  const { prefs, loaded, error, refetch } = useUserPreferences();
+  // A background refresh failure does not invalidate a previously loaded preference snapshot.
+  const loadError = prefs === undefined ? error : null;
+  const retryLoad = useCallback(() => {
+    void refetch();
+  }, [refetch]);
   const [userConfig, setUserConfig] = useState<WorkbenchPreferences>(() =>
     mergeUser(user?.preferences?.workbench, userId, { preferLocalLayout: true }),
   );
@@ -588,7 +596,13 @@ export function useWorkbenchConfig(
           .then((res) => {
             cachePreferences(queryClient, flushUserId, res);
           })
-          .catch(() => undefined);
+          .catch(() => {
+            useToastStore.getState().push({
+              kind: "error",
+              msg: "工作台设置未同步",
+              sub: "离开页面前的修改保存失败，请返回工作台检查并重新设置。",
+            });
+          });
       }
     },
     [queryClient],
@@ -669,7 +683,13 @@ export function useWorkbenchConfig(
           writeLocalLayout(saved.layout, userId);
         })
         .catch((err) => {
+          if (saveRevision !== saveRevisionRef.current) return;
           console.warn("Failed to persist workbench preferences", err);
+          useToastStore.getState().push({
+            kind: "error",
+            msg: "工作台设置未同步",
+            sub: "当前工作台保留本次修改，再次调整设置可重试保存。",
+          });
         })
         .finally(() => {
           if (saveRevision === saveRevisionRef.current) setSaving(false);
@@ -694,9 +714,10 @@ export function useWorkbenchConfig(
     [userId, scheduleDebouncedSave],
   );
 
-  // v0.15.3 · 设置抽屉写路径:本地立即生效(画布实时预览)+ 防抖 PATCH。
+  // 设置窗口写路径:成功读取后才允许编辑，避免默认值覆盖尚未加载的远端偏好。
   const setFields = useCallback(
     (patch: WorkbenchConfigPatch) => {
+      if (!prefs) return;
       saveRevisionRef.current += 1;
       const prev = userConfigRef.current;
       const next = applyConfigPatch(
@@ -709,7 +730,7 @@ export function useWorkbenchConfig(
       broadcastConfig(next, sourceRef.current);
       scheduleDebouncedSave();
     },
-    [scheduleDebouncedSave],
+    [prefs, scheduleDebouncedSave],
   );
 
   const { merged, lockedFields } = useMemo(
@@ -721,6 +742,8 @@ export function useWorkbenchConfig(
     config: merged,
     layout: userConfig.layout,
     loaded,
+    loadError,
+    retryLoad,
     saving,
     update,
     setFields,

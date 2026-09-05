@@ -111,6 +111,14 @@ Shell 持有当前会话的 `scenePlaybackActive`，将预览状态接到 `useTa
 
 ## 可停靠工作区
 
+### 设置窗口的输入隔离
+
+设置窗口内容与遮罩带 `data-workbench-settings`，打开时 `data-state="open"`。独立的背景键盘和全局滚轮监听先调用 `isWorkbenchSettingsInteractionBlocked(event)`；窗口打开或事件的 `composedPath()` 包含设置标记时直接返回，不阻止传播，让设置自身的键盘、焦点与滚动行为继续工作。事件路径判断保留已卸载的标记，防止关闭设置的同一次事件落到背景。
+
+主快捷键还通过 `disabled` 暂停，开窗时清空空格平移与视频按住状态，并提交此前已有的方向键微移。`keyup`、`pointerup`、`mouseup` 中的释放和拖拽收尾继续执行。视频入口调用 `pausePlayback({ snapToGrid: false })`，暂停但不对齐采样网格、不切换帧；关闭设置后保持暂停。这一边界只负责设置窗口，不改变其它弹窗或后台任务的生命周期。
+
+## 右栏：AI 检查器 + 讨论面板
+
 `WorkbenchDockWorkspace` 是 Dockview 的唯一 React 适配层。`workbenchPanelRegistry` 定义稳定面板 ID、渲染槽、生命周期和布局能力；`workbenchLayoutExecutor` 负责移动、停靠、浮动、隐藏、预设与紧凑布局重放。Shell 继续提供业务状态和回调，布局快照不保存 React props、工具、选择、任务、播放位置或编辑草稿。
 
 | Panel ID        | 内容                            | 生命周期与约束                                                         |
@@ -124,6 +132,12 @@ Shell 持有当前会话的 `scenePlaybackActive`，将预览状态接到 `useTa
 | `video-tracker` | 视频追踪配置与运行              | `always`；仅视频标注 context 提供入口                                  |
 | `tri-view`      | 俯视、侧视、正视三行精修        | `always`；仅 3D context 提供入口，作为一个面板移动与隐藏               |
 | `camera-view`   | 相机停靠图库                    | `always`；仅 3D context 提供入口，禁止原生图库浮窗，模式由整组命令切换 |
+
+- **上段 `.rightSplitTop`**：`AIInspectorPanel`，与下段之间有一个上下拖拽 handle。上段高度持久化到 localStorage `workbench.rightSplit.topHeight`（默认 360px，范围 160–720px）。
+- **下段 `.rightSplitBottom`**：`DiscussionPanel`，承载评论 / 历史 / issue 的统一讨论入口。
+- **列宽拖拽 handle** 提升到 `.rightSplit` 全高层级，覆盖两段，不再只贴在 AI 检查器一侧。
+- **布局偏好**：左右栏开合、左右栏宽度、任务队列 / 类别面板 / 标注详情 / 讨论面板浮窗、3D 三视图浮层、2D 相机面板布局和点云主视角快照写入 `user.preferences.workbench.layout`；前端提交全量 `workbench` 子树，后端递归合并偏好字典，列表覆盖；`workbench.layout.cameraPanels` 按原子 map 替换。
+- **侧栏区块分离**：`TaskQueuePanel` 内的任务队列和类别面板、`AIInspectorPanel`、`DiscussionPanel` 都可由 `WorkbenchLayout` 改用 `FloatingPanelShell` 渲染。分离操作默认收起对应侧栏；后续展开只显示仍嵌入的区块，不会自动合并浮窗。合并回侧栏只恢复嵌入状态，不主动展开侧栏。若一侧两个区块都已分离，侧栏 toggle 是可见 no-op。
 
 外围面板可放到画布左、右或底部，也可与其他外围面板组成标签。同窗口浮窗可以包含标签，但浮窗内部不支持再次切分网格。画布换位命令将同一个 `canvas` group 放到整棵可见树的左、右、上、下边缘；画布继续隐藏 header 并锁住原生拖放。`parking` 不显示 header，也不接收用户拖放。适配层不提供 popout，不调用 `addPopoutGroup`，快照清洗也不保留外部窗口描述。
 
@@ -214,7 +228,7 @@ context 是 `annotate|review × image|video|3d` 的六项闭集，按账号分�
 
 三视图和相机图库进入 Docking 树，逐路悬浮相机仍使用原有浮层系统。PSR、选中信息卡、桌宠、Drawer、Modal、候选审阅条与 Toast 不进入 Docking 树；其中需要越过内容裁剪的 PSR 与相机编辑层通过 portal 渲染。
 
-## 偏好四分树与设置抽屉
+## 偏好四分树与设置窗口
 
 `user.preferences.workbench` 从平铺字段重构为四个模态子树 + 顶层 `layout`：
 
@@ -229,7 +243,9 @@ workbench
 
 - **后端**：`apps/api/app/schemas/user.py` 四个子树 Model 均 `extra="forbid"`；存量 JSONB 由 alembic `0103` 数据迁移就地改写（up/down 可逆、幂等）。`update_preferences` 入口保留一层 legacy 平铺键提升器兼容旧 tab。
 - **`ProjectRenderingConfig` 保持平铺**：项目侧不迁移；`useWorkbenchConfig.applyProjectOverride` 把平铺的项目覆盖映射到 `image.*` 子树字段,`lockedFields` 语义不变。
-- **字段注册表**：`state/workbenchSettingsFields.ts` 是设置 UI 的单一来源（key / 分类 / 控件类型 / 是否可锁定）。Settings 页「标注偏好」与工作台设置抽屉共用它 + `components/SettingsFieldControl` 渲染，**新增设置项 = 后端子树加字段 → `auth.ts` 类型同步 → 注册表加一行 → 消费点读配置**。
-- **设置抽屉**：`shell/WorkbenchSettingsDrawer.tsx`，齿轮菜单入口，只显示「通用 + 当前模态」分组。写路径走 `useWorkbenchConfig.setFields()`（本地立即生效 + 与 `setLayout` 共用的 300ms 防抖 PATCH 和卸载 flush）；多实例（抽屉 ↔ 画布）经模块级广播同步，实现拖滑块画布实时预览。
+- **字段注册表**：`state/workbenchSettingsFields.ts` 是设置 UI 的单一来源（key / 分类 / section 分组 / 控件类型 / 是否可锁定）。Settings 页「标注偏好」与工作台设置窗口共用它 + `components/SettingsFieldControl` 渲染，**新增设置项 = 后端子树加字段 → `auth.ts` 类型同步 → 注册表加一行 → 消费点读配置**。
+- **设置窗口**：`shell/WorkbenchSettingsDialog.tsx` 复用 Radix Dialog / Tabs。桌面居中双栏，窄屏全屏；固定显示界面布局、标注显示、编辑与辅助、画布与视角、播放与轨迹、性能与实验六类，搜索匹配名称、说明、分组与选项，并保留命中子项的父开关。`WORKBENCH_SETTING_GROUPS` / `WORKBENCH_SETTING_SECTIONS` 和 `groupWorkbenchSettings()` 统一窗口、搜索与个人页的展示顺序，`category` 仍只表示原有偏好子树。窗口不接收 Stage 类型，不做模态可见性过滤。`SettingsFieldControl` 的 `settings` 布局显示说明，个人页保留默认 `compact` 布局。
+- **关闭与焦点**：`DialogContent.overlayProps` 为当前窗口配置遮罩层级和事件。仅从遮罩开始的完整点击触发关闭，避免滑块拖出窗口误关闭；关闭与切换分类前 blur 活跃字段。Dialog 接管焦点陷阱与恢复，组合输入期间不响应 Esc，背景输入按上文统一隔离。
+- **保存**：写路径仍走 `useWorkbenchConfig.setFields()`（本地立即生效、300ms 防抖 PATCH、卸载 flush）；各实例经模块广播同步，滑块提交后画布更新。hook 不随窗口关闭卸载；初次加载失败提供 `loadError` / `retryLoad` 并禁止写入，保存失败通过 toast 告知未同步。二次推理面板显隐沿用 `useSecondaryBarHiddenPref`，各任务均可调整但仅影响图片工具条；隐藏孤儿标注仍是会话回调。
 
-<!-- history: DiscussionPanel and the split right rail shipped through the v0.11 workbench slices. FloatingPanelShell + layout preferences shipped in v0.13.10. The four-subtree preferences split + settings drawer shipped in v0.15.3. -->
+<!-- history: DiscussionPanel and the split right rail shipped through the v0.11 workbench slices. FloatingPanelShell + layout preferences shipped in v0.13.10. The four-subtree preferences split + settings window shipped in v0.15.3. -->

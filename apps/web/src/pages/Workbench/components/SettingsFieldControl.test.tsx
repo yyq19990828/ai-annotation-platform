@@ -6,6 +6,7 @@ import type { WorkbenchSettingField } from "../state/workbenchSettingsFields";
 
 const toggleField: WorkbenchSettingField = {
   key: "image.smoothImage",
+  section: "imageDisplay",
   category: "image",
   label: "图像平滑",
   control: { type: "toggle", onText: "开", offText: "关" },
@@ -14,6 +15,7 @@ const toggleField: WorkbenchSettingField = {
 
 const sliderField: WorkbenchSettingField = {
   key: "image.controlPointsSize",
+  section: "drawing",
   category: "image",
   label: "控制点大小",
   description: "顶点拖拽手柄半径",
@@ -22,6 +24,7 @@ const sliderField: WorkbenchSettingField = {
 
 const selectField: WorkbenchSettingField = {
   key: "video.demo",
+  section: "playback",
   category: "video",
   label: "演示",
   control: {
@@ -35,6 +38,7 @@ const selectField: WorkbenchSettingField = {
 
 const numericSelectField: WorkbenchSettingField = {
   key: "image.zoomStepFactor",
+  section: "imageDisplay",
   category: "image",
   label: "滚轮缩放步长",
   control: {
@@ -48,6 +52,7 @@ const numericSelectField: WorkbenchSettingField = {
 
 const textField: WorkbenchSettingField = {
   key: "image.cssImageFilter",
+  section: "imageDisplay",
   category: "image",
   label: "CSS 图像滤镜",
   control: { type: "text", maxLength: 255, placeholder: "brightness(1.2)" },
@@ -55,6 +60,7 @@ const textField: WorkbenchSettingField = {
 
 const multiselectField: WorkbenchSettingField = {
   key: "common.labelContent",
+  section: "appearance",
   category: "common",
   label: "标签内容",
   control: {
@@ -151,5 +157,41 @@ describe("SettingsFieldControl", () => {
     render(<SettingsFieldControl field={toggleField} value={true} locked onCommit={vi.fn()} />);
     expect((screen.getByRole("switch") as HTMLInputElement).disabled).toBe(true);
     expect(screen.getByText("项目锁定")).toBeTruthy();
+  });
+});
+
+describe("settings layout commit boundaries", () => {
+  it("shows a readable description and a separately named numeric input", () => {
+    render(
+      <SettingsFieldControl layout="settings" field={sliderField} value={6} onCommit={vi.fn()} />,
+    );
+    expect(screen.getByText("顶点拖拽手柄半径")).toBeVisible();
+    expect(screen.getByRole("slider", { name: "控制点大小" })).toHaveAccessibleDescription(
+      "顶点拖拽手柄半径",
+    );
+  });
+  it("Enter and subsequent blur only commit once, and composition Enter does not commit", () => {
+    const onCommit = vi.fn();
+    render(<SettingsFieldControl field={textField} value="" onCommit={onCommit} />);
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: " invert(1) " } });
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    expect(onCommit).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.blur(input);
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit).toHaveBeenCalledWith("invert(1)");
+  });
+  it("slider pointerup and blur deduplicate, keyboard changes still commit", () => {
+    const onCommit = vi.fn();
+    render(<SettingsFieldControl field={sliderField} value={6} onCommit={onCommit} />);
+    const input = screen.getByRole("slider");
+    fireEvent.change(input, { target: { value: "12" } });
+    fireEvent.pointerUp(input);
+    fireEvent.blur(input);
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    fireEvent.change(input, { target: { value: "13" } });
+    fireEvent.keyUp(input, { key: "ArrowUp" });
+    expect(onCommit).toHaveBeenLastCalledWith(13);
   });
 });

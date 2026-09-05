@@ -7,6 +7,7 @@ import {
   type ComponentProps,
   type ReactNode,
 } from "react";
+import { isWorkbenchSettingsInteractionBlocked } from "./workbenchSettingsInteraction";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useIsMutating, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToastStore } from "@/components/ui/Toast";
@@ -659,7 +660,7 @@ export function useWorkbenchShellModel({
   const [fitTick, setFitTick] = useState(0);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const [showHotkeys, setShowHotkeys] = useState(false);
-  // v0.15.3 · 工作台设置抽屉(齿轮菜单入口)。
+  // v0.15.3 · 工作台设置窗口(齿轮菜单入口)。
   const [workbenchSettingsOpen, setWorkbenchSettingsOpen] = useState(false);
   const workspaceCommands = useRef<WorkbenchWorkspaceCommands>(null);
   // v0.21.4 · 视频单题 AI(当前帧→图像 backend)是同步 fetch(非 triggerPreannotation mutation),
@@ -967,6 +968,7 @@ export function useWorkbenchShellModel({
     if (!isVideoTask) return;
     if (videoChaptersData.length === 0) return;
     const onKeyDown = (e: KeyboardEvent) => {
+      if (isWorkbenchSettingsInteractionBlocked(e)) return;
       if (e.key !== "PageUp" && e.key !== "PageDown") return;
       const active = document.activeElement;
       if (active instanceof HTMLElement) {
@@ -1495,6 +1497,7 @@ export function useWorkbenchShellModel({
   useEffect(() => {
     if (!isVideoTask) return;
     const onKey = (e: KeyboardEvent) => {
+      if (isWorkbenchSettingsInteractionBlocked(e)) return;
       if (e.key !== "T" || !e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
       const active = document.activeElement;
       if (active instanceof HTMLElement) {
@@ -4966,6 +4969,7 @@ export function useWorkbenchShellModel({
     // popover 打开时让位: 键盘归它 (Esc 关 popover, Enter 选类)。
     if (videoSamPendingAccept) return;
     const handler = (e: KeyboardEvent) => {
+      if (isWorkbenchSettingsInteractionBlocked(e)) return;
       const target = e.target as HTMLElement | null;
       if (
         target?.tagName === "INPUT" ||
@@ -5499,6 +5503,7 @@ export function useWorkbenchShellModel({
     submitPolyline,
     updateMutation: { mutate: (vars) => updateAnnotationMut.mutate(vars) },
     taskId,
+    disabled: workbenchSettingsOpen,
     ignoredKeys: stageKind === "3d" ? threeDOwnedKeys : undefined,
     videoMode: isVideoTask,
     samplingActive,
@@ -6427,7 +6432,10 @@ export function useWorkbenchShellModel({
           : (topbarActions.onSubmit ?? handleSubmitTask),
       onSmartNextOpen: topbarActions.onSmartNextOpen,
       onSmartNextUncertain: topbarActions.onSmartNextUncertain,
-      onOpenWorkbenchSettings: () => setWorkbenchSettingsOpen(true),
+      onOpenWorkbenchSettings: () => {
+        videoControlsRef.current?.pausePlayback({ snapToGrid: false });
+        setWorkbenchSettingsOpen(true);
+      },
       canWithdraw: !scenePlaybackActive && topbarActions.canWithdraw,
       canReopen: !scenePlaybackActive && topbarActions.canReopen,
       isWithdrawing: topbarActions.isWithdrawing,
@@ -7072,7 +7080,6 @@ export function useWorkbenchShellModel({
     workbenchSettings: {
       open: workbenchSettingsOpen,
       onClose: () => setWorkbenchSettingsOpen(false),
-      stageKind,
       projectRenderingConfig: currentProject?.rendering_config ?? null,
       hideOrphanAnnotations,
       onToggleHideOrphans: () => setHideOrphanAnnotations((value) => !value),

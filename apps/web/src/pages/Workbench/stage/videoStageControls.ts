@@ -7,7 +7,7 @@
 export interface VideoStageControls {
   togglePlayback: () => void;
   jogPlayback: (dir: -1 | 1) => void;
-  pausePlayback: () => void;
+  pausePlayback: (options?: { snapToGrid?: boolean }) => void;
   seekByFrames: (delta: number, options?: { recordHistory?: boolean }) => void;
   /** 软网格跳:采样开启时 ←/→ 跳到严格大/小的最近网格点。 */
   seekGrid: (dir: -1 | 1, options?: { recordHistory?: boolean }) => void;

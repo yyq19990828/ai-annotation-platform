@@ -17,13 +17,14 @@ const videoHookMocks = vi.hoisted(() => ({
     width: number;
     height: number;
   } | null,
+  seekToAsync: vi.fn().mockResolvedValue({ ok: true, frame: 0 }),
   imageBitmapToJpeg: vi.fn().mockResolvedValue(null),
   videoElementToJpeg: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock("./useFrameClock", () => ({
   useFrameClock: () => ({
-    seekToAsync: vi.fn().mockResolvedValue({ ok: true, frame: 0 }),
+    seekToAsync: videoHookMocks.seekToAsync,
     isSeeking: false,
   }),
 }));
@@ -137,7 +138,10 @@ function mockVideo(readyState = 0) {
   };
 }
 
-function setup(videoRef: { current: unknown } = { current: null }) {
+function setup(
+  videoRef: { current: unknown } = { current: null },
+  overrides: Partial<Parameters<typeof useVideoPlaybackController>[0]> = {},
+) {
   return renderHook(() =>
     useVideoPlaybackController({
       manifest: MANIFEST,
@@ -151,6 +155,7 @@ function setup(videoRef: { current: unknown } = { current: null }) {
       drag: null,
       currentFrameEntries: [],
       onUpdate: vi.fn(),
+      ...overrides,
     }),
   );
 }
@@ -160,6 +165,7 @@ describe("useVideoPlaybackController", () => {
     localStorage.clear();
     videoHookMocks.activeBitmap = null;
     videoHookMocks.preciseBitmap = null;
+    videoHookMocks.seekToAsync.mockClear();
     videoHookMocks.imageBitmapToJpeg.mockClear();
     videoHookMocks.videoElementToJpeg.mockClear();
     vi.useFakeTimers();
@@ -236,6 +242,29 @@ describe("useVideoPlaybackController", () => {
     });
     expect(videoHookMocks.videoElementToJpeg).toHaveBeenCalledWith(video, undefined);
     expect(videoHookMocks.imageBitmapToJpeg).not.toHaveBeenCalled();
+  });
+
+  it("settings pause preserves an off-grid frame while ordinary pause still snaps", async () => {
+    const video = mockVideo(HTMLMediaElement.HAVE_METADATA);
+    const { result } = setup(
+      { current: video },
+      {
+        controlledFrameIndex: 7,
+        videoSampling: { mode: "step", frame_step: 5 },
+      },
+    );
+    act(() => result.current.controls.togglePlayback());
+    expect(result.current.isPlaybackActive).toBe(true);
+    videoHookMocks.seekToAsync.mockClear();
+
+    act(() => result.current.controls.pausePlayback({ snapToGrid: false }));
+    expect(result.current.isPlaybackActive).toBe(false);
+    expect(result.current.frameIndex).toBe(7);
+    expect(videoHookMocks.seekToAsync).not.toHaveBeenCalled();
+    expect(video.pause).toHaveBeenCalled();
+
+    await act(async () => result.current.controls.pausePlayback());
+    expect(videoHookMocks.seekToAsync).toHaveBeenCalledWith(5);
   });
 
   it("播放浮层:默认显示 → schedule 后 2s 自动隐藏 → show 再次唤出并取消隐藏", () => {

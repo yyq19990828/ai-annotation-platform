@@ -572,4 +572,48 @@ describe("usePointCloudScene camera continuity", () => {
       }),
     );
   });
+
+  it("settings buttons do not switch the gizmo and closing restores W/E/R", async () => {
+    const viewportRef = { current: document.createElement("div") };
+    const sceneRef = { current: null };
+    const view = renderHook(() =>
+      usePointCloudScene({
+        viewportRef,
+        sceneRef,
+        pcdDecimate: 100,
+        pointSize: 0.06,
+        showGrid: true,
+        showAxisGizmo: true,
+        cameraDamping: 0.1,
+        persistCameraView: false,
+        pointCloudUrl: undefined,
+        continuityKey: "settings-input",
+        axisConvention: "iso_8855",
+        boxes: [],
+        selectedId: "box",
+        selectedPsrEditable: true,
+        pointcloudCamera: null,
+        onWorkbenchLayoutChange: vi.fn(),
+        onViewModeChange: vi.fn(),
+        onTransformPreview: vi.fn(),
+        onTransformCommit: vi.fn(),
+      }),
+    );
+    await waitFor(() => expect(mockState.instances).toHaveLength(1));
+    const scene = mockState.instances[0];
+    const settings = document.createElement("button");
+    settings.dataset.workbenchSettings = "";
+    settings.dataset.state = "open";
+    document.body.append(settings);
+    act(() => {
+      for (const key of ["w", "e", "r"]) {
+        settings.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+      }
+    });
+    expect(scene.setTransformMode).not.toHaveBeenCalled();
+    settings.remove();
+    act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "r" })));
+    expect(scene.setTransformMode).toHaveBeenCalledWith("scale");
+    view.unmount();
+  });
 });

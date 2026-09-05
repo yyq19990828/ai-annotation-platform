@@ -22,7 +22,13 @@ export function useUserPreferences() {
     enabled: !!userId,
     staleTime: 5 * 60 * 1000,
   });
-  return { prefs: query.data, loaded: !query.isPending, userId };
+  return {
+    prefs: query.data,
+    loaded: !query.isPending,
+    error: query.error,
+    refetch: query.refetch,
+    userId,
+  };
 }
 
 /** 供 writer 成功后 invalidate 用: 与 useUserPreferences 同 key。 */

@@ -113,6 +113,15 @@ import fs from "fs";
 const HERE = decodeURIComponent(new URL(".", import.meta.url).pathname);
 const REPO_ROOT = HERE.replace(/\/apps\/web\/e2e\/screenshots\/flows\/?$/, "");
 const FLOWS_OUT = path.join(REPO_ROOT, "apps/web/e2e/screenshots/outputs/flows");
+// nuScenes-mini scene-0061 frame 0, truck annotation 83d881a6b3d94ef3a3bc3b585cc514f8.
+// Official world box transformed into the LiDAR timestamp ego frame (ISO 8855).
+const NUSCENES_RECORDING_BOX = {
+  type: "box_3d",
+  center: [16.19298371687693, 4.529423348258203, 1.8934624374100686],
+  size: [10.201, 2.877, 3.595],
+  rotation: [0.021297334519504878, -0.010713029376386173, 0.026594679170021198],
+  convention_at_create: "iso_8855",
+};
 const DOCS_IMAGES = path.join(REPO_ROOT, "docs-site/user-guide/images");
 const MARKETING_ARCHIVE_ROOT = path.join(REPO_ROOT, ".artifacts/marketing");
 const VALIDATE_ONLY = process.env.SCREENSHOT_VALIDATE_ONLY === "1";
@@ -1954,13 +1963,7 @@ test.describe("flow recordings", () => {
         annotation_type: "box_3d",
         tool_unit_id: "lidar_box_3d",
         class_name: "object",
-        geometry: {
-          type: "box_3d",
-          center: [2.0934999585151672, -0.2625943124294281, -0.3888123378157616],
-          size: [0.940999960899353, 0.7639772057533264, 0.7222056895494461],
-          rotation: [0, 0, 1.7316441821747883],
-          convention_at_create: "opencv_camera",
-        },
+        geometry: NUSCENES_RECORDING_BOX,
         attributes: { kind: "车辆", visibility: "清晰可见" },
       });
       annotationId = source.id;
@@ -2097,13 +2100,7 @@ test.describe("flow recordings", () => {
         annotation_type: "box_3d",
         tool_unit_id: "lidar_box_3d",
         class_name: "object",
-        geometry: {
-          type: "box_3d",
-          center: [2.0934999585151672, -0.2625943124294281, -0.3888123378157616],
-          size: [0.940999960899353, 0.7639772057533264, 0.7222056895494461],
-          rotation: [0, 0, 1.7316441821747883],
-          convention_at_create: "opencv_camera",
-        },
+        geometry: NUSCENES_RECORDING_BOX,
       });
       cleanup.push({ taskId: frame0.id, annotationId: source.id });
 
