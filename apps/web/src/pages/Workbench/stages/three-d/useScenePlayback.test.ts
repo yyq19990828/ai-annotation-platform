@@ -110,6 +110,26 @@ describe("useScenePlayback", () => {
     expect(resolveNext).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps a pending target through a temporary null task and waits for its confirmed ready state", async () => {
+    const pending = deferred<boolean>();
+    const { update, resolveNext, onActiveChange, result } = setup({ navigate: () => pending.promise });
+    await advance(500);
+    update({ taskId: null, sceneId: undefined, frameState: { taskId: null, status: "loading" } });
+    await advance(2_000);
+    expect(onActiveChange).not.toHaveBeenCalled();
+    expect(resolveNext).toHaveBeenCalledTimes(1);
+    expect(result.current.waiting).toBe(true);
+    await act(async () => pending.resolve(true));
+    update({ taskId: "task-2", frameState: { taskId: "task-2", status: "ready" } });
+    await advance(2_000);
+    expect(resolveNext).toHaveBeenCalledTimes(1);
+    update({ sceneId: "scene-1" });
+    await advance(499);
+    expect(resolveNext).toHaveBeenCalledTimes(1);
+    await advance(1);
+    expect(resolveNext).toHaveBeenCalledTimes(2);
+  });
+
   it("aborts a pending summary on pause and ignores its late response", async () => {
     const pending = deferred<ScenePlaybackTarget | null>();
     const resolver = vi.fn(() => pending.promise);
@@ -191,14 +211,14 @@ describe("useScenePlayback", () => {
     await advance(10_000);
     await act(async () => summary.resolve(nextFrame));
     expect(navigate).toHaveBeenCalledTimes(1);
-    update({ taskId: "task-2", frameState: { taskId: "task-2", status: "loading" } });
+    update({ taskId: null, sceneId: undefined, frameState: { taskId: null, status: "loading" } });
     await advance(4_999);
     expect(onActiveChange).not.toHaveBeenCalled();
     await advance(1);
     expect(onActiveChange).toHaveBeenCalledTimes(1);
     expect(onActiveChange).toHaveBeenCalledWith(false);
     expect(result.current.error).toContain("15 秒");
-    update({ frameState: { taskId: "task-2", status: "ready" } });
+    update({ taskId: "task-2", sceneId: "scene-1", frameState: { taskId: "task-2", status: "ready" } });
     await advance(1_000);
     expect(navigate).toHaveBeenCalledTimes(1);
   });

@@ -121,9 +121,11 @@ export function useScenePlayback(options: ScenePlaybackOptions) {
       return;
     }
     if (
-      !taskId ||
       (sceneId !== undefined && sceneId !== run.sceneId) ||
-      (taskId !== run.taskId && taskId !== run.previousTaskId)
+      // Resolving an out-of-page task briefly leaves Shell without a task identity.
+      (taskId === null
+        ? run.previousTaskId === null
+        : taskId !== run.taskId && taskId !== run.previousTaskId)
     ) {
       stop();
       return;
