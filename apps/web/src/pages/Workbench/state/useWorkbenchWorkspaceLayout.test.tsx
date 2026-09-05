@@ -45,15 +45,26 @@ function deferred<T>() {
 const initial = createWorkspacePreset("standard");
 const changed = createWorkspacePreset("review");
 const latest = createWorkspacePreset("focus");
-function legacySnapshot(snapshot: WorkspaceSnapshot): unknown {
+function legacySnapshot(snapshot: WorkspaceSnapshot, version = 1): unknown {
   const legacy = structuredClone(snapshot);
-  delete legacy.layout.panels["ai-task"];
-  delete legacy.layout.panels["video-tracker"];
-  delete (legacy as Partial<WorkspaceSnapshot>).visibilityIntent;
-  delete legacy.returns["ai-task"];
-  delete legacy.returns["video-tracker"];
+  const removed =
+    version >= 3
+      ? ["tri-view", "camera-view"]
+      : ["ai-task", "video-tracker", "tri-view", "camera-view"];
+  for (const id of removed) {
+    delete legacy.layout.panels[id];
+    delete legacy.returns[id as keyof typeof legacy.returns];
+  }
+  delete (legacy as Partial<WorkspaceSnapshot>).cameraPresentation;
+  if (version < 3) delete (legacy as Partial<WorkspaceSnapshot>).visibilityIntent;
+  else {
+    delete (legacy.visibilityIntent as Partial<WorkspaceSnapshot["visibilityIntent"]>)["tri-view"];
+    delete (legacy.visibilityIntent as Partial<WorkspaceSnapshot["visibilityIntent"]>)[
+      "camera-view"
+    ];
+  }
   const strip = (group: WorkspaceGroup) => {
-    group.views = group.views.filter((id) => id !== "ai-task" && id !== "video-tracker");
+    group.views = group.views.filter((id) => !removed.includes(id));
     if (group.activeView && !group.views.includes(group.activeView))
       group.activeView = group.views[0];
   };
@@ -70,7 +81,7 @@ const v2 = (snapshot = initial): WorkspaceEnvelope => ({
   schemaVersion: 2,
   snapshot: legacySnapshot(snapshot),
 });
-const v4 = (snapshot = initial): WorkspaceEnvelope => ({ schemaVersion: 4, snapshot });
+const v5 = (snapshot = initial): WorkspaceEnvelope => ({ schemaVersion: 5, snapshot });
 
 function preferences(
   envelope: WorkspaceEnvelope | undefined = v1(),
@@ -129,6 +140,28 @@ afterEach(() => {
 });
 
 describe("workspace layout owner", () => {
+  it("migrates 3D visibility only from the initial account GET and persists it once", async () => {
+    window.localStorage.setItem("workbench.triViewFloat", '{"collapsed":false,"x":9000}');
+    window.localStorage.setItem("workbench.u1.triViewFloat", '{"collapsed":false,"x":9000}');
+    window.localStorage.setItem(workspaceStorageKey("u1", "annotate:3d"), JSON.stringify(v1()));
+    const remote = preferences(v1(), "annotate:3d");
+    remote.workbench.layout.triViewFloat = { collapsed: true, x: 30, y: 20, w: 250, h: 600 };
+    remote.workbench.layout.cameraPanels = { front: { x: 55, y: 70, collapsed: true } };
+    mocks.get.mockResolvedValue(remote);
+    const { result, client } = setup("annotate:3d");
+    await waitFor(() => expect(result.current.initialized).toBe(true));
+    expect(result.current.snapshot.visibilityIntent["tri-view"]).toBe("hidden");
+    expect(result.current.snapshot.visibilityIntent["camera-view"]).toBe("shown");
+    expect(result.current.snapshot.cameraPresentation).toBe("floating");
+    await waitFor(() => expect(mocks.patch).toHaveBeenCalledTimes(1));
+    expect(mocks.patch.mock.calls[0][0].workbench.layout).not.toHaveProperty("cameraPanels");
+    expect(
+      mocks.patch.mock.calls[0][0].workbench.layout.workspace.contexts["annotate:3d"].schemaVersion,
+    ).toBe(5);
+    act(() => client.setQueryData(userPreferencesQueryKey("u1"), preferences(v1(), "annotate:3d")));
+    expect(result.current.snapshot.visibilityIntent["tri-view"]).toBe("hidden");
+    expect(window.localStorage.getItem("workbench.u1.triViewFloat")).toContain("9000");
+  });
   it("renders the account cache, blocks every write until initial GET, then hydrates once", async () => {
     window.localStorage.setItem(
       workspaceStorageKey("u1", "annotate:image"),
@@ -198,7 +231,7 @@ describe("workspace layout owner", () => {
     expect(result.current.restoreRevision).toBe(0);
     await waitFor(() => expect(mocks.patch).toHaveBeenCalledTimes(1));
     expect(mocks.patch.mock.calls[0][0].workbench.layout.workspace.contexts).toEqual({
-      "annotate:image": v4(),
+      "annotate:image": v5(),
     });
     expect(window.localStorage.getItem("wb:ai-popover-position")).toBe('{"left":48,"top":36}');
     expect(window.localStorage.getItem("wb:video-tracker-panel-size")).toBe('{"w":420,"h":560}');
@@ -225,7 +258,7 @@ describe("workspace layout owner", () => {
     expect(mocks.patch).toHaveBeenCalledTimes(2);
     expect(mocks.patch.mock.calls[1][0]).toEqual({
       workbench: {
-        layout: { workspace: { engine: "dockview@8", contexts: { "annotate:image": v4(latest) } } },
+        layout: { workspace: { engine: "dockview@8", contexts: { "annotate:image": v5(latest) } } },
       },
     });
     expect(result.current.snapshot).toEqual(initial);
@@ -246,7 +279,7 @@ describe("workspace layout owner", () => {
     expect(result.current.readOnly).toBe(false);
     expect(
       JSON.parse(window.localStorage.getItem(workspaceStorageKey("u1", "annotate:image"))!),
-    ).toEqual(v4(changed));
+    ).toEqual(v5(changed));
     act(() => result.current.save(latest));
     await act(async () => vi.advanceTimersByTimeAsync(300));
     expect(result.current.dirty).toBe(false);
@@ -277,7 +310,7 @@ describe("workspace layout owner", () => {
     expect(mocks.patch).toHaveBeenCalledTimes(1);
   });
 
-  it.each([5, 6] as const)(
+  it.each([6, 7] as const)(
     "does not interpret a future schema %s as v1 or permit resetting it",
     async (schemaVersion) => {
       mocks.get.mockResolvedValue(
@@ -336,7 +369,7 @@ describe("workspace layout owner", () => {
     expect(mocks.patch).toHaveBeenCalledTimes(1);
     expect(
       mocks.patch.mock.calls[0][0].workbench.layout.workspace.contexts["annotate:image"],
-    ).toEqual(v4());
+    ).toEqual(v5());
   });
 
   it("waits for a previous context save and keeps its cache authoritative when returning", async () => {
@@ -363,7 +396,7 @@ describe("workspace layout owner", () => {
     expect(
       client.getQueryData<UserPreferences>(userPreferencesQueryKey("u1"))?.workbench.layout
         .workspace?.contexts["annotate:image"],
-    ).toEqual(v4(latest));
+    ).toEqual(v5(latest));
   });
 
   it.each([
@@ -404,7 +437,7 @@ describe("workspace layout owner", () => {
     expect(mocks.patch).not.toHaveBeenCalled();
     expect(
       JSON.parse(window.localStorage.getItem(workspaceStorageKey("u1", "annotate:image"))!),
-    ).toEqual(v4(changed));
+    ).toEqual(v5(changed));
   });
 
   it("isolates cache, initial hydration and in-flight callbacks when the account changes", async () => {

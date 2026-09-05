@@ -28,5 +28,12 @@ describe("workbench panel contract", () => {
     expect(panelSupportsContext("ai-task", "review:image")).toBe(false);
     expect(panelSupportsContext("video-tracker", "annotate:video")).toBe(true);
     expect(panelSupportsContext("video-tracker", "annotate:image")).toBe(false);
+    for (const id of ["tri-view", "camera-view"] as const) {
+      expect(WORKBENCH_PANEL_REGISTRY[id].renderer).toBe("always");
+      expect(panelSupportsContext(id, "annotate:3d")).toBe(true);
+      expect(panelSupportsContext(id, "review:3d")).toBe(true);
+      expect(panelSupportsContext(id, "annotate:image")).toBe(false);
+    }
+    expect(WORKBENCH_PANEL_REGISTRY["camera-view"].capabilities.float).toBe(false);
   });
 });

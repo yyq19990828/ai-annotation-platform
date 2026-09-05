@@ -226,6 +226,7 @@ describe("useWorkbenchConfig · v0.10.10 项目级覆盖", () => {
   });
 
   it("setLayout 支持 3D 相机面板和主视角快照", async () => {
+    window.localStorage.setItem("workbench.u1.triViewFloat", '{"collapsed":true,"x":44}');
     mockGetPreferences.mockResolvedValue({ workbench: {} });
     mockUpdatePreferences.mockImplementation(async (payload) => payload);
     const { result } = renderHook(() => useWorkbenchConfig(), { wrapper });
@@ -242,6 +243,7 @@ describe("useWorkbenchConfig · v0.10.10 项目级覆盖", () => {
       result.current.setLayout({
         cameraPanels: { front: { x: 120, y: 80, collapsed: true } },
         pointcloudCamera,
+        triViewFloat: { collapsed: false, x: 100 },
       });
     });
 
@@ -253,6 +255,16 @@ describe("useWorkbenchConfig · v0.10.10 项目级覆盖", () => {
     expect(result.current.layout.pointcloudCamera).toEqual(pointcloudCamera);
     expect(window.localStorage.getItem("workbench.u1.cameraPanels")).toContain("front");
     expect(window.localStorage.getItem("workbench.u1.pointcloudCamera")).toContain("position");
+    expect(window.localStorage.getItem("workbench.u1.triViewFloat")).toBe(
+      '{"collapsed":true,"x":44}',
+    );
+    await waitFor(() => expect(mockUpdatePreferences).toHaveBeenCalled());
+    expect(mockUpdatePreferences.mock.calls.at(-1)![0].workbench.layout).not.toHaveProperty(
+      "triViewFloat",
+    );
+    expect(mockUpdatePreferences.mock.calls.at(-1)![0].workbench.layout.cameraPanels.front.x).toBe(
+      120,
+    );
   });
 
   it("较早的布局保存晚返回时不覆盖更新后的相机面板状态", async () => {

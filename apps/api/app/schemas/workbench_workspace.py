@@ -21,10 +21,13 @@ PanelId = Literal[
     "discussion",
     "ai-task",
     "video-tracker",
+    "tri-view",
+    "camera-view",
 ]
 GroupId = Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")]
 CORE_PANELS = {"canvas", "task-queue", "class-palette", "inspector", "discussion"}
 TOOL_PANELS = {"ai-task", "video-tracker"}
+THREE_D_PANELS = {"tri-view", "camera-view"}
 MAX_SNAPSHOT_BYTES = 64 * 1024
 
 
@@ -39,10 +42,19 @@ class WorkspacePosition(WorkspaceModel):
     height: float = Field(gt=0)
 
 
+class WorkspaceDockReturn(WorkspaceModel):
+    reference: PanelId
+    anchors: list[PanelId] = Field(min_length=1, max_length=8)
+    direction: Literal["left", "right", "above", "below"]
+    width: float = Field(gt=0, le=1_000_000)
+    height: float = Field(gt=0, le=1_000_000)
+
+
 class WorkspaceReturn(WorkspaceModel):
     group: GroupId
-    index: int = Field(ge=0, le=6)
+    index: int = Field(ge=0, le=8)
     position: WorkspacePosition | None = None
+    dock: WorkspaceDockReturn | None = None
 
     @model_validator(mode="after")
     def _legal_destination(self):
@@ -53,7 +65,7 @@ class WorkspaceReturn(WorkspaceModel):
 
 class WorkspaceGroup(WorkspaceModel):
     id: GroupId
-    views: list[PanelId] = Field(max_length=7)
+    views: list[PanelId] = Field(max_length=9)
     activeView: PanelId | None = None
     locked: bool | Literal["no-drop-target"] | None = None
     hideHeader: bool | None = None
@@ -78,7 +90,7 @@ class WorkspaceLeaf(WorkspaceModel):
 
 class WorkspaceBranch(WorkspaceModel):
     type: Literal["branch"]
-    data: list["WorkspaceNode"] = Field(min_length=1, max_length=8)
+    data: list["WorkspaceNode"] = Field(min_length=1, max_length=10)
     size: float | None = Field(default=None, ge=0)
     visible: bool | None = None
 
@@ -87,7 +99,7 @@ WorkspaceNode = Annotated[WorkspaceLeaf | WorkspaceBranch, Field(discriminator="
 
 
 class WorkspaceMaximizedNode(WorkspaceModel):
-    location: list[Annotated[int, Field(ge=0, le=7)]] = Field(max_length=12)
+    location: list[Annotated[int, Field(ge=0, le=9)]] = Field(max_length=12)
 
 
 class WorkspaceGrid(WorkspaceModel):
@@ -112,19 +124,24 @@ class WorkspaceFloatingGroup(WorkspaceModel):
 
 class WorkspaceLayout(WorkspaceModel):
     grid: WorkspaceGrid
-    panels: dict[PanelId, WorkspacePanel] = Field(min_length=5, max_length=7)
+    panels: dict[PanelId, WorkspacePanel] = Field(min_length=5, max_length=9)
     activeGroup: GroupId | None = None
     floatingGroups: list[WorkspaceFloatingGroup] = Field(
-        default_factory=list, max_length=7
+        default_factory=list, max_length=9
     )
 
 
 class WorkspaceSnapshot(WorkspaceModel):
     layout: WorkspaceLayout
-    returns: dict[PanelId, WorkspaceReturn] = Field(max_length=6)
+    returns: dict[PanelId, WorkspaceReturn] = Field(max_length=8)
     visibilityIntent: (
-        dict[Literal["ai-task", "video-tracker"], Literal["shown", "hidden"]] | None
+        dict[
+            Literal["ai-task", "video-tracker", "tri-view", "camera-view"],
+            Literal["shown", "hidden"],
+        ]
+        | None
     ) = None
+    cameraPresentation: Literal["floating", "docked"] | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -141,7 +158,7 @@ class WorkspaceSnapshot(WorkspaceModel):
 
 
 class WorkspaceContextEnvelope(WorkspaceModel):
-    schemaVersion: Literal[1, 2, 3, 4]
+    schemaVersion: Literal[1, 2, 3, 4, 5]
     snapshot: WorkspaceSnapshot
 
     @field_validator("schemaVersion", mode="before")
@@ -156,6 +173,8 @@ class WorkspaceContextEnvelope(WorkspaceModel):
         snapshot = self.snapshot
         layout = snapshot.layout
         expected = CORE_PANELS | TOOL_PANELS if self.schemaVersion >= 3 else CORE_PANELS
+        if self.schemaVersion >= 5:
+            expected |= THREE_D_PANELS
         if set(layout.panels) != expected:
             raise ValueError("panel set does not match schemaVersion")
         if any(key != panel.id for key, panel in layout.panels.items()):
@@ -164,8 +183,33 @@ class WorkspaceContextEnvelope(WorkspaceModel):
             raise ValueError("canvas must use the always renderer")
         if snapshot.visibilityIntent is not None and self.schemaVersion < 3:
             raise ValueError("visibilityIntent requires schemaVersion 3 or later")
+        if self.schemaVersion < 5:
+            if (
+                snapshot.cameraPresentation is not None
+                or set(snapshot.visibilityIntent or {}) & THREE_D_PANELS
+            ):
+                raise ValueError("3D presentation requires schemaVersion 5")
+        elif (
+            snapshot.cameraPresentation is None
+            or set(snapshot.visibilityIntent or {}) != TOOL_PANELS | THREE_D_PANELS
+        ):
+            raise ValueError(
+                "schemaVersion 5 requires camera presentation and tool visibility"
+            )
         if "canvas" in snapshot.returns or not set(snapshot.returns) <= expected:
             raise ValueError("returns can only describe peripheral panels")
+        for panel, destination in snapshot.returns.items():
+            if panel == "camera-view" and destination.position is not None:
+                raise ValueError("camera gallery cannot return to a native float")
+            if destination.dock is not None and (
+                self.schemaVersion < 5
+                or destination.dock.reference == panel
+                or destination.dock.reference not in expected
+                or destination.dock.reference not in destination.dock.anchors
+                or panel in destination.dock.anchors
+                or len(set(destination.dock.anchors)) != len(destination.dock.anchors)
+            ):
+                raise ValueError("invalid dock return")
 
         # Bound traversal separately from the serialized byte budget.
         pending = [(layout.grid.root, 1, True)]
@@ -174,7 +218,7 @@ class WorkspaceContextEnvelope(WorkspaceModel):
         while pending:
             node, depth, parent_visible = pending.pop()
             nodes += 1
-            if depth > 12 or nodes > 32:
+            if depth > 12 or nodes > (40 if self.schemaVersion >= 5 else 32):
                 raise ValueError("workspace grid exceeds node/depth limits")
             visible = parent_visible and node.visible is not False
             if isinstance(node, WorkspaceBranch):
@@ -187,8 +231,9 @@ class WorkspaceContextEnvelope(WorkspaceModel):
         ids = [group.id for group, _, _ in groups]
         if (
             len(ids) != len(set(ids))
-            or len(ids) > 8
-            or sum(id != "parking" for id in ids) > 7
+            or len(ids) > (10 if self.schemaVersion >= 5 else 8)
+            or sum(id != "parking" for id in ids)
+            > (9 if self.schemaVersion >= 5 else 7)
         ):
             raise ValueError("workspace group IDs must be unique and within limits")
         if layout.activeGroup is not None and (
@@ -200,6 +245,11 @@ class WorkspaceContextEnvelope(WorkspaceModel):
         if len(views) != len(set(views)) or set(views) != expected:
             raise ValueError("every panel must occur in exactly one group")
         for group, docked, visible in groups:
+            if "camera-view" in group.views:
+                if not docked:
+                    raise ValueError("camera gallery must remain docked")
+                if snapshot.cameraPresentation == "floating" and group.id != "parking":
+                    raise ValueError("floating cameras require the gallery in parking")
             if group.id == "parking":
                 if not docked or visible or group.hideHeader is not True:
                     raise ValueError("parking must be docked, invisible and headerless")
@@ -226,3 +276,24 @@ class WorkspaceContextEnvelope(WorkspaceModel):
 class WorkbenchWorkspacePreferences(WorkspaceModel):
     engine: Literal["dockview@8"]
     contexts: dict[WorkspaceContext, WorkspaceContextEnvelope] = Field(max_length=6)
+
+    @model_validator(mode="after")
+    def _three_d_scope(self):
+        for context, envelope in self.contexts.items():
+            if context.endswith(":3d") or envelope.schemaVersion < 5:
+                continue
+            pending = [envelope.snapshot.layout.grid.root]
+            while pending:
+                node = pending.pop()
+                if isinstance(node, WorkspaceBranch):
+                    pending.extend(node.data)
+                elif (
+                    node.data.id != "parking" and set(node.data.views) & THREE_D_PANELS
+                ):
+                    raise ValueError("3D panels require parking outside 3D contexts")
+            if any(
+                set(group.data.views) & THREE_D_PANELS
+                for group in envelope.snapshot.layout.floatingGroups
+            ):
+                raise ValueError("3D panels require parking outside 3D contexts")
+        return self

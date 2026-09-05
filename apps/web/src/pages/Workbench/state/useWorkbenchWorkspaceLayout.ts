@@ -12,6 +12,7 @@ import {
   type WorkspaceSnapshot,
 } from "../layout/workbenchLayoutSnapshot";
 import { userPreferencesQueryKey } from "./useUserPreferences";
+import { migrateThreeDWorkspace } from "../layout/workbenchLayoutPresets";
 
 type ReadOnlyReason = "invalid" | "newer-schema" | "restore-failed" | null;
 
@@ -29,6 +30,7 @@ interface WorkspaceSession {
   active: boolean;
   paused: boolean;
   timer: number | null;
+  needsThreeDMigration: boolean;
 }
 
 // A route remount must also wait for the previous owner's request to finish.
@@ -89,7 +91,8 @@ function createSession(
   fallback: WorkspaceSnapshot,
   standard: WorkspaceSnapshot,
 ): WorkspaceSession {
-  const local = readWorkspaceEnvelope(readLocal(userId, context));
+  const cached = readLocal(userId, context);
+  const local = readWorkspaceEnvelope(cached);
   return {
     userId,
     context,
@@ -104,6 +107,11 @@ function createSession(
     active: false,
     paused: false,
     timer: null,
+    needsThreeDMigration:
+      !cached ||
+      typeof cached !== "object" ||
+      !("schemaVersion" in cached) ||
+      cached.schemaVersion !== WORKSPACE_SCHEMA_VERSION,
   };
 }
 
@@ -297,20 +305,42 @@ export function useWorkbenchWorkspaceLayout(
       session.error = "暂时无法读取账号布局，当前使用本地布局。";
     } else {
       const workspace = query.data?.workbench?.layout?.workspace;
-      const remote = readWorkspaceEnvelope(contextEnvelope(workspace, context));
+      const envelope = contextEnvelope(workspace, context);
+      const remote = readWorkspaceEnvelope(envelope);
+      const needsMigration =
+        envelope === undefined ||
+        (typeof envelope === "object" &&
+          envelope !== null &&
+          "schemaVersion" in envelope &&
+          typeof envelope.schemaVersion === "number" &&
+          envelope.schemaVersion < WORKSPACE_SCHEMA_VERSION);
       if (remote.readOnlyReason) {
         session.readOnlyReason = remote.readOnlyReason;
         session.snapshot = session.standard;
         session.restoreRevision += 1;
       } else if (remote.snapshot) {
         session.readOnlyReason = null;
-        if (JSON.stringify(remote.snapshot) !== JSON.stringify(session.snapshot)) {
-          session.snapshot = remote.snapshot;
+        const snapshot = needsMigration
+          ? migrateThreeDWorkspace(remote.snapshot, query.data?.workbench ?? {}, context)
+          : remote.snapshot;
+        if (JSON.stringify(snapshot) !== JSON.stringify(session.snapshot)) {
+          session.snapshot = snapshot;
           session.restoreRevision += 1;
         }
-        writeLocal(session, remote.snapshot);
+        writeLocal(session, snapshot);
+        if (needsMigration && context.endsWith(":3d")) {
+          session.dirty = snapshot;
+          schedule(session);
+        }
       } else if (!session.readOnlyReason) {
         // No context on the server yet: persist the initial legacy conversion once.
+        const snapshot = session.needsThreeDMigration
+          ? migrateThreeDWorkspace(session.snapshot, query.data?.workbench ?? {}, context)
+          : session.snapshot;
+        if (JSON.stringify(snapshot) !== JSON.stringify(session.snapshot)) {
+          session.snapshot = snapshot;
+          session.restoreRevision += 1;
+        }
         session.dirty = session.snapshot;
         writeLocal(session, session.snapshot);
         schedule(session);

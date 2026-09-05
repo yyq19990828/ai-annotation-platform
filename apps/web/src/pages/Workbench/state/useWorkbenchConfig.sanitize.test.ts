@@ -35,13 +35,7 @@ describe("sanitizeForPersist", () => {
       w: 100,
       h: 201,
     });
-    expect(out.layout.triViewFloat).toEqual({
-      collapsed: false,
-      x: 12,
-      y: 9,
-      w: null,
-      h: null,
-    });
+    expect(out.layout).not.toHaveProperty("triViewFloat");
   });
 
   it("整数坐标幂等；返回新对象不就地改原值", () => {

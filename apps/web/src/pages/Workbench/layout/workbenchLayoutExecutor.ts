@@ -4,12 +4,14 @@ import {
   createWorkspacePreset,
   PANEL_DEFAULT_POSITION,
   type WorkspacePresetId,
+  type ThreeDWorkspacePresetId,
 } from "./workbenchLayoutPresets";
 import {
   PANEL_IDS,
   clampWorkspaceRect,
   sanitizeWorkspaceSnapshot,
   type PanelId,
+  type CameraPresentation,
   type PanelReturn,
   type WorkspaceBounds,
   type WorkspaceGroup,
@@ -232,6 +234,12 @@ export interface WorkbenchLayoutExecutor {
   restore(snapshot: WorkspaceSnapshot): void;
   recover(snapshot: WorkspaceSnapshot): void;
   setReturns(returns: WorkspaceSnapshot["returns"]): void;
+  setPresentation(
+    snapshot: Pick<WorkspaceSnapshot, "cameraPresentation" | "visibilityIntent">,
+  ): void;
+  setCameraPresentation(mode: CameraPresentation): void;
+  getCameraPresentation(): CameraPresentation;
+  applyThreeDPreset(preset: ThreeDWorkspacePresetId): void;
   show(id: PanelId): void;
   hide(id: PanelId): void;
   dock(id: PanelId, position: "left" | "right" | "below"): void;
@@ -256,6 +264,10 @@ export function createWorkbenchLayoutExecutor(
   getBounds: () => WorkspaceBounds,
 ): WorkbenchLayoutExecutor {
   let returns: WorkspaceSnapshot["returns"] = {};
+  let cameraPresentation: CameraPresentation = "floating";
+  let cameraIntent: "shown" | "hidden" = "hidden";
+  let compactCameraIntent: "shown" | "hidden" | undefined;
+  const requestedDockSizes = new Map<string, WorkspaceBounds>();
   let desktop: WorkspaceSnapshot | null = null;
   let restoreMaximizedSizes: ReturnType<typeof rememberGridSizes> | undefined;
   const pendingShows = new Set<SidePanelId>();
@@ -328,6 +340,8 @@ export function createWorkbenchLayoutExecutor(
     return (resizedGroup?: string, bounds = getBounds()) => {
       if (api.hasMaximizedGroup()) return;
       if (resizedGroup) previous.delete(resizedGroup);
+      for (const [id, size] of requestedDockSizes) previous.set(id, size);
+      requestedDockSizes.clear();
       syncConstraints();
       const snapshot = rawSnapshot();
       const tree = treeFromNode(snapshot.layout.grid.root, snapshot.layout.grid.orientation);
@@ -452,13 +466,55 @@ export function createWorkbenchLayoutExecutor(
     }
     if (layout.activeGroup && !getGroup(layout.activeGroup)?.api.isVisible)
       layout.activeGroup = "canvas";
-    return sanitizeWorkspaceSnapshot({ layout, returns }, bounds);
+    return sanitizeWorkspaceSnapshot(
+      { layout, returns, cameraPresentation, visibilityIntent: { "camera-view": cameraIntent } },
+      bounds,
+    );
   }
   function remember(id: SidePanelId) {
     const item = panel(id),
       group = item.group;
     if (["parking", "compact-overlay"].includes(group.id)) return;
     const entry: PanelReturn = { group: group.id, index: group.panels.indexOf(item) };
+    if (id === "camera-view" && group.api.location.type === "grid") {
+      const layout = api.toJSON();
+      const locate = (node: WorkspaceNode, axis: Axis): boolean => {
+        if (node.type === "leaf") return node.data.id === group.id;
+        const index = node.data.findIndex((child) => locate(child, opposite(axis)));
+        if (index === -1) return false;
+        if (!entry.dock) {
+          const neighborIndex = node.data
+            .map((child, i) => ({ child, i }))
+            .filter(
+              ({ child, i }) => i !== index && groupsIn(child).some((g) => g.id !== "parking"),
+            )
+            .sort((a, b) => Math.abs(a.i - index) - Math.abs(b.i - index))[0]?.i;
+          if (neighborIndex !== undefined) {
+            const reference = groupsIn(node.data[neighborIndex]).find((g) => g.id !== "parking")
+              ?.views[0];
+            if (reference)
+              entry.dock = {
+                reference,
+                anchors: groupsIn(node.data[neighborIndex])
+                  .filter((g) => g.id !== "parking")
+                  .flatMap((g) => g.views),
+                direction:
+                  axis === "HORIZONTAL"
+                    ? index < neighborIndex
+                      ? "left"
+                      : "right"
+                    : index < neighborIndex
+                      ? "above"
+                      : "below",
+                width: group.api.width,
+                height: group.api.height,
+              };
+          }
+        }
+        return true;
+      };
+      locate(layout.grid.root as WorkspaceNode, layout.grid.orientation);
+    }
     if (group.api.location.type === "floating") {
       const floating = api.toJSON().floatingGroups?.find((f) => f.data?.id === group.id);
       if (floating) {
@@ -479,6 +535,10 @@ export function createWorkbenchLayoutExecutor(
   }
   function hide(id: PanelId) {
     if (id === "canvas") return;
+    if (id === "camera-view") {
+      cameraIntent = "hidden";
+      if (desktop) compactCameraIntent = cameraIntent;
+    }
     if (desktop) pendingShows.delete(id);
     else remember(id);
     move(id, ensureParking());
@@ -555,6 +615,11 @@ export function createWorkbenchLayoutExecutor(
       canvas().api.setActive();
       return;
     }
+    if (id === "camera-view") {
+      cameraIntent = "shown";
+      if (desktop) compactCameraIntent = cameraIntent;
+      if (cameraPresentation === "floating") return;
+    }
     if (desktop) {
       if (
         !groupsIn(
@@ -571,9 +636,15 @@ export function createWorkbenchLayoutExecutor(
     if (item.group.id === "parking") {
       const saved = returns[id];
       const existing = saved && getGroup(saved.group);
-      if (existing && !["canvas", "parking", "compact-overlay"].includes(existing.id)) {
+      if (
+        existing &&
+        !["canvas", "parking", "compact-overlay"].includes(existing.id) &&
+        (id !== "camera-view" || existing.api.location.type === "grid")
+      ) {
         revealGroup(existing);
         move(id, existing, saved.index);
+      } else if (saved?.dock && id === "camera-view") {
+        restoreCameraDock(saved);
       } else if (saved?.position) {
         setFloat(item, clampWorkspaceRect(saved.position, getBounds()));
         const previousGroup = saved.group;
@@ -599,7 +670,7 @@ export function createWorkbenchLayoutExecutor(
     group.api.setVisible(true);
   }
   function float(id: PanelId) {
-    if (desktop || id === "canvas") return;
+    if (desktop || !WORKBENCH_PANEL_REGISTRY[id].capabilities.float) return;
     exitCanvasMaximized();
     const item = panel(id);
     setFloat(
@@ -614,6 +685,10 @@ export function createWorkbenchLayoutExecutor(
   function dock(id: PanelId, position: "left" | "right" | "below") {
     if (desktop || id === "canvas") return;
     exitCanvasMaximized();
+    if (id === "camera-view") {
+      cameraPresentation = "docked";
+      cameraIntent = "shown";
+    }
     const group = ensureGroup(`dock-${id}`, "canvas", position);
     move(id, group);
     group.api.moveTo({
@@ -630,6 +705,8 @@ export function createWorkbenchLayoutExecutor(
   }
   function tab(id: PanelId, target: PanelId) {
     if (desktop || id === "canvas" || target === "canvas") return;
+    if (id === "camera-view" && panel(target).group.api.location.type === "floating") return;
+    if (id === "camera-view" || target === "camera-view") changeCameraPresentation("docked");
     show(target);
     const group = panel(target).group;
     move(id, group);
@@ -653,6 +730,7 @@ export function createWorkbenchLayoutExecutor(
     const tree = treeFromNode(snapshot.layout.grid.root, snapshot.layout.grid.orientation, true);
     if (!tree) throw new Error("Empty workspace tree");
     exitCanvasMaximized();
+    setPresentation(snapshot);
     // Media-query layout effects can run before Dockview's ResizeObserver.
     // Release temporary replay constraints against the current host, not its old compact size.
     api.layout(bounds.width, bounds.height);
@@ -734,6 +812,79 @@ export function createWorkbenchLayoutExecutor(
         )
       )
         throw new Error("Workspace floating replay exceeded one pixel tolerance");
+    }
+  }
+  function setPresentation(
+    snapshot: Pick<WorkspaceSnapshot, "cameraPresentation" | "visibilityIntent">,
+  ) {
+    cameraPresentation = snapshot.cameraPresentation;
+    cameraIntent = snapshot.visibilityIntent["camera-view"];
+  }
+  function restoreCameraDock(saved: PanelReturn) {
+    const dock = saved.dock!;
+    const snapshot = rawSnapshot();
+    const tree = treeFromNode(snapshot.layout.grid.root, snapshot.layout.grid.orientation, true)!;
+    const members = (node: Tree): PanelId[] =>
+      "group" in node ? node.group.views : node.children.flatMap(members);
+    const available = new Set(members(tree));
+    const anchors = dock.anchors.filter((id) => available.has(id));
+    if (!anchors.length) anchors.push("canvas");
+    const axis: Axis =
+      dock.direction === "left" || dock.direction === "right" ? "HORIZONTAL" : "VERTICAL";
+    const insert = (node: Tree): Tree => {
+      if ("children" in node) {
+        const childIndex = node.children.findIndex((child) =>
+          anchors.every((id) => members(child).includes(id)),
+        );
+        if (childIndex !== -1) {
+          node.children[childIndex] = insert(node.children[childIndex]);
+          return node;
+        }
+      }
+      const size = axis === "HORIZONTAL" ? dock.width : dock.height;
+      const extent = axis === "HORIZONTAL" ? getBounds().width : getBounds().height;
+      const camera: Tree = {
+        group: { id: saved.group, views: ["camera-view"], activeView: "camera-view" },
+        size,
+      };
+      const target = { ...node, size: Math.max(1, extent - size) };
+      return {
+        axis,
+        size: node.size,
+        children:
+          dock.direction === "left" || dock.direction === "above"
+            ? [camera, target]
+            : [target, camera],
+      };
+    };
+    const root = normalizeTree(insert(tree));
+    const parking = structuredClone(findNode(snapshot.layout.grid.root, "parking")!);
+    if (parking.type === "leaf") {
+      parking.data.views = parking.data.views.filter((id) => id !== "camera-view");
+      if (parking.data.activeView === "camera-view")
+        parking.data.activeView = parking.data.views[0];
+    }
+    const node = nodeFromTree(root);
+    if (node.type !== "branch" || !("axis" in root))
+      throw new Error("Camera dock requires a branch");
+    node.data.push(parking);
+    snapshot.layout.grid.root = node;
+    snapshot.layout.grid.orientation =
+      root.axis as WorkspaceSnapshot["layout"]["grid"]["orientation"];
+    delete snapshot.layout.grid.maximizedNode;
+    snapshot.layout.activeGroup = saved.group;
+    replay(snapshot);
+    requestedDockSizes.set(saved.group, { width: dock.width, height: dock.height });
+  }
+  function changeCameraPresentation(mode: CameraPresentation) {
+    if (desktop) return;
+    if (mode === "floating") {
+      hide("camera-view");
+      cameraPresentation = mode;
+      cameraIntent = "shown";
+    } else {
+      cameraPresentation = mode;
+      show("camera-view");
     }
   }
   function sizeTree(tree: Tree, bounds: WorkspaceBounds, previous?: Map<string, WorkspaceBounds>) {
@@ -931,6 +1082,24 @@ export function createWorkbenchLayoutExecutor(
       hiddenSizes.clear();
       hiddenSizes = gridSizes(rawSnapshot());
     },
+    setPresentation,
+    setCameraPresentation: (mode) => stable(() => changeCameraPresentation(mode)),
+    getCameraPresentation: () => cameraPresentation,
+    applyThreeDPreset(preset) {
+      if (desktop) return;
+      stable(() => {
+        if (preset === "box-refinement") {
+          hide("camera-view");
+          show("tri-view");
+        } else if (preset === "sensor-fusion") {
+          hide("tri-view");
+          show("camera-view");
+        } else {
+          hide("tri-view");
+          hide("camera-view");
+        }
+      });
+    },
     show: (id) => stable(() => show(id)),
     hide: (id) => stable(() => hide(id), undefined, true),
     dock: (id, position) => stable(() => dock(id, position), id),
@@ -978,6 +1147,7 @@ export function createWorkbenchLayoutExecutor(
       // Latch floating/return rectangles in that tree's coordinate space before projecting it.
       desktop = rawSnapshot({ width: api.width, height: api.height });
       pendingShows.clear();
+      compactCameraIntent = undefined;
       exitCanvasMaximized();
       for (const id of PANEL_IDS) if (id !== "canvas") move(id, ensureParking());
       ensureParking();
@@ -986,15 +1156,20 @@ export function createWorkbenchLayoutExecutor(
     exitCompact() {
       if (!desktop) return false;
       const saved = desktop;
+      const cameraChange = compactCameraIntent;
       // Keep the latch if replay throws: the caller enters read-only recovery and never writes the projection.
       replay(saved);
       desktop = null;
-      const changed = pendingShows.size > 0;
+      const changed = pendingShows.size > 0 || cameraChange !== undefined;
       if (changed)
         stable(() => {
           for (const id of pendingShows) show(id);
         });
       pendingShows.clear();
+      if (cameraChange !== undefined) {
+        stable(() => (cameraChange === "shown" ? show("camera-view") : hide("camera-view")));
+      }
+      compactCameraIntent = undefined;
       return changed;
     },
     resizeCompact() {
@@ -1002,6 +1177,9 @@ export function createWorkbenchLayoutExecutor(
       if (desktop && active && active !== "canvas") compactShow(active as SidePanelId);
     },
     isCompact: () => desktop !== null,
-    isVisible: (id) => panel(id).group.id !== "parking" && panel(id).group.api.isVisible,
+    isVisible: (id) =>
+      id === "camera-view" && cameraPresentation === "floating"
+        ? cameraIntent === "shown"
+        : panel(id).group.id !== "parking" && panel(id).group.api.isVisible,
   };
 }

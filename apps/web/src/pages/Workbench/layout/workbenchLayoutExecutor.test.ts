@@ -62,6 +62,65 @@ describe("workspace executor with Dockview 8", () => {
     vi.unstubAllGlobals();
   });
 
+  it("switches every camera together and restores gallery topology and manual size without recreating panels", () => {
+    const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+    const panels = PANEL_IDS.map((id) => api.getPanel(id));
+    controller.show("camera-view");
+    expect(controller.isVisible("camera-view")).toBe(true);
+    expect(api.getPanel("camera-view")!.group.id).toBe("parking");
+    controller.setCameraPresentation("docked");
+    expect(api.getPanel("camera-view")!.api.width).toBe(240);
+    api.getPanel("camera-view")!.group.api.setSize({ width: 310 });
+    const before = controller.capture();
+    controller.setCameraPresentation("floating");
+    expect(controller.isVisible("camera-view")).toBe(true);
+    expect(api.getPanel("camera-view")!.group.id).toBe("parking");
+    controller.setCameraPresentation("docked");
+    expect(controller.capture().layout.grid.root).toEqual(before.layout.grid.root);
+    expect(api.getPanel("camera-view")!.api.width).toBe(310);
+    controller.hide("camera-view");
+    expect(controller.getCameraPresentation()).toBe("docked");
+    expect(controller.isVisible("camera-view")).toBe(false);
+    controller.show("camera-view");
+    expect(controller.capture().layout.grid.root).toEqual(before.layout.grid.root);
+    expect(PANEL_IDS.map((id) => api.getPanel(id))).toEqual(panels);
+  });
+
+  it("restores a gallery column beside a complete vertically split branch", () => {
+    const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+    controller.setCameraPresentation("docked");
+    controller.moveCanvas("left");
+    const before = controller.capture();
+    controller.setCameraPresentation("floating");
+    controller.setCameraPresentation("docked");
+    expect(controller.capture().layout.grid.root).toEqual(before.layout.grid.root);
+  });
+
+  it("keeps camera modes, hidden intent and 3D presets independent of physical side projection", () => {
+    const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+    controller.setCameraPresentation("docked");
+    controller.tab("camera-view", "inspector");
+    controller.toggleSide("right");
+    expect(controller.capture().visibilityIntent["camera-view"]).toBe("shown");
+    controller.toggleSide("right");
+    controller.float("camera-view");
+    expect(api.getPanel("camera-view")!.api.location.type).toBe("grid");
+    controller.applyThreeDPreset("box-refinement");
+    expect(controller.isVisible("tri-view")).toBe(true);
+    expect(controller.isVisible("camera-view")).toBe(false);
+    controller.applyThreeDPreset("sensor-fusion");
+    expect(controller.isVisible("tri-view")).toBe(false);
+    expect(controller.isVisible("camera-view")).toBe(true);
+    expect(api.getPanel("camera-view")!.group).toBe(api.getPanel("inspector")!.group);
+    controller.setCameraPresentation("floating");
+    controller.enterCompact();
+    controller.hide("camera-view");
+    expect(controller.exitCompact()).toBe(true);
+    expect(controller.isVisible("camera-view")).toBe(false);
+    controller.show("camera-view");
+    expect(api.getPanel("camera-view")!.group.id).toBe("parking");
+  });
+
   it("collapses physical sides without losing stacked sizes, even after restore and maximization", () => {
     const controller = createWorkbenchLayoutExecutor(api, () => bounds);
     controller.moveCanvas("left");
@@ -212,7 +271,7 @@ describe("workspace executor with Dockview 8", () => {
     expect(api.groups.some((group) => group.id === "compact-overlay")).toBe(false);
   });
 
-  it("preserves nested splits, tab order, floats, hidden items and the seven-group limit", () => {
+  it("preserves nested splits, tab order, floats, hidden items and the nine-group limit", () => {
     const controller = createWorkbenchLayoutExecutor(api, () => bounds);
     controller.dock("class-palette", "below");
     const target = api.getPanel("class-palette")!.group;
@@ -736,7 +795,7 @@ describe("workspace executor with Dockview 8", () => {
           visible: false,
           data: {
             id: "parking",
-            views: ["ai-task", "video-tracker"],
+            views: ["ai-task", "video-tracker", "tri-view", "camera-view"],
             activeView: "ai-task",
             locked: "no-drop-target",
             hideHeader: true,

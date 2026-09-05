@@ -18,6 +18,7 @@ export const WORKSPACE_PRESETS = [
   { id: "video-tracking", title: "视频追踪", contexts: ["annotate:video"] },
 ] as const;
 export type WorkspacePresetId = (typeof WORKSPACE_PRESETS)[number]["id"];
+export type ThreeDWorkspacePresetId = "box-refinement" | "sensor-fusion" | "point-segmentation";
 export const DEFAULT_WORKSPACE_BOUNDS: WorkspaceBounds = { width: 1440, height: 800 };
 export const PANEL_DEFAULT_POSITION = {
   "task-queue": "left",
@@ -26,6 +27,8 @@ export const PANEL_DEFAULT_POSITION = {
   discussion: "below",
   "ai-task": "right",
   "video-tracker": "right",
+  "tri-view": "right",
+  "camera-view": "right",
 } as const;
 
 function leaf(
@@ -60,6 +63,7 @@ export function createWorkspacePreset(
         : preset === "video-tracking"
           ? ["discussion", "ai-task"]
           : ["ai-task", "video-tracker"];
+  parked.push("tri-view", "camera-view");
   const parking = leaf("parking", parked, 0, true);
   const root =
     preset === "ai-review"
@@ -132,7 +136,10 @@ export function createWorkspacePreset(
             );
   const returns = Object.fromEntries(
     parked
-      .filter((id) => id !== "ai-task" && id !== "video-tracker")
+      .filter(
+        (id) =>
+          id !== "ai-task" && id !== "video-tracker" && id !== "tri-view" && id !== "camera-view",
+      )
       .map((id) => [id, { group: id, index: 0 }]),
   );
   return sanitizeWorkspaceSnapshot(
@@ -180,9 +187,69 @@ export interface LegacyWorkbenchLayout {
     floatingClassPalette?: LegacyFloatingPanel;
     floatingInspector?: LegacyFloatingPanel;
     floatingDiscussion?: LegacyFloatingPanel;
+    triViewFloat?: { collapsed?: boolean };
   };
   common?: { leftWidthPct?: number; rightWidthPct?: number };
   rightSplitTop?: number;
+}
+
+/** Only call with the current account's authoritative preferences after hydration. */
+export function migrateThreeDWorkspace(
+  input: WorkspaceSnapshot,
+  legacy: LegacyWorkbenchLayout,
+  context: WorkspaceContext,
+): WorkspaceSnapshot {
+  const snapshot = structuredClone(input);
+  if (!context.endsWith(":3d")) return snapshot;
+  snapshot.cameraPresentation = "floating";
+  snapshot.visibilityIntent["camera-view"] = "shown";
+  if (legacy.layout?.triViewFloat?.collapsed === true) return snapshot;
+  snapshot.visibilityIntent["tri-view"] = "shown";
+  const width = Math.max(220, Math.round(snapshot.layout.grid.width * 0.15));
+  const visit = (node: WorkspaceNode, axis: "HORIZONTAL" | "VERTICAL"): WorkspaceNode => {
+    if (node.type === "leaf") {
+      if (node.data.id === "parking") {
+        node.data.views = node.data.views.filter((id) => id !== "tri-view");
+        if (node.data.activeView === "tri-view") node.data.activeView = node.data.views[0];
+      }
+      return node;
+    }
+    node.data = node.data.map((child) =>
+      visit(child, axis === "HORIZONTAL" ? "VERTICAL" : "HORIZONTAL"),
+    );
+    const canvasIndex = node.data.findIndex(
+      (child) => child.type === "leaf" && child.data.id === "canvas",
+    );
+    if (canvasIndex !== -1) {
+      const canvas = node.data[canvasIndex];
+      const size = canvas.size ?? snapshot.layout.grid.width;
+      if (axis === "HORIZONTAL") {
+        canvas.size = Math.max(480, size - width);
+        node.data.splice(canvasIndex + 1, 0, leaf("tri-view", ["tri-view"], width));
+      } else {
+        node.data[canvasIndex] = branch(
+          [
+            { ...canvas, size: Math.max(480, snapshot.layout.grid.width - width) },
+            leaf("tri-view", ["tri-view"], width),
+          ],
+          size,
+        );
+      }
+    }
+    return node;
+  };
+  snapshot.layout.grid.root = visit(snapshot.layout.grid.root, snapshot.layout.grid.orientation);
+  // The insertion may change the canvas path; the executor restores maximization after hydration.
+  if (snapshot.layout.grid.maximizedNode) {
+    const find = (node: WorkspaceNode, path: number[] = []): number[] | undefined =>
+      node.type === "leaf"
+        ? node.data.id === "canvas"
+          ? path
+          : undefined
+        : node.data.map((child, index) => find(child, [...path, index])).find(Boolean);
+    snapshot.layout.grid.maximizedNode.location = find(snapshot.layout.grid.root)!;
+  }
+  return sanitizeWorkspaceSnapshot(snapshot);
 }
 
 /** One-way migration; legacy preferences remain untouched for frontend rollback. */

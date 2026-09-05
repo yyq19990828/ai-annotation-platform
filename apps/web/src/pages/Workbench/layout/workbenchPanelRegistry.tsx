@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import type { PanelId, WorkspaceContext } from "./workbenchLayoutSnapshot";
+import type { CameraPresentation, PanelId, WorkspaceContext } from "./workbenchLayoutSnapshot";
 import type { WorkspaceSide, WorkspaceSideState } from "./workbenchLayoutExecutor";
+import type { ThreeDWorkspacePresetId } from "./workbenchLayoutPresets";
 
 export type WorkbenchPanelSlots = Record<PanelId, ReactNode>;
 export interface WorkbenchWorkspaceCommands {
@@ -8,6 +9,8 @@ export interface WorkbenchWorkspaceCommands {
   hide(id: PanelId): void;
   toggle(id: PanelId): void;
   toggleSide(side: WorkspaceSide): void;
+  setCameraPresentation(mode: CameraPresentation): void;
+  applyThreeDPreset(preset: ThreeDWorkspacePresetId): void;
 }
 export interface WorkbenchWorkspaceState {
   sides: Record<WorkspaceSide, WorkspaceSideState>;
@@ -15,6 +18,9 @@ export interface WorkbenchWorkspaceState {
   inspectorVisible: boolean;
   aiTaskVisible: boolean;
   videoTrackerVisible: boolean;
+  triViewVisible: boolean;
+  cameraViewVisible: boolean;
+  cameraPresentation: CameraPresentation;
   canvasMaximized: boolean;
   taskQueueWidth: number;
   inspectorWidth: number;
@@ -118,6 +124,34 @@ export const WORKBENCH_PANEL_REGISTRY = {
     height: 520,
     closable: false,
   },
+  "tri-view": {
+    modes: ["annotate", "review"],
+    stages: ["3d"],
+    capabilities: SIDE_CAPABILITIES,
+    id: "tri-view",
+    title: "三视图精修",
+    renderer: "always",
+    defaultPosition: "right",
+    minWidth: 220,
+    minHeight: 320,
+    width: 240,
+    height: 600,
+    closable: false,
+  },
+  "camera-view": {
+    modes: ["annotate", "review"],
+    stages: ["3d"],
+    capabilities: { ...SIDE_CAPABILITIES, float: false },
+    id: "camera-view",
+    title: "相机视图",
+    renderer: "always",
+    defaultPosition: "right",
+    minWidth: 220,
+    minHeight: 160,
+    width: 240,
+    height: 600,
+    closable: false,
+  },
 } as const satisfies Record<
   PanelId,
   {
@@ -143,6 +177,8 @@ export const PERIPHERAL_PANELS = [
   "discussion",
   "ai-task",
   "video-tracker",
+  "tri-view",
+  "camera-view",
 ] as const;
 
 export function panelSupportsContext(id: PanelId, context: WorkspaceContext): boolean {

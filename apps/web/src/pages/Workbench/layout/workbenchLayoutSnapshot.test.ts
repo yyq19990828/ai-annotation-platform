@@ -8,15 +8,26 @@ import {
   type WorkspaceSnapshot,
 } from "./workbenchLayoutSnapshot";
 
-function legacySnapshot(snapshot: WorkspaceSnapshot): unknown {
+function legacySnapshot(snapshot: WorkspaceSnapshot, version = 1): unknown {
   const legacy = structuredClone(snapshot);
-  delete legacy.layout.panels["ai-task"];
-  delete legacy.layout.panels["video-tracker"];
-  delete (legacy as Partial<WorkspaceSnapshot>).visibilityIntent;
-  delete legacy.returns["ai-task"];
-  delete legacy.returns["video-tracker"];
+  const removed =
+    version >= 3
+      ? ["tri-view", "camera-view"]
+      : ["ai-task", "video-tracker", "tri-view", "camera-view"];
+  for (const id of removed) {
+    delete legacy.layout.panels[id];
+    delete legacy.returns[id as keyof typeof legacy.returns];
+  }
+  delete (legacy as Partial<WorkspaceSnapshot>).cameraPresentation;
+  if (version < 3) delete (legacy as Partial<WorkspaceSnapshot>).visibilityIntent;
+  else {
+    delete (legacy.visibilityIntent as Partial<WorkspaceSnapshot["visibilityIntent"]>)["tri-view"];
+    delete (legacy.visibilityIntent as Partial<WorkspaceSnapshot["visibilityIntent"]>)[
+      "camera-view"
+    ];
+  }
   const strip = (group: { views: string[]; activeView?: string }) => {
-    group.views = group.views.filter((id) => id !== "ai-task" && id !== "video-tracker");
+    group.views = group.views.filter((id) => !removed.includes(id));
     if (group.activeView && !group.views.includes(group.activeView))
       group.activeView = group.views[0];
   };
@@ -33,6 +44,31 @@ function canvasNode(node: WorkspaceNode): WorkspaceNode {
 }
 
 describe("workspace snapshot boundary", () => {
+  it("requires schema 5 presentation metadata and forbids native floating camera groups", () => {
+    const snapshot = createWorkspacePreset("standard");
+    expect(readWorkspaceEnvelope({ schemaVersion: 5, snapshot }).snapshot).toEqual(snapshot);
+    const incomplete = structuredClone(snapshot);
+    delete (incomplete as Partial<WorkspaceSnapshot>).cameraPresentation;
+    expect(readWorkspaceEnvelope({ schemaVersion: 5, snapshot: incomplete }).readOnlyReason).toBe(
+      "invalid",
+    );
+    const root = snapshot.layout.grid.root;
+    if (root.type !== "branch") throw new Error("Expected columns");
+    const parking = root.data.find((node) => node.type === "leaf" && node.data.id === "parking");
+    if (parking?.type !== "leaf") throw new Error("Expected parking");
+    parking.data.views = parking.data.views.filter((id) => id !== "camera-view");
+    snapshot.cameraPresentation = "docked";
+    snapshot.layout.floatingGroups = [
+      {
+        data: { id: "gallery", views: ["camera-view"] },
+        position: { left: 0, top: 0, width: 400, height: 500 },
+      },
+    ];
+    expect(() => sanitizeWorkspaceSnapshot(snapshot)).toThrow("Camera gallery must remain docked");
+    snapshot.layout.floatingGroups[0].data!.views.unshift("tri-view");
+    parking.data.views = parking.data.views.filter((id) => id !== "tri-view");
+    expect(() => sanitizeWorkspaceSnapshot(snapshot)).toThrow("Camera gallery must remain docked");
+  });
   it("round trips all presets and pins trusted renderer metadata", () => {
     for (const preset of ["standard", "focus", "review", "ai-review", "video-tracking"] as const) {
       const snapshot = createWorkspacePreset(preset);
@@ -48,8 +84,12 @@ describe("workspace snapshot boundary", () => {
         renderer: "always",
       });
       expect(clean.layout).not.toHaveProperty("popoutGroups");
-      expect(readWorkspaceEnvelope({ schemaVersion: 3, snapshot: clean }).snapshot).toEqual(clean);
-      expect(readWorkspaceEnvelope({ schemaVersion: 4, snapshot: clean }).snapshot).toEqual(clean);
+      expect(
+        readWorkspaceEnvelope({ schemaVersion: 3, snapshot: legacySnapshot(clean, 3) }).snapshot,
+      ).toEqual(clean);
+      expect(
+        readWorkspaceEnvelope({ schemaVersion: 4, snapshot: legacySnapshot(clean, 4) }).snapshot,
+      ).toEqual(clean);
       expect(Object.keys(clean.layout.panels)).toEqual(PANEL_IDS);
     }
     const standard = createWorkspacePreset("standard");
@@ -67,14 +107,19 @@ describe("workspace snapshot boundary", () => {
     if (root.type !== "branch") throw new Error("Expected columns");
     root.data[0].visible = false;
     snapshot.layout.activeGroup = "canvas";
-    expect(readWorkspaceEnvelope({ schemaVersion: 4, snapshot }).snapshot).toEqual(snapshot);
-    expect(readWorkspaceEnvelope({ schemaVersion: 3, snapshot }).readOnlyReason).toBe("invalid");
+    expect(
+      readWorkspaceEnvelope({ schemaVersion: 4, snapshot: legacySnapshot(snapshot, 4) }).snapshot,
+    ).toEqual(snapshot);
+    expect(
+      readWorkspaceEnvelope({ schemaVersion: 3, snapshot: legacySnapshot(snapshot, 3) })
+        .readOnlyReason,
+    ).toBe("invalid");
     snapshot.layout.activeGroup = "task-queue";
     expect(() => sanitizeWorkspaceSnapshot(snapshot)).toThrow("Invalid active group");
   });
 
   it("does not interpret newer envelopes as v1", () => {
-    for (const schemaVersion of [5, 6])
+    for (const schemaVersion of [6, 7])
       expect(readWorkspaceEnvelope({ schemaVersion, snapshot: {} })).toEqual({
         snapshot: null,
         readOnlyReason: "newer-schema",
@@ -106,7 +151,7 @@ describe("workspace snapshot boundary", () => {
     }
   });
 
-  it("enforces finite values, UTF-8 byte limit, tree depth and seven user groups", () => {
+  it("enforces finite values, UTF-8 byte limit, tree depth and nine user groups", () => {
     const large = createWorkspacePreset("standard");
     large.layout.panels.canvas.params = { value: "汉".repeat(23_000) };
     expect(() => sanitizeWorkspaceSnapshot(large)).toThrow("64 KiB");
@@ -119,7 +164,7 @@ describe("workspace snapshot boundary", () => {
     expect(() => sanitizeWorkspaceSnapshot(deep)).toThrow();
     const limit = createWorkspacePreset("standard");
     if (limit.layout.grid.root.type !== "branch") throw new Error("Expected branch");
-    for (let i = 0; i < 2; i++)
+    for (let i = 0; i < 4; i++)
       limit.layout.grid.root.data.push({
         type: "leaf",
         data: { id: `empty-${i}`, views: [] },

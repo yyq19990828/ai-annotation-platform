@@ -8,9 +8,13 @@ export const PANEL_IDS = [
   "discussion",
   "ai-task",
   "video-tracker",
+  "tri-view",
+  "camera-view",
 ] as const;
 export type PanelId = (typeof PANEL_IDS)[number];
-export type ToolPanelId = Extract<PanelId, "ai-task" | "video-tracker">;
+export const TOOL_PANEL_IDS = ["ai-task", "video-tracker", "tri-view", "camera-view"] as const;
+export type ToolPanelId = (typeof TOOL_PANEL_IDS)[number];
+export type CameraPresentation = "floating" | "docked";
 export const PANEL_TITLES: Record<PanelId, string> = {
   canvas: "画布",
   "task-queue": "任务队列",
@@ -19,6 +23,8 @@ export const PANEL_TITLES: Record<PanelId, string> = {
   discussion: "讨论 / Issue",
   "ai-task": "当前题 AI",
   "video-tracker": "视频追踪",
+  "tri-view": "三视图精修",
+  "camera-view": "相机视图",
 };
 export const WORKSPACE_CONTEXTS = [
   "annotate:image",
@@ -41,6 +47,11 @@ export interface PanelReturn {
   group: string;
   index: number;
   position?: WorkspaceRect;
+  dock?: WorkspaceBounds & {
+    reference: PanelId;
+    anchors: PanelId[];
+    direction: "left" | "right" | "above" | "below";
+  };
 }
 export interface WorkspaceGroup {
   id: string;
@@ -63,10 +74,11 @@ export interface WorkspaceSnapshot {
   layout: WorkspaceLayout;
   returns: Partial<Record<PanelId, PanelReturn>>;
   visibilityIntent: Record<ToolPanelId, "shown" | "hidden">;
+  cameraPresentation: CameraPresentation;
 }
-export type WorkspaceEnvelope = { schemaVersion: 1 | 2 | 3 | 4; snapshot: unknown };
+export type WorkspaceEnvelope = { schemaVersion: 1 | 2 | 3 | 4 | 5; snapshot: unknown };
 export type WorkspaceReadOnlyReason = "invalid" | "newer-schema";
-export const WORKSPACE_SCHEMA_VERSION = 4 as const;
+export const WORKSPACE_SCHEMA_VERSION = 5 as const;
 
 const LIMIT = 64 * 1024;
 const ID = /^[a-zA-Z0-9_-]{1,64}$/;
@@ -152,6 +164,9 @@ export function sanitizeWorkspaceSnapshot(
     if (!Array.isArray(item.views) || item.views.some((p) => !isPanelId(p)))
       throw new Error("Unknown panel");
     const views = item.views as PanelId[];
+    if (views.length > 9) throw new Error("Too many group panels");
+    if (floating && views.includes("camera-view"))
+      throw new Error("Camera gallery must remain docked");
     for (const panel of views) {
       if (panels.has(panel)) throw new Error("Duplicate layout panel");
       panels.add(panel);
@@ -176,7 +191,7 @@ export function sanitizeWorkspaceSnapshot(
     };
   }
   function parseNode(value: unknown, path: number[] = [], parentVisible = true): WorkspaceNode {
-    if (++nodes > 32 || path.length > 12) throw new Error("Layout tree exceeds limits");
+    if (++nodes > 40 || path.length >= 12) throw new Error("Layout tree exceeds limits");
     const node = record(value);
     if (node.visible !== undefined && typeof node.visible !== "boolean")
       throw new Error("Invalid visibility");
@@ -193,7 +208,7 @@ export function sanitizeWorkspaceSnapshot(
       node.type !== "branch" ||
       !Array.isArray(node.data) ||
       node.data.length === 0 ||
-      node.data.length > 8
+      node.data.length > 10
     )
       throw new Error("Invalid layout branch");
     return {
@@ -216,6 +231,8 @@ export function sanitizeWorkspaceSnapshot(
   };
   if (raw.floatingGroups !== undefined && !Array.isArray(raw.floatingGroups))
     throw new Error("Invalid floating groups");
+  if (Array.isArray(raw.floatingGroups) && raw.floatingGroups.length > 9)
+    throw new Error("Too many floating groups");
   const floatingGroups = (raw.floatingGroups as unknown[] | undefined)?.map((entry) => {
     const group = record(entry);
     if (group.grid !== undefined) throw new Error("Nested floating grids are not supported");
@@ -223,9 +240,9 @@ export function sanitizeWorkspaceSnapshot(
   });
   if (!canvasPath || panels.size !== PANEL_IDS.length || PANEL_IDS.some((p) => !panels.has(p)))
     throw new Error("Missing core panel");
-  if (ids.size - (ids.has("parking") ? 1 : 0) > 7) throw new Error("Too many layout groups");
+  if (ids.size - (ids.has("parking") ? 1 : 0) > 9) throw new Error("Too many layout groups");
   const rawPanels = record(raw.panels);
-  if (Object.keys(rawPanels).length > 7) throw new Error("Too many panels");
+  if (Object.keys(rawPanels).length > 9) throw new Error("Too many panels");
   const cleanPanels = Object.fromEntries(
     PANEL_IDS.map((id) => {
       if (record(rawPanels[id]).id !== id) throw new Error("Invalid panel identity");
@@ -245,31 +262,68 @@ export function sanitizeWorkspaceSnapshot(
   );
   const rawIntent = input.visibilityIntent === undefined ? {} : record(input.visibilityIntent);
   if (
-    Object.keys(rawIntent).some((id) => id !== "ai-task" && id !== "video-tracker") ||
+    Object.keys(rawIntent).some((id) => !TOOL_PANEL_IDS.includes(id as ToolPanelId)) ||
     Object.values(rawIntent).some((intent) => intent !== "shown" && intent !== "hidden")
   )
     throw new Error("Invalid tool panel visibility intent");
   const visibilityIntent = Object.fromEntries(
-    (["ai-task", "video-tracker"] as const).map((id) => [
+    TOOL_PANEL_IDS.map((id) => [
       id,
       (rawIntent[id] ?? (groupsInSnapshot(root, floatingGroups).get(id) ? "shown" : "hidden")) as
         | "shown"
         | "hidden",
     ]),
   ) as WorkspaceSnapshot["visibilityIntent"];
+  const cameraPresentation = input.cameraPresentation ?? "floating";
+  if (cameraPresentation !== "floating" && cameraPresentation !== "docked")
+    throw new Error("Invalid camera presentation");
+  if (
+    cameraPresentation === "floating" &&
+    groupsInSnapshot(root, floatingGroups).has("camera-view")
+  )
+    throw new Error("Floating cameras require the gallery in parking");
   const returns: WorkspaceSnapshot["returns"] = {};
   if (input.returns !== undefined) {
     for (const [id, value] of Object.entries(record(input.returns))) {
       if (!isPanelId(id) || id === "canvas") throw new Error("Invalid return panel");
       const entry = record(value);
+      if (id === "camera-view" && entry.position !== undefined)
+        throw new Error("Camera gallery cannot return to a native float");
       const group = groupId(entry.group);
       const index = finite(entry.index);
-      if (["canvas", "parking"].includes(group) || !Number.isInteger(index) || index > 6)
+      if (["canvas", "parking"].includes(group) || !Number.isInteger(index) || index > 8)
         throw new Error("Invalid return position");
+      let dock: PanelReturn["dock"];
+      if (entry.dock !== undefined) {
+        const destination = record(entry.dock);
+        if (
+          !isPanelId(destination.reference) ||
+          destination.reference === id ||
+          !["left", "right", "above", "below"].includes(destination.direction as string)
+        )
+          throw new Error("Invalid dock return");
+        if (
+          !Array.isArray(destination.anchors) ||
+          !destination.anchors.length ||
+          destination.anchors.length > 8 ||
+          destination.anchors.some((anchor) => !isPanelId(anchor) || anchor === id) ||
+          new Set(destination.anchors).size !== destination.anchors.length ||
+          !destination.anchors.includes(destination.reference)
+        )
+          throw new Error("Invalid dock return anchors");
+        dock = {
+          reference: destination.reference,
+          anchors: [...destination.anchors] as PanelId[],
+          direction: destination.direction as NonNullable<PanelReturn["dock"]>["direction"],
+          width: finite(destination.width, 1),
+          height: finite(destination.height, 1),
+        };
+      }
       returns[id] = {
         group,
         index,
         ...(entry.position === undefined ? {} : { position: parseRect(entry.position) }),
+        ...(dock ? { dock } : {}),
       };
     }
   }
@@ -302,6 +356,7 @@ export function sanitizeWorkspaceSnapshot(
     },
     returns,
     visibilityIntent,
+    cameraPresentation,
   };
 }
 
@@ -322,20 +377,27 @@ function groupsInSnapshot(
   return locations;
 }
 
-function upgradeLegacySnapshot(value: unknown): unknown {
+function upgradeLegacySnapshot(value: unknown, version: number): unknown {
   const snapshot = structuredClone(record(value));
   const layout = record(snapshot.layout);
   const grid = record(layout.grid);
   const panels = record(layout.panels);
-  for (const id of ["ai-task", "video-tracker"] as const) panels[id] = { id };
-
-  const toolIds: ToolPanelId[] = ["ai-task", "video-tracker"];
+  const expected = PANEL_IDS.filter(
+    (id) =>
+      id !== "tri-view" &&
+      id !== "camera-view" &&
+      (version >= 3 || (id !== "ai-task" && id !== "video-tracker")),
+  );
+  if (Object.keys(panels).length !== expected.length || expected.some((id) => !panels[id]))
+    throw new Error("Panel set does not match schema version");
+  const toolIds: ToolPanelId[] = version >= 3 ? ["tri-view", "camera-view"] : [...TOOL_PANEL_IDS];
+  for (const id of toolIds) panels[id] = { id };
   const parking = {
     type: "leaf",
     data: {
       id: "parking",
       views: toolIds,
-      activeView: "ai-task",
+      activeView: toolIds[0],
       locked: "no-drop-target",
       hideHeader: true,
     },
@@ -359,7 +421,7 @@ function upgradeLegacySnapshot(value: unknown): unknown {
   if (existingParking) {
     if (!Array.isArray(existingParking.views)) throw new Error("Invalid parking group");
     existingParking.views.push(...toolIds);
-    existingParking.activeView ??= "ai-task";
+    existingParking.activeView ??= toolIds[0];
   } else {
     const root = record(grid.root);
     grid.root =
@@ -367,7 +429,13 @@ function upgradeLegacySnapshot(value: unknown): unknown {
         ? { ...root, data: [...root.data, parking] }
         : { type: "branch", data: [root, parking], size: root.size };
   }
-  snapshot.visibilityIntent = { "ai-task": "hidden", "video-tracker": "hidden" };
+  snapshot.visibilityIntent = {
+    ...(version >= 3 && snapshot.visibilityIntent !== undefined
+      ? record(snapshot.visibilityIntent)
+      : {}),
+    ...Object.fromEntries(toolIds.map((id) => [id, "hidden"])),
+  };
+  snapshot.cameraPresentation = "floating";
   return snapshot;
 }
 
@@ -390,12 +458,24 @@ export function readWorkspaceEnvelope(
       envelope.schemaVersion !== 1 &&
       envelope.schemaVersion !== 2 &&
       envelope.schemaVersion !== 3 &&
-      envelope.schemaVersion !== 4
+      envelope.schemaVersion !== 4 &&
+      envelope.schemaVersion !== 5
     )
       throw new Error("Unsupported layout schema");
+    if (envelope.schemaVersion === 5) {
+      const snapshot = record(envelope.snapshot);
+      const intent = record(snapshot.visibilityIntent);
+      if (
+        snapshot.cameraPresentation === undefined ||
+        TOOL_PANEL_IDS.some((id) => intent[id] === undefined)
+      )
+        throw new Error("Schema 5 requires camera presentation and visibility intent");
+    }
     return {
       snapshot: sanitizeWorkspaceSnapshot(
-        envelope.schemaVersion >= 3 ? envelope.snapshot : upgradeLegacySnapshot(envelope.snapshot),
+        envelope.schemaVersion === 5
+          ? envelope.snapshot
+          : upgradeLegacySnapshot(envelope.snapshot, envelope.schemaVersion),
         bounds,
         envelope.schemaVersion >= 4,
       ),

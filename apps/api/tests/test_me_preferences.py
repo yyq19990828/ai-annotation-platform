@@ -1120,7 +1120,9 @@ def _workspace_envelope(version=1):
     panels = ["canvas", "task-queue", "class-palette", "inspector", "discussion"]
     if version >= 3:
         panels += ["ai-task", "video-tracker"]
-    return {
+    if version >= 5:
+        panels += ["tri-view", "camera-view"]
+    envelope = {
         "schemaVersion": version,
         "snapshot": {
             "layout": {
@@ -1155,6 +1157,23 @@ def _workspace_envelope(version=1):
             "returns": {},
         },
     }
+    if version >= 5:
+        snapshot = envelope["snapshot"]
+        snapshot["cameraPresentation"] = "floating"
+        snapshot["visibilityIntent"] = dict.fromkeys(
+            ["ai-task", "video-tracker", "tri-view", "camera-view"], "hidden"
+        )
+        root = snapshot["layout"]["grid"]["root"]
+        root["data"][1]["data"]["views"] = panels[1:-2]
+        root["data"].append(
+            {
+                "type": "leaf",
+                "visible": False,
+                "size": 0,
+                "data": {"id": "parking", "views": panels[-2:], "hideHeader": True},
+            }
+        )
+    return envelope
 
 
 def _workspace_patch(envelope, context="annotate:image"):
@@ -1168,6 +1187,43 @@ def _workspace_patch(envelope, context="annotate:image"):
             }
         }
     }
+
+
+def test_workspace_schema_five_camera_modes_and_bounded_dock_returns():
+    envelope = _workspace_envelope(5)
+    snapshot = envelope["snapshot"]
+    root = snapshot["layout"]["grid"]["root"]
+    snapshot["visibilityIntent"]["camera-view"] = "shown"
+    UserPreferences.model_validate(_workspace_patch(envelope, "annotate:3d"))
+    root["data"][-1]["data"]["views"].remove("camera-view")
+    root["data"][1]["data"]["views"].append("camera-view")
+    with pytest.raises(ValueError, match="gallery in parking"):
+        UserPreferences.model_validate(_workspace_patch(envelope, "annotate:3d"))
+    snapshot["cameraPresentation"] = "docked"
+    snapshot["returns"]["camera-view"] = {
+        "group": "gallery",
+        "index": 0,
+        "dock": {
+            "reference": "inspector",
+            "anchors": ["inspector", "discussion"],
+            "direction": "right",
+            "width": 320,
+            "height": 700,
+        },
+    }
+    UserPreferences.model_validate(_workspace_patch(envelope, "annotate:3d"))
+    floating = root["data"].pop(1)["data"]
+    snapshot["layout"]["floatingGroups"] = [
+        {
+            "data": floating,
+            "position": {"left": 10, "top": 10, "width": 400, "height": 500},
+        }
+    ]
+    with pytest.raises(ValueError, match="remain docked"):
+        UserPreferences.model_validate(_workspace_patch(envelope, "annotate:3d"))
+    del snapshot["cameraPresentation"]
+    with pytest.raises(ValueError, match="requires camera presentation"):
+        UserPreferences.model_validate(_workspace_patch(envelope, "annotate:3d"))
 
 
 @pytest.mark.parametrize("branch", [False, True])
@@ -1204,13 +1260,13 @@ async def test_workspace_collapsed_side_round_trip(httpx_client, annotator, bran
         UserPreferences.model_validate(_workspace_patch(envelope))
 
 
-@pytest.mark.parametrize("version", [1, 2, 3, 4])
+@pytest.mark.parametrize("version", [1, 2, 3, 4, 5])
 async def test_workspace_round_trip_versions_and_context_atomic_replace(
     httpx_client, annotator, version
 ):
     _, token = annotator
     envelope = _workspace_envelope(version)
-    if version >= 3:
+    if version in (3, 4):
         envelope["snapshot"]["visibilityIntent"] = {
             "ai-task": "hidden",
             "video-tracker": "shown",
@@ -1255,7 +1311,7 @@ async def test_workspace_round_trip_versions_and_context_atomic_replace(
     )
 
 
-@pytest.mark.parametrize("current,older", [(3, 1), (4, 3)])
+@pytest.mark.parametrize("current,older", [(3, 1), (4, 3), (5, 4)])
 async def test_workspace_schema_downgrade_rejects_entire_patch(
     httpx_client, annotator, current, older
 ):

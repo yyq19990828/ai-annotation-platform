@@ -94,10 +94,15 @@ function roundPanelRect<T>(panel: T): T {
 }
 
 /** 持久化前对 layout 浮窗坐标取整，避免小数像素触发后端 int 校验 422。 */
-export function sanitizeForPersist(wb: WorkbenchPreferences): WorkbenchPreferences {
+export function sanitizeForPersist(wb: WorkbenchPreferences): Omit<
+  WorkbenchPreferences,
+  "layout"
+> & {
+  layout: Omit<WorkbenchPreferences["layout"], "workspace" | "triViewFloat">;
+} {
   // Docking snapshots have their own writer; this legacy full-tree PATCH must never
   // carry a stale workspace copied from an earlier preferences response.
-  const { workspace: _workspace, ...l } = wb.layout;
+  const { workspace: _workspace, triViewFloat: _triViewFloat, ...l } = wb.layout;
   return {
     ...wb,
     layout: {
@@ -107,7 +112,6 @@ export function sanitizeForPersist(wb: WorkbenchPreferences): WorkbenchPreferenc
       floatingInspector: roundPanelRect(l.floatingInspector),
       floatingDiscussion: roundPanelRect(l.floatingDiscussion),
       floatingSelection: roundPanelRect(l.floatingSelection),
-      triViewFloat: roundPanelRect(l.triViewFloat),
     },
   };
 }
@@ -296,7 +300,6 @@ function writeLocalLayout(
     window.localStorage.setItem(K.floatingInspector, JSON.stringify(layout.floatingInspector));
     window.localStorage.setItem(K.floatingDiscussion, JSON.stringify(layout.floatingDiscussion));
     window.localStorage.setItem(K.floatingSelection, JSON.stringify(layout.floatingSelection));
-    window.localStorage.setItem(K.triViewFloat, JSON.stringify(layout.triViewFloat));
     window.localStorage.setItem(K.cameraPanels, JSON.stringify(layout.cameraPanels));
     window.localStorage.setItem(K.pointcloudCamera, JSON.stringify(layout.pointcloudCamera));
     // v0.20.22 · 分组折叠 + 讨论区收起本地写入, 消除首屏闪。

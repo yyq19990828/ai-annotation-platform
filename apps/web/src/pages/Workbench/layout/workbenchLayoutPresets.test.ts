@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   createWorkspacePreset,
   migrateLegacyWorkspace,
+  migrateThreeDWorkspace,
   presetSupportsContext,
   WORKSPACE_PRESETS,
 } from "./workbenchLayoutPresets";
@@ -11,7 +12,28 @@ const groups = (node: WorkspaceNode): { id: string; views: string[] }[] =>
   node.type === "leaf" ? [node.data] : node.data.flatMap(groups);
 
 describe("workspace presets", () => {
-  it("provides all seven panels once in every context without business params", () => {
+  it("migrates 3D visibility while preserving existing panels, widths and legacy coordinates", () => {
+    const before = createWorkspacePreset("standard", { width: 1600, height: 900 });
+    const legacy = { layout: { triViewFloat: { collapsed: false, x: 4000, y: -20 } } };
+    const snapshot = migrateThreeDWorkspace(before, legacy, "annotate:3d");
+    expect(snapshot.cameraPresentation).toBe("floating");
+    expect(snapshot.visibilityIntent["camera-view"]).toBe("shown");
+    expect(snapshot.visibilityIntent["tri-view"]).toBe("shown");
+    const root = snapshot.layout.grid.root;
+    if (root.type !== "branch" || before.layout.grid.root.type !== "branch")
+      throw new Error("Expected columns");
+    expect(root.data[0]).toEqual(before.layout.grid.root.data[0]);
+    expect(root.data[3]).toEqual(before.layout.grid.root.data[2]);
+    expect(root.data[2].size).toBe(240);
+    expect(groups(root).find((g) => g.id === "parking")?.views).toContain("camera-view");
+    expect(migrateThreeDWorkspace(before, legacy, "annotate:image")).toEqual(before);
+    expect(
+      migrateThreeDWorkspace(before, { layout: { triViewFloat: { collapsed: true } } }, "review:3d")
+        .visibilityIntent["tri-view"],
+    ).toBe("hidden");
+    expect(legacy.layout.triViewFloat.x).toBe(4000);
+  });
+  it("provides all nine panels once in every context without business params", () => {
     for (const context of WORKSPACE_CONTEXTS)
       for (const preset of WORKSPACE_PRESETS) {
         const snapshot = createWorkspacePreset(preset.id, { width: 1600, height: 900 }, context);
@@ -54,6 +76,8 @@ describe("workspace presets", () => {
     expect(groups(snapshot.layout.grid.root).find((g) => g.id === "parking")?.views).toEqual([
       "ai-task",
       "video-tracker",
+      "tri-view",
+      "camera-view",
       "task-queue",
       "class-palette",
     ]);
