@@ -4,6 +4,9 @@ import { DEFAULT_WORKBENCH_PREFERENCES } from "@/api/auth";
 import {
   WORKBENCH_SETTING_CATEGORY_LABELS,
   WORKBENCH_SETTING_FIELDS,
+  WORKBENCH_SETTING_SECTIONS,
+  getVisibleWorkbenchSettingFields,
+  filterWorkbenchSettings,
   buildFieldPatch,
   getFieldValue,
   lockableFieldName,
@@ -116,5 +119,46 @@ describe("workbenchSettingsFields 注册表", () => {
     ]);
     const common = WORKBENCH_SETTING_FIELDS.find((f) => f.category === "common")!;
     expect(lockableFieldName(common)).toBeNull();
+  });
+});
+
+describe("settings presentation", () => {
+  it("every registered field has a section and children stay with their parent", () => {
+    for (const field of WORKBENCH_SETTING_FIELDS) {
+      expect(field.section && WORKBENCH_SETTING_SECTIONS[field.section]).toBeTruthy();
+      if (field.parentKey)
+        expect(
+          WORKBENCH_SETTING_FIELDS.find((parent) => parent.key === field.parentKey)?.section,
+        ).toBe(field.section);
+    }
+  });
+  it.each([
+    ["image", 26],
+    ["video", 24],
+    ["3d", 33],
+  ] as const)("%s keeps its exact visible set", (stage, count) => {
+    const fields = getVisibleWorkbenchSettingFields(stage);
+    expect(fields).toHaveLength(count);
+    expect(fields.some((field) => field.hidden)).toBe(false);
+    expect(filterWorkbenchSettings(fields, "  ")).toEqual(fields);
+  });
+  it("search matches options and case-insensitive words without bringing back hidden fields", () => {
+    const fields = getVisibleWorkbenchSettingFields("3d");
+    expect(filterWorkbenchSettings(fields, "  GAMMA 上色 ").map((field) => field.key)).toEqual([
+      "pointcloud.colorizeWithCamera",
+      "pointcloud.colorizeGamma",
+    ]);
+    expect(filterWorkbenchSettings(fields, "矩形").map((field) => field.key)).toEqual([
+      "pointcloud.pointMaskSelectMode",
+    ]);
+    expect(filterWorkbenchSettings(getVisibleWorkbenchSettingFields("image"), "网格吸附")).toEqual(
+      [],
+    );
+    expect(filterWorkbenchSettings(fields, "相机上色").map((field) => field.key)).toEqual([
+      "pointcloud.colorizeWithCamera",
+      "pointcloud.colorizeContrast",
+      "pointcloud.colorizeBrightness",
+      "pointcloud.colorizeGamma",
+    ]);
   });
 });

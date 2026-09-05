@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { DEFAULT_WORKBENCH_PREFERENCES } from "@/api/auth";
 
 const mockPushToast = vi.fn();
 
@@ -74,56 +75,7 @@ vi.mock("@/hooks/useSystemSettings", () => ({
 
 // --- workbench config ---
 // v0.15.3 · 偏好四分树形态(common/image/video/pointcloud 子树)。
-const mockWorkbenchConfig = {
-  common: {
-    longTaskSampleRate: 0.1,
-    confirmDelete: "never",
-    recentClassesLimit: 5,
-    crossFrameOverlayEnabled: false,
-    crossFrameOverlayK: 1,
-    crossFrameOverlayScope: "selected",
-    performanceTier: "standard",
-    labelFontSize: 12,
-    labelVisibility: "always",
-    labelContent: ["class", "score"],
-    strokeWidth: 1.5,
-    fillOpacity: 0.07,
-    fillOpacitySelected: 0.12,
-  },
-  image: {
-    smoothImage: true,
-    cssImageFilter: "",
-    controlPointsSize: 6,
-    autoFitOnResize: true,
-    snapToGrid: false,
-    afterBoxCreate: "pick_class",
-    snapThresholdPx: 8,
-    zoomStepFactor: 1.1,
-    fadedOpacity: 0.35,
-    maskOverlayOpacity: 0.45,
-  },
-  video: {
-    defaultPlaybackRate: 1,
-    largeFrameStep: 10,
-    autoFitOnResize: true,
-  },
-  pointcloud: {
-    pointSize: 0.06,
-    persistCameraView: false,
-    colorizeWithCamera: false,
-    colorizeContrast: 1,
-    colorizeBrightness: 0,
-    colorizeGamma: 1,
-    showDepthHint: false,
-    pointMaskSelectMode: "rect",
-    showGrid: true,
-    showAxisGizmo: true,
-    cameraDamping: 0.1,
-    neighborPointOverlay: false,
-    neighborPointOverlayK: 1,
-    neighborPointCull: "keep",
-  },
-};
+const mockWorkbenchConfig = structuredClone(DEFAULT_WORKBENCH_PREFERENCES);
 const mockWorkbenchUpdate = vi.fn();
 vi.mock("@/pages/Workbench/state/useWorkbenchConfig", () => ({
   useWorkbenchConfig: () => ({
@@ -258,6 +210,9 @@ describe("SettingsPage", () => {
     renderUI();
     fireEvent.click(screen.getByRole("button", { name: /标注偏好/ }));
     expect(screen.getByText(/图像平滑/)).toBeInTheDocument();
+    expect(screen.getAllByTestId(/^setting-field-/)).toHaveLength(44);
+    expect(screen.queryByTestId("setting-field-image.snapToGrid")).not.toBeInTheDocument();
+    expect(screen.queryAllByTestId(/^setting-field-experiment\./)).toHaveLength(0);
   });
 
   it("点击「通知偏好」tab → 异步加载后显示通知类型", async () => {

@@ -639,7 +639,7 @@ function WorkbenchPreferencesSection() {
   };
 
   // v0.15.3 · 注册表驱动的四分组(通用/图片/视频/点云);空分组(本版 video/pointcloud)
-  // 不渲染。与工作台设置抽屉共用 WORKBENCH_SETTING_FIELDS + SettingsFieldControl。
+  // 不渲染。与工作台设置窗口共用 WORKBENCH_SETTING_FIELDS + SettingsFieldControl。
   const groups = (Object.keys(WORKBENCH_SETTING_CATEGORY_LABELS) as WorkbenchSettingCategory[])
     .map((category) => ({
       category,

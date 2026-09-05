@@ -153,3 +153,39 @@ describe("SettingsFieldControl", () => {
     expect(screen.getByText("项目锁定")).toBeTruthy();
   });
 });
+
+describe("settings layout commit boundaries", () => {
+  it("shows a readable description and a separately named numeric input", () => {
+    render(
+      <SettingsFieldControl layout="settings" field={sliderField} value={6} onCommit={vi.fn()} />,
+    );
+    expect(screen.getByText("顶点拖拽手柄半径")).toBeVisible();
+    expect(screen.getByRole("slider", { name: "控制点大小" })).toHaveAccessibleDescription(
+      "顶点拖拽手柄半径",
+    );
+  });
+  it("Enter and subsequent blur only commit once, and composition Enter does not commit", () => {
+    const onCommit = vi.fn();
+    render(<SettingsFieldControl field={textField} value="" onCommit={onCommit} />);
+    const input = screen.getByRole("textbox");
+    fireEvent.change(input, { target: { value: " invert(1) " } });
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    expect(onCommit).not.toHaveBeenCalled();
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.blur(input);
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit).toHaveBeenCalledWith("invert(1)");
+  });
+  it("slider pointerup and blur deduplicate, keyboard changes still commit", () => {
+    const onCommit = vi.fn();
+    render(<SettingsFieldControl field={sliderField} value={6} onCommit={onCommit} />);
+    const input = screen.getByRole("slider");
+    fireEvent.change(input, { target: { value: "12" } });
+    fireEvent.pointerUp(input);
+    fireEvent.blur(input);
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    fireEvent.change(input, { target: { value: "13" } });
+    fireEvent.keyUp(input, { key: "ArrowUp" });
+    expect(onCommit).toHaveBeenLastCalledWith(13);
+  });
+});

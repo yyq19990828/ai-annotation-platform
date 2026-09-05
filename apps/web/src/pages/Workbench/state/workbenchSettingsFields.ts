@@ -1,4 +1,4 @@
-// v0.15.3 · 工作台设置字段注册表(单一来源):工作台设置抽屉与 Settings 页「标注偏好」
+// v0.15.3 · 工作台设置字段注册表(单一来源):工作台设置窗口与 Settings 页「标注偏好」
 // 共用本数组渲染,杜绝两处 UI 漂移。新增字段流程:后端子树加字段 → auth.ts 类型同步 →
 // 这里加一行 → 消费点读配置。
 import type { LabelContentByType, WorkbenchPreferences } from "@/api/auth";
@@ -53,12 +53,14 @@ interface WorkbenchSettingFieldBase {
   /** 子设置挂到父开关下面;父开关关闭时子项禁用并置灰。 */
   parentKey?: `${WorkbenchSettingCategory}.${string}`;
   category: WorkbenchSettingCategory;
+  /** 仅用于展示分组，不参与偏好存储。 */
+  section?: WorkbenchSettingSection;
   label: string;
   description?: string;
   control: WorkbenchSettingControl;
   /** 注册但不渲染。v0.15.3 红线:不新增用户可感知项(snapToGrid 现状无设置 UI)。 */
   hidden?: boolean;
-  /** 实验字段在工作台抽屉中只显示给相关模态；个人设置页仍展示全部。 */
+  /** 实验字段在设置窗口中只显示给相关模态；个人设置页不展示本机实验项。 */
   stageKinds?: Array<"image" | "video" | "3d">;
 }
 
@@ -88,6 +90,26 @@ export const WORKBENCH_SETTING_CATEGORY_LABELS: Record<WorkbenchSettingCategory,
   experiment: "实验特性",
 };
 
+export const WORKBENCH_SETTING_SECTIONS = {
+  layout: "工作台布局",
+  appearance: "标注外观",
+  behavior: "操作行为",
+  reference: "邻帧参考",
+  performance: "性能",
+  imageDisplay: "图像显示",
+  drawing: "绘制与编辑",
+  ai: "AI 辅助",
+  playback: "播放与画布",
+  tracking: "轨迹操作",
+  points: "点云显示",
+  color: "相机图像与上色",
+  camera: "视角与选择",
+  neighbors: "邻帧点云",
+  experiments: "本机选项",
+} as const;
+
+export type WorkbenchSettingSection = keyof typeof WORKBENCH_SETTING_SECTIONS;
+
 function readLocalBoolean(key: string, defaultValue = false): boolean {
   if (typeof window === "undefined") return defaultValue;
   try {
@@ -111,6 +133,7 @@ function writeLocalBoolean(key: string, value: WorkbenchSettingValue): void {
 export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   {
     key: "common.leftWidthPct",
+    section: "layout",
     category: "common",
     label: "左栏宽度",
     description: "占工作台宽度的百分比;也可直接拖拽边栏分隔条,双击或此处重置回 15%",
@@ -118,6 +141,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "common.rightWidthPct",
+    section: "layout",
     category: "common",
     label: "右栏宽度",
     description: "占工作台宽度的百分比;也可直接拖拽边栏分隔条,双击或此处重置回 15%",
@@ -125,6 +149,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "common.longTaskSampleRate",
+    section: "performance",
     category: "common",
     label: "性能采样率",
     description: "PerformanceObserver longtask 采样率，0–1",
@@ -132,6 +157,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "common.confirmDelete",
+    section: "behavior",
     category: "common",
     label: "删除确认",
     description: "删除标注时是否二次确认：从不 / 仅多选删除 / 始终",
@@ -146,6 +172,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "common.recentClassesLimit",
+    section: "behavior",
     category: "common",
     label: "最近类别数量",
     description: "类别面板顶部「最近使用」保留的条目数",
@@ -153,6 +180,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "common.petEnabled",
+    section: "layout",
     category: "common",
     label: "工作台桌宠",
     description:
@@ -161,6 +189,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "common.focusSelectionEnabled",
+    section: "behavior",
     category: "common",
     label: "选中自动聚焦",
     description:
@@ -169,6 +198,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "common.autoAdvanceOnDecide",
+    section: "behavior",
     category: "common",
     label: "决策后自动前进",
     description:
@@ -177,6 +207,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "common.crossFrameOverlayEnabled",
+    section: "reference",
     category: "common",
     label: "邻帧框叠加",
     description: "开启后显示相邻帧参考框",
@@ -184,6 +215,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "common.crossFrameOverlayK",
+    section: "reference",
     parentKey: "common.crossFrameOverlayEnabled",
     category: "common",
     label: "邻帧框帧数",
@@ -200,6 +232,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "common.crossFrameOverlayScope",
+    section: "reference",
     parentKey: "common.crossFrameOverlayEnabled",
     category: "common",
     label: "邻帧框叠加范围",
@@ -214,6 +247,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "common.performanceTier",
+    section: "performance",
     category: "common",
     label: "性能档位",
     description: "控制视频缓存、预取窗口与点云抽稀上限",
@@ -228,6 +262,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "common.labelFontSize",
+    section: "appearance",
     category: "common",
     label: "标签字号",
     description: "标注标签文字大小;图片随画布缩放、视频固定像素。图片与视频共用",
@@ -235,9 +270,10 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "common.labelVisibility",
+    section: "appearance",
     category: "common",
     label: "标签显隐",
-    description: "标注标签何时显示:始终 / 仅选中对象时 / 从不。图片与视频共用",
+    description: "标注标签何时显示：始终 / 仅选中对象时 / 从不。图片、视频与点云共用",
     control: {
       type: "select",
       options: [
@@ -249,10 +285,11 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "common.labelContent",
+    section: "appearance",
     category: "common",
     label: "标签内容",
     description:
-      "按标注类型分段控制标签显示哪些信息;类别名三段恒显。单帧=图片手工框,轨迹=视频 track 框,AI=图片预测框",
+      "按标注类型分段控制标签显示哪些信息;类别名三段恒显。单帧=图片手工框，轨迹=视频轨迹和点云框，AI=图片预测框",
     control: {
       type: "labelContentByType",
       segments: [
@@ -288,6 +325,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "common.strokeWidth",
+    section: "appearance",
     category: "common",
     label: "线宽",
     description: "标注描边粗细;选中对象自动加粗 0.5。图片与视频共用",
@@ -295,6 +333,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "common.fillOpacity",
+    section: "appearance",
     category: "common",
     label: "填充透明度",
     description: "可闭合标注(框/多边形/旋转框)内部填充透明度;折线和点无填充。图片与视频共用",
@@ -302,6 +341,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "common.fillOpacitySelected",
+    section: "appearance",
     category: "common",
     label: "选中填充透明度",
     description: "选中对象的内部填充加重程度,便于区分当前对象。图片与视频共用",
@@ -309,6 +349,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "image.smoothImage",
+    section: "imageDisplay",
     category: "image",
     label: "图像平滑",
     description: "关闭后像素清晰，适合医学影像 / 像素艺术",
@@ -321,6 +362,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "image.cssImageFilter",
+    section: "imageDisplay",
     category: "image",
     label: "CSS 图像滤镜",
     description: "例：brightness(1.2) contrast(1.1) invert(0)；留空恢复原图",
@@ -329,6 +371,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "image.controlPointsSize",
+    section: "drawing",
     category: "image",
     label: "控制点大小",
     description: "顶点拖拽手柄半径",
@@ -337,6 +380,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "image.autoFitOnResize",
+    section: "imageDisplay",
     category: "image",
     label: "自动适应大小",
     description: "展开或收起边栏后自动让图片重新适应画布",
@@ -344,6 +388,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "image.snapToGrid",
+    section: "drawing",
     category: "image",
     label: "网格吸附",
     control: { type: "toggle" },
@@ -353,6 +398,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "image.afterBoxCreate",
+    section: "drawing",
     category: "image",
     label: "画框后行为",
     description: "画完一个框后：弹出类别选择 / 直接沿用当前激活类别",
@@ -366,6 +412,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "image.snapThresholdPx",
+    section: "drawing",
     category: "image",
     label: "吸附阈值",
     description: "顶点/边吸附到邻近标注的触发距离，越大越容易吸附",
@@ -373,6 +420,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "image.zoomStepFactor",
+    section: "imageDisplay",
     category: "image",
     label: "滚轮缩放步长",
     description: "每次滚轮缩放画布的倍率",
@@ -388,6 +436,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "image.fadedOpacity",
+    section: "ai",
     category: "image",
     label: "重复 AI 候选透明度",
     description: "与人工标注高度重叠、已视为重复的 AI 候选透明度，越低越淡",
@@ -395,6 +444,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "video.defaultPlaybackRate",
+    section: "playback",
     category: "video",
     label: "默认播放速率",
     description: "打开视频任务时的初始播放速率",
@@ -411,6 +461,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "video.largeFrameStep",
+    section: "playback",
     category: "video",
     label: "大步进帧数",
     description: "时间轴聚焦时 Shift+←/→ 使用",
@@ -426,6 +477,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "video.autoFitOnResize",
+    section: "playback",
     category: "video",
     label: "自动适应大小",
     description: "展开、收起或拖宽边栏后自动让视频重新适应画布",
@@ -433,6 +485,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "video.trackContinueAutoAdvance",
+    section: "tracking",
     category: "video",
     label: "续写后自动前进",
     description:
@@ -441,6 +494,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "pointcloud.pointSize",
+    section: "points",
     category: "pointcloud",
     label: "点大小",
     description: "点云渲染点径",
@@ -448,6 +502,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "pointcloud.persistCameraView",
+    section: "camera",
     category: "pointcloud",
     label: "持久化 3D 视角",
     description: "记住点云主视角，下次打开时恢复上次相机位置",
@@ -455,6 +510,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "pointcloud.colorizeWithCamera",
+    section: "color",
     category: "pointcloud",
     label: "相机上色",
     description: "用标定相机图像给点云采样 RGB",
@@ -462,6 +518,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "pointcloud.colorizeContrast",
+    section: "color",
     parentKey: "pointcloud.colorizeWithCamera",
     category: "pointcloud",
     label: "上色对比度",
@@ -470,6 +527,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "pointcloud.colorizeBrightness",
+    section: "color",
     parentKey: "pointcloud.colorizeWithCamera",
     category: "pointcloud",
     label: "上色亮度",
@@ -478,6 +536,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "pointcloud.colorizeGamma",
+    section: "color",
     parentKey: "pointcloud.colorizeWithCamera",
     category: "pointcloud",
     label: "上色 Gamma",
@@ -486,6 +545,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "pointcloud.showDepthHint",
+    section: "color",
     category: "pointcloud",
     label: "深度提示",
     description: "相机视图显示深度热力与悬停距离",
@@ -493,6 +553,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "pointcloud.pointMaskSelectMode",
+    section: "camera",
     category: "pointcloud",
     label: "点选模式",
     description: "框选点云时的圈选方式：矩形 / 套索 / 多边形",
@@ -507,6 +568,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "pointcloud.showGrid",
+    section: "points",
     category: "pointcloud",
     label: "显示地面网格",
     description: "在 3D 场景显示地面参考网格",
@@ -514,6 +576,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "pointcloud.showAxisGizmo",
+    section: "points",
     category: "pointcloud",
     label: "显示坐标轴",
     description: "在 3D 场景角落显示 XYZ 坐标轴指示器",
@@ -521,6 +584,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "pointcloud.cameraDamping",
+    section: "camera",
     category: "pointcloud",
     label: "相机灵敏度",
     description: "值越小惯性越强",
@@ -528,6 +592,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "pointcloud.neighborPointOverlay",
+    section: "neighbors",
     category: "pointcloud",
     label: "邻帧点云叠加",
     description:
@@ -536,6 +601,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "pointcloud.neighborPointOverlayK",
+    section: "neighbors",
     parentKey: "pointcloud.neighborPointOverlay",
     category: "pointcloud",
     label: "邻帧点云帧数",
@@ -551,6 +617,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "pointcloud.neighborPointCull",
+    section: "neighbors",
     parentKey: "pointcloud.neighborPointOverlay",
     category: "pointcloud",
     label: "邻帧动态点",
@@ -567,6 +634,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "experiment.pointCloudWebGpuRenderer",
+    section: "experiments",
     category: "experiment",
     storage: "local",
     stageKinds: ["3d"],
@@ -579,17 +647,20 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
   },
   {
     key: "experiment.webcodecs",
+    section: "experiments",
     category: "experiment",
     storage: "local",
     stageKinds: ["video"],
     label: "WebCodecs 精确解码",
-    description: "默认开启;暂停、逐帧和 seek 优先精确解码,不支持时安全回退,刷新后生效",
+    description:
+      "默认开启；暂停、逐帧和 seek 优先精确解码，不支持时安全回退。刷新后生效；URL 的 webcodecs 参数优先于本机开关",
     control: { type: "toggle" },
     read: () => readLocalBoolean(WEBCODECS_FLAG_STORAGE_KEY, WEBCODECS_DEFAULT_ENABLED),
     write: (value) => writeLocalBoolean(WEBCODECS_FLAG_STORAGE_KEY, value),
   },
   {
     key: "experiment.videoReferencePredict",
+    section: "experiments",
     category: "experiment",
     storage: "local",
     stageKinds: ["video"],
@@ -644,4 +715,68 @@ export function lockableFieldName(field: WorkbenchSettingField): LockableField |
   if (isLocalSettingField(field)) return null;
   if (!field.lockable) return null;
   return field.key.slice(field.category.length + 1) as LockableField;
+}
+
+/** 所有设置入口的搜索都先接收各自的可见集合，隐藏项不会被搜索重新暴露。 */
+export function getVisibleWorkbenchSettingFields(stageKind: "image" | "video" | "3d") {
+  const category = stageKind === "3d" ? "pointcloud" : stageKind;
+  return WORKBENCH_SETTING_FIELDS.filter(
+    (field) =>
+      !field.hidden &&
+      (field.category === "common" ||
+        field.category === category ||
+        (field.category === "experiment" &&
+          (!field.stageKinds || field.stageKinds.includes(stageKind)))),
+  );
+}
+
+type SearchableSetting = Pick<
+  WorkbenchSettingField,
+  "label" | "description" | "control" | "category" | "section"
+> & {
+  key: string;
+  parentKey?: string;
+};
+
+export function filterWorkbenchSettings<T extends SearchableSetting>(
+  fields: readonly T[],
+  query: string,
+): T[] {
+  const words = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return [...fields];
+  const matches = new Set(
+    fields
+      .filter((field) => {
+        const control = field.control;
+        const options =
+          control.type === "select" || control.type === "multiselect"
+            ? control.options.map((option) => option.label)
+            : control.type === "labelContentByType"
+              ? control.segments.flatMap((segment) => [
+                  segment.label,
+                  ...segment.options.map((option) => option.label),
+                ])
+              : [];
+        const text = [
+          field.label,
+          field.description,
+          WORKBENCH_SETTING_CATEGORY_LABELS[field.category],
+          field.section && WORKBENCH_SETTING_SECTIONS[field.section],
+          ...options,
+        ]
+          .join(" ")
+          .toLocaleLowerCase();
+        return words.every((word) => text.includes(word));
+      })
+      .map((field) => field.key),
+  );
+  const parents = new Set(
+    fields.filter((field) => matches.has(field.key)).map((field) => field.parentKey),
+  );
+  return fields.filter(
+    (field) =>
+      matches.has(field.key) ||
+      parents.has(field.key) ||
+      (field.parentKey !== undefined && matches.has(field.parentKey)),
+  );
 }

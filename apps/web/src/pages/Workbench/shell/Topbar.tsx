@@ -40,7 +40,7 @@ interface TopbarProps {
   onSubmit: () => void;
   onSmartNextOpen?: () => void;
   onSmartNextUncertain?: () => void;
-  /** v0.15.3 · 齿轮图标直接打开设置抽屉;缺省不渲染该项。 */
+  /** v0.15.3 · 齿轮图标直接打开设置窗口;缺省不渲染该项。 */
   onOpenWorkbenchSettings?: () => void;
   /** v0.6.5 状态机：审核中可撤回 / 已通过可重开。 */
   canWithdraw?: boolean;

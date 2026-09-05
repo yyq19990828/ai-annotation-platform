@@ -664,7 +664,7 @@ export function useWorkbenchShellModel({
   const [fitTick, setFitTick] = useState(0);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const [showHotkeys, setShowHotkeys] = useState(false);
-  // v0.15.3 · 工作台设置抽屉(齿轮菜单入口)。
+  // v0.15.3 · 工作台设置窗口(齿轮菜单入口)。
   const [workbenchSettingsOpen, setWorkbenchSettingsOpen] = useState(false);
   const [aiPopoverOpen, setAiPopoverOpen] = useState(false);
   // v0.21.4 · 视频单题 AI(当前帧→图像 backend)是同步 fetch(非 triggerPreannotation mutation),
