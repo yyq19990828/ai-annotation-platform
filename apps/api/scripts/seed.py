@@ -46,7 +46,7 @@ from app.services.screenshot_seed_backends import (
     default_screenshot_stub_url,
     reconcile_screenshot_backends,
 )
-from app.services.screenshot_seed_spec import SEED_REVISION
+from app.services.screenshot_seed_spec import SEED_REVISION, parse_backend_requirements
 
 # 生产保护栏：seed.py 仅用于 dev / staging
 if settings.environment == "production":
@@ -124,7 +124,9 @@ async def seed(
     repair: bool = False,
     ml_backend_mode: str = "live",
     ml_backend_url: str | None = None,
+    backend_requirements: str | None = None,
 ) -> None:
+    parse_backend_requirements(backend_requirements)
     assets = {}
     generated_assets = None
     if profile == "screenshots":
@@ -337,6 +339,7 @@ async def seed(
                 db,
                 mode=ml_backend_mode,
                 stub_url=ml_backend_url,
+                backend_requirements=backend_requirements,
             )
             binding_names = ", ".join(
                 f"{key}={value['backend_name']}"
@@ -346,7 +349,9 @@ async def seed(
                 f"  ready screenshots ML binding mode={ml_backend_mode} {binding_names}"
             )
             try:
-                await build_screenshot_seed_catalog(db)
+                await build_screenshot_seed_catalog(
+                    db, backend_requirements=backend_requirements
+                )
             except ScreenshotSeedCatalogError as exc:
                 raise RuntimeError(
                     "screenshots catalog preflight failed: " + "; ".join(exc.issues)
@@ -401,7 +406,18 @@ def parse_args() -> argparse.Namespace:
             f"(default: {default_screenshot_stub_url()})"
         ),
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--backend-requirements",
+        help="comma-separated image_interactive,video_tracker,ocr; 'none' for manual capture; omitted means all",
+    )
+    args = parser.parse_args()
+    try:
+        parse_backend_requirements(args.backend_requirements)
+    except ValueError as exc:
+        parser.error(str(exc))
+    if args.backend_requirements is not None and args.profile != "screenshots":
+        parser.error("--backend-requirements requires --profile screenshots")
+    return args
 
 
 async def main() -> None:
@@ -415,6 +431,7 @@ async def main() -> None:
         repair=args.repair,
         ml_backend_mode=args.ml_backend_mode,
         ml_backend_url=args.ml_backend_url,
+        backend_requirements=args.backend_requirements,
     )
     print("=== seed done  ===\n")
     print("测试账号一览 (密码统一: 123456):")

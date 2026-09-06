@@ -4,7 +4,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-08-14
+last_reviewed: 2026-09-06
 ---
 
 # 环境变量参考

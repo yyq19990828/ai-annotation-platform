@@ -143,6 +143,19 @@ BACKEND_REQUIREMENTS = {
 }
 
 
+def parse_backend_requirements(value: str | None) -> frozenset[str]:
+    """Keep legacy full validation; an explicit 'none' selects manual capture."""
+    if value is None:
+        return frozenset(BACKEND_REQUIREMENTS)
+    if value == "none":
+        return frozenset()
+    keys = frozenset(value.split(","))
+    unknown = keys - BACKEND_REQUIREMENTS.keys()
+    if unknown:
+        raise ValueError(f"unknown screenshot backend requirements: {sorted(unknown)}")
+    return keys
+
+
 IMAGE_BATCHES = (
     BatchSpec("draft", "B-SS-DRAFT", "截图 · 待分派", "draft"),
     BatchSpec("active", "B-SS-ACTIVE", "截图 · 待预标", "active"),

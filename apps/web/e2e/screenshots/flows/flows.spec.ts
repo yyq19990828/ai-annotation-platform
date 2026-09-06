@@ -1,11 +1,10 @@
 /**
  * M3 · 流程录制 spec。
  *
- * 执行：`pnpm screenshots:flows`（单独 project，video:on 全程录制）
+ * 执行：`pnpm screenshots:flows`（归档标准源录像与 GIF 配置）
  *
  * 前置条件同 screenshots.spec.ts。
- * flows project 只转码声明的文档 target；marketing-master project 归档所有成功流程。
- * outputs/flows 仅作为转码临时目录。
+ * Both profiles archive sources only. Publish derivatives with docs:media:derive.
  */
 import { test } from "../../fixtures/seed";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
@@ -90,8 +89,9 @@ import {
 } from "./candidate-review-lifecycle";
 import { recordingAnchor } from "./_canvas";
 import { installRecordingWorkbenchLayout } from "./_workbench-layout";
-import { convertToGif } from "../_helpers/recorder";
-import { recordFlowArtifact } from "../_helpers/flow-manifest";
+import type { SourceGifVariant } from "../_helpers/flow-manifest";
+import { archivePortableRecording } from "../_helpers/portable-recorder";
+import { recordingPlan } from "../recording-plan.mjs";
 import {
   archiveMarketingMaster,
   clipFromEpochWindow,
@@ -108,11 +108,9 @@ import { applyScreenshotTheme, installScreenshotEnvironment } from "../environme
 import { loadScreenshotCatalog } from "../catalog-runtime";
 import { execFileSync } from "child_process";
 import path from "path";
-import fs from "fs";
 
 const HERE = decodeURIComponent(new URL(".", import.meta.url).pathname);
 const REPO_ROOT = HERE.replace(/\/apps\/web\/e2e\/screenshots\/flows\/?$/, "");
-const FLOWS_OUT = path.join(REPO_ROOT, "apps/web/e2e/screenshots/outputs/flows");
 // nuScenes-mini scene-0061 frame 0, truck annotation 83d881a6b3d94ef3a3bc3b585cc514f8.
 // Official world box transformed into the LiDAR timestamp ego frame (ISO 8855).
 const NUSCENES_RECORDING_BOX = {
@@ -125,6 +123,12 @@ const NUSCENES_RECORDING_BOX = {
 const DOCS_IMAGES = path.join(REPO_ROOT, "docs-site/user-guide/images");
 const MARKETING_ARCHIVE_ROOT = path.join(REPO_ROOT, ".artifacts/marketing");
 const VALIDATE_ONLY = process.env.SCREENSHOT_VALIDATE_ONLY === "1";
+const SELECTED_CAPTURE = process.env.SCREENSHOT_RECORDING_FLOWS
+  ? recordingPlan(
+      process.env.SCREENSHOT_RECORDING_FLOWS.split(","),
+      process.env.SCREENSHOT_RECORDING_PROFILE,
+    )
+  : null;
 const FLOW_CAPTURE_COMMIT = execFileSync("git", ["rev-parse", "HEAD"], {
   cwd: REPO_ROOT,
   encoding: "utf8",
@@ -185,7 +189,7 @@ function flowWatchPaths(assetId: string): string[] {
     `apps/web/e2e/screenshots/flows/${sourceFile}`,
     "apps/web/e2e/screenshots/flows/_canvas.ts",
     "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
-    "apps/web/e2e/screenshots/_helpers/recorder.ts",
+    "apps/web/scripts/media-derivation.mjs",
     "apps/web/e2e/fixtures/seed.ts",
     "apps/api/app/services/screenshot_seed_spec.py",
     "apps/api/app/services/screenshot_seed_backends.py",
@@ -208,22 +212,6 @@ function flowWatchPaths(assetId: string): string[] {
     );
   }
   return paths.filter((candidate, index, all) => all.indexOf(candidate) === index);
-}
-
-function recordGeneratedArtifact(targetPath: string, assetId: string, role: "docs-gif"): void {
-  const info = test.info();
-  recordFlowArtifact({
-    repoRoot: REPO_ROOT,
-    targetPath,
-    assetId,
-    role,
-    source: path.relative(REPO_ROOT, info.file).replaceAll("\\", "/"),
-    testTitle: info.titlePath.join(" › "),
-    seedRevision: cached?.seed_revision ?? null,
-    capturedCommit: FLOW_CAPTURE_COMMIT,
-    sourceWorktreeDirty: FLOW_SOURCE_WORKTREE_DIRTY,
-    watchPaths: flowWatchPaths(assetId),
-  });
 }
 
 test.beforeAll(() => {
@@ -268,6 +256,9 @@ function repairScreenshotProfile(mode: "stub" | "live", silent = false): void {
       "--repair",
       "--ml-backend-mode",
       mode,
+      ...(process.env.SCREENSHOT_BACKEND_REQUIREMENTS === undefined
+        ? []
+        : ["--backend-requirements", process.env.SCREENSHOT_BACKEND_REQUIREMENTS]),
     ],
     {
       cwd: path.join(REPO_ROOT, "apps/api"),
@@ -555,6 +546,7 @@ async function archiveMarketingRecording(
   page: Page,
   assetId: string,
   universalClip?: MarketingClip,
+  variants: Array<{ target: string; options?: GifOptions }> = [],
 ): Promise<boolean> {
   const info = test.info();
   if (info.project.name !== MARKETING_PROJECT_NAME) return false;
@@ -587,6 +579,7 @@ async function archiveMarketingRecording(
       viewport: capture.logicalViewport,
       browser,
       universalClip: resolvedClip,
+      gifVariants: gifRecipes(variants, capture.startedAtEpochMs),
     });
     console.log(`[marketing] ✓ 4K60 采集源：${archived.capturePath}`);
     console.log(`[marketing] ✓ 4K60 MP4 母版：${archived.masterPath}`);
@@ -597,9 +590,29 @@ async function archiveMarketingRecording(
   }
 }
 
+function gifRecipes(
+  variants: Array<{ target: string; options?: GifOptions }>,
+  recordingStartEpochMs?: number,
+): SourceGifVariant[] {
+  return variants.map(({ target, options = {} }) => {
+    const epochClip =
+      options.captureWindow && recordingStartEpochMs !== undefined
+        ? clipFromEpochWindow(recordingStartEpochMs, options.captureWindow)
+        : undefined;
+    return {
+      target: path.relative(REPO_ROOT, target).replaceAll("\\", "/"),
+      fps: options.fps ?? 10,
+      maxWidth: options.maxWidth ?? 1280,
+      maxColors: options.maxColors,
+      startSec: epochClip?.startSeconds ?? options.startSec,
+      durationSec: epochClip?.durationSeconds ?? options.durationSec,
+    };
+  });
+}
+
 async function finalizeVariants(
   page: Page,
-  gifName: string,
+  assetId: string,
   variants: Array<{ target: string; options?: GifOptions }>,
   marketingClip?: MarketingClip,
 ) {
@@ -607,117 +620,90 @@ async function finalizeVariants(
     await page.close();
     return;
   }
-  const resolvedMarketingClip = marketingClip ?? marketingClipFromVariants(gifName, variants);
-  if (await archiveMarketingRecording(page, gifName, resolvedMarketingClip)) return;
-  if (variants.length === 0) {
-    await page.close();
-    return;
-  }
-  const video = page.video();
-  if (!video) {
-    throw new Error("[flows] video 未开启，检查 playwright config 的 flows project");
-  }
-
-  const outWebm = path.join(FLOWS_OUT, `${gifName}.webm`);
-  const outGif = path.join(FLOWS_OUT, `${gifName}.gif`);
-
-  // video 只在 page 关闭后才写完整；先 close 再 saveAs（saveAs 会等视频落盘），
-  // 避免直接读 video.path() 拿到半截 webm 导致 ffmpeg palettegen 失败（短流程必踩）。
-  await page.close();
-  fs.mkdirSync(FLOWS_OUT, { recursive: true });
-  try {
-    await video.saveAs(outWebm);
-    for (const variant of variants) {
-      await convertToGif(outWebm, outGif, {
-        fps: variant.options?.fps ?? 10,
-        maxWidth: variant.options?.maxWidth ?? 1280,
-        maxColors: variant.options?.maxColors,
-        startSec: variant.options?.startSec,
-        durationSec: variant.options?.durationSec,
-      });
-      if (!fs.existsSync(outGif)) {
-        throw new Error(`[flows] ${gifName}: GIF 未生成，请安装 ffmpeg 或检查 FFMPEG_PATH`);
-      }
-      fs.mkdirSync(path.dirname(variant.target), { recursive: true });
-      fs.copyFileSync(outGif, variant.target);
-      recordGeneratedArtifact(variant.target, gifName, "docs-gif");
-      console.log(`[flows] ✓ 同步 gif 到文档站：${variant.target}`);
-    }
-  } finally {
-    fs.rmSync(outWebm, { force: true });
-    fs.rmSync(outGif, { force: true });
-    fs.rmSync(outGif.replace(/\.gif$/, ".palette.png"), { force: true });
+  if (test.info().project.name === MARKETING_PROJECT_NAME) {
+    await archiveMarketingRecording(
+      page,
+      assetId,
+      marketingClip ?? marketingClipFromVariants(assetId, variants),
+      variants,
+    );
+  } else {
+    await archivePortable(page, assetId, gifRecipes(variants));
   }
 }
 
 async function finalize(
   page: Page,
-  gifName: string,
-  // 文档站目标 gif 绝对路径（不填则只执行流程验证）
+  assetId: string,
   docsTarget?: string,
-  // GIF 转码参数（不填默认 fps:10 / maxWidth:1280）；工作台画面细节多时调小避免超 5MB；
-  // startSec/durationSec 裁掉录屏开头(准备)与结尾(清理)，只留核心片段。
   gifOpts?: GifOptions,
   marketingClip?: MarketingClip,
 ) {
-  const resolvedMarketingClip =
-    marketingClip ??
-    (gifOpts ? marketingClipFromVariants(gifName, [{ options: gifOpts }]) : undefined);
   await finalizeVariants(
     page,
-    gifName,
+    assetId,
     docsTarget ? [{ target: docsTarget, options: gifOpts }] : [],
-    resolvedMarketingClip,
+    marketingClip ??
+      (test.info().project.name === MARKETING_PROJECT_NAME && gifOpts
+        ? marketingClipFromVariants(assetId, [{ options: gifOpts }])
+        : undefined),
   );
 }
 
 async function finalizeMarketingBackedHomepageAsset(
   page: Page,
-  name: string,
+  assetId: string,
   trim: { startSec?: number; durationSec?: number },
   docsGifTarget?: string,
   docsGifOptions?: { fps?: number; maxWidth?: number },
 ) {
-  if (VALIDATE_ONLY) {
-    await page.close();
-    return;
-  }
-  if (
-    await archiveMarketingRecording(
-      page,
-      name,
-      marketingClipFromVariants(name, [{ options: trim }]),
-    )
-  )
-    return;
-  if (!docsGifTarget) {
-    await page.close();
-    return;
-  }
-  const video = page.video();
-  if (!video) throw new Error("[flows] video 未开启，无法生成文档 GIF");
+  await finalize(page, assetId, docsGifTarget, {
+    ...trim,
+    fps: docsGifOptions?.fps ?? 8,
+    maxWidth: docsGifOptions?.maxWidth ?? 860,
+  });
+}
 
-  const tempName = name.replaceAll("/", "-");
-  const source = path.join(FLOWS_OUT, `${tempName}.source.webm`);
-  const gif = path.join(FLOWS_OUT, `${tempName}.gif`);
-  await page.close();
-  fs.mkdirSync(FLOWS_OUT, { recursive: true });
-  try {
-    await video.saveAs(source);
-    await convertToGif(source, gif, {
-      ...trim,
-      fps: docsGifOptions?.fps ?? 8,
-      maxWidth: docsGifOptions?.maxWidth ?? 860,
-    });
-    fs.mkdirSync(path.dirname(docsGifTarget), { recursive: true });
-    fs.copyFileSync(gif, docsGifTarget);
-    recordGeneratedArtifact(docsGifTarget, name, "docs-gif");
-    console.log(`[flows] ✓ 同步 gif 到文档站：${docsGifTarget}`);
-  } finally {
-    fs.rmSync(source, { force: true });
-    fs.rmSync(gif, { force: true });
-    fs.rmSync(gif.replace(/\.gif$/, ".palette.png"), { force: true });
-  }
+async function archivePortable(
+  page: Page,
+  assetId: string,
+  gifs: SourceGifVariant[],
+): Promise<void> {
+  const info = test.info();
+  const requirements = SELECTED_CAPTURE
+    ? recordingPlan([info.title.split(" —")[0]]).backendRequirements
+    : null;
+  await archivePortableRecording(page, {
+    repoRoot: REPO_ROOT,
+    runId: process.env.SCREENSHOT_RECORDING_RUN ?? "",
+    assetId,
+    source: path.relative(REPO_ROOT, info.file),
+    testTitle: info.title,
+    seedRevision: cached?.seed_revision ?? null,
+    capturedCommit: FLOW_CAPTURE_COMMIT,
+    sourceWorktreeDirty: FLOW_SOURCE_WORKTREE_DIRTY,
+    watchPaths: [
+      ...flowWatchPaths(assetId),
+      "apps/web/e2e/screenshots/recording-plan.mjs",
+      "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+    ],
+    capture: {
+      gif_variants: gifs,
+      backend_requirements: requirements,
+      // Legacy flows may intercept inference even with live backend bindings.
+      inference: requirements === null ? "unverified" : requirements === "none" ? "none" : "live",
+      backends: Object.fromEntries(
+        Object.entries(cached?.projects ?? {})
+          .filter(
+            ([, project]) =>
+              project.ml_backend &&
+              (requirements === null ||
+                requirements.split(",").includes(project.ml_backend.requirement)),
+          )
+          .map(([key, project]) => [key, project.ml_backend]),
+      ),
+    },
+  });
 }
 
 function hasLiveSam3(catalog: ScreenshotSeedCatalog): boolean {
@@ -734,8 +720,24 @@ function hasLiveSam3(catalog: ScreenshotSeedCatalog): boolean {
 
 test.describe("flow recordings", () => {
   test.beforeEach(async ({ page, seed }, testInfo) => {
+    if (SELECTED_CAPTURE) {
+      if (!SELECTED_CAPTURE.flows.includes(testInfo.title.split(" —")[0])) {
+        throw new Error("Flow is outside the preflighted recording selection");
+      }
+      if (SELECTED_CAPTURE.backendRequirements !== process.env.SCREENSHOT_BACKEND_REQUIREMENTS) {
+        throw new Error("Recording selection and backend scope differ");
+      }
+      if (
+        SELECTED_CAPTURE.backendRequirements.includes("image_interactive") &&
+        (!cached || !hasLiveSam3(cached))
+      ) {
+        throw new Error(
+          "Selected SAM recording requires a live SAM3 backend; no stub or skipped success",
+        );
+      }
+    }
     if (
-      testInfo.project.name !== MARKETING_PROJECT_NAME ||
+      (testInfo.project.name !== MARKETING_PROJECT_NAME && !SELECTED_CAPTURE) ||
       testInfo.title.includes("e2e-quickstart")
     ) {
       return;
@@ -763,12 +765,19 @@ test.describe("flow recordings", () => {
       );
     }
 
-    if (!VALIDATE_ONLY) await startExternalMarketingRecording(page);
+    if (!VALIDATE_ONLY && testInfo.project.name === MARKETING_PROJECT_NAME) {
+      await startExternalMarketingRecording(page);
+    }
   });
 
   test.afterEach(async ({ page }, testInfo) => {
     if (testInfo.project.name === MARKETING_PROJECT_NAME) {
       await discardExternalMarketingRecording(page);
+    }
+    if (SELECTED_CAPTURE && testInfo.status === "skipped") {
+      throw new Error(
+        "Explicitly selected recording was skipped; no successful capture was produced",
+      );
     }
   });
 

@@ -583,6 +583,51 @@ async def test_catalog_fails_closed_when_primary_backend_is_unbound(
     assert any("primary ML backend is not bound" in issue for issue in detail["issues"])
 
 
+async def test_catalog_scopes_backends_but_not_fixture_integrity(
+    httpx_client, db_session
+):
+    projects, _ = await _ready_profile(db_session)
+    projects["image_demo"].ml_backend_pool_id = None
+    projects["video_demo"].ml_backend_pool_id = None
+    await db_session.flush()
+    response = await httpx_client.get(
+        "/api/v1/__test/seed/catalog?backend_requirements=ocr"
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["backend_requirements"] == ["ocr"]
+    assert response.json()["projects"]["image_demo"]["ml_backend"] is None
+    assert response.json()["projects"]["ocr_demo"]["ml_backend"] is not None
+    projects["ocr_demo"].ml_backend_pool_id = None
+    await db_session.flush()
+    assert (
+        await httpx_client.get("/api/v1/__test/seed/catalog?backend_requirements=ocr")
+    ).status_code == 409
+    assert (
+        await httpx_client.get("/api/v1/__test/seed/catalog?backend_requirements=none")
+    ).status_code == 200
+    assert (
+        await httpx_client.get("/api/v1/__test/seed/catalog?backend_requirements=typo")
+    ).status_code == 422
+    db_session.add(
+        Task(
+            project_id=projects["ocr_demo"].id,
+            display_id="T-SS-UNEXPECTED",
+            file_name="unexpected.jpg",
+            file_path="unexpected.jpg",
+            file_type="image",
+        )
+    )
+    await db_session.flush()
+    response = await httpx_client.get(
+        "/api/v1/__test/seed/catalog?backend_requirements=none"
+    )
+    assert response.status_code == 409
+    assert any(
+        "unexpected or missing tasks" in issue
+        for issue in response.json()["detail"]["issues"]
+    )
+
+
 async def test_catalog_fails_closed_when_media_object_is_missing(
     httpx_client, db_session, monkeypatch
 ):

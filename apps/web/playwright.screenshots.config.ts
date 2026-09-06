@@ -5,7 +5,7 @@
  *   pnpm screenshots                  # desktop-light 全量（默认）
  *   pnpm screenshots:dark             # desktop-dark 单跑
  *   pnpm screenshots:matrix           # 三个截图 project 全跑
- *   pnpm screenshots:flows            # 流程录制 → GIF（video:on）
+ *   pnpm screenshots:flows            # 流程录制 → 标准源归档（video:on）
  *   pnpm screenshots:marketing        # 流程录制 → 4K60 MKV 采集源 + MP4 通用母版
  *   pnpm screenshots:regression       # 视觉回归子集（M4）
  *
@@ -16,9 +16,12 @@
  */
 import { defineConfig, devices } from "@playwright/test";
 import { MARKETING_PROJECT_NAME } from "./e2e/screenshots/_helpers/marketing-recorder";
+import { recordingPlan } from "./e2e/screenshots/recording-plan.mjs";
 
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3001";
 const VALIDATE_ONLY = process.env.SCREENSHOT_VALIDATE_ONLY === "1";
+// One source archive identity must survive Playwright worker restarts.
+process.env.SCREENSHOT_RECORDING_RUN ??= `${new Date().toISOString().replace(/[:.]/g, "-")}-${process.pid}`;
 const BROWSER_ENV: Record<string, string> = {};
 for (const [key, value] of Object.entries(process.env)) {
   if (value !== undefined && (key !== "DISPLAY" || process.env.PWDEBUG)) {
@@ -32,7 +35,7 @@ const MARKETING_BROWSER_ENV = {
     : {}),
 };
 
-export default defineConfig({
+const config = defineConfig({
   testDir: "./e2e/screenshots",
   testMatch: ["**/*.spec.ts"],
   globalSetup: "./e2e/screenshots/global-setup.ts",
@@ -152,3 +155,20 @@ export default defineConfig({
     },
   ],
 });
+
+// FullConfig retains all configured projects even when CLI --project selects one.
+// A scoped catalog must never be shared with the full screenshot matrix.
+if (process.env.SCREENSHOT_BACKEND_REQUIREMENTS !== undefined) {
+  const plan = recordingPlan(
+    (process.env.SCREENSHOT_RECORDING_FLOWS ?? "").split(","),
+    process.env.SCREENSHOT_RECORDING_PROFILE,
+  );
+  if (plan.backendRequirements !== process.env.SCREENSHOT_BACKEND_REQUIREMENTS) {
+    throw new Error("Recording flow selection does not match backend requirements");
+  }
+  const projectName = plan.profile === "docs" ? "flows" : MARKETING_PROJECT_NAME;
+  config.projects = config.projects?.filter((project) => project.name === projectName);
+  config.grep = new RegExp(plan.grep);
+}
+
+export default config;

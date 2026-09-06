@@ -36,6 +36,7 @@ from app.services.screenshot_seed_spec import (
     RecordingAnchorSpec,
     TaskSpec,
     resolve_project_spec,
+    parse_backend_requirements,
 )
 from app.services.storage import storage_service
 
@@ -446,6 +447,7 @@ async def _resolve_project(
     spec: ProjectSpec,
     users: dict[str, User],
     issues: list[str],
+    backend_requirements: frozenset[str] | None = None,
 ) -> dict[str, Any] | None:
     projects = list(
         (
@@ -489,7 +491,11 @@ async def _resolve_project(
                     f"{spec.display_id}: {role_key} project membership is missing"
                 )
 
-    backend = await _resolve_backend(db, project, spec, issues)
+    backend = (
+        await _resolve_backend(db, project, spec, issues)
+        if backend_requirements is None or spec.required_backend in backend_requirements
+        else None
+    )
     dataset_payload = {}
     if dataset is not None:
         dataset_payload[dataset.display_id] = {
@@ -664,7 +670,10 @@ async def _resolve_optional_large_image_project(
     }
 
 
-async def build_screenshot_seed_catalog(db: AsyncSession) -> dict[str, Any]:
+async def build_screenshot_seed_catalog(
+    db: AsyncSession, *, backend_requirements: str | None = None
+) -> dict[str, Any]:
+    required = parse_backend_requirements(backend_requirements)
     issues: list[str] = []
     users: dict[str, User] = {}
     user_payload: dict[str, dict[str, str]] = {}
@@ -689,7 +698,7 @@ async def build_screenshot_seed_catalog(db: AsyncSession) -> dict[str, Any]:
 
     project_payload: dict[str, Any] = {}
     for logical_key, spec in PROJECT_SPECS.items():
-        project = await _resolve_project(db, logical_key, spec, users, issues)
+        project = await _resolve_project(db, logical_key, spec, users, issues, required)
         if project is not None:
             project_payload[logical_key] = project
 
@@ -702,6 +711,7 @@ async def build_screenshot_seed_catalog(db: AsyncSession) -> dict[str, Any]:
     return {
         "schema_version": SCHEMA_VERSION,
         "seed_revision": SEED_REVISION,
+        "backend_requirements": sorted(required),
         "users": user_payload,
         "projects": project_payload,
     }

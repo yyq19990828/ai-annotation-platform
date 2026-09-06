@@ -988,6 +988,7 @@ class SeedPeekResponse(BaseModel):
 )
 async def seed_catalog(
     profile: Literal["screenshots"] = "screenshots",
+    backend_requirements: str | None = None,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """解析 screenshots profile 的稳定逻辑键；数据漂移时明确失败。"""
@@ -997,7 +998,11 @@ async def seed_catalog(
     )
 
     try:
-        return await build_screenshot_seed_catalog(db)
+        return await build_screenshot_seed_catalog(
+            db, backend_requirements=backend_requirements
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except ScreenshotSeedCatalogError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
