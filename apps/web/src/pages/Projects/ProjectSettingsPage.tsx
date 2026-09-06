@@ -19,6 +19,7 @@ import { VideoSamplingSection } from "./sections/VideoSamplingSection";
 import { AnnotationGuideSection } from "./sections/AnnotationGuideSection";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import { ANNOTATION_GUIDE_UI_ENABLED } from "@/config/featureFlags";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 const NAV_BUTTON_BASE =
   "flex cursor-pointer appearance-none items-center gap-2 self-stretch rounded-sm border-0 bg-transparent px-2.5 py-2 text-left text-sm font-medium whitespace-nowrap max-md:flex-[0_0_auto]";
@@ -131,7 +132,7 @@ export function ProjectSettingsPage() {
   });
 
   return (
-    <div className="mx-auto max-w-[1200px] px-7 pt-5 pb-10 text-foreground max-md:px-4">
+    <PageContainer>
       <div className="mb-4">
         <button
           type="button"
@@ -235,6 +236,6 @@ export function ProjectSettingsPage() {
           {section === "danger" && <DangerSection project={project} />}
         </div>
       </div>
-    </div>
+    </PageContainer>
   );
 }

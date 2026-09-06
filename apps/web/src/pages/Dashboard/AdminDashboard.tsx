@@ -21,6 +21,7 @@ import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNa
 import type { ProjectResponse } from "@/api/projects";
 import type { UserRole } from "@/types";
 import type { RegistrationDayPoint } from "@/api/dashboard";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 // 按媒体维度 data_type 放行工作台,图像子类型(det/ocr/seg)同走图像栈,见 DashboardPage。
 const WORKBENCH_DATA_TYPES = new Set(["image", "video", "lidar"]);
@@ -80,7 +81,7 @@ export function AdminDashboard() {
   const projectsTotal = stats.total_projects || 1;
 
   return (
-    <div className="mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground max-[900px]:p-4">
+    <PageContainer>
       <div className="mb-5 flex items-end justify-between gap-6 max-[900px]:flex-col max-[900px]:items-start">
         <div>
           <h1 className="mb-1 text-xl font-semibold">平台概览</h1>
@@ -427,7 +428,7 @@ export function AdminDashboard() {
           )}
         </Card>
       </div>
-    </div>
+    </PageContainer>
   );
 }
 

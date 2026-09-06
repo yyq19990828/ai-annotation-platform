@@ -29,6 +29,7 @@ import { InvitationListPanel } from "@/components/users/InvitationListPanel";
 import { usersApi, type UserResponse } from "@/api/users";
 import { ApiError } from "@/api/client";
 import type { UserRole } from "@/types";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 // actor.role × target.role → 可点"编辑"（即可改角色或可删）
 const EDITABLE_TARGET_ROLES_BY_ACTOR: Record<UserRole, UserRole[]> = {
@@ -143,7 +144,7 @@ export function UsersPage() {
   const activeLabel = tabLabels.find(([k]) => k === tab)?.[1] ?? tabLabels[0][1];
 
   return (
-    <div className="mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground">
+    <PageContainer>
       <div className="mb-5 flex items-end justify-between gap-6">
         <div>
           <h1 className="mb-1 text-xl font-semibold">用户与权限</h1>
@@ -693,6 +694,6 @@ export function UsersPage() {
           </div>
         )}
       </Modal>
-    </div>
+    </PageContainer>
   );
 }

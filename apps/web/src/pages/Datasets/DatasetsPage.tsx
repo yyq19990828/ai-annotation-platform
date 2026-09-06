@@ -33,6 +33,7 @@ import type { DatasetResponse } from "@/api/datasets";
 import type { ProjectResponse } from "@/api/projects";
 import type { IconName } from "@/components/ui/Icon";
 import type { LidarAxisConvention } from "@/pages/Workbench/stages/three-d/geometry/axisConvention";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 const TYPE_LABELS: Record<string, string> = {
   image: "图像",
@@ -694,7 +695,7 @@ export function DatasetsPage() {
   const linkedCount = datasets.filter((ds) => (ds.project_count ?? 0) > 0).length;
 
   return (
-    <div className="mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground">
+    <PageContainer>
       {/* Header */}
       <div className="mb-5 flex items-end justify-between gap-6">
         <div>
@@ -807,6 +808,6 @@ export function DatasetsPage() {
           </Card>
         </>
       )}
-    </div>
+    </PageContainer>
   );
 }

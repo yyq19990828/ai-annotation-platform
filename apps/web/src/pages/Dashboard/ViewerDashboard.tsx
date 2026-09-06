@@ -12,6 +12,7 @@ import { useProjects, useProjectStats } from "@/hooks/useProjects";
 import type { ProjectResponse } from "@/api/projects";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import { projectDisplayType } from "@/utils/projectDisplay";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 const FILTERS = ["全部", "进行中", "待审核", "已完成"] as const;
 const FILTER_STATUS_MAP: Record<string, string | undefined> = {
@@ -53,7 +54,7 @@ export function ViewerDashboard() {
   const { data: stats } = useProjectStats();
 
   return (
-    <div className="mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground">
+    <PageContainer>
       <div className="mb-5">
         <h1 className="mb-1 text-xl font-semibold">项目概览</h1>
         <p className="text-sm text-muted-foreground">查看项目进度与数据质量</p>
@@ -164,6 +165,6 @@ export function ViewerDashboard() {
           </table>
         </div>
       </Card>
-    </div>
+    </PageContainer>
   );
 }

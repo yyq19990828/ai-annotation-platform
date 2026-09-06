@@ -12,6 +12,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { DatasetResponse } from "@/api/datasets";
 import type { BucketSummary, VideoAssetFailureItem, VideoAssetKind } from "@/api/storage";
 import type { IconName } from "@/components/ui/Icon";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 const TYPE_ICONS: Record<string, IconName> = {
   image: "image",
@@ -322,7 +323,7 @@ export function StoragePage() {
     "border-b border-border bg-muted px-3 py-2 text-left text-xs font-medium text-muted-foreground";
 
   return (
-    <div className="mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground max-[760px]:p-4">
+    <PageContainer>
       {/* Header */}
       <div className="mb-5 flex items-end justify-between gap-6 max-[760px]:flex-col max-[760px]:items-start">
         <div>
@@ -411,6 +412,6 @@ export function StoragePage() {
       </div>
 
       <VideoAssetFailuresPanel />
-    </div>
+    </PageContainer>
   );
 }

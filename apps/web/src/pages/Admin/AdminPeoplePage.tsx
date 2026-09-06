@@ -24,6 +24,7 @@ import { REJECT_REASON_TYPE_LABELS } from "@/pages/Review/rejectReasonTypes";
 import { dashboardApi, type AdminPersonItem } from "@/api/dashboard";
 import { tasksApi } from "@/api/tasks";
 import { useToastStore } from "@/components/ui/Toast";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 const ROLE_OPTS = [
   { v: "", label: "全部" },
@@ -118,7 +119,7 @@ export function AdminPeoplePage() {
   const items = data?.items ?? [];
 
   return (
-    <div className="mx-auto max-w-[1680px] px-7 pb-10 pt-5 text-foreground">
+    <PageContainer>
       <div className="mb-4 flex items-end justify-between">
         <div>
           <h1 className="mb-1 text-xl font-semibold">成员绩效</h1>
@@ -213,7 +214,7 @@ export function AdminPeoplePage() {
           onClose={() => setActiveUserId(null)}
         />
       )}
-    </div>
+    </PageContainer>
   );
 }
 

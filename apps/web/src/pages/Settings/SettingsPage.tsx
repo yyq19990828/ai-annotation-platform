@@ -31,6 +31,7 @@ import {
   type WorkbenchSettingValue,
 } from "@/pages/Workbench/state/workbenchSettingsFields";
 import type { UserRole } from "@/types";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 type SectionKey = "profile" | "workbench" | "apikeys" | "feedback" | "notifications" | "system";
 
@@ -66,7 +67,7 @@ export function SettingsPage() {
   ];
 
   return (
-    <div className="mx-auto max-w-[1100px] px-7 pb-10 pt-5 text-foreground max-[760px]:p-4">
+    <PageContainer>
       <header className="mb-4">
         <h1 className="mb-1 text-xl font-semibold">设置</h1>
         <p className="text-sm text-muted-foreground">管理你的账号信息与平台配置</p>
@@ -112,7 +113,7 @@ export function SettingsPage() {
           )}
         </div>
       </div>
-    </div>
+    </PageContainer>
   );
 }
 
