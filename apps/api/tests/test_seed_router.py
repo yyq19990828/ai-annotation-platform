@@ -93,11 +93,14 @@ async def test_all_seed_routes_have_database_guard():
     )
 
 
-async def test_seed_router_uses_real_annotation_test_database(httpx_client, db_session):
+async def test_seed_router_uses_configured_test_database(
+    httpx_client, db_session, test_db_url
+):
     from sqlalchemy import text
+    from sqlalchemy.engine import make_url
 
     database_name = await db_session.scalar(text("SELECT current_database()"))
-    assert database_name == "annotation_test"
+    assert database_name == make_url(test_db_url).database
 
     response = await httpx_client.get("/api/v1/__test/seed/peek")
     assert response.status_code == 200, response.text

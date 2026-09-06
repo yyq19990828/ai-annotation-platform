@@ -19,7 +19,7 @@ vi.mock("../stages/video/VideoWorkbench", () => ({
   }),
 }));
 vi.mock("../stages/three-d/ThreeDWorkbench", () => ({
-  default: (props: { selectedIds?: string[] }) => {
+  default: (props: { selectedIds?: string[]; petDock?: unknown }) => {
     threeDWorkbenchMock(props);
     return <div data-testid="three-d-workbench" />;
   },
@@ -201,5 +201,18 @@ describe("WorkbenchStageHost", () => {
     expect(threeDWorkbenchMock).toHaveBeenCalledWith(
       expect.objectContaining({ selectedIds: ["a1", "a2"], onNavigateSceneFrame }),
     );
+  });
+
+  it("forwards the shared pet dock to the 3d workbench", async () => {
+    const petDock = {
+      enabled: true,
+      position: { x: 480, y: 620 },
+      onPositionChange: vi.fn(),
+    };
+
+    render(<WorkbenchStageHost ref={createRef()} {...propsFor("3d")} petDock={petDock} />);
+
+    expect(await screen.findByTestId("three-d-workbench")).toBeTruthy();
+    expect(threeDWorkbenchMock).toHaveBeenLastCalledWith(expect.objectContaining({ petDock }));
   });
 });

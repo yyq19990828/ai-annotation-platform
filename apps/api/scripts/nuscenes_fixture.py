@@ -65,6 +65,10 @@ def validate_nuscenes_mini(
     sample_data = _load_table(root, "sample_data")
     calibrated_sensors = _load_table(root, "calibrated_sensor")
     sensors = _load_table(root, "sensor")
+    for row in _load_table(root, "map"):
+        filename = row.get("filename")
+        if not isinstance(filename, str) or not (root / filename).is_file():
+            raise NuScenesFixtureError(f"nuScenes map is missing: {filename}")
 
     scene_by_name = {row.get("name"): row for row in scenes}
     sample_by_token = {row.get("token"): row for row in samples}
@@ -260,7 +264,7 @@ def _safe_member_path(name: str) -> PurePosixPath:
 
 
 def extract_nuscenes_mini(archive: Path, root: Path) -> None:
-    """Extract metadata and key-frame samples; sweeps/maps are not used by the seed."""
+    """Extract metadata, maps and key-frame samples; skip unused sweeps."""
     root.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".content-", dir=root.parent))
     extracted = 0
@@ -272,7 +276,7 @@ def extract_nuscenes_mini(archive: Path, root: Path) -> None:
                     raise NuScenesFixtureError(
                         f"nuScenes archive link/device is not allowed: {path}"
                     )
-                if path.parts[0] not in {NUSCENES_VERSION, "samples"}:
+                if path.parts[0] not in {NUSCENES_VERSION, "samples", "maps"}:
                     continue
                 mode = member.mode
                 if member.isdir():

@@ -47,15 +47,15 @@ test.describe("workbench pointcloud smoke (WebGL go/no-go)", () => {
     expect(lidar.lidar_point_count).toBeGreaterThan(30_000);
     await expect(stats).toContainText(lidar.lidar_point_count.toLocaleString());
 
-    // 主点云 viewport 只挂一个 Three renderer canvas；三视图 overlay 自己的 2D canvas 不计入。
+    // 整个工作区只挂一个共享 Three renderer canvas；三视图自己的 2D overlay 不计入。
     const viewport = page.getByTestId("pc-viewport");
-    await expect(viewport.locator(":scope > canvas")).toHaveCount(1);
+    await expect(page.locator("[data-workbench-render-surface] > canvas")).toHaveCount(1);
     await expect(viewport).toHaveAttribute("data-pointcloud-renderer-count", "1");
 
     const card = page.locator('[data-testid^="box-list-item-"]').first();
     await card.click({ position: { x: 12, y: 16 } });
-    const openRefinement = page.getByRole("button", { name: "框体精修" });
-    if (await openRefinement.isVisible()) await openRefinement.click();
+    await page.getByRole("button", { name: "布局", exact: true }).click();
+    await page.getByRole("menuitem", { name: "框体精修", exact: true }).click();
     await expect(page.getByTestId("tri-view-renderer-panel")).toBeVisible();
     await expect(
       page.getByTestId("tri-view-renderer-panel").locator(":scope > canvas"),
@@ -76,6 +76,42 @@ test.describe("workbench pointcloud smoke (WebGL go/no-go)", () => {
         return after - before;
       })
       .toBe(0);
+
+    const rendererCanvas = page.locator("[data-workbench-render-surface] > canvas");
+    const originalCanvas = await rendererCanvas.elementHandle();
+    const originalContext = await rendererCanvas.evaluateHandle((canvas) =>
+      (canvas as HTMLCanvasElement).getContext("webgl2"),
+    );
+    for (const preset of ["专注画布布局", "审核协作布局", "标准标注布局"]) {
+      await page.getByRole("button", { name: "布局", exact: true }).click();
+      await page.getByRole("menuitem", { name: preset, exact: true }).click();
+      expect(
+        await rendererCanvas.evaluate((node, original) => node === original, originalCanvas),
+      ).toBe(true);
+      expect(
+        await rendererCanvas.evaluate(
+          (node, original) => (node as HTMLCanvasElement).getContext("webgl2") === original,
+          originalContext,
+        ),
+      ).toBe(true);
+      await expect(viewport).toHaveAttribute("data-pointcloud-renderer-count", "1");
+    }
+    await page.setViewportSize({ width: 1024, height: 800 });
+    await expect(page.locator("[data-workbench-workspace]")).toHaveAttribute(
+      "data-compact",
+      "true",
+    );
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await expect(page.locator("[data-workbench-workspace]")).toHaveAttribute(
+      "data-compact",
+      "false",
+    );
+    expect(
+      await rendererCanvas.evaluate((node, original) => node === original, originalCanvas),
+    ).toBe(true);
+    expect(
+      await originalContext.evaluate((context) => context !== null && !context.isContextLost()),
+    ).toBe(true);
 
     // 过滤掉与本验证无关的已知噪声(如第三方资源 404 / favicon),只对真错误失败。
     const fatal = consoleErrors.filter(

@@ -90,13 +90,15 @@ export default defineConfig({
         launchOptions: {
           ...(pointcloudBrowserEnv ? { env: pointcloudBrowserEnv } : {}),
           args: pointcloudWebGpuQualification
-            ? [
-                "--enable-unsafe-webgpu",
-                "--enable-features=Vulkan",
-                "--use-angle=vulkan",
-                "--disable-vulkan-surface",
-                "--ignore-gpu-blocklist",
-              ]
+            ? process.platform === "darwin"
+              ? []
+              : [
+                  "--enable-unsafe-webgpu",
+                  "--enable-features=Vulkan",
+                  "--use-angle=vulkan",
+                  "--disable-vulkan-surface",
+                  "--ignore-gpu-blocklist",
+                ]
             : [
                 "--use-gl=angle",
                 "--use-angle=swiftshader",

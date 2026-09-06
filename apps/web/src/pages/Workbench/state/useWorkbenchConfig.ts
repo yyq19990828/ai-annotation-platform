@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
 import {
   authApi,
   DEFAULT_WORKBENCH_PREFERENCES,
@@ -9,6 +9,7 @@ import {
   type FloatingSelectionState,
   type PointcloudCameraState,
   type TriViewFloatState,
+  type UserPreferences,
   type WorkbenchCommonPreferences,
   type WorkbenchImagePreferences,
   type WorkbenchLayoutPreferences,
@@ -96,8 +97,15 @@ function roundPanelRect<T>(panel: T): T {
 }
 
 /** 持久化前对 layout 浮窗坐标取整，避免小数像素触发后端 int 校验 422。 */
-export function sanitizeForPersist(wb: WorkbenchPreferences): WorkbenchPreferences {
-  const l = wb.layout;
+export function sanitizeForPersist(wb: WorkbenchPreferences): Omit<
+  WorkbenchPreferences,
+  "layout"
+> & {
+  layout: Omit<WorkbenchPreferences["layout"], "workspace" | "triViewFloat">;
+} {
+  // Docking snapshots have their own writer; this legacy full-tree PATCH must never
+  // carry a stale workspace copied from an earlier preferences response.
+  const { workspace: _workspace, triViewFloat: _triViewFloat, ...l } = wb.layout;
   return {
     ...wb,
     layout: {
@@ -107,9 +115,26 @@ export function sanitizeForPersist(wb: WorkbenchPreferences): WorkbenchPreferenc
       floatingInspector: roundPanelRect(l.floatingInspector),
       floatingDiscussion: roundPanelRect(l.floatingDiscussion),
       floatingSelection: roundPanelRect(l.floatingSelection),
-      triViewFloat: roundPanelRect(l.triViewFloat),
     },
   };
+}
+
+function cachePreferences(
+  client: QueryClient,
+  userId: string | null | undefined,
+  response: UserPreferences,
+): void {
+  client.setQueryData<UserPreferences>(userPreferencesQueryKey(userId), (previous) => {
+    const workspace = previous?.workbench?.layout?.workspace;
+    if (workspace === undefined) return response;
+    return {
+      ...response,
+      workbench: {
+        ...response.workbench,
+        layout: { ...response.workbench.layout, workspace },
+      },
+    };
+  });
 }
 
 function mergeUser(
@@ -278,7 +303,6 @@ function writeLocalLayout(
     window.localStorage.setItem(K.floatingInspector, JSON.stringify(layout.floatingInspector));
     window.localStorage.setItem(K.floatingDiscussion, JSON.stringify(layout.floatingDiscussion));
     window.localStorage.setItem(K.floatingSelection, JSON.stringify(layout.floatingSelection));
-    window.localStorage.setItem(K.triViewFloat, JSON.stringify(layout.triViewFloat));
     window.localStorage.setItem(K.cameraPanels, JSON.stringify(layout.cameraPanels));
     window.localStorage.setItem(K.pointcloudCamera, JSON.stringify(layout.pointcloudCamera));
     // v0.20.22 · 分组折叠 + 讨论区收起本地写入, 消除首屏闪。
@@ -382,6 +406,7 @@ function mergeLayout(
     ? (local.pointcloudCamera ?? remote?.pointcloudCamera)
     : (remote?.pointcloudCamera ?? local.pointcloudCamera);
   return {
+    workspace: merged.workspace,
     leftOpen: merged.leftOpen ?? DEFAULT_WORKBENCH_PREFERENCES.layout.leftOpen,
     rightOpen: merged.rightOpen ?? DEFAULT_WORKBENCH_PREFERENCES.layout.rightOpen,
     attrPanelCollapsed:
@@ -569,7 +594,7 @@ export function useWorkbenchConfig(
         void authApi
           .updatePreferences({ workbench: sanitizeForPersist(userConfigRef.current) })
           .then((res) => {
-            queryClient.setQueryData(userPreferencesQueryKey(flushUserId), res);
+            cachePreferences(queryClient, flushUserId, res);
           })
           .catch(() => {
             useToastStore.getState().push({
@@ -615,7 +640,7 @@ export function useWorkbenchConfig(
         });
         if (saveRevision !== saveRevisionRef.current) return;
         // v0.21.18 · 整份返回值回灌共享 query 缓存(PATCH 返回整份 preferences, 无子键覆盖风险)。
-        queryClient.setQueryData(userPreferencesQueryKey(userId), res);
+        cachePreferences(queryClient, userId, res);
         const saved = mergeUser(res.workbench, userId);
         userConfigRef.current = saved;
         setUserConfig(saved);
@@ -650,7 +675,7 @@ export function useWorkbenchConfig(
         .updatePreferences({ workbench: sanitizeForPersist(payload) })
         .then((res) => {
           if (saveRevision !== saveRevisionRef.current) return;
-          queryClient.setQueryData(userPreferencesQueryKey(userId), res);
+          cachePreferences(queryClient, userId, res);
           const saved = mergeUser(res.workbench, userId);
           userConfigRef.current = saved;
           setUserConfig(saved);

@@ -195,7 +195,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     category: "common",
     label: "工作台桌宠",
     description:
-      "常驻像素小人:久坐轻提示、标注里程碑庆祝;选中标注时举牌(点击展开信息卡)。关闭后折叠态回退纯文字小条",
+      "常驻像素小人:久坐轻提示、标注里程碑庆祝;选中图片或视频标注时举牌,选中 3D 标注时与信息栏合并联动。关闭后退回独立浮层",
     control: { type: "toggle", onText: "已开启", offText: "已关闭" },
   },
   {

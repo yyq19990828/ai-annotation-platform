@@ -29,6 +29,7 @@ export interface PointCloudRenderer {
   setViewport(x: number, y: number, width: number, height: number): void;
   clearDepth(): void;
   clear(color?: boolean, depth?: boolean, stencil?: boolean): void;
+  compileAsync(scene: THREE.Object3D, camera: THREE.Camera): Promise<unknown>;
   render(scene: THREE.Object3D, camera: THREE.Camera): void;
   dispose(): void;
   forceContextLoss?: () => void;

@@ -64,6 +64,7 @@ import type { VideoMaskKeyframeActionHandlers } from "../stage/videoMaskKeyframe
 import type { MaskCompareTileStore } from "../stage/shared/maskCompareTileStore";
 import type { WorkbenchImageSource } from "../stage/imagePyramid";
 import type { RasterResourceCoordinator } from "../stage/shared/rasterResourceCoordinator";
+import type { WorkbenchPetDock } from "./pet/WorkbenchPet";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
@@ -117,6 +118,9 @@ interface WorkbenchStageHostCommonProps {
   onCrossFrameInterpolate: (trackId: string, toTaskId: string) => void;
   /** Scene 时间轴复用壳层保存保护与 task 导航。 */
   onNavigateSceneFrame: (targetTaskId: string) => Promise<boolean>;
+  scenePlaybackActive?: boolean;
+  onScenePlaybackActiveChange?: (active: boolean) => void;
+  scenePlaybackBlockedReason?: string | null;
   /** v0.13.10 · 3D 浮层避让右栏 + 三视图浮窗偏好。 */
   rightSidebarOpen: boolean;
   rightSidebarWidth: number;
@@ -338,6 +342,7 @@ interface WorkbenchStageHostProps {
   image?: WorkbenchStageHostImageProps;
   ai?: WorkbenchStageHostAiProps;
   editors?: WorkbenchStageHostEditorProps;
+  petDock?: WorkbenchPetDock;
 }
 
 function requireStageGroup<T>(group: T | undefined, groupName: string, stageKind: StageKind): T {
@@ -347,7 +352,7 @@ function requireStageGroup<T>(group: T | undefined, groupName: string, stageKind
 
 export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageHostProps>(
   function WorkbenchStageHost(props, ref) {
-    const { common, video, image, ai, editors } = props;
+    const { common, video, image, ai, editors, petDock } = props;
     const {
       stageKind,
       maskCompareStore,
@@ -371,6 +376,9 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       onCrossFramePropagateToTask,
       onCrossFrameInterpolate,
       onNavigateSceneFrame,
+      scenePlaybackActive,
+      onScenePlaybackActiveChange,
+      scenePlaybackBlockedReason,
       rightSidebarOpen,
       rightSidebarWidth,
       workbenchLayout,
@@ -548,6 +556,9 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
               onCrossFramePropagateToTask={onCrossFramePropagateToTask}
               onCrossFrameInterpolate={onCrossFrameInterpolate}
               onNavigateSceneFrame={onNavigateSceneFrame}
+              playbackActive={scenePlaybackActive}
+              onPlaybackActiveChange={onScenePlaybackActiveChange}
+              playbackBlockedReason={scenePlaybackBlockedReason}
               rightSidebarOpen={rightSidebarOpen}
               rightSidebarWidth={rightSidebarWidth}
               triViewFloat={workbenchLayout.triViewFloat}
@@ -560,6 +571,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
               onWorkbenchConfigChange={onWorkbenchConfigChange}
               onWorkbenchConfigUpdate={onWorkbenchConfigUpdate}
               box3dDefaultSize={stageProjectRenderingConfig?.box3dDefaultSize ?? null}
+              petDock={petDock}
             />
           </Suspense>
         ) : stageKind === "video" ? (

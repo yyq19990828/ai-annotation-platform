@@ -1,3 +1,4 @@
+import { niceFrameStep } from "./timelineCoords";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   ButtonHTMLAttributes,
@@ -154,15 +155,6 @@ function formatTime(seconds: number) {
 
 function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
-}
-
-// v0.21.16 · 尺子刻度步长: 选一个"整齐"帧步长 (1/2/2.5/5×10ⁿ), 使可见窗口内约 6 个标签。
-// 随缩放窗口跨度变化自动切档, 长视频缩放后不会挤成一坨或稀到没参照。
-function niceFrameStep(span: number): number {
-  const target = Math.max(1, span / 6);
-  const pow = Math.pow(10, Math.floor(Math.log10(target)));
-  const candidate = [1, 2, 2.5, 5, 10].map((m) => m * pow).find((c) => c >= target);
-  return Math.max(1, Math.round(candidate ?? 10 * pow));
 }
 
 // 密度条半透明色: 轨迹色 (oklch) 或 accent token 兑入透明, 避免密度条过抢眼。

@@ -25,6 +25,7 @@ from app.services.screenshot_seed_spec import (
     SEED_MANAGED_BY,
     SEED_REVISION,
     USER_SPECS,
+    resolve_project_spec,
 )
 from app.services.storage import storage_service
 
@@ -301,9 +302,10 @@ async def _assert_rebuild_ownership(
                 )
             ).scalars()
         )
+        resolved_spec = resolve_project_spec(spec, dataset.id, dataset.metadata_)
         allowed_prefixes = LEGACY_STORAGE_PREFIXES.get(
             logical_key, {spec.storage_prefix}
-        )
+        ) | {resolved_spec.storage_prefix}
         if any(
             not any(item.file_path.startswith(prefix) for prefix in allowed_prefixes)
             for item in items
@@ -404,6 +406,7 @@ async def _resolve_owned_resources(
             f"{logical_key}: project/dataset is missing or duplicated"
         )
     project, dataset = projects[0], datasets[0]
+    spec = resolve_project_spec(spec, dataset.id, dataset.metadata_)
     project_links = list(
         (
             await db.execute(

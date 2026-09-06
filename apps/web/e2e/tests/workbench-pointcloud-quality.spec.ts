@@ -197,6 +197,7 @@ test.describe("workbench point-cloud quality", () => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`/projects/${lidar.lidar_project_id}/annotate?task=${taskId}`);
     await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
+    await page.getByTestId("scene-timeline-toggle").click();
     await expect(page.getByTestId(`scene-timeline-quality-${context.frameIndex}`)).toBeVisible();
 
     await page.getByTestId("scene-quality-open").click();

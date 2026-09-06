@@ -13,6 +13,13 @@
 import type { Locator, Page } from "@playwright/test";
 import { test, expect } from "../fixtures/seed";
 
+async function layoutCommand(page: Page, name: string) {
+  await page.getByRole("button", { name: "布局", exact: true }).click();
+  const item = page.getByRole("menuitem", { name, exact: true });
+  await expect(item).toBeEnabled();
+  await item.click();
+}
+
 interface BrowserPointCloudViewState {
   position: [number, number, number];
   target: [number, number, number];
@@ -204,6 +211,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     const timeline = page.getByTestId("three-d-scene-timeline");
     await expect(timeline).toBeVisible({ timeout: 10_000 });
     await expect(timeline).toContainText("nuScenes mini scene-0061");
+    await page.getByTestId("scene-timeline-toggle").click();
     await expect(page.getByTestId("scene-timeline-frame-0")).toHaveAttribute(
       "aria-current",
       "step",
@@ -525,10 +533,9 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
 
     const card = page.locator('[data-testid^="box-list-item-"]').first();
     await card.click({ position: { x: 12, y: 16 } });
-    await page.getByRole("button", { name: "框体精修" }).click();
-    await expect(page.getByText("三视图精修")).toBeVisible();
-    const pointCloudViewport = page.getByTestId("pc-viewport");
-    const rendererCanvas = pointCloudViewport.locator(":scope > canvas");
+    await layoutCommand(page, "框体精修");
+    await expect(page.getByTestId("tri-view-renderer-panel")).toBeVisible();
+    const rendererCanvas = page.locator("[data-workbench-render-surface] > canvas");
     await expect(rendererCanvas).toHaveCount(1);
     await expect(
       page.getByTestId("tri-view-renderer-panel").locator(":scope > canvas"),
@@ -560,6 +567,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     await seed.reset();
     const lidar = await seed.seedLidar();
     await seed.injectToken(page, "admin@e2e.test");
+    await seed.setPetEnabled("admin@e2e.test", true);
 
     const consoleErrors: string[] = [];
     page.on("console", (msg) => {
@@ -583,6 +591,52 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     // PSR 浮层默认折叠(usePsrFloatingPanel expanded=false),展开后才渲染 cx/cy/cz 输入。
     const expandBtn = page.getByLabel("展开详情");
     await expect(expandBtn).toBeVisible({ timeout: 5_000 });
+    const selectionPanel = page.getByTestId("three-d-selection-panel");
+    const selectionPanelHandle = page.getByTestId("three-d-selection-panel-handle");
+    const pet = page.getByLabel("工作台桌宠(可拖动)");
+    await expect(selectionPanel).toHaveAttribute("data-pet-linked", "true");
+    await expect(pet).toBeVisible();
+
+    const [panelAnchorBefore, petPositionBefore] = await Promise.all([
+      selectionPanel.evaluate((element) => ({
+        x: Number.parseFloat(element.style.getPropertyValue("--psr-pet-x")),
+        y: Number.parseFloat(element.style.getPropertyValue("--psr-pet-y")),
+      })),
+      pet.evaluate((element) => ({
+        x: Number.parseFloat(element.style.getPropertyValue("--pet-x")),
+        y: Number.parseFloat(element.style.getPropertyValue("--pet-y")),
+      })),
+    ]);
+    expect(panelAnchorBefore.x).toBeCloseTo(petPositionBefore.x + 28, 3);
+    expect(panelAnchorBefore.y).toBeCloseTo(petPositionBefore.y + 28, 3);
+
+    const handleBounds = await selectionPanelHandle.boundingBox();
+    if (!handleBounds) throw new Error("3D 选中信息栏拖柄 boundingBox 不可用");
+    await page.mouse.move(handleBounds.x + 8, handleBounds.y + handleBounds.height - 6);
+    await page.mouse.down();
+    await page.mouse.move(handleBounds.x + 32, handleBounds.y + handleBounds.height + 10, {
+      steps: 4,
+    });
+    await page.mouse.up();
+    await expect
+      .poll(async () => {
+        const [panelAnchor, petPosition] = await Promise.all([
+          selectionPanel.evaluate((element) => ({
+            x: Number.parseFloat(element.style.getPropertyValue("--psr-pet-x")),
+            y: Number.parseFloat(element.style.getPropertyValue("--psr-pet-y")),
+          })),
+          pet.evaluate((element) => ({
+            x: Number.parseFloat(element.style.getPropertyValue("--pet-x")),
+            y: Number.parseFloat(element.style.getPropertyValue("--pet-y")),
+          })),
+        ]);
+        return { panelAnchor, petPosition };
+      })
+      .toEqual({
+        panelAnchor: { x: panelAnchorBefore.x + 24, y: panelAnchorBefore.y + 16 },
+        petPosition: { x: petPositionBefore.x + 24, y: petPositionBefore.y + 16 },
+      });
+
     await expandBtn.click();
 
     const cx = page.getByLabel("cx", { exact: true });
@@ -970,7 +1024,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
       }
     });
 
-    const canvas = page.locator("canvas").first();
+    const canvas = page.getByTestId("pc-viewport");
     const cbox = await canvas.boundingBox();
     if (!cbox) throw new Error("canvas boundingBox 不可用");
     const cx = cbox.x + cbox.width * 0.5;
@@ -1070,7 +1124,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
 
     await page.locator("body").click();
     await page.keyboard.press("b");
-    const mainCanvas = page.locator("canvas").first();
+    const mainCanvas = page.getByTestId("pc-viewport");
     const mainBounds = await mainCanvas.boundingBox();
     if (!mainBounds) throw new Error("主点云 canvas boundingBox 不可用");
     await page.mouse.click(
@@ -1145,9 +1199,9 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     await page.waitForTimeout(200);
     const cameraBefore = await readPointCloudViewState(page);
 
-    await page.getByRole("button", { name: "恢复点级分割布局" }).click();
-    await expect(page.getByLabel("展开三视图精修(可拖动)")).toBeVisible();
-    await expect(page.getByTestId("tri-view-renderer-panel")).toHaveCount(0);
+    await layoutCommand(page, "点级分割");
+    await expect(page.getByTestId("tri-view-renderer-panel")).toBeHidden();
+    await expect(page.locator('[data-workbench-panel="tri-view"]')).toHaveCount(1);
     await expect(page.getByTestId("pointmask-mode-select")).toHaveCount(0);
 
     const sensorFusionSave = page.waitForRequest(
@@ -1158,30 +1212,26 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
         ) {
           return false;
         }
-        const body = request.postDataJSON() as {
-          workbench?: { layout?: { cameraPanels?: Record<string, unknown> } };
-        };
-        return Object.keys(body.workbench?.layout?.cameraPanels ?? {}).length === 0;
+        const snapshot =
+          request.postDataJSON()?.workbench?.layout?.workspace?.contexts["annotate:3d"]?.snapshot;
+        return (
+          snapshot?.visibilityIntent?.["camera-view"] === "shown" &&
+          snapshot?.visibilityIntent?.["tri-view"] === "hidden"
+        );
       },
       { timeout: 10_000 },
     );
-    await page.getByRole("button", { name: "恢复传感器融合布局" }).click();
-    await expect(page.getByLabel("展开三视图精修(可拖动)")).toBeVisible();
-    const sensorFusionBody = (await sensorFusionSave).postDataJSON() as {
-      workbench?: {
-        layout?: {
-          cameraPanels?: Record<string, unknown>;
-          triViewFloat?: { collapsed?: boolean };
-        };
-      };
-    };
-    expect(sensorFusionBody.workbench?.layout?.cameraPanels).toEqual({});
-    expect(sensorFusionBody.workbench?.layout?.triViewFloat?.collapsed).toBe(true);
-    await expect(page.getByTitle("展开相机").first()).toBeVisible();
+    await layoutCommand(page, "传感器融合");
+    await expect(page.getByTestId("tri-view-renderer-panel")).toBeHidden();
+    const sensorFusionLayout = (await sensorFusionSave).postDataJSON().workbench.layout;
+    expect(sensorFusionLayout).not.toHaveProperty("cameraPanels");
+    expect(sensorFusionLayout).not.toHaveProperty("triViewFloat");
+    expect(sensorFusionLayout.workspace.contexts["annotate:3d"].schemaVersion).toBe(5);
+    await expect(page.getByRole("button", { name: /布局菜单$/ }).first()).toBeVisible();
 
-    await page.getByRole("button", { name: "恢复框体精修布局" }).click();
-    await expect(page.getByText("三视图精修", { exact: true })).toBeVisible();
-    await expect(page.getByTitle("展开相机").first()).toBeVisible();
+    await layoutCommand(page, "框体精修");
+    await expect(page.getByTestId("tri-view-renderer-panel")).toBeVisible();
+    await expect(page.getByRole("button", { name: /布局菜单$/ })).toHaveCount(0);
     const cameraAfter = await readPointCloudViewState(page);
     expectPointCloudViewStateClose(cameraAfter, cameraBefore);
   });
@@ -1226,11 +1276,17 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
       await page.goto(`/projects/${lidar.lidar_project_id}/annotate`);
       await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
 
-      const expandDetails = page.getByRole("button", { name: "展开标注详情" });
-      if ((item.selectBox || !item.closeSidebar) && (await expandDetails.isVisible())) {
-        await expandDetails.click();
+      const rightSide = page.getByRole("button", { name: "右侧面板", exact: true });
+      if (
+        (item.selectBox || !item.closeSidebar) &&
+        (await rightSide.getAttribute("aria-expanded")) === "false"
+      ) {
+        await rightSide.click();
       }
       if (item.selectBox) {
+        // A visible tri-view can make the physical right side partially open
+        // while the inspector is still hidden from the previous matrix case.
+        await layoutCommand(page, "标注详情");
         await page
           .locator('[data-testid^="box-list-item-"]')
           .first()
@@ -1238,17 +1294,20 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
             position: { x: 12, y: 16 },
           });
       }
-      const collapseDetails = page.getByRole("button", { name: "收起标注详情" });
-      if (item.closeSidebar && (await collapseDetails.isVisible())) await collapseDetails.click();
+      if (item.closeSidebar && (await rightSide.getAttribute("aria-expanded")) === "true")
+        await rightSide.click();
 
-      await page.getByRole("button", { name: "恢复点级分割布局" }).click();
-      await expect(page.getByTitle("展开相机")).toHaveCount(item.count);
-      await page.getByRole("button", { name: "恢复传感器融合布局" }).click();
-      await page.getByRole("button", { name: "恢复框体精修布局" }).click();
+      await layoutCommand(page, "点级分割");
+      await expect(page.getByRole("button", { name: /布局菜单$/ })).toHaveCount(0);
+      await layoutCommand(page, "传感器融合");
+      await expect(page.getByRole("button", { name: /布局菜单$/ })).toHaveCount(item.count);
+      await layoutCommand(page, "框体精修");
 
-      for (const name of ["恢复框体精修布局", "恢复传感器融合布局", "恢复点级分割布局"]) {
-        await expectCenterHitTarget(page.getByRole("button", { name }));
+      await page.getByRole("button", { name: "布局", exact: true }).click();
+      for (const name of ["框体精修", "传感器融合", "点级分割"]) {
+        await expectCenterHitTarget(page.getByRole("menuitem", { name, exact: true }));
       }
+      await page.keyboard.press("Escape");
       for (const name of ["上一", "提交质检", "跳过", "下一"]) {
         await expectCenterHitTarget(page.getByRole("button", { name, exact: true }));
       }
@@ -1287,7 +1346,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     await page.goto(`/projects/${lidar.lidar_project_id}/annotate?task=${firstTaskId}`);
     await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
     const defaultView = await readPointCloudViewState(page);
-    const canvas = page.locator("canvas").first();
+    const canvas = page.getByTestId("pc-viewport");
     const bounds = await canvas.boundingBox();
     if (!bounds) throw new Error("主点云 canvas boundingBox 不可用");
     await page.mouse.move(bounds.x + bounds.width * 0.45, bounds.y + bounds.height * 0.5);

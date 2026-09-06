@@ -90,3 +90,4 @@
 | 22   | [Supervisely 与 CVAT 标注工作台](./22-supervisely-cvat-workbench.md)                   | 官方文档、源码、教程与媒体深读；UI 交互、3D 工作台逻辑、能力差距、借鉴优先级与验收标准                            |
 | 23   | [Supervisely 与 CVAT 图片、视频工作台](./23-supervisely-cvat-image-video-workbench.md) | 图片与视频 UI 交互专项；高频摩擦、工具状态、AI / Mask、轨迹时间轴、审核定位与实施验收                             |
 | 24   | [3D 时序对象与轨迹生命周期](./24-3d-temporal-object-lifecycle.md)                      | 八个商业/开放核心平台、五个开源项目与 OpenLABEL；对象身份、存在区间、时间角色、可逆修复和领域基础                 |
+| 25   | [macOS WebGPU 性能实测](./25-macos-webgpu-performance.md)                              | Apple Metal 上的 Raster Mask 与 3D 点云 Chrome/Safari 性能、正确性、恢复能力与推广门结果                          |

@@ -1,7 +1,9 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { SensorCalibration } from "@/types";
 
 import { CameraProjectionView } from "./CameraProjectionView";
+import * as depthmap from "./geometry/depthmap";
 
 describe("CameraProjectionView frame loading", () => {
   afterEach(() => {
@@ -76,6 +78,89 @@ describe("CameraProjectionView frame loading", () => {
     expect(view?.className).toContain("w-fit");
     expect(view?.className).toContain("max-w-full");
     expect(view?.className).not.toContain("w-[190px]");
+  });
+
+  it("fits docked images and projection pixels together, and pauses work while hidden", () => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    );
+    const context = { setTransform: vi.fn(), clearRect: vi.fn(), fillRect: vi.fn() };
+    const getContext = vi
+      .spyOn(HTMLCanvasElement.prototype, "getContext")
+      .mockReturnValue(context as never);
+    const buildRaster = vi.spyOn(depthmap, "buildDepthRaster");
+    const props = {
+      name: "front",
+      imageUrl: "/frame-0.jpg",
+      boxes: [],
+      highlightedIds: new Set<string>(),
+      onSelectBox: vi.fn(),
+      calibration: {
+        extrinsic: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+        intrinsic: [1, 0, 0, 0, 1, 0, 0, 0, 1],
+      } satisfies SensorCalibration,
+      pointPositions: new Float32Array([0, 0, 4]),
+      fitToPanel: true,
+      showDepth: true,
+    };
+    const view = render(<CameraProjectionView {...props} />);
+    const image = screen.getByRole("img", { name: "front" });
+    Object.defineProperties(image, {
+      naturalWidth: { configurable: true, value: 640 },
+      naturalHeight: { configurable: true, value: 360 },
+      clientWidth: { configurable: true, value: 320 },
+      clientHeight: { configurable: true, value: 180 },
+    });
+    fireEvent.load(image);
+    expect(image.className).toContain("h-auto w-full");
+    expect(image.parentElement?.className).not.toContain("w-[190px]");
+    const canvas = screen.getByLabelText("front 相机投影");
+    expect(canvas.style.width).toBe("320px");
+    expect(canvas.style.height).toBe("180px");
+    expect(buildRaster).toHaveBeenCalled();
+
+    getContext.mockClear();
+    buildRaster.mockClear();
+    const nextPositions = new Float32Array([0, 0, 8]);
+    view.rerender(
+      <CameraProjectionView {...props} pointPositions={nextPositions} visible={false} />,
+    );
+    expect(getContext).not.toHaveBeenCalled();
+    expect(buildRaster).not.toHaveBeenCalled();
+    expect(canvas.className).toContain("pointer-events-none");
+
+    view.rerender(<CameraProjectionView {...props} pointPositions={nextPositions} />);
+    expect(getContext).toHaveBeenCalled();
+    expect(buildRaster).toHaveBeenLastCalledWith(nextPositions, props.calibration, 640, 360);
+  });
+
+  it("shows image failures and returns to loading for the next frame", () => {
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    );
+    const props = {
+      name: "front",
+      boxes: [],
+      highlightedIds: new Set<string>(),
+      onSelectBox: vi.fn(),
+    };
+    const view = render(<CameraProjectionView {...props} imageUrl="/failed.jpg" fitToPanel />);
+    fireEvent.error(screen.getByRole("img", { name: "front" }));
+    expect(screen.getByRole("status")).toHaveTextContent("相机图像加载失败");
+    expect(screen.getByLabelText("front 相机投影").className).toContain("pointer-events-none");
+
+    view.rerender(<CameraProjectionView {...props} imageUrl="/next.jpg" fitToPanel />);
+    expect(screen.getByRole("status")).toHaveTextContent("加载相机…");
+    view.rerender(<CameraProjectionView {...props} imageUrl="" fitToPanel />);
+    expect(screen.getByRole("status")).toHaveTextContent("当前帧无图像");
   });
 
   it("creates a normalized persistent camera bbox by dragging in manual mode", () => {

@@ -165,7 +165,16 @@ export function isWorkbenchInputFocused(el: EventTarget | null): boolean {
   ) {
     return false;
   }
-  return el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable;
+  return (
+    el.tagName === "INPUT" ||
+    el.tagName === "TEXTAREA" ||
+    el.isContentEditable ||
+    Boolean(
+      el.closest(
+        '[data-workbench-layout-control], [data-scene-timeline], [role="tab"], [role="menu"], [role="menuitem"]',
+      ),
+    )
+  );
 }
 
 /** AI 工具 (requiredPrompt) 的 hotkey 目标 id; 项目关闭交互式 AI 时这些 hotkey no-op。 */

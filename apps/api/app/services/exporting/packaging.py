@@ -1842,7 +1842,7 @@ def main() -> int:
                 os.makedirs(out_dir, exist_ok=True)
                 cmd = [
                     "ffmpeg", "-y", "-loglevel", "error", "-i", video_path,
-                    "-vf", "select='%s'" % select_expr, "-vsync", "0",
+                    "-vf", "select='%s'" % select_expr, "-fps_mode", "passthrough",
                     "-start_number", str(output_start),
                     os.path.join(out_dir, "%%0%dd.%s" % (padding, extension)),
                 ]

@@ -1,4 +1,5 @@
 export const SCENE_TIMELINE_CELL_WIDTH = 40;
+export const SCENE_TIMELINE_ZOOM_LEVELS = [24, 40, 64, 80] as const;
 export const SCENE_TIMELINE_OVERSCAN = 12;
 export const SCENE_TIMELINE_INITIAL_WINDOW = 80;
 export const SCENE_TIMELINE_MAX_WINDOW = 200;
@@ -37,4 +38,24 @@ export function timelineInitialRange(): TimelineFrameRange {
 export function densityRatio(count: number, maxCount: number): number {
   if (count <= 0 || maxCount <= 0) return 0;
   return Math.min(1, count / maxCount);
+}
+
+/** Preserve the current-frame position, or the viewport center after manual browsing. */
+export function timelineZoomOffset({
+  scrollLeft,
+  viewportWidth,
+  oldWidth,
+  newWidth,
+  currentIndex,
+  followCurrent,
+}: {
+  scrollLeft: number;
+  viewportWidth: number;
+  oldWidth: number;
+  newWidth: number;
+  currentIndex: number;
+  followCurrent: boolean;
+}): number {
+  const anchor = followCurrent ? currentIndex + 0.5 : (scrollLeft + viewportWidth / 2) / oldWidth;
+  return Math.max(0, scrollLeft + anchor * (newWidth - oldWidth));
 }

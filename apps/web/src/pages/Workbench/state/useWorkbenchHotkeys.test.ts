@@ -65,6 +65,24 @@ describe("useWorkbenchHotkeys module", () => {
 
     expect(isWorkbenchInputFocused(timeline)).toBe(false);
     expect(isWorkbenchInputFocused(textInput)).toBe(true);
+    const sceneTimeline = document.createElement("section");
+    sceneTimeline.dataset.sceneTimeline = "";
+    const playButton = document.createElement("button");
+    sceneTimeline.append(playButton);
+    expect(isWorkbenchInputFocused(playButton)).toBe(true);
+  });
+
+  it("does not send single-key annotation shortcuts from docking tabs or menus", () => {
+    for (const role of ["tab", "menu", "menuitem"]) {
+      const element = document.createElement("div");
+      element.setAttribute("role", role);
+      const child = document.createElement("span");
+      element.append(child);
+      expect(isWorkbenchInputFocused(child)).toBe(true);
+    }
+    const control = document.createElement("button");
+    control.dataset.workbenchLayoutControl = "";
+    expect(isWorkbenchInputFocused(control)).toBe(true);
   });
 
   it("blocks the Mask hotkey with the ToolDock reason", () => {

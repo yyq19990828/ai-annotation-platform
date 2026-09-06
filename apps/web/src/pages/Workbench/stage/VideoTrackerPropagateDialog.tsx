@@ -1,11 +1,5 @@
-import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type PointerEvent as ReactPointerEvent,
-} from "react";
-import { Bot, Clock3, Info, Loader2, MousePointer2, Move, Type, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Bot, Clock3, Info, Loader2, MousePointer2, Type, X } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/shadcn/ui/badge";
@@ -14,17 +8,12 @@ import { Progress } from "@/components/shadcn/ui/progress";
 import type { VideoTrackerDirection, VideoTrackerPropagatePayload } from "@/api/videoTracker";
 import { cn } from "@/lib/utils";
 import { readDialogMemory, writeDialogMemory } from "../state/videoDialogMemory";
-import type { FloatingPanelPosition, FloatingPanelSize } from "../state/useFloatingPanelFrame";
 import {
   AI_PANEL_HEADER_CLASS,
   AI_PANEL_ICON_CLASS,
   AI_PANEL_SECTION_CLASS,
   AI_PANEL_SURFACE_CLASS,
 } from "../shell/workbenchAiPanelChrome";
-import {
-  SIDE_FLOATING_PANEL_MAX_SIZE,
-  SIDE_FLOATING_PANEL_MIN_SIZE,
-} from "../shell/floatingPanelSizing";
 
 const SPAN_PRESETS = ["10", "30", "60"] as const;
 const RANGE_PRESETS = [...SPAN_PRESETS, "next-keyframe", "end"] as const;
@@ -33,16 +22,9 @@ const TRACKER_SELECT_CLASS =
   "h-8 w-full cursor-pointer appearance-none rounded-md border border-input bg-background px-2.5 text-xs text-foreground shadow-xs outline-none transition-[border-color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-input/30";
 const TRACKER_FIELD_LABEL_CLASS = "text-xs font-medium leading-none text-foreground";
 const TRACKER_FIELD_HELP_CLASS = "text-2xs leading-relaxed text-muted-foreground";
-const TRACKER_PANEL_EDGE_MARGIN = 8;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
-}
-
-function trackerPanelParentRect(panel: HTMLElement): DOMRect {
-  const parent =
-    panel.offsetParent instanceof HTMLElement ? panel.offsetParent : panel.parentElement;
-  return parent?.getBoundingClientRect() ?? panel.getBoundingClientRect();
 }
 
 type RangePresetValue = (typeof RANGE_PRESETS)[number];
@@ -215,12 +197,7 @@ export interface TrackerSeedTargetSummary {
 
 interface VideoTrackerPropagateDialogProps {
   open: boolean;
-  /** 画布内坐标；null 时回落右上角默认停靠。 */
-  position?: FloatingPanelPosition | null;
-  onPositionChange?: (position: FloatingPanelPosition) => void;
-  /** 用户拖角后的显式尺寸；null 时使用默认宽度和内容高度。 */
-  size?: FloatingPanelSize | null;
-  onSizeChange?: (size: FloatingPanelSize) => void;
+  visible?: boolean;
   frameIndex: number;
   minFrame?: number;
   maxFrame: number;
@@ -289,10 +266,7 @@ interface VideoTrackerPropagateDialogProps {
 
 export function VideoTrackerPropagateDialog({
   open,
-  position = null,
-  onPositionChange,
-  size = null,
-  onSizeChange,
+  visible = true,
   frameIndex,
   minFrame = 0,
   maxFrame,
@@ -329,16 +303,7 @@ export function VideoTrackerPropagateDialog({
   tracking = false,
   trackingWindow = null,
 }: VideoTrackerPropagateDialogProps) {
-  const panelRef = useRef<HTMLDivElement | null>(null);
-  const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
-  const resizeStartRef = useRef<{
-    x: number;
-    y: number;
-    w: number;
-    h: number;
-    left: number;
-    top: number;
-  } | null>(null);
+  const initializedOpen = useRef(false);
   const [direction, setDirection] = useState<VideoTrackerDirection>("forward");
   const [rangePreset, setRangePreset] = useState<RangePresetValue>("30");
   const [modelKey, setModelKey] = useState<string>("mock_bbox");
@@ -406,25 +371,28 @@ export function VideoTrackerPropagateDialog({
         : "正在延展轨迹…";
 
   useEffect(() => {
-    if (open) {
-      const remembered =
-        readDialogMemory(userId, "trackerPropagate", validateTrackerMemory) ??
-        DEFAULT_TRACKER_MEMORY;
-      setDirection(remembered.direction);
-      setRangePreset(remembered.rangePreset);
-      setModelKey(
-        resolveTrackerDefaultModel({
-          projectDefaultModel,
-          rememberedModel: remembered.modelKey,
-          preferNonMockModel,
-          options: modelOptions,
-        }),
-      );
-      setSamVariant(remembered.samVariant);
-      setText("");
-      setError(null);
-      setCustomRange(null);
+    if (!open) {
+      initializedOpen.current = false;
+      return;
     }
+    if (initializedOpen.current || modelOptions.length === 0) return;
+    initializedOpen.current = true;
+    const remembered =
+      readDialogMemory(userId, "trackerPropagate", validateTrackerMemory) ?? DEFAULT_TRACKER_MEMORY;
+    setDirection(remembered.direction);
+    setRangePreset(remembered.rangePreset);
+    setModelKey(
+      resolveTrackerDefaultModel({
+        projectDefaultModel,
+        rememberedModel: remembered.modelKey,
+        preferNonMockModel,
+        options: modelOptions,
+      }),
+    );
+    setSamVariant(remembered.samVariant);
+    setText("");
+    setError(null);
+    setCustomRange(null);
   }, [open, preferNonMockModel, projectDefaultModel, userId, modelOptions]);
 
   // v0.22.1 · B · 无源目标类别重置独立成 effect (仅依赖 open); 不把不稳定的 availableClasses
@@ -526,228 +494,13 @@ export function VideoTrackerPropagateDialog({
 
   // v0.21.14 · 浮层化后无遮罩, 用 Esc 关闭 (替代原点击遮罩关闭)。
   useEffect(() => {
-    if (!open) return;
+    if (!open || !visible) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onCancel();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, onCancel]);
-
-  // 与 AI 单题面板一致：位置/尺寸通过 CSS 变量落到 DOM，偏好状态留在工作台模型。
-  // 恢复旧偏好或窗口缩小时，把面板夹回中间画布可见区域。
-  useEffect(() => {
-    const panel = panelRef.current;
-    if (!open || !panel) return;
-
-    const applyFrame = () => {
-      if (size) {
-        panel.style.setProperty("--tracker-panel-w", `${size.w}px`);
-        panel.style.setProperty("--tracker-panel-h", `${size.h}px`);
-      } else {
-        panel.style.removeProperty("--tracker-panel-w");
-        panel.style.removeProperty("--tracker-panel-h");
-      }
-
-      if (position) {
-        panel.style.setProperty("--tracker-panel-left", `${position.left}px`);
-        panel.style.setProperty("--tracker-panel-top", `${position.top}px`);
-      } else {
-        panel.style.removeProperty("--tracker-panel-left");
-        panel.style.removeProperty("--tracker-panel-top");
-      }
-
-      const parentRect = trackerPanelParentRect(panel);
-      if (parentRect.width <= 0 || parentRect.height <= 0) return;
-
-      const maxAvailableW = Math.max(1, parentRect.width - TRACKER_PANEL_EDGE_MARGIN * 2);
-      const maxAvailableH = Math.max(1, parentRect.height - TRACKER_PANEL_EDGE_MARGIN * 2);
-      const minW = Math.min(SIDE_FLOATING_PANEL_MIN_SIZE.w, maxAvailableW);
-      const minH = Math.min(SIDE_FLOATING_PANEL_MIN_SIZE.h, maxAvailableH);
-      const nextSize = size
-        ? {
-            w: Math.round(
-              clamp(
-                size.w,
-                minW,
-                Math.max(minW, Math.min(SIDE_FLOATING_PANEL_MAX_SIZE.w, maxAvailableW)),
-              ),
-            ),
-            h: Math.round(
-              clamp(
-                size.h,
-                minH,
-                Math.max(minH, Math.min(SIDE_FLOATING_PANEL_MAX_SIZE.h, maxAvailableH)),
-              ),
-            ),
-          }
-        : null;
-
-      if (nextSize) {
-        panel.style.setProperty("--tracker-panel-w", `${nextSize.w}px`);
-        panel.style.setProperty("--tracker-panel-h", `${nextSize.h}px`);
-        if ((nextSize.w !== size?.w || nextSize.h !== size?.h) && onSizeChange) {
-          onSizeChange(nextSize);
-        }
-      }
-
-      if (position) {
-        const panelRect = panel.getBoundingClientRect();
-        const panelW = nextSize?.w ?? panelRect.width;
-        const panelH = nextSize?.h ?? panelRect.height;
-        const nextPosition = {
-          left: Math.round(
-            clamp(
-              position.left,
-              TRACKER_PANEL_EDGE_MARGIN,
-              Math.max(
-                TRACKER_PANEL_EDGE_MARGIN,
-                parentRect.width - panelW - TRACKER_PANEL_EDGE_MARGIN,
-              ),
-            ),
-          ),
-          top: Math.round(
-            clamp(
-              position.top,
-              TRACKER_PANEL_EDGE_MARGIN,
-              Math.max(
-                TRACKER_PANEL_EDGE_MARGIN,
-                parentRect.height - panelH - TRACKER_PANEL_EDGE_MARGIN,
-              ),
-            ),
-          ),
-        };
-        panel.style.setProperty("--tracker-panel-left", `${nextPosition.left}px`);
-        panel.style.setProperty("--tracker-panel-top", `${nextPosition.top}px`);
-        if (
-          (nextPosition.left !== position.left || nextPosition.top !== position.top) &&
-          onPositionChange
-        ) {
-          onPositionChange(nextPosition);
-        }
-      }
-    };
-
-    applyFrame();
-    window.addEventListener("resize", applyFrame);
-    const parent =
-      panel.offsetParent instanceof HTMLElement ? panel.offsetParent : panel.parentElement;
-    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(applyFrame);
-    if (parent && observer) observer.observe(parent);
-    return () => {
-      window.removeEventListener("resize", applyFrame);
-      observer?.disconnect();
-    };
-  }, [onPositionChange, onSizeChange, open, position, size]);
-
-  const handleDragStart = (event: ReactPointerEvent<HTMLElement>) => {
-    if (!onPositionChange || (event.button !== 0 && event.button !== undefined)) return;
-    if ((event.target as HTMLElement).closest("button,a,input,select,textarea")) return;
-    const panel = panelRef.current;
-    if (!panel) return;
-    const panelRect = panel.getBoundingClientRect();
-    const parentRect = trackerPanelParentRect(panel);
-    const startPosition = {
-      left: Math.round(panelRect.left - parentRect.left),
-      top: Math.round(panelRect.top - parentRect.top),
-    };
-    panel.style.setProperty("--tracker-panel-left", `${startPosition.left}px`);
-    panel.style.setProperty("--tracker-panel-top", `${startPosition.top}px`);
-    onPositionChange(startPosition);
-    dragOffsetRef.current = {
-      x: event.clientX - panelRect.left,
-      y: event.clientY - panelRect.top,
-    };
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-    event.preventDefault();
-  };
-
-  const handleDragMove = (event: ReactPointerEvent<HTMLElement>) => {
-    const dragOffset = dragOffsetRef.current;
-    const panel = panelRef.current;
-    if (!dragOffset || !panel || !onPositionChange) return;
-    const parentRect = trackerPanelParentRect(panel);
-    const panelRect = panel.getBoundingClientRect();
-    onPositionChange({
-      left: Math.round(
-        clamp(
-          event.clientX - parentRect.left - dragOffset.x,
-          TRACKER_PANEL_EDGE_MARGIN,
-          Math.max(
-            TRACKER_PANEL_EDGE_MARGIN,
-            parentRect.width - panelRect.width - TRACKER_PANEL_EDGE_MARGIN,
-          ),
-        ),
-      ),
-      top: Math.round(
-        clamp(
-          event.clientY - parentRect.top - dragOffset.y,
-          TRACKER_PANEL_EDGE_MARGIN,
-          Math.max(
-            TRACKER_PANEL_EDGE_MARGIN,
-            parentRect.height - panelRect.height - TRACKER_PANEL_EDGE_MARGIN,
-          ),
-        ),
-      ),
-    });
-  };
-
-  const handleDragEnd = () => {
-    dragOffsetRef.current = null;
-  };
-
-  const handleResizeStart = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    const panel = panelRef.current;
-    if (!panel || !onSizeChange || (event.button !== 0 && event.button !== undefined)) return;
-    const panelRect = panel.getBoundingClientRect();
-    const parentRect = trackerPanelParentRect(panel);
-    const startPosition = {
-      left: Math.round(panelRect.left - parentRect.left),
-      top: Math.round(panelRect.top - parentRect.top),
-    };
-    if (!position && onPositionChange) onPositionChange(startPosition);
-    resizeStartRef.current = {
-      x: event.clientX,
-      y: event.clientY,
-      w: panelRect.width,
-      h: panelRect.height,
-      ...startPosition,
-    };
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-    event.preventDefault();
-    event.stopPropagation();
-  };
-
-  const handleResizeMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    const start = resizeStartRef.current;
-    const panel = panelRef.current;
-    if (!start || !panel || !onSizeChange) return;
-    const parentRect = trackerPanelParentRect(panel);
-    const maxW = Math.max(
-      1,
-      Math.min(
-        SIDE_FLOATING_PANEL_MAX_SIZE.w,
-        parentRect.width - start.left - TRACKER_PANEL_EDGE_MARGIN,
-      ),
-    );
-    const maxH = Math.max(
-      1,
-      Math.min(
-        SIDE_FLOATING_PANEL_MAX_SIZE.h,
-        parentRect.height - start.top - TRACKER_PANEL_EDGE_MARGIN,
-      ),
-    );
-    const minW = Math.min(SIDE_FLOATING_PANEL_MIN_SIZE.w, maxW);
-    const minH = Math.min(SIDE_FLOATING_PANEL_MIN_SIZE.h, maxH);
-    onSizeChange({
-      w: Math.round(clamp(start.w + event.clientX - start.x, minW, maxW)),
-      h: Math.round(clamp(start.h + event.clientY - start.y, minH, maxH)),
-    });
-  };
-
-  const handleResizeEnd = () => {
-    resizeStartRef.current = null;
-  };
+  }, [open, onCancel, visible]);
 
   if (!open) return null;
 
@@ -811,31 +564,19 @@ export function VideoTrackerPropagateDialog({
 
   return (
     <div
-      ref={panelRef}
       role="dialog"
       aria-label={scopeTitle}
       data-testid="video-tracker-propagate-dialog"
       className={cn(
         AI_PANEL_SURFACE_CLASS,
-        "absolute z-workbench-modal flex h-[var(--tracker-panel-h,auto)] max-h-[calc(100%-1rem)] w-[var(--tracker-panel-w,min(360px,calc(100%-1rem)))] flex-col text-card-foreground",
-        position
-          ? "left-[var(--tracker-panel-left)] top-[var(--tracker-panel-top)]"
-          : "right-2 top-2",
+        "flex h-full min-h-0 flex-col rounded-none border-0 text-card-foreground",
       )}
     >
       {tracking ? (
         <div className="flex flex-col" role="status" aria-live="polite">
           <div
             data-testid="tracker-panel-header"
-            className={cn(
-              AI_PANEL_HEADER_CLASS,
-              "flex cursor-move touch-none items-start justify-between gap-3",
-            )}
-            onPointerDown={handleDragStart}
-            onPointerMove={handleDragMove}
-            onPointerUp={handleDragEnd}
-            onPointerCancel={handleDragEnd}
-            title={`拖动${scopeTitle}面板`}
+            className={cn(AI_PANEL_HEADER_CLASS, "flex items-start justify-between gap-3")}
           >
             <div className="flex min-w-0 items-start gap-2">
               <span className={AI_PANEL_ICON_CLASS}>
@@ -847,7 +588,6 @@ export function VideoTrackerPropagateDialog({
                   className="flex flex-wrap items-baseline gap-x-2 gap-y-1"
                 >
                   <h2 className="text-sm font-semibold tracking-tight">{progressLabel}</h2>
-                  <Move className="size-3 text-muted-foreground" />
                   {trackingWindow && trackingWindow.total > 1 && (
                     <span
                       data-testid="tracker-progress-window"
@@ -895,15 +635,7 @@ export function VideoTrackerPropagateDialog({
         <>
           <header
             data-testid="tracker-panel-header"
-            className={cn(
-              AI_PANEL_HEADER_CLASS,
-              "flex cursor-move touch-none items-start justify-between gap-3",
-            )}
-            onPointerDown={handleDragStart}
-            onPointerMove={handleDragMove}
-            onPointerUp={handleDragEnd}
-            onPointerCancel={handleDragEnd}
-            title={`拖动${scopeTitle}面板`}
+            className={cn(AI_PANEL_HEADER_CLASS, "flex items-start justify-between gap-3")}
           >
             <div className="flex min-w-0 items-start gap-2">
               <span className={AI_PANEL_ICON_CLASS}>
@@ -915,7 +647,6 @@ export function VideoTrackerPropagateDialog({
                   <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-2xs text-muted-foreground">
                     Ctrl+B
                   </kbd>
-                  <Move className="size-3 text-muted-foreground" />
                 </div>
                 <p className="text-xs leading-relaxed text-muted-foreground">
                   {scopeDescription}结果先进入候选审阅。
@@ -1385,22 +1116,6 @@ export function VideoTrackerPropagateDialog({
             </div>
           </footer>
         </>
-      )}
-      {onSizeChange && (
-        <button
-          type="button"
-          data-testid="tracker-panel-resize-handle"
-          className="absolute bottom-0 right-0 size-[18px] cursor-nwse-resize touch-none appearance-none border-0 bg-transparent p-0 text-muted-foreground hover:text-status-info"
-          onPointerDown={handleResizeStart}
-          onPointerMove={handleResizeMove}
-          onPointerUp={handleResizeEnd}
-          onPointerCancel={handleResizeEnd}
-          aria-label={`调整${scopeTitle}面板尺寸`}
-          title="拖拽调整尺寸"
-        >
-          <span className="pointer-events-none absolute bottom-1 right-1 h-px w-[9px] origin-right rotate-[-45deg] bg-current" />
-          <span className="pointer-events-none absolute bottom-2 right-1 h-px w-[5px] origin-right rotate-[-45deg] bg-current" />
-        </button>
       )}
     </div>
   );

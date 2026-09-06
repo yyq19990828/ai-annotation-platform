@@ -111,19 +111,25 @@ test.describe("mask editor (I11)", () => {
     ).toBeChecked();
 
     const stage = page.getByTestId("workbench-stage");
-    const box = await stage.boundingBox();
-    if (!box) throw new Error("stage boundingBox 不可用");
+    await expect(stage).toHaveAttribute("data-image-ready", "true", { timeout: 10_000 });
+    // fitted 完成前 Konva 宿主为 visibility:hidden (ImageStage konvaHostHidden),
+    // 此窗口内的 pointer 事件不会到达画布 → 一笔橡皮会被整体丢弃且不置 dirty。
+    await expect(stage.locator("canvas").first()).toBeVisible({ timeout: 10_000 });
     // 真实 E2E 图片为 64x48；默认 16px 橡皮会把约 19x14px 的候选整个擦空。
-    // 用 2px 半径从左边界向内擦出与外部连通的小缺口，既保留前景，也不制造 hole。
+    // 用 2px 半径从多边形内部深处向外擦出与外部连通的小缺口，既保留前景，也不制造 hole。
+    // boundingBox 取在 slider 之后：slider blur 触发工具栏重渲染，先取 box 会拿到
+    // 重渲染前的过渡几何，换算出的擦除点会偏离 mask buffer 的真实坐标。
     const slider = page.getByTestId("mask-radius-slider");
     await slider.fill("2");
     await expect(slider).toHaveValue("2");
     await slider.blur();
-    const cx = box.x + box.width * 0.3;
+    const box = await stage.boundingBox();
+    if (!box) throw new Error("stage boundingBox 不可用");
+    const cx = box.x + box.width * 0.35;
     const cy = box.y + box.height * 0.45;
     await page.mouse.move(cx, cy);
     await page.mouse.down();
-    await page.mouse.move(cx + 20, cy, { steps: 4 });
+    await page.mouse.move(cx - 20, cy, { steps: 4 });
     await page.mouse.up();
 
     // commit 触发：确认转换报告后创建带 prediction lineage 的原生 Mask。

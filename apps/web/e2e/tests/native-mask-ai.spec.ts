@@ -223,6 +223,18 @@ async function generateAndAccept(
   const pendingLabel = options?.candidateCycles
     ? `${options.candidateCycles + 1} 个候选待处理`
     : "候选待处理";
+  await page.waitForTimeout(1200); // TEMP-DEBUG
+  console.log(
+    "PET_DUMP:",
+    await page.evaluate(() => {
+      const pet = document.querySelector("[data-pet-mood]");
+      return JSON.stringify({
+        petMood: pet?.getAttribute("data-pet-mood") ?? null,
+        petText: pet?.textContent?.slice(0, 60) ?? null,
+        hasPending: (document.body.textContent ?? "").includes("候选待处理"),
+      });
+    }),
+  );
   await expect(page.getByText(pendingLabel, { exact: true })).toBeVisible({ timeout: 10_000 });
   // Polygon outlines are immediate; only the active candidate's pixel preview is decoded lazily.
   await page.waitForTimeout(media === "image" ? 250 : 750);
@@ -284,6 +296,7 @@ test.describe("native Mask interactive candidate acceptance", () => {
     const fixture = await seed.nativeMaskCandidate(taskId, { variant: "multimask_donut" });
     const routed = await routeNativeCandidate(page, fixture);
     await seed.injectToken(page, data.annotator_email);
+    await seed.setPetEnabled(data.annotator_email, true);
 
     const accepted = await generateAndAccept(page, data.project_id, taskId, "image", {
       candidateCycles: 2,
@@ -327,6 +340,7 @@ test.describe("native Mask interactive candidate acceptance", () => {
     await seed.advanceTask({ taskId, toStatus: "pending", annotatorEmail: data.annotator_email });
     const contexts = await routePolygonCandidate(page);
     await seed.injectToken(page, data.annotator_email);
+    await seed.setPetEnabled(data.annotator_email, true);
 
     await page.goto(`/projects/${data.project_id}/annotate?task=${taskId}`);
     const stage = page.getByTestId("workbench-stage");
@@ -383,6 +397,7 @@ test.describe("native Mask interactive candidate acceptance", () => {
     const fixture = await seed.nativeMaskCandidate(taskId);
     await routeNativeCandidate(page, fixture);
     await seed.injectToken(page, data.annotator_email);
+    await seed.setPetEnabled(data.annotator_email, true);
 
     let attempts = 0;
     let committedBeforeDisconnect: AcceptedMaskResponse | null = null;
@@ -457,6 +472,7 @@ test.describe("native Mask interactive candidate acceptance", () => {
     const fixture = await seed.nativeMaskCandidate(taskId);
     const routed = await routeNativeCandidate(page, fixture);
     await seed.injectToken(page, data.annotator_email);
+    await seed.setPetEnabled(data.annotator_email, true);
 
     const accepted = await generateAndAccept(page, data.project_id, taskId, "video");
     expect(accepted.annotation.annotation_type).toBe("video_track_mask");
@@ -487,6 +503,7 @@ test.describe("native Mask interactive candidate acceptance", () => {
     const fixture = await seed.nativeMaskCandidate(taskId);
     await routeNativeCandidate(page, fixture);
     await seed.injectToken(page, data.annotator_email);
+    await seed.setPetEnabled(data.annotator_email, true);
 
     const accepted = await generateAndAccept(page, data.project_id, taskId, "video");
     const annotationId = accepted.annotation.id;
@@ -738,6 +755,7 @@ test.describe("native Mask interactive candidate acceptance", () => {
     fixture.response.mask_input_next = "opaque-e2e-mask-session";
     const routed = await routeNativeCandidate(page, fixture, { failFirst: true });
     await seed.injectToken(page, data.annotator_email);
+    await seed.setPetEnabled(data.annotator_email, true);
 
     const token = await seed.accessToken(data.annotator_email);
     const before = await request.get(

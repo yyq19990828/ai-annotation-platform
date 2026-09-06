@@ -18,7 +18,7 @@
 
 只有以下条件同时成立才允许转定稿：
 
-- [3D 专属质量流程](../2026-08-26-v0.24.13-3d-quality-workflow.md)已稳定，cuboid、点掩码、track 与投影相关指标都有固定夹具和可解释定位。
+- [3D 专属质量流程](../archive/2026-08-26-v0.24.13-3d-quality-workflow.md)已稳定，cuboid、点掩码、track 与投影相关指标都有固定夹具和可解释定位。
 - 至少一个真实项目需要隐藏 GT / 即时反馈，或至少三个标注副本的 Consensus，而不是只需要普通 review。
 - 项目方已确认 replica 成本、盲标规则、GT 更新权限和争议仲裁人。
 - 当前任务 / annotation revision 模型可以创建隔离快照；若不能，ADR 已批准新增最小持久化模型。

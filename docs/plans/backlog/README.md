@@ -28,21 +28,21 @@
 
 ### 可在精修计划后优先转定稿
 
-[持续创建与持续自动拟合](../2026-08-24-v0.24.3-3d-continuous-creation.md) 已转为 v0.24.3 实施计划，不再属于 backlog。
+[持续创建与持续自动拟合](../archive/2026-08-24-v0.24.3-3d-continuous-creation.md) 已转为 v0.24.3 实施计划，不再属于 backlog。
 
-[跨帧任务中心](../2026-08-25-v0.24.8-3d-cross-frame-job-center-mvp.md) 已拆出 registration 并转为实施计划，不再属于 backlog；registration 仍需单独通过准确率门。
+[跨帧任务中心](../archive/2026-08-25-v0.24.8-3d-cross-frame-job-center-mvp.md) 已拆出 registration 并转为实施计划，不再属于 backlog；registration 仍需单独通过准确率门。
 
 | 草案 | 独立结果 | 关键依赖 |
 | ---- | -------- | -------- |
 
-[3D 专属质量流程](../2026-08-26-v0.24.13-3d-quality-workflow.md) 已完成转定稿并进入实施，不再属于 backlog。
+[3D 专属质量流程](../archive/2026-08-26-v0.24.13-3d-quality-workflow.md) 已完成转定稿并进入实施，不再属于 backlog。
 
-[3D 测量 Overlay MVP](../2026-08-27-v0.24.19-3d-measurement-overlay.md) 已从“地面、测量与几何辅助层”拆出并转为实施计划；原草案不再属于 backlog，地面预览与几何特征只有重新满足各自触发门后才能另立草案。
+[3D 测量 Overlay MVP](../archive/2026-08-27-v0.24.19-3d-measurement-overlay.md) 已从“地面、测量与几何辅助层”拆出并转为实施计划；原草案不再属于 backlog，地面预览与几何特征只有重新满足各自触发门后才能另立草案。
 
-可信 LiDAR 导出已收缩为 [LiDAR 可信导出 MVP](../2026-08-25-v0.24.9-lidar-trusted-export-mvp.md) 并转入实施；完整 nuScenes 与多相机 COCO 派生 2D 不在当前版本范围。
+可信 LiDAR 导出已收缩为 [LiDAR 可信导出 MVP](../archive/2026-08-25-v0.24.9-lidar-trusted-export-mvp.md) 并转入实施；完整 nuScenes 与多相机 COCO 派生 2D 不在当前版本范围。
 
 [持久化多模态对象](2026-08-24-persistent-multimodal-object-draft.md) 的相机 bbox 主路径已由
-[`v0.24.15`](../2026-08-26-v0.24.15-persistent-multicamera-members.md) 实施；原草案标记为部分替代，
+[`v0.24.15`](../archive/2026-08-26-v0.24.15-persistent-multicamera-members.md) 实施；原草案标记为部分替代，
 只保留相机 polygon / mask 等未排期方向。
 
 ### 由合同或基线触发后再转定稿
@@ -56,12 +56,12 @@
 
 ## 共同研究依据
 
-- [`v0.24.4 · 3D Scene 时间轴 MVP`](../2026-08-24-v0.24.4-3d-scene-timeline.md) 已转为实施计划，不再属于 backlog。
-- [`v0.24.11 · 3D 时序对象与轨迹生命周期基础`](../2026-08-25-v0.24.11-3d-track-domain-foundation.md) 已转为实施计划，不再属于 backlog。
+- [`v0.24.4 · 3D Scene 时间轴 MVP`](../archive/2026-08-24-v0.24.4-3d-scene-timeline.md) 已转为实施计划，不再属于 backlog。
+- [`v0.24.11 · 3D 时序对象与轨迹生命周期基础`](../archive/2026-08-25-v0.24.11-3d-track-domain-foundation.md) 已转为实施计划，不再属于 backlog。
 
 - [`docs/research/22-supervisely-cvat-workbench.md`](../../research/22-supervisely-cvat-workbench.md)：Supervisely / CVAT 工作台、教程、图片、GIF、视频与固定源码快照的深度调研。
 - [`docs/research/24-3d-temporal-object-lifecycle.md`](../../research/24-3d-temporal-object-lifecycle.md)：商业平台、开源工具与 OpenLABEL 的 3D 时序对象、存在区间和轨迹修复合同。
 - [`docs/research/14-point-cloud-image-fusion.md`](../../research/14-point-cloud-image-fusion.md)：点云与图像联合标注、真值边界与平台差距。
-- [`docs/plans/2026-08-14-v0.24.x-3d-workbench-optimization-epic.md`](../2026-08-14-v0.24.x-3d-workbench-optimization-epic.md)：已实施历史、延期方向和版本边界。
+- [`docs/plans/archive/2026-08-14-v0.24.x-3d-workbench-optimization-epic.md`](../archive/2026-08-14-v0.24.x-3d-workbench-optimization-epic.md)：已实施历史、延期方向和版本边界。
 
 具身 Episode Profile、2D 类别行工具、Center Out、Slice、通用 Layers / Filters 和视频双层时间轴不属于这组 3D 工作台草案；它们需要各自的产品域计划，不能借本目录顺带实施。

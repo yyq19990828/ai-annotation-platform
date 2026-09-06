@@ -38,6 +38,7 @@ vi.mock("@/components/ui/Toast", () => ({
 }));
 
 import { useWorkbenchConfig } from "./useWorkbenchConfig";
+import { userPreferencesQueryKey } from "./useUserPreferences";
 
 function wrapper({ children }: { children: ReactNode }) {
   const c = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -230,6 +231,7 @@ describe("useWorkbenchConfig · v0.10.10 项目级覆盖", () => {
   });
 
   it("setLayout 支持 3D 相机面板和主视角快照", async () => {
+    window.localStorage.setItem("workbench.u1.triViewFloat", '{"collapsed":true,"x":44}');
     mockGetPreferences.mockResolvedValue({ workbench: {} });
     mockUpdatePreferences.mockImplementation(async (payload) => payload);
     const { result } = renderHook(() => useWorkbenchConfig(), { wrapper });
@@ -246,6 +248,7 @@ describe("useWorkbenchConfig · v0.10.10 项目级覆盖", () => {
       result.current.setLayout({
         cameraPanels: { front: { x: 120, y: 80, collapsed: true } },
         pointcloudCamera,
+        triViewFloat: { collapsed: false, x: 100 },
       });
     });
 
@@ -257,6 +260,16 @@ describe("useWorkbenchConfig · v0.10.10 项目级覆盖", () => {
     expect(result.current.layout.pointcloudCamera).toEqual(pointcloudCamera);
     expect(window.localStorage.getItem("workbench.u1.cameraPanels")).toContain("front");
     expect(window.localStorage.getItem("workbench.u1.pointcloudCamera")).toContain("position");
+    expect(window.localStorage.getItem("workbench.u1.triViewFloat")).toBe(
+      '{"collapsed":true,"x":44}',
+    );
+    await waitFor(() => expect(mockUpdatePreferences).toHaveBeenCalled());
+    expect(mockUpdatePreferences.mock.calls.slice(-1)[0][0].workbench.layout).not.toHaveProperty(
+      "triViewFloat",
+    );
+    expect(
+      mockUpdatePreferences.mock.calls.slice(-1)[0][0].workbench.layout.cameraPanels.front.x,
+    ).toBe(120);
   });
 
   it("较早的布局保存晚返回时不覆盖更新后的相机面板状态", async () => {
@@ -333,6 +346,59 @@ describe("useWorkbenchConfig · v0.15.3 setFields + 多实例广播", () => {
       workbench: expect.objectContaining({
         image: expect.objectContaining({ controlPointsSize: 12 }),
       }),
+    });
+    vi.useRealTimers();
+  });
+
+  it("keeps workspace in local config while both legacy setters omit it from PATCH", async () => {
+    const workspace = { engine: "dockview@8", contexts: {} };
+    mockGetPreferences.mockResolvedValue({ workbench: { layout: { workspace } } });
+    mockUpdatePreferences.mockImplementation(async (payload) => payload);
+    const { result } = renderHook(() => useWorkbenchConfig(), { wrapper });
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    expect(result.current.layout.workspace).toEqual(workspace);
+
+    vi.useFakeTimers();
+    act(() => result.current.setFields({ image: { controlPointsSize: 12 } }));
+    await act(async () => vi.advanceTimersByTimeAsync(300));
+    act(() => result.current.setLayout({ rightOpen: false }));
+    await act(async () => vi.advanceTimersByTimeAsync(300));
+    expect(mockUpdatePreferences).toHaveBeenCalledTimes(2);
+    for (const [payload] of mockUpdatePreferences.mock.calls) {
+      expect(payload.workbench.layout).not.toHaveProperty("workspace");
+    }
+    vi.useRealTimers();
+  });
+
+  it("a late legacy save response cannot replace a newer workspace cache", async () => {
+    const old = { workbench: { layout: { workspace: { engine: "dockview@8", contexts: {} } } } };
+    mockGetPreferences.mockResolvedValue(old);
+    let resolve!: (response: typeof old) => void;
+    mockUpdatePreferences.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { result } = renderHook(() => useWorkbenchConfig(), {
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={client}>{children}</QueryClientProvider>
+      ),
+    });
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    vi.useFakeTimers();
+    act(() => result.current.setFields({ image: { controlPointsSize: 12 } }));
+    await act(async () => vi.advanceTimersByTimeAsync(300));
+    const workspace = {
+      engine: "dockview@8",
+      contexts: { "review:video": { schemaVersion: 2, snapshot: { updated: true } } },
+    };
+    act(() =>
+      client.setQueryData(userPreferencesQueryKey("u1"), { workbench: { layout: { workspace } } }),
+    );
+    await act(async () => resolve(old));
+    expect(client.getQueryData(userPreferencesQueryKey("u1"))).toMatchObject({
+      workbench: { layout: { workspace } },
     });
     vi.useRealTimers();
   });
