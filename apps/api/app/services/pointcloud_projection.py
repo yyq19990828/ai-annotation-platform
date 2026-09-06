@@ -1,15 +1,35 @@
-"""Pure point-cloud box transforms shared by LiDAR export and scene QC."""
+"""Shared, deterministic 3D cuboid to camera projection primitives."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import math
+from typing import Protocol
 
 from app.schemas._jsonb_types import SensorCalibration
-from app.services.axis_convention import PsrDict
+from app.services.axis_convention import PsrDict, R_NORM
 
 
-Mat3 = tuple[float, float, float, float, float, float, float, float, float]
-Vec3 = tuple[float, float, float]
+class ProjectionCamera(Protocol):
+    calibration: SensorCalibration
+    width: int
+    height: int
+
+
+@dataclass(frozen=True)
+class ProjectedBox:
+    pixel_bbox: tuple[float, float, float, float]
+    normalized_bbox: tuple[float, float, float, float]
+    truncated: float
+
+
+@dataclass(frozen=True)
+class ProjectionResidual:
+    iou: float
+    max_edge_residual_px: float
+    mean_edge_residual_px: float
+    max_edge_residual_ratio: float
+
 
 BOX_EDGES: tuple[tuple[int, int], ...] = (
     (0, 1),
@@ -25,32 +45,26 @@ BOX_EDGES: tuple[tuple[int, int], ...] = (
     (2, 6),
     (3, 7),
 )
+NEAR_PLANE = 0.1
 
 
-def _mat4_vec(matrix: list[float], vector: tuple[float, float, float, float]):
-    return tuple(
-        sum(float(matrix[row * 4 + col]) * vector[col] for col in range(4))
-        for row in range(4)
+def clamp(value: float, lo: float, hi: float) -> float:
+    return max(lo, min(hi, value))
+
+
+def mat3_vec(
+    matrix: tuple[float, ...] | list[float], point: tuple[float, float, float]
+) -> tuple[float, float, float]:
+    x, y, z = point
+    return (
+        matrix[0] * x + matrix[1] * y + matrix[2] * z,
+        matrix[3] * x + matrix[4] * y + matrix[5] * z,
+        matrix[6] * x + matrix[7] * y + matrix[8] * z,
     )
 
 
-def _mat3_vec(matrix: list[float] | Mat3, vector: Vec3) -> Vec3:
-    return tuple(
-        sum(float(matrix[row * 3 + col]) * vector[col] for col in range(3))
-        for row in range(3)
-    )  # type: ignore[return-value]
-
-
-def _mat3_mul(left: Mat3, right: Mat3) -> Mat3:
-    return tuple(
-        sum(left[row * 3 + i] * right[i * 3 + col] for i in range(3))
-        for row in range(3)
-        for col in range(3)
-    )  # type: ignore[return-value]
-
-
-def _euler_xyz_to_mat3(rotation: list[float]) -> Mat3:
-    rx, ry, rz = (float(rotation[i]) for i in range(3))
+def euler_xyz_matrix(rotation: list[float]) -> tuple[float, ...]:
+    rx, ry, rz = rotation
     cx, sx = math.cos(rx), math.sin(rx)
     cy, sy = math.cos(ry), math.sin(ry)
     cz, sz = math.cos(rz), math.sin(rz)
@@ -67,142 +81,228 @@ def _euler_xyz_to_mat3(rotation: list[float]) -> Mat3:
     )
 
 
-def _mat3_to_euler_xyz(matrix: Mat3) -> list[float]:
-    ry = math.asin(max(-1.0, min(1.0, matrix[2])))
-    if abs(math.cos(ry)) > 1e-6:
-        rx = math.atan2(-matrix[5], matrix[8])
-        rz = math.atan2(-matrix[1], matrix[0])
-    else:
-        rx = math.atan2(matrix[7], matrix[4])
-        rz = 0.0
-    return [rx, ry, rz]
-
-
-def _camera_matrix(calibration: SensorCalibration) -> tuple[list[float], Mat3]:
-    extrinsic = [float(value) for value in calibration.extrinsic]
-    linear: Mat3 = (
-        extrinsic[0],
-        extrinsic[1],
-        extrinsic[2],
-        extrinsic[4],
-        extrinsic[5],
-        extrinsic[6],
-        extrinsic[8],
-        extrinsic[9],
-        extrinsic[10],
+def iso_to_source(
+    point: tuple[float, float, float], axis_convention: str
+) -> tuple[float, float, float]:
+    matrix = R_NORM[axis_convention]
+    transpose = (
+        matrix[0],
+        matrix[3],
+        matrix[6],
+        matrix[1],
+        matrix[4],
+        matrix[7],
+        matrix[2],
+        matrix[5],
+        matrix[8],
     )
-    if calibration.rect is None:
-        return extrinsic, linear
+    return mat3_vec(transpose, point)
 
-    rect = [float(value) for value in calibration.rect]
-    combined = [
-        sum(rect[row * 4 + i] * extrinsic[i * 4 + col] for i in range(4))
-        for row in range(4)
-        for col in range(4)
-    ]
-    rect_linear: Mat3 = (
-        rect[0],
-        rect[1],
-        rect[2],
-        rect[4],
-        rect[5],
-        rect[6],
-        rect[8],
-        rect[9],
-        rect[10],
+
+def apply_camera_point(
+    point: tuple[float, float, float], calibration: SensorCalibration
+) -> tuple[float, float, float]:
+    x, y, z = point
+    extrinsic = calibration.extrinsic
+    camera = (
+        extrinsic[0] * x + extrinsic[1] * y + extrinsic[2] * z + extrinsic[3],
+        extrinsic[4] * x + extrinsic[5] * y + extrinsic[6] * z + extrinsic[7],
+        extrinsic[8] * x + extrinsic[9] * y + extrinsic[10] * z + extrinsic[11],
     )
-    return combined, _mat3_mul(rect_linear, linear)
-
-
-def _transform_point(matrix: list[float], point: Vec3) -> Vec3:
-    x, y, z, w = _mat4_vec(matrix, (point[0], point[1], point[2], 1.0))
-    if abs(w) > 1e-12 and w != 1.0:
-        return (x / w, y / w, z / w)
-    return (x, y, z)
-
-
-def transform_box_to_camera_psr(
-    psr: PsrDict,
-    calibration: SensorCalibration,
-) -> PsrDict:
-    """Transform a platform ISO-frame box center and orientation to camera frame."""
-
-    matrix, linear = _camera_matrix(calibration)
-    center = _transform_point(
-        matrix,
-        tuple(float(value) for value in psr["center"][:3]),  # type: ignore[arg-type]
-    )
-    rotation = _mat3_mul(linear, _euler_xyz_to_mat3(psr["rotation"]))
-    return {
-        "center": list(center),
-        "size": [float(value) for value in psr["size"][:3]],
-        "rotation": _mat3_to_euler_xyz(rotation),
-    }
-
-
-def _box_corners(psr: PsrDict) -> list[Vec3]:
-    center = tuple(float(value) for value in psr["center"][:3])
-    half = tuple(float(value) / 2.0 for value in psr["size"][:3])
-    rotation = _euler_xyz_to_mat3(psr["rotation"])
-    corners: list[Vec3] = []
-    for z_sign in (-1.0, 1.0):
-        for x_sign, y_sign in ((-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)):
-            offset = _mat3_vec(
-                rotation,
-                (x_sign * half[0], y_sign * half[1], z_sign * half[2]),
-            )
-            corners.append(
-                (center[0] + offset[0], center[1] + offset[1], center[2] + offset[2])
-            )
-    return corners
-
-
-def project_box_to_image_bbox(
-    psr: PsrDict,
-    calibration: SensorCalibration,
-    *,
-    image_width: int | None = None,
-    image_height: int | None = None,
-    near_clip: float = 1e-6,
-) -> tuple[float, float, float, float] | None:
-    """Project a box to a clipped image bbox, including near-plane edge intersections."""
-
-    if not math.isfinite(near_clip) or near_clip <= 0:
-        raise ValueError("near_clip must be a finite positive number")
-    matrix, _linear = _camera_matrix(calibration)
-    camera_corners = [_transform_point(matrix, point) for point in _box_corners(psr)]
-    clipped = [point for point in camera_corners if point[2] >= near_clip]
-    for start_index, end_index in BOX_EDGES:
-        start = camera_corners[start_index]
-        end = camera_corners[end_index]
-        if (start[2] >= near_clip) == (end[2] >= near_clip):
-            continue
-        ratio = (near_clip - start[2]) / (end[2] - start[2])
-        clipped.append(
-            tuple(start[i] + ratio * (end[i] - start[i]) for i in range(3))  # type: ignore[arg-type]
+    if calibration.rect:
+        rect = calibration.rect
+        cx, cy, cz = camera
+        return (
+            rect[0] * cx + rect[1] * cy + rect[2] * cz + rect[3],
+            rect[4] * cx + rect[5] * cy + rect[6] * cz + rect[7],
+            rect[8] * cx + rect[9] * cy + rect[10] * cz + rect[11],
         )
-    if not clipped:
-        return None
+    return camera
 
-    pixels: list[tuple[float, float]] = []
-    intrinsic = [float(value) for value in calibration.intrinsic]
-    for point in clipped:
-        u, v, w = _mat3_vec(intrinsic, point)
-        if w > 0 and all(math.isfinite(value) for value in (u, v, w)):
-            pixels.append((u / w, v / w))
+
+def apply_camera_vector(
+    vector: tuple[float, float, float], calibration: SensorCalibration
+) -> tuple[float, float, float]:
+    extrinsic = calibration.extrinsic
+    camera = mat3_vec(
+        (
+            extrinsic[0],
+            extrinsic[1],
+            extrinsic[2],
+            extrinsic[4],
+            extrinsic[5],
+            extrinsic[6],
+            extrinsic[8],
+            extrinsic[9],
+            extrinsic[10],
+        ),
+        vector,
+    )
+    if calibration.rect:
+        rect = calibration.rect
+        return mat3_vec(
+            (
+                rect[0],
+                rect[1],
+                rect[2],
+                rect[4],
+                rect[5],
+                rect[6],
+                rect[8],
+                rect[9],
+                rect[10],
+            ),
+            camera,
+        )
+    return camera
+
+
+def project_camera_point(
+    point: tuple[float, float, float], intrinsic: list[float]
+) -> tuple[float, float] | None:
+    x, y, z = point
+    u = intrinsic[0] * x + intrinsic[1] * y + intrinsic[2] * z
+    v = intrinsic[3] * x + intrinsic[4] * y + intrinsic[5] * z
+    w = intrinsic[6] * x + intrinsic[7] * y + intrinsic[8] * z
+    if w <= 0 or not math.isfinite(w):
+        return None
+    pixel = (u / w, v / w)
+    return pixel if all(math.isfinite(value) for value in pixel) else None
+
+
+def box_iso_geometry(
+    psr: PsrDict,
+) -> tuple[
+    list[tuple[float, float, float]],
+    tuple[float, float, float],
+    tuple[float, float, float],
+]:
+    center = tuple(psr["center"])
+    length, width, height = psr["size"]
+    rotation = euler_xyz_matrix(psr["rotation"])
+
+    def world(local: tuple[float, float, float]) -> tuple[float, float, float]:
+        offset = mat3_vec(rotation, local)
+        return (
+            center[0] + offset[0],
+            center[1] + offset[1],
+            center[2] + offset[2],
+        )
+
+    corners = [
+        world((sx * length / 2, sy * width / 2, sz * height / 2))
+        for sz in (-1, 1)
+        for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))
+    ]
+    return corners, world((0, 0, -height / 2)), mat3_vec(rotation, (1, 0, 0))
+
+
+def clipped_projection_bbox(
+    corners: list[tuple[float, float, float]], camera: ProjectionCamera
+) -> tuple[tuple[float, float, float, float], float] | None:
+    candidates = [point for point in corners if point[2] >= NEAR_PLANE]
+    for start_index, end_index in BOX_EDGES:
+        start = corners[start_index]
+        end = corners[end_index]
+        start_front = start[2] >= NEAR_PLANE
+        end_front = end[2] >= NEAR_PLANE
+        if start_front == end_front:
+            continue
+        ratio = (NEAR_PLANE - start[2]) / (end[2] - start[2])
+        candidates.append(
+            (
+                start[0] + ratio * (end[0] - start[0]),
+                start[1] + ratio * (end[1] - start[1]),
+                NEAR_PLANE,
+            )
+        )
+    pixels = [
+        pixel
+        for point in candidates
+        if (pixel := project_camera_point(point, camera.calibration.intrinsic))
+        is not None
+    ]
     if not pixels:
         return None
-
-    x1 = min(pixel[0] for pixel in pixels)
-    y1 = min(pixel[1] for pixel in pixels)
-    x2 = max(pixel[0] for pixel in pixels)
-    y2 = max(pixel[1] for pixel in pixels)
-    if image_width is not None:
-        x1 = max(0.0, min(float(image_width), x1))
-        x2 = max(0.0, min(float(image_width), x2))
-    if image_height is not None:
-        y1 = max(0.0, min(float(image_height), y1))
-        y2 = max(0.0, min(float(image_height), y2))
-    if x2 <= x1 or y2 <= y1:
+    raw = (
+        min(pixel[0] for pixel in pixels),
+        min(pixel[1] for pixel in pixels),
+        max(pixel[0] for pixel in pixels),
+        max(pixel[1] for pixel in pixels),
+    )
+    raw_area = max(0.0, raw[2] - raw[0]) * max(0.0, raw[3] - raw[1])
+    if raw_area <= 1e-9:
         return None
-    return (x1, y1, x2, y2)
+    image_right = float(camera.width - 1)
+    image_bottom = float(camera.height - 1)
+    clipped = (
+        clamp(raw[0], 0.0, image_right),
+        clamp(raw[1], 0.0, image_bottom),
+        clamp(raw[2], 0.0, image_right),
+        clamp(raw[3], 0.0, image_bottom),
+    )
+    clipped_area = max(0.0, clipped[2] - clipped[0]) * max(0.0, clipped[3] - clipped[1])
+    if clipped_area <= 1e-9:
+        return None
+    return clipped, clamp(1.0 - clipped_area / raw_area, 0.0, 1.0)
+
+
+def normalized_bbox(
+    pixel_bbox: tuple[float, float, float, float], width: int, height: int
+) -> tuple[float, float, float, float]:
+    x1, y1, x2, y2 = pixel_bbox
+    return (x1 / width, y1 / height, (x2 - x1) / width, (y2 - y1) / height)
+
+
+def pixel_bbox(
+    bbox: tuple[float, float, float, float], width: int, height: int
+) -> tuple[float, float, float, float]:
+    x, y, w, h = bbox
+    return (x * width, y * height, (x + w) * width, (y + h) * height)
+
+
+def project_iso_box(
+    psr: PsrDict, *, camera: ProjectionCamera, axis_convention: str
+) -> ProjectedBox | None:
+    corners_iso, _, _ = box_iso_geometry(psr)
+    corners_camera = [
+        apply_camera_point(iso_to_source(point, axis_convention), camera.calibration)
+        for point in corners_iso
+    ]
+    result = clipped_projection_bbox(corners_camera, camera)
+    if result is None:
+        return None
+    bbox, truncated = result
+    return ProjectedBox(
+        pixel_bbox=bbox,
+        normalized_bbox=normalized_bbox(bbox, camera.width, camera.height),
+        truncated=truncated,
+    )
+
+
+def projection_residual(
+    manual_normalized_bbox: tuple[float, float, float, float],
+    projected_pixel_bbox: tuple[float, float, float, float],
+    *,
+    width: int,
+    height: int,
+) -> ProjectionResidual:
+    manual = pixel_bbox(manual_normalized_bbox, width, height)
+    x1 = max(manual[0], projected_pixel_bbox[0])
+    y1 = max(manual[1], projected_pixel_bbox[1])
+    x2 = min(manual[2], projected_pixel_bbox[2])
+    y2 = min(manual[3], projected_pixel_bbox[3])
+    intersection = max(0.0, x2 - x1) * max(0.0, y2 - y1)
+    manual_area = max(0.0, manual[2] - manual[0]) * max(0.0, manual[3] - manual[1])
+    projected_area = max(0.0, projected_pixel_bbox[2] - projected_pixel_bbox[0]) * max(
+        0.0, projected_pixel_bbox[3] - projected_pixel_bbox[1]
+    )
+    union = manual_area + projected_area - intersection
+    edges = [abs(a - b) for a, b in zip(manual, projected_pixel_bbox, strict=True)]
+    maximum = max(edges)
+    return ProjectionResidual(
+        iou=intersection / union if union > 1e-9 else 0.0,
+        max_edge_residual_px=maximum,
+        mean_edge_residual_px=sum(edges) / len(edges),
+        max_edge_residual_ratio=maximum / max(math.hypot(width, height), 1.0),
+    )

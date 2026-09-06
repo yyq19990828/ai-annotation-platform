@@ -4,7 +4,7 @@ import type Konva from "konva";
 import { useTheme } from "@/hooks/useTheme";
 import { cssVarToHex } from "./colors";
 import type { VideoPixelSize } from "./videoKonvaCoordinates";
-import type { AnnotationFeedback } from "@/api/feedbacks";
+import { hasPixelAnchor, type AnnotationFeedback } from "@/api/feedbacks";
 
 // issue pin 半径(世界单位,= 旧 SVG viewBox 0.012,随画布缩放);描边 /scale 屏幕恒定。
 const ISSUE_PIN_RADIUS = 0.012;
@@ -51,7 +51,9 @@ export function VideoKonvaIssueLayer({
     }
     return fills;
   }, [theme]);
-  const onFrame = pixelIssues.filter((issue) => issue.anchor_position?.frame === frameIndex);
+  const onFrame = pixelIssues
+    .filter(hasPixelAnchor)
+    .filter((issue) => issue.anchor_position.frame === frameIndex);
   if (onFrame.length === 0) return null;
   const radius = ISSUE_PIN_RADIUS * size.w;
   const clickable = !!onPinClick;
@@ -62,8 +64,8 @@ export function VideoKonvaIssueLayer({
   return (
     <Layer name="issue" listening={clickable}>
       {onFrame.map((issue) => {
-        const x = issue.anchor_position!.x * size.w;
-        const y = issue.anchor_position!.y * size.h;
+        const x = issue.anchor_position.x * size.w;
+        const y = issue.anchor_position.y * size.h;
         const fill = statusFillByStatus[issue.status] ?? statusFillByStatus.open;
         const isHighlight = highlightId === issue.id;
         return (
@@ -92,8 +94,8 @@ export function VideoKonvaIssueLayer({
       {onFrame.map((issue) => (
         <Text
           key={`issue-label-${issue.id}`}
-          x={issue.anchor_position!.x * size.w}
-          y={issue.anchor_position!.y * size.h}
+          x={issue.anchor_position.x * size.w}
+          y={issue.anchor_position.y * size.h}
           text="i"
           fontSize={radius * 1.2}
           fontStyle="bold"

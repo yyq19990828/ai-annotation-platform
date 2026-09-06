@@ -25,11 +25,11 @@ export function useNeighborPointClouds(
   const results = useQueries({
     queries: list.map((n) => ({
       queryKey: ["neighbor-pcd", n.taskId, convention, targetCount],
-      queryFn: async (): Promise<NeighborPcd | null> => {
-        const manifest = await tasksApi.getPointCloudManifest(n.taskId);
+      queryFn: async ({ signal }: { signal: AbortSignal }): Promise<NeighborPcd | null> => {
+        const manifest = await tasksApi.getPointCloudManifest(n.taskId, { signal });
         const url = manifest.point_cloud_url;
         if (!url) return null;
-        const positions = await loadNeighborPcdPositions(url, convention, targetCount);
+        const positions = await loadNeighborPcdPositions(url, convention, targetCount, signal);
         return { taskId: n.taskId, frameIndex: n.frameIndex, positions };
       },
       enabled,

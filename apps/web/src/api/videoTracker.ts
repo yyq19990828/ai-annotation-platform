@@ -230,8 +230,8 @@ export type VideoTrackerDecisionPayload = VideoTrackerDecisionCommon &
   );
 
 export const videoTrackerApi = {
-  segments: (taskId: string) =>
-    apiClient.get<VideoSegmentsResponse>(`/tasks/${taskId}/video/segments`),
+  segments: (taskId: string, init?: RequestInit) =>
+    apiClient.get<VideoSegmentsResponse>(`/tasks/${taskId}/video/segments`, init),
   claimSegment: (taskId: string, segmentId: string) =>
     apiClient.post<VideoSegment>(`/tasks/${taskId}/video/segments/${segmentId}:claim`, {}),
   heartbeatSegment: (taskId: string, segmentId: string) =>
@@ -244,10 +244,10 @@ export const videoTrackerApi = {
     apiClient.post<VideoSegment>(`/tasks/${taskId}/video/segments/${segmentId}:reopen`, {}),
   unassignSegment: (taskId: string, segmentId: string) =>
     apiClient.post<VideoSegment>(`/tasks/${taskId}/video/segments/${segmentId}:unassign`, {}),
-  trackQuality: (taskId: string) =>
-    apiClient.get<VideoTrackQualityRun[]>(`/tasks/${taskId}/video/track-quality`),
-  trackQualityDetail: (taskId: string, runId: string) =>
-    apiClient.get<VideoTrackQualityRun>(`/tasks/${taskId}/video/track-quality/${runId}`),
+  trackQuality: (taskId: string, init?: RequestInit) =>
+    apiClient.get<VideoTrackQualityRun[]>(`/tasks/${taskId}/video/track-quality`, init),
+  trackQualityDetail: (taskId: string, runId: string, init?: RequestInit) =>
+    apiClient.get<VideoTrackQualityRun>(`/tasks/${taskId}/video/track-quality/${runId}`, init),
   runTrackQuality: (taskId: string, leftSegmentId: string, rightSegmentId: string) =>
     apiClient.post<VideoTrackQualityRun>(`/tasks/${taskId}/video/track-quality/run`, {
       left_segment_id: leftSegmentId,

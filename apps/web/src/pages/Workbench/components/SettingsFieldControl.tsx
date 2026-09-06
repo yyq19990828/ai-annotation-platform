@@ -1,8 +1,11 @@
-// v0.15.3 · 注册表驱动的共享设置控件:工作台设置抽屉与 Settings 页「标注偏好」共用,
-// 按 field.control 类型渲染 toggle / slider / select / text。锁定字段禁用 + 「项目锁定」badge。
-import { useEffect, useRef, useState } from "react";
+// 共享值控件，个人页保持紧凑布局，工作台窗口直接展示说明。
+import { useEffect, useId, useRef, useState } from "react";
 import { Icon } from "@/components/ui/Icon";
-import { Switch } from "@/components/ui/Switch";
+import { Switch } from "@/components/shadcn/ui/switch";
+import { Badge } from "@/components/shadcn/ui/badge";
+import { Tabs as TabsPrimitive } from "radix-ui";
+import { Field, FieldContent, FieldDescription, FieldLabel } from "@/components/shadcn/ui/field";
+import { cn } from "@/lib/utils";
 import type { LabelContentByType } from "@/api/auth";
 import type {
   WorkbenchSettingField,
@@ -11,15 +14,19 @@ import type {
 
 const LOCKED_TITLE = "由项目统一配置";
 
+// 会话和独立 ui 偏好也可复用展示，不伪装成 workbench 存储字段。
+export type SettingsControlField = Pick<
+  WorkbenchSettingField,
+  "label" | "description" | "control"
+> & { key: string };
+
 interface SettingsFieldControlProps {
-  field: WorkbenchSettingField;
+  field: SettingsControlField;
   value: WorkbenchSettingValue;
-  /** 父开关下的二级设置。 */
   nested?: boolean;
-  /** 保存中临时禁用(toggle/slider/select;text 仅锁定时禁用,与 SettingsPage 既有行为一致)。 */
   disabled?: boolean;
-  /** 被项目级 rendering_config 锁定:禁用 + badge + hover 提示。 */
   locked?: boolean;
+  layout?: "compact" | "settings";
   onCommit: (value: WorkbenchSettingValue) => void;
 }
 
@@ -29,132 +36,179 @@ export function SettingsFieldControl({
   nested = false,
   disabled = false,
   locked = false,
+  layout = "compact",
   onCommit,
 }: SettingsFieldControlProps) {
   const { control } = field;
-  // 滑块拖动期间用实时值显示数字(commit 仍只在松手发生);value 提交后经 effect 回同步。
+  const detailed = layout === "settings";
+  const id = useId();
+  const descriptionId = `${id}-description`;
   const [sliderLive, setSliderLive] = useState(Number(value));
   useEffect(() => {
     setSliderLive(Number(value));
   }, [value]);
-  const labelText =
+  const formatted =
     control.type === "slider"
-      ? `${field.label}：${control.format ? control.format(sliderLive) : String(sliderLive)}`
-      : field.label;
-  const title = locked ? LOCKED_TITLE : field.description;
-  // labelContentByType 是复杂分段控件,根用 div + 竖排(避免外层 label 包裹多个 input 误触)。
+      ? control.format
+        ? control.format(sliderLive)
+        : String(sliderLive)
+      : "";
   const isColumn = control.type === "labelContentByType";
-  const Root = isColumn ? "div" : "label";
-
+  const blocked = disabled || locked;
+  const inputProps = {
+    id,
+    "aria-describedby": detailed && field.description ? descriptionId : undefined,
+  };
   return (
-    <Root
-      className={`flex items-center justify-between gap-3 box-border min-h-[38px] px-2.5 py-2 rounded-[var(--radius-sm)] transition-[background] duration-150 hover:bg-muted ${isColumn ? "flex-col items-stretch gap-2" : ""} ${nested ? "ml-[18px] pl-3 border-l border-border rounded-[0_var(--radius-sm)_var(--radius-sm)_0]" : ""} ${disabled && !locked ? "opacity-[0.54] hover:bg-transparent" : ""}`}
-      title={title}
-      aria-disabled={disabled || locked}
+    <Field
+      orientation={isColumn ? "vertical" : "horizontal"}
+      className={cn(
+        detailed
+          ? "flex-col items-stretch py-4 md:flex-row md:items-center md:gap-8"
+          : "min-h-[38px] gap-3 rounded-sm px-2.5 py-2 hover:bg-muted",
+        isColumn && "flex-col items-stretch md:flex-col md:items-stretch",
+        nested && "ml-4 w-auto border-l border-border pl-4",
+      )}
+      title={locked ? LOCKED_TITLE : detailed ? undefined : field.description}
+      aria-disabled={blocked}
+      data-disabled={blocked || undefined}
       data-testid={`setting-field-${field.key}`}
     >
-      <div className="flex flex-1 min-w-0 items-center gap-1.5 text-muted-foreground text-xs font-medium">
-        {labelText}
-        {field.description && !locked && (
-          <span
-            className="inline-flex shrink-0 items-center text-muted-foreground"
-            aria-label={field.description}
-            title={field.description}
+      <FieldContent className="min-w-0">
+        <div className="flex items-center gap-2">
+          <FieldLabel
+            htmlFor={isColumn ? undefined : id}
+            className={cn("min-w-0", !detailed && "text-xs text-muted-foreground")}
           >
-            <Icon name="info" size={11} />
-          </span>
-        )}
-        {locked && (
-          <span
-            className="inline-flex shrink-0 items-center gap-1 px-1.5 py-px border border-border rounded-full bg-muted text-muted-foreground text-2xs font-medium"
-            title={LOCKED_TITLE}
-          >
-            <Icon name="lock" size={10} />
-            项目锁定
-          </span>
-        )}
-      </div>
-      {control.type === "toggle" && (
-        <span className="inline-flex items-center gap-2 shrink-0">
-          <Switch checked={Boolean(value)} disabled={disabled || locked} onChange={onCommit} />
-          {(control.onText || control.offText) && (
-            <span className="text-muted-foreground text-xs whitespace-nowrap">
-              {value ? control.onText : control.offText}
+            {field.label}
+            {!detailed && control.type === "slider" ? `：${formatted}` : ""}
+          </FieldLabel>
+          {!detailed && field.description && !locked && (
+            <span aria-label={field.description} title={field.description}>
+              <Icon name="info" size={11} />
             </span>
           )}
-        </span>
-      )}
-      {control.type === "slider" && (
-        <span className="inline-flex items-center gap-2 shrink-0">
-          <SliderControl
-            value={Number(value)}
-            min={control.min}
-            max={control.max}
-            step={control.step}
-            disabled={disabled || locked}
-            onLiveChange={setSliderLive}
+          {locked && (
+            <Badge variant="secondary" title={LOCKED_TITLE}>
+              项目锁定
+            </Badge>
+          )}
+        </div>
+        {detailed && field.description && (
+          <FieldDescription id={descriptionId} className="text-xs leading-relaxed">
+            {field.description}
+          </FieldDescription>
+        )}
+      </FieldContent>
+      <div
+        className={cn(
+          "flex shrink-0 items-center justify-end gap-2",
+          detailed && "w-full md:w-60",
+          isColumn && "block w-full md:w-full",
+        )}
+      >
+        {control.type === "toggle" && (
+          <>
+            <Switch
+              {...inputProps}
+              checked={Boolean(value)}
+              disabled={blocked}
+              onCheckedChange={onCommit}
+            />
+            {!detailed && (control.onText || control.offText) && (
+              <span className="whitespace-nowrap text-xs text-muted-foreground">
+                {value ? control.onText : control.offText}
+              </span>
+            )}
+          </>
+        )}
+        {control.type === "slider" && (
+          <>
+            <SliderControl
+              {...inputProps}
+              value={Number(value)}
+              min={control.min}
+              max={control.max}
+              step={control.step}
+              disabled={blocked}
+              detailed={detailed}
+              onLiveChange={setSliderLive}
+              onCommit={onCommit}
+            />
+            {detailed && (
+              <output htmlFor={id} className="min-w-10 text-right text-sm tabular-nums">
+                {formatted}
+              </output>
+            )}
+            {control.resetTo !== undefined && (
+              <button
+                type="button"
+                disabled={blocked}
+                onClick={() => onCommit(control.resetTo!)}
+                className="shrink-0 rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+              >
+                重置
+              </button>
+            )}
+          </>
+        )}
+        {control.type === "select" && (
+          <select
+            {...inputProps}
+            value={String(value)}
+            disabled={blocked}
+            onChange={(e) => {
+              const selected = control.options.find(
+                (option) => String(option.value) === e.target.value,
+              );
+              if (selected) onCommit(selected.value);
+            }}
+            className={cn(
+              "box-border w-full rounded-md border border-border bg-card px-2 py-2 text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50",
+              detailed ? "text-sm" : "max-w-[130px] text-xs",
+            )}
+          >
+            {control.options.map((option) => (
+              <option key={String(option.value)} value={String(option.value)}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        )}
+        {control.type === "text" && (
+          <TextControl
+            {...inputProps}
+            detailed={detailed}
+            value={String(value)}
+            maxLength={control.maxLength}
+            placeholder={control.placeholder}
+            disabled={blocked}
             onCommit={onCommit}
           />
-          {control.resetTo !== undefined && (
-            <button
-              type="button"
-              className="shrink-0 px-2 py-1 appearance-none border border-border rounded-[var(--radius-sm)] bg-card text-muted-foreground text-xs cursor-pointer transition-[border-color,color] duration-150 hover:border-brand hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={disabled || locked}
-              onClick={() => onCommit(control.resetTo!)}
-            >
-              重置
-            </button>
-          )}
-        </span>
-      )}
-      {control.type === "select" && (
-        <select
-          value={String(value)}
-          disabled={disabled || locked}
-          onChange={(e) => {
-            const selected = control.options.find((opt) => String(opt.value) === e.target.value);
-            if (selected) onCommit(selected.value);
-          }}
-          className="appearance-none box-border w-full max-w-[130px] px-2 py-1.5 pr-6 border border-border rounded-[var(--radius-sm)] bg-card text-foreground text-xs outline-none cursor-pointer transition-[border-color,box-shadow] duration-150 focus:border-brand focus:shadow-[0_0_0_2px_var(--sc-brand-soft)] disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {control.options.map((opt) => (
-            <option key={String(opt.value)} value={String(opt.value)}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
-      )}
-      {control.type === "multiselect" && (
-        <MultiselectControl
-          value={Array.isArray(value) ? value : []}
-          options={control.options}
-          min={control.min ?? 0}
-          disabled={disabled || locked}
-          onCommit={onCommit}
-        />
-      )}
-      {control.type === "text" && (
-        <TextControl
-          value={String(value)}
-          maxLength={control.maxLength}
-          placeholder={control.placeholder}
-          disabled={disabled || locked}
-          onCommit={onCommit}
-        />
-      )}
-      {control.type === "labelContentByType" && (
-        <LabelContentByTypeControl
-          value={
-            value && typeof value === "object" && !Array.isArray(value)
-              ? (value as LabelContentByType)
-              : { single: [], track: [], ai: [] }
-          }
-          segments={control.segments}
-          disabled={disabled || locked}
-          onCommit={onCommit}
-        />
-      )}
-    </Root>
+        )}
+        {control.type === "multiselect" && (
+          <MultiselectControl
+            value={Array.isArray(value) ? value : []}
+            options={control.options}
+            min={control.min ?? 0}
+            disabled={blocked}
+            onCommit={onCommit}
+          />
+        )}
+        {control.type === "labelContentByType" && (
+          <LabelContentByTypeControl
+            value={
+              value && typeof value === "object" && !Array.isArray(value)
+                ? (value as LabelContentByType)
+                : { single: [], track: [], ai: [] }
+            }
+            segments={control.segments}
+            disabled={blocked}
+            onCommit={onCommit}
+          />
+        )}
+      </div>
+    </Field>
   );
 }
 
@@ -186,26 +240,25 @@ function LabelContentByTypeControl({
     onCommit({ ...value, [active]: next } as LabelContentByType);
   };
   return (
-    <div className="flex flex-col gap-2">
-      <div
-        className="inline-flex gap-1 p-0.5 border border-border rounded-[var(--radius-sm)] bg-muted"
-        role="tablist"
-      >
+    // 保留键盘语义，避免外层分类 Tabs 的纵向 group 样式穿透嵌套列表。
+    <TabsPrimitive.Root
+      value={active}
+      onValueChange={(next) => setActive(next as typeof active)}
+      className="flex flex-col gap-2"
+    >
+      <TabsPrimitive.List aria-label="标签类型" className="flex gap-1 rounded-md bg-muted p-1">
         {segments.map((s) => (
-          <button
+          <TabsPrimitive.Trigger
             key={s.key}
-            type="button"
-            role="tab"
-            aria-selected={s.key === active}
-            className={`flex-1 px-2 py-1 border-0 rounded text-xs cursor-pointer transition-[background,color] duration-150 hover:text-foreground disabled:cursor-not-allowed ${s.key === active ? "bg-card text-brand font-medium" : "bg-transparent text-muted-foreground"}`}
+            value={s.key}
+            className="flex-1 rounded-sm px-2 py-1 text-xs text-muted-foreground data-[state=active]:bg-card data-[state=active]:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
             disabled={disabled}
-            onClick={() => setActive(s.key)}
           >
             {s.label}
-          </button>
+          </TabsPrimitive.Trigger>
         ))}
-      </div>
-      <div className="flex flex-col gap-0.5">
+      </TabsPrimitive.List>
+      <TabsPrimitive.Content value={active} className="flex flex-col gap-0.5">
         <div className="flex items-center justify-between gap-3 min-h-[30px] px-1 py-0.5 text-foreground text-xs cursor-default text-muted-foreground">
           <span>类别名</span>
           <span className="px-1.5 py-px rounded-full bg-muted text-muted-foreground text-2xs">
@@ -221,12 +274,12 @@ function LabelContentByTypeControl({
             <Switch
               checked={selected.includes(opt.value)}
               disabled={disabled}
-              onChange={() => toggle(opt.value)}
+              onCheckedChange={() => toggle(opt.value)}
             />
           </label>
         ))}
-      </div>
-    </div>
+      </TabsPrimitive.Content>
+    </TabsPrimitive.Root>
   );
 }
 
@@ -282,6 +335,9 @@ function MultiselectControl({
 }
 
 function SliderControl({
+  id,
+  "aria-describedby": describedBy,
+  detailed,
   value,
   min,
   max,
@@ -290,6 +346,9 @@ function SliderControl({
   onLiveChange,
   onCommit,
 }: {
+  id: string;
+  "aria-describedby"?: string;
+  detailed: boolean;
   value: number;
   min: number;
   max: number;
@@ -301,29 +360,39 @@ function SliderControl({
 }) {
   const [local, setLocal] = useState(value);
   const localRef = useRef(value);
+  const committedRef = useRef(value);
   const [dragging, setDragging] = useState(false);
 
   useEffect(() => {
     if (!dragging) {
       setLocal(value);
       localRef.current = value;
+      committedRef.current = value;
     }
   }, [dragging, value]);
 
   const commit = () => {
     setDragging(false);
-    if (localRef.current !== value) onCommit(localRef.current);
+    if (localRef.current !== committedRef.current) {
+      committedRef.current = localRef.current;
+      onCommit(localRef.current);
+    }
   };
 
   return (
     <input
+      id={id}
+      aria-describedby={describedBy}
       type="range"
       min={min}
       max={max}
       step={step}
       value={local}
       disabled={disabled}
-      onPointerDown={() => setDragging(true)}
+      onPointerDown={(e) => {
+        e.currentTarget.setPointerCapture?.(e.pointerId);
+        setDragging(true);
+      }}
       onChange={(e) => {
         const next = Number(e.target.value);
         localRef.current = next;
@@ -331,51 +400,83 @@ function SliderControl({
         onLiveChange(next);
       }}
       onPointerUp={commit}
+      onPointerCancel={commit}
       onBlur={commit}
       onKeyUp={(e) => {
         if (
           e.key === "ArrowLeft" ||
           e.key === "ArrowRight" ||
+          e.key === "ArrowUp" ||
+          e.key === "ArrowDown" ||
+          e.key === "PageUp" ||
+          e.key === "PageDown" ||
           e.key === "Home" ||
           e.key === "End"
         ) {
           commit();
         }
       }}
-      className="w-[110px] h-1 appearance-none bg-border rounded-sm outline-none cursor-pointer accent-brand disabled:opacity-40 disabled:cursor-not-allowed"
+      className={cn(
+        "h-5 min-w-0 cursor-pointer accent-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40",
+        detailed ? "w-full flex-1" : "w-[110px]",
+      )}
     />
   );
 }
 
-/** text 控件本地暂存,blur 时 trim 后提交(沿用 SettingsPage cssImageFilter 既有交互)。 */
 function TextControl({
+  id,
+  "aria-describedby": describedBy,
   value,
   maxLength,
   placeholder,
   disabled,
+  detailed,
   onCommit,
 }: {
+  id: string;
+  "aria-describedby"?: string;
   value: string;
   maxLength: number;
   placeholder?: string;
   disabled: boolean;
+  detailed: boolean;
   onCommit: (value: string) => void;
 }) {
   const [local, setLocal] = useState(value);
+  const committedRef = useRef(value);
   useEffect(() => {
     setLocal(value);
+    committedRef.current = value;
   }, [value]);
-
+  const commit = () => {
+    const next = local.trim();
+    setLocal(next);
+    if (next !== committedRef.current) {
+      committedRef.current = next;
+      onCommit(next);
+    }
+  };
   return (
     <input
+      id={id}
+      aria-describedby={describedBy}
       value={local}
       disabled={disabled}
+      maxLength={maxLength}
       onChange={(e) => setLocal(e.target.value.slice(0, maxLength))}
-      onBlur={() => {
-        if (local !== value) onCommit(local.trim());
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+          e.preventDefault();
+          commit();
+        }
       }}
       placeholder={placeholder}
-      className="appearance-none box-border w-full max-w-[180px] px-2 py-1.5 border border-border rounded-[var(--radius-sm)] bg-card text-foreground text-xs outline-none transition-[border-color,box-shadow] duration-150 focus:border-brand focus:shadow-[0_0_0_2px_var(--sc-brand-soft)] disabled:opacity-50 disabled:cursor-not-allowed"
+      className={cn(
+        "box-border w-full rounded-md border border-border bg-card px-2 py-2 text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50",
+        detailed ? "text-sm" : "max-w-[180px] text-xs",
+      )}
     />
   );
 }

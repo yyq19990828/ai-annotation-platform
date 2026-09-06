@@ -1,6 +1,5 @@
-// v0.16.x 第 2 批 · 从 ThreeDWorkbench 抽出的选中框 PSR 面板 UI hook:
-// 渐进展开 + 整体拖动,展开态与位置偏移按用户记忆(localStorage)。
-// 自包含(不碰 Three.js scene),仅依赖 userId;逐字搬运,行为零变化。
+// 选中标注 PSR 面板 UI hook：渐进展开 + 整体拖动。
+// 独立浮层记忆本地偏移；提供共享锚点时，拖动改为更新锚点位置。
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import {
@@ -8,11 +7,26 @@ import {
   writePsrPanelUiState,
   type PsrPanelUiState,
 } from "./pointcloudPreferenceStorage";
+import type { FloatingPanelPoint } from "../../shell/useDragMove";
 
-export function usePsrFloatingPanel(userId: string | null) {
+interface LinkedPsrPanelAnchor {
+  position: FloatingPanelPoint;
+  onPositionChange: (position: FloatingPanelPoint) => void;
+}
+
+type PsrDragState =
+  | { mode: "panel"; sx: number; sy: number; dx0: number; dy0: number }
+  | { mode: "linked"; sx: number; sy: number; x0: number; y0: number };
+
+export function usePsrFloatingPanel(
+  userId: string | null,
+  linkedAnchor: LinkedPsrPanelAnchor | null = null,
+) {
   const [psrPanel, setPsrPanel] = useState<PsrPanelUiState>({ expanded: false, dx: 0, dy: 0 });
   const psrPanelRef = useRef(psrPanel);
   psrPanelRef.current = psrPanel;
+  const linkedAnchorRef = useRef(linkedAnchor);
+  linkedAnchorRef.current = linkedAnchor;
   useEffect(() => {
     if (!userId || typeof window === "undefined") return;
     setPsrPanel(readPsrPanelUiState(userId, window.localStorage));
@@ -31,18 +45,28 @@ export function usePsrFloatingPanel(userId: string | null) {
       return next;
     });
   }, [persistPsrPanel]);
-  const psrDragRef = useRef<{ sx: number; sy: number; dx0: number; dy0: number } | null>(null);
+  const psrDragRef = useRef<PsrDragState | null>(null);
   const [psrDragging, setPsrDragging] = useState(false);
   const onPsrHeaderPointerDown = useCallback((e: ReactPointerEvent) => {
     if (e.button !== 0) return;
     // 拖柄落在交互控件(类别下拉 / 锁 / 删 / 展开钮)上时不起拖,保持可点。
     if ((e.target as HTMLElement).closest("button, select, input, a")) return;
-    psrDragRef.current = {
-      sx: e.clientX,
-      sy: e.clientY,
-      dx0: psrPanelRef.current.dx,
-      dy0: psrPanelRef.current.dy,
-    };
+    const anchor = linkedAnchorRef.current;
+    psrDragRef.current = anchor
+      ? {
+          mode: "linked",
+          sx: e.clientX,
+          sy: e.clientY,
+          x0: anchor.position.x,
+          y0: anchor.position.y,
+        }
+      : {
+          mode: "panel",
+          sx: e.clientX,
+          sy: e.clientY,
+          dx0: psrPanelRef.current.dx,
+          dy0: psrPanelRef.current.dy,
+        };
     setPsrDragging(true);
   }, []);
   useEffect(() => {
@@ -50,12 +74,24 @@ export function usePsrFloatingPanel(userId: string | null) {
     const onMove = (e: PointerEvent) => {
       const d = psrDragRef.current;
       if (!d) return;
-      setPsrPanel((p) => ({ ...p, dx: d.dx0 + e.clientX - d.sx, dy: d.dy0 + e.clientY - d.sy }));
+      if (d.mode === "linked") {
+        linkedAnchorRef.current?.onPositionChange({
+          x: d.x0 + e.clientX - d.sx,
+          y: d.y0 + e.clientY - d.sy,
+        });
+        return;
+      }
+      setPsrPanel((p) => ({
+        ...p,
+        dx: d.dx0 + e.clientX - d.sx,
+        dy: d.dy0 + e.clientY - d.sy,
+      }));
     };
     const onUp = () => {
+      const d = psrDragRef.current;
       psrDragRef.current = null;
       setPsrDragging(false);
-      persistPsrPanel(psrPanelRef.current);
+      if (d?.mode === "panel") persistPsrPanel(psrPanelRef.current);
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp, { once: true });

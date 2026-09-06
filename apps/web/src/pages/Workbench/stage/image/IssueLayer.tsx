@@ -19,7 +19,7 @@
 import { Circle, Layer, Rect, Text } from "react-konva";
 import type Konva from "konva";
 
-import type { AnnotationFeedback } from "@/api/feedbacks";
+import { hasPixelAnchor, type AnnotationFeedback } from "@/api/feedbacks";
 
 interface Props {
   /** 仅 kind=issue + anchor_type=pixel + 含 anchor_position 的 feedback 行. */
@@ -63,7 +63,7 @@ export function IssueLayer({
   return (
     <Layer name="issue-pins" listening={true}>
       {pixelIssues.map((issue) => {
-        if (!issue.anchor_position) return null;
+        if (!hasPixelAnchor(issue)) return null;
         const x = issue.anchor_position.x * imgW;
         const y = issue.anchor_position.y * imgH;
         const color = STATUS_COLOR[issue.status] ?? STATUS_COLOR.open;
@@ -91,7 +91,7 @@ export function IssueLayer({
       })}
       {/* pin 文字标签 (i) — 单独 map 避免 onClick 命中 Text 被 Circle 截获 */}
       {pixelIssues.map((issue) => {
-        if (!issue.anchor_position) return null;
+        if (!hasPixelAnchor(issue)) return null;
         const x = issue.anchor_position.x * imgW;
         const y = issue.anchor_position.y * imgH;
         return (

@@ -2,6 +2,7 @@
 // 图钉创建/拖放 UI 状态、与 DiscussionPanel issues tab 的聚焦联动 effect。
 // 行为零变化:state / query / effect 逐字搬运,主 hook 同名解构,消费点不变。
 import { useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import { hasPixelAnchor } from "@/api/feedbacks";
 import { useFeedbacks } from "@/hooks/useFeedbacks";
 import { useActiveIssueStore } from "./useActiveIssueStore";
 import type { Viewport } from "./useViewportTransform";
@@ -52,7 +53,8 @@ export function useIssuePins(params: {
     }
     const { imgW, imgH, vpSize } = stageGeom;
     if (!imgW || !imgH || !vpSize.w || !vpSize.h) return;
-    setVp((cur) => resolvePinViewport(cur, target.anchor_position!, imgW, imgH, vpSize));
+    if (!hasPixelAnchor(target)) return;
+    setVp((cur) => resolvePinViewport(cur, target.anchor_position, imgW, imgH, vpSize));
   }, [
     issueFocusTick,
     activeIssueHighlightId,

@@ -7,7 +7,7 @@
 <p><strong>A production-grade labeling control plane for image, video, point-cloud, and AI-assisted dataset operations.</strong></p>
 
 <a href="https://github.com/yyq19990828/ai-annotation-platform/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/yyq19990828/ai-annotation-platform/actions/workflows/ci.yml/badge.svg?branch=main"></a>
-<a href="https://github.com/yyq19990828/ai-annotation-platform/actions/workflows/docs.yml"><img alt="Docs" src="https://github.com/yyq19990828/ai-annotation-platform/actions/workflows/docs.yml/badge.svg?branch=main"></a>
+<a href="https://github.com/yyq19990828/ai-annotation-platform/actions/workflows/docs-deploy.yml"><img alt="Docs" src="https://github.com/yyq19990828/ai-annotation-platform/actions/workflows/docs-deploy.yml/badge.svg?branch=main"></a>
 <img alt="React" src="https://img.shields.io/badge/React-18-61dafb?style=flat-square">
 <img alt="FastAPI" src="https://img.shields.io/badge/FastAPI-0.115+-009688?style=flat-square">
 <img alt="Python" src="https://img.shields.io/badge/Python-3.11+-3776ab?style=flat-square">
@@ -89,7 +89,7 @@ AI Annotation Platform 把项目管理、Data Manager、多模态标注工作台
     </td>
     <td width="33%" valign="top">
       <strong>Review & Data Delivery</strong><br>
-      Data Manager 任务 / 对象 / 轨迹视图、审核反馈，以及 COCO、YOLO、DAVIS、MOT、KITTI、nuScenes、Point Mask 等导出。
+      Data Manager 任务 / 对象 / 轨迹视图、审核反馈，以及 COCO、YOLO、DAVIS、MOT、KITTI、Multi-camera COCO、Point Mask 等导出。
     </td>
   </tr>
 </table>

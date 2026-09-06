@@ -3,8 +3,8 @@
  *
  * 输出：outputs/flows/pointcloud-controls.gif → docs-site/.../workbench/pointcloud-controls-bar.gif
  *
- * 数据来自 screenshots seed 的 pointcloud_demo（真实 RGB-D 室内扫描）。这些控件不在画面浮条上，
- * 而在「工作台设置」抽屉的「点云」分类里(toggle/slider)。
+ * 数据来自 screenshots seed 的 pointcloud_demo（nuScenes mini 自动驾驶场景）。这些控件不在画面浮条上，
+ * 而在「工作台设置」窗口的「画布与视角」分类里(toggle/slider)。
  * 本 flow 纯切设置不落标注；账号级偏好 PATCH 由 flows.spec 的录制沙箱在内存中响应，不写回服务端。
  *
  * 点云 PCD 由前端按需加载并经 WebGL(headless 走 SwiftShader)渲染, 故进入后多等一段让点云就绪。
@@ -30,16 +30,17 @@ export async function runPointcloudControls(
 
   const drawStartMs = Date.now();
 
-  // ── 打开工作台设置抽屉(Topbar 齿轮; 抽屉为右侧栏, 左侧 3D 视口仍可见)──
+  // ── 打开工作台设置窗口(Topbar 齿轮; 居中设置窗口)──
   await page.getByRole("button", { name: "工作台设置" }).first().click();
-  await page.getByTestId("workbench-settings-drawer").waitFor({ timeout: 5000 });
+  await page.getByTestId("workbench-settings-dialog").waitFor({ timeout: 5000 });
+  await page.getByRole("tab", { name: "画布与视角", exact: true }).click();
   await page.waitForTimeout(800);
 
-  // ── 相机上色 ON：点云从高度色 → 采样相机 RGB(左侧视口实时变色)──
-  // 点字段 <label> 本身切换(内嵌 checkbox 视觉隐藏不可直接点; 原生 label 行为转发到它)。
+  // ── 相机上色 ON：点云从高度色 → 采样相机 RGB，关闭窗口后检查效果──
+  // 使用可访问开关直接切换。
   const colorize = page.getByTestId("setting-field-pointcloud.colorizeWithCamera");
   await colorize.scrollIntoViewIfNeeded();
-  await colorize.click();
+  await colorize.getByRole("switch").click();
   await page.waitForTimeout(1600);
 
   // ── 点大小调大：拖滑块(键盘步进)放大点径, 点云更饱满 ──
@@ -55,10 +56,10 @@ export async function runPointcloudControls(
   // ── 深度提示 ON：相机视图叠加深度热力 ──
   const depth = page.getByTestId("setting-field-pointcloud.showDepthHint");
   await depth.scrollIntoViewIfNeeded();
-  await depth.click();
+  await depth.getByRole("switch").click();
   await page.waitForTimeout(1400);
 
-  // ── 关抽屉, 露出完整重着色 + 放大后的点云, 停留展示 ──
+  // ── 关闭设置窗口, 露出完整重着色 + 放大后的点云, 停留展示 ──
   await page.keyboard.press("Escape");
   await page.waitForTimeout(4200);
 

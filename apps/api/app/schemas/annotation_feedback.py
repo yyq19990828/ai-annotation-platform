@@ -9,7 +9,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 FeedbackKind = Literal["issue", "comment", "reject", "bug"]
-FeedbackAnchorType = Literal["project", "task", "annotation", "pixel"]
+FeedbackAnchorType = Literal["project", "task", "annotation", "pixel", "point_cloud"]
 FeedbackStatus = Literal["open", "resolved", "wont_fix"]
 FeedbackSeverity = Literal["info", "warn", "blocker"]
 
@@ -46,19 +46,25 @@ class MaskFeedbackCompareLocator(BaseModel):
 
 
 class FeedbackAnchorPosition(BaseModel):
-    """pixel anchor 携带的坐标 (相对 0-1 与 geometry 同语义); frame 视频时可选."""
+    """Pixel or 3D quality anchor position and durable locator."""
 
-    x: float = Field(ge=0, le=1)
-    y: float = Field(ge=0, le=1)
+    x: float | None = Field(default=None, ge=0, le=1)
+    y: float | None = Field(default=None, ge=0, le=1)
     frame: int | None = Field(default=None, ge=0)
     region_bbox: tuple[float, float, float, float] | None = None
     region_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     boundary_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     mask_qc_issue_id: UUID | None = None
+    point_cloud_quality_issue_id: UUID | None = None
+    scene_id: UUID | None = None
+    scene_track_id: UUID | None = None
+    auxiliary_layers: list[str] = Field(default_factory=list, max_length=20)
     compare_locator: MaskFeedbackCompareLocator | None = None
 
     @model_validator(mode="after")
     def _validate_region_anchor(self):
+        if (self.x is None) != (self.y is None):
+            raise ValueError("x and y must be provided together")
         if self.region_bbox is not None:
             x0, y0, x1, y1 = self.region_bbox
             if not (0 <= x0 < x1 <= 1 and 0 <= y0 < y1 <= 1):
@@ -69,6 +75,13 @@ class FeedbackAnchorPosition(BaseModel):
             raise ValueError("boundary_digest requires region_digest")
         if self.compare_locator is not None and self.mask_qc_issue_id is None:
             raise ValueError("compare_locator requires mask_qc_issue_id")
+        if self.mask_qc_issue_id is not None and (self.x is None or self.y is None):
+            raise ValueError("mask_qc_issue_id requires x and y")
+        if self.point_cloud_quality_issue_id is not None:
+            if self.mask_qc_issue_id is not None:
+                raise ValueError("quality anchors cannot mix 2D and 3D issues")
+            if self.scene_id is None or self.frame is None:
+                raise ValueError("point cloud quality anchor requires scene and frame")
         return self
 
 
@@ -110,6 +123,17 @@ class AnnotationFeedbackCreate(BaseModel):
         elif self.anchor_type == "pixel":
             if not (self.task_id and self.anchor_position):
                 raise ValueError("pixel anchor requires task_id and anchor_position")
+            if self.anchor_position.x is None or self.anchor_position.y is None:
+                raise ValueError("pixel anchor requires x and y")
+        elif self.anchor_type == "point_cloud":
+            if not (self.task_id and self.anchor_position):
+                raise ValueError(
+                    "point_cloud anchor requires task_id and anchor_position"
+                )
+            if self.anchor_position.point_cloud_quality_issue_id is None:
+                raise ValueError(
+                    "point_cloud anchor requires point_cloud_quality_issue_id"
+                )
         return self
 
 

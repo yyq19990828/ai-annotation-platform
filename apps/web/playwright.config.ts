@@ -5,9 +5,20 @@ import { fileURLToPath } from "node:url";
 const rasterMaskMatrix = process.env.PLAYWRIGHT_RASTER_MASK_MATRIX;
 const rasterMaskCreateEnabled = rasterMaskMatrix === "native";
 const chromiumChannel = process.env.PLAYWRIGHT_CHROMIUM_CHANNEL;
+const pointcloudWebGpuQualification = process.env.PLAYWRIGHT_POINTCLOUD_WEBGPU === "1";
 const configDir = dirname(fileURLToPath(import.meta.url));
 const isCI = Boolean(process.env.CI);
 const useIsolatedServers = !isCI || Boolean(rasterMaskMatrix);
+// SSH ForwardX11 会注入 localhost DISPLAY；无头 SwANGLE 会因此误走 XCB，导致 WebGL2 初始化失败。
+// 只隔离转发型 DISPLAY，保留本机 :0 / :1，避免破坏显式 --headed 调试。
+const forwardedX11Display = /^localhost:\d+(?:\.\d+)?$/.test(process.env.DISPLAY ?? "");
+const pointcloudBrowserEnv = forwardedX11Display
+  ? Object.fromEntries(
+      Object.entries(process.env).filter(
+        (entry): entry is [string, string] => entry[0] !== "DISPLAY" && entry[1] !== undefined,
+      ),
+    )
+  : undefined;
 
 if (useIsolatedServers) {
   // 固定隔离端口，避免继承 shell/CI job 中指向开发服务的旧变量。
@@ -77,12 +88,23 @@ export default defineConfig({
         ...devices["Desktop Chrome"],
         ...(chromiumChannel ? { channel: chromiumChannel } : {}),
         launchOptions: {
-          args: [
-            "--use-gl=angle",
-            "--use-angle=swiftshader",
-            "--enable-unsafe-swiftshader",
-            "--ignore-gpu-blocklist",
-          ],
+          ...(pointcloudBrowserEnv ? { env: pointcloudBrowserEnv } : {}),
+          args: pointcloudWebGpuQualification
+            ? process.platform === "darwin"
+              ? []
+              : [
+                  "--enable-unsafe-webgpu",
+                  "--enable-features=Vulkan",
+                  "--use-angle=vulkan",
+                  "--disable-vulkan-surface",
+                  "--ignore-gpu-blocklist",
+                ]
+            : [
+                "--use-gl=angle",
+                "--use-angle=swiftshader",
+                "--enable-unsafe-swiftshader",
+                "--ignore-gpu-blocklist",
+              ],
         },
       },
     },

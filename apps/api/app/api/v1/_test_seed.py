@@ -16,7 +16,10 @@ E2E（Playwright）通过 `POST /api/v1/__test/seed/reset` 在每个 spec 前重
 from __future__ import annotations
 
 import asyncio
+import os
 import secrets
+import struct
+from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -534,31 +537,19 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
 
 
 class SeedLidar(BaseModel):
-    """v0.16.x · 点云 E2E 基线 fixture（拆 3D 整簇前的 Playwright 守护网用)。
+    """点云 E2E fixture。
 
-    造 1 个 lidar 项目 + 2 帧(同一 .pcd)point_cloud task，每帧关联两张带标定的
-    camera_front / camera_side 图。覆盖点云冒烟、PSR / gizmo / 点掩膜和相机投影编辑。
+    造 1 个 lidar 项目 + 2 帧 point_cloud task；点云优先来自 nuScenes mini，
+    每帧关联两张确定性标定相机图，覆盖冒烟、PSR / gizmo / 点掩膜和相机投影编辑。
     """
 
     lidar_project_id: str
     lidar_task_ids: list[str]
+    lidar_fixture_source: Literal["nuscenes_mini", "nuscenes_profile"]
+    lidar_point_count: int
 
 
-def _make_test_pcd_bytes(n_side: int = 8) -> bytes:
-    """生成一个 n_side³ 的小立方体点阵 ASCII PCD(512 点,够 PCDLoader 加载 + 渲染)。"""
-    pts: list[tuple[float, float, float]] = []
-    span = max(n_side - 1, 1)
-    for i in range(n_side):
-        for j in range(n_side):
-            for k in range(n_side):
-                pts.append(
-                    (
-                        -2.0 + 4.0 * i / span,
-                        -2.0 + 4.0 * j / span,
-                        4.0 * k / span,
-                    )
-                )
-    n = len(pts)
+def _binary_pcd_bytes(points: bytes, count: int) -> bytes:
     header = (
         "# .PCD v0.7 - Point Cloud Data file format\n"
         "VERSION 0.7\n"
@@ -566,14 +557,87 @@ def _make_test_pcd_bytes(n_side: int = 8) -> bytes:
         "SIZE 4 4 4\n"
         "TYPE F F F\n"
         "COUNT 1 1 1\n"
-        f"WIDTH {n}\n"
+        f"WIDTH {count}\n"
         "HEIGHT 1\n"
         "VIEWPOINT 0 0 0 1 0 0 0\n"
-        f"POINTS {n}\n"
-        "DATA ascii\n"
+        f"POINTS {count}\n"
+        "DATA binary\n"
     )
-    body = "".join(f"{x:.4f} {y:.4f} {z:.4f}\n" for x, y, z in pts)
-    return (header + body).encode("utf-8")
+    return header.encode("ascii") + points
+
+
+def _nuscenes_lidar_to_pcd(bin_path: Path) -> tuple[bytes, int]:
+    """nuScenes LIDAR_TOP 的 5×float32 点转为前端消费的 binary PCD xyz。"""
+    raw = bin_path.read_bytes()
+    point_stride = 5 * 4
+    if not raw or len(raw) % point_stride:
+        raise ValueError(f"invalid nuScenes lidar frame: {bin_path}")
+    count = len(raw) // point_stride
+    xyz = bytearray(count * 12)
+    for index in range(count):
+        x, y, z = struct.unpack_from("<fff", raw, index * point_stride)
+        struct.pack_into("<fff", xyz, index * 12, x, y, z)
+    return _binary_pcd_bytes(bytes(xyz), count), count
+
+
+def _make_nuscenes_profile_pcd_bytes() -> tuple[bytes, int]:
+    """无外部数据时生成 32 线、34,752 点的确定性 CI 兜底，并保留框内目标点。"""
+    import math
+
+    count = 32 * 1086
+    target_points = 4096
+    xyz = bytearray(count * 12)
+    for index in range(count):
+        if index < target_points:
+            face = index % 6
+            u = ((index // 6) % 32) / 31
+            v = ((index // (6 * 32)) % 22) / 21
+            x, y, z = -1 + 4 * u, -1 + 2 * v, 0.25 + 1.5 * v
+            if face == 0:
+                x = -1
+            elif face == 1:
+                x = 3
+            elif face == 2:
+                y = -1
+            elif face == 3:
+                y = 1
+            elif face == 4:
+                z = 0.25
+            else:
+                z = 1.75
+        else:
+            scan_index = index - target_points
+            ring = scan_index % 32
+            azimuth = (scan_index // 32) * (2 * math.pi / 959)
+            elevation = math.radians(-30.67 + ring * (41.34 / 31))
+            radius = 8 + ((scan_index * 37) % 5200) / 100
+            planar = radius * math.cos(elevation)
+            x = planar * math.cos(azimuth)
+            y = planar * math.sin(azimuth)
+            z = 1.8 + radius * math.sin(elevation)
+        struct.pack_into("<fff", xyz, index * 12, x, y, z)
+    return _binary_pcd_bytes(bytes(xyz), count), count
+
+
+def _make_test_pcd_frames() -> tuple[
+    list[bytes], Literal["nuscenes_mini", "nuscenes_profile"], int
+]:
+    """优先取 seed 脚本下载的两个真实 nuScenes mini 帧，CI 无数据时兜底。"""
+    xdg_cache = os.environ.get("XDG_CACHE_HOME")
+    cache_base = Path(xdg_cache).expanduser() if xdg_cache else Path.home() / ".cache"
+    lidar_frames = sorted(
+        (
+            cache_base
+            / "ai-annotation-platform/nuscenes-mini/content/samples/LIDAR_TOP"
+        ).glob("*.pcd.bin")
+    )
+    if lidar_frames:
+        converted = [_nuscenes_lidar_to_pcd(path) for path in lidar_frames[:2]]
+        if len(converted) == 1:
+            converted.append(converted[0])
+        return [payload for payload, _ in converted], "nuscenes_mini", converted[0][1]
+    payload, count = _make_nuscenes_profile_pcd_bytes()
+    return [payload, payload], "nuscenes_profile", count
 
 
 @router.post(
@@ -587,7 +651,7 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
     from sqlalchemy import select
 
     from app.db.models.annotation import Annotation
-    from app.db.models.dataset import Dataset, DatasetItem
+    from app.db.models.dataset import Dataset, DatasetItem, Scene
     from app.db.models.project import Project
     from app.db.models.project_member import ProjectMember
     from app.db.models.task import Task
@@ -653,16 +717,22 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
         await _try_delete(
             "DELETE FROM projects WHERE id = ANY(:pids)", {"pids": old_pids}
         )
+    # Dataset 不归属于 Project，不能依赖删项目级联；清掉上次 seed 遗留的 items/scene。
+    await _try_delete("DELETE FROM datasets WHERE display_id LIKE 'DS-E2E-LDR-%'")
     await db.flush()
 
-    # 上传测试点云到 datasets_bucket(presign GET 才能 200,前端 loadPcd 才成功)。
+    # 上传两个独立帧到 datasets_bucket(presign GET 才能 200,前端 loadPcd 才成功)。
     suffix = secrets.token_hex(3)
-    pcd_key = f"e2e/lidar/{suffix}.pcd"
-    storage_service.client.put_object(
-        Bucket=storage_service.datasets_bucket,
-        Key=pcd_key,
-        Body=_make_test_pcd_bytes(),
-    )
+    pcd_frames, pcd_source, pcd_point_count = _make_test_pcd_frames()
+    pcd_keys = []
+    for idx, pcd_bytes in enumerate(pcd_frames):
+        pcd_key = f"e2e/lidar/{suffix}-{idx}.pcd"
+        storage_service.client.put_object(
+            Bucket=storage_service.datasets_bucket,
+            Key=pcd_key,
+            Body=pcd_bytes,
+        )
+        pcd_keys.append(pcd_key)
     camera_key = f"e2e/lidar/{suffix}-camera-front.svg"
     camera_svg = (
         '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480" '
@@ -683,7 +753,10 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
     # 校验 PATCH);coalesce 会误落 bbox unit,故此处显式构造。
     tool_bindings = {
         "lidar_box_3d": {
-            "classes": [{"name": "car", "order": 0}],
+            "classes": [
+                {"name": "car", "order": 0},
+                {"name": "pedestrian", "order": 1},
+            ],
             "enabled": True,
             "attribute_schema": {"fields": []},
         },
@@ -739,6 +812,17 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
     db.add(dataset)
     await db.flush()
 
+    scene = Scene(
+        display_id=f"SCN-E2E-{suffix}",
+        dataset_id=dataset.id,
+        name="nuScenes mini scene-0061",
+        source_format="nuscenes",
+        source_metadata={"fixture_source": pcd_source},
+        created_by=admin.id,
+    )
+    db.add(scene)
+    await db.flush()
+
     calibration = {
         "extrinsic": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
         "intrinsic": [100, 0, 320, 0, 100, 240, 0, 0, 1],
@@ -748,8 +832,10 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
         lidar_item = DatasetItem(
             dataset_id=dataset.id,
             file_name=f"e2e-lidar-{suffix}-{idx}.pcd",
-            file_path=pcd_key,
+            file_path=pcd_keys[idx],
             file_type="point_cloud",
+            scene_id=scene.id,
+            frame_index=idx,
         )
         camera_item = DatasetItem(
             dataset_id=dataset.id,
@@ -759,6 +845,8 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
             width=640,
             height=480,
             metadata_={"calibration": calibration},
+            scene_id=scene.id,
+            frame_index=idx,
         )
         camera_side_item = DatasetItem(
             dataset_id=dataset.id,
@@ -768,6 +856,8 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
             width=640,
             height=480,
             metadata_={"calibration": calibration},
+            scene_id=scene.id,
+            frame_index=idx,
         )
         db.add_all([lidar_item, camera_item, camera_side_item])
         await db.flush()
@@ -776,9 +866,10 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
             display_id=f"T-E2E-LIDAR-{suffix}-{idx}",
             project_id=project.id,
             dataset_item_id=lidar_item.id,
+            sequence_order=idx,
             status="pending",
             file_name=f"e2e-lidar-{suffix}-{idx}.pcd",
-            file_path=pcd_key,
+            file_path=pcd_keys[idx],
             file_type="point_cloud",
             batch_id=batch.id,
         )
@@ -798,6 +889,18 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
 
     # 每帧注入 1 个 box_3d 标注(落在点阵范围内),供 P2 选中 / 改 PSR / gizmo 断言。
     # 几何 = ISO 8855 系;center/size 单位 m,rotation 单位 rad(roll,pitch,yaw)。
+    from app.services.scene_track_domain import ensure_scene_track
+
+    scene_track = await ensure_scene_track(
+        db,
+        project_id=project.id,
+        scene_id=scene.id,
+        track_id="trk_e2e_lidar_car",
+        class_name="car",
+        frames=set(range(len(tasks))),
+        actor_id=annotator.id,
+        interval_source="imported",
+    )
     for t in tasks:
         db.add(
             Annotation(
@@ -808,6 +911,9 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
                 annotation_type="box_3d",
                 tool_unit_id="lidar_box_3d",
                 class_name="car",
+                track_id="trk_e2e_lidar_car",
+                scene_track_id=scene_track.id,
+                temporal_role="sample",
                 geometry={
                     "type": "box_3d",
                     "center": [1.0, 0.0, 1.0],
@@ -823,6 +929,8 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
     return SeedLidar(
         lidar_project_id=str(project.id),
         lidar_task_ids=[str(t.id) for t in tasks],
+        lidar_fixture_source=pcd_source,
+        lidar_point_count=pcd_point_count,
     )
 
 

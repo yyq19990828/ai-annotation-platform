@@ -355,19 +355,14 @@ async def test_catalog_returns_explicit_stable_logical_resources(
     assert anchor["negative_point"] is None
     assert anchor["provenance"] == "verified-label-derived"
     pointcloud = body["projects"]["pointcloud_demo"]
-    assert pointcloud["tasks"].keys() == {
-        "frame_000",
-        "frame_001",
-        "frame_002",
-        "frame_003",
-    }
+    assert pointcloud["tasks"].keys() == {f"frame_{index:03d}" for index in range(39)}
     pointcloud_anchor = pointcloud["tasks"]["frame_000"]["recording_anchors"][
         "foreground_object"
     ]
     assert pointcloud_anchor["label"] == "object"
-    assert pointcloud_anchor["bbox"] == [0.472, 0.566, 0.704, 0.982]
-    assert pointcloud_anchor["point"] == [0.588, 0.774]
-    assert pointcloud_anchor["provenance"] == "reviewed-depth-frame-derived"
+    assert pointcloud_anchor["bbox"] == [0.045, 0.245, 0.326, 0.758]
+    assert pointcloud_anchor["point"] == [0.185, 0.5]
+    assert pointcloud_anchor["provenance"] == "reviewed-nuscenes-front-camera"
     assert body["projects"]["pointcloud_multicam_demo"]["display_id"] == ("P-PC-MULTI")
     assert body["projects"]["pointcloud_multicam_demo"]["tasks"].keys() == {"frame_000"}
     assert body["projects"]["video_demo"]["ml_backend"]["name"] == "screenshot-video"
@@ -378,6 +373,47 @@ async def test_catalog_returns_explicit_stable_logical_resources(
     assert video_anchor["bbox"] == [0.492, 0.455, 0.722, 0.825]
     assert video_anchor["negative_point"] == [0.755, 0.755]
     assert "large_image_demo" not in body["projects"]
+
+
+async def test_nuscenes_uuid_storage_reconciles_and_resolves(db_session):
+    from app.services.screenshot_seed_catalog import build_screenshot_seed_catalog
+    from app.services.screenshot_seed_spec import resolve_project_spec
+    from app.services.storage import TRUSTED_NUSCENES_PREFIX
+
+    _, tasks = await _ready_profile(db_session)
+    dataset = await db_session.scalar(
+        select(Dataset).where(Dataset.display_id == "DS-PC-DEV")
+    )
+    root = f"{TRUSTED_NUSCENES_PREFIX}-{dataset.id.hex}"
+    spec = PROJECT_SPECS["pointcloud_demo"]
+    assert resolve_project_spec(spec, dataset.id, dataset.metadata_) is spec
+    with pytest.raises(ValueError, match="dataset UUID"):
+        resolve_project_spec(spec, uuid.uuid4(), {"source": {"storage_root": root}})
+    dataset.metadata_ = {
+        **dataset.metadata_,
+        "source": {"storage_root": root, "storage_layout": "uuid_v1"},
+    }
+    items = (
+        await db_session.scalars(
+            select(DatasetItem).where(DatasetItem.dataset_id == dataset.id)
+        )
+    ).all()
+    for item in items:
+        item.file_path = item.file_path.replace("nuscenes-mini/", f"{root}/", 1)
+        item.content_hash = hashlib.sha256(item.file_path.encode()).hexdigest()
+    for task in tasks["pointcloud_demo"].values():
+        task.file_path = task.file_path.replace("nuscenes-mini/", f"{root}/", 1)
+    await db_session.flush()
+    await reconcile_screenshot_seed(
+        db_session,
+        preparation=ScreenshotSeedPreparation(adopt_keys=frozenset()),
+        asset_sha256={key: "a" * 64 for key in PROJECT_SPECS},
+    )
+    catalog = await build_screenshot_seed_catalog(db_session)
+    assert len(catalog["projects"]["pointcloud_demo"]["tasks"]) == 39
+    assert catalog["projects"]["pointcloud_demo"]["tasks"]["frame_000"][
+        "file_path"
+    ].startswith(f"{root}/")
 
 
 async def test_catalog_ignores_soft_deleted_annotations(httpx_client, db_session):
@@ -628,7 +664,7 @@ async def test_desired_state_reconcile_is_idempotent_and_preserves_user_project(
         asset_sha256=digests,
     )
 
-    assert first == second == {"projects": 5, "tasks": 15, "batches": 5}
+    assert first == second == {"projects": 5, "tasks": 50, "batches": 5}
     assert {
         logical_key: {key: task.id for key, task in project_tasks.items()}
         for logical_key, project_tasks in tasks.items()

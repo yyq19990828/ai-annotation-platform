@@ -20,7 +20,6 @@ import {
   Text,
 } from "react-konva";
 import type Konva from "konva";
-import useImage from "use-image";
 import type { Annotation, Geometry, RotatedBboxGeometry, Keypoint, KeypointSchema } from "@/types";
 import { ContextMenu } from "@/components/ui/ContextMenu";
 import type { PendingDrawing, Tool } from "../state/useWorkbenchState";
@@ -53,6 +52,7 @@ import {
 } from "./polygonGeom";
 import { buildSnapIndex, type SnapMatch } from "./shared/geometry/snap";
 import { BlurhashLayer } from "./BlurhashLayer";
+import { useAbortableImage } from "./useAbortableImage";
 import {
   KonvaBox,
   KonvaPolygon,
@@ -675,7 +675,7 @@ export function ImageStage({
     imageSourceRef.current.url = previewUrl;
   }
   const previewSourceUrl = imageSourceRef.current.url;
-  const [image, imageStatus] = useImage(previewSourceUrl ?? "");
+  const [image, imageStatus] = useAbortableImage(previewSourceUrl ?? "");
   const overviewResourceRef = useRef<RasterResourceReservation | null>(null);
   const [overviewAdmitted, setOverviewAdmitted] = useState(() => !resourceCoordinator);
   const [overviewLifecycleEpoch, setOverviewLifecycleEpoch] = useState(0);

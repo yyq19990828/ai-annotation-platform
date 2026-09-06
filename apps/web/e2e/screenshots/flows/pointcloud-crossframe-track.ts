@@ -107,7 +107,7 @@ export async function runPointcloudCrossframeTrack(
     { timeout: 10_000 },
   );
   await centerX.click();
-  await centerX.fill("2.35");
+  await centerX.fill(String(Number(await centerX.inputValue()) + 0.2));
   await page.getByText("中心 (m)", { exact: true }).click();
   const updated = (await (await updatePromise).json()) as SeedTaskAnnotation;
   if (updated.geometry.type !== "box_3d") {

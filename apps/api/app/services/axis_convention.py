@@ -173,26 +173,6 @@ def unapply_to_psr(psr: PsrDict, convention: LidarAxisConvention) -> PsrDict:
     }
 
 
-def apply_convention_to_extrinsic(
-    extrinsic: list[float], convention: LidarAxisConvention
-) -> list[float]:
-    """Convert a source-lidar→camera extrinsic to accept platform ISO points."""
-
-    r_norm_t = _transpose(R_NORM[convention])
-    out = [float(value) for value in extrinsic]
-    for row in range(3):
-        source_row = (
-            float(extrinsic[row * 4]),
-            float(extrinsic[row * 4 + 1]),
-            float(extrinsic[row * 4 + 2]),
-        )
-        out[row * 4 : row * 4 + 3] = [
-            sum(source_row[i] * r_norm_t[i * 3 + col] for i in range(3))
-            for col in range(3)
-        ]
-    return out
-
-
 def sniff_convention_from_forward(
     fx: float,
     fy: float,

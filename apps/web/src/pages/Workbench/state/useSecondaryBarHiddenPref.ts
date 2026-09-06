@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 
 import { authApi } from "@/api/auth";
+import { useToastStore } from "@/components/ui/Toast";
 import { useAuthStore } from "@/stores/authStore";
 
 /**
@@ -24,7 +25,13 @@ export function useSecondaryBarHiddenPref() {
         ui: { ...prevPrefs.ui, secondary_bar_hidden: next },
       },
     });
-    void authApi.updatePreferences({ ui: { secondary_bar_hidden: next } }).catch(() => {});
+    void authApi.updatePreferences({ ui: { secondary_bar_hidden: next } }).catch(() => {
+      useToastStore.getState().push({
+        kind: "error",
+        msg: "二次推理面板设置未同步",
+        sub: "当前显示状态已保留，再次切换可重试保存。",
+      });
+    });
   }, []);
 
   return { hidden, setHidden };

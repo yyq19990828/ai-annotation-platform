@@ -18,6 +18,7 @@ from app.db.models.annotation_feedback import AnnotationFeedback
 from app.db.models.dataset import (
     Dataset,
     DatasetItem,
+    SensorCalibrationRevision,
     ProjectDataset,
     VideoChunk,
     VideoFrameCache,
@@ -25,6 +26,11 @@ from app.db.models.dataset import (
     VideoSegment,
 )
 from app.db.models.scene_pose import SceneFramePose
+from app.db.models.scene_track import (
+    SceneTrack,
+    SceneTrackInterval,
+    SceneTrackOperation,
+)
 from app.db.models.ml_backend_pool import MLBackendPoolMember, MLBackendServicePool
 from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackendPool
 from app.db.models.gpu_backend_cancel_intent import GPUBackendCancelIntent
@@ -53,6 +59,11 @@ from app.db.models.video_chapter import VideoChapter
 from app.db.models.video_track_quality import (
     VideoTrackQualityIssue,
     VideoTrackQualityRun,
+)
+from app.db.models.point_cloud_quality import (
+    PointCloudQualityEvaluation,
+    PointCloudQualityIssue,
+    PointCloudQualityRun,
 )
 from app.db.models.audit_log import AuditLog
 from app.db.models.user_invitation import UserInvitation
@@ -94,12 +105,16 @@ __all__ = [
     "AnnotationFeedback",
     "Dataset",
     "DatasetItem",
+    "SensorCalibrationRevision",
     "ProjectDataset",
     "VideoChunk",
     "VideoFrameCache",
     "VideoFrameIndex",
     "VideoSegment",
     "SceneFramePose",
+    "SceneTrack",
+    "SceneTrackInterval",
+    "SceneTrackOperation",
     "MLBackendRegistry",
     "MLBackendServicePool",
     "MLBackendPoolMember",
@@ -128,6 +143,9 @@ __all__ = [
     "VideoChapter",
     "VideoTrackQualityIssue",
     "VideoTrackQualityRun",
+    "PointCloudQualityIssue",
+    "PointCloudQualityRun",
+    "PointCloudQualityEvaluation",
     "AuditLog",
     "UserInvitation",
     "BugReport",

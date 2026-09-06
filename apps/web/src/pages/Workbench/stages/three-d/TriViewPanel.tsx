@@ -1,28 +1,28 @@
 /**
  * v0.13.5 · 三正交视图面板 (主 3D 视图右栏)。B-1: 只读渲染基建; B-2: 拖边/角精修。
  *
- * 结构: 一块占满面板的 WebGL canvas (TriViewRenderer, 居底) + 纵向 3 行 (top/side/front),
- * 每行一个 2D overlay (TriOrthoView, 叠其上) + 标题。面板按 3 行的实测像素矩形给 renderer
- * 下发 viewport, 使 WebGL 分屏与 overlay 严丝对齐。未选中框 → 三窗空, 显示占位提示。
+ * 结构:纵向 3 行 (top/side/front),每行一个 2D overlay (TriOrthoView) + 标题。点云底图由
+ * PointCloudScene 的唯一 renderer 直接画进主 canvas 对应区域；本组件只量出 client rect 并下发，
+ * 不创建第二块 canvas/context。
  *
  * 拖拽: 任一视图开拖 → frozen 记下起始姿态, 期间相机冻结 (setCameraRef) 让框在屏上真实
  * 长/移; 拖拽中 onEditPsr(psr,false) 走 draft 实时四方同步, 松手 onEditPsr(psr,true) 落 PATCH。
  *
- * 生命周期: renderer 随面板挂载建一次、卸载 dispose。点 geometry 复用主场景。
+ * 生命周期:挂载时注册三视图布局与状态，卸载时从 PointCloudScene 注销。
  * v0.17.6 · module.css → Tailwind。
  */
-import { useCallback, useEffect, useRef, useState } from "react";
-import type * as THREE from "three";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import { TriViewRenderer, type ViewRectCss } from "./TriViewRenderer";
+import type { PointCloudScene } from "./PointCloudScene";
+import type { PointCloudVisibleRegions } from "./PointCloudTriViewPass";
 import { TriOrthoView, type TriSelected } from "./TriOrthoView";
 import type { TriView, Psr } from "./geometry/triview";
 
 // v0.17.6 · Tailwind class constants (was ThreeDWorkbench.module.css).
-const TRI_PANEL = "relative flex-1 flex flex-col gap-1.5 p-1.5 bg-card min-h-0";
-const TRI_ROW = "relative flex-1 min-h-0 border border-border rounded-sm overflow-hidden";
+const TRI_PANEL = "relative flex-1 flex min-h-0 flex-col gap-0 bg-transparent p-0";
+const TRI_ROW = "relative flex-1 min-h-0 border border-border overflow-hidden";
 const TRI_CAPTION =
-  "absolute top-1 left-1/2 z-local-2 -translate-x-1/2 px-1.5 py-px rounded-sm bg-card border border-border text-xs text-muted-foreground whitespace-nowrap pointer-events-none";
+  "absolute top-1 left-1/2 z-local-2 -translate-x-1/2 px-1.5 py-px rounded-sm bg-card border border-border text-xs text-muted-foreground tabular-nums whitespace-nowrap pointer-events-none";
 const TRI_AXIS_GLYPH =
   "absolute left-1.5 bottom-1 z-local-2 w-[42px] h-[42px] pointer-events-none [filter:drop-shadow(0_0_5px_var(--sc-muted))]";
 const TRI_AXIS_PATH =
@@ -55,16 +55,20 @@ const AXIS_LABEL: Record<"x" | "y" | "z", string> = {
 };
 
 interface TriViewPanelProps {
+  /** 主点云 Scene；三视图只注册 render pass 状态，不拥有 renderer。 */
+  scene: PointCloudScene | null;
   /** 当前选中框 (PSR + 色); null = 无选中。拖拽中由上层下发 draft。 */
   selected: TriSelected | null;
-  /** 取主场景当前点 BufferGeometry (复用同一份)。 */
-  getPointsGeometry: () => THREE.BufferGeometry | null;
-  /** 点云是否已加载完 (主场景 stats 到位); 变化时重绑 geometry。 */
-  pointsReady: boolean;
   /** 是否可编辑 (任务非只读 且 框未锁定); false → 只读, overlay 不画 handle、不收事件。 */
   editable: boolean;
-  /** 点大小 (米): 跟随主视图点大小滑杆。 */
-  pointSize: number;
+  /** 浮窗位置/尺寸变化键；fixed 浮窗移动不会触发 ResizeObserver。 */
+  layoutKey: string | number;
+  getVisibleRegions?: PointCloudVisibleRegions;
+  /** 折叠时注销可见 pass，展开后恢复。 */
+  active?: boolean;
+  /** 当前对象按视图记忆的缩放倍数。 */
+  zoomByView: Record<TriView, number>;
+  onZoomChange: (view: TriView, zoom: number) => void;
   /** 拖拽中 (commit=false, draft) / 松手 (commit=true, PATCH) 回写选中框 PSR。 */
   onEditPsr: (psr: Psr, commit: boolean) => void;
 }
@@ -99,11 +103,14 @@ function TriAxisGlyph({ view }: { view: TriView }) {
 }
 
 export function TriViewPanel({
+  scene,
   selected,
-  getPointsGeometry,
-  pointsReady,
   editable,
-  pointSize,
+  layoutKey,
+  getVisibleRegions,
+  active = true,
+  zoomByView,
+  onZoomChange,
   onEditPsr,
 }: TriViewPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
@@ -112,66 +119,85 @@ export function TriViewPanel({
     side: null,
     front: null,
   });
-  const rendererRef = useRef<TriViewRenderer | null>(null);
   // 拖拽期冻结取景参考 (起始姿态); null = 无拖拽。
   const [frozen, setFrozen] = useState<Psr | null>(null);
 
-  // 量出 3 行相对面板的像素矩形, 下发给 renderer 当 viewport。
+  // 量出 panel / 3 行的 client rect，由 PointCloudScene 相对主 canvas 统一换算 viewport。
   const layout = useCallback(() => {
     const panel = panelRef.current;
-    const r = rendererRef.current;
-    if (!panel || !r) return;
-    r.resize();
+    if (!panel || !scene) return;
     const pr = panel.getBoundingClientRect();
-    const rects: ViewRectCss[] = [];
+    const views = [];
     for (const view of VIEWS) {
       const el = rowRefs.current[view];
       if (!el) continue;
       const b = el.getBoundingClientRect();
-      rects.push({ view, x: b.left - pr.left, y: b.top - pr.top, w: b.width, h: b.height });
+      views.push({
+        view,
+        left: b.left + el.clientLeft,
+        top: b.top + el.clientTop,
+        width: el.clientWidth,
+        height: el.clientHeight,
+      });
     }
-    r.setViewports(rects);
-  }, []);
+    scene.setTriViewLayout({
+      panel: { left: pr.left, top: pr.top, width: pr.width, height: pr.height },
+      views,
+      visibleRegions: active ? getVisibleRegions?.(panel) : [],
+    });
+  }, [active, getVisibleRegions, scene]);
 
-  // 挂载建 renderer, 卸载 dispose; 面板尺寸变化重排。
+  // 挂载注册布局；浮窗 resize 与窗口 resize 重测，卸载恢复主 canvas 旧区域。
   useEffect(() => {
-    if (!panelRef.current) return;
-    const r = new TriViewRenderer(panelRef.current);
-    rendererRef.current = r;
+    const panel = panelRef.current;
+    if (!panel || !scene) return;
+    const ro = new ResizeObserver(layout);
+    ro.observe(panel);
+    window.addEventListener("resize", layout);
     layout();
-    const ro = new ResizeObserver(() => layout());
-    ro.observe(panelRef.current);
     return () => {
       ro.disconnect();
-      r.dispose();
-      rendererRef.current = null;
+      window.removeEventListener("resize", layout);
+      scene.setTriViewLayout(null);
     };
-  }, [layout]);
+  }, [layout, scene]);
 
-  // 点云加载完 (或换帧) 重绑 geometry。
-  useEffect(() => {
-    rendererRef.current?.setGeometry(getPointsGeometry());
-  }, [pointsReady, getPointsGeometry]);
+  // fixed 浮窗拖动只改位置，不触发 ResizeObserver；父层每次位置/尺寸变化后同步重测。
+  useLayoutEffect(() => layout(), [layout, layoutKey]);
 
-  // 点大小跟随主视图滑杆。
   useEffect(() => {
-    rendererRef.current?.setPointSize(pointSize);
-  }, [pointSize]);
+    if (!scene) return;
+    scene.setTriViewActive(active);
+    return () => scene.setTriViewActive(false);
+  }, [active, scene]);
 
-  // 选中框 PSR 变化 (含拖拽 draft): 更新裁剪面/相机, 并重排。
   useEffect(() => {
-    rendererRef.current?.setBox(
+    scene?.setTriViewZoomByView(zoomByView);
+  }, [scene, zoomByView]);
+
+  // 选中框 PSR 变化 (含拖拽 draft): 只更新裁剪面/相机。DOM 布局由上方的
+  // ResizeObserver / layoutKey 负责，避免业务对象引用刷新把 0.5px 测量抖动放大成渲染循环。
+  useEffect(() => {
+    if (!scene) return;
+    scene.setTriViewBox(
       selected
         ? { center: selected.center, size: selected.size, rotation: selected.rotation }
         : null,
     );
-    layout();
-  }, [selected, layout]);
+  }, [scene, selected]);
+
+  // 只在 Scene owner 变化或卸载时清理；selected 引用刷新但 PSR 未变时不能制造一次 null 闪断。
+  useEffect(() => {
+    if (!scene) return;
+    return () => scene.setTriViewBox(null);
+  }, [scene]);
 
   // 拖拽期冻结相机取景 (裁剪面仍随实时 box)。
   useEffect(() => {
-    rendererRef.current?.setCameraRef(frozen);
-  }, [frozen]);
+    if (!scene) return;
+    scene.setTriViewCameraRef(frozen);
+    return () => scene.setTriViewCameraRef(null);
+  }, [frozen, scene]);
 
   const handleDragStart = useCallback((startPsr: Psr) => setFrozen(startPsr), []);
   const handleDragMove = useCallback((psr: Psr) => onEditPsr(psr, false), [onEditPsr]);
@@ -184,7 +210,7 @@ export function TriViewPanel({
   );
 
   return (
-    <div ref={panelRef} className={TRI_PANEL}>
+    <div ref={panelRef} className={TRI_PANEL} data-testid="tri-view-renderer-panel">
       {VIEWS.map((view) => (
         <div
           key={view}
@@ -198,12 +224,16 @@ export function TriViewPanel({
             selected={selected}
             frozen={frozen}
             editable={editable}
+            zoom={zoomByView[view]}
+            onZoomChange={(zoom) => onZoomChange(view, zoom)}
             onDragStart={handleDragStart}
             onDragMove={handleDragMove}
             onDragEnd={handleDragEnd}
           />
           <TriAxisGlyph view={view} />
-          <figcaption className={TRI_CAPTION}>{TRI_LABEL[view]}</figcaption>
+          <figcaption className={TRI_CAPTION}>
+            {TRI_LABEL[view]} · {Math.round(zoomByView[view] * 100)}%
+          </figcaption>
         </div>
       ))}
       {!selected && (

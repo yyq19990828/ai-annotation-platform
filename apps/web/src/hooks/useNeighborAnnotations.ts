@@ -27,7 +27,8 @@ export function useNeighborAnnotations(
   const active = enabled && taskId != null && k > 0;
   const query = useQuery({
     queryKey: ["neighbor-annotations", taskId, k, trackId],
-    queryFn: () => tasksApi.getNeighborAnnotations(taskId as string, k, trackId),
+    queryFn: ({ signal }) =>
+      tasksApi.getNeighborAnnotations(taskId as string, k, trackId, { signal }),
     enabled: active,
     staleTime: 60 * 1000,
   });

@@ -13,6 +13,10 @@ import { useCallback, useMemo } from "react";
 import type { CSSProperties } from "react";
 
 import type { SensorCalibration } from "@/types";
+import { Button } from "@/components/ui/Button";
+import { DropdownMenu } from "@/components/ui/DropdownMenu";
+import { Icon } from "@/components/ui/Icon";
+import { Tooltip } from "@/components/ui/Tooltip";
 
 import type { FloatingPanelBounds, FloatingPanelPoint } from "../../shell/useDragMove";
 import { useDragMove } from "../../shell/useDragMove";
@@ -30,7 +34,7 @@ const CAM_PANEL_BAR = "flex justify-end gap-1 px-1 py-0.5 border-b border-border
 const FLOAT_TOGGLE_BTN =
   "appearance-none px-2 py-0.5 rounded-sm border border-border bg-background text-muted-foreground cursor-pointer text-xs hover:border-brand hover:text-brand";
 const CAM_PANEL_TAB =
-  "appearance-none px-2.5 py-1.5 rounded-md border border-border bg-card shadow-sm text-foreground cursor-pointer text-xs whitespace-nowrap hover:border-brand hover:text-brand";
+  "appearance-none px-2.5 py-1.5 border-0 bg-transparent text-foreground cursor-pointer text-xs whitespace-nowrap hover:text-brand";
 
 interface FloatingCameraPanelProps {
   /** 相机 role(canonical),作 user config cameraPanels 的 key 与稳定标识。 */
@@ -46,6 +50,9 @@ interface FloatingCameraPanelProps {
   showDepth?: boolean;
   /** v0.13.7 · 点「⛶」放大该相机为大图浮层(L3)。 */
   onEnlarge?: () => void;
+  /** 相机整组切换成一个停靠图库，不修改每路位置及折叠态。 */
+  onDockAll?: () => void;
+  layoutDisabled?: boolean;
   autoCollapsed?: boolean;
   dragBounds?: FloatingPanelBounds | null;
   /** v0.15.x · 受控位置(来自 user config);null = 未拖动,用默认贴边位。 */
@@ -63,6 +70,8 @@ export function FloatingCameraPanel({
   role,
   name,
   onEnlarge,
+  onDockAll,
+  layoutDisabled = false,
   autoCollapsed = false,
   dragBounds,
   position = null,
@@ -111,7 +120,7 @@ export function FloatingCameraPanel({
         } as CSSProperties)
       : undefined,
   );
-  const tabRef = useElementStyle<HTMLButtonElement>(
+  const tabRef = useElementStyle<HTMLDivElement>(
     floatingPoint
       ? ({
           "--cam-panel-x": `${floatingPoint.x}px`,
@@ -120,17 +129,58 @@ export function FloatingCameraPanel({
       : undefined,
   );
 
+  const dockMenu = onDockAll ? (
+    <DropdownMenu
+      items={[
+        {
+          id: "dock-all-cameras",
+          label: "全部相机停靠",
+          icon: "panelRight",
+          disabled: layoutDisabled,
+          onSelect: onDockAll,
+        },
+      ]}
+      trigger={({ ref, toggle, open }) => (
+        <Tooltip name="相机布局" side="bottom">
+          <Button
+            ref={ref}
+            type="button"
+            variant="ghost"
+            size="xs"
+            className="w-6 px-0"
+            aria-label={`${name}布局菜单`}
+            aria-haspopup="menu"
+            aria-expanded={open}
+            onPointerDown={(event) => event.stopPropagation()}
+            onDoubleClick={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              toggle();
+            }}
+          >
+            <Icon name="more" size={12} />
+          </Button>
+        </Tooltip>
+      )}
+    />
+  ) : null;
+
   if (collapsed) {
     return (
-      <button
+      <div
         ref={tabRef}
-        type="button"
-        className={`${CAM_PANEL_TAB} ${floatingPoint ? CAM_PANEL_FLOATING : ""}`}
-        onClick={() => setCollapsed(false)}
-        title="展开相机"
+        className={`flex w-fit items-center rounded-md border border-border bg-card shadow-sm ${floatingPoint ? CAM_PANEL_FLOATING : ""}`}
       >
-        {name} ▸
-      </button>
+        <button
+          type="button"
+          className={CAM_PANEL_TAB}
+          onClick={() => setCollapsed(false)}
+          title="展开相机"
+        >
+          {name} ▸
+        </button>
+        {dockMenu}
+      </div>
     );
   }
 
@@ -152,6 +202,7 @@ export function FloatingCameraPanel({
         title="拖动相机面板，双击归位"
         {...handleProps}
       >
+        {dockMenu}
         {onEnlarge && (
           <button type="button" className={FLOAT_TOGGLE_BTN} onClick={onEnlarge} title="放大相机">
             ⛶

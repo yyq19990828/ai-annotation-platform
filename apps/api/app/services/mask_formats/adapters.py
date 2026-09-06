@@ -37,15 +37,7 @@ from app.services.exporting.video_scope import (
 _ALLOWED_GEOMETRY: dict[str, frozenset[str] | None] = {
     "aap_json": None,
     "coco": frozenset(
-        {
-            "bbox",
-            "box_3d",
-            "rotated_bbox",
-            "polygon",
-            "multi_polygon",
-            "keypoint",
-            "raster_mask",
-        }
+        {"bbox", "rotated_bbox", "polygon", "multi_polygon", "keypoint", "raster_mask"}
     ),
     "yolo": frozenset({"bbox"}),
     "yolo-det": frozenset({"bbox"}),
@@ -62,6 +54,7 @@ _ALLOWED_GEOMETRY: dict[str, frozenset[str] | None] = {
     "youtube-vos": frozenset({"video_track_mask"}),
     "mots": frozenset({"video_track_mask"}),
     "mot": frozenset({"video_track", "bbox"}),
+    "coco-multicamera": None,
     "kitti": None,
     "nuscenes": None,
     "pointmask": None,
@@ -163,8 +156,6 @@ class LegacyPackagingAdapter:
         items: list[MaskFormatPlanItem] = []
         for task_id, file_path in task_rows:
             geometry_counts = grouped.get(task_id, {})
-            if project.data_type == "lidar" and self.descriptor.format_id == "coco":
-                geometry_counts = {"box_3d": geometry_counts.get("box_3d", 0)}
             unsupported = sorted(
                 geometry_type
                 for geometry_type, count in geometry_counts.items()
@@ -521,6 +512,24 @@ _DESCRIPTORS = [
         export_capability=_capability(True, verified=True, enabled_for_ui=True),
         option_schema={"frame_base": {"type": "integer", "enum": [0, 1], "default": 0}},
     ),
+    MaskFormatDescriptor(
+        format_id="nuscenes",
+        label="nuScenes",
+        adapter_version="2.0.0",
+        manifest_version="2",
+        media_types=frozenset({"lidar"}),
+        import_capability=_capability(False),
+        export_capability=_capability(True, verified=True, enabled_for_ui=True),
+    ),
+    MaskFormatDescriptor(
+        format_id="coco-multicamera",
+        label="Multi-camera COCO",
+        adapter_version="1.0.0",
+        manifest_version="1",
+        media_types=frozenset({"lidar"}),
+        import_capability=_capability(False),
+        export_capability=_capability(True, verified=True, enabled_for_ui=True),
+    ),
     *[
         MaskFormatDescriptor(
             format_id=format_id,
@@ -541,7 +550,6 @@ _DESCRIPTORS = [
             ("yolo-frames-seg", "YOLO Frames Segmentation", {"video"}),
             ("mot", "MOT", {"video"}),
             ("kitti", "KITTI", {"video", "lidar"}),
-            ("nuscenes", "nuScenes", {"lidar"}),
             ("pointmask", "Point Mask", {"lidar"}),
         )
     ],

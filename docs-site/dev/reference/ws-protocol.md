@@ -33,7 +33,7 @@ last_reviewed: 2026-07-29
 | 视频 tracker job        | `/ws/video-tracker-jobs/{job_id}?token=<jwt>` | JWT (query)，并按 task 可见性校验                                                          | `video-tracker-job:{job_id}` (`video_tracker_runner.py`) | 单条 tracker job 的运行、候选暂存与人工决策事件                                                                                            |
 | ML Backend Stats        | `/ws/ml-backend-stats?token=<jwt 或 ak_key>`  | JWT **或 `ak_` api_key**（query, `super_admin` / `project_admin`；SDK / TUI 可用 api_key） | `ml-backend-stats:global` (`ws.py:246`)                  | Celery beat 每 1s 拉取 backend `/health` 快照后 publish；通过 `ml-backend-stats:subscribers` INCR/DECR 计数门控 — 0 订阅者时 beat 跳过实拉 |
 
-base URL：`ws://<api-host>/ws/...` 或 `wss://...`。多数频道复用 `apps/web/src/hooks/useReconnectingWebSocket.ts`；用户通知为了 token refresh 使用 `useNotificationSocket.ts` 内的专用重连循环。本机 DEV 默认直连 `localhost:8000`；远程 DEV 访问使用页面同源 `/ws` 代理，避免远程浏览器错误连接自己的 localhost。
+base URL：`ws://<api-host>/ws/...` 或 `wss://...`。多数频道复用 `apps/web/src/hooks/useReconnectingWebSocket.ts`；用户通知为了 token refresh 使用 `useNotificationSocket.ts` 内的专用重连循环。浏览器中的 DEV 连接统一使用页面同源 `/ws` 代理，避免 LAN 或 SSH LocalForward 访问把浏览器自己的 localhost 误当成 API 主机。
 
 ---
 

@@ -13,8 +13,9 @@ annotation.source、annotation_guide、classes_config 等。
   不走 LabelStudio shape 的 {type, value: {...}} 嵌套.
 - task_match oneof: display_id 优先 (全局唯一最稳); 都给则 display_id 胜出.
 
-预测导入消费 predictions[]；标注导入消费 annotations[]。schema 1.3 的
-mask_objects 让 video_track_mask 的内容寻址 RLE 可跨实例迁移。
+预测导入消费 predictions[]；标注导入消费 annotations[]。mask_objects 让
+video_track_mask 的内容寻址 RLE 可跨实例迁移；scene_tracks 保留 3D
+时序对象的多段存在区间与轨迹级属性。
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # ── schema 常量 ─────────────────────────────────────────────────────
 
@@ -33,7 +34,9 @@ AAP_SCHEMA_MAJOR = 1
 # v0.10.31 · 升 1.2: task 层增加 media_type + video 子块 (视频采样/fps/帧元数据).
 # 1.x reader 走 extra=ignore 容忍, media_type 缺失时默认 "image".
 # v0.22.0 · 升 1.3: envelope 增 mask_objects，令 coco_rle_ref 跨实例可移植。
-AAP_SCHEMA_VERSION = "1.3"
+# 1.5: annotation entry 增 track_id / temporal_role，envelope 增 scene_tracks。
+# 1.6: annotation entry 增持久化多相机成员及其标定版本关系。
+AAP_SCHEMA_VERSION = "1.6"
 
 
 # ── task_match (oneof) ───────────────────────────────────────────────
@@ -61,9 +64,36 @@ class AAPAnnotationEntry(BaseModel):
     attributes: dict[str, Any] = Field(default_factory=dict)
     confidence: float | None = None
     source: str | None = None  # manual / prediction_based / prediction / interpolated
+    track_id: str | None = Field(default=None, max_length=64)
+    temporal_role: Literal["keyframe", "derived", "sample"] | None = None
+    # 多相机持久化成员：role 是跨实例稳定键，DatasetItem UUID 不进入交换格式。
+    sensor_role: str | None = Field(default=None, max_length=50, pattern=r"^camera_")
+    sensor_visibility: Literal["visible", "occluded", "truncated", "unknown"] | None = (
+        None
+    )
+    calibration_revision: int | None = Field(default=None, ge=1)
+    calibration_digest: str | None = Field(default=None, min_length=64, max_length=64)
     user_id: UUID | None = None
     created_at: datetime | None = None
     external_id: str | None = None  # 留 forward compat
+
+    @model_validator(mode="after")
+    def validate_sensor_member(self):
+        sensor_values = (
+            self.sensor_role,
+            self.sensor_visibility,
+            self.calibration_revision,
+            self.calibration_digest,
+        )
+        if any(value is not None for value in sensor_values) and not all(
+            value is not None for value in sensor_values
+        ):
+            raise ValueError("camera member sensor fields must be provided together")
+        if self.sensor_role is not None and (
+            self.geometry.get("type") != "bbox" or self.track_id is None
+        ):
+            raise ValueError("camera member requires bbox geometry and track_id")
+        return self
 
     model_config = ConfigDict(extra="ignore")
 
@@ -82,6 +112,32 @@ class AAPPredictionEntry(BaseModel):
     source: str | None = None  # ml_backend / external_import
     created_at: datetime | None = None
     external_id: str | None = None  # 留 forward compat
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class AAPSceneTrackInterval(BaseModel):
+    start_frame: int = Field(ge=0)
+    end_frame: int | None = Field(default=None, ge=0)
+    source: Literal["legacy_envelope", "manual", "imported", "derived"] = "imported"
+
+    @model_validator(mode="after")
+    def validate_frames(self):
+        if self.end_frame is not None and self.end_frame < self.start_frame:
+            raise ValueError("end_frame must be greater than or equal to start_frame")
+        return self
+
+    model_config = ConfigDict(extra="ignore")
+
+
+class AAPSceneTrackEntry(BaseModel):
+    track_id: str = Field(min_length=1, max_length=64)
+    scene_name: str | None = None
+    class_name: str = Field(min_length=1, max_length=100)
+    presence_mode: Literal["inferred", "explicit"] = "explicit"
+    attributes: dict[str, Any] = Field(default_factory=dict)
+    attributes_meta: dict[str, Any] = Field(default_factory=dict)
+    intervals: list[AAPSceneTrackInterval] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="ignore")
 
@@ -141,6 +197,7 @@ class AAPJsonV1Envelope(BaseModel):
     exported_from: AAPExportedFrom = Field(default_factory=AAPExportedFrom)
     project: AAPProjectMeta = Field(default_factory=AAPProjectMeta)
     mask_objects: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    scene_tracks: list[AAPSceneTrackEntry] = Field(default_factory=list)
     tasks: list[AAPTaskBlock] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="ignore")

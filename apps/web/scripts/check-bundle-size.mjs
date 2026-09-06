@@ -62,6 +62,11 @@ function main() {
   console.log(`[size-limit] checking ${budget.length} budgets against ${files.length} dist files`);
   for (const entry of budget) {
     const matches = files.filter((f) => globMatch(entry.pattern, f));
+    if (entry.required && matches.length !== 1) {
+      console.error(`[size-limit] ${entry.name}: expected one chunk, found ${matches.length}`);
+      failed = true;
+      continue;
+    }
     if (matches.length === 0) {
       console.warn(
         `[size-limit] ⚠ no file matches pattern '${entry.pattern}' (${entry.name}) — skipping`,

@@ -17,6 +17,13 @@ export interface WorkbenchPetProps {
 }
 
 export const WORKBENCH_PET_SIZE = { w: 56, h: 56 } as const;
+
+export interface WorkbenchPetDock {
+  enabled: boolean;
+  position: FloatingPanelPoint;
+  onPositionChange: (position: FloatingPanelPoint) => void;
+}
+
 const PET_POS_KEY = "workbench.pet.pos";
 const DRAG_THRESHOLD = 3;
 

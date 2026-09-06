@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 # 完整 URL (含签名) 做缓存 key, 于是每次 task 列表 refetch 都会让全部缩略图/原图缓存失效并重下。
 # 代价是实际有效期在 [expires_in, expires_in + _PRESIGN_ALIGN_WINDOW] 之间浮动。
 _PRESIGN_ALIGN_WINDOW = 600
+TRUSTED_NUSCENES_PREFIX = "__aap_trusted_nuscenes__"
 
 
 def _aligned_expires_in(expires_in: int) -> int:

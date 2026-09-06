@@ -1,3 +1,4 @@
+import asyncio
 import hashlib
 import io
 import mimetypes
@@ -27,7 +28,10 @@ from app.schemas.dataset import (
 from app.schemas.project import ProjectOut
 from app.services.audit import AuditAction, AuditService
 from app.services.axis_sniffer import AxisSnifferService
-from app.services.dataset import DatasetService
+from app.services.dataset import (
+    DatasetService,
+    ensure_dataset_storage_name_is_writable,
+)
 from app.services.mask_formats.safe_archive import (
     ArchiveLimits,
     ArchiveSafetyError,
@@ -169,10 +173,11 @@ async def delete_dataset(
     current_user: User = Depends(require_roles(*_MANAGERS)),
 ):
     svc = DatasetService(db)
-    ok = await svc.delete(dataset_id)
-    if not ok:
+    cleanup = await svc.delete(dataset_id)
+    if cleanup is None:
         raise HTTPException(status_code=404, detail="Dataset not found")
     await db.commit()
+    await asyncio.to_thread(svc.cleanup_deleted_storage, cleanup)
 
 
 # ── Items ───────────────────────────────────────────────────────────────────
@@ -297,6 +302,7 @@ async def upload_init(
     if not ds:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
+    ensure_dataset_storage_name_is_writable(ds.name)
     storage_key = f"{ds.name}/{data.file_name}"
     file_type = _infer_file_type(data.content_type)
 
@@ -530,6 +536,7 @@ async def upload_zip(
         )
     )
     existing_hashes: set[str] = {r[0] for r in hash_rows.all()}
+    ensure_dataset_storage_name_is_writable(ds.name)
 
     for info in infos:
         name = info.source_name

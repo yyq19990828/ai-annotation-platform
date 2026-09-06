@@ -8,6 +8,7 @@ import { BatchStatusBadge } from "@/components/badges/BatchStatusBadge";
 import { useTheme } from "@/hooks/useTheme";
 import type { TaskResponse } from "@/types";
 import type { VideoSegment } from "@/api/videoTracker";
+import type { WorkspaceSide, WorkspaceSideState } from "../layout/workbenchLayoutExecutor";
 
 interface TopbarProps {
   /** 项目名 + 展示 ID（如 P-0001）；显示在左侧 task id 前作为项目上下文。 */
@@ -24,23 +25,24 @@ interface TopbarProps {
   confThreshold?: number;
   onShowHotkeys: () => void;
   onBack?: () => void;
-  leftSidebarOpen?: boolean;
-  rightSidebarOpen?: boolean;
-  onToggleLeftSidebar?: () => void;
-  onToggleRightSidebar?: () => void;
-  onRunAi: () => void;
+  onToggleSide?: (side: WorkspaceSide) => void;
+  sides?: Record<WorkspaceSide, WorkspaceSideState>;
+  layoutMenuSlot?: React.ReactNode;
+  layoutDisabled?: boolean;
+  onRunAi?: () => void;
   aiOpen?: boolean;
   aiDisabled?: boolean;
-  /** 视频任务的画布级 AI 追踪入口；与 AI 单题面板互斥。 */
+  /** 视频任务的画布级 AI 追踪入口。 */
   onToggleTracker?: () => void;
   trackerOpen?: boolean;
   trackerRunning?: boolean;
   onPrev: () => void;
   onNext: () => void;
   onSubmit: () => void;
+  submitDisabled?: boolean;
   onSmartNextOpen?: () => void;
   onSmartNextUncertain?: () => void;
-  /** v0.15.3 · 齿轮图标直接打开设置抽屉;缺省不渲染该项。 */
+  /** v0.15.3 · 齿轮图标直接打开设置窗口;缺省不渲染该项。 */
   onOpenWorkbenchSettings?: () => void;
   /** v0.6.5 状态机：审核中可撤回 / 已通过可重开。 */
   canWithdraw?: boolean;
@@ -90,10 +92,10 @@ export function Topbar({
   confThreshold,
   onShowHotkeys,
   onBack,
-  leftSidebarOpen,
-  rightSidebarOpen,
-  onToggleLeftSidebar,
-  onToggleRightSidebar,
+  onToggleSide,
+  sides = { left: "empty", right: "empty" },
+  layoutMenuSlot,
+  layoutDisabled = false,
   onRunAi,
   aiOpen = false,
   aiDisabled = false,
@@ -103,6 +105,7 @@ export function Topbar({
   onPrev,
   onNext,
   onSubmit,
+  submitDisabled = false,
   onSmartNextOpen,
   onSmartNextUncertain,
   onOpenWorkbenchSettings,
@@ -181,16 +184,20 @@ export function Topbar({
               返回
             </Button>
           )}
-          {onToggleLeftSidebar && (
+          {onToggleSide && (
             <Button
               variant="ghost"
               size="sm"
-              onClick={onToggleLeftSidebar}
-              title={leftSidebarOpen ? "收起任务列表" : "展开任务列表"}
-              className={cn(
-                "justify-center w-7 h-7 p-0 border-transparent rounded-[var(--radius-sm)] bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground",
-                leftSidebarOpen && "text-foreground bg-transparent shadow-none",
-              )}
+              onClick={() => onToggleSide("left")}
+              disabled={layoutDisabled || sides.left === "empty"}
+              title={
+                sides.left === "empty"
+                  ? "画布左侧没有停靠面板"
+                  : `${sides.left === "open" ? "收起" : "展开"}画布左侧所有面板`
+              }
+              aria-label="左侧面板"
+              aria-expanded={sides.left === "open"}
+              className="justify-center w-7 h-7 p-0 border-transparent rounded-[var(--radius-sm)] bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground"
             >
               <Icon name="panelLeft" size={14} />
             </Button>
@@ -310,7 +317,7 @@ export function Topbar({
               variant="primary"
               size="sm"
               onClick={onSubmit}
-              disabled={isSubmitting}
+              disabled={isSubmitting || submitDisabled}
               data-testid="workbench-submit"
             >
               <Icon name="check" size={13} />
@@ -382,7 +389,7 @@ export function Topbar({
                 aria-label="发现新目标"
                 aria-pressed={trackerOpen}
                 title={
-                  trackerOpen ? "关闭画布级多目标追踪" : "发现或播种多个新目标，不延展当前选中轨迹"
+                  trackerOpen ? "聚焦画布级多目标追踪" : "发现或播种多个新目标，不延展当前选中轨迹"
                 }
                 className="h-7 px-3"
                 data-testid="workbench-ai-tracker"
@@ -399,34 +406,30 @@ export function Topbar({
                 发现目标
               </Button>
             )}
-            <Button
-              variant="ai"
-              size="sm"
-              onClick={onRunAi}
-              aria-label="AI 单题"
-              aria-pressed={aiOpen}
-              disabled={aiDisabled}
-              title={
-                aiDisabled
-                  ? "视频任务暂不支持 AI"
-                  : aiOpen
-                    ? "关闭 AI 单题面板"
-                    : "打开 AI 单题面板"
-              }
-              className="h-7 px-3"
-              data-testid="workbench-ai-single"
-            >
-              {aiRunning ? (
-                <Icon
-                  name="loader2"
-                  size={13}
-                  className="animate-spin motion-reduce:animate-none"
-                />
-              ) : (
-                <Icon name="wandSparkles" size={13} />
-              )}
-              AI
-            </Button>
+            {onRunAi && (
+              <Button
+                variant="ai"
+                size="sm"
+                onClick={onRunAi}
+                aria-label="AI 单题"
+                aria-pressed={aiOpen}
+                disabled={aiDisabled}
+                title={aiOpen ? "聚焦 AI 单题面板" : "打开 AI 单题面板"}
+                className="h-7 px-3"
+                data-testid="workbench-ai-single"
+              >
+                {aiRunning ? (
+                  <Icon
+                    name="loader2"
+                    size={13}
+                    className="animate-spin motion-reduce:animate-none"
+                  />
+                ) : (
+                  <Icon name="wandSparkles" size={13} />
+                )}
+                AI
+              </Button>
+            )}
           </>
         )}
         <Button
@@ -452,16 +455,21 @@ export function Topbar({
             <Icon name="settings" size={14} />
           </Button>
         )}
-        {onToggleRightSidebar && (
+        {layoutMenuSlot}
+        {onToggleSide && (
           <Button
             variant="ghost"
             size="sm"
-            onClick={onToggleRightSidebar}
-            title={rightSidebarOpen ? "收起标注详情" : "展开标注详情"}
-            className={cn(
-              "justify-center w-7 h-7 p-0 border-transparent rounded-[var(--radius-sm)] bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground",
-              rightSidebarOpen && "text-foreground bg-transparent shadow-none",
-            )}
+            onClick={() => onToggleSide("right")}
+            disabled={layoutDisabled || sides.right === "empty"}
+            title={
+              sides.right === "empty"
+                ? "画布右侧没有停靠面板"
+                : `${sides.right === "open" ? "收起" : "展开"}画布右侧所有面板`
+            }
+            aria-label="右侧面板"
+            aria-expanded={sides.right === "open"}
+            className="justify-center w-7 h-7 p-0 border-transparent rounded-[var(--radius-sm)] bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground"
           >
             <Icon name="panelRight" size={14} />
           </Button>

@@ -4,6 +4,11 @@ import { DEFAULT_WORKBENCH_PREFERENCES } from "@/api/auth";
 import {
   WORKBENCH_SETTING_CATEGORY_LABELS,
   WORKBENCH_SETTING_FIELDS,
+  WORKBENCH_SETTING_SECTIONS,
+  WORKBENCH_SETTING_GROUPS,
+  groupWorkbenchSettings,
+  getVisibleWorkbenchSettingFields,
+  filterWorkbenchSettings,
   buildFieldPatch,
   getFieldValue,
   lockableFieldName,
@@ -34,7 +39,7 @@ describe("workbenchSettingsFields 注册表", () => {
   });
 
   it("注册表默认值与现状一致", () => {
-    expect(WORKBENCH_SETTING_FIELDS).toHaveLength(47);
+    expect(WORKBENCH_SETTING_FIELDS).toHaveLength(48);
     const byKey = Object.fromEntries(
       WORKBENCH_SETTING_FIELDS.map((f) => [f.key, getFieldValue(DEFAULT_WORKBENCH_PREFERENCES, f)]),
     );
@@ -84,6 +89,7 @@ describe("workbenchSettingsFields 注册表", () => {
       "pointcloud.neighborPointOverlay": false,
       "pointcloud.neighborPointOverlayK": 1,
       "pointcloud.neighborPointCull": "keep",
+      "experiment.pointCloudWebGpuRenderer": false,
       "experiment.webcodecs": true,
       "experiment.videoReferencePredict": "off",
     });
@@ -115,5 +121,54 @@ describe("workbenchSettingsFields 注册表", () => {
     ]);
     const common = WORKBENCH_SETTING_FIELDS.find((f) => f.category === "common")!;
     expect(lockableFieldName(common)).toBeNull();
+  });
+});
+
+describe("settings presentation", () => {
+  it("every registered field has a section and children stay with their parent", () => {
+    for (const field of WORKBENCH_SETTING_FIELDS) {
+      expect(field.section && WORKBENCH_SETTING_SECTIONS[field.section]).toBeTruthy();
+      if (field.parentKey)
+        expect(
+          WORKBENCH_SETTING_FIELDS.find((parent) => parent.key === field.parentKey)?.section,
+        ).toBe(field.section);
+    }
+  });
+  it("all settings share six purpose groups without missing or duplicating fields", () => {
+    const fields = getVisibleWorkbenchSettingFields();
+    expect(fields).toHaveLength(47);
+    expect(fields.some((field) => field.hidden)).toBe(false);
+    const groups = groupWorkbenchSettings(fields);
+    expect(groups.map((group) => group.key)).toEqual(Object.keys(WORKBENCH_SETTING_GROUPS));
+    const groupedKeys = groups.flatMap((group) =>
+      group.sections.flatMap((section) => section.fields.map((field) => field.key)),
+    );
+    expect(groupedKeys.sort()).toEqual(fields.map((field) => field.key).sort());
+    expect(new Set(groupedKeys).size).toBe(47);
+    const canvas = groups.find((group) => group.key === "canvas")!;
+    expect(
+      new Set(canvas.sections.flatMap((section) => section.fields.map((field) => field.category))),
+    ).toEqual(new Set(["image", "video", "pointcloud"]));
+    expect(filterWorkbenchSettings(fields, "  ")).toEqual(fields);
+    expect(filterWorkbenchSettings(fields, "画布与视角")).toEqual(
+      fields.filter((field) => WORKBENCH_SETTING_SECTIONS[field.section].group === "canvas"),
+    );
+  });
+  it("search matches options and case-insensitive words without bringing back hidden fields", () => {
+    const fields = getVisibleWorkbenchSettingFields();
+    expect(filterWorkbenchSettings(fields, "  GAMMA 上色 ").map((field) => field.key)).toEqual([
+      "pointcloud.colorizeWithCamera",
+      "pointcloud.colorizeGamma",
+    ]);
+    expect(filterWorkbenchSettings(fields, "矩形").map((field) => field.key)).toEqual([
+      "pointcloud.pointMaskSelectMode",
+    ]);
+    expect(filterWorkbenchSettings(getVisibleWorkbenchSettingFields(), "网格吸附")).toEqual([]);
+    expect(filterWorkbenchSettings(fields, "相机上色").map((field) => field.key)).toEqual([
+      "pointcloud.colorizeWithCamera",
+      "pointcloud.colorizeContrast",
+      "pointcloud.colorizeBrightness",
+      "pointcloud.colorizeGamma",
+    ]);
   });
 });

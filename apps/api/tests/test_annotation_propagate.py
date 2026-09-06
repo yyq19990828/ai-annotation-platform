@@ -15,11 +15,13 @@ from __future__ import annotations
 import uuid
 
 import pytest
+from fastapi import HTTPException
 
 from app.db.models.annotation import Annotation
 from app.db.models.dataset import Dataset, DatasetItem, Scene
 from app.db.models.task import Task
 from app.services.annotation import AnnotationService
+from app.services.scene_track_domain import ensure_scene_track
 from tests.factory import create_project
 
 
@@ -161,6 +163,45 @@ async def test_propagate_reuses_existing_track_id(db_session, super_admin):
     )
     assert new.track_id == "trk_preexisting"
     assert src.track_id == "trk_preexisting"
+
+
+@pytest.mark.asyncio
+async def test_propagate_cannot_silently_cross_explicit_absence(
+    db_session, super_admin
+):
+    user, _ = super_admin
+    project, _, scene, tasks = await _seed_scene(db_session, owner_id=user.id)
+    src = await _add_annotation(
+        db_session,
+        task=tasks[0],
+        project=project,
+        user_id=user.id,
+        geometry=_box3d(),
+        track_id="trk-explicit-stop",
+    )
+    track = await ensure_scene_track(
+        db_session,
+        project_id=project.id,
+        scene_id=scene.id,
+        track_id=src.track_id,
+        class_name=src.class_name,
+        frames={0},
+        actor_id=user.id,
+        interval_source="manual",
+    )
+    track.presence_mode = "explicit"
+    src.scene_track_id = track.id
+    await db_session.flush()
+
+    with pytest.raises(HTTPException) as captured:
+        await AnnotationService(db_session).propagate(
+            source_annotation_id=src.id,
+            target_task_id=tasks[1].id,
+            user_id=user.id,
+        )
+
+    assert captured.value.status_code == 409
+    assert captured.value.detail["reason"] == "track_frame_absent"
 
 
 @pytest.mark.asyncio

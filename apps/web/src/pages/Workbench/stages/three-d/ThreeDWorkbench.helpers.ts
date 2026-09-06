@@ -3,8 +3,6 @@
 import type { CSSProperties } from "react";
 import * as THREE from "three";
 import type { Box3DGeometry, SensorCalibration } from "@/types";
-import type { FloatingPanelRect } from "../../shell/FloatingPanelShell";
-import type { TriViewFloatState } from "@/api/auth";
 import type { Psr } from "./geometry/triview";
 import { cameraAnchor, type Anchor } from "./geometry/cameraAnchor";
 import type { CameraSample } from "./geometry/colorize";
@@ -18,12 +16,18 @@ export const IDENTITY_MATRIX = new THREE.Matrix4();
 export const SEED_FALLBACK_RANGE_M = 12;
 export const CAMERA_AUTO_COLLAPSE_WIDTH = 1366;
 export const CAMERA_STACK_VISIBLE = 2;
-export const TRI_FLOAT_DEFAULT_W = 240;
-export const TRI_FLOAT_DEFAULT_H = 440;
-// 收起标签的近似尺寸,仅用于拖动时把标签 clamp 在视口内(略放大留余量)。
-export const TRI_TAB_DRAG_SIZE = { w: 96, h: 34 };
-// 收起标签拖动判定阈值:位移超过此值才算"拖动"(否则按点击展开),px。
-export const TRI_TAB_DRAG_THRESHOLD = 3;
+export type ThreeDLayoutPreset = "box-refinement" | "sensor-fusion" | "point-segmentation";
+
+export const THREE_D_LAYOUT_PRESETS: ReadonlyArray<{
+  id: ThreeDLayoutPreset;
+  label: string;
+  description: string;
+}> = [
+  { id: "box-refinement", label: "框体精修", description: "显示三视图，隐藏相机面板" },
+  { id: "sensor-fusion", label: "传感器融合", description: "显示相机，保留当前呈现模式" },
+  { id: "point-segmentation", label: "点级分割", description: "隐藏三视图和相机面板" },
+];
+
 // v0.13.9 · 框选预览矩形位置/尺寸经 CSS custom property 注入(逐帧动态值)。
 export type BoxSelectRectVars = CSSProperties & {
   "--rect-l": string;
@@ -34,22 +38,6 @@ export type BoxSelectRectVars = CSSProperties & {
 
 export function sortedIndices(indices: Iterable<number>): number[] {
   return [...indices].sort((a, b) => a - b);
-}
-
-export function resolveTriViewFloatRect(
-  state: TriViewFloatState,
-  rightSidebarWidth: number,
-): FloatingPanelRect {
-  const w = state.w ?? TRI_FLOAT_DEFAULT_W;
-  const h = state.h ?? TRI_FLOAT_DEFAULT_H;
-  const viewportW = typeof window === "undefined" ? 1280 : window.innerWidth;
-  const viewportH = typeof window === "undefined" ? 800 : window.innerHeight;
-  return {
-    x: state.x ?? Math.max(24, viewportW - w - rightSidebarWidth - 12),
-    y: state.y ?? Math.max(24, viewportH - h - 12),
-    w,
-    h,
-  };
 }
 
 export function resolveBox3dDefaultSize(
@@ -90,25 +78,44 @@ export function geometryConvention(
 export function loadCameraSample(
   imageUrl: string,
   calib: SensorCalibration,
+  signal?: AbortSignal,
 ): Promise<CameraSample | null> {
   return new Promise((resolve) => {
     const img = new Image();
+    let settled = false;
+    const finish = (sample: CameraSample | null) => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener("abort", handleAbort);
+      img.onload = null;
+      img.onerror = null;
+      resolve(sample);
+    };
+    const handleAbort = () => {
+      img.src = "";
+      finish(null);
+    };
+    if (signal?.aborted) {
+      finish(null);
+      return;
+    }
+    signal?.addEventListener("abort", handleAbort, { once: true });
     img.crossOrigin = "anonymous";
     img.onload = () => {
       const canvas = document.createElement("canvas");
       canvas.width = img.naturalWidth;
       canvas.height = img.naturalHeight;
       const ctx = canvas.getContext("2d");
-      if (!ctx) return resolve(null);
+      if (!ctx) return finish(null);
       ctx.drawImage(img, 0, 0);
       try {
         const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        resolve({ calib, width: canvas.width, height: canvas.height, data });
+        finish({ calib, width: canvas.width, height: canvas.height, data });
       } catch {
-        resolve(null); // 跨域污染
+        finish(null); // 跨域污染
       }
     };
-    img.onerror = () => resolve(null);
+    img.onerror = () => finish(null);
     img.src = imageUrl;
   });
 }

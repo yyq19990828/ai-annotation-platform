@@ -1899,7 +1899,8 @@
               "project",
               "task",
               "annotation",
-              "pixel"
+              "pixel",
+              "point_cloud"
             ],
             "title": "Anchor Type",
             "type": "string"
@@ -2052,7 +2053,8 @@
               "project",
               "task",
               "annotation",
-              "pixel"
+              "pixel",
+              "point_cloud"
             ],
             "title": "Anchor Type",
             "type": "string"
@@ -2425,6 +2427,28 @@
             "title": "Attributes Meta",
             "type": "object"
           },
+          "calibration_digest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration Digest"
+          },
+          "calibration_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration Revision"
+          },
           "class_name": {
             "title": "Class Name",
             "type": "string"
@@ -2602,6 +2626,58 @@
             ],
             "title": "Project Id"
           },
+          "scene_track_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Track Id"
+          },
+          "sensor_dataset_item_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sensor Dataset Item Id"
+          },
+          "sensor_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sensor Role"
+          },
+          "sensor_visibility": {
+            "anyOf": [
+              {
+                "enum": [
+                  "visible",
+                  "occluded",
+                  "truncated",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sensor Visibility"
+          },
           "source": {
             "title": "Source",
             "type": "string"
@@ -2609,6 +2685,16 @@
           "task_id": {
             "format": "uuid",
             "title": "Task Id",
+            "type": "string"
+          },
+          "temporal_role": {
+            "default": "sample",
+            "enum": [
+              "keyframe",
+              "derived",
+              "sample"
+            ],
+            "title": "Temporal Role",
             "type": "string"
           },
           "tool_unit_id": {
@@ -6576,6 +6662,342 @@
         "title": "CacheStats",
         "type": "object"
       },
+      "CameraAnnotationMemberCreate": {
+        "properties": {
+          "bbox": {
+            "$ref": "#/components/schemas/NormalizedCameraBbox"
+          },
+          "camera_role": {
+            "maxLength": 50,
+            "minLength": 1,
+            "pattern": "^camera_",
+            "title": "Camera Role",
+            "type": "string"
+          },
+          "expected_calibration_digest": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Expected Calibration Digest",
+            "type": "string"
+          },
+          "expected_calibration_revision": {
+            "minimum": 1.0,
+            "title": "Expected Calibration Revision",
+            "type": "integer"
+          },
+          "expected_track_revision": {
+            "minimum": 1.0,
+            "title": "Expected Track Revision",
+            "type": "integer"
+          },
+          "source_annotation_id": {
+            "format": "uuid",
+            "title": "Source Annotation Id",
+            "type": "string"
+          },
+          "visibility": {
+            "default": "visible",
+            "enum": [
+              "visible",
+              "occluded",
+              "truncated",
+              "unknown"
+            ],
+            "title": "Visibility",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source_annotation_id",
+          "camera_role",
+          "bbox",
+          "expected_track_revision",
+          "expected_calibration_revision",
+          "expected_calibration_digest"
+        ],
+        "title": "CameraAnnotationMemberCreate",
+        "type": "object"
+      },
+      "CameraAnnotationMemberDelete": {
+        "properties": {
+          "expected_track_revision": {
+            "minimum": 1.0,
+            "title": "Expected Track Revision",
+            "type": "integer"
+          },
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_version",
+          "expected_track_revision"
+        ],
+        "title": "CameraAnnotationMemberDelete",
+        "type": "object"
+      },
+      "CameraAnnotationMemberList": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CameraAnnotationMemberOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "projected_bbox": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NormalizedCameraBbox"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "track_revision": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Revision"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "CameraAnnotationMemberList",
+        "type": "object"
+      },
+      "CameraAnnotationMemberOut": {
+        "properties": {
+          "bbox": {
+            "$ref": "#/components/schemas/NormalizedCameraBbox"
+          },
+          "calibration_digest": {
+            "title": "Calibration Digest",
+            "type": "string"
+          },
+          "calibration_revision": {
+            "title": "Calibration Revision",
+            "type": "integer"
+          },
+          "camera_dataset_item_id": {
+            "format": "uuid",
+            "title": "Camera Dataset Item Id",
+            "type": "string"
+          },
+          "camera_role": {
+            "title": "Camera Role",
+            "type": "string"
+          },
+          "class_name": {
+            "title": "Class Name",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "current_calibration_digest": {
+            "title": "Current Calibration Digest",
+            "type": "string"
+          },
+          "current_calibration_revision": {
+            "title": "Current Calibration Revision",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "relation_status": {
+            "enum": [
+              "current",
+              "stale"
+            ],
+            "title": "Relation Status",
+            "type": "string"
+          },
+          "residual": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CameraProjectionResidual"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scene_track_id": {
+            "format": "uuid",
+            "title": "Scene Track Id",
+            "type": "string"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          },
+          "track_id": {
+            "title": "Track Id",
+            "type": "string"
+          },
+          "track_revision": {
+            "minimum": 1.0,
+            "title": "Track Revision",
+            "type": "integer"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "visibility": {
+            "enum": [
+              "visible",
+              "occluded",
+              "truncated",
+              "unknown"
+            ],
+            "title": "Visibility",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "task_id",
+          "scene_track_id",
+          "track_id",
+          "class_name",
+          "camera_dataset_item_id",
+          "camera_role",
+          "bbox",
+          "visibility",
+          "version",
+          "is_active",
+          "calibration_revision",
+          "calibration_digest",
+          "current_calibration_revision",
+          "current_calibration_digest",
+          "relation_status",
+          "track_revision",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "CameraAnnotationMemberOut",
+        "type": "object"
+      },
+      "CameraAnnotationMemberRestore": {
+        "properties": {
+          "expected_calibration_digest": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Expected Calibration Digest",
+            "type": "string"
+          },
+          "expected_calibration_revision": {
+            "minimum": 1.0,
+            "title": "Expected Calibration Revision",
+            "type": "integer"
+          },
+          "expected_track_revision": {
+            "minimum": 1.0,
+            "title": "Expected Track Revision",
+            "type": "integer"
+          },
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "expected_version",
+          "expected_track_revision",
+          "expected_calibration_revision",
+          "expected_calibration_digest"
+        ],
+        "title": "CameraAnnotationMemberRestore",
+        "type": "object"
+      },
+      "CameraAnnotationMemberUpdate": {
+        "properties": {
+          "bbox": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NormalizedCameraBbox"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expected_calibration_digest": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Expected Calibration Digest",
+            "type": "string"
+          },
+          "expected_calibration_revision": {
+            "minimum": 1.0,
+            "title": "Expected Calibration Revision",
+            "type": "integer"
+          },
+          "expected_track_revision": {
+            "minimum": 1.0,
+            "title": "Expected Track Revision",
+            "type": "integer"
+          },
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          },
+          "visibility": {
+            "anyOf": [
+              {
+                "enum": [
+                  "visible",
+                  "occluded",
+                  "truncated",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visibility"
+          }
+        },
+        "required": [
+          "expected_version",
+          "expected_track_revision",
+          "expected_calibration_revision",
+          "expected_calibration_digest"
+        ],
+        "title": "CameraAnnotationMemberUpdate",
+        "type": "object"
+      },
       "CameraPanelState": {
         "additionalProperties": false,
         "description": "v0.15.x · 3D 悬浮相机面板的位置 + 折叠态。按相机 role 分桶存。\n\n位置像素由前端按视图计算后落库;无该 role 键 = 用默认贴边位置 + 自动折叠态。",
@@ -6609,6 +7031,43 @@
           }
         },
         "title": "CameraPanelState",
+        "type": "object"
+      },
+      "CameraProjectionResidual": {
+        "properties": {
+          "iou": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Iou",
+            "type": "number"
+          },
+          "max_edge_residual_px": {
+            "minimum": 0.0,
+            "title": "Max Edge Residual Px",
+            "type": "number"
+          },
+          "max_edge_residual_ratio": {
+            "minimum": 0.0,
+            "title": "Max Edge Residual Ratio",
+            "type": "number"
+          },
+          "mean_edge_residual_px": {
+            "minimum": 0.0,
+            "title": "Mean Edge Residual Px",
+            "type": "number"
+          },
+          "projected_bbox": {
+            "$ref": "#/components/schemas/NormalizedCameraBbox"
+          }
+        },
+        "required": [
+          "iou",
+          "max_edge_residual_px",
+          "mean_edge_residual_px",
+          "max_edge_residual_ratio",
+          "projected_bbox"
+        ],
+        "title": "CameraProjectionResidual",
         "type": "object"
       },
       "CanvasDrawing": {
@@ -7468,6 +7927,86 @@
           "enabled"
         ],
         "title": "ConnectorDeploymentSftpPresetOut",
+        "type": "object"
+      },
+      "CrossFrameJobCreate": {
+        "properties": {
+          "annotation_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "title": "Annotation Ids",
+            "type": "array"
+          },
+          "conflict_policy": {
+            "const": "skip_existing",
+            "default": "skip_existing",
+            "title": "Conflict Policy",
+            "type": "string"
+          },
+          "direction": {
+            "enum": [
+              "forward",
+              "backward"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "end_frame": {
+            "minimum": 0.0,
+            "title": "End Frame",
+            "type": "integer"
+          },
+          "operation": {
+            "const": "propagate",
+            "default": "propagate",
+            "title": "Operation",
+            "type": "string"
+          },
+          "scope": {
+            "enum": [
+              "selected",
+              "all"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "start_frame": {
+            "minimum": 0.0,
+            "title": "Start Frame",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "scope",
+          "direction",
+          "start_frame",
+          "end_frame"
+        ],
+        "title": "CrossFrameJobCreate",
+        "type": "object"
+      },
+      "CrossFrameJobListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AsyncJobOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "CrossFrameJobListResponse",
         "type": "object"
       },
       "DataManagerAiReviewSummary": {
@@ -9997,6 +10536,16 @@
       "ExportRequestBody": {
         "additionalProperties": false,
         "properties": {
+          "lidar": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LidarExportOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "scope": {
             "anyOf": [
               {
@@ -10180,8 +10729,16 @@
         "type": "object"
       },
       "FeedbackAnchorPosition": {
-        "description": "pixel anchor 携带的坐标 (相对 0-1 与 geometry 同语义); frame 视频时可选.",
+        "description": "Pixel or 3D quality anchor position and durable locator.",
         "properties": {
+          "auxiliary_layers": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Auxiliary Layers",
+            "type": "array"
+          },
           "boundary_digest": {
             "anyOf": [
               {
@@ -10228,6 +10785,18 @@
             ],
             "title": "Mask Qc Issue Id"
           },
+          "point_cloud_quality_issue_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Point Cloud Quality Issue Id"
+          },
           "region_bbox": {
             "anyOf": [
               {
@@ -10267,23 +10836,57 @@
             ],
             "title": "Region Digest"
           },
+          "scene_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
+          },
+          "scene_track_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Track Id"
+          },
           "x": {
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "title": "X",
-            "type": "number"
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "X"
           },
           "y": {
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "title": "Y",
-            "type": "number"
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Y"
           }
         },
-        "required": [
-          "x",
-          "y"
-        ],
         "title": "FeedbackAnchorPosition",
         "type": "object"
       },
@@ -13434,42 +14037,10 @@
         "title": "LabelContentByType",
         "type": "object"
       },
-      "LidarCameraRoleOut": {
+      "LidarExportIssue": {
+        "additionalProperties": false,
         "properties": {
-          "calibrated_frame_count": {
-            "title": "Calibrated Frame Count",
-            "type": "integer"
-          },
-          "complete": {
-            "title": "Complete",
-            "type": "boolean"
-          },
-          "frame_count": {
-            "title": "Frame Count",
-            "type": "integer"
-          },
-          "role": {
-            "title": "Role",
-            "type": "string"
-          },
-          "sized_frame_count": {
-            "title": "Sized Frame Count",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "role",
-          "frame_count",
-          "calibrated_frame_count",
-          "sized_frame_count",
-          "complete"
-        ],
-        "title": "LidarCameraRoleOut",
-        "type": "object"
-      },
-      "LidarCameraRolesResponse": {
-        "properties": {
-          "default_role": {
+          "camera_role": {
             "anyOf": [
               {
                 "type": "string"
@@ -13478,20 +14049,161 @@
                 "type": "null"
               }
             ],
-            "title": "Default Role"
+            "title": "Camera Role"
           },
-          "roles": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "frame_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Key"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "task_display_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Display Id"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "LidarExportIssue",
+        "type": "object"
+      },
+      "LidarExportOptions": {
+        "additionalProperties": false,
+        "properties": {
+          "kitti_camera_role": {
+            "anyOf": [
+              {
+                "maxLength": 50,
+                "minLength": 1,
+                "pattern": "^camera_[A-Za-z0-9_.-]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kitti Camera Role"
+          }
+        },
+        "title": "LidarExportOptions",
+        "type": "object"
+      },
+      "LidarExportPreflightRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "lidar": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LidarExportOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "targets": {
             "items": {
-              "$ref": "#/components/schemas/LidarCameraRoleOut"
+              "type": "string"
             },
-            "title": "Roles",
+            "minItems": 1,
+            "title": "Targets",
             "type": "array"
           }
         },
         "required": [
-          "roles"
+          "targets"
         ],
-        "title": "LidarCameraRolesResponse",
+        "title": "LidarExportPreflightRequest",
+        "type": "object"
+      },
+      "LidarExportPreflightResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "camera_roles": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Camera Roles",
+            "type": "array"
+          },
+          "checked_tasks": {
+            "title": "Checked Tasks",
+            "type": "integer"
+          },
+          "issue_count": {
+            "title": "Issue Count",
+            "type": "integer"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/LidarExportIssue"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "issues_truncated": {
+            "default": false,
+            "title": "Issues Truncated",
+            "type": "boolean"
+          },
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "selected_camera_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Camera Role"
+          }
+        },
+        "required": [
+          "ready",
+          "camera_roles",
+          "checked_tasks",
+          "issue_count",
+          "issues"
+        ],
+        "title": "LidarExportPreflightResponse",
         "type": "object"
       },
       "LoginRequest": {
@@ -17882,6 +18594,42 @@
         "title": "NeighborsResponse",
         "type": "object"
       },
+      "NormalizedCameraBbox": {
+        "properties": {
+          "h": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 1.0,
+            "title": "H",
+            "type": "number"
+          },
+          "w": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 1.0,
+            "title": "W",
+            "type": "number"
+          },
+          "x": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "X",
+            "type": "number"
+          },
+          "y": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Y",
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y",
+          "w",
+          "h"
+        ],
+        "title": "NormalizedCameraBbox",
+        "type": "object"
+      },
       "NotificationList": {
         "properties": {
           "items": {
@@ -18467,6 +19215,44 @@
               }
             ]
           },
+          "calibration_digest": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration Digest"
+          },
+          "calibration_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration Revision"
+          },
+          "dataset_item_id": {
+            "format": "uuid",
+            "title": "Dataset Item Id",
+            "type": "string"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
           "image_url": {
             "title": "Image Url",
             "type": "string"
@@ -18478,14 +19264,1243 @@
           "role": {
             "title": "Role",
             "type": "string"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
           }
         },
         "required": [
           "name",
           "role",
+          "dataset_item_id",
           "image_url"
         ],
         "title": "PointCloudCameraOut",
+        "type": "object"
+      },
+      "PointCloudQualityConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "class_thresholds": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PointCloudQualityThresholdOverride"
+            },
+            "title": "Class Thresholds",
+            "type": "object"
+          },
+          "config_revision": {
+            "default": 1,
+            "minimum": 1.0,
+            "title": "Config Revision",
+            "type": "integer"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "enabled_rules": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Enabled Rules",
+            "type": "array"
+          },
+          "governance": {
+            "$ref": "#/components/schemas/PointCloudQualityGovernanceConfig"
+          },
+          "schema_version": {
+            "const": 2,
+            "default": 2,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "severity_overrides": {
+            "additionalProperties": {
+              "enum": [
+                "info",
+                "warning",
+                "blocker",
+                "off"
+              ],
+              "type": "string"
+            },
+            "title": "Severity Overrides",
+            "type": "object"
+          },
+          "thresholds": {
+            "$ref": "#/components/schemas/PointCloudQualityThresholdConfig"
+          }
+        },
+        "title": "PointCloudQualityConfig",
+        "type": "object"
+      },
+      "PointCloudQualityEvaluationCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "candidate_config": {
+            "$ref": "#/components/schemas/PointCloudQualityConfig"
+          }
+        },
+        "required": [
+          "candidate_config"
+        ],
+        "title": "PointCloudQualityEvaluationCreate",
+        "type": "object"
+      },
+      "PointCloudQualityEvaluationListItem": {
+        "properties": {
+          "baseline_config_digest": {
+            "title": "Baseline Config Digest",
+            "type": "string"
+          },
+          "baseline_config_revision": {
+            "title": "Baseline Config Revision",
+            "type": "integer"
+          },
+          "candidate_config_digest": {
+            "title": "Candidate Config Digest",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By Id"
+          },
+          "cutoff_at": {
+            "format": "date-time",
+            "title": "Cutoff At",
+            "type": "string"
+          },
+          "gate_reasons": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Gate Reasons",
+            "type": "array"
+          },
+          "gate_status": {
+            "enum": [
+              "insufficient_data",
+              "hold",
+              "promote"
+            ],
+            "title": "Gate Status",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "promoted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promoted At"
+          },
+          "promoted_by_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promoted By Id"
+          },
+          "promoted_config_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promoted Config Revision"
+          },
+          "sample_count": {
+            "title": "Sample Count",
+            "type": "integer"
+          },
+          "summary": {
+            "additionalProperties": true,
+            "title": "Summary",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "created_by_id",
+          "baseline_config_revision",
+          "baseline_config_digest",
+          "candidate_config_digest",
+          "cutoff_at",
+          "sample_count",
+          "summary",
+          "gate_status",
+          "gate_reasons",
+          "promoted_by_id",
+          "promoted_at",
+          "promoted_config_revision",
+          "created_at"
+        ],
+        "title": "PointCloudQualityEvaluationListItem",
+        "type": "object"
+      },
+      "PointCloudQualityEvaluationOut": {
+        "properties": {
+          "baseline_config_digest": {
+            "title": "Baseline Config Digest",
+            "type": "string"
+          },
+          "baseline_config_revision": {
+            "title": "Baseline Config Revision",
+            "type": "integer"
+          },
+          "baseline_config_snapshot": {
+            "additionalProperties": true,
+            "title": "Baseline Config Snapshot",
+            "type": "object"
+          },
+          "candidate_config_digest": {
+            "title": "Candidate Config Digest",
+            "type": "string"
+          },
+          "candidate_config_snapshot": {
+            "additionalProperties": true,
+            "title": "Candidate Config Snapshot",
+            "type": "object"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By Id"
+          },
+          "cutoff_at": {
+            "format": "date-time",
+            "title": "Cutoff At",
+            "type": "string"
+          },
+          "gate_reasons": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Gate Reasons",
+            "type": "array"
+          },
+          "gate_status": {
+            "enum": [
+              "insufficient_data",
+              "hold",
+              "promote"
+            ],
+            "title": "Gate Status",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "promoted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promoted At"
+          },
+          "promoted_by_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promoted By Id"
+          },
+          "promoted_config_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promoted Config Revision"
+          },
+          "sample_count": {
+            "title": "Sample Count",
+            "type": "integer"
+          },
+          "summary": {
+            "additionalProperties": true,
+            "title": "Summary",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "created_by_id",
+          "baseline_config_revision",
+          "baseline_config_digest",
+          "baseline_config_snapshot",
+          "candidate_config_digest",
+          "candidate_config_snapshot",
+          "cutoff_at",
+          "sample_count",
+          "summary",
+          "gate_status",
+          "gate_reasons",
+          "promoted_by_id",
+          "promoted_at",
+          "promoted_config_revision",
+          "created_at"
+        ],
+        "title": "PointCloudQualityEvaluationOut",
+        "type": "object"
+      },
+      "PointCloudQualityEvaluationPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PointCloudQualityEvaluationListItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "PointCloudQualityEvaluationPage",
+        "type": "object"
+      },
+      "PointCloudQualityGovernanceConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "maximum_false_positive_rate": {
+            "default": 0.1,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Maximum False Positive Rate",
+            "type": "number"
+          },
+          "minimum_confirmed_retention": {
+            "default": 0.9,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Minimum Confirmed Retention",
+            "type": "number"
+          },
+          "minimum_reviewed_per_rule": {
+            "default": 20,
+            "maximum": 10000.0,
+            "minimum": 1.0,
+            "title": "Minimum Reviewed Per Rule",
+            "type": "integer"
+          }
+        },
+        "title": "PointCloudQualityGovernanceConfig",
+        "type": "object"
+      },
+      "PointCloudQualityIssueOut": {
+        "properties": {
+          "annotation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotation Id"
+          },
+          "annotation_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotation Version"
+          },
+          "class_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Class Name"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "evidence": {
+            "additionalProperties": true,
+            "title": "Evidence",
+            "type": "object"
+          },
+          "frame_end": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame End"
+          },
+          "frame_start": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Start"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_seen_run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen Run Id"
+          },
+          "locator": {
+            "additionalProperties": true,
+            "title": "Locator",
+            "type": "object"
+          },
+          "metric": {
+            "additionalProperties": true,
+            "title": "Metric",
+            "type": "object"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "related_annotation_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Related Annotation Ids",
+            "type": "array"
+          },
+          "resolution_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolution Reason"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "resolved_by_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved By Id"
+          },
+          "review_note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Note"
+          },
+          "review_verdict": {
+            "anyOf": [
+              {
+                "enum": [
+                  "confirmed",
+                  "false_positive",
+                  "accepted_exception",
+                  "uncertain"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Verdict"
+          },
+          "reviewed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed At"
+          },
+          "reviewed_by_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed By Id"
+          },
+          "rule_version": {
+            "title": "Rule Version",
+            "type": "integer"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "scene_id": {
+            "format": "uuid",
+            "title": "Scene Id",
+            "type": "string"
+          },
+          "scene_track_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Track Id"
+          },
+          "severity": {
+            "enum": [
+              "blocker",
+              "warning",
+              "info"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "source_versions": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Source Versions",
+            "type": "object"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "resolved",
+              "wont_fix",
+              "stale"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "suggested_command": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested Command"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "threshold": {
+            "additionalProperties": true,
+            "title": "Threshold",
+            "type": "object"
+          },
+          "track_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Revision"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "run_id",
+          "last_seen_run_id",
+          "project_id",
+          "scene_id",
+          "task_id",
+          "annotation_id",
+          "annotation_version",
+          "scene_track_id",
+          "track_revision",
+          "related_annotation_ids",
+          "source_versions",
+          "class_name",
+          "code",
+          "rule_version",
+          "severity",
+          "status",
+          "frame_start",
+          "frame_end",
+          "metric",
+          "threshold",
+          "evidence",
+          "locator",
+          "suggested_command",
+          "resolution_reason",
+          "resolved_by_id",
+          "resolved_at",
+          "review_verdict",
+          "review_note",
+          "reviewed_by_id",
+          "reviewed_at",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "PointCloudQualityIssueOut",
+        "type": "object"
+      },
+      "PointCloudQualityIssuePage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PointCloudQualityIssueOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "PointCloudQualityIssuePage",
+        "type": "object"
+      },
+      "PointCloudQualityIssuePatch": {
+        "additionalProperties": false,
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "review_note": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Note"
+          },
+          "review_verdict": {
+            "anyOf": [
+              {
+                "enum": [
+                  "confirmed",
+                  "false_positive",
+                  "accepted_exception",
+                  "uncertain"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Verdict"
+          },
+          "status": {
+            "enum": [
+              "open",
+              "resolved",
+              "wont_fix"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "PointCloudQualityIssuePatch",
+        "type": "object"
+      },
+      "PointCloudQualityRunOut": {
+        "properties": {
+          "async_job_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Async Job Id"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "config_digest": {
+            "title": "Config Digest",
+            "type": "string"
+          },
+          "config_revision": {
+            "title": "Config Revision",
+            "type": "integer"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "progress_pct": {
+            "title": "Progress Pct",
+            "type": "integer"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "reused": {
+            "default": false,
+            "title": "Reused",
+            "type": "boolean"
+          },
+          "scope_json": {
+            "additionalProperties": true,
+            "title": "Scope Json",
+            "type": "object"
+          },
+          "source_snapshot_digest": {
+            "title": "Source Snapshot Digest",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "summary": {
+            "additionalProperties": true,
+            "title": "Summary",
+            "type": "object"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "async_job_id",
+          "status",
+          "progress_pct",
+          "scope_json",
+          "config_revision",
+          "config_digest",
+          "source_snapshot_digest",
+          "summary",
+          "error_message",
+          "created_at",
+          "completed_at"
+        ],
+        "title": "PointCloudQualityRunOut",
+        "type": "object"
+      },
+      "PointCloudQualityRunRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "annotation_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 5000,
+            "title": "Annotation Ids",
+            "type": "array"
+          },
+          "expected_versions": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Expected Versions",
+            "type": "object"
+          },
+          "scene_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "title": "Scene Ids",
+            "type": "array"
+          },
+          "scope": {
+            "enum": [
+              "project",
+              "scene_ids",
+              "task_ids",
+              "annotation_ids"
+            ],
+            "title": "Scope",
+            "type": "string"
+          },
+          "task_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 2000,
+            "title": "Task Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "scope"
+        ],
+        "title": "PointCloudQualityRunRequest",
+        "type": "object"
+      },
+      "PointCloudQualityThresholdConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "ground_float_m": {
+            "default": 0.45,
+            "exclusiveMinimum": 0.0,
+            "maximum": 10.0,
+            "title": "Ground Float M",
+            "type": "number"
+          },
+          "ground_margin_m": {
+            "default": 0.75,
+            "maximum": 10.0,
+            "minimum": 0.0,
+            "title": "Ground Margin M",
+            "type": "number"
+          },
+          "ground_penetration_m": {
+            "default": 0.2,
+            "exclusiveMinimum": 0.0,
+            "maximum": 5.0,
+            "title": "Ground Penetration M",
+            "type": "number"
+          },
+          "ground_sample_min": {
+            "default": 24,
+            "minimum": 3.0,
+            "title": "Ground Sample Min",
+            "type": "integer"
+          },
+          "minimum_points": {
+            "default": 5,
+            "minimum": 0.0,
+            "title": "Minimum Points",
+            "type": "integer"
+          },
+          "projection_max_edge_residual_ratio": {
+            "default": 0.025,
+            "exclusiveMinimum": 0.0,
+            "maximum": 1.0,
+            "title": "Projection Max Edge Residual Ratio",
+            "type": "number"
+          },
+          "projection_min_iou": {
+            "default": 0.5,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Projection Min Iou",
+            "type": "number"
+          },
+          "size_mad_z": {
+            "default": 4.5,
+            "exclusiveMinimum": 0.0,
+            "maximum": 20.0,
+            "title": "Size Mad Z",
+            "type": "number"
+          },
+          "size_min_samples": {
+            "default": 8,
+            "minimum": 3.0,
+            "title": "Size Min Samples",
+            "type": "integer"
+          },
+          "temporal_center_jump_m": {
+            "default": 4.0,
+            "exclusiveMinimum": 0.0,
+            "maximum": 100.0,
+            "title": "Temporal Center Jump M",
+            "type": "number"
+          },
+          "temporal_size_change_ratio": {
+            "default": 0.6,
+            "exclusiveMinimum": 0.0,
+            "maximum": 10.0,
+            "title": "Temporal Size Change Ratio",
+            "type": "number"
+          },
+          "temporal_yaw_jump_rad": {
+            "default": 0.8,
+            "exclusiveMinimum": 0.0,
+            "maximum": 3.142,
+            "title": "Temporal Yaw Jump Rad",
+            "type": "number"
+          }
+        },
+        "title": "PointCloudQualityThresholdConfig",
+        "type": "object"
+      },
+      "PointCloudQualityThresholdOverride": {
+        "additionalProperties": false,
+        "properties": {
+          "ground_float_m": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 10.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ground Float M"
+          },
+          "ground_margin_m": {
+            "anyOf": [
+              {
+                "maximum": 10.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ground Margin M"
+          },
+          "ground_penetration_m": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 5.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ground Penetration M"
+          },
+          "ground_sample_min": {
+            "anyOf": [
+              {
+                "minimum": 3.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ground Sample Min"
+          },
+          "minimum_points": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minimum Points"
+          },
+          "projection_max_edge_residual_ratio": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 1.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projection Max Edge Residual Ratio"
+          },
+          "projection_min_iou": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projection Min Iou"
+          },
+          "size_mad_z": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 20.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Mad Z"
+          },
+          "size_min_samples": {
+            "anyOf": [
+              {
+                "minimum": 3.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Min Samples"
+          },
+          "temporal_center_jump_m": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 100.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temporal Center Jump M"
+          },
+          "temporal_size_change_ratio": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 10.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temporal Size Change Ratio"
+          },
+          "temporal_yaw_jump_rad": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "maximum": 3.142,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Temporal Yaw Jump Rad"
+          }
+        },
+        "title": "PointCloudQualityThresholdOverride",
         "type": "object"
       },
       "PointMaskGeometry": {
@@ -20408,6 +22423,9 @@
             ],
             "title": "Owner Name"
           },
+          "point_cloud_quality_config": {
+            "$ref": "#/components/schemas/PointCloudQualityConfig"
+          },
           "preannotate_pipeline": {
             "anyOf": [
               {
@@ -22241,6 +24259,16 @@
             ],
             "title": "Name"
           },
+          "point_cloud_quality_config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PointCloudQualityConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "preannotate_pipeline": {
             "anyOf": [
               {
@@ -23906,6 +25934,1085 @@
         "title": "SceneOut",
         "type": "object"
       },
+      "SceneTimelineFrameSummary": {
+        "properties": {
+          "annotation_count": {
+            "default": 0,
+            "title": "Annotation Count",
+            "type": "integer"
+          },
+          "frame_index": {
+            "title": "Frame Index",
+            "type": "integer"
+          },
+          "selected_track": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SceneTimelineTrackOccurrence"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "selected_track_present": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Track Present"
+          },
+          "state": {
+            "enum": [
+              "available",
+              "unavailable",
+              "missing"
+            ],
+            "title": "State",
+            "type": "string"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          },
+          "task_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Status"
+          }
+        },
+        "required": [
+          "frame_index",
+          "state"
+        ],
+        "title": "SceneTimelineFrameSummary",
+        "type": "object"
+      },
+      "SceneTimelineResponse": {
+        "description": "3D Scene 时间轴窗口摘要。start/end 均为包含端点。",
+        "properties": {
+          "current_frame_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Frame Index"
+          },
+          "frames": {
+            "items": {
+              "$ref": "#/components/schemas/SceneTimelineFrameSummary"
+            },
+            "title": "Frames",
+            "type": "array"
+          },
+          "populated_frame_count": {
+            "default": 0,
+            "title": "Populated Frame Count",
+            "type": "integer"
+          },
+          "scene_end_frame": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene End Frame"
+          },
+          "scene_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Id"
+          },
+          "scene_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Name"
+          },
+          "scene_start_frame": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Start Frame"
+          },
+          "summary_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Summary Version",
+            "type": "integer"
+          },
+          "window_end_frame": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window End Frame"
+          },
+          "window_start_frame": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Window Start Frame"
+          }
+        },
+        "title": "SceneTimelineResponse",
+        "type": "object"
+      },
+      "SceneTimelineTrackOccurrence": {
+        "properties": {
+          "annotation_id": {
+            "format": "uuid",
+            "title": "Annotation Id",
+            "type": "string"
+          },
+          "class_name": {
+            "title": "Class Name",
+            "type": "string"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "temporal_role": {
+            "default": "sample",
+            "enum": [
+              "keyframe",
+              "derived",
+              "sample"
+            ],
+            "title": "Temporal Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "annotation_id",
+          "source",
+          "class_name"
+        ],
+        "title": "SceneTimelineTrackOccurrence",
+        "type": "object"
+      },
+      "SceneTrackCommandExecuteRequest": {
+        "properties": {
+          "confirm_member_deactivation": {
+            "default": false,
+            "title": "Confirm Member Deactivation",
+            "type": "boolean"
+          },
+          "frame_index": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Index"
+          },
+          "idempotency_key": {
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "split",
+              "merge",
+              "mark_absent",
+              "resume",
+              "terminate"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "resume_frame": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume Frame"
+          },
+          "secondary_track_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary Track Id"
+          },
+          "snapshot_token": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Snapshot Token",
+            "type": "string"
+          },
+          "source_annotation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Annotation Id"
+          },
+          "track_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Track Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "track_id",
+          "snapshot_token",
+          "idempotency_key"
+        ],
+        "title": "SceneTrackCommandExecuteRequest",
+        "type": "object"
+      },
+      "SceneTrackCommandMemberImpact": {
+        "properties": {
+          "by_temporal_role": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Temporal Role",
+            "type": "object"
+          },
+          "frames": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Frames",
+            "type": "array"
+          },
+          "requires_confirmation": {
+            "default": false,
+            "title": "Requires Confirmation",
+            "type": "boolean"
+          },
+          "total": {
+            "default": 0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "title": "SceneTrackCommandMemberImpact",
+        "type": "object"
+      },
+      "SceneTrackCommandPreviewOut": {
+        "properties": {
+          "affected_members": {
+            "$ref": "#/components/schemas/SceneTrackCommandMemberImpact"
+          },
+          "after_intervals": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/SceneTrackIntervalOut"
+              },
+              "type": "array"
+            },
+            "title": "After Intervals",
+            "type": "object"
+          },
+          "before_intervals": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/SceneTrackIntervalOut"
+              },
+              "type": "array"
+            },
+            "title": "Before Intervals",
+            "type": "object"
+          },
+          "contract_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Contract Version",
+            "type": "integer"
+          },
+          "frame_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Index"
+          },
+          "kind": {
+            "enum": [
+              "split",
+              "merge",
+              "mark_absent",
+              "resume",
+              "terminate",
+              "revert"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "resume_frame": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume Frame"
+          },
+          "scene_id": {
+            "format": "uuid",
+            "title": "Scene Id",
+            "type": "string"
+          },
+          "scene_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Name"
+          },
+          "secondary_track_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary Track Id"
+          },
+          "snapshot_token": {
+            "title": "Snapshot Token",
+            "type": "string"
+          },
+          "source_revisions": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Source Revisions",
+            "type": "object"
+          },
+          "track_id": {
+            "title": "Track Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "scene_id",
+          "track_id",
+          "affected_members",
+          "snapshot_token"
+        ],
+        "title": "SceneTrackCommandPreviewOut",
+        "type": "object"
+      },
+      "SceneTrackCommandRequest": {
+        "properties": {
+          "confirm_member_deactivation": {
+            "default": false,
+            "title": "Confirm Member Deactivation",
+            "type": "boolean"
+          },
+          "frame_index": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Index"
+          },
+          "kind": {
+            "enum": [
+              "split",
+              "merge",
+              "mark_absent",
+              "resume",
+              "terminate"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "resume_frame": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume Frame"
+          },
+          "secondary_track_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary Track Id"
+          },
+          "source_annotation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Annotation Id"
+          },
+          "track_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Track Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "track_id"
+        ],
+        "title": "SceneTrackCommandRequest",
+        "type": "object"
+      },
+      "SceneTrackCommandResultOut": {
+        "properties": {
+          "affected_members": {
+            "$ref": "#/components/schemas/SceneTrackCommandMemberImpact"
+          },
+          "after_intervals": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/SceneTrackIntervalOut"
+              },
+              "type": "array"
+            },
+            "title": "After Intervals",
+            "type": "object"
+          },
+          "before_intervals": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/SceneTrackIntervalOut"
+              },
+              "type": "array"
+            },
+            "title": "Before Intervals",
+            "type": "object"
+          },
+          "contract_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Contract Version",
+            "type": "integer"
+          },
+          "created_track_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created Track Id"
+          },
+          "frame_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Index"
+          },
+          "kind": {
+            "enum": [
+              "split",
+              "merge",
+              "mark_absent",
+              "resume",
+              "terminate",
+              "revert"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "operation_id": {
+            "format": "uuid",
+            "title": "Operation Id",
+            "type": "string"
+          },
+          "result_revisions": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Result Revisions",
+            "type": "object"
+          },
+          "resume_frame": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume Frame"
+          },
+          "scene_id": {
+            "format": "uuid",
+            "title": "Scene Id",
+            "type": "string"
+          },
+          "scene_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Name"
+          },
+          "secondary_track_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary Track Id"
+          },
+          "snapshot_token": {
+            "title": "Snapshot Token",
+            "type": "string"
+          },
+          "source_revisions": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Source Revisions",
+            "type": "object"
+          },
+          "status": {
+            "default": "committed",
+            "enum": [
+              "committed",
+              "reverted"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "track_id": {
+            "title": "Track Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "scene_id",
+          "track_id",
+          "affected_members",
+          "snapshot_token",
+          "operation_id"
+        ],
+        "title": "SceneTrackCommandResultOut",
+        "type": "object"
+      },
+      "SceneTrackDetailOut": {
+        "properties": {
+          "attributes": {
+            "additionalProperties": true,
+            "title": "Attributes",
+            "type": "object"
+          },
+          "attributes_meta": {
+            "additionalProperties": true,
+            "title": "Attributes Meta",
+            "type": "object"
+          },
+          "available_commands": {
+            "items": {
+              "enum": [
+                "split",
+                "merge",
+                "mark_absent",
+                "resume",
+                "terminate",
+                "revert"
+              ],
+              "type": "string"
+            },
+            "title": "Available Commands",
+            "type": "array"
+          },
+          "class_name": {
+            "title": "Class Name",
+            "type": "string"
+          },
+          "contract_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Contract Version",
+            "type": "integer"
+          },
+          "current_frame": {
+            "title": "Current Frame",
+            "type": "integer"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "intervals": {
+            "items": {
+              "$ref": "#/components/schemas/SceneTrackIntervalOut"
+            },
+            "title": "Intervals",
+            "type": "array"
+          },
+          "members": {
+            "$ref": "#/components/schemas/SceneTrackMemberSummary"
+          },
+          "presence_mode": {
+            "enum": [
+              "inferred",
+              "explicit"
+            ],
+            "title": "Presence Mode",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "retired_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Retired At"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          },
+          "scene_id": {
+            "format": "uuid",
+            "title": "Scene Id",
+            "type": "string"
+          },
+          "scene_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Name"
+          },
+          "track_id": {
+            "title": "Track Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "scene_id",
+          "track_id",
+          "class_name",
+          "presence_mode",
+          "revision",
+          "current_frame",
+          "members"
+        ],
+        "title": "SceneTrackDetailOut",
+        "type": "object"
+      },
+      "SceneTrackDiagnosticIssueOut": {
+        "properties": {
+          "annotation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotation Id"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "frame_index": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frame Index"
+          },
+          "track_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Id"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "title": "SceneTrackDiagnosticIssueOut",
+        "type": "object"
+      },
+      "SceneTrackDiagnosticReportOut": {
+        "properties": {
+          "contract_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Contract Version",
+            "type": "integer"
+          },
+          "issue_counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Issue Counts",
+            "type": "object"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/SceneTrackDiagnosticIssueOut"
+            },
+            "title": "Issues",
+            "type": "array"
+          },
+          "linked_member_count": {
+            "title": "Linked Member Count",
+            "type": "integer"
+          },
+          "scene_id": {
+            "format": "uuid",
+            "title": "Scene Id",
+            "type": "string"
+          },
+          "track_count": {
+            "title": "Track Count",
+            "type": "integer"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "scene_id",
+          "track_count",
+          "linked_member_count"
+        ],
+        "title": "SceneTrackDiagnosticReportOut",
+        "type": "object"
+      },
+      "SceneTrackIntervalOut": {
+        "properties": {
+          "end_frame": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Frame"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "legacy_envelope",
+              "manual",
+              "imported",
+              "derived"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "start_frame": {
+            "title": "Start Frame",
+            "type": "integer"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "start_frame",
+          "source",
+          "version"
+        ],
+        "title": "SceneTrackIntervalOut",
+        "type": "object"
+      },
+      "SceneTrackMemberSummary": {
+        "properties": {
+          "by_source": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Source",
+            "type": "object"
+          },
+          "by_temporal_role": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "By Temporal Role",
+            "type": "object"
+          },
+          "derived_frames": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Derived Frames",
+            "type": "array"
+          },
+          "keyframe_frames": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Keyframe Frames",
+            "type": "array"
+          },
+          "sample_frames": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Sample Frames",
+            "type": "array"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total"
+        ],
+        "title": "SceneTrackMemberSummary",
+        "type": "object"
+      },
+      "SceneTrackOperationListItemOut": {
+        "properties": {
+          "completed_at": {
+            "format": "date-time",
+            "title": "Completed At",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "split",
+              "merge",
+              "mark_absent",
+              "resume",
+              "terminate",
+              "revert"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "response": {
+            "$ref": "#/components/schemas/SceneTrackCommandResultOut"
+          },
+          "status": {
+            "enum": [
+              "committed",
+              "reverted"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "created_at",
+          "completed_at",
+          "response"
+        ],
+        "title": "SceneTrackOperationListItemOut",
+        "type": "object"
+      },
+      "SceneTrackOperationListOut": {
+        "properties": {
+          "contract_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Contract Version",
+            "type": "integer"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/SceneTrackOperationListItemOut"
+            },
+            "title": "Operations",
+            "type": "array"
+          }
+        },
+        "title": "SceneTrackOperationListOut",
+        "type": "object"
+      },
+      "SceneTrackRevertRequest": {
+        "properties": {
+          "idempotency_key": {
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Idempotency Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "idempotency_key"
+        ],
+        "title": "SceneTrackRevertRequest",
+        "type": "object"
+      },
       "SceneUpdate": {
         "properties": {
           "name": {
@@ -24187,6 +27294,100 @@
           "intrinsic"
         ],
         "title": "SensorCalibration",
+        "type": "object"
+      },
+      "SensorCalibrationHistoryOut": {
+        "properties": {
+          "current_digest": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Current Digest",
+            "type": "string"
+          },
+          "current_revision": {
+            "minimum": 1.0,
+            "title": "Current Revision",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SensorCalibrationRevisionOut"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "current_revision",
+          "current_digest",
+          "items"
+        ],
+        "title": "SensorCalibrationHistoryOut",
+        "type": "object"
+      },
+      "SensorCalibrationRevisionOut": {
+        "properties": {
+          "calibration": {
+            "$ref": "#/components/schemas/SensorCalibration"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "dataset_item_id": {
+            "format": "uuid",
+            "title": "Dataset Item Id",
+            "type": "string"
+          },
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "revision": {
+            "title": "Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "dataset_item_id",
+          "revision",
+          "digest",
+          "calibration"
+        ],
+        "title": "SensorCalibrationRevisionOut",
+        "type": "object"
+      },
+      "SensorCalibrationUpdate": {
+        "properties": {
+          "calibration": {
+            "$ref": "#/components/schemas/SensorCalibration"
+          },
+          "expected_digest": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Expected Digest",
+            "type": "string"
+          },
+          "expected_revision": {
+            "minimum": 1.0,
+            "title": "Expected Revision",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "calibration",
+          "expected_revision",
+          "expected_digest"
+        ],
+        "title": "SensorCalibrationUpdate",
         "type": "object"
       },
       "ServicePoolAdminItem": {
@@ -26507,6 +29708,337 @@
           "router_mode"
         ],
         "title": "TopologyResponse",
+        "type": "object"
+      },
+      "TrackOperationCandidatesResponse": {
+        "properties": {
+          "candidates": {
+            "items": {
+              "$ref": "#/components/schemas/TrackSummary"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "contract_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Contract Version",
+            "type": "integer"
+          },
+          "primary": {
+            "$ref": "#/components/schemas/TrackSummary"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "primary"
+        ],
+        "title": "TrackOperationCandidatesResponse",
+        "type": "object"
+      },
+      "TrackOperationExecuteRequest": {
+        "properties": {
+          "operation": {
+            "enum": [
+              "split",
+              "merge"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "primary_track_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Primary Track Id",
+            "type": "string"
+          },
+          "secondary_track_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary Track Id"
+          },
+          "snapshot_token": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Snapshot Token",
+            "type": "string"
+          },
+          "split_after_frame": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Split After Frame"
+          }
+        },
+        "required": [
+          "operation",
+          "primary_track_id",
+          "snapshot_token"
+        ],
+        "title": "TrackOperationExecuteRequest",
+        "type": "object"
+      },
+      "TrackOperationPreviewResponse": {
+        "properties": {
+          "affected_member_count": {
+            "title": "Affected Member Count",
+            "type": "integer"
+          },
+          "contract_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Contract Version",
+            "type": "integer"
+          },
+          "operation": {
+            "enum": [
+              "split",
+              "merge"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "primary": {
+            "$ref": "#/components/schemas/TrackSummary"
+          },
+          "rewritten_member_count": {
+            "title": "Rewritten Member Count",
+            "type": "integer"
+          },
+          "scene_id": {
+            "format": "uuid",
+            "title": "Scene Id",
+            "type": "string"
+          },
+          "scene_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Name"
+          },
+          "secondary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrackSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "snapshot_token": {
+            "title": "Snapshot Token",
+            "type": "string"
+          },
+          "survivor_track_id": {
+            "title": "Survivor Track Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation",
+          "scene_id",
+          "primary",
+          "survivor_track_id",
+          "affected_member_count",
+          "rewritten_member_count",
+          "snapshot_token"
+        ],
+        "title": "TrackOperationPreviewResponse",
+        "type": "object"
+      },
+      "TrackOperationRequest": {
+        "properties": {
+          "operation": {
+            "enum": [
+              "split",
+              "merge"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "primary_track_id": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Primary Track Id",
+            "type": "string"
+          },
+          "secondary_track_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Secondary Track Id"
+          },
+          "split_after_frame": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Split After Frame"
+          }
+        },
+        "required": [
+          "operation",
+          "primary_track_id"
+        ],
+        "title": "TrackOperationRequest",
+        "type": "object"
+      },
+      "TrackOperationResult": {
+        "properties": {
+          "affected_member_count": {
+            "title": "Affected Member Count",
+            "type": "integer"
+          },
+          "contract_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Contract Version",
+            "type": "integer"
+          },
+          "created_track_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created Track Id"
+          },
+          "operation": {
+            "enum": [
+              "split",
+              "merge"
+            ],
+            "title": "Operation",
+            "type": "string"
+          },
+          "primary": {
+            "$ref": "#/components/schemas/TrackSummary"
+          },
+          "rewritten_member_count": {
+            "title": "Rewritten Member Count",
+            "type": "integer"
+          },
+          "scene_id": {
+            "format": "uuid",
+            "title": "Scene Id",
+            "type": "string"
+          },
+          "scene_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scene Name"
+          },
+          "secondary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TrackSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "snapshot_token": {
+            "title": "Snapshot Token",
+            "type": "string"
+          },
+          "survivor_track_id": {
+            "title": "Survivor Track Id",
+            "type": "string"
+          },
+          "updated_member_count": {
+            "title": "Updated Member Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "operation",
+          "scene_id",
+          "primary",
+          "survivor_track_id",
+          "affected_member_count",
+          "rewritten_member_count",
+          "snapshot_token",
+          "updated_member_count"
+        ],
+        "title": "TrackOperationResult",
+        "type": "object"
+      },
+      "TrackSummary": {
+        "properties": {
+          "class_name": {
+            "title": "Class Name",
+            "type": "string"
+          },
+          "first_frame": {
+            "title": "First Frame",
+            "type": "integer"
+          },
+          "last_frame": {
+            "title": "Last Frame",
+            "type": "integer"
+          },
+          "member_count": {
+            "title": "Member Count",
+            "type": "integer"
+          },
+          "track_id": {
+            "title": "Track Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "track_id",
+          "class_name",
+          "member_count",
+          "first_frame",
+          "last_frame"
+        ],
+        "title": "TrackSummary",
         "type": "object"
       },
       "TrackerExemplar": {
@@ -31458,6 +34990,16 @@
                 "type": "null"
               }
             ]
+          },
+          "workspace": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkbenchWorkspacePreferences"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "title": "WorkbenchLayoutPreferences",
@@ -31627,6 +35169,676 @@
         },
         "title": "WorkbenchVideoPreferences",
         "type": "object"
+      },
+      "WorkbenchWorkspacePreferences": {
+        "additionalProperties": false,
+        "properties": {
+          "contexts": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/WorkspaceContextEnvelope"
+            },
+            "maxProperties": 6,
+            "propertyNames": {
+              "enum": [
+                "annotate:image",
+                "annotate:video",
+                "annotate:3d",
+                "review:image",
+                "review:video",
+                "review:3d"
+              ]
+            },
+            "title": "Contexts",
+            "type": "object"
+          },
+          "engine": {
+            "const": "dockview@8",
+            "title": "Engine",
+            "type": "string"
+          }
+        },
+        "required": [
+          "engine",
+          "contexts"
+        ],
+        "title": "WorkbenchWorkspacePreferences",
+        "type": "object"
+      },
+      "WorkspaceBranch": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "branch": "#/components/schemas/WorkspaceBranch",
+                  "leaf": "#/components/schemas/WorkspaceLeaf"
+                },
+                "propertyName": "type"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/WorkspaceLeaf"
+                },
+                {
+                  "$ref": "#/components/schemas/WorkspaceBranch"
+                }
+              ]
+            },
+            "maxItems": 10,
+            "minItems": 1,
+            "title": "Data",
+            "type": "array"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "type": {
+            "const": "branch",
+            "title": "Type",
+            "type": "string"
+          },
+          "visible": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visible"
+          }
+        },
+        "required": [
+          "type",
+          "data"
+        ],
+        "title": "WorkspaceBranch",
+        "type": "object"
+      },
+      "WorkspaceContextEnvelope": {
+        "additionalProperties": false,
+        "properties": {
+          "schemaVersion": {
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "title": "Schemaversion",
+            "type": "integer"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/WorkspaceSnapshot"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "snapshot"
+        ],
+        "title": "WorkspaceContextEnvelope",
+        "type": "object"
+      },
+      "WorkspaceDockReturn": {
+        "additionalProperties": false,
+        "properties": {
+          "anchors": {
+            "items": {
+              "enum": [
+                "canvas",
+                "task-queue",
+                "class-palette",
+                "inspector",
+                "discussion",
+                "ai-task",
+                "video-tracker",
+                "tri-view",
+                "camera-view"
+              ],
+              "type": "string"
+            },
+            "maxItems": 8,
+            "minItems": 1,
+            "title": "Anchors",
+            "type": "array"
+          },
+          "direction": {
+            "enum": [
+              "left",
+              "right",
+              "above",
+              "below"
+            ],
+            "title": "Direction",
+            "type": "string"
+          },
+          "height": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 1000000.0,
+            "title": "Height",
+            "type": "number"
+          },
+          "reference": {
+            "enum": [
+              "canvas",
+              "task-queue",
+              "class-palette",
+              "inspector",
+              "discussion",
+              "ai-task",
+              "video-tracker",
+              "tri-view",
+              "camera-view"
+            ],
+            "title": "Reference",
+            "type": "string"
+          },
+          "width": {
+            "exclusiveMinimum": 0.0,
+            "maximum": 1000000.0,
+            "title": "Width",
+            "type": "number"
+          }
+        },
+        "required": [
+          "reference",
+          "anchors",
+          "direction",
+          "width",
+          "height"
+        ],
+        "title": "WorkspaceDockReturn",
+        "type": "object"
+      },
+      "WorkspaceFloatingGroup": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/WorkspaceGroup"
+          },
+          "position": {
+            "$ref": "#/components/schemas/WorkspacePosition"
+          }
+        },
+        "required": [
+          "data",
+          "position"
+        ],
+        "title": "WorkspaceFloatingGroup",
+        "type": "object"
+      },
+      "WorkspaceGrid": {
+        "additionalProperties": false,
+        "properties": {
+          "height": {
+            "exclusiveMinimum": 0.0,
+            "title": "Height",
+            "type": "number"
+          },
+          "maximizedNode": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkspaceMaximizedNode"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "orientation": {
+            "enum": [
+              "HORIZONTAL",
+              "VERTICAL"
+            ],
+            "title": "Orientation",
+            "type": "string"
+          },
+          "root": {
+            "discriminator": {
+              "mapping": {
+                "branch": "#/components/schemas/WorkspaceBranch",
+                "leaf": "#/components/schemas/WorkspaceLeaf"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/WorkspaceLeaf"
+              },
+              {
+                "$ref": "#/components/schemas/WorkspaceBranch"
+              }
+            ],
+            "title": "Root"
+          },
+          "width": {
+            "exclusiveMinimum": 0.0,
+            "title": "Width",
+            "type": "number"
+          }
+        },
+        "required": [
+          "root",
+          "width",
+          "height",
+          "orientation"
+        ],
+        "title": "WorkspaceGrid",
+        "type": "object"
+      },
+      "WorkspaceGroup": {
+        "additionalProperties": false,
+        "properties": {
+          "activeView": {
+            "anyOf": [
+              {
+                "enum": [
+                  "canvas",
+                  "task-queue",
+                  "class-palette",
+                  "inspector",
+                  "discussion",
+                  "ai-task",
+                  "video-tracker",
+                  "tri-view",
+                  "camera-view"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activeview"
+          },
+          "hideHeader": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hideheader"
+          },
+          "id": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "locked": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "const": "no-drop-target",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locked"
+          },
+          "views": {
+            "items": {
+              "enum": [
+                "canvas",
+                "task-queue",
+                "class-palette",
+                "inspector",
+                "discussion",
+                "ai-task",
+                "video-tracker",
+                "tri-view",
+                "camera-view"
+              ],
+              "type": "string"
+            },
+            "maxItems": 9,
+            "title": "Views",
+            "type": "array"
+          }
+        },
+        "required": [
+          "id",
+          "views"
+        ],
+        "title": "WorkspaceGroup",
+        "type": "object"
+      },
+      "WorkspaceLayout": {
+        "additionalProperties": false,
+        "properties": {
+          "activeGroup": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activegroup"
+          },
+          "floatingGroups": {
+            "items": {
+              "$ref": "#/components/schemas/WorkspaceFloatingGroup"
+            },
+            "maxItems": 9,
+            "title": "Floatinggroups",
+            "type": "array"
+          },
+          "grid": {
+            "$ref": "#/components/schemas/WorkspaceGrid"
+          },
+          "panels": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/WorkspacePanel"
+            },
+            "maxProperties": 9,
+            "minProperties": 5,
+            "propertyNames": {
+              "enum": [
+                "canvas",
+                "task-queue",
+                "class-palette",
+                "inspector",
+                "discussion",
+                "ai-task",
+                "video-tracker",
+                "tri-view",
+                "camera-view"
+              ]
+            },
+            "title": "Panels",
+            "type": "object"
+          }
+        },
+        "required": [
+          "grid",
+          "panels"
+        ],
+        "title": "WorkspaceLayout",
+        "type": "object"
+      },
+      "WorkspaceLeaf": {
+        "additionalProperties": false,
+        "properties": {
+          "data": {
+            "$ref": "#/components/schemas/WorkspaceGroup"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size"
+          },
+          "type": {
+            "const": "leaf",
+            "title": "Type",
+            "type": "string"
+          },
+          "visible": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visible"
+          }
+        },
+        "required": [
+          "type",
+          "data"
+        ],
+        "title": "WorkspaceLeaf",
+        "type": "object"
+      },
+      "WorkspaceMaximizedNode": {
+        "additionalProperties": false,
+        "properties": {
+          "location": {
+            "items": {
+              "maximum": 9.0,
+              "minimum": 0.0,
+              "type": "integer"
+            },
+            "maxItems": 12,
+            "title": "Location",
+            "type": "array"
+          }
+        },
+        "required": [
+          "location"
+        ],
+        "title": "WorkspaceMaximizedNode",
+        "type": "object"
+      },
+      "WorkspacePanel": {
+        "additionalProperties": false,
+        "properties": {
+          "contentComponent": {
+            "const": "workbench-panel",
+            "title": "Contentcomponent",
+            "type": "string"
+          },
+          "id": {
+            "enum": [
+              "canvas",
+              "task-queue",
+              "class-palette",
+              "inspector",
+              "discussion",
+              "ai-task",
+              "video-tracker",
+              "tri-view",
+              "camera-view"
+            ],
+            "title": "Id",
+            "type": "string"
+          },
+          "renderer": {
+            "enum": [
+              "always",
+              "onlyWhenVisible"
+            ],
+            "title": "Renderer",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "id",
+          "contentComponent",
+          "renderer"
+        ],
+        "title": "WorkspacePanel",
+        "type": "object"
+      },
+      "WorkspacePosition": {
+        "additionalProperties": false,
+        "properties": {
+          "height": {
+            "exclusiveMinimum": 0.0,
+            "title": "Height",
+            "type": "number"
+          },
+          "left": {
+            "title": "Left",
+            "type": "number"
+          },
+          "top": {
+            "title": "Top",
+            "type": "number"
+          },
+          "width": {
+            "exclusiveMinimum": 0.0,
+            "title": "Width",
+            "type": "number"
+          }
+        },
+        "required": [
+          "left",
+          "top",
+          "width",
+          "height"
+        ],
+        "title": "WorkspacePosition",
+        "type": "object"
+      },
+      "WorkspaceReturn": {
+        "additionalProperties": false,
+        "properties": {
+          "dock": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkspaceDockReturn"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "group": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$",
+            "title": "Group",
+            "type": "string"
+          },
+          "index": {
+            "maximum": 8.0,
+            "minimum": 0.0,
+            "title": "Index",
+            "type": "integer"
+          },
+          "position": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkspacePosition"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "group",
+          "index"
+        ],
+        "title": "WorkspaceReturn",
+        "type": "object"
+      },
+      "WorkspaceSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "cameraPresentation": {
+            "anyOf": [
+              {
+                "enum": [
+                  "floating",
+                  "docked"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Camerapresentation"
+          },
+          "layout": {
+            "$ref": "#/components/schemas/WorkspaceLayout"
+          },
+          "returns": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/WorkspaceReturn"
+            },
+            "maxProperties": 8,
+            "propertyNames": {
+              "enum": [
+                "canvas",
+                "task-queue",
+                "class-palette",
+                "inspector",
+                "discussion",
+                "ai-task",
+                "video-tracker",
+                "tri-view",
+                "camera-view"
+              ]
+            },
+            "title": "Returns",
+            "type": "object"
+          },
+          "visibilityIntent": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "enum": [
+                    "shown",
+                    "hidden"
+                  ],
+                  "type": "string"
+                },
+                "propertyNames": {
+                  "enum": [
+                    "ai-task",
+                    "video-tracker",
+                    "tri-view",
+                    "camera-view"
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Visibilityintent"
+          }
+        },
+        "required": [
+          "layout",
+          "returns"
+        ],
+        "title": "WorkspaceSnapshot",
+        "type": "object"
       }
     },
     "securitySchemes": {
@@ -31638,7 +35850,7 @@
   },
   "info": {
     "title": "AI 标注平台 API",
-    "version": "0.24.1"
+    "version": "0.25.2"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -35304,7 +39516,7 @@
         ]
       },
       "patch": {
-        "description": "更新 preferences，按顶层子树（workbench / ai）合并，未提交的子树保持不变。\n\npydantic forbid extra 防脏写入。改为子树级合并（而非整体替换）后，工作台渲染偏好与\nAI 工具参数偏好可各自独立保存，互不覆盖。workbench 内部仍由前端提交全量子树；\n单独 PATCH layout 会覆盖旧 workbench 渲染字段。\n\n入参收 raw dict：先过 legacy 平铺键提升器 + 移除键剥离器（均 v0.16 移除）再手动走\npydantic 校验，校验失败按 FastAPI 原生 422 形态抛出。",
+        "description": "锁定最新用户偏好后深合并 PATCH；workspace context 原子替换且禁止版本降级。\n\n入参收 raw dict：先过 legacy 平铺键提升器 + 移除键剥离器（均 v0.16 移除）再手动走\npydantic 校验，校验失败按 FastAPI 原生 422 形态抛出。",
         "operationId": "update_preferences_api_v1_auth_me_preferences_patch",
         "requestBody": {
           "content": {
@@ -39793,6 +44005,110 @@
         ]
       }
     },
+    "/api/v1/point-cloud-quality/issues/{issue_id}": {
+      "get": {
+        "operationId": "get_issue_api_v1_point_cloud_quality_issues__issue_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Issue Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PointCloudQualityIssueOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Issue",
+        "tags": [
+          "point-cloud-quality"
+        ]
+      },
+      "patch": {
+        "operationId": "patch_issue_api_v1_point_cloud_quality_issues__issue_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "issue_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Issue Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PointCloudQualityIssuePatch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PointCloudQualityIssueOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Patch Issue",
+        "tags": [
+          "point-cloud-quality"
+        ]
+      }
+    },
     "/api/v1/project-pipelines": {
       "get": {
         "operationId": "list_pipelines_api_v1_project_pipelines_get",
@@ -41892,7 +46208,7 @@
             }
           },
           {
-            "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / youtube-vos / mots / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
+            "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / youtube-vos / mots / mot / kitti / coco-multicamera / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
             "in": "query",
             "name": "targets",
             "required": false,
@@ -41900,7 +46216,7 @@
               "default": [
                 "coco"
               ],
-              "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / youtube-vos / mots / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
+              "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / youtube-vos / mots / mot / kitti / coco-multicamera / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
               "items": {
                 "type": "string"
               },
@@ -41942,27 +46258,6 @@
               "pattern": "^(iso|source)$",
               "title": "Axis Frame",
               "type": "string"
-            }
-          },
-          {
-            "description": "LiDAR KITTI camera role; required when more than one complete role exists",
-            "in": "query",
-            "name": "lidar_camera_role",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "maxLength": 50,
-                  "minLength": 8,
-                  "pattern": "^camera_[A-Za-z0-9_.-]+$",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "LiDAR KITTI camera role; required when more than one complete role exists",
-              "title": "Lidar Camera Role"
             }
           },
           {
@@ -42032,6 +46327,74 @@
           }
         ],
         "summary": "Export Batch",
+        "tags": [
+          "batches"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/batches/{batch_id}/exports/lidar:preflight": {
+      "post": {
+        "operationId": "preflight_batch_lidar_export_api_v1_projects__project_id__batches__batch_id__exports_lidar_preflight_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LidarExportPreflightRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LidarExportPreflightResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preflight Batch Lidar Export",
         "tags": [
           "batches"
         ]
@@ -42882,7 +47245,7 @@
             }
           },
           {
-            "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / label-studio-brush / binary-png / indexed-png / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / youtube-vos / mots / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
+            "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / label-studio-brush / binary-png / indexed-png / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / youtube-vos / mots / mot / kitti / coco-multicamera / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
             "in": "query",
             "name": "targets",
             "required": false,
@@ -42890,7 +47253,7 @@
               "default": [
                 "coco"
               ],
-              "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / label-studio-brush / binary-png / indexed-png / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / youtube-vos / mots / mot / kitti / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
+              "description": "导出目标，可多选：coco / yolo-det / yolo-obb / yolo-seg / label-studio-brush / binary-png / indexed-png / aap_json / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis / youtube-vos / mots / mot / kitti / coco-multicamera / nuscenes / pointmask（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
               "items": {
                 "type": "string"
               },
@@ -42934,27 +47297,6 @@
               "pattern": "^(iso|source)$",
               "title": "Axis Frame",
               "type": "string"
-            }
-          },
-          {
-            "description": "LiDAR KITTI camera role; required when more than one complete role exists",
-            "in": "query",
-            "name": "lidar_camera_role",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "maxLength": 50,
-                  "minLength": 8,
-                  "pattern": "^camera_[A-Za-z0-9_.-]+$",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "LiDAR KITTI camera role; required when more than one complete role exists",
-              "title": "Lidar Camera Role"
             }
           },
           {
@@ -43041,6 +47383,64 @@
           }
         ],
         "summary": "Export Project",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/exports/lidar:preflight": {
+      "post": {
+        "operationId": "preflight_project_lidar_export_api_v1_projects__project_id__exports_lidar_preflight_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LidarExportPreflightRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LidarExportPreflightResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preflight Project Lidar Export",
         "tags": [
           "projects"
         ]
@@ -43273,71 +47673,6 @@
         "summary": "Guide Asset Upload Init",
         "tags": [
           "guide-assets"
-        ]
-      }
-    },
-    "/api/v1/projects/{project_id}/lidar-camera-roles": {
-      "get": {
-        "operationId": "lidar_camera_roles_api_v1_projects__project_id__lidar_camera_roles_get",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "project_id",
-            "required": true,
-            "schema": {
-              "format": "uuid",
-              "title": "Project Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "batch_id",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "format": "uuid",
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Batch Id"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/LidarCameraRolesResponse"
-                }
-              }
-            },
-            "description": "Successful Response"
-          },
-          "422": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            },
-            "description": "Validation Error"
-          }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ],
-        "summary": "Lidar Camera Roles",
-        "tags": [
-          "projects"
         ]
       }
     },
@@ -45637,6 +49972,580 @@
         "summary": "Apply Project Pipeline",
         "tags": [
           "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/point-cloud-quality/evaluations": {
+      "get": {
+        "operationId": "get_project_evaluations_api_v1_projects__project_id__point_cloud_quality_evaluations_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PointCloudQualityEvaluationPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Project Evaluations",
+        "tags": [
+          "point-cloud-quality"
+        ]
+      },
+      "post": {
+        "operationId": "create_project_evaluation_api_v1_projects__project_id__point_cloud_quality_evaluations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PointCloudQualityEvaluationCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PointCloudQualityEvaluationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Project Evaluation",
+        "tags": [
+          "point-cloud-quality"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/point-cloud-quality/evaluations/{evaluation_id}": {
+      "get": {
+        "operationId": "get_project_evaluation_api_v1_projects__project_id__point_cloud_quality_evaluations__evaluation_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "evaluation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Evaluation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PointCloudQualityEvaluationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Project Evaluation",
+        "tags": [
+          "point-cloud-quality"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/point-cloud-quality/evaluations/{evaluation_id}/promote": {
+      "post": {
+        "operationId": "promote_project_evaluation_api_v1_projects__project_id__point_cloud_quality_evaluations__evaluation_id__promote_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "evaluation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Evaluation Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PointCloudQualityEvaluationOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Promote Project Evaluation",
+        "tags": [
+          "point-cloud-quality"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/point-cloud-quality/issues": {
+      "get": {
+        "operationId": "get_issues_api_v1_projects__project_id__point_cloud_quality_issues_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "open",
+                    "resolved",
+                    "wont_fix",
+                    "stale"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "severity",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "blocker",
+                    "warning",
+                    "info"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Severity"
+            }
+          },
+          {
+            "in": "query",
+            "name": "code",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Code"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scene_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scene Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "task_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Task Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "annotation_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Annotation Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scene_track_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scene Track Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "frame",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Frame"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PointCloudQualityIssuePage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Issues",
+        "tags": [
+          "point-cloud-quality"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/point-cloud-quality/runs": {
+      "post": {
+        "operationId": "create_run_api_v1_projects__project_id__point_cloud_quality_runs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PointCloudQualityRunRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PointCloudQualityRunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Run",
+        "tags": [
+          "point-cloud-quality"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/point-cloud-quality/runs/{run_id}": {
+      "get": {
+        "operationId": "get_run_api_v1_projects__project_id__point_cloud_quality_runs__run_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PointCloudQualityRunOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Run",
+        "tags": [
+          "point-cloud-quality"
         ]
       }
     },
@@ -48809,6 +53718,180 @@
         ]
       }
     },
+    "/api/v1/tasks/{task_id}/cross-frame-jobs": {
+      "get": {
+        "operationId": "list_cross_frame_jobs_api_v1_tasks__task_id__cross_frame_jobs_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 50,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrossFrameJobListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Cross Frame Jobs",
+        "tags": [
+          "tasks"
+        ]
+      },
+      "post": {
+        "operationId": "create_cross_frame_job_api_v1_tasks__task_id__cross_frame_jobs_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CrossFrameJobCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AsyncJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create Cross Frame Job",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/cross-frame-jobs/{job_id}/retry-failed": {
+      "post": {
+        "operationId": "retry_cross_frame_job_api_v1_tasks__task_id__cross_frame_jobs__job_id__retry_failed_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AsyncJobOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Retry Cross Frame Job",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
     "/api/v1/tasks/{task_id}/image-pyramid": {
       "get": {
         "operationId": "get_image_pyramid_api_v1_tasks__task_id__image_pyramid_get",
@@ -49389,6 +54472,478 @@
           }
         ],
         "summary": "Get Task Neighbors",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/point-cloud/camera-members": {
+      "get": {
+        "operationId": "get_camera_members_api_v1_tasks__task_id__point_cloud_camera_members_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scene_track_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Scene Track Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "projection_camera_role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^camera_",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Projection Camera Role"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_inactive",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Inactive",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CameraAnnotationMemberList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Camera Members",
+        "tags": [
+          "tasks"
+        ]
+      },
+      "post": {
+        "operationId": "post_camera_member_api_v1_tasks__task_id__point_cloud_camera_members_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CameraAnnotationMemberCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CameraAnnotationMemberOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Post Camera Member",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/point-cloud/camera-members/{member_id}": {
+      "delete": {
+        "operationId": "remove_camera_member_api_v1_tasks__task_id__point_cloud_camera_members__member_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Member Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CameraAnnotationMemberDelete"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CameraAnnotationMemberOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Remove Camera Member",
+        "tags": [
+          "tasks"
+        ]
+      },
+      "patch": {
+        "operationId": "patch_camera_member_api_v1_tasks__task_id__point_cloud_camera_members__member_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Member Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CameraAnnotationMemberUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CameraAnnotationMemberOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Patch Camera Member",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/point-cloud/camera-members/{member_id}/restore": {
+      "post": {
+        "operationId": "restore_deleted_camera_member_api_v1_tasks__task_id__point_cloud_camera_members__member_id__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Member Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CameraAnnotationMemberRestore"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CameraAnnotationMemberOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Restore Deleted Camera Member",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/point-cloud/cameras/{camera_role}/calibration": {
+      "get": {
+        "operationId": "get_camera_calibration_history_api_v1_tasks__task_id__point_cloud_cameras__camera_role__calibration_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "camera_role",
+            "required": true,
+            "schema": {
+              "title": "Camera Role",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SensorCalibrationHistoryOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Camera Calibration History",
+        "tags": [
+          "tasks"
+        ]
+      },
+      "patch": {
+        "operationId": "patch_camera_calibration_api_v1_tasks__task_id__point_cloud_cameras__camera_role__calibration_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "camera_role",
+            "required": true,
+            "schema": {
+              "title": "Camera Role",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SensorCalibrationUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SensorCalibrationRevisionOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Patch Camera Calibration",
         "tags": [
           "tasks"
         ]
@@ -50054,6 +55609,465 @@
         ]
       }
     },
+    "/api/v1/tasks/{task_id}/scene-timeline": {
+      "get": {
+        "description": "返回当前 task 所属 3D Scene 的只读窗口摘要。",
+        "operationId": "get_task_scene_timeline_api_v1_tasks__task_id__scene_timeline_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start_frame",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "title": "Start Frame",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end_frame",
+            "required": true,
+            "schema": {
+              "minimum": 0,
+              "title": "End Frame",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "track_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "minLength": 1,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Track Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneTimelineResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Task Scene Timeline",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/scene-track-commands": {
+      "get": {
+        "operationId": "list_scene_track_operations_api_v1_tasks__task_id__scene_track_commands_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "track_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Track Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneTrackOperationListOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Scene Track Operations",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/scene-track-commands/execute": {
+      "post": {
+        "operationId": "execute_scene_track_command_api_v1_tasks__task_id__scene_track_commands_execute_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SceneTrackCommandExecuteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneTrackCommandResultOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Execute Scene Track Command",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/scene-track-commands/preview": {
+      "post": {
+        "operationId": "preview_scene_track_command_api_v1_tasks__task_id__scene_track_commands_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SceneTrackCommandRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneTrackCommandPreviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preview Scene Track Command",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/scene-track-commands/{operation_id}/revert": {
+      "post": {
+        "operationId": "revert_scene_track_command_api_v1_tasks__task_id__scene_track_commands__operation_id__revert_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "operation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Operation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SceneTrackRevertRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneTrackCommandResultOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Revert Scene Track Command",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/scene-track-diagnostics": {
+      "get": {
+        "operationId": "get_scene_track_diagnostics_api_v1_tasks__task_id__scene_track_diagnostics_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneTrackDiagnosticReportOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Scene Track Diagnostics",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/scene-tracks/{track_id}": {
+      "get": {
+        "operationId": "get_scene_track_detail_api_v1_tasks__task_id__scene_tracks__track_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "track_id",
+            "required": true,
+            "schema": {
+              "title": "Track Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SceneTrackDetailOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Scene Track Detail",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
     "/api/v1/tasks/{task_id}/skip": {
       "post": {
         "description": "v0.8.7 F7 · 标注员跳过任务并附原因，自动转 reviewer 复核。\n\n状态机：\n  - pending / in_progress → review（与 submit 行为一致，但不要求有标注）\n  - 其他状态 → 409\n业务约束：\n  - reason ∈ {image_corrupt, no_target, unclear, other}；其他 422\n  - reason=\"other\" 时建议带 note，但 note 可空（前端兜底）",
@@ -50152,6 +56166,193 @@
           }
         ],
         "summary": "Submit Task",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/track-operations": {
+      "post": {
+        "operationId": "execute_track_operation_api_v1_tasks__task_id__track_operations_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrackOperationExecuteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackOperationResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Execute Track Operation",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/track-operations/candidates": {
+      "get": {
+        "operationId": "list_track_operation_candidates_api_v1_tasks__task_id__track_operations_candidates_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "track_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "minLength": 1,
+              "title": "Track Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 20,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackOperationCandidatesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Track Operation Candidates",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/track-operations/preview": {
+      "post": {
+        "operationId": "preview_track_operation_api_v1_tasks__task_id__track_operations_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrackOperationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrackOperationPreviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preview Track Operation",
         "tags": [
           "tasks"
         ]

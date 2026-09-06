@@ -9,6 +9,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { RegisteredBackendsTab } from "./RegisteredBackendsTab";
 import { RuntimeObservePanel } from "./RuntimeObservePanel";
 import { CapabilityCatalogPanel } from "./CapabilityCatalogPanel";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 // v0.9.12 BUG B-14 · 删 failed tab; 失败预测已迁到 /ai-pre/jobs?status=failed.
 // v0.23.4 P4 · FailedPredictionsTab.tsx + ObserveBackendsPanel.tsx 已删除
@@ -82,7 +83,7 @@ export function ModelMarketPage() {
   };
 
   return (
-    <div className="mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground max-md:px-4">
+    <PageContainer>
       <div className="mb-4">
         <h1 className="mb-1 text-xl font-semibold">模型市场</h1>
         <p className="text-sm text-muted-foreground">
@@ -142,7 +143,7 @@ export function ModelMarketPage() {
       {activeTab === "catalog" && <CapabilityCatalogPanel />}
       {activeTab === "runtime" && <RuntimeObservePanel />}
       {activeTab === "registry" && <RegisteredBackendsTab />}
-    </div>
+    </PageContainer>
   );
 }
 

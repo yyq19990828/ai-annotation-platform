@@ -19,7 +19,7 @@ vi.mock("../stages/video/VideoWorkbench", () => ({
   }),
 }));
 vi.mock("../stages/three-d/ThreeDWorkbench", () => ({
-  default: (props: { selectedIds?: string[] }) => {
+  default: (props: { selectedIds?: string[]; petDock?: unknown }) => {
     threeDWorkbenchMock(props);
     return <div data-testid="three-d-workbench" />;
   },
@@ -47,6 +47,7 @@ const baseProps = {
     fitTick: 0,
     threeDTool: "select",
     onSetThreeDTool: vi.fn(),
+    onNavigateSceneFrame: vi.fn(),
     rightSidebarOpen: true,
     rightSidebarWidth: 280,
     workbenchLayout: {
@@ -188,7 +189,9 @@ describe("WorkbenchStageHost", () => {
 
   it("stageKind=3d: renders ThreeDWorkbench only (lazy)", async () => {
     const props = propsFor("3d");
+    const onNavigateSceneFrame = vi.fn();
     props.common.selectedIds = ["a1", "a2"];
+    props.common.onNavigateSceneFrame = onNavigateSceneFrame;
     render(<WorkbenchStageHost ref={createRef()} {...props} />);
 
     // lazy + Suspense: 组件异步解析,用 findBy 等待。
@@ -196,7 +199,20 @@ describe("WorkbenchStageHost", () => {
     expect(screen.queryByTestId("image-workbench")).toBeNull();
     expect(screen.queryByTestId("video-workbench")).toBeNull();
     expect(threeDWorkbenchMock).toHaveBeenCalledWith(
-      expect.objectContaining({ selectedIds: ["a1", "a2"] }),
+      expect.objectContaining({ selectedIds: ["a1", "a2"], onNavigateSceneFrame }),
     );
+  });
+
+  it("forwards the shared pet dock to the 3d workbench", async () => {
+    const petDock = {
+      enabled: true,
+      position: { x: 480, y: 620 },
+      onPositionChange: vi.fn(),
+    };
+
+    render(<WorkbenchStageHost ref={createRef()} {...propsFor("3d")} petDock={petDock} />);
+
+    expect(await screen.findByTestId("three-d-workbench")).toBeTruthy();
+    expect(threeDWorkbenchMock).toHaveBeenLastCalledWith(expect.objectContaining({ petDock }));
   });
 });

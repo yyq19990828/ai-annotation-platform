@@ -6,7 +6,11 @@ import {
   VIEW_AXES,
   MIN_SIZE,
   FRAME_MARGIN,
+  TRI_ZOOM_MAX,
+  TRI_ZOOM_MIN,
+  clampTriZoom,
   frameOrtho,
+  stepTriZoom,
   dragEdge,
   dragCorner,
   dragHandle,
@@ -46,6 +50,27 @@ describe("frameOrtho · 正交取景半宽/半高", () => {
     const { halfW, halfH } = frameOrtho(base.size, "top", 1);
     expect(halfW).toBeCloseTo(2.6); // = halfU
     expect(halfH).toBeCloseTo(2.6); // = halfU / aspect
+  });
+
+  it("zoom 同步缩放两个正交半轴，默认参数保持既有行为", () => {
+    const baseFrame = frameOrtho(base.size, "top", 2);
+    const zoomed = frameOrtho(base.size, "top", 2, FRAME_MARGIN, 2);
+    expect(zoomed.halfW).toBeCloseTo(baseFrame.halfW / 2);
+    expect(zoomed.halfH).toBeCloseTo(baseFrame.halfH / 2);
+  });
+});
+
+describe("三视图离散缩放", () => {
+  it("每档乘或除 1.12，往返恢复原值", () => {
+    const zoomed = stepTriZoom(1, 1);
+    expect(zoomed).toBeCloseTo(1.12);
+    expect(stepTriZoom(zoomed, -1)).toBeCloseTo(1);
+  });
+
+  it("限制在 0.50x 至 8.00x，并把非法值恢复为 1.00x", () => {
+    expect(stepTriZoom(TRI_ZOOM_MAX, 1)).toBe(TRI_ZOOM_MAX);
+    expect(stepTriZoom(TRI_ZOOM_MIN, -1)).toBe(TRI_ZOOM_MIN);
+    expect(clampTriZoom(Number.NaN)).toBe(1);
   });
 });
 

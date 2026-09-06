@@ -71,6 +71,22 @@ cd apps/api && uv sync --extra test && cd ../..
 # （用 uv tool 独立安装 pre-commit，勿 pip 装进项目 venv；否则 uv sync 会把它卸载）
 ```
 
+## Codex 会话启动硬件上下文
+
+仓库内的 `.codex/hooks.json` 会在 Codex 会话启动、恢复、清空或压缩后运行
+`.codex/hooks/session-start.mjs`，把当前机器的平台、CPU、内存和 GPU 摘要注入
+agent 上下文。脚本只使用 Node.js 标准库和系统自带查询命令，支持 macOS、Windows
+和 Linux；未安装对应查询命令时仍会返回基础信息。
+
+项目级 hook 需要通过两层信任才会运行：先信任项目的 `.codex/` 配置层，再在 Codex
+中打开 `/hooks`，审核并信任当前 hook 定义。脚本或配置变更后哈希变化，需要重新审核。
+未信任项目、未批准 hook，或无法完成交互式信任的非交互环境会跳过该 hook，因此不会
+收到硬件上下文。
+
+```bash
+node scripts/test-codex-session-start.mjs
+```
+
 ## 快速开始
 
 ### 1. 启动基础服务
@@ -351,6 +367,8 @@ seed 标记的对象。整套自动化固定使用 `annotation_screenshots_test`
 
 交互流程的点击与笔迹坐标来自 catalog 中随任务版本化的归一化语义锚点：锚点可由模型候选生成，但进入截图 seed 前必须经过标签或人工复核，录制器不在运行时猜测画布目标。点云静态场景同时包含轻量 PCL RGB-D 夹具与 nuScenes 六相机环视夹具；后者固定携带六路同步图像、内外参与单帧激光雷达，专门覆盖多相机画布状态。
 
+nuScenes 缓存需包含地图、元数据和关键帧传感器文件；初始化时会校验地图是否齐全。录制 catalog 根据数据集 UUID 解析导入器的隔离存储路径，逻辑帧名称保持固定。
+
 ### 前置条件
 
 ```bash
@@ -477,9 +495,9 @@ pnpm docs:media:audit -- --release
   `screenshot-ml-stub` 后改用 `--ml-backend-mode stub`。不要把浏览器的 `/minio`
   地址拿来配置 backend，后者必须同时对宿主 API 和 Celery 容器可达。
 - **远程工作台一直「重连中」**：DEV 中的 WebSocket 默认跟随页面同源，由
-  Vite 将 `:3000/ws` 升级并转发到本机 API。只有本机打开页面时才直连
-  `localhost:8000`。不要把 Docker 默认 IP 或服务器端 `localhost` 发给远程浏览器；
-  如果确需覆盖，使用对远程浏览器可达的 `VITE_WS_HOST`。
+  Vite 将当前页面端口的 `/ws` 升级并转发到本机 API；LAN 与 SSH LocalForward
+  访问也保持同源。不要把 Docker 默认 IP 或服务器端 `localhost:8000` 发给远程浏览器；
+  只有刻意绕过 Vite proxy 时才设置浏览器可达的 `VITE_WS_HOST`。
 - **seed repair 后点项目被退回总览**：`--repair` 可能为 seed 自有项目生成新 UUID。
   旧页签或已缓存的项目卡片仍指向旧 UUID 时会跳回总览；修复数据后强制刷新
   项目总览一次。
@@ -502,7 +520,11 @@ pnpm docs:media:audit -- --release
 | `anno2`  | annotator     | 123456 | (标注组A)          |
 | `anno3`  | annotator     | 123456 | (标注组B)          |
 
-初始化：`cd apps/api && uv run python scripts/seed.py`
+初始化：`cd apps/api && uv run python scripts/seed.py`。首次运行会从官方地址下载
+nuScenes mini 到 `~/.cache/ai-annotation-platform/nuscenes-mini`（约 4 GB，支持断点续传），
+并导入 scene-0061 的 39 个关键帧；归档和解压内容都不会写入 Git 仓库。
+重跑 seed 会保留已有任务和标注，并从 nuScenes `sample_data` 幂等回填旧相机条目缺失的
+像素宽高，供 3D 投影、持久化 2D 成员和残差质检共用。
 
 ## 下一步计划
 

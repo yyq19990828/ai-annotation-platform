@@ -261,29 +261,32 @@ async def seed(
                     "ocr P-OCR"
                 )
 
-        # 点云开发夹具(owner=admin):依赖 MinIO + SUSTechPOINTS 夹具,缺失则跳过,
-        # 不影响核心账号/项目种子。幂等:P-PC-DEV 已存在则跳过。
+        # 点云开发夹具(owner=admin):脚本按需下载官方 nuScenes mini 到用户缓存，
+        # P-PC-DEV 固定导入 scene-0061 的 39 个 key frame。--offline 只复用已有缓存。
         if admin_id is not None:
             try:
-                info = await seed_pointcloud(
+                nu = await seed_nuscenes_scene(
                     db,
                     owner_id=admin_id,
-                    fixture=generated_assets.pointcloud_root if strict else None,
-                    axis_convention="opencv_camera" if strict else "sustechpoints_demo",
+                    cache_dir=cache_dir,
+                    offline=offline,
+                    create_batch=not strict,
                 )
                 await db.commit()
-                if info is None:
-                    print("  skip  point-cloud P-PC-DEV (已存在)")
-                else:
-                    print(
-                        f"  add   point-cloud {info['project']}  "
-                        f"files={info['files']} tasks={info['tasks']}"
-                    )
-            except Exception as e:  # noqa: BLE001 — 夹具/MinIO 不可用时不阻断 seed
+                scenes = ", ".join(
+                    f"{s['name']}({s['frames']}帧{'·已存在' if s.get('skipped') else ''})"
+                    for s in nu["scenes"]
+                )
+                action = "replace" if nu.get("replaced_legacy") else "ready  "
+                print(
+                    f"  {action} nuscenes P-PC-DEV  items={nu['total_items']} "
+                    f"batches={nu['batches']}  {scenes}"
+                )
+            except Exception as e:  # noqa: BLE001 — demo 模式下大型夹具可选
                 await db.rollback()
                 if strict:
                     raise
-                print(f"  WARN  point-cloud 夹具跳过: {e}")
+                print(f"  WARN  nuScenes mini 夹具跳过: {e}")
 
             if strict:
                 try:
@@ -310,24 +313,6 @@ async def seed(
                     raise RuntimeError(
                         f"multi-camera point-cloud fixture failed: {e}"
                     ) from e
-
-            # scene 模式点云项目(owner=admin):nuScenes-mini 取 1 个 scene。依赖 MinIO +
-            # third-party/nuscenes-mini 夹具(~5.1G), 缺失则跳过。幂等:同名 scene 跳过。
-            if not strict:
-                try:
-                    nu = await seed_nuscenes_scene(db, owner_id=admin_id)
-                    await db.commit()
-                    scenes = ", ".join(
-                        f"{s['name']}({s['frames']}帧{'·已存在' if s.get('skipped') else ''})"
-                        for s in nu["scenes"]
-                    )
-                    print(
-                        f"  add   nuscenes scene-mode  items={nu['total_items']} "
-                        f"batches={nu['batches']}  {scenes}"
-                    )
-                except Exception as e:  # noqa: BLE001 — demo 模式下大型夹具可选
-                    await db.rollback()
-                    print(f"  WARN  nuscenes 夹具跳过: {e}")
 
         if strict:
             if preparation is None or generated_assets is None:

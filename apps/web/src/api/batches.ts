@@ -232,12 +232,12 @@ export const batchesApi = {
     if (opts?.motsFrameBase !== undefined) {
       params.set("mots_frame_base", String(opts.motsFrameBase));
     }
-    if (opts?.lidarCameraRole) {
-      params.set("lidar_camera_role", opts.lidarCameraRole);
-    }
     return apiClient.post<{ job_id: string }>(
       `/projects/${projectId}/batches/${batchId}/export?${params.toString()}`,
-      opts?.scope ? { scope: opts.scope } : {},
+      {
+        ...(opts?.scope ? { scope: opts.scope } : {}),
+        ...(opts?.lidar ? { lidar: { kitti_camera_role: opts.lidar.kittiCameraRole } } : {}),
+      },
     );
   },
 };

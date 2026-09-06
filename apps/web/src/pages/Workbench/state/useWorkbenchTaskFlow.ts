@@ -10,7 +10,7 @@
  * 之前 v0.6.4 拆 hotkeys + actions、v0.6.5 拆 canvas 草稿持久化；本 hook 让
  * shell 文件再瘦 ~80 行，并把 task flow 与 ImageStage 渲染逻辑解耦，便于单测。
  */
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type { TaskResponse, AnnotationResponse } from "@/types";
 import type { AttributeSchema } from "@/api/projects";
 import { getMissingRequired } from "../shell/AttributeForm";
@@ -32,7 +32,7 @@ export interface UseWorkbenchTaskFlowParams {
   /** Project 对象（仅读 attribute_schema），保持松类型以兼容 generated client */
   currentProject: { attribute_schema?: unknown } | undefined;
   userBoxesCount: number;
-  setCurrentTaskId: (id: string) => void;
+  setCurrentTaskId: (id: string) => void | Promise<boolean>;
   setSelectedId: (id: string | null) => void;
   pushToast: ToastFn;
   submitTaskMut: {
@@ -45,6 +45,20 @@ export interface UseWorkbenchTaskFlowResult {
   smartNext: (mode: "open" | "uncertain") => void;
   hasMissingRequired: boolean;
   handleSubmitTask: () => void;
+}
+
+export function relativeTaskTargetId(
+  taskIds: readonly string[],
+  committedTaskId: string | undefined,
+  pendingTaskId: string | null,
+  direction: "next" | "prev",
+): string | null {
+  const baseTaskId = pendingTaskId ?? committedTaskId;
+  const index = taskIds.indexOf(baseTaskId ?? "");
+  if (index < 0) return null;
+  const targetIndex =
+    direction === "next" ? Math.min(index + 1, taskIds.length - 1) : Math.max(0, index - 1);
+  return taskIds[targetIndex] === baseTaskId ? null : taskIds[targetIndex];
 }
 
 export function useWorkbenchTaskFlow(p: UseWorkbenchTaskFlowParams): UseWorkbenchTaskFlowResult {
@@ -64,13 +78,30 @@ export function useWorkbenchTaskFlow(p: UseWorkbenchTaskFlowParams): UseWorkbenc
     pushToast,
     submitTaskMut,
   } = p;
+  const pendingRelativeTaskIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    const pendingTaskId = pendingRelativeTaskIdRef.current;
+    if (
+      !pendingTaskId ||
+      pendingTaskId === taskId ||
+      !tasks.some((item) => item.id === pendingTaskId)
+    ) {
+      pendingRelativeTaskIdRef.current = null;
+    }
+  }, [taskId, tasks]);
 
   const navigateTask = useCallback(
     (direction: "next" | "prev") => {
       if (tasks.length === 0) return;
-      const idx = tasks.findIndex((t) => t.id === taskId);
-      const newIdx =
-        direction === "next" ? Math.min(idx + 1, tasks.length - 1) : Math.max(0, idx - 1);
+      const targetTaskId = relativeTaskTargetId(
+        tasks.map((item) => item.id),
+        taskId,
+        pendingRelativeTaskIdRef.current,
+        direction,
+      );
+      if (!targetTaskId) return;
+      const newIdx = tasks.findIndex((item) => item.id === targetTaskId);
       // 距末页 10 条时预加载下一页
       if (
         direction === "next" &&
@@ -80,7 +111,12 @@ export function useWorkbenchTaskFlow(p: UseWorkbenchTaskFlowParams): UseWorkbenc
       ) {
         fetchNextPage();
       }
-      setCurrentTaskId(tasks[newIdx].id);
+      pendingRelativeTaskIdRef.current = targetTaskId;
+      void Promise.resolve(setCurrentTaskId(targetTaskId)).then((allowed) => {
+        if (allowed === false && pendingRelativeTaskIdRef.current === targetTaskId) {
+          pendingRelativeTaskIdRef.current = null;
+        }
+      });
       setSelectedId(null);
     },
     [

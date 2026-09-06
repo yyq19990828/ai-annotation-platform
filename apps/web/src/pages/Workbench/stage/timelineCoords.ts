@@ -80,3 +80,12 @@ export function panWindow(
 ): TimelineWindow {
   return clampWindow({ from: win.from + deltaFrames, to: win.to + deltaFrames }, maxFrame, minSpan);
 }
+
+// v0.21.16 · 尺子刻度步长: 选一个"整齐"帧步长 (1/2/2.5/5×10ⁿ), 使可见窗口内约 6 个标签。
+// 随缩放窗口跨度变化自动切档, 长视频缩放后不会挤成一坨或稀到没参照。
+export function niceFrameStep(span: number): number {
+  const target = Math.max(1, span / 6);
+  const pow = Math.pow(10, Math.floor(Math.log10(target)));
+  const candidate = [1, 2, 2.5, 5, 10].map((m) => m * pow).find((c) => c >= target);
+  return Math.max(1, Math.round(candidate ?? 10 * pow));
+}

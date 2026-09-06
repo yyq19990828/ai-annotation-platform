@@ -1,6 +1,6 @@
 # 点云 + 图像联合标注总路线图(2D⇄3D 互标)
 
-> Status: superseded by [v0.24.x 3D 标注工作台优化 Epic](../../docs/plans/2026-08-14-v0.24.x-3d-workbench-optimization-epic.md)
+> Status: superseded by [v0.24.x 3D 标注工作台优化 Epic](../../docs/plans/archive/2026-08-14-v0.24.x-3d-workbench-optimization-epic.md)
 >
 > 从 [ROADMAP.md](../../ROADMAP.md) §A「3D 延伸项①」与 §C.8 旁支抽离的**3D 旗舰独立 epic**。性质:长程 epic,按 Phase 顺序推进,每 Phase 收尾配套精简本文 + 回写 CHANGELOG。
 >

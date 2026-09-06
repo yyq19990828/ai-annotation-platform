@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import shutil
 import struct
 import subprocess
@@ -21,10 +20,9 @@ except ModuleNotFoundError:  # package import from tests
     from scripts.seed_assets import SeedAssetError, default_cache_dir
 
 
-GENERATED_REVISION = "screenshots-real-v5"
+GENERATED_REVISION = "screenshots-real-v6"
 ROAD_SOURCE_IDS = ("auckland-traffic-1", "auckland-traffic-2")
 VIDEO_SOURCE_ID = "street-traffic-video"
-POINTCLOUD_SOURCE_IDS = tuple(f"pcl-pairwise-capture-{index}" for index in range(1, 5))
 NUSCENES_LIDAR_SOURCE_ID = "nuscenes-demo-lidar"
 NUSCENES_CAMERA_SOURCE_IDS = {
     role: f"nuscenes-demo-cam-{role.replace('_', '-')}"
@@ -41,7 +39,6 @@ REQUIRED_SOURCE_IDS = frozenset(
     (
         *ROAD_SOURCE_IDS,
         VIDEO_SOURCE_ID,
-        *POINTCLOUD_SOURCE_IDS,
         NUSCENES_LIDAR_SOURCE_ID,
         *NUSCENES_CAMERA_SOURCE_IDS.values(),
     )
@@ -50,10 +47,6 @@ PREPARED_PROVENANCE = {
     "media_status": "deterministic derivatives of verified network sources",
     "image": "CC0-1.0 Auckland traffic photographs by Kiwiev",
     "video": "Street traffic by Editor / Wikimedia Commons, CC BY 3.0",
-    "pointcloud": (
-        "Point Cloud Library data repository, BSD-3-Clause; camera frames are "
-        "deterministic depth renders from the organized XYZ pixels"
-    ),
     "multicamera_pointcloud": (
         "nuScenes / Motional, CC BY-NC-SA 4.0; version-pinned MMDetection3D "
         "six-camera demo sample"
@@ -279,16 +272,8 @@ class GeneratedScreenshotAssets:
     content_sha256: str
     image_root: Path
     video_path: Path
-    pointcloud_root: Path
     multicamera_pointcloud_root: Path
     source: str
-
-
-@dataclass(frozen=True)
-class OrganizedPointCloud:
-    width: int
-    height: int
-    points: tuple[tuple[float, float, float], ...]
 
 
 def _required_files(root: Path) -> tuple[Path, ...]:
@@ -298,9 +283,6 @@ def _required_files(root: Path) -> tuple[Path, ...]:
         root / "image/labels/train/screenshot_01.txt",
         root / "image/labels/val/screenshot_08.txt",
         root / "video/tracking_scene.mp4",
-        *(root / f"pointcloud/lidar/{index:06d}.pcd" for index in range(4)),
-        *(root / f"pointcloud/camera/front/{index:06d}.jpg" for index in range(4)),
-        root / "pointcloud/calib/camera/front.json",
         root / "multicamera-pointcloud/lidar/000000.pcd",
         *(
             root / f"multicamera-pointcloud/camera/{role}/000000.jpg"
@@ -380,7 +362,6 @@ def _validate(root: Path, *, source_sha256: str) -> GeneratedScreenshotAssets:
         content_sha256=content_sha256,
         image_root=root / "image",
         video_path=root / "video/tracking_scene.mp4",
-        pointcloud_root=root / "pointcloud",
         multicamera_pointcloud_root=root / "multicamera-pointcloud",
         source="cache",
     )
@@ -521,293 +502,6 @@ def _prepare_video(root: Path, source: Path) -> None:
         raise SeedAssetError(f"cannot prepare screenshot video: {detail}") from exc
 
 
-def _lzf_decompress(payload: bytes, expected_size: int) -> bytes:
-    output = bytearray()
-    cursor = 0
-    while cursor < len(payload):
-        control = payload[cursor]
-        cursor += 1
-        if control < 32:
-            length = control + 1
-            output.extend(payload[cursor : cursor + length])
-            cursor += length
-            continue
-        length = control >> 5
-        reference = len(output) - ((control & 0x1F) << 8) - 1
-        if length == 7:
-            length += payload[cursor]
-            cursor += 1
-        reference -= payload[cursor]
-        cursor += 1
-        length += 2
-        if reference < 0:
-            raise SeedAssetError("invalid LZF back-reference in screenshot PCD")
-        for _ in range(length):
-            output.append(output[reference])
-            reference += 1
-    if len(output) != expected_size:
-        raise SeedAssetError(
-            "screenshot PCD decompressed size mismatch: "
-            f"expected {expected_size}, got {len(output)}"
-        )
-    return bytes(output)
-
-
-def _read_organized_xyz_pcd(source: Path) -> OrganizedPointCloud:
-    payload = source.read_bytes()
-    data_offset = payload.find(b"DATA ")
-    if data_offset < 0:
-        raise SeedAssetError(f"screenshot PCD has no DATA header: {source}")
-    header_end = payload.find(b"\n", data_offset)
-    if header_end < 0:
-        raise SeedAssetError(f"screenshot PCD header is incomplete: {source}")
-    try:
-        header_lines = payload[:header_end].decode("ascii").splitlines()
-    except UnicodeDecodeError as exc:
-        raise SeedAssetError(f"screenshot PCD header is not ASCII: {source}") from exc
-    header = {
-        parts[0]: parts[1:]
-        for line in header_lines
-        if (parts := line.strip().split()) and not parts[0].startswith("#")
-    }
-    if (
-        header.get("FIELDS") != ["x", "y", "z"]
-        or header.get("SIZE") != ["4", "4", "4"]
-        or header.get("TYPE") != ["F", "F", "F"]
-        or header.get("COUNT", ["1", "1", "1"]) != ["1", "1", "1"]
-    ):
-        raise SeedAssetError(f"unsupported screenshot PCD schema: {source}")
-    try:
-        point_count = int(header["POINTS"][0])
-        width = int(header["WIDTH"][0])
-        height = int(header["HEIGHT"][0])
-    except (KeyError, IndexError, ValueError) as exc:
-        raise SeedAssetError(
-            f"screenshot PCD dimensions are invalid: {source}"
-        ) from exc
-    if width <= 0 or height <= 0 or width * height != point_count:
-        raise SeedAssetError(
-            f"screenshot PCD is not an organized point cloud: {source}"
-        )
-
-    data_kind = header["DATA"][0]
-    body = payload[header_end + 1 :]
-    points: list[tuple[float, float, float]] = []
-    if data_kind == "ascii":
-        try:
-            rows = body.decode("ascii").splitlines()
-            points = [
-                tuple(float(value) for value in row.split()) for row in rows if row
-            ]
-        except (UnicodeDecodeError, ValueError) as exc:
-            raise SeedAssetError(f"screenshot ASCII PCD is invalid: {source}") from exc
-    elif data_kind == "binary":
-        if len(body) != point_count * 12:
-            raise SeedAssetError(f"screenshot binary PCD size is invalid: {source}")
-        points = [
-            struct.unpack_from("<fff", body, index * 12) for index in range(point_count)
-        ]
-    elif data_kind == "binary_compressed":
-        if len(body) < 8:
-            raise SeedAssetError(f"screenshot compressed PCD is truncated: {source}")
-        compressed_size, uncompressed_size = struct.unpack_from("<II", body)
-        compressed = body[8 : 8 + compressed_size]
-        if len(compressed) != compressed_size or uncompressed_size != point_count * 12:
-            raise SeedAssetError(f"screenshot compressed PCD size is invalid: {source}")
-        unpacked = _lzf_decompress(compressed, uncompressed_size)
-        points = [
-            (
-                struct.unpack_from("<f", unpacked, index * 4)[0],
-                struct.unpack_from("<f", unpacked, point_count * 4 + index * 4)[0],
-                struct.unpack_from("<f", unpacked, point_count * 8 + index * 4)[0],
-            )
-            for index in range(point_count)
-        ]
-    else:
-        raise SeedAssetError(f"unsupported screenshot PCD DATA type: {data_kind}")
-
-    return OrganizedPointCloud(width=width, height=height, points=tuple(points))
-
-
-def _normalized_xyz_pcd(cloud: OrganizedPointCloud, *, source: Path) -> bytes:
-    finite = [
-        point for point in cloud.points if all(math.isfinite(value) for value in point)
-    ]
-    if not finite:
-        raise SeedAssetError(f"screenshot PCD contains no finite points: {source}")
-    normalized_header = (
-        "# .PCD v0.7 - Point Cloud Data file format\n"
-        "VERSION 0.7\n"
-        "FIELDS x y z\n"
-        "SIZE 4 4 4\n"
-        "TYPE F F F\n"
-        "COUNT 1 1 1\n"
-        f"WIDTH {len(finite)}\n"
-        "HEIGHT 1\n"
-        "VIEWPOINT 0 0 0 1 0 0 0\n"
-        f"POINTS {len(finite)}\n"
-        "DATA binary\n"
-    ).encode("ascii")
-    normalized_body = bytearray(len(finite) * 12)
-    for index, point in enumerate(finite):
-        struct.pack_into("<fff", normalized_body, index * 12, *point)
-    return normalized_header + normalized_body
-
-
-def _linear_camera_axis(
-    samples: list[tuple[float, float]],
-    *,
-    fallback_focal: float,
-    fallback_center: float,
-) -> tuple[float, float]:
-    """Fit pixel = focal * (axis / depth) + center for one camera axis."""
-
-    count = len(samples)
-    if count < 2:
-        return fallback_focal, fallback_center
-    sum_x = sum(sample[0] for sample in samples)
-    sum_y = sum(sample[1] for sample in samples)
-    sum_xx = sum(sample[0] * sample[0] for sample in samples)
-    sum_xy = sum(sample[0] * sample[1] for sample in samples)
-    denominator = count * sum_xx - sum_x * sum_x
-    if abs(denominator) < 1e-9:
-        return fallback_focal, fallback_center
-    focal = (count * sum_xy - sum_x * sum_y) / denominator
-    center = (sum_y - focal * sum_x) / count
-    if not math.isfinite(focal) or not math.isfinite(center) or focal <= 0:
-        return fallback_focal, fallback_center
-    return focal, center
-
-
-def _infer_camera_intrinsic(cloud: OrganizedPointCloud) -> tuple[float, ...]:
-    horizontal: list[tuple[float, float]] = []
-    vertical: list[tuple[float, float]] = []
-    for index, (x, y, z) in enumerate(cloud.points):
-        if not all(math.isfinite(value) for value in (x, y, z)) or z <= 0:
-            continue
-        pixel_x = float(index % cloud.width)
-        pixel_y = float(index // cloud.width)
-        horizontal.append((x / z, pixel_x))
-        vertical.append((y / z, pixel_y))
-    fallback_focal = max(cloud.width, cloud.height) * 0.82
-    focal_x, center_x = _linear_camera_axis(
-        horizontal,
-        fallback_focal=fallback_focal,
-        fallback_center=(cloud.width - 1) / 2,
-    )
-    focal_y, center_y = _linear_camera_axis(
-        vertical,
-        fallback_focal=fallback_focal,
-        fallback_center=(cloud.height - 1) / 2,
-    )
-    return (
-        round(focal_x, 6),
-        0.0,
-        round(center_x, 6),
-        0.0,
-        round(focal_y, 6),
-        round(center_y, 6),
-        0.0,
-        0.0,
-        1.0,
-    )
-
-
-def _depth_color(value: float) -> tuple[int, int, int]:
-    """Compact blue→cyan→amber ramp for a deterministic depth-camera frame."""
-
-    stops = (
-        (18, 31, 67),
-        (20, 111, 150),
-        (61, 181, 154),
-        (244, 196, 92),
-    )
-    scaled = max(0.0, min(1.0, value)) * (len(stops) - 1)
-    left = min(int(scaled), len(stops) - 2)
-    fraction = scaled - left
-    return tuple(
-        round(
-            stops[left][channel] * (1 - fraction) + stops[left + 1][channel] * fraction
-        )
-        for channel in range(3)
-    )
-
-
-def _write_depth_camera(cloud: OrganizedPointCloud, destination: Path) -> None:
-    depths = sorted(
-        z
-        for x, y, z in cloud.points
-        if all(math.isfinite(value) for value in (x, y, z)) and z > 0
-    )
-    if not depths:
-        raise SeedAssetError("screenshot organized PCD contains no positive depth")
-    near = depths[int((len(depths) - 1) * 0.02)]
-    far = depths[int((len(depths) - 1) * 0.98)]
-    span = max(far - near, 1e-6)
-    pixels = []
-    for x, y, z in cloud.points:
-        if not all(math.isfinite(value) for value in (x, y, z)) or z <= 0:
-            pixels.append((7, 11, 18))
-            continue
-        pixels.append(_depth_color(1 - (z - near) / span))
-    image = Image.new("RGB", (cloud.width, cloud.height))
-    image.putdata(pixels)
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    image.save(
-        destination,
-        format="JPEG",
-        quality=92,
-        subsampling=0,
-        optimize=False,
-        progressive=False,
-    )
-
-
-def _prepare_pointclouds(root: Path, source_files: Mapping[str, Path]) -> None:
-    lidar = root / "lidar"
-    lidar.mkdir(parents=True, exist_ok=True)
-    intrinsic: tuple[float, ...] | None = None
-    for index, source_id in enumerate(POINTCLOUD_SOURCE_IDS):
-        source = source_files[source_id]
-        cloud = _read_organized_xyz_pcd(source)
-        (lidar / f"{index:06d}.pcd").write_bytes(
-            _normalized_xyz_pcd(cloud, source=source)
-        )
-        _write_depth_camera(
-            cloud,
-            root / f"camera/front/{index:06d}.jpg",
-        )
-        intrinsic = intrinsic or _infer_camera_intrinsic(cloud)
-
-    calibration = {
-        "extrinsic": [
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-            0.0,
-            0.0,
-            0.0,
-            0.0,
-            1.0,
-        ],
-        "intrinsic": list(intrinsic or ()),
-    }
-    calibration_path = root / "calib/camera/front.json"
-    calibration_path.parent.mkdir(parents=True, exist_ok=True)
-    calibration_path.write_text(
-        json.dumps(calibration, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-
-
 def _nuscenes_lidar_pcd(source: Path) -> bytes:
     payload = source.read_bytes()
     stride = 5 * 4
@@ -876,7 +570,6 @@ def ensure_screenshot_assets(
     try:
         _prepare_images(staging / "image", source_files)
         _prepare_video(staging / "video", source_files[VIDEO_SOURCE_ID])
-        _prepare_pointclouds(staging / "pointcloud", source_files)
         _prepare_nuscenes_multicamera(staging / "multicamera-pointcloud", source_files)
         content_sha256 = _content_digest(staging)
         (staging / ".complete.json").write_text(
@@ -902,7 +595,6 @@ def ensure_screenshot_assets(
             content_sha256=resolved.content_sha256,
             image_root=resolved.image_root,
             video_path=resolved.video_path,
-            pointcloud_root=resolved.pointcloud_root,
             multicamera_pointcloud_root=resolved.multicamera_pointcloud_root,
             source="prepared",
         )

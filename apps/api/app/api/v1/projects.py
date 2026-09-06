@@ -34,7 +34,11 @@ from app.schemas.project import (
     ProjectTransferRequest,
 )
 from app.schemas.project_pipeline import ProjectPipelineApplyRequest, ProjectPipelineOut
-from app.schemas.export import ExportRequestBody, LidarCameraRolesResponse
+from app.schemas.export import (
+    ExportRequestBody,
+    LidarExportPreflightRequest,
+    LidarExportPreflightResponse,
+)
 from app.config import settings
 from app.services.display_id import next_display_id
 from app.services.pipeline_validation import (
@@ -764,6 +768,33 @@ async def update_project(
             )
         requested_config.config_revision = current_config.config_revision + 1
         payload["mask_qc_config"] = requested_config.model_dump(mode="json")
+    if "point_cloud_quality_config" in payload:
+        from app.services.point_cloud_quality.config import (
+            load_point_cloud_quality_config,
+        )
+
+        project = (
+            await db.execute(
+                select(Project).where(Project.id == project.id).with_for_update()
+            )
+        ).scalar_one()
+        current_config = load_point_cloud_quality_config(
+            project.point_cloud_quality_config
+        )
+        requested_config = load_point_cloud_quality_config(
+            payload["point_cloud_quality_config"]
+        )
+        if requested_config.config_revision != current_config.config_revision:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "reason": "point_cloud_quality_config_revision_conflict",
+                    "expected": requested_config.config_revision,
+                    "actual": current_config.config_revision,
+                },
+            )
+        requested_config.config_revision = current_config.config_revision + 1
+        payload["point_cloud_quality_config"] = requested_config.model_dump(mode="json")
     # v0.13.x 收口 PR#30 review #5: type_key 与 data_type 媒体维度必须一致.
     # 单独 PATCH 任一字段也要校验 (用 payload 给值 + 项目现值组合后的有效值).
     if "type_key" in payload or "data_type" in payload:
@@ -1244,30 +1275,26 @@ def _validate_export_targets(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.get(
-    "/{project_id}/lidar-camera-roles",
-    response_model=LidarCameraRolesResponse,
+@router.post(
+    "/{project_id}/exports/lidar:preflight",
+    response_model=LidarExportPreflightResponse,
 )
-async def lidar_camera_roles(
-    project_id: uuid.UUID,
-    batch_id: uuid.UUID | None = Query(default=None),
+async def preflight_project_lidar_export(
+    body: LidarExportPreflightRequest,
     project: Project = Depends(require_project_visible),
     db: AsyncSession = Depends(get_db),
-):
+) -> LidarExportPreflightResponse:
     if project.data_type != "lidar":
-        raise HTTPException(status_code=400, detail="project is not a LiDAR project")
-    if batch_id is not None:
-        from app.db.models.batch import Batch
+        raise HTTPException(status_code=422, detail="project is not a lidar project")
+    targets = _validate_export_targets(body.targets, project.data_type)
+    from app.services.exporting.lidar_preflight import preflight_lidar_export
 
-        batch = await db.get(Batch, batch_id)
-        if batch is None or batch.project_id != project.id:
-            raise HTTPException(status_code=404, detail="Batch not found")
-    from app.services.exporting.packaging import get_lidar_camera_roles
-
-    return await get_lidar_camera_roles(
+    return await preflight_lidar_export(
         db,
         project_id=project.id,
-        batch_id=batch_id,
+        batch_id=None,
+        targets=targets,
+        options=body.lidar,
     )
 
 
@@ -1281,7 +1308,7 @@ async def export_project(
         " / label-studio-brush / binary-png / indexed-png / aap_json"
         " / video_json / yolo-frames-det / yolo-frames-seg / coco-frames-seg / davis"
         " / youtube-vos / mots / mot / kitti"
-        " / nuscenes / pointmask"
+        " / coco-multicamera / nuscenes / pointmask"
         "（voc 仅可单选，走同步下载；lidar.kitti 为 3D label，video.kitti 为 tracking label）",
     ),
     include_attributes: bool = Query(
@@ -1297,13 +1324,6 @@ async def export_project(
         "iso",
         pattern="^(iso|source)$",
         description="3D box export axis frame: iso keeps platform-normalized PSR; source maps back to dataset axis convention",
-    ),
-    lidar_camera_role: str | None = Query(
-        default=None,
-        min_length=8,
-        max_length=50,
-        pattern=r"^camera_[A-Za-z0-9_.-]+$",
-        description="LiDAR KITTI camera role; required when more than one complete role exists",
     ),
     indexed_overlap_policy: str = Query(
         "error",
@@ -1332,11 +1352,32 @@ async def export_project(
     from app.services.audit import AuditService, AuditAction, export_detail
 
     targets = _validate_export_targets(targets, project.data_type)
-    selected_lidar_role = (
-        lidar_camera_role
-        if project.data_type == "lidar" and "kitti" in targets
+
+    lidar_options = body.lidar if body else None
+    lidar_options_payload = (
+        lidar_options.model_dump(mode="json", exclude_none=True)
+        if lidar_options
         else None
     )
+    if project.data_type == "lidar":
+        from app.services.exporting.lidar_preflight import (
+            LidarExportPreflightFailed,
+            assert_lidar_export_ready,
+        )
+
+        try:
+            await assert_lidar_export_ready(
+                db,
+                project_id=project.id,
+                batch_id=None,
+                targets=targets,
+                options=lidar_options,
+            )
+        except LidarExportPreflightFailed as exc:
+            raise HTTPException(
+                status_code=409,
+                detail=exc.report.model_dump(mode="json"),
+            ) from exc
 
     from app.services.exporting.video_scope import normalize_video_export_scope
 
@@ -1418,15 +1459,11 @@ async def export_project(
             "mots_frame_base": mots_frame_base,
             "project_display_id": project.display_id,
             **(
-                {"lidar_camera_role": selected_lidar_role}
-                if selected_lidar_role
-                else {}
-            ),
-            **(
                 {"video_export_scope": video_scope_payload}
                 if video_scope_payload
                 else {}
             ),
+            **({"lidar": lidar_options_payload} if lidar_options_payload else {}),
         },
     )
     await AuditService.log(
@@ -1449,15 +1486,11 @@ async def export_project(
                 "video_overlap_policy": video_overlap_policy,
                 "mots_frame_base": mots_frame_base,
                 **(
-                    {"lidar_camera_role": selected_lidar_role}
-                    if selected_lidar_role
-                    else {}
-                ),
-                **(
                     {"video_export_scope": video_scope_payload}
                     if video_scope_payload
                     else {}
                 ),
+                **({"lidar": lidar_options_payload} if lidar_options_payload else {}),
             },
         ),
     )
@@ -1475,15 +1508,11 @@ async def export_project(
             "video_overlap_policy": video_overlap_policy,
             "mots_frame_base": mots_frame_base,
             **(
-                {"lidar_camera_role": selected_lidar_role}
-                if selected_lidar_role
-                else {}
-            ),
-            **(
                 {"video_export_scope": video_scope_payload}
                 if video_scope_payload
                 else {}
             ),
+            **({"lidar": lidar_options_payload} if lidar_options_payload else {}),
         },
         async_job_id=str(job.id),
     )

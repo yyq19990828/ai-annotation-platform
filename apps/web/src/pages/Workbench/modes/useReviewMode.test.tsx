@@ -132,4 +132,21 @@ describe("useReviewMode", () => {
       expect.any(Object),
     );
   });
+
+  it("ignores A/R from settings buttons and restores review shortcuts after close", () => {
+    const { result } = renderReview();
+    const settings = document.createElement("button");
+    settings.dataset.workbenchSettings = "";
+    settings.dataset.state = "open";
+    document.body.append(settings);
+    act(() => {
+      settings.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
+      settings.dispatchEvent(new KeyboardEvent("keydown", { key: "r", bubbles: true }));
+    });
+    expect(mocks.approveMutate).not.toHaveBeenCalled();
+    expect(result.current.rejectModal?.open).toBe(false);
+    settings.remove();
+    act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "a" })));
+    expect(mocks.approveMutate).toHaveBeenCalledTimes(1);
+  });
 });

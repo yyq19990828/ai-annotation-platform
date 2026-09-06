@@ -203,6 +203,9 @@ jobs:
         run: >-
           uv tool run --from pre-commit==4.6.1 pre-commit run
           --all-files --hook-stage manual --show-diff-on-failure
+      # Advisory: workflow 文件名 / 顶层 name 的 sentence case 规范, 不阻断。
+      - name: Workflow naming (advisory)
+        run: node scripts/check-workflow-names.mjs
 
   docs-build:
     name: Docs build (VitePress)
@@ -312,7 +315,7 @@ jobs:
         working-directory: apps/web
         env:
           OPENAPI_URL: ${{ github.workspace }}/apps/api/openapi.snapshot.json
-        run: pnpm build
+        run: pnpm build --mode e2e
       - name: Install Playwright browsers
         working-directory: apps/web
         run: pnpm exec playwright install --with-deps chromium

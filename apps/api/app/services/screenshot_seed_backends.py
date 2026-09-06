@@ -336,17 +336,5 @@ async def reconcile_screenshot_backends(
             binding["tracker"] = tracker
         bindings[logical_key] = binding
 
-    if mode == "live":
-        owned_stubs = list(
-            (
-                await db.execute(
-                    select(MLBackendRegistry).where(MLBackendRegistry.source == "seed")
-                )
-            ).scalars()
-        )
-        for backend in owned_stubs:
-            if _is_owned_stub(backend):
-                await db.delete(backend)
-
     await db.commit()
     return {"mode": mode, "bindings": bindings}

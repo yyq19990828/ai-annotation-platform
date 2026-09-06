@@ -14,6 +14,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { ReviewTaskItem, RecentReviewItem } from "@/api/dashboard";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import { RejectReasonModal } from "@/pages/Review/RejectReasonModal";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 const CARD_TITLE = "m-0 text-sm font-semibold";
 const CARD_HEADER_PLAIN = "border-b border-border px-4 py-3.5";
@@ -68,7 +69,7 @@ export function ReviewerDashboard() {
   }
 
   return (
-    <div className="mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground">
+    <PageContainer>
       <div className="mb-5 flex items-end justify-between max-md:flex-col max-md:items-start max-md:gap-2.5">
         <div>
           <h1 className="mb-1 text-xl font-semibold">质检工作台</h1>
@@ -247,7 +248,7 @@ export function ReviewerDashboard() {
         onClose={() => setRejectingTaskId(null)}
         onConfirm={handleRejectConfirm}
       />
-    </div>
+    </PageContainer>
   );
 }
 

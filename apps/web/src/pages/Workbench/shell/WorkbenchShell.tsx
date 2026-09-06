@@ -2,7 +2,6 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { cn } from "@/lib/utils";
 import { useFabRevealed } from "@/stores/fabRevealStore";
-import { VideoTrackerPropagateDialog } from "../stage/VideoTrackerPropagateDialog";
 import { VideoMaskCorrectionDialog } from "../stage/VideoMaskCorrectionDialog";
 import { MaskConversionDialog } from "../stage/MaskConversionDialog";
 import { VideoTrackerReviewBar } from "../stage/VideoTrackerReviewBar";
@@ -41,9 +40,9 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
     <>
       <WorkbenchLayout
         {...model.layout}
+        videoTracker={model.propagateDialog}
         stageOverlay={
           <>
-            <VideoTrackerPropagateDialog {...model.propagateDialog} />
             <VideoMaskCorrectionDialog {...model.maskCorrectionDialog} />
             <MaskConversionDialog {...model.conversionDialog} />
             <VideoTrackerReviewBar {...model.trackerReview} />

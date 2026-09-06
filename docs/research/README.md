@@ -64,26 +64,30 @@
 
 ## 子文档索引
 
-| 编号 | 文档                                                                         | 内容                                                                                                              |
-| ---- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| 01   | [Label Studio](./01-label-studio.md)                                         | §2.1 Label Studio 深度拆解                                                                                        |
-| 02   | [Adala](./02-adala.md)                                                       | §2.2 Adala LLM Agent 标注框架                                                                                     |
-| 03   | [CVAT](./03-cvat.md)                                                         | §2.3 CVAT CV 专用平台                                                                                             |
-| 04   | [X-AnyLabeling](./04-x-anylabeling.md)                                       | §2.4 X-AnyLabeling 桌面端                                                                                         |
-| 05   | [商业平台速览](./05-commercial.md)                                           | §2.5 Roboflow、Encord、V7、Refuel、Argilla                                                                        |
-| 06   | [AI 赋能模式拆解](./06-ai-patterns.md)                                       | §3 五种 AI 赋能模式 A-E                                                                                           |
-| 07   | [生产级能力](./07-production-capabilities.md)                                | §4 用户管理/数据存储/协同                                                                                         |
-| 08   | [对比矩阵](./08-comparison-matrix.md)                                        | §5 关键能力对比矩阵（4 张表格）                                                                                   |
-| 09   | [借鉴建议](./09-recommendations.md)                                          | §6 具体借鉴建议                                                                                                   |
-| 10   | [路线图](./10-roadmap.md)                                                    | §7 路线图建议（v0.3-v0.6+）                                                                                       |
-| 11   | [参考资料](./11-references.md)                                               | §8-§9 参考资料 + 总结                                                                                             |
-| 12   | [大数据集分批策略](./12-large-dataset-batching.md)                           | 智能切批 / 不可变快照 / 主动学习闭环                                                                              |
-| 13   | [mask→polygon simplify tolerance 评测](./13-simplify-tolerance-eval.md)      | v0.9.4 phase 3 默认 tolerance 选定依据                                                                            |
-| 14   | [点云 + 图像联合标注](./14-point-cloud-image-fusion.md)                      | 融合原理 + SUSTechPOINTS/xtreme1/CVAT 源码级拆解 + 本平台 gap 分析与改动评估                                      |
-| 15   | [标注员绩效能力对标](./15-annotator-performance.md)                          | CVAT/LS 源码 + 6 商业产品的绩效指标 taxonomy + gap 分析(IAA/honeypot/项目级范围/导出)                             |
-| 16   | [质量体系前置调研](./16-quality-system-1t1a1r.md)                            | 1 task : 1 annotator : 1 reviewer 模式下 GT / Honeypot / Consensus 的可行边界                                     |
-| 17   | [图片 Raster Mask 工作台基准](./17-image-raster-mask-workbench-benchmark.md) | 1080p Worker decode / analyze / bitmap p50/p95、临时内存与 20 Mask 缓存字节基线                                   |
-| 18   | [Mask 高级操作基准](./18-mask-advanced-operations-benchmark.md)              | 1080p component / hole / morphology / split 的主线程与 Worker p50/p95、Long Task 和重复 20 次 heap 基线           |
-| 19   | [Mask 大画布性能基线](./19-mask-large-canvas-performance-baseline.md)        | 720p / 1080p / 4K 渲染、缓存、编辑历史、快速切帧、5K / 8K 内存边界与实施后退出门                                  |
-| 20   | [Mask 质检与格式生态合同](./20-mask-qc-format-contracts.md)                  | QC golden、格式事实标准、consumer fixture、稳定 loss / skip code 与并发 / 安全风险                                |
-| 21   | [WebGPU 视频工作台适用性](./21-webgpu-video-workbench.md)                    | 客户端 / 服务端资源边界、Linux NVIDIA 实测、packed XOR 与 immutable base cache production A/B、ROI 路由与字节预算 |
+| 编号 | 文档                                                                                   | 内容                                                                                                              |
+| ---- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| 01   | [Label Studio](./01-label-studio.md)                                                   | §2.1 Label Studio 深度拆解                                                                                        |
+| 02   | [Adala](./02-adala.md)                                                                 | §2.2 Adala LLM Agent 标注框架                                                                                     |
+| 03   | [CVAT](./03-cvat.md)                                                                   | §2.3 CVAT CV 专用平台                                                                                             |
+| 04   | [X-AnyLabeling](./04-x-anylabeling.md)                                                 | §2.4 X-AnyLabeling 桌面端                                                                                         |
+| 05   | [商业平台速览](./05-commercial.md)                                                     | §2.5 Roboflow、Encord、V7、Refuel、Argilla                                                                        |
+| 06   | [AI 赋能模式拆解](./06-ai-patterns.md)                                                 | §3 五种 AI 赋能模式 A-E                                                                                           |
+| 07   | [生产级能力](./07-production-capabilities.md)                                          | §4 用户管理/数据存储/协同                                                                                         |
+| 08   | [对比矩阵](./08-comparison-matrix.md)                                                  | §5 关键能力对比矩阵（4 张表格）                                                                                   |
+| 09   | [借鉴建议](./09-recommendations.md)                                                    | §6 具体借鉴建议                                                                                                   |
+| 10   | [路线图](./10-roadmap.md)                                                              | §7 路线图建议（v0.3-v0.6+）                                                                                       |
+| 11   | [参考资料](./11-references.md)                                                         | §8-§9 参考资料 + 总结                                                                                             |
+| 12   | [大数据集分批策略](./12-large-dataset-batching.md)                                     | 智能切批 / 不可变快照 / 主动学习闭环                                                                              |
+| 13   | [mask→polygon simplify tolerance 评测](./13-simplify-tolerance-eval.md)                | v0.9.4 phase 3 默认 tolerance 选定依据                                                                            |
+| 14   | [点云 + 图像联合标注](./14-point-cloud-image-fusion.md)                                | 融合原理 + SUSTechPOINTS/xtreme1/CVAT 源码级拆解 + 本平台 gap 分析与改动评估                                      |
+| 15   | [标注员绩效能力对标](./15-annotator-performance.md)                                    | CVAT/LS 源码 + 6 商业产品的绩效指标 taxonomy + gap 分析(IAA/honeypot/项目级范围/导出)                             |
+| 16   | [质量体系前置调研](./16-quality-system-1t1a1r.md)                                      | 1 task : 1 annotator : 1 reviewer 模式下 GT / Honeypot / Consensus 的可行边界                                     |
+| 17   | [图片 Raster Mask 工作台基准](./17-image-raster-mask-workbench-benchmark.md)           | 1080p Worker decode / analyze / bitmap p50/p95、临时内存与 20 Mask 缓存字节基线                                   |
+| 18   | [Mask 高级操作基准](./18-mask-advanced-operations-benchmark.md)                        | 1080p component / hole / morphology / split 的主线程与 Worker p50/p95、Long Task 和重复 20 次 heap 基线           |
+| 19   | [Mask 大画布性能基线](./19-mask-large-canvas-performance-baseline.md)                  | 720p / 1080p / 4K 渲染、缓存、编辑历史、快速切帧、5K / 8K 内存边界与实施后退出门                                  |
+| 20   | [Mask 质检与格式生态合同](./20-mask-qc-format-contracts.md)                            | QC golden、格式事实标准、consumer fixture、稳定 loss / skip code 与并发 / 安全风险                                |
+| 21   | [WebGPU 视频工作台适用性](./21-webgpu-video-workbench.md)                              | 客户端 / 服务端资源边界、Linux NVIDIA 实测、packed XOR 与 immutable base cache production A/B、ROI 路由与字节预算 |
+| 22   | [Supervisely 与 CVAT 标注工作台](./22-supervisely-cvat-workbench.md)                   | 官方文档、源码、教程与媒体深读；UI 交互、3D 工作台逻辑、能力差距、借鉴优先级与验收标准                            |
+| 23   | [Supervisely 与 CVAT 图片、视频工作台](./23-supervisely-cvat-image-video-workbench.md) | 图片与视频 UI 交互专项；高频摩擦、工具状态、AI / Mask、轨迹时间轴、审核定位与实施验收                             |
+| 24   | [3D 时序对象与轨迹生命周期](./24-3d-temporal-object-lifecycle.md)                      | 八个商业/开放核心平台、五个开源项目与 OpenLABEL；对象身份、存在区间、时间角色、可逆修复和领域基础                 |
+| 25   | [macOS WebGPU 性能实测](./25-macos-webgpu-performance.md)                              | Apple Metal 上的 Raster Mask 与 3D 点云 Chrome/Safari 性能、正确性、恢复能力与推广门结果                          |

@@ -14,6 +14,7 @@ import type { ProjectResponse } from "@/api/projects";
 import { MyBatchesCard } from "./MyBatchesCard";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import { projectDisplayType } from "@/utils/projectDisplay";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 const STATS_GRID_FOUR = "grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3";
 const STATS_GRID_THREE = "grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3";
@@ -62,7 +63,7 @@ export function AnnotatorDashboard() {
   const trendPct = stats.weekly_compare_pct ?? undefined;
 
   return (
-    <div className="mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground">
+    <PageContainer>
       <div className="mb-3 flex items-end justify-between">
         <div>
           <h1 className="mb-1 text-xl font-semibold">标注工作台</h1>
@@ -301,6 +302,6 @@ export function AnnotatorDashboard() {
           )}
         </Card>
       </div>
-    </div>
+    </PageContainer>
   );
 }

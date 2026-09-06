@@ -63,7 +63,14 @@ describe("useIssuePins", () => {
   });
 
   it("focusTick 变化 + image 任务 → 平移视口到图钉(setVp)", () => {
-    feedbackItems = [{ id: "iss-1", status: "open", anchor_position: { x: 0.5, y: 0.5 } }];
+    feedbackItems = [
+      {
+        id: "iss-1",
+        status: "open",
+        anchor_type: "pixel",
+        anchor_position: { x: 0.5, y: 0.5 },
+      },
+    ];
     storeState.highlightId = "iss-1";
     const { rerender, setVp, setVideoFrameIndex } = setup();
     expect(setVp).not.toHaveBeenCalled(); // 初次挂载 focusTick 未变,不动
@@ -75,13 +82,34 @@ describe("useIssuePins", () => {
 
   it("focusTick 变化 + video 任务 → seek 到 anchor 帧(setVideoFrameIndex)", () => {
     feedbackItems = [
-      { id: "iss-1", status: "open", anchor_position: { x: 0.5, y: 0.5, frame: 42 } },
+      {
+        id: "iss-1",
+        status: "open",
+        anchor_type: "pixel",
+        anchor_position: { x: 0.5, y: 0.5, frame: 42 },
+      },
     ];
     storeState.highlightId = "iss-1";
     const { rerender, setVp, setVideoFrameIndex } = setup({ isVideoTask: true });
     storeState.focusTick = 1;
     rerender({ isVideoTask: true });
     expect(setVideoFrameIndex).toHaveBeenCalledWith(42);
+    expect(setVp).not.toHaveBeenCalled();
+  });
+
+  it("point_cloud 锚点没有 x/y 时不移动二维视口", () => {
+    feedbackItems = [
+      {
+        id: "quality-1",
+        status: "open",
+        anchor_type: "point_cloud",
+        anchor_position: { frame: 0, point_cloud_quality_issue_id: "quality-1" },
+      },
+    ];
+    storeState.highlightId = "quality-1";
+    const { rerender, setVp } = setup();
+    storeState.focusTick = 1;
+    rerender({ isVideoTask: false });
     expect(setVp).not.toHaveBeenCalled();
   });
 

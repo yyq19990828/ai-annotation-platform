@@ -24,6 +24,7 @@ import { ProjectActionsMenu } from "./ProjectActionsMenu";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import { projectDisplayType } from "@/utils/projectDisplay";
 import { statSeriesHint, statSparkValues, statTrendFromSeries } from "@/utils/projectStatsSeries";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 // v0.10.28 · 列表图标改读媒体维度 data_type (image / video / lidar).
 const DATA_TYPE_ICONS: Record<string, IconName> = {
@@ -282,7 +283,7 @@ export function DashboardPage() {
   const recentActivity = audit?.items ?? [];
 
   return (
-    <div className="mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground max-[900px]:p-4">
+    <PageContainer>
       <div className="mb-5 flex items-end justify-between gap-6 max-[900px]:flex-col max-[900px]:items-start">
         <div>
           <h1 className="mb-1 text-xl font-semibold">项目总览</h1>
@@ -496,7 +497,7 @@ export function DashboardPage() {
           )}
         </Card>
       </div>
-    </div>
+    </PageContainer>
   );
 }
 

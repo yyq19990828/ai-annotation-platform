@@ -155,4 +155,45 @@ describe("VideoKonvaStage · konva mock", () => {
     act(() => ref.current?.togglePlayback());
     expect(playMock).toHaveBeenCalled();
   });
+
+  it("settings scrolling and draft keys leave the underlying video stage untouched", () => {
+    const view = render(<VideoKonvaStage manifest={manifest} videoTool="polygon" />);
+    const stage = view.getByTestId("video-konva-stage");
+    vi.spyOn(stage, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 1000, 500));
+    const settings = document.createElement("button");
+    settings.dataset.workbenchSettings = "";
+    settings.dataset.state = "open";
+    document.body.append(settings);
+    const events = [
+      new WheelEvent("wheel", {
+        clientX: 100,
+        clientY: 100,
+        ctrlKey: true,
+        deltaY: -10,
+        bubbles: true,
+        cancelable: true,
+      }),
+      ...["Enter", "Escape", "Backspace"].map(
+        (key) => new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+      ),
+    ];
+    act(() => events.forEach((event) => settings.dispatchEvent(event)));
+    expect(events.every((event) => !event.defaultPrevented)).toBe(true);
+    settings.remove();
+
+    const wheel = new WheelEvent("wheel", {
+      clientX: 100,
+      clientY: 100,
+      ctrlKey: true,
+      deltaY: -10,
+      cancelable: true,
+    });
+    const enter = new KeyboardEvent("keydown", { key: "Enter", cancelable: true });
+    act(() => {
+      window.dispatchEvent(wheel);
+      window.dispatchEvent(enter);
+    });
+    expect(wheel.defaultPrevented).toBe(true);
+    expect(enter.defaultPrevented).toBe(true);
+  });
 });

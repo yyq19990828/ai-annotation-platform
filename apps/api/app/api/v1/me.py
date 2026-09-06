@@ -2,7 +2,9 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, ValidationError
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import hash_password, verify_password
@@ -114,11 +116,9 @@ async def request_self_deactivation(
 
 
 @router.get("/preferences", response_model=UserPreferences)
-async def get_preferences(user: User = Depends(get_current_user)) -> UserPreferences:
+async def get_preferences(user: User = Depends(get_current_user)) -> JSONResponse:
     """v0.9.41 · 读取当前用户的标注偏好。空字段走 schema 默认值。"""
-    return UserPreferences.model_validate(
-        _strip_removed_workbench_keys(user.preferences or {})
-    )
+    return _preferences_response(user.preferences or {})
 
 
 # v0.16 移除 · v0.15.3 把 workbench 平铺键拆为 common/image 子树后，部署窗口期内
@@ -162,7 +162,13 @@ def _promote_legacy_workbench_keys(payload: dict) -> dict:
 _REMOVED_WORKBENCH_LAYOUT_KEYS = ("leftWidth", "rightWidth")
 
 
-def _deep_merge_preferences(existing: dict, incoming: dict) -> dict:
+_ATOMIC_PREFERENCE_MAP_PATHS = {("workbench", "layout", "cameraPanels")}
+_WORKSPACE_CONTEXTS_PATH = ("workbench", "layout", "workspace", "contexts")
+
+
+def _deep_merge_preferences(
+    existing: dict, incoming: dict, *, _path: tuple[str, ...] = ()
+) -> dict:
     """把 incoming 深合并到 existing 的副本: dict 递归、其它类型 (list / scalar) 直接覆盖。
 
     动机: pydantic exclude_unset PATCH 只带用户本次改的键, 顶层浅合并会让"改一个字段=
@@ -171,12 +177,17 @@ def _deep_merge_preferences(existing: dict, incoming: dict) -> dict:
     字段, ai.secondary_by_model 里单 backend 桶 PATCH 也不冲掉其它 backend 的偏好。
 
     注: list 直接覆盖 (合并语义不确定), 前端如需增删列表元素应提交完整列表。
+    workbench.layout.cameraPanels 是按 role 提交的完整 map；缺失 role 表示删除
+    其自定义状态，故该路径不能递归合并。
     """
     out: dict = dict(existing)
     for k, v in incoming.items():
         cur = out.get(k)
-        if isinstance(v, dict) and isinstance(cur, dict):
-            out[k] = _deep_merge_preferences(cur, v)
+        path = (*_path, k)
+        if path in _ATOMIC_PREFERENCE_MAP_PATHS or _path == _WORKSPACE_CONTEXTS_PATH:
+            out[k] = v
+        elif isinstance(v, dict) and isinstance(cur, dict):
+            out[k] = _deep_merge_preferences(cur, v, _path=path)
         else:
             out[k] = v
     return out
@@ -203,17 +214,53 @@ def _strip_removed_workbench_keys(prefs: dict) -> dict:
     return {**prefs, "workbench": {**workbench, "layout": clean_layout}}
 
 
+def _preferences_response(prefs: dict) -> JSONResponse:
+    """Keep stored workspace envelopes intact for client recovery/version detection.
+
+    Incoming workspace writes are strict. Reading must also tolerate corrupt or
+    future layouts without failing the whole workbench or silently overwriting
+    them with today's defaults. Other preferences keep their existing validation.
+    """
+    prefs = _strip_removed_workbench_keys(prefs)
+    workbench = prefs.get("workbench", {})
+    layout = workbench.get("layout", {}) if isinstance(workbench, dict) else {}
+    has_workspace = isinstance(layout, dict) and "workspace" in layout
+    if has_workspace:
+        prefs = {
+            **prefs,
+            "workbench": {
+                **workbench,
+                "layout": {
+                    key: value for key, value in layout.items() if key != "workspace"
+                },
+            },
+        }
+    content = UserPreferences.model_validate(prefs).model_dump(
+        mode="json", by_alias=True
+    )
+    if has_workspace:
+        content["workbench"]["layout"]["workspace"] = layout["workspace"]
+    else:
+        content["workbench"]["layout"].pop("workspace", None)
+    return JSONResponse(content)
+
+
+def _workspace_contexts(prefs: dict) -> dict:
+    value = prefs
+    for key in _WORKSPACE_CONTEXTS_PATH:
+        if not isinstance(value, dict):
+            return {}
+        value = value.get(key, {})
+    return value if isinstance(value, dict) else {}
+
+
 @router.patch("/preferences", response_model=UserPreferences)
 async def update_preferences(
     payload: dict,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> UserPreferences:
-    """更新 preferences，按顶层子树（workbench / ai）合并，未提交的子树保持不变。
-
-    pydantic forbid extra 防脏写入。改为子树级合并（而非整体替换）后，工作台渲染偏好与
-    AI 工具参数偏好可各自独立保存，互不覆盖。workbench 内部仍由前端提交全量子树；
-    单独 PATCH layout 会覆盖旧 workbench 渲染字段。
+) -> JSONResponse:
+    """锁定最新用户偏好后深合并 PATCH；workspace context 原子替换且禁止版本降级。
 
     入参收 raw dict：先过 legacy 平铺键提升器 + 移除键剥离器（均 v0.16 移除）再手动走
     pydantic 校验，校验失败按 FastAPI 原生 422 形态抛出。"""
@@ -221,15 +268,14 @@ async def update_preferences(
     try:
         validated = UserPreferences.model_validate(promoted)
     except ValidationError as exc:
-        # 只透传 JSON 可序列化字段：pydantic 的 err["ctx"] 可能含 ValueError 等
-        # 非可序列化对象，整条 **err 透传会让 FastAPI 兜底编码 422 体时 500。
+        # 不回显 ctx 或原始 input：前者可能含异常对象，后者可能含溢出数值。
+        # 保留定位与说明，避免错误响应本身再次 JSON 序列化失败变成 500。
         raise RequestValidationError(
             [
                 {
                     "type": err["type"],
                     "loc": ("body", *err["loc"]),
                     "msg": err["msg"],
-                    "input": err.get("input"),
                 }
                 for err in exc.errors()
             ]
@@ -239,12 +285,29 @@ async def update_preferences(
     # 覆盖历史上按需增加的两层浅合并 (ai.* / ui.*): 现在 workbench 子树 (layout / common /
     # image / video / pointcloud) 与 ai.secondary_by_model (深度 2) 都能守住"单键 PATCH
     # 不冲掉同层邻居"的不变量, 前端任一 debounce writer 提交自己那半子键即可。
+    user = (
+        await db.execute(
+            select(User)
+            .where(User.id == user.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one()
     existing = user.preferences or {}
+    stored_contexts = _workspace_contexts(existing)
+    for context, envelope in _workspace_contexts(incoming).items():
+        stored = stored_contexts.get(context)
+        stored_version = (
+            stored.get("schemaVersion") if isinstance(stored, dict) else None
+        )
+        if type(stored_version) is int and stored_version > envelope["schemaVersion"]:
+            raise HTTPException(status_code=409, detail="layout_schema_downgrade")
     merged = _deep_merge_preferences(existing, incoming)
     merged = _strip_removed_workbench_keys(merged)
+    response = _preferences_response(merged)
     user.preferences = merged
     await db.commit()
-    return UserPreferences.model_validate(merged)
+    return response
 
 
 @router.delete("/deactivation-request", response_model=UserOut)

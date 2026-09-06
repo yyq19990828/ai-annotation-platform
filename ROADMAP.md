@@ -32,11 +32,14 @@
 
 ### 3D 标注工作台 0.24.x
 
-详见[v0.24.x 3D 标注工作台优化 Epic](docs/plans/2026-08-14-v0.24.x-3d-workbench-optimization-epic.md)。
+详见[v0.24.x 3D 标注工作台优化 Epic](docs/plans/archive/2026-08-14-v0.24.x-3d-workbench-optimization-epic.md)。
 
-- 在放大相机投影视图中直接移动选中的 3D 框，保持所有相机、三视图和点云主视图同步。
-- 删除 KITTI 与 nuScenes 导出中的占位几何、时间和位姿，并提供多相机 COCO 派生 2D 导出。
-- 增加 scene 级 4D 时间轴与轨迹、标定、位姿质检摘要。
+- WebGPU 点云渲染继续保持默认关闭的实验功能：同一 NVIDIA 设备上的三轮 warm geometry、warm RGB、精修首帧、缓存 owner、CPU depth payload 与 GPU RSS plateau 均已通过；跨轮深度数组残留也已修复。主透视视图与三正交视图共用唯一 renderer/context，空闲时停止提交；Chromium GPU 进程受控丢失后会卸载这一 canvas 并自动重建完整 Legacy Scene，这验证了显存压力最终触发 device lost 时的熔断路径，但未主动制造不可控的物理 OOM。
+  当前没有 NVIDIA、Intel/AMD 两类 GPU 的可用测试设备，跨厂商验证明确记为 `not tested`；它不阻塞
+  本地性能与回退链路继续收口，但在硬件可用并完成验证前不得移除实验标记或默认启用。
+- Scene Track 已支持同帧 3D 主成员与按相机 role 区分的持久化人工 bbox，标定采用可追溯 revision，3D Quality 能冻结并治理投影残差，KITTI 优先使用所选相机的人工框；Multi-camera COCO 可把全部相机的人工 2D 真值合并导出并以指纹 manifest 可信回源。放大相机已可查看原始标定矩阵和 append-only revision 历史，项目 owner 或 super admin 可以并发安全地追加修正；跨项目共享相机只允许 super admin 修改。后续多模态几何扩展集中在相机 polygon / mask 和跨相机批量复核。
+- nuScenes 已形成可信导出合同：只允许真实来源和完整 Scene，生成官方 13 表关键帧子集并以指纹 manifest 回源原始媒体。官方 benchmark ontology / split 映射继续独立立项。
+- 点云主视图已支持吸附真实渲染点的两点或多段会话测量，可读取三维总长、水平总长和首尾高差，且不写标注或导出。地面预览仍需先形成可解释的地面分割、残差和置信合同，不复用放框时的高度估计伪装成测量事实。
 
 ## 独立 Epic
 
@@ -107,6 +110,7 @@
 
 - **学习式动静分割**：邻帧点云中的未标注动态目标确实影响生产时再引入。
 - **模板治理升级**：误改、公共模板数量或跨组织发布达到现有人工流程上限时启动。
+- **标定历史分页**：单相机 revision 数量使历史接口或管理面板出现可观测延迟时，引入服务端硬上限的游标分页和前端渐进加载。
 
 ## 工程维护
 
@@ -119,7 +123,7 @@
 - [长期规划（12 个月以外）](ROADMAP/2026-05-12-long-term-strategy.md)
 - [CVAT / Label Studio 取经合集](ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md)
 - [视频工作台路线](ROADMAP/2026-05-21-video-workbench-roadmap.md)
-- [v0.24.x 3D 标注工作台优化 Epic](docs/plans/2026-08-14-v0.24.x-3d-workbench-optimization-epic.md)
+- [v0.24.x 3D 标注工作台优化 Epic](docs/plans/archive/2026-08-14-v0.24.x-3d-workbench-optimization-epic.md)
 
 架构反模式与决策底线统一维护在
 [取经合集 §6](ROADMAP/2026-05-18-cvat-labelstudio-inspiration.md#6-避坑清单保持当前选择不要走回头路)，

@@ -139,7 +139,7 @@ export function useVideoFramePreview({
   const [preview, setPreview] = useState<VideoFramePreview | null>(null);
   const [diagnostics, setDiagnostics] = useState<VideoFramePreviewDiagnostics>(EMPTY_DIAGNOSTICS);
   const cacheRef = useRef(new Map<string, VideoFramePreview>());
-  const inFlightRef = useRef(new Set<string>());
+  const inFlightRef = useRef(new Map<string, AbortController>());
   const unsupportedTaskRef = useRef<string | null>(null);
   const activeRequestKeyRef = useRef<string | null>(null);
   const requestSeqRef = useRef(0);
@@ -148,6 +148,9 @@ export function useVideoFramePreview({
   const scheduledFrameRef = useRef<number | null>(null);
   const lastPrefetchAnchorRef = useRef<number | null>(null);
   const anchorPrefetchedTaskRef = useRef<string | null>(null);
+  const foregroundControllerRef = useRef<AbortController | null>(null);
+  const prefetchControllerRef = useRef<AbortController | null>(null);
+  const anchorPrefetchControllerRef = useRef<AbortController | null>(null);
 
   const clearRetry = useCallback(() => {
     if (retryTimerRef.current) {
@@ -195,11 +198,29 @@ export function useVideoFramePreview({
     patchDiagnostics({ cacheSize: cache.size });
   }, [maxCacheItems, patchDiagnostics]);
 
+  const abortForegroundRequest = useCallback(() => {
+    const controller = foregroundControllerRef.current;
+    controller?.abort();
+    foregroundControllerRef.current = null;
+    if (!controller) return;
+    for (const [pendingKey, pendingController] of inFlightRef.current) {
+      if (pendingController === controller) inFlightRef.current.delete(pendingKey);
+    }
+  }, []);
+
   const fetchFrame = useCallback(
     (frameIndex: number, requestId: number, retryAttempt: number) => {
       if (!taskId || !enabled || unsupportedTaskRef.current === taskId) return;
       const key = cacheKey(taskId, frameIndex, width, format);
-      inFlightRef.current.add(key);
+      abortForegroundRequest();
+      const controller = new AbortController();
+      foregroundControllerRef.current = controller;
+      inFlightRef.current.set(key, controller);
+      const finishInFlight = () => {
+        if (inFlightRef.current.get(key) === controller) {
+          inFlightRef.current.delete(key);
+        }
+      };
       setDiagnostics((cur) => ({
         ...cur,
         requests: cur.requests + 1,
@@ -208,9 +229,9 @@ export function useVideoFramePreview({
         unsupported: taskId ? unsupportedTaskRef.current === taskId : false,
       }));
       void tasksApi
-        .getVideoFrame(taskId, frameIndex, { width, format })
+        .getVideoFrame(taskId, frameIndex, { width, format }, { signal: controller.signal })
         .then((frame) => {
-          inFlightRef.current.delete(key);
+          finishInFlight();
           if (requestSeqRef.current !== requestId) return;
           const next = previewFromFrame(frame, width, format);
           if (next.status !== "pending") remember(key, next);
@@ -239,7 +260,7 @@ export function useVideoFramePreview({
           }
         })
         .catch((err: unknown) => {
-          inFlightRef.current.delete(key);
+          finishInFlight();
           if (err instanceof ApiError && (err.status === 400 || err.status === 404)) {
             unsupportedTaskRef.current = taskId;
             if (requestSeqRef.current === requestId) setPreview(null);
@@ -265,9 +286,14 @@ export function useVideoFramePreview({
             lastStatus: next.status,
             errors: cur.errors + 1,
           }));
+        })
+        .finally(() => {
+          if (foregroundControllerRef.current === controller) {
+            foregroundControllerRef.current = null;
+          }
         });
     },
-    [enabled, format, patchDiagnostics, remember, taskId, width],
+    [abortForegroundRequest, enabled, format, patchDiagnostics, remember, taskId, width],
   );
 
   const cancelScheduledFetch = useCallback(() => {
@@ -278,19 +304,27 @@ export function useVideoFramePreview({
     scheduledFrameRef.current = null;
   }, []);
 
-  const prefetch = useCallback(
-    (rawFrames: readonly number[]) => {
-      if (!taskId || !enabled || unsupportedTaskRef.current === taskId) return;
-      const frames = [...new Set(rawFrames.map((frame) => clampFrame(frame, maxFrame)))]
-        .filter((frame) => !cacheRef.current.has(cacheKey(taskId, frame, width, format)))
-        .slice(0, 50);
-      if (frames.length === 0) return;
+  const requestPrefetch = useCallback(
+    (frames: number[], purpose: "window" | "anchor" = "window") => {
+      if (!taskId || frames.length === 0) return;
+      const controllerRef =
+        purpose === "anchor" ? anchorPrefetchControllerRef : prefetchControllerRef;
+      controllerRef.current?.abort();
+      const controller = new AbortController();
+      controllerRef.current = controller;
       setDiagnostics((cur) => ({
         ...cur,
         prefetchRequests: cur.prefetchRequests + 1,
         prefetchFrames: cur.prefetchFrames + frames.length,
       }));
-      void Promise.resolve(tasksApi.prefetchVideoFrames(taskId, frames, { width, format }))
+      void Promise.resolve(
+        tasksApi.prefetchVideoFrames(
+          taskId,
+          frames,
+          { width, format },
+          { signal: controller.signal },
+        ),
+      )
         .then((response) => {
           if (!response || !Array.isArray(response.frames)) return;
           for (const frame of response.frames) {
@@ -305,9 +339,25 @@ export function useVideoFramePreview({
             unsupportedTaskRef.current = taskId;
             patchDiagnostics({ unsupported: true });
           }
+        })
+        .finally(() => {
+          if (controllerRef.current === controller) {
+            controllerRef.current = null;
+          }
         });
     },
-    [enabled, format, maxFrame, patchDiagnostics, remember, taskId, width],
+    [format, patchDiagnostics, remember, taskId, width],
+  );
+
+  const prefetch = useCallback(
+    (rawFrames: readonly number[], purpose: "window" | "anchor" = "window") => {
+      if (!taskId || !enabled || unsupportedTaskRef.current === taskId) return;
+      const frames = [...new Set(rawFrames.map((frame) => clampFrame(frame, maxFrame)))]
+        .filter((frame) => !cacheRef.current.has(cacheKey(taskId, frame, width, format)))
+        .slice(0, 50);
+      requestPrefetch(frames, purpose);
+    },
+    [enabled, format, maxFrame, requestPrefetch, taskId, width],
   );
 
   const scrubPrefetch = useCallback(
@@ -326,30 +376,9 @@ export function useVideoFramePreview({
         frames.push(f);
       }
       if (frames.length === 0) return;
-      setDiagnostics((cur) => ({
-        ...cur,
-        prefetchRequests: cur.prefetchRequests + 1,
-        prefetchFrames: cur.prefetchFrames + frames.length,
-      }));
-      const pending = tasksApi.prefetchVideoFrames(taskId, frames, { width, format });
-      void Promise.resolve(pending)
-        .then((response) => {
-          if (!response || !Array.isArray(response.frames)) return;
-          for (const frame of response.frames) {
-            const next = previewFromFrame(frame, width, format);
-            if (next.status !== "pending") {
-              remember(cacheKey(taskId, next.frameIndex, width, format), next);
-            }
-          }
-        })
-        .catch((err: unknown) => {
-          if (err instanceof ApiError && (err.status === 400 || err.status === 404)) {
-            unsupportedTaskRef.current = taskId;
-            patchDiagnostics({ unsupported: true });
-          }
-        });
+      requestPrefetch(frames);
     },
-    [enabled, format, maxFrame, patchDiagnostics, remember, scrubPrefetchHalfWindow, taskId, width],
+    [enabled, format, maxFrame, requestPrefetch, scrubPrefetchHalfWindow, taskId, width],
   );
 
   const seedAnchorsIfNeeded = useCallback(() => {
@@ -365,7 +394,7 @@ export function useVideoFramePreview({
     // First scrub on a fresh task: seed evenly-spaced anchor frames so distant
     // jumps later (e.g. clicking a bookmark) land on a warm cache instead of a
     // cold worker.
-    prefetch(anchors);
+    prefetch(anchors, "anchor");
   }, [anchorPrefetchCount, maxFrame, prefetch, taskId]);
 
   const flushScheduledFetch = useCallback(() => {
@@ -395,6 +424,7 @@ export function useVideoFramePreview({
       if (rawFrameIndex === null || !taskId || !enabled || unsupportedTaskRef.current === taskId) {
         cancelScheduledFetch();
         clearRetry();
+        abortForegroundRequest();
         activeRequestKeyRef.current = null;
         requestSeqRef.current += 1;
         setPreview(null);
@@ -405,6 +435,7 @@ export function useVideoFramePreview({
       const sameActiveRequest = activeRequestKeyRef.current === key;
       if (!sameActiveRequest) {
         clearRetry();
+        abortForegroundRequest();
         activeRequestKeyRef.current = key;
         requestSeqRef.current += 1;
       }
@@ -447,6 +478,7 @@ export function useVideoFramePreview({
     [
       cancelScheduledFetch,
       clearRetry,
+      abortForegroundRequest,
       enabled,
       flushScheduledFetch,
       format,
@@ -459,6 +491,11 @@ export function useVideoFramePreview({
   const clear = useCallback(() => {
     cancelScheduledFetch();
     clearRetry();
+    abortForegroundRequest();
+    prefetchControllerRef.current?.abort();
+    prefetchControllerRef.current = null;
+    anchorPrefetchControllerRef.current?.abort();
+    anchorPrefetchControllerRef.current = null;
     requestSeqRef.current += 1;
     activeRequestKeyRef.current = null;
     lastPrefetchAnchorRef.current = null;
@@ -470,7 +507,7 @@ export function useVideoFramePreview({
       ...EMPTY_DIAGNOSTICS,
       unsupported: taskId ? unsupportedTaskRef.current === taskId : false,
     });
-  }, [cancelScheduledFetch, clearRetry, taskId]);
+  }, [abortForegroundRequest, cancelScheduledFetch, clearRetry, taskId]);
 
   useEffect(() => {
     unsupportedTaskRef.current = null;
@@ -481,8 +518,14 @@ export function useVideoFramePreview({
     () => () => {
       cancelScheduledFetch();
       clearRetry();
+      abortForegroundRequest();
+      prefetchControllerRef.current?.abort();
+      prefetchControllerRef.current = null;
+      anchorPrefetchControllerRef.current?.abort();
+      anchorPrefetchControllerRef.current = null;
+      inFlightRef.current.clear();
     },
-    [cancelScheduledFetch, clearRetry],
+    [abortForegroundRequest, cancelScheduledFetch, clearRetry],
   );
 
   return { preview, previewFor, prefetch, clear, diagnostics };

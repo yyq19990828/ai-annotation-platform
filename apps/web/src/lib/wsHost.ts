@@ -5,35 +5,23 @@
  * usePreannotation / PerfHud/useMLBackendStats):
  *
  *   const proto = window.location.protocol === "https:" ? "wss" : "ws";
- *   const host = import.meta.env.DEV ? "localhost:8000" : window.location.host;
+ *   const host = import.meta.env.VITE_WS_HOST || window.location.host;
  *   const url = `${proto}://${host}/ws/...?token=${encodeURIComponent(t)}`;
  *
- * 本机 DEV 直连后端端口，绕开 vite proxy `/ws` 在多连接并发 upgrade 时的已知问题。
- * 远程 DEV 浏览器不能把 `localhost:8000` 当成平台主机，因此改走页面同源 Vite `/ws`
- * 代理。production 同样走页面同源反向代理。
+ * DEV 与 production 都默认走页面同源 `/ws` 代理。这样本机、LAN 与 SSH LocalForward
+ * 访问使用同一条路径，不会把访问端的 `localhost` 错当成 API 所在主机。
  *
- * v0.13.3 · dev host 默认 localhost:8000,但多 worktree 并行时各分支后端端口不同
- * (如点云隔离栈 8010,与 HTTP 的 API_PROXY_TARGET 同源),用 `VITE_WS_HOST` 覆盖。
+ * DEV 需要刻意绕过 Vite proxy 时仍可用 `VITE_WS_HOST` 覆盖。
  */
 
-type WsLocation = Pick<Location, "host" | "hostname">;
-
-function isLoopbackHostname(hostname: string): boolean {
-  return (
-    hostname === "localhost" ||
-    hostname.endsWith(".localhost") ||
-    hostname === "[::1]" ||
-    /^127(?:\.\d{1,3}){3}$/.test(hostname)
-  );
-}
+type WsLocation = Pick<Location, "host">;
 
 export function getWsHost(
   location: WsLocation = window.location,
   configuredHost: string | undefined = import.meta.env.VITE_WS_HOST,
 ): string {
-  if (!import.meta.env.DEV) return window.location.host;
-  if (configuredHost) return configuredHost;
-  return isLoopbackHostname(location.hostname) ? "localhost:8000" : location.host;
+  if (import.meta.env.DEV && configuredHost) return configuredHost;
+  return location.host;
 }
 
 export function getWsProtocol(): "ws" | "wss" {

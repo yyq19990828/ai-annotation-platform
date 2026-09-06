@@ -832,13 +832,13 @@ const assetSpecs = [
     duration: { minSeconds: 22, targetSeconds: 30, maxSeconds: 40 },
     shots: [
       "从首帧已复核的 object 3D 框开始，保留完整点云与选中态。",
-      "延续到第 1 帧，展示新框自动选中、同一轨迹编号与无 ego 轨迹的真实提示。",
+      "延续到第 1 帧，展示 nuScenes ego 位姿补偿、新框自动选中与同一轨迹编号。",
       "在第 1 帧通过数值面板修正框中心位置并保存。",
       "将修正后的框继续延续到第 2 帧，核对 track_id 未变。",
       "从第 2 帧逐帧回到第 1 帧和首帧，同时展示当前实线框与同轨迹邻帧虚线参考框。",
     ],
     editingNotes: [
-      "该能力不是 AI 追踪；当 scene 无 ego 轨迹时如实保留“原样复制”提示。",
+      "该能力不是 AI 追踪；使用 nuScenes-mini scene-0061 的真实 ego 位姿与连续帧。",
       "源 3D 框在录制窗口前通过正式 API 准备，母版不混入相机种框或从零画框。",
     ],
   }),
@@ -858,7 +858,7 @@ const assetSpecs = [
     ],
     editingNotes: [
       "该母版只表达 billboard 标签配置与视角适配，不混入种框、跨帧延续、相机投影或几何编辑。",
-      "属性开关必须真正触发 CanvasTexture 绘制完整文本，不能只录设置抽屉点击动作。",
+      "属性开关必须真正触发 CanvasTexture 绘制完整文本，不能只录设置窗口点击动作。",
       "源 3D 框在录制前通过正式 API 准备，结束后按 annotation ID 精确清理。",
     ],
   }),

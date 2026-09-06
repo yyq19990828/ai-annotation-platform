@@ -60,7 +60,12 @@ describe("useNeighborAnnotations", () => {
       wrapper: makeWrapper(),
     });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(mockGet).toHaveBeenCalledWith("t0", 5, "trk_5");
+    expect(mockGet).toHaveBeenCalledWith(
+      "t0",
+      5,
+      "trk_5",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
     expect(result.current.byTask["t1"].map((a) => a.id)).toEqual(["a1"]);
     expect(result.current.byTask["t2"].map((a) => a.id)).toEqual(["b1", "b2"]);
   });
@@ -71,6 +76,11 @@ describe("useNeighborAnnotations", () => {
       wrapper: makeWrapper(),
     });
     await waitFor(() => expect(mockGet).toHaveBeenCalled());
-    expect(mockGet).toHaveBeenCalledWith("t0", 3, null);
+    expect(mockGet).toHaveBeenCalledWith(
+      "t0",
+      3,
+      null,
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 });

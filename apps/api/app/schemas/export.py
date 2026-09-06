@@ -41,20 +41,49 @@ class VideoExportScopeRequest(BaseModel):
     selection: VideoExportSelection
 
 
+class LidarExportOptions(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kitti_camera_role: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=50,
+        pattern=r"^camera_[A-Za-z0-9_.-]+$",
+    )
+
+
+class LidarExportPreflightRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    targets: list[str] = Field(min_length=1)
+    lidar: LidarExportOptions | None = None
+
+
+class LidarExportIssue(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    message: str
+    task_id: uuid.UUID | None = None
+    task_display_id: str | None = None
+    frame_key: str | None = None
+    camera_role: str | None = None
+
+
+class LidarExportPreflightResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ready: bool
+    camera_roles: list[str]
+    selected_camera_role: str | None = None
+    checked_tasks: int
+    issue_count: int
+    issues_truncated: bool = False
+    issues: list[LidarExportIssue]
+
+
 class ExportRequestBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     scope: VideoExportScopeRequest | None = None
-
-
-class LidarCameraRoleOut(BaseModel):
-    role: str
-    frame_count: int
-    calibrated_frame_count: int
-    sized_frame_count: int
-    complete: bool
-
-
-class LidarCameraRolesResponse(BaseModel):
-    roles: list[LidarCameraRoleOut]
-    default_role: str | None = None
+    lidar: LidarExportOptions | None = None

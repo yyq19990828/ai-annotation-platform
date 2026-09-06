@@ -44,7 +44,7 @@ export function useNextTask(projectId: string | undefined, batchId?: string) {
 export function useTask(id: string) {
   return useQuery({
     queryKey: ["task", id],
-    queryFn: () => tasksApi.get(id),
+    queryFn: ({ signal }) => tasksApi.get(id, { signal }),
     enabled: !!id,
   });
 }
@@ -52,7 +52,7 @@ export function useTask(id: string) {
 export function useMaskCapabilities(taskId: string | null | undefined, enabled = true) {
   return useQuery({
     queryKey: ["task-mask-capabilities", taskId],
-    queryFn: () => tasksApi.getMaskCapabilities(taskId!),
+    queryFn: ({ signal }) => tasksApi.getMaskCapabilities(taskId!, { signal }),
     enabled: !!taskId && enabled,
     staleTime: 30_000,
   });
@@ -61,7 +61,7 @@ export function useMaskCapabilities(taskId: string | null | undefined, enabled =
 export function useVideoManifest(taskId: string | undefined, enabled = true) {
   return useQuery({
     queryKey: ["task-video-manifest", taskId],
-    queryFn: () => tasksApi.getVideoManifest(taskId!),
+    queryFn: ({ signal }) => tasksApi.getVideoManifest(taskId!, { signal }),
     enabled: !!taskId && enabled,
   });
 }
@@ -69,7 +69,7 @@ export function useVideoManifest(taskId: string | undefined, enabled = true) {
 export function useVideoFrameTimetable(taskId: string | undefined, enabled = true) {
   return useQuery({
     queryKey: ["task-video-frame-timetable", taskId],
-    queryFn: () => tasksApi.getVideoFrameTimetable(taskId!),
+    queryFn: ({ signal }) => tasksApi.getVideoFrameTimetable(taskId!, undefined, { signal }),
     enabled: !!taskId && enabled,
     staleTime: Infinity,
   });
@@ -85,7 +85,7 @@ export function useAnnotations(
     : (["annotations", taskId] as const);
   return useQuery({
     queryKey,
-    queryFn: () => tasksApi.getAnnotations(taskId!, videoSegmentId),
+    queryFn: ({ signal }) => tasksApi.getAnnotations(taskId!, videoSegmentId, { signal }),
     enabled: !!taskId && enabled,
   });
 }
@@ -146,6 +146,7 @@ export function useCreateAnnotation(taskId: string | undefined, videoSegmentId?:
         );
       }
       qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["scene-timeline"] });
       // B-20 接续：首条标注会把 task 从 pending 转 in_progress，需刷新批次进度
       qc.invalidateQueries({ queryKey: ["dashboard"] });
     },
@@ -177,6 +178,7 @@ export function useDeleteAnnotation(taskId: string | undefined, videoSegmentId?:
       qc.invalidateQueries({ queryKey });
       qc.invalidateQueries({ queryKey: ["tasks"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
+      qc.invalidateQueries({ queryKey: ["scene-timeline"] });
     },
   });
 }
@@ -238,6 +240,7 @@ export function useUpdateAnnotation(
     },
     onSettled: (_data, _err, vars) => {
       qc.invalidateQueries({ queryKey });
+      qc.invalidateQueries({ queryKey: ["scene-timeline"] });
       // 通知桥 (usePendingGeom): mutation 已 settle (成功或失败), 主动清 pending override,
       // 不依赖被动 800ms 兜底 — 避免慢网 (> 800ms) 回滚后 pending 已 drop 而画面闪到旧几何。
       const annotationId = (vars as { annotationId?: string } | undefined)?.annotationId;

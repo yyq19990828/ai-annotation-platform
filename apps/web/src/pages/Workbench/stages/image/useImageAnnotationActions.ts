@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { isWorkbenchSettingsInteractionBlocked } from "../../state/workbenchSettingsInteraction";
 import type { QueryClient } from "@tanstack/react-query";
 import type { Annotation, AnnotationResponse, PredictionResponse } from "@/types";
 import type { AnnotationPayload, AnnotationUpdatePayload } from "@/api/tasks";
@@ -543,6 +544,7 @@ export function useImageAnnotationActions({
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (isWorkbenchSettingsInteractionBlocked(e)) return;
       // v0.10.2 · sam 拆分后, Tab/Enter 候选导航在任一 AI 工具激活下都启用.
       const isAIActive =
         s.tool === "smart-point" ||

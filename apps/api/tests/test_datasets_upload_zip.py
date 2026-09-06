@@ -17,8 +17,8 @@ import zipfile
 import pytest
 from sqlalchemy import select
 
-from app.db.models.dataset import DatasetItem, Scene
-from app.services.storage import storage_service
+from app.db.models.dataset import Dataset, DatasetItem, Scene
+from app.services.storage import TRUSTED_NUSCENES_PREFIX, storage_service
 
 pytestmark = pytest.mark.asyncio
 
@@ -106,6 +106,33 @@ async def test_delete_item_rejects_mismatched_dataset(
 
     assert response.status_code == 404
     assert await db_session.get(DatasetItem, item.id) is item
+
+
+async def test_reserved_nuscenes_storage_namespace_cannot_be_uploaded(
+    httpx_client, db_session, super_admin
+):
+    user, token = super_admin
+    create_response = await httpx_client.post(
+        "/api/v1/datasets",
+        headers=_bearer(token),
+        json={"name": TRUSTED_NUSCENES_PREFIX, "data_type": "image"},
+    )
+    assert create_response.status_code == 422
+
+    legacy = Dataset(
+        display_id=f"DS-RSV-{uuid.uuid4().hex[:6]}",
+        name=f"{TRUSTED_NUSCENES_PREFIX}-victim",
+        data_type="image",
+        created_by=user.id,
+    )
+    db_session.add(legacy)
+    await db_session.flush()
+    upload_response = await httpx_client.post(
+        f"/api/v1/datasets/{legacy.id}/items/upload-init",
+        headers=_bearer(token),
+        json={"file_name": "target.bin", "content_type": "application/octet-stream"},
+    )
+    assert upload_response.status_code == 422
 
 
 async def test_upload_zip_preserves_subdirectories(

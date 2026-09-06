@@ -1,0 +1,4 @@
+scripts:
+  setup: bash scripts/orca-worktree-setup.sh
+
+setupAgentStartupPolicy: wait-for-setup

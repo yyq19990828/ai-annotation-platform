@@ -9,6 +9,6 @@ import type { TrajectoryResponse } from "@/api/generated/types.gen";
 
 export const scenesApi = {
   // 无位姿 scene → 200 + poses=[](非 nuScenes 来源/历史数据,调用方按无轨迹降级)。
-  getTrajectory: (sceneId: string) =>
-    apiClient.get<TrajectoryResponse>(`/scenes/${sceneId}/trajectory`),
+  getTrajectory: (sceneId: string, init?: RequestInit) =>
+    apiClient.get<TrajectoryResponse>(`/scenes/${sceneId}/trajectory`, init),
 };

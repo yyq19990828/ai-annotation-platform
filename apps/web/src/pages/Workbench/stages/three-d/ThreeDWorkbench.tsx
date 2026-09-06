@@ -5,7 +5,12 @@
  * 旁边平铺各相机图(只读,不画投影框 —— 投影联动是 v0.13.4)。与 Konva 2D 工作台双栈隔离。
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { viewportRegionClipPath } from "../../layout/workbenchViewportRegions";
+import { createPortal } from "react-dom";
+import { useWorkbench3DLayout } from "../../layout/Workbench3DLayoutContext";
+import { CameraDockPanel } from "./CameraDockPanel";
+import { isWorkbenchSettingsInteractionBlocked } from "../../state/workbenchSettingsInteraction";
 
 import type {
   CameraPanelState,
@@ -35,6 +40,9 @@ import {
   type AlignPsr,
 } from "./geometry/perObjectAlign";
 import { useToastStore } from "@/components/ui/Toast";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Tooltip } from "@/components/ui/Tooltip";
 import { useAuthStore } from "@/stores/authStore";
 import { classColorForCanvas, displayClassName } from "@/pages/Workbench/stage/colors";
 import { buildTrackLabelText, shouldShowLabel } from "@/pages/Workbench/stage/annotationVisual";
@@ -44,16 +52,20 @@ import type {
   WorkbenchLayoutPatch,
 } from "@/pages/Workbench/state/useWorkbenchConfig";
 import type { PointMaskGeometry, SensorCalibration } from "@/types";
+import type { PointCloudQualityConfig, PointCloudQualityIssue } from "@/api/pointCloudQuality";
+import { usePointCloudQualityIssues } from "@/hooks/usePointCloudQuality";
+import { useCameraAnnotationMembers } from "@/hooks/useCameraAnnotationMembers";
 
 import { AttributeForm } from "../../shell/AttributeForm";
-import { FloatingPanelShell, type FloatingPanelRect } from "../../shell/FloatingPanelShell";
-import { useDragMove, type FloatingPanelBounds } from "../../shell/useDragMove";
+import type { FloatingPanelBounds } from "../../shell/useDragMove";
+import { WORKBENCH_PET_SIZE, type WorkbenchPetDock } from "../../shell/pet/WorkbenchPet";
 import { usePointCloudManifest } from "./usePointCloudManifest";
 import {
   type BoxPsr,
   type PointCloudScene,
   type PointMaskSelection,
   type SceneBox,
+  type SceneMeasurementPath,
   type ReferenceBox,
 } from "./PointCloudScene";
 import { usePointCloudScene } from "./usePointCloudScene";
@@ -69,8 +81,10 @@ import { FramePicker, type FramePickerMode } from "./FramePicker";
 import CameraProjectionView from "./CameraProjectionView";
 import FloatingCameraPanel from "./FloatingCameraPanel";
 import TriViewPanel from "./TriViewPanel";
+import { PointCloudQualityPanel } from "./PointCloudQualityPanel";
+import { SensorCalibrationSheet } from "./SensorCalibrationSheet";
 import type { TriSelected } from "./TriOrthoView";
-import type { Psr } from "./geometry/triview";
+import { TRI_ZOOM_DEFAULT, clampTriZoom, type Psr, type TriView } from "./geometry/triview";
 import { psrToCorners } from "./geometry/box3d";
 import { cameraAnchor, type Anchor } from "./geometry/cameraAnchor";
 import {
@@ -80,8 +94,21 @@ import {
   type ColorAdjust,
 } from "./geometry/colorize";
 import { colorizePointsAsync } from "./geometry/pointcloudCompute";
+import { retainPointCloudComputeSession } from "./geometry/pointCloudComputeSession";
+import {
+  prepareCameraTextureResources,
+  type CameraTextureResources,
+} from "./rendering/cameraTextureResources";
 import { projectPoints } from "./geometry/projection";
 import type { ScreenPoint } from "./geometry/pointInPolygon";
+import {
+  formatMeasurementMeters,
+  MAX_MEASUREMENT_ANCHORS,
+  MAX_MEASUREMENT_PATHS,
+  summarizeMeasurement,
+  type MeasurementAnchor,
+  type MeasurementPath,
+} from "./geometry/measurement";
 import { fitSize, fitBottom, fitYaw, fitSizeAndBottom, psrFromPoints } from "./geometry/autofit";
 import {
   centralRay,
@@ -110,17 +137,27 @@ import { usePsrPatchPipeline } from "./usePsrPatchPipeline";
 import { useCameraPanels } from "./useCameraPanels";
 import { resolveWorkbenchPerformanceTier } from "../../state/performanceTier";
 import { useElementStyle } from "@/components/ui/useElementStyle";
+import { SceneTimeline } from "./SceneTimeline";
+import { markPointCloudPaint } from "./pointCloudTiming";
+import {
+  pointCloudRendererModeFromExperiment,
+  readPointCloudWebGpuExperiment,
+  type PointCloudRendererStatus,
+} from "./rendering/pointCloudRenderer";
 
 // v0.17.6 · Tailwind class constants (was ThreeDWorkbench.module.css).
-const ROOT = "flex flex-col size-full min-h-0 bg-background";
+const ROOT = "flex flex-col size-full min-h-0 bg-transparent";
 const VIEWPORT_WRAP = "relative flex-1 min-h-0";
 const VIEWPORT = "absolute inset-0";
 const PLACING = "cursor-crosshair";
+const CREATION_BLOCKED = "cursor-wait";
 const BOX_SELECT_RECT =
   "absolute left-[var(--rect-l)] top-[var(--rect-t)] w-[var(--rect-w)] h-[var(--rect-h)] z-local-3 pointer-events-none border border-brand bg-brand/10 opacity-50";
 const POINT_MASK_PATH_PREVIEW = "absolute inset-0 z-local-3 size-full pointer-events-none";
 const CONTROLS =
-  "absolute top-3 left-3 z-local-4 flex flex-wrap items-center gap-3 max-w-[calc(100%-24px)] px-2.5 py-1.5 rounded-md bg-card border border-border shadow-sm";
+  "absolute top-3 left-3 z-local-4 flex max-w-[calc(100%-24px)] flex-col items-start gap-1.5 pointer-events-none";
+const CONTROL_BAR =
+  "flex h-8 items-center gap-0.5 max-w-full px-0.5 rounded-md bg-card border border-border pointer-events-auto";
 const BTN =
   "appearance-none px-2.5 py-1 rounded-sm border border-border bg-background text-foreground cursor-pointer text-sm hover:border-brand hover:text-brand disabled:text-muted-foreground/65 disabled:cursor-not-allowed disabled:opacity-65";
 const BTN_ACTIVE = "!border-brand !bg-brand/10 !text-brand";
@@ -131,11 +168,21 @@ const FIT_GROUP =
   "grid grid-cols-2 items-center gap-1.5 py-1.5 border-y border-border [&_button]:w-full [&_button]:px-1.5 [&_button]:py-1 [&_button]:text-xs";
 const STATUS_BAR =
   "absolute bottom-3 left-3.5 flex flex-wrap gap-2 max-w-[min(420px,calc(100%-28px))] px-2.5 py-1 rounded-sm bg-card border border-border text-xs text-muted-foreground";
+const MEASUREMENT_PANEL =
+  "absolute top-3 right-3 z-local-4 flex w-[288px] max-h-[calc(100%-72px)] flex-col gap-2 overflow-auto rounded-md border border-border bg-card p-2.5 text-xs text-foreground shadow-sm";
+const MEASUREMENT_ROW =
+  "flex items-start justify-between gap-2 rounded-sm border border-border p-2";
+const MEASUREMENT_VALUE_GRID = "grid grid-cols-2 gap-x-3 gap-y-1 text-muted-foreground";
+const MEASUREMENT_ACTIONS = "flex shrink-0 items-center gap-1";
 const ERR = "text-status-danger";
 const MISMATCH_BANNER =
   "absolute top-[calc(var(--top-toolbar-height)+24px)] left-3 z-local-4 flex flex-wrap items-center gap-2 max-w-[min(640px,calc(100%-24px))] px-2.5 py-1.5 text-status-caution text-xs bg-card border border-amber-600 dark:border-amber-400 rounded-md shadow-sm";
-const EDIT_PANEL =
-  "absolute top-3 right-3 w-[210px] translate-x-[var(--psr-dx)] translate-y-[var(--psr-dy)] flex flex-col gap-1.5 p-2.5 rounded-md bg-card border border-border shadow-sm text-xs text-foreground";
+const EDIT_PANEL_SURFACE =
+  "w-[210px] flex flex-col gap-1.5 p-2.5 rounded-md bg-card border shadow-sm text-xs text-foreground";
+const EDIT_PANEL_FLOATING =
+  "absolute top-3 right-3 translate-x-[var(--psr-dx)] translate-y-[var(--psr-dy)] border-border";
+const EDIT_PANEL_PET_LINKED =
+  "fixed left-[var(--psr-pet-x)] top-[var(--psr-pet-y)] z-overlay-high -translate-x-1/2 -translate-y-full border-brand shadow-md";
 const EDIT_PANEL_DRAGGING = "select-none";
 const EDIT_HEADER = "flex flex-col gap-1 cursor-grab";
 const DRAG_HINT = "shrink-0 text-muted-foreground";
@@ -157,19 +204,24 @@ const EDIT_ROW =
   "flex gap-1.5 [&_input]:flex-1 [&_input]:min-w-0 [&_input]:px-1.5 [&_input]:py-1 [&_input]:rounded-sm [&_input]:border [&_input]:border-border [&_input]:bg-background [&_input]:text-foreground [&_input]:text-xs";
 const DELETE_BTN =
   "appearance-none mt-1.5 px-2.5 py-1 rounded-sm border border-rose-600 dark:border-rose-400 bg-transparent text-status-danger cursor-pointer text-xs hover:bg-rose-600 dark:hover:bg-rose-400 hover:text-white dark:hover:text-white";
-const TRI_FLOAT_TAB =
-  "fixed left-[var(--tri-tab-x)] top-[var(--tri-tab-y)] z-local-6 px-2.5 py-1.5 rounded-md border border-border bg-card shadow-sm text-foreground cursor-grab text-xs select-none touch-none hover:border-brand hover:text-brand";
-const TRI_FLOAT_TAB_DRAGGING = "!cursor-grabbing !border-brand shadow-md";
+const QUALITY_PANEL_WIDTH = 360;
+const CAMERA_LAYER = "absolute inset-0 z-local-3 pointer-events-none";
 const CAM_GROUP =
-  "absolute z-local-3 flex gap-2.5 max-h-[calc(100%-var(--top-toolbar-height)-48px)] overflow-visible pointer-events-none [&>*]:pointer-events-auto";
-const CAM_MODAL = "absolute inset-0 z-base flex items-center justify-center bg-black/70";
+  "absolute flex gap-2.5 max-h-[calc(100%-var(--top-toolbar-height)-48px)] overflow-visible pointer-events-none [&>*]:pointer-events-auto";
+const CAM_MODAL =
+  "fixed left-[var(--camera-edit-left)] top-[var(--camera-edit-top)] w-[var(--camera-edit-width)] h-[var(--camera-edit-height)] z-workbench-modal flex items-center justify-center bg-black/70";
 const CAM_MODAL_BODY =
-  "relative p-3 rounded-md border border-border bg-card shadow-sm [&_figure_img]:w-auto [&_figure_img]:h-[70vh] [&_figure_img]:max-w-[88vw]";
+  "relative w-fit max-w-[calc(100%-24px)] p-3 rounded-md border border-border bg-card shadow-sm";
 const CAM_MODAL_CLOSE =
   "absolute top-4 right-4 z-local-1 appearance-none px-2.5 py-1 rounded-sm border border-border bg-background text-foreground cursor-pointer text-xs hover:border-brand hover:text-brand";
+const CAM_MODAL_TOOL_GROUP = "absolute top-4 left-4 z-local-1 flex items-center gap-2";
 const CAM_MODAL_SEED =
-  "absolute top-4 left-4 z-local-1 appearance-none px-2.5 py-1 rounded-sm border border-border bg-background text-foreground cursor-pointer text-xs hover:border-brand hover:text-brand";
+  "appearance-none px-2.5 py-1 rounded-sm border border-border bg-background text-foreground cursor-pointer text-xs hover:border-brand hover:text-brand";
 const CAM_MODAL_SEED_ACTIVE = "!border-brand !bg-brand/10 !text-brand";
+const CAM_MODAL_MEMBER_BAR =
+  "absolute bottom-9 left-4 right-4 z-local-1 flex flex-wrap items-center justify-center gap-2 pointer-events-none";
+const CAM_MODAL_MEMBER_CARD =
+  "flex flex-wrap items-center gap-2 rounded-md border border-border bg-card/95 px-2.5 py-1.5 text-xs text-foreground shadow-sm pointer-events-auto";
 const CAM_MODAL_SWITCH =
   "absolute top-1/2 z-local-1 w-9 h-12 -translate-y-1/2 rounded-md border border-border bg-background text-foreground cursor-pointer text-control-xl leading-none hover:border-brand hover:text-brand";
 const CAM_MODAL_PREV = "left-4";
@@ -182,8 +234,6 @@ import {
   POINT_MASK_TOOL_UNIT,
   PSR_GROUPS,
   SEED_FALLBACK_RANGE_M,
-  TRI_TAB_DRAG_SIZE,
-  TRI_TAB_DRAG_THRESHOLD,
   boxGeometryFromPsr,
   frontCameraForward,
   geometryConvention,
@@ -191,15 +241,30 @@ import {
   loadCameraSample,
   psrToForm,
   resolveBox3dDefaultSize,
-  resolveTriViewFloatRect,
   sortedIndices,
   type PsrField,
 } from "./ThreeDWorkbench.helpers";
+
+const DEFAULT_TRI_ZOOM_BY_VIEW: Record<TriView, number> = {
+  top: TRI_ZOOM_DEFAULT,
+  side: TRI_ZOOM_DEFAULT,
+  front: TRI_ZOOM_DEFAULT,
+};
+
+function rendererBackendLabel(status: PointCloudRendererStatus | null): string {
+  if (!status) return "Renderer 初始化…";
+  if (status.actualBackend === "webgpu") return "WebGPU";
+  if (status.actualBackend === "webgl2-fallback") return "WebGL2 fallback";
+  return "Legacy WebGL2";
+}
 
 interface ThreeDWorkbenchProps {
   taskId: string | null;
   /** v0.13.3 · 锁定 task / viewer 角色时只读:不放置 / 不编辑 / 无 gizmo,仅看 + 选中查看数值。 */
   readOnly?: boolean;
+  playbackActive?: boolean;
+  onPlaybackActiveChange?: (active: boolean) => void;
+  playbackBlockedReason?: string | null;
   /** v0.13.3-5 · 壳层共享选中态(与标注列表 / 右栏面板同一份),驱动选中高亮 / gizmo / 数值面板。 */
   selectedId: string | null;
   selectedIds: string[];
@@ -217,6 +282,8 @@ interface ThreeDWorkbenchProps {
   onCrossFramePropagateToTask: (targetTaskId: string, targetFrameIndex: number) => void;
   /** v0.15.1 · 区间插值填充(当前 task 为起点帧)。v0.21.2 · 按 track_id 认链。 */
   onCrossFrameInterpolate: (trackId: string, toTaskId: string) => void;
+  /** Scene 时间轴导航，服从壳层的未保存保护。 */
+  onNavigateSceneFrame: (targetTaskId: string) => Promise<boolean>;
   /** v0.13.10 · 右栏避让与三视图浮窗持久化。 */
   rightSidebarOpen: boolean;
   rightSidebarWidth: number;
@@ -231,11 +298,16 @@ interface ThreeDWorkbenchProps {
   onWorkbenchConfigChange: (patch: WorkbenchConfigPatch) => void;
   onWorkbenchConfigUpdate: (patch: WorkbenchConfigPatch) => Promise<void>;
   box3dDefaultSize?: [number, number, number] | null;
+  /** 桌宠开启时，让 3D 选中信息栏与桌宠共用拖动锚点。 */
+  petDock?: WorkbenchPetDock;
 }
 
 export function ThreeDWorkbench({
   taskId,
-  readOnly = false,
+  readOnly: taskReadOnly = false,
+  playbackActive = false,
+  onPlaybackActiveChange,
+  playbackBlockedReason: shellPlaybackBlockedReason,
   selectedId,
   selectedIds,
   onSelectBox,
@@ -246,9 +318,7 @@ export function ThreeDWorkbench({
   onCrossFramePropagateBatch,
   onCrossFramePropagateToTask,
   onCrossFrameInterpolate,
-  rightSidebarOpen,
-  rightSidebarWidth,
-  triViewFloat,
+  onNavigateSceneFrame,
   cameraPanels,
   pointcloudCamera,
   onWorkbenchLayoutChange,
@@ -258,10 +328,62 @@ export function ThreeDWorkbench({
   onWorkbenchConfigChange,
   onWorkbenchConfigUpdate,
   box3dDefaultSize,
+  petDock,
 }: ThreeDWorkbenchProps) {
-  const { data: manifest, isLoading, error } = usePointCloudManifest(taskId, true);
+  const readOnly = taskReadOnly || playbackActive;
+  const writeAllowedRef = useRef(!readOnly);
+  writeAllowedRef.current = !readOnly;
+  // Capture before renderer and Shell shortcuts: the first editing gesture only pauses.
+  useEffect(() => {
+    if (!readOnly) return;
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.closest(
+          'input, textarea, select, [contenteditable="true"], [role="dialog"], [role="menu"], [role="tab"], [data-workbench-layout-control], [data-scene-timeline]',
+        )
+      )
+        return;
+      const key = event.key.toLowerCase();
+      const editing =
+        event.ctrlKey || event.metaKey
+          ? ["z", "y", "v", "d", "enter"].includes(key)
+          : [
+              "b",
+              "p",
+              "w",
+              "e",
+              "r",
+              "q",
+              "l",
+              "h",
+              "enter",
+              "delete",
+              "backspace",
+              "arrowleft",
+              "arrowright",
+              "arrowup",
+              "arrowdown",
+            ].includes(key);
+      if (!editing) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (playbackActive) onPlaybackActiveChange?.(false);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [onPlaybackActiveChange, playbackActive, readOnly]);
+  const dockLayout = useWorkbench3DLayout();
+  const [cameraResetKey, setCameraResetKey] = useState(0);
+  useEffect(() => retainPointCloudComputeSession(), []);
+  const manifestQuery = usePointCloudManifest(taskId, true);
+  const { data: manifest, isLoading, error } = manifestQuery;
+  const retainedManifestRef = useRef(manifest);
+  if (manifest) retainedManifestRef.current = manifest;
+  const displayManifest = manifest ?? retainedManifestRef.current;
   const pushToast = useToastStore((st) => st.push);
   const userId = useAuthStore((s) => s.user?.id ?? null);
+  const userRole = useAuthStore((s) => s.user?.role ?? null);
   // v0.13.11 · dataset 声明的 lidar 系约定;前端把点云 positions + 相机 extrinsic 一次性
   // 旋转到 ISO 8855 (+X 前 / +Y 左 / +Z 上),上层几何代码继续锁死 ISO。null / 缺省 = iso_8855。
   const axisConvention: LidarAxisConvention = manifest?.axis_convention ?? "iso_8855";
@@ -289,6 +411,9 @@ export function ThreeDWorkbench({
   const controlsRef = useRef<HTMLDivElement>(null);
   // 场景实例 ref —— 壳层各交互 handler 共用;生命周期由 usePointCloudScene 管理。
   const sceneRef = useRef<PointCloudScene | null>(null);
+  const [rendererMode] = useState(() =>
+    pointCloudRendererModeFromExperiment(readPointCloudWebGpuExperiment()),
+  );
   const performanceConfig = useMemo(
     () => resolveWorkbenchPerformanceTier(workbenchCommon.performanceTier),
     [workbenchCommon.performanceTier],
@@ -344,18 +469,31 @@ export function ThreeDWorkbench({
   const [neighborMovedCount, setNeighborMovedCount] = useState(0);
   const [pointCloudViewMode, setPointCloudViewMode] = useState<"orbit" | "bev">("orbit");
   const [colorizing, setColorizing] = useState(false);
+  const [, setCameraTextureResources] = useState<CameraTextureResources | null>(null);
   const colorizedRawRef = useRef<Float32Array | null>(null);
   const adjustedColorBufferRef = useRef<Float32Array | null>(null);
   // v0.13.7 · 放大查看的相机 role(L3);null = 无放大。点⛶开,ESC/遮罩/关闭钮收。
   const [enlargedRole, setEnlargedRole] = useState<string | null>(null);
+  const [calibrationSheetOpen, setCalibrationSheetOpen] = useState(false);
   // v0.15.24 · 放大相机模态里的「种框」模式:拖 2D 框 → 视锥选点 → 拟合 box_3d。仅放大视图启用。
   const [seedMode, setSeedMode] = useState(false);
+  const [manualBboxMode, setManualBboxMode] = useState(false);
+  const [boxCreationSaving, setBoxCreationSaving] = useState(false);
+  const [boxCreationIssue, setBoxCreationIssue] = useState<string | null>(null);
+  const boxCreationInFlightRef = useRef(false);
+  const boxCreationRevisionRef = useRef(0);
+  const taskIdRef = useRef(taskId);
+  taskIdRef.current = taskId;
   const [pointMaskPolygonPoints, setPointMaskPolygonPoints] = useState<ScreenPoint[]>([]);
   const [pointMaskCursor, setPointMaskCursor] = useState<ScreenPoint | null>(null);
   const finishPointMaskPolygonRef = useRef<(subtract: boolean) => void>(() => undefined);
+  const [measurementDraft, setMeasurementDraft] = useState<MeasurementAnchor[]>([]);
+  const [completedMeasurements, setCompletedMeasurements] = useState<MeasurementPath[]>([]);
+  const measurementIdRef = useRef(0);
   // 选中态来自壳层(selectedId / onSelectBox props),与标注列表 / 右栏面板共享同一份。
 
-  const { data: annotations } = useAnnotations(taskId ?? undefined);
+  const annotationsQuery = useAnnotations(taskId ?? undefined);
+  const { data: annotations } = annotationsQuery;
   const updateAnnotation = useUpdateAnnotation(taskId ?? undefined);
   const deleteAnnotation = useDeleteAnnotation(taskId ?? undefined);
   const createAnnotation = useCreateAnnotation(taskId ?? undefined);
@@ -377,6 +515,40 @@ export function ThreeDWorkbench({
   // 创建新 3D 标注需要对应工具单位的类别(后端按 tool_bindings 校验 class_name)。
   const { data: task } = useTask(taskId ?? "");
   const { data: project } = useProject(task?.project_id ?? "");
+  const qualityAllowed =
+    userRole === "super_admin" || userRole === "project_admin" || userRole === "reviewer";
+  const qualityCanScanScene = userRole === "super_admin" || project?.owner_id === userId;
+  const canManageCalibration = userRole === "super_admin" || project?.owner_id === userId;
+  const [qualityPanelOpen, setQualityPanelOpen] = useState(false);
+  const qualitySafeFloatBounds = useMemo(() => {
+    if (!triFloatBounds || !qualityPanelOpen) return triFloatBounds;
+    const margin = triFloatBounds.margin ?? 0;
+    return {
+      ...triFloatBounds,
+      right: Math.max(
+        triFloatBounds.left + 200 + margin * 2,
+        triFloatBounds.right - QUALITY_PANEL_WIDTH,
+      ),
+    };
+  }, [qualityPanelOpen, triFloatBounds]);
+  const qualityIssuesQuery = usePointCloudQualityIssues({
+    projectId: qualityAllowed ? (task?.project_id ?? "") : "",
+    sceneId: manifest?.scene_id ?? undefined,
+    status: "open",
+  });
+  const qualityMarkers = useMemo(() => {
+    const rank = { blocker: 0, warning: 1, info: 2 } as const;
+    const markers: Record<number, "blocker" | "warning" | "info"> = {};
+    for (const issue of qualityIssuesQuery.data?.items ?? []) {
+      if (issue.frame_start == null) continue;
+      const end = issue.frame_end ?? issue.frame_start;
+      for (let frame = issue.frame_start; frame <= end; frame += 1) {
+        const current = markers[frame];
+        if (!current || rank[issue.severity] < rank[current]) markers[frame] = issue.severity;
+      }
+    }
+    return markers;
+  }, [qualityIssuesQuery.data?.items]);
   const toolBindings = project?.tool_bindings;
   const hasToolBindings = !!toolBindings && Object.keys(toolBindings).length > 0;
   const boxClasses = useMemo(() => {
@@ -398,6 +570,7 @@ export function ThreeDWorkbench({
   const canPlacePointMask = !readOnly && pointMaskClasses.length > 0;
   const placing = threeDTool === "box" && canPlaceBox;
   const pointMasking = threeDTool === "point-mask" && canPlacePointMask;
+  const measuring = threeDTool === "measure";
   const pointMaskPolygonMode = pointMasking && pointMaskSelectMode === "polygon";
   const pointMaskDragMode = pointMasking && pointMaskSelectMode !== "polygon";
   const drawingSelection = placing || pointMasking;
@@ -407,49 +580,7 @@ export function ThreeDWorkbench({
     activeClass && pointMaskClasses.includes(activeClass)
       ? activeClass
       : (pointMaskClasses[0] ?? null);
-  const effectiveRightSidebarWidth = rightSidebarOpen ? rightSidebarWidth : 0;
-  const triFloatPosition = useMemo(
-    () => resolveTriViewFloatRect(triViewFloat, effectiveRightSidebarWidth),
-    [effectiveRightSidebarWidth, triViewFloat],
-  );
-  const updateTriViewFloat = useCallback(
-    (patch: Partial<FloatingPanelRect> & { collapsed?: boolean }) => {
-      onWorkbenchLayoutChange({
-        triViewFloat: {
-          ...triViewFloat,
-          ...patch,
-        },
-      });
-    },
-    [onWorkbenchLayoutChange, triViewFloat],
-  );
-
-  // 收起的「三视图 ▸」标签也可整体拖动:与展开面板共享记忆坐标(triViewFloat.x/y),
-  // 拖动落库位置;位移不过阈值则视为点击 → 展开。moved 区分二者,避免拖完误触发展开。
-  const triTabStartRef = useRef<{ x: number; y: number } | null>(null);
-  const triTabMovedRef = useRef(false);
-  const triTabDrag = useDragMove({
-    position: triFloatPosition,
-    size: TRI_TAB_DRAG_SIZE,
-    bounds: triFloatBounds,
-    onStart: (pos) => {
-      triTabStartRef.current = pos;
-      triTabMovedRef.current = false;
-    },
-    onChange: (pos) => {
-      const start = triTabStartRef.current;
-      if (
-        start &&
-        (Math.abs(pos.x - start.x) > TRI_TAB_DRAG_THRESHOLD ||
-          Math.abs(pos.y - start.y) > TRI_TAB_DRAG_THRESHOLD)
-      ) {
-        triTabMovedRef.current = true;
-      }
-      updateTriViewFloat({ x: pos.x, y: pos.y });
-    },
-  });
-
-  // v0.16.x 第 2 批 · 相机面板位置/折叠落库 + 窄屏自动折叠 + 旧 localStorage 迁移,
+  // 相机面板位置/折叠落库与窄屏自动折叠，
   // 整簇抽到 useCameraPanels;viewportWrapRef 由壳层共用故传入。
   const {
     autoCollapseCameras,
@@ -457,6 +588,17 @@ export function ThreeDWorkbench({
     handleCameraPanelCollapsed,
     handleResetCameraPanels,
   } = useCameraPanels({ cameraPanels, onWorkbenchLayoutChange, viewportWrapRef });
+  const registerLayoutActions = dockLayout?.registerActions;
+  const cameraPresentation = dockLayout?.cameraPresentation ?? "floating";
+  useEffect(() => {
+    registerLayoutActions?.({
+      resetCameras: () => {
+        if (cameraPresentation === "floating") handleResetCameraPanels();
+        else setCameraResetKey((value) => value + 1);
+      },
+    });
+    return () => registerLayoutActions?.(null);
+  }, [cameraPresentation, handleResetCameraPanels, registerLayoutActions]);
 
   useLayoutEffect(() => {
     const controls = controlsRef.current;
@@ -508,7 +650,7 @@ export function ThreeDWorkbench({
       observer.disconnect();
       window.removeEventListener("resize", syncBounds);
     };
-  }, []);
+  }, [dockLayout?.layoutKey]);
 
   useEffect(() => {
     if (!workbenchConfigLoaded || !userId || typeof window === "undefined") return;
@@ -544,11 +686,16 @@ export function ThreeDWorkbench({
   // PATCH 防抖 250ms;yaw 以度展示。
   const [form, setForm] = useState<Record<PsrField, string> | null>(null);
 
-  // v0.13.5 · 三视图拖拽中的本地草稿 PSR (覆盖选中框, 实时四方同步; 松手 PATCH 后清空)。
-  const [draftPsr, setDraftPsr] = useState<{ id: string; psr: Psr } | null>(null);
+  // 本地草稿 PSR：三视图或主视图 gizmo 拖拽时覆盖选中框，实时同步全部投影视图；提交后清空。
+  const [draftPsr, setDraftPsr] = useState<{
+    id: string;
+    psr: Psr;
+    source: "gizmo" | "triview";
+  } | null>(null);
+  const sceneDraftPsr = draftPsr?.source === "triview" ? draftPsr : null;
 
   // 标注里的 3D 框(geometry.type==="box_3d")→ 渲染层输入(PSR + 类别色 + 选中态 + 标签)。
-  const boxes = useMemo<SceneBox[]>(() => {
+  const sceneBoxes = useMemo<SceneBox[]>(() => {
     // 标签内容复用 common.labelContent 的 track 段(点云框是跨帧 track 语义):类别名恒显,
     // 轨迹号 / 属性按开关。state 后缀点云渲染层无逐帧态,留空。可见性走 labelVisibility 门控。
     const trackContent = workbenchCommon.labelContent.track;
@@ -576,7 +723,7 @@ export function ThreeDWorkbench({
       };
       if (g?.type !== "box_3d" || !g.center || !g.size || !g.rotation) continue;
       // 三视图拖拽中:用本地草稿覆盖该框的 PSR(实时预览, 不发请求)。
-      const dp = draftPsr && draftPsr.id === a.id ? draftPsr.psr : null;
+      const dp = sceneDraftPsr && sceneDraftPsr.id === a.id ? sceneDraftPsr.psr : null;
       const selected = selectedIdSet.has(a.id);
       const label = shouldShowLabel(selected, labelVisibility)
         ? buildTrackLabelText(
@@ -610,13 +757,112 @@ export function ThreeDWorkbench({
   }, [
     annotations,
     selectedIdSet,
-    draftPsr,
+    sceneDraftPsr,
     workbenchCommon.labelContent.track,
     workbenchCommon.labelVisibility,
   ]);
 
+  // 主 gizmo 已经直接改变 Three.js group；其草稿只覆盖依赖 React 的三视图/相机，不能再喂回
+  // PointCloudScene，否则每次 objectChange 都会重挂 TransformControls 并把一次拖动拆成多次提交。
+  const boxes = useMemo<SceneBox[]>(() => {
+    if (!draftPsr || draftPsr.source !== "gizmo") return sceneBoxes;
+    return sceneBoxes.map((box) =>
+      box.id === draftPsr.id
+        ? {
+            ...box,
+            center: [draftPsr.psr.center[0], draftPsr.psr.center[1], draftPsr.psr.center[2]],
+            size: [
+              Math.abs(draftPsr.psr.size[0]),
+              Math.abs(draftPsr.psr.size[1]),
+              Math.abs(draftPsr.psr.size[2]),
+            ],
+            rotation: [
+              draftPsr.psr.rotation[0],
+              draftPsr.psr.rotation[1],
+              draftPsr.psr.rotation[2],
+            ],
+          }
+        : box,
+    );
+  }, [draftPsr, sceneBoxes]);
+
   const selectedBox = boxes.find((b) => b.id === selectedId) ?? null;
   const selectedAnn = (annotations ?? []).find((a) => a.id === selectedId) ?? null;
+  const cameraMembers = useCameraAnnotationMembers(
+    taskId,
+    selectedAnn?.scene_track_id ?? null,
+    selectedAnn?.version ?? null,
+    enlargedRole,
+  );
+  const pendingTimelineSelectionRef = useRef<{
+    taskId: string;
+    annotationId: string | null;
+  } | null>(null);
+  const pendingQualityLocatorRef = useRef<PointCloudQualityIssue | null>(null);
+  const handleTimelineNavigate = useCallback(
+    async (targetTaskId: string, annotationId: string | null) => {
+      pendingTimelineSelectionRef.current = { taskId: targetTaskId, annotationId };
+      const allowed = await onNavigateSceneFrame(targetTaskId);
+      if (!allowed) pendingTimelineSelectionRef.current = null;
+      return allowed;
+    },
+    [onNavigateSceneFrame],
+  );
+  const applyQualityLocatorView = useCallback(
+    (issue: PointCloudQualityIssue) => {
+      const groundZ = issue.metric.ground_z;
+      sceneRef.current?.setQualityGroundPlane(
+        issue.locator.auxiliary_layers.includes("ground") && typeof groundZ === "number"
+          ? groundZ
+          : null,
+      );
+      if (issue.locator.auxiliary_layers.includes("neighbor_frames")) {
+        onWorkbenchConfigChange({
+          common: { crossFrameOverlayEnabled: true, crossFrameOverlayK: 1 },
+        });
+      }
+      if (issue.locator.camera) setEnlargedRole(issue.locator.camera);
+    },
+    [onWorkbenchConfigChange],
+  );
+  const handleLocateQualityIssue = useCallback(
+    (issue: PointCloudQualityIssue) => {
+      if (!issue.locator.task_id) {
+        pushToast({ msg: "该问题缺少可访问的任务定位器", kind: "warning" });
+        return;
+      }
+      if (issue.locator.task_id === taskId) {
+        applyQualityLocatorView(issue);
+        onSelectBox(issue.locator.annotation_id);
+        return;
+      }
+      pendingQualityLocatorRef.current = issue;
+      void handleTimelineNavigate(issue.locator.task_id, issue.locator.annotation_id).then(
+        (allowed) => {
+          if (!allowed && pendingQualityLocatorRef.current?.id === issue.id) {
+            pendingQualityLocatorRef.current = null;
+          }
+        },
+      );
+    },
+    [applyQualityLocatorView, handleTimelineNavigate, onSelectBox, pushToast, taskId],
+  );
+  useEffect(() => {
+    const pending = pendingTimelineSelectionRef.current;
+    if (!pending || pending.taskId !== taskId || !annotations) return;
+    pendingTimelineSelectionRef.current = null;
+    if (
+      pending.annotationId &&
+      annotations.some((annotation) => annotation.id === pending.annotationId)
+    ) {
+      onSelectBox(pending.annotationId);
+    }
+    const qualityIssue = pendingQualityLocatorRef.current;
+    if (qualityIssue?.locator.task_id === taskId) {
+      pendingQualityLocatorRef.current = null;
+      applyQualityLocatorView(qualityIssue);
+    }
+  }, [annotations, applyQualityLocatorView, onSelectBox, taskId]);
   const selectedBoxIds = useMemo(
     () => selectedIds.filter((id) => boxes.some((b) => b.id === id)),
     [selectedIds, boxes],
@@ -658,9 +904,18 @@ export function ThreeDWorkbench({
   const selectedPsrEditable = selectedEditable && !multiBoxSelected;
   const selectedPointMaskEditable = selectedEditable && !!selectedPointMask && !multiBoxSelected;
 
-  // gizmo 拖拽结束:回写 PSR 表单 + 几何 PATCH 持久化(与数值面板共用持久化管线)。
+  // gizmo 拖拽中只更新本地 PSR，三视图与相机投影跟随主框实时刷新。
+  const handleTransformPreview = useCallback((id: string, psr: BoxPsr) => {
+    if (!writeAllowedRef.current) return;
+    setForm(psrToForm(psr));
+    setDraftPsr({ id, psr, source: "gizmo" });
+  }, []);
+
+  // gizmo 拖拽结束:清理预览并回写 PSR 表单 + 几何 PATCH 持久化。
   // 作为回调注入 usePointCloudScene —— form / mutate / history 仍由本壳组件持有,边界干净。
   const handleTransformCommit = useCallback((id: string, psr: BoxPsr) => {
+    if (!writeAllowedRef.current) return;
+    setDraftPsr(null);
     setForm(psrToForm(psr));
     const ann = annotationsRef.current?.find((a) => a.id === id);
     const geometry = boxGeometryFromPsr(
@@ -679,23 +934,59 @@ export function ThreeDWorkbench({
     // 依赖全为稳定 ref / setState / 纯函数 import,故空依赖。
   }, []);
 
+  const measurementScenePaths = useMemo<SceneMeasurementPath[]>(() => {
+    const completed = completedMeasurements
+      .filter((measurement) => measurement.visible)
+      .map((measurement) => ({
+        id: measurement.id,
+        positions: measurement.anchors.map((anchor) => anchor.position),
+        active: false,
+      }));
+    if (measurementDraft.length === 0) return completed;
+    return [
+      ...completed,
+      {
+        id: "measurement-draft",
+        positions: measurementDraft.map((anchor) => anchor.position),
+        active: true,
+      },
+    ];
+  }, [completedMeasurements, measurementDraft]);
+
   // Three.js 场景生命周期(实例化/销毁 · 偏好同步 · 点云加载 · 框图层 · gizmo 挂载 · W-E-R)。
-  const { stats, loadError } = usePointCloudScene({
+  const {
+    stats,
+    loadError,
+    rendererError,
+    isLoading: pointCloudLoading,
+    loadedPointCloudUrl,
+    rendererStatus,
+    retryLoad,
+  } = usePointCloudScene({
+    renderSurface: dockLayout?.renderSurface,
+    layoutKey: dockLayout?.layoutKey,
+    getVisibleRegions: dockLayout?.getVisibleRegions,
     viewportRef,
     sceneRef,
     pcdDecimate: performanceConfig.pcdDecimate,
+    rendererMode,
     pointSize,
     showGrid: workbenchPointcloud.showGrid,
     showAxisGizmo: workbenchPointcloud.showAxisGizmo,
     cameraDamping: workbenchPointcloud.cameraDamping,
     persistCameraView: workbenchPointcloud.persistCameraView,
-    pointCloudUrl: manifest?.point_cloud_url,
-    axisConvention,
-    boxes,
+    pointCloudUrl: displayManifest?.point_cloud_url,
+    deferPointCloudDisplay: false,
+    continuityKey: displayManifest?.scene_id ?? displayManifest?.task_id ?? taskId,
+    axisConvention: displayManifest?.axis_convention ?? axisConvention,
+    boxes: sceneBoxes,
+    measurementPaths: measurementScenePaths,
     selectedId,
     selectedPsrEditable,
     pointcloudCamera,
     onWorkbenchLayoutChange,
+    onViewModeChange: setPointCloudViewMode,
+    onTransformPreview: handleTransformPreview,
     onTransformCommit: handleTransformCommit,
   });
 
@@ -704,6 +995,7 @@ export function ThreeDWorkbench({
   useEffect(() => {
     if (readOnly) return;
     const onKey = (e: KeyboardEvent) => {
+      if (isWorkbenchSettingsInteractionBlocked(e)) return;
       // v0.14.1 · 阻断按住 Shift+→ 的 auto-repeat: 否则连发多个 propagate POST,
       // 在目标帧造出共享同一新 track_id 的重复 annotation。
       if (e.repeat) return;
@@ -736,38 +1028,131 @@ export function ThreeDWorkbench({
     return () => window.removeEventListener("keydown", onKey);
   }, [readOnly, selectedId, onCrossFramePropagate, onCrossFramePropagateBatch, pushToast]);
 
-  // 切任务回到选择工具(选中态由壳层在切任务时统管,3D 不再本地清)。
+  const measurementDraftSummary = useMemo(
+    () => summarizeMeasurement(measurementDraft),
+    [measurementDraft],
+  );
+  const completeMeasurement = useCallback(() => {
+    if (measurementDraft.length < 2) {
+      pushToast({ msg: "至少选择两个点才能完成测量", kind: "" });
+      return;
+    }
+    if (completedMeasurements.length >= MAX_MEASUREMENT_PATHS) {
+      pushToast({ msg: `当前任务最多保留 ${MAX_MEASUREMENT_PATHS} 条测量`, kind: "" });
+      return;
+    }
+    measurementIdRef.current += 1;
+    setCompletedMeasurements((previous) => [
+      ...previous,
+      {
+        id: `measurement-${measurementIdRef.current}`,
+        anchors: measurementDraft,
+        visible: true,
+      },
+    ]);
+    setMeasurementDraft([]);
+  }, [completedMeasurements.length, measurementDraft, pushToast]);
+  const toggleMeasurementVisible = useCallback((measurementId: string) => {
+    setCompletedMeasurements((previous) =>
+      previous.map((measurement) =>
+        measurement.id === measurementId
+          ? { ...measurement, visible: !measurement.visible }
+          : measurement,
+      ),
+    );
+  }, []);
+  const deleteMeasurement = useCallback((measurementId: string) => {
+    setCompletedMeasurements((previous) =>
+      previous.filter((measurement) => measurement.id !== measurementId),
+    );
+  }, []);
+
+  // 切任务回到选择工具，并让旧 task 的迟到创建响应失效。
   useEffect(() => {
+    boxCreationRevisionRef.current += 1;
+    boxCreationInFlightRef.current = false;
+    setBoxCreationSaving(false);
+    setBoxCreationIssue(null);
+    setSeedMode(false);
+    setMeasurementDraft([]);
+    setCompletedMeasurements([]);
+    measurementIdRef.current = 0;
     onSetThreeDTool("select");
     setPointCloudViewMode("orbit");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId]);
 
-  // 进入放置模式时清选中,避免 gizmo 挡在点地面的路上。
+  // 只在进入工具的那个事件周期清一次旧选择。持续建框成功后即使仍为 box，
+  // 新框也必须保持选中，不能被 placing=true 的 effect 再次清空。
+  const previousThreeDToolRef = useRef(threeDTool);
   useEffect(() => {
-    if (placing || (pointMasking && selectedAnn?.geometry?.type !== "point_mask_3d")) {
+    const previous = previousThreeDToolRef.current;
+    previousThreeDToolRef.current = threeDTool;
+    if (threeDTool === "box" && previous !== "box") {
+      onSelectBox(null);
+      setBoxCreationIssue(null);
+    } else if (
+      threeDTool === "point-mask" &&
+      previous !== "point-mask" &&
+      selectedAnn?.geometry?.type !== "point_mask_3d"
+    ) {
+      onSelectBox(null);
+    } else if (threeDTool === "measure" && previous !== "measure") {
       onSelectBox(null);
     }
-  }, [placing, pointMasking, selectedAnn?.geometry, onSelectBox]);
+    if (previous === "measure" && threeDTool !== "measure") {
+      setMeasurementDraft([]);
+    }
+  }, [threeDTool, selectedAnn?.geometry?.type, onSelectBox]);
 
-  // B 进放置 / V / Esc 回选择(焦点在输入框时不拦截;无可用类别时 B 无效)。
+  // 只读或工具类别被撤销时立即安全退出，不保留看似可用的 armed 状态。
+  useEffect(() => {
+    if (!readOnly && boxClasses.length > 0) return;
+    if (threeDTool !== "box" && !seedMode) return;
+    boxCreationRevisionRef.current += 1;
+    boxCreationInFlightRef.current = false;
+    setBoxCreationSaving(false);
+    setBoxCreationIssue(null);
+    setSeedMode(false);
+    if (threeDTool === "box") onSetThreeDTool("select");
+  }, [boxClasses.length, onSetThreeDTool, readOnly, seedMode, threeDTool]);
+
+  // B/P/M 切工具；Enter 完成多边形或测量；V/Esc 回选择或取消当前测量草稿。
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (isWorkbenchSettingsInteractionBlocked(e)) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
-      if (e.key === "Enter" && pointMaskPolygonMode) {
+      if (e.key === "Enter" && measuring) {
+        e.preventDefault();
+        completeMeasurement();
+      } else if (e.key === "Enter" && pointMaskPolygonMode) {
         e.preventDefault();
         finishPointMaskPolygonRef.current(e.altKey);
+      } else if (e.key === "Escape" && measuring && measurementDraft.length > 0) {
+        setMeasurementDraft([]);
       } else if (e.key === "Escape" || e.key === "v" || e.key === "V") {
         setPointMaskPolygonPoints([]);
         setPointMaskCursor(null);
+        setMeasurementDraft([]);
+        setSeedMode(false);
+        setBoxCreationIssue(null);
         onSetThreeDTool("select");
       } else if ((e.key === "b" || e.key === "B") && canPlaceBox) onSetThreeDTool("box");
       else if ((e.key === "p" || e.key === "P") && canPlacePointMask) onSetThreeDTool("point-mask");
+      else if (e.key === "m" || e.key === "M") onSetThreeDTool("measure");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [canPlaceBox, canPlacePointMask, onSetThreeDTool, pointMaskPolygonMode]);
+  }, [
+    canPlaceBox,
+    canPlacePointMask,
+    completeMeasurement,
+    measurementDraft.length,
+    measuring,
+    onSetThreeDTool,
+    pointMaskPolygonMode,
+  ]);
 
   // 选中目标切换时用其 PSR 初始化表单(编辑期间不被服务端回写覆盖,故仅依赖 selectedId)。
   useEffect(() => {
@@ -784,13 +1169,15 @@ export function ThreeDWorkbench({
   // v0.16.x 第 3 批 · PSR 数值字段防抖落库管线抽到 usePsrPatchPipeline(单一职责、
   // 单消费者 handleField、不碰共享 form/setForm);完整 usePsrEditor 因 form 被多处共享
   // 无法干净切分(见计划 §5/§7),此处仅"缩小范围"抽这条管线。
-  const { schedulePatch } = usePsrPatchPipeline({
-    selectedId,
-    selectedAnn,
-    axisConvention,
-    updateAnnotation,
-    history,
-  });
+  const { schedulePatch, hasPendingPatch, hasInvalidDraft, isSaving, saveError } =
+    usePsrPatchPipeline({
+      form,
+      selectedId,
+      selectedAnn,
+      axisConvention,
+      updateAnnotation,
+      history,
+    });
 
   const handleField = useCallback(
     (k: PsrField, value: string) => {
@@ -810,14 +1197,18 @@ export function ThreeDWorkbench({
       if (!selectedBox) return;
       setForm((prev) => {
         if (!prev) return prev;
-        return isPsrFieldBad(k, prev[k]) ? { ...prev, [k]: psrToForm(selectedBox)[k] } : prev;
+        if (!isPsrFieldBad(k, prev[k])) return prev;
+        const next = { ...prev, [k]: psrToForm(selectedBox)[k] };
+        schedulePatch(next);
+        return next;
       });
     },
-    [selectedBox],
+    [schedulePatch, selectedBox],
   );
 
   const updateAnnotationWithHistory = useCallback(
     (annotationId: string, before: AnnotationUpdatePayload, after: AnnotationUpdatePayload) => {
+      if (!writeAllowedRef.current) return;
       if (JSON.stringify(before) === JSON.stringify(after)) return;
       updateAnnotation.mutate({ annotationId, payload: after });
       history.push({ kind: "update", annotationId, before, after });
@@ -955,6 +1346,7 @@ export function ThreeDWorkbench({
   useEffect(() => {
     if (!selectedId || !selectedPsrEditable) return;
     const onKey = (e: KeyboardEvent) => {
+      if (isWorkbenchSettingsInteractionBlocked(e)) return;
       if (e.key !== "q" && e.key !== "Q") return;
       if (e.ctrlKey || e.metaKey) return;
       const t = e.target as HTMLElement | null;
@@ -974,6 +1366,7 @@ export function ThreeDWorkbench({
   useEffect(() => {
     if (readOnly || selectedBoxIds.length === 0) return;
     const onKey = (e: KeyboardEvent) => {
+      if (isWorkbenchSettingsInteractionBlocked(e)) return;
       if (e.key !== "Delete" && e.key !== "Backspace") return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
@@ -986,6 +1379,7 @@ export function ThreeDWorkbench({
 
   // 锁定 / 解锁选中框(与列表 L 切换同源 is_locked;锁定后不可编辑,解锁需此按钮 / 列表)。
   const handleToggleLock = useCallback(() => {
+    if (!writeAllowedRef.current) return;
     if (!selectedId) return;
     updateAnnotation.mutate({
       annotationId: selectedId,
@@ -995,6 +1389,7 @@ export function ThreeDWorkbench({
 
   // v0.15.20 · 隐藏 / 显示选中框(与右栏列表同源 is_hidden;仅可见性,渲染侧读 a.is_hidden)。
   const handleToggleHidden = useCallback(() => {
+    if (!writeAllowedRef.current) return;
     if (!selectedId) return;
     updateAnnotation.mutate({
       annotationId: selectedId,
@@ -1002,13 +1397,50 @@ export function ThreeDWorkbench({
     });
   }, [selectedId, selectedHidden, updateAnnotation]);
 
-  // 放置:点地面 → 默认尺寸框(落在地面上)→ 持久化 → 选中新框精修;单次放置后退出。
+  const submitBoxCreation = useCallback(
+    (payload: AnnotationPayload) => {
+      if (!writeAllowedRef.current) return;
+      if (boxCreationInFlightRef.current) return;
+      const submittedTaskId = taskId;
+      const revision = ++boxCreationRevisionRef.current;
+      boxCreationInFlightRef.current = true;
+      setBoxCreationIssue(null);
+      setBoxCreationSaving(true);
+      createAnnotation.mutate(payload, {
+        onSuccess: (created) => {
+          if (
+            revision !== boxCreationRevisionRef.current ||
+            submittedTaskId !== taskIdRef.current
+          ) {
+            return;
+          }
+          history.push({ kind: "create", annotationId: created.id, payload });
+          onSelectBox(created.id);
+        },
+        onError: () => {
+          if (revision !== boxCreationRevisionRef.current) return;
+          setBoxCreationIssue("保存失败，请重试");
+        },
+        onSettled: () => {
+          if (revision !== boxCreationRevisionRef.current) return;
+          boxCreationInFlightRef.current = false;
+          setBoxCreationSaving(false);
+        },
+      });
+    },
+    [createAnnotation, history, onSelectBox, taskId],
+  );
+
+  // 放置:点地面 → 默认尺寸框(落在地面上)→ 持久化 → 选中新框，工具继续 armed。
   const handlePlace = useCallback(
     (clientX: number, clientY: number) => {
       const scene = sceneRef.current;
-      if (!scene || !boxPlaceClass) return;
+      if (!scene || !boxPlaceClass || boxCreationInFlightRef.current) return;
       const ground = scene.placeOnGround(clientX, clientY);
-      if (!ground) return;
+      if (!ground) {
+        setBoxCreationIssue("未找到可放置位置，请换个位置重试");
+        return;
+      }
       const [l, w, h] = defaultBoxSize;
       const geometry = boxGeometryFromPsr(
         {
@@ -1024,23 +1456,9 @@ export function ThreeDWorkbench({
         class_name: boxPlaceClass,
         geometry,
       };
-      createAnnotation.mutate(payload, {
-        onSuccess: (created) => {
-          history.push({ kind: "create", annotationId: created.id, payload });
-          onSelectBox(created.id);
-        },
-      });
-      onSetThreeDTool("select"); // 单次放置后回到选择工具
+      submitBoxCreation(payload);
     },
-    [
-      axisConvention,
-      boxPlaceClass,
-      createAnnotation,
-      defaultBoxSize,
-      history,
-      onSelectBox,
-      onSetThreeDTool,
-    ],
+    [axisConvention, boxPlaceClass, defaultBoxSize, submitBoxCreation],
   );
 
   // v0.13.9 · 框选画框 (frustum 选点): 在 box 工具下按住拖出屏幕矩形 → 选中投影落在矩形内的真实
@@ -1050,9 +1468,12 @@ export function ThreeDWorkbench({
   const handleBoxSelect = useCallback(
     (a: { x: number; y: number }, b: { x: number; y: number }) => {
       const scene = sceneRef.current;
-      if (!scene || !boxPlaceClass) return;
+      if (!scene || !boxPlaceClass || boxCreationInFlightRef.current) return;
       const selected = scene.selectPointsInScreenRect(a.x, a.y, b.x, b.y);
-      if (!selected) return; // 框内无点 → 不建框
+      if (!selected) {
+        setBoxCreationIssue("框内无点，请调整范围后重试");
+        return;
+      }
       const psr = psrFromPoints(selected);
       const geometry = boxGeometryFromPsr(psr, axisConvention);
       const payload: AnnotationPayload = {
@@ -1061,15 +1482,9 @@ export function ThreeDWorkbench({
         class_name: boxPlaceClass,
         geometry,
       };
-      createAnnotation.mutate(payload, {
-        onSuccess: (created) => {
-          history.push({ kind: "create", annotationId: created.id, payload });
-          onSelectBox(created.id);
-        },
-      });
-      onSetThreeDTool("select"); // 单次画框后回到选择工具
+      submitBoxCreation(payload);
     },
-    [boxPlaceClass, axisConvention, createAnnotation, history, onSelectBox, onSetThreeDTool],
+    [boxPlaceClass, axisConvention, submitBoxCreation],
   );
 
   // v0.15.24 · §Phase1 相机图「2D 框种 3D 框」:在放大相机图上拖矩形 → 该相机标定反算视锥选点
@@ -1078,9 +1493,12 @@ export function ThreeDWorkbench({
   const handleSeedBox = useCallback(
     (rect: SeedRect, calibration: SensorCalibration) => {
       const scene = sceneRef.current;
-      if (!scene || !boxPlaceClass) return;
+      if (!scene || !boxPlaceClass || boxCreationInFlightRef.current) return;
       const positions = scene.getPointPositions();
-      if (!positions) return;
+      if (!positions) {
+        setBoxCreationIssue("点云尚未就绪，请稍后重试");
+        return;
+      }
       const gated = depthGate(selectPointsInRect(positions, rect, calibration));
       let psr: Psr;
       if (gated.length >= 3) {
@@ -1104,27 +1522,14 @@ export function ThreeDWorkbench({
         class_name: boxPlaceClass,
         geometry,
       };
-      createAnnotation.mutate(payload, {
-        onSuccess: (created) => {
-          history.push({ kind: "create", annotationId: created.id, payload });
-          onSelectBox(created.id);
-        },
-      });
-      setSeedMode(false);
+      submitBoxCreation(payload);
     },
-    [
-      boxPlaceClass,
-      axisConvention,
-      defaultBoxSize,
-      createAnnotation,
-      history,
-      onSelectBox,
-      pushToast,
-    ],
+    [boxPlaceClass, axisConvention, defaultBoxSize, pushToast, submitBoxCreation],
   );
 
   const applyPointMaskSelection = useCallback(
     (selected: PointMaskSelection | null, subtract: boolean) => {
+      if (!writeAllowedRef.current) return;
       if (!selected) return;
       const scene = sceneRef.current;
       if (selectedPointMaskEditable && selectedId && selectedPointMask) {
@@ -1242,11 +1647,13 @@ export function ThreeDWorkbench({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (isWorkbenchSettingsInteractionBlocked(e)) return;
       if (!(e.ctrlKey || e.metaKey)) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       const key = e.key.toLowerCase();
       if (!["z", "y", "c", "v", "d"].includes(key)) return;
+      if (key !== "c" && !writeAllowedRef.current) return;
       e.preventDefault();
       e.stopImmediatePropagation();
       if (key === "z" && !e.shiftKey) {
@@ -1267,6 +1674,7 @@ export function ThreeDWorkbench({
 
   // mousedown 落点(像素): click 时若位移超阈值判为「转视角拖拽」, 不改选中/不放置。
   const pointerDownRef = useRef<{ x: number; y: number } | null>(null);
+  const selectionBeforeDoubleClickRef = useRef<string[]>([]);
   const DRAG_CLICK_TOL = 4; // px
   // v0.13.9 · 框选拖拽起点(client px)与屏上预览矩形(相对 viewportWrap px)。
   const boxSelectStartRef = useRef<{ x: number; y: number } | null>(null);
@@ -1281,8 +1689,19 @@ export function ThreeDWorkbench({
   const [previewPath, setPreviewPath] = useState<ScreenPoint[]>([]);
 
   const handleViewportMouseDown = (e: React.MouseEvent) => {
+    // 控件条、状态条和其他覆盖层都在 viewport DOM 内，事件会冒泡到这里。
+    // 共享画布位于工作区底层，只接受主视图交互宿主（独立模式则为 canvas）的事件。
+    if (e.target !== viewportRef.current && !(e.target instanceof HTMLCanvasElement)) return;
     pointerDownRef.current = { x: e.clientX, y: e.clientY };
+    if (e.button === 0 && e.detail === 1 && threeDTool === "select") {
+      selectionBeforeDoubleClickRef.current = [...selectedIds];
+    }
+    if (placing && boxCreationSaving) {
+      e.preventDefault();
+      return;
+    }
     if (placing || pointMaskDragMode) {
+      if (placing) setBoxCreationIssue(null);
       // 框选: 禁 orbit, 记起点; 实际 move/up 走 window 监听(见下方 effect), 拖出视口也能收尾。
       sceneRef.current?.setBoxSelecting(true);
       boxSelectStartRef.current = { x: e.clientX, y: e.clientY };
@@ -1348,6 +1767,7 @@ export function ThreeDWorkbench({
       lassoPointsRef.current = [];
     };
     const onCancelKey = (e: KeyboardEvent) => {
+      if (isWorkbenchSettingsInteractionBlocked(e)) return;
       if (e.key === "Escape") cancel();
     };
     const onContextMenu = (e: MouseEvent) => {
@@ -1383,12 +1803,74 @@ export function ThreeDWorkbench({
   };
 
   const handleViewportDoubleClick = (e: React.MouseEvent) => {
-    if (!pointMaskPolygonMode) return;
+    if (pointMaskPolygonMode) {
+      e.preventDefault();
+      finishPointMaskPolygon(e.altKey);
+      return;
+    }
+    const scene = sceneRef.current;
+    if (
+      threeDTool !== "select" ||
+      drawingSelection ||
+      isBoxSelecting ||
+      !scene ||
+      scene.isTransformDragging()
+    ) {
+      return;
+    }
+    const hitId = scene.pickBox(e.clientX, e.clientY);
+    if (!hitId) {
+      const previous = selectionBeforeDoubleClickRef.current;
+      if (previous.length > 0) {
+        onSelectBox(previous[0]);
+        for (const id of previous.slice(1)) onSelectBox(id, { shift: true });
+      }
+      return;
+    }
     e.preventDefault();
-    finishPointMaskPolygon(e.altKey);
+    onSelectBox(hitId);
+    scene.focusBox(hitId);
   };
 
   const handleViewportClick = (e: React.MouseEvent) => {
+    if (playbackActive) {
+      const down = pointerDownRef.current;
+      pointerDownRef.current = null;
+      if (!down || Math.hypot(e.clientX - down.x, e.clientY - down.y) <= DRAG_CLICK_TOL) {
+        onPlaybackActiveChange?.(false);
+      }
+      return;
+    }
+    if (measuring) {
+      if (
+        (e.target !== viewportRef.current && !(e.target instanceof HTMLCanvasElement)) ||
+        e.detail !== 1
+      )
+        return;
+      if (sceneRef.current?.shouldIgnoreClick()) return;
+      const down = pointerDownRef.current;
+      pointerDownRef.current = null;
+      if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > DRAG_CLICK_TOL) return;
+      if (completedMeasurements.length >= MAX_MEASUREMENT_PATHS) {
+        pushToast({ msg: `当前任务最多保留 ${MAX_MEASUREMENT_PATHS} 条测量`, kind: "" });
+        return;
+      }
+      if (measurementDraft.length >= MAX_MEASUREMENT_ANCHORS) {
+        pushToast({ msg: `单条测量最多包含 ${MAX_MEASUREMENT_ANCHORS} 个锚点`, kind: "" });
+        return;
+      }
+      const hit = sceneRef.current?.pickPoint(e.clientX, e.clientY) ?? null;
+      if (!hit) {
+        pushToast({ msg: "未命中点云，请放大后重试", kind: "" });
+        return;
+      }
+      if (measurementDraft[measurementDraft.length - 1]?.pointIndex === hit.pointIndex) {
+        pushToast({ msg: "该点已经是当前路径的最后一个锚点", kind: "" });
+        return;
+      }
+      setMeasurementDraft((previous) => [...previous, hit]);
+      return;
+    }
     if (pointMaskPolygonMode) {
       const down = pointerDownRef.current;
       pointerDownRef.current = null;
@@ -1422,8 +1904,10 @@ export function ThreeDWorkbench({
   } | null>(null);
 
   // v0.15.21 · 选中框 PSR 面板:渐进展开 + 整体拖动,展开态与位置偏移按用户记忆(localStorage)。
-  const { psrPanel, psrDragging, onPsrHeaderPointerDown, togglePsrExpanded } =
-    usePsrFloatingPanel(userId);
+  const { psrPanel, psrDragging, onPsrHeaderPointerDown, togglePsrExpanded } = usePsrFloatingPanel(
+    userId,
+    petDock?.enabled ? petDock : null,
+  );
 
   const closeContextMenu = () => {
     contextMenu.close();
@@ -1431,6 +1915,11 @@ export function ThreeDWorkbench({
   };
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
+    if (measuring) {
+      pointerDownRef.current = null;
+      closeContextMenu();
+      return;
+    }
     // 右键拖动 = OrbitControls 相机平移, 抑制菜单; 右键点击才弹(与 click 判定同阈值)。
     const down = pointerDownRef.current;
     pointerDownRef.current = null;
@@ -1559,6 +2048,138 @@ export function ThreeDWorkbench({
     () => (enlargedIndex >= 0 ? cameras[enlargedIndex] : null),
     [cameras, enlargedIndex],
   );
+  const enlargedCalibrationSource = useMemo(
+    () => manifest?.cameras.find((camera) => camera.role === enlargedRole) ?? null,
+    [enlargedRole, manifest?.cameras],
+  );
+  const enlargedCameraMember = useMemo(
+    () =>
+      cameraMembers.data?.items.find(
+        (member) => member.is_active && member.camera_role === enlargedCam?.role,
+      ) ?? null,
+    [cameraMembers.data?.items, enlargedCam?.role],
+  );
+  useEffect(() => {
+    setManualBboxMode(false);
+  }, [enlargedCam?.role, selectedAnn?.scene_track_id, readOnly]);
+
+  const handleManualBboxCommit = useCallback(
+    async (bbox: { x: number; y: number; w: number; h: number }) => {
+      if (!writeAllowedRef.current) return;
+      if (
+        !taskId ||
+        !selectedAnn?.scene_track_id ||
+        !enlargedCam?.calibration ||
+        !enlargedCam.calibration_revision ||
+        !enlargedCam.calibration_digest ||
+        !cameraMembers.data?.track_revision
+      ) {
+        pushToast({ msg: "2D 成员上下文尚未就绪，请稍后重试", kind: "warning" });
+        return;
+      }
+      try {
+        if (enlargedCameraMember) {
+          await cameraMembers.update.mutateAsync({
+            memberId: enlargedCameraMember.id,
+            payload: {
+              bbox,
+              expected_version: enlargedCameraMember.version,
+              expected_track_revision: cameraMembers.data.track_revision,
+              expected_calibration_revision: enlargedCam.calibration_revision,
+              expected_calibration_digest: enlargedCam.calibration_digest,
+            },
+          });
+        } else {
+          await cameraMembers.create.mutateAsync({
+            source_annotation_id: selectedAnn.id,
+            camera_role: enlargedCam.role,
+            bbox,
+            visibility: "visible",
+            expected_track_revision: cameraMembers.data.track_revision,
+            expected_calibration_revision: enlargedCam.calibration_revision,
+            expected_calibration_digest: enlargedCam.calibration_digest,
+          });
+        }
+        setManualBboxMode(false);
+        pushToast({
+          msg: enlargedCameraMember ? "2D 成员已更新" : "2D 成员已创建",
+          kind: "success",
+        });
+      } catch (error) {
+        await cameraMembers.query.refetch();
+        pushToast({
+          msg: "2D 成员保存失败",
+          sub: error instanceof Error ? error.message : "数据或标定已变化，请重试",
+          kind: "error",
+        });
+      }
+    },
+    [cameraMembers, enlargedCam, enlargedCameraMember, pushToast, selectedAnn, taskId],
+  );
+
+  const handleManualVisibilityChange = useCallback(
+    async (visibility: "visible" | "occluded" | "truncated" | "unknown") => {
+      if (!writeAllowedRef.current) return;
+      if (
+        !enlargedCameraMember ||
+        !enlargedCam?.calibration_revision ||
+        !enlargedCam.calibration_digest ||
+        !cameraMembers.data?.track_revision
+      )
+        return;
+      try {
+        await cameraMembers.update.mutateAsync({
+          memberId: enlargedCameraMember.id,
+          payload: {
+            visibility,
+            expected_version: enlargedCameraMember.version,
+            expected_track_revision: cameraMembers.data.track_revision,
+            expected_calibration_revision: enlargedCam.calibration_revision,
+            expected_calibration_digest: enlargedCam.calibration_digest,
+          },
+        });
+      } catch (error) {
+        await cameraMembers.query.refetch();
+        pushToast({
+          msg: "可见性更新失败",
+          sub: error instanceof Error ? error.message : "数据已变化，请重试",
+          kind: "error",
+        });
+      }
+    },
+    [cameraMembers, enlargedCam, enlargedCameraMember, pushToast],
+  );
+
+  const handleDeleteManualBbox = useCallback(async () => {
+    if (!writeAllowedRef.current) return;
+    if (!enlargedCameraMember || !cameraMembers.data?.track_revision) return;
+    if (!window.confirm(`删除 ${enlargedCam?.name ?? "当前相机"} 的 2D 成员？`)) return;
+    try {
+      await cameraMembers.remove.mutateAsync({
+        memberId: enlargedCameraMember.id,
+        payload: {
+          expected_version: enlargedCameraMember.version,
+          expected_track_revision: cameraMembers.data.track_revision,
+        },
+      });
+      setManualBboxMode(false);
+      pushToast({ msg: "2D 成员已删除", kind: "success" });
+    } catch (error) {
+      await cameraMembers.query.refetch();
+      pushToast({
+        msg: "2D 成员删除失败",
+        sub: error instanceof Error ? error.message : "数据已变化，请重试",
+        kind: "error",
+      });
+    }
+  }, [cameraMembers, enlargedCam?.name, enlargedCameraMember, pushToast]);
+  const triViewElevated = enlargedCam !== null;
+  useLayoutEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    scene.setTriViewElevated(triViewElevated);
+    return () => scene.setTriViewElevated(false);
+  }, [rendererStatus?.actualBackend, triViewElevated]);
   const cycleEnlargedCamera = useCallback(
     (dir: -1 | 1) => {
       if (cameras.length === 0) return;
@@ -1583,6 +2204,8 @@ export function ThreeDWorkbench({
   useEffect(() => {
     if (!enlargedRole) return;
     const onKey = (e: KeyboardEvent) => {
+      if (isWorkbenchSettingsInteractionBlocked(e)) return;
+      if (calibrationSheetOpen) return;
       if (e.key === "Escape") {
         if (seedMode) setSeedMode(false);
         else setEnlargedRole(null);
@@ -1596,10 +2219,13 @@ export function ThreeDWorkbench({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [cycleEnlargedCamera, enlargedRole, seedMode]);
+  }, [calibrationSheetOpen, cycleEnlargedCamera, enlargedRole, seedMode]);
   // v0.15.24 · 关闭放大浮层时复位种框模式(种框仅在放大视图内有意义)。
   useEffect(() => {
-    if (!enlargedRole) setSeedMode(false);
+    if (!enlargedRole) {
+      setSeedMode(false);
+      setCalibrationSheetOpen(false);
+    }
   }, [enlargedRole]);
   // v0.13.6 · 点云坐标(载帧后稳定);供相机视图建深度栅格。stats 变化即点云换帧。
   const pointPositions = useMemo(
@@ -1607,52 +2233,113 @@ export function ThreeDWorkbench({
     [stats],
   );
 
-  // v0.13.6 · 相机 RGB 上色:开关开 → 逐点投影到各标定相机采样像素 → 写回点云 color;
-  // 关 → 还原高度色带。一次性算(不进每帧),依赖 colorizeOn / cameras / stats(载帧)。
-  // 无标定相机自动剔除;getImageData 跨域污染则降级(整相机跳过)。三视图复用同一 geometry 自动跟随。
+  // Legacy 仍由持久 Worker 生成颜色 attribute；实验 renderer 直接采样 ImageBitmap texture，
+  // 不执行 Canvas getImageData / 逐点 RGB 回传。两条路径都先显示高度色，不再隐藏点云。
   useEffect(() => {
     const scene = sceneRef.current;
-    if (!scene || !stats) return;
+    const pointCloudUrl = manifest?.point_cloud_url ?? null;
+    const frameReady =
+      !!scene && !!stats && !!pointCloudUrl && loadedPointCloudUrl === pointCloudUrl;
+    if (!scene || !frameReady) {
+      colorizedRawRef.current = null;
+      adjustedColorBufferRef.current = null;
+      setColorizing(false);
+      setCameraTextureResources(null);
+      return;
+    }
     if (!colorizeOn) {
       colorizedRawRef.current = null;
       adjustedColorBufferRef.current = null;
+      scene.setCameraTextureColorization(null);
+      setCameraTextureResources(null);
       scene.setPointColors(null);
+      scene.setPointCloudVisible(true);
       return;
     }
-    let cancelled = false;
+    const controller = new AbortController();
     setColorizing(true);
+    let textureResources: CameraTextureResources | null = null;
     (async () => {
-      const positions = scene.getPointPositions();
-      const calibCams = cameras.filter((c) => c.calibration);
-      if (!positions || calibCams.length === 0) {
-        if (!cancelled) setColorizing(false);
-        return;
-      }
-      const samples = (
-        await Promise.all(calibCams.map((c) => loadCameraSample(c.image_url, c.calibration!)))
-      ).filter((s): s is CameraSample => s !== null);
-      if (cancelled) return;
-      if (samples.length > 0) {
-        const colors = await colorizePointsAsync(positions, scene.getBaseColors(), samples);
-        if (!cancelled) {
+      try {
+        const positions = scene.getPointPositions();
+        const calibCams = cameras.filter((c) => c.calibration);
+        if (!positions || calibCams.length === 0) return;
+        const useTextureSampling =
+          rendererStatus?.actualBackend !== "legacy-webgl2" && calibCams.length <= 6;
+        if (useTextureSampling) {
+          textureResources = await prepareCameraTextureResources(
+            pointCloudUrl,
+            positions,
+            calibCams.map((camera) => ({
+              imageUrl: camera.image_url,
+              calibration: camera.calibration!,
+            })),
+            controller.signal,
+          );
+          if (controller.signal.aborted) return;
+          scene.setCameraTextureColorAdjust(colorAdjust);
+          scene.setCameraTextureColorization(textureResources.samples);
+          setCameraTextureResources(textureResources);
+          return;
+        }
+        const samples = (
+          await Promise.all(
+            calibCams.map((c) => loadCameraSample(c.image_url, c.calibration!, controller.signal)),
+          )
+        ).filter((s): s is CameraSample => s !== null);
+        if (controller.signal.aborted || samples.length === 0) return;
+        const colors = await colorizePointsAsync(positions, scene.getBaseColors(), samples, {
+          signal: controller.signal,
+        });
+        if (!controller.signal.aborted) {
           colorizedRawRef.current = colors;
           adjustedColorBufferRef.current = null;
           scene.setPointColors(
             isNeutralAdjust(colorAdjust) ? colors : adjustColors(colors, colorAdjust),
           );
         }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.warn("[pointcloud-colorize] failed; showing height colors", error);
+          scene.setCameraTextureColorization(null);
+          scene.setPointColors(null);
+        }
+      } finally {
+        if (!controller.signal.aborted) {
+          scene.setPointCloudVisible(true);
+          setColorizing(false);
+          markPointCloudPaint(
+            "camera-color-ready",
+            pointCloudUrl,
+            () => !controller.signal.aborted,
+          );
+        }
       }
-      if (!cancelled) setColorizing(false);
     })();
     return () => {
-      cancelled = true;
+      controller.abort();
+      scene.setCameraTextureColorization(null);
+      const resources = textureResources;
+      resources?.dispose();
+      setCameraTextureResources((current) => (current === resources ? null : current));
     };
     // colorAdjust changes are handled by the lightweight remap effect below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [colorizeOn, cameras, stats]);
+  }, [
+    colorizeOn,
+    cameras,
+    loadedPointCloudUrl,
+    manifest?.point_cloud_url,
+    rendererStatus?.actualBackend,
+    stats,
+  ]);
 
   useEffect(() => {
     const scene = sceneRef.current;
+    if (scene && rendererStatus?.actualBackend !== "legacy-webgl2") {
+      scene.setCameraTextureColorAdjust(colorAdjust);
+      return;
+    }
     const raw = colorizedRawRef.current;
     if (!scene || !colorizeOn || !raw) return;
     if (isNeutralAdjust(colorAdjust)) {
@@ -1663,7 +2350,7 @@ export function ThreeDWorkbench({
       adjustedColorBufferRef.current = new Float32Array(raw.length);
     }
     scene.setPointColors(adjustColors(raw, colorAdjust, adjustedColorBufferRef.current));
-  }, [colorAdjust, colorizeOn]);
+  }, [colorAdjust, colorizeOn, rendererStatus?.actualBackend]);
 
   useEffect(() => {
     sceneRef.current?.highlightPointMask(selectedPointMask?.point_indices ?? null);
@@ -1672,7 +2359,20 @@ export function ThreeDWorkbench({
   // v0.13.4 · 跨模态高亮集合:选中框 + 同 track_id 成员。3D 主视图仍按 selected 单框高亮,
   // overlay 按本集合高亮(为未来同链 2D 框成员预留;孤立框 track_id 为空时退化为仅选中本身)。
   // v0.21.2 · ADR-0045 · 跨帧链按 track_id 认同一对象 (原 group_id 高位段)。
+  const [playbackTrackId, setPlaybackTrackId] = useState<string | null>(null);
   const selectedTrackId = selectedAnn?.track_id ?? null;
+  useEffect(() => {
+    if (!playbackActive || !playbackTrackId || !annotationsQuery.isSuccess) return;
+    const member = annotations?.find((annotation) => annotation.track_id === playbackTrackId);
+    if (member && member.id !== selectedId) onSelectBox(member.id);
+  }, [
+    annotations,
+    annotationsQuery.isSuccess,
+    onSelectBox,
+    playbackActive,
+    playbackTrackId,
+    selectedId,
+  ]);
   const highlightedIds = useMemo(() => {
     const s = new Set<string>();
     for (const id of selectedIds) s.add(id);
@@ -1939,9 +2639,29 @@ export function ThreeDWorkbench({
   }, [selectedBox, cameras]);
   const bestCameraRole = selectedCameraVis[0]?.role ?? null;
 
-  // v0.13.5 · 三视图复用主场景点 geometry (零拷贝); selected 仅在 PSR/色变化时换引用,
-  // 避免每次 render 触发 TriViewRenderer.setBox。
-  const getPointsGeometry = useCallback(() => sceneRef.current?.getPointsGeometry() ?? null, []);
+  const [triZoomByAnnotation, setTriZoomByAnnotation] = useState(
+    () => new Map<string, Record<TriView, number>>(),
+  );
+  const triZoomAnnotationId = !multiBoxSelected ? (selectedBox?.id ?? null) : null;
+  const triZoomByView = useMemo(
+    () =>
+      triZoomAnnotationId
+        ? (triZoomByAnnotation.get(triZoomAnnotationId) ?? DEFAULT_TRI_ZOOM_BY_VIEW)
+        : DEFAULT_TRI_ZOOM_BY_VIEW,
+    [triZoomAnnotationId, triZoomByAnnotation],
+  );
+  const handleTriZoomChange = useCallback(
+    (view: TriView, zoom: number) => {
+      if (!triZoomAnnotationId) return;
+      setTriZoomByAnnotation((currentByAnnotation) => {
+        const current = currentByAnnotation.get(triZoomAnnotationId) ?? DEFAULT_TRI_ZOOM_BY_VIEW;
+        const next = new Map(currentByAnnotation);
+        next.set(triZoomAnnotationId, { ...current, [view]: clampTriZoom(zoom) });
+        return next;
+      });
+    },
+    [triZoomAnnotationId],
+  );
   const triSelected = useMemo<TriSelected | null>(
     () =>
       selectedBox && !multiBoxSelected
@@ -1954,7 +2674,6 @@ export function ThreeDWorkbench({
         : null,
     [selectedBox, multiBoxSelected],
   );
-
   // v0.13.5 · 三视图拖边/角回写: 拖拽中 (commit=false) 只更新本地草稿 (实时四方同步);
   // 松手 (commit=true) 走与 gizmo 同一条 PATCH 管线持久化, 并清草稿 (乐观更新已写入缓存)。
   const handleEditPsr = useCallback(
@@ -1980,7 +2699,7 @@ export function ThreeDWorkbench({
           { geometry },
         );
       } else {
-        setDraftPsr({ id: selectedId, psr });
+        setDraftPsr({ id: selectedId, psr, source: "triview" });
       }
     },
     [selectedId, selectedAnn?.geometry, axisConvention, updateAnnotationWithHistory],
@@ -2037,21 +2756,121 @@ export function ThreeDWorkbench({
         } as CSSProperties)
       : undefined,
   );
-  const editPanelRef = useElementStyle<HTMLDivElement>({
-    "--psr-dx": `${psrPanel.dx}px`,
-    "--psr-dy": `${psrPanel.dy}px`,
+  const petLinked = petDock?.enabled === true;
+  const editPanelRef = useElementStyle<HTMLDivElement>(
+    petLinked
+      ? ({
+          "--psr-pet-x": `${petDock.position.x + WORKBENCH_PET_SIZE.w / 2}px`,
+          "--psr-pet-y": `${petDock.position.y + WORKBENCH_PET_SIZE.h / 2}px`,
+        } as CSSProperties)
+      : ({
+          "--psr-dx": `${psrPanel.dx}px`,
+          "--psr-dy": `${psrPanel.dy}px`,
+        } as CSSProperties),
+  );
+  const editPanelClass = [
+    EDIT_PANEL_SURFACE,
+    petLinked ? EDIT_PANEL_PET_LINKED : EDIT_PANEL_FLOATING,
+    psrDragging ? EDIT_PANEL_DRAGGING : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const modalRect = viewportWrapRef.current?.getBoundingClientRect();
+  const cameraModalRef = useElementStyle<HTMLDivElement>({
+    "--camera-edit-left": (modalRect?.left ?? 0) + "px",
+    "--camera-edit-top": (modalRect?.top ?? 0) + "px",
+    "--camera-edit-width": (modalRect?.width ?? 0) + "px",
+    "--camera-edit-height": (modalRect?.height ?? 0) + "px",
+    clipPath:
+      modalRect && viewportRef.current && dockLayout
+        ? viewportRegionClipPath(dockLayout.getVisibleRegions(viewportRef.current), modalRect)
+        : undefined,
   } as CSSProperties);
-  const triFloatTabRef = useElementStyle<HTMLDivElement>({
-    "--tri-tab-x": `${triFloatPosition.x}px`,
-    "--tri-tab-y": `${triFloatPosition.y}px`,
-  } as CSSProperties);
+  const renderPsrPanel = (panel: ReactNode) =>
+    petLinked ? createPortal(panel, document.body) : panel;
+
+  const [canvasVisible, setCanvasVisible] = useState(true);
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    const measure = () => {
+      const rect = viewport.getBoundingClientRect();
+      setCanvasVisible(
+        rect.width > 0 &&
+          rect.height > 0 &&
+          (!dockLayout || dockLayout.getVisibleRegions(viewport).length > 0),
+      );
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(viewport);
+    return () => observer.disconnect();
+  }, [dockLayout]);
+  const frameError = error || annotationsQuery.error || loadError || rendererError;
+  const frameState = {
+    taskId,
+    status: frameError
+      ? ("error" as const)
+      : taskId &&
+          manifest?.task_id === taskId &&
+          annotationsQuery.isSuccess &&
+          manifest.point_cloud_url &&
+          loadedPointCloudUrl === manifest.point_cloud_url &&
+          stats &&
+          !pointCloudLoading
+        ? ("ready" as const)
+        : ("loading" as const),
+    error: frameError
+      ? String(frameError instanceof Error ? frameError.message : frameError)
+      : null,
+  };
+  const playbackBlockedReason =
+    shellPlaybackBlockedReason ||
+    (hasInvalidDraft
+      ? "请先修正或取消未完成的数值输入"
+      : hasPendingPatch
+        ? "数值修改正在等待保存"
+        : isSaving ||
+            createAnnotation.isPending ||
+            deleteAnnotation.isPending ||
+            history.busy ||
+            boxCreationSaving
+          ? "标注正在保存"
+          : saveError || createAnnotation.error || deleteAnnotation.error || boxCreationIssue
+            ? "标注保存失败，请先重试或修正"
+            : draftPsr || isBoxSelecting || psrDragging
+              ? "请先结束当前拖动"
+              : pointMaskPolygonPoints.length > 0 ||
+                  measurementDraft.length > 0 ||
+                  threeDTool === "box" ||
+                  threeDTool === "point-mask"
+                ? "请先完成或取消绘制，再切回选择工具"
+                : enlargedRole || calibrationSheetOpen || framePicker || classPickerAnchor
+                  ? "请先关闭编辑面板"
+                  : null);
 
   return (
-    <div className={ROOT}>
+    <div
+      className={ROOT}
+      data-scene-playback={playbackActive ? "playing" : "paused"}
+      data-scene-frame-state={frameState.status}
+      onPointerDownCapture={(event) => {
+        const target = event.target as HTMLElement;
+        if (playbackActive && target.closest('[data-testid="tri-view-renderer-panel"]')) {
+          event.preventDefault();
+          event.stopPropagation();
+          onPlaybackActiveChange?.(false);
+        }
+      }}
+    >
       <div ref={viewportWrapRef} className={VIEWPORT_WRAP}>
         <div
           ref={viewportRef}
-          className={drawingSelection ? `${VIEWPORT} ${PLACING}` : VIEWPORT}
+          className={
+            drawingSelection || measuring
+              ? `${VIEWPORT} ${boxCreationSaving && placing ? CREATION_BLOCKED : PLACING}`
+              : VIEWPORT
+          }
           data-testid="pc-viewport"
           onMouseDown={handleViewportMouseDown}
           onMouseMove={handleViewportMouseMove}
@@ -2094,53 +2913,53 @@ export function ThreeDWorkbench({
 
         {/* 控件浮条 */}
         <div ref={controlsRef} className={CONTROLS}>
-          <button type="button" className={BTN} onClick={handleResetView}>
-            重置视角
-          </button>
-          <button
-            type="button"
-            className={pointCloudViewMode === "bev" ? `${BTN} ${BTN_ACTIVE}` : BTN}
-            onClick={handleBevView}
-            aria-pressed={pointCloudViewMode === "bev"}
-          >
-            俯视
-          </button>
-          <button
-            type="button"
-            className={BTN}
-            onClick={handleResetCameraPanels}
-            title="恢复 2D 相机图默认贴边布局"
-          >
-            重置相机布局
-          </button>
-          {colorizing && (
-            <span className={SIZE_CTL} title="相机上色处理中">
-              相机上色…
-            </span>
-          )}
-          {threeDTool === "point-mask" && (
-            <label className={SIZE_CTL}>
-              选点
-              <select
-                className={SELECT_CTL}
-                data-testid="pointmask-mode-select"
-                value={pointMaskSelectMode}
-                disabled={!canPlacePointMask}
-                onChange={(e) => {
-                  const next = e.target.value;
-                  if (isPointMaskSelectMode(next)) {
-                    onWorkbenchConfigChange({
-                      pointcloud: { pointMaskSelectMode: next },
-                    });
-                  }
-                }}
+          <div className={CONTROL_BAR}>
+            <Button
+              type="button"
+              size="xs"
+              className="h-7"
+              variant={pointCloudViewMode === "bev" ? "primary" : "ghost"}
+              onClick={handleBevView}
+              aria-pressed={pointCloudViewMode === "bev"}
+            >
+              俯视
+            </Button>
+            <Tooltip name="重置视角" side="bottom">
+              <Button
+                type="button"
+                size="xs"
+                className="size-7 p-0"
+                variant="ghost"
+                aria-label="重置视角"
+                onClick={handleResetView}
               >
-                <option value="rect">矩形</option>
-                <option value="lasso">套索</option>
-                <option value="polygon">多边形</option>
-              </select>
-            </label>
-          )}
+                <Icon name="rotate-ccw" size={14} />
+              </Button>
+            </Tooltip>
+            {threeDTool === "point-mask" && (
+              <label className={SIZE_CTL}>
+                选点
+                <select
+                  className={SELECT_CTL}
+                  data-testid="pointmask-mode-select"
+                  value={pointMaskSelectMode}
+                  disabled={!canPlacePointMask}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    if (isPointMaskSelectMode(next)) {
+                      onWorkbenchConfigChange({
+                        pointcloud: { pointMaskSelectMode: next },
+                      });
+                    }
+                  }}
+                >
+                  <option value="rect">矩形</option>
+                  <option value="lasso">套索</option>
+                  <option value="polygon">多边形</option>
+                </select>
+              </label>
+            )}
+          </div>
         </div>
 
         <ContextMenu
@@ -2201,9 +3020,26 @@ export function ThreeDWorkbench({
 
         {/* 状态条 */}
         <div className={STATUS_BAR}>
+          {colorizing && <span>相机上色…</span>}
           {isLoading && <span>加载 manifest…</span>}
+          {pointCloudLoading && <span data-testid="pointcloud-loading">加载点云…</span>}
           {error && <span className={ERR}>manifest 加载失败</span>}
           {loadError && <span className={ERR}>点云加载失败: {loadError}</span>}
+          {rendererError && (
+            <span className={ERR} data-testid="pointcloud-renderer-error">
+              Renderer 初始化失败: {rendererError}
+            </span>
+          )}
+          <Badge
+            variant={rendererStatus?.actualBackend === "webgpu" ? "accent" : "outline"}
+            data-testid="pointcloud-renderer-backend"
+            data-backend={
+              rendererError ? "failed" : (rendererStatus?.actualBackend ?? "initializing")
+            }
+            title={rendererError ?? rendererStatus?.fallbackReason ?? undefined}
+          >
+            {rendererError ? "Renderer 不可用" : rendererBackendLabel(rendererStatus)}
+          </Badge>
           {stats && (
             <span data-testid="pointcloud-stats">
               {stats.renderedPoints.toLocaleString()} 点
@@ -2218,7 +3054,30 @@ export function ThreeDWorkbench({
             <span>· 邻帧对齐 {neighborMovedCount.toLocaleString()} 动态点</span>
           )}
           {pointMasks.length > 0 && <span>· {pointMasks.length} 分割</span>}
-          {placing && <span>· 拖框选 / 点击放置 {boxPlaceClass ?? ""} · V/Esc 取消</span>}
+          {placing && (
+            <Badge
+              variant={boxCreationIssue ? "danger" : boxCreationSaving ? "warning" : "accent"}
+              dot
+              data-testid="three-d-creation-status"
+              data-phase={
+                boxCreationSaving
+                  ? "saving"
+                  : boxCreationIssue
+                    ? "error"
+                    : isBoxSelecting
+                      ? "drawing"
+                      : "armed"
+              }
+            >
+              {boxCreationSaving
+                ? `连续建框 · 正在保存 ${boxPlaceClass ?? ""}`
+                : boxCreationIssue
+                  ? `连续建框 · ${boxCreationIssue} · V/Esc 退出`
+                  : isBoxSelecting
+                    ? `连续建框 · 正在拟合 ${boxPlaceClass ?? ""}`
+                    : `连续建框 · ${boxPlaceClass ?? ""} · 点击放置 / 拖框拟合 · V/Esc 退出`}
+            </Badge>
+          )}
           {pointMasking && (
             <span>
               · {pointMaskSelectMode === "polygon" ? "点击多边形闭合" : "拖动选点"}
@@ -2231,6 +3090,12 @@ export function ThreeDWorkbench({
           {threeDTool === "point-mask" && !canPlacePointMask && (
             <span className={ERR}>· 当前项目未启用 point_mask_3d 类别</span>
           )}
+          {measuring && (
+            <span data-testid="measurement-status">
+              · 测量 · 单击点云添加锚点 · Enter 完成 · Esc 取消草稿 · V 退出
+            </span>
+          )}
+          {completedMeasurements.length > 0 && <span>· {completedMeasurements.length} 条测量</span>}
           {selectedBox && (
             <span>
               · 选中 {selectedClass ?? ""} 中心 [
@@ -2244,40 +3109,330 @@ export function ThreeDWorkbench({
           )}
         </div>
 
-        {/* 选中框 PSR 数值编辑面板(右上;头部可拖动 + 渐进展开) */}
-        {selectedBox && form && (
-          <div
-            ref={editPanelRef}
-            className={[EDIT_PANEL, psrDragging ? EDIT_PANEL_DRAGGING : ""]
-              .filter(Boolean)
-              .join(" ")}
+        {measuring && (
+          <aside
+            className={MEASUREMENT_PANEL}
+            aria-label="点云测量"
+            data-testid="measurement-panel"
           >
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <div className="text-sm font-semibold">点云测量</div>
+                <div className="text-muted-foreground">结果仅保留在当前任务会话</div>
+              </div>
+              {completedMeasurements.length > 0 && (
+                <button
+                  type="button"
+                  className={RESET_BTN}
+                  onClick={() => setCompletedMeasurements([])}
+                >
+                  全部清除
+                </button>
+              )}
+            </div>
+
+            <div className={MEASUREMENT_ROW} data-testid="measurement-draft">
+              <div className="min-w-0 flex-1">
+                <div className="font-medium">当前测量 · {measurementDraft.length} 个锚点</div>
+                {measurementDraft.length === 0 ? (
+                  <div className="mt-1 text-muted-foreground">在主点云中依次单击真实点。</div>
+                ) : measurementDraft.length === 1 ? (
+                  <div className="mt-1 text-muted-foreground">继续选择第二个点以形成距离。</div>
+                ) : (
+                  <div className={`${MEASUREMENT_VALUE_GRID} mt-1`}>
+                    <span>三维总长</span>
+                    <span>{formatMeasurementMeters(measurementDraftSummary.distance3d)}</span>
+                    <span>水平总长</span>
+                    <span>
+                      {formatMeasurementMeters(measurementDraftSummary.horizontalDistance)}
+                    </span>
+                    <span>首尾高差</span>
+                    <span>
+                      {formatMeasurementMeters(measurementDraftSummary.elevationChange, true)}
+                    </span>
+                  </div>
+                )}
+                <div className="mt-2 flex gap-1.5">
+                  <button
+                    type="button"
+                    className={BTN}
+                    disabled={measurementDraft.length < 2}
+                    onClick={completeMeasurement}
+                  >
+                    完成当前
+                  </button>
+                  <button
+                    type="button"
+                    className={BTN}
+                    disabled={measurementDraft.length === 0}
+                    onClick={() => setMeasurementDraft([])}
+                  >
+                    取消草稿
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {completedMeasurements.map((measurement, index) => {
+              const summary = summarizeMeasurement(measurement.anchors);
+              return (
+                <div
+                  key={measurement.id}
+                  className={MEASUREMENT_ROW}
+                  data-testid={`measurement-item-${measurement.id}`}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium">
+                      测量 {index + 1} · {summary.segmentCount} 段
+                    </div>
+                    <div className={`${MEASUREMENT_VALUE_GRID} mt-1`}>
+                      <span>三维总长</span>
+                      <span>{formatMeasurementMeters(summary.distance3d)}</span>
+                      <span>水平总长</span>
+                      <span>{formatMeasurementMeters(summary.horizontalDistance)}</span>
+                      <span>首尾高差</span>
+                      <span>{formatMeasurementMeters(summary.elevationChange, true)}</span>
+                    </div>
+                  </div>
+                  <div className={MEASUREMENT_ACTIONS}>
+                    <button
+                      type="button"
+                      className={ICON_BTN}
+                      aria-label={
+                        measurement.visible ? `隐藏测量 ${index + 1}` : `显示测量 ${index + 1}`
+                      }
+                      onClick={() => toggleMeasurementVisible(measurement.id)}
+                    >
+                      <Icon name={measurement.visible ? "eye" : "eyeOff"} size={13} />
+                    </button>
+                    <button
+                      type="button"
+                      className={ICON_BTN}
+                      aria-label={`删除测量 ${index + 1}`}
+                      onClick={() => deleteMeasurement(measurement.id)}
+                    >
+                      <Icon name="trash" size={13} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </aside>
+        )}
+
+        {/* 选中框 PSR 数值编辑面板：桌宠开启时与其共用锚点，否则保持右上浮层。 */}
+        {selectedBox &&
+          form &&
+          renderPsrPanel(
             <div
-              className={psrDragging ? `${EDIT_HEADER} !cursor-grabbing` : EDIT_HEADER}
-              onPointerDown={onPsrHeaderPointerDown}
+              ref={editPanelRef}
+              className={editPanelClass}
+              data-testid="three-d-selection-panel"
+              data-pet-linked={petLinked || undefined}
             >
-              <div className={EDIT_TITLE}>
-                <Icon name="move" size={12} className={DRAG_HINT} />
-                {boxClasses.length > 0 ? (
+              <div
+                className={psrDragging ? `${EDIT_HEADER} !cursor-grabbing` : EDIT_HEADER}
+                onPointerDown={onPsrHeaderPointerDown}
+                data-testid="three-d-selection-panel-handle"
+              >
+                <div className={EDIT_TITLE}>
+                  <Icon name="move" size={12} className={DRAG_HINT} />
+                  {boxClasses.length > 0 ? (
+                    <select
+                      className={CLASS_SELECT}
+                      value={selectedClass ?? ""}
+                      aria-label="框类别"
+                      disabled={!selectedEditable}
+                      onChange={(e) => handleChangeClass(e.target.value)}
+                    >
+                      {/* 当前类别若不在配置集合内(历史数据)仍可见,不丢选中项 */}
+                      {selectedClass && !boxClasses.includes(selectedClass) && (
+                        <option value={selectedClass}>{selectedClass}</option>
+                      )}
+                      {boxClasses.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <span>3D 框 · {selectedClass ?? ""}</span>
+                  )}
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      className={selectedLocked ? `${LOCK_BTN} ${LOCK_BTN_ON}` : LOCK_BTN}
+                      aria-pressed={selectedLocked}
+                      onClick={handleToggleLock}
+                    >
+                      {selectedLocked ? "已锁定" : "锁定"}
+                    </button>
+                  )}
+                  {!readOnly && selectedBoxIds.length > 0 && (
+                    <button
+                      type="button"
+                      className={ICON_BTN}
+                      onClick={handleDeleteSelected}
+                      aria-label={
+                        multiBoxSelected ? `删除选中 ${selectedBoxIds.length} 个框` : "删除框"
+                      }
+                      title={multiBoxSelected ? `删除选中 ${selectedBoxIds.length} 个框` : "删除框"}
+                    >
+                      <Icon name="trash" size={14} />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className={ICON_BTN}
+                    onClick={togglePsrExpanded}
+                    aria-expanded={psrPanel.expanded}
+                    aria-label={psrPanel.expanded ? "收起详情" : "展开详情"}
+                    title={psrPanel.expanded ? "收起" : "展开"}
+                  >
+                    <Icon name={psrPanel.expanded ? "chevUp" : "chevDown"} size={14} />
+                  </button>
+                </div>
+                <div className={EDIT_SUMMARY}>
+                  {multiBoxSelected
+                    ? `${selectedBoxIds.length} 个框已选中`
+                    : `尺寸 ${selectedBox.size.map((n) => n.toFixed(2)).join(" × ")} m`}
+                </div>
+              </div>
+              {psrPanel.expanded && (
+                <div className={EDIT_BODY}>
+                  <div className={EDIT_GROUP_LABEL}>
+                    {readOnly
+                      ? "只读 · 锁定 / 审阅态"
+                      : multiBoxSelected
+                        ? `${selectedBoxIds.length} 个框已选中 · 可批量改类 / 删除`
+                        : selectedLocked
+                          ? "已锁定 · 点「已锁定」解锁后可编辑"
+                          : "拖 gizmo 或改数值 · W 平移 / E 转 / R 缩放"}
+                  </div>
+                  {/* v0.13.8 · 选中框自动贴合:Q 默认连击(收尺寸+贴地);
+                    Shift+Q 仅收尺寸;Alt+Q 仅贴地;朝向(实验)仅按钮触发。 */}
+                  {selectedPsrEditable && (
+                    <div className={FIT_GROUP} role="group" aria-label="自动贴合">
+                      <button
+                        type="button"
+                        className={BTN}
+                        onClick={handleFitDefault}
+                        title="贴合 (Q):收尺寸 + 贴地"
+                      >
+                        贴合
+                      </button>
+                      <button
+                        type="button"
+                        className={BTN}
+                        onClick={handleFitSize}
+                        title="只收尺寸 (Shift+Q)"
+                      >
+                        收尺寸
+                      </button>
+                      <button
+                        type="button"
+                        className={BTN}
+                        onClick={handleFitBottom}
+                        title="只贴地 (Alt+Q)"
+                      >
+                        贴地
+                      </button>
+                      <button
+                        type="button"
+                        className={BTN}
+                        onClick={handleFitYaw}
+                        title="贴朝向(实验):点云稀疏时主轴可能反转 180°"
+                      >
+                        朝向⚗
+                      </button>
+                    </div>
+                  )}
+                  {PSR_GROUPS.map((g) => (
+                    <div key={g.label}>
+                      <div className={EDIT_GROUP_LABEL_ROW}>
+                        <span className={EDIT_GROUP_LABEL}>{g.label}</span>
+                        {g.reset && selectedPsrEditable && (
+                          <button
+                            type="button"
+                            className={RESET_BTN}
+                            onClick={handleResetRotation}
+                            title="把偏航/俯仰/翻滚全部归零"
+                          >
+                            归零
+                          </button>
+                        )}
+                      </div>
+                      <div className={EDIT_ROW}>
+                        {g.keys.map((k) => (
+                          <input
+                            key={k}
+                            type="number"
+                            step={g.step}
+                            min={g.min}
+                            value={form[k]}
+                            aria-label={k}
+                            disabled={!selectedPsrEditable}
+                            onChange={(e) => handleField(k, e.target.value)}
+                            onBlur={() => handleFieldBlur(k)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {!multiBoxSelected && (
+                    <AttributeForm
+                      schema={boxAttributeSchema}
+                      className={selectedClass ?? ""}
+                      attributes={selectedAnn?.attributes ?? {}}
+                      readOnly={!selectedEditable}
+                      onChange={handleChangeAttributes}
+                    />
+                  )}
+                </div>
+              )}
+            </div>,
+          )}
+
+        {selectedPointMask &&
+          selectedAnn &&
+          renderPsrPanel(
+            <div
+              ref={editPanelRef}
+              className={editPanelClass}
+              data-testid="three-d-selection-panel"
+              data-pet-linked={petLinked || undefined}
+            >
+              <div
+                className={
+                  petLinked
+                    ? psrDragging
+                      ? `${EDIT_TITLE} cursor-grabbing`
+                      : `${EDIT_TITLE} cursor-grab`
+                    : EDIT_TITLE
+                }
+                onPointerDown={petLinked ? onPsrHeaderPointerDown : undefined}
+                data-testid={petLinked ? "three-d-selection-panel-handle" : undefined}
+              >
+                {petLinked && <Icon name="move" size={12} className={DRAG_HINT} />}
+                {pointMaskClasses.length > 0 ? (
                   <select
                     className={CLASS_SELECT}
                     value={selectedClass ?? ""}
-                    aria-label="框类别"
-                    disabled={!selectedEditable}
+                    aria-label="分割类别"
+                    disabled={!selectedPointMaskEditable}
                     onChange={(e) => handleChangeClass(e.target.value)}
                   >
-                    {/* 当前类别若不在配置集合内(历史数据)仍可见,不丢选中项 */}
-                    {selectedClass && !boxClasses.includes(selectedClass) && (
+                    {selectedClass && !pointMaskClasses.includes(selectedClass) && (
                       <option value={selectedClass}>{selectedClass}</option>
                     )}
-                    {boxClasses.map((c) => (
+                    {pointMaskClasses.map((c) => (
                       <option key={c} value={c}>
                         {c}
                       </option>
                     ))}
                   </select>
                 ) : (
-                  <span>3D 框 · {selectedClass ?? ""}</span>
+                  <span>点云分割 · {selectedClass ?? ""}</span>
                 )}
                 {!readOnly && (
                   <button
@@ -2289,341 +3444,389 @@ export function ThreeDWorkbench({
                     {selectedLocked ? "已锁定" : "锁定"}
                   </button>
                 )}
-                {!readOnly && selectedBoxIds.length > 0 && (
-                  <button
-                    type="button"
-                    className={ICON_BTN}
-                    onClick={handleDeleteSelected}
-                    aria-label={
-                      multiBoxSelected ? `删除选中 ${selectedBoxIds.length} 个框` : "删除框"
-                    }
-                    title={multiBoxSelected ? `删除选中 ${selectedBoxIds.length} 个框` : "删除框"}
-                  >
-                    <Icon name="trash" size={14} />
-                  </button>
-                )}
+              </div>
+              <div className={EDIT_GROUP_LABEL}>
+                {selectedPointMask.point_indices.length.toLocaleString()} 点 · P 后圈选加点,Alt
+                圈选减点
+              </div>
+              {!readOnly && selectedPointMaskEditable && (
                 <button
                   type="button"
-                  className={ICON_BTN}
-                  onClick={togglePsrExpanded}
-                  aria-expanded={psrPanel.expanded}
-                  aria-label={psrPanel.expanded ? "收起详情" : "展开详情"}
-                  title={psrPanel.expanded ? "收起" : "展开"}
+                  className={DELETE_BTN}
+                  onClick={() => {
+                    deleteAnnotation.mutate(selectedAnn.id);
+                    history.pushBatch([{ kind: "delete", annotation: selectedAnn }]);
+                    onSelectBox(null);
+                  }}
                 >
-                  <Icon name={psrPanel.expanded ? "chevUp" : "chevDown"} size={14} />
-                </button>
-              </div>
-              <div className={EDIT_SUMMARY}>
-                {multiBoxSelected
-                  ? `${selectedBoxIds.length} 个框已选中`
-                  : `尺寸 ${selectedBox.size.map((n) => n.toFixed(2)).join(" × ")} m`}
-              </div>
-            </div>
-            {psrPanel.expanded && (
-              <div className={EDIT_BODY}>
-                <div className={EDIT_GROUP_LABEL}>
-                  {readOnly
-                    ? "只读 · 锁定 / 审阅态"
-                    : multiBoxSelected
-                      ? `${selectedBoxIds.length} 个框已选中 · 可批量改类 / 删除`
-                      : selectedLocked
-                        ? "已锁定 · 点「已锁定」解锁后可编辑"
-                        : "拖 gizmo 或改数值 · W 平移 / E 转 / R 缩放"}
-                </div>
-                {/* v0.13.8 · 选中框自动贴合:Q 默认连击(收尺寸+贴地);
-                    Shift+Q 仅收尺寸;Alt+Q 仅贴地;朝向(实验)仅按钮触发。 */}
-                {selectedPsrEditable && (
-                  <div className={FIT_GROUP} role="group" aria-label="自动贴合">
-                    <button
-                      type="button"
-                      className={BTN}
-                      onClick={handleFitDefault}
-                      title="贴合 (Q):收尺寸 + 贴地"
-                    >
-                      贴合
-                    </button>
-                    <button
-                      type="button"
-                      className={BTN}
-                      onClick={handleFitSize}
-                      title="只收尺寸 (Shift+Q)"
-                    >
-                      收尺寸
-                    </button>
-                    <button
-                      type="button"
-                      className={BTN}
-                      onClick={handleFitBottom}
-                      title="只贴地 (Alt+Q)"
-                    >
-                      贴地
-                    </button>
-                    <button
-                      type="button"
-                      className={BTN}
-                      onClick={handleFitYaw}
-                      title="贴朝向(实验):点云稀疏时主轴可能反转 180°"
-                    >
-                      朝向⚗
-                    </button>
-                  </div>
-                )}
-                {PSR_GROUPS.map((g) => (
-                  <div key={g.label}>
-                    <div className={EDIT_GROUP_LABEL_ROW}>
-                      <span className={EDIT_GROUP_LABEL}>{g.label}</span>
-                      {g.reset && selectedPsrEditable && (
-                        <button
-                          type="button"
-                          className={RESET_BTN}
-                          onClick={handleResetRotation}
-                          title="把偏航/俯仰/翻滚全部归零"
-                        >
-                          归零
-                        </button>
-                      )}
-                    </div>
-                    <div className={EDIT_ROW}>
-                      {g.keys.map((k) => (
-                        <input
-                          key={k}
-                          type="number"
-                          step={g.step}
-                          min={g.min}
-                          value={form[k]}
-                          aria-label={k}
-                          disabled={!selectedPsrEditable}
-                          onChange={(e) => handleField(k, e.target.value)}
-                          onBlur={() => handleFieldBlur(k)}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ))}
-                {!multiBoxSelected && (
-                  <AttributeForm
-                    schema={boxAttributeSchema}
-                    className={selectedClass ?? ""}
-                    attributes={selectedAnn?.attributes ?? {}}
-                    readOnly={!selectedEditable}
-                    onChange={handleChangeAttributes}
-                  />
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {selectedPointMask && selectedAnn && (
-          <div className={EDIT_PANEL}>
-            <div className={EDIT_TITLE}>
-              {pointMaskClasses.length > 0 ? (
-                <select
-                  className={CLASS_SELECT}
-                  value={selectedClass ?? ""}
-                  aria-label="分割类别"
-                  disabled={!selectedPointMaskEditable}
-                  onChange={(e) => handleChangeClass(e.target.value)}
-                >
-                  {selectedClass && !pointMaskClasses.includes(selectedClass) && (
-                    <option value={selectedClass}>{selectedClass}</option>
-                  )}
-                  {pointMaskClasses.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <span>点云分割 · {selectedClass ?? ""}</span>
-              )}
-              {!readOnly && (
-                <button
-                  type="button"
-                  className={selectedLocked ? `${LOCK_BTN} ${LOCK_BTN_ON}` : LOCK_BTN}
-                  aria-pressed={selectedLocked}
-                  onClick={handleToggleLock}
-                >
-                  {selectedLocked ? "已锁定" : "锁定"}
+                  删除分割
                 </button>
               )}
-            </div>
-            <div className={EDIT_GROUP_LABEL}>
-              {selectedPointMask.point_indices.length.toLocaleString()} 点 · P 后圈选加点,Alt
-              圈选减点
-            </div>
-            {!readOnly && selectedPointMaskEditable && (
-              <button
-                type="button"
-                className={DELETE_BTN}
-                onClick={() => {
-                  deleteAnnotation.mutate(selectedAnn.id);
-                  history.pushBatch([{ kind: "delete", annotation: selectedAnn }]);
-                  onSelectBox(null);
-                }}
-              >
-                删除分割
-              </button>
-            )}
-          </div>
-        )}
+            </div>,
+          )}
 
-        {/* v0.13.7 · 三正交视图精修浮层(右下):选中框才浮出,可收成小标签。 */}
-        {triSelected && !triViewFloat.collapsed && (
-          <FloatingPanelShell
-            title="三视图精修"
-            position={triFloatPosition}
-            onPositionChange={updateTriViewFloat}
-            onCollapse={() => updateTriViewFloat({ collapsed: true })}
-            variant="no-merge"
-            minSize={{ w: 200, h: 240 }}
-            maxSize={{ w: 480, h: 720 }}
-            bounds={triFloatBounds}
-          >
-            <TriViewPanel
-              selected={triSelected}
-              getPointsGeometry={getPointsGeometry}
-              pointsReady={!!stats}
-              editable={selectedPsrEditable}
-              pointSize={pointSize}
-              onEditPsr={handleEditPsr}
-            />
-          </FloatingPanelShell>
-        )}
-        {triSelected && triViewFloat.collapsed && (
-          // 不能用 <button>/role=button:useDragMove 的 isInteractiveTarget 会拦掉其 pointerdown。
-          // 用 div + tabIndex 保留键盘可达;拖动经 handleProps,纯点击(未拖动)才展开。
-          <div
-            ref={triFloatTabRef}
-            tabIndex={0}
-            data-floating-panel
-            aria-label="展开三视图精修(可拖动)"
-            className={[TRI_FLOAT_TAB, triTabDrag.isDragging ? TRI_FLOAT_TAB_DRAGGING : ""]
-              .filter(Boolean)
-              .join(" ")}
-            {...triTabDrag.handleProps}
-            onClick={() => {
-              if (!triTabMovedRef.current) updateTriViewFloat({ collapsed: false });
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                updateTriViewFloat({ collapsed: false });
-              }
-            }}
-          >
-            三视图 ▸
-          </div>
-        )}
+        {dockLayout?.targets["tri-view"] &&
+          createPortal(
+            <div className="flex h-full min-h-0 flex-col">
+              <TriViewPanel
+                scene={sceneRef.current}
+                selected={triSelected}
+                editable={!!triSelected && selectedPsrEditable}
+                active={dockLayout.panelVisible["tri-view"]}
+                layoutKey={dockLayout.layoutKey}
+                getVisibleRegions={dockLayout.getVisibleRegions}
+                zoomByView={triZoomByView}
+                onZoomChange={handleTriZoomChange}
+                onEditPsr={handleEditPsr}
+              />
+            </div>,
+            dockLayout.targets["tri-view"],
+          )}
+        {dockLayout?.targets["camera-view"] &&
+          createPortal(
+            <CameraDockPanel
+              cameras={cameras}
+              boxes={boxes}
+              highlightedIds={highlightedIds}
+              onSelectBox={onSelectBox}
+              bestRole={bestCameraRole}
+              pointPositions={pointPositions}
+              showDepth={depthOn}
+              onEnlarge={setEnlargedRole}
+              visible={cameraPresentation === "docked" && dockLayout.panelVisible["camera-view"]}
+              loading={isLoading}
+              error={error ? "相机数据加载失败" : null}
+              resetKey={cameraResetKey}
+            />,
+            dockLayout.targets["camera-view"],
+          )}
 
         {/* v0.13.7 · 悬浮相机面板:按物理朝向贴主视图边缘,同朝向沿边堆叠。
             投影 overlay / 上色 / 深度命中沿用 CameraProjectionView,布局对其透明。 */}
-        {cameraGroups.map(([anchor, cams]) => (
-          <div key={anchor} className={`${CAM_GROUP} ${ANCHOR_CLASS[anchor]}`}>
-            {cams.map((cam, index) => (
-              <FloatingCameraPanel
-                key={cam.role}
-                role={cam.role}
-                name={cam.name}
-                imageUrl={cam.image_url}
-                calibration={cam.calibration}
-                boxes={boxes}
-                highlightedIds={highlightedIds}
-                onSelectBox={onSelectBox}
-                bestForSelected={cam.role === bestCameraRole}
-                pointPositions={pointPositions}
-                showDepth={depthOn}
-                onEnlarge={() => setEnlargedRole(cam.role)}
-                autoCollapsed={autoCollapseCameras || index >= CAMERA_STACK_VISIBLE}
-                dragBounds={triFloatBounds}
-                position={
-                  cameraPanels[cam.role]?.x != null && cameraPanels[cam.role]?.y != null
-                    ? {
-                        x: cameraPanels[cam.role]!.x!,
-                        y: cameraPanels[cam.role]!.y!,
-                      }
-                    : null
-                }
-                collapsed={cameraPanels[cam.role]?.collapsed}
-                onPositionChange={handleCameraPanelPosition}
-                onCollapsedChange={handleCameraPanelCollapsed}
-              />
+        {cameraPresentation === "floating" && (dockLayout?.cameraVisible ?? true) && (
+          <div className={CAMERA_LAYER} data-testid="camera-panel-layer">
+            {cameraGroups.map(([anchor, cams]) => (
+              <div key={anchor} className={`${CAM_GROUP} ${ANCHOR_CLASS[anchor]}`}>
+                {cams.map((cam, index) => (
+                  <FloatingCameraPanel
+                    key={cam.role}
+                    role={cam.role}
+                    name={cam.name}
+                    imageUrl={cam.image_url}
+                    calibration={cam.calibration}
+                    boxes={boxes}
+                    highlightedIds={highlightedIds}
+                    onSelectBox={onSelectBox}
+                    bestForSelected={cam.role === bestCameraRole}
+                    pointPositions={pointPositions}
+                    showDepth={depthOn}
+                    onEnlarge={() => setEnlargedRole(cam.role)}
+                    autoCollapsed={autoCollapseCameras || index >= CAMERA_STACK_VISIBLE}
+                    dragBounds={qualitySafeFloatBounds}
+                    position={
+                      cameraPanels[cam.role]?.x != null && cameraPanels[cam.role]?.y != null
+                        ? {
+                            x: cameraPanels[cam.role]!.x!,
+                            y: cameraPanels[cam.role]!.y!,
+                          }
+                        : null
+                    }
+                    collapsed={cameraPanels[cam.role]?.collapsed}
+                    onPositionChange={handleCameraPanelPosition}
+                    onCollapsedChange={handleCameraPanelCollapsed}
+                    onDockAll={
+                      dockLayout
+                        ? () => dockLayout.commands.setCameraPresentation("docked")
+                        : undefined
+                    }
+                    layoutDisabled={dockLayout?.disabled}
+                  />
+                ))}
+              </div>
             ))}
           </div>
-        ))}
+        )}
 
         {/* v0.13.7 · 相机放大浮层(L3):点⛶弹大图,遮罩 / 关闭钮 / ESC 关闭。
             复用 CameraProjectionView(同 props,大尺寸),投影 / 上色 / 深度 overlay 一致。 */}
-        {enlargedCam && (
-          <div className={CAM_MODAL} onClick={() => setEnlargedRole(null)} role="presentation">
+        {enlargedCam &&
+          createPortal(
             <div
-              className={CAM_MODAL_BODY}
-              onClick={(e) => e.stopPropagation()}
+              ref={cameraModalRef}
+              className={CAM_MODAL}
+              data-testid="camera-modal"
+              onClick={() => setEnlargedRole(null)}
               role="presentation"
             >
-              <button
-                type="button"
-                className={CAM_MODAL_CLOSE}
-                onClick={() => setEnlargedRole(null)}
+              <div
+                className={CAM_MODAL_BODY}
+                data-testid="camera-modal-body"
+                onClick={(e) => e.stopPropagation()}
+                role="presentation"
               >
-                关闭 ✕
-              </button>
-              {!readOnly && enlargedCam.calibration && boxPlaceClass && (
                 <button
                   type="button"
-                  className={
-                    seedMode ? `${CAM_MODAL_SEED} ${CAM_MODAL_SEED_ACTIVE}` : CAM_MODAL_SEED
-                  }
-                  onClick={() => setSeedMode((v) => !v)}
-                  aria-pressed={seedMode}
-                  title="在相机图上拖一个 2D 框,自动在 3D 里生成框(视锥选点拟合)"
+                  className={CAM_MODAL_CLOSE}
+                  onClick={() => setEnlargedRole(null)}
                 >
-                  {seedMode ? "种框中 · 拖矩形" : "种框 ⊹"}
+                  关闭 ✕
                 </button>
-              )}
-              {cameras.length > 1 && (
-                <>
-                  <button
-                    type="button"
-                    className={`${CAM_MODAL_SWITCH} ${CAM_MODAL_PREV}`}
-                    onClick={() => cycleEnlargedCamera(-1)}
-                    title="上一视角"
-                  >
-                    ‹
-                  </button>
-                  <button
-                    type="button"
-                    className={`${CAM_MODAL_SWITCH} ${CAM_MODAL_NEXT}`}
-                    onClick={() => cycleEnlargedCamera(1)}
-                    title="下一视角"
-                  >
-                    ›
-                  </button>
-                </>
-              )}
-              <CameraProjectionView
-                name={enlargedCam.name}
-                imageUrl={enlargedCam.image_url}
-                calibration={enlargedCam.calibration}
-                boxes={boxes}
-                highlightedIds={highlightedIds}
-                onSelectBox={onSelectBox}
-                bestForSelected={enlargedCam.role === bestCameraRole}
-                pointPositions={pointPositions}
-                showDepth={depthOn}
-                seedMode={seedMode}
-                onSeedBox={handleSeedBox}
-                editableBox={
-                  threeDTool === "select" && selectedPsrEditable && !seedMode ? selectedBox : null
-                }
-                onEditPsr={handleEditPsr}
-                onCancelEditPsr={handleCancelCameraEdit}
-                onEditError={handleCameraEditError}
-              />
-            </div>
-          </div>
+                <div className={CAM_MODAL_TOOL_GROUP}>
+                  {!readOnly && enlargedCam.calibration && boxPlaceClass && (
+                    <button
+                      type="button"
+                      className={
+                        seedMode ? `${CAM_MODAL_SEED} ${CAM_MODAL_SEED_ACTIVE}` : CAM_MODAL_SEED
+                      }
+                      onClick={() => {
+                        setBoxCreationIssue(null);
+                        setManualBboxMode(false);
+                        setSeedMode((v) => !v);
+                      }}
+                      aria-pressed={seedMode}
+                      title="在相机图上拖一个 2D 框,自动在 3D 里生成框(视锥选点拟合)"
+                    >
+                      {seedMode
+                        ? boxCreationSaving
+                          ? `正在保存 ${boxPlaceClass}`
+                          : boxCreationIssue
+                            ? `保存失败 · 重试 ${boxPlaceClass}`
+                            : `连续种框 · ${boxPlaceClass} · 拖矩形`
+                        : "种框 ⊹"}
+                    </button>
+                  )}
+                  {enlargedCalibrationSource?.calibration &&
+                    enlargedCalibrationSource.calibration_revision &&
+                    enlargedCalibrationSource.calibration_digest && (
+                      <button
+                        type="button"
+                        className={CAM_MODAL_SEED}
+                        onClick={() => {
+                          setSeedMode(false);
+                          setManualBboxMode(false);
+                          setCalibrationSheetOpen(true);
+                        }}
+                      >
+                        标定 · R{enlargedCalibrationSource.calibration_revision}
+                      </button>
+                    )}
+                </div>
+                {cameras.length > 1 && (
+                  <>
+                    <button
+                      type="button"
+                      className={`${CAM_MODAL_SWITCH} ${CAM_MODAL_PREV}`}
+                      onClick={() => cycleEnlargedCamera(-1)}
+                      title="上一视角"
+                    >
+                      ‹
+                    </button>
+                    <button
+                      type="button"
+                      className={`${CAM_MODAL_SWITCH} ${CAM_MODAL_NEXT}`}
+                      onClick={() => cycleEnlargedCamera(1)}
+                      title="下一视角"
+                    >
+                      ›
+                    </button>
+                  </>
+                )}
+                {selectedAnn?.scene_track_id && enlargedCam.calibration && (
+                  <div className={CAM_MODAL_MEMBER_BAR}>
+                    <div className={CAM_MODAL_MEMBER_CARD}>
+                      <span className="font-medium">多相机 2D 成员</span>
+                      {cameraMembers.query.isLoading ? (
+                        <span className="text-muted-foreground">读取中…</span>
+                      ) : cameraMembers.query.isError ? (
+                        <span
+                          role="alert"
+                          className="text-status-caution"
+                          title={
+                            cameraMembers.query.error instanceof Error
+                              ? cameraMembers.query.error.message
+                              : "请检查相机标定与图像尺寸"
+                          }
+                        >
+                          2D 成员不可用：
+                          {cameraMembers.query.error instanceof Error
+                            ? cameraMembers.query.error.message
+                            : "上下文读取失败"}
+                        </span>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className={manualBboxMode ? `${BTN} ${BTN_ACTIVE}` : BTN}
+                            disabled={
+                              readOnly || cameraMembers.busy || !cameraMembers.data?.track_revision
+                            }
+                            onClick={() => {
+                              setSeedMode(false);
+                              setManualBboxMode((value) => !value);
+                            }}
+                          >
+                            {manualBboxMode
+                              ? "退出 2D 编辑"
+                              : enlargedCameraMember
+                                ? "编辑 2D 框"
+                                : "创建 2D 框"}
+                          </button>
+                          {!enlargedCameraMember && cameraMembers.data?.projected_bbox && (
+                            <button
+                              type="button"
+                              className={BTN}
+                              disabled={readOnly || cameraMembers.busy}
+                              onClick={() =>
+                                void handleManualBboxCommit(cameraMembers.data!.projected_bbox!)
+                              }
+                            >
+                              采用当前投影
+                            </button>
+                          )}
+                          {enlargedCameraMember && (
+                            <>
+                              <select
+                                className={SELECT_CTL}
+                                value={enlargedCameraMember.visibility}
+                                disabled={readOnly || cameraMembers.busy}
+                                aria-label="2D 成员可见性"
+                                onChange={(event) =>
+                                  void handleManualVisibilityChange(
+                                    event.target.value as
+                                      | "visible"
+                                      | "occluded"
+                                      | "truncated"
+                                      | "unknown",
+                                  )
+                                }
+                              >
+                                <option value="visible">可见</option>
+                                <option value="occluded">遮挡</option>
+                                <option value="truncated">截断</option>
+                                <option value="unknown">未知</option>
+                              </select>
+                              {enlargedCameraMember.residual && (
+                                <span className="text-muted-foreground">
+                                  IoU {enlargedCameraMember.residual.iou.toFixed(2)} · 边差{" "}
+                                  {enlargedCameraMember.residual.max_edge_residual_px.toFixed(1)}px
+                                </span>
+                              )}
+                              {enlargedCameraMember.relation_status === "stale" && (
+                                <button
+                                  type="button"
+                                  className={BTN}
+                                  disabled={readOnly || cameraMembers.busy}
+                                  onClick={() =>
+                                    void handleManualBboxCommit(enlargedCameraMember.bbox)
+                                  }
+                                >
+                                  标定已变更 · 重新确认
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                className={DELETE_BTN}
+                                disabled={readOnly || cameraMembers.busy}
+                                onClick={() => void handleDeleteManualBbox()}
+                              >
+                                删除 2D 框
+                              </button>
+                            </>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+                <CameraProjectionView
+                  name={enlargedCam.name}
+                  imageUrl={enlargedCam.image_url}
+                  calibration={enlargedCam.calibration}
+                  boxes={boxes}
+                  highlightedIds={highlightedIds}
+                  onSelectBox={onSelectBox}
+                  bestForSelected={enlargedCam.role === bestCameraRole}
+                  pointPositions={pointPositions}
+                  showDepth={depthOn}
+                  seedMode={seedMode && !manualBboxMode}
+                  interactionDisabled={readOnly || boxCreationSaving || cameraMembers.busy}
+                  onSeedBox={handleSeedBox}
+                  editableBox={
+                    threeDTool === "select" && selectedPsrEditable && !seedMode && !manualBboxMode
+                      ? selectedBox
+                      : null
+                  }
+                  onEditPsr={handleEditPsr}
+                  onCancelEditPsr={handleCancelCameraEdit}
+                  onEditError={handleCameraEditError}
+                  manualBbox={enlargedCameraMember?.bbox ?? null}
+                  manualBboxMode={manualBboxMode}
+                  manualBboxStale={enlargedCameraMember?.relation_status === "stale"}
+                  onManualBboxCommit={(bbox) => void handleManualBboxCommit(bbox)}
+                  expanded
+                />
+              </div>
+            </div>,
+            document.body,
+          )}
+        {qualityPanelOpen && project && manifest?.scene_id && (
+          <PointCloudQualityPanel
+            projectId={project.id}
+            sceneId={manifest.scene_id}
+            taskId={taskId ?? ""}
+            canScanScene={qualityCanScanScene}
+            canGovern={qualityCanScanScene}
+            qualityConfig={
+              project.point_cloud_quality_config as PointCloudQualityConfig | undefined
+            }
+            classes={boxClasses}
+            onClose={() => setQualityPanelOpen(false)}
+            onLocate={handleLocateQualityIssue}
+          />
         )}
+        {enlargedCalibrationSource?.calibration &&
+          enlargedCalibrationSource.calibration_revision &&
+          enlargedCalibrationSource.calibration_digest && (
+            <SensorCalibrationSheet
+              open={calibrationSheetOpen}
+              onOpenChange={setCalibrationSheetOpen}
+              taskId={taskId}
+              projectId={task?.project_id ?? null}
+              cameraName={enlargedCalibrationSource.name}
+              cameraRole={enlargedCalibrationSource.role}
+              calibration={enlargedCalibrationSource.calibration}
+              revision={enlargedCalibrationSource.calibration_revision}
+              digest={enlargedCalibrationSource.calibration_digest}
+              canManage={!readOnly && canManageCalibration}
+            />
+          )}
       </div>
+      <SceneTimeline
+        taskId={taskId}
+        trackId={playbackActive ? (playbackTrackId ?? selectedTrackId) : selectedTrackId}
+        frameState={frameState}
+        onRetryFrame={() => {
+          void manifestQuery.refetch();
+          void annotationsQuery.refetch();
+          retryLoad();
+        }}
+        playbackActive={playbackActive}
+        onPlaybackActiveChange={onPlaybackActiveChange}
+        playbackBlockedReason={playbackBlockedReason}
+        onPlaybackTrackChange={setPlaybackTrackId}
+        visible={canvasVisible}
+        prefetchDepthRasters={rendererStatus?.actualBackend === "webgpu"}
+        prefetchDecimateThreshold={performanceConfig.pcdDecimate}
+        selectedAnnotationIds={boxes
+          .filter((box) => selectedIdSet.has(box.id))
+          .map((box) => box.id)}
+        boxCount={boxes.length}
+        readOnly={readOnly}
+        onNavigateFrame={handleTimelineNavigate}
+        qualityMarkers={qualityMarkers}
+        qualityIssueCount={qualityIssuesQuery.data?.total ?? 0}
+        onOpenQuality={qualityAllowed ? () => setQualityPanelOpen(true) : undefined}
+      />
     </div>
   );
 }

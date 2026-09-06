@@ -7,8 +7,9 @@ import {
   type ComponentProps,
   type ReactNode,
 } from "react";
+import { isWorkbenchSettingsInteractionBlocked } from "./workbenchSettingsInteraction";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useIsMutating, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToastStore } from "@/components/ui/Toast";
 import { randomId } from "@/utils/id";
 import {
@@ -52,7 +53,11 @@ import {
 } from "@/api/maskMutations";
 import { ApiError } from "@/api/client";
 import type { AnnotationConversionExecuteResponse } from "@/api/annotationConversions";
-import { videoTrackerApi } from "@/api/videoTracker";
+import {
+  videoTrackerApi,
+  type VideoTrackQualityIssue,
+  type VideoTrackQualityRun,
+} from "@/api/videoTracker";
 import { VideoTrackQualitySidebar } from "../sidebar/VideoTrackQualitySidebar";
 import { resolveCrossFrameNavigation } from "./crossFrameTarget";
 import { useBatches } from "@/hooks/useBatches";
@@ -87,8 +92,6 @@ import {
 } from "./useMaskQcReview";
 import type { MaskQcIssue } from "@/api/maskQc";
 import { usePredictionPropagation } from "./usePredictionPropagation";
-import { useAiPopoverFrame } from "./useAiPopoverFrame";
-import { useVideoTrackerPanelFrame } from "./useVideoTrackerPanelFrame";
 import { useAnnotationHistory, type VideoMaskFrameState } from "./useAnnotationHistory";
 import { useRecentClasses } from "./useRecentClasses";
 import { useSessionStats } from "./useSessionStats";
@@ -187,6 +190,7 @@ import {
   workbenchImagePreviewUrl,
 } from "../stage/useWorkbenchImageSource";
 import { imageTileDeviceBudget, singleImageFitsDecodedBudget } from "../stage/imagePyramid";
+import { loadAbortableImage } from "../stage/useAbortableImage";
 import { WorkbenchOverlays } from "../shell/WorkbenchOverlays";
 import type { ClassPickerAttrEditing } from "../shell/ClassPickerPopover";
 import { WorkbenchLayout } from "../shell/WorkbenchLayout";
@@ -205,7 +209,6 @@ import { VideoPointsTrackCardContent } from "../shell/selectionCard/VideoPointsT
 import { ConversionBatchCardContent } from "../shell/selectionCard/ConversionBatchCardContent";
 import type { PetSelectionSourceKind, WorkbenchPetContext } from "../shell/pet/usePetState";
 import type { FloatingPanelRect } from "../shell/FloatingPanelShell";
-import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useAuthStore } from "@/stores/authStore";
 import {
   getRememberedWorkbenchTask,
@@ -213,6 +216,11 @@ import {
   resolveWorkbenchReturnTo,
   updateWorkbenchUrlSearch,
 } from "@/utils/workbenchNavigation";
+import {
+  ensurePointCloudNavigationGeneration,
+  pointCloudNavigationGenerationForTask,
+  publishPointCloudNavigationTrace,
+} from "@/utils/pointCloudNavigationDiagnostics";
 import { getAll as offlineQueueGetAll, removeById as offlineQueueRemoveById } from "./offlineQueue";
 import { useWorkbenchOfflineQueue } from "./useWorkbenchOfflineQueue";
 import { useImageAnnotationActions } from "../stages/image/useImageAnnotationActions";
@@ -242,6 +250,7 @@ import {
   subtractMaskAlpha,
 } from "../stage/shared/geometry/maskMutationDraft";
 import {
+  LatestTaskNavigationScheduler,
   buildPipelineRunPayload,
   annotationsForTask,
   commitAfterNavigationGuard,
@@ -250,16 +259,17 @@ import {
   buildPredictParams,
   promptOfTool,
   resolveMaskEditorSize,
-  resolveFloatingClassPaletteRect,
-  resolveFloatingDiscussionRect,
-  resolveFloatingInspectorRect,
   resolveFloatingSelectionRect,
-  resolveFloatingTaskQueueRect,
 } from "./useWorkbenchShellModel.helpers";
-import { useWorkbenchSidebarSizing } from "./useWorkbenchSidebarSizing";
+import type {
+  WorkbenchWorkspaceCommands,
+  WorkbenchWorkspaceState,
+} from "../layout/workbenchPanelRegistry";
 import { useConflictResolution } from "./useConflictResolution";
 
 type WorkbenchShellMode = "annotate" | "review";
+
+const TASK_NAVIGATION_SETTLE_MS = 160;
 
 type PendingMaskAtomicDraft = {
   kind: MaskMutationOperation;
@@ -363,9 +373,30 @@ interface WorkbenchShellEmptyState {
   };
 }
 
+export interface LocalTaskUrlSyncDecision {
+  holdRequestedTask: boolean;
+  clearPendingTarget: boolean;
+}
+
+/**
+ * 判定 URL 中的 task 是外部导航意图，还是本地切题后尚未追上的旧值。
+ */
+export function resolveLocalTaskUrlSync(
+  requestedTaskId: string | null,
+  pendingLocalTaskId: string | null,
+): LocalTaskUrlSyncDecision {
+  if (!pendingLocalTaskId) {
+    return { holdRequestedTask: false, clearPendingTarget: false };
+  }
+  if (requestedTaskId === pendingLocalTaskId) {
+    return { holdRequestedTask: false, clearPendingTarget: true };
+  }
+  return { holdRequestedTask: true, clearPendingTarget: false };
+}
+
 interface WorkbenchShellReadyModel {
   kind: "ready";
-  layout: ComponentProps<typeof WorkbenchLayout>;
+  layout: Omit<ComponentProps<typeof WorkbenchLayout>, "videoTracker">;
   propagateDialog: ComponentProps<typeof VideoTrackerPropagateDialog>;
   maskCorrectionDialog: ComponentProps<typeof VideoMaskCorrectionDialog>;
   conversionDialog: ComponentProps<typeof MaskConversionDialog>;
@@ -413,12 +444,24 @@ export function useWorkbenchShellModel({
     [returnTo, currentPath],
   );
   const maskNavigationGuardRef = useRef<() => Promise<boolean>>(async () => true);
+  const taskNavigationSchedulerRef = useRef<LatestTaskNavigationScheduler | null>(null);
+  if (taskNavigationSchedulerRef.current === null) {
+    taskNavigationSchedulerRef.current = new LatestTaskNavigationScheduler(
+      TASK_NAVIGATION_SETTLE_MS,
+    );
+  }
+  const taskNavigationScheduler = taskNavigationSchedulerRef.current;
+  const pendingLocalTaskIdRef = useRef<string | null>(null);
   const maskInstanceTransitionInFlightRef = useRef(false);
   const maskInstanceCommitInFlightRef = useRef<Promise<boolean> | null>(null);
   const maskInstanceRefreshTokenRef = useRef<object | null>(null);
   const [maskInstanceCommitting, setMaskInstanceCommitting] = useState(false);
   const [maskInstanceRefreshing, setMaskInstanceRefreshing] = useState(false);
   const maskInstanceTransitionBusy = maskInstanceCommitting || maskInstanceRefreshing;
+  useEffect(() => {
+    taskNavigationScheduler.activate();
+    return () => taskNavigationScheduler.dispose();
+  }, [taskNavigationScheduler]);
   const onBack = useCallback(() => {
     void maskNavigationGuardRef.current().then((allowed) => {
       if (allowed) navigate(backTarget);
@@ -617,24 +660,17 @@ export function useWorkbenchShellModel({
   const [fitTick, setFitTick] = useState(0);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const [showHotkeys, setShowHotkeys] = useState(false);
-  // v0.15.3 · 工作台设置抽屉(齿轮菜单入口)。
+  // v0.15.3 · 工作台设置窗口(齿轮菜单入口)。
   const [workbenchSettingsOpen, setWorkbenchSettingsOpen] = useState(false);
-  const [aiPopoverOpen, setAiPopoverOpen] = useState(false);
+  const workspaceCommands = useRef<WorkbenchWorkspaceCommands>(null);
   // v0.21.4 · 视频单题 AI(当前帧→图像 backend)是同步 fetch(非 triggerPreannotation mutation),
   // 单独一个运行态并入 aiRunning, 供 popover 转圈 + 防重复点击。
   const [videoFrameAiRunning, setVideoFrameAiRunning] = useState(false);
-  // v0.16.x 第 3 批 · AI 浮层位置/尺寸(+localStorage 持久化)抽到 useAiPopoverFrame;
-  // 开关 aiPopoverOpen 因切 task 时被关闭(与任务流纠缠)留壳层。
-  const { aiPopoverPosition, setAiPopoverPosition, aiPopoverSize, setAiPopoverSize } =
-    useAiPopoverFrame();
-  const { trackerPanelPosition, setTrackerPanelPosition, trackerPanelSize, setTrackerPanelSize } =
-    useVideoTrackerPanelFrame();
   const [stageGeom, setStageGeom] = useState<{
     imgW: number;
     imgH: number;
     vpSize: { w: number; h: number };
   }>({ imgW: 0, imgH: 0, vpSize: { w: 0, h: 0 } });
-  const isNarrow = useMediaQuery("(max-width: 1024px)");
   const { recent: recentClasses, record: recordRecentClass } = useRecentClasses(
     routeId,
     s.workbenchConfig.common.recentClassesLimit,
@@ -662,24 +698,97 @@ export function useWorkbenchShellModel({
   const taskId = task?.id;
   const currentTaskIdRef = useRef(taskId);
   currentTaskIdRef.current = taskId;
+  const navigationIdentityRef = useRef({
+    currentTaskId,
+    requestedTaskId,
+    resolvedTaskId: taskId ?? null,
+  });
+  navigationIdentityRef.current = {
+    currentTaskId,
+    requestedTaskId,
+    resolvedTaskId: taskId ?? null,
+  };
   const taskIdx = tasks.findIndex((t) => t.id === taskId);
+  const [scenePlaybackActive, setScenePlaybackActive] = useState(false);
+  const scenePlaybackRef = useRef(false);
+  const scenePropagationPendingRef = useRef(false);
+  const [scenePropagationPending, setScenePropagationPending] = useState(false);
+  const pendingWorkbenchWrites = useIsMutating();
+  const setScenePlayback = useCallback(
+    (active: boolean) => {
+      if (active && (queryClient.isMutating() > 0 || scenePropagationPendingRef.current)) return;
+      scenePlaybackRef.current = active;
+      setScenePlaybackActive(active);
+    },
+    [queryClient],
+  );
   const selectTask = useCallback(
     async (
       id: string,
-      opts: { replace?: boolean; signal?: AbortSignal } = {},
+      opts: { replace?: boolean; signal?: AbortSignal; scenePreview?: boolean } = {},
     ): Promise<boolean> => {
-      return commitAfterNavigationGuard(maskNavigationGuardRef.current, opts.signal, () => {
-        setCurrentTaskId(id);
-        setSelectedId(null);
-        updateUrl({
-          batchId: selectedBatchId,
+      if (!opts.scenePreview) setScenePlayback(false);
+      const generation = ensurePointCloudNavigationGeneration(id, "shell");
+      const before = navigationIdentityRef.current;
+      publishPointCloudNavigationTrace({
+        source: "shell",
+        type: "select-start",
+        generation,
+        taskId: id,
+        targetTaskId: id,
+        currentTaskId: before.currentTaskId,
+        requestedTaskId: before.requestedTaskId,
+        resolvedTaskId: before.resolvedTaskId,
+        pending: true,
+      });
+      return taskNavigationScheduler.schedule(id, async (navigationSignal) => {
+        const allowed = await commitAfterNavigationGuard(
+          maskNavigationGuardRef.current,
+          [navigationSignal, opts.signal],
+          () => {
+            const current = navigationIdentityRef.current;
+            publishPointCloudNavigationTrace({
+              source: "shell",
+              type: "state-url-commit-requested",
+              generation,
+              taskId: id,
+              targetTaskId: id,
+              currentTaskId: current.currentTaskId,
+              requestedTaskId: current.requestedTaskId,
+              resolvedTaskId: current.resolvedTaskId,
+              pending: true,
+            });
+            pendingLocalTaskIdRef.current = current.requestedTaskId === id ? null : id;
+            setCurrentTaskId(id);
+            setSelectedId(null);
+            updateUrl({
+              batchId: selectedBatchId,
+              taskId: id,
+              replace: opts.replace,
+              maskGuardApproved: true,
+            });
+          },
+        );
+        publishPointCloudNavigationTrace({
+          source: "shell",
+          type: "select-resolved",
+          generation,
           taskId: id,
-          replace: opts.replace,
-          maskGuardApproved: true,
+          targetTaskId: id,
+          allowed,
+          pending: false,
         });
+        return allowed;
       });
     },
-    [selectedBatchId, setCurrentTaskId, setSelectedId, updateUrl],
+    [
+      selectedBatchId,
+      setCurrentTaskId,
+      setSelectedId,
+      taskNavigationScheduler,
+      updateUrl,
+      setScenePlayback,
+    ],
   );
   const imageWidth = task?.image_width ?? null;
   const imageHeight = task?.image_height ?? null;
@@ -692,6 +801,27 @@ export function useWorkbenchShellModel({
   const workbenchImagePreview = workbenchImagePreviewUrl(workbenchImageSource);
   const isVideoTask = task?.file_type === "video" || currentProject?.type_key === "video-track";
   const stageKind = currentProject?.type_key === "lidar" ? "3d" : isVideoTask ? "video" : "image";
+  useEffect(() => {
+    const identityTaskId = taskId ?? currentTaskId ?? requestedTaskId;
+    if (!identityTaskId || stageKind !== "3d") return;
+    const generation =
+      pointCloudNavigationGenerationForTask(identityTaskId) ??
+      ensurePointCloudNavigationGeneration(identityTaskId, "shell");
+    publishPointCloudNavigationTrace({
+      source: "shell",
+      type: "identity",
+      generation,
+      taskId: identityTaskId,
+      currentTaskId,
+      requestedTaskId,
+      resolvedTaskId: taskId ?? null,
+      status:
+        currentTaskId === requestedTaskId && taskId === requestedTaskId
+          ? "aligned"
+          : "transitioning",
+      pending: directTaskQuery.isFetching,
+    });
+  }, [currentTaskId, directTaskQuery.isFetching, requestedTaskId, stageKind, taskId]);
   const maskCapabilities = useMaskCapabilities(taskId, !!taskId && !isVideoTask);
   const imageMaskSizeSupported =
     !imageWidth || !imageHeight || !maskCapabilities.data
@@ -713,7 +843,7 @@ export function useWorkbenchShellModel({
   const videoManifest = useVideoManifest(taskId, isVideoTask);
   const videoSegmentsQuery = useQuery({
     queryKey: ["video-segments", taskId],
-    queryFn: () => videoTrackerApi.segments(taskId as string),
+    queryFn: ({ signal }) => videoTrackerApi.segments(taskId as string, { signal }),
     enabled: isVideoTask && !!taskId,
     staleTime: 30_000,
   });
@@ -838,6 +968,7 @@ export function useWorkbenchShellModel({
     if (!isVideoTask) return;
     if (videoChaptersData.length === 0) return;
     const onKeyDown = (e: KeyboardEvent) => {
+      if (isWorkbenchSettingsInteractionBlocked(e)) return;
       if (e.key !== "PageUp" && e.key !== "PageDown") return;
       const active = document.activeElement;
       if (active instanceof HTMLElement) {
@@ -907,8 +1038,6 @@ export function useWorkbenchShellModel({
 
   const openPropagateDialog = useCallback(
     (source: TrackerSourceAnnotation | TrackerSourceAnnotation[] | null) => {
-      // AI 单题与 AI 追踪共用顶部工具组；打开追踪时先收起单题面板，避免两个浮层叠加。
-      setAiPopoverOpen(false);
       // v0.22.2 · M2 · 归一化: null=无源, 单条=单源延展, ≥2 条=多选批量 (单 job 多源)。
       const list = Array.isArray(source) ? source : source ? [source] : [];
       setPropagateDialog({
@@ -924,6 +1053,7 @@ export function useWorkbenchShellModel({
       setSeedAnchorFrame(null);
       setSeedCollecting(false);
       seedPrevToolRef.current = null;
+      workspaceCommands.current?.show("video-tracker");
     },
     [],
   );
@@ -934,22 +1064,15 @@ export function useWorkbenchShellModel({
     setSeedObj(1);
     setSeedAnchorFrame(null);
     stopSeedCollecting();
+    workspaceCommands.current?.hide("video-tracker");
   }, [stopSeedCollecting]);
   const togglePropagateDialog = useCallback(() => {
-    if (propagateDialog) {
-      closePropagateDialog();
-      return;
-    }
-    openPropagateDialog(null);
-  }, [closePropagateDialog, openPropagateDialog, propagateDialog]);
+    if (propagateDialog) workspaceCommands.current?.show("video-tracker");
+    else openPropagateDialog(null);
+  }, [openPropagateDialog, propagateDialog]);
   const toggleAiPopover = useCallback(() => {
-    if (aiPopoverOpen) {
-      setAiPopoverOpen(false);
-      return;
-    }
-    closePropagateDialog();
-    setAiPopoverOpen(true);
-  }, [aiPopoverOpen, closePropagateDialog]);
+    workspaceCommands.current?.show("ai-task");
+  }, []);
   // v0.22.2 · U8 · 提交成功后不立即关闭对话框, 而就地转「追踪中…」进行态 (保留对话框显示进度,
   // 让位审阅条前给即时反馈)。清掉种子采集态 (与关闭同款), 但保留对话框记录并挂上 job id。
   const enterTrackingProgress = useCallback(
@@ -1079,7 +1202,8 @@ export function useWorkbenchShellModel({
 
   useEffect(() => {
     resetVideoStageUi();
-    setAiPopoverOpen(false);
+    workspaceCommands.current?.hide("ai-task");
+    closePropagateDialog();
     // 切 task / 切 batch 后, 丢弃指向其它 task 的待补选; 仅当新 task 正是
     // 跨帧 propagate 的目标时保留 (该补选逻辑见下方 annotationsData effect)。
     const pend = pendingCrossFrameSelectRef.current;
@@ -1089,10 +1213,32 @@ export function useWorkbenchShellModel({
     // pendingCrossFrameSelectRef 是 usePredictionPropagation 返回的稳定 useRef(声明在
     // 本 effect 下方,入依赖会 TDZ);ref 引用恒定不入依赖,行为与抽取前一致。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [taskId, resetVideoStageUi]);
+  }, [closePropagateDialog, taskId, resetVideoStageUi]);
 
   useEffect(() => {
     if (tasks.length === 0 && !directTaskQuery.data) return;
+    const localUrlSync = resolveLocalTaskUrlSync(requestedTaskId, pendingLocalTaskIdRef.current);
+    if (localUrlSync.clearPendingTarget) {
+      pendingLocalTaskIdRef.current = null;
+    }
+    if (localUrlSync.holdRequestedTask) {
+      const pendingTaskId = pendingLocalTaskIdRef.current;
+      if (pendingTaskId) {
+        publishPointCloudNavigationTrace({
+          source: "shell",
+          type: "stale-url-sync-held",
+          generation: pointCloudNavigationGenerationForTask(pendingTaskId),
+          taskId: pendingTaskId,
+          targetTaskId: pendingTaskId,
+          currentTaskId,
+          requestedTaskId,
+          resolvedTaskId: taskId ?? null,
+          status: "held",
+          pending: true,
+        });
+      }
+      return;
+    }
     if (requestedTaskId && tasks.some((t) => t.id === requestedTaskId)) {
       if (currentTaskId !== requestedTaskId) {
         setCurrentTaskId(requestedTaskId);
@@ -1121,6 +1267,7 @@ export function useWorkbenchShellModel({
     tasks,
     currentTaskId,
     requestedTaskId,
+    taskId,
     selectedBatchId,
     setCurrentTaskId,
     setSelectedId,
@@ -1138,6 +1285,7 @@ export function useWorkbenchShellModel({
     (batchId: string | null) => {
       void maskNavigationGuardRef.current().then((allowed) => {
         if (!allowed) return;
+        pendingLocalTaskIdRef.current = null;
         setSelectedBatchId(batchId);
         setCurrentTaskId(null);
         setSelectedId(null);
@@ -1166,7 +1314,57 @@ export function useWorkbenchShellModel({
   const [qualityPreviewAnnotations, setQualityPreviewAnnotations] = useState<
     AnnotationResponse[] | null
   >(null);
-  useEffect(() => setQualityPreviewAnnotations(null), [mode, taskId]);
+  const qualityPreviewRequestRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    qualityPreviewRequestRef.current?.abort();
+    qualityPreviewRequestRef.current = null;
+    setQualityPreviewAnnotations(null);
+    return () => {
+      qualityPreviewRequestRef.current?.abort();
+      qualityPreviewRequestRef.current = null;
+    };
+  }, [mode, taskId]);
+  const handlePreviewVideoQualityIssue = useCallback(
+    (run: VideoTrackQualityRun, issue: VideoTrackQualityIssue) => {
+      if (!taskId) return;
+      qualityPreviewRequestRef.current?.abort();
+      const controller = new AbortController();
+      qualityPreviewRequestRef.current = controller;
+      const requestedTaskId = taskId;
+      void Promise.all([
+        tasksApi.getAnnotations(requestedTaskId, run.left_segment_id, {
+          signal: controller.signal,
+        }),
+        tasksApi.getAnnotations(requestedTaskId, run.right_segment_id, {
+          signal: controller.signal,
+        }),
+      ])
+        .then(([left, right]) => {
+          if (controller.signal.aborted || currentTaskIdRef.current !== requestedTaskId) return;
+          setQualityPreviewAnnotations([...left, ...right]);
+          s.replaceSelected(
+            [issue.left_annotation_id, issue.right_annotation_id].filter(
+              (id): id is string => !!id,
+            ),
+          );
+          s.setVideoFrameIndex(issue.frame_start);
+        })
+        .catch((error: unknown) => {
+          if (controller.signal.aborted) return;
+          pushToast({
+            msg: "质量问题预览加载失败",
+            sub: error instanceof Error ? error.message : undefined,
+            kind: "error",
+          });
+        })
+        .finally(() => {
+          if (qualityPreviewRequestRef.current === controller) {
+            qualityPreviewRequestRef.current = null;
+          }
+        });
+    },
+    [pushToast, s, taskId],
+  );
   const {
     data: scopedAnnotationsData,
     refetch: refetchAnnotations,
@@ -1299,6 +1497,7 @@ export function useWorkbenchShellModel({
   useEffect(() => {
     if (!isVideoTask) return;
     const onKey = (e: KeyboardEvent) => {
+      if (isWorkbenchSettingsInteractionBlocked(e)) return;
       if (e.key !== "T" || !e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
       const active = document.activeElement;
       if (active instanceof HTMLElement) {
@@ -1432,9 +1631,27 @@ export function useWorkbenchShellModel({
     connection: preannotationConn,
     retries: preannotationRetries,
   } = usePreannotationProgress(projectId);
-  const { lockError, lockConflict, remainingMs } = useTaskLock(
+  const sceneMayEdit =
+    mode === "annotate" && !!task && task.status !== "review" && task.status !== "completed";
+  const {
+    lockError,
+    lockConflict,
+    remainingMs,
+    isLocked: taskLockReady,
+  } = useTaskLock(
     taskId,
-    videoCollaborationResolved && !videoCollaborationEnabled,
+    videoCollaborationResolved &&
+      !videoCollaborationEnabled &&
+      (stageKind !== "3d" || (sceneMayEdit && !scenePlaybackActive)),
+  );
+  const sceneWriteBlocked =
+    stageKind === "3d" && (scenePlaybackActive || !sceneMayEdit || !taskLockReady);
+  useEffect(() => {
+    if (stageKind !== "3d") setScenePlayback(false);
+  }, [setScenePlayback, stageKind]);
+  const navigateScenePreview = useCallback(
+    (targetTaskId: string) => selectTask(targetTaskId, { scenePreview: true }),
+    [selectTask],
   );
   const [segmentLeaseError, setSegmentLeaseError] = useState<string | null>(null);
   const segmentLeaseRef = useRef<{ taskId: string; segmentId: string } | null>(null);
@@ -1534,10 +1751,10 @@ export function useWorkbenchShellModel({
   // pendingCrossFrameSelectRef 返回供上方两处 effect(切 task 清理 522 / 导航后补选 651)读写。
   const {
     pendingCrossFrameSelectRef,
-    crossFramePropagate,
-    crossFramePropagateBatch,
-    crossFramePropagateToTask,
-    crossFrameInterpolate,
+    crossFramePropagate: propagateSceneFrame,
+    crossFramePropagateBatch: propagateSceneBatch,
+    crossFramePropagateToTask: propagateSceneToTask,
+    crossFrameInterpolate: interpolateScene,
   } = usePredictionPropagation({
     taskId,
     selectedId: s.selectedId,
@@ -1545,6 +1762,41 @@ export function useWorkbenchShellModel({
     pushToast,
     queryClient,
   });
+
+  const runSceneWrite = useCallback(
+    async (write: () => Promise<void>) => {
+      if (scenePlaybackRef.current) {
+        setScenePlayback(false);
+        return;
+      }
+      if (sceneWriteBlocked || scenePropagationPendingRef.current) return;
+      scenePropagationPendingRef.current = true;
+      setScenePropagationPending(true);
+      try {
+        await write();
+      } finally {
+        scenePropagationPendingRef.current = false;
+        setScenePropagationPending(false);
+      }
+    },
+    [sceneWriteBlocked, setScenePlayback],
+  );
+  const crossFramePropagate = useCallback(
+    (direction: "next" | "prev") => runSceneWrite(() => propagateSceneFrame(direction)),
+    [propagateSceneFrame, runSceneWrite],
+  );
+  const crossFramePropagateBatch = useCallback(
+    (direction: "next" | "prev") => runSceneWrite(() => propagateSceneBatch(direction)),
+    [propagateSceneBatch, runSceneWrite],
+  );
+  const crossFramePropagateToTask = useCallback(
+    (target: string, frame: number) => runSceneWrite(() => propagateSceneToTask(target, frame)),
+    [propagateSceneToTask, runSceneWrite],
+  );
+  const crossFrameInterpolate = useCallback(
+    (track: string, target: string) => runSceneWrite(() => interpolateScene(track, target)),
+    [interpolateScene, runSceneWrite],
+  );
 
   // v0.14.18 · 交互线能力路由: 对每个注册后端拉 /setup 建 capIndex, 按当前工具 prompt 解析交互后端。
   // v0.18.31 · 交互后端选择的服务端持久化偏好 (按 project, 跨设备; 替代旧 localStorage)。
@@ -2135,30 +2387,33 @@ export function useWorkbenchShellModel({
 
   useEffect(() => {
     const idx = tasks.findIndex((t) => t.id === taskId);
+    const controller = new AbortController();
     const prefetch = (t: TaskResponse | undefined) => {
       if (!t) return;
       if (!videoCollaborationEnabled) {
         queryClient.prefetchQuery({
           queryKey: ["annotations", t.id],
-          queryFn: () => tasksApi.getAnnotations(t.id),
+          queryFn: () => tasksApi.getAnnotations(t.id, undefined, { signal: controller.signal }),
         });
       }
       queryClient.prefetchInfiniteQuery({
         queryKey: ["predictions", t.id, undefined, debouncedConf, 100],
         initialPageParam: 0,
-        queryFn: () => predictionsApi.listByTask(t.id, undefined, debouncedConf, 100, 0),
+        queryFn: () =>
+          predictionsApi.listByTask(t.id, undefined, debouncedConf, 100, 0, {
+            signal: controller.signal,
+          }),
       });
       if (stageKind === "image" && t.image_pyramid && LARGE_IMAGE_TILES_ENABLED) {
         void queryClient
           .fetchQuery({
             queryKey: ["image-pyramid", t.id, t.image_pyramid.generation],
-            queryFn: ({ signal }) => tasksApi.getImagePyramid(t.id, { signal }),
+            queryFn: () => tasksApi.getImagePyramid(t.id, { signal: controller.signal }),
             staleTime: 30_000,
           })
           .then((pyramid) => {
             if (!pyramid.overview?.url) return;
-            const img = new Image();
-            img.src = pyramid.overview.url;
+            return loadAbortableImage(pyramid.overview.url, controller.signal);
           })
           .catch(() => {});
       } else if (stageKind === "image" && t.file_url && !t.image_pyramid?.required) {
@@ -2175,12 +2430,17 @@ export function useWorkbenchShellModel({
             : true;
         const url = t.thumbnail_url ?? (originalAllowed ? t.file_url : null);
         if (!url) return;
-        const img = new Image();
-        img.src = url;
+        void loadAbortableImage(url, controller.signal).catch(() => {});
       }
     };
-    prefetch(tasks[idx + 1]);
-    prefetch(tasks[idx - 1]);
+    const timer = window.setTimeout(() => {
+      prefetch(tasks[idx + 1]);
+      prefetch(tasks[idx - 1]);
+    }, TASK_NAVIGATION_SETTLE_MS);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
   }, [taskId, tasks, queryClient, debouncedConf, stageKind, videoCollaborationEnabled]);
 
   const aiRunning =
@@ -2316,7 +2576,8 @@ export function useWorkbenchShellModel({
   } = offlineQ;
 
   const isLockedForActions =
-    mode === "review"
+    sceneWriteBlocked ||
+    (mode === "review"
       ? task?.status === "completed" || videoCollaborationEnabled || !!lockConflict || !!lockError
       : task?.status === "review" ||
         task?.status === "completed" ||
@@ -2326,7 +2587,7 @@ export function useWorkbenchShellModel({
           (!activeVideoSegment ||
             activeVideoSegment.status === "completed" ||
             activeVideoSegment.locked_by !== meUserId ||
-            !!segmentLeaseError));
+            !!segmentLeaseError)));
   const maskEditorSize = resolveMaskEditorSize(
     isVideoTask,
     stageGeom,
@@ -4708,6 +4969,7 @@ export function useWorkbenchShellModel({
     // popover 打开时让位: 键盘归它 (Esc 关 popover, Enter 选类)。
     if (videoSamPendingAccept) return;
     const handler = (e: KeyboardEvent) => {
+      if (isWorkbenchSettingsInteractionBlocked(e)) return;
       const target = e.target as HTMLElement | null;
       if (
         target?.tagName === "INPUT" ||
@@ -4945,6 +5207,11 @@ export function useWorkbenchShellModel({
 
   const handleUpdateAttributes = useCallback(
     (annotationId: string, next: Record<string, unknown>) => {
+      if (scenePlaybackRef.current) {
+        setScenePlayback(false);
+        return;
+      }
+      if (isLockedForActions) return;
       const ann = annotationsRef.current.find((a) => a.id === annotationId);
       if (!ann) return;
       const before = { attributes: ann.attributes ?? {} };
@@ -4958,12 +5225,16 @@ export function useWorkbenchShellModel({
         },
       );
     },
-    [updateAnnotationMut, history],
+    [updateAnnotationMut, history, isLockedForActions, setScenePlayback],
   );
 
   const hoveredCommentShapes = useHoveredCommentStore(selectEffectiveShapes);
 
-  const { navigateTask, smartNext, handleSubmitTask } = useWorkbenchTaskFlow({
+  const {
+    navigateTask,
+    smartNext,
+    handleSubmitTask: submitTask,
+  } = useWorkbenchTaskFlow({
     taskId,
     task,
     tasks,
@@ -4979,6 +5250,10 @@ export function useWorkbenchShellModel({
     pushToast,
     submitTaskMut,
   });
+  const handleSubmitTask = useCallback(() => {
+    if (scenePlaybackRef.current || sceneWriteBlocked) return;
+    submitTask();
+  }, [sceneWriteBlocked, submitTask]);
 
   // v0.21.4 · 视频单题 AI: 抓当前帧 JPEG → 图像 backend(client 供图路径)→ 落单帧 video_bbox 候选。
   // 与图像的 handleRunAi 走不同路(那条投 task_id 让后端从 task URL 取图, 视频 task URL 是整段 mp4)。
@@ -5039,7 +5314,7 @@ export function useWorkbenchShellModel({
 
   const annotateModeState = useAnnotateMode({
     mode,
-    taskId,
+    taskId: scenePlaybackActive ? undefined : taskId,
     task,
     navigateTask,
     smartNext,
@@ -5049,14 +5324,14 @@ export function useWorkbenchShellModel({
   });
   const reviewModeState = useReviewMode({
     mode,
-    taskId,
+    taskId: scenePlaybackActive ? undefined : taskId,
     task,
     navigateTask,
     pushToast,
   });
   const modeState = mode === "review" ? reviewModeState : annotateModeState;
   const { topbarActions, bannerActions } = modeState;
-  const isLocked = modeState.isLocked;
+  const isLocked = modeState.isLocked || sceneWriteBlocked;
   // v0.21.13 · 章节 × 时间轴联动控制器 (状态/handler 声明在前, 此处 isLocked 就绪后组装并 gate 编辑)。
   const canEditChapters = !isLocked && isOwner;
   const videoTimelineChapterControls = useMemo<VideoTimelineChapterControls | undefined>(() => {
@@ -5228,6 +5503,7 @@ export function useWorkbenchShellModel({
     submitPolyline,
     updateMutation: { mutate: (vars) => updateAnnotationMut.mutate(vars) },
     taskId,
+    disabled: workbenchSettingsOpen,
     ignoredKeys: stageKind === "3d" ? threeDOwnedKeys : undefined,
     videoMode: isVideoTask,
     samplingActive,
@@ -5248,161 +5524,39 @@ export function useWorkbenchShellModel({
     maskInteractionFrozen: maskCompareInteractionBlocked,
   });
 
-  const floatingTaskQueue = s.workbenchLayout.floatingTaskQueue;
-  const floatingClassPalette = s.workbenchLayout.floatingClassPalette;
-  const floatingInspector = s.workbenchLayout.floatingInspector;
-  const floatingDiscussion = s.workbenchLayout.floatingDiscussion;
+  const [workspaceState, setWorkspaceState] = useState<WorkbenchWorkspaceState>({
+    sides: { left: "empty", right: "empty" },
+    taskQueueVisible: true,
+    inspectorVisible: true,
+    aiTaskVisible: false,
+    videoTrackerVisible: false,
+    triViewVisible: false,
+    cameraViewVisible: false,
+    cameraPresentation: "floating",
+    canvasMaximized: false,
+    taskQueueWidth: 220,
+    inspectorWidth: 260,
+    disabled: true,
+  });
+  useEffect(() => {
+    if (
+      mode === "annotate" &&
+      isVideoTask &&
+      workspaceState.videoTrackerVisible &&
+      !propagateDialog
+    )
+      openPropagateDialog(null);
+  }, [isVideoTask, mode, openPropagateDialog, propagateDialog, workspaceState.videoTrackerVisible]);
   const setWorkbenchLayout = s.setWorkbenchLayout;
-  const setLeftOpenState = s.setLeftOpen;
-  const setRightOpenState = s.setRightOpen;
-  const leftOpenState = s.leftOpen;
-  const rightOpenState = s.rightOpen;
-  const taskQueueDetached = floatingTaskQueue.detached;
-  const classPaletteDetached = floatingClassPalette.detached;
-  const inspectorDetached = floatingInspector.detached;
-  const discussionDetached = floatingDiscussion.detached;
-  const leftHasEmbeddedPanels = !taskQueueDetached || !classPaletteDetached;
-  const rightHasEmbeddedPanels = !inspectorDetached || !discussionDetached;
-  const leftOpen = isNarrow || !leftHasEmbeddedPanels ? false : leftOpenState;
-  const rightOpen = isNarrow || !rightHasEmbeddedPanels ? false : rightOpenState;
-  // v0.15.x · 左右边栏宽度落在 common 子树的真百分比;拖拽与设置面板共用 setFields(乐观+广播+防抖)。
-  const leftPct = s.workbenchConfig.common.leftWidthPct;
-  const rightPct = s.workbenchConfig.common.rightWidthPct;
-  const setWorkbenchFields = s.setWorkbenchFields;
-  const {
-    leftPx,
-    rightPx,
-    onResizeLeft,
-    onResizeRight,
-    sidebarMinPx,
-    sidebarMaxPx,
-    sidebarResetPx,
-  } = useWorkbenchSidebarSizing(leftPct, rightPct, setWorkbenchFields);
-  const floatingTaskQueuePosition = useMemo(
-    () => resolveFloatingTaskQueueRect(floatingTaskQueue),
-    [floatingTaskQueue],
-  );
-  const floatingClassPalettePosition = useMemo(
-    () => resolveFloatingClassPaletteRect(floatingClassPalette),
-    [floatingClassPalette],
-  );
-  const floatingInspectorPosition = useMemo(
-    () => resolveFloatingInspectorRect(floatingInspector),
-    [floatingInspector],
-  );
-  const floatingDiscussionPosition = useMemo(
-    () => resolveFloatingDiscussionRect(floatingDiscussion),
-    [floatingDiscussion],
-  );
-  const detachTaskQueue = useCallback(() => {
-    setWorkbenchLayout({
-      floatingTaskQueue: {
-        ...floatingTaskQueue,
-        ...floatingTaskQueuePosition,
-        detached: true,
-      },
-    });
-    setLeftOpenState(false);
-  }, [floatingTaskQueue, floatingTaskQueuePosition, setLeftOpenState, setWorkbenchLayout]);
-  const detachClassPalette = useCallback(() => {
-    setWorkbenchLayout({
-      floatingClassPalette: {
-        ...floatingClassPalette,
-        ...floatingClassPalettePosition,
-        detached: true,
-      },
-    });
-    setLeftOpenState(false);
-  }, [floatingClassPalette, floatingClassPalettePosition, setLeftOpenState, setWorkbenchLayout]);
-  const detachInspector = useCallback(() => {
-    setWorkbenchLayout({
-      floatingInspector: {
-        ...floatingInspector,
-        ...floatingInspectorPosition,
-        detached: true,
-      },
-    });
-    setRightOpenState(false);
-  }, [floatingInspector, floatingInspectorPosition, setRightOpenState, setWorkbenchLayout]);
-  const detachDiscussion = useCallback(() => {
-    setWorkbenchLayout({
-      floatingDiscussion: {
-        ...floatingDiscussion,
-        ...floatingDiscussionPosition,
-        detached: true,
-      },
-    });
-    setRightOpenState(false);
-  }, [floatingDiscussion, floatingDiscussionPosition, setRightOpenState, setWorkbenchLayout]);
-  const mergeTaskQueueBack = useCallback(() => {
-    setWorkbenchLayout({
-      floatingTaskQueue: {
-        ...floatingTaskQueue,
-        detached: false,
-      },
-    });
-  }, [floatingTaskQueue, setWorkbenchLayout]);
-  const mergeClassPaletteBack = useCallback(() => {
-    setWorkbenchLayout({
-      floatingClassPalette: {
-        ...floatingClassPalette,
-        detached: false,
-      },
-    });
-  }, [floatingClassPalette, setWorkbenchLayout]);
-  const mergeInspectorBack = useCallback(() => {
-    setWorkbenchLayout({
-      floatingInspector: {
-        ...floatingInspector,
-        detached: false,
-      },
-    });
-  }, [floatingInspector, setWorkbenchLayout]);
-  const mergeDiscussionBack = useCallback(() => {
-    setWorkbenchLayout({
-      floatingDiscussion: {
-        ...floatingDiscussion,
-        detached: false,
-      },
-    });
-  }, [floatingDiscussion, setWorkbenchLayout]);
-  const closeFloatingTaskQueue = useCallback(() => {
-    setWorkbenchLayout({
-      floatingTaskQueue: {
-        ...floatingTaskQueue,
-        detached: false,
-      },
-    });
-    setLeftOpenState(false);
-  }, [floatingTaskQueue, setLeftOpenState, setWorkbenchLayout]);
-  const closeFloatingClassPalette = useCallback(() => {
-    setWorkbenchLayout({
-      floatingClassPalette: {
-        ...floatingClassPalette,
-        detached: false,
-      },
-    });
-    setLeftOpenState(false);
-  }, [floatingClassPalette, setLeftOpenState, setWorkbenchLayout]);
-  const closeFloatingInspector = useCallback(() => {
-    setWorkbenchLayout({
-      floatingInspector: {
-        ...floatingInspector,
-        detached: false,
-      },
-    });
-    setRightOpenState(false);
-  }, [floatingInspector, setRightOpenState, setWorkbenchLayout]);
-  const closeFloatingDiscussion = useCallback(() => {
-    setWorkbenchLayout({
-      floatingDiscussion: {
-        ...floatingDiscussion,
-        detached: false,
-      },
-    });
-    setRightOpenState(false);
-  }, [floatingDiscussion, setRightOpenState, setWorkbenchLayout]);
-  // v0.16.8 · 选中标注浮动信息卡:位置 / 折叠态走 layout 偏好(跨设备),显隐由选中状态驱动。
+  const leftOpen = workspaceState.taskQueueVisible;
+  const rightOpen = workspaceState.inspectorVisible;
+  const leftPx = workspaceState.taskQueueWidth;
+  const rightPx = workspaceState.inspectorWidth;
+  const onResizeLeft = () => undefined;
+  const onResizeRight = () => undefined;
+  const sidebarMinPx = 180;
+  const sidebarMaxPx = 600;
+  const sidebarResetPx = 240;
   const floatingSelection = s.workbenchLayout.floatingSelection;
   const floatingSelectionPosition = useMemo(
     () => resolveFloatingSelectionRect(floatingSelection),
@@ -5968,28 +6122,10 @@ export function useWorkbenchShellModel({
     ],
   );
 
-  const toggleLeftSidebar = useCallback(() => {
-    if (!leftHasEmbeddedPanels) return;
-    setLeftOpenState(!leftOpenState);
-  }, [leftHasEmbeddedPanels, leftOpenState, setLeftOpenState]);
-  const toggleRightSidebar = useCallback(() => {
-    if (!rightHasEmbeddedPanels) return;
-    setRightOpenState(!rightOpenState);
-  }, [rightHasEmbeddedPanels, rightOpenState, setRightOpenState]);
-  useEffect(() => {
-    // 边栏收起/展开后 stage 容器宽度变化, 用 fitTick 触发 image/video stage 重新适应窗口。
-    if (stageKind !== "image" && stageKind !== "video") return;
-    let secondFrame = 0;
-    const firstFrame = window.requestAnimationFrame(() => {
-      secondFrame = window.requestAnimationFrame(() => {
-        setFitTick((n) => n + 1);
-      });
-    });
-    return () => {
-      window.cancelAnimationFrame(firstFrame);
-      if (secondFrame) window.cancelAnimationFrame(secondFrame);
-    };
-  }, [leftOpen, rightOpen, stageKind]);
+  const toggleWorkspaceSide = useCallback(
+    (side: "left" | "right") => workspaceCommands.current?.toggleSide(side),
+    [],
+  );
 
   if (
     isProjectLoading ||
@@ -6164,8 +6300,16 @@ export function useWorkbenchShellModel({
   const canPrepareMaskJoin =
     selectedMaskJoinCandidates.length >= 2 && (!isVideoTask || currentVideoSegment !== null);
 
-  const layout: ComponentProps<typeof WorkbenchLayout> = {
-    gridTemplateColumns: `${leftOpen ? `clamp(180px, ${leftPct}%, 600px)` : "0px"} 48px 1fr ${rightOpen ? `clamp(180px, ${rightPct}%, 600px)` : "0px"}`,
+  const layout: WorkbenchShellReadyModel["layout"] = {
+    workspace: {
+      context: `${mode}:${stageKind}`,
+      legacy: {
+        layout: { ...s.workbenchLayout, leftOpen: s.leftOpen, rightOpen: s.rightOpen },
+        common: s.workbenchConfig.common,
+      },
+      commandsRef: workspaceCommands,
+      onStateChange: setWorkspaceState,
+    },
     taskQueue: {
       open: leftOpen,
       classes,
@@ -6175,13 +6319,17 @@ export function useWorkbenchShellModel({
         stageKind === "3d"
           ? s.threeDTool === "point-mask"
             ? "点云分割"
-            : "3D 框"
+            : s.threeDTool === "measure"
+              ? "测量"
+              : "3D 框"
           : TOOL_REGISTRY[s.tool].label,
       toolIcon:
         stageKind === "3d"
           ? s.threeDTool === "point-mask"
             ? "scissors"
-            : "rect"
+            : s.threeDTool === "measure"
+              ? "ruler"
+              : "rect"
           : TOOL_REGISTRY[s.tool].icon,
       activeClass: s.activeClass,
       recentClasses,
@@ -6205,8 +6353,6 @@ export function useWorkbenchShellModel({
       widthMin: sidebarMinPx,
       widthMax: sidebarMaxPx,
       widthResetTo: sidebarResetPx,
-      onDetachQueue: detachTaskQueue,
-      onDetachPalette: detachClassPalette,
       // v0.13.3-5 · 3D 点云台:左栏色板可点选 = 放置新框的类别(2D 仍只读图例)。
       classPickable: stageKind === "3d" && !isLocked,
       onPickClass: s.setActiveClass,
@@ -6248,7 +6394,7 @@ export function useWorkbenchShellModel({
       lockError,
       lockConflict,
       claimInfo: modeState.claimInfo,
-      canWithdraw: bannerActions.canWithdraw,
+      canWithdraw: !scenePlaybackActive && bannerActions.canWithdraw,
       isWithdrawing: bannerActions.isWithdrawing,
       isReopening: bannerActions.isReopening,
       isAcceptingRejection: bannerActions.isAcceptingRejection,
@@ -6265,39 +6411,42 @@ export function useWorkbenchShellModel({
       aiRunning,
       batchStatus: currentBatchStatus,
       isSubmitting: isSubmittingTask,
+      submitDisabled: sceneWriteBlocked,
       confThreshold: s.confThreshold,
       onShowHotkeys: () => setShowHotkeys(true),
       onBack,
-      leftSidebarOpen: leftOpen,
-      rightSidebarOpen: rightOpen,
-      onToggleLeftSidebar: toggleLeftSidebar,
-      onToggleRightSidebar: toggleRightSidebar,
-      onRunAi: toggleAiPopover,
-      aiOpen: aiPopoverOpen,
+      onToggleSide: toggleWorkspaceSide,
+      onRunAi: stageKind === "3d" ? undefined : toggleAiPopover,
+      aiOpen: workspaceState.aiTaskVisible,
       // v0.21.4 · 视频项目也开放当前题 AI(单帧 → 图像 backend), 不再禁用工具栏 AI 按钮。
       aiDisabled: false,
       onToggleTracker: isVideoTask ? togglePropagateDialog : undefined,
-      trackerOpen: Boolean(propagateDialog),
+      trackerOpen: workspaceState.videoTrackerVisible,
       trackerRunning: Boolean(trackingJobId),
       onPrev: () => navigateTask("prev"),
       onNext: () => navigateTask("next"),
-      onSubmit: videoCollaborationEnabled
-        ? submitActiveVideoSegment
-        : (topbarActions.onSubmit ?? handleSubmitTask),
+      onSubmit: sceneWriteBlocked
+        ? handleSubmitTask
+        : videoCollaborationEnabled
+          ? submitActiveVideoSegment
+          : (topbarActions.onSubmit ?? handleSubmitTask),
       onSmartNextOpen: topbarActions.onSmartNextOpen,
       onSmartNextUncertain: topbarActions.onSmartNextUncertain,
-      onOpenWorkbenchSettings: () => setWorkbenchSettingsOpen(true),
-      canWithdraw: topbarActions.canWithdraw,
-      canReopen: topbarActions.canReopen,
+      onOpenWorkbenchSettings: () => {
+        videoControlsRef.current?.pausePlayback({ snapToGrid: false });
+        setWorkbenchSettingsOpen(true);
+      },
+      canWithdraw: !scenePlaybackActive && topbarActions.canWithdraw,
+      canReopen: !scenePlaybackActive && topbarActions.canReopen,
       isWithdrawing: topbarActions.isWithdrawing,
       isReopening: topbarActions.isReopening,
       onWithdraw: topbarActions.onWithdraw,
       onReopen: topbarActions.onReopen,
       isSkipping: topbarActions.isSkipping,
-      onSkip: topbarActions.onSkip,
+      onSkip: scenePlaybackActive ? undefined : topbarActions.onSkip,
       mode,
-      onApprove: topbarActions.onApprove,
-      onReject: topbarActions.onReject,
+      onApprove: scenePlaybackActive ? undefined : topbarActions.onApprove,
+      onReject: scenePlaybackActive ? undefined : topbarActions.onReject,
       isApproving: topbarActions.isApproving,
       isRejecting: topbarActions.isRejecting,
       reviewInfoSlot: topbarActions.reviewInfoSlot,
@@ -6334,6 +6483,14 @@ export function useWorkbenchShellModel({
         onCrossFramePropagateBatch: crossFramePropagateBatch,
         onCrossFramePropagateToTask: crossFramePropagateToTask,
         onCrossFrameInterpolate: crossFrameInterpolate,
+        onNavigateSceneFrame: navigateScenePreview,
+        scenePlaybackActive,
+        onScenePlaybackActiveChange: setScenePlayback,
+        scenePlaybackBlockedReason: scenePropagationPending
+          ? "跨帧操作正在保存，请稍候"
+          : !scenePlaybackActive && pendingWorkbenchWrites > 0
+            ? "工作台正在保存，请稍候"
+            : null,
         rightSidebarOpen: rightOpen,
         rightSidebarWidth: rightOpen ? rightPx : 0,
         workbenchLayout: s.workbenchLayout,
@@ -6796,7 +6953,6 @@ export function useWorkbenchShellModel({
       widthMin: sidebarMinPx,
       widthMax: sidebarMaxPx,
       widthResetTo: sidebarResetPx,
-      onDetach: detachInspector,
       capabilityWarnings,
       onFillAttribute: handleFillAttribute,
       aiBoxes: modeState.diffMode !== "final" ? aiBoxes : [],
@@ -6861,81 +7017,12 @@ export function useWorkbenchShellModel({
                 <VideoTrackQualitySidebar
                   taskId={taskId}
                   onSeekFrame={s.setVideoFrameIndex}
-                  onPreviewIssue={(run, issue) => {
-                    void Promise.all([
-                      tasksApi.getAnnotations(taskId, run.left_segment_id),
-                      tasksApi.getAnnotations(taskId, run.right_segment_id),
-                    ]).then(([left, right]) => {
-                      setQualityPreviewAnnotations([...left, ...right]);
-                      s.replaceSelected(
-                        [issue.left_annotation_id, issue.right_annotation_id].filter(
-                          (id): id is string => !!id,
-                        ),
-                      );
-                      s.setVideoFrameIndex(issue.frame_start);
-                    });
-                  }}
+                  onPreviewIssue={handlePreviewVideoQualityIssue}
                 />
               )}
             </div>
           )
         : undefined,
-    },
-    floatingTaskQueue: {
-      detached: taskQueueDetached,
-      position: floatingTaskQueuePosition,
-      onPositionChange: (patch) => {
-        s.setWorkbenchLayout({
-          floatingTaskQueue: {
-            ...s.workbenchLayout.floatingTaskQueue,
-            ...patch,
-          },
-        });
-      },
-      onMergeBack: mergeTaskQueueBack,
-      onClose: closeFloatingTaskQueue,
-    },
-    floatingClassPalette: {
-      detached: classPaletteDetached,
-      position: floatingClassPalettePosition,
-      onPositionChange: (patch) => {
-        s.setWorkbenchLayout({
-          floatingClassPalette: {
-            ...s.workbenchLayout.floatingClassPalette,
-            ...patch,
-          },
-        });
-      },
-      onMergeBack: mergeClassPaletteBack,
-      onClose: closeFloatingClassPalette,
-    },
-    floatingInspector: {
-      detached: inspectorDetached,
-      position: floatingInspectorPosition,
-      onPositionChange: (patch) => {
-        s.setWorkbenchLayout({
-          floatingInspector: {
-            ...s.workbenchLayout.floatingInspector,
-            ...patch,
-          },
-        });
-      },
-      onMergeBack: mergeInspectorBack,
-      onClose: closeFloatingInspector,
-    },
-    floatingDiscussion: {
-      detached: discussionDetached,
-      position: floatingDiscussionPosition,
-      onPositionChange: (patch) => {
-        s.setWorkbenchLayout({
-          floatingDiscussion: {
-            ...s.workbenchLayout.floatingDiscussion,
-            ...patch,
-          },
-        });
-      },
-      onMergeBack: mergeDiscussionBack,
-      onClose: closeFloatingDiscussion,
     },
     floatingSelection: selectionCard,
     // v0.20.x · 工作台桌宠;情绪全由 props 派生(标注数增长/里程碑/久坐),不挂 mutation。
@@ -6946,19 +7033,15 @@ export function useWorkbenchShellModel({
     },
     aiPopover: {
       // v0.21.4 · 视频项目也开放当前题 AI(单帧 → 图像 backend), onRunAi 走帧路径。
-      open: aiPopoverOpen,
-      rightOffset: rightOpen ? rightPx + 44 : 44,
-      position: aiPopoverPosition,
-      onPositionChange: setAiPopoverPosition,
-      size: aiPopoverSize,
-      onSizeChange: setAiPopoverSize,
       aiModel,
       aiRunning,
       aiBoxCount: aiPopoverBoxCount,
       isVideoTask,
       confThreshold: s.confThreshold,
       aiTakeoverRate,
-      onClose: () => setAiPopoverOpen(false),
+      onClose: () => {
+        workspaceCommands.current?.hide("ai-task");
+      },
       // v0.21.4 · 视频走单帧路径(client 供图), 图像走既有 task 级 triggerPreannotation。
       onRunAi: isVideoTask ? handleRunVideoFrameAi : handleRunAi,
       // v0.18.28 · 项目存了编排时多给一个「按项目编排跑当前题」入口。
@@ -6997,7 +7080,6 @@ export function useWorkbenchShellModel({
     workbenchSettings: {
       open: workbenchSettingsOpen,
       onClose: () => setWorkbenchSettingsOpen(false),
-      stageKind,
       projectRenderingConfig: currentProject?.rendering_config ?? null,
       hideOrphanAnnotations,
       onToggleHideOrphans: () => setHideOrphanAnnotations((value) => !value),
@@ -7096,7 +7178,6 @@ export function useWorkbenchShellModel({
       },
       commentAnchor: videoCommentAnchor,
       onSeekFrame: isVideoTask ? s.setVideoFrameIndex : undefined,
-      onDetach: detachDiscussion,
       // v0.20.22 · 讨论区完全收起 (同一 workbench.layout 管道跨设备持久)。
       collapsed: s.discussionCollapsed,
       onToggleCollapsed: () => s.setDiscussionCollapsed(!s.discussionCollapsed),
@@ -7105,10 +7186,7 @@ export function useWorkbenchShellModel({
 
   const propagateDialogProps: ComponentProps<typeof VideoTrackerPropagateDialog> = {
     open: Boolean(propagateDialog),
-    position: trackerPanelPosition,
-    onPositionChange: setTrackerPanelPosition,
-    size: trackerPanelSize,
-    onSizeChange: setTrackerPanelSize,
+    visible: workspaceState.videoTrackerVisible,
     // v0.21.27 · U-pvs-2 · 有落点后范围锚定首个落点帧 (seedAnchorFrame), 导航到别帧加修正点
     // 不移动传播范围; 无落点时跟随当前帧 (与现状一致)。
     frameIndex: seedAnchorFrame ?? s.videoFrameIndex,
@@ -7217,8 +7295,7 @@ export function useWorkbenchShellModel({
           // v0.11.5 · issue FAB → 切到 DiscussionPanel issues tab (旧浮层 IssueListPanel 已删)。
           // v0.13.10+ · 不再把已分离的标注详情合并回去；讨论面板仍嵌入时才展开右栏。
           onOpenList: () => {
-            if (!s.workbenchLayout.floatingDiscussion.detached && !s.rightOpen)
-              s.setRightOpen(true);
+            workspaceCommands.current?.show("discussion");
             requestIssuesTab();
           },
           onToggleIssuePinDrop: () => setIssuePinDropArmed((v) => !v),

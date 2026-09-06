@@ -1,9 +1,23 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { ApiError } from "@/api";
 import { tasksApi } from "@/api/tasks";
 import type { TaskLockConflictDetail, TaskLockResponse } from "@/types";
 
 const HEARTBEAT_INTERVAL_MS = 60_000;
+
+// DELETE targets (task, user), not an acquisition token. Serialize even across
+// hook remounts so an old cleanup can never delete a newer same-task lock.
+const taskLockOperations = new Map<string, Promise<void>>();
+
+function enqueueLockOperation(taskId: string, operation: () => Promise<void>) {
+  const pending = (taskLockOperations.get(taskId) ?? Promise.resolve()).then(operation);
+  const settled = pending.catch(() => undefined);
+  taskLockOperations.set(taskId, settled);
+  void settled.then(() => {
+    if (taskLockOperations.get(taskId) === settled) taskLockOperations.delete(taskId);
+  });
+  return settled;
+}
 
 function parseLockConflict(err: unknown): TaskLockConflictDetail | null {
   if (!(err instanceof ApiError) || err.status !== 409) return null;
@@ -14,111 +28,94 @@ function parseLockConflict(err: unknown): TaskLockConflictDetail | null {
 }
 
 export function useTaskLock(taskId: string | undefined, enabled = true) {
-  const [lock, setLock] = useState<TaskLockResponse | null>(null);
-  const [lockError, setLockError] = useState<string | null>(null);
-  const [lockConflict, setLockConflict] = useState<TaskLockConflictDetail | null>(null);
-  const [remainingMs, setRemainingMs] = useState<number>(0);
-  const intervalRef = useRef<ReturnType<typeof setInterval>>();
-  const timerRef = useRef<ReturnType<typeof setInterval>>();
-  const currentTaskRef = useRef<string>();
-
-  const release = useCallback((tid: string) => {
-    // v0.6.7 B-13：用 keepalive 保证 DELETE 在 unmount / 页面跳转时仍能送达，
-    // 否则浏览器会取消请求 → 残留 lock 行 → 用户重进时被自己的旧锁挡住。
-    void tasksApi.releaseLockKeepalive(tid);
-  }, []);
+  const session = useMemo(() => ({ taskId: enabled ? taskId : undefined }), [taskId, enabled]);
+  const [state, setState] = useState<{
+    session: typeof session;
+    lock: TaskLockResponse | null;
+    lockError: string | null;
+    lockConflict: TaskLockConflictDetail | null;
+  }>({ session, lock: null, lockError: null, lockConflict: null });
+  const [now, setNow] = useState(Date.now);
 
   useEffect(() => {
-    if (!taskId || !enabled) {
-      if (currentTaskRef.current) release(currentTaskRef.current);
-      currentTaskRef.current = undefined;
-      setLock(null);
-      setLockError(null);
-      setLockConflict(null);
-      setRemainingMs(0);
-      return;
-    }
-
-    if (currentTaskRef.current && currentTaskRef.current !== taskId) {
-      release(currentTaskRef.current);
-    }
-    currentTaskRef.current = taskId;
+    const tid = session.taskId;
+    setState({ session, lock: null, lockError: null, lockConflict: null });
+    if (!tid) return;
 
     let cancelled = false;
+    let requestPending = true;
 
-    async function acquire(allowRetry = true): Promise<void> {
+    async function acquire(allowRetry = true, recovering = false): Promise<void> {
+      if (cancelled) return;
       try {
-        const result = await tasksApi.acquireLock(taskId!);
+        const lock = await tasksApi.acquireLock(tid!);
         if (!cancelled) {
-          setLock(result);
-          setLockError(null);
-          setLockConflict(null);
+          setState({ session, lock, lockError: null, lockConflict: null });
+          setNow(Date.now());
         }
       } catch (err: unknown) {
         if (cancelled) return;
-        const conflict = parseLockConflict(err);
-        if (conflict) {
-          // 真冲突：他人持锁 → 显示「该任务正被 X 编辑」横幅
-          setLock(null);
-          setLockConflict(conflict);
-          setLockError("Task is locked by another user");
+        const lockConflict = parseLockConflict(err);
+        if (!lockConflict && allowRetry) {
+          await acquire(false, recovering);
           return;
         }
-        // 非 409（多为退出重进的瞬时竞态：500 / 网络抖动）。重试一次；仍失败则静默，
-        // 不把它误渲染成「他人正在编辑」横幅（全局拦截器已对 5xx 弹 toast）。
-        if (allowRetry) {
-          await acquire(false);
-          return;
-        }
-        setLock(null);
-        setLockConflict(null);
+        setState({
+          session,
+          lock: null,
+          lockConflict,
+          lockError: lockConflict
+            ? "Task is locked by another user"
+            : recovering
+              ? "Lock expired"
+              : null,
+        });
       }
     }
 
-    acquire();
+    void enqueueLockOperation(tid, async () => {
+      await acquire();
+      requestPending = false;
+    });
 
-    intervalRef.current = setInterval(async () => {
-      if (cancelled) return;
-      try {
-        await tasksApi.heartbeatLock(taskId);
-      } catch {
-        // lock lost — try to re-acquire once
+    const heartbeatTimer = setInterval(() => {
+      if (cancelled || requestPending) return;
+      requestPending = true;
+      void enqueueLockOperation(tid, async () => {
         try {
-          const newLock = await tasksApi.acquireLock(taskId);
-          if (!cancelled) {
-            setLock(newLock);
-            setLockError(null);
-            setLockConflict(null);
-          }
-        } catch (err: unknown) {
-          if (!cancelled) {
-            setLock(null);
-            const conflict = parseLockConflict(err);
-            setLockConflict(conflict);
-            setLockError(conflict ? "Task is locked by another user" : "Lock expired");
-          }
+          if (cancelled) return;
+          await tasksApi.heartbeatLock(tid);
+        } catch {
+          if (cancelled) return;
+          setState({ session, lock: null, lockError: null, lockConflict: null });
+          await acquire(false, true);
+        } finally {
+          requestPending = false;
         }
-      }
+      });
     }, HEARTBEAT_INTERVAL_MS);
 
-    // countdown timer: update remainingMs every second
-    timerRef.current = setInterval(() => {
-      if (cancelled) return;
-      setLock((prev) => {
-        if (!prev?.expire_at) return prev;
-        const ms = new Date(prev.expire_at).getTime() - Date.now();
-        setRemainingMs(Math.max(0, ms));
-        return prev;
-      });
-    }, 1000);
+    const countdownTimer = setInterval(() => setNow(Date.now()), 1000);
 
     return () => {
       cancelled = true;
-      clearInterval(intervalRef.current);
-      clearInterval(timerRef.current);
-      release(taskId);
+      clearInterval(heartbeatTimer);
+      clearInterval(countdownTimer);
+      // A cancelled POST may still acquire on the server. Its DELETE must finish
+      // after that POST and before a resumed session's POST, including unmount.
+      void enqueueLockOperation(tid, async () => {
+        await tasksApi.releaseLockKeepalive(tid);
+      });
     };
-  }, [taskId, enabled, release]);
+  }, [session]);
 
-  return { lock, lockError, lockConflict, remainingMs, isLocked: !!lock };
+  const current = state.session === session && !!session.taskId;
+  const lock = current ? state.lock : null;
+  return {
+    lock,
+    lockError: current ? state.lockError : null,
+    lockConflict: current ? state.lockConflict : null,
+    remainingMs: lock ? Math.max(0, new Date(lock.expire_at).getTime() - now) : 0,
+    isLocked: !!lock,
+  };
 }

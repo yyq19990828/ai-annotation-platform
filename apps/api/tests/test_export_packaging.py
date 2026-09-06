@@ -8,6 +8,8 @@ from __future__ import annotations
 import io
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import uuid
 import zipfile
@@ -20,10 +22,44 @@ from app.db.models.dataset import DatasetItem
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.services.exporting.packaging import (
+    _FETCH_FRAMES_TEMPLATE,
     _build_video_export_zip,
     clean_export_targets,
     relative_path_from_file_path,
 )
+
+
+def test_fetch_frames_script_extracts_only_selected_frames(tmp_path):
+    from app.api.v1._test_seed_webcodecs import generate_fixture
+
+    fixture = generate_fixture("h264-baseline-gop12", tmp_path)
+    videos = tmp_path / "videos"
+    videos.mkdir()
+    (videos / "clip.mp4").write_bytes(fixture["mp4_bytes"])
+    (tmp_path / "manifest.json").write_text(
+        json.dumps(
+            {
+                "videos": [
+                    {
+                        "rel_path": "clip.mp4",
+                        "sequence": "clip",
+                        "grid_source_frames": [0, 5, 11],
+                    }
+                ]
+            }
+        )
+    )
+    script = tmp_path / "fetch_frames.py"
+    script.write_text(_FETCH_FRAMES_TEMPLATE)
+    result = subprocess.run(
+        [sys.executable, str(script)], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert sorted(path.name for path in (tmp_path / "clip" / "img1").iterdir()) == [
+        "000001.jpg",
+        "000002.jpg",
+        "000003.jpg",
+    ]
 
 
 def test_strips_dataset_prefix():

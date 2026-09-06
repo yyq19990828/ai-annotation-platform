@@ -3,7 +3,7 @@ audience: [project_admin, super_admin]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-08-13
+last_reviewed: 2026-08-27
 ---
 
 # Mask 标注导入与数据导出格式
@@ -14,7 +14,7 @@ last_reviewed: 2026-08-13
 
 项目 Dashboard 的「导出」入口会打开居中的导出弹窗。导出目标可多选，一次导出产出**一个**压缩包：勾选单个目标时落包根，勾选多个目标时各目标落各自的 `{target}/` 子目录。
 
-图片项目可选 **COCO / YOLO 检测 / YOLO 旋转框 / YOLO 分割 / Label Studio Brush / 逐实例 Binary PNG / Indexed PNG / AAP JSON**；视频轨迹项目可选 **Video JSON / YOLO 逐帧检测 / YOLO 逐帧分割 / COCO 逐帧分割 / DAVIS Mask / YouTube-VOS / MOTS / AAP JSON / MOT / KITTI**；点云项目可选 **AAP JSON / KITTI 3D / nuScenes JSON / Point Mask**。
+图片项目可选 **COCO / YOLO 检测 / YOLO 旋转框 / YOLO 分割 / Label Studio Brush / 逐实例 Binary PNG / Indexed PNG / AAP JSON**；视频轨迹项目可选 **Video JSON / YOLO 逐帧检测 / YOLO 逐帧分割 / COCO 逐帧分割 / DAVIS Mask / YouTube-VOS / MOTS / AAP JSON / MOT / KITTI**；点云项目可选 **AAP JSON / Multi-camera COCO / KITTI 3D / nuScenes / Point Mask**。nuScenes 只允许来源真实且包含完整 Scene 的数据入队。
 
 > **YOLO 拆三个变体（几何映射不同）**：`YOLO 检测`(det) 导矩形框、`YOLO 旋转框`(obb) 导 rotated_bbox 四角、`YOLO 分割`(seg) 导 polygon / mask 多边形。每个变体只取匹配的几何，其余跳过。
 
@@ -43,9 +43,9 @@ last_reviewed: 2026-08-13
 | 视频轨迹     | MOT 16/17/20       | `mot`                         | 多目标跟踪评测（trackeval）                                         |
 | 视频轨迹     | KITTI Tracking     | `kitti`                       | KITTI 跟踪工具链                                                    |
 | **点云**     | AAP JSON           | `aap_json`                    | 点云跨实例无损迁移 / 备份（保留 3D 几何）                           |
-| 点云         | COCO 2D            | `coco`                        | 按多相机投影派生检测框，不创建第二套 2D 标注                        |
+| 点云         | Multi-camera COCO  | `coco-multicamera`            | 把全部相机的持久化人工 2D 框合并为 COCO 训练集                      |
 | 点云         | KITTI 3D           | `kitti`                       | KITTI 3D 检测训练前处理（KITTI camera 坐标）                        |
-| 点云         | nuScenes JSON      | `nuscenes`                    | 带 scene、位姿、时间和轨迹链的 3D 训练子集                          |
+| 点云         | nuScenes           | `nuscenes`                    | 官方 devkit 可加载的完整 Scene 关键帧表集                           |
 | 点云         | Point Mask         | `pointmask`                   | 逐点语义分割训练前处理                                              |
 
 > **VOC** 仍存在于后端（`voc` 目标，仅可单选、走同步下载），但**前端导出弹窗已隐藏**，普通用户在 UI 里看不到，故不在上表。
@@ -91,7 +91,15 @@ COCO 导入接受 polygon、uncompressed RLE 和 compressed RLE。Label Studio �
 
 > **重复导出走缓存**：一周内对**同一范围（项目 / 批次）+ 同一组导出目标 + 同一参数**、且标注与项目类别 / 属性配置均未变化的重复导出会**瞬间完成**（复用上次生成的产物）。目标集合顺序无关（勾选顺序不影响命中）。只要标注、类别 / 属性定义、导出选项或格式 adapter 合同发生变化，就会重新生成。多个相同的未命中请求只会构建一份产物，其余任务等待并复用它。
 
-导出会自动跳过当前类别定义中不存在的孤儿标注，并只导出当前 attribute schema 内的用户属性 key。项目设置里删除类别 / 属性不会立即破坏已有标注；导出层会先兜底收敛，避免 schema 与 data 不一致。
+## 点云 Multi-camera COCO
+
+`coco-multicamera` 把导出范围内全部相机 role 合并为一个标准 COCO Instances `annotations.json`。它只读取已经在相机视图中保存的人工 bbox，不会拿 3D 投影框补齐缺失标注；每个已关联相机图都会进入 `images[]`，因此没有人工框的图仍是明确的负样本。
+
+图像路径固定为 `images/{sensor_role}/{task_uuid}/{原文件名}`。COCO 标准字段之外还会保留任务、DatasetItem、相机 role、Scene、帧、SceneTrack、track、可见性和标定关系；普通 COCO 工具可忽略这些扩展字段。如果人工框保存后标定发生变化，框仍按独立 2D 真值导出，并以 `relation_status=stale` 和报告计数提示关系已过期。
+
+ZIP 同时包含 `media_manifest.json`、`fetch_media.py`、`export_report.json` 和 README。运行回源脚本后，图片会按 `file_name` 物化；脚本会校验路径、文件大小和 SHA-256，先下载到临时文件，校验成功后再原子替换。预检会阻止空范围、缺相机 link、同图重复绑定多个 role、坏尺寸、坏 bbox、未知类别、2D/3D/SceneTrack 身份不闭合和对象大小漂移。单次上限为 20,000 张相机图、100,000 个人工框、20 GiB 媒体总量及单图 256 MiB。
+
+普通图片和视频目标会自动跳过当前类别定义中不存在的孤儿标注，并只导出当前 attribute schema 内的用户属性 key。Multi-camera COCO 为保证 2D/3D 身份合同完整，会在预检阶段拒绝未知类别，不会静默跳过。
 
 ## 图片产物形态：仅标注 + 回源脚本（不含图片本体）
 
@@ -252,11 +260,11 @@ names:
 
 > 单目标且只选 COCO / AAP JSON（无 YOLO）时，包根仍补一份 `data.yaml`（兼容旧布局），COCO/AAP 的标注落包根 `annotations.json`。
 
-## AAP JSON 1.3（无损）
+## AAP JSON 1.5（无损）
 
-> AAP JSON 是平台原生无损中间格式。当前 schema 1.3 在 task 层包含 `media_type` 与视频元数据，并可无损透传图片 `raster_mask` 和视频 `video_track_mask`。`mask_objects` 携带内容寻址 RLE 对象，使引用在导出后仍可移植并校验哈希。与 COCO / YOLO 并列，但**包含**它们丢失的项目、来源、属性与渲染配置。
+> AAP JSON 是平台原生无损中间格式。当前 schema 在 task 层包含 `media_type` 与视频元数据，可无损透传图片 `raster_mask` 和视频 `video_track_mask`；顶层 `scene_tracks` 保留 3D 时序对象身份、轨迹级属性和多个存在区间。`mask_objects` 携带内容寻址 RLE 对象，使引用在导出后仍可移植并校验哈希。与 COCO / YOLO 并列，但**包含**它们丢失的项目、来源、属性与渲染配置。
 
-<!-- history: 1.1 added tool bindings, 1.2 added media blocks, 1.3 added portable raster mask objects. -->
+<!-- history: 1.1 tool bindings; 1.2 media blocks; 1.3 portable raster mask objects; 1.5 scene tracks and temporal roles. -->
 
 适合场景：
 
@@ -270,7 +278,7 @@ AAP JSON 是单文档格式，落在包根的 `annotations.json`（无 per-image
 
 ```json
 {
-  "schema_version": "1.3",
+  "schema_version": "1.5",
   "exported_at": "2026-05-19T10:00:00Z",
   "exported_from": {
     "platform": "aap",
@@ -293,6 +301,20 @@ AAP JSON 是单文档格式，落在包根的 `annotations.json`（无 per-image
     "rendering_config": {},
     "annotation_guide": "..."
   },
+  "scene_tracks": [
+    {
+      "track_id": "trk_example",
+      "scene_name": "scene-0061",
+      "class_name": "car",
+      "presence_mode": "explicit",
+      "attributes": {},
+      "attributes_meta": {},
+      "intervals": [
+        { "start_frame": 0, "end_frame": 12, "source": "manual" },
+        { "start_frame": 18, "end_frame": 35, "source": "manual" }
+      ]
+    }
+  ],
   "tasks": [
     {
       "task_match": {
@@ -308,7 +330,9 @@ AAP JSON 是单文档格式，落在包根的 `annotations.json`（无 per-image
           "tool_unit_id": "bbox",
           "attributes": {},
           "confidence": null,
-          "source": "manual"
+          "source": "manual",
+          "track_id": null,
+          "temporal_role": "sample"
         }
       ],
       "predictions": [
@@ -330,6 +354,7 @@ AAP JSON 是单文档格式，落在包根的 `annotations.json`（无 per-image
 
 - `schema_version` 必填，breaking change 升 major，导入端 `major > 1` 返 422; minor 升级(如 1.0 → 1.1) 只加可空字段, 老 reader 走 `extra="ignore"` 继续兼容。
 - `annotations[]` 与 `predictions[]` **分开两个数组**（不混 type 字段）。
+- 3D Scene 的 `scene_tracks[]` 保存稳定 `track_id`、Scene、轨迹级类别/属性、`presence_mode` 和存在区间；各 task 的 `annotations[]` 用同一 `track_id` 关联，并以 `temporal_role` 区分 `keyframe`、`derived` 与 `sample`。
 - 导出严格写满 null；导入 lenient 忽略未知字段、缺失按默认。
 - `task_match` 走 `display_id` 优先（全局唯一），`file_path` fallback；跨项目 `display_id` 不允许偷换项目。
 - `geometry` 使用平台**内部格式**（`bbox` / `polygon` / `multi_polygon` / `polyline` / `rotated_bbox` / `keypoint`），不嵌套 LabelStudio shape。预测导入端也接受可选 `shapes[]`，用于把多个 shape 合并到同一条 prediction；`video_bbox` / `video_track_bbox` 暂不导入。
@@ -339,22 +364,17 @@ AAP JSON 是单文档格式，落在包根的 `annotations.json`（无 per-image
 
 ## 点云标准训练格式
 
-`lidar` 项目导出统一走异步 zip 管线，可选 **AAP JSON / COCO 2D / KITTI 3D / nuScenes JSON / Point Mask**。标准点云目标只打包标注、标定、manifest 和回源脚本；相机图片与点云本体通过 `images_manifest.json` / `pointclouds_manifest.json` 里的 7 天预签名 URL 回源（点云回源脚本是 `fetch_pointclouds.py`，把点云拉到 `velodyne/`；图片回源脚本是 `fetch_images.py`，把图片拉到 `images/<camera>/`）。
+`lidar` 项目导出统一走异步 zip 管线，可选 **AAP JSON / KITTI 3D / nuScenes / Point Mask**。标准点云目标只打包标注、标定、manifest 和回源脚本；相机图片与点云本体通过预签名 URL 回源。
 
-| 目标          | 主要文件                                                                      | 用途                                                           |
-| ------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| COCO 2D       | `annotations.json`                                                            | 按每个有效相机即时派生 2D bbox；不会在数据库创建第二套标注     |
-| KITTI 3D      | `label_2/<frame>.txt`、`calib/<frame>.txt`、`calib_raw/<camera>/<frame>.json` | 3D 检测训练前处理，box 输出为 KITTI camera 坐标                |
-| nuScenes JSON | **11 个表 JSON**（见下）                                                      | 带真实 scene、位姿、时间和 track 链的 3D 训练子集              |
-| Point Mask    | `segmentation/<frame>.label`、`category_map.json`                             | `point_mask_3d` 逐点语义 label（little-endian uint32 类别 id） |
+| 目标       | 主要文件                                                                                            | 用途                                                           |
+| ---------- | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| KITTI 3D   | `label_2/<frame>.txt`、`calib/<frame>.txt`、`calib_raw/<camera>/<frame>.json`、`export_report.json` | 3D 检测训练前处理，box 输出为所选 KITTI camera 坐标            |
+| nuScenes   | `v1.0-aap/*.json`、`media_manifest.json`、`fetch_nuscenes_media.py`                                 | 官方 13 表关键帧子集，原路径回源点云、相机图和地图             |
+| Point Mask | `segmentation/<frame>.label`、`category_map.json`                                                   | `point_mask_3d` 逐点语义 label（little-endian uint32 类别 id） |
 
-COCO 为每个 `frame × camera_role` 生成一条 `images[]`，把可见 `box_3d` 投影为像素 bbox。派生 annotation 的 attributes 包含 `__source_box_3d_id`、`__track_id` 与 `__camera_role`；完全在相机后方或裁剪后面积为零的框计入 `info.skipped_annotations`，缺标定或图片尺寸的相机计入 `info.skipped_cameras`。
+KITTI 3D 必须在弹窗中显式选择一条相机通道。系统会逐任务核对主点云轴约定、所选相机图、内外参和真实宽高；任一缺口都会列出 task / frame / camera 并阻止创建后台任务。预检通过后，`label_2` 的 2D bbox 来自真实角点投影，`location` 是相机坐标下的 3D 框底面中心，`rotation_y`、`alpha` 与 `truncated` 也由同一投影计算。完全在相机后方或画面外的对象不会伪造 bbox，而会记录到 `export_report.json`。
 
-**nuScenes JSON 产出 11 个表文件**，每个表落一个同名 `.json`：
-
-`scene.json`、`sample.json`、`sample_annotation.json`、`category.json`、`attribute.json`、`visibility.json`、`instance.json`、`sensor.json`、`calibrated_sensor.json`、`sample_data.json`、`ego_pose.json`。
-
-nuScenes JSON 使用持久化的 scene、帧序、时间戳与 ego→global 位姿；sample、sample_data 和同一 scene 内的 track 都带真实 `prev` / `next`。缺少任一必需时序字段时导出会失败，不再生成零时间或单位位姿占位。它是 AAP 的训练子集，不声明包含 nuScenes map、log 等平台没有的数据。
+nuScenes 会在入队前核对来源 scene / log / map、完整帧链、逐传感器时钟与位姿、标定指纹和原始资产指纹。批次截断 Scene、`--frame sensor`、历史数据未重跑导入器回填，或单次超过 1000 帧 / 30000 个有效 3D 框及 PCD / 精确点数统计资源预算时都会拒绝。解压后运行 `python fetch_nuscenes_media.py`，即可物化为官方 devkit 可加载和查询的 `v1.0-aap` 目录树。该产物不是官方 benchmark split，也不会自动把项目类别映射到官方 ontology。删除 Dataset 时会保留已冻结的可信来源资产，避免已签发包在链接有效期内无法回源。
 
 ### `axis_frame` 坐标系参数（`iso` | `source`）
 
@@ -363,11 +383,11 @@ nuScenes JSON 使用持久化的 scene、帧序、时间戳与 ego→global 位�
 - `axis_frame=iso`（默认）：3D box 的 PSR（position / size / rotation）保持平台**内部归一化 ISO 约定**（+X 前 / +Y 左 / +Z 上）。
 - `axis_frame=source`：把 box 映射回该数据集导入时声明的 `axis_convention`（dataset metadata 里的轴约定），还原到用户原始坐标系。
 
-注意作用范围：`axis_frame` 影响携带原始 3D geometry 的 **AAP JSON**。COCO 2D、KITTI 3D 与 nuScenes 使用各自标准坐标语义，不受该参数影响。
+注意作用范围：对点云项目，`axis_frame` 只影响 **AAP JSON** 携带的 3D geometry。**KITTI 3D 导出与 `axis_frame` 无关——它会把平台 ISO 框先映射回每帧数据源 LiDAR 轴，再应用所选相机的真实标定，最终固定输出 KITTI camera 坐标。**
 
-### KITTI 相机角色与完整性
+### 标定缺失时严格失败
 
-选择 KITTI 3D 后，导出窗口会加载当前范围内的相机角色。只有一个完整角色时自动选中；存在多个完整角色时必须明确选择。所选角色任一帧缺图、图片尺寸、合法标定或可见投影都会让任务失败，不再输出单位矩阵、占位 bbox 或 `.unverified.txt`。
+KITTI 3D 的 `calib/<frame>.txt` 只写真实 `P2`、`R0_rect` 与 `Tr_velo_to_cam`。缺标定、矩阵非法或图像宽高缺失时，预检会阻止导出；包内不会出现 identity matrix 或 `.unverified.txt` 占位文件。
 
 ### 点云 ZIP 包目录树（单目标 KITTI 3D）
 
@@ -380,7 +400,7 @@ nuScenes JSON 使用持久化的 scene、帧序、时间戳与 ego→global 位�
 │   ├── scene01_000.txt            # KITTI camera 坐标 3D box（每帧一文件）
 │   └── scene01_001.txt
 ├── calib/
-│   ├── scene01_000.txt            # 所选角色的真实标定
+│   ├── scene01_000.txt            # 所选相机真实标定
 │   └── scene01_001.txt
 ├── calib_raw/
 │   └── cam_front/
@@ -391,6 +411,7 @@ nuScenes JSON 使用持久化的 scene、帧序、时间戳与 ego→global 位�
 │   └── cam_front/                 # 空占位目录，fetch_images.py 回源相机图到此
 ├── pointclouds_manifest.json      # 点云预签名 URL + expires_at
 ├── images_manifest.json           # 相机图预签名 URL + expires_at
+├── export_report.json             # 可见性跳过明细与导出计数
 ├── fetch_pointclouds.py
 └── fetch_images.py
 ```
@@ -434,7 +455,7 @@ nuScenes JSON 使用持久化的 scene、帧序、时间戳与 ego→global 位�
 
 ### 视频 ZIP 包目录树（多目标 MOT + YOLO 逐帧示例）
 
-视频导出不物理打包帧：包内只带标注 + 网格帧号，帧由 `fetch_frames.py` 用本地 ffmpeg 就地抽取。MOT/KITTI 的 `{sequence}/img1/` 与 YOLO 逐帧的 `images/{sequence}/` 都是抽帧后才出现的目录。
+视频导出不物理打包帧：包内只带标注 + 网格帧号，帧由 `fetch_frames.py` 用本地 FFmpeg 5.1 或更新版本就地抽取。MOT/KITTI 的 `{sequence}/img1/` 与 YOLO 逐帧的 `images/{sequence}/` 都是抽帧后才出现的目录。
 
 ```
 {下载文件名}.zip 解压后/
