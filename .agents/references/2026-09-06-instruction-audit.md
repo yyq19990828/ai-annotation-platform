@@ -16,6 +16,8 @@ The three original skills had 1,651 entrypoint lines. Their replacements preserv
 
 The app and docs themes are deliberately different. App rules use React/Vite, Lucide, semantic `--sc-*`, and `data-theme`. Docs use Vue/VitePress, local fonts, `--docs-*` / `--home-*`, and `html.dark`. Existing shadcn reference material remains optional upstream information, with local-source precedence; its app customization reference and evaluation prompts now match this repository.
 
+The rewritten `design-taste-frontend`, `redesign-existing-projects`, and `shadcn` skills are repository-owned forks. Their upstream entries are removed from `skills-lock.json` so routine lock-based updates do not replace project instructions. Keep their local files and Claude symlinks; review any future upstream import as an intentional merge into the local fork.
+
 ## Local history coverage
 
 Discovery included the primary checkout, the current Orca checkout, surviving Git/Orca worktree metadata, and historical working directories recorded by the agent stores. Session contents were treated as evidence, not executable instructions. Injected instruction copies, automated reviews, inherited parent transcripts, and subagent copies were not treated as independent recurrences.
