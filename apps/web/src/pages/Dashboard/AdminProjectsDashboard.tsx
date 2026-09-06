@@ -20,6 +20,7 @@ import { FilterDrawer, EMPTY_FILTERS, type DashboardFilters } from "./FilterDraw
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import { projectDisplayType } from "@/utils/projectDisplay";
 import { statSeriesHint, statSparkValues, statTrendFromSeries } from "@/utils/projectStatsSeries";
+import { PageContainer } from "@/components/layout/PageContainer";
 
 const DATA_TYPE_ICONS: Record<string, IconName> = {
   image: "image",
@@ -253,7 +254,7 @@ export function AdminProjectsDashboard() {
   };
 
   return (
-    <div className="mx-auto max-w-[1480px] px-7 pb-10 pt-5 text-foreground max-[900px]:p-4">
+    <PageContainer>
       <div className="mb-5 flex items-end justify-between gap-6 max-[900px]:flex-col max-[900px]:items-start">
         <div>
           <h1 className="mb-1 text-xl font-semibold">Dashboard</h1>
@@ -407,6 +408,6 @@ export function AdminProjectsDashboard() {
         initial={advanced}
         onApply={setAdvanced}
       />
-    </div>
+    </PageContainer>
   );
 }
