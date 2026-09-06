@@ -1,6 +1,13 @@
 import "@testing-library/jest-dom/vitest";
+import { configure } from "@testing-library/react";
 import { afterAll, afterEach, beforeAll, vi } from "vitest";
 import { server } from "./src/mocks/server";
+
+// v0.25.2 · CI 满载 runner 上 react-query 异步解析链（capabilities 请求 → 渲染 →
+// 用户交互）偶尔超过 testing-library 默认的 1s waitFor 超时（如 ProjectDetailPanel
+// OCR 用例在同一提交上本地过、CI 挂）。全局放宽到 5s：waitFor 轮询在条件满足时
+// 立即返回，只有真失败才吃满超时，不影响本地速度。
+configure({ asyncUtilTimeout: 5000 });
 
 // v0.16.0 · react-konva → DOM stand-in mock(画布栈统一地基)。
 // 把 Konva 组件渲染成带 data-konva / data-testid 的 <div>,使现有 RTL 风格

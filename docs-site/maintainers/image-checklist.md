@@ -4,7 +4,7 @@
 >
 > 标 `[auto]` 的图由 `pnpm --filter @anno/web screenshots` 自动生成（脚本：`apps/web/e2e/screenshots/`），输出到 `docs-site/user-guide/images/`。
 >
-> 简短动图由 `screenshots:flows` 生成 GIF；较长、强调 AI 链路、视频或 3D 平滑度的流程由 4K60 母版运行 `pnpm docs:media:derive`，派生为 `docs-site/public/media/**/*.mp4` 与 WebP 封面，并同步生成首页 VP9 WebM、H.264 MP4 fallback 与 WebP 封面。
+> 所有流程录制先归档标准源或高清营销母版，再由 `pnpm docs:media:derive` 统一派生 GIF、文档 MP4、首页 WebM/MP4 和封面；`screenshots:flows` 不再直接覆盖 GIF。标准源需显式选择 `--quality standard`，发布时（包括 GIF）指定审阅过的 `--clip start:duration`，不能冒充 4K60 母版。
 > 更新流程：
 >
 > 1. 启动 docker / api / dev 三件套（同 `pnpm test:e2e`）

@@ -3,44 +3,38 @@
   "evals": [
     {
       "id": 1,
-      "prompt": "I'm building a Next.js app with shadcn/ui (base-nova preset, lucide icons). Create a settings form component with fields for: full name, email address, and notification preferences (email, SMS, push notifications as toggle options). Add validation states for required fields.",
-      "expected_output": "A React component using FieldGroup, Field, ToggleGroup, data-invalid/aria-invalid validation, gap-* spacing, and semantic colors.",
+      "prompt": "In apps/web, fix the disabled state of an existing Button without changing its public API.",
+      "expected_output": "A focused change grounded in the local Button and affected callers.",
       "files": [],
       "expectations": [
-        "Uses FieldGroup and Field components for form layout instead of raw div with space-y",
-        "Uses Switch for independent on/off notification toggles (not looping Button with manual active state)",
-        "Uses data-invalid on Field and aria-invalid on the input control for validation states",
-        "Uses gap-* (e.g. gap-4, gap-6) instead of space-y-* or space-x-* for spacing",
-        "Uses semantic color tokens (e.g. bg-background, text-muted-foreground, text-destructive) instead of raw colors like bg-red-500",
-        "No manual dark: color overrides"
+        "Inspects the installed local primitive and callers",
+        "Preserves the React/Vite stack, local variants, and compatibility APIs",
+        "Does not run init, apply a preset, or fetch a latest CLI for this local fix",
+        "Verifies the disabled behavior and semantic styling"
       ]
     },
     {
       "id": 2,
-      "prompt": "Create a dialog component for editing a user profile. It should have the user's avatar at the top, input fields for name and bio, and Save/Cancel buttons with appropriate icons. Using shadcn/ui with radix-nova preset and tabler icons.",
-      "expected_output": "A React component with DialogTitle, Avatar+AvatarFallback, data-icon on icon buttons, no icon sizing classes, tabler icon imports.",
+      "prompt": "Add a profile-edit dialog to the existing app using its current components and icons.",
+      "expected_output": "An accessible dialog composed with local Radix/shadcn APIs and Lucide conventions.",
       "files": [],
       "expectations": [
-        "Includes DialogTitle for accessibility (visible or with sr-only class)",
-        "Avatar component includes AvatarFallback",
-        "Icons on buttons use the data-icon attribute (data-icon=\"inline-start\" or data-icon=\"inline-end\")",
-        "No sizing classes on icons inside components (no size-4, w-4, h-4, etc.)",
-        "Uses tabler icons (@tabler/icons-react) instead of lucide-react",
-        "Uses asChild for custom triggers (radix preset)"
+        "Uses an accessible dialog title, labels, and focus behavior",
+        "Inspects the local Icon and toast adapters before choosing APIs",
+        "Uses installed components and the app's semantic tokens",
+        "Does not require unsupported data-icon behavior or install a new icon library"
       ]
     },
     {
       "id": 3,
-      "prompt": "Create a dashboard component that shows 4 stat cards in a grid. Each card has a title, large number, percentage change badge, and a loading skeleton state. Using shadcn/ui with base-nova preset and lucide icons.",
-      "expected_output": "A React component with full Card composition, Skeleton for loading, Badge for changes, semantic colors, gap-* spacing.",
+      "prompt": "Update the existing shadcn Button from upstream while keeping our custom variants.",
+      "expected_output": "A previewed upstream merge preserving local variants and theme mapping.",
       "files": [],
       "expectations": [
-        "Uses full Card composition with CardHeader, CardTitle, CardContent (not dumping everything into CardContent)",
-        "Uses Skeleton component for loading placeholders instead of custom animate-pulse divs",
-        "Uses Badge component for percentage change instead of custom styled spans",
-        "Uses semantic color tokens instead of raw color values like bg-green-500 or text-red-600",
-        "Uses gap-* instead of space-y-* or space-x-* for spacing",
-        "Uses size-* when width and height are equal instead of separate w-* h-*"
+        "Uses installed CLI help and a dry-run/diff before changing source",
+        "Preserves local variants and consumers",
+        "Maps upstream styling into --sc-* and data-theme conventions",
+        "Does not request permission again for work already authorized; asks only for unresolved material conflicts"
       ]
     }
   ]

@@ -12,6 +12,46 @@ last_reviewed: 2026-07-23
 本平台采用 Playwright 自动化产出文档图片，支持矩阵化截图（多视口 / 多主题）、
 元素级裁切、SVG 注释叠加、网络状态 mock 以及流程录制（GIF/WebM）。
 
+## Mac / Linux 分工录制
+
+录制机器不必也是 AI 推理机器。新增入口将场景所需的模型能力与采集规格分开：
+
+```bash
+# 仓库根目录：查看已登记场景、只预览依赖（不连接服务或写库）
+pnpm --filter @anno/web screenshots:record -- --list
+pnpm --filter @anno/web screenshots:record -- --flow bbox-draw --plan
+
+# 准备好下文的隔离环境和素材缓存后运行
+pnpm --filter @anno/web screenshots:record -- --flow bbox-draw
+pnpm --filter @anno/web screenshots:record -- --flow ocr-inference
+pnpm --filter @anno/web screenshots:record -- --flow sam-tool-smart-point
+
+# Linux X11/NVIDIA：保留原有母版质量检查
+pnpm --filter @anno/web screenshots:record -- --flow bbox-draw --profile marketing
+```
+
+默认 `docs` 规格在 Mac / Linux 使用 Playwright 与 CPU H.264 编码，生成
+`.artifacts/recordings/<run-id>/<asset-id>.mp4`、WebM 源文件及私有 `manifest.json`。
+它是**未裁剪的标准源素材**，不承诺真实 60fps；录制本身不会替换已发布视频、公开清单或人工审核记录。
+清单逐项保留资产 ID、哈希、实际媒体参数、来源提交、脏工作树状态、浏览器和后端证据。
+`docs:media:derive` 现在同时接受标准源与营销母版清单，必须显式选择标准源等级，不能自动降级替换高清来源。
+
+入口必须设置 `SCREENSHOT_DATABASE_URL`，以及完全相同、显式选择非零 Redis DB 的
+`REDIS_URL` 和 `CELERY_BROKER_URL`。同时核对 API、Worker 的实际目标；入口只固定自己子进程的
+`DATABASE_URL` / `MIGRATION_DATABASE_URL`，不会改已运行服务。真实推理检查隔离 broker 上只存在
+`screenshots@` worker。每次运行及场景间会修复自己管理的截图夹具并重读目录，不能与其他录制共享该库并发运行。
+
+手工场景使用 `--backend-requirements none`，不探测或启动模型；OCR 只要求 `ocr`，SAM 工具使用
+`image_interactive` 能力组（包含 exemplar），多个 `--flow` 合并依赖。入口只使用真实后端，缺失时失败，不自动回退 stub。
+Mac 可连接已注册的远程 Linux 模型服务：API / Worker 必须能访问模型，模型也必须能访问截图存储的签名媒体 URL。
+`--ml-backend-url` 是 stub 配置，不是远程 live 后端地址。仅改 API URL 不会把本地 seed / 清理脚本搬到远端。
+
+本次拆分的是 **AI 后端依赖**，完整截图素材缓存、MinIO、固定项目及 nuScenes 数据仍须准备；入口使用 offline seed。
+`--list` 同时列出规格限制；点云 billboard、相机种框和跨帧链场景虽不依赖 ML，仍要求原有硬件 WebGL/60Hz 运行面，只接受 `marketing`，不静默跳过。
+大图场景另需大图夹具。旧命令不传范围时仍完整校验。`--list` 外的复杂编排、追踪流程继续使用原入口；
+新增场景须先在 `apps/web/e2e/screenshots/recording-plan.mjs` 声明依赖，不能把 mock 推理流程归类为真实 AI 证据。
+`--validate-only` 不产视频，但仍准备和修改隔离夹具。
+
 ## 快速运行
 
 截图自动化使用专用 `annotation_screenshots_test` 数据库和 `3001/8010`
@@ -19,11 +59,17 @@ last_reviewed: 2026-07-23
 
 ### 1. 准备、迁移并填充专用库
 
+下例是旧命令的全量 seed。使用上面的按场景入口时，先完成建库、迁移和素材缓存准备，
+跳过这里的全量 live seed，由入口按所选依赖执行 offline seed。将迁移和 broker 覆盖值一并固定，避免继承日常环境配置。
+
 ```bash
 docker compose up -d postgres redis minio
 
 cd apps/api
 export SCREENSHOT_DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/annotation_screenshots_test
+export MIGRATION_DATABASE_URL="$SCREENSHOT_DATABASE_URL"
+export REDIS_URL=redis://localhost:6379/15
+export CELERY_BROKER_URL="$REDIS_URL"
 DATABASE_URL="$SCREENSHOT_DATABASE_URL" uv run python scripts/prepare_e2e_db.py
 DATABASE_URL="$SCREENSHOT_DATABASE_URL" uv run alembic upgrade head
 DATABASE_URL="$SCREENSHOT_DATABASE_URL" PYTHONPATH=. uv run python scripts/seed.py \
@@ -79,7 +125,7 @@ export PLAYWRIGHT_API_BASE=http://127.0.0.1:8010
 pnpm screenshots                  # desktop-light 全量（最常用）
 pnpm screenshots:dark             # desktop-dark 变体
 pnpm screenshots:matrix           # desktop-light / dark / mobile
-pnpm screenshots:flows            # 流程录制 → 简短文档 GIF（需 ffmpeg）
+pnpm screenshots:flows            # 流程录制 → 标准源录像及 GIF 配置归档（需 ffmpeg）
 pnpm screenshots:marketing        # 4K60 MKV 采集源 + MP4/H.264 通用母版（需 X11/NVIDIA/ffmpeg）
 pnpm screenshots:regression       # 比较高价值视觉回归基线
 pnpm screenshots:regression:update # 有意改变 UI 后更新基线
@@ -200,7 +246,7 @@ apps/web/e2e/screenshots/
 ├── _helpers/
 │   ├── annotate.ts            # SVG overlay 注释
 │   ├── mock-state.ts          # page.route 网络状态 mock
-│   ├── recorder.ts            # video → GIF / WebM / WebP 海报转换
+│   ├── portable-recorder.ts   # 标准源录像归档与 GIF 配置
 │   ├── marketing-assets.ts    # 营销资产主题、分镜与时长规格
 │   ├── marketing-external-recorder.ts # 4K60 外部采集与 GPU/刷新率门禁
 │   └── marketing-recorder.ts  # 高清母版转码、归档与 manifest
@@ -218,7 +264,7 @@ apps/web/e2e/screenshots/
 ├── outputs/
 │   ├── manifest.json          # 提交入 git 的 v2 图片清单
 │   ├── flow-manifest.json     # GIF、文档 MP4、首页视频与封面的生成来源清单
-│   └── flows/                 # GIF / WebM 临时目录（不提交）
+│   └── flows/                 # 旧临时目录，不再用于发布
 └── screenshots.spec.ts        # 主 driver
 
 .artifacts/marketing/             # 高清私有母版与运行 manifest（Git 忽略）
@@ -310,7 +356,7 @@ pnpm docs:media:audit -- --release
 人工审阅时至少检查每张 PNG 的主体内容、加载状态和敏感信息；GIF / MP4 / WebM 除首帧外
 还要抽查核心动作和最终结果，并确认动效完整、体积合理。首页 WebM 与 MP4 fallback 还需检查对应 WebP 海报能独立说明
 场景，主图不被浮动面板遮挡，且移动端与 `prefers-reduced-motion` 下不自动播放。Hero 源图更新后还要
-重新生成派生 WebP。录制结束后 `outputs/flows/` 必须为空。
+重新生成派生 WebP。源录像保留在 `.artifacts/recordings/` 或 `.artifacts/marketing/`；备份确认前不要删除。
 
 ## 生成来源与人工复核版本
 
@@ -328,13 +374,36 @@ pnpm docs:media:audit -- --release
 
 批准命令拒绝在脏工作树上运行，避免把视觉结论绑定到不完整的 SHA。普通审计只阻断文件缺失、已批准文件哈希变化或关联路径变化；发布审计还要求所有引用素材有生成来源、使用当前 seed、生成时工作树干净，并且人工复核未超过 30 天。每周工作流只生成报告，不自动重录或自动批准。
 
-较长流程从私有 4K60 母版派生文档媒体：
+所有视频、GIF、视频封面都从私有源归档派生，静态截图保持独立：
 
 ```bash
 pnpm docs:media:derive
+# 指定高清批次和单个资产（支持只含部分资产的批次）
+pnpm docs:media:derive -- --run <run-id> --asset video-chapter
+# 标准源发布视频：必须先审阅录像，再指定起点:时长（秒）
+pnpm docs:media:derive -- --quality standard --run <run-id> --asset video-track --format video --clip 2:8
+# 仅派生归档中记录的 GIF 子片段
+pnpm docs:media:derive -- --quality standard --run <run-id> --asset bbox-draw --format gif --clip 2:4
+# 宣传文章复用相同的源校验、编码和来源记录
+pnpm docs:media:derive -- --run /absolute/path/to/run --article 06-video-track --asset video-draw
 ```
 
-派生器读取最新营销运行 manifest，为用户手册输出 1280×720、30fps、H.264/yuv420p MP4 和 WebP 封面；首页的 AI 辅助、OCR 与三种 SAM 工具同时输出 1280×720、30fps 的 VP9 WebM、H.264 MP4 fallback 和 WebP 封面。两类成品都会把母版运行 ID、资产 ID、来源 SHA 和派生哈希写入 `flow-manifest.json`。文档正文使用 `<DocsVideo>`；组件初始只加载封面，首次进入可视区域才挂载 MP4 来源并按设置播放，离开可视区域后暂停，减少同页多段视频的并发下载和解码。简单且不超过约 6 秒的微交互才保留 GIF。
+`--quality` 默认 `marketing`，仍要求 4K60 文件参数与硬件采集／独立帧证据；标准源必须显式使用 `standard`。
+`--run` 可以是所选等级下的批次名，也可以是包含 `manifest.json` 的绝对目录。
+默认只处理该批次中实际存在、且支持所选格式的已登记资产，不要求整套资产齐全；GIF 批处理跳过没有 GIF 配置的条目。`--asset` 可重复指定，显式指定不支持的资产仍报错，未选文件和清单条目保留。
+
+统一实现位于 `apps/web/scripts/media-derivation.mjs`，先检查源哈希、质量、路径和裁剪范围，再暂存全部编码结果，编码成功后才发布。
+`--article` 选择文章的成对 GIF/PNG 配置，不能与 `--format`、`--gif-target` 混用；旧文章脚本保留为兼容入口，也使用同一实现。
+文档视频最大 1280×720、30fps，标准源不放大、不补帧；首页可同时派生 VP9 WebM、H.264 MP4 与 WebP 封面。
+默认 `--format all`；`video` 包含视频及封面，`gif` 使用归档保存的独立子片段配置。
+标准源的所有输出（包括 GIF）都需要单资产的 `--clip start:duration`，显式窗口覆盖录制时的估算。
+同一资产有多个 GIF 时，先用 `--format video` 生成主视频，再用 `--format gif --gif-target <已登记的仓库相对路径>` 分别指定各自的裁剪窗口。
+例如视频章节的“创建”和“调整”不能被同一个覆盖窗口合并。营销源不指定覆盖窗口时使用归档内的 GIF 配置；录制器已将窗口换算到归档时间轴，并按实际结尾收敛尾部留白，派生时不能再次减去原始录制偏移。
+旧营销清单没有 GIF 配置时仍可派生视频；要生成对应 GIF，须先重新录制，不能猜测窗口。
+
+每个成品在 `flow-manifest.json` 中记录来源批次、资产 ID、源 SHA、质量等级、实际裁剪范围及派生哈希。
+该流程不生成或更新人工审核结论，也不自动重做已有发布资产。
+文档正文继续使用 `<DocsVideo>`；组件先加载封面，进入可视区域后才挂载视频。短微交互才使用 GIF。
 
 ## `ScreenshotScene` 完整字段说明
 
@@ -413,6 +482,7 @@ DEV 远程页面应连当前 `:3000` 同源的 `/ws`，由 Vite 升级并转发�
 安装 ffmpeg：`sudo apt install ffmpeg` 或 `brew install ffmpeg`，
 或设置 `FFMPEG_PATH=/path/to/ffmpeg`。
 营销母版还会调用同一安装包提供的 `ffprobe` 校验实际媒体参数。
+统一派生同样需要 `ffprobe`；生成 WebP 时使用 ffmpeg 的 `libwebp` 编码器，缺少时可使用已安装的 `cwebp`。
 
 **Q: 视觉回归误报（字体渲染差异）**
 先确认 CI 与本机都使用 Playwright Chromium、固定时区/语言/DPR 和 protocol stub。

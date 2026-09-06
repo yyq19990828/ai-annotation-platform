@@ -1,147 +1,67 @@
 # Repository instructions
 
-`AGENTS.md` links to this file. Keep that link and maintain one shared set of instructions. Write this file in English; replies may use the user's language, and other files follow project conventions.
+`AGENTS.md` is a symlink to this file. Maintain one shared instruction source. Write agent instructions, skills, supporting references, and agent handoff documents in English. Replies and product documentation follow the user's language and existing conventions.
 
-## Execution and decisions
+## Complete the task
 
-- Complete the requested outcome, including implementation, relevant docs, and verification. For multi-step work, state a brief plan with observable success criteria; execute small tasks directly.
-- Resolve routine, reversible choices from context and state consequential assumptions. Ask only when missing information materially changes correctness, scope, or authorization; continue independent work meanwhile.
-- Carry existing authorization forward. If approval is still needed, first prepare the authorized work for review. Do not add approval steps for hypothetical risks.
-- Subject to system and developer instructions, explicit user requests override this file and skill guidance. If a skill blocks progress, cite its exact file and instruction and explain why it applies.
-- Incorporate corrections and answer side questions while retaining the active objective, unless the user cancels or replaces it.
-- Report the result first, then relevant validation and remaining limitations. Use concise, plain language and readable agent messages; avoid repetitive updates and unnecessary formatting.
+- Carry the requested outcome through implementation, relevant documentation, and verification. When requested, include browser validation, commits, pushes, or release work; do not stop at the first implementation. A review or diagnosis alone does not request a fix.
+- Resolve routine choices from context. Ask only when missing information materially changes correctness, scope, or authorization; complete independent authorized work meanwhile. Carry prior authorization and corrections forward, including across side questions.
+- User instructions take precedence over repository and skill guidance, subject to system and developer instructions. If a skill blocks authorized work, identify the exact file and instruction and explain the actual conflict.
+- Read the affected implementation and relevant callers. Use the routing below when useful; do not read every document or load every skill for each edit.
+- Reuse existing owners, helpers, patterns, and dependencies. Architectural extensions are appropriate when they support the requested capability; explain consequential tradeoffs and preserve unrelated work.
+- Delegate independent, bounded work when it saves time or improves quality. Read-only agents may share this checkout; modifying agents need isolated worktrees based on the current local `HEAD`. Before delegation that writes code, read [parallel work](.agents/references/parallel-work.md).
+- Verify changed behavior and run required checks. For low-impact changes, use lightweight checks; add regression tests when they exercise meaningful behavior. After checks pass, expand or repeat only for new changes, failures, or unresolved concerns. Do not repeat completed acceptance work simply because a task resumes.
+- Review the final diff and run `git diff --check`. Report the result, relevant evidence, and precise remaining limitations concisely. Distinguish local checks from live browser results and remote CI.
 
-## Understand before editing
+## Project boundaries
 
-- Read the affected code and relevant docs. Trace callers and shared behavior before fixing a bug; fix the cause where the affected paths converge.
-- Design for extensibility as well as current requirements. Reuse existing helpers, patterns, standard libraries, and installed dependencies when they fit; the smallest implementation is not always the preferred design.
-- Over-engineering is allowed to expand capabilities: introduce forward-looking abstractions, extension points, modular layers, and configuration even before multiple implementations or consumers exist. Briefly explain which extensions the design enables and its maintenance cost.
-- Keep added complexity connected to extension goals. Preserve compatibility, required validation, security, accessibility, and protection against data loss.
-- Refactoring and structural changes needed for the intended extension architecture are in scope. Match existing style, preserve unrelated work, and remove only imports, variables, or functions made unused by your changes. Mention relevant unrelated problems without silently fixing them.
-- Use `rg` / `rg --files` for focused searches. Read the documentation index below as a routing map, not a requirement to load every document.
+- `apps/web` is a React/Vite SPA; `docs-site` is Vue/VitePress. Preserve each surface's framework and theme system.
+- In `apps/web`, use semantic Tailwind classes backed by `apps/web/src/styles/shadcn.css` and `@theme inline`. CSS modules read `--sc-*`, never legacy `--color-*`. Do not add bare/arbitrary colors to `className`; canvas/data colors and shadow/overlay rgba are narrow exceptions.
+- Use semantic status utilities such as `text-status-danger bg-status-danger-soft`, not paired hue classes. App dark mode uses `data-theme` and Tailwind `dark:`; do not introduce `.dark` there. The docs site intentionally uses `html.dark` and its own `--docs-*` / `--home-*` tokens. See [design system](docs-site/dev/reference/design-system.md).
+- After app styling changes, run `pnpm --filter @anno/web lint:css-tokens` (also included in web lint). Prefer existing compact text sizes, semantic overlay layers, Lucide icons, and local UI adapters.
+- Worktree `.env` and Node dependencies may be symlinks to the primary checkout. Check their targets before changing configuration or installing dependencies. Python environments and generated API types belong to the current checkout. See [runtime skill](.agents/skills/aap-runtime/SKILL.md).
+- Celery does not hot-reload mounted Python code. Worker changes require refreshing affected running workers in the intended development stack and checking the new task/signature inside them. Dependencies or baked source require rebuilding; migrations require applying. Determine actual mounts and services first.
+- Tests that seed or migrate databases must target a verified disposable test database. Follow the relevant test configuration; never assume the everyday development database is disposable.
 
-## Verification and completion
+## Documentation and releases
 
-- Use checks that exercise changed behavior. For bugs and non-trivial logic, add or adapt the smallest meaningful regression check using existing test infrastructure.
-- For low-impact edits, inspect the diff and run applicable lightweight checks. Do not add tests that merely repeat the implementation.
-- Run required checks. Expand or repeat validation only after changes, failures, or unresolved concerns.
-- Check `git diff --check` and review the final diff for accidental changes. Distinguish passing checks from checks blocked by missing dependencies or services; never claim unrun checks passed.
-- The task is complete when the requested behavior, related docs, and relevant checks are handled. Report any remaining blocker precisely.
+Before committing, update documentation affected by the change in the same commit:
 
-## Parallel subagents and worktrees
+| Change                      | Documentation                                                                    |
+| --------------------------- | -------------------------------------------------------------------------------- |
+| API                         | `docs-site/api/`, `README.md`; regenerate affected API artifacts                 |
+| Feature or user-visible fix | Relevant `docs-site/user-guide/` pages and top `CHANGELOG.md` Unreleased section |
+| Architecture                | `docs-site/dev/concepts/`; ADR in `docs/adr/` when warranted                     |
+| Environment variable        | `.env.example`, `pnpm docs:gen-env-vars`, `DEV.md`                               |
+| Removed or renamed symbol   | Search Markdown references and update affected links                             |
 
-- Proactively delegate independent, bounded tasks when parallel work saves time or improves quality. Dispatch independent tasks together and keep useful work in the main process. Avoid duplicating the same investigation.
-- Read-only agents can share the checkout. Every code-modifying agent must have a separate worktree based on the current local `HEAD`, including unpushed commits.
-- Use native worktree isolation when available: in Claude Code, `isolation: "worktree"` and `.claude/settings.json` with `worktree.baseRef: "head"`. Otherwise, create the worktree explicitly before dispatch, give the agent its absolute path, and require all edits there. If isolation cannot be provided, do the edits in the main process.
-- Give each modifying agent a bounded scope and require a real commit on its `worktree-agent-*` branch before finishing. Its report must include the commit hash and summary.
-- The main process integrates those commits into the originating branch and runs validation in the environment that has the dependencies and services. Do not force `pnpm` / `uv run` checks in unequipped agent worktrees; verify that an environment exists if checks must run before integration.
-- `.claude/hooks/guard-worktree-paths.mjs` guards edit-tool writes only for Claude sessions inside `.claude/worktrees/`; it does not guard shell writes or other runtimes. Keep every agent's writes inside its assigned worktree regardless of hook coverage.
-- After successful integration, remove only the task's clean worktrees and merged branches with `git worktree remove`, `git worktree prune`, and `git branch -d`. Preserve unmerged or uncommitted work.
+Keep rendered documentation about the current system, without dotted version provenance such as `vX.Y.Z`. Put provenance in comments or frontmatter. Exceptions: `CHANGELOG.md`, `docs/adr/**`, `docs-site/dev/adr/**`, and `*.generated.md`; runtime requirements, routes, and protocol versions remain valid.
 
-## Frontend theme rules
+`CHANGELOG.md` follows Keep a Changelog: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`, omitting empty groups. Explain user impact. Pure refactors, tests, and formatting may omit an entry. Release headings use `## [x.y.z] - YYYY-MM-DD`, newest first.
 
-The token source is `apps/web/src/styles/shadcn.css`; the palette reference is [design-system.md](docs-site/dev/reference/design-system.md). Tailwind semantic classes map to runtime `--sc-*` tokens through `@theme inline`.
+Only bump versions for a requested release; use [aap-release](.agents/skills/aap-release/SKILL.md) for the synchronized version and OpenAPI workflow. `node scripts/check-doc-version-prefix.mjs --staged` is advisory. Plan filenames use `yyyy-mm-dd-<topic>.md`, or `yyyy-mm-dd-vx.y.z-<topic>.md` for versioned plans.
 
-1. Prefer semantic classes such as `bg-card`, `text-foreground`, `text-muted-foreground`, `border-border`, `bg-primary`, and `text-brand`.
-2. CSS modules may read `var(--sc-*)`, never legacy `var(--color-*)` variables.
-3. Do not put arbitrary or bare colors in `className`, including hex, `rgb(...)`, or `oklch(...)`. Canvas/data-domain colors and shadow/overlay-specific rgba are narrow exceptions.
-4. Use theme-aware status utilities such as `text-status-danger bg-status-danger-soft`. Status tokens already cover both themes; do not substitute paired hue classes such as `text-rose-600 dark:text-rose-400`.
-5. Dark mode uses `data-theme` and Tailwind `dark:` variants. Do not introduce a `.dark` selector.
+CI workflow files use `<domain>-<action>.yml`; the aggregate remains `ci.yml`. Top-level names use sentence case, preserving proper nouns and acronyms. Aggregate jobs set `name: <Domain> <tool/action>`; single-domain workflows rely on job ids. `scripts/check-workflow-names.mjs` checks these conventions.
 
-`pnpm lint` includes the token gate. Run it separately with `pnpm --filter @anno/web lint:css-tokens` (`apps/web/scripts/check-tw-tokens.mjs`).
+## Task routing
 
-## CI workflow naming
+Use only the relevant entry. Paths in skills are repository-relative unless linked otherwise.
 
-- File names follow `<domain>-<action>.yml` in kebab-case; the cross-domain aggregate stays `ci.yml`.
-- The top-level `name:` uses sentence case (`<Domain> <action>`): capitalize the first word only; keep acronyms and proper nouns as-is (Claude, CI, PR, Playwright).
-- In aggregate workflows each job sets `name: <Domain> <tool/action>`; single-domain workflows omit job names and rely on the job id.
-- `scripts/check-workflow-names.mjs` guards this advisory (CI lint job + pre-commit); extend its `PROPER_NOUNS` set when a new product name is legitimate.
+| Task                                                                    | Entry                                                                            |
+| ----------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Worktree setup, runtime refresh, stuck Celery tasks                     | [aap-runtime](.agents/skills/aap-runtime/SKILL.md)                               |
+| App release/version synchronization                                     | [aap-release](.agents/skills/aap-release/SKILL.md)                               |
+| Screenshot/video capture, media provenance or review failures           | [aap-doc-media](.agents/skills/aap-doc-media/SKILL.md)                           |
+| Workbench layout, preferences, task switching, playback or write guards | [aap-workbench-state](.agents/skills/aap-workbench-state/SKILL.md)               |
+| Point-cloud/WebGPU or precise-video qualification                       | [aap-renderer-validation](.agents/skills/aap-renderer-validation/SKILL.md)       |
+| Python SDK/CLI/TUI capability or API-contract changes                   | [aap-sdk-contracts](.agents/skills/aap-sdk-contracts/SKILL.md)                   |
+| Preannotation pipeline contracts and worker/backend routing             | [aap-prediction-pipeline](.agents/skills/aap-prediction-pipeline/SKILL.md)       |
+| Local shadcn/Radix primitive composition or update                      | [shadcn](.agents/skills/shadcn/SKILL.md)                                         |
+| Visual audit or improvement of an existing product screen               | [redesign-existing-projects](.agents/skills/redesign-existing-projects/SKILL.md) |
+| Public landing/marketing surface                                        | [design-taste-frontend](.agents/skills/design-taste-frontend/SKILL.md)           |
 
-## Documentation and changelog
+`README.md` covers setup; `DEV.md` covers local commands. `docs-site/dev/` contains architecture, references and troubleshooting; `docs-site/ops/` contains deployment/runbooks. Use `docs/adr/README.md`, `docs/plans/README.md`, and `docs/research/README.md` to locate decisions, plans, and research. Preview docs with `pnpm docs:dev`; verify the actual URL printed by the server.
 
-Before each commit, check documentation impact and update affected docs in the same change:
+For a reported UI defect, inspect the affected flow's recent API calls and console errors. `BugReportDrawer` stores evidence in PostgreSQL `bug_reports`; [runtime diagnostics](.agents/skills/aap-runtime/references/diagnostics.md) gives a read-only fallback when an API token is unavailable.
 
-| Change                      | Documentation to check or update                                    |
-| --------------------------- | ------------------------------------------------------------------- |
-| API                         | `docs-site/api/`, `README.md`                                       |
-| Feature or user-visible fix | `docs-site/user-guide/`, `CHANGELOG.md`                             |
-| Architecture                | `docs-site/dev/concepts/`; add an ADR in `docs/adr/` when warranted |
-| Environment variable        | `.env.example`, then `pnpm docs:gen-env-vars`; check `DEV.md`       |
-| Removed or renamed symbol   | Search all `*.md` for its old name and fix affected references      |
-
-Docs describe the current system. Do not expose `vX.Y.Z` provenance in rendered prose, headings, or tables; use HTML comments or YAML frontmatter if needed. Exceptions: `CHANGELOG.md`, `docs/adr/**`, `docs-site/dev/adr/**`, and `*.generated.md`. Undotted versions such as Node v18+, `/v1/` routes, and the v2 protocol are allowed.
-
-`node scripts/check-doc-version-prefix.mjs --staged` is advisory, not a blocking gate.
-
-`CHANGELOG.md` follows Keep a Changelog 1.1.0:
-
-- Put routine features and user-visible fixes under the top `## [Unreleased]` in the same commit as the change. Pure refactors, tests, formatting, and other work with no user impact may skip an entry.
-- Group entries in this order, omitting empty groups: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security` (level-three headings).
-- Explain what changed and why it matters; a fix names the user-visible symptom. Keep released sections newest first as `## [x.y.z] - YYYY-MM-DD`, without repeating version numbers in entry text.
-
-When creating a plan file in plan mode, use `yyyy-mm-dd-<topic>.md`; for version-related plans, use `yyyy-mm-dd-vx.y.z-<topic>.md`.
-
-## Releases
-
-Only perform a version bump as part of a requested release. `CHANGELOG.md` is the version source of truth.
-
-1. Promote `## [Unreleased]` to `## [x.y.z] - YYYY-MM-DD` and add a fresh empty `## [Unreleased]` above it.
-2. In the same release commit, update `app_version` in `apps/api/app/config.py`, `[project].version` in `apps/api/pyproject.toml`, and `version` in `apps/web/package.json`.
-3. Regenerate the `anno-api` version in `apps/api/uv.lock` with `uv lock` or `uv sync` from `apps/api`; do not edit the lockfile by hand.
-4. Let the pre-commit hook regenerate `apps/api/openapi.snapshot.json`, including `info.version`; use `pnpm openapi:export` if the hook is unavailable, and verify with `pnpm openapi:check`. Do not hand-edit the snapshot or invoke `dump-openapi.py` for it. The docs build copies it to `docs-site/public/openapi.json`.
-5. Verify the running API reports the new version via `curl -s localhost:8000/health`; both FastAPI metadata and `/health` read `app_version`.
-
-## Local runtime: reload, restart, or rebuild
-
-Check the actual Compose services and mounts before acting. Code mounted into a container needs a process restart; code and dependencies baked into an image need a rebuild.
-
-| Change                                                                                                                   | Action in the development environment                                                                          |
-| ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| Host API code under `apps/api/**`                                                                                        | `uvicorn --reload` reloads Python code                                                                         |
-| Frontend under `apps/web/src/**`                                                                                         | Vite HMR applies changes                                                                                       |
-| Source used by Celery                                                                                                    | Restart affected running workers and beat as applicable; Celery does not auto-reload                           |
-| Runtime `.env` values                                                                                                    | Recreate affected containers with `docker compose up -d <services>`; restart affected host processes           |
-| Alembic migration                                                                                                        | Apply `alembic upgrade head` in the configured API environment; restarting alone does not migrate the database |
-| Dependency manifests/locks, Dockerfile, `.dockerignore`, base image, build configuration, or source copied into an image | Rebuild and recreate affected services                                                                         |
-
-Celery services mount `./apps/api:/app`, install dependencies outside that source mount, and mask the host `.venv` with an anonymous `/app/.venv` volume. Check `docker-compose.yml` for the affected default, GPU, CPU, export, image-pyramid, or GPU-control workers. Shared worker code can require restarting several services, not just `celery-worker`.
-
-```bash
-# Example for the default worker; select every affected service.
-docker compose restart celery-worker
-
-# When image contents change:
-docker compose build celery-worker
-docker compose up -d celery-worker
-```
-
-After changes under `apps/api/app/workers/`, restart affected running workers and verify the changed task or signature inside the running container. A dispatch-time `TypeError` about new keyword arguments can mean the worker still runs old code.
-
-## Frontend bug investigation
-
-Use Chrome DevTools MCP when available, or the available browser tooling, to inspect recent API calls and console errors along with the affected flow.
-
-Reports from `BugReportDrawer` live in PostgreSQL's `bug_reports` table. If no API token is available, use read-only queries in the active local Compose project:
-
-```bash
-docker compose exec -T postgres psql -U user -d annotation -c \
-  "SELECT display_id, title, severity, status, created_at FROM bug_reports ORDER BY created_at DESC LIMIT 20;"
-
-docker compose exec -T postgres psql -U user -d annotation -c \
-  "SELECT display_id, title, description, severity, status, route, browser_ua, recent_api_calls, recent_console_errors FROM bug_reports WHERE display_id = 'B-1';"
-```
-
-## Documentation index
-
-Consult only the entries needed for the task:
-
-- [README.md](README.md): product overview and setup; [DEV.md](DEV.md): local commands and development workflow; [CHANGELOG.md](CHANGELOG.md): unreleased and released changes.
-- [docs-site/user-guide/](docs-site/user-guide/): workbench, projects, review, and administration behavior.
-- [docs-site/dev/](docs-site/dev/): tutorials, concepts, how-to guides, references, and troubleshooting. Architecture lives in `dev/concepts/`; protocol and environment specifications in `dev/reference/`.
-- [docs-site/ops/](docs-site/ops/): deployment, observability, security, and runbooks; [docs-site/api/](docs-site/api/): generated API reference.
-- [docs/adr/README.md](docs/adr/README.md): architecture decisions; [docs/plans/README.md](docs/plans/README.md): implementation plans.
-- [docs/research/README.md](docs/research/README.md): research index for annotation tools, AI integration, datasets, multimodal fusion, and annotator performance.
-
-Preview the documentation with `pnpm docs:dev` (normally `http://localhost:5173`).
-
-<!-- Behavioral guidance adapted from https://developers.openai.com/api/docs/guides/latest-model?model=gpt-6-astra, reviewed 2026-09-05. Project rules are maintained against this repository. -->
+For instruction maintenance only, see the [source and history audit](.agents/references/2026-09-06-instruction-audit.md).

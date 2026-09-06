@@ -427,6 +427,12 @@ Worker 与上述命令必须使用同一 `SCREENSHOT_DATABASE_URL`；开发库 W
 
 ### 触发
 
+Mac / Linux 分工录制优先使用 `pnpm --filter @anno/web screenshots:record -- --list`，
+再用 `--flow bbox-draw --plan` 预览依赖。默认 `docs` 规格归档未裁剪标准源视频，
+`--profile marketing` 保留 Linux X11/NVIDIA 母版检查；手工场景无需模型，SAM / OCR 可使用远程注册后端。
+入口会修复隔离夹具，运行前须核对数据库和 Redis，并准备完整离线素材缓存。
+详见 [跨平台录制与隔离要求](docs-site/dev/how-to/update-screenshots.md#mac-linux-分工录制)。
+
 ```bash
 export PLAYWRIGHT_BASE_URL=http://127.0.0.1:3001
 export PLAYWRIGHT_API_BASE=http://127.0.0.1:8010
@@ -435,15 +441,20 @@ SCREENSHOT_VALIDATE_ONLY=1 pnpm --filter web screenshots  # 只验证场景，�
 pnpm --filter web screenshots                              # 生成 desktop-light 正式图
 pnpm --filter web screenshots:dark                         # 显式声明的深色场景
 pnpm --filter web screenshots:matrix                       # desktop-light/dark/mobile
-pnpm --filter web screenshots:flows                        # 流程 GIF，需 ffmpeg
+pnpm --filter web screenshots:flows                        # 标准源录像及 GIF 配置归档，需 ffmpeg
 pnpm --filter web screenshots:marketing                    # 4K60 MKV + MP4/H.264，需本机 X11/NVIDIA/ffmpeg
-pnpm docs:media:derive                                      # 从最新 4K60 批次派生文档 MP4 + WebP
+pnpm docs:media:derive                                      # 从最新营销批次统一派生视频 / GIF / 封面
 pnpm docs:media:audit                                       # 检查引用、来源与人工复核版本
 pnpm --filter web screenshots:regression                   # 比较 9 张高价值视觉基线
 pnpm --filter web screenshots:regression:update            # 有意 UI 变化后更新基线
 ```
 
 不要手工维护资产数量；静态 manifest、流程 manifest、磁盘文件和文档引用共同给出当前清单。
+所有视频录制入口只归档，不直接覆盖站点文件。标准源使用
+`pnpm docs:media:derive -- --quality standard --run <run-id> --asset video-track --format video --clip 2:8`；
+其中 `2:8` 必须换成实际审阅过的窗口；标准源 GIF 同样需要 `--clip`。仅派生 GIF 时使用 `--format gif`；多 GIF 资产须通过 `--gif-target` 分别指定各自窗口。
+派生器校验源哈希和质量证据，不放大或补帧提升标准源等级，并保留未选择资产的清单记录。
+宣传文章入口 `scripts/derive-article-media.mjs` 也复用同一校验、转码和来源记录实现。
 生成后人工审阅 PNG，以及 GIF / MP4 的核心动作与最终结果；完整 matrix 成功后才原子重建静态 manifest，定向运行和 validate-only 不会替换它。
 营销母版单独写入 Git 忽略的 `.artifacts/marketing/<run-id>/`，不可变的 4K60 MKV/H.264 采集源和
 4K60 MP4/H.264 通用母版分别按 SHA-256 命名。录制使用 1440×810 逻辑 viewport 与 1.8× 设备像素倍率，

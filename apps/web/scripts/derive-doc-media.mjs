@@ -1,14 +1,18 @@
 #!/usr/bin/env node
-import { spawnSync } from "node:child_process";
+import { parseArgs } from "node:util";
+import {
+  checked,
+  deriveMedia,
+  parseClip,
+  readArchive,
+  selectArchiveAssets,
+} from "./media-derivation.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { recordFlowArtifact } from "../e2e/screenshots/_helpers/flow-manifest.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, "../../..");
-const ARCHIVE_ROOT = path.join(REPO_ROOT, ".artifacts/marketing");
-const OUTPUT_ROOT = path.join(REPO_ROOT, "docs-site/public/media");
 
 const POSTER_AT_SECONDS = new Map([
   ["review-reject", 2],
@@ -108,282 +112,121 @@ const HOME_TARGETS = new Map(
   ].map(([assetId, target]) => [assetId, target]),
 );
 
-function optionValues(name) {
-  const values = [];
-  for (let index = 0; index < process.argv.length; index += 1) {
-    if (process.argv[index] === name && process.argv[index + 1])
-      values.push(process.argv[index + 1]);
-  }
-  return values;
-}
-
-function latestRunDirectory() {
-  const candidates = fs
-    .readdirSync(ARCHIVE_ROOT, { withFileTypes: true })
+const { values } = parseArgs({
+  args: process.argv.slice(2).filter((arg) => arg !== "--"),
+  options: {
+    run: { type: "string" },
+    asset: { type: "string", multiple: true },
+    quality: { type: "string", default: "marketing" },
+    format: { type: "string", default: "all" },
+    clip: { type: "string" },
+    "gif-target": { type: "string" },
+    article: { type: "string" },
+  },
+});
+if (!["standard", "marketing"].includes(values.quality))
+  throw new Error("--quality must be standard or marketing");
+if (!["all", "video", "gif"].includes(values.format))
+  throw new Error("--format must be all, video, or gif");
+const archiveRoot = path.join(
+  REPO_ROOT,
+  values.quality === "marketing" ? ".artifacts/marketing" : ".artifacts/recordings",
+);
+const run =
+  values.run ??
+  fs
+    .readdirSync(archiveRoot, { withFileTypes: true })
     .filter(
       (entry) =>
-        entry.isDirectory() && fs.existsSync(path.join(ARCHIVE_ROOT, entry.name, "manifest.json")),
+        entry.isDirectory() && fs.existsSync(path.join(archiveRoot, entry.name, "manifest.json")),
     )
     .map((entry) => entry.name)
-    .sort();
-  const latest = candidates.at(-1);
-  if (!latest) throw new Error("[docs-media] 没有可用的高清营销运行目录");
-  return path.join(ARCHIVE_ROOT, latest);
-}
-
-function checked(command, args) {
-  const result = spawnSync(command, args, { encoding: "utf8" });
-  if (result.error || result.status !== 0) {
+    .sort()
+    .at(-1);
+if (!run) throw new Error("No source archive; capture first or pass --run");
+const runDirectory = path.resolve(archiveRoot, run);
+if (values.article) {
+  if (values.format !== "all" || values["gif-target"]) {
     throw new Error(
-      `[docs-media] ${command} 失败：${result.error?.message ?? result.stderr.trim() ?? result.status}`,
+      "Article presets generate paired GIF/cover outputs; omit --format and --gif-target",
     );
   }
-  return result.stdout;
+  const output = checked(process.execPath, [
+    path.join(REPO_ROOT, "scripts/derive-article-media.mjs"),
+    "--archive",
+    runDirectory,
+    "--article",
+    values.article,
+    "--quality",
+    values.quality,
+    ...(values.asset ?? []).flatMap((id) => ["--asset", id]),
+    ...(values.clip ? ["--clip", values.clip] : []),
+  ]);
+  process.stdout.write(output);
+  process.exit(0);
 }
-
-function verifyVideo(filePath, expected) {
-  const parsed = JSON.parse(
-    checked("ffprobe", [
-      "-v",
-      "error",
-      "-select_streams",
-      "v:0",
-      "-show_entries",
-      "stream=codec_name,width,height,avg_frame_rate,pix_fmt",
-      "-of",
-      "json",
-      filePath,
-    ]),
-  );
-  const stream = parsed.streams?.[0];
-  if (
-    stream?.codec_name !== expected.codec ||
-    stream?.width !== expected.width ||
-    stream?.height !== expected.height ||
-    stream?.avg_frame_rate !== expected.fps ||
-    stream?.pix_fmt !== expected.pixelFormat
-  ) {
-    throw new Error(`[docs-media] 派生视频规格不正确：${filePath} ${JSON.stringify(stream)}`);
-  }
+const archive = readArchive(runDirectory);
+if (values["gif-target"] && (values.format !== "gif" || values.asset?.length !== 1)) {
+  throw new Error("--gif-target requires --format gif and one --asset");
 }
-
-const runArg = optionValues("--run").at(-1);
-const runDirectory = runArg ? path.resolve(ARCHIVE_ROOT, runArg) : latestRunDirectory();
-const manifestPath = path.join(runDirectory, "manifest.json");
-if (!fs.existsSync(manifestPath)) throw new Error(`[docs-media] manifest 不存在：${manifestPath}`);
-const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-if (manifest.schema_version !== 4 || !manifest.run || !manifest.entries) {
-  throw new Error(`[docs-media] 不支持的营销 manifest：${manifestPath}`);
-}
-
-const requestedAssets = optionValues("--asset");
-const selected =
-  requestedAssets.length > 0
-    ? requestedAssets
-    : [...new Set([...TARGETS.keys(), ...HOME_TARGETS.keys()])];
-const unknown = selected.filter((assetId) => !TARGETS.has(assetId) && !HOME_TARGETS.has(assetId));
-if (unknown.length > 0) throw new Error(`[docs-media] 未登记的文档派生资产：${unknown.join(", ")}`);
-
-for (const assetId of selected) {
-  const entry = manifest.entries[assetId];
-  if (!entry) throw new Error(`[docs-media] 运行 ${manifest.run.id} 缺少资产：${assetId}`);
-  const sourceInfo = entry.files?.universal_mp4;
-  if (!sourceInfo?.file || !sourceInfo.sha256) {
-    throw new Error(`[docs-media] ${assetId} 缺少通用 MP4 来源`);
-  }
-  const source = path.join(runDirectory, sourceInfo.file);
-  const provenance = {
-    repoRoot: REPO_ROOT,
-    assetId,
-    source: "apps/web/scripts/derive-doc-media.mjs",
-    seedRevision: entry.seed_revision ?? null,
-    capturedCommit: manifest.run.source_commit,
-    sourceWorktreeDirty: Boolean(manifest.run.source_worktree_dirty),
-    sourceAsset: {
-      runId: manifest.run.id,
-      assetId,
-      sha256: sourceInfo.sha256,
-    },
-  };
-  const durationSeconds = Number(sourceInfo.media?.duration_ms ?? 0) / 1000;
-  const posterAt =
-    POSTER_AT_SECONDS.get(assetId) ??
-    Math.max(1, Math.min(durationSeconds * 0.72, durationSeconds - 0.4));
-
-  const docsTarget = TARGETS.get(assetId);
-  if (docsTarget) {
-    const targetStem = path.join(OUTPUT_ROOT, docsTarget);
-    const videoTarget = `${targetStem}.mp4`;
-    const posterTarget = `${targetStem}-poster.webp`;
-    const videoTemp = `${videoTarget}.${process.pid}.tmp.mp4`;
-    const posterTemp = `${posterTarget}.${process.pid}.tmp.webp`;
-    fs.mkdirSync(path.dirname(videoTarget), { recursive: true });
-
-    try {
-      checked("ffmpeg", [
-        "-y",
-        "-i",
-        source,
-        "-an",
-        "-vf",
-        "fps=30,scale=1280:720:flags=lanczos,setsar=1",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "slow",
-        "-crf",
-        "24",
-        "-pix_fmt",
-        "yuv420p",
-        "-movflags",
-        "+faststart",
-        videoTemp,
-      ]);
-      verifyVideo(videoTemp, {
-        codec: "h264",
-        width: 1280,
-        height: 720,
-        fps: "30/1",
-        pixelFormat: "yuv420p",
-      });
-      checked("ffmpeg", [
-        "-y",
-        "-ss",
-        posterAt.toFixed(3),
-        "-i",
-        videoTemp,
-        "-frames:v",
-        "1",
-        "-c:v",
-        "libwebp",
-        "-quality",
-        "84",
-        posterTemp,
-      ]);
-      fs.renameSync(videoTemp, videoTarget);
-      fs.renameSync(posterTemp, posterTarget);
-
-      const docsProvenance = {
-        ...provenance,
-        testTitle: `derive docs media › ${assetId}`,
-        watchPaths: [
-          entry.source,
-          "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
-          "docs-site/.vitepress/theme/components/DocsVideo.vue",
-        ].filter(Boolean),
-      };
-      recordFlowArtifact({ ...docsProvenance, targetPath: videoTarget, role: "docs-video" });
-      recordFlowArtifact({ ...docsProvenance, targetPath: posterTarget, role: "poster" });
-      console.log(`[docs-media] ✓ ${assetId} → ${path.relative(REPO_ROOT, videoTarget)}`);
-    } finally {
-      fs.rmSync(videoTemp, { force: true });
-      fs.rmSync(posterTemp, { force: true });
+const assets = selectArchiveAssets(
+  archive,
+  values.asset,
+  values.format,
+  (id) => TARGETS.has(id) || HOME_TARGETS.has(id),
+);
+deriveMedia({
+  repoRoot: REPO_ROOT,
+  runDirectory,
+  quality: values.quality,
+  assets,
+  clip: parseClip(values.clip),
+  outputs(assetId, item) {
+    const outputs = [];
+    if (values.format !== "gif") {
+      for (const [map, root, videoRole, posterRole] of [
+        [TARGETS, "docs-site/public/media", "docs-video", "poster"],
+        [HOME_TARGETS, "docs-site/public/home", "home-video", "home-poster"],
+      ]) {
+        const stem = map.get(assetId);
+        if (!stem) continue;
+        outputs.push({ target: `${root}/${stem}.mp4`, kind: "mp4", role: videoRole });
+        if (map === HOME_TARGETS)
+          outputs.push({ target: `${root}/${stem}.webm`, kind: "webm", role: videoRole });
+        outputs.push({
+          target: `${root}/${stem}-poster.webp`,
+          kind: "webp",
+          role: posterRole,
+          posterAt: POSTER_AT_SECONDS.get(assetId),
+        });
+      }
     }
-  }
-
-  const homeTarget = HOME_TARGETS.get(assetId);
-  if (homeTarget) {
-    const targetStem = path.join(REPO_ROOT, "docs-site/public/home", homeTarget);
-    const webmTarget = `${targetStem}.webm`;
-    const mp4Target = `${targetStem}.mp4`;
-    const posterTarget = `${targetStem}-poster.webp`;
-    const webmTemp = `${webmTarget}.${process.pid}.tmp.webm`;
-    const mp4Temp = `${mp4Target}.${process.pid}.tmp.mp4`;
-    const posterTemp = `${posterTarget}.${process.pid}.tmp.webp`;
-    fs.mkdirSync(path.dirname(webmTarget), { recursive: true });
-
-    try {
-      checked("ffmpeg", [
-        "-y",
-        "-i",
-        source,
-        "-an",
-        "-vf",
-        "fps=30,scale=1280:720:flags=lanczos,setsar=1",
-        "-c:v",
-        "libvpx-vp9",
-        "-crf",
-        "32",
-        "-b:v",
-        "0",
-        "-deadline",
-        "good",
-        "-cpu-used",
-        "3",
-        "-row-mt",
-        "1",
-        "-pix_fmt",
-        "yuv420p",
-        webmTemp,
-      ]);
-      verifyVideo(webmTemp, {
-        codec: "vp9",
-        width: 1280,
-        height: 720,
-        fps: "30/1",
-        pixelFormat: "yuv420p",
-      });
-      checked("ffmpeg", [
-        "-y",
-        "-i",
-        source,
-        "-an",
-        "-vf",
-        "fps=30,scale=1280:720:flags=lanczos,setsar=1",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "slow",
-        "-crf",
-        "24",
-        "-pix_fmt",
-        "yuv420p",
-        "-movflags",
-        "+faststart",
-        mp4Temp,
-      ]);
-      verifyVideo(mp4Temp, {
-        codec: "h264",
-        width: 1280,
-        height: 720,
-        fps: "30/1",
-        pixelFormat: "yuv420p",
-      });
-      checked("ffmpeg", [
-        "-y",
-        "-ss",
-        posterAt.toFixed(3),
-        "-i",
-        mp4Temp,
-        "-frames:v",
-        "1",
-        "-c:v",
-        "libwebp",
-        "-quality",
-        "84",
-        posterTemp,
-      ]);
-      fs.renameSync(webmTemp, webmTarget);
-      fs.renameSync(mp4Temp, mp4Target);
-      fs.renameSync(posterTemp, posterTarget);
-
-      const homeProvenance = {
-        ...provenance,
-        testTitle: `derive home media › ${assetId}`,
-        watchPaths: [
-          entry.source,
-          "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
-          "docs-site/.vitepress/theme/components/home/ProductProof.vue",
-        ].filter(Boolean),
-      };
-      recordFlowArtifact({ ...homeProvenance, targetPath: webmTarget, role: "home-video" });
-      recordFlowArtifact({ ...homeProvenance, targetPath: mp4Target, role: "home-video" });
-      recordFlowArtifact({ ...homeProvenance, targetPath: posterTarget, role: "home-poster" });
-      console.log(`[home-media] ✓ ${assetId} → ${path.relative(REPO_ROOT, webmTarget)}`);
-    } finally {
-      fs.rmSync(webmTemp, { force: true });
-      fs.rmSync(mp4Temp, { force: true });
-      fs.rmSync(posterTemp, { force: true });
+    if (values.format !== "video") {
+      const gifs = item.gifs.filter(
+        (gif) => !values["gif-target"] || gif.target === values["gif-target"],
+      );
+      if (values["gif-target"] && !gifs.length)
+        throw new Error("GIF target is not registered in this source archive");
+      for (const gif of gifs) {
+        outputs.push({
+          target: gif.target,
+          kind: "gif",
+          role: "docs-gif",
+          raw: true,
+          width: gif.maxWidth,
+          height: Number.MAX_SAFE_INTEGER,
+          fps: gif.fps,
+          colors: gif.maxColors,
+          clip:
+            gif.durationSec === undefined
+              ? undefined
+              : { start: gif.startSec ?? 0, duration: gif.durationSec },
+        });
+      }
+      if (values.format === "gif" && !item.gifs.length)
+        throw new Error(`No archived GIF recipes for ${assetId}; recapture the flow`);
     }
-  }
-}
+    if (!outputs.length) throw new Error(`No registered outputs for ${assetId}`);
+    return outputs;
+  },
+});

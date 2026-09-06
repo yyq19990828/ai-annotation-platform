@@ -20,6 +20,7 @@ import {
   type APIRequestContext,
   type APIResponse,
 } from "@playwright/test";
+import { screenshotCatalogPath } from "../screenshots/recording-plan.mjs";
 
 export interface SeedData {
   admin_email: string;
@@ -109,6 +110,7 @@ export interface ScreenshotCatalogProject {
 export interface ScreenshotSeedCatalog {
   schema_version: 1;
   seed_revision: string;
+  backend_requirements?: string[];
   users: Record<ScreenshotUserKey, ScreenshotCatalogUser>;
   projects: Record<ScreenshotCoreProjectKey, ScreenshotCatalogProject> &
     Partial<Record<"large_image_demo", ScreenshotCatalogProject>>;
@@ -374,9 +376,7 @@ export class SeedAPI {
 
   /** 截图专用只读 catalog：解析稳定逻辑键，服务端会对完整 profile fail-closed。 */
   async screenshotCatalog(): Promise<ScreenshotSeedCatalog> {
-    const res = await this.request.get(
-      `${API_BASE}/api/v1/__test/seed/catalog?profile=screenshots`,
-    );
+    const res = await this.request.get(`${API_BASE}${screenshotCatalogPath()}`);
     if (!res.ok()) {
       throw new Error(
         `seed/catalog failed: ${res.status()} ${await res.text()}\n` +

@@ -72,7 +72,11 @@ const config: Parameters<typeof defineConfig>[0] = {
     environment: "jsdom",
     setupFiles: ["./vitest.setup.ts"],
     css: false,
-    exclude: ["**/node_modules/**", "**/dist/**", "**/e2e/**"],
+    // v0.14.x · e2e/** 下的测试由 Playwright 或 node --test 执行，vitest 不收集。
+    // scripts/media-derivation.test.mjs 是 node:test 风格（screenshots:docs-media:test
+    // 用 `node --test` 跑），vitest 收集会报 "No test suite found"；scripts/ 其余
+    // .test.mjs（check-bundle-size / video-bench）是 vitest 风格，必须保留收集。
+    exclude: ["**/node_modules/**", "**/dist/**", "**/e2e/**", "scripts/media-derivation.test.mjs"],
     coverage: {
       provider: "v8",
       reporter: ["text", "json", "html", "lcov"],
