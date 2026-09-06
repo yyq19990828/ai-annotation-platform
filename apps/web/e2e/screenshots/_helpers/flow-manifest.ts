@@ -3,6 +3,15 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
+export interface SourceGifVariant {
+  target: string;
+  fps?: number;
+  maxWidth?: number;
+  maxColors?: number;
+  startSec?: number;
+  durationSec?: number;
+}
+
 export interface FlowArtifactProvenance {
   repoRoot: string;
   targetPath: string;
@@ -14,10 +23,14 @@ export interface FlowArtifactProvenance {
   capturedCommit: string;
   sourceWorktreeDirty: boolean;
   watchPaths?: string[];
+  manifestPath?: string;
+  capture?: Record<string, unknown>;
   sourceAsset?: {
     runId: string;
     assetId: string;
     sha256: string;
+    quality?: "standard" | "marketing";
+    clip?: { start: number; duration: number };
   };
 }
 
@@ -27,8 +40,17 @@ interface FlowManifest {
   entries: Record<string, Record<string, unknown>>;
 }
 
-function sha256(filePath: string): string {
-  return createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
+export function sha256File(filePath: string): string {
+  const hash = createHash("sha256");
+  const fd = fs.openSync(filePath, "r");
+  const buffer = Buffer.allocUnsafe(1024 * 1024);
+  try {
+    let count: number;
+    while ((count = fs.readSync(fd, buffer)) > 0) hash.update(buffer.subarray(0, count));
+    return hash.digest("hex");
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 function mediaFacts(filePath: string): Record<string, unknown> | null {
@@ -78,10 +100,9 @@ function readManifest(manifestPath: string): FlowManifest {
 }
 
 export function recordFlowArtifact(input: FlowArtifactProvenance): string {
-  const manifestPath = path.join(
-    input.repoRoot,
-    "apps/web/e2e/screenshots/outputs/flow-manifest.json",
-  );
+  const manifestPath =
+    input.manifestPath ??
+    path.join(input.repoRoot, "apps/web/e2e/screenshots/outputs/flow-manifest.json");
   const absoluteTarget = path.resolve(input.targetPath);
   const relativeTarget = path.relative(input.repoRoot, absoluteTarget).replaceAll("\\", "/");
   if (relativeTarget.startsWith("../") || path.isAbsolute(relativeTarget)) {
@@ -104,9 +125,10 @@ export function recordFlowArtifact(input: FlowArtifactProvenance): string {
     source: input.source,
     test_title: input.testTitle,
     watch_paths: [...new Set([input.source, ...(input.watchPaths ?? [])])].sort(),
-    sha256: sha256(absoluteTarget),
+    sha256: sha256File(absoluteTarget),
     bytes: fs.statSync(absoluteTarget).size,
     media: mediaFacts(absoluteTarget),
+    ...(input.capture ? { capture: input.capture } : {}),
     ...(input.sourceAsset ? { source_asset: input.sourceAsset } : {}),
   };
   manifest.entries = Object.fromEntries(

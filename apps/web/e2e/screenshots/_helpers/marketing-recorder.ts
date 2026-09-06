@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Video } from "@playwright/test";
 import type { MarketingAssetSpec } from "./marketing-assets";
+import type { SourceGifVariant } from "./flow-manifest";
 
 export const MARKETING_PROJECT_NAME = "marketing-master";
 export const MARKETING_CAPTURE_SIZE = { width: 3840, height: 2160 } as const;
@@ -46,6 +47,7 @@ interface MarketingArchiveOptions extends MarketingCaptureMetadata {
   assetSpec: MarketingAssetSpec;
   capturedAt?: string;
   universalClip?: UniversalClipRequest;
+  gifVariants?: SourceGifVariant[];
 }
 
 type UniversalClipRequest =
@@ -78,6 +80,7 @@ interface VideoProbe {
 
 interface MarketingManifestEntry {
   asset_id: string;
+  gif_variants?: SourceGifVariant[];
   source: string;
   test_title: string;
   project: string;
@@ -604,6 +607,29 @@ export async function archiveMarketingMaster(options: MarketingArchiveOptions): 
     ].join("/");
     manifest.entries[assetId] = {
       asset_id: assetId,
+      ...(options.gifVariants?.length
+        ? {
+            gif_variants: options.gifVariants.map((variant) => {
+              // Both archived files are already trimmed to universalClip, unlike the
+              // original external capture used by the flow's epoch-based windows.
+              const startSec =
+                variant.startSec === undefined
+                  ? 0
+                  : Math.max(0, variant.startSec - (universalClip?.startSeconds ?? 0));
+              const remaining = Number(captureMedia.duration_ms) / 1000 - startSec;
+              if (remaining <= 0) throw new Error("GIF window starts after the archived capture");
+              if (variant.durationSec !== undefined && variant.durationSec > remaining + 0.45) {
+                throw new Error("Archived capture is missing more than GIF trailing padding");
+              }
+              // Flow windows include trailing padding; stopping capture can shorten that padding.
+              return {
+                ...variant,
+                startSec,
+                durationSec: Math.min(variant.durationSec ?? remaining, remaining),
+              };
+            }),
+          }
+        : {}),
       source: pathForManifest(options.source),
       test_title: options.testTitle,
       project: options.projectName,

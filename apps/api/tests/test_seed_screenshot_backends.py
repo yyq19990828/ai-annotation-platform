@@ -211,3 +211,33 @@ async def test_reconcile_creates_exact_primary_and_enabled_bindings(
         (projects["video_demo"].id, image_pool.id),
         (projects["ocr_demo"].id, ocr_pool.id),
     }
+
+    async def ocr_only(_db):
+        return [ocr]
+
+    monkeypatch.setattr(
+        "app.services.screenshot_seed_backends._live_candidates", ocr_only
+    )
+    report = await reconcile_screenshot_backends(
+        db_session, mode="live", backend_requirements="ocr"
+    )
+    assert set(report["bindings"]) == {"ocr_demo"}
+    assert projects["image_demo"].ml_backend_pool_id is None
+    assert projects["video_demo"].ml_backend_pool_id is None
+
+    async def unexpected_probe(*_args):
+        raise AssertionError("Manual capture must not probe or create ML backends")
+
+    monkeypatch.setattr(
+        "app.services.screenshot_seed_backends._live_candidates", unexpected_probe
+    )
+    monkeypatch.setattr(
+        "app.services.screenshot_seed_backends._stub_candidate", unexpected_probe
+    )
+    for mode in ("live", "stub"):
+        report = await reconcile_screenshot_backends(
+            db_session, mode=mode, backend_requirements="none"
+        )
+        assert report["bindings"] == {}
+        assert projects["ocr_demo"].preannotate_pipeline == []
+        assert all(project.ml_backend_pool_id is None for project in projects.values())

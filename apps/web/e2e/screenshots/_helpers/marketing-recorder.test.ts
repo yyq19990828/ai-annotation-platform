@@ -254,6 +254,11 @@ test("archives an immutable video and writes a verifiable manifest", async () =>
       },
       capturedAt: "2026-08-14T01:02:03.000Z",
       universalClip: { startSeconds: 0.2, durationSeconds: 1.5 },
+      gifVariants: [
+        { target: "docs-site/user-guide/images/test/create.gif", startSec: 0.4, durationSec: 0.3 },
+        { target: "docs-site/user-guide/images/test/resize.gif", startSec: 1, durationSec: 0.4 },
+        { target: "docs-site/user-guide/images/test/padded.gif", startSec: 1.5, durationSec: 0.5 },
+      ],
     });
 
     assert.equal(fs.existsSync(result.capturePath), true);
@@ -268,6 +273,7 @@ test("archives an immutable video and writes a verifiable manifest", async () =>
         string,
         {
           review_status: string;
+          gif_variants: Array<{ startSec: number; durationSec: number }>;
           files: {
             capture_source: {
               file: string;
@@ -308,7 +314,21 @@ test("archives an immutable video and writes a verifiable manifest", async () =>
       >;
     };
     const entry = manifest.entries["sam-tools/smart-point"];
+    assert.deepEqual(
+      entry.gif_variants
+        .slice(0, 2)
+        .map(({ startSec, durationSec }) => ({ startSec, durationSec })),
+      [
+        { startSec: 0.2, durationSec: 0.3 },
+        { startSec: 0.8, durationSec: 0.4 },
+      ],
+    );
     assert.equal(manifest.schema_version, 4);
+    assert.equal(
+      entry.gif_variants[2].durationSec,
+      entry.files.capture_source.media.duration_ms / 1000 - entry.gif_variants[2].startSec,
+    );
+    assert.ok(entry.gif_variants[2].durationSec < 0.5);
     assert.match(entry.files.capture_source.sha256, /^[a-f0-9]{64}$/);
     assert.match(entry.files.universal_mp4.sha256, /^[a-f0-9]{64}$/);
     assert.equal(

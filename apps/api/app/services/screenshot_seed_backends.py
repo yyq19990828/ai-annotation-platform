@@ -23,6 +23,7 @@ from app.services.screenshot_seed_spec import (
     SEED_MANAGED_BY,
     SEED_REVISION,
     BackendRequirement,
+    parse_backend_requirements,
 )
 
 
@@ -268,18 +269,26 @@ async def reconcile_screenshot_backends(
     *,
     mode: str,
     stub_url: str | None = None,
+    backend_requirements: str | None = None,
 ) -> dict[str, Any]:
     if mode not in {"live", "stub"}:
         raise ScreenshotSeedBackendError(f"unsupported ML backend mode: {mode}")
+    required = parse_backend_requirements(backend_requirements)
     candidates = (
-        await _live_candidates(db)
-        if mode == "live"
-        else await _stub_candidate(db, stub_url or default_screenshot_stub_url())
+        []
+        if not required
+        else (
+            await _live_candidates(db)
+            if mode == "live"
+            else await _stub_candidate(db, stub_url or default_screenshot_stub_url())
+        )
     )
 
     selected: dict[str, MLBackendRegistry] = {}
     failures: list[str] = []
     for key, requirement in BACKEND_REQUIREMENTS.items():
+        if key not in required:
+            continue
         backend = select_backend_for_requirement(candidates, requirement)
         if backend is None:
             failures.append(_format_discovery_failure(requirement, candidates))
@@ -309,7 +318,8 @@ async def reconcile_screenshot_backends(
             )
         )
         project.ml_backend_pool_id = None
-        if spec.required_backend is None:
+        if spec.required_backend not in required:
+            project.preannotate_pipeline = []
             continue
         backend = selected[spec.required_backend]
         await service.set_enabled(project.id, backend.id, True)

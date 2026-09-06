@@ -16,6 +16,8 @@ Start with `pnpm docs:media:audit` for provenance/review failures, or the reques
 
 Read [capture](references/capture.md) when generating or rerecording assets. Inspect the actual image and, for video, its beginning, core interaction, ending, and poster. Verify the represented feature, loading state, real target geometry, and sensitive-data masking. Successful encoding is not visual acceptance.
 
+For video work across macOS and Linux, select inference requirements separately from capture quality. Use `pnpm --filter @anno/web screenshots:record -- --list`, then `--flow <id> --plan` before recording. All flow recording commands archive sources only. Publish video, GIF, and poster derivatives through `pnpm docs:media:derive`; `standard` sources and qualified `marketing` masters use the same pipeline without sharing quality claims. Read the cross-platform and derivation sections in the capture reference before preparing either environment.
+
 ## Repair provenance honestly
 
 Review metadata and generation provenance answer different questions. After merge or rebase, check commit reachability, file hashes, associated paths, and actual review scope. Preserve valid records from both sides. Do not fabricate a clean generation commit, change hashes to silence failures, or relabel an unreviewed set as freshly reviewed.
