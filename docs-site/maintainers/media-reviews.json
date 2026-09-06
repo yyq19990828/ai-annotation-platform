@@ -215,8 +215,8 @@
       ]
     },
     "docs-site/public/media/ai/assisted-annotation-poster.webp": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
+      "last_verified_commit": "f66191c30bb51af1c504870dfe2a600828349d29",
+      "verified_at": "2026-09-06T17:45:12.366Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "2e42cab3e9b2c16053d359dc276c90838adf28062ea0695c16079d3bda67efd7",
@@ -230,8 +230,8 @@
       ]
     },
     "docs-site/public/media/ai/assisted-annotation.mp4": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
+      "last_verified_commit": "f66191c30bb51af1c504870dfe2a600828349d29",
+      "verified_at": "2026-09-06T17:45:12.366Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "789912acd40c61c79d3c6bab93d14ec1229ddd40ddf9f46d19eca6dadc60cdac",
@@ -1156,9 +1156,75 @@
         "docs-site/user-guide/review/index.md"
       ]
     },
+    "docs-site/public/media/sam/exemplar-poster.webp": {
+      "last_verified_commit": "bf6664aeea3a1e3d9f391ffb494bd193a7f07dd8",
+      "verified_at": "2026-09-06T16:22:57.383Z",
+      "reviewer": "yyq19990828",
+      "review_profile": "visual-content-v1",
+      "sha256": "a360fa72b5d24de58d11fc1fb882b51f7e1469470bb922f8498405a33af68d28",
+      "watch_paths": [
+        "docs-site/public/media/sam/exemplar-poster.webp",
+        "docs-site/user-guide/workbench/sam-tool.md"
+      ]
+    },
+    "docs-site/public/media/sam/exemplar.mp4": {
+      "last_verified_commit": "bf6664aeea3a1e3d9f391ffb494bd193a7f07dd8",
+      "verified_at": "2026-09-06T16:22:57.383Z",
+      "reviewer": "yyq19990828",
+      "review_profile": "visual-content-v1",
+      "sha256": "f713b468f315a9682d11344885f94eafcdde78bee7dee2f64c790831f3761729",
+      "watch_paths": [
+        "docs-site/public/media/sam/exemplar.mp4",
+        "docs-site/user-guide/workbench/sam-tool.md"
+      ]
+    },
+    "docs-site/public/media/sam/smart-box-poster.webp": {
+      "last_verified_commit": "bf6664aeea3a1e3d9f391ffb494bd193a7f07dd8",
+      "verified_at": "2026-09-06T16:22:57.383Z",
+      "reviewer": "yyq19990828",
+      "review_profile": "visual-content-v1",
+      "sha256": "0ada13e1f1d3abe49d08385d51896ecc529d70382bf44081400cab01460f69c1",
+      "watch_paths": [
+        "docs-site/public/media/sam/smart-box-poster.webp",
+        "docs-site/user-guide/workbench/sam-tool.md"
+      ]
+    },
+    "docs-site/public/media/sam/smart-box.mp4": {
+      "last_verified_commit": "bf6664aeea3a1e3d9f391ffb494bd193a7f07dd8",
+      "verified_at": "2026-09-06T16:22:57.383Z",
+      "reviewer": "yyq19990828",
+      "review_profile": "visual-content-v1",
+      "sha256": "f712b8efcb7df4e2da2182ae351a0303246fdbd3f9c956fb2be2792e20bed9b8",
+      "watch_paths": [
+        "docs-site/public/media/sam/smart-box.mp4",
+        "docs-site/user-guide/workbench/sam-tool.md"
+      ]
+    },
+    "docs-site/public/media/sam/smart-point-poster.webp": {
+      "last_verified_commit": "bf6664aeea3a1e3d9f391ffb494bd193a7f07dd8",
+      "verified_at": "2026-09-06T16:22:57.383Z",
+      "reviewer": "yyq19990828",
+      "review_profile": "visual-content-v1",
+      "sha256": "baf8ac74bc8b3553e3751c0edfb81980961dbacc18bb14f52c94acb2254e13e0",
+      "watch_paths": [
+        "docs-site/public/media/sam/smart-point-poster.webp",
+        "docs-site/user-guide/workbench/sam-tool.md"
+      ]
+    },
+    "docs-site/public/media/sam/smart-point.mp4": {
+      "last_verified_commit": "bf6664aeea3a1e3d9f391ffb494bd193a7f07dd8",
+      "verified_at": "2026-09-06T16:22:57.383Z",
+      "reviewer": "yyq19990828",
+      "review_profile": "visual-content-v1",
+      "sha256": "2ff6ac05d520aefe4e952d6e6393e7c7f65ca90dc3de930db80e1ce2d7812dff",
+      "watch_paths": [
+        "docs-site/public/media/sam/smart-point.mp4",
+        "docs-site/user-guide/workbench/sam-tool.md"
+      ]
+    },
     "docs-site/public/media/sam/smart-scribble-poster.webp": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
+      "last_verified_commit": "f66191c30bb51af1c504870dfe2a600828349d29",
+      "verified_at": "2026-09-06T17:45:12.366Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "1e0effc83ea16e7ca7d923d0f98105a4ff9cc7ae92ff493b12a7e4fbb7c7c5da",
@@ -1172,8 +1238,8 @@
       ]
     },
     "docs-site/public/media/sam/smart-scribble.mp4": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
+      "last_verified_commit": "f66191c30bb51af1c504870dfe2a600828349d29",
+      "verified_at": "2026-09-06T17:45:12.366Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "97e559267cc6e48e04aad161077df2ebdd03312b71c973d24e716442f4504d5d",
@@ -1836,6 +1902,28 @@
         "docs-site/user-guide/workbench/video-track.md"
       ]
     },
+    "docs-site/public/media/workbench/bbox-draw-poster.webp": {
+      "last_verified_commit": "bf6664aeea3a1e3d9f391ffb494bd193a7f07dd8",
+      "verified_at": "2026-09-06T16:22:57.383Z",
+      "reviewer": "yyq19990828",
+      "review_profile": "visual-content-v1",
+      "sha256": "c7e4c81f185c3ba7e8cae5245a68085564fed0289a3fdb81911ad80ee5dc3718",
+      "watch_paths": [
+        "docs-site/public/media/workbench/bbox-draw-poster.webp",
+        "docs-site/user-guide/workbench/bbox.md"
+      ]
+    },
+    "docs-site/public/media/workbench/bbox-draw.mp4": {
+      "last_verified_commit": "bf6664aeea3a1e3d9f391ffb494bd193a7f07dd8",
+      "verified_at": "2026-09-06T16:22:57.383Z",
+      "reviewer": "yyq19990828",
+      "review_profile": "visual-content-v1",
+      "sha256": "a4e09bbfac88abff52db2e17d182c9497a3ea186765b8ba7b94b684d690c5aee",
+      "watch_paths": [
+        "docs-site/public/media/workbench/bbox-draw.mp4",
+        "docs-site/user-guide/workbench/bbox.md"
+      ]
+    },
     "docs-site/public/media/workbench/hotkey-cheatsheet-poster.webp": {
       "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
       "verified_at": "2026-09-06T17:01:37.149Z",
@@ -2322,8 +2410,8 @@
       ]
     },
     "docs-site/user-guide/images/sam/exemplar-output-mode.png": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
+      "last_verified_commit": "f66191c30bb51af1c504870dfe2a600828349d29",
+      "verified_at": "2026-09-06T17:45:12.366Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "14637735dfa584ae7fea4d9901129452052fff3cb7ee9cf4d8e0f99ba19b1249",
@@ -2334,8 +2422,8 @@
       ]
     },
     "docs-site/user-guide/images/sam/interactive-toolbar.png": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
+      "last_verified_commit": "f66191c30bb51af1c504870dfe2a600828349d29",
+      "verified_at": "2026-09-06T17:45:12.366Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "90706edfa31a806c25b8337c326c5492666080e0c75a5dc7994634d0bc48f33e",
@@ -2346,8 +2434,8 @@
       ]
     },
     "docs-site/user-guide/images/sam/magic-box-toolbar.png": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
+      "last_verified_commit": "f66191c30bb51af1c504870dfe2a600828349d29",
+      "verified_at": "2026-09-06T17:45:12.366Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "d0164d62edc02afa8e00ef7d659b3dbd5ef620705439fc6d1e5f40d92dad705c",
@@ -2380,8 +2468,8 @@
       ]
     },
     "docs-site/user-guide/images/sam/smart-point-toolbar.png": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
+      "last_verified_commit": "f66191c30bb51af1c504870dfe2a600828349d29",
+      "verified_at": "2026-09-06T17:45:12.366Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "057b36cb1ca114cc0b48350eeb74b307922ff95ce9fbafde2eecc564331c15a4",

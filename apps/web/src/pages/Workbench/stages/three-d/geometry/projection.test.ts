@@ -136,6 +136,26 @@ describe("projectPoints — behind-camera 剔除 (identity extrinsic + 简单 in
   });
 });
 
+it("与后端共享的 KITTI 手算 oracle bbox 对拍", () => {
+  const calibration: SensorCalibration = {
+    extrinsic: [
+      0, -1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 0, 0, 0, 0, 1,
+    ] as unknown as SensorCalibration["extrinsic"],
+    intrinsic: [800, 0, 640, 0, 800, 360, 0, 0, 1] as unknown as SensorCalibration["intrinsic"],
+  };
+  const corners = psrToCorners([10, 0, 0], [4, 2, 2], [0, 0, 0]);
+  const projected = projectPoints(corners, calibration);
+  const visible = projected.pixels.filter((_pixel, index) => projected.visible[index]);
+  const bbox = [
+    Math.min(...visible.map((pixel) => pixel[0])),
+    Math.min(...visible.map((pixel) => pixel[1])),
+    Math.max(...visible.map((pixel) => pixel[0])),
+    Math.max(...visible.map((pixel) => pixel[1])),
+  ];
+
+  expect(bbox).toEqual([540, 260, 740, 460]);
+});
+
 describe("projectPoints — rect 处理", () => {
   const IDENTITY_RECT = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
