@@ -12,7 +12,12 @@ last_reviewed: 2026-06-15
 
 ## 操作
 
-![矩形框绘制：选「矩形」工具后，在画布按下拖动松开生成一个轴对齐矩形](../images/bbox/draw-in-progress.gif)
+<DocsVideo
+  src="/media/workbench/bbox-draw.mp4"
+  poster="/media/workbench/bbox-draw-poster.webp"
+  alt="矩形框绘制：选「矩形」工具后，在画布按下拖动松开生成一个轴对齐矩形"
+  caption="选「矩形」工具后，在画布按下拖动松开生成轴对齐矩形，类别弹层选择后保存。"
+/>
 
 1. 按 `B` 切到矩形工具
 2. 在画布上按下鼠标 → 拖动 → 松开，即生成一个矩形

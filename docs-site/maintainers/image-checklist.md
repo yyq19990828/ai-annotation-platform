@@ -240,7 +240,7 @@
 
 ### 工作台
 
-- [x] `images/bbox/draw-in-progress.gif` — 选矩形工具 → 画布拖出轴对齐矩形 `[auto-gif]`（flows/bbox-draw，P-COCO8）
+- [~] ~~`images/bbox/draw-in-progress.gif`~~ — **已由** `public/media/workbench/bbox-draw.mp4` **替代**：矩形绘制完整流已迁移到 DocsVideo
 - [ ] `images/polygon/vertex-edit.png` — 多边形选中态 + 边悬停 + 图标；旧图未展示命名状态且带权限告警，已删除，待建立可验证场景后暗色重拍
 - [ ] `images/polygon/close-hint.png` — 三顶点后下一点贴近首点的闭合提示；旧图未展示命名状态且带权限告警，已删除，待建立可验证场景后暗色重拍
 - [ ] `images/keypoint/human-pose.png` — COCO 17 点人体姿态 + 骨架连线；旧 1×1 占位图已删除，待重拍
@@ -285,11 +285,11 @@
 - [x] `images/sam/interactive-toolbar.png` — 智能框交互工具条（引擎/模型/档位 + 状态灯）`[auto]`（scene: `sam/interactive-toolbar`，P-COCO8 + live backend）
 - [x] `images/sam/magic-box-toolbar.png` — Magic Box 交互工具条（紧凑 bbox 输出提示 + 引擎/档位 + 状态灯）`[auto]`（scene: `sam/magic-box-toolbar`，P-COCO8 + live backend）
 - [x] `images/sam/exemplar-output-mode.png` — Exemplar 示例交互工具条（输出形态三选一 + 示例能力控件）`[auto]`（scene: `sam/exemplar-output-mode`，P-COCO8 + live backend）
-- [x] `images/sam/smart-point-interaction.gif` — 无侧边栏的真实 SAM3 智能点车辆轮廓候选 `[auto-gif]`（flow: `sam-tool-smart-point`，P-COCO8）
-- [x] `images/sam/smart-box-interaction.gif` — 无侧边栏的真实 SAM3 智能框车辆轮廓候选 `[auto-gif]`（flow: `sam-tool-smart-box`，P-COCO8）
+- [~] ~~`images/sam/smart-point-interaction.gif`~~ — **已由** `public/media/sam/smart-point.mp4` **替代**：智能点真实推理完整流已迁移到 DocsVideo
+- [~] ~~`images/sam/smart-box-interaction.gif`~~ — **已由** `public/media/sam/smart-box.mp4` **替代**：智能框真实推理完整流已迁移到 DocsVideo
 - [~] ~~`images/sam/smart-scribble-interaction.gif`~~ — **已由** `public/media/sam/smart-scribble.mp4` **替代**：正负笔迹精修完整流已迁移到 DocsVideo
 - [x] `public/media/ai/assisted-annotation.mp4` — 无侧边栏的真实 SAM3 Magic Box 粗框、候选收紧与类别确认 `[derived-mp4]`（P-COCO8）
-- [x] `images/sam/exemplar-interaction.gif` — 无侧边栏的真实 SAM3 Exemplar 车辆示例与全图相似候选 `[auto-gif]`（flow: `sam-tool-exemplar`，P-COCO8）
+- [~] ~~`images/sam/exemplar-interaction.gif`~~ — **已由** `public/media/sam/exemplar.mp4` **替代**：Exemplar 示例推理完整流已迁移到 DocsVideo
 - [ ] `images/sam/exemplar-yoloe-toolbar.png` — YOLOE exemplar 交互工具栏能力裁剪态；红框：仅正样例、无负框/叠加文本、输出形态 [manual]
 - [x] `images/sam/ai-inspector-panel.png` — 悬浮 AI 面板（Prompt/阈值滑块/变体选择） [auto]
 - [ ] `images/workbench/current-task-project-pipeline.png` — 工作台「当前题 AI」面板按项目编排运行入口；红框：运行当前题（按项目编排 · N 阶段）按钮、项目编排来源提示 [manual]

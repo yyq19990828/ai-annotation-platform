@@ -34,11 +34,15 @@ AI Annotation Platform 把项目管理、Data Manager、多模态标注工作台
   <tr>
     <td width="50%" valign="top" align="center">
       <strong>智能点 · Smart Point</strong><br>
-      <img src="./docs-site/user-guide/images/sam/smart-point-interaction.gif" alt="智能点单击生成对象轮廓" width="100%">
+      <a href="./docs-site/public/media/sam/smart-point.mp4">
+        <img src="./docs-site/public/media/sam/smart-point-poster.webp" alt="智能点单击生成对象轮廓" width="100%">
+      </a>
     </td>
     <td width="50%" valign="top" align="center">
       <strong>智能框 · Smart Box</strong><br>
-      <img src="./docs-site/user-guide/images/sam/smart-box-interaction.gif" alt="智能框框选生成多边形候选" width="100%">
+      <a href="./docs-site/public/media/sam/smart-box.mp4">
+        <img src="./docs-site/public/media/sam/smart-box-poster.webp" alt="智能框框选生成多边形候选" width="100%">
+      </a>
     </td>
   </tr>
   <tr>
@@ -50,7 +54,9 @@ AI Annotation Platform 把项目管理、Data Manager、多模态标注工作台
     </td>
     <td width="50%" valign="top" align="center">
       <strong>Exemplar</strong><br>
-      <img src="./docs-site/user-guide/images/sam/exemplar-interaction.gif" alt="Exemplar 示例驱动相似目标发现" width="100%">
+      <a href="./docs-site/public/media/sam/exemplar.mp4">
+        <img src="./docs-site/public/media/sam/exemplar-poster.webp" alt="Exemplar 示例驱动相似目标发现" width="100%">
+      </a>
     </td>
   </tr>
 </table>

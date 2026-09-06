@@ -35,6 +35,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **文档演示资产全面迁移到 MP4 视频**. README 工作台案例表格与 SAM / Bbox 用户文档中剩余的 4 个 GIF 演示（智能点、智能框、Exemplar、矩形框绘制）替换为 4K 母版派生的 720p MP4（文档站内 DocsVideo 播放，README 用海报帧链接到 MP4），发布文章同步改为海报帧 + 完整演示链接，并删除旧的 GIF 文件。
+
 ### Added
 
 - **点云导出使用真实多相机投影与时序语义**. KITTI 可按完整相机角色输出真实 camera 坐标、bottom-center、yaw 与 2D bbox；COCO 可按所有有效相机即时派生 2D 框且不写数据库；nuScenes 子集改用真实 scene、时间戳、ego pose、sample 和 track 前后链。

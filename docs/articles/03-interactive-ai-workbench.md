@@ -25,9 +25,9 @@
 
 智能点适合目标明确、边界还没有现成几何可用的情况。标注员在目标内部单击，工作台把归一化坐标作为正向点交给支持点提示的模型，返回一个或多个轮廓候选。
 
-![智能点生成车辆轮廓候选](../../docs-site/user-guide/images/sam/smart-point-interaction.gif)
+![智能点生成车辆轮廓候选](../../docs-site/public/media/sam/smart-point-poster.webp)
 
-_在车辆内部单击后，画布显示模型返回的轮廓候选，顶部提示可用 Tab 切换、Enter 采纳。_
+_[观看完整演示](../../docs-site/public/media/sam/smart-point.mp4)：在车辆内部单击后，画布显示模型返回的轮廓候选，顶部提示可用 Tab 切换、Enter 采纳。_
 
 第一次点击有歧义时，模型可以给出多个候选。`Tab` 和 `Shift+Tab` 用来切换，`Enter` 打开类别选择器，`Esc` 放弃这一轮。标注员也可以继续补点：正向点告诉模型目标还包括哪里，按住 `Alt` 单击，或切到负向极性，则表示这部分不要。
 
@@ -37,9 +37,9 @@ _在车辆内部单击后，画布显示模型返回的轮廓候选，顶部提�
 
 背景杂乱时，一个点可能不足以说明目标范围。智能框让标注员先画出大致区域，模型只需要在这个范围里找主要前景。返回结果仍是轮廓候选，可以保存为 polygon；模型、项目和工具单位都支持时，也可以直接提交为原生 Raster Mask。
 
-![智能框提取车辆轮廓](../../docs-site/user-guide/images/sam/smart-box-interaction.gif)
+![智能框提取车辆轮廓](../../docs-site/public/media/sam/smart-box-poster.webp)
 
-_拖框圈定车辆后，模型在框内提取主要前景，结果先以紫色轮廓候选显示。_
+_[观看完整演示](../../docs-site/public/media/sam/smart-box.mp4)：拖框圈定车辆后，模型在框内提取主要前景，结果先以紫色轮廓候选显示。_
 
 Magic Box 复用了拖框手势，但目标是检测框。标注员不必把矩形四条边拖到很准，只要大致包住目标。模型先算出目标 Mask，工作台再取它的紧凑外接矩形，随即打开类别选择器。选好类别后，结果作为 bbox 保存，不进入普通的多候选审阅流程。
 
@@ -71,9 +71,9 @@ _[观看完整演示](../../docs-site/public/media/sam/smart-scribble.mp4)：选
 
 _Exemplar 工具栏会按当前后端能力显示输出形态、正负样例、文本组合和置信度筛选控件。_
 
-![Exemplar 查找道路图中的相似车辆](../../docs-site/user-guide/images/sam/exemplar-interaction.gif)
+![Exemplar 查找道路图中的相似车辆](../../docs-site/public/media/sam/exemplar-poster.webp)
 
-_框出一辆白色车辆后，Exemplar 在整张道路图中返回多个相似车辆候选。_
+_[观看完整演示](../../docs-site/public/media/sam/exemplar.mp4)：框出一辆白色车辆后，Exemplar 在整张道路图中返回多个相似车辆候选。_
 
 第一次结果不理想时，不必清空重来。支持完整 Exemplar 精修能力的 SAM 3 可以继续增加正样例来补召回，也可以用负样例排除误检；置信度阈值用来控制结果数量，还能叠加一个简短文本概念。每次调整都会带着当前框集、文本和阈值重新计算。
 
@@ -149,13 +149,13 @@ AI Annotation Platform 把点、框、笔迹和视觉样例变成画布里的模
 
 ### 配图上传顺序
 
-1. `sam/smart-point-interaction.gif`：开场，展示单击后出现车辆轮廓候选；
-2. `sam/smart-box-interaction.gif`：展示拖框后提取框内主要前景；
+1. `public/media/sam/smart-point.mp4`：开场，展示单击后出现车辆轮廓候选；
+2. `public/media/sam/smart-box.mp4`：展示拖框后提取框内主要前景；
 3. `public/media/sam/smart-scribble.mp4`：展示选中已有 Mask 后依次添加正向与负向笔迹；
 4. `public/media/ai/assisted-annotation.mp4`：展示粗框、类别确认和紧凑 bbox；
 5. `sam/exemplar-output-mode.png`：说明 Exemplar 的输出和筛选控件；
-6. `sam/exemplar-interaction.gif`：展示一个视觉样例返回多个相似车辆候选。
+6. `public/media/sam/exemplar.mp4`：展示一个视觉样例返回多个相似车辆候选。
 
-五段交互媒体都来自工作台录制。智能点、智能框、Magic Box 和 Exemplar 使用真实 SAM 3；智能笔迹使用可重复的签名候选响应，保留真实手势、候选渲染和会话状态。发布到知乎或公众号时需要逐张上传，不要保留仓库相对路径。智能笔迹视频和 Exemplar GIF 宽度较小，移动端建议保留画布目标、顶部工具栏和候选状态，裁掉无关空白。
+五段交互媒体都来自工作台录制。智能点、智能框、Magic Box 和 Exemplar 使用真实 SAM 3；智能笔迹使用可重复的签名候选响应，保留真实手势、候选渲染和会话状态。发布到知乎或公众号时需要逐个上传，不要保留仓库相对路径。智能笔迹和 Exemplar 视频宽度较小，移动端建议保留画布目标、顶部工具栏和候选状态，裁掉无关空白。
 
 智能笔迹演示停在候选态，没有展示最终确认入库。发布图注不要把它写成“已经更新 Mask”；原位更新行为由正文说明。

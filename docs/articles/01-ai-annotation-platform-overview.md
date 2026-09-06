@@ -130,21 +130,21 @@ _审核员可以检查标注结果，并将有问题的任务退回修正。_
 - Magic Box：先画一个粗框，再由模型自动收紧；
 - Exemplar：给出一个视觉示例，查找画面中外观相似的目标。
 
-![智能点生成对象轮廓](../../docs-site/user-guide/images/sam/smart-point-interaction.gif)
+![智能点生成对象轮廓](../../docs-site/public/media/sam/smart-point-poster.webp)
 
-_智能点：单击目标后生成可选择的轮廓候选。_
+_[观看完整演示](../../docs-site/public/media/sam/smart-point.mp4)：智能点单击目标后生成可选择的轮廓候选。_
 
-![智能框提取目标边界](../../docs-site/user-guide/images/sam/smart-box-interaction.gif)
+![智能框提取目标边界](../../docs-site/public/media/sam/smart-box-poster.webp)
 
-_智能框：拖出目标范围，由模型提取框内对象边界。_
+_[观看完整演示](../../docs-site/public/media/sam/smart-box.mp4)：智能框拖出目标范围，由模型提取框内对象边界。_
 
 ![Magic Box 自动收紧粗框](../../docs-site/public/media/ai/assisted-annotation-poster.webp)
 
 _[观看完整演示](../../docs-site/public/media/ai/assisted-annotation.mp4)：Magic Box 从一个粗略矩形开始，自动得到贴合目标的检测框。_
 
-![Exemplar 查找相似目标](../../docs-site/user-guide/images/sam/exemplar-interaction.gif)
+![Exemplar 查找相似目标](../../docs-site/public/media/sam/exemplar-poster.webp)
 
-_Exemplar：用一个示例目标查找画面中的相似对象。_
+_[观看完整演示](../../docs-site/public/media/sam/exemplar.mp4)：Exemplar 用一个示例目标查找画面中的相似对象。_
 
 项目级 AI 预标注可以先对一批任务运行模型，再把候选结果送入人工工作台。视频侧可以调用 tracker 延续目标轨迹，OCR 侧可以完成文本检测与识别。平台已经接入 Grounded-SAM-2、SAM 3、YOLO、ONNXTools 和 RapidOCR，并通过开放的 ML Backend 协议管理模型能力、连接状态与任务路由。
 
