@@ -50,6 +50,13 @@ The token source is `apps/web/src/styles/shadcn.css`; the palette reference is [
 
 `pnpm lint` includes the token gate. Run it separately with `pnpm --filter @anno/web lint:css-tokens` (`apps/web/scripts/check-tw-tokens.mjs`).
 
+## CI workflow naming
+
+- File names follow `<domain>-<action>.yml` in kebab-case; the cross-domain aggregate stays `ci.yml`.
+- The top-level `name:` uses sentence case (`<Domain> <action>`): capitalize the first word only; keep acronyms and proper nouns as-is (Claude, CI, PR, Playwright).
+- In aggregate workflows each job sets `name: <Domain> <tool/action>`; single-domain workflows omit job names and rely on the job id.
+- `scripts/check-workflow-names.mjs` guards this advisory (CI lint job + pre-commit); extend its `PROPER_NOUNS` set when a new product name is legitimate.
+
 ## Documentation and changelog
 
 Before each commit, check documentation impact and update affected docs in the same change:

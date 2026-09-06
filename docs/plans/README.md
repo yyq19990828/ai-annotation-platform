@@ -42,6 +42,6 @@
 
 ## CI 守护
 
-`docs.yml` 中的 `validate` job 会扫描超过 30 天未补 `## Outcome` 段的 plan，输出 warning（不阻断合并）。如果某个 plan 注定无 outcome（探索性废案），请在文件顶部加 `> Status: abandoned` 说明。
+`docs-validate.yml` 中的 `validate` job 会扫描超过 30 天未补 `## Outcome` 段的 plan，输出 warning（不阻断合并）。如果某个 plan 注定无 outcome（探索性废案），请在文件顶部加 `> Status: abandoned` 说明。
 
 `docs-site/scripts/check-plans-freshness.mjs` 只扫描根目录中的活跃计划，归档文件不再参与陈旧计划提醒。
