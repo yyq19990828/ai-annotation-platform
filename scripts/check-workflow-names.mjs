@@ -29,7 +29,7 @@ const PROPER_NOUNS = new Set(["Claude", "Code", "Playwright", "VitePress", "MinI
 // SDK, E2E, API, ML, TSC, ... recognized without listing each one.
 const isAcronym = (word) => /^[A-Z][A-Z0-9]{1,4}$/.test(word);
 
-const RE_FILE = /^[a-z0-9]+(-[a-z0-9]+)*\.yml$/;
+const RE_FILE = /^(?:ci|[a-z0-9]+(?:-[a-z0-9]+)+)\.yml$/;
 // Top-level `name:` is the first unindented `name:` key; indented ones are
 // job/step names and are out of scope here.
 const RE_TOP_NAME = /^name:[ \t]+(\S.*)$/m;
@@ -66,8 +66,8 @@ function scanFile(file, findings) {
     return;
   }
   const line = text.slice(0, match.index).split("\n").length;
-  // Only plain word tokens are checked; tokens carrying punctuation are skipped.
-  const words = match[1].split(/\s+/).filter((w) => /^[A-Za-z][A-Za-z0-9-]*$/.test(w));
+  const name = match[1].trim().replace(/^(['"])(.*)\1$/, "$2");
+  const words = name.split(/\s+/).filter((w) => /^[A-Za-z][A-Za-z0-9-]*$/.test(w));
   words.forEach((word, i) => {
     const msg = checkWord(word, i);
     if (msg) findings.push({ path, line, msg });
@@ -77,7 +77,7 @@ function scanFile(file, findings) {
 const strict = process.argv.includes("--strict");
 const findings = [];
 for (const file of readdirSync(workflowsDir)
-  .filter((f) => f.endsWith(".yml"))
+  .filter((f) => /\.ya?ml$/.test(f))
   .sort()) {
   scanFile(file, findings);
 }
