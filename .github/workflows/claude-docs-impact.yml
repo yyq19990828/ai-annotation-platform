@@ -1,4 +1,4 @@
-name: Claude Docs Impact
+name: Claude docs impact
 
 on: workflow_dispatch
 

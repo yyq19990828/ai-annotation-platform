@@ -98,3 +98,14 @@ repos:
         exclude: ^(CHANGELOG\.md|docs/adr/|docs-site/dev/adr/|.*\.generated\.md)$
         pass_filenames: false
         verbose: true
+
+      # Workflow 命名规范提醒(仅提醒, 不阻塞): 文件名 kebab-case `<域>-<动作>.yml`,
+      # 顶层 name 用 sentence case(专有名词/缩写保留)。规范见 CLAUDE.md
+      # "CI workflow naming"; 脚本永远 exit 0, CI lint job 同款兜底。
+      - id: workflow-names
+        name: Check workflow naming (advisory)
+        entry: node scripts/check-workflow-names.mjs
+        language: system
+        files: ^\.github/workflows/.*\.ya?ml$|^scripts/check-workflow-names\.mjs$
+        pass_filenames: false
+        verbose: true

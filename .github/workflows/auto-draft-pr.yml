@@ -1,4 +1,4 @@
-name: Auto Draft PR
+name: Auto draft PR
 
 on:
   pull_request:

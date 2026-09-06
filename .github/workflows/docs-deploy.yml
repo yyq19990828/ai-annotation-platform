@@ -1,4 +1,4 @@
-name: Deploy docs site
+name: Docs deploy
 
 on:
   push:
@@ -11,7 +11,7 @@ on:
       - "ROADMAP.md"
       - "ROADMAP/**"
       - "apps/api/openapi.snapshot.json"
-      - ".github/workflows/docs.yml"
+      - ".github/workflows/docs-deploy.yml"
   workflow_dispatch:
 
 permissions:
