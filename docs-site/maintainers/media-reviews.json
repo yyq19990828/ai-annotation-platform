@@ -215,8 +215,8 @@
       ]
     },
     "docs-site/public/media/ai/assisted-annotation-poster.webp": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
+      "last_verified_commit": "f66191c30bb51af1c504870dfe2a600828349d29",
+      "verified_at": "2026-09-06T17:45:12.366Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "2e42cab3e9b2c16053d359dc276c90838adf28062ea0695c16079d3bda67efd7",
@@ -230,8 +230,8 @@
       ]
     },
     "docs-site/public/media/ai/assisted-annotation.mp4": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
+      "last_verified_commit": "f66191c30bb51af1c504870dfe2a600828349d29",
+      "verified_at": "2026-09-06T17:45:12.366Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "789912acd40c61c79d3c6bab93d14ec1229ddd40ddf9f46d19eca6dadc60cdac",
@@ -1223,8 +1223,8 @@
       ]
     },
     "docs-site/public/media/sam/smart-scribble-poster.webp": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
+      "last_verified_commit": "f66191c30bb51af1c504870dfe2a600828349d29",
+      "verified_at": "2026-09-06T17:45:12.366Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "1e0effc83ea16e7ca7d923d0f98105a4ff9cc7ae92ff493b12a7e4fbb7c7c5da",
@@ -1238,8 +1238,8 @@
       ]
     },
     "docs-site/public/media/sam/smart-scribble.mp4": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
+      "last_verified_commit": "f66191c30bb51af1c504870dfe2a600828349d29",
+      "verified_at": "2026-09-06T17:45:12.366Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "97e559267cc6e48e04aad161077df2ebdd03312b71c973d24e716442f4504d5d",
@@ -2410,8 +2410,8 @@
       ]
     },
     "docs-site/user-guide/images/sam/exemplar-output-mode.png": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
+      "last_verified_commit": "f66191c30bb51af1c504870dfe2a600828349d29",
+      "verified_at": "2026-09-06T17:45:12.366Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "14637735dfa584ae7fea4d9901129452052fff3cb7ee9cf4d8e0f99ba19b1249",
@@ -2422,8 +2422,8 @@
       ]
     },
     "docs-site/user-guide/images/sam/interactive-toolbar.png": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
+      "last_verified_commit": "f66191c30bb51af1c504870dfe2a600828349d29",
+      "verified_at": "2026-09-06T17:45:12.366Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "90706edfa31a806c25b8337c326c5492666080e0c75a5dc7994634d0bc48f33e",
@@ -2434,8 +2434,8 @@
       ]
     },
     "docs-site/user-guide/images/sam/magic-box-toolbar.png": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
+      "last_verified_commit": "f66191c30bb51af1c504870dfe2a600828349d29",
+      "verified_at": "2026-09-06T17:45:12.366Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "d0164d62edc02afa8e00ef7d659b3dbd5ef620705439fc6d1e5f40d92dad705c",
@@ -2468,8 +2468,8 @@
       ]
     },
     "docs-site/user-guide/images/sam/smart-point-toolbar.png": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
+      "last_verified_commit": "f66191c30bb51af1c504870dfe2a600828349d29",
+      "verified_at": "2026-09-06T17:45:12.366Z",
       "reviewer": "yyq19990828",
       "review_profile": "visual-content-v1",
       "sha256": "057b36cb1ca114cc0b48350eeb74b307922ff95ce9fbafde2eecc564331c15a4",
