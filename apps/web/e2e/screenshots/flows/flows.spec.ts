@@ -907,12 +907,20 @@ test.describe("flow recordings", () => {
       await installRecordingWorkbenchLayout(page, "both", {
         workspace: { context: "annotate:image", preset: "ai-review" },
       });
-      let createdId: string | undefined;
+      const cleanup: CandidateReviewCleanupRecord = {
+        projectId: cached.projects.image_demo.id,
+        taskId: cached.projects.image_demo.tasks.annotating.id,
+        predictionIds: [],
+        annotationIds: [],
+      };
+      candidateReviewCleanupRecords.push(cleanup);
       try {
         const win = await runSamToolRecording(page, cached, demo.tool, {
           accept: true,
-          onCreated: (id) => {
-            createdId = id;
+          onCreated: (id, annotation) => {
+            cleanup.annotationIds.push(id);
+            if (typeof annotation.parent_prediction_id === "string")
+              cleanup.predictionIds.push(annotation.parent_prediction_id);
           },
         });
         flowInferenceEvidence[`sam-tools/${demo.tool}`] = win.evidence;
@@ -924,12 +932,7 @@ test.describe("flow recordings", () => {
           { fps: demo.fps ?? 8, maxWidth: demo.maxWidth ?? 860 },
         );
       } finally {
-        if (createdId)
-          await seed.deleteTaskAnnotation(
-            cached.projects.image_demo.tasks.annotating.id,
-            createdId,
-            cached.users.admin.email,
-          );
+        cleanupCandidateReview(cleanup);
       }
     });
   }
@@ -988,20 +991,23 @@ test.describe("flow recordings", () => {
     await installRecordingWorkbenchLayout(page, "both", {
       workspace: { context: "annotate:image", preset: "ai-review" },
     });
-    let createdId: string | undefined;
+    const cleanup: CandidateReviewCleanupRecord = {
+      projectId: cached.projects.image_demo.id,
+      taskId: cached.projects.image_demo.tasks.annotating.id,
+      predictionIds: [],
+      annotationIds: [],
+    };
+    candidateReviewCleanupRecords.push(cleanup);
     try {
-      const win = await runSamInteractive(page, cached, (id) => {
-        createdId = id;
+      const win = await runSamInteractive(page, cached, (id, annotation) => {
+        cleanup.annotationIds.push(id);
+        if (typeof annotation.parent_prediction_id === "string")
+          cleanup.predictionIds.push(annotation.parent_prediction_id);
       });
       flowInferenceEvidence["ai-assisted-annotation"] = win.evidence;
       await finalizeMarketingBackedHomepageAsset(page, "ai-assisted-annotation", drawTrim(win, t0));
     } finally {
-      if (createdId)
-        await seed.deleteTaskAnnotation(
-          cached.projects.image_demo.tasks.annotating.id,
-          createdId,
-          cached.users.admin.email,
-        );
+      cleanupCandidateReview(cleanup);
     }
   });
 

@@ -33,7 +33,10 @@ export async function runSamToolRecording(
   page: Page,
   catalog: ScreenshotSeedCatalog,
   toolId: SamRecordingTool,
-  options: { accept?: boolean; onCreated?: (id: string) => void } = {},
+  options: {
+    accept?: boolean;
+    onCreated?: (id: string, annotation: Record<string, unknown>) => void;
+  } = {},
 ): Promise<SamRecordingWindow> {
   const anchor = catalog.projects.image_demo.tasks.annotating.recording_anchors?.primary_vehicle;
   if (!anchor) {
@@ -227,7 +230,7 @@ export async function runSamToolRecording(
 export async function runSamInteractive(
   page: Page,
   catalog: ScreenshotSeedCatalog,
-  onCreated?: (id: string) => void,
+  onCreated?: (id: string, annotation: Record<string, unknown>) => void,
 ): Promise<SamRecordingWindow> {
   return runSamToolRecording(page, catalog, "magic-box", { accept: true, onCreated });
 }
