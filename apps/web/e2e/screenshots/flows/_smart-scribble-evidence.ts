@@ -7,6 +7,11 @@ import type { CandidateReviewCleanupRecord } from "./candidate-review-lifecycle"
 
 export const SMART_SCRIBBLE_MODEL = "sam3-interactive-seg";
 
+/** Warmup shares the transport endpoint but is not a recorded scribble round. */
+export function isSmartScribbleRequest(request: InteractiveRequest) {
+  return request.context?.type === "scribble" && request.context.model_id === SMART_SCRIBBLE_MODEL;
+}
+
 export interface ScribbleSourceIdentity {
   task_id: string;
   annotation_id: string;
@@ -48,6 +53,49 @@ export function scribbleMaskEvidence(rle: CocoRle) {
     offset += count;
   }
   return { content_digest, area, size: rle.size, samples };
+}
+
+/** Sample both directions of the pixel change, excluding shared foreground. */
+export function scribbleMaskDifference(previous: CocoRle, current: CocoRle) {
+  scribbleMaskEvidence(previous);
+  scribbleMaskEvidence(current);
+  assert.deepEqual(current.size, previous.size, "Scribble rounds must use the same image size");
+  const [height, width] = current.size;
+  const added: Array<[number, number]> = [];
+  const removed: Array<[number, number]> = [];
+  let previousIndex = 0;
+  let currentIndex = 0;
+  let previousEnd = previous.counts[0];
+  let currentEnd = current.counts[0];
+  let offset = 0;
+  while (offset < width * height) {
+    while (previousEnd <= offset) previousEnd += previous.counts[++previousIndex];
+    while (currentEnd <= offset) currentEnd += current.counts[++currentIndex];
+    const end = Math.min(previousEnd, currentEnd);
+    if (previousIndex % 2 !== currentIndex % 2) {
+      (currentIndex % 2 ? added : removed).push([offset, end]);
+    }
+    offset = end;
+  }
+  assert.ok(added.length + removed.length > 0, "Scribble rounds must differ in actual pixels");
+  const sample = (runs: Array<[number, number]>): [number, number][] => {
+    const area = runs.reduce((sum, [start, end]) => sum + end - start, 0);
+    const count = Math.min(16, area);
+    const points: [number, number][] = [];
+    let runIndex = 0;
+    let preceding = 0;
+    for (let index = 0; index < count; index += 1) {
+      const rank = Math.floor(((index + 0.5) * area) / count);
+      while (rank >= preceding + runs[runIndex][1] - runs[runIndex][0]) {
+        preceding += runs[runIndex][1] - runs[runIndex][0];
+        runIndex += 1;
+      }
+      const pixel = runs[runIndex][0] + rank - preceding;
+      points.push([(Math.floor(pixel / height) + 0.5) / width, ((pixel % height) + 0.5) / height]);
+    }
+    return points;
+  };
+  return { added: sample(added), removed: sample(removed) };
 }
 
 export function inspectScribbleRound(

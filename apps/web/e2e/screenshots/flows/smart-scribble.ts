@@ -21,6 +21,8 @@ import {
 } from "./_workbench-layout";
 import {
   inspectScribbleRound,
+  isSmartScribbleRequest,
+  scribbleMaskDifference,
   scribbleMaskEvidence,
   SMART_SCRIBBLE_MODEL,
   trackScribbleAcceptance,
@@ -39,7 +41,11 @@ async function readJson<T>(page: Page, path: string): Promise<T> {
   }, path);
 }
 
-async function waitForVisibleCandidate(page: Page, samples: [number, number][]) {
+async function waitForVisibleCandidate(
+  page: Page,
+  samples: [number, number][],
+  difference?: ReturnType<typeof scribbleMaskDifference>,
+) {
   const stage = page.getByTestId("workbench-stage");
   await expect(stage).toHaveAttribute("data-sam-candidate-count", "1", { timeout: 20_000 });
   const media = await renderedMediaBounds(stage);
@@ -48,9 +54,9 @@ async function waitForVisibleCandidate(page: Page, samples: [number, number][]) 
     .poll(
       async () =>
         stage.evaluate(
-          (element, { media, samples }) => {
+          (element, { media, samples, difference }) => {
             const canvases = [...element.querySelectorAll("canvas")];
-            return samples.some(([x, y]) =>
+            const isPurple = ([x, y]: [number, number]) =>
               canvases.some((canvas) => {
                 const bounds = canvas.getBoundingClientRect();
                 if (bounds.width <= 0 || bounds.height <= 0) return false;
@@ -69,10 +75,15 @@ async function waitForVisibleCandidate(page: Page, samples: [number, number][]) 
                   Math.abs(pixel[1] - 85) < 12 &&
                   Math.abs(pixel[2] - 247) < 12
                 );
-              }),
+              });
+            return (
+              samples.some(isPurple) &&
+              (!difference ||
+                (difference.added.every(isPurple) &&
+                  difference.removed.every((point) => !isPurple(point))))
             );
           },
-          { media, samples },
+          { media, samples, difference },
         ),
       { timeout: 20_000, message: "The returned native Mask must be painted on the canvas" },
     )
@@ -96,9 +107,12 @@ export async function runSmartScribble(
   const endpoint = `/api/v1/projects/${project.id}/ml-backends/${backend.id}/interactive-annotating`;
   const requests: InteractiveRequest[] = [];
   const failedMaskRequests: string[] = [];
+  const isScribbleInference = (request: Request) =>
+    request.method() === "POST" &&
+    new URL(request.url()).pathname === endpoint &&
+    isSmartScribbleRequest(request.postDataJSON() as InteractiveRequest);
   const observeRequest = (request: Request) => {
-    if (request.method() === "POST" && new URL(request.url()).pathname === endpoint)
-      requests.push(request.postDataJSON() as InteractiveRequest);
+    if (isScribbleInference(request)) requests.push(request.postDataJSON() as InteractiveRequest);
     if (/\/annotations\/tmp_[^/]+\/mask-content/.test(request.url()))
       failedMaskRequests.push("temporary annotation requested persisted content");
   };
@@ -177,6 +191,7 @@ export async function runSmartScribble(
     await page.waitForTimeout(1000);
     const rounds: ReturnType<typeof inspectScribbleRound>["evidence"][] = [];
     let previousSession: string | null | undefined;
+    let previousRle: CocoRle | undefined;
     for (const [index, anchors] of [anchor.positive_stroke, anchor.negative_stroke].entries()) {
       const [first, last] = anchors;
       if (!first || !last) throw new Error("[smart-scribble] primary_vehicle 缺少正负笔迹锚点");
@@ -188,11 +203,9 @@ export async function runSmartScribble(
       const media = await renderedMediaBounds(stage);
       const start = mediaPoint(media, first);
       const end = mediaPoint(media, last);
-      const pending = page.waitForResponse(
-        (response) =>
-          response.request().method() === "POST" && new URL(response.url()).pathname === endpoint,
-        { timeout: 120_000 },
-      );
+      const pending = page.waitForResponse((response) => isScribbleInference(response.request()), {
+        timeout: 120_000,
+      });
       await page.mouse.move(start.x, start.y);
       await page.mouse.down();
       await movePointerAtRefreshRate(page, start, end, 900);
@@ -217,7 +230,13 @@ export async function runSmartScribble(
       previousSession = result.mask_input_next;
       rounds.push(round.evidence);
       await page.mouse.move(0, 0);
-      await waitForVisibleCandidate(page, round.evidence.mask.samples);
+      // A retained previous candidate shares most foreground with the new result.
+      // Require added pixels to turn purple and removed pixels to stop being purple.
+      const difference = previousRle
+        ? scribbleMaskDifference(previousRle, round.candidate.value.rle)
+        : undefined;
+      await waitForVisibleCandidate(page, round.evidence.mask.samples, difference);
+      previousRle = round.candidate.value.rle;
       await page.waitForTimeout(1800);
     }
     expect(requests).toHaveLength(2);

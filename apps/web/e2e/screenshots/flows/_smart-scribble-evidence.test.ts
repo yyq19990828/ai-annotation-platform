@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AiMaskAcceptResponse } from "../../../src/api/aiMasks";
+import type { CocoRle } from "../../../src/pages/Workbench/stage/shared/geometry/maskRle";
 import type { CandidateReviewCleanupRecord } from "./candidate-review-lifecycle";
 import {
   inspectScribbleRound,
+  isSmartScribbleRequest,
+  scribbleMaskDifference,
   scribbleMaskEvidence,
   trackScribbleAcceptance,
 } from "./_smart-scribble-evidence.ts";
@@ -111,6 +114,29 @@ test("a fixture model cannot pass the live inference gate", () => {
   assert.throws(() => inspectScribbleRound(request, response, source, "backend-1", [1]));
 });
 
+test("warmup and other model requests cannot count as a scribble round", () => {
+  const { request } = round();
+  assert.equal(isSmartScribbleRequest(request), true);
+  assert.equal(
+    isSmartScribbleRequest({
+      task_id: source.task_id,
+      context: { type: "point", points: [[0.5, 0.5]], labels: [1] },
+    }),
+    false,
+  );
+  assert.equal(
+    isSmartScribbleRequest({ ...request, context: { ...request.context, type: "point" } }),
+    false,
+  );
+  assert.equal(
+    isSmartScribbleRequest({
+      ...request,
+      context: { ...request.context, model_id: "other-model" },
+    }),
+    false,
+  );
+});
+
 test("wrong task, backend, prompt source, or polarity cannot become provenance", () => {
   for (const mutate of [
     (r: ReturnType<typeof round>) => {
@@ -167,6 +193,58 @@ test("changed candidate pixels cannot reuse an old candidate ID", () => {
 test("empty or malformed Mask content cannot pass visual evidence preparation", () => {
   for (const counts of [[6], [1, 2], [1, -1, 6]]) {
     assert.throws(() => scribbleMaskEvidence({ encoding: "coco_rle", size: [2, 3], counts }));
+  }
+});
+
+test("round differences exclude shared foreground and detect a stale previous bitmap", () => {
+  const previous: CocoRle = { encoding: "coco_rle", size: [2, 3], counts: [0, 3, 3] };
+  const current: CocoRle = { ...previous, counts: [1, 3, 2] };
+  const difference = scribbleMaskDifference(previous, current);
+  assert.deepEqual(difference, { added: [[0.5, 0.75]], removed: [[1 / 6, 0.25]] });
+  const bitmapMatches = (pixels: number[]) => {
+    const isForeground = ([x, y]: [number, number]) =>
+      pixels[Math.floor(x * 3) * 2 + Math.floor(y * 2)] === 1;
+    return (
+      difference.added.every(isForeground) && difference.removed.every((p) => !isForeground(p))
+    );
+  };
+  assert.equal(bitmapMatches([1, 1, 1, 0, 0, 0]), false);
+  assert.equal(bitmapMatches([0, 1, 1, 1, 0, 0]), true);
+});
+
+test("pure additions and removals keep their expected foreground polarity", () => {
+  const smaller: CocoRle = { encoding: "coco_rle", size: [2, 3], counts: [0, 3, 3] };
+  const larger: CocoRle = { ...smaller, counts: [0, 4, 2] };
+  assert.deepEqual(scribbleMaskDifference(smaller, larger), {
+    added: [[0.5, 0.75]],
+    removed: [],
+  });
+  assert.deepEqual(scribbleMaskDifference(larger, smaller), {
+    added: [],
+    removed: [[0.5, 0.75]],
+  });
+});
+
+test("difference sampling spans large changes and handles zero-length runs", () => {
+  const previous: CocoRle = { encoding: "coco_rle", size: [20, 10], counts: [0, 50, 150] };
+  const current: CocoRle = { ...previous, counts: [100, 25, 0, 75] };
+  const difference = scribbleMaskDifference(previous, current);
+  assert.equal(difference.added.length, 16);
+  assert.equal(difference.removed.length, 16);
+  assert.ok(difference.added.every(([x, y]) => x > 0.5 && y > 0 && y < 1));
+  assert.ok(difference.removed.every(([x, y]) => x < 0.3 && y > 0 && y < 1));
+  assert.ok(difference.added[0][0] < difference.added.at(-1)![0]);
+});
+
+test("identical pixels, changed dimensions, and invalid RLE cannot produce difference evidence", () => {
+  const previous: CocoRle = { encoding: "coco_rle", size: [2, 3], counts: [0, 3, 3] };
+  for (const current of [
+    previous,
+    { ...previous, counts: [0, 1, 0, 2, 3] },
+    { ...previous, size: [3, 2] as [number, number] },
+    { ...previous, counts: [0, 2, 3] },
+  ]) {
+    assert.throws(() => scribbleMaskDifference(previous, current));
   }
 });
 
