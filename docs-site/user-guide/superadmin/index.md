@@ -20,6 +20,8 @@ last_reviewed: 2026-08-16
 
 平台概览顶部集中汇总用户、项目、任务和标注规模，并提供成员绩效与失败预测管理入口。宽屏下，主栏展示项目状态、用户角色和全平台项目，辅助栏展示 30 天注册来源与近期业务审计；下方展示 ML 后端与预测成本。窄屏下各区块按顺序排列，项目表格可横向滚动。它用于运营总览；DB、Redis、MinIO、Celery 等组件探活在独立的[系统监控](./system-monitoring)页面查看。
 
+统计刷新失败时，页面保留上次成功加载的数据，并显示提示和「重新加载」按钮；已打开的项目或导入向导保持可用。首次加载失败且没有可用统计时，页面显示加载失败提示，可点击「重新加载」重试。
+
 <DocsVideo
   src="/media/superadmin/platform-overview.mp4"
   poster="/media/superadmin/platform-overview-poster.webp"

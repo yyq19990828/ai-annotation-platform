@@ -73,7 +73,7 @@ export function AdminDashboard() {
     }
   };
 
-  if (isError) {
+  if (isError && !stats) {
     return (
       <PageContainer>
         <div role="alert" className="rounded-lg border border-border bg-card p-6">
@@ -93,6 +93,15 @@ export function AdminDashboard() {
 
   return (
     <PageContainer className="[&_.surface-shadow-sm]:shadow-none">
+      {isError && (
+        <div
+          role="alert"
+          className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-status-caution-soft p-4"
+        >
+          <p className="text-sm">刷新失败，当前显示上次成功加载的统计。</p>
+          <Button onClick={() => void refetch()}>重新加载</Button>
+        </div>
+      )}
       <div className="mb-6 flex items-center justify-between gap-6 max-[900px]:flex-col max-[900px]:items-start">
         <div>
           <h1 className="mb-1 text-xl font-semibold">平台概览</h1>

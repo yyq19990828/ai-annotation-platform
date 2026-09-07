@@ -34,11 +34,11 @@ describe("Sidebar layout", () => {
     fireEvent.keyDown(handle(), { key: "End" });
     fireEvent.click(screen.getByRole("button", { name: "收起侧边栏" }));
     expect(sidebar()).toHaveStyle({ width: "56px" });
-    expect(screen.getByRole("link", { name: "质检审核" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "质检审核 · 4 待审核" })).toHaveAttribute(
       "title",
       "质检审核 · 4 待审核",
     );
-    expect(screen.getByRole("link", { name: "AI 预标注" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "AI 预标注 · 3 待接管 · 2 失败" })).toHaveAttribute(
       "title",
       "AI 预标注 · 3 待接管 · 2 失败",
     );
@@ -49,6 +49,14 @@ describe("Sidebar layout", () => {
     fireEvent.click(screen.getByRole("button", { name: "展开侧边栏" }));
     expect(sidebar()).toHaveStyle({ width: "320px" });
   });
+  it.each([false, true])(
+    "exposes review and AI counts in expanded navigation (drawer=%s)",
+    (drawer) => {
+      mount(drawer);
+      expect(screen.getByRole("link", { name: "质检审核 · 4 待审核" })).toBeVisible();
+      expect(screen.getByRole("link", { name: "AI 预标注 · 3 待接管 · 2 失败" })).toBeVisible();
+    },
+  );
   it("clamps keyboard changes and resets width on double click", () => {
     mount();
     fireEvent.keyDown(handle(), { key: "Home" });

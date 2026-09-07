@@ -139,6 +139,15 @@ export function Sidebar({ reviewCount, drawer = false }: SidebarProps) {
   // B-19：非超管角色禁用此查询，避免 dashboard 加载时弹出"需要角色权限"toast。
   const adminStatsQ = useAdminStats(role === "super_admin");
   const preAnnotatedTotal = adminStatsQ.data?.pre_annotated_batches ?? 0;
+  const navigationLabel = (item: NavItem) => {
+    if (item.key === "review" && reviewCount > 0) {
+      return `${item.label} · ${reviewCount} 待审核`;
+    }
+    if (item.key === "ai-pre") {
+      return `${item.label} · ${preAnnotatedTotal} 待接管 · ${failedTotal} 失败`;
+    }
+    return item.label;
+  };
 
   const sections = sectionsForRole(role === "super_admin");
   const visibleSections = sections
@@ -200,12 +209,8 @@ export function Sidebar({ reviewCount, drawer = false }: SidebarProps) {
               <NavLink
                 key={item.path}
                 to={item.path}
-                title={
-                  collapsed
-                    ? `${item.label}${item.key === "review" && reviewCount > 0 ? ` · ${reviewCount} 待审核` : ""}${item.key === "ai-pre" ? ` · ${preAnnotatedTotal} 待接管 · ${failedTotal} 失败` : ""}`
-                    : undefined
-                }
-                aria-label={item.label}
+                title={collapsed ? navigationLabel(item) : undefined}
+                aria-label={navigationLabel(item)}
                 className={({ isActive }) =>
                   cn(
                     NAV_ITEM_CLASS,

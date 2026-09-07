@@ -95,6 +95,45 @@ describe("AdminDashboard", () => {
     expect(screen.getByText("5,678")).toBeInTheDocument(); // total_annotations
   });
 
+  it("后台刷新失败时保留统计和已打开向导，重试成功后更新统计", () => {
+    const refetch = vi.fn();
+    mockUseAdminStats.mockReturnValue({ data: baseStats, isLoading: false, refetch });
+    const view = renderUI();
+    fireEvent.click(screen.getByRole("button", { name: "导入数据集" }));
+    mockUseAdminStats.mockReturnValue({
+      data: baseStats,
+      isLoading: false,
+      isError: true,
+      refetch,
+    });
+    const dashboard = (
+      <MemoryRouter>
+        <AdminDashboard />
+      </MemoryRouter>
+    );
+    view.rerender(dashboard);
+    expect(screen.getByText("1,234")).toBeInTheDocument();
+    expect(screen.getByTestId("id-wizard")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("刷新失败，当前显示上次成功加载的统计");
+    fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
+    expect(refetch).toHaveBeenCalledOnce();
+
+    mockUseAdminStats.mockReturnValue({
+      data: { ...baseStats, total_tasks: 2345 },
+      isLoading: false,
+      isError: false,
+      refetch,
+    });
+    view.rerender(
+      <MemoryRouter>
+        <AdminDashboard />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText("2,345")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByTestId("id-wizard")).toBeInTheDocument();
+  });
+
   it("ML backend 总数 0 → 空态文案", () => {
     mockUseAdminStats.mockReturnValue({ data: baseStats, isLoading: false });
     renderUI();
