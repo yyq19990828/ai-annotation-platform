@@ -6,47 +6,23 @@ name = "ai-annotation-platform"
 script = '''
 set -euo pipefail
 
-cd "$CODEX_WORKTREE_PATH"
-
-link_from_source() {
-  local rel="$1"
-  local source="$CODEX_SOURCE_TREE_PATH/$rel"
-  local target="$CODEX_WORKTREE_PATH/$rel"
-
-  if [ -e "$source" ] && [ ! -e "$target" ] && [ ! -L "$target" ]; then
-    mkdir -p "$(dirname "$target")"
-    ln -s "$source" "$target"
-  fi
-}
-
-link_from_source "node_modules"
-link_from_source "apps/web/node_modules"
-link_from_source "docs-site/node_modules"
-link_from_source "apps/api/.venv"
+export ORCA_ROOT_PATH="${CODEX_SOURCE_TREE_PATH:?Missing source checkout path}"
+export ORCA_WORKTREE_PATH="${CODEX_WORKTREE_PATH:?Missing worktree path}"
+cd "$ORCA_WORKTREE_PATH"
 
 if ! command -v pnpm >/dev/null 2>&1; then
   corepack enable
 fi
 
-if [ ! -e node_modules ] && [ ! -L node_modules ]; then
-  pnpm install --frozen-lockfile
-fi
-
-if [ ! -e apps/api/.venv ] && [ ! -L apps/api/.venv ]; then
-  cd apps/api
-  uv sync --extra test
-  cd ../..
-fi
-
-if [ -f "$CODEX_SOURCE_TREE_PATH/.env" ] && [ ! -e .env ] && [ ! -L .env ]; then
-  ln -s "$CODEX_SOURCE_TREE_PATH/.env" .env
-elif [ -f .env.example ] && [ ! -e .env ] && [ ! -L .env ]; then
-  ln -s .env.example .env
-fi
+bash scripts/orca-worktree-setup.sh
 '''
 
 [cleanup]
-script = "rm -rf .pytest_cache .ruff_cache apps/web/coverage apps/web/test-results apps/web/playwright-report docs-site/.vitepress/cache"
+script = '''
+set -euo pipefail
+cd "${CODEX_WORKTREE_PATH:?Missing worktree path}"
+rm -rf -- .pytest_cache .ruff_cache apps/api/.pytest_cache apps/api/.ruff_cache apps/web/coverage apps/web/test-results apps/web/playwright-report docs-site/.vitepress/cache
+'''
 
 [[actions]]
 name = "Web typecheck"

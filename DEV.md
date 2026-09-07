@@ -71,6 +71,33 @@ cd apps/api && uv sync --extra test && cd ../..
 # （用 uv tool 独立安装 pre-commit，勿 pip 装进项目 venv；否则 uv sync 会把它卸载）
 ```
 
+## Worktree 初始化
+
+Codex 的 `.codex/environments/environment.toml` 将源目录和 worktree 路径传给
+`scripts/orca-worktree-setup.sh`，与 Orca 共用初始化逻辑。需要提前安装 Node.js、
+pnpm 和 uv；Codex 在找不到 pnpm 时会尝试 `corepack enable`。
+
+只有依赖清单和锁文件一致、源目录的三个 Node 依赖目录都存在时，才共享这些目录；
+否则安装当前 worktree 的锁定依赖。Python 虚拟环境保持独立，通过
+`uv sync --locked --extra test` 同步，随后运行 `pnpm codegen` 生成当前 checkout 的 API 类型。
+若已有共享依赖链接与新依赖不匹配，或 `.venv` / API 生成目录是符号链接，初始化会报错；
+检查链接目标后，仅解除需要替换的链接，再重新初始化。
+
+`.env` 和可选的 `.env.local` 与源目录共享，已有 worktree 配置会保留。
+源目录没有 `.env` 时会创建权限受限的空配置，使用应用默认值；不会链接或修改
+`.env.example`。共享配置中的修改会影响其他 worktree。
+Codex 清理脚本固定在当前 worktree 执行，并包含 API 测试缓存。
+
+初始化只准备依赖和生成文件，不启动服务或准备测试数据库。执行 API tests 前，
+需确认测试数据库可丢弃。新 worktree 使用其基准提交内的脚本，因此这些改动需要
+进入所选基准提交后才会在后续 worktree 生效。
+
+隔离回归测试使用临时目录和模拟命令，不安装依赖、不连接数据库，结束后自动清理：
+
+```bash
+apps/api/.venv/bin/python scripts/test-orca-worktree-setup.py
+```
+
 ## Codex 会话启动硬件上下文
 
 仓库内的 `.codex/hooks.json` 会在 Codex 会话启动、恢复、清空或压缩后运行
