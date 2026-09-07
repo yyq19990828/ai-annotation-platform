@@ -133,7 +133,7 @@ export async function selectVideoRecordingClass(
 
 export async function waitForCommittedAnnotationClass(
   page: Page,
-  options: { label: string; taskId: string | number },
+  options: { label: string; taskId: string | number; onCreated?: (id: string) => void },
 ): Promise<Record<string, unknown>> {
   const response = await page.waitForResponse(
     (candidate) =>
@@ -143,6 +143,7 @@ export async function waitForCommittedAnnotationClass(
   const payload = committedAnnotationFromPayload(
     (await response.json()) as Record<string, unknown>,
   );
+  if (typeof payload.id === "string") options.onCreated?.(payload.id);
   if (payload.task_id !== options.taskId || payload.class_name !== options.label) {
     throw new Error(
       `[recording-class] 标注落库结果与语义锚点不一致：` +
@@ -154,7 +155,7 @@ export async function waitForCommittedAnnotationClass(
 
 export async function commitPendingAnnotationClass(
   page: Page,
-  options: { label: string; taskId: string | number },
+  options: { label: string; taskId: string | number; onCreated?: (id: string) => void },
 ): Promise<Record<string, unknown>> {
   const picker = page.getByTestId("class-picker-popover");
   await picker.waitFor({ state: "visible", timeout: 10_000 });

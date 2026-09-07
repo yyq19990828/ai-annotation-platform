@@ -12,6 +12,8 @@ export interface MatrixAxis {
 
 export interface ScreenshotScene {
   name: string;
+  /** Live backend leases require current browser time; deterministic scenes default to fixed. */
+  clock?: "fixed" | "live";
   /** 单角色或多角色（多角色时取第一个登录） */
   role: Role | Role[];
   /** 场景消费的稳定 seed 资源；driver 会在导航前统一 fail-closed 校验。 */

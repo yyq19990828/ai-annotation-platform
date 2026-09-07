@@ -101,7 +101,7 @@ test.describe("screenshots automation", () => {
         // 激活网络 mock（如有）
         cleanupMock = await setupMockState(page, scene.mockState);
 
-        await installScreenshotEnvironment(page);
+        const clock = await installScreenshotEnvironment(page, { clock: scene.clock });
         await seed.injectToken(page, roleEmail);
         await applyScreenshotTheme(page, axis.theme);
         await page.goto(route);
@@ -200,6 +200,7 @@ test.describe("screenshots automation", () => {
               project: info.project.name,
               viewport: page.viewportSize(),
               theme: axis.theme,
+              clock,
               locale: axis.locale,
               browser: {
                 name: page.context().browser()?.browserType().name() ?? "chromium",

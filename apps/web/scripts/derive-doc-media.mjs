@@ -15,6 +15,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, "../../..");
 
 const POSTER_AT_SECONDS = new Map([
+  ["ai-tracker-panel", 8],
   ["review-reject", 2],
   ["jobs-retry-recovery", 11],
   ["model-market-runtime-pool", 10],
@@ -36,6 +37,7 @@ const POSTER_AT_SECONDS = new Map([
   ["pointcloud-billboard-label", 10],
   ["storage-connector-create-test", 15],
   ["video-track-batch-propagate", 2.5],
+  ["video-track", 19.9],
   ["video-propagate-track-vs-copy", 14],
 ]);
 

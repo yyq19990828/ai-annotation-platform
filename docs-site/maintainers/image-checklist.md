@@ -294,9 +294,9 @@
 - [ ] `images/workbench/current-task-project-pipeline.png` — 工作台「当前题 AI」面板按项目编排运行入口；红框：运行当前题（按项目编排 · N 阶段）按钮、项目编排来源提示 [manual]
 - [ ] `images/video-playback/sampling-config.png` — 项目设置帧采样配置区（mode/target_fps/frame_step） [manual]
 - [ ] `images/video-playback/chapter-sidebar.png` — 章节侧栏含彩色色带 + 章节列表 [manual]
-- [x] `public/media/video/ai-tracker-panel.mp4` — 旧互斥浮层素材，已从用户指南撤下；新流程脚本覆盖停靠、隐藏恢复与并存 `[derived-mp4]`
+- [x] `public/media/video/ai-tracker-panel.mp4` — 自由布局中的浮动、停靠、隐藏恢复与 AI 标签合并，已接入工作台布局指南 `[derived-mp4]`
 - [ ] `images/video-propagate/tracker-job-badge.png` — 进度 badge + 取消按钮 [manual]
-- [x] `public/media/video/workbench-overview.mp4` — 视频工作台整体（时间轴 + 逐帧前进 + 播放）`[derived-mp4]`（开源 P-VIDEO-DEV，seed_video.py）
+- [x] `public/media/video/workbench-overview.mp4` — 视频工作台整体（双向逐帧 + 播放暂停 + 手动建轨迹并刷新核对）`[derived-mp4]`（开源 P-VIDEO-DEV，seed_video.py）
 - [~] ~~`images/workbench/video-track-trajectory.gif`~~ — **已由** `public/media/video/video-draw.mp4` **替代**：轨迹关键帧与插值完整流已迁移到 DocsVideo
 - [x] `images/workbench/video-real-scene.png` — 真实城市交通视频任务工作台 `[auto]`（scene: `workbench/video-real-scene`，P-VIDEO-DEV）
 - [x] `images/workbench/video-track-timeline.png` — 视频轨道时间轴 + 关键帧 + 软网格（同上 `video-track-trajectory.gif` 画关键帧时时间轴同步呈现）`[auto-gif]`

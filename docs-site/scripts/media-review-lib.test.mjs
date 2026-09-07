@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifyMedia } from "./media-review-lib.mjs";
+import { classifyMedia, collectPublishedMedia } from "./media-review-lib.mjs";
 
 test("missing media is broken", () => {
   assert.equal(
@@ -56,4 +56,14 @@ test("unchanged recent review is current", () => {
     }).status,
     "current",
   );
+});
+
+test("homepage static image imports remain in the published media inventory", () => {
+  const records = collectPublishedMedia();
+  for (const name of ["video-track", "pointcloud", "review", "data-manager"]) {
+    const entry = records.get(`docs-site/.vitepress/theme/assets/home/hero/${name}.webp`);
+    assert.ok(entry, `${name} Hero import is missing`);
+    assert.ok(entry.kinds.has("image"));
+    assert.ok(entry.sources.has("docs-site/.vitepress/theme/components/home/DataAtlasHero.vue"));
+  }
 });

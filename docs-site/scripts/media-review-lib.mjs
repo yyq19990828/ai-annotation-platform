@@ -75,6 +75,12 @@ export function collectPublishedMedia() {
   for (const sourcePath of walkFiles(themeRoot, (name) => /\.(?:vue|ts)$/.test(name))) {
     const content = fs.readFileSync(sourcePath, "utf8");
     const source = repoKey(sourcePath);
+    for (const match of content.matchAll(
+      /\bimport\s+[\w$]+\s+from\s*["'](\.{1,2}\/[^"']+\.(?:png|gif|jpe?g|webp|svg)(?:[?#][^"']*)?)["']/g,
+    )) {
+      const absolute = path.resolve(path.dirname(sourcePath), match[1].split(/[?#]/, 1)[0]);
+      addRecord(records, absolute, source, "image");
+    }
     for (const match of content.matchAll(/withBase\(\s*["'](\/(?:home|media)\/[^"']+)["']\s*\)/g)) {
       const absolute = resolvePublicPath(match[1]);
       if (absolute)

@@ -136,9 +136,11 @@ pnpm screenshots:lint             # 快速检查静态引用与 manifest
 # 开发/验证场景：执行真实导航和 locator 校验，但不写 PNG/manifest
 SCREENSHOT_VALIDATE_ONLY=1 pnpm screenshots
 
-# 首页 Hero 静态卡片源图更新后，重新生成轻量 WebP
-pnpm --filter @anno/docs-site media:home-hero
+# 首页 Hero 静态卡片源图更新后，按本轮范围生成轻量 WebP
+pnpm --filter @anno/docs-site media:home-hero --asset video-track --asset pointcloud --asset review
 ```
+
+按流程录制使用当前浏览器时间，与后端任务锁和作业时间一致；需要展示真实倒计时的静态场景声明 `clock: "live"`。其他截图场景继续使用固定日期，避免无关时间漂移。
 
 截图脚本从只读 screenshot catalog 获取当次运行的 UUID，并分别使用 seed 中的
 `admin`、`anno` 和 `qa` 账号呈现超管、标注员和审核员的真实项目关系。
@@ -358,7 +360,7 @@ pnpm docs:media:audit -- --release
 人工审阅时至少检查每张 PNG 的主体内容、加载状态和敏感信息；GIF / MP4 / WebM 除首帧外
 还要抽查核心动作和最终结果，并确认动效完整、体积合理。首页 WebM 与 MP4 fallback 还需检查对应 WebP 海报能独立说明
 场景，主图不被浮动面板遮挡，且移动端与 `prefers-reduced-motion` 下不自动播放。Hero 源图更新后还要
-重新生成派生 WebP。源录像保留在 `.artifacts/recordings/` 或 `.artifacts/marketing/`；备份确认前不要删除。
+重新生成派生 WebP。生成器先核对源图与截图清单的哈希，再把派生关系写入流程媒体清单；不传 `--asset` 时处理全部四张卡片。媒体审计也会读取主题组件中的静态图片导入，覆盖这些首页配图。源录像保留在 `.artifacts/recordings/` 或 `.artifacts/marketing/`；备份确认前不要删除。
 
 ## 生成来源与人工复核版本
 

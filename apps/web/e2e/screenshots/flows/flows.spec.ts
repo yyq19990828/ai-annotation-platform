@@ -94,7 +94,7 @@ import { recordingAnchor } from "./_canvas";
 import { installRecordingWorkbenchLayout } from "./_workbench-layout";
 import type { SourceGifVariant } from "../_helpers/flow-manifest";
 import { archivePortableRecording } from "../_helpers/portable-recorder";
-import { recordingPlan } from "../recording-plan.mjs";
+import { recordingPlan, recordingInference } from "../recording-plan.mjs";
 import {
   archiveMarketingMaster,
   clipFromEpochWindow,
@@ -694,10 +694,12 @@ async function archivePortable(
     ],
     capture: {
       gif_variants: gifs,
+      clock: SELECTED_CAPTURE ? "live" : "unverified",
       inference_evidence: flowInferenceEvidence[assetId],
       backend_requirements: requirements,
       // Legacy flows may intercept inference even with live backend bindings.
-      inference: requirements === null ? "unverified" : requirements === "none" ? "none" : "live",
+      inference:
+        requirements === null ? "unverified" : recordingInference(info.title.split(" —")[0]),
       backends: Object.fromEntries(
         Object.entries(cached?.projects ?? {})
           .filter(
@@ -726,7 +728,7 @@ function hasLiveSam3(catalog: ScreenshotSeedCatalog): boolean {
 
 test.describe("flow recordings", () => {
   test.beforeEach(async ({ page, seed }, testInfo) => {
-    if (testInfo.title.startsWith("candidate-keyboard-review —")) testInfo.setTimeout(300_000);
+    if (SELECTED_CAPTURE) testInfo.setTimeout(300_000);
     if (SELECTED_CAPTURE) {
       if (!SELECTED_CAPTURE.flows.includes(testInfo.title.split(" —")[0])) {
         throw new Error("Flow is outside the preflighted recording selection");
@@ -1032,12 +1034,21 @@ test.describe("flow recordings", () => {
     const t0 = Date.now();
     await seed.injectToken(page, cached.users.project_admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "both");
-    let cleanupRecord: OcrCleanupRecord | null = null;
-    const win = await runCurrentTaskImageInference(page, cached, (record) => {
-      cleanupRecord = record;
-      ocrCleanupRecords.push(record);
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:image", preset: "ai-review" },
     });
+    let cleanupRecord: OcrCleanupRecord | null = null;
+    const win = await runCurrentTaskImageInference(
+      page,
+      cached,
+      (record) => {
+        cleanupRecord = record;
+        ocrCleanupRecords.push(record);
+      },
+      (evidence) => {
+        flowInferenceEvidence["current-task-image-inference"] = evidence;
+      },
+    );
     if (!cleanupRecord) {
       throw new Error("[current-task-image-inference] 未记录无痕清理标识");
     }
@@ -1278,9 +1289,23 @@ test.describe("flow recordings", () => {
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
-    const win = await runVideoTrack(page, cached);
-    await finalize(page, "video-track", undefined, drawTrim(win, t0));
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:video", preset: "video-tracking" },
+    });
+    let createdId: string | null = null;
+    try {
+      const win = await runVideoTrack(page, cached, (id) => {
+        createdId = id;
+      });
+      await finalize(page, "video-track", undefined, drawTrim(win, t0));
+    } finally {
+      if (createdId)
+        await seed.deleteTaskAnnotation(
+          cached.projects.video_demo.tasks.tracking.id,
+          createdId,
+          cached.users.admin.email,
+        );
+    }
   });
 
   test("video-timeline-zoom — 时间轴锚点缩放与复位", async ({ page, seed }) => {
@@ -1926,7 +1951,9 @@ test.describe("flow recordings", () => {
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:video", preset: "standard" },
+    });
     const win = await runAiTrackerPanel(page, cached);
     await finalize(page, "ai-tracker-panel", undefined, drawTrim(win, t0));
   });
@@ -2072,7 +2099,7 @@ test.describe("flow recordings", () => {
       "真实点云种框需要 marketing-master 的硬件 WebGL 与 60Hz 运行面",
     );
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(120_000);
+    test.setTimeout(SELECTED_CAPTURE ? 300_000 : 120_000);
     const t0 = Date.now();
     const userEmail = cached.users.admin.email;
     let created: { taskId: string; annotationId: string } | null = null;
@@ -2081,9 +2108,11 @@ test.describe("flow recordings", () => {
       await seed.injectToken(page, userEmail);
       await applyScreenshotTheme(page, "dark");
       await installRecordingWorkbenchLayout(page, "both", {
-        layout: { triViewFloat: { x: 24, y: 24, w: 320, h: 540, collapsed: true } },
+        workspace: { context: "annotate:3d", preset: "standard" },
       });
-      const win = await runPointcloudCameraSeed3dBox(page, cached);
+      const win = await runPointcloudCameraSeed3dBox(page, cached, (record) => {
+        created = record;
+      });
       created = win.created;
       await finalize(page, "pointcloud-camera-seed-3d-box", undefined, drawTrim(win, t0));
     } finally {

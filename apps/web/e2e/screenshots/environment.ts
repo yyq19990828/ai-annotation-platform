@@ -3,8 +3,16 @@ import type { Page } from "@playwright/test";
 const FIXED_TIME = new Date("2026-07-13T10:00:00+08:00");
 
 /** 必须在首次导航前调用，避免动画、系统时区和页面时间造成截图漂移。 */
-export async function installScreenshotEnvironment(page: Page): Promise<void> {
-  await page.clock.setFixedTime(FIXED_TIME);
+export async function installScreenshotEnvironment(
+  page: Page,
+  options: { clock?: "fixed" | "live" } = {},
+): Promise<"fixed" | "live"> {
+  // Live API leases use server time. Freezing a recording months in the past
+  // creates false lock durations and stale-job ages in otherwise real workflows.
+  const clock =
+    options.clock ??
+    (process.env.SCREENSHOT_RECORDING_PROFILE || process.env.MARKETING_RUN_ID ? "live" : "fixed");
+  if (clock === "fixed") await page.clock.setFixedTime(FIXED_TIME);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.addInitScript(() => {
     const installStyle = () => {
@@ -21,6 +29,7 @@ export async function installScreenshotEnvironment(page: Page): Promise<void> {
     if (document.documentElement) installStyle();
     document.addEventListener("DOMContentLoaded", installStyle, { once: true });
   });
+  return clock;
 }
 
 export async function applyScreenshotTheme(page: Page, theme: "light" | "dark"): Promise<void> {

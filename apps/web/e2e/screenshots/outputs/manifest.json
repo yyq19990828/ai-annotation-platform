@@ -924,8 +924,8 @@
         "batch": "review"
       },
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-08-e",
-      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "seed_revision": "screenshots-2026-08-g",
+      "source_commit": "a6044bbf4fef17967a90e4c0600ff0145f15e12a",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -937,11 +937,13 @@
       },
       "theme": "dark",
       "locale": "zh-CN",
-      "generated_at": "2026-08-15T06:33:19.854Z",
+      "generated_at": "2026-09-07T10:10:53.983Z",
       "provenance": "current-run",
-      "sha256": "2c426163314750cab09911eb6b1d82c719aed3752ca300c44cf9cd6315bc5b12",
+      "sha256": "4da3ee1be6e2b170a5b7a541a7b3a788873e58d4c4ca854f94fab2e5f456d1df",
       "width": 1440,
-      "height": 900
+      "height": 900,
+      "clock": "live",
+      "source_worktree_dirty": true
     },
     "docs-site/user-guide/images/sam/exemplar-output-mode.png": {
       "auto": true,
@@ -1764,8 +1766,8 @@
         ]
       },
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-08-e",
-      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "seed_revision": "screenshots-2026-08-g",
+      "source_commit": "a6044bbf4fef17967a90e4c0600ff0145f15e12a",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1777,11 +1779,13 @@
       },
       "theme": "dark",
       "locale": "zh-CN",
-      "generated_at": "2026-08-15T06:33:19.854Z",
+      "generated_at": "2026-09-07T10:11:11.594Z",
       "provenance": "current-run",
-      "sha256": "724dba4bec2099791b3dc9fc25c9d5a629ea30cf55bd55011b3d4b73a6a62762",
+      "sha256": "a1e027db83242277b472c2e3561773b96ce67adc3473c86c54a1fe3f5587d7cb",
       "width": 1440,
-      "height": 900
+      "height": 900,
+      "clock": "live",
+      "source_worktree_dirty": true
     },
     "docs-site/user-guide/images/workbench/pointcloud-real-scene.png": {
       "auto": true,
@@ -1796,8 +1800,8 @@
         "task": "frame_000"
       },
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-08-e",
-      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "seed_revision": "screenshots-2026-08-g",
+      "source_commit": "a6044bbf4fef17967a90e4c0600ff0145f15e12a",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1809,11 +1813,13 @@
       },
       "theme": "dark",
       "locale": "zh-CN",
-      "generated_at": "2026-08-15T06:33:19.854Z",
+      "generated_at": "2026-09-07T10:11:06.223Z",
       "provenance": "current-run",
-      "sha256": "9c9a8795036868af2118d88ea18b8ff883544baad410134bbb476790e2e09409",
+      "sha256": "ea37793ab57eb487f22c43494e3d50558e65793485453e17c7a8aede614fc334",
       "width": 1440,
-      "height": 900
+      "height": 900,
+      "clock": "live",
+      "source_worktree_dirty": true
     },
     "docs-site/user-guide/images/workbench/video-real-scene.png": {
       "auto": true,
@@ -1832,8 +1838,8 @@
         ]
       },
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-08-e",
-      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "seed_revision": "screenshots-2026-08-g",
+      "source_commit": "a6044bbf4fef17967a90e4c0600ff0145f15e12a",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1845,11 +1851,13 @@
       },
       "theme": "dark",
       "locale": "zh-CN",
-      "generated_at": "2026-08-15T06:33:19.854Z",
+      "generated_at": "2026-09-07T10:10:59.239Z",
       "provenance": "current-run",
-      "sha256": "bb4ce66d00b6f0102292509b161620e6adc567d5c4878ee68d39c7df0818901b",
+      "sha256": "9a761d5e8ab82cf561a338443c9989def385f0c500aa594a40c1449c998ce70f",
       "width": 1440,
-      "height": 900
+      "height": 900,
+      "clock": "live",
+      "source_worktree_dirty": true
     },
     "docs-site/user-guide/images/workflows/failed-prediction-recovery-jobs-list.png": {
       "auto": true,

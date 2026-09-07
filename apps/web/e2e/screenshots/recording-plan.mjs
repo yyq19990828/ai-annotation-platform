@@ -25,15 +25,29 @@ const manual = [
   "hotkey-cheatsheet",
 ];
 
-export const RECORDING_FLOWS = {
-  ...Object.fromEntries(manual.map((id) => [id, []])),
+// Inference execution is explicit: a panel can require live capabilities without
+// submitting a prediction or tracker job during its recording.
+const liveInference = {
   "sam-tool-smart-point": ["image_interactive"],
   "sam-tool-smart-box": ["image_interactive"],
   "sam-tool-exemplar": ["image_interactive"],
   "sam-interactive": ["image_interactive"],
   "ocr-inference": ["ocr"],
+  "current-task-image-inference": ["ocr"],
   "candidate-keyboard-review": ["image_interactive"],
 };
+
+export const RECORDING_FLOWS = {
+  ...Object.fromEntries(manual.map((id) => [id, []])),
+  ...liveInference,
+  "ai-tracker-panel": ["video_tracker"],
+};
+
+export function recordingInference(flowId) {
+  if (!Object.hasOwn(RECORDING_FLOWS, flowId))
+    throw new Error(`Unregistered recording flow: ${flowId}`);
+  return Object.hasOwn(liveInference, flowId) ? "live" : "none";
+}
 
 export const MARKETING_ONLY_FLOWS = [
   "pointcloud-billboard-label",
