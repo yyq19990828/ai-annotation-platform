@@ -20,6 +20,20 @@ function defineAsset(spec: MarketingAssetSpec): MarketingAssetSpec {
 
 const assetSpecs = [
   defineAsset({
+    assetId: "workspace-layout-basics",
+    title: "工作台布局调整",
+    theme: "调整面板时保留标注选择与讨论草稿",
+    objective: "展示调整宽度、合并标签、隐藏找回与专注画布，不中断当前编辑上下文。",
+    duration: { minSeconds: 20, targetSeconds: 30, maxSeconds: 60 },
+    shots: [
+      "在标准布局中保持一个已保存标注选中，并留下未发送的讨论。",
+      "拖动分隔条，合并讨论和标注详情并切换标签。",
+      "隐藏活动标签，再从布局菜单恢复原面板和草稿。",
+      "专注画布后恢复，保持同一任务、标注和讨论内容。",
+    ],
+    editingNotes: ["这是页面内布局教学，不表示未发送草稿会跨刷新持久保存。"],
+  }),
+  defineAsset({
     assetId: "ai-prediction-import",
     title: "导入 AI 预标注",
     theme: "导入预测结果的人工复核与采纳",

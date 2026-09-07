@@ -12,24 +12,23 @@
 import type { Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
 import {
-  commitPendingAnnotationClass,
-  hidePredictions,
-  mediaPoint,
-  openImageAnnotate,
-  recordingAnchor,
-  renderedMediaBounds,
-} from "./_canvas";
+  commitImageDrawing,
+  prepareImageDrawing,
+  verifySavedImageDrawing,
+  type ImageDrawingOptions,
+} from "./_image-drawing";
+import { mediaPoint, recordingAnchor, renderedMediaBounds } from "./_canvas";
 import type { DrawWindow } from "./rotated-bbox";
 
 export async function runPolylineDraw(
   page: Page,
   catalog: ScreenshotSeedCatalog,
+  options: ImageDrawingOptions = {},
 ): Promise<DrawWindow> {
-  await openImageAnnotate(page, catalog);
+  await prepareImageDrawing(page, catalog);
   await page.waitForTimeout(1400);
 
   // 准备（不进 GIF）：隐藏预测 → 选折线工具
-  await hidePredictions(page);
 
   const btn = page.getByTestId("tool-btn-polyline");
   await btn.click();
@@ -59,7 +58,8 @@ export async function runPolylineDraw(
   await page.waitForTimeout(800);
   // Enter 结束折线（不闭合）
   await page.keyboard.press("Enter");
-  await commitPendingAnnotationClass(page, {
+  const created = await commitImageDrawing(page, {
+    onCreated: options.onCreated,
     label: anchor.label,
     taskId: catalog.projects.image_demo.tasks.annotating.id,
   });
@@ -69,6 +69,13 @@ export async function runPolylineDraw(
 
   // 等 autosave 把折线落库（清理由 flows.spec 的 afterAll 重建截图 seed 完成）
   await page.waitForTimeout(1200);
+
+  await verifySavedImageDrawing(
+    page,
+    catalog.projects.image_demo.tasks.annotating.id,
+    String(created.id),
+    ["polyline"],
+  );
 
   return { drawStartMs, drawEndMs };
 }

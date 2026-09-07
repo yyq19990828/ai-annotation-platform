@@ -35,7 +35,7 @@ Mask 是矩形标注。新建 Mask 保存成功后会自动加载真实像素轮
   src="/media/mask-brush/mask-draw.mp4"
   poster="/media/mask-brush/mask-draw-poster.webp"
   alt="在目标区域涂抹 Mask 并按 Enter 提交"
-  caption="拖拽笔刷填充目标区域，确认覆盖范围后按 Enter 提交 Mask。"
+  caption="在标准标注布局中分笔涂抹目标，核对覆盖范围后按 Enter，再选择目标类别保存。"
 />
 
 1. **空白 mask（从零开始）**

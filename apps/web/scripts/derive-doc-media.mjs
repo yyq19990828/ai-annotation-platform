@@ -15,6 +15,13 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, "../../..");
 
 const POSTER_AT_SECONDS = new Map([
+  ["bbox-draw", 6.4],
+  ["polyline-draw", 11.8],
+  ["polygon-draw", 13],
+  ["hotkey-cheatsheet", 2],
+  ["workspace-layout-basics", 18.8],
+  ["rotated-bbox", 9.3],
+  ["mask-draw", 7.6],
   ["ai-tracker-panel", 8],
   ["review-reject", 2],
   ["jobs-retry-recovery", 11],
@@ -43,6 +50,8 @@ const POSTER_AT_SECONDS = new Map([
 
 const TARGETS = new Map(
   [
+    ["bbox-draw", "workbench/bbox-draw"],
+    ["workspace-layout-basics", "workbench/layout-basics"],
     ["ai-prediction-import", "ai/prediction-import"],
     ["ai-preannotate", "ai/preannotate"],
     ["ai-assisted-annotation", "ai/assisted-annotation"],

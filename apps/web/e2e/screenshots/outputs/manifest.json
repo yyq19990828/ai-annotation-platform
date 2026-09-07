@@ -258,15 +258,15 @@
       "capture": {
         "kind": "locator",
         "selector": "[data-testid=\"mask-toolbar\"]",
-        "padding": 12
+        "padding": 24
       },
       "fixture": {
         "project": "image_demo",
         "task": "annotating"
       },
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-08-e",
-      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "seed_revision": "screenshots-2026-08-g",
+      "source_commit": "ddaa313826f6dd3a2b3e68d625d4e5607bf7655c",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -278,11 +278,13 @@
       },
       "theme": "dark",
       "locale": "zh-CN",
-      "generated_at": "2026-08-15T06:33:19.854Z",
+      "generated_at": "2026-09-07T11:37:21.308Z",
       "provenance": "current-run",
-      "sha256": "876cd40137c3486e26c07e2d9870aa696642d189e0b38ba890875f0ebbc2a824",
-      "width": 504,
-      "height": 92
+      "sha256": "ffaffd8eac4727a620c98384730da2411f3bf8fb13e104e555bdc4f535585e7e",
+      "width": 526,
+      "height": 116,
+      "clock": "fixed",
+      "source_worktree_dirty": true
     },
     "docs-site/user-guide/images/notifications/panel-overview.png": {
       "auto": true,

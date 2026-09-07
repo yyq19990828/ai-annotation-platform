@@ -1,6 +1,6 @@
 # Workbench media recapture after dockable layouts
 
-> Status: first representative batch complete on 2026-09-07; remaining migration groups are planned and not yet completed.
+> Status: first representative batch approved by the user on 2026-09-07; second image/layout batch recorded and published locally, awaiting per-asset human review.
 > Baseline: `af2eb6ab`, 2026-09-07. No release milestone is assigned.
 
 ## Goal and acceptance
@@ -148,3 +148,53 @@ The source recordings used live browser time to match API lease timestamps. Ordi
 Relevant integrated commits: `3b0a8a84` (tracker/video recording assertions), `04a3e15e` (persisted annotation identity for discussion), and their merges `ee0e0550` / `a6044bbf`. The four screenshots and final recordings were captured from `a6044bbf` with local recording changes; their dirty provenance is intentional and preserved. This outcome accompanies the media batch commit rather than inventing a clean capture commit. Final source archives were copied outside the checkout and verified by SHA-256 before intermediate cleanup.
 
 The collector now includes all four statically imported homepage Hero images and the two reintroduced panel-demo references: 205 published files in the broader inventory. No human review record was renewed. Missing historical generation evidence, affected historical review records, the remaining content families, and the three planned dedicated layout stories still need the subsequent batches described above. The 49-group / 125-file planning scope must not be reported as fully recaptured. No release version or push approval is implied by this batch.
+
+## Batch 2: image basics and layout teaching
+
+The user accepted the first 15 published files and requested continuation. Commit `49584ba6` records exactly that approved set against `ea71c3e4`; it does not approve unrelated media or authorize a push.
+
+This batch records the nine image-basics groups other than the retained `e2e-quickstart`, plus the new `workspace-layout-basics` teaching flow. Publish each video and its poster, and replace the Mask toolbar crop: 21 files. The retired, unreferenced drawing/hotkey GIF targets remain archived recipes, not additional publication targets.
+
+| Decision  | Content                                                                                           | Evidence / action                                                                                                                                                                                                                                                 |
+| --------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Recapture | bbox-draw, rotated-bbox, polyline-draw, polygon-draw, mask-draw                                   | Use the standard image-annotation preset with visible class palette and inspector; confirm the real saved geometry and reload it. Give the class picker a readable pause and clean exact annotation IDs in finally.                                               |
+| Add       | workspace-layout-basics                                                                           | Actual divider resizing, tab grouping/switching, title-bar hiding, menu restore, canvas focus and restore; retain the same canvas/editor instances, selected persisted annotation and unsent discussion. This is composition, not backend preference persistence. |
+| Recapture | large-image-progressive, large-image-pyramid-recovery                                             | Composition and real tile requests remain valid, but existing posters showed impossible lease timers around 80,984 minutes. Keep the intended large-canvas story with the live-clock environment.                                                                 |
+| Recapture | large-image-mask-limit                                                                            | Existing poster/video at 11.8 seconds showed 48,567 minutes, old toolbar icons and a pet overlay. The actual size limit and vector-annotation story remain correct.                                                                                               |
+| Recapture | hotkey-cheatsheet                                                                                 | Existing ending at 11.7 seconds showed about 80,951 minutes; shortcut groups and search behavior still match current source.                                                                                                                                      |
+| Recapture | mask-brush/toolbar-overview                                                                       | The old title used scissors; the current toolbar uses a brush. Replace obsolete annotation selectors with the actual brush/eraser accessible labels.                                                                                                              |
+| Keep      | sam/smart-point-toolbar, sam/interactive-toolbar, sam/magic-box-toolbar, sam/exemplar-output-mode | Agent image/source inspection confirmed current icons and relevant control ordering. No human review record is inferred from this inspection.                                                                                                                     |
+| Keep      | e2e-quickstart                                                                                    | The recent GIF shows login, drawing/class selection and successful submission to the next task with the current layout.                                                                                                                                           |
+
+The first bbox probe passed real drawing, class save and reload checks. Its source was inspected; the class-confirmation moment was too short for teaching, so the final recordings use an explicit one-second confirmation pause. The shared capture runtime remains isolated to `annotation_screenshots_test` and Redis DB 15, with exclusive seed ownership. Source archives, publication clips and final results will be recorded after the selected runs complete.
+
+## Outcome: second image/layout batch
+
+Published ten MP4/poster pairs and one Mask toolbar PNG (21 files). The first ten-flow run passed nine interactions but exposed an actual rotation bug; visual inspection also caught a Mask load failure and a layout recording artifact that the original interaction assertions did not detect. Those three sources were rejected. After fixing their causes, all three replacement recordings passed. The other seven clips were inspected and retained without repeating their completed acceptance work.
+
+| Published story              | Duration | Qualified standard source / inspected clip      |
+| ---------------------------- | -------: | ----------------------------------------------- |
+| bbox-draw                    |    8.0 s | `2026-09-07T10-48-02-433Z-2190341`, `72.2:8.0`  |
+| polyline-draw                |   13.0 s | same run, `66.2:13.0`                           |
+| polygon-draw                 |  14.32 s | same run, `65.4:14.3`                           |
+| large-image-progressive      |  13.56 s | same run, `69.5:13.5`                           |
+| large-image-pyramid-recovery |   17.6 s | same run, `69.2:17.6`                           |
+| large-image-mask-limit       |  12.84 s | same run, `66.7:12.8`                           |
+| hotkey-cheatsheet            |  11.16 s | same run, `68.1:11.1`                           |
+| workspace-layout-basics      |   20.2 s | `2026-09-07T11-23-57-107Z-2321898`, `66.6:20.2` |
+| rotated-bbox                 |   9.96 s | same replacement run, `6.1:9.9`                 |
+| mask-draw                    |   8.52 s | same replacement run, `72.4:8.5`                |
+
+Published standard videos are 1280×720 at 25 fps; they are not marketing masters and perform no model inference. The tile-recovery story injects one failure into a real tile request, then verifies actual retry and full coverage. The final toolbar screenshot uses the current brush/eraser controls and enough padding for its labels. Its fixed clock is outside the crop; recording sources use live time.
+
+The layout teaching flow retains the same canvas/editor DOM instances, task, tool, selected saved annotation and unsent discussion through resizing, tab switches, hiding/restoring and focus/restore. It does not claim that an unsent draft persists across reloads. All five drawing stories verify real saved geometry and reload the same annotation. The Mask story additionally requires native raster content, ready decoded statistics both before and after reload, zero temporary-ID content requests and zero failed content responses.
+
+Three bounded corrections accompany this batch:
+
+- `3da4b76f`: image rotation uses pixel-space offsets, fixing aspect-ratio-dependent angles. Three regressions failed before the fix; eleven related tests passed afterward. The replacement recording also verifies the saved 35-degree angle.
+- `ed294a89`: optimistic image/video Mask IDs no longer fetch persisted content. A shared SHA-only in-flight request had transferred a temporary ID's failure to the saved ID; a different source now checks its own endpoint after a shared failure, while successful content deduplication and genuine errors remain intact. Seven new regressions failed before the fix; 33 relevant tests passed afterward.
+- `ab82bde7` / `ecc00afc`: a pure Konva reproduction isolated the visual ghost to accelerated 2D Canvas under the screenshot browser's SwiftShader configuration. Disabling that 2D path removes stale pixels without adding application redraw logic. The independent real-browser regression fails with the old configuration, passes with the new one, and confirms that software WebGL2 still works.
+
+Final source beginnings, core operations, endings and published posters were inspected. The three replacement traces contain no HTTP errors or browser console errors. The selected toolbar capture passed; recording unit tests (5), derivation tests (2), screenshot lint and strict static manifest checks passed. The documentation build passed. Broader e2e configuration TypeScript checks still expose pre-existing marketing-recorder/config and unrelated legacy-flow typing issues; changed drawing helpers and the new canvas regression passed focused type checks, and application type/lint checks passed in the implementation commits.
+
+The local preview serves all 21 exact files successfully with matching SHA-256 hashes. The existing browser connection was unavailable for a final preview-page inspection; this does not replace or invalidate the successful real-browser capture tests and published-frame inspections. No second-batch human approval is recorded. The broader inventory now contains 207 referenced files; remaining task families and historical review gaps continue under the original plan. No release or push is implied.

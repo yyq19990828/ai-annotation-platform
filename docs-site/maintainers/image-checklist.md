@@ -240,6 +240,7 @@
 
 ### 工作台
 
+- [x] `public/media/workbench/layout-basics.mp4` — 标准布局 → 拖动分隔条 → 讨论与详情合并标签 → 标题栏隐藏 → 菜单找回 → 专注画布及恢复；保持标注选择和未发送草稿 `[derived-mp4]`
 - [~] ~~`images/bbox/draw-in-progress.gif`~~ — **已由** `public/media/workbench/bbox-draw.mp4` **替代**：矩形绘制完整流已迁移到 DocsVideo
 - [ ] `images/polygon/vertex-edit.png` — 多边形选中态 + 边悬停 + 图标；旧图未展示命名状态且带权限告警，已删除，待建立可验证场景后暗色重拍
 - [ ] `images/polygon/close-hint.png` — 三顶点后下一点贴近首点的闭合提示；旧图未展示命名状态且带权限告警，已删除，待建立可验证场景后暗色重拍
@@ -262,7 +263,7 @@
 - [x] `public/media/large-image/pyramid-recovery.mp4` — 一个当前视口高清切片真实返回 503 后保留 overview、自动重签恢复，并继续缩放和平移 **[Tier A]** `[derived-mp4]`
 - [x] `public/media/large-image/mask-limit.mp4` — Cosmic Cliffs 分块浏览 → 完整落库矩形框 → 悬停置灰 Mask 入口核对实际尺寸、单边上限与总像素上限 **[Tier A]** `[derived-mp4]`
 
-- [x] `images/mask-brush/toolbar-overview.png` — Mask 笔刷浮动工具栏全貌（笔刷/橡皮 chip + 半径 slider + 状态文字） [auto]
+- [x] `images/mask-brush/toolbar-overview.png` — Mask 笔刷浮动工具栏全貌（笔刷图标、笔刷/橡皮按钮与半径 slider；按实际可访问标签标注） [auto]
 - [~] ~~`images/mask-brush/draw-in-progress.gif`~~ — **已由** `public/media/mask-brush/mask-draw.mp4` **替代**：Mask 绘制与提交完整流已迁移到 DocsVideo
 - [x] `public/media/video/mask-track-edit.mp4` — 点击「Mask 轨迹」从空白创建 Mask → `Enter` 生成首个关键帧 → 跳到保持帧编辑同一轨迹 → 笔刷修正 → `Enter` 物化第二个人工关键帧 **[Tier A]** `[derived-mp4]`
 - [x] `public/media/video/mask-correction-propagate.mp4` — 在 F5 漂移帧补入漏分区域、扣除外溢区域 → 使用原生 Mask seed 向后传播 → 跨帧审阅 → 采纳后原轨迹保留 17 个关键帧 **[Tier A]** `[derived-mp4]`

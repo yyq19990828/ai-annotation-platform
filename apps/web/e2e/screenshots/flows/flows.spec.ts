@@ -17,6 +17,7 @@ import { runBatchBulkActions } from "./batch-bulk-actions";
 import { runAiPreVariantSelector } from "./ai-pre-variant-selector";
 import { runRotatedBbox } from "./rotated-bbox";
 import { runBboxDraw } from "./bbox-draw";
+import { runWorkspaceLayoutBasics, workspaceLayoutBasicsLayout } from "./workspace-layout-basics";
 import { runPolylineDraw } from "./polyline-draw";
 import { runPolygonDraw } from "./polygon-draw";
 import { runMaskDraw } from "./mask-draw";
@@ -193,11 +194,17 @@ function flowWatchPaths(assetId: string): string[] {
     `apps/web/e2e/screenshots/flows/${sourceFile}`,
     "apps/web/e2e/screenshots/flows/_canvas.ts",
     "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
+    "apps/web/e2e/screenshots/environment.ts",
     "apps/web/scripts/media-derivation.mjs",
     "apps/web/e2e/fixtures/seed.ts",
     "apps/api/app/services/screenshot_seed_spec.py",
     "apps/api/app/services/screenshot_seed_backends.py",
   ];
+  if (
+    ["bbox-draw", "rotated-bbox", "polyline-draw", "polygon-draw", "mask-draw"].includes(assetId)
+  ) {
+    paths.push("apps/web/e2e/screenshots/flows/_image-drawing.ts");
+  }
   if (assetId === "jobs-retry-recovery") {
     paths.push("apps/api/scripts/screenshot_job_recovery_fixture.py");
   }
@@ -1109,20 +1116,56 @@ test.describe("flow recordings", () => {
     await finalize(page, "secondary-inference-attribute", undefined, drawTrim(win, t0));
   });
 
+  test("workspace-layout-basics — 布局调整与编辑状态保留", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    const t0 = Date.now();
+    const userEmail = cached.users.admin.email;
+    await installScreenshotEnvironment(page);
+    await seed.injectToken(page, userEmail);
+    await applyScreenshotTheme(page, "dark");
+    await installRecordingWorkbenchLayout(page, "both", workspaceLayoutBasicsLayout);
+    let created: { taskId: string; annotationId: string } | undefined;
+    try {
+      const win = await runWorkspaceLayoutBasics(page, cached, (annotation) => {
+        created = annotation;
+      });
+      await finalize(page, "workspace-layout-basics", undefined, drawTrim(win, t0));
+    } finally {
+      if (created) await seed.deleteTaskAnnotation(created.taskId, created.annotationId, userEmail);
+    }
+  });
+
   test("rotated-bbox — 旋转框绘制", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
     const t0 = Date.now(); // 录屏起点参照（page 在测试体前创建，t0≈video t=0）
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.annotator.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
-    const win = await runRotatedBbox(page, cached);
-    await finalize(page, "rotated-bbox", path.join(DOCS_IMAGES, "workbench/rotated-bbox.gif"), {
-      fps: 4,
-      maxWidth: 640,
-      maxColors: 96,
-      ...drawTrim(win, t0),
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:image", preset: "standard" },
+      image: { afterBoxCreate: "pick_class" },
     });
+    let createdId: string | undefined;
+    try {
+      const win = await runRotatedBbox(page, cached, {
+        onCreated: (id) => {
+          createdId = id;
+        },
+      });
+      await finalize(page, "rotated-bbox", path.join(DOCS_IMAGES, "workbench/rotated-bbox.gif"), {
+        fps: 4,
+        maxWidth: 640,
+        maxColors: 96,
+        ...drawTrim(win, t0),
+      });
+    } finally {
+      if (createdId)
+        await seed.deleteTaskAnnotation(
+          cached.projects.image_demo.tasks.annotating.id,
+          createdId,
+          cached.users.annotator.email,
+        );
+    }
   });
 
   test("bbox-draw — 矩形绘制", async ({ page, seed }) => {
@@ -1131,19 +1174,33 @@ test.describe("flow recordings", () => {
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.annotator.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none", {
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:image", preset: "standard" },
       image: { afterBoxCreate: "pick_class" },
       ui: { secondary_bar_hidden: true },
     });
-    const win = await runBboxDraw(page, cached, {
-      marketing: test.info().project.name === MARKETING_PROJECT_NAME,
-    });
-    await finalize(page, "bbox-draw", path.join(DOCS_IMAGES, "bbox/draw-in-progress.gif"), {
-      fps: 4,
-      maxWidth: 640,
-      maxColors: 96,
-      ...drawTrim(win, t0),
-    });
+    let createdId: string | undefined;
+    try {
+      const win = await runBboxDraw(page, cached, {
+        onCreated: (id) => {
+          createdId = id;
+        },
+        marketing: test.info().project.name === MARKETING_PROJECT_NAME,
+      });
+      await finalize(page, "bbox-draw", path.join(DOCS_IMAGES, "bbox/draw-in-progress.gif"), {
+        fps: 4,
+        maxWidth: 640,
+        maxColors: 96,
+        ...drawTrim(win, t0),
+      });
+    } finally {
+      if (createdId)
+        await seed.deleteTaskAnnotation(
+          cached.projects.image_demo.tasks.annotating.id,
+          createdId,
+          cached.users.annotator.email,
+        );
+    }
   });
 
   test("polyline-draw — 折线逐点绘制", async ({ page, seed }) => {
@@ -1152,14 +1209,36 @@ test.describe("flow recordings", () => {
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.annotator.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
-    const win = await runPolylineDraw(page, cached);
-    await finalize(page, "polyline-draw", path.join(DOCS_IMAGES, "polyline/draw-in-progress.gif"), {
-      fps: 4,
-      maxWidth: 640,
-      maxColors: 96,
-      ...drawTrim(win, t0),
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:image", preset: "standard" },
+      image: { afterBoxCreate: "pick_class" },
     });
+    let createdId: string | undefined;
+    try {
+      const win = await runPolylineDraw(page, cached, {
+        onCreated: (id) => {
+          createdId = id;
+        },
+      });
+      await finalize(
+        page,
+        "polyline-draw",
+        path.join(DOCS_IMAGES, "polyline/draw-in-progress.gif"),
+        {
+          fps: 4,
+          maxWidth: 640,
+          maxColors: 96,
+          ...drawTrim(win, t0),
+        },
+      );
+    } finally {
+      if (createdId)
+        await seed.deleteTaskAnnotation(
+          cached.projects.image_demo.tasks.annotating.id,
+          createdId,
+          cached.users.annotator.email,
+        );
+    }
   });
 
   test("polygon-draw — 多边形逐点绘制", async ({ page, seed }) => {
@@ -1168,31 +1247,65 @@ test.describe("flow recordings", () => {
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.annotator.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
-    const win = await runPolygonDraw(page, cached);
-    await finalize(page, "polygon-draw", path.join(DOCS_IMAGES, "polygon/draw-in-progress.gif"), {
-      fps: 4,
-      maxWidth: 640,
-      maxColors: 96,
-      ...drawTrim(win, t0),
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:image", preset: "standard" },
+      image: { afterBoxCreate: "pick_class" },
     });
+    let createdId: string | undefined;
+    try {
+      const win = await runPolygonDraw(page, cached, {
+        onCreated: (id) => {
+          createdId = id;
+        },
+      });
+      await finalize(page, "polygon-draw", path.join(DOCS_IMAGES, "polygon/draw-in-progress.gif"), {
+        fps: 4,
+        maxWidth: 640,
+        maxColors: 96,
+        ...drawTrim(win, t0),
+      });
+    } finally {
+      if (createdId)
+        await seed.deleteTaskAnnotation(
+          cached.projects.image_demo.tasks.annotating.id,
+          createdId,
+          cached.users.annotator.email,
+        );
+    }
   });
 
   test("mask-draw — Mask 笔刷涂抹", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(180_000); // 多笔 Mask + 4K H.264 归档转码
+    test.setTimeout(SELECTED_CAPTURE ? 300_000 : 180_000); // Include isolated seed and encoding.
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.annotator.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
-    const win = await runMaskDraw(page, cached);
-    await finalize(page, "mask-draw", path.join(DOCS_IMAGES, "mask-brush/draw-in-progress.gif"), {
-      fps: 4,
-      maxWidth: 640,
-      maxColors: 96,
-      ...drawTrim(win, t0),
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:image", preset: "standard" },
+      image: { afterBoxCreate: "pick_class" },
     });
+    let createdId: string | undefined;
+    try {
+      const win = await runMaskDraw(page, cached, {
+        onCreated: (id) => {
+          createdId = id;
+        },
+      });
+      await finalize(page, "mask-draw", path.join(DOCS_IMAGES, "mask-brush/draw-in-progress.gif"), {
+        fps: 4,
+        maxWidth: 640,
+        maxColors: 96,
+        ...drawTrim(win, t0),
+      });
+    } finally {
+      if (createdId)
+        await seed.deleteTaskAnnotation(
+          cached.projects.image_demo.tasks.annotating.id,
+          createdId,
+          cached.users.annotator.email,
+        );
+    }
   });
 
   test("candidate-keyboard-review — 候选键盘审阅与自动前进", async ({ page, seed }) => {
@@ -2059,36 +2172,42 @@ test.describe("flow recordings", () => {
 
   test("large-image-progressive — 大图渐进式高清切片", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(90_000);
+    test.setTimeout(SELECTED_CAPTURE ? 300_000 : 90_000);
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:image", preset: "focus" },
+    });
     const win = await runLargeImageProgressive(page, cached);
     await finalize(page, "large-image-progressive", undefined, drawTrim(win, t0));
   });
 
   test("large-image-pyramid-recovery — 单切片失败后自动恢复", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(90_000);
+    test.setTimeout(SELECTED_CAPTURE ? 300_000 : 90_000);
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:image", preset: "focus" },
+    });
     const win = await runLargeImagePyramidRecovery(page, cached);
     await finalize(page, "large-image-pyramid-recovery", undefined, drawTrim(win, t0));
   });
 
   test("large-image-mask-limit — 超大图矢量标注与 Mask 尺寸门禁", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(90_000);
+    test.setTimeout(SELECTED_CAPTURE ? 300_000 : 90_000);
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:image", preset: "focus" },
+    });
     const win = await runLargeImageMaskLimit(page, cached);
     await finalize(page, "large-image-mask-limit", undefined, drawTrim(win, t0));
   });
@@ -2169,7 +2288,9 @@ test.describe("flow recordings", () => {
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.annotator.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:image", preset: "standard" },
+    });
     const win = await runHotkeyCheatSheet(page, cached);
     await finalize(
       page,
@@ -2186,7 +2307,7 @@ test.describe("flow recordings", () => {
 function drawTrim(
   win: { drawStartMs: number; drawEndMs: number } | null,
   t0: number,
-): { startSec?: number; durationSec?: number } {
+): Pick<GifOptions, "startSec" | "durationSec" | "captureWindow"> {
   if (!win) return {};
   const startSec = Math.max(0, (win.drawStartMs - t0) / 1000 - 0.4);
   const durationSec = (win.drawEndMs - win.drawStartMs) / 1000 + 0.8;
