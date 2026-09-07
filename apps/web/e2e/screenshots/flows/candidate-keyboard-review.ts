@@ -63,6 +63,8 @@ export async function runCandidateKeyboardReview(
   await page.getByTestId("tool-btn-select").click();
   await rows[0].click();
   await waitForSelectedCandidate(page, [predictionIds[0]]);
+  // Keep the pointer off inspector rows while demonstrating keyboard review.
+  await page.mouse.move(0, 0);
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   await page.waitForTimeout(1_000);
 
