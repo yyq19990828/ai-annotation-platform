@@ -18,6 +18,8 @@ export interface WorkbenchWorkspaceState {
   inspectorVisible: boolean;
   aiTaskVisible: boolean;
   videoTrackerVisible: boolean;
+  /** True only while the tracking panel content is the displayed tab of a visible group. */
+  videoTrackerContentVisible: boolean;
   triViewVisible: boolean;
   cameraViewVisible: boolean;
   cameraPresentation: CameraPresentation;

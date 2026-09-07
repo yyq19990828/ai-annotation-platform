@@ -5518,6 +5518,7 @@ export function useWorkbenchShellModel({
     inspectorVisible: true,
     aiTaskVisible: false,
     videoTrackerVisible: false,
+    videoTrackerContentVisible: false,
     triViewVisible: false,
     cameraViewVisible: false,
     cameraPresentation: "floating",
@@ -5963,7 +5964,7 @@ export function useWorkbenchShellModel({
       collapsed: resolveVideoSelectionCardCollapsed(
         floatingSelection.collapsed,
         trackerDialogOpen,
-        workspaceState.videoTrackerVisible,
+        workspaceState.videoTrackerContentVisible,
       ),
       onCollapse: collapseSelectionCard,
       onExpand: expandSelectionCard,
@@ -6026,7 +6027,7 @@ export function useWorkbenchShellModel({
     onSelectionPositionChange,
     floatingSelection.collapsed,
     trackerDialogOpen,
-    workspaceState.videoTrackerVisible,
+    workspaceState.videoTrackerContentVisible,
     collapseSelectionCard,
     expandSelectionCard,
   ]);
