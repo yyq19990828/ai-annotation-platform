@@ -116,9 +116,51 @@ describe("ToolDock · video tools", () => {
     expect(smartPoint.querySelector(".lucide-target")).toBeInTheDocument();
     expect(smartBox.querySelector(".lucide-scan")).toBeInTheDocument();
     expect(exemplar.querySelector(".lucide-copy")).toBeInTheDocument();
-    expect(mask.querySelector(".lucide-pencil")).toBeInTheDocument();
+    expect(mask.querySelector(".lucide-brush")).toBeInTheDocument();
     expect(maskTrack).toHaveAccessibleName("Mask 轨迹");
-    expect(maskTrack.querySelector(".lucide-scissors")).toBeInTheDocument();
+    expect(maskTrack.querySelector("svg")?.innerHTML).not.toEqual(
+      mask.querySelector("svg")?.innerHTML,
+    );
+  });
+
+  it("shares image/video geometry while distinguishing each trajectory silhouette", () => {
+    const { unmount } = render(<ToolDock tool="select" onSetTool={vi.fn()} />);
+    const shared = [
+      "box",
+      "rotated-box",
+      "keypoint",
+      "polygon",
+      "polyline",
+      "mask",
+      "smart-point",
+      "smart-box",
+      "exemplar",
+      "magic-box",
+    ];
+    const imageGeometry = new Map(
+      shared.map((id) => [
+        id,
+        screen.getByTestId(`tool-btn-${id}`).querySelector("svg")!.innerHTML,
+      ]),
+    );
+    unmount();
+    render(
+      <ToolDock
+        tool="select"
+        onSetTool={vi.fn()}
+        videoMode
+        videoTool="select"
+        onSetVideoTool={vi.fn()}
+      />,
+    );
+    for (const id of shared) {
+      expect(screen.getByTestId(`video-tool-btn-${id}`).querySelector("svg")!.innerHTML).toEqual(
+        imageGeometry.get(id),
+      );
+    }
+    const buttons = document.querySelectorAll("[data-testid^='video-tool-btn-']");
+    const silhouettes = [...buttons].map((button) => button.querySelector("svg")!.innerHTML);
+    expect(new Set(silhouettes).size).toBe(buttons.length);
   });
 
   it("项目开关隐藏全部创建工具时不渲染空分组", () => {

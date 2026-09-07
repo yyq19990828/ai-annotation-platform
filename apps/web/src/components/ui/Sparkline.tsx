@@ -24,9 +24,21 @@ export function Sparkline({
     .join(" ");
   const area = `0,${height} ${points} ${width},${height}`;
   return (
-    <svg width={width} height={height} className="block">
+    <svg
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="none"
+      className="block max-w-full"
+    >
       <polyline points={area} fill={color} opacity="0.08" stroke="none" />
-      <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" />
+      <polyline
+        points={points}
+        fill="none"
+        stroke={color}
+        strokeWidth="1.5"
+        vectorEffect="non-scaling-stroke"
+      />
     </svg>
   );
 }

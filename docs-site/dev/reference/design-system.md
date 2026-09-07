@@ -93,6 +93,32 @@ Use semantic z utilities instead of raw numeric z-index classes:
 - Use shadcn/ui primitives from `apps/web/src/components/shadcn/ui/` for low-level behavior where possible.
 - Keep existing `@/components/ui/*` adapters only when they preserve the current app API; they should delegate to shadcn/Radix behavior or Tailwind classes internally.
 
+## Icon semantics
+
+The app keeps Lucide as its primary icon library. `components/ui/Icon.tsx` renders
+both Lucide icons and the small annotation-specific set in `annotationIcons.ts`.
+Local icons use Lucide's renderer, 24px grid, `currentColor`, and the adapter's
+size, stroke, forwarded ref, and decorative accessibility behavior.
+
+- Reuse an icon for the same action across pages (search, save, delete). Do not
+  require globally unique icons.
+- Give different choices in the same navigation or tool group distinct silhouettes.
+  Color, selection backgrounds, and tiny badges alone do not establish identity.
+- Consume existing owners: Sidebar navigation descriptors, `ToolMeta.icon` via
+  `TOOL_REGISTRY` / `ALL_TOOLS`, and `TOOL_UNIT_GROUPS` for project configuration.
+  Do not create a parallel registry or pick a new icon independently in a consumer.
+- Image and video single-frame tools share geometry. Polygon/polyline trajectories
+  add a trailing-frame outline; Mask trajectories combine it with a region contour.
+  Rotated boxes use a tilted rectangle with a handle; keypoints use connected nodes.
+- Mask painting uses a brush, smart scribble uses a marked stroke, and canvas comments
+  retain the pencil. Scissors remain appropriate for cutting and point-cloud selection.
+- Check local SVGs at 12px (configuration/task queue), 13px (tool hints), 16px
+  (navigation), and 17px (dock). Inspect light/dark, selected, disabled, hover, and
+  keyboard focus states in a real browser. Retain accessible button names and tooltips.
+
+Generic decorative/action icons may still import Lucide directly. New dependencies
+or broad icon-library migrations require a demonstrated coverage or design benefit.
+
 ## Validation
 
 Run the web lint gate after styling changes:

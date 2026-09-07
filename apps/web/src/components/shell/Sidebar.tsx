@@ -42,7 +42,7 @@ const sectionsForRole = (isSuperAdmin: boolean): { label: string; items: NavItem
             {
               key: "dashboard" as PageKey,
               path: "/dashboard",
-              icon: "layers" as IconName,
+              icon: "folderKanban" as IconName,
               label: "项目管理",
             },
           ]
@@ -55,7 +55,7 @@ const sectionsForRole = (isSuperAdmin: boolean): { label: string; items: NavItem
             },
           ]),
       { key: "annotate", path: "/annotate", icon: "target", label: "标注工作" },
-      { key: "review", path: "/review", icon: "check", label: "质检审核" },
+      { key: "review", path: "/review", icon: "clipboardCheck", label: "质检审核" },
     ],
   },
   {
@@ -63,7 +63,7 @@ const sectionsForRole = (isSuperAdmin: boolean): { label: string; items: NavItem
     items: [
       { key: "ai-pre", path: "/ai-pre", icon: "sparkles", label: "AI 预标注" },
       { key: "model-market", path: "/model-market", icon: "bot", label: "模型市场" },
-      { key: "training", path: "/training", icon: "activity", label: "训练队列" },
+      { key: "training", path: "/training", icon: "listStart", label: "训练队列" },
     ],
   },
   {
@@ -73,14 +73,14 @@ const sectionsForRole = (isSuperAdmin: boolean): { label: string; items: NavItem
       { key: "storage", path: "/storage", icon: "db", label: "存储管理" },
       // v0.10.14 · E2 · 项目模板库
       { key: "project-templates", path: "/project-templates", icon: "book", label: "项目模板" },
-      { key: "users", path: "/users", icon: "users", label: "用户与权限" },
+      { key: "users", path: "/users", icon: "userRoundCog", label: "用户与权限" },
       { key: "audit", path: "/audit", icon: "shield", label: "审计日志" },
       // v0.12.3 · 标注员绩效 + 离线分析（此前仅 Dashboard 卡片 / 直达 URL 可达，补 Sidebar 入口）
       // v0.12.6 (A3) · 标注员绩效对 project_admin 开放（项目级范围），由 canAccessPage 过滤；离线分析仍超管专属。
       {
         key: "admin-people" as PageKey,
         path: "/admin/people",
-        icon: "users" as IconName,
+        icon: "chartPerformance" as IconName,
         label: "标注员绩效",
       },
       ...(isSuperAdmin
@@ -88,7 +88,7 @@ const sectionsForRole = (isSuperAdmin: boolean): { label: string; items: NavItem
             {
               key: "admin-analytics" as PageKey,
               path: "/admin/analytics",
-              icon: "layers" as IconName,
+              icon: "chartAnalytics" as IconName,
               label: "离线分析",
             },
           ]
@@ -107,7 +107,7 @@ const sectionsForRole = (isSuperAdmin: boolean): { label: string; items: NavItem
         ? [{ key: "bugs" as PageKey, path: "/bugs", icon: "bug" as IconName, label: "BUG反馈" }]
         : []),
       // v0.12.3 · 我的绩效（所有角色自助自视）
-      { key: "my-performance", path: "/me/performance", icon: "activity", label: "我的绩效" },
+      { key: "my-performance", path: "/me/performance", icon: "gauge", label: "我的绩效" },
       { key: "settings", path: "/settings", icon: "settings", label: "设置" },
     ],
   },

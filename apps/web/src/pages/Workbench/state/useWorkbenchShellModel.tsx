@@ -6329,7 +6329,7 @@ export function useWorkbenchShellModel({
             ? "scissors"
             : s.threeDTool === "measure"
               ? "ruler"
-              : "rect"
+              : "cube"
           : TOOL_REGISTRY[s.tool].icon,
       activeClass: s.activeClass,
       recentClasses,

@@ -8,7 +8,7 @@ export const SmartScribbleTool: CanvasTool = {
   id: "smart-scribble",
   hotkey: "",
   label: "智能笔迹",
-  icon: "edit",
+  icon: "smartScribble",
   cursor: "crosshair",
   requiredPrompt: "scribble",
   onPointerDown: ({

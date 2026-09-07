@@ -8,11 +8,15 @@ import {
   Bot,
   Box,
   Brain,
+  Brush,
   Bug,
   Check,
   CheckCircle,
   CircleDot,
   Clock,
+  ChartNoAxesCombined,
+  ChartColumnIncreasing,
+  ClipboardCheck,
   ClipboardPaste,
   ChevronDown,
   ChevronLeft,
@@ -32,6 +36,8 @@ import {
   Flame,
   Folder,
   FolderOpen,
+  FolderKanban,
+  Gauge,
   GalleryHorizontalEnd,
   Hexagon,
   History,
@@ -44,6 +50,7 @@ import {
   Layers,
   Link as LinkIcon,
   List,
+  ListStart,
   Loader2,
   Lock,
   LockOpen,
@@ -87,6 +94,7 @@ import {
   Type,
   Upload,
   User,
+  UserRoundCog,
   Users,
   Video,
   WandSparkles,
@@ -98,15 +106,22 @@ import {
 
 import { cn } from "@/lib/utils";
 
+import {
+  AnnotationPolygon,
+  AnnotationPolyline,
+  Keypoints,
+  MaskTrack,
+  PolygonTrack,
+  PolylineTrack,
+  RotatedBox,
+  SmartScribble,
+} from "./annotationIcons";
 import { useElementStyle } from "./useElementStyle";
 
 /**
- * 图标体系（v0.5.5）—— 内部走 Lucide React，对外保留稳定的 `<Icon name="..." />` API。
- *
- * 旧约定：~60 个手写 SVG path（视觉一致性 / 像素对齐都要自己保）。
- * 新约定：name → Lucide 组件映射；新代码直接 `import { Layers } from "lucide-react"` 也可以。
- *
- * 这里只为存量 171 处调用兜底兼容；新业务（batch / SAM / theme 等）建议直接用 Lucide。
+ * Stable icon adapter for Lucide and local annotation geometry.
+ * Business surfaces consume their existing tool/navigation metadata so one meaning
+ * keeps one icon across entry points. Generic actions may import Lucide directly.
  */
 const ICON_MAP = {
   activity: Activity,
@@ -118,11 +133,23 @@ const ICON_MAP = {
   bot: Bot,
   box: Box,
   brain: Brain,
+  brush: Brush,
+  annotationPolygon: AnnotationPolygon,
+  annotationPolyline: AnnotationPolyline,
+  keypoints: Keypoints,
+  maskTrack: MaskTrack,
+  polygonTrack: PolygonTrack,
+  polylineTrack: PolylineTrack,
+  rotatedBox: RotatedBox,
+  smartScribble: SmartScribble,
   bug: Bug,
   check: Check,
   checkCircle: CheckCircle,
   circleDot: CircleDot,
   clock: Clock,
+  chartAnalytics: ChartNoAxesCombined,
+  chartPerformance: ChartColumnIncreasing,
+  clipboardCheck: ClipboardCheck,
   clipboardPaste: ClipboardPaste,
   chevDown: ChevronDown,
   chevLeft: ChevronLeft,
@@ -148,6 +175,8 @@ const ICON_MAP = {
   flame: Flame,
   folder: Folder,
   folderOpen: FolderOpen,
+  folderKanban: FolderKanban,
+  gauge: Gauge,
   galleryHorizontalEnd: GalleryHorizontalEnd,
   grid: LayoutGrid,
   history: History,
@@ -158,6 +187,7 @@ const ICON_MAP = {
   layers: Layers,
   link: LinkIcon,
   list: List,
+  listStart: ListStart,
   loader2: Loader2,
   lock: Lock,
   unlock: LockOpen,
@@ -201,6 +231,7 @@ const ICON_MAP = {
   type: Type,
   upload: Upload,
   user: User,
+  userRoundCog: UserRoundCog,
   users: Users,
   video: Video,
   wandSparkles: WandSparkles,
