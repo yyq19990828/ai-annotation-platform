@@ -66,6 +66,7 @@ export async function openVideoKeyframeRecording(page: Page, catalog: Screenshot
     ["canvas", "class-palette", "inspector"],
     ["discussion", "ai-task", "video-tracker"],
   );
+  await page.getByRole("button", { name: "全部", exact: true }).click();
   const manifest = await readVideoRecordingJson<TaskVideoManifestResponse>(
     page,
     `/api/v1/tasks/${taskId}/video/manifest`,
@@ -87,9 +88,10 @@ export async function openVideoKeyframeRecording(page: Page, catalog: Screenshot
     await page.getByRole("button", { name: "播放 / 暂停", exact: true }).click();
   }
   // Keep the draw endpoints clear; expand the timeline after the manual edits.
-  await setVideoRecordingTimeline(page, false);
+  await setVideoRecordingTimeline(page, true);
   await page.getByRole("button", { name: "回到首帧", exact: true }).click();
   await waitForVideoRecordingFrame(page, manifest, 0);
+  await setVideoRecordingTimeline(page, false);
   await collapseVideoSelectionCard(page);
   const baseline = await readVideoRecordingJson<RecordedVideoTrack[]>(
     page,

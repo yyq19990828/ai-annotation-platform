@@ -1,6 +1,6 @@
 # Workbench media recapture after dockable layouts
 
-> Status: first representative batch approved by the user on 2026-09-07; second image/layout batch approved; third SAM/review batch captured and awaiting user review.
+> Status: first representative batch approved by the user on 2026-09-07; second image/layout batch approved; third SAM/review batch approved; fourth video-basics batch captured and awaiting user review.
 > Baseline: `af2eb6ab`, 2026-09-07. No release milestone is assigned.
 
 ## Goal and acceptance
@@ -233,3 +233,39 @@ Scribble starts from a stored 26,933-pixel Mask and makes two real positive/back
 Validation includes 29 recording/helper unit tests, two media-derivation tests, focused TypeScript and ESLint checks, and independent visual inspection of the six source clips. Final derivative, documentation, preview and provenance checks are recorded with the private publication archive. Third-batch generation does not renew human approval or complete the remaining video, 3D and cross-page families.
 
 Final review extended the shared commit callback to register native-Mask prediction lineage before any later UI assertion. SAM tools and Magic Box now use the same exact annotation/prediction cleanup as lifecycle and scribble, including marketing captures that do not rebuild the seed at the end. A regression case verifies registration even when class validation fails. This cleanup-only follow-up does not change the qualified recordings.
+
+## Batch 4: video basics and timeline editing
+
+The user reviewed and accepted the third batch. Commit `e3c5de73` records exactly its 24 files against `96bf0cad`; no push or approval of another batch is implied.
+
+This batch covers five existing stories and ten referenced derivatives (one MP4 and one poster per story): `video-draw`, `video-track-carryover`, `video-mask-track-edit`, `video-timeline-zoom`, and `video-chapter`. All five mappings and generation entries already exist. No homepage or active GIF targets belong to this batch. Keep the previously approved `video-track` overview.
+
+Inspection of the old beginnings, core actions, endings and posters confirmed that all five still use the old workbench shell. The carryover information card obscures the track list, Mask editing ends with a hidden timeline, and chapter text wraps in an overly narrow sidebar. Timeline zoom also reaches the minimum window span before its later gestures, and double-click both seeks and resets the window. The new composition uses the video-tracking preset, actual tabs and expanded timeline. A visible timeline requires checking opacity, because its auto-hide state remains present in the DOM.
+
+| Story           | Required demonstration and verification                                                                                                                         |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Video draw      | Two manually saved keyframes on the same vehicle track; inspect the real intermediate geometry and reload the same annotation.                                  |
+| Track carryover | Actual next-frame ghost and Tab continuation; preserve track identity, verify saved keyframe and auto-advance behavior.                                         |
+| Mask track edit | Create F0 Mask, inspect held F5, erase and commit a distinct F5 keyframe; retain F0 content, verify both rendered masks, exact ID/version and reload.           |
+| Timeline zoom   | Select a real saved track; use two effective pointer-anchored zoom steps, pan the window and reset with “Fit all frames”; frame and selection remain unchanged. |
+| Chapter editing | Brush-select a range, create its named chapter, resize both ends, and verify the same chapter and final range after reload.                                     |
+
+All five stories are manual interactions, so their recording plan requires no ML backend and makes no inference claim. Capture behavior evidence separately from inference evidence. Register created annotations and chapters before later assertions can fail and remove those exact records in finally/afterAll, including marketing mode. The shared disposable database remains `annotation_screenshots_test`, API 8010/web 3020 and Redis DB 15; the root recorder exclusively owns seeding.
+
+### Batch 4 outcome
+
+The five manual stories passed real browser verification, with ten MP4/poster derivatives regenerated from inspected standard sources. Their browser traces have no failed HTTP requests, console errors or page/test errors. The earlier four accepted stories were retained while the Mask composition was corrected; failed captures remain private diagnostic evidence.
+
+| Story           | Verified result                                                                                                                                                                           | Published clip |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| Video draw      | One annotation/track, manual F0 and F8 keyframes, rendered dashed F4 interpolation, unchanged keyframe count after reload                                                                 | 17.6 s         |
+| Track carryover | Tab selects the bus at F1; only that track receives its new keyframe; the truck keeps its original class, identity and version and becomes the next selection                             | 10.9 s         |
+| Mask track edit | F0 foreground remains 28,766 pixels; the erased F5 keyframe has 25,643 pixels and distinct content, on the same annotation/track with version 1 → 2; native bitmap and reload checks pass | 20.0 s         |
+| Timeline zoom   | Two effective pointer-anchored zoom steps, pan and fit-all preserve frame 0 and the selected annotation                                                                                   | 10.2 s         |
+| Chapter editing | Manual F14–F34 chapter resized to F20–F48; both handle saves and reload preserve the same chapter without seeking the video                                                               | 15.1 s         |
+
+Production fixes in `0372bf9c` and `7c13fb7a` restore explicit chapter brushing when a tracking session is retained, and distinguish an open docked tracking panel from its actually displayed tab. Only a displayed tracking tab temporarily folds the selection card; user folding preferences and tracking configuration remain intact. The final visibility regression uses the real Dockview owner and selection card, covering background tabs, reactivation and canvas focus. The affected three groups pass 61 tests.
+
+Recorder fixes align with the current UI: select the full track list for cross-frame checks, use the new object's class picker instead of relabeling a selected track, and close the floating selection card before clicking a row it covers. This last ordering prevents browser actionability retries from scrolling the workspace; the final Mask clip keeps the whole canvas visible. Cleanup now drains every owned record queue before each project reseed, including the separate routing flow, and retains failed cleanup work for retry.
+
+Validation includes 36 recording/helper tests, two derivation tests, focused TypeScript and ESLint checks, screenshot lint (61 files, none missing), the strict static-image manifest check and the documentation build. The static manifest retains three historical warnings. Final publication hashes, browser preview results and source files are retained in the verified private batch archive. This batch does not approve the new ten files, claim marketing/4K60 quality, authorize a push or release, or complete the remaining video, 3D and cross-page families.

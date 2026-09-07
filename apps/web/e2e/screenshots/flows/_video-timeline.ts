@@ -16,6 +16,7 @@ export async function assertVideoTimelineVisible(page: Page): Promise<void> {
     "data-state",
     "expanded",
   );
+  await expect(page.getByTestId("video-playback-overlay")).toHaveCSS("opacity", "1");
   const bounds = await stage.boundingBox();
   expect(bounds?.height, "The video must remain readable above the timeline").toBeGreaterThan(200);
 }

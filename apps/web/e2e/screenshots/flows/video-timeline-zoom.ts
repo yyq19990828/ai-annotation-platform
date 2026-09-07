@@ -62,7 +62,7 @@ export async function runVideoTimelineZoom(
     expect(await currentVideoFrame(page)).toBe(frame);
     await expect(rows).toHaveCount(1);
     await expect(rows).toHaveAttribute("aria-selected", "true");
-    await expect(rows).toHaveText(selectionText);
+    await expect(rows).toHaveText(selectionText, { useInnerText: true });
     await expect(page.getByTestId("video-konva-source")).toHaveJSProperty("paused", true);
     await assertVideoTimelineVisible(page);
   };

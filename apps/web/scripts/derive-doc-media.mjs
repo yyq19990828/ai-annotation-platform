@@ -15,6 +15,11 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, "../../..");
 
 const POSTER_AT_SECONDS = new Map([
+  ["video-mask-track-edit", 19.2],
+  ["video-track-carryover", 10.1],
+  ["video-draw", 16.9],
+  ["video-timeline-zoom", 9.2],
+  ["video-chapter", 14.0],
   ["sam-tools/smart-box", 7.8],
   ["sam-tools/smart-point", 6.2],
   ["ai-assisted-annotation", 7.7],

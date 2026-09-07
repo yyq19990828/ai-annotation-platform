@@ -35,9 +35,10 @@ async function drawTrack(
   anchor: ScreenshotRecordingAnchor,
   taskId: string,
   onCreated: VideoTrackCreated,
+  preselectClass = true,
 ) {
   const stage = page.getByTestId("video-konva-stage");
-  await selectVideoRecordingClass(page, stage, anchor.label);
+  if (preselectClass) await selectVideoRecordingClass(page, stage, anchor.label);
   const { start, end } = mediaBbox(await renderedMediaBounds(stage), anchor.bbox);
   await page.mouse.move(start.x, start.y);
   await page.mouse.down();
@@ -73,9 +74,10 @@ export async function runVideoTrackCarryover(
   await trackButton.click();
   const drawStartMs = Date.now();
   const bus = await drawTrack(page, leftBus, taskId, onCreated);
-  await page.keyboard.press("Escape");
-  await trackButton.click();
-  const truck = await drawTrack(page, frontTruck, taskId, onCreated);
+  // The same-frame track tool creates another object. Use its required class picker;
+  // a numeric shortcut here would relabel the selected bus instead of the new truck.
+  await expect(page.getByTestId("video-sticky-track-hint")).toContainText("本帧已有关键帧");
+  const truck = await drawTrack(page, frontTruck, taskId, onCreated, false);
   expect(bus.id).not.toBe(truck.id);
   expect(bus.geometry.track_id).not.toBe(truck.geometry.track_id);
   const row = (trackId: string) =>

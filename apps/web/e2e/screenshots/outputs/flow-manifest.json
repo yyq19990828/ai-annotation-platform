@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-07T14:51:57.394Z",
+  "updated_at": "2026-09-07T16:46:31.220Z",
   "entries": {
     "docs-site/.vitepress/theme/assets/home/hero/pointcloud.webp": {
       "asset_id": "home-hero/pointcloud",
@@ -4110,19 +4110,30 @@
     "docs-site/public/media/video/mask-track-edit-poster.webp": {
       "asset_id": "video-mask-track-edit",
       "role": "poster",
-      "generated_at": "2026-08-15T06:09:20.831Z",
-      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "generated_at": "2026-09-07T16:43:18.479Z",
+      "captured_commit": "7c13fb7ab678404e0d9037481b495e17d925076b",
       "source_worktree_dirty": true,
-      "seed_revision": "screenshots-2026-08-e",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › video-mask-track-edit",
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive webp › video-mask-track-edit",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_video-keyframe-evidence.ts",
+        "apps/web/e2e/screenshots/flows/_video-keyframe-recording.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/scripts/derive-doc-media.mjs"
+        "apps/web/e2e/screenshots/flows/video-mask-track-edit.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "ff7accf627ba9a75ab8cd91769573ea9a2b04488a56b6640e29b6176cc48d6ec",
-      "bytes": 98328,
+      "sha256": "a4c7870cdaa78988d92526dd12e5c85f416fdc98a18ead0d06b99d447d559824",
+      "bytes": 57070,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -4131,40 +4142,69 @@
         "fps": "25/1",
         "duration_seconds": null
       },
+      "capture": {
+        "source_quality": "standard",
+        "source_inference": "none"
+      },
       "source_asset": {
-        "runId": "20260815T001709Z-435b32ac23d6",
+        "runId": "2026-09-07T16-38-03-493Z-3202218",
         "assetId": "video-mask-track-edit",
-        "sha256": "5aaafff31c9f69e5e955a8c76fd0c7850d355b4f357de0295d0ec4fd168a21f6"
+        "sha256": "d9ccd787061eaa486ad56b4501b4b4462ba5fd335afbd4e7eec85908bfe9625e",
+        "quality": "standard",
+        "clip": {
+          "start": 70.2,
+          "duration": 20
+        }
       }
     },
     "docs-site/public/media/video/mask-track-edit.mp4": {
       "asset_id": "video-mask-track-edit",
       "role": "docs-video",
-      "generated_at": "2026-08-15T06:09:20.769Z",
-      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "generated_at": "2026-09-07T16:43:18.394Z",
+      "captured_commit": "7c13fb7ab678404e0d9037481b495e17d925076b",
       "source_worktree_dirty": true,
-      "seed_revision": "screenshots-2026-08-e",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › video-mask-track-edit",
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive mp4 › video-mask-track-edit",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_video-keyframe-evidence.ts",
+        "apps/web/e2e/screenshots/flows/_video-keyframe-recording.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/scripts/derive-doc-media.mjs"
+        "apps/web/e2e/screenshots/flows/video-mask-track-edit.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "a67265ee1bc093cffaa50edcc27a6583cddc97fdc5dced98f7030e915db15dd2",
-      "bytes": 505496,
+      "sha256": "c9f4738da87be0f524c2d7dc46e3ca351b65c14afd78866cc1eedf443c7611b0",
+      "bytes": 665544,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
-        "fps": "30/1",
-        "duration_seconds": 14.567
+        "fps": "25/1",
+        "duration_seconds": 20
+      },
+      "capture": {
+        "source_quality": "standard",
+        "source_inference": "none"
       },
       "source_asset": {
-        "runId": "20260815T001709Z-435b32ac23d6",
+        "runId": "2026-09-07T16-38-03-493Z-3202218",
         "assetId": "video-mask-track-edit",
-        "sha256": "5aaafff31c9f69e5e955a8c76fd0c7850d355b4f357de0295d0ec4fd168a21f6"
+        "sha256": "d9ccd787061eaa486ad56b4501b4b4462ba5fd335afbd4e7eec85908bfe9625e",
+        "quality": "standard",
+        "clip": {
+          "start": 70.2,
+          "duration": 20
+        }
       }
     },
     "docs-site/public/media/video/prediction-density-navigation-poster.webp": {
@@ -4727,20 +4767,29 @@
     "docs-site/public/media/video/video-chapter-poster.webp": {
       "asset_id": "video-chapter",
       "role": "poster",
-      "generated_at": "2026-08-16T09:28:41.998Z",
-      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "generated_at": "2026-09-07T16:08:51.012Z",
+      "captured_commit": "0372bf9c13c1107d2ef1de96c3d557ac04e00e43",
       "source_worktree_dirty": true,
-      "seed_revision": "screenshots-2026-08-e",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › video-chapter",
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive webp › video-chapter",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_video-timeline.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/flows/video-chapter.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
         "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "d9aee5532ad33b44016c4565448dcf5b873a9777f6024c59b91c366c6934c036",
-      "bytes": 95676,
+      "sha256": "3b4939f8e777fda2301e23994e487d0af1e34761589216468a4a795bc650617b",
+      "bytes": 57194,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -4749,60 +4798,97 @@
         "fps": "25/1",
         "duration_seconds": null
       },
+      "capture": {
+        "source_quality": "standard",
+        "source_inference": "none"
+      },
       "source_asset": {
-        "runId": "20260815T001709Z-435b32ac23d6",
+        "runId": "2026-09-07T15-54-13-477Z-3049078",
         "assetId": "video-chapter",
-        "sha256": "fafa5b159cdb6225eb768763ab719c1822df9073a58284bcb9ad783c56d99ce1"
+        "sha256": "637ad726620a6327d2883beadf7f7e28f23c6a1273126e80bd8703967dae8c17",
+        "quality": "standard",
+        "clip": {
+          "start": 71.5,
+          "duration": 15.1
+        }
       }
     },
     "docs-site/public/media/video/video-chapter.mp4": {
       "asset_id": "video-chapter",
       "role": "docs-video",
-      "generated_at": "2026-08-16T09:28:41.929Z",
-      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "generated_at": "2026-09-07T16:08:50.930Z",
+      "captured_commit": "0372bf9c13c1107d2ef1de96c3d557ac04e00e43",
       "source_worktree_dirty": true,
-      "seed_revision": "screenshots-2026-08-e",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › video-chapter",
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive mp4 › video-chapter",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_video-timeline.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/flows/video-chapter.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
         "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "6085c93e46bb3f48cad0ea08b8797e8a8c07b5b1bf981cfe28b1ce61a9fb82e5",
-      "bytes": 322005,
+      "sha256": "859f5e3f24e894bc9b75c33219dfb438cf21f2341fb8d828d377610fe2f58bfe",
+      "bytes": 387422,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
-        "fps": "30/1",
-        "duration_seconds": 11.734
+        "fps": "25/1",
+        "duration_seconds": 15.16
+      },
+      "capture": {
+        "source_quality": "standard",
+        "source_inference": "none"
       },
       "source_asset": {
-        "runId": "20260815T001709Z-435b32ac23d6",
+        "runId": "2026-09-07T15-54-13-477Z-3049078",
         "assetId": "video-chapter",
-        "sha256": "fafa5b159cdb6225eb768763ab719c1822df9073a58284bcb9ad783c56d99ce1"
+        "sha256": "637ad726620a6327d2883beadf7f7e28f23c6a1273126e80bd8703967dae8c17",
+        "quality": "standard",
+        "clip": {
+          "start": 71.5,
+          "duration": 15.1
+        }
       }
     },
     "docs-site/public/media/video/video-draw-poster.webp": {
       "asset_id": "video-draw",
       "role": "poster",
-      "generated_at": "2026-08-16T09:28:47.328Z",
-      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "generated_at": "2026-09-07T16:25:40.808Z",
+      "captured_commit": "7c13fb7ab678404e0d9037481b495e17d925076b",
       "source_worktree_dirty": true,
-      "seed_revision": "screenshots-2026-08-e",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › video-draw",
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive webp › video-draw",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_video-keyframe-evidence.ts",
+        "apps/web/e2e/screenshots/flows/_video-keyframe-recording.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/flows/video-draw.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
         "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "ec573512649d3495342853631c5cde95cf2a4d79534bbeffeb12c17a6575488d",
-      "bytes": 106824,
+      "sha256": "f9f66dde2319634045e0a6e1fd5ec522cb9746e717c1269c6391cf325e614302",
+      "bytes": 60058,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -4811,60 +4897,97 @@
         "fps": "25/1",
         "duration_seconds": null
       },
+      "capture": {
+        "source_quality": "standard",
+        "source_inference": "none"
+      },
       "source_asset": {
-        "runId": "20260815T001709Z-435b32ac23d6",
+        "runId": "2026-09-07T16-13-03-694Z-3128330",
         "assetId": "video-draw",
-        "sha256": "b8ffb897b75d29f11d3161f8dfa0fee9bb6920f48fa678e50277997bdebe4639"
+        "sha256": "6e2e3d4bf608a2ba708d536d5becfbde2dd054b3e1ed5edeb943eb7872522816",
+        "quality": "standard",
+        "clip": {
+          "start": 70,
+          "duration": 17.6
+        }
       }
     },
     "docs-site/public/media/video/video-draw.mp4": {
       "asset_id": "video-draw",
       "role": "docs-video",
-      "generated_at": "2026-08-16T09:28:47.263Z",
-      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "generated_at": "2026-09-07T16:25:40.726Z",
+      "captured_commit": "7c13fb7ab678404e0d9037481b495e17d925076b",
       "source_worktree_dirty": true,
-      "seed_revision": "screenshots-2026-08-e",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › video-draw",
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive mp4 › video-draw",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_video-keyframe-evidence.ts",
+        "apps/web/e2e/screenshots/flows/_video-keyframe-recording.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/flows/video-draw.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
         "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "9eb73723c2bf39af62ff70aceaa1195dd33672997163e5abc77c0232e480d5bd",
-      "bytes": 791781,
+      "sha256": "81f86688f7b680829326b14561103cd07eaea9e9069e3ea04b3853f511789009",
+      "bytes": 772197,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
-        "fps": "30/1",
-        "duration_seconds": 12.867
+        "fps": "25/1",
+        "duration_seconds": 17.6
+      },
+      "capture": {
+        "source_quality": "standard",
+        "source_inference": "none"
       },
       "source_asset": {
-        "runId": "20260815T001709Z-435b32ac23d6",
+        "runId": "2026-09-07T16-13-03-694Z-3128330",
         "assetId": "video-draw",
-        "sha256": "b8ffb897b75d29f11d3161f8dfa0fee9bb6920f48fa678e50277997bdebe4639"
+        "sha256": "6e2e3d4bf608a2ba708d536d5becfbde2dd054b3e1ed5edeb943eb7872522816",
+        "quality": "standard",
+        "clip": {
+          "start": 70,
+          "duration": 17.6
+        }
       }
     },
     "docs-site/public/media/video/video-timeline-zoom-poster.webp": {
       "asset_id": "video-timeline-zoom",
       "role": "poster",
-      "generated_at": "2026-08-16T09:28:51.408Z",
-      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "generated_at": "2026-09-07T16:08:19.885Z",
+      "captured_commit": "0372bf9c13c1107d2ef1de96c3d557ac04e00e43",
       "source_worktree_dirty": true,
-      "seed_revision": "screenshots-2026-08-e",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › video-timeline-zoom",
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive webp › video-timeline-zoom",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_video-timeline.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/flows/video-timeline-zoom.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
         "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "19c44673b25fa040d85f48dd7e247e1cef0c633712c230675c8644b93205aa5a",
-      "bytes": 111632,
+      "sha256": "fd209778a1e354b45344988b6e218d7e1b7fa7ff19036704aeda0033b5ffc8d3",
+      "bytes": 58336,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -4873,60 +4996,97 @@
         "fps": "25/1",
         "duration_seconds": null
       },
+      "capture": {
+        "source_quality": "standard",
+        "source_inference": "none"
+      },
       "source_asset": {
-        "runId": "20260815T001709Z-435b32ac23d6",
+        "runId": "2026-09-07T15-54-13-477Z-3049078",
         "assetId": "video-timeline-zoom",
-        "sha256": "909a872a34ca50c70bdacd1374804b96fef411b7f7e93c84d110e49bf0f8bc40"
+        "sha256": "f24bee82df07c73c1bc0526aab8f421c887563770bc5d5bf4426625c3ec15f37",
+        "quality": "standard",
+        "clip": {
+          "start": 69.4,
+          "duration": 10.2
+        }
       }
     },
     "docs-site/public/media/video/video-timeline-zoom.mp4": {
       "asset_id": "video-timeline-zoom",
       "role": "docs-video",
-      "generated_at": "2026-08-16T09:28:51.338Z",
-      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "generated_at": "2026-09-07T16:08:19.807Z",
+      "captured_commit": "0372bf9c13c1107d2ef1de96c3d557ac04e00e43",
       "source_worktree_dirty": true,
-      "seed_revision": "screenshots-2026-08-e",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › video-timeline-zoom",
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive mp4 › video-timeline-zoom",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_video-timeline.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/flows/video-timeline-zoom.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
         "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "78b1f7006ce2fb502c176e77027a2f9cbd88b7fef9d8b587717fe849e5885e96",
-      "bytes": 306565,
+      "sha256": "c8a83cacaa537df72760e8741fb359997ecc6c81037b76e26e47a4a6d990098d",
+      "bytes": 278302,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
-        "fps": "30/1",
-        "duration_seconds": 8.734
+        "fps": "25/1",
+        "duration_seconds": 10.2
+      },
+      "capture": {
+        "source_quality": "standard",
+        "source_inference": "none"
       },
       "source_asset": {
-        "runId": "20260815T001709Z-435b32ac23d6",
+        "runId": "2026-09-07T15-54-13-477Z-3049078",
         "assetId": "video-timeline-zoom",
-        "sha256": "909a872a34ca50c70bdacd1374804b96fef411b7f7e93c84d110e49bf0f8bc40"
+        "sha256": "f24bee82df07c73c1bc0526aab8f421c887563770bc5d5bf4426625c3ec15f37",
+        "quality": "standard",
+        "clip": {
+          "start": 69.4,
+          "duration": 10.2
+        }
       }
     },
     "docs-site/public/media/video/video-track-carryover-poster.webp": {
       "asset_id": "video-track-carryover",
       "role": "poster",
-      "generated_at": "2026-08-16T09:28:55.870Z",
-      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "generated_at": "2026-09-07T16:46:31.220Z",
+      "captured_commit": "7c13fb7ab678404e0d9037481b495e17d925076b",
       "source_worktree_dirty": true,
-      "seed_revision": "screenshots-2026-08-e",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › video-track-carryover",
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive webp › video-track-carryover",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_video-keyframe-evidence.ts",
+        "apps/web/e2e/screenshots/flows/_video-keyframe-recording.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/flows/video-track-carryover.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
         "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "4a1eb00cc1b18346babcd1ed4eba2f5f4934c72c2edaf2890af141e501edc1d7",
-      "bytes": 94668,
+      "sha256": "dded2a6a0d98b8221cb7b3b0a399e2a8df8509d38737469af1ba7179ca5437ea",
+      "bytes": 60648,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -4935,41 +5095,69 @@
         "fps": "25/1",
         "duration_seconds": null
       },
+      "capture": {
+        "source_quality": "standard",
+        "source_inference": "none"
+      },
       "source_asset": {
-        "runId": "20260815T001709Z-435b32ac23d6",
+        "runId": "2026-09-07T16-27-01-025Z-3168703",
         "assetId": "video-track-carryover",
-        "sha256": "cca2b1b918ba6559ef7a6f6d13fa7242613e117b276767f32f46e9613f66c29c"
+        "sha256": "6abd7bea9c763d8893499670b0fe4d73b08e215fc603ddc032e924afcad01497",
+        "quality": "standard",
+        "clip": {
+          "start": 74.8,
+          "duration": 10.9
+        }
       }
     },
     "docs-site/public/media/video/video-track-carryover.mp4": {
       "asset_id": "video-track-carryover",
       "role": "docs-video",
-      "generated_at": "2026-08-16T09:28:55.807Z",
-      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "generated_at": "2026-09-07T16:46:31.137Z",
+      "captured_commit": "7c13fb7ab678404e0d9037481b495e17d925076b",
       "source_worktree_dirty": true,
-      "seed_revision": "screenshots-2026-08-e",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › video-track-carryover",
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive mp4 › video-track-carryover",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_video-keyframe-evidence.ts",
+        "apps/web/e2e/screenshots/flows/_video-keyframe-recording.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/flows/video-track-carryover.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
         "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "1aa4bc3b8813a3fca6d86406ba1ca29681438e9327f693ef6122d7298a6483c9",
-      "bytes": 466975,
+      "sha256": "46fd0a96e1a808a8dbe923077a59908e25b95d7bc4335115e0bebff9b8f983df",
+      "bytes": 426756,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
-        "fps": "30/1",
-        "duration_seconds": 10.267
+        "fps": "25/1",
+        "duration_seconds": 10.92
+      },
+      "capture": {
+        "source_quality": "standard",
+        "source_inference": "none"
       },
       "source_asset": {
-        "runId": "20260815T001709Z-435b32ac23d6",
+        "runId": "2026-09-07T16-27-01-025Z-3168703",
         "assetId": "video-track-carryover",
-        "sha256": "cca2b1b918ba6559ef7a6f6d13fa7242613e117b276767f32f46e9613f66c29c"
+        "sha256": "6abd7bea9c763d8893499670b0fe4d73b08e215fc603ddc032e924afcad01497",
+        "quality": "standard",
+        "clip": {
+          "start": 74.8,
+          "duration": 10.9
+        }
       }
     },
     "docs-site/public/media/video/workbench-overview-poster.webp": {

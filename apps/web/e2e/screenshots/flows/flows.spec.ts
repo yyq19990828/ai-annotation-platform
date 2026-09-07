@@ -1,3 +1,4 @@
+import { drainRecordingCleanup } from "../_helpers/recording-cleanup";
 /**
  * M3 · 流程录制 spec。
  *
@@ -41,7 +42,7 @@ import {
   STORAGE_CONNECTOR_RECORDING_NAME,
 } from "./storage-connector-create-test";
 import { runVideoDraw } from "./video-draw";
-import { runVideoChapter } from "./video-chapter";
+import { runVideoChapter, type VideoChapterCleanupRecord } from "./video-chapter";
 import { runVideoMultiSeedTracking } from "./video-multi-seed-tracking";
 import { runVideoTimelinePredictionNavigation } from "./video-timeline-prediction-navigation";
 import { runVideoTrackerTextDiscovery } from "./video-tracker-text-discovery";
@@ -145,6 +146,13 @@ const FLOW_SOURCE_WORKTREE_DIRTY =
 
 let cached: ScreenshotSeedCatalog | null = null;
 const flowInferenceEvidence: Record<string, unknown> = {};
+const flowBehaviorEvidence: Record<string, unknown> = {};
+type VideoAnnotationCleanupRecord = Pick<
+  VideoFrameInferenceCleanupRecord,
+  "projectId" | "taskId" | "annotationIds"
+>;
+const videoAnnotationCleanupRecords: VideoAnnotationCleanupRecord[] = [];
+const videoChapterCleanupRecords: Array<VideoChapterCleanupRecord & { accessToken: string }> = [];
 const ocrCleanupRecords: OcrCleanupRecord[] = [];
 const videoFrameInferenceCleanupRecords: VideoFrameInferenceCleanupRecord[] = [];
 const secondaryInferenceCleanupRecords: SecondaryInferenceCleanupRecord[] = [];
@@ -215,6 +223,13 @@ function flowWatchPaths(assetId: string): string[] {
   }
   if (assetId === "sam-tools/smart-point")
     paths.push("apps/web/e2e/screenshots/flows/_sam-recording-candidates.ts");
+  if (["video-draw", "video-track-carryover", "video-mask-track-edit"].includes(assetId))
+    paths.push(
+      "apps/web/e2e/screenshots/flows/_video-keyframe-recording.ts",
+      "apps/web/e2e/screenshots/flows/_video-keyframe-evidence.ts",
+    );
+  if (["video-timeline-zoom", "video-chapter"].includes(assetId))
+    paths.push("apps/web/e2e/screenshots/flows/_video-timeline.ts");
   if (assetId === "smart-scribble")
     paths.push(
       "apps/web/e2e/screenshots/flows/_smart-scribble-evidence.ts",
@@ -300,19 +315,11 @@ function repairScreenshotProfile(mode: "stub" | "live", silent = false): void {
 // 重建自己管理的固定项目，不再按几何类型猜测并删除数据。
 // Playwright 要求 hook 的 fixture 参数使用对象解构；此处确实不消费任何 fixture。
 // eslint-disable-next-line no-empty-pattern
-test.afterAll(({}, testInfo) => {
+test.afterAll(async ({}, testInfo) => {
   if (!cached) return;
   // 推理完成时已清一次；整组结束再幂等清理一次可变业务痕迹，
   // 然后才重建 seed。审计表是平台不可变安全记录，录制器不绕过该约束。
-  for (const record of ocrCleanupRecords) cleanupOcrRecording(record);
-  for (const record of videoFrameInferenceCleanupRecords) cleanupVideoFrameInference(record);
-  for (const record of secondaryInferenceCleanupRecords) cleanupSecondaryInference(record);
-  for (const record of candidateReviewCleanupRecords) cleanupCandidateReview(record);
-  for (const record of pipelineApplyCleanupRecords) cleanupPipelineApply(record);
-  for (const record of jobsRetryCleanupRecords) manageJobsRetryFixture("cleanup", record);
-  for (const record of backgroundExportCleanupRecords) {
-    manageBackgroundExportFixture("cleanup", record);
-  }
+  await cleanupRecordingRecords();
   // Playwright 会在单项失败后重启 worker，并在旧 worker 上执行 afterAll。
   // marketing-master 的 catalog 由 globalSetup 只读取一次；此时重建固定项目会让
   // 后续 worker 继续使用已经失效的项目 / 任务 ID，造成整批录制级联跳回 Dashboard。
@@ -320,6 +327,22 @@ test.afterAll(({}, testInfo) => {
   if (testInfo.project.name === MARKETING_PROJECT_NAME) return;
   repairScreenshotProfile(screenshotBackendMode(cached));
 });
+
+async function cleanupRecordingRecords(): Promise<void> {
+  await drainRecordingCleanup(ocrCleanupRecords, cleanupOcrRecording);
+  await drainRecordingCleanup(videoFrameInferenceCleanupRecords, cleanupVideoFrameInference);
+  await drainRecordingCleanup(videoAnnotationCleanupRecords, cleanupVideoFrameInference);
+  await drainRecordingCleanup(videoChapterCleanupRecords, cleanupVideoChapter);
+  await drainRecordingCleanup(secondaryInferenceCleanupRecords, cleanupSecondaryInference);
+  await drainRecordingCleanup(candidateReviewCleanupRecords, cleanupCandidateReview);
+  await drainRecordingCleanup(pipelineApplyCleanupRecords, cleanupPipelineApply);
+  await drainRecordingCleanup(jobsRetryCleanupRecords, (record) => {
+    manageJobsRetryFixture("cleanup", record);
+  });
+  await drainRecordingCleanup(backgroundExportCleanupRecords, (record) => {
+    manageBackgroundExportFixture("cleanup", record);
+  });
+}
 
 function cleanupOcrRecording(record: OcrCleanupRecord): void {
   execFileSync(
@@ -342,7 +365,34 @@ function cleanupOcrRecording(record: OcrCleanupRecord): void {
   );
 }
 
-function cleanupVideoFrameInference(record: VideoFrameInferenceCleanupRecord): void {
+function registerVideoAnnotationCleanup(
+  catalog: ScreenshotSeedCatalog,
+): VideoAnnotationCleanupRecord {
+  const record = {
+    projectId: String(catalog.projects.video_demo.id),
+    taskId: String(catalog.projects.video_demo.tasks.tracking.id),
+    annotationIds: [] as string[],
+  };
+  videoAnnotationCleanupRecords.push(record);
+  return record;
+}
+
+async function cleanupVideoChapter(
+  record: VideoChapterCleanupRecord & { accessToken: string },
+): Promise<void> {
+  const apiBase = process.env.PLAYWRIGHT_API_BASE ?? "http://127.0.0.1:8010";
+  const response = await fetch(
+    `${apiBase}/api/v1/videos/${record.datasetItemId}/chapters/${record.chapterId}`,
+    {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${record.accessToken}` },
+    },
+  );
+  if (!response.ok && response.status !== 404)
+    throw new Error(`Recording chapter cleanup: HTTP ${response.status}`);
+}
+
+function cleanupVideoFrameInference(record: VideoAnnotationCleanupRecord): void {
   execFileSync(
     path.join(REPO_ROOT, "apps/api/.venv/bin/python"),
     [
@@ -720,6 +770,7 @@ async function archivePortable(
       gif_variants: gifs,
       clock: SELECTED_CAPTURE ? "live" : "unverified",
       inference_evidence: flowInferenceEvidence[assetId],
+      behavior_evidence: flowBehaviorEvidence[assetId],
       backend_requirements: requirements,
       // Legacy flows may intercept inference even with live backend bindings.
       inference:
@@ -779,10 +830,7 @@ test.describe("flow recordings", () => {
 
     // 每条营销母版拥有独立的固定数据状态。绘图、审核和视频轨迹流程都会写库；
     // 若沿用同一任务，前一条素材会改变后一条素材的画布、状态与命中目标。
-    for (const record of ocrCleanupRecords.splice(0)) cleanupOcrRecording(record);
-    for (const record of videoFrameInferenceCleanupRecords.splice(0)) {
-      cleanupVideoFrameInference(record);
-    }
+    await cleanupRecordingRecords();
     repairScreenshotProfile(screenshotBackendMode(cached), true);
     cached = await seed.screenshotCatalog();
 
@@ -1474,14 +1522,22 @@ test.describe("flow recordings", () => {
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
-    const win = await runVideoTimelineZoom(page, cached);
-    await finalize(
-      page,
-      "video-timeline-zoom",
-      path.join(DOCS_IMAGES, "video-timeline/horizontal-zoom.gif"),
-      { fps: 6, maxWidth: 640, maxColors: 128, ...drawTrim(win, t0) },
-    );
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:video", preset: "video-tracking" },
+    });
+    const cleanup = registerVideoAnnotationCleanup(cached);
+    try {
+      const win = await runVideoTimelineZoom(page, cached, (id) => cleanup.annotationIds.push(id));
+      flowBehaviorEvidence["video-timeline-zoom"] = win.evidence;
+      await finalize(
+        page,
+        "video-timeline-zoom",
+        path.join(DOCS_IMAGES, "video-timeline/horizontal-zoom.gif"),
+        { fps: 6, maxWidth: 640, maxColors: 128, ...drawTrim(win, t0) },
+      );
+    } finally {
+      cleanupVideoFrameInference(cleanup);
+    }
   });
 
   test("video-timeline-prediction-navigation — AI 预测密度与帧导航", async ({ page, seed }) => {
@@ -1511,23 +1567,36 @@ test.describe("flow recordings", () => {
 
   test("video-chapter — 时间轴圈选与拖柄调整章节", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(120_000);
+    test.setTimeout(SELECTED_CAPTURE ? 300_000 : 120_000);
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "both");
-    const windows = await runVideoChapter(page, cached);
-    await finalizeVariants(page, "video-chapter", [
-      {
-        target: path.join(DOCS_IMAGES, "video-timeline/brush-create-chapter.gif"),
-        options: { fps: 4, maxWidth: 600, maxColors: 96, ...drawTrim(windows.create, t0) },
-      },
-      {
-        target: path.join(DOCS_IMAGES, "video-timeline/chapter-resize-hover.gif"),
-        options: { fps: 4, maxWidth: 600, maxColors: 96, ...drawTrim(windows.resize, t0) },
-      },
-    ]);
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:video", preset: "video-tracking" },
+    });
+    const accessToken = await seed.accessToken(cached.users.admin.email);
+    const createdChapters: Array<VideoChapterCleanupRecord & { accessToken: string }> = [];
+    try {
+      const windows = await runVideoChapter(page, cached, (record) => {
+        const cleanup = { ...record, accessToken };
+        createdChapters.push(cleanup);
+        videoChapterCleanupRecords.push(cleanup);
+      });
+      flowBehaviorEvidence["video-chapter"] = windows.evidence;
+      await finalizeVariants(page, "video-chapter", [
+        {
+          target: path.join(DOCS_IMAGES, "video-timeline/brush-create-chapter.gif"),
+          options: { fps: 4, maxWidth: 600, maxColors: 96, ...drawTrim(windows.create, t0) },
+        },
+        {
+          target: path.join(DOCS_IMAGES, "video-timeline/chapter-resize-hover.gif"),
+          options: { fps: 4, maxWidth: 600, maxColors: 96, ...drawTrim(windows.resize, t0) },
+        },
+      ]);
+    } finally {
+      for (const record of createdChapters) await cleanupVideoChapter(record);
+    }
   });
 
   test("video-tracker-range — 时间轴刷选追踪范围", async ({ page, seed }) => {
@@ -2017,6 +2086,7 @@ test.describe("flow recordings", () => {
       const win = await runProjectMlRouting(page, cached);
       await finalize(page, "project-ml-routing", undefined, drawTrim(win, t0));
     } finally {
+      await cleanupRecordingRecords();
       repairScreenshotProfile(screenshotBackendMode(cached), true);
       cached = await seed.screenshotCatalog();
     }
@@ -2076,33 +2146,50 @@ test.describe("flow recordings", () => {
 
   test("video-track-carryover — 跨帧虚影 Tab 续写", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(120_000);
+    test.setTimeout(SELECTED_CAPTURE ? 300_000 : 120_000);
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:video", preset: "video-tracking" },
       video: { trackContinueAutoAdvance: true },
     });
-    const win = await runVideoTrackCarryover(page, cached);
-    await finalize(
-      page,
-      "video-track-carryover",
-      path.join(DOCS_IMAGES, "workbench/video-track-carryover-ghost.gif"),
-      { fps: 4, maxWidth: 600, maxColors: 96, ...drawTrim(win, t0) },
-    );
+    const cleanup = registerVideoAnnotationCleanup(cached);
+    try {
+      const win = await runVideoTrackCarryover(page, cached, (id) =>
+        cleanup.annotationIds.push(id),
+      );
+      flowBehaviorEvidence["video-track-carryover"] = win.evidence;
+      await finalize(
+        page,
+        "video-track-carryover",
+        path.join(DOCS_IMAGES, "workbench/video-track-carryover-ghost.gif"),
+        { fps: 4, maxWidth: 600, maxColors: 96, ...drawTrim(win, t0) },
+      );
+    } finally {
+      cleanupVideoFrameInference(cleanup);
+    }
   });
 
   test("video-mask-track-edit — Mask 轨迹创建与后续帧编辑", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(180_000); // 视频解码 + 两次 Mask 提交 + 4K H.264 归档
+    test.setTimeout(SELECTED_CAPTURE ? 300_000 : 180_000); // 视频解码、两次 Mask 提交与归档
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "both");
-    const win = await runVideoMaskTrackEdit(page, cached);
-    await finalize(page, "video-mask-track-edit", undefined, drawTrim(win, t0));
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:video", preset: "video-tracking" },
+    });
+    const cleanup = registerVideoAnnotationCleanup(cached);
+    try {
+      const win = await runVideoMaskTrackEdit(page, cached, (id) => cleanup.annotationIds.push(id));
+      flowBehaviorEvidence["video-mask-track-edit"] = win.evidence;
+      await finalize(page, "video-mask-track-edit", undefined, drawTrim(win, t0));
+    } finally {
+      cleanupVideoFrameInference(cleanup);
+    }
   });
 
   test("ai-tracker-panel — AI 与追踪面板停靠、隐藏恢复与并存", async ({ page, seed }) => {
@@ -2201,20 +2288,27 @@ test.describe("flow recordings", () => {
 
   test("video-draw — 视频画框轨迹(track 关键帧插值)", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(120_000); // 视频解码 + 两次画框 + 来回逐帧, 冷启动时给 worker 留足余量
+    test.setTimeout(SELECTED_CAPTURE ? 300_000 : 120_000);
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
-    const win = await runVideoDraw(page, cached);
-    await finalize(
-      page,
-      "video-draw",
-      // 画框和逐帧插值的帧间变化大，使用低帧率与受限调色板保持可提交体积。
-      path.join(DOCS_IMAGES, "workbench/video-track-trajectory.gif"),
-      { fps: 3, maxWidth: 520, maxColors: 80, ...drawTrim(win, t0) },
-    );
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:video", preset: "video-tracking" },
+    });
+    const cleanup = registerVideoAnnotationCleanup(cached);
+    try {
+      const win = await runVideoDraw(page, cached, (id) => cleanup.annotationIds.push(id));
+      flowBehaviorEvidence["video-draw"] = win.evidence;
+      await finalize(
+        page,
+        "video-draw",
+        path.join(DOCS_IMAGES, "workbench/video-track-trajectory.gif"),
+        { fps: 3, maxWidth: 520, maxColors: 80, ...drawTrim(win, t0) },
+      );
+    } finally {
+      cleanupVideoFrameInference(cleanup);
+    }
   });
 
   test("large-image-progressive — 大图渐进式高清切片", async ({ page, seed }) => {

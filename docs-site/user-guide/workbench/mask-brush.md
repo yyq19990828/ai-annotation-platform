@@ -195,6 +195,7 @@ Buffer 都会保留；网络或服务暂时错误可用原幂等键「重试」�
   src="/media/video/mask-track-edit.mp4"
   poster="/media/video/mask-track-edit-poster.webp"
   alt="创建视频 Mask 轨迹并在后续保持帧编辑、物化新关键帧"
+  caption="在首帧创建 Mask，在后续保持帧用橡皮修订并保存新关键帧，再往返核对两帧；首帧 Mask 保持不变。"
 />
 
 在视频任务中点击「Mask 轨迹」工具（该工具不占用快捷键）：

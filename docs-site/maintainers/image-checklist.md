@@ -28,9 +28,11 @@
 
 ### 暗色工作台重录
 
+视频基础重录范围为 `public/media/video/{video-draw,video-track-carryover,mask-track-edit,video-timeline-zoom,video-chapter}.mp4` 及对应海报，使用视频追踪停靠预设和展开时间轴。旧 GIF 配方仅归档，不恢复已退休的引用；此前已确认的视频总览保留。
+
 - [x] 图片工作台静态图：`workbench/layout-overview.png`、`mask-brush/toolbar-overview.png`、`sam/{smart-point-toolbar,interactive-toolbar,magic-box-toolbar,exemplar-output-mode}.png`、`workbench/ocr-real-scene.png`、`review/{workbench,reject-form}.png`
 - [x] 图片工作台流程：短交互保留 GIF；Magic Box、OCR、AI 预标与候选审阅已迁移到 `public/media/**/*.mp4`
-- [x] 首页图片工作台媒体：`public/home/ai-assisted-annotation.*`、`public/home/sam-tools/{smart-point,smart-box,exemplar}.*` 与 `public/home/ocr-real-scene.*`，均由对应 4K60 母版派生 VP9 WebM、H.264 MP4 fallback 和 WebP 封面；OCR 母版中的 AI 面板停靠在主图右侧
+- [x] 首页图片工作台媒体：`public/home/ai-assisted-annotation.*`、`public/home/sam-tools/{smart-point,smart-box,exemplar}.*` 与 `public/home/ocr-real-scene.*`，按各自已验证来源派生 WebM、H.264 MP4 fallback 和 WebP 封面；标准录制保留来源的尺寸与帧率上限，不标记为 4K60 母版
 - [x] 首页 Hero 派生图：`theme/assets/home/hero/*.webp`，由对应用户手册截图生成
 - [x] 视频工作台：静态总览保留 PNG；工作台播放、AI 面板、多目标种子和 Mask 轨迹编辑已迁移到 `public/media/video/*.mp4`
 - [x] 点云工作台：`workbench/pointcloud-real-scene.png`（nuScenes 六相机环视）+ `public/media/pointcloud/{controls,orbit}.mp4`
