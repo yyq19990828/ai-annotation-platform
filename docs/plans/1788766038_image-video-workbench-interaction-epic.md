@@ -406,7 +406,7 @@ Python 优先使用本工作区 `apps/api/.venv`。本地 Playwright 配置使�
 | C      | [图片连续创建](1788769060_workbench-c-image-continuous-creation.md)               | 无     | 已授权 | 已完成 | C-1–C-5 通过   |
 | D      | [Mask 阶段主动作](1788769060_workbench-d-mask-primary-actions.md)                 | 无     | 已授权 | 完成   | D1–D5 通过     |
 | E1     | [AI 交互顶栏主次层](1788769060_workbench-e1-ai-toolbar-layers.md)                 | 无     | 已授权 | 已完成 | E1-1–E1-4 通过 |
-| E2     | [AI Inspector 阶段展示](1788769060_workbench-e2-ai-inspector-phases.md)           | E1     | 已授权 | 未开始 | 未执行         |
+| E2     | [AI Inspector 阶段展示](1788769060_workbench-e2-ai-inspector-phases.md)           | E1     | 已授权 | 已完成 | E2-1–E2-5 通过 |
 | F1     | [当前视频轨迹条](1788769060_workbench-f1-video-track-context.md)                  | 无     | 已授权 | 未开始 | 未执行         |
 | F2     | [视频单帧与轨迹范围](1788769060_workbench-f2-video-tool-scope.md)                 | B      | 已授权 | 未开始 | 未执行         |
 | F3     | [追踪候选审阅范围](1788769060_workbench-f3-video-tracker-review-scope.md)         | 无     | 已授权 | 未开始 | 未执行         |

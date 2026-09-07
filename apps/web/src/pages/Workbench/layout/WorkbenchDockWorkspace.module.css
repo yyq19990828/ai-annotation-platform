@@ -64,6 +64,11 @@
   border-right: 1px solid var(--sc-border);
 }
 
+/* Dockview's default sash layer is 99, above body-portaled application menus. */
+.workspace :global(.dv-split-view-container .dv-sash-container .dv-sash) {
+  z-index: var(--sc-z-local-overlay);
+}
+
 .workspace :global(.dv-resize-container) {
   border: 1px solid var(--sc-border);
 }

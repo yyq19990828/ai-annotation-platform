@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -8,6 +8,8 @@ import type { Annotation, AnnotationResponse } from "@/types";
 import { filterBoxesByFrame, firstTrackFrame, type FrameFilter } from "./annotationFrameScope";
 import type { AttributeField, AttributeSchema } from "@/api/projects";
 import type { CapabilityWarning } from "../state/useCapabilityValidation";
+import type { WorkbenchAiRequestPresentation } from "../state/useWorkbenchAiRequest";
+import { isWorkbenchInputFocused } from "../state/useWorkbenchHotkeys";
 import {
   PREDICTION_SOURCE_FILTERS,
   predictionSourceLabel,
@@ -17,6 +19,7 @@ import {
   type PredictionSourceVisibility,
 } from "../state/transforms";
 import { BoxListItem } from "../stage/BoxListItem";
+import { aiBoxOnFrame } from "../stage/aiBoxFrames";
 import type { RasterMaskRecordStatus } from "../stage/shared/useRasterMaskRecords";
 import { displayClassName } from "../stage/colors";
 import { AttributeForm, getMissingRequired } from "./AttributeForm";
@@ -187,8 +190,8 @@ export function AIInspectorPanel({
           selectedAnnotation.attributes ?? {},
         )
       : [];
-  // v0.18.0 · 采纳前预览: 选中单个 AI 候选 (未落库, selectedAnnotation 为空) 且其携带属性时,
-  // 在底部用 AttributeForm 展示二阶段 backend 写入的 attributes (经 schema options 解析为中文)。
+  // Selected AI candidates keep editable attributes separate from persisted annotations.
+  // An empty attribute object may still need required project fields before acceptance.
   const selectedAiBox =
     !selectedAnnotation && selSet.size === 1
       ? (aiBoxes.find((b) => selSet.has(b.id)) ?? null)
@@ -197,22 +200,24 @@ export function AIInspectorPanel({
   // 采纳时经 onAcceptPrediction 的 attributeOverrides 把改后值原子落库 (而非一步全采纳原值)。
   const [editedAiBoxAttrs, setEditedAiBoxAttrs] = useState<Record<string, unknown> | null>(null);
   const editedBoxIdRef = useRef<string | null>(null);
-  if (selectedAiBox?.id !== editedBoxIdRef.current) {
-    editedBoxIdRef.current = selectedAiBox?.id ?? null;
-    // 选中的候选框变化 → 丢弃上一个的草稿改动 (渲染期同步重置, 无需 effect)。
+  if (selectedAiBox && selectedAiBox.id !== editedBoxIdRef.current) {
+    editedBoxIdRef.current = selectedAiBox.id;
+    // A hidden or temporarily absent candidate keeps its draft. A different candidate owns a new one.
     if (editedAiBoxAttrs !== null) setEditedAiBoxAttrs(null);
   }
-  const aiBoxAttrs =
-    selectedAiBox?.attributes && Object.keys(selectedAiBox.attributes).length > 0
-      ? { ...selectedAiBox.attributes, ...(editedAiBoxAttrs ?? {}) }
-      : null;
+  const aiBoxAttrs = selectedAiBox
+    ? { ...(selectedAiBox.attributes ?? {}), ...(editedAiBoxAttrs ?? {}) }
+    : null;
+  const aiAttrMissing = selectedAiBox
+    ? getMissingRequired(attributeSchema, selectedAiBox.cls, aiBoxAttrs ?? {})
+    : [];
 
-  // v0.20.22 · 属性审阅"采纳"按钮退役 (与列表行采纳入口重复); 表单保持可编辑,
-  // 行内采纳时自动带上审阅改动。仅当被采纳候选 === 当前审阅中的候选且 editedAiBoxAttrs 非空
-  // 时附带; 未编辑时保持传 undefined, 避免多发一次空 dict 让下游/接口日志产生噪音。
+  // The selected candidate action and list rows share the same attribute override path.
+  // Unedited candidates keep the original undefined override contract.
   // 画布贴框采纳 (SelectionOverlay/BoxRenderer 走 ImageStage.onAcceptPrediction 1-arg 版本)
   // 拿不到该本地 state, 维持采纳原值 (计划内不上提 state)。
   const acceptWithReviewEdits = (box: AiBox, overrides?: Record<string, unknown>) => {
+    if (readOnly || (box.id === selectedAiBox?.id && aiAttrMissing.length > 0)) return;
     const shouldAttachReviewEdits =
       box.id === selectedAiBox?.id &&
       editedAiBoxAttrs !== null &&
@@ -223,6 +228,32 @@ export function AIInspectorPanel({
       onAcceptPrediction(box, overrides);
     }
   };
+  const handleCandidateKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (
+      event.defaultPrevented ||
+      readOnly ||
+      !selectedAiBox ||
+      isWorkbenchInputFocused(event.target) ||
+      event.repeat ||
+      event.nativeEvent.isComposing ||
+      event.nativeEvent.keyCode === 229 ||
+      event.ctrlKey ||
+      event.metaKey ||
+      event.altKey ||
+      event.shiftKey ||
+      (currentFrameIndex !== undefined && !aiBoxOnFrame(selectedAiBox, currentFrameIndex))
+    ) {
+      return;
+    }
+    const key = event.key.toLowerCase();
+    if (key !== "a" && key !== "d") return;
+    if (key === "d" && !onRejectPrediction) return;
+    // The surrounding toolbar marker yields background listeners to this draft-aware owner.
+    event.preventDefault();
+    event.stopPropagation();
+    if (key === "a") acceptWithReviewEdits(selectedAiBox);
+    else onRejectPrediction?.(selectedAiBox);
+  };
 
   if (!open) {
     return null;
@@ -230,8 +261,11 @@ export function AIInspectorPanel({
 
   return (
     <div
+      data-workbench-ai-toolbar={selectedAiBox ? "" : undefined}
+      data-testid="ai-inspector-panel"
+      onKeyDown={handleCandidateKeyDown}
       className={cn(
-        "relative flex flex-col overflow-hidden bg-card",
+        "relative flex h-full min-h-0 flex-col overflow-hidden bg-card",
         floating ? "border-l-0" : "border-l border-border",
       )}
     >
@@ -371,7 +405,7 @@ export function AIInspectorPanel({
       )}
 
       {/* v0.18.0 · 候选属性预览; v0.18.3 · 可编辑 + 分步采纳: 审阅多阶段预标产出的属性, 改后再采纳。 */}
-      {!videoTrackPanel && aiBoxAttrs && selectedAiBox && attributeSchema && (
+      {aiBoxAttrs && selectedAiBox && attributeSchema && (
         <div className="flex max-h-[45%] flex-[0_0_auto] flex-col border-t border-border bg-card">
           <button
             type="button"
@@ -386,6 +420,11 @@ export function AIInspectorPanel({
             {editedAiBoxAttrs && Object.keys(editedAiBoxAttrs).length > 0 && (
               <span className="text-xs font-normal text-status-caution">· 已改动</span>
             )}
+            {aiAttrMissing.length > 0 && (
+              <span className="text-xs font-normal text-status-caution">
+                · {aiAttrMissing.length} 项必填未填
+              </span>
+            )}
             <span className="ml-auto text-xs font-normal text-muted-foreground">
               {displayClassName(selectedAiBox.cls)}
             </span>
@@ -393,15 +432,15 @@ export function AIInspectorPanel({
           {!attrCollapsed && (
             <div className="overflow-y-auto pb-1">
               <AttributeForm
+                key={selectedAiBox.id}
                 schema={attributeSchema}
                 className={selectedAiBox.cls}
                 attributes={aiBoxAttrs}
                 onChange={(next) => setEditedAiBoxAttrs(next)}
                 readOnly={readOnly}
+                immediate
                 hideHeading
               />
-              {/* v0.20.22 · 采纳按钮退役 (与列表行/画布采纳入口重复);
-                  行内/画布点采纳时 wrapper 自动带上此处改动 (仅列表行, 画布保持原值)。 */}
               {!readOnly && (
                 <div className="px-3.5 pb-2 pt-1 text-2xs leading-normal text-muted-foreground">
                   改动将随采纳一并落库。
@@ -409,6 +448,42 @@ export function AIInspectorPanel({
               )}
             </div>
           )}
+        </div>
+      )}
+      {selectedAiBox && (
+        <div
+          data-testid="ai-candidate-review-actions"
+          className="shrink-0 border-t border-border bg-card px-3.5 py-2.5"
+        >
+          <div className="mb-2 text-xs text-muted-foreground">
+            当前候选 ·{" "}
+            <span className="text-foreground">{displayClassName(selectedAiBox.cls)}</span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              data-testid="ai-candidate-accept"
+              disabled={readOnly || aiAttrMissing.length > 0}
+              title={aiAttrMissing.length > 0 ? "请先补齐候选必填属性" : "接受当前候选及属性改动"}
+              onClick={() => acceptWithReviewEdits(selectedAiBox)}
+            >
+              <Icon name="check" size={12} />
+              接受候选
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              data-testid="ai-candidate-reject"
+              disabled={readOnly || !onRejectPrediction}
+              onClick={() => onRejectPrediction?.(selectedAiBox)}
+            >
+              <Icon name="x" size={12} />
+              拒绝候选
+            </Button>
+          </div>
         </div>
       )}
     </div>
@@ -419,6 +494,10 @@ interface AIPredictionPopoverProps {
   aiModel: string;
   aiRunning: boolean;
   aiBoxCount: number;
+  request?: WorkbenchAiRequestPresentation;
+  onRetryRequest?: () => void;
+  onCancelRequest?: () => void;
+  onReviewCandidates?: () => void;
   // v0.21.10 · 视频任务时面板做单帧检测 (方案 a); 留一句指引告诉找整段追踪的用户去哪跑。
   isVideoTask?: boolean;
   confThreshold: number;
@@ -451,10 +530,61 @@ interface AIPredictionPopoverProps {
   projectMlBackendId?: string | null;
 }
 
+function requestInputSummary(input: Record<string, unknown>): Array<[string, string]> {
+  const rows: Array<[string, string]> = [];
+  if (typeof input.prompt === "string" && input.prompt.trim()) {
+    rows.push(["提示词", input.prompt]);
+  }
+  const taskLabels: Record<string, string> = {
+    detection: "检测",
+    segmentation: "分割",
+    keypoint: "关键点",
+    obb: "旋转框检测",
+    ocr: "文字识别",
+    doc_layout: "文档版面",
+  };
+  if (typeof input.task_type === "string") {
+    rows.push(["任务类型", taskLabels[input.task_type] ?? input.task_type]);
+  }
+  const variants = input.model_variants;
+  if (variants && typeof variants === "object" && !Array.isArray(variants)) {
+    const names: Record<string, string> = {
+      size: "尺寸",
+      series: "系列",
+      version: "版本",
+      lang: "语言",
+      precision: "精度",
+    };
+    const values = Object.entries(variants)
+      .filter(([, value]) => typeof value === "string" || typeof value === "number")
+      .map(([key, value]) => `${names[key] ?? key}：${String(value)}`);
+    if (values.length > 0) rows.push(["权重", values.join(" · ")]);
+  }
+  const outputLabels: Record<string, string> = {
+    box: "框",
+    mask: "掩膜",
+    both: "框和掩膜",
+  };
+  if (typeof input.output_mode === "string" && outputLabels[input.output_mode]) {
+    rows.push(["输出", outputLabels[input.output_mode]]);
+  }
+  if (Array.isArray(input.class_filter) && input.class_filter.length > 0) {
+    rows.push(["类别筛选", `${input.class_filter.length} 个模型类别`]);
+  }
+  if (Array.isArray(input.pipeline_stages)) {
+    rows.push(["项目编排", `${input.pipeline_stages.length} 个阶段`]);
+  }
+  return rows;
+}
+
 export function AIPredictionPopover({
   aiModel,
   aiRunning,
   aiBoxCount,
+  request,
+  onRetryRequest,
+  onCancelRequest,
+  onReviewCandidates,
   isVideoTask,
   confThreshold,
   aiTakeoverRate,
@@ -477,9 +607,34 @@ export function AIPredictionPopover({
   onSelectBackend,
   projectMlBackendId,
 }: AIPredictionPopoverProps) {
-  // 冷启动动态计时: variant 未 warm 且推理中 → 模型正载入显存。模型加载无原生进度
-  // 信号(真·逐%拿不到), 故只给"已等 Xs"实时计时 + 静态经验区间, 不做误导性百分比。
-  const coldStarting = aiRunning && isVariantWarmProp === false;
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const advancedId = useId();
+  const running = request ? request.status === "running" : aiRunning;
+  const phase = running
+    ? "running"
+    : request?.status === "error"
+      ? "error"
+      : aiBoxCount > 0
+        ? "review"
+        : "idle";
+  const phaseLabels = {
+    idle: "准备运行",
+    running: "推理中",
+    review: "待审阅",
+    error: "请求失败",
+  };
+  const summary = request?.summary;
+  const progressPct =
+    request?.progressPct != null && Number.isFinite(request.progressPct)
+      ? Math.min(100, Math.max(0, request.progressPct))
+      : null;
+  const canCancel = !!request?.canCancel && !!onCancelRequest;
+  const canRetry = !!request?.canRetry && !!onRetryRequest;
+  const needsPrompt = !!cfg.backendId && !cfg.isDocMode && !cfg.isGeometricBackend;
+
+  // Only legacy callers infer a cold start from the current configuration. Owned requests use
+  // their immutable summary and reported progress, even when the next configuration is edited.
+  const coldStarting = !request && running && isVariantWarmProp === false;
   const [coldElapsedSec, setColdElapsedSec] = useState(0);
   useEffect(() => {
     if (!coldStarting) {
@@ -496,10 +651,11 @@ export function AIPredictionPopover({
   return (
     <div
       data-testid="ai-prediction-popover"
+      data-workbench-ai-toolbar
       className={cn(AI_PANEL_SURFACE_CLASS, "flex h-full min-h-0 flex-col rounded-none border-0")}
     >
       <div className={AI_PANEL_HEADER_CLASS}>
-        <div className="mb-2 flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <span className={AI_PANEL_ICON_CLASS}>
               <Icon name="bot" size={14} />
@@ -507,14 +663,16 @@ export function AIPredictionPopover({
             <b className="text-sm">当前题 AI</b>
           </div>
           <div className="flex items-center gap-1.5">
-            <Badge variant="ai" dot={!aiRunning} className="gap-1 text-2xs">
-              {aiRunning && <Icon name="loader2" size={10} className="spin" />}
-              {aiRunning ? "推理中" : "就绪"}
+            <Badge variant={phase === "error" ? "danger" : "ai"} className="gap-1 text-2xs">
+              {running && <Icon name="loader2" size={10} />}
+              {phaseLabels[phase]}
             </Badge>
             <Button
+              type="button"
               variant="ghost"
               size="sm"
               onClick={onClose}
+              aria-label="关闭当前题 AI"
               title="关闭当前题 AI"
               className="px-1.5 py-0.5"
             >
@@ -522,142 +680,354 @@ export function AIPredictionPopover({
             </Button>
           </div>
         </div>
-        <div className="mb-2 flex justify-between gap-3 text-xs text-muted-foreground">
-          <span>
-            本次模型: <span className="font-medium text-foreground">{aiModel}</span>
-          </span>
-          <span className="mono">{aiBoxCount} 待审</span>
-        </div>
-        <div className="mb-2.5 flex gap-1.5">
-          <Button variant="ai" size="sm" onClick={onRunAi} disabled={aiRunning} className="flex-1">
-            {aiRunning ? (
-              <Icon name="loader2" size={11} className="spin" />
-            ) : (
-              <Icon name="wandSparkles" size={11} />
-            )}
-            {aiRunning
-              ? isVariantWarmProp === false
-                ? `加载中… 已等 ${coldElapsedSec}s（首次约 5-15s）`
-                : "推理中..."
-              : "运行当前题"}
-          </Button>
-          <Button
-            size="sm"
-            onClick={onAcceptAll}
-            disabled={aiBoxCount === 0}
-            className="flex-1"
-            title="采纳当前题可见候选"
-          >
-            <Icon name="check" size={11} />
-            采纳当前候选
-          </Button>
-        </div>
-        {/* v0.18.28 · 项目存了编排时单独一行: 把项目编排只跑当前一图 (执行器, 非编排编辑器)。 */}
-        {/* claude[bot] P1 #5 · 引用的 backend 被删/停 → 按钮禁用 + 标注原因, 避免默默 422。 */}
-        {/* v0.21.10 · 视频任务隐藏此按钮: batch 预标不接受 frame_index (payload 无该字段),
-            对视频会跑整段而非"当前题"; 单帧路径 /predict-frame 又是单模型、跑不了多阶段编排。
-            视频单帧检测走上面的主「运行当前题」(方案 a), 整段/多阶段编排到「AI 预标」批量页。 */}
-        {!isVideoTask && hasProjectPipeline && onRunPipeline && (
-          <Button
-            variant="ai"
-            size="sm"
-            onClick={onRunPipeline}
-            disabled={aiRunning || !projectPipelineRunnable}
-            className="mb-2.5 w-full"
-            title={
-              projectPipelineRunnable
-                ? "按项目已保存的多阶段编排, 对当前题跑完整流水线"
-                : `编排引用的 ${pipelineMissingBackendCount} 个后端不可用, 请到「AI 预标」修编排或重新注册`
-            }
-          >
-            <Icon name="layers" size={11} />
-            {projectPipelineRunnable
-              ? `运行当前题（按项目编排 · ${projectPipelineStageCount} 阶段）`
-              : `编排引用 ${pipelineMissingBackendCount} 个后端不可用`}
-          </Button>
-        )}
-        {isVideoTask && (
-          <p className="mb-1 text-2xs leading-snug text-muted-foreground">
-            仅对<span className="text-foreground">当前帧</span>做单帧检测。要追踪整段目标：用 Ctrl+B
-            种子追踪，或到「AI 预标」批量页按整段序列跑。
-          </p>
-        )}
       </div>
 
-      {/* v0.14.18 · header 以下整体可滚 (拖动头固定), 修面板内容超高时底部 (输出形态/效率) 被截断. */}
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {/* v0.14.18 · 置信度阈值移出拖动头 → body 顶部: 拖面板 (头部) 与拖滑块互不抢手势. */}
-        <div className={AI_PANEL_SECTION_CLASS}>
-          <div className="mb-1.5 text-xs font-semibold text-foreground">候选筛选</div>
-          <div className="mb-1 flex items-baseline justify-between text-xs">
-            <span className="text-muted-foreground">置信度阈值</span>
-            <span className="mono rounded-sm bg-violet-500/[0.12] px-1.5 text-xs font-semibold text-status-info">
-              {(confThreshold * 100).toFixed(0)}%
-            </span>
-          </div>
-          <div className="mb-1.5 text-2xs leading-[1.4] text-muted-foreground">
-            仅显示并采纳当前题中置信度 ≥ 此值的 AI
-            候选；低于阈值的候选会隐藏，且不纳入一键采纳。可拖动滑块调整，或用工具栏 <kbd>[</kbd> /{" "}
-            <kbd>]</kbd>（滚轮 5%、Shift 10%）。
-          </div>
-          {/* 可拖动滑块 (step 1%); 仍支持滚轮 (5%/Shift 10%) 与工具栏 [ / ]. */}
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.01}
-            value={confThreshold}
-            onChange={(e) => onSetConfThreshold(Number(parseFloat(e.target.value).toFixed(2)))}
-            onWheel={(e) => {
-              e.preventDefault();
-              const step = e.shiftKey ? 0.1 : 0.05;
-              const next = Math.min(1, Math.max(0, confThreshold + (e.deltaY < 0 ? step : -step)));
-              onSetConfThreshold(Number(next.toFixed(2)));
-            }}
-            className="my-0.5 w-full cursor-pointer accent-violet-500"
-            aria-label="置信度阈值"
-            data-testid="ai-threshold-display"
-          />
-        </div>
-
-        {/* 共享配置区: 任务类型 / 模型任务 (检测/分割…) / 类别白名单 / variant / 后端参数 / prompt.
-            与批量页 ProjectDetailPanel 同一组件 (单一事实源). */}
-        <div className={AI_PANEL_SECTION_CLASS}>
-          <div className="mb-2 text-xs font-semibold text-foreground">本次运行</div>
-          <PreannotateConfigForm
-            cfg={cfg}
-            backends={backends}
-            selectedBackendId={selectedBackendId}
-            onSelectBackend={onSelectBackend}
-            projectMlBackendId={projectMlBackendId}
-            backendSelectorLabel="本次 backend"
-          />
-        </div>
-
-        <div className={AI_PANEL_SECTION_CLASS}>
-          <div className="mb-1.5 text-xs text-muted-foreground">本次效率</div>
-          <div className="mb-1 flex justify-between text-xs">
-            <span>AI 接管率</span>
-            <span className="mono font-semibold text-status-info">{aiTakeoverRate}%</span>
-          </div>
-          <ProgressBar value={aiTakeoverRate} color="var(--sc-chart-4)" />
-          {taskAiPredictionCount && taskAiPredictionCount > 0 && (
-            <div
-              data-testid="task-ai-cost"
-              className="mt-1.5 flex justify-between gap-2.5 text-xs text-muted-foreground"
-            >
-              <span>本题</span>
-              <span className="mono text-foreground">
-                {taskAiCost != null && taskAiCost > 0 ? `¥${taskAiCost.toFixed(4)}` : "¥0"}
-                {taskAiAvgMs != null && (
-                  <>
-                    <span className="mx-1 text-muted-foreground">·</span>
-                    {taskAiAvgMs}ms
-                  </>
+        <section
+          className={AI_PANEL_SECTION_CLASS}
+          data-testid="ai-prediction-phase"
+          data-phase={phase}
+        >
+          {phase === "idle" ? (
+            <div className="mb-2.5">
+              <div className="mb-1 text-xs text-muted-foreground">
+                待运行模型：<span className="font-medium text-foreground">{aiModel}</span>
+              </div>
+              {request?.status === "cancelled" && (
+                <p role="status" className="mb-2 text-2xs text-muted-foreground">
+                  本次请求已取消，可以调整输入后重新运行。
+                </p>
+              )}
+              {request?.status === "completed" && aiBoxCount === 0 && (
+                <p role="status" className="mb-2 text-2xs text-muted-foreground">
+                  本次运行已完成，当前没有待审候选。
+                </p>
+              )}
+              <div hidden={advancedOpen}>
+                {needsPrompt ? (
+                  <label className="mb-2 flex flex-col gap-1 text-xs text-foreground">
+                    提示词
+                    <textarea
+                      rows={2}
+                      data-testid="ai-prediction-prompt"
+                      value={cfg.prompt}
+                      onChange={(event) => cfg.setPrompt(event.target.value)}
+                      placeholder="例如 car, person"
+                      className="w-full resize-y rounded-sm border border-border bg-card px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground"
+                    />
+                  </label>
+                ) : (
+                  <p className="my-1 text-2xs leading-normal text-muted-foreground">
+                    {cfg.backendId
+                      ? "使用当前模型与输入配置，可在高级配置中调整。"
+                      : "请在高级配置中选择已接入的 ML 后端。"}
+                  </p>
                 )}
-                <span className="ml-1 text-muted-foreground">({taskAiPredictionCount} 次)</span>
+              </div>
+              {cfg.sourceBatchableWarning && (
+                <p role="alert" className="my-1 text-2xs text-status-caution">
+                  {cfg.sourceBatchableWarning}
+                </p>
+              )}
+            </div>
+          ) : (
+            <>
+              {summary ? (
+                <div className="mb-2.5" data-testid="ai-request-summary">
+                  <div className="mb-1.5 text-xs font-semibold text-foreground">本次请求</div>
+                  <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-1 text-2xs leading-normal">
+                    <dt className="text-muted-foreground">模型</dt>
+                    <dd className="m-0 break-words text-foreground">{summary.modelName}</dd>
+                    <dt className="text-muted-foreground">后端</dt>
+                    <dd className="m-0 break-words text-foreground">{summary.backendName}</dd>
+                    <dt className="text-muted-foreground">任务</dt>
+                    <dd className="m-0 break-all text-foreground">
+                      {summary.taskLabel ?? summary.taskId}
+                    </dd>
+                    <dt className="text-muted-foreground">范围</dt>
+                    <dd className="m-0 text-foreground">
+                      {summary.frameIndex == null ? "当前题" : `当前帧 F${summary.frameIndex}`}
+                    </dd>
+                    {requestInputSummary(summary.input).map(([label, value]) => (
+                      <div key={label} className="contents">
+                        <dt className="text-muted-foreground">{label}</dt>
+                        <dd className="m-0 break-words text-foreground">{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              ) : (
+                <p className="mb-2.5 text-2xs text-muted-foreground">
+                  {phase === "review"
+                    ? "请选择候选，核对类别和属性后决定是否接受。"
+                    : "本次请求摘要不可用。"}
+                </p>
+              )}
+              {phase === "running" && (
+                <div className="mb-2.5" data-testid="ai-request-progress">
+                  {progressPct == null ? (
+                    <p role="status" className="my-1 text-2xs text-muted-foreground">
+                      {coldStarting
+                        ? `正在加载模型，已等待 ${coldElapsedSec} 秒`
+                        : "推理正在进行，尚无可用进度。"}
+                    </p>
+                  ) : (
+                    <div
+                      role="progressbar"
+                      aria-label="本次请求进度"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={progressPct}
+                    >
+                      <div className="mb-1 text-right text-2xs tabular-nums text-muted-foreground">
+                        {progressPct.toFixed(0)}%
+                      </div>
+                      <ProgressBar value={progressPct} />
+                    </div>
+                  )}
+                  <p className="my-1 text-2xs leading-normal text-muted-foreground">
+                    隐藏或移动面板不影响本次运行。
+                  </p>
+                </div>
+              )}
+              {request?.error && (
+                <div className="mb-2.5" data-testid="ai-request-error">
+                  <p role="alert" className="my-1 break-words text-xs text-status-danger">
+                    {request.error}
+                  </p>
+                  {phase === "running" && canRetry && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      data-testid="ai-request-retry-poll"
+                      onClick={onRetryRequest}
+                    >
+                      <Icon name="rotate-ccw" size={11} />
+                      重试状态查询
+                    </Button>
+                  )}
+                </div>
+              )}
+              {phase === "review" && (
+                <p className="mb-2 text-xs text-foreground">
+                  <span className="font-semibold tabular-nums">{aiBoxCount}</span> 个候选待审阅
+                </p>
+              )}
+            </>
+          )}
+
+          {phase === "running" ? (
+            <Button
+              type="button"
+              variant={canCancel ? "default" : "ghost"}
+              size="sm"
+              data-testid="ai-prediction-primary-action"
+              disabled={!canCancel || request?.cancelling}
+              onClick={onCancelRequest}
+              className="w-full"
+            >
+              <Icon name={canCancel && !request?.cancelling ? "x" : "loader2"} size={12} />
+              {request?.cancelling ? "正在取消本次请求" : canCancel ? "取消本次请求" : "推理进行中"}
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              data-testid="ai-prediction-primary-action"
+              disabled={
+                phase === "idle"
+                  ? !cfg.configReady
+                  : phase === "error"
+                    ? !canRetry
+                    : !onReviewCandidates
+              }
+              onClick={
+                phase === "idle" ? onRunAi : phase === "error" ? onRetryRequest : onReviewCandidates
+              }
+              className="w-full"
+            >
+              <Icon
+                name={phase === "idle" ? "wandSparkles" : phase === "error" ? "rotate-ccw" : "list"}
+                size={12}
+              />
+              {phase === "idle" ? "运行当前题" : phase === "error" ? "重试本次请求" : "审阅候选"}
+            </Button>
+          )}
+
+          {isVideoTask && (
+            <p className="mb-0 mt-2 text-2xs leading-normal text-muted-foreground">
+              仅对当前帧做单帧检测。整段目标可用 Ctrl+B 种子追踪，或到「AI
+              预标」批量页按整段序列运行。
+            </p>
+          )}
+        </section>
+
+        <div className="border-b border-border px-3.5 py-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            data-testid="ai-prediction-advanced-toggle"
+            aria-expanded={advancedOpen}
+            aria-controls={advancedId}
+            onClick={() => setAdvancedOpen((open) => !open)}
+            className="w-full justify-between"
+          >
+            <span>{phase === "idle" ? "高级配置" : "高级配置 · 下一轮"}</span>
+            <Icon name={advancedOpen ? "chevUp" : "chevDown"} size={12} />
+          </Button>
+        </div>
+
+        {/* One persistent form instance retains presets and drafts across display phases. */}
+        <div id={advancedId} data-testid="ai-prediction-advanced" hidden={!advancedOpen}>
+          <div className={AI_PANEL_SECTION_CLASS}>
+            <div className="mb-2 text-xs font-semibold text-foreground">
+              {phase === "idle" ? "运行输入" : "下一轮配置"}
+            </div>
+            {phase !== "idle" && (
+              <p className="mb-2 text-2xs leading-normal text-muted-foreground">
+                这里的改动用于下一轮，不会改变上方本次请求或重试输入。
+              </p>
+            )}
+            <PreannotateConfigForm
+              cfg={cfg}
+              backends={backends}
+              selectedBackendId={selectedBackendId}
+              onSelectBackend={onSelectBackend}
+              projectMlBackendId={projectMlBackendId}
+              backendSelectorLabel={phase === "idle" ? "本次后端" : "下一轮后端"}
+            />
+            {phase !== "idle" && (
+              <Button
+                type="button"
+                size="sm"
+                data-testid="ai-prediction-run-next"
+                onClick={onRunAi}
+                disabled={running || !cfg.configReady}
+                className="mt-2 w-full"
+              >
+                <Icon name="wandSparkles" size={12} />
+                运行下一轮
+              </Button>
+            )}
+            {!isVideoTask && hasProjectPipeline && onRunPipeline && (
+              <Button
+                type="button"
+                size="sm"
+                data-testid="ai-prediction-run-pipeline"
+                onClick={onRunPipeline}
+                disabled={running || !projectPipelineRunnable}
+                className="mt-2 w-full"
+                title={
+                  projectPipelineRunnable
+                    ? "按项目已保存的多阶段编排，对当前题运行完整流程"
+                    : `编排引用的 ${pipelineMissingBackendCount} 个后端不可用，请到「AI 预标」修复编排或重新注册`
+                }
+              >
+                <Icon name="layers" size={12} />
+                {projectPipelineRunnable
+                  ? `运行当前题（项目编排 · ${projectPipelineStageCount} 阶段）`
+                  : `编排引用 ${pipelineMissingBackendCount} 个后端不可用`}
+              </Button>
+            )}
+          </div>
+
+          <div className={AI_PANEL_SECTION_CLASS}>
+            <div className="mb-1.5 text-xs font-semibold text-foreground">候选筛选与批量采纳</div>
+            <div className="mb-1 flex items-baseline justify-between text-xs">
+              <span className="text-muted-foreground">置信度阈值</span>
+              <span className="rounded-sm bg-status-info-soft px-1.5 text-xs font-semibold tabular-nums text-status-info">
+                {(confThreshold * 100).toFixed(0)}%
               </span>
             </div>
+            <p className="mb-1.5 text-2xs leading-normal text-muted-foreground">
+              低于阈值的候选会隐藏，不纳入批量采纳。可拖动滑块，或使用工具栏 <kbd>[</kbd> /{" "}
+              <kbd>]</kbd>； 滚轮每次 5%，按住 Shift 为 10%。
+            </p>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={confThreshold}
+              onChange={(event) =>
+                onSetConfThreshold(Number(parseFloat(event.target.value).toFixed(2)))
+              }
+              onWheel={(event) => {
+                event.preventDefault();
+                const step = event.shiftKey ? 0.1 : 0.05;
+                const next = Math.min(
+                  1,
+                  Math.max(0, confThreshold + (event.deltaY < 0 ? step : -step)),
+                );
+                onSetConfThreshold(Number(next.toFixed(2)));
+              }}
+              className="my-0.5 w-full cursor-pointer accent-brand"
+              aria-label="置信度阈值"
+              data-testid="ai-threshold-display"
+            />
+            <p
+              data-testid="ai-prediction-bulk-scope"
+              className="mb-2 text-2xs leading-normal text-muted-foreground"
+            >
+              批量采纳沿用当前题已加载、符合筛选的候选范围，跳过与人工标注重复的候选。
+              {isVideoTask && "视频范围可能包括其他帧。"}
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              data-testid="ai-prediction-accept-all"
+              onClick={onAcceptAll}
+              disabled={aiBoxCount === 0}
+              className="w-full"
+              title="采纳当前题可见候选"
+            >
+              <Icon name="check" size={12} />
+              采纳当前候选
+            </Button>
+          </div>
+
+          <div className={AI_PANEL_SECTION_CLASS}>
+            <div className="mb-1.5 text-xs text-muted-foreground">本题效率</div>
+            <div className="mb-1 flex justify-between text-xs">
+              <span>AI 接管率</span>
+              <span className="font-semibold tabular-nums text-status-info">{aiTakeoverRate}%</span>
+            </div>
+            <ProgressBar value={aiTakeoverRate} color="var(--sc-chart-4)" />
+            {taskAiPredictionCount != null && taskAiPredictionCount > 0 && (
+              <div
+                data-testid="task-ai-cost"
+                className="mt-1.5 flex flex-wrap justify-between gap-2.5 text-xs text-muted-foreground"
+              >
+                <span>本题</span>
+                <span className="tabular-nums text-foreground">
+                  {taskAiCost != null && taskAiCost > 0 ? `¥${taskAiCost.toFixed(4)}` : "¥0"}
+                  {taskAiAvgMs != null && (
+                    <>
+                      <span className="mx-1 text-muted-foreground">·</span>
+                      {taskAiAvgMs}ms
+                    </>
+                  )}
+                  <span className="ml-1 text-muted-foreground">({taskAiPredictionCount} 次)</span>
+                </span>
+              </div>
+            )}
+          </div>
+
+          {summary && (
+            <details className={AI_PANEL_SECTION_CLASS} data-testid="ai-request-diagnostics">
+              <summary className="cursor-pointer text-xs text-muted-foreground">
+                本次请求诊断
+              </summary>
+              <p className="my-1 break-all text-2xs text-muted-foreground">
+                项目 {summary.projectId} · 任务 {summary.taskId}
+              </p>
+              <pre className="m-0 max-h-52 overflow-auto whitespace-pre-wrap break-words rounded-sm bg-card p-2 font-mono text-2xs text-muted-foreground">
+                {JSON.stringify(summary.input, null, 2)}
+              </pre>
+            </details>
           )}
         </div>
       </div>

@@ -71,6 +71,8 @@ git diff --check
 
 ## Outcome
 
+本里程碑已提交：`44c253ef`。
+
 E1 已完成。工作目录为 `/home/hehao/.codex/worktrees/0dc6/ai-annotation-platform`，基线为 D 提交 `11eb762f`，本记录对应该基线上的本步实现。
 
 ### 实际改动

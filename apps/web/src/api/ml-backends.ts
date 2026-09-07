@@ -351,6 +351,7 @@ export const mlBackendsApi = {
       frameIndex: number;
       config: Record<string, unknown>;
     },
+    signal?: AbortSignal,
   ): Promise<{ prediction_id: string; candidate_count: number; frame_index: number }> => {
     const form = new FormData();
     form.append("frame", params.blob, "frame.jpg");
@@ -364,6 +365,7 @@ export const mlBackendsApi = {
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: form,
+        signal,
       },
     );
     if (!res.ok) {

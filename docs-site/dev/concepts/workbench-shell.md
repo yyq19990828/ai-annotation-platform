@@ -117,6 +117,16 @@ Shell 持有当前会话的 `scenePlaybackActive`，将预览状态接到 `useTa
 
 图片 `requestSamAccept` 与视频 `requestVideoSamAccept` 各自复用已有待选类别 owner，顶栏按钮和画布 Enter 调同一入口，保留原生 Mask 原子接纳与 point / Exemplar 各自的消费语义。`data-workbench-ai-toolbar` 只保护控件事件路径，不在顶栏显示时全局屏蔽画布。候选捕获监听还让出原生输入、按钮、弹窗、IME 和重复事件。
 
+## 当前题 AI 请求与 Inspector 阶段
+
+`AIPredictionPopover` 从当前题请求及现有候选数量派生 idle / running / review / error 展示；`useWorkbenchAiRequest` 只持有普通预测的请求归属，不接管 SAM 或 tracker 执行器。图片与项目编排仍调用 `useTriggerPreannotation`，视频仍调用 `mlBackendsApi.predictFrame`。
+
+提交时深复制并冻结任务、视频帧、后端、模型及输入，视频在首次异步抓帧之前占用请求，重试复用捕获的 JPEG。当前请求在 project / task / frame 变化或卸载时失效；迟到响应不能修改新视图。图片返回的 Celery ID 通过 `async_jobs.celery_task_id` 精确匹配，再使用 `useAsyncJob` 查询进度和终态。项目 WebSocket 继续服务项目进度，不能作为当前请求身份。
+
+图片只在匹配到支持取消的作业后开放取消，等待服务端终态；视频使用 AbortSignal。查询失败保留原作业，重试只恢复查询；候选刷新失败只重试刷新，执行失败才重放原输入。候选刷新完成后进入审阅，移动或隐藏 Dockview 面板不会改变请求归属。
+
+Inspector 的候选属性按候选自身的工具单位读取 schema，由原候选选择持有；输入立即更新本地草稿，主接受按钮、面板内 A 与列表采纳共用 `acceptWithReviewEdits`。本地 A/D 让出输入、菜单、修饰键、IME、重复事件，并使用 `aiBoxOnFrame` 保留视频当前帧范围；全局监听通过 `data-workbench-ai-toolbar` 让出，避免重复执行或绕过草稿。高级表单保持同一挂载实例；未引入新的候选列表、Dockview grammar 或业务面板实例。
+
 ## 可停靠工作区
 
 ### 设置窗口与工具菜单的输入隔离

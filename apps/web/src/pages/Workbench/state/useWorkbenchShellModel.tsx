@@ -8,6 +8,8 @@ import {
   type ReactNode,
 } from "react";
 import { isWorkbenchInteractionBlocked } from "./workbenchInteractionGuards";
+import { useWorkbenchAiRequest } from "./useWorkbenchAiRequest";
+import { markVariantHot } from "./sessionVariantCache";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useIsMutating, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToastStore } from "@/components/ui/Toast";
@@ -128,6 +130,7 @@ import { SecondaryInferenceBar } from "../shell/SecondaryInferenceBar";
 import { useSecondaryBarHiddenPref } from "./useSecondaryBarHiddenPref";
 import { IssueCreateModal } from "../shell/IssueCreateModal";
 import { isAIToolId, TOOL_REGISTRY, type ToolId } from "../stage/tools";
+import { toolUnitForGeometryType } from "../stage/tools/toolUnits";
 import {
   resolveSamCandidateClass,
   samCandidateDisplayShapes,
@@ -667,9 +670,6 @@ export function useWorkbenchShellModel({
   // v0.15.3 · 工作台设置窗口(齿轮菜单入口)。
   const [workbenchSettingsOpen, setWorkbenchSettingsOpen] = useState(false);
   const workspaceCommands = useRef<WorkbenchWorkspaceCommands>(null);
-  // v0.21.4 · 视频单题 AI(当前帧→图像 backend)是同步 fetch(非 triggerPreannotation mutation),
-  // 单独一个运行态并入 aiRunning, 供 popover 转圈 + 防重复点击。
-  const [videoFrameAiRunning, setVideoFrameAiRunning] = useState(false);
   const [stageGeom, setStageGeom] = useState<{
     imgW: number;
     imgH: number;
@@ -2467,10 +2467,30 @@ export function useWorkbenchShellModel({
     };
   }, [taskId, tasks, queryClient, debouncedConf, stageKind, videoCollaborationEnabled]);
 
-  const aiRunning =
-    preannotationProgress?.status === "running" ||
-    triggerPreannotation.isPending ||
-    videoFrameAiRunning;
+  const aiRequest = useWorkbenchAiRequest({
+    scopeKey:
+      projectId && taskId
+        ? `${projectId}:${taskId}:${isVideoTask ? `${videoFrameIndex}:${activeVideoSegmentId ?? "whole"}` : "image"}`
+        : null,
+    onCompleted: async (summary) => {
+      await queryClient.invalidateQueries(
+        { queryKey: ["predictions", summary.taskId] },
+        { throwOnError: true },
+      );
+      const backendId = summary.input.ml_backend_id;
+      const variants = summary.input.model_variants;
+      if (typeof backendId === "string" && variants && typeof variants === "object") {
+        markVariantHot(backendId, variants as Record<string, unknown>);
+        if (
+          backendId === batchBackendId &&
+          JSON.stringify(variants) === JSON.stringify(preCfg.currentVariantSlice)
+        ) {
+          preCfg.markHot();
+        }
+      }
+    },
+  });
+  const aiRunning = aiRequest.presentation.status === "running";
 
   const currentBatchStatus = useMemo<string | undefined>(() => {
     if (!task?.batch_id || !batchList) return undefined;
@@ -3033,7 +3053,7 @@ export function useWorkbenchShellModel({
   );
 
   const handleRunAi = useCallback(() => {
-    if (!projectId) return;
+    if (!projectId || !taskId) return;
     const mlBackendId = batchBackendId;
     if (!mlBackendId) {
       pushToast({
@@ -3057,17 +3077,37 @@ export function useWorkbenchShellModel({
       });
       return;
     }
-    pushToast({ msg: "AI 正在分析图像...", sub: aiModel });
-    triggerPreannotation.mutate(
-      { ...args, task_ids: taskId ? [taskId] : undefined },
-      {
-        // v0.14.13 · 推理成功 → 记 variant 已热 (异步 trigger 拿不到 cache_hit, 走兜底).
-        onSuccess: () => preCfg.markHot(),
-        onError: (err: unknown) =>
-          pushToast({ msg: "AI 预标注失败", sub: String(err), kind: "error" }),
+    const payload = structuredClone({ ...args, task_ids: [taskId] });
+    aiRequest.start({
+      summary: {
+        projectId,
+        taskId,
+        taskLabel: task?.display_id,
+        frameIndex: null,
+        backendName: aiModel,
+        modelName:
+          preCfg.selectableModels.find((model) => model.id === args.model_id)?.display_name ??
+          args.model_id ??
+          aiModel,
+        input: { ...payload },
       },
-    );
-  }, [projectId, batchBackendId, aiModel, taskId, triggerPreannotation, pushToast, preCfg]);
+      cancellable: false,
+      execute: async () => {
+        const response = await triggerPreannotation.mutateAsync(payload);
+        return { kind: "queued", celeryTaskId: response.job_id };
+      },
+    });
+  }, [
+    projectId,
+    batchBackendId,
+    aiModel,
+    task?.display_id,
+    taskId,
+    triggerPreannotation,
+    pushToast,
+    preCfg,
+    aiRequest,
+  ]);
 
   // v0.21.0 · 项目默认命名编排成为 popover「按项目编排」来源; 旧 preannotate_pipeline 仅作读兼容兜底。
   // popover 仍是执行器、不是编排编辑器: 编排在 /ai-pre 定义保存, 这里只把那条编排跑当前一图。
@@ -3086,6 +3126,7 @@ export function useWorkbenchShellModel({
   );
   const projectPipelineRunnable = hasProjectPipeline && pipelineMissingBackends.length === 0;
   const handleRunAiPipeline = useCallback(() => {
+    if (!projectId || !taskId) return;
     if (pipelineMissingBackends.length > 0) {
       pushToast({
         msg: "项目编排引用的后端不可用",
@@ -3094,23 +3135,33 @@ export function useWorkbenchShellModel({
       });
       return;
     }
-    const payload = buildPipelineRunPayload(projectPipeline, taskId, availableBackendIds);
-    if (!payload) return;
-    pushToast({
-      msg: "AI 正在按项目编排分析...",
-      sub: `${payload.pipeline_stages?.length ?? 0} 阶段`,
-    });
-    triggerPreannotation.mutate(payload, {
-      onSuccess: () => preCfg.markHot(),
-      onError: (err: unknown) =>
-        pushToast({ msg: "AI 编排预标失败", sub: String(err), kind: "error" }),
+    const configured = buildPipelineRunPayload(projectPipeline, taskId, availableBackendIds);
+    if (!configured) return;
+    const payload = structuredClone(configured);
+    aiRequest.start({
+      summary: {
+        projectId,
+        taskId,
+        taskLabel: task?.display_id,
+        frameIndex: null,
+        backendName: "项目编排",
+        modelName: `${payload.pipeline_stages?.length ?? 0} 阶段`,
+        input: { ...payload },
+      },
+      cancellable: false,
+      execute: async () => {
+        const response = await triggerPreannotation.mutateAsync(payload);
+        return { kind: "queued", celeryTaskId: response.job_id };
+      },
     });
   }, [
+    projectId,
     projectPipeline,
+    task?.display_id,
     taskId,
     triggerPreannotation,
     pushToast,
-    preCfg,
+    aiRequest,
     availableBackendIds,
     pipelineMissingBackends,
   ]);
@@ -5503,8 +5554,8 @@ export function useWorkbenchShellModel({
 
   // v0.21.4 · 视频单题 AI: 抓当前帧 JPEG → 图像 backend(client 供图路径)→ 落单帧 video_bbox 候选。
   // 与图像的 handleRunAi 走不同路(那条投 task_id 让后端从 task URL 取图, 视频 task URL 是整段 mp4)。
-  const handleRunVideoFrameAi = useCallback(async () => {
-    if (!projectId) return;
+  const handleRunVideoFrameAi = useCallback(() => {
+    if (!projectId || !taskId) return;
     const mlBackendId = batchBackendId;
     if (!mlBackendId) {
       pushToast({
@@ -5526,37 +5577,52 @@ export function useWorkbenchShellModel({
       });
       return;
     }
-    const blob = await videoControlsRef.current?.captureCurrentFrameJpeg();
-    if (!blob) {
-      pushToast({
-        msg: "当前帧尚未就绪",
-        sub: "请等待画面加载完成后重试",
-        kind: "warning",
-      });
-      return;
-    }
-    setVideoFrameAiRunning(true);
-    pushToast({ msg: "AI 正在分析当前帧...", sub: aiModel });
-    try {
-      const res = await mlBackendsApi.predictFrame(projectId, mlBackendId, {
-        blob,
-        taskId: taskId!,
+    const config = structuredClone(args) as unknown as Record<string, unknown>;
+    // Keep the same JPEG for retries, even when the input controls change afterward.
+    let capturedFrame: Blob | null = null;
+    aiRequest.start({
+      summary: {
+        projectId,
+        taskId,
+        taskLabel: task?.display_id,
         frameIndex: videoFrameIndex,
-        config: args as unknown as Record<string, unknown>,
-      });
-      preCfg.markHot();
-      await queryClient.invalidateQueries({ queryKey: ["predictions", taskId] });
-      pushToast({
-        msg: "当前帧分析完成",
-        sub: `第 ${videoFrameIndex} 帧新增 ${res.candidate_count} 个候选`,
-        kind: "success",
-      });
-    } catch (err) {
-      pushToast({ msg: "AI 预标注失败", sub: String(err), kind: "error" });
-    } finally {
-      setVideoFrameAiRunning(false);
-    }
-  }, [projectId, batchBackendId, preCfg, aiModel, taskId, videoFrameIndex, queryClient, pushToast]);
+        backendName: aiModel,
+        modelName:
+          preCfg.selectableModels.find((model) => model.id === args.model_id)?.display_name ??
+          args.model_id ??
+          aiModel,
+        input: config,
+      },
+      cancellable: true,
+      execute: async ({ signal, isCurrent }) => {
+        capturedFrame ??= (await videoControlsRef.current?.captureCurrentFrameJpeg()) ?? null;
+        if (!isCurrent() || signal.aborted) throw new DOMException("请求已取消", "AbortError");
+        if (!capturedFrame) throw new Error("当前帧尚未就绪，请等待画面加载完成后重试");
+        await mlBackendsApi.predictFrame(
+          projectId,
+          mlBackendId,
+          {
+            blob: capturedFrame,
+            taskId,
+            frameIndex: videoFrameIndex,
+            config,
+          },
+          signal,
+        );
+        return { kind: "completed" };
+      },
+    });
+  }, [
+    projectId,
+    batchBackendId,
+    preCfg,
+    aiModel,
+    task?.display_id,
+    taskId,
+    videoFrameIndex,
+    aiRequest,
+    pushToast,
+  ]);
 
   const annotateModeState = useAnnotateMode({
     mode,
@@ -7294,7 +7360,15 @@ export function useWorkbenchShellModel({
         const cur = !!ann[flag];
         handlePatchShapeFlag(id, flag, !cur);
       },
-      attributeSchema: toolView.attributeSchema,
+      attributeSchema: selectedAiBox
+        ? attributeSchemaForUnit(
+            currentProject?.tool_bindings,
+            (selectedAiBox.tool_unit_id as ToolUnitId | null | undefined) ??
+              toolUnitForGeometryType(
+                selectedAiBox.geometry?.type ?? selectedAiBox.annotation_type ?? "bbox",
+              ),
+          )
+        : toolView.attributeSchema,
       selectedAnnotation: selectedAnnotationForPanel,
       onUpdateAttributes: handleUpdateAttributes,
       onBulkUpdateAttributes: (ids, patch) => {
@@ -7348,6 +7422,10 @@ export function useWorkbenchShellModel({
       aiModel,
       aiRunning,
       aiBoxCount: aiPopoverBoxCount,
+      request: aiRequest.presentation,
+      onRetryRequest: aiRequest.retry,
+      onCancelRequest: aiRequest.cancel,
+      onReviewCandidates: () => workspaceCommands.current?.show("inspector"),
       isVideoTask,
       confThreshold: s.confThreshold,
       aiTakeoverRate,
@@ -7472,7 +7550,9 @@ export function useWorkbenchShellModel({
               onUpdateIssue: maskQcReview.updateIssue,
             }
           : undefined,
-      annotationId: s.selectedId,
+      annotationId: visibleAnnotationsData.some((annotation) => annotation.id === s.selectedId)
+        ? s.selectedId
+        : null,
       taskId: taskId ?? null,
       projectId: projectId ?? null,
       currentUserId: meUserId ?? null,
