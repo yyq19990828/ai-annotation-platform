@@ -71,6 +71,29 @@ def test_cache_key_is_target_order_independent_and_contract_sensitive() -> None:
         5,
         axis_frame="source",
     )
+    front = cache.compute_cache_key(
+        scope_id,
+        ["kitti"],
+        True,
+        "keyframes",
+        updated_at,
+        5,
+        options_digest=export_worker.canonical_digest(
+            {"lidar_camera_role": "camera_front"}
+        ),
+    )
+    left = cache.compute_cache_key(
+        scope_id,
+        ["kitti"],
+        True,
+        "keyframes",
+        updated_at,
+        5,
+        options_digest=export_worker.canonical_digest(
+            {"lidar_camera_role": "camera_left"}
+        ),
+    )
+    assert front != left
 
 
 @pytest.mark.asyncio

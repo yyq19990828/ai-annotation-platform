@@ -79,9 +79,9 @@ _批次状态机把项目负责人、标注员、质检员和 AI 后台任务的
 
 批次较多时，可以多选后执行激活、归档、重新分配、删除、批量通过或批量驳回，批量操作不会绕过角色和状态限制。
 
-![批次批量操作](../../docs-site/user-guide/images/projects/batch-bulk-actions.gif)
+![批次批量操作](../../docs-site/public/media/projects/batch-bulk-actions-poster.webp)
 
-_勾选多个批次后，页面显示当前状态下可用的批量操作工具栏。_
+_[观看完整演示](../../docs-site/public/media/projects/batch-bulk-actions.mp4)：勾选多个批次后，页面显示当前状态下可用的批量操作工具栏。_
 
 ## 标注员的页面只保留眼前的工作
 
@@ -160,7 +160,7 @@ AI Annotation Platform 内置超级管理员、项目管理员、质检员、标
 3. `users/invite-modal.png`：说明邀请时预设邮箱、角色和数据组；
 4. `projects/batch-status-list.png`：展示批次、人员与状态；
 5. `batch-lifecycle.svg`：解释角色交接与状态迁移；
-6. `projects/batch-bulk-actions.gif`：展示多选后出现批量操作栏；
+6. `public/media/projects/batch-bulk-actions.mp4`：展示多选后出现批量操作栏；
 7. `review/workbench.png`：展示完整审核画布；
 8. `review/reject-form.png`：展示结构化退回原因。
 

@@ -25,9 +25,9 @@
 
 智能点适合目标明确、边界还没有现成几何可用的情况。标注员在目标内部单击，工作台把归一化坐标作为正向点交给支持点提示的模型，返回一个或多个轮廓候选。
 
-![智能点生成车辆轮廓候选](../../docs-site/user-guide/images/sam/smart-point-interaction.gif)
+![智能点生成车辆轮廓候选](../../docs-site/public/media/sam/smart-point-poster.webp)
 
-_在车辆内部单击后，画布显示模型返回的轮廓候选，顶部提示可用 Tab 切换、Enter 采纳。_
+_[观看完整演示](../../docs-site/public/media/sam/smart-point.mp4)：在车辆内部单击后，画布显示模型返回的轮廓候选，顶部提示可用 Tab 切换、Enter 采纳。_
 
 第一次点击有歧义时，模型可以给出多个候选。`Tab` 和 `Shift+Tab` 用来切换，`Enter` 打开类别选择器，`Esc` 放弃这一轮。标注员也可以继续补点：正向点告诉模型目标还包括哪里，按住 `Alt` 单击，或切到负向极性，则表示这部分不要。
 
@@ -37,15 +37,15 @@ _在车辆内部单击后，画布显示模型返回的轮廓候选，顶部提�
 
 背景杂乱时，一个点可能不足以说明目标范围。智能框让标注员先画出大致区域，模型只需要在这个范围里找主要前景。返回结果仍是轮廓候选，可以保存为 polygon；模型、项目和工具单位都支持时，也可以直接提交为原生 Raster Mask。
 
-![智能框提取车辆轮廓](../../docs-site/user-guide/images/sam/smart-box-interaction.gif)
+![智能框提取车辆轮廓](../../docs-site/public/media/sam/smart-box-poster.webp)
 
-_拖框圈定车辆后，模型在框内提取主要前景，结果先以紫色轮廓候选显示。_
+_[观看完整演示](../../docs-site/public/media/sam/smart-box.mp4)：拖框圈定车辆后，模型在框内提取主要前景，结果先以紫色轮廓候选显示。_
 
 Magic Box 复用了拖框手势，但目标是检测框。标注员不必把矩形四条边拖到很准，只要大致包住目标。模型先算出目标 Mask，工作台再取它的紧凑外接矩形，随即打开类别选择器。选好类别后，结果作为 bbox 保存，不进入普通的多候选审阅流程。
 
-![Magic Box 从粗框得到紧凑检测框](../../docs-site/user-guide/images/sam/magic-box-interaction.gif)
+![Magic Box 从粗框得到紧凑检测框](../../docs-site/public/media/ai/assisted-annotation-poster.webp)
 
-_Magic Box 先接收一个粗框，再按模型轮廓收紧边界。确认类别后，画布保存紧凑的车辆检测框。_
+_[观看完整演示](../../docs-site/public/media/ai/assisted-annotation.mp4)：Magic Box 先接收一个粗框，再按模型轮廓收紧边界。确认类别后，画布保存紧凑的车辆检测框。_
 
 智能框回答的是“这个范围里的对象边界在哪里”，Magic Box 处理的是“把这个粗框收紧成检测框”。两者都使用单框提示，后续确认和保存路径不同。
 
@@ -53,9 +53,9 @@ _Magic Box 先接收一个粗框，再按模型轮廓收紧边界。确认类别
 
 智能笔迹只在选中一条已保存、未锁定的原生 Raster Mask 后启用。绿色正向笔迹用于补回漏掉的区域，按住 `Alt` 绘制或切到负向极性后，红色笔迹用于去掉误分区域。笔迹在这里是模型提示，不直接改写像素。
 
-![智能笔迹连续添加正向与负向提示](../../docs-site/user-guide/images/sam/smart-scribble-interaction.gif)
+![智能笔迹连续添加正向与负向提示](../../docs-site/public/media/sam/smart-scribble-poster.webp)
 
-_选中已存原生 Mask 后，画布依次接收正向和负向笔迹，精修结果保持候选态，等待标注员确认。_
+_[观看完整演示](../../docs-site/public/media/sam/smart-scribble.mp4)：选中已存原生 Mask 后，画布依次接收正向和负向笔迹，精修结果保持候选态，等待标注员确认。_
 
 同一条 Mask 还可以继续用正负点或框精修。工作台把源 Annotation 的 ID 和版本交给平台，服务端读取已存 RLE，再将当前提示送给模型。确认候选后，系统更新原来的 Annotation，不会再创建一条重叠对象。
 
@@ -71,9 +71,9 @@ _选中已存原生 Mask 后，画布依次接收正向和负向笔迹，精修�
 
 _Exemplar 工具栏会按当前后端能力显示输出形态、正负样例、文本组合和置信度筛选控件。_
 
-![Exemplar 查找道路图中的相似车辆](../../docs-site/user-guide/images/sam/exemplar-interaction.gif)
+![Exemplar 查找道路图中的相似车辆](../../docs-site/public/media/sam/exemplar-poster.webp)
 
-_框出一辆白色车辆后，Exemplar 在整张道路图中返回多个相似车辆候选。_
+_[观看完整演示](../../docs-site/public/media/sam/exemplar.mp4)：框出一辆白色车辆后，Exemplar 在整张道路图中返回多个相似车辆候选。_
 
 第一次结果不理想时，不必清空重来。支持完整 Exemplar 精修能力的 SAM 3 可以继续增加正样例来补召回，也可以用负样例排除误检；置信度阈值用来控制结果数量，还能叠加一个简短文本概念。每次调整都会带着当前框集、文本和阈值重新计算。
 
@@ -115,7 +115,7 @@ AI Annotation Platform 采用 MIT License 开源。五种工具的前端交互�
 - ML Backend 协议：<https://yyq19990828.github.io/ai-annotation-platform/dev/reference/ml-backend-protocol>
 - License：MIT
 
-系列下一篇会继续介绍模型市场、项目模型启用，以及检测、分类、OCR 和属性写回怎样组成多阶段 AI 工作流。
+系列下一篇会继续介绍模型市场与 ML Backend：模型能力怎样被平台识别、全局 Backend 为什么还要由项目显式启用。
 
 ---
 
@@ -131,7 +131,7 @@ AI Annotation Platform 采用 MIT License 开源。五种工具的前端交互�
 轮廓 · Mask · 紧凑检测框
 ```
 
-封面建议截取智能笔迹候选和 Exemplar 多候选两个局部，左右拼接。智能笔迹使用新录制的 `smart-scribble-interaction.gif`，不要用普通 Mask 笔刷素材代替。
+封面建议截取智能笔迹候选和 Exemplar 多候选两个局部，左右拼接。智能笔迹使用 `public/media/sam/smart-scribble.mp4`，不要用普通 Mask 笔刷素材代替。
 
 ### 备选标题
 
@@ -149,13 +149,13 @@ AI Annotation Platform 把点、框、笔迹和视觉样例变成画布里的模
 
 ### 配图上传顺序
 
-1. `sam/smart-point-interaction.gif`：开场，展示单击后出现车辆轮廓候选；
-2. `sam/smart-box-interaction.gif`：展示拖框后提取框内主要前景；
-3. `sam/smart-scribble-interaction.gif`：展示选中已有 Mask 后依次添加正向与负向笔迹；
-4. `sam/magic-box-interaction.gif`：展示粗框、类别确认和紧凑 bbox；
+1. `public/media/sam/smart-point.mp4`：开场，展示单击后出现车辆轮廓候选；
+2. `public/media/sam/smart-box.mp4`：展示拖框后提取框内主要前景；
+3. `public/media/sam/smart-scribble.mp4`：展示选中已有 Mask 后依次添加正向与负向笔迹；
+4. `public/media/ai/assisted-annotation.mp4`：展示粗框、类别确认和紧凑 bbox；
 5. `sam/exemplar-output-mode.png`：说明 Exemplar 的输出和筛选控件；
-6. `sam/exemplar-interaction.gif`：展示一个视觉样例返回多个相似车辆候选。
+6. `public/media/sam/exemplar.mp4`：展示一个视觉样例返回多个相似车辆候选。
 
-五段 GIF 都来自工作台录制。智能点、智能框、Magic Box 和 Exemplar 使用真实 SAM 3；智能笔迹使用可重复的签名候选响应，保留真实手势、候选渲染和会话状态。发布到知乎或公众号时需要逐张上传，不要保留仓库相对路径。智能笔迹和 Exemplar GIF 宽度较小，移动端建议保留画布目标、顶部工具栏和候选状态，裁掉无关空白。
+五段交互媒体都来自工作台录制。智能点、智能框、Magic Box 和 Exemplar 使用真实 SAM 3；智能笔迹使用可重复的签名候选响应，保留真实手势、候选渲染和会话状态。发布到知乎或公众号时需要逐个上传，不要保留仓库相对路径。智能笔迹和 Exemplar 视频宽度较小，移动端建议保留画布目标、顶部工具栏和候选状态，裁掉无关空白。
 
-智能笔迹 GIF 停在候选态，没有展示最终确认入库。发布图注不要把它写成“已经更新 Mask”；原位更新行为由正文说明。
+智能笔迹演示停在候选态，没有展示最终确认入库。发布图注不要把它写成“已经更新 Mask”；原位更新行为由正文说明。

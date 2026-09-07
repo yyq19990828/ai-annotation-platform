@@ -40,7 +40,12 @@ last_reviewed: 2026-09-05
 - **Alt + 单击**：负向点，告诉 SAM「这块不要」做减法
 - 工具激活时**交互工具栏**显示极性切换圆按钮，按 `=` / `+` 切正向，按 `-` 切负向
 
-![智能点落在真实车辆上并生成轮廓候选](../images/sam/smart-point-interaction.gif)
+<DocsVideo
+  src="/media/sam/smart-point.mp4"
+  poster="/media/sam/smart-point-poster.webp"
+  alt="智能点落在真实车辆上并生成轮廓候选"
+  caption="在真实车辆内放置正向智能点，SAM 生成轮廓候选，选择 car 类别后保存。"
+/>
 
 ### 智能框（Smart Box）— 拖框作 bbox prompt
 
@@ -48,7 +53,12 @@ last_reviewed: 2026-09-05
 
 拖框，SAM 把框内主要前景的轮廓找出来。比智能点更明确「就是这一块」，适合背景杂乱时。
 
-![智能框对齐真实车辆并生成轮廓候选](../images/sam/smart-box-interaction.gif)
+<DocsVideo
+  src="/media/sam/smart-box.mp4"
+  poster="/media/sam/smart-box-poster.webp"
+  alt="智能框对齐真实车辆并生成轮廓候选"
+  caption="拖出包围真实车辆的提示框，SAM 生成分割候选，选择 car 类别后保存。"
+/>
 
 ### 智能笔迹（Smart Scribble）— 在已存 Mask 上做加减法
 
@@ -97,7 +107,12 @@ last_reviewed: 2026-09-05
 
 拖框圈出图中**已有的一个示例实例**，支持 exemplar 的 backend 会返回**全图相似实例**。SAM 3 PCS 支持正/负框、文本概念叠加和阈值重筛；YOLOE visual prompt 支持多正框和阈值，但没有负框与文本概念叠加。工具栏会读取 `/setup.exemplar_capabilities` 自动隐藏当前 backend 不支持的控件。
 
-![Exemplar 框选真实车辆并返回全图相似候选](../images/sam/exemplar-interaction.gif)
+<DocsVideo
+  src="/media/sam/exemplar.mp4"
+  poster="/media/sam/exemplar-poster.webp"
+  alt="Exemplar 框选真实车辆并返回全图相似候选"
+  caption="框选一个正示例实例，返回全图相似目标候选，逐条确认后保存。"
+/>
 
 这不是一发定生死——拖第一个框后进入**迭代 refine 会话**，可以一边看结果一边收紧：
 
