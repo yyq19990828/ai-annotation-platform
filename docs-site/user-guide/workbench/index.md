@@ -67,6 +67,13 @@ Mask 是否可编辑以任务返回的能力提示为准；超过上限时仍可
 ## 布局偏好与浮窗
 
 <DocsVideo
+  src="/media/workbench/layout-basics.mp4"
+  poster="/media/workbench/layout-basics-poster.webp"
+  alt="调整分隔条、合并标签、隐藏并找回讨论面板，再专注画布与恢复布局"
+  caption="从标准标注布局开始调整空间；当前任务、工具、选中标注和未发送的讨论内容在面板调整期间保持不变。"
+/>
+
+<DocsVideo
   src="/media/video/ai-tracker-panel.mp4"
   poster="/media/video/ai-tracker-panel-poster.webp"
   alt="打开视频追踪面板，浮动、停靠、隐藏后恢复，再与当前题 AI 合并为标签"
