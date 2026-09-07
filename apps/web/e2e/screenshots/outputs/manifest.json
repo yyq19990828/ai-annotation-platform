@@ -1725,8 +1725,8 @@
         "task": "annotating"
       },
       "seed_profile": "screenshots",
-      "seed_revision": "screenshots-2026-08-e",
-      "source_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
+      "seed_revision": "screenshots-2026-08-g",
+      "source_commit": "08e31458bf454f6d721a1dcdff91946defb90615",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1738,11 +1738,12 @@
       },
       "theme": "dark",
       "locale": "zh-CN",
-      "generated_at": "2026-08-15T06:33:19.854Z",
+      "generated_at": "2026-09-07T07:49:48.087084Z",
       "provenance": "current-run",
-      "sha256": "6218ce470273e5bd4c173f674e69ac59d2c38e4eab595c8fb8efecfe4e8b6631",
+      "sha256": "bd75f8b224cbed089244588fc7ab6f22af3646241db1e0673ed60456523fa77e",
       "width": 1440,
-      "height": 900
+      "height": 900,
+      "source_worktree_dirty": true
     },
     "docs-site/user-guide/images/workbench/ocr-real-scene.png": {
       "auto": true,
