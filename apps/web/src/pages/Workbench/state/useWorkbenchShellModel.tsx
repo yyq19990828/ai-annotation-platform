@@ -107,7 +107,7 @@ import {
 import type { VideoSamPrompt } from "../stage/videoStageTypes";
 import { isSamCandidateNavTool } from "../stage/videoKonvaInteraction";
 import { tightenBboxFromPolygon } from "../stage/shared/geometry/bbox";
-import { classColorForCanvas } from "../stage/colors";
+import { buildImageRasterMaskDescriptors } from "./imageRasterMaskDescriptors";
 import { useRasterMaskRecords } from "../stage/shared/useRasterMaskRecords";
 import { useRasterMaskWorkerPool } from "../stage/shared/useRasterMaskWorkerPool";
 import { useRasterResourceCoordinator } from "../stage/shared/useRasterResourceCoordinator";
@@ -1547,23 +1547,7 @@ export function useWorkbenchShellModel({
   const rasterMaskWorkerPool = useRasterMaskWorkerPool(taskId, rasterResources);
   const imageRasterMaskDescriptors = useMemo(() => {
     if (isVideoTask || maskCapabilities.data?.read_enabled !== true) return [];
-    return visibleAnnotationsData.flatMap((annotation) => {
-      if (annotation.geometry.type !== "raster_mask") return [];
-      const color = classColorForCanvas(annotation.class_name);
-      return [
-        {
-          id: annotation.id,
-          source: "annotation" as const,
-          ref: annotation.geometry.mask,
-          revision: annotation.version ?? annotation.geometry.mask.sha256,
-          color,
-          colorRevision: color,
-          zOrder: annotation.z_order ?? 0,
-          selected: rasterMaskSelectedIds.has(annotation.id),
-          load: () => rasterMasksApi.annotationRasterMaskContent(annotation.id),
-        },
-      ];
-    });
+    return buildImageRasterMaskDescriptors(visibleAnnotationsData, rasterMaskSelectedIds);
   }, [
     isVideoTask,
     maskCapabilities.data?.read_enabled,
