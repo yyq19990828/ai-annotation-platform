@@ -7160,7 +7160,7 @@ export function useWorkbenchShellModel({
               onUpdateIssue: maskQcReview.updateIssue,
             }
           : undefined,
-      annotationId: s.selectedId,
+      annotationId: selectedAnnotationForPanel?.id ?? null,
       taskId: taskId ?? null,
       projectId: projectId ?? null,
       currentUserId: meUserId ?? null,
