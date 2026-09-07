@@ -113,7 +113,9 @@ export async function installRecordingWorkbenchLayout(
         image: { ...original.workbench.image, ...(overrides.image ?? {}) },
         video: { ...original.workbench.video, ...(overrides.video ?? {}) },
         pointcloud: { ...original.workbench.pointcloud, ...(overrides.pointcloud ?? {}) },
-        layout: { ...original.workbench.layout, ...(overrides.layout ?? {}) },
+        // Let the current workspace owner migrate these recording-only legacy
+        // settings; saved Dockview contexts must not override the requested mode.
+        layout: { ...original.workbench.layout, ...(overrides.layout ?? {}), workspace: undefined },
       },
       ui: { ...original.ui, ...(overrides.ui ?? {}) },
     },
@@ -157,6 +159,9 @@ export async function installRecordingWorkbenchLayout(
     if (!user?.id) throw new Error("[recording-layout] auth-storage 缺少 user.id");
     user.preferences = preferences;
     localStorage.setItem("auth-storage", JSON.stringify(auth));
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith(`workbench.${user.id}.workspace.`)) localStorage.removeItem(key);
+    }
     localStorage.setItem(
       `workbench.${user.id}.leftOpen`,
       preferences.workbench.layout.leftOpen ? "1" : "0",
@@ -172,22 +177,39 @@ export async function installRecordingWorkbenchLayout(
   }, sandbox);
 }
 
-/** 录制开始前验证侧栏开合与 15% 宽度已真正进入 DOM。 */
+/** Verify the current Dockview panels and their actual recording geometry. */
 export async function waitForRecordingWorkbenchLayout(
   page: Page,
   mode: RecordingSidebarMode,
 ): Promise<void> {
-  const expectedLeftTitle = mode === "both" ? "收起任务列表" : "展开任务列表";
-  const expectedRightTitle = mode === "both" ? "收起标注详情" : "展开标注详情";
-  await page.getByTitle(expectedLeftTitle).waitFor({ state: "visible", timeout: 10_000 });
-  await page.getByTitle(expectedRightTitle).waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator("[data-workbench-workspace]").waitFor({ state: "visible", timeout: 10_000 });
   await page.waitForFunction(
     (sidebarMode) => {
-      const root = document.querySelector<HTMLElement>('[style*="--workbench-grid-template"]');
-      const value = root?.style.getPropertyValue("--workbench-grid-template") ?? "";
-      return sidebarMode === "both"
-        ? value.includes("clamp(180px, 15%, 600px) 48px 1fr clamp(180px, 15%, 600px)")
-        : value === "0px 48px 1fr 0px";
+      const root = document.querySelector<HTMLElement>("[data-workbench-workspace]");
+      const rect = (id: string) => {
+        const panel = root?.querySelector<HTMLElement>(`[data-workbench-panel="${id}"]`);
+        if (!panel || panel.getAttribute("aria-hidden") === "true") return null;
+        const box = panel.getBoundingClientRect();
+        return box.width > 0 && box.height > 0 ? box : null;
+      };
+      const workspace = root?.getBoundingClientRect();
+      const canvas = rect("canvas");
+      if (!workspace || !canvas) return false;
+      const left = rect("task-queue");
+      const right = rect("inspector");
+      if (sidebarMode === "none") {
+        return !left && !right && canvas.width >= workspace.width * 0.9;
+      }
+      return Boolean(
+        left &&
+        right &&
+        left.width >= 180 &&
+        left.width <= workspace.width * 0.25 &&
+        right.width >= 180 &&
+        right.width <= workspace.width * 0.25 &&
+        left.right <= canvas.left + 2 &&
+        right.left >= canvas.right - 2,
+      );
     },
     mode,
     { timeout: 10_000 },
