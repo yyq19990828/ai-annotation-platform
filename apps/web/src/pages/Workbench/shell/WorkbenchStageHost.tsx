@@ -1,3 +1,5 @@
+import type { TrackerReviewProjection } from "@/hooks/videoTrackerReviewScope";
+import type { VideoTrackContextBarProps } from "../stage/VideoTrackContextBar";
 import { forwardRef, lazy, Suspense, type ReactNode } from "react";
 import type {
   Annotation,
@@ -144,6 +146,9 @@ interface WorkbenchStageHostVideoProps {
   videoTimelineChapterControls?: VideoTimelineChapterControls;
   /** v0.21.14 WS3 · AI 传播对话框打开时在时间轴高亮的影响范围。 */
   videoPropagateRange?: { startFrame: number; endFrame: number } | null;
+  trackerReview?: TrackerReviewProjection | null;
+  reviewReference?: VideoTrackContextBarProps["reviewReference"];
+  onSeekReviewFrame?: (frame: number) => void;
   videoSegmentRange?: VideoSegmentTimelineRange | null;
   /** v0.10.29 · 项目级采样配置 → VideoStage 软网格导航。 */
   videoSampling?: VideoSamplingConfig | null;
@@ -406,6 +411,9 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       videoChapters,
       videoTimelineChapterControls,
       videoPropagateRange,
+      trackerReview,
+      reviewReference,
+      onSeekReviewFrame,
       videoSegmentRange,
       videoSampling,
       videoTool,
@@ -618,6 +626,9 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             chapters={videoChapters}
             timelineChapterControls={videoTimelineChapterControls}
             propagateRange={videoPropagateRange}
+            trackerReview={trackerReview}
+            reviewReference={reviewReference}
+            onSeekReviewFrame={onSeekReviewFrame}
             segmentRange={videoSegmentRange}
             videoSampling={videoSampling}
             performanceTier={workbenchCommon.performanceTier}

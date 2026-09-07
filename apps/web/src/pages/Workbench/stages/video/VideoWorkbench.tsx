@@ -1,3 +1,5 @@
+import type { TrackerReviewProjection } from "@/hooks/videoTrackerReviewScope";
+import type { VideoTrackContextBarProps } from "../../stage/VideoTrackContextBar";
 import { forwardRef, useMemo, type ReactNode } from "react";
 import type {
   AnnotationResponse,
@@ -82,6 +84,9 @@ export interface VideoWorkbenchProps {
   chapters?: VideoTimelineChapter[];
   timelineChapterControls?: VideoTimelineChapterControls;
   propagateRange?: { startFrame: number; endFrame: number } | null;
+  trackerReview?: TrackerReviewProjection | null;
+  reviewReference?: VideoTrackContextBarProps["reviewReference"];
+  onSeekReviewFrame?: (frame: number) => void;
   segmentRange?: VideoSegmentTimelineRange | null;
   videoSampling?: VideoSamplingConfig | null;
   performanceTier?: WorkbenchCommonPreferences["performanceTier"];
@@ -169,6 +174,9 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
       chapters,
       timelineChapterControls,
       propagateRange,
+      trackerReview,
+      reviewReference,
+      onSeekReviewFrame,
       segmentRange,
       videoSampling,
       performanceTier,
@@ -285,6 +293,9 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         chapters={chapters}
         timelineChapterControls={timelineChapterControls}
         propagateRange={propagateRange}
+        trackerReview={trackerReview}
+        reviewReference={reviewReference}
+        onSeekReviewFrame={onSeekReviewFrame}
         segmentRange={segmentRange}
         videoSampling={videoSampling}
         defaultPlaybackRate={workbenchVideo.defaultPlaybackRate}

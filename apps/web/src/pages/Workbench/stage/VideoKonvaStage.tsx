@@ -1,3 +1,4 @@
+import type { TrackerReviewProjection } from "@/hooks/videoTrackerReviewScope";
 import {
   forwardRef,
   useCallback,
@@ -276,6 +277,9 @@ interface VideoKonvaStageProps {
   timelineChapterControls?: VideoTimelineChapterControls;
   /** v0.21.14 WS3 · AI 传播对话框打开时在时间轴高亮的影响范围。 */
   propagateRange?: VideoLoopRegion | null;
+  trackerReview?: TrackerReviewProjection | null;
+  reviewReference?: VideoTrackContextBarProps["reviewReference"];
+  onSeekReviewFrame?: (frame: number) => void;
   segmentRange?: import("./VideoPlaybackOverlay").VideoSegmentTimelineRange | null;
   /** 采样配置(帧网格步进策略)。 */
   videoSampling?: VideoSamplingConfig | null;
@@ -365,6 +369,9 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       chapters = [],
       timelineChapterControls,
       propagateRange = null,
+      trackerReview,
+      reviewReference,
+      onSeekReviewFrame,
       segmentRange = null,
       videoSampling = null,
       defaultPlaybackRate,
@@ -2671,6 +2678,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
           trackColorOverrides={trackColorOverrides}
           loopRegion={loopRegion}
           propagateRange={propagateRange}
+          trackerReview={trackerReview}
+          onSeekReviewFrame={onSeekReviewFrame}
           segmentRange={segmentRange}
           rangeSelectPurpose={timelineChapterControls?.rangeSelectPurpose ?? "loop"}
           bookmarks={bookmarks}
@@ -2742,6 +2751,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       <>
         <VideoTrackContextBar
           frameIndex={frameIndex}
+          trackerReview={trackerReview}
+          reviewReference={reviewReference}
           track={
             selectedContextTrack
               ? {

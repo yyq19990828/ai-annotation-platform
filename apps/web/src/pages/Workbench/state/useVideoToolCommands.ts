@@ -42,6 +42,7 @@ interface Options {
 type Command =
   | { kind: "tool"; tool: VideoTool }
   | { kind: "scope"; scope: VideoToolScope }
+  | { kind: "frame"; frameIndex: number; isRelevant: () => boolean }
   | {
       kind: "temporary";
       tool: VideoTool;
@@ -122,6 +123,9 @@ export function useVideoToolCommands(options: Options) {
           tool: command.tool,
           scope: videoToolScopeForTool(command.tool) ?? current.scope,
         };
+      } else if (command.kind === "frame") {
+        if (!Number.isInteger(command.frameIndex) || command.frameIndex < 0) return false;
+        targetFrame = command.frameIndex;
       } else {
         targetFrame = command.frameIndex;
         if (targetFrame !== undefined && (!Number.isInteger(targetFrame) || targetFrame < 0))
@@ -146,8 +150,14 @@ export function useVideoToolCommands(options: Options) {
       }
       // Tracker seed collection has its own backend capabilities and borrows an AI tool.
       const reason =
-        command.kind === "temporary" ? undefined : initial.toolDisabledReason(target.tool);
-      if (command.kind !== "temporary" && (!initial.isToolEnabled(target.tool) || reason)) {
+        command.kind === "temporary" || command.kind === "frame"
+          ? undefined
+          : initial.toolDisabledReason(target.tool);
+      if (
+        command.kind !== "temporary" &&
+        command.kind !== "frame" &&
+        (!initial.isToolEnabled(target.tool) || reason)
+      ) {
         target = {
           ...target,
           tool: "select",
@@ -161,7 +171,13 @@ export function useVideoToolCommands(options: Options) {
           selectedIds.some((id, index) => id !== initial.state.selectedIds[index]));
       const changesFrame =
         targetFrame !== undefined && targetFrame !== initial.state.videoFrameIndex;
-      if (!changesTool && !changesSelection && !changesFrame && command.kind !== "temporary") {
+      if (
+        !changesTool &&
+        !changesSelection &&
+        !changesFrame &&
+        command.kind !== "temporary" &&
+        command.kind !== "frame"
+      ) {
         if (command.kind === "selection") command.onAdmitted?.();
         if (target.reason) initial.explain(target.reason);
         return true;
@@ -171,7 +187,7 @@ export function useVideoToolCommands(options: Options) {
         serial.current === requestId &&
         latest.current.enabled &&
         latest.current.ownerKey === initial.ownerKey &&
-        (command.kind !== "temporary" || command.isRelevant());
+        ((command.kind !== "temporary" && command.kind !== "frame") || command.isRelevant());
       if (!isCurrent()) return false;
       const pending = initial.state.pendingDrawing;
       // A pending Mask class owns an in-flight save resolver in the native writer.
@@ -207,9 +223,12 @@ export function useVideoToolCommands(options: Options) {
       if (stageDraft && currentPending && currentPending !== pending && !migratedPending)
         return false;
       const latestReason =
-        command.kind === "temporary" ? undefined : latest.current.toolDisabledReason(target.tool);
+        command.kind === "temporary" || command.kind === "frame"
+          ? undefined
+          : latest.current.toolDisabledReason(target.tool);
       if (
         command.kind !== "temporary" &&
+        command.kind !== "frame" &&
         (!latest.current.isToolEnabled(target.tool) || latestReason)
       ) {
         target = {
@@ -220,10 +239,18 @@ export function useVideoToolCommands(options: Options) {
       }
       if (stageDraft) latest.current.controlsRef.current?.discardDrawingDraft?.();
       if (hasPending || migratedPending) latest.current.state.setPendingDrawing(null);
-      if (targetFrame !== undefined) latest.current.state.setVideoFrameIndex(targetFrame);
+      if (targetFrame !== undefined) {
+        const controls = latest.current.controlsRef.current;
+        if (command.kind === "frame" && controls) {
+          controls.pausePlayback({ snapToGrid: false });
+          controls.seekToFrame(targetFrame, { recordHistory: true });
+        } else {
+          latest.current.state.setVideoFrameIndex(targetFrame);
+        }
+      }
       if (selectedIds !== undefined) latest.current.state.replaceSelected(selectedIds);
       if (command.kind === "temporary") command.onAdmitted(current);
-      latest.current.state.setVideoToolSelection(target);
+      if (command.kind !== "frame") latest.current.state.setVideoToolSelection(target);
       if (command.kind === "selection") command.onAdmitted?.();
       if (target.reason) latest.current.explain(target.reason);
       return true;
@@ -250,6 +277,13 @@ export function useVideoToolCommands(options: Options) {
     [request],
   );
 
+  const requestFrame = useCallback(
+    (frameIndex: number, isRelevant: () => boolean) => {
+      void request({ kind: "frame", frameIndex, isRelevant });
+    },
+    [request],
+  );
+
   const requestTemporaryTool = useCallback(
     (
       tool: VideoTool,
@@ -265,6 +299,7 @@ export function useVideoToolCommands(options: Options) {
     requestTool,
     requestScope,
     requestSelection,
+    requestFrame,
     requestTemporaryTool,
     confirmationOpen,
     settleConfirmation,

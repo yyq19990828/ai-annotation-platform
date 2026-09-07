@@ -9,6 +9,7 @@ import type {
 import { flushSync } from "react-dom";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import type { TrackerReviewProjection } from "@/hooks/videoTrackerReviewScope";
 import { getTrackColor } from "./colors";
 import { frameTimebaseDuration, frameToTime, type FrameTimebase } from "./frameTimebase";
 import {
@@ -117,6 +118,8 @@ interface VideoPlaybackOverlayProps {
   loopRegion?: VideoLoopRegion | null;
   /** v0.21.14 WS3 · AI 传播对话框打开时在时间轴高亮「将影响哪段帧」(受控静态带, 非刷选草稿)。 */
   propagateRange?: VideoLoopRegion | null;
+  trackerReview?: TrackerReviewProjection | null;
+  onSeekReviewFrame?: (frameIndex: number) => void;
   segmentRange?: VideoSegmentTimelineRange | null;
   /** v0.21.13 · 时间轴刷选产物的用途 (默认 "loop", 原行为)。非 loop 时松手走 onRangeSelect。 */
   rangeSelectPurpose?: TimelineRangePurpose;
@@ -241,6 +244,8 @@ export function VideoPlaybackOverlay({
   trackColorOverrides,
   loopRegion = null,
   propagateRange = null,
+  trackerReview = null,
+  onSeekReviewFrame,
   segmentRange = null,
   rangeSelectPurpose = "loop",
   bookmarks = [],
@@ -533,6 +538,16 @@ export function VideoPlaybackOverlay({
   // v0.21.15 WS3 · 点位标记是否落在可见窗口内 (无 overflow 裁剪, 窗口外书签/issue/关键帧/离网格标记须跳过)。
   const frameInWindow = (frame: number) =>
     frame >= timelineWindow.from && frame <= timelineWindow.to;
+  const reviewRangeStyle = (from: number, to: number): CSSVars => {
+    // An inclusive review window can contain only the first or last source frame.
+    if (from === to && frameInWindow(from)) {
+      return {
+        "--timeline-left": `${Math.min(99.5, frameToPct(from, timelineWindow))}%`,
+        "--timeline-width": "0.5%",
+      };
+    }
+    return rangeStyle(from, to);
+  };
   // v0.21.15 WS3 · 密度 bin 按其帧区间 [from, to] 经窗口映射 (替代 index/binCount 等宽), 完全窗口外返回 null。
   const binWindowStyle = (from: number, to: number): CSSVars | null => {
     const rawLeft = frameToPct(from, timelineWindow);
@@ -714,6 +729,44 @@ export function VideoPlaybackOverlay({
   const showPropagationLane = Boolean(propagateRange) || rangeDraft?.purpose === "propagate-range";
   const showSegmentLane = Boolean(segmentRange);
   const showLoopLane = Boolean(loopRegion) || rangeDraft?.purpose === "loop";
+  const reviewSummary = trackerReview && (
+    <div
+      data-workbench-tracker-review
+      className={cn(
+        "col-span-full flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 rounded bg-card px-2 py-1 text-2xs text-card-foreground",
+        isInteractive && styles.interactive,
+      )}
+      onPointerDown={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+    >
+      <span data-testid="timeline-tracker-review-scope" data-review-job-id={trackerReview.jobId}>
+        审阅 {trackerReview.scope.instanceIds.length} 个目标 · F{trackerReview.scope.fromFrame}–F
+        {trackerReview.scope.toFrame} · 所选待审 {trackerReview.selectedPending} · 全部待审{" "}
+        {trackerReview.jobPending}
+      </span>
+      {trackerReview.remainingIntervals.length > 0 && (
+        <div className="flex min-w-0 max-w-full items-center gap-1 overflow-x-auto">
+          <span className="shrink-0 text-muted-foreground">剩余</span>
+          {trackerReview.remainingIntervals.map(({ fromFrame, toFrame }) => (
+            <Button
+              key={`${fromFrame}:${toFrame}`}
+              type="button"
+              size="xs"
+              variant="ghost"
+              disabled={!isInteractive || !onSeekReviewFrame}
+              data-testid={`timeline-tracker-review-remaining-${fromFrame}-${toFrame}`}
+              aria-label={`查看剩余区间 F${fromFrame}–F${toFrame}`}
+              onClick={() => onSeekReviewFrame?.(fromFrame)}
+              className="shrink-0 tabular-nums"
+            >
+              F{fromFrame}–F{toFrame}
+            </Button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
   const toggleTimelineDetails = () => {
     restoreToggleFocusRef.current = true;
     const update = () => setExpanded((value) => !value);
@@ -1384,6 +1437,27 @@ export function VideoPlaybackOverlay({
             </div>
           )}
 
+          {trackerReview && (
+            <div
+              data-testid="video-timeline-lane-tracker-review"
+              data-review-job-id={trackerReview.jobId}
+              className={styles.laneRow}
+            >
+              <span className={styles.laneLabel}>追踪审阅</span>
+              <div className={styles.laneBody}>
+                <TimelineSpan
+                  data-testid="timeline-tracker-review-window"
+                  title={`审阅 F${trackerReview.scope.fromFrame}–F${trackerReview.scope.toFrame}`}
+                  className={styles.reviewRegion}
+                  vars={reviewRangeStyle(
+                    trackerReview.scope.fromFrame,
+                    trackerReview.scope.toFrame,
+                  )}
+                />
+              </div>
+            </div>
+          )}
+
           {showPropagationLane && (
             <div data-testid="video-timeline-lane-propagation" className={styles.laneRow}>
               <span className={styles.laneLabel}>AI 影响范围</span>
@@ -1430,6 +1504,7 @@ export function VideoPlaybackOverlay({
           )}
         </div>
 
+        {reviewSummary}
         {statusBar}
       </div>
     );
@@ -1834,6 +1909,7 @@ export function VideoPlaybackOverlay({
         )}
       </div>
       {timelineToggleButton}
+      {reviewSummary}
     </div>
   );
 }

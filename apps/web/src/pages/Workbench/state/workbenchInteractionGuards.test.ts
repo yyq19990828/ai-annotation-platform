@@ -3,7 +3,7 @@ import { isWorkbenchInteractionBlocked } from "./workbenchInteractionGuards";
 
 afterEach(() => document.body.replaceChildren());
 
-it.each(["workbenchAiToolbar", "workbenchTrackContext"])(
+it.each(["workbenchAiToolbar", "workbenchTrackContext", "workbenchTrackerReview"])(
   "%s controls keep their input while canvas shortcuts remain available",
   (marker) => {
     const toolbar = document.createElement("div");
@@ -17,7 +17,7 @@ it.each(["workbenchAiToolbar", "workbenchTrackContext"])(
       expect(event.defaultPrevented).toBe(false);
     });
     button.addEventListener("keydown", check);
-    button.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
+    button.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
     expect(check).toHaveBeenCalledOnce();
   },
 );

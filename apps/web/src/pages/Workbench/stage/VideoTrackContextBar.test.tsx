@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { projectTrackerReview } from "@/hooks/videoTrackerReviewScope";
 import { VideoTrackContextBar, type VideoTrackContextBarProps } from "./VideoTrackContextBar";
 
 function props(overrides: Partial<VideoTrackContextBarProps> = {}): VideoTrackContextBarProps {
@@ -25,6 +26,25 @@ function props(overrides: Partial<VideoTrackContextBarProps> = {}): VideoTrackCo
     actions: [{ id: "add-keyframe", label: "补关键帧", onClick: vi.fn() }],
     ...overrides,
   };
+}
+
+function reviewProjection() {
+  return projectTrackerReview(
+    {
+      job_id: "review-job",
+      status: "pending_review",
+      annotation_id: "annotation-1",
+      grid_step: 1,
+      output_geometry: "bbox",
+      results: [
+        { instance_id: "A", frame_index: 0, geometry: { type: "bbox", x: 0, y: 0, w: 1, h: 1 } },
+        { instance_id: "A", frame_index: 3, geometry: { type: "bbox", x: 0, y: 0, w: 1, h: 1 } },
+        { instance_id: "B", frame_index: 7, geometry: { type: "bbox", x: 0, y: 0, w: 1, h: 1 } },
+      ],
+    },
+    { instanceIds: ["A"], fromFrame: 0, toFrame: 4, intentRevision: 1 },
+    1,
+  );
 }
 
 describe("VideoTrackContextBar", () => {
@@ -200,5 +220,82 @@ describe("VideoTrackContextBar", () => {
     } finally {
       window.removeEventListener("keydown", capturedPath, true);
     }
+  });
+
+  it("shows the controlled review scope without a selected reference track", () => {
+    render(
+      <VideoTrackContextBar
+        {...props({ track: null, context: null, trackerReview: reviewProjection() })}
+      />,
+    );
+    expect(screen.getByTestId("video-track-review-scope")).toHaveTextContent(
+      "审阅 1 个目标 · F0–F4 · 所选待审 2 · 全部待审 3",
+    );
+    expect(screen.getByTestId("video-track-review-scope")).toHaveAttribute(
+      "data-review-job-id",
+      "review-job",
+    );
+    expect(screen.getByRole("button", { name: "加入审阅目标" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "替换审阅目标" })).toBeDisabled();
+    expect(screen.getByText("选择参考轨迹以加入或替换审阅目标")).toBeVisible();
+  });
+
+  it.each(["locked", "readOnly"] as const)(
+    "allows explicit review target changes while reference geometry is %s",
+    (protection) => {
+      const initial = props({ trackerReview: reviewProjection() });
+      const reference = { instanceIds: ["B"], onAdd: vi.fn(), onReplace: vi.fn() };
+      render(
+        <VideoTrackContextBar
+          {...initial}
+          track={{ ...initial.track!, [protection]: true }}
+          reviewReference={reference}
+        />,
+      );
+      expect(screen.queryByRole("button", { name: "补关键帧" })).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "加入审阅目标" }));
+      fireEvent.click(screen.getByRole("button", { name: "替换审阅目标" }));
+      expect(reference.onAdd).toHaveBeenCalledOnce();
+      expect(reference.onReplace).toHaveBeenCalledOnce();
+      expect(initial.onSeekFrame).not.toHaveBeenCalled();
+      expect(initial.actions![0].onClick).not.toHaveBeenCalled();
+      expect(screen.getByTestId("video-track-review-scope")).toHaveTextContent("审阅 1 个目标");
+    },
+  );
+
+  it("viewing another source frame or reference does not change review targets", () => {
+    const reference = { instanceIds: ["B"], onAdd: vi.fn(), onReplace: vi.fn() };
+    const initial = props({ trackerReview: reviewProjection(), reviewReference: reference });
+    const { rerender } = render(<VideoTrackContextBar {...initial} />);
+    rerender(
+      <VideoTrackContextBar
+        {...initial}
+        frameIndex={32}
+        track={{ ...initial.track!, shortId: "#8", className: "行人" }}
+        context={null}
+      />,
+    );
+    expect(screen.getByText("行人")).toBeVisible();
+    expect(screen.getByTestId("video-track-context-frame")).toHaveTextContent("F32");
+    expect(screen.getByTestId("video-track-review-scope")).toHaveTextContent(
+      "审阅 1 个目标 · F0–F4 · 所选待审 2 · 全部待审 3",
+    );
+    expect(reference.onAdd).not.toHaveBeenCalled();
+    expect(reference.onReplace).not.toHaveBeenCalled();
+  });
+
+  it("explains why an unrelated reference cannot add or replace review targets", () => {
+    const reference = { instanceIds: [], onAdd: vi.fn(), onReplace: vi.fn() };
+    render(
+      <VideoTrackContextBar
+        {...props({ trackerReview: reviewProjection(), reviewReference: reference })}
+      />,
+    );
+    expect(screen.getByText("当前参考轨迹没有可加入的待审目标")).toBeVisible();
+    expect(screen.getByRole("button", { name: "加入审阅目标" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "替换审阅目标" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "加入审阅目标" }));
+    expect(reference.onAdd).not.toHaveBeenCalled();
+    expect(reference.onReplace).not.toHaveBeenCalled();
   });
 });

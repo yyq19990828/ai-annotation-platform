@@ -362,5 +362,13 @@ export function useVideoMaskFrames(params: {
     [],
   );
 
-  return records;
+  return useMemo(() => {
+    // Review scope changes retire old staged visuals before another job finishes decoding.
+    const activeTrackerKeys = new Set(
+      descriptors.filter((descriptor) => descriptor.source === "tracker").map(cacheKey),
+    );
+    return records.filter(
+      (record) => record.source !== "tracker" || activeTrackerKeys.has(record.cacheKey),
+    );
+  }, [descriptors, records]);
 }

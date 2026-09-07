@@ -189,6 +189,7 @@ import { aiBoxOnFrame } from "../stage/aiBoxFrames";
 import type { AnnotationCommentAnchor } from "@/api/comments";
 import { useUpdateVideoChapter, useVideoChapters } from "@/hooks/useVideoChapters";
 import { useVideoTrackerJobs } from "@/hooks/useVideoTrackerJobs";
+import { referenceReviewInstanceIds } from "@/hooks/videoTrackerReviewScope";
 import type { VideoTrackAnnotation } from "../stage/videoStageTypes";
 import type { StageKind } from "../stages/types";
 import {
@@ -2781,6 +2782,7 @@ export function useWorkbenchShellModel({
     requestTool: requestVideoTool,
     requestScope: requestVideoToolScope,
     requestSelection: requestVideoSelection,
+    requestFrame: requestVideoReviewFrame,
     requestTemporaryTool: requestTemporaryVideoTool,
     confirmationOpen: videoToolConfirmationOpen,
     settleConfirmation: settleVideoToolConfirmation,
@@ -6580,22 +6582,42 @@ export function useWorkbenchShellModel({
       ].sort((a, b) => a - b),
     }));
 
-  // v0.21.28 · 候选/接受: 本任务的待审候选 (candidates 按 jobId, 用 jobs[jobId].taskId 过滤)。
-  // 普通计算 (非 hook): 位于早返回之后, 且计算便宜。
-  const trackerReviewEntry =
-    Object.entries(trackerJobs.candidates).find(
-      ([jobId]) => trackerJobs.jobs[jobId]?.taskId === taskId,
-    ) ?? null;
-  const trackerReviewCandidate = trackerReviewEntry
-    ? { jobId: trackerReviewEntry[0], preview: trackerReviewEntry[1] }
-    : null;
+  // The existing tracker owner projects one review scope to every surface.
+  const trackerReviewCandidate =
+    trackerJobs.activeReview && trackerJobs.jobs[trackerJobs.activeReview.jobId]?.taskId === taskId
+      ? trackerJobs.activeReview
+      : null;
+  const reviewReferenceIds = trackerReviewCandidate
+    ? referenceReviewInstanceIds(trackerReviewCandidate.preview, s.selectedId)
+    : [];
+  const reviewReference = trackerReviewCandidate
+    ? {
+        instanceIds: reviewReferenceIds,
+        onAdd: () =>
+          trackerJobs.setReviewInstances([
+            ...new Set([...trackerReviewCandidate.scope.instanceIds, ...reviewReferenceIds]),
+          ]),
+        onReplace: () => trackerJobs.setReviewInstances(reviewReferenceIds),
+      }
+    : undefined;
+  const seekTrackerReviewFrame = (frameIndex: number) => {
+    if (!trackerReviewCandidate) return;
+    const { intentKey } = trackerReviewCandidate;
+    const target = currentVideoSegment
+      ? Math.max(
+          currentVideoSegment.work_start_frame,
+          Math.min(currentVideoSegment.work_end_frame, frameIndex),
+        )
+      : frameIndex;
+    requestVideoReviewFrame(target, () => trackerJobs.isReviewIntentCurrent(intentKey));
+  };
   const trackerReviewMultiObj = trackerReviewCandidate
     ? new Set(trackerReviewCandidate.preview.results.map((r) => r.instance_id ?? "1")).size > 1
     : false;
   // 候选当前帧的框 (bbox 几何) → overlay 预览 (复用 samSessionBoxes 通道, 多目标逐 obj 配色)。
   const candidateBoxesThisFrame: { bbox: [number, number, number, number]; obj?: number }[] =
     trackerReviewCandidate
-      ? trackerReviewCandidate.preview.results
+      ? trackerReviewCandidate.selectedResults
           .filter(
             (r) =>
               r.frame_index === s.videoFrameIndex &&
@@ -6611,7 +6633,7 @@ export function useWorkbenchShellModel({
           })
       : [];
   const candidateMasksThisFrame = trackerReviewCandidate
-    ? trackerReviewCandidate.preview.results
+    ? trackerReviewCandidate.selectedResults
         .filter(
           (result) =>
             result.frame_index === s.videoFrameIndex &&
@@ -7211,6 +7233,9 @@ export function useWorkbenchShellModel({
         videoChapters: isVideoTask ? videoTimelineChapters : undefined,
         videoTimelineChapterControls,
         videoPropagateRange: propagateHighlight,
+        trackerReview: trackerReviewCandidate,
+        reviewReference,
+        onSeekReviewFrame: seekTrackerReviewFrame,
         videoSegmentRange:
           videoCollaborationEnabled && activeVideoSegment
             ? {
@@ -7754,8 +7779,18 @@ export function useWorkbenchShellModel({
 
   // v0.21.28 · 候选/接受审阅条 props。
   const trackerReviewProps: ComponentProps<typeof VideoTrackerReviewBar> = {
-    open: Boolean(trackerReviewCandidate),
-    preview: trackerReviewCandidate?.preview ?? null,
+    review: trackerReviewCandidate,
+    jobs: Object.keys(trackerJobs.candidates)
+      .filter((jobId) => trackerJobs.jobs[jobId]?.taskId === taskId)
+      .map((jobId) => ({
+        jobId,
+        label: `${trackerJobs.jobs[jobId].modelKey} · ${jobId.slice(0, 8)}`,
+      })),
+    onChooseJob: trackerJobs.chooseReviewJob,
+    onSetInstances: trackerJobs.setReviewInstances,
+    onSetWindow: trackerJobs.setReviewWindow,
+    onSeekFrame: seekTrackerReviewFrame,
+    isIntentCurrent: trackerJobs.isReviewIntentCurrent,
     submitting: trackerReviewCandidate
       ? Boolean(trackerJobs.submitting[trackerReviewCandidate.jobId])
       : false,

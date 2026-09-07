@@ -386,6 +386,7 @@ export function VideoTrackPanel({
                 <div
                   key={ann.render_key ?? ann.id}
                   data-testid="video-track-row"
+                  data-annotation-id={ann.id}
                   data-workbench-video-tool-command={onSelectVideoObject ? "" : undefined}
                   aria-selected={selected}
                   onClick={(e) => {

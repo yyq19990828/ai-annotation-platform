@@ -59,6 +59,54 @@ function deferred() {
 }
 
 describe("explicit video tool commands", () => {
+  it("review navigation preserves the reference selection and explicit tool scope", () => {
+    const { result } = setup();
+    act(() => result.current.commands.requestSelection("video_track_bbox"));
+    act(() => result.current.commands.requestSelection("video_track_polygon", { shift: true }));
+    act(() => result.current.commands.requestTool("box"));
+    act(() => result.current.commands.requestFrame(16, () => true));
+    expect(result.current.state.videoFrameIndex).toBe(16);
+    expect(result.current.state.selectedIds).toEqual(["video_track_bbox", "video_track_polygon"]);
+    expect(result.current.state.videoTool).toBe("box");
+    expect(result.current.state.videoToolScope).toBe("frame");
+  });
+
+  it("review navigation uses stage seeking only after the drawing guard admits it", async () => {
+    const seekToFrame = vi.fn();
+    const pausePlayback = vi.fn();
+    const discardDrawingDraft = vi.fn();
+    const { result } = setup({
+      controlsRef: {
+        current: {
+          getDrawingDraft: () => ({ kind: "points", tool: "polygon", frameIndex: 0 }),
+          discardDrawingDraft,
+          pausePlayback,
+          seekToFrame,
+        } as unknown as VideoStageControls,
+      },
+    });
+    act(() => result.current.commands.requestFrame(16, () => true));
+    expect(result.current.commands.confirmationOpen).toBe(true);
+    await act(async () => result.current.commands.settleConfirmation(false));
+    expect(seekToFrame).not.toHaveBeenCalled();
+    expect(discardDrawingDraft).not.toHaveBeenCalled();
+    act(() => result.current.commands.requestFrame(16, () => true));
+    await act(async () => result.current.commands.settleConfirmation(true));
+    expect(discardDrawingDraft).toHaveBeenCalledOnce();
+    expect(pausePlayback).toHaveBeenCalledWith({ snapToGrid: false });
+    expect(seekToFrame).toHaveBeenCalledWith(16, { recordHistory: true });
+  });
+
+  it("a changed review intent retires navigation waiting for a Mask save", async () => {
+    const save = deferred();
+    let currentReview = true;
+    const { result } = setup({ needsMaskGuard: true, guardMask: () => save.promise });
+    act(() => result.current.commands.requestFrame(16, () => currentReview));
+    currentReview = false;
+    await act(async () => save.resolve(true));
+    expect(result.current.state.videoFrameIndex).toBe(0);
+  });
+
   it.each(tracks)(
     "%s selection maps once and explicit frame commands survive refetch",
     (type, tool) => {

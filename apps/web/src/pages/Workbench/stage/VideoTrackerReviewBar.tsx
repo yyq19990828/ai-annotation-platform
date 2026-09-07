@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Bot, Check, RefreshCw, ShieldAlert, X } from "lucide-react";
 
 import type { VideoTrackerJobPreview } from "@/api/videoTracker";
+import type { TrackerReviewProjection } from "@/hooks/videoTrackerReviewScope";
 import type {
   TrackerReviewDecision,
   TrackerReviewDecisionOutcome,
@@ -10,15 +11,16 @@ import type {
 import { Button } from "@/components/ui/Button";
 
 export interface VideoTrackerReviewBarProps {
-  open: boolean;
-  preview: VideoTrackerJobPreview | null;
+  review: TrackerReviewProjection | null;
+  jobs: Array<{ jobId: string; label: string }>;
   submitting?: boolean;
+  onChooseJob: (jobId: string) => void;
+  onSetInstances: (instanceIds: string[]) => void;
+  onSetWindow: (fromFrame: number, toFrame: number) => void;
+  onSeekFrame: (frame: number) => void;
   onDecide: (selection: TrackerReviewDecision) => Promise<TrackerReviewDecisionOutcome>;
   onRefresh: () => void;
-}
-
-function instanceKey(value: string | null | undefined): string {
-  return value ?? "1";
+  isIntentCurrent: (intentKey: string) => boolean;
 }
 
 function directionLabel(direction: VideoTrackerJobPreview["direction"]): string {
@@ -29,71 +31,100 @@ function directionLabel(direction: VideoTrackerJobPreview["direction"]): string 
 }
 
 export function VideoTrackerReviewBar({
-  open,
-  preview,
+  review,
+  jobs,
   submitting = false,
+  onChooseJob,
+  onSetInstances,
+  onSetWindow,
+  onSeekFrame,
   onDecide,
   onRefresh,
+  isIntentCurrent,
 }: VideoTrackerReviewBarProps) {
-  const instances = useMemo(
-    () =>
-      [...new Set((preview?.results ?? []).map((item) => instanceKey(item.instance_id)))].sort(),
-    [preview?.results],
-  );
-  const frames = (preview?.results ?? []).map((item) => item.frame_index);
-  const minFrame = frames.length > 0 ? Math.min(...frames) : 0;
-  const maxFrame = frames.length > 0 ? Math.max(...frames) : 0;
-  const [selectedInstances, setSelectedInstances] = useState<string[]>([]);
-  const [fromFrame, setFromFrame] = useState(0);
-  const [toFrame, setToFrame] = useState(0);
-
+  const mountedRef = useRef(true);
+  const pendingIntentsRef = useRef(new Set<string>());
+  const [pendingIntents, setPendingIntents] = useState<ReadonlySet<string>>(() => new Set());
+  const latestRef = useRef({ review, isIntentCurrent });
+  latestRef.current = { review, isIntentCurrent };
   useEffect(() => {
-    setSelectedInstances(instances);
-    setFromFrame(minFrame);
-    setToFrame(maxFrame);
-  }, [instances, maxFrame, minFrame, preview?.job_id, preview?.job_revision]);
-
-  const selected = (preview?.results ?? []).filter(
-    (item) =>
-      selectedInstances.includes(instanceKey(item.instance_id)) &&
-      item.frame_index >= fromFrame &&
-      item.frame_index <= toFrame,
-  );
-  const manualCount = selected.filter((item) => item.manual_protected).length;
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  const preview = review?.preview;
   const total =
     preview?.candidate_total ??
     (preview?.results.length ?? 0) +
       (preview?.candidate_accepted ?? 0) +
       (preview?.candidate_rejected ?? 0);
   const resolved = (preview?.candidate_accepted ?? 0) + (preview?.candidate_rejected ?? 0);
-  const disabled = submitting || selected.length === 0 || fromFrame > toFrame;
+  const disabled =
+    submitting ||
+    !review ||
+    pendingIntents.has(review.intentKey) ||
+    review.selectedPending === 0 ||
+    review.scope.fromFrame > review.scope.toFrame;
   const isCorrection = preview?.job_kind === "correction";
 
   const submit = async (decision: "accept" | "reject") => {
+    if (
+      !review ||
+      disabled ||
+      pendingIntentsRef.current.has(review.intentKey) ||
+      !isIntentCurrent(review.intentKey)
+    )
+      return;
+    const { intentKey, jobId, scope } = review;
+    const decide = onDecide;
     const selection: TrackerReviewDecision = {
-      instance_ids: selectedInstances,
-      from_frame: fromFrame,
-      to_frame: toFrame,
+      instance_ids: [...scope.instanceIds],
+      from_frame: scope.fromFrame,
+      to_frame: scope.toFrame,
       decision,
       override_manual: false,
     };
-    const outcome = await onDecide(selection);
-    if (
-      decision === "accept" &&
-      outcome.reason === "manual_keyframe_protected" &&
-      window.confirm("选区包含受保护的人工关键帧，确认用追踪候选覆盖这些帧吗？")
-    ) {
-      await onDecide({ ...selection, override_manual: true });
+    const isCurrent = () =>
+      mountedRef.current &&
+      latestRef.current.review?.jobId === jobId &&
+      latestRef.current.review.intentKey === intentKey &&
+      latestRef.current.isIntentCurrent(intentKey);
+    pendingIntentsRef.current.add(intentKey);
+    setPendingIntents(new Set(pendingIntentsRef.current));
+    try {
+      const outcome = await decide(selection);
+      if (
+        decision === "accept" &&
+        outcome.reason === "manual_keyframe_protected" &&
+        isCurrent() &&
+        window.confirm("选区包含受保护的人工关键帧，确认用追踪候选覆盖这些帧吗？") &&
+        isCurrent()
+      ) {
+        await decide({ ...selection, override_manual: true });
+      }
+    } finally {
+      pendingIntentsRef.current.delete(intentKey);
+      if (mountedRef.current) setPendingIntents(new Set(pendingIntentsRef.current));
     }
   };
 
-  if (!open || !preview) return null;
+  if (!review || !preview) return null;
+  const { scope, availableInstanceIds, selectedPending, jobPending, manualCount } = review;
+  const frames = preview.results.map((item) => item.frame_index);
+  const minFrame = preview.from_frame ?? (frames.length ? Math.min(...frames) : 0);
+  const maxFrame = preview.to_frame ?? (frames.length ? Math.max(...frames) : scope.toFrame);
   return (
     <div
       role="dialog"
       aria-label={isCorrection ? "Mask 纠错候选审阅" : "AI 追踪候选审阅"}
       aria-live="polite"
+      data-workbench-tracker-review
+      data-review-job-id={review.jobId}
       data-testid="video-tracker-review-bar"
+      onPointerDown={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
       className="absolute left-1/2 top-3 z-workbench-modal w-[min(46rem,calc(100%-1.5rem))] -translate-x-1/2 overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-xl"
     >
       <div className="flex flex-col gap-3 p-4">
@@ -103,11 +134,34 @@ export function VideoTrackerReviewBar({
               <Bot className="size-4" />
             </span>
             <div className="flex min-w-0 flex-col gap-1">
-              <h2 className="text-sm font-semibold tracking-tight">
-                {isCorrection ? "Mask 纠错传播候选" : "AI 追踪候选"}
-              </h2>
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <h2 className="text-sm font-semibold tracking-tight">
+                  {isCorrection ? "Mask 纠错传播候选" : "AI 追踪候选"}
+                </h2>
+                <select
+                  aria-label="审阅追踪任务"
+                  data-testid="tracker-review-job"
+                  value={review.jobId}
+                  onChange={(event) => onChooseJob(event.target.value)}
+                  className="h-7 min-w-0 max-w-56 rounded-md border border-border bg-background px-2 text-xs text-foreground"
+                >
+                  {jobs.map((job) => (
+                    <option key={job.jobId} value={job.jobId}>
+                      {job.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <p className="text-xs leading-relaxed text-muted-foreground">
-                已审 {resolved}/{total}，当前选区 {selected.length} 个候选；确认后才写入轨迹。
+                已审 {resolved}/{total}；确认后才写入轨迹。
+              </p>
+              <p
+                data-testid="tracker-review-scope-summary"
+                data-review-job-id={review.jobId}
+                className="text-xs leading-relaxed text-foreground"
+              >
+                审阅 {scope.instanceIds.length} 个目标 · F{scope.fromFrame}–F{scope.toFrame} ·
+                所选待审 {selectedPending} · 全部待审 {jobPending}
               </p>
               {isCorrection ? (
                 <p
@@ -131,16 +185,16 @@ export function VideoTrackerReviewBar({
         <div className="grid gap-3 rounded-lg border border-border bg-muted/20 p-3 sm:grid-cols-[1fr_auto]">
           <fieldset className="flex min-w-0 flex-wrap gap-x-3 gap-y-2">
             <legend className="mb-2 text-2xs font-medium text-muted-foreground">目标</legend>
-            {instances.map((instanceId) => (
+            {availableInstanceIds.map((instanceId) => (
               <label key={instanceId} className="flex items-center gap-1.5 text-xs">
                 <input
                   type="checkbox"
-                  checked={selectedInstances.includes(instanceId)}
+                  checked={scope.instanceIds.includes(instanceId)}
                   onChange={(event) =>
-                    setSelectedInstances((current) =>
+                    onSetInstances(
                       event.target.checked
-                        ? [...current, instanceId]
-                        : current.filter((item) => item !== instanceId),
+                        ? [...scope.instanceIds, instanceId]
+                        : scope.instanceIds.filter((item) => item !== instanceId),
                     )
                   }
                   data-testid={`tracker-review-instance-${instanceId}`}
@@ -156,8 +210,11 @@ export function VideoTrackerReviewBar({
                 type="number"
                 min={minFrame}
                 max={maxFrame}
-                value={fromFrame}
-                onChange={(event) => setFromFrame(Number(event.target.value))}
+                value={scope.fromFrame}
+                onChange={(event) => {
+                  const value = event.currentTarget.valueAsNumber;
+                  if (Number.isFinite(value)) onSetWindow(value, scope.toFrame);
+                }}
                 data-testid="tracker-review-from-frame"
                 className="h-8 w-20 rounded-md border border-border bg-background px-2 text-xs text-foreground"
               />
@@ -168,13 +225,36 @@ export function VideoTrackerReviewBar({
                 type="number"
                 min={minFrame}
                 max={maxFrame}
-                value={toFrame}
-                onChange={(event) => setToFrame(Number(event.target.value))}
+                value={scope.toFrame}
+                onChange={(event) => {
+                  const value = event.currentTarget.valueAsNumber;
+                  if (Number.isFinite(value)) onSetWindow(scope.fromFrame, value);
+                }}
                 data-testid="tracker-review-to-frame"
                 className="h-8 w-20 rounded-md border border-border bg-background px-2 text-xs text-foreground"
               />
             </label>
           </div>
+        </div>
+
+        <div className="flex max-h-16 flex-wrap items-center gap-x-2 gap-y-1 overflow-y-auto text-2xs text-muted-foreground">
+          <span>剩余区间</span>
+          {review.remainingIntervals.map(({ fromFrame, toFrame }) => (
+            <Button
+              key={`${fromFrame}:${toFrame}`}
+              type="button"
+              variant="ghost"
+              size="xs"
+              data-testid={`tracker-review-remaining-${fromFrame}-${toFrame}`}
+              aria-label={`查看剩余区间 F${fromFrame}–F${toFrame}`}
+              onClick={() => onSeekFrame(fromFrame)}
+              className="tabular-nums"
+            >
+              F{fromFrame}–F{toFrame}
+            </Button>
+          ))}
+          {review.remainingIntervals.length === 0 && <span>暂无剩余候选</span>}
+          {selectedPending === 0 && jobPending > 0 && <span>当前范围暂无待审候选</span>}
         </div>
 
         {manualCount > 0 ? (

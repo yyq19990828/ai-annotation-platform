@@ -2,12 +2,18 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AnnotationResponse } from "@/types";
 import type { AiBox } from "../state/transforms";
-import { buildTintedMaskRgba, maskAlphaBounds, useVideoMaskFrames } from "./videoMaskFrames";
+import {
+  buildTintedMaskRgba,
+  maskAlphaBounds,
+  useVideoMaskFrames,
+  type VideoMaskCandidate,
+} from "./videoMaskFrames";
 
 const apiMocks = vi.hoisted(() => ({
   annotationRasterMaskContent: vi.fn(),
   annotationVideoMaskContent: vi.fn(),
   predictionVideoMaskContent: vi.fn(),
+  trackerMaskContent: vi.fn(),
 }));
 
 vi.mock("@/api/rasterMasks", () => ({
@@ -19,7 +25,7 @@ vi.mock("@/api/rasterMasks", () => ({
 }));
 
 vi.mock("@/api/videoTracker", () => ({
-  videoTrackerApi: { maskContent: vi.fn() },
+  videoTrackerApi: { maskContent: apiMocks.trackerMaskContent },
 }));
 
 describe("video mask frame helpers", () => {
@@ -43,6 +49,7 @@ describe("useVideoMaskFrames", () => {
     apiMocks.annotationRasterMaskContent.mockReset();
     apiMocks.annotationVideoMaskContent.mockReset();
     apiMocks.predictionVideoMaskContent.mockReset();
+    apiMocks.trackerMaskContent.mockReset();
     vi.stubGlobal(
       "createImageBitmap",
       vi.fn(async () => ({ close: vi.fn() })),
@@ -57,6 +64,80 @@ describe("useVideoMaskFrames", () => {
         ) {}
       },
     );
+  });
+
+  it("retires the previous review job's Mask immediately while the new job is decoding", async () => {
+    const rle = {
+      encoding: "coco_rle" as const,
+      size: [2, 3] as [number, number],
+      counts: [1, 2, 3],
+    };
+    const candidate = (jobId: string): VideoMaskCandidate => ({
+      jobId,
+      result: {
+        frame_index: 4,
+        instance_id: "A",
+        geometry: {
+          type: "mask",
+          mask: {
+            encoding: "coco_rle_ref",
+            size: [2, 3],
+            object_key: `raster-masks/sha256/aa/aa/${"a".repeat(64)}.json`,
+            sha256: "a".repeat(64),
+            runs: 3,
+            bytes: 64,
+          },
+        },
+      },
+    });
+    let resolveMask!: (value: typeof rle) => void;
+    apiMocks.trackerMaskContent.mockResolvedValueOnce(rle).mockImplementationOnce(
+      () =>
+        new Promise<typeof rle>((resolve) => {
+          resolveMask = resolve;
+        }),
+    );
+    const color = () => "#ff0000";
+    const annotations: AnnotationResponse[] = [];
+    const predictions: AiBox[] = [];
+    const { result, rerender } = renderHook(
+      ({ candidates }: { candidates: VideoMaskCandidate[] }) =>
+        useVideoMaskFrames({
+          taskId: "task-1",
+          annotations,
+          predictions,
+          candidates,
+          frameIndex: 4,
+          selectedId: null,
+          colorForAnnotation: color,
+          colorForPrediction: color,
+        }),
+      { initialProps: { candidates: [candidate("job-a")] } },
+    );
+    await waitFor(() =>
+      expect(result.current.map((record) => record.id)).toEqual(["tracker:job-a:A:4"]),
+    );
+    rerender({ candidates: [candidate("job-b")] });
+    expect(result.current).toEqual([]);
+    await act(async () => resolveMask(rle));
+    expect(result.current.map((record) => record.id)).toEqual(["tracker:job-b:A:4"]);
+    let resolveRetired!: (value: typeof rle) => void;
+    apiMocks.trackerMaskContent.mockImplementationOnce(
+      () =>
+        new Promise<typeof rle>((resolve) => {
+          resolveRetired = resolve;
+        }),
+    );
+    rerender({ candidates: [candidate("job-c")] });
+    expect(result.current).toEqual([]);
+    rerender({ candidates: [candidate("job-a")] });
+    await waitFor(() =>
+      expect(result.current.map((record) => record.id)).toEqual(["tracker:job-a:A:4"]),
+    );
+    await act(async () => resolveRetired(rle));
+    expect(result.current.map((record) => record.id)).toEqual(["tracker:job-a:A:4"]);
+    rerender({ candidates: [] });
+    expect(result.current).toEqual([]);
   });
 
   it("单帧 video_mask 只在所属帧加载静态内容并归入人工对象", async () => {

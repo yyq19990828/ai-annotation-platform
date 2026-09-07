@@ -1,5 +1,6 @@
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import type { TrackerReviewProjection } from "@/hooks/videoTrackerReviewScope";
 import { cn } from "@/lib/utils";
 import { VideoStickyTrackHint } from "./VideoStickyTrackHint";
 
@@ -30,6 +31,8 @@ export interface VideoTrackContextBarProps {
   }>;
   shortcuts?: ReadonlyArray<{ key: string; label: string }>;
   stickyHint?: { label: string; hasKeyframeAtFrame: boolean } | null;
+  trackerReview?: TrackerReviewProjection | null;
+  reviewReference?: { instanceIds: string[]; onAdd: () => void; onReplace: () => void };
 }
 
 type FrameContext = NonNullable<VideoTrackContextBarProps["context"]>;
@@ -70,6 +73,8 @@ export function VideoTrackContextBar({
   actions = [],
   shortcuts = [],
   stickyHint,
+  trackerReview = null,
+  reviewReference,
 }: VideoTrackContextBarProps) {
   const state = context?.state ?? "unavailable";
   const source = context?.source ?? "unknown";
@@ -195,6 +200,47 @@ export function VideoTrackContextBar({
             </div>
           )}
         </div>
+        {trackerReview && (
+          <div
+            data-workbench-tracker-review
+            className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-2xs"
+          >
+            <span
+              data-testid="video-track-review-scope"
+              data-review-job-id={trackerReview.jobId}
+              className="text-foreground"
+            >
+              审阅 {trackerReview.scope.instanceIds.length} 个目标 · F
+              {trackerReview.scope.fromFrame}–F{trackerReview.scope.toFrame} · 所选待审{" "}
+              {trackerReview.selectedPending} · 全部待审 {trackerReview.jobPending}
+            </span>
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              disabled={!reviewReference?.instanceIds.length}
+              onClick={reviewReference?.onAdd}
+              className={BUTTON_CLASS}
+            >
+              加入审阅目标
+            </Button>
+            <Button
+              type="button"
+              size="xs"
+              variant="ghost"
+              disabled={!reviewReference?.instanceIds.length}
+              onClick={reviewReference?.onReplace}
+              className={BUTTON_CLASS}
+            >
+              替换审阅目标
+            </Button>
+            {!reviewReference?.instanceIds.length && (
+              <span className="text-muted-foreground">
+                {track ? "当前参考轨迹没有可加入的待审目标" : "选择参考轨迹以加入或替换审阅目标"}
+              </span>
+            )}
+          </div>
+        )}
         {(shortcuts.length > 0 || (track && stickyHint)) && (
           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-2xs text-muted-foreground">
             {shortcuts.slice(0, 5).map((shortcut) => (

@@ -159,6 +159,16 @@ Inspector 的候选属性按候选自身的工具单位读取 schema，由原候
 
 视频工具命令带 `data-workbench-video-tool-command`，类别弹窗在外部点击捕获阶段让位，避免确认前保存未知类别；标记只接管原生激活和导航键，普通工具字母仍可使用。绘制确认框使用 `data-workbench-video-tool-confirm`，打开时所有背景监听让位。
 
+### 视频追踪审阅范围
+
+`TrackerJobStore` 在原有 jobs、candidates 和提交生命周期内保存当前审阅作业，以及每个作业的目标 ID、源帧窗口和意图代次。`videoTrackerReviewScope` 只派生可用目标、选区内候选、未决计数和真实剩余帧区间，不持有另一份候选数据。Shell 将同一个 projection 传给审阅条、当前轨迹条和时间轴，bbox 与 Mask 画布预览先按这个选区过滤，再按当前源帧过滤。
+
+新候选只在没有当前审阅作业时选择默认作业；后续到达或刷新不能抢走已选作业。切换作业保留各自范围，revision 更新只与仍合法的目标求交，不添加未选目标或扩大窗口。选区为空时保留零未决状态，剩余区间入口只导航，不隐式改变选区。参考轨迹通过候选的 source / target annotation ID 映射，只有明确加入或替换命令才更新目标。
+
+任务 epoch、作业 generation 与请求所有权保护恢复、预览及决定后的异步写入；旧任务的响应不得复活候选，新 preview 不被旧 revision 覆盖。同一任务内旧作业已经落库的结果仍可更新其缓存，但不能重选该作业或覆盖当前范围。人工帧覆盖重试绑定点击时的任务、作业、范围意图和候选 revision，确认前后均检查是否仍有效。Mask QC 保留独立区域 selector 与原决定入口。
+
+剩余区间导航经 `useVideoToolCommands.requestFrame` 使用原 Stage 和 Mask 草稿保护，并在等待后复核审阅意图；它保留工具范围与参考对象多选。审阅控件使用 `data-workbench-tracker-review` 让背景键盘监听让位，非模态审阅打开时仍可操作背景画布。
+
 ### 图片手工创建事务
 
 `useWorkbenchState` 保存会话级连续创建意图 `(projectId, tool_unit_id, class_name, tool)`，只允许矩形框、旋转框、多边形、折线和模板关键点；区域单元恢复 Polygon。`useWorkbenchAnnotationActions` 仍是几何创建 owner。完成的几何附带唯一草稿 ID、任务、工具单元、类别、独立属性和 `class / attributes / saving / error` 阶段，类别和属性均从该单元读取，不使用展示层的跨单元兜底。默认值逐对象复制，缺失必填项复用 `AttributeForm.getMissingRequired`，草稿表单同步更新以支持输入后立即 Enter；旧草稿 ID 的更新无效。
