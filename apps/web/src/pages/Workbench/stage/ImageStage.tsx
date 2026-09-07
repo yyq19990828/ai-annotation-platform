@@ -1226,8 +1226,10 @@ export function ImageStage({
         schedule(() =>
           setDrag((cur) => {
             if (!cur || cur.kind !== "rotateBox") return cur;
-            const dx = pt.x - cur.cx;
-            const dy = pt.y - cur.cy;
+            // Match Konva's pixel-space rotation; normalized axes have different units
+            // on non-square images and would distort the pointer's visible angle.
+            const dx = (pt.x - cur.cx) * imgW;
+            const dy = (pt.y - cur.cy) * imgH;
             let deg = (Math.atan2(dx, -dy) * 180) / Math.PI;
             deg = ((deg % 360) + 360) % 360;
             return { ...cur, cur: deg };
