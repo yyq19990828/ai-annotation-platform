@@ -12,12 +12,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isWorkbenchInteractionBlocked } from "./workbenchInteractionGuards";
 
-import { dispatchKey, ARROW_KEY_SET, hotkeyIgnoreToken } from "./hotkeys";
+import {
+  dispatchKey,
+  ARROW_KEY_SET,
+  hotkeyIgnoreToken,
+  isMaskContextHotkey,
+  isMaskHotkeyBlocked,
+} from "./hotkeys";
 import { nextInCategory, nextCategory } from "../stage/frameObjectCycle";
 import { aiBoxOnFrame } from "../stage/aiBoxFrames";
 import type { UseMaskEditorReturn } from "./useMaskEditor";
-// v0.23.5 · WS-C · Enter 提交真实条件 (dirty + 可提交相位)。
-import { canCommitMask, canEditMask } from "./canEditMask";
+import { canEditMask } from "./canEditMask";
 import { recordHotkeyUsage } from "./hotkeyUsage";
 import { bboxGeom } from "./transforms";
 import type { useWorkbenchState } from "./useWorkbenchState";
@@ -139,9 +144,8 @@ export interface UseWorkbenchHotkeysArgs {
   maskToolDisabledReason?: string;
   /** v0.10.8 · mask 工具激活时的 B/E/Enter/Esc 上下文键由这组 callback 消费。 */
   maskEditor?: UseMaskEditorReturn;
-  commitMaskAsPolygon?: () => void;
-  commitMaskInstanceOperation?: () => void;
-  cancelMaskEdit?: () => void;
+  onMaskPrimaryAction?: () => void;
+  onMaskSecondaryAction?: () => void;
   /** v0.23.5 · WS-C · task 级只读 (review/completed 锁), 供 canEditMask 判定 B/E 是否可用。 */
   maskTaskReadOnly?: boolean;
   /** 分块缓存超预算时停止像素编辑，但保留已有草稿的保存入口。 */
@@ -230,9 +234,8 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     aiInteractiveEnabled,
     maskToolDisabledReason,
     maskEditor,
-    commitMaskAsPolygon,
-    commitMaskInstanceOperation,
-    cancelMaskEdit,
+    onMaskPrimaryAction,
+    onMaskSecondaryAction,
     maskTaskReadOnly = false,
     maskPixelReadOnly = false,
     maskInteractionFrozen = false,
@@ -338,21 +341,15 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
   }, [disabled, s.tool, polygonDraftPoints, submitPolygon, submitPolyline, setPolygonDraftPoints]);
 
   // v0.10.8 · I11 · Mask 工具专用键（capture 阶段，先于主 dispatchKey 抢键）：
-  //   B → brush 模式  · E → erase 模式  · Enter → commit  · Esc → cancel
+  //   B → brush 模式  · E → erase 模式  · Enter/Esc → 当前阶段主/次动作
   // 仅 tool === "mask" 且 maskEditor 注入时生效；输入聚焦 / pending popover 时让位。
   useEffect(() => {
     if (disabled) return;
     if (s.tool !== "mask") return;
     if (!maskEditor) return;
     const onKey = (e: KeyboardEvent) => {
-      if (isWorkbenchInteractionBlocked(e)) return;
+      if (isMaskHotkeyBlocked(e)) return;
       if (maskInteractionFrozen) return;
-      const t = e.target;
-      if (
-        t instanceof HTMLElement &&
-        (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)
-      )
-        return;
       if (s.pendingDrawing || s.editingClass || classPickerActive) return;
       // v0.23.5 · WS-C · B/E 模式切换也经 canEditMask: 锁定对象连切笔刷都不允许,
       // 与 pointer 入口 (MaskTool) 一道关闭锁定绕过。readOnly 来自 task 级 (调用方传入),
@@ -360,14 +357,6 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
       const sel = s.selectedId ? annotationsRef.current.find((a) => a.id === s.selectedId) : null;
       const maskEditable = canEditMask({
         taskReadOnly: !!maskTaskReadOnly || !!maskPixelReadOnly,
-        annotationLocked: !!sel?.is_locked,
-        trackLocked: false,
-        segmentLocked: false,
-        editorPhase:
-          maskEditor.phase ?? (maskEditor.dirty ? "dirty" : maskEditor.active ? "ready" : "idle"),
-      });
-      const maskCommitAllowed = canEditMask({
-        taskReadOnly: !!maskTaskReadOnly,
         annotationLocked: !!sel?.is_locked,
         trackLocked: false,
         segmentLocked: false,
@@ -397,43 +386,16 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         maskEditor.setMode("erase");
         return;
       }
-      if (e.key === "Enter" && maskEditor.active) {
-        // v0.23.5 · WS-C · ADR-0052 D7: 无变化 (dirty=false) 不物化 held keyframe;
-        // 且必须满足 canEditMask (锁定对象即便已有 buffer 也不得提交)。
+      if (e.key === "Enter") {
         e.preventDefault();
         e.stopImmediatePropagation();
-        if (maskEditor.instanceOperationPreview) {
-          if (!maskEditable) return;
-          commitMaskInstanceOperation?.();
-          return;
-        }
-        if (maskEditor.operationPreview) {
-          if (!maskEditable) return;
-          maskEditor.confirmOperation();
-          return;
-        }
-        if (!maskCommitAllowed) return;
-        if (
-          !canCommitMask(
-            maskEditor.phase ?? (maskEditor.dirty ? "dirty" : "ready"),
-            maskEditor.dirty,
-          )
-        )
-          return;
-        commitMaskAsPolygon?.();
+        onMaskPrimaryAction?.();
         return;
       }
       if (e.key === "Escape") {
-        // 退出 mask 工具（与 MaskToolbar「取消 (Esc)」一致）：无论是否已有 active buffer，
-        // Esc 都应丢弃缓冲（若有）并切回选择工具。早先 `&& maskEditor.active` 守卫
-        // 导致「按 M 进入但未落笔时 Esc 失效」，与工具栏文案矛盾。
         e.preventDefault();
-        e.stopPropagation();
-        if (maskEditor.operationPreview || maskEditor.instanceOperationPreview) {
-          maskEditor.cancelOperation();
-          return;
-        }
-        cancelMaskEdit?.();
+        e.stopImmediatePropagation();
+        onMaskSecondaryAction?.();
         return;
       }
     };
@@ -446,9 +408,8 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     s.editingClass,
     s.selectedId,
     maskEditor,
-    commitMaskAsPolygon,
-    commitMaskInstanceOperation,
-    cancelMaskEdit,
+    onMaskPrimaryAction,
+    onMaskSecondaryAction,
     maskInteractionFrozen,
     classPickerActive,
     maskTaskReadOnly,
@@ -490,6 +451,15 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
 
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || isWorkbenchInteractionBlocked(e)) return;
+      const maskToolActive = videoMode
+        ? s.videoTool === "mask" || s.videoTool === "mask-track"
+        : s.tool === "mask";
+      if (
+        maskToolActive &&
+        isMaskContextHotkey(e) &&
+        (maskInteractionFrozen || isMaskHotkeyBlocked(e))
+      )
+        return;
       const modifiedToken = hotkeyIgnoreToken(e);
       if (ignoredKeys?.has(e.key) || (modifiedToken && ignoredKeys?.has(modifiedToken))) return;
       const attributeHotkey = (digit: string) => {
@@ -1021,6 +991,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     isPromptSupported,
     aiInteractiveEnabled,
     maskToolDisabledReason,
+    maskInteractionFrozen,
     aiBoxes,
     setShowHotkeys,
     clipboard,

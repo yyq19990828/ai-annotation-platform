@@ -234,6 +234,7 @@ import {
 import type { UseMaskEditorReturn } from "./useMaskEditor";
 import { canCommitMask, canEditMask, maskEditBlockReason } from "./canEditMask";
 import { MaskToolbar } from "../shell/MaskToolbar";
+import { useMaskPrimaryActionOwner } from "./useMaskPrimaryActionOwner";
 import {
   upsertVideoMaskKeyframe,
   useVideoAnnotationActions,
@@ -2626,6 +2627,7 @@ export function useWorkbenchShellModel({
     "idle",
   );
   const commitCurrentMaskRef = useRef<() => Promise<boolean>>(async () => false);
+  const maskPrimaryBusyRef = useRef(false);
   // 离开 dirty session 必须先取得明确决定。取消即恢复旧 task/frame/tool/selection，
   // 确认才丢弃；session hook 仅在 guard 完成后推进 generation。
   const handleMaskLeaveDirty = useCallback(
@@ -2644,7 +2646,11 @@ export function useWorkbenchShellModel({
         sub: "确认可丢弃；取消将继续编辑",
         kind: "warning",
       });
-      if (maskPhaseStateRef.current === "saving" || maskInstanceTransitionInFlightRef.current) {
+      if (
+        maskPhaseStateRef.current === "saving" ||
+        maskInstanceTransitionInFlightRef.current ||
+        maskPrimaryBusyRef.current
+      ) {
         pushToast({ msg: "Mask 正在保存", sub: "保存完成后再离开", kind: "warning" });
         applyContext(previous);
         return "continue" as const;
@@ -2693,9 +2699,12 @@ export function useWorkbenchShellModel({
     generation: maskEditor.generation,
   };
   maskPhaseStateRef.current = maskEditor.phase;
-  const hasPendingMaskDraft = maskEditor.dirty || maskEditor.instanceOperationPreview !== null;
+  const hasPendingMaskDraft =
+    maskEditor.dirty ||
+    maskEditor.operationPreview !== null ||
+    maskEditor.instanceOperationPreview !== null;
   maskNavigationGuardRef.current = async () => {
-    if (maskInstanceTransitionInFlightRef.current) {
+    if (maskInstanceTransitionInFlightRef.current || maskPrimaryBusyRef.current) {
       pushToast({ msg: "Mask 正在处理", sub: "完成后再离开", kind: "warning" });
       return false;
     }
@@ -2723,6 +2732,8 @@ export function useWorkbenchShellModel({
 
   const imageActions = useImageAnnotationActions({
     taskId,
+    maskRouteKey: currentPath,
+    maskSessionKey,
     videoSegmentId: annotationSegmentId,
     projectId,
     meUserId,
@@ -3378,23 +3389,17 @@ export function useWorkbenchShellModel({
     [annotationQueryKey, pushToast, queryClient, s],
   );
 
-  const cancelVideoMaskEdit = useCallback(() => {
-    if (maskInstanceTransitionInFlightRef.current) {
-      pushToast({ msg: "Mask 正在处理", sub: "完成后再取消", kind: "warning" });
-      return;
-    }
+  const cancelVideoMaskEdit = useCallback(async () => {
     if (handleCancelVideoMaskPendingClass()) return;
+    if (!(await maskNavigationGuardRef.current())) return;
     maskEditor.cancel();
     s.setVideoTool("select");
-  }, [handleCancelVideoMaskPendingClass, maskEditor, pushToast, s]);
-  const cancelImageMaskEdit = useCallback(() => {
-    if (maskInstanceTransitionInFlightRef.current) {
-      pushToast({ msg: "Mask 正在处理", sub: "完成后再取消", kind: "warning" });
-      return;
-    }
+  }, [handleCancelVideoMaskPendingClass, maskEditor, s]);
+  const cancelImageMaskEdit = useCallback(async () => {
     if (handleCancelMaskPendingClass()) return;
+    if (!(await maskNavigationGuardRef.current())) return;
     cancelMaskEdit();
-  }, [cancelMaskEdit, handleCancelMaskPendingClass, pushToast]);
+  }, [cancelMaskEdit, handleCancelMaskPendingClass]);
   const [videoMaskCorrectionOpen, setVideoMaskCorrectionOpen] = useState(false);
   const [videoMaskCorrectionSubmitting, setVideoMaskCorrectionSubmitting] = useState(false);
   const [videoMaskCorrectionContext, setVideoMaskCorrectionContext] = useState<{
@@ -3768,19 +3773,30 @@ export function useWorkbenchShellModel({
       snapshotMaskMembers,
     ],
   );
+  const maskPrimaryPending = maskPrimaryBusyRef.current;
   const stageMaskEditor = useMemo<UseMaskEditorReturn>(
     () => ({
       ...maskEditor,
-      phase: maskInstanceTransitionBusy ? "saving" : maskEditor.phase,
+      phase: maskInstanceTransitionBusy || maskPrimaryPending ? "saving" : maskEditor.phase,
       runInstanceOperation: runMaskInstanceOperation,
       cancelOperation: () => {
-        if (!maskInstanceTransitionInFlightRef.current) maskEditor.cancelOperation();
+        if (
+          !maskInstanceTransitionInFlightRef.current &&
+          !maskPrimaryBusyRef.current &&
+          maskEditor.phase !== "saving"
+        )
+          maskEditor.cancelOperation();
       },
       cancel: () => {
-        if (!maskInstanceTransitionInFlightRef.current) maskEditor.cancel();
+        if (
+          !maskInstanceTransitionInFlightRef.current &&
+          !maskPrimaryBusyRef.current &&
+          maskEditor.phase !== "saving"
+        )
+          maskEditor.cancel();
       },
     }),
-    [maskEditor, maskInstanceTransitionBusy, runMaskInstanceOperation],
+    [maskEditor, maskInstanceTransitionBusy, maskPrimaryPending, runMaskInstanceOperation],
   );
 
   const [videoMaskClipboard, setVideoMaskClipboard] = useState<VideoMaskClipboardEntry | null>(
@@ -4862,7 +4878,30 @@ export function useWorkbenchShellModel({
     setVideoMaskCorrectionCreateRetryable(true);
     setVideoMaskCorrectionContext(null);
   }, []);
+  const videoMaskCommitOwner = useMemo(
+    () => ({
+      taskId,
+      frame: s.videoFrameIndex,
+      tool: s.videoTool,
+      selection: s.selectedId,
+      mode,
+      currentPath,
+      isLockedForActions,
+    }),
+    [taskId, s.videoFrameIndex, s.videoTool, s.selectedId, mode, currentPath, isLockedForActions],
+  );
+  const videoMaskCommitOwnerRef = useRef(videoMaskCommitOwner);
+  videoMaskCommitOwnerRef.current = videoMaskCommitOwner;
+  const videoMaskCommitMountedRef = useRef(true);
+  useEffect(() => {
+    videoMaskCommitMountedRef.current = true;
+    return () => {
+      videoMaskCommitMountedRef.current = false;
+    };
+  }, []);
   const commitVideoMask = useCallback(() => {
+    const ownsCommit = () =>
+      videoMaskCommitMountedRef.current && videoMaskCommitOwnerRef.current === videoMaskCommitOwner;
     const trackLocked =
       !!selectedVideoMaskForTool &&
       selectedVideoMaskForTool.geometry.type === "video_track_mask" &&
@@ -4901,7 +4940,9 @@ export function useWorkbenchShellModel({
             s.videoFrameIndex,
             selectedVideoMaskForTool,
             s.videoTool === "mask-track" ? "track" : "frame",
+            ownsCommit,
           );
+          if (!ownsCommit()) return { ok: false, retryable: false };
           if (!savedKeyframe) {
             classSelectionCancelled = true;
             return { ok: false, retryable: false };
@@ -4923,6 +4964,7 @@ export function useWorkbenchShellModel({
         }
       })
       .then((result) => {
+        if (!ownsCommit()) return { ok: false, retryable: false, savedKeyframe: null };
         if (classSelectionCancelled) {
           maskEditor.recoverFromError();
           return { ...result, savedKeyframe };
@@ -4941,6 +4983,7 @@ export function useWorkbenchShellModel({
         return { ...result, savedKeyframe };
       });
   }, [
+    videoMaskCommitOwner,
     handleVideoMaskCommit,
     isLockedForActions,
     lockConflict,
@@ -5063,13 +5106,81 @@ export function useWorkbenchShellModel({
       videoMaskCorrectionContext,
     ],
   );
-  commitCurrentMaskRef.current = async () => {
-    if (maskEditor.instanceOperationPreview) {
-      return requestCommitMaskInstanceOperation();
-    }
-    const result = isVideoTask ? await commitVideoMask() : await commitMaskAsPolygon();
-    return result.ok;
+  const maskToolbarSelection = s.selectedId
+    ? visibleAnnotationsData.find((annotation) => annotation.id === s.selectedId)
+    : null;
+  const maskToolbarTrackLocked = !!(
+    isVideoTask &&
+    maskToolbarSelection &&
+    isVideoMaskTrack(maskToolbarSelection) &&
+    s.lockedVideoTrackIds.has(maskToolbarSelection.geometry.track_id)
+  );
+  const maskToolbarEditContext = {
+    taskReadOnly:
+      isLockedForActions || imageMaskInteractionBlocked || maskCompareInteractionBlocked,
+    annotationLocked: !!maskToolbarSelection?.is_locked,
+    trackLocked: maskToolbarTrackLocked,
+    segmentLocked: !!lockConflict || !!lockError,
+    editorPhase: maskInstanceTransitionBusy || maskPrimaryPending ? "saving" : maskEditor.phase,
   };
+  const maskToolbarBaseBlockReason = maskEditBlockReason(maskToolbarEditContext);
+  const maskToolbarBlockReason = maskEditor.tiledReadOnly
+    ? ("large_canvas_budget_exceeded" as const)
+    : maskToolbarBaseBlockReason;
+  const maskActionOwner = useMemo(
+    () => ({ sessionId: maskEditor.sessionId, generation: maskEditor.generation }),
+    [maskEditor.sessionId, maskEditor.generation],
+  );
+  const heldMaskFrame =
+    selectedVideoMaskForTool?.geometry.type === "video_track_mask"
+      ? resolveVideoMaskTrackAtFrame(selectedVideoMaskForTool.geometry, s.videoFrameIndex)
+      : null;
+  const maskPrimary = useMaskPrimaryActionOwner({
+    owner: maskActionOwner,
+    busyRef: maskPrimaryBusyRef,
+    state: {
+      active: maskEditor.active,
+      phase: maskEditor.phase,
+      dirty: maskEditor.dirty,
+      revision: maskEditor.revision,
+      canEdit: maskToolbarBlockReason === null,
+      canCommit: maskToolbarBaseBlockReason === null,
+      editBlockReason: maskToolbarBlockReason,
+      interactionFrozen: maskCompareInteractionBlocked,
+      operationStatus: maskEditor.operationStatus,
+      operationPreview: maskEditor.operationPreview,
+      instanceOperationPreview: maskEditor.instanceOperationPreview,
+      operationError: maskEditor.operationError,
+      instanceCommitting: maskInstanceCommitting,
+      instanceRefreshing: maskInstanceRefreshing,
+      instanceCommitError: maskInstanceCommitError,
+      instanceCanRetry: maskInstanceRecovery.retry,
+      instanceCanRefresh: maskInstanceRecovery.refresh,
+      instanceCommitBlocked: maskInstanceCommitBlocked,
+      saveLabel: isVideoTask
+        ? s.videoTool === "mask-track"
+          ? "保存当前帧关键帧"
+          : "保存当前帧 Mask"
+        : "保存 Mask",
+      saveHint:
+        isVideoTask && s.videoTool === "mask-track"
+          ? heldMaskFrame && heldMaskFrame.keyframeFrame !== s.videoFrameIndex
+            ? `当前帧保持 F${heldMaskFrame.keyframeFrame} 的 Mask；保存修改将仅在 F${s.videoFrameIndex} 新建人工关键帧。`
+            : `仅保存 F${s.videoFrameIndex} 的人工关键帧，其它帧保持不变。`
+          : isVideoTask
+            ? `仅保存当前 F${s.videoFrameIndex} 的 Mask。`
+            : "保存当前像素草稿。",
+    },
+    onSave: async () => (isVideoTask ? await commitVideoMask() : await commitMaskAsPolygon()).ok,
+    onCommitInstances: requestCommitMaskInstanceOperation,
+    onApplyRegion: maskEditor.confirmOperation,
+    onCancelPreview: maskEditor.cancelOperation,
+    onRecoverSession: isVideoTask ? maskEditor.recoverFromError : retryImageMaskSession,
+    onRefreshInstances: refreshMaskInstanceOperation,
+    onExit: isVideoTask ? cancelVideoMaskEdit : cancelImageMaskEdit,
+    onError: (error) => pushToast({ msg: "Mask 操作失败", sub: String(error), kind: "error" }),
+  });
+  commitCurrentMaskRef.current = maskPrimary.saveBeforeLeave;
 
   // v0.21.23 · 视频交互式 SAM 候选键位: Enter 采纳 / Esc 取消 / Tab 切候选 (与图片侧同键位)。
   // Enter 不直接落库, 而是弹类选择器 —— 与图片侧 samPendingAccept 一致。视频侧的 popover 走
@@ -5641,9 +5752,8 @@ export function useWorkbenchShellModel({
     aiInteractiveEnabled: currentProject?.ai_interactive_enabled,
     maskToolDisabledReason: imageMaskSizeDisabledReason,
     maskEditor: stageMaskEditor,
-    commitMaskAsPolygon,
-    commitMaskInstanceOperation: () => void requestCommitMaskInstanceOperation(),
-    cancelMaskEdit: cancelImageMaskEdit,
+    onMaskPrimaryAction: () => void maskPrimary.runPrimary(),
+    onMaskSecondaryAction: () => void maskPrimary.runSecondary(),
     maskTaskReadOnly:
       isLockedForActions ||
       imageMaskInteractionBlocked ||
@@ -6378,27 +6488,6 @@ export function useWorkbenchShellModel({
         ? aiBoxes.filter((b) => aiBoxOnFrame(b, s.videoFrameIndex)).length
         : aiBoxes.length;
 
-  const maskToolbarSelection = s.selectedId
-    ? visibleAnnotationsData.find((annotation) => annotation.id === s.selectedId)
-    : null;
-  const maskToolbarTrackLocked = !!(
-    isVideoTask &&
-    maskToolbarSelection &&
-    isVideoMaskTrack(maskToolbarSelection) &&
-    s.lockedVideoTrackIds.has(maskToolbarSelection.geometry.track_id)
-  );
-  const maskToolbarEditContext = {
-    taskReadOnly:
-      isLockedForActions || imageMaskInteractionBlocked || maskCompareInteractionBlocked,
-    annotationLocked: !!maskToolbarSelection?.is_locked,
-    trackLocked: maskToolbarTrackLocked,
-    segmentLocked: !!lockConflict || !!lockError,
-    editorPhase: maskInstanceTransitionBusy ? "saving" : maskEditor.phase,
-  };
-  const maskToolbarBaseBlockReason = maskEditBlockReason(maskToolbarEditContext);
-  const maskToolbarBlockReason = maskEditor.tiledReadOnly
-    ? ("large_canvas_budget_exceeded" as const)
-    : maskToolbarBaseBlockReason;
   const selectedMaskJoinCandidates = [
     ...new Set([...(s.selectedId ? [s.selectedId] : []), ...s.selectedIds]),
   ]
@@ -6677,14 +6766,13 @@ export function useWorkbenchShellModel({
                 onSetBrushShape={maskEditor.setBrushShape}
                 onSetConnectivity={maskEditor.setConnectivity}
                 onSetRadius={maskEditor.setRadius}
-                onConfirmOperation={maskEditor.confirmOperation}
-                onCancelOperation={stageMaskEditor.cancelOperation}
+                actions={maskPrimary.actions}
+                onPrimaryAction={() => void maskPrimary.runPrimary()}
+                onSecondaryAction={() => void maskPrimary.runSecondary()}
                 onRunOperation={maskEditor.runOperation}
                 onRunInstanceOperation={runMaskInstanceOperation}
-                onCommitInstanceOperation={() => void requestCommitMaskInstanceOperation()}
                 onPrepareJoin={(joinMode) => void prepareMaskJoin(joinMode)}
                 onPrepareOverlap={(policy) => void prepareMaskOverlap(policy)}
-                onRefreshInstanceOperation={() => void refreshMaskInstanceOperation()}
                 canPrepareJoin={canPrepareMaskJoin}
                 joinSupportsReplace={!isVideoTask}
                 instanceCommitting={maskInstanceCommitting}
@@ -6697,8 +6785,6 @@ export function useWorkbenchShellModel({
                 instanceCommitBlocked={maskInstanceCommitBlocked}
                 onUndo={maskEditor.undo}
                 onRedo={maskEditor.redo}
-                onRetry={isVideoTask ? maskEditor.recoverFromError : retryImageMaskSession}
-                onCommit={isVideoTask ? commitVideoMask : commitMaskAsPolygon}
                 onCommitAndPropagate={
                   isVideoTask && selectedVideoMask ? openVideoMaskCorrection : undefined
                 }
@@ -6711,14 +6797,43 @@ export function useWorkbenchShellModel({
                       ? () => openAnnotationConversion(selectedImageRasterMask.id)
                       : undefined
                 }
-                onCancel={isVideoTask ? cancelVideoMaskEdit : cancelImageMaskEdit}
               />
             )}
+            <AlertDialog
+              open={maskPrimary.emptyConfirmationOpen}
+              onOpenChange={(open) => {
+                if (!open) maskPrimary.closeEmptyConfirmation();
+              }}
+            >
+              <AlertDialogContent
+                size="sm"
+                className="z-app-drawer"
+                overlayProps={{ className: "z-app-drawer-backdrop" }}
+              >
+                <AlertDialogHeader>
+                  <AlertDialogTitle>确认清空当前 Mask？</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    该操作会把当前对象变为空
+                    Mask。应用后仍可用撤销恢复，但保存时需要选择删除对象或继续编辑。
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>返回预览</AlertDialogCancel>
+                  <AlertDialogAction variant="destructive" onClick={maskPrimary.confirmEmptyRegion}>
+                    确认清空
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
             <AlertDialog
               open={maskInstanceDeleteConfirmOpen}
               onOpenChange={setMaskInstanceDeleteConfirmOpen}
             >
-              <AlertDialogContent size="sm">
+              <AlertDialogContent
+                size="sm"
+                className="z-app-drawer"
+                overlayProps={{ className: "z-app-drawer-backdrop" }}
+              >
                 <AlertDialogHeader>
                   <AlertDialogTitle>
                     确认删除 {maskInstanceDeleteCount} 个 Mask 实例？
@@ -6942,13 +7057,8 @@ export function useWorkbenchShellModel({
         videoMaskCandidates: isVideoTask ? candidateMasksThisFrame : undefined,
         videoMaskEditor: isVideoTask ? stageMaskEditor : undefined,
         videoMaskKeyframeActions: isVideoTask ? videoMaskKeyframeActions : undefined,
-        onVideoMaskCommit: isVideoTask
-          ? () => {
-              if (maskEditor.instanceOperationPreview) void requestCommitMaskInstanceOperation();
-              else void commitVideoMask();
-            }
-          : undefined,
-        onVideoMaskCancel: isVideoTask ? cancelVideoMaskEdit : undefined,
+        onVideoMaskCommit: isVideoTask ? () => void maskPrimary.runPrimary() : undefined,
+        onVideoMaskCancel: isVideoTask ? () => void maskPrimary.runSecondary() : undefined,
         spacePan,
         onSpacePanDragStart: markSpacePanDrag,
         videoFrameIndex: s.videoFrameIndex,

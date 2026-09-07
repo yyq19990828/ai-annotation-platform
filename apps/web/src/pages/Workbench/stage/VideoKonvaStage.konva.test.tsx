@@ -7,10 +7,12 @@
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createRef } from "react";
-import { act, render } from "@testing-library/react";
+import { act, render, renderHook } from "@testing-library/react";
 import { VideoKonvaStage } from "./VideoKonvaStage";
 import type { VideoStageControls } from "./videoStageControls";
 import type { TaskVideoManifestResponse } from "@/types";
+import type { UseMaskEditorReturn } from "../state/useMaskEditor";
+import { useWorkbenchHotkeys, type UseWorkbenchHotkeysArgs } from "../state/useWorkbenchHotkeys";
 
 vi.mock("./useVideoPreciseFrame", () => ({
   useVideoPreciseFrame: () => ({
@@ -71,6 +73,27 @@ vi.mock("./useVideoPreciseFrame", () => ({
 
 const playMock = vi.fn();
 const pauseMock = vi.fn();
+
+function makeMaskEditor(overrides: Partial<UseMaskEditorReturn> = {}) {
+  return {
+    active: true,
+    dirty: true,
+    phase: "dirty",
+    buffer: null,
+    tool: "brush",
+    mode: "brush",
+    radius: 8,
+    backend: "dense",
+    operationPreview: null,
+    instanceOperationPreview: null,
+    setMode: vi.fn(),
+    undo: vi.fn(),
+    redo: vi.fn(),
+    confirmOperation: vi.fn(),
+    cancelOperation: vi.fn(),
+    ...overrides,
+  } as unknown as UseMaskEditorReturn;
+}
 
 const manifest: TaskVideoManifestResponse = {
   task_id: "task-1",
@@ -195,5 +218,203 @@ describe("VideoKonvaStage · konva mock", () => {
     });
     expect(wheel.defaultPrevented).toBe(true);
     expect(enter.defaultPrevented).toBe(true);
+  });
+
+  it.each(["mask", "mask-track"] as const)(
+    "%s sends every editor phase to the primary/secondary owner",
+    (videoTool) => {
+      const onMaskCommit = vi.fn();
+      const onMaskCancel = vi.fn();
+      const states: Partial<UseMaskEditorReturn>[] = [
+        { active: false, dirty: false, phase: "idle" },
+        { dirty: false, phase: "ready" },
+        { phase: "dirty" },
+        { phase: "saving" },
+        { operationPreview: { id: 1, alpha: new Uint8Array(0) } as never },
+        { instanceOperationPreview: { id: 2, plan: { focusAlpha: new Uint8Array(0) } } as never },
+      ];
+      const view = render(<VideoKonvaStage manifest={manifest} />);
+      states.forEach((state, index) => {
+        const editor = makeMaskEditor(state);
+        view.rerender(
+          <VideoKonvaStage
+            manifest={manifest}
+            videoTool={videoTool}
+            maskEditor={editor}
+            onMaskCommit={onMaskCommit}
+            onMaskCancel={onMaskCancel}
+          />,
+        );
+        act(() => {
+          window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", cancelable: true }));
+          window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", cancelable: true }));
+        });
+        expect(onMaskCommit).toHaveBeenCalledTimes(index + 1);
+        expect(onMaskCancel).toHaveBeenCalledTimes(index + 1);
+        expect(editor.confirmOperation).not.toHaveBeenCalled();
+        expect(editor.cancelOperation).not.toHaveBeenCalled();
+      });
+    },
+  );
+
+  it("pixel read-only blocks brush/undo while the primary owner decides whether saving is allowed", () => {
+    const editor = makeMaskEditor();
+    const onMaskCommit = vi.fn();
+    const view = render(
+      <VideoKonvaStage
+        manifest={manifest}
+        videoTool="mask"
+        maskEditor={editor}
+        onMaskCommit={onMaskCommit}
+        readOnly
+      />,
+    );
+    const key = (key: string, ctrlKey = false) =>
+      window.dispatchEvent(new KeyboardEvent("keydown", { key, ctrlKey, cancelable: true }));
+    act(() => {
+      key("b");
+      key("e");
+      key("z", true);
+      key("Enter");
+    });
+    expect(onMaskCommit).toHaveBeenCalledTimes(1);
+    expect(editor.setMode).not.toHaveBeenCalled();
+    expect(editor.undo).not.toHaveBeenCalled();
+    view.rerender(<VideoKonvaStage manifest={manifest} videoTool="mask" maskEditor={editor} />);
+    act(() => {
+      key("b");
+      key("e");
+      key("z", true);
+      key("y", true);
+    });
+    expect(editor.setMode).toHaveBeenNthCalledWith(1, "brush");
+    expect(editor.setMode).toHaveBeenNthCalledWith(2, "erase");
+    expect(editor.undo).toHaveBeenCalledTimes(1);
+    expect(editor.redo).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    "input",
+    "textarea",
+    "select",
+    "contenteditable",
+    "combobox",
+    "listbox",
+    "menu",
+    "dialog",
+    "button",
+  ])("video Mask leaves %s keys with the focused control", (kind) => {
+    const onMaskCommit = vi.fn();
+    const onMaskCancel = vi.fn();
+    render(
+      <VideoKonvaStage
+        manifest={manifest}
+        videoTool="mask"
+        maskEditor={makeMaskEditor()}
+        onMaskCommit={onMaskCommit}
+        onMaskCancel={onMaskCancel}
+      />,
+    );
+    const element = document.createElement(
+      ["input", "textarea", "select", "button"].includes(kind) ? kind : "div",
+    );
+    if (kind === "contenteditable") element.setAttribute("contenteditable", "true");
+    else if (!["input", "textarea", "select", "button"].includes(kind))
+      element.setAttribute("role", kind);
+    const target = ["contenteditable", "combobox", "listbox", "menu", "dialog", "button"].includes(
+      kind,
+    )
+      ? element.appendChild(document.createElement("span"))
+      : element;
+    const ownKeys = vi.fn();
+    element.addEventListener("keydown", ownKeys);
+    document.body.append(element);
+    try {
+      const keys = kind === "button" ? ["Enter"] : ["Enter", "Escape"];
+      const events = keys.map(
+        (key) => new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+      );
+      act(() => events.forEach((event) => target.dispatchEvent(event)));
+      expect(ownKeys).toHaveBeenCalledTimes(keys.length);
+      expect(events.every((event) => !event.defaultPrevented)).toBe(true);
+      expect(onMaskCommit).not.toHaveBeenCalled();
+      expect(onMaskCancel).not.toHaveBeenCalled();
+    } finally {
+      element.remove();
+    }
+  });
+
+  it.each([
+    ["long press", { repeat: true }],
+    ["IME composition", { isComposing: true }],
+    ["IME legacy key", { keyCode: 229 }],
+    ["already handled", {}],
+  ] as const)("video Mask ignores %s", (name, init) => {
+    const editor = makeMaskEditor();
+    const onMaskCommit = vi.fn();
+    const onMaskCancel = vi.fn();
+    render(
+      <VideoKonvaStage
+        manifest={manifest}
+        videoTool="mask-track"
+        maskEditor={editor}
+        onMaskCommit={onMaskCommit}
+        onMaskCancel={onMaskCancel}
+      />,
+    );
+    act(() => {
+      for (const key of ["Enter", "Escape", "b", "e", "z"]) {
+        const event = new KeyboardEvent("keydown", {
+          ...init,
+          key,
+          ctrlKey: key === "z",
+          cancelable: true,
+        });
+        if (name === "already handled") event.preventDefault();
+        window.dispatchEvent(event);
+      }
+    });
+    expect(onMaskCommit).not.toHaveBeenCalled();
+    expect(onMaskCancel).not.toHaveBeenCalled();
+    expect(editor.setMode).not.toHaveBeenCalled();
+    expect(editor.undo).not.toHaveBeenCalled();
+  });
+
+  it("video Mask lets an unfocused context menu receive Esc", () => {
+    const onMaskCancel = vi.fn();
+    const setVideoTool = vi.fn();
+    render(
+      <VideoKonvaStage
+        manifest={manifest}
+        videoTool="mask"
+        maskEditor={makeMaskEditor()}
+        onMaskCancel={onMaskCancel}
+      />,
+    );
+    renderHook(() =>
+      useWorkbenchHotkeys({
+        videoMode: true,
+        s: { tool: "select", videoTool: "mask", selectedIds: [], setVideoTool },
+        stageGeom: { imgW: 1000, imgH: 500 },
+      } as unknown as UseWorkbenchHotkeysArgs),
+    );
+    const menu = document.createElement("div");
+    menu.setAttribute("role", "menu");
+    document.body.append(menu);
+    const close = vi.fn(() => menu.remove());
+    document.addEventListener("keydown", close);
+    try {
+      act(() =>
+        document.body.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+        ),
+      );
+      expect(close).toHaveBeenCalledTimes(1);
+      expect(onMaskCancel).not.toHaveBeenCalled();
+      expect(setVideoTool).not.toHaveBeenCalled();
+    } finally {
+      menu.remove();
+      document.removeEventListener("keydown", close);
+    }
   });
 });

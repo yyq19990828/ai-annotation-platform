@@ -1,6 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { isWorkbenchInputFocused, useWorkbenchHotkeys } from "./useWorkbenchHotkeys";
+import type { UseMaskEditorReturn } from "./useMaskEditor";
 
 function makeArgs(overrides: Partial<Parameters<typeof useWorkbenchHotkeys>[0]> = {}) {
   return {
@@ -49,6 +50,243 @@ function makeArgs(overrides: Partial<Parameters<typeof useWorkbenchHotkeys>[0]> 
     ...overrides,
   } as unknown as Parameters<typeof useWorkbenchHotkeys>[0];
 }
+
+function makeMaskArgs(
+  editorOverrides: Partial<UseMaskEditorReturn> = {},
+  overrides: Partial<Parameters<typeof useWorkbenchHotkeys>[0]> = {},
+) {
+  const editor = {
+    active: true,
+    dirty: true,
+    phase: "dirty",
+    operationPreview: null,
+    instanceOperationPreview: null,
+    setMode: vi.fn(),
+    undo: vi.fn(),
+    redo: vi.fn(),
+    confirmOperation: vi.fn(),
+    cancelOperation: vi.fn(),
+    ...editorOverrides,
+  } as unknown as UseMaskEditorReturn;
+  const primary = vi.fn();
+  const secondary = vi.fn();
+  const args = makeArgs({
+    maskEditor: editor,
+    onMaskPrimaryAction: primary,
+    onMaskSecondaryAction: secondary,
+    ...overrides,
+  });
+  args.s.tool = "mask";
+  return { args, editor, primary, secondary };
+}
+
+describe("Mask keyboard action ownership", () => {
+  it.each([
+    ["idle", { active: false, dirty: false, phase: "idle" }],
+    ["clean", { dirty: false, phase: "ready" }],
+    ["dirty", {}],
+    ["saving", { phase: "saving" }],
+    ["operation preview", { operationPreview: { id: 1 } }],
+    ["instance preview", { instanceOperationPreview: { id: 2 } }],
+  ] as const)("%s delegates Enter/Esc to the current action owner", (_name, state) => {
+    const { args, editor, primary, secondary } = makeMaskArgs(
+      state as Partial<UseMaskEditorReturn>,
+    );
+    renderHook(() => useWorkbenchHotkeys(args));
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", cancelable: true }));
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", cancelable: true }));
+    });
+    expect(primary).toHaveBeenCalledTimes(1);
+    expect(secondary).toHaveBeenCalledTimes(1);
+    expect(editor.confirmOperation).not.toHaveBeenCalled();
+    expect(editor.cancelOperation).not.toHaveBeenCalled();
+    expect(args.s.setTool).not.toHaveBeenCalled();
+  });
+
+  it.each(["maskTaskReadOnly", "maskPixelReadOnly"] as const)(
+    "%s keeps action eligibility with the owner while blocking pixel commands",
+    (gate) => {
+      const { args, editor, primary, secondary } = makeMaskArgs({}, { [gate]: true });
+      renderHook(() => useWorkbenchHotkeys(args));
+      act(() => {
+        for (const key of ["b", "e", "Enter", "Escape"]) {
+          window.dispatchEvent(new KeyboardEvent("keydown", { key, cancelable: true }));
+        }
+        window.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "z", ctrlKey: true, cancelable: true }),
+        );
+      });
+      expect(primary).toHaveBeenCalledTimes(1);
+      expect(secondary).toHaveBeenCalledTimes(1);
+      expect(editor.setMode).not.toHaveBeenCalled();
+      expect(editor.undo).not.toHaveBeenCalled();
+      expect(args.history.undo).not.toHaveBeenCalled();
+      expect(args.s.setTool).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps brush, erase and undo/redo on the editable mask session", () => {
+    const { args, editor } = makeMaskArgs();
+    renderHook(() => useWorkbenchHotkeys(args));
+    act(() => {
+      for (const init of [
+        { key: "b" },
+        { key: "e" },
+        { key: "z", ctrlKey: true },
+        { key: "z", metaKey: true, shiftKey: true },
+        { key: "y", ctrlKey: true },
+      ]) {
+        window.dispatchEvent(new KeyboardEvent("keydown", { ...init, cancelable: true }));
+      }
+    });
+    expect(editor.setMode).toHaveBeenNthCalledWith(1, "brush");
+    expect(editor.setMode).toHaveBeenNthCalledWith(2, "erase");
+    expect(editor.undo).toHaveBeenCalledTimes(1);
+    expect(editor.redo).toHaveBeenCalledTimes(2);
+    expect(args.history.undo).not.toHaveBeenCalled();
+    expect(args.history.redo).not.toHaveBeenCalled();
+    expect(args.s.setTool).not.toHaveBeenCalled();
+  });
+
+  it("comparison freezes Mask commands without falling through to a tool change", () => {
+    const { args, editor, primary, secondary } = makeMaskArgs({}, { maskInteractionFrozen: true });
+    renderHook(() => useWorkbenchHotkeys(args));
+    act(() => {
+      for (const key of ["Enter", "Escape", "b", "e", "z"]) {
+        window.dispatchEvent(
+          new KeyboardEvent("keydown", { key, ctrlKey: key === "z", cancelable: true }),
+        );
+      }
+    });
+    expect(primary).not.toHaveBeenCalled();
+    expect(secondary).not.toHaveBeenCalled();
+    expect(editor.setMode).not.toHaveBeenCalled();
+    expect(editor.undo).not.toHaveBeenCalled();
+    expect(args.history.undo).not.toHaveBeenCalled();
+    expect(args.s.setTool).not.toHaveBeenCalled();
+  });
+
+  it.each(["hidden", "aria-hidden", "closed", "display-none", "hidden-parent"])(
+    "%s popup does not keep blocking the current Mask action",
+    (state) => {
+      const { args, primary } = makeMaskArgs();
+      renderHook(() => useWorkbenchHotkeys(args));
+      const parent = document.createElement("div");
+      const popup = parent.appendChild(document.createElement("div"));
+      popup.setAttribute("role", "dialog");
+      if (state === "hidden") popup.hidden = true;
+      if (state === "aria-hidden") popup.setAttribute("aria-hidden", "true");
+      if (state === "closed") popup.dataset.state = "closed";
+      if (state === "display-none") popup.style.display = "none";
+      if (state === "hidden-parent") parent.style.display = "none";
+      document.body.append(parent);
+      try {
+        act(() =>
+          window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", cancelable: true })),
+        );
+        expect(primary).toHaveBeenCalledTimes(1);
+      } finally {
+        parent.remove();
+      }
+    },
+  );
+
+  it.each([
+    "input",
+    "textarea",
+    "select",
+    "contenteditable",
+    "combobox",
+    "listbox",
+    "menu",
+    "dialog",
+    "button",
+  ])("%s receives its own keys without a background Mask action", (kind) => {
+    const { args, primary, secondary } = makeMaskArgs();
+    renderHook(() => useWorkbenchHotkeys(args));
+    const element = document.createElement(
+      ["input", "textarea", "select", "button"].includes(kind) ? kind : "div",
+    );
+    if (kind === "contenteditable") element.setAttribute("contenteditable", "true");
+    else if (!["input", "textarea", "select", "button"].includes(kind))
+      element.setAttribute("role", kind);
+    const target = ["contenteditable", "combobox", "listbox", "menu", "dialog", "button"].includes(
+      kind,
+    )
+      ? element.appendChild(document.createElement("span"))
+      : element;
+    const ownKeys = vi.fn();
+    element.addEventListener("keydown", ownKeys);
+    document.body.append(element);
+    try {
+      const keys = kind === "button" ? ["Enter"] : ["Enter", "Escape"];
+      const events = keys.map(
+        (key) => new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true }),
+      );
+      act(() => events.forEach((event) => target.dispatchEvent(event)));
+      expect(ownKeys).toHaveBeenCalledTimes(keys.length);
+      expect(events.every((event) => !event.defaultPrevented)).toBe(true);
+      expect(primary).not.toHaveBeenCalled();
+      expect(secondary).not.toHaveBeenCalled();
+      expect(args.s.setTool).not.toHaveBeenCalled();
+    } finally {
+      element.remove();
+    }
+  });
+
+  it.each([
+    ["long press", { repeat: true }],
+    ["IME composition", { isComposing: true }],
+    ["IME legacy key", { keyCode: 229 }],
+    ["already handled", {}],
+  ] as const)("ignores %s without falling through to generic shortcuts", (name, init) => {
+    const { args, editor, primary, secondary } = makeMaskArgs();
+    renderHook(() => useWorkbenchHotkeys(args));
+    act(() => {
+      for (const key of ["Enter", "Escape", "b", "e", "z"]) {
+        const event = new KeyboardEvent("keydown", {
+          ...init,
+          key,
+          ctrlKey: key === "z",
+          cancelable: true,
+        });
+        if (name === "already handled") event.preventDefault();
+        window.dispatchEvent(event);
+      }
+    });
+    expect(primary).not.toHaveBeenCalled();
+    expect(secondary).not.toHaveBeenCalled();
+    expect(editor.setMode).not.toHaveBeenCalled();
+    expect(editor.undo).not.toHaveBeenCalled();
+    expect(args.history.undo).not.toHaveBeenCalled();
+    expect(args.s.setTool).not.toHaveBeenCalled();
+  });
+
+  it("Esc closes an unfocused popup without also exiting the Mask tool", () => {
+    const { args, primary, secondary } = makeMaskArgs();
+    renderHook(() => useWorkbenchHotkeys(args));
+    const menu = document.createElement("div");
+    menu.setAttribute("role", "menu");
+    document.body.append(menu);
+    const close = vi.fn(() => menu.remove());
+    document.addEventListener("keydown", close);
+    try {
+      act(() =>
+        document.body.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }),
+        ),
+      );
+      expect(close).toHaveBeenCalledTimes(1);
+      expect(primary).not.toHaveBeenCalled();
+      expect(secondary).not.toHaveBeenCalled();
+      expect(args.s.setTool).not.toHaveBeenCalled();
+    } finally {
+      menu.remove();
+      document.removeEventListener("keydown", close);
+    }
+  });
+});
 
 describe("useWorkbenchHotkeys module", () => {
   it("连续模式的 Esc 先取消手工草稿，再退出模式，不受已保存选中对象阻挡", () => {

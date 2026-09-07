@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import { isWorkbenchInteractionBlocked } from "../state/workbenchInteractionGuards";
+import { isMaskHotkeyBlocked } from "../state/hotkeys";
 import type {
   CSSProperties,
   MouseEvent as ReactMouseEvent,
@@ -53,7 +54,7 @@ import {
 } from "./shared/maskCompareTileStore";
 import type { UseMaskEditorReturn } from "../state/useMaskEditor";
 import { MaskBuffer } from "./shared/geometry/maskBuffer";
-import { canCommitMask, canEditMask } from "../state/canEditMask";
+import { canEditMask } from "../state/canEditMask";
 import { VideoKonvaOverlayLayer } from "./VideoKonvaOverlayLayer";
 import { VideoKonvaIssueLayer } from "./VideoKonvaIssueLayer";
 import {
@@ -1155,14 +1156,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     useEffect(() => {
       if (!maskToolActive || !maskEditor) return;
       const onKey = (event: KeyboardEvent) => {
-        if (isWorkbenchInteractionBlocked(event)) return;
+        if (isMaskHotkeyBlocked(event)) return;
         if (maskCompareActive) return;
-        const target = event.target;
-        if (
-          target instanceof HTMLElement &&
-          (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
-        )
-          return;
         const command = event.ctrlKey || event.metaKey;
         const selectedTrackId = selectedManagedTrack?.geometry.track_id;
         const phase =
@@ -1202,24 +1197,10 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         } else if (event.key === "Enter") {
           event.preventDefault();
           event.stopImmediatePropagation();
-          if (!editable) return;
-          if (maskEditor.instanceOperationPreview) {
-            onMaskCommit?.();
-            return;
-          }
-          if (maskEditor.operationPreview) {
-            maskEditor.confirmOperation();
-            return;
-          }
-          if (!canCommitMask(phase, maskEditor.dirty)) return;
           onMaskCommit?.();
         } else if (event.key === "Escape") {
           event.preventDefault();
           event.stopImmediatePropagation();
-          if (maskEditor.operationPreview || maskEditor.instanceOperationPreview) {
-            maskEditor.cancelOperation();
-            return;
-          }
           onMaskCancel?.();
         }
       };

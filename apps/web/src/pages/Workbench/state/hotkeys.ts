@@ -1,6 +1,8 @@
 // Single source of truth for Workbench shortcuts.
 // useEffect 注册和 HotkeyCheatSheet 都从这里读，避免漂移。
 
+import { isWorkbenchInteractionBlocked } from "./workbenchInteractionGuards";
+
 export type HotkeyGroup = "view" | "draw" | "ai" | "nav" | "video" | "threed" | "system";
 
 export interface HotkeyDef {
@@ -20,6 +22,52 @@ export function hotkeyIgnoreToken(
   event: Pick<KeyboardEvent, "key" | "ctrlKey" | "metaKey">,
 ): string | null {
   return event.ctrlKey || event.metaKey ? `Mod+${event.key.toLowerCase()}` : null;
+}
+
+export function isMaskContextHotkey(event: KeyboardEvent): boolean {
+  const key = event.key.toLowerCase();
+  return (
+    ["enter", "escape", "b", "e"].includes(key) ||
+    ((event.ctrlKey || event.metaKey) && (key === "z" || key === "y"))
+  );
+}
+
+const blockedMaskEvents = new WeakSet<KeyboardEvent>();
+const maskControlSelector =
+  'input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="combobox"], [role="listbox"], [role="menu"], [role^="menuitem"], [role="dialog"], [role="alertdialog"], [role="tab"], [data-workbench-layout-control], [data-scene-timeline]';
+const maskPopupSelector =
+  '[role="menu"], [role="dialog"], [role="alertdialog"], [role="listbox"], dialog[open]';
+
+/** Image and video Mask listeners yield without swallowing a control's own key event. */
+export function isMaskHotkeyBlocked(event: KeyboardEvent): boolean {
+  if (blockedMaskEvents.has(event)) return true;
+  const blocked =
+    event.defaultPrevented ||
+    event.isComposing ||
+    event.keyCode === 229 ||
+    event.repeat ||
+    isWorkbenchInteractionBlocked(event) ||
+    event
+      .composedPath()
+      .some(
+        (target) =>
+          target instanceof Element &&
+          (target.matches(maskControlSelector) ||
+            (target instanceof HTMLElement && target.isContentEditable) ||
+            (event.key === "Enter" && target.matches('button, [role="button"], a[href], summary'))),
+      ) ||
+    (typeof document !== "undefined" &&
+      Array.from(document.querySelectorAll(maskPopupSelector)).some((popup) => {
+        if (popup.closest('[hidden], [aria-hidden="true"], [data-state="closed"]')) return false;
+        for (let element: Element | null = popup; element; element = element.parentElement) {
+          const style = getComputedStyle(element);
+          if (style.display === "none" || style.visibility === "hidden") return false;
+        }
+        return true;
+      }));
+  // A popup may remove itself between capture and the later background listener.
+  if (blocked) blockedMaskEvents.add(event);
+  return blocked;
 }
 
 export const HOTKEYS: HotkeyDef[] = [
@@ -78,7 +126,7 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["wheel"], desc: "Mask 工具: 调笔刷半径 (±2px)", group: "draw" },
   { keys: ["B"], desc: "Mask 工具激活时: 切笔刷模式", group: "draw" },
   { keys: ["E"], desc: "Mask 工具激活时: 切橡皮模式", group: "draw" },
-  { keys: ["Enter"], desc: "Mask 工具激活时: 提交当前 Mask", group: "draw" },
+  { keys: ["Enter"], desc: "Mask 工具激活时: 执行当前阶段主动作", group: "draw" },
   {
     keys: ["Alt", "2"],
     desc: "图片多边形工具（备用）",

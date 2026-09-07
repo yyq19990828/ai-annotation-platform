@@ -1,11 +1,18 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Annotation } from "@/types";
+import type { Annotation, AnnotationResponse, CocoRleMaskRef } from "@/types";
+import type { CocoRle } from "../../stage/shared/geometry/maskRle";
+import type { MaskSaveResult } from "../../state/useMaskEditorSession";
 import {
   getBatchChangeTarget,
   hasUsableImageBounds,
   useImageAnnotationActions,
 } from "./useImageAnnotationActions";
+
+const nativeRequests = vi.hoisted(() => ({ upload: vi.fn() }));
+vi.mock("@/api/rasterMasks", () => ({
+  rasterMasksApi: { uploadTaskContent: nativeRequests.upload },
+}));
 
 const predictionMutations = vi.hoisted(() => ({ accept: vi.fn(), reject: vi.fn() }));
 vi.mock("@/hooks/usePredictions", () => ({
@@ -477,4 +484,353 @@ describe("useImageAnnotationActions module", () => {
       expect(sam.cancel).toHaveBeenCalledTimes(1);
     },
   );
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((yes, no) => {
+    resolve = yes;
+    reject = no;
+  });
+  return { promise, resolve, reject };
+}
+
+const maskRle: CocoRle = { encoding: "coco_rle", size: [100, 100], counts: [0, 10_000] };
+const maskRef: CocoRleMaskRef = {
+  encoding: "coco_rle_ref",
+  size: [100, 100],
+  object_key: "mask-key",
+  sha256: "mask-hash",
+  runs: 2,
+  bytes: 20,
+};
+const savedMask = {
+  id: "mask-1",
+  class_name: "Car",
+  version: 2,
+  is_locked: false,
+  geometry: { type: "raster_mask", mask: maskRef },
+} as AnnotationResponse;
+
+function maskCommitHarness() {
+  const view = decisionHarness();
+  const editor = {
+    active: true,
+    dirty: true,
+    phase: "dirty",
+    generation: 1,
+    sessionId: "task-1|mask|blank|v?",
+    commitToRleAsync: vi.fn<() => Promise<CocoRle | null>>().mockResolvedValue(maskRle),
+    commitToPolygon: vi.fn().mockReturnValue({
+      points: [
+        [0, 0],
+        [100, 0],
+        [100, 100],
+      ],
+      lossy: false,
+    }),
+    save: vi.fn(async (commit: () => Promise<MaskSaveResult>) => commit()),
+    rebaseSession: vi.fn(),
+    cancel: vi.fn(),
+    initFromPolygon: vi.fn(),
+    undo: vi.fn(),
+    canUndo: true,
+  };
+  const args = Object.assign(view.args, {
+    maskEditor: editor,
+    maskPersistenceMode: "native" as "native" | "legacy",
+    maskRouteKey: "/workbench/task-1",
+    maskSessionKey: {
+      taskId: "task-1",
+      frameIndex: 0,
+      toolKey: "image:mask",
+      routeKey: "/workbench/task-1",
+      selectionKey: "blank",
+      annotationVersion: undefined as number | undefined,
+    },
+    activeToolHasOwnClasses: false,
+    isLocked: false,
+  });
+  const s = Object.assign(view.s, { tool: "mask", selectedId: "", setTool: vi.fn() });
+  Object.assign(args.sam, { consume: vi.fn() });
+  args.createAnnotationAsync.mockResolvedValue(savedMask);
+  args.updateAnnotationAsync.mockResolvedValue(savedMask);
+  view.rerender();
+  return { ...view, args, s, editor };
+}
+
+function expectNoMaskCompletion(view: ReturnType<typeof maskCommitHarness>) {
+  expect(view.args.history.push).not.toHaveBeenCalled();
+  expect(view.args.recordRecentClass).not.toHaveBeenCalled();
+  expect(view.args.pushToast).not.toHaveBeenCalled();
+  expect(view.editor.cancel).not.toHaveBeenCalled();
+  expect(view.s.setTool).not.toHaveBeenCalled();
+  expect(view.s.setSelectedId).not.toHaveBeenCalled();
+}
+
+describe("ordinary image Mask commit ownership", () => {
+  beforeEach(() => {
+    nativeRequests.upload.mockReset().mockResolvedValue(maskRef);
+  });
+
+  it.each(["task", "return-to-task", "route", "tool", "selection", "lock", "generation"])(
+    "异步合并期间切换 %s 后不能选类、上传或修改新会话",
+    async (change) => {
+      const merge = deferred<CocoRle>();
+      const view = maskCommitHarness();
+      view.args.activeToolHasOwnClasses = true;
+      view.editor.commitToRleAsync.mockReturnValueOnce(merge.promise);
+      view.rerender();
+      const pending = view.result.current.commitMaskAsPolygon();
+      if (change === "task" || change === "return-to-task") view.args.taskId = "task-2";
+      if (change === "route") view.args.maskRouteKey = "/review/task-1";
+      if (change === "tool") view.s.tool = "box";
+      if (change === "selection") view.s.selectedId = "another";
+      if (change === "lock") view.args.isLocked = true;
+      if (change === "generation") view.editor.generation += 1;
+      view.rerender();
+      if (change === "return-to-task") {
+        view.args.taskId = "task-1";
+        view.rerender();
+      }
+      await act(async () => {
+        merge.resolve(maskRle);
+        expect(await pending).toEqual({ ok: false, retryable: false });
+      });
+      expect(view.s.setPendingDrawing).not.toHaveBeenCalled();
+      expect(nativeRequests.upload).not.toHaveBeenCalled();
+      expect(view.editor.save).not.toHaveBeenCalled();
+      expectNoMaskCompletion(view);
+    },
+  );
+
+  it("过期合并失败保持静默", async () => {
+    const merge = deferred<CocoRle>();
+    const view = maskCommitHarness();
+    view.editor.commitToRleAsync.mockReturnValueOnce(merge.promise);
+    const pending = view.result.current.commitMaskAsPolygon();
+    view.args.taskId = "task-2";
+    view.rerender();
+    await act(async () => {
+      merge.reject(new Error("released old worker"));
+      expect(await pending).toEqual({ ok: false, retryable: false });
+    });
+    expectNoMaskCompletion(view);
+  });
+
+  it.each(["native", "legacy"] as const)(
+    "%s 选类弹层在切题后结束，不能沿用到新题",
+    async (mode) => {
+      const view = maskCommitHarness();
+      view.args.maskPersistenceMode = mode;
+      view.args.activeToolHasOwnClasses = true;
+      view.rerender();
+      let pending!: Promise<MaskSaveResult>;
+      await act(async () => {
+        pending = view.result.current.commitMaskAsPolygon();
+      });
+      expect(view.s.setPendingDrawing).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "raster_mask" }),
+      );
+      view.s.pendingDrawing =
+        view.s.setPendingDrawing.mock.calls[view.s.setPendingDrawing.mock.calls.length - 1][0];
+      view.rerender();
+      view.args.taskId = "task-2";
+      view.rerender();
+      await act(async () => {
+        expect(await pending).toEqual({ ok: false, retryable: false });
+      });
+      expect(view.s.setPendingDrawing).toHaveBeenLastCalledWith(null);
+      expect(nativeRequests.upload).not.toHaveBeenCalled();
+      expect(view.editor.save).not.toHaveBeenCalled();
+      expectNoMaskCompletion(view);
+    },
+  );
+
+  it.each(["task", "generation"])("上传期间切换 %s，上传完成不能继续创建标注", async (change) => {
+    const upload = deferred<CocoRleMaskRef>();
+    nativeRequests.upload.mockReturnValueOnce(upload.promise);
+    const view = maskCommitHarness();
+    let pending!: Promise<MaskSaveResult>;
+    await act(async () => {
+      pending = view.result.current.commitMaskAsPolygon();
+    });
+    expect(nativeRequests.upload).toHaveBeenCalledTimes(1);
+    if (change === "task") view.args.taskId = "task-2";
+    else view.editor.generation += 1;
+    view.rerender();
+    await act(async () => {
+      upload.resolve(maskRef);
+      expect(await pending).toEqual({ ok: false, retryable: false });
+    });
+    expect(view.args.createAnnotationAsync).not.toHaveBeenCalled();
+    expect(view.args.updateAnnotationAsync).not.toHaveBeenCalled();
+    expectNoMaskCompletion(view);
+  });
+
+  it.each(["native", "legacy"] as const)(
+    "%s 迟到创建成功不能写入历史、选择或取消新稿件",
+    async (mode) => {
+      const save = deferred<AnnotationResponse>();
+      const view = maskCommitHarness();
+      view.args.maskPersistenceMode = mode;
+      view.args.createAnnotationAsync.mockReturnValueOnce(save.promise);
+      view.rerender();
+      let pending!: Promise<MaskSaveResult>;
+      await act(async () => {
+        pending = view.result.current.commitMaskAsPolygon();
+      });
+      expect(view.args.createAnnotationAsync).toHaveBeenCalledTimes(1);
+      view.args.taskId = "task-2";
+      view.rerender();
+      view.args.taskId = "task-1";
+      view.rerender();
+      await act(async () => {
+        save.resolve(savedMask);
+        expect(await pending).toEqual({ ok: false, retryable: false });
+      });
+      expectNoMaskCompletion(view);
+    },
+  );
+
+  it("过期保存失败不向新会话显示旧错误", async () => {
+    const save = deferred<AnnotationResponse>();
+    const view = maskCommitHarness();
+    view.args.createAnnotationAsync.mockReturnValueOnce(save.promise);
+    let pending!: Promise<MaskSaveResult>;
+    await act(async () => {
+      pending = view.result.current.commitMaskAsPolygon();
+    });
+    view.args.taskId = "task-2";
+    view.rerender();
+    await act(async () => {
+      save.reject(new Error("offline"));
+      expect(await pending).toEqual({ ok: false, retryable: false });
+    });
+    expectNoMaskCompletion(view);
+  });
+
+  it("自身成功更新的对象版本变化仍可完成历史和编辑器收尾", async () => {
+    const save = deferred<AnnotationResponse>();
+    const view = maskCommitHarness();
+    view.args.maskSessionKey = {
+      ...view.args.maskSessionKey,
+      selectionKey: savedMask.id,
+      annotationVersion: 1,
+    };
+    view.s.selectedId = savedMask.id;
+    view.args.annotationsRef.current = [{ ...savedMask, version: 1 }] as never;
+    view.args.updateAnnotationAsync.mockReturnValueOnce(save.promise);
+    view.rerender();
+    let pending!: Promise<MaskSaveResult>;
+    await act(async () => {
+      pending = view.result.current.commitMaskAsPolygon();
+    });
+    expect(view.args.updateAnnotationAsync).toHaveBeenCalledWith(
+      savedMask.id,
+      { geometry: savedMask.geometry },
+      'W/"1"',
+    );
+    view.args.annotationsRef.current = [savedMask] as never;
+    view.editor.generation += 1;
+    view.editor.sessionId = "task-1|mask|mask-1|v2";
+    view.rerender();
+    await act(async () => {
+      save.resolve(savedMask);
+      expect(await pending).toEqual({ ok: true, retryable: false });
+    });
+    expect(view.args.history.push).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "update", annotationId: savedMask.id }),
+    );
+    expect(view.editor.rebaseSession).toHaveBeenCalledWith({
+      ...view.args.maskSessionKey,
+      annotationVersion: 2,
+    });
+    expect(view.editor.rebaseSession.mock.invocationCallOrder[0]).toBeLessThan(
+      view.editor.cancel.mock.invocationCallOrder[0],
+    );
+    expect(view.editor.cancel).toHaveBeenCalledTimes(1);
+    expect(view.s.setTool).toHaveBeenCalledWith("box");
+    expect(view.s.setSelectedId).toHaveBeenCalledWith(savedMask.id);
+  });
+
+  it("删除空 Mask 的迟到成功不清空新会话选择和历史", async () => {
+    const view = maskCommitHarness();
+    view.s.selectedId = savedMask.id;
+    view.args.annotationsRef.current = [savedMask] as never;
+    view.editor.commitToRleAsync.mockResolvedValueOnce({ ...maskRle, counts: [10_000] });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    view.rerender();
+    let pending!: Promise<MaskSaveResult>;
+    try {
+      await act(async () => {
+        pending = view.result.current.commitMaskAsPolygon();
+      });
+      expect(view.args.mutations.delete.mutate).toHaveBeenCalledTimes(1);
+      const callbacks = view.args.mutations.delete.mutate.mock.calls[0][1];
+      view.args.taskId = "task-2";
+      view.rerender();
+      await act(async () => {
+        callbacks.onSuccess();
+        expect(await pending).toEqual({ ok: false, retryable: false });
+      });
+      expectNoMaskCompletion(view);
+    } finally {
+      confirm.mockRestore();
+    }
+  });
+
+  it("卸载后合并成功保持静默", async () => {
+    const merge = deferred<CocoRle>();
+    const view = maskCommitHarness();
+    view.editor.commitToRleAsync.mockReturnValueOnce(merge.promise);
+    const pending = view.result.current.commitMaskAsPolygon();
+    view.unmount();
+    merge.resolve(maskRle);
+    expect(await pending).toEqual({ ok: false, retryable: false });
+    expect(nativeRequests.upload).not.toHaveBeenCalled();
+    expectNoMaskCompletion(view);
+  });
+
+  it("旧入口在切题后被调用也不能启动合并", async () => {
+    const view = maskCommitHarness();
+    const oldCommit = view.result.current.commitMaskAsPolygon;
+    view.args.taskId = "task-2";
+    view.rerender();
+    expect(await oldCommit()).toEqual({ ok: false, retryable: false });
+    expect(view.editor.commitToRleAsync).not.toHaveBeenCalled();
+    expectNoMaskCompletion(view);
+  });
+
+  it("原会话正常创建只写一次历史并选中结果", async () => {
+    const view = maskCommitHarness();
+    await act(async () => {
+      expect(await view.result.current.commitMaskAsPolygon()).toEqual({
+        ok: true,
+        retryable: false,
+      });
+    });
+    expect(nativeRequests.upload).toHaveBeenCalledWith("task-1", maskRle);
+    expect(view.args.createAnnotationAsync).toHaveBeenCalledTimes(1);
+    expect(view.args.history.push).toHaveBeenCalledTimes(1);
+    expect(view.editor.cancel).toHaveBeenCalledTimes(1);
+    expect(view.s.setSelectedId).toHaveBeenCalledWith(savedMask.id);
+  });
+
+  it("锁定对象不能开始合并或保存", async () => {
+    const view = maskCommitHarness();
+    view.s.selectedId = savedMask.id;
+    view.args.annotationsRef.current = [{ ...savedMask, is_locked: true }] as never;
+    view.rerender();
+    await act(async () => {
+      expect(await view.result.current.commitMaskAsPolygon()).toEqual({
+        ok: false,
+        retryable: false,
+      });
+    });
+    expect(view.editor.commitToRleAsync).not.toHaveBeenCalled();
+    expect(view.editor.save).not.toHaveBeenCalled();
+    expect(view.args.pushToast).toHaveBeenCalledWith(expect.objectContaining({ kind: "warning" }));
+  });
 });

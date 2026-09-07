@@ -29,7 +29,7 @@ import {
   resolveSamCandidateClass,
   samCandidateGeom,
 } from "../../state/useWorkbenchShellModel.helpers";
-import type { UseMaskEditorSessionReturn } from "../../state/useMaskEditorSession";
+import type { UseMaskEditorSessionReturn, MaskSessionKey } from "../../state/useMaskEditorSession";
 import { canEditMask } from "../../state/canEditMask";
 import { tightenBboxFromPolygon } from "../../stage/shared/geometry/bbox";
 import { UNKNOWN_CLASS } from "../../stage/colors";
@@ -53,6 +53,24 @@ import {
   type RegionGeometry,
 } from "../../stage/shared/geometry/maskConversion";
 import { cocoRleArea, cocoRleBounds } from "../../stage/shared/geometry/maskRle";
+
+type PendingRefine =
+  | {
+      kind: "prediction";
+      predictionId: string;
+      shapeIndex: number;
+      labelId: string;
+      sourceGeometry: RegionGeometry;
+    }
+  | { kind: "sam"; samIdx: number; labelId: string; sourceGeometry: RegionGeometry }
+  | {
+      kind: "user";
+      annotationId: string;
+      beforeGeometry: AnnotationResponse["geometry"];
+      annotationVersion: number | undefined;
+      labelId: string;
+      sourceGeometry: RegionGeometry;
+    };
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
@@ -89,6 +107,9 @@ interface ToastInput {
 interface UseImageAnnotationActionsArgs {
   taskId: string | undefined;
   videoSegmentId?: string | null;
+  /** Route identity is separate from annotation versions refreshed by a successful save. */
+  maskRouteKey?: string;
+  maskSessionKey?: MaskSessionKey;
   projectId: string | undefined;
   meUserId: string | null | undefined;
   queryClient: QueryClient;
@@ -211,6 +232,8 @@ export function promptEmptyRasterMaskChoice(
 export function useImageAnnotationActions({
   taskId,
   videoSegmentId,
+  maskRouteKey,
+  maskSessionKey,
   projectId,
   meUserId,
   queryClient,
@@ -270,6 +293,52 @@ export function useImageAnnotationActions({
   const [batchChangeToolUnitId, setBatchChangeToolUnitId] = useState<string | undefined>();
   const [samPendingAccept, setSamPendingAccept] = useState<{ idx: number } | null>(null);
   const pendingMaskClassResolverRef = useRef<((className: string | null) => void) | null>(null);
+  const pendingRefineRef = useRef<PendingRefine | null>(null);
+  const maskTargetId =
+    pendingRefineRef.current?.kind === "user"
+      ? pendingRefineRef.current.annotationId
+      : s.selectedId;
+  const selectedMaskLocked = !!annotationsRef.current.find((ann) => ann.id === maskTargetId)
+    ?.is_locked;
+  // Keep a distinct lease after A -> B -> A. Annotation versions are intentionally
+  // checked separately: our own successful mutation may refresh that version.
+  const maskCommitOwner = useMemo(
+    () => ({
+      taskId,
+      projectId,
+      videoSegmentId,
+      maskRouteKey,
+      tool: s.tool,
+      selection: s.selectedId,
+      frame: s.videoFrameIndex,
+      isLocked,
+      selectedMaskLocked,
+      maskPersistenceMode,
+      active: maskEditor?.active,
+    }),
+    [
+      taskId,
+      projectId,
+      videoSegmentId,
+      maskRouteKey,
+      s.tool,
+      s.selectedId,
+      s.videoFrameIndex,
+      isLocked,
+      selectedMaskLocked,
+      maskPersistenceMode,
+      maskEditor?.active,
+    ],
+  );
+  const currentMaskCommitRef = useRef({ owner: maskCommitOwner, editor: maskEditor, isLocked });
+  currentMaskCommitRef.current = { owner: maskCommitOwner, editor: maskEditor, isLocked };
+  const maskCommitMountedRef = useRef(true);
+  useEffect(() => {
+    maskCommitMountedRef.current = true;
+    return () => {
+      maskCommitMountedRef.current = false;
+    };
+  }, []);
   const [dismissedShapeKeys, setDismissedShapeKeys] = useState<Set<string>>(new Set());
   const [predictionSourceVisibility, setPredictionSourceVisibility] = useState(
     defaultPredictionSourceVisibility,
@@ -279,12 +348,17 @@ export function useImageAnnotationActions({
     setDismissedShapeKeys(new Set());
   }, [taskId]);
 
+  const setMaskPendingDrawing = s.setPendingDrawing;
   useEffect(
     () => () => {
-      pendingMaskClassResolverRef.current?.(null);
+      const resolve = pendingMaskClassResolverRef.current;
       pendingMaskClassResolverRef.current = null;
+      if (resolve) {
+        resolve(null);
+        setMaskPendingDrawing(null);
+      }
     },
-    [taskId],
+    [maskCommitOwner, setMaskPendingDrawing],
   );
 
   const requestMaskClass = useCallback(
@@ -956,24 +1030,6 @@ export function useImageAnnotationActions({
 
   // v0.10.8 · I11 · Mask 精修：候选/已存 polygon → mask 编辑 → commit 路径按 kind 分流。
   // v0.10.9 · 扩三种 kind：prediction（AI 预标 polygon 行）/ sam（SAM 交互候选，未 Enter）/ user（已落库 polygon，update 替换 geometry）。
-  type PendingRefine =
-    | {
-        kind: "prediction";
-        predictionId: string;
-        shapeIndex: number;
-        labelId: string;
-        sourceGeometry: RegionGeometry;
-      }
-    | { kind: "sam"; samIdx: number; labelId: string; sourceGeometry: RegionGeometry }
-    | {
-        kind: "user";
-        annotationId: string;
-        beforeGeometry: AnnotationResponse["geometry"];
-        annotationVersion: number | undefined;
-        labelId: string;
-        sourceGeometry: RegionGeometry;
-      };
-  const pendingRefineRef = useRef<PendingRefine | null>(null);
 
   const initMaskFromNormalizedPoints = useCallback(
     (normPoints: [number, number][]): boolean => {
@@ -1100,6 +1156,27 @@ export function useImageAnnotationActions({
     // v0.23.5 · WS-C · 提交边界 defense-in-depth: 即便 Enter hotkey 漏判, commit 本身也
     // 经 canEditMask 拦截锁定对象 (task 只读 / 选中 annotation is_locked)。
     const refine = pendingRefineRef.current;
+    const generation = maskEditor.generation;
+    const sessionId = maskEditor.sessionId;
+    const staleResult = { ok: false, retryable: false };
+    // Before writing, require the original buffer generation. After our mutation,
+    // the semantic lease still owns completion even if its saved version rebased.
+    const isCurrentOwner = (checkSession = true) => {
+      const current = currentMaskCommitRef.current;
+      const targetId = refine?.kind === "user" ? refine.annotationId : s.selectedId;
+      return (
+        maskCommitMountedRef.current &&
+        current.owner === maskCommitOwner &&
+        pendingRefineRef.current === refine &&
+        !current.isLocked &&
+        !annotationsRef.current.find((ann) => ann.id === targetId)?.is_locked &&
+        (!checkSession ||
+          (current.editor?.generation === generation && current.editor?.sessionId === sessionId))
+      );
+    };
+    if (!maskCommitMountedRef.current || currentMaskCommitRef.current.owner !== maskCommitOwner) {
+      return staleResult;
+    }
     const refinedAnnotation =
       refine?.kind === "user"
         ? annotationsRef.current.find((a) => a.id === refine.annotationId)
@@ -1119,6 +1196,7 @@ export function useImageAnnotationActions({
       pushToast({ msg: "对象已锁定,无法提交 Mask", kind: "warning" });
       return Promise.resolve({ ok: false, retryable: false });
     }
+    if (!isCurrentOwner()) return staleResult;
     if (!maskEditor.dirty) return Promise.resolve({ ok: false, retryable: false });
     if (sel?.geometry.type === "raster_mask" && maskPersistenceMode !== "native") {
       pushToast({ msg: "Mask 为只读", sub: "当前项目未开启原生 Mask 再编辑", kind: "warning" });
@@ -1141,6 +1219,7 @@ export function useImageAnnotationActions({
       try {
         rle = await maskEditor.commitToRleAsync();
       } catch (error: unknown) {
+        if (!isCurrentOwner()) return staleResult;
         pushToast({
           msg: "Mask 合并失败",
           sub: "分块稿件与撤销历史已保留，可重试",
@@ -1148,6 +1227,7 @@ export function useImageAnnotationActions({
         });
         return { ok: false, retryable: true, error };
       }
+      if (!isCurrentOwner()) return staleResult;
       const foregroundPixels = rle ? cocoRleArea(rle) : 0;
       const selectedRaster = sel?.geometry.type === "raster_mask" ? sel : null;
       const updateTarget = refinedAnnotation ?? selectedRaster;
@@ -1157,6 +1237,7 @@ export function useImageAnnotationActions({
           return Promise.resolve({ ok: false, retryable: false });
         }
         const emptyChoice = promptEmptyRasterMaskChoice(window.confirm);
+        if (!isCurrentOwner()) return staleResult;
         if (emptyChoice === "delete") {
           return maskEditor
             .save(
@@ -1177,6 +1258,7 @@ export function useImageAnnotationActions({
                 }),
             )
             .then((result) => {
+              if (!isCurrentOwner(false) || result === staleResult) return staleResult;
               if (!result.ok) {
                 pushToast({
                   msg: "删除 Mask 失败",
@@ -1212,6 +1294,7 @@ export function useImageAnnotationActions({
       if (!refine && !updateTarget) {
         labelForCommit = await requestMaskClass(cocoRleBounds(rle) ?? { x: 0, y: 0, w: 1, h: 1 });
       }
+      if (!isCurrentOwner()) return staleResult;
       if (!labelForCommit) {
         return Promise.resolve({ ok: false, retryable: false });
       }
@@ -1240,6 +1323,7 @@ export function useImageAnnotationActions({
         }
       }
 
+      if (!isCurrentOwner()) return staleResult;
       let committedAnnotation: AnnotationResponse | null = null;
       let createdPayload: AnnotationPayload | null = null;
       const beforeGeometry = updateTarget?.geometry;
@@ -1247,6 +1331,7 @@ export function useImageAnnotationActions({
         .save(async () => {
           try {
             const mask = await rasterMasksApi.uploadTaskContent(taskId, rle);
+            if (!isCurrentOwner()) return staleResult;
             const geometry = { type: "raster_mask", mask } as const;
             if (updateTarget) {
               committedAnnotation = await updateAnnotationAsync(
@@ -1270,14 +1355,28 @@ export function useImageAnnotationActions({
               };
               committedAnnotation = await createAnnotationAsync(createdPayload);
             }
+            if (!isCurrentOwner(false)) return staleResult;
+            // Accept our own version before leaving the saved session. Otherwise
+            // the dirty-leave guard can restore the old Mask tool after cancel.
+            if (
+              maskSessionKey?.selectionKey === committedAnnotation.id &&
+              committedAnnotation.version != null
+            ) {
+              maskEditor.rebaseSession({
+                ...maskSessionKey,
+                annotationVersion: committedAnnotation.version,
+              });
+            }
             return { ok: true, retryable: false };
           } catch (error: unknown) {
+            if (!isCurrentOwner()) return staleResult;
             const retryable =
               !(error instanceof ApiError) || error.status === 409 || error.status >= 500;
             return { ok: false, retryable, error };
           }
         })
         .then((result) => {
+          if (!isCurrentOwner(false) || result === staleResult) return staleResult;
           if (!result.ok) {
             pushToast({
               msg: "Mask 保存失败",
@@ -1348,6 +1447,7 @@ export function useImageAnnotationActions({
     if (!refine) {
       labelForCommit = await requestMaskClass(geometryToShape(geometry));
     }
+    if (!isCurrentOwner()) return staleResult;
     if (!labelForCommit) {
       return Promise.resolve({ ok: false, retryable: false });
     }
@@ -1372,17 +1472,20 @@ export function useImageAnnotationActions({
                 : {}),
             };
             createdAnnotation = await createAnnotationAsync(payload);
+            if (!isCurrentOwner(false)) return staleResult;
             history.push({ kind: "create", annotationId: createdAnnotation.id, payload });
             recordRecentClass(labelForCommit);
           }
           return { ok: true, retryable: false };
         } catch (error: unknown) {
+          if (!isCurrentOwner()) return staleResult;
           const retryable =
             !(error instanceof ApiError) || error.status === 409 || error.status >= 500;
           return { ok: false, retryable, error };
         }
       })
       .then((result) => {
+        if (!isCurrentOwner(false) || result === staleResult) return staleResult;
         if (!result.ok) {
           pushToast({
             msg: "Mask 保存失败",
@@ -1420,6 +1523,8 @@ export function useImageAnnotationActions({
     // 上游被阻断 (见函数开头 out.lossy 早退分支), 走到这里的一定是单连通无损 mask。
   }, [
     maskEditor,
+    maskCommitOwner,
+    maskSessionKey,
     s,
     annotationsRef,
     isLocked,

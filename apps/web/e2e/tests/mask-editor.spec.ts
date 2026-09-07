@@ -147,10 +147,7 @@ test.describe("mask editor (I11)", () => {
         { timeout: 10_000 },
       )
       .catch(() => null);
-    await page
-      .getByTestId("mask-toolbar")
-      .getByRole("button", { name: "确认", exact: true })
-      .click();
+    await page.getByTestId("mask-toolbar").getByTestId("mask-primary-action").click();
     const resp = await annoPost;
     expect(resp).not.toBeNull();
     expect(confirmCount).toBeGreaterThan(0);
