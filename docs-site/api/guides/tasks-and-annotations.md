@@ -47,6 +47,8 @@ POST /api/v1/tasks/:id/annotations
 
 ## 视频任务
 
+视频轨迹标注的 `geometry.keyframes[].source` 只代表该关键帧记录的来源。读取矩形框、多边形、折线和 Mask 轨迹时，旧数据未保存的 `source` 字段保持缺省，客户端应显示「来源未知」，不能用整条标注的 `source` 替代。新建关键帧未指定来源时仍按既有写入规则保存为 `manual`；此读取规则不修改已存几何或补写旧数据。
+
 视频任务会在 `GET /api/v1/tasks/:id` 的 `TaskOut.video_metadata` 里透出标准化视频元数据：
 
 ```json

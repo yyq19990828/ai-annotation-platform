@@ -7,10 +7,10 @@
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createRef } from "react";
-import { act, render, renderHook } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, screen, within } from "@testing-library/react";
 import { VideoKonvaStage } from "./VideoKonvaStage";
 import type { VideoStageControls } from "./videoStageControls";
-import type { TaskVideoManifestResponse } from "@/types";
+import type { AnnotationResponse, TaskVideoManifestResponse } from "@/types";
 import type { UseMaskEditorReturn } from "../state/useMaskEditor";
 import { useWorkbenchHotkeys, type UseWorkbenchHotkeysArgs } from "../state/useWorkbenchHotkeys";
 
@@ -166,6 +166,136 @@ describe("VideoKonvaStage · konva mock", () => {
     expect(document.querySelector('[data-testid="video-konva-stage"]')).toBeNull();
     expect(document.querySelector('[data-konva="Stage"]')).toBeNull();
   });
+
+  it("工具与审阅浮层位于轨迹条下方，共享画布坐标而不冒泡到绘制容器", () => {
+    render(
+      <VideoKonvaStage
+        manifest={manifest}
+        overlays={<button data-testid="tool-overlay">工具</button>}
+      />,
+    );
+    const canvas = screen.getByTestId("video-konva-stage");
+    const bar = screen.getByTestId("video-track-context-bar");
+    const overlay = screen.getByTestId("tool-overlay");
+    expect(canvas.contains(overlay)).toBe(false);
+    expect(canvas.parentElement).toBe(overlay.parentElement);
+    expect(canvas.parentElement?.previousElementSibling).toBe(bar);
+  });
+
+  function contextAnnotation(
+    type: "video_track_bbox" | "video_track_polygon" | "video_track_polyline",
+  ): AnnotationResponse {
+    const shape =
+      type === "video_track_bbox"
+        ? { bbox: { x: 0.1, y: 0.2, w: 0.3, h: 0.4 } }
+        : {
+            points: [
+              [0.1, 0.1],
+              [0.4, 0.1],
+              [0.4, 0.4],
+            ],
+          };
+    return {
+      id: "context-annotation",
+      task_id: "task-1",
+      source: "manual",
+      annotation_type: type,
+      class_name: "car",
+      is_active: true,
+      attributes: {},
+      confidence: 1,
+      parent_prediction_id: null,
+      created_at: "2026-09-07T00:00:00Z",
+      updated_at: null,
+      geometry: {
+        type,
+        track_id: "trk_context",
+        keyframes: [0, 8].map((frame_index) => ({ frame_index, source: "manual", ...shape })),
+      },
+    } as AnnotationResponse;
+  }
+
+  it.each(["video_track_bbox", "video_track_polygon", "video_track_polyline"] as const)(
+    "%s 的轨迹条将真实插值物化为人工关键帧，保留原端点",
+    (type) => {
+      const annotation = contextAnnotation(type);
+      const onUpdate = vi.fn();
+      render(
+        <VideoKonvaStage
+          manifest={manifest}
+          annotations={[annotation]}
+          selectedId={annotation.id}
+          frameIndex={4}
+          onUpdate={onUpdate}
+        />,
+      );
+      const bar = within(screen.getByTestId("video-track-context-bar"));
+      expect(bar.getByTestId("video-track-context-state")).toHaveAttribute(
+        "data-state",
+        "interpolated",
+      );
+      fireEvent.click(bar.getByRole("button", { name: "补关键帧" }));
+      expect(onUpdate).toHaveBeenCalledOnce();
+      const [owner, geometry] = onUpdate.mock.calls[0];
+      expect(owner).toBe(annotation);
+      expect(geometry.type).toBe(type);
+      expect(
+        geometry.keyframes.map((keyframe: { frame_index: number }) => keyframe.frame_index),
+      ).toEqual([0, 4, 8]);
+      expect(geometry.keyframes[1].source).toBe("manual");
+      expect("keyframes" in annotation.geometry).toBe(true);
+      if ("keyframes" in annotation.geometry) {
+        expect(geometry.keyframes[0]).toEqual(annotation.geometry.keyframes[0]);
+        expect(geometry.keyframes[2]).toEqual(annotation.geometry.keyframes[1]);
+      }
+    },
+  );
+
+  it.each(["readOnly", "annotationLock", "trackLock", "draft", "maskDraft"] as const)(
+    "%s 阻止轨迹条写入，读取帧状态仍可用",
+    (guard) => {
+      const annotation = contextAnnotation("video_track_bbox");
+      if (guard === "annotationLock") annotation.is_locked = true;
+      const onUpdate = vi.fn();
+      const onPropagateTrack = vi.fn();
+      const ref = createRef<VideoStageControls>();
+      render(
+        <VideoKonvaStage
+          ref={ref}
+          manifest={manifest}
+          annotations={[annotation]}
+          selectedId={annotation.id}
+          frameIndex={4}
+          onUpdate={onUpdate}
+          onPropagateTrack={onPropagateTrack}
+          readOnly={guard === "readOnly"}
+          lockedTrackIds={guard === "trackLock" ? new Set(["trk_context"]) : new Set()}
+          pendingDrawing={
+            guard === "draft"
+              ? {
+                  kind: "video_bbox",
+                  frameIndex: 4,
+                  geom: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+                  anchor: { left: 0, top: 0 },
+                }
+              : null
+          }
+          maskEditor={guard === "maskDraft" ? makeMaskEditor() : undefined}
+        />,
+      );
+      const bar = within(screen.getByTestId("video-track-context-bar"));
+      expect(bar.queryByRole("button", { name: "补关键帧" })).toBeNull();
+      expect(bar.queryByRole("button", { name: "标记 outside" })).toBeNull();
+      expect(bar.queryByRole("button", { name: "延展轨迹" })).toBeNull();
+      expect(bar.getByRole("button", { name: "下一关键帧" })).toBeEnabled();
+      if (["readOnly", "annotationLock", "trackLock"].includes(guard)) {
+        act(() => ref.current?.toggleSelectedTrackOutside());
+        act(() => ref.current?.propagateSelectedTrack());
+        expect(onUpdate).not.toHaveBeenCalled();
+        expect(onPropagateTrack).not.toHaveBeenCalled();
+      }
+    },
+  );
 
   it("转发的 VideoStageControls 暴露播放控制(togglePlayback 触发 video.play)", () => {
     const ref = createRef<VideoStageControls>();

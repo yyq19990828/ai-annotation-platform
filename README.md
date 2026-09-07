@@ -223,6 +223,8 @@ E2E 不复用开发环境的 `3000/8000` 或 `annotation` 数据库。测试路�
 
 API 变更后同步跑 `pnpm openapi:export` 和 `pnpm codegen`；环境变量变更后同步更新 `.env.example` 并跑 `pnpm docs:gen-env-vars`。
 
+视频轨迹 API 保留旧关键帧缺失的来源字段，客户端应按「来源未知」处理；新建标注仍使用现有来源默认值，详见[任务与标注 API](./docs-site/api/guides/tasks-and-annotations.md)。
+
 ## 文档地图
 
 | 角色 / 任务                | 入口                                                                                                   |

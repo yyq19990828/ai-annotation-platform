@@ -11,6 +11,7 @@ import { isWorkbenchInteractionBlocked } from "../state/workbenchInteractionGuar
 import { isMaskHotkeyBlocked } from "../state/hotkeys";
 import type {
   CSSProperties,
+  ReactNode,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
@@ -91,12 +92,23 @@ import {
   isVideoPolylineTrack,
   isVideoTrack,
   normalizeGeom,
+  resolveTrackAtFrame,
   resolveVideoMaskTrackAtFrame,
+  resolveVideoPolygonTrackAtFrame,
+  resolveVideoPolylineTrackAtFrame,
   shapeIou,
   shortTrackId,
   sortedKeyframes,
+  upsertKeyframe,
+  upsertPointsKeyframe,
 } from "./videoStageGeometry";
-import { buildSelectedTrackTimeline, visibleKeyframesForTimeline } from "./videoTrackTimeline";
+import {
+  buildSelectedTrackTimeline,
+  nextVisibleKeyframeFrame,
+  visibleKeyframesForTimeline,
+} from "./videoTrackTimeline";
+import { deriveVideoTrackContext } from "./videoTrackContext";
+import { removeOutsideFrame } from "./videoTrackOutside";
 import { pickTopVideoEntryAt, pickTopVideoMaskAt } from "./videoStagePicking";
 import { useVideoMaskFrames, type VideoMaskCandidate } from "./videoMaskFrames";
 import { useVideoTrackActions } from "./useVideoTrackActions";
@@ -132,7 +144,7 @@ import { VideoSamCandidateOverlay, type VideoSamCandidateShape } from "./VideoSa
 import { SelectionOverlay } from "./SelectionOverlay";
 import { keypointColorByIndex } from "./ImageStageShapes";
 import { pickTopRasterMaskAt, type RasterMaskRenderRecord } from "./shared/rasterMaskRender";
-import { VideoStickyTrackHint } from "./VideoStickyTrackHint";
+import { VideoTrackContextBar, type VideoTrackContextBarProps } from "./VideoTrackContextBar";
 import type { AiBox } from "../state/transforms";
 import styles from "./VideoKonvaStage.module.css";
 
@@ -152,6 +164,7 @@ const MASK_OPERATION_PREVIEW_COLOR = [245, 158, 11] as const;
 const MASK_INSTANCE_PREVIEW_COLOR = [14, 165, 233] as const;
 
 interface VideoKonvaStageProps {
+  overlays?: ReactNode;
   maskCompareStore?: MaskCompareTileStore | null;
   manifest: TaskVideoManifestResponse | undefined;
   frameTimetable?: TaskVideoFrameTimetableResponse;
@@ -288,6 +301,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
   function VideoKonvaStage(
     {
       maskCompareStore,
+      overlays,
       manifest,
       frameTimetable,
       isLoading = false,
@@ -382,6 +396,11 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     const selectedTrack = useMemo(() => {
       const a = annotations.find((x) => x.id === selectedId);
       return a && isVideoTrack(a) ? a : null;
+    }, [annotations, selectedId]);
+    // Selection identity remains available even when the current frame has no visible geometry.
+    const selectedContextTrack = useMemo(() => {
+      const annotation = annotations.find((item) => item.id === selectedId);
+      return annotation && isAnyVideoTrack(annotation) ? annotation : null;
     }, [annotations, selectedId]);
     const selectedManagedTrack = useMemo<VideoManagedTrackAnnotation | null>(() => {
       const annotation = annotations.find((item) => item.id === selectedId);
@@ -492,8 +511,6 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       samplingStep,
       maxFrame,
       timebase,
-      selectedTrackTimeline,
-      selectedTrackColor,
       globalTimelineDensity,
       predictionDensity,
       hasPredictedFrames,
@@ -515,21 +532,31 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
 
     const effectiveSelectedTrackTimeline = useMemo(
       () =>
-        selectedManagedTrack?.geometry.type === "video_track_mask"
-          ? buildSelectedTrackTimeline(selectedManagedTrack.geometry, "held")
-          : selectedTrackTimeline,
-      [selectedManagedTrack, selectedTrackTimeline],
+        selectedContextTrack
+          ? buildSelectedTrackTimeline(
+              selectedContextTrack.geometry,
+              selectedContextTrack.geometry.type === "video_track_mask" ? "held" : "interpolated",
+            )
+          : null,
+      [selectedContextTrack],
     );
     const effectiveSelectedTrackColor = useMemo(
       () =>
-        selectedManagedTrack?.geometry.type === "video_track_mask"
+        selectedContextTrack
           ? getTrackColor(
-              selectedManagedTrack.geometry.track_id,
-              selectedManagedTrack.class_name,
+              selectedContextTrack.geometry.track_id,
+              selectedContextTrack.class_name,
               trackColorOverrides,
             )
-          : selectedTrackColor,
-      [selectedManagedTrack, selectedTrackColor, trackColorOverrides],
+          : undefined,
+      [selectedContextTrack, trackColorOverrides],
+    );
+    const trackContext = useMemo(
+      () =>
+        selectedContextTrack
+          ? deriveVideoTrackContext(selectedContextTrack.geometry, frameIndex)
+          : null,
+      [frameIndex, selectedContextTrack],
     );
 
     // 当前帧的拖框 pending draft；OBB 初建角度为 0，可复用轴对齐预览。
@@ -1675,20 +1702,11 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
 
     const seekManagedKeyframe = useCallback(
       (dir: -1 | 1, options?: { recordHistory?: boolean }) => {
-        if (selectedManagedTrack?.geometry.type !== "video_track_mask") {
-          controls.seekToKeyframe(dir, options);
-          return;
-        }
-        const frames = visibleKeyframesForTimeline(selectedManagedTrack.geometry).map(
-          (keyframe) => keyframe.frame_index,
-        );
-        const next =
-          dir > 0
-            ? frames.find((candidate) => candidate > frameIndex)
-            : [...frames].reverse().find((candidate) => candidate < frameIndex);
+        if (!selectedContextTrack) return;
+        const next = nextVisibleKeyframeFrame(selectedContextTrack.geometry, frameIndex, dir);
         if (next != null) seekToFrame(next, options);
       },
-      [controls, frameIndex, seekToFrame, selectedManagedTrack],
+      [frameIndex, seekToFrame, selectedContextTrack],
     );
 
     // useImperativeHandle 委托给 controller.controls,再覆盖 deleteSelectedTrackKeyframe。
@@ -1737,6 +1755,132 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       if (selectedManagedTrack?.geometry.type === "video_track_mask") return;
       trackActions.toggleSelectedTrackOccluded();
     }, [selectedManagedTrack, trackActions]);
+
+    const contextTrackLocked = Boolean(
+      selectedContextTrack &&
+      (selectedContextTrack.is_locked ||
+        lockedTrackIds.has(selectedContextTrack.geometry.track_id)),
+    );
+    const contextWritesBlocked = Boolean(
+      readOnly ||
+      contextTrackLocked ||
+      isPlaybackActive ||
+      maskCompareActive ||
+      pendingDrawing ||
+      maskEditor?.active ||
+      (segmentRange &&
+        (frameIndex < segmentRange.workStartFrame || frameIndex > segmentRange.workEndFrame)),
+    );
+    const materializeContextKeyframe = useCallback(() => {
+      if (
+        !selectedContextTrack ||
+        !onUpdate ||
+        contextWritesBlocked ||
+        trackContext?.state !== "interpolated"
+      )
+        return;
+      const geometry = selectedContextTrack.geometry;
+      if (geometry.type === "video_track_bbox") {
+        const resolved = resolveTrackAtFrame(geometry, frameIndex);
+        if (resolved)
+          onUpdate(
+            selectedContextTrack,
+            upsertKeyframe(geometry, frameIndex, resolved.geom, { source: "manual" }),
+          );
+      } else if (geometry.type === "video_track_polygon") {
+        const resolved = resolveVideoPolygonTrackAtFrame(geometry, frameIndex);
+        if (resolved)
+          onUpdate(
+            selectedContextTrack,
+            upsertPointsKeyframe(geometry, frameIndex, resolved.points),
+          );
+      } else if (geometry.type === "video_track_polyline") {
+        const resolved = resolveVideoPolylineTrackAtFrame(geometry, frameIndex);
+        if (resolved)
+          onUpdate(
+            selectedContextTrack,
+            upsertPointsKeyframe(geometry, frameIndex, resolved.points),
+          );
+      }
+    }, [contextWritesBlocked, frameIndex, onUpdate, selectedContextTrack, trackContext?.state]);
+    const contextActions = useMemo<NonNullable<VideoTrackContextBarProps["actions"]>>(() => {
+      if (!selectedContextTrack || !trackContext || contextWritesBlocked) return [];
+      const actions: Array<NonNullable<VideoTrackContextBarProps["actions"]>[number]> = [];
+      const geometry = selectedContextTrack.geometry;
+      if (trackContext.state === "interpolated" && onUpdate) {
+        actions.push({ id: "materialize", label: "补关键帧", onClick: materializeContextKeyframe });
+      }
+      if (geometry.type === "video_track_bbox" && onUpdate) {
+        const canRestore =
+          trackContext.state === "outside" &&
+          visibleKeyframesForTimeline(removeOutsideFrame(geometry, frameIndex)).length > 0;
+        if (
+          trackContext.state === "keyframe" ||
+          trackContext.state === "interpolated" ||
+          canRestore
+        ) {
+          actions.push({
+            id: "outside",
+            label: trackContext.state === "outside" ? "恢复显示" : "标记 outside",
+            shortcut: "O",
+            onClick: toggleManagedTrackOutside,
+          });
+        }
+      } else if (
+        geometry.type === "video_track_mask" &&
+        maskKeyframeActions &&
+        !maskKeyframeActions.busy
+      ) {
+        const canRestore =
+          trackContext.state === "outside" &&
+          resolveVideoMaskTrackAtFrame(removeOutsideFrame(geometry, frameIndex), frameIndex) !==
+            null &&
+          geometry.outside?.some(
+            (range) =>
+              range.source !== "prediction" && range.from <= frameIndex && frameIndex <= range.to,
+          );
+        if (trackContext.state === "keyframe" || trackContext.state === "held" || canRestore) {
+          actions.push({
+            id: "outside",
+            label: trackContext.state === "outside" ? "恢复显示" : "标记 outside",
+            shortcut: "O",
+            onClick: toggleManagedTrackOutside,
+          });
+        }
+      }
+      if (
+        selectedManagedTrack &&
+        onPropagateTrack &&
+        trackContext.state !== "outside" &&
+        trackContext.state !== "unavailable"
+      ) {
+        actions.push({
+          id: "propagate",
+          label: "延展轨迹",
+          onClick: trackActions.propagateSelectedTrack,
+        });
+      }
+      return actions;
+    }, [
+      contextWritesBlocked,
+      frameIndex,
+      maskKeyframeActions,
+      materializeContextKeyframe,
+      onPropagateTrack,
+      onUpdate,
+      selectedContextTrack,
+      selectedManagedTrack,
+      toggleManagedTrackOutside,
+      trackActions,
+      trackContext,
+    ]);
+    const seekContextFrame = useCallback(
+      (frame: number) => {
+        pausePlayback();
+        seekToFrame(frame, { recordHistory: true });
+      },
+      [pausePlayback, seekToFrame],
+    );
 
     useImperativeHandle(
       ref,
@@ -1941,7 +2085,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       );
     }
 
-    return (
+    const canvas = (
       <div
         ref={setContainerNode}
         data-testid="video-konva-stage"
@@ -2391,12 +2535,6 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
           </div>
         )}
         <VideoQcWarnings warnings={qualityWarnings} />
-        {stickyTrackHint && (
-          <VideoStickyTrackHint
-            label={stickyTrackHint.label}
-            hasKeyframeAtFrame={stickyTrackHint.hasKeyframeAtFrame}
-          />
-        )}
         <VideoPlaybackOverlay
           frameIndex={frameIndex}
           maxFrame={maxFrame}
@@ -2481,6 +2619,41 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
           />
         )}
       </div>
+    );
+    return (
+      <>
+        <VideoTrackContextBar
+          frameIndex={frameIndex}
+          track={
+            selectedContextTrack
+              ? {
+                  className: selectedContextTrack.class_name,
+                  shortId: shortTrackId(selectedContextTrack.geometry.track_id),
+                  color: effectiveSelectedTrackColor ?? classColor(selectedContextTrack.class_name),
+                  locked: contextTrackLocked,
+                  hidden: Boolean(hiddenTrackIds?.has(selectedContextTrack.geometry.track_id)),
+                  readOnly,
+                }
+              : null
+          }
+          context={trackContext}
+          onSeekFrame={seekContextFrame}
+          actions={contextActions}
+          shortcuts={
+            selectedManagedTrack
+              ? [
+                  { key: ", / .", label: "关键帧" },
+                  { key: "K", label: "暂停" },
+                ]
+              : [{ key: "K", label: "暂停" }]
+          }
+          stickyHint={contextWritesBlocked ? null : stickyTrackHint}
+        />
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          {canvas}
+          {overlays}
+        </div>
+      </>
     );
   },
 );

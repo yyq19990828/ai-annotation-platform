@@ -167,8 +167,14 @@ export function isVideoPointsSingleFrame(ann: AnnotationResponse): ann is Annota
   return isVideoPolygon(ann) || isVideoPolyline(ann) || isVideoRotatedBbox(ann);
 }
 
-/** 任意视频轨迹几何 (bbox / polygon / polyline track)。 */
-export function isAnyVideoTrack(ann: AnnotationResponse): boolean {
+/** Narrow annotations to any supported video track geometry. */
+export function isAnyVideoTrack(ann: AnnotationResponse): ann is AnnotationResponse & {
+  geometry:
+    | VideoTrackGeometry
+    | VideoTrackPolygonGeometry
+    | VideoTrackPolylineGeometry
+    | VideoTrackMaskGeometry;
+} {
   return (
     isVideoTrack(ann) ||
     isVideoPolygonTrack(ann) ||

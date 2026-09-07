@@ -201,7 +201,8 @@ test("视频 Mask 关键帧复制、outside、删除撤销与组件拆轨保持�
   const deleteResponse = await deleted;
   expect(deleteResponse.status(), await deleteResponse.text()).toBe(200);
   expect((await deleteResponse.allHeaders())["x-resolved-keyframe-frame"]).toBe("0");
-  await expect(page.getByText(/当前帧保持 F0 的 Mask/)).toBeVisible();
+  await expect(page.getByTestId("video-track-context-state")).toHaveAttribute("data-state", "held");
+  await expect(page.getByTestId("video-track-context-source")).toContainText("保持自 F0");
 
   const undone = page.waitForResponse((response) =>
     isKeyframeResponse(response, taskId, source.id, 1, "PUT"),
@@ -210,7 +211,10 @@ test("视频 Mask 关键帧复制、outside、删除撤销与组件拆轨保持�
   const undoResponse = await undone;
   expect(undoResponse.status(), await undoResponse.text()).toBe(200);
   expect(undoResponse.request().postDataJSON()).toMatchObject({ source: "manual" });
-  await expect(page.getByText("当前帧为 Mask 关键帧。")).toBeVisible();
+  await expect(page.getByTestId("video-track-context-state")).toHaveAttribute(
+    "data-state",
+    "keyframe",
+  );
 
   await page.getByRole("button", { name: "组件拆轨" }).click();
   await expect(toolbar).toContainText("拆分组件", { timeout: 15_000 });

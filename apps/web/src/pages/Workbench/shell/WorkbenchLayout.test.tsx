@@ -50,9 +50,16 @@ vi.mock("./Topbar", () => ({
   Topbar: () => <div data-testid="topbar" />,
 }));
 vi.mock("./WorkbenchStageHost", () => ({
-  WorkbenchStageHost: forwardRef(function WorkbenchStageHost(props, _ref) {
+  WorkbenchStageHost: forwardRef(function WorkbenchStageHost(
+    props: { common: { stageKind: string; overlays?: React.ReactNode } },
+    _ref,
+  ) {
     workbenchStageHostMock(props);
-    return <div data-testid="stage-host" />;
+    return (
+      <div data-testid="stage-host">
+        {props.common.stageKind === "video" && props.common.overlays}
+      </div>
+    );
   }),
 }));
 vi.mock("./StatusBar", () => ({
@@ -104,7 +111,7 @@ const baseProps = {
   toolDock: {} as never,
   banners: {} as never,
   topbar: {} as never,
-  stageHost: {} as never,
+  stageHost: { common: { stageKind: "image", overlays: null } } as never,
   videoControlsRef: createRef<VideoStageControls>(),
   statusBar: {} as never,
   inspector: baseInspectorProps as never,
@@ -118,6 +125,24 @@ const baseProps = {
 };
 
 describe("WorkbenchLayout", () => {
+  it("视频将工具和审阅浮层统一交给画布，只挂载一份", () => {
+    render(
+      <WorkbenchLayout
+        {...baseProps}
+        stageHost={
+          {
+            common: { stageKind: "video", overlays: <div data-testid="video-tool-overlay" /> },
+          } as never
+        }
+        stageOverlay={<div data-testid="video-review-overlay" />}
+      />,
+    );
+    const stage = screen.getByTestId("stage-host");
+    expect(screen.getAllByTestId("video-tool-overlay")).toHaveLength(1);
+    expect(screen.getAllByTestId("video-review-overlay")).toHaveLength(1);
+    expect(stage.contains(screen.getByTestId("video-tool-overlay"))).toBe(true);
+    expect(stage.contains(screen.getByTestId("video-review-overlay"))).toBe(true);
+  });
   it("renders all required slots (no optional modals/panels)", () => {
     render(<WorkbenchLayout {...baseProps} />);
 

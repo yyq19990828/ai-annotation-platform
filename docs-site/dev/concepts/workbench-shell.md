@@ -117,6 +117,12 @@ Shell 持有当前会话的 `scenePlaybackActive`，将预览状态接到 `useTa
 
 图片 `requestSamAccept` 与视频 `requestVideoSamAccept` 各自复用已有待选类别 owner，顶栏按钮和画布 Enter 调同一入口，保留原生 Mask 原子接纳与 point / Exemplar 各自的消费语义。`data-workbench-ai-toolbar` 只保护控件事件路径，不在顶栏显示时全局屏蔽画布。候选捕获监听还让出原生输入、按钮、弹窗、IME 和重复事件。
 
+## 当前视频轨迹上下文
+
+`VideoKonvaStage` 从完整 `annotations` 与 `selectedId` 获取 bbox、polygon、polyline 或 Mask 轨迹身份；当前帧的可见几何、ghost、隐藏或 outside 过滤不决定轨迹是否存在。`videoTrackContext` 复用现有几何解析与可见关键帧导航，派生关键帧、插值、保持、outside 和本帧无几何。`VideoTrackContextBar` 在画布面板的正常布局流中占据上方一行，不持有第二份选择、播放或持久化状态，也不依赖详细时间轴的显隐。视频的公共工具浮层与 `stageOverlay` 一起传入下方的画布容器，与原绘制节点互为兄弟；它们使用相同画布坐标，不覆盖轨迹条，也不把工具事件冒泡到绘制节点。
+
+来源读取原始关键帧字段；Mask 保持使用实际解析锚点，缺字段不采用 renderer 的人工兜底。`AnnotationOut` 的 JSON 序列化保留旧关键帧来源缺失，写入 schema 默认值和存量数据不变。补关键帧走既有几何 upsert 与 `onUpdate`；Mask outside 继续走版本校验和历史 owner。入口共同检查任务只读、标注锁、会话轨迹锁、工作帧范围及绘制/播放状态；条内事件通过 `data-workbench-track-context` 让后台快捷键退让，条仅可见时不屏蔽画布按键。
+
 ## 当前题 AI 请求与 Inspector 阶段
 
 `AIPredictionPopover` 从当前题请求及现有候选数量派生 idle / running / review / error 展示；`useWorkbenchAiRequest` 只持有普通预测的请求归属，不接管 SAM 或 tracker 执行器。图片与项目编排仍调用 `useTriggerPreannotation`，视频仍调用 `mlBackendsApi.predictFrame`。

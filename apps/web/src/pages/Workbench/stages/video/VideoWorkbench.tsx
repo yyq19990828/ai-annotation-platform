@@ -1,4 +1,4 @@
-import { forwardRef, useMemo } from "react";
+import { forwardRef, useMemo, type ReactNode } from "react";
 import type {
   AnnotationResponse,
   TaskVideoFrameTimetableResponse,
@@ -55,6 +55,7 @@ type VideoGeometry =
   | VideoTrackPolylineGeometry;
 
 export interface VideoWorkbenchProps {
+  overlays?: ReactNode;
   maskCompareStore?: MaskCompareTileStore | null;
   manifest: TaskVideoManifestResponse | undefined;
   frameTimetable?: TaskVideoFrameTimetableResponse;
@@ -143,6 +144,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
   function VideoWorkbench(
     {
       maskCompareStore,
+      overlays,
       manifest,
       frameTimetable,
       isLoading,
@@ -218,6 +220,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     return (
       <VideoKonvaStage
         maskCompareStore={maskCompareStore}
+        overlays={overlays}
         ref={ref}
         manifest={manifest}
         frameTimetable={frameTimetable}

@@ -1,4 +1,5 @@
-import type { VideoTrackGeometry, VideoTrackMaskGeometry, VideoTrackOutsideRange } from "@/types";
+import type { VideoTrackOutsideRange } from "@/types";
+import type { VideoContextTrackGeometry } from "./videoTrackContext";
 import {
   effectiveOutsideRanges,
   isFrameInOutsideRanges,
@@ -43,7 +44,7 @@ export interface VideoTimelineDensityBin {
   tracks: { trackId: string; count: number }[];
 }
 
-type TimelineTrack = VideoTrackGeometry | VideoTrackMaskGeometry;
+type TimelineTrack = VideoContextTrackGeometry;
 type TimelineKeyframe = TimelineTrack["keyframes"][number];
 
 function sortedLatestKeyframes(track: TimelineTrack): TimelineKeyframe[] {
@@ -100,7 +101,7 @@ export function buildSelectedTrackTimeline(
 }
 
 export function buildGlobalTimelineDensity(
-  tracks: readonly VideoTrackGeometry[],
+  tracks: readonly TimelineTrack[],
   maxFrame: number,
   bins = 80,
   manualBboxFrames: readonly number[] = [],
@@ -177,7 +178,7 @@ export function buildPredictionDensity(
 }
 
 export function nextVisibleKeyframeFrame(
-  track: VideoTrackGeometry,
+  track: TimelineTrack,
   frameIndex: number,
   dir: -1 | 1,
 ): number | null {
@@ -191,23 +192,23 @@ export function nextVisibleKeyframeFrame(
 }
 
 /** 上一个可见关键帧（不在 outside 区间）；无则 null。 */
-export function prevKeyframeFrame(track: VideoTrackGeometry, frameIndex: number): number | null {
+export function prevKeyframeFrame(track: TimelineTrack, frameIndex: number): number | null {
   return nextVisibleKeyframeFrame(track, frameIndex, -1);
 }
 
 /** 下一个可见关键帧（不在 outside 区间）；无则 null。 */
-export function nextKeyframeFrame(track: VideoTrackGeometry, frameIndex: number): number | null {
+export function nextKeyframeFrame(track: TimelineTrack, frameIndex: number): number | null {
   return nextVisibleKeyframeFrame(track, frameIndex, 1);
 }
 
 /** 轨迹首次出现（最早可见关键帧）的源帧号；无可见关键帧则 null。 */
-export function firstAppearFrame(track: VideoTrackGeometry): number | null {
+export function firstAppearFrame(track: TimelineTrack): number | null {
   const frames = visibleKeyframesForTimeline(track);
   return frames.length > 0 ? frames[0].frame_index : null;
 }
 
 /** 轨迹最后出现（最晚可见关键帧）的源帧号；无可见关键帧则 null。 */
-export function lastAppearFrame(track: VideoTrackGeometry): number | null {
+export function lastAppearFrame(track: TimelineTrack): number | null {
   const frames = visibleKeyframesForTimeline(track);
   return frames.length > 0 ? frames[frames.length - 1].frame_index : null;
 }

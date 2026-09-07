@@ -118,7 +118,9 @@ export async function runVideoMaskTrackEdit(
   }
   await page.waitForTimeout(650);
   await confirmMask(page, { taskId: project.tasks.tracking.id, update: true });
-  await page.getByText("当前帧为 Mask 关键帧。").waitFor({ timeout: 10_000 });
+  await page
+    .locator('[data-testid="video-track-context-state"][data-state="keyframe"]')
+    .waitFor({ timeout: 10_000 });
   await page.waitForTimeout(900);
   // 在两个真实关键帧间往返，验证 F0 初始 Mask 与 F5 人工修订都已落入同一轨迹。
   await page.getByRole("button", { name: "上一关键帧" }).click();

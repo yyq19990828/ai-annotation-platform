@@ -578,6 +578,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
           </Suspense>
         ) : stageKind === "video" ? (
           <VideoWorkbench
+            overlays={overlays}
             maskCompareStore={maskCompareStore}
             ref={ref}
             manifest={videoManifest}
@@ -737,7 +738,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onIssuePinDrop={onIssuePinDrop}
           />
         )}
-        {stageKind !== "image" && overlays}
+        {stageKind === "3d" && overlays}
       </div>
     );
   },

@@ -48,6 +48,13 @@ test("Tracker 可按目标/帧窗局部接受拒绝并二次确认人工帧", as
   const review = page.getByTestId("video-tracker-review-bar");
   await expect(review).toBeVisible({ timeout: 20_000 });
   await expect(review).toContainText("已审 0/20");
+  const contextBar = page.getByTestId("video-track-context-bar");
+  await expect(contextBar).toBeVisible();
+  const contextBounds = await contextBar.boundingBox();
+  const reviewBounds = await review.boundingBox();
+  expect(contextBounds).not.toBeNull();
+  expect(reviewBounds).not.toBeNull();
+  expect(reviewBounds!.y).toBeGreaterThanOrEqual(contextBounds!.y + contextBounds!.height);
 
   // 仅接受 A 的 F10-F15；B 与窗口外必须保持不变。
   await page.getByTestId("tracker-review-instance-B").click();
