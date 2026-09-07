@@ -152,6 +152,67 @@ describe("ImageStage drag scheduling", () => {
     expect(commit).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { width: 1280, height: 720, angle: 35, scale: 1, tx: 0, ty: 0 },
+    { width: 720, height: 1280, angle: 35, scale: 0.6, tx: 70, ty: 30 },
+    { width: 1280, height: 720, angle: -35, scale: 1.2, tx: -90, ty: 40 },
+  ])(
+    "rotates in image pixels on a $width × $height image",
+    ({ width, height, angle, scale, tx, ty }) => {
+      const geometry = {
+        type: "rotated_bbox" as const,
+        cx: 0.5,
+        cy: 0.5,
+        w: 0.2,
+        h: 0.2,
+        angle: 0,
+      };
+      const onCommitRotateBbox = vi.fn();
+      render(
+        <ImageStage
+          {...defaults}
+          imageWidth={width}
+          imageHeight={height}
+          tool="select"
+          selectedId="rotated"
+          userBoxes={[
+            {
+              id: "rotated",
+              cls: "car",
+              source: "manual",
+              conf: 1,
+              x: 0.4,
+              y: 0.4,
+              w: 0.2,
+              h: 0.2,
+              geometry,
+            },
+          ]}
+          vp={{ scale, tx, ty }}
+          onCommitRotateBbox={onCommitRotateBbox}
+        />,
+      );
+      const handle = document.querySelector('[data-konva="Circle"]')!;
+      const centerX = geometry.cx * width * scale + tx;
+      const centerY = geometry.cy * height * scale + ty;
+      const radius = 100 * scale;
+      fireEvent.mouseDown(handle, { clientX: centerX, clientY: centerY - radius, button: 0 });
+      expect(screen.getByTestId("workbench-stage")).toHaveAttribute("data-drag-kind", "rotateBox");
+      fireEvent.mouseMove(window, {
+        clientX: centerX + radius * Math.sin((angle * Math.PI) / 180),
+        clientY: centerY - radius * Math.cos((angle * Math.PI) / 180),
+        buttons: 1,
+      });
+      fireEvent.mouseUp(window, { button: 0 });
+      expect(onCommitRotateBbox).toHaveBeenCalledOnce();
+      const [id, before, after] = onCommitRotateBbox.mock.calls[0];
+      expect(id).toBe("rotated");
+      expect(before).toEqual(geometry);
+      expect(after).toMatchObject({ ...geometry, angle: expect.any(Number) });
+      expect(after.angle).toBeCloseTo((angle + 360) % 360, 8);
+    },
+  );
+
   it.each([{ mediaKey: "image-b" }, { tool: "select" as const }, { readOnly: true }])(
     "ends the drag when its editing context changes: %j",
     (next) => {
