@@ -13,6 +13,11 @@ last_reviewed: 2026-07-23
 元素级裁切、SVG 注释叠加、网络状态 mock 以及流程录制（GIF/WebM）。
 
 截图与标准录制使用软件 WebGL 支持 3D 场景，同时禁用加速 2D Canvas，避免调整画布尺寸后残留旧标注像素。
+修改浏览器启动参数后，可运行不依赖 API 或截图数据库的绘制检查：
+
+```bash
+pnpm --filter @anno/web exec playwright test --config=playwright.screenshot-canvas.config.ts
+```
 
 ## Mac / Linux 分工录制
 
