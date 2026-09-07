@@ -51,6 +51,66 @@ function makeArgs(overrides: Partial<Parameters<typeof useWorkbenchHotkeys>[0]> 
 }
 
 describe("useWorkbenchHotkeys module", () => {
+  it.each(["select", "combobox", "listbox"])("%s 的 A/D 选项定位不触发候选写入", (kind) => {
+    const args = makeArgs({ videoMode: true, handleRejectPrediction: vi.fn() });
+    args.s.selectedId = "candidate";
+    args.s.videoFrameIndex = 0;
+    args.aiBoxes = [
+      {
+        id: "candidate",
+        predictionId: "p",
+        shapeIndex: 0,
+        geometry: { type: "video_bbox", frame_index: 0 },
+      },
+    ] as never;
+    renderHook(() => useWorkbenchHotkeys(args));
+    const element = document.createElement(kind === "select" ? "select" : "button");
+    if (kind !== "select") element.setAttribute("role", kind);
+    document.body.append(element);
+    element.focus();
+    act(() => {
+      element.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true }));
+      element.dispatchEvent(new KeyboardEvent("keydown", { key: "d", bubbles: true }));
+    });
+    expect(args.handleAcceptPrediction).not.toHaveBeenCalled();
+    expect(args.handleRejectPrediction).not.toHaveBeenCalled();
+    element.remove();
+  });
+  it("SAM 补类弹层打开时 A/D 不触发候选或切工具", () => {
+    const args = makeArgs({ videoMode: true, classPickerActive: true });
+    args.s.setVideoTool = vi.fn();
+    renderHook(() => useWorkbenchHotkeys(args));
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "a" }));
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "d" }));
+    });
+    expect(args.handleAcceptPrediction).not.toHaveBeenCalled();
+    expect(args.s.setVideoTool).not.toHaveBeenCalled();
+  });
+  it("当前帧候选键只调用公共决策，不提前改选；长按不提交", () => {
+    const args = makeArgs({ videoMode: true });
+    args.s.selectedId = "candidate";
+    args.s.videoFrameIndex = 0;
+    args.s.setSelectedId = vi.fn();
+    args.aiBoxes = [
+      {
+        id: "candidate",
+        predictionId: "prediction",
+        shapeIndex: 0,
+        geometry: { type: "video_bbox", frame_index: 0 },
+      },
+    ] as never;
+    const view = renderHook(() => useWorkbenchHotkeys(args));
+    act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "a" })));
+    expect(args.handleAcceptPrediction).toHaveBeenCalledTimes(1);
+    expect(args.s.setSelectedId).not.toHaveBeenCalled();
+    act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "a", repeat: true })));
+    expect(args.handleAcceptPrediction).toHaveBeenCalledTimes(1);
+    args.s.videoFrameIndex = 10;
+    view.rerender();
+    act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "a" })));
+    expect(args.handleAcceptPrediction).toHaveBeenCalledTimes(1);
+  });
   it("exports the hook", () => {
     expect(typeof useWorkbenchHotkeys).toBe("function");
   });

@@ -1,11 +1,12 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import type { AttributeSchema } from "@/api/projects";
 import type { Viewport } from "../state/useViewportTransform";
 import { AttributeForm } from "./AttributeForm";
 import { ClassPalette, shortcutForIndex } from "./ClassPalette";
 
 const POPOVER_CLASS =
-  "top-[var(--class-picker-top)] left-[var(--class-picker-left)] z-popover min-w-[220px] max-w-[280px] max-h-[70vh] overflow-y-auto rounded-md border border-border bg-card p-2.5 shadow-lg [pointer-events:auto]";
+  "top-[var(--class-picker-top)] left-[var(--class-picker-left)] min-w-[220px] max-w-[280px] max-h-[70vh] overflow-y-auto rounded-md border border-border bg-card p-2.5 shadow-lg [pointer-events:auto]";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type FixedAnchor = { left: number; top: number };
@@ -161,11 +162,11 @@ export function ClassPickerPopover({
     };
   }, [onCancel]);
 
-  return (
+  const content = (
     <div
       ref={ref}
       data-testid="class-picker-popover"
-      className={`${POPOVER_CLASS} ${isFixed ? "fixed" : "absolute"}`}
+      className={`${POPOVER_CLASS} ${isFixed ? "fixed z-overlay-high" : "absolute z-popover"}`}
       onMouseDown={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
     >
@@ -203,4 +204,6 @@ export function ClassPickerPopover({
       )}
     </div>
   );
+  // Viewport anchors must escape the stage's stacking context and selection card.
+  return isFixed ? createPortal(content, document.body) : content;
 }

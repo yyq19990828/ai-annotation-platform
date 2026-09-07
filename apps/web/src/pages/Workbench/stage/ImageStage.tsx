@@ -2883,10 +2883,7 @@ export function ImageStage({
           imgH={imgH}
           vp={vp}
           onAccept={onAcceptPrediction ? () => onAcceptPrediction(selectedBox as AiBox) : undefined}
-          onReject={() => {
-            if (onRejectPrediction) onRejectPrediction(selectedBox as AiBox);
-            onSelectBox(null);
-          }}
+          onReject={() => onRejectPrediction?.(selectedBox as AiBox)}
         />
       )}
 

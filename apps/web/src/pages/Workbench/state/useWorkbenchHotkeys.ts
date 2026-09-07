@@ -65,6 +65,8 @@ export interface UseWorkbenchHotkeysArgs {
   currentProject: ProjectAttributeSchemaLite | null | undefined;
   annotationsRef: { current: AnnotationResponse[] };
   batchChanging: boolean;
+  /** SAM and other class pickers that keep their draft outside ordinary editingClass. */
+  classPickerActive?: boolean;
   setBatchChanging: React.Dispatch<React.SetStateAction<boolean>>;
   cancelPendingDrawing?: () => void;
   showHotkeys: boolean;
@@ -96,8 +98,6 @@ export interface UseWorkbenchHotkeysArgs {
 
   // ai
   aiBoxes: AiBox[];
-  /** v0.21.11 · 采纳/拒绝后自动推进选中到下一个待决 AI(common.autoAdvanceOnDecide, 默认开)。 */
-  autoAdvanceOnDecide?: boolean;
 
   // ui state setters
   setShowHotkeys: React.Dispatch<React.SetStateAction<boolean>>;
@@ -168,10 +168,11 @@ export function isWorkbenchInputFocused(el: EventTarget | null): boolean {
   return (
     el.tagName === "INPUT" ||
     el.tagName === "TEXTAREA" ||
+    el.tagName === "SELECT" ||
     el.isContentEditable ||
     Boolean(
       el.closest(
-        '[data-workbench-layout-control], [data-scene-timeline], [role="tab"], [role="menu"], [role="menuitem"]',
+        '[data-workbench-layout-control], [data-scene-timeline], [role="tab"], [role="menu"], [role="menuitem"], [role="combobox"], [role="listbox"]',
       ),
     )
   );
@@ -188,6 +189,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     currentProject,
     annotationsRef,
     batchChanging,
+    classPickerActive = false,
     setBatchChanging,
     cancelPendingDrawing,
     showHotkeys,
@@ -207,7 +209,6 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     handleUpdateAttributes,
     handleVideoSetSelectedClass,
     aiBoxes,
-    autoAdvanceOnDecide = true,
     setShowHotkeys,
     clipboard,
     pushToast,
@@ -350,7 +351,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)
       )
         return;
-      if (s.pendingDrawing || s.editingClass) return;
+      if (s.pendingDrawing || s.editingClass || classPickerActive) return;
       // v0.23.5 · WS-C · B/E 模式切换也经 canEditMask: 锁定对象连切笔刷都不允许,
       // 与 pointer 入口 (MaskTool) 一道关闭锁定绕过。readOnly 来自 task 级 (调用方传入),
       // is_locked 读当前选中 annotation。
@@ -447,6 +448,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     commitMaskInstanceOperation,
     cancelMaskEdit,
     maskInteractionFrozen,
+    classPickerActive,
     maskTaskReadOnly,
     maskPixelReadOnly,
     annotationsRef,
@@ -485,7 +487,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     };
 
     const onKey = (e: KeyboardEvent) => {
-      if (isWorkbenchSettingsInteractionBlocked(e)) return;
+      if (e.defaultPrevented || isWorkbenchSettingsInteractionBlocked(e)) return;
       const modifiedToken = hotkeyIgnoreToken(e);
       if (ignoredKeys?.has(e.key) || (modifiedToken && ignoredKeys?.has(modifiedToken))) return;
       const attributeHotkey = (digit: string) => {
@@ -512,9 +514,14 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
       const action = dispatchKey(e, {
         isInputFocused: isWorkbenchInputFocused(e.target),
         hasSelection: !!s.selectedId || s.selectedIds.length > 0,
-        pendingActive: !!s.pendingDrawing || !!s.editingClass || batchChanging,
+        pendingActive: !!s.pendingDrawing || !!s.editingClass || batchChanging || classPickerActive,
         attributeHotkey,
         videoMode,
+        selectedPrediction:
+          aiBoxes.find(
+            (box) =>
+              box.id === s.selectedId && (!videoMode || aiBoxOnFrame(box, s.videoFrameIndex)),
+          ) ?? null,
         samplingActive,
         hasSelectedVideoTrack:
           videoMode &&
@@ -934,33 +941,18 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           handleSubmitTask();
           return;
 
-        // v0.21.11 · 采纳/拒绝后, 若开启自动前进则把选中推进到下一个待决 AI(移除当前后落到后一个,
-        // 没有则前一个, 都没有=审完置空)。决策前按当前 aiBoxes 顺序算好, 避免异步刷新后列表已变。
-        // 关闭时保持现状: 采纳后不动选中(指向的框随即消失=去选), 拒绝后置空。
-        case "acceptAi": {
-          if (!s.selectedId) return;
-          // 视频模式 aiBoxes 是跨帧候选全集; 自动前进须限定当前帧, 否则 nextId 会指向别帧的候选、
-          // 当前帧画布上「什么都没选中」。图片模式无帧维度, scoped 即全集。
-          const scoped = videoMode
-            ? aiBoxes.filter((b) => aiBoxOnFrame(b, s.videoFrameIndex))
-            : aiBoxes;
-          const idx = scoped.findIndex((b) => b.id === s.selectedId);
-          if (idx < 0) return;
-          const nextId = scoped[idx + 1]?.id ?? scoped[idx - 1]?.id ?? null;
-          handleAcceptPrediction(scoped[idx]);
-          if (autoAdvanceOnDecide) s.setSelectedId(nextId);
-          return;
-        }
+        case "acceptAi":
         case "rejectAi": {
-          if (!s.selectedId) return;
-          const scoped = videoMode
-            ? aiBoxes.filter((b) => aiBoxOnFrame(b, s.videoFrameIndex))
-            : aiBoxes;
-          const idx = scoped.findIndex((b) => b.id === s.selectedId);
-          if (idx < 0) return;
-          const nextId = scoped[idx + 1]?.id ?? scoped[idx - 1]?.id ?? null;
-          handleRejectPrediction?.(scoped[idx]);
-          s.setSelectedId(autoAdvanceOnDecide ? nextId : null);
+          e.preventDefault();
+          if (e.repeat) return;
+          const box = aiBoxes.find(
+            (candidate) =>
+              candidate.id === s.selectedId &&
+              (!videoMode || aiBoxOnFrame(candidate, s.videoFrameIndex)),
+          );
+          if (!box) return;
+          if (action.type === "acceptAi") void handleAcceptPrediction(box);
+          else void handleRejectPrediction?.(box);
           return;
         }
       }
@@ -998,6 +990,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     currentProject,
     annotationsRef,
     batchChanging,
+    classPickerActive,
     setBatchChanging,
     cancelPendingDrawing,
     showHotkeys,
@@ -1020,7 +1013,6 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     aiInteractiveEnabled,
     maskToolDisabledReason,
     aiBoxes,
-    autoAdvanceOnDecide,
     setShowHotkeys,
     clipboard,
     pushToast,

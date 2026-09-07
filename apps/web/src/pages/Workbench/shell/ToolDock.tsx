@@ -179,7 +179,7 @@ const VIDEO_TOOLS: Array<{
     hotkey: "D",
     label: "智能框",
     icon: imageToolIcon("smart-box"),
-    desc: "框选目标 · SAM 分割当前帧",
+    desc: "框选目标 · SAM 分割当前帧；选中当前帧待决 AI 候选时 D 为忽略",
     group: "sam",
     requiredPrompt: "interactive_box",
   },

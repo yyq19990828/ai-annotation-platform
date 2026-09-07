@@ -5492,7 +5492,6 @@ export function useWorkbenchShellModel({
     handleUpdateAttributes,
     handleVideoSetSelectedClass,
     aiBoxes,
-    autoAdvanceOnDecide: s.workbenchConfig.common.autoAdvanceOnDecide,
     setShowHotkeys,
     clipboard,
     pushToast,
@@ -5504,6 +5503,7 @@ export function useWorkbenchShellModel({
     updateMutation: { mutate: (vars) => updateAnnotationMut.mutate(vars) },
     taskId,
     disabled: workbenchSettingsOpen,
+    classPickerActive: !!samPendingGeom || !!videoSamPendingAccept,
     ignoredKeys: stageKind === "3d" ? threeDOwnedKeys : undefined,
     videoMode: isVideoTask,
     samplingActive,
@@ -5581,22 +5581,9 @@ export function useWorkbenchShellModel({
     });
   }, [floatingSelection, setWorkbenchLayout]);
 
-  // v0.16.14 · 卡内采纳 / 忽略后清掉选中:预测被消费后 pred- id 已失效,否则卡会回落到
-  // 「已选中 1 个标注」占位死角。仅在卡入口处理选中态,不动 handleAccept/Reject 业务逻辑。
-  const acceptPredictionFromCard = useCallback(
-    (box: Parameters<typeof handleAcceptPrediction>[0]) => {
-      handleAcceptPrediction(box);
-      s.setSelectedId(null);
-    },
-    [handleAcceptPrediction, s],
-  );
-  const rejectPredictionFromCard = useCallback(
-    (box: Parameters<typeof handleRejectPrediction>[0]) => {
-      handleRejectPrediction(box);
-      s.setSelectedId(null);
-    },
-    [handleRejectPrediction, s],
-  );
+  // Buttons and hotkeys share the decision owner's success-only selection handling.
+  const acceptPredictionFromCard = handleAcceptPrediction;
+  const rejectPredictionFromCard = handleRejectPrediction;
 
   const hiddenVideoTrackIds = s.hiddenVideoTrackIds;
   const lockedVideoTrackIds = s.lockedVideoTrackIds;

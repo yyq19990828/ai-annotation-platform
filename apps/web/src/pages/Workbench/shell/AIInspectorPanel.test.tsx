@@ -327,14 +327,14 @@ describe("AIInspectorPanel", () => {
     expect(screen.getByTestId("attribute-form")).toBeInTheDocument();
   });
 
-  it("点击驳回按钮 → 调用 onRejectPrediction + onClearSelection", () => {
+  it("点击驳回按钮由公共决策处理选择，不提前清选", () => {
     const onRejectPrediction = vi.fn();
     const onClearSelection = vi.fn();
     const aiBox = makeAiBox("ai-3", "dog");
     renderUI({ aiBoxes: [aiBox], onRejectPrediction, onClearSelection });
     fireEvent.click(screen.getByTestId("reject-ai-3"));
     expect(onRejectPrediction).toHaveBeenCalledWith(aiBox);
-    expect(onClearSelection).toHaveBeenCalled();
+    expect(onClearSelection).not.toHaveBeenCalled();
   });
 
   it("polygon AI 框点击精修 → 调用 onRefinePrediction", () => {

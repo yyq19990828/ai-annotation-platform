@@ -316,7 +316,6 @@ export function AIInspectorPanel({
         onRefineUserPolygon={onRefineUserPolygon}
         onEditRasterMask={onEditRasterMask}
         readOnly={readOnly}
-        onClearSelection={onClearSelection}
         onDeleteUserBox={onDeleteUserBox}
         onChangeUserBoxClass={onChangeUserBoxClass}
         onToggleUserBoxFlag={onToggleUserBoxFlag}
@@ -797,7 +796,6 @@ interface BoxesListProps {
   onRefineUserPolygon?: (annotationId: string) => void;
   onEditRasterMask?: (annotationId: string) => void;
   readOnly?: boolean;
-  onClearSelection: () => void;
   onDeleteUserBox: (id: string) => void;
   onChangeUserBoxClass?: (id: string) => void;
   /** v0.10.5 M4-β · I15 切换 shape 状态位（lock/hidden）。 */
@@ -835,7 +833,6 @@ function BoxesList({
   onRefineUserPolygon,
   onEditRasterMask,
   readOnly = false,
-  onClearSelection,
   onDeleteUserBox,
   onChangeUserBoxClass,
   onToggleUserBoxFlag,
@@ -1019,10 +1016,7 @@ function BoxesList({
                   imageHeight={imageHeight}
                   onSelect={(e) => selectBox(r.box, e?.shiftKey)}
                   onAccept={() => onAcceptPrediction(r.box)}
-                  onReject={() => {
-                    onRejectPrediction?.(r.box);
-                    onClearSelection();
-                  }}
+                  onReject={() => onRejectPrediction?.(r.box)}
                   onRefine={
                     onRefinePrediction && r.box.geometry?.type === "polygon"
                       ? () => onRefinePrediction(r.box)

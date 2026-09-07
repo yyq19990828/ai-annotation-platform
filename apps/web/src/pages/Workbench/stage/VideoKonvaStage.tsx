@@ -2400,10 +2400,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
               imgH={size.h}
               vp={vp}
               onAccept={() => onAcceptPrediction?.(selectedAiBox)}
-              onReject={() => {
-                onRejectPrediction?.(selectedAiBox);
-                onSelect?.(null);
-              }}
+              onReject={() => onRejectPrediction?.(selectedAiBox)}
             />
           )}
         </div>

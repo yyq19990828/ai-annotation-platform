@@ -6,6 +6,7 @@ import type { AnnotationPayload, AnnotationUpdatePayload } from "@/api/tasks";
 import { ApiError } from "@/api/client";
 import { rasterMasksApi } from "@/api/rasterMasks";
 import type { ToolBindings } from "@/api/projects";
+import { usePredictionDecisions } from "./usePredictionDecisions";
 import { useAcceptPrediction, useRejectPrediction } from "@/hooks/usePredictions";
 import type { useAcceptNativeMaskCandidate } from "@/hooks/useAcceptNativeMaskCandidate";
 import { dedupeAiBoxesById } from "../../stage/aiBoxFrames";
@@ -931,90 +932,25 @@ export function useImageAnnotationActions({
     setBatchChangeToolUnitId(undefined);
   }, []);
 
-  const handleRejectPrediction = useCallback(
-    (box: AiBox) => {
-      // 先本地隐藏，避免等待网络回包
-      setDismissedShapeKeys((prev) => {
-        if (prev.has(box.id)) return prev;
-        const next = new Set(prev);
-        next.add(box.id);
-        return next;
-      });
-      // B-37 · 同步持久化到后端, 让刷新 / 切回该 task 时不再出现
-      if (!box.predictionId) return;
-      rejectPredictionMut.mutate(
-        { predictionId: box.predictionId, shapeIndex: box.shapeIndex },
-        {
-          onError: () => {
-            // 失败回滚本地隐藏，提示用户
-            setDismissedShapeKeys((prev) => {
-              if (!prev.has(box.id)) return prev;
-              const next = new Set(prev);
-              next.delete(box.id);
-              return next;
-            });
-            pushToast({ msg: "忽略失败", sub: "请稍后重试", kind: "error" });
-          },
-        },
-      );
-    },
-    [rejectPredictionMut, pushToast],
-  );
-
-  const handleAcceptPrediction = useCallback(
-    (box: AiBox, attributeOverrides?: Record<string, unknown>) => {
-      if (!box.predictionId) return;
-      acceptPredictionMut.mutate(
-        { predictionId: box.predictionId, shapeIndex: box.shapeIndex, attributeOverrides },
-        {
-          onSuccess: (created) => {
-            const ids = created.map((a) => a.id);
-            // v0.20.22 · 后端 accept_prediction 已在同一事务原子落库 shape 富属性
-            // + attribute_overrides (annotation.py:305-322), 前端不再逐条 PATCH 合并。
-            // 旧的 carry 循环在后端返回整题全量时会误改所有既有人工标注属性 → 已删除。
-            history.push({
-              kind: "acceptPrediction",
-              predictionId: box.predictionId,
-              createdAnnotationIds: ids,
-            });
-            pushToast({
-              msg: "已采纳 AI 标注",
-              sub: `${box.cls} · 置信度 ${(box.conf * 100).toFixed(0)}%`,
-              kind: "success",
-            });
-          },
-          onError: (err) => {
-            // v0.14.17 · 采纳时选类: 预测类名不在项目标签集 (如 YOLO 输出 "person" 而项目标签是 "行人"
-            // 且无 alias) → 后端 422. 复用 ClassPickerPopover 让用户选项目标签, commit 时带
-            // override_class_name 重试采纳 (见 handleCommitChangeClass 的 accept 分支)。
-            const status = (err as { status?: number } | null)?.status;
-            if (status === 422 && box.predictionId) {
-              s.setEditingClass({
-                annotationId: "",
-                geom: box.geometry as Geom,
-                currentClass: box.cls,
-                // B-57 · 带上预测自身的 tool_unit_id, 让 popover 列出该单位 (如 region) 的类别,
-                // 否则采纳多边形预测时只显示当前激活工具 (bbox) 的类, 选不到正确类别 → 反复 422。
-                accept: {
-                  predictionId: box.predictionId,
-                  shapeIndex: box.shapeIndex,
-                  toolUnitId: box.tool_unit_id ?? undefined,
-                },
-              });
-              pushToast({
-                msg: "该类别不在项目标签集",
-                sub: `请为模型类别「${box.cls}」选择对应的项目标签`,
-                kind: "warning",
-              });
-            } else {
-              pushToast({ msg: "采纳失败", sub: (err as Error)?.message, kind: "error" });
-            }
-          },
-        },
-      );
-    },
-    [acceptPredictionMut, history, pushToast, s],
-  );
+  const dismissPrediction = useCallback((id: string) => {
+    setDismissedShapeKeys((prev) => new Set(prev).add(id));
+  }, []);
+  const predictionDecisions = usePredictionDecisions({
+    taskId,
+    videoSegmentId,
+    s,
+    aiBoxes,
+    acceptedShapeKeys,
+    isLocked,
+    accept: acceptPredictionMut.mutateAsync,
+    reject: rejectPredictionMut.mutateAsync,
+    history,
+    pushToast,
+    recordRecentClass,
+    dismiss: dismissPrediction,
+  });
+  const handleAcceptPrediction = predictionDecisions.acceptPrediction;
+  const handleRejectPrediction = predictionDecisions.rejectPrediction;
 
   // v0.10.8 · I11 · Mask 精修：候选/已存 polygon → mask 编辑 → commit 路径按 kind 分流。
   // v0.10.9 · 扩三种 kind：prediction（AI 预标 polygon 行）/ sam（SAM 交互候选，未 Enter）/ user（已落库 polygon，update 替换 geometry）。
@@ -1505,7 +1441,7 @@ export function useImageAnnotationActions({
     s.setTool("select");
   }, [maskEditor, s]);
 
-  const handleAcceptAll = useCallback(() => {
+  const handleAcceptAll = useCallback(async () => {
     if (aiBoxes.length === 0) return;
     // 跳过被同类人工框覆盖 (IoU 高于去重阈值) 而淡化的 AI 框，避免采纳出重复标注。
     const target = aiBoxes.filter((box) => !dimmedAiIds.has(box.id));
@@ -1514,43 +1450,22 @@ export function useImageAnnotationActions({
       pushToast({ msg: "无可采纳的 AI 框", sub: `${skipped} 个与人工框重复已跳过` });
       return;
     }
-    const totalBoxes = target.length;
-    let succeeded = 0;
-    let failed = 0;
-    let pending = target.length;
-    target.forEach((box) => {
-      acceptPredictionMut.mutate(
-        { predictionId: box.predictionId, shapeIndex: box.shapeIndex },
-        {
-          onSuccess: (created) => {
-            succeeded++;
-            history.push({
-              kind: "acceptPrediction",
-              predictionId: box.predictionId,
-              createdAnnotationIds: created.map((a) => a.id),
-            });
-          },
-          onError: () => {
-            failed++;
-          },
-          onSettled: () => {
-            pending--;
-            if (pending === 0) {
-              const parts = [
-                failed ? `${failed} 项失败` : null,
-                skipped ? `${skipped} 个重复已跳过` : null,
-              ].filter(Boolean);
-              pushToast({
-                msg: `采纳 ${succeeded}/${totalBoxes} 个 AI 框`,
-                sub: parts.length ? parts.join("，") : undefined,
-                kind: failed ? "error" : "success",
-              });
-            }
-          },
-        },
-      );
+    const results = await predictionDecisions.acceptAll(target);
+    if (!results) return;
+    const succeeded = results.filter((result) => result.status === "success").length;
+    const failed = results.filter((result) => result.status === "failed").length;
+    const pendingClass = results.filter((result) => result.status === "awaiting-class").length;
+    const parts = [
+      failed ? `${failed} 项失败` : null,
+      pendingClass ? `${pendingClass} 项等待补选类别` : null,
+      skipped ? `${skipped} 个重复已跳过` : null,
+    ].filter(Boolean);
+    pushToast({
+      msg: `采纳 ${succeeded}/${target.length} 个 AI 框`,
+      sub: parts.length ? parts.join("，") : undefined,
+      kind: failed ? "error" : "success",
     });
-  }, [aiBoxes, dimmedAiIds, acceptPredictionMut, history, pushToast]);
+  }, [aiBoxes, dimmedAiIds, predictionDecisions, pushToast]);
 
   const handleCommitDrawing = useCallback(
     (geo: Geom) => {
@@ -1626,26 +1541,7 @@ export function useImageAnnotationActions({
       }
       // v0.14.17 · 采纳模式: 带 override_class_name 采纳预测 (而非改已存标注的类). 不因
       // cls===currentClass 早返 — 这里 currentClass 是模型原生类名, cls 是人选的项目标签.
-      if (editing.accept) {
-        const { predictionId, shapeIndex } = editing.accept;
-        s.setEditingClass(null);
-        s.setActiveClass(cls);
-        recordRecentClass(cls);
-        acceptPredictionMut.mutate(
-          { predictionId, shapeIndex, overrideClassName: cls },
-          {
-            onSuccess: (created) => {
-              const ids = created.map((a) => a.id);
-              history.push({ kind: "acceptPrediction", predictionId, createdAnnotationIds: ids });
-              pushToast({ msg: `已采纳为 ${cls}`, kind: "success" });
-            },
-            onError: (err) => {
-              pushToast({ msg: "采纳失败", sub: (err as Error)?.message, kind: "error" });
-            },
-          },
-        );
-        return;
-      }
+      if (editing.accept) return predictionDecisions.commitClass(cls);
       if (cls === editing.currentClass) {
         s.setEditingClass(null);
         return;
@@ -1670,12 +1566,13 @@ export function useImageAnnotationActions({
         },
       );
     },
-    [s, mutations.update, history, pushToast, recordRecentClass, acceptPredictionMut],
+    [s, mutations.update, history, pushToast, recordRecentClass, predictionDecisions],
   );
 
   const handleCancelChangeClass = useCallback(() => {
+    predictionDecisions.cancelClass();
     s.setEditingClass(null);
-  }, [s]);
+  }, [s, predictionDecisions]);
 
   // v0.11.28：改类悬浮框含属性时，点类别即时提交但不关闭悬浮框
   // （更新 currentClass 让悬浮框内属性按新类别联动刷新可见字段）。

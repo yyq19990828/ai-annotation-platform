@@ -11,6 +11,9 @@ export interface HotkeyDef {
    *  同 action.type 多 HotkeyDef 时共享同一计数（如 setTool 三键合并）。
    *  无明确 action 的演示类（如「拖动顶点」）留空，频率排时排到最后。 */
   actionType?: string;
+  /** Context and target for shortcuts whose shared keys have different routes. */
+  context?: "image" | "video" | "image-prediction" | "video-prediction" | "video-no-prediction";
+  targetTool?: Extract<HotkeyAction, { type: "setTool" | "setVideoTool" }>["tool"];
 }
 
 export function hotkeyIgnoreToken(
@@ -23,9 +26,11 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["B"], desc: "矩形框工具", group: "draw", actionType: "setTool" },
   {
     keys: ["Alt", "1"],
-    desc: "矩形框工具（备用，避免与切类别冲突）",
+    desc: "图片矩形框工具（备用，避免与切类别冲突）",
     group: "draw",
     actionType: "setTool",
+    context: "image",
+    targetTool: "box",
   },
   {
     keys: ["W"],
@@ -39,7 +44,14 @@ export const HOTKEYS: HotkeyDef[] = [
     group: "ai",
     actionType: "setTool",
   },
-  { keys: ["Alt", "3"], desc: "AI 工具（备用）", group: "ai", actionType: "setTool" },
+  {
+    keys: ["Alt", "3"],
+    desc: "图片 AI 工具循环（备用）",
+    group: "ai",
+    actionType: "setTool",
+    context: "image",
+    targetTool: "ai-cycle",
+  },
   {
     keys: ["G"],
     desc: "Magic Box: 粗框 → SAM 收紧到对象紧凑外接矩形 → 落 bbox",
@@ -67,14 +79,28 @@ export const HOTKEYS: HotkeyDef[] = [
   { keys: ["B"], desc: "Mask 工具激活时: 切笔刷模式", group: "draw" },
   { keys: ["E"], desc: "Mask 工具激活时: 切橡皮模式", group: "draw" },
   { keys: ["Enter"], desc: "Mask 工具激活时: 提交当前 Mask", group: "draw" },
-  { keys: ["Alt", "3"], desc: "多边形工具（备用）", group: "draw", actionType: "setTool" },
+  {
+    keys: ["Alt", "2"],
+    desc: "图片多边形工具（备用）",
+    group: "draw",
+    actionType: "setTool",
+    context: "image",
+    targetTool: "polygon",
+  },
   {
     keys: ["V"],
     desc: "选择工具：点选 / 移动已有标注与预标注",
     group: "draw",
     actionType: "setTool",
   },
-  { keys: ["Alt", "4"], desc: "选择工具（备用）", group: "draw", actionType: "setTool" },
+  {
+    keys: ["Alt", "4"],
+    desc: "图片选择工具（备用）",
+    group: "draw",
+    actionType: "setTool",
+    context: "image",
+    targetTool: "select",
+  },
   { keys: ["Enter"], desc: "闭合多边形（≥3 顶点）", group: "draw" },
   {
     keys: ["Backspace"],
@@ -155,9 +181,11 @@ export const HOTKEYS: HotkeyDef[] = [
   },
   {
     keys: ["D"],
-    desc: "视频智能框工具（框选目标，交互式 SAM 分割当前帧）",
+    desc: "未选中当前帧待决 AI 候选时：视频智能框工具",
     group: "video",
     actionType: "setVideoTool",
+    context: "video-no-prediction",
+    targetTool: "smart-box",
   },
   {
     keys: ["E"],
@@ -295,8 +323,58 @@ export const HOTKEYS: HotkeyDef[] = [
     actionType: "setClassByDigit",
   },
 
-  { keys: ["A"], desc: "采纳选中 AI 框", group: "ai", actionType: "acceptAi" },
-  { keys: ["D"], desc: "忽略选中 AI 框", group: "ai", actionType: "rejectAi" },
+  {
+    keys: ["A"],
+    desc: "图片：采纳选中待决 AI 候选",
+    group: "ai",
+    actionType: "acceptAi",
+    context: "image-prediction",
+  },
+  {
+    keys: ["D"],
+    desc: "图片：忽略选中待决 AI 候选",
+    group: "ai",
+    actionType: "rejectAi",
+    context: "image-prediction",
+  },
+  {
+    keys: ["A"],
+    desc: "采纳选中当前帧普通待决 AI 候选（轨迹候选接受整个 shape）",
+    group: "video",
+    actionType: "acceptAi",
+    context: "video-prediction",
+  },
+  {
+    keys: ["D"],
+    desc: "忽略选中当前帧普通待决 AI 候选（保留当前工具）",
+    group: "video",
+    actionType: "rejectAi",
+    context: "video-prediction",
+  },
+  {
+    keys: ["Alt", "1"],
+    desc: "视频矩形框工具（备用）",
+    group: "video",
+    actionType: "setVideoTool",
+    context: "video",
+    targetTool: "box",
+  },
+  {
+    keys: ["Alt", "2"],
+    desc: "视频轨迹工具（备用）",
+    group: "video",
+    actionType: "setVideoTool",
+    context: "video",
+    targetTool: "track",
+  },
+  {
+    keys: ["Alt", "3"],
+    desc: "视频选择工具（备用）",
+    group: "video",
+    actionType: "setVideoTool",
+    context: "video",
+    targetTool: "select",
+  },
   {
     keys: ["["],
     desc: "选中态：z_order -1；否则降置信度阈值",
@@ -476,6 +554,8 @@ export interface DispatchCtx {
   isInputFocused: boolean;
   /** 是否有任意选中（决定方向键 nudge / a/d AI accept-reject 等是否激活）。 */
   hasSelection: boolean;
+  /** Selected ordinary pending prediction, already filtered to the displayed frame. */
+  selectedPrediction?: { id: string } | null;
   /** pendingDrawing | editingClass | batchChanging 中任一活跃 → 类别按键归 popover 消费。 */
   pendingActive: boolean;
   /** D.1：选中标注且当前数字键命中某个属性 hotkey 时，返回属性元数据；否则返回 null。
@@ -570,6 +650,10 @@ export function dispatchKey(e: KeyboardEvent, ctx: DispatchCtx): HotkeyAction | 
       if (e.key === "3") return { type: "setVideoTool", tool: "select" };
       if (e.key === "l" || e.key === "L") return { type: "videoClearLoopRegion" };
       return null;
+    }
+    if (ctx.selectedPrediction) {
+      if (e.key === "a" || e.key === "A") return { type: "acceptAi" };
+      if (e.key === "d" || e.key === "D") return { type: "rejectAi" };
     }
     if (e.key === " ") return { type: "videoSpaceDown" };
     if (e.key === "j" || e.key === "J") return { type: "videoJogPlayback", dir: -1 };
