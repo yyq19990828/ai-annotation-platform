@@ -39,7 +39,7 @@ Keep rendered documentation about the current system, without dotted version pro
 
 `CHANGELOG.md` follows Keep a Changelog: `Added`, `Changed`, `Deprecated`, `Removed`, `Fixed`, `Security`, omitting empty groups. Explain user impact. Pure refactors, tests, and formatting may omit an entry. Release headings use `## [x.y.z] - YYYY-MM-DD`, newest first.
 
-Only bump versions for a requested release; use [aap-release](.agents/skills/aap-release/SKILL.md) for the synchronized version and OpenAPI workflow. `node scripts/check-doc-version-prefix.mjs --staged` is advisory. Plan filenames use `yyyy-mm-dd-<topic>.md`, or `yyyy-mm-dd-vx.y.z-<topic>.md` for versioned plans.
+Only bump versions for a requested release; use [aap-release](.agents/skills/aap-release/SKILL.md) for the synchronized version and OpenAPI workflow. `node scripts/check-doc-version-prefix.mjs --staged` is advisory. New plan filenames use `<unix-seconds>_<topic>.md`: a 10-digit Unix timestamp at creation, an underscore, and a lowercase kebab-case topic, with no version number. Keep existing filenames and links; see [plan conventions](docs/plans/README.md) for promotion and archival. Maintainers determine release milestones and version assignments; agents must not infer them from plans or assign them independently.
 
 CI workflow files use `<domain>-<action>.yml`; the aggregate remains `ci.yml`. Top-level names use sentence case, preserving proper nouns and acronyms. Aggregate jobs set `name: <Domain> <tool/action>`; single-domain workflows rely on job ids. `scripts/check-workflow-names.mjs` checks these conventions.
 

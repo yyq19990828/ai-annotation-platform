@@ -1,28 +1,28 @@
-# 研究草案与转定稿约定
+# Research drafts and promotion conventions
 
-`docs/plans/backlog/` 保存已经形成推荐方向、但尚未排期且不能直接授权实施的计划草案。它们用于保留调研结论、范围边界、依赖顺序和验收方向，不是当前仓库的实现说明，也不占用任何版本号。
+`docs/plans/backlog/` holds drafts with a recommended direction that are not yet scheduled and do not authorize implementation. They preserve research findings, scope boundaries, dependency order, and acceptance direction. They do not describe the current implementation or reserve any version number.
 
-## 状态语义
+## Status semantics
 
-- `research-draft`：推荐方向已经明确，仍需按实施当日的仓库重新校准。
-- `trigger-gated research-draft`：除重新校准外，还必须先满足草案写明的数据、性能或业务触发条件。
-- 根目录中的 `draft / pending approval / approved` 才能进入版本评审；backlog 文件不能作为开工依据。
+- `research-draft`: the recommended direction is clear, but it must be reassessed against the repository on the day implementation starts.
+- `trigger-gated research-draft`: in addition to reassessment, the draft's data, performance, or business triggers must be satisfied first.
+- Only root-level plans marked `draft / pending approval / approved` may enter implementation review. Backlog files cannot authorize work. Maintainers determine release milestones and version assignments.
 
-草案不得用 `TODO`、`TBD` 或空白占位隐藏决策。尚不能安全冻结的内容必须写成可验证的触发条件或转定稿检查项。
+Drafts must not hide decisions behind `TODO`, `TBD`, or blank placeholders. Decisions that cannot yet be safely finalized must become verifiable triggers or promotion checklist items.
 
-## 转定稿门
+## Promotion gate
 
-准备实施任一草案时，必须完成下面的顺序；任何一步发现基础假设已变化，都以当前代码、Schema、ADR 和正式文档为准，重写草案而不是迁就旧文字。
+Before implementing any draft, complete the following steps in order. If any step reveals changed assumptions, use the current code, schema, ADRs, and official documentation as the source of truth and rewrite the draft accordingly.
 
-1. 确认当前 `CHANGELOG.md`、四处版本源、活跃 Epic 与已实施计划，重新决定是否分配版本；不得沿用草案日期推导版本。
-2. 检查 `git status`，区分用户未提交变更与本计划范围，记录不能覆盖的工作树约束。
-3. 用 `rg` 重新定位草案列出的代码锚点，核对 API、数据库模型、迁移 head、前端状态机、测试夹具和正式文档是否已经演进。
-4. 对照草案的触发条件、范围和非范围，记录“仍成立 / 已由现状覆盖 / 需要拆分 / 不再成立”的结论。
-5. 把候选变更面替换为精确文件清单、依赖图、迁移与兼容策略、按层测试命令、人工验收矩阵、文档与 `CHANGELOG.md` 同步项。
-6. 明确每个可合并切片的验收门和回滚方法；超过 8 个文件时在定稿中显式确认大变更面，超过 3 个组件时保留 ASCII 数据流图。
-7. 将文件移动到 `docs/plans/` 根目录，使用转定稿当天日期；若版本已经获批，文件名使用 `yyyy-mm-dd-vx.y.z-...md`，否则保持无版本名。状态改为待批准或已批准后，才能实施。
+1. Check the current `CHANGELOG.md`, active Epics, and implemented plans to reassess scope and dependencies. Record only maintainer-confirmed release milestones; do not assign versions or infer them from draft dates or timestamps.
+2. Check `git status`, distinguish uncommitted user changes from the plan's scope, and record worktree constraints that must be preserved.
+3. Use `rg` to relocate the draft's code anchors. Check whether APIs, database models, migration heads, frontend state machines, test fixtures, and official documentation have evolved.
+4. Assess the draft's triggers, scope, and exclusions, recording whether each still holds, is already covered by the current system, needs splitting, or no longer holds.
+5. Replace the candidate change areas with an exact file list, dependency graph, migration and compatibility strategies, test commands by layer, manual acceptance matrix, and documentation and `CHANGELOG.md` updates.
+6. Specify acceptance gates and rollback methods for each mergeable slice. If the plan touches more than 8 files, explicitly acknowledge the large change scope in the finalized plan; if it touches more than 3 components, retain an ASCII data-flow diagram.
+7. Move the file to the `docs/plans/` root, following the [naming conventions](../README.md#naming-conventions). Keep existing `<unix-seconds>_<topic>.md` filenames. For legacy drafts with date or version prefixes, use the 10-digit Unix timestamp in seconds at promotion, remove version numbers, and update all Markdown references. Set the status to pending approval or approved; implementation still requires authorization.
 
-转定稿不是给原文补几条备注，而是一次基于真实仓库的重新决策。旧草案的研究来源和被否决方向可以保留，文件范围、契约与测试口径必须重新生成。
+Promotion requires a fresh decision based on the actual repository, not a few notes appended to the original text. Research sources and rejected directions may remain, but the file scope, contracts, and test criteria must be regenerated.
 
 ## 当前 3D 工作台草案集
 
