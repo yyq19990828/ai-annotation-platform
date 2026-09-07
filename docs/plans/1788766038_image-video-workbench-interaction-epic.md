@@ -399,24 +399,24 @@ Python 优先使用本工作区 `apps/api/.venv`。本地 Playwright 配置使�
 
 下表为执行状态索引；各草案记录本步设计与验收，Epic 保留整体目标、共同边界和历史依据。实现前如发现与草案合同有实质冲突，先更新对应草案并说明差异，不静默改变交付范围。
 
-| 里程碑 | 独立草案                                                                          | 硬依赖 | 确认   | 实施   | 浏览器实测   |
-| ------ | --------------------------------------------------------------------------------- | ------ | ------ | ------ | ------------ |
-| A      | [视频候选决策与快捷键](1788769060_workbench-a-video-candidate-decisions.md)       | 无     | 已确认 | 已完成 | A-1–A-5 通过 |
-| B      | [工具坞高度溢出](1788769060_workbench-b-tool-dock-overflow.md)                    | 无     | 已授权 | 完成   | B-1–B-4 通过 |
-| C      | [图片连续创建](1788769060_workbench-c-image-continuous-creation.md)               | 无     | 已授权 | 已完成 | C-1–C-5 通过 |
-| D      | [Mask 阶段主动作](1788769060_workbench-d-mask-primary-actions.md)                 | 无     | 已授权 | 完成   | D1–D5 通过   |
-| E1     | [AI 交互顶栏主次层](1788769060_workbench-e1-ai-toolbar-layers.md)                 | 无     | 已授权 | 未开始 | 未执行       |
-| E2     | [AI Inspector 阶段展示](1788769060_workbench-e2-ai-inspector-phases.md)           | E1     | 已授权 | 未开始 | 未执行       |
-| F1     | [当前视频轨迹条](1788769060_workbench-f1-video-track-context.md)                  | 无     | 已授权 | 未开始 | 未执行       |
-| F2     | [视频单帧与轨迹范围](1788769060_workbench-f2-video-tool-scope.md)                 | B      | 已授权 | 未开始 | 未执行       |
-| F3     | [追踪候选审阅范围](1788769060_workbench-f3-video-tracker-review-scope.md)         | 无     | 已授权 | 未开始 | 未执行       |
-| G1     | [视频 Issue 创建与真实落帧](1788769060_workbench-g1-video-issue-frame.md)         | 无     | 已授权 | 未开始 | 未执行       |
-| G2     | [视频 Issue 完整上下文恢复](1788769060_workbench-g2-video-issue-context.md)       | G1     | 已授权 | 未开始 | 未执行       |
-| H1     | [中心向外创建 bbox](1788769060_workbench-h1-bbox-center-out.md)                   | 无     | 已授权 | 未开始 | 未执行       |
-| H2     | [Polygon 自动落点](1788769060_workbench-h2-polygon-auto-points.md)                | 无     | 已授权 | 未开始 | 未执行       |
-| H3     | [沿已有 Polygon 边界追踪](1788769060_workbench-h3-polygon-boundary-trace.md)      | 无     | 已授权 | 未开始 | 未执行       |
-| H4a    | [Polygon Slice 与原子恢复](1788769060_workbench-h4a-polygon-slice-transaction.md) | 无     | 已授权 | 未开始 | 未执行       |
-| H4b    | [Mask Slice 与可回收数据保护](1788769060_workbench-h4b-mask-slice-transaction.md) | H4a、D | 已授权 | 未开始 | 未执行       |
+| 里程碑 | 独立草案                                                                          | 硬依赖 | 确认   | 实施   | 浏览器实测     |
+| ------ | --------------------------------------------------------------------------------- | ------ | ------ | ------ | -------------- |
+| A      | [视频候选决策与快捷键](1788769060_workbench-a-video-candidate-decisions.md)       | 无     | 已确认 | 已完成 | A-1–A-5 通过   |
+| B      | [工具坞高度溢出](1788769060_workbench-b-tool-dock-overflow.md)                    | 无     | 已授权 | 完成   | B-1–B-4 通过   |
+| C      | [图片连续创建](1788769060_workbench-c-image-continuous-creation.md)               | 无     | 已授权 | 已完成 | C-1–C-5 通过   |
+| D      | [Mask 阶段主动作](1788769060_workbench-d-mask-primary-actions.md)                 | 无     | 已授权 | 完成   | D1–D5 通过     |
+| E1     | [AI 交互顶栏主次层](1788769060_workbench-e1-ai-toolbar-layers.md)                 | 无     | 已授权 | 已完成 | E1-1–E1-4 通过 |
+| E2     | [AI Inspector 阶段展示](1788769060_workbench-e2-ai-inspector-phases.md)           | E1     | 已授权 | 未开始 | 未执行         |
+| F1     | [当前视频轨迹条](1788769060_workbench-f1-video-track-context.md)                  | 无     | 已授权 | 未开始 | 未执行         |
+| F2     | [视频单帧与轨迹范围](1788769060_workbench-f2-video-tool-scope.md)                 | B      | 已授权 | 未开始 | 未执行         |
+| F3     | [追踪候选审阅范围](1788769060_workbench-f3-video-tracker-review-scope.md)         | 无     | 已授权 | 未开始 | 未执行         |
+| G1     | [视频 Issue 创建与真实落帧](1788769060_workbench-g1-video-issue-frame.md)         | 无     | 已授权 | 未开始 | 未执行         |
+| G2     | [视频 Issue 完整上下文恢复](1788769060_workbench-g2-video-issue-context.md)       | G1     | 已授权 | 未开始 | 未执行         |
+| H1     | [中心向外创建 bbox](1788769060_workbench-h1-bbox-center-out.md)                   | 无     | 已授权 | 未开始 | 未执行         |
+| H2     | [Polygon 自动落点](1788769060_workbench-h2-polygon-auto-points.md)                | 无     | 已授权 | 未开始 | 未执行         |
+| H3     | [沿已有 Polygon 边界追踪](1788769060_workbench-h3-polygon-boundary-trace.md)      | 无     | 已授权 | 未开始 | 未执行         |
+| H4a    | [Polygon Slice 与原子恢复](1788769060_workbench-h4a-polygon-slice-transaction.md) | 无     | 已授权 | 未开始 | 未执行         |
+| H4b    | [Mask Slice 与可回收数据保护](1788769060_workbench-h4b-mask-slice-transaction.md) | H4a、D | 已授权 | 未开始 | 未执行         |
 
 E1 不依赖 A/D；E2 只依赖 E1。F2 依赖 B，F1/F3 可各自使用现有 UI 独立交付。H1/H2 与 C 的联合检查是集成验收，不是硬依赖；H4a 不依赖 H3；H4b 依赖 H4a 的原子恢复和 D 的主动作。此表细化并取代 §4 聚合步骤中的粗粒度依赖描述。
 

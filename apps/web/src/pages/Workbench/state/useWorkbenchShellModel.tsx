@@ -98,6 +98,7 @@ import { useAnnotationHistory, type VideoMaskFrameState } from "./useAnnotationH
 import { useRecentClasses } from "./useRecentClasses";
 import { useSessionStats } from "./useSessionStats";
 import { useWorkbenchHotkeys } from "./useWorkbenchHotkeys";
+import { isSamCandidateHotkeyBlocked } from "./hotkeys";
 import { useCanvasDraftPersistence } from "./useCanvasDraftPersistence";
 import { useWorkbenchTaskFlow } from "./useWorkbenchTaskFlow";
 import {
@@ -1946,6 +1947,18 @@ export function useWorkbenchShellModel({
     modelPref.savedModelId ?? null,
     exactMaskRequirement,
   );
+  const capabilityError =
+    [
+      ...routing.capabilityErrors.map((failure) => `${failure.backendName}：${failure.message}`),
+      ...(mlCapabilities.error &&
+      !routing.capabilityErrors.some((failure) => failure.backendId === interactiveBackendId)
+        ? [mlCapabilities.error]
+        : []),
+    ].join("；") || undefined;
+  const retryInteractiveCapabilities = useCallback(() => {
+    if (routing.capabilityErrors.length > 0) void routing.retryCapabilities();
+    else void mlCapabilities.refetch();
+  }, [routing, mlCapabilities]);
   const activeGeometricOutputs =
     mlCapabilities.activeModel?.supported_geometric_outputs ??
     mlCapabilities.capability?.supported_geometric_outputs ??
@@ -2069,7 +2082,7 @@ export function useWorkbenchShellModel({
       isVideoTask ? videoFrameIndex : "image",
       mlCapabilities.activeModelId ?? "default",
       effectiveSingleFrameOutputGeometry,
-      selectedMaskPromptSource
+      canRefineSelectedMask && selectedMaskPromptSource
         ? `${selectedMaskPromptSource.annotation_id}@${selectedMaskPromptSource.source_version}`
         : "no-mask-prompt",
     ].join(":"),
@@ -2149,38 +2162,6 @@ export function useWorkbenchShellModel({
     [sam.candidates, selectSamCandidateByIndex],
   );
 
-  // v0.21.23 · 画布 samProbe 松手 → 请求候选 (坐标已归一化 [0,1])。
-  const onVideoSamPrompt = useCallback(
-    (prompt: VideoSamPrompt) => {
-      // v0.21.27 · U-pvs-1 · PVS 种子采集态: point 收进种子列表 (不跑帧级 SAM)。仅由传播
-      // 对话框「落点选目标」显式开启; 正点 polarity=1 / Alt 负点 polarity=0 (精修召回)。
-      // 点归属当前目标 seedObj (「新目标」递增 → 多目标各成一条轨迹) + 当前帧 (纠偏: 导航到
-      // 别帧落修正点, 提交按 frame 分组成多帧 prompts)。首个落点帧设为范围锚点。
-      if (seedCollecting && prompt.mode === "point") {
-        const frame = s.videoFrameIndex;
-        setSeedAnchorFrame((a) => (a === null ? frame : a));
-        setTrackerSeeds((prev) => [
-          ...prev,
-          { pt: prompt.pt, polarity: prompt.alt ? 0 : 1, obj: seedObj, frame },
-        ]);
-        return;
-      }
-      // v0.21.27 · 框修正 · 采集态画框 (smart-box) → 收进框种子列表, 不跑帧级 SAM。
-      if (seedCollecting && prompt.mode === "bbox") {
-        const frame = s.videoFrameIndex;
-        setSeedAnchorFrame((a) => (a === null ? frame : a));
-        setTrackerSeedBoxes((prev) => [...prev, { bbox: prompt.bbox, obj: seedObj, frame }]);
-        return;
-      }
-      if (prompt.mode === "point") return sam.runPoint(prompt.pt, prompt.alt ? 0 : 1);
-      // exemplar: alt = 负框 (排误检) / 否则正框 (扩召回); 会话每次重发全量框。
-      if (prompt.mode === "exemplar") {
-        return sam.runExemplar(prompt.bbox, prompt.alt ? 0 : 1, s.exemplarOutputMode);
-      }
-      sam.runBbox(prompt.bbox);
-    },
-    [sam, s.exemplarOutputMode, seedCollecting, seedObj, s.videoFrameIndex],
-  );
   // v0.14.9 · active model 输出几何 / 文本属性 与项目配置的兼容性警告 (非阻断)。
   const capabilityWarnings = useCapabilityValidation({
     activeModel: mlCapabilities.activeModel,
@@ -2204,6 +2185,46 @@ export function useWorkbenchShellModel({
       ...interactiveProjectVariantSlice,
     }),
     [mlCapabilities.activeModel, interactiveProjectVariantSlice],
+  );
+  // v0.21.23 · 画布 samProbe 松手 → 请求候选 (坐标已归一化 [0,1])。
+  const onVideoSamPrompt = useCallback(
+    (prompt: VideoSamPrompt) => {
+      // v0.21.27 · U-pvs-1 · PVS 种子采集态: point 收进种子列表 (不跑帧级 SAM)。仅由传播
+      // 对话框「落点选目标」显式开启; 正点 polarity=1 / Alt 负点 polarity=0 (精修召回)。
+      // 点归属当前目标 seedObj (「新目标」递增 → 多目标各成一条轨迹) + 当前帧 (纠偏: 导航到
+      // 别帧落修正点, 提交按 frame 分组成多帧 prompts)。首个落点帧设为范围锚点。
+      if (seedCollecting && prompt.mode === "point") {
+        const frame = s.videoFrameIndex;
+        setSeedAnchorFrame((a) => (a === null ? frame : a));
+        setTrackerSeeds((prev) => [
+          ...prev,
+          { pt: prompt.pt, polarity: prompt.alt ? 0 : 1, obj: seedObj, frame },
+        ]);
+        return;
+      }
+      // v0.21.27 · 框修正 · 采集态画框 (smart-box) → 收进框种子列表, 不跑帧级 SAM。
+      if (seedCollecting && prompt.mode === "bbox") {
+        const frame = s.videoFrameIndex;
+        setSeedAnchorFrame((a) => (a === null ? frame : a));
+        setTrackerSeedBoxes((prev) => [...prev, { bbox: prompt.bbox, obj: seedObj, frame }]);
+        return;
+      }
+      const extra = buildPredictParams(undefined, interactiveVariantSlice);
+      if (prompt.mode === "point") return sam.runPoint(prompt.pt, prompt.alt ? 0 : 1, extra);
+      // exemplar: alt = 负框 (排误检) / 否则正框 (扩召回); 会话每次重发全量框。
+      if (prompt.mode === "exemplar") {
+        return sam.runExemplar(prompt.bbox, prompt.alt ? 0 : 1, s.exemplarOutputMode, extra);
+      }
+      sam.runBbox(prompt.bbox, extra);
+    },
+    [
+      sam,
+      s.exemplarOutputMode,
+      seedCollecting,
+      seedObj,
+      s.videoFrameIndex,
+      interactiveVariantSlice,
+    ],
   );
   const handleInteractiveVariantChange = useCallback(
     (next: Record<string, unknown>) => {
@@ -2355,7 +2376,7 @@ export function useWorkbenchShellModel({
     routing.isPromptSupported(p) ? "1" : "0",
   ).join("");
   useEffect(() => {
-    if (routing.isLoading) return;
+    if (routing.isLoading || routing.capabilityErrors.length > 0) return;
     if (!isAIToolId(s.tool)) return;
     const requiredPrompt = promptOfTool(s.tool);
     if (requiredPrompt && !routing.isPromptSupported(requiredPrompt)) {
@@ -2367,9 +2388,9 @@ export function useWorkbenchShellModel({
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routingSig, routing.isLoading, s.tool]);
+  }, [routingSig, routing.isLoading, routing.capabilityErrors.length, s.tool]);
   useEffect(() => {
-    if (s.tool !== "smart-scribble" || canRefineSelectedMask) return;
+    if (s.tool !== "smart-scribble" || canRefineSelectedMask || capabilityError) return;
     s.setTool("select");
     sam.cancel();
     pushToast({
@@ -2379,7 +2400,7 @@ export function useWorkbenchShellModel({
     });
     // sam / s 为壳层聚合对象，仅按实际门控状态触发。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canRefineSelectedMask, s.tool]);
+  }, [canRefineSelectedMask, capabilityError, s.tool]);
   useEffect(() => {
     if (!isVideoTask) return;
     if (tool !== "box" && tool !== "select") setTool("box");
@@ -5190,47 +5211,33 @@ export function useWorkbenchShellModel({
     anchor: { left: number; top: number };
   } | null>(null);
 
+  const requestVideoSamAccept = useCallback(() => {
+    if (isLockedForActions || videoSamPendingAccept || !sam.canAcceptCandidates || sam.isRunning)
+      return;
+    const idx = sam.activeIdx;
+    const candidate = sam.candidates[idx];
+    if (!candidate) return;
+    const geom = samCandidateDisplayGeom(candidate);
+    if (!geom) return;
+    const pt = videoControlsRef.current?.normToClient({ x: geom.x, y: geom.y + geom.h });
+    setVideoSamPendingAccept({ idx, anchor: { left: pt?.left ?? 0, top: (pt?.top ?? 0) + 6 } });
+  }, [isLockedForActions, videoSamPendingAccept, sam, samCandidateDisplayGeom]);
+
   useEffect(() => {
-    if (!isVideoTask) return;
-    // magic-box 不参与候选导航 (单候选, 自动弹 popover) —— 与图片侧一致。
-    if (!isSamCandidateNavTool(s.videoTool)) return;
-    if (sam.candidates.length === 0) return;
-    // popover 打开时让位: 键盘归它 (Esc 关 popover, Enter 选类)。
-    if (videoSamPendingAccept) return;
+    if (!isVideoTask || !isSamCandidateNavTool(s.videoTool)) return;
+    if (sam.candidates.length === 0 || videoSamPendingAccept) return;
     const handler = (e: KeyboardEvent) => {
-      if (isWorkbenchInteractionBlocked(e)) return;
-      const target = e.target as HTMLElement | null;
-      if (
-        target?.tagName === "INPUT" ||
-        target?.tagName === "TEXTAREA" ||
-        target?.isContentEditable
-      )
-        return;
+      if (isSamCandidateHotkeyBlocked(e)) return;
       if (e.key !== "Enter" && e.key !== "Escape" && e.key !== "Tab") return;
       e.preventDefault();
-      // stopImmediatePropagation 而非 stopPropagation: 两个 handler 都挂在 window 的捕获阶段,
-      // stopPropagation 只拦跨节点传播, 拦不住同一 window 上后注册的 useWorkbenchHotkeys ——
-      // 否则视频侧 Tab 会在切候选的同时又触发「同类下一个」的选中循环。
       e.stopImmediatePropagation();
-      if (e.key === "Enter") {
-        if (!sam.canAcceptCandidates) return;
-        const idx = sam.activeIdx;
-        const geom = samCandidateDisplayGeom(sam.candidates[idx]);
-        if (!geom) return;
-        // 锚到候选外接框底边中点下方, 与手绘 box 的 onPendingDraw 同式。
-        const pt = videoControlsRef.current?.normToClient({ x: geom.x, y: geom.y + geom.h });
-        setVideoSamPendingAccept({ idx, anchor: { left: pt?.left ?? 0, top: (pt?.top ?? 0) + 6 } });
-        return;
-      }
-      if (e.key === "Escape") {
-        sam.cancel();
-        return;
-      }
-      sam.cycle(e.shiftKey ? -1 : 1);
+      if (e.key === "Enter") requestVideoSamAccept();
+      else if (e.key === "Escape") sam.cancel();
+      else sam.cycle(e.shiftKey ? -1 : 1);
     };
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, [isVideoTask, s.videoTool, sam, samCandidateDisplayGeom, videoSamPendingAccept]);
+  }, [isVideoTask, s.videoTool, sam, requestVideoSamAccept, videoSamPendingAccept]);
 
   // magic-box: 候选一到就自动弹类选择器 (无需 Enter), 选定类别后收紧成外接框 —— 与图片侧同式。
   useEffect(() => {
@@ -6857,68 +6864,86 @@ export function useWorkbenchShellModel({
                 与 MaskToolbar 互斥 (mask 非 AI 工具)。引擎选择经 modelPref 服务端持久化。
                 v0.21.27 · U-pvs-1 · PVS 种子采集态借用 smart-point 工具落点, 此时抑制本工具条
                 (否则与顶部居中的传播对话框撞位); 采集是「落 PVS 种子」而非帧级 SAM 分割。 */}
-            {isAIToolId(activeAiTool) && !seedCollecting && (
-              <InteractiveToolBar
-                tool={activeAiTool}
-                backendName={mlCapabilities.capability?.name}
-                capability={mlCapabilities.capability}
-                samPolarity={s.samPolarity}
-                onSetSamPolarity={s.setSamPolarity}
-                isLoading={mlCapabilities.isLoading}
-                isError={mlCapabilities.isError}
-                canRetry={sam.canRetry}
-                onRetry={sam.retryLast}
-                exemplarOutputMode={s.exemplarOutputMode}
-                singleFrameOutputGeometry={effectiveSingleFrameOutputGeometry}
-                onSetSingleFrameOutputGeometry={setSingleFrameOutputGeometry}
-                nativeMaskOutputDisabledReason={nativeMaskOutputDisabledReason}
-                maskPromptSourceLabel={
-                  canRefineSelectedMask && selectedMaskPromptSource
-                    ? `精修 Mask · ${selectedMaskPromptSource.class_name}`
-                    : undefined
-                }
-                onSetExemplarOutputMode={(mode) => {
-                  // 切输出形态时若 exemplar 会话进行中, 用当前会话重跑 (output 透传)。
-                  handleSetExemplarOutputMode(mode);
-                  sam.rerunExemplar(mode);
-                }}
-                exemplarText={sam.exemplarText}
-                onSetExemplarText={sam.setExemplarText}
-                exemplarThreshold={sam.exemplarThreshold}
-                onSetExemplarThreshold={sam.setExemplarThreshold}
-                exemplarThresholdDefault={((): number | undefined => {
-                  const def = (
-                    mlCapabilities.paramsSchema?.properties?.score_threshold as
-                      | { default?: unknown }
-                      | undefined
-                  )?.default;
-                  return typeof def === "number" ? def : undefined;
-                })()}
-                exemplarSessionActive={sam.sessionExemplars.length > 0}
-                models={mlCapabilities.models}
-                activeModelId={mlCapabilities.activeModelId}
-                onSetActiveModelId={(id) => {
-                  // 会话内选中 + 服务端持久化 (按 backend, 跨设备)。
-                  mlCapabilities.setActiveModelId(id);
-                  modelPref.save(id);
-                }}
-                capabilityWarnings={capabilityWarnings}
-                onFillAttribute={handleFillAttribute}
-                interactiveBackends={(activeInteractivePrompt
-                  ? routing.candidatesFor(activeInteractivePrompt)
-                  : []
-                )
-                  .map((id) => backends.find((b) => b.id === id))
-                  .filter((b): b is MLBackendResponse => !!b)}
-                selectedInteractiveId={interactiveBackendId}
-                onSelectInteractive={routing.setPreferredInteractiveId}
-                variantGroups={interactiveVariantGroups}
-                variantCombinations={interactiveVariantCombos}
-                variantDefaults={interactiveVariantSlice}
-                variantValue={interactiveProjectVariantSlice}
-                onVariantChange={handleInteractiveVariantChange}
-              />
-            )}
+            {(isAIToolId(activeAiTool) || (stageKind !== "3d" && capabilityError)) &&
+              !seedCollecting && (
+                <InteractiveToolBar
+                  tool={isAIToolId(activeAiTool) ? activeAiTool : "smart-point"}
+                  capabilityRecoveryOnly={!isAIToolId(activeAiTool)}
+                  backendName={mlCapabilities.capability?.name}
+                  capability={mlCapabilities.capability}
+                  samPolarity={s.samPolarity}
+                  onSetSamPolarity={s.setSamPolarity}
+                  isLoading={routing.isLoading || mlCapabilities.isLoading}
+                  isError={!!capabilityError}
+                  capabilityError={capabilityError}
+                  onRetryCapabilities={retryInteractiveCapabilities}
+                  isCapabilityRetrying={routing.isFetching || mlCapabilities.isFetching}
+                  isRunning={sam.isRunning}
+                  inferenceError={sam.error}
+                  candidateCount={sam.candidates.length}
+                  activeCandidateIndex={sam.activeIdx}
+                  canAcceptCandidates={sam.canAcceptCandidates && !isLockedForActions}
+                  candidateActionPending={
+                    isVideoTask ? videoSamPendingAccept !== null : imageActions.samClassPickerActive
+                  }
+                  onCycleCandidate={sam.cycle}
+                  onAcceptCandidate={
+                    isVideoTask ? requestVideoSamAccept : imageActions.requestSamAccept
+                  }
+                  onCancelCandidates={sam.cancel}
+                  canRetry={sam.canRetry}
+                  onRetry={sam.retryLast}
+                  exemplarOutputMode={s.exemplarOutputMode}
+                  singleFrameOutputGeometry={effectiveSingleFrameOutputGeometry}
+                  onSetSingleFrameOutputGeometry={setSingleFrameOutputGeometry}
+                  nativeMaskOutputDisabledReason={nativeMaskOutputDisabledReason}
+                  maskPromptSourceLabel={
+                    canRefineSelectedMask && selectedMaskPromptSource
+                      ? `精修 Mask · ${selectedMaskPromptSource.class_name}`
+                      : undefined
+                  }
+                  onSetExemplarOutputMode={(mode) => {
+                    // 切输出形态时若 exemplar 会话进行中, 用当前会话重跑 (output 透传)。
+                    handleSetExemplarOutputMode(mode);
+                    sam.rerunExemplar(mode);
+                  }}
+                  exemplarText={sam.exemplarText}
+                  onSetExemplarText={sam.setExemplarText}
+                  exemplarThreshold={sam.exemplarThreshold}
+                  onSetExemplarThreshold={sam.setExemplarThreshold}
+                  exemplarThresholdDefault={((): number | undefined => {
+                    const def = (
+                      mlCapabilities.paramsSchema?.properties?.score_threshold as
+                        | { default?: unknown }
+                        | undefined
+                    )?.default;
+                    return typeof def === "number" ? def : undefined;
+                  })()}
+                  exemplarSessionActive={sam.sessionExemplars.length > 0}
+                  models={mlCapabilities.models}
+                  activeModelId={mlCapabilities.activeModelId}
+                  onSetActiveModelId={(id) => {
+                    // 会话内选中 + 服务端持久化 (按 backend, 跨设备)。
+                    mlCapabilities.setActiveModelId(id);
+                    modelPref.save(id);
+                  }}
+                  capabilityWarnings={capabilityWarnings}
+                  onFillAttribute={handleFillAttribute}
+                  interactiveBackends={(activeInteractivePrompt
+                    ? routing.candidatesFor(activeInteractivePrompt)
+                    : []
+                  )
+                    .map((id) => backends.find((b) => b.id === id))
+                    .filter((b): b is MLBackendResponse => !!b)}
+                  selectedInteractiveId={interactiveBackendId}
+                  onSelectInteractive={routing.setPreferredInteractiveId}
+                  variantGroups={interactiveVariantGroups}
+                  variantCombinations={interactiveVariantCombos}
+                  variantDefaults={interactiveVariantSlice}
+                  variantValue={interactiveProjectVariantSlice}
+                  onVariantChange={handleInteractiveVariantChange}
+                />
+              )}
             {/* v0.20.11 · 选中单框二次推理入口: 非 AI 工具 (与 InteractiveToolBar 互斥) 且单选一个
                 已落库框时浮顶部, 列该框可跑能力。图片任务 only (视频/3D 走各自轨迹面板)。 */}
             {!secondaryBarHidden &&

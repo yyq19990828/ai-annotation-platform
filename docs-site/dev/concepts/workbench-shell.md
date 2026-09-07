@@ -109,6 +109,14 @@ Shell 持有当前会话的 `scenePlaybackActive`，将预览状态接到 `useTa
 
 视频候选审阅条仍使用 `WorkbenchLayout.stageOverlay`，相对中间 Stage 定位。当前题 AI 与视频追踪是独立 Dockview panel，视频标注中可以同时显示；打开入口会显示或聚焦已有实例，不创建第二份业务 session。
 
+## 交互 AI 顶栏与状态来源
+
+`InteractiveToolBar` 的主层显示提示输入和当前候选决策，高级区只持有展开状态。后端、模型、variant、文本和阈值继续由既有路由、偏好、项目配置与 `useInteractiveAI` 保存；折叠使用 `hidden`，不调用配置 setter、重跑推理或取消会话。视频当前帧提示与图片提示都透传 `interactiveVariantSlice`。
+
+能力错误来自 `useBackendRouting` 的各后端 setup query 和 `useMLCapabilities` 的同一查询缓存；重试只 refetch 失败 query，不改变偏好或启动推理。本轮推理错误由 `useInteractiveAI` 的现有请求代次校验后发布，启动、成功、取消及 owner 变化时清除；`canRetry` 仅决定重试入口，不能代表错误是否存在。全部协商失败时，未选 AI 工具也展示恢复条；正在使用的工具不会因网络协商失败被当作能力不支持而退出。
+
+图片 `requestSamAccept` 与视频 `requestVideoSamAccept` 各自复用已有待选类别 owner，顶栏按钮和画布 Enter 调同一入口，保留原生 Mask 原子接纳与 point / Exemplar 各自的消费语义。`data-workbench-ai-toolbar` 只保护控件事件路径，不在顶栏显示时全局屏蔽画布。候选捕获监听还让出原生输入、按钮、弹窗、IME 和重复事件。
+
 ## 可停靠工作区
 
 ### 设置窗口与工具菜单的输入隔离

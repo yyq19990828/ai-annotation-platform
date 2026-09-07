@@ -272,17 +272,18 @@ async def _cleanup_e2e_fixtures(db: AsyncSession) -> None:
 
     # v0.23.3 ADR-0050 · mock registry 已有 singleton pool，且 pool 的
     # legacy_instance_id / member 都以 RESTRICT 引用 registry。先删除 mock pool
-    # （member 随 pool CASCADE），再删 registry；否则第二次 reset 会留下旧 registry，
+    # （member 随 pool CASCADE），再删 registry；包含顶栏多后端测试的第二个固定夹具。
+    # 否则第二次 reset 会留下旧 registry，
     # 重建时撞 url unique 约束。共享 pool / registry 均不受影响。
     await _try_delete(
         "DELETE FROM ml_backend_service_pools WHERE legacy_instance_id IN "
         "(SELECT id FROM ml_backend_registry "
-        "WHERE url = 'http://mock-sam.e2e:9999')"
+        "WHERE url IN ('http://mock-sam.e2e:9999', 'http://second-toolbar.e2e:9999'))"
     )
     # v0.19.0 ADR-0044 · 清旧的 E2E mock registry 行(url unique 约束,
     # 重建必须先删旧)。共享注册项不删,只删本 fixture 自造的 mock url。
     await _try_delete(
-        "DELETE FROM ml_backend_registry WHERE url = 'http://mock-sam.e2e:9999'"
+        "DELETE FROM ml_backend_registry WHERE url IN ('http://mock-sam.e2e:9999', 'http://second-toolbar.e2e:9999')"
     )
 
     await db.flush()
@@ -304,7 +305,7 @@ async def _cleanup_e2e_fixtures(db: AsyncSession) -> None:
                     " WHERE name = 'E2E Demo Project' "
                     "    OR display_id LIKE 'P-E2E-%') AS projects, "
                     "(SELECT count(*) FROM ml_backend_registry "
-                    " WHERE url = 'http://mock-sam.e2e:9999') AS ml_backends"
+                    " WHERE url IN ('http://mock-sam.e2e:9999', 'http://second-toolbar.e2e:9999')) AS ml_backends"
                 )
             )
         )

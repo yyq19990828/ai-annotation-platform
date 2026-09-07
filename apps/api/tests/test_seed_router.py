@@ -215,6 +215,21 @@ async def test_seed_cleanup_is_idempotent_and_preserves_non_e2e_data(
     reset = await httpx_client.post("/api/v1/__test/seed/reset")
     assert reset.status_code == 200, reset.text
 
+    login = await httpx_client.post(
+        "/api/v1/__test/seed/login", json={"email": reset.json()["admin_email"]}
+    )
+    assert login.status_code == 200, login.text
+    second_backend = await httpx_client.post(
+        f"/api/v1/projects/{reset.json()['project_id']}/ml-backends",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+        json={
+            "name": "E1 toolbar fixture",
+            "url": "http://second-toolbar.e2e:9999",
+            "is_interactive": True,
+        },
+    )
+    assert second_backend.status_code == 201, second_backend.text
+
     first = await httpx_client.post("/api/v1/__test/seed/cleanup")
     second = await httpx_client.post("/api/v1/__test/seed/cleanup")
     assert first.status_code == 200, first.text
@@ -253,7 +268,11 @@ async def test_seed_cleanup_is_idempotent_and_preserves_non_e2e_data(
         await db_session.scalar(
             select(func.count())
             .select_from(MLBackendRegistry)
-            .where(MLBackendRegistry.url == "http://mock-sam.e2e:9999")
+            .where(
+                MLBackendRegistry.url.in_(
+                    ["http://mock-sam.e2e:9999", "http://second-toolbar.e2e:9999"]
+                )
+            )
         )
         == 0
     )

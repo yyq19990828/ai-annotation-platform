@@ -3,6 +3,22 @@ import { isWorkbenchInteractionBlocked } from "./workbenchInteractionGuards";
 
 afterEach(() => document.body.replaceChildren());
 
+it("AI toolbar controls keep their input while canvas shortcuts remain available", () => {
+  const toolbar = document.createElement("div");
+  toolbar.dataset.workbenchAiToolbar = "";
+  const button = document.createElement("button");
+  toolbar.append(button);
+  document.body.append(toolbar);
+  expect(isWorkbenchInteractionBlocked(new KeyboardEvent("keydown", { key: "Tab" }))).toBe(false);
+  const check = vi.fn((event: Event) => {
+    expect(isWorkbenchInteractionBlocked(event)).toBe(true);
+    expect(event.defaultPrevented).toBe(false);
+  });
+  button.addEventListener("keydown", check);
+  button.dispatchEvent(new KeyboardEvent("keydown", { key: "Tab", bubbles: true }));
+  expect(check).toHaveBeenCalledOnce();
+});
+
 it.each([
   ["Enter", true],
   [" ", true],

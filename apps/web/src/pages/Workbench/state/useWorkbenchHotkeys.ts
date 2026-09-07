@@ -18,6 +18,7 @@ import {
   hotkeyIgnoreToken,
   isMaskContextHotkey,
   isMaskHotkeyBlocked,
+  isSamCandidateHotkeyBlocked,
 } from "./hotkeys";
 import { nextInCategory, nextCategory } from "../stage/frameObjectCycle";
 import { aiBoxOnFrame } from "../stage/aiBoxFrames";
@@ -451,6 +452,15 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
 
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || isWorkbenchInteractionBlocked(e)) return;
+      const activeTool = videoMode ? s.videoTool : s.tool;
+      if (
+        ["smart-point", "smart-box", "smart-scribble", "text-prompt", "exemplar"].includes(
+          activeTool ?? "",
+        ) &&
+        ["Enter", "Escape", "Tab", "r", "R"].includes(e.key) &&
+        isSamCandidateHotkeyBlocked(e)
+      )
+        return;
       const maskToolActive = videoMode
         ? s.videoTool === "mask" || s.videoTool === "mask-track"
         : s.tool === "mask";

@@ -2,6 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { isWorkbenchInputFocused, useWorkbenchHotkeys } from "./useWorkbenchHotkeys";
 import type { UseMaskEditorReturn } from "./useMaskEditor";
+import { isSamCandidateHotkeyBlocked } from "./hotkeys";
 
 function makeArgs(overrides: Partial<Parameters<typeof useWorkbenchHotkeys>[0]> = {}) {
   return {
@@ -79,6 +80,45 @@ function makeMaskArgs(
   args.s.tool = "mask";
   return { args, editor, primary, secondary };
 }
+
+describe("SAM global hotkey fallback", () => {
+  it.each([false, true])("yields native button navigation in videoMode=%s", (videoMode) => {
+    const args = makeArgs({ videoMode });
+    args.s.tool = "smart-point";
+    args.s.videoTool = "smart-point";
+    const view = renderHook(() => useWorkbenchHotkeys(args));
+    const button = document.createElement("button");
+    document.body.append(button);
+    for (const key of ["Tab", "Enter", "Escape", "r"]) {
+      const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+      act(() => button.dispatchEvent(event));
+      expect(event.defaultPrevented).toBe(false);
+    }
+    expect(args.s.setTool).not.toHaveBeenCalled();
+    button.remove();
+    view.unmount();
+  });
+
+  it("keeps a popup-closing Esc out of the background after SAM capture yields", () => {
+    const args = makeArgs();
+    args.s.tool = "smart-point";
+    const capture = (event: KeyboardEvent) => {
+      isSamCandidateHotkeyBlocked(event);
+    };
+    window.addEventListener("keydown", capture, true);
+    const view = renderHook(() => useWorkbenchHotkeys(args));
+    const popup = document.createElement("div");
+    popup.setAttribute("role", "dialog");
+    document.body.append(popup);
+    popup.addEventListener("keydown", () => popup.remove());
+    const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    act(() => popup.dispatchEvent(event));
+    expect(args.s.setTool).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+    window.removeEventListener("keydown", capture, true);
+    view.unmount();
+  });
+});
 
 describe("Mask keyboard action ownership", () => {
   it.each([

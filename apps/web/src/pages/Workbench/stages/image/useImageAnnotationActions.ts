@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { isWorkbenchInteractionBlocked } from "../../state/workbenchInteractionGuards";
+import { isSamCandidateHotkeyBlocked } from "../../state/hotkeys";
 import type { QueryClient } from "@tanstack/react-query";
 import type { Annotation, AnnotationResponse, PredictionResponse } from "@/types";
 import type { AnnotationPayload, AnnotationUpdatePayload } from "@/api/tasks";
@@ -619,9 +619,15 @@ export function useImageAnnotationActions({
   // v0.10.9 · R 键精修走 ref 间接调用,避免在 useEffect 依赖里前向引用未定义的 handleRefineSamCandidate.
   const refineSamRef = useRef<(idx: number) => void>(() => {});
 
+  const requestSamAccept = useCallback(() => {
+    if (isLocked || samPendingAccept || !sam.canAcceptCandidates || sam.isRunning) return;
+    if (!sam.candidates[sam.activeIdx]) return;
+    setSamPendingAccept({ idx: sam.activeIdx });
+  }, [isLocked, sam, samPendingAccept]);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (isWorkbenchInteractionBlocked(e)) return;
+      if (isSamCandidateHotkeyBlocked(e)) return;
       // v0.10.2 · sam 拆分后, Tab/Enter 候选导航在任一 AI 工具激活下都启用.
       const isAIActive =
         s.tool === "smart-point" ||
@@ -631,20 +637,13 @@ export function useImageAnnotationActions({
         s.tool === "exemplar";
       if (!isAIActive) return;
       if (sam.candidates.length === 0) return;
-      const target = e.target as HTMLElement | null;
-      if (
-        target?.tagName === "INPUT" ||
-        target?.tagName === "TEXTAREA" ||
-        target?.isContentEditable
-      )
-        return;
       if (samPendingAccept) return;
 
       if (e.key === "Enter") {
         if (!sam.canAcceptCandidates) return;
         e.preventDefault();
         e.stopImmediatePropagation();
-        setSamPendingAccept({ idx: sam.activeIdx });
+        requestSamAccept();
         return;
       }
       if (e.key === "Escape") {
@@ -669,7 +668,7 @@ export function useImageAnnotationActions({
     };
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, [s.tool, sam, samPendingAccept]);
+  }, [s.tool, sam, samPendingAccept, requestSamAccept]);
 
   const handleBatchDelete = useCallback(
     (targetIds?: string[]) => {
@@ -1737,6 +1736,8 @@ export function useImageAnnotationActions({
     batchChangeTarget,
     samPendingGeom,
     samDefaultClass,
+    samClassPickerActive: samPendingAccept !== null,
+    requestSamAccept,
     handlePickMaskPendingClass,
     handleCancelMaskPendingClass,
     handleBatchDelete,

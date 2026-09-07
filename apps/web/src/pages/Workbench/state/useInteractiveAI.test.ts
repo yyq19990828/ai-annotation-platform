@@ -48,6 +48,16 @@ const POLY_RESPONSE = {
   ],
 };
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 function nativeResponse(maskInputNext: string | null = null) {
   const candidateId = `sha256:${"a".repeat(64)}`;
   return {
@@ -242,7 +252,123 @@ describe("useInteractiveAI", () => {
       ),
     );
     expect(result.current.candidates).toHaveLength(0);
+    expect(result.current.error).toBe("connection refused");
   });
+
+  it("重试在途立即清除上轮错误，成功和缓存命中保持清除", async () => {
+    const retry = deferred<typeof POLY_RESPONSE>();
+    interactiveAnnotateMock
+      .mockRejectedValueOnce(new Error("connection refused"))
+      .mockImplementationOnce(() => retry.promise)
+      .mockRejectedValueOnce(new Error("another prompt failed"));
+    const { result } = renderHook(() => useInteractiveAI(ARGS));
+    expect(result.current.error).toBeNull();
+
+    act(() => result.current.runBbox([0.1, 0.1, 0.4, 0.4]));
+    await waitFor(() => expect(result.current.error).toBe("connection refused"));
+    expect(result.current.canRetry).toBe(true);
+
+    act(() => result.current.retryLast());
+    expect(result.current.error).toBeNull();
+    expect(result.current.isRunning).toBe(true);
+    await act(async () => {
+      retry.resolve(POLY_RESPONSE);
+      await retry.promise;
+    });
+    expect(result.current.error).toBeNull();
+    expect(result.current.canAcceptCandidates).toBe(true);
+
+    act(() => result.current.runBbox([0.5, 0.5, 0.7, 0.7]));
+    await waitFor(() => expect(result.current.error).toBe("another prompt failed"));
+    act(() => result.current.runBbox([0.1, 0.1, 0.4, 0.4]));
+    expect(result.current.error).toBeNull();
+    expect(result.current.canAcceptCandidates).toBe(true);
+    expect(result.current.isRunning).toBe(false);
+    expect(interactiveAnnotateMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("不可重试的纯负向 Scribble 仍保留本轮错误，取消后清除", async () => {
+    interactiveAnnotateMock.mockRejectedValue(
+      new ApiError(409, "mask session expired", { reason: "mask_session_expired" }),
+    );
+    const { result } = renderHook(() => useInteractiveAI(ARGS));
+    act(() =>
+      result.current.runScribble(
+        [
+          [0.2, 0.2],
+          [0.3, 0.3],
+        ],
+        0,
+      ),
+    );
+    await waitFor(() => expect(result.current.error).toBe("mask session expired"));
+    expect(result.current.canRetry).toBe(false);
+    act(() => result.current.retryLast());
+    expect(interactiveAnnotateMock).toHaveBeenCalledTimes(1);
+    expect(result.current.error).toBe("mask session expired");
+    act(() => result.current.cancel());
+    expect(result.current.error).toBeNull();
+  });
+
+  it.each(["success", "failure"])("旧请求的 %s 不得覆盖当前请求错误", async (outcome) => {
+    const old = deferred<typeof POLY_RESPONSE>();
+    interactiveAnnotateMock
+      .mockImplementationOnce(() => old.promise)
+      .mockRejectedValueOnce(new Error("current request failed"));
+    const { result } = renderHook(() => useInteractiveAI(ARGS));
+    act(() => result.current.runBbox([0.1, 0.1, 0.3, 0.3]));
+    const oldSignal = interactiveAnnotateMock.mock.calls[0][3] as AbortSignal;
+    act(() => result.current.runBbox([0.5, 0.5, 0.7, 0.7]));
+    await waitFor(() => expect(result.current.error).toBe("current request failed"));
+    expect(oldSignal.aborted).toBe(true);
+
+    await act(async () => {
+      if (outcome === "success") old.resolve(POLY_RESPONSE);
+      else old.reject(new Error("old request failed"));
+      await old.promise.catch(() => undefined);
+    });
+    expect(result.current.error).toBe("current request failed");
+    expect(result.current.canRetry).toBe(true);
+    expect(result.current.candidates).toEqual([]);
+    expect(pushToastMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["projectId", "taskId", "mlBackendId", "cacheScope"] as const)(
+    "%s 变更清除旧错误，取消后的异步失败不污染新 owner",
+    async (ownerKey) => {
+      const old = deferred<typeof POLY_RESPONSE>();
+      interactiveAnnotateMock
+        .mockRejectedValueOnce(new Error("old owner failed"))
+        .mockImplementationOnce(() => old.promise)
+        .mockRejectedValueOnce(new Error("current owner failed"));
+      const initialOwner = { ...ARGS, cacheScope: "frame-0" };
+      const { result, rerender } = renderHook((owner) => useInteractiveAI(owner), {
+        initialProps: initialOwner,
+      });
+      act(() => result.current.runBbox([0.1, 0.1, 0.3, 0.3]));
+      await waitFor(() => expect(result.current.error).toBe("old owner failed"));
+
+      rerender({ ...initialOwner, [ownerKey]: "owner-b" });
+      expect(result.current.error).toBeNull();
+      expect(result.current.canRetry).toBe(false);
+      act(() => result.current.runBbox([0.4, 0.4, 0.5, 0.5]));
+      const oldSignal = interactiveAnnotateMock.mock.calls[1][3] as AbortSignal;
+      rerender({ ...initialOwner, [ownerKey]: "owner-c" });
+      expect(oldSignal.aborted).toBe(true);
+      expect(result.current.error).toBeNull();
+      expect(result.current.isRunning).toBe(false);
+
+      act(() => result.current.runBbox([0.6, 0.6, 0.7, 0.7]));
+      await waitFor(() => expect(result.current.error).toBe("current owner failed"));
+      await act(async () => {
+        old.reject(new DOMException("The operation was aborted", "AbortError"));
+        await old.promise.catch(() => undefined);
+      });
+      expect(result.current.error).toBe("current owner failed");
+      expect(result.current.canRetry).toBe(true);
+      expect(pushToastMock).toHaveBeenCalledTimes(2);
+    },
+  );
 
   it("空 result → 提示 + candidates 清空", async () => {
     interactiveAnnotateMock.mockResolvedValue({ result: [] });
@@ -718,6 +844,7 @@ describe("useInteractiveAI", () => {
         }),
       ),
     );
+    expect(result.current.error).toBe("模型暂不可用：30 秒后重试");
   });
 
   it("无变体字段的预测不弹任何切换 toast", async () => {

@@ -1,7 +1,8 @@
 /** Background listeners yield to Workbench settings and tool menus without consuming events. */
 export function isWorkbenchInteractionBlocked(event: Event): boolean {
   if (typeof document === "undefined") return false;
-  const selector = "[data-workbench-settings], [data-workbench-tool-menu]";
+  const selector =
+    "[data-workbench-settings], [data-workbench-tool-menu], [data-workbench-ai-toolbar]";
   const triggerSelector = "[data-workbench-tool-menu-trigger]";
   // Closing may remove the marker before a later window listener sees this same event.
   return (

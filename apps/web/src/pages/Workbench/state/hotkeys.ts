@@ -70,6 +70,23 @@ export function isMaskHotkeyBlocked(event: KeyboardEvent): boolean {
   return blocked;
 }
 
+/** Candidate shortcuts yield all navigation keys to native and toolbar controls. */
+export function isSamCandidateHotkeyBlocked(event: KeyboardEvent): boolean {
+  return (
+    isMaskHotkeyBlocked(event) ||
+    event.ctrlKey ||
+    event.metaKey ||
+    event.altKey ||
+    event
+      .composedPath()
+      .some(
+        (target) =>
+          target instanceof Element &&
+          target.matches('button, [role="button"], a[href], summary, [data-workbench-ai-toolbar]'),
+      )
+  );
+}
+
 export const HOTKEYS: HotkeyDef[] = [
   { keys: ["B"], desc: "矩形框工具", group: "draw", actionType: "setTool" },
   {

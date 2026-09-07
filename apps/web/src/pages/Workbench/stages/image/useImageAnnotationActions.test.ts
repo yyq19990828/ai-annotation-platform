@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Annotation, AnnotationResponse, CocoRleMaskRef } from "@/types";
 import type { CocoRle } from "../../stage/shared/geometry/maskRle";
 import type { MaskSaveResult } from "../../state/useMaskEditorSession";
+import { useWorkbenchHotkeys } from "../../state/useWorkbenchHotkeys";
 import {
   getBatchChangeTarget,
   hasUsableImageBounds,
@@ -100,6 +101,103 @@ function decisionHarness() {
   const view = renderHook(() => useImageAnnotationActions(args as never));
   return { ...view, args, s };
 }
+
+describe("SAM candidate actions", () => {
+  function samHarness() {
+    const view = decisionHarness();
+    view.s.tool = "smart-point";
+    Object.assign(view.args.sam, {
+      activeIdx: 1,
+      isRunning: false,
+      canAcceptCandidates: true,
+      candidates: [0.1, 0.5].map((x) => ({
+        type: "rectanglelabels",
+        points: [],
+        bbox: { x, y: 0.2, width: 0.2, height: 0.3 },
+        label: "Car",
+      })),
+    });
+    view.rerender();
+    return view;
+  }
+
+  it("button and canvas Enter open the same current-candidate class picker", () => {
+    const view = samHarness();
+    act(() => view.result.current.requestSamAccept());
+    expect(view.result.current.samClassPickerActive).toBe(true);
+    const buttonGeometry = view.result.current.samPendingGeom;
+    expect(buttonGeometry?.x).toBe(0.5);
+    act(() => view.result.current.handleSamCancelClass());
+    act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" })));
+    expect(view.result.current.samPendingGeom).toEqual(buttonGeometry);
+    expect(view.args.acceptNativeMask).not.toHaveBeenCalled();
+    view.unmount();
+  });
+
+  it.each(["select", "button", "input"])(
+    "leaves %s keyboard input to the focused control",
+    (tag) => {
+      const view = samHarness();
+      const control = document.createElement(tag);
+      document.body.append(control);
+      act(() => {
+        for (const key of ["Enter", "Escape", "Tab", "r"]) {
+          control.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+        }
+      });
+      expect(view.result.current.samClassPickerActive).toBe(false);
+      expect(view.args.sam.cancel).not.toHaveBeenCalled();
+      expect(view.args.sam.cycle).not.toHaveBeenCalled();
+      control.remove();
+      view.unmount();
+    },
+  );
+
+  it("ignores repeats, IME and locked candidate acceptance", () => {
+    const view = samHarness();
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", repeat: true }));
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", isComposing: true }));
+    });
+    expect(view.result.current.samClassPickerActive).toBe(false);
+    Object.assign(view.args, { isLocked: true });
+    view.rerender();
+    act(() => view.result.current.requestSamAccept());
+    expect(view.result.current.samClassPickerActive).toBe(false);
+    view.unmount();
+  });
+
+  it("SAM capture and the global listener both yield Tab on an AI dock button", () => {
+    const view = samHarness();
+    view.unmount();
+    const joint = renderHook(() => {
+      const actions = useImageAnnotationActions(view.args as never);
+      useWorkbenchHotkeys({
+        s: view.s,
+        history: view.args.history,
+        annotationsRef: view.args.annotationsRef,
+        classes: [],
+        currentProject: null,
+        aiBoxes: actions.aiBoxes,
+        polygonDraftPoints: [],
+        updateMutation: view.args.mutations.update,
+        stageGeom: view.args.stageGeom,
+        clipboard: {},
+      } as never);
+      return actions;
+    });
+    const button = document.createElement("button");
+    document.body.append(button);
+    const event = new KeyboardEvent("keydown", { key: "Tab", bubbles: true, cancelable: true });
+    act(() => button.dispatchEvent(event));
+    expect(event.defaultPrevented).toBe(false);
+    expect(view.args.sam.cycle).not.toHaveBeenCalled();
+    expect(view.s.setSelectedId).not.toHaveBeenCalled();
+    expect(joint.result.current.samClassPickerActive).toBe(false);
+    button.remove();
+    joint.unmount();
+  });
+});
 
 describe("ordinary prediction decisions", () => {
   beforeEach(() => {
