@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-07T07:53:50.579Z",
+  "updated_at": "2026-09-07T08:03:56.307Z",
   "entries": {
     "docs-site/public/home/ai-assisted-annotation-poster.webp": {
       "asset_id": "ai-assisted-annotation",
@@ -4309,6 +4309,53 @@
         "runId": "20260815T124249Z-2bfe97c6ec6c",
         "assetId": "jobs-retry-recovery",
         "sha256": "b1c973b55c06c464a5e22f95b7564ca126e3fd98e642218d6fb177bc4a533f08"
+      }
+    },
+    "docs-site/user-guide/images/getting-started/e2e.gif": {
+      "asset_id": "e2e-quickstart",
+      "role": "docs-gif",
+      "generated_at": "2026-09-07T08:03:56.307Z",
+      "captured_commit": "31ed34a2be9ccbdb1f9a853429517ec7289430ed",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive gif › e2e-quickstart",
+      "watch_paths": [
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
+        "apps/web/e2e/screenshots/flows/e2e-quickstart.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "apps/web/scripts/media-derivation.mjs"
+      ],
+      "sha256": "3d8fe6adfb9e41b9f6cdf24209752609268964d9b5d6f87d190052a0c3e8f943",
+      "bytes": 1724700,
+      "media": {
+        "container": "gif",
+        "codec": "gif",
+        "width": 640,
+        "height": 360,
+        "fps": "4/1",
+        "duration_seconds": 8.5
+      },
+      "capture": {
+        "source_quality": "standard",
+        "source_inference": "unverified"
+      },
+      "source_asset": {
+        "runId": "2026-09-07T08-01-18-405Z-1757732",
+        "assetId": "e2e-quickstart",
+        "sha256": "1a17cee6cb3b47d449c8b5df3cee24a70ba70a697eda666b8193cdc69f4f92d1",
+        "quality": "standard",
+        "clip": {
+          "start": 0.7,
+          "duration": 8.6
+        }
       }
     }
   }
