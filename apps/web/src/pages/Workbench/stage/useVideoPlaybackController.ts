@@ -12,7 +12,7 @@ import { resolveWorkbenchPerformanceTier } from "../state/performanceTier";
 import { buildFrameTimebase, frameToTime } from "./frameTimebase";
 import type { FrameTimebase } from "./frameTimebase";
 import { deriveSamplingStep, gridNext, gridPrev, microStep, snapToGrid } from "./videoSamplingGrid";
-import { useFrameClock } from "./useFrameClock";
+import { useFrameClock, type FrameSeekResult } from "./useFrameClock";
 import { useVideoBitmapCache } from "./useVideoBitmapCache";
 import type { CachedVideoBitmap } from "./useVideoBitmapCache";
 import { useVideoPreciseFrame, type PreciseFrameSourceState } from "./useVideoPreciseFrame";
@@ -59,10 +59,24 @@ import {
   sortedKeyframes,
 } from "./videoStageGeometry";
 import type { VideoStageGeom, VideoDragState, VideoTrackAnnotation } from "./videoStageTypes";
-import type { VideoStageControls } from "./videoStageControls";
+import type {
+  VideoFramePresentation,
+  VideoFrameSeekResult,
+  VideoStageControls,
+} from "./videoStageControls";
 
 const VIDEO_PLAYBACK_RATES = [0.25, 0.5, 1, 2, 4] as const;
 const DEFAULT_VIDEO_PLAYBACK_RATE: VideoPlaybackRate = 1;
+export const VIDEO_FRAME_READY_TIMEOUT_MS = 3000;
+
+interface PendingFramePresentation {
+  requestId: number;
+  frameIndex: number;
+  ownerEpoch: number;
+  navigationGeneration: number;
+  timer: ReturnType<typeof setTimeout> | null;
+  resolve: (result: VideoFrameSeekResult) => void;
+}
 
 type VideoPlaybackRate = (typeof VIDEO_PLAYBACK_RATES)[number];
 type VideoJogPlayback = { direction: -1 | 0 | 1; rate: VideoPlaybackRate };
@@ -124,6 +138,8 @@ export interface UseVideoPlaybackControllerResult {
   preciseSourceState: PreciseFrameSourceState;
   precisePaintedFrameIndex: number | null;
   markPreciseFramePainted: (frameIndex: number) => void;
+  framePresentation: VideoFramePresentation | null;
+  markFramePresented: (presentation: VideoFramePresentation) => void;
   framePreview: VideoFramePreview | null;
   previewFrame: (frameIndex: number | null) => void;
   samplingStep: number;
@@ -209,6 +225,42 @@ export function useVideoPlaybackController({
   const frameIndexRef = useRef(0);
   const jogPlaybackRef = useRef<VideoJogPlayback>(DEFAULT_PAUSED_JOG_PLAYBACK);
   const onSelectRef = useRef(onSelect);
+  const mountedRef = useRef(true);
+  const navigationGenerationRef = useRef(0);
+  const presentationSequenceRef = useRef(0);
+  const pendingPresentationRef = useRef<PendingFramePresentation | null>(null);
+  const [presentationRequest, setPresentationRequest] = useState<PendingFramePresentation | null>(
+    null,
+  );
+  const sourceKey = JSON.stringify([manifest?.task_id ?? null, manifest?.video_url ?? null]);
+  const sourceOwnerRef = useRef({ key: sourceKey, epoch: 0 });
+  if (sourceOwnerRef.current.key !== sourceKey) {
+    sourceOwnerRef.current = { key: sourceKey, epoch: sourceOwnerRef.current.epoch + 1 };
+  }
+  const sourceEpoch = sourceOwnerRef.current.epoch;
+
+  const settlePresentation = useCallback(
+    (request: PendingFramePresentation, result: VideoFrameSeekResult, publish = true) => {
+      if (pendingPresentationRef.current !== request) return;
+      pendingPresentationRef.current = null;
+      if (request.timer !== null) clearTimeout(request.timer);
+      request.resolve(result);
+      if (publish && mountedRef.current) setPresentationRequest(null);
+    },
+    [],
+  );
+  const cancelPresentation = useCallback(
+    (publish = true) => {
+      const request = pendingPresentationRef.current;
+      if (request)
+        settlePresentation(
+          request,
+          { status: "cancelled", frameIndex: request.frameIndex, source: null },
+          publish,
+        );
+    },
+    [settlePresentation],
+  );
 
   useEffect(() => {
     onSelectRef.current = onSelect;
@@ -219,6 +271,8 @@ export function useVideoPlaybackController({
   jogPlaybackRef.current = jogPlayback;
   const isJogPlaying = jogPlayback.direction !== 0;
   const isPlaybackActive = isPlaying || isJogPlaying;
+  const isPlaybackActiveRef = useRef(isPlaybackActive);
+  isPlaybackActiveRef.current = isPlaybackActive;
 
   // defaultPlaybackRate 变化时重置停帧态的 jog 速率,不中断播放。
   useEffect(() => {
@@ -258,6 +312,8 @@ export function useVideoPlaybackController({
 
   const stageMode = modeFromDrag(drag);
   const stageModeGuard = getVideoStageModeGuard(stageMode);
+  const canSetupFrameRef = useRef(stageModeGuard.canSetupFrame);
+  canSetupFrameRef.current = stageModeGuard.canSetupFrame;
 
   const handleFrameClockChange = useCallback(
     (nextFrame: number) => {
@@ -279,11 +335,17 @@ export function useVideoPlaybackController({
 
   const frameClock = useFrameClock({
     videoRef,
+    sourceKey,
     frameIndex,
     timebase,
     isPlaying,
     onFrameChange: handleFrameClockChange,
   });
+  const {
+    getFrameEvidence,
+    nativeFrame: nativeFrameEvidence,
+    seekToAsync: seekNativeFrameAsync,
+  } = frameClock;
 
   const {
     preview: framePreview,
@@ -307,6 +369,7 @@ export function useVideoPlaybackController({
     showFrame: showCachedBitmapFrame,
   } = useVideoBitmapCache({
     taskId: manifest?.task_id,
+    sourceKey,
     maxItems: performanceConfig.videoBitmapCache,
   });
 
@@ -315,7 +378,7 @@ export function useVideoPlaybackController({
     taskId: manifest?.task_id,
     frameIndex,
     enabled: !isPlaybackActive,
-    decodeEnabled: !frameClock.isSeeking,
+    decodeEnabled: !frameClock.isSeeking || presentationRequest !== null,
     bitmapBudgetBytes: performanceConfig.videoDecoderBitmapCacheBytes,
     chunkBudgetBytes: performanceConfig.videoChunkByteCacheBytes,
     prefetchFrames: performanceConfig.videoDecodePrefetchFrames,
@@ -336,6 +399,148 @@ export function useVideoPlaybackController({
       : nativeBitmap
         ? "video-bitmap"
         : "video-element";
+  const frameSourceRef = useRef(frameSource);
+  frameSourceRef.current = frameSource;
+
+  const captureVerifiedFrame = useCallback(
+    (video: HTMLVideoElement | null, targetFrame: number) => {
+      const evidence = getFrameEvidence(targetFrame);
+      if (!video || !evidence || evidence.video !== video) return Promise.resolve(null);
+      const epoch = sourceOwnerRef.current.epoch;
+      const generation = navigationGenerationRef.current;
+      return captureBitmapFrame(video, targetFrame, {
+        isCurrent: () =>
+          mountedRef.current &&
+          sourceOwnerRef.current.epoch === epoch &&
+          navigationGenerationRef.current === generation &&
+          videoRef.current === video &&
+          !isPlaybackActiveRef.current &&
+          video.paused &&
+          frameIndexRef.current === targetFrame &&
+          getFrameEvidence(targetFrame) === evidence,
+      });
+    },
+    [captureBitmapFrame, getFrameEvidence, videoRef],
+  );
+
+  // The video can finish seeking after rVFC stored its receipt. Revalidate on render:
+  // the receipt object stays identical while the native element becomes drawable.
+  const currentNativeEvidence =
+    nativeFrameEvidence?.frameIndex === frameIndex ? getFrameEvidence(frameIndex) : null;
+  const framePresentation = useMemo<VideoFramePresentation | null>(() => {
+    const request = presentationRequest;
+    if (
+      !request ||
+      request !== pendingPresentationRef.current ||
+      request.ownerEpoch !== sourceEpoch ||
+      request.frameIndex !== frameIndex ||
+      isPlaybackActive ||
+      !stageModeGuard.canSetupFrame
+    )
+      return null;
+    const shownBitmap =
+      displayBitmap?.frameIndex === request.frameIndex ? displayBitmap.bitmap : null;
+    const evidence = !shownBitmap ? currentNativeEvidence : null;
+    const image = shownBitmap ?? evidence?.video ?? null;
+    if (!image || (shownBitmap && (!shownBitmap.width || !shownBitmap.height))) return null;
+    const source = frameSource;
+    return {
+      requestId: request.requestId,
+      frameIndex: request.frameIndex,
+      source,
+      image,
+      isCurrent: () =>
+        mountedRef.current &&
+        pendingPresentationRef.current === request &&
+        sourceOwnerRef.current.epoch === request.ownerEpoch &&
+        navigationGenerationRef.current === request.navigationGeneration &&
+        frameIndexRef.current === request.frameIndex &&
+        canSetupFrameRef.current &&
+        !isPlaybackActiveRef.current &&
+        frameSourceRef.current === source &&
+        (shownBitmap
+          ? displayBitmapRef.current?.bitmap === shownBitmap &&
+            shownBitmap.width > 0 &&
+            shownBitmap.height > 0
+          : displayBitmapRef.current === null &&
+            videoRef.current === image &&
+            !!evidence &&
+            evidence.video.paused &&
+            getFrameEvidence(request.frameIndex) === evidence),
+    };
+  }, [
+    displayBitmap,
+    getFrameEvidence,
+    currentNativeEvidence,
+    frameIndex,
+    frameSource,
+    isPlaybackActive,
+    presentationRequest,
+    sourceEpoch,
+    stageModeGuard.canSetupFrame,
+    videoRef,
+  ]);
+
+  const markFramePresented = useCallback(
+    (presentation: VideoFramePresentation) => {
+      const request = pendingPresentationRef.current;
+      if (
+        !request ||
+        request.requestId !== presentation.requestId ||
+        request.frameIndex !== presentation.frameIndex ||
+        !presentation.isCurrent()
+      )
+        return;
+      settlePresentation(request, {
+        status: "ready",
+        frameIndex: presentation.frameIndex,
+        source: presentation.source,
+      });
+    },
+    [settlePresentation],
+  );
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      cancelPresentation(false);
+    };
+  }, [cancelPresentation]);
+
+  useEffect(() => {
+    cancelPresentation();
+    return () => cancelPresentation(false);
+  }, [cancelPresentation, sourceEpoch]);
+
+  useEffect(() => {
+    const request = pendingPresentationRef.current;
+    if (!request) return;
+    if (isPlaybackActive || request.frameIndex !== frameIndex) {
+      cancelPresentation();
+    } else if (
+      !stageModeGuard.canSetupFrame ||
+      (videoRef.current?.error &&
+        !displayBitmap &&
+        ["disabled", "fallback"].includes(precise.sourceState))
+    ) {
+      settlePresentation(request, {
+        status: "unavailable",
+        frameIndex: request.frameIndex,
+        source: null,
+      });
+    }
+  }, [
+    cancelPresentation,
+    displayBitmap,
+    frameIndex,
+    isPlaybackActive,
+    playbackError,
+    precise.sourceState,
+    settlePresentation,
+    stageModeGuard.canSetupFrame,
+    videoRef,
+  ]);
 
   // 全局诊断 producer(v0.23.15):把精确帧状态写入 window.__videoWorkbenchDiagnostics,
   // 供 BugReportDrawer 附带与排障。写入 window 不触发 React 重渲染;发布频率上限 5 Hz,
@@ -573,22 +778,57 @@ export function useVideoPlaybackController({
 
   // ---- seek 核心 ----
   const seekFrameAsync = useCallback(
-    async (nextFrame: number, options?: { recordHistory?: boolean }) => {
-      if (!stageModeGuard.canSetupFrame) return;
+    async (
+      nextFrame: number,
+      options?: { recordHistory?: boolean },
+      checkedRequest?: PendingFramePresentation,
+    ): Promise<FrameSeekResult> => {
+      if (sourceOwnerRef.current.epoch !== sourceEpoch) {
+        return { status: "cancelled", frameIndex: nextFrame, source: null };
+      }
+      if (!checkedRequest) cancelPresentation();
+      const generation = checkedRequest?.navigationGeneration ?? ++navigationGenerationRef.current;
+      const epoch = sourceOwnerRef.current.epoch;
       const targetFrame = Math.max(0, Math.min(maxFrame, Math.round(nextFrame)));
+      if (!stageModeGuard.canSetupFrame || !manifest?.task_id || !Number.isFinite(nextFrame)) {
+        return { status: "unavailable", frameIndex: nextFrame, source: null };
+      }
+      if (
+        checkedRequest &&
+        (pendingPresentationRef.current !== checkedRequest || checkedRequest.ownerEpoch !== epoch)
+      ) {
+        return { status: "cancelled", frameIndex: nextFrame, source: null };
+      }
       if (options?.recordHistory) {
         setJumpHistory((history) => pushVideoJumpHistory(history, targetFrame));
       }
       showCachedBitmapFrame(targetFrame);
-      const result = await frameClock.seekToAsync(targetFrame);
-      void captureBitmapFrame(videoRef.current, targetFrame);
+      let result: FrameSeekResult;
+      try {
+        result = await seekNativeFrameAsync(targetFrame);
+      } catch {
+        result = { status: "unavailable", frameIndex: targetFrame, source: null };
+      }
+      if (
+        !mountedRef.current ||
+        sourceOwnerRef.current.epoch !== epoch ||
+        navigationGenerationRef.current !== generation
+      ) {
+        return { status: "cancelled", frameIndex: targetFrame, source: null };
+      }
+      if (result.status === "ready" && result.frameIndex === targetFrame) {
+        void captureVerifiedFrame(videoRef.current, targetFrame);
+      }
       return result;
     },
     [
-      captureBitmapFrame,
-      frameClock,
+      cancelPresentation,
+      captureVerifiedFrame,
+      seekNativeFrameAsync,
+      manifest?.task_id,
       maxFrame,
       showCachedBitmapFrame,
+      sourceEpoch,
       stageModeGuard.canSetupFrame,
       videoRef,
     ],
@@ -752,12 +992,53 @@ export function useVideoPlaybackController({
   );
 
   const seekToFrameReady = useCallback(
-    async (nextFrame: number, options?: { recordHistory?: boolean }) => {
+    (nextFrame: number, options?: { recordHistory?: boolean }): Promise<VideoFrameSeekResult> => {
+      if (sourceOwnerRef.current.epoch !== sourceEpoch) {
+        return Promise.resolve({ status: "cancelled", frameIndex: nextFrame, source: null });
+      }
+      cancelPresentation();
       showPlaybackOverlay();
       pausePlayback({ snapToGrid: false });
-      await seekFrameAsync(nextFrame, { recordHistory: options?.recordHistory ?? true });
+      if (
+        !mountedRef.current ||
+        !manifest?.task_id ||
+        !stageModeGuard.canSetupFrame ||
+        !Number.isInteger(nextFrame) ||
+        nextFrame < 0 ||
+        nextFrame > maxFrame
+      ) {
+        return Promise.resolve({ status: "unavailable", frameIndex: nextFrame, source: null });
+      }
+      return new Promise<VideoFrameSeekResult>((resolve) => {
+        const request: PendingFramePresentation = {
+          requestId: ++presentationSequenceRef.current,
+          frameIndex: nextFrame,
+          ownerEpoch: sourceOwnerRef.current.epoch,
+          navigationGeneration: ++navigationGenerationRef.current,
+          timer: null,
+          resolve,
+        };
+        pendingPresentationRef.current = request;
+        request.timer = setTimeout(() => {
+          settlePresentation(request, { status: "timeout", frameIndex: nextFrame, source: null });
+        }, VIDEO_FRAME_READY_TIMEOUT_MS);
+        setPresentationRequest(request);
+        // Native seek may time out while a precise decode is still useful. Only the actual
+        // media-layer receipt resolves ready; all ordinary navigation still cancels this wait.
+        void seekFrameAsync(nextFrame, { recordHistory: options?.recordHistory ?? true }, request);
+      });
     },
-    [pausePlayback, seekFrameAsync, showPlaybackOverlay],
+    [
+      cancelPresentation,
+      manifest?.task_id,
+      maxFrame,
+      pausePlayback,
+      seekFrameAsync,
+      settlePresentation,
+      showPlaybackOverlay,
+      sourceEpoch,
+      stageModeGuard.canSetupFrame,
+    ],
   );
 
   // v0.21.9 · 跳到下一个/上一个有预测的帧 (预测帧集合上的 next/prev)。
@@ -898,7 +1179,7 @@ export function useVideoPlaybackController({
     video.addEventListener("ended", onEnded);
     video.addEventListener("error", onError);
     const onFrameReady = () => {
-      if (!isPlaybackActive) void captureBitmapFrame(video, frameIndexRef.current);
+      if (!isPlaybackActive) void captureVerifiedFrame(video, frameIndexRef.current);
     };
     video.addEventListener("seeked", onFrameReady);
     video.addEventListener("loadeddata", onFrameReady);
@@ -910,7 +1191,7 @@ export function useVideoPlaybackController({
       video.removeEventListener("seeked", onFrameReady);
       video.removeEventListener("loadeddata", onFrameReady);
     };
-  }, [captureBitmapFrame, isPlaybackActive, videoRef]);
+  }, [captureVerifiedFrame, isPlaybackActive, videoRef]);
 
   // ---- 首帧预热 ----
   useEffect(() => {
@@ -920,7 +1201,11 @@ export function useVideoPlaybackController({
     const primeFirstFrame = () => {
       if (cancelled) return;
       cancelled = true;
-      void seekFrameAsyncRef.current(frameIndexRef.current, { recordHistory: false });
+      void seekFrameAsyncRef.current(
+        frameIndexRef.current,
+        { recordHistory: false },
+        pendingPresentationRef.current ?? undefined,
+      );
     };
     if (video.readyState >= HTMLMediaElement.HAVE_METADATA) {
       primeFirstFrame();
@@ -978,12 +1263,19 @@ export function useVideoPlaybackController({
         ? window.cancelAnimationFrame.bind(window)
         : window.clearTimeout.bind(window);
     const raf = schedule(() => {
-      void captureBitmapFrame(videoRef.current, frameIndex);
+      void captureVerifiedFrame(videoRef.current, frameIndex);
     });
     return () => {
       cancel(raf);
     };
-  }, [captureBitmapFrame, frameClock.isSeeking, frameIndex, isPlaybackActive, videoRef]);
+  }, [
+    captureVerifiedFrame,
+    frameClock.isSeeking,
+    nativeFrameEvidence,
+    frameIndex,
+    isPlaybackActive,
+    videoRef,
+  ]);
 
   // ---- 任务切换复位 ----
   useEffect(() => {
@@ -1158,6 +1450,8 @@ export function useVideoPlaybackController({
     preciseSourceState: precise.sourceState,
     precisePaintedFrameIndex: precise.performance.paintedFrameIndex,
     markPreciseFramePainted: precise.markFramePainted,
+    framePresentation,
+    markFramePresented,
     framePreview,
     previewFrame,
     samplingStep,

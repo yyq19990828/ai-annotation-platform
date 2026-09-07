@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { maskQcApi, type MaskQcIssue } from "@/api/maskQc";
+import type { AnnotationResponse } from "@/types";
+import type { VideoFrameSeekResult, VideoStageControls } from "../stage/videoStageControls";
 import {
   assertMaskQcLocalAiCandidate,
   assertMaskQcTrackerCandidate,
@@ -7,7 +11,115 @@ import {
   maskQcReadyContextMatches,
   MaskQcNavigationGeneration,
   MaskQcNavigationStaleError,
+  useMaskQcReview,
 } from "./useMaskQcReview";
+
+describe("Mask QC waits for actual frame presentation", () => {
+  const issue = {
+    id: "issue-1",
+    task_id: "task-1",
+    annotation_id: "annotation-1",
+    annotation_version: 1,
+    frame_start: 17,
+    source: {},
+    region_bbox: { x0: 0.1, y0: 0.2, x1: 0.5, y1: 0.6 },
+  } as MaskQcIssue;
+  function setup() {
+    let finish!: (value: VideoFrameSeekResult) => void;
+    const seek = new Promise<VideoFrameSeekResult>((resolve) => {
+      finish = resolve;
+    });
+    const seekToFrameReady = vi.fn(() => seek);
+    const focusRegion = vi.fn();
+    const setSelectedId = vi.fn();
+    const setFrameIndex = vi.fn();
+    const compare = vi
+      .spyOn(maskQcApi, "compare")
+      .mockRejectedValue(new Error("comparison unavailable in navigation test"));
+    const view = renderHook(() =>
+      useMaskQcReview({
+        enabled: true,
+        taskId: "task-1",
+        annotationsReady: true,
+        annotations: [{ id: "annotation-1", version: 1 }] as AnnotationResponse[],
+        visibleAnnotationIds: new Set(["annotation-1"]),
+        selectedId: "annotation-1",
+        isVideoTask: true,
+        videoManifestReady: true,
+        frameIndex: 17,
+        stageGeom: { imgW: 1000, imgH: 500, vpSize: { w: 1000, h: 500 } },
+        workerPool: undefined,
+        getAiCandidate: () => null,
+        getTrackerCandidates: () => [],
+        videoControlsRef: {
+          current: { seekToFrameReady, focusRegion } as unknown as VideoStageControls,
+        },
+        selectTask: async () => true,
+        setSelectedId,
+        setFrameIndex,
+        setVp: vi.fn(),
+      }),
+    );
+    return {
+      ...view,
+      finish,
+      seekToFrameReady,
+      setSelectedId,
+      setFrameIndex,
+      focusRegion,
+      compare,
+    };
+  }
+
+  it.each([
+    { status: "cancelled", frameIndex: 17, source: null },
+    { status: "timeout", frameIndex: 17, source: null },
+    { status: "unavailable", frameIndex: 17, source: null },
+    { status: "ready", frameIndex: 16, source: "webcodecs" },
+  ] satisfies VideoFrameSeekResult[])(
+    "rejects $status at F$frameIndex before selecting or comparing masks",
+    async (value) => {
+      const view = setup();
+      let navigation!: Promise<void>;
+      act(() => {
+        navigation = view.result.current.navigate(issue);
+      });
+      await waitFor(() => expect(view.seekToFrameReady).toHaveBeenCalledOnce());
+      expect(view.setSelectedId).not.toHaveBeenCalled();
+      await act(async () => {
+        view.finish(value);
+        await navigation;
+      });
+      expect(view.result.current.phase).toBe("error");
+      expect(view.setSelectedId).not.toHaveBeenCalled();
+      expect(view.setFrameIndex).not.toHaveBeenCalled();
+      expect(view.focusRegion).not.toHaveBeenCalled();
+      expect(view.compare).not.toHaveBeenCalled();
+      view.compare.mockRestore();
+    },
+  );
+
+  it("an optimistic matching frame cannot advance until the checked request completes", async () => {
+    const view = setup();
+    let navigation!: Promise<void>;
+    act(() => {
+      navigation = view.result.current.navigate(issue);
+    });
+    await waitFor(() => expect(view.seekToFrameReady).toHaveBeenCalledOnce());
+    expect(view.result.current.phase).toBe("seeking_frame");
+    expect(view.setSelectedId).not.toHaveBeenCalled();
+    await act(async () => {
+      view.finish({ status: "ready", frameIndex: 17, source: "webcodecs" });
+      await navigation;
+    });
+    expect(view.setSelectedId).toHaveBeenCalledOnce();
+    expect(view.setSelectedId).toHaveBeenCalledWith("annotation-1");
+    expect(view.focusRegion).toHaveBeenCalledOnce();
+    expect(view.focusRegion).toHaveBeenCalledWith(issue.region_bbox);
+    expect(view.compare).toHaveBeenCalledOnce();
+    view.compare.mockRestore();
+  });
+});
 
 describe("MaskQcNavigationGeneration", () => {
   it("invalidates every phase of an older asynchronous navigation", () => {

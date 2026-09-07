@@ -127,6 +127,7 @@ interface VideoPlaybackOverlayProps {
   chapters?: VideoTimelineChapter[];
   /** v0.11.7 · 含 pixel-anchored issue 的帧 (时间轴上加标记, 单击跳转)。 */
   issueFrames?: number[];
+  onSeekIssueFrame?: (frameIndex: number) => void;
   hoverPreview?: VideoFramePreview | null;
   currentFrameEntryCount: number;
   visible: boolean;
@@ -251,6 +252,7 @@ export function VideoPlaybackOverlay({
   bookmarks = [],
   chapters = [],
   issueFrames = [],
+  onSeekIssueFrame,
   hoverPreview = null,
   currentFrameEntryCount,
   visible,
@@ -1274,11 +1276,12 @@ export function VideoPlaybackOverlay({
                       key={`xissue-${frame}`}
                       type="button"
                       data-testid="video-issue-marker"
+                      data-workbench-issue-navigation
                       title={`问题 · F ${frame}`}
                       onClick={(e) => {
                         e.preventDefault();
                         e.stopPropagation();
-                        onSeek(frame);
+                        (onSeekIssueFrame ?? onSeek)(frame);
                       }}
                       className={cn(
                         styles.issueMarker,
@@ -1750,11 +1753,12 @@ export function VideoPlaybackOverlay({
                 key={`issue-${frame}`}
                 type="button"
                 data-testid="video-issue-marker"
+                data-workbench-issue-navigation
                 title={`问题 · F ${frame}`}
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
-                  onSeek(frame);
+                  (onSeekIssueFrame ?? onSeek)(frame);
                 }}
                 className={cn(styles.issueMarker, isInteractive && styles.interactive)}
                 vars={{ "--timeline-left": frameLeft(frame) }}

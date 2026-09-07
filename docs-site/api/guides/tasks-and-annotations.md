@@ -45,6 +45,23 @@ POST /api/v1/tasks/:id/annotations
 
 提交后任务状态进入完成或待审核路径，锁释放。
 
+## 视频问题反馈
+
+`POST /api/v1/feedbacks` 复用像素锚点合同保存视频问题，`anchor_position.frame` 为从 0 开始的源视频帧号，x/y 为画面内 0–1 相对坐标：
+
+```json
+{
+  "kind": "issue",
+  "anchor_type": "pixel",
+  "project_id": "00000000-0000-0000-0000-000000000001",
+  "task_id": "00000000-0000-0000-0000-000000000002",
+  "anchor_position": { "x": 0.5, "y": 0.25, "frame": 17 },
+  "body": "该帧目标区域需要复核"
+}
+```
+
+通过 `GET /api/v1/feedbacks?project_id=…&task_id=…&kind=issue` 读回同一锚点。不绑定画面位置的问题使用 `anchor_type: "task"` 和 `anchor_position: null`；图片像素锚点继续省略 frame。工作台在实际源帧就绪后冻结视频创建锚点，提交时不重新读取播放头。
+
 ## 视频任务
 
 视频轨迹标注的 `geometry.keyframes[].source` 只代表该关键帧记录的来源。读取矩形框、多边形、折线和 Mask 轨迹时，旧数据未保存的 `source` 字段保持缺省，客户端应显示「来源未知」，不能用整条标注的 `source` 替代。新建关键帧未指定来源时仍按既有写入规则保存为 `manual`；此读取规则不修改已存几何或补写旧数据。

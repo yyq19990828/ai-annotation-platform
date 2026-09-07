@@ -22,6 +22,7 @@ import { useActiveIssueStore } from "../state/useActiveIssueStore";
 interface Props {
   projectId: string;
   taskId: string;
+  onCreateTaskIssue?: () => void;
 }
 
 function cn(...xs: Array<string | false | null | undefined>): string {
@@ -56,7 +57,7 @@ const SEVERITY_CHIP: Record<FeedbackSeverity, string> = {
   blocker: "text-status-danger",
 };
 
-export function DiscussionIssuesTab({ projectId, taskId }: Props) {
+export function DiscussionIssuesTab({ projectId, taskId, onCreateTaskIssue }: Props) {
   const [statusFilter, setStatusFilter] = useState<FeedbackStatus | "all">("all");
   const params: ListFeedbacksParams = useMemo(
     () => ({ project_id: projectId, task_id: taskId, kind: "issue" }),
@@ -91,6 +92,17 @@ export function DiscussionIssuesTab({ projectId, taskId }: Props) {
             {f.label}
           </button>
         ))}
+        {onCreateTaskIssue && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onCreateTaskIssue}
+            data-testid="issue-create-task"
+            data-workbench-issue-navigation
+          >
+            <Icon name="plus" size={12} /> 记录任务级问题
+          </Button>
+        )}
       </div>
 
       {isLoading && <div className="px-1 py-2 text-xs text-muted-foreground">加载中…</div>}

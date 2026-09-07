@@ -2,7 +2,7 @@
 export function isWorkbenchInteractionBlocked(event: Event): boolean {
   if (typeof document === "undefined") return false;
   const selector =
-    "[data-workbench-settings], [data-workbench-tool-menu], [data-workbench-ai-toolbar], [data-workbench-track-context], [data-workbench-tracker-review], [data-workbench-video-tool-confirm]";
+    "[data-workbench-settings], [data-workbench-tool-menu], [data-workbench-ai-toolbar], [data-workbench-track-context], [data-workbench-tracker-review], [data-workbench-video-tool-confirm], [data-workbench-issue-navigation], [data-workbench-issue-create]";
   const triggerSelector = "[data-workbench-tool-menu-trigger]";
   // Closing may remove the marker before a later window listener sees this same event.
   return (
@@ -25,7 +25,7 @@ export function isWorkbenchInteractionBlocked(event: Event): boolean {
       );
     }) ||
     document.querySelector(
-      '[data-workbench-settings][data-state="open"], [data-workbench-tool-menu][data-state="open"], [data-workbench-tool-menu-trigger][data-state="open"], [data-workbench-video-tool-confirm][data-state="open"]',
+      '[data-workbench-settings][data-state="open"], [data-workbench-tool-menu][data-state="open"], [data-workbench-tool-menu-trigger][data-state="open"], [data-workbench-video-tool-confirm][data-state="open"], [data-workbench-issue-create][data-state="open"]',
     ) !== null
   );
 }

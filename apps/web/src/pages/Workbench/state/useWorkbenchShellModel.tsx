@@ -366,6 +366,8 @@ interface WorkbenchShellIssueSection {
   issuePinDropArmed: boolean;
   onOpenList: () => void;
   onToggleIssuePinDrop: () => void;
+  issueNavigation: ReturnType<typeof useIssuePins>["issueNavigation"];
+  onRetryIssueNavigation: () => Promise<void>;
   createModal: ComponentProps<typeof IssueCreateModal>;
 }
 
@@ -1631,20 +1633,37 @@ export function useWorkbenchShellModel({
   );
   const bulkUpdateMut = useAnnotationBulkUpdate(taskId ?? "");
 
+  // Video playback, checked Issue navigation and current-frame AI share the same Stage.
+  const videoControlsRef = useRef<VideoStageControls | null>(null);
+  const requestIssueFrameRef = useRef<ReturnType<typeof useVideoToolCommands>["requestFrameReady"]>(
+    async (frameIndex) => ({ status: "unavailable", frameIndex, source: null }),
+  );
   const {
     issueCreateOpen,
-    setIssueCreateOpen,
     issuePinDropArmed,
-    setIssuePinDropArmed,
     issuePinPrefill,
-    setIssuePinPrefill,
+    onToggleIssuePinDrop,
+    openTaskIssue,
+    onIssuePinDrop,
+    onSeekIssueFrame,
+    closeIssueCreate,
+    issueNavigation,
+    retryIssueNavigation,
     issueListParams,
     issuesQuery,
     openIssueCount,
     activeIssueHighlightId,
     highlightIssueFromPin,
     requestIssuesTab,
-  } = useIssuePins({ projectId, taskId, stageGeom, setVp, setVideoFrameIndex, isVideoTask });
+  } = useIssuePins({
+    projectId,
+    taskId,
+    stageGeom,
+    setVp,
+    isVideoTask,
+    pauseVideoPlayback: () => videoControlsRef.current?.pausePlayback({ snapToGrid: false }),
+    seekVideoFrameReady: (frame, isRelevant) => requestIssueFrameRef.current(frame, isRelevant),
+  });
   const submitTaskMut = useSubmitTask();
   const triggerPreannotation = useTriggerPreannotation(projectId);
   const {
@@ -2039,8 +2058,6 @@ export function useWorkbenchShellModel({
     ],
   );
 
-  // v0.21.4 起视频单题 AI 用它抓当前帧; v0.21.23 交互式 SAM 复用同一取帧口。
-  const videoControlsRef = useRef<VideoStageControls | null>(null);
   const maskQcAiCandidateRef = useRef<MaskQcLocalAiCandidate | null>(null);
   const getMaskQcTrackerCandidates = useCallback(
     (issue: MaskQcIssue, targetFrame: number): MaskQcTrackerCandidate[] =>
@@ -2783,6 +2800,7 @@ export function useWorkbenchShellModel({
     requestScope: requestVideoToolScope,
     requestSelection: requestVideoSelection,
     requestFrame: requestVideoReviewFrame,
+    requestFrameReady: requestVideoIssueFrame,
     requestTemporaryTool: requestTemporaryVideoTool,
     confirmationOpen: videoToolConfirmationOpen,
     settleConfirmation: settleVideoToolConfirmation,
@@ -2833,6 +2851,7 @@ export function useWorkbenchShellModel({
     explain: (reason) => pushToast({ msg: reason, kind: "warning" }),
   });
   requestVideoSeedToolRef.current = requestTemporaryVideoTool;
+  requestIssueFrameRef.current = requestVideoIssueFrame;
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
       if (!maskInstanceTransitionBusy && (!maskEditor.active || !hasPendingMaskDraft)) return;
@@ -7422,11 +7441,9 @@ export function useWorkbenchShellModel({
         // 单击图钉 → 高亮 + 请求 DiscussionPanel 切到 issues tab + 高亮对应列表行。
         onIssuePinClick: (id) => highlightIssueFromPin(id),
         issuePinDropArmed: issuePinDropArmed,
-        onIssuePinDrop: (x, y) => {
-          setIssuePinDropArmed(false);
-          setIssuePinPrefill({ x, y });
-          setIssueCreateOpen(true);
-        },
+        issueNavigationPending: issueNavigation.status === "preparing",
+        onIssuePinDrop,
+        onSeekIssueFrame,
       },
     },
     videoControlsRef,
@@ -7649,6 +7666,7 @@ export function useWorkbenchShellModel({
         : undefined,
     // v0.11.5 · B 组 · DiscussionPanel 转正 → 右栏固定两段布局 (上 AIInspectorPanel + 下 DiscussionPanel)。
     discussionPanel: {
+      onCreateTaskIssue: openTaskIssue,
       maskQc:
         mode === "review" && projectId && taskId
           ? {
@@ -7839,17 +7857,17 @@ export function useWorkbenchShellModel({
             workspaceCommands.current?.show("discussion");
             requestIssuesTab();
           },
-          onToggleIssuePinDrop: () => setIssuePinDropArmed((v) => !v),
+          onToggleIssuePinDrop,
+          issueNavigation,
+          onRetryIssueNavigation: retryIssueNavigation,
           createModal: {
             open: issueCreateOpen,
             projectId,
             taskId,
             listParams: issueListParams,
             prefilledAnchor: issuePinPrefill,
-            onClose: () => {
-              setIssueCreateOpen(false);
-              setIssuePinPrefill(null);
-            },
+            anchorMode: isVideoTask && issuePinPrefill?.frame === undefined ? "task" : "pixel",
+            onClose: closeIssueCreate,
           },
         } satisfies WorkbenchShellIssueSection)
       : undefined;

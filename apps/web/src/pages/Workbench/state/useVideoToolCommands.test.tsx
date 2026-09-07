@@ -59,6 +59,79 @@ function deferred() {
 }
 
 describe("explicit video tool commands", () => {
+  it.each(["ready", "cancelled", "timeout", "unavailable"] as const)(
+    "checked frame navigation preserves the Stage's %s result",
+    async (status) => {
+      const expected = { status, frameIndex: 16, source: null };
+      const seekToFrameReady = vi.fn(async () => expected);
+      const seekToFrame = vi.fn();
+      const { result } = setup({
+        controlsRef: {
+          current: { seekToFrameReady, seekToFrame } as unknown as VideoStageControls,
+        },
+      });
+      let actual;
+      await act(async () => {
+        actual = await result.current.commands.requestFrameReady(16, () => true);
+      });
+      expect(actual).toEqual(expected);
+      expect(seekToFrameReady).toHaveBeenCalledOnce();
+      expect(seekToFrameReady).toHaveBeenCalledWith(16, { recordHistory: true });
+      expect(seekToFrame).not.toHaveBeenCalled();
+    },
+  );
+
+  it("checked navigation without Stage controls is unavailable and does not set an optimistic frame", async () => {
+    const { result } = setup();
+    let actual;
+    await act(async () => {
+      actual = await result.current.commands.requestFrameReady(16, () => true);
+    });
+    expect(actual).toEqual({ status: "unavailable", frameIndex: 16, source: null });
+    expect(result.current.state.videoFrameIndex).toBe(0);
+  });
+
+  it("checked navigation refused by a draft confirmation leaves the draft and media untouched", async () => {
+    const seekToFrameReady = vi.fn();
+    const discardDrawingDraft = vi.fn();
+    const { result } = setup({
+      controlsRef: {
+        current: {
+          getDrawingDraft: () => ({ kind: "points", tool: "polygon", frameIndex: 0 }),
+          discardDrawingDraft,
+          seekToFrameReady,
+        } as unknown as VideoStageControls,
+      },
+    });
+    let navigation: ReturnType<typeof result.current.commands.requestFrameReady>;
+    act(() => {
+      navigation = result.current.commands.requestFrameReady(16, () => true);
+    });
+    expect(result.current.commands.confirmationOpen).toBe(true);
+    await act(async () => result.current.commands.settleConfirmation(false));
+    expect(await navigation!).toEqual({ status: "cancelled", frameIndex: 16, source: null });
+    expect(seekToFrameReady).not.toHaveBeenCalled();
+    expect(discardDrawingDraft).not.toHaveBeenCalled();
+  });
+
+  it("a retired Issue intent cannot accept a late successful presentation", async () => {
+    let finish!: (value: { status: "ready"; frameIndex: number; source: null }) => void;
+    const ready = new Promise<{ status: "ready"; frameIndex: number; source: null }>((resolve) => {
+      finish = resolve;
+    });
+    let relevant = true;
+    const { result } = setup({
+      controlsRef: { current: { seekToFrameReady: () => ready } as unknown as VideoStageControls },
+    });
+    let navigation: ReturnType<typeof result.current.commands.requestFrameReady>;
+    act(() => {
+      navigation = result.current.commands.requestFrameReady(16, () => relevant);
+    });
+    relevant = false;
+    await act(async () => finish({ status: "ready", frameIndex: 16, source: null }));
+    expect(await navigation!).toEqual({ status: "cancelled", frameIndex: 16, source: null });
+  });
+
   it("review navigation preserves the reference selection and explicit tool scope", () => {
     const { result } = setup();
     act(() => result.current.commands.requestSelection("video_track_bbox"));

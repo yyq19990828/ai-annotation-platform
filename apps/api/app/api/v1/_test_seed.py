@@ -1277,7 +1277,7 @@ async def seed_video_webcodecs(
 
     Generates a small machine-readable H.264 clip (numpy → ffmpeg), probes it with
     the same ffprobe / avcC pipeline the worker uses, and writes dataset item +
-    task + production-shaped VideoChunk diagnostics. Short correctness fixtures use
+    task + source frame timetable + production-shaped VideoChunk diagnostics. Short correctness fixtures use
     one chunk; qualification fixtures use ready 60-frame chunks. ``chunk_status``
     lets specs exercise the pending → ready contract without a media Celery worker.
     """
@@ -1296,7 +1296,7 @@ async def seed_video_webcodecs(
         generate_fixture,
         generate_qualification_fixture,
     )
-    from app.db.models.dataset import DatasetItem, VideoChunk
+    from app.db.models.dataset import DatasetItem, VideoChunk, VideoFrameIndex
     from app.db.models.task import Task
     from app.db.models.task_batch import TaskBatch
     from app.services.storage import storage_service
@@ -1385,6 +1385,13 @@ async def seed_video_webcodecs(
     )
     db.add(item)
     await db.flush()
+    # Keep native presentation evidence independent of intentionally damaged chunk metadata.
+    db.add_all(
+        [
+            VideoFrameIndex(dataset_item_id=item.id, **entry)
+            for entry in meta["frame_timetable"]
+        ]
+    )
     task = Task(
         project_id=project_id,
         batch_id=batch.id,

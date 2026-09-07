@@ -143,6 +143,10 @@ export interface VideoWorkbenchProps {
   issuePixelFeedbacks?: AnnotationFeedback[];
   issueHighlightId?: string | null;
   onIssuePinClick?: (id: string) => void;
+  issuePinDropArmed?: boolean;
+  issueNavigationPending?: boolean;
+  onIssuePinDrop?: (x: number, y: number, frame?: number) => void;
+  onSeekIssueFrame?: (frame: number) => void;
 }
 
 export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps>(
@@ -214,6 +218,10 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
       issuePixelFeedbacks,
       issueHighlightId,
       onIssuePinClick,
+      issuePinDropArmed,
+      issueNavigationPending,
+      onIssuePinDrop,
+      onSeekIssueFrame,
     },
     ref,
   ) {
@@ -252,6 +260,10 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         issuePixelFeedbacks={issuePixelFeedbacks}
         issueHighlightId={issueHighlightId}
         onIssuePinClick={onIssuePinClick}
+        issuePinDropArmed={issuePinDropArmed}
+        issueNavigationPending={issueNavigationPending}
+        onIssuePinDrop={onIssuePinDrop}
+        onSeekIssueFrame={onSeekIssueFrame}
         visual={annotationVisual}
         videoTool={videoTool}
         isVideoToolEnabled={isVideoToolEnabled}

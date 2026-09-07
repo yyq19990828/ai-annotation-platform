@@ -6,6 +6,21 @@
  */
 import type { VideoTool } from "../state/useWorkbenchState";
 
+export interface VideoFrameSeekResult {
+  status: "ready" | "cancelled" | "timeout" | "unavailable";
+  frameIndex: number;
+  source: "webcodecs" | "video-bitmap" | "video-element" | null;
+}
+
+/** A request-owned source that the media layer must actually draw before acknowledging. */
+export interface VideoFramePresentation {
+  requestId: number;
+  frameIndex: number;
+  source: NonNullable<VideoFrameSeekResult["source"]>;
+  image: ImageBitmap | HTMLVideoElement;
+  isCurrent: () => boolean;
+}
+
 export type VideoDrawingDraft = {
   kind: "points" | "keypoint" | "box";
   tool: VideoTool;
@@ -29,8 +44,11 @@ export interface VideoStageControls {
   microStep: (dir: -1 | 1, options?: { recordHistory?: boolean }) => void;
   seekToKeyframe: (dir: -1 | 1, options?: { recordHistory?: boolean }) => void;
   seekToFrame: (frameIndex: number, options?: { recordHistory?: boolean }) => void;
-  /** Seek completion means the media element has resolved the requested frame. */
-  seekToFrameReady: (frameIndex: number, options?: { recordHistory?: boolean }) => Promise<void>;
+  /** Ready requires exact source-frame pixels and a completed media-layer draw. */
+  seekToFrameReady: (
+    frameIndex: number,
+    options?: { recordHistory?: boolean },
+  ) => Promise<VideoFrameSeekResult>;
   toggleBookmark: () => void;
   jumpHistory: (dir: -1 | 1) => void;
   clearLoopRegion: () => void;

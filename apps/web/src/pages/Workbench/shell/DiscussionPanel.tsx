@@ -51,6 +51,7 @@ type CommentsBridgeProps = Pick<
 >;
 
 interface DiscussionPanelProps extends CommentsBridgeProps {
+  onCreateTaskIssue?: () => void;
   maskQc?: ComponentProps<typeof MaskQcPanel>;
   annotationId: string | null;
   taskId: string | null;
@@ -65,6 +66,7 @@ interface DiscussionPanelProps extends CommentsBridgeProps {
 }
 
 export function DiscussionPanel({
+  onCreateTaskIssue,
   maskQc,
   annotationId,
   taskId,
@@ -171,7 +173,11 @@ export function DiscussionPanel({
             ) : null
           ) : tab === "issues" ? (
             projectId && taskId ? (
-              <DiscussionIssuesTab projectId={projectId} taskId={taskId} />
+              <DiscussionIssuesTab
+                projectId={projectId}
+                taskId={taskId}
+                onCreateTaskIssue={onCreateTaskIssue}
+              />
             ) : null
           ) : (
             <CommentsPanel

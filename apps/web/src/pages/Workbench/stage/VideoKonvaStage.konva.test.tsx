@@ -167,6 +167,38 @@ describe("VideoKonvaStage · konva mock", () => {
     expect(document.querySelector('[data-konva="Stage"]')).toBeNull();
   });
 
+  it("allows the first Issue drop above annotation handles in a review canvas", () => {
+    const view = render(
+      <VideoKonvaStage manifest={manifest} readOnly issuePinDropArmed onIssuePinDrop={vi.fn()} />,
+    );
+    const catcher = screen.getByTestId("video-issue-drop-catcher");
+    const stage = document.querySelector('[data-konva="Stage"]')!;
+    expect(stage.lastElementChild).toBe(catcher.closest('[data-konva="Layer"]'));
+    view.rerender(<VideoKonvaStage manifest={manifest} readOnly issuePinDropArmed={false} />);
+    expect(screen.queryByTestId("video-issue-drop-catcher")).toBeNull();
+  });
+
+  it("keeps preparing Issue navigation above canvas writers after the first drop is disarmed", () => {
+    const onIssuePinDrop = vi.fn();
+    const ref = createRef<VideoStageControls>();
+    render(
+      <VideoKonvaStage
+        ref={ref}
+        manifest={manifest}
+        videoTool="polygon"
+        issuePinDropArmed={false}
+        issueNavigationPending
+        onIssuePinDrop={onIssuePinDrop}
+      />,
+    );
+    const catcher = screen.getByTestId("video-issue-drop-catcher");
+    const stage = document.querySelector('[data-konva="Stage"]')!;
+    expect(stage.lastElementChild).toBe(catcher.closest('[data-konva="Layer"]'));
+    fireEvent.pointerDown(stage, { clientX: 250, clientY: 200, button: 0 });
+    expect(ref.current?.getDrawingDraft?.()).toBeNull();
+    expect(onIssuePinDrop).not.toHaveBeenCalled();
+  });
+
   it("工具与审阅浮层位于轨迹条下方，共享画布坐标而不冒泡到绘制容器", () => {
     render(
       <VideoKonvaStage
@@ -214,6 +246,38 @@ describe("VideoKonvaStage · konva mock", () => {
       },
     } as AnnotationResponse;
   }
+
+  it.each(["armed", "preparing"])(
+    "%s Issue input also blocks native context-menu selection",
+    (phase) => {
+      const annotation = contextAnnotation("video_track_bbox");
+      const onSelect = vi.fn();
+      const view = render(
+        <VideoKonvaStage
+          manifest={manifest}
+          annotations={[annotation]}
+          onSelect={onSelect}
+          issuePinDropArmed={phase === "armed"}
+          issueNavigationPending={phase === "preparing"}
+        />,
+      );
+      drawingSurface();
+      onSelect.mockClear();
+      fireEvent.contextMenu(screen.getByTestId("video-konva-stage"), {
+        clientX: 200,
+        clientY: 150,
+      });
+      expect(onSelect).not.toHaveBeenCalled();
+      view.rerender(
+        <VideoKonvaStage manifest={manifest} annotations={[annotation]} onSelect={onSelect} />,
+      );
+      fireEvent.contextMenu(screen.getByTestId("video-konva-stage"), {
+        clientX: 200,
+        clientY: 150,
+      });
+      expect(onSelect).toHaveBeenCalledWith(annotation.id);
+    },
+  );
 
   it.each(["video_track_bbox", "video_track_polygon", "video_track_polyline"] as const)(
     "%s 的轨迹条将真实插值物化为人工关键帧，保留原端点",

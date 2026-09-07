@@ -899,3 +899,18 @@ describe("resolveLargeFrameStep", () => {
 const densityHelpers = {
   color: (trackId: string) => getTrackColor(trackId, ""),
 };
+
+describe("Issue frame navigation", () => {
+  it.each([false, true])(
+    "routes Issue anchors through checked readiness (expanded=%s)",
+    (expanded) => {
+      const onSeek = vi.fn();
+      const onSeekIssueFrame = vi.fn();
+      const view = renderOverlay({ issueFrames: [3], onSeek, onSeekIssueFrame });
+      if (expanded) fireEvent.click(view.getByRole("button", { name: "展开时间轴详情" }));
+      fireEvent.click(view.getByTestId("video-issue-marker"));
+      expect(onSeekIssueFrame).toHaveBeenCalledWith(3);
+      expect(onSeek).not.toHaveBeenCalled();
+    },
+  );
+});

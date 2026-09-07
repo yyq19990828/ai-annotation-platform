@@ -8,7 +8,7 @@
 >
 > 调研输入：[Supervisely 与 CVAT 图片、视频工作台交互专项调研](../research/23-supervisely-cvat-image-video-workbench.md)。用户指定的主工作区文件与本工作区副本内容一致。
 >
-> 用户确认范围：完整规划 A–H，优先交付 A–D。最新执行要求：各里程碑先拆独立草案，然后逐步实施，每个里程碑浏览器实测通过后提交；见 §15–16。A 已实施并通过浏览器验收，其余草案按序执行；不预分配版本或发布日期。
+> 用户确认范围：完整规划 A–H，优先交付 A–D。最新执行要求：各里程碑先拆独立草案，然后逐步实施，每个里程碑浏览器实测通过后提交；见 §15–16。已完成切片与证据见 §16 状态表，其余草案按序执行；不预分配版本或发布日期。
 
 ## 1. 推荐路线与边界
 
@@ -356,7 +356,7 @@ C 另覆盖创建动作、类别/属性表单和图片连续创建浏览器路�
 
 Python 优先使用本工作区 `apps/api/.venv`。本地 Playwright 配置使用隔离 API/Web 端口与 `annotation_e2e`，pytest 使用测试配置中的一次性库；运行前验证实际目标，不能仅凭库名认定可清空。Node 依赖和 `.env` 当前指向主工作区，测试不修改这些共享目标。每次测试结束清理本次生成的缓存、截图、trace、HTML 报告及临时 seed；保留明确交付的基线证据，不能删除预存文件。
 
-初始规划阶段只做源码和合同核验。A 的应用单测与真实浏览器验收已完成，证据见独立文档 Outcome；其余里程碑、数据库迁移演练与远端 CI 不因 A 通过而视为完成。
+初始规划阶段只做源码和合同核验。已完成切片的应用单测与真实浏览器验收见各自文档 Outcome；尚未实施的里程碑、数据库迁移演练与远端 CI 不因相邻切片通过而视为完成。
 
 ### 用户路径测量
 
@@ -410,7 +410,7 @@ Python 优先使用本工作区 `apps/api/.venv`。本地 Playwright 配置使�
 | F1     | [当前视频轨迹条](1788769060_workbench-f1-video-track-context.md)                  | 无     | 已授权 | 已完成 | F1-1–F1-4 通过 |
 | F2     | [视频单帧与轨迹范围](1788769060_workbench-f2-video-tool-scope.md)                 | B      | 已授权 | 已完成 | F2-1–F2-5 通过 |
 | F3     | [追踪候选审阅范围](1788769060_workbench-f3-video-tracker-review-scope.md)         | 无     | 已授权 | 已完成 | F3-1–F3-4 通过 |
-| G1     | [视频 Issue 创建与真实落帧](1788769060_workbench-g1-video-issue-frame.md)         | 无     | 已授权 | 未开始 | 未执行         |
+| G1     | [视频 Issue 创建与真实落帧](1788769060_workbench-g1-video-issue-frame.md)         | 无     | 已授权 | 已完成 | G1-1–G1-4 通过 |
 | G2     | [视频 Issue 完整上下文恢复](1788769060_workbench-g2-video-issue-context.md)       | G1     | 已授权 | 未开始 | 未执行         |
 | H1     | [中心向外创建 bbox](1788769060_workbench-h1-bbox-center-out.md)                   | 无     | 已授权 | 未开始 | 未执行         |
 | H2     | [Polygon 自动落点](1788769060_workbench-h2-polygon-auto-points.md)                | 无     | 已授权 | 未开始 | 未执行         |

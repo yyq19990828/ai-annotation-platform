@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Layer, Circle, Text } from "react-konva";
+import { Layer, Circle, Text, Rect } from "react-konva";
 import type Konva from "konva";
 import { useTheme } from "@/hooks/useTheme";
 import { cssVarToHex } from "./colors";
@@ -24,6 +24,8 @@ interface VideoKonvaIssueLayerProps {
   highlightId?: string | null;
   /** 单击图钉 → onPinClick(id)(Shell 据此高亮 + 切到 DiscussionPanel issues tab)。 */
   onPinClick?: (id: string) => void;
+  dropArmed?: boolean;
+  onDrop?: (x: number, y: number, frame: number) => void;
 }
 
 /**
@@ -41,6 +43,8 @@ export function VideoKonvaIssueLayer({
   scale,
   highlightId,
   onPinClick,
+  dropArmed = false,
+  onDrop,
 }: VideoKonvaIssueLayerProps) {
   const { resolved: theme } = useTheme();
   const ringColor = useMemo(() => cssVarToHex("--sc-card", theme), [theme]);
@@ -54,7 +58,7 @@ export function VideoKonvaIssueLayer({
   const onFrame = pixelIssues
     .filter(hasPixelAnchor)
     .filter((issue) => issue.anchor_position.frame === frameIndex);
-  if (onFrame.length === 0) return null;
+  if (onFrame.length === 0 && !dropArmed) return null;
   const radius = ISSUE_PIN_RADIUS * size.w;
   const clickable = !!onPinClick;
   const setCursor = (e: Konva.KonvaEventObject<MouseEvent>, cursor: string) => {
@@ -62,7 +66,7 @@ export function VideoKonvaIssueLayer({
     if (stage) stage.container().style.cursor = cursor;
   };
   return (
-    <Layer name="issue" listening={clickable}>
+    <Layer name="issue" listening={clickable || dropArmed}>
       {onFrame.map((issue) => {
         const x = issue.anchor_position.x * size.w;
         const y = issue.anchor_position.y * size.h;
@@ -105,6 +109,36 @@ export function VideoKonvaIssueLayer({
           listening={false}
         />
       ))}
+      {dropArmed && (
+        <Rect
+          name="video-issue-drop-catcher"
+          x={0}
+          y={0}
+          width={size.w}
+          height={size.h}
+          fill="rgba(0,0,0,0)"
+          listening
+          onPointerDown={(event) => {
+            event.cancelBubble = true;
+          }}
+          onPointerUp={(event) => {
+            event.cancelBubble = true;
+          }}
+          onClick={(event) => {
+            event.cancelBubble = true;
+            if (event.evt.button !== 0 || size.w <= 0 || size.h <= 0) return;
+            const stage = event.target.getStage();
+            const position = stage?.getPointerPosition();
+            if (!stage || !position) return;
+            const point = stage.getAbsoluteTransform().copy().invert().point(position);
+            const x = point.x / size.w;
+            const y = point.y / size.h;
+            if (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || x > 1 || y < 0 || y > 1)
+              return;
+            onDrop?.(x, y, frameIndex);
+          }}
+        />
+      )}
     </Layer>
   );
 }

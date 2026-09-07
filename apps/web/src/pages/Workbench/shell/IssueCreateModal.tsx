@@ -1,18 +1,9 @@
-/**
- * I18 · 创建 pixel-anchored issue 的简易 modal.
- *
- * v0.10.19 形态:
- * - 输入 title / severity / body
- * - anchor 默认走 task 级 (anchor_type='task'); 用户可选填 x/y (0-1 相对坐标) 升级为 pixel anchor
- * - 不挂截图 / 不挂图上单击落点 (留 v0.10.20 接 ImageStage 时做)
- *
- * 提交成功后调用 onSuccess 让 useFeedbacks 失效重拉.
- */
-import { useEffect, useState, type ChangeEvent } from "react";
+import { useLayoutEffect, useRef, useState, type ChangeEvent } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useCreateFeedback } from "@/hooks/useFeedbacks";
 import type { FeedbackSeverity, ListFeedbacksParams } from "@/api/feedbacks";
+import type { IssuePinAnchor } from "../state/useIssuePins";
 
 // UA-safe 文本输入基线(无全局 preflight 期间)。
 const FIELD_BASE =
@@ -35,35 +26,53 @@ interface Props {
   taskId: string;
   /** useFeedbacks 当前订阅的 params; 提交后 invalidate 这个 key. */
   listParams: ListFeedbacksParams;
-  /** v0.10.20 · I18 · drop-arm 单击图像落点后预填的相对坐标 (0-1). 传入时自动设到 x/y 输入框. */
-  prefilledAnchor?: { x: number; y: number } | null;
+  /** The clicked normalized point and, for video, its confirmed source frame. */
+  prefilledAnchor?: IssuePinAnchor | null;
+  /** Task-only video entry cannot promote unverified coordinates into a pixel Issue. */
+  anchorMode?: "pixel" | "task";
   onClose: () => void;
 }
 
-export function IssueCreateModal({
-  open,
+export function IssueCreateModal(props: Props) {
+  if (!props.open) return null;
+  return <IssueCreateSession key={JSON.stringify([props.projectId, props.taskId])} {...props} />;
+}
+
+function IssueCreateSession({
   projectId,
   taskId,
   listParams,
   prefilledAnchor,
+  anchorMode = "pixel",
   onClose,
 }: Props) {
+  // Each opening/task owns its form and mutation observer, including A → B → A.
+  const [snapshot] = useState(() => ({
+    projectId,
+    taskId,
+    listParams: { ...listParams },
+    anchor: anchorMode === "pixel" && prefilledAnchor ? { ...prefilledAnchor } : null,
+    anchorMode,
+  }));
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [severity, setSeverity] = useState<FeedbackSeverity>("warn");
-  const [x, setX] = useState<string>("");
-  const [y, setY] = useState<string>("");
-  const createMut = useCreateFeedback(listParams);
+  const [x, setX] = useState(() => snapshot.anchor?.x.toFixed(3) ?? "");
+  const [y, setY] = useState(() => snapshot.anchor?.y.toFixed(3) ?? "");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const createMut = useCreateFeedback(snapshot.listParams);
+  const mountedRef = useRef(true);
+  const closedRef = useRef(false);
+  const requestRef = useRef<object | null>(null);
 
-  // v0.10.20 · 打开 modal 且 prefilledAnchor 非空时, 自动填入 x/y (保留 2 位小数, 用户仍可调整).
-  useEffect(() => {
-    if (open && prefilledAnchor) {
-      setX(prefilledAnchor.x.toFixed(3));
-      setY(prefilledAnchor.y.toFixed(3));
-    }
-  }, [open, prefilledAnchor]);
-
-  if (!open) return null;
+  useLayoutEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      requestRef.current = null;
+    };
+  }, []);
 
   const parsedX = parseFloat(x);
   const parsedY = parseFloat(y);
@@ -74,31 +83,55 @@ export function IssueCreateModal({
     parsedX <= 1 &&
     parsedY >= 0 &&
     parsedY <= 1;
-  const pixelMode = x !== "" || y !== "";
+  const pixelMode = snapshot.anchorMode === "pixel" && (x !== "" || y !== "");
   const pixelInvalid = pixelMode && !hasValidPixel;
+  const frame = snapshot.anchor?.frame;
 
-  const canSubmit = body.trim().length > 0 && !pixelInvalid && !createMut.isPending;
+  const canSubmit = body.trim().length > 0 && !pixelInvalid && !submitting && !createMut.isPending;
+
+  const handleClose = () => {
+    closedRef.current = true;
+    requestRef.current = null;
+    onClose();
+  };
 
   const handleSubmit = () => {
-    if (!canSubmit) return;
+    if (!canSubmit || closedRef.current || requestRef.current) return;
+    const request = {};
+    requestRef.current = request;
+    setSubmitting(true);
+    setSubmitError(null);
+    const isCurrent = () =>
+      mountedRef.current && !closedRef.current && requestRef.current === request;
     createMut.mutate(
       {
         kind: "issue",
         anchor_type: pixelMode ? "pixel" : "task",
-        project_id: projectId,
-        task_id: taskId,
-        anchor_position: pixelMode ? { x: parsedX, y: parsedY } : null,
+        project_id: snapshot.projectId,
+        task_id: snapshot.taskId,
+        anchor_position: pixelMode
+          ? { x: parsedX, y: parsedY, ...(frame !== undefined ? { frame } : {}) }
+          : null,
         severity,
         title: title.trim() || null,
         body: body.trim(),
       },
       {
         onSuccess: () => {
+          if (!isCurrent()) return;
+          requestRef.current = null;
+          setSubmitting(false);
           setTitle("");
           setBody("");
           setX("");
           setY("");
-          onClose();
+          handleClose();
+        },
+        onError: (error) => {
+          if (!isCurrent()) return;
+          requestRef.current = null;
+          setSubmitting(false);
+          setSubmitError(error instanceof Error ? error.message : "创建失败，请重试");
         },
       },
     );
@@ -107,9 +140,18 @@ export function IssueCreateModal({
   return (
     <div
       className="fixed inset-0 z-workbench-modal flex items-center justify-center bg-black/40"
-      onClick={onClose}
+      onClick={handleClose}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape" || event.nativeEvent.isComposing) return;
+        event.preventDefault();
+        event.stopPropagation();
+        handleClose();
+      }}
       role="dialog"
       aria-modal="true"
+      aria-label="标记问题"
+      data-workbench-issue-create
+      data-state="open"
     >
       <div
         className="flex max-h-[88vh] w-[min(480px,92vw)] flex-col gap-3 overflow-auto rounded-lg border border-border bg-card p-4 shadow-xl"
@@ -119,7 +161,7 @@ export function IssueCreateModal({
           <b className="inline-flex items-center gap-1.5 text-sm text-foreground">
             <Icon name="flag" size={14} /> 标记问题 (Issue)
           </b>
-          <Button variant="ghost" size="sm" onClick={onClose} title="关闭">
+          <Button variant="ghost" size="sm" onClick={handleClose} title="关闭">
             <Icon name="x" size={12} />
           </Button>
         </div>
@@ -170,43 +212,60 @@ export function IssueCreateModal({
           />
         </div>
 
-        <div className="flex flex-col gap-1.5">
-          <label className="text-xs text-muted-foreground">像素锚点（可选, 0-1 相对坐标）</label>
-          <div className="flex gap-2">
-            <input
-              className={cn(FIELD_BASE, "min-w-0 flex-1")}
-              value={x}
-              onChange={(e) => setX(e.target.value)}
-              placeholder="x (0-1)"
-              type="number"
-              step="0.01"
-              min="0"
-              max="1"
-            />
-            <input
-              className={cn(FIELD_BASE, "min-w-0 flex-1")}
-              value={y}
-              onChange={(e) => setY(e.target.value)}
-              placeholder="y (0-1)"
-              type="number"
-              step="0.01"
-              min="0"
-              max="1"
-            />
+        {snapshot.anchorMode === "pixel" ? (
+          <div className="flex flex-col gap-1.5">
+            <label className="text-xs text-muted-foreground">像素锚点（可选, 0-1 相对坐标）</label>
+            {pixelMode && frame !== undefined && (
+              <span className="text-xs text-muted-foreground" data-testid="issue-create-frame">
+                源帧 F {frame}
+              </span>
+            )}
+            <div className="flex gap-2">
+              <input
+                className={cn(FIELD_BASE, "min-w-0 flex-1")}
+                value={x}
+                onChange={(e) => setX(e.target.value)}
+                placeholder="x (0-1)"
+                type="number"
+                step="0.01"
+                min="0"
+                max="1"
+              />
+              <input
+                className={cn(FIELD_BASE, "min-w-0 flex-1")}
+                value={y}
+                onChange={(e) => setY(e.target.value)}
+                placeholder="y (0-1)"
+                type="number"
+                step="0.01"
+                min="0"
+                max="1"
+              />
+            </div>
+            {pixelInvalid && (
+              <span className="text-xs text-status-danger">
+                x/y 必须在 0-1 范围;留空则按任务级 issue 创建
+              </span>
+            )}
           </div>
-          {pixelInvalid && (
-            <span className="text-xs text-status-danger">
-              x/y 必须在 0-1 范围;留空则按任务级 issue 创建
-            </span>
-          )}
-        </div>
+        ) : (
+          <p className="m-0 text-xs text-muted-foreground">
+            任务级问题不绑定画面位置；标记位置请关闭表单后在视频画面落点。
+          </p>
+        )}
+
+        {submitError && (
+          <p className="m-0 text-xs text-status-danger" role="alert">
+            {submitError}
+          </p>
+        )}
 
         <div className="flex justify-end gap-2 border-t border-border pt-2.5">
-          <Button variant="ghost" size="sm" onClick={onClose}>
+          <Button variant="ghost" size="sm" onClick={handleClose}>
             取消
           </Button>
           <Button size="sm" disabled={!canSubmit} onClick={handleSubmit}>
-            {createMut.isPending ? "提交中…" : "提交"}
+            {submitting || createMut.isPending ? "提交中…" : "提交"}
           </Button>
         </div>
       </div>

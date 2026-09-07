@@ -96,4 +96,39 @@ describe("WorkbenchShell", () => {
     expect(onOpenList).toHaveBeenCalledOnce();
     expect(onToggleIssuePinDrop).toHaveBeenCalledOnce();
   });
+  it.each(["preparing", "ready", "cancelled", "timeout", "unavailable"] as const)(
+    "video issues expose %s without claiming failed navigation is ready",
+    (status) => {
+      const onRetryIssueNavigation = vi.fn(async () => {});
+      const onToggleIssuePinDrop = vi.fn();
+      mockUseWorkbenchShellModel.mockReturnValue({
+        kind: "ready",
+        layout: {},
+        issueSection: {
+          openIssueCount: 0,
+          stageKind: "video",
+          issuePinDropArmed: false,
+          onOpenList: vi.fn(),
+          onToggleIssuePinDrop,
+          issueNavigation: { status, frameIndex: 0 },
+          onRetryIssueNavigation,
+          createModal: {},
+        },
+      });
+      render(<WorkbenchShell />);
+      fireEvent.click(screen.getByTestId("issue-pin-fab"));
+      expect(onToggleIssuePinDrop).toHaveBeenCalledOnce();
+      const progress = screen.getByTestId("issue-frame-navigation");
+      expect(progress).toHaveAttribute("data-status", status);
+      expect(progress).toHaveAttribute("data-frame-index", "0");
+      expect(progress.textContent?.includes("已定位")).toBe(status === "ready");
+      const retry = screen.queryByRole("button", { name: "重试" });
+      if (status === "preparing" || status === "ready") expect(retry).toBeNull();
+      else {
+        expect(retry).not.toBeNull();
+        fireEvent.click(retry!);
+        expect(onRetryIssueNavigation).toHaveBeenCalledOnce();
+      }
+    },
+  );
 });

@@ -361,7 +361,11 @@ issue 在画布上以图钉呈现，与 issues tab 列表双向联动：
 
 - 点列表项（有 pin）→ `focusIssue(id)` → 视口平移到对应图钉并高亮。
 - 图钉单击 → `useActiveIssueStore` 高亮对应行并自动把面板切到 issues tab。
-- 视频 stage 的图钉按 `anchor_position.frame` 帧级显隐（`VideoIssueLayer.tsx`），颜色按 status 映射（open=warning / resolved=success / wont_fix=muted）。
+- 视频 Stage 的图钉按 `anchor_position.frame` 帧级显隐（`VideoKonvaIssueLayer.tsx`），颜色按 status 映射（open=warning / resolved=success / wont_fix=muted）。
+
+视频落点通过 `useIssuePins` 保存当次请求的归一化坐标和源帧，等待 `seekToFrameReady` 返回精确的 `ready` 后再打开创建框。Issue 表单以每次打开及 project/task 作为会话边界，冻结提交目标和帧号；清空坐标仍使用任务级空锚点。迟到定位、提交回调不能关闭或改写新任务的表单。讨论页的任务级问题入口直接使用空锚点打开同一表单，并使未完成的像素定位请求失效，不依赖视频准备结果；此会话固定为任务级，不允许手填坐标绕过源帧就绪检查。
+
+列表和时间轴共用受绘制 / Mask 草稿保护的帧定位入口。`VideoStageControls.seekToFrameReady` 返回 `ready / cancelled / timeout / unavailable`；`ready` 要求当前任务与请求仍有效、实际源帧匹配并收到媒体层绘制回执。WebCodecs 位图和原生回退分别验证来源；时间轴的乐观帧号、邻帧容差和计时结束都不能作为成功证据。Mask QC 定位也检查这一结果，失败时不选择标注、不加载比较或聚焦区域。
 
 ### 评论画布批注
 

@@ -334,12 +334,14 @@ interface WorkbenchStageHostEditorProps {
   maskEditor?: UseMaskEditorReturn;
   /** v0.10.10 · I17.3 · 项目级 rendering_config 覆盖（仅图像舞台消费）。 */
   projectRenderingConfig?: import("@/api/projects").ProjectRenderingConfig | null;
-  // ── v0.10.20 · I18 IssueLayer (仅图像舞台消费) ─────────────
+  // Issue pins and creation anchors are shared by image and video stages.
   issuePixelFeedbacks?: import("@/api/feedbacks").AnnotationFeedback[];
   highlightIssueId?: string | null;
   onIssuePinClick?: (id: string) => void;
   issuePinDropArmed?: boolean;
-  onIssuePinDrop?: (x: number, y: number) => void;
+  issueNavigationPending?: boolean;
+  onIssuePinDrop?: (x: number, y: number, frame?: number) => void;
+  onSeekIssueFrame?: (frame: number) => void;
 }
 
 interface WorkbenchStageHostProps {
@@ -402,7 +404,11 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       stageKind === "image" ? requireStageGroup(image, "image", stageKind) : undefined;
     const aiProps = stageKind === "image" ? requireStageGroup(ai, "ai", stageKind) : undefined;
     const editorProps =
-      stageKind === "image" ? requireStageGroup(editors, "editors", stageKind) : undefined;
+      stageKind === "image"
+        ? requireStageGroup(editors, "editors", stageKind)
+        : stageKind === "video"
+          ? editors
+          : undefined;
     const {
       videoManifest,
       videoFrameTimetable,
@@ -540,7 +546,9 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       highlightIssueId,
       onIssuePinClick,
       issuePinDropArmed,
+      issueNavigationPending,
       onIssuePinDrop,
+      onSeekIssueFrame,
     } = editorProps ?? ({} as WorkbenchStageHostEditorProps);
     return (
       <div className="relative flex min-h-0 flex-1 flex-col" data-workbench-stage>
@@ -654,6 +662,10 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             issuePixelFeedbacks={issuePixelFeedbacks}
             issueHighlightId={highlightIssueId}
             onIssuePinClick={onIssuePinClick}
+            issuePinDropArmed={issuePinDropArmed}
+            issueNavigationPending={issueNavigationPending}
+            onIssuePinDrop={onIssuePinDrop}
+            onSeekIssueFrame={onSeekIssueFrame}
           />
         ) : (
           <ImageWorkbench

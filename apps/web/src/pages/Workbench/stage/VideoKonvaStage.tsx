@@ -193,6 +193,10 @@ interface VideoKonvaStageProps {
   issueHighlightId?: string | null;
   /** 单击 issue 图钉(Shell 据此高亮 + 切到讨论面板 issues tab)。 */
   onIssuePinClick?: (id: string) => void;
+  issuePinDropArmed?: boolean;
+  issueNavigationPending?: boolean;
+  onIssuePinDrop?: (x: number, y: number, frame?: number) => void;
+  onSeekIssueFrame?: (frame: number) => void;
   /** 共享视觉规格(线宽/填充/字号/标签);与图片同源。缺省回退默认值。 */
   visual?: AnnotationVisualConfig;
   videoTool?: VideoTool;
@@ -328,6 +332,10 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       issuePixelFeedbacks,
       issueHighlightId,
       onIssuePinClick,
+      issuePinDropArmed,
+      issueNavigationPending,
+      onIssuePinDrop,
+      onSeekIssueFrame,
       visual = DEFAULT_ANNOTATION_VISUAL,
       videoTool = "select",
       isVideoToolEnabled,
@@ -513,6 +521,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       preciseSourceState,
       precisePaintedFrameIndex,
       markPreciseFramePainted,
+      framePresentation,
+      markFramePresented,
       cachedRanges,
       framePreview,
       previewFrame,
@@ -1071,6 +1081,10 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     // 落点: polygon/polyline 工具下 Stage pointerdown 累加顶点 (阻断拖拽/选择分流)。
     const handleStagePointerDown = useCallback(
       (e: Parameters<typeof interaction.onStagePointerDown>[0]) => {
+        if (issuePinDropArmed || issueNavigationPending) {
+          e.cancelBubble = true;
+          return;
+        }
         if (spacePan || panRef.current || isWorkbenchInteractionBlocked(e.evt)) return;
         if ((e.evt.ctrlKey || e.evt.metaKey) && samMaskRecords.length > 0) {
           const point = pointFromClientEvt(e.evt.clientX, e.evt.clientY);
@@ -1210,6 +1224,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         commitPointsDraft,
         frameIndex,
         interaction,
+        issuePinDropArmed,
+        issueNavigationPending,
         isPlaybackActive,
         isPointsClosedTool,
         lockedTrackIds,
@@ -1623,6 +1639,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     const handleContextMenu = useCallback(
       (evt: ReactMouseEvent<HTMLDivElement>) => {
         evt.preventDefault();
+        if (issuePinDropArmed || issueNavigationPending) return;
         if (keypointDrawEnabled) return;
         const down = rightDownRef.current;
         rightDownRef.current = null;
@@ -1666,6 +1683,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         contextMenu,
         frameViews.entries,
         frameViews.ghost,
+        issuePinDropArmed,
+        issueNavigationPending,
         keypointDrawEnabled,
         onSelect,
         readOnly,
@@ -2169,13 +2188,19 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     // v0.21.26 · 复用交互层同一谓词 isSamProbeTool (含 exemplar / magic-box), 修此前漏登记这两个
     // 工具 → 选中后无十字光标、体感像未进入工具的问题。
     const samProbeTool = isSamProbeTool(videoTool);
-    const cursorClass = panning
-      ? styles.rootPanning
-      : spacePan
-        ? styles.toolGrab
-        : creationEnabled || pointsDrawEnabled || keypointDrawEnabled || samProbeTool
-          ? styles.toolCrosshair
-          : "";
+    const cursorClass = issueNavigationPending
+      ? "cursor-wait"
+      : panning
+        ? styles.rootPanning
+        : spacePan
+          ? styles.toolGrab
+          : issuePinDropArmed ||
+              creationEnabled ||
+              pointsDrawEnabled ||
+              keypointDrawEnabled ||
+              samProbeTool
+            ? styles.toolCrosshair
+            : "";
 
     const videoMinimapVisible = viewportSize.w > 0 && viewportSize.h > 0;
 
@@ -2215,7 +2240,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         data-active-class={activeClass}
         className={`${styles.root} ${cursorClass}`}
         onContextMenu={handleContextMenu}
-        onPointerDown={beginPan}
+        onPointerDown={issuePinDropArmed || issueNavigationPending ? undefined : beginPan}
         onPointerMove={onPointerMove}
         onPointerUp={endPan}
         onPointerCancel={endPan}
@@ -2251,6 +2276,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
               frameIndex={frameIndex}
               preciseFrameIndex={frameSource === "webcodecs" ? frameIndex : null}
               onPreciseFramePainted={markPreciseFramePainted}
+              framePresentation={framePresentation}
+              onFramePresented={markFramePresented}
               size={size}
               viewport={viewportSize}
               isPlaybackActive={isPlaybackActive}
@@ -2339,18 +2366,6 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
               visual={visual}
               onSelect={(id) => onSelect?.(id)}
             />
-            {issuePixelFeedbacks && issuePixelFeedbacks.length > 0 && (
-              <VideoKonvaIssueLayer
-                pixelIssues={issuePixelFeedbacks.filter(
-                  (f) => f.kind === "issue" && f.anchor_type === "pixel" && !!f.anchor_position,
-                )}
-                frameIndex={frameIndex}
-                size={size}
-                scale={vp.scale}
-                highlightId={issueHighlightId}
-                onPinClick={onIssuePinClick}
-              />
-            )}
             <VideoKonvaInteractionLayer
               size={size}
               scale={vp.scale}
@@ -2609,6 +2624,22 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
                 />
               </Layer>
             )}
+            {((issuePixelFeedbacks?.length ?? 0) > 0 ||
+              issuePinDropArmed ||
+              issueNavigationPending) && (
+              <VideoKonvaIssueLayer
+                pixelIssues={(issuePixelFeedbacks ?? []).filter(
+                  (f) => f.kind === "issue" && f.anchor_type === "pixel" && !!f.anchor_position,
+                )}
+                frameIndex={frameIndex}
+                size={size}
+                scale={vp.scale}
+                highlightId={issueHighlightId}
+                onPinClick={onIssuePinClick}
+                dropArmed={issuePinDropArmed || issueNavigationPending}
+                onDrop={issueNavigationPending ? undefined : onIssuePinDrop}
+              />
+            )}
           </Stage>
           {creationScopeHint && (
             <div
@@ -2685,6 +2716,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
           bookmarks={bookmarks}
           chapters={chapters}
           issueFrames={issueFrames}
+          onSeekIssueFrame={onSeekIssueFrame}
           hoverPreview={framePreview}
           currentFrameEntryCount={frameViews.entries.length}
           visible={playbackOverlayVisible && !drag}

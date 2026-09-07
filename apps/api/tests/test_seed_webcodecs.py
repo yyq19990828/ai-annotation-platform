@@ -41,6 +41,12 @@ def test_baseline_fixture_produces_production_shaped_samples(tmp_path):
 
     samples = meta["samples"]
     assert len(samples) == 12
+    assert [entry["frame_index"] for entry in meta["frame_timetable"]] == list(
+        range(12)
+    )
+    assert [entry["pts_ms"] for entry in meta["frame_timetable"]] == [
+        sample["pts_ms"] for sample in samples
+    ]
     # frame_index 是 0..11 的 presentation-rank 排列(前端按 timestamp 选目标)。
     assert sorted(s["frame_index"] for s in samples) == list(range(12))
     # baseline 共 12 帧且 GOP=12，关闭 scenecut 后只有首帧关键帧。
@@ -65,6 +71,7 @@ def test_qualification_fixture_produces_full_ready_chunk_contract(tmp_path):
     ]
     assert meta["chunks"][0]["start_frame"] == 0
     assert meta["chunks"][-1]["end_frame"] == meta["frame_count"] - 1
+    assert len(meta["frame_timetable"]) == meta["frame_count"]
 
 
 def test_main_bframes_has_decode_presentation_reorder(tmp_path):
@@ -93,6 +100,7 @@ def test_vfr_fixture_has_complete_monotonic_alternating_pts(tmp_path):
     assert len(presented) == meta["frame_count"] == 24
     assert [sample["frame_index"] for sample in presented] == list(range(24))
     pts_ms = [sample["pts_ms"] for sample in presented]
+    assert [entry["pts_ms"] for entry in meta["frame_timetable"]] == pts_ms
     deltas = [right - left for left, right in zip(pts_ms, pts_ms[1:])]
     assert all(32 <= delta <= 35 for delta in deltas[::2])
     assert all(65 <= delta <= 68 for delta in deltas[1::2])
@@ -115,6 +123,8 @@ def test_apply_metadata_mutation_malformed_pushes_offset_out_of_bounds(tmp_path)
     mutated = apply_metadata_mutation("malformed-samples", base)
     assert len(mutated["samples"]) == len(base["samples"])
     assert mutated["samples"][1]["offset_in_chunk"] == 10**9
+    assert mutated["frame_timetable"] == base["frame_timetable"]
+    assert mutated["frame_timetable"][1]["pts_ms"] == 33
     # 其余帧不变。
     assert mutated["samples"][0] == base["samples"][0]
 

@@ -72,6 +72,8 @@ git diff --check
 
 ## Outcome
 
+提交：`3d820ecc`（`feat(workbench): keep tracker review scope consistent`）。
+
 2026-09-08 完成实施与验收，基于 F2 提交 `bfe7ae70`。
 
 ### 实现与文档

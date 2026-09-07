@@ -25,7 +25,7 @@ from PIL import Image
 
 from app.workers.media_codec import _extract_decoder_config
 from app.workers.media_chunks import extract_video_chunk_smart_copy
-from app.workers.media_probe import probe_chunk_samples
+from app.workers.media_probe import probe_chunk_samples, probe_video_frame_timetable
 
 FRAME_W = 160
 FRAME_H = 120
@@ -208,6 +208,7 @@ def generate_fixture(fixture: str, tmpdir: str | Path) -> dict[str, Any]:
     )
     return {
         "mp4_bytes": out.read_bytes(),
+        "frame_timetable": probe_video_frame_timetable(out),
         "samples": samples,
         "codec_string": codec,
         "description": description,
@@ -315,6 +316,7 @@ def generate_qualification_fixture(fixture: str, tmpdir: str | Path) -> dict[str
         )
     return {
         "mp4_bytes": source.read_bytes(),
+        "frame_timetable": probe_video_frame_timetable(source),
         "chunks": chunks,
         "width": spec["width"],
         "height": spec["height"],

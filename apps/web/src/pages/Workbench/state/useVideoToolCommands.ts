@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AnnotationResponse } from "@/types";
-import type { VideoDrawingDraft, VideoStageControls } from "../stage/videoStageControls";
+import type {
+  VideoDrawingDraft,
+  VideoFrameSeekResult,
+  VideoStageControls,
+} from "../stage/videoStageControls";
 import {
   resolveVideoScopeTransition,
   videoToolScopeForTool,
@@ -42,7 +46,12 @@ interface Options {
 type Command =
   | { kind: "tool"; tool: VideoTool }
   | { kind: "scope"; scope: VideoToolScope }
-  | { kind: "frame"; frameIndex: number; isRelevant: () => boolean }
+  | {
+      kind: "frame";
+      frameIndex: number;
+      isRelevant: () => boolean;
+      onAdmitted?: (controls: VideoStageControls | null) => void;
+    }
   | {
       kind: "temporary";
       tool: VideoTool;
@@ -241,7 +250,9 @@ export function useVideoToolCommands(options: Options) {
       if (hasPending || migratedPending) latest.current.state.setPendingDrawing(null);
       if (targetFrame !== undefined) {
         const controls = latest.current.controlsRef.current;
-        if (command.kind === "frame" && controls) {
+        if (command.kind === "frame" && command.onAdmitted) {
+          command.onAdmitted(controls);
+        } else if (command.kind === "frame" && controls) {
           controls.pausePlayback({ snapToGrid: false });
           controls.seekToFrame(targetFrame, { recordHistory: true });
         } else {
@@ -295,11 +306,36 @@ export function useVideoToolCommands(options: Options) {
     [request],
   );
 
+  const requestFrameReady = useCallback(
+    async (frameIndex: number, isRelevant: () => boolean): Promise<VideoFrameSeekResult> => {
+      let ready: Promise<VideoFrameSeekResult> | undefined;
+      const admitted = await request({
+        kind: "frame",
+        frameIndex,
+        isRelevant,
+        onAdmitted: (controls) => {
+          ready = controls
+            ? controls.seekToFrameReady(frameIndex, { recordHistory: true })
+            : Promise.resolve({ status: "unavailable", frameIndex, source: null });
+        },
+      });
+      if (!admitted || !ready) return { status: "cancelled", frameIndex, source: null };
+      const result = await ready;
+      // Admission is complete before the Stage changes the frame component of ownerKey.
+      // The caller's task/intent token and Stage's request generation own completion.
+      return active.current && isRelevant()
+        ? result
+        : { status: "cancelled", frameIndex, source: null };
+    },
+    [request],
+  );
+
   return {
     requestTool,
     requestScope,
     requestSelection,
     requestFrame,
+    requestFrameReady,
     requestTemporaryTool,
     confirmationOpen,
     settleConfirmation,

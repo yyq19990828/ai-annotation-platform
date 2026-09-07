@@ -171,6 +171,10 @@ describe("WorkbenchStageHost", () => {
 
   it("stageKind=video: forwards overlays to the video viewport", () => {
     const props = propsFor("video");
+    props.editors!.issuePinDropArmed = true;
+    props.editors!.issueNavigationPending = true;
+    props.editors!.onIssuePinDrop = vi.fn();
+    props.editors!.onSeekIssueFrame = vi.fn();
     props.video!.keypointSchema = {
       nodes: [{ name: "nose", color: "#fff", x: 0.5, y: 0.5 }],
       edges: [],
@@ -185,7 +189,13 @@ describe("WorkbenchStageHost", () => {
       screen.getByTestId("video-workbench").contains(screen.getByTestId("overlays-content")),
     ).toBe(true);
     expect(videoWorkbenchMock).toHaveBeenCalledWith(
-      expect.objectContaining({ keypointSchema: props.video!.keypointSchema }),
+      expect.objectContaining({
+        keypointSchema: props.video!.keypointSchema,
+        issuePinDropArmed: true,
+        issueNavigationPending: true,
+        onIssuePinDrop: props.editors!.onIssuePinDrop,
+        onSeekIssueFrame: props.editors!.onSeekIssueFrame,
+      }),
     );
   });
 
