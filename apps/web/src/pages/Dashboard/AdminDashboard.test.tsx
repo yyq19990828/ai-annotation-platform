@@ -70,6 +70,20 @@ describe("AdminDashboard", () => {
     expect(screen.getByText("加载中...")).toBeInTheDocument();
   });
 
+  it("统计请求失败时允许重新加载", () => {
+    const refetch = vi.fn();
+    mockUseAdminStats.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      refetch,
+    });
+    renderUI();
+    expect(screen.getByRole("alert")).toHaveTextContent("平台概览暂时无法加载");
+    fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
+    expect(refetch).toHaveBeenCalledOnce();
+  });
+
   it("有 stats → 渲染主要 KPI 卡片", () => {
     mockUseAdminStats.mockReturnValue({ data: baseStats, isLoading: false });
     renderUI();

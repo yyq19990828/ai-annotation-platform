@@ -186,7 +186,7 @@ function AppShell() {
         <>
           <aside className={styles.hiddenSidebarSlot} aria-hidden="true" />
           <SidebarDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)}>
-            <Sidebar reviewCount={0} />
+            <Sidebar reviewCount={0} drawer />
           </SidebarDrawer>
         </>
       ) : (

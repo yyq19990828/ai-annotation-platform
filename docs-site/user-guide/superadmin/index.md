@@ -18,7 +18,7 @@ last_reviewed: 2026-08-16
 - `/model-market` — ML 模型市场，集中管理 ML Backend 与失败预测
 - `/bugs` — BUG 反馈管理，支持状态流转、Markdown 描述/评论和多张截图附件
 
-平台概览先汇总用户、项目、任务和标注规模，再按项目状态与用户角色解释资源分布；继续向下可查看 30 天注册来源、ML 后端与预测成本、近期业务审计，以及全平台项目组合。它用于运营总览；DB、Redis、MinIO、Celery 等组件探活在独立的[系统监控](./system-monitoring)页面查看。
+平台概览顶部集中汇总用户、项目、任务和标注规模，并提供成员绩效与失败预测管理入口。宽屏下，主栏展示项目状态、用户角色和全平台项目，辅助栏展示 30 天注册来源与近期业务审计；下方展示 ML 后端与预测成本。窄屏下各区块按顺序排列，项目表格可横向滚动。它用于运营总览；DB、Redis、MinIO、Celery 等组件探活在独立的[系统监控](./system-monitoring)页面查看。
 
 <DocsVideo
   src="/media/superadmin/platform-overview.mp4"
