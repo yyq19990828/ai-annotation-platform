@@ -152,6 +152,7 @@ export function useVideoMaskFrames(params: {
 
   const descriptors = useMemo<MaskDescriptor[]>(() => {
     const committed = annotations.flatMap((annotation) => {
+      if (annotation.id.startsWith("tmp_")) return [];
       if (isVideoMask(annotation)) {
         if (annotation.geometry.frame_index !== frameIndex) return [];
         return [
