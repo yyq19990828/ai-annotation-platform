@@ -255,6 +255,8 @@ export function useImageAnnotationActions({
     mutations,
     keypointNodeCount,
     activeToolHasOwnClasses,
+    toolBindings,
+    createAnnotationAsync,
     markPendingGeom,
   });
   const { createBboxWithClass, submitPolygon } = annotationActions;
@@ -1472,6 +1474,14 @@ export function useImageAnnotationActions({
       // 会话级落框守卫：越界 clamp / 过小 / 疑似重复（拦截时已 toast）。
       const g = guardDrawnBox(geo, userBoxes, pushToast);
       if (!g) return;
+      if (s.tool === "box") {
+        const reuseClass = classNameForCommittedDrawing(
+          s.workbenchConfig.image.afterBoxCreate,
+          s.activeClass,
+        );
+        annotationActions.beginBboxDrawing(g, reuseClass || undefined);
+        return;
+      }
       // 当前工具自身的 unit 没有类别定义 → 不弹选类别窗, 直接以 __unknown 落库。
       // 修复老项目用无类别工具落框仍弹窗 (借 bbox/region 类) 的 BUG。
       if (!activeToolHasOwnClasses) {

@@ -117,6 +117,7 @@ export interface UseWorkbenchHotkeysArgs {
   submitPolygon: (points: [number, number][]) => void;
   // v0.10.28 · polyline 复用同一草稿 state，Enter 阈值为 2 顶点。
   submitPolyline: (points: [number, number][]) => void;
+  cancelManualDrawing?: () => boolean;
 
   // nudge 提交所用 mutation
   updateMutation: UpdateMutationLike;
@@ -217,6 +218,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     setPolygonDraftPoints,
     submitPolygon,
     submitPolyline,
+    cancelManualDrawing,
     updateMutation,
     taskId,
     disabled = false,
@@ -730,6 +732,12 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
             s.setEditingClass(null);
             return;
           }
+          if (!videoMode && cancelManualDrawing?.()) return;
+          if (!videoMode && s.continuousCreation) {
+            s.setContinuousCreation(null);
+            s.setTool("select");
+            return;
+          }
           if (s.selectedId) {
             s.setSelectedId(null);
             return;
@@ -993,6 +1001,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     classPickerActive,
     setBatchChanging,
     cancelPendingDrawing,
+    cancelManualDrawing,
     showHotkeys,
     navigateTask,
     smartNext,

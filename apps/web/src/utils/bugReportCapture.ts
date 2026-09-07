@@ -101,9 +101,6 @@ export function patchFetchForBugCapture() {
       const resp = await orig(input, init);
       status = resp.status;
       return resp;
-    } catch {
-      status = 0;
-      throw new Error("fetch failed");
     } finally {
       const url =
         typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;

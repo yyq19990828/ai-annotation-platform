@@ -23,6 +23,7 @@ import type Konva from "konva";
 import type { Annotation, Geometry, RotatedBboxGeometry, Keypoint, KeypointSchema } from "@/types";
 import { ContextMenu } from "@/components/ui/ContextMenu";
 import type { PendingDrawing, Tool } from "../state/useWorkbenchState";
+import { isWorkbenchInteractionBlocked } from "../state/workbenchInteractionGuards";
 import type { AiBox } from "../state/transforms";
 import { useElementSize, type Viewport } from "../state/useViewportTransform";
 import { applyResize, applyRotatedResize, type ResizeDirection } from "./ResizeHandles";
@@ -233,6 +234,7 @@ interface ImageStageProps {
   setVp: React.Dispatch<React.SetStateAction<Viewport>>;
   fitTick: number;
   readOnly?: boolean;
+  continuousCreation?: boolean;
   fadedAiIds?: Set<string>;
   /** 待确认绘制几何：画完后等待用户在 popover 里选类别。 */
   pendingDrawing?: PendingDrawing;
@@ -527,6 +529,7 @@ export function ImageStage({
   setVp,
   fitTick,
   readOnly = false,
+  continuousCreation = false,
   fadedAiIds,
   pendingDrawing,
   nudgeMap,
@@ -605,12 +608,14 @@ export function ImageStage({
   // 使其 resize/move 手柄可直接交互——否则画完框（画框后行为=选择类别，框已选中）想调大小
   // 必须先切回选择工具，过于严格。此时点中空白仍落到 Stage 触发画框（绘制穿透保留）。
   const selectActive = tool === "select";
+  const canEditSavedGeometry = !readOnly && !continuousCreation;
   const primarySelectedBox =
     selectedId != null && selSet.size === 1
       ? userBoxes.find((b) => b.id === selectedId)
       : undefined;
   const hasEditablePrimarySelection = !!primarySelectedBox && !primarySelectedBox.is_locked;
-  const userLayerListening = (selectActive || hasEditablePrimarySelection) && !readOnly;
+  const userLayerListening =
+    (selectActive || (!continuousCreation && hasEditablePrimarySelection)) && !readOnly;
   // v0.9.41 · 标注偏好（I17）：smoothImage / cssImageFilter / longTaskSampleRate。
   // v0.10.10 · I17.3 · 合并项目级 rendering_config 覆盖（项目级 > 用户级 > 默认）。
   const { config: workbenchConfig } = useWorkbenchConfig(projectRenderingConfig);
@@ -887,6 +892,19 @@ export function ImageStage({
   useEffect(() => {
     dragRef.current = drag;
   }, [drag]);
+
+  useEffect(() => {
+    const cancelDrawing = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || isWorkbenchInteractionBlocked(event)) return;
+      if (dragRef.current?.kind !== "draw") return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      dragRef.current = null;
+      setDrag(null);
+    };
+    window.addEventListener("keydown", cancelDrawing, true);
+    return () => window.removeEventListener("keydown", cancelDrawing, true);
+  }, []);
 
   const closeContextMenu = useCallback(() => {
     contextMenu.close();
@@ -1989,7 +2007,7 @@ export function ImageStage({
                 const liveAngle =
                   drag?.kind === "rotateBox" && drag.id === b.id ? drag.cur : liveGeometry.angle;
                 const isPrimarySingleSelect =
-                  selectedId === b.id && selSet.size === 1 && !readOnly && !b.is_locked;
+                  selectedId === b.id && selSet.size === 1 && canEditSavedGeometry && !b.is_locked;
                 return (
                   <KonvaRotatedBox
                     key={renderKey}
@@ -2049,7 +2067,7 @@ export function ImageStage({
                 const polyOv = polyOverridePoints(b.id);
                 const livePoints = polyOv ?? (display.polyline as Pt[]);
                 const isOnlySelected =
-                  selectedId === b.id && selSet.size === 1 && !readOnly && !b.is_locked;
+                  selectedId === b.id && selSet.size === 1 && canEditSavedGeometry && !b.is_locked;
                 return (
                   <KonvaPolyline
                     key={renderKey}
@@ -2113,7 +2131,7 @@ export function ImageStage({
                 const kpOv = kpOverridePoints(b.id);
                 const liveKps = kpOv ?? b.keypoints ?? [];
                 const isKpEditable =
-                  selectedId === b.id && selSet.size === 1 && !readOnly && !b.is_locked;
+                  selectedId === b.id && selSet.size === 1 && canEditSavedGeometry && !b.is_locked;
                 return (
                   <KonvaKeypoint
                     key={renderKey}
@@ -2160,7 +2178,7 @@ export function ImageStage({
                   geometrySupportsDirectEdit &&
                   selectedId === b.id &&
                   selSet.size === 1 &&
-                  !readOnly &&
+                  canEditSavedGeometry &&
                   !b.is_locked;
                 // v0.10.4 I2.2 · 顶点拖拽中走 O(n) 增量检测；静态态用 O(n²) 全量（n 通常 <50）。
                 const draggingThisVertex =
@@ -2233,7 +2251,7 @@ export function ImageStage({
               // 单体选中时（且只有一个选中）才允许 move/resize；多选时禁用以避免冲突
               // v0.10.5 M4-β · 锁定 (is_locked) 时禁 move/resize；occluded 影响 stroke 风格。
               const isPrimarySingleSelect =
-                selectedId === b.id && selSet.size === 1 && !readOnly && !b.is_locked;
+                selectedId === b.id && selSet.size === 1 && canEditSavedGeometry && !b.is_locked;
               return (
                 <KonvaBox
                   key={renderKey}
@@ -2244,7 +2262,7 @@ export function ImageStage({
                   faded={false}
                   fadedOpacity={workbenchConfig.image.fadedOpacity}
                   visual={annotationVisual}
-                  editable={!readOnly && !b.is_locked}
+                  editable={canEditSavedGeometry && !b.is_locked}
                   occluded={!!b.occluded}
                   imgW={imgW}
                   imgH={imgH}

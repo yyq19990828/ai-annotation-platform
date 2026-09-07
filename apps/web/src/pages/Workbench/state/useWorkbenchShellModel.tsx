@@ -79,6 +79,8 @@ import { publishTaskBoxCount } from "@/components/PerfHud/useTaskBoxCount";
 import { useWorkbenchState, type VideoTool } from "./useWorkbenchState";
 import { usePendingGeom } from "./usePendingGeom";
 import { useToolBindings, classesForUnit, attributeSchemaForUnit } from "./useToolBindings";
+import { MANUAL_IMAGE_TOOLS, manualImageTool, continuousIntentError } from "./manualImageCreation";
+import { ManualCreationPopover } from "../shell/ManualCreationPopover";
 import { videoToolUnit, videoToolEnabled } from "../stage/videoToolUnits";
 import type { ToolUnitId } from "@/constants/toolUnits";
 import type { AttributeField, ToolBinding, ToolBindings } from "@/api/projects";
@@ -2756,6 +2758,122 @@ export function useWorkbenchShellModel({
     },
     markPendingGeom,
   });
+  const continuousCreationAllowed =
+    stageKind === "image" && mode !== "review" && !isLockedForActions && !!task;
+  const continuousUnits = MANUAL_IMAGE_TOOLS.filter(
+    (item) =>
+      currentProject?.tool_bindings?.[item.unit]?.enabled &&
+      (item.unit !== "keypoint" ||
+        !!currentProject?.tool_bindings?.keypoint?.keypoint_schema?.nodes?.length),
+  ).map((item) => ({
+    id: item.unit,
+    label: item.label,
+    classes: classesForUnit(currentProject?.tool_bindings, item.unit),
+  }));
+  const { continuousCreation, setContinuousCreation } = s;
+  useEffect(() => {
+    if (!continuousCreation) return;
+    const error =
+      currentProject && currentProject.id === projectId
+        ? continuousIntentError(continuousCreation, currentProject.tool_bindings)
+        : null;
+    if (
+      stageKind !== "image" ||
+      mode === "review" ||
+      isLockedForActions ||
+      continuousCreation.projectId !== projectId ||
+      error
+    ) {
+      setContinuousCreation(null);
+      if (error) {
+        setTool("select");
+        pushToast({ msg: "已退出连续创建", sub: error, kind: "warning" });
+      }
+      return;
+    }
+    const next = manualImageTool(s.tool);
+    if (!next) {
+      setContinuousCreation(null);
+      return;
+    }
+    if (next.unit !== continuousCreation.toolUnitId)
+      setContinuousCreation({
+        projectId: projectId!,
+        tool: next.tool,
+        toolUnitId: next.unit,
+        className: "",
+      });
+  }, [
+    continuousCreation,
+    stageKind,
+    mode,
+    isLockedForActions,
+    currentProject,
+    projectId,
+    pushToast,
+    s.tool,
+    setTool,
+    setContinuousCreation,
+  ]);
+  useEffect(() => {
+    if (isLockedForActions && s.pendingDrawing?.creation) s.setPendingDrawing(null);
+  }, [isLockedForActions, s]);
+  const blockCreationIntentChange = () => {
+    if (!imageActions.hasManualDraft) return false;
+    pushToast({
+      msg: "请先完成或取消当前草稿",
+      sub: "按 Esc 取消草稿后再切换创建类别",
+      kind: "warning",
+    });
+    return true;
+  };
+  const setContinuousEnabled = (enabled: boolean) => {
+    if (blockCreationIntentChange()) return;
+    if (!enabled) {
+      setContinuousCreation(null);
+      s.setTool("select");
+      return;
+    }
+    if (!continuousCreationAllowed || !projectId) return;
+    const selected =
+      manualImageTool(s.tool) ??
+      MANUAL_IMAGE_TOOLS.find((item) => item.unit === toolView.toolUnitId) ??
+      MANUAL_IMAGE_TOOLS[0];
+    const next = continuousUnits.some((item) => item.id === selected.unit)
+      ? selected
+      : MANUAL_IMAGE_TOOLS.find((item) => continuousUnits.some((unit) => unit.id === item.unit));
+    if (!next) {
+      pushToast({ msg: "没有可用的手工创建工具", kind: "warning" });
+      return;
+    }
+    setContinuousCreation({ projectId, tool: next.tool, toolUnitId: next.unit, className: "" });
+    s.setTool(next.tool);
+  };
+  const selectContinuousUnit = (unit: string) => {
+    if (!continuousCreation || blockCreationIntentChange()) return;
+    const next = MANUAL_IMAGE_TOOLS.find((item) => item.unit === unit);
+    if (!next) return;
+    setContinuousCreation({
+      ...continuousCreation,
+      tool: next.tool,
+      toolUnitId: next.unit,
+      className: "",
+    });
+    s.setTool(next.tool);
+  };
+  const pickContinuousClass = (className: string) => {
+    if (
+      !continuousCreation ||
+      blockCreationIntentChange() ||
+      !classesForUnit(currentProject?.tool_bindings, continuousCreation.toolUnitId).includes(
+        className,
+      )
+    )
+      return;
+    setContinuousCreation({ ...continuousCreation, className });
+    s.setActiveClass(className);
+    s.setTool(continuousCreation.tool);
+  };
   const {
     aiBoxes,
     predictionSourceFilter,
@@ -5165,6 +5283,10 @@ export function useWorkbenchShellModel({
 
   const handleCancelPending = useCallback(
     (reason: "escape" | "outside") => {
+      if (s.pendingDrawing?.creation) {
+        if (reason === "escape") imageActions.cancelManualDrawing();
+        return;
+      }
       if (reason === "escape") {
         if (handleCancelMaskPendingClass()) return;
         if (handleCancelVideoMaskPendingClass()) return;
@@ -5174,7 +5296,13 @@ export function useWorkbenchShellModel({
       if (s.pendingDrawing) handlePickPendingClassAny(UNKNOWN_CLASS);
       else s.setPendingDrawing(null);
     },
-    [s, handleCancelMaskPendingClass, handleCancelVideoMaskPendingClass, handlePickPendingClassAny],
+    [
+      s,
+      imageActions,
+      handleCancelMaskPendingClass,
+      handleCancelVideoMaskPendingClass,
+      handlePickPendingClassAny,
+    ],
   );
 
   const selectedAnnotationForPanel = useMemo<AnnotationResponse | null>(() => {
@@ -5475,6 +5603,7 @@ export function useWorkbenchShellModel({
     batchChanging,
     setBatchChanging,
     cancelPendingDrawing: () => handleCancelPending("escape"),
+    cancelManualDrawing: imageActions.cancelManualDrawing,
     showHotkeys,
     navigateTask,
     smartNext,
@@ -6343,6 +6472,19 @@ export function useWorkbenchShellModel({
       // v0.13.3-5 · 3D 点云台:左栏色板可点选 = 放置新框的类别(2D 仍只读图例)。
       classPickable: stageKind === "3d" && !isLocked,
       onPickClass: s.setActiveClass,
+      continuousCreation:
+        stageKind === "image"
+          ? {
+              enabled: !!continuousCreation,
+              toolUnitId: continuousCreation?.toolUnitId ?? toolView.toolUnitId,
+              units: continuousUnits,
+              activeClass: continuousCreation?.className ?? "",
+              onEnabledChange: setContinuousEnabled,
+              onSelectUnit: selectContinuousUnit,
+              onPickClass: pickContinuousClass,
+              readOnly: !continuousCreationAllowed,
+            }
+          : undefined,
     },
     toolDock: {
       tool: s.tool,
@@ -6453,7 +6595,7 @@ export function useWorkbenchShellModel({
         stageKind,
         maskCompareStore: maskQcReview.store,
         taskId: taskId ?? null,
-        readOnly: isLockedForActions,
+        readOnly: isLockedForActions || (!!continuousCreation && !continuousCreation.className),
         activeClass: s.activeClass,
         selectedId: s.selectedId,
         selectedIds: s.selectedIds,
@@ -6490,6 +6632,25 @@ export function useWorkbenchShellModel({
         projectRenderingConfig: currentProject?.rendering_config ?? null,
         overlays: (
           <>
+            {continuousCreation && stageKind === "image" && (
+              <div
+                role="status"
+                data-testid="continuous-creation-status"
+                className="absolute left-1/2 top-2 z-overlay flex -translate-x-1/2 items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 text-xs shadow-sm pointer-events-auto"
+              >
+                <span>
+                  连续创建 · {continuousCreation.className || "请选择类别"} ·{" "}
+                  {MANUAL_IMAGE_TOOLS.find((item) => item.tool === continuousCreation.tool)?.label}
+                </span>
+                <button
+                  type="button"
+                  className="rounded-sm px-1.5 py-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  onClick={() => setContinuousEnabled(false)}
+                >
+                  退出连续创建
+                </button>
+              </div>
+            )}
             {(isVideoTask
               ? s.videoTool === "mask" || s.videoTool === "mask-track"
               : s.tool === "mask") && (
@@ -6659,40 +6820,68 @@ export function useWorkbenchShellModel({
                 />
               )}
             {/* SAM 候选的类选择器: 图片给 geom 走 vp 换算, 视频给 anchor 走 fixed 定位 (二者互斥)。 */}
-            <WorkbenchOverlays
-              pendingDrawing={s.pendingDrawing}
-              editingClass={s.editingClass}
-              samPendingGeom={isVideoTask ? videoSamPendingGeom : samPendingGeom}
-              samPendingAnchor={isVideoTask ? (videoSamPendingAccept?.anchor ?? null) : null}
-              samDefaultClass={isVideoTask ? videoSamDefaultClass : samDefaultClass}
-              batchChanging={batchChanging}
-              batchChangeTarget={batchChangeTarget}
-              imageOverlayEnabled={stageKind === "image"}
-              stageGeom={stageGeom}
-              vp={vp}
-              classes={classes}
-              editingClassClasses={editingClassClasses}
-              batchChangeClasses={
-                batchChangeToolUnitId
-                  ? classesForUnit(
-                      currentProject?.tool_bindings,
-                      batchChangeToolUnitId as ToolUnitId,
-                    )
-                  : classes
-              }
-              recentClasses={recentClasses}
-              activeClass={s.activeClass}
-              onPickPendingClass={handlePickPendingClassAny}
-              onCancelPending={handleCancelPending}
-              onCommitChangeClass={handleCommitChangeClass}
-              onChangeClassKeepOpen={handleChangeClassKeepOpen}
-              changeClassAttrEditing={changeClassAttrEditing}
-              onCancelChangeClass={handleCancelChangeClass}
-              onSamCommitClass={isVideoTask ? handleVideoSamCommitClass : handleSamCommitClass}
-              onSamCancelClass={isVideoTask ? handleVideoSamCancelClass : handleSamCancelClass}
-              onCommitBatchChangeClass={handleCommitBatchChangeClass}
-              onCancelBatchChange={handleCancelBatchChange}
-            />
+            {!s.pendingDrawing?.creation && (
+              <WorkbenchOverlays
+                pendingDrawing={s.pendingDrawing}
+                editingClass={s.editingClass}
+                samPendingGeom={isVideoTask ? videoSamPendingGeom : samPendingGeom}
+                samPendingAnchor={isVideoTask ? (videoSamPendingAccept?.anchor ?? null) : null}
+                samDefaultClass={isVideoTask ? videoSamDefaultClass : samDefaultClass}
+                batchChanging={batchChanging}
+                batchChangeTarget={batchChangeTarget}
+                imageOverlayEnabled={stageKind === "image"}
+                stageGeom={stageGeom}
+                vp={vp}
+                classes={classes}
+                editingClassClasses={editingClassClasses}
+                batchChangeClasses={
+                  batchChangeToolUnitId
+                    ? classesForUnit(
+                        currentProject?.tool_bindings,
+                        batchChangeToolUnitId as ToolUnitId,
+                      )
+                    : classes
+                }
+                recentClasses={recentClasses}
+                activeClass={s.activeClass}
+                onPickPendingClass={handlePickPendingClassAny}
+                onCancelPending={handleCancelPending}
+                onCommitChangeClass={handleCommitChangeClass}
+                onChangeClassKeepOpen={handleChangeClassKeepOpen}
+                changeClassAttrEditing={changeClassAttrEditing}
+                onCancelChangeClass={handleCancelChangeClass}
+                onSamCommitClass={isVideoTask ? handleVideoSamCommitClass : handleSamCommitClass}
+                onSamCancelClass={isVideoTask ? handleVideoSamCancelClass : handleSamCancelClass}
+                onCommitBatchChangeClass={handleCommitBatchChangeClass}
+                onCancelBatchChange={handleCancelBatchChange}
+              />
+            )}
+            {s.pendingDrawing?.creation && stageKind === "image" && (
+              <ManualCreationPopover
+                key={s.pendingDrawing.creation.id}
+                {...s.pendingDrawing.creation}
+                className={s.pendingDrawing.creation.className || s.activeClass}
+                anchor={{ left: Math.max(16, window.innerWidth / 2 - 130), top: 112 }}
+                classes={classesForUnit(
+                  currentProject?.tool_bindings,
+                  s.pendingDrawing.creation.toolUnitId,
+                )}
+                recent={recentClasses}
+                schema={attributeSchemaForUnit(
+                  currentProject?.tool_bindings,
+                  s.pendingDrawing.creation.toolUnitId,
+                )}
+                onPickClass={handlePickPendingClass}
+                onChangeAttributes={(next) =>
+                  imageActions.changeManualAttributes(s.pendingDrawing!.creation!.id, next)
+                }
+                onSubmit={imageActions.submitManualDrawing}
+                onCancel={imageActions.cancelManualDrawing}
+                onOutside={
+                  continuousCreation ? undefined : () => handlePickPendingClass(UNKNOWN_CLASS)
+                }
+              />
+            )}
           </>
         ),
       },
@@ -6794,6 +6983,7 @@ export function useWorkbenchShellModel({
         onRejectPrediction: handleRejectPrediction,
       },
       image: {
+        continuousCreation: !!continuousCreation,
         resourceCoordinator: rasterResources,
         rasterMaskRecords: imageRasterMasks.records,
         rasterMaskStatusById: imageRasterMasks.statusById,

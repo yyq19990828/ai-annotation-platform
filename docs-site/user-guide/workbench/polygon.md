@@ -15,6 +15,8 @@ last_reviewed: 2026-06-10
 3. 双击 / 按 `Enter` 闭合多边形
 4. 在多边形旁弹出的类别浮层中选择 `region` 类别
 
+开启[图片连续创建](./#图片连续创建)并选定区域类别后，完成多边形即可继续同类下一对象；缺必填属性时先补齐字段。Esc 先取消当前点集或待保存草稿，再按一次退出连续模式。
+
 <DocsVideo
   src="/media/polygon/draw.mp4"
   poster="/media/polygon/draw-poster.webp"

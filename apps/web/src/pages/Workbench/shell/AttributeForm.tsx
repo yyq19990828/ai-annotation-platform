@@ -16,6 +16,8 @@ export interface AttributeFormProps {
   attributes: Record<string, unknown> | undefined;
   onChange: (next: Record<string, unknown>) => void;
   readOnly?: boolean;
+  /** Keep creation drafts current before an immediate submit or cancellation. */
+  immediate?: boolean;
   /**
    * v0.10.20 · I12 多选批量编辑模式: > 1 时在表单顶部渲染 banner 提示「N 个标注被选中, 修改将应用到全部」。
    * 实际 bulk-update 路径由调用方在 onChange 中分发 (走 useAnnotationBulkUpdate);
@@ -102,6 +104,7 @@ export function AttributeForm({
   attributes,
   onChange,
   readOnly,
+  immediate = false,
   context = "image",
   dirtyTracker,
   annotationId,
@@ -113,6 +116,8 @@ export function AttributeForm({
   const lastFromUpstream = useRef<Record<string, unknown>>(attributes ?? {});
   // v0.10.6：保留最新 draft 引用，blur flush 时取最新值上抛
   const draftRef = useRef(draft);
+  const immediateRef = useRef(immediate);
+  immediateRef.current = immediate;
   useEffect(() => {
     draftRef.current = draft;
   }, [draft]);
@@ -127,16 +132,31 @@ export function AttributeForm({
     const next = attributes ?? {};
     if (JSON.stringify(next) !== JSON.stringify(lastFromUpstream.current)) {
       lastFromUpstream.current = next;
+      draftRef.current = next;
       setDraft(next);
     }
   }, [attributes]);
 
   // 防抖 400ms 上抛（dirty tracker 模式下旁路：dirty 累积，blur 时一次 flush）
   const debounceRef = useRef<number | null>(null);
-  const useDirty = !!(dirtyTracker && annotationId);
+  const useDirty = !immediate && !!(dirtyTracker && annotationId);
+
+  useEffect(() => {
+    if (immediate && debounceRef.current !== null) {
+      window.clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+  }, [immediate]);
 
   const scheduleCommit = (next: Record<string, unknown>) => {
+    draftRef.current = next;
     setDraft(next);
+    if (immediate) {
+      if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+      onChange(next);
+      return;
+    }
     if (useDirty) {
       // dirty tracker 模式：标脏即可，不立即触发 onChange；等 blur flush
       dirtyTracker!.markDirty(annotationId!, "attributes");
@@ -167,7 +187,7 @@ export function AttributeForm({
       if (debounceRef.current) {
         window.clearTimeout(debounceRef.current);
         debounceRef.current = null;
-        onChangeRef.current(draftRef.current);
+        if (!immediateRef.current) onChangeRef.current(draftRef.current);
       }
     },
     [],

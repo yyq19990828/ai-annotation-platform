@@ -24,6 +24,7 @@ type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
 
 export interface ImageWorkbenchProps {
+  continuousCreation?: boolean;
   resourceCoordinator?: RasterResourceCoordinator;
   maskCompareStore?: MaskCompareTileStore | null;
   rasterMaskRecords: readonly RasterMaskRenderRecord<"annotation">[];
@@ -154,6 +155,7 @@ export interface ImageWorkbenchProps {
 }
 
 export function ImageWorkbench({
+  continuousCreation,
   resourceCoordinator,
   maskCompareStore,
   rasterMaskRecords,
@@ -325,6 +327,7 @@ export function ImageWorkbench({
 
   return (
     <ImageStage
+      continuousCreation={continuousCreation}
       key={mediaKey ?? fileUrl ?? "image-stage"}
       resourceCoordinator={resourceCoordinator}
       maskCompareStore={maskCompareStore}

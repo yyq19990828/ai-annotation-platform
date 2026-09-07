@@ -51,6 +51,29 @@ function makeArgs(overrides: Partial<Parameters<typeof useWorkbenchHotkeys>[0]> 
 }
 
 describe("useWorkbenchHotkeys module", () => {
+  it("连续模式的 Esc 先取消手工草稿，再退出模式，不受已保存选中对象阻挡", () => {
+    const cancelManualDrawing = vi.fn().mockReturnValueOnce(true).mockReturnValue(false);
+    const args = makeArgs({ cancelManualDrawing });
+    args.s.tool = "keypoint";
+    args.s.selectedId = "saved-object";
+    args.s.setSelectedId = vi.fn();
+    args.s.setContinuousCreation = vi.fn();
+    args.s.continuousCreation = {
+      projectId: "project",
+      tool: "keypoint",
+      toolUnitId: "keypoint",
+      className: "car",
+    };
+    renderHook(() => useWorkbenchHotkeys(args));
+    act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+    expect(args.s.setContinuousCreation).not.toHaveBeenCalled();
+    expect(args.s.setTool).not.toHaveBeenCalled();
+    act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+    expect(args.s.setContinuousCreation).toHaveBeenCalledWith(null);
+    expect(args.s.setTool).toHaveBeenCalledWith("select");
+    expect(args.s.setSelectedId).not.toHaveBeenCalled();
+  });
+
   it("更多工具菜单的 Enter/Esc 不提交或取消背景多边形", () => {
     const args = makeArgs({
       polygonDraftPoints: [

@@ -1,34 +1,235 @@
-// v0.6.3 P1 单测：覆盖 v0.6.3 新增的 replaceAnnotationId 与 drain 失败累计 retry_count。
-//
-// 思路：mock idb-keyval 为内存 Map，直接测公共导出的纯异步 API，
-// 不依赖 IndexedDB / BroadcastChannel（jsdom 也不需要）。
+// Model IndexedDB's structured clones and transaction completion separately from
+// put(), including failures before get.onsuccess and after a successful put().
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const idbStore = new Map<string, unknown>();
-vi.mock("idb-keyval", () => ({
-  get: vi.fn(async (key: string) => idbStore.get(key)),
-  set: vi.fn(async (key: string, value: unknown) => {
-    idbStore.set(key, value);
-  }),
+const storage = vi.hoisted(() => ({
+  values: new Map<string, unknown>(),
+  readError: null as Error | null,
+  readThrow: null as Error | null,
+  writeError: null as Error | null,
+  commitError: null as Error | null,
+  commitGate: null as Promise<void> | null,
+  writes: vi.fn(),
 }));
+
+vi.mock("idb-keyval", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("idb-keyval")>();
+  return {
+    ...actual,
+    createStore: vi.fn(
+      () => (_mode: IDBTransactionMode, callback: (store: IDBObjectStore) => unknown) => {
+        let settled = false;
+        let pending: { key: string; value: unknown } | null = null;
+        const transaction = {
+          error: null as Error | null,
+          oncomplete: null as (() => void) | null,
+          onabort: null as (() => void) | null,
+          onerror: null as (() => void) | null,
+          abort() {
+            if (settled) return;
+            settled = true;
+            transaction.error ??= new Error("Transaction aborted");
+            queueMicrotask(() => transaction.onabort?.());
+          },
+        };
+        const finish = async () => {
+          if (pending && storage.commitGate) {
+            const gate = storage.commitGate;
+            storage.commitGate = null;
+            await gate;
+          }
+          if (settled) return;
+          if (pending && storage.commitError) {
+            transaction.error = storage.commitError;
+            storage.commitError = null;
+            transaction.abort();
+            return;
+          }
+          if (pending) storage.values.set(pending.key, structuredClone(pending.value));
+          settled = true;
+          transaction.oncomplete?.();
+        };
+        const store = {
+          transaction,
+          get(key: string) {
+            if (storage.readThrow) {
+              const error = storage.readThrow;
+              storage.readThrow = null;
+              throw error;
+            }
+            const request = {
+              result: undefined as unknown,
+              error: null as Error | null,
+              onsuccess: null as (() => void) | null,
+              onerror: null as (() => void) | null,
+            };
+            queueMicrotask(() => {
+              if (storage.readError) {
+                request.error = transaction.error = storage.readError;
+                storage.readError = null;
+                request.onerror?.();
+                transaction.abort();
+                return;
+              }
+              request.result = structuredClone(storage.values.get(key));
+              request.onsuccess?.();
+              queueMicrotask(() => void finish());
+            });
+            return request;
+          },
+          put(value: unknown, key: string) {
+            storage.writes(key, value);
+            if (storage.writeError) {
+              const error = storage.writeError;
+              storage.writeError = null;
+              throw error;
+            }
+            pending = { key, value: structuredClone(value) };
+          },
+        };
+        return Promise.resolve(callback(store as unknown as IDBObjectStore));
+      },
+    ),
+  };
+});
 
 import {
   clearAll,
   drain,
   enqueue,
+  enqueueDurably,
   getAll,
+  count,
+  removeById,
   replaceAnnotationId,
+  subscribe,
   type OfflineOp,
 } from "./offlineQueue";
 
 beforeEach(async () => {
-  idbStore.clear();
+  storage.values.clear();
+  storage.readError = storage.readThrow = storage.writeError = storage.commitError = null;
+  storage.commitGate = null;
   await clearAll();
+  storage.writes.mockClear();
 });
 
 afterEach(() => {
   vi.clearAllMocks();
+});
+
+const KEY = "anno.offline-queue.v1";
+
+function deleteOp(id: string, annotationId = id): OfflineOp {
+  return { kind: "delete", id, taskId: "task", annotationId, ts: 1 };
+}
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+describe("offlineQueue durable acceptance", () => {
+  it("waits for transaction completion before resolving or notifying subscribers", async () => {
+    const subscriber = vi.fn();
+    const unsubscribe = subscribe(subscriber);
+    await count();
+    subscriber.mockClear();
+    const gate = deferred();
+    storage.commitGate = gate.promise;
+    const accepted = vi.fn();
+    const pending = enqueueDurably(deleteOp("new")).then(accepted);
+    try {
+      await vi.waitFor(() => expect(storage.writes).toHaveBeenCalledOnce());
+      expect(accepted).not.toHaveBeenCalled();
+      expect(subscriber).not.toHaveBeenCalled();
+      expect(storage.values.get(KEY)).toEqual([]);
+    } finally {
+      gate.resolve();
+      await pending;
+      unsubscribe();
+    }
+    expect(accepted).toHaveBeenCalledOnce();
+    expect(subscriber).toHaveBeenCalledWith(1);
+    expect(await getAll()).toEqual([deleteOp("new")]);
+  });
+
+  it.each(["readError", "readThrow", "writeError", "commitError"] as const)(
+    "%s rejects durable enqueue without publishing acceptance; a later retry preserves saved data",
+    async (failure) => {
+      await enqueueDurably(deleteOp("saved"));
+      const subscriber = vi.fn();
+      const unsubscribe = subscribe(subscriber);
+      await count();
+      subscriber.mockClear();
+      const error = new Error(failure);
+      storage[failure] = error;
+      try {
+        await expect(enqueueDurably(deleteOp("new"))).rejects.toBe(error);
+        expect(subscriber).not.toHaveBeenCalled();
+        expect(await getAll()).toEqual([deleteOp("saved")]);
+        expect(storage.values.get(KEY)).toEqual([deleteOp("saved")]);
+        await enqueueDurably(deleteOp("new"));
+        expect(await getAll()).toEqual([deleteOp("saved"), deleteOp("new")]);
+      } finally {
+        unsubscribe();
+      }
+    },
+  );
+
+  it("a failed display read cannot overwrite saved operations with an empty fallback", async () => {
+    storage.values.set(KEY, [deleteOp("other-tab")]);
+    storage.readError = new Error("Read unavailable");
+    expect(await getAll()).toEqual([]);
+    await enqueueDurably(deleteOp("new"));
+    expect(await getAll()).toEqual([deleteOp("other-tab"), deleteOp("new")]);
+  });
+
+  it("legacy fire-and-forget enqueue does not reject or accept an uncommitted operation", async () => {
+    storage.commitError = new Error("Quota exceeded");
+    await expect(enqueue(deleteOp("legacy"))).resolves.toBeUndefined();
+    expect(await getAll()).toEqual([]);
+    await enqueueDurably(deleteOp("next"));
+    expect(await getAll()).toEqual([deleteOp("next")]);
+  });
+
+  it("captures input payloads and returns independent snapshots", async () => {
+    const op: OfflineOp = {
+      kind: "create",
+      id: "create",
+      taskId: "task",
+      payload: { value: 1 },
+      ts: 1,
+    };
+    const pending = enqueueDurably(op);
+    (op.payload as { value: number }).value = 2;
+    await pending;
+    const [snapshot] = await getAll();
+    (snapshot as Extract<OfflineOp, { kind: "create" }>).payload = { value: 3 };
+    expect((await getAll())[0]).toMatchObject({ payload: { value: 1 } });
+  });
+
+  it("rejects corrupt stored data without replacing it", async () => {
+    storage.values.set(KEY, { corrupt: true });
+    await expect(enqueueDurably(deleteOp("new"))).rejects.toThrow("not an array");
+    expect(storage.values.get(KEY)).toEqual({ corrupt: true });
+    expect(storage.writes).not.toHaveBeenCalled();
+    await clearAll();
+    expect(storage.values.get(KEY)).toEqual([]);
+  });
+
+  it("keeps invocation order across concurrent durable and legacy enqueues", async () => {
+    await Promise.all([
+      enqueueDurably(deleteOp("one")),
+      enqueue(deleteOp("two")),
+      enqueueDurably(deleteOp("three")),
+    ]);
+    expect((await getAll()).map((op) => op.id)).toEqual(["one", "two", "three"]);
+  });
 });
 
 describe("offlineQueue.replaceAnnotationId", () => {
@@ -75,9 +276,11 @@ describe("offlineQueue.replaceAnnotationId", () => {
       payload: {},
       ts: 1,
     });
+    storage.writes.mockClear();
     await replaceAnnotationId("not-in-queue", "anything");
     const all = await getAll();
     expect((all[0] as Extract<OfflineOp, { kind: "update" }>).annotationId).toBe("x");
+    expect(storage.writes).not.toHaveBeenCalled();
   });
 });
 
@@ -130,4 +333,136 @@ describe("offlineQueue.drain · retry_count 累计 + 失败时停止", () => {
     expect(all[0].retry_count).toBe(1);
     expect(all[1].retry_count).toBeUndefined();
   });
+});
+
+describe("offlineQueue concurrent mutations", () => {
+  it("a drain handler can durably enqueue and replace IDs without taking a nested lock", async () => {
+    await enqueueDurably({
+      kind: "create",
+      id: "create",
+      taskId: "task",
+      tmpId: "tmp",
+      payload: {},
+      ts: 1,
+    });
+    await enqueueDurably(deleteOp("delete", "tmp"));
+    const observed: OfflineOp[] = [];
+    const result = await drain(async (op) => {
+      observed.push(op);
+      if (op.kind === "create") {
+        await enqueueDurably({
+          kind: "update",
+          id: "update",
+          taskId: "task",
+          annotationId: "tmp",
+          payload: {},
+          ts: 2,
+        });
+        await replaceAnnotationId("tmp", "real");
+      }
+    });
+    expect(result).toEqual({ ok: 3, failed: 0 });
+    expect(observed.slice(1)).toMatchObject([
+      { id: "delete", annotationId: "real" },
+      { id: "update", annotationId: "real" },
+    ]);
+    expect(await getAll()).toEqual([]);
+  });
+
+  it("removes only the processed ID when another operation removes the head during a drain", async () => {
+    await enqueueDurably(deleteOp("in-flight"));
+    const entered = deferred();
+    const release = deferred();
+    const observed: string[] = [];
+    const running = drain(async (op) => {
+      observed.push(op.id);
+      if (op.id === "in-flight") {
+        entered.resolve();
+        await release.promise;
+      }
+    });
+    await entered.promise;
+    try {
+      await enqueueDurably(deleteOp("later"));
+      await removeById("in-flight");
+    } finally {
+      release.resolve();
+    }
+    expect(await running).toEqual({ ok: 2, failed: 0 });
+    expect(observed).toEqual(["in-flight", "later"]);
+    expect(await getAll()).toEqual([]);
+  });
+
+  it("a failed handler preserves concurrent enqueues while incrementing only its own retry count", async () => {
+    await enqueueDurably(deleteOp("failed"));
+    const result = await drain(async () => {
+      await enqueueDurably(deleteOp("later"));
+      throw new Error("Network unavailable");
+    });
+    expect(result).toEqual({ ok: 0, failed: 1 });
+    expect(await getAll()).toEqual([{ ...deleteOp("failed"), retry_count: 1 }, deleteOp("later")]);
+  });
+
+  it("shares concurrent drains within this tab so each operation is sent once", async () => {
+    await enqueueDurably(deleteOp("one"));
+    const gate = deferred();
+    const handler = vi.fn(async () => gate.promise);
+    const first = drain(handler);
+    const otherHandler = vi.fn(async () => {});
+    const second = drain(otherHandler);
+    try {
+      expect(second).toBe(first);
+    } finally {
+      gate.resolve();
+    }
+    expect(await first).toEqual({ ok: 1, failed: 0 });
+    expect(handler).toHaveBeenCalledOnce();
+    expect(otherHandler).not.toHaveBeenCalled();
+  });
+
+  it("keeps the persisted operation when dequeue commit fails after a successful handler", async () => {
+    await enqueueDurably(deleteOp("saved"));
+    const result = await drain(async () => {
+      storage.commitError = new Error("Commit failed");
+    });
+    expect(result).toEqual({ ok: 0, failed: 1 });
+    expect(await getAll()).toEqual([deleteOp("saved")]);
+  });
+
+  it("does not execute cached operations when the drain read fails", async () => {
+    await enqueueDurably(deleteOp("saved"));
+    storage.readError = new Error("Read failed");
+    const handler = vi.fn(async () => {});
+    expect(await drain(handler)).toEqual({ ok: 0, failed: 1 });
+    expect(handler).not.toHaveBeenCalled();
+    expect(await getAll()).toEqual([deleteOp("saved")]);
+  });
+
+  it("remove and replace mutate the latest stored queue instead of the last displayed snapshot", async () => {
+    await enqueueDurably(deleteOp("local", "tmp"));
+    storage.values.set(KEY, [deleteOp("local", "tmp"), deleteOp("other-tab", "tmp")]);
+    await replaceAnnotationId("tmp", "real");
+    await removeById("local");
+    expect(await getAll()).toEqual([deleteOp("other-tab", "real")]);
+  });
+
+  it.each(["remove", "replace", "clear"] as const)(
+    "%s failure leaves persisted and displayed operations unchanged",
+    async (mutation) => {
+      await enqueueDurably(deleteOp("saved", "tmp"));
+      storage.commitError = new Error("Commit failed");
+      const pending =
+        mutation === "remove"
+          ? removeById("saved")
+          : mutation === "replace"
+            ? replaceAnnotationId("tmp", "real")
+            : clearAll();
+      if (mutation === "replace") {
+        await expect(pending).rejects.toThrow("Commit failed");
+      } else {
+        await expect(pending).resolves.toBeUndefined();
+      }
+      expect(await getAll()).toEqual([deleteOp("saved", "tmp")]);
+    },
+  );
 });

@@ -207,6 +207,7 @@ interface WorkbenchStageHostVideoProps {
 }
 
 interface WorkbenchStageHostImageProps {
+  continuousCreation?: boolean;
   resourceCoordinator?: RasterResourceCoordinator;
   rasterMaskRecords: readonly RasterMaskRenderRecord<"annotation">[];
   rasterMaskStatusById: ReadonlyMap<string, RasterMaskRecordStatus>;
@@ -450,6 +451,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       onRejectPrediction: onVideoRejectPrediction,
     } = videoProps ?? ({} as WorkbenchStageHostVideoProps);
     const {
+      continuousCreation,
       resourceCoordinator,
       rasterMaskRecords,
       rasterMaskStatusById,
@@ -643,6 +645,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
           />
         ) : (
           <ImageWorkbench
+            continuousCreation={continuousCreation}
             resourceCoordinator={resourceCoordinator}
             maskCompareStore={maskCompareStore}
             rasterMaskRecords={rasterMaskRecords}

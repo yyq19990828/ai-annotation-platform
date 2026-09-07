@@ -17,6 +17,10 @@ import type { TaskResponse } from "@/types";
 import type { ClassesConfig } from "@/api/projects";
 import type { BatchResponse } from "@/api/batches";
 import { ClassPalette } from "./ClassPalette";
+import {
+  ContinuousCreationControls,
+  type ContinuousCreationControlsProps,
+} from "./ContinuousCreationControls";
 import { ResizeHandle } from "./ResizeHandle";
 
 const PALETTE_HEIGHT_KEY = "workbench.leftPalette.height";
@@ -64,6 +68,7 @@ interface TaskQueuePanelProps {
    */
   classPickable?: boolean;
   onPickClass?: (cls: string) => void;
+  continuousCreation?: ContinuousCreationControlsProps;
 }
 
 function cn(...classes: Array<string | false | null | undefined>): string {
@@ -247,6 +252,7 @@ export function TaskQueuePanel({
   floatingSection,
   classPickable = false,
   onPickClass,
+  continuousCreation,
 }: TaskQueuePanelProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const [paletteHeight, setPaletteHeight] = useState(readPaletteHeight);
@@ -494,18 +500,27 @@ export function TaskQueuePanel({
               </button>
             )}
           </div>
-          <div className="mb-1.5 text-muted-foreground text-xs">
-            {classPickable ? "点击选择放置类别" : "数字/字母键直接落框时使用"}
-          </div>
-          <ClassPalette
-            classes={classes}
-            classesConfig={classesConfig}
-            recent={recentClasses}
-            activeClass={activeClass}
-            enableSearch={classes.length > 9}
-            onPick={onPickClass}
-            readOnly={!classPickable}
-          />
+          {continuousCreation ? (
+            <ContinuousCreationControls
+              {...continuousCreation}
+              legend={{ classes, classesConfig, recent: recentClasses, activeClass }}
+            />
+          ) : (
+            <>
+              <div className="mb-1.5 text-muted-foreground text-xs">
+                {classPickable ? "点击选择放置类别" : "数字/字母键直接落框时使用"}
+              </div>
+              <ClassPalette
+                classes={classes}
+                classesConfig={classesConfig}
+                recent={recentClasses}
+                activeClass={activeClass}
+                enableSearch={classes.length > 9}
+                onPick={onPickClass}
+                readOnly={!classPickable}
+              />
+            </>
+          )}
         </div>
       )}
 

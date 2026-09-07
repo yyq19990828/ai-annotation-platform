@@ -3,6 +3,7 @@ import type { Annotation, Keypoint } from "@/types";
 import type { CommentCanvasDrawing } from "@/api/comments";
 import type { TextOutputMode } from "./useInteractiveAI";
 import { useWorkbenchConfig } from "./useWorkbenchConfig";
+import type { ContinuousImageCreation, ManualCreationDraft } from "./manualImageCreation";
 
 // v0.10.2 · Tool union 扩展: 旧 "sam" 拆为 4 个独立 AI 工具 (smart-point / smart-box /
 // text-prompt / exemplar), 每个绑定一个 prompt 范式. 状态层仅保留 polarity (smart-point
@@ -102,7 +103,7 @@ const DEFAULT_CANVAS_STROKE = "#ef4444";
 
 export type Geom = { x: number; y: number; w: number; h: number };
 
-export type PendingDrawing =
+type PendingDrawingGeometry =
   | { kind?: "bbox" | "rotated_bbox" | "raster_mask"; geom: Geom }
   | { kind: "polygon" | "polyline"; geom: Geom; points: [number, number][] }
   | { kind: "keypoint"; geom: Geom; points: Keypoint[] }
@@ -133,6 +134,10 @@ export type PendingDrawing =
       geom: Geom;
       anchor: { left: number; top: number };
     }
+  | null;
+
+export type PendingDrawing =
+  | (NonNullable<PendingDrawingGeometry> & { creation?: ManualCreationDraft })
   | null;
 
 /** 选中已落库 user 框后，再次"改类别"时的状态。 */
@@ -185,6 +190,9 @@ export function useWorkbenchState() {
    * 实际类别在画完框 → ClassPickerPopover 中确认。
    */
   const [activeClass, setActiveClass] = useState("");
+  const [continuousCreation, setContinuousCreation] = useState<ContinuousImageCreation | null>(
+    null,
+  );
   const [pendingDrawing, setPendingDrawing] = useState<PendingDrawing>(null);
   const [editingClass, setEditingClass] = useState<EditingClass>(null);
   /**
@@ -474,6 +482,8 @@ export function useWorkbenchState() {
     aiVariant,
     setAiVariant,
     activeClass,
+    continuousCreation,
+    setContinuousCreation,
     setActiveClass,
     pendingDrawing,
     setPendingDrawing,

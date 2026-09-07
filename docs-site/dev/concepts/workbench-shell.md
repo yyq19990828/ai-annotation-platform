@@ -121,6 +121,14 @@ Shell 持有当前会话的 `scenePlaybackActive`，将预览状态接到 `useTa
 
 图片与视频的 `ToolDock` 共享纯函数 `splitToolDock`，输入是能力过滤后的工具描述、当前工具和实际容器尺寸。`ResizeObserver` 测量工具坞及共用 CSS 的非交互尺寸样本，计算按钮、间距、分隔线和分组标题的完整高度。发生溢出后优先保留选择与当前工具，并为“更多”预留位置；极小高度保留可滚动兜底。主栏和本地 Radix 菜单调用同一动作，不拥有几何草稿或 Stage。容量改变时关闭菜单，卸载焦点圈后回到“更多”；入口消失时回到当前工具。详细时间轴作为画布浮层，不改变工具坞高度；停靠面板调整和浏览器缩放按实际工具坞高度重新计算。
 
+### 图片手工创建事务
+
+`useWorkbenchState` 保存会话级连续创建意图 `(projectId, tool_unit_id, class_name, tool)`，只允许矩形框、旋转框、多边形、折线和模板关键点；区域单元恢复 Polygon。`useWorkbenchAnnotationActions` 仍是几何创建 owner。完成的几何附带唯一草稿 ID、任务、工具单元、类别、独立属性和 `class / attributes / saving / error` 阶段，类别和属性均从该单元读取，不使用展示层的跨单元兜底。默认值逐对象复制，缺失必填项复用 `AttributeForm.getMissingRequired`，草稿表单同步更新以支持输入后立即 Enter；旧草稿 ID 的更新无效。
+
+同步 ref 防止一次完成动作触发重复请求。在线成功或 `enqueueDurably` 确认 IndexedDB 事务提交后才释放草稿，失败保留同一几何重试。任务代次保护选择、history 和弹层；切题清空原题草稿，同项目保留仍合法的意图。底层 `useCreateAnnotation` 将任务与视频分段放进每次调用的内部变量，缓存与请求都使用调用时的归属，避免等待 `onMutate` 或网络时切题把写入转移到新题。公开 mutation 调用仍接收普通 annotation payload。
+
+离线队列沿用已有存储键。入队、出队和 ID 替换通过同一个原子读改写事务执行；网络 handler 在事务锁外运行，防止重入死锁或覆盖期间新增的操作。旧 `enqueue` 保留尽力写入的兼容接口，要求保存确认的流程必须等待 `enqueueDurably`。这保证本机接收语义，不新增远端幂等协议；远端成功后本机提交失败、跨标签页并行 drain 等既有边界仍不能保证远端只执行一次。
+
 ## 右栏：AI 检查器 + 讨论面板
 
 `WorkbenchDockWorkspace` 是 Dockview 的唯一 React 适配层。`workbenchPanelRegistry` 定义稳定面板 ID、渲染槽、生命周期和布局能力；`workbenchLayoutExecutor` 负责移动、停靠、浮动、隐藏、预设与紧凑布局重放。Shell 继续提供业务状态和回调，布局快照不保存 React props、工具、选择、任务、播放位置或编辑草稿。
