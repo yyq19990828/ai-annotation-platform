@@ -32,7 +32,7 @@ from posixpath import splitext
 from typing import Any, AsyncIterator
 
 import numpy as np
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.annotation import Annotation
@@ -971,6 +971,25 @@ async def _load_lidar_link_items(
     return out
 
 
+def _primary_lidar_item(
+    task: Task,
+    links_by_task: dict[uuid.UUID, dict[str, tuple[TaskDatasetItemLink, DatasetItem]]],
+    dataset_items: dict[uuid.UUID, DatasetItem],
+) -> DatasetItem | None:
+    """v0.24 · chunk 内解析 task 的主点云 item(与导出循环 primary_item 同规则)。
+
+    优先 primary_lidar link,回退 task.dataset_item_id;nuScenes pose 按
+    (scene, frame) 精确查询时用它收集本 chunk 实际需要的 pose 对。
+    """
+
+    primary_pair = links_by_task.get(task.id, {}).get("primary_lidar")
+    if primary_pair is not None:
+        return primary_pair[1]
+    if task.dataset_item_id:
+        return dataset_items.get(task.dataset_item_id)
+    return None
+
+
 def _kitti_calib_text(calib: SensorCalibration) -> str:
     k = [float(v) for v in calib.intrinsic]
     p2 = [k[0], k[1], k[2], 0.0, k[3], k[4], k[5], 0.0, k[6], k[7], k[8], 0.0]
@@ -1217,39 +1236,48 @@ async def _build_lidar_export_zip(
             scenes_by_id: dict[uuid.UUID, Scene] = {}
             poses_by_frame: dict[tuple[uuid.UUID, int], SceneFramePose] = {}
             if "nuscenes" in targets:
-                scene_ids = {
-                    item.scene_id
-                    for item in dataset_items.values()
-                    if item.scene_id is not None
-                }
-                if scene_ids:
+                # v0.24 · pose 查询按 chunk 内主点云的 (scene, frame) 对过滤:
+                # 大 scene 跨多个 1000-task chunk 时,逐 chunk 全量拉 scene pose
+                # 会造成 ~N²/1000 行的重复加载;精确对过滤让每帧 pose 只取一次。
+                chunk_pose_pairs: set[tuple[uuid.UUID, int]] = set()
+                chunk_scene_ids: set[uuid.UUID] = set()
+                for task in tasks:
+                    chunk_primary = _primary_lidar_item(
+                        task, links_by_task, dataset_items
+                    )
+                    if chunk_primary is None or chunk_primary.scene_id is None:
+                        continue
+                    chunk_scene_ids.add(chunk_primary.scene_id)
+                    if chunk_primary.frame_index is not None:
+                        chunk_pose_pairs.add(
+                            (chunk_primary.scene_id, chunk_primary.frame_index)
+                        )
+                if chunk_scene_ids:
                     scenes_by_id = {
                         scene.id: scene
                         for scene in (
                             await svc.db.execute(
-                                select(Scene).where(Scene.id.in_(scene_ids))
+                                select(Scene).where(Scene.id.in_(chunk_scene_ids))
                             )
                         ).scalars()
                     }
+                if chunk_pose_pairs:
                     poses_by_frame = {
                         (pose.scene_id, pose.frame_index): pose
                         for pose in (
                             await svc.db.execute(
                                 select(SceneFramePose).where(
-                                    SceneFramePose.scene_id.in_(scene_ids)
+                                    tuple_(
+                                        SceneFramePose.scene_id,
+                                        SceneFramePose.frame_index,
+                                    ).in_(chunk_pose_pairs)
                                 )
                             )
                         ).scalars()
                     }
             for task in tasks:
                 linked = links_by_task.get(task.id, {})
-                fallback_item = (
-                    dataset_items.get(task.dataset_item_id)
-                    if task.dataset_item_id
-                    else None
-                )
-                primary_pair = linked.get("primary_lidar")
-                primary_item = primary_pair[1] if primary_pair else fallback_item
+                primary_item = _primary_lidar_item(task, links_by_task, dataset_items)
                 frame_key = _lidar_frame_key(task, primary_item)
                 cameras: dict[str, LidarCameraExportCtx] = {}
                 if needs_legacy_lidar_manifests:
