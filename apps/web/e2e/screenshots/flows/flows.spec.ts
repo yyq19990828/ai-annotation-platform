@@ -82,7 +82,10 @@ import {
   runSecondaryInferenceAttribute,
   type SecondaryInferenceCleanupRecord,
 } from "./secondary-inference-attribute";
-import { runCandidateKeyboardReview } from "./candidate-keyboard-review";
+import {
+  prepareLiveCandidateReview,
+  runCandidateKeyboardReview,
+} from "./candidate-keyboard-review";
 import {
   runCandidateReviewLifecycle,
   type CandidateReviewCleanupRecord,
@@ -140,6 +143,7 @@ const FLOW_SOURCE_WORKTREE_DIRTY =
   }).trim().length > 0;
 
 let cached: ScreenshotSeedCatalog | null = null;
+const flowInferenceEvidence: Record<string, unknown> = {};
 const ocrCleanupRecords: OcrCleanupRecord[] = [];
 const videoFrameInferenceCleanupRecords: VideoFrameInferenceCleanupRecord[] = [];
 const secondaryInferenceCleanupRecords: SecondaryInferenceCleanupRecord[] = [];
@@ -387,6 +391,7 @@ function cleanupCandidateReview(record: CandidateReviewCleanupRecord): void {
       record.projectId,
       "--task-id",
       record.taskId,
+      ...(record.celeryTaskId ? ["--celery-task-id", record.celeryTaskId] : []),
       ...record.predictionIds.flatMap((predictionId) => ["--prediction-id", predictionId]),
       ...record.annotationIds.flatMap((annotationId) => ["--annotation-id", annotationId]),
     ],
@@ -689,6 +694,7 @@ async function archivePortable(
     ],
     capture: {
       gif_variants: gifs,
+      inference_evidence: flowInferenceEvidence[assetId],
       backend_requirements: requirements,
       // Legacy flows may intercept inference even with live backend bindings.
       inference: requirements === null ? "unverified" : requirements === "none" ? "none" : "live",
@@ -720,6 +726,7 @@ function hasLiveSam3(catalog: ScreenshotSeedCatalog): boolean {
 
 test.describe("flow recordings", () => {
   test.beforeEach(async ({ page, seed }, testInfo) => {
+    if (testInfo.title.startsWith("candidate-keyboard-review —")) testInfo.setTimeout(300_000);
     if (SELECTED_CAPTURE) {
       if (!SELECTED_CAPTURE.flows.includes(testInfo.title.split(" —")[0])) {
         throw new Error("Flow is outside the preflighted recording selection");
@@ -1181,35 +1188,27 @@ test.describe("flow recordings", () => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
     const project = cached.projects.image_demo;
     const task = project.tasks.annotating;
-    const candidateAnchors = [
-      recordingAnchor(cached, "image_demo", "annotating", "review_vehicle_left"),
-      recordingAnchor(cached, "image_demo", "annotating", "primary_vehicle"),
-      recordingAnchor(cached, "image_demo", "annotating", "review_vehicle_right"),
-    ];
-    if (candidateAnchors.some((anchor) => anchor.polygon.length < 3)) {
-      throw new Error("[candidate-keyboard-review] 候选车辆缺少可显示的轮廓锚点");
-    }
-    const predictions = await Promise.all(
-      candidateAnchors.map((anchor, index) =>
-        seed.injectPrediction({
-          taskId: task.id,
-          projectId: project.id,
-          label: anchor.label,
-          polygon: anchor.polygon,
-          score: [0.96, 0.91, 0.87][index],
-        }),
-      ),
+    test.setTimeout(300_000);
+    const cleanup: CandidateReviewCleanupRecord = {
+      projectId: project.id,
+      taskId: task.id,
+      predictionIds: [],
+      annotationIds: [],
+    };
+    candidateReviewCleanupRecords.push(cleanup);
+    const live = await prepareLiveCandidateReview(
+      page,
+      cached,
+      await seed.accessToken(cached.users.admin.email),
+      cleanup,
     );
+    flowInferenceEvidence["candidate-keyboard-review"] = live.evidence;
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.annotator.email);
     await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "both");
-    const win = await runCandidateKeyboardReview(
-      page,
-      cached,
-      predictions.map((prediction) => prediction.prediction_id),
-    );
+    const win = await runCandidateKeyboardReview(page, cached, live.candidateIds, cleanup);
     await finalizeVariants(page, "candidate-keyboard-review", [
       {
         target: path.join(DOCS_IMAGES, "workbench/review-auto-advance.gif"),

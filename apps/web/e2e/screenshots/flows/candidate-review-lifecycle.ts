@@ -10,6 +10,7 @@ export interface CandidateReviewCleanupRecord {
   projectId: string;
   taskId: string;
   predictionIds: string[];
+  celeryTaskId?: string;
   annotationIds: string[];
 }
 

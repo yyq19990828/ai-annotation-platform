@@ -32,6 +32,7 @@ export const RECORDING_FLOWS = {
   "sam-tool-exemplar": ["image_interactive"],
   "sam-interactive": ["image_interactive"],
   "ocr-inference": ["ocr"],
+  "candidate-keyboard-review": ["image_interactive"],
 };
 
 export const MARKETING_ONLY_FLOWS = [

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 import { RECORDING_FLOWS, recordingPlan, screenshotCatalogPath } from "./recording-plan.mjs";
 
@@ -9,7 +10,7 @@ test("selection scopes AI without changing capture quality or legacy catalog def
   const output = execFileSync(
     process.execPath,
     [
-      new URL("../../scripts/run-recording-capture.mjs", import.meta.url).pathname,
+      fileURLToPath(new URL("../../scripts/run-recording-capture.mjs", import.meta.url)),
       "--",
       "--flow",
       "bbox-draw",
@@ -21,6 +22,10 @@ test("selection scopes AI without changing capture quality or legacy catalog def
   assert.equal(recordingPlan(["ocr-inference", "bbox-draw"]).backendRequirements, "ocr");
   assert.equal(
     recordingPlan(["sam-interactive"], "marketing").backendRequirements,
+    "image_interactive",
+  );
+  assert.equal(
+    recordingPlan(["candidate-keyboard-review"]).backendRequirements,
     "image_interactive",
   );
   assert.throws(() => recordingPlan(["typo"]), /Unregistered/);

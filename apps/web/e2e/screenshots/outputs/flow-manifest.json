@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-07T08:03:56.307Z",
+  "updated_at": "2026-09-07T08:39:22.349Z",
   "entries": {
     "docs-site/public/home/ai-assisted-annotation-poster.webp": {
       "asset_id": "ai-assisted-annotation",
@@ -532,8 +532,8 @@
     "docs-site/public/media/ai/candidate-keyboard-review-poster.webp": {
       "asset_id": "candidate-keyboard-review",
       "role": "poster",
-      "generated_at": "2026-09-07T07:53:50.579Z",
-      "captured_commit": "08e31458bf454f6d721a1dcdff91946defb90615",
+      "generated_at": "2026-09-07T08:39:22.349Z",
+      "captured_commit": "da0ac3dee9e4eefa649bc76a9686637438b98b82",
       "source_worktree_dirty": true,
       "seed_revision": "screenshots-2026-08-g",
       "source": "apps/web/scripts/media-derivation.mjs",
@@ -551,8 +551,8 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "ae59397f11e36d78793fff765f60398e4b127228175c2bece2f95771c54c69bc",
-      "bytes": 59020,
+      "sha256": "bf47e3ebb185bca202e71330d5e44078a11e69b69ca3a04a902cf435bceb4170",
+      "bytes": 61152,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -563,24 +563,24 @@
       },
       "capture": {
         "source_quality": "standard",
-        "source_inference": "unverified"
+        "source_inference": "live"
       },
       "source_asset": {
-        "runId": "2026-09-07T07-47-46-465Z-1711219",
+        "runId": "2026-09-07T08-35-53-056Z-1841951",
         "assetId": "candidate-keyboard-review",
-        "sha256": "a38d116e06cb4f693ecf7182656fc191533e2252229aba80f2db9d2dead36e59",
+        "sha256": "108a84b4f5e143a9ab0401ce78d641d7e947f39b4632c7a469c1950dafbc058c",
         "quality": "standard",
         "clip": {
-          "start": 4,
-          "duration": 10.1
+          "start": 69,
+          "duration": 10.7
         }
       }
     },
     "docs-site/public/media/ai/candidate-keyboard-review.mp4": {
       "asset_id": "candidate-keyboard-review",
       "role": "docs-video",
-      "generated_at": "2026-09-07T07:53:50.503Z",
-      "captured_commit": "08e31458bf454f6d721a1dcdff91946defb90615",
+      "generated_at": "2026-09-07T08:39:22.267Z",
+      "captured_commit": "da0ac3dee9e4eefa649bc76a9686637438b98b82",
       "source_worktree_dirty": true,
       "seed_revision": "screenshots-2026-08-g",
       "source": "apps/web/scripts/media-derivation.mjs",
@@ -598,28 +598,28 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "9646dc142a0e3044c9c73fb6bd475bd2d43f573a3665bb018a31b8f1782a8897",
-      "bytes": 416873,
+      "sha256": "ca83b8dc61528a5060fe8420ecf0ea02fda096f807a9178a0c2cd17f9475ab6f",
+      "bytes": 489513,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "25/1",
-        "duration_seconds": 10.12
+        "duration_seconds": 10.72
       },
       "capture": {
         "source_quality": "standard",
-        "source_inference": "unverified"
+        "source_inference": "live"
       },
       "source_asset": {
-        "runId": "2026-09-07T07-47-46-465Z-1711219",
+        "runId": "2026-09-07T08-35-53-056Z-1841951",
         "assetId": "candidate-keyboard-review",
-        "sha256": "a38d116e06cb4f693ecf7182656fc191533e2252229aba80f2db9d2dead36e59",
+        "sha256": "108a84b4f5e143a9ab0401ce78d641d7e947f39b4632c7a469c1950dafbc058c",
         "quality": "standard",
         "clip": {
-          "start": 4,
-          "duration": 10.1
+          "start": 69,
+          "duration": 10.7
         }
       }
     },

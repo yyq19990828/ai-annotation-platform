@@ -43,6 +43,8 @@ pnpm --filter @anno/web screenshots:record -- --flow bbox-draw --profile marketi
 
 手工场景使用 `--backend-requirements none`，不探测或启动模型；OCR 只要求 `ocr`，SAM 工具使用
 `image_interactive` 能力组（包含 exemplar），多个 `--flow` 合并依赖。入口只使用真实后端，缺失时失败，不自动回退 stub。
+`candidate-keyboard-review` 同样要求 `image_interactive`，并额外核验 `sam3-segmentation`。它通过正式预标注 API 和隔离 worker 生成车辆轮廓，保留模型原始置信度、候选索引及源清单中的 `inference_evidence`，不注入固定候选。录制会检查逐项采纳／拒绝请求和标注保存结果；模型未返回足够候选时直接失败。
+
 Mac 可连接已注册的远程 Linux 模型服务：API / Worker 必须能访问模型，模型也必须能访问截图存储的签名媒体 URL。
 `--ml-backend-url` 是 stub 配置，不是远程 live 后端地址。仅改 API URL 不会把本地 seed / 清理脚本搬到远端。
 
