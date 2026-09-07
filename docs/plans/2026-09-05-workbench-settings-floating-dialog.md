@@ -232,7 +232,7 @@ Dialog DOM 的设置作用域标记
 
 ### 5.4 背景输入隔离
 
-使用一个设置专用、无持久状态的共享判断 `isWorkbenchSettingsInteractionBlocked(event)`：检查处于打开状态的 Dialog 标记，并检查本次事件 composedPath 是否属于设置区域。Content 和 Overlay 都放设置标记；检查路径时只认标记，不要求节点仍 open 或 connected，避免 Esc / 遮罩关闭卸载后同一事件继续执行背景动作。A 片的原 Drawer 给当前可见的面板和点击层补相同 open 标记，以便复用同一查询。
+使用一个设置专用、无持久状态的共享判断 `isWorkbenchInteractionBlocked(event)`：检查处于打开状态的 Dialog 标记，并检查本次事件 composedPath 是否属于设置区域。Content 和 Overlay 都放设置标记；检查路径时只认标记，不要求节点仍 open 或 connected，避免 Esc / 遮罩关闭卸载后同一事件继续执行背景动作。A 片的原 Drawer 给当前可见的面板和点击层补相同 open 标记，以便复用同一查询。
 
 DOM 标记只代表工作台设置，不顺带改变所有旧弹窗；不额外注册一个抢在全部监听前的 capture 拦截器，也不向整个 Stage 树逐层传递新对象。主 hotkeys 仍使用已有 disabled 参数以停止其 effect；禁用转换时清空 spacePan、`videoSpaceDownRef`、`videoSpaceDraggedRef`，不触发播放切换，并对已经发生的方向键微移完成一次 `flushNudges()`，再清理暂态。
 
@@ -274,7 +274,7 @@ DOM 标记只代表工作台设置，不顺带改变所有旧弹窗；不额外�
 
 交付：原抽屉视觉仍可用，但打开时背景键盘/视频 wheel 不误操作，离开输入不丢值，保存失败可见，读取失败可重试。
 
-- 新增 `apps/web/src/pages/Workbench/state/workbenchSettingsInteraction.ts` 及其小型回归测试，集中设置作用域标记和背景判断。
+- 新增 `apps/web/src/pages/Workbench/state/workbenchInteractionGuards.ts` 及其小型回归测试，集中设置作用域标记和背景判断。
 - 给原 Drawer 设置标记；接入 §5.4 的 7 个生产文件。主热键同时接已有 disabled，开窗暂停视频。
 - `stage/videoStageControls.ts` 把 pausePlayback 的无参句柄类型改为可选 `{ snapToGrid?: boolean }`；底层 `useVideoPlaybackController` 已支持该参数，保持旧调用默认行为，并通过现有 controller 测试验证开窗暂停不跳帧。
 - 修改 `SettingsFieldControl.tsx` 的提交去重/Enter 边界；Drawer 统一关闭前提交。
@@ -309,7 +309,7 @@ DOM 标记只代表工作台设置，不顺带改变所有旧弹窗；不额外�
 | `shell/WorkbenchSettingsDialog.test.tsx`                                          | 分类和搜索可切；特殊项作用域；锁定与父项禁用；本机写入不 PATCH；加载失败重试；关闭前提交                      |
 | `components/SettingsFieldControl.test.tsx`                                        | 原有控件行为 + settings 布局可访问名、Enter/blur 去重、slider 指针和键盘提交、IME 不提交                      |
 | `state/useWorkbenchConfig.test.tsx`                                               | 防抖中关窗不丢值、路由卸载 flush、读失败不写、失败提示、旧响应不盖新值、多实例广播                            |
-| `state/workbenchSettingsInteraction.test.ts`                                      | 开窗、关闭恢复、事件 composedPath 保留设置来源；不吞设置自身事件                                              |
+| `state/workbenchInteractionGuards.test.ts`                                        | 开窗、关闭恢复、事件 composedPath 保留设置来源；不吞设置自身事件                                              |
 | `state/useWorkbenchHotkeys.test.ts`                                               | disabled 与恢复，spacePan/视频按住状态清理，已发生微移 flush                                                  |
 | `stage/useVideoPlaybackController.test.ts`                                        | `{ snapToGrid: false }` 暂停不 seek；旧无参暂停仍按既有规则对齐                                               |
 | `stage/VideoKonvaStage.konva.test.tsx`                                            | 窗口覆盖画布坐标时 wheel 不改半径/缩放；搜索 Backspace/Enter 不改草稿                                         |
@@ -321,7 +321,7 @@ DOM 标记只代表工作台设置，不顺带改变所有旧弹窗；不额外�
 
 ```bash
 rtk pnpm --filter @anno/web test src/pages/Workbench/shell/WorkbenchSettingsDialog.test.tsx src/pages/Workbench/components/SettingsFieldControl.test.tsx src/pages/Workbench/state/workbenchSettingsFields.test.ts src/pages/Workbench/state/useWorkbenchConfig.test.tsx src/pages/Settings/SettingsPage.test.tsx src/pages/Workbench/shell/WorkbenchLayout.test.tsx
-rtk pnpm --filter @anno/web test src/pages/Workbench/state/workbenchSettingsInteraction.test.ts src/pages/Workbench/state/useWorkbenchHotkeys.test.ts src/pages/Workbench/stage/VideoKonvaStage.konva.test.tsx src/pages/Workbench/stage/useVideoPlaybackController.test.ts src/pages/Workbench/modes/useReviewMode.test.tsx src/pages/Workbench/stages/image/useImageAnnotationActions.test.ts src/pages/Workbench/stages/three-d/usePointCloudScene.test.ts
+rtk pnpm --filter @anno/web test src/pages/Workbench/state/workbenchInteractionGuards.test.ts src/pages/Workbench/state/useWorkbenchHotkeys.test.ts src/pages/Workbench/stage/VideoKonvaStage.konva.test.tsx src/pages/Workbench/stage/useVideoPlaybackController.test.ts src/pages/Workbench/modes/useReviewMode.test.tsx src/pages/Workbench/stages/image/useImageAnnotationActions.test.ts src/pages/Workbench/stages/three-d/usePointCloudScene.test.ts
 rtk proxy pnpm --filter @anno/web typecheck
 rtk pnpm --filter @anno/web lint
 rtk pnpm docs:settings

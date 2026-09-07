@@ -7,7 +7,7 @@ import {
   type ComponentProps,
   type ReactNode,
 } from "react";
-import { isWorkbenchSettingsInteractionBlocked } from "./workbenchSettingsInteraction";
+import { isWorkbenchInteractionBlocked } from "./workbenchInteractionGuards";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useIsMutating, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToastStore } from "@/components/ui/Toast";
@@ -968,7 +968,7 @@ export function useWorkbenchShellModel({
     if (!isVideoTask) return;
     if (videoChaptersData.length === 0) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (isWorkbenchSettingsInteractionBlocked(e)) return;
+      if (isWorkbenchInteractionBlocked(e)) return;
       if (e.key !== "PageUp" && e.key !== "PageDown") return;
       const active = document.activeElement;
       if (active instanceof HTMLElement) {
@@ -1497,7 +1497,7 @@ export function useWorkbenchShellModel({
   useEffect(() => {
     if (!isVideoTask) return;
     const onKey = (e: KeyboardEvent) => {
-      if (isWorkbenchSettingsInteractionBlocked(e)) return;
+      if (isWorkbenchInteractionBlocked(e)) return;
       if (e.key !== "T" || !e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
       const active = document.activeElement;
       if (active instanceof HTMLElement) {
@@ -4969,7 +4969,7 @@ export function useWorkbenchShellModel({
     // popover 打开时让位: 键盘归它 (Esc 关 popover, Enter 选类)。
     if (videoSamPendingAccept) return;
     const handler = (e: KeyboardEvent) => {
-      if (isWorkbenchSettingsInteractionBlocked(e)) return;
+      if (isWorkbenchInteractionBlocked(e)) return;
       const target = e.target as HTMLElement | null;
       if (
         target?.tagName === "INPUT" ||

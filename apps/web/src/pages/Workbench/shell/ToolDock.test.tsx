@@ -1,7 +1,129 @@
-import { describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { ToolDock } from "./ToolDock";
 import { dispatchKey, type DispatchCtx } from "../state/hotkeys";
+
+const resizeCallbacks = new Set<() => void>();
+beforeEach(() => {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      constructor(private callback: () => void) {}
+      observe(target: HTMLElement) {
+        if (target.dataset.testid === "tool-dock") resizeCallbacks.add(this.callback);
+      }
+      unobserve() {}
+      disconnect() {
+        resizeCallbacks.delete(this.callback);
+      }
+    },
+  );
+});
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  resizeCallbacks.clear();
+});
+
+function measureDock(initialHeight: number) {
+  let height = initialHeight;
+  const original = HTMLElement.prototype.getBoundingClientRect;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+    this: HTMLElement,
+  ) {
+    if (this.dataset.testid === "tool-dock") return { ...original.call(this), width: 47, height };
+    const measured = this.dataset.dockMeasure;
+    if (measured)
+      return {
+        ...original.call(this),
+        width: 38,
+        height: measured === "button" ? 38 : measured === "divider" ? 13 : 12,
+      };
+    return original.call(this);
+  });
+  const computedStyle = window.getComputedStyle;
+  vi.spyOn(window, "getComputedStyle").mockImplementation((element) => {
+    const style = computedStyle(element);
+    return (element as HTMLElement).dataset.testid === "tool-dock"
+      ? new Proxy(style, {
+          get(target, key) {
+            if (key === "rowGap") return "6px";
+            if (key === "paddingTop" || key === "paddingBottom") return "10px";
+            return Reflect.get(target, key, target);
+          },
+        })
+      : style;
+  });
+  return (next: number) =>
+    act(() => {
+      height = next;
+      [...resizeCallbacks].forEach((callback) => callback());
+    });
+}
+
+describe("ToolDock · 高度溢出", () => {
+  it("当前轨迹工具留在主栏，菜单项仍按能力禁用；选择只调用一次原动作", async () => {
+    measureDock(220);
+    const onSetVideoTool = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <ToolDock
+        tool="select"
+        onSetTool={vi.fn()}
+        videoMode
+        videoTool="mask-track"
+        onSetVideoTool={onSetVideoTool}
+        isPromptSupported={() => false}
+      />,
+    );
+    expect(screen.getByTestId("video-tool-btn-select")).toBeVisible();
+    expect(screen.getByTestId("video-tool-btn-mask-track")).toBeVisible();
+    expect(screen.queryByTestId("video-tool-btn-polygon")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "更多工具" }));
+    expect(screen.getByTestId("tool-overflow-item-smart-point")).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(screen.getByTestId("tool-overflow-item-smart-point")).toHaveAccessibleDescription(
+      "当前后端不支持此交互模式",
+    );
+    await user.click(screen.getByTestId("tool-overflow-item-polygon"));
+    expect(onSetVideoTool).toHaveBeenCalledTimes(1);
+    expect(onSetVideoTool).toHaveBeenCalledWith("polygon");
+    expect(screen.getByRole("button", { name: "更多工具" })).toHaveFocus();
+  });
+
+  it("高度变化收回菜单并恢复焦点，空间足够后恢复全量工具", async () => {
+    const resize = measureDock(220);
+    const user = userEvent.setup();
+    render(<ToolDock tool="box" onSetTool={vi.fn()} />);
+    const more = screen.getByRole("button", { name: "更多工具" });
+    await user.click(more);
+    expect(screen.getByTestId("tool-dock-menu")).toContainElement(
+      document.activeElement as HTMLElement,
+    );
+    resize(300);
+    expect(screen.queryByTestId("tool-dock-menu")).toBeNull();
+    await waitFor(() => expect(more).toHaveFocus());
+    resize(1200);
+    expect(screen.queryByRole("button", { name: "更多工具" })).toBeNull();
+    expect(screen.getByTestId("tool-btn-box")).toHaveFocus();
+    expect(screen.getByTestId("tool-btn-magic-box")).toBeVisible();
+  });
+
+  it("用户已点击画布空白后，容量变化不抢回旧工具焦点", async () => {
+    const resize = measureDock(220);
+    const user = userEvent.setup();
+    render(<ToolDock tool="box" onSetTool={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "更多工具" }));
+    await user.keyboard("{Escape}");
+    await user.click(document.body);
+    expect(document.body).toHaveFocus();
+    resize(300);
+    expect(document.body).toHaveFocus();
+  });
+});
 
 describe("ToolDock · video tools", () => {
   it("renders video select and creation tools without the retired pan tool", () => {

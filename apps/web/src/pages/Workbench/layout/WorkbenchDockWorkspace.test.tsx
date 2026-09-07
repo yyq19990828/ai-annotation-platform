@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { createRef, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import type { DockviewApi } from "dockview-react";
 import { createWorkspacePreset } from "./workbenchLayoutPresets";
 import { getCanvasPlacement } from "./workbenchLayoutExecutor";
@@ -56,6 +57,7 @@ function Draft() {
 function fixture(
   context: WorkspaceContext = "annotate:image",
   commands = createRef<WorkbenchWorkspaceCommands>(),
+  canvas = <Canvas />,
 ) {
   return (
     <WorkbenchDockWorkspace
@@ -63,7 +65,7 @@ function fixture(
       legacy={{}}
       commandsRef={commands}
       slots={{
-        canvas: <Canvas />,
+        canvas,
         "task-queue": <p>任务</p>,
         "class-palette": <p>类别</p>,
         inspector: <p>详情</p>,
@@ -132,6 +134,31 @@ afterEach(async () => {
 });
 
 describe("stable Dockview React workspace", () => {
+  it("tool-menu portal keys do not save the workspace layout", async () => {
+    render(
+      fixture(
+        "annotate:image",
+        createRef(),
+        <>
+          <Canvas />
+          {createPortal(
+            <div role="menu" data-workbench-tool-menu tabIndex={-1}>
+              工具
+            </div>,
+            document.body,
+          )}
+        </>,
+      ),
+    );
+    await screen.findByTestId("canvas-marker");
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "ArrowDown" });
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    });
+    expect(state.owner.save).not.toHaveBeenCalled();
+    expect(state.owner.failRestore).not.toHaveBeenCalled();
+  });
+
   it("header X hides only the active tab and restores its draft without remounting canvas", async () => {
     const commands = createRef<WorkbenchWorkspaceCommands>();
     render(fixture("annotate:image", commands));

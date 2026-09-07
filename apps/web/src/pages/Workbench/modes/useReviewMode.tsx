@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { isWorkbenchSettingsInteractionBlocked } from "../state/workbenchSettingsInteraction";
+import { isWorkbenchInteractionBlocked } from "../state/workbenchInteractionGuards";
 import { useApproveTask, useRejectTask, useReviewClaim } from "@/hooks/useTasks";
 import { ReviewerMiniPanel } from "@/pages/Review/ReviewerMiniPanel";
 import type { ReviewClaimResponse, TaskResponse } from "@/types";
@@ -83,7 +83,7 @@ export function useReviewMode({
   useEffect(() => {
     if (mode !== "review") return;
     const handler = (e: KeyboardEvent) => {
-      if (isWorkbenchSettingsInteractionBlocked(e)) return;
+      if (isWorkbenchInteractionBlocked(e)) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const target = e.target as HTMLElement | null;
       if (

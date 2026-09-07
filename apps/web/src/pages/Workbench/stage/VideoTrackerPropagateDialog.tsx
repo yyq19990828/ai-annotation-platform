@@ -1,3 +1,4 @@
+import { isWorkbenchInteractionBlocked } from "../state/workbenchInteractionGuards";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Bot, Clock3, Info, Loader2, MousePointer2, Type, X } from "lucide-react";
 
@@ -496,6 +497,7 @@ export function VideoTrackerPropagateDialog({
   useEffect(() => {
     if (!open || !visible) return;
     const onKey = (e: KeyboardEvent) => {
+      if (isWorkbenchInteractionBlocked(e)) return;
       if (e.key === "Escape") onCancel();
     };
     window.addEventListener("keydown", onKey);

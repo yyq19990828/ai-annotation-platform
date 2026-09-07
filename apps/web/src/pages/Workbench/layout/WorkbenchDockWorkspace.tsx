@@ -926,6 +926,12 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
             onKeyDown={(event) => {
               if (
                 (event.target as HTMLElement).closest(
+                  "[data-workbench-tool-menu], [data-workbench-tool-menu-trigger]",
+                )
+              )
+                return;
+              if (
+                (event.target as HTMLElement).closest(
                   '[role="tab"], [role="menu"], [role="menuitem"], [data-workbench-layout-control]',
                 )
               ) {

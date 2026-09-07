@@ -1,3 +1,4 @@
+import { isWorkbenchInteractionBlocked } from "../state/workbenchInteractionGuards";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import type { AttributeSchema } from "@/api/projects";
@@ -104,6 +105,7 @@ export function ClassPickerPopover({
   // keyboard
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (isWorkbenchInteractionBlocked(e)) return;
       if (
         (e.target instanceof HTMLInputElement ||
           e.target instanceof HTMLSelectElement ||
@@ -149,6 +151,7 @@ export function ClassPickerPopover({
   // click outside to cancel
   useEffect(() => {
     const onDown = (e: PointerEvent) => {
+      if (isWorkbenchInteractionBlocked(e)) return;
       if (ref.current && !ref.current.contains(e.target as Node)) onCancel("outside");
     };
     // 用 pointerdown(而非 mousedown):视频 Konva 画布的 pointerdown 处理会 preventDefault,

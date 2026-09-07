@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { isWorkbenchSettingsInteractionBlocked } from "../state/workbenchSettingsInteraction";
+import { isWorkbenchInteractionBlocked } from "../state/workbenchInteractionGuards";
 import type {
   CSSProperties,
   MouseEvent as ReactMouseEvent,
@@ -1155,7 +1155,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     useEffect(() => {
       if (!maskToolActive || !maskEditor) return;
       const onKey = (event: KeyboardEvent) => {
-        if (isWorkbenchSettingsInteractionBlocked(event)) return;
+        if (isWorkbenchInteractionBlocked(event)) return;
         if (maskCompareActive) return;
         const target = event.target;
         if (
@@ -1253,7 +1253,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     useEffect(() => {
       if (!pointsDrawEnabled) return;
       const onKey = (e: KeyboardEvent) => {
-        if (isWorkbenchSettingsInteractionBlocked(e)) return;
+        if (isWorkbenchInteractionBlocked(e)) return;
         if (e.key === "Enter") {
           e.preventDefault();
           commitPointsDraft();
@@ -1602,7 +1602,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     // Mask 直接滚轮调半径；ctrl/⌘+滚轮围绕光标缩放。
     useEffect(() => {
       const onWheel = (e: WheelEvent) => {
-        if (isWorkbenchSettingsInteractionBlocked(e)) return;
+        if (isWorkbenchInteractionBlocked(e)) return;
         const el = containerRef.current;
         if (!el) return;
         // 播放组件(时间轴/控制条/概览导航条)叠在 stage 容器内, 它有独立滚轮行为。
@@ -1649,7 +1649,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         el instanceof HTMLElement &&
         (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable);
       const onKeyDown = (e: KeyboardEvent) => {
-        if (isWorkbenchSettingsInteractionBlocked(e)) return;
+        if (isWorkbenchInteractionBlocked(e)) return;
         if (isInputFocused(e.target)) return;
         if (
           (e.key === "f" || e.key === "F") &&

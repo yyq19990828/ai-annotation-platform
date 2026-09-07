@@ -375,103 +375,106 @@ describe("useImageAnnotationActions module", () => {
     expect(hasUsableImageBounds({ x: 0.1, y: 0.2, w: 0.3, h: 0.4 })).toBe(true);
   });
 
-  it("取消 Mask 回选择，设置窗口内的候选键不影响背景 SAM", () => {
-    const cancel = vi.fn();
-    const setTool = vi.fn();
-    const s = {
-      activeClass: "",
-      clipboard: null,
-      confThreshold: 0.5,
-      editingClass: null,
-      pendingDrawing: null,
-      selectedId: null,
-      selectedIds: [],
-      tool: "mask",
-      videoFrameIndex: 0,
-      workbenchConfig: { image: { afterBoxCreate: "pick_class" } },
-      replaceSelected: vi.fn(),
-      setActiveClass: vi.fn(),
-      setClipboard: vi.fn(),
-      setEditingClass: vi.fn(),
-      setPendingDrawing: vi.fn(),
-      setSelectedId: vi.fn(),
-      setTool,
-    };
-    const sam = {
-      activeIdx: 0,
-      canAcceptCandidates: false,
-      candidates: [],
-      isRunning: false,
-      cancel: vi.fn(),
-      consume: vi.fn(),
-      cycle: vi.fn(),
-    };
-    const mutate = vi.fn();
-    const view = renderHook(() =>
-      useImageAnnotationActions({
-        taskId: "task-1",
-        projectId: "project-1",
-        meUserId: "user-1",
-        queryClient: {},
-        history: { push: vi.fn(), pushBatch: vi.fn() },
-        s,
-        pushToast: vi.fn(),
-        recordRecentClass: vi.fn(),
-        annotationsData: [],
-        annotationsRef: { current: [] },
-        predictionsData: [],
-        userBoxes: [],
-        stageGeom: { imgW: 100, imgH: 100, vpSize: { w: 100, h: 100 } },
-        iouDedupThreshold: 0.7,
-        classes: [],
-        sam,
-        acceptNativeMask: vi.fn(),
-        createAnnotationAsync: vi.fn(),
-        updateAnnotationAsync: vi.fn(),
-        mutations: {
-          create: { mutate },
-          update: { mutate },
-          delete: { mutate },
-        },
-        enqueueOnError: vi.fn(),
-        maskEditor: { cancel },
-      } as never),
-    );
+  it.each(["data-workbench-settings", "data-workbench-tool-menu"])(
+    "取消 Mask 回选择，%s 内的候选键不影响背景 SAM",
+    (marker) => {
+      const cancel = vi.fn();
+      const setTool = vi.fn();
+      const s = {
+        activeClass: "",
+        clipboard: null,
+        confThreshold: 0.5,
+        editingClass: null,
+        pendingDrawing: null,
+        selectedId: null,
+        selectedIds: [],
+        tool: "mask",
+        videoFrameIndex: 0,
+        workbenchConfig: { image: { afterBoxCreate: "pick_class" } },
+        replaceSelected: vi.fn(),
+        setActiveClass: vi.fn(),
+        setClipboard: vi.fn(),
+        setEditingClass: vi.fn(),
+        setPendingDrawing: vi.fn(),
+        setSelectedId: vi.fn(),
+        setTool,
+      };
+      const sam = {
+        activeIdx: 0,
+        canAcceptCandidates: false,
+        candidates: [],
+        isRunning: false,
+        cancel: vi.fn(),
+        consume: vi.fn(),
+        cycle: vi.fn(),
+      };
+      const mutate = vi.fn();
+      const view = renderHook(() =>
+        useImageAnnotationActions({
+          taskId: "task-1",
+          projectId: "project-1",
+          meUserId: "user-1",
+          queryClient: {},
+          history: { push: vi.fn(), pushBatch: vi.fn() },
+          s,
+          pushToast: vi.fn(),
+          recordRecentClass: vi.fn(),
+          annotationsData: [],
+          annotationsRef: { current: [] },
+          predictionsData: [],
+          userBoxes: [],
+          stageGeom: { imgW: 100, imgH: 100, vpSize: { w: 100, h: 100 } },
+          iouDedupThreshold: 0.7,
+          classes: [],
+          sam,
+          acceptNativeMask: vi.fn(),
+          createAnnotationAsync: vi.fn(),
+          updateAnnotationAsync: vi.fn(),
+          mutations: {
+            create: { mutate },
+            update: { mutate },
+            delete: { mutate },
+          },
+          enqueueOnError: vi.fn(),
+          maskEditor: { cancel },
+        } as never),
+      );
 
-    act(() => view.result.current.cancelMaskEdit());
+      act(() => view.result.current.cancelMaskEdit());
 
-    expect(cancel).toHaveBeenCalledTimes(1);
-    expect(setTool).toHaveBeenCalledWith("select");
+      expect(cancel).toHaveBeenCalledTimes(1);
+      expect(setTool).toHaveBeenCalledWith("select");
 
-    Object.assign(s, { tool: "smart-point" });
-    Object.assign(sam, {
-      canAcceptCandidates: true,
-      candidates: [
-        {
-          type: "polygonlabels",
-          points: [
-            [0, 0],
-            [1, 0],
-            [1, 1],
-          ],
-        },
-      ],
-    });
-    view.rerender();
-    const settings = document.createElement("button");
-    settings.dataset.workbenchSettings = "";
-    settings.dataset.state = "open";
-    document.body.append(settings);
-    act(() => {
-      for (const key of ["Enter", "Escape", "Tab", "r"]) {
-        settings.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
-      }
-    });
-    expect(view.result.current.samPendingGeom).toBeNull();
-    expect(sam.cancel).not.toHaveBeenCalled();
-    expect(sam.cycle).not.toHaveBeenCalled();
-    settings.remove();
-    act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
-    expect(sam.cancel).toHaveBeenCalledTimes(1);
-  });
+      Object.assign(s, { tool: "smart-point" });
+      Object.assign(sam, {
+        canAcceptCandidates: true,
+        candidates: [
+          {
+            type: "polygonlabels",
+            points: [
+              [0, 0],
+              [1, 0],
+              [1, 1],
+            ],
+          },
+        ],
+      });
+      view.rerender();
+      const settings = document.createElement("button");
+      settings.setAttribute(marker, "");
+      settings.dataset.state = "open";
+      document.body.append(settings);
+      act(() => {
+        for (const key of ["Enter", "Escape", "Tab", "r"]) {
+          settings.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+        }
+      });
+      expect(view.result.current.samPendingGeom).toBeNull();
+      expect(sam.cancel).not.toHaveBeenCalled();
+      expect(sam.cycle).not.toHaveBeenCalled();
+      settings.remove();
+      act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" })));
+      expect(sam.cancel).toHaveBeenCalledTimes(1);
+    },
+  );
 });

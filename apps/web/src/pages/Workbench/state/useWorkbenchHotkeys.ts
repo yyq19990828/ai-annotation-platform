@@ -10,7 +10,7 @@
 // AnnotationActions handler（state/useWorkbenchAnnotationActions.ts）。
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { isWorkbenchSettingsInteractionBlocked } from "./workbenchSettingsInteraction";
+import { isWorkbenchInteractionBlocked } from "./workbenchInteractionGuards";
 
 import { dispatchKey, ARROW_KEY_SET, hotkeyIgnoreToken } from "./hotkeys";
 import { nextInCategory, nextCategory } from "../stage/frameObjectCycle";
@@ -303,7 +303,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     const isPolyline = s.tool === "polyline";
     const minPts = isPolyline ? 2 : 3;
     const onKey = (e: KeyboardEvent) => {
-      if (isWorkbenchSettingsInteractionBlocked(e)) return;
+      if (isWorkbenchInteractionBlocked(e)) return;
       const t = e.target;
       if (
         t instanceof HTMLElement &&
@@ -343,7 +343,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     if (s.tool !== "mask") return;
     if (!maskEditor) return;
     const onKey = (e: KeyboardEvent) => {
-      if (isWorkbenchSettingsInteractionBlocked(e)) return;
+      if (isWorkbenchInteractionBlocked(e)) return;
       if (maskInteractionFrozen) return;
       const t = e.target;
       if (
@@ -487,7 +487,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     };
 
     const onKey = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || isWorkbenchSettingsInteractionBlocked(e)) return;
+      if (e.defaultPrevented || isWorkbenchInteractionBlocked(e)) return;
       const modifiedToken = hotkeyIgnoreToken(e);
       if (ignoredKeys?.has(e.key) || (modifiedToken && ignoredKeys?.has(modifiedToken))) return;
       const attributeHotkey = (digit: string) => {
@@ -962,7 +962,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
       if (e.key === " ") {
         setSpacePan(false);
         if (videoMode && videoSpaceDownRef.current) {
-          if (!videoSpaceDraggedRef.current && !isWorkbenchSettingsInteractionBlocked(e)) {
+          if (!videoSpaceDraggedRef.current && !isWorkbenchInteractionBlocked(e)) {
             videoControlsRef?.current?.togglePlayback();
           }
           videoSpaceDownRef.current = false;

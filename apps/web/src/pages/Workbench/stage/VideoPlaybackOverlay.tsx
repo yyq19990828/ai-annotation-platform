@@ -294,7 +294,7 @@ export function VideoPlaybackOverlay({
   const hoverFrameRef = useRef<number | null>(null);
   useEffect(() => {
     if (!restoreToggleFocusRef.current) return;
-    timelineToggleRef.current?.focus();
+    timelineToggleRef.current?.focus({ preventScroll: true });
     restoreToggleFocusRef.current = false;
   }, [expanded]);
   const frameTooltip = useMemo(() => {

@@ -135,4 +135,4 @@ git diff --check
 
 本工作区原有 Node 依赖软链接缺少必要的 dockview-react；仅将本工作区 root/web/docs 三处依赖链接改为本地目录，使用 frozen lockfile 安装，未修改包清单或锁文件。Python 使用本地虚拟环境。
 
-A 已完成；按用户更新的执行要求提交后继续 B 及其余草案，完整 Epic 尚未完成。
+A 已完成并提交为 `f5f6c83f`；按用户更新的执行要求继续 B 及其余草案，完整 Epic 尚未完成。

@@ -402,7 +402,7 @@ Python 优先使用本工作区 `apps/api/.venv`。本地 Playwright 配置使�
 | 里程碑 | 独立草案                                                                          | 硬依赖 | 确认   | 实施   | 浏览器实测   |
 | ------ | --------------------------------------------------------------------------------- | ------ | ------ | ------ | ------------ |
 | A      | [视频候选决策与快捷键](1788769060_workbench-a-video-candidate-decisions.md)       | 无     | 已确认 | 已完成 | A-1–A-5 通过 |
-| B      | [工具坞高度溢出](1788769060_workbench-b-tool-dock-overflow.md)                    | 无     | 已授权 | 未开始 | 未执行       |
+| B      | [工具坞高度溢出](1788769060_workbench-b-tool-dock-overflow.md)                    | 无     | 已授权 | 完成   | B-1–B-4 通过 |
 | C      | [图片连续创建](1788769060_workbench-c-image-continuous-creation.md)               | 无     | 已授权 | 未开始 | 未执行       |
 | D      | [Mask 阶段主动作](1788769060_workbench-d-mask-primary-actions.md)                 | 无     | 已授权 | 未开始 | 未执行       |
 | E1     | [AI 交互顶栏主次层](1788769060_workbench-e1-ai-toolbar-layers.md)                 | 无     | 已授权 | 未开始 | 未执行       |

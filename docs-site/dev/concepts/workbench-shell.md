@@ -111,11 +111,15 @@ Shell 持有当前会话的 `scenePlaybackActive`，将预览状态接到 `useTa
 
 ## 可停靠工作区
 
-### 设置窗口的输入隔离
+### 设置窗口与工具菜单的输入隔离
 
-设置窗口内容与遮罩带 `data-workbench-settings`，打开时 `data-state="open"`。独立的背景键盘和全局滚轮监听先调用 `isWorkbenchSettingsInteractionBlocked(event)`；窗口打开或事件的 `composedPath()` 包含设置标记时直接返回，不阻止传播，让设置自身的键盘、焦点与滚动行为继续工作。事件路径判断保留已卸载的标记，防止关闭设置的同一次事件落到背景。
+设置窗口内容与遮罩带 `data-workbench-settings`，工具溢出菜单带 `data-workbench-tool-menu`，入口单独标记为 `data-workbench-tool-menu-trigger`，打开时 `data-state="open"`。独立的背景键盘和全局滚轮监听先调用 `workbenchInteractionGuards.ts` 的 `isWorkbenchInteractionBlocked(event)`；有打开的标记，或事件的 `composedPath()` 包含标记时直接返回，不阻止传播，让浮层自身的键盘、焦点与滚动行为继续工作。事件路径判断保留已卸载的标记，防止关闭菜单的同一次事件落到背景。类别选择器的外部点击也遵循此边界，打开工具菜单不取消待选类别的草稿。关闭后的入口只接管 Enter、Space、向下方向键等打开菜单的输入，其余画布快捷键恢复；菜单的 React portal 冒泡事件不触发布局保存。
 
 主快捷键还通过 `disabled` 暂停，开窗时清空空格平移与视频按住状态，并提交此前已有的方向键微移。`keyup`、`pointerup`、`mouseup` 中的释放和拖拽收尾继续执行。视频入口调用 `pausePlayback({ snapToGrid: false })`，暂停但不对齐采样网格、不切换帧；关闭设置后保持暂停。这一边界只负责设置窗口，不改变其它弹窗或后台任务的生命周期。
+
+### 工具坞容量
+
+图片与视频的 `ToolDock` 共享纯函数 `splitToolDock`，输入是能力过滤后的工具描述、当前工具和实际容器尺寸。`ResizeObserver` 测量工具坞及共用 CSS 的非交互尺寸样本，计算按钮、间距、分隔线和分组标题的完整高度。发生溢出后优先保留选择与当前工具，并为“更多”预留位置；极小高度保留可滚动兜底。主栏和本地 Radix 菜单调用同一动作，不拥有几何草稿或 Stage。容量改变时关闭菜单，卸载焦点圈后回到“更多”；入口消失时回到当前工具。详细时间轴作为画布浮层，不改变工具坞高度；停靠面板调整和浏览器缩放按实际工具坞高度重新计算。
 
 ## 右栏：AI 检查器 + 讨论面板
 

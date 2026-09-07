@@ -51,6 +51,60 @@ function makeArgs(overrides: Partial<Parameters<typeof useWorkbenchHotkeys>[0]> 
 }
 
 describe("useWorkbenchHotkeys module", () => {
+  it("更多工具菜单的 Enter/Esc 不提交或取消背景多边形", () => {
+    const args = makeArgs({
+      polygonDraftPoints: [
+        [0, 0],
+        [1, 0],
+        [1, 1],
+      ],
+    });
+    args.s.tool = "polygon";
+    args.s.setPendingDrawing = vi.fn();
+    renderHook(() => useWorkbenchHotkeys(args));
+    const menu = document.createElement("div");
+    menu.dataset.workbenchToolMenu = "";
+    menu.dataset.state = "open";
+    menu.setAttribute("role", "menu");
+    const item = document.createElement("button");
+    item.setAttribute("role", "menuitem");
+    menu.append(item);
+    document.body.append(menu);
+    const menuKey = vi.fn();
+    item.addEventListener("keydown", menuKey);
+    try {
+      act(() => {
+        item.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+        item.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+      });
+      expect(args.submitPolygon).not.toHaveBeenCalled();
+      expect(args.setPolygonDraftPoints).not.toHaveBeenCalled();
+      expect(menuKey).toHaveBeenCalledTimes(2);
+    } finally {
+      menu.remove();
+    }
+  });
+
+  it("在画布按住 Space 后进入更多工具菜单再松开，只释放按住态", () => {
+    const togglePlayback = vi.fn();
+    const args = makeArgs({
+      videoMode: true,
+      videoControlsRef: { current: { togglePlayback } } as never,
+    });
+    const view = renderHook(() => useWorkbenchHotkeys(args));
+    act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: " " })));
+    expect(view.result.current.spacePan).toBe(true);
+    const trigger = document.createElement("button");
+    trigger.dataset.workbenchToolMenu = "";
+    document.body.append(trigger);
+    try {
+      act(() => trigger.dispatchEvent(new KeyboardEvent("keyup", { key: " ", bubbles: true })));
+      expect(view.result.current.spacePan).toBe(false);
+      expect(togglePlayback).not.toHaveBeenCalled();
+    } finally {
+      trigger.remove();
+    }
+  });
   it.each(["select", "combobox", "listbox"])("%s 的 A/D 选项定位不触发候选写入", (kind) => {
     const args = makeArgs({ videoMode: true, handleRejectPrediction: vi.fn() });
     args.s.selectedId = "candidate";
