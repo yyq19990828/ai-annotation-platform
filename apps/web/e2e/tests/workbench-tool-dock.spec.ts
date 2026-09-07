@@ -68,7 +68,7 @@ test("图片与视频在三种高度和原生页面缩放下保留全部工具�
   const data = await prepare(request, seed);
   const measurements: unknown[] = [];
   let expectedImage: Array<string | null> | undefined;
-  let expectedVideo: Array<string | null> | undefined;
+  const expectedVideo: Partial<Record<"frame" | "track", Array<string | null>>> = {};
   for (const height of [768, 900, 1080]) {
     // Headless Chromium reserves 87 physical pixels for browser chrome at 100%.
     // Assert the real CSS viewport below so changes to that inset fail visibly.
@@ -92,6 +92,7 @@ test("图片与视频在三种高度和原生页面缩放下保留全部工具�
         await expect(stage).toBeVisible();
         const originalStage = await stage.elementHandle();
         const tail = video ? "mask-track" : "mask";
+        if (video) await page.getByRole("button", { name: "轨迹范围", exact: true }).click();
         const button = page.getByTestId(`${video ? "video-tool" : "tool"}-btn-${tail}`);
         if (await button.isVisible()) await button.click();
         else {
@@ -119,11 +120,39 @@ test("图片与视频在三种高度和原生页面缩放下保留全部工具�
           await expect
             .poll(() => dock.evaluate((el) => el.scrollHeight <= el.clientHeight + 1))
             .toBe(true);
-          const ids = await accessibleTools(page);
           if (video) {
-            expectedVideo ??= ids;
-            expect(ids).toEqual(expectedVideo);
+            for (const scope of ["frame", "track"] as const) {
+              await page
+                .getByRole("button", {
+                  name: scope === "frame" ? "单帧范围" : "轨迹范围",
+                  exact: true,
+                })
+                .click();
+              await expect(page.getByTestId("video-tool-scope")).toHaveAttribute(
+                "data-scope",
+                scope,
+              );
+              const active = page.getByTestId(
+                `video-tool-btn-${scope === "frame" ? "mask" : "mask-track"}`,
+              );
+              if (await active.isVisible()) await active.click();
+              else {
+                await page.getByTestId("tool-dock-more").click();
+                await page
+                  .getByTestId(`tool-overflow-item-${scope === "frame" ? "mask" : "mask-track"}`)
+                  .click();
+              }
+              await expect(active).toHaveAttribute("aria-pressed", "true");
+              await expect(active).toBeInViewport();
+              const ids = await accessibleTools(page);
+              expectedVideo[scope] ??= ids;
+              expect(ids).toEqual(expectedVideo[scope]);
+              await expect
+                .poll(() => dock.evaluate((el) => el.scrollHeight <= el.clientHeight + 1))
+                .toBe(true);
+            }
           } else {
+            const ids = await accessibleTools(page);
             expectedImage ??= ids;
             expect(ids).toEqual(expectedImage);
           }
@@ -145,7 +174,9 @@ test("图片与视频在三种高度和原生页面缩放下保留全部工具�
     }
   }
   expect(expectedImage!.length).toBeGreaterThanOrEqual(12);
-  expect(expectedVideo).toHaveLength(15);
+  expect(expectedVideo.frame).not.toContain("mask-track");
+  expect(expectedVideo.track).not.toContain("mask");
+  expect(new Set([...expectedVideo.frame!, ...expectedVideo.track!]).size).toBe(15);
   await testInfo.attach("native-browser-zoom", {
     body: JSON.stringify(measurements, null, 2),
     contentType: "application/json",
@@ -222,6 +253,14 @@ for (const video of [false, true]) {
     }
     await page.getByRole("button", { name: "讨论 / Issue菜单" }).click();
     await page.getByRole("menuitem", { name: "停靠到底部", exact: true }).click();
+    await expect(page.getByText("布局恢复失败", { exact: false })).toHaveCount(0);
+    expect(
+      await page
+        .locator("[data-workbench-workspace], .dv-split-view-container")
+        .evaluateAll(
+          (nodes) => nodes.filter((node) => node.scrollLeft !== 0 || node.scrollTop !== 0).length,
+        ),
+    ).toBe(0);
     const canvasPanel = page.locator('[data-workbench-panel="canvas"]');
     const canvasBounds = (await canvasPanel.boundingBox())!;
     const sashes = await page
@@ -238,7 +277,7 @@ for (const video of [false, true]) {
     const sashX = canvasBounds.x + canvasBounds.width / 2;
     await page.mouse.move(sashX, sash.y + sash.height / 2);
     await page.mouse.down();
-    await page.mouse.move(sashX, sash.y - 65, { steps: 8 });
+    await page.mouse.move(sashX, sash.y - (video ? 150 : 65), { steps: 8 });
     await page.mouse.up();
     await expect.poll(async () => (await dock.boundingBox())!.height).toBeLessThan(beforeDrag - 40);
     const more = page.getByTestId("tool-dock-more");

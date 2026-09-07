@@ -408,7 +408,7 @@ Python 优先使用本工作区 `apps/api/.venv`。本地 Playwright 配置使�
 | E1     | [AI 交互顶栏主次层](1788769060_workbench-e1-ai-toolbar-layers.md)                 | 无     | 已授权 | 已完成 | E1-1–E1-4 通过 |
 | E2     | [AI Inspector 阶段展示](1788769060_workbench-e2-ai-inspector-phases.md)           | E1     | 已授权 | 已完成 | E2-1–E2-5 通过 |
 | F1     | [当前视频轨迹条](1788769060_workbench-f1-video-track-context.md)                  | 无     | 已授权 | 已完成 | F1-1–F1-4 通过 |
-| F2     | [视频单帧与轨迹范围](1788769060_workbench-f2-video-tool-scope.md)                 | B      | 已授权 | 未开始 | 未执行         |
+| F2     | [视频单帧与轨迹范围](1788769060_workbench-f2-video-tool-scope.md)                 | B      | 已授权 | 已完成 | F2-1–F2-5 通过 |
 | F3     | [追踪候选审阅范围](1788769060_workbench-f3-video-tracker-review-scope.md)         | 无     | 已授权 | 未开始 | 未执行         |
 | G1     | [视频 Issue 创建与真实落帧](1788769060_workbench-g1-video-issue-frame.md)         | 无     | 已授权 | 未开始 | 未执行         |
 | G2     | [视频 Issue 完整上下文恢复](1788769060_workbench-g2-video-issue-context.md)       | G1     | 已授权 | 未开始 | 未执行         |

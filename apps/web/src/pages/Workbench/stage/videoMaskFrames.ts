@@ -152,6 +152,8 @@ export function useVideoMaskFrames(params: {
 
   const descriptors = useMemo<MaskDescriptor[]>(() => {
     const committed = annotations.flatMap((annotation) => {
+      // Optimistic rows have no persisted content endpoint until creation returns a real ID.
+      if (annotation.id.startsWith("tmp_")) return [];
       if (isVideoMask(annotation)) {
         if (annotation.geometry.frame_index !== frameIndex) return [];
         return [

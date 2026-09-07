@@ -14,6 +14,7 @@ import {
 import { ALL_TOOLS, type CanvasTool, type ToolId } from "../stage/tools";
 import { toolUnitForTool } from "../stage/tools/toolUnits";
 import type { ThreeDTool, VideoTool } from "../state/useWorkbenchState";
+import { videoToolScopeForTool, type VideoToolScope } from "../stage/videoToolUnits";
 import { splitToolDock, type ToolDockEntry, type ToolDockMetrics } from "./toolDockOverflow";
 
 const ROOT_CLASS =
@@ -43,6 +44,9 @@ interface ToolDockProps {
   onSetTool: (t: ToolId) => void;
   videoTool?: VideoTool;
   onSetVideoTool?: (t: VideoTool) => void;
+  videoToolScope?: VideoToolScope;
+  /** Admission belongs to the Shell; the dock never changes scope before this callback. */
+  onSetVideoToolScope?: (scope: VideoToolScope) => void;
   /** v0.10.2 · 由 useMLCapabilities 注入. tool.requiredPrompt 不在 supported 集合 → 置灰. */
   isPromptSupported?: (type: string) => boolean;
   /** 工作台上下文门控（例如 scribble 必须先选中已存 Mask）。 */
@@ -329,7 +333,8 @@ function AdaptiveToolDock({
     : { visibleIds: tools.map((tool) => tool.id), overflowIds: [], scroll: false };
   const visibleTools = tools.filter((tool) => allocation.visibleIds.includes(tool.id));
   const overflowTools = tools.filter((tool) => allocation.overflowIds.includes(tool.id));
-  const signature = allocation.visibleIds.join("|");
+  // A scope projection can change only overflow items while selection stays in the main rail.
+  const signature = `${tools.map((tool) => tool.id).join("|")}:${allocation.visibleIds.join("|")}`;
   const previousSignature = useRef(signature);
 
   useLayoutEffect(() => {
@@ -415,6 +420,7 @@ function AdaptiveToolDock({
           disabled={!!tool.disabledReason}
           data-testid={tool.testId}
           data-tool-dock-entry={tool.id}
+          data-workbench-video-tool-command={video ? "" : undefined}
           className={cn(
             TOOL_BTN_CLASS,
             active ? TOOL_BTN_ACTIVE : cn(TOOL_BTN_IDLE, !tool.disabledReason && TOOL_BTN_HOVER),
@@ -522,6 +528,7 @@ function AdaptiveToolDock({
               title="更多工具"
               data-testid="tool-dock-more"
               data-workbench-tool-menu-trigger
+              data-workbench-video-tool-command={video ? "" : undefined}
               data-tool-dock-entry="more"
               className={cn(
                 TOOL_BTN_CLASS,
@@ -538,6 +545,7 @@ function AdaptiveToolDock({
             align="start"
             collisionPadding={8}
             data-workbench-tool-menu
+            data-workbench-video-tool-command={video ? "" : undefined}
             aria-label="更多工具"
             data-testid="tool-dock-menu"
             className="z-overlay-high w-64 data-[state=open]:animate-none data-[state=closed]:animate-none"
@@ -565,6 +573,7 @@ function AdaptiveToolDock({
                       tool.disabledReason ? `dock-tool-reason-${tool.id}` : undefined
                     }
                     data-testid={`tool-overflow-item-${tool.id}`}
+                    data-workbench-video-tool-command={video ? "" : undefined}
                     onSelect={tool.onSelect}
                   >
                     <Icon name={tool.icon} size={16} />
@@ -609,6 +618,8 @@ export function ToolDock({
   onSetTool,
   videoTool = "select",
   onSetVideoTool,
+  videoToolScope,
+  onSetVideoToolScope,
   isPromptSupported,
   toolDisabledReasons,
   capabilitiesLoading = false,
@@ -664,6 +675,7 @@ export function ToolDock({
     );
   }
   if (videoMode) {
+    const scope = videoToolScope ?? videoToolScopeForTool(videoTool) ?? "frame";
     // 视频显示选择 + 创建工具；平移走右键/Space 手势, 不占工具按钮。
     // 三层门控与图片侧同构: 项目总开关(隐藏 AI 组) → 后端能力(置灰) → 产出几何单位(隐藏)。
     const visibleVideoTools = VIDEO_TOOLS.filter((t) => {
@@ -700,7 +712,43 @@ export function ToolDock({
         onSelect: () => onSetVideoTool?.(t.id),
       };
     });
-    return <AdaptiveToolDock tools={tools} activeId={videoTool} video />;
+    const scopedTools = tools.filter(
+      (tool) => tool.id === "select" || videoToolScopeForTool(tool.id as VideoTool) === scope,
+    );
+    return (
+      <div className="flex h-full min-h-0 shrink-0 flex-col">
+        <div
+          role="group"
+          aria-label="视频作用范围"
+          data-testid="video-tool-scope"
+          data-scope={scope}
+          className="flex shrink-0 flex-col items-center gap-1 border-b border-r border-border bg-card px-1 py-1.5"
+        >
+          {(["frame", "track"] as const).map((targetScope) => (
+            <button
+              key={targetScope}
+              type="button"
+              aria-label={targetScope === "frame" ? "单帧范围" : "轨迹范围"}
+              aria-pressed={scope === targetScope}
+              data-workbench-video-tool-command
+              disabled={!onSetVideoToolScope}
+              onClick={() => onSetVideoToolScope?.(targetScope)}
+              className={cn(
+                "h-7 w-[38px] shrink-0 cursor-pointer appearance-none rounded-md border text-2xs font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring disabled:cursor-default",
+                scope === targetScope
+                  ? "border-brand bg-brand/10 text-brand"
+                  : "border-transparent bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+            >
+              {targetScope === "frame" ? "单帧" : "轨迹"}
+            </button>
+          ))}
+        </div>
+        <div className="min-h-0 flex-1">
+          <AdaptiveToolDock tools={scopedTools} activeId={videoTool} video />
+        </div>
+      </div>
+    );
   }
 
   // 三层门控 (每层语义单一):

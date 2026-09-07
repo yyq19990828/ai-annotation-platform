@@ -9,8 +9,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createRef } from "react";
 import { act, fireEvent, render, renderHook, screen, within } from "@testing-library/react";
 import { VideoKonvaStage } from "./VideoKonvaStage";
-import type { VideoStageControls } from "./videoStageControls";
-import type { AnnotationResponse, TaskVideoManifestResponse } from "@/types";
+import type { VideoDrawingDraft, VideoStageControls } from "./videoStageControls";
+import type { AnnotationResponse, TaskVideoManifestResponse, VideoTrackGeometry } from "@/types";
 import type { UseMaskEditorReturn } from "../state/useMaskEditor";
 import { useWorkbenchHotkeys, type UseWorkbenchHotkeysArgs } from "../state/useWorkbenchHotkeys";
 
@@ -309,6 +309,338 @@ describe("VideoKonvaStage · konva mock", () => {
     expect(playMock).toHaveBeenCalled();
   });
 
+  function pointer(target: Element | Window, type: string, x: number, y: number, button = 0) {
+    fireEvent(target, new MouseEvent(type, { clientX: x, clientY: y, button, bubbles: true }));
+  }
+
+  function drawingSurface() {
+    const container = screen.getByTestId("video-konva-stage");
+    vi.spyOn(container, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 1000, 500));
+    return container.querySelector('[data-konva="Stage"]')!;
+  }
+
+  it.each([
+    ["polygon", "video_polygon", false],
+    ["polygon-track", "video_track_polygon", true],
+    ["polyline", "video_polyline", false],
+    ["polyline-track", "video_track_polyline", true],
+  ] as const)(
+    "%s exposes the original partial draft and resumes its exact points",
+    (tool, kind, track) => {
+      const ref = createRef<VideoStageControls>();
+      const onCreate = vi.fn();
+      render(
+        <VideoKonvaStage
+          ref={ref}
+          manifest={manifest}
+          frameIndex={4}
+          videoTool={tool}
+          onCreatePoints={onCreate}
+          onCreatePointsTrack={onCreate}
+        />,
+      );
+      const stage = drawingSurface();
+      pointer(stage, "pointerdown", 100, 100);
+      pointer(stage, "pointerdown", 300, 100);
+      expect(ref.current?.getDrawingDraft?.()).toEqual({ kind: "points", tool, frameIndex: 4 });
+      const hint = screen.getByTestId("video-creation-scope-hint");
+      expect(hint).toHaveTextContent(track ? "新建轨迹，从当前源帧开始" : "仅当前源帧");
+      expect(hint).toHaveAttribute("data-source-frame-index", "4");
+      // A declined scope command only reads the bridge; it does not reconstruct the draft.
+      expect(ref.current?.getDrawingDraft?.()).toEqual({ kind: "points", tool, frameIndex: 4 });
+      pointer(stage, "pointerdown", 300, 300);
+      fireEvent.keyDown(window, { key: "Enter" });
+      expect(onCreate).toHaveBeenCalledOnce();
+      expect(onCreate).toHaveBeenCalledWith(kind, 4, [
+        [0.1, 0.2],
+        [0.3, 0.2],
+        [0.3, 0.6],
+      ]);
+      expect(ref.current?.getDrawingDraft?.()).toBeNull();
+      expect(screen.queryByTestId("video-creation-scope-hint")).toBeNull();
+    },
+  );
+
+  it("discard clears points and prevents the subsequent Enter from creating an object", () => {
+    const ref = createRef<VideoStageControls>();
+    const onCreatePoints = vi.fn();
+    render(
+      <VideoKonvaStage
+        ref={ref}
+        manifest={manifest}
+        videoTool="polygon"
+        onCreatePoints={onCreatePoints}
+      />,
+    );
+    const stage = drawingSurface();
+    pointer(stage, "pointerdown", 100, 100);
+    pointer(stage, "pointerdown", 300, 100);
+    pointer(stage, "pointerdown", 300, 300);
+    act(() => {
+      ref.current?.discardDrawingDraft?.();
+      expect(ref.current?.getDrawingDraft?.()).toBeNull();
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", cancelable: true }));
+    });
+    expect(onCreatePoints).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("video-creation-scope-hint")).toBeNull();
+  });
+
+  it("partial keypoints can be inspected and discarded without retaining an old node", () => {
+    const ref = createRef<VideoStageControls>();
+    const onCreateKeypoints = vi.fn();
+    render(
+      <VideoKonvaStage
+        ref={ref}
+        manifest={manifest}
+        frameIndex={4}
+        videoTool="keypoint"
+        keypointSchema={{ nodes: [{ name: "head" }, { name: "tail" }], edges: [[0, 1]] }}
+        onCreateKeypoints={onCreateKeypoints}
+      />,
+    );
+    const stage = drawingSurface();
+    pointer(stage, "pointerdown", 100, 100);
+    expect(ref.current?.getDrawingDraft?.()).toEqual({
+      kind: "keypoint",
+      tool: "keypoint",
+      frameIndex: 4,
+    });
+    expect(screen.getByTestId("video-creation-scope-hint")).toHaveTextContent("仅当前源帧");
+    act(() => ref.current?.discardDrawingDraft?.());
+    expect(ref.current?.getDrawingDraft?.()).toBeNull();
+    pointer(stage, "pointerdown", 300, 100);
+    expect(onCreateKeypoints).not.toHaveBeenCalled();
+    pointer(stage, "pointerdown", 300, 300);
+    expect(onCreateKeypoints).toHaveBeenCalledOnce();
+    expect(onCreateKeypoints).toHaveBeenCalledWith(4, [
+      { x: 0.3, y: 0.2, v: 2 },
+      { x: 0.3, y: 0.6, v: 2 },
+    ]);
+  });
+
+  it("discarding a creating drag blocks a trailing pointerup synchronously", () => {
+    const ref = createRef<VideoStageControls>();
+    const onPendingDraw = vi.fn();
+    render(
+      <VideoKonvaStage
+        ref={ref}
+        manifest={manifest}
+        frameIndex={4}
+        videoTool="track"
+        onPendingDraw={onPendingDraw}
+      />,
+    );
+    const stage = drawingSurface();
+    pointer(stage, "pointerdown", 600, 100);
+    expect(ref.current?.getDrawingDraft?.()).toEqual({ kind: "box", tool: "track", frameIndex: 4 });
+    expect(screen.getByTestId("video-creation-scope-hint")).toHaveTextContent(
+      "新建轨迹，从当前源帧开始",
+    );
+    pointer(window, "pointermove", 800, 300);
+    act(() => {
+      ref.current?.discardDrawingDraft?.();
+      expect(ref.current?.getDrawingDraft?.()).toBeNull();
+      window.dispatchEvent(new MouseEvent("pointerup", { clientX: 800, clientY: 300 }));
+    });
+    expect(onPendingDraw).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("video-creation-scope-hint")).toBeNull();
+  });
+
+  it("the creation bridge leaves an existing object move intact", () => {
+    const annotation = contextAnnotation("video_track_bbox");
+    const ref = createRef<VideoStageControls>();
+    const onUpdate = vi.fn();
+    render(
+      <VideoKonvaStage
+        ref={ref}
+        manifest={manifest}
+        annotations={[annotation]}
+        selectedId={annotation.id}
+        videoTool="select"
+        onUpdate={onUpdate}
+      />,
+    );
+    const stage = drawingSurface();
+    pointer(stage, "pointerdown", 200, 150);
+    expect(ref.current?.getDrawingDraft?.()).toBeNull();
+    expect(screen.queryByTestId("video-creation-scope-hint")).toBeNull();
+    act(() => ref.current?.discardDrawingDraft?.());
+    pointer(window, "pointerup", 300, 200);
+    expect(onUpdate).toHaveBeenCalledOnce();
+    expect(onUpdate.mock.calls[0][0].id).toBe(annotation.id);
+  });
+
+  it("continuing an existing bbox track never advertises a new track", () => {
+    const annotation = contextAnnotation("video_track_bbox");
+    const ref = createRef<VideoStageControls>();
+    const onUpdate = vi.fn();
+    const onPendingDraw = vi.fn();
+    render(
+      <VideoKonvaStage
+        ref={ref}
+        manifest={manifest}
+        frameIndex={4}
+        annotations={[annotation]}
+        selectedId={annotation.id}
+        videoTool="track"
+        onUpdate={onUpdate}
+        onPendingDraw={onPendingDraw}
+      />,
+    );
+    const stage = drawingSurface();
+    pointer(stage, "pointerdown", 600, 100);
+    expect(ref.current?.getDrawingDraft?.()).toEqual({
+      kind: "box",
+      tool: "track",
+      frameIndex: 4,
+      continuingTrack: true,
+    });
+    expect(screen.queryByTestId("video-creation-scope-hint")).toBeNull();
+    pointer(window, "pointerup", 800, 300);
+    expect(onPendingDraw).not.toHaveBeenCalled();
+    expect(onUpdate).toHaveBeenCalledOnce();
+    expect(
+      onUpdate.mock.calls[0][1].keyframes.some(
+        (kf: { frame_index: number }) => kf.frame_index === 4,
+      ),
+    ).toBe(true);
+  });
+
+  it("ends the continuing draft before keyframe writes and automatic next-track selection", () => {
+    const annotation = contextAnnotation("video_track_bbox");
+    const nextTrack: AnnotationResponse = {
+      ...annotation,
+      id: "next-track",
+      geometry: {
+        type: "video_track_bbox",
+        track_id: "trk_next",
+        keyframes: [
+          {
+            frame_index: 3,
+            bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+            source: "manual",
+            occluded: false,
+          },
+        ],
+      },
+    };
+    const ref = createRef<VideoStageControls>();
+    const observedDrafts: Array<VideoDrawingDraft | null | undefined> = [];
+    const onUpdate = vi.fn();
+    const onSelect = vi.fn();
+    onUpdate.mockImplementation(() => observedDrafts.push(ref.current?.getDrawingDraft?.()));
+    onSelect.mockImplementation(() => observedDrafts.push(ref.current?.getDrawingDraft?.()));
+    render(
+      <VideoKonvaStage
+        ref={ref}
+        manifest={manifest}
+        frameIndex={4}
+        annotations={[annotation, nextTrack]}
+        selectedId={annotation.id}
+        videoTool="track"
+        trackContinueAutoAdvance
+        onUpdate={onUpdate}
+        onSelect={onSelect}
+      />,
+    );
+    const stage = drawingSurface();
+    observedDrafts.length = 0;
+    onSelect.mockClear();
+
+    pointer(stage, "pointerdown", 600, 100);
+    pointer(window, "pointerup", 800, 300);
+
+    expect(onUpdate).toHaveBeenCalledOnce();
+    expect(onUpdate.mock.calls[0][0]).toBe(annotation);
+    const updated = onUpdate.mock.calls[0][1] as VideoTrackGeometry;
+    expect(updated.keyframes.map((keyframe) => keyframe.frame_index)).toEqual([0, 4, 8]);
+    expect(updated.keyframes[1]).toMatchObject({ source: "manual", occluded: false });
+    expect(updated.keyframes[1].bbox).toMatchObject({ x: 0.6, y: 0.2 });
+    expect(updated.keyframes[1].bbox.w).toBeCloseTo(0.2);
+    expect(updated.keyframes[1].bbox.h).toBeCloseTo(0.4);
+    expect(onSelect).toHaveBeenCalledOnce();
+    expect(onSelect).toHaveBeenCalledWith(nextTrack.id);
+    expect(observedDrafts).toEqual([null, null]);
+    expect(ref.current?.getDrawingDraft?.()).toBeNull();
+  });
+
+  it("pending preview scope follows its captured payload instead of the current tool", () => {
+    const view = render(
+      <VideoKonvaStage
+        manifest={manifest}
+        videoTool="box"
+        frameIndex={4}
+        pendingDrawing={{
+          kind: "video_track_polygon",
+          frameIndex: 4,
+          geom: { x: 0.1, y: 0.2, w: 0.2, h: 0.3 },
+          anchor: { left: 100, top: 200 },
+          points: [
+            [0.1, 0.2],
+            [0.3, 0.2],
+            [0.3, 0.5],
+          ],
+        }}
+      />,
+    );
+    expect(screen.getByTestId("video-creation-scope-hint")).toHaveTextContent(
+      "新建轨迹，从当前源帧开始",
+    );
+    view.rerender(
+      <VideoKonvaStage
+        manifest={manifest}
+        videoTool="track"
+        frameIndex={4}
+        pendingDrawing={{
+          kind: "video_bbox",
+          frameIndex: 4,
+          geom: { x: 0.1, y: 0.2, w: 0.2, h: 0.3 },
+          anchor: { left: 100, top: 200 },
+        }}
+      />,
+    );
+    expect(screen.getByTestId("video-creation-scope-hint")).toHaveTextContent("仅当前源帧");
+    view.rerender(
+      <VideoKonvaStage
+        manifest={manifest}
+        videoTool="track"
+        frameIndex={5}
+        pendingDrawing={{
+          kind: "video_bbox",
+          frameIndex: 4,
+          geom: { x: 0.1, y: 0.2, w: 0.2, h: 0.3 },
+          anchor: { left: 100, top: 200 },
+        }}
+      />,
+    );
+    expect(screen.queryByTestId("video-creation-scope-hint")).toBeNull();
+  });
+
+  it.each([
+    [0, false, true],
+    [1, false, false],
+    [2, false, false],
+    [0, true, false],
+  ] as const)(
+    "neutral blank pointer button=%s spacePan=%s clears only a normal left selection",
+    (button, spacePan, clears) => {
+      const onSelect = vi.fn();
+      render(
+        <VideoKonvaStage
+          manifest={manifest}
+          videoTool="select"
+          onSelect={onSelect}
+          spacePan={spacePan}
+        />,
+      );
+      const stage = drawingSurface();
+      onSelect.mockClear();
+      pointer(stage, "pointerdown", 700, 100, button);
+      expect(onSelect.mock.calls).toEqual(clears ? [[null]] : []);
+      pointer(window, "pointerup", 700, 100, button);
+    },
+  );
+
   it("settings scrolling and draft keys leave the underlying video stage untouched", () => {
     const view = render(<VideoKonvaStage manifest={manifest} videoTool="polygon" />);
     const stage = view.getByTestId("video-konva-stage");
@@ -349,6 +681,86 @@ describe("VideoKonvaStage · konva mock", () => {
     expect(wheel.defaultPrevented).toBe(true);
     expect(enter.defaultPrevented).toBe(true);
   });
+
+  it("a tool menu consumes Enter while the existing points draft remains available", () => {
+    const ref = createRef<VideoStageControls>();
+    const onCreatePoints = vi.fn();
+    render(
+      <VideoKonvaStage
+        ref={ref}
+        manifest={manifest}
+        videoTool="polygon"
+        onCreatePoints={onCreatePoints}
+      />,
+    );
+    const stage = drawingSurface();
+    pointer(stage, "pointerdown", 100, 100);
+    pointer(stage, "pointerdown", 300, 100);
+    pointer(stage, "pointerdown", 300, 300);
+    const menu = document.createElement("button");
+    menu.dataset.workbenchToolMenu = "";
+    menu.dataset.state = "open";
+    document.body.append(menu);
+    try {
+      fireEvent.keyDown(menu, { key: "Enter" });
+      expect(onCreatePoints).not.toHaveBeenCalled();
+      expect(ref.current?.getDrawingDraft?.()).toEqual({
+        kind: "points",
+        tool: "polygon",
+        frameIndex: 0,
+      });
+    } finally {
+      menu.remove();
+    }
+    fireEvent.keyDown(window, { key: "Enter" });
+    expect(onCreatePoints).toHaveBeenCalledWith("video_polygon", 0, [
+      [0.1, 0.2],
+      [0.3, 0.2],
+      [0.3, 0.6],
+    ]);
+  });
+
+  it.each(["mask", "mask-track"] as const)(
+    "new %s preview keeps its first stroke scope through the pending class step",
+    (tool) => {
+      const editor = makeMaskEditor({ beginStroke: vi.fn(), paintAt: vi.fn(), endStroke: vi.fn() });
+      const ref = createRef<VideoStageControls>();
+      const view = render(
+        <VideoKonvaStage
+          ref={ref}
+          manifest={manifest}
+          videoTool={tool}
+          frameIndex={4}
+          maskEditor={editor}
+        />,
+      );
+      const stage = drawingSurface();
+      pointer(stage, "pointerdown", 100, 100);
+      expect(ref.current?.getDrawingDraft?.()).toBeNull(); // Mask retains its existing navigation owner.
+      const text = tool === "mask-track" ? "新建轨迹，从当前源帧开始" : "仅当前源帧";
+      expect(screen.getByTestId("video-creation-scope-hint")).toHaveTextContent(text);
+      view.rerender(
+        <VideoKonvaStage
+          ref={ref}
+          manifest={manifest}
+          videoTool="select"
+          frameIndex={4}
+          maskEditor={editor}
+          pendingDrawing={{
+            kind: "video_mask",
+            frameIndex: 4,
+            geom: { x: 0.1, y: 0.2, w: 0.2, h: 0.3 },
+            anchor: { left: 100, top: 200 },
+          }}
+        />,
+      );
+      expect(screen.getByTestId("video-creation-scope-hint")).toHaveTextContent(text);
+      expect(screen.getByTestId("video-creation-scope-hint")).toHaveAttribute(
+        "data-source-frame-index",
+        "4",
+      );
+    },
+  );
 
   it.each(["mask", "mask-track"] as const)(
     "%s sends every editor phase to the primary/secondary owner",

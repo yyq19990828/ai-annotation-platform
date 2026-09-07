@@ -9,6 +9,7 @@ import {
 } from "react";
 import { isWorkbenchInteractionBlocked } from "./workbenchInteractionGuards";
 import { useWorkbenchAiRequest } from "./useWorkbenchAiRequest";
+import { useVideoToolCommands } from "./useVideoToolCommands";
 import { markVariantHot } from "./sessionVariantCache";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useIsMutating, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -83,7 +84,7 @@ import { usePendingGeom } from "./usePendingGeom";
 import { useToolBindings, classesForUnit, attributeSchemaForUnit } from "./useToolBindings";
 import { MANUAL_IMAGE_TOOLS, manualImageTool, continuousIntentError } from "./manualImageCreation";
 import { ManualCreationPopover } from "../shell/ManualCreationPopover";
-import { videoToolUnit, videoToolEnabled } from "../stage/videoToolUnits";
+import { videoToolUnit, videoToolEnabled, type VideoToolSelection } from "../stage/videoToolUnits";
 import type { ToolUnitId } from "@/constants/toolUnits";
 import type { AttributeField, ToolBinding, ToolBindings } from "@/api/projects";
 import { useViewportTransform } from "./useViewportTransform";
@@ -649,6 +650,7 @@ export function useWorkbenchShellModel({
   const setTool = s.setTool;
   const videoTool = s.videoTool;
   const setVideoTool = s.setVideoTool;
+  const setVideoToolSelection = s.setVideoToolSelection;
   const videoFrameIndex = s.videoFrameIndex;
   const setVideoFrameIndex = s.setVideoFrameIndex;
   useEffect(() => {
@@ -957,10 +959,15 @@ export function useWorkbenchShellModel({
   >([]);
   // 落点/画框模式: point → smart-point 落点, box → smart-box 画修正框。
   const [seedMode, setSeedMode] = useState<"point" | "box">("point");
+  const seedModeRef = useRef(seedMode);
+  seedModeRef.current = seedMode;
   const [seedObj, setSeedObj] = useState(1);
   const [seedAnchorFrame, setSeedAnchorFrame] = useState<number | null>(null);
   const [seedCollecting, setSeedCollecting] = useState(false);
-  const seedPrevToolRef = useRef<VideoTool | null>(null);
+  const seedPrevToolRef = useRef<VideoToolSelection | null>(null);
+  const requestVideoSeedToolRef = useRef<
+    ReturnType<typeof useVideoToolCommands>["requestTemporaryTool"]
+  >(() => {});
   // 当前创建工具被 video_modes 过滤掉时, 回到选择工具；平移不再是 fallback 工具。
   // v0.21.27 · U-pvs-1 · PVS 种子采集态会临时把工具切到 smart-point (画布 samProbe 只看
   // 工具值、不看 enablement), 此时不受本守卫回收 —— 否则未绑交互工具的项目落不了种子。
@@ -1008,11 +1015,20 @@ export function useWorkbenchShellModel({
   // 「落点选目标」进入采集态, 画布点击落归一化种子点 (复用 smart-point 手势 →
   // onVideoSamPrompt), 提交时进 prompt.seeds。seedPrevToolRef 记录进入前的工具, 退出时
   // 仅在真进过采集态时复原 (避免误改工具)。
+  const propagateDialogRef = useRef(propagateDialog);
+  propagateDialogRef.current = propagateDialog;
   const startSeedCollecting = useCallback(() => {
-    seedPrevToolRef.current = s.videoTool;
-    setVideoTool(seedMode === "box" ? "smart-box" : "smart-point");
-    setSeedCollecting(true);
-  }, [s.videoTool, setVideoTool, seedMode]);
+    const sourceDialog = propagateDialog;
+    if (!sourceDialog) return;
+    requestVideoSeedToolRef.current(
+      seedMode === "box" ? "smart-box" : "smart-point",
+      (previous) => {
+        seedPrevToolRef.current = previous;
+        setSeedCollecting(true);
+      },
+      () => propagateDialogRef.current === sourceDialog && seedModeRef.current === seedMode,
+    );
+  }, [propagateDialog, seedMode]);
   // 点/框模式切换: 采集中即时切工具 (smart-point ↔ smart-box), 未采集只记模式。
   const changeSeedMode = useCallback(
     (mode: "point" | "box") => {
@@ -1023,11 +1039,11 @@ export function useWorkbenchShellModel({
   );
   const stopSeedCollecting = useCallback(() => {
     if (seedPrevToolRef.current !== null) {
-      setVideoTool(seedPrevToolRef.current);
+      setVideoToolSelection(seedPrevToolRef.current);
       seedPrevToolRef.current = null;
     }
     setSeedCollecting(false);
-  }, [setVideoTool]);
+  }, [setVideoToolSelection]);
   const toggleSeedCollecting = useCallback(() => {
     if (seedCollecting) stopSeedCollecting();
     else startSeedCollecting();
@@ -2761,6 +2777,60 @@ export function useWorkbenchShellModel({
     maskEditor.cancel();
     return true;
   };
+  const {
+    requestTool: requestVideoTool,
+    requestScope: requestVideoToolScope,
+    requestSelection: requestVideoSelection,
+    requestTemporaryTool: requestTemporaryVideoTool,
+    confirmationOpen: videoToolConfirmationOpen,
+    settleConfirmation: settleVideoToolConfirmation,
+  } = useVideoToolCommands({
+    enabled: isVideoTask,
+    ownerKey: JSON.stringify([taskId, annotationSegmentId, s.videoFrameIndex, currentPath]),
+    state: s,
+    controlsRef: videoControlsRef,
+    annotationsRef,
+    isToolEnabled: isVideoToolEnabled,
+    toolDisabledReason: (target) => {
+      if (
+        target === "keypoint" &&
+        !currentProject?.tool_bindings?.keypoint?.keypoint_schema?.nodes?.length
+      ) {
+        return "请先在项目设置中配置关键点骨骼";
+      }
+      const prompt =
+        target === "smart-point" ||
+        target === "smart-box" ||
+        target === "magic-box" ||
+        target === "exemplar"
+          ? promptOfTool(target)
+          : null;
+      if (!prompt) return undefined;
+      if (currentProject?.ai_interactive_enabled === false) return "项目未启用交互式 AI 工具";
+      if (routing.isLoading) return "正在协商后端能力，请稍后再选择";
+      if (!routing.isPromptSupported(prompt)) return "当前后端不支持此交互模式";
+      return undefined;
+    },
+    needsMaskGuard:
+      hasPendingMaskDraft ||
+      maskEditor.phase === "saving" ||
+      maskInstanceTransitionBusy ||
+      maskPrimaryBusyRef.current,
+    guardMask: () => maskNavigationGuardRef.current(),
+    blockedReason: seedCollecting
+      ? "请先结束追踪种子采集"
+      : maskCompareInteractionBlocked
+        ? "请先结束 Mask 证据对比"
+        : s.pendingDrawing?.kind === "video_mask"
+          ? "请先为 Mask 选择类别或取消保存"
+          : maskEditor.phase === "saving" ||
+              maskInstanceTransitionBusy ||
+              maskPrimaryBusyRef.current
+            ? "Mask 正在处理，完成后再切换工具"
+            : undefined,
+    explain: (reason) => pushToast({ msg: reason, kind: "warning" }),
+  });
+  requestVideoSeedToolRef.current = requestTemporaryVideoTool;
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
       if (!maskInstanceTransitionBusy && (!maskEditor.active || !hasPendingMaskDraft)) return;
@@ -3025,6 +3095,15 @@ export function useWorkbenchShellModel({
 
   const handleSelectBox = useCallback(
     (id: string | null, opts?: { shift?: boolean }) => {
+      if (isVideoTask) {
+        // Seed prompts clear ordinary selection internally without leaving collection mode.
+        if (seedCollecting && id === null) {
+          s.setSelectedId(null);
+          return;
+        }
+        requestVideoSelection(id, opts);
+        return;
+      }
       if (!id) {
         s.setSelectedId(null);
         return;
@@ -3036,7 +3115,7 @@ export function useWorkbenchShellModel({
         s.setSelectedId(id);
       }
     },
-    [s],
+    [isVideoTask, seedCollecting, s, requestVideoSelection],
   );
 
   const enterImageRasterMaskEdit = useCallback(
@@ -5819,6 +5898,7 @@ export function useWorkbenchShellModel({
     classPickerActive: !!samPendingGeom || !!videoSamPendingAccept,
     ignoredKeys: stageKind === "3d" ? threeDOwnedKeys : undefined,
     videoMode: isVideoTask,
+    requestVideoTool,
     samplingActive,
     videoControlsRef,
     isPromptSupported: routing.isPromptSupported,
@@ -5924,6 +6004,7 @@ export function useWorkbenchShellModel({
         lockedTrackIds={lockedVideoTrackIds}
         classes={classes}
         onSelect={handleSelectBox}
+        onSelectVideoObject={requestVideoSelection}
         onToggleHiddenTrack={toggleHiddenVideoTrack}
         onToggleLockedTrack={toggleLockedVideoTrack}
         onSeekFrame={s.setVideoFrameIndex}
@@ -5964,6 +6045,7 @@ export function useWorkbenchShellModel({
       lockedVideoTrackIds,
       classes,
       handleSelectBox,
+      requestVideoSelection,
       toggleHiddenVideoTrack,
       toggleLockedVideoTrack,
       s.setVideoFrameIndex,
@@ -6122,7 +6204,7 @@ export function useWorkbenchShellModel({
             onDelete={handleDeleteBox}
             onUpdateAttributes={handleUpdateAttributes}
             onConvert={ann.geometry.type === "video_polygon" ? openAnnotationConversion : undefined}
-            onEditMask={isVideoMask(ann) ? () => setVideoTool("mask") : undefined}
+            onEditMask={isVideoMask(ann) ? () => requestVideoTool("mask") : undefined}
           />
         );
       } else if (ann && (isVideoPointsTrack(ann) || isVideoMaskTrack(ann))) {
@@ -6143,7 +6225,7 @@ export function useWorkbenchShellModel({
             onDelete={handleDeleteBox}
             onToggleHidden={toggleHiddenVideoTrack}
             onToggleLock={toggleLockedVideoTrack}
-            onEditMask={isVideoMaskTrack(ann) ? () => setVideoTool("mask-track") : undefined}
+            onEditMask={isVideoMaskTrack(ann) ? () => requestVideoTool("mask-track") : undefined}
             onPropagate={isVideoMaskTrack(ann) ? () => openPropagateDialog(ann) : undefined}
             onConvert={
               ann.geometry.type === "video_track_polygon" || isVideoMaskTrack(ann)
@@ -6314,7 +6396,7 @@ export function useWorkbenchShellModel({
     lockedVideoTrackIds,
     toggleHiddenVideoTrack,
     toggleLockedVideoTrack,
-    setVideoTool,
+    requestVideoTool,
     videoMaskKeyframeActions,
     openPropagateDialog,
     handleStartChangeClass,
@@ -6652,7 +6734,9 @@ export function useWorkbenchShellModel({
       tool: s.tool,
       onSetTool: s.setTool,
       videoTool: s.videoTool,
-      onSetVideoTool: s.setVideoTool,
+      onSetVideoTool: requestVideoTool,
+      videoToolScope: s.videoToolScope,
+      onSetVideoToolScope: requestVideoToolScope,
       isPromptSupported: routing.isPromptSupported,
       toolDisabledReasons: {
         mask: imageMaskSizeDisabledReason,
@@ -6872,6 +6956,35 @@ export function useWorkbenchShellModel({
                 }
               />
             )}
+            <AlertDialog
+              open={videoToolConfirmationOpen}
+              onOpenChange={(open) => {
+                if (!open) settleVideoToolConfirmation(false);
+              }}
+            >
+              <AlertDialogContent
+                size="sm"
+                className="z-app-drawer"
+                overlayProps={{ className: "z-app-drawer-backdrop" }}
+                data-workbench-video-tool-confirm
+              >
+                <AlertDialogHeader>
+                  <AlertDialogTitle>切换视频工具</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    当前源帧还有未完成的绘制。继续绘制会保留原工具、范围和草稿；丢弃后再切换。
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>继续绘制</AlertDialogCancel>
+                  <AlertDialogAction
+                    variant="destructive"
+                    onClick={() => settleVideoToolConfirmation(true)}
+                  >
+                    丢弃并切换
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
             <AlertDialog
               open={maskPrimary.emptyConfirmationOpen}
               onOpenChange={(open) => {
@@ -7345,6 +7458,7 @@ export function useWorkbenchShellModel({
       imageWidth,
       imageHeight,
       onSelect: handleSelectBox,
+      onSelectVideoObject: isVideoTask ? requestVideoSelection : undefined,
       onAcceptPrediction: handleAcceptPrediction,
       onRejectPrediction: handleRejectPrediction,
       onRefinePrediction: handleRefinePrediction,

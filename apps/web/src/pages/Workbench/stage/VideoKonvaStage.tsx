@@ -138,7 +138,7 @@ import {
   nextCategory,
   type FrameObjectRef,
 } from "./frameObjectCycle";
-import type { VideoStageControls } from "./videoStageControls";
+import type { VideoDrawingDraft, VideoStageControls } from "./videoStageControls";
 import { VideoKonvaAiLayer } from "./VideoKonvaAiLayer";
 import { VideoSamCandidateOverlay, type VideoSamCandidateShape } from "./VideoSamCandidateOverlay";
 import { SelectionOverlay } from "./SelectionOverlay";
@@ -390,6 +390,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     const maskLassoRef = useRef<[number, number][] | null>(null);
     const [maskLassoPoints, setMaskLassoPoints] = useState<[number, number][]>([]);
     const [maskCursor, setMaskCursor] = useState<{ x: number; y: number } | null>(null);
+    const maskCreationOwnerRef = useRef<{ tool: VideoTool; frameIndex: number } | null>(null);
     const maskToolActive = videoTool === "mask" || videoTool === "mask-track";
 
     // v0.16.3 · 交互:选中轨迹(供 track 工具画框落关键帧 + ghost 可编辑判定)。
@@ -974,6 +975,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     // v0.21.20/21 · polygon/polyline 绘制 (点击落点, Enter/双击闭合)。与拖拽 bbox 正交。
     // 四工具: polygon/polyline = 单帧几何; polygon-track/polyline-track = 轨迹关键帧。
     const pointsDraft = useVideoPolygonDraft();
+    const pointsOwnerRef = useRef<VideoDrawingDraft | null>(null);
     // 绘制中的光标归一化坐标(橡皮筋预览段 + 首点吸附高亮用),越界/未绘制时 null。
     const [pointsCursor, setPointsCursor] = useState<{ x: number; y: number } | null>(null);
     const isPointsClosedTool = videoTool === "polygon" || videoTool === "polygon-track";
@@ -995,6 +997,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     );
 
     const [keypointDraft, setKeypointDraft] = useState<Keypoint[]>([]);
+    const keypointOwnerRef = useRef<VideoDrawingDraft | null>(null);
     const keypointDrawEnabled =
       videoTool === "keypoint" &&
       !pendingDrawing &&
@@ -1003,30 +1006,65 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       (keypointSchema?.nodes.length ?? 0) > 0 &&
       (!isVideoToolEnabled || isVideoToolEnabled(videoTool));
     useEffect(() => {
+      keypointOwnerRef.current = null;
       setKeypointDraft([]);
     }, [frameIndex, keypointSchema?.nodes.length, videoTool]);
 
+    useEffect(() => {
+      if (
+        !maskEditor?.active ||
+        selectedMaskAnnotation ||
+        maskCreationOwnerRef.current?.frameIndex !== frameIndex
+      )
+        maskCreationOwnerRef.current = null;
+    }, [frameIndex, maskEditor?.active, selectedMaskAnnotation]);
+
+    const cancelPointsDraft = useCallback(() => {
+      pointsOwnerRef.current = null;
+      pointsDraft.cancel();
+      setPointsCursor(null);
+    }, [pointsDraft]);
+
+    const getDrawingDraft = useCallback((): VideoDrawingDraft | null => {
+      if (pointsDraft.draft?.points.length && pointsOwnerRef.current)
+        return { ...pointsOwnerRef.current };
+      if (keypointDraft.length && keypointOwnerRef.current) return { ...keypointOwnerRef.current };
+      return interaction.getDrawingDraft();
+    }, [interaction, keypointDraft.length, pointsDraft.draft]);
+
+    const discardDrawingDraft = useCallback(() => {
+      cancelPointsDraft();
+      keypointOwnerRef.current = null;
+      setKeypointDraft([]);
+      interaction.discardDrawingDraft();
+    }, [cancelPointsDraft, interaction]);
+
     const commitPointsDraft = useCallback(() => {
+      const owner = pointsOwnerRef.current;
+      if (!owner) return;
       const pts = pointsDraft.commit();
+      pointsOwnerRef.current = null;
+      setPointsCursor(null);
       if (!pts) return;
-      if (videoTool === "polygon-track" || videoTool === "polyline-track") {
+      if (owner.tool === "polygon-track" || owner.tool === "polyline-track") {
         onCreatePointsTrack?.(
-          videoTool === "polyline-track" ? "video_track_polyline" : "video_track_polygon",
-          frameIndex,
+          owner.tool === "polyline-track" ? "video_track_polyline" : "video_track_polygon",
+          owner.frameIndex,
           pts,
         );
       } else {
         onCreatePoints?.(
-          videoTool === "polyline" ? "video_polyline" : "video_polygon",
-          frameIndex,
+          owner.tool === "polyline" ? "video_polyline" : "video_polygon",
+          owner.frameIndex,
           pts,
         );
       }
-    }, [pointsDraft, onCreatePointsTrack, onCreatePoints, videoTool, frameIndex]);
+    }, [pointsDraft, onCreatePointsTrack, onCreatePoints]);
 
     // 落点: polygon/polyline 工具下 Stage pointerdown 累加顶点 (阻断拖拽/选择分流)。
     const handleStagePointerDown = useCallback(
       (e: Parameters<typeof interaction.onStagePointerDown>[0]) => {
+        if (spacePan || panRef.current || isWorkbenchInteractionBlocked(e.evt)) return;
         if ((e.evt.ctrlKey || e.evt.metaKey) && samMaskRecords.length > 0) {
           const point = pointFromClientEvt(e.evt.clientX, e.evt.clientY);
           const candidate = point ? pickTopRasterMaskAt(samMaskRecords, point) : null;
@@ -1057,6 +1095,9 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
           if (!point) return;
           e.cancelBubble = true;
           containerRef.current?.setPointerCapture?.(native.pointerId);
+          if (!selectedMaskAnnotation && !maskCreationOwnerRef.current) {
+            maskCreationOwnerRef.current = { tool: videoTool, frameIndex };
+          }
           if (!maskEditor.active) maskEditor.beginBlank();
           const x = point.x * size.w;
           const y = point.y * size.h;
@@ -1120,13 +1161,17 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
           const pt = pointFromClientEvt(native.clientX, native.clientY);
           if (!pt) return;
           e.cancelBubble = true;
-          if (keypointDraft.length === 0) onSelect?.(null);
+          if (keypointDraft.length === 0) {
+            onSelect?.(null);
+            keypointOwnerRef.current = { kind: "keypoint", tool: videoTool, frameIndex };
+          }
           const next = [
             ...keypointDraft,
             { x: pt.x, y: pt.y, v: native.button === 2 ? 0 : native.altKey ? 1 : 2 } as Keypoint,
           ];
           if (next.length >= (keypointSchema?.nodes.length ?? 0)) {
-            onCreateKeypoints?.(frameIndex, next);
+            onCreateKeypoints?.(keypointOwnerRef.current?.frameIndex ?? frameIndex, next);
+            keypointOwnerRef.current = null;
             setKeypointDraft([]);
           } else {
             setKeypointDraft(next);
@@ -1147,6 +1192,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
               return;
             }
           }
+          if (!pts?.length)
+            pointsOwnerRef.current = { kind: "points", tool: videoTool, frameIndex };
           pointsDraft.addPoint(pt, isPointsClosedTool);
           return;
         }
@@ -1177,6 +1224,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         selectedMaskAnnotation,
         size.h,
         size.w,
+        spacePan,
+        videoTool,
       ],
     );
 
@@ -1248,16 +1297,16 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
 
     // Enter/双击 闭合提交; Esc 取消。切工具/只读 时丢弃草稿。
     useEffect(() => {
-      if (!pointsDrawEnabled && pointsDraft.draft) pointsDraft.cancel();
-    }, [pointsDrawEnabled, pointsDraft]);
+      if (!pointsDrawEnabled && pointsDraft.draft) cancelPointsDraft();
+    }, [cancelPointsDraft, pointsDrawEnabled, pointsDraft.draft]);
     // 切帧时丢弃未提交的顶点草稿: 顶点是起草帧的像素坐标, 若带到新帧提交会错位落在新帧上。
     // ref 守卫「帧真的变了」才取消 (pointsDraft 身份每渲染变, 不守卫会误伤同帧正常绘制)。
     const draftFrameRef = useRef(frameIndex);
     useEffect(() => {
       if (draftFrameRef.current === frameIndex) return;
       draftFrameRef.current = frameIndex;
-      if (pointsDraft.draft) pointsDraft.cancel();
-    }, [frameIndex, pointsDraft]);
+      if (pointsDraft.draft) cancelPointsDraft();
+    }, [cancelPointsDraft, frameIndex, pointsDraft.draft]);
     useEffect(() => {
       if (!pointsDrawEnabled) return;
       const onKey = (e: KeyboardEvent) => {
@@ -1267,7 +1316,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
           commitPointsDraft();
         } else if (e.key === "Escape") {
           e.preventDefault();
-          pointsDraft.cancel();
+          cancelPointsDraft();
         } else if (e.key === "Backspace") {
           e.preventDefault();
           pointsDraft.removeLastPoint();
@@ -1275,7 +1324,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       };
       window.addEventListener("keydown", onKey, true);
       return () => window.removeEventListener("keydown", onKey, true);
-    }, [pointsDrawEnabled, commitPointsDraft, pointsDraft]);
+    }, [pointsDrawEnabled, cancelPointsDraft, commitPointsDraft, pointsDraft]);
 
     // 可编辑选中框 → 画 8 向句柄(拖拽中跟随 live geom);live 预览框(画框/移动/缩放)。
     const interactionEditable = !readOnly && !isPlaybackActive;
@@ -1383,6 +1432,55 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         frameViews.entries.find((entry) => entry.id === drag.id)?.color ?? classColor(activeClass);
       return { geometry: drag.current, color };
     }, [activeClass, drag, frameViews.entries]);
+
+    const creationScopeHint = (() => {
+      const at = (tool: VideoTool, sourceFrame: number, point: { x: number; y: number }) => {
+        if (sourceFrame !== frameIndex) return null;
+        const isTrack =
+          tool === "track" ||
+          tool === "polygon-track" ||
+          tool === "polyline-track" ||
+          tool === "mask-track";
+        return {
+          text: isTrack ? "新建轨迹，从当前源帧开始" : "仅当前源帧",
+          frameIndex: sourceFrame,
+          left: Math.max(8, Math.min(vp.tx + point.x * size.w * vp.scale, viewportSize.w - 240)),
+          top: Math.max(8, Math.min(vp.ty + point.y * size.h * vp.scale - 30, viewportSize.h - 90)),
+        };
+      };
+      if (pendingDrawing && "frameIndex" in pendingDrawing) {
+        const { kind, frameIndex: sourceFrame, geom } = pendingDrawing;
+        if (kind === "video_mask") {
+          const owner = maskCreationOwnerRef.current;
+          return owner && !selectedMaskAnnotation ? at(owner.tool, sourceFrame, geom) : null;
+        }
+        const tool =
+          kind === "video_track_bbox"
+            ? "track"
+            : kind === "video_track_polygon"
+              ? "polygon-track"
+              : kind === "video_track_polyline"
+                ? "polyline-track"
+                : "box";
+        return at(tool, sourceFrame, geom);
+      }
+      const pointsOwner = pointsOwnerRef.current;
+      const draftPoints = pointsDraft.draft?.points;
+      const lastPoint = draftPoints?.[draftPoints.length - 1];
+      if (pointsOwner && lastPoint)
+        return at(pointsOwner.tool, pointsOwner.frameIndex, { x: lastPoint[0], y: lastPoint[1] });
+      const keypointOwner = keypointOwnerRef.current;
+      const lastKeypoint = keypointDraft[keypointDraft.length - 1];
+      if (keypointOwner && lastKeypoint)
+        return at(keypointOwner.tool, keypointOwner.frameIndex, lastKeypoint);
+      const boxOwner = interaction.getDrawingDraft();
+      if (boxOwner && drag?.kind === "draw" && !interaction.continuingTrack)
+        return at(boxOwner.tool, boxOwner.frameIndex, normalizeGeom(drag.start, drag.current));
+      const maskOwner = maskCreationOwnerRef.current;
+      if (maskOwner && maskEditor?.dirty && maskCursor && !selectedMaskAnnotation)
+        return at(maskOwner.tool, maskOwner.frameIndex, maskCursor);
+      return null;
+    })();
 
     // v0.16.4 · 右键上下文菜单
     const selectedAnnotation = useMemo(
@@ -1886,6 +1984,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       ref,
       () => ({
         ...controls,
+        getDrawingDraft,
+        discardDrawingDraft,
         seekToKeyframe: seekManagedKeyframe,
         toggleSelectedTrackOutside: toggleManagedTrackOutside,
         toggleSelectedTrackOccluded: toggleManagedTrackOccluded,
@@ -1903,8 +2003,10 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         controls,
         cycleInCategory,
         deleteSelectedTrackKeyframe,
+        discardDrawingDraft,
         focusObject,
         focusRegion,
+        getDrawingDraft,
         normToClient,
         seekManagedKeyframe,
         stepCategory,
@@ -2501,6 +2603,22 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
               </Layer>
             )}
           </Stage>
+          {creationScopeHint && (
+            <div
+              data-testid="video-creation-scope-hint"
+              data-source-frame-index={creationScopeHint.frameIndex}
+              className="pointer-events-none absolute left-[var(--creation-scope-left)] top-[var(--creation-scope-top)] z-local-3 max-w-[calc(100%-16px)] rounded border border-border bg-card px-2 py-1 text-xs text-foreground shadow-sm"
+              // eslint-disable-next-line no-restricted-syntax -- Position follows the actual creation preview through viewport transforms.
+              style={
+                {
+                  "--creation-scope-left": `${creationScopeHint.left}px`,
+                  "--creation-scope-top": `${creationScopeHint.top}px`,
+                } as CSSProperties
+              }
+            >
+              {creationScopeHint.text}
+            </div>
+          )}
           {/* 跟踪当前帧屏幕矩形的不可见标记:改类/批量改类弹窗经 [data-video-overlay] 锚到画布上的框
             (Konva 栈无旧 SVG overlay,此 div 复刻其矩形,随 vp 平移/缩放同步)。 */}
           <div

@@ -64,6 +64,12 @@
   border-right: 1px solid var(--sc-border);
 }
 
+/* Focus must not scroll the layout grid and shift its coordinate origin. Panel content
+   keeps its own scrolling; these containers only arrange and clip the split tree. */
+.workspace :global(.dv-split-view-container) {
+  overflow: clip;
+}
+
 /* Dockview's default sash layer is 99, above body-portaled application menus. */
 .workspace :global(.dv-split-view-container .dv-sash-container .dv-sash) {
   z-index: var(--sc-z-local-overlay);

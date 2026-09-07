@@ -41,7 +41,7 @@ it.each([
   expect(check).toHaveBeenCalledOnce();
 });
 
-describe.each(["workbenchSettings", "workbenchToolMenu"])(
+describe.each(["workbenchSettings", "workbenchToolMenu", "workbenchVideoToolConfirm"])(
   "workbench %s interaction boundary",
   (marker) => {
     it("blocks background events only while the marker is open", () => {
@@ -82,5 +82,31 @@ describe.each(["workbenchSettings", "workbenchToolMenu"])(
         expect(background).toHaveBeenCalledTimes(1);
       },
     );
+  },
+);
+
+it.each([
+  ["Enter", true],
+  [" ", true],
+  ["ArrowLeft", true],
+  ["ArrowRight", true],
+  ["Home", true],
+  ["End", true],
+  ["b", false],
+  ["p", false],
+  ["m", false],
+  ["Escape", false],
+])(
+  "video scope controls retain native %s while ordinary tool shortcuts remain available",
+  (key, blocked) => {
+    const control = document.createElement("button");
+    control.dataset.workbenchVideoToolCommand = "";
+    document.body.append(control);
+    const check = vi.fn((event: Event) =>
+      expect(isWorkbenchInteractionBlocked(event)).toBe(blocked),
+    );
+    control.addEventListener("keydown", check);
+    control.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+    expect(check).toHaveBeenCalledOnce();
   },
 );

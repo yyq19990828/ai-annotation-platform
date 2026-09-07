@@ -81,6 +81,26 @@ function makeMaskArgs(
   return { args, editor, primary, secondary };
 }
 
+describe("video tool admission", () => {
+  it.each([
+    ["b", "box"],
+    ["p", "polygon"],
+    ["m", "mask"],
+    ["t", "track"],
+    ["v", "select"],
+  ])("%s keeps its explicit target and goes through the guarded command", (key, tool) => {
+    const requestVideoTool = vi.fn();
+    const args = makeArgs({ videoMode: true, requestVideoTool });
+    args.s.videoTool = "track";
+    args.s.setVideoTool = vi.fn();
+    const view = renderHook(() => useWorkbenchHotkeys(args));
+    act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true })));
+    expect(requestVideoTool).toHaveBeenCalledWith(tool);
+    expect(args.s.setVideoTool).not.toHaveBeenCalled();
+    view.unmount();
+  });
+});
+
 describe("SAM global hotkey fallback", () => {
   it.each([false, true])("yields native button navigation in videoMode=%s", (videoMode) => {
     const args = makeArgs({ videoMode });

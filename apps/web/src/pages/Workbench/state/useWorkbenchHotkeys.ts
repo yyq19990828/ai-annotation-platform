@@ -26,7 +26,7 @@ import type { UseMaskEditorReturn } from "./useMaskEditor";
 import { canEditMask } from "./canEditMask";
 import { recordHotkeyUsage } from "./hotkeyUsage";
 import { bboxGeom } from "./transforms";
-import type { useWorkbenchState } from "./useWorkbenchState";
+import type { useWorkbenchState, VideoTool } from "./useWorkbenchState";
 import type { useAnnotationHistory } from "./useAnnotationHistory";
 import type { AnnotationResponse, Geometry } from "@/types";
 import type { AiBox } from "./transforms";
@@ -134,6 +134,7 @@ export interface UseWorkbenchHotkeysArgs {
   disabled?: boolean;
   ignoredKeys?: Set<string>;
   videoMode?: boolean;
+  requestVideoTool?: (tool: VideoTool) => void;
   /** v0.10.29 · 视频采样网格生效 (step>1) 时改写 ←/→ 键位；step=1 维持现状。 */
   samplingActive?: boolean;
   videoControlsRef?: React.RefObject<VideoStageControls | null>;
@@ -229,6 +230,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     disabled = false,
     ignoredKeys,
     videoMode = false,
+    requestVideoTool,
     samplingActive = false,
     videoControlsRef,
     isPromptSupported,
@@ -723,7 +725,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
             return;
           }
           // 无草稿 / 无选中可取消时回选择工具；视频只退到 select, 不再回 hidden hand。
-          if (videoMode) s.setVideoTool("select");
+          if (videoMode) (requestVideoTool ?? s.setVideoTool)("select");
           else s.setTool("select");
           return;
 
@@ -877,7 +879,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           if (aiInteractiveEnabled === false && AI_TOOL_HOTKEY_IDS.has(action.tool)) {
             return;
           }
-          s.setVideoTool(action.tool);
+          (requestVideoTool ?? s.setVideoTool)(action.tool);
           return;
 
         case "samPolarity": {
@@ -970,6 +972,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     disabled,
     ignoredKeys,
     videoMode,
+    requestVideoTool,
     samplingActive,
     videoControlsRef,
     s,

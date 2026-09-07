@@ -14,6 +14,7 @@ import type {
 } from "@/types";
 import type { Viewport } from "../state/useViewportTransform";
 import type { VideoTool } from "../state/useWorkbenchState";
+import type { VideoDrawingDraft } from "./videoStageControls";
 import { applyResize, applyRotatedResize } from "./ResizeHandles";
 import {
   clamp01,
@@ -408,6 +409,9 @@ export interface UseVideoKonvaInteractionParams {
 
 export interface VideoKonvaInteraction {
   drag: VideoDragState;
+  getDrawingDraft: () => VideoDrawingDraft | null;
+  discardDrawingDraft: () => void;
+  continuingTrack: boolean;
   /** 接到 Konva Stage 的 onPointerDown:空白拖→画框,命中→移动。 */
   onStagePointerDown: (e: Konva.KonvaEventObject<PointerEvent>) => void;
   /** 接到 resize 句柄的 onPointerDown(需 cancelBubble 防冒泡到 Stage)。 */
@@ -453,6 +457,27 @@ export function useVideoKonvaInteraction(
   const [drag, setDrag] = useState<VideoDragState>(null);
   const dragRef = useRef<VideoDragState>(null);
   dragRef.current = drag;
+  const drawingOwnerRef = useRef<
+    (Omit<VideoDrawingDraft, "continuingTrack"> & { continuingTrack: boolean }) | null
+  >(null);
+
+  const getDrawingDraft = useCallback((): VideoDrawingDraft | null => {
+    const owner = drawingOwnerRef.current;
+    if (dragRef.current?.kind !== "draw" || !owner) return null;
+    return {
+      kind: owner.kind,
+      tool: owner.tool,
+      frameIndex: owner.frameIndex,
+      ...(owner.continuingTrack ? { continuingTrack: true as const } : {}),
+    };
+  }, []);
+  const discardDrawingDraft = useCallback(() => {
+    if (dragRef.current?.kind !== "draw") return;
+    // Clear the event owner before React renders, so a trailing pointerup cannot commit it.
+    dragRef.current = null;
+    drawingOwnerRef.current = null;
+    setDrag(null);
+  }, []);
 
   const paramsRef = useRef(params);
   paramsRef.current = params;
@@ -492,7 +517,18 @@ export function useVideoKonvaInteraction(
       const pt = pointFromClient(native.clientX, native.clientY);
       if (!pt) return;
       if (p.videoTool !== "track" || !p.selectedTrack) p.onSelect(null);
-      setDrag({ kind: "draw", start: pt, current: pt });
+      drawingOwnerRef.current = {
+        kind: "box",
+        tool: p.videoTool,
+        frameIndex: p.frameIndex,
+        continuingTrack:
+          p.videoTool === "track" &&
+          !!p.selectedTrack &&
+          !p.selectedTrack.geometry.keyframes.some((kf) => kf.frame_index === p.frameIndex),
+      };
+      const nextDrag = { kind: "draw", start: pt, current: pt } as const;
+      dragRef.current = nextDrag;
+      setDrag(nextDrag);
     },
     [pointFromClient],
   );
@@ -692,6 +728,10 @@ export function useVideoKonvaInteraction(
       ];
       const hit = pickTopVideoEntryAt(pickables, pt, { size: p.size });
       if (!hit) {
+        if (p.videoTool === "select") {
+          p.onSelect(null);
+          return;
+        }
         beginDraw(native);
         return;
       }
@@ -790,11 +830,19 @@ export function useVideoKonvaInteraction(
       setDrag((cur) => advanceDrag(cur, pt, { shiftKey: ev.shiftKey, altKey: ev.altKey }));
     };
     const onUp = (ev: PointerEvent) => {
+      const finalDrag = dragRef.current;
       const pt = pointFromClient(ev.clientX, ev.clientY) ?? lastPt;
-      if (pt) commit(dragRef.current, pt);
+      // Commit callbacks may select the next track; the completed drag no longer owns a draft.
+      drawingOwnerRef.current = null;
+      dragRef.current = null;
+      setDrag(null);
+      if (pt) commit(finalDrag, pt);
+    };
+    const onCancel = () => {
+      dragRef.current = null;
+      drawingOwnerRef.current = null;
       setDrag(null);
     };
-    const onCancel = () => setDrag(null);
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onCancel);
@@ -807,6 +855,9 @@ export function useVideoKonvaInteraction(
 
   return {
     drag,
+    getDrawingDraft,
+    discardDrawingDraft,
+    continuingTrack: drag?.kind === "draw" && !!drawingOwnerRef.current?.continuingTrack,
     onStagePointerDown,
     onResizeHandlePointerDown,
     onVertexPointerDown,

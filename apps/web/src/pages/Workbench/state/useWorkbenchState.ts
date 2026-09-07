@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
 import type { Annotation, Keypoint } from "@/types";
 import type { CommentCanvasDrawing } from "@/api/comments";
 import type { TextOutputMode } from "./useInteractiveAI";
 import { useWorkbenchConfig } from "./useWorkbenchConfig";
 import type { ContinuousImageCreation, ManualCreationDraft } from "./manualImageCreation";
+import { videoToolScopeForTool, type VideoToolSelection } from "../stage/videoToolUnits";
+
+export type { VideoToolScope, VideoToolSelection } from "../stage/videoToolUnits";
 
 // v0.10.2 · Tool union 扩展: 旧 "sam" 拆为 4 个独立 AI 工具 (smart-point / smart-box /
 // text-prompt / exemplar), 每个绑定一个 prompt 范式. 状态层仅保留 polarity (smart-point
@@ -166,7 +169,27 @@ export function useWorkbenchState() {
   } = useWorkbenchConfig();
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [tool, setTool] = useState<Tool>("select");
-  const [videoTool, setVideoTool] = useState<VideoTool>("select");
+  const [videoToolSelection, setVideoToolSelectionRaw] = useState<VideoToolSelection>({
+    tool: "select",
+    scope: "frame",
+  });
+  const { tool: videoTool, scope: videoToolScope } = videoToolSelection;
+  const setVideoToolSelection = useCallback((selection: VideoToolSelection) => {
+    const next = {
+      tool: selection.tool,
+      scope: videoToolScopeForTool(selection.tool) ?? selection.scope,
+    };
+    setVideoToolSelectionRaw((current) =>
+      current.tool === next.tool && current.scope === next.scope ? current : next,
+    );
+  }, []);
+  const setVideoTool = useCallback((nextTool: SetStateAction<VideoTool>) => {
+    setVideoToolSelectionRaw((current) => {
+      const next = typeof nextTool === "function" ? nextTool(current.tool) : nextTool;
+      const scope = videoToolScopeForTool(next) ?? current.scope;
+      return current.tool === next && current.scope === scope ? current : { tool: next, scope };
+    });
+  }, []);
   const [threeDTool, setThreeDTool] = useState<ThreeDTool>("select");
   const [videoFrameIndex, setVideoFrameIndex] = useState(0);
   const [hiddenVideoTrackIds, setHiddenVideoTrackIds] = useState<Set<string>>(() => new Set());
@@ -460,6 +483,8 @@ export function useWorkbenchState() {
     setTool,
     videoTool,
     setVideoTool,
+    videoToolScope,
+    setVideoToolSelection,
     threeDTool,
     setThreeDTool,
     videoFrameIndex,

@@ -4,7 +4,21 @@
  * 与具体渲染实现解耦:由 VideoKonvaStage 实现,经 useImperativeHandle 暴露。
  * (原定义在已删除的旧 SVG VideoStage.tsx,v0.16.5 统一到 Konva 后抽到本文件。)
  */
+import type { VideoTool } from "../state/useWorkbenchState";
+
+export type VideoDrawingDraft = {
+  kind: "points" | "keypoint" | "box";
+  tool: VideoTool;
+  frameIndex: number;
+  /** An active drag that will add a keyframe to the selected existing track. */
+  continuingTrack?: true;
+};
+
 export interface VideoStageControls {
+  /** Read the stage-owned in-progress creation without changing its geometry. */
+  getDrawingDraft?: () => VideoDrawingDraft | null;
+  /** Discard only in-progress creation, including a pending drag pointerup. */
+  discardDrawingDraft?: () => void;
   togglePlayback: () => void;
   jogPlayback: (dir: -1 | 1) => void;
   pausePlayback: (options?: { snapToGrid?: boolean }) => void;

@@ -905,7 +905,7 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
           <div
             ref={host}
             className={cn(
-              "min-h-0 min-w-0 flex-1 overflow-hidden",
+              "min-h-0 min-w-0 flex-1 overflow-clip",
               styles.workspace,
               owner.readOnly && styles.locked,
               compact && styles.compact,

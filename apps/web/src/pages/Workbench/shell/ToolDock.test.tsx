@@ -63,7 +63,7 @@ function measureDock(initialHeight: number) {
 }
 
 describe("ToolDock · 高度溢出", () => {
-  it("当前轨迹工具留在主栏，菜单项仍按能力禁用；选择只调用一次原动作", async () => {
+  it("当前工具留在主栏，菜单项仍按能力禁用；选择只调用一次原动作", async () => {
     measureDock(220);
     const onSetVideoTool = vi.fn();
     const user = userEvent.setup();
@@ -72,13 +72,13 @@ describe("ToolDock · 高度溢出", () => {
         tool="select"
         onSetTool={vi.fn()}
         videoMode
-        videoTool="mask-track"
+        videoTool="mask"
         onSetVideoTool={onSetVideoTool}
         isPromptSupported={() => false}
       />,
     );
     expect(screen.getByTestId("video-tool-btn-select")).toBeVisible();
-    expect(screen.getByTestId("video-tool-btn-mask-track")).toBeVisible();
+    expect(screen.getByTestId("video-tool-btn-mask")).toBeVisible();
     expect(screen.queryByTestId("video-tool-btn-polygon")).toBeNull();
     await user.click(screen.getByRole("button", { name: "更多工具" }));
     expect(screen.getByTestId("tool-overflow-item-smart-point")).toHaveAttribute(
@@ -126,8 +126,8 @@ describe("ToolDock · 高度溢出", () => {
 });
 
 describe("ToolDock · video tools", () => {
-  it("renders video select and creation tools without the retired pan tool", () => {
-    render(
+  it("projects the requested scope and keeps select without the retired pan tool", () => {
+    const { rerender } = render(
       <ToolDock
         tool="select"
         onSetTool={vi.fn()}
@@ -139,9 +139,22 @@ describe("ToolDock · video tools", () => {
 
     expect(screen.getByTestId("video-tool-btn-select")).toBeInTheDocument();
     expect(screen.getByTestId("video-tool-btn-box")).toBeInTheDocument();
-    expect(screen.getByTestId("video-tool-btn-track")).toBeInTheDocument();
+    expect(screen.queryByTestId("video-tool-btn-track")).toBeNull();
     expect(screen.queryByTestId("video-tool-btn-hand")).toBeNull();
     expect(screen.queryByRole("button", { name: "平移" })).toBeNull();
+    rerender(
+      <ToolDock
+        tool="select"
+        onSetTool={vi.fn()}
+        videoMode
+        videoTool="select"
+        videoToolScope="track"
+        onSetVideoTool={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("video-tool-btn-select")).toBeInTheDocument();
+    expect(screen.getByTestId("video-tool-btn-track")).toBeInTheDocument();
+    expect(screen.queryByTestId("video-tool-btn-box")).toBeNull();
   });
 
   it("keeps video select when creation modes are disabled without falling back to hand", () => {
@@ -164,8 +177,8 @@ describe("ToolDock · video tools", () => {
     expect(screen.queryByTestId("video-tool-btn-hand")).toBeNull();
   });
 
-  it("按单帧、SAM 与轨迹语义排列工具，AI 追踪不再占用左侧工具栏", () => {
-    render(
+  it("在各自范围内保持单帧、SAM 与轨迹分组，AI 追踪不占用工具栏", () => {
+    const { rerender } = render(
       <ToolDock
         tool="select"
         onSetTool={vi.fn()}
@@ -177,7 +190,6 @@ describe("ToolDock · video tools", () => {
 
     const frameGroup = screen.getByRole("group", { name: "单帧工具" });
     const samGroup = within(frameGroup).getByRole("group", { name: "SAM 工具" });
-    const trackGroup = screen.getByRole("group", { name: "轨迹工具" });
     const toolIds = (root: HTMLElement) =>
       [...root.querySelectorAll<HTMLElement>("[data-testid^='video-tool-btn-']")].map((button) =>
         button.dataset.testid?.replace("video-tool-btn-", ""),
@@ -196,10 +208,28 @@ describe("ToolDock · video tools", () => {
       "magic-box",
     ]);
     expect(toolIds(samGroup)).toEqual(["smart-point", "smart-box", "exemplar", "magic-box"]);
-    expect(toolIds(trackGroup)).toEqual(["track", "polygon-track", "polyline-track", "mask-track"]);
+    expect(screen.queryByRole("group", { name: "轨迹工具" })).toBeNull();
     expect(screen.queryByTestId("video-tool-btn-ai-track")).toBeNull();
     expect(frameGroup).not.toContainElement(screen.getByTestId("video-tool-btn-select"));
     expect(screen.getByTestId("video-tool-btn-keypoint")).toBeDisabled();
+    rerender(
+      <ToolDock
+        tool="select"
+        onSetTool={vi.fn()}
+        videoMode
+        videoTool="select"
+        videoToolScope="track"
+        onSetVideoTool={vi.fn()}
+      />,
+    );
+    expect(toolIds(screen.getByRole("group", { name: "轨迹工具" }))).toEqual([
+      "track",
+      "polygon-track",
+      "polyline-track",
+      "mask-track",
+    ]);
+    expect(screen.queryByRole("group", { name: "单帧工具" })).toBeNull();
+    expect(screen.queryByRole("group", { name: "SAM 工具" })).toBeNull();
   });
 
   it("配置骨骼节点后启用视频关键点工具", () => {
@@ -217,7 +247,7 @@ describe("ToolDock · video tools", () => {
   });
 
   it("矩形框轨迹使用独立图标，视频 AI 与 Mask 图标和图片工作台一致", () => {
-    render(
+    const { rerender } = render(
       <ToolDock
         tool="select"
         onSetTool={vi.fn()}
@@ -227,18 +257,28 @@ describe("ToolDock · video tools", () => {
       />,
     );
 
-    const track = screen.getByTestId("video-tool-btn-track");
     const smartPoint = screen.getByTestId("video-tool-btn-smart-point");
     const smartBox = screen.getByTestId("video-tool-btn-smart-box");
     const exemplar = screen.getByTestId("video-tool-btn-exemplar");
     const mask = screen.getByTestId("video-tool-btn-mask");
-    const maskTrack = screen.getByTestId("video-tool-btn-mask-track");
-    expect(track).toHaveAccessibleName("矩形框轨迹");
-    expect(track.querySelector(".lucide-gallery-horizontal-end")).toBeInTheDocument();
     expect(smartPoint.querySelector(".lucide-target")).toBeInTheDocument();
     expect(smartBox.querySelector(".lucide-scan")).toBeInTheDocument();
     expect(exemplar.querySelector(".lucide-copy")).toBeInTheDocument();
     expect(mask.querySelector(".lucide-pencil")).toBeInTheDocument();
+    rerender(
+      <ToolDock
+        tool="select"
+        onSetTool={vi.fn()}
+        videoMode
+        videoTool="select"
+        videoToolScope="track"
+        onSetVideoTool={vi.fn()}
+      />,
+    );
+    const track = screen.getByTestId("video-tool-btn-track");
+    const maskTrack = screen.getByTestId("video-tool-btn-mask-track");
+    expect(track).toHaveAccessibleName("矩形框轨迹");
+    expect(track.querySelector(".lucide-gallery-horizontal-end")).toBeInTheDocument();
     expect(maskTrack).toHaveAccessibleName("Mask 轨迹");
     expect(maskTrack.querySelector(".lucide-scissors")).toBeInTheDocument();
   });
@@ -259,6 +299,135 @@ describe("ToolDock · video tools", () => {
     expect(screen.queryByRole("group", { name: "单帧工具" })).toBeNull();
     expect(screen.queryByRole("group", { name: "SAM 工具" })).toBeNull();
     expect(screen.queryByRole("group", { name: "轨迹工具" })).toBeNull();
+  });
+});
+
+describe("ToolDock · 视频范围命令", () => {
+  it("先发受控范围请求，准入完成前保留原范围和工具", async () => {
+    const onSetVideoToolScope = vi.fn();
+    const onSetVideoTool = vi.fn();
+    const user = userEvent.setup();
+    const props = {
+      tool: "select" as const,
+      onSetTool: vi.fn(),
+      videoMode: true,
+      onSetVideoTool,
+      onSetVideoToolScope,
+    };
+    const { rerender } = render(<ToolDock {...props} videoTool="polygon" videoToolScope="frame" />);
+    const captured: EventTarget[][] = [];
+    const onPointerDown = (event: Event) => captured.push(event.composedPath());
+    document.addEventListener("pointerdown", onPointerDown, true);
+    try {
+      const scopeButton = screen.getByRole("button", { name: "轨迹范围" });
+      await user.click(scopeButton);
+      expect(captured[captured.length - 1]).toContain(scopeButton);
+      expect(scopeButton).toHaveAttribute("data-workbench-video-tool-command");
+      expect(onSetVideoToolScope).toHaveBeenCalledTimes(1);
+      expect(onSetVideoToolScope).toHaveBeenCalledWith("track");
+      expect(onSetVideoTool).not.toHaveBeenCalled();
+      expect(screen.getByTestId("video-tool-scope")).toHaveAttribute("data-scope", "frame");
+      expect(screen.getByTestId("video-tool-btn-polygon")).toHaveAttribute("aria-pressed", "true");
+      rerender(<ToolDock {...props} videoTool="polygon-track" videoToolScope="track" />);
+      expect(screen.getByRole("button", { name: "轨迹范围" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(screen.getByTestId("video-tool-scope")).toHaveAttribute("data-scope", "track");
+      expect(screen.getByTestId("video-tool-btn-polygon-track")).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(screen.queryByTestId("video-tool-btn-polygon")).toBeNull();
+      expect(onSetVideoTool).not.toHaveBeenCalled();
+    } finally {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+    }
+  });
+
+  it("范围按钮保留原生 Enter/Space 激活，字母键不变成范围或工具命令", async () => {
+    const onSetVideoToolScope = vi.fn();
+    const onSetVideoTool = vi.fn();
+    const user = userEvent.setup();
+    render(
+      <ToolDock
+        tool="select"
+        onSetTool={vi.fn()}
+        videoMode
+        videoTool="select"
+        videoToolScope="frame"
+        onSetVideoTool={onSetVideoTool}
+        onSetVideoToolScope={onSetVideoToolScope}
+      />,
+    );
+    const button = screen.getByRole("button", { name: "轨迹范围" });
+    button.focus();
+    await user.keyboard("{Enter}");
+    expect(onSetVideoToolScope).toHaveBeenCalledTimes(1);
+    expect(onSetVideoToolScope).toHaveBeenLastCalledWith("track");
+    await user.keyboard(" ");
+    expect(onSetVideoToolScope).toHaveBeenCalledTimes(2);
+    await user.keyboard("bpmtv");
+    expect(onSetVideoToolScope).toHaveBeenCalledTimes(2);
+    expect(onSetVideoTool).not.toHaveBeenCalled();
+    expect(screen.getByTestId("tool-dock")).not.toHaveAttribute(
+      "data-workbench-video-tool-command",
+    );
+  });
+
+  it("可用工具投影改变时关闭更多菜单，即使主栏始终只有选择工具", async () => {
+    measureDock(90);
+    const user = userEvent.setup();
+    const view = (scope: "frame" | "track") => (
+      <ToolDock
+        tool="select"
+        onSetTool={vi.fn()}
+        videoMode
+        videoTool="select"
+        videoToolScope={scope}
+        onSetVideoTool={vi.fn()}
+        onSetVideoToolScope={vi.fn()}
+      />
+    );
+    const { rerender } = render(view("frame"));
+    for (const target of ["track", "frame", "track"] as const) {
+      await user.click(screen.getByRole("button", { name: "更多工具" }));
+      expect(screen.getByTestId("tool-dock-menu")).toBeVisible();
+      rerender(view(target));
+      await waitFor(() => expect(screen.queryByTestId("tool-dock-menu")).toBeNull());
+      await waitFor(() => expect(screen.getByRole("button", { name: "更多工具" })).toHaveFocus());
+      expect(screen.getByTestId("video-tool-btn-select")).toBeVisible();
+      expect(screen.getByTestId("video-tool-scope")).toHaveAttribute("data-scope", target);
+    }
+    await user.click(screen.getByRole("button", { name: "更多工具" }));
+    expect(screen.getByTestId("tool-overflow-item-polygon-track")).toHaveAttribute(
+      "data-workbench-video-tool-command",
+    );
+    expect(screen.queryByTestId("tool-overflow-item-polygon")).toBeNull();
+  });
+
+  it("短屏范围切换保留实际激活工具，并且重新渲染不派发工具切换", () => {
+    measureDock(140);
+    const onSetVideoTool = vi.fn();
+    const props = {
+      tool: "select" as const,
+      onSetTool: vi.fn(),
+      videoMode: true,
+      onSetVideoTool,
+      onSetVideoToolScope: vi.fn(),
+    };
+    const { rerender } = render(<ToolDock {...props} videoTool="mask" videoToolScope="frame" />);
+    expect(screen.getByTestId("video-tool-btn-mask")).toHaveAttribute("aria-pressed", "true");
+    rerender(<ToolDock {...props} videoTool="mask-track" videoToolScope="track" />);
+    expect(screen.getByTestId("video-tool-btn-mask-track")).toBeVisible();
+    expect(screen.getByTestId("video-tool-btn-mask-track")).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("video-tool-btn-mask-track")).toHaveAttribute(
+      "data-workbench-video-tool-command",
+    );
+    expect(screen.getByTestId("video-tool-btn-select")).toBeVisible();
+    expect(screen.getByRole("button", { name: "更多工具" })).toBeVisible();
+    rerender(<ToolDock {...props} videoTool="mask-track" videoToolScope="track" />);
+    expect(onSetVideoTool).not.toHaveBeenCalled();
   });
 });
 
@@ -480,16 +649,18 @@ describe("ToolDock · 视频工具角标不撒谎", () => {
   // 角标是给用户看的承诺: 按这个键就切到这个工具。历史上 polygon 标 G、polyline 标 L 都没绑定,
   // 而视频 L 是播放 jog —— 按下去会快进。这条测试把角标与 hotkeys.ts 的真实绑定钉在一起。
   it("每个渲染出的角标都真能 dispatch 到它标注的工具", () => {
-    render(
+    const view = (scope: "frame" | "track") => (
       <ToolDock
         tool="select"
         onSetTool={vi.fn()}
         videoMode
         videoTool="select"
+        videoToolScope={scope}
         onSetVideoTool={vi.fn()}
         isPromptSupported={() => true}
-      />,
+      />
     );
+    const { rerender } = render(view("frame"));
     const base: DispatchCtx = {
       isInputFocused: false,
       hasSelection: false,
@@ -497,7 +668,9 @@ describe("ToolDock · 视频工具角标不撒谎", () => {
       videoMode: true,
     };
     const buttons = [...document.querySelectorAll<HTMLElement>("[data-testid^='video-tool-btn-']")];
-    expect(buttons.length).toBeGreaterThan(0);
+    rerender(view("track"));
+    buttons.push(...document.querySelectorAll<HTMLElement>("[data-testid^='video-tool-btn-']"));
+    expect(new Set(buttons.map((button) => button.dataset.testid)).size).toBe(15);
 
     let checked = 0;
     for (const btn of buttons) {
@@ -520,6 +693,6 @@ describe("ToolDock · 视频工具角标不撒谎", () => {
       });
       checked += 1;
     }
-    expect(checked).toBeGreaterThanOrEqual(7); // V B T P S D E G
+    expect(checked).toBeGreaterThanOrEqual(8); // V B T P S D E G
   });
 });

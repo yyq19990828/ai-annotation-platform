@@ -910,6 +910,7 @@ export function VideoTrackerPropagateDialog({
                         onClick={onToggleSeedCollecting}
                         disabled={submitting}
                         data-testid="tracker-seed-toggle"
+                        data-workbench-video-tool-command
                         aria-pressed={seedCollecting}
                       >
                         <MousePointer2 data-icon="inline-start" />

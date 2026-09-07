@@ -9,6 +9,7 @@ import { filterBoxesByFrame, firstTrackFrame, type FrameFilter } from "./annotat
 import type { AttributeField, AttributeSchema } from "@/api/projects";
 import type { CapabilityWarning } from "../state/useCapabilityValidation";
 import type { WorkbenchAiRequestPresentation } from "../state/useWorkbenchAiRequest";
+import type { VideoSelectionCommand } from "../state/videoSelectionCommand";
 import { isWorkbenchInputFocused } from "../state/useWorkbenchHotkeys";
 import {
   PREDICTION_SOURCE_FILTERS,
@@ -85,6 +86,7 @@ interface AIInspectorPanelProps {
   onSeekFrame?: (frameIndex: number) => void;
   /** Shift+click 进入多选；普通 click 单选。 */
   onSelect: (id: string, opts?: { shift?: boolean }) => void;
+  onSelectVideoObject?: VideoSelectionCommand;
   onAcceptPrediction: (b: AiBox, attributeOverrides?: Record<string, unknown>) => void;
   onRejectPrediction?: (b: AiBox) => void;
   /** v0.10.8 · I11 · polygon 候选行展示「精修」按钮 → 启动 Mask 编辑器。 */
@@ -148,6 +150,7 @@ export function AIInspectorPanel({
   currentFrameIndex,
   onSeekFrame,
   onSelect,
+  onSelectVideoObject,
   onAcceptPrediction,
   onRejectPrediction,
   onRefinePrediction,
@@ -319,7 +322,8 @@ export function AIInspectorPanel({
             已选 <b>{multiCount}</b> 个 user 框
           </span>
           <button
-            onClick={onClearSelection}
+            data-workbench-video-tool-command={onSelectVideoObject ? "" : undefined}
+            onClick={onSelectVideoObject ? () => onSelectVideoObject(null) : onClearSelection}
             className="cursor-pointer appearance-none rounded-[3px] border border-border bg-transparent px-1.5 py-px text-2xs text-muted-foreground"
           >
             清除
@@ -344,6 +348,7 @@ export function AIInspectorPanel({
         currentFrameIndex={currentFrameIndex}
         onSeekFrame={onSeekFrame}
         onSelect={onSelect}
+        onSelectVideoObject={onSelectVideoObject}
         onAcceptPrediction={acceptWithReviewEdits}
         onRejectPrediction={onRejectPrediction}
         onRefinePrediction={onRefinePrediction}
@@ -1158,6 +1163,7 @@ interface BoxesListProps {
   onFetchMore?: () => void;
   currentFrameIndex?: number;
   onSelect: (id: string, opts?: { shift?: boolean }) => void;
+  onSelectVideoObject?: VideoSelectionCommand;
   onAcceptPrediction: (b: AiBox, attributeOverrides?: Record<string, unknown>) => void;
   onRejectPrediction?: (b: AiBox) => void;
   /** v0.10.8 · I11 · 仅 polygon 候选会展示「精修」按钮，由 WorkbenchShell 注入 handleRefinePrediction。 */
@@ -1197,6 +1203,7 @@ function BoxesList({
   currentFrameIndex,
   onSeekFrame,
   onSelect,
+  onSelectVideoObject,
   onAcceptPrediction,
   onRejectPrediction,
   onRefinePrediction,
@@ -1321,8 +1328,12 @@ function BoxesList({
   ]);
 
   const selectBox = (box: Annotation | AiBox, shift: boolean | undefined) => {
+    const frame = shift ? null : firstTrackFrame(box);
+    if (onSelectVideoObject) {
+      onSelectVideoObject(box.id, { shift: !!shift, frameIndex: frame ?? undefined });
+      return;
+    }
     if (!shift) {
-      const frame = firstTrackFrame(box);
       if (frame !== null) onSeekFrame?.(frame);
     }
     onSelect(box.id, { shift: !!shift });
@@ -1370,6 +1381,9 @@ function BoxesList({
             <div
               key={r.key}
               data-index={vItem.index}
+              data-workbench-video-tool-command={
+                onSelectVideoObject && (r.kind === "ai" || r.kind === "user") ? "" : undefined
+              }
               ref={(node) => {
                 virtualizer.measureElement(node);
                 node?.style.setProperty("--ai-inspector-row-y", `${vItem.start}px`);

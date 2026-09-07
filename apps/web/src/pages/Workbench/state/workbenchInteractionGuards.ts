@@ -2,13 +2,21 @@
 export function isWorkbenchInteractionBlocked(event: Event): boolean {
   if (typeof document === "undefined") return false;
   const selector =
-    "[data-workbench-settings], [data-workbench-tool-menu], [data-workbench-ai-toolbar], [data-workbench-track-context]";
+    "[data-workbench-settings], [data-workbench-tool-menu], [data-workbench-ai-toolbar], [data-workbench-track-context], [data-workbench-video-tool-confirm]";
   const triggerSelector = "[data-workbench-tool-menu-trigger]";
   // Closing may remove the marker before a later window listener sees this same event.
   return (
     event.composedPath().some((target) => {
       if (!(target instanceof Element)) return false;
       if (target.matches(selector)) return true;
+      if (target.matches("[data-workbench-video-tool-command]")) {
+        return (
+          !(event instanceof KeyboardEvent) ||
+          ["Enter", " ", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Home", "End"].includes(
+            event.key,
+          )
+        );
+      }
       // The trigger must protect opening input before the portal exists, while
       // normal canvas shortcuts resume once a closed menu restores focus to it.
       return (
@@ -17,7 +25,7 @@ export function isWorkbenchInteractionBlocked(event: Event): boolean {
       );
     }) ||
     document.querySelector(
-      '[data-workbench-settings][data-state="open"], [data-workbench-tool-menu][data-state="open"], [data-workbench-tool-menu-trigger][data-state="open"]',
+      '[data-workbench-settings][data-state="open"], [data-workbench-tool-menu][data-state="open"], [data-workbench-tool-menu-trigger][data-state="open"], [data-workbench-video-tool-confirm][data-state="open"]',
     ) !== null
   );
 }
