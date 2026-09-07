@@ -3,6 +3,48 @@
   "default_max_age_days": 30,
   "review_profile": "visual-content-v1",
   "entries": {
+    "docs-site/.vitepress/theme/assets/home/hero/pointcloud.webp": {
+      "last_verified_commit": "ea71c3e4785985de31773e4396b8ed488c8fe4f7",
+      "verified_at": "2026-09-07T10:33:54.559Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "040647b393d89f76a028f7c4b5fdd493d1dfa521ce6402b0f9aacc46d4d11b02",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/scenes/workbench-media.ts",
+        "docs-site/.vitepress/theme/assets/home/hero/pointcloud.webp",
+        "docs-site/.vitepress/theme/components/home/DataAtlasHero.vue",
+        "docs-site/scripts/generate-home-hero-media.mjs",
+        "docs-site/user-guide/images/workbench/pointcloud-real-scene.png"
+      ]
+    },
+    "docs-site/.vitepress/theme/assets/home/hero/review.webp": {
+      "last_verified_commit": "ea71c3e4785985de31773e4396b8ed488c8fe4f7",
+      "verified_at": "2026-09-07T10:33:54.559Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "ac689f4dfaed8136c50e0b27c9db8fa8645f485d4b2ef9d4ddae1f9461c68677",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/scenes/review.ts",
+        "docs-site/.vitepress/theme/assets/home/hero/review.webp",
+        "docs-site/.vitepress/theme/components/home/DataAtlasHero.vue",
+        "docs-site/scripts/generate-home-hero-media.mjs",
+        "docs-site/user-guide/images/review/workbench.png"
+      ]
+    },
+    "docs-site/.vitepress/theme/assets/home/hero/video-track.webp": {
+      "last_verified_commit": "ea71c3e4785985de31773e4396b8ed488c8fe4f7",
+      "verified_at": "2026-09-07T10:33:54.559Z",
+      "reviewer": "yyq08228",
+      "review_profile": "visual-content-v1",
+      "sha256": "db5b01a03230e6f77c9a98eb6c36220427e4f394507446c9fe9912ecb0218714",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/scenes/workbench-media.ts",
+        "docs-site/.vitepress/theme/assets/home/hero/video-track.webp",
+        "docs-site/.vitepress/theme/components/home/DataAtlasHero.vue",
+        "docs-site/scripts/generate-home-hero-media.mjs",
+        "docs-site/user-guide/images/workbench/video-real-scene.png"
+      ]
+    },
     "docs-site/public/home/ai-assisted-annotation-poster.webp": {
       "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
       "verified_at": "2026-09-06T17:01:37.149Z",
@@ -333,31 +375,45 @@
       ]
     },
     "docs-site/public/media/ai/current-task-image-inference-poster.webp": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
-      "reviewer": "yyq19990828",
+      "last_verified_commit": "ea71c3e4785985de31773e4396b8ed488c8fe4f7",
+      "verified_at": "2026-09-07T10:33:54.559Z",
+      "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
-      "sha256": "f895fc4c95884279274218f849d6605233f54a5f493c8ae953fd933e1bcf85e4",
+      "sha256": "b206768a92fb343ef6bbb1d22662776d4b666308ecd66513c170a23d868d47e8",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
+        "apps/web/e2e/screenshots/flows/current-task-image-inference.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
         "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "apps/web/scripts/media-derivation.mjs",
         "docs-site/public/media/ai/current-task-image-inference-poster.webp",
         "docs-site/user-guide/ai/current-task-inference.md"
       ]
     },
     "docs-site/public/media/ai/current-task-image-inference.mp4": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
-      "reviewer": "yyq19990828",
+      "last_verified_commit": "ea71c3e4785985de31773e4396b8ed488c8fe4f7",
+      "verified_at": "2026-09-07T10:33:54.559Z",
+      "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
-      "sha256": "6474aa85b3d7df4f9da222d7b315b0269b6f92e40b3d27bbaacf63a5e9faa0a8",
+      "sha256": "97917b7f54cc655cf5280a71ceb9476609f382e428a29fbe206db5ea88ed3fc5",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
+        "apps/web/e2e/screenshots/flows/current-task-image-inference.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
         "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "apps/web/scripts/media-derivation.mjs",
         "docs-site/public/media/ai/current-task-image-inference.mp4",
         "docs-site/user-guide/ai/current-task-inference.md"
       ]
@@ -805,29 +861,29 @@
       ]
     },
     "docs-site/public/media/pointcloud/camera-seed-3d-box-poster.webp": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
-      "reviewer": "yyq19990828",
+      "last_verified_commit": "ea71c3e4785985de31773e4396b8ed488c8fe4f7",
+      "verified_at": "2026-09-07T10:33:54.559Z",
+      "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
-      "sha256": "cc62c511831a3458e94b03a2076795b1c69e75eeec4e49df12ab255963cb613d",
+      "sha256": "5f8924c100840817e1ef4722b45a6993e73280355e3d6f192a5ffe750b990b53",
       "watch_paths": [
-        "apps/api/app/services/screenshot_seed_spec.py",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/e2e/screenshots/flows/pointcloud-camera-seed-3d-box.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "apps/web/scripts/media-derivation.mjs",
         "docs-site/public/media/pointcloud/camera-seed-3d-box-poster.webp",
         "docs-site/user-guide/workbench/pointcloud-projection.md"
       ]
     },
     "docs-site/public/media/pointcloud/camera-seed-3d-box.mp4": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
-      "reviewer": "yyq19990828",
+      "last_verified_commit": "ea71c3e4785985de31773e4396b8ed488c8fe4f7",
+      "verified_at": "2026-09-07T10:33:54.559Z",
+      "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
-      "sha256": "a8005a89dde2aec83a6bc89c87cd6f139fbee19662fb1ba7bc3e1eef889d4989",
+      "sha256": "4b8f29fbff84ec30c0a2975f431e3fbe923324f42fc48e165023a2d289cefbfd",
       "watch_paths": [
-        "apps/api/app/services/screenshot_seed_spec.py",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/e2e/screenshots/flows/pointcloud-camera-seed-3d-box.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "apps/web/scripts/media-derivation.mjs",
         "docs-site/public/media/pointcloud/camera-seed-3d-box.mp4",
         "docs-site/user-guide/workbench/pointcloud-projection.md"
       ]
@@ -1403,31 +1459,47 @@
       ]
     },
     "docs-site/public/media/video/ai-tracker-panel-poster.webp": {
-      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
-      "verified_at": "2026-08-16T12:36:37.673Z",
-      "reviewer": "yyq19990828",
+      "last_verified_commit": "ea71c3e4785985de31773e4396b8ed488c8fe4f7",
+      "verified_at": "2026-09-07T10:33:54.559Z",
+      "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
-      "sha256": "99d64e04403e64eba10608e351c8bf6874afb4477162e2f215cbd9d0e04e262a",
+      "sha256": "018e8c5d576400af4a3341bf4d5a6579b1d0239cc260f1f8da4d0ed9f22938a0",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
+        "apps/web/e2e/screenshots/flows/ai-tracker-panel.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
         "apps/web/scripts/derive-doc-media.mjs",
+        "apps/web/scripts/media-derivation.mjs",
         "docs-site/public/media/video/ai-tracker-panel-poster.webp",
-        "docs-site/user-guide/workbench/video-propagate.md"
+        "docs-site/user-guide/workbench/index.md"
       ]
     },
     "docs-site/public/media/video/ai-tracker-panel.mp4": {
-      "last_verified_commit": "35ea94ac406b3e41665b96146dac0a16b8b04296",
-      "verified_at": "2026-08-16T12:36:37.673Z",
-      "reviewer": "yyq19990828",
+      "last_verified_commit": "ea71c3e4785985de31773e4396b8ed488c8fe4f7",
+      "verified_at": "2026-09-07T10:33:54.559Z",
+      "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
-      "sha256": "8b0b94d50582e17420ee4b988ef9457a0a57d71cb2934e96c96eb5d8024030ad",
+      "sha256": "720a1d581bbf1f41e9beda497bf661865e69ff97a8f5693874153cd89d34167e",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
+        "apps/web/e2e/screenshots/flows/ai-tracker-panel.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
         "apps/web/scripts/derive-doc-media.mjs",
+        "apps/web/scripts/media-derivation.mjs",
         "docs-site/public/media/video/ai-tracker-panel.mp4",
-        "docs-site/user-guide/workbench/video-propagate.md"
+        "docs-site/user-guide/workbench/index.md"
       ]
     },
     "docs-site/public/media/video/mask-correction-propagate-poster.webp": {
@@ -1875,29 +1947,45 @@
       ]
     },
     "docs-site/public/media/video/workbench-overview-poster.webp": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
-      "reviewer": "yyq19990828",
+      "last_verified_commit": "ea71c3e4785985de31773e4396b8ed488c8fe4f7",
+      "verified_at": "2026-09-07T10:33:54.559Z",
+      "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
-      "sha256": "a698a3c91d53f6758feabeb2f2346d365c8db467e19389dc14d014215431e1ca",
+      "sha256": "5ba13d9db19a22163888e7f96483ef3070e8ed3b3d5de4c6a5459fa26834459c",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/flows/video-track.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
         "apps/web/scripts/derive-doc-media.mjs",
+        "apps/web/scripts/media-derivation.mjs",
         "docs-site/public/media/video/workbench-overview-poster.webp",
         "docs-site/user-guide/workbench/video-track.md"
       ]
     },
     "docs-site/public/media/video/workbench-overview.mp4": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
-      "reviewer": "yyq19990828",
+      "last_verified_commit": "ea71c3e4785985de31773e4396b8ed488c8fe4f7",
+      "verified_at": "2026-09-07T10:33:54.559Z",
+      "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
-      "sha256": "c8e3ab7fa449acfecb73932e92663b72809ff8b9b4e8ceb016f543006c3709a5",
+      "sha256": "366f3ee2c1563980403486bf95b4562771d7ea1c4096fc5ee57b52bfd0b9a50c",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/flows/video-track.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
         "apps/web/scripts/derive-doc-media.mjs",
+        "apps/web/scripts/media-derivation.mjs",
         "docs-site/public/media/video/workbench-overview.mp4",
         "docs-site/user-guide/workbench/video-track.md"
       ]
@@ -2387,11 +2475,11 @@
       ]
     },
     "docs-site/user-guide/images/review/workbench.png": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
-      "reviewer": "yyq19990828",
+      "last_verified_commit": "ea71c3e4785985de31773e4396b8ed488c8fe4f7",
+      "verified_at": "2026-09-07T10:33:54.559Z",
+      "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
-      "sha256": "2c426163314750cab09911eb6b1d82c719aed3752ca300c44cf9cd6315bc5b12",
+      "sha256": "4da3ee1be6e2b170a5b7a541a7b3a788873e58d4c4ca854f94fab2e5f456d1df",
       "watch_paths": [
         "apps/web/e2e/screenshots/scenes/review.ts",
         "docs-site/user-guide/images/review/workbench.png",
@@ -2755,11 +2843,11 @@
       ]
     },
     "docs-site/user-guide/images/workbench/ocr-real-scene.png": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
-      "reviewer": "yyq19990828",
+      "last_verified_commit": "ea71c3e4785985de31773e4396b8ed488c8fe4f7",
+      "verified_at": "2026-09-07T10:33:54.559Z",
+      "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
-      "sha256": "724dba4bec2099791b3dc9fc25c9d5a629ea30cf55bd55011b3d4b73a6a62762",
+      "sha256": "a1e027db83242277b472c2e3561773b96ce67adc3473c86c54a1fe3f5587d7cb",
       "watch_paths": [
         "apps/web/e2e/screenshots/scenes/workbench-media.ts",
         "docs-site/user-guide/images/workbench/ocr-real-scene.png",
@@ -2767,11 +2855,11 @@
       ]
     },
     "docs-site/user-guide/images/workbench/pointcloud-real-scene.png": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
-      "reviewer": "yyq19990828",
+      "last_verified_commit": "ea71c3e4785985de31773e4396b8ed488c8fe4f7",
+      "verified_at": "2026-09-07T10:33:54.559Z",
+      "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
-      "sha256": "9c9a8795036868af2118d88ea18b8ff883544baad410134bbb476790e2e09409",
+      "sha256": "ea37793ab57eb487f22c43494e3d50558e65793485453e17c7a8aede614fc334",
       "watch_paths": [
         "apps/web/e2e/screenshots/scenes/workbench-media.ts",
         "docs-site/user-guide/images/workbench/pointcloud-real-scene.png",
@@ -2780,11 +2868,11 @@
       ]
     },
     "docs-site/user-guide/images/workbench/video-real-scene.png": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
-      "reviewer": "yyq19990828",
+      "last_verified_commit": "ea71c3e4785985de31773e4396b8ed488c8fe4f7",
+      "verified_at": "2026-09-07T10:33:54.559Z",
+      "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
-      "sha256": "bb4ce66d00b6f0102292509b161620e6adc567d5c4878ee68d39c7df0818901b",
+      "sha256": "9a761d5e8ab82cf561a338443c9989def385f0c500aa594a40c1449c998ce70f",
       "watch_paths": [
         "apps/web/e2e/screenshots/scenes/workbench-media.ts",
         "docs-site/user-guide/images/workbench/video-real-scene.png",
