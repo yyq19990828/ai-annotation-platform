@@ -25,6 +25,7 @@ function round() {
   const claims = {
     task_id: source.task_id,
     content_digest: CONTENT_DIGEST,
+    prompt_revision: "live-round-1",
     prompt_source: {
       source_annotation_id: source.annotation_id,
       source_version: source.source_version,
@@ -266,4 +267,16 @@ test("unexpected saved IDs remain cleanable when in-place acceptance validation 
   trackScribbleAcceptance(response, cleanup);
   assert.deepEqual(cleanup.annotationIds, [source.annotation_id, "unexpected-create"]);
   assert.deepEqual(cleanup.predictionIds, ["prediction-1"]);
+});
+
+// The API computes prompt_revision after hydrating the stored Mask and session.
+test("server-generated revisions do not require a browser-supplied revision", () => {
+  const { request, response, claims, receipt } = round();
+  const { prompt_revision: _unused, ...context } = request.context;
+  inspectScribbleRound({ ...request, context }, response, source, "backend-1", [1]);
+  claims.prompt_revision = "unrelated-round";
+  response.accept_receipts[CANDIDATE_ID] = receipt();
+  assert.throws(() =>
+    inspectScribbleRound({ ...request, context }, response, source, "backend-1", [1]),
+  );
 });

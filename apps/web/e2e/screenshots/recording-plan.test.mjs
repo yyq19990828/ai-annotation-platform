@@ -74,6 +74,8 @@ test("capability-only panels and live inference retain separate recording eviden
     "sam-interactive",
     "ocr-inference",
     "candidate-keyboard-review",
+    "candidate-review-lifecycle",
+    "smart-scribble",
   ]) {
     assert.equal(recordingInference(id), "live", id);
   }

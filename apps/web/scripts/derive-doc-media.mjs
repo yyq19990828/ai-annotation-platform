@@ -15,6 +15,11 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, "../../..");
 
 const POSTER_AT_SECONDS = new Map([
+  ["sam-tools/smart-box", 7.8],
+  ["sam-tools/smart-point", 6.2],
+  ["ai-assisted-annotation", 7.7],
+  ["candidate-review-lifecycle", 14],
+  ["smart-scribble", 15.8],
   ["bbox-draw", 6.4],
   ["polyline-draw", 11.8],
   ["polygon-draw", 13],
@@ -50,6 +55,9 @@ const POSTER_AT_SECONDS = new Map([
 
 const TARGETS = new Map(
   [
+    ["sam-tools/smart-point", "sam/smart-point"],
+    ["sam-tools/smart-box", "sam/smart-box"],
+    ["sam-tools/exemplar", "sam/exemplar"],
     ["bbox-draw", "workbench/bbox-draw"],
     ["workspace-layout-basics", "workbench/layout-basics"],
     ["ai-prediction-import", "ai/prediction-import"],

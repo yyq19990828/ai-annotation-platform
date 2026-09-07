@@ -1,5 +1,6 @@
 /** Real SAM3 refinement of one stored road-vehicle Mask; no inference fixtures. */
 import { expect, type Page, type Request, type Response } from "@playwright/test";
+import type Konva from "konva";
 import type { AnnotationResponse } from "../../../src/types";
 import type { AiMaskAcceptRequest, AiMaskAcceptResponse } from "../../../src/api/aiMasks";
 import type { InteractiveAnnotateResponse, InteractiveRequest } from "../../../src/api/ml-backends";
@@ -30,6 +31,7 @@ import {
 } from "./_smart-scribble-evidence";
 import type { CandidateReviewCleanupRecord } from "./candidate-review-lifecycle";
 import type { DrawWindow } from "./rotated-bbox";
+import { pickSamRecordingCandidate } from "./_sam-recording-candidates";
 
 async function readJson<T>(page: Page, path: string): Promise<T> {
   return page.evaluate(async (path) => {
@@ -44,6 +46,8 @@ async function readJson<T>(page: Page, path: string): Promise<T> {
 async function waitForVisibleCandidate(
   page: Page,
   samples: [number, number][],
+  candidateId: string,
+  size: [number, number],
   difference?: ReturnType<typeof scribbleMaskDifference>,
 ) {
   const stage = page.getByTestId("workbench-stage");
@@ -54,7 +58,96 @@ async function waitForVisibleCandidate(
     .poll(
       async () =>
         stage.evaluate(
-          (element, { media, samples, difference }) => {
+          async (element, { media, samples, candidateId, size, difference }) => {
+            const runtime = (window as unknown as { Konva?: typeof Konva }).Konva;
+            const group = runtime?.stages
+              .flatMap((stage) => stage.find(".sam-native-mask-candidate"))
+              .find((node) => node.id() === candidateId) as Konva.Group | undefined;
+            const layer = group?.getLayer() as
+              | (Konva.Layer & { _waitingForDraw?: boolean })
+              | null
+              | undefined;
+            const maskImage = group?.findOne("Image") as Konva.Image | undefined;
+            const bitmap = maskImage?.image() as
+              | (CanvasImageSource & { width: number; height: number })
+              | undefined;
+            if (
+              !group?.isVisible() ||
+              !layer?.isVisible() ||
+              !maskImage ||
+              !bitmap?.width ||
+              !bitmap.height
+            )
+              return {
+                ready: false,
+                reason: "candidate bitmap readiness",
+                runtime: !!runtime,
+                groups: runtime?.stages
+                  .flatMap((stage) => stage.find(".sam-native-mask-candidate"))
+                  .map((node) => node.id()),
+                candidateId,
+                layerWaiting: layer?._waitingForDraw,
+                groupVisible: group?.isVisible(),
+                bitmapWidth: bitmap?.width,
+                bitmapHeight: bitmap?.height,
+              };
+            // The candidate outline animates this layer continuously, so its
+            // private _waitingForDraw flag is not an idle/readiness signal.
+            // Observe a natural completed draw after the exact bitmap is ready.
+            const painted = await new Promise<boolean>((resolve) => {
+              const event = "draw.aapScribbleRecording";
+              const finish = (ready: boolean) => {
+                clearTimeout(timeout);
+                layer.off(event, onDraw);
+                resolve(ready);
+              };
+              const onDraw = () => finish(true);
+              const timeout = setTimeout(() => finish(false), 1_000);
+              layer.on(event, onDraw);
+            });
+            if (!painted) return { ready: false, reason: "no completed candidate layer draw" };
+            // Inspect the current decoded bitmap: strokes and preview outlines may
+            // cover changed pixels on the composed canvas even after a correct draw.
+            if (difference) {
+              const buffer = document.createElement("canvas");
+              buffer.width = bitmap.width;
+              buffer.height = bitmap.height;
+              const context = buffer.getContext("2d");
+              if (!context) return { ready: false, reason: "bitmap context" };
+              context.drawImage(bitmap, 0, 0);
+              const foreground = ([x, y]: [number, number]) => {
+                const px = Math.floor(
+                  ((x * size[1] - maskImage.x()) / maskImage.width()) * bitmap.width,
+                );
+                const py = Math.floor(
+                  ((y * size[0] - maskImage.y()) / maskImage.height()) * bitmap.height,
+                );
+                return (
+                  px >= 0 &&
+                  py >= 0 &&
+                  px < bitmap.width &&
+                  py < bitmap.height &&
+                  context.getImageData(px, py, 1, 1).data[3] > 0
+                );
+              };
+              if (
+                !difference.added.every(foreground) ||
+                !difference.removed.every((point) => !foreground(point))
+              )
+                return {
+                  ready: false,
+                  reason: "decoded bitmap pixel delta",
+                  added: difference.added.map(foreground),
+                  removed: difference.removed.map(foreground),
+                  bitmapWidth: bitmap.width,
+                  bitmapHeight: bitmap.height,
+                  x: maskImage.x(),
+                  y: maskImage.y(),
+                  width: maskImage.width(),
+                  height: maskImage.height(),
+                  size,
+                };
+            }
             const canvases = [...element.querySelectorAll("canvas")];
             const isPurple = ([x, y]: [number, number]) =>
               canvases.some((canvas) => {
@@ -76,18 +169,15 @@ async function waitForVisibleCandidate(
                   Math.abs(pixel[2] - 247) < 12
                 );
               });
-            return (
-              samples.some(isPurple) &&
-              (!difference ||
-                (difference.added.every(isPurple) &&
-                  difference.removed.every((point) => !isPurple(point))))
-            );
+            return samples.some(isPurple)
+              ? { ready: true }
+              : { ready: false, reason: "painted foreground" };
           },
-          { media, samples, difference },
+          { media, samples, candidateId, size, difference },
         ),
       { timeout: 20_000, message: "The returned native Mask must be painted on the canvas" },
     )
-    .toBe(true);
+    .toEqual({ ready: true });
 }
 
 export async function runSmartScribble(
@@ -164,8 +254,14 @@ export async function runSmartScribble(
 
     await recordingLayoutCommand(page, "图片 AI 审阅布局");
     await recordingPanelCommand(page, "讨论 / Issue", "隐藏面板");
-    await page.getByRole("tab", { name: "类别面板", exact: true }).click();
-    await page.getByRole("tab", { name: "标注详情", exact: true }).click();
+    await page
+      .getByRole("tab")
+      .filter({ has: page.getByRole("button", { name: "类别面板菜单", exact: true }) })
+      .click();
+    await page
+      .getByRole("tab")
+      .filter({ has: page.getByRole("button", { name: "标注详情菜单", exact: true }) })
+      .click();
     await waitForRecordingPanels(page, ["canvas", "class-palette", "inspector"], ["discussion"]);
     await hidePredictions(page);
     const stage = page.getByTestId("workbench-stage");
@@ -223,6 +319,9 @@ export async function runSmartScribble(
         index === 0 ? [1] : [1, 0],
       );
       expect(round.evidence.mask.size).toEqual(source.mask.size);
+      const target = pickSamRecordingCandidate(result.result, anchor.bbox);
+      expect(target.index).toBe(0);
+      Object.assign(round.evidence, { target_geometry: target });
       expect(
         round.evidence.mask.content_digest,
         "Each stroke must change the visible Mask result",
@@ -235,7 +334,13 @@ export async function runSmartScribble(
       const difference = previousRle
         ? scribbleMaskDifference(previousRle, round.candidate.value.rle)
         : undefined;
-      await waitForVisibleCandidate(page, round.evidence.mask.samples, difference);
+      await waitForVisibleCandidate(
+        page,
+        round.evidence.mask.samples,
+        round.evidence.candidate_id,
+        round.evidence.mask.size,
+        difference,
+      );
       previousRle = round.candidate.value.rle;
       await page.waitForTimeout(1800);
     }
@@ -255,6 +360,8 @@ export async function runSmartScribble(
         return { response, accepted };
       });
     await page.keyboard.press("Enter");
+    await expect(page.getByTestId("class-picker-popover")).toBeVisible();
+    await page.waitForTimeout(1_200);
     const [created, { response, accepted }] = await Promise.all([
       commitPendingAnnotationClass(page, {
         label: anchor.label,
@@ -290,7 +397,38 @@ export async function runSmartScribble(
     await expect(sourceRow).toContainText(`${finalRound.mask.area} px`);
     await expect(sourceRow).toContainText(/\d+ 组件 · \d+ 孔洞 · AABB/);
     await expect(sourceRow).not.toContainText("load_failed");
-    await page.waitForTimeout(2200);
+    await page.waitForFunction(
+      ({ id, area }) => {
+        const runtime = (window as unknown as { Konva?: typeof Konva }).Konva;
+        if (
+          !runtime ||
+          runtime.stages.some((stage) => stage.find(".sam-native-mask-candidate").length > 0)
+        )
+          return false;
+        const group = runtime.stages
+          .flatMap((stage) => stage.find(".raster-mask-annotation"))
+          .find((node) => node.id() === id) as Konva.Group | undefined;
+        const image = group?.findOne(".raster-mask-fill") as Konva.Image | undefined;
+        const bitmap = image?.image() as
+          | (CanvasImageSource & { width: number; height: number })
+          | undefined;
+        if (!group?.isVisible() || !bitmap?.width || !bitmap.height) return false;
+        const buffer = document.createElement("canvas");
+        buffer.width = bitmap.width;
+        buffer.height = bitmap.height;
+        const context = buffer.getContext("2d");
+        if (!context) return false;
+        context.drawImage(bitmap, 0, 0);
+        const pixels = context.getImageData(0, 0, bitmap.width, bitmap.height).data;
+        let foreground = 0;
+        for (let index = 3; index < pixels.length; index += 4)
+          if (pixels[index] > 0) foreground += 1;
+        return foreground === area;
+      },
+      { id: source.annotation_id, area: finalRound.mask.area },
+      { timeout: 20_000 },
+    );
+    await page.waitForTimeout(3_500);
     const drawEndMs = Date.now();
     const after = await readJson<AnnotationResponse[]>(page, annotationsPath);
     expect(after.map((item) => item.id).sort()).toEqual(before.map((item) => item.id).sort());

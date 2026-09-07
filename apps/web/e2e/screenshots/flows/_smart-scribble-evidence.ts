@@ -122,7 +122,8 @@ export function inspectScribbleRound(
   );
   assert.ok(strokes.every((stroke) => stroke.points.length >= 2));
   assert.equal(response.output_geometry, "mask");
-  assert.equal(response.prompt_revision, context.prompt_revision);
+  // The API derives this revision after resolving the source Mask and session.
+  assert.ok(typeof response.prompt_revision === "string" && response.prompt_revision.length > 0);
   assert.equal(response.diagnostic ?? null, null, "Live scribble inference returned a diagnostic");
   assert.match(response.model_version ?? "", /sam3/i);
   assert.doesNotMatch(response.model_version ?? "", /e2e|fixture|stub|screenshot/i);
@@ -161,6 +162,7 @@ export function inspectScribbleRound(
   assert.ok(receipt, "The live candidate must carry a server acceptance receipt");
   // Read consistency claims only; the production accept endpoint verifies the signature.
   const claims = JSON.parse(Buffer.from(receipt.split(".")[0], "base64url").toString("utf8"));
+  assert.equal(claims.prompt_revision, response.prompt_revision);
   assert.equal(claims.task_id, source.task_id);
   assert.equal(claims.content_digest, mask.content_digest);
   assert.deepEqual(claims.prompt_source, {

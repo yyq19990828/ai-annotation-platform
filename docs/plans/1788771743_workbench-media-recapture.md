@@ -1,6 +1,6 @@
 # Workbench media recapture after dockable layouts
 
-> Status: first representative batch approved by the user on 2026-09-07; second image/layout batch recorded and published locally, awaiting per-asset human review.
+> Status: first representative batch approved by the user on 2026-09-07; second image/layout batch approved; third SAM/review batch captured and awaiting user review.
 > Baseline: `af2eb6ab`, 2026-09-07. No release milestone is assigned.
 
 ## Goal and acceptance
@@ -198,3 +198,36 @@ Three bounded corrections accompany this batch:
 Final source beginnings, core operations, endings and published posters were inspected. The three replacement traces contain no HTTP errors or browser console errors. The selected toolbar capture passed; recording unit tests (5), derivation tests (2), screenshot lint and strict static manifest checks passed. The documentation build passed. Broader e2e configuration TypeScript checks still expose pre-existing marketing-recorder/config and unrelated legacy-flow typing issues; changed drawing helpers and the new canvas regression passed focused type checks, and application type/lint checks passed in the implementation commits.
 
 The local preview serves all 21 exact files successfully with matching SHA-256 hashes. The existing browser connection was unavailable for a final preview-page inspection; this does not replace or invalidate the successful real-browser capture tests and published-frame inspections. No second-batch human approval is recorded. The broader inventory now contains 207 referenced files; remaining task families and historical review gaps continue under the original plan. No release or push is implied.
+
+## Batch 3: SAM interaction and candidate decisions
+
+The user approved the second batch after review. Commit `01512ab1` records exactly its 21 published files against `174cc739`; no push or unrelated review approval is implied. The primary checkout remains on main; continuation stays on the existing feature checkout so that the completed media and fixes are retained.
+
+This batch covers six real-inference stories and 24 referenced derivatives: three SAM tools (five files each: documentation MP4/poster plus homepage MP4/WebM/poster), Magic Box acceptance (the same five-output arrangement), candidate review lifecycle (MP4/poster), and saved-Mask smart scribble (MP4/poster). The currently referenced six `/media/sam/` smart-point/smart-box/exemplar files have no generation entries because only the homepage mappings existed. Add their three documentation mappings and derive both surfaces from the same qualified new source. Do not copy provenance from differently encoded historical homepage files.
+
+Keep the current candidate-keyboard-review pair: its real SAM3 source, current Dockview controls, target geometry and final counts were inspected again and remain appropriate. Retired SAM interaction GIF recipes are not publication targets.
+
+SAM recordings use the image AI-review preset, hide unused discussion and show the class palette and annotation-detail tab. They record actual model/routing/result evidence, register saved annotation IDs before subsequent checks, verify saved geometry after reload and delete exact temporary annotations. Candidate readiness is read from the canvas rather than optional pet text. Lifecycle decisions preserve the original prediction/shape identity and actual candidate count. Smart scribble retains a real stored native Mask input while removing the fabricated setup/inference response; its positive and negative prompts must run against an advertised live capability.
+
+The capture API, worker and Vite remain isolated at ports 8010/3020 with `annotation_screenshots_test` and Redis DB 15. All selected flows share exclusive seed ownership. The selected sources and visual inspection results are recorded below.
+
+### Batch 3 outcome
+
+All six selected browser stories passed with real SAM3 results and exact temporary-record cleanup. Publish only these qualified continuous clips; rejected attempts remain in the private evidence archive.
+
+| Story               | Source run                         | Clip (start:duration, seconds) | Published files |
+| ------------------- | ---------------------------------- | ------------------------------ | --------------: |
+| Smart point         | `2026-09-07T14-08-23-014Z-2749963` | `69.8:9.6`                     |               5 |
+| Smart box           | `2026-09-07T13-50-37-363Z-2703051` | `66.4:8.4`                     |               5 |
+| Exemplar            | `2026-09-07T13-50-37-363Z-2703051` | `4.3:9.4`                      |               5 |
+| Magic Box           | `2026-09-07T14-08-23-014Z-2749963` | `70.3:8.5`                     |               5 |
+| Candidate lifecycle | `2026-09-07T14-08-23-014Z-2749963` | `4.6:15.0`                     |               2 |
+| Saved-Mask scribble | `2026-09-07T14-42-20-019Z-2832894` | `73.0:16.0`                    |               2 |
+
+The interactive recorder excludes endpoint warmup requests from inference evidence. Smart point switches through the actual three candidates with two Tab presses to select the whole car; the initial candidate covers only a license plate. The selected mask matches the saved mask digest. Exemplar accepts the model's original top result and preserves its geometry. Magic Box selects the class in the post-draw picker; its earlier palette is read-only.
+
+Lifecycle starts with five real candidates. Skip leaves five, acceptance leaves four plus one saved annotation, rejection leaves three, and reload verifies those identities and counts. The accepted annotation retains the original prediction ID and shape index.
+
+Scribble starts from a stored 26,933-pixel Mask and makes two real positive/background-hint requests. Both change the result; the final 25,391-pixel whole-car Mask updates the same annotation from version 1 to 2 with matching signed candidate, model routing and content digest. No additional annotation is created. The clip retains the actual reload and final persisted state. Prompts are model hints, so the guide does not promise monotonic pixel addition or removal. Candidate readiness checks decoded changed pixels and a real Konva layer draw event; animated candidate borders make the internal pending-draw flag unsuitable as an idle signal.
+
+Validation includes 28 recording/helper unit tests, two media-derivation tests, focused TypeScript and ESLint checks, and independent visual inspection of the six source clips. Final derivative, documentation, preview and provenance checks are recorded with the private publication archive. Third-batch generation does not renew human approval or complete the remaining video, 3D and cross-page families.

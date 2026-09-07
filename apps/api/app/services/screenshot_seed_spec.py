@@ -241,8 +241,8 @@ PROJECT_SPECS = {
                             ((0.42, 0.665), (0.53, 0.665)),
                             ((0.435, 0.705), (0.515, 0.705)),
                         ),
-                        positive_stroke=((0.51, 0.59), (0.58, 0.66)),
-                        negative_stroke=((0.43, 0.54), (0.48, 0.61)),
+                        positive_stroke=((0.48, 0.52), (0.49, 0.70)),
+                        negative_stroke=((0.46, 0.725), (0.52, 0.725)),
                     ),
                     RecordingAnchorSpec(
                         key="review_vehicle_left",

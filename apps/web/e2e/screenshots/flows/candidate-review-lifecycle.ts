@@ -80,7 +80,10 @@ export async function runCandidateReviewLifecycle(
   ) {
     await recordingPanelCommand(page, "讨论 / Issue", "隐藏面板");
   }
-  await page.getByRole("tab", { name: "标注详情", exact: true }).click();
+  await page
+    .getByRole("tab")
+    .filter({ has: page.getByRole("button", { name: "标注详情菜单", exact: true }) })
+    .click();
   await waitForRecordingPanels(page, ["canvas", "inspector"], ["ai-task", "discussion"]);
 
   const section = page.getByTestId("section-header-ai");
@@ -177,7 +180,7 @@ export async function runCandidateReviewLifecycle(
     );
     await page.keyboard.press(action === "accept" ? "A" : "D");
     const response = await pending;
-    expect(response.ok(), await response.text()).toBeTruthy();
+    expect(response.ok(), `${action} HTTP ${response.status()}`).toBeTruthy();
     if (action === "reject") {
       expect(response.status()).toBe(204);
       return;

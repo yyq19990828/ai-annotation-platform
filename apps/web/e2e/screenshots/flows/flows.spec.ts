@@ -201,10 +201,27 @@ function flowWatchPaths(assetId: string): string[] {
     "apps/api/app/services/screenshot_seed_backends.py",
   ];
   if (
-    ["bbox-draw", "rotated-bbox", "polyline-draw", "polygon-draw", "mask-draw"].includes(assetId)
+    [
+      "bbox-draw",
+      "rotated-bbox",
+      "polyline-draw",
+      "polygon-draw",
+      "mask-draw",
+      "ai-assisted-annotation",
+    ].includes(assetId) ||
+    assetId.startsWith("sam-tools/")
   ) {
     paths.push("apps/web/e2e/screenshots/flows/_image-drawing.ts");
   }
+  if (assetId === "sam-tools/smart-point")
+    paths.push("apps/web/e2e/screenshots/flows/_sam-recording-candidates.ts");
+  if (assetId === "smart-scribble")
+    paths.push(
+      "apps/web/e2e/screenshots/flows/_smart-scribble-evidence.ts",
+      "apps/web/e2e/screenshots/flows/_sam-recording-candidates.ts",
+    );
+  if (assetId === "candidate-review-lifecycle")
+    paths.push("apps/web/e2e/screenshots/flows/candidate-keyboard-review.ts");
   if (assetId === "jobs-retry-recovery") {
     paths.push("apps/api/scripts/screenshot_job_recovery_fixture.py");
   }
@@ -881,76 +898,111 @@ test.describe("flow recordings", () => {
   for (const demo of samToolDemos) {
     test(`sam-tool-${demo.tool} — ${demo.label}真实推理`, async ({ page, seed }) => {
       if (!cached) throw new Error("screenshot seed catalog 未完成");
-      test.skip(!hasLiveSam3(cached), "真实 SAM 工具 GIF 只由 live SAM3 场景更新");
-      test.setTimeout(150_000);
+      test.skip(!hasLiveSam3(cached), "真实 SAM 工具视频需要 live SAM3");
+      test.setTimeout(SELECTED_CAPTURE ? 300_000 : 150_000);
       const t0 = Date.now();
+      await installScreenshotEnvironment(page);
       await seed.injectToken(page, cached.users.admin.email);
       await applyScreenshotTheme(page, "dark");
-      await installRecordingWorkbenchLayout(page, "none");
-      const win = await runSamToolRecording(page, cached, demo.tool, { accept: true });
-      await finalizeMarketingBackedHomepageAsset(
-        page,
-        `sam-tools/${demo.tool}`,
-        drawTrim(win, t0),
-        path.join(DOCS_IMAGES, "sam", demo.target),
-        {
-          fps: demo.fps ?? 8,
-          maxWidth: demo.maxWidth ?? 860,
-        },
-      );
+      await installRecordingWorkbenchLayout(page, "both", {
+        workspace: { context: "annotate:image", preset: "ai-review" },
+      });
+      let createdId: string | undefined;
+      try {
+        const win = await runSamToolRecording(page, cached, demo.tool, {
+          accept: true,
+          onCreated: (id) => {
+            createdId = id;
+          },
+        });
+        flowInferenceEvidence[`sam-tools/${demo.tool}`] = win.evidence;
+        await finalizeMarketingBackedHomepageAsset(
+          page,
+          `sam-tools/${demo.tool}`,
+          drawTrim(win, t0),
+          path.join(DOCS_IMAGES, "sam", demo.target),
+          { fps: demo.fps ?? 8, maxWidth: demo.maxWidth ?? 860 },
+        );
+      } finally {
+        if (createdId)
+          await seed.deleteTaskAnnotation(
+            cached.projects.image_demo.tasks.annotating.id,
+            createdId,
+            cached.users.admin.email,
+          );
+      }
     });
   }
 
   test("smart-scribble — 已存 Mask 正负笔迹精修", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(180_000); // 正负笔迹 + 4K H.264 归档转码需覆盖完整营销母版链路
-    const t0 = Date.now();
+    test.setTimeout(300_000);
     const project = cached.projects.image_demo;
     const task = project.tasks.annotating;
-    await seed.configureRasterMask(project.id, true);
-    const source = await seed.injectRasterMask({
+    const cleanup: CandidateReviewCleanupRecord = {
+      projectId: project.id,
       taskId: task.id,
-      userEmail: cached.users.admin.email,
-      variant: "smart_scribble_source",
-      label: "car",
-      canvas: "media",
-    });
-    const fixture = await seed.nativeMaskCandidate(task.id, {
-      variant: "smart_scribble_refined",
-      promptFamily: "scribble",
-      negativeScribbles: 1,
-      promptSource: {
-        annotationId: source.annotation_id,
-        sourceVersion: 1,
-        sourceDigest: source.mask.sha256,
-      },
-    });
-
-    await installScreenshotEnvironment(page);
-    await seed.injectToken(page, cached.users.admin.email);
-    await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
-    const win = await runSmartScribble(page, cached, source.annotation_id, fixture);
-    await finalize(
-      page,
-      "smart-scribble",
-      path.join(DOCS_IMAGES, "sam/smart-scribble-interaction.gif"),
-      { fps: 4, maxWidth: 860, maxColors: 96, ...drawTrim(win, t0) },
-    );
+      predictionIds: [],
+      annotationIds: [],
+    };
+    candidateReviewCleanupRecords.push(cleanup);
+    try {
+      await seed.configureRasterMask(project.id, true);
+      const source = await seed.injectRasterMask({
+        taskId: task.id,
+        userEmail: cached.users.admin.email,
+        variant: "smart_scribble_source",
+        label: "car",
+        canvas: "media",
+      });
+      cleanup.annotationIds.push(source.annotation_id);
+      const t0 = Date.now();
+      await installScreenshotEnvironment(page);
+      await seed.injectToken(page, cached.users.admin.email);
+      await applyScreenshotTheme(page, "dark");
+      await installRecordingWorkbenchLayout(page, "both", {
+        workspace: { context: "annotate:image", preset: "ai-review" },
+      });
+      const win = await runSmartScribble(page, cached, source, cleanup, (evidence) => {
+        flowInferenceEvidence["smart-scribble"] = evidence;
+      });
+      await finalize(
+        page,
+        "smart-scribble",
+        path.join(DOCS_IMAGES, "sam/smart-scribble-interaction.gif"),
+        { fps: 4, maxWidth: 860, maxColors: 96, ...drawTrim(win, t0) },
+      );
+    } finally {
+      cleanupCandidateReview(cleanup);
+    }
   });
 
   test("sam-interactive — Magic Box 候选→人工确认", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.skip(!hasLiveSam3(cached), "首页 AI 视频只由 live SAM3 场景更新，stub 模式保留现有资产");
-    test.setTimeout(150_000);
+    test.skip(!hasLiveSam3(cached), "首页 AI 视频需要 live SAM3");
+    test.setTimeout(SELECTED_CAPTURE ? 300_000 : 150_000);
     const t0 = Date.now();
-    // 首页视频保留候选虚线与 toast 的自然动效，因此不安装面向静态 PNG 的
-    // fixed-time / reduced-motion 截图环境。
+    await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
-    const win = await runSamInteractive(page, cached);
-    await finalizeMarketingBackedHomepageAsset(page, "ai-assisted-annotation", drawTrim(win, t0));
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:image", preset: "ai-review" },
+    });
+    let createdId: string | undefined;
+    try {
+      const win = await runSamInteractive(page, cached, (id) => {
+        createdId = id;
+      });
+      flowInferenceEvidence["ai-assisted-annotation"] = win.evidence;
+      await finalizeMarketingBackedHomepageAsset(page, "ai-assisted-annotation", drawTrim(win, t0));
+    } finally {
+      if (createdId)
+        await seed.deleteTaskAnnotation(
+          cached.projects.image_demo.tasks.annotating.id,
+          createdId,
+          cached.users.admin.email,
+        );
+    }
   });
 
   test("review-reject — 审核拒回流程", async ({ page, seed }) => {
@@ -1347,53 +1399,42 @@ test.describe("flow recordings", () => {
 
   test("candidate-review-lifecycle — 跳过、采纳、驳回与最终计数", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(180_000);
+    test.setTimeout(300_000);
     const project = cached.projects.image_demo;
     const task = project.tasks.annotating;
-    const candidateAnchors = [
-      recordingAnchor(cached, "image_demo", "annotating", "review_vehicle_left"),
-      recordingAnchor(cached, "image_demo", "annotating", "primary_vehicle"),
-      recordingAnchor(cached, "image_demo", "annotating", "review_vehicle_right"),
-    ];
-    if (candidateAnchors.some((anchor) => anchor.polygon.length < 3)) {
-      throw new Error("[candidate-review-lifecycle] 候选车辆缺少可显示的轮廓锚点");
-    }
-    const predictionIds: string[] = [];
-    for (const [index, anchor] of candidateAnchors.entries()) {
-      const prediction = await seed.injectPrediction({
-        taskId: task.id,
-        projectId: project.id,
-        label: anchor.label,
-        polygon: anchor.polygon,
-        score: [0.96, 0.91, 0.87][index],
-      });
-      predictionIds.push(prediction.prediction_id);
-    }
     const cleanupRecord: CandidateReviewCleanupRecord = {
       projectId: project.id,
       taskId: task.id,
-      predictionIds,
+      predictionIds: [],
       annotationIds: [],
     };
     candidateReviewCleanupRecords.push(cleanupRecord);
-
-    const t0 = Date.now();
-    await installScreenshotEnvironment(page);
-    await seed.injectToken(page, cached.users.annotator.email);
-    await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "both", {
-      common: { petEnabled: false, autoAdvanceOnDecide: true },
-      layout: {
-        aiSectionCollapsed: false,
-        manualSectionCollapsed: false,
-        discussionCollapsed: true,
-        attrPanelCollapsed: true,
-        floatingSelection: { collapsed: true, x: 310, y: 690, w: 320, h: 300 },
-      },
-    });
-    const win = await runCandidateReviewLifecycle(page, cached, cleanupRecord);
-    await finalize(page, "candidate-review-lifecycle", undefined, drawTrim(win, t0));
-    cleanupCandidateReview(cleanupRecord);
+    try {
+      const live = await prepareLiveCandidateReview(
+        page,
+        cached,
+        await seed.accessToken(cached.users.admin.email),
+        cleanupRecord,
+      );
+      flowInferenceEvidence["candidate-review-lifecycle"] = live.evidence;
+      const t0 = Date.now();
+      await installScreenshotEnvironment(page);
+      await seed.injectToken(page, cached.users.annotator.email);
+      await applyScreenshotTheme(page, "dark");
+      await installRecordingWorkbenchLayout(page, "both", {
+        workspace: { context: "annotate:image", preset: "ai-review" },
+        common: { petEnabled: false, autoAdvanceOnDecide: true },
+        layout: { aiSectionCollapsed: false, manualSectionCollapsed: false },
+      });
+      const win = await runCandidateReviewLifecycle(page, cached, live.candidateIds, cleanupRecord);
+      flowInferenceEvidence["candidate-review-lifecycle"] = {
+        ...live.evidence,
+        review: win.reviewEvidence,
+      };
+      await finalize(page, "candidate-review-lifecycle", undefined, drawTrim(win, t0));
+    } finally {
+      cleanupCandidateReview(cleanupRecord);
+    }
   });
 
   test("video-track — 视频时序工作台", async ({ page, seed }) => {

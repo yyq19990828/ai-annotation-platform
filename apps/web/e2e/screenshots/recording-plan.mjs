@@ -36,6 +36,8 @@ const liveInference = {
   "ocr-inference": ["ocr"],
   "current-task-image-inference": ["ocr"],
   "candidate-keyboard-review": ["image_interactive"],
+  "candidate-review-lifecycle": ["image_interactive"],
+  "smart-scribble": ["image_interactive"],
 };
 
 export const RECORDING_FLOWS = {
