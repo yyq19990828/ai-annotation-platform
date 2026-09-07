@@ -199,3 +199,10 @@ pnpm --filter @anno/web test:e2e e2e/tests/workbench-pointcloud-playback.spec.ts
 - 复用 TanStack Virtual 的横向虚拟化、尺寸估计和窗口观察能力：[Virtualizer 官方文档](https://tanstack.com/virtual/latest/docs/api/virtualizer)。
 - 帧定位轨道遵循原生 slider 的焦点、方向键及首尾操作语义：[WAI-ARIA Slider Pattern](https://www.w3.org/WAI/ARIA/apg/patterns/slider/)。
 - 后台暂停使用浏览器页面可见性事件：[Page Visibility API](https://developer.mozilla.org/en-US/docs/Web/API/Page_Visibility_API)。
+
+## Outcome
+
+- 已交付紧凑/展开分轨时间轴、全段定位、实际帧号输入、四档缩放，以及 1/2/4 帧每秒的串行只读播放；播放期间暂停任务锁并阻止写操作，点云与标注就绪后才推进。
+- 正式文档：`docs-site/user-guide/workbench/pointcloud-view.md`、`docs-site/user-guide/workbench/pointcloud-crossframe.md`、`docs-site/dev/concepts/workbench-shell.md` 与 `CHANGELOG.md` 已同步。
+- 验证：定向 Vitest 141 项、Chromium 点云播放与编辑 21 项、自由布局矩阵 7 项、质检 1 项及 macOS 原生 WebGPU 播放 5 项通过；TypeScript、ESLint、CSS tokens、文档构建和 `git diff --check` 通过。
+- 剩余工作：未新增 API、数据库迁移、依赖或版本号；万帧真实点云全程播放未纳入本轮验收。
