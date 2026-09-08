@@ -1,4 +1,4 @@
-name: Docs validate
+name: Documentation
 
 on:
   pull_request:
@@ -38,6 +38,7 @@ permissions:
 
 jobs:
   validate:
+    name: Docs validation
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -88,8 +89,12 @@ jobs:
       - name: User-guide image coverage
         run: node docs-site/scripts/check-image-manifest.mjs --strict && node docs-site/scripts/check-orphan-images.mjs --strict
 
-      - name: User-guide media review status
-        run: pnpm --filter @anno/docs-site media:audit -- --strict
+      - name: Media audit policy tests
+        run: pnpm --filter @anno/docs-site media:test
+
+      # Review freshness belongs to manual acceptance, not each PR.
+      - name: Published media integrity
+        run: pnpm --filter @anno/docs-site media:audit -- --integrity
 
       - name: Excalidraw diagram integrity
         run: pnpm --filter @anno/docs-site check:diagrams

@@ -1,4 +1,4 @@
-name: Visual regression
+name: Browser checks
 
 # M4 · 视觉回归 CI
 # 触发：每周一 01:00 UTC cron + 手动 dispatch
@@ -21,6 +21,7 @@ concurrency:
 
 jobs:
   regression:
+    name: Frontend visual regression
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

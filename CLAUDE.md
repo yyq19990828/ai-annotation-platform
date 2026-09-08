@@ -41,7 +41,7 @@ Keep rendered documentation about the current system, without dotted version pro
 
 Only bump versions for a requested release; use [aap-release](.agents/skills/aap-release/SKILL.md) for the synchronized version and OpenAPI workflow. `node scripts/check-doc-version-prefix.mjs --staged` is advisory. New plan filenames use `<unix-seconds>_<topic>.md`: a 10-digit Unix timestamp at creation, an underscore, and a lowercase kebab-case topic, with no version number. Keep existing filenames and links; see [plan conventions](docs/plans/README.md) for promotion and archival. Maintainers determine release milestones and version assignments; agents must not infer them from plans or assign them independently.
 
-CI workflow files use `<domain>-<action>.yml`; the aggregate remains `ci.yml`. Top-level names use sentence case, preserving proper nouns and acronyms. Aggregate jobs set `name: <Domain> <tool/action>`; single-domain workflows rely on job ids. `scripts/check-workflow-names.mjs` checks these conventions.
+CI workflow files use `<domain>-<action>.yml`; the aggregate remains `ci.yml`. Top-level names use sentence case, preserving proper nouns and acronyms. Every job sets a static, repository-wide unique `name: <Domain> <responsibility>`, including single-domain workflows. Job names use sentence case, preserving proper nouns and acronyms; keep tool lists in step names. Do not put slashes in job names: GitHub already displays `<workflow> / <job> (event)`. Keep workflow names short and distinct. Workflow files use block-style YAML with two-space job keys and four-space job properties so the dependency-free naming checker can inspect them. `node scripts/check-workflow-names.mjs --strict` enforces these conventions in CI and pre-commit.
 
 ## Task routing
 

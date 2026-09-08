@@ -222,3 +222,21 @@ export function tierAOpenItems() {
     .filter((line) => /^- \[ \].*\*\*\[Tier A\]\*/.test(line))
     .map((line) => line.replace(/^- \[ \]\s*/, ""));
 }
+
+// Keep automatic integrity checks independent of human review freshness.
+export function mediaAuditFailed(
+  report,
+  { integrity = false, strict = false, release = false } = {},
+) {
+  const integrityFailure =
+    report.counts.broken > 0 ||
+    report.assets.some((item) => item.provenance_issues.includes("文件哈希与生成来源清单不一致"));
+  const strictFailure = integrityFailure || report.counts.stale > 0;
+  const releaseFailure =
+    strictFailure ||
+    report.counts.review_due > 0 ||
+    report.assets.some((item) => item.provenance_issues.length > 0);
+  return (
+    (release && releaseFailure) || (strict && strictFailure) || (integrity && integrityFailure)
+  );
+}

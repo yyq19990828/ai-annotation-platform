@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { classifyMedia, collectPublishedMedia } from "./media-review-lib.mjs";
+import { classifyMedia, collectPublishedMedia, mediaAuditFailed } from "./media-review-lib.mjs";
 
 test("missing media is broken", () => {
   assert.equal(
@@ -66,4 +66,37 @@ test("homepage static image imports remain in the published media inventory", ()
     assert.ok(entry.kinds.has("image"));
     assert.ok(entry.sources.has("docs-site/.vitepress/theme/components/home/DataAtlasHero.vue"));
   }
+});
+
+test("PR integrity allows stale and overdue reviews but blocks missing files and source hash mismatch", () => {
+  const report = {
+    counts: { broken: 0, stale: 1, review_due: 1, current: 0 },
+    assets: [{ provenance_issues: [] }],
+  };
+  assert.equal(mediaAuditFailed(report, { integrity: true }), false);
+  assert.equal(mediaAuditFailed(report, { strict: true }), true);
+  assert.equal(mediaAuditFailed(report, { release: true }), true);
+  report.counts.broken = 1;
+  assert.equal(mediaAuditFailed(report, { integrity: true }), true);
+  assert.equal(mediaAuditFailed(report), false);
+  report.counts.broken = 0;
+  report.assets[0].provenance_issues = ["文件哈希与生成来源清单不一致"];
+  assert.equal(mediaAuditFailed(report, { integrity: true }), true);
+  assert.equal(mediaAuditFailed(report), false);
+});
+
+test("release retains overdue-review and provenance requirements even when integrity is selected", () => {
+  const report = {
+    counts: { broken: 0, stale: 0, review_due: 1, current: 0 },
+    assets: [{ provenance_issues: [] }],
+  };
+  assert.equal(mediaAuditFailed(report, { strict: true }), false);
+  assert.equal(mediaAuditFailed(report, { integrity: true, release: true }), true);
+  report.counts.review_due = 0;
+  report.assets[0].provenance_issues = ["没有生成来源清单"];
+  assert.equal(mediaAuditFailed(report, { integrity: true }), false);
+  assert.equal(mediaAuditFailed(report, { strict: true }), false);
+  assert.equal(mediaAuditFailed(report, { release: true }), true);
+  report.assets[0].provenance_issues = [];
+  assert.equal(mediaAuditFailed(report, { release: true }), false);
 });

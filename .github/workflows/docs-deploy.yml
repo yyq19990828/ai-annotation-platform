@@ -1,4 +1,4 @@
-name: Docs deploy
+name: Pages
 
 on:
   push:
@@ -25,6 +25,7 @@ concurrency:
 
 jobs:
   build:
+    name: Docs pages build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -46,6 +47,7 @@ jobs:
           path: docs-site/.vitepress/dist
 
   deploy:
+    name: Docs deployment
     needs: build
     runs-on: ubuntu-latest
     environment:

@@ -1,7 +1,8 @@
-name: Docs media audit
+name: Media review
 
 on:
   schedule:
+    # Monday 11:17 Asia/Shanghai; advisory report only.
     - cron: "17 3 * * 1"
   workflow_dispatch:
 
@@ -10,6 +11,7 @@ permissions:
 
 jobs:
   audit:
+    name: Docs media audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,8 +24,9 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
       - name: Audit published media
-        run: pnpm --filter @anno/docs-site media:audit -- --output .artifacts/docs-media-audit.json
+        run: pnpm --filter @anno/docs-site media:audit -- --output ../.artifacts/docs-media-audit.json
       - name: Upload audit report
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: docs-media-audit

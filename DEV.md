@@ -348,6 +348,10 @@ pnpm typecheck                   # Web TypeScript
 uv tool run --from pre-commit==4.6.1 pre-commit run \
   --all-files --hook-stage manual --show-diff-on-failure  # CI 同款第二层复核
 
+# CI 命名检查
+node scripts/check-workflow-names.mjs --strict
+node --test scripts/check-workflow-names.test.mjs
+
 # 前端测试
 pnpm test                        # vitest 单测
 pnpm --filter @anno/web test:coverage  # 前端带覆盖率
@@ -367,6 +371,15 @@ pnpm docs:dev                    # http://localhost:5173
 pnpm docs:build
 pnpm --filter @anno/docs-site check:all  # 文档元数据、导航与生成物检查
 ```
+
+CI 检查名称统一使用 `领域 职责`，例如 `Backend tests`、`Frontend verification`、
+`Docs validation`。所有 job（包括单 job 工作流）都显式设置 `name`，并在仓库内保持唯一；
+整个名称使用 sentence case，保留 Python、SDK 等专有名词和缩写。工具明细放在 step 名称中。GitHub 会展示 `工作流 / job (事件)`，因此 job 名称不再添加斜杠；
+例如 `CI / Frontend verification (pull_request)`、`Change analysis / Docs impact (pull_request)`。
+工作流文件使用 `<domain>-<action>.yml`（聚合工作流保留 `ci.yml`），顶层名称使用 sentence case。
+命名检查器不依赖额外安装包，按仓库统一的块式 YAML 检查：job 键缩进两格，job 属性缩进四格。
+本地 pre-commit 和 CI 均严格检查文件名、工作流名称、job 名称格式及重名。
+修改检查名称时，应核对仓库分支保护或 ruleset 中引用的 required checks，并同步迁移对应名称。
 
 完整测试指南见 [docs-site/dev/testing.md](docs-site/dev/testing.md)。
 
@@ -504,7 +517,13 @@ pnpm docs:media:audit -- --release
 
 `flow-manifest.json` 保存 GIF、文档 MP4、首页视频与封面的生成 commit、seed、哈希和母版 lineage；
 `docs-site/maintainers/media-reviews.json` 单独保存人工复核 commit。只有工作树干净、媒体已提交并完成视觉检查后，才运行
-`pnpm docs:media:approve -- --asset <仓库相对路径>`。每周工作流会生成缺失、过时和到期复核报告，不会自动批准素材。
+`pnpm docs:media:approve -- --asset <仓库相对路径>`。
+日常 `Docs validation` 用 `media:audit -- --integrity` 检查文件缺失与生成清单哈希一致性，
+人工复核过期或关联源码变化不阻塞 PR。每周一北京时间 11:17 的 `Docs media audit` 生成阶段待办报告，
+也支持手动运行。功能稳定、发布文档前，在 GitHub Actions 手动运行 **Release readiness** 并选择待验收分支，
+执行完整文档检查、截图 `--release` 检查及媒体 `--release` 审核；失败时也保留媒体报告。
+手动入口需工作流先进入默认分支，验收不会自动批准素材或发布版本。
+具体步骤见[生成来源与人工复核版本](docs-site/dev/how-to/update-screenshots.md#生成来源与人工复核版本)。
 
 `pnpm test:e2e` 使用 `annotation_e2e`，截图使用
 `annotation_screenshots_test`，两者都与开发库 `annotation` 隔离。不要为省略建库步骤
