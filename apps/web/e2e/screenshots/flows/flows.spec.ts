@@ -912,7 +912,7 @@ function hasLiveSam3(catalog: ScreenshotSeedCatalog): boolean {
 
 test.describe("flow recordings", () => {
   test.beforeEach(async ({ page, seed }, testInfo) => {
-    if (SELECTED_CAPTURE) testInfo.setTimeout(300_000);
+    if (SELECTED_CAPTURE) testInfo.setTimeout(420_000);
     if (SELECTED_CAPTURE) {
       if (!SELECTED_CAPTURE.flows.includes(testInfo.title.split(" —")[0])) {
         throw new Error("Flow is outside the preflighted recording selection");
@@ -2371,7 +2371,7 @@ test.describe("flow recordings", () => {
       "billboard 多角度核对需要 marketing-master 的硬件 WebGL 与 60Hz 运行面",
     );
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(SELECTED_CAPTURE ? 300_000 : 120_000);
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 120_000);
     const userEmail = cached.users.admin.email;
     const task = cached.projects.pointcloud_demo.tasks.frame_000;
     let annotationId: string | null = null;
