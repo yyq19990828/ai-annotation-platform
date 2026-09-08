@@ -7179,7 +7179,7 @@ export function useWorkbenchShellModel({
 
   const propagateDialogProps: ComponentProps<typeof VideoTrackerPropagateDialog> = {
     open: Boolean(propagateDialog),
-    visible: workspaceState.videoTrackerVisible,
+    visible: workspaceState.videoTrackerContentVisible,
     // v0.21.27 · U-pvs-2 · 有落点后范围锚定首个落点帧 (seedAnchorFrame), 导航到别帧加修正点
     // 不移动传播范围; 无落点时跟随当前帧 (与现状一致)。
     frameIndex: seedAnchorFrame ?? s.videoFrameIndex,

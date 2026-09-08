@@ -130,6 +130,63 @@ describe("VideoTrackerPropagateDialog", () => {
     expect(onRangeChange).toHaveBeenLastCalledWith(null);
   });
 
+  it("后台保留的追踪面板不发布范围，显示后恢复并跟随当前帧", () => {
+    const onRangeChange = vi.fn();
+    const onSubmit = vi.fn();
+    const view = (visible: boolean, frameIndex: number) => (
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        visible={visible}
+        frameIndex={frameIndex}
+        onRangeChange={onRangeChange}
+        onSubmit={onSubmit}
+      />
+    );
+    const { rerender, unmount } = render(view(false, 50));
+    expect(onRangeChange).toHaveBeenLastCalledWith(null);
+    rerender(view(true, 50));
+    expect(onRangeChange).toHaveBeenLastCalledWith({ startFrame: 50, endFrame: 80 });
+    rerender(view(false, 50));
+    expect(onRangeChange).toHaveBeenLastCalledWith(null);
+    rerender(view(false, 70));
+    expect(onRangeChange).toHaveBeenLastCalledWith(null);
+    rerender(view(true, 70));
+    expect(onRangeChange).toHaveBeenLastCalledWith({ startFrame: 70, endFrame: 100 });
+    unmount();
+    expect(onRangeChange).toHaveBeenLastCalledWith(null);
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("隐藏范围预览不清空自定义范围或方向", () => {
+    const onRangeChange = vi.fn();
+    const onSubmit = vi.fn();
+    const brushedRange = { startFrame: 10, endFrame: 42 };
+    const view = (visible: boolean, frameIndex: number, brushed = true) => (
+      <VideoTrackerPropagateDialog
+        {...baseProps}
+        visible={visible}
+        frameIndex={frameIndex}
+        brushedRange={brushed ? brushedRange : null}
+        onRangeChange={onRangeChange}
+        onSubmit={onSubmit}
+      />
+    );
+    const { rerender } = render(view(true, 50, false));
+    fireEvent.click(screen.getByTestId("tracker-direction-backward"));
+    rerender(view(true, 50));
+    expect(onRangeChange).toHaveBeenLastCalledWith(brushedRange);
+    rerender(view(false, 70));
+    expect(onRangeChange).toHaveBeenLastCalledWith(null);
+    rerender(view(true, 70));
+    expect(onRangeChange).toHaveBeenLastCalledWith(brushedRange);
+    expect(screen.getByTestId("tracker-direction-backward")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByTestId("tracker-range-custom")).toBeInTheDocument();
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
   it("时间轴刷选回填自定义范围, 覆盖预设; 改预设即回派生范围", async () => {
     const onSubmit = vi.fn().mockResolvedValue(undefined);
     const onRangeChange = vi.fn();

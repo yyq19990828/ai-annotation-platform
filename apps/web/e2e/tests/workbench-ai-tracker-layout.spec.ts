@@ -20,6 +20,82 @@ async function savedVideoWorkspace(page: Page) {
   return (await response.json()).workbench.layout.workspace.contexts["annotate:video"];
 }
 
+test("AI 范围预览仅随实际可见的追踪面板显示", async ({ page, seed }, testInfo) => {
+  test.setTimeout(90_000);
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(message.text());
+  });
+  page.on("response", (response) => {
+    if (response.url().includes("/api/") && response.status() >= 400)
+      errors.push(`${response.status()} ${new URL(response.url()).pathname}`);
+  });
+  const data = await seed.reset();
+  const video = await seed.videoTask(data.project_id);
+  // The shared seed binds an unreachable mock backend; this layout test needs no inference.
+  const token = await seed.accessToken(data.admin_email);
+  const disabled = await page.request.put(
+    `/api/v1/projects/${data.project_id}/ml-backends/${data.ml_backend_id}/enablement`,
+    { headers: { Authorization: `Bearer ${token}` }, data: { enabled: false } },
+  );
+  expect(disabled.ok(), await disabled.text()).toBe(true);
+  const clearedDefault = await page.request.patch(`/api/v1/projects/${data.project_id}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    data: { ml_backend_id: null },
+  });
+  expect(clearedDefault.ok(), await clearedDefault.text()).toBe(true);
+  await seed.injectToken(page, data.admin_email);
+  await page.setViewportSize({ width: 1366, height: 900 });
+  await page.goto(`/projects/${data.project_id}/annotate?task=${video.task_id}`);
+  const stage = page.getByTestId("video-konva-stage");
+  await expect(stage).toBeVisible({ timeout: 30_000 });
+  await layoutCommand(page, "视频追踪布局");
+  const tracker = page.getByTestId("video-tracker-propagate-dialog");
+  const wrapper = page.locator('[data-workbench-panel="video-tracker"]');
+  const range = page.getByTestId("video-propagate-range");
+  await expect(tracker).toBeVisible();
+  await stage.hover();
+  await expect(range).toBeVisible();
+  const toggle = page.getByTestId("video-timeline-toggle");
+  if ((await toggle.getAttribute("aria-expanded")) !== "true") await toggle.click();
+  await expect(page.getByTestId("video-timeline-lane-propagation")).toBeVisible();
+  await page.getByRole("button", { name: "下一帧", exact: true }).click();
+  const frame = await stage.getAttribute("data-video-frame-index");
+  await page.getByRole("tab", { name: "标注详情", exact: true }).click();
+  await expect(wrapper).toHaveAttribute("aria-hidden", "true");
+  await expect(tracker).toHaveCount(1);
+  await expect(range).toHaveCount(0);
+  await expect(page.getByTestId("video-timeline-lane-propagation")).toHaveCount(0);
+  await stage.hover();
+  await page.getByRole("button", { name: "下一帧", exact: true }).click();
+  await expect(stage).not.toHaveAttribute("data-video-frame-index", frame!);
+  await expect(range).toHaveCount(0);
+  const pausedFrame = await stage.getAttribute("data-video-frame-index");
+  await page.getByRole("button", { name: "播放 / 暂停", exact: true }).click();
+  await expect(stage).not.toHaveAttribute("data-video-frame-index", pausedFrame!);
+  await page.getByRole("button", { name: "播放 / 暂停", exact: true }).click();
+  await expect(range).toHaveCount(0);
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(range).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath("hidden-tracker.png") });
+
+  await page.getByRole("tab", { name: "视频追踪", exact: true }).click();
+  await stage.hover();
+  await expect(range).toBeVisible();
+  await page.getByTestId("video-tool-btn-select").click();
+  await stage.click({ position: { x: 20, y: 20 } });
+  await expect(range).toBeVisible();
+  await panelCommand(page, "视频追踪", "隐藏面板");
+  await expect(range).toHaveCount(0);
+  await page.getByTestId("workbench-ai-tracker").click();
+  await stage.hover();
+  await expect(range).toBeVisible();
+  await page.screenshot({ path: testInfo.outputPath("visible-tracker.png") });
+  expect(errors).toEqual([]);
+});
+
 test("图片 AI 审阅预设显示单例面板，图片上下文不暴露视频追踪", async ({ page, seed }) => {
   const data = await seed.reset();
   await seed.injectToken(page, data.admin_email);
