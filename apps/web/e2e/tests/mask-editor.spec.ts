@@ -28,6 +28,7 @@ test.describe("mask editor (I11)", () => {
     // 按 M 切 mask 工具
     await page.keyboard.press("m");
     await expect(page.getByTestId("mask-tool-capsule")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId("mask-settings-trigger")).toHaveAttribute("title", /· 就绪 ·/);
 
     // 在画布上拖拽画一笔
     const stage = page.getByTestId("workbench-stage");
@@ -107,6 +108,7 @@ test.describe("mask editor (I11)", () => {
 
     // mask 工具应激活 + buffer 已 from polygon 初始化
     await expect(page.getByTestId("mask-tool-capsule")).toBeVisible();
+    await expect(page.getByTestId("mask-settings-trigger")).toHaveAttribute("title", /· 就绪 ·/);
     // 候选 mask 的 dirty 在 initFromPolygon 后为 false（尚未涂改）
     // 用 erase 擦一块小区域使其变 dirty
     await page.keyboard.press("e");
@@ -174,6 +176,7 @@ test.describe("mask editor (I11)", () => {
 
     await page.keyboard.press("m");
     await expect(page.getByTestId("mask-tool-capsule")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId("mask-settings-trigger")).toHaveAttribute("title", /· 就绪 ·/);
 
     // 默认是 brush 模式（aria-pressed 或视觉态由 chipStyle 控制），按 E 切橡皮
     await page.keyboard.press("e");
