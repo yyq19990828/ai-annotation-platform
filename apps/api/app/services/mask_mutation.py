@@ -1228,26 +1228,17 @@ class MaskMutationService:
         from app.api.v1.tasks._shared import _assert_task_editable, _assert_task_visible
 
         await _assert_task_visible(self.db, task, actor)
-        if payload.operation == "slice_mask":
-            _assert_task_editable(task, actor)
-            if task.file_type != "image":
-                raise MaskMutationError(
-                    status_code=422,
-                    reason="unsupported_media",
-                    message="切割仅支持图片任务",
-                )
-            try:
-                await assert_task_lock_for_legacy_video(self.db, task, actor.id)
-            except TaskLockConflictError as exc:
-                raise MaskMutationError(
-                    status_code=409,
-                    reason="task_lock_conflict",
-                    message="任务正由其他用户编辑",
-                ) from exc
         replay = await self._idempotent_replay(task_id, actor.id, payload, digest)
         if replay is not None:
             return replay
         _assert_task_editable(task, actor)
+
+        if payload.operation == "slice_mask" and task.file_type != "image":
+            raise MaskMutationError(
+                status_code=422,
+                reason="unsupported_media",
+                message="切割仅支持图片任务",
+            )
 
         try:
             await assert_task_lock_for_legacy_video(self.db, task, actor.id)

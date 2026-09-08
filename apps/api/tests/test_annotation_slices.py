@@ -313,6 +313,36 @@ async def test_commit_undo_redo_preserve_ids_provenance_parent_attributes_and_de
     ) == 6
 
 
+async def test_slice_commit_and_restore_replay_after_task_becomes_locked(
+    db_session, super_admin
+):
+    actor, _ = super_admin
+    task, source, _ = await _seed(db_session, actor)
+    service = AnnotationSliceService(db_session)
+    payload = _payload(source)
+    result = await service.commit(task.id, payload, actor)
+
+    task.status = "completed"
+    await db_session.flush()
+    commit_replay = await service.commit(task.id, payload, actor)
+    assert commit_replay.idempotent_replay
+
+    task.status = "pending"
+    await db_session.flush()
+    restore_payload = _restore(result)
+    restored = await service.restore(
+        task.id, result.operation_id, restore_payload, actor
+    )
+
+    task.status = "completed"
+    await db_session.flush()
+    restore_replay = await service.restore(
+        task.id, result.operation_id, restore_payload, actor
+    )
+    assert restore_replay.idempotent_replay
+    assert restore_replay.operation_id == restored.operation_id
+
+
 @pytest.mark.parametrize(
     "failure",
     [

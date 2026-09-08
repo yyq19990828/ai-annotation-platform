@@ -272,6 +272,13 @@ async def test_slice_and_restore_preserve_identity_metadata_and_versions(
     replay = await MaskMutationService(db_session).commit(task.id, payload, actor)
     assert replay.idempotent_replay and replay.operation_id == receipt.operation_id
 
+    task.status = "completed"
+    await db_session.flush()
+    locked_task_replay = await MaskMutationService(db_session).commit(
+        task.id, payload, actor
+    )
+    assert locked_task_replay.idempotent_replay
+
 
 @pytest.mark.asyncio
 async def test_undo_gc_redo_and_reference_retention(

@@ -59,8 +59,21 @@ class AnnotationSliceService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
+    async def _assert_task_writable(self, task: Task, actor: User) -> None:
+        from app.api.v1.tasks._shared import _assert_task_editable
+
+        _assert_task_editable(task, actor)
+        if task.file_type != "image":
+            raise AnnotationSliceError(422, "unsupported_media", "切割仅支持图片任务")
+        try:
+            await assert_task_lock_for_legacy_video(self.db, task, actor.id)
+        except TaskLockConflictError as exc:
+            raise AnnotationSliceError(
+                409, "task_lock_conflict", "任务正由其他用户编辑"
+            ) from exc
+
     async def _lock_task(self, task_id: uuid.UUID, actor: User) -> Task:
-        from app.api.v1.tasks._shared import _assert_task_editable, _assert_task_visible
+        from app.api.v1.tasks._shared import _assert_task_visible
 
         task = await self.db.scalar(
             select(Task)
@@ -71,15 +84,6 @@ class AnnotationSliceService:
         if task is None:
             raise AnnotationSliceError(404, "task_not_found", "任务不存在")
         await _assert_task_visible(self.db, task, actor)
-        _assert_task_editable(task, actor)
-        if task.file_type != "image":
-            raise AnnotationSliceError(422, "unsupported_media", "切割仅支持图片任务")
-        try:
-            await assert_task_lock_for_legacy_video(self.db, task, actor.id)
-        except TaskLockConflictError as exc:
-            raise AnnotationSliceError(
-                409, "task_lock_conflict", "任务正由其他用户编辑"
-            ) from exc
         return task
 
     async def _replay(
@@ -184,6 +188,7 @@ class AnnotationSliceService:
         replay = await self._replay(task_id, actor, payload.idempotency_key, digest)
         if replay:
             return replay
+        await self._assert_task_writable(task, actor)
         rows = await self._lock_annotations(task_id, [payload.annotation_id])
         source = rows[str(payload.annotation_id)]
         if not source.is_active or source.version != payload.expected_version:
@@ -309,6 +314,7 @@ class AnnotationSliceService:
         replay = await self._replay(task_id, actor, payload.idempotency_key, digest)
         if replay:
             return replay
+        await self._assert_task_writable(task, actor)
         original = await self.db.scalar(
             select(AnnotationOperation)
             .where(
