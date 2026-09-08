@@ -23,13 +23,13 @@ export async function runAiPredictionImport(
   // 避免母版首帧仍是 Konva 透明棋盘。
   await page.waitForTimeout(1_000);
   const drawStartMs = Date.now();
-  await page.waitForTimeout(options.marketing ? 2_500 : 500);
+  await page.waitForTimeout(options.marketing ? 2_500 : 2_000);
 
   await page.waitForTimeout(options.marketing ? 1_000 : 0);
   const candidate = page.locator('[data-testid^="box-list-item-"]').first();
   await candidate.waitFor({ state: "visible", timeout: 10_000 });
   await candidate.click();
-  await page.waitForTimeout(options.marketing ? 1_500 : 200);
+  await page.waitForTimeout(options.marketing ? 1_500 : 1_500);
   const accepted = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&
@@ -44,6 +44,6 @@ export async function runAiPredictionImport(
   await accepted;
   await expect(stage).toHaveAttribute("data-user-box-count", "1", { timeout: 10_000 });
   await expect(stage).toHaveAttribute("data-ai-box-count", "4", { timeout: 10_000 });
-  await page.waitForTimeout(options.marketing ? 3_200 : 500);
+  await page.waitForTimeout(options.marketing ? 3_200 : 2_500);
   return { drawStartMs, drawEndMs: Date.now() };
 }

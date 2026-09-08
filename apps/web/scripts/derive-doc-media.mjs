@@ -50,7 +50,7 @@ const POSTER_AT_SECONDS = new Map([
   ["project-actions-menu", 9],
   ["jobs-bell-active", 10],
   ["video-tracker-job-states", 5],
-  ["project-ml-routing", 14],
+  ["project-ml-routing", 11],
   ["pipeline-apply-project", 33.25],
   ["secondary-inference-attribute", 9],
   ["background-export-download", 16],
