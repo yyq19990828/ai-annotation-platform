@@ -162,13 +162,17 @@ export function WorkbenchLayout({
     <div ref={rootRef} className="relative flex h-full flex-col overflow-hidden bg-muted">
       <WorkbenchDockWorkspace
         {...workspace}
-        renderTopbar={(menu, state) => (
-          <Topbar
-            {...topbar}
-            layoutMenuSlot={menu}
-            layoutDisabled={state.disabled}
-            sides={state.sides}
-          />
+        onOpenLayoutSettings={topbar.onOpenWorkbenchSettings}
+        renderTopbar={(menu, state, layoutSettings) => (
+          <>
+            <Topbar
+              {...topbar}
+              layoutMenuSlot={menu}
+              layoutDisabled={state.disabled}
+              sides={state.sides}
+            />
+            <WorkbenchSettingsDialog {...workbenchSettings} layoutSettings={layoutSettings} />
+          </>
         )}
         slots={{
           canvas: (
@@ -245,7 +249,6 @@ export function WorkbenchLayout({
 
       <HotkeyCheatSheet {...hotkeys} />
       <OfflineQueueDrawer {...offlineQueue} />
-      <WorkbenchSettingsDialog {...workbenchSettings} />
       <ConflictModal {...conflict} />
       {rejectModal && <RejectReasonModal {...rejectModal} />}
       {deleteConfirm && <DeleteConfirmModal {...deleteConfirm} />}

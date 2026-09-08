@@ -1,3 +1,4 @@
+import { openLayoutSettings } from "../helpers/workbench-layout";
 import { createWorkspacePreset } from "../../src/pages/Workbench/layout/workbenchLayoutPresets";
 import { expect, test } from "../fixtures/seed";
 
@@ -106,16 +107,14 @@ test("3D 本地树等待首次权威回灌，复用原生画布与 WebGL context
     await sameRenderer();
 
     await page.getByRole("button", { name: "布局", exact: true }).click();
-    for (const name of [
-      "标准标注布局",
-      "专注画布布局",
-      "审核协作布局",
-      "任务队列",
-      "重置为标准布局",
-    ]) {
+    for (const name of ["标准标注布局", "专注画布布局"]) {
       await expect(page.getByRole("menuitem", { name, exact: true })).toBeDisabled();
     }
     await page.keyboard.press("Escape");
+    const settings = await openLayoutSettings(page);
+    await expect(settings.getByRole("status")).toHaveText("正在加载设置…");
+    await expect(settings.getByRole("region", { name: "工作台布局" })).toHaveCount(0);
+    await settings.getByRole("button", { name: "关闭设置", exact: true }).click();
     const queueBounds = await queue.boundingBox();
     await page
       .getByRole("tab", { name: "任务队列", exact: true })

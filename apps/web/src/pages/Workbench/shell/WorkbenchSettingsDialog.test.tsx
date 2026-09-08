@@ -39,6 +39,21 @@ describe("WorkbenchSettingsDialog", () => {
     localStorage.clear();
   });
 
+  it("previews slider changes immediately and restores the dialog on capture loss", () => {
+    mount();
+    const slider = screen.getByRole("slider", { name: "左栏宽度" });
+    fireEvent.pointerDown(slider, { pointerId: 1 });
+    expect(screen.getByTestId("workbench-settings-dialog")).toHaveAttribute(
+      "data-previewing",
+      "true",
+    );
+    fireEvent.change(slider, { target: { value: "22" } });
+    expect(mocks.setFields).toHaveBeenCalledWith({ common: { leftWidthPct: 22 } });
+    fireEvent.lostPointerCapture(slider);
+    expect(screen.getByTestId("workbench-settings-dialog")).not.toHaveAttribute("data-previewing");
+    expect(mocks.setFields).toHaveBeenCalledTimes(1);
+  });
+
   it("shows all six purpose categories and leaves hidden fields unavailable", () => {
     mount();
     expect(

@@ -147,7 +147,8 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     section: "layout",
     category: "common",
     label: "左栏宽度",
-    description: "占工作台宽度的百分比;也可直接拖拽边栏分隔条,双击或此处重置回 15%",
+    description:
+      "调整画布同侧可见列的宽度；多列分别调整，受面板最小尺寸限制。隐藏或专注时不调整，可拖动分隔条精调。",
     control: { type: "slider", min: 10, max: 35, step: 1, format: (v) => `${v}%`, resetTo: 15 },
   },
   {
@@ -155,7 +156,8 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     section: "layout",
     category: "common",
     label: "右栏宽度",
-    description: "占工作台宽度的百分比;也可直接拖拽边栏分隔条,双击或此处重置回 15%",
+    description:
+      "调整画布同侧可见列的宽度；多列分别调整，受面板最小尺寸限制。隐藏或专注时不调整，可拖动分隔条精调。",
     control: { type: "slider", min: 10, max: 35, step: 1, format: (v) => `${v}%`, resetTo: 15 },
   },
   {

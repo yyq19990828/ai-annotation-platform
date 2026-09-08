@@ -1,3 +1,4 @@
+import { layoutCommand } from "../helpers/workbench-layout";
 /**
  * v0.16.x · 点云工作台冒烟基线(P1)——拆 3D 整簇前的 Playwright 守护网地基。
  *
@@ -54,8 +55,7 @@ test.describe("workbench pointcloud smoke (WebGL go/no-go)", () => {
 
     const card = page.locator('[data-testid^="box-list-item-"]').first();
     await card.click({ position: { x: 12, y: 16 } });
-    await page.getByRole("button", { name: "布局", exact: true }).click();
-    await page.getByRole("menuitem", { name: "框体精修", exact: true }).click();
+    await layoutCommand(page, "框体精修");
     await expect(page.getByTestId("tri-view-renderer-panel")).toBeVisible();
     await expect(
       page.getByTestId("tri-view-renderer-panel").locator(":scope > canvas"),
@@ -83,8 +83,7 @@ test.describe("workbench pointcloud smoke (WebGL go/no-go)", () => {
       (canvas as HTMLCanvasElement).getContext("webgl2"),
     );
     for (const preset of ["专注画布布局", "审核协作布局", "标准标注布局"]) {
-      await page.getByRole("button", { name: "布局", exact: true }).click();
-      await page.getByRole("menuitem", { name: preset, exact: true }).click();
+      await layoutCommand(page, preset);
       expect(
         await rendererCanvas.evaluate((node, original) => node === original, originalCanvas),
       ).toBe(true);

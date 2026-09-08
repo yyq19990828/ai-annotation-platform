@@ -27,6 +27,8 @@ interface SettingsFieldControlProps {
   disabled?: boolean;
   locked?: boolean;
   layout?: "compact" | "settings";
+  previewing?: boolean;
+  onPreviewChange?: (active: boolean) => void;
   onCommit: (value: WorkbenchSettingValue) => void;
 }
 
@@ -38,6 +40,8 @@ export function SettingsFieldControl({
   locked = false,
   layout = "compact",
   onCommit,
+  previewing,
+  onPreviewChange,
 }: SettingsFieldControlProps) {
   const { control } = field;
   const detailed = layout === "settings";
@@ -72,6 +76,7 @@ export function SettingsFieldControl({
       title={locked ? LOCKED_TITLE : detailed ? undefined : field.description}
       aria-disabled={blocked}
       data-disabled={blocked || undefined}
+      data-slider-preview={previewing || undefined}
       data-testid={`setting-field-${field.key}`}
     >
       <FieldContent className="min-w-0">
@@ -132,7 +137,11 @@ export function SettingsFieldControl({
               step={control.step}
               disabled={blocked}
               detailed={detailed}
-              onLiveChange={setSliderLive}
+              onPreviewChange={onPreviewChange}
+              onLiveChange={(next) => {
+                setSliderLive(next);
+                if (onPreviewChange) onCommit(next);
+              }}
               onCommit={onCommit}
             />
             {detailed && (
@@ -344,6 +353,7 @@ function SliderControl({
   step,
   disabled,
   onLiveChange,
+  onPreviewChange,
   onCommit,
 }: {
   id: string;
@@ -356,6 +366,7 @@ function SliderControl({
   disabled: boolean;
   /** 拖动过程中每帧上报实时值(供父组件实时显示数字);不触发 commit。 */
   onLiveChange: (value: number) => void;
+  onPreviewChange?: (active: boolean) => void;
   onCommit: (value: number) => void;
 }) {
   const [local, setLocal] = useState(value);
@@ -373,6 +384,7 @@ function SliderControl({
 
   const commit = () => {
     setDragging(false);
+    onPreviewChange?.(false);
     if (localRef.current !== committedRef.current) {
       committedRef.current = localRef.current;
       onCommit(localRef.current);
@@ -392,15 +404,18 @@ function SliderControl({
       onPointerDown={(e) => {
         e.currentTarget.setPointerCapture?.(e.pointerId);
         setDragging(true);
+        onPreviewChange?.(true);
       }}
       onChange={(e) => {
         const next = Number(e.target.value);
         localRef.current = next;
         setLocal(next);
         onLiveChange(next);
+        if (onPreviewChange) committedRef.current = next;
       }}
       onPointerUp={commit}
       onPointerCancel={commit}
+      onLostPointerCapture={commit}
       onBlur={commit}
       onKeyUp={(e) => {
         if (
