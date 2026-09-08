@@ -4,6 +4,10 @@
 import { expect, type Page, type Response } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
 import {
+  cocoRleBounds,
+  validateCocoRle,
+} from "../../../src/pages/Workbench/stage/shared/geometry/maskRle";
+import {
   commitPendingAnnotationClass,
   mediaPoint,
   movePointerPathAtRefreshRate,
@@ -100,6 +104,78 @@ function assertUpdatedMaskTrack(payload: unknown, annotationId: string): void {
   }
 }
 
+async function readJson<T>(page: Page, path: string): Promise<T> {
+  return page.evaluate(async (url) => {
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+    });
+    if (!response.ok) throw new Error(`Mask correction readback: HTTP ${response.status}`);
+    return (await response.json()) as T;
+  }, path);
+}
+
+async function assertCorrectedMaskGeometry(
+  page: Page,
+  payload: unknown,
+  annotationId: string,
+  expectedBbox: [number, number, number, number],
+): Promise<void> {
+  if (!Array.isArray(payload)) return;
+  const annotation = payload.find(
+    (item) =>
+      typeof item === "object" &&
+      item !== null &&
+      String((item as Record<string, unknown>).id) === annotationId,
+  ) as Record<string, unknown> | undefined;
+  const geometry = annotation?.geometry as Record<string, unknown> | undefined;
+  const keyframes = Array.isArray(geometry?.keyframes) ? geometry.keyframes : [];
+  const corrected = keyframes.find(
+    (item) =>
+      typeof item === "object" &&
+      item !== null &&
+      Number((item as Record<string, unknown>).frame_index) === 5 &&
+      (item as Record<string, unknown>).source === "manual",
+  ) as Record<string, unknown> | undefined;
+  const original = keyframes.find(
+    (item) =>
+      typeof item === "object" &&
+      item !== null &&
+      Number((item as Record<string, unknown>).frame_index) === 0,
+  ) as Record<string, unknown> | undefined;
+  const correctedRef = corrected?.mask as Record<string, unknown> | undefined;
+  const originalRef = original?.mask as Record<string, unknown> | undefined;
+  if (
+    !correctedRef ||
+    correctedRef.encoding !== "coco_rle_ref" ||
+    typeof correctedRef.sha256 !== "string" ||
+    correctedRef.sha256.length !== 64
+  ) {
+    throw new Error("[video-mask-correction-propagate] F5 人工关键帧缺少有效 Mask 内容引用");
+  }
+  if (correctedRef.sha256 === originalRef?.sha256) {
+    throw new Error("[video-mask-correction-propagate] F5 纠错帧仍复用了 F0 Mask 内容");
+  }
+
+  const correctedRle = validateCocoRle(
+    await readJson<unknown>(page, `/api/v1/annotations/${annotationId}/mask-content/5`),
+  );
+  const bounds = cocoRleBounds(correctedRle);
+  if (!bounds) throw new Error("[video-mask-correction-propagate] F5 纠错 Mask 没有前景像素");
+  const [expectedMinX, expectedMinY, expectedMaxX, expectedMaxY] = expectedBbox;
+  const tolerance = 0.03;
+  if (
+    bounds.x < expectedMinX - tolerance ||
+    bounds.y < expectedMinY - tolerance ||
+    bounds.x + bounds.w > expectedMaxX + tolerance ||
+    bounds.y + bounds.h > expectedMaxY + tolerance
+  ) {
+    throw new Error(
+      `[video-mask-correction-propagate] F5 纠错 Mask 超出前景驾驶室范围: ` +
+        `${JSON.stringify(bounds)} vs ${JSON.stringify(expectedBbox)}`,
+    );
+  }
+}
+
 export async function runVideoMaskCorrectionPropagate(
   page: Page,
   catalog: ScreenshotSeedCatalog,
@@ -182,34 +258,58 @@ export async function runVideoMaskCorrectionPropagate(
   try {
     await page.waitForTimeout(1_200);
     await page.getByLabel(/展开选中信息卡.*可拖动/).click();
-    // Dockview may leave a maximum sash over this compact action. The action is
-    // still visible and the forced click targets the resolved button itself.
-    await page.getByTitle("编辑当前帧 Mask").click({ force: true });
+    const editMaskButton = page.getByTitle("编辑当前帧 Mask");
+    await editMaskButton.waitFor({ state: "visible", timeout: 10_000 });
+    const hitTest = await editMaskButton.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const target = document.elementFromPoint(
+        rect.left + rect.width / 2,
+        rect.top + rect.height / 2,
+      );
+      return {
+        targetMatches: target === element || (target instanceof Node && element.contains(target)),
+        targetDescription:
+          target instanceof HTMLElement
+            ? `${target.tagName.toLowerCase()}[title="${target.getAttribute("title") ?? ""}"]`
+            : (target?.nodeName ?? null),
+      };
+    });
+    expect(
+      hitTest.targetMatches,
+      `Mask edit button is physically occluded by ${hitTest.targetDescription}`,
+    ).toBe(true);
+    await editMaskButton.click();
+    await expect(page.getByTestId("video-tool-btn-mask-track")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+      { timeout: 10_000 },
+    );
     await toolbar.waitFor({ timeout: 10_000 });
     const collapseEditorSelection = page.getByRole("button", { name: "收起浮窗" });
     if (await collapseEditorSelection.isVisible()) await collapseEditorSelection.click();
     await toolbar.getByTitle("笔刷 (B)").click();
+    // F5 的真实目标是前景白色 Skyline 驾驶室；其车顶约在 y=.45，
+    // 上方 y=.38-.43 是后方公交/车辆。把补入笔迹限制在驾驶室上沿内，
+    // 避免 SAM3 把后方高车厢一起吸进纠错 seed。
     await stroke(
       page,
       [
-        mediaPoint(bounds, [0.49, 0.38]),
-        mediaPoint(bounds, [0.69, 0.38]),
-        mediaPoint(bounds, [0.69, 0.43]),
-        mediaPoint(bounds, [0.485, 0.43]),
-        mediaPoint(bounds, [0.49, 0.48]),
-        mediaPoint(bounds, [0.695, 0.48]),
+        mediaPoint(bounds, [0.515, 0.47]),
+        mediaPoint(bounds, [0.675, 0.47]),
+        mediaPoint(bounds, [0.675, 0.51]),
+        mediaPoint(bounds, [0.515, 0.51]),
       ],
-      1_250,
+      1_050,
     );
     await page.waitForTimeout(800);
 
     await toolbar.getByTitle("橡皮 (E)").click();
     await page.waitForTimeout(450);
-    await stroke(
-      page,
-      [mediaPoint(bounds, [0.742, 0.49]), mediaPoint(bounds, [0.742, 0.75])],
-      1_050,
-    );
+    await stroke(page, [mediaPoint(bounds, [0.48, 0.425]), mediaPoint(bounds, [0.72, 0.425])], 900);
+    await stroke(page, [mediaPoint(bounds, [0.73, 0.44]), mediaPoint(bounds, [0.73, 0.75])], 1_050);
+    // The deliberate F0 spill ends at x=.746; the brush radius leaves a thin
+    // fringe around x=.763, so overlap a second vertical erase stroke there.
+    await stroke(page, [mediaPoint(bounds, [0.75, 0.44]), mediaPoint(bounds, [0.75, 0.75])], 1_050);
     await page.waitForTimeout(900);
 
     await toolbar.getByRole("button", { name: "保存并传播" }).click();
@@ -270,7 +370,14 @@ export async function runVideoMaskCorrectionPropagate(
     );
     await review.getByTestId("tracker-review-accept").click();
     const [, annotationsResponse] = await Promise.all([accepted, annotationsRefreshed]);
-    assertUpdatedMaskTrack(await annotationsResponse.json(), annotationId);
+    const annotationsPayload = await annotationsResponse.json();
+    assertUpdatedMaskTrack(annotationsPayload, annotationId);
+    await assertCorrectedMaskGeometry(
+      page,
+      annotationsPayload,
+      annotationId,
+      [0.48, 0.44, 0.71, 0.84],
+    );
     await review.waitFor({ state: "hidden", timeout: 8_000 });
     // 采纳后切一帧再返回，展示正式轨迹 Mask；等待 Konva 的 Mask 与标签层都完成重绘，
     // 防止旧 ImageBitmap 阻塞同帧队列后把“保持 F0”残影录进母版。

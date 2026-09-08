@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-08T08:36:58.131Z",
+  "updated_at": "2026-09-08T09:14:30.261Z",
   "entries": {
     "docs-site/.vitepress/theme/assets/home/hero/pointcloud.webp": {
       "asset_id": "home-hero/pointcloud",
@@ -4457,20 +4457,28 @@
     "docs-site/public/media/video/mask-correction-propagate-poster.webp": {
       "asset_id": "video-mask-correction-propagate",
       "role": "poster",
-      "generated_at": "2026-08-15T12:15:57.966Z",
-      "captured_commit": "13ad5149e29aa78af8081ef08bd6a587ccdd3bcf",
+      "generated_at": "2026-09-08T09:14:30.261Z",
+      "captured_commit": "e3f10312fbed2467cf8b369689b0742871bf217f",
       "source_worktree_dirty": false,
-      "seed_revision": "screenshots-2026-08-e",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › video-mask-correction-propagate",
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive webp › video-mask-correction-propagate",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/flows/video-mask-correction-propagate.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
         "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "760ebcd5163f2f18c131370b15f205cf683d8e3eb2c68977b88b82f79ecb9f77",
-      "bytes": 79558,
+      "sha256": "566cda3ff6ac2034bbf49f096d5c2d2f0ad5a29849219e515904cb7abf32a671",
+      "bytes": 73004,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -4479,41 +4487,67 @@
         "fps": "25/1",
         "duration_seconds": null
       },
+      "capture": {
+        "source_quality": "standard",
+        "source_inference": "live"
+      },
       "source_asset": {
-        "runId": "20260815T110545Z-13ad5149e29a",
+        "runId": "2026-09-08T09-03-00-000Z-mask-correction-final",
         "assetId": "video-mask-correction-propagate",
-        "sha256": "e0546e004ea8e7bd8e455264e196ddee07d24a18a48fd849bbfda5725a465a8a"
+        "sha256": "93bdc8261b01c4104279d2adfb6461534c756012963883df3fb018ff4e38fb26",
+        "quality": "standard",
+        "clip": {
+          "start": 12,
+          "duration": 26.3
+        }
       }
     },
     "docs-site/public/media/video/mask-correction-propagate.mp4": {
       "asset_id": "video-mask-correction-propagate",
       "role": "docs-video",
-      "generated_at": "2026-08-15T12:15:57.882Z",
-      "captured_commit": "13ad5149e29aa78af8081ef08bd6a587ccdd3bcf",
+      "generated_at": "2026-09-08T09:14:30.172Z",
+      "captured_commit": "e3f10312fbed2467cf8b369689b0742871bf217f",
       "source_worktree_dirty": false,
-      "seed_revision": "screenshots-2026-08-e",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › video-mask-correction-propagate",
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive mp4 › video-mask-correction-propagate",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/flows/video-mask-correction-propagate.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
         "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "21f79a27f2b497d116a4b0f7507c225f10ced3bdcae084177f59e867eb967d0b",
-      "bytes": 874413,
+      "sha256": "7c7f724ee703ed9722d3094e04c5d4e7ade53c69f7a5f20031a4c9efa7714abd",
+      "bytes": 1181361,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
-        "fps": "30/1",
-        "duration_seconds": 25.334
+        "fps": "25/1",
+        "duration_seconds": 26.32
+      },
+      "capture": {
+        "source_quality": "standard",
+        "source_inference": "live"
       },
       "source_asset": {
-        "runId": "20260815T110545Z-13ad5149e29a",
+        "runId": "2026-09-08T09-03-00-000Z-mask-correction-final",
         "assetId": "video-mask-correction-propagate",
-        "sha256": "e0546e004ea8e7bd8e455264e196ddee07d24a18a48fd849bbfda5725a465a8a"
+        "sha256": "93bdc8261b01c4104279d2adfb6461534c756012963883df3fb018ff4e38fb26",
+        "quality": "standard",
+        "clip": {
+          "start": 12,
+          "duration": 26.3
+        }
       }
     },
     "docs-site/public/media/video/mask-track-edit-poster.webp": {
