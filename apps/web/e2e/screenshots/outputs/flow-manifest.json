@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-08T08:08:58.193Z",
+  "updated_at": "2026-09-08T09:14:30.261Z",
   "entries": {
     "docs-site/.vitepress/theme/assets/home/hero/pointcloud.webp": {
       "asset_id": "home-hero/pointcloud",
@@ -4111,9 +4111,9 @@
     "docs-site/public/media/video/mask-correction-propagate-poster.webp": {
       "asset_id": "video-mask-correction-propagate",
       "role": "poster",
-      "generated_at": "2026-09-08T08:08:58.193Z",
-      "captured_commit": "ef08fa8657f3df3dc666a7e542847034f3fb6c24",
-      "source_worktree_dirty": true,
+      "generated_at": "2026-09-08T09:14:30.261Z",
+      "captured_commit": "e3f10312fbed2467cf8b369689b0742871bf217f",
+      "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-g",
       "source": "apps/web/scripts/media-derivation.mjs",
       "test_title": "derive webp › video-mask-correction-propagate",
@@ -4131,8 +4131,8 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "5341e96fe08fa68c6b48353c946452d8a4eab855a15b943ea301227ff638bb05",
-      "bytes": 69858,
+      "sha256": "566cda3ff6ac2034bbf49f096d5c2d2f0ad5a29849219e515904cb7abf32a671",
+      "bytes": 73004,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -4146,22 +4146,22 @@
         "source_inference": "live"
       },
       "source_asset": {
-        "runId": "2026-09-08T08-20-00-000Z-mask-correction",
+        "runId": "2026-09-08T09-03-00-000Z-mask-correction-final",
         "assetId": "video-mask-correction-propagate",
-        "sha256": "7d048251dc8184a4a9a5357b1698e710bb8ace124775179108d6c0fac880e1c3",
+        "sha256": "93bdc8261b01c4104279d2adfb6461534c756012963883df3fb018ff4e38fb26",
         "quality": "standard",
         "clip": {
-          "start": 6,
-          "duration": 40.5
+          "start": 12,
+          "duration": 26.3
         }
       }
     },
     "docs-site/public/media/video/mask-correction-propagate.mp4": {
       "asset_id": "video-mask-correction-propagate",
       "role": "docs-video",
-      "generated_at": "2026-09-08T08:08:58.107Z",
-      "captured_commit": "ef08fa8657f3df3dc666a7e542847034f3fb6c24",
-      "source_worktree_dirty": true,
+      "generated_at": "2026-09-08T09:14:30.172Z",
+      "captured_commit": "e3f10312fbed2467cf8b369689b0742871bf217f",
+      "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-g",
       "source": "apps/web/scripts/media-derivation.mjs",
       "test_title": "derive mp4 › video-mask-correction-propagate",
@@ -4179,28 +4179,28 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "8d8da1c18709540048f833b4a26b502670e4668ac69c3722a9ce98c1abc644ec",
-      "bytes": 1676342,
+      "sha256": "7c7f724ee703ed9722d3094e04c5d4e7ade53c69f7a5f20031a4c9efa7714abd",
+      "bytes": 1181361,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "25/1",
-        "duration_seconds": 40.52
+        "duration_seconds": 26.32
       },
       "capture": {
         "source_quality": "standard",
         "source_inference": "live"
       },
       "source_asset": {
-        "runId": "2026-09-08T08-20-00-000Z-mask-correction",
+        "runId": "2026-09-08T09-03-00-000Z-mask-correction-final",
         "assetId": "video-mask-correction-propagate",
-        "sha256": "7d048251dc8184a4a9a5357b1698e710bb8ace124775179108d6c0fac880e1c3",
+        "sha256": "93bdc8261b01c4104279d2adfb6461534c756012963883df3fb018ff4e38fb26",
         "quality": "standard",
         "clip": {
-          "start": 6,
-          "duration": 40.5
+          "start": 12,
+          "duration": 26.3
         }
       }
     },
