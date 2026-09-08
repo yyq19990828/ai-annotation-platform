@@ -16,6 +16,7 @@ const { values } = parseArgs({
     list: { type: "boolean" },
     plan: { type: "boolean" },
     "validate-only": { type: "boolean" },
+    "resize-display": { type: "boolean" },
   },
 });
 if (values.list) {
@@ -51,6 +52,9 @@ if (!/^\/[1-9]\d*$/.test(redis.pathname) || redis.href !== broker.href) {
 }
 if (values.profile === "marketing" && process.platform !== "linux") {
   throw new Error("Marketing masters require Linux X11/NVIDIA; use --profile docs on macOS.");
+}
+if (values["resize-display"] && values.profile !== "marketing") {
+  throw new Error("--resize-display only applies to the marketing profile.");
 }
 const env = {
   ...process.env,
@@ -97,7 +101,16 @@ run(
   apiRoot,
 );
 if (plan.profile === "marketing") {
-  run(process.execPath, ["scripts/run-marketing-capture.mjs", "--grep", plan.grep], webRoot);
+  run(
+    process.execPath,
+    [
+      "scripts/run-marketing-capture.mjs",
+      "--grep",
+      plan.grep,
+      ...(values["resize-display"] ? ["--resize-display"] : []),
+    ],
+    webRoot,
+  );
 } else {
   run(
     path.join(webRoot, "node_modules/.bin/playwright"),
