@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-08T02:51:29.835Z",
+  "updated_at": "2026-09-08T04:56:10.214Z",
   "entries": {
     "docs-site/.vitepress/theme/assets/home/hero/pointcloud.webp": {
       "asset_id": "home-hero/pointcloud",
@@ -1674,20 +1674,28 @@
     "docs-site/public/media/jobs/video-tracker-job-states-poster.webp": {
       "asset_id": "video-tracker-job-states",
       "role": "poster",
-      "generated_at": "2026-08-15T20:42:27.388Z",
-      "captured_commit": "361dd963410c44ed7569a303d4c02ff681d9bd7b",
+      "generated_at": "2026-09-08T04:56:10.214Z",
+      "captured_commit": "464d9591cf062a3a389c65e3ee52e928014ba613",
       "source_worktree_dirty": false,
-      "seed_revision": "screenshots-2026-08-f",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › video-tracker-job-states",
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive webp › video-tracker-job-states",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/flows/video-tracker-job-states.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
         "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "22fb3f8954e8ac8830034166a3831b8e682696cf1a4c4365b19e42b81d635c93",
-      "bytes": 35462,
+      "sha256": "6fc473ba93619eaac3090549d27ea188b8d154fd872409f413bc4979e5ccf617",
+      "bytes": 29034,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -1696,46 +1704,67 @@
         "fps": "25/1",
         "duration_seconds": null
       },
+      "capture": {
+        "source_quality": "standard",
+        "source_inference": "none"
+      },
       "source_asset": {
-        "runId": "20260815T204030Z-361dd963410c",
+        "runId": "2026-09-08T04-40-09-990Z-362226",
         "assetId": "video-tracker-job-states",
-        "sha256": "fbdbd8e61c179119396588b35b1723237ea35a9933035ee975da0b86e3c87ca7"
+        "sha256": "6261b088a4a5995d8c03fabcb2cbf903a2348f6c52542d3a2f954839e64e0c55",
+        "quality": "standard",
+        "clip": {
+          "start": 207,
+          "duration": 18.8
+        }
       }
     },
     "docs-site/public/media/jobs/video-tracker-job-states.mp4": {
       "asset_id": "video-tracker-job-states",
       "role": "docs-video",
-      "generated_at": "2026-09-05T14:43:22.877Z",
-      "captured_commit": "361dd963410c44ed7569a303d4c02ff681d9bd7b",
+      "generated_at": "2026-09-08T04:56:10.129Z",
+      "captured_commit": "464d9591cf062a3a389c65e3ee52e928014ba613",
       "source_worktree_dirty": false,
-      "seed_revision": "screenshots-2026-08-f",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › video-tracker-job-states",
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive mp4 › video-tracker-job-states",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/flows/video-tracker-job-states.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
         "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "23e3816a070b2628ae9095ddaa9d5d44bb202a9704bea56f010401d995f734d0",
-      "bytes": 276482,
+      "sha256": "96833743d801e510ed97ed14f5418b4d8a85eab842978e328f0f5dc4158346f7",
+      "bytes": 390738,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
-        "fps": "30/1",
-        "duration_seconds": 16.466667
+        "fps": "25/1",
+        "duration_seconds": 18.8
+      },
+      "capture": {
+        "source_quality": "standard",
+        "source_inference": "none"
       },
       "source_asset": {
-        "runId": "20260815T204030Z-361dd963410c",
+        "runId": "2026-09-08T04-40-09-990Z-362226",
         "assetId": "video-tracker-job-states",
-        "sha256": "fbdbd8e61c179119396588b35b1723237ea35a9933035ee975da0b86e3c87ca7"
-      },
-      "postprocess": {
-        "input_sha256": "1a8242f681870aa8a01ca20dbaf91b09e881082126eb51e5f4d7408f942a9064",
-        "trim_start_seconds": 0.25,
-        "note": "Removed login/loading pre-roll; retained the original capture and core interaction."
+        "sha256": "6261b088a4a5995d8c03fabcb2cbf903a2348f6c52542d3a2f954839e64e0c55",
+        "quality": "standard",
+        "clip": {
+          "start": 207,
+          "duration": 18.8
+        }
       }
     },
     "docs-site/public/media/large-image/mask-limit-poster.webp": {
