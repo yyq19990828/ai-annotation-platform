@@ -108,6 +108,13 @@ export async function runPointcloudCrossframeTrack(
   );
   await expect(page.getByTestId("three-d-selection-panel").first()).toBeVisible({ timeout: 5_000 });
   await page.waitForTimeout(1_200);
+  // 与 billboard 录制一致，聚焦后轻微拉远，给跨帧 ego 位姿变化留下完整构图余量。
+  await page.mouse.move(
+    viewportBox.x + viewportBox.width * 0.14,
+    viewportBox.y + viewportBox.height * 0.19,
+  );
+  await page.mouse.wheel(0, 120);
+  await page.waitForTimeout(700);
 
   await selectBox(page, source.id);
   await page.waitForTimeout(700);
