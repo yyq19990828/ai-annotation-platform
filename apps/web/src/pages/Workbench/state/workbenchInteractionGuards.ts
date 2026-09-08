@@ -25,7 +25,7 @@ export function isWorkbenchInteractionBlocked(event: Event): boolean {
       );
     }) ||
     document.querySelector(
-      '[data-workbench-settings][data-state="open"], [data-workbench-tool-menu][data-state="open"], [data-workbench-tool-menu-trigger][data-state="open"], [data-workbench-video-tool-confirm][data-state="open"], [data-workbench-issue-create][data-state="open"]',
+      '[data-workbench-settings][data-state="open"], [data-workbench-tool-menu][data-state="open"], [data-workbench-tool-menu-trigger][data-state="open"], [data-workbench-video-tool-confirm][data-state="open"], [data-workbench-issue-create][data-state="open"], [data-workbench-polygon-slice][data-state="open"]',
     ) !== null
   );
 }

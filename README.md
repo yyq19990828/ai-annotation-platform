@@ -225,6 +225,8 @@ API 变更后同步跑 `pnpm openapi:export` 和 `pnpm codegen`；环境变量�
 
 视频轨迹 API 保留旧关键帧缺失的来源字段，客户端应按「来源未知」处理；新建标注仍使用现有来源默认值，详见[任务与标注 API](./docs-site/api/guides/tasks-and-annotations.md)。
 
+图片 Polygon 支持预览后原子切割与保留对象 ID 的撤销/重做。提交和恢复使用独立幂等请求，恢复受完整版本集与原切割后 30 天期限约束，详见[切割操作](./docs-site/user-guide/workbench/polygon.md#切割为两个对象)与[API 合同](./docs-site/api/guides/tasks-and-annotations.md#polygon-原子切割与恢复)。
+
 ## 文档地图
 
 | 角色 / 任务                | 入口                                                                                                   |

@@ -302,9 +302,9 @@ export function buildVideoCompositionCommands(
     created_annotations: AnnotationResponse[];
     deleted_annotation_ids: string[];
   },
-): Exclude<Command, { kind: "batch" }>[] {
+): Exclude<Command, { kind: "batch" | "slice" }>[] {
   const beforeById = new Map(beforeAnnotations.map((ann) => [ann.id, ann]));
-  const commands: Exclude<Command, { kind: "batch" }>[] = [];
+  const commands: Exclude<Command, { kind: "batch" | "slice" }>[] = [];
 
   for (const updated of result.updated_annotations) {
     const before = beforeById.get(updated.id);
@@ -924,8 +924,8 @@ export function useVideoAnnotationActions({
             : withoutSource;
           return [...updatedSource, ...result.created_annotations];
         });
-        const commands: Exclude<Command, { kind: "batch" }>[] = result.created_annotations.map(
-          (created) => ({
+        const commands: Exclude<Command, { kind: "batch" | "slice" }>[] =
+          result.created_annotations.map((created) => ({
             kind: "create",
             annotationId: created.id,
             payload: {
@@ -935,8 +935,7 @@ export function useVideoAnnotationActions({
               confidence: created.confidence ?? undefined,
               attributes: created.attributes,
             },
-          }),
-        );
+          }));
         if (result.deleted_source) {
           commands.push({ kind: "delete", annotation: ann });
           s.setSelectedId(null);

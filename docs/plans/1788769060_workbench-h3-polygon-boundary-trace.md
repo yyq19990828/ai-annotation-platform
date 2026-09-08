@@ -74,6 +74,8 @@ git diff --check
 
 ## Outcome
 
+- 实际提交：`9df2ebbe`（`feat(workbench): trace saved polygon boundaries into drafts`）。
+
 完成日期：2026-09-08。实现基于 `89849018`，沿用现有草稿和创建事务；未新增 API 或修改来源标注。
 
 ### 实现与文档

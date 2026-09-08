@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useLayoutEffect,
   useEffect,
   useMemo,
   useRef,
@@ -14,6 +15,7 @@ import { markVariantHot } from "./sessionVariantCache";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useIsMutating, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToastStore } from "@/components/ui/Toast";
+import { annotationSlicesApi, type PolygonSliceCommitRequest } from "@/api/annotationSlices";
 import { randomId } from "@/utils/id";
 import {
   AlertDialog,
@@ -2610,6 +2612,17 @@ export function useWorkbenchShellModel({
   }, [task?.batch_id, batchList]);
 
   const history = useAnnotationHistory(taskId, {
+    restoreSlice: async (ownerTaskId, operationId, payload) => {
+      const result = await annotationSlicesApi.restore(ownerTaskId, operationId, payload);
+      void queryClient.invalidateQueries({ queryKey: ["annotations", ownerTaskId] });
+      return result;
+    },
+    onSliceError: (error) =>
+      pushToast({
+        msg: "切割恢复失败，历史记录已保留",
+        sub: error instanceof Error ? error.message : String(error),
+        kind: "error",
+      }),
     createAnnotation: (payload) => createAnnotation.mutateAsync(payload),
     deleteAnnotation: (id) => deleteAnnotationMut.mutateAsync(id),
     updateAnnotation: (id, payload) => {
@@ -2744,6 +2757,34 @@ export function useWorkbenchShellModel({
             activeVideoSegment.status === "completed" ||
             activeVideoSegment.locked_by !== meUserId ||
             !!segmentLeaseError)));
+  const pushSliceHistory = history.push;
+  const sliceWriteOwner = useRef({ taskId, canWrite: false });
+  useLayoutEffect(() => {
+    sliceWriteOwner.current = { taskId, canWrite: stageKind === "image" && !isLockedForActions };
+  }, [taskId, stageKind, isLockedForActions]);
+  const handleCommitPolygonSlice = useCallback(
+    async (payload: PolygonSliceCommitRequest) => {
+      if (
+        !taskId ||
+        sliceWriteOwner.current.taskId !== taskId ||
+        !sliceWriteOwner.current.canWrite
+      ) {
+        throw new Error("当前任务不可编辑，请重新打开切割预览");
+      }
+      const result = await annotationSlicesApi.commitPolygon(taskId, payload);
+      pushSliceHistory(
+        {
+          kind: "slice",
+          operationId: result.slice_operation_id,
+          resultVersions: result.result_versions,
+          restoreExpiresAt: result.restore_expires_at,
+        },
+        taskId,
+      );
+      void queryClient.invalidateQueries({ queryKey: ["annotations", taskId] });
+    },
+    [taskId, pushSliceHistory, queryClient],
+  );
   const maskEditorSize = resolveMaskEditorSize(
     isVideoTask,
     stageGeom,
@@ -7488,6 +7529,7 @@ export function useWorkbenchShellModel({
         onCommitKeypointGeometry: handleCommitKeypointGeometry,
         onJoinSelected: handleJoinSelectedPolygons,
         onCropSelected: handleCropSelectedPolygons,
+        onCommitPolygonSlice: handleCommitPolygonSlice,
         onStageGeometry: setStageGeom,
       },
       ai: {

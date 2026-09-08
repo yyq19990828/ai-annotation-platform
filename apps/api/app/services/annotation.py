@@ -186,7 +186,15 @@ class AnnotationService:
         """
         from fastapi import HTTPException
 
-        parent = await self.db.get(Annotation, parent_annotation_id)
+        # Slice restore may deactivate a prospective parent. Serialize child
+        # creation with it before validating, so a waiter cannot create a child
+        # from an active-state snapshot taken before the restore committed.
+        await self.db.execute(select(Task).where(Task.id == task_id).with_for_update())
+        parent = await self.db.scalar(
+            select(Annotation)
+            .where(Annotation.id == parent_annotation_id)
+            .execution_options(populate_existing=True)
+        )
         if parent is None or not parent.is_active:
             raise HTTPException(
                 status_code=400,

@@ -161,6 +161,8 @@ watched_tags = ["projects", "datasets", "batches", "tasks", "annotations", "anno
 "POST /api/v1/tasks/{task_id}/annotations" = { status = "covered" }
 "POST /api/v1/tasks/{task_id}/annotations/interpolate-range" = { status = "excluded", reason = "workbench-internal" }
 "POST /api/v1/tasks/{task_id}/annotations/mask-mutations:commit" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/annotations/polygon-slices:commit" = { status = "excluded", reason = "workbench-internal" }
+"POST /api/v1/tasks/{task_id}/annotations/slices/{operation_id}:restore" = { status = "excluded", reason = "workbench-internal" }
 "POST /api/v1/tasks/{task_id}/annotations/propagate-batch" = { status = "excluded", reason = "workbench-internal" }
 "POST /api/v1/tasks/{task_id}/annotations/video/track-compositions" = { status = "excluded", reason = "workbench-internal" }
 "POST /api/v1/tasks/{task_id}/annotations/{annotation_id}/propagate-to-task" = { status = "excluded", reason = "workbench-internal" }

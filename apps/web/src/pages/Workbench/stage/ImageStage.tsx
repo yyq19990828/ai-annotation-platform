@@ -1,3 +1,4 @@
+import type { CommitPolygonSlice } from "./usePolygonSlice";
 import {
   useCallback,
   useEffect,
@@ -36,6 +37,10 @@ import { usePolygonAutoPoints } from "./usePolygonAutoPoints";
 import { POLYGON_AUTO_POINT_LIMIT } from "./polygonAutoPoints";
 import { usePolygonBoundaryTrace } from "./usePolygonBoundaryTrace";
 import { PolygonBoundaryTraceControls } from "./PolygonBoundaryTraceControls";
+import { usePolygonSlice } from "./usePolygonSlice";
+import { PolygonSliceControls } from "./PolygonSliceControls";
+import { pickBoundary } from "./shared/geometry/polygonBoundaryTrace";
+import { polygonSliceUnavailableReason } from "./shared/geometry/polygonSlice";
 import { CanvasDrawingLayer } from "./CanvasDrawingLayer";
 import { MaskOverlayLayer } from "./overlays/MaskOverlayLayer";
 import { TiledMaskOverlayLayer } from "./overlays/TiledMaskOverlayLayer";
@@ -258,6 +263,7 @@ interface ImageStageProps {
   onJoinSelected?: () => void;
   /** 裁切重叠区(右键菜单):以右键框为基准,减去其余选中多边形的重叠区。 */
   onCropSelected?: (baseId: string) => void;
+  onCommitPolygonSlice?: CommitPolygonSlice;
   onSelectBox: (id: string | null, opts?: { shift?: boolean }) => void;
   onAcceptPrediction?: (b: AiBox) => void;
   /** B-11 · 驳回 AI 预测 (将 prediction 从画布隐去, 不调后端). */
@@ -545,6 +551,7 @@ export function ImageStage({
   pendingGeomMap,
   onJoinSelected,
   onCropSelected,
+  onCommitPolygonSlice,
   onSelectBox,
   onAcceptPrediction,
   onRejectPrediction,
@@ -982,6 +989,20 @@ export function ImageStage({
     autoFitOnResize: workbenchConfig.image.autoFitOnResize,
   });
   const imageReady = imageStatus === "loaded" && imageLoaded && fitted;
+  const sliceEnabled =
+    tool === "select" && imageReady && !readOnly && !pendingDrawing && !maskReadOnly;
+  const polygonSlice = usePolygonSlice({
+    enabled: sliceEnabled,
+    owner: imageIdentity,
+    annotations: userBoxes,
+    commit: onCommitPolygonSlice,
+  });
+  const polygonSliceActive = Boolean(polygonSlice.session);
+  useLayoutEffect(() => {
+    // React commits listening before Konva's next batch draw. Refresh the hit
+    // graph now so the first click after cancelling a slice can select again.
+    stageRef.current?.getLayers().forEach((layer) => layer.drawHit());
+  }, [polygonSliceActive]);
   const boundaryTrace = usePolygonBoundaryTrace({
     enabled: tool === "polygon" && imageReady && !readOnly && !pendingDrawing,
     owner: imageIdentity,
@@ -1470,6 +1491,19 @@ export function ImageStage({
     }
     const pt = toImg(e.evt.clientX, e.evt.clientY);
     if (!pt) return;
+    if (polygonSlice.session && !spacePan && e.evt.button === 0) {
+      containerRef.current?.focus({ preventScroll: true });
+      const hit = !e.evt.altKey
+        ? pickBoundary(
+            polygonSlice.session.source.geometry.points,
+            [pt.x, pt.y],
+            imgW * vp.scale,
+            imgH * vp.scale,
+          )
+        : null;
+      polygonSlice.addPoint(hit?.point ?? [pt.x, pt.y]);
+      return;
+    }
     if (boundaryTrace.trace && !spacePan && e.evt.button === 0) {
       polygonClickPair.current = { previousPlain: null, allowDoubleClick: false };
       boundaryTrace.pick([pt.x, pt.y]);
@@ -1535,6 +1569,7 @@ export function ImageStage({
   };
 
   const handleStageDblClick = () => {
+    if (polygonSlice.session) return;
     if (boundaryTrace.trace) return;
     // Konva counts Shift drags and distant clicks on the same Stage as a double click.
     // Closing requires two plain clicks at the same screen position.
@@ -1727,6 +1762,17 @@ export function ImageStage({
       onChangeClass: onChangeUserBoxClass,
       onJoinSelected,
       onCropSelected,
+      onSlicePolygon: onCommitPolygonSlice
+        ? (annotation) => {
+            polygonSlice.begin(annotation);
+            onSelectBox(null);
+            // ContextMenu closes its portal after onSelect; focus the canvas after that.
+            requestAnimationFrame(() => containerRef.current?.focus({ preventScroll: true }));
+          }
+        : undefined,
+      sliceDisabledReason: !sliceEnabled
+        ? "请切换到选择工具并结束当前编辑"
+        : polygonSliceUnavailableReason(contextMenuTarget, userBoxes),
       onDelete: onDeleteUserBox,
       onPatchFlag: onPatchShapeFlag,
       secondaryBarHidden,
@@ -1739,6 +1785,10 @@ export function ImageStage({
     onChangeUserBoxClass,
     onJoinSelected,
     onCropSelected,
+    onCommitPolygonSlice,
+    onSelectBox,
+    polygonSlice,
+    sliceEnabled,
     onDeleteUserBox,
     onPatchShapeFlag,
     readOnly,
@@ -1811,6 +1861,8 @@ export function ImageStage({
     <div
       ref={setContainerNode}
       data-testid="workbench-stage"
+      tabIndex={polygonSlice.session ? 0 : undefined}
+      onKeyDownCapture={(event) => polygonSlice.keyDown(event.nativeEvent)}
       data-image-identity={imageIdentity}
       data-image-ready={imageReady ? "true" : "false"}
       data-image-tile-retrying={
@@ -1851,6 +1903,7 @@ export function ImageStage({
         setDrag({ kind: "pan", sx: evt.clientX, sy: evt.clientY });
       }}
     >
+      <PolygonSliceControls controller={polygonSlice} />
       {tool === "polygon" &&
         imageReady &&
         !readOnly &&
@@ -2014,7 +2067,7 @@ export function ImageStage({
 
           {/* ai 层：AI 预测框（虚线 + 浅填充）。严格分离：仅「选择工具」下可点选采纳，
             与 user 层一致；绘制工具下不响应 hit-test，避免预标注被任意工具误选。 */}
-          <Layer name="ai" listening={selectActive}>
+          <Layer name="ai" listening={selectActive && !polygonSlice.session}>
             {aiBoxes.map((b) =>
               b.polyline && b.polyline.length >= 2 ? (
                 <KonvaPolyline
@@ -2067,7 +2120,10 @@ export function ImageStage({
           </Layer>
 
           {/* user 层：人工框 + 选中态 + resize handle */}
-          <Layer name="user" listening={userLayerListening && !boundaryTrace.trace}>
+          <Layer
+            name="user"
+            listening={userLayerListening && !boundaryTrace.trace && !polygonSlice.session}
+          >
             {visibleSortedUserBoxes.map((b) => {
               if (!shouldRenderImageAnnotationShape(b)) return null;
               const ov = overrideGeom(b.id);
@@ -2525,6 +2581,40 @@ export function ImageStage({
                   fill="white"
                 />
               </>
+            )}
+            {polygonSlice.session && (
+              <Group listening={false}>
+                {polygonSlice.session.preview?.map((part, index) => (
+                  <Line
+                    key={`slice-${index}`}
+                    closed
+                    points={part.points.flatMap(([x, y]) => [x * imgW, y * imgH])}
+                    stroke={classColorForCanvas(index === 0 ? "slice-kept" : "slice-new")}
+                    fill={hexToRgba(
+                      classColorForCanvas(index === 0 ? "slice-kept" : "slice-new"),
+                      0.28,
+                    )}
+                    strokeWidth={2 / vp.scale}
+                  />
+                ))}
+                <Line
+                  points={polygonSlice.session.points.flatMap(([x, y]) => [x * imgW, y * imgH])}
+                  stroke={pendingColor}
+                  strokeWidth={3 / vp.scale}
+                  dash={[8 / vp.scale, 4 / vp.scale]}
+                />
+                {polygonSlice.session.points.map(([x, y], i) => (
+                  <Circle
+                    key={`slice-point-${i}`}
+                    x={x * imgW}
+                    y={y * imgH}
+                    radius={4 / vp.scale}
+                    stroke={pendingColor}
+                    strokeWidth={2 / vp.scale}
+                    fill="white"
+                  />
+                ))}
+              </Group>
             )}
             {/* polygon / polyline 草稿：已落点 + 跟随光标的预览线段 + 顶点圆点。
               polygon 额外渲染半透填充 + 首点高亮（提示可闭合）；polyline 不闭合、无填充。 */}

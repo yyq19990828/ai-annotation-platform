@@ -7,7 +7,17 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
-import { useAnnotationHistory, type Command, type HistoryHandlers } from "./useAnnotationHistory";
+import {
+  useAnnotationHistory,
+  loadHistoryFromSession,
+  type Command,
+  type HistoryHandlers,
+  type SliceCommand,
+} from "./useAnnotationHistory";
+import type {
+  AnnotationSliceResponse,
+  AnnotationSliceRestoreRequest,
+} from "@/api/annotationSlices";
 
 function makeHandlers(): HistoryHandlers {
   return {
@@ -155,5 +165,212 @@ describe("useAnnotationHistory · 栈状态机", () => {
       await result.current.undo();
     });
     await waitFor(() => expect(handlers.deleteAnnotation).toHaveBeenCalledWith("real-1"));
+  });
+});
+
+const sliceCommand = (): SliceCommand => ({
+  kind: "slice",
+  operationId: "slice-operation",
+  resultVersions: { source: 2, created: 1 },
+  restoreExpiresAt: "2026-10-08T00:00:00Z",
+});
+function receipt(payload: AnnotationSliceRestoreRequest): AnnotationSliceResponse {
+  return {
+    operation_id: "restore-operation",
+    slice_operation_id: "slice-operation",
+    source_annotation_id: "source",
+    created_annotation_id: "created",
+    result_versions: Object.fromEntries(
+      Object.entries(payload.expected_versions).map(([id, version]) => [id, version + 1]),
+    ),
+    active_annotation_ids: payload.target === "before" ? ["source"] : ["source", "created"],
+    target: payload.target,
+    restore_expires_at: "2026-10-08T00:00:00Z",
+    idempotent_replay: false,
+    no_op: false,
+  };
+}
+
+describe("atomic slice history", () => {
+  it("preserves a new edit's redo invalidation while an earlier undo settles", async () => {
+    let resolve!: (value: AnnotationSliceResponse) => void;
+    const restoreSlice = vi.fn(
+      (_task: string, _operation: string, _payload: AnnotationSliceRestoreRequest) =>
+        new Promise<AnnotationSliceResponse>((done) => {
+          resolve = done;
+        }),
+    );
+    const { result } = renderHook(() =>
+      useAnnotationHistory("slice-new-edit", { ...makeHandlers(), restoreSlice }),
+    );
+    act(() => result.current.push(sliceCommand()));
+    let pending!: Promise<void>;
+    act(() => {
+      pending = result.current.undo();
+    });
+    act(() =>
+      result.current.push({ kind: "update", annotationId: "later", before: {}, after: {} }),
+    );
+    await act(async () => {
+      resolve(receipt(restoreSlice.mock.calls[0][2]));
+      await pending;
+    });
+    expect(result.current.canRedo).toBe(false);
+    expect(loadHistoryFromSession("slice-new-edit")?.undo).toEqual([
+      { kind: "update", annotationId: "later", before: {}, after: {} },
+    ]);
+  });
+  it("inserts a pending redo before edits made after it started", async () => {
+    let resolve!: (value: AnnotationSliceResponse) => void;
+    const restoreSlice = vi.fn(
+      async (_task: string, _operation: string, payload: AnnotationSliceRestoreRequest) =>
+        receipt(payload),
+    );
+    const { result } = renderHook(() =>
+      useAnnotationHistory("slice-redo-edit", { ...makeHandlers(), restoreSlice }),
+    );
+    act(() => result.current.push(sliceCommand()));
+    await act(async () => result.current.undo());
+    restoreSlice.mockImplementationOnce(
+      () =>
+        new Promise<AnnotationSliceResponse>((done) => {
+          resolve = done;
+        }),
+    );
+    let pending!: Promise<void>;
+    act(() => {
+      pending = result.current.redo();
+    });
+    act(() =>
+      result.current.push({ kind: "update", annotationId: "later", before: {}, after: {} }),
+    );
+    await act(async () => {
+      resolve(receipt(restoreSlice.mock.calls[1][2]));
+      await pending;
+    });
+    expect(loadHistoryFromSession("slice-redo-edit")?.undo.map((item) => item.kind)).toEqual([
+      "slice",
+      "update",
+    ]);
+    expect(result.current.canRedo).toBe(false);
+  });
+  it("moves one command only after success and keeps IDs and server-returned versions", async () => {
+    const restoreSlice = vi.fn(
+      async (_task: string, _operation: string, payload: AnnotationSliceRestoreRequest) =>
+        receipt(payload),
+    );
+    const { result } = renderHook(() =>
+      useAnnotationHistory("slice-a", { ...makeHandlers(), restoreSlice }),
+    );
+    act(() => result.current.push(sliceCommand()));
+    await act(async () => result.current.undo());
+    expect(result.current.canRedo).toBe(true);
+    expect(restoreSlice.mock.calls[0].slice(0, 2)).toEqual(["slice-a", "slice-operation"]);
+    expect(restoreSlice.mock.calls[0][2]).toMatchObject({
+      target: "before",
+      expected_versions: { source: 2, created: 1 },
+    });
+    await act(async () => result.current.redo());
+    expect(restoreSlice.mock.calls[1][2]).toMatchObject({
+      target: "after",
+      expected_versions: { source: 3, created: 2 },
+    });
+    expect(restoreSlice.mock.calls[1][2].idempotency_key).not.toBe(
+      restoreSlice.mock.calls[0][2].idempotency_key,
+    );
+    expect(result.current.canUndo).toBe(true);
+    expect(result.current.canRedo).toBe(false);
+  });
+  it("retains position and retry key on a failed restore, including across reload", async () => {
+    const onSliceError = vi.fn();
+    const restoreSlice = vi.fn(
+      async (_task: string, _operation: string, payload: AnnotationSliceRestoreRequest) =>
+        receipt(payload),
+    );
+    restoreSlice.mockRejectedValueOnce(new Error("response lost"));
+    const handlers = { ...makeHandlers(), restoreSlice, onSliceError };
+    const first = renderHook(() => useAnnotationHistory("slice-retry", handlers));
+    act(() => first.result.current.push(sliceCommand()));
+    await act(async () => first.result.current.undo());
+    expect(first.result.current.canUndo).toBe(true);
+    expect(first.result.current.canRedo).toBe(false);
+    expect(onSliceError).toHaveBeenCalledOnce();
+    const key = restoreSlice.mock.calls[0][2].idempotency_key;
+    first.unmount();
+    const second = renderHook(() => useAnnotationHistory("slice-retry", handlers));
+    await act(async () => second.result.current.undo());
+    expect(restoreSlice.mock.calls[1][2].idempotency_key).toBe(key);
+    expect(second.result.current.canRedo).toBe(true);
+  });
+  it("rejects concurrent undo attempts and settles only its original task", async () => {
+    let resolve!: (value: AnnotationSliceResponse) => void;
+    const restoreSlice = vi.fn(
+      (_task: string, _operation: string, _payload: AnnotationSliceRestoreRequest) =>
+        new Promise<AnnotationSliceResponse>((done) => {
+          resolve = done;
+        }),
+    );
+    const handlers = { ...makeHandlers(), restoreSlice };
+    const { result, rerender } = renderHook(({ task }) => useAnnotationHistory(task, handlers), {
+      initialProps: { task: "slice-owner-a" },
+    });
+    act(() => result.current.push(sliceCommand()));
+    let pending!: Promise<void>;
+    act(() => {
+      pending = result.current.undo();
+    });
+    await act(async () => result.current.undo());
+    expect(restoreSlice).toHaveBeenCalledTimes(1);
+    rerender({ task: "slice-owner-b" });
+    act(() => result.current.push({ kind: "update", annotationId: "b", before: {}, after: {} }));
+    await act(async () => {
+      resolve(receipt(restoreSlice.mock.calls[0][2]));
+      await pending;
+    });
+    expect(result.current.canUndo).toBe(true);
+    expect(result.current.canRedo).toBe(false);
+    expect(loadHistoryFromSession("slice-owner-b")?.undo[0]).toMatchObject({ annotationId: "b" });
+    expect(loadHistoryFromSession("slice-owner-a")?.redo).toHaveLength(1);
+    rerender({ task: "slice-owner-a" });
+    expect(result.current.canRedo).toBe(true);
+    expect(result.current.canUndo).toBe(false);
+  });
+  it("places a late commit in its original task and deduplicates the same receipt", () => {
+    const { result } = renderHook(() => useAnnotationHistory("slice-current", makeHandlers()));
+    act(() => {
+      result.current.push(sliceCommand(), "slice-retired");
+      result.current.push(sliceCommand(), "slice-retired");
+    });
+    expect(result.current.canUndo).toBe(false);
+    expect(loadHistoryFromSession("slice-retired")?.undo).toHaveLength(1);
+  });
+  it("keeps the original task's failed command when the view changes during restore", async () => {
+    let reject!: (reason: Error) => void;
+    const onSliceError = vi.fn();
+    const restoreSlice = vi.fn(
+      () =>
+        new Promise<AnnotationSliceResponse>((_resolve, fail) => {
+          reject = fail;
+        }),
+    );
+    const handlers = { ...makeHandlers(), restoreSlice, onSliceError };
+    const { result, rerender } = renderHook(({ task }) => useAnnotationHistory(task, handlers), {
+      initialProps: { task: "slice-fail-a" },
+    });
+    act(() => result.current.push(sliceCommand()));
+    let pending!: Promise<void>;
+    act(() => {
+      pending = result.current.undo();
+    });
+    rerender({ task: "slice-fail-b" });
+    await act(async () => {
+      reject(new Error("version conflict"));
+      await pending;
+    });
+    expect(result.current.canUndo).toBe(false);
+    expect(onSliceError).not.toHaveBeenCalled();
+    rerender({ task: "slice-fail-a" });
+    expect(result.current.canUndo).toBe(true);
+    expect(result.current.canRedo).toBe(false);
   });
 });

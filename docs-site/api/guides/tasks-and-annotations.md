@@ -288,6 +288,47 @@ annotation 变更、内容关联、操作账本、lineage、任务统计和聚�
 
 缺少范围版本返回 `428 expected_versions_missing`。范围成员变化、版本漂移、任务 / 对象 / 分段锁冲突分别返回结构化 409 reason；操作合同、类别、geometry、引用或空结果无效返回结构化 422 reason。任一失败都不会留下部分 annotation 或账本记录。
 
+## Polygon 原子切割与恢复
+
+`POST /api/v1/tasks/{task_id}/annotations/polygon-slices:commit` 只接受以下字段：
+
+```json
+{
+  "annotation_id": "11111111-1111-4111-8111-111111111111",
+  "expected_version": 3,
+  "idempotency_key": "slice_commit_20260908_001",
+  "cut_path": [
+    [0.7, 0.03],
+    [0.7, 0.97]
+  ]
+}
+```
+
+切线为 2–256 个有限归一化坐标点，不能自交；来源必须是图片内已保存、未锁定、无活动子对象的简单单外环 Polygon。切线只允许穿越两次，允许边界端点；相切、沿边重叠、多次进出、孔洞和 multi_polygon 拒绝。服务端独立重算两块非空区域，验证它们分割且覆盖来源，面积误差阈值为 `max(1e-10, source_area * 1e-8)`。切线交点与自交候选边对各设固定百万步检查预算。
+
+较大区域保留来源 ID，等面积按质心 x / y 排序。新对象复制类别、工具单元、业务 attributes、attributes_meta、z_order 及原 parent_annotation_id，使用 manual 来源与当前操作者，confidence、parent_prediction_id 为空。来源身份与属性保留，追溯通过 lineage 保存。
+
+响应包含本次 `operation_id`、原切割 `slice_operation_id`、`source_annotation_id`、`created_annotation_id`、两个对象的完整 `result_versions`、`active_annotation_ids`、当前 `target`、`restore_expires_at`、`idempotent_replay` 与 `no_op`。读取完整结果沿用任务 annotations GET。
+
+`POST /api/v1/tasks/{task_id}/annotations/slices/{operation_id}:restore` 的 operation_id 必须指向原切割：
+
+```json
+{
+  "target": "before",
+  "expected_versions": {
+    "11111111-1111-4111-8111-111111111111": 4,
+    "22222222-2222-4222-8222-222222222222": 1
+  },
+  "idempotency_key": "slice_restore_20260908_001"
+}
+```
+
+`target` 为 `before` 或 `after`。必须携带原切割或上次成功恢复返回的完整版本集，含 inactive 对象；服务端还会核对该版本集等于账本记录。不得刷新任意最新版本以覆盖后续修改。几何与活动状态只从账本快照恢复，不接受客户端回滚 geometry。ID 保持、版本递增，恢复响应继续返回两个 ID 的全部版本。恢复到当前同一侧时 `no_op=true`，对象版本不变。
+
+两个接口均要求当前任务可见、可编辑且任务锁允许写入，以及 `annotations:write` scope。相同 actor / task / key 同参回放首次响应，异参返回 `409 idempotency_conflict`。同一次超时重试复用原 key；下一次 undo / redo 必须使用新 key。对象版本变化、锁定或活动子对象分别返回 `409 version_mismatch / annotation_locked / active_children`，非法切线返回 `422 invalid_cut`。原切割提交后 30 天返回 `410 restore_expired`，撤销与重做不续期。
+
+每次提交或恢复都在单一事务内写入对象、统计、操作账本、lineage 与审计；任一失败不产生部分结果。Python SDK 将两个工作台内部接口明确列为 excluded，尚未提供对应客户端方法。实现与回滚约束见 [ADR-0074](/dev/adr/0074-atomic-annotation-slice-restore)。
+
 ## 标注转换计划
 
 图片与视频的几何转换使用「预检计划 → 原子执行」两步接口，客户端不得用多次 annotation PATCH 模拟批量 replace：

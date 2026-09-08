@@ -415,7 +415,7 @@ Python 优先使用本工作区 `apps/api/.venv`。本地 Playwright 配置使�
 | H1     | [中心向外创建 bbox](1788769060_workbench-h1-bbox-center-out.md)                   | 无     | 已授权 | 已完成 | 通过           |
 | H2     | [Polygon 自动落点](1788769060_workbench-h2-polygon-auto-points.md)                | 无     | 已授权 | 已完成 | 通过           |
 | H3     | [沿已有 Polygon 边界追踪](1788769060_workbench-h3-polygon-boundary-trace.md)      | 无     | 已授权 | 已完成 | 通过           |
-| H4a    | [Polygon Slice 与原子恢复](1788769060_workbench-h4a-polygon-slice-transaction.md) | 无     | 已授权 | 未开始 | 未执行         |
+| H4a    | [Polygon Slice 与原子恢复](1788769060_workbench-h4a-polygon-slice-transaction.md) | 无     | 已授权 | 完成   | 通过           |
 | H4b    | [Mask Slice 与可回收数据保护](1788769060_workbench-h4b-mask-slice-transaction.md) | H4a、D | 已授权 | 未开始 | 未执行         |
 
 E1 不依赖 A/D；E2 只依赖 E1。F2 依赖 B，F1/F3 可各自使用现有 UI 独立交付。H1/H2 与 C 的联合检查是集成验收，不是硬依赖；H4a 不依赖 H3；H4b 依赖 H4a 的原子恢复和 D 的主动作。此表细化并取代 §4 聚合步骤中的粗粒度依赖描述。

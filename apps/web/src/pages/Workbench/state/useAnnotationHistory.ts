@@ -1,6 +1,18 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type { AnnotationResponse, VideoTrackKeyframe, VideoTrackMaskKeyframe } from "@/types";
 import type { AnnotationPayload, AnnotationUpdatePayload } from "@/api/tasks";
+import type {
+  AnnotationSliceResponse,
+  AnnotationSliceRestoreRequest,
+} from "@/api/annotationSlices";
+
+export interface SliceCommand {
+  kind: "slice";
+  operationId: string;
+  resultVersions: Record<string, number>;
+  restoreExpiresAt: string;
+  pendingRestore?: { target: "before" | "after"; idempotencyKey: string };
+}
 
 export interface VideoMaskFrameState {
   keyframe: VideoTrackMaskKeyframe | null;
@@ -12,6 +24,7 @@ export interface VideoMaskFrameState {
  * 切任务清栈，避免误撤销另一题。
  */
 export type Command =
+  | SliceCommand
   | { kind: "create"; annotationId: string; payload: AnnotationPayload }
   | { kind: "delete"; annotation: AnnotationResponse }
   | {
@@ -36,15 +49,13 @@ export type Command =
     }
   | { kind: "acceptPrediction"; predictionId: string; createdAnnotationIds: string[] }
   /** 批量命令：undo 时反序应用、redo 时正序应用。子命令必须不含 batch（一层）。 */
-  | { kind: "batch"; commands: Exclude<Command, { kind: "batch" }>[] };
+  | { kind: "batch"; commands: LeafCommand[] };
+
+export type LeafCommand = Exclude<Command, { kind: "batch" | "slice" }>;
 
 /** v0.6.3 P1：单条非 batch 命令的实际执行。导出为纯函数便于单测。
  *  注意 cmd 在 redo / delete-undo 路径会被就地 mutate（annotationId / annotation.id），与 hook 内栈引用相同。 */
-export async function applyLeaf(
-  cmd: Exclude<Command, { kind: "batch" }>,
-  direction: "undo" | "redo",
-  h: HistoryHandlers,
-) {
+export async function applyLeaf(cmd: LeafCommand, direction: "undo" | "redo", h: HistoryHandlers) {
   if (cmd.kind === "create") {
     if (direction === "undo") {
       // v0.6.3 P0：tmpId 走纯本地分支，避免对未入库的 id 调 DELETE → 404
@@ -108,6 +119,12 @@ export async function applyLeaf(
 }
 
 export interface HistoryHandlers {
+  restoreSlice?: (
+    taskId: string,
+    operationId: string,
+    payload: AnnotationSliceRestoreRequest,
+  ) => Promise<AnnotationSliceResponse>;
+  onSliceError?: (error: unknown) => void;
   createAnnotation: (payload: AnnotationPayload) => Promise<AnnotationResponse>;
   deleteAnnotation: (annotationId: string) => Promise<unknown>;
   updateAnnotation: (annotationId: string, payload: AnnotationUpdatePayload) => Promise<unknown>;
@@ -190,137 +207,184 @@ export function saveHistoryToSession(
   }
 }
 
+interface TaskHistory {
+  taskId: string | undefined;
+  undo: Command[];
+  redo: Command[];
+  busy: boolean;
+  revision: number;
+}
+
+/** Each in-flight operation settles the history of the task that started it. */
 export function useAnnotationHistory(taskId: string | undefined, handlers: HistoryHandlers) {
-  // 初始化时尝试 restore（同步，避免首屏空栈再 hydrate 闪烁）
-  const [undoStack, setUndoStack] = useState<Command[]>(() => {
-    const restored = loadHistoryFromSession(taskId);
-    return restored?.undo ?? [];
-  });
-  const [redoStack, setRedoStack] = useState<Command[]>(() => {
-    const restored = loadHistoryFromSession(taskId);
-    return restored?.redo ?? [];
-  });
-  const [busy, setBusy] = useState(false);
-  const busyRef = useRef(false);
+  const histories = useRef(new Map<string | undefined, TaskHistory>());
+  const getHistory = useCallback((owner: string | undefined): TaskHistory => {
+    const existing = histories.current.get(owner);
+    if (existing) return existing;
+    const restored = loadHistoryFromSession(owner);
+    const created = {
+      taskId: owner,
+      undo: restored?.undo ?? [],
+      redo: restored?.redo ?? [],
+      busy: false,
+      revision: 0,
+    };
+    histories.current.set(owner, created);
+    return created;
+  }, []);
+  const current = useRef(getHistory(taskId));
+  const [snapshot, setSnapshot] = useState(() => ({ ...current.current }));
   const handlersRef = useRef(handlers);
-  handlersRef.current = handlers;
-
-  // 切任务：优先 restore；缺省清栈
-  useEffect(() => {
-    const restored = loadHistoryFromSession(taskId);
-    setUndoStack(restored?.undo ?? []);
-    setRedoStack(restored?.redo ?? []);
-  }, [taskId]);
-
-  // 写时机：栈变化后 throttle 50ms 写 sessionStorage
-  const writeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (writeTimerRef.current) clearTimeout(writeTimerRef.current);
-    writeTimerRef.current = setTimeout(() => {
-      saveHistoryToSession(taskId, undoStack, redoStack);
-    }, 50);
+  const mounted = useRef(true);
+  useLayoutEffect(() => {
+    handlersRef.current = handlers;
+  });
+  useLayoutEffect(() => {
+    const previous = current.current;
+    if (previous.taskId !== taskId && !previous.busy) histories.current.delete(previous.taskId);
+    current.current = getHistory(taskId);
+    setSnapshot({ ...current.current });
+  }, [taskId, getHistory]);
+  useLayoutEffect(() => {
+    mounted.current = true;
     return () => {
-      if (writeTimerRef.current) clearTimeout(writeTimerRef.current);
+      mounted.current = false;
     };
-  }, [taskId, undoStack, redoStack]);
-
-  const push = useCallback((cmd: Command) => {
-    setUndoStack((s) => [...s, cmd]);
-    setRedoStack([]); // 新操作会清掉 redo
   }, []);
 
-  const apply = useCallback(async (cmd: Command, direction: "undo" | "redo") => {
-    const h = handlersRef.current;
-    if (cmd.kind === "batch") {
-      // batch 的子命令在 undo 时倒序、redo 时正序执行
-      const ordered = direction === "undo" ? [...cmd.commands].reverse() : cmd.commands;
-      for (const sub of ordered) {
-        try {
-          await applyLeaf(sub, direction, h);
-        } catch {
-          /* 单条失败不阻塞 */
+  const publish = useCallback((record: TaskHistory) => {
+    saveHistoryToSession(record.taskId, record.undo, record.redo);
+    if (mounted.current && current.current === record) setSnapshot({ ...record });
+  }, []);
+
+  const push = useCallback(
+    (cmd: Command, owner = current.current.taskId) => {
+      const record = getHistory(owner);
+      // A response retry may be delivered after the original receipt was handled.
+      if (
+        cmd.kind === "slice" &&
+        [...record.undo, ...record.redo].some(
+          (item) => item.kind === "slice" && item.operationId === cmd.operationId,
+        )
+      )
+        return;
+      record.undo = [...record.undo, cmd];
+      record.redo = [];
+      record.revision += 1;
+      publish(record);
+    },
+    [getHistory, publish],
+  );
+
+  const pushBatch = useCallback(
+    (commands: LeafCommand[]) => {
+      if (!commands.length) return;
+      push(commands.length === 1 ? commands[0] : { kind: "batch", commands });
+    },
+    [push],
+  );
+
+  const replaceAnnotationId = useCallback(
+    (tmpId: string, realId: string) => {
+      const swapLeaf = (c: LeafCommand): LeafCommand => {
+        if (c.kind === "create" && c.annotationId === tmpId) return { ...c, annotationId: realId };
+        if (c.kind === "update" && c.annotationId === tmpId) return { ...c, annotationId: realId };
+        if (c.kind === "delete" && c.annotation.id === tmpId)
+          return { ...c, annotation: { ...c.annotation, id: realId } };
+        if (c.kind === "videoKeyframe" && c.annotationId === tmpId)
+          return { ...c, annotationId: realId };
+        if (c.kind === "videoMaskFrame" && c.annotationId === tmpId)
+          return { ...c, annotationId: realId };
+        if (c.kind === "acceptPrediction" && c.createdAnnotationIds.includes(tmpId))
+          return {
+            ...c,
+            createdAnnotationIds: c.createdAnnotationIds.map((id) => (id === tmpId ? realId : id)),
+          };
+        return c;
+      };
+      const swap = (c: Command): Command => {
+        if (c.kind === "slice") return c;
+        if (c.kind === "batch") return { ...c, commands: c.commands.map(swapLeaf) };
+        return swapLeaf(c);
+      };
+      const record = current.current;
+      record.undo = record.undo.map(swap);
+      record.redo = record.redo.map(swap);
+      publish(record);
+    },
+    [publish],
+  );
+
+  const execute = useCallback(
+    async (direction: "undo" | "redo") => {
+      const record = current.current;
+      if (record.busy) return;
+      const from = direction === "undo" ? "undo" : "redo";
+      const to = direction === "undo" ? "redo" : "undo";
+      const cmd = record[from][record[from].length - 1];
+      if (!cmd) return;
+      const revision = record.revision;
+      const targetIndex = record[to].length;
+      const h = handlersRef.current;
+      record.busy = true;
+      if (cmd.kind !== "slice") record[from] = record[from].slice(0, -1);
+      publish(record);
+      try {
+        if (cmd.kind === "slice") {
+          if (!h.restoreSlice || !record.taskId) throw new Error("切割恢复接口不可用");
+          const target = direction === "undo" ? "before" : "after";
+          if (!cmd.pendingRestore || cmd.pendingRestore.target !== target) {
+            cmd.pendingRestore = {
+              target,
+              idempotencyKey: crypto.randomUUID().replace(/-/g, ""),
+            };
+          }
+          // Persist the retry key before making the request, including across reloads.
+          publish(record);
+          const result = await h.restoreSlice(record.taskId, cmd.operationId, {
+            target,
+            expected_versions: cmd.resultVersions,
+            idempotency_key: cmd.pendingRestore.idempotencyKey,
+          });
+          cmd.resultVersions = result.result_versions;
+          cmd.restoreExpiresAt = result.restore_expires_at;
+          delete cmd.pendingRestore;
+          record[from] = record[from].filter((item) => item !== cmd);
+        } else if (cmd.kind === "batch") {
+          const ordered = direction === "undo" ? [...cmd.commands].reverse() : cmd.commands;
+          for (const sub of ordered) {
+            try {
+              await applyLeaf(sub, direction, h);
+            } catch {
+              /* Existing batch best effort behavior. */
+            }
+          }
+        } else {
+          await applyLeaf(cmd, direction, h);
         }
+        if (cmd.kind !== "slice" || record.revision === revision) {
+          record[to] = [...record[to], cmd];
+        } else if (direction === "redo") {
+          // New edits made during this request stay after the initiating redo.
+          record.undo = [
+            ...record.undo.slice(0, targetIndex),
+            cmd,
+            ...record.undo.slice(targetIndex),
+          ];
+        }
+        // A new edit clears redo, even if the preceding undo settles later.
+      } catch (error) {
+        if (cmd.kind === "slice" && mounted.current && current.current === record)
+          h.onSliceError?.(error);
+      } finally {
+        record.busy = false;
+        publish(record);
       }
-      return;
-    }
-    await applyLeaf(cmd, direction, h);
-  }, []);
-
-  const pushBatch = useCallback((commands: Exclude<Command, { kind: "batch" }>[]) => {
-    if (commands.length === 0) return;
-    if (commands.length === 1) {
-      setUndoStack((s) => [...s, commands[0]]);
-    } else {
-      setUndoStack((s) => [...s, { kind: "batch", commands }]);
-    }
-    setRedoStack([]);
-  }, []);
-
-  /** v0.5.5 phase 2 D.2：离线 create 的 tmp_id 在 drain 后被替换为后端真实 id；
-   *  扫栈把 undo + redo 两边命令里的 annotationId（含嵌套 batch）整体替换，
-   *  保证 Ctrl+Z / Ctrl+Y 不再尝试操作不存在的 tmp_id。 */
-  const replaceAnnotationId = useCallback((tmpId: string, realId: string) => {
-    const swapLeaf = (
-      c: Exclude<Command, { kind: "batch" }>,
-    ): Exclude<Command, { kind: "batch" }> => {
-      if (c.kind === "create" && c.annotationId === tmpId) return { ...c, annotationId: realId };
-      if (c.kind === "update" && c.annotationId === tmpId) return { ...c, annotationId: realId };
-      if (c.kind === "delete" && c.annotation.id === tmpId)
-        return { ...c, annotation: { ...c.annotation, id: realId } };
-      if (c.kind === "videoKeyframe" && c.annotationId === tmpId)
-        return { ...c, annotationId: realId };
-      if (c.kind === "videoMaskFrame" && c.annotationId === tmpId)
-        return { ...c, annotationId: realId };
-      if (c.kind === "acceptPrediction" && c.createdAnnotationIds.includes(tmpId))
-        return {
-          ...c,
-          createdAnnotationIds: c.createdAnnotationIds.map((id) => (id === tmpId ? realId : id)),
-        };
-      return c;
-    };
-    const swap = (c: Command): Command => {
-      if (c.kind === "batch") return { ...c, commands: c.commands.map(swapLeaf) };
-      return swapLeaf(c);
-    };
-    setUndoStack((s) => s.map(swap));
-    setRedoStack((s) => s.map(swap));
-  }, []);
-
-  const undo = useCallback(async () => {
-    if (busyRef.current) return;
-    const cmd = undoStack[undoStack.length - 1];
-    if (!cmd) return;
-    busyRef.current = true;
-    setBusy(true);
-    setUndoStack(undoStack.slice(0, -1));
-    try {
-      await apply(cmd, "undo");
-      setRedoStack((stack) => [...stack, cmd]);
-    } catch {
-      /* swallow; 命令已从栈移除 */
-    } finally {
-      busyRef.current = false;
-      setBusy(false);
-    }
-  }, [apply, undoStack]);
-
-  const redo = useCallback(async () => {
-    if (busyRef.current) return;
-    const cmd = redoStack[redoStack.length - 1];
-    if (!cmd) return;
-    busyRef.current = true;
-    setBusy(true);
-    setRedoStack(redoStack.slice(0, -1));
-    try {
-      await apply(cmd, "redo");
-      setUndoStack((stack) => [...stack, cmd]);
-    } catch {
-      /* swallow */
-    } finally {
-      busyRef.current = false;
-      setBusy(false);
-    }
-  }, [apply, redoStack]);
+    },
+    [publish],
+  );
+  const undo = useCallback(() => execute("undo"), [execute]);
+  const redo = useCallback(() => execute("redo"), [execute]);
 
   return {
     push,
@@ -328,8 +392,8 @@ export function useAnnotationHistory(taskId: string | undefined, handlers: Histo
     undo,
     redo,
     replaceAnnotationId,
-    canUndo: undoStack.length > 0 && !busy,
-    canRedo: redoStack.length > 0 && !busy,
-    busy,
+    canUndo: snapshot.undo.length > 0 && !snapshot.busy,
+    canRedo: snapshot.redo.length > 0 && !snapshot.busy,
+    busy: snapshot.busy,
   };
 }

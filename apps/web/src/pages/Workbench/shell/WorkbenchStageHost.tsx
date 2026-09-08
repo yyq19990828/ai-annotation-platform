@@ -1,3 +1,4 @@
+import type { CommitPolygonSlice } from "../stage/usePolygonSlice";
 import type { TrackerReviewProjection } from "@/hooks/videoTrackerReviewScope";
 import type { VideoTrackContextBarProps } from "../stage/VideoTrackContextBar";
 import { forwardRef, lazy, Suspense, type ReactNode } from "react";
@@ -283,6 +284,7 @@ interface WorkbenchStageHostImageProps {
   ) => void;
   onJoinSelected: () => void;
   onCropSelected: (baseId: string) => void;
+  onCommitPolygonSlice?: CommitPolygonSlice;
   onStageGeometry: (g: StageGeometry) => void;
 }
 
@@ -509,6 +511,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       onCommitKeypointGeometry,
       onJoinSelected,
       onCropSelected,
+      onCommitPolygonSlice,
       onStageGeometry,
     } = imageProps ?? ({} as WorkbenchStageHostImageProps);
     const {
@@ -734,6 +737,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onChangeUserBoxClass={onChangeUserBoxClass}
             onJoinSelected={onJoinSelected}
             onCropSelected={onCropSelected}
+            onCommitPolygonSlice={onCommitPolygonSlice}
             onStageGeometry={onStageGeometry}
             polygonDraft={polygonDraft}
             keypointDraft={keypointDraft}

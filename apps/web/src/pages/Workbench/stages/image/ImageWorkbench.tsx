@@ -1,3 +1,4 @@
+import type { CommitPolygonSlice } from "../../stage/usePolygonSlice";
 import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import type { Annotation, Geometry, RotatedBboxGeometry, Keypoint, KeypointSchema } from "@/types";
 import type { CommentCanvasDrawing } from "@/api/comments";
@@ -121,6 +122,7 @@ export interface ImageWorkbenchProps {
   onChangeUserBoxClass: (id: string) => void;
   onJoinSelected: () => void;
   onCropSelected: (baseId: string) => void;
+  onCommitPolygonSlice?: CommitPolygonSlice;
   onStageGeometry: (g: StageGeometry) => void;
   polygonDraft?: PolygonDraftHandle;
   keypointDraft?: KeypointDraftHandle;
@@ -219,6 +221,7 @@ export function ImageWorkbench({
   onChangeUserBoxClass,
   onJoinSelected,
   onCropSelected,
+  onCommitPolygonSlice,
   onStageGeometry,
   polygonDraft,
   keypointDraft,
@@ -391,6 +394,7 @@ export function ImageWorkbench({
       onChangeUserBoxClass={onChangeUserBoxClass}
       onJoinSelected={onJoinSelected}
       onCropSelected={onCropSelected}
+      onCommitPolygonSlice={onCommitPolygonSlice}
       onStageGeometry={onStageGeometry}
       polygonDraft={polygonDraft}
       keypointDraft={keypointDraft}

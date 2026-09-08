@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.v1.tasks import (
+    annotation_slices,
     annotations,
     ai_masks,
     cross_frame_jobs,
@@ -37,6 +38,7 @@ router.include_router(video.router, prefix="/tasks")
 router.include_router(image_pyramid.router, prefix="/tasks")
 router.include_router(mask_capabilities.router, prefix="/tasks")
 router.include_router(mask_mutations.router, prefix="/tasks")
+router.include_router(annotation_slices.router, prefix="/tasks")
 router.include_router(multicamera_annotations.router, prefix="/tasks")
 router.include_router(annotations.router, prefix="/tasks")
 router.include_router(ai_masks.router, prefix="/tasks")

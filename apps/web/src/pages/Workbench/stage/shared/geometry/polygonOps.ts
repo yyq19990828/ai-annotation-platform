@@ -49,6 +49,46 @@ function geometryToMultiPolygon(geometry: Geometry): MultiPolygon | null {
   return null;
 }
 
+function multiPolygonArea(polygons: MultiPolygon): number {
+  return polygons.reduce(
+    (total, polygon) =>
+      total +
+      polygon.reduce((sum, ring, index) => {
+        const area = Math.abs(
+          ring.reduce((value, a, i) => {
+            const b = ring[(i + 1) % ring.length];
+            return value + a[0] * b[1] - b[0] * a[1];
+          }, 0) / 2,
+        );
+        return sum + (index === 0 ? area : -area);
+      }, 0),
+    0,
+  );
+}
+
+/** Boolean oracle for the preview; the server independently reconstructs the cut. */
+export function validatePolygonPartition(
+  source: PolygonGeometry,
+  parts: [PolygonGeometry, PolygonGeometry],
+): boolean {
+  const original = geometryToMultiPolygon(source);
+  const first = geometryToMultiPolygon(parts[0]);
+  const second = geometryToMultiPolygon(parts[1]);
+  if (!original || !first || !second) return false;
+  try {
+    const tolerance = Math.max(1e-10, multiPolygonArea(original) * 1e-8);
+    return (
+      multiPolygonArea(first) > 1e-12 &&
+      multiPolygonArea(second) > 1e-12 &&
+      multiPolygonArea(polygonClipping.intersection(first, second)) <= tolerance &&
+      multiPolygonArea(polygonClipping.xor(original, polygonClipping.union(first, second))) <=
+        tolerance
+    );
+  } catch {
+    return false;
+  }
+}
+
 function stripClosingPoint(ring: Ring): [number, number][] {
   const points = ring.map(([x, y]) => [x, y] as [number, number]);
   if (points.length > 1) {
