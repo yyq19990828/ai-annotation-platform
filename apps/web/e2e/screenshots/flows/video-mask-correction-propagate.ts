@@ -1,12 +1,11 @@
 /**
  * 高清母版：在漂移帧用笔刷添加、橡皮扣除纠正 Mask，再以原生 Mask seed 向后续帧重传播。
  */
-import type { Page, Response } from "@playwright/test";
+import { expect, type Page, type Response } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
 import {
   commitPendingAnnotationClass,
   mediaPoint,
-  movePointerAtRefreshRate,
   movePointerPathAtRefreshRate,
   recordingAnchor,
   renderedMediaBounds,
@@ -27,28 +26,24 @@ async function stroke(page: Page, points: Point[], durationMs: number): Promise<
   await page.waitForTimeout(250);
 }
 
+async function seekFrame(page: Page, frameIndex: number): Promise<void> {
+  const slider = page.getByRole("slider", { name: "视频帧时间轴" }).first();
+  await slider.fill(String(Math.round((frameIndex / 71) * 10_000)));
+  await expect(page.getByTestId("video-konva-stage")).toHaveAttribute(
+    "data-video-frame-index",
+    String(frameIndex),
+    { timeout: 10_000 },
+  );
+}
+
 async function scrubCorrectionCandidates(
   page: Page,
   timeline: ReturnType<Page["getByTestId"]>,
 ): Promise<void> {
-  const box = await timeline.boundingBox();
-  if (!box) throw new Error("[video-mask-correction-propagate] 时间轴不可见");
-  const y = box.y + box.height * 0.5;
-  const correctionFrame = { x: box.x + box.width * 0.07, y };
-  const laterFrame = { x: box.x + box.width * 0.25, y };
-  const reviewFrame = { x: box.x + box.width * 0.14, y };
-
-  await page.mouse.move(correctionFrame.x, correctionFrame.y);
-  await page.mouse.down();
-  await movePointerAtRefreshRate(page, correctionFrame, laterFrame, 1_800);
-  await page.mouse.up();
-  await page.getByText(/^F 1[6-9] \/ 71$/).waitFor({ timeout: 4_000 });
+  await timeline.waitFor({ state: "visible", timeout: 10_000 });
+  await seekFrame(page, 18);
   await page.waitForTimeout(1_100);
-
-  await page.mouse.down();
-  await movePointerAtRefreshRate(page, laterFrame, reviewFrame, 1_300);
-  await page.mouse.up();
-  await page.getByText(/^F (?:9|10|11) \/ 71$/).waitFor({ timeout: 4_000 });
+  await seekFrame(page, 10);
   await page.waitForTimeout(1_100);
 }
 
@@ -187,7 +182,9 @@ export async function runVideoMaskCorrectionPropagate(
   try {
     await page.waitForTimeout(1_200);
     await page.getByLabel(/展开选中信息卡.*可拖动/).click();
-    await page.getByTitle("编辑当前帧 Mask").click();
+    // Dockview may leave a maximum sash over this compact action. The action is
+    // still visible and the forced click targets the resolved button itself.
+    await page.getByTitle("编辑当前帧 Mask").click({ force: true });
     await toolbar.waitFor({ timeout: 10_000 });
     const collapseEditorSelection = page.getByRole("button", { name: "收起浮窗" });
     if (await collapseEditorSelection.isVisible()) await collapseEditorSelection.click();

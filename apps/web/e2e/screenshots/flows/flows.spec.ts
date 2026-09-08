@@ -133,6 +133,7 @@ const NUSCENES_RECORDING_BOX = {
 const DOCS_IMAGES = path.join(REPO_ROOT, "docs-site/user-guide/images");
 const MARKETING_ARCHIVE_ROOT = path.join(REPO_ROOT, ".artifacts/marketing");
 const VALIDATE_ONLY = process.env.SCREENSHOT_VALIDATE_ONLY === "1";
+const SKIP_CAPTURE_SEED_REPAIR = process.env.SCREENSHOT_SKIP_SEED_REPAIR === "1";
 const SELECTED_CAPTURE = process.env.SCREENSHOT_RECORDING_FLOWS
   ? recordingPlan(
       process.env.SCREENSHOT_RECORDING_FLOWS.split(","),
@@ -947,7 +948,7 @@ test.describe("flow recordings", () => {
     // 每条营销母版拥有独立的固定数据状态。绘图、审核和视频轨迹流程都会写库；
     // 若沿用同一任务，前一条素材会改变后一条素材的画布、状态与命中目标。
     await cleanupRecordingRecords();
-    repairScreenshotProfile(screenshotBackendMode(cached), true);
+    if (!SKIP_CAPTURE_SEED_REPAIR) repairScreenshotProfile(screenshotBackendMode(cached), true);
     cached = await seed.screenshotCatalog();
 
     // image_demo 主后端保留 SAM3 供交互工具使用；批量预标单项另启用 batchable YOLO。

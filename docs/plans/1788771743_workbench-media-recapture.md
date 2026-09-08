@@ -334,3 +334,9 @@ All eight assigned AI/review stories passed primary-thread content review. The f
 The OCR hardware source measures 2592 × 1458 pixels with 58.17 unique frames per second and is resampled to a 3840 × 2160 master; it is not native 4K capture. The marketing manifest does not carry an inference receipt, so its derivative metadata retains `unverified`; the separate review evidence records the successful real-backend assertions and visible result. This limitation is not repaired by inventing receipt data.
 
 These are agent reviews under the user's explicit delegation, not newly attributed human approvals. Integration preserves previously delivered media and does not complete the remaining video and cross-frame 3D stories or authorize a push or release.
+
+### Video propagation integration
+
+The primary thread reviewed the complete geometry-copy comparison, batch propagation, and combination-discovery recordings and their posters. The copy story shows fixed geometry across frames, undo, then real AI tracking of the moving truck. Batch propagation and combination discovery retain the actual inference wait and visible results. Only leading setup/loading frames were removed; final source windows are `5:35.48`, `6.5:57.3`, and `5.5:64.46` respectively, from the clean `3adad68b` capture source. Exact exported first frames were rechecked after trimming.
+
+The combined recording helpers pass 41 tests, and media derivation passes two tests. The optional existing seed-repair skip flag now also avoids the duplicate per-flow reset after an isolated catalog has already been repaired; catalog loading and flow requirements remain active. The mask flow's native frame navigation update is included, while its final media remains subject to separate content review.
