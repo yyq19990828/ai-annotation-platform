@@ -64,6 +64,8 @@ import {
   SIBLING_HIGHLIGHT_COLOR,
 } from "./ImageStageShapes";
 import {
+  imageBoxFromDrag,
+  type BboxCreationMode,
   isNormalizedImagePoint,
   normalizeImageCoordinate,
   resolveSnapMatch,
@@ -106,7 +108,7 @@ import styles from "./ImageStage.module.css";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type Drag =
-  | { kind: "draw"; sx: number; sy: number; cx: number; cy: number }
+  | { kind: "draw"; sx: number; sy: number; cx: number; cy: number; fromCenter?: boolean }
   | {
       kind: "samProbe";
       // v0.10.2 · 加 exemplar; 行为同 bbox 但松手时派发到 onSamPrompt.kind="exemplar".
@@ -223,6 +225,7 @@ interface ImageStageProps {
   imageWidth?: number | null;
   imageHeight?: number | null;
   tool: Tool;
+  bboxCreationMode?: BboxCreationMode;
   activeClass: string;
   selectedId: string | null;
   /** primary 之外的全部选中（含 primary）。仅 user 框可多选；AI 框单选。 */
@@ -519,6 +522,7 @@ export function ImageStage({
   imageWidth,
   imageHeight,
   tool,
+  bboxCreationMode = "corner",
   activeClass,
   selectedId,
   selectedIds,
@@ -1242,14 +1246,13 @@ export function ImageStage({
         );
       }
     };
-    const onUp = () => {
+    const onUp = (event: PointerEvent | MouseEvent) => {
       const d = dragRef.current;
       if (d) {
         if (d.kind === "draw") {
-          const x = Math.min(d.sx, d.cx);
-          const y = Math.min(d.sy, d.cy);
-          const w = Math.abs(d.cx - d.sx);
-          const h = Math.abs(d.cy - d.sy);
+          // Pointerup is authoritative even when the last move's rAF has not rendered yet.
+          const end = toImg(event.clientX, event.clientY);
+          const { x, y, w, h } = imageBoxFromDrag(end ? { ...d, cx: end.x, cy: end.y } : d);
           // 误点（几乎没拖动）静默丢弃；任一边 ≥3px 的真实拖拽一律下交，
           // 过小 / 越界 / 疑似重复由 commit 漏斗 (guardDrawnBox) 统一处理并提示。
           if (Math.max(w * imgW, h * imgH) >= 3) {
@@ -1458,6 +1461,7 @@ export function ImageStage({
       spacePan,
       readOnly: readOnly || (tool === "mask" && (maskReadOnly || maskCompareActive)),
       pendingDrawing: !!pendingDrawing,
+      bboxCreationMode,
       onClearSelection: () => onSelectBox(null),
       preserveSelectionForPrompt:
         primarySelectedBox?.geometry?.type === "raster_mask" &&
@@ -1572,15 +1576,7 @@ export function ImageStage({
     return buffer;
   }, [imgH, imgW, maskEditor?.instanceOperationPreview]);
 
-  const drawingPreview =
-    drag?.kind === "draw"
-      ? {
-          x: Math.min(drag.sx, drag.cx),
-          y: Math.min(drag.sy, drag.cy),
-          w: Math.abs(drag.cx - drag.sx),
-          h: Math.abs(drag.cy - drag.sy),
-        }
-      : null;
+  const drawingPreview = drag?.kind === "draw" ? imageBoxFromDrag(drag) : null;
 
   // SAM 拖框预览：与 drawingPreview 同形态，但样式为紫色虚线（与 PendingPolygonsOverlay 视觉对齐）
   const samPreview =

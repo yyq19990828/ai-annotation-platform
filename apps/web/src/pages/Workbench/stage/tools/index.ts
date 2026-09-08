@@ -18,6 +18,7 @@ import { MagicBoxTool } from "./MagicBoxTool";
 import { KeypointTool } from "./KeypointTool";
 import type { IconName } from "@/components/ui/Icon";
 import type { Keypoint } from "@/types";
+import type { BboxCreationMode } from "../ImageStage.helpers";
 
 // v0.10.2 · Prompt-first ToolDock 重构:
 //   SAM 单工具拆为 4 个独立工具, 每个声明 requiredPrompt (point/bbox/text/exemplar) 由
@@ -58,7 +59,7 @@ export interface ToolMeta {
 
 /** Drag 初始化负载：仅 stage 空白处按下能产生的几种。 */
 export type DragInit =
-  | { kind: "draw"; sx: number; sy: number; cx: number; cy: number }
+  | { kind: "draw"; sx: number; sy: number; cx: number; cy: number; fromCenter?: boolean }
   /**
    * v0.9.2 · SAM 工具拖动负载.
    * v0.9.4 phase 2 · mode 由子工具决定, 不再按几何尺寸隐式分流.
@@ -121,6 +122,7 @@ export interface ToolPointerContext {
   spacePan: boolean;
   readOnly: boolean;
   pendingDrawing: boolean;
+  bboxCreationMode?: BboxCreationMode;
   onClearSelection: () => void;
   /** 在已存 Mask 上追加 AI 提示时保留选中，便于服务端按 id + version 解析种子。 */
   preserveSelectionForPrompt?: boolean;

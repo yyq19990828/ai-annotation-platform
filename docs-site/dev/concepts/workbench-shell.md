@@ -171,6 +171,8 @@ Inspector 的候选属性按候选自身的工具单位读取 schema，由原候
 
 ### 图片手工创建事务
 
+普通矩形框的 `bboxCreationMode` 保存在 `useWorkbenchState` 会话中；`BboxTool` 在按下时锁存中心选项或 Alt，`ImageStage` 的预览与提交共用 `imageBoxFromDrag`。中心创建按两侧最近图像边界限制半径，松手读取最终指针坐标，避免最后一次 move 尚未渲染时丢失终点。几何随后仍进入原创建事务，过小、零面积和属性校验由已有漏斗处理；起点选项不写入用户偏好或标注合同。
+
 `useWorkbenchState` 保存会话级连续创建意图 `(projectId, tool_unit_id, class_name, tool)`，只允许矩形框、旋转框、多边形、折线和模板关键点；区域单元恢复 Polygon。`useWorkbenchAnnotationActions` 仍是几何创建 owner。完成的几何附带唯一草稿 ID、任务、工具单元、类别、独立属性和 `class / attributes / saving / error` 阶段，类别和属性均从该单元读取，不使用展示层的跨单元兜底。默认值逐对象复制，缺失必填项复用 `AttributeForm.getMissingRequired`，草稿表单同步更新以支持输入后立即 Enter；旧草稿 ID 的更新无效。
 
 同步 ref 防止一次完成动作触发重复请求。在线成功或 `enqueueDurably` 确认 IndexedDB 事务提交后才释放草稿，失败保留同一几何重试。任务代次保护选择、history 和弹层；切题清空原题草稿，同项目保留仍合法的意图。底层 `useCreateAnnotation` 将任务与视频分段放进每次调用的内部变量，缓存与请求都使用调用时的归属，避免等待 `onMutate` 或网络时切题把写入转移到新题。公开 mutation 调用仍接收普通 annotation payload。

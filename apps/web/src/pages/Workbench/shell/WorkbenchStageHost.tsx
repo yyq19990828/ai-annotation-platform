@@ -67,6 +67,7 @@ import type { MaskCompareTileStore } from "../stage/shared/maskCompareTileStore"
 import type { WorkbenchImageSource } from "../stage/imagePyramid";
 import type { RasterResourceCoordinator } from "../stage/shared/rasterResourceCoordinator";
 import type { WorkbenchPetDock } from "./pet/WorkbenchPet";
+import type { BboxCreationMode } from "../stage/ImageStage.helpers";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
@@ -212,6 +213,7 @@ interface WorkbenchStageHostVideoProps {
 }
 
 interface WorkbenchStageHostImageProps {
+  bboxCreationMode?: BboxCreationMode;
   continuousCreation?: boolean;
   resourceCoordinator?: RasterResourceCoordinator;
   rasterMaskRecords: readonly RasterMaskRenderRecord<"annotation">[];
@@ -466,6 +468,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
     } = videoProps ?? ({} as WorkbenchStageHostVideoProps);
     const {
       continuousCreation,
+      bboxCreationMode,
       resourceCoordinator,
       rasterMaskRecords,
       rasterMaskStatusById,
@@ -670,6 +673,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
         ) : (
           <ImageWorkbench
             continuousCreation={continuousCreation}
+            bboxCreationMode={bboxCreationMode}
             resourceCoordinator={resourceCoordinator}
             maskCompareStore={maskCompareStore}
             rasterMaskRecords={rasterMaskRecords}

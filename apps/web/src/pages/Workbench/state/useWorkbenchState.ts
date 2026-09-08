@@ -5,6 +5,7 @@ import type { TextOutputMode } from "./useInteractiveAI";
 import { useWorkbenchConfig } from "./useWorkbenchConfig";
 import type { ContinuousImageCreation, ManualCreationDraft } from "./manualImageCreation";
 import { videoToolScopeForTool, type VideoToolSelection } from "../stage/videoToolUnits";
+import type { BboxCreationMode } from "../stage/ImageStage.helpers";
 
 export type { VideoToolScope, VideoToolSelection } from "../stage/videoToolUnits";
 
@@ -213,6 +214,7 @@ export function useWorkbenchState() {
    * 实际类别在画完框 → ClassPickerPopover 中确认。
    */
   const [activeClass, setActiveClass] = useState("");
+  const [bboxCreationMode, setBboxCreationMode] = useState<BboxCreationMode>("corner");
   const [continuousCreation, setContinuousCreation] = useState<ContinuousImageCreation | null>(
     null,
   );
@@ -508,6 +510,8 @@ export function useWorkbenchState() {
     setAiVariant,
     activeClass,
     continuousCreation,
+    bboxCreationMode,
+    setBboxCreationMode,
     setContinuousCreation,
     setActiveClass,
     pendingDrawing,

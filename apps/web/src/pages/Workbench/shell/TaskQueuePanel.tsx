@@ -22,6 +22,7 @@ import {
   type ContinuousCreationControlsProps,
 } from "./ContinuousCreationControls";
 import { ResizeHandle } from "./ResizeHandle";
+import type { BboxCreationMode } from "../stage/ImageStage.helpers";
 
 const PALETTE_HEIGHT_KEY = "workbench.leftPalette.height";
 const PALETTE_HEIGHT_DEFAULT = 220;
@@ -69,6 +70,11 @@ interface TaskQueuePanelProps {
   classPickable?: boolean;
   onPickClass?: (cls: string) => void;
   continuousCreation?: ContinuousCreationControlsProps;
+  bboxCreation?: {
+    mode: BboxCreationMode;
+    onChange: (mode: BboxCreationMode) => void;
+    disabled?: boolean;
+  };
 }
 
 function cn(...classes: Array<string | false | null | undefined>): string {
@@ -253,6 +259,7 @@ export function TaskQueuePanel({
   classPickable = false,
   onPickClass,
   continuousCreation,
+  bboxCreation,
 }: TaskQueuePanelProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const [paletteHeight, setPaletteHeight] = useState(readPaletteHeight);
@@ -500,6 +507,35 @@ export function TaskQueuePanel({
               </button>
             )}
           </div>
+          {bboxCreation && (
+            <div className="mb-2 flex items-center gap-2 text-xs" data-testid="bbox-creation-mode">
+              <span className="shrink-0 text-muted-foreground">画框起点</span>
+              <div className="flex min-w-0 flex-1 gap-1" role="group" aria-label="画框起点">
+                {(["corner", "center"] as const).map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    aria-pressed={bboxCreation.mode === mode}
+                    disabled={bboxCreation.disabled}
+                    onClick={() => bboxCreation.onChange(mode)}
+                    title={
+                      mode === "corner"
+                        ? "从角点拖动；按住 Alt 可临时从中心开始"
+                        : "以落点为中心对称展开"
+                    }
+                    className={cn(
+                      "min-w-0 flex-1 rounded-sm border px-2 py-1 text-xs disabled:opacity-50",
+                      bboxCreation.mode === mode
+                        ? "border-brand bg-brand/10 text-brand"
+                        : "border-border bg-background text-muted-foreground hover:bg-muted",
+                    )}
+                  >
+                    {mode === "corner" ? "角点" : "中心"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {continuousCreation ? (
             <ContinuousCreationControls
               {...continuousCreation}

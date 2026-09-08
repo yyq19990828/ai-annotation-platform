@@ -19,11 +19,13 @@ import type { MaskCompareTileStore } from "../../stage/shared/maskCompareTileSto
 import type { WorkbenchImageSource } from "../../stage/imagePyramid";
 import { workbenchImagePreviewUrl } from "../../stage/useWorkbenchImageSource";
 import type { RasterResourceCoordinator } from "../../stage/shared/rasterResourceCoordinator";
+import type { BboxCreationMode } from "../../stage/ImageStage.helpers";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
 
 export interface ImageWorkbenchProps {
+  bboxCreationMode?: BboxCreationMode;
   continuousCreation?: boolean;
   resourceCoordinator?: RasterResourceCoordinator;
   maskCompareStore?: MaskCompareTileStore | null;
@@ -156,6 +158,7 @@ export interface ImageWorkbenchProps {
 
 export function ImageWorkbench({
   continuousCreation,
+  bboxCreationMode,
   resourceCoordinator,
   maskCompareStore,
   rasterMaskRecords,
@@ -328,6 +331,7 @@ export function ImageWorkbench({
   return (
     <ImageStage
       continuousCreation={continuousCreation}
+      bboxCreationMode={bboxCreationMode}
       key={mediaKey ?? fileUrl ?? "image-stage"}
       resourceCoordinator={resourceCoordinator}
       maskCompareStore={maskCompareStore}

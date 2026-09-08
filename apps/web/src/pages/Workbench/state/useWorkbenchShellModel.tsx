@@ -6838,6 +6838,14 @@ export function useWorkbenchShellModel({
       // v0.13.3-5 · 3D 点云台:左栏色板可点选 = 放置新框的类别(2D 仍只读图例)。
       classPickable: stageKind === "3d" && !isLocked,
       onPickClass: s.setActiveClass,
+      bboxCreation:
+        stageKind === "image" && s.tool === "box"
+          ? {
+              mode: s.bboxCreationMode,
+              onChange: s.setBboxCreationMode,
+              disabled: isLockedForActions,
+            }
+          : undefined,
       continuousCreation:
         stageKind === "image"
           ? {
@@ -7422,6 +7430,7 @@ export function useWorkbenchShellModel({
         onRejectPrediction: handleRejectPrediction,
       },
       image: {
+        bboxCreationMode: s.bboxCreationMode,
         continuousCreation: !!continuousCreation,
         resourceCoordinator: rasterResources,
         rasterMaskRecords: imageRasterMasks.records,
