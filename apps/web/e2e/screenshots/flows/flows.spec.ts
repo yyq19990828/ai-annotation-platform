@@ -2547,6 +2547,7 @@ test.describe("flow recordings", () => {
       await applyScreenshotTheme(page, "dark");
       await installRecordingWorkbenchLayout(page, "both", {
         workspace: { context: "annotate:3d", preset: "standard" },
+        layout: { cameraPanels: {} },
       });
       const win = await runPointcloudPanelLayout(page, cached, source);
       await finalize(page, "pointcloud-panel-layout", undefined, drawTrim(win, t0));

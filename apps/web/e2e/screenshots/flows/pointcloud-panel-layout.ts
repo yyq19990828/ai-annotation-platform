@@ -42,9 +42,31 @@ async function expectTriViewReady(page: Page): Promise<void> {
     .toBeGreaterThan(0);
 }
 
-async function expectCameraImages(page: Page, roles: readonly string[]): Promise<void> {
+type CameraImageScope = "floating" | "docked";
+
+function cameraImageRoot(page: Page, scope: CameraImageScope) {
+  return scope === "floating"
+    ? page.getByTestId("camera-panel-layer")
+    : page.locator('[data-workbench-panel="camera-view"]');
+}
+
+async function expandFloatingCameraPanels(page: Page, roles: readonly string[]): Promise<void> {
+  const layer = page.getByTestId("camera-panel-layer");
   for (const role of roles) {
-    const image = page.locator(`img[alt="${role}"]`).first();
+    const tab = layer.locator('button[title="展开相机"]').filter({ hasText: role }).first();
+    if (await tab.count()) await tab.click();
+    await expect(layer.locator(`img[alt="${role}"]:visible`)).toBeVisible({ timeout: 15_000 });
+  }
+}
+
+async function expectCameraImages(
+  page: Page,
+  roles: readonly string[],
+  scope: CameraImageScope,
+): Promise<void> {
+  const root = cameraImageRoot(page, scope);
+  for (const role of roles) {
+    const image = root.locator(`img[alt="${role}"]:visible`).first();
     await expect(image).toBeVisible({ timeout: 15_000 });
     await expect
       .poll(async () => image.evaluate((node) => (node as HTMLImageElement).naturalWidth))
@@ -59,10 +81,15 @@ async function selectSourceBox(page: Page, annotationId: string): Promise<void> 
   await expect(item).toHaveClass(/border-brand/);
 }
 
-async function cameraImageSources(page: Page, roles: readonly string[]): Promise<string[]> {
+async function cameraImageSources(
+  page: Page,
+  roles: readonly string[],
+  scope: CameraImageScope,
+): Promise<string[]> {
+  const root = cameraImageRoot(page, scope);
   return Promise.all(
     roles.map(async (role) => {
-      const source = await page.locator(`img[alt="${role}"]`).first().getAttribute("src");
+      const source = await root.locator(`img[alt="${role}"]:visible`).first().getAttribute("src");
       if (!source) throw new Error(`[pointcloud-panel-layout] ${role} 相机图缺少真实 URL`);
       return source;
     }),
@@ -145,16 +172,17 @@ export async function runPointcloudPanelLayout(
   await recordingLayoutCommand(page, "传感器融合");
   await waitForRecordingPanels(page, ["canvas"], ["tri-view", "camera-view"]);
   await expect(page.getByTestId("camera-panel-layer")).toBeVisible({ timeout: 15_000 });
-  await expectCameraImages(page, cameraRoles);
+  await expandFloatingCameraPanels(page, cameraRoles);
+  await expectCameraImages(page, cameraRoles, "floating");
   await assertStableCanvasAndSelection();
-  const frameZeroCameraSources = await cameraImageSources(page, cameraRoles);
+  const frameZeroCameraSources = await cameraImageSources(page, cameraRoles, "floating");
   await page.waitForTimeout(1_200);
 
   await recordingLayoutCommand(page, "全部相机停靠");
   await waitForRecordingPanels(page, ["canvas", "camera-view"], ["tri-view"]);
   const gallery = page.locator('[data-workbench-panel="camera-view"]');
   await expect(gallery.locator("[data-camera-dock-panel] section")).toHaveCount(cameraRoles.length);
-  await expectCameraImages(page, cameraRoles);
+  await expectCameraImages(page, cameraRoles, "docked");
   await assertStableCanvasAndSelection();
   await page.waitForTimeout(1_500);
 
@@ -163,7 +191,7 @@ export async function runPointcloudPanelLayout(
   await page.waitForTimeout(800);
   await recordingLayoutCommand(page, "相机视图");
   await waitForRecordingPanels(page, ["canvas", "camera-view"], ["tri-view"]);
-  await expectCameraImages(page, cameraRoles);
+  await expectCameraImages(page, cameraRoles, "docked");
   await assertStableCanvasAndSelection();
   await page.waitForTimeout(1_400);
 
@@ -175,9 +203,9 @@ export async function runPointcloudPanelLayout(
   await expect(page).toHaveURL(new RegExp(`task=${frame1.id}`), { timeout: 15_000 });
   await waitForPointcloudFrame(page);
   await waitForRecordingPanels(page, ["canvas", "camera-view"], ["tri-view"]);
-  await expectCameraImages(page, cameraRoles);
+  await expectCameraImages(page, cameraRoles, "docked");
   await expect
-    .poll(async () => cameraImageSources(page, cameraRoles))
+    .poll(async () => cameraImageSources(page, cameraRoles, "docked"))
     .not.toEqual(frameZeroCameraSources);
   await page.waitForTimeout(2_200);
 
