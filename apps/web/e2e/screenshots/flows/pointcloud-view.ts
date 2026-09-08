@@ -84,7 +84,9 @@ export async function runPointcloudView(
     await page.mouse.wheel(0, 120);
     await page.waitForTimeout(180);
   }
-  await page.waitForTimeout(1_400);
+  // 收边回到可读的斜俯视角，避免最后一帧贴近地平面而遮掉空间结构。
+  await dragOrbit(page, box, { dx: 0.5, dy: 0.5 }, { dx: 0.5, dy: 0.36 });
+  await page.waitForTimeout(1_500);
 
   const drawEndMs = Date.now();
   return { drawStartMs, drawEndMs };

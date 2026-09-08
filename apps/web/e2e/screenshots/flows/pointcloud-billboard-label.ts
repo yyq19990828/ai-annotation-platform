@@ -109,7 +109,9 @@ export async function runPointcloudBillboardLabel(
   await dragOrbit(page, box, { x: 0.67, y: 0.46 }, { x: 0.42, y: 0.66 });
   await dragOrbit(page, box, { x: 0.43, y: 0.65 }, { x: 0.57, y: 0.3 });
   await dragOrbit(page, box, { x: 0.58, y: 0.34 }, { x: 0.32, y: 0.48 });
-  await page.waitForTimeout(2_400);
+  // 收边回到可读的斜俯视角，避免最后一帧贴近地平面而遮掉标签与空间结构。
+  await dragOrbit(page, box, { x: 0.5, y: 0.5 }, { x: 0.5, y: 0.36 });
+  await page.waitForTimeout(1_500);
 
   return { drawStartMs, drawEndMs: Date.now() };
 }
