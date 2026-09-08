@@ -54,6 +54,7 @@ const POSTER_AT_SECONDS = new Map([
   ["project-create-existing-resources", 14],
   ["large-image-pyramid-recovery", 9],
   ["large-image-mask-limit", 11],
+  ["pointcloud-view", 0.8],
   ["pointcloud-camera-seed-3d-box", 10],
   ["pointcloud-crossframe-track", 15],
   ["pointcloud-billboard-label", 10],

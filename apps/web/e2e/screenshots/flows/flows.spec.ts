@@ -2345,7 +2345,7 @@ test.describe("flow recordings", () => {
 
   test("pointcloud-controls — 点云控件(上色/点大小/深度)", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(SELECTED_CAPTURE ? 300_000 : 180_000); // 点云加载与 4K H.264 归档都较重
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 180_000); // 点云加载与 4K H.264 归档都较重
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
@@ -2356,7 +2356,7 @@ test.describe("flow recordings", () => {
 
   test("pointcloud-view — 点云视图导航(拖动旋转)", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(SELECTED_CAPTURE ? 300_000 : 180_000); // 点云加载与 4K H.264 归档都较重
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 180_000); // 点云加载与 4K H.264 归档都较重
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
@@ -2528,7 +2528,7 @@ test.describe("flow recordings", () => {
       "3D 面板布局需要 marketing-master 的硬件 WebGL 与 60Hz 运行面",
     );
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(SELECTED_CAPTURE ? 300_000 : 120_000);
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 120_000);
     const userEmail = cached.users.admin.email;
     const task = cached.projects.pointcloud_demo.tasks.frame_000;
     let annotationId: string | null = null;
@@ -2561,7 +2561,7 @@ test.describe("flow recordings", () => {
       "真实点云跨帧链需要 marketing-master 的硬件 WebGL 与 60Hz 运行面",
     );
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(SELECTED_CAPTURE ? 300_000 : 120_000);
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 120_000);
     const userEmail = cached.users.admin.email;
     const frame0 = cached.projects.pointcloud_demo.tasks.frame_000;
     const cleanup: Array<{ taskId: string; annotationId: string }> = [];

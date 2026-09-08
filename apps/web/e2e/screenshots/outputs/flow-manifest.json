@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-08T02:51:29.835Z",
+  "updated_at": "2026-09-08T05:32:43.645Z",
   "entries": {
     "docs-site/.vitepress/theme/assets/home/hero/pointcloud.webp": {
       "asset_id": "home-hero/pointcloud",
@@ -2543,19 +2543,19 @@
     "docs-site/public/media/pointcloud/orbit-poster.webp": {
       "asset_id": "pointcloud-view",
       "role": "poster",
-      "generated_at": "2026-09-05T14:19:41.575Z",
-      "captured_commit": "269c3fedf03b843b521e7751c707842c7cb726f9",
-      "source_worktree_dirty": true,
-      "seed_revision": null,
-      "source": "apps/web/e2e/screenshots/flows/pointcloud-view.ts",
-      "test_title": "PR 71 browser replay: pointcloud-view",
+      "generated_at": "2026-09-08T05:32:43.645Z",
+      "captured_commit": "44aa3470537967003e30bbc6ace191ff818f68bb",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive webp › pointcloud-view",
       "watch_paths": [
-        "apps/web/e2e/screenshots/flows/pointcloud-view.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/api/app/services/screenshot_seed_spec.py"
+        "apps/web/scripts/derive-doc-media.mjs",
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "0e403b2a93c4c2968a460ebc2e1d03b756a67db37ed2d6f419972c0875d015ce",
-      "bytes": 60150,
+      "sha256": "8b8e7c9fb233a65d9eef09650dac747615023e206189e3a97406b16259c574a6",
+      "bytes": 42502,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -2564,51 +2564,59 @@
         "fps": "25/1",
         "duration_seconds": null
       },
-      "provenance": "targeted-browser-capture",
-      "fixture": {
-        "dataset": "nuscenes-mini",
-        "scene": "scene-0061",
-        "frame_indices": [
-          0
-        ],
-        "axis_convention": "iso_8855"
+      "capture": {
+        "source_quality": "marketing",
+        "source_inference": "unverified"
       },
-      "note": "Captured from the PR frontend with the existing local nuScenes-mini fixture; the full screenshot seed catalog was not revalidated. Preferences were sandboxed in browser memory, and temporary annotations were deleted after recording. Documentation output only (1280x720, 30fps), not a 4K60 marketing master."
+      "source_asset": {
+        "runId": "20260908T035916Z-44aa34705379",
+        "assetId": "pointcloud-view",
+        "sha256": "96fbf7c7cfa5f92eb9fb633a8c80712862be33be0f1427bf350e5534fcebb497",
+        "quality": "marketing",
+        "clip": {
+          "start": 0,
+          "duration": 10.45
+        }
+      }
     },
     "docs-site/public/media/pointcloud/orbit.mp4": {
       "asset_id": "pointcloud-view",
       "role": "docs-video",
-      "generated_at": "2026-09-05T14:19:41.575Z",
-      "captured_commit": "269c3fedf03b843b521e7751c707842c7cb726f9",
-      "source_worktree_dirty": true,
-      "seed_revision": null,
-      "source": "apps/web/e2e/screenshots/flows/pointcloud-view.ts",
-      "test_title": "PR 71 browser replay: pointcloud-view",
+      "generated_at": "2026-09-08T05:32:43.560Z",
+      "captured_commit": "44aa3470537967003e30bbc6ace191ff818f68bb",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive mp4 › pointcloud-view",
       "watch_paths": [
-        "apps/web/e2e/screenshots/flows/pointcloud-view.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/api/app/services/screenshot_seed_spec.py"
+        "apps/web/scripts/derive-doc-media.mjs",
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "e9424a2e4e9bb58cdf8fa852d8c8f00afd7e60f58af6317824ec2aa13bedbc6c",
-      "bytes": 3174792,
+      "sha256": "b563eb6982fa54288a65d7cd825275ed9612ab0ee0e47e101427b0aaa86e534f",
+      "bytes": 1330513,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "30/1",
-        "duration_seconds": 11
+        "duration_seconds": 10.467
       },
-      "provenance": "targeted-browser-capture",
-      "fixture": {
-        "dataset": "nuscenes-mini",
-        "scene": "scene-0061",
-        "frame_indices": [
-          0
-        ],
-        "axis_convention": "iso_8855"
+      "capture": {
+        "source_quality": "marketing",
+        "source_inference": "unverified"
       },
-      "note": "Captured from the PR frontend with the existing local nuScenes-mini fixture; the full screenshot seed catalog was not revalidated. Preferences were sandboxed in browser memory, and temporary annotations were deleted after recording. Documentation output only (1280x720, 30fps), not a 4K60 marketing master."
+      "source_asset": {
+        "runId": "20260908T035916Z-44aa34705379",
+        "assetId": "pointcloud-view",
+        "sha256": "96fbf7c7cfa5f92eb9fb633a8c80712862be33be0f1427bf350e5534fcebb497",
+        "quality": "marketing",
+        "clip": {
+          "start": 0,
+          "duration": 10.45
+        }
+      }
     },
     "docs-site/public/media/polygon/draw-poster.webp": {
       "asset_id": "polygon-draw",
