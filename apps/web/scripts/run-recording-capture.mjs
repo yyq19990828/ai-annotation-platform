@@ -5,6 +5,7 @@ import { parseArgs } from "node:util";
 import {
   RECORDING_FLOWS,
   MARKETING_ONLY_FLOWS,
+  recordingInference,
   recordingPlan,
 } from "../e2e/screenshots/recording-plan.mjs";
 
@@ -21,8 +22,12 @@ const { values } = parseArgs({
 });
 if (values.list) {
   for (const [id, requirements] of Object.entries(RECORDING_FLOWS)) {
+    const inference = recordingInference(id);
+    const scope =
+      requirements.join(",") ||
+      (inference === "live" ? "live inference (flow setup)" : "manual (no ML backend)");
     console.log(
-      `${id}\t${requirements.join(",") || "manual (no ML backend)"}\t${MARKETING_ONLY_FLOWS.includes(id) ? "marketing only" : "docs / marketing"}`,
+      `${id}\t${scope}\t${MARKETING_ONLY_FLOWS.includes(id) ? "marketing only" : "docs / marketing"}`,
     );
   }
   process.exit(0);
@@ -67,7 +72,8 @@ const env = {
   SCREENSHOT_RECORDING_RUN: `${new Date().toISOString().replace(/[:.]/g, "-")}-${process.pid}`,
   SCREENSHOT_VALIDATE_ONLY: values["validate-only"] ? "1" : "0",
 };
-if (plan.backendRequirements !== "none") {
+const requiresLiveInference = plan.flows.some((id) => recordingInference(id) === "live");
+if (plan.backendRequirements !== "none" || requiresLiveInference) {
   const response = await fetch(
     new URL("/health", process.env.PLAYWRIGHT_API_BASE ?? "http://127.0.0.1:8010"),
     { signal: AbortSignal.timeout(15_000) },

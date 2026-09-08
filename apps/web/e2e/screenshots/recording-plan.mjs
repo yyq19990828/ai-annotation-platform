@@ -40,10 +40,10 @@ const liveInference = {
   "secondary-inference-attribute": ["ocr"],
   "jobs-retry-recovery": ["ocr"],
   // These flows enable and execute live YOLO/ONNX jobs after their own project
-  // setup. image_interactive keeps the capture CLI's live-worker gate active;
-  // the selected project backend itself is changed by each flow before dispatch.
-  "ai-preannotate": ["image_interactive"],
-  "pipeline-apply-project": ["image_interactive"],
+  // setup. Their capability scope is intentionally empty because the flow
+  // selects the backend itself; recordingInference still marks execution live.
+  "ai-preannotate": [],
+  "pipeline-apply-project": [],
   "current-task-image-inference": ["ocr"],
   "candidate-keyboard-review": ["image_interactive"],
   "candidate-review-lifecycle": ["image_interactive"],

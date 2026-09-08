@@ -71,8 +71,10 @@ test("capability-only panels and live inference retain separate recording eviden
   assert.deepEqual(RECORDING_FLOWS["project-ml-routing"], ["image_interactive"]);
   assert.equal(recordingInference("ai-preannotate"), "live");
   assert.equal(recordingInference("pipeline-apply-project"), "live");
-  assert.equal(recordingPlan(["ai-preannotate"]).backendRequirements, "image_interactive");
-  assert.equal(recordingPlan(["pipeline-apply-project"]).backendRequirements, "image_interactive");
+  assert.equal(recordingPlan(["ai-preannotate"]).backendRequirements, "none");
+  assert.equal(recordingPlan(["pipeline-apply-project"]).backendRequirements, "none");
+  assert.equal(recordingPlan(["ai-preannotate", "bbox-draw"]).backendRequirements, "none");
+  assert.equal(recordingPlan(["ai-preannotate", "ocr-inference"]).backendRequirements, "ocr");
 
   for (const id of [
     "sam-tool-smart-point",
@@ -93,12 +95,26 @@ test("capability-only panels and live inference retain separate recording eviden
   }
   for (const [id, requirements] of Object.entries(RECORDING_FLOWS)) {
     if (requirements.length === 0) {
-      assert.equal(recordingInference(id), "none", id);
+      assert.ok(["none", "live"].includes(recordingInference(id)), id);
     }
   }
   for (const id of ["typo", "toString", "__proto__"]) {
     assert.throws(() => recordingInference(id), /Unregistered/);
   }
+});
+
+test("capture list distinguishes flow-owned live inference from manual flows", () => {
+  const output = execFileSync(
+    process.execPath,
+    [fileURLToPath(new URL("../../scripts/run-recording-capture.mjs", import.meta.url)), "--list"],
+    { encoding: "utf8" },
+  );
+  assert.match(output, /^ai-preannotate\tlive inference \(flow setup\)\tdocs \/ marketing$/m);
+  assert.match(
+    output,
+    /^pipeline-apply-project\tlive inference \(flow setup\)\tdocs \/ marketing$/m,
+  );
+  assert.match(output, /^bbox-draw\tmanual \(no ML backend\)\tdocs \/ marketing$/m);
 });
 
 test("mixed selection combines capability requirements without widening individual inference", () => {
