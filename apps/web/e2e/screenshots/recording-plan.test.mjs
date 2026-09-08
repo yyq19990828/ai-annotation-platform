@@ -24,7 +24,11 @@ test("selection scopes AI without changing capture quality or legacy catalog def
     { encoding: "utf8" },
   );
   assert.equal(JSON.parse(output).backendRequirements, "none");
-  assert.equal(recordingPlan(["ocr-inference", "bbox-draw"]).backendRequirements, "ocr");
+  assert.equal(
+    recordingPlan(["ocr-inference", "bbox-draw"], "marketing").backendRequirements,
+    "ocr",
+  );
+  assert.throws(() => recordingPlan(["ocr-inference"]), /requires --profile marketing/);
   assert.equal(
     recordingPlan(["sam-interactive"], "marketing").backendRequirements,
     "image_interactive",
@@ -66,6 +70,13 @@ test("capability-only panels and live inference retain separate recording eviden
   assert.deepEqual(RECORDING_FLOWS["current-task-image-inference"], ["ocr"]);
   assert.equal(recordingPlan(["current-task-image-inference"]).backendRequirements, "ocr");
   assert.equal(recordingInference("current-task-image-inference"), "live");
+  assert.deepEqual(RECORDING_FLOWS["secondary-inference-attribute"], ["ocr"]);
+  assert.deepEqual(RECORDING_FLOWS["jobs-retry-recovery"], ["ocr"]);
+  assert.deepEqual(RECORDING_FLOWS["project-ml-routing"], ["image_interactive"]);
+  assert.equal(recordingInference("ai-preannotate"), "live");
+  assert.equal(recordingInference("pipeline-apply-project"), "live");
+  assert.equal(recordingPlan(["ai-preannotate"]).backendRequirements, "none");
+  assert.equal(recordingPlan(["pipeline-apply-project"]).backendRequirements, "none");
 
   for (const id of [
     "sam-tool-smart-point",
@@ -85,7 +96,9 @@ test("capability-only panels and live inference retain separate recording eviden
     assert.equal(recordingInference(id), "live", id);
   }
   for (const [id, requirements] of Object.entries(RECORDING_FLOWS)) {
-    if (requirements.length === 0) assert.equal(recordingInference(id), "none", id);
+    if (requirements.length === 0 && !["ai-preannotate", "pipeline-apply-project"].includes(id)) {
+      assert.equal(recordingInference(id), "none", id);
+    }
   }
   for (const id of ["typo", "toString", "__proto__"]) {
     assert.throws(() => recordingInference(id), /Unregistered/);

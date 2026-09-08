@@ -8,6 +8,9 @@ const manual = [
   "mask-draw",
   "ai-prediction-import",
   "review-reject",
+  "pipeline-apply-project",
+  "ai-preannotate",
+  "project-ml-routing",
   "batch-bulk-actions",
   "video-track",
   "video-timeline-zoom",
@@ -34,6 +37,13 @@ const liveInference = {
   "sam-tool-exemplar": ["image_interactive"],
   "sam-interactive": ["image_interactive"],
   "ocr-inference": ["ocr"],
+  "secondary-inference-attribute": ["ocr"],
+  "jobs-retry-recovery": ["ocr"],
+  // These flows execute live YOLO/ONNX jobs after their own project setup. The
+  // screenshot seed capability scope has no YOLO/ONNX requirement key, so they
+  // intentionally keep an empty scope while retaining live inference evidence.
+  "ai-preannotate": [],
+  "pipeline-apply-project": [],
   "current-task-image-inference": ["ocr"],
   "candidate-keyboard-review": ["image_interactive"],
   "candidate-review-lifecycle": ["image_interactive"],
@@ -49,6 +59,7 @@ export const RECORDING_FLOWS = {
   ...Object.fromEntries(manual.map((id) => [id, []])),
   ...liveInference,
   "ai-tracker-panel": ["video_tracker"],
+  "project-ml-routing": ["image_interactive"],
 };
 
 export function recordingInference(flowId) {
@@ -58,6 +69,7 @@ export function recordingInference(flowId) {
 }
 
 export const MARKETING_ONLY_FLOWS = [
+  "ocr-inference",
   "pointcloud-billboard-label",
   "pointcloud-camera-seed-3d-box",
   "pointcloud-crossframe-track",

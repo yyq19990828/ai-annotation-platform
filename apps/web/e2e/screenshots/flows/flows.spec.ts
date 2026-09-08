@@ -176,6 +176,14 @@ const backgroundExportCleanupRecords: Array<{
 
 const FLOW_SOURCE_BY_ASSET: Record<string, string> = {
   "ai-assisted-annotation": "sam-interactive.ts",
+  "ocr-real-scene": "ocr-inference.ts",
+  "secondary-inference-attribute": "secondary-inference-attribute.ts",
+  "ai-prediction-import": "ai-prediction-import.ts",
+  "review-reject": "review-reject.ts",
+  "pipeline-apply-project": "pipeline-apply-project.ts",
+  "jobs-retry-recovery": "jobs-retry-recovery.ts",
+  "project-ml-routing": "project-ml-routing.ts",
+  "ai-preannotate": "ai-preannotate.ts",
   "sam-tools/smart-point": "sam-interactive.ts",
   "sam-tools/smart-box": "sam-interactive.ts",
   "sam-tools/exemplar": "sam-interactive.ts",
