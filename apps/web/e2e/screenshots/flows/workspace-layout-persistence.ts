@@ -253,9 +253,10 @@ export async function runWorkspaceLayoutPersistence(
     originalUserId = await userId(page);
     originalPreferences = await readPreferences(page);
     await page.goto(`/projects/${catalog.projects.image_demo.id}/annotate?task=${imageTask.id}`);
-    await applyScreenshotTheme(page, "dark");
     await waitForImage(page);
     await waitForDesktop(page, "annotate:image");
+    await applyScreenshotTheme(page, "dark");
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
 
     const drawStartMs = Date.now();
     await page.waitForTimeout(900);
