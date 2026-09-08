@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import {
+  mediaAuditFailed,
   changedWatchPaths,
   classifyMedia,
   collectPublishedMedia,
@@ -14,6 +15,7 @@ import {
   tierAOpenItems,
 } from "./media-review-lib.mjs";
 
+const integrity = process.argv.includes("--integrity");
 const strict = process.argv.includes("--strict");
 const release = process.argv.includes("--release");
 const jsonOnly = process.argv.includes("--json");
@@ -140,12 +142,4 @@ if (process.env.GITHUB_STEP_SUMMARY) {
   fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
 }
 
-const provenanceHashMismatch = results.some((item) =>
-  item.provenance_issues.includes("文件哈希与生成来源清单不一致"),
-);
-const strictFailure = counts.broken > 0 || counts.stale > 0 || provenanceHashMismatch;
-const releaseFailure =
-  strictFailure ||
-  counts.review_due > 0 ||
-  results.some((item) => item.provenance_issues.length > 0);
-if ((release && releaseFailure) || (strict && strictFailure)) process.exit(1);
+if (mediaAuditFailed(report, { integrity, strict, release })) process.exit(1);

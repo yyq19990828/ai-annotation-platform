@@ -1,0 +1,47 @@
+name: Docs acceptance
+
+# Run against the selected stable branch before publishing documentation.
+# This checks evidence; it never records a visual approval or publishes a release.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  acceptance:
+    name: Docs / Acceptance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: pnpm/action-setup@v4
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Documentation checks
+        run: pnpm --filter @anno/docs-site check:all
+      - name: Navigation coverage
+        run: pnpm --filter @anno/docs-site check:navigation -- --strict
+      - name: Complete screenshot manifest
+        run: node docs-site/scripts/check-image-manifest.mjs --release
+      - name: Build docs site
+        env:
+          DOCS_BASE: /ai-annotation-platform/
+        run: pnpm --filter @anno/docs-site build
+      - name: Internal Markdown links
+        run: node scripts/check-dead-links.mjs docs-site
+      - name: Release media review and provenance
+        if: ${{ !cancelled() }}
+        run: pnpm --filter @anno/docs-site media:audit -- --release --output ../.artifacts/docs-acceptance.json
+      - name: Upload acceptance report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-acceptance
+          path: .artifacts/docs-acceptance.json
+          if-no-files-found: error
+          retention-days: 30

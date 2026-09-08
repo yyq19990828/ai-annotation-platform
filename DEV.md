@@ -516,7 +516,13 @@ pnpm docs:media:audit -- --release
 
 `flow-manifest.json` 保存 GIF、文档 MP4、首页视频与封面的生成 commit、seed、哈希和母版 lineage；
 `docs-site/maintainers/media-reviews.json` 单独保存人工复核 commit。只有工作树干净、媒体已提交并完成视觉检查后，才运行
-`pnpm docs:media:approve -- --asset <仓库相对路径>`。每周工作流会生成缺失、过时和到期复核报告，不会自动批准素材。
+`pnpm docs:media:approve -- --asset <仓库相对路径>`。
+日常 `Docs / Validation` 用 `media:audit -- --integrity` 检查文件缺失与生成清单哈希一致性，
+人工复核过期或关联源码变化不阻塞 PR。每周一北京时间 11:17 的 `Docs / Media audit` 生成阶段待办报告，
+也支持手动运行。功能稳定、发布文档前，在 GitHub Actions 手动运行 **Docs acceptance** 并选择待验收分支，
+执行完整文档检查、截图 `--release` 检查及媒体 `--release` 审核；失败时也保留媒体报告。
+手动入口需工作流先进入默认分支，验收不会自动批准素材或发布版本。
+具体步骤见[生成来源与人工复核版本](docs-site/dev/how-to/update-screenshots.md#生成来源与人工复核版本)。
 
 `pnpm test:e2e` 使用 `annotation_e2e`，截图使用
 `annotation_screenshots_test`，两者都与开发库 `annotation` 隔离。不要为省略建库步骤
