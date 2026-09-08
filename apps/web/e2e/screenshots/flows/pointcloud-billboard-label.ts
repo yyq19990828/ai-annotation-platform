@@ -97,18 +97,17 @@ export async function runPointcloudBillboardLabel(
   const box = await viewport.boundingBox();
   if (!box) throw new Error("[pointcloud-billboard-label] 点云视口不可见");
 
-  // 先拉近目标，再以四段连续 orbit 展示标签不随框平面倾斜、始终正对相机。
+  // 先把目标拉近并保持在视口中央，再以小幅连续 orbit 展示标签不随框平面倾斜、始终正对相机。
   await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
-  for (let index = 0; index < 3; index += 1) {
+  for (let index = 0; index < 9; index += 1) {
     await page.mouse.wheel(0, -120);
     await page.waitForTimeout(160);
   }
-  await page.waitForTimeout(700);
+  await page.waitForTimeout(1_200);
 
-  await dragOrbit(page, box, { x: 0.3, y: 0.52 }, { x: 0.68, y: 0.44 });
-  await dragOrbit(page, box, { x: 0.67, y: 0.46 }, { x: 0.42, y: 0.66 });
-  await dragOrbit(page, box, { x: 0.43, y: 0.65 }, { x: 0.57, y: 0.3 });
-  await dragOrbit(page, box, { x: 0.58, y: 0.34 }, { x: 0.32, y: 0.48 });
+  await dragOrbit(page, box, { x: 0.44, y: 0.49 }, { x: 0.56, y: 0.45 });
+  await dragOrbit(page, box, { x: 0.55, y: 0.45 }, { x: 0.47, y: 0.54 });
+  await dragOrbit(page, box, { x: 0.47, y: 0.53 }, { x: 0.54, y: 0.47 });
   // 收边回到可读的斜俯视角，避免最后一帧贴近地平面而遮掉标签与空间结构。
   await dragOrbit(page, box, { x: 0.5, y: 0.5 }, { x: 0.5, y: 0.36 });
   await page.waitForTimeout(1_500);
