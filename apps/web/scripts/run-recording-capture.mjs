@@ -29,6 +29,9 @@ if (values.list) {
 }
 const plan = recordingPlan(values.flow ?? [], values.profile);
 console.log(JSON.stringify(plan, null, 2));
+if (values["resize-display"] && values.profile !== "marketing") {
+  throw new Error("--resize-display only applies to the marketing profile.");
+}
 if (values.plan) process.exit(0);
 
 const webRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -52,9 +55,6 @@ if (!/^\/[1-9]\d*$/.test(redis.pathname) || redis.href !== broker.href) {
 }
 if (values.profile === "marketing" && process.platform !== "linux") {
   throw new Error("Marketing masters require Linux X11/NVIDIA; use --profile docs on macOS.");
-}
-if (values["resize-display"] && values.profile !== "marketing") {
-  throw new Error("--resize-display only applies to the marketing profile.");
 }
 const env = {
   ...process.env,
