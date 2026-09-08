@@ -24,11 +24,7 @@ test("selection scopes AI without changing capture quality or legacy catalog def
     { encoding: "utf8" },
   );
   assert.equal(JSON.parse(output).backendRequirements, "none");
-  assert.equal(
-    recordingPlan(["ocr-inference", "bbox-draw"], "marketing").backendRequirements,
-    "ocr",
-  );
-  assert.throws(() => recordingPlan(["ocr-inference"]), /requires --profile marketing/);
+  assert.equal(recordingPlan(["ocr-inference", "bbox-draw"]).backendRequirements, "ocr");
   assert.equal(
     recordingPlan(["sam-interactive"], "marketing").backendRequirements,
     "image_interactive",
@@ -75,8 +71,8 @@ test("capability-only panels and live inference retain separate recording eviden
   assert.deepEqual(RECORDING_FLOWS["project-ml-routing"], ["image_interactive"]);
   assert.equal(recordingInference("ai-preannotate"), "live");
   assert.equal(recordingInference("pipeline-apply-project"), "live");
-  assert.equal(recordingPlan(["ai-preannotate"]).backendRequirements, "none");
-  assert.equal(recordingPlan(["pipeline-apply-project"]).backendRequirements, "none");
+  assert.equal(recordingPlan(["ai-preannotate"]).backendRequirements, "image_interactive");
+  assert.equal(recordingPlan(["pipeline-apply-project"]).backendRequirements, "image_interactive");
 
   for (const id of [
     "sam-tool-smart-point",
@@ -96,7 +92,7 @@ test("capability-only panels and live inference retain separate recording eviden
     assert.equal(recordingInference(id), "live", id);
   }
   for (const [id, requirements] of Object.entries(RECORDING_FLOWS)) {
-    if (requirements.length === 0 && !["ai-preannotate", "pipeline-apply-project"].includes(id)) {
+    if (requirements.length === 0) {
       assert.equal(recordingInference(id), "none", id);
     }
   }

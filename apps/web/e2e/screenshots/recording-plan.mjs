@@ -39,11 +39,11 @@ const liveInference = {
   "ocr-inference": ["ocr"],
   "secondary-inference-attribute": ["ocr"],
   "jobs-retry-recovery": ["ocr"],
-  // These flows execute live YOLO/ONNX jobs after their own project setup. The
-  // screenshot seed capability scope has no YOLO/ONNX requirement key, so they
-  // intentionally keep an empty scope while retaining live inference evidence.
-  "ai-preannotate": [],
-  "pipeline-apply-project": [],
+  // These flows enable and execute live YOLO/ONNX jobs after their own project
+  // setup. image_interactive keeps the capture CLI's live-worker gate active;
+  // the selected project backend itself is changed by each flow before dispatch.
+  "ai-preannotate": ["image_interactive"],
+  "pipeline-apply-project": ["image_interactive"],
   "current-task-image-inference": ["ocr"],
   "candidate-keyboard-review": ["image_interactive"],
   "candidate-review-lifecycle": ["image_interactive"],
@@ -69,7 +69,6 @@ export function recordingInference(flowId) {
 }
 
 export const MARKETING_ONLY_FLOWS = [
-  "ocr-inference",
   "pointcloud-billboard-label",
   "pointcloud-camera-seed-3d-box",
   "pointcloud-crossframe-track",
