@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
-import { applyScreenshotTheme, installScreenshotEnvironment } from "../environment";
+import { installScreenshotEnvironment } from "../environment";
 import { recordingLayoutCommand, waitForRecordingPanels } from "./_workbench-layout";
 import {
   WORKSPACE_SCHEMA_VERSION,
@@ -14,6 +14,7 @@ import {
 
 type Preferences = {
   [key: string]: unknown;
+  ui?: { theme?: string };
   workbench?: {
     layout?: {
       workspace?: {
@@ -232,10 +233,12 @@ export async function runWorkspaceLayoutPersistence(
     if (request.method() !== "PATCH" || url.pathname !== "/api/v1/auth/me/preferences") return;
     const payload = request.postDataJSON() as Preferences;
     const contexts = payload.workbench?.layout?.workspace?.contexts ?? {};
-    const [context] = Object.keys(contexts);
+    const contextKeys = Object.keys(contexts);
+    if (contextKeys.length === 0) return;
+    const [context] = contextKeys;
     patchWrites.push({
       method: "PATCH",
-      contextKeys: Object.keys(contexts),
+      contextKeys,
       schemaVersion: context ? contexts[context]?.schemaVersion : undefined,
     });
   };
@@ -255,8 +258,22 @@ export async function runWorkspaceLayoutPersistence(
     await page.goto(`/projects/${catalog.projects.image_demo.id}/annotate?task=${imageTask.id}`);
     await waitForImage(page);
     await waitForDesktop(page, "annotate:image");
-    await applyScreenshotTheme(page, "dark");
+    const dayThemeToggle = page.getByRole("button", { name: "当前日间，切到夜间" });
+    if (await dayThemeToggle.count()) {
+      const themePatch = page.waitForResponse(
+        (response) =>
+          response.request().method() === "PATCH" &&
+          new URL(response.url()).pathname === "/api/v1/auth/me/preferences" &&
+          response.ok(),
+        { timeout: 15_000 },
+      );
+      await dayThemeToggle.click();
+      await themePatch;
+    }
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await expect
+      .poll(async () => (await readPreferences(page)).ui?.theme, { timeout: 15_000 })
+      .toBe("dark");
 
     const drawStartMs = Date.now();
     await page.waitForTimeout(900);
