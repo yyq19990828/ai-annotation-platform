@@ -86,7 +86,31 @@ export async function runPointcloudCrossframeTrack(
   await page.waitForLoadState("domcontentloaded");
   await page.getByTestId("pc-viewport").waitFor({ timeout: 20_000 });
   await waitForRecordingWorkbenchLayout(page, "both");
+
+  // 首帧点云在 viewport 出现后仍会短暂完成 manifest/PCD 上传与首帧绘制；
+  // 先等到场景明确 ready，再稳定一段时间，避免把空网格录入母版。
+  await expect(page.locator('[data-scene-frame-state="ready"]')).toHaveCount(1, {
+    timeout: 20_000,
+  });
+  await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
+  await page.waitForTimeout(3_500);
+
+  // 沿用产品真实的双击框聚焦路径，把目标与后续邻帧参考带到镜头中心，
+  // 保证 0.2m 修正和虚线框在 1280px 文档视频中仍可辨认。
+  const viewport = page.getByTestId("pc-viewport");
+  const viewportBox = await viewport.boundingBox();
+  if (!viewportBox) throw new Error("[pointcloud-crossframe-track] 点云视口不可见");
+  await page.getByRole("button", { name: "重置视角", exact: true }).click();
+  await page.waitForTimeout(1_500);
+  await page.mouse.dblclick(
+    viewportBox.x + viewportBox.width * 0.47,
+    viewportBox.y + viewportBox.height * 0.42,
+  );
+  await expect(page.getByTestId("three-d-selection-panel").first()).toBeVisible({ timeout: 5_000 });
+  await page.waitForTimeout(1_200);
+
   await selectBox(page, source.id);
+  await page.waitForTimeout(700);
   const drawStartMs = Date.now();
   await page.waitForTimeout(3_000);
   await page.waitForTimeout(1_200);
