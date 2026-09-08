@@ -139,11 +139,20 @@ test("video tracking recordings require a live tracker without widening to other
     "video-tracker-positive-negative",
     "video-tracker-box-seed",
     "video-tracker-text-discovery",
+    "current-frame-video-inference",
+    "video-timeline-prediction-navigation",
+    "video-mask-correction-propagate",
+    "video-propagate-track-vs-copy",
+    "video-track-batch-propagate",
+    "video-tracker-combo-discovery",
   ];
   assert.equal(recordingPlan(flows).backendRequirements, "video_tracker");
   assert.deepEqual(
     flows.map(recordingInference),
     flows.map(() => "live"),
   );
-  assert.throws(() => recordingPlan(["video-tracker-combo-discovery"]), /Unregistered/);
+  assert.equal(
+    recordingPlan(["video-tracker-combo-discovery"]).backendRequirements,
+    "video_tracker",
+  );
 });

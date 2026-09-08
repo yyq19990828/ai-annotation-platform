@@ -22,6 +22,7 @@ import { runAiPreVariantSelector } from "./ai-pre-variant-selector";
 import { runRotatedBbox } from "./rotated-bbox";
 import { runBboxDraw } from "./bbox-draw";
 import { runWorkspaceLayoutBasics, workspaceLayoutBasicsLayout } from "./workspace-layout-basics";
+import { runWorkspaceLayoutPersistence } from "./workspace-layout-persistence";
 import { runPolylineDraw } from "./polyline-draw";
 import { runPolygonDraw } from "./polygon-draw";
 import { runMaskDraw } from "./mask-draw";
@@ -196,13 +197,10 @@ const FLOW_SOURCE_BY_ASSET: Record<string, string> = {
   "video-tracker-combo-discovery": "video-tracker-combo-discovery.ts",
   "video-mask-correction-propagate": "video-mask-correction-propagate.ts",
   "pipeline-template-create": "pipeline-template-create.ts",
-  "pipeline-apply-project": "pipeline-apply-project.ts",
-  "jobs-retry-recovery": "jobs-retry-recovery.ts",
   "model-market-runtime-pool": "model-market-runtime-pool.ts",
   "model-market-video-pool": "model-market-runtime-pool.ts",
   "model-market-runtime-partial-failure": "model-market-runtime-pool.ts",
   "model-market-gpu-resource-overview": "model-market-runtime-pool.ts",
-  "project-ml-routing": "project-ml-routing.ts",
   "background-export-download": "background-export-download.ts",
   "project-create-existing-resources": "project-create-existing-resources.ts",
   "large-image-mask-limit": "large-image-mask-limit.ts",
@@ -210,6 +208,7 @@ const FLOW_SOURCE_BY_ASSET: Record<string, string> = {
   "project-actions-menu": "project-actions-menu.ts",
   "jobs-bell-active": "jobs-bell-active.ts",
   "video-tracker-job-states": "video-tracker-job-states.ts",
+  "workspace-layout-persistence": "workspace-layout-persistence.ts",
 };
 
 function flowWatchPaths(assetId: string): string[] {
@@ -1290,7 +1289,7 @@ test.describe("flow recordings", () => {
 
   test("current-frame-video-inference — 当前帧车辆推理与作用域核对", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(180_000);
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 180_000);
     const t0 = Date.now();
     await seed.enableMLBackendByName(
       cached.projects.video_demo.id,
@@ -1358,6 +1357,21 @@ test.describe("flow recordings", () => {
     } finally {
       if (created) await seed.deleteTaskAnnotation(created.taskId, created.annotationId, userEmail);
     }
+  });
+
+  test("workspace-layout-persistence — 布局偏好跨任务、刷新与紧凑视口持久化", async ({
+    page,
+    seed,
+  }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    // The screenshot seed/repair fixture may take several minutes on a live
+    // media worker; keep the per-test budget separate from the 20s UI waits.
+    test.setTimeout(420_000);
+    const t0 = Date.now();
+    await seed.injectToken(page, cached.users.project_admin.email);
+    const result = await runWorkspaceLayoutPersistence(page, cached);
+    flowBehaviorEvidence["workspace-layout-persistence"] = result.evidence;
+    await finalize(page, "workspace-layout-persistence", undefined, drawTrim(result, t0));
   });
 
   test("rotated-bbox — 旋转框绘制", async ({ page, seed }) => {
@@ -1661,7 +1675,7 @@ test.describe("flow recordings", () => {
 
   test("video-timeline-prediction-navigation — AI 预测密度与帧导航", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(180_000); // 真实双目标视频推理 + 4K H.264 归档转码
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 180_000); // 真实双目标视频推理 + 4K H.264 归档转码
     const t0 = Date.now();
     await seed.enableMLBackendByName(
       cached.projects.video_demo.id,
@@ -1738,7 +1752,7 @@ test.describe("flow recordings", () => {
 
   test("video-track-batch-propagate — 双轨迹批量延展并复核", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(180_000); // 双轨迹真实视频推理 + 候选审阅 + 4K H.264 归档
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 180_000); // 双轨迹真实视频推理 + 候选审阅 + 4K H.264 归档
     const project = cached.projects.video_demo;
     const task = project.tasks.tracking;
     const userEmail = cached.users.project_admin.email;
@@ -1817,7 +1831,7 @@ test.describe("flow recordings", () => {
 
   test("video-propagate-track-vs-copy — 几何复制与 AI 延展对比", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(180_000); // 真实 30 帧 SAM3 追踪 + 候选审阅 + 4K H.264 归档
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 180_000); // 真实 30 帧 SAM3 追踪 + 候选审阅 + 4K H.264 归档
     const project = cached.projects.video_demo;
     const task = project.tasks.tracking;
     const userEmail = cached.users.project_admin.email;
@@ -1967,7 +1981,7 @@ test.describe("flow recordings", () => {
 
   test("video-tracker-combo-discovery — 文本发现后逐对象记忆追踪", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(240_000); // 真实两趟视频推理 + 4K H.264 归档转码
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 240_000); // 真实两趟视频推理 + 4K H.264 归档转码
     const t0 = Date.now();
     await seed.enableMLBackendByName(
       cached.projects.video_demo.id,
@@ -1984,7 +1998,7 @@ test.describe("flow recordings", () => {
 
   test("video-mask-correction-propagate — 错帧加减笔迹后重传播", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(240_000); // 两次 Mask 提交 + 真实视频重传播 + 4K H.264 归档
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 240_000); // 两次 Mask 提交 + 真实视频重传播 + 4K H.264 归档
     const t0 = Date.now();
     await seed.enableMLBackendByName(
       cached.projects.video_demo.id,
@@ -2213,7 +2227,7 @@ test.describe("flow recordings", () => {
 
   test("video-tracker-job-states — 四状态、筛选与返回视频工作台", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(120_000);
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 120_000);
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);

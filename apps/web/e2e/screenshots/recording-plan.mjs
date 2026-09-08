@@ -18,6 +18,8 @@ const manual = [
   "video-track-carryover",
   "video-mask-track-edit",
   "video-draw",
+  "video-tracker-job-states",
+  "workspace-layout-persistence",
   "pointcloud-controls",
   "pointcloud-view",
   "pointcloud-billboard-label",
@@ -53,6 +55,12 @@ const liveInference = {
   "video-tracker-positive-negative": ["video_tracker"],
   "video-tracker-box-seed": ["video_tracker"],
   "video-tracker-text-discovery": ["video_tracker"],
+  "current-frame-video-inference": ["video_tracker"],
+  "video-timeline-prediction-navigation": ["video_tracker"],
+  "video-mask-correction-propagate": ["video_tracker"],
+  "video-propagate-track-vs-copy": ["video_tracker"],
+  "video-track-batch-propagate": ["video_tracker"],
+  "video-tracker-combo-discovery": ["video_tracker"],
 };
 
 export const RECORDING_FLOWS = {

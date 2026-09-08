@@ -34,6 +34,24 @@ const assetSpecs = [
     editingNotes: ["这是页面内布局教学，不表示未发送草稿会跨刷新持久保存。"],
   }),
   defineAsset({
+    assetId: "workspace-layout-persistence",
+    title: "工作台布局偏好持久化",
+    theme: "布局保存后跨任务、刷新与紧凑视口恢复",
+    objective:
+      "展示真实账号偏好 PATCH/GET 保存 Dockview 布局，在图像与视频任务间切换后回到原 context，刷新并进入紧凑视口再恢复桌面布局。",
+    duration: { minSeconds: 18, targetSeconds: 28, maxSeconds: 55 },
+    shots: [
+      "在图像工作台把面板切换为专注画布布局并保留完整画布。",
+      "切换到视频任务，保存独立的视频追踪布局，证明 image/video context 分桶。",
+      "返回图像任务并刷新，核对之前保存的桌面布局仍被真实 GET 恢复。",
+      "进入紧凑视口再回到桌面宽度，保持已保存的 Dockview 树与面板可见。",
+    ],
+    editingNotes: [
+      "该素材验证真实 preferences PATCH/GET 与 context 分桶；紧凑视口只临时重排，不写回桌面布局。",
+      "保留跨任务、刷新和视口变化后的实际恢复结果，不把未发送讨论草稿写成刷新后仍存。",
+    ],
+  }),
+  defineAsset({
     assetId: "ai-prediction-import",
     title: "导入 AI 预标注",
     theme: "导入预测结果的人工复核与采纳",
