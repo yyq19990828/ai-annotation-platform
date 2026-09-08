@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-08T06:40:57.348Z",
+  "updated_at": "2026-09-08T07:12:25.277Z",
   "entries": {
     "docs-site/.vitepress/theme/assets/home/hero/pointcloud.webp": {
       "asset_id": "home-hero/pointcloud",
@@ -251,20 +251,19 @@
     "docs-site/public/home/ocr-real-scene-poster.webp": {
       "asset_id": "ocr-real-scene",
       "role": "home-poster",
-      "generated_at": "2026-08-15T07:10:55.817Z",
-      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
-      "source_worktree_dirty": true,
-      "seed_revision": "screenshots-2026-08-e",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive home media › ocr-real-scene",
+      "generated_at": "2026-09-08T07:12:25.277Z",
+      "captured_commit": "04f1bf52fadf806966bed877c58a3501c277898b",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive webp › ocr-real-scene",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
         "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/home/ProductProof.vue"
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "ca43ebdd80b533d2e2614912a9a2a3070788cdae2224d62faaf8e961b8abe5dc",
-      "bytes": 109232,
+      "sha256": "a11a5072d62e93a940ad51e634d81e0a5060dd93962348208fcd6223d5983a1f",
+      "bytes": 80444,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -273,72 +272,97 @@
         "fps": "25/1",
         "duration_seconds": null
       },
+      "capture": {
+        "source_quality": "marketing",
+        "source_inference": "unverified"
+      },
       "source_asset": {
-        "runId": "20260815T001709Z-435b32ac23d6",
+        "runId": "20260908T071007Z-04f1bf52fadf",
         "assetId": "ocr-real-scene",
-        "sha256": "682b118d8b00c5bfe3fb7a1159900d340e992fa90eeb8a152a272b0377487879"
+        "sha256": "1659de6cb2e87044aea123623cabad5aeba52343c9b176af40f55ba8df847d81",
+        "quality": "marketing",
+        "clip": {
+          "start": 0,
+          "duration": 11.517
+        }
       }
     },
     "docs-site/public/home/ocr-real-scene.mp4": {
       "asset_id": "ocr-real-scene",
       "role": "home-video",
-      "generated_at": "2026-08-15T07:10:55.757Z",
-      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
-      "source_worktree_dirty": true,
-      "seed_revision": "screenshots-2026-08-e",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive home media › ocr-real-scene",
+      "generated_at": "2026-09-08T07:12:25.145Z",
+      "captured_commit": "04f1bf52fadf806966bed877c58a3501c277898b",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive mp4 › ocr-real-scene",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
         "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/home/ProductProof.vue"
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "c190c297320287c1fa6bd729ebb1587e4ade65ab879a6794a7a3d791fd5f230c",
-      "bytes": 478436,
+      "sha256": "129e5103f8090e80835422be205a35bea212285cb326e2c757c11e0c0d033095",
+      "bytes": 455782,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "30/1",
-        "duration_seconds": 12.234
+        "duration_seconds": 11.534
+      },
+      "capture": {
+        "source_quality": "marketing",
+        "source_inference": "unverified"
       },
       "source_asset": {
-        "runId": "20260815T001709Z-435b32ac23d6",
+        "runId": "20260908T071007Z-04f1bf52fadf",
         "assetId": "ocr-real-scene",
-        "sha256": "682b118d8b00c5bfe3fb7a1159900d340e992fa90eeb8a152a272b0377487879"
+        "sha256": "1659de6cb2e87044aea123623cabad5aeba52343c9b176af40f55ba8df847d81",
+        "quality": "marketing",
+        "clip": {
+          "start": 0,
+          "duration": 11.517
+        }
       }
     },
     "docs-site/public/home/ocr-real-scene.webm": {
       "asset_id": "ocr-real-scene",
       "role": "home-video",
-      "generated_at": "2026-08-15T07:10:55.695Z",
-      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
-      "source_worktree_dirty": true,
-      "seed_revision": "screenshots-2026-08-e",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive home media › ocr-real-scene",
+      "generated_at": "2026-09-08T07:12:25.209Z",
+      "captured_commit": "04f1bf52fadf806966bed877c58a3501c277898b",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive webm › ocr-real-scene",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
         "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/home/ProductProof.vue"
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "043ec1aa414431aecca910ccf5aaf6bdc5cd6d5dad2915140ba744ccdac7fdbb",
-      "bytes": 542144,
+      "sha256": "703495a557a305be36c6516703a965280c6dfbd4b37794bfc53651500f54018a",
+      "bytes": 505636,
       "media": {
         "container": "matroska,webm",
         "codec": "vp9",
         "width": 1280,
         "height": 720,
         "fps": "30/1",
-        "duration_seconds": 12.233
+        "duration_seconds": 11.533
+      },
+      "capture": {
+        "source_quality": "marketing",
+        "source_inference": "unverified"
       },
       "source_asset": {
-        "runId": "20260815T001709Z-435b32ac23d6",
+        "runId": "20260908T071007Z-04f1bf52fadf",
         "assetId": "ocr-real-scene",
-        "sha256": "682b118d8b00c5bfe3fb7a1159900d340e992fa90eeb8a152a272b0377487879"
+        "sha256": "1659de6cb2e87044aea123623cabad5aeba52343c9b176af40f55ba8df847d81",
+        "quality": "marketing",
+        "clip": {
+          "start": 0,
+          "duration": 11.517
+        }
       }
     },
     "docs-site/public/home/sam-tools/exemplar-poster.webp": {
@@ -1234,20 +1258,19 @@
     "docs-site/public/media/ai/ocr-current-task-poster.webp": {
       "asset_id": "ocr-real-scene",
       "role": "poster",
-      "generated_at": "2026-08-15T07:10:39.935Z",
-      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
-      "source_worktree_dirty": true,
-      "seed_revision": "screenshots-2026-08-e",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › ocr-real-scene",
+      "generated_at": "2026-09-08T07:12:25.085Z",
+      "captured_commit": "04f1bf52fadf806966bed877c58a3501c277898b",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive webp › ocr-real-scene",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
         "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "ca43ebdd80b533d2e2614912a9a2a3070788cdae2224d62faaf8e961b8abe5dc",
-      "bytes": 109232,
+      "sha256": "a11a5072d62e93a940ad51e634d81e0a5060dd93962348208fcd6223d5983a1f",
+      "bytes": 80444,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -1256,41 +1279,58 @@
         "fps": "25/1",
         "duration_seconds": null
       },
+      "capture": {
+        "source_quality": "marketing",
+        "source_inference": "unverified"
+      },
       "source_asset": {
-        "runId": "20260815T001709Z-435b32ac23d6",
+        "runId": "20260908T071007Z-04f1bf52fadf",
         "assetId": "ocr-real-scene",
-        "sha256": "682b118d8b00c5bfe3fb7a1159900d340e992fa90eeb8a152a272b0377487879"
+        "sha256": "1659de6cb2e87044aea123623cabad5aeba52343c9b176af40f55ba8df847d81",
+        "quality": "marketing",
+        "clip": {
+          "start": 0,
+          "duration": 11.517
+        }
       }
     },
     "docs-site/public/media/ai/ocr-current-task.mp4": {
       "asset_id": "ocr-real-scene",
       "role": "docs-video",
-      "generated_at": "2026-08-15T07:10:39.868Z",
-      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
-      "source_worktree_dirty": true,
-      "seed_revision": "screenshots-2026-08-e",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › ocr-real-scene",
+      "generated_at": "2026-09-08T07:12:25.000Z",
+      "captured_commit": "04f1bf52fadf806966bed877c58a3501c277898b",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive mp4 › ocr-real-scene",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
         "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "c190c297320287c1fa6bd729ebb1587e4ade65ab879a6794a7a3d791fd5f230c",
-      "bytes": 478436,
+      "sha256": "129e5103f8090e80835422be205a35bea212285cb326e2c757c11e0c0d033095",
+      "bytes": 455782,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "30/1",
-        "duration_seconds": 12.234
+        "duration_seconds": 11.534
+      },
+      "capture": {
+        "source_quality": "marketing",
+        "source_inference": "unverified"
       },
       "source_asset": {
-        "runId": "20260815T001709Z-435b32ac23d6",
+        "runId": "20260908T071007Z-04f1bf52fadf",
         "assetId": "ocr-real-scene",
-        "sha256": "682b118d8b00c5bfe3fb7a1159900d340e992fa90eeb8a152a272b0377487879"
+        "sha256": "1659de6cb2e87044aea123623cabad5aeba52343c9b176af40f55ba8df847d81",
+        "quality": "marketing",
+        "clip": {
+          "start": 0,
+          "duration": 11.517
+        }
       }
     },
     "docs-site/public/media/ai/preannotate-poster.webp": {
