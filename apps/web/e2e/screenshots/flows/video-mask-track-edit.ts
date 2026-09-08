@@ -167,6 +167,7 @@ export async function runVideoMaskTrackEdit(
       `/api/v1/tasks/${task.id}/annotations`,
     );
     const toolbar = page.getByTestId("mask-toolbar");
+    await page.getByRole("button", { name: "轨迹范围", exact: true }).click();
     await page.getByTestId("video-tool-btn-mask-track").click();
     await expect(toolbar).toBeVisible();
     const drawStartMs = Date.now();
@@ -178,7 +179,7 @@ export async function runVideoMaskTrackEdit(
     });
     await stroke(page, initialPath, 1_800);
     await page.waitForTimeout(650);
-    await toolbar.getByTitle("确认 (Enter)").click();
+    await toolbar.getByTestId("mask-primary-action").click();
     await expect(page.getByTestId("class-picker-popover")).toBeVisible();
     await page.waitForTimeout(1_000);
     const created = maskTrack(
@@ -236,7 +237,7 @@ export async function runVideoMaskTrackEdit(
           `/api/v1/tasks/${task.id}/video/tracks/${created.id}/mask-keyframes/5`,
       { timeout: 30_000 },
     );
-    await toolbar.getByTitle("确认 (Enter)").click();
+    await toolbar.getByTestId("mask-primary-action").click();
     const response = await updateResponse;
     expect(response.ok(), `Save F5 Mask: HTTP ${response.status()}`).toBeTruthy();
     expect(response.request().headers()["if-match"]).toBe(`W/"${created.version}"`);

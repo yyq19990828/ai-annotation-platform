@@ -13,7 +13,7 @@ vi.mock("react-konva", async () => {
   return {
     ...components,
     Stage: React.forwardRef((props: StageProps, ref) => {
-      const stage = React.useMemo(() => ({ draw: vi.fn() }), []);
+      const stage = React.useMemo(() => ({ draw: vi.fn(), getLayers: () => [] }), []);
       React.useImperativeHandle(ref, () => stage, [stage]);
       return (
         <div

@@ -38,13 +38,15 @@ const AlertDialogOverlay = React.forwardRef<
 function AlertDialogContent({
   className,
   size = "default",
+  overlayProps,
   ...props
 }: React.ComponentProps<typeof AlertDialogPrimitive.Content> & {
   size?: "default" | "sm";
+  overlayProps?: React.ComponentProps<typeof AlertDialogPrimitive.Overlay>;
 }) {
   return (
     <AlertDialogPortal>
-      <AlertDialogOverlay />
+      <AlertDialogOverlay {...overlayProps} />
       <AlertDialogPrimitive.Content
         data-slot="alert-dialog-content"
         data-size={size}

@@ -36,7 +36,8 @@ vi.mock("./ResizeHandle", () => ({
 }));
 
 // ── mock AttributeForm ────────────────────────────────────────────────────────
-vi.mock("./AttributeForm", () => ({
+vi.mock("./AttributeForm", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./AttributeForm")>()),
   AttributeForm: ({ onChange }: { onChange: (v: Record<string, unknown>) => void }) => (
     <div data-testid="attribute-form">
       <button onClick={() => onChange({ key: "val" })}>change-attr</button>
@@ -244,7 +245,7 @@ describe("AIInspectorPanel", () => {
     expect(onAcceptPrediction).toHaveBeenCalledWith(aiBox, undefined);
   });
 
-  it("v0.20.22 · 属性审阅按钮已退役, 选中带属性的候选未编辑时点行内采纳 → onAcceptPrediction(box, undefined)", () => {
+  it("选中带属性的候选未编辑时点行内采纳保持 undefined overrides", () => {
     const onAcceptPrediction = vi.fn();
     const aiBox = { ...makeAiBox("ai-attr", "car"), attributes: { color: "blue" } };
     const attributeSchema = {
@@ -266,15 +267,15 @@ describe("AIInspectorPanel", () => {
       attributeSchema,
       onAcceptPrediction,
     });
-    // 属性审阅区表单仍存在, 但 v0.20.22 采纳按钮已退役 (accept-candidate-attrs 不存在)。
+    // 行内采纳与新的当前候选主动作共用原属性覆盖处理。
     expect(screen.getByText("属性审阅")).toBeInTheDocument();
-    expect(screen.queryByTestId("accept-candidate-attrs")).toBeNull();
+    expect(screen.getByTestId("ai-candidate-accept")).toBeEnabled();
     // 行内 (BoxesList) 采纳按钮触发 wrapper: 未编辑 → 传 undefined。
     fireEvent.click(screen.getByTestId("accept-ai-attr"));
     expect(onAcceptPrediction).toHaveBeenCalledWith(aiBox, undefined);
   });
 
-  it("v0.20.22 · 属性审阅区改属性后点行内采纳 → wrapper 附带 overrides", () => {
+  it("属性审阅区改属性后点行内采纳附带 overrides", () => {
     const onAcceptPrediction = vi.fn();
     const aiBox = { ...makeAiBox("ai-attr", "car"), attributes: { color: "blue" } };
     const attributeSchema = {
@@ -298,8 +299,7 @@ describe("AIInspectorPanel", () => {
     const attributeSchema = {
       fields: [{ key: "color", label: "颜色", type: "text" as const }],
     };
-    // 走候选「属性审阅」路径 (selectedAiBox), 与「属性」区共用 attrCollapsed 控制,
-    // 且不触发 selectedAnnotation 分支的 getMissingRequired (测试 mock 未导出)。
+    // 候选属性审阅与人工属性共用 attrCollapsed 控制。
     const aiBox = { ...makeAiBox("ai-attr", "car"), attributes: { color: "blue" } };
     const shared = {
       aiBoxes: [aiBox],
@@ -327,14 +327,14 @@ describe("AIInspectorPanel", () => {
     expect(screen.getByTestId("attribute-form")).toBeInTheDocument();
   });
 
-  it("点击驳回按钮 → 调用 onRejectPrediction + onClearSelection", () => {
+  it("点击驳回按钮由公共决策处理选择，不提前清选", () => {
     const onRejectPrediction = vi.fn();
     const onClearSelection = vi.fn();
     const aiBox = makeAiBox("ai-3", "dog");
     renderUI({ aiBoxes: [aiBox], onRejectPrediction, onClearSelection });
     fireEvent.click(screen.getByTestId("reject-ai-3"));
     expect(onRejectPrediction).toHaveBeenCalledWith(aiBox);
-    expect(onClearSelection).toHaveBeenCalled();
+    expect(onClearSelection).not.toHaveBeenCalled();
   });
 
   it("polygon AI 框点击精修 → 调用 onRefinePrediction", () => {

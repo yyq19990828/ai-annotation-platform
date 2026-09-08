@@ -2782,6 +2782,119 @@
         "title": "AnnotationOut",
         "type": "object"
       },
+      "AnnotationSliceResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "active_annotation_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Active Annotation Ids",
+            "type": "array"
+          },
+          "created_annotation_id": {
+            "format": "uuid",
+            "title": "Created Annotation Id",
+            "type": "string"
+          },
+          "idempotent_replay": {
+            "default": false,
+            "title": "Idempotent Replay",
+            "type": "boolean"
+          },
+          "no_op": {
+            "default": false,
+            "title": "No Op",
+            "type": "boolean"
+          },
+          "operation_id": {
+            "format": "uuid",
+            "title": "Operation Id",
+            "type": "string"
+          },
+          "restore_expires_at": {
+            "format": "date-time",
+            "title": "Restore Expires At",
+            "type": "string"
+          },
+          "result_versions": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Result Versions",
+            "type": "object"
+          },
+          "slice_operation_id": {
+            "format": "uuid",
+            "title": "Slice Operation Id",
+            "type": "string"
+          },
+          "source_annotation_id": {
+            "format": "uuid",
+            "title": "Source Annotation Id",
+            "type": "string"
+          },
+          "target": {
+            "enum": [
+              "before",
+              "after"
+            ],
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation_id",
+          "slice_operation_id",
+          "source_annotation_id",
+          "created_annotation_id",
+          "result_versions",
+          "active_annotation_ids",
+          "target",
+          "restore_expires_at"
+        ],
+        "title": "AnnotationSliceResponse",
+        "type": "object"
+      },
+      "AnnotationSliceRestoreRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_versions": {
+            "additionalProperties": {
+              "minimum": 1.0,
+              "type": "integer"
+            },
+            "maxProperties": 2,
+            "minProperties": 2,
+            "propertyNames": {
+              "format": "uuid"
+            },
+            "title": "Expected Versions",
+            "type": "object"
+          },
+          "idempotency_key": {
+            "pattern": "^[A-Za-z0-9_-]{16,128}$",
+            "title": "Idempotency Key",
+            "type": "string"
+          },
+          "target": {
+            "enum": [
+              "before",
+              "after"
+            ],
+            "title": "Target",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target",
+          "expected_versions",
+          "idempotency_key"
+        ],
+        "title": "AnnotationSliceRestoreRequest",
+        "type": "object"
+      },
       "AnnotationUpdate": {
         "properties": {
           "attributes": {
@@ -10860,6 +10973,16 @@
             ],
             "title": "Scene Track Id"
           },
+          "video_context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeedbackVideoContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "x": {
             "anyOf": [
               {
@@ -10888,6 +11011,142 @@
           }
         },
         "title": "FeedbackAnchorPosition",
+        "type": "object"
+      },
+      "FeedbackVideoContext": {
+        "additionalProperties": false,
+        "description": "Versioned capture of source-frame, object and view context for a pixel anchor.",
+        "properties": {
+          "annotation_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotation Version"
+          },
+          "frame_range": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeedbackVideoFrameRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "schema_version": {
+            "const": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "timeline_window": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeedbackVideoTimelineWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "track_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Id"
+          },
+          "viewport": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeedbackVideoViewport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "schema_version"
+        ],
+        "title": "FeedbackVideoContext",
+        "type": "object"
+      },
+      "FeedbackVideoFrameRange": {
+        "additionalProperties": false,
+        "properties": {
+          "from_frame": {
+            "minimum": 0.0,
+            "title": "From Frame",
+            "type": "integer"
+          },
+          "to_frame": {
+            "minimum": 0.0,
+            "title": "To Frame",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "from_frame",
+          "to_frame"
+        ],
+        "title": "FeedbackVideoFrameRange",
+        "type": "object"
+      },
+      "FeedbackVideoTimelineWindow": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "minimum": 0.0,
+            "title": "From",
+            "type": "number"
+          },
+          "to": {
+            "minimum": 0.0,
+            "title": "To",
+            "type": "number"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "FeedbackVideoTimelineWindow",
+        "type": "object"
+      },
+      "FeedbackVideoViewport": {
+        "additionalProperties": false,
+        "properties": {
+          "center_x": {
+            "title": "Center X",
+            "type": "number"
+          },
+          "center_y": {
+            "title": "Center Y",
+            "type": "number"
+          },
+          "zoom": {
+            "exclusiveMinimum": 0.0,
+            "title": "Zoom",
+            "type": "number"
+          }
+        },
+        "required": [
+          "center_x",
+          "center_y",
+          "zoom"
+        ],
+        "title": "FeedbackVideoViewport",
         "type": "object"
       },
       "FloatingPanelState": {
@@ -16210,6 +16469,36 @@
       "MaskMutationCommitRequest": {
         "additionalProperties": false,
         "properties": {
+          "cut_path": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "maximum": 1.0,
+                      "minimum": 0.0,
+                      "type": "number"
+                    },
+                    {
+                      "maximum": 1.0,
+                      "minimum": 0.0,
+                      "type": "number"
+                    }
+                  ],
+                  "type": "array"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cut Path"
+          },
           "expected_versions": {
             "items": {
               "$ref": "#/components/schemas/MaskExpectedVersion"
@@ -16254,6 +16543,7 @@
           },
           "operation": {
             "enum": [
+              "slice_mask",
               "split_components",
               "copy_component",
               "copy_keyframe",
@@ -16353,6 +16643,16 @@
             },
             "title": "Result Versions",
             "type": "object"
+          },
+          "slice_restore": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnnotationSliceResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "updated_annotations": {
             "items": {
@@ -20682,6 +20982,57 @@
           "points"
         ],
         "title": "PolygonGeometry",
+        "type": "object"
+      },
+      "PolygonSliceCommitRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "annotation_id": {
+            "format": "uuid",
+            "title": "Annotation Id",
+            "type": "string"
+          },
+          "cut_path": {
+            "items": {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "maximum": 1.0,
+                  "minimum": 0.0,
+                  "type": "number"
+                },
+                {
+                  "maximum": 1.0,
+                  "minimum": 0.0,
+                  "type": "number"
+                }
+              ],
+              "type": "array"
+            },
+            "maxItems": 256,
+            "minItems": 2,
+            "title": "Cut Path",
+            "type": "array"
+          },
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          },
+          "idempotency_key": {
+            "pattern": "^[A-Za-z0-9_-]{16,128}$",
+            "title": "Idempotency Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "annotation_id",
+          "expected_version",
+          "idempotency_key",
+          "cut_path"
+        ],
+        "title": "PolygonSliceCommitRequest",
         "type": "object"
       },
       "PolylineGeometry": {
@@ -53152,6 +53503,65 @@
         ]
       }
     },
+    "/api/v1/tasks/{task_id}/annotations/polygon-slices:commit": {
+      "post": {
+        "description": "Split one saved simple image Polygon in an atomic, idempotent transaction.",
+        "operationId": "commit_polygon_slice_api_v1_tasks__task_id__annotations_polygon_slices_commit_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PolygonSliceCommitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationSliceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Commit Polygon Slice",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
     "/api/v1/tasks/{task_id}/annotations/propagate-batch": {
       "post": {
         "description": "v0.15.1 · 多目标批量跨帧延续: 把源 task 的多个(或全部)box_3d 一次\n运动补偿 propagate 到目标 task。整批一个事务,任一失败全部回滚。",
@@ -53206,6 +53616,75 @@
           }
         ],
         "summary": "Propagate Annotations Batch",
+        "tags": [
+          "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/annotations/slices/{operation_id}:restore": {
+      "post": {
+        "description": "Restore ledger-owned slice snapshots with the complete last result versions.",
+        "operationId": "restore_annotation_slice_api_v1_tasks__task_id__annotations_slices__operation_id__restore_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "operation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Operation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnnotationSliceRestoreRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationSliceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Restore Annotation Slice",
         "tags": [
           "tasks"
         ]

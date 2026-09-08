@@ -89,7 +89,7 @@ AI Annotation Platform 把项目管理、Data Manager、多模态标注工作台
     </td>
     <td width="33%" valign="top">
       <strong>Review & Data Delivery</strong><br>
-      Data Manager 任务 / 对象 / 轨迹视图、审核反馈，以及 COCO、YOLO、DAVIS、MOT、KITTI、Multi-camera COCO、Point Mask 等导出。
+      Data Manager 任务 / 对象 / 轨迹视图、<a href="./docs-site/user-guide/review/index.md#在视频画面标记问题">视频问题标记与上下文恢复</a>（源帧范围、对象、画布和时间窗）、审核反馈，以及 COCO、YOLO、DAVIS、MOT、KITTI、Multi-camera COCO、Point Mask 等导出。
     </td>
   </tr>
 </table>
@@ -222,6 +222,10 @@ E2E 不复用开发环境的 `3000/8000` 或 `annotation` 数据库。测试路�
 详见 [E2E 运行说明](./apps/web/e2e/README.md)。
 
 API 变更后同步跑 `pnpm openapi:export` 和 `pnpm codegen`；环境变量变更后同步更新 `.env.example` 并跑 `pnpm docs:gen-env-vars`。
+
+视频轨迹 API 保留旧关键帧缺失的来源字段，客户端应按「来源未知」处理；新建标注仍使用现有来源默认值，详见[任务与标注 API](./docs-site/api/guides/tasks-and-annotations.md)。
+
+图片 Polygon 和 Raster Mask 支持预览后原子切割与保留对象 ID 的撤销/重做。提交和恢复使用独立幂等请求，恢复受完整版本集与原切割后 30 天期限约束，Mask 支持保留全部像素的直线切割，撤销后的内容引用受资源清理保护。详见[Mask 切割](./docs-site/user-guide/workbench/mask-brush.md#直线切割为两个实例)、[Polygon 切割](./docs-site/user-guide/workbench/polygon.md#切割为两个对象)与[API 合同](./docs-site/api/guides/tasks-and-annotations.md#polygon-原子切割与恢复)。
 
 ## 文档地图
 

@@ -491,6 +491,13 @@
 |---|---|
 | POST | `/{task_id}/ai-mask-candidates/accept` |
 
+## `tasks/annotation_slices.py`
+
+| Method | Path |
+|---|---|
+| POST | `/{task_id}/annotations/polygon-slices:commit` |
+| POST | `/{task_id}/annotations/slices/{operation_id}:restore` |
+
 ## `tasks/annotations.py`
 
 | Method | Path |
@@ -690,4 +697,4 @@
 
 ---
 
-_共 64 模块 / 388 路由_
+_共 65 模块 / 390 路由_

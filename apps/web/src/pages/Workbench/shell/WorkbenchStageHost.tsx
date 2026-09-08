@@ -1,3 +1,6 @@
+import type { CommitPolygonSlice } from "../stage/usePolygonSlice";
+import type { TrackerReviewProjection } from "@/hooks/videoTrackerReviewScope";
+import type { VideoTrackContextBarProps } from "../stage/VideoTrackContextBar";
 import { forwardRef, lazy, Suspense, type ReactNode } from "react";
 import type {
   Annotation,
@@ -65,6 +68,7 @@ import type { MaskCompareTileStore } from "../stage/shared/maskCompareTileStore"
 import type { WorkbenchImageSource } from "../stage/imagePyramid";
 import type { RasterResourceCoordinator } from "../stage/shared/rasterResourceCoordinator";
 import type { WorkbenchPetDock } from "./pet/WorkbenchPet";
+import type { BboxCreationMode } from "../stage/ImageStage.helpers";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
@@ -144,6 +148,9 @@ interface WorkbenchStageHostVideoProps {
   videoTimelineChapterControls?: VideoTimelineChapterControls;
   /** v0.21.14 WS3 · AI 传播对话框打开时在时间轴高亮的影响范围。 */
   videoPropagateRange?: { startFrame: number; endFrame: number } | null;
+  trackerReview?: TrackerReviewProjection | null;
+  reviewReference?: VideoTrackContextBarProps["reviewReference"];
+  onSeekReviewFrame?: (frame: number) => void;
   videoSegmentRange?: VideoSegmentTimelineRange | null;
   /** v0.10.29 · 项目级采样配置 → VideoStage 软网格导航。 */
   videoSampling?: VideoSamplingConfig | null;
@@ -207,6 +214,8 @@ interface WorkbenchStageHostVideoProps {
 }
 
 interface WorkbenchStageHostImageProps {
+  bboxCreationMode?: BboxCreationMode;
+  continuousCreation?: boolean;
   resourceCoordinator?: RasterResourceCoordinator;
   rasterMaskRecords: readonly RasterMaskRenderRecord<"annotation">[];
   rasterMaskStatusById: ReadonlyMap<string, RasterMaskRecordStatus>;
@@ -275,6 +284,7 @@ interface WorkbenchStageHostImageProps {
   ) => void;
   onJoinSelected: () => void;
   onCropSelected: (baseId: string) => void;
+  onCommitPolygonSlice?: CommitPolygonSlice;
   onStageGeometry: (g: StageGeometry) => void;
 }
 
@@ -328,12 +338,14 @@ interface WorkbenchStageHostEditorProps {
   maskEditor?: UseMaskEditorReturn;
   /** v0.10.10 · I17.3 · 项目级 rendering_config 覆盖（仅图像舞台消费）。 */
   projectRenderingConfig?: import("@/api/projects").ProjectRenderingConfig | null;
-  // ── v0.10.20 · I18 IssueLayer (仅图像舞台消费) ─────────────
+  // Issue pins and creation anchors are shared by image and video stages.
   issuePixelFeedbacks?: import("@/api/feedbacks").AnnotationFeedback[];
   highlightIssueId?: string | null;
   onIssuePinClick?: (id: string) => void;
   issuePinDropArmed?: boolean;
-  onIssuePinDrop?: (x: number, y: number) => void;
+  issueNavigationPending?: boolean;
+  onIssuePinDrop?: (x: number, y: number, frame?: number) => void;
+  onSeekIssueFrame?: (frame: number) => void;
 }
 
 interface WorkbenchStageHostProps {
@@ -396,7 +408,11 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       stageKind === "image" ? requireStageGroup(image, "image", stageKind) : undefined;
     const aiProps = stageKind === "image" ? requireStageGroup(ai, "ai", stageKind) : undefined;
     const editorProps =
-      stageKind === "image" ? requireStageGroup(editors, "editors", stageKind) : undefined;
+      stageKind === "image"
+        ? requireStageGroup(editors, "editors", stageKind)
+        : stageKind === "video"
+          ? editors
+          : undefined;
     const {
       videoManifest,
       videoFrameTimetable,
@@ -405,6 +421,9 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       videoChapters,
       videoTimelineChapterControls,
       videoPropagateRange,
+      trackerReview,
+      reviewReference,
+      onSeekReviewFrame,
       videoSegmentRange,
       videoSampling,
       videoTool,
@@ -450,6 +469,8 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       onRejectPrediction: onVideoRejectPrediction,
     } = videoProps ?? ({} as WorkbenchStageHostVideoProps);
     const {
+      continuousCreation,
+      bboxCreationMode,
       resourceCoordinator,
       rasterMaskRecords,
       rasterMaskStatusById,
@@ -490,6 +511,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       onCommitKeypointGeometry,
       onJoinSelected,
       onCropSelected,
+      onCommitPolygonSlice,
       onStageGeometry,
     } = imageProps ?? ({} as WorkbenchStageHostImageProps);
     const {
@@ -530,7 +552,9 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       highlightIssueId,
       onIssuePinClick,
       issuePinDropArmed,
+      issueNavigationPending,
       onIssuePinDrop,
+      onSeekIssueFrame,
     } = editorProps ?? ({} as WorkbenchStageHostEditorProps);
     return (
       <div className="relative flex min-h-0 flex-1 flex-col" data-workbench-stage>
@@ -576,6 +600,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
           </Suspense>
         ) : stageKind === "video" ? (
           <VideoWorkbench
+            overlays={overlays}
             maskCompareStore={maskCompareStore}
             ref={ref}
             manifest={videoManifest}
@@ -615,6 +640,9 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             chapters={videoChapters}
             timelineChapterControls={videoTimelineChapterControls}
             propagateRange={videoPropagateRange}
+            trackerReview={trackerReview}
+            reviewReference={reviewReference}
+            onSeekReviewFrame={onSeekReviewFrame}
             segmentRange={videoSegmentRange}
             videoSampling={videoSampling}
             performanceTier={workbenchCommon.performanceTier}
@@ -640,9 +668,15 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             issuePixelFeedbacks={issuePixelFeedbacks}
             issueHighlightId={highlightIssueId}
             onIssuePinClick={onIssuePinClick}
+            issuePinDropArmed={issuePinDropArmed}
+            issueNavigationPending={issueNavigationPending}
+            onIssuePinDrop={onIssuePinDrop}
+            onSeekIssueFrame={onSeekIssueFrame}
           />
         ) : (
           <ImageWorkbench
+            continuousCreation={continuousCreation}
+            bboxCreationMode={bboxCreationMode}
             resourceCoordinator={resourceCoordinator}
             maskCompareStore={maskCompareStore}
             rasterMaskRecords={rasterMaskRecords}
@@ -703,6 +737,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onChangeUserBoxClass={onChangeUserBoxClass}
             onJoinSelected={onJoinSelected}
             onCropSelected={onCropSelected}
+            onCommitPolygonSlice={onCommitPolygonSlice}
             onStageGeometry={onStageGeometry}
             polygonDraft={polygonDraft}
             keypointDraft={keypointDraft}
@@ -734,7 +769,7 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onIssuePinDrop={onIssuePinDrop}
           />
         )}
-        {stageKind !== "image" && overlays}
+        {stageKind === "3d" && overlays}
       </div>
     );
   },

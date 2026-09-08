@@ -1666,6 +1666,19 @@ def test_schema_rejects_policy_mismatch_and_duplicate_targets():
     with pytest.raises(ValueError, match="only be updated or deleted once"):
         MaskMutationCommitRequest.model_validate(base)
 
+    base["mutations"] = [base["mutations"][0]]
+    parsed = MaskMutationCommitRequest.model_validate(base)
+    round_tripped = MaskMutationCommitRequest.model_validate(
+        parsed.model_dump(mode="json", exclude_none=True)
+    )
+    assert round_tripped.cut_path is None
+    with pytest.raises(ValueError, match="cut_path is only valid for slice_mask"):
+        MaskMutationCommitRequest.model_validate({**base, "cut_path": None})
+    with pytest.raises(ValueError, match="cut_path is only valid for slice_mask"):
+        MaskMutationCommitRequest.model_validate(
+            {**base, "cut_path": [[0.1, 0.1], [0.9, 0.9]]}
+        )
+
 
 def test_derived_rle_run_budget_returns_stable_operation_error(monkeypatch):
     monkeypatch.setattr("app.services.mask_mutation.MAX_MASK_RUNS", 3)

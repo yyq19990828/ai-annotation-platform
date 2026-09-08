@@ -75,6 +75,42 @@ async def test_feedback_create_and_list(db_session, super_admin):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("frame", [0, 17])
+async def test_video_issue_preserves_source_frame_and_task_anchor(
+    db_session, super_admin, frame
+):
+    user, _ = super_admin
+    project = await create_project(db_session, owner_id=user.id, type_key="video-det")
+    task = await create_task(db_session, project_id=project.id)
+    service = FeedbackService(db_session)
+    for position in ({"x": 0.5, "y": 0.25, "frame": frame}, None):
+        await service.create(
+            author_id=user.id,
+            kind="issue",
+            anchor_type="pixel" if position else "task",
+            project_id=project.id,
+            task_id=task.id,
+            annotation_id=None,
+            anchor_position=position,
+            severity="warn",
+            title=None,
+            body="Video frame anchor regression",
+            attachments=[],
+            thread_parent_id=None,
+        )
+    await db_session.flush()
+    project_id, task_id = project.id, task.id
+    db_session.expire_all()
+    rows, _ = await service.list_paged(project_id=project_id, task_id=task_id, limit=10)
+    assert len(rows) == 2
+    pixel = next(row for row in rows if row.anchor_type == "pixel")
+    assert pixel.anchor_position == {"x": 0.5, "y": 0.25, "frame": frame}
+    assert (
+        next(row for row in rows if row.anchor_type == "task").anchor_position is None
+    )
+
+
+@pytest.mark.asyncio
 async def test_feedback_patch_status_sets_resolved_at(db_session, super_admin):
     user, _ = super_admin
     proj = await create_project(db_session, owner_id=user.id, type_key="image-det")

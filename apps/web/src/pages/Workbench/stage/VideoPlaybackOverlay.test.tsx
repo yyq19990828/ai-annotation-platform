@@ -1,9 +1,11 @@
-import { fireEvent, render, within } from "@testing-library/react";
+import { act, fireEvent, render, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { ComponentProps } from "react";
+import { createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
+import { projectTrackerReview } from "@/hooks/videoTrackerReviewScope";
 import {
   VideoPlaybackOverlay,
   densityBinGradient,
@@ -13,6 +15,7 @@ import { getTrackColor } from "./colors";
 import { resolveVideoTimelineRangePurpose } from "../state/useWorkbenchShellModel.helpers";
 import { buildFrameTimebase } from "./frameTimebase";
 import type { VideoTimelineDensityBin, VideoTrackTimeline } from "./videoTrackTimeline";
+import type { VideoTimelineWindowControls } from "./videoStageControls";
 
 const overlayCss = readFileSync(
   resolve(process.cwd(), "src/pages/Workbench/stage/VideoPlaybackOverlay.module.css"),
@@ -88,7 +91,92 @@ function renderOverlay(extra: Partial<ComponentProps<typeof VideoPlaybackOverlay
   );
 }
 
+function reviewProjection() {
+  return projectTrackerReview(
+    {
+      job_id: "review-job",
+      status: "pending_review",
+      annotation_id: "annotation-1",
+      grid_step: 1,
+      output_geometry: "bbox",
+      results: [
+        { instance_id: "B", frame_index: 0, geometry: { type: "bbox", x: 0, y: 0, w: 1, h: 1 } },
+        { instance_id: "A", frame_index: 3, geometry: { type: "bbox", x: 0, y: 0, w: 1, h: 1 } },
+        { instance_id: "A", frame_index: 7, geometry: { type: "bbox", x: 0, y: 0, w: 1, h: 1 } },
+      ],
+    },
+    { instanceIds: ["A"], fromFrame: 2, toFrame: 7, intentRevision: 1 },
+    1,
+  );
+}
+
 describe("VideoPlaybackOverlay", () => {
+  it("captures fractional windows, preserves them across collapse, and rejects handles from A→B→A", () => {
+    const ref = createRef<VideoTimelineWindowControls>();
+    const onInteraction = vi.fn();
+    const props = {
+      frameIndex: 120,
+      maxFrame: 179,
+      timebase,
+      isPlaying: false,
+      currentFrameEntryCount: 0,
+      visible: true,
+      onSeek: vi.fn(),
+      onSeekByFrames: vi.fn(),
+      onTogglePlay: vi.fn(),
+      windowControlsRef: ref,
+      onViewInteraction: onInteraction,
+    };
+    const view = render(<VideoPlaybackOverlay {...props} sourceKey="A" />);
+    const old = ref.current!;
+    act(() => {
+      expect(ref.current!.restore({ from: 60.25, to: 144.75 })).toEqual({
+        window: { from: 60.25, to: 144.75 },
+        clamped: false,
+      });
+    });
+    expect(ref.current!.capture()).toEqual({ from: 60.25, to: 144.75 });
+    expect(onInteraction).not.toHaveBeenCalled();
+    expect(view.getByTestId("video-playback-overlay")).toHaveAttribute(
+      "data-timeline-from",
+      "60.25",
+    );
+    fireEvent.click(view.getByTestId("video-timeline-toggle"));
+    expect(view.getByTestId("video-playback-overlay")).toHaveAttribute(
+      "data-timeline-to",
+      "144.75",
+    );
+    view.rerender(<VideoPlaybackOverlay {...props} sourceKey="B" />);
+    expect(ref.current!.capture()).toEqual({ from: 0, to: 179 });
+    view.rerender(<VideoPlaybackOverlay {...props} sourceKey="A" />);
+    expect(old.capture()).toBeNull();
+    expect(old.restore({ from: 20, to: 100 })).toBeNull();
+    expect(ref.current!.capture()).toEqual({ from: 0, to: 179 });
+    fireEvent.click(view.getByRole("button", { name: "放大时间轴" }));
+    expect(onInteraction).toHaveBeenCalledTimes(1);
+    view.unmount();
+    expect(old.capture()).toBeNull();
+  });
+
+  it("restores through the density-derived minimum span and current media bounds", () => {
+    const ref = createRef<VideoTimelineWindowControls>();
+    renderOverlay({
+      maxFrame: 179,
+      windowControlsRef: ref,
+      globalTimelineDensity: [{ index: 0, from: 0, to: 11, density: 1, tracks: [] }],
+    });
+    act(() => {
+      expect(ref.current!.restore({ from: 160.5, to: 170.5 })).toEqual({
+        window: { from: 107, to: 179 },
+        clamped: true,
+      });
+    });
+    expect(ref.current!.capture()).toEqual({ from: 107, to: 179 });
+    expect(ref.current!.restore({ from: NaN, to: 120 })).toBeNull();
+    expect(ref.current!.restore({ from: 120, to: 60 })).toBeNull();
+    expect(ref.current!.capture()).toEqual({ from: 107, to: 179 });
+  });
+
   it("renders the active jog playback rate when provided", () => {
     const { getByTestId } = renderOverlay({ isPlaying: true, playbackRateLabel: "-2x" });
 
@@ -677,6 +765,149 @@ describe("VideoPlaybackOverlay", () => {
     expect(within(summary).getByTestId("video-propagate-range")).toBeInTheDocument();
   });
 
+  it("keeps review scope visible in compact and expanded modes with independent navigation", async () => {
+    const user = userEvent.setup();
+    const onSeekReviewFrame = vi.fn();
+    const onSeek = vi.fn();
+    const onLoopRegionChange = vi.fn();
+    const onRangeSelect = vi.fn();
+    const { getByTestId, getAllByTestId } = renderOverlay({
+      trackerReview: reviewProjection(),
+      onSeekReviewFrame,
+      onSeek,
+      onLoopRegionChange,
+      onRangeSelect,
+      loopRegion: { startFrame: 1, endFrame: 5 },
+      propagateRange: { startFrame: 4, endFrame: 8 },
+      chapters: [{ id: "chapter-1", startFrame: 3, endFrame: 6, title: "章节" }],
+    });
+    const expectSummary = () => {
+      expect(getAllByTestId("timeline-tracker-review-scope")).toHaveLength(1);
+      expect(getByTestId("timeline-tracker-review-scope")).toHaveTextContent(
+        "审阅 1 个目标 · F2–F7 · 所选待审 2 · 全部待审 3",
+      );
+      expect(getByTestId("timeline-tracker-review-scope")).toHaveAttribute(
+        "data-review-job-id",
+        "review-job",
+      );
+    };
+    expectSummary();
+    await user.click(getByTestId("timeline-tracker-review-remaining-0-0"));
+    expect(onSeekReviewFrame).toHaveBeenCalledWith(0);
+    await user.click(getByTestId("video-timeline-toggle"));
+    expectSummary();
+    const lane = getByTestId("video-timeline-lane-tracker-review");
+    const band = within(lane).getByTestId("timeline-tracker-review-window");
+    expect(band.style.getPropertyValue("--timeline-left")).toBe(`${(2 / 9) * 100}%`);
+    expect(getByTestId("video-timeline-lane-loop")).toBeInTheDocument();
+    expect(getByTestId("video-timeline-lane-propagation")).toBeInTheDocument();
+    expect(getByTestId("video-timeline-chapter")).toBeInTheDocument();
+    await user.click(getByTestId("timeline-tracker-review-remaining-7-7"));
+    expect(onSeekReviewFrame).toHaveBeenLastCalledWith(7);
+    expect(onSeek).not.toHaveBeenCalled();
+    expect(onLoopRegionChange).not.toHaveBeenCalled();
+    expect(onRangeSelect).not.toHaveBeenCalled();
+  });
+
+  it("uses the owner projection when the inspected frame changes and when the review job changes", () => {
+    const trackerReview = reviewProjection();
+    const base = {
+      frameIndex: 0,
+      maxFrame: 9,
+      timebase,
+      isPlaying: false,
+      currentFrameEntryCount: 0,
+      visible: true,
+      onSeek: vi.fn(),
+      onSeekByFrames: vi.fn(),
+      onTogglePlay: vi.fn(),
+      onSeekReviewFrame: vi.fn(),
+      trackerReview,
+    };
+    const { rerender, getByTestId } = render(<VideoPlaybackOverlay {...base} />);
+    rerender(<VideoPlaybackOverlay {...base} frameIndex={9} currentFrameEntryCount={4} />);
+    expect(getByTestId("timeline-tracker-review-scope")).toHaveTextContent(
+      "审阅 1 个目标 · F2–F7 · 所选待审 2 · 全部待审 3",
+    );
+    const nextReview = projectTrackerReview(
+      { ...trackerReview.preview, job_id: "other-job" },
+      { instanceIds: ["B"], fromFrame: 0, toFrame: 1, intentRevision: 2 },
+      1,
+    );
+    rerender(<VideoPlaybackOverlay {...base} trackerReview={nextReview} />);
+    expect(getByTestId("timeline-tracker-review-scope")).toHaveTextContent(
+      "审阅 1 个目标 · F0–F1 · 所选待审 1 · 全部待审 3",
+    );
+    expect(getByTestId("timeline-tracker-review-scope")).toHaveAttribute(
+      "data-review-job-id",
+      "other-job",
+    );
+    expect(base.onSeekReviewFrame).not.toHaveBeenCalled();
+    expect(base.onSeek).not.toHaveBeenCalled();
+  });
+
+  it.each([0, 9])("shows a single-frame review window at source-frame endpoint F%s", (frame) => {
+    const initial = reviewProjection();
+    const trackerReview = projectTrackerReview(
+      initial.preview,
+      { ...initial.scope, fromFrame: frame, toFrame: frame },
+      1,
+    );
+    const { getByTestId } = renderOverlay({ trackerReview });
+    fireEvent.click(getByTestId("video-timeline-toggle"));
+    const band = getByTestId("timeline-tracker-review-window");
+    const left = parseFloat(band.style.getPropertyValue("--timeline-left"));
+    const width = parseFloat(band.style.getPropertyValue("--timeline-width"));
+    expect(width).toBeGreaterThan(0);
+    expect(left).toBeGreaterThanOrEqual(0);
+    expect(left + width).toBeLessThanOrEqual(100);
+    expect(getByTestId("timeline-tracker-review-scope")).toHaveTextContent(`F${frame}–F${frame}`);
+  });
+
+  it.each([false, true])(
+    "review links require their guarded callback and an interactive overlay (%s)",
+    (interactive) => {
+      const onSeek = vi.fn();
+      const onSeekReviewFrame = interactive ? undefined : vi.fn();
+      const { getByTestId } = renderOverlay({
+        trackerReview: reviewProjection(),
+        interactive,
+        onSeek,
+        onSeekReviewFrame,
+      });
+      const link = getByTestId("timeline-tracker-review-remaining-0-0");
+      expect(link).toBeDisabled();
+      fireEvent.click(link);
+      expect(onSeek).not.toHaveBeenCalled();
+      if (onSeekReviewFrame) expect(onSeekReviewFrame).not.toHaveBeenCalled();
+    },
+  );
+
+  it("review feedback leaves source-frame seeking and propagation brushing with their existing owners", () => {
+    const onSeek = vi.fn();
+    const onRangeSelect = vi.fn();
+    const onSeekReviewFrame = vi.fn();
+    const { getByTestId } = renderOverlay({
+      trackerReview: reviewProjection(),
+      rangeSelectPurpose: "propagate-range",
+      onSeek,
+      onRangeSelect,
+      onSeekReviewFrame,
+    });
+    const shell = getByTestId("video-timeline-shell");
+    setRect(shell);
+    expect(shell.closest("[data-workbench-tracker-review]")).toBeNull();
+    fireEvent(shell, pointerDown(300));
+    fireEvent(shell, pointerUp(300));
+    expect(onSeek).toHaveBeenCalledWith(3);
+    fireEvent(shell, pointerDown(200, true));
+    fireEvent(shell, pointerMove(800));
+    fireEvent(shell, pointerUp(800));
+    expect(onRangeSelect).toHaveBeenCalledWith("propagate-range", { startFrame: 2, endFrame: 7 });
+    expect(onSeekReviewFrame).not.toHaveBeenCalled();
+    expect(getByTestId("timeline-tracker-review-scope")).toHaveTextContent("F2–F7");
+  });
+
   it("does not hide collapsed active-range feedback in CSS", () => {
     const hiddenSelectors = [...overlayCss.matchAll(/([^{}]+)\{[^{}]*display:\s*none;?[^{}]*\}/g)]
       .map((match) => match[1])
@@ -812,3 +1043,18 @@ describe("resolveLargeFrameStep", () => {
 const densityHelpers = {
   color: (trackId: string) => getTrackColor(trackId, ""),
 };
+
+describe("Issue frame navigation", () => {
+  it.each([false, true])(
+    "routes Issue anchors through checked readiness (expanded=%s)",
+    (expanded) => {
+      const onSeek = vi.fn();
+      const onSeekIssueFrame = vi.fn();
+      const view = renderOverlay({ issueFrames: [3], onSeek, onSeekIssueFrame });
+      if (expanded) fireEvent.click(view.getByRole("button", { name: "展开时间轴详情" }));
+      fireEvent.click(view.getByTestId("video-issue-marker"));
+      expect(onSeekIssueFrame).toHaveBeenCalledWith(3);
+      expect(onSeek).not.toHaveBeenCalled();
+    },
+  );
+});

@@ -11,6 +11,29 @@ import {
   type SnapViewportTransform,
 } from "./shared/geometry/snap";
 
+export type BboxCreationMode = "corner" | "center";
+
+/** The center is latched at pointerdown; image bounds limit both sides equally. */
+export function imageBoxFromDrag(drag: {
+  sx: number;
+  sy: number;
+  cx: number;
+  cy: number;
+  fromCenter?: boolean;
+}) {
+  if (drag.fromCenter) {
+    const rx = Math.max(0, Math.min(Math.abs(drag.cx - drag.sx), drag.sx, 1 - drag.sx));
+    const ry = Math.max(0, Math.min(Math.abs(drag.cy - drag.sy), drag.sy, 1 - drag.sy));
+    return { x: drag.sx - rx, y: drag.sy - ry, w: 2 * rx, h: 2 * ry };
+  }
+  return {
+    x: Math.min(drag.sx, drag.cx),
+    y: Math.min(drag.sy, drag.cy),
+    w: Math.abs(drag.cx - drag.sx),
+    h: Math.abs(drag.cy - drag.sy),
+  };
+}
+
 // client(视口像素)坐标 → 归一图坐标(0-1):逆 viewport 平移/缩放后再除图尺寸。
 export function normalizeImageCoordinate(
   clientX: number,

@@ -10,8 +10,9 @@
 //
 // 不在这里管的：键盘 dispatch（键位在 useWorkbenchHotkeys）、history undo/redo 本身。
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { QueryClient } from "@tanstack/react-query";
+import type { ToolBindings } from "@/api/projects";
 
 import { isSelfIntersecting, type Pt } from "../stage/polygonGeom";
 import { UNKNOWN_CLASS } from "../stage/colors";
@@ -21,10 +22,22 @@ import { isComplexPolygonGeometry } from "../stage/shared/geometry/geometryEditP
 import { bboxGeom, keypointGeom, polygonGeom, polylineGeom } from "../state/transforms";
 import type { Geometry, Keypoint } from "@/types";
 import { randomId } from "@/utils/id";
-import { enqueue } from "../state/offlineQueue";
+import { enqueue, enqueueDurably } from "../state/offlineQueue";
+import { attributeSchemaForUnit, classesForUnit } from "./useToolBindings";
+import { getMissingRequired } from "../shell/AttributeForm";
+import {
+  creationAttributeDefaults,
+  manualDrawingPayload,
+  manualImageTool,
+  type ManualCreationDraft,
+} from "./manualImageCreation";
+import type { PendingDrawing } from "./useWorkbenchState";
+import { usePolygonDraftPoints } from "./usePolygonDraftPoints";
+import { POLYGON_AUTO_POINT_LIMIT } from "../stage/polygonAutoPoints";
 import type { useWorkbenchState } from "../state/useWorkbenchState";
 import type { useAnnotationHistory } from "../state/useAnnotationHistory";
 import type { AnnotationPayload, AnnotationUpdatePayload } from "@/api/tasks";
+import { tasksApi } from "@/api/tasks";
 import type { AnnotationResponse, RotatedBboxGeometry } from "@/types";
 
 type Geom = { x: number; y: number; w: number; h: number };
@@ -79,6 +92,8 @@ export interface UseWorkbenchAnnotationActionsArgs {
   keypointNodeCount?: number;
   /** 当前工具自身无类别时直接以 unknown 落库，不打开空类别弹层。 */
   activeToolHasOwnClasses?: boolean;
+  toolBindings?: ToolBindings;
+  createAnnotationAsync?: (payload: AnnotationPayload) => Promise<AnnotationResponse>;
   /**
    * v0.20.22 · 同步登记提交在途几何 override, 桥接「setDrag(null)」与「onMutate 微任务
    * 回填 cache」之间的一帧空窗, 防松手闪回原尺寸。见 usePendingGeom。
@@ -90,6 +105,11 @@ export interface UseWorkbenchAnnotationActionsReturn {
   /** 共用 create fallback：分配 tmpId → cache → history → enqueue。*/
   optimisticEnqueueCreate: (payload: AnnotationPayload) => void;
   createBboxWithClass: (geom: Geom, cls: string) => boolean;
+  beginBboxDrawing: (geom: Geom, cls?: string) => boolean;
+  submitManualDrawing: () => void;
+  changeManualAttributes: (id: string, next: Record<string, unknown>) => void;
+  cancelManualDrawing: () => boolean;
+  hasManualDraft: boolean;
   /** 旋转框：由轴对齐矩形生成 angle=0 草稿，再统一选择类别。 */
   createRotatedBbox: (geom: Geom) => boolean;
   /** v0.10.28 · 旋转框: 旋转 / 缩放手柄落定时更新 OBB geometry (走 update mutation + history)。 */
@@ -145,9 +165,37 @@ export function useWorkbenchAnnotationActions({
   isLocked = false,
   keypointNodeCount = 0,
   activeToolHasOwnClasses = true,
+  toolBindings,
+  createAnnotationAsync,
   markPendingGeom,
 }: UseWorkbenchAnnotationActionsArgs): UseWorkbenchAnnotationActionsReturn {
   const setQ = queryClient.setQueryData.bind(queryClient);
+  const owner = useMemo(() => ({ taskId, projectId, isLocked }), [taskId, projectId, isLocked]);
+  const currentOwner = useRef(owner);
+  currentOwner.current = owner;
+  useEffect(() => {
+    currentOwner.current = owner;
+    return () => {
+      if (currentOwner.current === owner) currentOwner.current = { ...owner };
+    };
+  }, [owner]);
+  const manualDraftRef = useRef<PendingDrawing>(null);
+  const draftOwnerRef = useRef(owner);
+  if (draftOwnerRef.current !== owner) {
+    draftOwnerRef.current = owner;
+    manualDraftRef.current = null;
+  }
+  const publishManualDraft = useCallback(
+    (drawing: PendingDrawing) => {
+      manualDraftRef.current = drawing;
+      s.setPendingDrawing(drawing);
+    },
+    [s],
+  );
+  useEffect(() => {
+    if (s.pendingDrawing?.creation && s.pendingDrawing.creation.taskId !== taskId)
+      s.setPendingDrawing(null);
+  }, [s, taskId]);
 
   /** v0.6.5：锁定时 short-circuit；返回 true 表示已被拦截。 */
   const blockIfLocked = useCallback((): boolean => {
@@ -213,6 +261,231 @@ export function useWorkbenchAnnotationActions({
       enqueue({ kind: "create", id: randomId(), tmpId, taskId, payload, ts: Date.now() });
     },
     [taskId, projectId, meUserId, setQ, s, history],
+  );
+
+  const submitManual = useCallback(
+    (drawing: NonNullable<PendingDrawing>) => {
+      const draft = drawing.creation;
+      if (!draft || !taskId || draft.taskId !== taskId || blockIfLocked()) return;
+      if (manualDraftRef.current?.creation?.phase === "saving") return;
+      if (!draft.className) return;
+      if (toolBindings && !toolBindings[draft.toolUnitId]?.enabled) {
+        publishManualDraft({
+          ...drawing,
+          creation: { ...draft, phase: "error", error: "当前工具已停用，请取消草稿后选择可用工具" },
+        });
+        return;
+      }
+      const ownClasses = classesForUnit(toolBindings, draft.toolUnitId);
+      if (
+        toolBindings &&
+        draft.className !== UNKNOWN_CLASS &&
+        !ownClasses.includes(draft.className)
+      ) {
+        publishManualDraft({
+          ...drawing,
+          creation: {
+            ...draft,
+            phase: "error",
+            error: "类别已不属于当前工具，请取消草稿后重新选类",
+          },
+        });
+        return;
+      }
+      const schema = attributeSchemaForUnit(toolBindings, draft.toolUnitId);
+      const missing = getMissingRequired(schema, draft.className, draft.attributes);
+      if (missing.length) {
+        publishManualDraft({
+          ...drawing,
+          creation: {
+            ...draft,
+            phase: "attributes",
+            requiredKeys: [...new Set([...draft.requiredKeys, ...missing])],
+            error: undefined,
+          },
+        });
+        return;
+      }
+      const payload = manualDrawingPayload(drawing, draft);
+      publishManualDraft({ ...drawing, creation: { ...draft, phase: "saving", error: undefined } });
+      const owns = () =>
+        currentOwner.current === owner && manualDraftRef.current?.creation?.id === draft.id;
+      const accepted = (id: string) => {
+        if (!owns()) return;
+        history.push({ kind: "create", annotationId: id, payload });
+        s.setSelectedId(id);
+        if (draft.className !== UNKNOWN_CLASS) {
+          s.setActiveClass(draft.className);
+          recordRecentClass(draft.className);
+        }
+        publishManualDraft(null);
+      };
+      const failed = async (err: unknown) => {
+        // A rejected business request remains retryable. Only a transport failure enters the queue.
+        if (err instanceof TypeError) {
+          const tmpId = `tmp_${randomId()}`;
+          try {
+            await enqueueDurably({
+              kind: "create",
+              id: randomId(),
+              tmpId,
+              taskId,
+              payload,
+              ts: Date.now(),
+            });
+            const optimistic: AnnotationResponse = {
+              id: tmpId,
+              task_id: taskId,
+              project_id: projectId ?? null,
+              user_id: meUserId ?? null,
+              source: "manual",
+              annotation_type: payload.annotation_type ?? "bbox",
+              tool_unit_id: payload.tool_unit_id,
+              class_name: payload.class_name,
+              geometry: payload.geometry,
+              confidence: 1,
+              parent_prediction_id: null,
+              parent_annotation_id: null,
+              lead_time: null,
+              is_active: true,
+              ground_truth: false,
+              attributes: payload.attributes ?? {},
+              created_at: new Date().toISOString(),
+              updated_at: null,
+              render_key: tmpId,
+            };
+            queryClient.setQueryData<AnnotationResponse[]>(["annotations", taskId], (prev) => [
+              ...(prev ?? []),
+              optimistic,
+            ]);
+            accepted(tmpId);
+            if (currentOwner.current === owner)
+              pushToast({ msg: "已保存到离线队列", sub: "联网后自动同步", kind: "warning" });
+            return;
+          } catch {
+            if (owns())
+              publishManualDraft({
+                ...drawing,
+                creation: {
+                  ...draft,
+                  phase: "error",
+                  error: "无法保存到离线队列，草稿已保留。请恢复存储或网络后重试。",
+                },
+              });
+            return;
+          }
+        }
+        if (owns())
+          publishManualDraft({
+            ...drawing,
+            creation: { ...draft, phase: "error", error: "保存失败，草稿已保留。请重试。" },
+          });
+      };
+      if (createAnnotationAsync)
+        void createAnnotationAsync(payload).then((created) => accepted(created.id), failed);
+      else
+        mutations.create.mutate(payload, {
+          onSuccess: (created) => accepted(created.id),
+          onError: (error) => {
+            void failed(error);
+          },
+        });
+    },
+    [
+      taskId,
+      projectId,
+      meUserId,
+      blockIfLocked,
+      toolBindings,
+      publishManualDraft,
+      owner,
+      history,
+      s,
+      recordRecentClass,
+      queryClient,
+      pushToast,
+      createAnnotationAsync,
+      mutations.create,
+    ],
+  );
+
+  const beginManualDrawing = useCallback(
+    (drawing: NonNullable<PendingDrawing>, cls?: string): boolean => {
+      if (blockIfLocked() || !taskId || manualDraftRef.current) return false;
+      const unit =
+        drawing.kind === "polygon"
+          ? "region"
+          : drawing.kind === "polyline"
+            ? "polyline"
+            : drawing.kind === "keypoint"
+              ? "keypoint"
+              : drawing.kind === "rotated_bbox"
+                ? "rotated_bbox"
+                : "bbox";
+      const intent = s.continuousCreation;
+      if (intent && (intent.toolUnitId !== unit || !intent.className)) {
+        pushToast({ msg: "请先为当前工具选择连续创建类别", kind: "warning" });
+        return false;
+      }
+      const className =
+        intent?.className ?? (!activeToolHasOwnClasses ? UNKNOWN_CLASS : (cls ?? ""));
+      const draft: ManualCreationDraft = {
+        id: randomId(),
+        taskId,
+        toolUnitId: unit,
+        className,
+        attributes: creationAttributeDefaults(
+          attributeSchemaForUnit(toolBindings, unit),
+          className,
+        ),
+        requiredKeys: [],
+        phase: className ? "attributes" : "class",
+      };
+      const pending = { ...drawing, creation: draft };
+      publishManualDraft(pending);
+      if (className) submitManual(pending);
+      return true;
+    },
+    [
+      blockIfLocked,
+      taskId,
+      s.continuousCreation,
+      activeToolHasOwnClasses,
+      toolBindings,
+      publishManualDraft,
+      submitManual,
+      pushToast,
+    ],
+  );
+
+  const beginBboxDrawing = useCallback(
+    (geom: Geom, cls?: string) => beginManualDrawing({ kind: "bbox", geom }, cls),
+    [beginManualDrawing],
+  );
+  const submitManualDrawing = useCallback(() => {
+    const pending = manualDraftRef.current;
+    if (pending) submitManual(pending);
+  }, [submitManual]);
+  const changeManualAttributes = useCallback(
+    (id: string, next: Record<string, unknown>) => {
+      const pending = manualDraftRef.current;
+      const draft = pending?.creation;
+      if (!pending || !draft || draft.id !== id || draft.phase === "saving") return;
+      const missing = getMissingRequired(
+        attributeSchemaForUnit(toolBindings, draft.toolUnitId),
+        draft.className,
+        next,
+      );
+      publishManualDraft({
+        ...pending,
+        creation: {
+          ...draft,
+          attributes: next,
+          requiredKeys: [...new Set([...draft.requiredKeys, ...missing])],
+        },
+      });
+    },
+    [publishManualDraft, toolBindings],
   );
 
   const createGeometryWithClass = useCallback(
@@ -301,20 +574,33 @@ export function useWorkbenchAnnotationActions({
   );
 
   // ── polygon / polyline 草稿（共用顶点累积 state）──────────────────────
-  const [polygonDraftPoints, setPolygonDraftPoints] = useState<[number, number][]>([]);
-  // 切到非 polygon/polyline 工具或切题清空草稿
-  useEffect(() => {
-    if (s.tool !== "polygon" && s.tool !== "polyline") setPolygonDraftPoints([]);
-  }, [s.tool]);
+  const {
+    points: polygonDraftPoints,
+    setPoints: setPolygonDraftPoints,
+    getPoints: getPolygonDraftPoints,
+  } = usePolygonDraftPoints();
+  const polygonBeforeKey = useRef<(() => void) | null>(null);
+  const polygonBeforeInput = useRef<((event: KeyboardEvent) => boolean) | null>(null);
+  const currentTool = useRef(s.tool);
+  currentTool.current = s.tool;
+  // Each tool owns its unfinished vertices, including Polygon ↔ Polyline switches.
   useEffect(() => {
     setPolygonDraftPoints([]);
-  }, [taskId]);
+  }, [s.tool, setPolygonDraftPoints]);
+  useEffect(() => {
+    setPolygonDraftPoints([]);
+  }, [taskId, setPolygonDraftPoints]);
 
   const submitPolygon = useCallback(
     (points: [number, number][]) => {
       if (blockIfLocked()) return;
       if (points.length < 3) {
         pushToast({ msg: "多边形需至少 3 个顶点", kind: "warning" });
+        return;
+      }
+      if (manualImageTool(s.tool)) {
+        if (beginManualDrawing({ kind: "polygon", geom: pointsBounds(points), points }))
+          setPolygonDraftPoints([]);
         return;
       }
       setPolygonDraftPoints([]);
@@ -324,18 +610,76 @@ export function useWorkbenchAnnotationActions({
       }
       s.setPendingDrawing({ kind: "polygon", geom: pointsBounds(points), points });
     },
-    [activeToolHasOwnClasses, blockIfLocked, createPolygonWithClass, pointsBounds, pushToast, s],
+    [
+      activeToolHasOwnClasses,
+      blockIfLocked,
+      beginManualDrawing,
+      createPolygonWithClass,
+      pointsBounds,
+      pushToast,
+      s,
+      setPolygonDraftPoints,
+    ],
   );
 
   const polygonHandle = useMemo<PolygonDraftHandle>(
     () => ({
       points: polygonDraftPoints,
-      addPoint: (pt) => setPolygonDraftPoints((p) => [...p, pt]),
-      close: () => submitPolygon(polygonDraftPoints),
+      addPoint: (pt) => {
+        if (!manualDraftRef.current && !isLocked) setPolygonDraftPoints((p) => [...p, pt]);
+      },
+      close: () => submitPolygon(getPolygonDraftPoints()),
       cancel: () => setPolygonDraftPoints([]),
       closed: true,
+      beforeInput: polygonBeforeInput,
+      boundaryTrace: {
+        getPoints: getPolygonDraftPoints,
+        append: (batch, expected) => {
+          if (
+            currentOwner.current !== owner ||
+            currentTool.current !== "polygon" ||
+            manualDraftRef.current ||
+            isLocked ||
+            getPolygonDraftPoints() !== expected
+          )
+            return false;
+          setPolygonDraftPoints([...expected, ...batch]);
+          return true;
+        },
+        readSource: async (id, signal) => {
+          if (!taskId || currentOwner.current !== owner || isLocked) return null;
+          const annotations = await tasksApi.getAnnotations(taskId, null, { signal });
+          if (signal.aborted || currentOwner.current !== owner) return null;
+          return (
+            annotations.find((annotation) => annotation.id === id && annotation.is_active) ?? null
+          );
+        },
+      },
+      autoPoints: {
+        getPoints: getPolygonDraftPoints,
+        beforeKey: polygonBeforeKey,
+        append: (batch, expected) => {
+          if (
+            manualDraftRef.current ||
+            isLocked ||
+            getPolygonDraftPoints() !== expected ||
+            expected.length + batch.length > POLYGON_AUTO_POINT_LIMIT
+          )
+            return false;
+          setPolygonDraftPoints([...expected, ...batch]);
+          return true;
+        },
+      },
     }),
-    [polygonDraftPoints, submitPolygon],
+    [
+      polygonDraftPoints,
+      submitPolygon,
+      isLocked,
+      getPolygonDraftPoints,
+      setPolygonDraftPoints,
+      owner,
+      taskId,
+    ],
   );
 
   // ── polyline 提交 (v0.10.28) ──────────────────────────────────────
@@ -346,6 +690,11 @@ export function useWorkbenchAnnotationActions({
         pushToast({ msg: "折线需至少 2 个顶点", kind: "warning" });
         return;
       }
+      if (manualImageTool(s.tool)) {
+        if (beginManualDrawing({ kind: "polyline", geom: pointsBounds(points), points }))
+          setPolygonDraftPoints([]);
+        return;
+      }
       setPolygonDraftPoints([]);
       if (!activeToolHasOwnClasses) {
         createPolylineWithClass(points, UNKNOWN_CLASS);
@@ -353,22 +702,38 @@ export function useWorkbenchAnnotationActions({
       }
       s.setPendingDrawing({ kind: "polyline", geom: pointsBounds(points), points });
     },
-    [activeToolHasOwnClasses, blockIfLocked, createPolylineWithClass, pointsBounds, pushToast, s],
+    [
+      activeToolHasOwnClasses,
+      blockIfLocked,
+      beginManualDrawing,
+      createPolylineWithClass,
+      pointsBounds,
+      pushToast,
+      s,
+      setPolygonDraftPoints,
+    ],
   );
 
   const polylineHandle = useMemo<PolygonDraftHandle>(
     () => ({
       points: polygonDraftPoints,
-      addPoint: (pt) => setPolygonDraftPoints((p) => [...p, pt]),
+      addPoint: (pt) => {
+        if (!manualDraftRef.current && !isLocked) setPolygonDraftPoints((p) => [...p, pt]);
+      },
       close: () => submitPolyline(polygonDraftPoints),
       cancel: () => setPolygonDraftPoints([]),
       closed: false,
     }),
-    [polygonDraftPoints, submitPolyline],
+    [polygonDraftPoints, submitPolyline, isLocked, setPolygonDraftPoints],
   );
 
   // ── v0.10.28 · keypoint 草稿 ──────────────────────────────────────────
   const [keypointDraftPoints, setKeypointDraftPoints] = useState<Keypoint[]>([]);
+  useEffect(() => {
+    if (!isLocked) return;
+    setPolygonDraftPoints([]);
+    setKeypointDraftPoints([]);
+  }, [isLocked, setPolygonDraftPoints]);
   useEffect(() => {
     if (s.tool !== "keypoint") setKeypointDraftPoints([]);
   }, [s.tool]);
@@ -384,6 +749,17 @@ export function useWorkbenchAnnotationActions({
     (points: Keypoint[]) => {
       if (blockIfLocked()) return;
       if (points.length === 0) return;
+      if (manualImageTool(s.tool)) {
+        if (
+          beginManualDrawing({
+            kind: "keypoint",
+            geom: pointsBounds(points.map((point) => [point.x, point.y])),
+            points,
+          })
+        )
+          setKeypointDraftPoints([]);
+        return;
+      }
       setKeypointDraftPoints([]);
       if (!activeToolHasOwnClasses) {
         createKeypointWithClass(points, UNKNOWN_CLASS);
@@ -395,7 +771,14 @@ export function useWorkbenchAnnotationActions({
         points,
       });
     },
-    [activeToolHasOwnClasses, blockIfLocked, createKeypointWithClass, pointsBounds, s],
+    [
+      activeToolHasOwnClasses,
+      blockIfLocked,
+      beginManualDrawing,
+      createKeypointWithClass,
+      pointsBounds,
+      s,
+    ],
   );
 
   // 放满 nodeCount 个点 → 自动提交一个实例。
@@ -409,11 +792,39 @@ export function useWorkbenchAnnotationActions({
     () => ({
       points: keypointDraftPoints,
       nodeCount: keypointNodeCount,
-      addPoint: (kp) => setKeypointDraftPoints((p) => [...p, kp]),
+      addPoint: (kp) => {
+        if (!manualDraftRef.current && !isLocked) setKeypointDraftPoints((p) => [...p, kp]);
+      },
       cancel: () => setKeypointDraftPoints([]),
     }),
-    [keypointDraftPoints, keypointNodeCount],
+    [keypointDraftPoints, keypointNodeCount, isLocked],
   );
+
+  const cancelManualDrawing = useCallback((): boolean => {
+    if (manualDraftRef.current?.creation?.phase === "saving") {
+      pushToast({ msg: "标注正在保存", sub: "保存完成后再继续", kind: "warning" });
+      return true;
+    }
+    if (manualDraftRef.current) {
+      publishManualDraft(null);
+      return true;
+    }
+    if (polygonDraftPoints.length) {
+      setPolygonDraftPoints([]);
+      return true;
+    }
+    if (keypointDraftPoints.length) {
+      setKeypointDraftPoints([]);
+      return true;
+    }
+    return false;
+  }, [
+    pushToast,
+    publishManualDraft,
+    polygonDraftPoints.length,
+    keypointDraftPoints.length,
+    setPolygonDraftPoints,
+  ]);
 
   const handleCommitKeypointGeometry = useCallback(
     (id: string, before: Keypoint[], after: Keypoint[]) => {
@@ -471,6 +882,7 @@ export function useWorkbenchAnnotationActions({
 
   const createBboxWithClass = useCallback(
     (geom: Geom, cls: string): boolean => {
+      if (s.tool === "box") return beginBboxDrawing(geom, cls);
       if (blockIfLocked()) return false;
       if (!cls) return false;
       const isUnknown = cls === UNKNOWN_CLASS;
@@ -498,6 +910,7 @@ export function useWorkbenchAnnotationActions({
     },
     [
       blockIfLocked,
+      beginBboxDrawing,
       s,
       mutations,
       history,
@@ -527,17 +940,9 @@ export function useWorkbenchAnnotationActions({
   // v0.10.28 · 旋转框: 轴对齐矩形 → angle=0 的 rotated_bbox，完成后统一弹类别选择。
   const createRotatedBbox = useCallback(
     (geom: Geom): boolean => {
-      if (blockIfLocked()) return false;
-      if (!activeToolHasOwnClasses) {
-        return createRotatedBboxWithClass(geom, UNKNOWN_CLASS);
-      }
-      s.setPendingDrawing({
-        kind: "rotated_bbox",
-        geom,
-      });
-      return true;
+      return beginManualDrawing({ kind: "rotated_bbox", geom });
     },
-    [activeToolHasOwnClasses, blockIfLocked, createRotatedBboxWithClass, s],
+    [beginManualDrawing],
   );
 
   // v0.10.28 · 旋转框: 旋转 / 缩放手柄落定时更新 rotated_bbox geometry。
@@ -604,6 +1009,23 @@ export function useWorkbenchAnnotationActions({
       const pending = s.pendingDrawing;
       if (!pending || !cls) return;
       if (pending.kind?.startsWith("video_")) return;
+      if (pending.creation) {
+        if (
+          manualDraftRef.current?.creation?.id !== pending.creation.id ||
+          pending.creation.phase === "saving"
+        )
+          return;
+        const draft = {
+          ...pending.creation,
+          className: cls,
+          attributes: creationAttributeDefaults(
+            attributeSchemaForUnit(toolBindings, pending.creation.toolUnitId),
+            cls,
+          ),
+        };
+        submitManual({ ...pending, creation: draft });
+        return;
+      }
       s.setPendingDrawing(null);
       switch (pending.kind) {
         case "rotated_bbox":
@@ -629,6 +1051,8 @@ export function useWorkbenchAnnotationActions({
       createPolylineWithClass,
       createRotatedBboxWithClass,
       s,
+      toolBindings,
+      submitManual,
     ],
   );
 
@@ -954,6 +1378,14 @@ export function useWorkbenchAnnotationActions({
 
   return {
     optimisticEnqueueCreate,
+    beginBboxDrawing,
+    submitManualDrawing,
+    changeManualAttributes,
+    cancelManualDrawing,
+    hasManualDraft:
+      !!s.pendingDrawing?.creation ||
+      polygonDraftPoints.length > 0 ||
+      keypointDraftPoints.length > 0,
     createBboxWithClass,
     createRotatedBbox,
     handleCommitRotateBbox,

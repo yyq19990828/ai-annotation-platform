@@ -1,4 +1,12 @@
-import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useCallback } from "react";
+import {
+  useInfiniteQuery,
+  useQuery,
+  useMutation,
+  useQueryClient,
+  type MutateOptions,
+  type UseMutationResult,
+} from "@tanstack/react-query";
 import {
   tasksApi,
   type AnnotationPayload,
@@ -90,13 +98,44 @@ export function useAnnotations(
   });
 }
 
-export function useCreateAnnotation(taskId: string | undefined, videoSegmentId?: string | null) {
-  const qc = useQueryClient();
-  const queryKey = videoSegmentId
+interface CreateAnnotationVariables {
+  readonly taskId: string | undefined;
+  readonly videoSegmentId: string | null | undefined;
+  readonly payload: AnnotationPayload;
+}
+
+interface CreateAnnotationContext {
+  prev: AnnotationResponse[] | undefined;
+  tmpId: string | undefined;
+}
+
+type CreateAnnotationOptions = MutateOptions<
+  AnnotationResponse,
+  Error,
+  AnnotationPayload,
+  CreateAnnotationContext
+>;
+
+function createAnnotationQueryKey({ taskId, videoSegmentId }: CreateAnnotationVariables) {
+  return videoSegmentId
     ? (["annotations", taskId, videoSegmentId] as const)
     : (["annotations", taskId] as const);
-  return useMutation({
-    mutationFn: (payload: AnnotationPayload) => {
+}
+
+export function useCreateAnnotation(taskId: string | undefined, videoSegmentId?: string | null) {
+  const qc = useQueryClient();
+  const mutation = useMutation<
+    AnnotationResponse,
+    Error,
+    CreateAnnotationVariables,
+    CreateAnnotationContext
+  >({
+    // Transport failures must reach the existing durable offline queue instead
+    // of leaving a creation draft paused indefinitely inside TanStack Query.
+    networkMode: "always",
+    // Pending mutations receive new options after a rerender. Their variables
+    // retain the submitted owner, including while onMutate awaits cancellation.
+    mutationFn: ({ taskId, videoSegmentId, payload }) => {
       if (!taskId) throw new Error("No task selected");
       return tasksApi.createAnnotation(
         taskId,
@@ -104,8 +143,10 @@ export function useCreateAnnotation(taskId: string | undefined, videoSegmentId?:
       );
     },
     // B-19：乐观写入 tmp 条目，避免 pendingDrawing 被清后到 refetch 返回前出现空白闪烁。
-    onMutate: async (payload) => {
+    onMutate: async (variables) => {
+      const { taskId, videoSegmentId, payload } = variables;
       if (!taskId) return { prev: undefined, tmpId: undefined };
+      const queryKey = createAnnotationQueryKey(variables);
       await qc.cancelQueries({ queryKey });
       const prev = qc.getQueryData<AnnotationResponse[]>(queryKey);
       const tmpId = `tmp_${randomId()}`;
@@ -133,17 +174,28 @@ export function useCreateAnnotation(taskId: string | undefined, videoSegmentId?:
       qc.setQueryData<AnnotationResponse[]>(queryKey, (old) => [...(old ?? []), optimistic]);
       return { prev, tmpId };
     },
-    onError: (_err, _payload, ctx) => {
+    onError: (_err, variables, ctx) => {
       // rollback；offline fallback（optimisticEnqueueCreate）会在同一同步流程内重新写入 tmp 条目，不会出现可见闪烁。
-      if (ctx?.prev !== undefined) qc.setQueryData(queryKey, ctx.prev);
-    },
-    onSuccess: (created, _payload, ctx) => {
+      // Other requests or a refetch may have updated this cache since onMutate.
       if (ctx?.tmpId) {
-        qc.setQueryData<AnnotationResponse[]>(queryKey, (old) =>
-          (old ?? []).map((a) =>
-            a.id === ctx.tmpId ? { ...created, render_key: a.render_key ?? ctx.tmpId } : a,
-          ),
+        qc.setQueryData<AnnotationResponse[]>(createAnnotationQueryKey(variables), (old) =>
+          old?.filter((annotation) => annotation.id !== ctx.tmpId),
         );
+      }
+    },
+    onSuccess: (created, variables, ctx) => {
+      if (ctx?.tmpId) {
+        qc.setQueryData<AnnotationResponse[]>(createAnnotationQueryKey(variables), (old = []) => {
+          // Returning to the task can refetch away the optimistic row, or already
+          // fetch the created annotation. Keep newer cache data and avoid duplicates.
+          if (old.some((annotation) => annotation.id === created.id))
+            return old.filter((annotation) => annotation.id !== ctx.tmpId);
+          const optimistic = old.find((annotation) => annotation.id === ctx.tmpId);
+          const saved = { ...created, render_key: optimistic?.render_key ?? ctx.tmpId };
+          return optimistic
+            ? old.map((annotation) => (annotation.id === ctx.tmpId ? saved : annotation))
+            : [...old, saved];
+        });
       }
       qc.invalidateQueries({ queryKey: ["tasks"] });
       qc.invalidateQueries({ queryKey: ["scene-timeline"] });
@@ -151,6 +203,36 @@ export function useCreateAnnotation(taskId: string | undefined, videoSegmentId?:
       qc.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
+  const { mutateAsync: runMutation } = mutation;
+  const mutateAsync = useCallback(
+    (payload: AnnotationPayload, options?: CreateAnnotationOptions) =>
+      runMutation(
+        { taskId, videoSegmentId, payload },
+        options && {
+          onSuccess: (created, variables, context, mutationContext) =>
+            options.onSuccess?.(created, variables.payload, context, mutationContext),
+          onError: (error, variables, context, mutationContext) =>
+            options.onError?.(error, variables.payload, context, mutationContext),
+          onSettled: (created, error, variables, context, mutationContext) =>
+            options.onSettled?.(created, error, variables.payload, context, mutationContext),
+        },
+      ),
+    [runMutation, taskId, videoSegmentId],
+  );
+  const mutate = useCallback(
+    (payload: AnnotationPayload, options?: CreateAnnotationOptions) => {
+      // Match useMutation's fire-and-forget API; mutateAsync still rejects.
+      void mutateAsync(payload, options).catch(() => undefined);
+    },
+    [mutateAsync],
+  );
+  // Unwrap only variables; TanStack still owns status, callbacks and reset behavior.
+  return {
+    ...mutation,
+    variables: mutation.variables?.payload,
+    mutate,
+    mutateAsync,
+  } as UseMutationResult<AnnotationResponse, Error, AnnotationPayload, CreateAnnotationContext>;
 }
 
 export function useDeleteAnnotation(taskId: string | undefined, videoSegmentId?: string | null) {

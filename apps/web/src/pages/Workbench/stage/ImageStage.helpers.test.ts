@@ -1,6 +1,7 @@
 // v0.16.x 第 2 批 · ImageStage 纯几何函数测试守护(伴随从 toImg 提炼,锁定逆变换公式)。
 import { describe, it, expect } from "vitest";
 import {
+  imageBoxFromDrag,
   isNormalizedImagePoint,
   normalizeImageCoordinate,
   resolveSnapMatch,
@@ -8,6 +9,53 @@ import {
   siblingHighlightChildren,
 } from "./ImageStage.helpers";
 import type { Pt } from "./polygonGeom";
+
+describe("imageBoxFromDrag", () => {
+  it.each([
+    [0.7, 0.6],
+    [0.3, 0.6],
+    [0.3, 0.4],
+    [0.7, 0.4],
+  ])("keeps the down point at the center for endpoint %s,%s", (cx, cy) => {
+    const box = imageBoxFromDrag({ sx: 0.5, sy: 0.5, cx, cy, fromCenter: true });
+    expect(box.x + box.w / 2).toBeCloseTo(0.5);
+    expect(box.y + box.h / 2).toBeCloseTo(0.5);
+    expect(box.w).toBeCloseTo(0.4);
+    expect(box.h).toBeCloseTo(0.2);
+  });
+
+  it.each([
+    [0.05, 0.5],
+    [0.95, 0.5],
+    [0.5, 0.05],
+    [0.5, 0.95],
+  ])("limits both sides symmetrically near image boundary %s,%s", (sx, sy) => {
+    for (const [cx, cy] of [
+      [-1, -1],
+      [2, 2],
+    ]) {
+      const box = imageBoxFromDrag({ sx, sy, cx, cy, fromCenter: true });
+      expect(box.x + box.w / 2).toBeCloseTo(sx);
+      expect(box.y + box.h / 2).toBeCloseTo(sy);
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.y).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.w).toBeLessThanOrEqual(1);
+      expect(box.y + box.h).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("retains ordinary corner geometry and zero movement", () => {
+    const corner = imageBoxFromDrag({ sx: 0.7, sy: 0.6, cx: 0.2, cy: 0.1 });
+    expect(corner).toMatchObject({ x: 0.2, y: 0.1, h: 0.5 });
+    expect(corner.w).toBeCloseTo(0.5);
+    expect(imageBoxFromDrag({ sx: 0.4, sy: 0.3, cx: 0.4, cy: 0.3, fromCenter: true })).toEqual({
+      x: 0.4,
+      y: 0.3,
+      w: 0,
+      h: 0,
+    });
+  });
+});
 
 describe("siblingHighlightChildren", () => {
   const boxes = [

@@ -25,6 +25,8 @@ interface BuildImageContextMenuItemsArgs {
   onChangeClass?: (id: string) => void;
   onJoinSelected?: () => void;
   onCropSelected?: (baseId: string) => void;
+  onSlicePolygon?: (annotation: Annotation) => void;
+  sliceDisabledReason?: string | null;
   onDelete?: (id: string) => void;
   onPatchFlag?: (
     id: string,
@@ -79,6 +81,8 @@ export function buildImageContextMenuItems({
   onChangeClass,
   onJoinSelected,
   onCropSelected,
+  onSlicePolygon,
+  sliceDisabledReason,
   onDelete,
   onPatchFlag,
   secondaryBarHidden,
@@ -147,6 +151,19 @@ export function buildImageContextMenuItems({
       onSelect: () => onCropSelected?.(annotation.id),
     },
   ];
+
+  if (
+    onSlicePolygon &&
+    (annotation.geometry?.type === "polygon" || annotation.geometry?.type === "multi_polygon")
+  ) {
+    items.push({
+      id: "slice-polygon",
+      label: sliceDisabledReason ? `切割多边形（${sliceDisabledReason}）` : "切割多边形",
+      icon: "scissors",
+      disabled: shapeMutationDisabled || !!sliceDisabledReason,
+      onSelect: () => onSlicePolygon(annotation),
+    });
+  }
 
   items.push(
     { id: "state-divider", divider: true, label: "" },

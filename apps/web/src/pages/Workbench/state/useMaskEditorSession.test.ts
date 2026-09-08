@@ -181,6 +181,37 @@ describe("useMaskEditorSession · dirty leave guard", () => {
     expect(promptMaskLeaveChoice(vi.fn(() => false))).toBe("continue");
   });
 
+  it("区域预览尚未应用时仍属于旧会话，切换取消保留预览", async () => {
+    const onLeaveDirty = vi.fn(async () => "continue" as const);
+    const { result, rerender } = renderSession({ sessionKey: KEY_A, onLeaveDirty });
+    await act(async () => {
+      result.current.loadRle(result.current.generation, {
+        encoding: "coco_rle",
+        size: [20, 20],
+        counts: [0, 1, 399],
+      });
+      expect(
+        await result.current.runOperation("dilate", {
+          type: "morphology",
+          operation: "dilate",
+          kernelShape: "disk",
+          radius: 1,
+        }),
+      ).toBe(true);
+    });
+    expect(result.current.dirty).toBe(false);
+    const preview = result.current.operationPreview;
+    expect(preview).not.toBeNull();
+    const generation = result.current.generation;
+    rerender({ sessionKey: KEY_B, onLeaveDirty });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(onLeaveDirty).toHaveBeenCalledWith(KEY_A, KEY_B);
+    expect(result.current.generation).toBe(generation);
+    expect(result.current.operationPreview).toBe(preview);
+  });
+
   it("实例预览即使 Buffer 未变也会阻止切换 session", async () => {
     const onLeaveDirty = vi.fn(async () => "continue" as const);
     const { result, rerender } = renderSession({ sessionKey: KEY_A, onLeaveDirty });

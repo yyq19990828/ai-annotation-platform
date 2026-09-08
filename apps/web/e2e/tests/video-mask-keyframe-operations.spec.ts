@@ -146,7 +146,7 @@ test("视频 Mask 关键帧复制、outside、删除撤销与组件拆轨保持�
   const materialized = page.waitForResponse((response) =>
     isKeyframeResponse(response, taskId, source.id, 1, "PUT"),
   );
-  await toolbar.getByRole("button", { name: "确认", exact: true }).click();
+  await toolbar.getByTestId("mask-primary-action").click();
   expect((await materialized).status()).toBe(200);
   // 网络响应先于保存成功后的会话清理；等 UI 真正回到选择态再发起下一项操作。
   await expect(toolbar).toBeHidden({ timeout: 10_000 });
@@ -167,7 +167,7 @@ test("视频 Mask 关键帧复制、outside、删除撤销与组件拆轨保持�
   await expect(toolbar).toContainText("待原子提交");
   expect(mutationWrites).toBe(0);
   const copiedTrack = page.waitForResponse((response) => isMutationResponse(response, taskId));
-  await toolbar.getByRole("button", { name: "原子提交" }).click();
+  await toolbar.getByTestId("mask-primary-action").click();
   const copyResponse = await copiedTrack;
   expect(copyResponse.status(), await copyResponse.text()).toBe(200);
   expect(copyResponse.request().postDataJSON()).toMatchObject({
@@ -201,8 +201,13 @@ test("视频 Mask 关键帧复制、outside、删除撤销与组件拆轨保持�
   const deleteResponse = await deleted;
   expect(deleteResponse.status(), await deleteResponse.text()).toBe(200);
   expect((await deleteResponse.allHeaders())["x-resolved-keyframe-frame"]).toBe("0");
-  await expect(page.getByText(/当前帧保持 F0 的 Mask/)).toBeVisible();
+  await expect(page.getByTestId("video-track-context-state")).toHaveAttribute("data-state", "held");
+  await expect(page.getByTestId("video-track-context-source")).toContainText("保持自 F0");
 
+  // The context bar intentionally owns its own keyboard controls; return focus to the
+  // workbench's Mask editor before sending the global undo shortcut.
+  await page.getByTestId("mask-toolbar").getByText("Mask 编辑", { exact: true }).click();
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   const undone = page.waitForResponse((response) =>
     isKeyframeResponse(response, taskId, source.id, 1, "PUT"),
   );
@@ -210,13 +215,16 @@ test("视频 Mask 关键帧复制、outside、删除撤销与组件拆轨保持�
   const undoResponse = await undone;
   expect(undoResponse.status(), await undoResponse.text()).toBe(200);
   expect(undoResponse.request().postDataJSON()).toMatchObject({ source: "manual" });
-  await expect(page.getByText("当前帧为 Mask 关键帧。")).toBeVisible();
+  await expect(page.getByTestId("video-track-context-state")).toHaveAttribute(
+    "data-state",
+    "keyframe",
+  );
 
   await page.getByRole("button", { name: "组件拆轨" }).click();
   await expect(toolbar).toContainText("拆分组件", { timeout: 15_000 });
   await expect(toolbar).toContainText("1 个来源 → 3 个结果");
   const split = page.waitForResponse((response) => isMutationResponse(response, taskId));
-  await toolbar.getByRole("button", { name: "原子提交" }).click();
+  await toolbar.getByTestId("mask-primary-action").click();
   const splitResponse = await split;
   expect(splitResponse.status(), await splitResponse.text()).toBe(200);
   expect(splitResponse.request().postDataJSON()).toMatchObject({

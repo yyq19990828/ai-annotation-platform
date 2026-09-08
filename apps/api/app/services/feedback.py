@@ -12,10 +12,14 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import HTTPException
+from pydantic import ValidationError
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.annotation_feedback import AnnotationFeedback
+from app.db.models.annotation import Annotation
+from app.db.models.task import Task
+from app.schemas.annotation_feedback import FeedbackAnchorPosition
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +44,31 @@ class FeedbackService:
         attachments: list[dict],
         thread_parent_id: uuid.UUID | None,
     ) -> AnnotationFeedback:
+        if anchor_position and anchor_position.get("video_context") is not None:
+            # A reply copies a persisted anchor, including future versions or a
+            # reference whose object/media has since changed. It never edits it.
+            parent = (
+                await self.db.get(AnnotationFeedback, thread_parent_id)
+                if kind == "comment" and thread_parent_id is not None
+                else None
+            )
+            inherits_anchor = (
+                parent is not None
+                and parent.is_active
+                and parent.anchor_type == anchor_type
+                and parent.project_id == project_id
+                and parent.task_id == task_id
+                and parent.annotation_id == annotation_id
+                and parent.anchor_position == anchor_position
+            )
+            if not inherits_anchor:
+                await self._validate_video_context(
+                    anchor_type=anchor_type,
+                    project_id=project_id,
+                    task_id=task_id,
+                    annotation_id=annotation_id,
+                    anchor_position=anchor_position,
+                )
         entry = AnnotationFeedback(
             kind=kind,
             anchor_type=anchor_type,
@@ -59,6 +88,96 @@ class FeedbackService:
         self.db.add(entry)
         await self.db.flush()
         return entry
+
+    async def _validate_video_context(
+        self,
+        *,
+        anchor_type: str,
+        project_id: uuid.UUID,
+        task_id: uuid.UUID | None,
+        annotation_id: uuid.UUID | None,
+        anchor_position: dict,
+    ) -> None:
+        if anchor_type != "pixel" or task_id is None:
+            raise HTTPException(
+                status_code=422, detail="video_context requires a task pixel anchor"
+            )
+        try:
+            anchor = FeedbackAnchorPosition.model_validate(anchor_position)
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=422, detail="Invalid video_context anchor"
+            ) from exc
+        context = anchor.video_context
+        if (
+            context is None
+            or anchor.x is None
+            or anchor.y is None
+            or anchor.frame is None
+        ):
+            raise HTTPException(
+                status_code=422, detail="video_context requires x, y and frame"
+            )
+        if context.annotation_version is not None and annotation_id is None:
+            raise HTTPException(
+                status_code=422, detail="annotation_version requires annotation_id"
+            )
+
+        task = await self.db.get(Task, task_id)
+        if task is None:
+            raise HTTPException(status_code=404, detail="Task not found")
+        if task.project_id != project_id:
+            raise HTTPException(
+                status_code=422, detail="Feedback task does not belong to project"
+            )
+        if task.file_type != "video":
+            raise HTTPException(
+                status_code=422, detail="video_context requires a video task"
+            )
+        if annotation_id is not None:
+            annotation = await self.db.get(Annotation, annotation_id)
+            if (
+                annotation is None
+                or not annotation.is_active
+                or annotation.was_cancelled
+            ):
+                raise HTTPException(status_code=404, detail="Annotation not found")
+            if annotation.task_id != task_id or annotation.project_id != project_id:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Feedback annotation does not belong to task",
+                )
+            # annotation_version is the captured version, not an optimistic-lock precondition.
+
+        from app.services.video_frame_service import build_context_from_task
+
+        media = await build_context_from_task(self.db, task)
+        frame_count = media.metadata.frame_count
+        if frame_count is None or frame_count < 1:
+            raise HTTPException(status_code=503, detail="Video metadata not ready")
+        last_frame = frame_count - 1
+        if anchor.frame > last_frame:
+            raise HTTPException(
+                status_code=422, detail="Feedback frame is outside video"
+            )
+        frame_range = context.frame_range
+        if frame_range is not None and not (
+            0
+            <= frame_range.from_frame
+            <= anchor.frame
+            <= frame_range.to_frame
+            <= last_frame
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="Feedback frame range must contain frame within video",
+            )
+        window = context.timeline_window
+        if window is not None and not (0 <= window.from_ <= window.to <= last_frame):
+            raise HTTPException(
+                status_code=422,
+                detail="Feedback timeline window is outside video or unordered",
+            )
 
     async def patch(
         self,

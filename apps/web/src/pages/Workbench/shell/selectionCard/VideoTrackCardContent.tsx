@@ -11,12 +11,7 @@ import { getTrackColor } from "../../stage/colors";
 import { resolveTrackAtFrame, shortTrackId, sortedKeyframes } from "../../stage/videoStageGeometry";
 import { isFrameOutside } from "../../stage/videoTrackOutside";
 import { nextKeyframeFrame, prevKeyframeFrame } from "../../stage/videoTrackTimeline";
-import {
-  frameRange,
-  keyframeStatus,
-  nextPredictionFrame,
-  sourceChipText,
-} from "../../stage/videoTrackFormat";
+import { frameRange, keyframeStatus, nextPredictionFrame } from "../../stage/videoTrackFormat";
 import { VideoAttributesEditor } from "../../stage/VideoAttributesEditor";
 import { VideoTrackerJobBadge } from "../../stage/VideoTrackerJobBadge";
 import {
@@ -230,13 +225,6 @@ export function VideoTrackCardContent({
   const resolved = resolveTrackAtFrame(geom, frameIndex);
   const currentKeyframe = geom.keyframes.find((kf) => kf.frame_index === frameIndex) ?? null;
   const currentFrameHasKeyframe = resolved !== null;
-  const frameStatusText = currentFrameOutside
-    ? "消失"
-    : currentKeyframe?.occluded
-      ? "遮挡"
-      : currentKeyframe
-        ? "关键帧"
-        : "非关键帧";
   const occluded = !currentFrameOutside && Boolean(currentKeyframe?.occluded);
 
   const trackMetrics: Metric[] = [
@@ -244,8 +232,6 @@ export function VideoTrackCardContent({
     { label: "范围", value: frameRange(geom.keyframes.map((kf) => kf.frame_index)) },
   ];
   const currentMetrics: Metric[] = [
-    { label: "状态", value: frameStatusText },
-    { label: "来源", value: sourceChipText(resolved?.source ?? null) },
     ...(resolved
       ? geometryMetrics(
           {

@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useLayoutEffect,
   useEffect,
   useMemo,
   useRef,
@@ -7,10 +8,14 @@ import {
   type ComponentProps,
   type ReactNode,
 } from "react";
-import { isWorkbenchSettingsInteractionBlocked } from "./workbenchSettingsInteraction";
+import { isWorkbenchInteractionBlocked } from "./workbenchInteractionGuards";
+import { useWorkbenchAiRequest } from "./useWorkbenchAiRequest";
+import { useVideoToolCommands } from "./useVideoToolCommands";
+import { markVariantHot } from "./sessionVariantCache";
 import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useIsMutating, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToastStore } from "@/components/ui/Toast";
+import { annotationSlicesApi, type PolygonSliceCommitRequest } from "@/api/annotationSlices";
 import { randomId } from "@/utils/id";
 import {
   AlertDialog,
@@ -79,11 +84,15 @@ import { publishTaskBoxCount } from "@/components/PerfHud/useTaskBoxCount";
 import { useWorkbenchState, type VideoTool } from "./useWorkbenchState";
 import { usePendingGeom } from "./usePendingGeom";
 import { useToolBindings, classesForUnit, attributeSchemaForUnit } from "./useToolBindings";
-import { videoToolUnit, videoToolEnabled } from "../stage/videoToolUnits";
+import { MANUAL_IMAGE_TOOLS, manualImageTool, continuousIntentError } from "./manualImageCreation";
+import { ManualCreationPopover } from "../shell/ManualCreationPopover";
+import { videoToolUnit, videoToolEnabled, type VideoToolSelection } from "../stage/videoToolUnits";
 import type { ToolUnitId } from "@/constants/toolUnits";
 import type { AttributeField, ToolBinding, ToolBindings } from "@/api/projects";
 import { useViewportTransform } from "./useViewportTransform";
 import { useIssuePins } from "./useIssuePins";
+import { useVideoIssueNavigation } from "./useVideoIssueNavigation";
+import { useActiveIssueStore } from "./useActiveIssueStore";
 import {
   useMaskQcReview,
   collectMaskQcTrackerCandidates,
@@ -96,6 +105,7 @@ import { useAnnotationHistory, type VideoMaskFrameState } from "./useAnnotationH
 import { useRecentClasses } from "./useRecentClasses";
 import { useSessionStats } from "./useSessionStats";
 import { useWorkbenchHotkeys } from "./useWorkbenchHotkeys";
+import { isSamCandidateHotkeyBlocked } from "./hotkeys";
 import { useCanvasDraftPersistence } from "./useCanvasDraftPersistence";
 import { useWorkbenchTaskFlow } from "./useWorkbenchTaskFlow";
 import {
@@ -125,6 +135,7 @@ import { SecondaryInferenceBar } from "../shell/SecondaryInferenceBar";
 import { useSecondaryBarHiddenPref } from "./useSecondaryBarHiddenPref";
 import { IssueCreateModal } from "../shell/IssueCreateModal";
 import { isAIToolId, TOOL_REGISTRY, type ToolId } from "../stage/tools";
+import { toolUnitForGeometryType } from "../stage/tools/toolUnits";
 import {
   resolveSamCandidateClass,
   samCandidateDisplayShapes,
@@ -182,6 +193,7 @@ import { aiBoxOnFrame } from "../stage/aiBoxFrames";
 import type { AnnotationCommentAnchor } from "@/api/comments";
 import { useUpdateVideoChapter, useVideoChapters } from "@/hooks/useVideoChapters";
 import { useVideoTrackerJobs } from "@/hooks/useVideoTrackerJobs";
+import { referenceReviewInstanceIds } from "@/hooks/videoTrackerReviewScope";
 import type { VideoTrackAnnotation } from "../stage/videoStageTypes";
 import type { StageKind } from "../stages/types";
 import {
@@ -232,6 +244,7 @@ import {
 import type { UseMaskEditorReturn } from "./useMaskEditor";
 import { canCommitMask, canEditMask, maskEditBlockReason } from "./canEditMask";
 import { MaskToolbar } from "../shell/MaskToolbar";
+import { useMaskPrimaryActionOwner } from "./useMaskPrimaryActionOwner";
 import {
   upsertVideoMaskKeyframe,
   useVideoAnnotationActions,
@@ -245,6 +258,7 @@ import {
 import {
   maskAlphasIntersect,
   maskMutationExpectedVersions,
+  maskSliceUnavailableReason,
   maskMutationScopeFingerprint,
   maskMutationScopeMembers,
   subtractMaskAlpha,
@@ -359,6 +373,8 @@ interface WorkbenchShellIssueSection {
   issuePinDropArmed: boolean;
   onOpenList: () => void;
   onToggleIssuePinDrop: () => void;
+  issueNavigation: ReturnType<typeof useIssuePins>["issueNavigation"];
+  onRetryIssueNavigation: () => Promise<void>;
   createModal: ComponentProps<typeof IssueCreateModal>;
 }
 
@@ -464,7 +480,12 @@ export function useWorkbenchShellModel({
     taskNavigationScheduler.activate();
     return () => taskNavigationScheduler.dispose();
   }, [taskNavigationScheduler]);
+  const cancelVideoIssueNavigationRef = useRef<() => void>(() => {});
+  const videoLeaveGuardRef = useRef<(isRelevant: () => boolean) => Promise<boolean>>(
+    async () => true,
+  );
   const onBack = useCallback(() => {
+    cancelVideoIssueNavigationRef.current();
     void maskNavigationGuardRef.current().then((allowed) => {
       if (allowed) navigate(backTarget);
     });
@@ -644,6 +665,7 @@ export function useWorkbenchShellModel({
   const setTool = s.setTool;
   const videoTool = s.videoTool;
   const setVideoTool = s.setVideoTool;
+  const setVideoToolSelection = s.setVideoToolSelection;
   const videoFrameIndex = s.videoFrameIndex;
   const setVideoFrameIndex = s.setVideoFrameIndex;
   useEffect(() => {
@@ -665,9 +687,6 @@ export function useWorkbenchShellModel({
   // v0.15.3 · 工作台设置窗口(齿轮菜单入口)。
   const [workbenchSettingsOpen, setWorkbenchSettingsOpen] = useState(false);
   const workspaceCommands = useRef<WorkbenchWorkspaceCommands>(null);
-  // v0.21.4 · 视频单题 AI(当前帧→图像 backend)是同步 fetch(非 triggerPreannotation mutation),
-  // 单独一个运行态并入 aiRunning, 供 popover 转圈 + 防重复点击。
-  const [videoFrameAiRunning, setVideoFrameAiRunning] = useState(false);
   const [stageGeom, setStageGeom] = useState<{
     imgW: number;
     imgH: number;
@@ -727,8 +746,14 @@ export function useWorkbenchShellModel({
   const selectTask = useCallback(
     async (
       id: string,
-      opts: { replace?: boolean; signal?: AbortSignal; scenePreview?: boolean } = {},
+      opts: {
+        replace?: boolean;
+        signal?: AbortSignal;
+        scenePreview?: boolean;
+        issueRestore?: boolean;
+      } = {},
     ): Promise<boolean> => {
+      if (!opts.issueRestore) cancelVideoIssueNavigationRef.current();
       if (!opts.scenePreview) setScenePlayback(false);
       const generation = ensurePointCloudNavigationGeneration(id, "shell");
       const before = navigationIdentityRef.current;
@@ -744,6 +769,12 @@ export function useWorkbenchShellModel({
         pending: true,
       });
       return taskNavigationScheduler.schedule(id, async (navigationSignal) => {
+        if (
+          !(await videoLeaveGuardRef.current(
+            () => !navigationSignal.aborted && !opts.signal?.aborted,
+          ))
+        )
+          return false;
         const allowed = await commitAfterNavigationGuard(
           maskNavigationGuardRef.current,
           [navigationSignal, opts.signal],
@@ -955,10 +986,15 @@ export function useWorkbenchShellModel({
   >([]);
   // 落点/画框模式: point → smart-point 落点, box → smart-box 画修正框。
   const [seedMode, setSeedMode] = useState<"point" | "box">("point");
+  const seedModeRef = useRef(seedMode);
+  seedModeRef.current = seedMode;
   const [seedObj, setSeedObj] = useState(1);
   const [seedAnchorFrame, setSeedAnchorFrame] = useState<number | null>(null);
   const [seedCollecting, setSeedCollecting] = useState(false);
-  const seedPrevToolRef = useRef<VideoTool | null>(null);
+  const seedPrevToolRef = useRef<VideoToolSelection | null>(null);
+  const requestVideoSeedToolRef = useRef<
+    ReturnType<typeof useVideoToolCommands>["requestTemporaryTool"]
+  >(() => {});
   // 当前创建工具被 video_modes 过滤掉时, 回到选择工具；平移不再是 fallback 工具。
   // v0.21.27 · U-pvs-1 · PVS 种子采集态会临时把工具切到 smart-point (画布 samProbe 只看
   // 工具值、不看 enablement), 此时不受本守卫回收 —— 否则未绑交互工具的项目落不了种子。
@@ -970,7 +1006,7 @@ export function useWorkbenchShellModel({
     if (!isVideoTask) return;
     if (videoChaptersData.length === 0) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (isWorkbenchSettingsInteractionBlocked(e)) return;
+      if (isWorkbenchInteractionBlocked(e)) return;
       if (e.key !== "PageUp" && e.key !== "PageDown") return;
       const active = document.activeElement;
       if (active instanceof HTMLElement) {
@@ -1006,11 +1042,20 @@ export function useWorkbenchShellModel({
   // 「落点选目标」进入采集态, 画布点击落归一化种子点 (复用 smart-point 手势 →
   // onVideoSamPrompt), 提交时进 prompt.seeds。seedPrevToolRef 记录进入前的工具, 退出时
   // 仅在真进过采集态时复原 (避免误改工具)。
+  const propagateDialogRef = useRef(propagateDialog);
+  propagateDialogRef.current = propagateDialog;
   const startSeedCollecting = useCallback(() => {
-    seedPrevToolRef.current = s.videoTool;
-    setVideoTool(seedMode === "box" ? "smart-box" : "smart-point");
-    setSeedCollecting(true);
-  }, [s.videoTool, setVideoTool, seedMode]);
+    const sourceDialog = propagateDialog;
+    if (!sourceDialog) return;
+    requestVideoSeedToolRef.current(
+      seedMode === "box" ? "smart-box" : "smart-point",
+      (previous) => {
+        seedPrevToolRef.current = previous;
+        setSeedCollecting(true);
+      },
+      () => propagateDialogRef.current === sourceDialog && seedModeRef.current === seedMode,
+    );
+  }, [propagateDialog, seedMode]);
   // 点/框模式切换: 采集中即时切工具 (smart-point ↔ smart-box), 未采集只记模式。
   const changeSeedMode = useCallback(
     (mode: "point" | "box") => {
@@ -1021,11 +1066,11 @@ export function useWorkbenchShellModel({
   );
   const stopSeedCollecting = useCallback(() => {
     if (seedPrevToolRef.current !== null) {
-      setVideoTool(seedPrevToolRef.current);
+      setVideoToolSelection(seedPrevToolRef.current);
       seedPrevToolRef.current = null;
     }
     setSeedCollecting(false);
-  }, [setVideoTool]);
+  }, [setVideoToolSelection]);
   const toggleSeedCollecting = useCallback(() => {
     if (seedCollecting) stopSeedCollecting();
     else startSeedCollecting();
@@ -1287,6 +1332,7 @@ export function useWorkbenchShellModel({
 
   const handleSelectBatch = useCallback(
     (batchId: string | null) => {
+      cancelVideoIssueNavigationRef.current();
       void maskNavigationGuardRef.current().then((allowed) => {
         if (!allowed) return;
         pendingLocalTaskIdRef.current = null;
@@ -1501,7 +1547,7 @@ export function useWorkbenchShellModel({
   useEffect(() => {
     if (!isVideoTask) return;
     const onKey = (e: KeyboardEvent) => {
-      if (isWorkbenchSettingsInteractionBlocked(e)) return;
+      if (isWorkbenchInteractionBlocked(e)) return;
       if (e.key !== "T" || !e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
       const active = document.activeElement;
       if (active instanceof HTMLElement) {
@@ -1598,20 +1644,95 @@ export function useWorkbenchShellModel({
   );
   const bulkUpdateMut = useAnnotationBulkUpdate(taskId ?? "");
 
+  // Video playback, checked Issue navigation and current-frame AI share the same Stage.
+  const videoControlsRef = useRef<VideoStageControls | null>(null);
+  const requestIssueFrameRef = useRef<ReturnType<typeof useVideoToolCommands>["requestFrameReady"]>(
+    async (frameIndex) => ({ status: "unavailable", frameIndex, source: null }),
+  );
+  const videoIssueNavigation = useVideoIssueNavigation({
+    projectId,
+    taskId,
+    requestedTaskId,
+    annotationsReady,
+    annotations: annotationsData ?? [],
+    frameCount: videoFrameCount,
+    controlsRef: videoControlsRef,
+    selectTask: (id, signal) => selectTask(id, { signal, issueRestore: true }),
+    seekFrame: (frame, isRelevant) => requestIssueFrameRef.current(frame, isRelevant),
+    selectObject: s.setSelectedId,
+    cacheTargetTask: (target) => queryClient.setQueryData(["task", target.id], target),
+  });
+  cancelVideoIssueNavigationRef.current = videoIssueNavigation.cancel;
   const {
     issueCreateOpen,
-    setIssueCreateOpen,
     issuePinDropArmed,
-    setIssuePinDropArmed,
     issuePinPrefill,
-    setIssuePinPrefill,
+    onToggleIssuePinDrop,
+    openTaskIssue,
+    onIssuePinDrop,
+    onSeekIssueFrame: onSeekIssueFrameOnly,
+    closeIssueCreate,
+    issueNavigation: issueCreationNavigation,
+    retryIssueNavigation: retryIssueCreationNavigation,
     issueListParams,
     issuesQuery,
     openIssueCount,
     activeIssueHighlightId,
     highlightIssueFromPin,
     requestIssuesTab,
-  } = useIssuePins({ projectId, taskId, stageGeom, setVp, setVideoFrameIndex, isVideoTask });
+  } = useIssuePins({
+    projectId,
+    taskId,
+    stageGeom,
+    setVp,
+    isVideoTask,
+    pauseVideoPlayback: () => videoControlsRef.current?.pausePlayback({ snapToGrid: false }),
+    seekVideoFrameReady: (frame, isRelevant) => requestIssueFrameRef.current(frame, isRelevant),
+    navigateVideoIssue: videoIssueNavigation.navigate,
+    onCreateIntent: videoIssueNavigation.cancel,
+    captureVideoContext: (frame) => {
+      const view = videoControlsRef.current?.captureIssueView?.();
+      if (!view || view.taskId !== taskId || view.frameIndex !== frame) return null;
+      const object = annotationsRef.current.find(
+        (annotation) => annotation.id === s.selectedId && annotation.is_active,
+      );
+      return {
+        maxFrame: Math.max(0, videoFrameCount - 1),
+        ...(object ? { annotationId: object.id, annotationLabel: object.class_name } : {}),
+        videoContext: {
+          schema_version: 1,
+          viewport: { ...view.viewport },
+          timeline_window: { ...view.timeline_window },
+          ...(object?.track_id ? { track_id: object.track_id } : {}),
+          ...(object?.version ? { annotation_version: object.version } : {}),
+        },
+      };
+    },
+  });
+  const issueNavigation =
+    videoIssueNavigation.navigation.status !== "idle"
+      ? videoIssueNavigation.navigation
+      : issueCreationNavigation;
+  const retryIssueNavigation =
+    videoIssueNavigation.navigation.status !== "idle"
+      ? videoIssueNavigation.retry
+      : retryIssueCreationNavigation;
+  const cancelVideoIssueNavigation = videoIssueNavigation.cancel;
+  const onSeekIssueFrame = useCallback(
+    async (frame: number) => {
+      const issue = issuesQuery.data?.items.find(
+        (item) => item.anchor_position?.frame === frame && item.anchor_type === "pixel",
+      );
+      if (issue) {
+        closeIssueCreate();
+        useActiveIssueStore.getState().focusIssue(issue);
+      } else {
+        cancelVideoIssueNavigation();
+        await onSeekIssueFrameOnly(frame);
+      }
+    },
+    [issuesQuery.data, closeIssueCreate, cancelVideoIssueNavigation, onSeekIssueFrameOnly],
+  );
   const submitTaskMut = useSubmitTask();
   const triggerPreannotation = useTriggerPreannotation(projectId);
   const {
@@ -1864,6 +1985,9 @@ export function useWorkbenchShellModel({
   // v0.21.23 · 当前激活的 AI 工具。视频侧按 videoTool 解析 —— smart-point / smart-box 与图片
   // 工具同名, 共用 TOOL_REGISTRY, 故交互 prompt 解析与工具上下文浮块可直接复用图片侧那套。
   const activeAiTool = (isVideoTask ? s.videoTool : s.tool) as ToolId;
+  const maskToolActive = isVideoTask
+    ? s.videoTool === "mask" || s.videoTool === "mask-track"
+    : s.tool === "mask";
   // 当前工具对应的交互 prompt (非交互工具回落 point, 仅用于 sam/warmup 的后端选取, 不参与门控)。
   const activeInteractivePrompt = promptOfTool(activeAiTool);
   const [singleFrameOutputGeometry, setSingleFrameOutputGeometry] = useState<"polygon" | "mask">(
@@ -1931,6 +2055,18 @@ export function useWorkbenchShellModel({
     modelPref.savedModelId ?? null,
     exactMaskRequirement,
   );
+  const capabilityError =
+    [
+      ...routing.capabilityErrors.map((failure) => `${failure.backendName}：${failure.message}`),
+      ...(mlCapabilities.error &&
+      !routing.capabilityErrors.some((failure) => failure.backendId === interactiveBackendId)
+        ? [mlCapabilities.error]
+        : []),
+    ].join("；") || undefined;
+  const retryInteractiveCapabilities = useCallback(() => {
+    if (routing.capabilityErrors.length > 0) void routing.retryCapabilities();
+    else void mlCapabilities.refetch();
+  }, [routing, mlCapabilities]);
   const activeGeometricOutputs =
     mlCapabilities.activeModel?.supported_geometric_outputs ??
     mlCapabilities.capability?.supported_geometric_outputs ??
@@ -1994,8 +2130,6 @@ export function useWorkbenchShellModel({
     ],
   );
 
-  // v0.21.4 起视频单题 AI 用它抓当前帧; v0.21.23 交互式 SAM 复用同一取帧口。
-  const videoControlsRef = useRef<VideoStageControls | null>(null);
   const maskQcAiCandidateRef = useRef<MaskQcLocalAiCandidate | null>(null);
   const getMaskQcTrackerCandidates = useCallback(
     (issue: MaskQcIssue, targetFrame: number): MaskQcTrackerCandidate[] =>
@@ -2054,7 +2188,7 @@ export function useWorkbenchShellModel({
       isVideoTask ? videoFrameIndex : "image",
       mlCapabilities.activeModelId ?? "default",
       effectiveSingleFrameOutputGeometry,
-      selectedMaskPromptSource
+      canRefineSelectedMask && selectedMaskPromptSource
         ? `${selectedMaskPromptSource.annotation_id}@${selectedMaskPromptSource.source_version}`
         : "no-mask-prompt",
     ].join(":"),
@@ -2134,38 +2268,6 @@ export function useWorkbenchShellModel({
     [sam.candidates, selectSamCandidateByIndex],
   );
 
-  // v0.21.23 · 画布 samProbe 松手 → 请求候选 (坐标已归一化 [0,1])。
-  const onVideoSamPrompt = useCallback(
-    (prompt: VideoSamPrompt) => {
-      // v0.21.27 · U-pvs-1 · PVS 种子采集态: point 收进种子列表 (不跑帧级 SAM)。仅由传播
-      // 对话框「落点选目标」显式开启; 正点 polarity=1 / Alt 负点 polarity=0 (精修召回)。
-      // 点归属当前目标 seedObj (「新目标」递增 → 多目标各成一条轨迹) + 当前帧 (纠偏: 导航到
-      // 别帧落修正点, 提交按 frame 分组成多帧 prompts)。首个落点帧设为范围锚点。
-      if (seedCollecting && prompt.mode === "point") {
-        const frame = s.videoFrameIndex;
-        setSeedAnchorFrame((a) => (a === null ? frame : a));
-        setTrackerSeeds((prev) => [
-          ...prev,
-          { pt: prompt.pt, polarity: prompt.alt ? 0 : 1, obj: seedObj, frame },
-        ]);
-        return;
-      }
-      // v0.21.27 · 框修正 · 采集态画框 (smart-box) → 收进框种子列表, 不跑帧级 SAM。
-      if (seedCollecting && prompt.mode === "bbox") {
-        const frame = s.videoFrameIndex;
-        setSeedAnchorFrame((a) => (a === null ? frame : a));
-        setTrackerSeedBoxes((prev) => [...prev, { bbox: prompt.bbox, obj: seedObj, frame }]);
-        return;
-      }
-      if (prompt.mode === "point") return sam.runPoint(prompt.pt, prompt.alt ? 0 : 1);
-      // exemplar: alt = 负框 (排误检) / 否则正框 (扩召回); 会话每次重发全量框。
-      if (prompt.mode === "exemplar") {
-        return sam.runExemplar(prompt.bbox, prompt.alt ? 0 : 1, s.exemplarOutputMode);
-      }
-      sam.runBbox(prompt.bbox);
-    },
-    [sam, s.exemplarOutputMode, seedCollecting, seedObj, s.videoFrameIndex],
-  );
   // v0.14.9 · active model 输出几何 / 文本属性 与项目配置的兼容性警告 (非阻断)。
   const capabilityWarnings = useCapabilityValidation({
     activeModel: mlCapabilities.activeModel,
@@ -2189,6 +2291,46 @@ export function useWorkbenchShellModel({
       ...interactiveProjectVariantSlice,
     }),
     [mlCapabilities.activeModel, interactiveProjectVariantSlice],
+  );
+  // v0.21.23 · 画布 samProbe 松手 → 请求候选 (坐标已归一化 [0,1])。
+  const onVideoSamPrompt = useCallback(
+    (prompt: VideoSamPrompt) => {
+      // v0.21.27 · U-pvs-1 · PVS 种子采集态: point 收进种子列表 (不跑帧级 SAM)。仅由传播
+      // 对话框「落点选目标」显式开启; 正点 polarity=1 / Alt 负点 polarity=0 (精修召回)。
+      // 点归属当前目标 seedObj (「新目标」递增 → 多目标各成一条轨迹) + 当前帧 (纠偏: 导航到
+      // 别帧落修正点, 提交按 frame 分组成多帧 prompts)。首个落点帧设为范围锚点。
+      if (seedCollecting && prompt.mode === "point") {
+        const frame = s.videoFrameIndex;
+        setSeedAnchorFrame((a) => (a === null ? frame : a));
+        setTrackerSeeds((prev) => [
+          ...prev,
+          { pt: prompt.pt, polarity: prompt.alt ? 0 : 1, obj: seedObj, frame },
+        ]);
+        return;
+      }
+      // v0.21.27 · 框修正 · 采集态画框 (smart-box) → 收进框种子列表, 不跑帧级 SAM。
+      if (seedCollecting && prompt.mode === "bbox") {
+        const frame = s.videoFrameIndex;
+        setSeedAnchorFrame((a) => (a === null ? frame : a));
+        setTrackerSeedBoxes((prev) => [...prev, { bbox: prompt.bbox, obj: seedObj, frame }]);
+        return;
+      }
+      const extra = buildPredictParams(undefined, interactiveVariantSlice);
+      if (prompt.mode === "point") return sam.runPoint(prompt.pt, prompt.alt ? 0 : 1, extra);
+      // exemplar: alt = 负框 (排误检) / 否则正框 (扩召回); 会话每次重发全量框。
+      if (prompt.mode === "exemplar") {
+        return sam.runExemplar(prompt.bbox, prompt.alt ? 0 : 1, s.exemplarOutputMode, extra);
+      }
+      sam.runBbox(prompt.bbox, extra);
+    },
+    [
+      sam,
+      s.exemplarOutputMode,
+      seedCollecting,
+      seedObj,
+      s.videoFrameIndex,
+      interactiveVariantSlice,
+    ],
   );
   const handleInteractiveVariantChange = useCallback(
     (next: Record<string, unknown>) => {
@@ -2340,7 +2482,7 @@ export function useWorkbenchShellModel({
     routing.isPromptSupported(p) ? "1" : "0",
   ).join("");
   useEffect(() => {
-    if (routing.isLoading) return;
+    if (routing.isLoading || routing.capabilityErrors.length > 0) return;
     if (!isAIToolId(s.tool)) return;
     const requiredPrompt = promptOfTool(s.tool);
     if (requiredPrompt && !routing.isPromptSupported(requiredPrompt)) {
@@ -2352,9 +2494,9 @@ export function useWorkbenchShellModel({
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routingSig, routing.isLoading, s.tool]);
+  }, [routingSig, routing.isLoading, routing.capabilityErrors.length, s.tool]);
   useEffect(() => {
-    if (s.tool !== "smart-scribble" || canRefineSelectedMask) return;
+    if (s.tool !== "smart-scribble" || canRefineSelectedMask || capabilityError) return;
     s.setTool("select");
     sam.cancel();
     pushToast({
@@ -2364,7 +2506,7 @@ export function useWorkbenchShellModel({
     });
     // sam / s 为壳层聚合对象，仅按实际门控状态触发。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canRefineSelectedMask, s.tool]);
+  }, [canRefineSelectedMask, capabilityError, s.tool]);
   useEffect(() => {
     if (!isVideoTask) return;
     if (tool !== "box" && tool !== "select") setTool("box");
@@ -2431,10 +2573,30 @@ export function useWorkbenchShellModel({
     };
   }, [taskId, tasks, queryClient, debouncedConf, stageKind, videoCollaborationEnabled]);
 
-  const aiRunning =
-    preannotationProgress?.status === "running" ||
-    triggerPreannotation.isPending ||
-    videoFrameAiRunning;
+  const aiRequest = useWorkbenchAiRequest({
+    scopeKey:
+      projectId && taskId
+        ? `${projectId}:${taskId}:${isVideoTask ? `${videoFrameIndex}:${activeVideoSegmentId ?? "whole"}` : "image"}`
+        : null,
+    onCompleted: async (summary) => {
+      await queryClient.invalidateQueries(
+        { queryKey: ["predictions", summary.taskId] },
+        { throwOnError: true },
+      );
+      const backendId = summary.input.ml_backend_id;
+      const variants = summary.input.model_variants;
+      if (typeof backendId === "string" && variants && typeof variants === "object") {
+        markVariantHot(backendId, variants as Record<string, unknown>);
+        if (
+          backendId === batchBackendId &&
+          JSON.stringify(variants) === JSON.stringify(preCfg.currentVariantSlice)
+        ) {
+          preCfg.markHot();
+        }
+      }
+    },
+  });
+  const aiRunning = aiRequest.presentation.status === "running";
 
   const currentBatchStatus = useMemo<string | undefined>(() => {
     if (!task?.batch_id || !batchList) return undefined;
@@ -2442,6 +2604,17 @@ export function useWorkbenchShellModel({
   }, [task?.batch_id, batchList]);
 
   const history = useAnnotationHistory(taskId, {
+    restoreSlice: async (ownerTaskId, operationId, payload) => {
+      const result = await annotationSlicesApi.restore(ownerTaskId, operationId, payload);
+      void queryClient.invalidateQueries({ queryKey: ["annotations", ownerTaskId] });
+      return result;
+    },
+    onSliceError: (error) =>
+      pushToast({
+        msg: "切割恢复失败，历史记录已保留",
+        sub: error instanceof Error ? error.message : String(error),
+        kind: "error",
+      }),
     createAnnotation: (payload) => createAnnotation.mutateAsync(payload),
     deleteAnnotation: (id) => deleteAnnotationMut.mutateAsync(id),
     updateAnnotation: (id, payload) => {
@@ -2576,6 +2749,34 @@ export function useWorkbenchShellModel({
             activeVideoSegment.status === "completed" ||
             activeVideoSegment.locked_by !== meUserId ||
             !!segmentLeaseError)));
+  const pushSliceHistory = history.push;
+  const sliceWriteOwner = useRef({ taskId, canWrite: false });
+  useLayoutEffect(() => {
+    sliceWriteOwner.current = { taskId, canWrite: stageKind === "image" && !isLockedForActions };
+  }, [taskId, stageKind, isLockedForActions]);
+  const handleCommitPolygonSlice = useCallback(
+    async (payload: PolygonSliceCommitRequest) => {
+      if (
+        !taskId ||
+        sliceWriteOwner.current.taskId !== taskId ||
+        !sliceWriteOwner.current.canWrite
+      ) {
+        throw new Error("当前任务不可编辑，请重新打开切割预览");
+      }
+      const result = await annotationSlicesApi.commitPolygon(taskId, payload);
+      pushSliceHistory(
+        {
+          kind: "slice",
+          operationId: result.slice_operation_id,
+          resultVersions: result.result_versions,
+          restoreExpiresAt: result.restore_expires_at,
+        },
+        taskId,
+      );
+      void queryClient.invalidateQueries({ queryKey: ["annotations", taskId] });
+    },
+    [taskId, pushSliceHistory, queryClient],
+  );
   const maskEditorSize = resolveMaskEditorSize(
     isVideoTask,
     stageGeom,
@@ -2612,6 +2813,7 @@ export function useWorkbenchShellModel({
     "idle",
   );
   const commitCurrentMaskRef = useRef<() => Promise<boolean>>(async () => false);
+  const maskPrimaryBusyRef = useRef(false);
   // 离开 dirty session 必须先取得明确决定。取消即恢复旧 task/frame/tool/selection，
   // 确认才丢弃；session hook 仅在 guard 完成后推进 generation。
   const handleMaskLeaveDirty = useCallback(
@@ -2630,7 +2832,11 @@ export function useWorkbenchShellModel({
         sub: "确认可丢弃；取消将继续编辑",
         kind: "warning",
       });
-      if (maskPhaseStateRef.current === "saving" || maskInstanceTransitionInFlightRef.current) {
+      if (
+        maskPhaseStateRef.current === "saving" ||
+        maskInstanceTransitionInFlightRef.current ||
+        maskPrimaryBusyRef.current
+      ) {
         pushToast({ msg: "Mask 正在保存", sub: "保存完成后再离开", kind: "warning" });
         applyContext(previous);
         return "continue" as const;
@@ -2679,9 +2885,12 @@ export function useWorkbenchShellModel({
     generation: maskEditor.generation,
   };
   maskPhaseStateRef.current = maskEditor.phase;
-  const hasPendingMaskDraft = maskEditor.dirty || maskEditor.instanceOperationPreview !== null;
+  const hasPendingMaskDraft =
+    maskEditor.dirty ||
+    maskEditor.operationPreview !== null ||
+    maskEditor.instanceOperationPreview !== null;
   maskNavigationGuardRef.current = async () => {
-    if (maskInstanceTransitionInFlightRef.current) {
+    if (maskInstanceTransitionInFlightRef.current || maskPrimaryBusyRef.current) {
       pushToast({ msg: "Mask 正在处理", sub: "完成后再离开", kind: "warning" });
       return false;
     }
@@ -2697,6 +2906,66 @@ export function useWorkbenchShellModel({
     maskEditor.cancel();
     return true;
   };
+  const {
+    requestTool: requestVideoTool,
+    requestScope: requestVideoToolScope,
+    requestSelection: requestVideoSelection,
+    requestFrame: requestVideoReviewFrame,
+    requestFrameReady: requestVideoIssueFrame,
+    requestLeave: requestVideoLeave,
+    requestTemporaryTool: requestTemporaryVideoTool,
+    confirmationOpen: videoToolConfirmationOpen,
+    settleConfirmation: settleVideoToolConfirmation,
+  } = useVideoToolCommands({
+    enabled: isVideoTask,
+    ownerKey: JSON.stringify([taskId, annotationSegmentId, s.videoFrameIndex, currentPath]),
+    state: s,
+    controlsRef: videoControlsRef,
+    annotationsRef,
+    isToolEnabled: isVideoToolEnabled,
+    toolDisabledReason: (target) => {
+      if (
+        target === "keypoint" &&
+        !currentProject?.tool_bindings?.keypoint?.keypoint_schema?.nodes?.length
+      ) {
+        return "请先在项目设置中配置关键点骨骼";
+      }
+      const prompt =
+        target === "smart-point" ||
+        target === "smart-box" ||
+        target === "magic-box" ||
+        target === "exemplar"
+          ? promptOfTool(target)
+          : null;
+      if (!prompt) return undefined;
+      if (currentProject?.ai_interactive_enabled === false) return "项目未启用交互式 AI 工具";
+      if (routing.isLoading) return "正在协商后端能力，请稍后再选择";
+      if (!routing.isPromptSupported(prompt)) return "当前后端不支持此交互模式";
+      return undefined;
+    },
+    needsMaskGuard:
+      hasPendingMaskDraft ||
+      maskEditor.phase === "saving" ||
+      maskInstanceTransitionBusy ||
+      maskPrimaryBusyRef.current,
+    guardMask: () => maskNavigationGuardRef.current(),
+    blockedReason: seedCollecting
+      ? "请先结束追踪种子采集"
+      : maskCompareInteractionBlocked
+        ? "请先结束 Mask 证据对比"
+        : s.pendingDrawing?.kind === "video_mask"
+          ? "请先为 Mask 选择类别或取消保存"
+          : maskEditor.phase === "saving" ||
+              maskInstanceTransitionBusy ||
+              maskPrimaryBusyRef.current
+            ? "Mask 正在处理，完成后再切换工具"
+            : undefined,
+    explain: (reason) => pushToast({ msg: reason, kind: "warning" }),
+    onUserIntent: videoIssueNavigation.cancel,
+  });
+  requestVideoSeedToolRef.current = requestTemporaryVideoTool;
+  requestIssueFrameRef.current = requestVideoIssueFrame;
+  videoLeaveGuardRef.current = isVideoTask ? requestVideoLeave : async () => true;
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
       if (!maskInstanceTransitionBusy && (!maskEditor.active || !hasPendingMaskDraft)) return;
@@ -2709,6 +2978,8 @@ export function useWorkbenchShellModel({
 
   const imageActions = useImageAnnotationActions({
     taskId,
+    maskRouteKey: currentPath,
+    maskSessionKey,
     videoSegmentId: annotationSegmentId,
     projectId,
     meUserId,
@@ -2744,6 +3015,122 @@ export function useWorkbenchShellModel({
     },
     markPendingGeom,
   });
+  const continuousCreationAllowed =
+    stageKind === "image" && mode !== "review" && !isLockedForActions && !!task;
+  const continuousUnits = MANUAL_IMAGE_TOOLS.filter(
+    (item) =>
+      currentProject?.tool_bindings?.[item.unit]?.enabled &&
+      (item.unit !== "keypoint" ||
+        !!currentProject?.tool_bindings?.keypoint?.keypoint_schema?.nodes?.length),
+  ).map((item) => ({
+    id: item.unit,
+    label: item.label,
+    classes: classesForUnit(currentProject?.tool_bindings, item.unit),
+  }));
+  const { continuousCreation, setContinuousCreation } = s;
+  useEffect(() => {
+    if (!continuousCreation) return;
+    const error =
+      currentProject && currentProject.id === projectId
+        ? continuousIntentError(continuousCreation, currentProject.tool_bindings)
+        : null;
+    if (
+      stageKind !== "image" ||
+      mode === "review" ||
+      isLockedForActions ||
+      continuousCreation.projectId !== projectId ||
+      error
+    ) {
+      setContinuousCreation(null);
+      if (error) {
+        setTool("select");
+        pushToast({ msg: "已退出连续创建", sub: error, kind: "warning" });
+      }
+      return;
+    }
+    const next = manualImageTool(s.tool);
+    if (!next) {
+      setContinuousCreation(null);
+      return;
+    }
+    if (next.unit !== continuousCreation.toolUnitId)
+      setContinuousCreation({
+        projectId: projectId!,
+        tool: next.tool,
+        toolUnitId: next.unit,
+        className: "",
+      });
+  }, [
+    continuousCreation,
+    stageKind,
+    mode,
+    isLockedForActions,
+    currentProject,
+    projectId,
+    pushToast,
+    s.tool,
+    setTool,
+    setContinuousCreation,
+  ]);
+  useEffect(() => {
+    if (isLockedForActions && s.pendingDrawing?.creation) s.setPendingDrawing(null);
+  }, [isLockedForActions, s]);
+  const blockCreationIntentChange = () => {
+    if (!imageActions.hasManualDraft) return false;
+    pushToast({
+      msg: "请先完成或取消当前草稿",
+      sub: "按 Esc 取消草稿后再切换创建类别",
+      kind: "warning",
+    });
+    return true;
+  };
+  const setContinuousEnabled = (enabled: boolean) => {
+    if (blockCreationIntentChange()) return;
+    if (!enabled) {
+      setContinuousCreation(null);
+      s.setTool("select");
+      return;
+    }
+    if (!continuousCreationAllowed || !projectId) return;
+    const selected =
+      manualImageTool(s.tool) ??
+      MANUAL_IMAGE_TOOLS.find((item) => item.unit === toolView.toolUnitId) ??
+      MANUAL_IMAGE_TOOLS[0];
+    const next = continuousUnits.some((item) => item.id === selected.unit)
+      ? selected
+      : MANUAL_IMAGE_TOOLS.find((item) => continuousUnits.some((unit) => unit.id === item.unit));
+    if (!next) {
+      pushToast({ msg: "没有可用的手工创建工具", kind: "warning" });
+      return;
+    }
+    setContinuousCreation({ projectId, tool: next.tool, toolUnitId: next.unit, className: "" });
+    s.setTool(next.tool);
+  };
+  const selectContinuousUnit = (unit: string) => {
+    if (!continuousCreation || blockCreationIntentChange()) return;
+    const next = MANUAL_IMAGE_TOOLS.find((item) => item.unit === unit);
+    if (!next) return;
+    setContinuousCreation({
+      ...continuousCreation,
+      tool: next.tool,
+      toolUnitId: next.unit,
+      className: "",
+    });
+    s.setTool(next.tool);
+  };
+  const pickContinuousClass = (className: string) => {
+    if (
+      !continuousCreation ||
+      blockCreationIntentChange() ||
+      !classesForUnit(currentProject?.tool_bindings, continuousCreation.toolUnitId).includes(
+        className,
+      )
+    )
+      return;
+    setContinuousCreation({ ...continuousCreation, className });
+    s.setActiveClass(className);
+    s.setTool(continuousCreation.tool);
+  };
   const {
     aiBoxes,
     predictionSourceFilter,
@@ -2842,7 +3229,16 @@ export function useWorkbenchShellModel({
   }, [deleteConfirm]);
 
   const handleSelectBox = useCallback(
-    (id: string | null, opts?: { shift?: boolean }) => {
+    (id: string | null, opts?: { shift?: boolean; source?: "task-reset" }) => {
+      if (isVideoTask) {
+        // Seed prompts clear ordinary selection internally without leaving collection mode.
+        if (seedCollecting && id === null) {
+          s.setSelectedId(null);
+          return;
+        }
+        requestVideoSelection(id, opts);
+        return;
+      }
       if (!id) {
         s.setSelectedId(null);
         return;
@@ -2854,7 +3250,7 @@ export function useWorkbenchShellModel({
         s.setSelectedId(id);
       }
     },
-    [s],
+    [isVideoTask, seedCollecting, s, requestVideoSelection],
   );
 
   const enterImageRasterMaskEdit = useCallback(
@@ -2871,7 +3267,7 @@ export function useWorkbenchShellModel({
   );
 
   const handleRunAi = useCallback(() => {
-    if (!projectId) return;
+    if (!projectId || !taskId) return;
     const mlBackendId = batchBackendId;
     if (!mlBackendId) {
       pushToast({
@@ -2895,17 +3291,37 @@ export function useWorkbenchShellModel({
       });
       return;
     }
-    pushToast({ msg: "AI 正在分析图像...", sub: aiModel });
-    triggerPreannotation.mutate(
-      { ...args, task_ids: taskId ? [taskId] : undefined },
-      {
-        // v0.14.13 · 推理成功 → 记 variant 已热 (异步 trigger 拿不到 cache_hit, 走兜底).
-        onSuccess: () => preCfg.markHot(),
-        onError: (err: unknown) =>
-          pushToast({ msg: "AI 预标注失败", sub: String(err), kind: "error" }),
+    const payload = structuredClone({ ...args, task_ids: [taskId] });
+    aiRequest.start({
+      summary: {
+        projectId,
+        taskId,
+        taskLabel: task?.display_id,
+        frameIndex: null,
+        backendName: aiModel,
+        modelName:
+          preCfg.selectableModels.find((model) => model.id === args.model_id)?.display_name ??
+          args.model_id ??
+          aiModel,
+        input: { ...payload },
       },
-    );
-  }, [projectId, batchBackendId, aiModel, taskId, triggerPreannotation, pushToast, preCfg]);
+      cancellable: false,
+      execute: async () => {
+        const response = await triggerPreannotation.mutateAsync(payload);
+        return { kind: "queued", celeryTaskId: response.job_id };
+      },
+    });
+  }, [
+    projectId,
+    batchBackendId,
+    aiModel,
+    task?.display_id,
+    taskId,
+    triggerPreannotation,
+    pushToast,
+    preCfg,
+    aiRequest,
+  ]);
 
   // v0.21.0 · 项目默认命名编排成为 popover「按项目编排」来源; 旧 preannotate_pipeline 仅作读兼容兜底。
   // popover 仍是执行器、不是编排编辑器: 编排在 /ai-pre 定义保存, 这里只把那条编排跑当前一图。
@@ -2924,6 +3340,7 @@ export function useWorkbenchShellModel({
   );
   const projectPipelineRunnable = hasProjectPipeline && pipelineMissingBackends.length === 0;
   const handleRunAiPipeline = useCallback(() => {
+    if (!projectId || !taskId) return;
     if (pipelineMissingBackends.length > 0) {
       pushToast({
         msg: "项目编排引用的后端不可用",
@@ -2932,23 +3349,33 @@ export function useWorkbenchShellModel({
       });
       return;
     }
-    const payload = buildPipelineRunPayload(projectPipeline, taskId, availableBackendIds);
-    if (!payload) return;
-    pushToast({
-      msg: "AI 正在按项目编排分析...",
-      sub: `${payload.pipeline_stages?.length ?? 0} 阶段`,
-    });
-    triggerPreannotation.mutate(payload, {
-      onSuccess: () => preCfg.markHot(),
-      onError: (err: unknown) =>
-        pushToast({ msg: "AI 编排预标失败", sub: String(err), kind: "error" }),
+    const configured = buildPipelineRunPayload(projectPipeline, taskId, availableBackendIds);
+    if (!configured) return;
+    const payload = structuredClone(configured);
+    aiRequest.start({
+      summary: {
+        projectId,
+        taskId,
+        taskLabel: task?.display_id,
+        frameIndex: null,
+        backendName: "项目编排",
+        modelName: `${payload.pipeline_stages?.length ?? 0} 阶段`,
+        input: { ...payload },
+      },
+      cancellable: false,
+      execute: async () => {
+        const response = await triggerPreannotation.mutateAsync(payload);
+        return { kind: "queued", celeryTaskId: response.job_id };
+      },
     });
   }, [
+    projectId,
     projectPipeline,
+    task?.display_id,
     taskId,
     triggerPreannotation,
     pushToast,
-    preCfg,
+    aiRequest,
     availableBackendIds,
     pipelineMissingBackends,
   ]);
@@ -3248,23 +3675,17 @@ export function useWorkbenchShellModel({
     [annotationQueryKey, pushToast, queryClient, s],
   );
 
-  const cancelVideoMaskEdit = useCallback(() => {
-    if (maskInstanceTransitionInFlightRef.current) {
-      pushToast({ msg: "Mask 正在处理", sub: "完成后再取消", kind: "warning" });
-      return;
-    }
+  const cancelVideoMaskEdit = useCallback(async () => {
     if (handleCancelVideoMaskPendingClass()) return;
+    if (!(await maskNavigationGuardRef.current())) return;
     maskEditor.cancel();
     s.setVideoTool("select");
-  }, [handleCancelVideoMaskPendingClass, maskEditor, pushToast, s]);
-  const cancelImageMaskEdit = useCallback(() => {
-    if (maskInstanceTransitionInFlightRef.current) {
-      pushToast({ msg: "Mask 正在处理", sub: "完成后再取消", kind: "warning" });
-      return;
-    }
+  }, [handleCancelVideoMaskPendingClass, maskEditor, s]);
+  const cancelImageMaskEdit = useCallback(async () => {
     if (handleCancelMaskPendingClass()) return;
+    if (!(await maskNavigationGuardRef.current())) return;
     cancelMaskEdit();
-  }, [cancelMaskEdit, handleCancelMaskPendingClass, pushToast]);
+  }, [cancelMaskEdit, handleCancelMaskPendingClass]);
   const [videoMaskCorrectionOpen, setVideoMaskCorrectionOpen] = useState(false);
   const [videoMaskCorrectionSubmitting, setVideoMaskCorrectionSubmitting] = useState(false);
   const [videoMaskCorrectionContext, setVideoMaskCorrectionContext] = useState<{
@@ -3590,9 +4011,23 @@ export function useWorkbenchShellModel({
 
   const runMaskInstanceOperation = useCallback(
     async (name: string, operationSpec: MaskInstanceOperationSpec) => {
-      if (name !== "copy_component" && name !== "split_components") return false;
+      if (name !== "copy_component" && name !== "split_components" && name !== "slice_mask")
+        return false;
       const primary = currentSelectedNativeMask();
       if (!primary || primary.is_locked || nativeMaskTrackLocallyLocked(primary)) return false;
+      if (name === "slice_mask") {
+        const reason = maskSliceUnavailableReason(primary, annotationsRef.current);
+        if (
+          isVideoTask ||
+          maskEditor.dirty ||
+          reason ||
+          !sliceWriteOwner.current.canWrite ||
+          sliceWriteOwner.current.taskId !== taskId
+        ) {
+          showMaskInstanceFailure(reason ?? "请先保存草稿并确认当前图片可编辑");
+          return false;
+        }
+      }
       if (isVideoTask && !currentVideoSegment) {
         showMaskInstanceFailure("当前帧没有可编辑分段");
         return false;
@@ -3613,15 +4048,20 @@ export function useWorkbenchShellModel({
         showMaskInstanceFailure(maskMutationErrorMessage(error), { retry: false, refresh: true });
         return false;
       }
-      const previewed = await maskEditor.runInstanceOperation(name, operationSpec);
-      if (!previewed) return false;
-      pendingMaskAtomicDraftRef.current = {
+      const draft: PendingMaskAtomicDraft = {
         kind: name,
         sourceIds: [primary.id],
         scope,
         members: snapshotMaskMembers(members),
         operationSpec,
       };
+      // Publish the owner before the synchronous preview can render its details.
+      pendingMaskAtomicDraftRef.current = draft;
+      const previewed = await maskEditor.runInstanceOperation(name, operationSpec);
+      if (!previewed) {
+        if (pendingMaskAtomicDraftRef.current === draft) pendingMaskAtomicDraftRef.current = null;
+        return false;
+      }
       maskAtomicIdempotencyRef.current = null;
       clearMaskInstanceFailure();
       return true;
@@ -3636,21 +4076,33 @@ export function useWorkbenchShellModel({
       s.videoFrameIndex,
       showMaskInstanceFailure,
       snapshotMaskMembers,
+      taskId,
     ],
   );
+  const maskPrimaryPending = maskPrimaryBusyRef.current;
   const stageMaskEditor = useMemo<UseMaskEditorReturn>(
     () => ({
       ...maskEditor,
-      phase: maskInstanceTransitionBusy ? "saving" : maskEditor.phase,
+      phase: maskInstanceTransitionBusy || maskPrimaryPending ? "saving" : maskEditor.phase,
       runInstanceOperation: runMaskInstanceOperation,
       cancelOperation: () => {
-        if (!maskInstanceTransitionInFlightRef.current) maskEditor.cancelOperation();
+        if (
+          !maskInstanceTransitionInFlightRef.current &&
+          !maskPrimaryBusyRef.current &&
+          maskEditor.phase !== "saving"
+        )
+          maskEditor.cancelOperation();
       },
       cancel: () => {
-        if (!maskInstanceTransitionInFlightRef.current) maskEditor.cancel();
+        if (
+          !maskInstanceTransitionInFlightRef.current &&
+          !maskPrimaryBusyRef.current &&
+          maskEditor.phase !== "saving"
+        )
+          maskEditor.cancel();
       },
     }),
-    [maskEditor, maskInstanceTransitionBusy, runMaskInstanceOperation],
+    [maskEditor, maskInstanceTransitionBusy, maskPrimaryPending, runMaskInstanceOperation],
   );
 
   const [videoMaskClipboard, setVideoMaskClipboard] = useState<VideoMaskClipboardEntry | null>(
@@ -4259,7 +4711,7 @@ export function useWorkbenchShellModel({
               source_annotation_ids: [primary.id],
               geometry: geometryForReference(primary, reference, true),
             });
-          } else if (operation === "split_components") {
+          } else if (operation === "split_components" || operation === "slice_mask") {
             const references = await Promise.all([
               uploadAlpha(preview.plan.primary),
               ...preview.plan.created.map(uploadAlpha),
@@ -4334,6 +4786,7 @@ export function useWorkbenchShellModel({
             scope,
             source_frame_index:
               operation === "copy_keyframe" ? pending.copyKeyframe?.sourceFrameIndex : undefined,
+            ...(operation === "slice_mask" ? { cut_path: preview.plan.cutPath } : {}),
             scope_fingerprint: fingerprint,
             expected_versions: expectedVersions,
             mutations,
@@ -4352,6 +4805,18 @@ export function useWorkbenchShellModel({
         const result = await maskEditor.save(async () => {
           try {
             responseHolder.value = await maskMutationsApi.commit(taskId, payload);
+            const receipt = responseHolder.value.slice_restore;
+            if (receipt) {
+              pushSliceHistory(
+                {
+                  kind: "slice",
+                  operationId: receipt.slice_operation_id,
+                  resultVersions: receipt.result_versions,
+                  restoreExpiresAt: receipt.restore_expires_at,
+                },
+                taskId,
+              );
+            }
             return { ok: true, retryable: false };
           } catch (error) {
             return {
@@ -4364,6 +4829,8 @@ export function useWorkbenchShellModel({
             };
           }
         });
+        if (responseHolder.value?.slice_restore)
+          void queryClient.invalidateQueries({ queryKey: ["annotations", taskId] });
         if (!result.ok) {
           const message = maskMutationErrorMessage(result.error);
           showMaskInstanceFailure(message, maskMutationRecovery(result.error));
@@ -4434,6 +4901,7 @@ export function useWorkbenchShellModel({
     maskEditor,
     nativeMaskTrackLocallyLocked,
     pushToast,
+    pushSliceHistory,
     queryClient,
     s,
     showMaskInstanceFailure,
@@ -4512,7 +4980,11 @@ export function useWorkbenchShellModel({
       );
     }
     return pending.sourceIds.map((annotationId) =>
-      row(annotationId, null, pending.kind === "split_components" ? "update" : "source"),
+      row(
+        annotationId,
+        null,
+        pending.kind === "split_components" || pending.kind === "slice_mask" ? "update" : "source",
+      ),
     );
   }, [maskEditor.instanceOperationPreview]);
   const maskInstanceCommitBlocked = useMemo(() => {
@@ -4732,7 +5204,30 @@ export function useWorkbenchShellModel({
     setVideoMaskCorrectionCreateRetryable(true);
     setVideoMaskCorrectionContext(null);
   }, []);
+  const videoMaskCommitOwner = useMemo(
+    () => ({
+      taskId,
+      frame: s.videoFrameIndex,
+      tool: s.videoTool,
+      selection: s.selectedId,
+      mode,
+      currentPath,
+      isLockedForActions,
+    }),
+    [taskId, s.videoFrameIndex, s.videoTool, s.selectedId, mode, currentPath, isLockedForActions],
+  );
+  const videoMaskCommitOwnerRef = useRef(videoMaskCommitOwner);
+  videoMaskCommitOwnerRef.current = videoMaskCommitOwner;
+  const videoMaskCommitMountedRef = useRef(true);
+  useEffect(() => {
+    videoMaskCommitMountedRef.current = true;
+    return () => {
+      videoMaskCommitMountedRef.current = false;
+    };
+  }, []);
   const commitVideoMask = useCallback(() => {
+    const ownsCommit = () =>
+      videoMaskCommitMountedRef.current && videoMaskCommitOwnerRef.current === videoMaskCommitOwner;
     const trackLocked =
       !!selectedVideoMaskForTool &&
       selectedVideoMaskForTool.geometry.type === "video_track_mask" &&
@@ -4771,7 +5266,9 @@ export function useWorkbenchShellModel({
             s.videoFrameIndex,
             selectedVideoMaskForTool,
             s.videoTool === "mask-track" ? "track" : "frame",
+            ownsCommit,
           );
+          if (!ownsCommit()) return { ok: false, retryable: false };
           if (!savedKeyframe) {
             classSelectionCancelled = true;
             return { ok: false, retryable: false };
@@ -4793,6 +5290,7 @@ export function useWorkbenchShellModel({
         }
       })
       .then((result) => {
+        if (!ownsCommit()) return { ok: false, retryable: false, savedKeyframe: null };
         if (classSelectionCancelled) {
           maskEditor.recoverFromError();
           return { ...result, savedKeyframe };
@@ -4811,6 +5309,7 @@ export function useWorkbenchShellModel({
         return { ...result, savedKeyframe };
       });
   }, [
+    videoMaskCommitOwner,
     handleVideoMaskCommit,
     isLockedForActions,
     lockConflict,
@@ -4933,13 +5432,81 @@ export function useWorkbenchShellModel({
       videoMaskCorrectionContext,
     ],
   );
-  commitCurrentMaskRef.current = async () => {
-    if (maskEditor.instanceOperationPreview) {
-      return requestCommitMaskInstanceOperation();
-    }
-    const result = isVideoTask ? await commitVideoMask() : await commitMaskAsPolygon();
-    return result.ok;
+  const maskToolbarSelection = s.selectedId
+    ? visibleAnnotationsData.find((annotation) => annotation.id === s.selectedId)
+    : null;
+  const maskToolbarTrackLocked = !!(
+    isVideoTask &&
+    maskToolbarSelection &&
+    isVideoMaskTrack(maskToolbarSelection) &&
+    s.lockedVideoTrackIds.has(maskToolbarSelection.geometry.track_id)
+  );
+  const maskToolbarEditContext = {
+    taskReadOnly:
+      isLockedForActions || imageMaskInteractionBlocked || maskCompareInteractionBlocked,
+    annotationLocked: !!maskToolbarSelection?.is_locked,
+    trackLocked: maskToolbarTrackLocked,
+    segmentLocked: !!lockConflict || !!lockError,
+    editorPhase: maskInstanceTransitionBusy || maskPrimaryPending ? "saving" : maskEditor.phase,
   };
+  const maskToolbarBaseBlockReason = maskEditBlockReason(maskToolbarEditContext);
+  const maskToolbarBlockReason = maskEditor.tiledReadOnly
+    ? ("large_canvas_budget_exceeded" as const)
+    : maskToolbarBaseBlockReason;
+  const maskActionOwner = useMemo(
+    () => ({ sessionId: maskEditor.sessionId, generation: maskEditor.generation }),
+    [maskEditor.sessionId, maskEditor.generation],
+  );
+  const heldMaskFrame =
+    selectedVideoMaskForTool?.geometry.type === "video_track_mask"
+      ? resolveVideoMaskTrackAtFrame(selectedVideoMaskForTool.geometry, s.videoFrameIndex)
+      : null;
+  const maskPrimary = useMaskPrimaryActionOwner({
+    owner: maskActionOwner,
+    busyRef: maskPrimaryBusyRef,
+    state: {
+      active: maskEditor.active,
+      phase: maskEditor.phase,
+      dirty: maskEditor.dirty,
+      revision: maskEditor.revision,
+      canEdit: maskToolbarBlockReason === null,
+      canCommit: maskToolbarBaseBlockReason === null,
+      editBlockReason: maskToolbarBlockReason,
+      interactionFrozen: maskCompareInteractionBlocked,
+      operationStatus: maskEditor.operationStatus,
+      operationPreview: maskEditor.operationPreview,
+      instanceOperationPreview: maskEditor.instanceOperationPreview,
+      operationError: maskEditor.operationError,
+      instanceCommitting: maskInstanceCommitting,
+      instanceRefreshing: maskInstanceRefreshing,
+      instanceCommitError: maskInstanceCommitError,
+      instanceCanRetry: maskInstanceRecovery.retry,
+      instanceCanRefresh: maskInstanceRecovery.refresh,
+      instanceCommitBlocked: maskInstanceCommitBlocked,
+      saveLabel: isVideoTask
+        ? s.videoTool === "mask-track"
+          ? "保存当前帧关键帧"
+          : "保存当前帧 Mask"
+        : "保存 Mask",
+      saveHint:
+        isVideoTask && s.videoTool === "mask-track"
+          ? heldMaskFrame && heldMaskFrame.keyframeFrame !== s.videoFrameIndex
+            ? `当前帧保持 F${heldMaskFrame.keyframeFrame} 的 Mask；保存修改将仅在 F${s.videoFrameIndex} 新建人工关键帧。`
+            : `仅保存 F${s.videoFrameIndex} 的人工关键帧，其它帧保持不变。`
+          : isVideoTask
+            ? `仅保存当前 F${s.videoFrameIndex} 的 Mask。`
+            : "保存当前像素草稿。",
+    },
+    onSave: async () => (isVideoTask ? await commitVideoMask() : await commitMaskAsPolygon()).ok,
+    onCommitInstances: requestCommitMaskInstanceOperation,
+    onApplyRegion: maskEditor.confirmOperation,
+    onCancelPreview: maskEditor.cancelOperation,
+    onRecoverSession: isVideoTask ? maskEditor.recoverFromError : retryImageMaskSession,
+    onRefreshInstances: refreshMaskInstanceOperation,
+    onExit: isVideoTask ? cancelVideoMaskEdit : cancelImageMaskEdit,
+    onError: (error) => pushToast({ msg: "Mask 操作失败", sub: String(error), kind: "error" }),
+  });
+  commitCurrentMaskRef.current = maskPrimary.saveBeforeLeave;
 
   // v0.21.23 · 视频交互式 SAM 候选键位: Enter 采纳 / Esc 取消 / Tab 切候选 (与图片侧同键位)。
   // Enter 不直接落库, 而是弹类选择器 —— 与图片侧 samPendingAccept 一致。视频侧的 popover 走
@@ -4949,47 +5516,33 @@ export function useWorkbenchShellModel({
     anchor: { left: number; top: number };
   } | null>(null);
 
+  const requestVideoSamAccept = useCallback(() => {
+    if (isLockedForActions || videoSamPendingAccept || !sam.canAcceptCandidates || sam.isRunning)
+      return;
+    const idx = sam.activeIdx;
+    const candidate = sam.candidates[idx];
+    if (!candidate) return;
+    const geom = samCandidateDisplayGeom(candidate);
+    if (!geom) return;
+    const pt = videoControlsRef.current?.normToClient({ x: geom.x, y: geom.y + geom.h });
+    setVideoSamPendingAccept({ idx, anchor: { left: pt?.left ?? 0, top: (pt?.top ?? 0) + 6 } });
+  }, [isLockedForActions, videoSamPendingAccept, sam, samCandidateDisplayGeom]);
+
   useEffect(() => {
-    if (!isVideoTask) return;
-    // magic-box 不参与候选导航 (单候选, 自动弹 popover) —— 与图片侧一致。
-    if (!isSamCandidateNavTool(s.videoTool)) return;
-    if (sam.candidates.length === 0) return;
-    // popover 打开时让位: 键盘归它 (Esc 关 popover, Enter 选类)。
-    if (videoSamPendingAccept) return;
+    if (!isVideoTask || !isSamCandidateNavTool(s.videoTool)) return;
+    if (sam.candidates.length === 0 || videoSamPendingAccept) return;
     const handler = (e: KeyboardEvent) => {
-      if (isWorkbenchSettingsInteractionBlocked(e)) return;
-      const target = e.target as HTMLElement | null;
-      if (
-        target?.tagName === "INPUT" ||
-        target?.tagName === "TEXTAREA" ||
-        target?.isContentEditable
-      )
-        return;
+      if (isSamCandidateHotkeyBlocked(e)) return;
       if (e.key !== "Enter" && e.key !== "Escape" && e.key !== "Tab") return;
       e.preventDefault();
-      // stopImmediatePropagation 而非 stopPropagation: 两个 handler 都挂在 window 的捕获阶段,
-      // stopPropagation 只拦跨节点传播, 拦不住同一 window 上后注册的 useWorkbenchHotkeys ——
-      // 否则视频侧 Tab 会在切候选的同时又触发「同类下一个」的选中循环。
       e.stopImmediatePropagation();
-      if (e.key === "Enter") {
-        if (!sam.canAcceptCandidates) return;
-        const idx = sam.activeIdx;
-        const geom = samCandidateDisplayGeom(sam.candidates[idx]);
-        if (!geom) return;
-        // 锚到候选外接框底边中点下方, 与手绘 box 的 onPendingDraw 同式。
-        const pt = videoControlsRef.current?.normToClient({ x: geom.x, y: geom.y + geom.h });
-        setVideoSamPendingAccept({ idx, anchor: { left: pt?.left ?? 0, top: (pt?.top ?? 0) + 6 } });
-        return;
-      }
-      if (e.key === "Escape") {
-        sam.cancel();
-        return;
-      }
-      sam.cycle(e.shiftKey ? -1 : 1);
+      if (e.key === "Enter") requestVideoSamAccept();
+      else if (e.key === "Escape") sam.cancel();
+      else sam.cycle(e.shiftKey ? -1 : 1);
     };
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, [isVideoTask, s.videoTool, sam, samCandidateDisplayGeom, videoSamPendingAccept]);
+  }, [isVideoTask, s.videoTool, sam, requestVideoSamAccept, videoSamPendingAccept]);
 
   // magic-box: 候选一到就自动弹类选择器 (无需 Enter), 选定类别后收紧成外接框 —— 与图片侧同式。
   useEffect(() => {
@@ -5153,6 +5706,10 @@ export function useWorkbenchShellModel({
 
   const handleCancelPending = useCallback(
     (reason: "escape" | "outside") => {
+      if (s.pendingDrawing?.creation) {
+        if (reason === "escape") imageActions.cancelManualDrawing();
+        return;
+      }
       if (reason === "escape") {
         if (handleCancelMaskPendingClass()) return;
         if (handleCancelVideoMaskPendingClass()) return;
@@ -5162,7 +5719,13 @@ export function useWorkbenchShellModel({
       if (s.pendingDrawing) handlePickPendingClassAny(UNKNOWN_CLASS);
       else s.setPendingDrawing(null);
     },
-    [s, handleCancelMaskPendingClass, handleCancelVideoMaskPendingClass, handlePickPendingClassAny],
+    [
+      s,
+      imageActions,
+      handleCancelMaskPendingClass,
+      handleCancelVideoMaskPendingClass,
+      handlePickPendingClassAny,
+    ],
   );
 
   const selectedAnnotationForPanel = useMemo<AnnotationResponse | null>(() => {
@@ -5245,8 +5808,8 @@ export function useWorkbenchShellModel({
 
   // v0.21.4 · 视频单题 AI: 抓当前帧 JPEG → 图像 backend(client 供图路径)→ 落单帧 video_bbox 候选。
   // 与图像的 handleRunAi 走不同路(那条投 task_id 让后端从 task URL 取图, 视频 task URL 是整段 mp4)。
-  const handleRunVideoFrameAi = useCallback(async () => {
-    if (!projectId) return;
+  const handleRunVideoFrameAi = useCallback(() => {
+    if (!projectId || !taskId) return;
     const mlBackendId = batchBackendId;
     if (!mlBackendId) {
       pushToast({
@@ -5268,37 +5831,52 @@ export function useWorkbenchShellModel({
       });
       return;
     }
-    const blob = await videoControlsRef.current?.captureCurrentFrameJpeg();
-    if (!blob) {
-      pushToast({
-        msg: "当前帧尚未就绪",
-        sub: "请等待画面加载完成后重试",
-        kind: "warning",
-      });
-      return;
-    }
-    setVideoFrameAiRunning(true);
-    pushToast({ msg: "AI 正在分析当前帧...", sub: aiModel });
-    try {
-      const res = await mlBackendsApi.predictFrame(projectId, mlBackendId, {
-        blob,
-        taskId: taskId!,
+    const config = structuredClone(args) as unknown as Record<string, unknown>;
+    // Keep the same JPEG for retries, even when the input controls change afterward.
+    let capturedFrame: Blob | null = null;
+    aiRequest.start({
+      summary: {
+        projectId,
+        taskId,
+        taskLabel: task?.display_id,
         frameIndex: videoFrameIndex,
-        config: args as unknown as Record<string, unknown>,
-      });
-      preCfg.markHot();
-      await queryClient.invalidateQueries({ queryKey: ["predictions", taskId] });
-      pushToast({
-        msg: "当前帧分析完成",
-        sub: `第 ${videoFrameIndex} 帧新增 ${res.candidate_count} 个候选`,
-        kind: "success",
-      });
-    } catch (err) {
-      pushToast({ msg: "AI 预标注失败", sub: String(err), kind: "error" });
-    } finally {
-      setVideoFrameAiRunning(false);
-    }
-  }, [projectId, batchBackendId, preCfg, aiModel, taskId, videoFrameIndex, queryClient, pushToast]);
+        backendName: aiModel,
+        modelName:
+          preCfg.selectableModels.find((model) => model.id === args.model_id)?.display_name ??
+          args.model_id ??
+          aiModel,
+        input: config,
+      },
+      cancellable: true,
+      execute: async ({ signal, isCurrent }) => {
+        capturedFrame ??= (await videoControlsRef.current?.captureCurrentFrameJpeg()) ?? null;
+        if (!isCurrent() || signal.aborted) throw new DOMException("请求已取消", "AbortError");
+        if (!capturedFrame) throw new Error("当前帧尚未就绪，请等待画面加载完成后重试");
+        await mlBackendsApi.predictFrame(
+          projectId,
+          mlBackendId,
+          {
+            blob: capturedFrame,
+            taskId,
+            frameIndex: videoFrameIndex,
+            config,
+          },
+          signal,
+        );
+        return { kind: "completed" };
+      },
+    });
+  }, [
+    projectId,
+    batchBackendId,
+    preCfg,
+    aiModel,
+    task?.display_id,
+    taskId,
+    videoFrameIndex,
+    aiRequest,
+    pushToast,
+  ]);
 
   const annotateModeState = useAnnotateMode({
     mode,
@@ -5463,6 +6041,7 @@ export function useWorkbenchShellModel({
     batchChanging,
     setBatchChanging,
     cancelPendingDrawing: () => handleCancelPending("escape"),
+    cancelManualDrawing: imageActions.cancelManualDrawing,
     showHotkeys,
     navigateTask,
     smartNext,
@@ -5480,29 +6059,30 @@ export function useWorkbenchShellModel({
     handleUpdateAttributes,
     handleVideoSetSelectedClass,
     aiBoxes,
-    autoAdvanceOnDecide: s.workbenchConfig.common.autoAdvanceOnDecide,
     setShowHotkeys,
     clipboard,
     pushToast,
     stageGeom,
     polygonDraftPoints,
+    polygonDraft: s.tool === "polygon" ? polygonHandle : undefined,
     setPolygonDraftPoints,
     submitPolygon,
     submitPolyline,
     updateMutation: { mutate: (vars) => updateAnnotationMut.mutate(vars) },
     taskId,
     disabled: workbenchSettingsOpen,
+    classPickerActive: !!samPendingGeom || !!videoSamPendingAccept,
     ignoredKeys: stageKind === "3d" ? threeDOwnedKeys : undefined,
     videoMode: isVideoTask,
+    requestVideoTool,
     samplingActive,
     videoControlsRef,
     isPromptSupported: routing.isPromptSupported,
     aiInteractiveEnabled: currentProject?.ai_interactive_enabled,
     maskToolDisabledReason: imageMaskSizeDisabledReason,
     maskEditor: stageMaskEditor,
-    commitMaskAsPolygon,
-    commitMaskInstanceOperation: () => void requestCommitMaskInstanceOperation(),
-    cancelMaskEdit: cancelImageMaskEdit,
+    onMaskPrimaryAction: () => void maskPrimary.runPrimary(),
+    onMaskSecondaryAction: () => void maskPrimary.runSecondary(),
     maskTaskReadOnly:
       isLockedForActions ||
       imageMaskInteractionBlocked ||
@@ -5570,22 +6150,9 @@ export function useWorkbenchShellModel({
     });
   }, [floatingSelection, setWorkbenchLayout]);
 
-  // v0.16.14 · 卡内采纳 / 忽略后清掉选中:预测被消费后 pred- id 已失效,否则卡会回落到
-  // 「已选中 1 个标注」占位死角。仅在卡入口处理选中态,不动 handleAccept/Reject 业务逻辑。
-  const acceptPredictionFromCard = useCallback(
-    (box: Parameters<typeof handleAcceptPrediction>[0]) => {
-      handleAcceptPrediction(box);
-      s.setSelectedId(null);
-    },
-    [handleAcceptPrediction, s],
-  );
-  const rejectPredictionFromCard = useCallback(
-    (box: Parameters<typeof handleRejectPrediction>[0]) => {
-      handleRejectPrediction(box);
-      s.setSelectedId(null);
-    },
-    [handleRejectPrediction, s],
-  );
+  // Buttons and hotkeys share the decision owner's success-only selection handling.
+  const acceptPredictionFromCard = handleAcceptPrediction;
+  const rejectPredictionFromCard = handleRejectPrediction;
 
   const hiddenVideoTrackIds = s.hiddenVideoTrackIds;
   const lockedVideoTrackIds = s.lockedVideoTrackIds;
@@ -5614,6 +6181,7 @@ export function useWorkbenchShellModel({
         lockedTrackIds={lockedVideoTrackIds}
         classes={classes}
         onSelect={handleSelectBox}
+        onSelectVideoObject={requestVideoSelection}
         onToggleHiddenTrack={toggleHiddenVideoTrack}
         onToggleLockedTrack={toggleLockedVideoTrack}
         onSeekFrame={s.setVideoFrameIndex}
@@ -5654,6 +6222,7 @@ export function useWorkbenchShellModel({
       lockedVideoTrackIds,
       classes,
       handleSelectBox,
+      requestVideoSelection,
       toggleHiddenVideoTrack,
       toggleLockedVideoTrack,
       s.setVideoFrameIndex,
@@ -5811,7 +6380,7 @@ export function useWorkbenchShellModel({
             onDelete={handleDeleteBox}
             onUpdateAttributes={handleUpdateAttributes}
             onConvert={ann.geometry.type === "video_polygon" ? openAnnotationConversion : undefined}
-            onEditMask={isVideoMask(ann) ? () => setVideoTool("mask") : undefined}
+            onEditMask={isVideoMask(ann) ? () => requestVideoTool("mask") : undefined}
           />
         );
       } else if (ann && (isVideoPointsTrack(ann) || isVideoMaskTrack(ann))) {
@@ -5832,7 +6401,7 @@ export function useWorkbenchShellModel({
             onDelete={handleDeleteBox}
             onToggleHidden={toggleHiddenVideoTrack}
             onToggleLock={toggleLockedVideoTrack}
-            onEditMask={isVideoMaskTrack(ann) ? () => setVideoTool("mask-track") : undefined}
+            onEditMask={isVideoMaskTrack(ann) ? () => requestVideoTool("mask-track") : undefined}
             onPropagate={isVideoMaskTrack(ann) ? () => openPropagateDialog(ann) : undefined}
             onConvert={
               ann.geometry.type === "video_track_polygon" || isVideoMaskTrack(ann)
@@ -5961,11 +6530,13 @@ export function useWorkbenchShellModel({
       position: floatingSelectionPosition,
       onPositionChange: onSelectionPositionChange,
       // Visibility affects rendering only; the user's collapsed preference remains intact.
-      collapsed: resolveVideoSelectionCardCollapsed(
-        floatingSelection.collapsed,
-        trackerDialogOpen,
-        workspaceState.videoTrackerContentVisible,
-      ),
+      collapsed:
+        resolveVideoSelectionCardCollapsed(
+          floatingSelection.collapsed,
+          trackerDialogOpen,
+          workspaceState.videoTrackerContentVisible,
+        ) ||
+        (stageKind === "image" && tool === "mask" && maskEditor.tool === "slice_mask"),
       onCollapse: collapseSelectionCard,
       onExpand: expandSelectionCard,
       // v0.20.19 · 二次推理面板显隐 toggle 仅图片任务 (二次推理条本就图片限定)。
@@ -6007,7 +6578,7 @@ export function useWorkbenchShellModel({
     lockedVideoTrackIds,
     toggleHiddenVideoTrack,
     toggleLockedVideoTrack,
-    setVideoTool,
+    requestVideoTool,
     videoMaskKeyframeActions,
     openPropagateDialog,
     handleStartChangeClass,
@@ -6027,6 +6598,8 @@ export function useWorkbenchShellModel({
     onSelectionPositionChange,
     floatingSelection.collapsed,
     trackerDialogOpen,
+    tool,
+    maskEditor.tool,
     workspaceState.videoTrackerContentVisible,
     collapseSelectionCard,
     expandSelectionCard,
@@ -6192,22 +6765,42 @@ export function useWorkbenchShellModel({
       ].sort((a, b) => a - b),
     }));
 
-  // v0.21.28 · 候选/接受: 本任务的待审候选 (candidates 按 jobId, 用 jobs[jobId].taskId 过滤)。
-  // 普通计算 (非 hook): 位于早返回之后, 且计算便宜。
-  const trackerReviewEntry =
-    Object.entries(trackerJobs.candidates).find(
-      ([jobId]) => trackerJobs.jobs[jobId]?.taskId === taskId,
-    ) ?? null;
-  const trackerReviewCandidate = trackerReviewEntry
-    ? { jobId: trackerReviewEntry[0], preview: trackerReviewEntry[1] }
-    : null;
+  // The existing tracker owner projects one review scope to every surface.
+  const trackerReviewCandidate =
+    trackerJobs.activeReview && trackerJobs.jobs[trackerJobs.activeReview.jobId]?.taskId === taskId
+      ? trackerJobs.activeReview
+      : null;
+  const reviewReferenceIds = trackerReviewCandidate
+    ? referenceReviewInstanceIds(trackerReviewCandidate.preview, s.selectedId)
+    : [];
+  const reviewReference = trackerReviewCandidate
+    ? {
+        instanceIds: reviewReferenceIds,
+        onAdd: () =>
+          trackerJobs.setReviewInstances([
+            ...new Set([...trackerReviewCandidate.scope.instanceIds, ...reviewReferenceIds]),
+          ]),
+        onReplace: () => trackerJobs.setReviewInstances(reviewReferenceIds),
+      }
+    : undefined;
+  const seekTrackerReviewFrame = (frameIndex: number) => {
+    if (!trackerReviewCandidate) return;
+    const { intentKey } = trackerReviewCandidate;
+    const target = currentVideoSegment
+      ? Math.max(
+          currentVideoSegment.work_start_frame,
+          Math.min(currentVideoSegment.work_end_frame, frameIndex),
+        )
+      : frameIndex;
+    requestVideoReviewFrame(target, () => trackerJobs.isReviewIntentCurrent(intentKey));
+  };
   const trackerReviewMultiObj = trackerReviewCandidate
     ? new Set(trackerReviewCandidate.preview.results.map((r) => r.instance_id ?? "1")).size > 1
     : false;
   // 候选当前帧的框 (bbox 几何) → overlay 预览 (复用 samSessionBoxes 通道, 多目标逐 obj 配色)。
   const candidateBoxesThisFrame: { bbox: [number, number, number, number]; obj?: number }[] =
     trackerReviewCandidate
-      ? trackerReviewCandidate.preview.results
+      ? trackerReviewCandidate.selectedResults
           .filter(
             (r) =>
               r.frame_index === s.videoFrameIndex &&
@@ -6223,7 +6816,7 @@ export function useWorkbenchShellModel({
           })
       : [];
   const candidateMasksThisFrame = trackerReviewCandidate
-    ? trackerReviewCandidate.preview.results
+    ? trackerReviewCandidate.selectedResults
         .filter(
           (result) =>
             result.frame_index === s.videoFrameIndex &&
@@ -6255,27 +6848,6 @@ export function useWorkbenchShellModel({
         ? aiBoxes.filter((b) => aiBoxOnFrame(b, s.videoFrameIndex)).length
         : aiBoxes.length;
 
-  const maskToolbarSelection = s.selectedId
-    ? visibleAnnotationsData.find((annotation) => annotation.id === s.selectedId)
-    : null;
-  const maskToolbarTrackLocked = !!(
-    isVideoTask &&
-    maskToolbarSelection &&
-    isVideoMaskTrack(maskToolbarSelection) &&
-    s.lockedVideoTrackIds.has(maskToolbarSelection.geometry.track_id)
-  );
-  const maskToolbarEditContext = {
-    taskReadOnly:
-      isLockedForActions || imageMaskInteractionBlocked || maskCompareInteractionBlocked,
-    annotationLocked: !!maskToolbarSelection?.is_locked,
-    trackLocked: maskToolbarTrackLocked,
-    segmentLocked: !!lockConflict || !!lockError,
-    editorPhase: maskInstanceTransitionBusy ? "saving" : maskEditor.phase,
-  };
-  const maskToolbarBaseBlockReason = maskEditBlockReason(maskToolbarEditContext);
-  const maskToolbarBlockReason = maskEditor.tiledReadOnly
-    ? ("large_canvas_budget_exceeded" as const)
-    : maskToolbarBaseBlockReason;
   const selectedMaskJoinCandidates = [
     ...new Set([...(s.selectedId ? [s.selectedId] : []), ...s.selectedIds]),
   ]
@@ -6349,12 +6921,35 @@ export function useWorkbenchShellModel({
       // v0.13.3-5 · 3D 点云台:左栏色板可点选 = 放置新框的类别(2D 仍只读图例)。
       classPickable: stageKind === "3d" && !isLocked,
       onPickClass: s.setActiveClass,
+      bboxCreation:
+        stageKind === "image" && s.tool === "box"
+          ? {
+              mode: s.bboxCreationMode,
+              onChange: s.setBboxCreationMode,
+              disabled: isLockedForActions,
+            }
+          : undefined,
+      continuousCreation:
+        stageKind === "image"
+          ? {
+              enabled: !!continuousCreation,
+              toolUnitId: continuousCreation?.toolUnitId ?? toolView.toolUnitId,
+              units: continuousUnits,
+              activeClass: continuousCreation?.className ?? "",
+              onEnabledChange: setContinuousEnabled,
+              onSelectUnit: selectContinuousUnit,
+              onPickClass: pickContinuousClass,
+              readOnly: !continuousCreationAllowed,
+            }
+          : undefined,
     },
     toolDock: {
       tool: s.tool,
       onSetTool: s.setTool,
       videoTool: s.videoTool,
-      onSetVideoTool: s.setVideoTool,
+      onSetVideoTool: requestVideoTool,
+      videoToolScope: s.videoToolScope,
+      onSetVideoToolScope: requestVideoToolScope,
       isPromptSupported: routing.isPromptSupported,
       toolDisabledReasons: {
         mask: imageMaskSizeDisabledReason,
@@ -6459,7 +7054,7 @@ export function useWorkbenchShellModel({
         stageKind,
         maskCompareStore: maskQcReview.store,
         taskId: taskId ?? null,
-        readOnly: isLockedForActions,
+        readOnly: isLockedForActions || (!!continuousCreation && !continuousCreation.className),
         activeClass: s.activeClass,
         selectedId: s.selectedId,
         selectedIds: s.selectedIds,
@@ -6496,9 +7091,26 @@ export function useWorkbenchShellModel({
         projectRenderingConfig: currentProject?.rendering_config ?? null,
         overlays: (
           <>
-            {(isVideoTask
-              ? s.videoTool === "mask" || s.videoTool === "mask-track"
-              : s.tool === "mask") && (
+            {continuousCreation && stageKind === "image" && (
+              <div
+                role="status"
+                data-testid="continuous-creation-status"
+                className="absolute left-1/2 top-2 z-overlay flex -translate-x-1/2 items-center gap-2 rounded-md border border-border bg-card px-3 py-1.5 text-xs shadow-sm pointer-events-auto"
+              >
+                <span>
+                  连续创建 · {continuousCreation.className || "请选择类别"} ·{" "}
+                  {MANUAL_IMAGE_TOOLS.find((item) => item.tool === continuousCreation.tool)?.label}
+                </span>
+                <button
+                  type="button"
+                  className="rounded-sm px-1.5 py-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  onClick={() => setContinuousEnabled(false)}
+                >
+                  退出连续创建
+                </button>
+              </div>
+            )}
+            {maskToolActive && (
               <MaskToolbar
                 active={maskEditor.active}
                 tool={maskEditor.tool}
@@ -6522,16 +7134,23 @@ export function useWorkbenchShellModel({
                 onSetBrushShape={maskEditor.setBrushShape}
                 onSetConnectivity={maskEditor.setConnectivity}
                 onSetRadius={maskEditor.setRadius}
-                onConfirmOperation={maskEditor.confirmOperation}
-                onCancelOperation={stageMaskEditor.cancelOperation}
+                actions={maskPrimary.actions}
+                onPrimaryAction={() => void maskPrimary.runPrimary()}
+                onSecondaryAction={() => void maskPrimary.runSecondary()}
                 onRunOperation={maskEditor.runOperation}
                 onRunInstanceOperation={runMaskInstanceOperation}
-                onCommitInstanceOperation={() => void requestCommitMaskInstanceOperation()}
                 onPrepareJoin={(joinMode) => void prepareMaskJoin(joinMode)}
                 onPrepareOverlap={(policy) => void prepareMaskOverlap(policy)}
-                onRefreshInstanceOperation={() => void refreshMaskInstanceOperation()}
                 canPrepareJoin={canPrepareMaskJoin}
                 joinSupportsReplace={!isVideoTask}
+                sliceUnavailableReason={
+                  isVideoTask
+                    ? undefined
+                    : maskSliceUnavailableReason(
+                        selectedImageRasterMask ?? null,
+                        annotationsData ?? [],
+                      )
+                }
                 instanceCommitting={maskInstanceCommitting}
                 instanceRefreshing={maskInstanceRefreshing}
                 instanceCommitError={maskInstanceCommitError}
@@ -6542,8 +7161,6 @@ export function useWorkbenchShellModel({
                 instanceCommitBlocked={maskInstanceCommitBlocked}
                 onUndo={maskEditor.undo}
                 onRedo={maskEditor.redo}
-                onRetry={isVideoTask ? maskEditor.recoverFromError : retryImageMaskSession}
-                onCommit={isVideoTask ? commitVideoMask : commitMaskAsPolygon}
                 onCommitAndPropagate={
                   isVideoTask && selectedVideoMask ? openVideoMaskCorrection : undefined
                 }
@@ -6556,14 +7173,72 @@ export function useWorkbenchShellModel({
                       ? () => openAnnotationConversion(selectedImageRasterMask.id)
                       : undefined
                 }
-                onCancel={isVideoTask ? cancelVideoMaskEdit : cancelImageMaskEdit}
               />
             )}
+            <AlertDialog
+              open={videoToolConfirmationOpen}
+              onOpenChange={(open) => {
+                if (!open) settleVideoToolConfirmation(false);
+              }}
+            >
+              <AlertDialogContent
+                size="sm"
+                className="z-app-drawer"
+                overlayProps={{ className: "z-app-drawer-backdrop" }}
+                data-workbench-video-tool-confirm
+              >
+                <AlertDialogHeader>
+                  <AlertDialogTitle>切换视频工具</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    当前源帧还有未完成的绘制。继续绘制会保留原工具、范围和草稿；丢弃后再切换。
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>继续绘制</AlertDialogCancel>
+                  <AlertDialogAction
+                    variant="destructive"
+                    onClick={() => settleVideoToolConfirmation(true)}
+                  >
+                    丢弃并切换
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+            <AlertDialog
+              open={maskPrimary.emptyConfirmationOpen}
+              onOpenChange={(open) => {
+                if (!open) maskPrimary.closeEmptyConfirmation();
+              }}
+            >
+              <AlertDialogContent
+                size="sm"
+                className="z-app-drawer"
+                overlayProps={{ className: "z-app-drawer-backdrop" }}
+              >
+                <AlertDialogHeader>
+                  <AlertDialogTitle>确认清空当前 Mask？</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    该操作会把当前对象变为空
+                    Mask。应用后仍可用撤销恢复，但保存时需要选择删除对象或继续编辑。
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>返回预览</AlertDialogCancel>
+                  <AlertDialogAction variant="destructive" onClick={maskPrimary.confirmEmptyRegion}>
+                    确认清空
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
             <AlertDialog
               open={maskInstanceDeleteConfirmOpen}
               onOpenChange={setMaskInstanceDeleteConfirmOpen}
             >
-              <AlertDialogContent size="sm">
+              <AlertDialogContent
+                size="sm"
+                className="z-app-drawer"
+                overlayProps={{ className: "z-app-drawer-backdrop" }}
+              >
                 <AlertDialogHeader>
                   <AlertDialogTitle>
                     确认删除 {maskInstanceDeleteCount} 个 Mask 实例？
@@ -6587,68 +7262,87 @@ export function useWorkbenchShellModel({
                 与 MaskToolbar 互斥 (mask 非 AI 工具)。引擎选择经 modelPref 服务端持久化。
                 v0.21.27 · U-pvs-1 · PVS 种子采集态借用 smart-point 工具落点, 此时抑制本工具条
                 (否则与顶部居中的传播对话框撞位); 采集是「落 PVS 种子」而非帧级 SAM 分割。 */}
-            {isAIToolId(activeAiTool) && !seedCollecting && (
-              <InteractiveToolBar
-                tool={activeAiTool}
-                backendName={mlCapabilities.capability?.name}
-                capability={mlCapabilities.capability}
-                samPolarity={s.samPolarity}
-                onSetSamPolarity={s.setSamPolarity}
-                isLoading={mlCapabilities.isLoading}
-                isError={mlCapabilities.isError}
-                canRetry={sam.canRetry}
-                onRetry={sam.retryLast}
-                exemplarOutputMode={s.exemplarOutputMode}
-                singleFrameOutputGeometry={effectiveSingleFrameOutputGeometry}
-                onSetSingleFrameOutputGeometry={setSingleFrameOutputGeometry}
-                nativeMaskOutputDisabledReason={nativeMaskOutputDisabledReason}
-                maskPromptSourceLabel={
-                  canRefineSelectedMask && selectedMaskPromptSource
-                    ? `精修 Mask · ${selectedMaskPromptSource.class_name}`
-                    : undefined
-                }
-                onSetExemplarOutputMode={(mode) => {
-                  // 切输出形态时若 exemplar 会话进行中, 用当前会话重跑 (output 透传)。
-                  handleSetExemplarOutputMode(mode);
-                  sam.rerunExemplar(mode);
-                }}
-                exemplarText={sam.exemplarText}
-                onSetExemplarText={sam.setExemplarText}
-                exemplarThreshold={sam.exemplarThreshold}
-                onSetExemplarThreshold={sam.setExemplarThreshold}
-                exemplarThresholdDefault={((): number | undefined => {
-                  const def = (
-                    mlCapabilities.paramsSchema?.properties?.score_threshold as
-                      | { default?: unknown }
-                      | undefined
-                  )?.default;
-                  return typeof def === "number" ? def : undefined;
-                })()}
-                exemplarSessionActive={sam.sessionExemplars.length > 0}
-                models={mlCapabilities.models}
-                activeModelId={mlCapabilities.activeModelId}
-                onSetActiveModelId={(id) => {
-                  // 会话内选中 + 服务端持久化 (按 backend, 跨设备)。
-                  mlCapabilities.setActiveModelId(id);
-                  modelPref.save(id);
-                }}
-                capabilityWarnings={capabilityWarnings}
-                onFillAttribute={handleFillAttribute}
-                interactiveBackends={(activeInteractivePrompt
-                  ? routing.candidatesFor(activeInteractivePrompt)
-                  : []
-                )
-                  .map((id) => backends.find((b) => b.id === id))
-                  .filter((b): b is MLBackendResponse => !!b)}
-                selectedInteractiveId={interactiveBackendId}
-                onSelectInteractive={routing.setPreferredInteractiveId}
-                variantGroups={interactiveVariantGroups}
-                variantCombinations={interactiveVariantCombos}
-                variantDefaults={interactiveVariantSlice}
-                variantValue={interactiveProjectVariantSlice}
-                onVariantChange={handleInteractiveVariantChange}
-              />
-            )}
+            {(isAIToolId(activeAiTool) ||
+              (stageKind !== "3d" && capabilityError && !maskToolActive)) &&
+              !seedCollecting && (
+                <InteractiveToolBar
+                  tool={isAIToolId(activeAiTool) ? activeAiTool : "smart-point"}
+                  capabilityRecoveryOnly={!isAIToolId(activeAiTool)}
+                  backendName={mlCapabilities.capability?.name}
+                  capability={mlCapabilities.capability}
+                  samPolarity={s.samPolarity}
+                  onSetSamPolarity={s.setSamPolarity}
+                  isLoading={routing.isLoading || mlCapabilities.isLoading}
+                  isError={!!capabilityError}
+                  capabilityError={capabilityError}
+                  onRetryCapabilities={retryInteractiveCapabilities}
+                  isCapabilityRetrying={routing.isFetching || mlCapabilities.isFetching}
+                  isRunning={sam.isRunning}
+                  inferenceError={sam.error}
+                  candidateCount={sam.candidates.length}
+                  activeCandidateIndex={sam.activeIdx}
+                  canAcceptCandidates={sam.canAcceptCandidates && !isLockedForActions}
+                  candidateActionPending={
+                    isVideoTask ? videoSamPendingAccept !== null : imageActions.samClassPickerActive
+                  }
+                  onCycleCandidate={sam.cycle}
+                  onAcceptCandidate={
+                    isVideoTask ? requestVideoSamAccept : imageActions.requestSamAccept
+                  }
+                  onCancelCandidates={sam.cancel}
+                  canRetry={sam.canRetry}
+                  onRetry={sam.retryLast}
+                  exemplarOutputMode={s.exemplarOutputMode}
+                  singleFrameOutputGeometry={effectiveSingleFrameOutputGeometry}
+                  onSetSingleFrameOutputGeometry={setSingleFrameOutputGeometry}
+                  nativeMaskOutputDisabledReason={nativeMaskOutputDisabledReason}
+                  maskPromptSourceLabel={
+                    canRefineSelectedMask && selectedMaskPromptSource
+                      ? `精修 Mask · ${selectedMaskPromptSource.class_name}`
+                      : undefined
+                  }
+                  onSetExemplarOutputMode={(mode) => {
+                    // 切输出形态时若 exemplar 会话进行中, 用当前会话重跑 (output 透传)。
+                    handleSetExemplarOutputMode(mode);
+                    sam.rerunExemplar(mode);
+                  }}
+                  exemplarText={sam.exemplarText}
+                  onSetExemplarText={sam.setExemplarText}
+                  exemplarThreshold={sam.exemplarThreshold}
+                  onSetExemplarThreshold={sam.setExemplarThreshold}
+                  exemplarThresholdDefault={((): number | undefined => {
+                    const def = (
+                      mlCapabilities.paramsSchema?.properties?.score_threshold as
+                        | { default?: unknown }
+                        | undefined
+                    )?.default;
+                    return typeof def === "number" ? def : undefined;
+                  })()}
+                  exemplarSessionActive={sam.sessionExemplars.length > 0}
+                  models={mlCapabilities.models}
+                  activeModelId={mlCapabilities.activeModelId}
+                  onSetActiveModelId={(id) => {
+                    // 会话内选中 + 服务端持久化 (按 backend, 跨设备)。
+                    mlCapabilities.setActiveModelId(id);
+                    modelPref.save(id);
+                  }}
+                  capabilityWarnings={capabilityWarnings}
+                  onFillAttribute={handleFillAttribute}
+                  interactiveBackends={(activeInteractivePrompt
+                    ? routing.candidatesFor(activeInteractivePrompt)
+                    : []
+                  )
+                    .map((id) => backends.find((b) => b.id === id))
+                    .filter((b): b is MLBackendResponse => !!b)}
+                  selectedInteractiveId={interactiveBackendId}
+                  onSelectInteractive={routing.setPreferredInteractiveId}
+                  variantGroups={interactiveVariantGroups}
+                  variantCombinations={interactiveVariantCombos}
+                  variantDefaults={interactiveVariantSlice}
+                  variantValue={interactiveProjectVariantSlice}
+                  onVariantChange={handleInteractiveVariantChange}
+                />
+              )}
             {/* v0.20.11 · 选中单框二次推理入口: 非 AI 工具 (与 InteractiveToolBar 互斥) 且单选一个
                 已落库框时浮顶部, 列该框可跑能力。图片任务 only (视频/3D 走各自轨迹面板)。 */}
             {!secondaryBarHidden &&
@@ -6665,40 +7359,68 @@ export function useWorkbenchShellModel({
                 />
               )}
             {/* SAM 候选的类选择器: 图片给 geom 走 vp 换算, 视频给 anchor 走 fixed 定位 (二者互斥)。 */}
-            <WorkbenchOverlays
-              pendingDrawing={s.pendingDrawing}
-              editingClass={s.editingClass}
-              samPendingGeom={isVideoTask ? videoSamPendingGeom : samPendingGeom}
-              samPendingAnchor={isVideoTask ? (videoSamPendingAccept?.anchor ?? null) : null}
-              samDefaultClass={isVideoTask ? videoSamDefaultClass : samDefaultClass}
-              batchChanging={batchChanging}
-              batchChangeTarget={batchChangeTarget}
-              imageOverlayEnabled={stageKind === "image"}
-              stageGeom={stageGeom}
-              vp={vp}
-              classes={classes}
-              editingClassClasses={editingClassClasses}
-              batchChangeClasses={
-                batchChangeToolUnitId
-                  ? classesForUnit(
-                      currentProject?.tool_bindings,
-                      batchChangeToolUnitId as ToolUnitId,
-                    )
-                  : classes
-              }
-              recentClasses={recentClasses}
-              activeClass={s.activeClass}
-              onPickPendingClass={handlePickPendingClassAny}
-              onCancelPending={handleCancelPending}
-              onCommitChangeClass={handleCommitChangeClass}
-              onChangeClassKeepOpen={handleChangeClassKeepOpen}
-              changeClassAttrEditing={changeClassAttrEditing}
-              onCancelChangeClass={handleCancelChangeClass}
-              onSamCommitClass={isVideoTask ? handleVideoSamCommitClass : handleSamCommitClass}
-              onSamCancelClass={isVideoTask ? handleVideoSamCancelClass : handleSamCancelClass}
-              onCommitBatchChangeClass={handleCommitBatchChangeClass}
-              onCancelBatchChange={handleCancelBatchChange}
-            />
+            {!s.pendingDrawing?.creation && (
+              <WorkbenchOverlays
+                pendingDrawing={s.pendingDrawing}
+                editingClass={s.editingClass}
+                samPendingGeom={isVideoTask ? videoSamPendingGeom : samPendingGeom}
+                samPendingAnchor={isVideoTask ? (videoSamPendingAccept?.anchor ?? null) : null}
+                samDefaultClass={isVideoTask ? videoSamDefaultClass : samDefaultClass}
+                batchChanging={batchChanging}
+                batchChangeTarget={batchChangeTarget}
+                imageOverlayEnabled={stageKind === "image"}
+                stageGeom={stageGeom}
+                vp={vp}
+                classes={classes}
+                editingClassClasses={editingClassClasses}
+                batchChangeClasses={
+                  batchChangeToolUnitId
+                    ? classesForUnit(
+                        currentProject?.tool_bindings,
+                        batchChangeToolUnitId as ToolUnitId,
+                      )
+                    : classes
+                }
+                recentClasses={recentClasses}
+                activeClass={s.activeClass}
+                onPickPendingClass={handlePickPendingClassAny}
+                onCancelPending={handleCancelPending}
+                onCommitChangeClass={handleCommitChangeClass}
+                onChangeClassKeepOpen={handleChangeClassKeepOpen}
+                changeClassAttrEditing={changeClassAttrEditing}
+                onCancelChangeClass={handleCancelChangeClass}
+                onSamCommitClass={isVideoTask ? handleVideoSamCommitClass : handleSamCommitClass}
+                onSamCancelClass={isVideoTask ? handleVideoSamCancelClass : handleSamCancelClass}
+                onCommitBatchChangeClass={handleCommitBatchChangeClass}
+                onCancelBatchChange={handleCancelBatchChange}
+              />
+            )}
+            {s.pendingDrawing?.creation && stageKind === "image" && (
+              <ManualCreationPopover
+                key={s.pendingDrawing.creation.id}
+                {...s.pendingDrawing.creation}
+                className={s.pendingDrawing.creation.className || s.activeClass}
+                anchor={{ left: Math.max(16, window.innerWidth / 2 - 130), top: 112 }}
+                classes={classesForUnit(
+                  currentProject?.tool_bindings,
+                  s.pendingDrawing.creation.toolUnitId,
+                )}
+                recent={recentClasses}
+                schema={attributeSchemaForUnit(
+                  currentProject?.tool_bindings,
+                  s.pendingDrawing.creation.toolUnitId,
+                )}
+                onPickClass={handlePickPendingClass}
+                onChangeAttributes={(next) =>
+                  imageActions.changeManualAttributes(s.pendingDrawing!.creation!.id, next)
+                }
+                onSubmit={imageActions.submitManualDrawing}
+                onCancel={imageActions.cancelManualDrawing}
+                onOutside={
+                  continuousCreation ? undefined : () => handlePickPendingClass(UNKNOWN_CLASS)
+                }
+              />
+            )}
           </>
         ),
       },
@@ -6709,6 +7431,9 @@ export function useWorkbenchShellModel({
         videoChapters: isVideoTask ? videoTimelineChapters : undefined,
         videoTimelineChapterControls,
         videoPropagateRange: propagateHighlight,
+        trackerReview: trackerReviewCandidate,
+        reviewReference,
+        onSeekReviewFrame: seekTrackerReviewFrame,
         videoSegmentRange:
           videoCollaborationEnabled && activeVideoSegment
             ? {
@@ -6759,13 +7484,8 @@ export function useWorkbenchShellModel({
         videoMaskCandidates: isVideoTask ? candidateMasksThisFrame : undefined,
         videoMaskEditor: isVideoTask ? stageMaskEditor : undefined,
         videoMaskKeyframeActions: isVideoTask ? videoMaskKeyframeActions : undefined,
-        onVideoMaskCommit: isVideoTask
-          ? () => {
-              if (maskEditor.instanceOperationPreview) void requestCommitMaskInstanceOperation();
-              else void commitVideoMask();
-            }
-          : undefined,
-        onVideoMaskCancel: isVideoTask ? cancelVideoMaskEdit : undefined,
+        onVideoMaskCommit: isVideoTask ? () => void maskPrimary.runPrimary() : undefined,
+        onVideoMaskCancel: isVideoTask ? () => void maskPrimary.runSecondary() : undefined,
         spacePan,
         onSpacePanDragStart: markSpacePanDrag,
         videoFrameIndex: s.videoFrameIndex,
@@ -6800,6 +7520,8 @@ export function useWorkbenchShellModel({
         onRejectPrediction: handleRejectPrediction,
       },
       image: {
+        bboxCreationMode: s.bboxCreationMode,
+        continuousCreation: !!continuousCreation,
         resourceCoordinator: rasterResources,
         rasterMaskRecords: imageRasterMasks.records,
         rasterMaskStatusById: imageRasterMasks.statusById,
@@ -6855,6 +7577,7 @@ export function useWorkbenchShellModel({
         onCommitKeypointGeometry: handleCommitKeypointGeometry,
         onJoinSelected: handleJoinSelectedPolygons,
         onCropSelected: handleCropSelectedPolygons,
+        onCommitPolygonSlice: handleCommitPolygonSlice,
         onStageGeometry: setStageGeom,
       },
       ai: {
@@ -6897,13 +7620,15 @@ export function useWorkbenchShellModel({
         // v0.11.5 · 图钉高亮跟 DiscussionPanel issues tab 共享 store (旧浮层路径已删)。
         highlightIssueId: activeIssueHighlightId,
         // 单击图钉 → 高亮 + 请求 DiscussionPanel 切到 issues tab + 高亮对应列表行。
-        onIssuePinClick: (id) => highlightIssueFromPin(id),
-        issuePinDropArmed: issuePinDropArmed,
-        onIssuePinDrop: (x, y) => {
-          setIssuePinDropArmed(false);
-          setIssuePinPrefill({ x, y });
-          setIssueCreateOpen(true);
+        onIssuePinClick: (id) => {
+          highlightIssueFromPin(id);
+          const issue = issuesQuery.data?.items.find((item) => item.id === id);
+          if (isVideoTask && issue) useActiveIssueStore.getState().focusIssue(issue);
         },
+        issuePinDropArmed: issuePinDropArmed,
+        issueNavigationPending: issueNavigation.status === "preparing",
+        onIssuePinDrop,
+        onSeekIssueFrame,
       },
     },
     videoControlsRef,
@@ -6960,6 +7685,7 @@ export function useWorkbenchShellModel({
       imageWidth,
       imageHeight,
       onSelect: handleSelectBox,
+      onSelectVideoObject: isVideoTask ? requestVideoSelection : undefined,
       onAcceptPrediction: handleAcceptPrediction,
       onRejectPrediction: handleRejectPrediction,
       onRefinePrediction: handleRefinePrediction,
@@ -6975,7 +7701,15 @@ export function useWorkbenchShellModel({
         const cur = !!ann[flag];
         handlePatchShapeFlag(id, flag, !cur);
       },
-      attributeSchema: toolView.attributeSchema,
+      attributeSchema: selectedAiBox
+        ? attributeSchemaForUnit(
+            currentProject?.tool_bindings,
+            (selectedAiBox.tool_unit_id as ToolUnitId | null | undefined) ??
+              toolUnitForGeometryType(
+                selectedAiBox.geometry?.type ?? selectedAiBox.annotation_type ?? "bbox",
+              ),
+          )
+        : toolView.attributeSchema,
       selectedAnnotation: selectedAnnotationForPanel,
       onUpdateAttributes: handleUpdateAttributes,
       onBulkUpdateAttributes: (ids, patch) => {
@@ -7029,6 +7763,10 @@ export function useWorkbenchShellModel({
       aiModel,
       aiRunning,
       aiBoxCount: aiPopoverBoxCount,
+      request: aiRequest.presentation,
+      onRetryRequest: aiRequest.retry,
+      onCancelRequest: aiRequest.cancel,
+      onReviewCandidates: () => workspaceCommands.current?.show("inspector"),
       isVideoTask,
       confThreshold: s.confThreshold,
       aiTakeoverRate,
@@ -7113,6 +7851,8 @@ export function useWorkbenchShellModel({
         : undefined,
     // v0.11.5 · B 组 · DiscussionPanel 转正 → 右栏固定两段布局 (上 AIInspectorPanel + 下 DiscussionPanel)。
     discussionPanel: {
+      onCreateTaskIssue: openTaskIssue,
+      allowProjectIssueScope: isVideoTask,
       maskQc:
         mode === "review" && projectId && taskId
           ? {
@@ -7241,8 +7981,18 @@ export function useWorkbenchShellModel({
 
   // v0.21.28 · 候选/接受审阅条 props。
   const trackerReviewProps: ComponentProps<typeof VideoTrackerReviewBar> = {
-    open: Boolean(trackerReviewCandidate),
-    preview: trackerReviewCandidate?.preview ?? null,
+    review: trackerReviewCandidate,
+    jobs: Object.keys(trackerJobs.candidates)
+      .filter((jobId) => trackerJobs.jobs[jobId]?.taskId === taskId)
+      .map((jobId) => ({
+        jobId,
+        label: `${trackerJobs.jobs[jobId].modelKey} · ${jobId.slice(0, 8)}`,
+      })),
+    onChooseJob: trackerJobs.chooseReviewJob,
+    onSetInstances: trackerJobs.setReviewInstances,
+    onSetWindow: trackerJobs.setReviewWindow,
+    onSeekFrame: seekTrackerReviewFrame,
+    isIntentCurrent: trackerJobs.isReviewIntentCurrent,
     submitting: trackerReviewCandidate
       ? Boolean(trackerJobs.submitting[trackerReviewCandidate.jobId])
       : false,
@@ -7291,17 +8041,17 @@ export function useWorkbenchShellModel({
             workspaceCommands.current?.show("discussion");
             requestIssuesTab();
           },
-          onToggleIssuePinDrop: () => setIssuePinDropArmed((v) => !v),
+          onToggleIssuePinDrop,
+          issueNavigation,
+          onRetryIssueNavigation: retryIssueNavigation,
           createModal: {
             open: issueCreateOpen,
             projectId,
             taskId,
             listParams: issueListParams,
             prefilledAnchor: issuePinPrefill,
-            onClose: () => {
-              setIssueCreateOpen(false);
-              setIssuePinPrefill(null);
-            },
+            anchorMode: isVideoTask && issuePinPrefill?.frame === undefined ? "task" : "pixel",
+            onClose: closeIssueCreate,
           },
         } satisfies WorkbenchShellIssueSection)
       : undefined;

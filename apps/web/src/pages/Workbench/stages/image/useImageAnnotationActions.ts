@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { isWorkbenchSettingsInteractionBlocked } from "../../state/workbenchSettingsInteraction";
+import { isSamCandidateHotkeyBlocked } from "../../state/hotkeys";
 import type { QueryClient } from "@tanstack/react-query";
 import type { Annotation, AnnotationResponse, PredictionResponse } from "@/types";
 import type { AnnotationPayload, AnnotationUpdatePayload } from "@/api/tasks";
 import { ApiError } from "@/api/client";
 import { rasterMasksApi } from "@/api/rasterMasks";
 import type { ToolBindings } from "@/api/projects";
+import { usePredictionDecisions } from "./usePredictionDecisions";
 import { useAcceptPrediction, useRejectPrediction } from "@/hooks/usePredictions";
 import type { useAcceptNativeMaskCandidate } from "@/hooks/useAcceptNativeMaskCandidate";
 import { dedupeAiBoxesById } from "../../stage/aiBoxFrames";
@@ -28,7 +29,7 @@ import {
   resolveSamCandidateClass,
   samCandidateGeom,
 } from "../../state/useWorkbenchShellModel.helpers";
-import type { UseMaskEditorSessionReturn } from "../../state/useMaskEditorSession";
+import type { UseMaskEditorSessionReturn, MaskSessionKey } from "../../state/useMaskEditorSession";
 import { canEditMask } from "../../state/canEditMask";
 import { tightenBboxFromPolygon } from "../../stage/shared/geometry/bbox";
 import { UNKNOWN_CLASS } from "../../stage/colors";
@@ -52,6 +53,24 @@ import {
   type RegionGeometry,
 } from "../../stage/shared/geometry/maskConversion";
 import { cocoRleArea, cocoRleBounds } from "../../stage/shared/geometry/maskRle";
+
+type PendingRefine =
+  | {
+      kind: "prediction";
+      predictionId: string;
+      shapeIndex: number;
+      labelId: string;
+      sourceGeometry: RegionGeometry;
+    }
+  | { kind: "sam"; samIdx: number; labelId: string; sourceGeometry: RegionGeometry }
+  | {
+      kind: "user";
+      annotationId: string;
+      beforeGeometry: AnnotationResponse["geometry"];
+      annotationVersion: number | undefined;
+      labelId: string;
+      sourceGeometry: RegionGeometry;
+    };
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
@@ -88,6 +107,9 @@ interface ToastInput {
 interface UseImageAnnotationActionsArgs {
   taskId: string | undefined;
   videoSegmentId?: string | null;
+  /** Route identity is separate from annotation versions refreshed by a successful save. */
+  maskRouteKey?: string;
+  maskSessionKey?: MaskSessionKey;
   projectId: string | undefined;
   meUserId: string | null | undefined;
   queryClient: QueryClient;
@@ -210,6 +232,8 @@ export function promptEmptyRasterMaskChoice(
 export function useImageAnnotationActions({
   taskId,
   videoSegmentId,
+  maskRouteKey,
+  maskSessionKey,
   projectId,
   meUserId,
   queryClient,
@@ -254,6 +278,8 @@ export function useImageAnnotationActions({
     mutations,
     keypointNodeCount,
     activeToolHasOwnClasses,
+    toolBindings,
+    createAnnotationAsync,
     markPendingGeom,
   });
   const { createBboxWithClass, submitPolygon } = annotationActions;
@@ -267,6 +293,52 @@ export function useImageAnnotationActions({
   const [batchChangeToolUnitId, setBatchChangeToolUnitId] = useState<string | undefined>();
   const [samPendingAccept, setSamPendingAccept] = useState<{ idx: number } | null>(null);
   const pendingMaskClassResolverRef = useRef<((className: string | null) => void) | null>(null);
+  const pendingRefineRef = useRef<PendingRefine | null>(null);
+  const maskTargetId =
+    pendingRefineRef.current?.kind === "user"
+      ? pendingRefineRef.current.annotationId
+      : s.selectedId;
+  const selectedMaskLocked = !!annotationsRef.current.find((ann) => ann.id === maskTargetId)
+    ?.is_locked;
+  // Keep a distinct lease after A -> B -> A. Annotation versions are intentionally
+  // checked separately: our own successful mutation may refresh that version.
+  const maskCommitOwner = useMemo(
+    () => ({
+      taskId,
+      projectId,
+      videoSegmentId,
+      maskRouteKey,
+      tool: s.tool,
+      selection: s.selectedId,
+      frame: s.videoFrameIndex,
+      isLocked,
+      selectedMaskLocked,
+      maskPersistenceMode,
+      active: maskEditor?.active,
+    }),
+    [
+      taskId,
+      projectId,
+      videoSegmentId,
+      maskRouteKey,
+      s.tool,
+      s.selectedId,
+      s.videoFrameIndex,
+      isLocked,
+      selectedMaskLocked,
+      maskPersistenceMode,
+      maskEditor?.active,
+    ],
+  );
+  const currentMaskCommitRef = useRef({ owner: maskCommitOwner, editor: maskEditor, isLocked });
+  currentMaskCommitRef.current = { owner: maskCommitOwner, editor: maskEditor, isLocked };
+  const maskCommitMountedRef = useRef(true);
+  useEffect(() => {
+    maskCommitMountedRef.current = true;
+    return () => {
+      maskCommitMountedRef.current = false;
+    };
+  }, []);
   const [dismissedShapeKeys, setDismissedShapeKeys] = useState<Set<string>>(new Set());
   const [predictionSourceVisibility, setPredictionSourceVisibility] = useState(
     defaultPredictionSourceVisibility,
@@ -276,12 +348,17 @@ export function useImageAnnotationActions({
     setDismissedShapeKeys(new Set());
   }, [taskId]);
 
+  const setMaskPendingDrawing = s.setPendingDrawing;
   useEffect(
     () => () => {
-      pendingMaskClassResolverRef.current?.(null);
+      const resolve = pendingMaskClassResolverRef.current;
       pendingMaskClassResolverRef.current = null;
+      if (resolve) {
+        resolve(null);
+        setMaskPendingDrawing(null);
+      }
     },
-    [taskId],
+    [maskCommitOwner, setMaskPendingDrawing],
   );
 
   const requestMaskClass = useCallback(
@@ -542,9 +619,15 @@ export function useImageAnnotationActions({
   // v0.10.9 · R 键精修走 ref 间接调用,避免在 useEffect 依赖里前向引用未定义的 handleRefineSamCandidate.
   const refineSamRef = useRef<(idx: number) => void>(() => {});
 
+  const requestSamAccept = useCallback(() => {
+    if (isLocked || samPendingAccept || !sam.canAcceptCandidates || sam.isRunning) return;
+    if (!sam.candidates[sam.activeIdx]) return;
+    setSamPendingAccept({ idx: sam.activeIdx });
+  }, [isLocked, sam, samPendingAccept]);
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      if (isWorkbenchSettingsInteractionBlocked(e)) return;
+      if (isSamCandidateHotkeyBlocked(e)) return;
       // v0.10.2 · sam 拆分后, Tab/Enter 候选导航在任一 AI 工具激活下都启用.
       const isAIActive =
         s.tool === "smart-point" ||
@@ -554,20 +637,13 @@ export function useImageAnnotationActions({
         s.tool === "exemplar";
       if (!isAIActive) return;
       if (sam.candidates.length === 0) return;
-      const target = e.target as HTMLElement | null;
-      if (
-        target?.tagName === "INPUT" ||
-        target?.tagName === "TEXTAREA" ||
-        target?.isContentEditable
-      )
-        return;
       if (samPendingAccept) return;
 
       if (e.key === "Enter") {
         if (!sam.canAcceptCandidates) return;
         e.preventDefault();
         e.stopImmediatePropagation();
-        setSamPendingAccept({ idx: sam.activeIdx });
+        requestSamAccept();
         return;
       }
       if (e.key === "Escape") {
@@ -592,7 +668,7 @@ export function useImageAnnotationActions({
     };
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, [s.tool, sam, samPendingAccept]);
+  }, [s.tool, sam, samPendingAccept, requestSamAccept]);
 
   const handleBatchDelete = useCallback(
     (targetIds?: string[]) => {
@@ -931,111 +1007,28 @@ export function useImageAnnotationActions({
     setBatchChangeToolUnitId(undefined);
   }, []);
 
-  const handleRejectPrediction = useCallback(
-    (box: AiBox) => {
-      // 先本地隐藏，避免等待网络回包
-      setDismissedShapeKeys((prev) => {
-        if (prev.has(box.id)) return prev;
-        const next = new Set(prev);
-        next.add(box.id);
-        return next;
-      });
-      // B-37 · 同步持久化到后端, 让刷新 / 切回该 task 时不再出现
-      if (!box.predictionId) return;
-      rejectPredictionMut.mutate(
-        { predictionId: box.predictionId, shapeIndex: box.shapeIndex },
-        {
-          onError: () => {
-            // 失败回滚本地隐藏，提示用户
-            setDismissedShapeKeys((prev) => {
-              if (!prev.has(box.id)) return prev;
-              const next = new Set(prev);
-              next.delete(box.id);
-              return next;
-            });
-            pushToast({ msg: "忽略失败", sub: "请稍后重试", kind: "error" });
-          },
-        },
-      );
-    },
-    [rejectPredictionMut, pushToast],
-  );
-
-  const handleAcceptPrediction = useCallback(
-    (box: AiBox, attributeOverrides?: Record<string, unknown>) => {
-      if (!box.predictionId) return;
-      acceptPredictionMut.mutate(
-        { predictionId: box.predictionId, shapeIndex: box.shapeIndex, attributeOverrides },
-        {
-          onSuccess: (created) => {
-            const ids = created.map((a) => a.id);
-            // v0.20.22 · 后端 accept_prediction 已在同一事务原子落库 shape 富属性
-            // + attribute_overrides (annotation.py:305-322), 前端不再逐条 PATCH 合并。
-            // 旧的 carry 循环在后端返回整题全量时会误改所有既有人工标注属性 → 已删除。
-            history.push({
-              kind: "acceptPrediction",
-              predictionId: box.predictionId,
-              createdAnnotationIds: ids,
-            });
-            pushToast({
-              msg: "已采纳 AI 标注",
-              sub: `${box.cls} · 置信度 ${(box.conf * 100).toFixed(0)}%`,
-              kind: "success",
-            });
-          },
-          onError: (err) => {
-            // v0.14.17 · 采纳时选类: 预测类名不在项目标签集 (如 YOLO 输出 "person" 而项目标签是 "行人"
-            // 且无 alias) → 后端 422. 复用 ClassPickerPopover 让用户选项目标签, commit 时带
-            // override_class_name 重试采纳 (见 handleCommitChangeClass 的 accept 分支)。
-            const status = (err as { status?: number } | null)?.status;
-            if (status === 422 && box.predictionId) {
-              s.setEditingClass({
-                annotationId: "",
-                geom: box.geometry as Geom,
-                currentClass: box.cls,
-                // B-57 · 带上预测自身的 tool_unit_id, 让 popover 列出该单位 (如 region) 的类别,
-                // 否则采纳多边形预测时只显示当前激活工具 (bbox) 的类, 选不到正确类别 → 反复 422。
-                accept: {
-                  predictionId: box.predictionId,
-                  shapeIndex: box.shapeIndex,
-                  toolUnitId: box.tool_unit_id ?? undefined,
-                },
-              });
-              pushToast({
-                msg: "该类别不在项目标签集",
-                sub: `请为模型类别「${box.cls}」选择对应的项目标签`,
-                kind: "warning",
-              });
-            } else {
-              pushToast({ msg: "采纳失败", sub: (err as Error)?.message, kind: "error" });
-            }
-          },
-        },
-      );
-    },
-    [acceptPredictionMut, history, pushToast, s],
-  );
+  const dismissPrediction = useCallback((id: string) => {
+    setDismissedShapeKeys((prev) => new Set(prev).add(id));
+  }, []);
+  const predictionDecisions = usePredictionDecisions({
+    taskId,
+    videoSegmentId,
+    s,
+    aiBoxes,
+    acceptedShapeKeys,
+    isLocked,
+    accept: acceptPredictionMut.mutateAsync,
+    reject: rejectPredictionMut.mutateAsync,
+    history,
+    pushToast,
+    recordRecentClass,
+    dismiss: dismissPrediction,
+  });
+  const handleAcceptPrediction = predictionDecisions.acceptPrediction;
+  const handleRejectPrediction = predictionDecisions.rejectPrediction;
 
   // v0.10.8 · I11 · Mask 精修：候选/已存 polygon → mask 编辑 → commit 路径按 kind 分流。
   // v0.10.9 · 扩三种 kind：prediction（AI 预标 polygon 行）/ sam（SAM 交互候选，未 Enter）/ user（已落库 polygon，update 替换 geometry）。
-  type PendingRefine =
-    | {
-        kind: "prediction";
-        predictionId: string;
-        shapeIndex: number;
-        labelId: string;
-        sourceGeometry: RegionGeometry;
-      }
-    | { kind: "sam"; samIdx: number; labelId: string; sourceGeometry: RegionGeometry }
-    | {
-        kind: "user";
-        annotationId: string;
-        beforeGeometry: AnnotationResponse["geometry"];
-        annotationVersion: number | undefined;
-        labelId: string;
-        sourceGeometry: RegionGeometry;
-      };
-  const pendingRefineRef = useRef<PendingRefine | null>(null);
 
   const initMaskFromNormalizedPoints = useCallback(
     (normPoints: [number, number][]): boolean => {
@@ -1162,6 +1155,27 @@ export function useImageAnnotationActions({
     // v0.23.5 · WS-C · 提交边界 defense-in-depth: 即便 Enter hotkey 漏判, commit 本身也
     // 经 canEditMask 拦截锁定对象 (task 只读 / 选中 annotation is_locked)。
     const refine = pendingRefineRef.current;
+    const generation = maskEditor.generation;
+    const sessionId = maskEditor.sessionId;
+    const staleResult = { ok: false, retryable: false };
+    // Before writing, require the original buffer generation. After our mutation,
+    // the semantic lease still owns completion even if its saved version rebased.
+    const isCurrentOwner = (checkSession = true) => {
+      const current = currentMaskCommitRef.current;
+      const targetId = refine?.kind === "user" ? refine.annotationId : s.selectedId;
+      return (
+        maskCommitMountedRef.current &&
+        current.owner === maskCommitOwner &&
+        pendingRefineRef.current === refine &&
+        !current.isLocked &&
+        !annotationsRef.current.find((ann) => ann.id === targetId)?.is_locked &&
+        (!checkSession ||
+          (current.editor?.generation === generation && current.editor?.sessionId === sessionId))
+      );
+    };
+    if (!maskCommitMountedRef.current || currentMaskCommitRef.current.owner !== maskCommitOwner) {
+      return staleResult;
+    }
     const refinedAnnotation =
       refine?.kind === "user"
         ? annotationsRef.current.find((a) => a.id === refine.annotationId)
@@ -1181,6 +1195,7 @@ export function useImageAnnotationActions({
       pushToast({ msg: "对象已锁定,无法提交 Mask", kind: "warning" });
       return Promise.resolve({ ok: false, retryable: false });
     }
+    if (!isCurrentOwner()) return staleResult;
     if (!maskEditor.dirty) return Promise.resolve({ ok: false, retryable: false });
     if (sel?.geometry.type === "raster_mask" && maskPersistenceMode !== "native") {
       pushToast({ msg: "Mask 为只读", sub: "当前项目未开启原生 Mask 再编辑", kind: "warning" });
@@ -1203,6 +1218,7 @@ export function useImageAnnotationActions({
       try {
         rle = await maskEditor.commitToRleAsync();
       } catch (error: unknown) {
+        if (!isCurrentOwner()) return staleResult;
         pushToast({
           msg: "Mask 合并失败",
           sub: "分块稿件与撤销历史已保留，可重试",
@@ -1210,6 +1226,7 @@ export function useImageAnnotationActions({
         });
         return { ok: false, retryable: true, error };
       }
+      if (!isCurrentOwner()) return staleResult;
       const foregroundPixels = rle ? cocoRleArea(rle) : 0;
       const selectedRaster = sel?.geometry.type === "raster_mask" ? sel : null;
       const updateTarget = refinedAnnotation ?? selectedRaster;
@@ -1219,6 +1236,7 @@ export function useImageAnnotationActions({
           return Promise.resolve({ ok: false, retryable: false });
         }
         const emptyChoice = promptEmptyRasterMaskChoice(window.confirm);
+        if (!isCurrentOwner()) return staleResult;
         if (emptyChoice === "delete") {
           return maskEditor
             .save(
@@ -1239,6 +1257,7 @@ export function useImageAnnotationActions({
                 }),
             )
             .then((result) => {
+              if (!isCurrentOwner(false) || result === staleResult) return staleResult;
               if (!result.ok) {
                 pushToast({
                   msg: "删除 Mask 失败",
@@ -1274,6 +1293,7 @@ export function useImageAnnotationActions({
       if (!refine && !updateTarget) {
         labelForCommit = await requestMaskClass(cocoRleBounds(rle) ?? { x: 0, y: 0, w: 1, h: 1 });
       }
+      if (!isCurrentOwner()) return staleResult;
       if (!labelForCommit) {
         return Promise.resolve({ ok: false, retryable: false });
       }
@@ -1302,6 +1322,7 @@ export function useImageAnnotationActions({
         }
       }
 
+      if (!isCurrentOwner()) return staleResult;
       let committedAnnotation: AnnotationResponse | null = null;
       let createdPayload: AnnotationPayload | null = null;
       const beforeGeometry = updateTarget?.geometry;
@@ -1309,6 +1330,7 @@ export function useImageAnnotationActions({
         .save(async () => {
           try {
             const mask = await rasterMasksApi.uploadTaskContent(taskId, rle);
+            if (!isCurrentOwner()) return staleResult;
             const geometry = { type: "raster_mask", mask } as const;
             if (updateTarget) {
               committedAnnotation = await updateAnnotationAsync(
@@ -1332,14 +1354,28 @@ export function useImageAnnotationActions({
               };
               committedAnnotation = await createAnnotationAsync(createdPayload);
             }
+            if (!isCurrentOwner(false)) return staleResult;
+            // Accept our own version before leaving the saved session. Otherwise
+            // the dirty-leave guard can restore the old Mask tool after cancel.
+            if (
+              maskSessionKey?.selectionKey === committedAnnotation.id &&
+              committedAnnotation.version != null
+            ) {
+              maskEditor.rebaseSession({
+                ...maskSessionKey,
+                annotationVersion: committedAnnotation.version,
+              });
+            }
             return { ok: true, retryable: false };
           } catch (error: unknown) {
+            if (!isCurrentOwner()) return staleResult;
             const retryable =
               !(error instanceof ApiError) || error.status === 409 || error.status >= 500;
             return { ok: false, retryable, error };
           }
         })
         .then((result) => {
+          if (!isCurrentOwner(false) || result === staleResult) return staleResult;
           if (!result.ok) {
             pushToast({
               msg: "Mask 保存失败",
@@ -1410,6 +1446,7 @@ export function useImageAnnotationActions({
     if (!refine) {
       labelForCommit = await requestMaskClass(geometryToShape(geometry));
     }
+    if (!isCurrentOwner()) return staleResult;
     if (!labelForCommit) {
       return Promise.resolve({ ok: false, retryable: false });
     }
@@ -1434,17 +1471,20 @@ export function useImageAnnotationActions({
                 : {}),
             };
             createdAnnotation = await createAnnotationAsync(payload);
+            if (!isCurrentOwner(false)) return staleResult;
             history.push({ kind: "create", annotationId: createdAnnotation.id, payload });
             recordRecentClass(labelForCommit);
           }
           return { ok: true, retryable: false };
         } catch (error: unknown) {
+          if (!isCurrentOwner()) return staleResult;
           const retryable =
             !(error instanceof ApiError) || error.status === 409 || error.status >= 500;
           return { ok: false, retryable, error };
         }
       })
       .then((result) => {
+        if (!isCurrentOwner(false) || result === staleResult) return staleResult;
         if (!result.ok) {
           pushToast({
             msg: "Mask 保存失败",
@@ -1482,6 +1522,8 @@ export function useImageAnnotationActions({
     // 上游被阻断 (见函数开头 out.lossy 早退分支), 走到这里的一定是单连通无损 mask。
   }, [
     maskEditor,
+    maskCommitOwner,
+    maskSessionKey,
     s,
     annotationsRef,
     isLocked,
@@ -1505,7 +1547,7 @@ export function useImageAnnotationActions({
     s.setTool("select");
   }, [maskEditor, s]);
 
-  const handleAcceptAll = useCallback(() => {
+  const handleAcceptAll = useCallback(async () => {
     if (aiBoxes.length === 0) return;
     // 跳过被同类人工框覆盖 (IoU 高于去重阈值) 而淡化的 AI 框，避免采纳出重复标注。
     const target = aiBoxes.filter((box) => !dimmedAiIds.has(box.id));
@@ -1514,49 +1556,36 @@ export function useImageAnnotationActions({
       pushToast({ msg: "无可采纳的 AI 框", sub: `${skipped} 个与人工框重复已跳过` });
       return;
     }
-    const totalBoxes = target.length;
-    let succeeded = 0;
-    let failed = 0;
-    let pending = target.length;
-    target.forEach((box) => {
-      acceptPredictionMut.mutate(
-        { predictionId: box.predictionId, shapeIndex: box.shapeIndex },
-        {
-          onSuccess: (created) => {
-            succeeded++;
-            history.push({
-              kind: "acceptPrediction",
-              predictionId: box.predictionId,
-              createdAnnotationIds: created.map((a) => a.id),
-            });
-          },
-          onError: () => {
-            failed++;
-          },
-          onSettled: () => {
-            pending--;
-            if (pending === 0) {
-              const parts = [
-                failed ? `${failed} 项失败` : null,
-                skipped ? `${skipped} 个重复已跳过` : null,
-              ].filter(Boolean);
-              pushToast({
-                msg: `采纳 ${succeeded}/${totalBoxes} 个 AI 框`,
-                sub: parts.length ? parts.join("，") : undefined,
-                kind: failed ? "error" : "success",
-              });
-            }
-          },
-        },
-      );
+    const results = await predictionDecisions.acceptAll(target);
+    if (!results) return;
+    const succeeded = results.filter((result) => result.status === "success").length;
+    const failed = results.filter((result) => result.status === "failed").length;
+    const pendingClass = results.filter((result) => result.status === "awaiting-class").length;
+    const parts = [
+      failed ? `${failed} 项失败` : null,
+      pendingClass ? `${pendingClass} 项等待补选类别` : null,
+      skipped ? `${skipped} 个重复已跳过` : null,
+    ].filter(Boolean);
+    pushToast({
+      msg: `采纳 ${succeeded}/${target.length} 个 AI 框`,
+      sub: parts.length ? parts.join("，") : undefined,
+      kind: failed ? "error" : "success",
     });
-  }, [aiBoxes, dimmedAiIds, acceptPredictionMut, history, pushToast]);
+  }, [aiBoxes, dimmedAiIds, predictionDecisions, pushToast]);
 
   const handleCommitDrawing = useCallback(
     (geo: Geom) => {
       // 会话级落框守卫：越界 clamp / 过小 / 疑似重复（拦截时已 toast）。
       const g = guardDrawnBox(geo, userBoxes, pushToast);
       if (!g) return;
+      if (s.tool === "box") {
+        const reuseClass = classNameForCommittedDrawing(
+          s.workbenchConfig.image.afterBoxCreate,
+          s.activeClass,
+        );
+        annotationActions.beginBboxDrawing(g, reuseClass || undefined);
+        return;
+      }
       // 当前工具自身的 unit 没有类别定义 → 不弹选类别窗, 直接以 __unknown 落库。
       // 修复老项目用无类别工具落框仍弹窗 (借 bbox/region 类) 的 BUG。
       if (!activeToolHasOwnClasses) {
@@ -1626,26 +1655,7 @@ export function useImageAnnotationActions({
       }
       // v0.14.17 · 采纳模式: 带 override_class_name 采纳预测 (而非改已存标注的类). 不因
       // cls===currentClass 早返 — 这里 currentClass 是模型原生类名, cls 是人选的项目标签.
-      if (editing.accept) {
-        const { predictionId, shapeIndex } = editing.accept;
-        s.setEditingClass(null);
-        s.setActiveClass(cls);
-        recordRecentClass(cls);
-        acceptPredictionMut.mutate(
-          { predictionId, shapeIndex, overrideClassName: cls },
-          {
-            onSuccess: (created) => {
-              const ids = created.map((a) => a.id);
-              history.push({ kind: "acceptPrediction", predictionId, createdAnnotationIds: ids });
-              pushToast({ msg: `已采纳为 ${cls}`, kind: "success" });
-            },
-            onError: (err) => {
-              pushToast({ msg: "采纳失败", sub: (err as Error)?.message, kind: "error" });
-            },
-          },
-        );
-        return;
-      }
+      if (editing.accept) return predictionDecisions.commitClass(cls);
       if (cls === editing.currentClass) {
         s.setEditingClass(null);
         return;
@@ -1670,12 +1680,13 @@ export function useImageAnnotationActions({
         },
       );
     },
-    [s, mutations.update, history, pushToast, recordRecentClass, acceptPredictionMut],
+    [s, mutations.update, history, pushToast, recordRecentClass, predictionDecisions],
   );
 
   const handleCancelChangeClass = useCallback(() => {
+    predictionDecisions.cancelClass();
     s.setEditingClass(null);
-  }, [s]);
+  }, [s, predictionDecisions]);
 
   // v0.11.28：改类悬浮框含属性时，点类别即时提交但不关闭悬浮框
   // （更新 currentClass 让悬浮框内属性按新类别联动刷新可见字段）。
@@ -1725,6 +1736,8 @@ export function useImageAnnotationActions({
     batchChangeTarget,
     samPendingGeom,
     samDefaultClass,
+    samClassPickerActive: samPendingAccept !== null,
+    requestSamAccept,
     handlePickMaskPendingClass,
     handleCancelMaskPendingClass,
     handleBatchDelete,

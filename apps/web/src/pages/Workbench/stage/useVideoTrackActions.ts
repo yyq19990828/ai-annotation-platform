@@ -52,11 +52,19 @@ export function useVideoTrackActions({
       ? resolveVideoMaskTrackAtFrame(selectedTrack.geometry, frameIndex)?.occluded
       : selectedTrack.geometry.keyframes.find((kf) => kf.frame_index === frameIndex)?.occluded),
   );
-  const canEditSelectedTrack = Boolean(selectedTrack && !readOnly && !selectedTrackLocked);
+  const canEditSelectedTrack = Boolean(
+    selectedTrack && !selectedTrack.is_locked && !readOnly && !selectedTrackLocked,
+  );
 
   const markSelectedTrack = useCallback(
     (patch: TrackMarkPatch) => {
-      if (!selectedTrack || readOnly || lockedTrackIds.has(selectedTrack.geometry.track_id)) return;
+      if (
+        !selectedTrack ||
+        selectedTrack.is_locked ||
+        readOnly ||
+        lockedTrackIds.has(selectedTrack.geometry.track_id)
+      )
+        return;
       if (patch.outside) {
         onUpdate(
           selectedTrack,
@@ -123,7 +131,14 @@ export function useVideoTrackActions({
   }, [onToggleLockedTrack, readOnly, selectedTrackId]);
 
   const propagateSelectedTrack = useCallback(() => {
-    if (!selectedTrack || readOnly || selectedTrackLocked || !onPropagateTrack) return;
+    if (
+      !selectedTrack ||
+      selectedTrack.is_locked ||
+      readOnly ||
+      selectedTrackLocked ||
+      !onPropagateTrack
+    )
+      return;
     onPropagateTrack(selectedTrack);
   }, [onPropagateTrack, readOnly, selectedTrack, selectedTrackLocked]);
 

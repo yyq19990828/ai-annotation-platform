@@ -911,7 +911,7 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
           <div
             ref={host}
             className={cn(
-              "min-h-0 min-w-0 flex-1 overflow-hidden",
+              "min-h-0 min-w-0 flex-1 overflow-clip",
               styles.workspace,
               owner.readOnly && styles.locked,
               compact && styles.compact,
@@ -930,6 +930,12 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
               }
             }}
             onKeyDown={(event) => {
+              if (
+                (event.target as HTMLElement).closest(
+                  "[data-workbench-tool-menu], [data-workbench-tool-menu-trigger]",
+                )
+              )
+                return;
               if (
                 (event.target as HTMLElement).closest(
                   '[role="tab"], [role="menu"], [role="menuitem"], [data-workbench-layout-control]',

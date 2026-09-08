@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { dispatchKey, hotkeyIgnoreToken, type DispatchCtx, type HotkeyAction } from "./hotkeys";
+import {
+  HOTKEYS,
+  dispatchKey,
+  hotkeyIgnoreToken,
+  type DispatchCtx,
+  type HotkeyAction,
+} from "./hotkeys";
 
 const baseCtx: DispatchCtx = {
   isInputFocused: false,
@@ -137,6 +143,42 @@ describe("dispatchKey · 单键", () => {
 });
 
 describe("dispatchKey · 上下文相关", () => {
+  it("带上下文的帮助定义与实际动作和目标工具一致", () => {
+    for (const def of HOTKEYS.filter((item) => item.context)) {
+      const key = def.keys[def.keys.length - 1].toLowerCase();
+      const prediction =
+        def.context?.endsWith("-prediction") && def.context !== "video-no-prediction";
+      const actual = dispatch(
+        { key, altKey: def.keys.includes("Alt") },
+        {
+          videoMode: def.context?.startsWith("video"),
+          hasSelection: !!prediction,
+          selectedPrediction: prediction ? { id: "candidate" } : null,
+        },
+      );
+      expect(actual, `${def.context}: ${def.keys.join("+")}`).toEqual({
+        type: def.actionType,
+        ...(def.targetTool ? { tool: def.targetTool } : {}),
+      });
+    }
+  });
+  it("视频当前帧待决候选优先消费 A/D，人工对象仍保留 D 工具键", () => {
+    const selected = { videoMode: true, hasSelection: true };
+    expect(
+      dispatch({ key: "a" }, { ...selected, selectedPrediction: { id: "candidate" } }),
+    ).toEqual({ type: "acceptAi" });
+    expect(
+      dispatch({ key: "d" }, { ...selected, selectedPrediction: { id: "candidate" } }),
+    ).toEqual({ type: "rejectAi" });
+    expect(dispatch({ key: "a" }, selected)).toBeNull();
+    expect(dispatch({ key: "d" }, selected)).toEqual({ type: "setVideoTool", tool: "smart-box" });
+    expect(
+      dispatch(
+        { key: "d" },
+        { ...selected, selectedPrediction: { id: "candidate" }, pendingActive: true },
+      ),
+    ).toBeNull();
+  });
   it("input 聚焦时禁用所有 hotkey", () => {
     expect(dispatch({ key: "b" }, { isInputFocused: true })).toBeNull();
     expect(dispatch({ key: "z", ctrlKey: true }, { isInputFocused: true })).toBeNull();

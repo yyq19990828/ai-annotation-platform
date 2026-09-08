@@ -1,8 +1,20 @@
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createElement, type ReactNode } from "react";
+import { act, renderHook } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-import { videoTrackerApi, type VideoTrackerJob } from "@/api/videoTracker";
+import {
+  videoTrackerApi,
+  type VideoTrackerJob,
+  type VideoTrackerJobPreview,
+} from "@/api/videoTracker";
 import { ApiError } from "@/api/client";
-import { TrackerJobStore, type TrackerStoreState } from "./useVideoTrackerJobs";
+import { useToastStore } from "@/components/ui";
+import {
+  TrackerJobStore,
+  useVideoTrackerJobs,
+  type TrackerStoreState,
+} from "./useVideoTrackerJobs";
 
 vi.mock("@/api/videoTracker", () => ({
   videoTrackerApi: {
@@ -14,6 +26,9 @@ vi.mock("@/api/videoTracker", () => ({
     accept: vi.fn(),
     discard: vi.fn(),
     cancel: vi.fn(),
+    track: vi.fn(),
+    propagate: vi.fn(),
+    correct: vi.fn(),
   },
 }));
 
@@ -35,12 +50,18 @@ class MockWebSocket {
   }
 }
 
-function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void } {
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (v: T) => void;
+  reject: (error: unknown) => void;
+} {
   let resolve!: (v: T) => void;
-  const promise = new Promise<T>((r) => {
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((r, fail) => {
     resolve = r;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 const reviewableJob: VideoTrackerJob = {
@@ -55,7 +76,7 @@ const reviewableJob: VideoTrackerJob = {
   model_key: "sam2_video",
   direction: "forward",
   from_frame: 0,
-  to_frame: 10,
+  to_frame: 20,
   prompt: {},
   event_channel: "video-tracker-job:job-1",
   celery_task_id: null,
@@ -108,8 +129,32 @@ const stagedPreview: import("@/api/videoTracker").VideoTrackerJobPreview = {
   candidate_rejected: 0,
 };
 
+function emptySnapshot(): TrackerStoreState {
+  return {
+    jobs: {},
+    candidates: {},
+    submitting: {},
+    activeReviewJobId: null,
+    reviewScopes: {},
+    activeReview: null,
+  };
+}
+
+const stores = new Set<TrackerJobStore>();
+function createStore(): TrackerJobStore {
+  const store = new TrackerJobStore();
+  stores.add(store);
+  return store;
+}
+
+afterEach(() => {
+  for (const store of stores) store.scopeToTask(null);
+  stores.clear();
+  vi.useRealTimers();
+});
+
 beforeEach(() => {
-  vi.clearAllMocks();
+  vi.resetAllMocks();
   MockWebSocket.instances = [];
   vi.stubGlobal("WebSocket", MockWebSocket);
   // 两路拉取默认空,单测按需覆盖其一。
@@ -123,6 +168,48 @@ afterAll(() => {
 });
 
 describe("TrackerJobStore.restoreReviewable", () => {
+  it("retries failed listings when authentication becomes usable", async () => {
+    vi.mocked(videoTrackerApi.reviewable)
+      .mockRejectedValueOnce(new ApiError(401, "unauthorized"))
+      .mockResolvedValueOnce([reviewableJob]);
+    vi.mocked(videoTrackerApi.active)
+      .mockRejectedValueOnce(new ApiError(401, "unauthorized"))
+      .mockResolvedValueOnce([]);
+    vi.mocked(videoTrackerApi.preview).mockResolvedValue(stagedPreview);
+    const store = createStore();
+    let snapshot = emptySnapshot();
+    store.subscribe((next) => {
+      snapshot = next;
+    });
+    await store.restoreReviewable("task-1");
+    expect(snapshot.candidates).toEqual({});
+    await store.restoreReviewable("task-1", "ready-token");
+    expect(videoTrackerApi.reviewable).toHaveBeenCalledTimes(2);
+    expect(snapshot.candidates["job-1"]).toBeDefined();
+  });
+
+  it("retries after an in-flight unauthenticated restore fails even if the token arrived earlier", async () => {
+    const gate = deferred<VideoTrackerJob[]>();
+    vi.mocked(videoTrackerApi.reviewable)
+      .mockReturnValueOnce(gate.promise)
+      .mockResolvedValueOnce([reviewableJob]);
+    vi.mocked(videoTrackerApi.active)
+      .mockRejectedValueOnce(new ApiError(401, "unauthorized"))
+      .mockResolvedValueOnce([]);
+    vi.mocked(videoTrackerApi.preview).mockResolvedValue(stagedPreview);
+    const store = createStore();
+    let snapshot = emptySnapshot();
+    store.subscribe((next) => {
+      snapshot = next;
+    });
+    const initial = store.restoreReviewable("task-1");
+    const tokenReady = store.restoreReviewable("task-1", "ready-token");
+    gate.reject(new ApiError(401, "unauthorized"));
+    await Promise.all([initial, tokenReady]);
+    await vi.waitFor(() => expect(snapshot.candidates["job-1"]).toBeDefined());
+    expect(videoTrackerApi.reviewable).toHaveBeenCalledTimes(2);
+  });
+
   it("restores a pending candidate from the server after page state is lost", async () => {
     vi.mocked(videoTrackerApi.reviewable).mockResolvedValue([reviewableJob]);
     vi.mocked(videoTrackerApi.preview).mockResolvedValue({
@@ -138,8 +225,8 @@ describe("TrackerJobStore.restoreReviewable", () => {
       grid_step: 1,
       output_geometry: "bbox",
     });
-    const store = new TrackerJobStore();
-    let snapshot: TrackerStoreState = { jobs: {}, candidates: {}, submitting: {} };
+    const store = createStore();
+    let snapshot = emptySnapshot();
     store.subscribe((next) => {
       snapshot = next;
     });
@@ -165,8 +252,8 @@ describe("TrackerJobStore.restoreReviewable", () => {
       grid_step: 1,
       output_geometry: "bbox",
     });
-    const store = new TrackerJobStore();
-    let snapshot: TrackerStoreState = { jobs: {}, candidates: {}, submitting: {} };
+    const store = createStore();
+    let snapshot = emptySnapshot();
     store.subscribe((next) => {
       snapshot = next;
     });
@@ -182,8 +269,8 @@ describe("TrackerJobStore.restoreReviewable", () => {
 describe("TrackerJobStore.restoreReviewable · 重连运行中任务 (#10)", () => {
   it("恢复运行中任务到 UI 并按 token 重连 WebSocket", async () => {
     vi.mocked(videoTrackerApi.active).mockResolvedValue([runningJob]);
-    const store = new TrackerJobStore();
-    let snapshot: TrackerStoreState = { jobs: {}, candidates: {}, submitting: {} };
+    const store = createStore();
+    let snapshot = emptySnapshot();
     store.subscribe((next) => {
       snapshot = next;
     });
@@ -202,8 +289,8 @@ describe("TrackerJobStore.restoreReviewable · 重连运行中任务 (#10)", () 
 
   it("无 token 时仍恢复运行中任务到 UI, 但不重连 WebSocket", async () => {
     vi.mocked(videoTrackerApi.active).mockResolvedValue([runningJob]);
-    const store = new TrackerJobStore();
-    let snapshot: TrackerStoreState = { jobs: {}, candidates: {}, submitting: {} };
+    const store = createStore();
+    let snapshot = emptySnapshot();
     store.subscribe((next) => {
       snapshot = next;
     });
@@ -225,8 +312,8 @@ describe("TrackerJobStore.restoreReviewable · 重连运行中任务 (#10)", () 
         job_kind: "correction",
         correction_frame: 5,
       });
-      const store = new TrackerJobStore();
-      let snapshot: TrackerStoreState = { jobs: {}, candidates: {}, submitting: {} };
+      const store = createStore();
+      let snapshot = emptySnapshot();
       store.subscribe((next) => {
         snapshot = next;
       });
@@ -254,7 +341,7 @@ describe("TrackerJobStore.restoreReviewable · 重连运行中任务 (#10)", () 
         ...runningCorrectionJob,
         status: "running",
       });
-      const store = new TrackerJobStore();
+      const store = createStore();
       await store.restoreReviewable("task-1", "tok-abc");
       expect(MockWebSocket.instances).toHaveLength(1);
 
@@ -271,8 +358,8 @@ describe("TrackerJobStore.restoreReviewable · 重连运行中任务 (#10)", () 
   it("reviewable 拉取失败不阻断运行中任务的重连", async () => {
     vi.mocked(videoTrackerApi.reviewable).mockRejectedValue(new Error("boom"));
     vi.mocked(videoTrackerApi.active).mockResolvedValue([runningJob]);
-    const store = new TrackerJobStore();
-    let snapshot: TrackerStoreState = { jobs: {}, candidates: {}, submitting: {} };
+    const store = createStore();
+    let snapshot = emptySnapshot();
     store.subscribe((next) => {
       snapshot = next;
     });
@@ -297,8 +384,8 @@ describe("TrackerJobStore.cancel · Mask 纠错", () => {
       ...reviewableCorrectionJob,
       status: "cancelled",
     });
-    const store = new TrackerJobStore();
-    let snapshot: TrackerStoreState = { jobs: {}, candidates: {}, submitting: {} };
+    const store = createStore();
+    let snapshot = emptySnapshot();
     store.subscribe((next) => {
       snapshot = next;
     });
@@ -321,8 +408,8 @@ describe("TrackerJobStore.cancel · Mask 纠错", () => {
       correction_frame: 5,
     });
     vi.mocked(videoTrackerApi.cancel).mockRejectedValue(new Error("offline"));
-    const store = new TrackerJobStore();
-    let snapshot: TrackerStoreState = { jobs: {}, candidates: {}, submitting: {} };
+    const store = createStore();
+    let snapshot = emptySnapshot();
     store.subscribe((next) => {
       snapshot = next;
     });
@@ -345,8 +432,8 @@ describe("TrackerJobStore.cancel · Mask 纠错", () => {
         ...runningCorrectionJob,
         status: "cancelled",
       });
-      const store = new TrackerJobStore();
-      let snapshot: TrackerStoreState = { jobs: {}, candidates: {}, submitting: {} };
+      const store = createStore();
+      let snapshot = emptySnapshot();
       store.subscribe((next) => {
         snapshot = next;
       });
@@ -372,8 +459,8 @@ describe("TrackerJobStore.restoreReviewable · 切任务 scope 清理 (#9)", () 
   it("切到新任务时清掉旧任务的候选与 job", async () => {
     vi.mocked(videoTrackerApi.reviewable).mockResolvedValue([reviewableJob]);
     vi.mocked(videoTrackerApi.preview).mockResolvedValue({ ...stagedPreview });
-    const store = new TrackerJobStore();
-    let snapshot: TrackerStoreState = { jobs: {}, candidates: {}, submitting: {} };
+    const store = createStore();
+    let snapshot = emptySnapshot();
     store.subscribe((next) => {
       snapshot = next;
     });
@@ -393,8 +480,8 @@ describe("TrackerJobStore.restoreReviewable · 切任务 scope 清理 (#9)", () 
 
   it("切任务时关闭旧任务运行中 job 的 WebSocket", async () => {
     vi.mocked(videoTrackerApi.active).mockResolvedValue([runningJob]);
-    const store = new TrackerJobStore();
-    let snapshot: TrackerStoreState = { jobs: {}, candidates: {}, submitting: {} };
+    const store = createStore();
+    let snapshot = emptySnapshot();
     store.subscribe((next) => {
       snapshot = next;
     });
@@ -412,8 +499,8 @@ describe("TrackerJobStore.restoreReviewable · 切任务 scope 清理 (#9)", () 
 
   it("同一任务重复恢复不会误删本任务的活跃 job", async () => {
     vi.mocked(videoTrackerApi.active).mockResolvedValue([runningJob]);
-    const store = new TrackerJobStore();
-    let snapshot: TrackerStoreState = { jobs: {}, candidates: {}, submitting: {} };
+    const store = createStore();
+    let snapshot = emptySnapshot();
     store.subscribe((next) => {
       snapshot = next;
     });
@@ -431,8 +518,8 @@ describe("TrackerJobStore.restoreReviewable · 切任务 scope 清理 (#9)", () 
     const gate = deferred<VideoTrackerJob[]>();
     vi.mocked(videoTrackerApi.reviewable).mockReturnValueOnce(gate.promise);
     vi.mocked(videoTrackerApi.preview).mockResolvedValue({ ...stagedPreview });
-    const store = new TrackerJobStore();
-    let snapshot: TrackerStoreState = { jobs: {}, candidates: {}, submitting: {} };
+    const store = createStore();
+    let snapshot = emptySnapshot();
     store.subscribe((next) => {
       snapshot = next;
     });
@@ -455,8 +542,8 @@ describe("TrackerJobStore.decide · 局部审阅", () => {
   async function restoredStore() {
     vi.mocked(videoTrackerApi.reviewable).mockResolvedValue([reviewableJob]);
     vi.mocked(videoTrackerApi.preview).mockResolvedValue({ ...stagedPreview });
-    const store = new TrackerJobStore();
-    let snapshot: TrackerStoreState = { jobs: {}, candidates: {}, submitting: {} };
+    const store = createStore();
+    let snapshot = emptySnapshot();
     store.subscribe((next) => {
       snapshot = next;
     });
@@ -515,22 +602,436 @@ describe("TrackerJobStore.decide · 局部审阅", () => {
     expect(getSnapshot().candidates["job-1"]).toBeDefined();
   });
 
-  it("revision 冲突刷新预览且不清候选", async () => {
-    const { store, getSnapshot } = await restoredStore();
-    const refreshedJob = { ...reviewableJob, status: "partially_reviewed" as const, revision: 3 };
-    vi.mocked(videoTrackerApi.decide).mockRejectedValue(
-      new ApiError(409, "stale", { reason: "job_revision_conflict" }),
-    );
-    vi.mocked(videoTrackerApi.get).mockResolvedValue(refreshedJob);
-    vi.mocked(videoTrackerApi.preview).mockResolvedValue({ ...stagedPreview, job_revision: 3 });
-    const outcome = await store.decide("job-1", {
-      instance_ids: ["1"],
-      from_frame: 1,
-      to_frame: 1,
-      decision: "reject",
-      override_manual: false,
+  it.each(["job_revision_conflict", "candidate_decision_conflict"])(
+    "%s 刷新预览且不清候选",
+    async (reason) => {
+      const { store, getSnapshot } = await restoredStore();
+      const refreshedJob = { ...reviewableJob, status: "partially_reviewed" as const, revision: 3 };
+      vi.mocked(videoTrackerApi.decide).mockRejectedValue(new ApiError(409, "stale", { reason }));
+      vi.mocked(videoTrackerApi.get).mockResolvedValue(refreshedJob);
+      vi.mocked(videoTrackerApi.preview).mockResolvedValue({ ...stagedPreview, job_revision: 3 });
+      const outcome = await store.decide("job-1", {
+        instance_ids: ["1"],
+        from_frame: 1,
+        to_frame: 1,
+        decision: "reject",
+        override_manual: false,
+      });
+      expect(outcome.reason).toBe(reason);
+      expect(getSnapshot().candidates["job-1"]?.job_revision).toBe(3);
+    },
+  );
+});
+
+const secondReviewJob: VideoTrackerJob = { ...reviewableJob, id: "job-2", annotation_id: null };
+const multiPreview: VideoTrackerJobPreview = {
+  ...stagedPreview,
+  candidate_total: 6,
+  candidate_pending: 6,
+  results: ["a", "b"].flatMap((instanceId) =>
+    [10, 12, 15].map((frame) => ({
+      ...stagedPreview.results[0],
+      instance_id: instanceId,
+      frame_index: frame,
+      manual_protected: instanceId === "a" && frame === 12,
+    })),
+  ),
+};
+const localDecision = {
+  instance_ids: ["a"],
+  from_frame: 10,
+  to_frame: 12,
+  decision: "accept" as const,
+};
+
+async function ownedReviewStore(twoJobs = false) {
+  vi.mocked(videoTrackerApi.reviewable).mockResolvedValue(
+    twoJobs ? [secondReviewJob, reviewableJob] : [reviewableJob],
+  );
+  vi.mocked(videoTrackerApi.preview).mockImplementation(async (jobId) => ({
+    ...multiPreview,
+    job_id: jobId,
+  }));
+  vi.mocked(videoTrackerApi.get).mockImplementation(async (jobId) =>
+    jobId === secondReviewJob.id ? secondReviewJob : reviewableJob,
+  );
+  const store = createStore();
+  let snapshot = emptySnapshot();
+  store.subscribe((next) => {
+    snapshot = next;
+  });
+  await store.restoreReviewable("task-1");
+  return { store, snapshot: () => snapshot };
+}
+
+describe("TrackerJobStore review ownership", () => {
+  it("clamps explicit window edits to the job boundary, without reordering an empty window", async () => {
+    const { store, snapshot } = await ownedReviewStore();
+    store.setReviewWindow(-10, 90);
+    expect(snapshot().activeReview!.scope).toMatchObject({ fromFrame: 0, toFrame: 20 });
+    store.setReviewWindow(15, 10);
+    expect(snapshot().activeReview!.scope).toMatchObject({ fromFrame: 15, toFrame: 10 });
+    expect(snapshot().activeReview!.selectedPending).toBe(0);
+    store.setReviewWindow(Number.NaN, 15);
+    expect(snapshot().activeReview!.scope).toMatchObject({ fromFrame: 15, toFrame: 10 });
+  });
+  it("initializes deterministically once, remembers each scope, and never steals the selected job", async () => {
+    const { store, snapshot } = await ownedReviewStore(true);
+    expect(snapshot().activeReviewJobId).toBe("job-1");
+    store.setReviewInstances(["a"]);
+    store.setReviewWindow(11, 13);
+    const firstIntent = snapshot().activeReview!.intentKey;
+    store.chooseReviewJob("job-2");
+    store.setReviewInstances(["b"]);
+    store.setReviewWindow(14, 15);
+    await store.refreshReview("job-1");
+    expect(snapshot().activeReview).toMatchObject({
+      jobId: "job-2",
+      scope: { instanceIds: ["b"], fromFrame: 14, toFrame: 15 },
     });
-    expect(outcome.reason).toBe("job_revision_conflict");
-    expect(getSnapshot().candidates["job-1"]?.job_revision).toBe(3);
+    store.chooseReviewJob("job-1");
+    expect(snapshot().activeReview!.scope).toMatchObject({
+      instanceIds: ["a"],
+      fromFrame: 11,
+      toFrame: 13,
+    });
+    expect(store.isReviewIntentCurrent(firstIntent)).toBe(false);
+    const stableIntent = snapshot().activeReview!.intentKey;
+    await store.refreshReview("job-1");
+    expect(store.isReviewIntentCurrent(stableIntent)).toBe(true);
+    store.chooseReviewJob("job-2");
+    vi.mocked(videoTrackerApi.discard).mockResolvedValue({ ...reviewableJob, status: "discarded" });
+    await store.discard("job-1");
+    expect(snapshot().activeReview!.jobId).toBe("job-2");
+    expect(snapshot().reviewScopes["job-1"]).toBeUndefined();
+  });
+
+  it("intersects a newer candidate revision without adding targets or widening the window", async () => {
+    const { store, snapshot } = await ownedReviewStore();
+    store.setReviewInstances(["a"]);
+    store.setReviewWindow(11, 13);
+    const oldIntent = snapshot().activeReview!.intentKey;
+    vi.mocked(videoTrackerApi.get).mockResolvedValue({ ...reviewableJob, revision: 2 });
+    vi.mocked(videoTrackerApi.preview).mockResolvedValue({
+      ...multiPreview,
+      job_revision: 2,
+      candidate_pending: 2,
+      results: [
+        { ...multiPreview.results[0], instance_id: "b", frame_index: 14 },
+        { ...multiPreview.results[0], instance_id: "c", frame_index: 20 },
+      ],
+    });
+    await store.refreshReview("job-1");
+    expect(snapshot().activeReview).toMatchObject({
+      scope: { instanceIds: [], fromFrame: 11, toFrame: 13 },
+      selectedPending: 0,
+      jobPending: 2,
+      availableInstanceIds: ["b", "c"],
+      remainingIntervals: [
+        { fromFrame: 14, toFrame: 14 },
+        { fromFrame: 20, toFrame: 20 },
+      ],
+    });
+    expect(store.isReviewIntentCurrent(oldIntent)).toBe(false);
+    expect(await store.decide("job-1", { ...localDecision, instance_ids: [] })).toEqual({
+      ok: false,
+      reason: "empty_selection",
+    });
+    expect(videoTrackerApi.decide).not.toHaveBeenCalled();
+    await store.refreshReview("job-1");
+    expect(snapshot().activeReview!.scope.instanceIds).toEqual([]);
+  });
+
+  it("partial accept updates pending counts and source versions while retaining the explicit scope", async () => {
+    const { store, snapshot } = await ownedReviewStore();
+    store.setReviewInstances(["a"]);
+    store.setReviewWindow(10, 12);
+    const updated = { ...reviewableJob, revision: 2, status: "partially_reviewed" as const };
+    vi.mocked(videoTrackerApi.decide).mockResolvedValue(updated);
+    vi.mocked(videoTrackerApi.get).mockResolvedValue(updated);
+    vi.mocked(videoTrackerApi.preview).mockResolvedValue({
+      ...multiPreview,
+      job_revision: 2,
+      expected_source_versions: { "annotation-1": 7 },
+      candidate_pending: 4,
+      candidate_accepted: 2,
+      results: multiPreview.results.filter(
+        (row) => row.instance_id !== "a" || row.frame_index > 12,
+      ),
+    });
+    expect(await store.decide("job-1", localDecision)).toEqual({ ok: true });
+    expect(snapshot().activeReview).toMatchObject({
+      scope: { instanceIds: ["a"], fromFrame: 10, toFrame: 12 },
+      selectedPending: 0,
+      jobPending: 4,
+      preview: { job_revision: 2, expected_source_versions: { "annotation-1": 7 } },
+    });
+    expect(snapshot().submitting).toEqual({});
+  });
+
+  it("a delayed partial decision updates its own job without reselecting it", async () => {
+    const { store, snapshot } = await ownedReviewStore(true);
+    const gate = deferred<VideoTrackerJob>();
+    vi.mocked(videoTrackerApi.decide).mockReturnValue(gate.promise);
+    const pending = store.decide("job-1", localDecision);
+    store.setReviewInstances(["b"]);
+    store.setReviewWindow(15, 18);
+    store.chooseReviewJob("job-2");
+    const secondIntent = snapshot().activeReview!.intentKey;
+    const updated = { ...reviewableJob, revision: 2, status: "partially_reviewed" as const };
+    vi.mocked(videoTrackerApi.get).mockResolvedValue(updated);
+    vi.mocked(videoTrackerApi.preview).mockResolvedValue({ ...multiPreview, job_revision: 2 });
+    gate.resolve(updated);
+    expect(await pending).toEqual({ ok: true });
+    expect(store.isReviewIntentCurrent(secondIntent)).toBe(true);
+    store.chooseReviewJob("job-1");
+    expect(snapshot().activeReview!.scope).toMatchObject({
+      instanceIds: ["b"],
+      fromFrame: 15,
+      toFrame: 18,
+    });
+  });
+
+  it("ignores old task A decisions after A→B→A and cannot clear a newer submission", async () => {
+    const { store, snapshot } = await ownedReviewStore();
+    const invalidator = vi.fn();
+    store.setAnnotationInvalidator(invalidator);
+    const push = vi.spyOn(useToastStore.getState(), "push");
+    const oldGate = deferred<VideoTrackerJob>();
+    const newGate = deferred<VideoTrackerJob>();
+    vi.mocked(videoTrackerApi.decide)
+      .mockReturnValueOnce(oldGate.promise)
+      .mockReturnValueOnce(newGate.promise);
+    const oldRequest = store.decide("job-1", localDecision);
+    await store.restoreReviewable("task-2");
+    await store.restoreReviewable("task-1");
+    const newRequest = store.decide("job-1", localDecision);
+    const currentIntent = snapshot().activeReview!.intentKey;
+    oldGate.resolve({ ...reviewableJob, revision: 2, status: "partially_reviewed" });
+    expect(await oldRequest).toEqual({ ok: false, reason: "stale_request" });
+    expect(snapshot().submitting["job-1"]).toBe(true);
+    expect(snapshot().candidates["job-1"].job_revision).toBe(1);
+    expect(store.isReviewIntentCurrent(currentIntent)).toBe(true);
+    expect(invalidator).not.toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+    newGate.resolve({ ...reviewableJob, status: "accepted" });
+    expect(await newRequest).toEqual({ ok: true });
+    expect(snapshot().submitting).toEqual({});
+    push.mockRestore();
+  });
+
+  it("restores a fresh A session while its earlier hydration is still pending", async () => {
+    const gate = deferred<VideoTrackerJob[]>();
+    vi.mocked(videoTrackerApi.reviewable)
+      .mockReturnValueOnce(gate.promise)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([secondReviewJob]);
+    vi.mocked(videoTrackerApi.preview).mockImplementation(async (jobId) => ({
+      ...multiPreview,
+      job_id: jobId,
+    }));
+    const store = createStore();
+    let snapshot = emptySnapshot();
+    store.subscribe((next) => {
+      snapshot = next;
+    });
+    const oldHydration = store.restoreReviewable("task-1", "old-token");
+    await store.restoreReviewable("task-2");
+    await store.restoreReviewable("task-1");
+    gate.resolve([reviewableJob]);
+    await oldHydration;
+    expect(Object.keys(snapshot.jobs)).toEqual(["job-2"]);
+    expect(snapshot.activeReview!.jobId).toBe("job-2");
+    expect(videoTrackerApi.reviewable).toHaveBeenCalledTimes(3);
+  });
+
+  it("rejects both out-of-order refreshes and later reads of an older revision", async () => {
+    const { store, snapshot } = await ownedReviewStore();
+    const oldPreview = deferred<VideoTrackerJobPreview>();
+    vi.mocked(videoTrackerApi.preview)
+      .mockReturnValueOnce(oldPreview.promise)
+      .mockResolvedValueOnce({ ...multiPreview, job_revision: 3 });
+    vi.mocked(videoTrackerApi.get)
+      .mockResolvedValueOnce({ ...reviewableJob, revision: 2 })
+      .mockResolvedValueOnce({ ...reviewableJob, revision: 3 });
+    const staleRefresh = store.refreshReview("job-1");
+    await store.refreshReview("job-1");
+    oldPreview.resolve({ ...multiPreview, job_revision: 2 });
+    await staleRefresh;
+    vi.mocked(videoTrackerApi.get).mockResolvedValue({ ...reviewableJob, revision: 2 });
+    vi.mocked(videoTrackerApi.preview).mockResolvedValue({ ...multiPreview, job_revision: 2 });
+    await store.refreshReview("job-1");
+    expect(snapshot().candidates["job-1"].job_revision).toBe(3);
+    expect(snapshot().jobs["job-1"].revision).toBe(3);
+  });
+
+  it("keeps a newer preview that arrived before an older decision response", async () => {
+    const { store, snapshot } = await ownedReviewStore();
+    const gate = deferred<VideoTrackerJob>();
+    vi.mocked(videoTrackerApi.decide).mockReturnValueOnce(gate.promise);
+    const pending = store.decide("job-1", localDecision);
+    const latestJob = { ...reviewableJob, status: "partially_reviewed" as const, revision: 3 };
+    vi.mocked(videoTrackerApi.get).mockResolvedValue(latestJob);
+    vi.mocked(videoTrackerApi.preview).mockResolvedValue({ ...multiPreview, job_revision: 3 });
+    await store.refreshReview("job-1");
+    const intent = snapshot().activeReview!.intentKey;
+    gate.resolve({ ...latestJob, revision: 2 });
+    expect(await pending).toEqual({ ok: true });
+    expect(snapshot().jobs["job-1"].revision).toBe(3);
+    expect(snapshot().candidates["job-1"].job_revision).toBe(3);
+    expect(store.isReviewIntentCurrent(intent)).toBe(true);
+    expect(snapshot().submitting).toEqual({});
+  });
+
+  it.each(["discard", "cancel"] as const)(
+    "a late preview cannot revive candidates after %s retires its generation",
+    async (action) => {
+      vi.useFakeTimers();
+      const store = createStore();
+      let snapshot = emptySnapshot();
+      store.subscribe((next) => {
+        snapshot = next;
+      });
+      store.addJob(runningCorrectionJob, "token");
+      const previewGate = deferred<VideoTrackerJobPreview>();
+      vi.mocked(videoTrackerApi.preview).mockReturnValueOnce(previewGate.promise);
+      MockWebSocket.instances[0].onmessage?.({
+        data: JSON.stringify({ type: "job_completed" }),
+      } as MessageEvent);
+      const terminal = {
+        ...runningCorrectionJob,
+        status: (action === "discard" ? "discarded" : "cancelled") as VideoTrackerJob["status"],
+      };
+      vi.mocked(videoTrackerApi[action]).mockResolvedValue(terminal);
+      await store[action](runningCorrectionJob.id);
+      previewGate.resolve({ ...multiPreview, job_id: runningCorrectionJob.id });
+      await Promise.resolve();
+      expect(snapshot.candidates).toEqual({});
+      expect(snapshot.activeReview).toBeNull();
+      vi.advanceTimersByTime(1500);
+      expect(snapshot.jobs).toEqual({});
+    },
+  );
+
+  it("keeps the current scope after a failed request and preserves the QC selector union", async () => {
+    const { store, snapshot } = await ownedReviewStore();
+    store.setReviewInstances(["a"]);
+    store.setReviewWindow(11, 12);
+    const intent = snapshot().activeReview!.intentKey;
+    vi.mocked(videoTrackerApi.decide).mockRejectedValue(new ApiError(500, "unavailable"));
+    await store.decide("job-1", localDecision);
+    expect(store.isReviewIntentCurrent(intent)).toBe(true);
+    expect(snapshot().submitting).toEqual({});
+    vi.mocked(videoTrackerApi.decide).mockRejectedValue(
+      new ApiError(409, "manual", { reason: "manual_keyframe_protected" }),
+    );
+    expect(
+      await store.decide("job-1", {
+        decision: "accept",
+        qc_issue_id: "qc-1",
+        candidate_digest: "digest",
+      }),
+    ).toMatchObject({ reason: "manual_keyframe_protected" });
+    expect(videoTrackerApi.decide).toHaveBeenLastCalledWith("job-1", {
+      decision: "accept",
+      qc_issue_id: "qc-1",
+      candidate_digest: "digest",
+      expected_source_versions: { "annotation-1": 1 },
+      job_revision: 1,
+    });
+  });
+
+  it("task launch ownership expires on task ABA and on leaving video", async () => {
+    const { store } = await ownedReviewStore();
+    const epoch = store.captureTaskEpoch("task-1");
+    store.scopeToTask("task-2");
+    store.scopeToTask("task-1");
+    expect(store.isTaskEpochCurrent("task-1", epoch)).toBe(false);
+    const latest = store.captureTaskEpoch("task-1");
+    store.scopeToTask(null);
+    expect(store.isTaskEpochCurrent("task-1", latest)).toBe(false);
+  });
+
+  it("suppresses an old-task manual conflict, including its error and finally effects", async () => {
+    const { store, snapshot } = await ownedReviewStore();
+    const gate = deferred<VideoTrackerJob>();
+    vi.mocked(videoTrackerApi.decide).mockReturnValueOnce(gate.promise);
+    const push = vi.spyOn(useToastStore.getState(), "push");
+    const pending = store.decide("job-1", localDecision);
+    await store.restoreReviewable("task-2");
+    gate.reject(new ApiError(409, "manual", { reason: "manual_keyframe_protected" }));
+    expect(await pending).toEqual({ ok: false, reason: "stale_request" });
+    expect(snapshot().jobs).toEqual({});
+    expect(snapshot().submitting).toEqual({});
+    expect(push).not.toHaveBeenCalled();
+    push.mockRestore();
+  });
+
+  it("does not admit a refresh that finishes after terminal cleanup", async () => {
+    vi.useFakeTimers();
+    const { store, snapshot } = await ownedReviewStore();
+    const gate = deferred<VideoTrackerJobPreview>();
+    vi.mocked(videoTrackerApi.preview).mockReturnValueOnce(gate.promise);
+    const pending = store.refreshReview("job-1");
+    vi.mocked(videoTrackerApi.discard).mockResolvedValue({ ...reviewableJob, status: "discarded" });
+    await store.discard("job-1");
+    vi.advanceTimersByTime(1500);
+    gate.resolve({ ...multiPreview, job_revision: 99 });
+    await pending;
+    expect(snapshot().jobs).toEqual({});
+    expect(snapshot().candidates).toEqual({});
+    expect(snapshot().activeReview).toBeNull();
+  });
+});
+
+describe("useVideoTrackerJobs launch ownership", () => {
+  function launchHarness() {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client: queryClient }, children);
+    return {
+      ...renderHook(({ taskId }) => useVideoTrackerJobs(taskId), {
+        initialProps: { taskId: "task-1" },
+        wrapper,
+      }),
+      queryClient,
+    };
+  }
+
+  it("rejects a late launch on task ABA, then polls an admitted launch without a token", async () => {
+    vi.useFakeTimers();
+    const { result, rerender, unmount, queryClient } = launchHarness();
+    const gate = deferred<VideoTrackerJob>();
+    vi.mocked(videoTrackerApi.track)
+      .mockReturnValueOnce(gate.promise)
+      .mockResolvedValueOnce(runningJob);
+    const payload = {
+      from_frame: 0,
+      to_frame: 20,
+      model_key: "sam2_video",
+      direction: "forward" as const,
+    };
+    let pending!: Promise<VideoTrackerJob>;
+    act(() => {
+      pending = result.current.track("task-1", payload);
+    });
+    rerender({ taskId: "task-2" });
+    rerender({ taskId: "task-1" });
+    await act(async () => {
+      gate.resolve(runningJob);
+      await pending;
+    });
+    expect(result.current.jobs).toEqual({});
+    await act(async () => {
+      await result.current.track("task-1", payload);
+    });
+    expect(result.current.jobs[runningJob.id]?.status).toBe("running");
+    vi.mocked(videoTrackerApi.get).mockResolvedValue(runningJob);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(videoTrackerApi.get).toHaveBeenCalledWith(runningJob.id);
+    unmount();
+    queryClient.clear();
   });
 });

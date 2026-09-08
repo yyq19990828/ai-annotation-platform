@@ -1,3 +1,4 @@
+import { isWorkbenchInteractionBlocked } from "../state/workbenchInteractionGuards";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Bot, Clock3, Info, Loader2, MousePointer2, Type, X } from "lucide-react";
 
@@ -496,6 +497,7 @@ export function VideoTrackerPropagateDialog({
   useEffect(() => {
     if (!open || !visible) return;
     const onKey = (e: KeyboardEvent) => {
+      if (isWorkbenchInteractionBlocked(e)) return;
       if (e.key === "Escape") onCancel();
     };
     window.addEventListener("keydown", onKey);
@@ -908,6 +910,7 @@ export function VideoTrackerPropagateDialog({
                         onClick={onToggleSeedCollecting}
                         disabled={submitting}
                         data-testid="tracker-seed-toggle"
+                        data-workbench-video-tool-command
                         aria-pressed={seedCollecting}
                       >
                         <MousePointer2 data-icon="inline-start" />

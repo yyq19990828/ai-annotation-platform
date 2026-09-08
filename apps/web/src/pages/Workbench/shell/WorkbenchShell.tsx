@@ -63,16 +63,18 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
                 onClick={model.issueSection.onOpenList}
                 className={cn(ISSUE_FAB_CLASS, "bottom-20", hiddenCls)}
                 data-testid="issue-fab"
+                data-workbench-issue-navigation
                 data-workbench-fab
               >
                 <Icon name="flag" size={14} />
                 {model.issueSection.openIssueCount > 0 && (
-                  <span className="absolute -right-1 -top-1 min-w-4 rounded-[10px] bg-amber-500 px-1.5 py-px text-center text-2xs text-white">
+                  <span className="absolute -right-1 -top-1 min-w-4 rounded-[10px] bg-status-caution-soft px-1.5 py-px text-center text-2xs text-status-caution">
                     {model.issueSection.openIssueCount}
                   </span>
                 )}
               </button>
-              {model.issueSection.stageKind === "image" && (
+              {(model.issueSection.stageKind === "image" ||
+                model.issueSection.stageKind === "video") && (
                 <button
                   type="button"
                   aria-label={
@@ -83,22 +85,60 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
                   title={
                     model.issueSection.issuePinDropArmed
                       ? "再次点击取消"
-                      : "单击图像落点创建像素 issue"
+                      : "单击画布落点创建像素 issue"
                   }
                   onClick={model.issueSection.onToggleIssuePinDrop}
                   className={cn(
                     ISSUE_FAB_CLASS,
                     "bottom-32",
-                    model.issueSection.issuePinDropArmed && "!border-amber-500 text-status-caution",
+                    model.issueSection.issuePinDropArmed &&
+                      "border-status-caution text-status-caution",
                     hiddenCls,
                   )}
                   data-testid="issue-pin-fab"
+                  data-workbench-issue-navigation
                   data-workbench-fab
                   data-armed={model.issueSection.issuePinDropArmed ? "true" : "false"}
                 >
                   <Icon name="crosshair" size={14} />
                 </button>
               )}
+              {model.issueSection.stageKind === "video" &&
+                model.issueSection.issueNavigation.status !== "idle" && (
+                  <div
+                    className="fixed bottom-20 right-20 z-workbench-top flex max-w-sm items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs text-foreground shadow-lg"
+                    role="status"
+                    aria-live="polite"
+                    data-testid="issue-frame-navigation"
+                    data-status={model.issueSection.issueNavigation.status}
+                    data-frame-index={model.issueSection.issueNavigation.frameIndex ?? ""}
+                    data-workbench-issue-navigation
+                  >
+                    <span>
+                      {model.issueSection.issueNavigation.message ??
+                        (model.issueSection.issueNavigation.status === "preparing"
+                          ? `正在准备源帧 F ${model.issueSection.issueNavigation.frameIndex}…`
+                          : model.issueSection.issueNavigation.status === "ready"
+                            ? `已定位源帧 F ${model.issueSection.issueNavigation.frameIndex}`
+                            : model.issueSection.issueNavigation.status === "timeout"
+                              ? "源帧准备超时，原锚点已保留"
+                              : model.issueSection.issueNavigation.status === "cancelled"
+                                ? "定位已取消，原锚点已保留"
+                                : "源帧暂不可用，原锚点已保留")}
+                    </span>
+                    {model.issueSection.issueNavigation.status !== "preparing" &&
+                      model.issueSection.issueNavigation.status !== "ready" && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          data-testid="issue-frame-retry"
+                          onClick={() => void model.issueSection?.onRetryIssueNavigation()}
+                        >
+                          重试
+                        </Button>
+                      )}
+                  </div>
+                )}
               <IssueCreateModal {...model.issueSection.createModal} />
             </>
           );

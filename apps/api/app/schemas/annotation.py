@@ -1,6 +1,12 @@
 import logging
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    field_serializer,
+    field_validator,
+    model_validator,
+)
 from uuid import UUID
 from datetime import datetime
 from typing import Literal
@@ -281,6 +287,24 @@ class AnnotationOut(BaseModel):
     @classmethod
     def _normalize_legacy(cls, v):
         return normalize_legacy_geometry(v)
+
+    @field_serializer("geometry", mode="wrap", when_used="json")
+    def _serialize_recorded_keyframe_sources(self, geometry, handler):
+        serialized = handler(geometry)
+        if geometry.type in {
+            "video_track_bbox",
+            "video_track_polygon",
+            "video_track_polyline",
+            "video_track_mask",
+        }:
+            # Write schemas default new keyframes to manual. A read of legacy JSON
+            # must not turn that default into evidence of recorded provenance.
+            for keyframe, output in zip(
+                geometry.keyframes, serialized["keyframes"], strict=True
+            ):
+                if "source" not in keyframe.model_fields_set:
+                    output.pop("source", None)
+        return serialized
 
     class Config:
         from_attributes = True

@@ -1,6 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { createRef, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import type { DockviewApi } from "dockview-react";
 import { createWorkspacePreset } from "./workbenchLayoutPresets";
 import { getCanvasPlacement } from "./workbenchLayoutExecutor";
@@ -58,6 +59,7 @@ function Draft() {
 function fixture(
   context: WorkspaceContext = "annotate:image",
   commands = createRef<WorkbenchWorkspaceCommands>(),
+  canvas = <Canvas />,
   onStateChange?: (workspace: WorkbenchWorkspaceState) => void,
 ) {
   return (
@@ -67,7 +69,7 @@ function fixture(
       commandsRef={commands}
       onStateChange={onStateChange}
       slots={{
-        canvas: <Canvas />,
+        canvas,
         "task-queue": <p>任务</p>,
         "class-palette": <p>类别</p>,
         inspector: <p>详情</p>,
@@ -87,7 +89,7 @@ function VideoSelectionWorkspace() {
   const [preferredCollapsed, setPreferredCollapsed] = useState(true);
   return (
     <>
-      {fixture("annotate:video", commands, setWorkspace)}
+      {fixture("annotate:video", commands, undefined, setWorkspace)}
       <output data-testid="tracker-docked">{String(workspace?.videoTrackerVisible)}</output>
       <output data-testid="tracker-content-visible">
         {String(workspace?.videoTrackerContentVisible)}
@@ -166,6 +168,31 @@ afterEach(async () => {
 });
 
 describe("stable Dockview React workspace", () => {
+  it("tool-menu portal keys do not save the workspace layout", async () => {
+    render(
+      fixture(
+        "annotate:image",
+        createRef(),
+        <>
+          <Canvas />
+          {createPortal(
+            <div role="menu" data-workbench-tool-menu tabIndex={-1}>
+              工具
+            </div>,
+            document.body,
+          )}
+        </>,
+      ),
+    );
+    await screen.findByTestId("canvas-marker");
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "ArrowDown" });
+    await act(async () => {
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    });
+    expect(state.owner.save).not.toHaveBeenCalled();
+    expect(state.owner.failRestore).not.toHaveBeenCalled();
+  });
+
   it("allows selection-card editing when the retained tracking panel is a background docked tab", async () => {
     state.owner.snapshot = createWorkspacePreset("video-tracking", bounds, "annotate:video");
     render(<VideoSelectionWorkspace />);

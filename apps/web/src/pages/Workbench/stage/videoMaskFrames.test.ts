@@ -2,12 +2,18 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AnnotationResponse } from "@/types";
 import type { AiBox } from "../state/transforms";
-import { buildTintedMaskRgba, maskAlphaBounds, useVideoMaskFrames } from "./videoMaskFrames";
+import {
+  buildTintedMaskRgba,
+  maskAlphaBounds,
+  useVideoMaskFrames,
+  type VideoMaskCandidate,
+} from "./videoMaskFrames";
 
 const apiMocks = vi.hoisted(() => ({
   annotationRasterMaskContent: vi.fn(),
   annotationVideoMaskContent: vi.fn(),
   predictionVideoMaskContent: vi.fn(),
+  trackerMaskContent: vi.fn(),
 }));
 
 vi.mock("@/api/rasterMasks", () => ({
@@ -19,7 +25,7 @@ vi.mock("@/api/rasterMasks", () => ({
 }));
 
 vi.mock("@/api/videoTracker", () => ({
-  videoTrackerApi: { maskContent: vi.fn() },
+  videoTrackerApi: { maskContent: apiMocks.trackerMaskContent },
 }));
 
 describe("video mask frame helpers", () => {
@@ -43,6 +49,7 @@ describe("useVideoMaskFrames", () => {
     apiMocks.annotationRasterMaskContent.mockReset();
     apiMocks.annotationVideoMaskContent.mockReset();
     apiMocks.predictionVideoMaskContent.mockReset();
+    apiMocks.trackerMaskContent.mockReset();
     vi.stubGlobal(
       "createImageBitmap",
       vi.fn(async () => ({ close: vi.fn() })),
@@ -57,6 +64,80 @@ describe("useVideoMaskFrames", () => {
         ) {}
       },
     );
+  });
+
+  it("retires the previous review job's Mask immediately while the new job is decoding", async () => {
+    const rle = {
+      encoding: "coco_rle" as const,
+      size: [2, 3] as [number, number],
+      counts: [1, 2, 3],
+    };
+    const candidate = (jobId: string): VideoMaskCandidate => ({
+      jobId,
+      result: {
+        frame_index: 4,
+        instance_id: "A",
+        geometry: {
+          type: "mask",
+          mask: {
+            encoding: "coco_rle_ref",
+            size: [2, 3],
+            object_key: `raster-masks/sha256/aa/aa/${"a".repeat(64)}.json`,
+            sha256: "a".repeat(64),
+            runs: 3,
+            bytes: 64,
+          },
+        },
+      },
+    });
+    let resolveMask!: (value: typeof rle) => void;
+    apiMocks.trackerMaskContent.mockResolvedValueOnce(rle).mockImplementationOnce(
+      () =>
+        new Promise<typeof rle>((resolve) => {
+          resolveMask = resolve;
+        }),
+    );
+    const color = () => "#ff0000";
+    const annotations: AnnotationResponse[] = [];
+    const predictions: AiBox[] = [];
+    const { result, rerender } = renderHook(
+      ({ candidates }: { candidates: VideoMaskCandidate[] }) =>
+        useVideoMaskFrames({
+          taskId: "task-1",
+          annotations,
+          predictions,
+          candidates,
+          frameIndex: 4,
+          selectedId: null,
+          colorForAnnotation: color,
+          colorForPrediction: color,
+        }),
+      { initialProps: { candidates: [candidate("job-a")] } },
+    );
+    await waitFor(() =>
+      expect(result.current.map((record) => record.id)).toEqual(["tracker:job-a:A:4"]),
+    );
+    rerender({ candidates: [candidate("job-b")] });
+    expect(result.current).toEqual([]);
+    await act(async () => resolveMask(rle));
+    expect(result.current.map((record) => record.id)).toEqual(["tracker:job-b:A:4"]);
+    let resolveRetired!: (value: typeof rle) => void;
+    apiMocks.trackerMaskContent.mockImplementationOnce(
+      () =>
+        new Promise<typeof rle>((resolve) => {
+          resolveRetired = resolve;
+        }),
+    );
+    rerender({ candidates: [candidate("job-c")] });
+    expect(result.current).toEqual([]);
+    rerender({ candidates: [candidate("job-a")] });
+    await waitFor(() =>
+      expect(result.current.map((record) => record.id)).toEqual(["tracker:job-a:A:4"]),
+    );
+    await act(async () => resolveRetired(rle));
+    expect(result.current.map((record) => record.id)).toEqual(["tracker:job-a:A:4"]);
+    rerender({ candidates: [] });
+    expect(result.current).toEqual([]);
   });
 
   it("单帧 video_mask 等待真实 ID，并只在所属帧加载静态内容", async () => {
@@ -132,6 +213,102 @@ describe("useVideoMaskFrames", () => {
     rerender({ frameIndex: 5, currentAnnotation: annotation });
     await waitFor(() => expect(result.current).toEqual([]));
   });
+
+  it.each(["video_mask", "video_track_mask"] as const)(
+    "%s waits for a persisted id while preserving other masks and the optimistic render key",
+    async (type) => {
+      const frameIndex = 6;
+      const savedId = "58213cd2-a17b-4ab9-a13e-8a5b46a74634";
+      const temporaryId = `tmp_${savedId}`;
+      const mask = {
+        encoding: "coco_rle_ref" as const,
+        size: [2, 3] as [number, number],
+        object_key: `raster-masks/sha256/aa/aa/${"a".repeat(64)}.json`,
+        sha256: "a".repeat(64),
+        runs: 3,
+        bytes: 64,
+      };
+      const annotation = (id: string): AnnotationResponse => ({
+        id,
+        task_id: "task-1",
+        project_id: "project-1",
+        user_id: "user-1",
+        source: "manual",
+        annotation_type: type,
+        class_name: "Car",
+        geometry:
+          type === "video_mask"
+            ? { type, frame_index: frameIndex, mask }
+            : {
+                type,
+                track_id: id,
+                keyframes: [{ frame_index: frameIndex, mask, source: "manual" }],
+              },
+        confidence: 1,
+        parent_prediction_id: null,
+        parent_annotation_id: null,
+        lead_time: null,
+        is_active: true,
+        ground_truth: false,
+        version: 1,
+        created_at: "2026-09-08T00:00:00Z",
+        updated_at: null,
+      });
+      const persisted = annotation("7fbd7a31-a1c1-4895-9ead-e91726529d69");
+      const optimistic = {
+        ...annotation(temporaryId),
+        version: undefined,
+        render_key: temporaryId,
+      };
+      const load =
+        type === "video_mask"
+          ? apiMocks.annotationRasterMaskContent
+          : apiMocks.annotationVideoMaskContent;
+      load.mockImplementation(async (id: string) => {
+        if (id === temporaryId) throw new Error("annotation_id must be a UUID");
+        return { encoding: "coco_rle", size: [2, 3], counts: [1, 2, 3] };
+      });
+      const initial: Parameters<typeof useVideoMaskFrames>[0] = {
+        taskId: "task-1",
+        annotations: [persisted],
+        candidates: [],
+        predictions: [],
+        frameIndex,
+        selectedId: null,
+        colorForAnnotation: () => "#ff0000",
+        colorForPrediction: () => "#00ff00",
+      };
+      const { result, rerender } = renderHook(useVideoMaskFrames, { initialProps: initial });
+      await waitFor(() =>
+        expect(result.current.map((record) => record.id)).toEqual([persisted.id]),
+      );
+      const existingImage = result.current[0].image;
+
+      // A pending create enters the query cache before its server ID is available.
+      await act(async () => {
+        rerender({ ...initial, annotations: [persisted, optimistic], selectedId: temporaryId });
+      });
+      expect(load.mock.calls.map(([id]) => id)).not.toContain(temporaryId);
+      expect(result.current.map((record) => record.id)).toEqual([persisted.id]);
+      expect(result.current[0].image).toBe(existingImage);
+
+      // useCreateAnnotation keeps the render key when replacing the optimistic row.
+      const saved = { ...annotation(savedId), render_key: temporaryId };
+      rerender({ ...initial, annotations: [persisted, saved], selectedId: saved.id });
+      await waitFor(() =>
+        expect(result.current.map((record) => record.id)).toEqual([persisted.id, saved.id]),
+      );
+      expect(load).toHaveBeenCalledWith(
+        ...(type === "video_mask" ? [saved.id] : [saved.id, frameIndex]),
+      );
+      expect(result.current[1]).toMatchObject({
+        id: saved.id,
+        selected: true,
+        isTrack: type === "video_track_mask",
+      });
+      expect([...result.current[1].alpha]).toEqual([0, 255, 0, 255, 0, 0]);
+    },
+  );
 
   it("外部 video_track_mask 候选复用任务鉴权内容端点并保持 AI 选择 id", async () => {
     const digest = "b".repeat(64);

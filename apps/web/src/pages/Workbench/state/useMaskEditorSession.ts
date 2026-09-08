@@ -148,7 +148,8 @@ export function useMaskEditorSession({
   }, [onLeaveDirty]);
   const editorActiveRef = useRef(editor.active);
   editorActiveRef.current = editor.active;
-  const hasPendingDraft = editor.dirty || editor.instanceOperationPreview !== null;
+  const hasPendingDraft =
+    editor.dirty || editor.operationPreview !== null || editor.instanceOperationPreview !== null;
   const editorDirtyRef = useRef(hasPendingDraft);
   editorDirtyRef.current = hasPendingDraft;
   const requestedKeyRef = useRef(sessionKey);

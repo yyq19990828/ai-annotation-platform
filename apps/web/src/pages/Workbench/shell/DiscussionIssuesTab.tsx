@@ -10,7 +10,7 @@
 import { useMemo, useState } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
-import { useFeedbacks, usePatchFeedback, useDeleteFeedback } from "@/hooks/useFeedbacks";
+import { useInfiniteFeedbacks, usePatchFeedback, useDeleteFeedback } from "@/hooks/useFeedbacks";
 import {
   hasPixelAnchor,
   type FeedbackSeverity,
@@ -18,10 +18,13 @@ import {
   type ListFeedbacksParams,
 } from "@/api/feedbacks";
 import { useActiveIssueStore } from "../state/useActiveIssueStore";
+import { readVideoIssueContext } from "../state/videoIssueContext";
 
 interface Props {
   projectId: string;
   taskId: string;
+  onCreateTaskIssue?: () => void;
+  allowProjectScope?: boolean;
 }
 
 function cn(...xs: Array<string | false | null | undefined>): string {
@@ -56,19 +59,30 @@ const SEVERITY_CHIP: Record<FeedbackSeverity, string> = {
   blocker: "text-status-danger",
 };
 
-export function DiscussionIssuesTab({ projectId, taskId }: Props) {
+export function DiscussionIssuesTab({
+  projectId,
+  taskId,
+  onCreateTaskIssue,
+  allowProjectScope = false,
+}: Props) {
   const [statusFilter, setStatusFilter] = useState<FeedbackStatus | "all">("all");
+  const [scope, setScope] = useState<"task" | "project">("task");
   const params: ListFeedbacksParams = useMemo(
-    () => ({ project_id: projectId, task_id: taskId, kind: "issue" }),
-    [projectId, taskId],
+    () => ({
+      project_id: projectId,
+      task_id: !allowProjectScope || scope === "task" ? taskId : undefined,
+      kind: "issue",
+    }),
+    [projectId, taskId, scope, allowProjectScope],
   );
-  const { data, isLoading, isError } = useFeedbacks(params);
+  const { data, isLoading, isError, hasNextPage, isFetchingNextPage, fetchNextPage } =
+    useInfiniteFeedbacks(params);
   const patchMut = usePatchFeedback(params);
   const deleteMut = useDeleteFeedback(params);
   const highlightId = useActiveIssueStore((s) => s.highlightId);
   const focusIssue = useActiveIssueStore((s) => s.focusIssue);
 
-  const items = data?.items ?? [];
+  const items = data?.pages.flatMap((page) => page.items) ?? [];
   const filtered = statusFilter === "all" ? items : items.filter((i) => i.status === statusFilter);
 
   const setStatus = (id: string, next: FeedbackStatus) => {
@@ -78,6 +92,18 @@ export function DiscussionIssuesTab({ projectId, taskId }: Props) {
   return (
     <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-3 py-2.5">
       <div className="flex flex-wrap gap-1">
+        {allowProjectScope && (
+          <select
+            aria-label="问题列表范围"
+            data-testid="issue-list-scope"
+            value={scope}
+            onChange={(event) => setScope(event.target.value as "task" | "project")}
+            className="rounded border border-border bg-muted px-1 py-0.5 text-xs text-foreground"
+          >
+            <option value="task">当前任务</option>
+            <option value="project">整个项目</option>
+          </select>
+        )}
         {STATUS_FILTERS.map((f) => (
           <button
             key={f.key}
@@ -91,19 +117,31 @@ export function DiscussionIssuesTab({ projectId, taskId }: Props) {
             {f.label}
           </button>
         ))}
+        {onCreateTaskIssue && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={onCreateTaskIssue}
+            data-testid="issue-create-task"
+            data-workbench-issue-navigation
+          >
+            <Icon name="plus" size={12} /> 记录任务级问题
+          </Button>
+        )}
       </div>
 
       {isLoading && <div className="px-1 py-2 text-xs text-muted-foreground">加载中…</div>}
       {isError && <div className="px-1 py-2 text-xs text-status-danger">加载失败</div>}
       {!isLoading && !isError && filtered.length === 0 && (
         <div className="px-1 py-2 text-xs text-muted-foreground">
-          当前任务暂无 issue。在画布工具栏「落点」可记录第一条。
+          {scope === "task" ? "当前任务" : "当前项目"}暂无 issue。在画布工具栏「落点」可记录第一条。
         </div>
       )}
 
       {filtered.map((it) => {
         const pixelAnchor = hasPixelAnchor(it) ? it.anchor_position : null;
         const hasPin = pixelAnchor !== null;
+        const videoContext = readVideoIssueContext(it);
         return (
           <div
             key={it.id}
@@ -111,7 +149,7 @@ export function DiscussionIssuesTab({ projectId, taskId }: Props) {
               if (highlightId === it.id && node) node.scrollIntoView({ block: "nearest" });
             }}
             onClick={() => {
-              if (hasPin) focusIssue(it.id);
+              if (hasPin) focusIssue(it);
             }}
             className={cn(
               "flex flex-col gap-1 rounded-md border border-border bg-muted px-2.5 py-2",
@@ -145,7 +183,14 @@ export function DiscussionIssuesTab({ projectId, taskId }: Props) {
               )}
               {pixelAnchor && typeof pixelAnchor.frame === "number" && (
                 <span className="text-2xs text-muted-foreground" title="所属帧 · 单击跳转">
-                  F{pixelAnchor.frame}
+                  {videoContext?.frame_range
+                    ? `F${videoContext.frame_range.from_frame}–F${videoContext.frame_range.to_frame}`
+                    : `F${pixelAnchor.frame}`}
+                </span>
+              )}
+              {scope === "project" && it.task_id && it.task_id !== taskId && (
+                <span className="text-2xs text-muted-foreground" title={it.task_id}>
+                  其他任务
                 </span>
               )}
               <span className="ml-auto text-2xs text-muted-foreground">
@@ -197,6 +242,16 @@ export function DiscussionIssuesTab({ projectId, taskId }: Props) {
           </div>
         );
       })}
+      {hasNextPage && (
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={isFetchingNextPage}
+          onClick={() => void fetchNextPage()}
+        >
+          {isFetchingNextPage ? "加载中…" : "加载更多问题"}
+        </Button>
+      )}
     </div>
   );
 }

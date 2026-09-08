@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { VideoTrackGeometry } from "@/types";
+import type { VideoContextTrackGeometry } from "./videoTrackContext";
 import {
   buildGlobalTimelineDensity,
   buildPredictionDensity,
@@ -138,6 +139,82 @@ describe("videoTrackTimeline", () => {
     expect(lastAppearFrame(geometry)).toBeNull();
     expect(prevKeyframeFrame(geometry, 5)).toBeNull();
     expect(nextKeyframeFrame(geometry, 0)).toBeNull();
+  });
+
+  const navigationFrames = [
+    { frame_index: 12, source: "prediction" as const },
+    { frame_index: 1, source: "manual" as const },
+    { frame_index: 4, source: "manual" as const },
+    { frame_index: 1, source: "prediction" as const, occluded: true },
+    { frame_index: 8, source: "manual" as const },
+  ];
+  const common = { track_id: "all-geometries", outside: [{ from: 8, to: 8 }] };
+  const trackVariants: VideoContextTrackGeometry[] = [
+    track({ ...common, keyframes: navigationFrames.map((frame) => ({ ...frame, bbox })) }),
+    {
+      ...common,
+      type: "video_track_polygon",
+      keyframes: navigationFrames.map((frame) => ({
+        ...frame,
+        points: [
+          [0, 0],
+          [1, 0],
+          [1, 1],
+        ],
+      })),
+    },
+    {
+      ...common,
+      type: "video_track_polyline",
+      keyframes: navigationFrames.map((frame) => ({
+        ...frame,
+        points: [
+          [0, 0],
+          [1, 1],
+        ],
+      })),
+    },
+    {
+      ...common,
+      type: "video_track_mask",
+      keyframes: navigationFrames.map((frame) => ({
+        ...frame,
+        mask: {
+          encoding: "coco_rle_ref",
+          size: [2, 2],
+          object_key: `mask-${frame.frame_index}`,
+          sha256: "a".repeat(64),
+          runs: 1,
+          bytes: 1,
+        },
+      })),
+    },
+  ];
+
+  it.each(trackVariants)("preserves timeline rules for $type", (geometry) => {
+    const before = structuredClone(geometry);
+    expect(visibleKeyframesForTimeline(geometry).map((frame) => frame.frame_index)).toEqual([
+      1, 4, 12,
+    ]);
+    expect(prevKeyframeFrame(geometry, 4)).toBe(1);
+    expect(nextKeyframeFrame(geometry, 4)).toBe(12);
+    expect(prevKeyframeFrame(geometry, 1)).toBeNull();
+    expect(nextKeyframeFrame(geometry, 12)).toBeNull();
+    expect(firstAppearFrame(geometry)).toBe(1);
+    expect(lastAppearFrame(geometry)).toBe(12);
+
+    const held = geometry.type === "video_track_mask";
+    expect(buildSelectedTrackTimeline(geometry, held ? "held" : "interpolated")).toEqual({
+      trackId: common.track_id,
+      keyframes: [
+        { frame: 1, source: "prediction", occluded: true },
+        { frame: 4, source: "manual", occluded: false },
+        { frame: 12, source: "prediction", occluded: false },
+      ],
+      outside: [{ from: 8, to: 8, source: "manual" }],
+      interpolated: [{ from: 1, to: 4, hasPrediction: true, ...(held ? { kind: "held" } : {}) }],
+    });
+    expect(geometry).toEqual(before);
   });
 
   it("aggregates global density into stable bins", () => {

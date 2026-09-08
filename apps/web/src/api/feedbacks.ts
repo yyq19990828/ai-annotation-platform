@@ -22,6 +22,32 @@ export interface MaskFeedbackCompareLocator {
   candidate_instance_id?: string | null;
 }
 
+export interface FeedbackVideoViewport {
+  center_x: number;
+  center_y: number;
+  /** Relative to the fit scale, independently of the current screen dimensions. */
+  zoom: number;
+}
+
+export interface FeedbackVideoFrameRange {
+  from_frame: number;
+  to_frame: number;
+}
+
+export interface FeedbackVideoTimelineWindow {
+  from: number;
+  to: number;
+}
+
+export interface FeedbackVideoContext {
+  schema_version: 1;
+  track_id?: string | null;
+  annotation_version?: number | null;
+  frame_range?: FeedbackVideoFrameRange | null;
+  viewport?: FeedbackVideoViewport | null;
+  timeline_window?: FeedbackVideoTimelineWindow | null;
+}
+
 export interface FeedbackAnchorPosition {
   x?: number | null;
   y?: number | null;
@@ -35,6 +61,8 @@ export interface FeedbackAnchorPosition {
   scene_track_id?: string | null;
   auxiliary_layers?: string[];
   compare_locator?: MaskFeedbackCompareLocator | null;
+  /** Historical/future versions remain readable; consumers validate V1 before restoring it. */
+  video_context?: FeedbackVideoContext | Record<string, unknown> | null;
 }
 
 export interface AnnotationFeedback {

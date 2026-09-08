@@ -1,6 +1,6 @@
 // 视频播放控制器单测(子 hook 全 mock):聚焦确定性 state ——
 // 播放浮层 show/2s 自动隐藏(v0.16.x 回归修复)、loopRegion 规范化/清除、书签开合、派生 maxFrame。
-// rAF/bitmap/seek 等时序路径不在此覆盖(需真实 <video>/解码,留作 e2e/手测)。
+// Source/draw admission uses explicit child-hook receipts; actual pixels remain a browser gate.
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -17,23 +17,34 @@ const videoHookMocks = vi.hoisted(() => ({
     width: number;
     height: number;
   } | null,
-  seekToAsync: vi.fn().mockResolvedValue({ ok: true, frame: 0 }),
+  seekToAsync: vi.fn(),
+  onFrameChange: null as ((frame: number) => void) | null,
+  getFrameEvidence: vi.fn(),
+  nativeFrame: null as import("./useFrameClock").NativeVideoFrameEvidence | null,
+  isSeeking: false,
+  capture: vi.fn(),
+  showFrame: vi.fn(),
   imageBitmapToJpeg: vi.fn().mockResolvedValue(null),
   videoElementToJpeg: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock("./useFrameClock", () => ({
-  useFrameClock: () => ({
-    seekToAsync: videoHookMocks.seekToAsync,
-    isSeeking: false,
-  }),
+  useFrameClock: (options: { onFrameChange: (frame: number) => void }) => {
+    videoHookMocks.onFrameChange = options.onFrameChange;
+    return {
+      seekToAsync: videoHookMocks.seekToAsync,
+      getFrameEvidence: videoHookMocks.getFrameEvidence,
+      nativeFrame: videoHookMocks.nativeFrame,
+      isSeeking: videoHookMocks.isSeeking,
+    };
+  },
 }));
 vi.mock("./useVideoBitmapCache", () => ({
   useVideoBitmapCache: () => ({
     activeBitmap: videoHookMocks.activeBitmap,
     cachedRanges: [],
-    capture: vi.fn(),
-    showFrame: vi.fn(),
+    capture: videoHookMocks.capture,
+    showFrame: videoHookMocks.showFrame,
   }),
 }));
 vi.mock("./useVideoPreciseFrame", () => ({
@@ -110,7 +121,11 @@ vi.mock("@/utils/imageBitmapToJpeg", () => ({
   videoElementToJpeg: videoHookMocks.videoElementToJpeg,
 }));
 
-import { useVideoPlaybackController } from "./useVideoPlaybackController";
+import type { VideoFrameSeekResult } from "./videoStageControls";
+import {
+  useVideoPlaybackController,
+  VIDEO_FRAME_READY_TIMEOUT_MS,
+} from "./useVideoPlaybackController";
 
 const MANIFEST = {
   task_id: "T1",
@@ -165,7 +180,15 @@ describe("useVideoPlaybackController", () => {
     localStorage.clear();
     videoHookMocks.activeBitmap = null;
     videoHookMocks.preciseBitmap = null;
-    videoHookMocks.seekToAsync.mockClear();
+    videoHookMocks.seekToAsync.mockReset().mockImplementation(async (frameIndex: number) => {
+      videoHookMocks.onFrameChange?.(frameIndex);
+      return { status: "ready", frameIndex, source: "rvfc" };
+    });
+    videoHookMocks.getFrameEvidence.mockReset().mockReturnValue(null);
+    videoHookMocks.nativeFrame = null;
+    videoHookMocks.isSeeking = false;
+    videoHookMocks.capture.mockReset().mockResolvedValue(null);
+    videoHookMocks.showFrame.mockReset();
     videoHookMocks.imageBitmapToJpeg.mockClear();
     videoHookMocks.videoElementToJpeg.mockClear();
     vi.useFakeTimers();
@@ -322,5 +345,304 @@ describe("useVideoPlaybackController", () => {
     video.readyState = HTMLMediaElement.HAVE_METADATA; // 加载恢复
     act(() => vi.advanceTimersByTime(15000));
     expect(video.load).not.toHaveBeenCalled();
+  });
+
+  function bitmapFrame(frameIndex: number) {
+    return {
+      frameIndex,
+      bitmap: { width: 640, height: 360, close: vi.fn() } as unknown as ImageBitmap,
+      width: 640,
+      height: 360,
+    };
+  }
+
+  it("requires a new completed media draw for each exact cached-frame request", async () => {
+    videoHookMocks.preciseBitmap = bitmapFrame(17);
+    const { result } = setup();
+    let first!: Promise<VideoFrameSeekResult>;
+    let finished = false;
+    act(() => {
+      first = result.current.controls.seekToFrameReady(17);
+      void first.then(() => {
+        finished = true;
+      });
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(finished).toBe(false);
+    const firstPresentation = result.current.framePresentation!;
+    expect(firstPresentation).toMatchObject({
+      frameIndex: 17,
+      source: "webcodecs",
+      image: videoHookMocks.preciseBitmap.bitmap,
+    });
+    await act(async () => {
+      result.current.markFramePresented(firstPresentation);
+      await first;
+    });
+    expect(await first).toEqual({ status: "ready", frameIndex: 17, source: "webcodecs" });
+    let second!: Promise<VideoFrameSeekResult>;
+    act(() => {
+      second = result.current.controls.seekToFrameReady(17);
+    });
+    const secondPresentation = result.current.framePresentation!;
+    expect(secondPresentation.requestId).not.toBe(firstPresentation.requestId);
+    act(() => result.current.markFramePresented(firstPresentation));
+    expect(result.current.framePresentation).toBe(secondPresentation);
+    await act(async () => {
+      result.current.markFramePresented(secondPresentation);
+      await second;
+    });
+    expect(await second).toEqual({ status: "ready", frameIndex: 17, source: "webcodecs" });
+  });
+
+  it("accepts a verified native bitmap after its own media draw", async () => {
+    videoHookMocks.activeBitmap = bitmapFrame(17);
+    const { result } = setup();
+    let pending!: Promise<VideoFrameSeekResult>;
+    act(() => {
+      pending = result.current.controls.seekToFrameReady(17);
+    });
+    expect(result.current.framePresentation?.source).toBe("video-bitmap");
+    await act(async () => {
+      result.current.markFramePresented(result.current.framePresentation!);
+      await pending;
+    });
+    expect(await pending).toEqual({ status: "ready", frameIndex: 17, source: "video-bitmap" });
+  });
+
+  it("uses exact observed native source pixels for video-element fallback, then waits for draw", async () => {
+    const video = mockVideo(HTMLMediaElement.HAVE_CURRENT_DATA);
+    video.videoWidth = 640;
+    video.videoHeight = 360;
+    const evidence = {
+      frameIndex: 17,
+      mediaTime: 17 / 30,
+      video: video as unknown as HTMLVideoElement,
+      ownerEpoch: 0,
+    };
+    videoHookMocks.getFrameEvidence.mockImplementation((frame) => (frame === 17 ? evidence : null));
+    videoHookMocks.nativeFrame = evidence;
+    const { result } = setup({ current: video });
+    let pending!: Promise<VideoFrameSeekResult>;
+    act(() => {
+      pending = result.current.controls.seekToFrameReady(17);
+    });
+    expect(result.current.framePresentation).toMatchObject({
+      frameIndex: 17,
+      source: "video-element",
+      image: video,
+    });
+    await act(async () => {
+      result.current.markFramePresented(result.current.framePresentation!);
+      await pending;
+    });
+    expect(await pending).toEqual({ status: "ready", frameIndex: 17, source: "video-element" });
+  });
+
+  it("rechecks an existing native receipt when seeking ends without a captured bitmap", async () => {
+    const video = { ...mockVideo(HTMLMediaElement.HAVE_CURRENT_DATA), seeking: true };
+    video.videoWidth = 640;
+    video.videoHeight = 360;
+    const evidence = {
+      frameIndex: 17,
+      mediaTime: 17 / 30,
+      video: video as unknown as HTMLVideoElement,
+      ownerEpoch: 0,
+    };
+    videoHookMocks.nativeFrame = evidence;
+    videoHookMocks.isSeeking = true;
+    videoHookMocks.getFrameEvidence.mockImplementation((frame) =>
+      frame === 17 && !video.seeking ? evidence : null,
+    );
+    const { result, rerender } = setup({ current: video });
+    let pending!: Promise<VideoFrameSeekResult>;
+    act(() => {
+      pending = result.current.controls.seekToFrameReady(17);
+    });
+    expect(result.current.framePresentation).toBeNull();
+
+    video.seeking = false;
+    videoHookMocks.isSeeking = false;
+    rerender();
+    expect(result.current.displayBitmap).toBeNull();
+    expect(result.current.framePresentation).toMatchObject({
+      frameIndex: 17,
+      source: "video-element",
+      image: video,
+    });
+    await act(async () => {
+      result.current.markFramePresented(result.current.framePresentation!);
+      await pending;
+    });
+    expect(await pending).toEqual({ status: "ready", frameIndex: 17, source: "video-element" });
+  });
+
+  it("keeps a cold precise decode eligible after native timeout and accepts its later draw", async () => {
+    videoHookMocks.seekToAsync.mockImplementation(async (frameIndex) => {
+      videoHookMocks.onFrameChange?.(frameIndex);
+      return { status: "timeout", frameIndex, source: "timeout" };
+    });
+    const { result, rerender } = setup();
+    let pending!: Promise<VideoFrameSeekResult>;
+    act(() => {
+      pending = result.current.controls.seekToFrameReady(17);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(500);
+    });
+    expect(result.current.framePresentation).toBeNull();
+    expect(videoHookMocks.capture).not.toHaveBeenCalled();
+    videoHookMocks.preciseBitmap = bitmapFrame(17);
+    rerender();
+    await act(async () => {
+      result.current.markFramePresented(result.current.framePresentation!);
+      await pending;
+    });
+    expect(await pending).toEqual({ status: "ready", frameIndex: 17, source: "webcodecs" });
+  });
+
+  it("a native seek result without source evidence or a completed draw times out", async () => {
+    const { result } = setup();
+    let pending!: Promise<VideoFrameSeekResult>;
+    act(() => {
+      pending = result.current.controls.seekToFrameReady(17);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(VIDEO_FRAME_READY_TIMEOUT_MS);
+    });
+    expect(await pending).toEqual({ status: "timeout", frameIndex: 17, source: null });
+    expect(videoHookMocks.capture).not.toHaveBeenCalled();
+    expect(result.current.framePresentation).toBeNull();
+  });
+
+  it("rejects disabled admission and invalid anchors without clamping them into success", async () => {
+    const overrides = {
+      drag: { kind: "draw" as const, start: { x: 0, y: 0 }, current: { x: 1, y: 1 } },
+    };
+    const { result } = setup(undefined, overrides);
+    await act(async () => {
+      expect(await result.current.controls.seekToFrameReady(17)).toEqual({
+        status: "unavailable",
+        frameIndex: 17,
+        source: null,
+      });
+    });
+    expect(videoHookMocks.seekToAsync).not.toHaveBeenCalled();
+    const idle = setup();
+    await act(async () => {
+      expect(await idle.result.current.controls.seekToFrameReady(120)).toEqual({
+        status: "unavailable",
+        frameIndex: 120,
+        source: null,
+      });
+      expect(await idle.result.current.controls.seekToFrameReady(1.5)).toEqual({
+        status: "unavailable",
+        frameIndex: 1.5,
+        source: null,
+      });
+    });
+    expect(videoHookMocks.seekToAsync).not.toHaveBeenCalled();
+  });
+
+  it("new navigation cancels the old request and rejects its delayed draw receipt", async () => {
+    videoHookMocks.preciseBitmap = bitmapFrame(17);
+    const { result } = setup();
+    let first!: Promise<VideoFrameSeekResult>;
+    act(() => {
+      first = result.current.controls.seekToFrameReady(17);
+    });
+    const oldPresentation = result.current.framePresentation!;
+    act(() => result.current.controls.seekToFrame(18));
+    expect(await first).toEqual({ status: "cancelled", frameIndex: 17, source: null });
+    expect(oldPresentation.isCurrent()).toBe(false);
+    act(() => result.current.markFramePresented(oldPresentation));
+    expect(result.current.framePresentation).toBeNull();
+  });
+
+  it("cancels task A→B→A and unmount work while preserving last-request-wins", async () => {
+    videoHookMocks.preciseBitmap = bitmapFrame(17);
+    const overrides: Partial<Parameters<typeof useVideoPlaybackController>[0]> = {
+      manifest: MANIFEST,
+    };
+    const { result, rerender, unmount } = setup(undefined, overrides);
+    let first!: Promise<VideoFrameSeekResult>;
+    act(() => {
+      first = result.current.controls.seekToFrameReady(17);
+    });
+    const oldPresentation = result.current.framePresentation!;
+    overrides.manifest = {
+      task_id: "T2",
+      video_url: "http://x/v.mp4",
+      metadata: { fps: 30, frame_count: 100 },
+    } as never;
+    rerender();
+    overrides.manifest = MANIFEST;
+    rerender();
+    expect(await first).toEqual({ status: "cancelled", frameIndex: 17, source: null });
+    expect(oldPresentation.isCurrent()).toBe(false);
+    let second!: Promise<VideoFrameSeekResult>;
+    let third!: Promise<VideoFrameSeekResult>;
+    act(() => {
+      second = result.current.controls.seekToFrameReady(17);
+    });
+    act(() => {
+      third = result.current.controls.seekToFrameReady(18);
+    });
+    expect(await second).toEqual({ status: "cancelled", frameIndex: 17, source: null });
+    unmount();
+    expect(await third).toEqual({ status: "cancelled", frameIndex: 18, source: null });
+  });
+
+  it("checked pause keeps off-grid source frame 17 and does not snap to the sampling grid", async () => {
+    videoHookMocks.preciseBitmap = bitmapFrame(17);
+    const video = mockVideo(HTMLMediaElement.HAVE_CURRENT_DATA);
+    const { result } = setup(
+      { current: video },
+      { videoSampling: { mode: "step", frame_step: 5 } },
+    );
+    act(() => result.current.controls.togglePlayback());
+    videoHookMocks.seekToAsync.mockClear();
+    let pending!: Promise<VideoFrameSeekResult>;
+    act(() => {
+      pending = result.current.controls.seekToFrameReady(17);
+    });
+    expect(result.current.isPlaybackActive).toBe(false);
+    expect(video.pause).toHaveBeenCalled();
+    expect(videoHookMocks.seekToAsync).toHaveBeenCalledWith(17);
+    expect(videoHookMocks.seekToAsync).not.toHaveBeenCalledWith(15);
+    await act(async () => {
+      result.current.markFramePresented(result.current.framePresentation!);
+      await pending;
+    });
+    expect((await pending).frameIndex).toBe(17);
+  });
+
+  it("an old task control cannot start or cancel a newer task's checked seek", async () => {
+    videoHookMocks.preciseBitmap = bitmapFrame(17);
+    const overrides: Partial<Parameters<typeof useVideoPlaybackController>[0]> = {
+      manifest: MANIFEST,
+    };
+    const { result, rerender } = setup(undefined, overrides);
+    const staleSeek = result.current.controls.seekToFrameReady;
+    overrides.manifest = {
+      task_id: "T2",
+      video_url: "http://x/other.mp4",
+      metadata: { fps: 30, frame_count: 100 },
+    } as never;
+    rerender();
+    let current!: Promise<VideoFrameSeekResult>;
+    act(() => {
+      current = result.current.controls.seekToFrameReady(17);
+    });
+    const presentation = result.current.framePresentation!;
+    expect(await staleSeek(17)).toEqual({ status: "cancelled", frameIndex: 17, source: null });
+    expect(presentation.isCurrent()).toBe(true);
+    await act(async () => {
+      result.current.markFramePresented(presentation);
+      await current;
+    });
+    expect((await current).status).toBe("ready");
   });
 });

@@ -9,6 +9,8 @@ const pointcloudWebGpuQualification = process.env.PLAYWRIGHT_POINTCLOUD_WEBGPU =
 const configDir = dirname(fileURLToPath(import.meta.url));
 const isCI = Boolean(process.env.CI);
 const useIsolatedServers = !isCI || Boolean(rasterMaskMatrix);
+const isolatedApiPort = process.env.PLAYWRIGHT_ISOLATED_API_PORT ?? "8010";
+const isolatedWebPort = process.env.PLAYWRIGHT_ISOLATED_WEB_PORT ?? "3001";
 // SSH ForwardX11 会注入 localhost DISPLAY；无头 SwANGLE 会因此误走 XCB，导致 WebGL2 初始化失败。
 // 只隔离转发型 DISPLAY，保留本机 :0 / :1，避免破坏显式 --headed 调试。
 const forwardedX11Display = /^localhost:\d+(?:\.\d+)?$/.test(process.env.DISPLAY ?? "");
@@ -22,21 +24,26 @@ const pointcloudBrowserEnv = forwardedX11Display
 
 if (useIsolatedServers) {
   // 固定隔离端口，避免继承 shell/CI job 中指向开发服务的旧变量。
-  process.env.PLAYWRIGHT_BASE_URL = "http://127.0.0.1:3001";
-  process.env.PLAYWRIGHT_API_BASE = "http://127.0.0.1:8010";
+  process.env.PLAYWRIGHT_BASE_URL = `http://127.0.0.1:${isolatedWebPort}`;
+  process.env.PLAYWRIGHT_API_BASE = `http://127.0.0.1:${isolatedApiPort}`;
 }
 
-const defaultBaseURL = useIsolatedServers ? "http://127.0.0.1:3001" : "http://127.0.0.1:3000";
+const defaultBaseURL = useIsolatedServers
+  ? `http://127.0.0.1:${isolatedWebPort}`
+  : "http://127.0.0.1:3000";
 process.env.PLAYWRIGHT_BASE_URL ??= defaultBaseURL;
 const e2eDatabaseURL = isCI
   ? (process.env.DATABASE_URL ?? "postgresql+asyncpg://user:pass@127.0.0.1:5432/annotation_test")
   : (process.env.PLAYWRIGHT_E2E_DATABASE_URL ??
     "postgresql+asyncpg://user:pass@127.0.0.1:5432/annotation_e2e");
+// Python ledger fixtures run as child processes and need the same disposable
+// database URL as the API, including in CI where the URL is derived from DATABASE_URL.
+process.env.PLAYWRIGHT_E2E_DATABASE_URL ??= e2eDatabaseURL;
 
 const isolatedApiCommand = [
   ...(isCI ? [] : ["uv run python scripts/prepare_e2e_db.py"]),
   "uv run alembic upgrade head",
-  "uv run uvicorn app.main:app --host 127.0.0.1 --port 8010",
+  `uv run uvicorn app.main:app --host 127.0.0.1 --port ${isolatedApiPort}`,
 ].join(" && ");
 
 /**
@@ -128,7 +135,7 @@ export default defineConfig({
                 }
               : {}),
           },
-          url: "http://127.0.0.1:8010/health/db",
+          url: `http://127.0.0.1:${isolatedApiPort}/health/db`,
           reuseExistingServer: false,
           timeout: 120_000,
         },
@@ -136,11 +143,11 @@ export default defineConfig({
           command: "pnpm dev --host 127.0.0.1",
           cwd: configDir,
           env: {
-            API_PROXY_TARGET: "http://127.0.0.1:8010",
-            VITE_WS_HOST: "127.0.0.1:8010",
-            PORT: "3001",
+            API_PROXY_TARGET: `http://127.0.0.1:${isolatedApiPort}`,
+            VITE_WS_HOST: `127.0.0.1:${isolatedApiPort}`,
+            PORT: isolatedWebPort,
           },
-          url: "http://127.0.0.1:3001",
+          url: `http://127.0.0.1:${isolatedWebPort}`,
           reuseExistingServer: false,
           timeout: 120_000,
         },
