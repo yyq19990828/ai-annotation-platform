@@ -43,6 +43,11 @@ async function expectTriViewReady(page: Page): Promise<void> {
 }
 
 type CameraImageScope = "floating" | "docked";
+type CameraImageSource = {
+  role: string;
+  pathname: string;
+  filename: string;
+};
 
 function cameraImageRoot(page: Page, scope: CameraImageScope) {
   return scope === "floating"
@@ -85,13 +90,17 @@ async function cameraImageSources(
   page: Page,
   roles: readonly string[],
   scope: CameraImageScope,
-): Promise<string[]> {
+): Promise<CameraImageSource[]> {
   const root = cameraImageRoot(page, scope);
   return Promise.all(
     roles.map(async (role) => {
       const source = await root.locator(`img[alt="${role}"]:visible`).first().getAttribute("src");
       if (!source) throw new Error(`[pointcloud-panel-layout] ${role} 相机图缺少真实 URL`);
-      return source;
+      // Signed URLs may change query parameters while the underlying frame stays
+      // the same. Compare the public path/filename so the frame transition is
+      // asserted per camera role rather than by an opaque URL string.
+      const pathname = decodeURIComponent(new URL(source, page.url()).pathname);
+      return { role, pathname, filename: pathname.split("/").pop() || pathname };
     }),
   );
 }

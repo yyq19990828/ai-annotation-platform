@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-08T05:50:45.791Z",
+  "updated_at": "2026-09-08T06:17:40.711Z",
   "entries": {
     "docs-site/.vitepress/theme/assets/home/hero/pointcloud.webp": {
       "asset_id": "home-hero/pointcloud",
@@ -2631,6 +2631,84 @@
         "clip": {
           "start": 0,
           "duration": 10.45
+        }
+      }
+    },
+    "docs-site/public/media/pointcloud/panel-layout-poster.webp": {
+      "asset_id": "pointcloud-panel-layout",
+      "role": "poster",
+      "generated_at": "2026-09-08T06:17:40.711Z",
+      "captured_commit": "13e91bc7526ecf4ae8ff0b5e788a7db643854693",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive webp › pointcloud-panel-layout",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "apps/web/scripts/media-derivation.mjs"
+      ],
+      "sha256": "c26aeffec642882e50a4cafecdf27214b16dd4bec14db56c5d98832fc1aa6448",
+      "bytes": 54354,
+      "media": {
+        "container": "webp_pipe",
+        "codec": "webp",
+        "width": 1280,
+        "height": 720,
+        "fps": "25/1",
+        "duration_seconds": null
+      },
+      "capture": {
+        "source_quality": "marketing",
+        "source_inference": "unverified"
+      },
+      "source_asset": {
+        "runId": "20260908T061146Z-13e91bc7526e",
+        "assetId": "pointcloud-panel-layout",
+        "sha256": "51a521de42db228f4cb157f7581e23f20178586c42c0a6fded4068ddff8a6188",
+        "quality": "marketing",
+        "clip": {
+          "start": 0,
+          "duration": 20.234
+        }
+      }
+    },
+    "docs-site/public/media/pointcloud/panel-layout.mp4": {
+      "asset_id": "pointcloud-panel-layout",
+      "role": "docs-video",
+      "generated_at": "2026-09-08T06:17:40.629Z",
+      "captured_commit": "13e91bc7526ecf4ae8ff0b5e788a7db643854693",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive mp4 › pointcloud-panel-layout",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "apps/web/scripts/media-derivation.mjs"
+      ],
+      "sha256": "dbbe53026ffa2d8ade00b8d4149a60dd11c65fbc201c8b546f7f2194f4d20b24",
+      "bytes": 739754,
+      "media": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "codec": "h264",
+        "width": 1280,
+        "height": 720,
+        "fps": "30/1",
+        "duration_seconds": 20.234
+      },
+      "capture": {
+        "source_quality": "marketing",
+        "source_inference": "unverified"
+      },
+      "source_asset": {
+        "runId": "20260908T061146Z-13e91bc7526e",
+        "assetId": "pointcloud-panel-layout",
+        "sha256": "51a521de42db228f4cb157f7581e23f20178586c42c0a6fded4068ddff8a6188",
+        "quality": "marketing",
+        "clip": {
+          "start": 0,
+          "duration": 20.234
         }
       }
     },
