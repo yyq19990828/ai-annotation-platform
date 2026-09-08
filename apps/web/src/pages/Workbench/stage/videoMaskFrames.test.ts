@@ -59,7 +59,7 @@ describe("useVideoMaskFrames", () => {
     );
   });
 
-  it("单帧 video_mask 只在所属帧加载静态内容并归入人工对象", async () => {
+  it("单帧 video_mask 等待真实 ID，并只在所属帧加载静态内容", async () => {
     const digest = "a".repeat(64);
     const annotation = {
       id: "mask-frame",
@@ -98,10 +98,10 @@ describe("useVideoMaskFrames", () => {
     });
 
     const { result, rerender } = renderHook(
-      ({ frameIndex }) =>
+      ({ frameIndex, currentAnnotation }) =>
         useVideoMaskFrames({
           taskId: "task-1",
-          annotations: [annotation],
+          annotations: [currentAnnotation],
           candidates: [],
           predictions: [],
           frameIndex,
@@ -109,9 +109,14 @@ describe("useVideoMaskFrames", () => {
           colorForAnnotation: () => "#ff0000",
           colorForPrediction: () => "#00ff00",
         }),
-      { initialProps: { frameIndex: 4 } },
+      {
+        initialProps: { frameIndex: 4, currentAnnotation: { ...annotation, id: "tmp_mask-frame" } },
+      },
     );
 
+    expect(apiMocks.annotationRasterMaskContent).not.toHaveBeenCalled();
+    expect(result.current).toEqual([]);
+    rerender({ frameIndex: 4, currentAnnotation: annotation });
     await waitFor(() => expect(result.current).toHaveLength(1));
     expect(result.current[0]).toMatchObject({
       id: annotation.id,
@@ -124,7 +129,7 @@ describe("useVideoMaskFrames", () => {
     expect(apiMocks.annotationRasterMaskContent).toHaveBeenCalledWith(annotation.id);
     expect(apiMocks.annotationVideoMaskContent).not.toHaveBeenCalled();
 
-    rerender({ frameIndex: 5 });
+    rerender({ frameIndex: 5, currentAnnotation: annotation });
     await waitFor(() => expect(result.current).toEqual([]));
   });
 

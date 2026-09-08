@@ -1,238 +1,300 @@
-/**
- * 高清母版：用明确文本在视频中发现左右两辆公交车，跨帧核对后采纳为新轨迹。
- */
-import type { Page, Response } from "@playwright/test";
+/** Discover the two anchored buses with real text inference and verify persisted tracks. */
+import { expect, type Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
-import { movePointerAtRefreshRate, normalizedBboxIoU, recordingAnchor } from "./_canvas";
-import type { NormalizedBbox } from "./_canvas";
+import type {
+  VideoTrackerJob,
+  VideoTrackerJobPreview,
+  VideoTrackerDecisionPayload,
+} from "../../../src/api/videoTracker";
+import { normalizedBboxIoU, recordingAnchor, type NormalizedBbox } from "./_canvas";
+import {
+  openVideoTimeline,
+  currentVideoFrame,
+  parkVideoPointer,
+  assertVideoTimelineVisible,
+} from "./_video-timeline";
 import type { DrawWindow } from "./rotated-bbox";
 
-function assertDiscoveredBusTracks(
-  payload: unknown,
-  targetClass: string,
-  expectedTargets: Array<[number, number, number, number]>,
-): void {
-  if (!Array.isArray(payload)) {
-    throw new Error("[video-tracker-text-discovery] 标注刷新没有返回数组");
-  }
+type SavedTrack = {
+  id: string;
+  class_name: string;
+  version: number;
+  geometry: {
+    type: string;
+    track_id?: string;
+    keyframes?: Array<{ frame_index: number; bbox?: NormalizedBbox }>;
+  };
+};
 
-  const tracks: NormalizedBbox[] = [];
-  for (const item of payload) {
-    if (
-      typeof item !== "object" ||
-      item === null ||
-      (item as Record<string, unknown>).class_name !== targetClass
-    ) {
-      continue;
+function matchTargets<T>(
+  items: T[],
+  targets: NormalizedBbox[],
+  bbox: (item: T) => NormalizedBbox | undefined,
+) {
+  // Exhaustive one-to-one assignment avoids a greedy match consuming the other bus.
+  let best: { items: T[]; overlaps: number[]; score: number } | undefined;
+  function visit(selected: T[], overlaps: number[], remaining: T[]) {
+    if (selected.length === targets.length) {
+      const score = overlaps.reduce((sum, value) => sum + value, 0);
+      if (!best || score > best.score) best = { items: selected, overlaps, score };
+      return;
     }
-    const geometry = (item as Record<string, unknown>).geometry;
-    if (typeof geometry !== "object" || geometry === null) continue;
-    const keyframes = (geometry as Record<string, unknown>).keyframes;
-    if (!Array.isArray(keyframes) || keyframes.length < 10) {
-      throw new Error(
-        `[video-tracker-text-discovery] ${targetClass} 轨迹关键帧不足: ` +
-          `${Array.isArray(keyframes) ? keyframes.length : 0}`,
-      );
-    }
-    const frameZero = keyframes.find(
-      (keyframe) =>
-        typeof keyframe === "object" &&
-        keyframe !== null &&
-        (keyframe as Record<string, unknown>).frame_index === 0,
-    ) as Record<string, unknown> | undefined;
-    const bbox = frameZero?.bbox;
-    if (typeof bbox === "object" && bbox !== null) {
-      tracks.push(bbox as unknown as NormalizedBbox);
+    for (const item of remaining) {
+      const actual = bbox(item);
+      const overlap = actual ? normalizedBboxIoU(actual, targets[selected.length]!) : 0;
+      if (overlap >= 0.6)
+        visit(
+          [...selected, item],
+          [...overlaps, overlap],
+          remaining.filter((other) => other !== item),
+        );
     }
   }
-
-  if (tracks.length !== expectedTargets.length) {
+  visit([], [], items);
+  if (!best)
     throw new Error(
-      `[video-tracker-text-discovery] 文本 bus 应生成 ${expectedTargets.length} 条轨迹，实际为 ${tracks.length}`,
+      "[video-tracker-text-discovery] Cannot match both bus anchors one-to-one at IoU >= 0.6",
     );
-  }
-
-  const unmatched = new Set(tracks.map((_, index) => index));
-  for (const expected of expectedTargets) {
-    const expectedBbox = {
-      x: expected[0],
-      y: expected[1],
-      w: expected[2] - expected[0],
-      h: expected[3] - expected[1],
-    };
-    let bestIndex = -1;
-    let bestOverlap = 0;
-    for (const index of unmatched) {
-      const overlap = normalizedBboxIoU(tracks[index]!, expectedBbox);
-      if (overlap > bestOverlap) {
-        bestIndex = index;
-        bestOverlap = overlap;
-      }
-    }
-    if (bestIndex < 0 || bestOverlap < 0.6) {
-      throw new Error(
-        "[video-tracker-text-discovery] 文本发现框没有完整命中左右公交车: " +
-          `bestIoU=${bestOverlap.toFixed(3)}, expected=${JSON.stringify(expectedBbox)}, ` +
-          `actual=${JSON.stringify(tracks)}`,
-      );
-    }
-    unmatched.delete(bestIndex);
-  }
+  return best;
 }
 
-async function scrubCandidateFrames(
-  page: Page,
-  timeline: ReturnType<Page["getByTestId"]>,
-): Promise<void> {
-  const box = await timeline.boundingBox();
-  if (!box) throw new Error("[video-tracker-text-discovery] 时间轴不可见");
-  const y = box.y + box.height * 0.5;
-  const frameZero = { x: box.x + 2, y };
-  const laterFrame = { x: box.x + box.width * 0.13, y };
-  const reviewFrame = { x: box.x + box.width * 0.06, y };
-
-  await page.mouse.move(frameZero.x, frameZero.y);
-  await page.mouse.down();
-  await movePointerAtRefreshRate(page, frameZero, laterFrame, 1_800);
-  await page.mouse.up();
-  await page.getByText(/^F (?:8|9|10) \/ 71$/).waitFor({ timeout: 3_000 });
-  await page.waitForTimeout(1_200);
-
-  await page.mouse.down();
-  await movePointerAtRefreshRate(page, laterFrame, reviewFrame, 1_300);
-  await page.mouse.up();
-  await page.getByText(/^F (?:3|4|5) \/ 71$/).waitFor({ timeout: 3_000 });
-  await page.waitForTimeout(1_200);
+function verifySaved(
+  tracks: SavedTrack[],
+  targets: NormalizedBbox[],
+  className: string,
+  from: number,
+  to: number,
+) {
+  expect(tracks).toHaveLength(targets.length);
+  for (const track of tracks) {
+    expect(track.class_name).toBe(className);
+    expect(track.version).toBeGreaterThan(0);
+    expect(track.geometry.type).toBe("video_track_bbox");
+    expect(track.geometry.track_id).toBeTruthy();
+    const frames = new Set(
+      track.geometry.keyframes
+        ?.filter((keyframe) => keyframe.bbox)
+        .map((keyframe) => keyframe.frame_index),
+    );
+    for (let frame = from; frame <= to; frame += 1)
+      expect(frames.has(frame), `Saved ${track.id} missing F${frame}`).toBe(true);
+  }
+  expect(new Set(tracks.map((track) => track.geometry.track_id)).size).toBe(targets.length);
+  return matchTargets(
+    tracks,
+    targets,
+    (track) => track.geometry.keyframes?.find((frame) => frame.frame_index === 0)?.bbox,
+  );
 }
 
 export async function runVideoTrackerTextDiscovery(
   page: Page,
   catalog: ScreenshotSeedCatalog,
-): Promise<DrawWindow> {
-  const project = catalog.projects.video_demo;
-  await page.evaluate(() => {
-    localStorage.setItem("wb:video-tracker-panel-position", JSON.stringify({ left: 1090, top: 8 }));
-    localStorage.removeItem("wb:video-tracker-panel-size");
-  });
-  await page.goto(`/projects/${project.id}/annotate?task=${project.tasks.tracking.id}`);
-  const stage = page.getByTestId("video-konva-stage");
-  const timeline = page.getByTestId("video-timeline-shell");
-  await timeline.waitFor({ timeout: 15_000 });
-  await stage.waitFor({ timeout: 10_000 });
-  await page.addStyleTag({
-    content: '[data-testid="video-frame-preview-popover"] { display: none !important; }',
-  });
-  await page.waitForTimeout(1_000);
-
-  const leftBus = recordingAnchor(catalog, "video_demo", "tracking", "left_bus_f0", 0);
-  const rightBus = recordingAnchor(catalog, "video_demo", "tracking", "right_bus_f0", 0);
-  if (leftBus.label !== "bus" || rightBus.label !== leftBus.label) {
-    throw new Error("[video-tracker-text-discovery] 录制锚点不是两辆独立公交车");
-  }
-
+  onJobCreated?: (jobId: string) => void,
+  onAnnotationsCreated?: (ids: string[]) => void,
+): Promise<DrawWindow & { evidence: object }> {
+  const taskId = catalog.projects.video_demo.tasks.tracking.id;
+  const annotationsPath = `/tasks/${taskId}/annotations`;
+  const annotationsResponse = () =>
+    page.waitForResponse(
+      (response) =>
+        response.request().method() === "GET" &&
+        new URL(response.url()).pathname.endsWith(annotationsPath) &&
+        response.ok(),
+      { timeout: 30_000 },
+    );
+  const baselineResponse = annotationsResponse();
+  await openVideoTimeline(page, catalog);
+  const baseline = (await (await baselineResponse).json()) as SavedTrack[];
+  const baselineIds = new Set(baseline.map((item) => item.id));
+  const anchors = [
+    recordingAnchor(catalog, "video_demo", "tracking", "left_bus_f0", 0),
+    recordingAnchor(catalog, "video_demo", "tracking", "right_bus_f0", 0),
+  ];
+  expect(anchors.map((anchor) => anchor.label)).toEqual(["bus", "bus"]);
+  const targets = anchors.map(({ bbox: [x, y, right, bottom] }) => ({
+    x,
+    y,
+    w: right - x,
+    h: bottom - y,
+  }));
   const drawStartMs = Date.now();
   await page.getByTestId("workbench-ai-tracker").click();
   const dialog = page.getByTestId("video-tracker-propagate-dialog");
-  await dialog.waitFor({ timeout: 5_000 });
-  await page.waitForTimeout(900);
-
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toBeInViewport({ ratio: 1 });
+  await parkVideoPointer(page);
+  await assertVideoTimelineVisible(page);
   const model = dialog.locator("#tracker-model");
-  const modelValues = await model
-    .locator("option")
-    .evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value));
-  if (!modelValues.includes("sam3_video")) {
-    throw new Error("[video-tracker-text-discovery] 当前项目没有真实 SAM3 文本追踪能力");
-  }
+  await expect(model).toBeEnabled();
+  await expect(model.locator('option[value="sam3_video"]')).toHaveCount(1);
+  expect(
+    await model
+      .locator('option[value="sam3_video"]')
+      .evaluate((option: HTMLOptionElement) => option.disabled),
+  ).toBe(false);
   await model.selectOption("sam3_video");
-  await page.waitForTimeout(700);
+  await dialog.getByTestId("tracker-direction-forward").click();
   await dialog.locator("#tracker-range-preset").selectOption("10");
-  await page.waitForTimeout(600);
-  await dialog.getByTestId("tracker-target-class").selectOption(leftBus.label);
-  await page.waitForTimeout(600);
+  await dialog.getByTestId("tracker-target-class").selectOption("bus");
   await dialog.getByTestId("tracker-output-geometry").selectOption("bbox");
-  await page.waitForTimeout(600);
-  const textInput = dialog.getByTestId("tracker-text-input");
-  await textInput.click();
-  await textInput.pressSequentially("bus", { delay: 120 });
-  await page.waitForTimeout(1_500);
+  await dialog.getByTestId("tracker-text-input").fill("bus");
+  await page.waitForTimeout(1_200);
 
-  const serverErrors: string[] = [];
-  const collectServerError = (response: Response) => {
-    if (response.status() >= 500) serverErrors.push(`${response.status()} ${response.url()}`);
+  // Register cleanup as soon as the real job is created, even if subsequent assertions fail.
+  const created = page
+    .waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        new URL(response.url()).pathname.endsWith(`/tasks/${taskId}/video:track`),
+      { timeout: 30_000 },
+    )
+    .then(async (response) => {
+      expect(response.ok()).toBe(true);
+      const job = (await response.json()) as VideoTrackerJob;
+      onJobCreated?.(job.id);
+      return { job, request: response.request().postDataJSON() as Record<string, unknown> };
+    });
+  const previewResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === "GET" &&
+      /\/video-tracker-jobs\/[^/]+\/preview$/.test(new URL(response.url()).pathname) &&
+      response.ok(),
+    { timeout: 180_000 },
+  );
+  await dialog.getByRole("button", { name: "开始发现", exact: true }).click();
+  const { job, request } = await created;
+  expect(request.model_key).toBe("sam3_video");
+  expect(request.text).toBe("bus");
+  expect(request.output_geometry).toBe("bbox");
+  expect(request.from_frame).toBe(0);
+  expect(request.to_frame).toBe(10);
+  const preview = (await (await previewResponse).json()) as VideoTrackerJobPreview;
+  expect(preview.job_id).toBe(job.id);
+  expect(preview.output_geometry).toBe("bbox");
+  const frameZero = preview.results.filter(
+    (result) => result.frame_index === 0 && !result.outside && result.geometry.type === "bbox",
+  );
+  const match = matchTargets(frameZero, targets, (result) =>
+    result.geometry.type === "bbox" ? result.geometry : undefined,
+  );
+  const selectedIds = match.items.map((result) => result.instance_id ?? "1");
+  expect(new Set(selectedIds).size).toBe(2);
+  const review = page.getByTestId("video-tracker-review-bar");
+  await expect(review).toBeVisible({ timeout: 10_000 });
+  await expect(review).toBeInViewport({ ratio: 1 });
+  const instances = [...new Set(preview.results.map((result) => result.instance_id ?? "1"))];
+  for (const instanceId of instances)
+    await review
+      .getByTestId(`tracker-review-instance-${instanceId}`)
+      .setChecked(selectedIds.includes(instanceId));
+  await review.getByTestId("tracker-review-from-frame").fill("0");
+  await review.getByTestId("tracker-review-to-frame").fill("10");
+  // Editing the review bar leaves the pointer outside the stage and hides playback controls.
+  const parkBelowReview = async () => {
+    const bounds = await page.getByTestId("video-konva-stage").boundingBox();
+    if (!bounds) throw new Error("Text discovery video stage is not visible");
+    // The review card covers the usual top-edge parking point.
+    await page.mouse.move(bounds.x + bounds.width * 0.5, bounds.y + bounds.height * 0.65);
   };
-  page.on("response", collectServerError);
-  try {
-    await dialog.getByRole("button", { name: "开始发现" }).click();
-    const review = page.getByTestId("video-tracker-review-bar");
-    await review.waitFor({ state: "visible", timeout: 120_000 });
-    await review.getByText(/当前选区 \d+ 个候选/).waitFor({ timeout: 5_000 });
-    const instances = review.locator('input[data-testid^="tracker-review-instance-"]');
-    if ((await instances.count()) < 7) {
-      throw new Error(
-        `[video-tracker-text-discovery] 文本 bus 候选池过小: ${await instances.count()}`,
-      );
-    }
-    await page.waitForTimeout(1_200);
-
-    const instanceIds = await instances.evaluateAll((inputs) =>
-      inputs.map((input) =>
-        input.getAttribute("data-testid")?.replace("tracker-review-instance-", ""),
-      ),
-    );
-    if (!instanceIds.includes("2") || !instanceIds.includes("4")) {
-      throw new Error("[video-tracker-text-discovery] 候选池缺少左右公交车实例 2、4");
-    }
-    for (const instanceId of instanceIds) {
-      if (!instanceId || instanceId === "2" || instanceId === "4") continue;
-      await review.getByTestId(`tracker-review-instance-${instanceId}`).click();
-      await page.waitForTimeout(120);
-    }
-    await review.getByText(/当前选区 22 个候选/).waitFor({ timeout: 3_000 });
-    await page.waitForTimeout(1_400);
-
-    await scrubCandidateFrames(page, timeline);
-
-    const accepted = page.waitForResponse(
+  await parkBelowReview();
+  await assertVideoTimelineVisible(page);
+  // Native frame controls keep the timeline geometry and actual decoded frame in agreement.
+  for (let frame = 1; frame <= 9; frame += 1) {
+    await page.getByRole("button", { name: "下一帧", exact: true }).click();
+    await expect.poll(() => currentVideoFrame(page)).toBe(frame);
+    await page.waitForTimeout(100);
+  }
+  await parkBelowReview();
+  await page.waitForTimeout(900);
+  for (let frame = 8; frame >= 4; frame -= 1) {
+    await page.getByRole("button", { name: "上一帧", exact: true }).click();
+    await expect.poll(() => currentVideoFrame(page)).toBe(frame);
+  }
+  await parkBelowReview();
+  await assertVideoTimelineVisible(page);
+  await page.waitForTimeout(900);
+  const decisionResponse = () =>
+    page.waitForResponse(
       (response) =>
         response.request().method() === "POST" &&
-        response.url().endsWith("/decisions") &&
-        response.ok(),
-      { timeout: 20_000 },
+        new URL(response.url()).pathname.endsWith(`/video-tracker-jobs/${job.id}/decisions`),
+      { timeout: 30_000 },
     );
-    const annotationsRefreshed = page.waitForResponse(
-      (response) =>
-        response.request().method() === "GET" &&
-        response.url().endsWith(`/tasks/${project.tasks.tracking.id}/annotations`) &&
-        response.ok(),
-      { timeout: 20_000 },
-    );
-    await review.getByTestId("tracker-review-accept").click();
-    const [, annotationsResponse] = await Promise.all([accepted, annotationsRefreshed]);
-    assertDiscoveredBusTracks(await annotationsResponse.json(), leftBus.label, [
-      leftBus.bbox,
-      rightBus.bbox,
-    ]);
-    await review.getByText(/已审 22\/\d+，当前选区 \d+ 个候选/).waitFor({ timeout: 5_000 });
-    await page.waitForTimeout(1_000);
-    const rejected = page.waitForResponse(
-      (response) =>
-        response.request().method() === "POST" &&
-        response.url().endsWith("/decisions") &&
-        response.ok(),
-      { timeout: 20_000 },
-    );
+  const acceptedResponse = decisionResponse();
+  const savedResponse = annotationsResponse().then(async (response) => {
+    const all = (await response.json()) as SavedTrack[];
+    const added = all.filter((item) => !baselineIds.has(item.id));
+    onAnnotationsCreated?.(added.map((item) => item.id));
+    return added;
+  });
+  await review.getByTestId("tracker-review-accept").click();
+  const [accepted, saved] = await Promise.all([acceptedResponse, savedResponse]);
+  expect(accepted.ok()).toBe(true);
+  const decision = accepted.request().postDataJSON() as VideoTrackerDecisionPayload;
+  expect(decision.decision).toBe("accept");
+  expect([...(decision.instance_ids ?? [])].sort()).toEqual([...selectedIds].sort());
+  expect([decision.from_frame, decision.to_frame]).toEqual([0, 10]);
+  const acceptedJob = (await accepted.json()) as VideoTrackerJob;
+  const savedMatch = verifySaved(saved, targets, "bus", 0, 10);
+  let rejectedEvidence: { request: unknown; job: VideoTrackerJob } | null = null;
+  if (acceptedJob.status === "partially_reviewed" || acceptedJob.status === "pending_review") {
+    const acceptedCount = preview.results.filter(
+      (result) =>
+        selectedIds.includes(result.instance_id ?? "1") &&
+        result.frame_index >= 0 &&
+        result.frame_index <= 10,
+    ).length;
+    await expect(review).toContainText(`已审 ${acceptedCount}/`);
+    const remaining = review.locator('input[data-testid^="tracker-review-instance-"]');
+    for (let index = 0; index < (await remaining.count()); index += 1)
+      await remaining.nth(index).setChecked(true);
+    await expect(review.getByTestId("tracker-review-discard")).toBeEnabled();
+    const rejectedResponse = decisionResponse();
     await review.getByTestId("tracker-review-discard").click();
-    await rejected;
-    await review.waitFor({ state: "hidden", timeout: 5_000 });
-    await page.waitForTimeout(2_500);
-  } finally {
-    page.off("response", collectServerError);
+    const rejected = await rejectedResponse;
+    expect(rejected.ok()).toBe(true);
+    expect(rejected.request().postDataJSON().decision).toBe("reject");
+    rejectedEvidence = {
+      request: rejected.request().postDataJSON(),
+      job: (await rejected.json()) as VideoTrackerJob,
+    };
   }
-
-  if (serverErrors.length > 0) {
-    throw new Error(
-      `[video-tracker-text-discovery] 文本发现与采纳期间出现服务端错误: ${serverErrors.join(", ")}`,
-    );
-  }
-  return { drawStartMs, drawEndMs: Date.now() };
+  await expect(review).toBeHidden();
+  await parkVideoPointer(page);
+  await page.waitForTimeout(1_500);
+  const drawEndMs = Date.now();
+  const reloadedResponse = annotationsResponse();
+  await page.reload();
+  const reloaded = (await (await reloadedResponse).json()) as SavedTrack[];
+  const reloadedAdded = reloaded.filter((item) => !baselineIds.has(item.id));
+  expect(reloadedAdded.map((item) => item.id).sort()).toEqual(saved.map((item) => item.id).sort());
+  verifySaved(reloadedAdded, targets, "bus", 0, 10);
+  expect(
+    reloadedAdded
+      .map((item) => ({ id: item.id, version: item.version, geometry: item.geometry }))
+      .sort((a, b) => a.id.localeCompare(b.id)),
+  ).toEqual(
+    saved
+      .map((item) => ({ id: item.id, version: item.version, geometry: item.geometry }))
+      .sort((a, b) => a.id.localeCompare(b.id)),
+  );
+  return {
+    drawStartMs,
+    drawEndMs,
+    evidence: {
+      model: "sam3_video",
+      job,
+      request,
+      preview,
+      selectedIds,
+      previewAnchorIoUs: match.overlaps,
+      decision,
+      rejected: rejectedEvidence,
+      acceptedAnnotationIds: saved.map((item) => item.id),
+      acceptedTracks: saved,
+      savedAnchorIoUs: savedMatch.overlaps,
+      reload: { verified: true, tracks: reloadedAdded },
+    },
+  };
 }

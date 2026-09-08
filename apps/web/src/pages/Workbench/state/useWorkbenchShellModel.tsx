@@ -107,7 +107,7 @@ import {
 import type { VideoSamPrompt } from "../stage/videoStageTypes";
 import { isSamCandidateNavTool } from "../stage/videoKonvaInteraction";
 import { tightenBboxFromPolygon } from "../stage/shared/geometry/bbox";
-import { classColorForCanvas } from "../stage/colors";
+import { buildImageRasterMaskDescriptors } from "./imageRasterMaskDescriptors";
 import { useRasterMaskRecords } from "../stage/shared/useRasterMaskRecords";
 import { useRasterMaskWorkerPool } from "../stage/shared/useRasterMaskWorkerPool";
 import { useRasterResourceCoordinator } from "../stage/shared/useRasterResourceCoordinator";
@@ -259,6 +259,8 @@ import {
   buildPredictParams,
   promptOfTool,
   resolveMaskEditorSize,
+  resolveVideoTimelineRangePurpose,
+  resolveVideoSelectionCardCollapsed,
   resolveFloatingSelectionRect,
 } from "./useWorkbenchShellModel.helpers";
 import type {
@@ -1040,6 +1042,7 @@ export function useWorkbenchShellModel({
     (source: TrackerSourceAnnotation | TrackerSourceAnnotation[] | null) => {
       // v0.22.2 · M2 · 归一化: null=无源, 单条=单源延展, ≥2 条=多选批量 (单 job 多源)。
       const list = Array.isArray(source) ? source : source ? [source] : [];
+      setChapterDraftArmed(false);
       setPropagateDialog({
         annotation: list.length === 1 ? list[0] : null,
         sources: list.length >= 2 ? list : undefined,
@@ -1067,6 +1070,7 @@ export function useWorkbenchShellModel({
     workspaceCommands.current?.hide("video-tracker");
   }, [stopSeedCollecting]);
   const togglePropagateDialog = useCallback(() => {
+    setChapterDraftArmed(false);
     if (propagateDialog) workspaceCommands.current?.show("video-tracker");
     else openPropagateDialog(null);
   }, [openPropagateDialog, propagateDialog]);
@@ -1547,23 +1551,7 @@ export function useWorkbenchShellModel({
   const rasterMaskWorkerPool = useRasterMaskWorkerPool(taskId, rasterResources);
   const imageRasterMaskDescriptors = useMemo(() => {
     if (isVideoTask || maskCapabilities.data?.read_enabled !== true) return [];
-    return visibleAnnotationsData.flatMap((annotation) => {
-      if (annotation.geometry.type !== "raster_mask") return [];
-      const color = classColorForCanvas(annotation.class_name);
-      return [
-        {
-          id: annotation.id,
-          source: "annotation" as const,
-          ref: annotation.geometry.mask,
-          revision: annotation.version ?? annotation.geometry.mask.sha256,
-          color,
-          colorRevision: color,
-          zOrder: annotation.z_order ?? 0,
-          selected: rasterMaskSelectedIds.has(annotation.id),
-          load: () => rasterMasksApi.annotationRasterMaskContent(annotation.id),
-        },
-      ];
-    });
+    return buildImageRasterMaskDescriptors(visibleAnnotationsData, rasterMaskSelectedIds);
   }, [
     isVideoTask,
     maskCapabilities.data?.read_enabled,
@@ -5336,12 +5324,12 @@ export function useWorkbenchShellModel({
   const canEditChapters = !isLocked && isOwner;
   const videoTimelineChapterControls = useMemo<VideoTimelineChapterControls | undefined>(() => {
     if (!isVideoTask) return undefined;
-    // 传播对话框开着时优先臂选 propagate-range (Shift+拖回填对话框); 否则章节圈选 / loop。
-    const rangeSelectPurpose = propagateDialog
-      ? "propagate-range"
-      : chapterDraftArmed
-        ? "chapter-draft"
-        : "loop";
+    // Explicit chapter brushing takes precedence over a retained propagation session.
+    // Opening tracking again clears that arm before restoring propagation range selection.
+    const rangeSelectPurpose = resolveVideoTimelineRangePurpose(
+      chapterDraftArmed,
+      Boolean(propagateDialog),
+    );
     return {
       rangeSelectPurpose,
       onRangeSelect: handleTimelineRangeSelect,
@@ -5530,6 +5518,7 @@ export function useWorkbenchShellModel({
     inspectorVisible: true,
     aiTaskVisible: false,
     videoTrackerVisible: false,
+    videoTrackerContentVisible: false,
     triViewVisible: false,
     cameraViewVisible: false,
     cameraPresentation: "floating",
@@ -5701,9 +5690,8 @@ export function useWorkbenchShellModel({
   const selectionCardEligible = stageKind === "image" || stageKind === "video";
   const selectedIds = s.selectedIds;
   const selectionCount = selectedIds.length;
-  // v0.22.2 · U7 · AI 追踪对话框 (顶部居中悬浮工具条) 打开时, 让右侧选中卡收起让位, 避免与
-  // 工具条视觉相撞。仅强制渲染折叠态 (经 OR 叠加, 不改用户持久化的 collapsed 偏好): 对话框
-  // 关闭后自动复位到用户偏好, 无需额外记忆。
+  // Only a visible tracking panel temporarily folds the selection card. A parked session
+  // retains its configuration without blocking annotation actions or changing the preference.
   const trackerDialogOpen = Boolean(propagateDialog);
   const selectionCard = useMemo<SelectedAnnotationCardProps | null>(() => {
     if (!selectionCardEligible || selectionCount < 1) return null;
@@ -5972,8 +5960,12 @@ export function useWorkbenchShellModel({
       title,
       position: floatingSelectionPosition,
       onPositionChange: onSelectionPositionChange,
-      // v0.22.2 · U7 · 追踪对话框打开时强制折叠让位 (OR 叠加, 不动持久化偏好)。
-      collapsed: floatingSelection.collapsed || trackerDialogOpen,
+      // Visibility affects rendering only; the user's collapsed preference remains intact.
+      collapsed: resolveVideoSelectionCardCollapsed(
+        floatingSelection.collapsed,
+        trackerDialogOpen,
+        workspaceState.videoTrackerContentVisible,
+      ),
       onCollapse: collapseSelectionCard,
       onExpand: expandSelectionCard,
       // v0.20.19 · 二次推理面板显隐 toggle 仅图片任务 (二次推理条本就图片限定)。
@@ -6035,6 +6027,7 @@ export function useWorkbenchShellModel({
     onSelectionPositionChange,
     floatingSelection.collapsed,
     trackerDialogOpen,
+    workspaceState.videoTrackerContentVisible,
     collapseSelectionCard,
     expandSelectionCard,
   ]);
@@ -6329,7 +6322,7 @@ export function useWorkbenchShellModel({
             ? "scissors"
             : s.threeDTool === "measure"
               ? "ruler"
-              : "rect"
+              : "cube"
           : TOOL_REGISTRY[s.tool].icon,
       activeClass: s.activeClass,
       recentClasses,
@@ -7160,7 +7153,7 @@ export function useWorkbenchShellModel({
               onUpdateIssue: maskQcReview.updateIssue,
             }
           : undefined,
-      annotationId: s.selectedId,
+      annotationId: selectedAnnotationForPanel?.id ?? null,
       taskId: taskId ?? null,
       projectId: projectId ?? null,
       currentUserId: meUserId ?? null,
@@ -7186,7 +7179,7 @@ export function useWorkbenchShellModel({
 
   const propagateDialogProps: ComponentProps<typeof VideoTrackerPropagateDialog> = {
     open: Boolean(propagateDialog),
-    visible: workspaceState.videoTrackerVisible,
+    visible: workspaceState.videoTrackerContentVisible,
     // v0.21.27 · U-pvs-2 · 有落点后范围锚定首个落点帧 (seedAnchorFrame), 导航到别帧加修正点
     // 不移动传播范围; 无落点时跟随当前帧 (与现状一致)。
     frameIndex: seedAnchorFrame ?? s.videoFrameIndex,

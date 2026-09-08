@@ -1,3 +1,7 @@
+import {
+  drainRecordingCleanup,
+  recoverRecordingAnnotationIds,
+} from "../_helpers/recording-cleanup";
 /**
  * M3 · 流程录制 spec。
  *
@@ -17,6 +21,8 @@ import { runBatchBulkActions } from "./batch-bulk-actions";
 import { runAiPreVariantSelector } from "./ai-pre-variant-selector";
 import { runRotatedBbox } from "./rotated-bbox";
 import { runBboxDraw } from "./bbox-draw";
+import { runWorkspaceLayoutBasics, workspaceLayoutBasicsLayout } from "./workspace-layout-basics";
+import { runWorkspaceLayoutPersistence } from "./workspace-layout-persistence";
 import { runPolylineDraw } from "./polyline-draw";
 import { runPolygonDraw } from "./polygon-draw";
 import { runMaskDraw } from "./mask-draw";
@@ -35,12 +41,13 @@ import { runPointcloudView } from "./pointcloud-view";
 import { runPointcloudCameraSeed3dBox } from "./pointcloud-camera-seed-3d-box";
 import { runPointcloudCrossframeTrack } from "./pointcloud-crossframe-track";
 import { runPointcloudBillboardLabel } from "./pointcloud-billboard-label";
+import { runPointcloudPanelLayout } from "./pointcloud-panel-layout";
 import {
   runStorageConnectorCreateTest,
   STORAGE_CONNECTOR_RECORDING_NAME,
 } from "./storage-connector-create-test";
 import { runVideoDraw } from "./video-draw";
-import { runVideoChapter } from "./video-chapter";
+import { runVideoChapter, type VideoChapterCleanupRecord } from "./video-chapter";
 import { runVideoMultiSeedTracking } from "./video-multi-seed-tracking";
 import { runVideoTimelinePredictionNavigation } from "./video-timeline-prediction-navigation";
 import { runVideoTrackerTextDiscovery } from "./video-tracker-text-discovery";
@@ -82,7 +89,10 @@ import {
   runSecondaryInferenceAttribute,
   type SecondaryInferenceCleanupRecord,
 } from "./secondary-inference-attribute";
-import { runCandidateKeyboardReview } from "./candidate-keyboard-review";
+import {
+  prepareLiveCandidateReview,
+  runCandidateKeyboardReview,
+} from "./candidate-keyboard-review";
 import {
   runCandidateReviewLifecycle,
   type CandidateReviewCleanupRecord,
@@ -91,7 +101,7 @@ import { recordingAnchor } from "./_canvas";
 import { installRecordingWorkbenchLayout } from "./_workbench-layout";
 import type { SourceGifVariant } from "../_helpers/flow-manifest";
 import { archivePortableRecording } from "../_helpers/portable-recorder";
-import { recordingPlan } from "../recording-plan.mjs";
+import { recordingPlan, recordingInference } from "../recording-plan.mjs";
 import {
   archiveMarketingMaster,
   clipFromEpochWindow,
@@ -123,6 +133,7 @@ const NUSCENES_RECORDING_BOX = {
 const DOCS_IMAGES = path.join(REPO_ROOT, "docs-site/user-guide/images");
 const MARKETING_ARCHIVE_ROOT = path.join(REPO_ROOT, ".artifacts/marketing");
 const VALIDATE_ONLY = process.env.SCREENSHOT_VALIDATE_ONLY === "1";
+const SKIP_CAPTURE_SEED_REPAIR = process.env.SCREENSHOT_SKIP_SEED_REPAIR === "1";
 const SELECTED_CAPTURE = process.env.SCREENSHOT_RECORDING_FLOWS
   ? recordingPlan(
       process.env.SCREENSHOT_RECORDING_FLOWS.split(","),
@@ -140,6 +151,20 @@ const FLOW_SOURCE_WORKTREE_DIRTY =
   }).trim().length > 0;
 
 let cached: ScreenshotSeedCatalog | null = null;
+const flowInferenceEvidence: Record<string, unknown> = {};
+const flowBehaviorEvidence: Record<string, unknown> = {};
+type VideoAnnotationCleanupRecord = Pick<
+  VideoFrameInferenceCleanupRecord,
+  "projectId" | "taskId" | "annotationIds"
+>;
+const videoAnnotationCleanupRecords: VideoAnnotationCleanupRecord[] = [];
+type VideoTrackerRecordingCleanupRecord = VideoTrackBatchPropagateCleanupRecord & {
+  accessToken: string;
+  baselineAnnotationIds: string[];
+  annotations: VideoAnnotationCleanupRecord;
+};
+const videoTrackerRecordingCleanupRecords: VideoTrackerRecordingCleanupRecord[] = [];
+const videoChapterCleanupRecords: Array<VideoChapterCleanupRecord & { accessToken: string }> = [];
 const ocrCleanupRecords: OcrCleanupRecord[] = [];
 const videoFrameInferenceCleanupRecords: VideoFrameInferenceCleanupRecord[] = [];
 const secondaryInferenceCleanupRecords: SecondaryInferenceCleanupRecord[] = [];
@@ -154,6 +179,14 @@ const backgroundExportCleanupRecords: Array<{
 
 const FLOW_SOURCE_BY_ASSET: Record<string, string> = {
   "ai-assisted-annotation": "sam-interactive.ts",
+  "ocr-real-scene": "ocr-inference.ts",
+  "secondary-inference-attribute": "secondary-inference-attribute.ts",
+  "ai-prediction-import": "ai-prediction-import.ts",
+  "review-reject": "review-reject.ts",
+  "pipeline-apply-project": "pipeline-apply-project.ts",
+  "jobs-retry-recovery": "jobs-retry-recovery.ts",
+  "project-ml-routing": "project-ml-routing.ts",
+  "ai-preannotate": "ai-preannotate.ts",
   "sam-tools/smart-point": "sam-interactive.ts",
   "sam-tools/smart-box": "sam-interactive.ts",
   "sam-tools/exemplar": "sam-interactive.ts",
@@ -166,13 +199,10 @@ const FLOW_SOURCE_BY_ASSET: Record<string, string> = {
   "video-tracker-combo-discovery": "video-tracker-combo-discovery.ts",
   "video-mask-correction-propagate": "video-mask-correction-propagate.ts",
   "pipeline-template-create": "pipeline-template-create.ts",
-  "pipeline-apply-project": "pipeline-apply-project.ts",
-  "jobs-retry-recovery": "jobs-retry-recovery.ts",
   "model-market-runtime-pool": "model-market-runtime-pool.ts",
   "model-market-video-pool": "model-market-runtime-pool.ts",
   "model-market-runtime-partial-failure": "model-market-runtime-pool.ts",
   "model-market-gpu-resource-overview": "model-market-runtime-pool.ts",
-  "project-ml-routing": "project-ml-routing.ts",
   "background-export-download": "background-export-download.ts",
   "project-create-existing-resources": "project-create-existing-resources.ts",
   "large-image-mask-limit": "large-image-mask-limit.ts",
@@ -180,6 +210,7 @@ const FLOW_SOURCE_BY_ASSET: Record<string, string> = {
   "project-actions-menu": "project-actions-menu.ts",
   "jobs-bell-active": "jobs-bell-active.ts",
   "video-tracker-job-states": "video-tracker-job-states.ts",
+  "workspace-layout-persistence": "workspace-layout-persistence.ts",
 };
 
 function flowWatchPaths(assetId: string): string[] {
@@ -189,11 +220,41 @@ function flowWatchPaths(assetId: string): string[] {
     `apps/web/e2e/screenshots/flows/${sourceFile}`,
     "apps/web/e2e/screenshots/flows/_canvas.ts",
     "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
+    "apps/web/e2e/screenshots/environment.ts",
     "apps/web/scripts/media-derivation.mjs",
     "apps/web/e2e/fixtures/seed.ts",
     "apps/api/app/services/screenshot_seed_spec.py",
     "apps/api/app/services/screenshot_seed_backends.py",
   ];
+  if (
+    [
+      "bbox-draw",
+      "rotated-bbox",
+      "polyline-draw",
+      "polygon-draw",
+      "mask-draw",
+      "ai-assisted-annotation",
+    ].includes(assetId) ||
+    assetId.startsWith("sam-tools/")
+  ) {
+    paths.push("apps/web/e2e/screenshots/flows/_image-drawing.ts");
+  }
+  if (assetId === "sam-tools/smart-point")
+    paths.push("apps/web/e2e/screenshots/flows/_sam-recording-candidates.ts");
+  if (["video-draw", "video-track-carryover", "video-mask-track-edit"].includes(assetId))
+    paths.push(
+      "apps/web/e2e/screenshots/flows/_video-keyframe-recording.ts",
+      "apps/web/e2e/screenshots/flows/_video-keyframe-evidence.ts",
+    );
+  if (["video-timeline-zoom", "video-chapter"].includes(assetId))
+    paths.push("apps/web/e2e/screenshots/flows/_video-timeline.ts");
+  if (assetId === "smart-scribble")
+    paths.push(
+      "apps/web/e2e/screenshots/flows/_smart-scribble-evidence.ts",
+      "apps/web/e2e/screenshots/flows/_sam-recording-candidates.ts",
+    );
+  if (assetId === "candidate-review-lifecycle")
+    paths.push("apps/web/e2e/screenshots/flows/candidate-keyboard-review.ts");
   if (assetId === "jobs-retry-recovery") {
     paths.push("apps/api/scripts/screenshot_job_recovery_fixture.py");
   }
@@ -272,19 +333,11 @@ function repairScreenshotProfile(mode: "stub" | "live", silent = false): void {
 // 重建自己管理的固定项目，不再按几何类型猜测并删除数据。
 // Playwright 要求 hook 的 fixture 参数使用对象解构；此处确实不消费任何 fixture。
 // eslint-disable-next-line no-empty-pattern
-test.afterAll(({}, testInfo) => {
+test.afterAll(async ({}, testInfo) => {
   if (!cached) return;
   // 推理完成时已清一次；整组结束再幂等清理一次可变业务痕迹，
   // 然后才重建 seed。审计表是平台不可变安全记录，录制器不绕过该约束。
-  for (const record of ocrCleanupRecords) cleanupOcrRecording(record);
-  for (const record of videoFrameInferenceCleanupRecords) cleanupVideoFrameInference(record);
-  for (const record of secondaryInferenceCleanupRecords) cleanupSecondaryInference(record);
-  for (const record of candidateReviewCleanupRecords) cleanupCandidateReview(record);
-  for (const record of pipelineApplyCleanupRecords) cleanupPipelineApply(record);
-  for (const record of jobsRetryCleanupRecords) manageJobsRetryFixture("cleanup", record);
-  for (const record of backgroundExportCleanupRecords) {
-    manageBackgroundExportFixture("cleanup", record);
-  }
+  await cleanupRecordingRecords();
   // Playwright 会在单项失败后重启 worker，并在旧 worker 上执行 afterAll。
   // marketing-master 的 catalog 由 globalSetup 只读取一次；此时重建固定项目会让
   // 后续 worker 继续使用已经失效的项目 / 任务 ID，造成整批录制级联跳回 Dashboard。
@@ -292,6 +345,23 @@ test.afterAll(({}, testInfo) => {
   if (testInfo.project.name === MARKETING_PROJECT_NAME) return;
   repairScreenshotProfile(screenshotBackendMode(cached));
 });
+
+async function cleanupRecordingRecords(): Promise<void> {
+  await drainRecordingCleanup(ocrCleanupRecords, cleanupOcrRecording);
+  await drainRecordingCleanup(videoFrameInferenceCleanupRecords, cleanupVideoFrameInference);
+  await drainRecordingCleanup(videoTrackerRecordingCleanupRecords, cleanupVideoTrackerRecording);
+  await drainRecordingCleanup(videoAnnotationCleanupRecords, cleanupVideoFrameInference);
+  await drainRecordingCleanup(videoChapterCleanupRecords, cleanupVideoChapter);
+  await drainRecordingCleanup(secondaryInferenceCleanupRecords, cleanupSecondaryInference);
+  await drainRecordingCleanup(candidateReviewCleanupRecords, cleanupCandidateReview);
+  await drainRecordingCleanup(pipelineApplyCleanupRecords, cleanupPipelineApply);
+  await drainRecordingCleanup(jobsRetryCleanupRecords, (record) => {
+    manageJobsRetryFixture("cleanup", record);
+  });
+  await drainRecordingCleanup(backgroundExportCleanupRecords, (record) => {
+    manageBackgroundExportFixture("cleanup", record);
+  });
+}
 
 function cleanupOcrRecording(record: OcrCleanupRecord): void {
   execFileSync(
@@ -314,7 +384,34 @@ function cleanupOcrRecording(record: OcrCleanupRecord): void {
   );
 }
 
-function cleanupVideoFrameInference(record: VideoFrameInferenceCleanupRecord): void {
+function registerVideoAnnotationCleanup(
+  catalog: ScreenshotSeedCatalog,
+): VideoAnnotationCleanupRecord {
+  const record = {
+    projectId: String(catalog.projects.video_demo.id),
+    taskId: String(catalog.projects.video_demo.tasks.tracking.id),
+    annotationIds: [] as string[],
+  };
+  videoAnnotationCleanupRecords.push(record);
+  return record;
+}
+
+async function cleanupVideoChapter(
+  record: VideoChapterCleanupRecord & { accessToken: string },
+): Promise<void> {
+  const apiBase = process.env.PLAYWRIGHT_API_BASE ?? "http://127.0.0.1:8010";
+  const response = await fetch(
+    `${apiBase}/api/v1/videos/${record.datasetItemId}/chapters/${record.chapterId}`,
+    {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${record.accessToken}` },
+    },
+  );
+  if (!response.ok && response.status !== 404)
+    throw new Error(`Recording chapter cleanup: HTTP ${response.status}`);
+}
+
+function cleanupVideoFrameInference(record: VideoAnnotationCleanupRecord): void {
   execFileSync(
     path.join(REPO_ROOT, "apps/api/.venv/bin/python"),
     [
@@ -357,6 +454,104 @@ function cleanupVideoTrackBatchPropagate(record: VideoTrackBatchPropagateCleanup
   );
 }
 
+async function readRecordingAnnotations(taskId: string, accessToken: string): Promise<unknown> {
+  const apiBase = process.env.PLAYWRIGHT_API_BASE ?? "http://127.0.0.1:8010";
+  const response = await fetch(`${apiBase}/api/v1/tasks/${taskId}/annotations`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) throw new Error(`Recording annotation recovery: HTTP ${response.status}`);
+  return response.json();
+}
+
+async function cleanupVideoTrackerRecording(
+  record: VideoTrackerRecordingCleanupRecord,
+): Promise<void> {
+  // This read is independent of the page, which portable finalization closes.
+  // Retain the cleanup record and job lineage if recovery itself is unavailable.
+  recoverRecordingAnnotationIds(
+    { ...record.annotations, baselineAnnotationIds: record.baselineAnnotationIds },
+    await readRecordingAnnotations(record.taskId, record.accessToken),
+  );
+  try {
+    if (record.videoTrackerJobIds.length) cleanupVideoTrackBatchPropagate(record);
+  } finally {
+    if (record.annotations.annotationIds.length) cleanupVideoFrameInference(record.annotations);
+  }
+}
+
+async function recordVideoTrackerStory(
+  page: Page,
+  assetId: string,
+  run: (
+    onJobCreated: (jobId: string) => void,
+    onAnnotationsCreated: (ids: string[]) => void,
+  ) => Promise<{ drawStartMs: number; drawEndMs: number; evidence: object }>,
+  docsTarget?: string,
+): Promise<void> {
+  if (!cached) throw new Error("Screenshot catalog is not ready");
+  const t0 = Date.now();
+  const annotations = registerVideoAnnotationCleanup(cached);
+  const accessToken = await page.evaluate(() => localStorage.getItem("token"));
+  if (!accessToken) throw new Error("Recording cleanup requires the isolated user's token");
+  const baselineAnnotationIds: string[] = [];
+  recoverRecordingAnnotationIds(
+    { taskId: annotations.taskId, baselineAnnotationIds: [], annotationIds: baselineAnnotationIds },
+    await readRecordingAnnotations(annotations.taskId, accessToken),
+  );
+  const jobs: VideoTrackerRecordingCleanupRecord = {
+    projectId: annotations.projectId,
+    taskId: annotations.taskId,
+    sourceAnnotationIds: [],
+    videoTrackerJobIds: [],
+    accessToken,
+    baselineAnnotationIds,
+    annotations,
+  };
+  videoTrackerRecordingCleanupRecords.push(jobs);
+  const errors: string[] = [];
+  const onPageError = (error: Error) => errors.push(error.message);
+  const onConsole = (message: import("@playwright/test").ConsoleMessage) => {
+    if (message.type() === "error") errors.push(message.text());
+  };
+  const onResponse = (response: import("@playwright/test").Response) => {
+    const pathname = new URL(response.url()).pathname;
+    if (pathname.startsWith("/api/") && response.status() >= 400)
+      errors.push(`${response.status()} ${pathname}`);
+  };
+  page.on("pageerror", onPageError);
+  page.on("console", onConsole);
+  page.on("response", onResponse);
+  try {
+    const win = await run(
+      (id) => {
+        if (!jobs.videoTrackerJobIds.includes(id)) jobs.videoTrackerJobIds.push(id);
+      },
+      (ids) => {
+        for (const id of ids)
+          if (!annotations.annotationIds.includes(id)) annotations.annotationIds.push(id);
+      },
+    );
+    expect(jobs.videoTrackerJobIds).toHaveLength(1);
+    expect(annotations.annotationIds.length).toBeGreaterThan(0);
+    expect(errors, `${assetId} browser and API errors`).toEqual([]);
+    flowInferenceEvidence[assetId] = { ...win.evidence, browserErrors: errors };
+    await finalize(page, assetId, docsTarget, {
+      fps: 6,
+      maxWidth: 680,
+      maxColors: 128,
+      ...drawTrim(win, t0),
+    });
+  } finally {
+    page.off("pageerror", onPageError);
+    page.off("console", onConsole);
+    page.off("response", onResponse);
+    // Accepted outputs are not propagation sources. Recover missed responses,
+    // then delete the owned job and new annotations through independent guards.
+    await cleanupVideoTrackerRecording(jobs);
+  }
+}
+
 function cleanupSecondaryInference(record: SecondaryInferenceCleanupRecord): void {
   execFileSync(
     path.join(REPO_ROOT, "apps/api/.venv/bin/python"),
@@ -387,6 +582,7 @@ function cleanupCandidateReview(record: CandidateReviewCleanupRecord): void {
       record.projectId,
       "--task-id",
       record.taskId,
+      ...(record.celeryTaskId ? ["--celery-task-id", record.celeryTaskId] : []),
       ...record.predictionIds.flatMap((predictionId) => ["--prediction-id", predictionId]),
       ...record.annotationIds.flatMap((annotationId) => ["--annotation-id", annotationId]),
     ],
@@ -689,9 +885,13 @@ async function archivePortable(
     ],
     capture: {
       gif_variants: gifs,
+      clock: SELECTED_CAPTURE ? "live" : "unverified",
+      inference_evidence: flowInferenceEvidence[assetId],
+      behavior_evidence: flowBehaviorEvidence[assetId],
       backend_requirements: requirements,
       // Legacy flows may intercept inference even with live backend bindings.
-      inference: requirements === null ? "unverified" : requirements === "none" ? "none" : "live",
+      inference:
+        requirements === null ? "unverified" : recordingInference(info.title.split(" —")[0]),
       backends: Object.fromEntries(
         Object.entries(cached?.projects ?? {})
           .filter(
@@ -720,6 +920,7 @@ function hasLiveSam3(catalog: ScreenshotSeedCatalog): boolean {
 
 test.describe("flow recordings", () => {
   test.beforeEach(async ({ page, seed }, testInfo) => {
+    if (SELECTED_CAPTURE) testInfo.setTimeout(420_000);
     if (SELECTED_CAPTURE) {
       if (!SELECTED_CAPTURE.flows.includes(testInfo.title.split(" —")[0])) {
         throw new Error("Flow is outside the preflighted recording selection");
@@ -746,11 +947,8 @@ test.describe("flow recordings", () => {
 
     // 每条营销母版拥有独立的固定数据状态。绘图、审核和视频轨迹流程都会写库；
     // 若沿用同一任务，前一条素材会改变后一条素材的画布、状态与命中目标。
-    for (const record of ocrCleanupRecords.splice(0)) cleanupOcrRecording(record);
-    for (const record of videoFrameInferenceCleanupRecords.splice(0)) {
-      cleanupVideoFrameInference(record);
-    }
-    repairScreenshotProfile(screenshotBackendMode(cached), true);
+    await cleanupRecordingRecords();
+    if (!SKIP_CAPTURE_SEED_REPAIR) repairScreenshotProfile(screenshotBackendMode(cached), true);
     cached = await seed.screenshotCatalog();
 
     // image_demo 主后端保留 SAM3 供交互工具使用；批量预标单项另启用 batchable YOLO。
@@ -828,7 +1026,9 @@ test.describe("flow recordings", () => {
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
+    await applyScreenshotTheme(page, "dark");
     const win = await runAiPreannotate(page, cached);
+    flowInferenceEvidence["ai-preannotate"] = win.evidence;
     await finalize(page, "ai-preannotate", undefined, drawTrim(win, t0));
   });
 
@@ -837,6 +1037,7 @@ test.describe("flow recordings", () => {
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
+    await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "both");
     const win = await runAiPredictionImport(page, cached, {
       marketing: test.info().project.name === MARKETING_PROJECT_NAME,
@@ -865,81 +1066,122 @@ test.describe("flow recordings", () => {
   for (const demo of samToolDemos) {
     test(`sam-tool-${demo.tool} — ${demo.label}真实推理`, async ({ page, seed }) => {
       if (!cached) throw new Error("screenshot seed catalog 未完成");
-      test.skip(!hasLiveSam3(cached), "真实 SAM 工具 GIF 只由 live SAM3 场景更新");
-      test.setTimeout(150_000);
+      test.skip(!hasLiveSam3(cached), "真实 SAM 工具视频需要 live SAM3");
+      test.setTimeout(SELECTED_CAPTURE ? 300_000 : 150_000);
       const t0 = Date.now();
+      await installScreenshotEnvironment(page);
       await seed.injectToken(page, cached.users.admin.email);
       await applyScreenshotTheme(page, "dark");
-      await installRecordingWorkbenchLayout(page, "none");
-      const win = await runSamToolRecording(page, cached, demo.tool, { accept: true });
-      await finalizeMarketingBackedHomepageAsset(
-        page,
-        `sam-tools/${demo.tool}`,
-        drawTrim(win, t0),
-        path.join(DOCS_IMAGES, "sam", demo.target),
-        {
-          fps: demo.fps ?? 8,
-          maxWidth: demo.maxWidth ?? 860,
-        },
-      );
+      await installRecordingWorkbenchLayout(page, "both", {
+        workspace: { context: "annotate:image", preset: "ai-review" },
+      });
+      const cleanup: CandidateReviewCleanupRecord = {
+        projectId: cached.projects.image_demo.id,
+        taskId: cached.projects.image_demo.tasks.annotating.id,
+        predictionIds: [],
+        annotationIds: [],
+      };
+      candidateReviewCleanupRecords.push(cleanup);
+      try {
+        const win = await runSamToolRecording(page, cached, demo.tool, {
+          accept: true,
+          onCreated: (id, annotation) => {
+            cleanup.annotationIds.push(id);
+            if (typeof annotation.parent_prediction_id === "string")
+              cleanup.predictionIds.push(annotation.parent_prediction_id);
+          },
+        });
+        flowInferenceEvidence[`sam-tools/${demo.tool}`] = win.evidence;
+        await finalizeMarketingBackedHomepageAsset(
+          page,
+          `sam-tools/${demo.tool}`,
+          drawTrim(win, t0),
+          path.join(DOCS_IMAGES, "sam", demo.target),
+          { fps: demo.fps ?? 8, maxWidth: demo.maxWidth ?? 860 },
+        );
+      } finally {
+        cleanupCandidateReview(cleanup);
+      }
     });
   }
 
   test("smart-scribble — 已存 Mask 正负笔迹精修", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(180_000); // 正负笔迹 + 4K H.264 归档转码需覆盖完整营销母版链路
-    const t0 = Date.now();
+    test.setTimeout(300_000);
     const project = cached.projects.image_demo;
     const task = project.tasks.annotating;
-    await seed.configureRasterMask(project.id, true);
-    const source = await seed.injectRasterMask({
+    const cleanup: CandidateReviewCleanupRecord = {
+      projectId: project.id,
       taskId: task.id,
-      userEmail: cached.users.admin.email,
-      variant: "smart_scribble_source",
-      label: "car",
-      canvas: "media",
-    });
-    const fixture = await seed.nativeMaskCandidate(task.id, {
-      variant: "smart_scribble_refined",
-      promptFamily: "scribble",
-      negativeScribbles: 1,
-      promptSource: {
-        annotationId: source.annotation_id,
-        sourceVersion: 1,
-        sourceDigest: source.mask.sha256,
-      },
-    });
-
-    await installScreenshotEnvironment(page);
-    await seed.injectToken(page, cached.users.admin.email);
-    await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
-    const win = await runSmartScribble(page, cached, source.annotation_id, fixture);
-    await finalize(
-      page,
-      "smart-scribble",
-      path.join(DOCS_IMAGES, "sam/smart-scribble-interaction.gif"),
-      { fps: 4, maxWidth: 860, maxColors: 96, ...drawTrim(win, t0) },
-    );
+      predictionIds: [],
+      annotationIds: [],
+    };
+    candidateReviewCleanupRecords.push(cleanup);
+    try {
+      await seed.configureRasterMask(project.id, true);
+      const source = await seed.injectRasterMask({
+        taskId: task.id,
+        userEmail: cached.users.admin.email,
+        variant: "smart_scribble_source",
+        label: "car",
+        canvas: "media",
+      });
+      cleanup.annotationIds.push(source.annotation_id);
+      const t0 = Date.now();
+      await installScreenshotEnvironment(page);
+      await seed.injectToken(page, cached.users.admin.email);
+      await applyScreenshotTheme(page, "dark");
+      await installRecordingWorkbenchLayout(page, "both", {
+        workspace: { context: "annotate:image", preset: "ai-review" },
+      });
+      const win = await runSmartScribble(page, cached, source, cleanup, (evidence) => {
+        flowInferenceEvidence["smart-scribble"] = evidence;
+      });
+      await finalize(
+        page,
+        "smart-scribble",
+        path.join(DOCS_IMAGES, "sam/smart-scribble-interaction.gif"),
+        { fps: 4, maxWidth: 860, maxColors: 96, ...drawTrim(win, t0) },
+      );
+    } finally {
+      cleanupCandidateReview(cleanup);
+    }
   });
 
   test("sam-interactive — Magic Box 候选→人工确认", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.skip(!hasLiveSam3(cached), "首页 AI 视频只由 live SAM3 场景更新，stub 模式保留现有资产");
-    test.setTimeout(150_000);
+    test.skip(!hasLiveSam3(cached), "首页 AI 视频需要 live SAM3");
+    test.setTimeout(SELECTED_CAPTURE ? 300_000 : 150_000);
     const t0 = Date.now();
-    // 首页视频保留候选虚线与 toast 的自然动效，因此不安装面向静态 PNG 的
-    // fixed-time / reduced-motion 截图环境。
+    await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
-    const win = await runSamInteractive(page, cached);
-    await finalizeMarketingBackedHomepageAsset(page, "ai-assisted-annotation", drawTrim(win, t0));
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:image", preset: "ai-review" },
+    });
+    const cleanup: CandidateReviewCleanupRecord = {
+      projectId: cached.projects.image_demo.id,
+      taskId: cached.projects.image_demo.tasks.annotating.id,
+      predictionIds: [],
+      annotationIds: [],
+    };
+    candidateReviewCleanupRecords.push(cleanup);
+    try {
+      const win = await runSamInteractive(page, cached, (id, annotation) => {
+        cleanup.annotationIds.push(id);
+        if (typeof annotation.parent_prediction_id === "string")
+          cleanup.predictionIds.push(annotation.parent_prediction_id);
+      });
+      flowInferenceEvidence["ai-assisted-annotation"] = win.evidence;
+      await finalizeMarketingBackedHomepageAsset(page, "ai-assisted-annotation", drawTrim(win, t0));
+    } finally {
+      cleanupCandidateReview(cleanup);
+    }
   });
 
   test("review-reject — 审核拒回流程", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(150_000);
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 150_000);
     const project = cached.projects.image_demo;
     const task = project.tasks.review;
     const reviewerEmail = cached.users.reviewer.email;
@@ -1025,12 +1267,21 @@ test.describe("flow recordings", () => {
     const t0 = Date.now();
     await seed.injectToken(page, cached.users.project_admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "both");
-    let cleanupRecord: OcrCleanupRecord | null = null;
-    const win = await runCurrentTaskImageInference(page, cached, (record) => {
-      cleanupRecord = record;
-      ocrCleanupRecords.push(record);
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:image", preset: "ai-review" },
     });
+    let cleanupRecord: OcrCleanupRecord | null = null;
+    const win = await runCurrentTaskImageInference(
+      page,
+      cached,
+      (record) => {
+        cleanupRecord = record;
+        ocrCleanupRecords.push(record);
+      },
+      (evidence) => {
+        flowInferenceEvidence["current-task-image-inference"] = evidence;
+      },
+    );
     if (!cleanupRecord) {
       throw new Error("[current-task-image-inference] 未记录无痕清理标识");
     }
@@ -1040,7 +1291,7 @@ test.describe("flow recordings", () => {
 
   test("current-frame-video-inference — 当前帧车辆推理与作用域核对", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(180_000);
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 180_000);
     const t0 = Date.now();
     await seed.enableMLBackendByName(
       cached.projects.video_demo.id,
@@ -1064,7 +1315,7 @@ test.describe("flow recordings", () => {
 
   test("secondary-inference-attribute — 裁剪 OCR 属性写回与人工校正", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(180_000);
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 180_000);
     const t0 = Date.now();
     await seed.injectToken(page, cached.users.project_admin.email);
     await applyScreenshotTheme(page, "dark");
@@ -1091,20 +1342,71 @@ test.describe("flow recordings", () => {
     await finalize(page, "secondary-inference-attribute", undefined, drawTrim(win, t0));
   });
 
+  test("workspace-layout-basics — 布局调整与编辑状态保留", async ({ page, seed }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    const t0 = Date.now();
+    const userEmail = cached.users.admin.email;
+    await installScreenshotEnvironment(page);
+    await seed.injectToken(page, userEmail);
+    await applyScreenshotTheme(page, "dark");
+    await installRecordingWorkbenchLayout(page, "both", workspaceLayoutBasicsLayout);
+    let created: { taskId: string; annotationId: string } | undefined;
+    try {
+      const win = await runWorkspaceLayoutBasics(page, cached, (annotation) => {
+        created = annotation;
+      });
+      await finalize(page, "workspace-layout-basics", undefined, drawTrim(win, t0));
+    } finally {
+      if (created) await seed.deleteTaskAnnotation(created.taskId, created.annotationId, userEmail);
+    }
+  });
+
+  test("workspace-layout-persistence — 布局偏好跨任务、刷新与紧凑视口持久化", async ({
+    page,
+    seed,
+  }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    // The screenshot seed/repair fixture may take several minutes on a live
+    // media worker; keep the per-test budget separate from the 20s UI waits.
+    test.setTimeout(420_000);
+    const t0 = Date.now();
+    await seed.injectToken(page, cached.users.project_admin.email);
+    const result = await runWorkspaceLayoutPersistence(page, cached);
+    flowBehaviorEvidence["workspace-layout-persistence"] = result.evidence;
+    await finalize(page, "workspace-layout-persistence", undefined, drawTrim(result, t0));
+  });
+
   test("rotated-bbox — 旋转框绘制", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
     const t0 = Date.now(); // 录屏起点参照（page 在测试体前创建，t0≈video t=0）
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.annotator.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
-    const win = await runRotatedBbox(page, cached);
-    await finalize(page, "rotated-bbox", path.join(DOCS_IMAGES, "workbench/rotated-bbox.gif"), {
-      fps: 4,
-      maxWidth: 640,
-      maxColors: 96,
-      ...drawTrim(win, t0),
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:image", preset: "standard" },
+      image: { afterBoxCreate: "pick_class" },
     });
+    let createdId: string | undefined;
+    try {
+      const win = await runRotatedBbox(page, cached, {
+        onCreated: (id) => {
+          createdId = id;
+        },
+      });
+      await finalize(page, "rotated-bbox", path.join(DOCS_IMAGES, "workbench/rotated-bbox.gif"), {
+        fps: 4,
+        maxWidth: 640,
+        maxColors: 96,
+        ...drawTrim(win, t0),
+      });
+    } finally {
+      if (createdId)
+        await seed.deleteTaskAnnotation(
+          cached.projects.image_demo.tasks.annotating.id,
+          createdId,
+          cached.users.annotator.email,
+        );
+    }
   });
 
   test("bbox-draw — 矩形绘制", async ({ page, seed }) => {
@@ -1113,19 +1415,33 @@ test.describe("flow recordings", () => {
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.annotator.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none", {
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:image", preset: "standard" },
       image: { afterBoxCreate: "pick_class" },
       ui: { secondary_bar_hidden: true },
     });
-    const win = await runBboxDraw(page, cached, {
-      marketing: test.info().project.name === MARKETING_PROJECT_NAME,
-    });
-    await finalize(page, "bbox-draw", path.join(DOCS_IMAGES, "bbox/draw-in-progress.gif"), {
-      fps: 4,
-      maxWidth: 640,
-      maxColors: 96,
-      ...drawTrim(win, t0),
-    });
+    let createdId: string | undefined;
+    try {
+      const win = await runBboxDraw(page, cached, {
+        onCreated: (id) => {
+          createdId = id;
+        },
+        marketing: test.info().project.name === MARKETING_PROJECT_NAME,
+      });
+      await finalize(page, "bbox-draw", path.join(DOCS_IMAGES, "bbox/draw-in-progress.gif"), {
+        fps: 4,
+        maxWidth: 640,
+        maxColors: 96,
+        ...drawTrim(win, t0),
+      });
+    } finally {
+      if (createdId)
+        await seed.deleteTaskAnnotation(
+          cached.projects.image_demo.tasks.annotating.id,
+          createdId,
+          cached.users.annotator.email,
+        );
+    }
   });
 
   test("polyline-draw — 折线逐点绘制", async ({ page, seed }) => {
@@ -1134,14 +1450,36 @@ test.describe("flow recordings", () => {
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.annotator.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
-    const win = await runPolylineDraw(page, cached);
-    await finalize(page, "polyline-draw", path.join(DOCS_IMAGES, "polyline/draw-in-progress.gif"), {
-      fps: 4,
-      maxWidth: 640,
-      maxColors: 96,
-      ...drawTrim(win, t0),
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:image", preset: "standard" },
+      image: { afterBoxCreate: "pick_class" },
     });
+    let createdId: string | undefined;
+    try {
+      const win = await runPolylineDraw(page, cached, {
+        onCreated: (id) => {
+          createdId = id;
+        },
+      });
+      await finalize(
+        page,
+        "polyline-draw",
+        path.join(DOCS_IMAGES, "polyline/draw-in-progress.gif"),
+        {
+          fps: 4,
+          maxWidth: 640,
+          maxColors: 96,
+          ...drawTrim(win, t0),
+        },
+      );
+    } finally {
+      if (createdId)
+        await seed.deleteTaskAnnotation(
+          cached.projects.image_demo.tasks.annotating.id,
+          createdId,
+          cached.users.annotator.email,
+        );
+    }
   });
 
   test("polygon-draw — 多边形逐点绘制", async ({ page, seed }) => {
@@ -1150,66 +1488,92 @@ test.describe("flow recordings", () => {
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.annotator.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
-    const win = await runPolygonDraw(page, cached);
-    await finalize(page, "polygon-draw", path.join(DOCS_IMAGES, "polygon/draw-in-progress.gif"), {
-      fps: 4,
-      maxWidth: 640,
-      maxColors: 96,
-      ...drawTrim(win, t0),
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:image", preset: "standard" },
+      image: { afterBoxCreate: "pick_class" },
     });
+    let createdId: string | undefined;
+    try {
+      const win = await runPolygonDraw(page, cached, {
+        onCreated: (id) => {
+          createdId = id;
+        },
+      });
+      await finalize(page, "polygon-draw", path.join(DOCS_IMAGES, "polygon/draw-in-progress.gif"), {
+        fps: 4,
+        maxWidth: 640,
+        maxColors: 96,
+        ...drawTrim(win, t0),
+      });
+    } finally {
+      if (createdId)
+        await seed.deleteTaskAnnotation(
+          cached.projects.image_demo.tasks.annotating.id,
+          createdId,
+          cached.users.annotator.email,
+        );
+    }
   });
 
   test("mask-draw — Mask 笔刷涂抹", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(180_000); // 多笔 Mask + 4K H.264 归档转码
+    test.setTimeout(SELECTED_CAPTURE ? 300_000 : 180_000); // Include isolated seed and encoding.
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.annotator.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
-    const win = await runMaskDraw(page, cached);
-    await finalize(page, "mask-draw", path.join(DOCS_IMAGES, "mask-brush/draw-in-progress.gif"), {
-      fps: 4,
-      maxWidth: 640,
-      maxColors: 96,
-      ...drawTrim(win, t0),
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:image", preset: "standard" },
+      image: { afterBoxCreate: "pick_class" },
     });
+    let createdId: string | undefined;
+    try {
+      const win = await runMaskDraw(page, cached, {
+        onCreated: (id) => {
+          createdId = id;
+        },
+      });
+      await finalize(page, "mask-draw", path.join(DOCS_IMAGES, "mask-brush/draw-in-progress.gif"), {
+        fps: 4,
+        maxWidth: 640,
+        maxColors: 96,
+        ...drawTrim(win, t0),
+      });
+    } finally {
+      if (createdId)
+        await seed.deleteTaskAnnotation(
+          cached.projects.image_demo.tasks.annotating.id,
+          createdId,
+          cached.users.annotator.email,
+        );
+    }
   });
 
   test("candidate-keyboard-review — 候选键盘审阅与自动前进", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
     const project = cached.projects.image_demo;
     const task = project.tasks.annotating;
-    const candidateAnchors = [
-      recordingAnchor(cached, "image_demo", "annotating", "review_vehicle_left"),
-      recordingAnchor(cached, "image_demo", "annotating", "primary_vehicle"),
-      recordingAnchor(cached, "image_demo", "annotating", "review_vehicle_right"),
-    ];
-    if (candidateAnchors.some((anchor) => anchor.polygon.length < 3)) {
-      throw new Error("[candidate-keyboard-review] 候选车辆缺少可显示的轮廓锚点");
-    }
-    const predictions = await Promise.all(
-      candidateAnchors.map((anchor, index) =>
-        seed.injectPrediction({
-          taskId: task.id,
-          projectId: project.id,
-          label: anchor.label,
-          polygon: anchor.polygon,
-          score: [0.96, 0.91, 0.87][index],
-        }),
-      ),
+    test.setTimeout(300_000);
+    const cleanup: CandidateReviewCleanupRecord = {
+      projectId: project.id,
+      taskId: task.id,
+      predictionIds: [],
+      annotationIds: [],
+    };
+    candidateReviewCleanupRecords.push(cleanup);
+    const live = await prepareLiveCandidateReview(
+      page,
+      cached,
+      await seed.accessToken(cached.users.admin.email),
+      cleanup,
     );
+    flowInferenceEvidence["candidate-keyboard-review"] = live.evidence;
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.annotator.email);
     await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "both");
-    const win = await runCandidateKeyboardReview(
-      page,
-      cached,
-      predictions.map((prediction) => prediction.prediction_id),
-    );
+    const win = await runCandidateKeyboardReview(page, cached, live.candidateIds, cleanup);
     await finalizeVariants(page, "candidate-keyboard-review", [
       {
         target: path.join(DOCS_IMAGES, "workbench/review-auto-advance.gif"),
@@ -1224,53 +1588,42 @@ test.describe("flow recordings", () => {
 
   test("candidate-review-lifecycle — 跳过、采纳、驳回与最终计数", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(180_000);
+    test.setTimeout(300_000);
     const project = cached.projects.image_demo;
     const task = project.tasks.annotating;
-    const candidateAnchors = [
-      recordingAnchor(cached, "image_demo", "annotating", "review_vehicle_left"),
-      recordingAnchor(cached, "image_demo", "annotating", "primary_vehicle"),
-      recordingAnchor(cached, "image_demo", "annotating", "review_vehicle_right"),
-    ];
-    if (candidateAnchors.some((anchor) => anchor.polygon.length < 3)) {
-      throw new Error("[candidate-review-lifecycle] 候选车辆缺少可显示的轮廓锚点");
-    }
-    const predictionIds: string[] = [];
-    for (const [index, anchor] of candidateAnchors.entries()) {
-      const prediction = await seed.injectPrediction({
-        taskId: task.id,
-        projectId: project.id,
-        label: anchor.label,
-        polygon: anchor.polygon,
-        score: [0.96, 0.91, 0.87][index],
-      });
-      predictionIds.push(prediction.prediction_id);
-    }
     const cleanupRecord: CandidateReviewCleanupRecord = {
       projectId: project.id,
       taskId: task.id,
-      predictionIds,
+      predictionIds: [],
       annotationIds: [],
     };
     candidateReviewCleanupRecords.push(cleanupRecord);
-
-    const t0 = Date.now();
-    await installScreenshotEnvironment(page);
-    await seed.injectToken(page, cached.users.annotator.email);
-    await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "both", {
-      common: { petEnabled: false, autoAdvanceOnDecide: true },
-      layout: {
-        aiSectionCollapsed: false,
-        manualSectionCollapsed: false,
-        discussionCollapsed: true,
-        attrPanelCollapsed: true,
-        floatingSelection: { collapsed: true, x: 310, y: 690, w: 320, h: 300 },
-      },
-    });
-    const win = await runCandidateReviewLifecycle(page, cached, cleanupRecord);
-    await finalize(page, "candidate-review-lifecycle", undefined, drawTrim(win, t0));
-    cleanupCandidateReview(cleanupRecord);
+    try {
+      const live = await prepareLiveCandidateReview(
+        page,
+        cached,
+        await seed.accessToken(cached.users.admin.email),
+        cleanupRecord,
+      );
+      flowInferenceEvidence["candidate-review-lifecycle"] = live.evidence;
+      const t0 = Date.now();
+      await installScreenshotEnvironment(page);
+      await seed.injectToken(page, cached.users.annotator.email);
+      await applyScreenshotTheme(page, "dark");
+      await installRecordingWorkbenchLayout(page, "both", {
+        workspace: { context: "annotate:image", preset: "ai-review" },
+        common: { petEnabled: false, autoAdvanceOnDecide: true },
+        layout: { aiSectionCollapsed: false, manualSectionCollapsed: false },
+      });
+      const win = await runCandidateReviewLifecycle(page, cached, live.candidateIds, cleanupRecord);
+      flowInferenceEvidence["candidate-review-lifecycle"] = {
+        ...live.evidence,
+        review: win.reviewEvidence,
+      };
+      await finalize(page, "candidate-review-lifecycle", undefined, drawTrim(win, t0));
+    } finally {
+      cleanupCandidateReview(cleanupRecord);
+    }
   });
 
   test("video-track — 视频时序工作台", async ({ page, seed }) => {
@@ -1279,9 +1632,23 @@ test.describe("flow recordings", () => {
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
-    const win = await runVideoTrack(page, cached);
-    await finalize(page, "video-track", undefined, drawTrim(win, t0));
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:video", preset: "video-tracking" },
+    });
+    let createdId: string | null = null;
+    try {
+      const win = await runVideoTrack(page, cached, (id) => {
+        createdId = id;
+      });
+      await finalize(page, "video-track", undefined, drawTrim(win, t0));
+    } finally {
+      if (createdId)
+        await seed.deleteTaskAnnotation(
+          cached.projects.video_demo.tasks.tracking.id,
+          createdId,
+          cached.users.admin.email,
+        );
+    }
   });
 
   test("video-timeline-zoom — 时间轴锚点缩放与复位", async ({ page, seed }) => {
@@ -1290,19 +1657,27 @@ test.describe("flow recordings", () => {
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
-    const win = await runVideoTimelineZoom(page, cached);
-    await finalize(
-      page,
-      "video-timeline-zoom",
-      path.join(DOCS_IMAGES, "video-timeline/horizontal-zoom.gif"),
-      { fps: 6, maxWidth: 640, maxColors: 128, ...drawTrim(win, t0) },
-    );
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:video", preset: "video-tracking" },
+    });
+    const cleanup = registerVideoAnnotationCleanup(cached);
+    try {
+      const win = await runVideoTimelineZoom(page, cached, (id) => cleanup.annotationIds.push(id));
+      flowBehaviorEvidence["video-timeline-zoom"] = win.evidence;
+      await finalize(
+        page,
+        "video-timeline-zoom",
+        path.join(DOCS_IMAGES, "video-timeline/horizontal-zoom.gif"),
+        { fps: 6, maxWidth: 640, maxColors: 128, ...drawTrim(win, t0) },
+      );
+    } finally {
+      cleanupVideoFrameInference(cleanup);
+    }
   });
 
   test("video-timeline-prediction-navigation — AI 预测密度与帧导航", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(180_000); // 真实双目标视频推理 + 4K H.264 归档转码
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 180_000); // 真实双目标视频推理 + 4K H.264 归档转码
     const t0 = Date.now();
     await seed.enableMLBackendByName(
       cached.projects.video_demo.id,
@@ -1327,44 +1702,59 @@ test.describe("flow recordings", () => {
 
   test("video-chapter — 时间轴圈选与拖柄调整章节", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(120_000);
+    test.setTimeout(SELECTED_CAPTURE ? 300_000 : 120_000);
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "both");
-    const windows = await runVideoChapter(page, cached);
-    await finalizeVariants(page, "video-chapter", [
-      {
-        target: path.join(DOCS_IMAGES, "video-timeline/brush-create-chapter.gif"),
-        options: { fps: 4, maxWidth: 600, maxColors: 96, ...drawTrim(windows.create, t0) },
-      },
-      {
-        target: path.join(DOCS_IMAGES, "video-timeline/chapter-resize-hover.gif"),
-        options: { fps: 4, maxWidth: 600, maxColors: 96, ...drawTrim(windows.resize, t0) },
-      },
-    ]);
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:video", preset: "video-tracking" },
+    });
+    const accessToken = await seed.accessToken(cached.users.admin.email);
+    const createdChapters: Array<VideoChapterCleanupRecord & { accessToken: string }> = [];
+    try {
+      const windows = await runVideoChapter(page, cached, (record) => {
+        const cleanup = { ...record, accessToken };
+        createdChapters.push(cleanup);
+        videoChapterCleanupRecords.push(cleanup);
+      });
+      flowBehaviorEvidence["video-chapter"] = windows.evidence;
+      await finalizeVariants(page, "video-chapter", [
+        {
+          target: path.join(DOCS_IMAGES, "video-timeline/brush-create-chapter.gif"),
+          options: { fps: 4, maxWidth: 600, maxColors: 96, ...drawTrim(windows.create, t0) },
+        },
+        {
+          target: path.join(DOCS_IMAGES, "video-timeline/chapter-resize-hover.gif"),
+          options: { fps: 4, maxWidth: 600, maxColors: 96, ...drawTrim(windows.resize, t0) },
+        },
+      ]);
+    } finally {
+      for (const record of createdChapters) await cleanupVideoChapter(record);
+    }
   });
 
   test("video-tracker-range — 时间轴刷选追踪范围", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    const t0 = Date.now();
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 240_000);
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
-    const win = await runVideoTrackerRange(page, cached);
-    await finalize(
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:video", preset: "video-tracking" },
+    });
+    await recordVideoTrackerStory(
       page,
       "video-tracker-range",
+      (onJobCreated, onAnnotationsCreated) =>
+        runVideoTrackerRange(page, cached!, onJobCreated, onAnnotationsCreated),
       path.join(DOCS_IMAGES, "video-propagate/shift-brush-range.gif"),
-      { fps: 6, maxWidth: 680, maxColors: 128, ...drawTrim(win, t0) },
     );
   });
 
   test("video-track-batch-propagate — 双轨迹批量延展并复核", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(180_000); // 双轨迹真实视频推理 + 候选审阅 + 4K H.264 归档
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 180_000); // 双轨迹真实视频推理 + 候选审阅 + 4K H.264 归档
     const project = cached.projects.video_demo;
     const task = project.tasks.tracking;
     const userEmail = cached.users.project_admin.email;
@@ -1443,7 +1833,7 @@ test.describe("flow recordings", () => {
 
   test("video-propagate-track-vs-copy — 几何复制与 AI 延展对比", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(180_000); // 真实 30 帧 SAM3 追踪 + 候选审阅 + 4K H.264 归档
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 180_000); // 真实 30 帧 SAM3 追踪 + 候选审阅 + 4K H.264 归档
     const project = cached.projects.video_demo;
     const task = project.tasks.tracking;
     const userEmail = cached.users.project_admin.email;
@@ -1513,60 +1903,87 @@ test.describe("flow recordings", () => {
 
   test("video-tracker-cross-frame-points — 双目标跨帧多正点", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(180_000); // 真实视频推理 + 4K H.264 归档转码
-    const t0 = Date.now();
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 240_000);
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
-    const win = await runVideoMultiSeedTracking(page, cached, "cross-frame-points");
-    await finalize(page, "video-tracker-cross-frame-points", undefined, drawTrim(win, t0));
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:video", preset: "video-tracking" },
+    });
+    await recordVideoTrackerStory(
+      page,
+      "video-tracker-cross-frame-points",
+      (onJobCreated, onAnnotationsCreated) =>
+        runVideoMultiSeedTracking(
+          page,
+          cached!,
+          "cross-frame-points",
+          onJobCreated,
+          onAnnotationsCreated,
+        ),
+    );
   });
 
   test("video-tracker-positive-negative — 双目标正负点修正", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(180_000); // 真实视频推理 + 4K H.264 归档转码
-    const t0 = Date.now();
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 240_000);
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
-    const win = await runVideoMultiSeedTracking(page, cached, "positive-negative");
-    await finalize(page, "video-tracker-positive-negative", undefined, drawTrim(win, t0));
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:video", preset: "video-tracking" },
+    });
+    await recordVideoTrackerStory(
+      page,
+      "video-tracker-positive-negative",
+      (onJobCreated, onAnnotationsCreated) =>
+        runVideoMultiSeedTracking(
+          page,
+          cached!,
+          "positive-negative",
+          onJobCreated,
+          onAnnotationsCreated,
+        ),
+    );
   });
 
   test("video-tracker-box-seed — 双目标整车框种子", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(180_000); // 真实视频推理 + 4K H.264 归档转码
-    const t0 = Date.now();
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 240_000);
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
-    const win = await runVideoMultiSeedTracking(page, cached, "box-seed");
-    await finalize(page, "video-tracker-box-seed", undefined, drawTrim(win, t0));
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:video", preset: "video-tracking" },
+    });
+    await recordVideoTrackerStory(
+      page,
+      "video-tracker-box-seed",
+      (onJobCreated, onAnnotationsCreated) =>
+        runVideoMultiSeedTracking(page, cached!, "box-seed", onJobCreated, onAnnotationsCreated),
+    );
   });
 
   test("video-tracker-text-discovery — 文本发现双目标并采纳轨迹", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(180_000); // 真实视频推理 + 4K H.264 归档转码
-    const t0 = Date.now();
-    await seed.enableMLBackendByName(
-      cached.projects.video_demo.id,
-      cached.users.project_admin.email,
-      "sam3-backend",
-    );
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 240_000);
     await installScreenshotEnvironment(page);
-    await seed.injectToken(page, cached.users.project_admin.email);
+    await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
-    const win = await runVideoTrackerTextDiscovery(page, cached);
-    await finalize(page, "video-tracker-text-discovery", undefined, drawTrim(win, t0));
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:video", preset: "video-tracking" },
+    });
+    await recordVideoTrackerStory(
+      page,
+      "video-tracker-text-discovery",
+      (onJobCreated, onAnnotationsCreated) =>
+        runVideoTrackerTextDiscovery(page, cached!, onJobCreated, onAnnotationsCreated),
+    );
   });
 
   test("video-tracker-combo-discovery — 文本发现后逐对象记忆追踪", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(240_000); // 真实两趟视频推理 + 4K H.264 归档转码
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 240_000); // 真实两趟视频推理 + 4K H.264 归档转码
     const t0 = Date.now();
     await seed.enableMLBackendByName(
       cached.projects.video_demo.id,
@@ -1583,7 +2000,7 @@ test.describe("flow recordings", () => {
 
   test("video-mask-correction-propagate — 错帧加减笔迹后重传播", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(240_000); // 两次 Mask 提交 + 真实视频重传播 + 4K H.264 归档
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 240_000); // 两次 Mask 提交 + 真实视频重传播 + 4K H.264 归档
     const t0 = Date.now();
     await seed.enableMLBackendByName(
       cached.projects.video_demo.id,
@@ -1593,7 +2010,14 @@ test.describe("flow recordings", () => {
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.project_admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "both");
+    await installRecordingWorkbenchLayout(page, "both", {
+      // Keep the selected-object card inside the canvas so its action buttons
+      // are physically reachable; the default right-side position is behind
+      // the inspector Dockview sash at this recording viewport.
+      layout: {
+        floatingSelection: { collapsed: false, x: 720, y: 88, w: 340, h: 440 },
+      },
+    });
     const win = await runVideoMaskCorrectionPropagate(page, cached);
     await finalize(page, "video-mask-correction-propagate", undefined, drawTrim(win, t0));
   });
@@ -1620,7 +2044,7 @@ test.describe("flow recordings", () => {
 
   test("pipeline-apply-project — 套用公共模板并运行项目默认编排", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(240_000);
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 240_000);
     const project = cached.projects.image_demo;
     const task = project.tasks.clean;
     const userEmail = cached.users.admin.email;
@@ -1701,7 +2125,7 @@ test.describe("flow recordings", () => {
 
   test("jobs-retry-recovery — 失败预测重试后进入结果", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(150_000);
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 150_000);
     const project = cached.projects.ocr_demo;
     const task = project.tasks.ocr;
     const userEmail = cached.users.admin.email;
@@ -1812,7 +2236,7 @@ test.describe("flow recordings", () => {
 
   test("video-tracker-job-states — 四状态、筛选与返回视频工作台", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(120_000);
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 120_000);
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
@@ -1823,7 +2247,7 @@ test.describe("flow recordings", () => {
 
   test("project-ml-routing — 批量主后端与交互能力自动分流", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(120_000);
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 120_000);
     const t0 = Date.now();
     try {
       await installScreenshotEnvironment(page);
@@ -1833,6 +2257,7 @@ test.describe("flow recordings", () => {
       const win = await runProjectMlRouting(page, cached);
       await finalize(page, "project-ml-routing", undefined, drawTrim(win, t0));
     } finally {
+      await cleanupRecordingRecords();
       repairScreenshotProfile(screenshotBackendMode(cached), true);
       cached = await seed.screenshotCatalog();
     }
@@ -1892,33 +2317,50 @@ test.describe("flow recordings", () => {
 
   test("video-track-carryover — 跨帧虚影 Tab 续写", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(120_000);
+    test.setTimeout(SELECTED_CAPTURE ? 300_000 : 120_000);
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:video", preset: "video-tracking" },
       video: { trackContinueAutoAdvance: true },
     });
-    const win = await runVideoTrackCarryover(page, cached);
-    await finalize(
-      page,
-      "video-track-carryover",
-      path.join(DOCS_IMAGES, "workbench/video-track-carryover-ghost.gif"),
-      { fps: 4, maxWidth: 600, maxColors: 96, ...drawTrim(win, t0) },
-    );
+    const cleanup = registerVideoAnnotationCleanup(cached);
+    try {
+      const win = await runVideoTrackCarryover(page, cached, (id) =>
+        cleanup.annotationIds.push(id),
+      );
+      flowBehaviorEvidence["video-track-carryover"] = win.evidence;
+      await finalize(
+        page,
+        "video-track-carryover",
+        path.join(DOCS_IMAGES, "workbench/video-track-carryover-ghost.gif"),
+        { fps: 4, maxWidth: 600, maxColors: 96, ...drawTrim(win, t0) },
+      );
+    } finally {
+      cleanupVideoFrameInference(cleanup);
+    }
   });
 
   test("video-mask-track-edit — Mask 轨迹创建与后续帧编辑", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(180_000); // 视频解码 + 两次 Mask 提交 + 4K H.264 归档
+    test.setTimeout(SELECTED_CAPTURE ? 300_000 : 180_000); // 视频解码、两次 Mask 提交与归档
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "both");
-    const win = await runVideoMaskTrackEdit(page, cached);
-    await finalize(page, "video-mask-track-edit", undefined, drawTrim(win, t0));
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:video", preset: "video-tracking" },
+    });
+    const cleanup = registerVideoAnnotationCleanup(cached);
+    try {
+      const win = await runVideoMaskTrackEdit(page, cached, (id) => cleanup.annotationIds.push(id));
+      flowBehaviorEvidence["video-mask-track-edit"] = win.evidence;
+      await finalize(page, "video-mask-track-edit", undefined, drawTrim(win, t0));
+    } finally {
+      cleanupVideoFrameInference(cleanup);
+    }
   });
 
   test("ai-tracker-panel — AI 与追踪面板停靠、隐藏恢复与并存", async ({ page, seed }) => {
@@ -1927,31 +2369,31 @@ test.describe("flow recordings", () => {
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:video", preset: "standard" },
+    });
     const win = await runAiTrackerPanel(page, cached);
     await finalize(page, "ai-tracker-panel", undefined, drawTrim(win, t0));
   });
 
   test("pointcloud-controls — 点云控件(上色/点大小/深度)", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(180_000); // 点云加载与 4K H.264 归档都较重
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 180_000); // 点云加载与 4K H.264 归档都较重
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
     const win = await runPointcloudControls(page, cached);
     await finalize(page, "pointcloud-controls", undefined, drawTrim(win, t0));
   });
 
   test("pointcloud-view — 点云视图导航(拖动旋转)", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(180_000); // 点云加载与 4K H.264 归档都较重
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 180_000); // 点云加载与 4K H.264 归档都较重
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
     const win = await runPointcloudView(page, cached);
     await finalize(page, "pointcloud-view", undefined, drawTrim(win, t0));
   });
@@ -1962,7 +2404,7 @@ test.describe("flow recordings", () => {
       "billboard 多角度核对需要 marketing-master 的硬件 WebGL 与 60Hz 运行面",
     );
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(120_000);
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 120_000);
     const userEmail = cached.users.admin.email;
     const task = cached.projects.pointcloud_demo.tasks.frame_000;
     let annotationId: string | null = null;
@@ -1980,13 +2422,17 @@ test.describe("flow recordings", () => {
       await installScreenshotEnvironment(page);
       await seed.injectToken(page, userEmail);
       await applyScreenshotTheme(page, "dark");
-      await installRecordingWorkbenchLayout(page, "none", {
+      await installRecordingWorkbenchLayout(page, "both", {
         common: {
           labelVisibility: "always",
           labelContent: { single: [], track: ["id", "state"], ai: ["source", "score"] },
         },
       });
-      const win = await runPointcloudBillboardLabel(page, cached);
+      const win = await runPointcloudBillboardLabel(page, cached, {
+        taskId: task.id,
+        annotationId: source.id,
+        geometry: source.geometry,
+      });
       await finalize(page, "pointcloud-billboard-label", undefined, drawTrim(win, t0));
     } finally {
       if (annotationId) await seed.deleteTaskAnnotation(task.id, annotationId, userEmail);
@@ -2015,54 +2461,67 @@ test.describe("flow recordings", () => {
 
   test("video-draw — 视频画框轨迹(track 关键帧插值)", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(120_000); // 视频解码 + 两次画框 + 来回逐帧, 冷启动时给 worker 留足余量
+    test.setTimeout(SELECTED_CAPTURE ? 300_000 : 120_000);
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
-    const win = await runVideoDraw(page, cached);
-    await finalize(
-      page,
-      "video-draw",
-      // 画框和逐帧插值的帧间变化大，使用低帧率与受限调色板保持可提交体积。
-      path.join(DOCS_IMAGES, "workbench/video-track-trajectory.gif"),
-      { fps: 3, maxWidth: 520, maxColors: 80, ...drawTrim(win, t0) },
-    );
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:video", preset: "video-tracking" },
+    });
+    const cleanup = registerVideoAnnotationCleanup(cached);
+    try {
+      const win = await runVideoDraw(page, cached, (id) => cleanup.annotationIds.push(id));
+      flowBehaviorEvidence["video-draw"] = win.evidence;
+      await finalize(
+        page,
+        "video-draw",
+        path.join(DOCS_IMAGES, "workbench/video-track-trajectory.gif"),
+        { fps: 3, maxWidth: 520, maxColors: 80, ...drawTrim(win, t0) },
+      );
+    } finally {
+      cleanupVideoFrameInference(cleanup);
+    }
   });
 
   test("large-image-progressive — 大图渐进式高清切片", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(90_000);
+    test.setTimeout(SELECTED_CAPTURE ? 300_000 : 90_000);
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:image", preset: "focus" },
+    });
     const win = await runLargeImageProgressive(page, cached);
     await finalize(page, "large-image-progressive", undefined, drawTrim(win, t0));
   });
 
   test("large-image-pyramid-recovery — 单切片失败后自动恢复", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(90_000);
+    test.setTimeout(SELECTED_CAPTURE ? 300_000 : 90_000);
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:image", preset: "focus" },
+    });
     const win = await runLargeImagePyramidRecovery(page, cached);
     await finalize(page, "large-image-pyramid-recovery", undefined, drawTrim(win, t0));
   });
 
   test("large-image-mask-limit — 超大图矢量标注与 Mask 尺寸门禁", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(90_000);
+    test.setTimeout(SELECTED_CAPTURE ? 300_000 : 90_000);
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:image", preset: "focus" },
+    });
     const win = await runLargeImageMaskLimit(page, cached);
     await finalize(page, "large-image-mask-limit", undefined, drawTrim(win, t0));
   });
@@ -2073,7 +2532,7 @@ test.describe("flow recordings", () => {
       "真实点云种框需要 marketing-master 的硬件 WebGL 与 60Hz 运行面",
     );
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(120_000);
+    test.setTimeout(SELECTED_CAPTURE ? 300_000 : 120_000);
     const t0 = Date.now();
     const userEmail = cached.users.admin.email;
     let created: { taskId: string; annotationId: string } | null = null;
@@ -2082,9 +2541,11 @@ test.describe("flow recordings", () => {
       await seed.injectToken(page, userEmail);
       await applyScreenshotTheme(page, "dark");
       await installRecordingWorkbenchLayout(page, "both", {
-        layout: { triViewFloat: { x: 24, y: 24, w: 320, h: 540, collapsed: true } },
+        workspace: { context: "annotate:3d", preset: "standard" },
       });
-      const win = await runPointcloudCameraSeed3dBox(page, cached);
+      const win = await runPointcloudCameraSeed3dBox(page, cached, (record) => {
+        created = record;
+      });
       created = win.created;
       await finalize(page, "pointcloud-camera-seed-3d-box", undefined, drawTrim(win, t0));
     } finally {
@@ -2094,13 +2555,47 @@ test.describe("flow recordings", () => {
     }
   });
 
+  test("pointcloud-panel-layout — 3D 三视图与相机面板布局", async ({ page, seed }) => {
+    test.skip(
+      test.info().project.name !== MARKETING_PROJECT_NAME,
+      "3D 面板布局需要 marketing-master 的硬件 WebGL 与 60Hz 运行面",
+    );
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 120_000);
+    const userEmail = cached.users.admin.email;
+    const task = cached.projects.pointcloud_demo.tasks.frame_000;
+    let annotationId: string | null = null;
+    const t0 = Date.now();
+    try {
+      const source = await seed.createTaskAnnotation(task.id, userEmail, {
+        annotation_type: "box_3d",
+        tool_unit_id: "lidar_box_3d",
+        class_name: "object",
+        geometry: NUSCENES_RECORDING_BOX,
+      });
+      annotationId = source.id;
+
+      await installScreenshotEnvironment(page);
+      await seed.injectToken(page, userEmail);
+      await applyScreenshotTheme(page, "dark");
+      await installRecordingWorkbenchLayout(page, "both", {
+        workspace: { context: "annotate:3d", preset: "standard" },
+        layout: { cameraPanels: {} },
+      });
+      const win = await runPointcloudPanelLayout(page, cached, source);
+      await finalize(page, "pointcloud-panel-layout", undefined, drawTrim(win, t0));
+    } finally {
+      if (annotationId) await seed.deleteTaskAnnotation(task.id, annotationId, userEmail);
+    }
+  });
+
   test("pointcloud-crossframe-track — 3D 目标跨帧延续、修正与邻帧核对", async ({ page, seed }) => {
     test.skip(
       test.info().project.name !== MARKETING_PROJECT_NAME,
       "真实点云跨帧链需要 marketing-master 的硬件 WebGL 与 60Hz 运行面",
     );
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(120_000);
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 120_000);
     const userEmail = cached.users.admin.email;
     const frame0 = cached.projects.pointcloud_demo.tasks.frame_000;
     const cleanup: Array<{ taskId: string; annotationId: string }> = [];
@@ -2141,7 +2636,9 @@ test.describe("flow recordings", () => {
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.annotator.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:image", preset: "standard" },
+    });
     const win = await runHotkeyCheatSheet(page, cached);
     await finalize(
       page,
@@ -2158,7 +2655,7 @@ test.describe("flow recordings", () => {
 function drawTrim(
   win: { drawStartMs: number; drawEndMs: number } | null,
   t0: number,
-): { startSec?: number; durationSec?: number } {
+): Pick<GifOptions, "startSec" | "durationSec" | "captureWindow"> {
   if (!win) return {};
   const startSec = Math.max(0, (win.drawStartMs - t0) / 1000 - 0.4);
   const durationSec = (win.drawEndMs - win.drawStartMs) / 1000 + 0.8;

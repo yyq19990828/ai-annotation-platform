@@ -28,12 +28,14 @@
 
 ### 暗色工作台重录
 
+视频基础重录范围为 `public/media/video/{video-draw,video-track-carryover,mask-track-edit,video-timeline-zoom,video-chapter}.mp4` 及对应海报，使用视频追踪停靠预设和展开时间轴。旧 GIF 配方仅归档，不恢复已退休的引用；此前已确认的视频总览保留。
+
 - [x] 图片工作台静态图：`workbench/layout-overview.png`、`mask-brush/toolbar-overview.png`、`sam/{smart-point-toolbar,interactive-toolbar,magic-box-toolbar,exemplar-output-mode}.png`、`workbench/ocr-real-scene.png`、`review/{workbench,reject-form}.png`
 - [x] 图片工作台流程：短交互保留 GIF；Magic Box、OCR、AI 预标与候选审阅已迁移到 `public/media/**/*.mp4`
-- [x] 首页图片工作台媒体：`public/home/ai-assisted-annotation.*`、`public/home/sam-tools/{smart-point,smart-box,exemplar}.*` 与 `public/home/ocr-real-scene.*`，均由对应 4K60 母版派生 VP9 WebM、H.264 MP4 fallback 和 WebP 封面；OCR 母版中的 AI 面板停靠在主图右侧
+- [x] 首页图片工作台媒体：`public/home/ai-assisted-annotation.*`、`public/home/sam-tools/{smart-point,smart-box,exemplar}.*` 与 `public/home/ocr-real-scene.*`，按各自已验证来源派生 WebM、H.264 MP4 fallback 和 WebP 封面；标准录制保留来源的尺寸与帧率上限，不标记为 4K60 母版
 - [x] 首页 Hero 派生图：`theme/assets/home/hero/*.webp`，由对应用户手册截图生成
 - [x] 视频工作台：静态总览保留 PNG；工作台播放、AI 面板、多目标种子和 Mask 轨迹编辑已迁移到 `public/media/video/*.mp4`
-- [x] 点云工作台：`workbench/pointcloud-real-scene.png`（nuScenes 六相机环视）+ `public/media/pointcloud/{controls,orbit}.mp4`
+- [x] 点云工作台：`workbench/pointcloud-real-scene.png`（nuScenes 六相机环视）+ `public/media/pointcloud/{controls,orbit,billboard-label,crossframe-track,panel-layout}.mp4`
 - [x] 删除过期图：旧 `sam/text-three-modes.png` 与未展示命名状态、带权限告警的 `polygon/{vertex-edit,close-hint}.png`
 
 ## Batch 1 · 数据集 / 导入导出（新增于 2026-06-10 · IA 重构）
@@ -240,6 +242,7 @@
 
 ### 工作台
 
+- [x] `public/media/workbench/layout-basics.mp4` — 标准布局 → 拖动分隔条 → 讨论与详情合并标签 → 标题栏隐藏 → 菜单找回 → 专注画布及恢复；保持标注选择和未发送草稿 `[derived-mp4]`
 - [~] ~~`images/bbox/draw-in-progress.gif`~~ — **已由** `public/media/workbench/bbox-draw.mp4` **替代**：矩形绘制完整流已迁移到 DocsVideo
 - [ ] `images/polygon/vertex-edit.png` — 多边形选中态 + 边悬停 + 图标；旧图未展示命名状态且带权限告警，已删除，待建立可验证场景后暗色重拍
 - [ ] `images/polygon/close-hint.png` — 三顶点后下一点贴近首点的闭合提示；旧图未展示命名状态且带权限告警，已删除，待建立可验证场景后暗色重拍
@@ -262,7 +265,7 @@
 - [x] `public/media/large-image/pyramid-recovery.mp4` — 一个当前视口高清切片真实返回 503 后保留 overview、自动重签恢复，并继续缩放和平移 **[Tier A]** `[derived-mp4]`
 - [x] `public/media/large-image/mask-limit.mp4` — Cosmic Cliffs 分块浏览 → 完整落库矩形框 → 悬停置灰 Mask 入口核对实际尺寸、单边上限与总像素上限 **[Tier A]** `[derived-mp4]`
 
-- [x] `images/mask-brush/toolbar-overview.png` — Mask 笔刷浮动工具栏全貌（笔刷/橡皮 chip + 半径 slider + 状态文字） [auto]
+- [x] `images/mask-brush/toolbar-overview.png` — Mask 笔刷浮动工具栏全貌（笔刷图标、笔刷/橡皮按钮与半径 slider；按实际可访问标签标注） [auto]
 - [~] ~~`images/mask-brush/draw-in-progress.gif`~~ — **已由** `public/media/mask-brush/mask-draw.mp4` **替代**：Mask 绘制与提交完整流已迁移到 DocsVideo
 - [x] `public/media/video/mask-track-edit.mp4` — 点击「Mask 轨迹」从空白创建 Mask → `Enter` 生成首个关键帧 → 跳到保持帧编辑同一轨迹 → 笔刷修正 → `Enter` 物化第二个人工关键帧 **[Tier A]** `[derived-mp4]`
 - [x] `public/media/video/mask-correction-propagate.mp4` — 在 F5 漂移帧补入漏分区域、扣除外溢区域 → 使用原生 Mask seed 向后传播 → 跨帧审阅 → 采纳后原轨迹保留 17 个关键帧 **[Tier A]** `[derived-mp4]`
@@ -271,8 +274,11 @@
 - [ ] `images/workbench-pointcloud-projection/overlay-wireframe.png` — 相机面板线框投影 overlay + 「正对」角标 [manual]
 - [ ] `images/workbench-pointcloud-projection/click-to-select-3d.png` — 点击投影框联动主视图高亮 [manual]
 - [x] `images/workbench/pointcloud-real-scene.png` — nuScenes 激光雷达 + 6 相机环绕布局全景 `[auto]`（scene: `workbench/pointcloud-real-scene`，P-PC-MULTI）
-- [x] `public/media/pointcloud/orbit.mp4` — 点云视图导航：收起两边栏后左键拖拽 orbit 环绕 + 滚轮缩放 `[derived-mp4]`（P-PC-DEV）
+- [x] `public/media/pointcloud/orbit.mp4` — 点云视图导航：保留两侧面板，左键拖拽 orbit 环绕 + 滚轮缩放并复位视角 `[derived-mp4]`（P-PC-DEV）
 - [x] `public/media/pointcloud/controls.mp4` — 工作台设置窗口点云控件演示（相机上色 / 点大小 / 深度提示逐项切换）`[derived-mp4]`（P-PC-DEV）
+- [x] `public/media/pointcloud/panel-layout.mp4` — 选中真实 3D 框后整体停靠 / 浮动 / 隐藏恢复三视图，整组切换六路相机并切帧核对布局与渲染 `[derived-mp4]`（P-PC-DEV）
+- [x] `public/media/pointcloud/crossframe-track.mp4` — nuScenes 3D 框跨帧延续、中心修正和邻帧轨迹参考 `[derived-mp4]`（P-PC-DEV）
+- [x] `public/media/pointcloud/billboard-label.mp4` — 轨迹标签启用属性后多角度核对 billboard 文本持续正对相机 `[derived-mp4]`（P-PC-DEV）
 - [x] `images/workbench/pointcloud-rgb-colorize.png` — 相机上色前后对比（同上 `public/media/pointcloud/controls.mp4` 内含青蓝高度色→相机 RGB 的切换）`[derived-mp4]`
 - [ ] `images/workbench/pointcloud-depth-heatmap.png` — 深度热力图 + figcaption 深度读数（控件 GIF 已演示开关，相机视图悬停深度读数特写仍 [manual]） [manual]
 - [~] ~~`images/polygon/draw-in-progress.gif`~~ — **已由** `public/media/polygon/draw.mp4` **替代**：多边形绘制与提交完整流已迁移到 DocsVideo
@@ -294,9 +300,9 @@
 - [ ] `images/workbench/current-task-project-pipeline.png` — 工作台「当前题 AI」面板按项目编排运行入口；红框：运行当前题（按项目编排 · N 阶段）按钮、项目编排来源提示 [manual]
 - [ ] `images/video-playback/sampling-config.png` — 项目设置帧采样配置区（mode/target_fps/frame_step） [manual]
 - [ ] `images/video-playback/chapter-sidebar.png` — 章节侧栏含彩色色带 + 章节列表 [manual]
-- [x] `public/media/video/ai-tracker-panel.mp4` — 旧互斥浮层素材，已从用户指南撤下；新流程脚本覆盖停靠、隐藏恢复与并存 `[derived-mp4]`
+- [x] `public/media/video/ai-tracker-panel.mp4` — 自由布局中的浮动、停靠、隐藏恢复与 AI 标签合并，已接入工作台布局指南 `[derived-mp4]`
 - [ ] `images/video-propagate/tracker-job-badge.png` — 进度 badge + 取消按钮 [manual]
-- [x] `public/media/video/workbench-overview.mp4` — 视频工作台整体（时间轴 + 逐帧前进 + 播放）`[derived-mp4]`（开源 P-VIDEO-DEV，seed_video.py）
+- [x] `public/media/video/workbench-overview.mp4` — 视频工作台整体（双向逐帧 + 播放暂停 + 手动建轨迹并刷新核对）`[derived-mp4]`（开源 P-VIDEO-DEV，seed_video.py）
 - [~] ~~`images/workbench/video-track-trajectory.gif`~~ — **已由** `public/media/video/video-draw.mp4` **替代**：轨迹关键帧与插值完整流已迁移到 DocsVideo
 - [x] `images/workbench/video-real-scene.png` — 真实城市交通视频任务工作台 `[auto]`（scene: `workbench/video-real-scene`，P-VIDEO-DEV）
 - [x] `images/workbench/video-track-timeline.png` — 视频轨道时间轴 + 关键帧 + 软网格（同上 `video-track-trajectory.gif` 画关键帧时时间轴同步呈现）`[auto-gif]`

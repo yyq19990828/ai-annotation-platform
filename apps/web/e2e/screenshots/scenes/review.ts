@@ -1,6 +1,10 @@
 import type { ScreenshotScene } from "./_types";
 
 import type { Page } from "@playwright/test";
+import {
+  installRecordingWorkbenchLayout,
+  waitForRecordingPanels,
+} from "../flows/_workbench-layout";
 
 const DARK_WORKBENCH_MATRIX: NonNullable<ScreenshotScene["matrix"]> = {
   themes: ["dark"],
@@ -25,10 +29,18 @@ const reviewWorkbenchRoute = (catalog: Parameters<ScreenshotScene["route"]>[0]) 
 export const REVIEW_SCENES: ScreenshotScene[] = [
   {
     name: "review/workbench",
+    clock: "live",
     role: "reviewer",
     fixture: { project: "image_demo", task: "review", batch: "review" },
     route: reviewWorkbenchRoute,
-    prepare: waitForReviewWorkbench,
+    prepare: async (page) => {
+      await installRecordingWorkbenchLayout(page, "both", {
+        workspace: { context: "review:image", preset: "review" },
+      });
+      await page.reload();
+      await waitForReviewWorkbench(page);
+      await waitForRecordingPanels(page, ["canvas", "inspector", "discussion"]);
+    },
     matrix: DARK_WORKBENCH_MATRIX,
     target: "docs-site/user-guide/images/review/workbench.png",
   },

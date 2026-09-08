@@ -15,7 +15,24 @@ import type { FloatingPanelState, FloatingSelectionState } from "@/api/auth";
 import type { Viewport } from "./useViewportTransform";
 import type { PipelineStagePayload, TriggerPreannotationPayload } from "@/hooks/usePreannotation";
 import { videoIntrinsicSize } from "../stage/videoKonvaCoordinates";
+import type { TimelineRangePurpose } from "../stage/VideoPlaybackOverlay";
 import { cocoRleBounds, type CocoRle } from "../stage/shared/geometry/maskRle";
+
+export function resolveVideoSelectionCardCollapsed(
+  preferredCollapsed: boolean,
+  propagationOpen: boolean,
+  trackerVisible: boolean,
+): boolean {
+  return preferredCollapsed || (propagationOpen && trackerVisible);
+}
+
+export function resolveVideoTimelineRangePurpose(
+  chapterDraftArmed: boolean,
+  propagationOpen: boolean,
+): TimelineRangePurpose {
+  // A parked propagation session keeps its settings, but cannot override an explicit chapter brush.
+  return chapterDraftArmed ? "chapter-draft" : propagationOpen ? "propagate-range" : "loop";
+}
 
 export const VARIANT_FIELD_SET = new Set<string>(VARIANT_FIELD_KEYS);
 

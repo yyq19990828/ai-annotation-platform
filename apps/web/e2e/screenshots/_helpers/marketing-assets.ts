@@ -20,6 +20,38 @@ function defineAsset(spec: MarketingAssetSpec): MarketingAssetSpec {
 
 const assetSpecs = [
   defineAsset({
+    assetId: "workspace-layout-basics",
+    title: "工作台布局调整",
+    theme: "调整面板时保留标注选择与讨论草稿",
+    objective: "展示调整宽度、合并标签、隐藏找回与专注画布，不中断当前编辑上下文。",
+    duration: { minSeconds: 20, targetSeconds: 30, maxSeconds: 60 },
+    shots: [
+      "在标准布局中保持一个已保存标注选中，并留下未发送的讨论。",
+      "拖动分隔条，合并讨论和标注详情并切换标签。",
+      "隐藏活动标签，再从布局菜单恢复原面板和草稿。",
+      "专注画布后恢复，保持同一任务、标注和讨论内容。",
+    ],
+    editingNotes: ["这是页面内布局教学，不表示未发送草稿会跨刷新持久保存。"],
+  }),
+  defineAsset({
+    assetId: "workspace-layout-persistence",
+    title: "工作台布局偏好持久化",
+    theme: "布局保存后跨任务、刷新与紧凑视口恢复",
+    objective:
+      "展示真实账号偏好 PATCH/GET 保存 Dockview 布局，在图像与视频任务间切换后回到原 context，刷新并进入紧凑视口再恢复桌面布局。",
+    duration: { minSeconds: 18, targetSeconds: 28, maxSeconds: 55 },
+    shots: [
+      "在图像工作台把面板切换为专注画布布局并保留完整画布。",
+      "切换到视频任务，保存独立的视频追踪布局，证明 image/video context 分桶。",
+      "返回图像任务并刷新，核对之前保存的桌面布局仍被真实 GET 恢复。",
+      "进入紧凑视口再回到桌面宽度，保持已保存的 Dockview 树与面板可见。",
+    ],
+    editingNotes: [
+      "该素材验证真实 preferences PATCH/GET 与 context 分桶；紧凑视口只临时重排，不写回桌面布局。",
+      "保留跨任务、刷新和视口变化后的实际恢复结果，不把未发送讨论草稿写成刷新后仍存。",
+    ],
+  }),
+  defineAsset({
     assetId: "ai-prediction-import",
     title: "导入 AI 预标注",
     theme: "导入预测结果的人工复核与采纳",
@@ -669,7 +701,7 @@ const assetSpecs = [
     duration: { minSeconds: 12, targetSeconds: 18, maxSeconds: 90 },
     shots: [
       "为目标 1 的左侧公交车放置 F0/F4 正点。",
-      "点击“+ 新目标”，移动面板后为目标 2 的右侧公交车放置 F0/F4 正点。",
+      "点击“+ 新目标”，在停靠面板旁为目标 2 的右侧公交车放置 F0/F4 正点。",
       "同时生成两个候选后拖动时间轴，跨帧核对 AI 追踪框，再整批采纳。",
     ],
     editingNotes: ["保留 F0→F4→F0 的种子切帧过程，以及候选阶段从前段拖到后段再回看的时间轴镜头。"],
@@ -697,7 +729,7 @@ const assetSpecs = [
     duration: { minSeconds: 10, targetSeconds: 15, maxSeconds: 90 },
     shots: [
       "沿左侧公交车完整车身绘制目标 1 的 F0 框。",
-      "点击“+ 新目标”，移动面板后沿右侧公交车绘制目标 2 的 F0 框。",
+      "点击“+ 新目标”，沿停靠面板旁的右侧公交车绘制目标 2 的 F0 框。",
       "同时生成两个候选后拖动时间轴，跨帧核对 AI 追踪框，再整批采纳。",
     ],
     editingNotes: [
@@ -710,16 +742,16 @@ const assetSpecs = [
     theme: "用明确文本自动发现多个目标并建立跨帧轨迹",
     objective:
       "展示输入 bus 后由真实 SAM3 自动发现左右两辆公交车，逐目标检查候选、跨帧核对并采纳为两条新轨迹。",
-    duration: { minSeconds: 18, targetSeconds: 24, maxSeconds: 30 },
+    duration: { minSeconds: 12, targetSeconds: 18, maxSeconds: 90 },
     shots: [
       "在无选中源轨迹的画布级入口选择 SAM3 文本追踪、bus 类别与矩形框输出。",
       "输入明确目标文本 bus 并发起发现，展示真实模型返回的多目标候选池。",
-      "人工取消远处目标和局部部件，只保留实例 2、4 对应的左右两辆完整公交车，共 22 个跨帧候选。",
-      "拖动时间轴到后段再回到中前段，核对两辆公交车的追踪框后采纳两条轨迹，并拒绝剩余噪声候选。",
+      "按真实候选框识别左右两辆完整公交车，只保留这两个目标，取消远处目标和局部部件。",
+      "逐帧前进到后段再回到中前段，核对两辆公交车的追踪框后采纳两条轨迹，并拒绝剩余噪声候选。",
     ],
     editingNotes: [
       "母版只表达纯文本无源发现，不混入点、框示例或已有轨迹传播；组合发现另录独立资产。",
-      "必须保留 11 帧范围、输入文本、候选池筛选、两目标候选数量、跨帧拖动、采纳双轨迹和拒绝剩余噪声的完整闭环。",
+      "必须保留 11 帧范围、输入文本、候选池筛选、两目标候选数量、逐帧核对、采纳双轨迹和拒绝剩余噪声的完整闭环。",
       "自动校验只接受与左右公交车锚点对齐的两条 bus 轨迹，中心 truck 不得被混入。",
     ],
   }),
@@ -860,6 +892,25 @@ const assetSpecs = [
       "该母版只表达 billboard 标签配置与视角适配，不混入种框、跨帧延续、相机投影或几何编辑。",
       "属性开关必须真正触发 CanvasTexture 绘制完整文本，不能只录设置窗口点击动作。",
       "源 3D 框在录制前通过正式 API 准备，结束后按 annotation ID 精确清理。",
+    ],
+  }),
+  defineAsset({
+    assetId: "pointcloud-panel-layout",
+    title: "点云三视图与相机面板布局",
+    theme: "3D 面板整体停靠、浮动、隐藏恢复与跨帧保持",
+    objective:
+      "展示选中 nuScenes 3D 框后，将三视图作为一个面板停靠 / 浮动 / 隐藏恢复，再把六路相机整组切换为悬浮与停靠图库，最后切到相邻帧核对渲染与相机角色仍然稳定。",
+    duration: { minSeconds: 20, targetSeconds: 30, maxSeconds: 48 },
+    shots: [
+      "从选中的真实 3D 框开始，在框体精修布局展示主视图与俯、侧、正三视图同步。",
+      "将三视图整体停靠到左侧、浮动，再隐藏并从布局菜单恢复；保留同一个选中框和渲染画布。",
+      "切到传感器融合，展示 CAM_FRONT 等六路相机按物理朝向悬浮，并收入相机视图停靠图库。",
+      "隐藏相机图库后恢复，切到 Scene 相邻帧，确认相机图、点云 renderer 和角色顺序仍完整。",
+    ],
+    editingNotes: [
+      "相机只能整组在悬浮和停靠之间切换；三视图始终作为一个 Dockview 面板操作，不把独立相机窗口伪装成第三种停靠模式。",
+      "所有底图、选择、相机角色和切帧都来自真实 nuScenes-mini 数据；该流程不执行 ML 推理，声明 none。",
+      "结束后按正式 API 创建的单个 annotation ID 精确清理，失败时保留录制诊断。",
     ],
   }),
   defineAsset({

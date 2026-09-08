@@ -39,12 +39,25 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
       await page.waitForSelector('[data-testid="workbench-stage"]', { timeout: 5000 });
       await page.getByTestId("tool-btn-mask").click();
       await page.waitForSelector('[data-testid="mask-toolbar"]', { timeout: 3000 });
+      for (const name of ["笔刷", "橡皮"]) {
+        const button = page.getByTestId("mask-toolbar").locator(`[aria-label="${name}"]`);
+        await button.waitFor({ state: "visible" });
+        if (!(await button.isEnabled())) throw new Error(`Mask toolbar: ${name} is disabled`);
+      }
       await page.waitForTimeout(200);
     },
-    capture: { kind: "locator", selector: '[data-testid="mask-toolbar"]', padding: 12 },
+    capture: { kind: "locator", selector: '[data-testid="mask-toolbar"]', padding: 24 },
     annotate: [
-      { selector: '[data-testid="mask-mode-brush"]', style: "rect-red", label: "笔刷" },
-      { selector: '[data-testid="mask-mode-erase"]', style: "rect-red", label: "橡皮" },
+      {
+        selector: '[data-testid="mask-toolbar"] [aria-label="笔刷"]',
+        style: "rect-red",
+        label: "笔刷",
+      },
+      {
+        selector: '[data-testid="mask-toolbar"] [aria-label="橡皮"]',
+        style: "rect-red",
+        label: "橡皮",
+      },
       { selector: '[data-testid="mask-radius-slider"]', style: "numbered" },
     ],
     matrix: DARK_WORKBENCH_MATRIX,

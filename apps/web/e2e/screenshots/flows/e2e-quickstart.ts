@@ -62,13 +62,11 @@ export async function runE2eQuickstart(
   const { start, end } = mediaBbox(box, anchor.bbox);
   await page.mouse.move(start.x, start.y);
   await page.mouse.down();
-  await page.waitForTimeout(options.marketing ? 250 : 80);
-  if (options.marketing) {
-    await movePointerAtRefreshRate(page, start, end, 900);
-  } else {
-    await page.mouse.move(end.x, end.y, { steps: 20 });
-  }
+  await expect(stage).toHaveAttribute("data-drag-kind", "draw", { timeout: 2_000 });
+  await movePointerAtRefreshRate(page, start, end, options.marketing ? 900 : 650);
+  await expect(stage).toHaveAttribute("data-drag-changed", "true", { timeout: 2_000 });
   await page.mouse.up();
+  await expect(stage).toHaveAttribute("data-pending-drawing", "true", { timeout: 2_000 });
   const classPicker = page.getByTestId("class-picker-popover");
   await classPicker.waitFor({ state: "visible", timeout: 5_000 });
   await hold(0, 900);

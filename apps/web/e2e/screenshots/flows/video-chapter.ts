@@ -1,127 +1,204 @@
-/**
- * 流程录制：在时间轴上圈选章节，再用章节条拖柄调整范围。
- */
-import type { Page } from "@playwright/test";
+/** Record a real timeline chapter draft, both resize handles, and persisted frame bounds. */
+import { expect, type Page, type Response } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
+import type { VideoChapter } from "../../../src/api/videoChapters";
 import { movePointerAtRefreshRate } from "./_canvas";
 import type { DrawWindow } from "./rotated-bbox";
+import {
+  assertVideoTimelineVisible,
+  currentVideoFrame,
+  openVideoTimeline,
+  parkVideoPointer,
+} from "./_video-timeline";
+
+export interface VideoChapterCleanupRecord {
+  datasetItemId: string;
+  chapterId: string;
+}
 
 export interface VideoChapterRecordingWindows {
   create: DrawWindow;
   resize: DrawWindow;
+  evidence: {
+    chapterId: string;
+    datasetItemId: string;
+    created: { start_frame: number; end_frame: number };
+    resized: { start_frame: number; end_frame: number };
+    currentFrame: number;
+    reloadVerified: boolean;
+  };
+}
+
+async function chapterResponse(response: Response): Promise<VideoChapter> {
+  expect(response.ok(), `Chapter ${response.request().method()}: HTTP ${response.status()}`).toBe(
+    true,
+  );
+  return response.json() as Promise<VideoChapter>;
 }
 
 export async function runVideoChapter(
   page: Page,
   catalog: ScreenshotSeedCatalog,
+  onCreated: (record: VideoChapterCleanupRecord) => void,
 ): Promise<VideoChapterRecordingWindows> {
-  const project = catalog.projects.video_demo;
-  await page.goto(`/projects/${project.id}/annotate?task=${project.tasks.tracking.id}`);
-
+  const maxFrame = await openVideoTimeline(page, catalog);
   const timeline = page.getByTestId("video-timeline-shell");
   const sidebar = page.getByTestId("video-chapter-sidebar");
-  await timeline.waitFor({ state: "visible", timeout: 15_000 });
-  await sidebar.waitFor({ state: "visible", timeout: 10_000 });
-  await page.addStyleTag({
-    content: '[data-testid="video-frame-preview-popover"] { display: none !important; }',
-  });
-  await page.waitForTimeout(700);
-
+  await expect(sidebar).toBeVisible({ timeout: 10_000 });
+  await sidebar.scrollIntoViewIfNeeded();
+  const title = "车辆驶入";
+  const chapterRow = sidebar.getByTestId("video-chapter-row").filter({ hasText: title });
+  await expect(
+    chapterRow,
+    "The recording chapter must not collide with a seed chapter",
+  ).toHaveCount(0);
+  const frame = await currentVideoFrame(page);
+  await parkVideoPointer(page);
   const createStartMs = Date.now();
-  await page.waitForTimeout(1_500);
-  await sidebar.getByRole("button", { name: "圈选" }).click();
-  await page.getByTestId("video-chapter-draft-hint").waitFor({ timeout: 3_000 });
-
-  const timelineBox = await timeline.boundingBox();
-  if (!timelineBox) throw new Error("[video-chapter] 时间轴不可见");
-  const startX = timelineBox.x + timelineBox.width * 0.2;
-  const endX = timelineBox.x + timelineBox.width * 0.48;
-  const y = timelineBox.y + timelineBox.height * 0.55;
-  await page.mouse.move(startX, y);
+  await page.waitForTimeout(1500);
+  const arm = sidebar.getByRole("button", { name: "圈选", exact: true });
+  await arm.click();
+  await expect(arm).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("video-chapter-draft-hint")).toBeVisible();
+  const box = await timeline.boundingBox();
+  if (!box) throw new Error("Video timeline is not visible");
+  const start = { x: box.x + box.width * 0.2, y: box.y + box.height * 0.55 };
+  const end = { x: box.x + box.width * 0.48, y: start.y };
+  await page.mouse.move(start.x, start.y);
   await page.mouse.down();
-  await movePointerAtRefreshRate(page, { x: startX, y }, { x: endX, y }, 700);
+  await movePointerAtRefreshRate(page, start, end, 1100);
   await page.mouse.up();
-
   const form = page.getByTestId("video-chapter-form");
-  await form.waitFor({ timeout: 3_000 });
-  await form.getByPlaceholder("章节标题").pressSequentially("车辆驶入", { delay: 120 });
-  await page.waitForTimeout(600);
-  await Promise.all([
+  await expect(form).toBeVisible();
+  const createdBounds = {
+    start_frame: Math.round(maxFrame * 0.2),
+    end_frame: Math.round(maxFrame * 0.48),
+  };
+  await expect(form.getByLabel(/^起始帧/)).toHaveValue(String(createdBounds.start_frame));
+  await expect(form.getByLabel(/^结束帧/)).toHaveValue(String(createdBounds.end_frame));
+  expect(await currentVideoFrame(page), "Chapter brushing must not seek the video").toBe(frame);
+  await form.getByPlaceholder("章节标题").pressSequentially(title, { delay: 120 });
+  await page.waitForTimeout(800);
+  const [response] = await Promise.all([
     page.waitForResponse(
-      (response) => response.request().method() === "POST" && response.url().includes("/chapters"),
-      { timeout: 5_000 },
+      (candidate) =>
+        candidate.request().method() === "POST" &&
+        /\/api\/v1\/videos\/[^/]+\/chapters$/.test(new URL(candidate.url()).pathname),
+      { timeout: 10_000 },
     ),
-    form.getByRole("button", { name: "创建" }).click(),
+    form.getByRole("button", { name: "创建", exact: true }).click(),
   ]);
-  const chapterRow = page.getByTestId("video-chapter-row").filter({ hasText: "车辆驶入" });
-  await chapterRow.waitFor({ timeout: 5_000 });
-  await page.getByTestId("video-timeline-chapter").waitFor({ timeout: 5_000 });
-  await page.waitForTimeout(1_500);
+  const created = await chapterResponse(response);
+  // Register cleanup before checking the remaining response and UI assertions.
+  onCreated({ datasetItemId: created.dataset_item_id, chapterId: created.id });
+  expect(created.id).toBeTruthy();
+  expect(created.dataset_item_id).toBeTruthy();
+  expect(new URL(response.url()).pathname).toBe(
+    `/api/v1/videos/${created.dataset_item_id}/chapters`,
+  );
+  expect(response.request().postDataJSON()).toMatchObject({ title, ...createdBounds });
+  expect(created).toMatchObject({ title, ...createdBounds, source: "manual" });
+  await expect(form).toHaveCount(0);
+  await expect(chapterRow).toHaveCount(1);
+  // The marker itself owns the title; scope by the exact server-confirmed bounds.
+  const chapterMarker = (startFrame: number, endFrame: number) =>
+    page
+      .getByTestId("video-timeline-chapter")
+      .and(page.locator(`[title="${title} · F${startFrame}-F${endFrame}"]`));
+  const assertChapterVisible = async (startFrame: number, endFrame: number) => {
+    await expect(chapterRow).toContainText(`F${startFrame}–F${endFrame}`);
+    await expect(chapterRow).toBeInViewport({ ratio: 1 });
+    await expect(chapterMarker(startFrame, endFrame)).toBeVisible();
+    expect(
+      await chapterRow.locator("b").evaluate((node) => node.scrollWidth - node.clientWidth),
+      "The chapter title must remain readable without clipping",
+    ).toBeLessThanOrEqual(1);
+    await assertVideoTimelineVisible(page);
+  };
+  await parkVideoPointer(page);
+  await assertChapterVisible(created.start_frame, created.end_frame);
+  await page.waitForTimeout(1800);
   const createEndMs = Date.now();
-
   const resizeStartMs = Date.now();
-  await page.getByTestId("video-timeline-toggle").click();
-  await page.getByTestId("video-timeline-lane-chapters").waitFor({ timeout: 3_000 });
-  await page.waitForTimeout(900);
-
-  const chapter = page.getByTestId("video-timeline-chapter").first();
   await chapterRow.hover();
-  await chapter.waitFor({ state: "visible" });
-  await page.waitForFunction(
-    () =>
-      document
-        .querySelector('[data-testid="video-timeline-chapter"]')
-        ?.getAttribute("data-hovered") === "true",
-    undefined,
-    { timeout: 3_000 },
+  await expect(chapterMarker(created.start_frame, created.end_frame)).toHaveAttribute(
+    "data-hovered",
+    "true",
   );
-  await page.waitForTimeout(500);
-
-  const endHandle = page.getByTestId("video-chapter-resize-end").first();
-  const handleBox = await endHandle.boundingBox();
-  if (!handleBox) throw new Error("[video-chapter] 章节结束拖柄不可见");
-  const handleX = handleBox.x + handleBox.width / 2;
-  const handleY = handleBox.y + handleBox.height / 2;
-  const patched = page.waitForResponse(
-    (response) => response.request().method() === "PATCH" && response.url().includes("/chapters/"),
-    { timeout: 20_000 },
-  );
-  await page.mouse.move(handleX, handleY);
-  await page.mouse.down();
-  await movePointerAtRefreshRate(
-    page,
-    { x: handleX, y: handleY },
-    { x: handleX + Math.min(140, timelineBox.width * 0.12), y: handleY },
-    700,
-  );
-  await page.mouse.up();
-  await patched;
-  await page.waitForTimeout(1_000);
-
-  // 继续调整起点，完整表达“修改章节起止范围”，而不只是拉长结尾。
-  const startHandle = page.getByTestId("video-chapter-resize-start").first();
-  const startHandleBox = await startHandle.boundingBox();
-  if (!startHandleBox) throw new Error("[video-chapter] 章节起始拖柄不可见");
-  const startHandleX = startHandleBox.x + startHandleBox.width / 2;
-  const startHandleY = startHandleBox.y + startHandleBox.height / 2;
-  const startPatched = page.waitForResponse(
-    (response) => response.request().method() === "PATCH" && response.url().includes("/chapters/"),
-    { timeout: 20_000 },
-  );
-  await page.mouse.move(startHandleX, startHandleY);
-  await page.mouse.down();
-  await movePointerAtRefreshRate(
-    page,
-    { x: startHandleX, y: startHandleY },
-    { x: startHandleX + Math.min(90, timelineBox.width * 0.08), y: startHandleY },
-    700,
-  );
-  await page.mouse.up();
-  await startPatched;
-  await page.waitForTimeout(1_600);
-
+  await page.waitForTimeout(600);
+  const chapterPath = `/api/v1/videos/${created.dataset_item_id}/chapters/${created.id}`;
+  let current = created;
+  const resize = async (edge: "start" | "end", targetFrame: number) => {
+    const handle = chapterMarker(current.start_frame, current.end_frame)
+      .locator("..")
+      .getByTestId(`video-chapter-resize-${edge}`);
+    const handleBox = await handle.boundingBox();
+    const timelineBox = await timeline.boundingBox();
+    if (!handleBox || !timelineBox) throw new Error(`Chapter ${edge} handle is not visible`);
+    const from = { x: handleBox.x + handleBox.width / 2, y: handleBox.y + handleBox.height / 2 };
+    const to = { x: timelineBox.x + (timelineBox.width * targetFrame) / maxFrame, y: from.y };
+    const patched = page.waitForResponse(
+      (candidate) =>
+        candidate.request().method() === "PATCH" &&
+        new URL(candidate.url()).pathname === chapterPath,
+      { timeout: 20_000 },
+    );
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await movePointerAtRefreshRate(page, from, to, 1100);
+    await page.mouse.up();
+    const updateResponse = await patched;
+    const expected = {
+      start_frame: edge === "start" ? targetFrame : current.start_frame,
+      end_frame: edge === "end" ? targetFrame : current.end_frame,
+    };
+    expect(updateResponse.request().postDataJSON()).toMatchObject(expected);
+    current = await chapterResponse(updateResponse);
+    expect(current).toMatchObject({
+      id: created.id,
+      dataset_item_id: created.dataset_item_id,
+      title,
+      ...expected,
+    });
+    expect(await currentVideoFrame(page), "Chapter resizing must not seek the video").toBe(frame);
+    await parkVideoPointer(page);
+    await assertChapterVisible(current.start_frame, current.end_frame);
+    await page.waitForTimeout(1500);
+  };
+  await resize("end", Math.round(maxFrame * 0.68));
+  await resize("start", Math.round(maxFrame * 0.28));
+  await parkVideoPointer(page);
+  await page.waitForTimeout(2200);
+  await assertChapterVisible(current.start_frame, current.end_frame);
+  const resizeEndMs = Date.now();
+  await page.reload();
+  await expect(page.getByTestId("video-konva-stage")).toBeVisible();
+  await page.getByRole("tab", { name: "标注详情", exact: true }).click();
+  await expect(chapterRow).toHaveCount(1);
+  await expect(chapterRow).toContainText(`F${current.start_frame}–F${current.end_frame}`);
+  const stored = await page.evaluate(async (datasetItemId) => {
+    const result = await fetch(`/api/v1/videos/${datasetItemId}/chapters`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+    });
+    if (!result.ok) throw new Error(`Chapter reload: HTTP ${result.status}`);
+    return result.json() as Promise<{ chapters: VideoChapter[] }>;
+  }, created.dataset_item_id);
+  expect(stored.chapters.find((chapter) => chapter.id === created.id)).toMatchObject({
+    title,
+    dataset_item_id: created.dataset_item_id,
+    start_frame: current.start_frame,
+    end_frame: current.end_frame,
+  });
   return {
     create: { drawStartMs: createStartMs, drawEndMs: createEndMs },
-    resize: { drawStartMs: resizeStartMs, drawEndMs: Date.now() },
+    resize: { drawStartMs: resizeStartMs, drawEndMs: resizeEndMs },
+    evidence: {
+      chapterId: created.id,
+      datasetItemId: created.dataset_item_id,
+      created: createdBounds,
+      resized: { start_frame: current.start_frame, end_frame: current.end_frame },
+      currentFrame: frame,
+      reloadVerified: true,
+    },
   };
 }

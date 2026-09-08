@@ -15,7 +15,7 @@ export const KeypointTool: CanvasTool = {
   id: "keypoint",
   hotkey: "F",
   label: "关键点",
-  icon: "point",
+  icon: "keypoints",
   cursor: "crosshair",
   onPointerDown: ({
     pt,

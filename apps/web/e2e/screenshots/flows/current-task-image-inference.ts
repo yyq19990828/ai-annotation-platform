@@ -1,17 +1,26 @@
 /**
  * 当前题图片推理完整链路：已保存项目编排 → 真实 OCR → 候选审阅 → 单项采纳。
  */
+import { createHash } from "node:crypto";
 import { expect, type Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
 import type { DrawWindow } from "./rotated-bbox";
 import type { OcrCleanupRecord } from "./ocr-inference";
-import { dockAiPanelAtViewportRight, waitForRecordingWorkbenchLayout } from "./_workbench-layout";
+import { recordingPanelCommand, waitForRecordingPanels } from "./_workbench-layout";
 
 export async function runCurrentTaskImageInference(
   page: Page,
   catalog: ScreenshotSeedCatalog,
   onDispatched?: (record: OcrCleanupRecord) => void,
+  onEvidence?: (evidence: unknown) => void,
 ): Promise<DrawWindow> {
+  const invalidCommentRequests: string[] = [];
+  page.on("request", (request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (/\/annotations\/pred-[^/]+\/(?:comments|history)/.test(pathname)) {
+      invalidCommentRequests.push(pathname);
+    }
+  });
   const project = catalog.projects.ocr_demo;
   const backend = project.ml_backend;
   const hasE2e = (backend?.capabilities.models ?? []).some((model) => model.id === "ocr-e2e");
@@ -27,16 +36,15 @@ export async function runCurrentTaskImageInference(
   await stage.waitFor({ state: "visible", timeout: 15_000 });
   await expect(stage).toHaveAttribute("data-image-ready", "true", { timeout: 15_000 });
   await expect(stage).toHaveAttribute("data-user-box-count", "0", { timeout: 10_000 });
-  await waitForRecordingWorkbenchLayout(page, "both");
+  await waitForRecordingPanels(page, ["canvas", "task-queue", "ai-task"]);
+  await recordingPanelCommand(page, "讨论 / Issue", "隐藏面板");
   await page.waitForTimeout(1_000);
 
   const drawStartMs = Date.now();
   await page.waitForTimeout(2_400);
 
-  await page.getByTestId("workbench-ai-single").click();
   const panel = page.getByTestId("ai-prediction-popover");
   await panel.waitFor({ state: "visible", timeout: 5_000 });
-  await dockAiPanelAtViewportRight(page, panel);
   const pipelineButton = panel.getByRole("button", {
     name: "运行当前题（按项目编排 · 1 阶段）",
     exact: true,
@@ -89,20 +97,70 @@ export async function runCurrentTaskImageInference(
   }
   await page.waitForTimeout(3_000);
 
-  await panel.getByTitle("关闭当前题 AI").click();
-  await panel.waitFor({ state: "hidden", timeout: 5_000 });
-  const inspectorList = page.getByTestId("section-header-ai").locator("xpath=../../..");
-  const candidate = page.locator('[data-testid^="box-list-item-pred-"]').first();
+  const predictions = await page.evaluate(async (taskId) => {
+    const response = await fetch(`/api/v1/tasks/${taskId}/predictions`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+    });
+    if (!response.ok) throw new Error(`Prediction evidence: HTTP ${response.status}`);
+    return response.json() as Promise<
+      Array<{
+        id: string;
+        ml_backend_id: string;
+        source: string;
+        model_version: string;
+        result: Array<{ shape_index: number; confidence: number; attributes?: { text?: string } }>;
+      }>
+    >;
+  }, task.id);
+  expect(predictions.length).toBeGreaterThan(0);
+  for (const prediction of predictions) {
+    expect(prediction.source).toBe("ml_backend");
+    expect(prediction.ml_backend_id).toBe(backend.id);
+    expect(prediction.model_version).toBeTruthy();
+  }
+  onEvidence?.({
+    job_id: body.job_id,
+    model_id: "ocr-e2e",
+    predictions,
+    result_sha256: createHash("sha256").update(JSON.stringify(predictions)).digest("hex"),
+  });
+  await page.getByRole("tab", { name: "标注详情", exact: true }).click();
+  await waitForRecordingPanels(page, ["canvas", "inspector"], ["ai-task"]);
+  const target = predictions
+    .flatMap((prediction) =>
+      prediction.result.map((shape) => ({
+        predictionId: prediction.id,
+        ...shape,
+      })),
+    )
+    .find((shape) => shape.attributes?.text?.replace(/\s/g, "").includes("大桶装"));
+  expect(target, "Real OCR should recognize the prominent product heading").toBeDefined();
+  const candidate = page.getByTestId(
+    `box-list-item-pred-${target!.predictionId}-${target!.shape_index}`,
+  );
   await candidate.waitFor({ state: "visible", timeout: 10_000 });
   await candidate.scrollIntoViewIfNeeded();
   await candidate.click();
   await expect(candidate).toContainText(/\d+%/);
   await page.waitForTimeout(2_800);
 
+  const candidateId = (await candidate.getAttribute("data-testid"))!.replace(
+    "box-list-item-pred-",
+    "",
+  );
+  const split = candidateId.lastIndexOf("-");
+  const predictionId = candidateId.slice(0, split);
+  const shapeIndex = Number(candidateId.slice(split + 1));
+  expect(
+    predictions
+      .find((prediction) => prediction.id === predictionId)
+      ?.result.some((shape) => shape.shape_index === shapeIndex),
+  ).toBeTruthy();
   const accepted = page.waitForResponse(
     (candidateResponse) =>
       candidateResponse.request().method() === "POST" &&
-      /\/predictions\/[^/]+\/accept(?:\?|$)/.test(candidateResponse.url()) &&
+      new URL(candidateResponse.url()).pathname.endsWith(`/predictions/${predictionId}/accept`) &&
+      new URL(candidateResponse.url()).searchParams.get("shape_index") === String(shapeIndex) &&
       candidateResponse.ok(),
     { timeout: 20_000 },
   );
@@ -123,13 +181,17 @@ export async function runCurrentTaskImageInference(
   await expect(stage).toHaveAttribute("data-ai-box-count", String(candidateCount - 1), {
     timeout: 10_000,
   });
-  await inspectorList.evaluate((element) =>
-    element.scrollTo({ top: element.scrollHeight, behavior: "smooth" }),
-  );
   const manualSection = page.getByTestId("section-header-manual");
+  await manualSection.scrollIntoViewIfNeeded();
   await manualSection.waitFor({ state: "visible", timeout: 10_000 });
   await expect(manualSection).toContainText("1");
   await page.waitForTimeout(4_000);
 
-  return { drawStartMs, drawEndMs: Date.now() };
+  const drawEndMs = Date.now();
+  await page.reload();
+  await expect(stage).toHaveAttribute("data-image-ready", "true", { timeout: 15_000 });
+  await expect(stage).toHaveAttribute("data-user-box-count", "1");
+  await expect(stage).toHaveAttribute("data-ai-box-count", String(candidateCount - 1));
+  expect(invalidCommentRequests).toEqual([]);
+  return { drawStartMs, drawEndMs };
 }

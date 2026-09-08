@@ -66,6 +66,101 @@ async function rememberCanvas(page: Page, stageId: string) {
 
 test.use({ viewport: DESKTOP });
 
+test("AI 候选和多选不会作为标注身份查询隐藏讨论面板", async ({ page, seed }) => {
+  test.setTimeout(90_000);
+  const data = await seed.reset();
+  const taskId = data.task_ids[0];
+  const annotationCommentRequests: string[] = [];
+  page.on("request", (request) => {
+    const pathname = new URL(request.url()).pathname;
+    if (/\/annotations\/[^/]+\/comments\/page$/.test(pathname)) {
+      annotationCommentRequests.push(pathname);
+    }
+  });
+  try {
+    await seed.advanceTask({ taskId, toStatus: "pending", annotatorEmail: data.annotator_email });
+    const annotations = [];
+    for (const x of [0.1, 0.5]) {
+      annotations.push(
+        await seed.createTaskAnnotation(taskId, data.admin_email, {
+          annotation_type: "bbox",
+          tool_unit_id: "bbox",
+          class_name: "car",
+          geometry: { type: "bbox", x, y: 0.2, w: 0.2, h: 0.2 },
+        }),
+      );
+    }
+    // A deterministic candidate exercises selection identity; no ML service is needed.
+    const prediction = await seed.injectPrediction({
+      taskId,
+      projectId: data.project_id,
+      label: "car",
+      polygon: [
+        [0.2, 0.5],
+        [0.4, 0.5],
+        [0.4, 0.7],
+      ],
+    });
+    await seed.injectToken(page, data.annotator_email);
+    await page.goto(`/projects/${data.project_id}/annotate?task=${taskId}`);
+    await expect(page.getByTestId("workbench-stage")).toHaveAttribute("data-image-ready", "true");
+    await layoutCommand(page, "标准标注布局");
+    const discussion = panel(page, "discussion");
+    const editor = discussion.locator('[contenteditable="true"]');
+    const disabledInput = discussion.getByTestId("comment-input-disabled");
+    const annotationRows = annotations.map((annotation) =>
+      page.getByTestId(`box-list-item-${annotation.id}`),
+    );
+    const firstComments = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname ===
+        `/api/v1/annotations/${annotations[0].id}/comments/page`,
+    );
+    await annotationRows[0].click();
+    expect((await firstComments).ok()).toBe(true);
+    await expect(editor).toBeVisible();
+    const collapseSelection = page.getByRole("button", { name: "收起浮窗", exact: true });
+    if (await collapseSelection.isVisible()) await collapseSelection.click();
+
+    await panelCommand(page, "讨论 / Issue", "隐藏面板");
+    await expect(discussion).toHaveAttribute("aria-hidden", "true");
+    const candidate = page.getByTestId(`box-list-item-pred-${prediction.prediction_id}-0`);
+    await candidate.click();
+    await expect(candidate).toHaveClass(/border-brand/);
+    // Hidden Dockview panels remain mounted. Assert their settled task-comment state,
+    // rather than relying on a delay or accepting the absence of every comment request.
+    await expect(disabledInput).toHaveCount(1);
+    await expect(editor).toHaveCount(0);
+    await layoutCommand(page, "讨论 / Issue");
+    await expect(disabledInput).toBeVisible();
+
+    await annotationRows[0].click();
+    await expect(editor).toBeVisible();
+    await annotationRows[1].click({ modifiers: ["Shift"] });
+    await expect(disabledInput).toBeVisible();
+    await expect(editor).toHaveCount(0);
+    await annotationRows[1].click();
+    await expect(editor).toBeVisible();
+    await expect
+      .poll(() => annotationCommentRequests)
+      .toContain(`/api/v1/annotations/${annotations[1].id}/comments/page`);
+    expect(annotationCommentRequests.length).toBeGreaterThanOrEqual(2);
+    expect(annotationCommentRequests).not.toEqual(
+      expect.arrayContaining([expect.stringContaining("/annotations/pred-")]),
+    );
+    expect(
+      annotationCommentRequests.every((pathname) =>
+        annotations.some(
+          (annotation) => pathname === `/api/v1/annotations/${annotation.id}/comments/page`,
+        ),
+      ),
+    ).toBe(true);
+  } finally {
+    await page.close();
+    await seed.reset();
+  }
+});
+
 test("图片布局预设、面板隐藏和浮动保留画布及未发送讨论草稿，刷新恢复已保存树", async ({
   page,
   seed,
