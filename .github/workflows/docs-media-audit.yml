@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   audit:
+    name: Docs / Media audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

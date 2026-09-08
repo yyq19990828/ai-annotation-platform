@@ -21,6 +21,7 @@ concurrency:
 
 jobs:
   regression:
+    name: Frontend / Visual regression
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:

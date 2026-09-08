@@ -8,6 +8,7 @@ concurrency:
 
 jobs:
   claude-docs-impact:
+    name: Claude / Docs impact
     runs-on: ubuntu-latest
     permissions:
       contents: read

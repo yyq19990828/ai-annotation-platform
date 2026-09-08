@@ -8,6 +8,7 @@ concurrency:
 
 jobs:
   claude-review:
+    name: Claude / Code review
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -38,6 +38,7 @@ permissions:
 
 jobs:
   validate:
+    name: Docs / Validation
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

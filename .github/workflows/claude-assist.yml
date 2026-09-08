@@ -4,6 +4,7 @@ on: workflow_dispatch
 
 jobs:
   claude:
+    name: Claude / Assistance
     if: |
       (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||

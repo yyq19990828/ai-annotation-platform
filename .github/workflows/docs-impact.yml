@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   docs-impact:
+    name: Docs / Impact
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
