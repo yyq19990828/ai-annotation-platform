@@ -162,7 +162,7 @@ async function assertCorrectedMaskGeometry(
   const bounds = cocoRleBounds(correctedRle);
   if (!bounds) throw new Error("[video-mask-correction-propagate] F5 纠错 Mask 没有前景像素");
   const [expectedMinX, expectedMinY, expectedMaxX, expectedMaxY] = expectedBbox;
-  const tolerance = 0.05;
+  const tolerance = 0.03;
   if (
     bounds.x < expectedMinX - tolerance ||
     bounds.y < expectedMinY - tolerance ||
@@ -305,12 +305,8 @@ export async function runVideoMaskCorrectionPropagate(
 
     await toolbar.getByTitle("橡皮 (E)").click();
     await page.waitForTimeout(450);
-    await stroke(page, [mediaPoint(bounds, [0.49, 0.4]), mediaPoint(bounds, [0.71, 0.4])], 850);
-    await stroke(
-      page,
-      [mediaPoint(bounds, [0.742, 0.49]), mediaPoint(bounds, [0.742, 0.75])],
-      1_050,
-    );
+    await stroke(page, [mediaPoint(bounds, [0.48, 0.425]), mediaPoint(bounds, [0.72, 0.425])], 900);
+    await stroke(page, [mediaPoint(bounds, [0.73, 0.44]), mediaPoint(bounds, [0.73, 0.75])], 1_050);
     await page.waitForTimeout(900);
 
     await toolbar.getByRole("button", { name: "保存并传播" }).click();
@@ -377,7 +373,7 @@ export async function runVideoMaskCorrectionPropagate(
       page,
       annotationsPayload,
       annotationId,
-      [0.48, 0.43, 0.72, 0.84],
+      [0.48, 0.44, 0.71, 0.84],
     );
     await review.waitFor({ state: "hidden", timeout: 8_000 });
     // 采纳后切一帧再返回，展示正式轨迹 Mask；等待 Konva 的 Mask 与标签层都完成重绘，
