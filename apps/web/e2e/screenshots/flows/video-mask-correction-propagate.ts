@@ -183,8 +183,16 @@ export async function runVideoMaskCorrectionPropagate(
     await page.waitForTimeout(1_200);
     await page.getByLabel(/展开选中信息卡.*可拖动/).click();
     // Dockview may leave a maximum sash over this compact action. The action is
-    // still visible and the forced click targets the resolved button itself.
-    await page.getByTitle("编辑当前帧 Mask").click({ force: true });
+    // still visible, so dispatch the event on the resolved button instead of
+    // relying on a physical hit test through the sash.
+    const editMaskButton = page.getByTitle("编辑当前帧 Mask");
+    await editMaskButton.waitFor({ state: "visible", timeout: 10_000 });
+    await editMaskButton.dispatchEvent("click");
+    await expect(page.getByTestId("video-tool-btn-mask-track")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+      { timeout: 10_000 },
+    );
     await toolbar.waitFor({ timeout: 10_000 });
     const collapseEditorSelection = page.getByRole("button", { name: "收起浮窗" });
     if (await collapseEditorSelection.isVisible()) await collapseEditorSelection.click();
