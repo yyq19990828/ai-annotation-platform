@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-08T04:56:10.214Z",
+  "updated_at": "2026-09-08T05:14:29.738Z",
   "entries": {
     "docs-site/.vitepress/theme/assets/home/hero/pointcloud.webp": {
       "asset_id": "home-hero/pointcloud",
@@ -1078,20 +1078,28 @@
     "docs-site/public/media/ai/current-frame-video-inference-poster.webp": {
       "asset_id": "current-frame-video-inference",
       "role": "poster",
-      "generated_at": "2026-08-15T17:05:04.455Z",
-      "captured_commit": "0de336ba262b0da6a5601ceb690efc6d141c8906",
+      "generated_at": "2026-09-08T05:12:02.212Z",
+      "captured_commit": "29a87f2ba8e012d16ce5b59b5ad8c32e6e7fd996",
       "source_worktree_dirty": false,
-      "seed_revision": "screenshots-2026-08-f",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › current-frame-video-inference",
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive webp › current-frame-video-inference",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
+        "apps/web/e2e/screenshots/flows/current-frame-video-inference.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
         "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "fa04e2865e8eb5497e33b7622ee220112e800ee58ae7c067cfd3fc28c700a570",
-      "bytes": 103432,
+      "sha256": "2ac82153d6ac44dfdcefad2303b062790d81c42908e488a039af83c79c9319c2",
+      "bytes": 67084,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -1100,41 +1108,67 @@
         "fps": "25/1",
         "duration_seconds": null
       },
+      "capture": {
+        "source_quality": "standard",
+        "source_inference": "live"
+      },
       "source_asset": {
-        "runId": "20260815T164903Z-0de336ba262b",
+        "runId": "2026-09-08T04-59-15-016Z-418980",
         "assetId": "current-frame-video-inference",
-        "sha256": "c038e9c0bd994b9f339f18d808c250fea89c3907127c4ea8e91b27a07c5b4e33"
+        "sha256": "310a30839cf65d4e98704b40605d531de81bcf6387b084b8f1d3178da9b4507a",
+        "quality": "standard",
+        "clip": {
+          "start": 235.25,
+          "duration": 25.5
+        }
       }
     },
     "docs-site/public/media/ai/current-frame-video-inference.mp4": {
       "asset_id": "current-frame-video-inference",
       "role": "docs-video",
-      "generated_at": "2026-08-15T17:05:04.374Z",
-      "captured_commit": "0de336ba262b0da6a5601ceb690efc6d141c8906",
+      "generated_at": "2026-09-08T05:12:02.128Z",
+      "captured_commit": "29a87f2ba8e012d16ce5b59b5ad8c32e6e7fd996",
       "source_worktree_dirty": false,
-      "seed_revision": "screenshots-2026-08-f",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › current-frame-video-inference",
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive mp4 › current-frame-video-inference",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
+        "apps/web/e2e/screenshots/flows/current-frame-video-inference.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
         "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "fd17df838e9592d58fdecf907d039a4b83e63df37dff3d71a54cd41a70e71f0b",
-      "bytes": 832009,
+      "sha256": "0234a3b06b827e1d77e79bc6e8d054b647fc3c71d704d609207ddd5822701a5f",
+      "bytes": 1135200,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
-        "fps": "30/1",
-        "duration_seconds": 23.434
+        "fps": "25/1",
+        "duration_seconds": 25.56
+      },
+      "capture": {
+        "source_quality": "standard",
+        "source_inference": "live"
       },
       "source_asset": {
-        "runId": "20260815T164903Z-0de336ba262b",
+        "runId": "2026-09-08T04-59-15-016Z-418980",
         "assetId": "current-frame-video-inference",
-        "sha256": "c038e9c0bd994b9f339f18d808c250fea89c3907127c4ea8e91b27a07c5b4e33"
+        "sha256": "310a30839cf65d4e98704b40605d531de81bcf6387b084b8f1d3178da9b4507a",
+        "quality": "standard",
+        "clip": {
+          "start": 235.25,
+          "duration": 25.5
+        }
       }
     },
     "docs-site/public/media/ai/current-task-image-inference-poster.webp": {
@@ -1674,7 +1708,7 @@
     "docs-site/public/media/jobs/video-tracker-job-states-poster.webp": {
       "asset_id": "video-tracker-job-states",
       "role": "poster",
-      "generated_at": "2026-09-08T04:56:10.214Z",
+      "generated_at": "2026-09-08T05:14:29.738Z",
       "captured_commit": "464d9591cf062a3a389c65e3ee52e928014ba613",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-g",
@@ -1694,8 +1728,8 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "6fc473ba93619eaac3090549d27ea188b8d154fd872409f413bc4979e5ccf617",
-      "bytes": 29034,
+      "sha256": "f96dec974da655574b4e835e3450a9f20e6e70f61a0fcf89e74587e0f73f6755",
+      "bytes": 29814,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -1714,15 +1748,15 @@
         "sha256": "6261b088a4a5995d8c03fabcb2cbf903a2348f6c52542d3a2f954839e64e0c55",
         "quality": "standard",
         "clip": {
-          "start": 207,
-          "duration": 18.8
+          "start": 209.3,
+          "duration": 16.5
         }
       }
     },
     "docs-site/public/media/jobs/video-tracker-job-states.mp4": {
       "asset_id": "video-tracker-job-states",
       "role": "docs-video",
-      "generated_at": "2026-09-08T04:56:10.129Z",
+      "generated_at": "2026-09-08T05:14:29.663Z",
       "captured_commit": "464d9591cf062a3a389c65e3ee52e928014ba613",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-g",
@@ -1742,15 +1776,15 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "96833743d801e510ed97ed14f5418b4d8a85eab842978e328f0f5dc4158346f7",
-      "bytes": 390738,
+      "sha256": "07043d7af08f6e10a04fb0bbae6ba946310a397384295f139dac514b9351adc3",
+      "bytes": 285734,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "25/1",
-        "duration_seconds": 18.8
+        "duration_seconds": 16.56
       },
       "capture": {
         "source_quality": "standard",
@@ -1762,8 +1796,8 @@
         "sha256": "6261b088a4a5995d8c03fabcb2cbf903a2348f6c52542d3a2f954839e64e0c55",
         "quality": "standard",
         "clip": {
-          "start": 207,
-          "duration": 18.8
+          "start": 209.3,
+          "duration": 16.5
         }
       }
     },
