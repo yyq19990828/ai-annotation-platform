@@ -15,6 +15,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, "../../..");
 
 const POSTER_AT_SECONDS = new Map([
+  ["ai-preannotate", 12.5],
   ["video-tracker-range", 32.8],
   ["video-tracker-cross-frame-points", 26],
   ["video-tracker-positive-negative", 29.3],

@@ -5,6 +5,7 @@ import { parseArgs } from "node:util";
 import {
   RECORDING_FLOWS,
   MARKETING_ONLY_FLOWS,
+  recordingInference,
   recordingPlan,
 } from "../e2e/screenshots/recording-plan.mjs";
 
@@ -16,12 +17,17 @@ const { values } = parseArgs({
     list: { type: "boolean" },
     plan: { type: "boolean" },
     "validate-only": { type: "boolean" },
+    "resize-display": { type: "boolean" },
   },
 });
 if (values.list) {
   for (const [id, requirements] of Object.entries(RECORDING_FLOWS)) {
+    const inference = recordingInference(id);
+    const scope =
+      requirements.join(",") ||
+      (inference === "live" ? "live inference (flow setup)" : "manual (no ML backend)");
     console.log(
-      `${id}\t${requirements.join(",") || "manual (no ML backend)"}\t${MARKETING_ONLY_FLOWS.includes(id) ? "marketing only" : "docs / marketing"}`,
+      `${id}\t${scope}\t${MARKETING_ONLY_FLOWS.includes(id) ? "marketing only" : "docs / marketing"}`,
     );
   }
   process.exit(0);
@@ -52,6 +58,9 @@ if (!/^\/[1-9]\d*$/.test(redis.pathname) || redis.href !== broker.href) {
 if (values.profile === "marketing" && process.platform !== "linux") {
   throw new Error("Marketing masters require Linux X11/NVIDIA; use --profile docs on macOS.");
 }
+if (values["resize-display"] && values.profile !== "marketing") {
+  throw new Error("--resize-display only applies to the marketing profile.");
+}
 const env = {
   ...process.env,
   DATABASE_URL: databaseUrl,
@@ -63,7 +72,8 @@ const env = {
   SCREENSHOT_RECORDING_RUN: `${new Date().toISOString().replace(/[:.]/g, "-")}-${process.pid}`,
   SCREENSHOT_VALIDATE_ONLY: values["validate-only"] ? "1" : "0",
 };
-if (plan.backendRequirements !== "none") {
+const requiresLiveInference = plan.flows.some((id) => recordingInference(id) === "live");
+if (plan.backendRequirements !== "none" || requiresLiveInference) {
   const response = await fetch(
     new URL("/health", process.env.PLAYWRIGHT_API_BASE ?? "http://127.0.0.1:8010"),
     { signal: AbortSignal.timeout(15_000) },
@@ -97,7 +107,16 @@ run(
   apiRoot,
 );
 if (plan.profile === "marketing") {
-  run(process.execPath, ["scripts/run-marketing-capture.mjs", "--grep", plan.grep], webRoot);
+  run(
+    process.execPath,
+    [
+      "scripts/run-marketing-capture.mjs",
+      "--grep",
+      plan.grep,
+      ...(values["resize-display"] ? ["--resize-display"] : []),
+    ],
+    webRoot,
+  );
 } else {
   run(
     path.join(webRoot, "node_modules/.bin/playwright"),

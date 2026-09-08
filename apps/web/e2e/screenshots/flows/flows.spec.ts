@@ -176,6 +176,14 @@ const backgroundExportCleanupRecords: Array<{
 
 const FLOW_SOURCE_BY_ASSET: Record<string, string> = {
   "ai-assisted-annotation": "sam-interactive.ts",
+  "ocr-real-scene": "ocr-inference.ts",
+  "secondary-inference-attribute": "secondary-inference-attribute.ts",
+  "ai-prediction-import": "ai-prediction-import.ts",
+  "review-reject": "review-reject.ts",
+  "pipeline-apply-project": "pipeline-apply-project.ts",
+  "jobs-retry-recovery": "jobs-retry-recovery.ts",
+  "project-ml-routing": "project-ml-routing.ts",
+  "ai-preannotate": "ai-preannotate.ts",
   "sam-tools/smart-point": "sam-interactive.ts",
   "sam-tools/smart-box": "sam-interactive.ts",
   "sam-tools/exemplar": "sam-interactive.ts",
@@ -911,7 +919,7 @@ function hasLiveSam3(catalog: ScreenshotSeedCatalog): boolean {
 
 test.describe("flow recordings", () => {
   test.beforeEach(async ({ page, seed }, testInfo) => {
-    if (SELECTED_CAPTURE) testInfo.setTimeout(300_000);
+    if (SELECTED_CAPTURE) testInfo.setTimeout(420_000);
     if (SELECTED_CAPTURE) {
       if (!SELECTED_CAPTURE.flows.includes(testInfo.title.split(" —")[0])) {
         throw new Error("Flow is outside the preflighted recording selection");
@@ -1017,7 +1025,9 @@ test.describe("flow recordings", () => {
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
+    await applyScreenshotTheme(page, "dark");
     const win = await runAiPreannotate(page, cached);
+    flowInferenceEvidence["ai-preannotate"] = win.evidence;
     await finalize(page, "ai-preannotate", undefined, drawTrim(win, t0));
   });
 
@@ -1026,6 +1036,7 @@ test.describe("flow recordings", () => {
     const t0 = Date.now();
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
+    await applyScreenshotTheme(page, "dark");
     await installRecordingWorkbenchLayout(page, "both");
     const win = await runAiPredictionImport(page, cached, {
       marketing: test.info().project.name === MARKETING_PROJECT_NAME,
@@ -1169,7 +1180,7 @@ test.describe("flow recordings", () => {
 
   test("review-reject — 审核拒回流程", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(150_000);
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 150_000);
     const project = cached.projects.image_demo;
     const task = project.tasks.review;
     const reviewerEmail = cached.users.reviewer.email;
@@ -1303,7 +1314,7 @@ test.describe("flow recordings", () => {
 
   test("secondary-inference-attribute — 裁剪 OCR 属性写回与人工校正", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(180_000);
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 180_000);
     const t0 = Date.now();
     await seed.injectToken(page, cached.users.project_admin.email);
     await applyScreenshotTheme(page, "dark");
@@ -2010,7 +2021,7 @@ test.describe("flow recordings", () => {
 
   test("pipeline-apply-project — 套用公共模板并运行项目默认编排", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(240_000);
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 240_000);
     const project = cached.projects.image_demo;
     const task = project.tasks.clean;
     const userEmail = cached.users.admin.email;
@@ -2091,7 +2102,7 @@ test.describe("flow recordings", () => {
 
   test("jobs-retry-recovery — 失败预测重试后进入结果", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(150_000);
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 150_000);
     const project = cached.projects.ocr_demo;
     const task = project.tasks.ocr;
     const userEmail = cached.users.admin.email;
@@ -2213,7 +2224,7 @@ test.describe("flow recordings", () => {
 
   test("project-ml-routing — 批量主后端与交互能力自动分流", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(120_000);
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 120_000);
     const t0 = Date.now();
     try {
       await installScreenshotEnvironment(page);
