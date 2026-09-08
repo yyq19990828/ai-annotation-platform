@@ -654,6 +654,9 @@ test.describe("native Mask interactive candidate acceptance", () => {
     await page.getByRole("button", { name: "收起浮窗" }).click();
     await row.click();
     await page.getByLabel(/展开选中信息卡.*可拖动/).click();
+    // The selected track command intentionally owns arrow keys while focused;
+    // return focus to the workbench before testing global frame navigation.
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await page.keyboard.press("ArrowRight");
     await page.keyboard.press("ArrowRight");
     await expect(page.getByText(/F 2 \//)).toBeVisible({ timeout: 10_000 });
