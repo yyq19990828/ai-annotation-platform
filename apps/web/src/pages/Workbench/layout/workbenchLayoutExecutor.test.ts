@@ -55,6 +55,15 @@ describe("workspace executor with Dockview 8", () => {
     api.layout(bounds.width, bounds.height);
     api.fromJSON(createWorkspacePreset("standard", bounds).layout);
   });
+  it("resizes a visible sidebar from settings while preserving the opposite side", () => {
+    const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+    const rightWidth = api.getPanel("inspector")!.group.api.width;
+    controller.resizeSide("left", 22);
+    expect(api.getPanel("task-queue")!.group.api.width).toBeCloseTo(352, 0);
+    expect(api.getPanel("class-palette")!.group.api.width).toBeCloseTo(352, 0);
+    expect(api.getPanel("inspector")!.group.api.width).toBe(rightWidth);
+  });
+
   afterEach(() => {
     api?.dispose();
     element?.remove();
@@ -645,7 +654,30 @@ describe("workspace executor with Dockview 8", () => {
     },
   );
 
-  it("moves the existing canvas to every root edge and preserves that edge across presets", () => {
+  it.each(["left", "right", "above", "below"] as const)(
+    "restores the standard columns after the canvas was moved %s",
+    (position) => {
+      const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+      const identities = PANEL_IDS.map((id) => api.getPanel(id));
+      controller.moveCanvas(position);
+      expect(getCanvasPlacement(controller.capture())).toBe(position);
+      controller.applyPreset("standard");
+      expect(getCanvasPlacement(controller.capture())).toBe("center");
+      expect(controller.getSides()).toEqual({ left: "open", right: "open" });
+      const root = controller.capture().layout.grid.root;
+      if (root.type !== "branch") throw new Error("Expected standard columns");
+      const views = (node: WorkspaceNode): string[] =>
+        node.type === "leaf" ? node.data.views : node.data.flatMap(views);
+      expect(root.data.filter((node) => node.visible !== false).map(views)).toEqual([
+        ["task-queue", "class-palette"],
+        ["canvas"],
+        ["inspector", "discussion"],
+      ]);
+      expect(PANEL_IDS.map((id) => api.getPanel(id))).toEqual(identities);
+    },
+  );
+
+  it("moves the existing canvas to every root edge and preserves that edge in review", () => {
     const controller = createWorkbenchLayoutExecutor(api, () => bounds);
     const identities = PANEL_IDS.map((id) => api.getPanel(id));
     for (const position of ["left", "right", "above", "below"] as const) {

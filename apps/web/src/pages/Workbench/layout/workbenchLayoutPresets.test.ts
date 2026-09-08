@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   createWorkspacePreset,
+  getActiveWorkspacePreset,
   migrateLegacyWorkspace,
   migrateThreeDWorkspace,
   presetSupportsContext,
@@ -12,6 +13,29 @@ const groups = (node: WorkspaceNode): { id: string; views: string[] }[] =>
   node.type === "leaf" ? [node.data] : node.data.flatMap(groups);
 
 describe("workspace presets", () => {
+  it("recognizes supported presets by topology and ignores panel dimensions", () => {
+    for (const context of WORKSPACE_CONTEXTS) {
+      for (const { id } of WORKSPACE_PRESETS) {
+        if (!presetSupportsContext(id, context)) continue;
+        const snapshot = createWorkspacePreset(id);
+        expect(getActiveWorkspacePreset(snapshot, context)).toBe(id);
+        snapshot.layout.grid.root.size = 999;
+        expect(getActiveWorkspacePreset(snapshot, context)).toBe(id);
+      }
+    }
+    const snapshot = createWorkspacePreset("standard");
+    const root = snapshot.layout.grid.root;
+    if (root.type !== "branch") throw new Error("Expected columns");
+    root.data[0].visible = false;
+    expect(getActiveWorkspacePreset(snapshot, "annotate:image")).toBe("custom");
+    delete root.data[0].visible;
+    snapshot.visibilityIntent["camera-view"] = "shown";
+    expect(getActiveWorkspacePreset(snapshot, "annotate:3d")).toBe("custom");
+    expect(getActiveWorkspacePreset(createWorkspacePreset("ai-review"), "annotate:video")).toBe(
+      "custom",
+    );
+  });
+
   it("migrates 3D visibility while preserving existing panels, widths and legacy coordinates", () => {
     const before = createWorkspacePreset("standard", { width: 1600, height: 900 });
     const legacy = { layout: { triViewFloat: { collapsed: false, x: 4000, y: -20 } } };

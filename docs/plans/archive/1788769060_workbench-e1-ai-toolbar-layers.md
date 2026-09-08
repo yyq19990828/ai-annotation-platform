@@ -20,8 +20,8 @@
 
 ## 3. 主要实现位置
 
-- [apps/web/src/pages/Workbench/shell/InteractiveToolBar.tsx](../../apps/web/src/pages/Workbench/shell/InteractiveToolBar.tsx)
-- [apps/web/src/pages/Workbench/state/useWorkbenchShellModel.tsx](../../apps/web/src/pages/Workbench/state/useWorkbenchShellModel.tsx)
+- [apps/web/src/pages/Workbench/shell/InteractiveToolBar.tsx](../../../apps/web/src/pages/Workbench/shell/InteractiveToolBar.tsx)
+- [apps/web/src/pages/Workbench/state/useWorkbenchShellModel.tsx](../../../apps/web/src/pages/Workbench/state/useWorkbenchShellModel.tsx)
 
 新增内部模块只服务本步职责；不得复制完整 Workbench/Mask/SAM/tracker 状态树。公共边界、失败语义和回滚约束沿用本文件设计及 Epic 跨步骤不变量。
 
@@ -82,7 +82,7 @@ E1 已完成。工作目录为 `/home/hehao/.codex/worktrees/0dc6/ai-annotation-
 - 图片和视频的按钮与 Enter 共用原类别选择入口；控件、原生 select、弹窗、IME 和长按事件由候选与主快捷键监听一起让出。视频自定义 variant 经既有参数规范化函数进入 `model_variants`。
 - 浏览器发现并修正视频 Exemplar 接受 Mask 后，选中保存对象导致剩余候选被清空的问题：已存 Mask 身份只参与精修提示的会话作用域。
 - 新浏览器 spec 使用现有 API 创建第二个测试后端；测试清理明确覆盖两个固定夹具 URL，保持其它后端不变。仅修改测试 seed 路由，没有新增公开 API、模型能力或生产后端。
-- 同步 [AI 工具指南](../../docs-site/user-guide/workbench/sam-tool.md)、[工作台状态合同](../../docs-site/dev/concepts/workbench-shell.md) 和 CHANGELOG Unreleased。
+- 同步 [AI 工具指南](../../../docs-site/user-guide/workbench/sam-tool.md)、[工作台状态合同](../../../docs-site/dev/concepts/workbench-shell.md) 和 CHANGELOG Unreleased。
 
 ### 浏览器验收
 

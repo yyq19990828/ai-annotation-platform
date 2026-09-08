@@ -249,6 +249,7 @@ export interface WorkbenchLayoutExecutor {
   isCanvasMaximized(): boolean;
   getSides(): Record<WorkspaceSide, WorkspaceSideState>;
   toggleSide(side: WorkspaceSide): void;
+  resizeSide(side: WorkspaceSide, percent: number): void;
   tab(id: PanelId, target: PanelId): void;
   float(id: PanelId): void;
   applyPreset(preset: WorkspacePresetId): void;
@@ -1126,6 +1127,16 @@ export function createWorkbenchLayoutExecutor(
     },
     isCanvasMaximized: () => api.hasMaximizedGroup(),
     getSides,
+    resizeSide(side, percent) {
+      if (desktop || !Number.isFinite(percent) || api.hasMaximizedGroup()) return;
+      const width = (getBounds().width * Math.min(35, Math.max(10, percent))) / 100;
+      stable(() => {
+        for (const id of sideGroups(rawSnapshot(), side)) {
+          const group = getGroup(id);
+          if (group?.api.isVisible) requestedDockSizes.set(id, { width, height: group.api.height });
+        }
+      });
+    },
     toggleSide(side) {
       if (desktop) return;
       exitCanvasMaximized();
@@ -1147,7 +1158,7 @@ export function createWorkbenchLayoutExecutor(
         if (api.hasMaximizedGroup()) exitCanvasMaximized();
         else maximizeCanvas();
       } else {
-        const placement = getCanvasPlacement(rawSnapshot());
+        const placement = preset === "standard" ? "center" : getCanvasPlacement(rawSnapshot());
         const next = createWorkspacePreset(preset, getBounds());
         replay(placement === "center" ? next : placeCanvas(next, placement, getBounds()));
       }

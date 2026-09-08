@@ -1,11 +1,7 @@
 import { panelCommand } from "../fixtures/workbench-panel-actions";
+import { layoutCommand, openLayoutSettings } from "../helpers/workbench-layout";
 import type { Page } from "@playwright/test";
 import { expect, test } from "../fixtures/seed";
-
-async function layoutCommand(page: Page, name: string) {
-  await page.getByRole("button", { name: "布局", exact: true }).click();
-  await page.getByRole("menuitem", { name, exact: true }).click();
-}
 
 async function savedVideoWorkspace(page: Page) {
   const token = await page.evaluate(() => localStorage.getItem("token"));
@@ -101,11 +97,17 @@ test("图片 AI 审阅预设显示单例面板，图片上下文不暴露视频�
 
   const aiWrapper = page.locator('[data-workbench-panel="ai-task"]');
   const identity = await aiWrapper.elementHandle();
-  await page.getByRole("button", { name: "布局", exact: true }).click();
-  await expect(page.getByRole("menuitem", { name: "图片 AI 审阅布局" })).toBeVisible();
-  await expect(page.getByRole("menuitem", { name: "当前题 AI" })).toBeVisible();
-  await expect(page.getByRole("menuitem", { name: "视频追踪" })).toHaveCount(0);
-  await page.getByRole("menuitem", { name: "图片 AI 审阅布局" }).click();
+  const settings = await openLayoutSettings(page);
+  await expect(settings.getByRole("button", { name: "图片 AI 审阅", exact: true })).toBeVisible();
+  await settings.locator("summary").filter({ hasText: "面板与高级布局" }).click();
+  await expect(settings.getByRole("button", { name: "当前题 AI", exact: true })).toBeVisible();
+  await expect(settings.getByRole("button", { name: "视频追踪", exact: true })).toHaveCount(0);
+  await settings.getByRole("button", { name: "图片 AI 审阅", exact: true }).click();
+  await expect(settings.getByRole("button", { name: "图片 AI 审阅", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await settings.getByRole("button", { name: "关闭设置", exact: true }).click();
 
   await expect(page.getByTestId("ai-prediction-popover")).toBeVisible();
   expect(await aiWrapper.evaluate((node, original) => node === original, identity)).toBe(true);

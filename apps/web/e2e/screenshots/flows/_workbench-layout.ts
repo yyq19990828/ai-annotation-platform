@@ -1,3 +1,4 @@
+import { layoutCommand } from "../../helpers/workbench-layout";
 import { panelCommand } from "../../fixtures/workbench-panel-actions";
 /**
  * 工作台流程录制的用户偏好沙箱。
@@ -272,12 +273,7 @@ export async function dockAiPanelAtViewportRight(page: Page, panel: Locator): Pr
 }
 
 /** The same user commands select presets during visible layout demonstrations. */
-export async function recordingLayoutCommand(page: Page, name: string): Promise<void> {
-  await page.getByRole("button", { name: "布局", exact: true }).click();
-  const command = page.getByRole("menuitem", { name, exact: true });
-  await expect(command).toBeEnabled({ timeout: 20_000 });
-  await command.click();
-}
+export const recordingLayoutCommand = layoutCommand;
 
 export const recordingPanelCommand = panelCommand;
 

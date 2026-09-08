@@ -1,11 +1,11 @@
 import { panelCommand } from "../fixtures/workbench-panel-actions";
+import { layoutCommand } from "../helpers/workbench-layout";
 import type { Page, Request } from "@playwright/test";
 import type {
   WorkspaceContext,
   WorkspaceEnvelope,
   WorkspaceSnapshot,
 } from "../../src/pages/Workbench/layout/workbenchLayoutSnapshot";
-import { getCanvasPlacement } from "../../src/pages/Workbench/layout/workbenchLayoutExecutor";
 import { expect, test } from "../fixtures/seed";
 
 // This filename selects the pointcloud project, whose browser also supports image/video.
@@ -14,13 +14,6 @@ const VIEWPORTS = [
   { width: 1920, height: 1080 },
 ] as const;
 const workspace = (page: Page) => page.locator("[data-workbench-workspace]");
-
-async function layoutCommand(page: Page, name: string) {
-  await page.getByRole("button", { name: "布局", exact: true }).click();
-  const command = page.getByRole("menuitem", { name, exact: true });
-  await expect(command).toBeEnabled({ timeout: 20_000 });
-  await command.click();
-}
 
 async function savedContext(page: Page, context: WorkspaceContext): Promise<WorkspaceEnvelope> {
   const token = await page.evaluate(() => localStorage.getItem("token"));
@@ -260,11 +253,11 @@ test("3D 自由布局保留共享 renderer，三视图移出画布与相机整�
     .toBeLessThanOrEqual(1);
   await sameCanvas();
 
-  await layoutCommand(page, "画布移到左侧");
+  await panelCommand(page, "任务队列", "停靠到左侧");
   const arranged = await renderedGroups(page);
   await layoutCommand(page, "专注画布布局");
   await expect(gallery).toHaveAttribute("aria-hidden", "true");
-  await layoutCommand(page, "专注画布布局");
+  await layoutCommand(page, "恢复画布布局");
   await expect(gallery).toHaveAttribute("aria-hidden", "false");
   await expectRenderedGroups(page, arranged);
   await page.setViewportSize({ width: 1024, height: desktop.height });
@@ -273,16 +266,15 @@ test("3D 自由布局保留共享 renderer，三视图移出画布与相机整�
   await expect(workspace(page)).toHaveAttribute("data-compact", "false");
   await sameCanvas();
   await expectRenderedGroups(page, arranged);
-  await expect
-    .poll(async () => {
-      const saved = await savedContext(page, "annotate:3d");
-      return (
-        saved?.schemaVersion === 5 &&
-        (saved.snapshot as WorkspaceSnapshot).cameraPresentation === "docked" &&
-        getCanvasPlacement(saved.snapshot as WorkspaceSnapshot) === "left"
-      );
-    })
-    .toBe(true);
+  // A docked camera flag can still belong to the snapshot before the final rearrangement.
+  // Wait for the complete local tree to reach the server before testing cold restoration.
+  const local = await page.evaluate(() => {
+    const { state } = JSON.parse(localStorage.getItem("auth-storage")!);
+    return JSON.parse(localStorage.getItem(`workbench.${state.user.id}.workspace.annotate:3d`)!);
+  });
+  expect(local.schemaVersion).toBe(5);
+  expect(local.snapshot.cameraPresentation).toBe("docked");
+  await expect.poll(() => savedContext(page, "annotate:3d")).toEqual(local);
   await page.reload();
   await (
     await rememberCanvas(page, "3d")
@@ -294,7 +286,7 @@ test("3D 自由布局保留共享 renderer，三视图移出画布与相机整�
 
 for (const mode of ["annotate", "review"] as const) {
   for (const kind of ["image", "video", "3d"] as const) {
-    test(`${mode}:${kind} 连续54次拖动重排保留画布，跨视口和紧凑模式后刷新恢复`, async ({
+    test(`${mode}:${kind} 连续54次面板重排保留画布，跨视口和紧凑模式后刷新恢复`, async ({
       page,
       seed,
     }) => {
@@ -361,8 +353,8 @@ for (const mode of ["annotate", "review"] as const) {
           await sameCanvas();
         });
       }
-      for (const command of ["画布移到左侧", "画布移到右侧", "画布移到上方", "画布移到下方"]) {
-        await layoutCommand(page, command);
+      for (const command of ["停靠到左侧", "停靠到右侧", "停靠到底部", "停靠到左侧"]) {
+        await panelCommand(page, "任务队列", command);
         await sameCanvas();
       }
       // The owner debounces by 300 ms; wait for the last command and its serial request.
@@ -374,7 +366,6 @@ for (const mode of ["annotate", "review"] as const) {
         .toEqual(latestSubmitted);
       const saved = await savedContext(page, context);
       expect(saved.schemaVersion).toBe(5);
-      expect(getCanvasPlacement(saved.snapshot as WorkspaceSnapshot)).toBe("below");
       expect(writes.length).toBeGreaterThan(0);
       expect(writes.every((keys) => keys.length === 1 && keys[0] === context)).toBe(true);
       const desktopGroups = await renderedGroups(page);

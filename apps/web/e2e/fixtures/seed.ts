@@ -17,6 +17,7 @@ import {
   test as base,
   expect,
   type Page,
+  type Route,
   type APIRequestContext,
   type APIResponse,
 } from "@playwright/test";
@@ -654,7 +655,20 @@ export class SeedAPI {
     const body = (await res.json()) as { access_token: string; user: unknown };
     await this.setPetEnabled(email, false, body.access_token);
     const target = baseURL ?? process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3001";
-    await page.goto(target);
+    // Establish same-origin storage without booting the previous actor's dashboard.
+    // Callers navigate to their test page after injecting the new identity.
+    const documentURL = new URL(target).href;
+    const emptyDocument = (route: Route) =>
+      route.fulfill({
+        contentType: "text/html",
+        body: "<!doctype html><title>E2E auth setup</title>",
+      });
+    await page.route(documentURL, emptyDocument, { times: 1 });
+    try {
+      await page.goto(documentURL);
+    } finally {
+      await page.unroute(documentURL, emptyDocument);
+    }
     await page.evaluate(
       ({ token, user }) => {
         localStorage.setItem("token", token);
