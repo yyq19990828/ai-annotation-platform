@@ -321,6 +321,11 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)
       )
         return;
+      if (polygonDraft?.beforeInput?.current?.(e)) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return;
+      }
       if (e.key === "Enter" || e.key === "Backspace")
         polygonDraft?.autoPoints?.beforeKey.current?.();
       const points = polygonDraft?.autoPoints?.getPoints() ?? polygonDraftPoints;

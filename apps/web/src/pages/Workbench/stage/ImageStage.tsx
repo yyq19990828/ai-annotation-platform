@@ -34,6 +34,8 @@ import { TOOL_REGISTRY, type PolygonDraftHandle, type KeypointDraftHandle } from
 import { CLOSE_DISTANCE } from "./tools/PolygonTool";
 import { usePolygonAutoPoints } from "./usePolygonAutoPoints";
 import { POLYGON_AUTO_POINT_LIMIT } from "./polygonAutoPoints";
+import { usePolygonBoundaryTrace } from "./usePolygonBoundaryTrace";
+import { PolygonBoundaryTraceControls } from "./PolygonBoundaryTraceControls";
 import { CanvasDrawingLayer } from "./CanvasDrawingLayer";
 import { MaskOverlayLayer } from "./overlays/MaskOverlayLayer";
 import { TiledMaskOverlayLayer } from "./overlays/TiledMaskOverlayLayer";
@@ -980,8 +982,22 @@ export function ImageStage({
     autoFitOnResize: workbenchConfig.image.autoFitOnResize,
   });
   const imageReady = imageStatus === "loaded" && imageLoaded && fitted;
+  const boundaryTrace = usePolygonBoundaryTrace({
+    enabled: tool === "polygon" && imageReady && !readOnly && !pendingDrawing,
+    owner: imageIdentity,
+    annotations: userBoxes,
+    width: imgW * vp.scale,
+    height: imgH * vp.scale,
+    draft: polygonDraft,
+  });
   const startPolygonAutoPoints = usePolygonAutoPoints({
-    enabled: tool === "polygon" && imageReady && !readOnly && !pendingDrawing && !spacePan,
+    enabled:
+      tool === "polygon" &&
+      imageReady &&
+      !readOnly &&
+      !pendingDrawing &&
+      !spacePan &&
+      !boundaryTrace.trace,
     owner: imageIdentity,
     view: `${vp.scale}:${vp.tx}:${vp.ty}`,
     width: imgW * vp.scale,
@@ -1454,6 +1470,11 @@ export function ImageStage({
     }
     const pt = toImg(e.evt.clientX, e.evt.clientY);
     if (!pt) return;
+    if (boundaryTrace.trace && !spacePan && e.evt.button === 0) {
+      polygonClickPair.current = { previousPlain: null, allowDoubleClick: false };
+      boundaryTrace.pick([pt.x, pt.y]);
+      return;
+    }
     if (tool === "polygon") {
       const plain = !e.evt.shiftKey && !spacePan && e.evt.button === 0;
       const previous = polygonClickPair.current.previousPlain;
@@ -1514,6 +1535,7 @@ export function ImageStage({
   };
 
   const handleStageDblClick = () => {
+    if (boundaryTrace.trace) return;
     // Konva counts Shift drags and distant clicks on the same Stage as a double click.
     // Closing requires two plain clicks at the same screen position.
     if (tool === "polygon" && !polygonClickPair.current.allowDoubleClick) return;
@@ -1829,6 +1851,20 @@ export function ImageStage({
         setDrag({ kind: "pan", sx: evt.clientX, sy: evt.clientY });
       }}
     >
+      {tool === "polygon" &&
+        imageReady &&
+        !readOnly &&
+        !pendingDrawing &&
+        polygonDraft?.boundaryTrace && (
+          <PolygonBoundaryTraceControls
+            controller={boundaryTrace}
+            onBegin={() => {
+              onSelectBox(null);
+              setSnapIndicator(null);
+              boundaryTrace.begin();
+            }}
+          />
+        )}
       {tool === "polygon" && (polygonDraft?.points.length ?? 0) > 0 && (
         <div
           role="status"
@@ -2031,7 +2067,7 @@ export function ImageStage({
           </Layer>
 
           {/* user 层：人工框 + 选中态 + resize handle */}
-          <Layer name="user" listening={userLayerListening}>
+          <Layer name="user" listening={userLayerListening && !boundaryTrace.trace}>
             {visibleSortedUserBoxes.map((b) => {
               if (!shouldRenderImageAnnotationShape(b)) return null;
               const ov = overrideGeom(b.id);
@@ -2467,6 +2503,29 @@ export function ImageStage({
 
           {/* overlay 层：绘制预览 + pending 框 + polygon 草稿；不参与 hit-test */}
           <Layer name="overlay" listening={false}>
+            {boundaryTrace.trace?.start && (
+              <>
+                {boundaryTrace.trace.paths && (
+                  <Line
+                    points={boundaryTrace.trace.paths[boundaryTrace.trace.direction].points.flatMap(
+                      ([x, y]) => [x * imgW, y * imgH],
+                    )}
+                    stroke={pendingColor}
+                    strokeWidth={3 / vp.scale}
+                    dash={[8 / vp.scale, 4 / vp.scale]}
+                    lineJoin="round"
+                  />
+                )}
+                <Circle
+                  x={boundaryTrace.trace.start.point[0] * imgW}
+                  y={boundaryTrace.trace.start.point[1] * imgH}
+                  radius={5 / vp.scale}
+                  stroke={pendingColor}
+                  strokeWidth={2 / vp.scale}
+                  fill="white"
+                />
+              </>
+            )}
             {/* polygon / polyline 草稿：已落点 + 跟随光标的预览线段 + 顶点圆点。
               polygon 额外渲染半透填充 + 首点高亮（提示可闭合）；polyline 不闭合、无填充。 */}
             {polygonDraft &&

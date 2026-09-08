@@ -37,6 +37,7 @@ import { POLYGON_AUTO_POINT_LIMIT } from "../stage/polygonAutoPoints";
 import type { useWorkbenchState } from "../state/useWorkbenchState";
 import type { useAnnotationHistory } from "../state/useAnnotationHistory";
 import type { AnnotationPayload, AnnotationUpdatePayload } from "@/api/tasks";
+import { tasksApi } from "@/api/tasks";
 import type { AnnotationResponse, RotatedBboxGeometry } from "@/types";
 
 type Geom = { x: number; y: number; w: number; h: number };
@@ -579,6 +580,9 @@ export function useWorkbenchAnnotationActions({
     getPoints: getPolygonDraftPoints,
   } = usePolygonDraftPoints();
   const polygonBeforeKey = useRef<(() => void) | null>(null);
+  const polygonBeforeInput = useRef<((event: KeyboardEvent) => boolean) | null>(null);
+  const currentTool = useRef(s.tool);
+  currentTool.current = s.tool;
   // Each tool owns its unfinished vertices, including Polygon ↔ Polyline switches.
   useEffect(() => {
     setPolygonDraftPoints([]);
@@ -627,6 +631,30 @@ export function useWorkbenchAnnotationActions({
       close: () => submitPolygon(getPolygonDraftPoints()),
       cancel: () => setPolygonDraftPoints([]),
       closed: true,
+      beforeInput: polygonBeforeInput,
+      boundaryTrace: {
+        getPoints: getPolygonDraftPoints,
+        append: (batch, expected) => {
+          if (
+            currentOwner.current !== owner ||
+            currentTool.current !== "polygon" ||
+            manualDraftRef.current ||
+            isLocked ||
+            getPolygonDraftPoints() !== expected
+          )
+            return false;
+          setPolygonDraftPoints([...expected, ...batch]);
+          return true;
+        },
+        readSource: async (id, signal) => {
+          if (!taskId || currentOwner.current !== owner || isLocked) return null;
+          const annotations = await tasksApi.getAnnotations(taskId, null, { signal });
+          if (signal.aborted || currentOwner.current !== owner) return null;
+          return (
+            annotations.find((annotation) => annotation.id === id && annotation.is_active) ?? null
+          );
+        },
+      },
       autoPoints: {
         getPoints: getPolygonDraftPoints,
         beforeKey: polygonBeforeKey,
@@ -643,7 +671,15 @@ export function useWorkbenchAnnotationActions({
         },
       },
     }),
-    [polygonDraftPoints, submitPolygon, isLocked, getPolygonDraftPoints, setPolygonDraftPoints],
+    [
+      polygonDraftPoints,
+      submitPolygon,
+      isLocked,
+      getPolygonDraftPoints,
+      setPolygonDraftPoints,
+      owner,
+      taskId,
+    ],
   );
 
   // ── polyline 提交 (v0.10.28) ──────────────────────────────────────

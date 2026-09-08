@@ -17,7 +17,7 @@ import { MaskTool } from "./MaskTool";
 import { MagicBoxTool } from "./MagicBoxTool";
 import { KeypointTool } from "./KeypointTool";
 import type { IconName } from "@/components/ui/Icon";
-import type { Keypoint } from "@/types";
+import type { AnnotationResponse, Keypoint } from "@/types";
 import type { BboxCreationMode } from "../ImageStage.helpers";
 
 // v0.10.2 · Prompt-first ToolDock 重构:
@@ -99,6 +99,12 @@ export interface PolygonDraftHandle {
   cancel: () => void;
   /** v0.10.28 · false 表示折线（不闭合）；缺省 / true 表示多边形。 */
   closed?: boolean;
+  beforeInput?: { current: ((event: KeyboardEvent) => boolean) | null };
+  boundaryTrace?: {
+    getPoints: () => [number, number][];
+    append: (points: [number, number][], expected: [number, number][]) => boolean;
+    readSource: (id: string, signal: AbortSignal) => Promise<AnnotationResponse | null>;
+  };
   /** Image Polygon drag batches share the existing draft and reject a retired snapshot. */
   autoPoints?: {
     getPoints: () => [number, number][];

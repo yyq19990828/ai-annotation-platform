@@ -73,6 +73,8 @@ git diff --check
 
 ## Outcome
 
+提交：`89849018`（`feat(workbench): sample polygon vertices during Shift dragging`）。
+
 - 实施基线：`5ffd4bdf`。H2 已实现并完成浏览器验收；本节随实现提交，不预写不存在的提交号。版本安排仍由维护者决定。
 - `PolygonTool` 在 Shift 左键路径中调用 `usePolygonAutoPoints`，按累计 8 CSS px 重采样，保留跨事件余量，一次输入可产生多个点，按动画帧合并追加；松手或释放 Shift 追加最终端点。普通单击、吸附和 Alt 关闭吸附保留既有优先级。
 - `usePolygonDraftPoints` 在现有 AnnotationActions owner 内同步发布点集引用；追加批次必须匹配原引用。快捷键在 Enter / Backspace 前刷新当前笔迹并读取最新点集。图像、工具、视口、许可变化和取消会使旧笔迹失效；首批被拒绝时不留下指针监听。

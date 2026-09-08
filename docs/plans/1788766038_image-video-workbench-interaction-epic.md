@@ -414,7 +414,7 @@ Python 优先使用本工作区 `apps/api/.venv`。本地 Playwright 配置使�
 | G2     | [视频 Issue 完整上下文恢复](1788769060_workbench-g2-video-issue-context.md)       | G1     | 已授权 | 已完成 | 通过           |
 | H1     | [中心向外创建 bbox](1788769060_workbench-h1-bbox-center-out.md)                   | 无     | 已授权 | 已完成 | 通过           |
 | H2     | [Polygon 自动落点](1788769060_workbench-h2-polygon-auto-points.md)                | 无     | 已授权 | 已完成 | 通过           |
-| H3     | [沿已有 Polygon 边界追踪](1788769060_workbench-h3-polygon-boundary-trace.md)      | 无     | 已授权 | 未开始 | 未执行         |
+| H3     | [沿已有 Polygon 边界追踪](1788769060_workbench-h3-polygon-boundary-trace.md)      | 无     | 已授权 | 已完成 | 通过           |
 | H4a    | [Polygon Slice 与原子恢复](1788769060_workbench-h4a-polygon-slice-transaction.md) | 无     | 已授权 | 未开始 | 未执行         |
 | H4b    | [Mask Slice 与可回收数据保护](1788769060_workbench-h4b-mask-slice-transaction.md) | H4a、D | 已授权 | 未开始 | 未执行         |
 
