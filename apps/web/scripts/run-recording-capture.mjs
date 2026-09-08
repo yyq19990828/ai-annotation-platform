@@ -34,6 +34,9 @@ if (values.list) {
 }
 const plan = recordingPlan(values.flow ?? [], values.profile);
 console.log(JSON.stringify(plan, null, 2));
+if (values["resize-display"] && values.profile !== "marketing") {
+  throw new Error("--resize-display only applies to the marketing profile.");
+}
 if (values.plan) process.exit(0);
 
 const webRoot = fileURLToPath(new URL("..", import.meta.url));

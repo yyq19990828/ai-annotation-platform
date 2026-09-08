@@ -42,6 +42,10 @@ test("selection scopes AI without changing capture quality or legacy catalog def
     recordingPlan(["pointcloud-billboard-label"], "marketing").backendRequirements,
     "none",
   );
+  for (const id of ["pointcloud-controls", "pointcloud-view", "pointcloud-panel-layout"]) {
+    assert.throws(() => recordingPlan([id]), /requires --profile marketing/);
+    assert.equal(recordingPlan([id], "marketing").backendRequirements, "none");
+  }
   assert.throws(() => recordingPlan([]), /Select/);
   assert.throws(() => recordingPlan(["bbox-draw"], "4k-mac"), /Unknown profile/);
   const grep = new RegExp(recordingPlan(["bbox-draw"]).grep);

@@ -895,6 +895,25 @@ const assetSpecs = [
     ],
   }),
   defineAsset({
+    assetId: "pointcloud-panel-layout",
+    title: "点云三视图与相机面板布局",
+    theme: "3D 面板整体停靠、浮动、隐藏恢复与跨帧保持",
+    objective:
+      "展示选中 nuScenes 3D 框后，将三视图作为一个面板停靠 / 浮动 / 隐藏恢复，再把六路相机整组切换为悬浮与停靠图库，最后切到相邻帧核对渲染与相机角色仍然稳定。",
+    duration: { minSeconds: 20, targetSeconds: 30, maxSeconds: 48 },
+    shots: [
+      "从选中的真实 3D 框开始，在框体精修布局展示主视图与俯、侧、正三视图同步。",
+      "将三视图整体停靠到左侧、浮动，再隐藏并从布局菜单恢复；保留同一个选中框和渲染画布。",
+      "切到传感器融合，展示 CAM_FRONT 等六路相机按物理朝向悬浮，并收入相机视图停靠图库。",
+      "隐藏相机图库后恢复，切到 Scene 相邻帧，确认相机图、点云 renderer 和角色顺序仍完整。",
+    ],
+    editingNotes: [
+      "相机只能整组在悬浮和停靠之间切换；三视图始终作为一个 Dockview 面板操作，不把独立相机窗口伪装成第三种停靠模式。",
+      "所有底图、选择、相机角色和切帧都来自真实 nuScenes-mini 数据；该流程不执行 ML 推理，声明 none。",
+      "结束后按正式 API 创建的单个 annotation ID 精确清理，失败时保留录制诊断。",
+    ],
+  }),
+  defineAsset({
     assetId: "storage-connector-create-test",
     title: "S3 / OSS 连接器创建与测试",
     theme: "安全保存外部存储凭据并真实探测素材目录",

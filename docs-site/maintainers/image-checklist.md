@@ -35,7 +35,7 @@
 - [x] 首页图片工作台媒体：`public/home/ai-assisted-annotation.*`、`public/home/sam-tools/{smart-point,smart-box,exemplar}.*` 与 `public/home/ocr-real-scene.*`，按各自已验证来源派生 WebM、H.264 MP4 fallback 和 WebP 封面；标准录制保留来源的尺寸与帧率上限，不标记为 4K60 母版
 - [x] 首页 Hero 派生图：`theme/assets/home/hero/*.webp`，由对应用户手册截图生成
 - [x] 视频工作台：静态总览保留 PNG；工作台播放、AI 面板、多目标种子和 Mask 轨迹编辑已迁移到 `public/media/video/*.mp4`
-- [x] 点云工作台：`workbench/pointcloud-real-scene.png`（nuScenes 六相机环视）+ `public/media/pointcloud/{controls,orbit}.mp4`
+- [x] 点云工作台：`workbench/pointcloud-real-scene.png`（nuScenes 六相机环视）+ `public/media/pointcloud/{controls,orbit,billboard-label,crossframe-track,panel-layout}.mp4`
 - [x] 删除过期图：旧 `sam/text-three-modes.png` 与未展示命名状态、带权限告警的 `polygon/{vertex-edit,close-hint}.png`
 
 ## Batch 1 · 数据集 / 导入导出（新增于 2026-06-10 · IA 重构）
@@ -274,8 +274,11 @@
 - [ ] `images/workbench-pointcloud-projection/overlay-wireframe.png` — 相机面板线框投影 overlay + 「正对」角标 [manual]
 - [ ] `images/workbench-pointcloud-projection/click-to-select-3d.png` — 点击投影框联动主视图高亮 [manual]
 - [x] `images/workbench/pointcloud-real-scene.png` — nuScenes 激光雷达 + 6 相机环绕布局全景 `[auto]`（scene: `workbench/pointcloud-real-scene`，P-PC-MULTI）
-- [x] `public/media/pointcloud/orbit.mp4` — 点云视图导航：收起两边栏后左键拖拽 orbit 环绕 + 滚轮缩放 `[derived-mp4]`（P-PC-DEV）
+- [x] `public/media/pointcloud/orbit.mp4` — 点云视图导航：保留两侧面板，左键拖拽 orbit 环绕 + 滚轮缩放并复位视角 `[derived-mp4]`（P-PC-DEV）
 - [x] `public/media/pointcloud/controls.mp4` — 工作台设置窗口点云控件演示（相机上色 / 点大小 / 深度提示逐项切换）`[derived-mp4]`（P-PC-DEV）
+- [x] `public/media/pointcloud/panel-layout.mp4` — 选中真实 3D 框后整体停靠 / 浮动 / 隐藏恢复三视图，整组切换六路相机并切帧核对布局与渲染 `[derived-mp4]`（P-PC-DEV）
+- [x] `public/media/pointcloud/crossframe-track.mp4` — nuScenes 3D 框跨帧延续、中心修正和邻帧轨迹参考 `[derived-mp4]`（P-PC-DEV）
+- [x] `public/media/pointcloud/billboard-label.mp4` — 轨迹标签启用属性后多角度核对 billboard 文本持续正对相机 `[derived-mp4]`（P-PC-DEV）
 - [x] `images/workbench/pointcloud-rgb-colorize.png` — 相机上色前后对比（同上 `public/media/pointcloud/controls.mp4` 内含青蓝高度色→相机 RGB 的切换）`[derived-mp4]`
 - [ ] `images/workbench/pointcloud-depth-heatmap.png` — 深度热力图 + figcaption 深度读数（控件 GIF 已演示开关，相机视图悬停深度读数特写仍 [manual]） [manual]
 - [~] ~~`images/polygon/draw-in-progress.gif`~~ — **已由** `public/media/polygon/draw.mp4` **替代**：多边形绘制与提交完整流已迁移到 DocsVideo

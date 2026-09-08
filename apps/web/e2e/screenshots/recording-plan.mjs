@@ -25,6 +25,7 @@ const manual = [
   "pointcloud-billboard-label",
   "pointcloud-camera-seed-3d-box",
   "pointcloud-crossframe-track",
+  "pointcloud-panel-layout",
   "large-image-progressive",
   "large-image-pyramid-recovery",
   "large-image-mask-limit",
@@ -77,9 +78,12 @@ export function recordingInference(flowId) {
 }
 
 export const MARKETING_ONLY_FLOWS = [
+  "pointcloud-controls",
+  "pointcloud-view",
   "pointcloud-billboard-label",
   "pointcloud-camera-seed-3d-box",
   "pointcloud-crossframe-track",
+  "pointcloud-panel-layout",
 ];
 
 export function recordingPlan(flows, profile = "docs") {
