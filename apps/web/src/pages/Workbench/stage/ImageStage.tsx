@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
+  type SetStateAction,
 } from "react";
 import {
   Stage,
@@ -102,6 +103,7 @@ import { supportsSingleRingPolygonEdit } from "./shared/geometry/geometryEditPol
 import { IssueLayer } from "./image/IssueLayer";
 import { useWorkbenchConfig } from "../state/useWorkbenchConfig";
 import { useWorkbenchPerf } from "./shared/useWorkbenchPerf";
+import { useRafThrottle } from "./shared/useRafThrottle";
 import { useCanvasContextMenu } from "./useCanvasContextMenu";
 import { pickTopRasterMaskAt, type RasterMaskRenderRecord } from "./shared/rasterMaskRender";
 import type { RasterMaskRecordStatus } from "./shared/useRasterMaskRecords";
@@ -899,16 +901,19 @@ export function ImageStage({
     onStageGeometry?.({ imgW, imgH, vpSize });
   }, [imgW, imgH, vpSize, onStageGeometry]);
 
-  const [drag, setDrag] = useState<Drag | null>(null);
+  const [drag, setDragState] = useState<Drag | null>(null);
   const contextMenu = useCanvasContextMenu();
   const [contextMenuTargetId, setContextMenuTargetId] = useState<string | null>(null);
   const rightDownRef = useRef<{ x: number; y: number } | null>(null);
-  // mousemove 监听走 ref 读取 kind/坐标，避免每次 setDrag 都让 useEffect 重挂监听 →
-  // 解决 v0.6.4 BUG B-2「画框时框体不实时 / 拖动卡」。
+  // Keep the event-time geometry synchronous: mouseup can flush a queued move
+  // before React has rendered its preview.
   const dragRef = useRef<Drag | null>(null);
-  useEffect(() => {
-    dragRef.current = drag;
-  }, [drag]);
+  const setDrag = useCallback((update: SetStateAction<Drag | null>) => {
+    const next = typeof update === "function" ? update(dragRef.current) : update;
+    dragRef.current = next;
+    setDragState(next);
+  }, []);
+  const { schedule, flush, cancel } = useRafThrottle();
 
   useEffect(() => {
     const cancelDrawing = (event: KeyboardEvent) => {
@@ -921,7 +926,7 @@ export function ImageStage({
     };
     window.addEventListener("keydown", cancelDrawing, true);
     return () => window.removeEventListener("keydown", cancelDrawing, true);
-  }, []);
+  }, [setDrag]);
 
   useLayoutEffect(() => {
     if (dragRef.current?.kind !== "maskSlice") return;
@@ -931,6 +936,7 @@ export function ImageStage({
     imageIdentity,
     primarySelectedBox?.id,
     primarySelectedBox?.version,
+    setDrag,
     maskEditor?.buffer,
     maskEditor?.tool,
     tool,
@@ -1100,24 +1106,30 @@ export function ImageStage({
   ]);
 
   // ── window-level drag events (rAF-throttled) ─────────────────────────────
-  // 依赖数组用 `!!drag` 而非 `drag` 本身：mousemove 期间 setDrag 频繁触发 React
-  // re-render，但不会让监听重挂；只在 drag 进 / 出 null 时切换。
+  // Cursor feedback can rebuild parent callbacks on every move. Keep the queued
+  // frame across listener refreshes, and cancel only when its gesture/owner ends.
   const dragging = !!drag;
   useEffect(() => {
+    if (!dragging) cancel();
+  }, [cancel, dragging]);
+  const dragOwnerRef = useRef({ imageIdentity, readOnly, tool });
+  useLayoutEffect(() => {
+    const previous = dragOwnerRef.current;
+    if (
+      previous.imageIdentity === imageIdentity &&
+      previous.readOnly === readOnly &&
+      previous.tool === tool
+    ) {
+      return;
+    }
+    dragOwnerRef.current = { imageIdentity, readOnly, tool };
+    cancel();
+    if (dragRef.current?.kind === "maskBrush") maskEditor?.endStroke();
+    setDrag(null);
+    setSnapIndicator(null);
+  }, [cancel, imageIdentity, maskEditor, readOnly, setDrag, tool]);
+  useEffect(() => {
     if (!dragging) return;
-    let rafId: number | null = null;
-    const pending = { current: null as null | (() => void) };
-
-    const schedule = (apply: () => void) => {
-      pending.current = apply;
-      if (rafId !== null) return;
-      rafId = requestAnimationFrame(() => {
-        rafId = null;
-        const fn = pending.current;
-        pending.current = null;
-        if (fn) fn();
-      });
-    };
 
     const onMove = (e: PointerEvent | MouseEvent) => {
       const d = dragRef.current;
@@ -1309,8 +1321,10 @@ export function ImageStage({
         schedule(() =>
           setDrag((cur) => {
             if (!cur || cur.kind !== "rotateBox") return cur;
-            const dx = pt.x - cur.cx;
-            const dy = pt.y - cur.cy;
+            // Match Konva's pixel-space rotation; normalized axes have different units
+            // on non-square images and would distort the pointer's visible angle.
+            const dx = (pt.x - cur.cx) * imgW;
+            const dy = (pt.y - cur.cy) * imgH;
             let deg = (Math.atan2(dx, -dy) * 180) / Math.PI;
             deg = ((deg % 360) + 360) % 360;
             return { ...cur, cur: deg };
@@ -1319,6 +1333,7 @@ export function ImageStage({
       }
     };
     const onUp = (event: PointerEvent | MouseEvent) => {
+      flush();
       const d = dragRef.current;
       if (d) {
         if (d.kind === "draw") {
@@ -1461,7 +1476,6 @@ export function ImageStage({
     window.addEventListener("pointerup", onUp, true);
     window.addEventListener("mouseup", onUp, true);
     return () => {
-      if (rafId !== null) cancelAnimationFrame(rafId);
       window.removeEventListener("pointermove", onMove, true);
       window.removeEventListener("mousemove", onMove, true);
       window.removeEventListener("pointerup", onUp, true);
@@ -1469,6 +1483,9 @@ export function ImageStage({
     };
   }, [
     dragging,
+    flush,
+    schedule,
+    setDrag,
     setVp,
     toImg,
     onCommitDrawing,
@@ -1506,7 +1523,7 @@ export function ImageStage({
       setDrag(null);
     }
     updateMaskCursor(null);
-  }, [maskCompareActive, maskEditor, updateMaskCursor]);
+  }, [maskCompareActive, maskEditor, setDrag, updateMaskCursor]);
 
   const customMaskCursorActive =
     tool === "mask" &&

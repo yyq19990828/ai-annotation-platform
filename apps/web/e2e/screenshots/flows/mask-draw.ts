@@ -9,16 +9,19 @@
  * Konva canvas，用 page.mouse 坐标拖动。
  *
  * 返回 { drawStartMs, drawEndMs }：供 finalize 裁掉开头(隐藏预测/选工具)与结尾(落库等待)。
- * 画完的 mask 由 flows.spec 的 afterAll 重建截图 seed 清理。
+ * 画完的 Mask 由 runner 的 finally 精确删除，afterAll 另行恢复截图 seed。
  */
-import type { Page } from "@playwright/test";
+import { expect, type Page, type Request, type Response } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
 import {
-  commitPendingAnnotationClass,
-  hidePredictions,
+  commitImageDrawing,
+  prepareImageDrawing,
+  verifySavedImageDrawing,
+  type ImageDrawingOptions,
+} from "./_image-drawing";
+import {
   mediaPoint,
   movePointerPathAtRefreshRate,
-  openImageAnnotate,
   recordingAnchor,
   renderedMediaBounds,
 } from "./_canvas";
@@ -35,54 +38,97 @@ async function stroke(page: Page, points: Array<{ x: number; y: number }>) {
   await page.waitForTimeout(300);
 }
 
-export async function runMaskDraw(page: Page, catalog: ScreenshotSeedCatalog): Promise<DrawWindow> {
-  await openImageAnnotate(page, catalog);
-  await page.waitForTimeout(1400);
+export async function runMaskDraw(
+  page: Page,
+  catalog: ScreenshotSeedCatalog,
+  options: ImageDrawingOptions = {},
+): Promise<DrawWindow> {
+  const invalidMaskRequests: string[] = [];
+  const failedMaskResponses: string[] = [];
+  const observeRequest = (request: Request) => {
+    if (/\/annotations\/tmp_[^/]+\/mask-content/.test(request.url())) {
+      invalidMaskRequests.push(request.url());
+    }
+  };
+  const observeResponse = (response: Response) => {
+    if (response.url().includes("/mask-content") && !response.ok()) {
+      failedMaskResponses.push(`${response.status()} ${response.url()}`);
+    }
+  };
+  page.on("request", observeRequest);
+  page.on("response", observeResponse);
+  try {
+    await prepareImageDrawing(page, catalog);
+    await page.waitForTimeout(1400);
 
-  // 准备（不进 GIF）：隐藏预测 → 选 Mask 笔刷
-  await hidePredictions(page);
+    // 准备（不进 GIF）：隐藏预测 → 选 Mask 笔刷
 
-  const btn = page.getByTestId("tool-btn-mask");
-  await btn.click();
-  await page.waitForTimeout(900);
+    const btn = page.getByTestId("tool-btn-mask");
+    await btn.click();
+    await page.waitForTimeout(900);
 
-  const stage = page.getByTestId("workbench-stage");
-  const box = await renderedMediaBounds(stage);
-  const anchor = recordingAnchor(catalog, "image_demo", "annotating", "primary_vehicle");
-  if (anchor.brush_strokes.length === 0) {
-    throw new Error("[mask-draw] primary_vehicle 缺少笔刷轨迹锚点");
-  }
+    const stage = page.getByTestId("workbench-stage");
+    const box = await renderedMediaBounds(stage);
+    const anchor = recordingAnchor(catalog, "image_demo", "annotating", "primary_vehicle");
+    if (anchor.brush_strokes.length === 0) {
+      throw new Error("[mask-draw] primary_vehicle 缺少笔刷轨迹锚点");
+    }
 
-  const drawStartMs = Date.now();
-  await page.waitForTimeout(1_000);
+    const drawStartMs = Date.now();
+    await page.waitForTimeout(1_000);
 
-  // ── 两组往返笔迹逐行填出目标，保留“多笔累积”的视觉语义 ──
-  const splitAt = Math.ceil(anchor.brush_strokes.length / 2);
-  for (const group of [
-    anchor.brush_strokes.slice(0, splitAt),
-    anchor.brush_strokes.slice(splitAt),
-  ]) {
-    if (group.length === 0) continue;
-    const points = group.flatMap((path, index) => {
-      const mapped = path.map((point) => mediaPoint(box, point));
-      return index % 2 === 0 ? mapped : mapped.reverse();
+    // ── 两组往返笔迹逐行填出目标，保留“多笔累积”的视觉语义 ──
+    const splitAt = Math.ceil(anchor.brush_strokes.length / 2);
+    for (const group of [
+      anchor.brush_strokes.slice(0, splitAt),
+      anchor.brush_strokes.slice(splitAt),
+    ]) {
+      if (group.length === 0) continue;
+      const points = group.flatMap((path, index) => {
+        const mapped = path.map((point) => mediaPoint(box, point));
+        return index % 2 === 0 ? mapped : mapped.reverse();
+      });
+      await stroke(page, points);
+    }
+    await page.waitForTimeout(700); // 停留展示涂好的色块
+
+    // Enter 提交 Mask（实际落库类型由任务能力决定）
+    await page.keyboard.press("Enter");
+    const created = await commitImageDrawing(page, {
+      onCreated: options.onCreated,
+      label: anchor.label,
+      taskId: catalog.projects.image_demo.tasks.annotating.id,
     });
-    await stroke(page, points);
+    const savedRow = page.getByTestId(`box-list-item-${created.id}`);
+    expect(created.geometry, "The native Mask fixture must persist a raster mask").toMatchObject({
+      type: "raster_mask",
+    });
+    // Statistics are exposed only after content decoding and render-record creation.
+    await expect(savedRow).toContainText(/\d+ px · \d+ 组件 · \d+ 孔洞 · AABB/);
+    await expect(savedRow).not.toContainText("load_failed");
+    await page.waitForTimeout(2_000);
+
+    const drawEndMs = Date.now();
+
+    // 保留落库后的展示时间；runner 最终精确清理本次标注。
+    await page.waitForTimeout(1200);
+
+    await verifySavedImageDrawing(
+      page,
+      catalog.projects.image_demo.tasks.annotating.id,
+      String(created.id),
+      ["raster_mask"],
+    );
+
+    await expect(savedRow).toContainText(/\d+ px · \d+ 组件 · \d+ 孔洞 · AABB/);
+    expect(
+      invalidMaskRequests,
+      "Temporary annotation IDs must never fetch persisted content",
+    ).toEqual([]);
+    expect(failedMaskResponses, "Mask content must load before and after reload").toEqual([]);
+    return { drawStartMs, drawEndMs };
+  } finally {
+    page.off("request", observeRequest);
+    page.off("response", observeResponse);
   }
-  await page.waitForTimeout(700); // 停留展示涂好的色块
-
-  // Enter 提交 Mask（实际落库类型由任务能力决定）
-  await page.keyboard.press("Enter");
-  await commitPendingAnnotationClass(page, {
-    label: anchor.label,
-    taskId: catalog.projects.image_demo.tasks.annotating.id,
-  });
-  await page.waitForTimeout(2_000);
-
-  const drawEndMs = Date.now();
-
-  // 等 autosave 落库（清理由 flows.spec 的 afterAll 重建截图 seed 完成）
-  await page.waitForTimeout(1200);
-
-  return { drawStartMs, drawEndMs };
 }

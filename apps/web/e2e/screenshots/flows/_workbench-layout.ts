@@ -5,7 +5,15 @@
  * 这里只改写 GET 响应，并在内存中响应 PATCH，确保页面内交互正常，
  * 同时不把任何录制设置写回真实用户。Playwright context 关闭后即无痕清理。
  */
-import type { Locator, Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
+import {
+  createWorkspacePreset,
+  type WorkspacePresetId,
+} from "../../../src/pages/Workbench/layout/workbenchLayoutPresets";
+import {
+  WORKSPACE_SCHEMA_VERSION,
+  type WorkspaceContext,
+} from "../../../src/pages/Workbench/layout/workbenchLayoutSnapshot";
 import type {
   UserPreferences,
   WorkbenchLayoutPreferences,
@@ -14,6 +22,7 @@ import type {
 
 export type RecordingSidebarMode = "both" | "none";
 export interface RecordingWorkbenchOverrides {
+  workspace?: { context: WorkspaceContext; preset: WorkspacePresetId };
   common?: Partial<WorkbenchPreferences["common"]>;
   image?: Partial<WorkbenchPreferences["image"]>;
   video?: Partial<WorkbenchPreferences["video"]>;
@@ -103,6 +112,13 @@ export async function installRecordingWorkbenchLayout(
     return response.json() as Promise<UserPreferences>;
   });
 
+  if (overrides.workspace && process.env.SCREENSHOT_RECORDING_PROFILE) {
+    const browserTime = await page.evaluate(() => Date.now());
+    expect(
+      Math.abs(Date.now() - browserTime),
+      "Live recording clock must match the host",
+    ).toBeLessThan(5000);
+  }
   const screenshotTheme = await page.evaluate(() => localStorage.getItem("anno.theme"));
   let sandbox = applyRecordingLayout(
     {
@@ -113,12 +129,26 @@ export async function installRecordingWorkbenchLayout(
         image: { ...original.workbench.image, ...(overrides.image ?? {}) },
         video: { ...original.workbench.video, ...(overrides.video ?? {}) },
         pointcloud: { ...original.workbench.pointcloud, ...(overrides.pointcloud ?? {}) },
-        layout: { ...original.workbench.layout, ...(overrides.layout ?? {}) },
+        // Let the current workspace owner migrate these recording-only legacy
+        // settings; saved Dockview contexts must not override the requested mode.
+        layout: { ...original.workbench.layout, ...(overrides.layout ?? {}), workspace: undefined },
       },
       ui: { ...original.ui, ...(overrides.ui ?? {}) },
     },
     mode,
   );
+  if (overrides.workspace) {
+    const { context, preset } = overrides.workspace;
+    sandbox.workbench.layout.workspace = {
+      engine: "dockview@8",
+      contexts: {
+        [context]: {
+          schemaVersion: WORKSPACE_SCHEMA_VERSION,
+          snapshot: createWorkspacePreset(preset, page.viewportSize() ?? undefined, context),
+        },
+      },
+    };
+  }
   if (screenshotTheme === "light" || screenshotTheme === "dark") {
     sandbox = {
       ...sandbox,
@@ -133,7 +163,9 @@ export async function installRecordingWorkbenchLayout(
     }
     if (method === "PATCH") {
       const patch = route.request().postDataJSON() as Partial<UserPreferences>;
-      sandbox = applyRecordingLayout(mergePreferences(sandbox, patch), mode);
+      sandbox = overrides.workspace
+        ? mergePreferences(sandbox, patch)
+        : applyRecordingLayout(mergePreferences(sandbox, patch), mode);
       await route.fulfill({ status: 200, json: sandbox });
       return;
     }
@@ -157,6 +189,14 @@ export async function installRecordingWorkbenchLayout(
     if (!user?.id) throw new Error("[recording-layout] auth-storage 缺少 user.id");
     user.preferences = preferences;
     localStorage.setItem("auth-storage", JSON.stringify(auth));
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith(`workbench.${user.id}.workspace.`)) localStorage.removeItem(key);
+    }
+    for (const [context, envelope] of Object.entries(
+      preferences.workbench.layout.workspace?.contexts ?? {},
+    )) {
+      localStorage.setItem(`workbench.${user.id}.workspace.${context}`, JSON.stringify(envelope));
+    }
     localStorage.setItem(
       `workbench.${user.id}.leftOpen`,
       preferences.workbench.layout.leftOpen ? "1" : "0",
@@ -172,22 +212,39 @@ export async function installRecordingWorkbenchLayout(
   }, sandbox);
 }
 
-/** 录制开始前验证侧栏开合与 15% 宽度已真正进入 DOM。 */
+/** Verify the current Dockview panels and their actual recording geometry. */
 export async function waitForRecordingWorkbenchLayout(
   page: Page,
   mode: RecordingSidebarMode,
 ): Promise<void> {
-  const expectedLeftTitle = mode === "both" ? "收起任务列表" : "展开任务列表";
-  const expectedRightTitle = mode === "both" ? "收起标注详情" : "展开标注详情";
-  await page.getByTitle(expectedLeftTitle).waitFor({ state: "visible", timeout: 10_000 });
-  await page.getByTitle(expectedRightTitle).waitFor({ state: "visible", timeout: 10_000 });
+  await page.locator("[data-workbench-workspace]").waitFor({ state: "visible", timeout: 10_000 });
   await page.waitForFunction(
     (sidebarMode) => {
-      const root = document.querySelector<HTMLElement>('[style*="--workbench-grid-template"]');
-      const value = root?.style.getPropertyValue("--workbench-grid-template") ?? "";
-      return sidebarMode === "both"
-        ? value.includes("clamp(180px, 15%, 600px) 48px 1fr clamp(180px, 15%, 600px)")
-        : value === "0px 48px 1fr 0px";
+      const root = document.querySelector<HTMLElement>("[data-workbench-workspace]");
+      const rect = (id: string) => {
+        const panel = root?.querySelector<HTMLElement>(`[data-workbench-panel="${id}"]`);
+        if (!panel || panel.getAttribute("aria-hidden") === "true") return null;
+        const box = panel.getBoundingClientRect();
+        return box.width > 0 && box.height > 0 ? box : null;
+      };
+      const workspace = root?.getBoundingClientRect();
+      const canvas = rect("canvas");
+      if (!workspace || !canvas) return false;
+      const left = rect("task-queue");
+      const right = rect("inspector");
+      if (sidebarMode === "none") {
+        return !left && !right && canvas.width >= workspace.width * 0.9;
+      }
+      return Boolean(
+        left &&
+        right &&
+        left.width >= 180 &&
+        left.width <= workspace.width * 0.25 &&
+        right.width >= 180 &&
+        right.width <= workspace.width * 0.25 &&
+        left.right <= canvas.left + 2 &&
+        right.left >= canvas.right - 2,
+      );
     },
     mode,
     { timeout: 10_000 },
@@ -212,4 +269,43 @@ export async function dockAiPanelAtViewportRight(page: Page, panel: Locator): Pr
   await page.getByRole("button", { name: "当前题 AI菜单", exact: true }).click();
   await page.getByRole("menuitem", { name: "停靠到右侧", exact: true }).click();
   await panel.waitFor({ state: "visible", timeout: 5_000 });
+}
+
+/** The same user commands select presets during visible layout demonstrations. */
+export async function recordingLayoutCommand(page: Page, name: string): Promise<void> {
+  await page.getByRole("button", { name: "布局", exact: true }).click();
+  const command = page.getByRole("menuitem", { name, exact: true });
+  await expect(command).toBeEnabled({ timeout: 20_000 });
+  await command.click();
+}
+
+export async function recordingPanelCommand(
+  page: Page,
+  title: string,
+  name: string,
+): Promise<void> {
+  await page.getByRole("button", { name: `${title}菜单`, exact: true }).click();
+  await page.getByRole("menuitem", { name, exact: true }).click();
+}
+
+export async function waitForRecordingPanels(
+  page: Page,
+  visible: string[],
+  hidden: string[] = [],
+): Promise<void> {
+  await expect(page.locator("[data-workbench-workspace]")).toBeVisible();
+  for (const id of visible) {
+    const panel = page.locator(`[data-workbench-panel="${id}"]`);
+    await expect(panel).toHaveCount(1);
+    await expect(panel).toHaveAttribute("aria-hidden", "false");
+    await expect(panel).toBeVisible();
+    const bounds = await panel.boundingBox();
+    expect(bounds && bounds.width >= 100 && bounds.height >= 60).toBeTruthy();
+  }
+  for (const id of hidden) {
+    await expect(page.locator(`[data-workbench-panel="${id}"]`)).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+  }
 }

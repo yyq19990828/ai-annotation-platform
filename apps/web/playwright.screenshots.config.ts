@@ -62,6 +62,9 @@ const config = defineConfig({
         "--use-angle=swiftshader",
         "--enable-unsafe-swiftshader",
         "--ignore-gpu-blocklist",
+        // SwiftShader's accelerated 2D canvas can retain old pixels after a resize.
+        // Keep software WebGL for 3D scenes while drawing screenshot canvases on the CPU.
+        "--disable-accelerated-2d-canvas",
       ],
     },
   },

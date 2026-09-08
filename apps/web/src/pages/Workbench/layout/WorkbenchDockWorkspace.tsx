@@ -69,6 +69,16 @@ type Executor = ReturnType<typeof createWorkbenchLayoutExecutor>;
 const SlotsContext = createContext<WorkbenchPanelSlots | null>(null);
 const TabMenuContext = createContext<(id: PanelId) => DropdownItem[]>(() => []);
 
+function isPanelContentVisible(api: IDockviewPanelProps["api"] | undefined): boolean {
+  return Boolean(
+    api &&
+    api.group.id !== "parking" &&
+    api.group.activePanel?.id === api.id &&
+    api.isVisible &&
+    api.group.api.isVisible,
+  );
+}
+
 // Dockview owns these stable React portals. Reparenting a panel does not recreate its content.
 function PanelContent({ api, containerApi }: IDockviewPanelProps) {
   const slots = useContext(SlotsContext)!;
@@ -87,13 +97,7 @@ function PanelContent({ api, containerApi }: IDockviewPanelProps) {
     return () => setTarget?.(api.id as ThreeDPanelId, null);
   }, [api.id, setTarget]);
   useEffect(() => {
-    const update = () =>
-      setVisible(
-        api.group.id !== "parking" &&
-          api.group.activePanel?.id === api.id &&
-          api.isVisible &&
-          api.group.api.isVisible,
-      );
+    const update = () => setVisible(isPanelContentVisible(api));
     let groupVisibility = api.group.api.onDidVisibilityChange(update);
     const subscriptions = [
       api.onDidVisibilityChange(update),
@@ -213,6 +217,7 @@ const EMPTY_STATE: WorkbenchWorkspaceState = {
   inspectorVisible: true,
   aiTaskVisible: false,
   videoTrackerVisible: false,
+  videoTrackerContentVisible: false,
   triViewVisible: false,
   cameraViewVisible: false,
   cameraPresentation: "floating",
@@ -318,6 +323,7 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
       inspectorVisible: opened.includes("inspector"),
       aiTaskVisible: opened.includes("ai-task"),
       videoTrackerVisible: opened.includes("video-tracker"),
+      videoTrackerContentVisible: isPanelContentVisible(api.getPanel("video-tracker")?.api),
       triViewVisible: opened.includes("tri-view"),
       cameraViewVisible: opened.includes("camera-view"),
       cameraPresentation: engine.getCameraPresentation(),

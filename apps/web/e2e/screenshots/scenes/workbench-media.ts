@@ -2,7 +2,9 @@ import type { ScreenshotScene } from "./_types";
 import { expect, type Page } from "@playwright/test";
 import type { WorkbenchLayoutPreferences } from "../../../src/api/auth";
 import {
-  dockAiPanelAtViewportRight,
+  recordingLayoutCommand,
+  recordingPanelCommand,
+  waitForRecordingPanels,
   installRecordingWorkbenchLayout,
   type RecordingWorkbenchOverrides,
   waitForRecordingWorkbenchLayout,
@@ -32,12 +34,17 @@ async function reloadWithSidebarLayout(
 ): Promise<void> {
   await installRecordingWorkbenchLayout(page, mode, overrides);
   await page.reload({ waitUntil: "domcontentloaded" });
-  await waitForRecordingWorkbenchLayout(page, mode);
+  if (overrides.workspace) {
+    await waitForRecordingPanels(page, ["canvas"]);
+  } else {
+    await waitForRecordingWorkbenchLayout(page, mode);
+  }
 }
 
 export const WORKBENCH_MEDIA_SCENES: ScreenshotScene[] = [
   {
     name: "workbench/video-real-scene",
+    clock: "live",
     role: "admin",
     fixture: {
       project: "video_demo",
@@ -50,7 +57,10 @@ export const WORKBENCH_MEDIA_SCENES: ScreenshotScene[] = [
       return `/projects/${project.id}/annotate?task=${project.tasks.tracking.id}`;
     },
     prepare: async (page) => {
-      await reloadWithSidebarLayout(page, "both");
+      await reloadWithSidebarLayout(page, "both", {
+        workspace: { context: "annotate:video", preset: "video-tracking" },
+      });
+      await page.getByRole("tab", { name: "标注详情", exact: true }).click();
       await page.getByTestId("video-timeline-shell").waitFor({ state: "visible", timeout: 15_000 });
       await page.getByTestId("video-konva-stage").waitFor({ state: "visible", timeout: 10_000 });
       await page.getByText("实时同步", { exact: true }).waitFor({ timeout: 5000 });
@@ -107,6 +117,7 @@ export const WORKBENCH_MEDIA_SCENES: ScreenshotScene[] = [
   },
   {
     name: "workbench/pointcloud-real-scene",
+    clock: "live",
     role: "admin",
     fixture: { project: "pointcloud_multicam_demo", task: "frame_000" },
     route: (catalog) => {
@@ -114,12 +125,15 @@ export const WORKBENCH_MEDIA_SCENES: ScreenshotScene[] = [
       return `/projects/${project.id}/annotate?task=${project.tasks.frame_000.id}`;
     },
     prepare: async (page) => {
-      await reloadWithSidebarLayout(page, "none", {
+      await reloadWithSidebarLayout(page, "both", {
+        workspace: { context: "annotate:3d", preset: "standard" },
         layout: { cameraPanels: EXPANDED_MULTI_CAMERA_PANELS },
       });
       await page.getByTestId("pc-viewport").waitFor({ state: "visible", timeout: 20_000 });
-      await expect(page.getByTitle("收起相机")).toHaveCount(6, { timeout: 10_000 });
-      const cameraImages = page.locator("[data-floating-panel] img");
+      await recordingLayoutCommand(page, "传感器融合");
+      await recordingLayoutCommand(page, "全部相机停靠");
+      await waitForRecordingPanels(page, ["canvas", "camera-view"]);
+      const cameraImages = page.locator("[data-camera-dock-panel] img");
       await expect(cameraImages).toHaveCount(6, { timeout: 10_000 });
       await cameraImages.evaluateAll(async (images: HTMLImageElement[]) => {
         await Promise.all(
@@ -141,6 +155,7 @@ export const WORKBENCH_MEDIA_SCENES: ScreenshotScene[] = [
   },
   {
     name: "workbench/ocr-real-scene",
+    clock: "live",
     role: "admin",
     fixture: {
       project: "ocr_demo",
@@ -154,11 +169,13 @@ export const WORKBENCH_MEDIA_SCENES: ScreenshotScene[] = [
     },
     prepare: async (page) => {
       await page.getByTestId("workbench-stage").waitFor({ state: "visible", timeout: 10_000 });
-      const aiButton = page.getByTestId("workbench-ai-single");
-      await aiButton.click();
+      await reloadWithSidebarLayout(page, "both", {
+        workspace: { context: "annotate:image", preset: "ai-review" },
+      });
+      await recordingPanelCommand(page, "讨论 / Issue", "隐藏面板");
       const panel = page.getByTestId("ai-prediction-popover");
       await panel.waitFor({ state: "visible", timeout: 5000 });
-      await dockAiPanelAtViewportRight(page, panel);
+      await waitForRecordingPanels(page, ["canvas", "ai-task"]);
       await page.waitForTimeout(300);
     },
     matrix: DARK_WORKBENCH_MATRIX,

@@ -8,17 +8,20 @@
  * 画布是 Konva canvas，手柄无 DOM 句柄，全程用 page.mouse 坐标操作。
  *
  * 返回 { drawStartMs, drawEndMs }：绘制段的起止时间戳，供 finalize 裁掉开头(隐藏预测)
- * 与结尾(落库等待)，GIF 只保留绘制过程。画完的标注由 flows.spec 的 afterAll 重建截图 seed 清理。
+ * 与结尾(落库等待)，GIF 只保留绘制过程。画完的标注由 runner 的 finally 精确删除，afterAll 重建 seed 兜底。
  */
 import type { Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
 import {
-  commitPendingAnnotationClass,
-  hidePredictions,
+  commitImageDrawing,
+  prepareImageDrawing,
+  verifySavedImageDrawing,
+  type ImageDrawingOptions,
+} from "./_image-drawing";
+import {
   mediaBbox,
   movePointerAtRefreshRate,
   movePointerPathAtRefreshRate,
-  openImageAnnotate,
   recordingAnchor,
   renderedMediaBounds,
   selectActiveClass,
@@ -32,12 +35,12 @@ export interface DrawWindow {
 export async function runRotatedBbox(
   page: Page,
   catalog: ScreenshotSeedCatalog,
+  options: ImageDrawingOptions = {},
 ): Promise<DrawWindow> {
-  await openImageAnnotate(page, catalog);
+  await prepareImageDrawing(page, catalog);
   await page.waitForTimeout(1400);
 
   // 准备（不进 GIF）：隐藏满屏预测框 → 选旋转框工具
-  await hidePredictions(page);
 
   const btn = page.getByTestId("tool-btn-rotated-box");
   await btn.click();
@@ -61,12 +64,13 @@ export async function runRotatedBbox(
   await page.mouse.down();
   await movePointerAtRefreshRate(page, start, end, 650);
   await page.mouse.up();
-  const created = (await commitPendingAnnotationClass(page, {
+  const created = (await commitImageDrawing(page, {
+    onCreated: options.onCreated,
     label: anchor.label,
     taskId: catalog.projects.image_demo.tasks.annotating.id,
   })) as {
     id?: string;
-    task_id?: number;
+    task_id?: string;
     class_name?: string;
   };
   if (
@@ -112,6 +116,18 @@ export async function runRotatedBbox(
 
   // 等 autosave 把新框落库（清理由 flows.spec 的 afterAll 重建截图 seed 完成）
   await page.waitForTimeout(1200);
+
+  const saved = await verifySavedImageDrawing(
+    page,
+    catalog.projects.image_demo.tasks.annotating.id,
+    String(created.id),
+    ["rotated_bbox"],
+  );
+  if (Math.abs((saved.geometry.angle ?? 0) - targetDeg) > 2) {
+    throw new Error(
+      `[rotated-bbox] Saved angle ${saved.geometry.angle} differs from the demonstrated ${targetDeg} degrees`,
+    );
+  }
 
   return { drawStartMs, drawEndMs };
 }

@@ -15,7 +15,7 @@ export const PolygonTool: CanvasTool = {
   id: "polygon",
   hotkey: "P",
   label: "多边形",
-  icon: "polygon",
+  icon: "annotationPolygon",
   cursor: "crosshair",
   onPointerDown: ({
     pt,

@@ -27,16 +27,15 @@ import { PageContainer } from "@/components/layout/PageContainer";
 const WORKBENCH_DATA_TYPES = new Set(["image", "video", "lidar"]);
 
 const CARD_HEADER_CLASS = "border-b border-border px-4 py-3.5";
-const CARD_HEADER_SPLIT_CLASS = `${CARD_HEADER_CLASS} flex items-center justify-between`;
+const CARD_HEADER_SPLIT_CLASS = `${CARD_HEADER_CLASS} flex flex-wrap items-center justify-between gap-2`;
 const CARD_TITLE_CLASS = "text-sm font-semibold";
 const CARD_BODY_CLASS = "p-4";
-const ENTRY_LINK_CLASS = "inline-flex items-center text-xs text-brand";
 const TABLE_HEAD_CELL_CLASS =
-  "border-b border-border bg-muted px-3 py-2.5 text-left text-xs font-medium whitespace-nowrap text-muted-foreground";
+  "border-b border-border bg-muted/40 px-3 py-2.5 text-left text-xs font-medium whitespace-nowrap text-muted-foreground";
 const TABLE_CELL_CLASS = "border-b border-border px-3 py-3 align-middle";
 
 export function AdminDashboard() {
-  const { data: stats, isLoading } = useAdminStats();
+  const { data: stats, isLoading, isError, refetch } = useAdminStats();
   const { data: projects = [], isLoading: projectsLoading } = useProjects();
   const { data: audit } = useAuditLogs({ page: 1, page_size: 8, business_only: true });
   const navigate = useNavigate();
@@ -74,6 +73,18 @@ export function AdminDashboard() {
     }
   };
 
+  if (isError && !stats) {
+    return (
+      <PageContainer>
+        <div role="alert" className="rounded-lg border border-border bg-card p-6">
+          <h1 className="text-lg font-semibold">平台概览暂时无法加载</h1>
+          <p className="mb-4 mt-2 text-sm text-muted-foreground">请稍后重试。</p>
+          <Button onClick={() => void refetch()}>重新加载</Button>
+        </div>
+      </PageContainer>
+    );
+  }
+
   if (isLoading || !stats) {
     return <div className="px-7 py-15 text-center text-muted-foreground">加载中...</div>;
   }
@@ -81,11 +92,20 @@ export function AdminDashboard() {
   const projectsTotal = stats.total_projects || 1;
 
   return (
-    <PageContainer>
-      <div className="mb-5 flex items-end justify-between gap-6 max-[900px]:flex-col max-[900px]:items-start">
+    <PageContainer className="[&_.surface-shadow-sm]:shadow-none">
+      {isError && (
+        <div
+          role="alert"
+          className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-status-caution-soft p-4"
+        >
+          <p className="text-sm">刷新失败，当前显示上次成功加载的统计。</p>
+          <Button onClick={() => void refetch()}>重新加载</Button>
+        </div>
+      )}
+      <div className="mb-6 flex items-center justify-between gap-6 max-[900px]:flex-col max-[900px]:items-start">
         <div>
           <h1 className="mb-1 text-xl font-semibold">平台概览</h1>
-          <p className="text-sm text-muted-foreground">全局平台运行状态与资源分布</p>
+          <p className="text-sm text-muted-foreground">集中掌握项目进展、团队构成与模型服务用量</p>
         </div>
         <div className="flex gap-2 max-[900px]:flex-wrap">
           <Button onClick={() => setImportOpen(true)}>
@@ -109,91 +129,75 @@ export function AdminDashboard() {
         </div>
       </div>
 
-      <div className="mb-3 grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3">
-        <StatCard
-          icon="users"
-          label="用户总数"
-          value={stats.total_users}
-          hint={`${stats.active_users} 在线`}
-        />
-        <StatCard
-          icon="layers"
-          label="项目总数"
-          value={stats.total_projects}
-          hint={`${stats.projects_in_progress} 进行中`}
-        />
-        <StatCard icon="target" label="任务总量" value={stats.total_tasks.toLocaleString()} />
-        <StatCard icon="check" label="标注总量" value={stats.total_annotations.toLocaleString()} />
-      </div>
-
-      {/* v0.8.4 · 成员绩效入口 */}
-      <div className="mb-5 cursor-pointer">
-        <Card onClick={() => navigate("/admin/people")}>
-          <div className="flex items-center justify-between gap-3 px-4 py-3">
-            <div className="flex items-center gap-2.5">
-              <Icon name="users" size={16} />
-              <div>
-                <div className="text-sm font-semibold">成员绩效</div>
-                <div className="text-xs text-muted-foreground">全员效率卡片网格 + 抽屉下钻</div>
-              </div>
+      <div className="mb-3 grid grid-cols-2 overflow-hidden rounded-lg border border-border bg-card lg:grid-cols-4">
+        {[
+          {
+            icon: "users" as const,
+            label: "用户总数",
+            value: stats.total_users,
+            hint: `${stats.active_users} 在线`,
+          },
+          {
+            icon: "layers" as const,
+            label: "项目总数",
+            value: stats.total_projects,
+            hint: `${stats.projects_in_progress} 进行中`,
+          },
+          {
+            icon: "target" as const,
+            label: "任务总量",
+            value: stats.total_tasks,
+            hint: "全平台任务",
+          },
+          {
+            icon: "check" as const,
+            label: "标注总量",
+            value: stats.total_annotations,
+            hint: "累计标注成果",
+          },
+        ].map((metric) => (
+          <div
+            key={metric.label}
+            className="min-w-0 border-border px-5 py-5 even:border-l max-lg:[&:nth-child(n+3)]:border-t lg:[&+div]:border-l"
+          >
+            <div className="mb-3 flex items-center justify-between gap-2 text-xs text-muted-foreground">
+              <span>{metric.label}</span>
+              <Icon name={metric.icon} size={15} />
             </div>
-            <span className={ENTRY_LINK_CLASS}>
-              打开 <Icon name="chevRight" size={11} />
-            </span>
+            <div className="text-3xl font-semibold tracking-tight tabular-nums">
+              {metric.value.toLocaleString()}
+            </div>
+            <div className="mt-2 text-xs text-muted-foreground">{metric.hint}</div>
           </div>
-        </Card>
+        ))}
       </div>
 
-      <div className="mb-4 grid grid-cols-[repeat(auto-fit,minmax(280px,1fr))] gap-3">
-        <Card>
-          <div className={CARD_HEADER_CLASS}>
-            <h3 className={CARD_TITLE_CLASS}>项目状态分布</h3>
-          </div>
-          <div className={CARD_BODY_CLASS}>
-            <StatusBar
-              label="进行中"
-              count={stats.projects_in_progress}
-              total={projectsTotal}
-              color="var(--sc-brand)"
-            />
-            <StatusBar
-              label="已完成"
-              count={stats.projects_completed}
-              total={projectsTotal}
-              color="var(--sc-positive)"
-            />
-            <StatusBar
-              label="待审核"
-              count={stats.projects_pending_review}
-              total={projectsTotal}
-              color="var(--sc-caution)"
-            />
-            <StatusBar
-              label="已归档"
-              count={stats.projects_archived}
-              total={projectsTotal}
-              color="var(--sc-muted-foreground)"
-            />
-          </div>
-        </Card>
-
-        <Card>
-          <div className={CARD_HEADER_CLASS}>
-            <h3 className={CARD_TITLE_CLASS}>用户角色分布</h3>
-          </div>
-          <div className={CARD_BODY_CLASS}>
-            {Object.entries(stats.role_distribution).map(([role, count]) => (
-              <div key={role} className="flex items-center justify-between py-1.5">
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline">{ROLE_LABELS[role as UserRole] ?? role}</Badge>
-                </div>
-                <span className="mono text-sm font-medium">{count}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
+      <div className="grid gap-2 border-b border-border pb-5 sm:grid-cols-2">
+        <button
+          type="button"
+          onClick={() => navigate("/admin/people")}
+          className="group flex items-center gap-3 rounded-md px-3 py-2 text-left hover:bg-accent active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Icon name="chartPerformance" size={18} className="text-muted-foreground" />
+          <span className="flex-1">
+            <span className="block text-sm font-medium">成员绩效</span>
+            <span className="text-xs text-muted-foreground">查看团队效率与成员工作量</span>
+          </span>
+          <Icon name="chevRight" size={14} className="text-muted-foreground" />
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate("/ai-pre/jobs?status=failed")}
+          className="group flex items-center gap-3 rounded-md px-3 py-2 text-left hover:bg-accent active:scale-[0.99] focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          <Icon name="warning" size={18} className="text-status-caution" />
+          <span className="flex-1">
+            <span className="block text-sm font-medium">失败预测管理</span>
+            <span className="text-xs text-muted-foreground">排查失败任务并按需重试</span>
+          </span>
+          <Icon name="chevRight" size={14} className="text-muted-foreground" />
+        </button>
       </div>
-
       {/* v0.9.5 · AI 预标注队列卡片（仅在有 pre_annotated 批次时显示） */}
       {(stats.pre_annotated_batches ?? 0) > 0 && (
         <div className="mb-3 cursor-pointer [&>*]:border [&>*]:border-border [&>*]:bg-status-info-soft">
@@ -218,215 +222,253 @@ export function AdminDashboard() {
         </div>
       )}
 
-      <RegistrationSourceCard series={stats.registration_by_day ?? []} />
-
-      <MLBackendsAndCostCard
-        backendsTotal={stats.ml_backends_total}
-        backendsConnected={stats.ml_backends_connected}
-      />
-
-      {/* v0.8.6 F6 · 失败预测入口（super_admin / project_admin 可见）; v0.9.12 改指向 /ai-pre/jobs */}
-      <div className="mt-3 cursor-pointer">
-        <Card onClick={() => navigate("/ai-pre/jobs?status=failed")}>
-          <div className="flex items-center justify-between gap-3 px-4 py-3">
-            <div className="flex items-center gap-2.5">
-              <Icon name="warning" size={16} className="text-status-caution" />
-              <div>
-                <div className="text-sm font-semibold">失败预测管理</div>
-                <div className="text-xs text-muted-foreground">
-                  查看 ML Backend 调用失败的预测，并按需重试 (单条最多 3 次)
-                </div>
+      <div className="mt-5 grid items-start gap-5 min-[1200px]:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="grid min-w-0 gap-5">
+          <div className="grid min-w-0 gap-4 sm:grid-cols-2">
+            <Card>
+              <div className={CARD_HEADER_CLASS}>
+                <h3 className={CARD_TITLE_CLASS}>项目状态分布</h3>
               </div>
-            </div>
-            <span className={ENTRY_LINK_CLASS}>
-              打开 <Icon name="chevRight" size={11} />
-            </span>
-          </div>
-        </Card>
-      </div>
+              <div className={CARD_BODY_CLASS}>
+                <StatusBar
+                  label="进行中"
+                  count={stats.projects_in_progress}
+                  total={projectsTotal}
+                  color="var(--sc-brand)"
+                />
+                <StatusBar
+                  label="已完成"
+                  count={stats.projects_completed}
+                  total={projectsTotal}
+                  color="var(--sc-positive)"
+                />
+                <StatusBar
+                  label="待审核"
+                  count={stats.projects_pending_review}
+                  total={projectsTotal}
+                  color="var(--sc-caution)"
+                />
+                <StatusBar
+                  label="已归档"
+                  count={stats.projects_archived}
+                  total={projectsTotal}
+                  color="var(--sc-muted-foreground)"
+                />
+              </div>
+            </Card>
 
-      <div className="mt-4">
-        <Card>
-          <div className={CARD_HEADER_SPLIT_CLASS}>
-            <h3 className={CARD_TITLE_CLASS}>近期审计活动</h3>
-            <Button size="sm" variant="ghost" onClick={() => navigate("/audit")}>
-              查看全部
-              <Icon name="chevRight" size={11} />
-            </Button>
+            <Card>
+              <div className={CARD_HEADER_CLASS}>
+                <h3 className={CARD_TITLE_CLASS}>用户角色分布</h3>
+              </div>
+              <div className={CARD_BODY_CLASS}>
+                {Object.entries(stats.role_distribution).map(([role, count]) => (
+                  <div key={role} className="flex items-center justify-between py-1.5">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline">{ROLE_LABELS[role as UserRole] ?? role}</Badge>
+                    </div>
+                    <span className="text-sm font-medium tabular-nums">{count}</span>
+                  </div>
+                ))}
+              </div>
+            </Card>
           </div>
-          {recentActivity.length === 0 ? (
-            <div className="flex flex-col items-center px-4 py-6 text-center text-sm text-muted-foreground">
-              <Icon name="activity" size={26} className="mb-2 opacity-25" />
-              <div>暂无业务事件</div>
-            </div>
-          ) : (
-            <ul className="m-0 list-none p-0">
-              {recentActivity.map((it) => (
-                <li
-                  key={it.id}
-                  className="flex items-center gap-2.5 border-b border-border px-4 py-2.5 text-sm"
-                >
-                  <Avatar initial={(it.actor_email ?? "?").slice(0, 1).toUpperCase()} size="sm" />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-medium">{it.actor_email ?? "匿名"}</span>
-                      <span className="[&>*]:text-2xs">
-                        <Badge variant="accent">{auditActionLabel(it.action)}</Badge>
-                      </span>
-                      {it.target_type && (
-                        <span className="text-xs text-muted-foreground">
-                          {it.target_type}
-                          {it.target_id && (
-                            <span className="mono ml-1">
-                              {it.target_id.length > 24
-                                ? it.target_id.slice(0, 8) + "…"
-                                : it.target_id}
+
+          <div className="min-w-0">
+            <Card>
+              <div className={CARD_HEADER_SPLIT_CLASS}>
+                <h3 className={CARD_TITLE_CLASS}>全平台项目</h3>
+                <span className="text-xs text-muted-foreground">共 {projects.length} 个</span>
+              </div>
+              {projectsLoading && (
+                <div className="p-8 text-center text-sm text-muted-foreground">加载中...</div>
+              )}
+              {!projectsLoading && projects.length === 0 && (
+                <div className="p-8 text-center text-sm text-muted-foreground">
+                  暂无项目，点击右上角「新建项目」开始
+                </div>
+              )}
+              {!projectsLoading && projects.length > 0 && (
+                <div className="w-full overflow-x-auto [overscroll-behavior-x:contain]">
+                  <table className="w-full min-w-[760px] border-separate border-spacing-0 text-sm">
+                    <thead>
+                      <tr>
+                        {["项目", "负责人", "成员", "状态", ""].map((h, i) => (
+                          <th
+                            key={i}
+                            className={[
+                              TABLE_HEAD_CELL_CLASS,
+                              i === 0 ? "pl-4" : "",
+                              i === 4 ? "pr-4" : "",
+                            ]
+                              .filter(Boolean)
+                              .join(" ")}
+                          >
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {projects.map((p) => (
+                        <tr
+                          key={p.id}
+                          className="cursor-pointer hover:bg-muted/40"
+                          onClick={() => navigate(`/projects/${p.id}/settings`)}
+                        >
+                          <td className={`${TABLE_CELL_CLASS} py-2.5 pl-4`}>
+                            <div className="max-w-[240px] overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium">
+                              {p.name}
+                            </div>
+                            <div className="max-w-[240px] overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
+                              <span className="mono">{p.display_id}</span> · {projectDisplayType(p)}
+                            </div>
+                          </td>
+                          <td className={TABLE_CELL_CLASS}>
+                            <div className="flex min-w-0 items-center gap-2">
+                              <Avatar initial={p.owner_name?.slice(0, 1) ?? "?"} size="sm" />
+                              <span className="max-w-[160px] overflow-hidden text-ellipsis whitespace-nowrap text-sm">
+                                {p.owner_name ?? "—"}
+                              </span>
+                            </div>
+                          </td>
+                          <td className={`${TABLE_CELL_CLASS} text-muted-foreground`}>
+                            {p.member_count}
+                          </td>
+                          <td className={TABLE_CELL_CLASS}>
+                            {p.status === "in_progress" && (
+                              <Badge variant="accent" dot>
+                                进行中
+                              </Badge>
+                            )}
+                            {p.status === "completed" && (
+                              <Badge variant="success" dot>
+                                已完成
+                              </Badge>
+                            )}
+                            {p.status === "pending_review" && (
+                              <Badge variant="warning" dot>
+                                待审核
+                              </Badge>
+                            )}
+                            {p.status === "archived" && (
+                              <Badge variant="outline" dot>
+                                已归档
+                              </Badge>
+                            )}
+                          </td>
+                          <td
+                            className={`${TABLE_CELL_CLASS} py-2.5 pr-4 text-right whitespace-nowrap`}
+                          >
+                            <div className="inline-flex items-center gap-1 whitespace-nowrap">
+                              {/* v0.10.11 · 「复制项目配置」入口 — 跳 Wizard 复制流, 用源项目配置预填. */}
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  navigate(`/dashboard?new=1&from=${p.id}`);
+                                }}
+                                title="复制项目配置（不复制数据集 / 任务 / 成员）"
+                              >
+                                <Icon name="copy" size={13} />
+                                复制
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  navigate(`/projects/${p.id}/settings`);
+                                }}
+                              >
+                                <Icon name="settings" size={13} />
+                                设置
+                              </Button>
+                              {/* B-46 · 「打开」入口 — 进工作台标注界面（样式与项目总览统一） */}
+                              <Button
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onOpenProject(p);
+                                }}
+                              >
+                                打开 <Icon name="chevRight" size={11} />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Card>
+          </div>
+        </div>
+        <div className="grid min-w-0 gap-5">
+          <RegistrationSourceCard series={stats.registration_by_day ?? []} />
+          <div className="min-w-0">
+            <Card>
+              <div className={CARD_HEADER_SPLIT_CLASS}>
+                <h3 className={CARD_TITLE_CLASS}>近期审计活动</h3>
+                <Button size="sm" variant="ghost" onClick={() => navigate("/audit")}>
+                  查看全部
+                  <Icon name="chevRight" size={11} />
+                </Button>
+              </div>
+              {recentActivity.length === 0 ? (
+                <div className="flex flex-col items-center px-4 py-6 text-center text-sm text-muted-foreground">
+                  <Icon name="activity" size={26} className="mb-2 opacity-25" />
+                  <div>暂无业务事件</div>
+                </div>
+              ) : (
+                <ul className="m-0 list-none p-0">
+                  {recentActivity.map((it) => (
+                    <li
+                      key={it.id}
+                      className="flex flex-wrap items-center gap-2.5 border-b border-border px-4 py-2.5 text-sm"
+                    >
+                      <Avatar
+                        initial={(it.actor_email ?? "?").slice(0, 1).toUpperCase()}
+                        size="sm"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="break-all font-medium">{it.actor_email ?? "匿名"}</span>
+                          <span className="[&>*]:text-2xs">
+                            <Badge variant="accent">{auditActionLabel(it.action)}</Badge>
+                          </span>
+                          {it.target_type && (
+                            <span className="text-xs text-muted-foreground">
+                              {it.target_type}
+                              {it.target_id && (
+                                <span className="mono ml-1">
+                                  {it.target_id.length > 24
+                                    ? it.target_id.slice(0, 8) + "…"
+                                    : it.target_id}
+                                </span>
+                              )}
                             </span>
                           )}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <span className="whitespace-nowrap text-xs text-muted-foreground">
-                    {relativeTime(it.created_at)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-      </div>
-
-      <div className="mt-4">
-        <Card>
-          <div className={CARD_HEADER_SPLIT_CLASS}>
-            <h3 className={CARD_TITLE_CLASS}>全平台项目</h3>
-            <span className="text-xs text-muted-foreground">共 {projects.length} 个</span>
-          </div>
-          {projectsLoading && (
-            <div className="p-8 text-center text-sm text-muted-foreground">加载中...</div>
-          )}
-          {!projectsLoading && projects.length === 0 && (
-            <div className="p-8 text-center text-sm text-muted-foreground">
-              暂无项目，点击右上角「新建项目」开始
-            </div>
-          )}
-          {!projectsLoading && projects.length > 0 && (
-            <div className="w-full overflow-x-auto [overscroll-behavior-x:contain]">
-              <table className="w-full min-w-[760px] border-separate border-spacing-0 text-sm">
-                <thead>
-                  <tr>
-                    {["项目", "负责人", "成员", "状态", ""].map((h, i) => (
-                      <th
-                        key={i}
-                        className={[
-                          TABLE_HEAD_CELL_CLASS,
-                          i === 0 ? "pl-4" : "",
-                          i === 4 ? "pr-4" : "",
-                        ]
-                          .filter(Boolean)
-                          .join(" ")}
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {projects.map((p) => (
-                    <tr
-                      key={p.id}
-                      className="cursor-pointer"
-                      onClick={() => navigate(`/projects/${p.id}/settings`)}
-                    >
-                      <td className={`${TABLE_CELL_CLASS} py-2.5 pl-4`}>
-                        <div className="max-w-[240px] overflow-hidden text-ellipsis whitespace-nowrap text-sm font-medium">
-                          {p.name}
                         </div>
-                        <div className="max-w-[240px] overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
-                          <span className="mono">{p.display_id}</span> · {projectDisplayType(p)}
-                        </div>
-                      </td>
-                      <td className={TABLE_CELL_CLASS}>
-                        <div className="flex min-w-0 items-center gap-2">
-                          <Avatar initial={p.owner_name?.slice(0, 1) ?? "?"} size="sm" />
-                          <span className="max-w-[160px] overflow-hidden text-ellipsis whitespace-nowrap text-sm">
-                            {p.owner_name ?? "—"}
-                          </span>
-                        </div>
-                      </td>
-                      <td className={`${TABLE_CELL_CLASS} text-muted-foreground`}>
-                        {p.member_count}
-                      </td>
-                      <td className={TABLE_CELL_CLASS}>
-                        {p.status === "in_progress" && (
-                          <Badge variant="accent" dot>
-                            进行中
-                          </Badge>
-                        )}
-                        {p.status === "completed" && (
-                          <Badge variant="success" dot>
-                            已完成
-                          </Badge>
-                        )}
-                        {p.status === "pending_review" && (
-                          <Badge variant="warning" dot>
-                            待审核
-                          </Badge>
-                        )}
-                        {p.status === "archived" && (
-                          <Badge variant="outline" dot>
-                            已归档
-                          </Badge>
-                        )}
-                      </td>
-                      <td
-                        className={`${TABLE_CELL_CLASS} py-2.5 pr-4 text-right whitespace-nowrap`}
-                      >
-                        <div className="inline-flex items-center gap-1 whitespace-nowrap">
-                          {/* v0.10.11 · 「复制项目配置」入口 — 跳 Wizard 复制流, 用源项目配置预填. */}
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              navigate(`/dashboard?new=1&from=${p.id}`);
-                            }}
-                            title="复制项目配置（不复制数据集 / 任务 / 成员）"
-                          >
-                            <Icon name="copy" size={13} />
-                            复制
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              navigate(`/projects/${p.id}/settings`);
-                            }}
-                          >
-                            <Icon name="settings" size={13} />
-                            设置
-                          </Button>
-                          {/* B-46 · 「打开」入口 — 进工作台标注界面（样式与项目总览统一） */}
-                          <Button
-                            size="sm"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onOpenProject(p);
-                            }}
-                          >
-                            打开 <Icon name="chevRight" size={11} />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
+                      </div>
+                      <span className="whitespace-nowrap text-xs text-muted-foreground">
+                        {relativeTime(it.created_at)}
+                      </span>
+                    </li>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
+                </ul>
+              )}
+            </Card>
+          </div>
+        </div>
+      </div>
+      <div className="mt-5">
+        <MLBackendsAndCostCard
+          backendsTotal={stats.ml_backends_total}
+          backendsConnected={stats.ml_backends_connected}
+        />
       </div>
     </PageContainer>
   );
@@ -476,7 +518,7 @@ function RegistrationSourceCard({ series }: { series: RegistrationDayPoint[] }) 
   const peak = Math.max(1, ...series.map((d) => d.invite_count + d.open_count));
 
   return (
-    <div className="mt-4">
+    <div className="min-w-0">
       <Card>
         <div className={CARD_HEADER_SPLIT_CLASS}>
           <h3 className={CARD_TITLE_CLASS}>30 天注册来源</h3>
@@ -506,7 +548,7 @@ function RegistrationSourceCard({ series }: { series: RegistrationDayPoint[] }) 
                   邀请注册
                 </span>
                 <span className="inline-flex items-center gap-1.5">
-                  <span className="size-2.5 rounded-sm bg-emerald-500" />
+                  <span className="size-2.5 rounded-sm bg-status-positive" />
                   开放注册
                 </span>
               </div>
@@ -532,7 +574,7 @@ function RegistrationSourceBar({ point, peak }: { point: RegistrationDayPoint; p
       className="flex flex-1 flex-col justify-end gap-px"
       title={`${point.date}\n邀请 ${point.invite_count} · 开放 ${point.open_count}`}
     >
-      <div className="h-[var(--registration-open-height)] min-h-[var(--registration-open-min-height)] rounded-t-sm bg-emerald-500" />
+      <div className="h-[var(--registration-open-height)] min-h-[var(--registration-open-min-height)] rounded-t-sm bg-status-positive" />
       <div
         className={`h-[var(--registration-invite-height)] min-h-[var(--registration-invite-min-height)] bg-brand ${point.open_count ? "rounded-none" : "rounded-t-sm"}`}
       />

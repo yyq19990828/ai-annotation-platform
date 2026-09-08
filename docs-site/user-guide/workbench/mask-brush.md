@@ -24,7 +24,7 @@ Mask 像素工具使用 `M` 键进入。它既可逐笔涂擦，也可用套索�
 单个大 Mask 会先显示受限预览，但选择仍读取原始 RLE 的精确像素，不会把缩略图的近似像素当作真值。
 
 已保存 Mask 与其它标注共用类别色和画布标签；选中时沿真实像素轮廓增强显示，不会再用外接矩形暗示
-Mask 是矩形标注。选中详情会显示 Mask 画布尺寸、RLE 编码段和存储大小。视频画布只上传前景范围内的
+Mask 是矩形标注。新建 Mask 保存成功后会自动加载真实像素轮廓，无需刷新页面。选中详情会显示 Mask 画布尺寸、RLE 编码段和存储大小。视频画布只上传前景范围内的
 裁剪位图，选择仍基于完整 RLE 像素，因此大量小 Mask 同屏时不会为了透明空白区域重复占用显存。
 
 ## 图片任务的进入方式
@@ -35,7 +35,7 @@ Mask 是矩形标注。选中详情会显示 Mask 画布尺寸、RLE 编码段�
   src="/media/mask-brush/mask-draw.mp4"
   poster="/media/mask-brush/mask-draw-poster.webp"
   alt="在目标区域涂抹 Mask 并按 Enter 提交"
-  caption="拖拽笔刷填充目标区域，确认覆盖范围后按 Enter 提交 Mask。"
+  caption="在标准标注布局中分笔涂抹目标，核对覆盖范围后按 Enter，再选择目标类别保存。"
 />
 
 1. **空白 mask（从零开始）**
@@ -228,6 +228,7 @@ Buffer 都会保留；网络或服务暂时错误可用原幂等键「重试实�
   src="/media/video/mask-track-edit.mp4"
   poster="/media/video/mask-track-edit-poster.webp"
   alt="创建视频 Mask 轨迹并在后续保持帧编辑、物化新关键帧"
+  caption="在首帧创建 Mask，在后续保持帧用橡皮修订并保存新关键帧，再往返核对两帧；首帧 Mask 保持不变。"
 />
 
 在视频任务中点击「Mask 轨迹」工具（该工具不占用快捷键）：

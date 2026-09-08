@@ -221,7 +221,7 @@ interface VideoTrackerPropagateDialogProps {
   submitting: boolean;
   onCancel: () => void;
   onSubmit: (payload: VideoTrackerPropagatePayload) => Promise<void>;
-  /** v0.21.14 WS3 · 上报当前影响范围, 供时间轴高亮「将影响哪段帧」; 关闭时上报 null。 */
+  /** Publish the preview only while visible; retain range settings when hidden. */
   onRangeChange?: (range: { startFrame: number; endFrame: number } | null) => void;
   /** v0.21.14 · 时间轴 Shift+拖刷选回填的范围 (覆盖预设/方向派生的范围); 每次刷选传新对象。 */
   brushedRange?: { startFrame: number; endFrame: number } | null;
@@ -483,15 +483,15 @@ export function VideoTrackerPropagateDialog({
     return targets;
   }, [activeSeedTargetId, seedBoxCount, seedPointCount, seedTargets]);
 
-  // v0.21.14 WS3 · 把当前影响范围上报给时间轴高亮; 关闭 / 卸载时清空。
+  // A retained background panel owns its settings, but must not paint a timeline preview.
   useEffect(() => {
-    if (!open) {
+    if (!open || !visible) {
       onRangeChange?.(null);
       return;
     }
     onRangeChange?.({ startFrame: range.from, endFrame: range.to });
     return () => onRangeChange?.(null);
-  }, [open, range.from, range.to, onRangeChange]);
+  }, [open, visible, range.from, range.to, onRangeChange]);
 
   // v0.21.14 · 浮层化后无遮罩, 用 Esc 关闭 (替代原点击遮罩关闭)。
   useEffect(() => {

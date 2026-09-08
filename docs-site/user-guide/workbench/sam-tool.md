@@ -36,6 +36,8 @@ last_reviewed: 2026-09-05
 
 图片支持智能点、智能框、Exemplar，以及基于已存 Mask 的智能笔迹；视频使用已有的当前帧点、框与 Exemplar 提示。以下按工具逐一说明。
 
+在“图片 AI 审阅”布局中，可切换“当前题 AI”与“标注详情”标签，查看任务推理或已保存结果；交互候选仍显示在画布上。
+
 ### 智能点（Smart Point）— 单击让 SAM 找边缘
 
 ![智能点交互工具条](../images/sam/smart-point-toolbar.png)
@@ -48,7 +50,7 @@ last_reviewed: 2026-09-05
   src="/media/sam/smart-point.mp4"
   poster="/media/sam/smart-point-poster.webp"
   alt="智能点落在真实车辆上并生成轮廓候选"
-  caption="在真实车辆内放置正向智能点，SAM 生成轮廓候选，选择 car 类别后保存。"
+  caption="在真实车辆内放置正向智能点，SAM 生成多个候选，用 Tab 切换到整车轮廓，再选择 car 类别保存。"
 />
 
 ### 智能框（Smart Box）— 拖框作 bbox prompt
@@ -70,16 +72,15 @@ last_reviewed: 2026-09-05
   src="/media/sam/smart-scribble.mp4"
   poster="/media/sam/smart-scribble-poster.webp"
   alt="在已保存 Mask 上添加正向和负向智能笔迹并查看精修候选"
-  caption="先选中已保存 Mask，再用正向笔迹补回区域、用负向笔迹扣除误分区域，最后确认精修候选。"
+  caption="先选中已保存 Mask，用正负笔迹标明车身与背景，查看更新后的候选，再确认精修结果。"
 />
 
-先选中一条已保存、未锁定的原生 Raster Mask，再点击智能笔迹。绿色正向笔迹补回目标区域；按住
-`Alt` 绘制，或在交互工具栏切到负向后绘制红色笔迹，可移除误分区域。没有合格的源 Mask、当前
+先选中一条已保存、未锁定的原生 Raster Mask，再点击智能笔迹。绿色正向笔迹标明应保留的目标区域；按住
+`Alt` 绘制，或在交互工具栏切到负向后绘制红色笔迹，标明应排除的背景区域。没有合格的源 Mask、当前
 模型未同时声明 `mask` 与 `scribble` prompt，或项目不允许写入原生 Mask 时，按钮保持置灰并显示原因。
 
-点、框与正负笔迹可以在同一精修会话中交替追加。工作台只向平台发送源 annotation 的 ID 与版本；
-平台在鉴权、任务 / 帧 / 版本校验后解析已存 RLE，并以短期签名的低分辨率 logits 连接后续轮次，
-浏览器不保存原始 logits。`Enter` 选类后原位更新同一 annotation，不会创建重复对象。
+点、框与正负笔迹可以在同一精修会话中交替追加。每次追加后，模型会重新估计轮廓，
+因此要先检查目标边界，再按 `Enter` 选类确认。确认后原位更新已选 Mask，不会创建重复对象；刷新后仍保留该结果。
 
 如果 prompt 请求遇到网络错误，当前候选、已追加的点 / 框 / 笔迹和源 Mask 会保留，交互工具栏可用
 「重试」原样发送同一轮输入。主动取消、切题、切帧、切模型或会话过期会清理未接受的候选与短期会话。
@@ -88,16 +89,16 @@ last_reviewed: 2026-09-05
 
 ![Magic Box 交互工具条](../images/sam/magic-box-toolbar.png)
 
-拖框时不要求精准，拖一个**大致包住目标**的框就行;SAM 跑 mask → 自动取 mask 的紧凑外接矩形 → **直接落 bbox 标注**(不经过候选层确认)。
+拖出一个大致包住目标的框，SAM 找到前景轮廓后自动取紧凑外接矩形，并弹出类别选择器。**选择类别后保存 bbox 标注**，无需先按 `Enter` 接受候选。
 
 | 与 Smart Box 的区别                                             |
 | --------------------------------------------------------------- |
 | Smart Box: 输出 polygon 或原生 Mask 候选,等 `Enter` 接受 + 选类 |
-| Magic Box: 输出 **bbox** 直接落库,跳过候选层                    |
+| Magic Box: 自动弹出类别选择器，选类后保存 **bbox**              |
 
 **使用场景**: 想要精准 bbox 但不想拖到对象边缘的精细位置 — 粗框一下,SAM 帮你把"距离对象边 5px"的浪费空间砍掉。
 
-**注意**: 落库的 bbox 类别取当前 `activeClass`(左侧调色板高亮的类);若未选类则用 SAM 返回的 label 或类别列表首个。Magic Box 产出矩形框，因此标注归 `bbox` 工具单位；智能点 / 智能框产出的 polygon 或原生 Mask 归 `region`。候选确认时会按目标工具单位重新校验默认类别，不会沿用其他单位中同名或过期的活动类别。交互式 AI 是项目能力开关，不再拥有独立类别域（详见[工具维度类别 / 属性](../projects/tool-units.md)）。
+**注意**: 落库类别以弹窗中的确认选择为准；左侧类别面板在 Magic Box 下是类别与快捷键图例。Magic Box 产出矩形框，因此标注归 `bbox` 工具单位；智能点 / 智能框产出的 polygon 或原生 Mask 归 `region`。候选确认时会按目标工具单位重新校验默认类别，不会沿用其他单位中同名或过期的活动类别。交互式 AI 是项目能力开关，不再拥有独立类别域（详见[工具维度类别 / 属性](../projects/tool-units.md)）。
 
 <DocsVideo
   src="/media/ai/assisted-annotation.mp4"

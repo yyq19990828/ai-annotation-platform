@@ -57,8 +57,10 @@ last_reviewed: 2026-09-05
   src="/media/video/tracker-range.mp4"
   poster="/media/video/tracker-range-poster.webp"
   alt="按住 Shift 刷选时间轴范围并把自定义范围回填到 AI 追踪面板"
-  caption="按住 Shift 刷选后，追踪面板会显示实际起止帧与影响范围；确认范围后再发起 AI 追踪。"
+  caption="先给公交车添加 F0 种子，再按住 Shift 刷选 F0–F20；确认范围后运行追踪，检查中间帧并采纳为同一条轨迹。"
 />
+
+时间轴上的紫色「AI 影响范围」是待处理帧的预览，不表示 AI 正在运行。它只在视频追踪面板可见时显示；切到同组其他标签页或隐藏面板后会消失，切回时恢复原有范围配置。
 
 ## 按意图选择模型
 
@@ -86,7 +88,7 @@ SAM 尺寸档位只在 **SAM2 · 框追踪**时显示，因为 `tiny / small / b
   src="/media/video/tracker-text-discovery.mp4"
   poster="/media/video/tracker-text-discovery-poster.webp"
   alt="输入 bus 后筛选左右两辆完整公交车，跨帧核对并采纳为两条视频轨迹"
-  caption="文本发现会返回多个身份候选；先只保留左右两辆完整公交车，拖动时间轴跨帧核对，再采纳正确轨迹并拒绝剩余噪声。"
+  caption="输入 bus 后，按真实候选框选出左右两辆完整公交车，逐帧核对后采纳两条轨迹，并拒绝剩余噪声候选。"
 />
 
 画布级「发现目标」不会把文本结果直接落库。模型返回候选池后，先按目标复核完整车身，取消远处目标、重复框或局部部件；再拖动时间轴检查所选身份是否持续跟随同一对象。接受所选只新建当前勾选的轨迹，其余候选可继续审阅或整批拒绝。
@@ -112,7 +114,7 @@ SAM2 和 SAM3 点框交互追踪支持在发起前采集种子。三种种子分
   src="/media/video/tracker-cross-frame-points.mp4"
   poster="/media/video/tracker-cross-frame-points-poster.webp"
   alt="为左右两辆公交车分别添加跨帧正点，追踪后拖动时间轴核对两个候选"
-  caption="两个目标分别在 F0 与 F4 添加正点，发起一次多目标追踪，并在接受前跨帧复核。"
+  caption="在停靠追踪面板中分别建立两个目标，为各自的 F0 与 F4 添加正点；一次追踪后跨帧复核，再采纳两条独立轨迹。"
 />
 
 ### 正负点修正
@@ -121,7 +123,7 @@ SAM2 和 SAM3 点框交互追踪支持在发起前采集种子。三种种子分
   src="/media/video/tracker-positive-negative.mp4"
   poster="/media/video/tracker-positive-negative-poster.webp"
   alt="为两辆公交车添加正点和红色负点，追踪后跨帧核对候选"
-  caption="Alt + 单击加入负点，用于排除紧邻目标的背景或相邻物体；面板会分别统计正负提示。"
+  caption="两个目标分别添加跨帧正点，并用 Alt + 单击排除车身旁的背景；核对目标、帧号与提示数量后追踪并采纳。"
 />
 
 ### 整车框种子
@@ -130,7 +132,7 @@ SAM2 和 SAM3 点框交互追踪支持在发起前采集种子。三种种子分
   src="/media/video/tracker-box-seed.mp4"
   poster="/media/video/tracker-box-seed-poster.webp"
   alt="沿左右两辆公交车完整车身绘制框种子并同时追踪"
-  caption="每个框覆盖完整车身；生成两个候选后拖动时间轴检查跨帧位置，再整批接受。"
+  caption="在 F0 为左右公交车各画一个完整车身框；生成候选后拖动时间轴核对两个目标的位置，再整批采纳。"
 />
 
 1. 在追踪面板的「种子」区选择**点**或**框**，进入采集状态。

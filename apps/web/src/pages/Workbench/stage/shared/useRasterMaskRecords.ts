@@ -208,7 +208,10 @@ type DeferredRasterMaskStatus = Extract<RasterMaskRecordStatus, { state: "deferr
   priority: number;
 };
 
-const rleLoadSingleFlights = new Map<string, Promise<CocoRle>>();
+const rleLoadSingleFlights = new Map<
+  string,
+  { id: string; source: string; promise: Promise<CocoRle> }
+>();
 
 class InvalidRasterMaskContentError extends Error {}
 class RasterMaskRenderError extends Error {}
@@ -262,20 +265,26 @@ function descriptorResourcePriority(
 function loadRleSingleFlight(descriptor: RasterMaskRecordDescriptor): Promise<CocoRle> {
   const key = descriptor.ref.sha256;
   const existing = rleLoadSingleFlights.get(key);
-  if (existing) return existing;
+  if (existing) {
+    if (existing.id === descriptor.id && existing.source === descriptor.source)
+      return existing.promise;
+    // Equal content can share a successful load, but authorization/existence errors
+    // belong to the requested object. Confirm a different source using its own endpoint.
+    return existing.promise.catch(() => descriptor.load());
+  }
   let request: Promise<CocoRle>;
   try {
     request = descriptor.load();
   } catch (error) {
     request = Promise.reject(error);
   }
-  rleLoadSingleFlights.set(key, request);
+  rleLoadSingleFlights.set(key, { id: descriptor.id, source: descriptor.source, promise: request });
   void request.then(
     () => {
-      if (rleLoadSingleFlights.get(key) === request) rleLoadSingleFlights.delete(key);
+      if (rleLoadSingleFlights.get(key)?.promise === request) rleLoadSingleFlights.delete(key);
     },
     () => {
-      if (rleLoadSingleFlights.get(key) === request) rleLoadSingleFlights.delete(key);
+      if (rleLoadSingleFlights.get(key)?.promise === request) rleLoadSingleFlights.delete(key);
     },
   );
   return request;

@@ -7,25 +7,33 @@
  * 而在「工作台设置」窗口的「画布与视角」分类里(toggle/slider)。
  * 本 flow 纯切设置不落标注；账号级偏好 PATCH 由 flows.spec 的录制沙箱在内存中响应，不写回服务端。
  *
- * 点云 PCD 由前端按需加载并经 WebGL(headless 走 SwiftShader)渲染, 故进入后多等一段让点云就绪。
+ * 点云 PCD 由前端按需加载并经真实硬件 WebGL 渲染，故进入后多等一段让点云就绪。
  *
  * 返回 { drawStartMs, drawEndMs }：供 finalize 裁掉开头(导航/解析/点云加载等待)。
  */
 import type { Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
 import type { DrawWindow } from "./rotated-bbox";
+import {
+  installRecordingWorkbenchLayout,
+  waitForRecordingWorkbenchLayout,
+} from "./_workbench-layout";
 
 export async function runPointcloudControls(
   page: Page,
   catalog: ScreenshotSeedCatalog,
 ): Promise<DrawWindow> {
   const project = catalog.projects.pointcloud_demo;
+  await installRecordingWorkbenchLayout(page, "both", {
+    workspace: { context: "annotate:3d", preset: "standard" },
+  });
   await page.goto(`/projects/${project.id}/annotate?task=${project.tasks.frame_000.id}`);
   // 点云工作台持续渲染 + 可能轮询, networkidle 不会稳定 settle; 用 domcontentloaded + 显式等待。
   await page.waitForLoadState("domcontentloaded");
 
   // 等 3D 视口挂载 + 点云经 WebGL 渲染(PCD 异步加载, SwiftShader 较慢, 多等一段)。
   await page.getByTestId("pc-viewport").waitFor({ timeout: 20_000 });
+  await waitForRecordingWorkbenchLayout(page, "both");
   await page.waitForTimeout(4000);
 
   const drawStartMs = Date.now();

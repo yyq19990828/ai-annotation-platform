@@ -24,6 +24,7 @@ coverage/
 playwright-report/
 test-results/
 .artifacts/marketing/
+.artifacts/recordings/
 .pytest_cache/
 .ruff_cache/
 

@@ -6,6 +6,7 @@ import { expect, type Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
 import { movePointerAtRefreshRate, recordingAnchor } from "./_canvas";
 import type { DrawWindow } from "./rotated-bbox";
+import { recordingLayoutCommand, waitForRecordingPanels } from "./_workbench-layout";
 
 export interface PointcloudCameraSeedResult extends DrawWindow {
   created: { taskId: string; annotationId: string };
@@ -35,9 +36,55 @@ function normalizedRect(
   };
 }
 
+/** Locate the rendered box, then use the product's double-click focus gesture. */
+async function focusCreatedBox(page: Page, annotationId: string): Promise<void> {
+  const viewport = page.getByTestId("pc-viewport");
+  const point = await viewport.evaluate((element, id) => {
+    const scene = (
+      element as HTMLElement & {
+        __pointCloudScene?: {
+          boxGroups: Map<
+            string,
+            {
+              position: { clone: () => { project: (camera: unknown) => { x: number; y: number } } };
+            }
+          >;
+          camera: unknown;
+          getViewState: () => { target: number[] };
+        };
+      }
+    ).__pointCloudScene;
+    const group = scene?.boxGroups.get(id);
+    if (!scene || !group) throw new Error("Rendered 3D box is unavailable for focus");
+    const projected = group.position.clone().project(scene.camera);
+    const bounds = element.getBoundingClientRect();
+    return {
+      x: bounds.left + ((projected.x + 1) * bounds.width) / 2,
+      y: bounds.top + ((1 - projected.y) * bounds.height) / 2,
+      previousTarget: scene.getViewState().target,
+    };
+  }, annotationId);
+  await page.mouse.dblclick(point.x, point.y);
+  await expect
+    .poll(() =>
+      viewport.evaluate((element) => {
+        return (
+          element as HTMLElement & {
+            __pointCloudScene?: {
+              getViewState: () => { target: number[] };
+            };
+          }
+        ).__pointCloudScene?.getViewState().target;
+      }),
+    )
+    .not.toEqual(point.previousTarget);
+  await page.waitForTimeout(1500);
+}
+
 export async function runPointcloudCameraSeed3dBox(
   page: Page,
   catalog: ScreenshotSeedCatalog,
+  onCreated?: (created: PointcloudCameraSeedResult["created"]) => void,
 ): Promise<PointcloudCameraSeedResult> {
   const project = catalog.projects.pointcloud_demo;
   const task = project.tasks.frame_000;
@@ -47,12 +94,13 @@ export async function runPointcloudCameraSeed3dBox(
   await page.waitForLoadState("domcontentloaded");
 
   await page.getByTestId("pc-viewport").waitFor({ timeout: 20_000 });
-  const frontCamera = page.locator("[data-floating-panel]").filter({
-    has: page.getByText(/^CAM_FRONT(?: · 正对)?$/),
-  });
+  await recordingLayoutCommand(page, "传感器融合");
+  await recordingLayoutCommand(page, "全部相机停靠");
+  await waitForRecordingPanels(page, ["canvas", "camera-view"]);
+  const frontCamera = page
+    .locator("[data-camera-dock-panel]")
+    .getByRole("region", { name: "CAM_FRONT", exact: true });
   await expect(frontCamera).toBeVisible({ timeout: 10_000 });
-  const expandCamera = frontCamera.getByTitle("展开相机", { exact: true });
-  if (await expandCamera.isVisible()) await expandCamera.click();
   const cameraImage = frontCamera.locator("img");
   await expect(cameraImage).toBeVisible({ timeout: 10_000 });
   await cameraImage.evaluate(async (image: HTMLImageElement) => {
@@ -67,14 +115,14 @@ export async function runPointcloudCameraSeed3dBox(
   const drawStartMs = Date.now();
   await page.waitForTimeout(1_400);
 
-  await frontCamera.getByTitle("放大相机", { exact: true }).click();
+  await frontCamera.getByRole("button", { name: "放大CAM_FRONT", exact: true }).click();
   const seedButton = page.getByRole("button", { name: "种框 ⊹" });
   await seedButton.waitFor({ state: "visible", timeout: 5_000 });
-  const modalBody = page.getByRole("button", { name: "关闭 ✕" }).locator("..");
+  const modalBody = page.getByTestId("camera-modal-body");
   await page.waitForTimeout(1_200);
   await seedButton.click();
 
-  const cameraCanvas = modalBody.getByLabel("CAM_FRONT 相机投影", { exact: true });
+  const cameraCanvas = modalBody.getByLabel(/^CAM_FRONT 相机投影(?:，|$)/);
   await expect(cameraCanvas).toBeVisible();
   const box = await cameraCanvas.boundingBox();
   if (!box) throw new Error("[pointcloud-camera-seed-3d-box] 放大相机画布不可见");
@@ -96,6 +144,7 @@ export async function runPointcloudCameraSeed3dBox(
 
   const createdResponse = await createdResponsePromise;
   const created = (await createdResponse.json()) as CreatedPointcloudAnnotation;
+  onCreated?.({ taskId: task.id, annotationId: created.id });
   if (
     created.task_id !== task.id ||
     created.annotation_type !== "box_3d" ||
@@ -120,8 +169,11 @@ export async function runPointcloudCameraSeed3dBox(
   await expect(page.getByRole("button", { name: "种框 ⊹" })).toBeHidden();
   await page.waitForTimeout(1_200);
 
-  await page.getByLabel("展开三视图精修(可拖动)").click();
-  await expect(page.getByText("俯视 Top", { exact: true })).toBeVisible({ timeout: 10_000 });
+  await recordingLayoutCommand(page, "框体精修");
+  await waitForRecordingPanels(page, ["canvas", "tri-view"], ["camera-view"]);
+  await expect(page.getByTestId("tri-view-renderer-panel")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByLabel(/^俯视精修视图，缩放 /)).toBeVisible();
+  await focusCreatedBox(page, created.id);
   await page.waitForTimeout(2_200);
 
   const viewport = page.getByTestId("pc-viewport");
@@ -143,7 +195,9 @@ export async function runPointcloudCameraSeed3dBox(
 
   // 回到同步相机图完成因果闭环：初始 2D 提示已生成真实 3D 框，
   // 核对空间包围后，最后再展示该框稳定重投影到原目标。
-  await frontCamera.getByTitle("放大相机", { exact: true }).click();
+  await recordingLayoutCommand(page, "传感器融合");
+  await waitForRecordingPanels(page, ["canvas", "camera-view"]);
+  await frontCamera.getByRole("button", { name: "放大CAM_FRONT", exact: true }).click();
   await expect(page.getByRole("button", { name: "关闭 ✕" })).toBeVisible();
   await expect(page.getByRole("button", { name: "种框 ⊹" })).toBeVisible();
   await page.waitForTimeout(2_800);

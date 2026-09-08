@@ -7,7 +7,7 @@ export const RotatedBboxTool: CanvasTool = {
   id: "rotated-box",
   hotkey: "W",
   label: "旋转框",
-  icon: "diamond",
+  icon: "rotatedBox",
   cursor: "crosshair",
   onPointerDown: ({
     pt,

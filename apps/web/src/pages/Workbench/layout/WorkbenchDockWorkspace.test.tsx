@@ -5,7 +5,9 @@ import { createPortal } from "react-dom";
 import type { DockviewApi } from "dockview-react";
 import { createWorkspacePreset } from "./workbenchLayoutPresets";
 import { getCanvasPlacement } from "./workbenchLayoutExecutor";
-import type { WorkbenchWorkspaceCommands } from "./workbenchPanelRegistry";
+import type { WorkbenchWorkspaceCommands, WorkbenchWorkspaceState } from "./workbenchPanelRegistry";
+import { SelectedAnnotationCard } from "../shell/SelectedAnnotationCard";
+import { resolveVideoSelectionCardCollapsed } from "../state/useWorkbenchShellModel.helpers";
 import type { WorkspaceContext, WorkspaceSnapshot } from "./workbenchLayoutSnapshot";
 
 const state = vi.hoisted(() => ({
@@ -58,12 +60,14 @@ function fixture(
   context: WorkspaceContext = "annotate:image",
   commands = createRef<WorkbenchWorkspaceCommands>(),
   canvas = <Canvas />,
+  onStateChange?: (workspace: WorkbenchWorkspaceState) => void,
 ) {
   return (
     <WorkbenchDockWorkspace
       context={context}
       legacy={{}}
       commandsRef={commands}
+      onStateChange={onStateChange}
       slots={{
         canvas,
         "task-queue": <p>任务</p>,
@@ -79,6 +83,36 @@ function fixture(
     />
   );
 }
+function VideoSelectionWorkspace() {
+  const [commands] = useState(() => createRef<WorkbenchWorkspaceCommands>());
+  const [workspace, setWorkspace] = useState<WorkbenchWorkspaceState | null>(null);
+  const [preferredCollapsed, setPreferredCollapsed] = useState(true);
+  return (
+    <>
+      {fixture("annotate:video", commands, undefined, setWorkspace)}
+      <output data-testid="tracker-docked">{String(workspace?.videoTrackerVisible)}</output>
+      <output data-testid="tracker-content-visible">
+        {String(workspace?.videoTrackerContentVisible)}
+      </output>
+      <output data-testid="selection-collapse-preference">{String(preferredCollapsed)}</output>
+      <SelectedAnnotationCard
+        title="truck"
+        position={{ x: 100, y: 80, w: 340, h: 440 }}
+        onPositionChange={() => {}}
+        collapsed={resolveVideoSelectionCardCollapsed(
+          preferredCollapsed,
+          true,
+          workspace?.videoTrackerContentVisible ?? false,
+        )}
+        onCollapse={() => setPreferredCollapsed(true)}
+        onExpand={() => setPreferredCollapsed(false)}
+      >
+        <button type="button">编辑当前帧 Mask</button>
+      </SelectedAnnotationCard>
+    </>
+  );
+}
+
 beforeEach(() => {
   vi.stubGlobal(
     "ResizeObserver",
@@ -157,6 +191,63 @@ describe("stable Dockview React workspace", () => {
     });
     expect(state.owner.save).not.toHaveBeenCalled();
     expect(state.owner.failRestore).not.toHaveBeenCalled();
+  });
+
+  it("allows selection-card editing when the retained tracking panel is a background docked tab", async () => {
+    state.owner.snapshot = createWorkspacePreset("video-tracking", bounds, "annotate:video");
+    render(<VideoSelectionWorkspace />);
+    await screen.findByTestId("canvas-marker");
+    const tracker = state.api!.getPanel("video-tracker")!;
+    const inspector = state.api!.getPanel("inspector")!;
+    expect(tracker.group).toBe(inspector.group);
+    await waitFor(() =>
+      expect(screen.getByTestId("tracker-content-visible")).toHaveTextContent("true"),
+    );
+    const draft = screen.getByLabelText("追踪草稿");
+    fireEvent.change(draft, { target: { value: "保留追踪配置" } });
+
+    act(() => inspector.api.setActive());
+    await waitFor(() =>
+      expect(draft.closest("[data-workbench-panel]")).toHaveAttribute("aria-hidden", "true"),
+    );
+    expect(screen.getByTestId("tracker-docked")).toHaveTextContent("true");
+    fireEvent.click(screen.getByLabelText("展开选中信息卡(可拖动)"));
+    expect(screen.getByTestId("selection-collapse-preference")).toHaveTextContent("false");
+    await waitFor(
+      () => expect(screen.getByTestId("tracker-content-visible")).toHaveTextContent("false"),
+      { timeout: 800 },
+    );
+    await screen.findByRole("button", { name: "编辑当前帧 Mask" });
+
+    // Activating the canvas must not hide a tracking panel displayed in its own group.
+    act(() => tracker.api.setActive());
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "编辑当前帧 Mask" })).toBeNull(),
+    );
+    act(() => state.api!.getPanel("canvas")!.api.setActive());
+    expect(screen.getByTestId("tracker-content-visible")).toHaveTextContent("true");
+    expect(screen.getByTestId("selection-collapse-preference")).toHaveTextContent("false");
+    expect(screen.getByLabelText("追踪草稿")).toBe(draft);
+    expect(draft).toHaveValue("保留追踪配置");
+
+    act(() => inspector.api.setActive());
+    await screen.findByRole("button", { name: "编辑当前帧 Mask" });
+    fireEvent.click(screen.getByLabelText("收起浮窗"));
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "编辑当前帧 Mask" })).toBeNull(),
+    );
+    expect(screen.getByTestId("selection-collapse-preference")).toHaveTextContent("true");
+    act(() => tracker.api.setActive());
+    await waitFor(() =>
+      expect(screen.getByTestId("tracker-content-visible")).toHaveTextContent("true"),
+    );
+    act(() => inspector.api.setActive());
+    await waitFor(() =>
+      expect(screen.getByTestId("tracker-content-visible")).toHaveTextContent("false"),
+    );
+    expect(screen.queryByRole("button", { name: "编辑当前帧 Mask" })).toBeNull();
+    expect(screen.getByTestId("selection-collapse-preference")).toHaveTextContent("true");
+    expect(mounts).toBe(1);
   });
 
   it("header X hides only the active tab and restores its draft without remounting canvas", async () => {

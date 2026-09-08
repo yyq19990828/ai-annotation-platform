@@ -2,9 +2,17 @@
  * 流程录制：从空白创建视频 Mask 轨迹，再在后续帧物化新关键帧。
  *
  * Mask 轨迹属于轨迹工具组，不使用单帧 Mask 的 M 快捷键。流程会落库，
- * 由 flows.spec 的 afterAll 重建 screenshots seed 清理。
+ * 创建响应立即登记到调用者，由 finally / afterAll 精确清理。
  */
-import type { Page } from "@playwright/test";
+import { expect, type Page, type Request, type Response } from "@playwright/test";
+import type Konva from "konva";
+import type {
+  AnnotationResponse,
+  TaskVideoManifestResponse,
+  VideoTrackMaskGeometry,
+} from "../../../src/types";
+import { validateCocoRle } from "../../../src/pages/Workbench/stage/shared/geometry/maskRle";
+import { waitForRecordingPanels } from "./_workbench-layout";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
 import {
   commitPendingAnnotationClass,
@@ -14,6 +22,11 @@ import {
   renderedMediaBounds,
 } from "./_canvas";
 import type { DrawWindow } from "./rotated-bbox";
+import {
+  collapseVideoSelectionCard,
+  waitForVideoRecordingFrame,
+  seekVideoRecordingFrame,
+} from "./_video-keyframe-recording";
 
 async function stroke(page: Page, points: Array<{ x: number; y: number }>, durationMs: number) {
   const first = points[0];
@@ -27,107 +40,285 @@ async function stroke(page: Page, points: Array<{ x: number; y: number }>, durat
   await page.waitForTimeout(250);
 }
 
-async function confirmMask(
-  page: Page,
-  options: { label?: string; taskId: number; update?: boolean },
-) {
-  const toolbar = page.getByTestId("mask-toolbar");
-  const confirm = toolbar.getByTitle("确认 (Enter)");
-  await confirm.waitFor({ state: "visible", timeout: 10_000 });
-  const updated = options.update
-    ? page.waitForResponse(
-        (response) =>
-          response.request().method() === "PUT" &&
-          /\/video\/tracks\/[^/]+\/mask-keyframes\/\d+(?:\?|$)/.test(response.url()) &&
-          response.ok(),
-        { timeout: 20_000 },
-      )
-    : null;
-  await confirm.click();
-  if (options.label) {
-    await commitPendingAnnotationClass(page, {
-      label: options.label,
-      taskId: options.taskId,
+type MaskTrack = Record<string, unknown> & {
+  id: string;
+  version: number;
+  geometry: VideoTrackMaskGeometry;
+};
+
+function maskTrack(value: Record<string, unknown>): MaskTrack {
+  expect(value.geometry).toMatchObject({ type: "video_track_mask" });
+  expect(Number.isInteger(value.version)).toBe(true);
+  expect(typeof value.id).toBe("string");
+  const track = value as MaskTrack;
+  expect(track.geometry.track_id).toBeTruthy();
+  return track;
+}
+
+async function readJson<T>(page: Page, path: string): Promise<T> {
+  return page.evaluate(async (url) => {
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
     });
-  }
-  if (updated) await updated;
-  await toolbar.waitFor({ state: "hidden", timeout: 15_000 });
+    if (!response.ok) throw new Error(`Video Mask readback: HTTP ${response.status}`);
+    return response.json();
+  }, path);
+}
+
+async function maskArea(page: Page, id: string, frame: number) {
+  const rle = validateCocoRle(
+    await readJson(page, `/api/v1/annotations/${id}/mask-content/${frame}`),
+  );
+  const area = rle.counts.reduce((sum, count, index) => sum + (index % 2 ? count : 0), 0);
+  expect(area, "The edited truck Mask must retain foreground").toBeGreaterThan(100);
+  return { area, size: rle.size };
+}
+
+async function waitForVisibleMask(page: Page, annotationId: string, area: number) {
+  // A saved row alone does not prove the raster layer has decoded the new keyframe.
+  await page.waitForFunction(
+    ({ id, expectedArea }) => {
+      const runtime = (window as unknown as { Konva?: typeof Konva }).Konva;
+      const group = runtime?.stages
+        .flatMap((stage) => stage.find(".raster-mask-annotation"))
+        .find((node) => node.id() === id) as Konva.Group | undefined;
+      const layer = group?.getLayer() as (Konva.Layer & { _waitingForDraw?: boolean }) | undefined;
+      const image = group?.findOne(".raster-mask-fill") as Konva.Image | undefined;
+      const bitmap = image?.image() as
+        | (CanvasImageSource & { width: number; height: number })
+        | undefined;
+      if (!group?.isVisible() || !bitmap?.width || !bitmap.height || layer?._waitingForDraw)
+        return false;
+      const canvas = document.createElement("canvas");
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const context = canvas.getContext("2d");
+      if (!context) return false;
+      context.drawImage(bitmap, 0, 0);
+      const pixels = context.getImageData(0, 0, bitmap.width, bitmap.height).data;
+      let foreground = 0;
+      for (let index = 3; index < pixels.length; index += 4) if (pixels[index] > 0) foreground++;
+      return foreground === expectedArea;
+    },
+    { id: annotationId, expectedArea: area },
+    { timeout: 20_000 },
+  );
 }
 
 export async function runVideoMaskTrackEdit(
   page: Page,
   catalog: ScreenshotSeedCatalog,
-): Promise<DrawWindow> {
+  onCreated: (annotationId: string) => void,
+): Promise<DrawWindow & { evidence: Record<string, unknown> }> {
   const project = catalog.projects.video_demo;
-  await page.goto(`/projects/${project.id}/annotate?task=${project.tasks.tracking.id}`);
-  await page.waitForLoadState("domcontentloaded");
-  await page.getByTestId("video-timeline-shell").waitFor({ timeout: 15_000 });
-  await page.getByTestId("video-konva-stage").waitFor({ timeout: 15_000 });
-  await page.waitForTimeout(1800);
-
-  const surface = page.getByTestId("video-konva-stage");
-  const box = await renderedMediaBounds(surface);
-  const initialAnchor = recordingAnchor(catalog, "video_demo", "tracking", "front_truck_f0", 0);
-  const editAnchor = recordingAnchor(catalog, "video_demo", "tracking", "front_truck_f5", 5);
-  if (initialAnchor.brush_strokes.length === 0 || editAnchor.brush_strokes.length === 0) {
-    throw new Error("[video-mask-track-edit] 车辆关键帧缺少 Mask 笔刷锚点");
-  }
-
-  const drawStartMs = Date.now();
-
-  await page.getByTestId("video-tool-btn-mask-track").click();
-  const toolbar = page.getByTestId("mask-toolbar");
-  await toolbar.waitFor({ timeout: 10_000 });
-
-  // 六条横线合并成一条来回往返的连续笔迹：画面仍呈现逐行覆盖，
-  // 但只触发一次 pointerdown/up，避免 4K Mask 每笔全量重绘把操作拉长。
-  const initialPath = initialAnchor.brush_strokes.flatMap((path, index) => {
-    const points = path.map((point) => mediaPoint(box, point));
-    return index % 2 === 0 ? points : points.reverse();
-  });
-  await stroke(page, initialPath, 1_800);
-  await page.waitForTimeout(650);
-  await confirmMask(page, {
-    label: initialAnchor.label,
-    taskId: project.tasks.tracking.id,
-  });
-
-  const trackRow = page.locator('[data-testid^="video-mask-track-"]').last();
-  await trackRow.waitFor({ timeout: 15_000 });
-  await trackRow.click();
-  await page.waitForTimeout(500);
-
-  for (let i = 0; i < 5; i++) {
-    await page.keyboard.press("ArrowRight");
-    await page.waitForTimeout(180);
-  }
-  await page
-    .getByText(/\u5f53\u524d\u5e27\u4fdd\u6301 F0 \u7684 Mask/)
-    .waitFor({ timeout: 10_000 });
-  await page.waitForTimeout(650);
-
-  await page.getByTitle("编辑当前帧 Mask").click();
-  await toolbar.waitFor({ timeout: 10_000 });
-  await toolbar.getByTitle("橡皮 (E)").click();
-  for (const path of editAnchor.brush_strokes) {
-    await stroke(
+  const task = project.tasks.tracking;
+  const failedMaskRequests: string[] = [];
+  const temporaryMaskRequests: string[] = [];
+  const observeRequest = (request: Request) => {
+    if (/\/annotations\/tmp_[^/]+\/mask-content/.test(request.url()))
+      temporaryMaskRequests.push(request.url());
+  };
+  const observeResponse = (response: Response) => {
+    if (response.url().includes("/mask-content") && !response.ok())
+      failedMaskRequests.push(`${response.status()} ${response.url()}`);
+  };
+  page.on("request", observeRequest);
+  page.on("response", observeResponse);
+  try {
+    await page.goto(`/projects/${project.id}/annotate?task=${task.id}`);
+    const stage = page.getByTestId("video-konva-stage");
+    const source = page.getByTestId("video-konva-source");
+    const timeline = page.getByTestId("video-timeline-shell");
+    await expect(timeline).toBeVisible({ timeout: 20_000 });
+    await expect(stage).toBeVisible();
+    await expect
+      .poll(() => source.evaluate((video: HTMLVideoElement) => video.readyState))
+      .toBeGreaterThanOrEqual(2);
+    for (const title of ["类别面板", "标注详情"]) {
+      await page
+        .getByRole("tab")
+        .filter({ has: page.getByRole("button", { name: `${title}菜单`, exact: true }) })
+        .click();
+    }
+    await waitForRecordingPanels(page, ["canvas", "class-palette", "inspector"]);
+    await page.getByRole("button", { name: "展开时间轴详情", exact: true }).click();
+    const overlay = page.getByTestId("video-playback-overlay");
+    await expect(overlay).toHaveAttribute("data-state", "expanded");
+    await page.getByRole("button", { name: "回到首帧", exact: true }).click();
+    await expect(stage).toHaveAttribute("data-video-frame-index", "0");
+    await expect(source).toHaveJSProperty("paused", true);
+    const manifest = await readJson<TaskVideoManifestResponse>(
       page,
-      path.map((point) => mediaPoint(box, point)),
-      600,
+      `/api/v1/tasks/${task.id}/video/manifest`,
     );
+    expect(manifest.task_id).toBe(task.id);
+    await waitForVideoRecordingFrame(page, manifest, 0);
+    const dimensions = await source.evaluate((video: HTMLVideoElement) => [
+      video.videoHeight,
+      video.videoWidth,
+    ]);
+    expect(dimensions).toEqual([manifest.metadata.height, manifest.metadata.width]);
+    const initialAnchor = recordingAnchor(catalog, "video_demo", "tracking", "front_truck_f0", 0);
+    const editAnchor = recordingAnchor(catalog, "video_demo", "tracking", "front_truck_f5", 5);
+    if (!initialAnchor.brush_strokes.length || !editAnchor.brush_strokes.length)
+      throw new Error("Video truck Mask brush anchors are missing");
+    const before = await readJson<AnnotationResponse[]>(
+      page,
+      `/api/v1/tasks/${task.id}/annotations`,
+    );
+    const toolbar = page.getByTestId("mask-toolbar");
+    await page.getByRole("button", { name: "轨迹范围", exact: true }).click();
+    await page.getByTestId("video-tool-btn-mask-track").click();
+    await expect(toolbar).toBeVisible();
+    const drawStartMs = Date.now();
+    await page.waitForTimeout(1_200);
+    const box = await renderedMediaBounds(stage);
+    const initialPath = initialAnchor.brush_strokes.flatMap((path, index) => {
+      const points = path.map((point) => mediaPoint(box, point));
+      return index % 2 === 0 ? points : points.reverse();
+    });
+    await stroke(page, initialPath, 1_800);
+    await page.waitForTimeout(650);
+    await toolbar.getByTestId("mask-primary-action").click();
+    await expect(page.getByTestId("class-picker-popover")).toBeVisible();
+    await page.waitForTimeout(1_000);
+    const created = maskTrack(
+      await commitPendingAnnotationClass(page, {
+        label: initialAnchor.label,
+        taskId: task.id,
+        onCreated,
+      }),
+    );
+    await expect(toolbar).toBeHidden();
+    expect(created.geometry.keyframes).toHaveLength(1);
+    expect(created.geometry.keyframes[0]).toMatchObject({ frame_index: 0, source: "manual" });
+    const originalMask = created.geometry.keyframes[0].mask;
+    const initial = await maskArea(page, created.id, 0);
+    expect(initial.size).toEqual(dimensions);
+    await waitForVisibleMask(page, created.id, initial.area);
+    const row = page.getByTestId(`video-mask-track-${created.id}`);
+    await expect(row).toContainText("1 关键帧");
+    // The expanded selection card covers this row. Finish its exit before clicking the row,
+    // so browser actionability retries cannot scroll the workspace behind the fixed card.
+    await collapseVideoSelectionCard(page);
+    await expect(page.getByLabel("展开选中信息卡(可拖动)", { exact: true })).toBeVisible();
+    await row.click();
+    await expect(stage).toBeInViewport({ ratio: 1 });
+    await page.mouse.move(box.x + 6, box.y + 6);
+    await page.waitForTimeout(1_500);
+    for (let frame = 1; frame <= 5; frame++) {
+      await page.getByRole("button", { name: "下一帧", exact: true }).click();
+      await waitForVideoRecordingFrame(page, manifest, frame);
+      await page.waitForTimeout(220);
+    }
+    await page.getByLabel("展开选中信息卡(可拖动)", { exact: true }).click();
+    await expect(page.getByText(/当前帧保持 F0 的 Mask；编辑会物化新关键帧/)).toBeVisible();
+    await waitForVisibleMask(page, created.id, initial.area);
+    await page.waitForTimeout(1_000);
+    await page.getByTitle("编辑当前帧 Mask").click();
+    await expect(toolbar).toBeVisible();
+    await collapseVideoSelectionCard(page);
+    await stage.scrollIntoViewIfNeeded();
+    await toolbar.scrollIntoViewIfNeeded();
+    await expect(toolbar).toBeInViewport({ ratio: 1 });
+    await toolbar.getByRole("radio", { name: "橡皮", exact: true }).click();
+    const editBounds = await renderedMediaBounds(stage);
+    for (const path of editAnchor.brush_strokes)
+      await stroke(
+        page,
+        path.map((point) => mediaPoint(editBounds, point)),
+        600,
+      );
+    await page.waitForTimeout(800);
+    const updateResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === "PUT" &&
+        new URL(response.url()).pathname ===
+          `/api/v1/tasks/${task.id}/video/tracks/${created.id}/mask-keyframes/5`,
+      { timeout: 30_000 },
+    );
+    await toolbar.getByTestId("mask-primary-action").click();
+    const response = await updateResponse;
+    expect(response.ok(), `Save F5 Mask: HTTP ${response.status()}`).toBeTruthy();
+    expect(response.request().headers()["if-match"]).toBe(`W/"${created.version}"`);
+    const updated = maskTrack(await response.json());
+    expect(updated.id).toBe(created.id);
+    expect(updated.geometry.track_id).toBe(created.geometry.track_id);
+    expect(updated.version).toBeGreaterThan(created.version);
+    expect(updated.geometry.keyframes.map((keyframe) => keyframe.frame_index)).toEqual([0, 5]);
+    expect(updated.geometry.keyframes[0].mask).toEqual(originalMask);
+    expect(updated.geometry.keyframes[1]).toMatchObject({ frame_index: 5, source: "manual" });
+    expect(updated.geometry.keyframes[1].mask.sha256).not.toBe(originalMask.sha256);
+    await expect(toolbar).toBeHidden();
+    const edited = await maskArea(page, created.id, 5);
+    expect(edited.size).toEqual(dimensions);
+    expect(edited.area, "Erasing a held Mask must reduce its foreground").toBeLessThan(
+      initial.area,
+    );
+    await waitForVisibleMask(page, created.id, edited.area);
+    await expect(row).toContainText("2 关键帧");
+    await page.getByLabel("展开选中信息卡(可拖动)", { exact: true }).click();
+    await expect(page.getByText("当前帧为 Mask 关键帧。")).toBeVisible();
+    await page.getByRole("button", { name: "上一关键帧", exact: true }).click();
+    await waitForVideoRecordingFrame(page, manifest, 0);
+    await waitForVisibleMask(page, created.id, initial.area);
+    await page.mouse.move(editBounds.x + 6, editBounds.y + 6);
+    await page.waitForTimeout(1_500);
+    await page.getByRole("button", { name: "下一关键帧", exact: true }).click();
+    await waitForVideoRecordingFrame(page, manifest, 5);
+    await waitForVisibleMask(page, created.id, edited.area);
+    await page.getByRole("button", { name: "收起浮窗", exact: true }).click();
+    await stage.scrollIntoViewIfNeeded();
+    await expect(stage).toBeInViewport({ ratio: 1 });
+    await expect(row).toContainText("2 关键帧");
+    const finalBounds = await renderedMediaBounds(stage);
+    await page.mouse.move(finalBounds.x + 6, finalBounds.y + 6);
+    await expect(overlay).toHaveCSS("opacity", "1");
+    await expect(overlay).toHaveAttribute("data-state", "expanded");
+    await page.waitForTimeout(2_500);
+    const drawEndMs = Date.now();
+    await page.reload();
+    await expect(stage).toBeVisible({ timeout: 20_000 });
+    await expect
+      .poll(() => source.evaluate((video: HTMLVideoElement) => video.readyState))
+      .toBeGreaterThanOrEqual(2);
+    const after = await readJson<AnnotationResponse[]>(
+      page,
+      `/api/v1/tasks/${task.id}/annotations`,
+    );
+    expect(after.map((item) => item.id).sort()).toEqual(
+      [...before.map((item) => item.id), created.id].sort(),
+    );
+    expect(after.find((item) => item.id === created.id)).toMatchObject({
+      version: updated.version,
+      geometry: updated.geometry,
+    });
+    await seekVideoRecordingFrame(page, manifest, 5);
+    await waitForVisibleMask(page, created.id, edited.area);
+    const reloaded = await maskArea(page, created.id, 5);
+    expect(reloaded).toEqual(edited);
+    expect(temporaryMaskRequests).toEqual([]);
+    expect(failedMaskRequests).toEqual([]);
+    return {
+      drawStartMs,
+      drawEndMs,
+      evidence: {
+        annotation_id: created.id,
+        track_id: created.geometry.track_id,
+        source_size: dimensions,
+        initial: { frame_index: 0, sha256: originalMask.sha256, area: initial.area },
+        edited: {
+          frame_index: 5,
+          sha256: updated.geometry.keyframes[1].mask.sha256,
+          area: edited.area,
+        },
+        source_version: created.version,
+        result_version: updated.version,
+        reload_verified: true,
+      },
+    };
+  } finally {
+    page.off("request", observeRequest);
+    page.off("response", observeResponse);
   }
-  await page.waitForTimeout(650);
-  await confirmMask(page, { taskId: project.tasks.tracking.id, update: true });
-  await page
-    .locator('[data-testid="video-track-context-state"][data-state="keyframe"]')
-    .waitFor({ timeout: 10_000 });
-  await page.waitForTimeout(900);
-  // 在两个真实关键帧间往返，验证 F0 初始 Mask 与 F5 人工修订都已落入同一轨迹。
-  await page.getByRole("button", { name: "上一关键帧" }).click();
-  await page.getByTestId("video-konva-stage").waitFor({ state: "visible" });
-  await page.waitForTimeout(1_200);
-  await page.getByRole("button", { name: "下一关键帧" }).click();
-  await page.waitForTimeout(1_200);
-
-  return { drawStartMs, drawEndMs: Date.now() };
 }

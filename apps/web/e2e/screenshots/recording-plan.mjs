@@ -1,12 +1,16 @@
 // Explicitly enrolled flows only: unknown flows must not acquire a manual fallback.
 const manual = [
   "bbox-draw",
+  "workspace-layout-basics",
   "rotated-bbox",
   "polyline-draw",
   "polygon-draw",
   "mask-draw",
   "ai-prediction-import",
   "review-reject",
+  "pipeline-apply-project",
+  "ai-preannotate",
+  "project-ml-routing",
   "batch-bulk-actions",
   "video-track",
   "video-timeline-zoom",
@@ -14,30 +18,72 @@ const manual = [
   "video-track-carryover",
   "video-mask-track-edit",
   "video-draw",
+  "video-tracker-job-states",
+  "workspace-layout-persistence",
   "pointcloud-controls",
   "pointcloud-view",
   "pointcloud-billboard-label",
   "pointcloud-camera-seed-3d-box",
   "pointcloud-crossframe-track",
+  "pointcloud-panel-layout",
   "large-image-progressive",
   "large-image-pyramid-recovery",
   "large-image-mask-limit",
   "hotkey-cheatsheet",
 ];
 
-export const RECORDING_FLOWS = {
-  ...Object.fromEntries(manual.map((id) => [id, []])),
+// Inference execution is explicit: a panel can require live capabilities without
+// submitting a prediction or tracker job during its recording.
+const liveInference = {
   "sam-tool-smart-point": ["image_interactive"],
   "sam-tool-smart-box": ["image_interactive"],
   "sam-tool-exemplar": ["image_interactive"],
   "sam-interactive": ["image_interactive"],
   "ocr-inference": ["ocr"],
+  "secondary-inference-attribute": ["ocr"],
+  "jobs-retry-recovery": ["ocr"],
+  // These flows enable and execute live YOLO/ONNX jobs after their own project
+  // setup. Their capability scope is intentionally empty because the flow
+  // selects the backend itself; recordingInference still marks execution live.
+  "ai-preannotate": [],
+  "pipeline-apply-project": [],
+  "current-task-image-inference": ["ocr"],
+  "candidate-keyboard-review": ["image_interactive"],
+  "candidate-review-lifecycle": ["image_interactive"],
+  "smart-scribble": ["image_interactive"],
+  "video-tracker-range": ["video_tracker"],
+  "video-tracker-cross-frame-points": ["video_tracker"],
+  "video-tracker-positive-negative": ["video_tracker"],
+  "video-tracker-box-seed": ["video_tracker"],
+  "video-tracker-text-discovery": ["video_tracker"],
+  "current-frame-video-inference": ["video_tracker"],
+  "video-timeline-prediction-navigation": ["video_tracker"],
+  "video-mask-correction-propagate": ["video_tracker"],
+  "video-propagate-track-vs-copy": ["video_tracker"],
+  "video-track-batch-propagate": ["video_tracker"],
+  "video-tracker-combo-discovery": ["video_tracker"],
 };
 
+export const RECORDING_FLOWS = {
+  ...Object.fromEntries(manual.map((id) => [id, []])),
+  ...liveInference,
+  "ai-tracker-panel": ["video_tracker"],
+  "project-ml-routing": ["image_interactive"],
+};
+
+export function recordingInference(flowId) {
+  if (!Object.hasOwn(RECORDING_FLOWS, flowId))
+    throw new Error(`Unregistered recording flow: ${flowId}`);
+  return Object.hasOwn(liveInference, flowId) ? "live" : "none";
+}
+
 export const MARKETING_ONLY_FLOWS = [
+  "pointcloud-controls",
+  "pointcloud-view",
   "pointcloud-billboard-label",
   "pointcloud-camera-seed-3d-box",
   "pointcloud-crossframe-track",
+  "pointcloud-panel-layout",
 ];
 
 export function recordingPlan(flows, profile = "docs") {

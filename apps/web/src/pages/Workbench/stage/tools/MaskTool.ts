@@ -15,7 +15,7 @@ export const MaskTool: CanvasToolMeta = {
   id: "mask",
   hotkey: "M",
   label: "Mask 笔刷",
-  icon: "edit",
+  icon: "brush",
   cursor: "crosshair",
   onPointerDown: ({ pt, readOnly, imgW, imgH, maskEditor, annotationLocked }) => {
     // v0.23.5 · WS-C · pointer 入口经 canEditMask: task readOnly 或 annotation is_locked

@@ -25,7 +25,7 @@ last_reviewed: 2026-09-08
   src="/media/polygon/draw.mp4"
   poster="/media/polygon/draw-poster.webp"
   alt="沿目标边界逐点绘制多边形并按 Enter 闭合提交"
-  caption="沿边界依次落点，观察预览线和闭合提示，按 Enter 完成多边形并选择类别。"
+  caption="标准标注布局保留类别和详情面板；沿边界逐点绘制，按 Enter 闭合后选择目标类别。"
 />
 
 ## 绘制快捷键

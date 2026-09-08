@@ -65,7 +65,8 @@ schema 详情见 [点云 / 多模态数据集导入格式 · 标定 JSON schema]
 <DocsVideo
   src="/media/pointcloud/camera-seed-3d-box.mp4"
   poster="/media/pointcloud/camera-seed-3d-box-poster.webp"
-  alt="在同步前视相机中圈定前景目标，生成真实 3D 框，在点云与三视图核对并再次检查相机重投影"
+  alt="从停靠相机图库放大前视相机并圈定目标，生成 3D 框后切换三视图精修核对"
+  caption="传感器融合布局把相机收进停靠图库；种框保存后可切换三视图精修，继续核对同一个对象。"
 />
 
 远处 / 稀疏 / 遮挡目标在点云主视图里点太少、难直接框，但在相机图上一眼可见。**种框**让你在相机图上拖一个 2D 矩形，系统反算视锥、选出锥内点云、自动拟合出一个 3D 框：

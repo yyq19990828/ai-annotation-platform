@@ -183,7 +183,7 @@ export function MaskToolbar({
       onMouseDown={(event) => event.stopPropagation()}
     >
       <div className="flex shrink-0 items-center gap-1.5">
-        <Icon name="scissors" size={13} />
+        <Icon name="brush" size={13} />
         <b className="whitespace-nowrap text-xs">Mask 编辑</b>
       </div>
       {TOOLBAR_DIVIDER}

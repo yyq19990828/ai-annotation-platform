@@ -1,6 +1,8 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { CocoRleMaskRef } from "@/types";
+import type { AnnotationResponse, CocoRleMaskRef } from "@/types";
+import { rasterMasksApi } from "@/api/rasterMasks";
+import { buildImageRasterMaskDescriptors } from "../../state/imageRasterMaskDescriptors";
 import { decodeCocoRle, encodeCocoRle, type CocoRle } from "./geometry/maskRle";
 import { analyzeRasterMaskAlpha } from "./rasterMaskRender";
 import { RasterMaskWorkerError } from "./rasterMaskWorkerPool";
@@ -198,6 +200,152 @@ describe("useRasterMaskRecords", () => {
       area: 2,
     });
     expect(view.result.current.records[0]?.rle).toBeUndefined();
+  });
+
+  it("waits for the persisted image Mask id before loading its optimistic content", async () => {
+    const item = makeDescriptor("persisted-mask");
+    const load = vi
+      .spyOn(rasterMasksApi, "annotationRasterMaskContent")
+      .mockResolvedValue(item.rle);
+    const annotation: AnnotationResponse = {
+      id: "tmp_new-mask",
+      task_id: "task-1",
+      project_id: "project-1",
+      user_id: "user-1",
+      source: "manual",
+      annotation_type: "raster_mask",
+      class_name: "car",
+      geometry: {
+        type: "raster_mask",
+        mask: {
+          ...item.descriptor.ref,
+          encoding: "coco_rle_ref",
+          object_key: "raster-masks/new-mask.json",
+          runs: item.rle.counts.length,
+          bytes: JSON.stringify(item.rle).length,
+        },
+      },
+      confidence: 1,
+      parent_prediction_id: null,
+      parent_annotation_id: null,
+      lead_time: null,
+      is_active: true,
+      ground_truth: false,
+      created_at: "2026-09-07T10:59:50Z",
+      updated_at: null,
+      render_key: "tmp_new-mask",
+    };
+    const view = renderHook(
+      ({ annotation }) =>
+        useRasterMaskRecords({
+          scopeKey: "task-1",
+          descriptors: buildImageRasterMaskDescriptors([annotation], new Set([annotation.id])),
+        }),
+      { initialProps: { annotation } },
+    );
+
+    await flushAsync();
+    expect(load).not.toHaveBeenCalled();
+    expect(view.result.current.statusById.size).toBe(0);
+    expect(view.result.current.records).toEqual([]);
+
+    // The create mutation keeps render_key stable while replacing only the API identity.
+    view.rerender({ annotation: { ...annotation, id: "persisted-mask", version: 1 } });
+    await flushAsync();
+
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(load).toHaveBeenCalledWith("persisted-mask");
+    expect(view.result.current.statusById.get("persisted-mask")?.state).toBe("ready");
+    expect(view.result.current.records[0]).toMatchObject({
+      id: "persisted-mask",
+      selected: true,
+      area: 2,
+    });
+  });
+
+  it("does not transfer an in-flight temporary id failure to its persisted replacement", async () => {
+    const pending = deferred<CocoRle>();
+    const temporary = makeDescriptor("tmp_new-mask", { load: vi.fn(() => pending.promise) });
+    const persisted = makeDescriptor("persisted-mask", { selected: true });
+    persisted.descriptor.ref = temporary.descriptor.ref;
+    const view = renderHook(
+      ({ descriptor }) => useRasterMaskRecords({ scopeKey: "task-1", descriptors: [descriptor] }),
+      { initialProps: { descriptor: temporary.descriptor } },
+    );
+
+    expect(temporary.load).toHaveBeenCalledTimes(1);
+    view.rerender({ descriptor: persisted.descriptor });
+    expect(view.result.current.statusById.get("persisted-mask")?.state).toBe("loading");
+
+    pending.reject({ status: 422 });
+    await flushAsync(16);
+
+    expect(persisted.load).toHaveBeenCalledTimes(1);
+    expect(view.result.current.statusById.has("tmp_new-mask")).toBe(false);
+    expect(view.result.current.statusById.get("persisted-mask")?.state).toBe("ready");
+    expect(view.result.current.records[0]).toMatchObject({ id: "persisted-mask", area: 2 });
+  });
+
+  it.each([
+    [403, "forbidden"],
+    [404, "not_found"],
+    [409, "corrupt"],
+    [503, "unavailable"],
+  ])(
+    "preserves a source's own HTTP %i failure after another source fails",
+    async (status, reason) => {
+      const pending = deferred<CocoRle>();
+      const first = makeDescriptor("first", { load: vi.fn(() => pending.promise) });
+      const second = makeDescriptor("second", { load: vi.fn().mockRejectedValue({ status }) });
+      second.descriptor.ref = first.descriptor.ref;
+      const view = renderHook(() =>
+        useRasterMaskRecords({
+          scopeKey: "task-1",
+          descriptors: [first.descriptor, second.descriptor],
+        }),
+      );
+
+      pending.reject({ status: 422 });
+      await flushAsync(16);
+
+      expect(first.load).toHaveBeenCalledTimes(1);
+      expect(second.load).toHaveBeenCalledTimes(1);
+      expect(view.result.current.statusById.get("first")).toMatchObject({
+        state: "error",
+        httpStatus: 422,
+      });
+      expect(view.result.current.statusById.get("second")).toMatchObject({
+        state: "error",
+        httpStatus: status,
+        reason,
+      });
+      expect(view.result.current.records).toEqual([]);
+    },
+  );
+
+  it("keeps an in-flight source failure when only its display color changes", async () => {
+    const pending = deferred<CocoRle>();
+    const item = makeDescriptor("same-mask", { load: vi.fn(() => pending.promise) });
+    const recoloredLoad = vi.fn(async () => item.rle);
+    const view = renderHook(
+      ({ descriptor }) => useRasterMaskRecords({ scopeKey: "task-1", descriptors: [descriptor] }),
+      { initialProps: { descriptor: item.descriptor } },
+    );
+
+    view.rerender({
+      descriptor: { ...item.descriptor, colorRevision: "new-color", load: recoloredLoad },
+    });
+    pending.reject({ status: 403 });
+    await flushAsync(16);
+
+    expect(item.load).toHaveBeenCalledTimes(1);
+    expect(recoloredLoad).not.toHaveBeenCalled();
+    expect(view.result.current.statusById.get("same-mask")).toMatchObject({
+      state: "error",
+      reason: "forbidden",
+      retryable: false,
+      httpStatus: 403,
+    });
   });
 
   it("keeps ready siblings when one object fails and retries only the target", async () => {

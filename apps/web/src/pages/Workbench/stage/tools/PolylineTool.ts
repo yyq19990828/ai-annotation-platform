@@ -13,7 +13,7 @@ export const PolylineTool: CanvasTool = {
   id: "polyline",
   hotkey: "L",
   label: "折线",
-  icon: "spline",
+  icon: "annotationPolyline",
   cursor: "crosshair",
   onPointerDown: ({
     pt,

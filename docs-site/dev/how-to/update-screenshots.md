@@ -12,6 +12,13 @@ last_reviewed: 2026-07-23
 本平台采用 Playwright 自动化产出文档图片，支持矩阵化截图（多视口 / 多主题）、
 元素级裁切、SVG 注释叠加、网络状态 mock 以及流程录制（GIF/WebM）。
 
+截图与标准录制使用软件 WebGL 支持 3D 场景，同时禁用加速 2D Canvas，避免调整画布尺寸后残留旧标注像素。
+修改浏览器启动参数后，可运行不依赖 API 或截图数据库的绘制检查：
+
+```bash
+pnpm --filter @anno/web exec playwright test --config=playwright.screenshot-canvas.config.ts
+```
+
 ## Mac / Linux 分工录制
 
 录制机器不必也是 AI 推理机器。新增入口将场景所需的模型能力与采集规格分开：
@@ -43,6 +50,10 @@ pnpm --filter @anno/web screenshots:record -- --flow bbox-draw --profile marketi
 
 手工场景使用 `--backend-requirements none`，不探测或启动模型；OCR 只要求 `ocr`，SAM 工具使用
 `image_interactive` 能力组（包含 exemplar），多个 `--flow` 合并依赖。入口只使用真实后端，缺失时失败，不自动回退 stub。
+`candidate-keyboard-review` 同样要求 `image_interactive`，并额外核验 `sam3-segmentation`。它通过正式预标注 API 和隔离 worker 生成车辆轮廓，保留模型原始置信度、候选索引及源清单中的 `inference_evidence`，不注入固定候选。录制会检查逐项采纳／拒绝请求和标注保存结果；模型未返回足够候选时直接失败。
+
+视频范围刷选、跨帧多正点、正负点、框种子和文本发现录制使用 `video_tracker` 能力组，分别对应 `video-tracker-range`、`video-tracker-cross-frame-points`、`video-tracker-positive-negative`、`video-tracker-box-seed`、`video-tracker-text-discovery`。这些流程运行真实追踪作业，并保存请求、候选、采纳及重载验证证据；文本发现按返回几何匹配目标，不依赖固定实例编号。失败时也会按已登记 ID 清理作业和新建标注。
+
 Mac 可连接已注册的远程 Linux 模型服务：API / Worker 必须能访问模型，模型也必须能访问截图存储的签名媒体 URL。
 `--ml-backend-url` 是 stub 配置，不是远程 live 后端地址。仅改 API URL 不会把本地 seed / 清理脚本搬到远端。
 
@@ -134,9 +145,11 @@ pnpm screenshots:lint             # 快速检查静态引用与 manifest
 # 开发/验证场景：执行真实导航和 locator 校验，但不写 PNG/manifest
 SCREENSHOT_VALIDATE_ONLY=1 pnpm screenshots
 
-# 首页 Hero 静态卡片源图更新后，重新生成轻量 WebP
-pnpm --filter @anno/docs-site media:home-hero
+# 首页 Hero 静态卡片源图更新后，按本轮范围生成轻量 WebP
+pnpm --filter @anno/docs-site media:home-hero --asset video-track --asset pointcloud --asset review
 ```
+
+按流程录制使用当前浏览器时间，与后端任务锁和作业时间一致；需要展示真实倒计时的静态场景声明 `clock: "live"`。其他截图场景继续使用固定日期，避免无关时间漂移。
 
 截图脚本从只读 screenshot catalog 获取当次运行的 UUID，并分别使用 seed 中的
 `admin`、`anno` 和 `qa` 账号呈现超管、标注员和审核员的真实项目关系。
@@ -356,7 +369,7 @@ pnpm docs:media:audit -- --release
 人工审阅时至少检查每张 PNG 的主体内容、加载状态和敏感信息；GIF / MP4 / WebM 除首帧外
 还要抽查核心动作和最终结果，并确认动效完整、体积合理。首页 WebM 与 MP4 fallback 还需检查对应 WebP 海报能独立说明
 场景，主图不被浮动面板遮挡，且移动端与 `prefers-reduced-motion` 下不自动播放。Hero 源图更新后还要
-重新生成派生 WebP。源录像保留在 `.artifacts/recordings/` 或 `.artifacts/marketing/`；备份确认前不要删除。
+重新生成派生 WebP。生成器先核对源图与截图清单的哈希，再把派生关系写入流程媒体清单；不传 `--asset` 时处理全部四张卡片。媒体审计也会读取主题组件中的静态图片导入，覆盖这些首页配图。源录像保留在 `.artifacts/recordings/` 或 `.artifacts/marketing/`；备份确认前不要删除。
 
 ## 生成来源与人工复核版本
 

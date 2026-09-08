@@ -12,6 +12,7 @@ import {
   resolveLargeFrameStep,
 } from "./VideoPlaybackOverlay";
 import { getTrackColor } from "./colors";
+import { resolveVideoTimelineRangePurpose } from "../state/useWorkbenchShellModel.helpers";
 import { buildFrameTimebase } from "./frameTimebase";
 import type { VideoTimelineDensityBin, VideoTrackTimeline } from "./videoTrackTimeline";
 import type { VideoTimelineWindowControls } from "./videoStageControls";
@@ -627,6 +628,81 @@ describe("VideoPlaybackOverlay", () => {
     fireEvent(shell, pointerMove(800));
     fireEvent(shell, pointerUp(800));
     expect(onRangeSelect).toHaveBeenCalledWith("propagate-range", { startFrame: 2, endFrame: 7 });
+  });
+
+  it.each([false, true])(
+    "gives an explicitly armed chapter brush priority over a retained propagation session (expanded=%s)",
+    (expanded) => {
+      const onSeek = vi.fn();
+      const onRangeSelect = vi.fn();
+      const { getByTestId } = renderOverlay({
+        rangeSelectPurpose: resolveVideoTimelineRangePurpose(true, true),
+        onSeek,
+        onRangeSelect,
+      });
+      if (expanded) fireEvent.click(getByTestId("video-timeline-toggle"));
+      const shell = getByTestId("video-timeline-shell");
+      setRect(shell);
+
+      fireEvent(shell, pointerDown(200));
+      fireEvent(shell, pointerMove(600));
+      fireEvent(shell, pointerUp(600));
+
+      expect(onSeek).not.toHaveBeenCalled();
+      expect(onRangeSelect).toHaveBeenCalledTimes(1);
+      expect(onRangeSelect).toHaveBeenCalledWith("chapter-draft", {
+        startFrame: 2,
+        endFrame: 5,
+      });
+    },
+  );
+
+  it("returns Shift+drag to propagation after the chapter arm is cleared", () => {
+    const onSeek = vi.fn();
+    const onRangeSelect = vi.fn();
+    const overlay = (chapterDraftArmed: boolean) => (
+      <VideoPlaybackOverlay
+        frameIndex={0}
+        maxFrame={9}
+        timebase={timebase}
+        isPlaying={false}
+        currentFrameEntryCount={0}
+        visible
+        onSeek={onSeek}
+        onSeekByFrames={() => {}}
+        onTogglePlay={() => {}}
+        rangeSelectPurpose={resolveVideoTimelineRangePurpose(chapterDraftArmed, true)}
+        onRangeSelect={onRangeSelect}
+      />
+    );
+    const { getByTestId, rerender } = render(overlay(true));
+    fireEvent.click(getByTestId("video-timeline-toggle"));
+    const shell = getByTestId("video-timeline-shell");
+    setRect(shell);
+    fireEvent(shell, pointerDown(200));
+    fireEvent(shell, pointerMove(600));
+    fireEvent(shell, pointerUp(600));
+    expect(onRangeSelect).toHaveBeenCalledWith("chapter-draft", {
+      startFrame: 2,
+      endFrame: 5,
+    });
+    onRangeSelect.mockClear();
+
+    // The shell clears its chapter arm when the user opens propagation again.
+    rerender(overlay(false));
+    fireEvent(shell, pointerDown(300, true));
+    fireEvent(shell, pointerMove(900));
+    fireEvent(shell, pointerUp(900));
+
+    expect(onSeek).not.toHaveBeenCalled();
+    expect(onRangeSelect).toHaveBeenCalledTimes(1);
+    expect(onRangeSelect).toHaveBeenCalledWith("propagate-range", {
+      startFrame: 3,
+      endFrame: 8,
+    });
+    fireEvent(shell, pointerDown(400));
+    fireEvent(shell, pointerUp(400));
+    expect(onSeek).toHaveBeenCalledWith(4);
   });
 
   // v0.21.13 WS3 · 拖章节条右边界 → 松手 onChapterResize 落新起止帧 (拖动中本地预览)。

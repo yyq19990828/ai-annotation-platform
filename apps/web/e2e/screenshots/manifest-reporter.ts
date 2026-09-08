@@ -16,6 +16,7 @@ interface ScreenshotRunMetadata {
   project: string;
   viewport: { width: number; height: number } | null;
   theme: string;
+  clock?: "fixed" | "live";
   locale: string;
   browser: { name: string; version: string };
 }
@@ -193,6 +194,7 @@ export default class ScreenshotManifestReporter implements Reporter {
           project: metadata.project,
           viewport: metadata.viewport,
           theme: metadata.theme,
+          clock: migrateLegacy ? "unverified" : (metadata.clock ?? "fixed"),
           locale: metadata.locale,
           generated_at: migrateLegacy
             ? (previous?.generated_at ??

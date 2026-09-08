@@ -1,15 +1,21 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
-import { RECORDING_FLOWS, recordingPlan, screenshotCatalogPath } from "./recording-plan.mjs";
+import {
+  RECORDING_FLOWS,
+  recordingInference,
+  recordingPlan,
+  screenshotCatalogPath,
+} from "./recording-plan.mjs";
 
 test("selection scopes AI without changing capture quality or legacy catalog defaults", () => {
   assert.equal(recordingPlan(["bbox-draw"]).backendRequirements, "none");
   const output = execFileSync(
     process.execPath,
     [
-      new URL("../../scripts/run-recording-capture.mjs", import.meta.url).pathname,
+      fileURLToPath(new URL("../../scripts/run-recording-capture.mjs", import.meta.url)),
       "--",
       "--flow",
       "bbox-draw",
@@ -23,6 +29,10 @@ test("selection scopes AI without changing capture quality or legacy catalog def
     recordingPlan(["sam-interactive"], "marketing").backendRequirements,
     "image_interactive",
   );
+  assert.equal(
+    recordingPlan(["candidate-keyboard-review"]).backendRequirements,
+    "image_interactive",
+  );
   assert.throws(() => recordingPlan(["typo"]), /Unregistered/);
   assert.throws(
     () => recordingPlan(["pointcloud-billboard-label"]),
@@ -32,6 +42,10 @@ test("selection scopes AI without changing capture quality or legacy catalog def
     recordingPlan(["pointcloud-billboard-label"], "marketing").backendRequirements,
     "none",
   );
+  for (const id of ["pointcloud-controls", "pointcloud-view", "pointcloud-panel-layout"]) {
+    assert.throws(() => recordingPlan([id]), /requires --profile marketing/);
+    assert.equal(recordingPlan([id], "marketing").backendRequirements, "none");
+  }
   assert.throws(() => recordingPlan([]), /Select/);
   assert.throws(() => recordingPlan(["bbox-draw"], "4k-mac"), /Unknown profile/);
   const grep = new RegExp(recordingPlan(["bbox-draw"]).grep);
@@ -46,4 +60,103 @@ test("selection scopes AI without changing capture quality or legacy catalog def
   for (const id of Object.keys(RECORDING_FLOWS)) {
     assert.ok(id.startsWith("sam-tool-") || spec.includes(`test("${id} —`), `No flow for ${id}`);
   }
+});
+
+test("capability-only panels and live inference retain separate recording evidence", () => {
+  assert.deepEqual(RECORDING_FLOWS["ai-tracker-panel"], ["video_tracker"]);
+  assert.equal(recordingPlan(["ai-tracker-panel"]).backendRequirements, "video_tracker");
+  assert.equal(recordingInference("ai-tracker-panel"), "none");
+
+  assert.deepEqual(RECORDING_FLOWS["current-task-image-inference"], ["ocr"]);
+  assert.equal(recordingPlan(["current-task-image-inference"]).backendRequirements, "ocr");
+  assert.equal(recordingInference("current-task-image-inference"), "live");
+  assert.deepEqual(RECORDING_FLOWS["secondary-inference-attribute"], ["ocr"]);
+  assert.deepEqual(RECORDING_FLOWS["jobs-retry-recovery"], ["ocr"]);
+  assert.deepEqual(RECORDING_FLOWS["project-ml-routing"], ["image_interactive"]);
+  assert.equal(recordingInference("ai-preannotate"), "live");
+  assert.equal(recordingInference("pipeline-apply-project"), "live");
+  assert.equal(recordingPlan(["ai-preannotate"]).backendRequirements, "none");
+  assert.equal(recordingPlan(["pipeline-apply-project"]).backendRequirements, "none");
+  assert.equal(recordingPlan(["ai-preannotate", "bbox-draw"]).backendRequirements, "none");
+  assert.equal(recordingPlan(["ai-preannotate", "ocr-inference"]).backendRequirements, "ocr");
+
+  for (const id of [
+    "sam-tool-smart-point",
+    "sam-tool-smart-box",
+    "sam-tool-exemplar",
+    "sam-interactive",
+    "ocr-inference",
+    "candidate-keyboard-review",
+    "candidate-review-lifecycle",
+    "smart-scribble",
+    "video-tracker-range",
+    "video-tracker-cross-frame-points",
+    "video-tracker-positive-negative",
+    "video-tracker-box-seed",
+    "video-tracker-text-discovery",
+  ]) {
+    assert.equal(recordingInference(id), "live", id);
+  }
+  for (const [id, requirements] of Object.entries(RECORDING_FLOWS)) {
+    if (requirements.length === 0) {
+      assert.ok(["none", "live"].includes(recordingInference(id)), id);
+    }
+  }
+  for (const id of ["typo", "toString", "__proto__"]) {
+    assert.throws(() => recordingInference(id), /Unregistered/);
+  }
+});
+
+test("capture list distinguishes flow-owned live inference from manual flows", () => {
+  const output = execFileSync(
+    process.execPath,
+    [fileURLToPath(new URL("../../scripts/run-recording-capture.mjs", import.meta.url)), "--list"],
+    { encoding: "utf8" },
+  );
+  assert.match(output, /^ai-preannotate\tlive inference \(flow setup\)\tdocs \/ marketing$/m);
+  assert.match(
+    output,
+    /^pipeline-apply-project\tlive inference \(flow setup\)\tdocs \/ marketing$/m,
+  );
+  assert.match(output, /^bbox-draw\tmanual \(no ML backend\)\tdocs \/ marketing$/m);
+});
+
+test("mixed selection combines capability requirements without widening individual inference", () => {
+  const plan = recordingPlan([
+    "ai-tracker-panel",
+    "current-task-image-inference",
+    "bbox-draw",
+    "ai-tracker-panel",
+  ]);
+  assert.deepEqual(plan.flows, ["ai-tracker-panel", "current-task-image-inference", "bbox-draw"]);
+  assert.equal(plan.backendRequirements, "ocr,video_tracker");
+  assert.deepEqual(plan.flows.map(recordingInference), ["none", "live", "none"]);
+  const grep = new RegExp(plan.grep);
+  for (const id of plan.flows) assert.ok(grep.test(`flows flow recordings ${id} — title`));
+  assert.ok(!grep.test("flows flow recordings video-tracker-range — title"));
+});
+
+test("video tracking recordings require a live tracker without widening to other backends", () => {
+  const flows = [
+    "video-tracker-range",
+    "video-tracker-cross-frame-points",
+    "video-tracker-positive-negative",
+    "video-tracker-box-seed",
+    "video-tracker-text-discovery",
+    "current-frame-video-inference",
+    "video-timeline-prediction-navigation",
+    "video-mask-correction-propagate",
+    "video-propagate-track-vs-copy",
+    "video-track-batch-propagate",
+    "video-tracker-combo-discovery",
+  ];
+  assert.equal(recordingPlan(flows).backendRequirements, "video_tracker");
+  assert.deepEqual(
+    flows.map(recordingInference),
+    flows.map(() => "live"),
+  );
+  assert.equal(
+    recordingPlan(["video-tracker-combo-discovery"]).backendRequirements,
+    "video_tracker",
+  );
 });

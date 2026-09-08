@@ -102,7 +102,7 @@ test.describe("visual regression", () => {
       let cleanupAnnotations: () => Promise<void> = async () => {};
 
       try {
-        await installScreenshotEnvironment(page);
+        await installScreenshotEnvironment(page, { clock: scene.clock });
         await seed.injectToken(page, emailByRole[role]);
         await applyScreenshotTheme(page, "light");
         cleanupMock = await setupMockState(page, scene.mockState);
