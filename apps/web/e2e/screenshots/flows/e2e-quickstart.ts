@@ -87,7 +87,7 @@ export async function runE2eQuickstart(
   await hold(800, 1_800);
 
   // ── Step 5：提交标注 ─────────────────────────────────────────
-  const submitBtn = page.getByRole("button", { name: "提交质检" });
+  const submitBtn = page.getByTestId("workbench-submit");
   await submitBtn.click();
   await page
     .getByText(`已提交 ${project.tasks.clean.display_id} 至质检`, { exact: true })

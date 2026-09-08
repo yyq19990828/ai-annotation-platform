@@ -844,10 +844,11 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
           aria-haspopup="menu"
           aria-expanded={open}
           onClick={toggle}
-          className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+          className="inline-flex h-8 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 text-xs text-muted-foreground hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring @max-[1100px]:w-7 @max-[1100px]:justify-center @max-[1100px]:p-0"
         >
-          布局
-          <Icon name="chevDown" size={12} />
+          <span className="@max-[1100px]:hidden">布局</span>
+          <Icon name="grid" size={14} className="hidden @max-[1100px]:block" />
+          <Icon name="chevDown" size={12} className="@max-[1100px]:hidden" />
         </button>
       )}
     />

@@ -28,6 +28,14 @@ describe("Topbar · AI 工具入口", () => {
       />,
     );
 
+    for (const label of ["上一个任务", "下一个任务"]) {
+      const navigation = screen.getByRole("button", { name: label });
+      expect(navigation).toHaveAttribute("title", label);
+      expect(navigation.textContent).toBe("");
+      expect(navigation.querySelector("svg")).not.toBeNull();
+    }
+    expect(screen.getByTestId("workbench-submit")).toHaveTextContent(/^提交$/);
+
     const tracker = screen.getByTestId("workbench-ai-tracker");
     const single = screen.getByTestId("workbench-ai-single");
 

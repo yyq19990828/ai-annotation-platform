@@ -126,7 +126,7 @@ export function Topbar({
   videoSegments,
   activeVideoSegmentId,
   onSelectVideoSegment,
-  submitLabel = "提交质检",
+  submitLabel = "提交",
 }: TopbarProps) {
   const { resolved, setTheme } = useTheme();
   // v0.8.7 F7 · 跳过任务 modal 状态
@@ -168,312 +168,377 @@ export function Topbar({
   const themeActionLabel = nextTheme === "dark" ? "切到夜间" : "切到日间";
   const themeTitle = `当前${resolved === "dark" ? "夜间" : "日间"}，${themeActionLabel}`;
 
+  const videoSegmentSelect = videoSegments && onSelectVideoSegment && (
+    <select
+      aria-label="当前视频分段"
+      value={activeVideoSegmentId ?? ""}
+      onChange={(event) => onSelectVideoSegment(event.target.value || null)}
+      className="h-7 min-w-0 w-32 max-w-full rounded border border-border bg-card px-2 text-xs text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <option value="">选择分段</option>
+      {videoSegments.map((segment) => (
+        <option key={segment.id} value={segment.id} disabled={segment.status === "completed"}>
+          S{segment.segment_index + 1} · {segment.start_frame}-{segment.end_frame} ·{" "}
+          {segment.status}
+          {segment.assignee_id ? ` · ${segment.assignee_id.slice(0, 8)}` : " · 未分配"}
+        </option>
+      ))}
+    </select>
+  );
+
   return (
-    <div className="relative grid grid-cols-[1fr_auto_1fr] gap-3 items-center px-4 py-2.5 bg-card border-b border-border">
-      {/* 左：标题段 — display_id 主、文件名次、索引徽章右贴 */}
-      <div className="flex items-center gap-2.5 min-w-0">
-        <div className="flex shrink-0 items-center gap-0.5">
-          {onBack && (
+    <div
+      data-testid="workbench-topbar"
+      className="@container shrink-0 min-w-0 bg-card border-b border-border"
+    >
+      <div className="relative flex items-center gap-3 px-4 py-2 @max-[700px]:gap-1 @max-[700px]:px-2">
+        {/* 左：标题段 — display_id 主、文件名次、索引徽章右贴 */}
+        <div className="flex flex-initial items-center gap-2.5 min-w-0 max-w-[360px] @max-[1100px]:flex-none @max-[1100px]:gap-0">
+          <div className="flex shrink-0 items-center gap-0.5">
+            {onBack && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onBack}
+                title="返回"
+                aria-label="返回"
+                className="px-2 py-1 text-muted-foreground @max-[1100px]:w-7 @max-[1100px]:p-0"
+              >
+                <Icon name="chevLeft" size={13} />
+                <span className="@max-[1100px]:hidden">返回</span>
+              </Button>
+            )}
+            {onToggleSide && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => onToggleSide("left")}
+                disabled={layoutDisabled || sides.left === "empty"}
+                title={
+                  sides.left === "empty"
+                    ? "画布左侧没有停靠面板"
+                    : `${sides.left === "open" ? "收起" : "展开"}画布左侧所有面板`
+                }
+                aria-label="左侧面板"
+                aria-expanded={sides.left === "open"}
+                className="justify-center w-7 h-7 p-0 border-transparent rounded-[var(--radius-sm)] bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground"
+              >
+                <Icon name="panelLeft" size={14} />
+              </Button>
+            )}
+          </div>
+          <span className="shrink-0 w-px h-[18px] bg-border @max-[1100px]:hidden" />
+          <span
+            className="flex-auto min-w-0 overflow-hidden text-sm font-semibold text-foreground truncate @max-[1100px]:hidden"
+            title={projectName}
+          >
+            {projectName}
+          </span>
+        </div>
+
+        {/* 中：任务标识 + 任务导航 + 状态相关主操作（整体居中） */}
+        <div className="flex flex-1 items-center justify-center gap-1.5 min-w-0 [&>button]:shrink-0 @max-[700px]:gap-0.5 @max-[700px]:[&>button]:w-7 @max-[700px]:[&>button]:p-0">
+          <div className="flex items-center gap-2.5 min-w-0 @max-[700px]:hidden">
+            <span className="mono shrink-0 text-xs text-muted-foreground @max-[1400px]:hidden">
+              {projectDisplayId}
+            </span>
+            <span className="shrink-0 w-px h-4 bg-border @max-[1400px]:hidden" />
+            <span className="mono shrink-0 text-sm font-semibold text-foreground">
+              {task?.display_id ?? "—"}
+            </span>
+            <span
+              className="min-w-0 max-w-[220px] overflow-hidden text-sm text-muted-foreground truncate @max-[900px]:hidden"
+              title={task?.file_name ?? undefined}
+            >
+              {task?.file_name ?? "—"}
+            </span>
+            {indexLabel && (
+              <span className="mono shrink-0 px-2 py-0.5 text-xs font-medium text-muted-foreground tracking-[0.2px] bg-muted border border-border rounded-full">
+                {indexLabel}
+              </span>
+            )}
+            <div className="flex shrink-0 items-center gap-2.5 @max-[1400px]:hidden">
+              {/* v0.9.6 · 仅 pre_annotated 时显示徽章, 标注员一眼知道「先看 AI 候选」 */}
+              {batchStatus === "pre_annotated" && <BatchStatusBadge status="pre_annotated" />}
+              {/* v0.7.2 · 责任人胶囊：标注员 / 审核员（list_tasks/get_task 已 populate） */}
+              {(task?.assignee || task?.reviewer) && (
+                <span className="shrink-0 w-px h-4 bg-border" />
+              )}
+              {task?.assignee && (
+                <AssigneeAvatarStack users={[task.assignee]} label="标注" max={1} />
+              )}
+              {task?.reviewer && (
+                <AssigneeAvatarStack users={[task.reviewer]} label="审核" max={1} />
+              )}
+            </div>
+            {videoSegmentSelect}
+          </div>
+          <span className="shrink-0 w-px h-4 bg-border @max-[700px]:hidden" />
+          <Button
+            size="sm"
+            onClick={onPrev}
+            title="上一个任务"
+            aria-label="上一个任务"
+            className="w-7 p-0"
+          >
+            <Icon name="chevLeft" size={13} />
+          </Button>
+          {mode === "review" ? (
+            <>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={onApprove}
+                disabled={isApproving || !onApprove}
+                aria-label="通过"
+                data-testid="review-approve"
+                title="通过 (A)"
+              >
+                <Icon name="check" size={13} />
+                <span className="@max-[700px]:hidden">通过</span>
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={onReject}
+                disabled={isRejecting || !onReject}
+                aria-label="退回"
+                data-testid="review-reject"
+                title="退回 (R)"
+              >
+                <Icon name="x" size={12} />
+                <span className="@max-[700px]:hidden">退回</span>
+              </Button>
+            </>
+          ) : isReview ? (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={onWithdraw}
+              disabled={!canWithdraw || isWithdrawing || !onWithdraw}
+              aria-label="撤回提交"
+              title={canWithdraw ? "撤回提交，回到编辑态" : "审核员已介入，无法撤回"}
+            >
+              <Icon name="chevLeft" size={13} />
+              <span className="@max-[700px]:hidden">撤回提交</span>
+            </Button>
+          ) : isCompleted ? (
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={onReopen}
+              disabled={!canReopen || isReopening || !onReopen}
+              aria-label="继续编辑"
+              title="重开任务，回到编辑态"
+            >
+              <Icon name="edit" size={13} />
+              <span className="@max-[700px]:hidden">继续编辑</span>
+            </Button>
+          ) : (
+            <>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={onSubmit}
+                disabled={isSubmitting || submitDisabled}
+                title={submitLabel}
+                aria-label={submitLabel}
+                data-testid="workbench-submit"
+              >
+                <Icon name="check" size={13} />
+                <span className="@max-[700px]:hidden">{submitLabel}</span>
+              </Button>
+              {onSkip && (
+                <Button
+                  size="sm"
+                  onClick={() => setSkipOpen(true)}
+                  disabled={isSkipping || isSubmitting}
+                  title="图像损坏 / 无目标 / 不清晰时跳过本题"
+                  aria-label="跳过"
+                  data-testid="workbench-skip"
+                >
+                  <Icon name="x" size={12} />
+                  <span className="@max-[700px]:hidden">跳过</span>
+                </Button>
+              )}
+            </>
+          )}
+          <Button
+            size="sm"
+            onClick={onNext}
+            title="下一个任务"
+            aria-label="下一个任务"
+            className="w-7 p-0"
+          >
+            <Icon name="chevRight" size={13} />
+          </Button>
+
+          <div className="flex shrink-0 items-center gap-1.5 @max-[700px]:hidden">
+            {smartItems.length > 0 && (
+              <DropdownMenu
+                items={smartItems}
+                trigger={({ toggle, ref, open }) => (
+                  <Button
+                    ref={ref}
+                    variant="ghost"
+                    size="sm"
+                    onClick={toggle}
+                    title="智能切题 (N / U)"
+                    className={cn("px-1 py-1 text-muted-foreground ml-0.5", open && "bg-muted")}
+                  >
+                    <Icon name="wandSparkles" size={13} />
+                  </Button>
+                )}
+              />
+            )}
             <Button
               variant="ghost"
               size="sm"
-              onClick={onBack}
-              className="px-2 py-1 text-muted-foreground"
+              onClick={onShowHotkeys}
+              title="快捷键 (?)"
+              className="mono px-1 py-1 text-muted-foreground"
             >
-              <Icon name="chevLeft" size={13} />
-              返回
+              ?
             </Button>
+          </div>
+        </div>
+        {/* 右：AI 主操作（annotate）或 ReviewerMini chip（review）+ 溢出菜单 */}
+        <div className="relative flex shrink-0 items-center justify-end gap-1.5 [&>button]:shrink-0 [&>button]:whitespace-nowrap @max-[700px]:gap-0.5">
+          <div className="@max-[1100px]:hidden">{reviewInfoSlot}</div>
+          {showThr && confThreshold !== undefined && (
+            <span className="mono absolute top-[calc(100%+6px)] right-0 z-local-overlay inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-status-info pointer-events-none bg-status-info-soft border border-violet-500/30 rounded-full shadow-md">
+              <span className="w-1.5 h-1.5 bg-violet-600 dark:bg-violet-400 rounded-full" />
+              阈值 {(confThreshold * 100).toFixed(0)}%
+            </span>
           )}
+          {mode === "annotate" && (
+            <>
+              {onToggleTracker && (
+                <Button
+                  variant="ai"
+                  size="sm"
+                  onClick={onToggleTracker}
+                  aria-label="发现新目标"
+                  aria-pressed={trackerOpen}
+                  title={
+                    trackerOpen
+                      ? "聚焦画布级多目标追踪"
+                      : "发现或播种多个新目标，不延展当前选中轨迹"
+                  }
+                  className="h-7 px-3 @max-[1100px]:w-7 @max-[1100px]:p-0"
+                  data-testid="workbench-ai-tracker"
+                >
+                  {trackerRunning ? (
+                    <Icon
+                      name="loader2"
+                      size={13}
+                      className="animate-spin motion-reduce:animate-none"
+                    />
+                  ) : (
+                    <Icon name="bot" size={13} />
+                  )}
+                  <span className="@max-[1100px]:hidden">发现目标</span>
+                </Button>
+              )}
+              {onRunAi && (
+                <Button
+                  variant="ai"
+                  size="sm"
+                  onClick={onRunAi}
+                  aria-label="AI 单题"
+                  aria-pressed={aiOpen}
+                  disabled={aiDisabled}
+                  title={aiOpen ? "聚焦 AI 单题面板" : "打开 AI 单题面板"}
+                  className="h-7 px-3 @max-[1100px]:w-7 @max-[1100px]:p-0"
+                  data-testid="workbench-ai-single"
+                >
+                  {aiRunning ? (
+                    <Icon
+                      name="loader2"
+                      size={13}
+                      className="animate-spin motion-reduce:animate-none"
+                    />
+                  ) : (
+                    <Icon name="wandSparkles" size={13} />
+                  )}
+                  <span className="@max-[1100px]:hidden">AI</span>
+                </Button>
+              )}
+            </>
+          )}
+          <div className="flex items-center gap-1.5 @max-[700px]:hidden">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setTheme(nextTheme)}
+              title={themeTitle}
+              aria-label={themeTitle}
+              className="justify-center w-7 h-7 p-0 text-muted-foreground bg-transparent border-transparent rounded-[var(--radius-sm)] shadow-none hover:text-foreground hover:bg-muted"
+            >
+              <Icon name={themeIcon} size={14} />
+            </Button>
+
+            {onOpenWorkbenchSettings && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onOpenWorkbenchSettings}
+                title="工作台设置"
+                aria-label="工作台设置"
+                className="justify-center w-7 h-7 p-0 text-muted-foreground bg-transparent border-transparent rounded-[var(--radius-sm)] shadow-none hover:text-foreground hover:bg-muted"
+              >
+                <Icon name="settings" size={14} />
+              </Button>
+            )}
+          </div>
+          <div className="hidden @max-[700px]:block">
+            <DropdownMenu
+              footer={videoSegmentSelect}
+              items={[
+                ...smartItems,
+                { id: "hotkeys", label: "快捷键", onSelect: onShowHotkeys },
+                { id: "theme", label: themeActionLabel, onSelect: () => setTheme(nextTheme) },
+                ...(onOpenWorkbenchSettings
+                  ? [{ id: "settings", label: "工作台设置", onSelect: onOpenWorkbenchSettings }]
+                  : []),
+              ]}
+              trigger={({ ref, toggle, open }) => (
+                <Button
+                  ref={ref}
+                  size="sm"
+                  variant="ghost"
+                  className="w-7 p-0"
+                  title="更多工具"
+                  aria-label="更多工具"
+                  aria-haspopup="menu"
+                  aria-expanded={open}
+                  onClick={toggle}
+                >
+                  <Icon name="more" size={14} />
+                </Button>
+              )}
+            />
+          </div>
+          {layoutMenuSlot}
           {onToggleSide && (
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => onToggleSide("left")}
-              disabled={layoutDisabled || sides.left === "empty"}
+              onClick={() => onToggleSide("right")}
+              disabled={layoutDisabled || sides.right === "empty"}
               title={
-                sides.left === "empty"
-                  ? "画布左侧没有停靠面板"
-                  : `${sides.left === "open" ? "收起" : "展开"}画布左侧所有面板`
+                sides.right === "empty"
+                  ? "画布右侧没有停靠面板"
+                  : `${sides.right === "open" ? "收起" : "展开"}画布右侧所有面板`
               }
-              aria-label="左侧面板"
-              aria-expanded={sides.left === "open"}
+              aria-label="右侧面板"
+              aria-expanded={sides.right === "open"}
               className="justify-center w-7 h-7 p-0 border-transparent rounded-[var(--radius-sm)] bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground"
             >
-              <Icon name="panelLeft" size={14} />
+              <Icon name="panelRight" size={14} />
             </Button>
           )}
         </div>
-        <span className="shrink-0 w-px h-[18px] bg-border" />
-        <span
-          className="flex-auto min-w-0 overflow-hidden text-sm font-semibold text-foreground truncate"
-          title={projectName}
-        >
-          {projectName}
-        </span>
-      </div>
-
-      {/* 中：任务标识 + 任务导航 + 状态相关主操作（整体居中） */}
-      <div className="flex items-center gap-1.5 min-w-0">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <span className="mono shrink-0 text-xs text-muted-foreground">{projectDisplayId}</span>
-          <span className="shrink-0 w-px h-4 bg-border" />
-          <span className="mono shrink-0 text-sm font-semibold text-foreground">
-            {task?.display_id ?? "—"}
-          </span>
-          <span
-            className="min-w-0 max-w-[220px] overflow-hidden text-sm text-muted-foreground truncate"
-            title={task?.file_name ?? undefined}
-          >
-            {task?.file_name ?? "—"}
-          </span>
-          {indexLabel && (
-            <span className="mono shrink-0 px-2 py-0.5 text-xs font-medium text-muted-foreground tracking-[0.2px] bg-muted border border-border rounded-full">
-              {indexLabel}
-            </span>
-          )}
-          {/* v0.9.6 · 仅 pre_annotated 时显示徽章, 标注员一眼知道「先看 AI 候选」 */}
-          {batchStatus === "pre_annotated" && <BatchStatusBadge status="pre_annotated" />}
-          {/* v0.7.2 · 责任人胶囊：标注员 / 审核员（list_tasks/get_task 已 populate） */}
-          {(task?.assignee || task?.reviewer) && <span className="shrink-0 w-px h-4 bg-border" />}
-          {task?.assignee && <AssigneeAvatarStack users={[task.assignee]} label="标注" max={1} />}
-          {task?.reviewer && <AssigneeAvatarStack users={[task.reviewer]} label="审核" max={1} />}
-          {videoSegments && onSelectVideoSegment && (
-            <select
-              aria-label="当前视频分段"
-              value={activeVideoSegmentId ?? ""}
-              onChange={(event) => onSelectVideoSegment(event.target.value || null)}
-              className="h-7 min-w-32 rounded border border-border bg-card px-2 text-xs text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              <option value="">选择分段</option>
-              {videoSegments.map((segment) => (
-                <option
-                  key={segment.id}
-                  value={segment.id}
-                  disabled={segment.status === "completed"}
-                >
-                  S{segment.segment_index + 1} · {segment.start_frame}-{segment.end_frame} ·{" "}
-                  {segment.status}
-                  {segment.assignee_id ? ` · ${segment.assignee_id.slice(0, 8)}` : " · 未分配"}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
-        <span className="shrink-0 w-px h-4 bg-border" />
-        <Button size="sm" onClick={onPrev}>
-          <Icon name="chevLeft" size={13} />
-          上一
-        </Button>
-        {mode === "review" ? (
-          <>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={onApprove}
-              disabled={isApproving || !onApprove}
-              data-testid="review-approve"
-              title="通过 (A)"
-            >
-              <Icon name="check" size={13} />
-              通过
-            </Button>
-            <Button
-              variant="danger"
-              size="sm"
-              onClick={onReject}
-              disabled={isRejecting || !onReject}
-              data-testid="review-reject"
-              title="退回 (R)"
-            >
-              <Icon name="x" size={12} />
-              退回
-            </Button>
-          </>
-        ) : isReview ? (
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={onWithdraw}
-            disabled={!canWithdraw || isWithdrawing || !onWithdraw}
-            title={canWithdraw ? "撤回提交，回到编辑态" : "审核员已介入，无法撤回"}
-          >
-            <Icon name="chevLeft" size={13} />
-            撤回提交
-          </Button>
-        ) : isCompleted ? (
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={onReopen}
-            disabled={!canReopen || isReopening || !onReopen}
-            title="重开任务，回到编辑态"
-          >
-            <Icon name="edit" size={13} />
-            继续编辑
-          </Button>
-        ) : (
-          <>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={onSubmit}
-              disabled={isSubmitting || submitDisabled}
-              data-testid="workbench-submit"
-            >
-              <Icon name="check" size={13} />
-              {submitLabel}
-            </Button>
-            {onSkip && (
-              <Button
-                size="sm"
-                onClick={() => setSkipOpen(true)}
-                disabled={isSkipping || isSubmitting}
-                title="图像损坏 / 无目标 / 不清晰时跳过本题"
-                data-testid="workbench-skip"
-              >
-                <Icon name="x" size={12} />
-                跳过
-              </Button>
-            )}
-          </>
-        )}
-        <Button size="sm" onClick={onNext}>
-          下一
-          <Icon name="chevRight" size={13} />
-        </Button>
-
-        {smartItems.length > 0 && (
-          <DropdownMenu
-            items={smartItems}
-            trigger={({ toggle, ref, open }) => (
-              <Button
-                ref={ref}
-                variant="ghost"
-                size="sm"
-                onClick={toggle}
-                title="智能切题 (N / U)"
-                className={cn("px-1 py-1 text-muted-foreground ml-0.5", open && "bg-muted")}
-              >
-                <Icon name="wandSparkles" size={13} />
-              </Button>
-            )}
-          />
-        )}
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onShowHotkeys}
-          title="快捷键 (?)"
-          className="mono px-1 py-1 text-muted-foreground"
-        >
-          ?
-        </Button>
-      </div>
-
-      {/* 右：AI 主操作（annotate）或 ReviewerMini chip（review）+ 溢出菜单 */}
-      <div className="relative flex items-center justify-end gap-1.5">
-        {reviewInfoSlot}
-        {showThr && confThreshold !== undefined && (
-          <span className="mono absolute top-[calc(100%+6px)] right-0 z-local-overlay inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-status-info pointer-events-none bg-status-info-soft border border-violet-500/30 rounded-full shadow-md">
-            <span className="w-1.5 h-1.5 bg-violet-600 dark:bg-violet-400 rounded-full" />
-            阈值 {(confThreshold * 100).toFixed(0)}%
-          </span>
-        )}
-        {mode === "annotate" && (
-          <>
-            {onToggleTracker && (
-              <Button
-                variant="ai"
-                size="sm"
-                onClick={onToggleTracker}
-                aria-label="发现新目标"
-                aria-pressed={trackerOpen}
-                title={
-                  trackerOpen ? "聚焦画布级多目标追踪" : "发现或播种多个新目标，不延展当前选中轨迹"
-                }
-                className="h-7 px-3"
-                data-testid="workbench-ai-tracker"
-              >
-                {trackerRunning ? (
-                  <Icon
-                    name="loader2"
-                    size={13}
-                    className="animate-spin motion-reduce:animate-none"
-                  />
-                ) : (
-                  <Icon name="bot" size={13} />
-                )}
-                发现目标
-              </Button>
-            )}
-            {onRunAi && (
-              <Button
-                variant="ai"
-                size="sm"
-                onClick={onRunAi}
-                aria-label="AI 单题"
-                aria-pressed={aiOpen}
-                disabled={aiDisabled}
-                title={aiOpen ? "聚焦 AI 单题面板" : "打开 AI 单题面板"}
-                className="h-7 px-3"
-                data-testid="workbench-ai-single"
-              >
-                {aiRunning ? (
-                  <Icon
-                    name="loader2"
-                    size={13}
-                    className="animate-spin motion-reduce:animate-none"
-                  />
-                ) : (
-                  <Icon name="wandSparkles" size={13} />
-                )}
-                AI
-              </Button>
-            )}
-          </>
-        )}
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setTheme(nextTheme)}
-          title={themeTitle}
-          aria-label={themeTitle}
-          className="justify-center w-7 h-7 p-0 text-muted-foreground bg-transparent border-transparent rounded-[var(--radius-sm)] shadow-none hover:text-foreground hover:bg-muted"
-        >
-          <Icon name={themeIcon} size={14} />
-        </Button>
-
-        {onOpenWorkbenchSettings && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onOpenWorkbenchSettings}
-            title="工作台设置"
-            aria-label="工作台设置"
-            className="justify-center w-7 h-7 p-0 text-muted-foreground bg-transparent border-transparent rounded-[var(--radius-sm)] shadow-none hover:text-foreground hover:bg-muted"
-          >
-            <Icon name="settings" size={14} />
-          </Button>
-        )}
-        {layoutMenuSlot}
-        {onToggleSide && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => onToggleSide("right")}
-            disabled={layoutDisabled || sides.right === "empty"}
-            title={
-              sides.right === "empty"
-                ? "画布右侧没有停靠面板"
-                : `${sides.right === "open" ? "收起" : "展开"}画布右侧所有面板`
-            }
-            aria-label="右侧面板"
-            aria-expanded={sides.right === "open"}
-            className="justify-center w-7 h-7 p-0 border-transparent rounded-[var(--radius-sm)] bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground"
-          >
-            <Icon name="panelRight" size={14} />
-          </Button>
-        )}
       </div>
       {onSkip && (
         <SkipTaskModal
