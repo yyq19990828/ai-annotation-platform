@@ -19,6 +19,7 @@ import {
   type IDockviewHeaderActionsProps,
   type DockviewWillShowOverlayLocationEvent,
   type DockviewWillDropEvent,
+  type DroptargetOverlayModel,
 } from "dockview-react";
 import { toast } from "sonner";
 import { DropdownMenu, type DropdownItem } from "@/components/ui/DropdownMenu";
@@ -29,7 +30,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { cn } from "@/lib/utils";
 import { useActiveIssueStore } from "../state/useActiveIssueStore";
 import { useWorkbenchWorkspaceLayout } from "../state/useWorkbenchWorkspaceLayout";
-import { createWorkbenchLayoutExecutor } from "./workbenchLayoutExecutor";
+import { createWorkbenchLayoutExecutor, defaultDockWidth } from "./workbenchLayoutExecutor";
 import {
   createWorkspacePreset,
   migrateLegacyWorkspace,
@@ -299,6 +300,21 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
   );
   const owner = useWorkbenchWorkspaceLayout(context, fallback, standard, compact);
   const [api, setApi] = useState<DockviewApi | null>(null);
+  const dropOverlays = useMemo(
+    () => ({
+      content: { smallWidthBoundary: 0 } as DroptargetOverlayModel,
+      edge: {
+        smallWidthBoundary: 0,
+        activationSize: { type: "pixels", value: 10 },
+      } as DroptargetOverlayModel,
+    }),
+    [],
+  );
+  const dropOverlayModel = useCallback(
+    ({ location }: { location: string }) =>
+      location === "content" ? dropOverlays.content : undefined,
+    [dropOverlays],
+  );
   const executor = useRef<Executor | null>(null);
   const latest = useRef({ owner, compact, onStateChange: props.onStateChange });
   latest.current = { owner, compact, onStateChange: props.onStateChange };
@@ -636,7 +652,27 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
         if (blocked() || event.group.id === "canvas" || event.group.id === "parking")
           event.nativeEvent.preventDefault();
       }),
-      api.onWillShowOverlay(guardDrop),
+      api.onWillShowOverlay((event) => {
+        guardDrop(event);
+        if (event.defaultPrevented) return;
+        const source = event.getData();
+        const panels = source?.panelId
+          ? [source.panelId]
+          : (api.groups.find((group) => group.id === source?.groupId)?.panels.map((p) => p.id) ??
+            []);
+        const horizontal = event.position === "left" || event.position === "right";
+        const width = Math.max(
+          defaultDockWidth(api.width),
+          ...panels.map((id) => WORKBENCH_PANEL_REGISTRY[id as PanelId]?.minWidth ?? 0),
+        );
+        // Dockview reads these models immediately after this event, before painting.
+        dropOverlays.content.size = horizontal
+          ? { type: "pixels", value: width }
+          : { type: "percentage", value: 50 };
+        dropOverlays.edge.size = horizontal
+          ? { type: "pixels", value: width }
+          : { type: "pixels", value: 20 };
+      }),
       api.onWillDrop((event) => {
         guardDrop(event);
         if (!event.defaultPrevented) {
@@ -669,7 +705,7 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
       workspaceHost?.removeEventListener("pointerdown", guardShiftFloat, true);
       if (pendingFrame.current !== null) cancelAnimationFrame(pendingFrame.current);
     };
-  }, [api, persist]);
+  }, [api, persist, dropOverlays]);
 
   useEffect(() => {
     if (!host.current || !api) return;
@@ -967,6 +1003,8 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
               onReady={(event) => setApi(event.api)}
               floatingGroupBounds="boundedWithinViewport"
               floatingGroupDragHandle="tabbar"
+              dndEdges={dropOverlays.edge}
+              dropOverlayModel={dropOverlayModel}
             />
           </div>
         </TabMenuContext.Provider>

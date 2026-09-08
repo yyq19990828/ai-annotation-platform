@@ -152,6 +152,7 @@ beforeEach(() => {
     if (
       this.classList.contains("dv-dockview") ||
       this.firstElementChild?.classList.contains("dv-dockview") ||
+      this.firstElementChild?.classList.contains("dv-shell") ||
       this.classList.contains("dv-shell")
     )
       return new DOMRect(0, 0, 1600, 900);
@@ -168,6 +169,37 @@ afterEach(async () => {
 });
 
 describe("stable Dockview React workspace", () => {
+  it.each(["left", "right"] as const)(
+    "previews a new %s column at its docked width",
+    async (side) => {
+      vi.stubGlobal("PointerEvent", class extends MouseEvent {});
+      vi.stubGlobal("DragEvent", MouseEvent);
+      vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(1600);
+      vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(900);
+      const { container } = render(fixture());
+      await waitFor(() => expect(state.api?.getPanel("class-palette")).toBeDefined());
+      const source = container.querySelector('[data-tab-panel-id="class-palette"]')!;
+      const target = container.querySelector(".dv-dockview")!;
+      const dataTransfer = {
+        setData: vi.fn(),
+        setDragImage: vi.fn(),
+        types: [],
+        items: [],
+        effectAllowed: "move",
+      };
+      fireEvent.dragStart(source, { dataTransfer });
+      fireEvent.dragOver(target, {
+        dataTransfer,
+        clientX: side === "left" ? 1 : 1599,
+        clientY: 450,
+      });
+      const preview = container.querySelector<HTMLElement>(`.dv-drop-target-${side}`)!;
+      expect(preview).not.toBeNull();
+      expect(preview.style.width).toBe("15%");
+      fireEvent.dragEnd(source, { dataTransfer });
+    },
+  );
+
   it("tool-menu portal keys do not save the workspace layout", async () => {
     render(
       fixture(

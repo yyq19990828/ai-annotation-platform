@@ -23,6 +23,7 @@ import {
 type SidePanelId = Exclude<PanelId, "canvas">;
 type DockPosition = "left" | "right" | "above" | "below";
 type Axis = "HORIZONTAL" | "VERTICAL";
+export const defaultDockWidth = (width: number): number => Math.round(width * 0.15);
 export type CanvasPlacement = "left" | "right" | "above" | "below" | "center";
 export type WorkspaceSide = "left" | "right";
 export type WorkspaceSideState = "empty" | "open" | "collapsed";
@@ -562,7 +563,7 @@ export function createWorkbenchLayoutExecutor(
     });
     group.api.setVisible(true);
     group.api.setSize({
-      width: Math.round(getBounds().width * 0.15),
+      width: defaultDockWidth(getBounds().width),
       ...(id === "discussion" ? { height: spec.height } : {}),
     });
     return group;
@@ -698,7 +699,7 @@ export function createWorkbenchLayoutExecutor(
     });
     group.api.setVisible(true);
     group.api.setSize(
-      position === "below" ? { height: 260 } : { width: Math.round(getBounds().width * 0.15) },
+      position === "below" ? { height: 260 } : { width: defaultDockWidth(getBounds().width) },
     );
     panel(id).api.setActive();
     ensureParking();
@@ -900,7 +901,7 @@ export function createWorkbenchLayoutExecutor(
         return (
           previous?.get(node.group.id)?.[dimension] ??
           (previous && dimension === "width"
-            ? Math.round(bounds.width * 0.15)
+            ? defaultDockWidth(bounds.width)
             : getGroup(node.group.id)!.api[dimension])
         );
       const alongAxis = (node.axis === "HORIZONTAL") === (dimension === "width");
