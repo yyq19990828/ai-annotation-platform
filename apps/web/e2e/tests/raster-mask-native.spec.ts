@@ -269,7 +269,7 @@ test.describe("raster mask native write matrix", () => {
     await page.keyboard.press("Enter");
     const toolbar = page.getByTestId("mask-toolbar");
     await expect(toolbar).toContainText("\u64cd\u4f5c\u5931\u8d25", { timeout: 10_000 });
-    await toolbar.getByTitle("\u6062\u590d\u6216\u91cd\u8bd5 Mask").click();
+    await toolbar.getByTestId("mask-primary-action").click();
     await expect(toolbar).toContainText("\u672a\u4fdd\u5b58");
     await expect(toolbar.getByTitle("\u64a4\u9500\u7b14\u753b (Ctrl+Z)")).toBeEnabled();
 

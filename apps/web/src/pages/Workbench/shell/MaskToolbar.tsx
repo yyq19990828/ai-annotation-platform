@@ -1,17 +1,7 @@
 import { useState } from "react";
-import { Brush, Check, ChevronDown, Eraser, Lasso, Redo2, Undo2 } from "lucide-react";
+import { Brush, Check, ChevronDown, Eraser, Lasso, Redo2, RotateCcw, Undo2 } from "lucide-react";
 import { Icon } from "@/components/ui/Icon";
 import { Button, buttonVariants } from "@/components/shadcn/ui/button";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/shadcn/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,12 +33,19 @@ import type {
 import type { MaskInstanceOperationSpec } from "../stage/shared/geometry/maskInstanceOperations";
 import type { MaskEditBlockReason, MaskEditorPhase } from "../state/canEditMask";
 import {
+  MASK_EDIT_BLOCK_REASON_LABELS,
+  type MaskPrimaryActions,
+} from "../state/maskPrimaryActions";
+import {
   TOOLBAR_DIVIDER,
   TOOLBAR_FIELD_LABEL_CLASS,
   TOOLBAR_SURFACE_CLASS,
 } from "./workbenchToolbarChrome";
 
 interface MaskToolbarProps {
+  actions: MaskPrimaryActions;
+  onPrimaryAction: () => void;
+  onSecondaryAction: () => void;
   active: boolean;
   tool: MaskEditorTool;
   brushShape: MaskBrushShape;
@@ -71,16 +68,13 @@ interface MaskToolbarProps {
   onSetBrushShape: (shape: MaskBrushShape) => void;
   onSetConnectivity: (connectivity: MaskConnectivity) => void;
   onSetRadius: (radius: number) => void;
-  onConfirmOperation: () => void;
-  onCancelOperation: () => void;
   onRunOperation: (name: string, operation: MaskOperationSpec) => Promise<boolean>;
   onRunInstanceOperation: (name: string, operation: MaskInstanceOperationSpec) => Promise<boolean>;
-  onCommitInstanceOperation?: () => void;
   onPrepareJoin?: (mode: "replace_sources" | "preserve_sources") => void;
   onPrepareOverlap?: (policy: "erase_same_class" | "erase_all") => void;
-  onRefreshInstanceOperation?: () => void;
   canPrepareJoin?: boolean;
   joinSupportsReplace?: boolean;
+  sliceUnavailableReason?: string | null;
   instanceCommitting?: boolean;
   instanceRefreshing?: boolean;
   instanceCommitError?: string | null;
@@ -94,13 +88,10 @@ interface MaskToolbarProps {
     status: "update" | "delete" | "source" | "unresolved";
   }>;
   instanceCommitBlocked?: boolean;
-  onCommit: () => void;
   onCommitAndPropagate?: () => void;
   onOpenConversion?: () => void;
-  onCancel: () => void;
   onUndo: () => void;
   onRedo: () => void;
-  onRetry?: () => void;
 }
 
 const phaseLabel: Record<MaskEditorPhase, string> = {
@@ -130,22 +121,13 @@ const operationLabel: Record<string, string> = {
   fill_holes_small: "填充小孔洞",
   component_copy: "复制命中组件",
   split_components: "拆分组件",
-};
-
-const editBlockReasonLabel: Record<MaskEditBlockReason, string> = {
-  task_read_only: "任务只读或原生 Mask 写能力未开启",
-  annotation_locked: "当前标注已锁定",
-  track_locked: "当前 Mask 轨迹已锁定",
-  segment_locked: "当前视频分段锁冲突",
-  editor_idle: "请先进入 Mask 编辑",
-  editor_loading: "正在加载 Mask",
-  editor_saving: "正在保存 Mask",
-  editor_error: "请先恢复失败的编辑会话",
-  large_canvas_budget_exceeded: "当前设备无法容纳可见分块，请放大局部 ROI 或更换高内存设备",
+  slice_mask: "直线切割",
 };
 
 export function MaskToolbar({
-  active,
+  actions,
+  onPrimaryAction,
+  onSecondaryAction,
   tool,
   brushShape,
   connectivity,
@@ -155,8 +137,6 @@ export function MaskToolbar({
   canUndo,
   canRedo,
   canEdit,
-  canCommit,
-  interactionFrozen = false,
   largeCanvas = false,
   editBlockReason,
   operationPreview,
@@ -167,38 +147,24 @@ export function MaskToolbar({
   onSetBrushShape,
   onSetConnectivity,
   onSetRadius,
-  onConfirmOperation,
-  onCancelOperation,
   onRunOperation,
   onRunInstanceOperation,
-  onCommitInstanceOperation,
   onPrepareJoin,
   onPrepareOverlap,
-  onRefreshInstanceOperation,
   canPrepareJoin = false,
   joinSupportsReplace = true,
-  instanceCommitting = false,
-  instanceRefreshing = false,
+  sliceUnavailableReason,
   instanceCommitError,
-  instanceCanRetry = false,
-  instanceCanRefresh = false,
   instancePreviewDetail,
   instancePreviewRows = [],
-  instanceCommitBlocked = false,
-  onCommit,
   onCommitAndPropagate,
   onOpenConversion,
-  onCancel,
   onUndo,
   onRedo,
-  onRetry,
 }: MaskToolbarProps) {
-  const instanceBusy = instanceCommitting || instanceRefreshing;
-  const commitAllowed = canCommit ?? canEdit;
   const [componentThreshold, setComponentThreshold] = useState(16);
   const [morphologyRadius, setMorphologyRadius] = useState(1);
   const [kernelShape, setKernelShape] = useState<MaskKernelShape>("disk");
-  const [confirmEmptyOpen, setConfirmEmptyOpen] = useState(false);
   const runMorphology = (operation: "dilate" | "erode" | "open" | "close") => {
     void onRunOperation(operation, {
       type: "morphology",
@@ -251,6 +217,7 @@ export function MaskToolbar({
 
       <DropdownMenu>
         <DropdownMenuTrigger
+          data-workbench-tool-menu-trigger
           className={buttonVariants({ variant: "outline", size: "xs" })}
           disabled={!canEdit}
           title="Mask 高级工具"
@@ -258,6 +225,7 @@ export function MaskToolbar({
           {operationLabel[tool] ?? "高级"} <ChevronDown />
         </DropdownMenuTrigger>
         <DropdownMenuContent
+          data-workbench-tool-menu
           align="start"
           className="max-h-[min(32rem,var(--radix-dropdown-menu-content-available-height))] w-72 overflow-y-auto"
         >
@@ -343,6 +311,18 @@ export function MaskToolbar({
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuLabel>派生与转换</DropdownMenuLabel>
+          {sliceUnavailableReason !== undefined && (
+            <DropdownMenuItem
+              disabled={sliceUnavailableReason !== null || dirty || largeCanvas}
+              title={
+                sliceUnavailableReason ??
+                (dirty ? "请先保存当前 Mask 草稿" : "拖动两点定义切线，预览后确认")
+              }
+              onSelect={() => onSetTool("slice_mask")}
+            >
+              直线切割为两个实例
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem
             disabled={!onOpenConversion || dirty || largeCanvas}
             title={
@@ -485,12 +465,17 @@ export function MaskToolbar({
       </span>
       {!canEdit && editBlockReason && (
         <span className="basis-full text-2xs text-status-caution" role="status">
-          不可编辑：{editBlockReasonLabel[editBlockReason]}
+          不可编辑：{MASK_EDIT_BLOCK_REASON_LABELS[editBlockReason]}
         </span>
       )}
       {largeCanvas && (
         <span className="basis-full text-2xs text-muted-foreground" role="status">
           大画布分块模式：形态学仅作用当前视口，全图扫描工具已禁用
+        </span>
+      )}
+      {tool === "slice_mask" && !instanceOperationPreview && (
+        <span className="basis-full text-2xs text-muted-foreground" role="status">
+          拖动两点定义直线，松手预览两块；较大块保留来源，像素相等时沿切线左侧保留。
         </span>
       )}
 
@@ -507,20 +492,6 @@ export function MaskToolbar({
             {operationPreview.report.beforeComponents}→{operationPreview.report.afterComponents}·
             孔洞 {operationPreview.report.beforeHoles}→{operationPreview.report.afterHoles}
           </span>
-          <Button type="button" size="xs" variant="ghost" onClick={onCancelOperation}>
-            取消预览
-          </Button>
-          <Button
-            type="button"
-            size="xs"
-            disabled={!canEdit}
-            onClick={() => {
-              if (operationPreview.report.afterArea === 0) setConfirmEmptyOpen(true);
-              else onConfirmOperation();
-            }}
-          >
-            应用预览
-          </Button>
         </div>
       )}
       {instanceOperationPreview && (
@@ -534,7 +505,9 @@ export function MaskToolbar({
                   ? "合并 Mask"
                   : instanceOperationPreview.plan.kind === "overlap"
                     ? "严格非重叠"
-                    : "拆分组件"}
+                    : instanceOperationPreview.plan.kind === "slice_mask"
+                      ? "直线切割"
+                      : "拆分组件"}
           </span>
           <span className="text-2xs text-muted-foreground">
             {instanceOperationPreview.plan.sourceCount} 个来源 →{" "}
@@ -564,25 +537,6 @@ export function MaskToolbar({
             </div>
           )}
           <span className="text-2xs text-status-caution">待原子提交</span>
-          <Button
-            type="button"
-            size="xs"
-            variant="ghost"
-            disabled={instanceBusy}
-            onClick={onCancelOperation}
-          >
-            取消预览
-          </Button>
-          {onCommitInstanceOperation && (
-            <Button
-              type="button"
-              size="xs"
-              disabled={instanceBusy || instanceCommitBlocked || !canEdit}
-              onClick={onCommitInstanceOperation}
-            >
-              {instanceRefreshing ? "刷新中…" : instanceCommitting ? "提交中…" : "原子提交"}
-            </Button>
-          )}
         </div>
       )}
       {instanceCommitError && (
@@ -591,49 +545,19 @@ export function MaskToolbar({
           role="alert"
         >
           <span className="text-2xs text-destructive">{instanceCommitError}</span>
-          {onCommitInstanceOperation && instanceCanRetry && (
-            <Button
-              type="button"
-              size="xs"
-              variant="ghost"
-              disabled={instanceBusy || !canEdit}
-              onClick={onCommitInstanceOperation}
-            >
-              重试
-            </Button>
-          )}
-          {onRefreshInstanceOperation && instanceCanRefresh && (
-            <Button
-              type="button"
-              size="xs"
-              variant="ghost"
-              disabled={instanceBusy}
-              onClick={onRefreshInstanceOperation}
-            >
-              刷新范围
-            </Button>
-          )}
-        </div>
-      )}
-      {operationStatus === "computing" && (
-        <div className="flex basis-full items-center gap-2 rounded-md border border-border bg-muted px-2 py-1">
-          <span className="text-2xs text-foreground">正在计算预览…</span>
-          <Button type="button" size="xs" variant="ghost" onClick={onCancelOperation}>
-            取消
-          </Button>
         </div>
       )}
       {operationStatus === "error" && (
-        <div className="flex basis-full items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1">
+        <div
+          className="flex basis-full items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-2 py-1"
+          role="alert"
+        >
           <span className="text-2xs text-destructive">
             高级操作失败：
             {operationError instanceof Error
               ? operationError.message
               : String(operationError ?? "未知错误")}
           </span>
-          <Button type="button" size="xs" variant="ghost" onClick={onCancelOperation}>
-            关闭
-          </Button>
         </div>
       )}
 
@@ -660,31 +584,31 @@ export function MaskToolbar({
         <Redo2 />
         <span className="sr-only">重做</span>
       </Button>
-      {phase === "error" && onRetry && !instanceOperationPreview && (
-        <Button type="button" size="xs" variant="ghost" onClick={onRetry} title="恢复或重试 Mask">
-          重试
-        </Button>
-      )}
       <Button
+        data-testid="mask-secondary-action"
         type="button"
         size="xs"
         variant="outline"
-        onClick={onCancel}
-        disabled={instanceBusy || interactionFrozen}
-        title="取消 (Esc)"
+        onClick={onSecondaryAction}
+        disabled={actions.secondary.disabled}
+        title={`${actions.secondary.label} (Esc)`}
       >
-        取消
+        {actions.secondary.label}
       </Button>
       <Button
+        data-testid="mask-primary-action"
         type="button"
         size="xs"
-        onClick={onCommit}
-        disabled={
-          !commitAllowed || !active || !dirty || phase !== "dirty" || operationStatus !== "idle"
-        }
-        title="确认 (Enter)"
+        onClick={onPrimaryAction}
+        disabled={actions.primary.disabled}
+        title={`${actions.primary.label} (Enter) · ${actions.primary.description}`}
       >
-        <Check /> 确认
+        {["save", "apply_region", "commit_instances"].includes(actions.primary.kind) ? (
+          <Check />
+        ) : actions.primary.kind !== "none" ? (
+          <RotateCcw />
+        ) : null}
+        {actions.primary.label}
       </Button>
       {onCommitAndPropagate && (
         <Button
@@ -692,35 +616,20 @@ export function MaskToolbar({
           size="xs"
           variant="ghost"
           onClick={onCommitAndPropagate}
-          disabled={
-            !commitAllowed || !active || !dirty || phase !== "dirty" || operationStatus !== "idle"
-          }
+          disabled={!dirty || actions.primary.kind !== "save" || actions.primary.disabled}
           title="保存人工纠错帧并选择定向重传播"
         >
           保存并传播
         </Button>
       )}
-      <AlertDialog open={confirmEmptyOpen} onOpenChange={setConfirmEmptyOpen}>
-        <AlertDialogContent size="sm">
-          <AlertDialogHeader>
-            <AlertDialogTitle>确认清空当前 Mask？</AlertDialogTitle>
-            <AlertDialogDescription>
-              该操作会把当前对象变为空
-              Mask。应用后仍可用撤销恢复，但保存时需要选择删除对象或继续编辑。
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>返回预览</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              onClick={onConfirmOperation}
-              disabled={!canEdit}
-            >
-              确认清空
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <div
+        role="status"
+        aria-live="polite"
+        data-testid="mask-action-hint"
+        className="basis-full text-2xs text-muted-foreground"
+      >
+        {actions.hint}
+      </div>
     </div>
   );
 }

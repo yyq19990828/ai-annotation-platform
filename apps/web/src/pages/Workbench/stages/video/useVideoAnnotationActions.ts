@@ -302,9 +302,9 @@ export function buildVideoCompositionCommands(
     created_annotations: AnnotationResponse[];
     deleted_annotation_ids: string[];
   },
-): Exclude<Command, { kind: "batch" }>[] {
+): Exclude<Command, { kind: "batch" | "slice" }>[] {
   const beforeById = new Map(beforeAnnotations.map((ann) => [ann.id, ann]));
-  const commands: Exclude<Command, { kind: "batch" }>[] = [];
+  const commands: Exclude<Command, { kind: "batch" | "slice" }>[] = [];
 
   for (const updated of result.updated_annotations) {
     const before = beforeById.get(updated.id);
@@ -690,14 +690,17 @@ export function useVideoAnnotationActions({
       frameIndex: number,
       selected: AnnotationResponse | null,
       createMode: "frame" | "track" = "frame",
+      isCurrent: () => boolean = () => true,
     ) => {
       if (!taskId) throw new Error("Task is not available");
+      if (!isCurrent()) return null;
       if (selected?.geometry.type === "video_track_mask") {
         const selectedMaskVersion = selected.version;
         if (selectedMaskVersion == null) {
           throw new Error("Video Mask annotation version is missing");
         }
         const reference = await rasterMasksApi.uploadTaskContent(taskId, rle);
+        if (!isCurrent()) return null;
         const geometry = upsertVideoMaskKeyframe(selected.geometry, frameIndex, reference);
         const command = buildVideoUpdateCommand(selected, geometry);
         const updated = await videoTrackerApi.saveMaskKeyframe(
@@ -710,6 +713,7 @@ export function useVideoAnnotationActions({
         queryClient.setQueryData<AnnotationResponse[]>(annotationQueryKey, (current) =>
           (current ?? []).map((item) => (item.id === updated.id ? updated : item)),
         );
+        if (!isCurrent()) return null;
         history.push(command);
         return {
           annotation: updated,
@@ -722,6 +726,7 @@ export function useVideoAnnotationActions({
           throw new Error("Video Mask annotation version is missing");
         }
         const reference = await rasterMasksApi.uploadTaskContent(taskId, rle);
+        if (!isCurrent()) return null;
         const geometry: VideoMaskGeometry = {
           type: "video_mask",
           frame_index: frameIndex,
@@ -737,6 +742,7 @@ export function useVideoAnnotationActions({
         queryClient.setQueryData<AnnotationResponse[]>(annotationQueryKey, (current) =>
           (current ?? []).map((item) => (item.id === updated.id ? updated : item)),
         );
+        if (!isCurrent()) return null;
         history.push(command);
         return {
           annotation: updated,
@@ -745,8 +751,9 @@ export function useVideoAnnotationActions({
         } satisfies SavedVideoMaskKeyframe;
       }
       const className = await requestVideoMaskClass(rle, frameIndex);
-      if (!className) return null;
+      if (!className || !isCurrent()) return null;
       const reference = await rasterMasksApi.uploadTaskContent(taskId, rle);
+      if (!isCurrent()) return null;
       const payload =
         createMode === "track"
           ? buildVideoMaskTrackCreatePayload(frameIndex, reference, className)
@@ -754,7 +761,7 @@ export function useVideoAnnotationActions({
       return new Promise<SavedVideoMaskKeyframe>((resolve, reject) => {
         mutations.create.mutate(payload, {
           onSuccess: (created) => {
-            history.push({ kind: "create", annotationId: created.id, payload });
+            if (isCurrent()) history.push({ kind: "create", annotationId: created.id, payload });
             resolve({ annotation: created, mask: reference, frameIndex });
           },
           onError: reject,
@@ -917,8 +924,8 @@ export function useVideoAnnotationActions({
             : withoutSource;
           return [...updatedSource, ...result.created_annotations];
         });
-        const commands: Exclude<Command, { kind: "batch" }>[] = result.created_annotations.map(
-          (created) => ({
+        const commands: Exclude<Command, { kind: "batch" | "slice" }>[] =
+          result.created_annotations.map((created) => ({
             kind: "create",
             annotationId: created.id,
             payload: {
@@ -928,8 +935,7 @@ export function useVideoAnnotationActions({
               confidence: created.confidence ?? undefined,
               attributes: created.attributes,
             },
-          }),
-        );
+          }));
         if (result.deleted_source) {
           commands.push({ kind: "delete", annotation: ann });
           s.setSelectedId(null);

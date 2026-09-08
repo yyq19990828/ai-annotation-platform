@@ -177,8 +177,25 @@ export function WorkbenchLayout({
               <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
                 <WorkbenchBanners {...banners} />
                 <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-                  <WorkbenchStageHost ref={videoControlsRef} {...stageHost} petDock={petDock} />
-                  {stageOverlay}
+                  <WorkbenchStageHost
+                    ref={videoControlsRef}
+                    {...stageHost}
+                    petDock={petDock}
+                    common={
+                      stageHost.common.stageKind === "video"
+                        ? {
+                            ...stageHost.common,
+                            overlays: (
+                              <>
+                                {stageHost.common.overlays}
+                                {stageOverlay}
+                              </>
+                            ),
+                          }
+                        : stageHost.common
+                    }
+                  />
+                  {stageHost.common.stageKind !== "video" && stageOverlay}
                 </div>
                 <StatusBar {...statusBar} />
               </div>

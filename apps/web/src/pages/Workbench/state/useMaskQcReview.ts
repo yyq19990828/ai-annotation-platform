@@ -484,11 +484,19 @@ export function useMaskQcReview(params: {
           await waitFor(() => dynamicRef.current.videoManifestReady, generation, token.value);
           await waitFor(() => params.videoControlsRef.current !== null, generation, token.value);
           setState((current) => ({ ...current, phase: "seeking_frame" }));
-          params.setFrameIndex(targetFrame);
-          await params.videoControlsRef.current!.seekToFrameReady(targetFrame, {
+          const frameResult = await params.videoControlsRef.current!.seekToFrameReady(targetFrame, {
             recordHistory: false,
           });
           generation.assert(token.value);
+          if (frameResult.status !== "ready" || frameResult.frameIndex !== targetFrame) {
+            throw new Error(
+              frameResult.status === "timeout"
+                ? "源帧准备超时，请重新定位该问题"
+                : frameResult.status === "cancelled"
+                  ? "源帧定位已取消，请重新定位该问题"
+                  : "目标源帧尚未就绪，请重新定位该问题",
+            );
+          }
           await waitFor(
             () => dynamicRef.current.frameIndex === targetFrame,
             generation,

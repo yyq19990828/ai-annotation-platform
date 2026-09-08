@@ -1,7 +1,7 @@
 # ai-annotation-sdk
 
 AI 标注平台官方 Python SDK(beta)。同步 Client 覆盖 projects / datasets / tasks / annotations /
-predictions / jobs / exports / ml_backends / batches / members / dashboard / api_keys 等稳定自动化工作流；
+feedbacks / predictions / jobs / exports / ml_backends / batches / members / dashboard / api_keys 等稳定自动化工作流；
 并提供全局 ML registry 与 service pool 运维；extras 提供 `aap` CLI 与终端监控面板。
 
 SDK、CLI 与 TUI 使用独立于 AAP 的 SemVer。AAP target 表示该 SDK release 最近一次完成测试与
@@ -67,6 +67,48 @@ with Client(base_url="http://localhost:8000", api_key="ak_...") as client:
 ```
 
 错误统一抛 `ai_annotation.errors` 下的异常(`AuthenticationError` / `NotFoundError` / `JobFailedError` 等);响应模型 `extra="allow"`,容忍服务端新增字段。
+
+## Issue 与反馈
+
+`client.feedbacks.create()` 创建反馈，`client.feedbacks.list()` 按 `items` / `next_cursor` 翻页。
+任务级 Issue 使用 `anchor_type="task"`，不绑定像素或帧；图片像素锚继续只需 x/y。
+
+视频像素 Issue 的上下文使用严格 V1 模型，并保留旧 `frame`。源帧范围是闭区间，必须包含
+锚点帧；时间窗可用分数帧。viewport 中心允许在画面外，zoom 是当前缩放与适配缩放的比值。
+服务端检查任务权限、视频边界及对象归属；`annotation_version` 保存捕获时版本，不要求
+等于创建时的最新版本。非法上下文在发送前触发 Pydantic 校验错误；服务端错误沿用 SDK 异常映射。
+下面的 `project_id`、`task_id`、`annotation_id` 分别使用目标项目、视频任务和已捕获标注的 ID。
+
+```python
+from ai_annotation import Client, FeedbackAnchorPosition, FeedbackVideoContext
+from ai_annotation import FeedbackVideoFrameRange, FeedbackVideoTimelineWindow, FeedbackVideoViewport
+
+with Client(base_url="http://localhost:8000", api_key="ak_...") as client:
+    issue = client.feedbacks.create(
+        project_id,
+        "检查 F120–F160 的遮挡边界",
+        task_id=task_id,
+        annotation_id=annotation_id,
+        anchor_type="pixel",
+        anchor_position=FeedbackAnchorPosition(
+            x=0.4, y=0.6, frame=140,
+            video_context=FeedbackVideoContext(
+                schema_version=1,
+                track_id="car-track/left",
+                annotation_version=2,
+                frame_range=FeedbackVideoFrameRange(from_frame=120, to_frame=160),
+                viewport=FeedbackVideoViewport(center_x=0.5, center_y=0.5, zoom=2),
+                timeline_window=FeedbackVideoTimelineWindow(from_=110.5, to=170.25),
+            ),
+        ),
+    )
+    page = client.feedbacks.list(project_id, kind="issue", limit=50)
+    while page.next_cursor:
+        page = client.feedbacks.list(project_id, kind="issue", cursor=page.next_cursor)
+```
+
+响应的 `anchor_position` 保留完整原始字典；`issue.video_context` 只返回可识别的有效 V1，
+未知版本返回 `None`，仍可读取旧 x/y/frame 做兼容定位。SDK 当前未提供修改、删除或回复反馈的方法。
 
 ## CLI
 

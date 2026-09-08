@@ -8,6 +8,10 @@ description,以及 unsupported / malformed 的确定性篡改。需要主机提�
 from __future__ import annotations
 
 import shutil
+import subprocess
+
+import numpy as np
+from PIL import Image
 
 from app.api.v1._test_seed_webcodecs import (
     QUALIFICATION_CHUNK_SIZE_FRAMES,
@@ -41,6 +45,12 @@ def test_baseline_fixture_produces_production_shaped_samples(tmp_path):
 
     samples = meta["samples"]
     assert len(samples) == 12
+    assert [entry["frame_index"] for entry in meta["frame_timetable"]] == list(
+        range(12)
+    )
+    assert [entry["pts_ms"] for entry in meta["frame_timetable"]] == [
+        sample["pts_ms"] for sample in samples
+    ]
     # frame_index 是 0..11 的 presentation-rank 排列(前端按 timestamp 选目标)。
     assert sorted(s["frame_index"] for s in samples) == list(range(12))
     # baseline 共 12 帧且 GOP=12，关闭 scenecut 后只有首帧关键帧。
@@ -65,6 +75,7 @@ def test_qualification_fixture_produces_full_ready_chunk_contract(tmp_path):
     ]
     assert meta["chunks"][0]["start_frame"] == 0
     assert meta["chunks"][-1]["end_frame"] == meta["frame_count"] - 1
+    assert len(meta["frame_timetable"]) == meta["frame_count"]
 
 
 def test_main_bframes_has_decode_presentation_reorder(tmp_path):
@@ -81,6 +92,66 @@ def test_main_bframes_has_decode_presentation_reorder(tmp_path):
     ]
 
 
+def test_issue_context_fixture_has_180_unique_decoded_frame_identities(tmp_path):
+    meta = generate_fixture("h264-issue-context", tmp_path)
+    expected = frame_expectations("h264-issue-context", meta["samples"])
+    assert meta["frame_count"] == expected["frame_count"] == 180
+    assert meta["codec_string"].startswith("avc1.4d")
+    assert [entry["frame_index"] for entry in meta["frame_timetable"]] == list(
+        range(180)
+    )
+    presented_samples = sorted(meta["samples"], key=lambda entry: entry["frame_index"])
+    assert [entry["pts_ms"] for entry in meta["frame_timetable"]] == [
+        entry["pts_ms"] for entry in presented_samples
+    ]
+    decode_order = [entry["frame_index"] for entry in meta["samples"]]
+    assert sorted(decode_order) == list(range(180))
+    assert decode_order != sorted(decode_order)
+    assert sorted(
+        entry["frame_index"] for entry in meta["samples"] if entry["is_keyframe"]
+    ) == list(range(0, 180, 30))
+    assert len({tuple(frame["center_bits"]) for frame in expected["frames"]}) == 180
+
+    # Decode the actual MP4, then verify every signature in presentation order.
+    decoded = subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            str(tmp_path / "chunk.mp4"),
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "-",
+        ],
+        capture_output=True,
+        check=True,
+    )
+    pixels = np.frombuffer(decoded.stdout, dtype=np.uint8).reshape(180, 120, 160, 3)
+    regions = expected["sample_regions"]["center_bits"]
+    for frame in expected["frames"]:
+        frame_index = frame["frame_index"]
+        with Image.open(tmp_path / "frames" / f"f{frame_index:04d}.png") as source:
+            source_pixels = np.asarray(source)
+            for region in regions:
+                x = round((region["x"] + region["w"] / 2) * 160)
+                y = round((region["y"] + region["h"] / 2) * 120)
+                bit = frame["center_bits"][region["bit"]]
+                assert np.all(source_pixels[y, x] == (235 if bit else 18))
+                luma = pixels[frame_index, y - 2 : y + 3, x - 2 : x + 3].mean()
+                assert luma > 160 if bit else luma < 95
+
+
+def test_existing_fixture_pixel_contract_does_not_gain_center_code():
+    for name in ("h264-baseline-gop12", "h264-main-bframes-gop30", "h264-vfr"):
+        expected = frame_expectations(name)
+        assert "center_bits" not in expected["sample_regions"]
+        assert all("center_bits" not in frame for frame in expected["frames"])
+
+
 def test_boundary_fixture_has_multiple_gops(tmp_path):
     meta = generate_fixture("h264-boundary-gop8", tmp_path)
     key_fi = [s["frame_index"] for s in meta["samples"] if s["is_keyframe"]]
@@ -93,6 +164,7 @@ def test_vfr_fixture_has_complete_monotonic_alternating_pts(tmp_path):
     assert len(presented) == meta["frame_count"] == 24
     assert [sample["frame_index"] for sample in presented] == list(range(24))
     pts_ms = [sample["pts_ms"] for sample in presented]
+    assert [entry["pts_ms"] for entry in meta["frame_timetable"]] == pts_ms
     deltas = [right - left for left, right in zip(pts_ms, pts_ms[1:])]
     assert all(32 <= delta <= 35 for delta in deltas[::2])
     assert all(65 <= delta <= 68 for delta in deltas[1::2])
@@ -115,6 +187,8 @@ def test_apply_metadata_mutation_malformed_pushes_offset_out_of_bounds(tmp_path)
     mutated = apply_metadata_mutation("malformed-samples", base)
     assert len(mutated["samples"]) == len(base["samples"])
     assert mutated["samples"][1]["offset_in_chunk"] == 10**9
+    assert mutated["frame_timetable"] == base["frame_timetable"]
+    assert mutated["frame_timetable"][1]["pts_ms"] == 33
     # 其余帧不变。
     assert mutated["samples"][0] == base["samples"][0]
 

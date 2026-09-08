@@ -367,7 +367,11 @@ export class SeedAPI {
   }
 
   async reset(): Promise<SeedData> {
-    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/reset`);
+    // Cleanup may remove WebCodecs objects in MinIO before rebuilding the fixture;
+    // do not abandon that idempotent reset while the server is still completing it.
+    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/reset`, {
+      timeout: 60_000,
+    });
     if (!res.ok()) {
       throw new Error(`seed/reset failed: ${res.status()} ${await res.text()}`);
     }
@@ -480,6 +484,7 @@ export class SeedAPI {
     options?: {
       fixture?: string;
       chunkStatus?: "ready" | "pending";
+      batchId?: string;
     },
   ): Promise<{
     task_id: string;
@@ -491,6 +496,7 @@ export class SeedAPI {
     const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/video-webcodecs`, {
       data: {
         project_id: projectId,
+        ...(options?.batchId ? { batch_id: options.batchId } : {}),
         fixture: options?.fixture ?? "h264-baseline-gop12",
         chunk_status: options?.chunkStatus ?? "ready",
       },
@@ -507,7 +513,26 @@ export class SeedAPI {
     };
   }
 
-  /** v0.23.15 · 确定性把 seed 的 pending chunk 切到 ready(不依赖媒体 worker)。 */
+  /** Simulate one unknown nested video context version without relaxing public writes. */
+  async videoIssueContextHistory(feedbackId: string): Promise<{
+    feedback_id: string;
+    anchor_position: Record<string, unknown>;
+  }> {
+    const res = await this.request.post(
+      `${API_BASE}/api/v1/__test/seed/video-issue-context-history`,
+      {
+        data: { feedback_id: feedbackId },
+      },
+    );
+    if (!res.ok()) {
+      throw new Error(
+        `seed/video-issue-context-history failed: ${res.status()} ${await res.text()}`,
+      );
+    }
+    return res.json();
+  }
+
+  /** Deterministically release a pending media chunk without a Celery worker. */
   async videoWebCodecsTransitionReady(
     datasetItemId: string,
     chunkId = 0,

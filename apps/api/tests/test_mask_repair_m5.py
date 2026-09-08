@@ -352,6 +352,8 @@ async def test_execute_dispatches_once_and_rollback_rejects_newer_annotation(
     batch = await db_session.get(MaskRepairBatch, uuid.UUID(first.json()["id"]))
     assert batch is not None
     private_item = batch.plan_json["items"][0]
+    # Plans written before optional-null omission must remain executable.
+    private_item["payload"]["cut_path"] = None
     result_rle = private_item["result_rle"]
     rles[private_item["result_reference"]["sha256"]] = result_rle
     monkeypatch.setattr("app.services.mask_mutation.load_coco_rle", fake_load)

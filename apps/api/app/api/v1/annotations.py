@@ -180,7 +180,9 @@ async def _mask_content_response(
     request: Request,
 ) -> Response:
     etag = f'"{mask_ref.get("sha256")}"'
-    headers = {"Cache-Control": "private, max-age=300", "ETag": etag}
+    # Annotation and frame URLs are mutable aliases, including slice restore.
+    # Revalidate the current reference before reusing an earlier response body.
+    headers = {"Cache-Control": "private, no-cache", "ETag": etag}
     if _mask_etag_matches(request, etag):
         return Response(status_code=304, headers=headers)
     try:

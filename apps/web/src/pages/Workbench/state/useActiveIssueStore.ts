@@ -9,13 +9,15 @@
  *   DiscussionPanel 监听后切到 issues tab。
  */
 import { create } from "zustand";
+import type { AnnotationFeedback } from "@/api/feedbacks";
 
 interface ActiveIssueState {
   highlightId: string | null;
   focusTick: number;
+  focusTarget: AnnotationFeedback | null;
   tabRequestTick: number;
   /** 列表单击：高亮 + 请求画布定位到该图钉。 */
-  focusIssue: (id: string) => void;
+  focusIssue: (target: string | AnnotationFeedback) => void;
   /** 图钉单击/hover：高亮 + 请求切到 issues tab。 */
   highlightFromPin: (id: string) => void;
   /** 仅请求切到 issues tab (工作台 issue FAB)，不改高亮。 */
@@ -27,8 +29,14 @@ interface ActiveIssueState {
 export const useActiveIssueStore = create<ActiveIssueState>((set) => ({
   highlightId: null,
   focusTick: 0,
+  focusTarget: null,
   tabRequestTick: 0,
-  focusIssue: (id) => set((s) => ({ highlightId: id, focusTick: s.focusTick + 1 })),
+  focusIssue: (target) =>
+    set((s) => ({
+      highlightId: typeof target === "string" ? target : target.id,
+      focusTarget: typeof target === "string" ? null : structuredClone(target),
+      focusTick: s.focusTick + 1,
+    })),
   highlightFromPin: (id) => set((s) => ({ highlightId: id, tabRequestTick: s.tabRequestTick + 1 })),
   requestIssuesTab: () => set((s) => ({ tabRequestTick: s.tabRequestTick + 1 })),
   setHighlightId: (highlightId) => set({ highlightId }),

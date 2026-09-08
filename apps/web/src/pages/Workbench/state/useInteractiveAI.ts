@@ -131,6 +131,8 @@ export interface UseInteractiveAIReturn {
   candidates: PendingCandidate[];
   activeIdx: number;
   isRunning: boolean;
+  /** Current inference failure, independent of whether that request can be retried. */
+  error: string | null;
   canRetry: boolean;
   canAcceptCandidates: boolean;
   retryLast: () => void;
@@ -221,6 +223,7 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
   const [candidates, setCandidates] = useState<PendingCandidate[]>([]);
   const [activeIdx, setActiveIdx] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [canRetry, setCanRetry] = useState(false);
   const [canAcceptCandidates, setCanAcceptCandidates] = useState(false);
   const lastFailedRequestRef = useRef<{
@@ -407,6 +410,7 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
       // (含 cache-hit 路径, 防止旧 in-flight 完成后覆盖刚命中的缓存; 见 issue 0002)。
       abortRef.current?.abort();
       const myInflight = ++inflightRef.current;
+      setError(null);
       const normalized = normalizePredictContext({
         ...requestContextDefaultsRef.current,
         ...context,
@@ -466,6 +470,7 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
         });
         // 只接受最新一次请求的结果（防止防抖窗口外的旧请求覆盖新候选）
         if (myInflight !== inflightRef.current) return;
+        setError(null);
         lastFailedRequestRef.current = null;
         setCanRetry(false);
         // v0.18.18 · 存本轮回灌 token: 单 mask 精修阶段非空, 多候选 / 框 / text / exemplar 为 null
@@ -510,6 +515,11 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
         if (controller.signal.aborted || myInflight !== inflightRef.current) return;
         const formatted = formatPredictError(err);
         const msg = err instanceof Error ? err.message : String(err);
+        setError(
+          formatted
+            ? `${formatted.msg}${formatted.sub ? `：${formatted.sub}` : ""}`
+            : msg.slice(0, 120),
+        );
         const sessionReason = apiErrorReason(err);
         const invalidSession =
           sessionReason === "invalid_mask_session" ||
@@ -809,6 +819,7 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
     abortRef.current?.abort();
     inflightRef.current++;
     lastFailedRequestRef.current = null;
+    setError(null);
     setCanRetry(false);
     setIsRunning(false);
   }, [resetRefinementSession, resetExemplarSession, cache, retireCandidates]);
@@ -839,20 +850,21 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
       });
   }, [projectId, taskId, mlBackendId]);
 
-  // 切 task / backend / 帧 → 重置预热记忆, 并 cancel 掉整个会话。
-  // v0.21.23 · cacheScope (视频 frameIndex) 是第四个重置触发点。这里必须走 cancel 而不是只
+  // 切 project / task / backend / 帧 → 重置预热记忆, 并 cancel 掉整个会话。
+  // v0.21.23 · cacheScope (视频 frameIndex) 也纳入同一重置入口。这里必须走 cancel 而不是只
   // reset 会话: 候选是**当前帧**的分割结果, 留着它跨帧会被采纳到新帧上 (提示发生在 F20、
   // 采纳落到 F28, 于是标注在当前帧不可见)。cancel 一并 abort 在飞请求, 避免旧帧的响应回来
   // 覆盖新帧候选。此外 mask_input 的 low-res logits 绑定具体图像, 跨帧回传必错。
   useEffect(() => {
     warmedRef.current = null;
     cancel();
-  }, [taskId, mlBackendId, cacheScope, cancel]);
+  }, [projectId, taskId, mlBackendId, cacheScope, cancel]);
 
   return {
     candidates,
     activeIdx,
     isRunning,
+    error,
     canRetry,
     canAcceptCandidates,
     retryLast,

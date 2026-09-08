@@ -28,7 +28,8 @@ class AnnotationOperation(Base):
             "kind IN ('split_components', 'copy_component', 'copy_keyframe', "
             "'join_masks', 'overlap', 'convert_annotations', "
             "'delete_small_islands', 'fill_small_holes', "
-            "'resolve_same_class_overlap', 'mask_repair_rollback')",
+            "'resolve_same_class_overlap', 'mask_repair_rollback', "
+            "'slice_polygon', 'restore_slice', 'slice_mask')",
             name="ck_annotation_operations_kind",
         ),
         CheckConstraint(
@@ -100,7 +101,7 @@ class AnnotationLineageEdge(Base):
         CheckConstraint(
             "relation IN ('split', 'copied', 'keyframe_copied', 'joined', "
             "'overlap_erased', 'converted', 'mask_repaired', "
-            "'mask_repair_rolled_back')",
+            "'mask_repair_rolled_back', 'slice_restored')",
             name="ck_annotation_lineage_relation",
         ),
         Index("ix_annotation_lineage_source", "source_annotation_id"),

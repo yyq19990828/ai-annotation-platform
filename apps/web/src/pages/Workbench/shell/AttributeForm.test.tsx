@@ -17,6 +17,85 @@ const schema: AttributeSchema = {
   ],
 };
 
+describe("AttributeForm immediate drafts", () => {
+  it("输入立即上抛，卸载和定时器不再重复提交", () => {
+    vi.useFakeTimers();
+    try {
+      const onChange = vi.fn();
+      const { getByDisplayValue, unmount } = render(
+        <AttributeForm
+          schema={schema}
+          className="car"
+          attributes={{ color: "red" }}
+          onChange={onChange}
+          immediate
+        />,
+      );
+      fireEvent.change(getByDisplayValue("red"), { target: { value: "blue" } });
+      expect(onChange).toHaveBeenCalledTimes(1);
+      expect(onChange).toHaveBeenCalledWith({ color: "blue" });
+      unmount();
+      act(() => vi.runAllTimers());
+      expect(onChange).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("即时草稿不登记已保存对象的 dirty tracker", () => {
+    const { result: tracker } = renderHook(() => useDirtyTracker());
+    const onChange = vi.fn();
+    const { container, getByDisplayValue } = render(
+      <AttributeForm
+        schema={schema}
+        className="car"
+        attributes={{ color: "red" }}
+        onChange={onChange}
+        annotationId="anno-1"
+        dirtyTracker={tracker.current}
+        immediate
+      />,
+    );
+    fireEvent.change(getByDisplayValue("red"), { target: { value: "blue" } });
+    fireEvent.blur(container.firstChild as HTMLElement, { relatedTarget: null });
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith({ color: "blue" });
+    expect(tracker.current.getDirtyFields("anno-1")).toEqual([]);
+  });
+
+  it("切到即时草稿时取消旧防抖，后续卸载不回写旧 owner", () => {
+    vi.useFakeTimers();
+    try {
+      const previousOnChange = vi.fn();
+      const nextOnChange = vi.fn();
+      const { getByDisplayValue, rerender, unmount } = render(
+        <AttributeForm
+          schema={schema}
+          className="car"
+          attributes={{ color: "red" }}
+          onChange={previousOnChange}
+        />,
+      );
+      fireEvent.change(getByDisplayValue("red"), { target: { value: "blue" } });
+      rerender(
+        <AttributeForm
+          schema={schema}
+          className="car"
+          attributes={{ color: "green" }}
+          onChange={nextOnChange}
+          immediate
+        />,
+      );
+      unmount();
+      act(() => vi.runAllTimers());
+      expect(previousOnChange).not.toHaveBeenCalled();
+      expect(nextOnChange).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("AttributeForm · mutable badge", () => {
   it("context=video + mutable=true 字段渲染「逐帧」徽标", () => {
     const { queryByTestId } = render(

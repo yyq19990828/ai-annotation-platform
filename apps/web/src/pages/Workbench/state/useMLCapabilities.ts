@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { apiErrorDetailMessage } from "@/api/client";
 import {
   mlBackendsApi,
   mlBackendSetupQueryKey,
@@ -33,7 +34,12 @@ export interface MLCapabilitiesResult {
   isPromptSupported: (type: string) => boolean;
   isInputSupported: (type: string) => boolean;
   isLoading: boolean;
+  /** Includes background refreshes without changing the initial-loading signal. */
+  isFetching: boolean;
   isError: boolean;
+  error: string | null;
+  /** Retries this setup query; missing project/backend identifiers are a no-op. */
+  refetch: () => Promise<unknown>;
   // v0.14.9 · 多模型目录 (capability.models). 长度 <= 1 时上层不应渲染选择器 (向后兼容).
   models: MLModelCapability[];
   /** 当前激活 model; 无 models 时为 undefined. */
@@ -72,6 +78,11 @@ export function useMLCapabilities(
     retry: 0,
   });
 
+  const refetchSetup = query.refetch;
+  const refetch = useCallback(
+    () => (enabled ? refetchSetup({ cancelRefetch: false }) : Promise.resolve(undefined)),
+    [enabled, refetchSetup],
+  );
   const capability = query.data;
   const allModels = useMemo<MLModelCapability[]>(
     // 工作台多模型选择器: 不过滤 (含 composite, 用户可手动选一锅端)。
@@ -133,8 +144,14 @@ export function useMLCapabilities(
     capability,
     isPromptSupported: (type: string) => prompts.includes(type),
     isInputSupported: (type: string) => inputs.includes(type),
-    isLoading: query.isLoading,
-    isError: query.isError,
+    isLoading: enabled && query.isLoading,
+    isFetching: enabled && query.isFetching,
+    isError: enabled && query.isError,
+    error:
+      enabled && query.isError
+        ? apiErrorDetailMessage(query.error) || "模型能力加载失败，请重试"
+        : null,
+    refetch,
     models,
     activeModel,
     activeModelId: activeModel?.id,

@@ -44,6 +44,32 @@ pnpm test:e2e --ui                       # 交互式 UI 模式
 所以数据库隔离才是不污染开发库的根本保障。下次运行会通过 reset/cleanup
 重新收敛专用库的状态。
 
+## 当前题 AI 的真实异步作业 E2E
+
+`workbench-ai-inspector-phases.spec.ts` 需要与隔离 API 使用同一测试数据库和专用
+Redis broker 的 Celery worker；确认后设置 `PLAYWRIGHT_AI_REQUEST_WORKER=1` 才会执行。
+不能把 worker 连到开发数据库或复用开发任务队列。API 和 worker 同时覆盖
+`DATABASE_URL`、`MIGRATION_DATABASE_URL`、`REDIS_URL`、`CELERY_BROKER_URL`，并设置相同的
+`PREANNOTATE_GPU_QUEUE` / `PREANNOTATE_CPU_QUEUE`。worker 订阅这两个队列及 `default,audit`，
+使用当前 checkout 的虚拟环境，不启动 beat。关闭 GPU arbiter 和 backend router，防止
+继承开发环境调度：`GPU_ARBITER_MODE=off`、`GPU_ARBITER_ROLLOUT_ENABLED=false`、
+`GPU_ARBITER_RESOURCES_JSON={}`、`ML_BACKEND_ROUTER_MODE=off`。
+
+模型夹具以 Node HTTP server 提供确定性的 setup / predict，在真实 API 注册路径中临时
+替换 seed backend 并于每例结束恢复。它只模拟模型输出、延迟和失败，预标派发、作业查询、
+取消、预测落库和候选采纳均使用真实服务。`PLAYWRIGHT_ML_FIXTURE_HOST` 可指定 API/worker
+能访问的非 loopback IPv4；缺省选择本机接口地址。该检查不验证模型质量。
+
+```bash
+PLAYWRIGHT_AI_REQUEST_WORKER=1 pnpm test:e2e \
+  e2e/tests/workbench-ai-inspector-phases.spec.ts --project=chromium
+```
+
+每例在输出目录保存不含凭据的 `ai-request-metadata.json`，记录项目与模型收到的任务 ID。
+结束时先释放模型等待并等作业终态，再恢复 seed backend、清理测试数据；按记录中的任务 ID
+从 import 桶删除精确的 `frame-predict/{task_id}/` 临时帧前缀，停止自有 worker 及 broker，
+清理报告与临时端口配置。服务异常中断时仍需执行相同清理。
+
 ## WebCodecs 精确帧 E2E
 
 `e2e/tests/video-webcodecs-precise-frame.spec.ts` 用 `seed/video-webcodecs`

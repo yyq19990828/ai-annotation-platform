@@ -156,11 +156,7 @@ export function VideoPointsTrackCardContent({
         )}
         <div className="mt-1 text-2xs">
           {isVideoMaskTrack(annotation)
-            ? resolvedMask
-              ? exactMaskKeyframe
-                ? "当前帧为 Mask 关键帧。"
-                : `当前帧保持 F${resolvedMask.keyframeFrame} 的 Mask；编辑会物化新关键帧。`
-              : "当前帧位于 outside 区间。"
+            ? "编辑并保存当前帧 Mask，会写入该帧关键帧；当前状态见画布上方轨迹条。"
             : "点集轨迹的关键帧逐帧编辑暂未开放,可在画布上拖动顶点改形。"}
         </div>
       </div>

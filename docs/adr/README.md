@@ -117,3 +117,4 @@
 - [0071](archive/0071-persistent-multicamera-annotation-members.md) — 多相机人工标注作为 SceneTrack 的持久成员
 - [0072](archive/0072-workbench-dockable-layout.md) — 工作台采用受控 Dockview 布局与单一快照写入者
 - [0073](archive/0073-shared-surface-for-3d-docking.md) — 3D 自由布局采用工作区共享渲染 surface 与整组相机呈现
+- [0074](0074-atomic-annotation-slice-restore.md) — 图片对象切割采用受限操作账本与原子恢复

@@ -1,4 +1,6 @@
-import { forwardRef, useMemo } from "react";
+import type { TrackerReviewProjection } from "@/hooks/videoTrackerReviewScope";
+import type { VideoTrackContextBarProps } from "../../stage/VideoTrackContextBar";
+import { forwardRef, useMemo, type ReactNode } from "react";
 import type {
   AnnotationResponse,
   TaskVideoFrameTimetableResponse,
@@ -55,6 +57,7 @@ type VideoGeometry =
   | VideoTrackPolylineGeometry;
 
 export interface VideoWorkbenchProps {
+  overlays?: ReactNode;
   maskCompareStore?: MaskCompareTileStore | null;
   manifest: TaskVideoManifestResponse | undefined;
   frameTimetable?: TaskVideoFrameTimetableResponse;
@@ -81,6 +84,9 @@ export interface VideoWorkbenchProps {
   chapters?: VideoTimelineChapter[];
   timelineChapterControls?: VideoTimelineChapterControls;
   propagateRange?: { startFrame: number; endFrame: number } | null;
+  trackerReview?: TrackerReviewProjection | null;
+  reviewReference?: VideoTrackContextBarProps["reviewReference"];
+  onSeekReviewFrame?: (frame: number) => void;
   segmentRange?: VideoSegmentTimelineRange | null;
   videoSampling?: VideoSamplingConfig | null;
   performanceTier?: WorkbenchCommonPreferences["performanceTier"];
@@ -137,12 +143,17 @@ export interface VideoWorkbenchProps {
   issuePixelFeedbacks?: AnnotationFeedback[];
   issueHighlightId?: string | null;
   onIssuePinClick?: (id: string) => void;
+  issuePinDropArmed?: boolean;
+  issueNavigationPending?: boolean;
+  onIssuePinDrop?: (x: number, y: number, frame?: number) => void;
+  onSeekIssueFrame?: (frame: number) => void;
 }
 
 export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps>(
   function VideoWorkbench(
     {
       maskCompareStore,
+      overlays,
       manifest,
       frameTimetable,
       isLoading,
@@ -167,6 +178,9 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
       chapters,
       timelineChapterControls,
       propagateRange,
+      trackerReview,
+      reviewReference,
+      onSeekReviewFrame,
       segmentRange,
       videoSampling,
       performanceTier,
@@ -204,6 +218,10 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
       issuePixelFeedbacks,
       issueHighlightId,
       onIssuePinClick,
+      issuePinDropArmed,
+      issueNavigationPending,
+      onIssuePinDrop,
+      onSeekIssueFrame,
     },
     ref,
   ) {
@@ -218,6 +236,7 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
     return (
       <VideoKonvaStage
         maskCompareStore={maskCompareStore}
+        overlays={overlays}
         ref={ref}
         manifest={manifest}
         frameTimetable={frameTimetable}
@@ -241,6 +260,10 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         issuePixelFeedbacks={issuePixelFeedbacks}
         issueHighlightId={issueHighlightId}
         onIssuePinClick={onIssuePinClick}
+        issuePinDropArmed={issuePinDropArmed}
+        issueNavigationPending={issueNavigationPending}
+        onIssuePinDrop={onIssuePinDrop}
+        onSeekIssueFrame={onSeekIssueFrame}
         visual={annotationVisual}
         videoTool={videoTool}
         isVideoToolEnabled={isVideoToolEnabled}
@@ -282,6 +305,9 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         chapters={chapters}
         timelineChapterControls={timelineChapterControls}
         propagateRange={propagateRange}
+        trackerReview={trackerReview}
+        reviewReference={reviewReference}
+        onSeekReviewFrame={onSeekReviewFrame}
         segmentRange={segmentRange}
         videoSampling={videoSampling}
         defaultPlaybackRate={workbenchVideo.defaultPlaybackRate}

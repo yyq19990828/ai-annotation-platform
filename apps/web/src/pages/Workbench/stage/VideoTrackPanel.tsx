@@ -9,6 +9,7 @@ import { VideoTrackColorPicker } from "./VideoTrackColorPicker";
 import { VideoTrackComposeDialog, type VideoTrackGapMode } from "./VideoTrackComposeDialog";
 import type { VideoFrameEntry, VideoTrackAnnotation } from "./videoStageTypes";
 import type { VideoTrackKeyframe } from "@/types";
+import type { VideoSelectionCommand } from "../state/videoSelectionCommand";
 import {
   firstVisibleTrackFrame,
   frameRange,
@@ -32,6 +33,7 @@ interface VideoTrackPanelProps {
   hiddenTrackIds: Set<string>;
   lockedTrackIds: Set<string>;
   onSelect: (id: string, opts?: { toggle?: boolean }) => void;
+  onSelectVideoObject?: VideoSelectionCommand;
   onToggleHiddenTrack: (trackId: string) => void;
   onToggleLockedTrack: (trackId: string) => void;
   onSeekFrame?: (frameIndex: number) => void;
@@ -147,6 +149,7 @@ export function VideoTrackPanel({
   hiddenTrackIds,
   lockedTrackIds,
   onSelect,
+  onSelectVideoObject,
   onToggleHiddenTrack,
   onToggleLockedTrack,
   onSeekFrame,
@@ -231,6 +234,7 @@ export function VideoTrackPanel({
             disabled={readOnly || !onStartNewTrack}
             title="清除当前轨迹选择，下一次画框会新建轨迹"
             aria-label="新建轨迹"
+            data-workbench-video-tool-command={onSelectVideoObject ? "" : undefined}
             onClick={onStartNewTrack}
           >
             <Icon name="plus" size={13} />
@@ -382,11 +386,20 @@ export function VideoTrackPanel({
                 <div
                   key={ann.render_key ?? ann.id}
                   data-testid="video-track-row"
+                  data-annotation-id={ann.id}
+                  data-workbench-video-tool-command={onSelectVideoObject ? "" : undefined}
                   aria-selected={selected}
                   onClick={(e) => {
                     const toggle = e.shiftKey || e.metaKey || e.ctrlKey;
+                    const targetFrame = toggle ? null : firstVisibleTrackFrame(track);
+                    if (onSelectVideoObject) {
+                      onSelectVideoObject(ann.id, {
+                        shift: toggle,
+                        frameIndex: targetFrame ?? undefined,
+                      });
+                      return;
+                    }
                     if (!toggle) {
-                      const targetFrame = firstVisibleTrackFrame(track);
                       if (targetFrame !== null) onSeekFrame?.(targetFrame);
                     }
                     onSelect(ann.id, { toggle });

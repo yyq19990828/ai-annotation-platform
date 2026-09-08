@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-08-25
+last_reviewed: 2026-09-08
 ---
 
 # 任务与标注
@@ -45,7 +45,53 @@ POST /api/v1/tasks/:id/annotations
 
 提交后任务状态进入完成或待审核路径，锁释放。
 
+## 视频问题反馈
+
+`POST /api/v1/feedbacks` 复用像素锚点合同保存视频问题，`anchor_position.frame` 为从 0 开始的源视频帧号，x/y 为画面内 0–1 相对坐标：
+
+```json
+{
+  "kind": "issue",
+  "anchor_type": "pixel",
+  "project_id": "00000000-0000-0000-0000-000000000001",
+  "task_id": "00000000-0000-0000-0000-000000000002",
+  "annotation_id": "00000000-0000-0000-0000-000000000003",
+  "anchor_position": {
+    "x": 0.5,
+    "y": 0.25,
+    "frame": 130,
+    "video_context": {
+      "schema_version": 1,
+      "track_id": "trk_car_left",
+      "annotation_version": 7,
+      "frame_range": { "from_frame": 120, "to_frame": 160 },
+      "viewport": { "center_x": 0.5, "center_y": 0.4, "zoom": 2 },
+      "timeline_window": { "from": 110.5, "to": 170.5 }
+    }
+  },
+  "body": "这一段目标区域需要复核"
+}
+```
+
+通过 `GET /api/v1/feedbacks?project_id=…&task_id=…&kind=issue` 读回同一锚点。不绑定画面位置的问题使用 `anchor_type: "task"` 和 `anchor_position: null`；图片像素锚点继续省略 frame。工作台在实际源帧就绪后冻结视频创建锚点，提交时不重新读取播放头。
+
+`video_context` 为可选扩展，保存在原有 JSONB 中。只有视频任务的 pixel 锚点可以写入，并须同时携带整数源帧 `frame`。版本为整数 `1`；其余字段均可省略，但提供范围、视口或时间窗时必须完整提供该子对象。
+
+| 字段                 | 合同                                                                                   |
+| -------------------- | -------------------------------------------------------------------------------------- |
+| `track_id`           | 可选普通字符串，保留对象身份线索，不要求 UUID                                          |
+| `annotation_version` | 大于等于 1 的整数，要求顶层 `annotation_id`；记录捕获版本，不要求等于提交时最新版本    |
+| `frame_range`        | 从 0 开始的源帧整数闭区间，包含 `frame`，且不超过视频最后一帧                          |
+| `viewport`           | 视频归一化坐标中的视口中心，可位于画面外；`zoom` 为 `scale / fitScale`，必须为正有限数 |
+| `timeline_window`    | 源帧窗口，允许分数帧；`from ≤ to`，且在视频范围内                                      |
+
+新上下文拒绝未知字段、布尔或字符串形式的整数、非有限数以及不完整子对象。服务端还检查任务属于该项目、标注属于该任务及项目、媒体边界和访问权限。无任务权限时返回 404；字段或关系非法返回 422；媒体元数据尚未就绪返回 503。省略 `task_id` 的项目反馈列表仍按任务可见性过滤，并返回 `next_cursor`。
+
+历史上下文按原值读取，未知 `schema_version` 不按当前版本解释；旧 `frame/x/y` 仍可用于定位。原对象变化后，已有反馈与继承同一锚点的回复仍可读取。Python SDK 的 `client.feedbacks.create()` 和 `client.feedbacks.list()` 提供对应类型化入口，创建字段与接口保持一致。
+
 ## 视频任务
+
+视频轨迹标注的 `geometry.keyframes[].source` 只代表该关键帧记录的来源。读取矩形框、多边形、折线和 Mask 轨迹时，旧数据未保存的 `source` 字段保持缺省，客户端应显示「来源未知」，不能用整条标注的 `source` 替代。新建关键帧未指定来源时仍按既有写入规则保存为 `manual`；此读取规则不修改已存几何或补写旧数据。
 
 视频任务会在 `GET /api/v1/tasks/:id` 的 `TaskOut.video_metadata` 里透出标准化视频元数据：
 
@@ -214,11 +260,11 @@ GET /api/v1/tasks/:id/video/frame-timetable?from=0&to=120
 }
 ```
 
-每个 task 最多保留 256 个尚未被 annotation POST/PATCH 认领的匿名上传；重复上传相同内容不重复占额度。达到上限返回 `422 mask_quota_exceeded`。图片和视频单帧 Mask 使用 `GET /api/v1/annotations/{annotation_id}/mask-content`；视频 Mask 轨迹的当前解析帧使用带 `{frame_index}` 的路径，兼容客户端也可以用带帧路径读取单态 Mask。响应支持 `If-None-Match` 命中返回 304；对象损坏或尺寸失配返回 409，存储暂时不可用返回可重试 503。部署可以分别控制读取和创建；创建关闭时仍允许安全读取存量 geometry。
+每个 task 最多保留 256 个尚未被 annotation POST/PATCH 认领的匿名上传；重复上传相同内容不重复占额度。达到上限返回 `422 mask_quota_exceeded`。图片和视频单帧 Mask 使用 `GET /api/v1/annotations/{annotation_id}/mask-content`；视频 Mask 轨迹的当前解析帧使用带 `{frame_index}` 的路径，兼容客户端也可以用带帧路径读取单态 Mask。对象或帧路径会随编辑及恢复指向新内容，因此返回 `Cache-Control: private, no-cache`，每次按当前摘要重新校验；`If-None-Match` 命中返回 304，摘要变化返回完整 RLE。对象损坏或尺寸失配返回 409，存储暂时不可用返回可重试 503。部署可以分别控制读取和创建；创建关闭时仍允许安全读取存量 geometry。
 
 ## Mask 实例原子操作
 
-拆分、复制、合并和严格非重叠会在一个任务级事务内提交：
+切割、拆分、复制、合并和严格非重叠会在一个任务级事务内提交：
 
 ```http
 POST /api/v1/tasks/:id/annotations/mask-mutations:commit
@@ -227,7 +273,7 @@ POST /api/v1/tasks/:id/annotations/mask-mutations:commit
 请求的核心字段是：
 
 - `idempotency_key`：同一预览重试必须复用同一个 key；同 key 异参返回 `idempotency_conflict`。
-- `operation`：`split_components`、`copy_component`、`copy_keyframe`、`join_masks` 或 `overlap`。`copy_keyframe` 只用于视频，并要求 `source_frame_index`。
+- `operation`：`slice_mask`、`split_components`、`copy_component`、`copy_keyframe`、`join_masks` 或 `overlap`。`copy_keyframe` 只用于视频，并要求 `source_frame_index`。
 - `scope`：固定 image / video、当前帧与 segment、同类 / 全部对象过滤、overlap policy 和是否要求严格非重叠。
 - `scope_fingerprint` 与 `expected_versions`：必须来自同一个预览快照；版本项按 annotation UUID 排序并覆盖范围内全部对象。
 - `mutations`：只允许有判别字段的 `update | create | delete`；geometry 只能是 `raster_mask` 或 `video_track_mask`，新内容引用必须先由当前任务上传保留。
@@ -241,6 +287,57 @@ annotation 变更、内容关联、操作账本、lineage、任务统计和聚�
 请求体上限为 12 MiB，范围候选对象、版本项、mutation 和引用的 RLE 对象各不得超过 1000，单次验证的 RLE runs 总数不得超过 200 万，派生 RLE 不得超过 100 万 runs，累计代数与连通域扫描不得超过 500 万步，严格非重叠经过 bbox 剪枝后最多比较 10 万对。范围查询在 SQL 层使用 `limit + 1` 预检；超限请求会在无界加载或更大规模的像素计算之前被拒绝。
 
 缺少范围版本返回 `428 expected_versions_missing`。范围成员变化、版本漂移、任务 / 对象 / 分段锁冲突分别返回结构化 409 reason；操作合同、类别、geometry、引用或空结果无效返回结构化 422 reason。任一失败都不会留下部分 annotation 或账本记录。
+
+### Mask 直线切割
+
+`operation: "slice_mask"` 仅用于图片 Raster Mask，必须包含恰好两个归一化有限端点的 `cut_path: [[x1,y1],[x2,y2]]`，端点不同；其它 operation 不接受 `cut_path`。mutations 必须为同一来源的一次 update 和一次 create，不得删除对象。仍须提交完整 scope 指纹、范围版本、预览结果引用及受控 report。
+
+服务端按像素中心 `((x+0.5)/W,(y+0.5)/H)` 对有向直线计算叉积，`>= 0` 属于左侧，其他属于右侧，前后端均不使用 epsilon。按 RLE 前景列区间和二分边界独立重算两块，逐像素验证提交的结果；不重叠、并集等于来源且两个结果非空。像素较多的区域必须为 update，数量相等时左侧必须为 update。来源可以有孔洞与多连通分量，`split_components` 仍仅允许拆出完整原连通分量。
+
+切割来源必须已保存、未锁定、没有活动子对象，保留原有身份、属性和父对象。新对象复制类别、工具单元、业务属性、属性来源、z_order 和原父对象，使用操作者与 manual 来源，不继承预测身份、置信度或外部轨迹身份。
+
+响应额外提供 `slice_restore`，其字段与下文 Polygon 切割响应相同。使用其中 `slice_operation_id` 和 `result_versions` 调用共享 `slices/{operation_id}:restore`；两块对象在一次 undo / redo 中保留 ID、递增版本，失败保持全部原状。恢复账本只记录前后版本号、内容摘要和活动状态，RLE 正文和内容引用来自当前对象或 `MaskAnnotationRevision`。每次切割 / 恢复事务把相关 revision 的保留期非缩短地保护到原切割后 30 天，无限保留项仍为无限。GC 无需新增扫描来源；缺失、过期或损坏的恢复引用返回 `409 snapshot_unavailable`，整次恢复拒绝。原操作超过 30 天返回 `410 restore_expired`。
+
+## Polygon 原子切割与恢复
+
+`POST /api/v1/tasks/{task_id}/annotations/polygon-slices:commit` 只接受以下字段：
+
+```json
+{
+  "annotation_id": "11111111-1111-4111-8111-111111111111",
+  "expected_version": 3,
+  "idempotency_key": "slice_commit_20260908_001",
+  "cut_path": [
+    [0.7, 0.03],
+    [0.7, 0.97]
+  ]
+}
+```
+
+切线为 2–256 个有限归一化坐标点，不能自交；来源必须是图片内已保存、未锁定、无活动子对象的简单单外环 Polygon。切线只允许穿越两次，允许边界端点；相切、沿边重叠、多次进出、孔洞和 multi_polygon 拒绝。服务端独立重算两块非空区域，验证它们分割且覆盖来源，面积误差阈值为 `max(1e-10, source_area * 1e-8)`。切线交点与自交候选边对各设固定百万步检查预算。
+
+较大区域保留来源 ID，等面积按质心 x / y 排序。新对象复制类别、工具单元、业务 attributes、attributes_meta、z_order 及原 parent_annotation_id，使用 manual 来源与当前操作者，confidence、parent_prediction_id 为空。来源身份与属性保留，追溯通过 lineage 保存。
+
+响应包含本次 `operation_id`、原切割 `slice_operation_id`、`source_annotation_id`、`created_annotation_id`、两个对象的完整 `result_versions`、`active_annotation_ids`、当前 `target`、`restore_expires_at`、`idempotent_replay` 与 `no_op`。读取完整结果沿用任务 annotations GET。
+
+`POST /api/v1/tasks/{task_id}/annotations/slices/{operation_id}:restore` 的 operation_id 必须指向原切割：
+
+```json
+{
+  "target": "before",
+  "expected_versions": {
+    "11111111-1111-4111-8111-111111111111": 4,
+    "22222222-2222-4222-8222-222222222222": 1
+  },
+  "idempotency_key": "slice_restore_20260908_001"
+}
+```
+
+`target` 为 `before` 或 `after`。必须携带原切割或上次成功恢复返回的完整版本集，含 inactive 对象；服务端还会核对该版本集等于账本记录。不得刷新任意最新版本以覆盖后续修改。几何与活动状态只从服务端账本快照或 Mask 版本引用恢复，不接受客户端回滚 geometry。ID 保持、版本递增，恢复响应继续返回两个 ID 的全部版本。恢复到当前同一侧时 `no_op=true`，对象版本不变。
+
+两个接口均要求当前任务可见、可编辑且任务锁允许写入，以及 `annotations:write` scope。相同 actor / task / key 同参回放首次响应，异参返回 `409 idempotency_conflict`。同一次超时重试复用原 key；下一次 undo / redo 必须使用新 key。对象版本变化、锁定或活动子对象分别返回 `409 version_mismatch / annotation_locked / active_children`，非法切线返回 `422 invalid_cut`。原切割提交后 30 天返回 `410 restore_expired`，撤销与重做不续期。
+
+每次提交或恢复都在单一事务内写入对象、统计、操作账本、lineage 与审计；任一失败不产生部分结果。Python SDK 将两个工作台内部接口明确列为 excluded，尚未提供对应客户端方法。实现与回滚约束见 [ADR-0074](/dev/adr/0074-atomic-annotation-slice-restore)。
 
 ## 标注转换计划
 

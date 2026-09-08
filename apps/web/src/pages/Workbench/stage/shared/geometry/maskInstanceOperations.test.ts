@@ -3,6 +3,8 @@ import {
   planMaskComponentCopy,
   planMaskComponentSplit,
   planMaskJoin,
+  planMaskSlice,
+  type MaskSlicePath,
 } from "./maskInstanceOperations";
 
 function alpha(rows: number[][]): Uint8Array {
@@ -18,6 +20,83 @@ function rows(value: Uint8Array, width: number): number[][] {
 }
 
 describe("Mask instance operation plans", () => {
+  it("slice preserves all pixels of holed and disconnected non-square sources", () => {
+    const source = alpha([
+      [1, 1, 1, 0, 1],
+      [1, 0, 1, 0, 1],
+      [1, 1, 1, 0, 0],
+    ]);
+    const original = source.slice();
+    const plan = planMaskSlice(source, 5, 3, [
+      [0.5, 0],
+      [0.5, 1],
+    ]);
+    expect(plan.sourceAreas).toEqual([10]);
+    expect(plan.resultAreas).toEqual([8, 2]);
+    for (let i = 0; i < source.length; i += 1) {
+      expect(plan.primary[i] && plan.created[0][i]).toBe(0);
+      expect(plan.primary[i] || plan.created[0][i]).toBe(source[i]);
+    }
+    expect(source).toEqual(original);
+  });
+
+  it("slice sends center ties to the directed left and reverses equal-area identity", () => {
+    const source = alpha([
+      [1, 1, 1],
+      [1, 1, 1],
+    ]);
+    const forward = planMaskSlice(source, 3, 2, [
+      [0, 0.5],
+      [1, 0.5],
+    ]);
+    const reverse = planMaskSlice(source, 3, 2, [
+      [1, 0.5],
+      [0, 0.5],
+    ]);
+    expect(forward.resultAreas).toEqual([3, 3]);
+    expect(rows(forward.primary, 3)).toEqual([
+      [0, 0, 0],
+      [1, 1, 1],
+    ]);
+    expect(reverse.primary).toEqual(forward.created[0]);
+    const centers = planMaskSlice(source, 3, 2, [
+      [0.5, 0],
+      [0.5, 1],
+    ]);
+    expect(rows(centers.primary, 3)).toEqual([
+      [1, 1, 0],
+      [1, 1, 0],
+    ]);
+    const reversedCenters = planMaskSlice(source, 3, 2, [
+      [0.5, 1],
+      [0.5, 0],
+    ]);
+    expect(rows(reversedCenters.primary, 3)).toEqual([
+      [0, 1, 1],
+      [0, 1, 1],
+    ]);
+  });
+
+  it.each<MaskSlicePath>([
+    [
+      [0, 0],
+      [0, 0],
+    ],
+    [
+      [0, 0],
+      [0, 1],
+    ],
+    [
+      [0, 0],
+      [Infinity, 1],
+    ],
+    [
+      [0, 0],
+      [2, 1],
+    ],
+  ])("rejects degenerate or empty slice %j", (start, end) => {
+    expect(() => planMaskSlice(alpha([[1, 1, 1]]), 3, 1, [start, end])).toThrow();
+  });
   it("copy component keeps the source and creates only the hit component", () => {
     const source = alpha([
       [1, 1, 0, 0],

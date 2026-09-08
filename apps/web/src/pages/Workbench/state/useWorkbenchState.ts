@@ -1,8 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type SetStateAction } from "react";
 import type { Annotation, Keypoint } from "@/types";
 import type { CommentCanvasDrawing } from "@/api/comments";
 import type { TextOutputMode } from "./useInteractiveAI";
 import { useWorkbenchConfig } from "./useWorkbenchConfig";
+import type { ContinuousImageCreation, ManualCreationDraft } from "./manualImageCreation";
+import { videoToolScopeForTool, type VideoToolSelection } from "../stage/videoToolUnits";
+import type { BboxCreationMode } from "../stage/ImageStage.helpers";
+
+export type { VideoToolScope, VideoToolSelection } from "../stage/videoToolUnits";
 
 // v0.10.2 · Tool union 扩展: 旧 "sam" 拆为 4 个独立 AI 工具 (smart-point / smart-box /
 // text-prompt / exemplar), 每个绑定一个 prompt 范式. 状态层仅保留 polarity (smart-point
@@ -102,7 +107,7 @@ const DEFAULT_CANVAS_STROKE = "#ef4444";
 
 export type Geom = { x: number; y: number; w: number; h: number };
 
-export type PendingDrawing =
+type PendingDrawingGeometry =
   | { kind?: "bbox" | "rotated_bbox" | "raster_mask"; geom: Geom }
   | { kind: "polygon" | "polyline"; geom: Geom; points: [number, number][] }
   | { kind: "keypoint"; geom: Geom; points: Keypoint[] }
@@ -135,6 +140,10 @@ export type PendingDrawing =
     }
   | null;
 
+export type PendingDrawing =
+  | (NonNullable<PendingDrawingGeometry> & { creation?: ManualCreationDraft })
+  | null;
+
 /** 选中已落库 user 框后，再次"改类别"时的状态。 */
 export type EditingClass = {
   annotationId: string;
@@ -161,7 +170,27 @@ export function useWorkbenchState() {
   } = useWorkbenchConfig();
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [tool, setTool] = useState<Tool>("select");
-  const [videoTool, setVideoTool] = useState<VideoTool>("select");
+  const [videoToolSelection, setVideoToolSelectionRaw] = useState<VideoToolSelection>({
+    tool: "select",
+    scope: "frame",
+  });
+  const { tool: videoTool, scope: videoToolScope } = videoToolSelection;
+  const setVideoToolSelection = useCallback((selection: VideoToolSelection) => {
+    const next = {
+      tool: selection.tool,
+      scope: videoToolScopeForTool(selection.tool) ?? selection.scope,
+    };
+    setVideoToolSelectionRaw((current) =>
+      current.tool === next.tool && current.scope === next.scope ? current : next,
+    );
+  }, []);
+  const setVideoTool = useCallback((nextTool: SetStateAction<VideoTool>) => {
+    setVideoToolSelectionRaw((current) => {
+      const next = typeof nextTool === "function" ? nextTool(current.tool) : nextTool;
+      const scope = videoToolScopeForTool(next) ?? current.scope;
+      return current.tool === next && current.scope === scope ? current : { tool: next, scope };
+    });
+  }, []);
   const [threeDTool, setThreeDTool] = useState<ThreeDTool>("select");
   const [videoFrameIndex, setVideoFrameIndex] = useState(0);
   const [hiddenVideoTrackIds, setHiddenVideoTrackIds] = useState<Set<string>>(() => new Set());
@@ -185,6 +214,10 @@ export function useWorkbenchState() {
    * 实际类别在画完框 → ClassPickerPopover 中确认。
    */
   const [activeClass, setActiveClass] = useState("");
+  const [bboxCreationMode, setBboxCreationMode] = useState<BboxCreationMode>("corner");
+  const [continuousCreation, setContinuousCreation] = useState<ContinuousImageCreation | null>(
+    null,
+  );
   const [pendingDrawing, setPendingDrawing] = useState<PendingDrawing>(null);
   const [editingClass, setEditingClass] = useState<EditingClass>(null);
   /**
@@ -452,6 +485,8 @@ export function useWorkbenchState() {
     setTool,
     videoTool,
     setVideoTool,
+    videoToolScope,
+    setVideoToolSelection,
     threeDTool,
     setThreeDTool,
     videoFrameIndex,
@@ -474,6 +509,10 @@ export function useWorkbenchState() {
     aiVariant,
     setAiVariant,
     activeClass,
+    continuousCreation,
+    bboxCreationMode,
+    setBboxCreationMode,
+    setContinuousCreation,
     setActiveClass,
     pendingDrawing,
     setPendingDrawing,

@@ -10,17 +10,24 @@
 // AnnotationActions handler（state/useWorkbenchAnnotationActions.ts）。
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { isWorkbenchSettingsInteractionBlocked } from "./workbenchSettingsInteraction";
+import type { PolygonDraftHandle } from "../stage/tools";
+import { isWorkbenchInteractionBlocked } from "./workbenchInteractionGuards";
 
-import { dispatchKey, ARROW_KEY_SET, hotkeyIgnoreToken } from "./hotkeys";
+import {
+  dispatchKey,
+  ARROW_KEY_SET,
+  hotkeyIgnoreToken,
+  isMaskContextHotkey,
+  isMaskHotkeyBlocked,
+  isSamCandidateHotkeyBlocked,
+} from "./hotkeys";
 import { nextInCategory, nextCategory } from "../stage/frameObjectCycle";
 import { aiBoxOnFrame } from "../stage/aiBoxFrames";
 import type { UseMaskEditorReturn } from "./useMaskEditor";
-// v0.23.5 · WS-C · Enter 提交真实条件 (dirty + 可提交相位)。
-import { canCommitMask, canEditMask } from "./canEditMask";
+import { canEditMask } from "./canEditMask";
 import { recordHotkeyUsage } from "./hotkeyUsage";
 import { bboxGeom } from "./transforms";
-import type { useWorkbenchState } from "./useWorkbenchState";
+import type { useWorkbenchState, VideoTool } from "./useWorkbenchState";
 import type { useAnnotationHistory } from "./useAnnotationHistory";
 import type { AnnotationResponse, Geometry } from "@/types";
 import type { AiBox } from "./transforms";
@@ -65,6 +72,8 @@ export interface UseWorkbenchHotkeysArgs {
   currentProject: ProjectAttributeSchemaLite | null | undefined;
   annotationsRef: { current: AnnotationResponse[] };
   batchChanging: boolean;
+  /** SAM and other class pickers that keep their draft outside ordinary editingClass. */
+  classPickerActive?: boolean;
   setBatchChanging: React.Dispatch<React.SetStateAction<boolean>>;
   cancelPendingDrawing?: () => void;
   showHotkeys: boolean;
@@ -96,8 +105,6 @@ export interface UseWorkbenchHotkeysArgs {
 
   // ai
   aiBoxes: AiBox[];
-  /** v0.21.11 · 采纳/拒绝后自动推进选中到下一个待决 AI(common.autoAdvanceOnDecide, 默认开)。 */
-  autoAdvanceOnDecide?: boolean;
 
   // ui state setters
   setShowHotkeys: React.Dispatch<React.SetStateAction<boolean>>;
@@ -113,10 +120,12 @@ export interface UseWorkbenchHotkeysArgs {
 
   // polygon hookup（来自 AnnotationActions hook）
   polygonDraftPoints: [number, number][];
+  polygonDraft?: PolygonDraftHandle;
   setPolygonDraftPoints: React.Dispatch<React.SetStateAction<[number, number][]>>;
   submitPolygon: (points: [number, number][]) => void;
   // v0.10.28 · polyline 复用同一草稿 state，Enter 阈值为 2 顶点。
   submitPolyline: (points: [number, number][]) => void;
+  cancelManualDrawing?: () => boolean;
 
   // nudge 提交所用 mutation
   updateMutation: UpdateMutationLike;
@@ -127,6 +136,7 @@ export interface UseWorkbenchHotkeysArgs {
   disabled?: boolean;
   ignoredKeys?: Set<string>;
   videoMode?: boolean;
+  requestVideoTool?: (tool: VideoTool) => void;
   /** v0.10.29 · 视频采样网格生效 (step>1) 时改写 ←/→ 键位；step=1 维持现状。 */
   samplingActive?: boolean;
   videoControlsRef?: React.RefObject<VideoStageControls | null>;
@@ -138,9 +148,8 @@ export interface UseWorkbenchHotkeysArgs {
   maskToolDisabledReason?: string;
   /** v0.10.8 · mask 工具激活时的 B/E/Enter/Esc 上下文键由这组 callback 消费。 */
   maskEditor?: UseMaskEditorReturn;
-  commitMaskAsPolygon?: () => void;
-  commitMaskInstanceOperation?: () => void;
-  cancelMaskEdit?: () => void;
+  onMaskPrimaryAction?: () => void;
+  onMaskSecondaryAction?: () => void;
   /** v0.23.5 · WS-C · task 级只读 (review/completed 锁), 供 canEditMask 判定 B/E 是否可用。 */
   maskTaskReadOnly?: boolean;
   /** 分块缓存超预算时停止像素编辑，但保留已有草稿的保存入口。 */
@@ -168,10 +177,11 @@ export function isWorkbenchInputFocused(el: EventTarget | null): boolean {
   return (
     el.tagName === "INPUT" ||
     el.tagName === "TEXTAREA" ||
+    el.tagName === "SELECT" ||
     el.isContentEditable ||
     Boolean(
       el.closest(
-        '[data-workbench-layout-control], [data-scene-timeline], [role="tab"], [role="menu"], [role="menuitem"]',
+        '[data-workbench-layout-control], [data-scene-timeline], [role="tab"], [role="menu"], [role="menuitem"], [role="combobox"], [role="listbox"]',
       ),
     )
   );
@@ -188,6 +198,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     currentProject,
     annotationsRef,
     batchChanging,
+    classPickerActive = false,
     setBatchChanging,
     cancelPendingDrawing,
     showHotkeys,
@@ -207,29 +218,30 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     handleUpdateAttributes,
     handleVideoSetSelectedClass,
     aiBoxes,
-    autoAdvanceOnDecide = true,
     setShowHotkeys,
     clipboard,
     pushToast,
     stageGeom,
     polygonDraftPoints,
+    polygonDraft,
     setPolygonDraftPoints,
     submitPolygon,
     submitPolyline,
+    cancelManualDrawing,
     updateMutation,
     taskId,
     disabled = false,
     ignoredKeys,
     videoMode = false,
+    requestVideoTool,
     samplingActive = false,
     videoControlsRef,
     isPromptSupported,
     aiInteractiveEnabled,
     maskToolDisabledReason,
     maskEditor,
-    commitMaskAsPolygon,
-    commitMaskInstanceOperation,
-    cancelMaskEdit,
+    onMaskPrimaryAction,
+    onMaskSecondaryAction,
     maskTaskReadOnly = false,
     maskPixelReadOnly = false,
     maskInteractionFrozen = false,
@@ -302,19 +314,27 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     const isPolyline = s.tool === "polyline";
     const minPts = isPolyline ? 2 : 3;
     const onKey = (e: KeyboardEvent) => {
-      if (isWorkbenchSettingsInteractionBlocked(e)) return;
+      if (isWorkbenchInteractionBlocked(e)) return;
       const t = e.target;
       if (
         t instanceof HTMLElement &&
         (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)
       )
         return;
-      if (polygonDraftPoints.length === 0) return;
-      if (e.key === "Enter" && polygonDraftPoints.length >= minPts) {
+      if (polygonDraft?.beforeInput?.current?.(e)) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Backspace")
+        polygonDraft?.autoPoints?.beforeKey.current?.();
+      const points = polygonDraft?.autoPoints?.getPoints() ?? polygonDraftPoints;
+      if (points.length === 0) return;
+      if (e.key === "Enter" && points.length >= minPts) {
         e.preventDefault();
         e.stopPropagation();
-        if (isPolyline) submitPolyline(polygonDraftPoints);
-        else submitPolygon(polygonDraftPoints);
+        if (isPolyline) submitPolyline(points);
+        else submitPolygon(points);
         return;
       }
       if (e.key === "Escape") {
@@ -332,25 +352,27 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [disabled, s.tool, polygonDraftPoints, submitPolygon, submitPolyline, setPolygonDraftPoints]);
+  }, [
+    disabled,
+    s.tool,
+    polygonDraft,
+    polygonDraftPoints,
+    submitPolygon,
+    submitPolyline,
+    setPolygonDraftPoints,
+  ]);
 
   // v0.10.8 · I11 · Mask 工具专用键（capture 阶段，先于主 dispatchKey 抢键）：
-  //   B → brush 模式  · E → erase 模式  · Enter → commit  · Esc → cancel
+  //   B → brush 模式  · E → erase 模式  · Enter/Esc → 当前阶段主/次动作
   // 仅 tool === "mask" 且 maskEditor 注入时生效；输入聚焦 / pending popover 时让位。
   useEffect(() => {
     if (disabled) return;
     if (s.tool !== "mask") return;
     if (!maskEditor) return;
     const onKey = (e: KeyboardEvent) => {
-      if (isWorkbenchSettingsInteractionBlocked(e)) return;
+      if (isMaskHotkeyBlocked(e)) return;
       if (maskInteractionFrozen) return;
-      const t = e.target;
-      if (
-        t instanceof HTMLElement &&
-        (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)
-      )
-        return;
-      if (s.pendingDrawing || s.editingClass) return;
+      if (s.pendingDrawing || s.editingClass || classPickerActive) return;
       // v0.23.5 · WS-C · B/E 模式切换也经 canEditMask: 锁定对象连切笔刷都不允许,
       // 与 pointer 入口 (MaskTool) 一道关闭锁定绕过。readOnly 来自 task 级 (调用方传入),
       // is_locked 读当前选中 annotation。
@@ -363,22 +385,18 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         editorPhase:
           maskEditor.phase ?? (maskEditor.dirty ? "dirty" : maskEditor.active ? "ready" : "idle"),
       });
-      const maskCommitAllowed = canEditMask({
-        taskReadOnly: !!maskTaskReadOnly,
-        annotationLocked: !!sel?.is_locked,
-        trackLocked: false,
-        segmentLocked: false,
-        editorPhase:
-          maskEditor.phase ?? (maskEditor.dirty ? "dirty" : maskEditor.active ? "ready" : "idle"),
-      });
       const command = e.ctrlKey || e.metaKey;
       if (command && (e.key.toLowerCase() === "z" || e.key.toLowerCase() === "y")) {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        if (!maskEditable) return;
-        if (e.key.toLowerCase() === "y" || e.shiftKey) maskEditor.redo();
-        else maskEditor.undo();
-        return;
+        const isRedo = e.key.toLowerCase() === "y" || e.shiftKey;
+        const canHandle = isRedo ? maskEditor.canRedo : maskEditor.canUndo;
+        if (!maskEditable || canHandle) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          if (!maskEditable) return;
+          if (isRedo) maskEditor.redo();
+          else maskEditor.undo();
+          return;
+        }
       }
       if (e.key === "b" || e.key === "B") {
         e.preventDefault();
@@ -394,43 +412,16 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         maskEditor.setMode("erase");
         return;
       }
-      if (e.key === "Enter" && maskEditor.active) {
-        // v0.23.5 · WS-C · ADR-0052 D7: 无变化 (dirty=false) 不物化 held keyframe;
-        // 且必须满足 canEditMask (锁定对象即便已有 buffer 也不得提交)。
+      if (e.key === "Enter") {
         e.preventDefault();
         e.stopImmediatePropagation();
-        if (maskEditor.instanceOperationPreview) {
-          if (!maskEditable) return;
-          commitMaskInstanceOperation?.();
-          return;
-        }
-        if (maskEditor.operationPreview) {
-          if (!maskEditable) return;
-          maskEditor.confirmOperation();
-          return;
-        }
-        if (!maskCommitAllowed) return;
-        if (
-          !canCommitMask(
-            maskEditor.phase ?? (maskEditor.dirty ? "dirty" : "ready"),
-            maskEditor.dirty,
-          )
-        )
-          return;
-        commitMaskAsPolygon?.();
+        onMaskPrimaryAction?.();
         return;
       }
       if (e.key === "Escape") {
-        // 退出 mask 工具（与 MaskToolbar「取消 (Esc)」一致）：无论是否已有 active buffer，
-        // Esc 都应丢弃缓冲（若有）并切回选择工具。早先 `&& maskEditor.active` 守卫
-        // 导致「按 M 进入但未落笔时 Esc 失效」，与工具栏文案矛盾。
         e.preventDefault();
-        e.stopPropagation();
-        if (maskEditor.operationPreview || maskEditor.instanceOperationPreview) {
-          maskEditor.cancelOperation();
-          return;
-        }
-        cancelMaskEdit?.();
+        e.stopImmediatePropagation();
+        onMaskSecondaryAction?.();
         return;
       }
     };
@@ -443,10 +434,10 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     s.editingClass,
     s.selectedId,
     maskEditor,
-    commitMaskAsPolygon,
-    commitMaskInstanceOperation,
-    cancelMaskEdit,
+    onMaskPrimaryAction,
+    onMaskSecondaryAction,
     maskInteractionFrozen,
+    classPickerActive,
     maskTaskReadOnly,
     maskPixelReadOnly,
     annotationsRef,
@@ -485,7 +476,25 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     };
 
     const onKey = (e: KeyboardEvent) => {
-      if (isWorkbenchSettingsInteractionBlocked(e)) return;
+      if (e.defaultPrevented || isWorkbenchInteractionBlocked(e)) return;
+      const activeTool = videoMode ? s.videoTool : s.tool;
+      if (
+        ["smart-point", "smart-box", "smart-scribble", "text-prompt", "exemplar"].includes(
+          activeTool ?? "",
+        ) &&
+        ["Enter", "Escape", "Tab", "r", "R"].includes(e.key) &&
+        isSamCandidateHotkeyBlocked(e)
+      )
+        return;
+      const maskToolActive = videoMode
+        ? s.videoTool === "mask" || s.videoTool === "mask-track"
+        : s.tool === "mask";
+      if (
+        maskToolActive &&
+        isMaskContextHotkey(e) &&
+        (maskInteractionFrozen || isMaskHotkeyBlocked(e))
+      )
+        return;
       const modifiedToken = hotkeyIgnoreToken(e);
       if (ignoredKeys?.has(e.key) || (modifiedToken && ignoredKeys?.has(modifiedToken))) return;
       const attributeHotkey = (digit: string) => {
@@ -512,9 +521,14 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
       const action = dispatchKey(e, {
         isInputFocused: isWorkbenchInputFocused(e.target),
         hasSelection: !!s.selectedId || s.selectedIds.length > 0,
-        pendingActive: !!s.pendingDrawing || !!s.editingClass || batchChanging,
+        pendingActive: !!s.pendingDrawing || !!s.editingClass || batchChanging || classPickerActive,
         attributeHotkey,
         videoMode,
+        selectedPrediction:
+          aiBoxes.find(
+            (box) =>
+              box.id === s.selectedId && (!videoMode || aiBoxOnFrame(box, s.videoFrameIndex)),
+          ) ?? null,
         samplingActive,
         hasSelectedVideoTrack:
           videoMode &&
@@ -723,12 +737,18 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
             s.setEditingClass(null);
             return;
           }
+          if (!videoMode && cancelManualDrawing?.()) return;
+          if (!videoMode && s.continuousCreation) {
+            s.setContinuousCreation(null);
+            s.setTool("select");
+            return;
+          }
           if (s.selectedId) {
             s.setSelectedId(null);
             return;
           }
           // 无草稿 / 无选中可取消时回选择工具；视频只退到 select, 不再回 hidden hand。
-          if (videoMode) s.setVideoTool("select");
+          if (videoMode) (requestVideoTool ?? s.setVideoTool)("select");
           else s.setTool("select");
           return;
 
@@ -882,7 +902,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           if (aiInteractiveEnabled === false && AI_TOOL_HOTKEY_IDS.has(action.tool)) {
             return;
           }
-          s.setVideoTool(action.tool);
+          (requestVideoTool ?? s.setVideoTool)(action.tool);
           return;
 
         case "samPolarity": {
@@ -934,33 +954,18 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
           handleSubmitTask();
           return;
 
-        // v0.21.11 · 采纳/拒绝后, 若开启自动前进则把选中推进到下一个待决 AI(移除当前后落到后一个,
-        // 没有则前一个, 都没有=审完置空)。决策前按当前 aiBoxes 顺序算好, 避免异步刷新后列表已变。
-        // 关闭时保持现状: 采纳后不动选中(指向的框随即消失=去选), 拒绝后置空。
-        case "acceptAi": {
-          if (!s.selectedId) return;
-          // 视频模式 aiBoxes 是跨帧候选全集; 自动前进须限定当前帧, 否则 nextId 会指向别帧的候选、
-          // 当前帧画布上「什么都没选中」。图片模式无帧维度, scoped 即全集。
-          const scoped = videoMode
-            ? aiBoxes.filter((b) => aiBoxOnFrame(b, s.videoFrameIndex))
-            : aiBoxes;
-          const idx = scoped.findIndex((b) => b.id === s.selectedId);
-          if (idx < 0) return;
-          const nextId = scoped[idx + 1]?.id ?? scoped[idx - 1]?.id ?? null;
-          handleAcceptPrediction(scoped[idx]);
-          if (autoAdvanceOnDecide) s.setSelectedId(nextId);
-          return;
-        }
+        case "acceptAi":
         case "rejectAi": {
-          if (!s.selectedId) return;
-          const scoped = videoMode
-            ? aiBoxes.filter((b) => aiBoxOnFrame(b, s.videoFrameIndex))
-            : aiBoxes;
-          const idx = scoped.findIndex((b) => b.id === s.selectedId);
-          if (idx < 0) return;
-          const nextId = scoped[idx + 1]?.id ?? scoped[idx - 1]?.id ?? null;
-          handleRejectPrediction?.(scoped[idx]);
-          s.setSelectedId(autoAdvanceOnDecide ? nextId : null);
+          e.preventDefault();
+          if (e.repeat) return;
+          const box = aiBoxes.find(
+            (candidate) =>
+              candidate.id === s.selectedId &&
+              (!videoMode || aiBoxOnFrame(candidate, s.videoFrameIndex)),
+          );
+          if (!box) return;
+          if (action.type === "acceptAi") void handleAcceptPrediction(box);
+          else void handleRejectPrediction?.(box);
           return;
         }
       }
@@ -970,7 +975,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
       if (e.key === " ") {
         setSpacePan(false);
         if (videoMode && videoSpaceDownRef.current) {
-          if (!videoSpaceDraggedRef.current && !isWorkbenchSettingsInteractionBlocked(e)) {
+          if (!videoSpaceDraggedRef.current && !isWorkbenchInteractionBlocked(e)) {
             videoControlsRef?.current?.togglePlayback();
           }
           videoSpaceDownRef.current = false;
@@ -990,6 +995,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     disabled,
     ignoredKeys,
     videoMode,
+    requestVideoTool,
     samplingActive,
     videoControlsRef,
     s,
@@ -998,8 +1004,10 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     currentProject,
     annotationsRef,
     batchChanging,
+    classPickerActive,
     setBatchChanging,
     cancelPendingDrawing,
+    cancelManualDrawing,
     showHotkeys,
     navigateTask,
     smartNext,
@@ -1019,8 +1027,8 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     isPromptSupported,
     aiInteractiveEnabled,
     maskToolDisabledReason,
+    maskInteractionFrozen,
     aiBoxes,
-    autoAdvanceOnDecide,
     setShowHotkeys,
     clipboard,
     pushToast,

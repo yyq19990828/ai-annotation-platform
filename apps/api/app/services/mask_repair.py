@@ -594,7 +594,7 @@ async def _plan_action(
         "before_version": int(target.version or 1),
         "result_rle": result_rle,
         "result_reference": result_reference,
-        "payload": payload.model_dump(mode="json"),
+        "payload": payload.model_dump(mode="json", exclude_none=True),
         "status": "pending",
     }
     return public_item.model_dump(mode="json"), private

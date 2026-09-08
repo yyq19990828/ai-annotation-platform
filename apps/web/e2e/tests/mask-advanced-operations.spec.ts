@@ -83,13 +83,15 @@ async function openTask(page: Page, seed: SeedAPI, data: SeedData, taskId: strin
 }
 
 async function beginEdit(page: Page, annotationId: string): Promise<void> {
+  // Dismiss the selected card through its normal keyboard path before selecting a row.
+  await page.keyboard.press("Escape");
   const row = page.getByTestId(`box-list-item-${annotationId}`);
   await expect(row).toBeVisible({ timeout: 15_000 });
-  // 浮动选中卡可能合法覆盖右侧列表；强制派发列表选择事件，随后仍从可见操作按钮进入编辑。
-  // 编辑按钮必须取目标行专属的 user-refine-{id} (dispatchEvent 绕过 hover 浮出)：
-  // 多 mask 场景下全局 :visible 的「编辑 Mask」按钮可能属于其他行，导致编辑了错误对象。
-  await row.click({ force: true });
-  await page.getByTestId(`user-refine-${annotationId}`).dispatchEvent("click");
+  await row.click();
+  const collapse = page.getByRole("button", { name: "收起浮窗", exact: true });
+  if (await collapse.isVisible()) await collapse.click();
+  await row.getByRole("button", { name: "更多操作" }).hover();
+  await page.getByTestId(`user-refine-${annotationId}`).click();
   await expect(page.getByTestId("mask-toolbar")).toContainText("就绪", { timeout: 15_000 });
   // 就绪 ≠ 画布可交互：等媒体与 Konva 画布真正可见后再让用例做指针操作，
   // 否则 fitted 前的合成指针事件被丢弃, 笔迹无声丢失。
@@ -160,10 +162,11 @@ async function chooseAdvancedRadio(page: Page, name: string): Promise<void> {
 }
 
 async function applyPreview(page: Page): Promise<void> {
-  await page.getByTestId("mask-toolbar").getByRole("button", { name: "应用预览" }).click();
+  await page.getByTestId("mask-toolbar").getByTestId("mask-primary-action").click();
 }
 
 test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
+  test.use({ viewport: { width: 1440, height: 1080 } });
   test("1. 非正方形图片的方笔刷、圆橡皮、lasso 与 undo/redo 刷新后逐像素一致", async ({
     page,
     request,
@@ -220,7 +223,7 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
         response.request().method() === "PATCH" &&
         response.ok(),
     );
-    await toolbar.getByRole("button", { name: "确认", exact: true }).click();
+    await toolbar.getByTestId("mask-primary-action").click();
     await savedResponse;
     const saved = await maskContent(request, fixture.annotation_id, token);
     expect(saved.counts).not.toEqual(before.counts);
@@ -249,7 +252,7 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     await clickPixel(page, 20, 20);
     await expect(toolbar).toContainText("面积 32→16");
     await expect(toolbar).toContainText("组件 2→1");
-    await toolbar.getByRole("button", { name: "取消预览" }).click();
+    await toolbar.getByTestId("mask-secondary-action").click();
 
     await chooseAdvancedRadio(page, "8 邻域");
     await chooseAdvanced(page, "保留命中组件");
@@ -257,7 +260,7 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     await expect(toolbar).toContainText("变化 0 px");
     await expect(toolbar).toContainText("面积 32→32");
     await expect(toolbar).toContainText("组件 1→1");
-    await toolbar.getByRole("button", { name: "取消预览" }).click();
+    await toolbar.getByTestId("mask-secondary-action").click();
 
     await chooseAdvancedRadio(page, "4 邻域");
     await chooseAdvanced(page, "擦除命中区域");
@@ -270,7 +273,7 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
         response.request().method() === "PATCH" &&
         response.ok(),
     );
-    await toolbar.getByRole("button", { name: "确认", exact: true }).click();
+    await toolbar.getByTestId("mask-primary-action").click();
     await savedResponse;
     expect(foregroundArea(await maskContent(request, fixture.annotation_id, token))).toBe(16);
   });
@@ -297,7 +300,7 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     await clickPixel(page, 10, 10);
     await expect(toolbar).toContainText("面积 612→676");
     await expect(toolbar).toContainText("孔洞 1→0");
-    await toolbar.getByRole("button", { name: "取消预览" }).click();
+    await toolbar.getByTestId("mask-secondary-action").click();
     expect(await maskContent(request, fixture.annotation_id, token)).toEqual(persisted);
 
     await openAdvanced(page);
@@ -305,7 +308,7 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     await page.getByRole("menuitem", { name: /去除小组件/ }).click();
     await expect(toolbar).toContainText("面积 612→456");
     await expect(toolbar).toContainText("组件 3→2");
-    await toolbar.getByRole("button", { name: "取消预览" }).click();
+    await toolbar.getByTestId("mask-secondary-action").click();
 
     await chooseAdvanced(page, "保留命中组件");
     await clickPixel(page, 5, 5);
@@ -313,7 +316,11 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     await expect(toolbar).toContainText("组件 3→1");
     await applyPreview(page);
     await expect(toolbar).toContainText("未保存");
-    await toolbar.getByRole("button", { name: "取消", exact: true }).click();
+    page.on("dialog", async (dialog) => {
+      if (dialog.message().includes("丢弃")) await dialog.accept();
+      else await dialog.dismiss();
+    });
+    await toolbar.getByTestId("mask-secondary-action").click();
     await expect(toolbar).toBeHidden();
     expect(await maskContent(request, fixture.annotation_id, token)).toEqual(persisted);
   });
@@ -448,13 +455,13 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
         response.url().endsWith(`/tasks/${taskId}/annotations/mask-mutations:commit`) &&
         response.request().method() === "POST",
     );
-    await toolbar.getByRole("button", { name: "原子提交" }).click();
+    await toolbar.getByTestId("mask-primary-action").click();
     const conflictResponse = await conflicted;
     expect(conflictResponse.status()).toBe(409);
     await expect(toolbar.getByRole("alert")).toContainText("来源 Mask 已变更");
     expect(await annotations(request, taskId, token)).toHaveLength(1);
 
-    await toolbar.getByRole("button", { name: "刷新范围" }).click();
+    await toolbar.getByTestId("mask-primary-action").click();
     await expect(toolbar).toContainText("1 个来源 → 3 个结果", { timeout: 15_000 });
     const committed = page.waitForResponse(
       (response) =>
@@ -462,7 +469,7 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
         response.request().method() === "POST" &&
         response.ok(),
     );
-    await toolbar.getByRole("button", { name: "原子提交" }).click();
+    await toolbar.getByTestId("mask-primary-action").click();
     const body = await json<{
       created_annotations: Array<{ id: string }>;
       lineage_edges: Array<{ source_annotation_id: string }>;
@@ -490,11 +497,13 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     await openTask(page, seed, data, taskId);
     const donutRow = page.getByTestId(`box-list-item-${donut.annotation_id}`);
     const islandRow = page.getByTestId(`box-list-item-${island.annotation_id}`);
-    await donutRow.click({ force: true });
-    await islandRow.dispatchEvent("click", { shiftKey: true });
+    await donutRow.click();
+    await page.getByRole("button", { name: "收起浮窗", exact: true }).click();
+    await islandRow.click({ modifiers: ["Shift"] });
     await expect(donutRow).toHaveClass(/!border-brand/);
     await expect(islandRow).toHaveClass(/!border-brand/);
-    await page.getByTestId(`user-refine-${island.annotation_id}`).dispatchEvent("click");
+    await islandRow.getByRole("button", { name: "更多操作" }).hover();
+    await page.getByTestId(`user-refine-${island.annotation_id}`).click();
     const toolbar = page.getByTestId("mask-toolbar");
     await expect(toolbar).toContainText("就绪", { timeout: 15_000 });
     await expect(donutRow).toHaveClass(/!border-brand/);
@@ -512,7 +521,7 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
         response.request().method() === "POST" &&
         response.ok(),
     );
-    await toolbar.getByRole("button", { name: "原子提交" }).click();
+    await toolbar.getByTestId("mask-primary-action").click();
     const joinBody = await json<{
       created_annotations: Array<{ id: string }>;
       lineage_edges: Array<{ source_annotation_id: string }>;
@@ -528,7 +537,7 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     expect(await annotations(request, taskId, token)).toHaveLength(3);
   });
 
-  test("6b. 锁定重叠对象阻止严格提交", async ({ page, seed }) => {
+  test("6b. 锁定重叠对象阻止严格提交", async ({ page, seed, request }) => {
     const data = await seed.reset();
     const taskId = data.task_ids[0];
     const primary = await seed.injectRasterMask({
@@ -546,7 +555,17 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     await chooseAdvanced(page, "预览同类严格非重叠");
     await expect(lockedToolbar).toContainText("未解决 1 个");
     await expect(lockedToolbar.getByRole("alert")).toContainText("锁定");
-    await expect(lockedToolbar.getByRole("button", { name: "原子提交" })).toBeDisabled();
+    const token = await seed.accessToken(data.annotator_email);
+    const before = await annotations(request, taskId, token);
+    let writes = 0;
+    page.on("request", (outgoing) => {
+      if (outgoing.url().endsWith("/annotations/mask-mutations:commit")) writes += 1;
+    });
+    await expect(lockedToolbar.getByTestId("mask-primary-action")).toHaveText("取消失效预览");
+    await lockedToolbar.getByTestId("mask-primary-action").click();
+    await expect(lockedToolbar.getByTestId("mask-primary-action")).toHaveText("已保存");
+    expect(await annotations(request, taskId, token)).toEqual(before);
+    expect(writes).toBe(0);
   });
 
   test("7. 默认允许重叠；erase_same_class 只修改同类当前媒体对象", async ({
@@ -586,11 +605,9 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
         response.request().method() === "PATCH" &&
         response.ok(),
     );
-    await toolbar.getByRole("button", { name: "确认", exact: true }).click();
+    await toolbar.getByTestId("mask-primary-action").click();
     await saved;
-    await expect(toolbar).toContainText("未激活", { timeout: 10_000 });
-    await page.keyboard.press("v");
-    await expect(toolbar).toBeHidden();
+    await expect(toolbar).toBeHidden({ timeout: 10_000 });
     expect(await maskContent(request, sameClass.annotation_id, token)).toEqual(sameBefore);
     expect(await maskContent(request, otherClass.annotation_id, token)).toEqual(otherBefore);
 
@@ -598,7 +615,7 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     await chooseAdvanced(page, "预览同类严格非重叠");
     const strictToolbar = page.getByTestId("mask-toolbar");
     await expect(strictToolbar).toContainText("删除 1 个");
-    await strictToolbar.getByRole("button", { name: "原子提交" }).click();
+    await strictToolbar.getByTestId("mask-primary-action").click();
     const confirm = page.getByRole("alertdialog");
     await expect(confirm).toContainText("确认删除 1 个 Mask 实例");
     const committed = page.waitForResponse(

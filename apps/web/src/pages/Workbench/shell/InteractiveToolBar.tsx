@@ -1,11 +1,11 @@
 // v0.18.25 · 交互工具上下文浮块 (前身 AIToolDrawer, 已退役)。
 //
 // 浮在 ImageStage container 顶部居中, 选中 AI 工具 (point/box/exemplar) 时渲染, 与 MaskToolbar
-// 互斥 (mask 非 AI 工具)。内容: 引擎 (后端+模型) 选择 + 工具特定控件 (极性 / 输出形态 / 叠加文本 /
-// 阈值) + 兼容性警告 + 状态指示。横排布局 (对齐 MaskToolbar 浮块风格), 取代旧的贴 ToolDock 右侧竖排抽屉。
+// 互斥 (mask 非 AI 工具)。主层保留工具提示、候选决策与恢复；高级区折叠引擎、模型、权重、
+// 阈值和诊断。配置与本轮推理仍由现有上层 owner 持有，折叠仅改变显示。
 // 引擎选择持久化由上层 useAiToolModelPref (服务端 User.preferences.ai.model_by_backend) 承载。
 
-import { useEffect } from "react";
+import { useEffect, useId, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -37,6 +37,20 @@ export interface InteractiveToolBarProps {
   onSetSamPolarity: (p: SamPolarity) => void;
   isLoading: boolean;
   isError: boolean;
+  capabilityRecoveryOnly?: boolean;
+  capabilityError?: string;
+  onRetryCapabilities?: () => void;
+  isCapabilityRetrying?: boolean;
+  isRunning?: boolean;
+  inferenceError?: string | null;
+  candidateCount?: number;
+  /** Zero-based index supplied by the current inference session. */
+  activeCandidateIndex?: number;
+  canAcceptCandidates?: boolean;
+  candidateActionPending?: boolean;
+  onCycleCandidate?: (dir: 1 | -1) => void;
+  onAcceptCandidate?: () => void;
+  onCancelCandidates?: () => void;
   canRetry?: boolean;
   onRetry?: () => void;
   // exemplar 工具输出形态 (box/mask/both); 会话级状态由 WorkbenchShell 持有.
@@ -147,6 +161,19 @@ export function InteractiveToolBar({
   onSetSamPolarity,
   isLoading,
   isError,
+  capabilityRecoveryOnly = false,
+  capabilityError,
+  onRetryCapabilities,
+  isCapabilityRetrying = false,
+  isRunning = false,
+  inferenceError,
+  candidateCount = 0,
+  activeCandidateIndex = 0,
+  canAcceptCandidates = false,
+  candidateActionPending = false,
+  onCycleCandidate,
+  onAcceptCandidate,
+  onCancelCandidates,
   canRetry,
   onRetry,
   exemplarOutputMode,
@@ -175,6 +202,8 @@ export function InteractiveToolBar({
   variantValue,
   onVariantChange,
 }: InteractiveToolBarProps) {
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const advancedId = useId();
   const meta = TOOL_REGISTRY[tool];
   const hint = TOOL_HINT[tool];
   const hasVariants = !!variantGroups && variantGroups.length > 0 && !!onVariantChange;
@@ -208,233 +237,413 @@ export function InteractiveToolBar({
   // 后端无负框 (YOLOE) 时强制正极性: 隐藏负极性按钮后, 防止从 smart-point 残留的负极性
   // 让 exemplar 拖框误发 label=False (被后端剔除 → 0 结果)。
   useEffect(() => {
-    if (tool === "exemplar" && !exemplarNegative && samPolarity === "negative") {
+    if (
+      !capabilityRecoveryOnly &&
+      tool === "exemplar" &&
+      !exemplarNegative &&
+      samPolarity === "negative"
+    ) {
       onSetSamPolarity("positive");
     }
-  }, [tool, exemplarNegative, samPolarity, onSetSamPolarity]);
+  }, [tool, exemplarNegative, samPolarity, onSetSamPolarity, capabilityRecoveryOnly]);
 
   // 交互后端选择器: ≥2 个候选 (支持当前工具 prompt 的后端) 时可切, 否则只读显示。
   const backendCands = interactiveBackends ?? [];
   const canSwitchBackend = backendCands.length >= 2 && !!onSelectInteractive;
   const warnings = capabilityWarnings ?? [];
+  const totalCandidates = Number.isFinite(candidateCount)
+    ? Math.max(0, Math.floor(candidateCount))
+    : 0;
+  const hasActiveCandidate =
+    Number.isInteger(activeCandidateIndex) &&
+    activeCandidateIndex >= 0 &&
+    activeCandidateIndex < totalCandidates;
+  const capabilityFailed = isError || !!capabilityError;
+  const capabilityBusy = isLoading || isCapabilityRetrying;
+  const inferenceStatus = candidateActionPending
+    ? "候选处理中…"
+    : isRunning
+      ? "本轮推理中…"
+      : inferenceError
+        ? "本轮推理失败"
+        : totalCandidates > 0
+          ? "候选已就绪"
+          : "等待提示";
 
   return (
     <div
       data-testid="interactive-toolbar"
+      data-workbench-ai-toolbar
       className={cn(
-        "absolute left-1/2 top-3 z-local-5 max-w-[calc(100%-1.5rem)] -translate-x-1/2",
+        "absolute left-1/2 top-3 z-local-5 w-max max-w-[calc(100%-1.5rem)] -translate-x-1/2",
         TOOLBAR_CHROME_CLASS,
       )}
-      onMouseDown={(e) => e.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
     >
-      {/* 主行: 标题 + 引擎 + 工具控件 + 状态 (横排) */}
-      <div className="flex items-center gap-2.5">
-        {/* 标题 */}
-        <div className="flex shrink-0 items-center gap-1.5" title={hint ?? undefined}>
-          <Icon name={meta.icon} size={13} />
-          <b className="whitespace-nowrap text-xs">{meta.label}</b>
+      <div
+        data-testid="interactive-toolbar-primary"
+        className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1.5"
+      >
+        <div
+          className="flex shrink-0 items-center gap-1.5"
+          title={capabilityRecoveryOnly ? undefined : (hint ?? undefined)}
+        >
+          <Icon name={capabilityRecoveryOnly ? "info" : meta.icon} size={13} />
+          <b className="whitespace-nowrap text-xs">
+            {capabilityRecoveryOnly ? "AI 能力" : meta.label}
+          </b>
         </div>
 
-        {canRetry && onRetry && (
+        {!capabilityRecoveryOnly && (
           <>
-            {DIVIDER}
-            <Button
-              variant="ghost"
-              size="xs"
-              onClick={onRetry}
-              data-testid="interactive-prompt-retry"
-            >
-              <Icon name="rotate-ccw" size={11} />
-              重试本轮
-            </Button>
-          </>
-        )}
-
-        {DIVIDER}
-
-        {/* 引擎: 后端 (≥2 候选可切, 否则只读) + 模型 (过滤后 >1 时) */}
-        <div className="flex items-center gap-1.5">
-          <span className={FIELD_LABEL_CLASS}>引擎</span>
-          <select
-            data-testid="ai-tool-backend-select"
-            value={canSwitchBackend ? (selectedInteractiveId ?? "") : (backendName ?? "")}
-            disabled={!canSwitchBackend}
-            onChange={(e) => onSelectInteractive?.(e.target.value)}
-            className={`${SELECT_CLASS} opacity-[0.85]`}
-            title="交互后端"
-          >
-            {canSwitchBackend ? (
-              backendCands.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))
-            ) : (
-              <option value={backendName ?? ""}>{backendName ?? "未绑定 ML 后端"}</option>
-            )}
-          </select>
-          {showModelSelector && (
-            <select
-              data-testid="ai-tool-model-select"
-              value={activeModelId ?? ""}
-              onChange={(e) => onSetActiveModelId?.(e.target.value)}
-              className={`${SELECT_CLASS} cursor-pointer`}
-              title="模型"
-            >
-              {groupModelsByTask(filteredModels).map(([task, group]) => (
-                <optgroup key={task} label={modelTaskLabel(task)}>
-                  {group.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.display_name || m.id}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-          )}
-          {/* v0.18.26 · 模型权重(档位): 内联紧凑下拉 (series/size 多轴, 复用 VariantSelector 联动逻辑)。 */}
-          {hasVariants && (
-            <VariantSelector
-              compact
-              supportedVariants={variantGroups}
-              variantCombinations={variantCombinations}
-              defaults={variantDefaults}
-              value={variantValue ?? {}}
-              onChange={(next) => onVariantChange?.(next)}
-            />
-          )}
-        </div>
-
-        {/* 极性切换 (smart-point 点正负 / exemplar 框正负, 与 Alt 修饰键合并)。
-            exemplar 仅在后端支持负框时显示 (YOLOE negative_box=false → 隐藏, 恒正框)。 */}
-        {(tool === "smart-point" ||
-          tool === "smart-scribble" ||
-          (tool === "exemplar" && exemplarNegative)) && (
-          <>
-            {DIVIDER}
-            <div className="flex items-center gap-1.5">
-              <span className={FIELD_LABEL_CLASS}>极性</span>
-              <button
-                type="button"
-                data-testid="ai-tool-polarity"
-                onClick={() =>
-                  onSetSamPolarity(samPolarity === "positive" ? "negative" : "positive")
-                }
-                className={cn(
-                  "flex size-6 cursor-pointer appearance-none items-center justify-center rounded-full border-0 p-0 text-white",
-                  samPolarity === "positive" ? "bg-emerald-500" : "bg-rose-500",
-                )}
-                title={
-                  tool === "exemplar"
-                    ? samPolarity === "positive"
-                      ? "正框 (+, 扩召回) — 按 - 切负框 / 或 Alt 拖框"
-                      : "负框 (−, 排误检) — 按 + 切正框 / 或 Alt 拖框"
-                    : samPolarity === "positive"
-                      ? "正向 (+) — 按 - 切负向"
-                      : "负向 (−) — 按 + 切正向"
-                }
-              >
-                <Icon name={samPolarity === "positive" ? "plus" : "minus"} size={14} />
-              </button>
-            </div>
-          </>
-        )}
-
-        {/* 单帧最终几何与 exemplar 的 box/mask/both 召回形态不是同一维度。 */}
-        {(tool === "smart-point" ||
-          tool === "smart-box" ||
-          tool === "smart-scribble" ||
-          tool === "exemplar") &&
-          singleFrameOutputGeometry &&
-          onSetSingleFrameOutputGeometry && (
-            <>
-              {DIVIDER}
-              <div className="flex items-center gap-1.5" data-testid="single-frame-output-geometry">
-                <span className={FIELD_LABEL_CLASS}>提交</span>
-                <select
-                  data-testid="single-frame-output-geometry-select"
-                  value={singleFrameOutputGeometry}
-                  onChange={(event) =>
-                    onSetSingleFrameOutputGeometry(event.target.value as "polygon" | "mask")
+            {(tool === "smart-point" ||
+              tool === "smart-scribble" ||
+              (tool === "exemplar" && exemplarNegative)) && (
+              <div className="flex items-center gap-1.5">
+                <span className={FIELD_LABEL_CLASS}>极性</span>
+                <button
+                  type="button"
+                  data-testid="ai-tool-polarity"
+                  aria-label={samPolarity === "positive" ? "切换到负向提示" : "切换到正向提示"}
+                  onClick={() =>
+                    onSetSamPolarity(samPolarity === "positive" ? "negative" : "positive")
                   }
-                  className={`${SELECT_CLASS} cursor-pointer`}
-                  title={nativeMaskOutputDisabledReason ?? "单帧候选持久化几何"}
+                  className={cn(
+                    "flex size-6 cursor-pointer appearance-none items-center justify-center rounded-full border-0 p-0",
+                    samPolarity === "positive"
+                      ? "bg-status-positive-soft text-status-positive"
+                      : "bg-status-danger-soft text-status-danger",
+                  )}
+                  title={
+                    tool === "exemplar"
+                      ? samPolarity === "positive"
+                        ? "正框 (+, 扩召回) — 按 - 切负框 / 或 Alt 拖框"
+                        : "负框 (−, 排误检) — 按 + 切正框 / 或 Alt 拖框"
+                      : samPolarity === "positive"
+                        ? "正向 (+) — 按 - 切负向"
+                        : "负向 (−) — 按 + 切正向"
+                  }
                 >
-                  <option value="polygon">多边形</option>
-                  <option value="mask" disabled={nativeMaskOutputDisabledReason != null}>
-                    原生 Mask
-                  </option>
+                  <Icon name={samPolarity === "positive" ? "plus" : "minus"} size={14} />
+                </button>
+              </div>
+            )}
+
+            {(tool === "smart-point" ||
+              tool === "smart-box" ||
+              tool === "smart-scribble" ||
+              tool === "exemplar") &&
+              singleFrameOutputGeometry &&
+              onSetSingleFrameOutputGeometry && (
+                <div
+                  className="flex min-w-0 items-center gap-1.5"
+                  data-testid="single-frame-output-geometry"
+                >
+                  <span className={FIELD_LABEL_CLASS}>提交</span>
+                  <select
+                    data-testid="single-frame-output-geometry-select"
+                    aria-label="单帧提交几何"
+                    value={singleFrameOutputGeometry}
+                    onChange={(event) =>
+                      onSetSingleFrameOutputGeometry(event.target.value as "polygon" | "mask")
+                    }
+                    className={cn(SELECT_CLASS, "min-w-0 max-w-full cursor-pointer")}
+                    title={nativeMaskOutputDisabledReason ?? "单帧候选持久化几何"}
+                  >
+                    <option value="polygon">多边形</option>
+                    <option value="mask" disabled={nativeMaskOutputDisabledReason != null}>
+                      原生 Mask
+                    </option>
+                  </select>
+                </div>
+              )}
+
+            {maskPromptSourceLabel &&
+              (tool === "smart-point" || tool === "smart-box" || tool === "smart-scribble") && (
+                <span
+                  data-testid="mask-prompt-source"
+                  className="max-w-full break-words rounded-full bg-status-positive-soft px-2 py-1 text-2xs font-medium text-status-positive"
+                  title="本轮以已存原生 Mask 为种子，接纳后原位更新"
+                >
+                  {maskPromptSourceLabel}
+                </span>
+              )}
+
+            {tool === "exemplar" && exemplarOutputMode && onSetExemplarOutputMode && (
+              <div className="flex min-w-0 items-center gap-1.5" data-testid="exemplar-output-mode">
+                <span className={FIELD_LABEL_CLASS}>形态</span>
+                <select
+                  data-testid="exemplar-output-mode-select"
+                  aria-label="示例召回形态"
+                  value={exemplarOutputMode}
+                  onChange={(event) =>
+                    onSetExemplarOutputMode(event.target.value as TextOutputMode)
+                  }
+                  className={cn(SELECT_CLASS, "min-w-0 max-w-full cursor-pointer")}
+                  title="输出形态"
+                >
+                  <option value="box">□ 框</option>
+                  <option value="mask">○ 掩膜</option>
+                  <option value="both">⊕ 全部</option>
                 </select>
               </div>
-            </>
-          )}
+            )}
 
-        {maskPromptSourceLabel &&
-          (tool === "smart-point" || tool === "smart-box" || tool === "smart-scribble") && (
-            <>
-              {DIVIDER}
+            {tool === "exemplar" && onSetExemplarText && exemplarTextCombo && (
+              <div className="flex min-w-0 items-center gap-1.5" data-testid="exemplar-text">
+                <span className={FIELD_LABEL_CLASS}>文本</span>
+                <input
+                  type="text"
+                  aria-label="示例叠加文本"
+                  value={exemplarText ?? ""}
+                  onChange={(event) => onSetExemplarText(event.target.value)}
+                  placeholder="如 car"
+                  className="w-24 min-w-0 rounded-sm border border-border bg-muted px-1.5 py-1 text-xs text-foreground placeholder:text-muted-foreground"
+                  title="叠加文本概念 (与示例框组合)"
+                />
+              </div>
+            )}
+
+            {DIVIDER}
+            <div className="flex flex-wrap items-center gap-1">
               <span
-                data-testid="mask-prompt-source"
-                className="whitespace-nowrap rounded-full bg-status-positive-soft px-2 py-1 text-2xs font-medium text-emerald-700 dark:text-emerald-400"
-                title="本轮以已存原生 Mask 为种子，接纳后原位更新"
+                data-testid="interactive-candidate-count"
+                className="whitespace-nowrap text-2xs tabular-nums text-muted-foreground"
+                aria-live="polite"
               >
-                {maskPromptSourceLabel}
+                候选 {hasActiveCandidate ? activeCandidateIndex + 1 : 0} / {totalCandidates}
               </span>
-            </>
-          )}
-
-        {/* exemplar 输出形态三选一 (box/mask/both) — 下拉, 与引擎排下拉风格统一 */}
-        {tool === "exemplar" && exemplarOutputMode && onSetExemplarOutputMode && (
-          <>
-            {DIVIDER}
-            <div className="flex items-center gap-1.5" data-testid="exemplar-output-mode">
-              <span className={FIELD_LABEL_CLASS}>形态</span>
-              <select
-                data-testid="exemplar-output-mode-select"
-                value={exemplarOutputMode}
-                onChange={(e) => onSetExemplarOutputMode(e.target.value as TextOutputMode)}
-                className={`${SELECT_CLASS} cursor-pointer`}
-                title="输出形态"
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                data-testid="interactive-candidate-previous"
+                aria-label="上一个候选"
+                title="上一个候选"
+                disabled={
+                  !hasActiveCandidate ||
+                  totalCandidates < 2 ||
+                  !onCycleCandidate ||
+                  isRunning ||
+                  candidateActionPending
+                }
+                onClick={() => onCycleCandidate?.(-1)}
               >
-                <option value="box">□ 框</option>
-                <option value="mask">○ 掩膜</option>
-                <option value="both">⊕ 全部</option>
+                <Icon name="chevron-left" size={12} />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                data-testid="interactive-candidate-next"
+                aria-label="下一个候选"
+                title="下一个候选"
+                disabled={
+                  !hasActiveCandidate ||
+                  totalCandidates < 2 ||
+                  !onCycleCandidate ||
+                  isRunning ||
+                  candidateActionPending
+                }
+                onClick={() => onCycleCandidate?.(1)}
+              >
+                <Icon name="chevron-right" size={12} />
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                size="xs"
+                data-testid="interactive-candidate-accept"
+                disabled={
+                  !hasActiveCandidate ||
+                  !canAcceptCandidates ||
+                  !onAcceptCandidate ||
+                  isRunning ||
+                  candidateActionPending
+                }
+                onClick={onAcceptCandidate}
+              >
+                <Icon name={candidateActionPending ? "loader2" : "check"} size={12} />
+                接受
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                data-testid="interactive-candidate-cancel"
+                disabled={!onCancelCandidates || candidateActionPending}
+                onClick={onCancelCandidates}
+              >
+                <Icon name="x" size={12} />
+                取消本轮
+              </Button>
+            </div>
+
+            <span
+              data-testid="interactive-inference-status"
+              role="status"
+              className={cn(
+                "flex items-center gap-1 whitespace-nowrap text-2xs",
+                inferenceError ? "text-status-danger" : "text-muted-foreground",
+              )}
+            >
+              {(isRunning || candidateActionPending) && <Icon name="loader2" size={11} />}
+              {inferenceStatus}
+            </span>
+            {canRetry && onRetry && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                disabled={isRunning || candidateActionPending}
+                onClick={onRetry}
+                data-testid="interactive-prompt-retry"
+              >
+                <Icon name="rotate-ccw" size={11} />
+                重试本轮
+              </Button>
+            )}
+          </>
+        )}
+
+        <span
+          data-testid="interactive-capability-status"
+          role="status"
+          className={cn(
+            "flex items-center gap-1 whitespace-nowrap text-2xs",
+            capabilityFailed && !capabilityBusy ? "text-status-danger" : "text-muted-foreground",
+          )}
+        >
+          {capabilityBusy && <Icon name="loader2" size={11} />}
+          {capabilityBusy
+            ? "正在加载能力…"
+            : capabilityFailed
+              ? "能力协商失败"
+              : capability
+                ? "能力就绪"
+                : "未获取能力"}
+        </span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
+          data-testid="interactive-toolbar-advanced-toggle"
+          aria-expanded={advancedOpen}
+          aria-controls={advancedId}
+          onClick={() => setAdvancedOpen((open) => !open)}
+        >
+          <Icon name={advancedOpen ? "chevUp" : "chevDown"} size={12} />
+          高级配置{warnings.length > 0 ? ` · ${warnings.length}` : ""}
+        </Button>
+      </div>
+
+      {capabilityFailed && (
+        <div
+          data-testid="interactive-capability-error"
+          className="flex min-w-0 flex-wrap items-center gap-1.5 rounded-sm bg-status-danger-soft px-1.5 py-1 text-2xs text-status-danger"
+        >
+          <span role="alert" className="min-w-0 flex-1 break-words">
+            能力协商：{capabilityError ?? "无法获取后端能力"}
+          </span>
+          {onRetryCapabilities && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              data-testid="interactive-capability-retry"
+              disabled={capabilityBusy}
+              onClick={onRetryCapabilities}
+            >
+              <Icon name={capabilityBusy ? "loader2" : "rotate-ccw"} size={11} />
+              {capabilityBusy ? "重试中…" : "重试能力协商"}
+            </Button>
+          )}
+        </div>
+      )}
+
+      {!capabilityRecoveryOnly && inferenceError && (
+        <div
+          data-testid="interactive-inference-error"
+          role="alert"
+          className="min-w-0 break-words rounded-sm bg-status-danger-soft px-1.5 py-1 text-2xs text-status-danger"
+        >
+          本轮推理：{inferenceError}
+        </div>
+      )}
+
+      {/* Keep configuration controls mounted so folding never resets their state or requests. */}
+      <section
+        id={advancedId}
+        data-testid="interactive-toolbar-advanced"
+        aria-label="AI 高级设置"
+        hidden={!advancedOpen}
+        className="border-t border-border pt-1.5"
+      >
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1.5">
+          <div className="flex min-w-0 max-w-full flex-wrap items-center gap-1.5">
+            <span className={FIELD_LABEL_CLASS}>引擎</span>
+            <select
+              data-testid="ai-tool-backend-select"
+              aria-label="交互后端"
+              value={canSwitchBackend ? (selectedInteractiveId ?? "") : (backendName ?? "")}
+              disabled={!canSwitchBackend}
+              onChange={(event) => onSelectInteractive?.(event.target.value)}
+              className={cn(SELECT_CLASS, "min-w-0 max-w-full opacity-[0.85]")}
+              title="交互后端"
+            >
+              {canSwitchBackend ? (
+                backendCands.map((backend) => (
+                  <option key={backend.id} value={backend.id}>
+                    {backend.name}
+                  </option>
+                ))
+              ) : (
+                <option value={backendName ?? ""}>{backendName ?? "未绑定 ML 后端"}</option>
+              )}
+            </select>
+            {showModelSelector && (
+              <select
+                data-testid="ai-tool-model-select"
+                aria-label="模型"
+                value={activeModelId ?? ""}
+                onChange={(event) => onSetActiveModelId?.(event.target.value)}
+                className={cn(SELECT_CLASS, "min-w-0 max-w-full cursor-pointer")}
+                title="模型"
+              >
+                {groupModelsByTask(filteredModels).map(([task, group]) => (
+                  <optgroup key={task} label={modelTaskLabel(task)}>
+                    {group.map((model) => (
+                      <option key={model.id} value={model.id}>
+                        {model.display_name || model.id}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
               </select>
-            </div>
-          </>
-        )}
-
-        {/* exemplar 叠加 text 概念 (后端支持时) */}
-        {tool === "exemplar" && onSetExemplarText && exemplarTextCombo && (
-          <>
-            {DIVIDER}
-            <div className="flex items-center gap-1.5" data-testid="exemplar-text">
-              <span className={FIELD_LABEL_CLASS}>文本</span>
-              <input
-                type="text"
-                value={exemplarText ?? ""}
-                onChange={(e) => onSetExemplarText(e.target.value)}
-                placeholder="如 car"
-                className="w-24 rounded-sm border border-border bg-muted px-1.5 py-1 text-xs text-foreground placeholder:text-muted-foreground"
-                title="叠加文本概念 (与示例框组合)"
+            )}
+            {hasVariants && (
+              <VariantSelector
+                compact
+                supportedVariants={variantGroups}
+                variantCombinations={variantCombinations}
+                defaults={variantDefaults}
+                value={variantValue ?? {}}
+                onChange={(next) => onVariantChange?.(next)}
               />
-            </div>
-          </>
-        )}
+            )}
+          </div>
 
-        {/* exemplar per-request 阈值 */}
-        {tool === "exemplar" && onSetExemplarThreshold && (
-          <>
-            {DIVIDER}
+          {!capabilityRecoveryOnly && tool === "exemplar" && onSetExemplarThreshold && (
             <div className="flex items-center gap-1.5" data-testid="exemplar-threshold">
               <span className={FIELD_LABEL_CLASS}>阈值</span>
               <input
                 type="range"
+                aria-label="示例召回阈值"
                 min={0}
                 max={1}
                 step={0.05}
                 value={exemplarThreshold ?? exemplarThresholdDefault ?? 0.5}
-                onChange={(e) => onSetExemplarThreshold(Number(e.target.value))}
+                onChange={(event) => onSetExemplarThreshold(Number(event.target.value))}
                 className="w-20 cursor-pointer accent-brand"
                 title={
                   exemplarSessionActive
@@ -446,11 +655,11 @@ export function InteractiveToolBar({
                 {(exemplarThreshold ?? exemplarThresholdDefault ?? 0.5).toFixed(2)}
                 {exemplarThreshold == null && "*"}
               </span>
-              {/* 拖动后阈值变成固定值, 此按钮把它重置回 null (跟随后端默认, 显示 *)。见 issue 0007。 */}
               {exemplarThreshold != null && (
                 <button
                   type="button"
                   data-testid="exemplar-threshold-reset"
+                  aria-label="重置为后端默认阈值"
                   onClick={() => onSetExemplarThreshold(null)}
                   className="flex size-5 cursor-pointer items-center justify-center rounded-sm border-0 bg-transparent p-0 text-muted-foreground hover:text-foreground"
                   title="重置为后端默认阈值 (*)"
@@ -459,62 +668,46 @@ export function InteractiveToolBar({
                 </button>
               )}
             </div>
-          </>
+          )}
+        </div>
+
+        <p
+          className="my-1 text-2xs text-muted-foreground"
+          data-testid="interactive-capability-diagnostics"
+        >
+          {capability
+            ? `能力：${capability.name}${capability.version ? ` · ${capability.version}` : ""}${capability.protocol_version ? ` · 协议 ${capability.protocol_version}` : ""}`
+            : "尚无后端能力信息"}
+        </p>
+
+        {warnings.length > 0 && (
+          <div
+            className="flex flex-wrap items-center gap-2"
+            data-testid="ai-tool-capability-warnings"
+          >
+            {warnings.map((warning) => (
+              <div
+                key={warning.key}
+                className="flex min-w-0 flex-wrap items-start gap-1 rounded-sm bg-status-caution-soft px-1.5 py-0.5 text-2xs leading-[1.4] text-status-caution"
+              >
+                <Icon name="warning" size={11} />
+                <span className="min-w-0 break-words">{warning.message}</span>
+                {warning.fillable && onFillAttribute && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="xs"
+                    onClick={() => onFillAttribute(warning.fillable!)}
+                    title="把该属性字段补进项目所有启用工具单位"
+                  >
+                    一键补全
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
         )}
-
-        {DIVIDER}
-
-        {/* 状态指示 */}
-        <div
-          className="flex items-center gap-1 text-2xs text-muted-foreground"
-          title={capability ? `${capability.name} v${capability.version ?? ""}` : undefined}
-        >
-          <span
-            aria-hidden
-            className={cn(
-              "size-1.5 rounded-full",
-              isError
-                ? "bg-rose-500"
-                : isLoading
-                  ? "bg-amber-500"
-                  : capability
-                    ? "bg-emerald-500"
-                    : "bg-muted-foreground",
-            )}
-          />
-          <span>
-            {isError ? "协商失败" : isLoading ? "加载中" : capability ? capability.name : "无能力"}
-          </span>
-        </div>
-      </div>
-
-      {/* 兼容性警告 (非阻断): active model 输出与项目配置不匹配时提示 (折到主行下方一行)。 */}
-      {warnings.length > 0 && (
-        <div
-          className="flex flex-wrap items-center gap-2"
-          data-testid="ai-tool-capability-warnings"
-        >
-          {warnings.map((w) => (
-            <div
-              key={w.key}
-              className="flex items-start gap-1 rounded-sm bg-status-caution-soft px-1.5 py-0.5 text-2xs leading-[1.4] text-status-caution"
-            >
-              <Icon name="warning" size={11} />
-              <span>{w.message}</span>
-              {w.fillable && onFillAttribute && (
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  onClick={() => onFillAttribute(w.fillable!)}
-                  title="把该属性字段补进项目所有启用工具单位"
-                >
-                  一键补全
-                </Button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+      </section>
     </div>
   );
 }

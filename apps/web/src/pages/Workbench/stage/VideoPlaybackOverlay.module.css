@@ -286,11 +286,20 @@
 .chapterDraftRegion,
 .propagateDraftRegion,
 .propagateRegion,
+.reviewRegion,
 .segmentWorkRegion,
 .segmentCoreRegion {
   position: absolute;
   left: var(--timeline-left);
   width: var(--timeline-width);
+}
+
+.reviewRegion {
+  inset-block: 1px;
+  border-radius: 3px;
+  background: color-mix(in oklch, var(--sc-brand) 24%, transparent);
+  box-shadow: inset 0 0 0 1px var(--sc-brand);
+  pointer-events: none;
 }
 
 .segmentWorkRegion {

@@ -53,8 +53,9 @@ describe("InteractiveToolBar · exemplar 能力门控", () => {
 
   it("全支持 (sam3 风格) 显示负极性按钮与文本输入", () => {
     renderDrawer(exemplarModel({ negative_box: true, text_combination: true }));
-    expect(screen.queryByTestId("ai-tool-polarity")).not.toBeNull();
-    expect(screen.queryByTestId("exemplar-text")).not.toBeNull();
+    expect(screen.getByTestId("ai-tool-polarity")).toBeVisible();
+    expect(screen.getByTestId("exemplar-text")).toBeVisible();
+    expect(screen.getByTestId("exemplar-threshold")).not.toBeVisible();
   });
 
   it("缺 exemplar_capabilities 向后兼容: 控件全显示", () => {
@@ -70,8 +71,8 @@ describe("InteractiveToolBar · exemplar 能力门控", () => {
 
   it("单帧持久几何与 exemplar 召回形态分别显示", () => {
     renderDrawer(exemplarModel({ negative_box: false }));
-    expect(screen.queryByTestId("single-frame-output-geometry")).not.toBeNull();
-    expect(screen.queryByTestId("exemplar-output-mode")).not.toBeNull();
+    expect(screen.getByTestId("single-frame-output-geometry")).toBeVisible();
+    expect(screen.getByTestId("exemplar-output-mode")).toBeVisible();
   });
 
   it("能力门禁关闭时禁用原生 Mask 选项并保留显式 polygon", () => {

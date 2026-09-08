@@ -1,3 +1,4 @@
+import type { CommitPolygonSlice } from "./usePolygonSlice";
 import {
   useCallback,
   useEffect,
@@ -19,11 +20,13 @@ import {
   Label,
   Tag,
   Text,
+  Shape,
 } from "react-konva";
 import type Konva from "konva";
 import type { Annotation, Geometry, RotatedBboxGeometry, Keypoint, KeypointSchema } from "@/types";
 import { ContextMenu } from "@/components/ui/ContextMenu";
 import type { PendingDrawing, Tool } from "../state/useWorkbenchState";
+import { isWorkbenchInteractionBlocked } from "../state/workbenchInteractionGuards";
 import type { AiBox } from "../state/transforms";
 import { useElementSize, type Viewport } from "../state/useViewportTransform";
 import { applyResize, applyRotatedResize, type ResizeDirection } from "./ResizeHandles";
@@ -31,6 +34,14 @@ import { classColorForCanvas, displayClassName, hexToRgb, hexToRgba } from "./co
 import { SelectionOverlay } from "./SelectionOverlay";
 import { TOOL_REGISTRY, type PolygonDraftHandle, type KeypointDraftHandle } from "./tools";
 import { CLOSE_DISTANCE } from "./tools/PolygonTool";
+import { usePolygonAutoPoints } from "./usePolygonAutoPoints";
+import { POLYGON_AUTO_POINT_LIMIT } from "./polygonAutoPoints";
+import { usePolygonBoundaryTrace } from "./usePolygonBoundaryTrace";
+import { PolygonBoundaryTraceControls } from "./PolygonBoundaryTraceControls";
+import { usePolygonSlice } from "./usePolygonSlice";
+import { PolygonSliceControls } from "./PolygonSliceControls";
+import { pickBoundary } from "./shared/geometry/polygonBoundaryTrace";
+import { polygonSliceUnavailableReason } from "./shared/geometry/polygonSlice";
 import { CanvasDrawingLayer } from "./CanvasDrawingLayer";
 import { MaskOverlayLayer } from "./overlays/MaskOverlayLayer";
 import { TiledMaskOverlayLayer } from "./overlays/TiledMaskOverlayLayer";
@@ -64,6 +75,8 @@ import {
   SIBLING_HIGHLIGHT_COLOR,
 } from "./ImageStageShapes";
 import {
+  imageBoxFromDrag,
+  type BboxCreationMode,
   isNormalizedImagePoint,
   normalizeImageCoordinate,
   resolveSnapMatch,
@@ -107,7 +120,7 @@ import styles from "./ImageStage.module.css";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type Drag =
-  | { kind: "draw"; sx: number; sy: number; cx: number; cy: number }
+  | { kind: "draw"; sx: number; sy: number; cx: number; cy: number; fromCenter?: boolean }
   | {
       kind: "samProbe";
       // v0.10.2 · 加 exemplar; 行为同 bbox 但松手时派发到 onSamPrompt.kind="exemplar".
@@ -145,6 +158,7 @@ type Drag =
   | { kind: "pan"; sx: number; sy: number }
   | { kind: "canvasStroke"; points: number[] }
   | { kind: "maskBrush"; lastX: number; lastY: number }
+  | { kind: "maskSlice"; start: [number, number]; end: [number, number] }
   | { kind: "maskLasso"; points: [number, number][] }
   // v0.10.28 · 旋转框旋转手柄拖拽。cx/cy 为框中心 (归一化), startAngle 为按下时角度, cur 实时角度。
   | { kind: "rotateBox"; id: string; cx: number; cy: number; startAngle: number; cur: number };
@@ -224,6 +238,7 @@ interface ImageStageProps {
   imageWidth?: number | null;
   imageHeight?: number | null;
   tool: Tool;
+  bboxCreationMode?: BboxCreationMode;
   activeClass: string;
   selectedId: string | null;
   /** primary 之外的全部选中（含 primary）。仅 user 框可多选；AI 框单选。 */
@@ -235,6 +250,7 @@ interface ImageStageProps {
   setVp: React.Dispatch<React.SetStateAction<Viewport>>;
   fitTick: number;
   readOnly?: boolean;
+  continuousCreation?: boolean;
   fadedAiIds?: Set<string>;
   /** 待确认绘制几何：画完后等待用户在 popover 里选类别。 */
   pendingDrawing?: PendingDrawing;
@@ -250,6 +266,7 @@ interface ImageStageProps {
   onJoinSelected?: () => void;
   /** 裁切重叠区(右键菜单):以右键框为基准,减去其余选中多边形的重叠区。 */
   onCropSelected?: (baseId: string) => void;
+  onCommitPolygonSlice?: CommitPolygonSlice;
   onSelectBox: (id: string | null, opts?: { shift?: boolean }) => void;
   onAcceptPrediction?: (b: AiBox) => void;
   /** B-11 · 驳回 AI 预测 (将 prediction 从画布隐去, 不调后端). */
@@ -519,6 +536,7 @@ export function ImageStage({
   imageWidth,
   imageHeight,
   tool,
+  bboxCreationMode = "corner",
   activeClass,
   selectedId,
   selectedIds,
@@ -529,12 +547,14 @@ export function ImageStage({
   setVp,
   fitTick,
   readOnly = false,
+  continuousCreation = false,
   fadedAiIds,
   pendingDrawing,
   nudgeMap,
   pendingGeomMap,
   onJoinSelected,
   onCropSelected,
+  onCommitPolygonSlice,
   onSelectBox,
   onAcceptPrediction,
   onRejectPrediction,
@@ -607,12 +627,14 @@ export function ImageStage({
   // 使其 resize/move 手柄可直接交互——否则画完框（画框后行为=选择类别，框已选中）想调大小
   // 必须先切回选择工具，过于严格。此时点中空白仍落到 Stage 触发画框（绘制穿透保留）。
   const selectActive = tool === "select";
+  const canEditSavedGeometry = !readOnly && !continuousCreation;
   const primarySelectedBox =
     selectedId != null && selSet.size === 1
       ? userBoxes.find((b) => b.id === selectedId)
       : undefined;
   const hasEditablePrimarySelection = !!primarySelectedBox && !primarySelectedBox.is_locked;
-  const userLayerListening = (selectActive || hasEditablePrimarySelection) && !readOnly;
+  const userLayerListening =
+    (selectActive || (!continuousCreation && hasEditablePrimarySelection)) && !readOnly;
   // v0.9.41 · 标注偏好（I17）：smoothImage / cssImageFilter / longTaskSampleRate。
   // v0.10.10 · I17.3 · 合并项目级 rendering_config 覆盖（项目级 > 用户级 > 默认）。
   const { config: workbenchConfig } = useWorkbenchConfig(projectRenderingConfig);
@@ -893,6 +915,34 @@ export function ImageStage({
   }, []);
   const { schedule, flush, cancel } = useRafThrottle();
 
+  useEffect(() => {
+    const cancelDrawing = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || isWorkbenchInteractionBlocked(event)) return;
+      if (dragRef.current?.kind !== "draw" && dragRef.current?.kind !== "maskSlice") return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      dragRef.current = null;
+      setDrag(null);
+    };
+    window.addEventListener("keydown", cancelDrawing, true);
+    return () => window.removeEventListener("keydown", cancelDrawing, true);
+  }, [setDrag]);
+
+  useLayoutEffect(() => {
+    if (dragRef.current?.kind !== "maskSlice") return;
+    dragRef.current = null;
+    setDrag(null);
+  }, [
+    imageIdentity,
+    primarySelectedBox?.id,
+    primarySelectedBox?.version,
+    setDrag,
+    maskEditor?.buffer,
+    maskEditor?.tool,
+    tool,
+    readOnly,
+  ]);
+
   const closeContextMenu = useCallback(() => {
     contextMenu.close();
     setContextMenuTargetId(null);
@@ -960,6 +1010,44 @@ export function ImageStage({
     autoFitOnResize: workbenchConfig.image.autoFitOnResize,
   });
   const imageReady = imageStatus === "loaded" && imageLoaded && fitted;
+  const sliceEnabled =
+    tool === "select" && imageReady && !readOnly && !pendingDrawing && !maskReadOnly;
+  const polygonSlice = usePolygonSlice({
+    enabled: sliceEnabled,
+    owner: imageIdentity,
+    annotations: userBoxes,
+    commit: onCommitPolygonSlice,
+  });
+  const polygonSliceActive = Boolean(polygonSlice.session);
+  useLayoutEffect(() => {
+    // React commits listening before Konva's next batch draw. Refresh the hit
+    // graph now so the first click after cancelling a slice can select again.
+    stageRef.current?.getLayers().forEach((layer) => layer.drawHit());
+  }, [polygonSliceActive]);
+  const boundaryTrace = usePolygonBoundaryTrace({
+    enabled: tool === "polygon" && imageReady && !readOnly && !pendingDrawing,
+    owner: imageIdentity,
+    annotations: userBoxes,
+    width: imgW * vp.scale,
+    height: imgH * vp.scale,
+    draft: polygonDraft,
+  });
+  const startPolygonAutoPoints = usePolygonAutoPoints({
+    enabled:
+      tool === "polygon" &&
+      imageReady &&
+      !readOnly &&
+      !pendingDrawing &&
+      !spacePan &&
+      !boundaryTrace.trace,
+    owner: imageIdentity,
+    view: `${vp.scale}:${vp.tx}:${vp.ty}`,
+    width: imgW * vp.scale,
+    height: imgH * vp.scale,
+    draft: polygonDraft,
+    toImage: toImg,
+    snap: snapImagePoint,
+  });
 
   // 揭开 konvaHost 前强制同步重绘一次: react-konva 的 batchDraw 是 rAF 异步, 否则 fitted 翻 true、
   // konvaHost 转可见的那一帧 canvas 像素还停在旧 vp (上一张) → 残留「左上角小比例闪一下」。
@@ -1052,7 +1140,10 @@ export function ImageStage({
         schedule(() => setVp((cur) => ({ ...cur, tx: cur.tx + dx, ty: cur.ty + dy })));
         return;
       }
-      const pt = toImg(e.clientX, e.clientY);
+      const pt =
+        d.kind === "maskSlice"
+          ? toImg(Math.floor(e.clientX), Math.floor(e.clientY))
+          : toImg(e.clientX, e.clientY);
       if (!pt) return;
       if (d.kind === "maskBrush" || d.kind === "maskLasso") {
         const inImage = isNormalizedImagePoint(pt);
@@ -1211,6 +1302,10 @@ export function ImageStage({
         }
         d.lastX = px;
         d.lastY = py;
+      } else if (d.kind === "maskSlice") {
+        if (maskCompareActive) return;
+        d.end = [Math.max(0, Math.min(1, pt.x)), Math.max(0, Math.min(1, pt.y))];
+        setDrag({ ...d });
       } else if (d.kind === "maskLasso") {
         if (maskCompareActive) return;
         const px = pt.x * imgW;
@@ -1237,15 +1332,14 @@ export function ImageStage({
         );
       }
     };
-    const onUp = () => {
+    const onUp = (event: PointerEvent | MouseEvent) => {
       flush();
       const d = dragRef.current;
       if (d) {
         if (d.kind === "draw") {
-          const x = Math.min(d.sx, d.cx);
-          const y = Math.min(d.sy, d.cy);
-          const w = Math.abs(d.cx - d.sx);
-          const h = Math.abs(d.cy - d.sy);
+          // Pointerup is authoritative even when the last move's rAF has not rendered yet.
+          const end = toImg(event.clientX, event.clientY);
+          const { x, y, w, h } = imageBoxFromDrag(end ? { ...d, cx: end.x, cy: end.y } : d);
           // 误点（几乎没拖动）静默丢弃；任一边 ≥3px 的真实拖拽一律下交，
           // 过小 / 越界 / 疑似重复由 commit 漏斗 (guardDrawnBox) 统一处理并提示。
           if (Math.max(w * imgW, h * imgH) >= 3) {
@@ -1338,6 +1432,21 @@ export function ImageStage({
           // 至少 2 个点（4 个数字）才算一笔；点击没有移动会被丢弃
           if (d.points.length >= 4) onCanvasStrokeCommit?.(d.points, canvasStroke);
         } else if (
+          d.kind === "maskSlice" &&
+          maskEditor &&
+          !maskCompareActive &&
+          !readOnly &&
+          !primarySelectedBox?.is_locked
+        ) {
+          const end = toImg(Math.floor(event.clientX), Math.floor(event.clientY));
+          const finalPoint: [number, number] = end
+            ? [Math.max(0, Math.min(1, end.x)), Math.max(0, Math.min(1, end.y))]
+            : d.end;
+          void maskEditor.runInstanceOperation("slice_mask", {
+            type: "slice_mask",
+            cutPath: [d.start, finalPoint],
+          });
+        } else if (
           d.kind === "maskLasso" &&
           d.points.length >= 3 &&
           maskEditor &&
@@ -1405,7 +1514,11 @@ export function ImageStage({
     if (!maskCompareActive) return;
     const currentDrag = dragRef.current;
     if (currentDrag?.kind === "maskBrush") maskEditor?.endStroke();
-    if (currentDrag?.kind === "maskBrush" || currentDrag?.kind === "maskLasso") {
+    if (
+      currentDrag?.kind === "maskBrush" ||
+      currentDrag?.kind === "maskLasso" ||
+      currentDrag?.kind === "maskSlice"
+    ) {
       dragRef.current = null;
       setDrag(null);
     }
@@ -1423,12 +1536,51 @@ export function ImageStage({
   }, [customMaskCursorActive, updateMaskCursor]);
 
   // ── stage event handlers ─────────────────────────────────────────────────
+  const polygonClickPair = useRef<{ previousPlain: Pt | null; allowDoubleClick: boolean }>({
+    previousPlain: null,
+    allowDoubleClick: false,
+  });
+  useEffect(() => {
+    polygonClickPair.current = { previousPlain: null, allowDoubleClick: false };
+  }, [tool, imageIdentity]);
   const handleStageMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
     if (e.target !== (stageRef.current as unknown)) {
       return;
     }
-    const pt = toImg(e.evt.clientX, e.evt.clientY);
+    const pt =
+      tool === "mask" && maskEditor?.tool === "slice_mask"
+        ? toImg(Math.floor(e.evt.clientX), Math.floor(e.evt.clientY))
+        : toImg(e.evt.clientX, e.evt.clientY);
     if (!pt) return;
+    if (polygonSlice.session && !spacePan && e.evt.button === 0) {
+      containerRef.current?.focus({ preventScroll: true });
+      const hit = !e.evt.altKey
+        ? pickBoundary(
+            polygonSlice.session.source.geometry.points,
+            [pt.x, pt.y],
+            imgW * vp.scale,
+            imgH * vp.scale,
+          )
+        : null;
+      polygonSlice.addPoint(hit?.point ?? [pt.x, pt.y]);
+      return;
+    }
+    if (boundaryTrace.trace && !spacePan && e.evt.button === 0) {
+      polygonClickPair.current = { previousPlain: null, allowDoubleClick: false };
+      boundaryTrace.pick([pt.x, pt.y]);
+      return;
+    }
+    if (tool === "polygon") {
+      const plain = !e.evt.shiftKey && !spacePan && e.evt.button === 0;
+      const previous = polygonClickPair.current.previousPlain;
+      polygonClickPair.current = {
+        previousPlain: plain ? [e.evt.clientX, e.evt.clientY] : null,
+        allowDoubleClick:
+          plain &&
+          !!previous &&
+          Math.hypot(previous[0] - e.evt.clientX, previous[1] - e.evt.clientY) <= 4,
+      };
+    }
     if (tool === "mask" && !spacePan && !isNormalizedImagePoint(pt)) return;
     if ((e.evt.ctrlKey || e.evt.metaKey) && samMaskRecords.length > 0) {
       const candidate = pickTopRasterMaskAt(samMaskRecords, pt);
@@ -1456,6 +1608,7 @@ export function ImageStage({
       spacePan,
       readOnly: readOnly || (tool === "mask" && (maskReadOnly || maskCompareActive)),
       pendingDrawing: !!pendingDrawing,
+      bboxCreationMode,
       onClearSelection: () => onSelectBox(null),
       preserveSelectionForPrompt:
         primarySelectedBox?.geometry?.type === "raster_mask" &&
@@ -1466,6 +1619,7 @@ export function ImageStage({
         return snapped.point;
       },
       polygonDraft,
+      startPolygonAutoPoints,
       keypointDraft,
       samPolarity,
       maskEditor,
@@ -1476,6 +1630,12 @@ export function ImageStage({
   };
 
   const handleStageDblClick = () => {
+    if (tool === "mask" && maskEditor?.tool === "slice_mask") return;
+    if (polygonSlice.session) return;
+    if (boundaryTrace.trace) return;
+    // Konva counts Shift drags and distant clicks on the same Stage as a double click.
+    // Closing requires two plain clicks at the same screen position.
+    if (tool === "polygon" && !polygonClickPair.current.allowDoubleClick) return;
     // polygon 模式下双击 → 闭合（≥ 3 点）；polyline 模式下双击 → 结束（≥ 2 点，不闭合）；否则适应视口
     if (tool === "polygon" && polygonDraft && polygonDraft.points.length >= 3) {
       polygonDraft.close();
@@ -1570,15 +1730,7 @@ export function ImageStage({
     return buffer;
   }, [imgH, imgW, maskEditor?.instanceOperationPreview]);
 
-  const drawingPreview =
-    drag?.kind === "draw"
-      ? {
-          x: Math.min(drag.sx, drag.cx),
-          y: Math.min(drag.sy, drag.cy),
-          w: Math.abs(drag.cx - drag.sx),
-          h: Math.abs(drag.cy - drag.sy),
-        }
-      : null;
+  const drawingPreview = drag?.kind === "draw" ? imageBoxFromDrag(drag) : null;
 
   // SAM 拖框预览：与 drawingPreview 同形态，但样式为紫色虚线（与 PendingPolygonsOverlay 视觉对齐）
   const samPreview =
@@ -1672,6 +1824,17 @@ export function ImageStage({
       onChangeClass: onChangeUserBoxClass,
       onJoinSelected,
       onCropSelected,
+      onSlicePolygon: onCommitPolygonSlice
+        ? (annotation) => {
+            polygonSlice.begin(annotation);
+            onSelectBox(null);
+            // ContextMenu closes its portal after onSelect; focus the canvas after that.
+            requestAnimationFrame(() => containerRef.current?.focus({ preventScroll: true }));
+          }
+        : undefined,
+      sliceDisabledReason: !sliceEnabled
+        ? "请切换到选择工具并结束当前编辑"
+        : polygonSliceUnavailableReason(contextMenuTarget, userBoxes),
       onDelete: onDeleteUserBox,
       onPatchFlag: onPatchShapeFlag,
       secondaryBarHidden,
@@ -1684,6 +1847,10 @@ export function ImageStage({
     onChangeUserBoxClass,
     onJoinSelected,
     onCropSelected,
+    onCommitPolygonSlice,
+    onSelectBox,
+    polygonSlice,
+    sliceEnabled,
     onDeleteUserBox,
     onPatchShapeFlag,
     readOnly,
@@ -1756,6 +1923,8 @@ export function ImageStage({
     <div
       ref={setContainerNode}
       data-testid="workbench-stage"
+      tabIndex={polygonSlice.session ? 0 : undefined}
+      onKeyDownCapture={(event) => polygonSlice.keyDown(event.nativeEvent)}
       data-image-identity={imageIdentity}
       data-image-ready={imageReady ? "true" : "false"}
       data-image-tile-retrying={
@@ -1770,6 +1939,7 @@ export function ImageStage({
       data-ai-box-count={aiBoxes.length}
       data-sam-candidate-count={samCandidates?.length ?? 0}
       data-pending-drawing={pendingDrawing ? "true" : "false"}
+      data-polygon-draft-count={polygonDraft?.points.length ?? 0}
       data-drag-kind={drag?.kind ?? "none"}
       data-drag-changed={
         drag?.kind === "draw" && (drag.cx !== drag.sx || drag.cy !== drag.sy) ? "true" : "false"
@@ -1795,6 +1965,32 @@ export function ImageStage({
         setDrag({ kind: "pan", sx: evt.clientX, sy: evt.clientY });
       }}
     >
+      <PolygonSliceControls controller={polygonSlice} />
+      {tool === "polygon" &&
+        imageReady &&
+        !readOnly &&
+        !pendingDrawing &&
+        polygonDraft?.boundaryTrace && (
+          <PolygonBoundaryTraceControls
+            controller={boundaryTrace}
+            onBegin={() => {
+              onSelectBox(null);
+              setSnapIndicator(null);
+              boundaryTrace.begin();
+            }}
+          />
+        )}
+      {tool === "polygon" && (polygonDraft?.points.length ?? 0) > 0 && (
+        <div
+          role="status"
+          data-testid="polygon-auto-points-status"
+          className="pointer-events-none absolute bottom-3 left-3 z-local-overlay rounded border border-border bg-card px-3 py-2 text-2xs text-muted-foreground"
+        >
+          {(polygonDraft?.points.length ?? 0) >= POLYGON_AUTO_POINT_LIMIT
+            ? "已达 20,000 点，自动落点已暂停；Backspace 撤一点，Esc 取消草稿"
+            : `${polygonDraft?.points.length} 点 · Shift 拖动自动落点 · Enter 闭合 · Backspace 撤一点`}
+        </div>
+      )}
       {/* blurhash 占位（图像加载前） */}
       {!imageLoaded && previewSourceUrl && blurhash && <BlurhashLayer hash={blurhash} />}
 
@@ -1933,7 +2129,7 @@ export function ImageStage({
 
           {/* ai 层：AI 预测框（虚线 + 浅填充）。严格分离：仅「选择工具」下可点选采纳，
             与 user 层一致；绘制工具下不响应 hit-test，避免预标注被任意工具误选。 */}
-          <Layer name="ai" listening={selectActive}>
+          <Layer name="ai" listening={selectActive && !polygonSlice.session}>
             {aiBoxes.map((b) =>
               b.polyline && b.polyline.length >= 2 ? (
                 <KonvaPolyline
@@ -1986,7 +2182,10 @@ export function ImageStage({
           </Layer>
 
           {/* user 层：人工框 + 选中态 + resize handle */}
-          <Layer name="user" listening={userLayerListening}>
+          <Layer
+            name="user"
+            listening={userLayerListening && !boundaryTrace.trace && !polygonSlice.session}
+          >
             {visibleSortedUserBoxes.map((b) => {
               if (!shouldRenderImageAnnotationShape(b)) return null;
               const ov = overrideGeom(b.id);
@@ -2005,7 +2204,7 @@ export function ImageStage({
                 const liveAngle =
                   drag?.kind === "rotateBox" && drag.id === b.id ? drag.cur : liveGeometry.angle;
                 const isPrimarySingleSelect =
-                  selectedId === b.id && selSet.size === 1 && !readOnly && !b.is_locked;
+                  selectedId === b.id && selSet.size === 1 && canEditSavedGeometry && !b.is_locked;
                 return (
                   <KonvaRotatedBox
                     key={renderKey}
@@ -2065,7 +2264,7 @@ export function ImageStage({
                 const polyOv = polyOverridePoints(b.id);
                 const livePoints = polyOv ?? (display.polyline as Pt[]);
                 const isOnlySelected =
-                  selectedId === b.id && selSet.size === 1 && !readOnly && !b.is_locked;
+                  selectedId === b.id && selSet.size === 1 && canEditSavedGeometry && !b.is_locked;
                 return (
                   <KonvaPolyline
                     key={renderKey}
@@ -2129,7 +2328,7 @@ export function ImageStage({
                 const kpOv = kpOverridePoints(b.id);
                 const liveKps = kpOv ?? b.keypoints ?? [];
                 const isKpEditable =
-                  selectedId === b.id && selSet.size === 1 && !readOnly && !b.is_locked;
+                  selectedId === b.id && selSet.size === 1 && canEditSavedGeometry && !b.is_locked;
                 return (
                   <KonvaKeypoint
                     key={renderKey}
@@ -2176,7 +2375,7 @@ export function ImageStage({
                   geometrySupportsDirectEdit &&
                   selectedId === b.id &&
                   selSet.size === 1 &&
-                  !readOnly &&
+                  canEditSavedGeometry &&
                   !b.is_locked;
                 // v0.10.4 I2.2 · 顶点拖拽中走 O(n) 增量检测；静态态用 O(n²) 全量（n 通常 <50）。
                 const draggingThisVertex =
@@ -2249,7 +2448,7 @@ export function ImageStage({
               // 单体选中时（且只有一个选中）才允许 move/resize；多选时禁用以避免冲突
               // v0.10.5 M4-β · 锁定 (is_locked) 时禁 move/resize；occluded 影响 stroke 风格。
               const isPrimarySingleSelect =
-                selectedId === b.id && selSet.size === 1 && !readOnly && !b.is_locked;
+                selectedId === b.id && selSet.size === 1 && canEditSavedGeometry && !b.is_locked;
               return (
                 <KonvaBox
                   key={renderKey}
@@ -2260,7 +2459,7 @@ export function ImageStage({
                   faded={false}
                   fadedOpacity={workbenchConfig.image.fadedOpacity}
                   visual={annotationVisual}
-                  editable={!readOnly && !b.is_locked}
+                  editable={canEditSavedGeometry && !b.is_locked}
                   occluded={!!b.occluded}
                   imgW={imgW}
                   imgH={imgH}
@@ -2422,6 +2621,63 @@ export function ImageStage({
 
           {/* overlay 层：绘制预览 + pending 框 + polygon 草稿；不参与 hit-test */}
           <Layer name="overlay" listening={false}>
+            {boundaryTrace.trace?.start && (
+              <>
+                {boundaryTrace.trace.paths && (
+                  <Line
+                    points={boundaryTrace.trace.paths[boundaryTrace.trace.direction].points.flatMap(
+                      ([x, y]) => [x * imgW, y * imgH],
+                    )}
+                    stroke={pendingColor}
+                    strokeWidth={3 / vp.scale}
+                    dash={[8 / vp.scale, 4 / vp.scale]}
+                    lineJoin="round"
+                  />
+                )}
+                <Circle
+                  x={boundaryTrace.trace.start.point[0] * imgW}
+                  y={boundaryTrace.trace.start.point[1] * imgH}
+                  radius={5 / vp.scale}
+                  stroke={pendingColor}
+                  strokeWidth={2 / vp.scale}
+                  fill="white"
+                />
+              </>
+            )}
+            {polygonSlice.session && (
+              <Group listening={false}>
+                {polygonSlice.session.preview?.map((part, index) => (
+                  <Line
+                    key={`slice-${index}`}
+                    closed
+                    points={part.points.flatMap(([x, y]) => [x * imgW, y * imgH])}
+                    stroke={classColorForCanvas(index === 0 ? "slice-kept" : "slice-new")}
+                    fill={hexToRgba(
+                      classColorForCanvas(index === 0 ? "slice-kept" : "slice-new"),
+                      0.28,
+                    )}
+                    strokeWidth={2 / vp.scale}
+                  />
+                ))}
+                <Line
+                  points={polygonSlice.session.points.flatMap(([x, y]) => [x * imgW, y * imgH])}
+                  stroke={pendingColor}
+                  strokeWidth={3 / vp.scale}
+                  dash={[8 / vp.scale, 4 / vp.scale]}
+                />
+                {polygonSlice.session.points.map(([x, y], i) => (
+                  <Circle
+                    key={`slice-point-${i}`}
+                    x={x * imgW}
+                    y={y * imgH}
+                    radius={4 / vp.scale}
+                    stroke={pendingColor}
+                    strokeWidth={2 / vp.scale}
+                    fill="white"
+                  />
+                ))}
+              </Group>
+            )}
             {/* polygon / polyline 草稿：已落点 + 跟随光标的预览线段 + 顶点圆点。
               polygon 额外渲染半透填充 + 首点高亮（提示可闭合）；polyline 不闭合、无填充。 */}
             {polygonDraft &&
@@ -2455,17 +2711,41 @@ export function ImageStage({
                       lineJoin="round"
                       fill={isPolyline ? undefined : hexToRgba(draftColor, 0.1)}
                     />
-                    {ps.map(([px, py], i) => (
-                      <Circle
-                        key={i}
-                        x={px * imgW}
-                        y={py * imgH}
-                        radius={(i === 0 ? 4.5 : 3) / vp.scale}
-                        fill={i === 0 && canClose ? draftColor : "white"}
-                        stroke={draftColor}
-                        strokeWidth={1.5 / vp.scale}
+                    {ps.length > 500 ? (
+                      <Shape
+                        sceneFunc={(ctx) => {
+                          ctx.setAttr("fillStyle", "white");
+                          ctx.setAttr("strokeStyle", draftColor);
+                          ctx.setAttr("lineWidth", 1.5 / vp.scale);
+                          ctx.beginPath();
+                          for (const [px, py] of ps.slice(1)) {
+                            const x = px * imgW;
+                            const y = py * imgH;
+                            ctx.moveTo(x + 3 / vp.scale, y);
+                            ctx.arc(x, y, 3 / vp.scale, 0, Math.PI * 2);
+                          }
+                          ctx.fill();
+                          ctx.stroke();
+                          ctx.beginPath();
+                          ctx.arc(ps[0][0] * imgW, ps[0][1] * imgH, 4.5 / vp.scale, 0, Math.PI * 2);
+                          ctx.setAttr("fillStyle", canClose ? draftColor : "white");
+                          ctx.fill();
+                          ctx.stroke();
+                        }}
                       />
-                    ))}
+                    ) : (
+                      ps.map(([px, py], i) => (
+                        <Circle
+                          key={i}
+                          x={px * imgW}
+                          y={py * imgH}
+                          radius={(i === 0 ? 4.5 : 3) / vp.scale}
+                          fill={i === 0 && canClose ? draftColor : "white"}
+                          stroke={draftColor}
+                          strokeWidth={1.5 / vp.scale}
+                        />
+                      ))
+                    )}
                   </>
                 );
               })()}
@@ -2601,6 +2881,21 @@ export function ImageStage({
                 listening={false}
               />
             )}
+            {!maskCompareActive &&
+              tool === "mask" &&
+              (drag?.kind === "maskSlice" ||
+                maskEditor?.instanceOperationPreview?.plan.cutPath) && (
+                <Line
+                  points={(drag?.kind === "maskSlice"
+                    ? [drag.start, drag.end]
+                    : (maskEditor?.instanceOperationPreview?.plan.cutPath ?? [])
+                  ).flatMap(([x, y]) => [x * imgW, y * imgH])}
+                  stroke={classColorForCanvas("mask-slice-cut")}
+                  strokeWidth={2 / vp.scale}
+                  dash={[6 / vp.scale, 4 / vp.scale]}
+                  listening={false}
+                />
+              )}
             {samCandidates && samCandidates.length > 0 && (
               <SamCandidateOverlay
                 candidates={samCandidates}
@@ -2899,10 +3194,7 @@ export function ImageStage({
           imgH={imgH}
           vp={vp}
           onAccept={onAcceptPrediction ? () => onAcceptPrediction(selectedBox as AiBox) : undefined}
-          onReject={() => {
-            if (onRejectPrediction) onRejectPrediction(selectedBox as AiBox);
-            onSelectBox(null);
-          }}
+          onReject={() => onRejectPrediction?.(selectedBox as AiBox)}
         />
       )}
 

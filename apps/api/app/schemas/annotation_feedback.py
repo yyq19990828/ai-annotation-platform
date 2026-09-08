@@ -45,6 +45,49 @@ class MaskFeedbackCompareLocator(BaseModel):
         return self
 
 
+class FeedbackVideoFrameRange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    from_frame: int = Field(strict=True, ge=0)
+    to_frame: int = Field(strict=True, ge=0)
+
+
+class FeedbackVideoViewport(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    center_x: float = Field(strict=True, allow_inf_nan=False)
+    center_y: float = Field(strict=True, allow_inf_nan=False)
+    zoom: float = Field(strict=True, allow_inf_nan=False, gt=0)
+
+
+class FeedbackVideoTimelineWindow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    from_: float = Field(alias="from", strict=True, allow_inf_nan=False, ge=0)
+    to: float = Field(strict=True, allow_inf_nan=False, ge=0)
+
+
+class FeedbackVideoContext(BaseModel):
+    """Versioned capture of source-frame, object and view context for a pixel anchor."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal[1]
+    track_id: str | None = Field(default=None, strict=True)
+    annotation_version: int | None = Field(default=None, strict=True, ge=1)
+    frame_range: FeedbackVideoFrameRange | None = None
+    viewport: FeedbackVideoViewport | None = None
+    timeline_window: FeedbackVideoTimelineWindow | None = None
+
+    @field_validator("schema_version", mode="before")
+    @classmethod
+    def _strict_schema_version(cls, value):
+        # Literal[1] alone also accepts True and 1.0 in Pydantic.
+        if type(value) is not int:
+            raise ValueError("schema_version must be the integer 1")
+        return value
+
+
 class FeedbackAnchorPosition(BaseModel):
     """Pixel or 3D quality anchor position and durable locator."""
 
@@ -60,6 +103,15 @@ class FeedbackAnchorPosition(BaseModel):
     scene_track_id: UUID | None = None
     auxiliary_layers: list[str] = Field(default_factory=list, max_length=20)
     compare_locator: MaskFeedbackCompareLocator | None = None
+    video_context: FeedbackVideoContext | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _validate_video_source_frame(cls, value):
+        if isinstance(value, dict) and value.get("video_context") is not None:
+            if type(value.get("frame")) is not int or value["frame"] < 0:
+                raise ValueError("video_context requires a non-negative integer frame")
+        return value
 
     @model_validator(mode="after")
     def _validate_region_anchor(self):
@@ -100,6 +152,19 @@ class AnnotationFeedbackCreate(BaseModel):
 
     @model_validator(mode="after")
     def _validate_anchor(self):
+        video_context = (
+            self.anchor_position.video_context if self.anchor_position else None
+        )
+        if video_context is not None:
+            if self.anchor_type != "pixel":
+                raise ValueError("video_context requires a pixel anchor")
+            if self.anchor_position.frame is None:
+                raise ValueError("video_context requires frame")
+            if (
+                video_context.annotation_version is not None
+                and self.annotation_id is None
+            ):
+                raise ValueError("annotation_version requires annotation_id")
         # 同 DB CHECK 约束逻辑, 但提前到 pydantic 层给出更友好错误.
         if self.anchor_type == "project":
             if self.task_id or self.annotation_id or self.anchor_position:

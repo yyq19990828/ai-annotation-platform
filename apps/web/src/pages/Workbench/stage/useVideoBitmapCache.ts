@@ -19,7 +19,17 @@ export interface VideoBitmapCacheDiagnostics {
 
 interface UseVideoBitmapCacheArgs {
   taskId: string | null | undefined;
+  sourceKey?: string;
   maxItems?: number;
+}
+
+export interface VideoBitmapCaptureProof {
+  /** Must still identify this exact observed source frame and navigation request. */
+  isCurrent: () => boolean;
+}
+
+interface OwnedVideoBitmap extends CachedVideoBitmap {
+  ownerEpoch: number;
 }
 
 const DEFAULT_MAX_ITEMS = 48;
@@ -52,13 +62,17 @@ function rangesFromFrames(frames: number[]) {
 
 export function useVideoBitmapCache({
   taskId,
+  sourceKey = "",
   maxItems = DEFAULT_MAX_ITEMS,
 }: UseVideoBitmapCacheArgs) {
   const supported = typeof window !== "undefined" && typeof window.createImageBitmap === "function";
-  const cacheRef = useRef(new Map<string, CachedVideoBitmap>());
-  const inFlightRef = useRef(new Set<string>());
-  const taskIdRef = useRef(taskId);
-  taskIdRef.current = taskId;
+  const cacheRef = useRef(new Map<string, OwnedVideoBitmap>());
+  const inFlightRef = useRef(new Map<string, symbol>());
+  const ownerRef = useRef({ taskId, sourceKey, epoch: 0 });
+  if (ownerRef.current.taskId !== taskId || ownerRef.current.sourceKey !== sourceKey) {
+    ownerRef.current = { taskId, sourceKey, epoch: ownerRef.current.epoch + 1 };
+  }
+  const mountedRef = useRef(true);
   const [activeFrameIndex, setActiveFrameIndex] = useState<number | null>(null);
   const [version, setVersion] = useState(0);
   const [diagnostics, setDiagnostics] = useState<VideoBitmapCacheDiagnostics>({
@@ -74,7 +88,7 @@ export function useVideoBitmapCache({
   const bumpVersion = useCallback(() => setVersion((v) => v + 1), []);
 
   const remember = useCallback(
-    (key: string, entry: CachedVideoBitmap) => {
+    (key: string, entry: OwnedVideoBitmap) => {
       const cache = cacheRef.current;
       const old = cache.get(key);
       if (old) closeBitmap(old.bitmap);
@@ -113,11 +127,13 @@ export function useVideoBitmapCache({
   }, [bumpVersion, maxItems, supported]);
 
   const capture = useCallback(
-    async (video: HTMLVideoElement | null, frameIndex: number) => {
-      if (!taskId || !supported || !video) return null;
+    async (video: HTMLVideoElement | null, frameIndex: number, proof: VideoBitmapCaptureProof) => {
+      if (!taskId || !supported || !video || !mountedRef.current || !proof.isCurrent()) return null;
+      if (!Number.isInteger(frameIndex) || frameIndex < 0) return null;
       if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return null;
       if (!video.videoWidth || !video.videoHeight) return null;
-      const normalizedFrame = Math.max(0, Math.round(frameIndex));
+      const epoch = ownerRef.current.epoch;
+      const normalizedFrame = frameIndex;
       const key = bitmapKey(taskId, normalizedFrame);
       // 已缓存该帧 → 复用,绝不重抓。首帧冷加载时同一帧(frame 0)会被多条路径反复抓取
       // (primeFirstFrame seek / loadeddata / seeked / 暂停态 rAF 持续抓),每次重抓都会在
@@ -126,19 +142,28 @@ export function useVideoBitmapCache({
       // 等到 rAF 真正 draw 时画出的是空白 → 首帧黑屏直到用户 scrub。同一视频帧解码结果确定不变,
       // 复用既正确又省一次 createImageBitmap;active 帧指针仍刷新以保证立即显示。
       const cached = cacheRef.current.get(key);
-      if (cached) {
+      if (cached?.ownerEpoch === epoch) {
         setActiveFrameIndex(normalizedFrame);
         return cached;
       }
-      if (inFlightRef.current.has(key)) return cacheRef.current.get(key) ?? null;
-      inFlightRef.current.add(key);
+      if (inFlightRef.current.has(key)) return null;
+      const request = Symbol(key);
+      inFlightRef.current.set(key, request);
+      const ownsCapture = () =>
+        mountedRef.current &&
+        ownerRef.current.epoch === epoch &&
+        ownerRef.current.taskId === taskId &&
+        ownerRef.current.sourceKey === sourceKey &&
+        inFlightRef.current.get(key) === request &&
+        proof.isCurrent();
       try {
         const bitmap = await window.createImageBitmap(video);
-        if (taskIdRef.current !== taskId) {
+        if (!ownsCapture()) {
           closeBitmap(bitmap);
           return null;
         }
-        const entry: CachedVideoBitmap = {
+        const entry: OwnedVideoBitmap = {
+          ownerEpoch: epoch,
           frameIndex: normalizedFrame,
           bitmap,
           width: bitmap.width || video.videoWidth,
@@ -148,6 +173,7 @@ export function useVideoBitmapCache({
         setActiveFrameIndex(normalizedFrame);
         return entry;
       } catch {
+        if (!ownsCapture()) return null;
         setDiagnostics((cur) => ({
           ...cur,
           supported,
@@ -156,10 +182,10 @@ export function useVideoBitmapCache({
         }));
         return null;
       } finally {
-        inFlightRef.current.delete(key);
+        if (inFlightRef.current.get(key) === request) inFlightRef.current.delete(key);
       }
     },
-    [remember, supported, taskId],
+    [remember, sourceKey, supported, taskId],
   );
 
   const showFrame = useCallback(
@@ -168,7 +194,7 @@ export function useVideoBitmapCache({
       const normalizedFrame = Math.max(0, Math.round(frameIndex));
       const key = bitmapKey(taskId, normalizedFrame);
       const cached = cacheRef.current.get(key);
-      if (cached) {
+      if (cached?.ownerEpoch === ownerRef.current.epoch) {
         cacheRef.current.delete(key);
         cacheRef.current.set(key, cached);
         setActiveFrameIndex(normalizedFrame);
@@ -194,6 +220,7 @@ export function useVideoBitmapCache({
   );
 
   const clear = useCallback(() => {
+    ownerRef.current.epoch += 1;
     for (const entry of cacheRef.current.values()) closeBitmap(entry.bitmap);
     cacheRef.current.clear();
     inFlightRef.current.clear();
@@ -207,29 +234,39 @@ export function useVideoBitmapCache({
     bumpVersion();
   }, [bumpVersion, supported]);
 
-  useEffect(
-    () => () => {
-      for (const entry of cacheRef.current.values()) closeBitmap(entry.bitmap);
-      cacheRef.current.clear();
-      inFlightRef.current.clear();
-    },
-    [],
-  );
+  useEffect(() => {
+    mountedRef.current = true;
+    const cache = cacheRef.current;
+    const inFlight = inFlightRef.current;
+    return () => {
+      mountedRef.current = false;
+      ownerRef.current.epoch += 1;
+      for (const entry of cache.values()) closeBitmap(entry.bitmap);
+      cache.clear();
+      inFlight.clear();
+    };
+  }, []);
 
   useEffect(() => {
     clear();
-  }, [clear, taskId]);
+  }, [clear, sourceKey, taskId]);
 
+  const ownerEpoch = ownerRef.current.epoch;
   const activeBitmap = useMemo(() => {
     void version;
     if (!taskId || activeFrameIndex === null) return null;
-    return cacheRef.current.get(bitmapKey(taskId, activeFrameIndex)) ?? null;
-  }, [activeFrameIndex, taskId, version]);
+    const entry = cacheRef.current.get(bitmapKey(taskId, activeFrameIndex));
+    return entry?.ownerEpoch === ownerEpoch ? entry : null;
+  }, [activeFrameIndex, ownerEpoch, taskId, version]);
 
   const cachedRanges = useMemo(() => {
     void version;
-    return rangesFromFrames([...cacheRef.current.values()].map((entry) => entry.frameIndex));
-  }, [version]);
+    return rangesFromFrames(
+      [...cacheRef.current.values()]
+        .filter((entry) => entry.ownerEpoch === ownerEpoch)
+        .map((entry) => entry.frameIndex),
+    );
+  }, [ownerEpoch, version]);
 
   return {
     activeBitmap,

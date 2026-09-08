@@ -1,6 +1,138 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ToolBindings } from "@/api/projects";
-import { videoToolUnit, videoToolEnabled } from "./videoToolUnits";
+import {
+  resolveVideoScopeTransition,
+  videoToolScopeForTool,
+  videoToolUnit,
+  videoToolEnabled,
+  videoTrackSelectionTool,
+} from "./videoToolUnits";
+
+describe("video scope transitions", () => {
+  it.each([
+    ["box", "track"],
+    ["polygon", "polygon-track"],
+    ["polyline", "polyline-track"],
+    ["mask", "mask-track"],
+  ] as const)("keeps the exact %s / %s geometry in both directions", (frame, track) => {
+    expect(
+      resolveVideoScopeTransition({ tool: frame, scope: "frame" }, "track", () => true),
+    ).toEqual({
+      tool: track,
+      scope: "track",
+    });
+    expect(
+      resolveVideoScopeTransition({ tool: track, scope: "track" }, "frame", () => true),
+    ).toEqual({
+      tool: frame,
+      scope: "frame",
+    });
+    expect(videoToolScopeForTool(frame)).toBe("frame");
+    expect(videoToolScopeForTool(track)).toBe("track");
+  });
+
+  it("keeps select neutral and honors an explicit scope even when all creation is disabled", () => {
+    const disabled = vi.fn(() => false);
+    expect(
+      resolveVideoScopeTransition({ tool: "select", scope: "frame" }, "track", disabled),
+    ).toEqual({
+      tool: "select",
+      scope: "track",
+    });
+    expect(
+      resolveVideoScopeTransition({ tool: "select", scope: "track" }, "frame", disabled),
+    ).toEqual({
+      tool: "select",
+      scope: "frame",
+    });
+    expect(disabled).not.toHaveBeenCalled();
+    expect(videoToolScopeForTool("select")).toBeNull();
+  });
+
+  it.each([
+    "rotated-box",
+    "keypoint",
+    "smart-point",
+    "smart-box",
+    "exemplar",
+    "magic-box",
+  ] as const)("%s has no implicit track or AI substitute", (tool) => {
+    const enabled = vi.fn(() => true);
+    expect(resolveVideoScopeTransition({ tool, scope: "frame" }, "track", enabled)).toEqual({
+      tool: "select",
+      scope: "track",
+      reason: expect.stringContaining("没有轨迹版本"),
+    });
+    expect(enabled).not.toHaveBeenCalled();
+    expect(resolveVideoScopeTransition({ tool, scope: "frame" }, "frame", enabled)).toEqual({
+      tool,
+      scope: "frame",
+    });
+    expect(videoToolScopeForTool(tool)).toBe("frame");
+  });
+
+  it("does not substitute another region tool when the exact counterpart is unavailable", () => {
+    const enabled = vi.fn(
+      (tool: Parameters<typeof videoToolEnabled>[0]) => tool !== "polygon-track",
+    );
+    expect(
+      resolveVideoScopeTransition({ tool: "polygon", scope: "frame" }, "track", enabled),
+    ).toEqual({
+      tool: "select",
+      scope: "track",
+      reason: expect.stringContaining("轨迹工具当前不可用"),
+    });
+    expect(enabled).toHaveBeenCalledTimes(1);
+    expect(enabled).toHaveBeenCalledWith("polygon-track");
+  });
+
+  it("preserves the requested scope when the existing unit or frame variant gate rejects it", () => {
+    const bindings: ToolBindings = {
+      region: { enabled: true, classes: [], video_modes: { box: false, track: true } },
+    };
+    const enabled = (tool: Parameters<typeof videoToolEnabled>[0]) =>
+      videoToolEnabled(tool, bindings);
+    expect(resolveVideoScopeTransition({ tool: "mask", scope: "frame" }, "track", enabled)).toEqual(
+      { tool: "mask-track", scope: "track" },
+    );
+    expect(
+      resolveVideoScopeTransition({ tool: "mask-track", scope: "track" }, "frame", enabled),
+    ).toMatchObject({ tool: "select", scope: "frame", reason: expect.any(String) });
+    expect(
+      resolveVideoScopeTransition({ tool: "box", scope: "frame" }, "track", enabled),
+    ).toMatchObject({ tool: "select", scope: "track", reason: expect.any(String) });
+  });
+
+  it.each([null, undefined, {}])("retains legacy availability for %s bindings", (bindings) => {
+    expect(
+      resolveVideoScopeTransition({ tool: "polyline", scope: "frame" }, "track", (tool) =>
+        videoToolEnabled(tool, bindings),
+      ),
+    ).toEqual({ tool: "polyline-track", scope: "track" });
+  });
+});
+
+describe("videoTrackSelectionTool", () => {
+  it.each([
+    ["video_track_bbox", "track"],
+    ["video_track_polygon", "polygon-track"],
+    ["video_track_polyline", "polyline-track"],
+    ["video_track_mask", "mask-track"],
+  ] as const)("maps the stored %s identity to %s", (geometry, tool) => {
+    expect(videoTrackSelectionTool(geometry)).toBe(tool);
+  });
+
+  it.each([
+    "video_bbox",
+    "video_polygon",
+    "video_polyline",
+    "video_mask",
+    "box_3d",
+    "video_track_rotated_bbox",
+  ])("does not invent a track tool for %s", (geometry) =>
+    expect(videoTrackSelectionTool(geometry)).toBeNull(),
+  );
+});
 
 describe("videoToolUnit", () => {
   it("几何工具映射到各自单位, select 无单位", () => {

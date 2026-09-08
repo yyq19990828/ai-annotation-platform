@@ -35,6 +35,11 @@ export const MaskTool: CanvasToolMeta = {
       return null;
     }
     if (!maskEditor) return null;
+    if (maskEditor.tool === "slice_mask") {
+      if (!maskEditor.active || maskEditor.dirty || maskEditor.instanceOperationPreview)
+        return null;
+      return { kind: "maskSlice", start: [pt.x, pt.y], end: [pt.x, pt.y] };
+    }
     // 像素坐标（pixel-space）— 与 maskBuffer / paintAt 单位一致。
     const px = pt.x * imgW;
     const py = pt.y * imgH;

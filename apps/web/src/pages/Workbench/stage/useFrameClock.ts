@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
-import { frameToSeekTime, frameToTime, timeToFrame, type FrameTimebase } from "./frameTimebase";
+import { frameToSeekTime, timeToFrame, type FrameTimebase } from "./frameTimebase";
 
 type FrameMetadata = { mediaTime: number };
 type VideoFrameCallback = (now: DOMHighResTimeStamp, metadata: FrameMetadata) => void;
@@ -25,35 +25,52 @@ export interface FrameClockDiagnostics {
 
 type FrameReadySource = NonNullable<FrameClockDiagnostics["lastFrameReadySource"]>;
 
+/** Native decoder completion, not a media-layer presentation receipt. */
 export interface FrameSeekResult {
-  accepted: boolean;
+  status: "ready" | "cancelled" | "timeout" | "unavailable";
   frameIndex: number;
-  source: FrameClockDiagnostics["lastFrameReadySource"] | "stale";
+  source: FrameClockDiagnostics["lastFrameReadySource"];
+}
+
+export interface NativeVideoFrameEvidence {
+  frameIndex: number;
+  mediaTime: number;
+  video: HTMLVideoElement;
+  ownerEpoch: number;
 }
 
 interface UseFrameClockOptions {
   videoRef: RefObject<HTMLVideoElement | null>;
+  /** Include the task and media identity so A→B→A cannot reuse old callbacks. */
+  sourceKey?: string;
   frameIndex: number;
   timebase: FrameTimebase;
   isPlaying: boolean;
   onFrameChange: (frameIndex: number) => void;
 }
 
+interface PendingSeek {
+  id: number;
+  frameIndex: number;
+  ownerEpoch: number;
+  startedAt: number;
+  timer: ReturnType<typeof setTimeout> | null;
+  resolve?: (result: FrameSeekResult) => void;
+}
+
 const SEEK_TIMEOUT_MS = 300;
 const MAX_RECENT_SEEKS = 12;
 
-function hasRequestVideoFrameCallback(video: HTMLVideoElement | null): boolean {
-  return typeof (video as VideoWithFrameCallback | null)?.requestVideoFrameCallback === "function";
-}
-
 export function useFrameClock({
   videoRef,
+  sourceKey = "",
   frameIndex,
   timebase,
   isPlaying,
   onFrameChange,
 }: UseFrameClockOptions) {
   const [isSeeking, setIsSeeking] = useState(false);
+  const [nativeFrame, setNativeFrame] = useState<NativeVideoFrameEvidence | null>(null);
   const [diagnostics, setDiagnostics] = useState<FrameClockDiagnostics>({
     seekCount: 0,
     staleCallbacks: 0,
@@ -62,243 +79,342 @@ export function useFrameClock({
     lastFrameReadySource: null,
     recentSeeks: [],
   });
-  const latestSeekIdRef = useRef(0);
-  const seekStartedAtRef = useRef<number | null>(null);
   const diagnosticsRef = useRef(diagnostics);
-  const targetFrameRef = useRef<number | null>(null);
-  const seekResolversRef = useRef(new Map<number, (result: FrameSeekResult) => void>());
-  // 已提交帧 / 播放态的最新值，给 updateFrameFromTime 在闭包外读取（避免 stale）。
-  const frameIndexRef = useRef(frameIndex);
-  frameIndexRef.current = frameIndex;
-  const isPlayingRef = useRef(isPlaying);
-  isPlayingRef.current = isPlaying;
+  const latestSeekIdRef = useRef(0);
+  const pendingSeekRef = useRef<PendingSeek | null>(null);
+  const seekFrameCallbackRef = useRef<{ video: VideoWithFrameCallback; handle: number } | null>(
+    null,
+  );
+  const nativeFrameRef = useRef<NativeVideoFrameEvidence | null>(null);
+  const mountedRef = useRef(false);
+  const latestRef = useRef({ frameIndex, timebase, isPlaying, onFrameChange });
+  latestRef.current = { frameIndex, timebase, isPlaying, onFrameChange };
+  const identityRef = useRef({ sourceKey, video: videoRef.current, timebase, epoch: 0 });
+  const previousIdentity = identityRef.current;
+  if (
+    previousIdentity.sourceKey !== sourceKey ||
+    previousIdentity.video !== videoRef.current ||
+    previousIdentity.timebase.fps !== timebase.fps ||
+    previousIdentity.timebase.frameCount !== timebase.frameCount ||
+    previousIdentity.timebase.ptsMs !== timebase.ptsMs
+  ) {
+    identityRef.current = {
+      sourceKey,
+      video: videoRef.current,
+      timebase,
+      epoch: previousIdentity.epoch + 1,
+    };
+  }
+  const ownerEpoch = identityRef.current.epoch;
 
-  diagnosticsRef.current = diagnostics;
-
-  const maxFrame = Math.max(0, timebase.frameCount - 1);
-  const seekTolerance = useMemo(() => Math.max(0.001, 0.5 / timebase.fps), [timebase.fps]);
-
-  const setDiagnosticsPatch = useCallback((patch: Partial<FrameClockDiagnostics>) => {
-    setDiagnostics((cur) => {
-      const next = { ...cur, ...patch };
-      diagnosticsRef.current = next;
-      return next;
-    });
+  const patchDiagnostics = useCallback((patch: Partial<FrameClockDiagnostics>) => {
+    if (!mountedRef.current) return;
+    const next = { ...diagnosticsRef.current, ...patch };
+    diagnosticsRef.current = next;
+    setDiagnostics(next);
   }, []);
 
-  const resolveSeek = useCallback((seekId: number, result: FrameSeekResult) => {
-    const resolver = seekResolversRef.current.get(seekId);
-    if (!resolver) return;
-    seekResolversRef.current.delete(seekId);
-    resolver(result);
+  const clearSeekFrameCallback = useCallback(() => {
+    const callback = seekFrameCallbackRef.current;
+    seekFrameCallbackRef.current = null;
+    if (callback) callback.video.cancelVideoFrameCallback?.(callback.handle);
   }, []);
 
-  const resolveStaleSeeks = useCallback(
-    (latestSeekId: number) => {
-      for (const [seekId, resolver] of seekResolversRef.current) {
-        if (seekId >= latestSeekId) continue;
-        seekResolversRef.current.delete(seekId);
-        resolver({
-          accepted: false,
-          frameIndex: targetFrameRef.current ?? frameIndex,
-          source: "stale",
-        });
-      }
+  const settleSeek = useCallback(
+    (pending: PendingSeek, result: FrameSeekResult, publish = true) => {
+      if (pendingSeekRef.current !== pending) return;
+      pendingSeekRef.current = null;
+      if (pending.timer !== null) clearTimeout(pending.timer);
+      clearSeekFrameCallback();
+      pending.resolve?.(result);
+      if (publish && mountedRef.current) setIsSeeking(false);
     },
-    [frameIndex],
+    [clearSeekFrameCallback],
   );
 
-  const recordFrameReady = useCallback(
-    (source: FrameReadySource, frame: number) => {
-      const seekTarget = targetFrameRef.current;
-      const seekStartedAt = seekStartedAtRef.current;
-      if (seekTarget !== null && Math.abs(seekTarget - frame) <= 1) {
-        targetFrameRef.current = null;
-        seekStartedAtRef.current = null;
-        setIsSeeking(false);
-        resolveSeek(latestSeekIdRef.current, { accepted: true, frameIndex: frame, source });
-        const seekMs =
-          seekStartedAt === null ? null : Math.round(performance.now() - seekStartedAt);
-        setDiagnosticsPatch({
-          lastFrameReadySource: source,
-          lastSeekMs: seekMs,
-          recentSeeks: [
-            { frameIndex: frame, ms: seekMs, source, at: new Date().toISOString() },
-            ...diagnosticsRef.current.recentSeeks,
-          ].slice(0, MAX_RECENT_SEEKS),
-        });
-        return;
-      }
-      setDiagnosticsPatch({ lastFrameReadySource: source });
+  const cancelPendingSeek = useCallback(
+    (publish = true) => {
+      const pending = pendingSeekRef.current;
+      if (pending)
+        settleSeek(
+          pending,
+          { status: "cancelled", frameIndex: pending.frameIndex, source: null },
+          publish,
+        );
     },
-    [resolveSeek, setDiagnosticsPatch],
+    [settleSeek],
+  );
+
+  const getFrameEvidence = useCallback(
+    (targetFrame: number): NativeVideoFrameEvidence | null => {
+      const evidence = nativeFrameRef.current;
+      const video = videoRef.current;
+      const sourceTimebase = latestRef.current.timebase;
+      const sourcePts = sourceTimebase.ptsMs?.[targetFrame];
+      if (
+        !mountedRef.current ||
+        !evidence ||
+        evidence.ownerEpoch !== identityRef.current.epoch ||
+        evidence.video !== video ||
+        evidence.frameIndex !== targetFrame ||
+        !video ||
+        video.seeking ||
+        video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
+        !video.videoWidth ||
+        !video.videoHeight ||
+        sourceTimebase.source !== "ffprobe" ||
+        sourcePts === undefined ||
+        !Number.isFinite(sourcePts) ||
+        // The stored timetable rounds ffprobe PTS to milliseconds. This is timestamp
+        // quantization tolerance, never acceptance of a neighboring source-frame index.
+        Math.abs(evidence.mediaTime * 1000 - sourcePts) > 0.501 ||
+        timeToFrame(video.currentTime, sourceTimebase) !== targetFrame
+      )
+        return null;
+      return evidence;
+    },
+    [videoRef],
+  );
+
+  const recordSeek = useCallback(
+    (pending: PendingSeek, source: FrameReadySource) => {
+      const ms = source === "timeout" ? null : Math.round(performance.now() - pending.startedAt);
+      patchDiagnostics({
+        lastFrameReadySource: source,
+        lastSeekMs: ms,
+        recentSeeks: [
+          { frameIndex: pending.frameIndex, ms, source, at: new Date().toISOString() },
+          ...diagnosticsRef.current.recentSeeks,
+        ].slice(0, MAX_RECENT_SEEKS),
+      });
+    },
+    [patchDiagnostics],
   );
 
   const updateFrameFromTime = useCallback(
-    (mediaTime: number, source: FrameReadySource) => {
-      const mediaFrame = timeToFrame(mediaTime, timebase);
-      const seekTarget = targetFrameRef.current;
-      let nextFrame: number;
-      if (seekTarget !== null) {
-        if (Math.abs(seekTarget - mediaFrame) <= 1) {
-          // 活跃 seek：±1 容差内吸附回目标帧。
-          nextFrame = seekTarget;
-        } else {
-          // 连续大跨度 seek 时，前一次 seeked/timeupdate 可能晚于新请求到达。旧媒体帧
-          // 不能把已经提交给 React 的新目标覆盖掉；等新目标就绪或 timeout 再结算。
-          const cur = diagnosticsRef.current;
-          setDiagnosticsPatch({ staleCallbacks: cur.staleCallbacks + 1 });
+    (mediaTime: number, source: FrameReadySource, video: HTMLVideoElement, epoch: number) => {
+      if (
+        !mountedRef.current ||
+        identityRef.current.epoch !== epoch ||
+        videoRef.current !== video ||
+        !Number.isFinite(mediaTime)
+      )
+        return;
+      const latest = latestRef.current;
+      const mediaFrame = timeToFrame(mediaTime, latest.timebase);
+      if (source === "rvfc") {
+        const previous = nativeFrameRef.current;
+        if (
+          !previous ||
+          previous.frameIndex !== mediaFrame ||
+          previous.mediaTime !== mediaTime ||
+          previous.video !== video ||
+          previous.ownerEpoch !== epoch
+        ) {
+          const evidence = { frameIndex: mediaFrame, mediaTime, video, ownerEpoch: epoch };
+          nativeFrameRef.current = evidence;
+          setNativeFrame(evidence);
+        }
+      }
+      const pending = pendingSeekRef.current;
+      if (pending) {
+        if (pending.ownerEpoch !== epoch || pending.frameIndex !== mediaFrame) {
+          patchDiagnostics({ staleCallbacks: diagnosticsRef.current.staleCallbacks + 1 });
           return;
         }
-      } else if (!isPlayingRef.current && Math.abs(mediaFrame - frameIndexRef.current) <= 1) {
-        // 暂停且无活跃 seek 时，seeked/timeupdate 把 currentTime 反算成相邻帧的 ±1 抖动
-        // 不要漂移已提交帧（否则 seek 到网格帧 30 后落成 29，破坏采样网格导航 → “逢9”帧、卡顿）。
-        nextFrame = frameIndexRef.current;
-      } else {
-        nextFrame = mediaFrame;
+        latest.onFrameChange(mediaFrame);
+        if (getFrameEvidence(mediaFrame)) {
+          // rVFC may arrive while seeking is still true. Later media events can admit
+          // that existing exact receipt, but never create pixel evidence themselves.
+          recordSeek(pending, "rvfc");
+          settleSeek(pending, { status: "ready", frameIndex: mediaFrame, source: "rvfc" });
+        } else if (
+          source === "seeked" &&
+          typeof (video as VideoWithFrameCallback).requestVideoFrameCallback !== "function"
+        ) {
+          // seeked/currentTime can release normal seeking, but cannot certify native pixels.
+          settleSeek(pending, { status: "unavailable", frameIndex: pending.frameIndex, source });
+        }
+        return;
       }
-      onFrameChange(nextFrame);
-      recordFrameReady(source, nextFrame);
+      // Paused timeupdate events describe the clock position, not a new source-frame receipt.
+      if (latest.isPlaying) latest.onFrameChange(mediaFrame);
+      patchDiagnostics({ lastFrameReadySource: source });
     },
-    [onFrameChange, recordFrameReady, setDiagnosticsPatch, timebase],
+    [getFrameEvidence, patchDiagnostics, recordSeek, settleSeek, videoRef],
   );
 
-  const seekTo = useCallback(
-    (nextFrame: number) => {
+  const startSeek = useCallback(
+    (nextFrame: number, resolve?: (result: FrameSeekResult) => void) => {
+      const latest = latestRef.current;
+      const maxFrame = Math.max(0, latest.timebase.frameCount - 1);
+      const target = Number.isFinite(nextFrame)
+        ? Math.max(0, Math.min(maxFrame, Math.round(nextFrame)))
+        : 0;
+      cancelPendingSeek();
+      const evidence = getFrameEvidence(target);
+      const pending: PendingSeek = {
+        id: ++latestSeekIdRef.current,
+        frameIndex: target,
+        ownerEpoch: identityRef.current.epoch,
+        startedAt: performance.now(),
+        timer: null,
+        resolve,
+      };
+      // Install the resolver before dispatch: an already-presented frame can finish immediately.
+      pendingSeekRef.current = pending;
+      patchDiagnostics({ seekCount: diagnosticsRef.current.seekCount + 1 });
+      latest.onFrameChange(target);
       const video = videoRef.current;
-      const frame = Math.max(0, Math.min(maxFrame, Math.round(nextFrame)));
-      const seekId = latestSeekIdRef.current + 1;
-      latestSeekIdRef.current = seekId;
-      resolveStaleSeeks(seekId);
-      targetFrameRef.current = frame;
-      seekStartedAtRef.current = performance.now();
-      setIsSeeking(true);
-      setDiagnostics((cur) => {
-        const next = { ...cur, seekCount: cur.seekCount + 1 };
-        diagnosticsRef.current = next;
-        return next;
-      });
-      onFrameChange(frame);
-
-      if (video) {
-        video.currentTime = frameToSeekTime(frame, timebase);
-
-        if (hasRequestVideoFrameCallback(video)) {
-          const frameVideo = video as VideoWithFrameCallback;
-          frameVideo.requestVideoFrameCallback?.((_now, metadata) => {
-            if (seekId !== latestSeekIdRef.current) {
-              const cur = diagnosticsRef.current;
-              const next = { ...cur, staleCallbacks: cur.staleCallbacks + 1 };
-              diagnosticsRef.current = next;
-              setDiagnostics(next);
-              resolveSeek(seekId, { accepted: false, frameIndex: frame, source: "stale" });
-              return;
-            }
-            updateFrameFromTime(metadata.mediaTime, "rvfc");
-          });
-        }
+      if (!mountedRef.current || !video) {
+        settleSeek(pending, { status: "unavailable", frameIndex: target, source: null });
+        return pending.id;
       }
-
-      window.setTimeout(() => {
-        if (seekId !== latestSeekIdRef.current || targetFrameRef.current === null) return;
-        targetFrameRef.current = null;
-        seekStartedAtRef.current = null;
-        setIsSeeking(false);
-        resolveSeek(seekId, { accepted: true, frameIndex: frame, source: "timeout" });
-        setDiagnosticsPatch({
-          lastFrameReadySource: "timeout",
-          lastSeekMs: null,
-          recentSeeks: [
-            {
-              frameIndex: frame,
-              ms: null,
-              source: "timeout" as const,
-              at: new Date().toISOString(),
-            },
-            ...diagnosticsRef.current.recentSeeks,
-          ].slice(0, MAX_RECENT_SEEKS),
-        });
+      if (evidence) {
+        recordSeek(pending, "rvfc");
+        settleSeek(pending, { status: "ready", frameIndex: target, source: "rvfc" });
+        return pending.id;
+      }
+      nativeFrameRef.current = null;
+      setNativeFrame(null);
+      setIsSeeking(true);
+      pending.timer = setTimeout(() => {
+        if (pendingSeekRef.current !== pending || pending.ownerEpoch !== identityRef.current.epoch)
+          return;
+        recordSeek(pending, "timeout");
+        settleSeek(pending, { status: "timeout", frameIndex: target, source: "timeout" });
       }, SEEK_TIMEOUT_MS);
-      return seekId;
+      const frameVideo = video as VideoWithFrameCallback;
+      if (typeof frameVideo.requestVideoFrameCallback === "function") {
+        const observe: VideoFrameCallback = (_now, metadata) => {
+          if (
+            pendingSeekRef.current !== pending ||
+            pending.ownerEpoch !== identityRef.current.epoch
+          )
+            return;
+          seekFrameCallbackRef.current = null;
+          updateFrameFromTime(metadata.mediaTime, "rvfc", video, pending.ownerEpoch);
+          if (pendingSeekRef.current === pending) {
+            const handle = frameVideo.requestVideoFrameCallback?.(observe);
+            if (handle !== undefined) seekFrameCallbackRef.current = { video: frameVideo, handle };
+          }
+        };
+        seekFrameCallbackRef.current = {
+          video: frameVideo,
+          handle: frameVideo.requestVideoFrameCallback(observe),
+        };
+      }
+      try {
+        video.currentTime = frameToSeekTime(target, latest.timebase);
+      } catch {
+        settleSeek(pending, { status: "unavailable", frameIndex: target, source: null });
+      }
+      return pending.id;
     },
     [
-      maxFrame,
-      onFrameChange,
-      resolveSeek,
-      resolveStaleSeeks,
-      setDiagnosticsPatch,
-      timebase,
+      cancelPendingSeek,
+      getFrameEvidence,
+      patchDiagnostics,
+      recordSeek,
+      settleSeek,
       updateFrameFromTime,
       videoRef,
     ],
   );
 
+  const seekTo = useCallback((nextFrame: number) => startSeek(nextFrame), [startSeek]);
   const seekToAsync = useCallback(
-    (nextFrame: number) => {
-      const frame = Math.max(0, Math.min(maxFrame, Math.round(nextFrame)));
-      const seekId = seekTo(frame);
-      return new Promise<FrameSeekResult>((resolve) => {
-        seekResolversRef.current.set(seekId, resolve);
-      });
-    },
-    [maxFrame, seekTo],
+    (nextFrame: number) =>
+      new Promise<FrameSeekResult>((resolve) => {
+        startSeek(nextFrame, resolve);
+      }),
+    [startSeek],
   );
 
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    const nextTime = frameToTime(frameIndex, timebase);
-    if (!Number.isFinite(nextTime)) return;
-    if (Math.abs(video.currentTime - nextTime) > seekTolerance && !isPlaying) {
-      video.currentTime = nextTime;
-    }
-  }, [frameIndex, isPlaying, seekTolerance, timebase, videoRef]);
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      cancelPendingSeek(false);
+      nativeFrameRef.current = null;
+    };
+  }, [cancelPendingSeek]);
+
+  useEffect(() => {
+    cancelPendingSeek();
+    nativeFrameRef.current = null;
+    setNativeFrame(null);
+    return () => {
+      cancelPendingSeek(false);
+      nativeFrameRef.current = null;
+    };
+  }, [cancelPendingSeek, ownerEpoch]);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
-    const onSeeked = () => updateFrameFromTime(video.currentTime, "seeked");
-    const onTimeUpdate = () => updateFrameFromTime(video.currentTime, "timeupdate");
+    const epoch = ownerEpoch;
+    // The ref can first bind during commit, after the render that installed this owner.
+    if (identityRef.current.epoch === epoch) identityRef.current.video = video;
+    let disposed = false;
+    let frameHandle: number | null = null;
+    const frameVideo = video as VideoWithFrameCallback;
+    const onSeeked = () => updateFrameFromTime(video.currentTime, "seeked", video, epoch);
+    const onTimeUpdate = () => updateFrameFromTime(video.currentTime, "timeupdate", video, epoch);
     video.addEventListener("seeked", onSeeked);
     video.addEventListener("timeupdate", onTimeUpdate);
+    if (typeof frameVideo.requestVideoFrameCallback === "function") {
+      const tick: VideoFrameCallback = (_now, metadata) => {
+        if (disposed || identityRef.current.epoch !== epoch) return;
+        updateFrameFromTime(metadata.mediaTime, "rvfc", video, epoch);
+        frameHandle = frameVideo.requestVideoFrameCallback?.(tick) ?? null;
+      };
+      frameHandle = frameVideo.requestVideoFrameCallback(tick);
+    }
     return () => {
+      disposed = true;
       video.removeEventListener("seeked", onSeeked);
       video.removeEventListener("timeupdate", onTimeUpdate);
+      if (frameHandle !== null) frameVideo.cancelVideoFrameCallback?.(frameHandle);
     };
-  }, [updateFrameFromTime, videoRef]);
+  }, [isPlaying, ownerEpoch, updateFrameFromTime, videoRef]);
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !isPlaying) return;
+    if (!video || isPlaying) return;
+    const tolerance = Math.max(0.001, 0.5 / timebase.fps);
+    const nextTime = frameToSeekTime(frameIndex, timebase);
+    if (Math.abs(video.currentTime - nextTime) > tolerance) startSeek(frameIndex);
+  }, [frameIndex, isPlaying, ownerEpoch, startSeek, timebase, videoRef]);
 
-    if (hasRequestVideoFrameCallback(video)) {
-      const frameVideo = video as VideoWithFrameCallback;
-      let handle = 0;
-      const tick: VideoFrameCallback = (_now, metadata) => {
-        updateFrameFromTime(metadata.mediaTime, "rvfc");
-        handle = frameVideo.requestVideoFrameCallback?.(tick) ?? 0;
-      };
-      handle = frameVideo.requestVideoFrameCallback?.(tick) ?? 0;
-      return () => {
-        if (handle && frameVideo.cancelVideoFrameCallback)
-          frameVideo.cancelVideoFrameCallback(handle);
-      };
-    }
-
+  useEffect(() => {
+    const video = videoRef.current;
+    if (
+      !video ||
+      !isPlaying ||
+      typeof (video as VideoWithFrameCallback).requestVideoFrameCallback === "function"
+    )
+      return;
+    const epoch = ownerEpoch;
     const schedule =
       typeof requestAnimationFrame === "function"
         ? requestAnimationFrame
         : (cb: FrameRequestCallback) => window.setTimeout(() => cb(performance.now()), 16);
     const cancel =
       typeof cancelAnimationFrame === "function" ? cancelAnimationFrame : window.clearTimeout;
+    let disposed = false;
     let raf = 0;
     const tick = () => {
-      updateFrameFromTime(video.currentTime, "raf");
+      if (disposed || identityRef.current.epoch !== epoch) return;
+      updateFrameFromTime(video.currentTime, "raf", video, epoch);
       raf = schedule(tick);
     };
     raf = schedule(tick);
-    return () => cancel(raf);
-  }, [isPlaying, updateFrameFromTime, videoRef]);
+    return () => {
+      disposed = true;
+      cancel(raf);
+    };
+  }, [isPlaying, ownerEpoch, updateFrameFromTime, videoRef]);
 
   useEffect(() => {
     if (!import.meta.env.DEV || typeof PerformanceObserver === "undefined") return;
@@ -307,23 +423,19 @@ export function useFrameClock({
       [];
     if (!supportedEntryTypes.includes("longtask")) return;
     const observer = new PerformanceObserver((list) => {
-      const count = list.getEntries().length;
-      if (count === 0) return;
-      setDiagnostics((cur) => {
-        const next = { ...cur, longTasks: cur.longTasks + count };
-        diagnosticsRef.current = next;
-        return next;
-      });
+      patchDiagnostics({ longTasks: diagnosticsRef.current.longTasks + list.getEntries().length });
     });
     observer.observe({ entryTypes: ["longtask"] });
     return () => observer.disconnect();
-  }, []);
+  }, [patchDiagnostics]);
 
   return {
     currentFrame: frameIndex,
     isSeeking,
     seekTo,
     seekToAsync,
+    getFrameEvidence,
+    nativeFrame: nativeFrame?.ownerEpoch === ownerEpoch ? nativeFrame : null,
     diagnostics,
     diagnosticsRef,
   };

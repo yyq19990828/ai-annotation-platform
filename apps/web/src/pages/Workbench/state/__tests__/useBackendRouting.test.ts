@@ -3,7 +3,10 @@
  * 覆盖: capIndex 构建 (多 model / 单 model / 文本能力 / tracker) · resolveInteractive 三情形 ·
  * 兜底链 (preferred → 项目默认 → 注册序) · reachable 降级 · pickDefaultPreferred。
  */
-import { describe, it, expect } from "vitest";
+import { createElement, type ReactNode } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import type { MLBackendCapability } from "@/api/ml-backends";
 import {
   buildCapEntry,
@@ -13,8 +16,20 @@ import {
   resolveInteractiveRequest,
   pickDefaultPreferred,
   capFingerprint,
+  useBackendRouting,
+  type BackendRoutingArgs,
   type CapIndex,
 } from "../useBackendRouting";
+import { useMLCapabilities } from "../useMLCapabilities";
+
+const mockSetup = vi.hoisted(() => vi.fn());
+vi.mock("@/api/ml-backends", () => ({
+  mlBackendsApi: { setup: mockSetup },
+  mlBackendSetupQueryKey: (
+    projectId: string | null | undefined,
+    backendId: string | null | undefined,
+  ) => ["ml-backends", projectId, backendId, "setup"],
+}));
 
 // gsam2 协议 2.1: 4 个 task model, 仅 interactive_seg 交互 (point/interactive_box); detection/seg 带 text。
 // tracker 的 "bbox" 是视频追踪种子 (非图像交互 prompt), v0.18.17 后不计入交互 prompt 集。
@@ -347,5 +362,193 @@ describe("capFingerprint — capSignature 内容变化感知", () => {
     };
 
     expect(capFingerprint(changed)).not.toBe(capFingerprint(base));
+  });
+});
+
+const routingClients: QueryClient[] = [];
+function routingWrapper() {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });
+  routingClients.push(client);
+  return ({ children }: { children: ReactNode }) =>
+    createElement(QueryClientProvider, { client }, children);
+}
+
+function routingHarness(overrides: Partial<BackendRoutingArgs> = {}) {
+  const args: BackendRoutingArgs = {
+    projectId: "p1",
+    backends: [
+      { id: "a", name: "Backend A" },
+      { id: "b", name: "Backend B" },
+    ],
+    defaultBackendId: "a",
+    savedInteractiveBackendId: "b",
+    onSaveInteractiveBackend: vi.fn(),
+    ...overrides,
+  };
+  return {
+    ...renderHook((props: BackendRoutingArgs) => useBackendRouting(props), {
+      initialProps: args,
+      wrapper: routingWrapper(),
+    }),
+    args,
+  };
+}
+
+function deferredCapability() {
+  let resolve!: (capability: MLBackendCapability) => void;
+  const promise = new Promise<MLBackendCapability>((complete) => {
+    resolve = complete;
+  });
+  return { promise, resolve };
+}
+
+describe("useBackendRouting capability query recovery", () => {
+  beforeEach(() => {
+    mockSetup.mockReset();
+  });
+  afterEach(() => {
+    routingClients.splice(0).forEach((client) => client.clear());
+  });
+
+  it("所有 setup 失败时仍提供逐后端错误，重试恢复路由及原偏好", async () => {
+    mockSetup.mockImplementation((_projectId: string, backendId: string) =>
+      Promise.reject(new Error(`${backendId} unavailable`)),
+    );
+    const { result, args } = routingHarness();
+    await waitFor(() =>
+      expect(result.current.capabilityErrors).toEqual([
+        { backendId: "a", backendName: "Backend A", message: "a unavailable" },
+        { backendId: "b", backendName: "Backend B", message: "b unavailable" },
+      ]),
+    );
+    expect(result.current.resolveInteractive("point")).toBeNull();
+    expect(result.current.isPromptSupported("point")).toBe(false);
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.isFetching).toBe(false);
+
+    const a = deferredCapability();
+    const b = deferredCapability();
+    mockSetup.mockImplementation((_projectId: string, backendId: string) =>
+      backendId === "a" ? a.promise : b.promise,
+    );
+    let pending!: Promise<unknown>;
+    act(() => {
+      pending = result.current.retryCapabilities();
+    });
+    await waitFor(() => expect(result.current.isFetching).toBe(true));
+    await act(async () => {
+      a.resolve(GSAM2);
+      b.resolve(GSAM2);
+      await pending;
+    });
+    await waitFor(() => expect(result.current.capabilityErrors).toEqual([]));
+    expect(result.current.isFetching).toBe(false);
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.resolveInteractive("point")).toBe("b");
+    expect(result.current.preferredInteractiveId).toBe("b");
+    expect(args.onSaveInteractiveBackend).not.toHaveBeenCalled();
+    expect(mockSetup).toHaveBeenCalledTimes(4);
+  });
+
+  it("部分失败只重试失败后端，健康路由保持可用且不写偏好", async () => {
+    mockSetup.mockImplementation((_projectId: string, backendId: string) =>
+      backendId === "a" ? Promise.resolve(GSAM2) : Promise.reject(new Error("B setup failed")),
+    );
+    const { result, args } = routingHarness();
+    await waitFor(() =>
+      expect(result.current.capabilityErrors).toEqual([
+        { backendId: "b", backendName: "Backend B", message: "B setup failed" },
+      ]),
+    );
+    expect(result.current.resolveInteractive("point")).toBe("a");
+    expect(result.current.resolveInteractive("exemplar")).toBeNull();
+    const retry = deferredCapability();
+    mockSetup.mockReturnValueOnce(retry.promise);
+    let pending!: Promise<unknown>;
+    act(() => {
+      pending = result.current.retryCapabilities();
+    });
+    await waitFor(() => expect(result.current.isFetching).toBe(true));
+    expect(result.current.resolveInteractive("point")).toBe("a");
+    expect(mockSetup).toHaveBeenLastCalledWith("p1", "b");
+    expect(mockSetup).toHaveBeenCalledTimes(3);
+    await act(async () => {
+      retry.resolve(SAM3);
+      await pending;
+    });
+    await waitFor(() => expect(result.current.capabilityErrors).toEqual([]));
+    expect(result.current.resolveInteractive("exemplar")).toBe("b");
+    expect(result.current.preferredInteractiveId).toBe("b");
+    expect(args.onSaveInteractiveBackend).not.toHaveBeenCalled();
+  });
+
+  it.each(["missing-project", "no-backends"])(
+    "%s 不显示加载或错误，重试不发请求",
+    async (scope) => {
+      const { result } = routingHarness(
+        scope === "missing-project" ? { projectId: null } : { backends: [] },
+      );
+      await act(async () => {
+        await result.current.retryCapabilities();
+      });
+      expect(mockSetup).not.toHaveBeenCalled();
+      expect(result.current.capabilityErrors).toEqual([]);
+      expect(result.current.isFetching).toBe(false);
+      expect(result.current.isLoading).toBe(false);
+      expect(result.current.resolveInteractive("point")).toBeNull();
+    },
+  );
+
+  it("退出项目后不保留旧错误，也不能触发旧项目重试", async () => {
+    mockSetup.mockRejectedValue(new Error("old project unavailable"));
+    const { result, rerender, args } = routingHarness();
+    await waitFor(() => expect(result.current.capabilityErrors).toHaveLength(2));
+    rerender({ ...args, projectId: null });
+    await act(async () => {
+      await result.current.retryCapabilities();
+    });
+    expect(result.current.capabilityErrors).toEqual([]);
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.isFetching).toBe(false);
+    expect(mockSetup).toHaveBeenCalledTimes(2);
+  });
+
+  it("单后端详情与路由复用同一 query，路由重试同步清除两处错误", async () => {
+    mockSetup.mockRejectedValueOnce(new Error("shared setup failed"));
+    const { result } = renderHook(
+      () => ({
+        routing: useBackendRouting({
+          projectId: "p1",
+          backends: [{ id: "a", name: "Backend A" }],
+          defaultBackendId: "a",
+          onSaveInteractiveBackend: vi.fn(),
+        }),
+        selected: useMLCapabilities("p1", "a"),
+      }),
+      { wrapper: routingWrapper() },
+    );
+    await waitFor(() => expect(result.current.selected.error).toBe("shared setup failed"));
+    expect(result.current.routing.capabilityErrors).toHaveLength(1);
+    expect(mockSetup).toHaveBeenCalledTimes(1);
+    const retry = deferredCapability();
+    mockSetup.mockReturnValueOnce(retry.promise);
+    let pending!: Promise<unknown>;
+    let duplicate!: Promise<unknown>;
+    act(() => {
+      pending = result.current.routing.retryCapabilities();
+    });
+    await waitFor(() => expect(result.current.selected.isFetching).toBe(true));
+    act(() => {
+      duplicate = result.current.selected.refetch();
+    });
+    expect(mockSetup).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      retry.resolve(GSAM2);
+      await Promise.all([pending, duplicate]);
+    });
+    await waitFor(() => expect(result.current.selected.error).toBeNull());
+    expect(result.current.routing.capabilityErrors).toEqual([]);
+    expect(result.current.routing.resolveInteractive("point")).toBe("a");
+    expect(result.current.selected.isPromptSupported("point")).toBe(true);
   });
 });

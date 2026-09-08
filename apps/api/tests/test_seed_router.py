@@ -215,6 +215,21 @@ async def test_seed_cleanup_is_idempotent_and_preserves_non_e2e_data(
     reset = await httpx_client.post("/api/v1/__test/seed/reset")
     assert reset.status_code == 200, reset.text
 
+    login = await httpx_client.post(
+        "/api/v1/__test/seed/login", json={"email": reset.json()["admin_email"]}
+    )
+    assert login.status_code == 200, login.text
+    second_backend = await httpx_client.post(
+        f"/api/v1/projects/{reset.json()['project_id']}/ml-backends",
+        headers={"Authorization": f"Bearer {login.json()['access_token']}"},
+        json={
+            "name": "E1 toolbar fixture",
+            "url": "http://second-toolbar.e2e:9999",
+            "is_interactive": True,
+        },
+    )
+    assert second_backend.status_code == 201, second_backend.text
+
     first = await httpx_client.post("/api/v1/__test/seed/cleanup")
     second = await httpx_client.post("/api/v1/__test/seed/cleanup")
     assert first.status_code == 200, first.text
@@ -253,7 +268,11 @@ async def test_seed_cleanup_is_idempotent_and_preserves_non_e2e_data(
         await db_session.scalar(
             select(func.count())
             .select_from(MLBackendRegistry)
-            .where(MLBackendRegistry.url == "http://mock-sam.e2e:9999")
+            .where(
+                MLBackendRegistry.url.in_(
+                    ["http://mock-sam.e2e:9999", "http://second-toolbar.e2e:9999"]
+                )
+            )
         )
         == 0
     )
@@ -473,6 +492,134 @@ async def test_seed_video_webcodecs_rejects_unknown_fixture():
         await _test_seed.seed_video_webcodecs(req, db=None)
     assert exc_info.value.status_code == 422
     assert exc_info.value.detail == "unknown_fixture"
+
+
+async def test_video_issue_context_history_preserves_the_original_feedback():
+    from copy import deepcopy
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    from app.api.v1 import _test_seed
+    from app.db.models.annotation_feedback import AnnotationFeedback
+    from app.db.models.project import Project
+    from app.db.models.task import Task
+
+    feedback = SimpleNamespace(
+        id=uuid4(),
+        project_id=uuid4(),
+        task_id=uuid4(),
+        annotation_id=uuid4(),
+        kind="issue",
+        anchor_type="pixel",
+        is_active=True,
+        body="Keep this body",
+        anchor_position={"x": 0.4, "y": 0.6, "frame": 120, "legacy_key": "kept"},
+    )
+    before = deepcopy(vars(feedback))
+    records = {
+        AnnotationFeedback: feedback,
+        Task: SimpleNamespace(project_id=feedback.project_id, file_type="video"),
+        Project: SimpleNamespace(name="E2E Demo Project", display_id="P-E2E-1"),
+    }
+
+    class Session:
+        commits = 0
+
+        async def get(self, model, identifier):
+            return records[model]
+
+        async def commit(self):
+            self.commits += 1
+
+    db = Session()
+    response = await _test_seed.seed_video_issue_context_history(
+        _test_seed.SeedVideoIssueContextHistoryRequest(feedback_id=feedback.id), db
+    )
+    assert db.commits == 1
+    assert response.feedback_id == feedback.id
+    assert response.anchor_position["video_context"]["schema_version"] == 999
+    assert {
+        key: value
+        for key, value in response.anchor_position.items()
+        if key != "video_context"
+    } == before["anchor_position"]
+    assert {
+        key: value for key, value in vars(feedback).items() if key != "anchor_position"
+    } == {key: value for key, value in before.items() if key != "anchor_position"}
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    ["non_e2e", "image", "cross_project", "task_anchor", "no_frame", "inactive"],
+)
+async def test_video_issue_context_history_rejects_other_records(invalid):
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    from fastapi import HTTPException
+
+    from app.api.v1 import _test_seed
+    from app.db.models.annotation_feedback import AnnotationFeedback
+    from app.db.models.project import Project
+    from app.db.models.task import Task
+
+    feedback = SimpleNamespace(
+        id=uuid4(),
+        project_id=uuid4(),
+        task_id=uuid4(),
+        kind="issue",
+        anchor_type="task" if invalid == "task_anchor" else "pixel",
+        is_active=invalid != "inactive",
+        anchor_position={
+            "x": 0.4,
+            "y": 0.6,
+            **({} if invalid == "no_frame" else {"frame": 120}),
+        },
+    )
+    original_anchor = feedback.anchor_position.copy()
+    records = {
+        AnnotationFeedback: feedback,
+        Task: SimpleNamespace(
+            project_id=uuid4() if invalid == "cross_project" else feedback.project_id,
+            file_type="image" if invalid == "image" else "video",
+        ),
+        Project: SimpleNamespace(
+            name="Ordinary Project" if invalid == "non_e2e" else "E2E Demo Project",
+            display_id="P-ORDINARY",
+        ),
+    }
+
+    class Session:
+        async def get(self, model, identifier):
+            return records[model]
+
+        async def commit(self):
+            pytest.fail("An invalid historical fixture must not be committed")
+
+    with pytest.raises(HTTPException) as error:
+        await _test_seed.seed_video_issue_context_history(
+            _test_seed.SeedVideoIssueContextHistoryRequest(feedback_id=feedback.id),
+            Session(),
+        )
+    assert error.value.status_code == 422
+    assert feedback.anchor_position == original_anchor
+
+
+async def test_video_issue_context_history_input_cannot_choose_arbitrary_fields():
+    from uuid import uuid4
+
+    from pydantic import ValidationError
+
+    from app.api.v1 import _test_seed
+
+    with pytest.raises(ValidationError):
+        _test_seed.SeedVideoIssueContextHistoryRequest(
+            feedback_id=uuid4(), video_context={"schema_version": 1}
+        )
+    with pytest.raises(ValidationError):
+        _test_seed.SeedVideoWebCodecsRequest(
+            project_id=str(uuid4()), batch_id="invalid"
+        )
 
 
 async def test_webcodecs_object_cleanup_paginates_batches_and_verifies():

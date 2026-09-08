@@ -13,6 +13,12 @@ import type { VideoTool } from "../state/useWorkbenchState";
 
 /** box = 单帧几何, track = 轨迹几何 (跨帧关键帧)。 */
 export type VideoVariant = "box" | "track";
+export type VideoToolScope = "frame" | "track";
+
+export interface VideoToolSelection {
+  tool: VideoTool;
+  scope: VideoToolScope;
+}
 
 export const VIDEO_TOOL_TARGET: Partial<
   Record<VideoTool, { unit: ToolUnitId; variant: VideoVariant }>
@@ -37,6 +43,67 @@ export const VIDEO_TOOL_TARGET: Partial<
   // magic-box 把候选收紧成外接矩形落 video_bbox, 故归 bbox 单位 (与 smart-* / exemplar 不同)。
   "magic-box": { unit: "bbox", variant: "box" },
 };
+
+/** Selection has no creating scope; all geometry tools keep their existing payload variant. */
+export function videoToolScopeForTool(tool: VideoTool): VideoToolScope | null {
+  const variant = VIDEO_TOOL_TARGET[tool]?.variant;
+  return variant === "track" ? "track" : variant === "box" ? "frame" : null;
+}
+
+// Pair exact geometries: polygon and Mask share a unit, but cannot substitute for each other.
+const VIDEO_SCOPE_PAIRS: ReadonlyArray<Record<VideoToolScope, VideoTool>> = [
+  { frame: "box", track: "track" },
+  { frame: "polygon", track: "polygon-track" },
+  { frame: "polyline", track: "polyline-track" },
+  { frame: "mask", track: "mask-track" },
+];
+
+/** Resolve an admitted scope request without choosing a different geometry or an AI tool. */
+export function resolveVideoScopeTransition(
+  current: VideoToolSelection,
+  targetScope: VideoToolScope,
+  isEnabled: (tool: VideoTool) => boolean,
+): VideoToolSelection & { reason?: string } {
+  if (current.tool === "select") return { tool: "select", scope: targetScope };
+  const targetTool =
+    videoToolScopeForTool(current.tool) === targetScope
+      ? current.tool
+      : VIDEO_SCOPE_PAIRS.find(
+          (pair) => pair.frame === current.tool || pair.track === current.tool,
+        )?.[targetScope];
+  const scopeLabel = targetScope === "frame" ? "单帧" : "轨迹";
+  if (!targetTool) {
+    return {
+      tool: "select",
+      scope: targetScope,
+      reason: `当前工具没有${scopeLabel}版本，已保留${scopeLabel}范围并切换到选择工具`,
+    };
+  }
+  if (!isEnabled(targetTool)) {
+    return {
+      tool: "select",
+      scope: targetScope,
+      reason: `对应的${scopeLabel}工具当前不可用，已保留${scopeLabel}范围并切换到选择工具`,
+    };
+  }
+  return { tool: targetTool, scope: targetScope };
+}
+
+/** Only existing manual video track geometries select a creating track tool. */
+export function videoTrackSelectionTool(geometryType: string): VideoTool | null {
+  switch (geometryType) {
+    case "video_track_bbox":
+      return "track";
+    case "video_track_polygon":
+      return "polygon-track";
+    case "video_track_polyline":
+      return "polyline-track";
+    case "video_track_mask":
+      return "mask-track";
+    default:
+      return null;
+  }
+}
 
 /** 该视频工具落在哪个工具单位; select 等非几何工具返回 null。 */
 export function videoToolUnit(t: VideoTool): ToolUnitId | null {

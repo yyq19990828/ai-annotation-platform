@@ -13,9 +13,9 @@ vi.mock("../stages/image/ImageWorkbench", () => ({
   ImageWorkbench: () => <div data-testid="image-workbench" />,
 }));
 vi.mock("../stages/video/VideoWorkbench", () => ({
-  VideoWorkbench: forwardRef(function VideoWorkbench(props, _ref) {
+  VideoWorkbench: forwardRef(function VideoWorkbench(props: { overlays?: React.ReactNode }, _ref) {
     videoWorkbenchMock(props);
-    return <div data-testid="video-workbench" />;
+    return <div data-testid="video-workbench">{props.overlays}</div>;
   }),
 }));
 vi.mock("../stages/three-d/ThreeDWorkbench", () => ({
@@ -169,8 +169,12 @@ describe("WorkbenchStageHost", () => {
     expect(screen.queryByTestId("three-d-workbench")).toBeNull();
   });
 
-  it("stageKind=video: renders VideoWorkbench + overlays rendered outside (image owns overlays inline)", () => {
+  it("stageKind=video: forwards overlays to the video viewport", () => {
     const props = propsFor("video");
+    props.editors!.issuePinDropArmed = true;
+    props.editors!.issueNavigationPending = true;
+    props.editors!.onIssuePinDrop = vi.fn();
+    props.editors!.onSeekIssueFrame = vi.fn();
     props.video!.keypointSchema = {
       nodes: [{ name: "nose", color: "#fff", x: 0.5, y: 0.5 }],
       edges: [],
@@ -180,10 +184,18 @@ describe("WorkbenchStageHost", () => {
     expect(screen.getByTestId("video-workbench")).toBeTruthy();
     expect(screen.queryByTestId("image-workbench")).toBeNull();
     expect(screen.queryByTestId("three-d-workbench")).toBeNull();
-    // Image 模式时 overlays 被传给 ImageWorkbench 自渲染; non-image 模式 host 在子组件后兜底渲染
     expect(screen.getByTestId("overlays-content")).toBeTruthy();
+    expect(
+      screen.getByTestId("video-workbench").contains(screen.getByTestId("overlays-content")),
+    ).toBe(true);
     expect(videoWorkbenchMock).toHaveBeenCalledWith(
-      expect.objectContaining({ keypointSchema: props.video!.keypointSchema }),
+      expect.objectContaining({
+        keypointSchema: props.video!.keypointSchema,
+        issuePinDropArmed: true,
+        issueNavigationPending: true,
+        onIssuePinDrop: props.editors!.onIssuePinDrop,
+        onSeekIssueFrame: props.editors!.onSeekIssueFrame,
+      }),
     );
   });
 

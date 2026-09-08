@@ -14,6 +14,8 @@ from ai_annotation.errors import AAPError, JobFailedError, JobTimeoutError
 from ai_annotation.models import (
     Annotation,
     AnnotationBulkUpdateResult,
+    AnnotationFeedback,
+    AnnotationFeedbackCreate,
     ApiKey,
     ApiKeyCreated,
     Batch,
@@ -24,6 +26,12 @@ from ai_annotation.models import (
     DatasetItem,
     DatasetUnlinkPreview,
     DatasetUnlinkResult,
+    FeedbackAnchorPosition,
+    FeedbackAnchorType,
+    FeedbackKind,
+    FeedbackPage,
+    FeedbackSeverity,
+    FeedbackStatus,
     ImportResult,
     Job,
     JobPage,
@@ -372,6 +380,79 @@ class Annotations:
             json={"ids": [str(value) for value in annotation_ids], "patch": patch},
         )
         return AnnotationBulkUpdateResult.model_validate(resp.json())
+
+
+class Feedbacks:
+    def __init__(self, http: HttpTransport):
+        self._http = http
+
+    def create(
+        self,
+        project_id: IdLike,
+        body: str,
+        *,
+        kind: FeedbackKind = "issue",
+        anchor_type: FeedbackAnchorType = "task",
+        task_id: IdLike | None = None,
+        annotation_id: IdLike | None = None,
+        anchor_position: FeedbackAnchorPosition | dict[str, Any] | None = None,
+        severity: FeedbackSeverity | None = None,
+        title: str | None = None,
+        attachments: Sequence[dict[str, Any]] = (),
+        thread_parent_id: IdLike | None = None,
+    ) -> AnnotationFeedback:
+        """Create feedback; the server verifies task permission and video/object boundaries."""
+        payload = AnnotationFeedbackCreate.model_validate(
+            {
+                "kind": kind,
+                "anchor_type": anchor_type,
+                "project_id": project_id,
+                "task_id": task_id,
+                "annotation_id": annotation_id,
+                "anchor_position": anchor_position,
+                "severity": severity,
+                "title": title,
+                "body": body,
+                "attachments": list(attachments),
+                "thread_parent_id": thread_parent_id,
+            }
+        ).model_dump(mode="json", by_alias=True, exclude_none=True)
+        # A task-level feedback explicitly carries no pixel anchor.
+        payload.setdefault("anchor_position", None)
+        resp = self._http.request("POST", "/feedbacks", json=payload)
+        return AnnotationFeedback.model_validate(resp.json())
+
+    def list(
+        self,
+        project_id: IdLike,
+        *,
+        task_id: IdLike | None = None,
+        annotation_id: IdLike | None = None,
+        kind: FeedbackKind | None = None,
+        anchor_type: FeedbackAnchorType | None = None,
+        status: FeedbackStatus | None = None,
+        cursor: str | None = None,
+        limit: int = 50,
+    ) -> FeedbackPage:
+        """List visible feedback using items/next_cursor pagination (no total field)."""
+        if type(limit) is not int or not 1 <= limit <= 200:
+            raise ValueError("limit must be an integer between 1 and 200")
+        params = _drop_none(
+            {
+                "project_id": str(project_id),
+                "task_id": str(task_id) if task_id is not None else None,
+                "annotation_id": str(annotation_id)
+                if annotation_id is not None
+                else None,
+                "kind": kind,
+                "anchor_type": anchor_type,
+                "status": status,
+                "cursor": cursor,
+                "limit": limit,
+            }
+        )
+        resp = self._http.request("GET", "/feedbacks", params=params)
+        return FeedbackPage.model_validate(resp.json())
 
 
 class Predictions:
@@ -1021,6 +1102,7 @@ class Client:
         self.datasets = Datasets(self._http)
         self.tasks = Tasks(self._http)
         self.annotations = Annotations(self._http)
+        self.feedbacks = Feedbacks(self._http)
         self.predictions = Predictions(self._http)
         self.jobs = Jobs(self._http)
         self.exports = Exports(self._http, self.jobs)

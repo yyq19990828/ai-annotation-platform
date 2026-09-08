@@ -3,6 +3,7 @@ import type { MaskMutationScope } from "@/api/maskMutations";
 import type { AnnotationResponse, Geometry } from "@/types";
 import {
   maskMutationExpectedVersions,
+  maskSliceUnavailableReason,
   maskAlphasIntersect,
   maskMutationScopeFingerprint,
   maskMutationScopeMembers,
@@ -56,6 +57,20 @@ const imageScope: MaskMutationScope = {
 };
 
 describe("maskMutationDraft", () => {
+  it("slice requires a saved unlocked source without active children", () => {
+    const source = annotation("source", { type: "raster_mask", mask: maskRef });
+    const child = annotation(
+      "child",
+      { type: "raster_mask", mask: maskRef },
+      { parent_annotation_id: source.id },
+    );
+    expect(maskSliceUnavailableReason(source, [source])).toBeNull();
+    expect(maskSliceUnavailableReason(source, [source, child])).toContain("活动子对象");
+    expect(maskSliceUnavailableReason({ ...source, is_locked: true }, [])).toContain("锁定");
+    expect(maskSliceUnavailableReason({ ...source, id: "tmp_source" }, [])).toContain("已保存");
+    expect(maskSliceUnavailableReason({ ...source, version: undefined }, [])).toContain("版本");
+    expect(maskSliceUnavailableReason(source, [{ ...child, is_active: false }])).toBeNull();
+  });
   it("固定 scope 成员顺序并与后端 canonical digest 一致", async () => {
     const first = annotation(
       "00000000-0000-0000-0000-000000000001",

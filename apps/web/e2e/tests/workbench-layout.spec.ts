@@ -327,6 +327,18 @@ test("标准和浮动布局使用日间与夜间语义主题", async ({ page, se
   test.setTimeout(90_000);
   const data = await seed.reset();
   await seed.injectToken(page, data.admin_email);
+  // Theme screenshots exercise the layout without depending on the seed's external ML service.
+  const headers = { Authorization: `Bearer ${await seed.accessToken(data.admin_email)}` };
+  const configured = await page.request.patch(`/api/v1/projects/${data.project_id}`, {
+    headers,
+    data: { ai_enabled: false, ai_interactive_enabled: false, ml_backend_id: null },
+  });
+  expect(configured.ok(), await configured.text()).toBe(true);
+  const removed = await page.request.delete(
+    `/api/v1/projects/${data.project_id}/ml-backends/${data.ml_backend_id}`,
+    { headers },
+  );
+  expect(removed.status()).toBe(204);
   await page.setViewportSize({ width: 1366, height: 768 });
   await page.goto(`/projects/${data.project_id}/annotate?task=${data.task_ids[0]}`);
   await expect(

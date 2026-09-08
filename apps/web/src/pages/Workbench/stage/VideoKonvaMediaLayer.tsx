@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import Konva from "konva";
 import { Layer, Image as KonvaImage } from "react-konva";
 import type { VideoPixelSize } from "./videoKonvaCoordinates";
+import type { VideoFramePresentation } from "./videoStageControls";
 
 interface VideoKonvaMediaLayerProps {
   /** 隐藏 `<video>` 解码源(A1:仍负责解码,不再是显示面)。 */
@@ -13,6 +14,8 @@ interface VideoKonvaMediaLayerProps {
   /** bitmap 确认来自 WebCodecs 时等于当前帧，否则为 null。 */
   preciseFrameIndex?: number | null;
   onPreciseFramePainted?: (frameIndex: number) => void;
+  framePresentation?: VideoFramePresentation | null;
+  onFramePresented?: (presentation: VideoFramePresentation) => void;
   /** 视频固有像素尺寸 = Konva 世界尺寸(Stage scale 负责缩放)。 */
   size: VideoPixelSize;
   /**
@@ -60,6 +63,8 @@ export function VideoKonvaMediaLayer({
   frameIndex,
   preciseFrameIndex,
   onPreciseFramePainted,
+  framePresentation,
+  onFramePresented,
   size,
   viewport,
   isPlaybackActive,
@@ -99,15 +104,44 @@ export function VideoKonvaMediaLayer({
       typeof frameIndex === "number" &&
       preciseFrameIndex === frameIndex &&
       !!onPreciseFramePainted;
-    const eventName = "draw.preciseFramePaint";
+    const imageSource = pickMediaImageSource(false, videoEl, bitmap);
+    const presentation = framePresentation;
+    const shouldPresent =
+      !!presentation &&
+      presentation.frameIndex === frameIndex &&
+      presentation.image === imageSource &&
+      size.w > 0 &&
+      size.h > 0 &&
+      viewport.w > 0 &&
+      viewport.h > 0 &&
+      presentation.isCurrent() &&
+      !!onFramePresented;
+    const eventName = "draw.mediaFramePaint";
+    let disposed = false;
     const notify = () => {
       layer.off(eventName, notify);
-      onPreciseFramePainted?.(frameIndex as number);
+      if (disposed || imageRef.current?.image() !== imageSource || !layer.isVisible()) return;
+      if (shouldNotify) onPreciseFramePainted?.(frameIndex as number);
+      if (shouldPresent && presentation?.isCurrent()) onFramePresented?.(presentation);
     };
-    if (shouldNotify) layer.on(eventName, notify);
+    if (shouldNotify || shouldPresent) layer.on(eventName, notify);
+    // Native playback remains a usable visual fallback without rVFC/WebCodecs. These events
+    // request a repaint only; they never manufacture exact-frame evidence or a ready result.
+    const repaintNative = () => {
+      if (!disposed) layer.batchDraw();
+    };
+    if (videoEl && imageSource === videoEl) {
+      videoEl.addEventListener("loadeddata", repaintNative);
+      videoEl.addEventListener("seeked", repaintNative);
+    }
     layer.batchDraw();
     return () => {
-      if (shouldNotify) layer.off(eventName, notify);
+      disposed = true;
+      if (shouldNotify || shouldPresent) layer.off(eventName, notify);
+      if (videoEl && imageSource === videoEl) {
+        videoEl.removeEventListener("loadeddata", repaintNative);
+        videoEl.removeEventListener("seeked", repaintNative);
+      }
     };
   }, [
     isPlaybackActive,
@@ -116,6 +150,8 @@ export function VideoKonvaMediaLayer({
     frameIndex,
     preciseFrameIndex,
     onPreciseFramePainted,
+    framePresentation,
+    onFramePresented,
     size.w,
     size.h,
     viewport.w,

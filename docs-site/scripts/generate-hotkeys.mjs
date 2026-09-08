@@ -3,12 +3,13 @@
 // 生成 docs-site/user-guide/workbench/hotkeys.generated.md。
 // 在 docs:dev / docs:build 之前自动执行。
 //
-// 使用 regex 解析 TS 源文件——无需 ts-node / tsc：HOTKEYS 是纯字面量数组。
+// 使用项目已有 TypeScript parser 读取字面量，校验上下文与目标元数据；不执行源码。
 // 解析失败会报错退出，让漂移问题暴露在 CI 而不是文档站静默错乱。
 
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import { emitGenerated } from "./_emit.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -17,39 +18,48 @@ const dst = resolve(here, "../user-guide/workbench/hotkeys.generated.md");
 
 const text = readFileSync(src, "utf8");
 
-// 1. 找 HOTKEYS = [...] 字面量
-const arrayMatch = text.match(/export const HOTKEYS:[^=]*=\s*(\[[\s\S]*?\n\];)/);
-if (!arrayMatch) {
-  console.error("[generate-hotkeys] 未找到 HOTKEYS 数组字面量，hotkeys.ts 结构是否变了？");
-  process.exit(1);
+// 2. Read complete records, including context/target fields, so formatting cannot drop entries.
+const ts = createRequire(src)("typescript");
+const sourceFile = ts.createSourceFile(src, text, ts.ScriptTarget.Latest, true);
+const declaration = sourceFile.statements
+  .filter(ts.isVariableStatement)
+  .flatMap((statement) => [...statement.declarationList.declarations])
+  .find((node) => node.name.getText(sourceFile) === "HOTKEYS");
+if (!declaration?.initializer || !ts.isArrayLiteralExpression(declaration.initializer)) {
+  throw new Error("HOTKEYS must be an array literal");
 }
-const arrLiteral = arrayMatch[1];
-
-// 2. 抽出每个对象 { keys: [...], desc: "...", group: "...", actionType?: "..." }
-// keys 数组中的字符串可能含 `]` / `[` 字符（如 `["]"]`），不能用 `[^\]]` 截断。
-// 改成：匹配 keys: [ <strings...> ]，其中 strings 是字符串字面量序列。
-const STR = `"(?:[^"\\\\]|\\\\.)*"`;
-const itemRe = new RegExp(
-  `\\{\\s*keys:\\s*\\[((?:\\s*${STR}\\s*,?)+)\\]\\s*,` +
-    `\\s*desc:\\s*(${STR})\\s*,` +
-    `\\s*group:\\s*"(\\w+)"`,
-  "g",
-);
-const items = [];
-for (const m of arrLiteral.matchAll(itemRe)) {
-  const keysLiteral = m[1];
-  const keysArr = [];
-  for (const km of keysLiteral.matchAll(new RegExp(STR, "g"))) {
-    // 去掉首尾引号 + 反引号转义
-    keysArr.push(km[0].slice(1, -1).replace(/\\"/g, '"'));
+const contexts = new Set([
+  "image",
+  "video",
+  "image-prediction",
+  "video-prediction",
+  "video-no-prediction",
+]);
+const items = declaration.initializer.elements.map((node) => {
+  if (!ts.isObjectLiteralExpression(node)) throw new Error("Hotkey must be an object literal");
+  const item = {};
+  for (const property of node.properties) {
+    if (!ts.isPropertyAssignment(property)) throw new Error("Hotkey properties must be literals");
+    const key = property.name.getText(sourceFile);
+    const value = property.initializer;
+    if (ts.isStringLiteral(value)) item[key] = value.text;
+    else if (
+      key === "keys" &&
+      ts.isArrayLiteralExpression(value) &&
+      value.elements.every(ts.isStringLiteral)
+    ) {
+      item.keys = value.elements.map((element) => element.text);
+    } else throw new Error(`Unsupported hotkey property: ${key}`);
   }
-  const desc = m[2].slice(1, -1).replace(/\\"/g, '"');
-  items.push({ keys: keysArr, desc, group: m[3] });
-}
-if (items.length === 0) {
-  console.error("[generate-hotkeys] 解析到 0 条 hotkey；regex 与 hotkeys.ts 不匹配。");
-  process.exit(1);
-}
+  if (!item.keys?.length || !item.desc || !item.group)
+    throw new Error("Incomplete hotkey definition");
+  if (item.context && !contexts.has(item.context))
+    throw new Error(`Unknown hotkey context: ${item.context}`);
+  if (item.targetTool && !["setTool", "setVideoTool"].includes(item.actionType))
+    throw new Error("Tool target requires a tool action");
+  return item;
+});
+if (items.length === 0) throw new Error("HOTKEYS is empty");
 
 // 3. 找 GROUP_LABEL
 const groupRe = /export const GROUP_LABEL:[^=]*=\s*\{([^}]+)\}/;
@@ -72,6 +82,10 @@ for (const it of items) {
 const lines = [];
 lines.push("<!-- AUTO-GENERATED — 由 docs-site/scripts/generate-hotkeys.mjs 从 -->");
 lines.push("<!-- apps/web/src/pages/Workbench/state/hotkeys.ts 生成。请勿手改。 -->");
+lines.push("");
+lines.push(
+  "同一按键按当前工作台与选择上下文路由。输入框、菜单、停靠标签、类别弹层及活跃工具自有按键优先；A / D 仅处理普通待决候选，成功后才自动前进，视频限定当前帧。交互式 SAM 使用 Enter / Esc / Tab，追踪作业使用其审阅操作。",
+);
 lines.push("");
 
 const formatKey = (k) => (k.includes("+") || k.includes(" ") ? `\`${k}\`` : `\`${k}\``);

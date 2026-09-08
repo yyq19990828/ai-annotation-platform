@@ -171,6 +171,46 @@ describe("handleVideoMaskCommit", () => {
     ).toMatchObject({ id: "mask-1", version: 4 });
   });
 
+  it("上传完成前 owner 失效不写旧关键帧或当前历史", async () => {
+    const { result, history } = setup();
+    let resolveUpload!: (value: typeof reference) => void;
+    apiMocks.uploadTaskContent.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveUpload = resolve;
+        }),
+    );
+    let current = true;
+    const saved = result.current.handleVideoMaskCommit(rle, 5, maskTrack, "track", () => current);
+    current = false;
+    resolveUpload(reference);
+    expect(await saved).toBeNull();
+    expect(apiMocks.saveMaskKeyframe).not.toHaveBeenCalled();
+    expect(history.push).not.toHaveBeenCalled();
+  });
+
+  it("旧关键帧迟到成功仅更新原查询缓存，不进入当前历史", async () => {
+    const { result, history, queryClient } = setup();
+    queryClient.setQueryData(["annotations", "task-1"], [maskTrack]);
+    let resolveSave!: (value: AnnotationResponse) => void;
+    apiMocks.saveMaskKeyframe.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSave = resolve;
+        }),
+    );
+    let current = true;
+    const saved = result.current.handleVideoMaskCommit(rle, 5, maskTrack, "track", () => current);
+    await vi.waitFor(() => expect(apiMocks.saveMaskKeyframe).toHaveBeenCalledTimes(1));
+    current = false;
+    resolveSave({ ...maskTrack, version: 4 });
+    expect(await saved).toBeNull();
+    expect(history.push).not.toHaveBeenCalled();
+    expect(
+      queryClient.getQueryData<AnnotationResponse[]>(["annotations", "task-1"])?.[0].version,
+    ).toBe(4);
+  });
+
   it("版本缺失时在上传前稳定失败", async () => {
     const { result } = setup();
 

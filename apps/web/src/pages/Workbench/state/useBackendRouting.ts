@@ -11,6 +11,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQueries } from "@tanstack/react-query";
+import { apiErrorDetailMessage } from "@/api/client";
 import { mlBackendsApi, mlBackendSetupQueryKey, type MLBackendCapability } from "@/api/ml-backends";
 import { INTERACTIVE_ROUTE_PROMPT_IDS } from "@/api/generated/capabilityVocab.gen";
 
@@ -291,6 +292,11 @@ export interface BackendRoutingArgs {
 export interface BackendRoutingResult {
   capIndex: CapIndex;
   isLoading: boolean;
+  /** True while any enabled setup query is fetching, including retries. */
+  isFetching: boolean;
+  capabilityErrors: Array<{ backendId: string; backendName: string; message: string }>;
+  /** Refetches only failed setup queries without changing backend preferences. */
+  retryCapabilities: () => Promise<unknown>;
   /** 工具栏 AI 工具门控: 某 prompt 只要任一交互后端支持就亮 (text → 任一 textCapable)。 */
   isPromptSupported: (type: string) => boolean;
   /** 解析某交互 prompt 实际会跑的后端 (null = 无候选, 工具置灰)。 */
@@ -322,7 +328,32 @@ export function useBackendRouting({
     })),
   });
 
-  const isLoading = queries.some((q) => q.isLoading);
+  const isLoading = !!projectId && queries.some((q) => q.isLoading);
+  const isFetching = !!projectId && queries.some((q) => q.isFetching);
+  const capabilityErrors = projectId
+    ? queries.flatMap((query, index) =>
+        query.isError
+          ? [
+              {
+                backendId: backends[index].id,
+                backendName: backends[index].name,
+                message: apiErrorDetailMessage(query.error) || "模型能力加载失败，请重试",
+              },
+            ]
+          : [],
+      )
+    : [];
+  const retryCapabilities = useCallback(
+    () =>
+      Promise.all(
+        projectId
+          ? queries
+              .filter((query) => query.isError)
+              .map((query) => query.refetch({ cancelRefetch: false }))
+          : [],
+      ),
+    [projectId, queries],
+  );
 
   // capIndex: backendId → 能力条目。query 成功用 data, 失败 (isError) → reachable=false。
   // 注: queries 数组与 backends 同序; 用 join 的稳定签名做依赖, 避免每渲染重建。
@@ -373,6 +404,9 @@ export function useBackendRouting({
   return {
     capIndex,
     isLoading,
+    isFetching,
+    capabilityErrors,
+    retryCapabilities,
     isPromptSupported: (type: string) => {
       if (isInteractivePrompt(type)) {
         return candidatesFor(capIndex, order, type).length > 0;

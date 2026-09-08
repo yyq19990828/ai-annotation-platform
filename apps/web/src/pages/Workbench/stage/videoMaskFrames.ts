@@ -152,6 +152,7 @@ export function useVideoMaskFrames(params: {
 
   const descriptors = useMemo<MaskDescriptor[]>(() => {
     const committed = annotations.flatMap((annotation) => {
+      // Optimistic rows have no persisted content endpoint until creation returns a real ID.
       if (annotation.id.startsWith("tmp_")) return [];
       if (isVideoMask(annotation)) {
         if (annotation.geometry.frame_index !== frameIndex) return [];
@@ -361,5 +362,13 @@ export function useVideoMaskFrames(params: {
     [],
   );
 
-  return records;
+  return useMemo(() => {
+    // Review scope changes retire old staged visuals before another job finishes decoding.
+    const activeTrackerKeys = new Set(
+      descriptors.filter((descriptor) => descriptor.source === "tracker").map(cacheKey),
+    );
+    return records.filter(
+      (record) => record.source !== "tracker" || activeTrackerKeys.has(record.cacheKey),
+    );
+  }, [descriptors, records]);
 }

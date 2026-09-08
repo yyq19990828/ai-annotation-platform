@@ -1,3 +1,4 @@
+import type { CommitPolygonSlice } from "../../stage/usePolygonSlice";
 import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import type { Annotation, Geometry, RotatedBboxGeometry, Keypoint, KeypointSchema } from "@/types";
 import type { CommentCanvasDrawing } from "@/api/comments";
@@ -19,11 +20,14 @@ import type { MaskCompareTileStore } from "../../stage/shared/maskCompareTileSto
 import type { WorkbenchImageSource } from "../../stage/imagePyramid";
 import { workbenchImagePreviewUrl } from "../../stage/useWorkbenchImageSource";
 import type { RasterResourceCoordinator } from "../../stage/shared/rasterResourceCoordinator";
+import type { BboxCreationMode } from "../../stage/ImageStage.helpers";
 
 type Geom = { x: number; y: number; w: number; h: number };
 type StageGeometry = { imgW: number; imgH: number; vpSize: { w: number; h: number } };
 
 export interface ImageWorkbenchProps {
+  bboxCreationMode?: BboxCreationMode;
+  continuousCreation?: boolean;
   resourceCoordinator?: RasterResourceCoordinator;
   maskCompareStore?: MaskCompareTileStore | null;
   rasterMaskRecords: readonly RasterMaskRenderRecord<"annotation">[];
@@ -118,6 +122,7 @@ export interface ImageWorkbenchProps {
   onChangeUserBoxClass: (id: string) => void;
   onJoinSelected: () => void;
   onCropSelected: (baseId: string) => void;
+  onCommitPolygonSlice?: CommitPolygonSlice;
   onStageGeometry: (g: StageGeometry) => void;
   polygonDraft?: PolygonDraftHandle;
   keypointDraft?: KeypointDraftHandle;
@@ -154,6 +159,8 @@ export interface ImageWorkbenchProps {
 }
 
 export function ImageWorkbench({
+  continuousCreation,
+  bboxCreationMode,
   resourceCoordinator,
   maskCompareStore,
   rasterMaskRecords,
@@ -214,6 +221,7 @@ export function ImageWorkbench({
   onChangeUserBoxClass,
   onJoinSelected,
   onCropSelected,
+  onCommitPolygonSlice,
   onStageGeometry,
   polygonDraft,
   keypointDraft,
@@ -325,6 +333,8 @@ export function ImageWorkbench({
 
   return (
     <ImageStage
+      continuousCreation={continuousCreation}
+      bboxCreationMode={bboxCreationMode}
       key={mediaKey ?? fileUrl ?? "image-stage"}
       resourceCoordinator={resourceCoordinator}
       maskCompareStore={maskCompareStore}
@@ -384,6 +394,7 @@ export function ImageWorkbench({
       onChangeUserBoxClass={onChangeUserBoxClass}
       onJoinSelected={onJoinSelected}
       onCropSelected={onCropSelected}
+      onCommitPolygonSlice={onCommitPolygonSlice}
       onStageGeometry={onStageGeometry}
       polygonDraft={polygonDraft}
       keypointDraft={keypointDraft}

@@ -2,6 +2,25 @@ import type { AnnotationResponse } from "@/types";
 import type { MaskMutationScope } from "@/api/maskMutations";
 import { resolveVideoMaskTrackAtFrame } from "../../videoStageGeometry";
 
+export function maskSliceUnavailableReason(
+  source: AnnotationResponse | null,
+  annotations: readonly AnnotationResponse[],
+): string | null {
+  if (
+    !source ||
+    source.geometry.type !== "raster_mask" ||
+    source.id.startsWith("tmp_") ||
+    !source.is_active
+  )
+    return "请先选中已保存的 Raster Mask";
+  if (!Number.isInteger(source.version) || Number(source.version) < 1)
+    return "来源缺少有效版本，请刷新";
+  if (source.is_locked) return "来源 Mask 已锁定";
+  if (annotations.some((row) => row.is_active && row.parent_annotation_id === source.id))
+    return "有活动子对象的 Mask 不能切割";
+  return null;
+}
+
 function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;

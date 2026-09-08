@@ -255,12 +255,13 @@ jobs:
           - 6379:6379
     env:
       DATABASE_URL: postgresql+asyncpg://user:pass@localhost:5432/annotation_test
+      PLAYWRIGHT_E2E_DATABASE_URL: postgresql+asyncpg://user:pass@localhost:5432/annotation_test
       SECRET_KEY: ci-test-secret
       REDIS_URL: redis://localhost:6379/0
       MINIO_ENDPOINT: localhost:9000
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
-      MINIO_BUCKET: annotations
+      MINIO_BUCKET: annotations-test
       # The test router is opt-in and also validates the _test database suffix.
       E2E_SEED_ENABLED: "true"
       ENVIRONMENT: development

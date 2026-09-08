@@ -213,7 +213,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     category: "common",
     label: "决策后自动前进",
     description:
-      "采纳 / 拒绝(A / D)AI 候选后,自动把选中推进到下一个待决对象,连续审阅无需重新点选(仅移动选中,不缩放;视口聚焦由上一项控制)。视频 + 图片工作台通用",
+      "采纳 / 忽略选中 AI 候选成功后，自动选择下一个待决对象；按钮与 A / D 通用。视频仅在当前帧内前进，失败或等待补选类别时保留选择。视口聚焦由上一项控制",
     control: { type: "toggle", onText: "已开启", offText: "已关闭" },
   },
   {

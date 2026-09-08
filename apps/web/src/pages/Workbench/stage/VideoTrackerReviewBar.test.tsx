@@ -1,8 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { VideoTrackerJobPreview } from "@/api/videoTracker";
-import { VideoTrackerReviewBar } from "./VideoTrackerReviewBar";
+import type { TrackerReviewDecisionOutcome } from "@/hooks/useVideoTrackerJobs";
+import { projectTrackerReview, type TrackerReviewScope } from "@/hooks/videoTrackerReviewScope";
+import { VideoTrackerReviewBar, type VideoTrackerReviewBarProps } from "./VideoTrackerReviewBar";
 
 const preview: VideoTrackerJobPreview = {
   job_id: "job-1",
@@ -36,30 +38,70 @@ const preview: VideoTrackerJobPreview = {
   output_geometry: "bbox",
 };
 
+function review(scope: Partial<TrackerReviewScope> = {}, source = preview) {
+  return projectTrackerReview(
+    source,
+    { instanceIds: ["A", "B"], fromFrame: 10, toFrame: 12, intentRevision: 1, ...scope },
+    1,
+  );
+}
+
+function props(overrides: Partial<VideoTrackerReviewBarProps> = {}): VideoTrackerReviewBarProps {
+  return {
+    review: review(),
+    jobs: [
+      { jobId: "job-1", label: "追踪一" },
+      { jobId: "job-2", label: "追踪二" },
+    ],
+    onChooseJob: vi.fn(),
+    onSetInstances: vi.fn(),
+    onSetWindow: vi.fn(),
+    onSeekFrame: vi.fn(),
+    onDecide: vi.fn().mockResolvedValue({ ok: true }),
+    onRefresh: vi.fn(),
+    isIntentCurrent: () => true,
+    ...overrides,
+  };
+}
+
+function deferredOutcome() {
+  let resolve!: (value: TrackerReviewDecisionOutcome) => void;
+  const promise = new Promise<TrackerReviewDecisionOutcome>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+afterEach(() => vi.restoreAllMocks());
+
 describe("VideoTrackerReviewBar", () => {
-  it("open=false 不渲染", () => {
-    render(
-      <VideoTrackerReviewBar open={false} preview={null} onDecide={vi.fn()} onRefresh={vi.fn()} />,
-    );
+  it("没有当前审阅任务时不渲染", () => {
+    render(<VideoTrackerReviewBar {...props({ review: null })} />);
     expect(screen.queryByTestId("video-tracker-review-bar")).toBeNull();
   });
 
   it("按目标和帧窗提交局部 selector", async () => {
-    const onDecide = vi.fn().mockResolvedValue({ ok: true });
-    render(
-      <VideoTrackerReviewBar open preview={preview} onDecide={onDecide} onRefresh={vi.fn()} />,
-    );
+    const initial = props();
+    const { rerender } = render(<VideoTrackerReviewBar {...initial} />);
     expect(screen.getByText(/已审 2\/5/)).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("tracker-review-instance-B"));
-    fireEvent.change(screen.getByTestId("tracker-review-from-frame"), {
-      target: { value: "10" },
-    });
+    expect(initial.onSetInstances).toHaveBeenCalledWith(["A"]);
+    expect(screen.getByTestId("tracker-review-instance-B")).toBeChecked();
+    rerender(<VideoTrackerReviewBar {...initial} review={review({ instanceIds: ["A"] })} />);
     fireEvent.change(screen.getByTestId("tracker-review-to-frame"), {
       target: { value: "10" },
     });
+    expect(initial.onSetWindow).toHaveBeenCalledWith(10, 10);
+    expect(screen.getByTestId("tracker-review-to-frame")).toHaveValue(12);
+    rerender(
+      <VideoTrackerReviewBar
+        {...initial}
+        review={review({ instanceIds: ["A"], toFrame: 10, intentRevision: 2 })}
+      />,
+    );
     fireEvent.click(screen.getByTestId("tracker-review-accept"));
     await waitFor(() =>
-      expect(onDecide).toHaveBeenCalledWith({
+      expect(initial.onDecide).toHaveBeenCalledWith({
         instance_ids: ["A"],
         from_frame: 10,
         to_frame: 10,
@@ -69,15 +111,64 @@ describe("VideoTrackerReviewBar", () => {
     );
   });
 
+  it("显式选择 job，展示同一份范围与待审计数", () => {
+    const initial = props({ review: review({ instanceIds: ["A"], fromFrame: 12 }) });
+    const { rerender } = render(<VideoTrackerReviewBar {...initial} />);
+    expect(screen.getByTestId("video-tracker-review-bar")).toHaveAttribute(
+      "data-workbench-tracker-review",
+    );
+    expect(screen.getByTestId("tracker-review-scope-summary")).toHaveTextContent(
+      "审阅 1 个目标 · F12–F12 · 所选待审 1 · 全部待审 3",
+    );
+    fireEvent.change(screen.getByTestId("tracker-review-job"), { target: { value: "job-2" } });
+    expect(initial.onChooseJob).toHaveBeenCalledWith("job-2");
+    expect(screen.getByTestId("tracker-review-job")).toHaveValue("job-1");
+    rerender(
+      <VideoTrackerReviewBar
+        {...initial}
+        review={review({ instanceIds: ["B"] }, { ...preview, job_id: "job-2" })}
+      />,
+    );
+    expect(screen.getByTestId("tracker-review-job")).toHaveValue("job-2");
+    expect(screen.getByTestId("video-tracker-review-bar")).toHaveAttribute(
+      "data-review-job-id",
+      "job-2",
+    );
+    expect(initial.onSetInstances).not.toHaveBeenCalled();
+    expect(initial.onSetWindow).not.toHaveBeenCalled();
+  });
+
+  it("revision 刷新遵循 owner 范围，剩余入口只跳源帧", () => {
+    const initial = props({ review: review({ instanceIds: ["A"], fromFrame: 12 }) });
+    const { rerender } = render(<VideoTrackerReviewBar {...initial} />);
+    rerender(
+      <VideoTrackerReviewBar
+        {...initial}
+        review={review(
+          { instanceIds: ["A"], fromFrame: 12 },
+          { ...preview, job_revision: 3, results: preview.results.slice(1), candidate_pending: 2 },
+        )}
+      />,
+    );
+    expect(screen.getByTestId("tracker-review-from-frame")).toHaveValue(12);
+    expect(screen.getByTestId("tracker-review-instance-B")).not.toBeChecked();
+    expect(screen.getByTestId("tracker-review-scope-summary")).toHaveTextContent(
+      "审阅 1 个目标 · F12–F12 · 所选待审 1 · 全部待审 2",
+    );
+    fireEvent.click(screen.getByTestId("tracker-review-remaining-11-12"));
+    expect(initial.onSeekFrame).toHaveBeenCalledWith(11);
+    expect(initial.onSetInstances).not.toHaveBeenCalled();
+    expect(initial.onSetWindow).not.toHaveBeenCalled();
+    expect(initial.onDecide).not.toHaveBeenCalled();
+  });
+
   it("选区含 manual 时在 409 后二次确认覆盖", async () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     const onDecide = vi
       .fn()
       .mockResolvedValueOnce({ ok: false, reason: "manual_keyframe_protected" })
       .mockResolvedValueOnce({ ok: true });
-    render(
-      <VideoTrackerReviewBar open preview={preview} onDecide={onDecide} onRefresh={vi.fn()} />,
-    );
+    render(<VideoTrackerReviewBar {...props({ onDecide })} />);
     expect(screen.getByTestId("tracker-review-manual-warning")).toHaveTextContent("1 个");
     expect(screen.getByTestId("tracker-review-accept")).not.toBeDisabled();
     expect(screen.getByTestId("tracker-review-discard")).not.toBeDisabled();
@@ -98,40 +189,172 @@ describe("VideoTrackerReviewBar", () => {
       decision: "accept",
       override_manual: true,
     });
-    confirm.mockRestore();
   });
 
-  it("无可选 candidate 或提交中时禁用决策", () => {
-    render(
-      <VideoTrackerReviewBar
-        open
-        preview={{ ...preview, results: [] }}
-        submitting
-        onDecide={vi.fn()}
-        onRefresh={vi.fn()}
-      />,
-    );
+  it.each([
+    { review: review({ instanceIds: [] }) },
+    { review: review({ fromFrame: 11, toFrame: 10 }) },
+    { review: review({}, { ...preview, results: [], candidate_pending: 0 }) },
+    { submitting: true },
+  ])("无可选 candidate、无效窗口或提交中时禁用决策 %#", (overrides) => {
+    const initial = props(overrides);
+    render(<VideoTrackerReviewBar {...initial} />);
     expect(screen.getByTestId("tracker-review-accept")).toBeDisabled();
     expect(screen.getByTestId("tracker-review-discard")).toBeDisabled();
+    fireEvent.click(screen.getByTestId("tracker-review-accept"));
+    expect(initial.onDecide).not.toHaveBeenCalled();
+  });
+
+  it("等待决定时仍能操作 job 与范围，但不重复提交", async () => {
+    const deferred = deferredOutcome();
+    const initial = props({ onDecide: vi.fn(() => deferred.promise) });
+    render(<VideoTrackerReviewBar {...initial} />);
+    fireEvent.click(screen.getByTestId("tracker-review-discard"));
+    fireEvent.click(screen.getByTestId("tracker-review-accept"));
+    expect(initial.onDecide).toHaveBeenCalledOnce();
+    expect(screen.getByTestId("tracker-review-job")).toBeEnabled();
+    expect(screen.getByTestId("tracker-review-instance-B")).toBeEnabled();
+    expect(screen.getByTestId("tracker-review-from-frame")).toBeEnabled();
+    fireEvent.change(screen.getByTestId("tracker-review-job"), { target: { value: "job-2" } });
+    fireEvent.click(screen.getByTestId("tracker-review-instance-B"));
+    fireEvent.change(screen.getByTestId("tracker-review-from-frame"), {
+      target: { value: "11" },
+    });
+    expect(initial.onChooseJob).toHaveBeenCalledWith("job-2");
+    expect(initial.onSetInstances).toHaveBeenCalledWith(["A"]);
+    expect(initial.onSetWindow).toHaveBeenCalledWith(11, 12);
+    await act(async () => deferred.resolve({ ok: false, reason: "revision_conflict" }));
+    expect(screen.getByTestId("tracker-review-accept")).toBeEnabled();
+  });
+
+  it.each(["job", "task-session"])(
+    "换 %s 后可以提交新决定，旧请求完成不会解除新请求的忙碌状态",
+    async (change) => {
+      const first = deferredOutcome();
+      const second = deferredOutcome();
+      const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+      const initial = props({ onDecide: vi.fn(() => first.promise) });
+      const { rerender } = render(<VideoTrackerReviewBar {...initial} />);
+      fireEvent.click(screen.getByTestId("tracker-review-accept"));
+      expect(screen.getByTestId("tracker-review-accept")).toBeDisabled();
+      const nextReview =
+        change === "job"
+          ? review({}, { ...preview, job_id: "job-2" })
+          : projectTrackerReview(preview, initial.review!.scope, 2);
+      const onNextDecide = vi.fn(() => second.promise);
+      rerender(<VideoTrackerReviewBar {...initial} review={nextReview} onDecide={onNextDecide} />);
+      expect(screen.getByTestId("tracker-review-accept")).toBeEnabled();
+      fireEvent.click(screen.getByTestId("tracker-review-accept"));
+      fireEvent.click(screen.getByTestId("tracker-review-discard"));
+      expect(onNextDecide).toHaveBeenCalledOnce();
+      await act(async () => first.resolve({ ok: false, reason: "manual_keyframe_protected" }));
+      expect(confirm).not.toHaveBeenCalled();
+      expect(initial.onDecide).toHaveBeenCalledOnce();
+      expect(screen.getByTestId("tracker-review-accept")).toBeDisabled();
+      expect(screen.getByTestId("tracker-review-discard")).toBeDisabled();
+      await act(async () => second.resolve({ ok: true }));
+      expect(screen.getByTestId("tracker-review-accept")).toBeEnabled();
+    },
+  );
+
+  it.each(["job", "scope", "preview", "owner"])(
+    "%s 已变化时不展示旧请求的人工帧确认",
+    async (change) => {
+      const deferred = deferredOutcome();
+      const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+      const initial = props({ onDecide: vi.fn(() => deferred.promise) });
+      const { rerender } = render(<VideoTrackerReviewBar {...initial} />);
+      fireEvent.click(screen.getByTestId("tracker-review-accept"));
+      const next =
+        change === "job"
+          ? review({}, { ...preview, job_id: "job-2" })
+          : change === "scope"
+            ? review({ instanceIds: ["A"], intentRevision: 2 })
+            : change === "preview"
+              ? review({}, { ...preview, job_revision: 3 })
+              : initial.review;
+      rerender(
+        <VideoTrackerReviewBar
+          {...initial}
+          review={next}
+          isIntentCurrent={() => change !== "owner"}
+        />,
+      );
+      await act(async () => deferred.resolve({ ok: false, reason: "manual_keyframe_protected" }));
+      expect(confirm).not.toHaveBeenCalled();
+      expect(initial.onDecide).toHaveBeenCalledOnce();
+    },
+  );
+
+  it("卸载后不弹出人工帧确认", async () => {
+    const deferred = deferredOutcome();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const initial = props({ onDecide: vi.fn(() => deferred.promise) });
+    const { unmount } = render(<VideoTrackerReviewBar {...initial} />);
+    fireEvent.click(screen.getByTestId("tracker-review-accept"));
+    unmount();
+    await act(async () => deferred.resolve({ ok: false, reason: "manual_keyframe_protected" }));
+    expect(confirm).not.toHaveBeenCalled();
+    expect(initial.onDecide).toHaveBeenCalledOnce();
+  });
+
+  it("人工帧确认返回后再次检查当前意图", async () => {
+    let current = true;
+    vi.spyOn(window, "confirm").mockImplementation(() => {
+      current = false;
+      return true;
+    });
+    const initial = props({
+      onDecide: vi.fn().mockResolvedValue({ ok: false, reason: "manual_keyframe_protected" }),
+      isIntentCurrent: () => current,
+    });
+    render(<VideoTrackerReviewBar {...initial} />);
+    fireEvent.click(screen.getByTestId("tracker-review-accept"));
+    await waitFor(() => expect(window.confirm).toHaveBeenCalledOnce());
+    expect(initial.onDecide).toHaveBeenCalledOnce();
+  });
+
+  it("人工帧重试使用点击时的 selector 和决定回调", async () => {
+    const deferred = deferredOutcome();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    const onDecide = vi.fn().mockReturnValueOnce(deferred.promise).mockResolvedValue({ ok: true });
+    const replacementDecide = vi.fn().mockResolvedValue({ ok: true });
+    const initial = props({
+      review: review({ instanceIds: ["A"], fromFrame: 12 }),
+      onDecide,
+    });
+    const { rerender } = render(<VideoTrackerReviewBar {...initial} />);
+    fireEvent.click(screen.getByTestId("tracker-review-accept"));
+    rerender(<VideoTrackerReviewBar {...initial} onDecide={replacementDecide} />);
+    await act(async () => deferred.resolve({ ok: false, reason: "manual_keyframe_protected" }));
+    expect(onDecide).toHaveBeenNthCalledWith(2, {
+      instance_ids: ["A"],
+      from_frame: 12,
+      to_frame: 12,
+      decision: "accept",
+      override_manual: true,
+    });
+    expect(replacementDecide).not.toHaveBeenCalled();
   });
 
   it("展示 Mask 纠错窗口、种子和 fallback lineage", () => {
     render(
       <VideoTrackerReviewBar
-        open
-        preview={{
-          ...preview,
-          job_kind: "correction",
-          correction_frame: 12,
-          direction: "backward",
-          from_frame: 2,
-          to_frame: 12,
-          seed_mode: "bbox",
-          fallback_reason: "mask_prompt_unsupported",
-          protect_manual: true,
-        }}
-        onDecide={vi.fn()}
-        onRefresh={vi.fn()}
+        {...props()}
+        review={review(
+          {},
+          {
+            ...preview,
+            job_kind: "correction",
+            correction_frame: 12,
+            direction: "backward",
+            from_frame: 2,
+            to_frame: 12,
+            seed_mode: "bbox",
+            fallback_reason: "mask_prompt_unsupported",
+            protect_manual: true,
+          },
+        )}
       />,
     );
     expect(screen.getByText("Mask 纠错传播候选")).toBeInTheDocument();

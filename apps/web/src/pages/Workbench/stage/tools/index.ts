@@ -17,7 +17,8 @@ import { MaskTool } from "./MaskTool";
 import { MagicBoxTool } from "./MagicBoxTool";
 import { KeypointTool } from "./KeypointTool";
 import type { IconName } from "@/components/ui/Icon";
-import type { Keypoint } from "@/types";
+import type { AnnotationResponse, Keypoint } from "@/types";
+import type { BboxCreationMode } from "../ImageStage.helpers";
 
 // v0.10.2 · Prompt-first ToolDock 重构:
 //   SAM 单工具拆为 4 个独立工具, 每个声明 requiredPrompt (point/bbox/text/exemplar) 由
@@ -58,7 +59,7 @@ export interface ToolMeta {
 
 /** Drag 初始化负载：仅 stage 空白处按下能产生的几种。 */
 export type DragInit =
-  | { kind: "draw"; sx: number; sy: number; cx: number; cy: number }
+  | { kind: "draw"; sx: number; sy: number; cx: number; cy: number; fromCenter?: boolean }
   /**
    * v0.9.2 · SAM 工具拖动负载.
    * v0.9.4 phase 2 · mode 由子工具决定, 不再按几何尺寸隐式分流.
@@ -82,6 +83,7 @@ export type DragInit =
    * Enter / MaskToolbar 显式触发。
    */
   | { kind: "maskBrush"; lastX: number; lastY: number }
+  | { kind: "maskSlice"; start: [number, number]; end: [number, number] }
   /** Mask lasso 草稿使用原图像素坐标，松手后才计算 preview。 */
   | { kind: "maskLasso"; points: [number, number][] }
   /**
@@ -98,6 +100,18 @@ export interface PolygonDraftHandle {
   cancel: () => void;
   /** v0.10.28 · false 表示折线（不闭合）；缺省 / true 表示多边形。 */
   closed?: boolean;
+  beforeInput?: { current: ((event: KeyboardEvent) => boolean) | null };
+  boundaryTrace?: {
+    getPoints: () => [number, number][];
+    append: (points: [number, number][], expected: [number, number][]) => boolean;
+    readSource: (id: string, signal: AbortSignal) => Promise<AnnotationResponse | null>;
+  };
+  /** Image Polygon drag batches share the existing draft and reject a retired snapshot. */
+  autoPoints?: {
+    getPoints: () => [number, number][];
+    append: (points: [number, number][], expected: [number, number][]) => boolean;
+    beforeKey: { current: (() => void) | null };
+  };
 }
 
 /**
@@ -121,6 +135,7 @@ export interface ToolPointerContext {
   spacePan: boolean;
   readOnly: boolean;
   pendingDrawing: boolean;
+  bboxCreationMode?: BboxCreationMode;
   onClearSelection: () => void;
   /** 在已存 Mask 上追加 AI 提示时保留选中，便于服务端按 id + version 解析种子。 */
   preserveSelectionForPrompt?: boolean;
@@ -128,6 +143,7 @@ export interface ToolPointerContext {
   snapPoint?: (pt: { x: number; y: number }, evt: MouseEvent) => { x: number; y: number };
   /** 仅 PolygonTool 用. */
   polygonDraft?: PolygonDraftHandle;
+  startPolygonAutoPoints?: (point: [number, number], event: MouseEvent) => void;
   /** v0.10.28 · 仅 KeypointTool 用. */
   keypointDraft?: KeypointDraftHandle;
   /** v0.10.2 · 仅 SmartPointTool 消费, "+/-" 极性 (与 Alt 修饰键合并). */

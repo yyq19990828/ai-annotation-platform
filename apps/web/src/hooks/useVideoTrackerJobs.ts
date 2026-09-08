@@ -13,6 +13,12 @@ import { ApiError } from "@/api/client";
 import { useToastStore } from "@/components/ui";
 import { buildWsUrl } from "@/lib/wsHost";
 import { useAuthStore } from "@/stores/authStore";
+import {
+  projectTrackerReview,
+  reviewInstanceIds,
+  type TrackerReviewProjection,
+  type TrackerReviewScope,
+} from "./videoTrackerReviewScope";
 
 const REMOVE_AFTER_DONE_MS = 1500;
 const POLL_AFTER_DISCONNECT_MS = 2000;
@@ -67,14 +73,29 @@ export interface TrackerStoreState {
   jobs: Record<string, VideoTrackerJobState>;
   candidates: Record<string, VideoTrackerJobPreview>;
   submitting: Record<string, boolean>;
+  activeReviewJobId: string | null;
+  reviewScopes: Record<string, TrackerReviewScope>;
+  activeReview: TrackerReviewProjection | null;
 }
 
 type Listener = (state: TrackerStoreState) => void;
+interface JobOwner {
+  taskId: string;
+  taskEpoch: number;
+  jobId: string;
+  generation: number;
+}
 
 export class TrackerJobStore {
   private jobs: Record<string, VideoTrackerJobState> = {};
   private candidates: Record<string, VideoTrackerJobPreview> = {};
   private submitting: Record<string, boolean> = {};
+  private activeReviewJobId: string | null = null;
+  private reviewScopes: Record<string, TrackerReviewScope> = {};
+  private intentRevision = 0;
+  private taskEpoch = 0;
+  private requestSequence = 0;
+  private readRequests = new Map<string, number>();
   private listeners = new Set<Listener>();
   private sockets = new Map<string, WebSocket>();
   private removeTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -96,7 +117,174 @@ export class TrackerJobStore {
   }
 
   private snapshot(): TrackerStoreState {
-    return { jobs: this.jobs, candidates: this.candidates, submitting: this.submitting };
+    return {
+      jobs: this.jobs,
+      candidates: this.candidates,
+      submitting: this.submitting,
+      activeReviewJobId: this.activeReviewJobId,
+      reviewScopes: this.reviewScopes,
+      activeReview: this.activeReview(),
+    };
+  }
+
+  private activeReview(): TrackerReviewProjection | null {
+    const jobId = this.activeReviewJobId;
+    const preview = jobId ? this.candidates[jobId] : undefined;
+    const scope = jobId ? this.reviewScopes[jobId] : undefined;
+    return preview && scope ? projectTrackerReview(preview, scope, this.taskEpoch) : null;
+  }
+
+  private reconcileReviewScopes(): void {
+    const scopes: Record<string, TrackerReviewScope> = {};
+    for (const jobId of Object.keys(this.candidates).sort()) {
+      if (!this.jobs[jobId]) continue;
+      const preview = this.candidates[jobId];
+      const available = reviewInstanceIds(preview);
+      const previous = this.reviewScopes[jobId];
+      if (previous) {
+        const instanceIds = previous.instanceIds.filter((id) => available.includes(id));
+        scopes[jobId] =
+          instanceIds.length === previous.instanceIds.length
+            ? previous
+            : { ...previous, instanceIds, intentRevision: ++this.intentRevision };
+      } else {
+        const frames = preview.results.map((result) => result.frame_index);
+        scopes[jobId] = {
+          instanceIds: available,
+          fromFrame: Math.min(...frames),
+          toFrame: Math.max(...frames),
+          intentRevision: ++this.intentRevision,
+        };
+      }
+    }
+    this.reviewScopes = scopes;
+    if (!this.activeReviewJobId || !scopes[this.activeReviewJobId]) {
+      this.activeReviewJobId = Object.keys(scopes).sort()[0] ?? null;
+      if (this.activeReviewJobId) {
+        scopes[this.activeReviewJobId] = {
+          ...scopes[this.activeReviewJobId],
+          intentRevision: ++this.intentRevision,
+        };
+      }
+    }
+  }
+
+  chooseReviewJob(jobId: string): void {
+    const scope = this.reviewScopes[jobId];
+    if (!scope || this.activeReviewJobId === jobId) return;
+    this.activeReviewJobId = jobId;
+    this.reviewScopes = {
+      ...this.reviewScopes,
+      [jobId]: { ...scope, intentRevision: ++this.intentRevision },
+    };
+    this.emit();
+  }
+
+  setReviewInstances(instanceIds: string[]): void {
+    const review = this.activeReview();
+    if (!review) return;
+    const selected = [...new Set(instanceIds)]
+      .filter((id) => review.availableInstanceIds.includes(id))
+      .sort();
+    if (JSON.stringify(selected) === JSON.stringify(review.scope.instanceIds)) return;
+    this.reviewScopes = {
+      ...this.reviewScopes,
+      [review.jobId]: {
+        ...review.scope,
+        instanceIds: selected,
+        intentRevision: ++this.intentRevision,
+      },
+    };
+    this.emit();
+  }
+
+  setReviewWindow(fromFrame: number, toFrame: number): void {
+    const review = this.activeReview();
+    if (!review || !Number.isFinite(fromFrame) || !Number.isFinite(toFrame)) return;
+    const job = this.jobs[review.jobId];
+    if (!job) return;
+    const clamp = (frame: number) =>
+      Math.min(job.toFrame, Math.max(job.fromFrame, Math.trunc(frame)));
+    const from = clamp(fromFrame);
+    const to = clamp(toFrame);
+    if (review.scope.fromFrame === from && review.scope.toFrame === to) return;
+    this.reviewScopes = {
+      ...this.reviewScopes,
+      [review.jobId]: {
+        ...review.scope,
+        fromFrame: from,
+        toFrame: to,
+        intentRevision: ++this.intentRevision,
+      },
+    };
+    this.emit();
+  }
+
+  isReviewIntentCurrent(intentKey: string): boolean {
+    return this.activeReview()?.intentKey === intentKey;
+  }
+
+  captureTaskEpoch(taskId: string): number | null {
+    return this.currentTaskId === taskId ? this.taskEpoch : null;
+  }
+
+  isTaskEpochCurrent(taskId: string, epoch: number | null): boolean {
+    return epoch !== null && this.currentTaskId === taskId && this.taskEpoch === epoch;
+  }
+
+  private owner(jobId: string): JobOwner | null {
+    const job = this.jobs[jobId];
+    return job && this.currentTaskId === job.taskId
+      ? {
+          taskId: job.taskId,
+          taskEpoch: this.taskEpoch,
+          jobId,
+          generation: this.jobGenerations.get(jobId) ?? 0,
+        }
+      : null;
+  }
+
+  private owns(owner: JobOwner): boolean {
+    return (
+      this.isTaskEpochCurrent(owner.taskId, owner.taskEpoch) &&
+      this.jobs[owner.jobId]?.taskId === owner.taskId &&
+      (this.jobGenerations.get(owner.jobId) ?? 0) === owner.generation
+    );
+  }
+
+  private beginRead(jobId: string): { owner: JobOwner; request: number } | null {
+    const owner = this.owner(jobId);
+    if (!owner || this.removeTimers.has(jobId)) return null;
+    const request = ++this.requestSequence;
+    this.readRequests.set(jobId, request);
+    return { owner, request };
+  }
+
+  private ownsRead(read: { owner: JobOwner; request: number }): boolean {
+    return this.owns(read.owner) && this.readRequests.get(read.owner.jobId) === read.request;
+  }
+
+  private currentRevision(jobId: string): number {
+    return Math.max(this.jobs[jobId]?.revision ?? 1, this.candidates[jobId]?.job_revision ?? 1);
+  }
+
+  private admitPreview(jobId: string, preview: VideoTrackerJobPreview): boolean {
+    const revision = preview.job_revision ?? 1;
+    if (revision < this.currentRevision(jobId)) return false;
+    if (preview.results.length > 0) this.candidates = { ...this.candidates, [jobId]: preview };
+    else {
+      const { [jobId]: _drop, ...rest } = this.candidates;
+      this.candidates = rest;
+    }
+    return true;
+  }
+
+  private beginMutation(jobId: string): JobOwner | null {
+    if (!this.owner(jobId) || this.submitting[jobId] || this.removeTimers.has(jobId)) return null;
+    this.bumpGeneration(jobId);
+    this.resetPoll(jobId);
+    this.setSubmitting(jobId, true);
+    return this.owner(jobId);
   }
 
   subscribe(listener: Listener): () => void {
@@ -108,12 +296,13 @@ export class TrackerJobStore {
   }
 
   private emit(): void {
+    this.reconcileReviewScopes();
     const s = this.snapshot();
     for (const fn of this.listeners) fn(s);
   }
 
   addJob(job: VideoTrackerJob, token?: string | null): void {
-    this.currentTaskId = job.task_id;
+    if (this.currentTaskId !== job.task_id) this.scopeToTask(job.task_id);
     this.jobGenerations.set(job.id, (this.jobGenerations.get(job.id) ?? 0) + 1);
     this.pollFailures.delete(job.id);
     this.jobs = { ...this.jobs, [job.id]: toJobState(job) };
@@ -135,14 +324,19 @@ export class TrackerJobStore {
     // 切 task: 先 scope 清理 (关旧 socket / 清旧 timer), 避免旧任务的完成 Toast 或候选
     // 借同名 annotation 浮到新任务上。
     if (this.currentTaskId !== taskId) {
-      this.currentTaskId = taskId;
       this.scopeToTask(taskId);
-      this.hydratedTaskId = null;
     }
-    const pending = this.hydrationTasks.get(taskId);
+    const epoch = this.taskEpoch;
+    const hydrationKey = `${epoch}:${taskId}`;
+    const pending = this.hydrationTasks.get(hydrationKey);
     if (pending) {
       // 拉取仍在飞行中: 待其结束后再补连 (届时 token 若已就绪, connectActiveJobs 是幂等的)。
-      if (token) void pending.then(() => this.connectActiveJobs(taskId, token));
+      if (token)
+        void pending.then(() => {
+          if (!this.isTaskEpochCurrent(taskId, epoch)) return;
+          if (this.hydratedTaskId === taskId) this.connectActiveJobs(taskId, token);
+          else void this.restoreReviewable(taskId, token);
+        });
       return pending;
     }
     if (this.hydratedTaskId === taskId) {
@@ -151,16 +345,23 @@ export class TrackerJobStore {
       if (token) this.connectActiveJobs(taskId, token);
       return Promise.resolve();
     }
-    const hydration = this.loadReviewable(taskId, token).finally(() => {
-      this.hydrationTasks.delete(taskId);
-      if (this.currentTaskId === taskId) this.hydratedTaskId = taskId;
-    });
-    this.hydrationTasks.set(taskId, hydration);
+    const hydration = this.loadReviewable(taskId, epoch, token)
+      .then((loaded) => {
+        if (loaded && this.isTaskEpochCurrent(taskId, epoch)) this.hydratedTaskId = taskId;
+      })
+      .finally(() => {
+        this.hydrationTasks.delete(hydrationKey);
+      });
+    this.hydrationTasks.set(hydrationKey, hydration);
     return hydration;
   }
 
   /** 关闭并清掉不属于 taskId 的 job/candidate/submitting/socket/timer。同 task 的活跃 job 保留。 */
-  private scopeToTask(taskId: string): void {
+  scopeToTask(taskId: string | null): void {
+    if (this.currentTaskId === taskId) return;
+    this.currentTaskId = taskId;
+    this.taskEpoch += 1;
+    this.hydratedTaskId = null;
     const keptJobs: Record<string, VideoTrackerJobState> = {};
     for (const [jobId, job] of Object.entries(this.jobs)) {
       if (job.taskId === taskId) keptJobs[jobId] = job;
@@ -201,6 +402,7 @@ export class TrackerJobStore {
       if (!keptJobs[jobId]) {
         this.jobGenerations.delete(jobId);
         this.pollFailures.delete(jobId);
+        this.readRequests.delete(jobId);
       }
     }
     const changed =
@@ -214,7 +416,14 @@ export class TrackerJobStore {
     this.emit();
   }
 
-  private async loadReviewable(taskId: string, token?: string | null): Promise<void> {
+  private async loadReviewable(
+    taskId: string,
+    epoch: number,
+    token?: string | null,
+  ): Promise<boolean> {
+    const generations = new Map(this.jobGenerations);
+    const reads = new Map(this.readRequests);
+    let listingsLoaded = true;
     // 候选 (pending_review / cancelled+staged) 与运行中 (queued/running) 任务分别拉取;
     // 任一失败都不阻断另一路。
     let reviewable: VideoTrackerJob[] = [];
@@ -222,12 +431,14 @@ export class TrackerJobStore {
       reviewable = (await videoTrackerApi.reviewable(taskId)) ?? [];
     } catch {
       reviewable = [];
+      listingsLoaded = false;
     }
     let active: VideoTrackerJob[] = [];
     try {
       active = (await videoTrackerApi.active(taskId)) ?? [];
     } catch {
       active = [];
+      listingsLoaded = false;
     }
     const restored = await Promise.all(
       reviewable.map(async (job) => {
@@ -240,21 +451,28 @@ export class TrackerJobStore {
       }),
     );
     // 护栏: 恢复期间用户已切走 task → 丢弃这批结果, 别把旧任务塞回来 (scopeToTask 会用当前 task 兜底)。
-    if (this.currentTaskId !== taskId) return;
-    let jobs = this.jobs;
-    let candidates = this.candidates;
+    if (!this.isTaskEpochCurrent(taskId, epoch)) return false;
+    const canRestore = (job: VideoTrackerJob) =>
+      job.task_id === taskId &&
+      !this.removeTimers.has(job.id) &&
+      (this.jobGenerations.get(job.id) ?? 0) === (generations.get(job.id) ?? 0) &&
+      this.readRequests.get(job.id) === reads.get(job.id);
     for (const entry of restored) {
-      if (!entry) continue;
+      if (!entry || !canRestore(entry.job)) continue;
       const { job, preview } = entry;
-      jobs = { ...jobs, [job.id]: toJobState(job) };
-      if (preview) candidates = { ...candidates, [job.id]: preview };
+      this.jobGenerations.set(job.id, this.jobGenerations.get(job.id) ?? 0);
+      if ((job.revision ?? 1) >= this.currentRevision(job.id)) {
+        this.jobs = { ...this.jobs, [job.id]: toJobState(job) };
+      }
+      if (preview) this.admitPreview(job.id, preview);
     }
     // 运行中任务: 恢复到 UI 并重连 WS, 让刷新后仍能收进度 / 完成时冒候选。
     for (const job of active) {
-      jobs = { ...jobs, [job.id]: toJobState(job) };
+      if (canRestore(job) && !this.jobs[job.id]) {
+        this.jobGenerations.set(job.id, this.jobGenerations.get(job.id) ?? 0);
+        this.jobs = { ...this.jobs, [job.id]: toJobState(job) };
+      }
     }
-    this.jobs = jobs;
-    this.candidates = candidates;
     this.emit();
     for (const entry of restored) {
       if (entry && !entry.preview) this.schedulePoll(entry.job.id);
@@ -264,6 +482,7 @@ export class TrackerJobStore {
     } else {
       for (const job of active) this.schedulePoll(job.id);
     }
+    return listingsLoaded;
   }
 
   private clearPoll(jobId: string): void {
@@ -321,16 +540,12 @@ export class TrackerJobStore {
 
   private async pollJob(jobId: string): Promise<void> {
     const current = this.jobs[jobId];
-    if (!current) return;
-    const generation = this.jobGenerations.get(jobId) ?? 0;
+    if (!current || this.submitting[jobId]) return;
+    const read = this.beginRead(jobId);
+    if (!read) return;
     try {
       const job = await videoTrackerApi.get(jobId);
-      if (
-        this.currentTaskId !== current.taskId ||
-        (this.jobGenerations.get(jobId) ?? 0) !== generation ||
-        !this.jobs[jobId]
-      )
-        return;
+      if (!this.ownsRead(read) || (job.revision ?? 1) < this.currentRevision(jobId)) return;
       this.jobs = { ...this.jobs, [jobId]: toJobState(job) };
       this.emit();
       if (job.status === "queued" || job.status === "running") {
@@ -344,14 +559,15 @@ export class TrackerJobStore {
         this.scheduleTerminalCleanup(jobId);
       }
     } catch {
-      if ((this.jobGenerations.get(jobId) ?? 0) === generation) {
+      if (this.ownsRead(read)) {
         this.schedulePollFailure(jobId);
       }
     }
   }
 
   private connect(jobId: string, token: string): void {
-    if (this.sockets.has(jobId)) return;
+    const owner = this.owner(jobId);
+    if (!owner || this.removeTimers.has(jobId) || this.sockets.has(jobId)) return;
     const url = buildWsUrl(`/ws/video-tracker-jobs/${jobId}`, { token });
     let socket: WebSocket;
     try {
@@ -361,10 +577,20 @@ export class TrackerJobStore {
       return;
     }
     this.sockets.set(jobId, socket);
+    const ownsSocket = () =>
+      this.isTaskEpochCurrent(owner.taskId, owner.taskEpoch) &&
+      this.sockets.get(jobId) === socket &&
+      !!this.jobs[jobId] &&
+      !this.removeTimers.has(jobId);
     this.schedulePoll(jobId, SOCKET_CONNECT_TIMEOUT_MS);
-    socket.onopen = () => this.resetPoll(jobId);
-    socket.onmessage = (evt) => this.handleMessage(jobId, evt);
+    socket.onopen = () => {
+      if (ownsSocket()) this.resetPoll(jobId);
+    };
+    socket.onmessage = (evt) => {
+      if (ownsSocket() && !this.submitting[jobId]) this.handleMessage(jobId, evt);
+    };
     socket.onclose = () => {
+      if (!ownsSocket()) return;
       this.sockets.delete(jobId);
       this.clearPoll(jobId);
       this.schedulePoll(jobId);
@@ -457,20 +683,19 @@ export class TrackerJobStore {
 
   /** 拉候选预览; 有暂存结果则进候选态 (等用户接受/丢弃), 无结果直接清理。 */
   private async enterReview(jobId: string): Promise<void> {
-    const jobTaskId = this.jobs[jobId]?.taskId;
+    const read = this.beginRead(jobId);
+    if (!read) return;
     try {
       const preview = await videoTrackerApi.preview(jobId);
+      if (!this.ownsRead(read) || !this.admitPreview(jobId, preview)) return;
       if (!preview.results || preview.results.length === 0) {
         this.scheduleTerminalCleanup(jobId);
         return;
       }
-      // 护栏: preview 请求飞行中用户已切走 task (scopeToTask 会把该 job 从 jobs 里剔除) →
-      // 丢弃这次写入, 避免孤儿候选挂到新任务上。
-      if (this.currentTaskId !== jobTaskId) return;
-      this.candidates = { ...this.candidates, [jobId]: preview };
       this.pollFailures.delete(jobId);
       this.emit();
     } catch {
+      if (!this.ownsRead(read)) return;
       useToastStore.getState().push({
         msg: "候选预览暂时不可用",
         sub: "作业已保留，可稍后刷新重试",
@@ -507,23 +732,26 @@ export class TrackerJobStore {
   }
 
   async refreshReview(jobId: string): Promise<void> {
-    const current = this.jobs[jobId];
-    if (!current) return;
+    const read = this.beginRead(jobId);
+    if (!read) return;
     try {
       const [job, preview] = await Promise.all([
         videoTrackerApi.get(jobId),
         videoTrackerApi.preview(jobId),
       ]);
-      if (this.currentTaskId !== current.taskId) return;
-      this.jobs = { ...this.jobs, [jobId]: toJobState(job) };
-      if (preview.results.length > 0) {
-        this.candidates = { ...this.candidates, [jobId]: preview };
-      } else {
-        const { [jobId]: _drop, ...rest } = this.candidates;
-        this.candidates = rest;
+      if (!this.ownsRead(read)) return;
+      const jobIsCurrent = (job.revision ?? 1) >= this.currentRevision(jobId);
+      if (jobIsCurrent) {
+        this.jobs = { ...this.jobs, [jobId]: toJobState(job) };
+      }
+      this.admitPreview(jobId, preview);
+      if (jobIsCurrent && ["accepted", "discarded", "failed"].includes(job.status)) {
+        this.finishReview(jobId, job.status);
+        return;
       }
       this.emit();
     } catch {
+      if (!this.ownsRead(read)) return;
       useToastStore.getState().push({
         msg: "刷新 AI 追踪候选失败",
         sub: "当前选择已保留，请稍后重试",
@@ -539,86 +767,112 @@ export class TrackerJobStore {
     const current = this.jobs[jobId];
     const preview = this.candidates[jobId];
     if (!current || !preview) return { ok: false, reason: "candidate_missing" };
+    if (
+      selection.instance_ids &&
+      (!Number.isInteger(selection.from_frame) ||
+        !Number.isInteger(selection.to_frame) ||
+        !preview.results.some(
+          (result) =>
+            selection.instance_ids!.includes(result.instance_id ?? "1") &&
+            result.frame_index >= selection.from_frame! &&
+            result.frame_index <= selection.to_frame!,
+        ))
+    ) {
+      return { ok: false, reason: "empty_selection" };
+    }
+    const owner = this.beginMutation(jobId);
+    if (!owner) return { ok: false, reason: "request_in_progress" };
     const payload: VideoTrackerDecisionPayload = {
       ...selection,
-      expected_source_versions: preview.expected_source_versions ?? {},
+      expected_source_versions: { ...preview.expected_source_versions },
       job_revision: preview.job_revision ?? current.revision ?? 1,
     };
-    this.setSubmitting(jobId, true);
-    let updated: VideoTrackerJob;
     try {
-      updated = await videoTrackerApi.decide(jobId, payload);
-    } catch (err) {
-      const detail =
-        err instanceof ApiError && err.detailRaw && typeof err.detailRaw === "object"
-          ? (err.detailRaw as { reason?: string })
-          : undefined;
-      const reason = detail?.reason;
-      if (reason === "manual_keyframe_protected") return { ok: false, reason };
-      if (reason === "job_revision_conflict" || reason === "source_version_conflict") {
-        await this.refreshReview(jobId);
-        useToastStore.getState().push({
-          msg: "追踪候选已发生变化",
-          sub: "已刷新最新版本，请重新确认选区",
-          kind: "warning",
-        });
+      let updated: VideoTrackerJob;
+      try {
+        updated = await videoTrackerApi.decide(jobId, payload);
+      } catch (err) {
+        if (!this.owns(owner)) return { ok: false, reason: "stale_request" };
+        const detail =
+          err instanceof ApiError && err.detailRaw && typeof err.detailRaw === "object"
+            ? (err.detailRaw as { reason?: string })
+            : undefined;
+        const reason = detail?.reason;
+        if (reason === "manual_keyframe_protected") return { ok: false, reason };
+        if (
+          reason === "job_revision_conflict" ||
+          reason === "source_version_conflict" ||
+          reason === "candidate_decision_conflict"
+        ) {
+          await this.refreshReview(jobId);
+          if (!this.owns(owner)) return { ok: false, reason: "stale_request" };
+          useToastStore.getState().push({
+            msg: "追踪候选已发生变化",
+            sub: "已刷新最新版本，请重新确认选区",
+            kind: "warning",
+          });
+          return { ok: false, reason };
+        }
+        this.pushActionError(selection.decision === "accept" ? "接受" : "拒绝", err);
         return { ok: false, reason };
       }
-      this.pushActionError(selection.decision === "accept" ? "接受" : "拒绝", err);
-      return { ok: false, reason };
+      if (!this.owns(owner)) return { ok: false, reason: "stale_request" };
+      if (selection.decision === "accept") this.invalidateAnnotations(current.taskId);
+      // A concurrent review refresh may already contain a later persisted decision.
+      if ((updated.revision ?? 1) < this.currentRevision(jobId)) return { ok: true };
+      if (updated.status === "partially_reviewed") {
+        this.jobs = { ...this.jobs, [jobId]: toJobState(updated) };
+        await this.refreshReview(jobId);
+        if (!this.owns(owner)) return { ok: false, reason: "stale_request" };
+        useToastStore.getState().push({
+          msg: selection.decision === "accept" ? "已接受所选追踪候选" : "已拒绝所选追踪候选",
+          sub: "仍有候选待审阅",
+          kind: "success",
+        });
+      } else {
+        useToastStore.getState().push({
+          msg: updated.status === "accepted" ? "追踪候选审阅完成" : "已丢弃全部追踪候选",
+          kind: "success",
+        });
+        this.finishReview(jobId, updated.status);
+      }
+      return { ok: true };
     } finally {
-      this.setSubmitting(jobId, false);
+      if (this.owns(owner)) this.setSubmitting(jobId, false);
     }
-    if (selection.decision === "accept") this.invalidateAnnotations(current.taskId);
-    if (updated.status === "partially_reviewed") {
-      this.jobs = { ...this.jobs, [jobId]: toJobState(updated) };
-      await this.refreshReview(jobId);
-      useToastStore.getState().push({
-        msg: selection.decision === "accept" ? "已接受所选追踪候选" : "已拒绝所选追踪候选",
-        sub: "仍有候选待审阅",
-        kind: "success",
-      });
-    } else {
-      useToastStore.getState().push({
-        msg: updated.status === "accepted" ? "追踪候选审阅完成" : "已丢弃全部追踪候选",
-        kind: "success",
-      });
-      this.finishReview(jobId, updated.status);
-    }
-    return { ok: true };
   }
 
   async accept(jobId: string): Promise<void> {
-    const cur = this.jobs[jobId];
-    this.setSubmitting(jobId, true);
-    let updated: VideoTrackerJob;
+    const owner = this.beginMutation(jobId);
+    if (!owner) return;
     try {
-      updated = await videoTrackerApi.accept(jobId);
+      const updated = await videoTrackerApi.accept(jobId);
+      if (!this.owns(owner)) return;
+      this.invalidateAnnotations(owner.taskId);
+      if ((updated.revision ?? 1) < this.currentRevision(jobId)) return;
+      useToastStore.getState().push({ msg: "已接受 AI 追踪结果", kind: "success" });
+      this.finishReview(jobId, updated.status);
     } catch (err) {
-      this.pushActionError("接受", err);
-      return;
+      if (this.owns(owner)) this.pushActionError("接受", err);
     } finally {
-      this.setSubmitting(jobId, false);
+      if (this.owns(owner)) this.setSubmitting(jobId, false);
     }
-    // 落库 → invalidate annotations 让结果可见; 清候选 + 清理。
-    if (cur) this.invalidateAnnotations(cur.taskId);
-    useToastStore.getState().push({ msg: "已接受 AI 追踪结果", kind: "success" });
-    this.finishReview(jobId, updated.status);
   }
 
   async discard(jobId: string): Promise<void> {
-    this.setSubmitting(jobId, true);
-    let updated: VideoTrackerJob;
+    const owner = this.beginMutation(jobId);
+    if (!owner) return;
     try {
-      updated = await videoTrackerApi.discard(jobId);
+      const updated = await videoTrackerApi.discard(jobId);
+      if (!this.owns(owner)) return;
+      if ((updated.revision ?? 1) < this.currentRevision(jobId)) return;
+      useToastStore.getState().push({ msg: "已丢弃 AI 追踪候选", kind: "" });
+      this.finishReview(jobId, updated.status);
     } catch (err) {
-      this.pushActionError("丢弃", err);
-      return;
+      if (this.owns(owner)) this.pushActionError("丢弃", err);
     } finally {
-      this.setSubmitting(jobId, false);
+      if (this.owns(owner)) this.setSubmitting(jobId, false);
     }
-    useToastStore.getState().push({ msg: "已丢弃 AI 追踪候选", kind: "" });
-    this.finishReview(jobId, updated.status);
   }
 
   private finishReview(jobId: string, status: VideoTrackerJobStatus): void {
@@ -633,6 +887,10 @@ export class TrackerJobStore {
   private scheduleTerminalCleanup(jobId: string): void {
     this.bumpGeneration(jobId);
     this.resetPoll(jobId);
+    const { [jobId]: _candidate, ...candidates } = this.candidates;
+    const { [jobId]: _submitting, ...submitting } = this.submitting;
+    this.candidates = candidates;
+    this.submitting = submitting;
     const timer = this.removeTimers.get(jobId);
     if (timer) clearTimeout(timer);
     this.removeTimers.set(
@@ -643,7 +901,7 @@ export class TrackerJobStore {
         const { [jobId]: _dropCand, ...restCand } = this.candidates;
         this.candidates = restCand;
         this.removeTimers.delete(jobId);
-        this.jobGenerations.delete(jobId);
+        this.readRequests.delete(jobId);
         this.pollFailures.delete(jobId);
         const sock = this.sockets.get(jobId);
         if (sock) {
@@ -657,17 +915,18 @@ export class TrackerJobStore {
         this.emit();
       }, REMOVE_AFTER_DONE_MS),
     );
+    this.emit();
   }
 
   async cancel(jobId: string): Promise<void> {
     const cur = this.jobs[jobId];
-    if (!cur) return;
-    this.bumpGeneration(jobId);
-    this.resetPoll(jobId);
+    const owner = this.beginMutation(jobId);
+    if (!cur || !owner) return;
     let updated: VideoTrackerJob;
     try {
       updated = await videoTrackerApi.cancel(jobId);
     } catch (error) {
+      if (!this.owns(owner)) return;
       useToastStore.getState().push({
         msg: cur.jobKind === "correction" ? "取消 Mask 纠错传播失败" : "取消 AI 追踪失败",
         sub: error instanceof Error ? error.message : "请重试",
@@ -675,7 +934,10 @@ export class TrackerJobStore {
       });
       this.schedulePoll(jobId);
       return;
+    } finally {
+      if (this.owns(owner)) this.setSubmitting(jobId, false);
     }
+    if (!this.owns(owner) || (updated.revision ?? 1) < this.currentRevision(jobId)) return;
     this.jobs = {
       ...this.jobs,
       [jobId]: {
@@ -758,6 +1020,9 @@ export function useVideoTrackerJobs(taskId?: string, enabled = true) {
     jobs: {},
     candidates: {},
     submitting: {},
+    activeReviewJobId: null,
+    reviewScopes: {},
+    activeReview: null,
   });
 
   useEffect(() => {
@@ -772,6 +1037,11 @@ export function useVideoTrackerJobs(taskId?: string, enabled = true) {
   tokenRef.current = token;
 
   useEffect(() => {
+    trackerStore.scopeToTask(enabled && taskId ? taskId : null);
+    return () => trackerStore.scopeToTask(null);
+  }, [taskId, enabled]);
+
+  useEffect(() => {
     // 传 token 让恢复顺带重连运行中任务的 WS (刷新后仍能收进度 / 完成时冒候选)。token 进依赖:
     // 刷新时 auth store 可能还没 hydrate (token=null), effect 先跑一轮拉数据但因无 token 连不上
     // socket; token 就位后这里重跑, restoreReviewable 内部会跳过重复拉数据、只补连 socket。
@@ -784,8 +1054,10 @@ export function useVideoTrackerJobs(taskId?: string, enabled = true) {
       annotationId: string,
       payload: Parameters<typeof videoTrackerApi.propagate>[2],
     ) => {
+      const epoch = trackerStore.captureTaskEpoch(taskId);
       const job = await videoTrackerApi.propagate(taskId, annotationId, payload);
-      if (tokenRef.current) trackerStore.addJob(job, tokenRef.current);
+      if (trackerStore.isTaskEpochCurrent(taskId, epoch))
+        trackerStore.addJob(job, tokenRef.current);
       return job;
     },
     [],
@@ -794,8 +1066,10 @@ export function useVideoTrackerJobs(taskId?: string, enabled = true) {
   // v0.22.1 · B · 无源检测发起 (画布级入口, 不绑选中轨迹)。
   const track = useCallback(
     async (taskId: string, payload: Parameters<typeof videoTrackerApi.track>[1]) => {
+      const epoch = trackerStore.captureTaskEpoch(taskId);
       const job = await videoTrackerApi.track(taskId, payload);
-      if (tokenRef.current) trackerStore.addJob(job, tokenRef.current);
+      if (trackerStore.isTaskEpochCurrent(taskId, epoch))
+        trackerStore.addJob(job, tokenRef.current);
       return job;
     },
     [],
@@ -807,8 +1081,10 @@ export function useVideoTrackerJobs(taskId?: string, enabled = true) {
       annotationId: string,
       payload: Parameters<typeof videoTrackerApi.correct>[2],
     ) => {
+      const epoch = trackerStore.captureTaskEpoch(taskId);
       const job = await videoTrackerApi.correct(taskId, annotationId, payload);
-      trackerStore.addJob(job, tokenRef.current);
+      if (trackerStore.isTaskEpochCurrent(taskId, epoch))
+        trackerStore.addJob(job, tokenRef.current);
       return job;
     },
     [],
@@ -822,6 +1098,19 @@ export function useVideoTrackerJobs(taskId?: string, enabled = true) {
     [],
   );
   const refreshReview = useCallback((jobId: string) => trackerStore.refreshReview(jobId), []);
+  const chooseReviewJob = useCallback((jobId: string) => trackerStore.chooseReviewJob(jobId), []);
+  const setReviewInstances = useCallback(
+    (ids: string[]) => trackerStore.setReviewInstances(ids),
+    [],
+  );
+  const setReviewWindow = useCallback(
+    (from: number, to: number) => trackerStore.setReviewWindow(from, to),
+    [],
+  );
+  const isReviewIntentCurrent = useCallback(
+    (key: string) => trackerStore.isReviewIntentCurrent(key),
+    [],
+  );
 
   const jobs = state.jobs;
   const candidates = state.candidates;
@@ -858,6 +1147,11 @@ export function useVideoTrackerJobs(taskId?: string, enabled = true) {
     candidates,
     candidateByAnnotation,
     submitting,
+    activeReview: state.activeReview,
+    chooseReviewJob,
+    setReviewInstances,
+    setReviewWindow,
+    isReviewIntentCurrent,
     propagate,
     track,
     correct,

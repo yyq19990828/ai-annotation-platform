@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import type { AnnotationResponse, VideoTrackKeyframe } from "@/types";
 import type { DiffMode } from "../modes/types";
+import type { VideoSelectionCommand } from "../state/videoSelectionCommand";
 import {
   isVideoBbox,
   isVideoMaskTrack,
@@ -49,6 +50,7 @@ interface VideoTrackSidebarProps {
   lockedTrackIds: Set<string>;
   classes?: string[];
   onSelect: (id: string | null, opts?: { shift?: boolean }) => void;
+  onSelectVideoObject?: VideoSelectionCommand;
   onToggleHiddenTrack: (trackId: string) => void;
   onToggleLockedTrack: (trackId: string) => void;
   onSeekFrame?: (frameIndex: number) => void;
@@ -155,6 +157,7 @@ export function VideoTrackSidebar({
   lockedTrackIds,
   classes,
   onSelect,
+  onSelectVideoObject,
   onToggleHiddenTrack,
   onToggleLockedTrack,
   onSeekFrame,
@@ -356,9 +359,44 @@ export function VideoTrackSidebar({
   );
 
   const startNewTrack = useCallback(() => {
+    if (onSelectVideoObject) {
+      onSelectVideoObject(null, { onAdmitted: () => setSelectedTrackIds(new Set()) });
+      return;
+    }
     setSelectedTrackIds(new Set());
     onSelect(null);
-  }, [onSelect]);
+  }, [onSelect, onSelectVideoObject]);
+
+  const selectVideoTrack = useCallback<VideoSelectionCommand>(
+    (id, options = {}) => {
+      if (!onSelectVideoObject) return;
+      const next = options.shift ? new Set(selectedTrackIds) : new Set<string>();
+      let primaryId = id;
+      let activateTrackTool = options.activateTrackTool;
+      if (id) {
+        if (options.shift && next.has(id) && next.size > 1) {
+          next.delete(id);
+          primaryId = next.values().next().value ?? id;
+          activateTrackTool = false;
+        } else {
+          next.add(id);
+        }
+      } else {
+        next.clear();
+      }
+      // The roster owns its batch set; the global selection receives its primary only.
+      onSelectVideoObject(primaryId, {
+        ...options,
+        shift: false,
+        activateTrackTool,
+        onAdmitted: () => {
+          setSelectedTrackIds(next);
+          options.onAdmitted?.();
+        },
+      });
+    },
+    [onSelectVideoObject, selectedTrackIds],
+  );
 
   const setSelectedTracksHidden = useCallback(
     (hidden: boolean) => {
@@ -630,6 +668,7 @@ export function VideoTrackSidebar({
         hiddenTrackIds={hiddenTrackIds}
         lockedTrackIds={lockedTrackIds}
         onSelect={selectTrack}
+        onSelectVideoObject={onSelectVideoObject ? selectVideoTrack : undefined}
         onToggleHiddenTrack={onToggleHiddenTrack}
         onToggleLockedTrack={onToggleLockedTrack}
         onSeekFrame={onSeekFrame}
@@ -677,8 +716,11 @@ export function VideoTrackSidebar({
                   <button
                     type="button"
                     data-testid={`video-mask-track-${annotation.id}`}
+                    data-workbench-video-tool-command={onSelectVideoObject ? "" : undefined}
                     className="min-w-0 flex-1 text-left"
-                    onClick={(event) => onSelect(annotation.id, { shift: event.shiftKey })}
+                    onClick={(event) =>
+                      (onSelectVideoObject ?? onSelect)(annotation.id, { shift: event.shiftKey })
+                    }
                   >
                     <span className="block truncate text-xs font-medium text-foreground">
                       {annotation.class_name}
