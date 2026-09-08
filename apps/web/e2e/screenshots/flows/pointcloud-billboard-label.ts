@@ -97,19 +97,21 @@ export async function runPointcloudBillboardLabel(
   const box = await viewport.boundingBox();
   if (!box) throw new Error("[pointcloud-billboard-label] 点云视口不可见");
 
-  // 先把目标拉近并保持在视口中央，再以小幅连续 orbit 展示标签不随框平面倾斜、始终正对相机。
-  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
-  for (let index = 0; index < 9; index += 1) {
-    await page.mouse.wheel(0, -120);
-    await page.waitForTimeout(160);
-  }
+  // 复位到产品定义的斜俯视角，再用真实双击框聚焦，把目标和 billboard 带到镜头中心。
+  await page.getByRole("button", { name: "重置视角", exact: true }).click();
+  await page.waitForTimeout(1_500);
+  // 该种子框在复位视角下投影到视口中部偏上；命中画布上的真实框而不是靠场景探针。
+  await page.mouse.dblclick(box.x + box.width * 0.47, box.y + box.height * 0.42);
+  await expect(page.getByTestId("three-d-selection-panel").first()).toBeVisible({ timeout: 5_000 });
   await page.waitForTimeout(1_200);
 
-  await dragOrbit(page, box, { x: 0.44, y: 0.49 }, { x: 0.56, y: 0.45 });
-  await dragOrbit(page, box, { x: 0.55, y: 0.45 }, { x: 0.47, y: 0.54 });
-  await dragOrbit(page, box, { x: 0.47, y: 0.53 }, { x: 0.54, y: 0.47 });
-  // 收边回到可读的斜俯视角，避免最后一帧贴近地平面而遮掉标签与空间结构。
-  await dragOrbit(page, box, { x: 0.5, y: 0.5 }, { x: 0.5, y: 0.36 });
+  // 轻微拉远保留框体完整，再以小幅连续 orbit 展示标签始终正对相机。
+  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
+  await page.mouse.wheel(0, 120);
+  await page.waitForTimeout(700);
+  await dragOrbit(page, box, { x: 0.46, y: 0.49 }, { x: 0.54, y: 0.46 });
+  await dragOrbit(page, box, { x: 0.54, y: 0.46 }, { x: 0.48, y: 0.51 });
+  // 轻微轨道不会把已聚焦目标翻到网格下方，保留框体和标签的可读构图。
   await page.waitForTimeout(1_500);
 
   return { drawStartMs, drawEndMs: Date.now() };
