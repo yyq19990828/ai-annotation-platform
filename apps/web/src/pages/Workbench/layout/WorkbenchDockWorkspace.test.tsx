@@ -443,6 +443,33 @@ describe("stable Dockview React workspace", () => {
     expect(standard).toHaveAttribute("aria-pressed", "true");
   });
 
+  it.each(["preset", "hydration"])(
+    "stops serializing an idle focus layout after %s",
+    async (source) => {
+      if (source === "hydration") state.owner.snapshot = createWorkspacePreset("focus", bounds);
+      render(fixture());
+      await screen.findByTestId("canvas-marker");
+      if (source === "preset") fireEvent.click(screen.getByRole("button", { name: "专注画布" }));
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      });
+      const serialize = vi.spyOn(state.api!, "toJSON");
+      fireEvent.pointerUp(window);
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      });
+      expect(serialize).not.toHaveBeenCalled();
+      expect(state.api!.hasMaximizedGroup()).toBe(true);
+      expect(screen.getByRole("button", { name: "专注画布" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      fireEvent.click(screen.getByRole("button", { name: "专注画布" }));
+      expect(serialize).toHaveBeenCalled();
+      expect(state.api!.hasMaximizedGroup()).toBe(false);
+    },
+  );
+
   it("restores sidebar sizes from a maximized saved layout on hydration", async () => {
     state.owner.snapshot = createWorkspacePreset("focus", bounds);
     render(fixture());

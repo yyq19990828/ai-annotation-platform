@@ -325,7 +325,10 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
     const engine = executor.current;
     if (!api || !engine) return;
     engine.syncConstraints();
-    setActivePreset(getActiveWorkspacePreset(engine.capture(), context));
+    // Capturing a maximized layout exits/reenters maximization and emits layout changes.
+    setActivePreset(
+      engine.isCanvasMaximized() ? "focus" : getActiveWorkspacePreset(engine.capture(), context),
+    );
     const opened = PERIPHERAL_PANELS.filter((id) => engine.isVisible(id));
     const next = {
       sides: engine.getSides(),
