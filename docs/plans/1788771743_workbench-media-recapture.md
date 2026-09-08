@@ -354,3 +354,11 @@ The final mask recording starts on F5 while holding F0 geometry, opens the edito
 The clean `e3f10312` source run `2026-09-08T09-03-00-000Z-mask-correction-final` supplies the contiguous `12:26.3` window. The 26.32-second public MP4, exact first frame, complete interaction, and result poster at source second 37 passed primary-thread review. F0 setup is outside the public window; the actual inference wait remains intact.
 
 All 21 assigned stories now have completed content review covering 45 public files: 41 replacements and four new layout assets. The other 210 files in the original 251-file media baseline remain byte-for-byte unchanged. Source commits remain reachable through integration, and private source archives have verified hashes. The integrated recording/helper suite passes 41 tests and media derivation passes two tests. Review registry entries are recorded separately after the integrated assets are committed, identifying the delegated primary agent as reviewer.
+
+### Final registry, preview, and cleanup
+
+The committed integration `2345bbc4` is the review anchor for exactly these 45 assets, with reviewer `Codex primary thread (user-delegated)`. All 45 classify as current with zero provenance issues. The full-site audit reports 0 broken, 115 stale, 1 review due, and 95 current; unrelated historical review records were not renewed. This completion does not claim a new human review of earlier batches or the excluded media.
+
+The local `/latest` gallery lists all 21 reviewed stories. HTTP readback matched all 45 file hashes, cache headers prevent stale previews, and MP4 byte-range requests returned 206 correctly. Content review used complete-video sampling and full-resolution key frames/posters; a fresh in-app browser playback session was unavailable. The earlier documentation build remains the build evidence for the affected guide integration.
+
+All three worker-owned API/web/Celery stacks, Redis containers, disposable databases, and their 21 precisely scoped storage buckets were removed after idle checks. Temporary worker worktrees were removed after verifying integration and private source backups. Shared application/model/storage services and the review preview remain available; source branches and the accepted private capture archives are retained.
