@@ -473,8 +473,10 @@ export function TaskQueuePanel({
       {showPalette && (
         <div
           className={cn(
-            "relative flex-[0_1_var(--left-palette-height)] min-h-[112px] max-h-[min(45%,420px)] overflow-y-auto px-3.5 py-4 pt-4 pb-2.5 border-t border-border",
-            !showQueue && "flex-1 max-h-none border-t-0",
+            "relative overflow-y-auto px-3.5 py-4 pt-4 pb-2.5 border-border",
+            showQueue
+              ? "flex-[0_1_var(--left-palette-height)] min-h-[112px] max-h-[min(45%,420px)] border-t"
+              : "min-h-0 flex-1",
           )}
         >
           {!floating && showQueue && (

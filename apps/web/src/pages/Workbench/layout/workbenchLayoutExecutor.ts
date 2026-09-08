@@ -939,10 +939,18 @@ export function createWorkbenchLayoutExecutor(
         box[axis],
         minimum.reduce((sum, size) => sum + size, 0),
       );
-      const weights = node.children.map((child) =>
-        previous ? extent(child, axis) : child.size || 1,
-      );
       const canvasIndex = node.children.findIndex(containsCanvas);
+      // A newly stacked pair shares its column equally; the retained panel's
+      // pre-drop full height must not outweigh the incoming panel's split height.
+      const splitColumn =
+        previous &&
+        axis === "height" &&
+        canvasIndex === -1 &&
+        node.children.length === 2 &&
+        node.children.some((child) => !hasPreviousSize(child));
+      const weights = node.children.map((child) =>
+        splitColumn ? 1 : previous ? extent(child, axis) : child.size || 1,
+      );
       if (previous && canvasIndex !== -1)
         weights[canvasIndex] = Math.max(
           1,

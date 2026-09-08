@@ -435,6 +435,8 @@ describe("workspace executor with Dockview 8", () => {
       expect(item.group).not.toBe(target);
       expect(item.group.api.width).toBe(width);
       expect(target.api.width).toBe(width);
+      expect(item.group.api.height).toBe(bounds.height / 2);
+      expect(target.api.height).toBe(bounds.height / 2);
       expect(api.getPanel("discussion")!.group.api.width).toBe(rightWidth);
       expect(api.getPanel("canvas")!.group.api.width).toBeGreaterThan(canvasWidth);
     },
