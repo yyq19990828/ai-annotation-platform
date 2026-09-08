@@ -11,12 +11,12 @@ test("accepts quoted names, comments, acronyms and nested step names", () => {
   assert.deepEqual(
     checkWorkflows([
       workflow(`  check:
-    name: "Python SDK / Tests" # public check name
+    name: "Python SDK tests" # public check name
     steps:
       - name: arbitrary step title + tools
         run: echo ok
   other:
-    name: 'ML examples / Tests'`),
+    name: 'ML examples tests'`),
     ]),
     [],
   );
@@ -26,7 +26,7 @@ test("requires explicit names even when steps have names", () => {
   const findings = checkWorkflows([
     workflow(`  check:
     steps:
-      - name: Docs / Validation`),
+      - name: Docs validation`),
   ]);
   assert.ok(findings.some((f) => f.msg.includes("must set an explicit name") && f.line === 3));
 });
@@ -36,8 +36,11 @@ test("rejects ambiguous, dynamic, and incorrectly cased display names", () => {
     "validate",
     "Docs/Validation",
     "Docs / validation",
+    "Docs Validation",
+    "Validation",
+    "docs validation",
     "docs / Validation",
-    "Docs / Build / Tests",
+    "Docs build / Tests",
     "Docs / ${{ matrix.task }}",
     "Docs / Tests + build",
     ">-",
@@ -48,30 +51,30 @@ test("rejects ambiguous, dynamic, and incorrectly cased display names", () => {
 
 test("rejects duplicate display names across workflows", () => {
   const findings = checkWorkflows([
-    workflow("  check:\n    name: Docs / Build"),
-    workflow("  build:\n    name: 'Docs / Build'", "docs-deploy.yml"),
+    workflow("  check:\n    name: Docs build"),
+    workflow("  build:\n    name: 'Docs build'", "docs-deploy.yml"),
   ]);
-  assert.ok(findings.some((f) => f.msg.includes('duplicate job name "Docs / Build"')));
+  assert.ok(findings.some((f) => f.msg.includes('duplicate job name "Docs build"')));
 });
 
 test("checks filename and top-level casing", () => {
-  const input = workflow("  check:\n    name: Docs / Validation", "claude.yml");
+  const input = workflow("  check:\n    name: Docs validation", "claude.yml");
   input.text = input.text.replace("Docs check", "Docs Check");
   assert.equal(checkWorkflows([input]).length, 2);
 });
 
 test("rejects unsupported job layout instead of silently skipping it", () => {
   for (const body of [
-    "  check: { name: 'Docs / Validation' }",
-    "    check:\n      name: Docs / Validation",
-    "  check:\n   name: Docs / Validation",
+    "  check: { name: 'Docs validation' }",
+    "    check:\n      name: Docs validation",
+    "  check:\n   name: Docs validation",
   ]) {
     assert.ok(checkWorkflows([workflow(body)]).length);
   }
 });
 
 test("ends the jobs mapping before other top-level mappings", () => {
-  const input = workflow("  check:\n    name: Docs / Validation\nconcurrency:\n  group: docs");
+  const input = workflow("  check:\n    name: Docs validation\nconcurrency:\n  group: docs");
   assert.deepEqual(checkWorkflows([input]), []);
 });
 
@@ -94,7 +97,7 @@ test("CLI fails in strict mode and only warns in advisory mode", async () => {
     const advisory = spawnSync(process.execPath, [script], { encoding: "utf8" });
     assert.equal(advisory.status, 0, advisory.stderr);
     assert.match(advisory.stdout, /::warning file=/);
-    writeFileSync(file, workflow("  check:\n    name: Docs / Validation").text);
+    writeFileSync(file, workflow("  check:\n    name: Docs validation").text);
     const valid = spawnSync(process.execPath, [script, "--strict"], { encoding: "utf8" });
     assert.equal(valid.status, 0, valid.stderr);
   } finally {

@@ -1,4 +1,4 @@
-name: Docs validate
+name: Documentation
 
 on:
   pull_request:
@@ -38,7 +38,7 @@ permissions:
 
 jobs:
   validate:
-    name: Docs / Validation
+    name: Docs validation
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

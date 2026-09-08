@@ -8,7 +8,7 @@ on:
 
 jobs:
   pytest:
-    name: Backend / Tests
+    name: Backend tests
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -103,7 +103,7 @@ jobs:
 
   # 示例 ML backend contract tests 保活：防 docs-site/dev/examples 与协议文档脱节。
   examples-pytest:
-    name: ML examples / Tests
+    name: ML examples tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -121,7 +121,7 @@ jobs:
 
   # Python SDK / CLI / TUI 测试（packages/python-sdk, v0.15.2 起）。
   python-sdk-pytest:
-    name: Python SDK / Tests
+    name: Python SDK tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -138,7 +138,7 @@ jobs:
         run: uv build
 
   vitest:
-    name: Frontend / Verification
+    name: Frontend verification
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -170,7 +170,7 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
 
   lint:
-    name: Repository / Quality
+    name: Repository quality
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -210,7 +210,7 @@ jobs:
           node scripts/check-workflow-names.mjs --strict
 
   docs-build:
-    name: Docs / Build
+    name: Docs build
     # 任何 PR 都跑：让 dead-link / hotkeys SoT 漂移 / snippet 不一致即时暴露。
     # 本地构建约 5s + prebuild 同步 openapi/hotkeys/snippet 约 2s。
     runs-on: ubuntu-latest
@@ -228,7 +228,7 @@ jobs:
         run: pnpm docs:build
 
   e2e:
-    name: Frontend / E2E
+    name: Frontend E2E
     runs-on: ubuntu-latest
     # v0.8.3 · 三 spec 已写实（auth / annotation / batch-flow），通过 _test_seed
     # router + e2e/fixtures/seed.ts 造数 + 跳登录；continue-on-error 已摘掉。

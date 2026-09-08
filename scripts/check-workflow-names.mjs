@@ -79,12 +79,10 @@ export function checkWorkflows(files) {
       if (job.named) report(i + 1, `job "${job.id}" has duplicate name properties`);
       job.named = true;
       const name = scalar(property[1]);
-      const parts = name.split(" / ");
-      if (parts.length !== 2 || parts.some((part) => !part)) {
-        report(i + 1, `job "${job.id}" name must be <Domain> / <Responsibility>`);
-      } else {
-        parts.forEach((part) => sentence(part, i + 1));
+      if (!name.includes(" ")) {
+        report(i + 1, `job "${job.id}" name must include a domain and responsibility`);
       }
+      sentence(name, i + 1);
       if (name) {
         if (seen.has(name))
           report(i + 1, `duplicate job name "${name}"; already used at ${seen.get(name)}`);

@@ -1,4 +1,4 @@
-name: Docs impact check
+name: Change analysis
 
 on:
   pull_request:
@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   docs-impact:
-    name: Docs / Impact
+    name: Docs impact
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

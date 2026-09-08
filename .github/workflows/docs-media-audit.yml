@@ -1,4 +1,4 @@
-name: Docs media audit
+name: Media review
 
 on:
   schedule:
@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   audit:
-    name: Docs / Media audit
+    name: Docs media audit
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

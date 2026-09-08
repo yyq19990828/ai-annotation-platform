@@ -1,4 +1,4 @@
-name: Claude docs impact
+name: Docs review
 
 on: workflow_dispatch
 
@@ -8,7 +8,7 @@ concurrency:
 
 jobs:
   claude-docs-impact:
-    name: Claude / Docs impact
+    name: Claude docs impact
     runs-on: ubuntu-latest
     permissions:
       contents: read
