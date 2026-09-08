@@ -40,6 +40,7 @@ import { runPointcloudView } from "./pointcloud-view";
 import { runPointcloudCameraSeed3dBox } from "./pointcloud-camera-seed-3d-box";
 import { runPointcloudCrossframeTrack } from "./pointcloud-crossframe-track";
 import { runPointcloudBillboardLabel } from "./pointcloud-billboard-label";
+import { runPointcloudPanelLayout } from "./pointcloud-panel-layout";
 import {
   runStorageConnectorCreateTest,
   STORAGE_CONNECTOR_RECORDING_NAME,
@@ -2349,7 +2350,6 @@ test.describe("flow recordings", () => {
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
     const win = await runPointcloudControls(page, cached);
     await finalize(page, "pointcloud-controls", undefined, drawTrim(win, t0));
   });
@@ -2361,7 +2361,6 @@ test.describe("flow recordings", () => {
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
     const win = await runPointcloudView(page, cached);
     await finalize(page, "pointcloud-view", undefined, drawTrim(win, t0));
   });
@@ -2390,7 +2389,7 @@ test.describe("flow recordings", () => {
       await installScreenshotEnvironment(page);
       await seed.injectToken(page, userEmail);
       await applyScreenshotTheme(page, "dark");
-      await installRecordingWorkbenchLayout(page, "none", {
+      await installRecordingWorkbenchLayout(page, "both", {
         common: {
           labelVisibility: "always",
           labelContent: { single: [], track: ["id", "state"], ai: ["source", "score"] },
@@ -2516,6 +2515,39 @@ test.describe("flow recordings", () => {
       if (created) {
         await seed.deleteTaskAnnotation(created.taskId, created.annotationId, userEmail);
       }
+    }
+  });
+
+  test("pointcloud-panel-layout — 3D 三视图与相机面板布局", async ({ page, seed }) => {
+    test.skip(
+      test.info().project.name !== MARKETING_PROJECT_NAME,
+      "3D 面板布局需要 marketing-master 的硬件 WebGL 与 60Hz 运行面",
+    );
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    test.setTimeout(SELECTED_CAPTURE ? 300_000 : 120_000);
+    const userEmail = cached.users.admin.email;
+    const task = cached.projects.pointcloud_demo.tasks.frame_000;
+    let annotationId: string | null = null;
+    const t0 = Date.now();
+    try {
+      const source = await seed.createTaskAnnotation(task.id, userEmail, {
+        annotation_type: "box_3d",
+        tool_unit_id: "lidar_box_3d",
+        class_name: "object",
+        geometry: NUSCENES_RECORDING_BOX,
+      });
+      annotationId = source.id;
+
+      await installScreenshotEnvironment(page);
+      await seed.injectToken(page, userEmail);
+      await applyScreenshotTheme(page, "dark");
+      await installRecordingWorkbenchLayout(page, "both", {
+        workspace: { context: "annotate:3d", preset: "standard" },
+      });
+      const win = await runPointcloudPanelLayout(page, cached, source);
+      await finalize(page, "pointcloud-panel-layout", undefined, drawTrim(win, t0));
+    } finally {
+      if (annotationId) await seed.deleteTaskAnnotation(task.id, annotationId, userEmail);
     }
   });
 

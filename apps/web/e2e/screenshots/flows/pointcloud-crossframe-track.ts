@@ -5,6 +5,10 @@
 import { expect, type Page, type Response } from "@playwright/test";
 import type { ScreenshotSeedCatalog, SeedTaskAnnotation } from "../../fixtures/seed";
 import type { DrawWindow } from "./rotated-bbox";
+import {
+  installRecordingWorkbenchLayout,
+  waitForRecordingWorkbenchLayout,
+} from "./_workbench-layout";
 
 interface PropagateResponseBody {
   annotation: SeedTaskAnnotation;
@@ -64,6 +68,10 @@ export async function runPointcloudCrossframeTrack(
   const frame2 = project.tasks.frame_002;
   const created: PointcloudCrossframeTrackResult["created"] = [];
 
+  await installRecordingWorkbenchLayout(page, "both", {
+    workspace: { context: "annotate:3d", preset: "standard" },
+  });
+
   // 录制窗口外预热后续两帧的 manifest 与 PCD：跨帧操作依然发生真实导航，
   // 但不把首次资源解析的骨架屏、短暂旧 manifest 绘制录进宣传母版。
   for (const task of [frame2, frame1]) {
@@ -77,6 +85,7 @@ export async function runPointcloudCrossframeTrack(
   await page.goto(`/projects/${project.id}/annotate?task=${frame0.id}`);
   await page.waitForLoadState("domcontentloaded");
   await page.getByTestId("pc-viewport").waitFor({ timeout: 20_000 });
+  await waitForRecordingWorkbenchLayout(page, "both");
   await selectBox(page, source.id);
   const drawStartMs = Date.now();
   await page.waitForTimeout(3_000);

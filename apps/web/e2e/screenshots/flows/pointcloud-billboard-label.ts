@@ -6,6 +6,10 @@ import { expect, type Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
 import { movePointerAtRefreshRate } from "./_canvas";
 import type { DrawWindow } from "./rotated-bbox";
+import {
+  installRecordingWorkbenchLayout,
+  waitForRecordingWorkbenchLayout,
+} from "./_workbench-layout";
 
 type ViewportBox = { x: number; y: number; width: number; height: number };
 
@@ -30,11 +34,15 @@ export async function runPointcloudBillboardLabel(
 ): Promise<DrawWindow> {
   const project = catalog.projects.pointcloud_demo;
   const task = project.tasks.frame_000;
+  await installRecordingWorkbenchLayout(page, "both", {
+    workspace: { context: "annotate:3d", preset: "standard" },
+  });
   await page.goto(`/projects/${project.id}/annotate?task=${task.id}`);
   await page.waitForLoadState("domcontentloaded");
 
   const viewport = page.getByTestId("pc-viewport");
   await viewport.waitFor({ timeout: 20_000 });
+  await waitForRecordingWorkbenchLayout(page, "both");
   await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
   await page.waitForTimeout(3_500);
 
