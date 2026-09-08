@@ -56,6 +56,52 @@ async function selectBox(page: Page, annotationId: string) {
   await expect(item).toHaveClass(/border-brand/);
 }
 
+async function focusBoxWithDoubleClick(page: Page, annotationId: string) {
+  await expect(page.locator('[data-scene-frame-state="ready"]')).toHaveCount(1, {
+    timeout: 20_000,
+  });
+  const point = await page.evaluate((targetId) => {
+    type SceneProbe = {
+      pickBox?: (clientX: number, clientY: number) => string | null;
+    };
+    const viewport = document.querySelector('[data-testid="pc-viewport"]') as
+      | (HTMLElement & { __pointCloudScene?: SceneProbe })
+      | null;
+    const scene = viewport?.__pointCloudScene;
+    const rect = viewport?.getBoundingClientRect();
+    if (!scene?.pickBox || !rect || rect.width <= 0 || rect.height <= 0) return null;
+
+    // The probe only locates the rendered box. The actual focus still travels through the
+    // product's pointer double-click handler below, just as it does for a user.
+    for (let row = 1; row < 20; row += 1) {
+      for (let column = 1; column < 20; column += 1) {
+        const x = rect.left + (column / 20) * rect.width;
+        const y = rect.top + (row / 20) * rect.height;
+        if (scene.pickBox(x, y) === targetId) return { x, y };
+      }
+    }
+    return null;
+  }, annotationId);
+  if (!point) {
+    throw new Error(`[pointcloud-crossframe-track] 无法在当前帧命中框: ${annotationId}`);
+  }
+
+  await page.mouse.dblclick(point.x, point.y);
+  await expect(page.getByTestId("three-d-selection-panel").first()).toBeVisible({ timeout: 5_000 });
+  await page.waitForTimeout(1_200);
+
+  // 跨帧 ego 位姿会改变投影；沿用 billboard 的轻微拉远，为邻帧参考留下余量。
+  const viewport = page.getByTestId("pc-viewport");
+  const viewportBox = await viewport.boundingBox();
+  if (!viewportBox) throw new Error("[pointcloud-crossframe-track] 点云视口不可见");
+  await page.mouse.move(
+    viewportBox.x + viewportBox.width * 0.14,
+    viewportBox.y + viewportBox.height * 0.19,
+  );
+  await page.mouse.wheel(0, 120);
+  await page.waitForTimeout(700);
+}
+
 export async function runPointcloudCrossframeTrack(
   page: Page,
   catalog: ScreenshotSeedCatalog,
@@ -97,25 +143,9 @@ export async function runPointcloudCrossframeTrack(
 
   // 沿用产品真实的双击框聚焦路径，把目标与后续邻帧参考带到镜头中心，
   // 保证 0.2m 修正和虚线框在 1280px 文档视频中仍可辨认。
-  const viewport = page.getByTestId("pc-viewport");
-  const viewportBox = await viewport.boundingBox();
-  if (!viewportBox) throw new Error("[pointcloud-crossframe-track] 点云视口不可见");
   await page.getByRole("button", { name: "重置视角", exact: true }).click();
   await page.waitForTimeout(1_500);
-  await page.mouse.dblclick(
-    viewportBox.x + viewportBox.width * 0.47,
-    viewportBox.y + viewportBox.height * 0.42,
-  );
-  await expect(page.getByTestId("three-d-selection-panel").first()).toBeVisible({ timeout: 5_000 });
-  await page.waitForTimeout(1_200);
-  // 与 billboard 录制一致，聚焦后轻微拉远，给跨帧 ego 位姿变化留下完整构图余量。
-  await page.mouse.move(
-    viewportBox.x + viewportBox.width * 0.14,
-    viewportBox.y + viewportBox.height * 0.19,
-  );
-  await page.mouse.wheel(0, 1_200);
-  await page.waitForTimeout(700);
-
+  await focusBoxWithDoubleClick(page, source.id);
   await selectBox(page, source.id);
   await page.waitForTimeout(700);
   const drawStartMs = Date.now();
@@ -131,6 +161,7 @@ export async function runPointcloudCrossframeTrack(
   await expect(page).toHaveURL(new RegExp(`task=${frame1.id}`), { timeout: 15_000 });
   await expect(page.getByText("已延续到帧 1")).toBeVisible({ timeout: 10_000 });
   await selectBox(page, first.annotation.id);
+  await focusBoxWithDoubleClick(page, first.annotation.id);
   await page.waitForTimeout(2_200);
 
   // 中间帧做一次可见的人工位置修正，再将修正后几何延续到下一帧。
@@ -168,18 +199,21 @@ export async function runPointcloudCrossframeTrack(
   await expect(page).toHaveURL(new RegExp(`task=${frame2.id}`), { timeout: 15_000 });
   await expect(page.getByText("已延续到帧 2")).toBeVisible({ timeout: 10_000 });
   await selectBox(page, second.annotation.id);
+  await focusBoxWithDoubleClick(page, second.annotation.id);
   await page.waitForTimeout(3_000);
 
   // 回看中间帧：当前实线框 + 同 track_id 的邻帧虚线框同时可见。
   await page.keyboard.press("Control+ArrowLeft");
   await expect(page).toHaveURL(new RegExp(`task=${frame1.id}`), { timeout: 15_000 });
   await selectBox(page, first.annotation.id);
+  await focusBoxWithDoubleClick(page, first.annotation.id);
   await page.waitForTimeout(3_200);
 
   // 继续回到首帧，核对源框也已获得同一轨迹身份，并参照下一帧虚线框。
   await page.keyboard.press("Control+ArrowLeft");
   await expect(page).toHaveURL(new RegExp(`task=${frame0.id}`), { timeout: 15_000 });
   await selectBox(page, source.id);
+  await focusBoxWithDoubleClick(page, source.id);
   await page.waitForTimeout(4_500);
 
   return {
