@@ -62,6 +62,17 @@ async function focusBoxWithDoubleClick(page: Page, annotationId: string) {
   });
   const point = await page.evaluate((targetId) => {
     type SceneProbe = {
+      camera?: unknown;
+      boxGroups?: Map<
+        string,
+        {
+          position: {
+            clone: () => {
+              project: (camera: unknown) => { x: number; y: number };
+            };
+          };
+        }
+      >;
       pickBox?: (clientX: number, clientY: number) => string | null;
     };
     const viewport = document.querySelector('[data-testid="pc-viewport"]') as
@@ -71,12 +82,29 @@ async function focusBoxWithDoubleClick(page: Page, annotationId: string) {
     const rect = viewport?.getBoundingClientRect();
     if (!scene?.pickBox || !rect || rect.width <= 0 || rect.height <= 0) return null;
 
+    const group = scene.boxGroups?.get(targetId);
+    if (group && scene.camera) {
+      const projected = group.position.clone().project(scene.camera);
+      const x = rect.left + ((projected.x + 1) / 2) * rect.width;
+      const y = rect.top + ((1 - projected.y) / 2) * rect.height;
+      if (
+        Number.isFinite(x) &&
+        Number.isFinite(y) &&
+        x >= rect.left &&
+        x <= rect.right &&
+        y >= rect.top &&
+        y <= rect.bottom
+      ) {
+        if (scene.pickBox(x, y) === targetId) return { x, y };
+      }
+    }
+
     // The probe only locates the rendered box. The actual focus still travels through the
     // product's pointer double-click handler below, just as it does for a user.
-    for (let row = 1; row < 20; row += 1) {
-      for (let column = 1; column < 20; column += 1) {
-        const x = rect.left + (column / 20) * rect.width;
-        const y = rect.top + (row / 20) * rect.height;
+    for (let row = 1; row < 80; row += 1) {
+      for (let column = 1; column < 100; column += 1) {
+        const x = rect.left + (column / 100) * rect.width;
+        const y = rect.top + (row / 80) * rect.height;
         if (scene.pickBox(x, y) === targetId) return { x, y };
       }
     }
