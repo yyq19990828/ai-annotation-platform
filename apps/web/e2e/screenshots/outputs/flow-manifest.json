@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-08T05:14:29.738Z",
+  "updated_at": "2026-09-08T05:30:26.795Z",
   "entries": {
     "docs-site/.vitepress/theme/assets/home/hero/pointcloud.webp": {
       "asset_id": "home-hero/pointcloud",
@@ -4273,20 +4273,28 @@
     "docs-site/public/media/video/prediction-density-navigation-poster.webp": {
       "asset_id": "video-timeline-prediction-navigation",
       "role": "poster",
-      "generated_at": "2026-08-15T21:40:12.766Z",
-      "captured_commit": "c5f193d7b3e79f81488142b77ff1f48cd4ab662d",
+      "generated_at": "2026-09-08T05:30:26.795Z",
+      "captured_commit": "5928dc567cb25b8ba3589bd034f6fbfa4ae41f08",
       "source_worktree_dirty": false,
-      "seed_revision": "screenshots-2026-08-f",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › video-timeline-prediction-navigation",
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive webp › video-timeline-prediction-navigation",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/flows/video-timeline-prediction-navigation.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
         "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "397c4ee156bcd20b11faa5521acb19d14f9e15efc99121fb086ef34ad142ede7",
-      "bytes": 115192,
+      "sha256": "129624218589ec4da31d86e465f4923aac3ced6a51f6624c7ff8173b669ffed2",
+      "bytes": 87480,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -4295,41 +4303,67 @@
         "fps": "25/1",
         "duration_seconds": null
       },
+      "capture": {
+        "source_quality": "standard",
+        "source_inference": "live"
+      },
       "source_asset": {
-        "runId": "20260815T213518Z-c5f193d7b3e7",
+        "runId": "2026-09-08T05-15-59-953Z-458332",
         "assetId": "video-timeline-prediction-navigation",
-        "sha256": "467b5c5e6bb6beee3eb1c2949400f9b62838d7396af1773f56b0888e9c6e5c85"
+        "sha256": "6bfe55782cb44134a394f675cd110d23a5565a4766e048dc37c47c781c1ba45d",
+        "quality": "standard",
+        "clip": {
+          "start": 282.5,
+          "duration": 14
+        }
       }
     },
     "docs-site/public/media/video/prediction-density-navigation.mp4": {
       "asset_id": "video-timeline-prediction-navigation",
       "role": "docs-video",
-      "generated_at": "2026-08-15T21:40:12.684Z",
-      "captured_commit": "c5f193d7b3e79f81488142b77ff1f48cd4ab662d",
+      "generated_at": "2026-09-08T05:30:26.707Z",
+      "captured_commit": "5928dc567cb25b8ba3589bd034f6fbfa4ae41f08",
       "source_worktree_dirty": false,
-      "seed_revision": "screenshots-2026-08-f",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › video-timeline-prediction-navigation",
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive mp4 › video-timeline-prediction-navigation",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/flows/video-timeline-prediction-navigation.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
         "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "cb9f6a7f36b8d8f25e8fed356672ad5cf54a88a4d611608bd12333cbbf0bc73b",
-      "bytes": 806796,
+      "sha256": "9b5f518022895a4bec13addd7a3762fa208fa9c78d3bf2acbf451846d55c77e1",
+      "bytes": 1106335,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
-        "fps": "30/1",
-        "duration_seconds": 15.3
+        "fps": "25/1",
+        "duration_seconds": 14.04
+      },
+      "capture": {
+        "source_quality": "standard",
+        "source_inference": "live"
       },
       "source_asset": {
-        "runId": "20260815T213518Z-c5f193d7b3e7",
+        "runId": "2026-09-08T05-15-59-953Z-458332",
         "assetId": "video-timeline-prediction-navigation",
-        "sha256": "467b5c5e6bb6beee3eb1c2949400f9b62838d7396af1773f56b0888e9c6e5c85"
+        "sha256": "6bfe55782cb44134a394f675cd110d23a5565a4766e048dc37c47c781c1ba45d",
+        "quality": "standard",
+        "clip": {
+          "start": 282.5,
+          "duration": 14
+        }
       }
     },
     "docs-site/public/media/video/propagate-track-vs-copy-poster.webp": {
