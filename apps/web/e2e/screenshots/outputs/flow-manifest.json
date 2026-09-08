@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-08T05:30:26.795Z",
+  "updated_at": "2026-09-08T06:20:45.344Z",
   "entries": {
     "docs-site/.vitepress/theme/assets/home/hero/pointcloud.webp": {
       "asset_id": "home-hero/pointcloud",
@@ -5814,6 +5814,102 @@
         "clip": {
           "start": 66.6,
           "duration": 20.2
+        }
+      }
+    },
+    "docs-site/public/media/workbench/layout-persistence-poster.webp": {
+      "asset_id": "workspace-layout-persistence",
+      "role": "poster",
+      "generated_at": "2026-09-08T06:20:45.344Z",
+      "captured_commit": "85129e74fa18ea329bb146cb714a7687f39bb6fb",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive webp › workspace-layout-persistence",
+      "watch_paths": [
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/flows/workspace-layout-persistence.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "apps/web/scripts/media-derivation.mjs"
+      ],
+      "sha256": "6a290be20a42c0f1e68902be820add8d42f07050df75bdaa6c8cead2b07f399f",
+      "bytes": 59616,
+      "media": {
+        "container": "webp_pipe",
+        "codec": "webp",
+        "width": 1280,
+        "height": 720,
+        "fps": "25/1",
+        "duration_seconds": null
+      },
+      "capture": {
+        "source_quality": "standard",
+        "source_inference": "none"
+      },
+      "source_asset": {
+        "runId": "2026-09-08T06-09-42-253Z-602621",
+        "assetId": "workspace-layout-persistence",
+        "sha256": "9f9988a2d3971a99e1af11120c30215911e78348958e0faba0758460ff6384b9",
+        "quality": "standard",
+        "clip": {
+          "start": 153.2,
+          "duration": 21
+        }
+      }
+    },
+    "docs-site/public/media/workbench/layout-persistence.mp4": {
+      "asset_id": "workspace-layout-persistence",
+      "role": "docs-video",
+      "generated_at": "2026-09-08T06:20:45.261Z",
+      "captured_commit": "85129e74fa18ea329bb146cb714a7687f39bb6fb",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive mp4 › workspace-layout-persistence",
+      "watch_paths": [
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/flows/workspace-layout-persistence.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "apps/web/scripts/media-derivation.mjs"
+      ],
+      "sha256": "52521de68fe34ffe3a7a4f2513ed6d25ac30bc1fbe76927b8973151e1f0f4ece",
+      "bytes": 1138613,
+      "media": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "codec": "h264",
+        "width": 1280,
+        "height": 720,
+        "fps": "25/1",
+        "duration_seconds": 21
+      },
+      "capture": {
+        "source_quality": "standard",
+        "source_inference": "none"
+      },
+      "source_asset": {
+        "runId": "2026-09-08T06-09-42-253Z-602621",
+        "assetId": "workspace-layout-persistence",
+        "sha256": "9f9988a2d3971a99e1af11120c30215911e78348958e0faba0758460ff6384b9",
+        "quality": "standard",
+        "clip": {
+          "start": 153.2,
+          "duration": 21
         }
       }
     },
