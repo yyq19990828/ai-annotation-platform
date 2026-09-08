@@ -149,7 +149,7 @@ export async function runPointcloudCrossframeTrack(
   await page.keyboard.press("Control+ArrowLeft");
   await expect(page).toHaveURL(new RegExp(`task=${frame0.id}`), { timeout: 15_000 });
   await selectBox(page, source.id);
-  await page.waitForTimeout(3_200);
+  await page.waitForTimeout(4_500);
 
   return {
     drawStartMs,
