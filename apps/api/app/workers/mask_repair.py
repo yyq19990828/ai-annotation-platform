@@ -61,6 +61,15 @@ def _result_copy(batch: MaskRepairBatch) -> dict[str, Any]:
     return result
 
 
+def _load_plan_payload(raw: dict[str, Any]) -> MaskMutationCommitRequest:
+    """Validate a persisted plan, including plans written before null omission."""
+
+    normalized = dict(raw)
+    if normalized.get("cut_path") is None:
+        normalized.pop("cut_path", None)
+    return MaskMutationCommitRequest.model_validate(normalized)
+
+
 async def _store_result_rle(
     db: AsyncSession,
     *,
@@ -95,7 +104,7 @@ async def _execute_shard(
     item_results: list[dict[str, Any]] = []
     for item_index in shard.get("item_indexes") or []:
         item = plan_items[int(item_index)]
-        payload = MaskMutationCommitRequest.model_validate(item["payload"])
+        payload = _load_plan_payload(item["payload"])
         task_id = uuid.UUID(str(item["task_id"]))
         service = MaskMutationService(db)
         members = await service._lock_scope(
@@ -615,7 +624,7 @@ def _rollback_payload(
     item: dict[str, Any],
     current_members: list[Annotation],
 ) -> MaskMutationCommitRequest:
-    original = MaskMutationCommitRequest.model_validate(item["payload"])
+    original = _load_plan_payload(item["payload"])
     target_id = uuid.UUID(str(item["annotation_id"]))
     mutation = MaskUpdateMutation(
         kind="update",
@@ -653,7 +662,7 @@ async def _rollback_shard(
             raise RuntimeError(f"rollback_version_conflict:{item['annotation_id']}")
     for entry in reversed(entries):
         item = plan_items[int(entry["item_index"])]
-        original = MaskMutationCommitRequest.model_validate(item["payload"])
+        original = _load_plan_payload(item["payload"])
         service = MaskMutationService(db)
         members = await service._lock_scope(
             uuid.UUID(str(item["task_id"])),
