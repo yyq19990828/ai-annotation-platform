@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-08T06:02:28.569Z",
+  "updated_at": "2026-09-08T06:16:05.509Z",
   "entries": {
     "docs-site/.vitepress/theme/assets/home/hero/pointcloud.webp": {
       "asset_id": "home-hero/pointcloud",
@@ -1452,7 +1452,7 @@
     "docs-site/public/media/ai/secondary-inference-attribute-poster.webp": {
       "asset_id": "secondary-inference-attribute",
       "role": "poster",
-      "generated_at": "2026-09-08T06:02:28.569Z",
+      "generated_at": "2026-09-08T06:16:05.509Z",
       "captured_commit": "4b648ef86076ec48efbc6141ead0fc1365aded62",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-g",
@@ -1472,8 +1472,8 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "873f27eff3c2d1a4dac24145befc3c714a724d364694fa5237b1edd7cead8b10",
-      "bytes": 67842,
+      "sha256": "fa79a98a9cb26b95c320fb406e75c73f36e22d213faa93822234f33155d02136",
+      "bytes": 68310,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -1492,15 +1492,15 @@
         "sha256": "1e67ee24f388a5f810709b1594dd66cdbe9f6ef4d17ce51f73ea8c076a29e1ac",
         "quality": "standard",
         "clip": {
-          "start": 264,
-          "duration": 21.4
+          "start": 266.25,
+          "duration": 19.15
         }
       }
     },
     "docs-site/public/media/ai/secondary-inference-attribute.mp4": {
       "asset_id": "secondary-inference-attribute",
       "role": "docs-video",
-      "generated_at": "2026-09-08T06:02:28.492Z",
+      "generated_at": "2026-09-08T06:16:05.422Z",
       "captured_commit": "4b648ef86076ec48efbc6141ead0fc1365aded62",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-g",
@@ -1520,15 +1520,15 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "0e52c6e68499d47b557eb9220c60cbc55518c19fb197a4be16043c964bfcea5c",
-      "bytes": 596529,
+      "sha256": "421d079efc439e289c80a129d7c76f2b5f218661230af194b33e5805f86a7a10",
+      "bytes": 474276,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "25/1",
-        "duration_seconds": 21.4
+        "duration_seconds": 19.16
       },
       "capture": {
         "source_quality": "standard",
@@ -1540,8 +1540,8 @@
         "sha256": "1e67ee24f388a5f810709b1594dd66cdbe9f6ef4d17ce51f73ea8c076a29e1ac",
         "quality": "standard",
         "clip": {
-          "start": 264,
-          "duration": 21.4
+          "start": 266.25,
+          "duration": 19.15
         }
       }
     },
@@ -2192,7 +2192,7 @@
     "docs-site/public/media/pipeline/apply-project-poster.webp": {
       "asset_id": "pipeline-apply-project",
       "role": "poster",
-      "generated_at": "2026-09-08T06:01:50.121Z",
+      "generated_at": "2026-09-08T06:15:50.714Z",
       "captured_commit": "4b648ef86076ec48efbc6141ead0fc1365aded62",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-g",
@@ -2212,8 +2212,8 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "0bd6c5485bcb53ea76ea62ffc5b8f1f80b04d165a7b067227a70c480f3aaaef7",
-      "bytes": 81306,
+      "sha256": "069d065b6ceb395adb225c2690e0c8feaa68ca3c6f4d39524e3c503ed0293b46",
+      "bytes": 77010,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -2232,15 +2232,15 @@
         "sha256": "d0e221dfa0c2aeb9d2d66a9daef3e3679fc79eabf6073302e3fb12c696fcc916",
         "quality": "standard",
         "clip": {
-          "start": 224,
-          "duration": 42.28
+          "start": 226.75,
+          "duration": 39.53
         }
       }
     },
     "docs-site/public/media/pipeline/apply-project.mp4": {
       "asset_id": "pipeline-apply-project",
       "role": "docs-video",
-      "generated_at": "2026-09-08T06:01:50.045Z",
+      "generated_at": "2026-09-08T06:15:50.634Z",
       "captured_commit": "4b648ef86076ec48efbc6141ead0fc1365aded62",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-g",
@@ -2260,15 +2260,15 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "273a14b2de0662ad1264e49273089be52b28182e6f02b8d5d1795bb81b883a6d",
-      "bytes": 1334196,
+      "sha256": "0d338fc3273b72f9a5de138faf33b89063b75135079dc5d347379e91487ef595",
+      "bytes": 1229346,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "25/1",
-        "duration_seconds": 42.28
+        "duration_seconds": 39.52
       },
       "capture": {
         "source_quality": "standard",
@@ -2280,8 +2280,8 @@
         "sha256": "d0e221dfa0c2aeb9d2d66a9daef3e3679fc79eabf6073302e3fb12c696fcc916",
         "quality": "standard",
         "clip": {
-          "start": 224,
-          "duration": 42.28
+          "start": 226.75,
+          "duration": 39.53
         }
       }
     },
@@ -3099,20 +3099,28 @@
     "docs-site/public/media/projects/ml-routing-poster.webp": {
       "asset_id": "project-ml-routing",
       "role": "poster",
-      "generated_at": "2026-08-15T14:01:48.012Z",
-      "captured_commit": "cbd6f5d9bc0a076281b79d0eacc5c87713249695",
+      "generated_at": "2026-09-08T06:15:18.085Z",
+      "captured_commit": "3cb60477dcc8f48522d577fb11b4ee62bd24858b",
       "source_worktree_dirty": false,
-      "seed_revision": "screenshots-2026-08-e",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › project-ml-routing",
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive webp › project-ml-routing",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/flows/project-ml-routing.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
         "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "d488ebcca65efb9c4f7cac59fdf80032b2e57cbe268b1bc5864506738ebf5e24",
-      "bytes": 54766,
+      "sha256": "9a24df39a48106d87de76d5c756656fc8960568d5fb10a4c5d8e58c9d4ead505",
+      "bytes": 80594,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -3121,41 +3129,67 @@
         "fps": "25/1",
         "duration_seconds": null
       },
+      "capture": {
+        "source_quality": "standard",
+        "source_inference": "none"
+      },
       "source_asset": {
-        "runId": "20260815T135835Z-cbd6f5d9bc0a",
+        "runId": "2026-09-08T06-04-03-061Z-588549",
         "assetId": "project-ml-routing",
-        "sha256": "eef0b45ac324ecfa3f6b19aa341dfee8cebcfdc19dc96cef9e2433b589a3dfdd"
+        "sha256": "437288b551258a04a73be4e72d59b44e55673dc85a9a4ac1d314d4e39d15d3b8",
+        "quality": "standard",
+        "clip": {
+          "start": 86,
+          "duration": 24.6
+        }
       }
     },
     "docs-site/public/media/projects/ml-routing.mp4": {
       "asset_id": "project-ml-routing",
       "role": "docs-video",
-      "generated_at": "2026-08-15T14:01:47.936Z",
-      "captured_commit": "cbd6f5d9bc0a076281b79d0eacc5c87713249695",
+      "generated_at": "2026-09-08T06:15:17.994Z",
+      "captured_commit": "3cb60477dcc8f48522d577fb11b4ee62bd24858b",
       "source_worktree_dirty": false,
-      "seed_revision": "screenshots-2026-08-e",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › project-ml-routing",
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive mp4 › project-ml-routing",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/flows/project-ml-routing.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
         "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue"
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "cdc9cb24570824d23ab5bcd0b57cf8b2188844e2d5d7d02a5db04a50cbaec048",
-      "bytes": 621250,
+      "sha256": "707bc53736961071c6897668246a1dfe0a99195ccfea29df1b80884a522cda04",
+      "bytes": 1045245,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
-        "fps": "30/1",
-        "duration_seconds": 27.767
+        "fps": "25/1",
+        "duration_seconds": 24.6
+      },
+      "capture": {
+        "source_quality": "standard",
+        "source_inference": "none"
       },
       "source_asset": {
-        "runId": "20260815T135835Z-cbd6f5d9bc0a",
+        "runId": "2026-09-08T06-04-03-061Z-588549",
         "assetId": "project-ml-routing",
-        "sha256": "eef0b45ac324ecfa3f6b19aa341dfee8cebcfdc19dc96cef9e2433b589a3dfdd"
+        "sha256": "437288b551258a04a73be4e72d59b44e55673dc85a9a4ac1d314d4e39d15d3b8",
+        "quality": "standard",
+        "clip": {
+          "start": 86,
+          "duration": 24.6
+        }
       }
     },
     "docs-site/public/media/projects/project-actions-menu-poster.webp": {
