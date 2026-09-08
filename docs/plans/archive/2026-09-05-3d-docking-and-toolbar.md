@@ -1,6 +1,6 @@
 # 3D 自由布局与画布工具栏方案
 
-状态：已确认为下版本计划，已实施并通过本轮验收，待发版。基线：`83480a3e`。日常变更记录在 `CHANGELOG.md` 的 `Unreleased`，发版时统一确定版本号。
+状态：已完成并通过验收，于 `0.25.3` 发布。基线：`83480a3e`。
 
 用户最终选择：三视图作为一个整体移动；相机悬浮时沿用当前模式，停靠时集中成一个组件，所有相机整组切换，不支持部分停靠、部分悬浮。将截图中的按钮优化作为本方案的第二项需求。
 
@@ -197,3 +197,13 @@ WebGPU 缓存命中后的 RGB p95 较同轮 Legacy 改善 67.8%。现有性能�
 两种后端均为一个 renderer，静止观测窗的提交增量为 0，均无运行时错误；WebGPU 全图 Canvas 回读为 0。此结果是本轮自由布局实现的测量，不替换历史报告，也不把实验渲染器改为默认开启。性能脚本中的临时布局操作不写入账号布局，临时上色偏好在结束时恢复。
 
 原始测量 JSON 只用于本轮核对，不纳入仓库；可用现有 benchmark 脚本及上述样本设置复测。
+
+## Outcome
+
+- Landed commits: `d6cc82cb`、`4eb581cd`、`c5325d81`、`8a5c2cb4`、`5ee1b4ac`、`556eadd5`。
+- Release milestone: `0.25.3`（维护者于 2026-09-09 确认）。
+- User documentation: `docs-site/user-guide/workbench/pointcloud-view.md`、`3d-box.md`、`pointcloud-projection.md`、`settings.md`。
+- Developer documentation: `docs-site/dev/concepts/workbench-shell.md`。
+- ADR: `docs/adr/archive/0073-shared-surface-for-3d-docking.md`。
+- CHANGELOG: `0.25.3` 已记录三视图、相机整组布局和视角工具栏。
+- Remaining work: 无；后续媒体更新由 `1788771743_workbench-media-recapture.md` 独立跟踪。
