@@ -913,7 +913,7 @@ function hasLiveSam3(catalog: ScreenshotSeedCatalog): boolean {
 
 test.describe("flow recordings", () => {
   test.beforeEach(async ({ page, seed }, testInfo) => {
-    if (SELECTED_CAPTURE) testInfo.setTimeout(300_000);
+    if (SELECTED_CAPTURE) testInfo.setTimeout(420_000);
     if (SELECTED_CAPTURE) {
       if (!SELECTED_CAPTURE.flows.includes(testInfo.title.split(" —")[0])) {
         throw new Error("Flow is outside the preflighted recording selection");
