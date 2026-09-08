@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
 
+# Cancel superseded PR runs; retain every main-branch validation.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   pytest:
     name: Backend tests
@@ -227,11 +232,35 @@ jobs:
           DOCS_BASE: /
         run: pnpm docs:build
 
-  e2e:
-    name: Frontend E2E
+  e2e-suites:
+    name: Frontend E2E suites
     runs-on: ubuntu-latest
-    # v0.8.3 · 三 spec 已写实（auth / annotation / batch-flow），通过 _test_seed
-    # router + e2e/fixtures/seed.ts 造数 + 跳登录；continue-on-error 已摘掉。
+    # Each runner owns its services: seed/reset and teardown delete shared fixtures.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: default-one
+            command: test:e2e --shard=1/4
+            built: true
+          - suite: default-two
+            command: test:e2e --shard=2/4
+            built: true
+          - suite: default-three
+            command: test:e2e --shard=3/4
+            built: true
+          - suite: default-four
+            command: test:e2e --shard=4/4
+            built: true
+          - suite: mask-readonly
+            command: test:e2e:mask-readonly
+            built: false
+          - suite: mask-native
+            command: test:e2e:mask-native
+            built: false
+          - suite: mask-ai-native
+            command: test:e2e:mask-ai-native
+            built: false
     services:
       postgres:
         image: postgres:16
@@ -297,9 +326,11 @@ jobs:
             sleep 1
           done
       - name: alembic upgrade head
+        if: matrix.built
         working-directory: apps/api
         run: uv run alembic upgrade head
       - name: Start FastAPI in background
+        if: matrix.built
         working-directory: apps/api
         run: |
           uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 &
@@ -314,7 +345,14 @@ jobs:
       - name: pnpm install
         working-directory: apps/web
         run: pnpm install --frozen-lockfile
+      - name: Generate API types for Mask suites
+        if: ${{ !matrix.built }}
+        working-directory: apps/web
+        env:
+          OPENAPI_URL: ${{ github.workspace }}/apps/api/openapi.snapshot.json
+        run: pnpm codegen
       - name: Build frontend
+        if: matrix.built
         working-directory: apps/web
         env:
           OPENAPI_URL: ${{ github.workspace }}/apps/api/openapi.snapshot.json
@@ -322,21 +360,23 @@ jobs:
       - name: Install Playwright browsers
         working-directory: apps/web
         run: pnpm exec playwright install --with-deps chromium
-      - name: Run E2E
+      - name: Run E2E suite
         working-directory: apps/web
-        run: pnpm test:e2e
-      - name: Run Raster Mask readonly matrix
-        working-directory: apps/web
-        run: pnpm test:e2e:mask-readonly
-      - name: Run Raster Mask native matrix
-        working-directory: apps/web
-        run: pnpm test:e2e:mask-native
-      - name: Run native Mask AI and local review matrix
-        working-directory: apps/web
-        run: pnpm test:e2e:mask-ai-native
+        run: pnpm ${{ matrix.command }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.suite }}
           path: apps/web/playwright-report/
           retention-days: 7
+
+  e2e:
+    name: Frontend E2E
+    runs-on: ubuntu-latest
+    needs: [e2e-suites]
+    if: always()
+    steps:
+      - name: Require every E2E suite to pass
+        env:
+          E2E_RESULT: ${{ needs.e2e-suites.result }}
+        run: test "$E2E_RESULT" = success
