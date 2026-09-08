@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-08T06:18:10.365Z",
+  "updated_at": "2026-09-08T06:40:57.348Z",
   "entries": {
     "docs-site/.vitepress/theme/assets/home/hero/pointcloud.webp": {
       "asset_id": "home-hero/pointcloud",
@@ -1488,7 +1488,7 @@
     "docs-site/public/media/ai/secondary-inference-attribute-poster.webp": {
       "asset_id": "secondary-inference-attribute",
       "role": "poster",
-      "generated_at": "2026-09-08T06:16:05.509Z",
+      "generated_at": "2026-09-08T06:40:44.949Z",
       "captured_commit": "4b648ef86076ec48efbc6141ead0fc1365aded62",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-g",
@@ -1508,8 +1508,8 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "fa79a98a9cb26b95c320fb406e75c73f36e22d213faa93822234f33155d02136",
-      "bytes": 68310,
+      "sha256": "db120778656467ebb1562831ed6d5ba29764bf2728db62b0236c7253cd7dd1b1",
+      "bytes": 68136,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -1536,7 +1536,7 @@
     "docs-site/public/media/ai/secondary-inference-attribute.mp4": {
       "asset_id": "secondary-inference-attribute",
       "role": "docs-video",
-      "generated_at": "2026-09-08T06:16:05.422Z",
+      "generated_at": "2026-09-08T06:40:44.865Z",
       "captured_commit": "4b648ef86076ec48efbc6141ead0fc1365aded62",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-g",
@@ -2228,7 +2228,7 @@
     "docs-site/public/media/pipeline/apply-project-poster.webp": {
       "asset_id": "pipeline-apply-project",
       "role": "poster",
-      "generated_at": "2026-09-08T06:15:50.714Z",
+      "generated_at": "2026-09-08T06:40:32.929Z",
       "captured_commit": "4b648ef86076ec48efbc6141ead0fc1365aded62",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-g",
@@ -2248,8 +2248,8 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "069d065b6ceb395adb225c2690e0c8feaa68ca3c6f4d39524e3c503ed0293b46",
-      "bytes": 77010,
+      "sha256": "0bd6c5485bcb53ea76ea62ffc5b8f1f80b04d165a7b067227a70c480f3aaaef7",
+      "bytes": 81306,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -2276,7 +2276,7 @@
     "docs-site/public/media/pipeline/apply-project.mp4": {
       "asset_id": "pipeline-apply-project",
       "role": "docs-video",
-      "generated_at": "2026-09-08T06:15:50.634Z",
+      "generated_at": "2026-09-08T06:40:32.852Z",
       "captured_commit": "4b648ef86076ec48efbc6141ead0fc1365aded62",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-g",
@@ -3135,7 +3135,7 @@
     "docs-site/public/media/projects/ml-routing-poster.webp": {
       "asset_id": "project-ml-routing",
       "role": "poster",
-      "generated_at": "2026-09-08T06:15:18.085Z",
+      "generated_at": "2026-09-08T06:40:57.348Z",
       "captured_commit": "3cb60477dcc8f48522d577fb11b4ee62bd24858b",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-g",
@@ -3155,8 +3155,8 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "9a24df39a48106d87de76d5c756656fc8960568d5fb10a4c5d8e58c9d4ead505",
-      "bytes": 80594,
+      "sha256": "57c8bed284a13e9cc0fefd5ce270b57a971656b541c9497afccc373019a1e2f5",
+      "bytes": 43966,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -3183,7 +3183,7 @@
     "docs-site/public/media/projects/ml-routing.mp4": {
       "asset_id": "project-ml-routing",
       "role": "docs-video",
-      "generated_at": "2026-09-08T06:15:17.994Z",
+      "generated_at": "2026-09-08T06:40:57.268Z",
       "captured_commit": "3cb60477dcc8f48522d577fb11b4ee62bd24858b",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-g",
