@@ -22,10 +22,10 @@
 
 ## 3. 主要实现位置
 
-- [apps/web/src/pages/Workbench/stage/VideoTrackerReviewBar.tsx](../../apps/web/src/pages/Workbench/stage/VideoTrackerReviewBar.tsx)
-- [apps/web/src/pages/Workbench/stage/VideoPlaybackOverlay.tsx](../../apps/web/src/pages/Workbench/stage/VideoPlaybackOverlay.tsx)
-- [apps/web/src/pages/Workbench/state/useWorkbenchShellModel.tsx](../../apps/web/src/pages/Workbench/state/useWorkbenchShellModel.tsx)
-- [apps/web/src/hooks/useVideoTrackerJobs.ts](../../apps/web/src/hooks/useVideoTrackerJobs.ts)
+- [apps/web/src/pages/Workbench/stage/VideoTrackerReviewBar.tsx](../../../apps/web/src/pages/Workbench/stage/VideoTrackerReviewBar.tsx)
+- [apps/web/src/pages/Workbench/stage/VideoPlaybackOverlay.tsx](../../../apps/web/src/pages/Workbench/stage/VideoPlaybackOverlay.tsx)
+- [apps/web/src/pages/Workbench/state/useWorkbenchShellModel.tsx](../../../apps/web/src/pages/Workbench/state/useWorkbenchShellModel.tsx)
+- [apps/web/src/hooks/useVideoTrackerJobs.ts](../../../apps/web/src/hooks/useVideoTrackerJobs.ts)
 
 新增内部模块只服务本步职责；不得复制完整 Workbench/Mask/SAM/tracker 状态树。公共边界、失败语义和回滚约束沿用本文件设计及 Epic 跨步骤不变量。
 

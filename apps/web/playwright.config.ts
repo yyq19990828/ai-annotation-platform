@@ -60,8 +60,8 @@ export default defineConfig({
   // 通过 `pnpm screenshots --testMatch '**/screenshots/**/*.spec.ts'` 显式触发，
   // 不进 CI 避免 baseline drift / flaky。
   testMatch: ["**/tests/**/*.spec.ts"],
-  // v0.8.5 · seed/reset 是数据库 TRUNCATE 全局操作，多 spec 并发会互相覆盖（auth /
-  // annotation / batch-flow 三 spec 共用同一个 fixture），本地与 CI 都用单 worker。
+  // seed/reset and teardown delete the shared E2E fixture namespace. Keep one
+  // worker per database; CI shards use independent runners and services.
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
   retries: isCI ? 2 : 0,

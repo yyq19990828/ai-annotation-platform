@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useRef, useState } from "react";
+import { useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { ArrowLeft, Search, X } from "lucide-react";
 import type { ProjectRenderingConfig } from "@/api/projects";
@@ -28,9 +28,11 @@ import {
   type WorkbenchSettingSection,
   type WorkbenchSettingValue,
 } from "../state/workbenchSettingsFields";
+import styles from "./WorkbenchSettingsDialog.module.css";
 import { useWorkbenchConfig } from "../state/useWorkbenchConfig";
 
 interface WorkbenchSettingsDialogProps {
+  layoutSettings?: ReactNode;
   open: boolean;
   onClose: () => void;
   projectRenderingConfig?: ProjectRenderingConfig | null;
@@ -52,6 +54,7 @@ interface SettingsEntry extends SettingsControlField {
 
 export function WorkbenchSettingsDialog({
   open,
+  layoutSettings,
   onClose,
   projectRenderingConfig,
   hideOrphanAnnotations,
@@ -65,6 +68,7 @@ export function WorkbenchSettingsDialog({
   const [, refreshLocalFields] = useReducer((n: number) => n + 1, 0);
   const [category, setCategory] = useState<WorkbenchSettingGroup>("layout");
   const [query, setQuery] = useState("");
+  const [previewField, setPreviewField] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
@@ -77,6 +81,8 @@ export function WorkbenchSettingsDialog({
   useEffect(() => {
     if (!open) {
       setQuery("");
+      setPreviewField(null);
+      setCategory("layout");
       composingRef.current = false;
     }
   }, [open]);
@@ -157,9 +163,10 @@ export function WorkbenchSettingsDialog({
         aria-describedby={undefined}
         data-testid="workbench-settings-dialog"
         data-workbench-settings=""
-        className="flex h-dvh max-h-dvh w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-border bg-card p-0 text-foreground z-app-drawer sm:max-w-none md:h-[min(820px,85dvh)] md:max-h-[calc(100dvh-64px)] md:w-[min(1120px,calc(100vw-64px))] md:rounded-xl motion-reduce:animate-none"
+        data-previewing={previewField ? "true" : undefined}
+        className={`${styles.dialog} flex h-dvh max-h-dvh w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-border bg-card p-0 text-foreground z-app-drawer sm:max-w-none md:h-[min(820px,85dvh)] md:max-h-[calc(100dvh-64px)] md:w-[min(1120px,calc(100vw-64px))] md:rounded-xl motion-reduce:animate-none`}
         overlayProps={{
-          className: "z-app-drawer-backdrop bg-black/25 motion-reduce:animate-none",
+          className: `z-app-drawer-backdrop bg-black/25 motion-reduce:animate-none ${previewField ? "opacity-0" : ""}`,
           "data-testid": "workbench-settings-overlay",
           "data-workbench-settings": "",
           onPointerDown: (event) => {
@@ -307,6 +314,7 @@ export function WorkbenchSettingsDialog({
               ref={scrollRef}
               className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-2 md:px-8 md:py-4"
             >
+              {loaded && !loadError && category === "layout" && !searching && layoutSettings}
               {!loaded ? (
                 <p role="status" className="py-8 text-sm text-muted-foreground">
                   正在加载设置…
@@ -347,6 +355,8 @@ export function WorkbenchSettingsDialog({
                             locked={entry.locked}
                             disabled={entry.disabled}
                             nested={!!entry.parentKey}
+                            previewing={previewField === entry.key}
+                            onPreviewChange={(active) => setPreviewField(active ? entry.key : null)}
                             onCommit={entry.onCommit}
                           />
                         ))}

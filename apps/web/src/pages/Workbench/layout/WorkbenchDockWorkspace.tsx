@@ -32,10 +32,13 @@ import { useWorkbenchWorkspaceLayout } from "../state/useWorkbenchWorkspaceLayou
 import { createWorkbenchLayoutExecutor } from "./workbenchLayoutExecutor";
 import {
   createWorkspacePreset,
+  getActiveWorkspacePreset,
   migrateLegacyWorkspace,
   presetSupportsContext,
   type WorkspacePresetId,
+  type ActiveWorkspacePreset,
 } from "./workbenchLayoutPresets";
+import { WorkbenchLayoutSettings } from "./WorkbenchLayoutSettings";
 import type { PanelId, WorkspaceContext } from "./workbenchLayoutSnapshot";
 import {
   PERIPHERAL_PANELS,
@@ -62,7 +65,12 @@ export interface WorkbenchDockWorkspaceProps {
   commandsRef?: Ref<WorkbenchWorkspaceCommands>;
   onStateChange?: (state: WorkbenchWorkspaceState) => void;
   slots: WorkbenchPanelSlots;
-  renderTopbar: (menu: ReactNode, state: WorkbenchWorkspaceState) => ReactNode;
+  onOpenLayoutSettings?: () => void;
+  renderTopbar: (
+    menu: ReactNode,
+    state: WorkbenchWorkspaceState,
+    layoutSettings: ReactNode,
+  ) => ReactNode;
 }
 
 type Executor = ReturnType<typeof createWorkbenchLayoutExecutor>;
@@ -303,6 +311,7 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
   const latest = useRef({ owner, compact, onStateChange: props.onStateChange });
   latest.current = { owner, compact, onStateChange: props.onStateChange };
   const [view, setView] = useState(EMPTY_STATE);
+  const [activePreset, setActivePreset] = useState<ActiveWorkspacePreset>("custom");
   const published = useRef(EMPTY_STATE);
   const [visiblePanels, setVisiblePanels] = useState<PanelId[]>([...PERIPHERAL_PANELS]);
   const restoring = useRef(false);
@@ -316,6 +325,10 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
     const engine = executor.current;
     if (!api || !engine) return;
     engine.syncConstraints();
+    // Capturing a maximized layout exits/reenters maximization and emits layout changes.
+    setActivePreset(
+      engine.isCanvasMaximized() ? "focus" : getActiveWorkspacePreset(engine.capture(), context),
+    );
     const opened = PERIPHERAL_PANELS.filter((id) => engine.isVisible(id));
     const next = {
       sides: engine.getSides(),
@@ -338,7 +351,7 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
       latest.current.onStateChange?.(next);
     }
     setVisiblePanels((previous) => (previous.join() === opened.join() ? previous : opened));
-  }, [api]);
+  }, [api, context]);
 
   const persist = useCallback(() => {
     if (pendingFrame.current !== null) cancelAnimationFrame(pendingFrame.current);
@@ -379,6 +392,19 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
     },
     [publish],
   );
+
+  const previousWidths = useRef(props.legacy.common);
+  useEffect(() => {
+    const previous = previousWidths.current;
+    const next = props.legacy.common;
+    previousWidths.current = next;
+    if (!previous || !next) return;
+    for (const side of ["left", "right"] as const) {
+      const key = side === "left" ? "leftWidthPct" : "rightWidthPct";
+      if (next[key] !== undefined && next[key] !== previous[key])
+        run((engine) => engine.resizeSide(side, next[key]!));
+    }
+  }, [props.legacy.common, run]);
 
   const commands = useMemo<WorkbenchWorkspaceCommands>(
     () => ({
@@ -771,95 +797,79 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
     [commands],
   );
 
+  const layoutItems: DropdownItem[] = [
+    ...(Object.keys(PRESET_LABELS) as WorkspacePresetId[])
+      .filter((id) => presetSupportsContext(id, context))
+      .map((id) => ({
+        id,
+        label: id === "focus" && view.canvasMaximized ? "恢复画布布局" : `${PRESET_LABELS[id]}布局`,
+        disabled: owner.readOnly || compact,
+        onSelect: () => preset(id),
+      })),
+    { id: "separator", label: "", divider: true },
+    ...(context.endsWith(":3d")
+      ? [
+          ...THREE_D_LAYOUT_PRESETS.map((entry) => ({
+            id: `3d-${entry.id}`,
+            label: entry.label,
+            disabled: owner.readOnly || compact,
+            onSelect: () =>
+              run((engine) => {
+                const before = engine.capture();
+                engine.applyThreeDPreset(entry.id);
+                undo.current = toast(`已切换到${entry.label}`, {
+                  id: undo.current ?? undefined,
+                  duration: 8000,
+                  position: "bottom-center",
+                  action: {
+                    label: "撤销",
+                    onClick: () => run((current) => current.restore(before)),
+                  },
+                });
+              }),
+          })),
+          {
+            id: "camera-presentation",
+            label: view.cameraPresentation === "floating" ? "全部相机停靠" : "全部相机悬浮",
+            disabled: owner.readOnly || compact,
+            onSelect: () =>
+              commands.setCameraPresentation(
+                view.cameraPresentation === "floating" ? "docked" : "floating",
+              ),
+          },
+          { id: "separator-3d", label: "", divider: true },
+        ]
+      : []),
+    ...availablePanels.map((id) => ({
+      id,
+      label: WORKBENCH_PANEL_REGISTRY[id].title,
+      active: visiblePanels.includes(id),
+      disabled: owner.readOnly,
+      onSelect: () => commands.toggle(id),
+    })),
+    { id: "separator-reset", label: "", divider: true },
+    ...(context.endsWith(":3d")
+      ? [
+          {
+            id: "reset-cameras",
+            label: "恢复相机排列",
+            disabled: owner.readOnly || !threeDActions,
+            onSelect: () => threeDActions?.resetCameras(),
+          },
+        ]
+      : []),
+    {
+      id: "reset",
+      label: "重置为标准布局",
+      disabled: !owner.initialized || compact || owner.readOnlyReason === "newer-schema",
+      onSelect: reset,
+    },
+  ];
   const menu = (
     <DropdownMenu
       items={[
-        ...(Object.keys(PRESET_LABELS) as WorkspacePresetId[])
-          .filter((id) => presetSupportsContext(id, context))
-          .map((id) => ({
-            id,
-            label: `${PRESET_LABELS[id]}布局`,
-            disabled: owner.readOnly || compact,
-            onSelect: () => preset(id),
-          })),
-        { id: "separator", label: "", divider: true },
-        ...(context.endsWith(":3d")
-          ? [
-              ...THREE_D_LAYOUT_PRESETS.map((entry) => ({
-                id: `3d-${entry.id}`,
-                label: entry.label,
-                disabled: owner.readOnly || compact,
-                onSelect: () =>
-                  run((engine) => {
-                    const before = engine.capture();
-                    engine.applyThreeDPreset(entry.id);
-                    undo.current = toast(`已切换到${entry.label}`, {
-                      id: undo.current ?? undefined,
-                      duration: 8000,
-                      position: "bottom-center",
-                      action: {
-                        label: "撤销",
-                        onClick: () => run((current) => current.restore(before)),
-                      },
-                    });
-                  }),
-              })),
-              {
-                id: "camera-presentation",
-                label: view.cameraPresentation === "floating" ? "全部相机停靠" : "全部相机悬浮",
-                disabled: owner.readOnly || compact,
-                onSelect: () =>
-                  commands.setCameraPresentation(
-                    view.cameraPresentation === "floating" ? "docked" : "floating",
-                  ),
-              },
-              { id: "separator-3d", label: "", divider: true },
-            ]
-          : []),
-        ...availablePanels.map((id) => ({
-          id,
-          label: WORKBENCH_PANEL_REGISTRY[id].title,
-          active: visiblePanels.includes(id),
-          disabled: owner.readOnly,
-          onSelect: () => commands.show(id),
-        })),
-        { id: "separator-canvas", label: "", divider: true },
-        ...(
-          [
-            ["left", "画布移到左侧"],
-            ["right", "画布移到右侧"],
-            ["above", "画布移到上方"],
-            ["below", "画布移到下方"],
-          ] as const
-        ).map(([position, label]) => ({
-          id: `canvas-${position}`,
-          label,
-          disabled: owner.readOnly || compact,
-          onSelect: () => run((engine) => engine.moveCanvas(position)),
-        })),
-        {
-          id: "canvas-maximize",
-          label: view.canvasMaximized ? "恢复画布" : "最大化画布",
-          disabled: owner.readOnly || compact,
-          onSelect: () => run((engine) => engine.toggleCanvasMaximized()),
-        },
-        { id: "separator-reset", label: "", divider: true },
-        ...(context.endsWith(":3d")
-          ? [
-              {
-                id: "reset-cameras",
-                label: "恢复相机排列",
-                disabled: owner.readOnly || !threeDActions,
-                onSelect: () => threeDActions?.resetCameras(),
-              },
-            ]
-          : []),
-        {
-          id: "reset",
-          label: "重置为标准布局",
-          disabled: !owner.initialized || compact || owner.readOnlyReason === "newer-schema",
-          onSelect: reset,
-        },
+        ...layoutItems.filter((item) => ["standard", "focus"].includes(item.id)),
+        { id: "settings", label: "更多布局设置…", onSelect: props.onOpenLayoutSettings },
       ]}
       trigger={({ ref, toggle, open }) => (
         <button
@@ -896,7 +906,11 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
     >
       <SlotsContext.Provider value={slots}>
         <TabMenuContext.Provider value={tabItems}>
-          {renderTopbar(menu, view)}
+          {renderTopbar(
+            menu,
+            view,
+            <WorkbenchLayoutSettings items={layoutItems} activePreset={activePreset} />,
+          )}
           {(owner.error || owner.readOnlyReason) && (
             <div
               role="status"

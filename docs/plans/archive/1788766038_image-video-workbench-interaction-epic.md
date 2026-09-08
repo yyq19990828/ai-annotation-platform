@@ -6,7 +6,7 @@
 >
 > 代码基线：`cd2521f1`；规划前工作区干净。
 >
-> 调研输入：[Supervisely 与 CVAT 图片、视频工作台交互专项调研](../research/23-supervisely-cvat-image-video-workbench.md)。用户指定的主工作区文件与本工作区副本内容一致。
+> 调研输入：[Supervisely 与 CVAT 图片、视频工作台交互专项调研](../../research/23-supervisely-cvat-image-video-workbench.md)。用户指定的主工作区文件与本工作区副本内容一致。
 >
 > 用户确认范围：完整规划 A–H，优先交付 A–D。最新执行要求：各里程碑先拆独立草案，然后逐步实施，每个里程碑浏览器实测通过后提交；见 §15–16。A–H 的 16 个独立里程碑均已实施并通过浏览器验收，结果与证据见 §16 状态表；不预分配版本或发布日期。
 
@@ -40,10 +40,10 @@
 
 主要实现入口：
 
-- [快捷键定义](../../apps/web/src/pages/Workbench/state/hotkeys.ts)、[快捷键调用方](../../apps/web/src/pages/Workbench/state/useWorkbenchHotkeys.ts)、[ToolDock](../../apps/web/src/pages/Workbench/shell/ToolDock.tsx)。
-- [Shell model](../../apps/web/src/pages/Workbench/state/useWorkbenchShellModel.tsx)、[创建动作](../../apps/web/src/pages/Workbench/state/useWorkbenchAnnotationActions.ts)、[图片动作](../../apps/web/src/pages/Workbench/stages/image/useImageAnnotationActions.ts)。
-- [Issue owner](../../apps/web/src/pages/Workbench/state/useIssuePins.ts)、[Issue 创建框](../../apps/web/src/pages/Workbench/shell/IssueCreateModal.tsx)、[反馈 schema](../../apps/api/app/schemas/annotation_feedback.py)。
-- [中心缩放](../../apps/web/src/pages/Workbench/stage/ResizeHandles.tsx)、[复杂几何保护](../../apps/web/src/pages/Workbench/stage/shared/geometry/geometryEditPolicy.ts)、[Mask 事务](../../apps/api/app/services/mask_mutation.py)、[操作账本](../../apps/api/app/db/models/annotation_operation.py)。
+- [快捷键定义](../../../apps/web/src/pages/Workbench/state/hotkeys.ts)、[快捷键调用方](../../../apps/web/src/pages/Workbench/state/useWorkbenchHotkeys.ts)、[ToolDock](../../../apps/web/src/pages/Workbench/shell/ToolDock.tsx)。
+- [Shell model](../../../apps/web/src/pages/Workbench/state/useWorkbenchShellModel.tsx)、[创建动作](../../../apps/web/src/pages/Workbench/state/useWorkbenchAnnotationActions.ts)、[图片动作](../../../apps/web/src/pages/Workbench/stages/image/useImageAnnotationActions.ts)。
+- [Issue owner](../../../apps/web/src/pages/Workbench/state/useIssuePins.ts)、[Issue 创建框](../../../apps/web/src/pages/Workbench/shell/IssueCreateModal.tsx)、[反馈 schema](../../../apps/api/app/schemas/annotation_feedback.py)。
+- [中心缩放](../../../apps/web/src/pages/Workbench/stage/ResizeHandles.tsx)、[复杂几何保护](../../../apps/web/src/pages/Workbench/stage/shared/geometry/geometryEditPolicy.ts)、[Mask 事务](../../../apps/api/app/services/mask_mutation.py)、[操作账本](../../../apps/api/app/db/models/annotation_operation.py)。
 
 ## 3. 跨步骤不变量
 
@@ -433,3 +433,13 @@ E1 不依赖 A/D；E2 只依赖 E1。F2 依赖 B，F1/F3 可各自使用现有 U
 每个里程碑的功能实测与定向回归都通过后才标为完成；测试结束清理本次 seed、临时配置、trace、HTML 报告和其它中间产物，保留明确交付的最小证据，停止本任务启动的进程并恢复浏览器缩放。真实 ML 后端测试与确定性响应夹具分别标注；客户端交互通过不能冒充模型质量或渲染性能资格通过。
 
 A 实施时发现共享依赖中缺少必要的 dockview-react；已仅在本工作区将 root/web/docs 的依赖链接改为本地安装，使用 frozen lockfile，包清单与锁文件未变。后续不再把这三处视作共享链接；`.env` 仍指向主工作区，不应修改。A 的临时运行服务、配置和测试数据已经清理，后续里程碑需重新核验并启动自己的验收环境。
+
+## Outcome
+
+- Landed commits: 16 个里程碑的实现、验证和提交记录见 §15 链接的独立计划。
+- Release milestone: `0.25.3`（维护者于 2026-09-09 确认）。
+- User documentation: `docs-site/user-guide/ai/`、`docs-site/user-guide/review/`、`docs-site/user-guide/workbench/`。
+- Developer documentation: `docs-site/dev/concepts/`、`docs-site/api/`。
+- ADR: `docs/adr/archive/0074-annotation-slice-operations.md` 及各独立计划记录的相关决策。
+- CHANGELOG: `0.25.3` 已记录 A–H 的用户影响。
+- Remaining work: 无；媒体重录的剩余工作由 `1788771743_workbench-media-recapture.md` 独立跟踪。

@@ -25,7 +25,6 @@
 from __future__ import annotations
 
 import os
-import uuid
 
 import httpx
 import pytest
@@ -190,16 +189,9 @@ httpx_client_bound = httpx_client
 
 
 def _make_user(role: str, email: str, name: str) -> dict:
-    from app.core.security import hash_password
+    from tests.factory import make_user_dict
 
-    return {
-        "id": uuid.uuid4(),
-        "email": email,
-        "name": name,
-        "password_hash": hash_password("Test1234"),
-        "role": role,
-        "is_active": True,
-    }
+    return make_user_dict(role, email, name)
 
 
 async def _create_user(db: AsyncSession, role: str, email: str, name: str):

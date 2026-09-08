@@ -15,12 +15,24 @@ from __future__ import annotations
 import secrets
 import uuid
 from datetime import datetime, timezone
+from functools import cache
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
+DEFAULT_PASSWORD = "Test1234"
+
+
+@cache
+def _default_password_hash() -> str:
+    # Fixture users share a known password; retain the real bcrypt cost and verifier.
+    from app.core.security import hash_password
+
+    return hash_password(DEFAULT_PASSWORD)
+
+
 def make_user_dict(
-    role: str, email: str, name: str, password: str = "Test1234"
+    role: str, email: str, name: str, password: str = DEFAULT_PASSWORD
 ) -> dict:
     from app.core.security import hash_password
 
@@ -28,7 +40,11 @@ def make_user_dict(
         "id": uuid.uuid4(),
         "email": email,
         "name": name,
-        "password_hash": hash_password(password),
+        "password_hash": (
+            _default_password_hash()
+            if password == DEFAULT_PASSWORD
+            else hash_password(password)
+        ),
         "role": role,
         "is_active": True,
     }
@@ -39,7 +55,7 @@ async def create_user(
     role: str,
     email: str,
     name: str,
-    password: str = "Test1234",
+    password: str = DEFAULT_PASSWORD,
 ):
     from app.db.models.user import User
 
