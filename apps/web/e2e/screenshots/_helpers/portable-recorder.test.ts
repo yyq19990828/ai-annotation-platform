@@ -49,12 +49,17 @@ test("portable encoding retains source and merges only captured assets", async (
     for (const assetId of ["bbox-draw", "sam-tools/smart-point"]) {
       await archivePortableRecording(page, { ...input, assetId });
     }
+    await archivePortableRecording(page, {
+      ...input,
+      assetId: "cropped-flow",
+      clip: { startSec: 0.04, durationSec: 0.1 },
+    });
     const manifestPath = path.join(root, ".artifacts/recordings/test-run/manifest.json");
     const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
     const before = manifest.entries[".artifacts/recordings/test-run/bbox-draw.mp4"];
     await archivePortableRecording(page, { ...input, assetId: "sam-tools/smart-point" });
     const after = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-    assert.equal(Object.keys(after.entries).length, 2);
+    assert.equal(Object.keys(after.entries).length, 3);
     assert.deepEqual(after.entries[".artifacts/recordings/test-run/bbox-draw.mp4"], before);
     assert.equal(before.media.codec, "h264");
     assert.equal(before.media.width, 320);
@@ -65,6 +70,14 @@ test("portable encoding retains source and merges only captured assets", async (
     assert.ok(
       !fs.existsSync(path.join(root, "apps/web/e2e/screenshots/outputs/flow-manifest.json")),
     );
+    const cropped = manifest.entries[".artifacts/recordings/test-run/cropped-flow.mp4"];
+    assert.deepEqual(cropped.capture.trim, {
+      type: "source_clip",
+      start_seconds: 0.04,
+      duration_seconds: 0.1,
+    });
+    assert.ok(cropped.media.duration_seconds >= 0.08);
+    assert.ok(cropped.media.duration_seconds <= 0.16);
     await assert.rejects(
       archivePortableRecording(page, { ...input, assetId: "../escape" }),
       /Unsafe/,

@@ -98,7 +98,10 @@ import {
 import { recordingAnchor } from "./_canvas";
 import { installRecordingWorkbenchLayout } from "./_workbench-layout";
 import type { SourceGifVariant } from "../_helpers/flow-manifest";
-import { archivePortableRecording } from "../_helpers/portable-recorder";
+import {
+  archivePortableRecording,
+  type PortableRecordingClip,
+} from "../_helpers/portable-recorder";
 import { recordingPlan, recordingInference } from "../recording-plan.mjs";
 import {
   archiveMarketingMaster,
@@ -810,6 +813,7 @@ async function finalizeVariants(
   assetId: string,
   variants: Array<{ target: string; options?: GifOptions }>,
   marketingClip?: MarketingClip,
+  portableClip?: PortableRecordingClip,
 ) {
   if (VALIDATE_ONLY) {
     await page.close();
@@ -823,7 +827,7 @@ async function finalizeVariants(
       variants,
     );
   } else {
-    await archivePortable(page, assetId, gifRecipes(variants));
+    await archivePortable(page, assetId, gifRecipes(variants), portableClip);
   }
 }
 
@@ -833,6 +837,7 @@ async function finalize(
   docsTarget?: string,
   gifOpts?: GifOptions,
   marketingClip?: MarketingClip,
+  portableClip?: PortableRecordingClip,
 ) {
   await finalizeVariants(
     page,
@@ -842,6 +847,7 @@ async function finalize(
       (test.info().project.name === MARKETING_PROJECT_NAME && gifOpts
         ? marketingClipFromVariants(assetId, [{ options: gifOpts }])
         : undefined),
+    portableClip,
   );
 }
 
@@ -863,6 +869,7 @@ async function archivePortable(
   page: Page,
   assetId: string,
   gifs: SourceGifVariant[],
+  clip?: PortableRecordingClip,
 ): Promise<void> {
   const info = test.info();
   const requirements = SELECTED_CAPTURE
@@ -902,6 +909,7 @@ async function archivePortable(
           .map(([key, project]) => [key, project.ml_backend]),
       ),
     },
+    clip,
   });
 }
 
@@ -1028,7 +1036,8 @@ test.describe("flow recordings", () => {
     await applyScreenshotTheme(page, "dark");
     const win = await runAiPreannotate(page, cached);
     flowInferenceEvidence["ai-preannotate"] = win.evidence;
-    await finalize(page, "ai-preannotate", undefined, drawTrim(win, t0));
+    const trim = drawTrim(win, t0);
+    await finalize(page, "ai-preannotate", undefined, trim, undefined, trim);
   });
 
   test("ai-prediction-import — 导入预标注结果", async ({ page, seed }) => {
