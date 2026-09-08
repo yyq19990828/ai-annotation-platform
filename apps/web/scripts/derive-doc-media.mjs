@@ -57,7 +57,7 @@ const POSTER_AT_SECONDS = new Map([
   ["pointcloud-view", 0.8],
   ["pointcloud-camera-seed-3d-box", 10],
   ["pointcloud-crossframe-track", 15],
-  ["pointcloud-billboard-label", 10],
+  ["pointcloud-billboard-label", 13],
   ["pointcloud-panel-layout", 28],
   ["storage-connector-create-test", 15],
   ["video-track-batch-propagate", 2.5],
