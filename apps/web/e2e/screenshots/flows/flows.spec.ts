@@ -22,6 +22,7 @@ import { runAiPreVariantSelector } from "./ai-pre-variant-selector";
 import { runRotatedBbox } from "./rotated-bbox";
 import { runBboxDraw } from "./bbox-draw";
 import { runWorkspaceLayoutBasics, workspaceLayoutBasicsLayout } from "./workspace-layout-basics";
+import { runWorkspaceLayoutPersistence } from "./workspace-layout-persistence";
 import { runPolylineDraw } from "./polyline-draw";
 import { runPolygonDraw } from "./polygon-draw";
 import { runMaskDraw } from "./mask-draw";
@@ -202,6 +203,7 @@ const FLOW_SOURCE_BY_ASSET: Record<string, string> = {
   "project-actions-menu": "project-actions-menu.ts",
   "jobs-bell-active": "jobs-bell-active.ts",
   "video-tracker-job-states": "video-tracker-job-states.ts",
+  "workspace-layout-persistence": "workspace-layout-persistence.ts",
 };
 
 function flowWatchPaths(assetId: string): string[] {
@@ -1347,6 +1349,21 @@ test.describe("flow recordings", () => {
     } finally {
       if (created) await seed.deleteTaskAnnotation(created.taskId, created.annotationId, userEmail);
     }
+  });
+
+  test("workspace-layout-persistence — 布局偏好跨任务、刷新与紧凑视口持久化", async ({
+    page,
+    seed,
+  }) => {
+    if (!cached) throw new Error("screenshot seed catalog 未完成");
+    // The screenshot seed/repair fixture may take several minutes on a live
+    // media worker; keep the per-test budget separate from the 20s UI waits.
+    test.setTimeout(420_000);
+    const t0 = Date.now();
+    await seed.injectToken(page, cached.users.project_admin.email);
+    const result = await runWorkspaceLayoutPersistence(page, cached);
+    flowBehaviorEvidence["workspace-layout-persistence"] = result.evidence;
+    await finalize(page, "workspace-layout-persistence", undefined, drawTrim(result, t0));
   });
 
   test("rotated-bbox — 旋转框绘制", async ({ page, seed }) => {
