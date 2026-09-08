@@ -175,7 +175,7 @@ export async function runProjectMlRouting(
   await expect(batchSelector.locator("option:checked")).toHaveText(
     `${BATCH_BACKEND_NAME}（项目主后端）`,
   );
-  await workbenchPage.waitForTimeout(3_000);
+  await page.waitForTimeout(3_000);
 
   const closeAiPanel = aiPanel.getByTitle("关闭当前题 AI");
   await moveTo(page, closeAiPanel);
@@ -184,7 +184,7 @@ export async function runProjectMlRouting(
 
   const smartPoint = page.getByTestId("tool-btn-smart-point");
   await expect(smartPoint).toBeEnabled();
-  await moveTo(workbenchPage, smartPoint);
+  await moveTo(page, smartPoint);
   await smartPoint.click();
   const interactiveToolbar = page.getByTestId("interactive-toolbar");
   await expect(interactiveToolbar).toBeVisible();
@@ -192,7 +192,7 @@ export async function runProjectMlRouting(
   await expect(interactiveSelector).toBeDisabled();
   await expect(interactiveSelector).toHaveValue(interactiveBackend.name);
   await expect(interactiveSelector.locator("option:checked")).toHaveText(interactiveBackend.name);
-  await workbenchPage.waitForTimeout(4_200);
+  await page.waitForTimeout(4_200);
 
   return { drawStartMs, drawEndMs: Date.now() };
 }
