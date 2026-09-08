@@ -11,6 +11,7 @@ interface FrameExpectation {
   frame_index: number;
   background_luma: number;
   corner_bits: number[];
+  center_bits?: number[];
   pts_ms?: number;
   duration_ms?: number;
   is_keyframe?: boolean;
@@ -24,6 +25,7 @@ export interface FrameExpectations {
   sample_regions: {
     background: NormalizedRegion;
     corners: Array<NormalizedRegion & { bit: number }>;
+    center_bits?: Array<NormalizedRegion & { bit: number }>;
   };
   frames: FrameExpectation[];
 }
@@ -113,5 +115,84 @@ export async function expectVideoFramePixels(
     const expectedBit = expected!.corner_bits[corner.bit];
     if (expectedBit === 1) expect(corner.luma).toBeGreaterThan(160);
     else expect(corner.luma).toBeLessThan(95);
+  }
+}
+
+/** Sample the long fixture through the actual media transform, including crop and zoom. */
+export async function sampleVideoContextFrameMarkers(page: Page, expectations: FrameExpectations) {
+  const regions = expectations.sample_regions.center_bits;
+  expect(
+    regions,
+    "The Issue context fixture needs all eight central frame identity bits",
+  ).toHaveLength(8);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  return page.evaluate((sampleRegions) => {
+    const stage = document.querySelector<HTMLElement>('[data-testid="video-konva-stage"]');
+    const content = stage?.querySelector<HTMLElement>(".konvajs-content");
+    const canvas = content?.querySelector<HTMLCanvasElement>(":scope > canvas");
+    if (!stage || !content || !canvas) throw new Error("Konva media canvas unavailable");
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Konva media canvas 2D context unavailable");
+    const contentRect = content.getBoundingClientRect();
+    const canvasRect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / canvasRect.width;
+    const scaleY = canvas.height / canvasRect.height;
+    const media = {
+      x: contentRect.left - canvasRect.left + Number(stage.getAttribute("data-media-x")),
+      y: contentRect.top - canvasRect.top + Number(stage.getAttribute("data-media-y")),
+      width: Number(stage.getAttribute("data-media-width")),
+      height: Number(stage.getAttribute("data-media-height")),
+    };
+    if (!Object.values(media).every(Number.isFinite) || media.width <= 0 || media.height <= 0)
+      throw new Error("Video media transform unavailable");
+    return sampleRegions!.map((region) => {
+      const left = Math.ceil((media.x + (region.x + region.w * 0.25) * media.width) * scaleX);
+      const top = Math.ceil((media.y + (region.y + region.h * 0.25) * media.height) * scaleY);
+      const right = Math.floor((media.x + (region.x + region.w * 0.75) * media.width) * scaleX);
+      const bottom = Math.floor((media.y + (region.y + region.h * 0.75) * media.height) * scaleY);
+      if (
+        left < 0 ||
+        top < 0 ||
+        right >= canvas.width ||
+        bottom >= canvas.height ||
+        right <= left ||
+        bottom <= top
+      )
+        throw new Error(
+          `Central frame bit ${region.bit} is clipped; no frame identity can be asserted`,
+        );
+      const pixels = context.getImageData(left, top, right - left, bottom - top).data;
+      let luma = 0;
+      let alpha = 0;
+      for (let offset = 0; offset < pixels.length; offset += 4) {
+        luma += 0.2126 * pixels[offset] + 0.7152 * pixels[offset + 1] + 0.0722 * pixels[offset + 2];
+        alpha += pixels[offset + 3];
+      }
+      return {
+        bit: region.bit,
+        luma: luma / (pixels.length / 4),
+        alpha: alpha / (pixels.length / 4),
+      };
+    });
+  }, regions);
+}
+
+export async function expectVideoContextFramePixels(
+  page: Page,
+  expectations: FrameExpectations,
+  frame: number,
+) {
+  const expected = expectations.frames.find((candidate) => candidate.frame_index === frame);
+  expect(expected?.center_bits, `Missing central frame identity for F${frame}`).toHaveLength(8);
+  const samples = await sampleVideoContextFrameMarkers(page, expectations);
+  for (const sample of samples) {
+    expect(sample.alpha).toBeGreaterThan(240);
+    if (expected!.center_bits![sample.bit] === 1) expect(sample.luma).toBeGreaterThan(160);
+    else expect(sample.luma).toBeLessThan(95);
   }
 }

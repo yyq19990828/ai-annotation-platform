@@ -81,7 +81,14 @@ def _serialize_anchor(payload: AnnotationFeedbackCreate) -> dict | None:
     anchor = payload.anchor_position
     if anchor is None:
         return None
-    value = anchor.model_dump(mode="json")
+    value = anchor.model_dump(mode="json", by_alias=True)
+    if anchor.video_context is None:
+        # Adding the optional context must not add null fields to legacy locators.
+        value.pop("video_context", None)
+    else:
+        value["video_context"] = anchor.video_context.model_dump(
+            mode="json", by_alias=True, exclude_none=True
+        )
     if payload.anchor_type == "pixel":
         for key in (
             "point_cloud_quality_issue_id",
@@ -179,6 +186,11 @@ async def create_feedback(
     user: User = Depends(require_roles(*_ALL)),
 ):
     await assert_project_visible(payload.project_id, db, user)
+    if payload.task_id is not None:
+        task = await db.get(Task, payload.task_id)
+        if task is None or task.project_id != payload.project_id:
+            raise HTTPException(status_code=404, detail="Task not found")
+        await _assert_task_visible(db, task, user)
     anchor = payload.anchor_position
     if anchor and anchor.mask_qc_issue_id:
         issue = await db.get(MaskQCIssue, anchor.mask_qc_issue_id)
@@ -366,6 +378,11 @@ async def reply_feedback(
     if parent is None or not parent.is_active:
         raise HTTPException(status_code=404, detail="feedback not found")
     await assert_project_visible(parent.project_id, db, user)
+    if parent.task_id is not None:
+        task = await db.get(Task, parent.task_id)
+        if task is None or task.project_id != parent.project_id:
+            raise HTTPException(status_code=404, detail="Task not found")
+        await _assert_task_visible(db, task, user)
     mask_qc_issue_id = (parent.anchor_position or {}).get("mask_qc_issue_id")
     if mask_qc_issue_id:
         issue = await db.get(MaskQCIssue, uuid.UUID(str(mask_qc_issue_id)))

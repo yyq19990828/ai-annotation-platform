@@ -89,7 +89,7 @@ AI Annotation Platform 把项目管理、Data Manager、多模态标注工作台
     </td>
     <td width="33%" valign="top">
       <strong>Review & Data Delivery</strong><br>
-      Data Manager 任务 / 对象 / 轨迹视图、<a href="./docs-site/user-guide/review/index.md#在视频画面标记问题">视频源帧问题标记</a>、审核反馈，以及 COCO、YOLO、DAVIS、MOT、KITTI、Multi-camera COCO、Point Mask 等导出。
+      Data Manager 任务 / 对象 / 轨迹视图、<a href="./docs-site/user-guide/review/index.md#在视频画面标记问题">视频问题标记与上下文恢复</a>（源帧范围、对象、画布和时间窗）、审核反馈，以及 COCO、YOLO、DAVIS、MOT、KITTI、Multi-camera COCO、Point Mask 等导出。
     </td>
   </tr>
 </table>

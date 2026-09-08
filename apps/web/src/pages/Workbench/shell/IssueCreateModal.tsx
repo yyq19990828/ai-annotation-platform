@@ -4,6 +4,7 @@ import { Icon } from "@/components/ui/Icon";
 import { useCreateFeedback } from "@/hooks/useFeedbacks";
 import type { FeedbackSeverity, ListFeedbacksParams } from "@/api/feedbacks";
 import type { IssuePinAnchor } from "../state/useIssuePins";
+import { validIssueFrameRange } from "../state/videoIssueContext";
 
 // UA-safe 文本输入基线(无全局 preflight 期间)。
 const FIELD_BASE =
@@ -51,7 +52,7 @@ function IssueCreateSession({
     projectId,
     taskId,
     listParams: { ...listParams },
-    anchor: anchorMode === "pixel" && prefilledAnchor ? { ...prefilledAnchor } : null,
+    anchor: anchorMode === "pixel" && prefilledAnchor ? structuredClone(prefilledAnchor) : null,
     anchorMode,
   }));
   const [title, setTitle] = useState("");
@@ -59,6 +60,9 @@ function IssueCreateSession({
   const [severity, setSeverity] = useState<FeedbackSeverity>("warn");
   const [x, setX] = useState(() => snapshot.anchor?.x.toFixed(3) ?? "");
   const [y, setY] = useState(() => snapshot.anchor?.y.toFixed(3) ?? "");
+  const [rangeEnabled, setRangeEnabled] = useState(false);
+  const [rangeFrom, setRangeFrom] = useState(() => String(snapshot.anchor?.frame ?? 0));
+  const [rangeTo, setRangeTo] = useState(() => String(snapshot.anchor?.frame ?? 0));
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const createMut = useCreateFeedback(snapshot.listParams);
@@ -86,8 +90,16 @@ function IssueCreateSession({
   const pixelMode = snapshot.anchorMode === "pixel" && (x !== "" || y !== "");
   const pixelInvalid = pixelMode && !hasValidPixel;
   const frame = snapshot.anchor?.frame;
+  const videoContext = snapshot.anchor?.videoContext;
+  const rangeInvalid =
+    pixelMode &&
+    !!videoContext &&
+    rangeEnabled &&
+    (frame === undefined ||
+      !validIssueFrameRange(rangeFrom, rangeTo, frame, snapshot.anchor?.maxFrame));
 
-  const canSubmit = body.trim().length > 0 && !pixelInvalid && !submitting && !createMut.isPending;
+  const canSubmit =
+    body.trim().length > 0 && !pixelInvalid && !rangeInvalid && !submitting && !createMut.isPending;
 
   const handleClose = () => {
     closedRef.current = true;
@@ -109,8 +121,30 @@ function IssueCreateSession({
         anchor_type: pixelMode ? "pixel" : "task",
         project_id: snapshot.projectId,
         task_id: snapshot.taskId,
+        ...(pixelMode && snapshot.anchor?.annotationId
+          ? { annotation_id: snapshot.anchor.annotationId }
+          : {}),
         anchor_position: pixelMode
-          ? { x: parsedX, y: parsedY, ...(frame !== undefined ? { frame } : {}) }
+          ? {
+              x: parsedX,
+              y: parsedY,
+              ...(frame !== undefined ? { frame } : {}),
+              ...(videoContext && frame !== undefined
+                ? {
+                    video_context: {
+                      ...videoContext,
+                      ...(rangeEnabled
+                        ? {
+                            frame_range: {
+                              from_frame: Number(rangeFrom),
+                              to_frame: Number(rangeTo),
+                            },
+                          }
+                        : {}),
+                    },
+                  }
+                : {}),
+            }
           : null,
         severity,
         title: title.trim() || null,
@@ -252,6 +286,58 @@ function IssueCreateSession({
           <p className="m-0 text-xs text-muted-foreground">
             任务级问题不绑定画面位置；标记位置请关闭表单后在视频画面落点。
           </p>
+        )}
+
+        {pixelMode && videoContext && frame !== undefined && (
+          <div className="flex flex-col gap-2 rounded border border-border bg-muted p-2 text-xs">
+            <span data-testid="issue-context-object" className="text-muted-foreground">
+              {snapshot.anchor?.annotationId
+                ? `对象：${snapshot.anchor.annotationLabel ?? snapshot.anchor.annotationId}${videoContext.annotation_version ? ` · 版本 ${videoContext.annotation_version}` : ""}`
+                : "未关联对象"}{" "}
+              · 已记录画布视图和时间窗
+            </span>
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={rangeEnabled}
+                data-testid="issue-frame-range-enabled"
+                onChange={(event) => setRangeEnabled(event.target.checked)}
+              />
+              记录源帧范围
+            </label>
+            {rangeEnabled && (
+              <div className="flex items-center gap-2">
+                <input
+                  className={cn(FIELD_BASE, "min-w-0 flex-1")}
+                  type="number"
+                  step="1"
+                  min="0"
+                  max={snapshot.anchor?.maxFrame}
+                  aria-label="起始源帧"
+                  data-testid="issue-frame-range-from"
+                  value={rangeFrom}
+                  onChange={(event) => setRangeFrom(event.target.value)}
+                />
+                <span>至</span>
+                <input
+                  className={cn(FIELD_BASE, "min-w-0 flex-1")}
+                  type="number"
+                  step="1"
+                  min="0"
+                  max={snapshot.anchor?.maxFrame}
+                  aria-label="结束源帧"
+                  data-testid="issue-frame-range-to"
+                  value={rangeTo}
+                  onChange={(event) => setRangeTo(event.target.value)}
+                />
+              </div>
+            )}
+            {rangeInvalid && (
+              <span className="text-status-danger" role="alert">
+                范围须为视频内的源帧整数闭区间，且包含 F {frame}。
+              </span>
+            )}
+          </div>
         )}
 
         {submitError && (

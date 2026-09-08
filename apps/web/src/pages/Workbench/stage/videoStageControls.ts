@@ -5,6 +5,46 @@
  * (原定义在已删除的旧 SVG VideoStage.tsx,v0.16.5 统一到 Konva 后抽到本文件。)
  */
 import type { VideoTool } from "../state/useWorkbenchState";
+import type { TimelineWindow } from "./timelineCoords";
+
+export interface VideoIssueViewport {
+  center_x: number;
+  center_y: number;
+  /** Current stage scale divided by the contain scale for the current container. */
+  zoom: number;
+}
+
+export interface VideoIssueView {
+  viewport?: VideoIssueViewport | null;
+  timeline_window?: TimelineWindow | null;
+}
+
+export interface VideoIssueViewCapture {
+  taskId: string;
+  frameIndex: number;
+  viewport: VideoIssueViewport;
+  timeline_window: TimelineWindow;
+}
+
+export interface VideoIssueViewRestoreResult {
+  status: "restored" | "cancelled" | "unavailable";
+  clamped: boolean;
+}
+
+export interface VideoIssueRestoreLease {
+  /** Resolves after selection, initial fit, and the restored view have committed. */
+  restore: (
+    view: VideoIssueView,
+    selectedId: string | null,
+  ) => Promise<VideoIssueViewRestoreResult>;
+  release: () => void;
+}
+
+/** Internal bridge to the Overlay's existing timeline-window owner. */
+export interface VideoTimelineWindowControls {
+  capture: () => TimelineWindow | null;
+  restore: (window: TimelineWindow) => { window: TimelineWindow; clamped: boolean } | null;
+}
 
 export interface VideoFrameSeekResult {
   status: "ready" | "cancelled" | "timeout" | "unavailable";
@@ -30,6 +70,14 @@ export type VideoDrawingDraft = {
 };
 
 export interface VideoStageControls {
+  /** User view/frame commands only; internal checked seek and restore do not emit. */
+  subscribeIssueNavigationInterrupt?: (listener: () => void) => () => void;
+  captureIssueView?: () => VideoIssueViewCapture | null;
+  waitForIssueViewReady?: (signal: AbortSignal) => Promise<boolean>;
+  beginIssueRestore?: (
+    isRelevant: () => boolean,
+    signal?: AbortSignal,
+  ) => VideoIssueRestoreLease | null;
   /** Read the stage-owned in-progress creation without changing its geometry. */
   getDrawingDraft?: () => VideoDrawingDraft | null;
   /** Discard only in-progress creation, including a pending drag pointerup. */

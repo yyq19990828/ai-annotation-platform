@@ -44,6 +44,7 @@ SCENE_RGB: dict[str, tuple[int, int, int]] = {
 WebCodecsFixture = Literal[
     "h264-baseline-gop12",
     "h264-main-bframes-gop30",
+    "h264-issue-context",
     "h264-boundary-gop8",
     "h264-vfr",
     "unsupported-config",
@@ -70,6 +71,15 @@ FIXTURE_SPECS: dict[str, dict[str, Any]] = {
         "frames": 48,
         "scene": "blue",
         "vfr": False,
+    },
+    "h264-issue-context": {
+        "profile": "main",
+        "gop": 30,
+        "bframes": 2,
+        "frames": 180,
+        "scene": "blue",
+        "vfr": False,
+        "center_code": True,
     },
     "h264-boundary-gop8": {
         "profile": "baseline",
@@ -104,6 +114,11 @@ _BIT_NORM = [
     {"bit": 2, "x": 0.0375, "y": 0.7667, "w": 0.1375, "h": 0.1833},  # BL
     {"bit": 3, "x": 0.8250, "y": 0.7667, "w": 0.1375, "h": 0.1833},  # BR
 ]
+_CENTER_BIT_PIXELS = [
+    {"bit": bit, "x": 52 + (bit % 4) * 14, "y": 46 + (bit // 4) * 14}
+    for bit in range(8)
+]
+_CENTER_BIT_EDGE = 12
 
 
 def _background_luma(frame_index: int) -> int:
@@ -111,7 +126,12 @@ def _background_luma(frame_index: int) -> int:
     return int(np.clip(32 + (frame_index >> 4) * 80, 0, 255))
 
 
-def _make_frame(frame_index: int, scene_rgb: tuple[int, int, int]) -> np.ndarray:
+def _make_frame(
+    frame_index: int,
+    scene_rgb: tuple[int, int, int],
+    *,
+    center_code: bool = False,
+) -> np.ndarray:
     """生成单帧:背景分组灰度 + 四角 bit 编码 + 中心场景色。"""
     img = np.zeros((FRAME_H, FRAME_W, 3), dtype=np.uint8)
     bg = _background_luma(frame_index)
@@ -127,6 +147,13 @@ def _make_frame(frame_index: int, scene_rgb: tuple[int, int, int]) -> np.ndarray
     for j, (x, y) in enumerate(corners):
         on = (frame_index >> j) & 1
         img[y : y + BIT_EDGE, x : x + BIT_EDGE] = 235 if on else 18
+    # This separate long fixture keeps its full 8-bit identity visible after zoom/pan.
+    # Existing precise-frame fixtures retain their original pixels and signatures.
+    if center_code:
+        for cell in _CENTER_BIT_PIXELS:
+            x, y = cell["x"], cell["y"]
+            on = (frame_index >> cell["bit"]) & 1
+            img[y : y + _CENTER_BIT_EDGE, x : x + _CENTER_BIT_EDGE] = 235 if on else 18
     return img
 
 
@@ -188,7 +215,9 @@ def generate_fixture(fixture: str, tmpdir: str | Path) -> dict[str, Any]:
     frames_dir = Path(tmpdir) / "frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
     for i in range(spec["frames"]):
-        Image.fromarray(_make_frame(i, scene_rgb)).save(frames_dir / f"f{i:04d}.png")
+        Image.fromarray(
+            _make_frame(i, scene_rgb, center_code=spec.get("center_code", False))
+        ).save(frames_dir / f"f{i:04d}.png")
     out = Path(tmpdir) / "chunk.mp4"
     _ffmpeg_encode(spec, frames_dir, out)
 
@@ -370,6 +399,11 @@ def frame_expectations(
                 "frame_index": i,
                 "background_luma": bg,
                 "corner_bits": bits,
+                **(
+                    {"center_bits": [(i >> bit) & 1 for bit in range(8)]}
+                    if spec.get("center_code")
+                    else {}
+                ),
                 **sample_by_frame.get(i, {}),
             }
         )
@@ -383,6 +417,23 @@ def frame_expectations(
         "sample_regions": {
             "background": {**_BG_NORM, "kind": "luma"},
             "corners": [{**b, "kind": "bit"} for b in _BIT_NORM],
+            **(
+                {
+                    "center_bits": [
+                        {
+                            "bit": cell["bit"],
+                            "x": cell["x"] / FRAME_W,
+                            "y": cell["y"] / FRAME_H,
+                            "w": _CENTER_BIT_EDGE / FRAME_W,
+                            "h": _CENTER_BIT_EDGE / FRAME_H,
+                            "kind": "bit",
+                        }
+                        for cell in _CENTER_BIT_PIXELS
+                    ]
+                }
+                if spec.get("center_code")
+                else {}
+            ),
         },
         "frames": frames,
     }

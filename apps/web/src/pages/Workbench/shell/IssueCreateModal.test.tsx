@@ -291,4 +291,88 @@ describe("IssueCreateModal", () => {
     act(() => requests[0].callbacks.onSuccess());
     expect(view.onClose).toHaveBeenCalledTimes(1);
   });
+
+  it("freezes the object version, viewport and time window while submitting one source-frame range", () => {
+    const anchor = {
+      x: 0.3,
+      y: 0.4,
+      frame: 130,
+      maxFrame: 179,
+      annotationId: "A1",
+      annotationLabel: "车辆",
+      videoContext: {
+        schema_version: 1 as const,
+        annotation_version: 3,
+        viewport: { center_x: 0.6, center_y: 0.7, zoom: 2 },
+        timeline_window: { from: 100.5, to: 160.5 },
+      },
+    };
+    const view = setup({ prefilledAnchor: anchor });
+    anchor.videoContext.annotation_version = 4;
+    anchor.videoContext.viewport.zoom = 5;
+    view.rerender(<IssueCreateModal {...view.props} />);
+    fireEvent.click(screen.getByTestId("issue-frame-range-enabled"));
+    fireEvent.change(screen.getByTestId("issue-frame-range-from"), { target: { value: "120" } });
+    fireEvent.change(screen.getByTestId("issue-frame-range-to"), { target: { value: "160" } });
+    fillBody();
+    submit();
+    expect(requests).toHaveLength(1);
+    expect(requests[0].payload).toMatchObject({
+      annotation_id: "A1",
+      anchor_position: {
+        frame: 130,
+        video_context: {
+          schema_version: 1,
+          annotation_version: 3,
+          viewport: { center_x: 0.6, center_y: 0.7, zoom: 2 },
+          timeline_window: { from: 100.5, to: 160.5 },
+          frame_range: { from_frame: 120, to_frame: 160 },
+        },
+      },
+    });
+  });
+
+  it.each([
+    ["131", "160"],
+    ["120", "129"],
+    ["120.5", "160"],
+    ["120", "180"],
+    ["", "160"],
+  ])("rejects a range %s–%s outside source boundaries or excluding the anchor", (from, to) => {
+    setup({
+      prefilledAnchor: {
+        x: 0.3,
+        y: 0.4,
+        frame: 130,
+        maxFrame: 179,
+        videoContext: { schema_version: 1 },
+      },
+    });
+    fireEvent.click(screen.getByTestId("issue-frame-range-enabled"));
+    fireEvent.change(screen.getByTestId("issue-frame-range-from"), { target: { value: from } });
+    fireEvent.change(screen.getByTestId("issue-frame-range-to"), { target: { value: to } });
+    fillBody();
+    submit();
+    expect(requests).toHaveLength(0);
+    expect(screen.getByRole("alert").textContent).toContain("包含 F 130");
+  });
+
+  it("omits object and context when clearing the pixel anchor to create a task-only issue", () => {
+    setup({
+      prefilledAnchor: {
+        x: 0.3,
+        y: 0.4,
+        frame: 130,
+        annotationId: "A1",
+        videoContext: { schema_version: 1, annotation_version: 3 },
+      },
+    });
+    fireEvent.change(screen.getByPlaceholderText("x (0-1)"), { target: { value: "" } });
+    fireEvent.change(screen.getByPlaceholderText("y (0-1)"), { target: { value: "" } });
+    fillBody();
+    submit();
+    expect(requests[0].payload.annotation_id).toBeUndefined();
+    expect(requests[0].payload.anchor_position).toBeNull();
+    expect(requests[0].payload.anchor_type).toBe("task");
+  });
 });

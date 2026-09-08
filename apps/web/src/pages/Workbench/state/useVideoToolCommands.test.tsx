@@ -59,6 +59,63 @@ function deferred() {
 }
 
 describe("explicit video tool commands", () => {
+  it("clears a task reset without retiring navigation, while a blank user selection interrupts it", () => {
+    const onUserIntent = vi.fn();
+    const { result } = setup({ onUserIntent });
+    act(() => result.current.state.setSelectedId("old-task-object"));
+    act(() => result.current.commands.requestSelection(null, { source: "task-reset" }));
+    expect(result.current.state.selectedIds).toEqual([]);
+    expect(onUserIntent).not.toHaveBeenCalled();
+    act(() => result.current.commands.requestSelection(null));
+    expect(onUserIntent).toHaveBeenCalledOnce();
+  });
+
+  it("checks cross-task leave against a drawing without changing frame, selection or tool", async () => {
+    const discardDrawingDraft = vi.fn();
+    const { result } = setup({
+      controlsRef: {
+        current: {
+          getDrawingDraft: () => ({ kind: "points", tool: "polygon", frameIndex: 0 }),
+          discardDrawingDraft,
+        } as unknown as VideoStageControls,
+      },
+    });
+    act(() => {
+      result.current.state.setVideoTool("polygon");
+      result.current.state.setSelectedId("existing");
+    });
+    let leave!: Promise<boolean>;
+    act(() => {
+      leave = result.current.commands.requestLeave(() => true);
+    });
+    expect(result.current.commands.confirmationOpen).toBe(true);
+    await act(async () => result.current.commands.settleConfirmation(false));
+    expect(await leave).toBe(false);
+    expect(discardDrawingDraft).not.toHaveBeenCalled();
+    act(() => {
+      leave = result.current.commands.requestLeave(() => true);
+    });
+    await act(async () => result.current.commands.settleConfirmation(true));
+    expect(await leave).toBe(true);
+    expect(discardDrawingDraft).toHaveBeenCalledOnce();
+    expect(result.current.state.selectedId).toBe("existing");
+    expect(result.current.state.videoTool).toBe("polygon");
+    expect(result.current.state.videoFrameIndex).toBe(0);
+  });
+
+  it("rejects a superseded leave after the Mask owner finishes saving", async () => {
+    const save = deferred();
+    let relevant = true;
+    const { result } = setup({ needsMaskGuard: true, guardMask: () => save.promise });
+    let leave!: Promise<boolean>;
+    act(() => {
+      leave = result.current.commands.requestLeave(() => relevant);
+    });
+    relevant = false;
+    await act(async () => save.resolve(true));
+    expect(await leave).toBe(false);
+  });
+
   it.each(["ready", "cancelled", "timeout", "unavailable"] as const)(
     "checked frame navigation preserves the Stage's %s result",
     async (status) => {

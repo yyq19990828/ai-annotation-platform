@@ -21,6 +21,7 @@ import secrets
 import struct
 from pathlib import Path
 from typing import Any, Literal
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
@@ -1252,6 +1253,7 @@ async def seed_video_task(
 
 class SeedVideoWebCodecsRequest(BaseModel):
     project_id: str
+    batch_id: UUID | None = None
     fixture: str = "h264-baseline-gop12"
     chunk_status: Literal["ready", "pending"] = "ready"
 
@@ -1310,16 +1312,11 @@ async def seed_video_webcodecs(
         raise HTTPException(status_code=422, detail="unknown_fixture")
 
     project_id = UUID(payload.project_id)
+    batch_query = select(TaskBatch).where(TaskBatch.project_id == project_id)
+    if payload.batch_id is not None:
+        batch_query = batch_query.where(TaskBatch.id == payload.batch_id)
     batch = (
-        (
-            await db.execute(
-                select(TaskBatch)
-                .where(TaskBatch.project_id == project_id)
-                .order_by(TaskBatch.created_at)
-            )
-        )
-        .scalars()
-        .first()
+        (await db.execute(batch_query.order_by(TaskBatch.created_at))).scalars().first()
     )
     ref_task = (
         (
@@ -1477,6 +1474,70 @@ async def seed_video_webcodecs(
         frame_expectations=(
             {} if qualification else frame_expectations(fixture, meta["samples"])
         ),
+    )
+
+
+class SeedVideoIssueContextHistoryRequest(BaseModel):
+    """Only simulate a future context version on an existing E2E video Issue."""
+
+    model_config = {"extra": "forbid"}
+
+    feedback_id: UUID
+
+
+class SeedVideoIssueContextHistoryResponse(BaseModel):
+    feedback_id: UUID
+    anchor_position: dict[str, Any]
+
+
+@router.post(
+    "/seed/video-issue-context-history",
+    response_model=SeedVideoIssueContextHistoryResponse,
+    include_in_schema=False,
+)
+async def seed_video_issue_context_history(
+    payload: SeedVideoIssueContextHistoryRequest,
+    db: AsyncSession = Depends(get_db),
+) -> SeedVideoIssueContextHistoryResponse:
+    from app.db.models.annotation_feedback import AnnotationFeedback
+    from app.db.models.project import Project
+    from app.db.models.task import Task
+
+    feedback = await db.get(AnnotationFeedback, payload.feedback_id)
+    if feedback is None:
+        raise HTTPException(status_code=404, detail="feedback fixture not found")
+    task = await db.get(Task, feedback.task_id) if feedback.task_id else None
+    project = await db.get(Project, feedback.project_id)
+    anchor = feedback.anchor_position
+    if (
+        project is None
+        or not (
+            project.name == "E2E Demo Project"
+            or str(project.display_id).startswith("P-E2E-")
+        )
+        or task is None
+        or task.project_id != feedback.project_id
+        or task.file_type != "video"
+        or feedback.kind != "issue"
+        or feedback.anchor_type != "pixel"
+        or not feedback.is_active
+        or not isinstance(anchor, dict)
+        or not {"x", "y", "frame"} <= anchor.keys()
+    ):
+        raise HTTPException(status_code=422, detail="expected E2E video pixel Issue")
+    # Preserve the old anchor and every other feedback field. The public write schema
+    # remains strict; a reader must ignore this unsupported nested version wholesale.
+    feedback.anchor_position = {
+        **anchor,
+        "video_context": {
+            "schema_version": 999,
+            "viewport": {"future_camera": "unsupported"},
+            "frame_range": {"from_frame": 900, "to_frame": 901},
+        },
+    }
+    await db.commit()
+    return SeedVideoIssueContextHistoryResponse(
+        feedback_id=feedback.id, anchor_position=feedback.anchor_position
     )
 
 

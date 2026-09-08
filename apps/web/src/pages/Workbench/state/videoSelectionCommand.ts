@@ -1,4 +1,5 @@
 export interface VideoSelectionCommandOptions {
+  source?: "task-reset";
   shift?: boolean;
   frameIndex?: number;
   activateTrackTool?: boolean;

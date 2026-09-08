@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-08-25
+last_reviewed: 2026-09-08
 ---
 
 # 任务与标注
@@ -55,12 +55,39 @@ POST /api/v1/tasks/:id/annotations
   "anchor_type": "pixel",
   "project_id": "00000000-0000-0000-0000-000000000001",
   "task_id": "00000000-0000-0000-0000-000000000002",
-  "anchor_position": { "x": 0.5, "y": 0.25, "frame": 17 },
-  "body": "该帧目标区域需要复核"
+  "annotation_id": "00000000-0000-0000-0000-000000000003",
+  "anchor_position": {
+    "x": 0.5,
+    "y": 0.25,
+    "frame": 130,
+    "video_context": {
+      "schema_version": 1,
+      "track_id": "trk_car_left",
+      "annotation_version": 7,
+      "frame_range": { "from_frame": 120, "to_frame": 160 },
+      "viewport": { "center_x": 0.5, "center_y": 0.4, "zoom": 2 },
+      "timeline_window": { "from": 110.5, "to": 170.5 }
+    }
+  },
+  "body": "这一段目标区域需要复核"
 }
 ```
 
 通过 `GET /api/v1/feedbacks?project_id=…&task_id=…&kind=issue` 读回同一锚点。不绑定画面位置的问题使用 `anchor_type: "task"` 和 `anchor_position: null`；图片像素锚点继续省略 frame。工作台在实际源帧就绪后冻结视频创建锚点，提交时不重新读取播放头。
+
+`video_context` 为可选扩展，保存在原有 JSONB 中。只有视频任务的 pixel 锚点可以写入，并须同时携带整数源帧 `frame`。版本为整数 `1`；其余字段均可省略，但提供范围、视口或时间窗时必须完整提供该子对象。
+
+| 字段                 | 合同                                                                                   |
+| -------------------- | -------------------------------------------------------------------------------------- |
+| `track_id`           | 可选普通字符串，保留对象身份线索，不要求 UUID                                          |
+| `annotation_version` | 大于等于 1 的整数，要求顶层 `annotation_id`；记录捕获版本，不要求等于提交时最新版本    |
+| `frame_range`        | 从 0 开始的源帧整数闭区间，包含 `frame`，且不超过视频最后一帧                          |
+| `viewport`           | 视频归一化坐标中的视口中心，可位于画面外；`zoom` 为 `scale / fitScale`，必须为正有限数 |
+| `timeline_window`    | 源帧窗口，允许分数帧；`from ≤ to`，且在视频范围内                                      |
+
+新上下文拒绝未知字段、布尔或字符串形式的整数、非有限数以及不完整子对象。服务端还检查任务属于该项目、标注属于该任务及项目、媒体边界和访问权限。无任务权限时返回 404；字段或关系非法返回 422；媒体元数据尚未就绪返回 503。省略 `task_id` 的项目反馈列表仍按任务可见性过滤，并返回 `next_cursor`。
+
+历史上下文按原值读取，未知 `schema_version` 不按当前版本解释；旧 `frame/x/y` 仍可用于定位。原对象变化后，已有反馈与继承同一锚点的回复仍可读取。Python SDK 的 `client.feedbacks.create()` 和 `client.feedbacks.list()` 提供对应类型化入口，创建字段与接口保持一致。
 
 ## 视频任务
 

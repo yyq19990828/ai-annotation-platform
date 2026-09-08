@@ -89,6 +89,8 @@ import type { ToolUnitId } from "@/constants/toolUnits";
 import type { AttributeField, ToolBinding, ToolBindings } from "@/api/projects";
 import { useViewportTransform } from "./useViewportTransform";
 import { useIssuePins } from "./useIssuePins";
+import { useVideoIssueNavigation } from "./useVideoIssueNavigation";
+import { useActiveIssueStore } from "./useActiveIssueStore";
 import {
   useMaskQcReview,
   collectMaskQcTrackerCandidates,
@@ -473,7 +475,12 @@ export function useWorkbenchShellModel({
     taskNavigationScheduler.activate();
     return () => taskNavigationScheduler.dispose();
   }, [taskNavigationScheduler]);
+  const cancelVideoIssueNavigationRef = useRef<() => void>(() => {});
+  const videoLeaveGuardRef = useRef<(isRelevant: () => boolean) => Promise<boolean>>(
+    async () => true,
+  );
   const onBack = useCallback(() => {
+    cancelVideoIssueNavigationRef.current();
     void maskNavigationGuardRef.current().then((allowed) => {
       if (allowed) navigate(backTarget);
     });
@@ -734,8 +741,14 @@ export function useWorkbenchShellModel({
   const selectTask = useCallback(
     async (
       id: string,
-      opts: { replace?: boolean; signal?: AbortSignal; scenePreview?: boolean } = {},
+      opts: {
+        replace?: boolean;
+        signal?: AbortSignal;
+        scenePreview?: boolean;
+        issueRestore?: boolean;
+      } = {},
     ): Promise<boolean> => {
+      if (!opts.issueRestore) cancelVideoIssueNavigationRef.current();
       if (!opts.scenePreview) setScenePlayback(false);
       const generation = ensurePointCloudNavigationGeneration(id, "shell");
       const before = navigationIdentityRef.current;
@@ -751,6 +764,12 @@ export function useWorkbenchShellModel({
         pending: true,
       });
       return taskNavigationScheduler.schedule(id, async (navigationSignal) => {
+        if (
+          !(await videoLeaveGuardRef.current(
+            () => !navigationSignal.aborted && !opts.signal?.aborted,
+          ))
+        )
+          return false;
         const allowed = await commitAfterNavigationGuard(
           maskNavigationGuardRef.current,
           [navigationSignal, opts.signal],
@@ -1306,6 +1325,7 @@ export function useWorkbenchShellModel({
 
   const handleSelectBatch = useCallback(
     (batchId: string | null) => {
+      cancelVideoIssueNavigationRef.current();
       void maskNavigationGuardRef.current().then((allowed) => {
         if (!allowed) return;
         pendingLocalTaskIdRef.current = null;
@@ -1638,6 +1658,20 @@ export function useWorkbenchShellModel({
   const requestIssueFrameRef = useRef<ReturnType<typeof useVideoToolCommands>["requestFrameReady"]>(
     async (frameIndex) => ({ status: "unavailable", frameIndex, source: null }),
   );
+  const videoIssueNavigation = useVideoIssueNavigation({
+    projectId,
+    taskId,
+    requestedTaskId,
+    annotationsReady,
+    annotations: annotationsData ?? [],
+    frameCount: videoFrameCount,
+    controlsRef: videoControlsRef,
+    selectTask: (id, signal) => selectTask(id, { signal, issueRestore: true }),
+    seekFrame: (frame, isRelevant) => requestIssueFrameRef.current(frame, isRelevant),
+    selectObject: s.setSelectedId,
+    cacheTargetTask: (target) => queryClient.setQueryData(["task", target.id], target),
+  });
+  cancelVideoIssueNavigationRef.current = videoIssueNavigation.cancel;
   const {
     issueCreateOpen,
     issuePinDropArmed,
@@ -1645,10 +1679,10 @@ export function useWorkbenchShellModel({
     onToggleIssuePinDrop,
     openTaskIssue,
     onIssuePinDrop,
-    onSeekIssueFrame,
+    onSeekIssueFrame: onSeekIssueFrameOnly,
     closeIssueCreate,
-    issueNavigation,
-    retryIssueNavigation,
+    issueNavigation: issueCreationNavigation,
+    retryIssueNavigation: retryIssueCreationNavigation,
     issueListParams,
     issuesQuery,
     openIssueCount,
@@ -1663,7 +1697,51 @@ export function useWorkbenchShellModel({
     isVideoTask,
     pauseVideoPlayback: () => videoControlsRef.current?.pausePlayback({ snapToGrid: false }),
     seekVideoFrameReady: (frame, isRelevant) => requestIssueFrameRef.current(frame, isRelevant),
+    navigateVideoIssue: videoIssueNavigation.navigate,
+    onCreateIntent: videoIssueNavigation.cancel,
+    captureVideoContext: (frame) => {
+      const view = videoControlsRef.current?.captureIssueView?.();
+      if (!view || view.taskId !== taskId || view.frameIndex !== frame) return null;
+      const object = annotationsRef.current.find(
+        (annotation) => annotation.id === s.selectedId && annotation.is_active,
+      );
+      return {
+        maxFrame: Math.max(0, videoFrameCount - 1),
+        ...(object ? { annotationId: object.id, annotationLabel: object.class_name } : {}),
+        videoContext: {
+          schema_version: 1,
+          viewport: { ...view.viewport },
+          timeline_window: { ...view.timeline_window },
+          ...(object?.track_id ? { track_id: object.track_id } : {}),
+          ...(object?.version ? { annotation_version: object.version } : {}),
+        },
+      };
+    },
   });
+  const issueNavigation =
+    videoIssueNavigation.navigation.status !== "idle"
+      ? videoIssueNavigation.navigation
+      : issueCreationNavigation;
+  const retryIssueNavigation =
+    videoIssueNavigation.navigation.status !== "idle"
+      ? videoIssueNavigation.retry
+      : retryIssueCreationNavigation;
+  const cancelVideoIssueNavigation = videoIssueNavigation.cancel;
+  const onSeekIssueFrame = useCallback(
+    async (frame: number) => {
+      const issue = issuesQuery.data?.items.find(
+        (item) => item.anchor_position?.frame === frame && item.anchor_type === "pixel",
+      );
+      if (issue) {
+        closeIssueCreate();
+        useActiveIssueStore.getState().focusIssue(issue);
+      } else {
+        cancelVideoIssueNavigation();
+        await onSeekIssueFrameOnly(frame);
+      }
+    },
+    [issuesQuery.data, closeIssueCreate, cancelVideoIssueNavigation, onSeekIssueFrameOnly],
+  );
   const submitTaskMut = useSubmitTask();
   const triggerPreannotation = useTriggerPreannotation(projectId);
   const {
@@ -2801,6 +2879,7 @@ export function useWorkbenchShellModel({
     requestSelection: requestVideoSelection,
     requestFrame: requestVideoReviewFrame,
     requestFrameReady: requestVideoIssueFrame,
+    requestLeave: requestVideoLeave,
     requestTemporaryTool: requestTemporaryVideoTool,
     confirmationOpen: videoToolConfirmationOpen,
     settleConfirmation: settleVideoToolConfirmation,
@@ -2849,9 +2928,11 @@ export function useWorkbenchShellModel({
             ? "Mask 正在处理，完成后再切换工具"
             : undefined,
     explain: (reason) => pushToast({ msg: reason, kind: "warning" }),
+    onUserIntent: videoIssueNavigation.cancel,
   });
   requestVideoSeedToolRef.current = requestTemporaryVideoTool;
   requestIssueFrameRef.current = requestVideoIssueFrame;
+  videoLeaveGuardRef.current = isVideoTask ? requestVideoLeave : async () => true;
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
       if (!maskInstanceTransitionBusy && (!maskEditor.active || !hasPendingMaskDraft)) return;
@@ -3115,7 +3196,7 @@ export function useWorkbenchShellModel({
   }, [deleteConfirm]);
 
   const handleSelectBox = useCallback(
-    (id: string | null, opts?: { shift?: boolean }) => {
+    (id: string | null, opts?: { shift?: boolean; source?: "task-reset" }) => {
       if (isVideoTask) {
         // Seed prompts clear ordinary selection internally without leaving collection mode.
         if (seedCollecting && id === null) {
@@ -7439,7 +7520,11 @@ export function useWorkbenchShellModel({
         // v0.11.5 · 图钉高亮跟 DiscussionPanel issues tab 共享 store (旧浮层路径已删)。
         highlightIssueId: activeIssueHighlightId,
         // 单击图钉 → 高亮 + 请求 DiscussionPanel 切到 issues tab + 高亮对应列表行。
-        onIssuePinClick: (id) => highlightIssueFromPin(id),
+        onIssuePinClick: (id) => {
+          highlightIssueFromPin(id);
+          const issue = issuesQuery.data?.items.find((item) => item.id === id);
+          if (isVideoTask && issue) useActiveIssueStore.getState().focusIssue(issue);
+        },
         issuePinDropArmed: issuePinDropArmed,
         issueNavigationPending: issueNavigation.status === "preparing",
         onIssuePinDrop,
@@ -7667,6 +7752,7 @@ export function useWorkbenchShellModel({
     // v0.11.5 · B 组 · DiscussionPanel 转正 → 右栏固定两段布局 (上 AIInspectorPanel + 下 DiscussionPanel)。
     discussionPanel: {
       onCreateTaskIssue: openTaskIssue,
+      allowProjectIssueScope: isVideoTask,
       maskQc:
         mode === "review" && projectId && taskId
           ? {

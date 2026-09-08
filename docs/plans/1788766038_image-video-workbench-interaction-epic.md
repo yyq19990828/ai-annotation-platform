@@ -411,7 +411,7 @@ Python 优先使用本工作区 `apps/api/.venv`。本地 Playwright 配置使�
 | F2     | [视频单帧与轨迹范围](1788769060_workbench-f2-video-tool-scope.md)                 | B      | 已授权 | 已完成 | F2-1–F2-5 通过 |
 | F3     | [追踪候选审阅范围](1788769060_workbench-f3-video-tracker-review-scope.md)         | 无     | 已授权 | 已完成 | F3-1–F3-4 通过 |
 | G1     | [视频 Issue 创建与真实落帧](1788769060_workbench-g1-video-issue-frame.md)         | 无     | 已授权 | 已完成 | G1-1–G1-4 通过 |
-| G2     | [视频 Issue 完整上下文恢复](1788769060_workbench-g2-video-issue-context.md)       | G1     | 已授权 | 未开始 | 未执行         |
+| G2     | [视频 Issue 完整上下文恢复](1788769060_workbench-g2-video-issue-context.md)       | G1     | 已授权 | 已完成 | 通过           |
 | H1     | [中心向外创建 bbox](1788769060_workbench-h1-bbox-center-out.md)                   | 无     | 已授权 | 未开始 | 未执行         |
 | H2     | [Polygon 自动落点](1788769060_workbench-h2-polygon-auto-points.md)                | 无     | 已授权 | 未开始 | 未执行         |
 | H3     | [沿已有 Polygon 边界追踪](1788769060_workbench-h3-polygon-boundary-trace.md)      | 无     | 已授权 | 未开始 | 未执行         |

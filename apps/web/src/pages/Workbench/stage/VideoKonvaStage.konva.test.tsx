@@ -9,7 +9,11 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createRef } from "react";
 import { act, fireEvent, render, renderHook, screen, within } from "@testing-library/react";
 import { VideoKonvaStage } from "./VideoKonvaStage";
-import type { VideoDrawingDraft, VideoStageControls } from "./videoStageControls";
+import type {
+  VideoDrawingDraft,
+  VideoIssueViewRestoreResult,
+  VideoStageControls,
+} from "./videoStageControls";
 import type { AnnotationResponse, TaskVideoManifestResponse, VideoTrackGeometry } from "@/types";
 import type { UseMaskEditorReturn } from "../state/useMaskEditor";
 import { useWorkbenchHotkeys, type UseWorkbenchHotkeysArgs } from "../state/useWorkbenchHotkeys";
@@ -165,6 +169,104 @@ describe("VideoKonvaStage · konva mock", () => {
     render(<VideoKonvaStage manifest={undefined} isLoading />);
     expect(document.querySelector('[data-testid="video-konva-stage"]')).toBeNull();
     expect(document.querySelector('[data-konva="Stage"]')).toBeNull();
+  });
+
+  it("restores through the real Stage/Overlay owners after selection without a later focus overwrite", async () => {
+    const ref = createRef<VideoStageControls>();
+    const longManifest = {
+      ...manifest,
+      metadata: { ...manifest.metadata, frame_count: 180 },
+    };
+    const annotation = contextAnnotation("video_track_bbox");
+    const props = {
+      manifest: longManifest,
+      annotations: [annotation],
+      focusSelectionEnabled: true,
+    };
+    const view = render(<VideoKonvaStage {...props} ref={ref} />);
+    const stage = view.getByTestId("video-konva-stage");
+    vi.spyOn(stage, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 800, 600));
+    fireEvent(window, new Event("resize"));
+    expect(stage).toHaveAttribute("data-video-view-ready", "true");
+    expect(await ref.current!.waitForIssueViewReady!(new AbortController().signal)).toBe(true);
+    let restored!: Promise<VideoIssueViewRestoreResult>;
+    act(() => {
+      restored = ref.current!.beginIssueRestore!(() => true)!.restore(
+        {
+          viewport: { center_x: 0.3, center_y: 0.7, zoom: 1.5 },
+          timeline_window: { from: 64.25, to: 144.75 },
+        },
+        annotation.id,
+      );
+    });
+    view.rerender(<VideoKonvaStage {...props} ref={ref} selectedId={annotation.id} />);
+    expect(await restored).toEqual({ status: "restored", clamped: false });
+    expect(ref.current!.captureIssueView!()).toMatchObject({
+      taskId: manifest.task_id,
+      frameIndex: 0,
+      timeline_window: { from: 64.25, to: 144.75 },
+    });
+    expect(Number(stage.dataset.videoViewCenterX)).toBeCloseTo(0.3);
+    expect(Number(stage.dataset.videoViewCenterY)).toBeCloseTo(0.7);
+    expect(Number(stage.dataset.videoViewZoom)).toBeCloseTo(1.5);
+    view.rerender(<VideoKonvaStage {...props} ref={ref} selectedId={annotation.id} />);
+    expect(Number(stage.dataset.videoViewZoom)).toBeCloseTo(1.5);
+  });
+
+  it("does not certify fallback dimensions and admits native metadata only for the current source", () => {
+    const ref = createRef<VideoStageControls>();
+    const noSize = { ...manifest, metadata: { ...manifest.metadata, width: null, height: null } };
+    const view = render(<VideoKonvaStage manifest={noSize} ref={ref} />);
+    const stage = view.getByTestId("video-konva-stage");
+    vi.spyOn(stage, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 800, 600));
+    fireEvent(window, new Event("resize"));
+    expect(ref.current!.captureIssueView!()).toBeNull();
+    expect(stage).toHaveAttribute("data-video-view-ready", "false");
+    const video = view.getByTestId("video-konva-source");
+    Object.defineProperties(video, {
+      currentSrc: { configurable: true, value: noSize.video_url },
+      videoWidth: { configurable: true, value: 640 },
+      videoHeight: { configurable: true, value: 360 },
+    });
+    fireEvent.loadedMetadata(video);
+    expect(ref.current!.captureIssueView!()?.viewport.zoom).toBe(1);
+    expect(stage).toHaveAttribute("data-video-view-ready", "true");
+    const old = ref.current!;
+    view.rerender(
+      <VideoKonvaStage
+        manifest={{ ...noSize, task_id: "task-B", video_url: "http://storage.local/B.mp4" }}
+        ref={ref}
+      />,
+    );
+    expect(ref.current!.captureIssueView!()).toBeNull();
+    expect(old.captureIssueView!()).toBeNull();
+  });
+
+  it("notifies navigation interrupts for user commands while internal seek and pause stay quiet", async () => {
+    const ref = createRef<VideoStageControls>();
+    const view = render(<VideoKonvaStage manifest={manifest} ref={ref} />);
+    const stage = view.getByTestId("video-konva-stage");
+    vi.spyOn(stage, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 800, 600));
+    fireEvent(window, new Event("resize"));
+    const listener = vi.fn();
+    const unsubscribe = ref.current!.subscribeIssueNavigationInterrupt!(listener);
+    let seeking!: ReturnType<VideoStageControls["seekToFrameReady"]>;
+    act(() => {
+      ref.current!.pausePlayback({ snapToGrid: false });
+      seeking = ref.current!.seekToFrameReady(0);
+    });
+    expect(listener).not.toHaveBeenCalled();
+    act(() => ref.current!.seekToFrame(1));
+    expect(listener).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(window, { key: "F", shiftKey: true });
+    expect(listener).toHaveBeenCalledTimes(2);
+    fireEvent.wheel(stage, { clientX: 300, clientY: 300, ctrlKey: true, deltaY: -1 });
+    expect(listener).toHaveBeenCalledTimes(3);
+    unsubscribe();
+    act(() => ref.current!.seekToFrame(2));
+    expect(listener).toHaveBeenCalledTimes(3);
+    view.unmount();
+    expect((await seeking).status).toBe("cancelled");
   });
 
   it("allows the first Issue drop above annotation handles in a review canvas", () => {

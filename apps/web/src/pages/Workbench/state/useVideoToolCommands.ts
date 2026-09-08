@@ -41,9 +41,11 @@ interface Options {
   guardMask: () => Promise<boolean>;
   blockedReason?: string;
   explain: (reason: string) => void;
+  onUserIntent?: () => void;
 }
 
 type Command =
+  | { kind: "leave"; isRelevant: () => boolean }
   | { kind: "tool"; tool: VideoTool }
   | { kind: "scope"; scope: VideoToolScope }
   | {
@@ -135,7 +137,7 @@ export function useVideoToolCommands(options: Options) {
       } else if (command.kind === "frame") {
         if (!Number.isInteger(command.frameIndex) || command.frameIndex < 0) return false;
         targetFrame = command.frameIndex;
-      } else {
+      } else if (command.kind === "selection") {
         targetFrame = command.frameIndex;
         if (targetFrame !== undefined && (!Number.isInteger(targetFrame) || targetFrame < 0))
           return false;
@@ -159,12 +161,13 @@ export function useVideoToolCommands(options: Options) {
       }
       // Tracker seed collection has its own backend capabilities and borrows an AI tool.
       const reason =
-        command.kind === "temporary" || command.kind === "frame"
+        command.kind === "temporary" || command.kind === "frame" || command.kind === "leave"
           ? undefined
           : initial.toolDisabledReason(target.tool);
       if (
         command.kind !== "temporary" &&
         command.kind !== "frame" &&
+        command.kind !== "leave" &&
         (!initial.isToolEnabled(target.tool) || reason)
       ) {
         target = {
@@ -185,7 +188,8 @@ export function useVideoToolCommands(options: Options) {
         !changesSelection &&
         !changesFrame &&
         command.kind !== "temporary" &&
-        command.kind !== "frame"
+        command.kind !== "frame" &&
+        command.kind !== "leave"
       ) {
         if (command.kind === "selection") command.onAdmitted?.();
         if (target.reason) initial.explain(target.reason);
@@ -196,7 +200,8 @@ export function useVideoToolCommands(options: Options) {
         serial.current === requestId &&
         latest.current.enabled &&
         latest.current.ownerKey === initial.ownerKey &&
-        ((command.kind !== "temporary" && command.kind !== "frame") || command.isRelevant());
+        ((command.kind !== "temporary" && command.kind !== "frame" && command.kind !== "leave") ||
+          command.isRelevant());
       if (!isCurrent()) return false;
       const pending = initial.state.pendingDrawing;
       // A pending Mask class owns an in-flight save resolver in the native writer.
@@ -232,12 +237,13 @@ export function useVideoToolCommands(options: Options) {
       if (stageDraft && currentPending && currentPending !== pending && !migratedPending)
         return false;
       const latestReason =
-        command.kind === "temporary" || command.kind === "frame"
+        command.kind === "temporary" || command.kind === "frame" || command.kind === "leave"
           ? undefined
           : latest.current.toolDisabledReason(target.tool);
       if (
         command.kind !== "temporary" &&
         command.kind !== "frame" &&
+        command.kind !== "leave" &&
         (!latest.current.isToolEnabled(target.tool) || latestReason)
       ) {
         target = {
@@ -261,7 +267,8 @@ export function useVideoToolCommands(options: Options) {
       }
       if (selectedIds !== undefined) latest.current.state.replaceSelected(selectedIds);
       if (command.kind === "temporary") command.onAdmitted(current);
-      if (command.kind !== "frame") latest.current.state.setVideoToolSelection(target);
+      if (command.kind !== "frame" && command.kind !== "leave")
+        latest.current.state.setVideoToolSelection(target);
       if (command.kind === "selection") command.onAdmitted?.();
       if (target.reason) latest.current.explain(target.reason);
       return true;
@@ -271,18 +278,26 @@ export function useVideoToolCommands(options: Options) {
 
   const requestTool = useCallback(
     (tool: VideoTool) => {
+      latest.current.onUserIntent?.();
       void request({ kind: "tool", tool });
     },
     [request],
   );
   const requestScope = useCallback(
     (scope: VideoToolScope) => {
+      latest.current.onUserIntent?.();
       void request({ kind: "scope", scope });
     },
     [request],
   );
   const requestSelection = useCallback<VideoSelectionCommand>(
     (id, options) => {
+      // The playback owner's task reset is lifecycle cleanup, not a user command.
+      if (id === null && options?.source === "task-reset") {
+        latest.current.state.replaceSelected([]);
+        return;
+      }
+      latest.current.onUserIntent?.();
       void request({ kind: "selection", id, ...options });
     },
     [request],
@@ -290,6 +305,7 @@ export function useVideoToolCommands(options: Options) {
 
   const requestFrame = useCallback(
     (frameIndex: number, isRelevant: () => boolean) => {
+      latest.current.onUserIntent?.();
       void request({ kind: "frame", frameIndex, isRelevant });
     },
     [request],
@@ -301,6 +317,7 @@ export function useVideoToolCommands(options: Options) {
       onAdmitted: (previous: VideoToolSelection) => void,
       isRelevant: () => boolean,
     ) => {
+      latest.current.onUserIntent?.();
       void request({ kind: "temporary", tool, onAdmitted, isRelevant });
     },
     [request],
@@ -330,7 +347,13 @@ export function useVideoToolCommands(options: Options) {
     [request],
   );
 
+  const requestLeave = useCallback(
+    (isRelevant: () => boolean) => request({ kind: "leave", isRelevant }),
+    [request],
+  );
+
   return {
+    requestLeave,
     requestTool,
     requestScope,
     requestSelection,

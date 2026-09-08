@@ -8,6 +8,10 @@ description,以及 unsupported / malformed 的确定性篡改。需要主机提�
 from __future__ import annotations
 
 import shutil
+import subprocess
+
+import numpy as np
+from PIL import Image
 
 from app.api.v1._test_seed_webcodecs import (
     QUALIFICATION_CHUNK_SIZE_FRAMES,
@@ -86,6 +90,66 @@ def test_main_bframes_has_decode_presentation_reorder(tmp_path):
         0,
         30,
     ]
+
+
+def test_issue_context_fixture_has_180_unique_decoded_frame_identities(tmp_path):
+    meta = generate_fixture("h264-issue-context", tmp_path)
+    expected = frame_expectations("h264-issue-context", meta["samples"])
+    assert meta["frame_count"] == expected["frame_count"] == 180
+    assert meta["codec_string"].startswith("avc1.4d")
+    assert [entry["frame_index"] for entry in meta["frame_timetable"]] == list(
+        range(180)
+    )
+    presented_samples = sorted(meta["samples"], key=lambda entry: entry["frame_index"])
+    assert [entry["pts_ms"] for entry in meta["frame_timetable"]] == [
+        entry["pts_ms"] for entry in presented_samples
+    ]
+    decode_order = [entry["frame_index"] for entry in meta["samples"]]
+    assert sorted(decode_order) == list(range(180))
+    assert decode_order != sorted(decode_order)
+    assert sorted(
+        entry["frame_index"] for entry in meta["samples"] if entry["is_keyframe"]
+    ) == list(range(0, 180, 30))
+    assert len({tuple(frame["center_bits"]) for frame in expected["frames"]}) == 180
+
+    # Decode the actual MP4, then verify every signature in presentation order.
+    decoded = subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-i",
+            str(tmp_path / "chunk.mp4"),
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "rgb24",
+            "-",
+        ],
+        capture_output=True,
+        check=True,
+    )
+    pixels = np.frombuffer(decoded.stdout, dtype=np.uint8).reshape(180, 120, 160, 3)
+    regions = expected["sample_regions"]["center_bits"]
+    for frame in expected["frames"]:
+        frame_index = frame["frame_index"]
+        with Image.open(tmp_path / "frames" / f"f{frame_index:04d}.png") as source:
+            source_pixels = np.asarray(source)
+            for region in regions:
+                x = round((region["x"] + region["w"] / 2) * 160)
+                y = round((region["y"] + region["h"] / 2) * 120)
+                bit = frame["center_bits"][region["bit"]]
+                assert np.all(source_pixels[y, x] == (235 if bit else 18))
+                luma = pixels[frame_index, y - 2 : y + 3, x - 2 : x + 3].mean()
+                assert luma > 160 if bit else luma < 95
+
+
+def test_existing_fixture_pixel_contract_does_not_gain_center_code():
+    for name in ("h264-baseline-gop12", "h264-main-bframes-gop30", "h264-vfr"):
+        expected = frame_expectations(name)
+        assert "center_bits" not in expected["sample_regions"]
+        assert all("center_bits" not in frame for frame in expected["frames"])
 
 
 def test_boundary_fixture_has_multiple_gops(tmp_path):

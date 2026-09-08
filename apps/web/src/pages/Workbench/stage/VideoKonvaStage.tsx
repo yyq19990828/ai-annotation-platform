@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -15,6 +16,8 @@ import type {
   ReactNode,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
+  Dispatch,
+  SetStateAction,
 } from "react";
 import { Stage, Layer, Line, Circle, Group, Image as KonvaImage, Rect } from "react-konva";
 import type Konva from "konva";
@@ -41,6 +44,10 @@ import type {
 import type { WorkbenchCommonPreferences } from "@/api/auth";
 import type { AnnotationFeedback } from "@/api/feedbacks";
 import { useElementSize, useViewportTransform } from "../state/useViewportTransform";
+import type { Viewport } from "../state/useViewportTransform";
+import { useVideoIssueView } from "./useVideoIssueView";
+import { captureVideoIssueViewport } from "./videoIssueViewport";
+import type { VideoTimelineWindowControls } from "./videoStageControls";
 import type { PendingDrawing, VideoTool } from "../state/useWorkbenchState";
 import type { DiffMode } from "../modes/types";
 import { FloatingDock } from "../shell/FloatingDock";
@@ -207,7 +214,7 @@ interface VideoKonvaStageProps {
   readOnly?: boolean;
   lockedTrackIds?: Set<string>;
   selectedIds?: string[];
-  onSelect?: (id: string | null, opts?: { shift?: boolean }) => void;
+  onSelect?: (id: string | null, opts?: { shift?: boolean; source?: "task-reset" }) => void;
   /** 光标归一化坐标上报(供状态栏坐标读出);离开画布时上报 null。 */
   onCursorMove?: (pt: { x: number; y: number } | null) => void;
   onCreate?: (frameIndex: number, geom: { x: number; y: number; w: number; h: number }) => void;
@@ -397,7 +404,56 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     }, []);
 
     const { ref: setContainerNode, size: viewportSize } = useElementSize(containerRef);
-    const { vp, vpRef, setVp, fit, zoomAt } = useViewportTransform();
+    const { vp, vpRef, setVp: setViewport, fit, zoomAt: zoomViewportAt } = useViewportTransform();
+    const sourceKey = JSON.stringify([manifest?.task_id ?? null, manifest?.video_url ?? null]);
+    const sourceOwnerRef = useRef({ key: sourceKey, epoch: 0 });
+    if (sourceOwnerRef.current.key !== sourceKey) {
+      sourceOwnerRef.current = { key: sourceKey, epoch: sourceOwnerRef.current.epoch + 1 };
+    }
+    const sourceEpoch = sourceOwnerRef.current.epoch;
+    const cancelIssueRestoreRef = useRef<() => void>(() => {});
+    const interruptListenersRef = useRef(new Set<() => void>());
+    const interruptMountedRef = useRef(false);
+    useLayoutEffect(() => {
+      interruptMountedRef.current = true;
+      const listeners = interruptListenersRef.current;
+      return () => {
+        interruptMountedRef.current = false;
+        listeners.clear();
+      };
+    }, []);
+    const interruptIssueNavigation = useCallback(() => {
+      cancelIssueRestoreRef.current();
+      for (const listener of [...interruptListenersRef.current]) listener();
+    }, []);
+    const subscribeIssueNavigationInterrupt = useCallback(
+      (listener: () => void) => {
+        if (!interruptMountedRef.current || sourceOwnerRef.current.epoch !== sourceEpoch)
+          return () => {};
+        interruptListenersRef.current.add(listener);
+        return () => {
+          interruptListenersRef.current.delete(listener);
+        };
+      },
+      [sourceEpoch],
+    );
+    const timelineWindowControlsRef = useRef<VideoTimelineWindowControls | null>(null);
+    const runViewCommand = useCallback(
+      (command: () => void) => {
+        if (sourceOwnerRef.current.epoch !== sourceEpoch) return;
+        interruptIssueNavigation();
+        command();
+      },
+      [interruptIssueNavigation, sourceEpoch],
+    );
+    const setVp: Dispatch<SetStateAction<Viewport>> = useCallback(
+      (next) => runViewCommand(() => setViewport(next)),
+      [runViewCommand, setViewport],
+    );
+    const zoomAt = useCallback(
+      (x: number, y: number, scale: number) => runViewCommand(() => zoomViewportAt(x, y, scale)),
+      [runViewCommand, zoomViewportAt],
+    );
 
     const [panning, setPanning] = useState(false);
     const panRef = useRef<{ x: number; y: number } | null>(null);
@@ -437,9 +493,59 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     const noopCreate = useCallback(() => {}, []);
     const noopUpdate = useCallback(() => {}, []);
 
+    const [nativeSize, setNativeSize] = useState<{
+      epoch: number;
+      video: HTMLVideoElement;
+      w: number;
+      h: number;
+    } | null>(null);
+    useEffect(() => {
+      if (!videoEl || !manifest?.video_url) return;
+      let disposed = false;
+      const expectedSource = new URL(manifest.video_url, document.baseURI).href;
+      const readSize = () => {
+        if (
+          disposed ||
+          sourceOwnerRef.current.epoch !== sourceEpoch ||
+          videoEl.currentSrc !== expectedSource ||
+          videoEl.readyState < HTMLMediaElement.HAVE_METADATA ||
+          videoEl.videoWidth <= 0 ||
+          videoEl.videoHeight <= 0
+        )
+          return;
+        setNativeSize({
+          epoch: sourceEpoch,
+          video: videoEl,
+          w: videoEl.videoWidth,
+          h: videoEl.videoHeight,
+        });
+      };
+      readSize();
+      videoEl.addEventListener("loadedmetadata", readSize);
+      return () => {
+        disposed = true;
+        videoEl.removeEventListener("loadedmetadata", readSize);
+      };
+    }, [manifest?.video_url, sourceEpoch, videoEl]);
+    const metadataWidth = manifest?.metadata.width;
+    const metadataHeight = manifest?.metadata.height;
+    const hasMetadataSize =
+      typeof metadataWidth === "number" &&
+      Number.isFinite(metadataWidth) &&
+      metadataWidth > 0 &&
+      typeof metadataHeight === "number" &&
+      Number.isFinite(metadataHeight) &&
+      metadataHeight > 0;
+    const hasNativeSize = nativeSize?.epoch === sourceEpoch && nativeSize.video === videoEl;
+    const hasRealMediaSize = hasMetadataSize || hasNativeSize;
     const size = useMemo(
-      () => videoIntrinsicSize(manifest?.metadata.width, manifest?.metadata.height),
-      [manifest?.metadata.height, manifest?.metadata.width],
+      () =>
+        hasMetadataSize
+          ? { w: metadataWidth, h: metadataHeight }
+          : hasNativeSize && nativeSize
+            ? { w: nativeSize.w, h: nativeSize.h }
+            : videoIntrinsicSize(metadataWidth, metadataHeight),
+      [hasMetadataSize, hasNativeSize, metadataHeight, metadataWidth, nativeSize],
     );
     const maskCompareViewport = useMemo(() => {
       if (!maskCompareStore || vp.scale <= 0 || viewportSize.w <= 0 || viewportSize.h <= 0)
@@ -487,7 +593,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       videoRef,
       controlledFrameIndex,
       onFrameIndexChange,
-      onSelect: onSelect as ((id: string | null) => void) | undefined,
+      onSelect,
       performanceTier,
       videoSampling,
       defaultPlaybackRate: defaultPlaybackRate as (1 | 0.25 | 0.5 | 2 | 4) | undefined,
@@ -532,7 +638,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       globalTimelineDensity,
       predictionDensity,
       hasPredictedFrames,
-      seekToAdjacentPredictedFrame,
+      seekToAdjacentPredictedFrame: seekToAdjacentPredictedFrameInternal,
       issueFrames,
       playbackOverlayVisible,
       highlightAction,
@@ -542,11 +648,53 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       schedulePlaybackOverlayHide,
       setNormalizedLoopRegion,
       clearLoopRegion,
-      seekToFrame,
-      seekOverlayByFrames,
-      pausePlayback,
-      controls,
+      seekOverlayByFrames: seekOverlayByFramesInternal,
+      controls: controllerControls,
     } = controller;
+    const controls = useMemo<typeof controllerControls>(
+      () => ({
+        ...controllerControls,
+        togglePlayback: () => runViewCommand(controllerControls.togglePlayback),
+        jogPlayback: (direction) => runViewCommand(() => controllerControls.jogPlayback(direction)),
+        pausePlayback: (options) => {
+          if (options?.snapToGrid === false) {
+            if (sourceOwnerRef.current.epoch === sourceEpoch)
+              controllerControls.pausePlayback(options);
+            return;
+          }
+          runViewCommand(() => controllerControls.pausePlayback(options));
+        },
+        seekByFrames: (delta, options) =>
+          runViewCommand(() => controllerControls.seekByFrames(delta, options)),
+        seekGrid: (direction, options) =>
+          runViewCommand(() => controllerControls.seekGrid(direction, options)),
+        microStep: (direction, options) =>
+          runViewCommand(() => controllerControls.microStep(direction, options)),
+        seekToKeyframe: (direction, options) =>
+          runViewCommand(() => controllerControls.seekToKeyframe(direction, options)),
+        seekToFrame: (frame, options) =>
+          runViewCommand(() => controllerControls.seekToFrame(frame, options)),
+        seekToFrameReady: (frame, options) => {
+          if (sourceOwnerRef.current.epoch !== sourceEpoch)
+            return Promise.resolve({ status: "cancelled", frameIndex: frame, source: null });
+          cancelIssueRestoreRef.current();
+          return controllerControls.seekToFrameReady(frame, options);
+        },
+        jumpHistory: (direction) => runViewCommand(() => controllerControls.jumpHistory(direction)),
+      }),
+      [controllerControls, runViewCommand, sourceEpoch],
+    );
+    const { seekToFrame, pausePlayback } = controls;
+    const seekOverlayByFrames = useCallback(
+      (...args: Parameters<typeof seekOverlayByFramesInternal>) =>
+        runViewCommand(() => seekOverlayByFramesInternal(...args)),
+      [runViewCommand, seekOverlayByFramesInternal],
+    );
+    const seekToAdjacentPredictedFrame = useCallback(
+      (...args: Parameters<typeof seekToAdjacentPredictedFrameInternal>) =>
+        runViewCommand(() => seekToAdjacentPredictedFrameInternal(...args)),
+      [runViewCommand, seekToAdjacentPredictedFrameInternal],
+    );
 
     const effectiveSelectedTrackTimeline = useMemo(
       () =>
@@ -901,14 +1049,18 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
           screenCy > viewportSize.h - margin;
         // 已在视口内且无需变焦 → 不动(避免每次选中都重排, 保留上下文)。
         if (!outOfView && scale === cur.scale) return;
-        setVp({ scale, tx: viewportSize.w / 2 - cx * scale, ty: viewportSize.h / 2 - cy * scale });
+        setViewport({
+          scale,
+          tx: viewportSize.w / 2 - cx * scale,
+          ty: viewportSize.h / 2 - cy * scale,
+        });
       },
       [
         committedMaskRecords,
         frameAiBoxes,
         frameViews.carryOverGhosts,
         frameViews.entries,
-        setVp,
+        setViewport,
         size.h,
         size.w,
         viewportSize.h,
@@ -916,14 +1068,6 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         vpRef,
       ],
     );
-
-    // 选中变化即触发焦点联动(键盘两级循环 / 侧栏点选 / 画布点选统一走此)。用 ref 读最新 focusObject,
-    // 使 effect 只在 selectedId 变化时跑 —— 否则 focusObject 逐帧变身份会让播放中每帧重排。
-    const focusObjectRef = useRef(focusObject);
-    focusObjectRef.current = focusObject;
-    useEffect(() => {
-      if (focusSelectionEnabled && selectedId) focusObjectRef.current(selectedId);
-    }, [focusSelectionEnabled, selectedId]);
 
     // QC 质量警告(关键帧间隔过大 / 当前帧极小框 / 同类高重叠)——与旧 SVG 栈 qualityWarnings 逐位一致。
     // 用当前帧 frameViews.entries(带 geom+className),解决控制器内因 frameIndex→entries 循环依赖
@@ -1696,8 +1840,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     );
 
     const fitViewport = useCallback(() => {
-      fit(viewportSize.w, viewportSize.h, size.w, size.h);
-    }, [fit, size.h, size.w, viewportSize.h, viewportSize.w]);
+      runViewCommand(() => fit(viewportSize.w, viewportSize.h, size.w, size.h));
+    }, [fit, runViewCommand, size.h, size.w, viewportSize.h, viewportSize.w]);
 
     // 实际尺寸(100% 缩放并居中,对齐旧 SVG 栈 setActualSize)。
     const setActualSize = useCallback(() => {
@@ -1712,24 +1856,23 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       });
     }, [setVp, size.h, size.w, viewportSize.h, viewportSize.w]);
 
-    // 首次加载任务必定 fit 一次;之后仅在 autoFitOnResize 开启时跟随尺寸变化(对齐旧栈)。
-    const fittedTaskIdRef = useRef<string | null>(null);
-    useEffect(() => {
-      const taskId = manifest?.task_id ?? null;
-      if (!taskId || !viewportSize.w || !viewportSize.h || !size.w || !size.h) return;
-      const firstFit = fittedTaskIdRef.current !== taskId;
-      if (!firstFit && !autoFitOnResize) return;
-      fittedTaskIdRef.current = taskId;
-      fitViewport();
-    }, [
+    const issueView = useVideoIssueView({
+      sourceKey,
+      taskId: manifest?.task_id ?? null,
+      frameIndex,
+      selectedId,
+      viewport: vp,
+      setViewport,
+      containerSize: viewportSize,
+      mediaSize: size,
+      hasRealMediaSize,
       autoFitOnResize,
-      fitViewport,
-      manifest?.task_id,
-      size.h,
-      size.w,
-      viewportSize.h,
-      viewportSize.w,
-    ]);
+      focusSelectionEnabled,
+      focusObject,
+      timelineRef: timelineWindowControlsRef,
+    });
+    cancelIssueRestoreRef.current = issueView.cancelIssueRestore;
+    const issueViewport = captureVideoIssueViewport(vp, viewportSize, size);
 
     // Mask 直接滚轮调半径；ctrl/⌘+滚轮围绕光标缩放。
     useEffect(() => {
@@ -2010,6 +2153,10 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       ref,
       () => ({
         ...controls,
+        subscribeIssueNavigationInterrupt,
+        captureIssueView: issueView.captureIssueView,
+        waitForIssueViewReady: issueView.waitForIssueViewReady,
+        beginIssueRestore: issueView.beginIssueRestore,
         getDrawingDraft,
         discardDrawingDraft,
         seekToKeyframe: seekManagedKeyframe,
@@ -2022,7 +2169,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         deleteSelectedTrackKeyframe,
         cycleInCategory,
         stepCategory,
-        focusObject,
+        focusObject: (id) => runViewCommand(() => focusObject(id)),
         focusRegion,
       }),
       [
@@ -2033,9 +2180,14 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         focusObject,
         focusRegion,
         getDrawingDraft,
+        issueView.beginIssueRestore,
+        issueView.captureIssueView,
+        issueView.waitForIssueViewReady,
         normToClient,
+        runViewCommand,
         seekManagedKeyframe,
         stepCategory,
+        subscribeIssueNavigationInterrupt,
         toggleManagedTrackOccluded,
         toggleManagedTrackOutside,
         trackActions,
@@ -2232,7 +2384,12 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         }
         data-video-precise-state={preciseSourceState}
         data-video-frame-index={frameIndex}
+        data-video-draft-point-count={pointsDraft.draft?.points.length ?? 0}
         data-video-painted-frame-index={precisePaintedFrameIndex ?? -1}
+        data-video-view-ready={issueView.viewReady ? "true" : "false"}
+        data-video-view-center-x={issueViewport?.center_x}
+        data-video-view-center-y={issueViewport?.center_y}
+        data-video-view-zoom={issueViewport?.zoom}
         data-media-x={vp.tx}
         data-media-y={vp.ty}
         data-media-width={size.w * vp.scale}
@@ -2692,6 +2849,9 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
         )}
         <VideoQcWarnings warnings={qualityWarnings} />
         <VideoPlaybackOverlay
+          sourceKey={sourceKey}
+          windowControlsRef={timelineWindowControlsRef}
+          onViewInteraction={interruptIssueNavigation}
           frameIndex={frameIndex}
           maxFrame={maxFrame}
           samplingStep={samplingStep}

@@ -10860,6 +10860,16 @@
             ],
             "title": "Scene Track Id"
           },
+          "video_context": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeedbackVideoContext"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "x": {
             "anyOf": [
               {
@@ -10888,6 +10898,142 @@
           }
         },
         "title": "FeedbackAnchorPosition",
+        "type": "object"
+      },
+      "FeedbackVideoContext": {
+        "additionalProperties": false,
+        "description": "Versioned capture of source-frame, object and view context for a pixel anchor.",
+        "properties": {
+          "annotation_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotation Version"
+          },
+          "frame_range": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeedbackVideoFrameRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "schema_version": {
+            "const": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "timeline_window": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeedbackVideoTimelineWindow"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "track_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Track Id"
+          },
+          "viewport": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FeedbackVideoViewport"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "schema_version"
+        ],
+        "title": "FeedbackVideoContext",
+        "type": "object"
+      },
+      "FeedbackVideoFrameRange": {
+        "additionalProperties": false,
+        "properties": {
+          "from_frame": {
+            "minimum": 0.0,
+            "title": "From Frame",
+            "type": "integer"
+          },
+          "to_frame": {
+            "minimum": 0.0,
+            "title": "To Frame",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "from_frame",
+          "to_frame"
+        ],
+        "title": "FeedbackVideoFrameRange",
+        "type": "object"
+      },
+      "FeedbackVideoTimelineWindow": {
+        "additionalProperties": false,
+        "properties": {
+          "from": {
+            "minimum": 0.0,
+            "title": "From",
+            "type": "number"
+          },
+          "to": {
+            "minimum": 0.0,
+            "title": "To",
+            "type": "number"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "FeedbackVideoTimelineWindow",
+        "type": "object"
+      },
+      "FeedbackVideoViewport": {
+        "additionalProperties": false,
+        "properties": {
+          "center_x": {
+            "title": "Center X",
+            "type": "number"
+          },
+          "center_y": {
+            "title": "Center Y",
+            "type": "number"
+          },
+          "zoom": {
+            "exclusiveMinimum": 0.0,
+            "title": "Zoom",
+            "type": "number"
+          }
+        },
+        "required": [
+          "center_x",
+          "center_y",
+          "zoom"
+        ],
+        "title": "FeedbackVideoViewport",
         "type": "object"
       },
       "FloatingPanelState": {

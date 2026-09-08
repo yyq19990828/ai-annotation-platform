@@ -1,7 +1,12 @@
 snapshot = "0.24.0"
-watched_tags = ["projects", "datasets", "batches", "tasks", "annotations", "async-jobs", "ml-backends", "admin-ml-integrations"]
+watched_tags = ["projects", "datasets", "batches", "tasks", "annotations", "annotation-feedbacks", "async-jobs", "ml-backends", "admin-ml-integrations"]
 
 [operations]
+"GET /api/v1/feedbacks" = { status = "covered" }
+"POST /api/v1/feedbacks" = { status = "covered" }
+"PATCH /api/v1/feedbacks/{feedback_id}" = { status = "excluded", reason = "no-external-demand" }
+"DELETE /api/v1/feedbacks/{feedback_id}" = { status = "excluded", reason = "no-external-demand" }
+"POST /api/v1/feedbacks/{feedback_id}/replies" = { status = "excluded", reason = "no-external-demand" }
 "DELETE /api/v1/admin/ml-integrations/registry/{registry_id}" = { status = "covered" }
 "DELETE /api/v1/admin/ml-integrations/service-pools/{pool_id}" = { status = "covered" }
 "DELETE /api/v1/admin/ml-integrations/service-pools/{pool_id}/members/{registry_id}" = { status = "covered" }

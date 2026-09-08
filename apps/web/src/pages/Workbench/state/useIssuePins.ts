@@ -8,7 +8,11 @@ import {
   type Dispatch,
   type SetStateAction,
 } from "react";
-import { hasPixelAnchor } from "@/api/feedbacks";
+import {
+  hasPixelAnchor,
+  type AnnotationFeedback,
+  type FeedbackVideoContext,
+} from "@/api/feedbacks";
 import { useFeedbacks } from "@/hooks/useFeedbacks";
 import type { VideoFrameSeekResult } from "../stage/videoStageControls";
 import { useActiveIssueStore } from "./useActiveIssueStore";
@@ -19,11 +23,16 @@ export interface IssuePinAnchor {
   x: number;
   y: number;
   frame?: number;
+  annotationId?: string;
+  annotationLabel?: string;
+  maxFrame?: number;
+  videoContext?: FeedbackVideoContext;
 }
 
 export interface IssueNavigation {
   status: "idle" | "preparing" | "ready" | "cancelled" | "timeout" | "unavailable";
   frameIndex: number | null;
+  message?: string;
 }
 
 interface IssueOwner {
@@ -68,6 +77,9 @@ export function useIssuePins(params: {
   seekVideoFrameReady: (frame: number, isRelevant: () => boolean) => Promise<VideoFrameSeekResult>;
   pauseVideoPlayback: () => void;
   isVideoTask: boolean;
+  captureVideoContext?: (frame: number) => Partial<IssuePinAnchor> | null;
+  navigateVideoIssue?: (issue: AnnotationFeedback) => Promise<void>;
+  onCreateIntent?: () => void;
 }) {
   const { projectId, taskId, stageGeom, setVp, isVideoTask } = params;
   const owner = useMemo(
@@ -160,6 +172,7 @@ export function useIssuePins(params: {
   const onToggleIssuePinDrop = useCallback(() => {
     if (!mountedRef.current || ownerRef.current !== owner || !projectId || !taskId) return;
     const armed = !uiRef.current.issuePinDropArmed;
+    paramsRef.current.onCreateIntent?.();
     clearRequest();
     if (armed && isVideoTask) paramsRef.current.pauseVideoPlayback();
     updateUi({ ...emptyIssueState(owner), issuePinDropArmed: armed });
@@ -169,6 +182,7 @@ export function useIssuePins(params: {
     if (!mountedRef.current || ownerRef.current !== owner || !projectId || !taskId) return;
     clearRequest();
     if (isVideoTask) paramsRef.current.pauseVideoPlayback();
+    paramsRef.current.onCreateIntent?.();
     updateUi({ ...emptyIssueState(owner), issueCreateOpen: true });
   }, [clearRequest, isVideoTask, owner, projectId, taskId, updateUi]);
 
@@ -199,7 +213,7 @@ export function useIssuePins(params: {
         });
         return;
       }
-      const anchor = { x, y, frame };
+      const anchor = { ...paramsRef.current.captureVideoContext?.(frame), x, y, frame };
       updateUi({ issuePinDropArmed: false, issuePinPrefill: anchor });
       await runNavigation({ owner, frameIndex: frame, anchor });
     },
@@ -241,15 +255,25 @@ export function useIssuePins(params: {
   const highlightIssueFromPin = useActiveIssueStore((st) => st.highlightFromPin);
   const requestIssuesTab = useActiveIssueStore((st) => st.requestIssuesTab);
   const issueFocusTick = useActiveIssueStore((st) => st.focusTick);
+  const focusTarget = useActiveIssueStore((st) => st.focusTarget);
   const lastIssueFocusRef = useRef({ owner, tick: issueFocusTick });
 
   useEffect(() => {
     const previous = lastIssueFocusRef.current;
     lastIssueFocusRef.current = { owner, tick: issueFocusTick };
-    if (previous.owner !== owner || issueFocusTick === previous.tick) return;
-    const target = (issuesQuery.data?.items ?? []).find((i) => i.id === activeIssueHighlightId);
+    if (issueFocusTick === previous.tick) return;
+    const target =
+      focusTarget?.id === activeIssueHighlightId
+        ? focusTarget
+        : (issuesQuery.data?.items ?? []).find((i) => i.id === activeIssueHighlightId);
     if (!target?.anchor_position) return;
     if (isVideoTask) {
+      if (paramsRef.current.navigateVideoIssue && target.project_id === projectId) {
+        clearRequest();
+        updateUi(emptyIssueState(owner));
+        void paramsRef.current.navigateVideoIssue(target);
+        return;
+      }
       const frame = target.anchor_position.frame;
       if (typeof frame === "number") void onSeekIssueFrame(frame);
       return;
@@ -266,6 +290,10 @@ export function useIssuePins(params: {
     setVp,
     isVideoTask,
     onSeekIssueFrame,
+    focusTarget,
+    projectId,
+    clearRequest,
+    updateUi,
   ]);
 
   return {

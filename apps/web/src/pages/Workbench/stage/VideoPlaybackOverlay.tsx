@@ -5,6 +5,7 @@ import type {
   HTMLAttributes,
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
+  Ref,
 } from "react";
 import { flushSync } from "react-dom";
 import { Button } from "@/components/ui/Button";
@@ -25,6 +26,8 @@ import {
 } from "./timelineCoords";
 import type { VideoBookmark, VideoLoopRegion } from "./videoNavigationState";
 import type { VideoFramePreview } from "./useVideoFramePreview";
+import { useVideoTimelineWindow } from "./useVideoTimelineWindow";
+import type { VideoTimelineWindowControls } from "./videoStageControls";
 import type {
   PredictionDensityBin,
   VideoTimelineDensityBin,
@@ -96,6 +99,9 @@ const RANGE_DRAFT_TESTID: Record<TimelineRangePurpose, string> = {
 };
 
 interface VideoPlaybackOverlayProps {
+  sourceKey?: string;
+  windowControlsRef?: Ref<VideoTimelineWindowControls>;
+  onViewInteraction?: () => void;
   frameIndex: number;
   maxFrame: number;
   /** v0.10.29 · 采样网格步长 (源帧空间)。>1 时在时间轴渲染网格刻度；1 时不画。 */
@@ -230,6 +236,9 @@ function TimelineDiv({ vars, ...props }: HTMLAttributes<HTMLDivElement> & { vars
 }
 
 export function VideoPlaybackOverlay({
+  sourceKey = "",
+  windowControlsRef,
+  onViewInteraction,
   frameIndex,
   maxFrame,
   samplingStep = 1,
@@ -289,11 +298,6 @@ export function VideoPlaybackOverlay({
   } | null>(null);
   const rangeDraftRef = useRef<TimelineRangeDraft | null>(null);
   const seekDragRef = useRef(false);
-  // v0.21.15 WS2 · 可见帧窗口 [from,to] (横向 zoom)。默认全窗口; 换视频 (maxFrame 变) 复位, 不持久化
-  // (跨视频帧数不同易越界)。窗口可为分数帧, 渲染/反解经 timelineCoords 收口, 保证同一坐标基准。
-  const [timelineWindow, setTimelineWindow] = useState<TimelineWindow>({ from: 0, to: maxFrame });
-  const timelineWindowRef = useRef(timelineWindow);
-  timelineWindowRef.current = timelineWindow;
   const timelineShellRef = useRef<HTMLDivElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const timelineToggleRef = useRef<HTMLButtonElement | null>(null);
@@ -328,6 +332,14 @@ export function VideoPlaybackOverlay({
     );
     return Math.max(MIN_VISIBLE_SPAN, densityBinSpan * 6);
   }, [globalTimelineDensity, predictionDensity]);
+  // This remains the Overlay's only window state. Equal-length task/media changes reset it too.
+  const { timelineWindow, timelineWindowRef, setTimelineWindow } = useVideoTimelineWindow({
+    sourceKey,
+    maxFrame,
+    minSpan: minTimelineSpan,
+    controlsRef: windowControlsRef,
+    onInteraction: onViewInteraction,
+  });
   // v0.10.29 · 采样网格刻度：step>1 时在时间轴渲染网格帧 tick。
   // 网格点过密时 (>200) 按比例抽稀，避免长视频生成海量 DOM 节点。
   const gridTicks = useMemo(() => {
@@ -601,10 +613,6 @@ export function VideoPlaybackOverlay({
 
   const isInteractive = visible && interactive;
 
-  // v0.21.15 WS2 · 换视频 (maxFrame 变) 复位窗口, 避免跨视频窗口越界 (窗口不持久化)。
-  useEffect(() => {
-    setTimelineWindow({ from: 0, to: maxFrame });
-  }, [maxFrame]);
   // v0.21.16 · 时间轴交互 shell 的指针/键盘 handler 抽为具名函数, 供折叠态 (紧凑轨道) 与展开态
   // (分行面板的 scrubber 行) 复用同一套 seek / 刷选 / scrub 逻辑。所有几何以 e.currentTarget 的
   // rect 换算, 故挂到哪个元素都对。
@@ -723,7 +731,7 @@ export function VideoPlaybackOverlay({
     return () => root.removeEventListener("wheel", onWheel);
     // expanded: 展开/折叠切到不同的外层 div, overlayRef 指向新节点, 必须重挂监听
     // (cleanup 用闭包捕获的旧 root 解绑旧节点, 不会解错)。
-  }, [expanded, isInteractive, maxFrame, minTimelineSpan]);
+  }, [expanded, isInteractive, maxFrame, minTimelineSpan, setTimelineWindow, timelineWindowRef]);
 
   const playbackRateText = playbackRateLabel ?? "1x";
   const hasPredictionDensity = predictionDensity.some((bin) => bin.count > 0);
@@ -1011,6 +1019,8 @@ export function VideoPlaybackOverlay({
     return (
       <div
         data-testid="video-playback-overlay"
+        data-timeline-from={timelineWindow.from}
+        data-timeline-to={timelineWindow.to}
         data-state="expanded"
         ref={overlayRef}
         className={cn(
@@ -1516,6 +1526,8 @@ export function VideoPlaybackOverlay({
   return (
     <div
       data-testid="video-playback-overlay"
+      data-timeline-from={timelineWindow.from}
+      data-timeline-to={timelineWindow.to}
       data-state="collapsed"
       ref={overlayRef}
       className={cn(

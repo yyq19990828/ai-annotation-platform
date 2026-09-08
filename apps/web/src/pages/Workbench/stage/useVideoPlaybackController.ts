@@ -102,7 +102,7 @@ export interface UseVideoPlaybackControllerOptions {
   videoRef: RefObject<HTMLVideoElement | null>;
   controlledFrameIndex?: number;
   onFrameIndexChange?: (frame: number) => void;
-  onSelect?: (id: string | null) => void;
+  onSelect?: (id: string | null, options?: { source: "task-reset" }) => void;
   performanceTier?: WorkbenchPerformanceTier;
   videoSampling?: VideoSamplingConfig | null;
   defaultPlaybackRate?: VideoPlaybackRate;
@@ -1311,7 +1311,7 @@ export function useVideoPlaybackController({
       setBookmarks([]);
       setJumpHistory(emptyVideoJumpHistory());
     }
-    onSelectRef.current?.(null);
+    onSelectRef.current?.(null, { source: "task-reset" });
   }, [manifest?.task_id, maxFrame, setFrameIndex]);
 
   // ---- sessionStorage 持久化 ----

@@ -1,8 +1,9 @@
-import { fireEvent, render, within } from "@testing-library/react";
+import { act, fireEvent, render, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import type { ComponentProps } from "react";
+import { createRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { projectTrackerReview } from "@/hooks/videoTrackerReviewScope";
 import {
@@ -13,6 +14,7 @@ import {
 import { getTrackColor } from "./colors";
 import { buildFrameTimebase } from "./frameTimebase";
 import type { VideoTimelineDensityBin, VideoTrackTimeline } from "./videoTrackTimeline";
+import type { VideoTimelineWindowControls } from "./videoStageControls";
 
 const overlayCss = readFileSync(
   resolve(process.cwd(), "src/pages/Workbench/stage/VideoPlaybackOverlay.module.css"),
@@ -108,6 +110,72 @@ function reviewProjection() {
 }
 
 describe("VideoPlaybackOverlay", () => {
+  it("captures fractional windows, preserves them across collapse, and rejects handles from A→B→A", () => {
+    const ref = createRef<VideoTimelineWindowControls>();
+    const onInteraction = vi.fn();
+    const props = {
+      frameIndex: 120,
+      maxFrame: 179,
+      timebase,
+      isPlaying: false,
+      currentFrameEntryCount: 0,
+      visible: true,
+      onSeek: vi.fn(),
+      onSeekByFrames: vi.fn(),
+      onTogglePlay: vi.fn(),
+      windowControlsRef: ref,
+      onViewInteraction: onInteraction,
+    };
+    const view = render(<VideoPlaybackOverlay {...props} sourceKey="A" />);
+    const old = ref.current!;
+    act(() => {
+      expect(ref.current!.restore({ from: 60.25, to: 144.75 })).toEqual({
+        window: { from: 60.25, to: 144.75 },
+        clamped: false,
+      });
+    });
+    expect(ref.current!.capture()).toEqual({ from: 60.25, to: 144.75 });
+    expect(onInteraction).not.toHaveBeenCalled();
+    expect(view.getByTestId("video-playback-overlay")).toHaveAttribute(
+      "data-timeline-from",
+      "60.25",
+    );
+    fireEvent.click(view.getByTestId("video-timeline-toggle"));
+    expect(view.getByTestId("video-playback-overlay")).toHaveAttribute(
+      "data-timeline-to",
+      "144.75",
+    );
+    view.rerender(<VideoPlaybackOverlay {...props} sourceKey="B" />);
+    expect(ref.current!.capture()).toEqual({ from: 0, to: 179 });
+    view.rerender(<VideoPlaybackOverlay {...props} sourceKey="A" />);
+    expect(old.capture()).toBeNull();
+    expect(old.restore({ from: 20, to: 100 })).toBeNull();
+    expect(ref.current!.capture()).toEqual({ from: 0, to: 179 });
+    fireEvent.click(view.getByRole("button", { name: "放大时间轴" }));
+    expect(onInteraction).toHaveBeenCalledTimes(1);
+    view.unmount();
+    expect(old.capture()).toBeNull();
+  });
+
+  it("restores through the density-derived minimum span and current media bounds", () => {
+    const ref = createRef<VideoTimelineWindowControls>();
+    renderOverlay({
+      maxFrame: 179,
+      windowControlsRef: ref,
+      globalTimelineDensity: [{ index: 0, from: 0, to: 11, density: 1, tracks: [] }],
+    });
+    act(() => {
+      expect(ref.current!.restore({ from: 160.5, to: 170.5 })).toEqual({
+        window: { from: 107, to: 179 },
+        clamped: true,
+      });
+    });
+    expect(ref.current!.capture()).toEqual({ from: 107, to: 179 });
+    expect(ref.current!.restore({ from: NaN, to: 120 })).toBeNull();
+    expect(ref.current!.restore({ from: 120, to: 60 })).toBeNull();
+    expect(ref.current!.capture()).toEqual({ from: 107, to: 179 });
+  });
+
   it("renders the active jog playback rate when provided", () => {
     const { getByTestId } = renderOverlay({ isPlaying: true, playbackRateLabel: "-2x" });
 
