@@ -1,6 +1,6 @@
 # Workbench media recapture after dockable layouts
 
-> Status: first representative batch approved by the user on 2026-09-07; second image/layout batch approved; third SAM/review batch approved; fourth video-basics batch captured and awaiting user review.
+> Status: first three batches approved; fourth video-basics batch retained at the user's request; fifth video-AI batch in progress. Keeping existing recordings is not a new per-asset review approval.
 > Baseline: `af2eb6ab`, 2026-09-07. No release milestone is assigned.
 
 ## Goal and acceptance
@@ -269,3 +269,33 @@ Production fixes in `0372bf9c` and `7c13fb7a` restore explicit chapter brushing 
 Recorder fixes align with the current UI: select the full track list for cross-frame checks, use the new object's class picker instead of relabeling a selected track, and close the floating selection card before clicking a row it covers. This last ordering prevents browser actionability retries from scrolling the workspace; the final Mask clip keeps the whole canvas visible. Cleanup now drains every owned record queue before each project reseed, including the separate routing flow, and retains failed cleanup work for retry.
 
 Validation includes 36 recording/helper tests, two derivation tests, focused TypeScript and ESLint checks, screenshot lint (61 files, none missing), the strict static-image manifest check and the documentation build. The static manifest retains three historical warnings. Final publication hashes, browser preview results and source files are retained in the verified private batch archive. This batch does not approve the new ten files, claim marketing/4K60 quality, authorize a push or release, or complete the remaining video, 3D and cross-page families.
+
+## Batch 5: video AI ranges, seeds, and discovery
+
+The user explicitly requested continuing to the next batch without rerecording completed content. Preserve the first four batches byte-for-byte, including the fourth batch's recordings made before the hidden-range fix in `177176ee`. That fix applies to subsequent captures; this request does not renew any media-review record.
+
+Record five stories: `video-tracker-range`, `video-tracker-cross-frame-points`, `video-tracker-positive-negative`, `video-tracker-box-seed`, and `video-tracker-text-discovery`. Publish only their ten existing MP4/WebP targets under `docs-site/public/media/video/`. Old GIF and article recipes remain archived; do not replace earlier recordings or unrelated derivatives.
+
+The old clips and posters show obsolete floating tracker forms. The three seed stories still drag the form across the canvas; the text story assumes fixed model-generated instance IDs. Use the current video-tracking dock layout with an expanded timeline, keeping both bus targets and the active control/result visible. Retain the actual model wait and complete seed/box gestures. Select a contiguous inspected source window; do not manufacture shorter inference or repeated frames.
+
+All five stories require live `video_tracker` capabilities. Declare those exact flows in the existing portable recording plan, preserve job/request/preview/decision lineage, match model results to reviewed target geometry, and verify saved track IDs and geometry after reload. Range brushing must include its seed frame; multi-frame seeds must retain their target/frame/polarity; text discovery must select the actual matching instances rather than historical IDs. Register each job and each new annotation before later checks can fail; delete jobs and accepted outputs separately through the existing scoped cleanup guards before reseeding.
+
+Use the existing isolated screenshot database, Redis DB 15, API 8010, web 3020, and a dedicated `screenshots@batch5` worker. Preflight confirmed no active capture DB sessions or nonterminal tracker jobs. Preserve unrelated queued audit records. Inspect beginnings, core interactions, endings, posters, browser/API errors, hashes, documentation and provenance before publishing a reviewable batch; keep verified private source backups outside the checkout.
+
+### Captured and verified
+
+The five live flows passed on the isolated screenshot stack. Range brushing produced one bus track with 21 keyframes (F0–F20); each seed variant produced two bus tracks with 31 keyframes each (F0–F30). Text discovery selected the two geometrically matched buses, accepted 22 candidates into two tracks (F0–F10), and rejected the remaining candidates. All flows verified persisted IDs and geometry after reload, with no collected browser, console, or API errors. Reloads remain outside the published windows.
+
+| Story                    | Source run                         | Reviewed source window | Output duration |
+| ------------------------ | ---------------------------------- | ---------------------- | --------------- |
+| Range                    | `2026-09-08T02-18-10-093Z-4162935` | `74.8:33.16`           | 33.16 s         |
+| Box seeds                | `2026-09-08T02-18-10-093Z-4162935` | `4.2:20.85`            | 20.88 s         |
+| Cross-frame points       | `2026-09-08T02-29-09-027Z-6986`    | `64.95:26.25`          | 26.28 s         |
+| Positive/negative points | `2026-09-08T02-29-09-027Z-6986`    | `4.1:29.55`            | 29.60 s         |
+| Text discovery           | `2026-09-08T02-47-14-567Z-77508`   | `68.8:14.6`            | 14.60 s         |
+
+Each published MP4 is standard 1280×720 at 25 fps with a separately inspected WebP poster. Every clip is contiguous and retains actual inference latency, including the longer range wait and the warm text-discovery response. Source setup and refresh-only tails were trimmed after frame inspection; no completed earlier story was rerecorded. The tracked-media baseline confirms exactly these ten replacements and 241 unchanged media files, including all four earlier batches.
+
+The text pilot exposed a recorder actionability problem: the review card covers the usual top-edge pointer parking location, leaving playback controls hidden. The successful flow parks below the card before using native frame controls. Its two failed pilots and the earlier range locator pilot are retained privately, not published. Cleanup recovers newly committed annotations when browser responses are lost, validates the task scope before deletion, and keeps failed cleanup records for retry. The docs profile also repairs isolated seed after the run; this validation does not certify the separate marketing teardown path.
+
+Validation: 40 recording/helper tests, two derivation tests, focused TypeScript and ESLint checks, screenshot lint (61 files, none missing), strict static-image manifest validation, and the documentation build passed. The static manifest retains its historical warnings. The local review page decoded five posters and played all five MP4s with no browser or HTTP errors. This batch remains pending human content review; it does not update `media-reviews.json`, authorize push/release, or certify marketing/4K60 capture.

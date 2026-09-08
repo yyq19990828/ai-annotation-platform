@@ -76,6 +76,11 @@ test("capability-only panels and live inference retain separate recording eviden
     "candidate-keyboard-review",
     "candidate-review-lifecycle",
     "smart-scribble",
+    "video-tracker-range",
+    "video-tracker-cross-frame-points",
+    "video-tracker-positive-negative",
+    "video-tracker-box-seed",
+    "video-tracker-text-discovery",
   ]) {
     assert.equal(recordingInference(id), "live", id);
   }
@@ -100,4 +105,20 @@ test("mixed selection combines capability requirements without widening individu
   const grep = new RegExp(plan.grep);
   for (const id of plan.flows) assert.ok(grep.test(`flows flow recordings ${id} — title`));
   assert.ok(!grep.test("flows flow recordings video-tracker-range — title"));
+});
+
+test("video tracking recordings require a live tracker without widening to other backends", () => {
+  const flows = [
+    "video-tracker-range",
+    "video-tracker-cross-frame-points",
+    "video-tracker-positive-negative",
+    "video-tracker-box-seed",
+    "video-tracker-text-discovery",
+  ];
+  assert.equal(recordingPlan(flows).backendRequirements, "video_tracker");
+  assert.deepEqual(
+    flows.map(recordingInference),
+    flows.map(() => "live"),
+  );
+  assert.throws(() => recordingPlan(["video-tracker-combo-discovery"]), /Unregistered/);
 });

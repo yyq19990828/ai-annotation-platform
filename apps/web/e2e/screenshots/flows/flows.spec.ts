@@ -1,4 +1,7 @@
-import { drainRecordingCleanup } from "../_helpers/recording-cleanup";
+import {
+  drainRecordingCleanup,
+  recoverRecordingAnnotationIds,
+} from "../_helpers/recording-cleanup";
 /**
  * M3 · 流程录制 spec。
  *
@@ -152,6 +155,12 @@ type VideoAnnotationCleanupRecord = Pick<
   "projectId" | "taskId" | "annotationIds"
 >;
 const videoAnnotationCleanupRecords: VideoAnnotationCleanupRecord[] = [];
+type VideoTrackerRecordingCleanupRecord = VideoTrackBatchPropagateCleanupRecord & {
+  accessToken: string;
+  baselineAnnotationIds: string[];
+  annotations: VideoAnnotationCleanupRecord;
+};
+const videoTrackerRecordingCleanupRecords: VideoTrackerRecordingCleanupRecord[] = [];
 const videoChapterCleanupRecords: Array<VideoChapterCleanupRecord & { accessToken: string }> = [];
 const ocrCleanupRecords: OcrCleanupRecord[] = [];
 const videoFrameInferenceCleanupRecords: VideoFrameInferenceCleanupRecord[] = [];
@@ -331,6 +340,7 @@ test.afterAll(async ({}, testInfo) => {
 async function cleanupRecordingRecords(): Promise<void> {
   await drainRecordingCleanup(ocrCleanupRecords, cleanupOcrRecording);
   await drainRecordingCleanup(videoFrameInferenceCleanupRecords, cleanupVideoFrameInference);
+  await drainRecordingCleanup(videoTrackerRecordingCleanupRecords, cleanupVideoTrackerRecording);
   await drainRecordingCleanup(videoAnnotationCleanupRecords, cleanupVideoFrameInference);
   await drainRecordingCleanup(videoChapterCleanupRecords, cleanupVideoChapter);
   await drainRecordingCleanup(secondaryInferenceCleanupRecords, cleanupSecondaryInference);
@@ -433,6 +443,104 @@ function cleanupVideoTrackBatchPropagate(record: VideoTrackBatchPropagateCleanup
       stdio: "inherit",
     },
   );
+}
+
+async function readRecordingAnnotations(taskId: string, accessToken: string): Promise<unknown> {
+  const apiBase = process.env.PLAYWRIGHT_API_BASE ?? "http://127.0.0.1:8010";
+  const response = await fetch(`${apiBase}/api/v1/tasks/${taskId}/annotations`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) throw new Error(`Recording annotation recovery: HTTP ${response.status}`);
+  return response.json();
+}
+
+async function cleanupVideoTrackerRecording(
+  record: VideoTrackerRecordingCleanupRecord,
+): Promise<void> {
+  // This read is independent of the page, which portable finalization closes.
+  // Retain the cleanup record and job lineage if recovery itself is unavailable.
+  recoverRecordingAnnotationIds(
+    { ...record.annotations, baselineAnnotationIds: record.baselineAnnotationIds },
+    await readRecordingAnnotations(record.taskId, record.accessToken),
+  );
+  try {
+    if (record.videoTrackerJobIds.length) cleanupVideoTrackBatchPropagate(record);
+  } finally {
+    if (record.annotations.annotationIds.length) cleanupVideoFrameInference(record.annotations);
+  }
+}
+
+async function recordVideoTrackerStory(
+  page: Page,
+  assetId: string,
+  run: (
+    onJobCreated: (jobId: string) => void,
+    onAnnotationsCreated: (ids: string[]) => void,
+  ) => Promise<{ drawStartMs: number; drawEndMs: number; evidence: object }>,
+  docsTarget?: string,
+): Promise<void> {
+  if (!cached) throw new Error("Screenshot catalog is not ready");
+  const t0 = Date.now();
+  const annotations = registerVideoAnnotationCleanup(cached);
+  const accessToken = await page.evaluate(() => localStorage.getItem("token"));
+  if (!accessToken) throw new Error("Recording cleanup requires the isolated user's token");
+  const baselineAnnotationIds: string[] = [];
+  recoverRecordingAnnotationIds(
+    { taskId: annotations.taskId, baselineAnnotationIds: [], annotationIds: baselineAnnotationIds },
+    await readRecordingAnnotations(annotations.taskId, accessToken),
+  );
+  const jobs: VideoTrackerRecordingCleanupRecord = {
+    projectId: annotations.projectId,
+    taskId: annotations.taskId,
+    sourceAnnotationIds: [],
+    videoTrackerJobIds: [],
+    accessToken,
+    baselineAnnotationIds,
+    annotations,
+  };
+  videoTrackerRecordingCleanupRecords.push(jobs);
+  const errors: string[] = [];
+  const onPageError = (error: Error) => errors.push(error.message);
+  const onConsole = (message: import("@playwright/test").ConsoleMessage) => {
+    if (message.type() === "error") errors.push(message.text());
+  };
+  const onResponse = (response: import("@playwright/test").Response) => {
+    const pathname = new URL(response.url()).pathname;
+    if (pathname.startsWith("/api/") && response.status() >= 400)
+      errors.push(`${response.status()} ${pathname}`);
+  };
+  page.on("pageerror", onPageError);
+  page.on("console", onConsole);
+  page.on("response", onResponse);
+  try {
+    const win = await run(
+      (id) => {
+        if (!jobs.videoTrackerJobIds.includes(id)) jobs.videoTrackerJobIds.push(id);
+      },
+      (ids) => {
+        for (const id of ids)
+          if (!annotations.annotationIds.includes(id)) annotations.annotationIds.push(id);
+      },
+    );
+    expect(jobs.videoTrackerJobIds).toHaveLength(1);
+    expect(annotations.annotationIds.length).toBeGreaterThan(0);
+    expect(errors, `${assetId} browser and API errors`).toEqual([]);
+    flowInferenceEvidence[assetId] = { ...win.evidence, browserErrors: errors };
+    await finalize(page, assetId, docsTarget, {
+      fps: 6,
+      maxWidth: 680,
+      maxColors: 128,
+      ...drawTrim(win, t0),
+    });
+  } finally {
+    page.off("pageerror", onPageError);
+    page.off("console", onConsole);
+    page.off("response", onResponse);
+    // Accepted outputs are not propagation sources. Recover missed responses,
+    // then delete the owned job and new annotations through independent guards.
+    await cleanupVideoTrackerRecording(jobs);
+  }
 }
 
 function cleanupSecondaryInference(record: SecondaryInferenceCleanupRecord): void {
@@ -1601,17 +1709,19 @@ test.describe("flow recordings", () => {
 
   test("video-tracker-range — 时间轴刷选追踪范围", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    const t0 = Date.now();
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 240_000);
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
-    const win = await runVideoTrackerRange(page, cached);
-    await finalize(
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:video", preset: "video-tracking" },
+    });
+    await recordVideoTrackerStory(
       page,
       "video-tracker-range",
+      (onJobCreated, onAnnotationsCreated) =>
+        runVideoTrackerRange(page, cached!, onJobCreated, onAnnotationsCreated),
       path.join(DOCS_IMAGES, "video-propagate/shift-brush-range.gif"),
-      { fps: 6, maxWidth: 680, maxColors: 128, ...drawTrim(win, t0) },
     );
   });
 
@@ -1766,55 +1876,82 @@ test.describe("flow recordings", () => {
 
   test("video-tracker-cross-frame-points — 双目标跨帧多正点", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(180_000); // 真实视频推理 + 4K H.264 归档转码
-    const t0 = Date.now();
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 240_000);
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
-    const win = await runVideoMultiSeedTracking(page, cached, "cross-frame-points");
-    await finalize(page, "video-tracker-cross-frame-points", undefined, drawTrim(win, t0));
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:video", preset: "video-tracking" },
+    });
+    await recordVideoTrackerStory(
+      page,
+      "video-tracker-cross-frame-points",
+      (onJobCreated, onAnnotationsCreated) =>
+        runVideoMultiSeedTracking(
+          page,
+          cached!,
+          "cross-frame-points",
+          onJobCreated,
+          onAnnotationsCreated,
+        ),
+    );
   });
 
   test("video-tracker-positive-negative — 双目标正负点修正", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(180_000); // 真实视频推理 + 4K H.264 归档转码
-    const t0 = Date.now();
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 240_000);
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
-    const win = await runVideoMultiSeedTracking(page, cached, "positive-negative");
-    await finalize(page, "video-tracker-positive-negative", undefined, drawTrim(win, t0));
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:video", preset: "video-tracking" },
+    });
+    await recordVideoTrackerStory(
+      page,
+      "video-tracker-positive-negative",
+      (onJobCreated, onAnnotationsCreated) =>
+        runVideoMultiSeedTracking(
+          page,
+          cached!,
+          "positive-negative",
+          onJobCreated,
+          onAnnotationsCreated,
+        ),
+    );
   });
 
   test("video-tracker-box-seed — 双目标整车框种子", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(180_000); // 真实视频推理 + 4K H.264 归档转码
-    const t0 = Date.now();
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 240_000);
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
-    const win = await runVideoMultiSeedTracking(page, cached, "box-seed");
-    await finalize(page, "video-tracker-box-seed", undefined, drawTrim(win, t0));
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:video", preset: "video-tracking" },
+    });
+    await recordVideoTrackerStory(
+      page,
+      "video-tracker-box-seed",
+      (onJobCreated, onAnnotationsCreated) =>
+        runVideoMultiSeedTracking(page, cached!, "box-seed", onJobCreated, onAnnotationsCreated),
+    );
   });
 
   test("video-tracker-text-discovery — 文本发现双目标并采纳轨迹", async ({ page, seed }) => {
     if (!cached) throw new Error("screenshot seed catalog 未完成");
-    test.setTimeout(180_000); // 真实视频推理 + 4K H.264 归档转码
-    const t0 = Date.now();
-    await seed.enableMLBackendByName(
-      cached.projects.video_demo.id,
-      cached.users.project_admin.email,
-      "sam3-backend",
-    );
+    test.setTimeout(SELECTED_CAPTURE ? 420_000 : 240_000);
     await installScreenshotEnvironment(page);
-    await seed.injectToken(page, cached.users.project_admin.email);
+    await seed.injectToken(page, cached.users.admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "none");
-    const win = await runVideoTrackerTextDiscovery(page, cached);
-    await finalize(page, "video-tracker-text-discovery", undefined, drawTrim(win, t0));
+    await installRecordingWorkbenchLayout(page, "both", {
+      workspace: { context: "annotate:video", preset: "video-tracking" },
+    });
+    await recordVideoTrackerStory(
+      page,
+      "video-tracker-text-discovery",
+      (onJobCreated, onAnnotationsCreated) =>
+        runVideoTrackerTextDiscovery(page, cached!, onJobCreated, onAnnotationsCreated),
+    );
   });
 
   test("video-tracker-combo-discovery — 文本发现后逐对象记忆追踪", async ({ page, seed }) => {

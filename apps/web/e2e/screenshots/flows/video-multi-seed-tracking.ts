@@ -410,21 +410,22 @@ export async function runVideoMultiSeedTracking(
         response.ok(),
       { timeout: 20_000 },
     );
-    const annotationsRefreshed = page.waitForResponse(
-      (response) =>
-        response.request().method() === "GET" &&
-        response.url().endsWith(`/tasks/${project.tasks.tracking.id}/annotations`) &&
-        response.ok(),
-      { timeout: 20_000 },
-    );
+    const annotationsRefreshed = page
+      .waitForResponse(
+        (response) =>
+          response.request().method() === "GET" &&
+          response.url().endsWith(`/tasks/${project.tasks.tracking.id}/annotations`) &&
+          response.ok(),
+        { timeout: 20_000 },
+      )
+      .then(async (response) => {
+        const saved = (await response.json()) as RecordedVideoTrack[];
+        const added = saved.filter((annotation) => !baselineIds.has(annotation.id));
+        onAnnotationsCreated?.(added.map((annotation) => annotation.id));
+        return added;
+      });
     await review.getByTestId("tracker-review-accept").click();
-    const [decisionResponse, annotationsResponse] = await Promise.all([
-      accepted,
-      annotationsRefreshed,
-    ]);
-    const saved = (await annotationsResponse.json()) as RecordedVideoTrack[];
-    const added = saved.filter((annotation) => !baselineIds.has(annotation.id));
-    onAnnotationsCreated?.(added.map((annotation) => annotation.id));
+    const [decisionResponse, added] = await Promise.all([accepted, annotationsRefreshed]);
     expect(added).toHaveLength(2);
     for (const annotation of added) {
       expect(annotation.task_id).toBe(project.tasks.tracking.id);

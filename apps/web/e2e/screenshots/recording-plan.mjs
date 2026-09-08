@@ -38,6 +38,11 @@ const liveInference = {
   "candidate-keyboard-review": ["image_interactive"],
   "candidate-review-lifecycle": ["image_interactive"],
   "smart-scribble": ["image_interactive"],
+  "video-tracker-range": ["video_tracker"],
+  "video-tracker-cross-frame-points": ["video_tracker"],
+  "video-tracker-positive-negative": ["video_tracker"],
+  "video-tracker-box-seed": ["video_tracker"],
+  "video-tracker-text-discovery": ["video_tracker"],
 };
 
 export const RECORDING_FLOWS = {

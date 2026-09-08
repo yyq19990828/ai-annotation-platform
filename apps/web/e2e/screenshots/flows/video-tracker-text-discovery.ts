@@ -18,6 +18,7 @@ import type { DrawWindow } from "./rotated-bbox";
 type SavedTrack = {
   id: string;
   class_name: string;
+  version: number;
   geometry: {
     type: string;
     track_id?: string;
@@ -67,6 +68,7 @@ function verifySaved(
   expect(tracks).toHaveLength(targets.length);
   for (const track of tracks) {
     expect(track.class_name).toBe(className);
+    expect(track.version).toBeGreaterThan(0);
     expect(track.geometry.type).toBe("video_track_bbox");
     expect(track.geometry.track_id).toBeTruthy();
     const frames = new Set(
@@ -188,19 +190,28 @@ export async function runVideoTrackerTextDiscovery(
       .setChecked(selectedIds.includes(instanceId));
   await review.getByTestId("tracker-review-from-frame").fill("0");
   await review.getByTestId("tracker-review-to-frame").fill("10");
+  // Editing the review bar leaves the pointer outside the stage and hides playback controls.
+  const parkBelowReview = async () => {
+    const bounds = await page.getByTestId("video-konva-stage").boundingBox();
+    if (!bounds) throw new Error("Text discovery video stage is not visible");
+    // The review card covers the usual top-edge parking point.
+    await page.mouse.move(bounds.x + bounds.width * 0.5, bounds.y + bounds.height * 0.65);
+  };
+  await parkBelowReview();
+  await assertVideoTimelineVisible(page);
   // Native frame controls keep the timeline geometry and actual decoded frame in agreement.
   for (let frame = 1; frame <= 9; frame += 1) {
     await page.getByRole("button", { name: "下一帧", exact: true }).click();
     await expect.poll(() => currentVideoFrame(page)).toBe(frame);
     await page.waitForTimeout(100);
   }
-  await parkVideoPointer(page);
+  await parkBelowReview();
   await page.waitForTimeout(900);
   for (let frame = 8; frame >= 4; frame -= 1) {
     await page.getByRole("button", { name: "上一帧", exact: true }).click();
     await expect.poll(() => currentVideoFrame(page)).toBe(frame);
   }
-  await parkVideoPointer(page);
+  await parkBelowReview();
   await assertVideoTimelineVisible(page);
   await page.waitForTimeout(900);
   const decisionResponse = () =>
@@ -226,6 +237,7 @@ export async function runVideoTrackerTextDiscovery(
   expect([decision.from_frame, decision.to_frame]).toEqual([0, 10]);
   const acceptedJob = (await accepted.json()) as VideoTrackerJob;
   const savedMatch = verifySaved(saved, targets, "bus", 0, 10);
+  let rejectedEvidence: { request: unknown; job: VideoTrackerJob } | null = null;
   if (acceptedJob.status === "partially_reviewed" || acceptedJob.status === "pending_review") {
     const acceptedCount = preview.results.filter(
       (result) =>
@@ -243,6 +255,10 @@ export async function runVideoTrackerTextDiscovery(
     const rejected = await rejectedResponse;
     expect(rejected.ok()).toBe(true);
     expect(rejected.request().postDataJSON().decision).toBe("reject");
+    rejectedEvidence = {
+      request: rejected.request().postDataJSON(),
+      job: (await rejected.json()) as VideoTrackerJob,
+    };
   }
   await expect(review).toBeHidden();
   await parkVideoPointer(page);
@@ -256,11 +272,11 @@ export async function runVideoTrackerTextDiscovery(
   verifySaved(reloadedAdded, targets, "bus", 0, 10);
   expect(
     reloadedAdded
-      .map((item) => ({ id: item.id, geometry: item.geometry }))
+      .map((item) => ({ id: item.id, version: item.version, geometry: item.geometry }))
       .sort((a, b) => a.id.localeCompare(b.id)),
   ).toEqual(
     saved
-      .map((item) => ({ id: item.id, geometry: item.geometry }))
+      .map((item) => ({ id: item.id, version: item.version, geometry: item.geometry }))
       .sort((a, b) => a.id.localeCompare(b.id)),
   );
   return {
@@ -274,6 +290,7 @@ export async function runVideoTrackerTextDiscovery(
       selectedIds,
       previewAnchorIoUs: match.overlaps,
       decision,
+      rejected: rejectedEvidence,
       acceptedAnnotationIds: saved.map((item) => item.id),
       acceptedTracks: saved,
       savedAnchorIoUs: savedMatch.overlaps,
