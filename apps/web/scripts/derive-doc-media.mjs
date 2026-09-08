@@ -62,6 +62,7 @@ const POSTER_AT_SECONDS = new Map([
   ["video-track-batch-propagate", 2.5],
   ["video-track", 19.9],
   ["video-propagate-track-vs-copy", 14],
+  ["video-mask-correction-propagate", 25],
 ]);
 
 const TARGETS = new Map(
