@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import uuid
+from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any
 
@@ -31,6 +32,13 @@ from app.schemas.mask_mutation import (
     MaskUpdateMutation,
 )
 from app.services.annotation import AnnotationService
+from app.services.annotation_slice import SLICE_RESTORE_TTL
+from app.schemas.annotation_slice import AnnotationSliceResponse
+from app.services.mask_slice import slice_mask_rle
+from app.services.mask_slice_restore import (
+    mask_version_snapshot,
+    protect_mask_slice_versions,
+)
 from app.services.annotation_propagation import _new_track_id
 from app.services.annotation_track_identity import prepare_compact_track_identity
 from app.services.audit import AuditAction, AuditService
@@ -104,7 +112,10 @@ def _canonical_digest(value: Any) -> str:
 
 
 def request_digest(payload: MaskMutationCommitRequest) -> str:
-    return _canonical_digest(payload.model_dump(mode="json", by_alias=True))
+    value = payload.model_dump(mode="json", by_alias=True)
+    if payload.cut_path is None:
+        value.pop("cut_path", None)
+    return _canonical_digest(value)
 
 
 def scope_fingerprint(
@@ -247,7 +258,7 @@ def _validate_operation_shape(
     ]
 
     valid = False
-    if payload.operation == "split_components":
+    if payload.operation in {"split_components", "slice_mask"}:
         valid = (
             len(source_ids) == 1
             and len(updates) == 1
@@ -255,6 +266,7 @@ def _validate_operation_shape(
             and len(creates) >= 1
             and all(set(item.source_annotation_ids) == source_ids for item in creates)
             and not deletes
+            and (payload.operation != "slice_mask" or len(creates) == 1)
         )
     elif payload.operation in {"copy_component", "copy_keyframe"}:
         valid = (
@@ -907,6 +919,23 @@ class MaskMutationService:
                     invalid_message = (
                         "copied result must equal one complete source component"
                     )
+        elif payload.operation == "slice_mask":
+            source_rle = source_rles[next(iter(source_ids))]
+            try:
+                kept, created = slice_mask_rle(
+                    source_rle, payload.cut_path, algebra_budget
+                )
+                for index, mutation in enumerate(payload.mutations):
+                    expected = (
+                        kept if isinstance(mutation, MaskUpdateMutation) else created
+                    )
+                    if not _rle_equal(result_rles[index], expected, algebra_budget):
+                        invalid_message = (
+                            "切割预览与像素中心分区不一致，或未按大小/左侧规则保留来源"
+                        )
+                        break
+            except ValueError as exc:
+                invalid_message = str(exc)
         elif payload.operation == "split_components":
             source_rle = source_rles[next(iter(source_ids))]
             split_results = list(result_rles.values())
@@ -1199,6 +1228,22 @@ class MaskMutationService:
         from app.api.v1.tasks._shared import _assert_task_editable, _assert_task_visible
 
         await _assert_task_visible(self.db, task, actor)
+        if payload.operation == "slice_mask":
+            _assert_task_editable(task, actor)
+            if task.file_type != "image":
+                raise MaskMutationError(
+                    status_code=422,
+                    reason="unsupported_media",
+                    message="切割仅支持图片任务",
+                )
+            try:
+                await assert_task_lock_for_legacy_video(self.db, task, actor.id)
+            except TaskLockConflictError as exc:
+                raise MaskMutationError(
+                    status_code=409,
+                    reason="task_lock_conflict",
+                    message="任务正由其他用户编辑",
+                ) from exc
         replay = await self._idempotent_replay(task_id, actor.id, payload, digest)
         if replay is not None:
             return replay
@@ -1303,6 +1348,33 @@ class MaskMutationService:
                 current_scope_fingerprint=current_fingerprint,
             )
         _validate_operation_shape(payload, source_ids)
+
+        if payload.operation == "slice_mask":
+            source = by_id[next(iter(source_ids))]
+            if source.was_cancelled or source.sensor_role is not None:
+                raise MaskMutationError(
+                    status_code=409,
+                    reason="annotation_locked",
+                    message="切割对象不可编辑",
+                )
+            child = await self.db.scalar(
+                select(Annotation.id)
+                .where(
+                    Annotation.parent_annotation_id == source.id,
+                    Annotation.is_active.is_(True),
+                )
+                .limit(1)
+            )
+            if child:
+                raise MaskMutationError(
+                    status_code=409,
+                    reason="active_children",
+                    message="有活动子对象的标注不能切割",
+                )
+            if source.parent_annotation_id is not None:
+                await AnnotationService(self.db)._validate_parent_annotation(
+                    task_id, source.parent_annotation_id
+                )
 
         delete_ids = {
             item.annotation_id
@@ -1508,6 +1580,14 @@ class MaskMutationService:
             }
             for annotation in annotations
         ]
+        slice_before = (
+            {
+                str(source_id): mask_version_snapshot(by_id[source_id])
+                for source_id in source_ids
+            }
+            if payload.operation == "slice_mask"
+            else None
+        )
         updated: list[Annotation] = []
         created: list[Annotation] = []
         deleted: list[Annotation] = []
@@ -1519,9 +1599,11 @@ class MaskMutationService:
                     mutation.geometry.model_dump(mode="json", by_alias=True)
                 )
                 annotation.geometry = geometry
-                annotation.track_id = track_id
+                if payload.operation != "slice_mask":
+                    annotation.track_id = track_id
                 annotation.annotation_type = str(geometry.get("type"))
-                annotation.user_id = actor.id
+                if payload.operation != "slice_mask":
+                    annotation.user_id = actor.id
                 annotation.version = int(annotation.version or 1) + 1
                 final_geometries[annotation.id] = geometry
                 updated.append(annotation)
@@ -1549,9 +1631,12 @@ class MaskMutationService:
                     geometry=geometry,
                     track_id=track_id,
                     confidence=None,
-                    attributes=dict(source.attributes or {}),
-                    attributes_meta=dict(source.attributes_meta or {}),
+                    attributes=deepcopy(source.attributes or {}),
+                    attributes_meta=deepcopy(source.attributes_meta or {}),
                     z_order=source.z_order,
+                    parent_annotation_id=source.parent_annotation_id
+                    if payload.operation == "slice_mask"
+                    else None,
                 )
                 self.db.add(annotation)
                 created.append(annotation)
@@ -1582,6 +1667,7 @@ class MaskMutationService:
         result_ids = [item.id for item in [*updated, *created]]
         lineage: list[AnnotationLineageEdge] = []
         relation = {
+            "slice_mask": "split",
             "split_components": "split",
             "copy_component": "copied",
             "copy_keyframe": "keyframe_copied",
@@ -1593,6 +1679,7 @@ class MaskMutationService:
             "mask_repair_rollback": "mask_repair_rolled_back",
         }[payload.operation]
         if payload.operation in {
+            "slice_mask",
             "split_components",
             "copy_component",
             "copy_keyframe",
@@ -1649,6 +1736,37 @@ class MaskMutationService:
                         frame_index=payload.scope.frame_index,
                     )
                 )
+        now = datetime.now(timezone.utc)
+        slice_receipt = None
+        operation_report = verified_report.model_dump(mode="json")
+        if slice_before is not None:
+            source, new = updated[0], created[0]
+            slice_before[str(new.id)] = mask_version_snapshot(new, active=False)
+            operation_report.update(
+                {
+                    "slice_snapshot_schema": 2,
+                    "before": slice_before,
+                    "after": {
+                        str(row.id): mask_version_snapshot(row) for row in (source, new)
+                    },
+                    "current_side": "after",
+                    "current_versions": result_versions,
+                    "cut_path": payload.model_dump(mode="json")["cut_path"],
+                }
+            )
+            slice_receipt = AnnotationSliceResponse(
+                operation_id=operation_id,
+                slice_operation_id=operation_id,
+                source_annotation_id=source.id,
+                created_annotation_id=new.id,
+                result_versions=result_versions,
+                active_annotation_ids=[source.id, new.id],
+                target="after",
+                restore_expires_at=now + SLICE_RESTORE_TTL,
+            )
+            await protect_mask_slice_versions(
+                self.db, operation_report, slice_receipt.restore_expires_at
+            )
         operation = AnnotationOperation(
             id=operation_id,
             task_id=task_id,
@@ -1662,7 +1780,8 @@ class MaskMutationService:
                 for item in payload.expected_versions
             },
             result_versions=result_versions,
-            report=verified_report.model_dump(mode="json"),
+            report=operation_report,
+            created_at=now,
             status="committed",
             response_json={},
         )
@@ -1730,6 +1849,7 @@ class MaskMutationService:
             before_digest=_canonical_digest(before_snapshot),
             after_digest=_canonical_digest(after_snapshot),
             audit_id=audit.id,
+            slice_restore=slice_receipt,
         )
         operation.response_json = response.model_dump(mode="json")
         await self.db.flush()

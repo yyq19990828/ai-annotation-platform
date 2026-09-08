@@ -156,6 +156,7 @@ type Drag =
   | { kind: "pan"; sx: number; sy: number }
   | { kind: "canvasStroke"; points: number[] }
   | { kind: "maskBrush"; lastX: number; lastY: number }
+  | { kind: "maskSlice"; start: [number, number]; end: [number, number] }
   | { kind: "maskLasso"; points: [number, number][] }
   // v0.10.28 · 旋转框旋转手柄拖拽。cx/cy 为框中心 (归一化), startAngle 为按下时角度, cur 实时角度。
   | { kind: "rotateBox"; id: string; cx: number; cy: number; startAngle: number; cur: number };
@@ -912,7 +913,7 @@ export function ImageStage({
   useEffect(() => {
     const cancelDrawing = (event: KeyboardEvent) => {
       if (event.key !== "Escape" || isWorkbenchInteractionBlocked(event)) return;
-      if (dragRef.current?.kind !== "draw") return;
+      if (dragRef.current?.kind !== "draw" && dragRef.current?.kind !== "maskSlice") return;
       event.preventDefault();
       event.stopImmediatePropagation();
       dragRef.current = null;
@@ -921,6 +922,20 @@ export function ImageStage({
     window.addEventListener("keydown", cancelDrawing, true);
     return () => window.removeEventListener("keydown", cancelDrawing, true);
   }, []);
+
+  useLayoutEffect(() => {
+    if (dragRef.current?.kind !== "maskSlice") return;
+    dragRef.current = null;
+    setDrag(null);
+  }, [
+    imageIdentity,
+    primarySelectedBox?.id,
+    primarySelectedBox?.version,
+    maskEditor?.buffer,
+    maskEditor?.tool,
+    tool,
+    readOnly,
+  ]);
 
   const closeContextMenu = useCallback(() => {
     contextMenu.close();
@@ -1113,7 +1128,10 @@ export function ImageStage({
         schedule(() => setVp((cur) => ({ ...cur, tx: cur.tx + dx, ty: cur.ty + dy })));
         return;
       }
-      const pt = toImg(e.clientX, e.clientY);
+      const pt =
+        d.kind === "maskSlice"
+          ? toImg(Math.floor(e.clientX), Math.floor(e.clientY))
+          : toImg(e.clientX, e.clientY);
       if (!pt) return;
       if (d.kind === "maskBrush" || d.kind === "maskLasso") {
         const inImage = isNormalizedImagePoint(pt);
@@ -1272,6 +1290,10 @@ export function ImageStage({
         }
         d.lastX = px;
         d.lastY = py;
+      } else if (d.kind === "maskSlice") {
+        if (maskCompareActive) return;
+        d.end = [Math.max(0, Math.min(1, pt.x)), Math.max(0, Math.min(1, pt.y))];
+        setDrag({ ...d });
       } else if (d.kind === "maskLasso") {
         if (maskCompareActive) return;
         const px = pt.x * imgW;
@@ -1395,6 +1417,21 @@ export function ImageStage({
           // 至少 2 个点（4 个数字）才算一笔；点击没有移动会被丢弃
           if (d.points.length >= 4) onCanvasStrokeCommit?.(d.points, canvasStroke);
         } else if (
+          d.kind === "maskSlice" &&
+          maskEditor &&
+          !maskCompareActive &&
+          !readOnly &&
+          !primarySelectedBox?.is_locked
+        ) {
+          const end = toImg(Math.floor(event.clientX), Math.floor(event.clientY));
+          const finalPoint: [number, number] = end
+            ? [Math.max(0, Math.min(1, end.x)), Math.max(0, Math.min(1, end.y))]
+            : d.end;
+          void maskEditor.runInstanceOperation("slice_mask", {
+            type: "slice_mask",
+            cutPath: [d.start, finalPoint],
+          });
+        } else if (
           d.kind === "maskLasso" &&
           d.points.length >= 3 &&
           maskEditor &&
@@ -1460,7 +1497,11 @@ export function ImageStage({
     if (!maskCompareActive) return;
     const currentDrag = dragRef.current;
     if (currentDrag?.kind === "maskBrush") maskEditor?.endStroke();
-    if (currentDrag?.kind === "maskBrush" || currentDrag?.kind === "maskLasso") {
+    if (
+      currentDrag?.kind === "maskBrush" ||
+      currentDrag?.kind === "maskLasso" ||
+      currentDrag?.kind === "maskSlice"
+    ) {
       dragRef.current = null;
       setDrag(null);
     }
@@ -1489,7 +1530,10 @@ export function ImageStage({
     if (e.target !== (stageRef.current as unknown)) {
       return;
     }
-    const pt = toImg(e.evt.clientX, e.evt.clientY);
+    const pt =
+      tool === "mask" && maskEditor?.tool === "slice_mask"
+        ? toImg(Math.floor(e.evt.clientX), Math.floor(e.evt.clientY))
+        : toImg(e.evt.clientX, e.evt.clientY);
     if (!pt) return;
     if (polygonSlice.session && !spacePan && e.evt.button === 0) {
       containerRef.current?.focus({ preventScroll: true });
@@ -1569,6 +1613,7 @@ export function ImageStage({
   };
 
   const handleStageDblClick = () => {
+    if (tool === "mask" && maskEditor?.tool === "slice_mask") return;
     if (polygonSlice.session) return;
     if (boundaryTrace.trace) return;
     // Konva counts Shift drags and distant clicks on the same Stage as a double click.
@@ -2819,6 +2864,21 @@ export function ImageStage({
                 listening={false}
               />
             )}
+            {!maskCompareActive &&
+              tool === "mask" &&
+              (drag?.kind === "maskSlice" ||
+                maskEditor?.instanceOperationPreview?.plan.cutPath) && (
+                <Line
+                  points={(drag?.kind === "maskSlice"
+                    ? [drag.start, drag.end]
+                    : (maskEditor?.instanceOperationPreview?.plan.cutPath ?? [])
+                  ).flatMap(([x, y]) => [x * imgW, y * imgH])}
+                  stroke={classColorForCanvas("mask-slice-cut")}
+                  strokeWidth={2 / vp.scale}
+                  dash={[6 / vp.scale, 4 / vp.scale]}
+                  listening={false}
+                />
+              )}
             {samCandidates && samCandidates.length > 0 && (
               <SamCandidateOverlay
                 candidates={samCandidates}

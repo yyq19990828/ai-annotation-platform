@@ -1,0 +1,156 @@
+"""Version references and retention for the shared, restricted slice restore."""
+
+from __future__ import annotations
+
+import uuid
+from copy import deepcopy
+from datetime import datetime, timezone
+
+from sqlalchemy import func, select, tuple_, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db.models.annotation import Annotation
+from app.db.models.mask_annotation_revision import MaskAnnotationRevision
+from app.db.models.task import Task
+from app.services.annotation_slice import AnnotationSliceError, _digest
+from app.services.raster_mask_storage import (
+    RasterMaskContractError,
+    prepare_mask_payload_for_write,
+)
+
+
+def mask_version_snapshot(
+    annotation: Annotation, *, active: bool | None = None
+) -> dict:
+    return {
+        "annotation_version": annotation.version,
+        "geometry_digest": _digest(annotation.geometry),
+        "active": annotation.is_active if active is None else active,
+    }
+
+
+def _references(report: dict) -> dict[tuple[uuid.UUID, int], dict]:
+    references = {}
+    for side in ("before", "after"):
+        for key, snapshot in report.get(side, {}).items():
+            if (
+                set(snapshot) != {"annotation_version", "geometry_digest", "active"}
+                or type(snapshot["annotation_version"]) is not int
+                or snapshot["annotation_version"] < 1
+                or not isinstance(snapshot["active"], bool)
+                or not isinstance(snapshot["geometry_digest"], str)
+            ):
+                raise AnnotationSliceError(
+                    409, "snapshot_unavailable", "Mask 恢复引用无效"
+                )
+            identity = (uuid.UUID(key), snapshot["annotation_version"])
+            if (
+                identity in references
+                and references[identity]["geometry_digest"]
+                != snapshot["geometry_digest"]
+            ):
+                raise AnnotationSliceError(
+                    409, "snapshot_unavailable", "Mask 恢复引用不一致"
+                )
+            references[identity] = snapshot
+    return references
+
+
+async def protect_mask_slice_versions(
+    db: AsyncSession, report: dict, expires_at: datetime
+) -> None:
+    """Call after annotation flush: triggers have captured every retiring version.
+
+    SQL GREATEST keeps infinity and longer retention unchanged. Run after every
+    restore so capture-trigger pruning cannot shorten a referenced old revision.
+    """
+    references = _references(report)
+    await db.execute(
+        update(MaskAnnotationRevision)
+        .where(
+            tuple_(
+                MaskAnnotationRevision.annotation_id,
+                MaskAnnotationRevision.annotation_version,
+            ).in_(references)
+        )
+        .values(expires_at=func.greatest(MaskAnnotationRevision.expires_at, expires_at))
+        .execution_options(synchronize_session=False)
+    )
+
+
+async def load_mask_slice_snapshots(
+    db: AsyncSession, task: Task, report: dict
+) -> dict[str, dict[str, dict]]:
+    """Verify both sides before any write; acquire content before annotation locks.
+
+    A second version read under revision locks detects expiry/deletion concurrent
+    with object verification. Asset locks then serialize the eventual references
+    with GC through transaction commit. No client-upload reservation is needed for
+    these previously linked, server-owned versions.
+    """
+    references = _references(report)
+    annotations = {
+        row.id: row
+        for row in await db.scalars(
+            select(Annotation)
+            .where(
+                Annotation.task_id == task.id,
+                Annotation.id.in_({key[0] for key in references}),
+            )
+            .execution_options(populate_existing=True)
+        )
+    }
+
+    async def resolve(*, locked: bool) -> dict[tuple[uuid.UUID, int], dict]:
+        result = {}
+        for (annotation_id, version), snapshot in sorted(
+            references.items(), key=lambda item: (str(item[0][0]), item[0][1])
+        ):
+            annotation = annotations.get(annotation_id)
+            if annotation is not None and annotation.version == version:
+                geometry = annotation.geometry
+            else:
+                query = (
+                    select(MaskAnnotationRevision)
+                    .where(
+                        MaskAnnotationRevision.task_id == task.id,
+                        MaskAnnotationRevision.annotation_id == annotation_id,
+                        MaskAnnotationRevision.annotation_version == version,
+                        MaskAnnotationRevision.expires_at > datetime.now(timezone.utc),
+                    )
+                    .execution_options(populate_existing=True)
+                )
+                revision = await db.scalar(query.with_for_update() if locked else query)
+                if revision is None:
+                    raise AnnotationSliceError(
+                        409, "snapshot_unavailable", "Mask 恢复版本缺失或已过期"
+                    )
+                geometry = revision.geometry
+            if (
+                geometry.get("type") != "raster_mask"
+                or _digest(geometry) != snapshot["geometry_digest"]
+            ):
+                raise AnnotationSliceError(
+                    409, "snapshot_unavailable", "Mask 恢复版本内容校验失败"
+                )
+            result[(annotation_id, version)] = deepcopy(geometry)
+        return result
+
+    first = await resolve(locked=False)
+    try:
+        await prepare_mask_payload_for_write(db, task, list(first.values()))
+    except RasterMaskContractError as exc:
+        raise AnnotationSliceError(
+            exc.status_code, "snapshot_unavailable", "Mask 恢复资源不可用：" + str(exc)
+        ) from exc
+    verified = await resolve(locked=True)
+    return {
+        side: {
+            key: {
+                "geometry": verified[(uuid.UUID(key), snapshot["annotation_version"])],
+                "active": snapshot["active"],
+            }
+            for key, snapshot in report[side].items()
+        }
+        for side in ("before", "after")
+    }

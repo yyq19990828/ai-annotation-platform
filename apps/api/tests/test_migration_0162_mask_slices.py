@@ -21,7 +21,7 @@ def test_empty_downgrade_upgrade_and_used_ledger_refuses_downgrade(
 ):
     config = Config("alembic.ini")
     config.set_main_option("sqlalchemy.url", test_db_url)
-    command.downgrade(config, "0160")
+    command.downgrade(config, "0161")
     command.upgrade(config, "head")
     actor_id, project_id, task_id, operation_id = [uuid.uuid4() for _ in range(4)]
 
@@ -70,7 +70,7 @@ def test_empty_downgrade_upgrade_and_used_ledger_refuses_downgrade(
                             id=operation_id,
                             task_id=task_id,
                             actor_id=actor_id,
-                            kind="slice_polygon",
+                            kind="slice_mask",
                             idempotency_key=uuid.uuid4().hex,
                             request_digest="a" * 64,
                             scope_fingerprint="b" * 64,
@@ -89,7 +89,7 @@ def test_empty_downgrade_upgrade_and_used_ledger_refuses_downgrade(
                                 AnnotationOperation.id == operation_id
                             )
                         )
-                        == "slice_polygon"
+                        == "slice_mask"
                     )
                     checks = (
                         await db.execute(
@@ -98,9 +98,7 @@ def test_empty_downgrade_upgrade_and_used_ledger_refuses_downgrade(
                             )
                         )
                     ).all()
-                    assert (
-                        "restore_slice" in dict(checks)["ck_annotation_operations_kind"]
-                    )
+                    assert "slice_mask" in dict(checks)["ck_annotation_operations_kind"]
                     assert (
                         "slice_restored"
                         in dict(checks)["ck_annotation_lineage_relation"]
@@ -115,8 +113,8 @@ def test_empty_downgrade_upgrade_and_used_ledger_refuses_downgrade(
 
     asyncio.run(inspect("seed"))
     try:
-        with pytest.raises(RuntimeError, match="Slice audit data exists"):
-            command.downgrade(config, "0160")
+        with pytest.raises(RuntimeError, match="Mask slice audit data exists"):
+            command.downgrade(config, "0161")
         asyncio.run(inspect("verify"))
     finally:
         asyncio.run(inspect("cleanup"))

@@ -318,7 +318,7 @@ class AnnotationSliceService:
             .with_for_update()
             .execution_options(populate_existing=True)
         )
-        if original is None or original.kind != "slice_polygon":
+        if original is None or original.kind not in {"slice_polygon", "slice_mask"}:
             raise AnnotationSliceError(404, "slice_not_found", "此操作不是可恢复的切割")
         expires_at = original.created_at + SLICE_RESTORE_TTL
         if datetime.now(timezone.utc) >= expires_at:
@@ -326,7 +326,8 @@ class AnnotationSliceService:
                 410, "restore_expired", "切割已超过 30 天恢复期限"
             )
         report = original.report
-        if report.get("slice_snapshot_schema") != 1:
+        is_mask = original.kind == "slice_mask"
+        if report.get("slice_snapshot_schema") != (2 if is_mask else 1):
             raise AnnotationSliceError(
                 409, "snapshot_unavailable", "切割恢复快照不可用"
             )
@@ -338,11 +339,17 @@ class AnnotationSliceService:
                 "version_mismatch",
                 "恢复版本集不匹配；请保留原历史，不能覆盖后续修改",
             )
+        if is_mask:
+            from app.services.mask_slice_restore import load_mask_slice_snapshots
+
+            snapshots = await load_mask_slice_snapshots(self.db, task, report)
+        else:
+            snapshots = report
         rows = await self._lock_annotations(
             task_id, [uuid.UUID(key) for key in expected]
         )
-        target = report.get(payload.target, {})
-        current = report.get(report.get("current_side"), {})
+        target = snapshots.get(payload.target, {})
+        current = snapshots.get(report.get("current_side"), {})
         if set(target) != set(rows) or set(current) != set(rows):
             raise AnnotationSliceError(
                 409, "snapshot_unavailable", "切割恢复快照不完整"
@@ -356,7 +363,8 @@ class AnnotationSliceService:
             if (
                 set(snapshot) != {"geometry", "active"}
                 or not isinstance(snapshot["active"], bool)
-                or snapshot["geometry"].get("type") != "polygon"
+                or snapshot["geometry"].get("type")
+                != ("raster_mask" if is_mask else "polygon")
             ):
                 raise AnnotationSliceError(
                     409, "snapshot_unavailable", "切割恢复快照类型不受支持"
@@ -369,11 +377,16 @@ class AnnotationSliceService:
                 row.version += 1
         versions = {key: row.version for key, row in rows.items()}
         restore_id = uuid.uuid4()
+        original_receipt = (
+            original.response_json["slice_restore"]
+            if is_mask
+            else original.response_json
+        )
         response = AnnotationSliceResponse(
             operation_id=restore_id,
             slice_operation_id=operation_id,
-            source_annotation_id=original.response_json["source_annotation_id"],
-            created_annotation_id=original.response_json["created_annotation_id"],
+            source_annotation_id=original_receipt["source_annotation_id"],
+            created_annotation_id=original_receipt["created_annotation_id"],
             result_versions=versions,
             active_annotation_ids=[row.id for row in rows.values() if row.is_active],
             target=payload.target,
@@ -424,4 +437,8 @@ class AnnotationSliceService:
                 ]
             )
         await self.db.flush()
+        if is_mask:
+            from app.services.mask_slice_restore import protect_mask_slice_versions
+
+            await protect_mask_slice_versions(self.db, report, expires_at)
         return response

@@ -53,6 +53,7 @@ import {
 
 export type MaskMode = "brush" | "erase";
 export type MaskEditorTool =
+  | "slice_mask"
   | MaskMode
   | "lasso_add"
   | "lasso_subtract"

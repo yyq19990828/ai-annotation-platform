@@ -27,7 +27,7 @@ async def main():
                 changed = await connection.execute(
                     text(
                         "UPDATE annotation_operations SET created_at=:created "
-                        "WHERE id=:operation AND task_id=:task AND kind='slice_polygon'"
+                        "WHERE id=:operation AND task_id=:task AND kind IN ('slice_polygon', 'slice_mask')"
                     ),
                     {
                         "created": datetime.now(timezone.utc) - timedelta(days=31),
@@ -69,6 +69,12 @@ async def main():
                     {
                         "operations": [dict(row) for row in operations],
                         "annotations": [dict(row) for row in annotations],
+                        "activeLocks": await connection.scalar(
+                            text(
+                                "SELECT count(*) FROM task_locks WHERE task_id=:task AND expire_at > now()"
+                            ),
+                            {"task": task_id},
+                        ),
                     },
                     default=str,
                 )

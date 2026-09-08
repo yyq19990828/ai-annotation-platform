@@ -88,7 +88,10 @@ async function beginEdit(page: Page, annotationId: string): Promise<void> {
   const row = page.getByTestId(`box-list-item-${annotationId}`);
   await expect(row).toBeVisible({ timeout: 15_000 });
   await row.click();
-  await page.locator('button[aria-label="编辑 Mask"]:visible').last().click();
+  const collapse = page.getByRole("button", { name: "收起浮窗", exact: true });
+  if (await collapse.isVisible()) await collapse.click();
+  await row.getByRole("button", { name: "更多操作" }).hover();
+  await page.getByTestId(`user-refine-${annotationId}`).click();
   await expect(page.getByTestId("mask-toolbar")).toContainText("就绪", { timeout: 15_000 });
   // 就绪 ≠ 画布可交互：等媒体与 Konva 画布真正可见后再让用例做指针操作，
   // 否则 fitted 前的合成指针事件被丢弃, 笔迹无声丢失。
@@ -494,7 +497,8 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     await openTask(page, seed, data, taskId);
     const donutRow = page.getByTestId(`box-list-item-${donut.annotation_id}`);
     const islandRow = page.getByTestId(`box-list-item-${island.annotation_id}`);
-    await donutRow.click({ force: true });
+    await donutRow.click();
+    await page.getByRole("button", { name: "收起浮窗", exact: true }).click();
     await islandRow.click({ modifiers: ["Shift"] });
     await expect(donutRow).toHaveClass(/!border-brand/);
     await expect(islandRow).toHaveClass(/!border-brand/);

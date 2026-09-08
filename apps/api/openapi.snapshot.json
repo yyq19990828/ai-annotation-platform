@@ -16469,6 +16469,36 @@
       "MaskMutationCommitRequest": {
         "additionalProperties": false,
         "properties": {
+          "cut_path": {
+            "anyOf": [
+              {
+                "items": {
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "prefixItems": [
+                    {
+                      "maximum": 1.0,
+                      "minimum": 0.0,
+                      "type": "number"
+                    },
+                    {
+                      "maximum": 1.0,
+                      "minimum": 0.0,
+                      "type": "number"
+                    }
+                  ],
+                  "type": "array"
+                },
+                "maxItems": 2,
+                "minItems": 2,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cut Path"
+          },
           "expected_versions": {
             "items": {
               "$ref": "#/components/schemas/MaskExpectedVersion"
@@ -16513,6 +16543,7 @@
           },
           "operation": {
             "enum": [
+              "slice_mask",
               "split_components",
               "copy_component",
               "copy_keyframe",
@@ -16612,6 +16643,16 @@
             },
             "title": "Result Versions",
             "type": "object"
+          },
+          "slice_restore": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnnotationSliceResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "updated_annotations": {
             "items": {

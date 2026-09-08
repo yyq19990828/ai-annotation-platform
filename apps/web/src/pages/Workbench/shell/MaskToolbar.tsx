@@ -74,6 +74,7 @@ interface MaskToolbarProps {
   onPrepareOverlap?: (policy: "erase_same_class" | "erase_all") => void;
   canPrepareJoin?: boolean;
   joinSupportsReplace?: boolean;
+  sliceUnavailableReason?: string | null;
   instanceCommitting?: boolean;
   instanceRefreshing?: boolean;
   instanceCommitError?: string | null;
@@ -120,6 +121,7 @@ const operationLabel: Record<string, string> = {
   fill_holes_small: "填充小孔洞",
   component_copy: "复制命中组件",
   split_components: "拆分组件",
+  slice_mask: "直线切割",
 };
 
 export function MaskToolbar({
@@ -151,6 +153,7 @@ export function MaskToolbar({
   onPrepareOverlap,
   canPrepareJoin = false,
   joinSupportsReplace = true,
+  sliceUnavailableReason,
   instanceCommitError,
   instancePreviewDetail,
   instancePreviewRows = [],
@@ -308,6 +311,18 @@ export function MaskToolbar({
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuLabel>派生与转换</DropdownMenuLabel>
+          {sliceUnavailableReason !== undefined && (
+            <DropdownMenuItem
+              disabled={sliceUnavailableReason !== null || dirty || largeCanvas}
+              title={
+                sliceUnavailableReason ??
+                (dirty ? "请先保存当前 Mask 草稿" : "拖动两点定义切线，预览后确认")
+              }
+              onSelect={() => onSetTool("slice_mask")}
+            >
+              直线切割为两个实例
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem
             disabled={!onOpenConversion || dirty || largeCanvas}
             title={
@@ -458,6 +473,11 @@ export function MaskToolbar({
           大画布分块模式：形态学仅作用当前视口，全图扫描工具已禁用
         </span>
       )}
+      {tool === "slice_mask" && !instanceOperationPreview && (
+        <span className="basis-full text-2xs text-muted-foreground" role="status">
+          拖动两点定义直线，松手预览两块；较大块保留来源，像素相等时沿切线左侧保留。
+        </span>
+      )}
 
       {operationPreview && (
         <div className="flex basis-full items-center gap-2 rounded-md border border-border bg-muted px-2 py-1">
@@ -485,7 +505,9 @@ export function MaskToolbar({
                   ? "合并 Mask"
                   : instanceOperationPreview.plan.kind === "overlap"
                     ? "严格非重叠"
-                    : "拆分组件"}
+                    : instanceOperationPreview.plan.kind === "slice_mask"
+                      ? "直线切割"
+                      : "拆分组件"}
           </span>
           <span className="text-2xs text-muted-foreground">
             {instanceOperationPreview.plan.sourceCount} 个来源 →{" "}

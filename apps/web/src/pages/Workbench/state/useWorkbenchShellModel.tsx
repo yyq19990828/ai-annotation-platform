@@ -258,6 +258,7 @@ import {
 import {
   maskAlphasIntersect,
   maskMutationExpectedVersions,
+  maskSliceUnavailableReason,
   maskMutationScopeFingerprint,
   maskMutationScopeMembers,
   subtractMaskAlpha,
@@ -1996,6 +1997,9 @@ export function useWorkbenchShellModel({
   // v0.21.23 · 当前激活的 AI 工具。视频侧按 videoTool 解析 —— smart-point / smart-box 与图片
   // 工具同名, 共用 TOOL_REGISTRY, 故交互 prompt 解析与工具上下文浮块可直接复用图片侧那套。
   const activeAiTool = (isVideoTask ? s.videoTool : s.tool) as ToolId;
+  const maskToolActive = isVideoTask
+    ? s.videoTool === "mask" || s.videoTool === "mask-track"
+    : s.tool === "mask";
   // 当前工具对应的交互 prompt (非交互工具回落 point, 仅用于 sam/warmup 的后端选取, 不参与门控)。
   const activeInteractivePrompt = promptOfTool(activeAiTool);
   const [singleFrameOutputGeometry, setSingleFrameOutputGeometry] = useState<"polygon" | "mask">(
@@ -4019,9 +4023,23 @@ export function useWorkbenchShellModel({
 
   const runMaskInstanceOperation = useCallback(
     async (name: string, operationSpec: MaskInstanceOperationSpec) => {
-      if (name !== "copy_component" && name !== "split_components") return false;
+      if (name !== "copy_component" && name !== "split_components" && name !== "slice_mask")
+        return false;
       const primary = currentSelectedNativeMask();
       if (!primary || primary.is_locked || nativeMaskTrackLocallyLocked(primary)) return false;
+      if (name === "slice_mask") {
+        const reason = maskSliceUnavailableReason(primary, annotationsRef.current);
+        if (
+          isVideoTask ||
+          maskEditor.dirty ||
+          reason ||
+          !sliceWriteOwner.current.canWrite ||
+          sliceWriteOwner.current.taskId !== taskId
+        ) {
+          showMaskInstanceFailure(reason ?? "请先保存草稿并确认当前图片可编辑");
+          return false;
+        }
+      }
       if (isVideoTask && !currentVideoSegment) {
         showMaskInstanceFailure("当前帧没有可编辑分段");
         return false;
@@ -4042,15 +4060,20 @@ export function useWorkbenchShellModel({
         showMaskInstanceFailure(maskMutationErrorMessage(error), { retry: false, refresh: true });
         return false;
       }
-      const previewed = await maskEditor.runInstanceOperation(name, operationSpec);
-      if (!previewed) return false;
-      pendingMaskAtomicDraftRef.current = {
+      const draft: PendingMaskAtomicDraft = {
         kind: name,
         sourceIds: [primary.id],
         scope,
         members: snapshotMaskMembers(members),
         operationSpec,
       };
+      // Publish the owner before the synchronous preview can render its details.
+      pendingMaskAtomicDraftRef.current = draft;
+      const previewed = await maskEditor.runInstanceOperation(name, operationSpec);
+      if (!previewed) {
+        if (pendingMaskAtomicDraftRef.current === draft) pendingMaskAtomicDraftRef.current = null;
+        return false;
+      }
       maskAtomicIdempotencyRef.current = null;
       clearMaskInstanceFailure();
       return true;
@@ -4065,6 +4088,7 @@ export function useWorkbenchShellModel({
       s.videoFrameIndex,
       showMaskInstanceFailure,
       snapshotMaskMembers,
+      taskId,
     ],
   );
   const maskPrimaryPending = maskPrimaryBusyRef.current;
@@ -4699,7 +4723,7 @@ export function useWorkbenchShellModel({
               source_annotation_ids: [primary.id],
               geometry: geometryForReference(primary, reference, true),
             });
-          } else if (operation === "split_components") {
+          } else if (operation === "split_components" || operation === "slice_mask") {
             const references = await Promise.all([
               uploadAlpha(preview.plan.primary),
               ...preview.plan.created.map(uploadAlpha),
@@ -4774,6 +4798,7 @@ export function useWorkbenchShellModel({
             scope,
             source_frame_index:
               operation === "copy_keyframe" ? pending.copyKeyframe?.sourceFrameIndex : undefined,
+            ...(operation === "slice_mask" ? { cut_path: preview.plan.cutPath } : {}),
             scope_fingerprint: fingerprint,
             expected_versions: expectedVersions,
             mutations,
@@ -4792,6 +4817,18 @@ export function useWorkbenchShellModel({
         const result = await maskEditor.save(async () => {
           try {
             responseHolder.value = await maskMutationsApi.commit(taskId, payload);
+            const receipt = responseHolder.value.slice_restore;
+            if (receipt) {
+              pushSliceHistory(
+                {
+                  kind: "slice",
+                  operationId: receipt.slice_operation_id,
+                  resultVersions: receipt.result_versions,
+                  restoreExpiresAt: receipt.restore_expires_at,
+                },
+                taskId,
+              );
+            }
             return { ok: true, retryable: false };
           } catch (error) {
             return {
@@ -4804,6 +4841,8 @@ export function useWorkbenchShellModel({
             };
           }
         });
+        if (responseHolder.value?.slice_restore)
+          void queryClient.invalidateQueries({ queryKey: ["annotations", taskId] });
         if (!result.ok) {
           const message = maskMutationErrorMessage(result.error);
           showMaskInstanceFailure(message, maskMutationRecovery(result.error));
@@ -4874,6 +4913,7 @@ export function useWorkbenchShellModel({
     maskEditor,
     nativeMaskTrackLocallyLocked,
     pushToast,
+    pushSliceHistory,
     queryClient,
     s,
     showMaskInstanceFailure,
@@ -4952,7 +4992,11 @@ export function useWorkbenchShellModel({
       );
     }
     return pending.sourceIds.map((annotationId) =>
-      row(annotationId, null, pending.kind === "split_components" ? "update" : "source"),
+      row(
+        annotationId,
+        null,
+        pending.kind === "split_components" || pending.kind === "slice_mask" ? "update" : "source",
+      ),
     );
   }, [maskEditor.instanceOperationPreview]);
   const maskInstanceCommitBlocked = useMemo(() => {
@@ -6498,7 +6542,10 @@ export function useWorkbenchShellModel({
       position: floatingSelectionPosition,
       onPositionChange: onSelectionPositionChange,
       // v0.22.2 · U7 · 追踪对话框打开时强制折叠让位 (OR 叠加, 不动持久化偏好)。
-      collapsed: floatingSelection.collapsed || trackerDialogOpen,
+      collapsed:
+        floatingSelection.collapsed ||
+        trackerDialogOpen ||
+        (stageKind === "image" && tool === "mask" && maskEditor.tool === "slice_mask"),
       onCollapse: collapseSelectionCard,
       onExpand: expandSelectionCard,
       // v0.20.19 · 二次推理面板显隐 toggle 仅图片任务 (二次推理条本就图片限定)。
@@ -6560,6 +6607,8 @@ export function useWorkbenchShellModel({
     onSelectionPositionChange,
     floatingSelection.collapsed,
     trackerDialogOpen,
+    tool,
+    maskEditor.tool,
     collapseSelectionCard,
     expandSelectionCard,
   ]);
@@ -7069,9 +7118,7 @@ export function useWorkbenchShellModel({
                 </button>
               </div>
             )}
-            {(isVideoTask
-              ? s.videoTool === "mask" || s.videoTool === "mask-track"
-              : s.tool === "mask") && (
+            {maskToolActive && (
               <MaskToolbar
                 active={maskEditor.active}
                 tool={maskEditor.tool}
@@ -7104,6 +7151,14 @@ export function useWorkbenchShellModel({
                 onPrepareOverlap={(policy) => void prepareMaskOverlap(policy)}
                 canPrepareJoin={canPrepareMaskJoin}
                 joinSupportsReplace={!isVideoTask}
+                sliceUnavailableReason={
+                  isVideoTask
+                    ? undefined
+                    : maskSliceUnavailableReason(
+                        selectedImageRasterMask ?? null,
+                        annotationsData ?? [],
+                      )
+                }
                 instanceCommitting={maskInstanceCommitting}
                 instanceRefreshing={maskInstanceRefreshing}
                 instanceCommitError={maskInstanceCommitError}
@@ -7215,7 +7270,8 @@ export function useWorkbenchShellModel({
                 与 MaskToolbar 互斥 (mask 非 AI 工具)。引擎选择经 modelPref 服务端持久化。
                 v0.21.27 · U-pvs-1 · PVS 种子采集态借用 smart-point 工具落点, 此时抑制本工具条
                 (否则与顶部居中的传播对话框撞位); 采集是「落 PVS 种子」而非帧级 SAM 分割。 */}
-            {(isAIToolId(activeAiTool) || (stageKind !== "3d" && capabilityError)) &&
+            {(isAIToolId(activeAiTool) ||
+              (stageKind !== "3d" && capabilityError && !maskToolActive)) &&
               !seedCollecting && (
                 <InteractiveToolBar
                   tool={isAIToolId(activeAiTool) ? activeAiTool : "smart-point"}

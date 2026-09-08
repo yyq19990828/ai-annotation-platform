@@ -1,7 +1,9 @@
 import type { RasterMaskGeometry, VideoTrackMaskGeometry } from "@/types";
 import { apiClient } from "./client";
+import type { AnnotationSliceResponse } from "./annotationSlices";
 
 export type MaskMutationOperation =
+  | "slice_mask"
   | "split_components"
   | "copy_component"
   | "copy_keyframe"
@@ -49,6 +51,7 @@ export interface MaskMutationCommitRequest {
   operation: MaskMutationOperation;
   scope: MaskMutationScope;
   source_frame_index?: number | null;
+  cut_path?: [[number, number], [number, number]];
   scope_fingerprint: string;
   expected_versions: Array<{ annotation_id: string; version: number }>;
   mutations: MaskMutation[];
@@ -73,6 +76,7 @@ export interface MaskMutationCommitResponse {
   after_digest: string;
   audit_id: number;
   idempotent_replay: boolean;
+  slice_restore?: AnnotationSliceResponse | null;
 }
 
 export const maskMutationsApi = {

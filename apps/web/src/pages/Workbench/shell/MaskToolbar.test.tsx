@@ -86,6 +86,25 @@ function toolbarProps(
 }
 
 describe("MaskToolbar", () => {
+  it("offers image slice only for a saved eligible source and changes only the pointer tool", async () => {
+    const user = userEvent.setup();
+    const props = toolbarProps({}, { sliceUnavailableReason: null });
+    const view = render(<MaskToolbar {...props} />);
+    await user.click(view.getByTitle("Mask 高级工具"));
+    await user.click(screen.getByRole("menuitem", { name: "直线切割为两个实例" }));
+    expect(props.onSetTool).toHaveBeenCalledWith("slice_mask");
+    expect(props.onRunInstanceOperation).not.toHaveBeenCalled();
+    view.rerender(<MaskToolbar {...props} sliceUnavailableReason="有活动子对象的 Mask 不能切割" />);
+    await user.click(view.getByTitle("Mask 高级工具"));
+    expect(screen.getByRole("menuitem", { name: "直线切割为两个实例" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await user.keyboard("{Escape}");
+    view.rerender(<MaskToolbar {...props} sliceUnavailableReason={undefined} />);
+    await user.click(view.getByTitle("Mask 高级工具"));
+    expect(screen.queryByRole("menuitem", { name: "直线切割为两个实例" })).toBeNull();
+  });
   it("阶段变化沿用工作台紧凑字号和按钮尺寸", () => {
     const view = render(<MaskToolbar {...toolbarProps()} />);
 

@@ -6,10 +6,12 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.schemas._jsonb_types import RasterMaskGeometry, VideoTrackMaskGeometry
+from app.schemas.annotation_slice import AnnotationSliceResponse, SlicePoint
 
 MaskGeometry = RasterMaskGeometry | VideoTrackMaskGeometry
 NonNegativeInt = Annotated[int, Field(ge=0)]
 MaskOperationKind = Literal[
+    "slice_mask",
     "split_components",
     "copy_component",
     "copy_keyframe",
@@ -153,6 +155,7 @@ class MaskMutationCommitRequest(BaseModel):
     operation: MaskOperationKind
     scope: MaskMutationScope
     source_frame_index: int | None = Field(default=None, ge=0)
+    cut_path: list[SlicePoint] | None = Field(default=None, min_length=2, max_length=2)
     scope_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     # Keep request parsing permissive enough for the service to return the
     # stable 428 expected_versions_missing contract for an omitted/empty list.
@@ -178,6 +181,15 @@ class MaskMutationCommitRequest(BaseModel):
 
     @model_validator(mode="after")
     def _unique_write_targets(self):
+        if self.operation == "slice_mask":
+            if self.scope.media != "image" or self.cut_path is None:
+                raise ValueError(
+                    "slice_mask requires image scope and two cut_path points"
+                )
+            if self.cut_path[0] == self.cut_path[1]:
+                raise ValueError("slice_mask cut_path must have two distinct points")
+        elif self.cut_path is not None or "cut_path" in self.model_fields_set:
+            raise ValueError("cut_path is only valid for slice_mask")
         targets = [
             mutation.annotation_id
             for mutation in self.mutations
@@ -222,3 +234,4 @@ class MaskMutationCommitResponse(BaseModel):
     after_digest: str
     audit_id: int
     idempotent_replay: bool = False
+    slice_restore: AnnotationSliceResponse | None = None

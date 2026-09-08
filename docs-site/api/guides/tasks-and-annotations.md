@@ -260,11 +260,11 @@ GET /api/v1/tasks/:id/video/frame-timetable?from=0&to=120
 }
 ```
 
-每个 task 最多保留 256 个尚未被 annotation POST/PATCH 认领的匿名上传；重复上传相同内容不重复占额度。达到上限返回 `422 mask_quota_exceeded`。图片和视频单帧 Mask 使用 `GET /api/v1/annotations/{annotation_id}/mask-content`；视频 Mask 轨迹的当前解析帧使用带 `{frame_index}` 的路径，兼容客户端也可以用带帧路径读取单态 Mask。响应支持 `If-None-Match` 命中返回 304；对象损坏或尺寸失配返回 409，存储暂时不可用返回可重试 503。部署可以分别控制读取和创建；创建关闭时仍允许安全读取存量 geometry。
+每个 task 最多保留 256 个尚未被 annotation POST/PATCH 认领的匿名上传；重复上传相同内容不重复占额度。达到上限返回 `422 mask_quota_exceeded`。图片和视频单帧 Mask 使用 `GET /api/v1/annotations/{annotation_id}/mask-content`；视频 Mask 轨迹的当前解析帧使用带 `{frame_index}` 的路径，兼容客户端也可以用带帧路径读取单态 Mask。对象或帧路径会随编辑及恢复指向新内容，因此返回 `Cache-Control: private, no-cache`，每次按当前摘要重新校验；`If-None-Match` 命中返回 304，摘要变化返回完整 RLE。对象损坏或尺寸失配返回 409，存储暂时不可用返回可重试 503。部署可以分别控制读取和创建；创建关闭时仍允许安全读取存量 geometry。
 
 ## Mask 实例原子操作
 
-拆分、复制、合并和严格非重叠会在一个任务级事务内提交：
+切割、拆分、复制、合并和严格非重叠会在一个任务级事务内提交：
 
 ```http
 POST /api/v1/tasks/:id/annotations/mask-mutations:commit
@@ -273,7 +273,7 @@ POST /api/v1/tasks/:id/annotations/mask-mutations:commit
 请求的核心字段是：
 
 - `idempotency_key`：同一预览重试必须复用同一个 key；同 key 异参返回 `idempotency_conflict`。
-- `operation`：`split_components`、`copy_component`、`copy_keyframe`、`join_masks` 或 `overlap`。`copy_keyframe` 只用于视频，并要求 `source_frame_index`。
+- `operation`：`slice_mask`、`split_components`、`copy_component`、`copy_keyframe`、`join_masks` 或 `overlap`。`copy_keyframe` 只用于视频，并要求 `source_frame_index`。
 - `scope`：固定 image / video、当前帧与 segment、同类 / 全部对象过滤、overlap policy 和是否要求严格非重叠。
 - `scope_fingerprint` 与 `expected_versions`：必须来自同一个预览快照；版本项按 annotation UUID 排序并覆盖范围内全部对象。
 - `mutations`：只允许有判别字段的 `update | create | delete`；geometry 只能是 `raster_mask` 或 `video_track_mask`，新内容引用必须先由当前任务上传保留。
@@ -287,6 +287,16 @@ annotation 变更、内容关联、操作账本、lineage、任务统计和聚�
 请求体上限为 12 MiB，范围候选对象、版本项、mutation 和引用的 RLE 对象各不得超过 1000，单次验证的 RLE runs 总数不得超过 200 万，派生 RLE 不得超过 100 万 runs，累计代数与连通域扫描不得超过 500 万步，严格非重叠经过 bbox 剪枝后最多比较 10 万对。范围查询在 SQL 层使用 `limit + 1` 预检；超限请求会在无界加载或更大规模的像素计算之前被拒绝。
 
 缺少范围版本返回 `428 expected_versions_missing`。范围成员变化、版本漂移、任务 / 对象 / 分段锁冲突分别返回结构化 409 reason；操作合同、类别、geometry、引用或空结果无效返回结构化 422 reason。任一失败都不会留下部分 annotation 或账本记录。
+
+### Mask 直线切割
+
+`operation: "slice_mask"` 仅用于图片 Raster Mask，必须包含恰好两个归一化有限端点的 `cut_path: [[x1,y1],[x2,y2]]`，端点不同；其它 operation 不接受 `cut_path`。mutations 必须为同一来源的一次 update 和一次 create，不得删除对象。仍须提交完整 scope 指纹、范围版本、预览结果引用及受控 report。
+
+服务端按像素中心 `((x+0.5)/W,(y+0.5)/H)` 对有向直线计算叉积，`>= 0` 属于左侧，其他属于右侧，前后端均不使用 epsilon。按 RLE 前景列区间和二分边界独立重算两块，逐像素验证提交的结果；不重叠、并集等于来源且两个结果非空。像素较多的区域必须为 update，数量相等时左侧必须为 update。来源可以有孔洞与多连通分量，`split_components` 仍仅允许拆出完整原连通分量。
+
+切割来源必须已保存、未锁定、没有活动子对象，保留原有身份、属性和父对象。新对象复制类别、工具单元、业务属性、属性来源、z_order 和原父对象，使用操作者与 manual 来源，不继承预测身份、置信度或外部轨迹身份。
+
+响应额外提供 `slice_restore`，其字段与下文 Polygon 切割响应相同。使用其中 `slice_operation_id` 和 `result_versions` 调用共享 `slices/{operation_id}:restore`；两块对象在一次 undo / redo 中保留 ID、递增版本，失败保持全部原状。恢复账本只记录前后版本号、内容摘要和活动状态，RLE 正文和内容引用来自当前对象或 `MaskAnnotationRevision`。每次切割 / 恢复事务把相关 revision 的保留期非缩短地保护到原切割后 30 天，无限保留项仍为无限。GC 无需新增扫描来源；缺失、过期或损坏的恢复引用返回 `409 snapshot_unavailable`，整次恢复拒绝。原操作超过 30 天返回 `410 restore_expired`。
 
 ## Polygon 原子切割与恢复
 
@@ -323,7 +333,7 @@ annotation 变更、内容关联、操作账本、lineage、任务统计和聚�
 }
 ```
 
-`target` 为 `before` 或 `after`。必须携带原切割或上次成功恢复返回的完整版本集，含 inactive 对象；服务端还会核对该版本集等于账本记录。不得刷新任意最新版本以覆盖后续修改。几何与活动状态只从账本快照恢复，不接受客户端回滚 geometry。ID 保持、版本递增，恢复响应继续返回两个 ID 的全部版本。恢复到当前同一侧时 `no_op=true`，对象版本不变。
+`target` 为 `before` 或 `after`。必须携带原切割或上次成功恢复返回的完整版本集，含 inactive 对象；服务端还会核对该版本集等于账本记录。不得刷新任意最新版本以覆盖后续修改。几何与活动状态只从服务端账本快照或 Mask 版本引用恢复，不接受客户端回滚 geometry。ID 保持、版本递增，恢复响应继续返回两个 ID 的全部版本。恢复到当前同一侧时 `no_op=true`，对象版本不变。
 
 两个接口均要求当前任务可见、可编辑且任务锁允许写入，以及 `annotations:write` scope。相同 actor / task / key 同参回放首次响应，异参返回 `409 idempotency_conflict`。同一次超时重试复用原 key；下一次 undo / redo 必须使用新 key。对象版本变化、锁定或活动子对象分别返回 `409 version_mismatch / annotation_locked / active_children`，非法切线返回 `422 invalid_cut`。原切割提交后 30 天返回 `410 restore_expired`，撤销与重做不续期。
 

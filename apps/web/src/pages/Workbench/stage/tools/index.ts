@@ -83,6 +83,7 @@ export type DragInit =
    * Enter / MaskToolbar 显式触发。
    */
   | { kind: "maskBrush"; lastX: number; lastY: number }
+  | { kind: "maskSlice"; start: [number, number]; end: [number, number] }
   /** Mask lasso 草稿使用原图像素坐标，松手后才计算 preview。 */
   | { kind: "maskLasso"; points: [number, number][] }
   /**

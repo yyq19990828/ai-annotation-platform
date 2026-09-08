@@ -342,6 +342,14 @@ test.describe("E1 interactive toolbar layers", () => {
     );
     await expect(page.getByTestId("interactive-inference-error")).toBeHidden();
     await expect(page.getByTestId("interactive-toolbar-advanced")).toBeHidden();
+    await selectTool(page, "image", "mask");
+    await expect(page.getByTestId("mask-toolbar")).toContainText("就绪");
+    await expect(page.getByTestId("interactive-toolbar")).toBeHidden();
+    await page.getByTestId("mask-toolbar").getByTitle("Mask 高级工具").click();
+    await expect(page.getByRole("menuitem", { name: "直线切割为两个实例" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await selectTool(page, "image", "select");
+    await expect(page.getByTestId("interactive-capability-error")).toBeVisible();
     routed.capabilityFailure = false;
     await page.getByTestId("interactive-capability-retry").click();
     await expect(page.getByTestId("interactive-capability-error")).toBeHidden();

@@ -29,7 +29,7 @@ class AnnotationOperation(Base):
             "'join_masks', 'overlap', 'convert_annotations', "
             "'delete_small_islands', 'fill_small_holes', "
             "'resolve_same_class_overlap', 'mask_repair_rollback', "
-            "'slice_polygon', 'restore_slice')",
+            "'slice_polygon', 'restore_slice', 'slice_mask')",
             name="ck_annotation_operations_kind",
         ),
         CheckConstraint(

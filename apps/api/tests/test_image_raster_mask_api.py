@@ -186,6 +186,7 @@ async def test_static_mask_get_supports_etag_and_frame_alias(
     )
     assert first.status_code == 200
     assert first.json() == FOREGROUND_RLE
+    assert first.headers["cache-control"] == "private, no-cache"
     etag = first.headers["etag"]
 
     cached = await httpx_client_bound.get(
@@ -198,7 +199,26 @@ async def test_static_mask_get_supports_etag_and_frame_alias(
     )
     assert cached.status_code == 304
     assert alias.status_code == 304
+    assert cached.headers["cache-control"] == "private, no-cache"
+    assert alias.headers["cache-control"] == "private, no-cache"
     load.assert_awaited_once()
+
+    # A stable annotation URL can point at new pixels after edits or restore.
+    annotation.geometry = {
+        "type": "raster_mask",
+        "mask": build_rle_reference(EMPTY_RLE),
+    }
+    load.return_value = EMPTY_RLE
+    await db_session.commit()
+    for suffix in ("", "/99"):
+        changed = await httpx_client_bound.get(
+            f"/api/v1/annotations/{annotation.id}/mask-content{suffix}",
+            headers=_headers(token, **{"If-None-Match": etag}),
+        )
+        assert changed.status_code == 200
+        assert changed.json() == EMPTY_RLE
+        assert changed.headers["etag"] != etag
+        assert changed.headers["cache-control"] == "private, no-cache"
 
 
 async def test_single_frame_video_mask_get_is_bound_to_its_frame(
