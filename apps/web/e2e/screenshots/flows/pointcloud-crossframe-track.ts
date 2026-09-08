@@ -113,7 +113,7 @@ export async function runPointcloudCrossframeTrack(
     viewportBox.x + viewportBox.width * 0.14,
     viewportBox.y + viewportBox.height * 0.19,
   );
-  await page.mouse.wheel(0, 600);
+  await page.mouse.wheel(0, 1_200);
   await page.waitForTimeout(700);
 
   await selectBox(page, source.id);
