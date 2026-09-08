@@ -372,6 +372,11 @@ pnpm docs:build
 pnpm --filter @anno/docs-site check:all  # 文档元数据、导航与生成物检查
 ```
 
+后端 CI 输出最慢 30 个 pytest 阶段，完整用例耗时保存在 `backend-test-results`
+artifact 的 JUnit XML 中。测试用户工厂在进程内复用默认密码 `Test1234` 的真实 bcrypt
+哈希；自定义密码、生产密码哈希与验证逻辑保持原样。四角色 fixture 与 E2E 造数
+共用这一工厂，避免为每个测试账号重复计算默认密码哈希。
+
 CI E2E 使用 4 个默认测试分片，以及 readonly Mask、native Mask、native Mask AI
 三个独立任务。每个任务拥有自己的 PostgreSQL、Redis 和 MinIO；同一数据库仍只用
 一个 Playwright worker，因为 seed/reset 和 teardown 会清理共享 E2E 数据。
