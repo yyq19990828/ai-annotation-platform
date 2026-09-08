@@ -372,6 +372,27 @@ pnpm docs:build
 pnpm --filter @anno/docs-site check:all  # 文档元数据、导航与生成物检查
 ```
 
+后端 CI 输出最慢 30 个 pytest 阶段，完整用例耗时保存在 `backend-test-results`
+artifact 的 JUnit XML 中。测试用户工厂在进程内复用默认密码 `Test1234` 的真实 bcrypt
+哈希；自定义密码、生产密码哈希与验证逻辑保持原样。四角色 fixture 与 E2E 造数
+共用这一工厂，避免为每个测试账号重复计算默认密码哈希。
+
+`seed.injectToken()` 用一次性的同源空文档写入身份，避免切换账号时先启动旧账号的
+首页请求。调用后需显式导航到测试页面；已有 localStorage 偏好会保留，真实请求
+错误检查不作放宽。
+
+CI E2E 使用 4 个默认测试分片，以及 readonly Mask、native Mask、native Mask AI
+三个独立任务。每个任务拥有自己的 PostgreSQL、Redis 和 MinIO；同一数据库仍只用
+一个 Playwright worker，因为 seed/reset 和 teardown 会清理共享 E2E 数据。
+默认分片使用构建产物，Mask 任务由 Playwright 启动隔离 API 和 Vite dev。
+所有任务保持原有用例和重试策略，`Frontend E2E` 汇总门禁仅在全部成功时通过。
+每组 HTML 报告分别保存在 `playwright-report-<suite>` artifact，便于查看耗时与重试。
+同一 PR 的新提交会取消旧 CI；main 的每次 push 验证均保留。
+
+分片只缩短并行等待时间，可能增加 runner 总用量。调整分片数量时，使用
+`pnpm exec playwright test --list --shard=1/4`（依次检查四片）确认默认用例无遗漏、
+无重复，并观察远端最慢分片的耗时与排队时间；不要在共享本地数据库上并发运行分片。
+
 CI 检查名称统一使用 `领域 职责`，例如 `Backend tests`、`Frontend verification`、
 `Docs validation`。所有 job（包括单 job 工作流）都显式设置 `name`，并在仓库内保持唯一；
 整个名称使用 sentence case，保留 Python、SDK 等专有名词和缩写。工具明细放在 step 名称中。GitHub 会展示 `工作流 / job (事件)`，因此 job 名称不再添加斜杠；
