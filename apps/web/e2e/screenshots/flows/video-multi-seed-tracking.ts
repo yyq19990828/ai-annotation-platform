@@ -1,7 +1,15 @@
 /**
  * 流程录制：按目标外观选择点、正负点或整车框，分别演示三种追踪种子。
  */
-import type { Page, Response } from "@playwright/test";
+import { expect, type Page, type Response } from "@playwright/test";
+import type {
+  VideoTrackerJob,
+  VideoTrackerJobPreview,
+  VideoTrackerPropagatePayload,
+} from "../../../src/api/videoTracker";
+import { assertVideoTimelineVisible, currentVideoFrame, parkVideoPointer } from "./_video-timeline";
+import { readVideoRecordingJson, setVideoRecordingTimeline } from "./_video-keyframe-recording";
+import type { RecordedVideoTrack } from "./_video-keyframe-evidence";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
 import {
   mediaBbox,
@@ -100,7 +108,8 @@ function assertAcceptedTracksCoverTargets(
     const minimumHeight = expectedBbox.h * 0.62;
     for (const frameIndex of [4, 15, 30]) {
       const keyframe = acceptedTrack.keyframes.find((item) => item.frameIndex === frameIndex);
-      if (!keyframe) continue;
+      if (!keyframe)
+        throw new Error(`[video-multi-seed:${variant}] 缺少 F${frameIndex} 的追踪结果`);
       if (keyframe.bbox.w < minimumWidth || keyframe.bbox.h < minimumHeight) {
         throw new Error(
           `[video-multi-seed:${variant}] ${targetClass} 轨迹在 F${frameIndex} 缩成局部目标: ` +
@@ -113,100 +122,116 @@ function assertAcceptedTracksCoverTargets(
   }
 }
 
-async function moveToFrame(page: Page, timeline: ReturnType<Page["getByTestId"]>, frame: number) {
-  await timeline.focus();
-  const key = frame > 0 ? "ArrowRight" : "ArrowLeft";
-  for (let i = 0; i < 4; i += 1) {
-    await page.keyboard.press(key);
-    await page.waitForTimeout(170);
+async function moveToFrame(page: Page, frame: number): Promise<void> {
+  const current = await currentVideoFrame(page);
+  if (frame === 0) {
+    await page.getByRole("button", { name: "回到首帧", exact: true }).click();
+  } else {
+    const direction = frame > current ? "下一帧" : "上一帧";
+    for (let next = current; next !== frame; ) {
+      next += frame > current ? 1 : -1;
+      await page.getByRole("button", { name: direction, exact: true }).click();
+      await expect.poll(() => currentVideoFrame(page)).toBe(next);
+      await page.waitForTimeout(120);
+    }
   }
-  await page.getByText(new RegExp(`^F ${frame} \\/ `)).waitFor({ timeout: 3_000 });
+  await expect.poll(() => currentVideoFrame(page)).toBe(frame);
+  await parkVideoPointer(page);
+  await assertVideoTimelineVisible(page);
 }
 
-async function moveTrackerPanelToLeft(
-  page: Page,
-  dialog: ReturnType<Page["getByTestId"]>,
-): Promise<void> {
-  const panelBox = await dialog.boundingBox();
-  const header = dialog.getByTestId("tracker-panel-header");
-  const headerBox = await header.boundingBox();
-  if (!panelBox || !headerBox) {
-    throw new Error("[video-multi-seed] 追踪面板不可见，无法为右侧目标让出画布");
+async function scrubPendingTrackerFrames(page: Page): Promise<void> {
+  const slider = page.getByRole("slider", { name: "视频帧时间轴", exact: true });
+  const box = await slider.boundingBox();
+  if (!box) throw new Error("[video-multi-seed] 视频帧时间轴不可见");
+  const readout = await page.getByTestId("video-timeline-window-readout").innerText();
+  const maximum = /全部\s*·\s*F0–F?(\d+)/.exec(readout);
+  if (!maximum) throw new Error(`Expected full video range: ${readout}`);
+  const maxFrame = Number(maximum[1]);
+  const y = box.y + box.height / 2;
+  // Native range thumbs have a small inset; assert the actual resulting frame, not pixel ratios.
+  let from = { x: box.x + 8, y };
+  for (const frame of [26, 10]) {
+    const to = { x: box.x + 8 + ((box.width - 16) * frame) / maxFrame, y };
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await movePointerAtRefreshRate(page, from, to, 1500);
+    await page.mouse.up();
+    await expect
+      .poll(async () => Math.abs((await currentVideoFrame(page)) - frame))
+      .toBeLessThanOrEqual(1);
+    await parkVideoPointer(page);
+    await assertVideoTimelineVisible(page);
+    await page.waitForTimeout(900);
+    from = to;
   }
-  const from = { x: headerBox.x + headerBox.width * 0.5, y: headerBox.y + headerBox.height * 0.5 };
-  const to = { x: from.x + 8 - panelBox.x, y: from.y };
-  await page.mouse.move(from.x, from.y);
-  await page.mouse.down();
-  await movePointerAtRefreshRate(page, from, to, 700);
-  await page.mouse.up();
-  const movedBox = await dialog.boundingBox();
-  if (!movedBox || movedBox.x > 80) {
-    throw new Error(`[video-multi-seed] 追踪面板没有移动到左侧: x=${movedBox?.x ?? "missing"}`);
-  }
-  await page.waitForTimeout(400);
 }
 
-async function scrubPendingTrackerFrames(
-  page: Page,
-  timeline: ReturnType<Page["getByTestId"]>,
-): Promise<void> {
-  const box = await timeline.boundingBox();
-  if (!box) throw new Error("[video-multi-seed] 时间轴不可见，无法展示跨帧候选");
-  const y = box.y + box.height * 0.5;
-  const frameZero = { x: box.x + 2, y };
-  const laterFrame = { x: box.x + box.width * 0.38, y };
-  const reviewFrame = { x: box.x + box.width * 0.14, y };
-
-  await page.mouse.move(frameZero.x, frameZero.y);
-  await page.mouse.down();
-  await movePointerAtRefreshRate(page, frameZero, laterFrame, 2_200);
-  await page.mouse.up();
-  await page.getByText(/^F 2[5-9] \/ 71$/).waitFor({ timeout: 3_000 });
-  await page.waitForTimeout(900);
-
-  await page.mouse.down();
-  await movePointerAtRefreshRate(page, laterFrame, reviewFrame, 1_800);
-  await page.mouse.up();
-  await page.getByText(/^F (?:9|10|11) \/ 71$/).waitFor({ timeout: 3_000 });
-  await page.waitForTimeout(1_000);
+interface SubmittedSeed {
+  obj_id: number;
+  prompts: Array<{ frame_index: number; points?: number[][]; bbox?: NormalizedBbox }>;
 }
 
 export async function runVideoMultiSeedTracking(
   page: Page,
   catalog: ScreenshotSeedCatalog,
   variant: VideoMultiSeedVariant,
-): Promise<DrawWindow> {
+  onJobCreated?: (jobId: string) => void,
+  onAnnotationsCreated?: (ids: string[]) => void,
+): Promise<DrawWindow & { evidence: Record<string, unknown> }> {
   const project = catalog.projects.video_demo;
   const label = VARIANT_LABELS[variant];
-  await page.evaluate(() => {
-    // 先在右侧面板下播种左侧公交车，再把面板拖到左侧播种右侧公交车。
-    localStorage.setItem("wb:video-tracker-panel-position", JSON.stringify({ left: 860, top: 8 }));
-    localStorage.removeItem("wb:video-tracker-panel-size");
-  });
   await page.goto(`/projects/${project.id}/annotate?task=${project.tasks.tracking.id}`);
   const stage = page.getByTestId("video-konva-stage");
-  const timeline = page.getByTestId("video-timeline-shell");
-  await timeline.waitFor({ timeout: 15_000 });
-  await stage.waitFor({ timeout: 10_000 });
-  await page.addStyleTag({
-    content: '[data-testid="video-frame-preview-popover"] { display: none !important; }',
-  });
-  await page.waitForTimeout(700);
-
+  await expect(stage).toBeVisible({ timeout: 20_000 });
+  await expect
+    .poll(() =>
+      page
+        .getByTestId("video-konva-source")
+        .evaluate((video: HTMLVideoElement) => video.readyState),
+    )
+    .toBeGreaterThanOrEqual(2);
+  await expect(page.getByTestId("video-konva-source")).toHaveJSProperty("paused", true);
+  await setVideoRecordingTimeline(page, true);
+  await moveToFrame(page, 0);
+  const reset = page.getByRole("button", { name: "适配全部帧", exact: true });
+  if (await reset.isEnabled()) await reset.click();
+  const annotationsPath = `/api/v1/tasks/${project.tasks.tracking.id}/annotations`;
+  const baseline = await readVideoRecordingJson<RecordedVideoTrack[]>(page, annotationsPath);
+  const baselineIds = new Set(baseline.map((annotation) => annotation.id));
   const drawStartMs = Date.now();
-  await page.getByTestId("workbench-ai-tracker").click();
   const dialog = page.getByTestId("video-tracker-propagate-dialog");
+  if (!(await dialog.isVisible())) await page.getByTestId("workbench-ai-tracker").click();
   await dialog.waitFor({ timeout: 5_000 });
 
   const modelSelect = dialog.locator("#tracker-model");
   const modelValues = await modelSelect
     .locator("option")
-    .evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value));
+    .evaluateAll((options) =>
+      options
+        .filter((option) => !(option as HTMLOptionElement).disabled)
+        .map((option) => (option as HTMLOptionElement).value),
+    );
   const seedModel = ["sam3_video_interactive", "sam2_video"].find((value) =>
     modelValues.includes(value),
   );
   if (!seedModel) throw new Error(`[video-multi-seed:${variant}] 没有可用的交互式视频模型`);
   await modelSelect.selectOption(seedModel);
+  await dialog.getByTestId("tracker-direction-forward").click();
+  await dialog.locator("#tracker-range-preset").selectOption("30");
+  await dialog.getByTestId("tracker-output-geometry").selectOption("bbox");
+  await parkVideoPointer(page);
+  await assertVideoTimelineVisible(page);
+  await expect(dialog).toBeInViewport({ ratio: 1 });
+  const stageBox = await stage.boundingBox();
+  const panelBox = await dialog.boundingBox();
+  expect(stageBox).toBeTruthy();
+  expect(panelBox).toBeTruthy();
+  expect(
+    stageBox!.x + stageBox!.width <= panelBox!.x + 1 ||
+      panelBox!.x + panelBox!.width <= stageBox!.x + 1,
+    "Docked tracker panel must not overlap the video targets",
+  ).toBe(true);
 
   const leftBusFrameZero = recordingAnchor(catalog, "video_demo", "tracking", "left_bus_f0", 0);
   const leftBusFrameFour = recordingAnchor(catalog, "video_demo", "tracking", "left_bus_f4", 4);
@@ -233,7 +258,6 @@ export async function runVideoMultiSeedTracking(
     const targetId = index + 1;
     if (targetId > 1) {
       await dialog.getByTestId("tracker-seed-new-target").click();
-      await moveTrackerPanelToLeft(page, dialog);
     }
 
     await toggle.click();
@@ -265,7 +289,7 @@ export async function runVideoMultiSeedTracking(
       continue;
     }
 
-    await moveToFrame(page, timeline, 4);
+    await moveToFrame(page, 4);
     await toggle.click();
     for (const normalizedPoint of [target.frameFour.point, ...target.frameFour.additional_points]) {
       const positive = mediaPoint(media, normalizedPoint);
@@ -278,7 +302,7 @@ export async function runVideoMultiSeedTracking(
       await page.keyboard.down("Alt");
       await page.mouse.click(negative.x, negative.y);
       await page.keyboard.up("Alt");
-      await dialog.getByTestId("tracker-panel-header").hover();
+      await parkVideoPointer(page);
       await page.waitForTimeout(900);
     }
 
@@ -289,7 +313,7 @@ export async function runVideoMultiSeedTracking(
       .filter({ hasText: "F0、F4" })
       .filter({ hasText: `${positivePointCount + (variant === "positive-negative" ? 1 : 0)} 点` })
       .waitFor({ timeout: 3_000 });
-    await moveToFrame(page, timeline, 0);
+    await moveToFrame(page, 0);
   }
   await page.waitForTimeout(900);
 
@@ -299,16 +323,90 @@ export async function runVideoMultiSeedTracking(
   };
   page.on("response", collectServerError);
   try {
+    const created = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.url().endsWith(`/tasks/${project.tasks.tracking.id}/video:track`) &&
+        response.status() === 202,
+    );
     await dialog.getByRole("button", { name: "开始发现" }).click();
+    const createdResponse = await created;
+    const job = (await createdResponse.json()) as VideoTrackerJob;
+    if (!job.id) throw new Error("Video tracker did not return a job ID");
+    onJobCreated?.(job.id);
+    const submitted = createdResponse.request().postDataJSON() as VideoTrackerPropagatePayload;
+    expect(submitted.model_key).toBe(seedModel);
+    expect(submitted.direction).toBe("forward");
+    expect(submitted.from_frame).toBe(0);
+    expect(submitted.to_frame).toBe(30);
+    expect(submitted.output_geometry).toBe("bbox");
+    expect(submitted.target_class_name).toBe(leftBusFrameZero.label);
+    expect(submitted.source_annotation_id ?? null).toBeNull();
+    expect(submitted.source_annotation_ids ?? []).toEqual([]);
+    const seeds = submitted.prompt?.seeds as SubmittedSeed[];
+    expect(seeds).toHaveLength(2);
+    expect(new Set(seeds.map((seed) => seed.obj_id)).size).toBe(2);
+    for (const [index, target] of targets.entries()) {
+      const seed = seeds.find((item) => item.obj_id === index + 1);
+      if (!seed) throw new Error(`Missing submitted seed target ${index + 1}`);
+      expect(seed.prompts.map((prompt) => prompt.frame_index)).toEqual(
+        variant === "box-seed" ? [0] : [0, 4],
+      );
+      for (const prompt of seed.prompts) {
+        const anchor = prompt.frame_index === 0 ? target.frameZero : target.frameFour;
+        if (variant === "box-seed") {
+          expect(prompt.bbox).toBeTruthy();
+          const expected = {
+            x: anchor.bbox[0],
+            y: anchor.bbox[1],
+            w: anchor.bbox[2] - anchor.bbox[0],
+            h: anchor.bbox[3] - anchor.bbox[1],
+          };
+          expect(normalizedBboxIoU(prompt.bbox!, expected)).toBeGreaterThan(0.95);
+          expect(prompt.points ?? []).toEqual([]);
+        } else {
+          const positives = [anchor.point, ...anchor.additional_points];
+          const negatives =
+            variant === "positive-negative" && prompt.frame_index === 4
+              ? [anchor.negative_point!]
+              : [];
+          const expectedPoints = [
+            ...positives.map(([x, y]) => [x, y, 1]),
+            ...negatives.map(([x, y]) => [x, y, 0]),
+          ];
+          expect(prompt.points).toHaveLength(expectedPoints.length);
+          for (const [pointIndex, point] of expectedPoints.entries()) {
+            const actual = prompt.points![pointIndex]!;
+            expect(actual[0]).toBeCloseTo(point[0]!, 2);
+            expect(actual[1]).toBeCloseTo(point[1]!, 2);
+            expect(actual[2]).toBe(point[2]);
+          }
+          expect(prompt.bbox).toBeUndefined();
+        }
+      }
+    }
     const review = page.getByTestId("video-tracker-review-bar");
     await review.waitFor({ state: "visible", timeout: 120_000 });
-    await review.getByText(/当前选区 62 个候选/).waitFor({ timeout: 5_000 });
+    const preview = await readVideoRecordingJson<VideoTrackerJobPreview>(
+      page,
+      `/api/v1/video-tracker-jobs/${job.id}/preview`,
+    );
+    expect(preview.job_id).toBe(job.id);
+    expect(preview.status).toBe("pending_review");
+    expect(preview.output_geometry).toBe("bbox");
+    expect(preview.results.length).toBeGreaterThan(0);
+    expect(new Set(preview.results.map((result) => result.instance_id)).size).toBe(2);
+    for (const result of preview.results) {
+      expect(result.frame_index).toBeGreaterThanOrEqual(0);
+      expect(result.frame_index).toBeLessThanOrEqual(30);
+      expect(result.geometry.type).toBe("bbox");
+    }
     await page.waitForTimeout(1_200);
-    await scrubPendingTrackerFrames(page, timeline);
+    await scrubPendingTrackerFrames(page);
     const accepted = page.waitForResponse(
       (response) =>
         response.request().method() === "POST" &&
-        response.url().endsWith("/decisions") &&
+        response.url().endsWith(`/video-tracker-jobs/${job.id}/decisions`) &&
         response.ok(),
       { timeout: 20_000 },
     );
@@ -320,22 +418,65 @@ export async function runVideoMultiSeedTracking(
       { timeout: 20_000 },
     );
     await review.getByTestId("tracker-review-accept").click();
-    const [, annotationsResponse] = await Promise.all([accepted, annotationsRefreshed]);
+    const [decisionResponse, annotationsResponse] = await Promise.all([
+      accepted,
+      annotationsRefreshed,
+    ]);
+    const saved = (await annotationsResponse.json()) as RecordedVideoTrack[];
+    const added = saved.filter((annotation) => !baselineIds.has(annotation.id));
+    onAnnotationsCreated?.(added.map((annotation) => annotation.id));
+    expect(added).toHaveLength(2);
+    for (const annotation of added) {
+      expect(annotation.task_id).toBe(project.tasks.tracking.id);
+      expect(annotation.geometry.type).toBe("video_track_bbox");
+      expect(annotation.geometry.track_id).toBeTruthy();
+      expect(annotation.version).toBeGreaterThanOrEqual(1);
+    }
+    expect(new Set(added.map((annotation) => annotation.geometry.track_id)).size).toBe(2);
     assertAcceptedTracksCoverTargets(
-      await annotationsResponse.json(),
+      added,
       leftBusFrameZero.label,
       targets.map((target) => target.frameZero.bbox),
       variant,
     );
     await review.waitFor({ state: "hidden", timeout: 5_000 });
+    await parkVideoPointer(page);
+    await assertVideoTimelineVisible(page);
     await page.waitForTimeout(1_200);
+    const drawEndMs = Date.now();
+    const finalJob = await readVideoRecordingJson<VideoTrackerJob>(
+      page,
+      `/api/v1/video-tracker-jobs/${job.id}`,
+    );
+    expect(finalJob.status).toBe("accepted");
+    expect(finalJob.model_key).toBe(seedModel);
+    expect(finalJob.error_message).toBeNull();
+    await page.reload();
+    await expect(stage).toBeVisible({ timeout: 20_000 });
+    const reloaded = await readVideoRecordingJson<RecordedVideoTrack[]>(page, annotationsPath);
+    for (const annotation of added) {
+      const persisted = reloaded.find((item) => item.id === annotation.id);
+      expect(persisted?.version).toBe(annotation.version);
+      expect(persisted?.geometry).toEqual(annotation.geometry);
+    }
+    expect(reloaded.filter((annotation) => !baselineIds.has(annotation.id))).toHaveLength(2);
+    if (serverErrors.length > 0)
+      throw new Error(`[video-multi-seed:${variant}] ${label}: ${serverErrors.join(", ")}`);
+    return {
+      drawStartMs,
+      drawEndMs,
+      evidence: {
+        variant,
+        submitted,
+        created_job: job,
+        preview,
+        final_job: finalJob,
+        decision: await decisionResponse.json(),
+        accepted_annotations: added,
+        reload_verified: true,
+      },
+    };
   } finally {
     page.off("response", collectServerError);
   }
-  if (serverErrors.length > 0) {
-    throw new Error(
-      `[video-multi-seed:${variant}] ${label}接受后出现服务端错误: ${serverErrors.join(", ")}`,
-    );
-  }
-  return { drawStartMs, drawEndMs: Date.now() };
 }
