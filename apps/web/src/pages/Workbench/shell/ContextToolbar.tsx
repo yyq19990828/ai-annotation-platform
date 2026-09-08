@@ -91,7 +91,7 @@ export function ContextToolbar({
           styles.capsule,
         )}
         onKeyDown={(event) => {
-          if (event.key === "Escape") {
+          if (event.key === "Escape" && quickOpen) {
             event.preventDefault();
             event.stopPropagation();
             setQuickOpen(false);

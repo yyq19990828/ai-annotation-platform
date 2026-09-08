@@ -2,9 +2,59 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { ContextToolbar } from "./ContextToolbar";
+import { isWorkbenchInteractionBlocked } from "../state/workbenchInteractionGuards";
 
 // A second, non-Mask consumer verifies the shell has no editing or persistence assumptions.
 describe("ContextToolbar", () => {
+  it("focuses the full panel and lets Escape reach the workbench after collapsing", async () => {
+    const user = userEvent.setup();
+    const escape = vi.fn();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.key === "Escape" &&
+        !event.defaultPrevented &&
+        !isWorkbenchInteractionBlocked(event)
+      ) {
+        escape();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    try {
+      render(
+        <ContextToolbar
+          id="keyboard"
+          label="示例"
+          summary="◇"
+          summaryLabel="示例常用工具"
+          quickActions={[]}
+        >
+          {() => <button>面板操作</button>}
+        </ContextToolbar>,
+      );
+      const summary = screen.getByRole("button", { name: "示例常用工具" });
+      await user.tab();
+      expect(summary).toHaveFocus();
+      await user.keyboard("{Escape}");
+      expect(summary).toHaveAttribute("aria-expanded", "false");
+      expect(escape).not.toHaveBeenCalled();
+      await user.keyboard("{Escape}");
+      expect(escape).toHaveBeenCalledTimes(1);
+
+      await user.keyboard("{Enter}{Tab}{Enter}");
+      await waitFor(() => expect(screen.getByTestId("keyboard-toolbar")).toHaveFocus());
+      await user.tab();
+      expect(screen.getByRole("button", { name: "面板操作" })).toHaveFocus();
+      await user.keyboard("{Escape}");
+      expect(summary).toHaveFocus();
+      expect(summary).toHaveAttribute("aria-expanded", "false");
+      expect(escape).toHaveBeenCalledTimes(1);
+      await user.keyboard("{Escape}");
+      expect(escape).toHaveBeenCalledTimes(2);
+    } finally {
+      window.removeEventListener("keydown", onKeyDown);
+    }
+  });
+
   it("derives the opening transform from the actual capsule and panel rectangles", async () => {
     const rect = vi
       .spyOn(HTMLElement.prototype, "getBoundingClientRect")
