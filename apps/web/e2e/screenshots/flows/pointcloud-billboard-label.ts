@@ -13,6 +13,12 @@ import {
 
 type ViewportBox = { x: number; y: number; width: number; height: number };
 
+export interface PointcloudBillboardSource {
+  taskId: string;
+  annotationId: string;
+  geometry: Record<string, unknown>;
+}
+
 async function dragOrbit(
   page: Page,
   box: ViewportBox,
@@ -31,9 +37,51 @@ async function dragOrbit(
 export async function runPointcloudBillboardLabel(
   page: Page,
   catalog: ScreenshotSeedCatalog,
+  source?: PointcloudBillboardSource,
 ): Promise<DrawWindow> {
   const project = catalog.projects.pointcloud_demo;
   const task = project.tasks.frame_000;
+  if (source && source.taskId !== task.id) {
+    throw new Error("[pointcloud-billboard-label] 录制框任务与截图 catalog 不一致");
+  }
+
+  const annotationMutations: string[] = [];
+  page.on("request", (request) => {
+    if (
+      ["POST", "PATCH", "DELETE"].includes(request.method()) &&
+      /\/api\/v1\/tasks\/[^/]+\/annotations(?:\/|$)/.test(request.url())
+    ) {
+      annotationMutations.push(`${request.method()} ${request.url()}`);
+    }
+  });
+
+  async function readSourceGeometry(): Promise<Record<string, unknown>> {
+    if (!source) throw new Error("[pointcloud-billboard-label] 缺少源框上下文");
+    const token = await page.evaluate(() => localStorage.getItem("token"));
+    if (!token) throw new Error("[pointcloud-billboard-label] 缺少登录凭据");
+    const api = process.env.PLAYWRIGHT_API_BASE ?? "http://127.0.0.1:8010";
+    const response = await page.request.get(`${api}/api/v1/tasks/${task.id}/annotations`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok()) {
+      throw new Error(
+        `[pointcloud-billboard-label] 读取源框失败: ${response.status()} ${await response.text()}`,
+      );
+    }
+    const annotations = (await response.json()) as Array<{
+      id?: string;
+      geometry?: Record<string, unknown>;
+    }>;
+    const match = annotations.find((annotation) => annotation.id === source.annotationId);
+    if (!match?.geometry) {
+      throw new Error("[pointcloud-billboard-label] 录制源框已消失");
+    }
+    return match.geometry;
+  }
+
+  const geometryBefore = source ? await readSourceGeometry() : null;
+  if (source) expect(geometryBefore).toEqual(source.geometry);
+
   await installRecordingWorkbenchLayout(page, "both", {
     workspace: { context: "annotate:3d", preset: "standard" },
   });
@@ -105,14 +153,26 @@ export async function runPointcloudBillboardLabel(
   await expect(page.getByTestId("three-d-selection-panel").first()).toBeVisible({ timeout: 5_000 });
   await page.waitForTimeout(1_200);
 
-  // 轻微拉远保留框体完整，再以小幅连续 orbit 展示标签始终正对相机。
-  await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5);
+  // 取消选择以移除 gizmo，保留相机焦点与 billboard 标签；后续轨道从视口上方空白处开始，
+  // 避免把拖动误解为框的平移/旋转操作。
+  await page.mouse.click(box.x + box.width * 0.14, box.y + box.height * 0.18);
+  await expect(page.getByTestId("three-d-selection-panel")).toHaveCount(0, { timeout: 5_000 });
+  await page.waitForTimeout(700);
+
+  // 轻微拉远保留框体完整，再从远离目标的空白区域连续 orbit，展示标签始终正对相机。
+  await page.mouse.move(box.x + box.width * 0.14, box.y + box.height * 0.19);
   await page.mouse.wheel(0, 120);
   await page.waitForTimeout(700);
-  await dragOrbit(page, box, { x: 0.46, y: 0.49 }, { x: 0.54, y: 0.46 });
-  await dragOrbit(page, box, { x: 0.54, y: 0.46 }, { x: 0.48, y: 0.51 });
-  // 轻微轨道不会把已聚焦目标翻到网格下方，保留框体和标签的可读构图。
+  await dragOrbit(page, box, { x: 0.14, y: 0.19 }, { x: 0.3, y: 0.16 });
+  await dragOrbit(page, box, { x: 0.3, y: 0.16 }, { x: 0.12, y: 0.24 });
+  // 空白处轨道不会改变框几何，保留焦点构图与标签可读性。
   await page.waitForTimeout(1_500);
+
+  if (source) {
+    const geometryAfter = await readSourceGeometry();
+    expect(geometryAfter).toEqual(geometryBefore);
+  }
+  expect(annotationMutations).toEqual([]);
 
   return { drawStartMs, drawEndMs: Date.now() };
 }

@@ -2395,7 +2395,11 @@ test.describe("flow recordings", () => {
           labelContent: { single: [], track: ["id", "state"], ai: ["source", "score"] },
         },
       });
-      const win = await runPointcloudBillboardLabel(page, cached);
+      const win = await runPointcloudBillboardLabel(page, cached, {
+        taskId: task.id,
+        annotationId: source.id,
+        geometry: source.geometry,
+      });
       await finalize(page, "pointcloud-billboard-label", undefined, drawTrim(win, t0));
     } finally {
       if (annotationId) await seed.deleteTaskAnnotation(task.id, annotationId, userEmail);
