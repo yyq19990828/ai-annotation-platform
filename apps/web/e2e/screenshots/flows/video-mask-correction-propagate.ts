@@ -307,6 +307,9 @@ export async function runVideoMaskCorrectionPropagate(
     await page.waitForTimeout(450);
     await stroke(page, [mediaPoint(bounds, [0.48, 0.425]), mediaPoint(bounds, [0.72, 0.425])], 900);
     await stroke(page, [mediaPoint(bounds, [0.73, 0.44]), mediaPoint(bounds, [0.73, 0.75])], 1_050);
+    // The deliberate F0 spill ends at x=.746; the brush radius leaves a thin
+    // fringe around x=.763, so overlap a second vertical erase stroke there.
+    await stroke(page, [mediaPoint(bounds, [0.75, 0.44]), mediaPoint(bounds, [0.75, 0.75])], 1_050);
     await page.waitForTimeout(900);
 
     await toolbar.getByRole("button", { name: "保存并传播" }).click();
