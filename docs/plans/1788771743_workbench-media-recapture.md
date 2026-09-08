@@ -315,3 +315,22 @@ All workers start from local `8a1c0a561067c4581d87d02330f4daf6d968f84b`. The pri
 The remaining 21 stories are content groups, not file counts. Their expected public output scope is 19 existing MP4/poster pairs, two new MP4/poster pairs, and the three existing OCR homepage encodings: 45 files. Confirm this against actual references before integration. OCR homepage and the hardware-qualified 3D flows retain the existing marketing requirements; standard capture is not an implicit fallback. Previously completed recordings and the 13 deliberately retained non-workbench flows remain outside this replacement scope.
 
 The primary reviewer must inspect each delivered source and derivative, including the complete represented interaction, beginning, ending, and poster; verify actual target geometry, inference/decision lineage, persistence, error evidence, clip bounds, and source hashes; and request corrections where needed. Encoding or passing tests alone do not constitute approval. Any review record made under the user's delegation must identify the primary agent as reviewer rather than attributing an unseen human review to the user.
+
+### AI and review integration
+
+All eight assigned AI/review stories passed primary-thread content review. The final import clip was extended to make candidate selection and acceptance readable; the routing flow uses one recorded page for both project settings and workbench capability selection. Source archives, hashes, complete-video contact sheets, inspected posters, and available API evidence are retained privately.
+
+| Story                | Verified content                                                                                                                                             |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| OCR                  | Real RapidOCR configuration, dispatch, running state, and 17 returned candidates; five homepage/documentation encodings share the inspected source.          |
+| Secondary inference  | Crop OCR writes three AI attributes; a manual text correction clears only that field's AI origin.                                                            |
+| Prediction import    | Five externally imported candidates become four pending candidates and one manual annotation after acceptance; no live inference claim.                      |
+| Review rejection     | Real claim and rejection requests record the geometry issue and reason.                                                                                      |
+| Pipeline application | A saved project pipeline runs detection followed by vehicle attribute classification and returns attributed shapes.                                          |
+| Job recovery         | An intentionally seeded failure is retried through the real API and RapidOCR worker; the completed retry leads to visible OCR candidates.                    |
+| Project routing      | Project backend configuration determines the single-task model and interactive tool backend; the recording demonstrates routing without executing inference. |
+| Preannotation        | Real asynchronous detection completes and returns visible candidates.                                                                                        |
+
+The OCR hardware source measures 2592 × 1458 pixels with 58.17 unique frames per second and is resampled to a 3840 × 2160 master; it is not native 4K capture. The marketing manifest does not carry an inference receipt, so its derivative metadata retains `unverified`; the separate review evidence records the successful real-backend assertions and visible result. This limitation is not repaired by inventing receipt data.
+
+These are agent reviews under the user's explicit delegation, not newly attributed human approvals. Integration preserves previously delivered media and does not complete the remaining video and cross-frame 3D stories or authorize a push or release.
