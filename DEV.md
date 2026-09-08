@@ -377,6 +377,10 @@ artifact 的 JUnit XML 中。测试用户工厂在进程内复用默认密码 `T
 哈希；自定义密码、生产密码哈希与验证逻辑保持原样。四角色 fixture 与 E2E 造数
 共用这一工厂，避免为每个测试账号重复计算默认密码哈希。
 
+`seed.injectToken()` 用一次性的同源空文档写入身份，避免切换账号时先启动旧账号的
+首页请求。调用后需显式导航到测试页面；已有 localStorage 偏好会保留，真实请求
+错误检查不作放宽。
+
 CI E2E 使用 4 个默认测试分片，以及 readonly Mask、native Mask、native Mask AI
 三个独立任务。每个任务拥有自己的 PostgreSQL、Redis 和 MinIO；同一数据库仍只用
 一个 Playwright worker，因为 seed/reset 和 teardown 会清理共享 E2E 数据。
