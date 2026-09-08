@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-08T05:32:43.645Z",
+  "updated_at": "2026-09-08T05:48:09.498Z",
   "entries": {
     "docs-site/.vitepress/theme/assets/home/hero/pointcloud.webp": {
       "asset_id": "home-hero/pointcloud",
@@ -2251,19 +2251,19 @@
     "docs-site/public/media/pointcloud/billboard-label-poster.webp": {
       "asset_id": "pointcloud-billboard-label",
       "role": "poster",
-      "generated_at": "2026-09-05T14:19:41.575Z",
-      "captured_commit": "269c3fedf03b843b521e7751c707842c7cb726f9",
-      "source_worktree_dirty": true,
-      "seed_revision": null,
-      "source": "apps/web/e2e/screenshots/flows/pointcloud-billboard-label.ts",
-      "test_title": "PR 71 browser replay: pointcloud-billboard-label",
+      "generated_at": "2026-09-08T05:48:09.498Z",
+      "captured_commit": "ac823844f5c358bab023d1ba57fe5fc8f58fd814",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive webp › pointcloud-billboard-label",
       "watch_paths": [
-        "apps/web/e2e/screenshots/flows/pointcloud-billboard-label.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/api/app/services/screenshot_seed_spec.py"
+        "apps/web/scripts/derive-doc-media.mjs",
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "220dba23b29f3f9b7d0920e9e22e0175a7e4d7846f1cffa5f4d49e5ea35a5488",
-      "bytes": 62762,
+      "sha256": "37b1721ce71c21e5dda8dea8102e20b041eebb31af7a9d84e2974b11602bb088",
+      "bytes": 55658,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -2272,51 +2272,59 @@
         "fps": "25/1",
         "duration_seconds": null
       },
-      "provenance": "targeted-browser-capture",
-      "fixture": {
-        "dataset": "nuscenes-mini",
-        "scene": "scene-0061",
-        "frame_indices": [
-          0
-        ],
-        "axis_convention": "iso_8855"
+      "capture": {
+        "source_quality": "marketing",
+        "source_inference": "unverified"
       },
-      "note": "Captured from the PR frontend with the existing local nuScenes-mini fixture; the full screenshot seed catalog was not revalidated. Preferences were sandboxed in browser memory, and temporary annotations were deleted after recording. Documentation output only (1280x720, 30fps), not a 4K60 marketing master."
+      "source_asset": {
+        "runId": "20260908T054312Z-ac823844f5c3",
+        "assetId": "pointcloud-billboard-label",
+        "sha256": "97b6f8f37cccab51cc416e7c79b62169f69e6bc4f5f9d78cd122cfff4cefbbf0",
+        "quality": "marketing",
+        "clip": {
+          "start": 0,
+          "duration": 16.684
+        }
+      }
     },
     "docs-site/public/media/pointcloud/billboard-label.mp4": {
       "asset_id": "pointcloud-billboard-label",
       "role": "docs-video",
-      "generated_at": "2026-09-05T14:19:41.575Z",
-      "captured_commit": "269c3fedf03b843b521e7751c707842c7cb726f9",
-      "source_worktree_dirty": true,
-      "seed_revision": null,
-      "source": "apps/web/e2e/screenshots/flows/pointcloud-billboard-label.ts",
-      "test_title": "PR 71 browser replay: pointcloud-billboard-label",
+      "generated_at": "2026-09-08T05:48:09.416Z",
+      "captured_commit": "ac823844f5c358bab023d1ba57fe5fc8f58fd814",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive mp4 › pointcloud-billboard-label",
       "watch_paths": [
-        "apps/web/e2e/screenshots/flows/pointcloud-billboard-label.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/api/app/services/screenshot_seed_spec.py"
+        "apps/web/scripts/derive-doc-media.mjs",
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "7726f520804569864e2ebeeb30ab571d7fe31377140c9000cbf8c9834d53799b",
-      "bytes": 2476619,
+      "sha256": "fd884aa682fb54feb0fe6b47d596d2aa87d05f4ab948206ab04e0785243ca25f",
+      "bytes": 1332065,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "30/1",
-        "duration_seconds": 14
+        "duration_seconds": 16.7
       },
-      "provenance": "targeted-browser-capture",
-      "fixture": {
-        "dataset": "nuscenes-mini",
-        "scene": "scene-0061",
-        "frame_indices": [
-          0
-        ],
-        "axis_convention": "iso_8855"
+      "capture": {
+        "source_quality": "marketing",
+        "source_inference": "unverified"
       },
-      "note": "Captured from the PR frontend with the existing local nuScenes-mini fixture; the full screenshot seed catalog was not revalidated. Preferences were sandboxed in browser memory, and temporary annotations were deleted after recording. Documentation output only (1280x720, 30fps), not a 4K60 marketing master."
+      "source_asset": {
+        "runId": "20260908T054312Z-ac823844f5c3",
+        "assetId": "pointcloud-billboard-label",
+        "sha256": "97b6f8f37cccab51cc416e7c79b62169f69e6bc4f5f9d78cd122cfff4cefbbf0",
+        "quality": "marketing",
+        "clip": {
+          "start": 0,
+          "duration": 16.684
+        }
+      }
     },
     "docs-site/public/media/pointcloud/camera-seed-3d-box-poster.webp": {
       "asset_id": "pointcloud-camera-seed-3d-box",
