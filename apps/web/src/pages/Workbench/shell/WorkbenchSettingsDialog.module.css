@@ -1,0 +1,13 @@
+.dialog[data-previewing="true"] {
+  visibility: hidden;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.dialog [data-slider-preview="true"] {
+  visibility: visible;
+  background: var(--sc-card);
+  border-radius: var(--sc-radius);
+  outline: 8px solid var(--sc-card);
+}

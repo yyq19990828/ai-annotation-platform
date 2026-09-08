@@ -18,6 +18,39 @@ export const WORKSPACE_PRESETS = [
   { id: "video-tracking", title: "视频追踪", contexts: ["annotate:video"] },
 ] as const;
 export type WorkspacePresetId = (typeof WORKSPACE_PRESETS)[number]["id"];
+export type ActiveWorkspacePreset = WorkspacePresetId | "custom";
+
+/** Match visible topology, not generated group IDs, focused tabs or user-resized dimensions. */
+export function getActiveWorkspacePreset(
+  snapshot: WorkspaceSnapshot,
+  context: WorkspaceContext,
+): ActiveWorkspacePreset {
+  if (snapshot.layout.grid.maximizedNode) return "focus";
+  if (snapshot.layout.floatingGroups?.length) return "custom";
+  const signature = (value: WorkspaceSnapshot) => {
+    const visit = (node: WorkspaceNode, horizontal: boolean): unknown => {
+      if (node.visible === false) return null;
+      if (node.type === "leaf") return node.data.id === "parking" ? null : node.data.views;
+      const children = node.data.map((child) => visit(child, !horizontal)).filter(Boolean);
+      return children.length === 1 ? children[0] : [horizontal, children];
+    };
+    return JSON.stringify([
+      visit(value.layout.grid.root, value.layout.grid.orientation === "HORIZONTAL"),
+      context.endsWith(":3d") && value.visibilityIntent["camera-view"] === "shown"
+        ? value.cameraPresentation
+        : null,
+    ]);
+  };
+  const current = signature(snapshot);
+  return (
+    WORKSPACE_PRESETS.find(
+      ({ id }) =>
+        id !== "focus" &&
+        presetSupportsContext(id, context) &&
+        signature(createWorkspacePreset(id)) === current,
+    )?.id ?? "custom"
+  );
+}
 export type ThreeDWorkspacePresetId = "box-refinement" | "sensor-fusion" | "point-segmentation";
 export const DEFAULT_WORKSPACE_BOUNDS: WorkspaceBounds = { width: 1440, height: 800 };
 export const PANEL_DEFAULT_POSITION = {

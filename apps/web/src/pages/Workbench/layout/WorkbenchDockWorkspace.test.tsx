@@ -1,14 +1,13 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { createRef, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import type { DockviewApi } from "dockview-react";
 import { createWorkspacePreset } from "./workbenchLayoutPresets";
-import { getCanvasPlacement } from "./workbenchLayoutExecutor";
 import type { WorkbenchWorkspaceCommands, WorkbenchWorkspaceState } from "./workbenchPanelRegistry";
 import { SelectedAnnotationCard } from "../shell/SelectedAnnotationCard";
 import { resolveVideoSelectionCardCollapsed } from "../state/useWorkbenchShellModel.helpers";
-import type { WorkspaceContext, WorkspaceSnapshot } from "./workbenchLayoutSnapshot";
+import type { WorkspaceContext } from "./workbenchLayoutSnapshot";
 
 const state = vi.hoisted(() => ({
   compact: false,
@@ -79,7 +78,12 @@ function fixture(
         "tri-view": null,
         "camera-view": null,
       }}
-      renderTopbar={(menu) => <header>{menu}</header>}
+      renderTopbar={(menu, _state, settings) => (
+        <header>
+          {menu}
+          {settings}
+        </header>
+      )}
     />
   );
 }
@@ -365,7 +369,7 @@ describe("stable Dockview React workspace", () => {
       act(() => commands.current!.show("discussion"));
       expect(screen.getByLabelText("讨论草稿")).toBe(draft);
       fireEvent.click(screen.getByRole("button", { name: "布局" }));
-      fireEvent.click(screen.getByRole("menuitem", { name: "审核协作布局" }));
+      fireEvent.click(screen.getByRole("button", { name: "审核协作" }));
       expect(state.owner.failRestore).not.toHaveBeenCalled();
       expect(screen.getByTestId("canvas-marker")).toBe(marker);
       const fromJSON = vi.spyOn(state.api!, "fromJSON");
@@ -401,29 +405,42 @@ describe("stable Dockview React workspace", () => {
     expect(mounts).toBe(1);
   });
 
-  it("moves and maximizes the same canvas from the layout menu", async () => {
+  it("keeps only quick presets and settings in the menu and preserves the canvas", async () => {
     render(fixture());
     const marker = await screen.findByTestId("canvas-marker");
-    for (const [command, placement] of [
-      ["画布移到左侧", "left"],
-      ["画布移到右侧", "right"],
-      ["画布移到上方", "above"],
-      ["画布移到下方", "below"],
-    ] as const) {
-      fireEvent.click(screen.getByRole("button", { name: "布局" }));
-      fireEvent.click(screen.getByRole("menuitem", { name: command }));
-      const calls = (state.owner.save as ReturnType<typeof vi.fn>).mock.calls;
-      const saved = calls[calls.length - 1]?.[0];
-      expect(getCanvasPlacement(saved as WorkspaceSnapshot)).toBe(placement);
-      expect(screen.getByTestId("canvas-marker")).toBe(marker);
-    }
     fireEvent.click(screen.getByRole("button", { name: "布局" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "最大化画布" }));
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+      "标准标注布局",
+      "专注画布布局",
+      "更多布局设置…",
+    ]);
+    fireEvent.click(screen.getByRole("menuitem", { name: "专注画布布局" }));
     expect(state.api!.hasMaximizedGroup()).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "布局" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "恢复画布" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "恢复画布布局" }));
     expect(state.api!.hasMaximizedGroup()).toBe(false);
+    expect(screen.getByTestId("canvas-marker")).toBe(marker);
     expect(mounts).toBe(1);
+  });
+
+  it("highlights the live preset and custom layout after panel changes and focus restoration", async () => {
+    const commands = createRef<WorkbenchWorkspaceCommands>();
+    render(fixture("annotate:image", commands));
+    await screen.findByTestId("canvas-marker");
+    const standard = screen.getByRole("button", { name: "标准标注" });
+    expect(standard).toHaveAttribute("aria-pressed", "true");
+    act(() => commands.current!.hide("discussion"));
+    expect(screen.getByLabelText("自定义布局")).toHaveAttribute("aria-current", "true");
+    expect(standard).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(standard);
+    expect(standard).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "专注画布" }));
+    expect(screen.getByRole("button", { name: "专注画布" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "专注画布" }));
+    expect(standard).toHaveAttribute("aria-pressed", "true");
   });
 
   it("restores sidebar sizes from a maximized saved layout on hydration", async () => {
@@ -432,7 +449,7 @@ describe("stable Dockview React workspace", () => {
     await screen.findByTestId("canvas-marker");
     expect(state.api!.hasMaximizedGroup()).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "布局" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "恢复画布" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "恢复画布布局" }));
     expect(state.api!.getPanel("inspector")!.group.api.width).toBe(240);
     expect(state.owner.failRestore).not.toHaveBeenCalled();
     expect(mounts).toBe(1);
@@ -442,9 +459,18 @@ describe("stable Dockview React workspace", () => {
     const commands = createRef<WorkbenchWorkspaceCommands>();
     const view = render(fixture("annotate:video", commands));
     fireEvent.click(await screen.findByRole("button", { name: "布局" }));
-    expect(screen.getByRole("menuitem", { name: "当前题 AI" })).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "视频追踪" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("menuitem", { name: "视频追踪" }));
+    fireEvent.click(screen.getByText("面板与高级布局"));
+    expect(screen.getByRole("button", { name: "当前题 AI" })).toBeInTheDocument();
+    expect(
+      within(screen.getByText("面板与高级布局").closest("details")!).getByRole("button", {
+        name: "视频追踪",
+      }),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      within(screen.getByText("面板与高级布局").closest("details")!).getByRole("button", {
+        name: "视频追踪",
+      }),
+    );
     const draft = screen.getByLabelText("追踪草稿");
     act(() => commands.current!.hide("video-tracker"));
     expect((draft.closest("[data-workbench-panel]") as HTMLElement).inert).toBe(true);
@@ -453,9 +479,9 @@ describe("stable Dockview React workspace", () => {
 
     view.rerender(fixture("review:video", commands));
     fireEvent.click(screen.getByRole("button", { name: "布局" }));
-    expect(screen.queryByRole("menuitem", { name: "当前题 AI" })).toBeNull();
-    expect(screen.queryByRole("menuitem", { name: "视频追踪" })).toBeNull();
-    expect(screen.queryByRole("menuitem", { name: "视频追踪布局" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "当前题 AI" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "视频追踪" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "视频追踪布局" })).toBeNull();
   });
 
   it("does not replay the previous context desktop after switching in compact mode", async () => {
@@ -486,7 +512,8 @@ describe("stable Dockview React workspace", () => {
     state.compact = false;
     view.rerender(fixture());
     fireEvent.click(screen.getByRole("button", { name: "布局" }));
-    expect(screen.getByRole("menuitem", { name: "重置为标准布局" })).toBeDisabled();
+    fireEvent.click(screen.getByText("面板与高级布局"));
+    expect(screen.getByRole("button", { name: "重置为标准布局" })).toBeDisabled();
     expect(mounts).toBe(1);
   });
 });
