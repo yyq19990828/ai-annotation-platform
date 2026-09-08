@@ -1,3 +1,4 @@
+import { openMaskSettings } from "../fixtures/mask-toolbar";
 import type { APIRequestContext, APIResponse, Page, Request } from "@playwright/test";
 import { expect, test, type SeedAPI, type SeedNativeMaskCandidateData } from "../fixtures/seed";
 
@@ -343,6 +344,7 @@ test.describe("E1 interactive toolbar layers", () => {
     await expect(page.getByTestId("interactive-inference-error")).toBeHidden();
     await expect(page.getByTestId("interactive-toolbar-advanced")).toBeHidden();
     await selectTool(page, "image", "mask");
+    await openMaskSettings(page);
     await expect(page.getByTestId("mask-toolbar")).toContainText("就绪");
     await expect(page.getByTestId("interactive-toolbar")).toBeHidden();
     await page.getByTestId("mask-toolbar").getByTitle("Mask 高级工具").click();

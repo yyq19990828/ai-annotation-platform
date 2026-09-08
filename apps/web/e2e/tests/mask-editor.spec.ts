@@ -10,6 +10,7 @@
  * SAM 候选精修入口需要真实 ml-backend 跑出候选，本期 e2e 不覆盖；
  * 单测层面 useImageAnnotationActions.test 已分流过 kind=sam。
  */
+import { openMaskSettings, closeMaskSettings } from "../fixtures/mask-toolbar";
 import { test, expect } from "../fixtures/seed";
 
 test.describe("mask editor (I11)", () => {
@@ -26,7 +27,7 @@ test.describe("mask editor (I11)", () => {
 
     // 按 M 切 mask 工具
     await page.keyboard.press("m");
-    await expect(page.getByTestId("mask-toolbar")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId("mask-tool-capsule")).toBeVisible({ timeout: 10_000 });
 
     // 在画布上拖拽画一笔
     const stage = page.getByTestId("workbench-stage");
@@ -42,7 +43,10 @@ test.describe("mask editor (I11)", () => {
     await page.mouse.up();
 
     // dirty 指示应变成「未保存」
-    await expect(page.getByTestId("mask-toolbar")).toContainText("未保存");
+    await expect(page.getByTestId("mask-tool-capsule").getByRole("status")).toHaveAttribute(
+      "aria-label",
+      "未保存",
+    );
 
     // Enter 提交 → 监听 POST /annotations
     const annoPost = page
@@ -102,13 +106,15 @@ test.describe("mask editor (I11)", () => {
     await refineBtn.click();
 
     // mask 工具应激活 + buffer 已 from polygon 初始化
-    await expect(page.getByTestId("mask-toolbar")).toBeVisible();
+    await expect(page.getByTestId("mask-tool-capsule")).toBeVisible();
     // 候选 mask 的 dirty 在 initFromPolygon 后为 false（尚未涂改）
     // 用 erase 擦一块小区域使其变 dirty
     await page.keyboard.press("e");
-    await expect(
-      page.getByTestId("mask-toolbar").getByRole("radio", { name: "橡皮" }),
-    ).toBeChecked();
+    await expect(page.getByTestId("mask-settings-trigger")).toHaveAttribute(
+      "aria-label",
+      "Mask 常用工具：橡皮",
+    );
+    await openMaskSettings(page);
 
     const stage = page.getByTestId("workbench-stage");
     await expect(stage).toHaveAttribute("data-image-ready", "true", { timeout: 10_000 });
@@ -123,6 +129,7 @@ test.describe("mask editor (I11)", () => {
     await slider.fill("2");
     await expect(slider).toHaveValue("2");
     await slider.blur();
+    await closeMaskSettings(page);
     const box = await stage.boundingBox();
     if (!box) throw new Error("stage boundingBox 不可用");
     const cx = box.x + box.width * 0.35;
@@ -147,6 +154,7 @@ test.describe("mask editor (I11)", () => {
         { timeout: 10_000 },
       )
       .catch(() => null);
+    await openMaskSettings(page);
     await page.getByTestId("mask-toolbar").getByTestId("mask-primary-action").click();
     const resp = await annoPost;
     expect(resp).not.toBeNull();
@@ -165,29 +173,33 @@ test.describe("mask editor (I11)", () => {
     await page.waitForLoadState("networkidle");
 
     await page.keyboard.press("m");
-    await expect(page.getByTestId("mask-toolbar")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId("mask-tool-capsule")).toBeVisible({ timeout: 10_000 });
 
     // 默认是 brush 模式（aria-pressed 或视觉态由 chipStyle 控制），按 E 切橡皮
     await page.keyboard.press("e");
-    const toolbar = page.getByTestId("mask-toolbar");
-    await expect(toolbar.getByRole("radio", { name: "橡皮" })).toBeChecked();
+    const trigger = page.getByTestId("mask-settings-trigger");
+    await expect(trigger).toHaveAttribute("aria-label", "Mask 常用工具：橡皮");
     // 按 B 切回笔刷
     await page.keyboard.press("b");
-    await expect(toolbar.getByRole("radio", { name: "笔刷" })).toBeChecked();
+    await expect(trigger).toHaveAttribute("aria-label", "Mask 常用工具：笔刷");
 
     // 滚轮调半径 —— 取 slider 的 value 前后对比
     const stage = page.getByTestId("workbench-stage");
     const box = await stage.boundingBox();
     if (!box) throw new Error("stage boundingBox 不可用");
     const slider = page.getByTestId("mask-radius-slider");
+    await openMaskSettings(page);
     const before = await slider.inputValue();
+    await closeMaskSettings(page);
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.wheel(0, -120);
+    await openMaskSettings(page);
     const after = await slider.inputValue();
+    await closeMaskSettings(page);
     expect(Number(after)).not.toBe(Number(before));
 
     // Esc 取消 → mask-toolbar 隐藏（mask 工具退出）
     await page.keyboard.press("Escape");
-    await expect(page.getByTestId("mask-toolbar")).toHaveCount(0);
+    await expect(page.getByTestId("mask-tool-capsule")).toHaveCount(0);
   });
 });

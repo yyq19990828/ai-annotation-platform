@@ -1,3 +1,4 @@
+import { openMaskSettings, closeMaskSettings } from "../fixtures/mask-toolbar";
 import type { APIRequestContext, APIResponse, Page } from "@playwright/test";
 import { expect, test, type SeedAPI, type SeedData } from "../fixtures/seed";
 
@@ -124,6 +125,7 @@ async function paintStroke(
   from: [number, number] = [0.42, 0.42],
   to: [number, number] = [0.58, 0.56],
 ): Promise<void> {
+  await closeMaskSettings(page);
   const box = await page.getByTestId("workbench-stage").boundingBox();
   if (!box) throw new Error("workbench stage has no bounding box");
   await page.mouse.move(box.x + box.width * from[0], box.y + box.height * from[1]);
@@ -138,6 +140,7 @@ async function beginRasterEdit(page: Page, annotationId: string): Promise<void> 
   await row.click();
   // 选中后优先从浮动详情卡进入；右侧面板展开时会合法遮住列表行操作。
   await page.locator('button[aria-label="\u7f16\u8f91 Mask"]:visible').last().click();
+  await openMaskSettings(page);
   await expect(page.getByTestId("mask-toolbar")).toContainText("\u5c31\u7eea", { timeout: 15_000 });
 }
 
@@ -155,10 +158,12 @@ test.describe("raster mask native write matrix", () => {
     const token = await seed.accessToken(data.annotator_email);
 
     await page.keyboard.press("m");
+    await openMaskSettings(page);
     await expect(page.getByTestId("mask-toolbar")).toContainText("\u5c31\u7eea", {
       timeout: 10_000,
     });
     await paintStroke(page);
+    await openMaskSettings(page);
     await expect(page.getByTestId("mask-toolbar")).toContainText("\u672a\u4fdd\u5b58");
 
     const createResponse = page.waitForResponse(
@@ -167,6 +172,7 @@ test.describe("raster mask native write matrix", () => {
         response.request().method() === "POST" &&
         response.status() === 201,
     );
+    await closeMaskSettings(page);
     await page.keyboard.press("Enter");
     await expect(page.getByTestId("class-picker-popover")).toBeVisible();
     await page.keyboard.press("Enter");
@@ -188,6 +194,7 @@ test.describe("raster mask native write matrix", () => {
         response.request().method() === "PATCH" &&
         response.ok(),
     );
+    await closeMaskSettings(page);
     await page.keyboard.press("Enter");
     const updated = await json<AnnotationDto>(await updateResponse);
     expect(updated.id).toBe(created.id);
@@ -267,6 +274,7 @@ test.describe("raster mask native write matrix", () => {
 
     await paintStroke(page, [0.55, 0.48], [0.65, 0.5]);
     await page.keyboard.press("Enter");
+    await openMaskSettings(page);
     const toolbar = page.getByTestId("mask-toolbar");
     await expect(toolbar).toContainText("\u64cd\u4f5c\u5931\u8d25", { timeout: 10_000 });
     await toolbar.getByTestId("mask-primary-action").click();
@@ -279,6 +287,7 @@ test.describe("raster mask native write matrix", () => {
         response.request().method() === "PATCH" &&
         response.ok(),
     );
+    await closeMaskSettings(page);
     await page.keyboard.press("Enter");
     await success;
     expect(patchAttempts).toBe(2);
@@ -343,6 +352,7 @@ test.describe("raster mask native write matrix", () => {
     await openTask(page, seed, data, taskId);
     await page.getByTestId(`box-list-item-${fixture.annotation_id}`).click();
     await page.keyboard.press("m");
+    await openMaskSettings(page);
     const toolbar = page.getByTestId("mask-toolbar");
     await expect(toolbar).toBeVisible({ timeout: 10_000 });
     await expect(toolbar.getByRole("radio", { name: "\u7b14\u5237" })).toBeDisabled();
@@ -356,6 +366,7 @@ test.describe("raster mask native write matrix", () => {
       )
         mutationCount += 1;
     });
+    await closeMaskSettings(page);
     await page.keyboard.press("b");
     await page.keyboard.press("e");
     await paintStroke(page);
@@ -536,7 +547,7 @@ test.describe("raster mask native write matrix", () => {
     await openTask(page, seed, data, taskId, false);
 
     await page.keyboard.press("m");
-    await expect(page.getByTestId("mask-toolbar")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId("mask-tool-capsule")).toBeVisible({ timeout: 10_000 });
     await paintStroke(page);
     const createdResponse = page.waitForResponse(
       (response) =>
@@ -544,6 +555,7 @@ test.describe("raster mask native write matrix", () => {
         response.request().method() === "POST" &&
         response.status() === 201,
     );
+    await closeMaskSettings(page);
     await page.keyboard.press("Enter");
     await expect(page.getByTestId("class-picker-popover")).toBeVisible();
     await page.keyboard.press("Enter");
@@ -613,9 +625,11 @@ test.describe("raster mask native write matrix", () => {
     await expect(page.getByText("形态学（当前视口 ROI）", { exact: true })).toBeVisible();
     await page.mouse.click(1, 1);
     await expect(page.getByRole("menuitem", { name: "填充全部孔洞" })).toHaveCount(0);
+    await openMaskSettings(page);
     await expect(toolbar).toBeVisible();
 
     await paintStroke(page, [0.35, 0.35], [0.46, 0.42]);
+    await openMaskSettings(page);
     await expect(toolbar).toContainText("未保存");
     await expect.poll(async () => (await rasterResources(page))?.reservedBytes).toBe(0);
     const beforePageHide = await rasterResources(page);
@@ -656,6 +670,7 @@ test.describe("raster mask native write matrix", () => {
         response.request().method() === "PATCH" &&
         response.ok(),
     );
+    await closeMaskSettings(page);
     await page.keyboard.press("Enter");
     await updateResponse;
     const saved = await getMaskContent(request, fixture.annotation_id, token);

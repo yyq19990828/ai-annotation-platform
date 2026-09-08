@@ -1,3 +1,4 @@
+import { openMaskSettings, closeMaskSettings } from "../fixtures/mask-toolbar";
 import type { APIResponse, Page, Request } from "@playwright/test";
 import { expect, test, type SeedNativeMaskCandidateData } from "../fixtures/seed";
 
@@ -661,8 +662,10 @@ test.describe("native Mask interactive candidate acceptance", () => {
     await page.keyboard.press("ArrowRight");
     await expect(page.getByText(/F 2 \//)).toBeVisible({ timeout: 10_000 });
     await page.getByTitle("编辑当前帧 Mask").click();
+    await openMaskSettings(page);
     const toolbar = page.getByTestId("mask-toolbar");
     await expect(toolbar).toContainText("就绪", { timeout: 15_000 });
+    await closeMaskSettings(page);
 
     const stage = page.getByTestId("video-konva-stage");
     const box = await stage.boundingBox();
@@ -671,6 +674,7 @@ test.describe("native Mask interactive candidate acceptance", () => {
     await page.mouse.down();
     await page.mouse.move(box.x + box.width * 0.56, box.y + box.height * 0.54, { steps: 6 });
     await page.mouse.up();
+    await openMaskSettings(page);
     await expect(toolbar).toContainText("未保存");
     await toolbar.getByRole("button", { name: "保存并传播" }).click();
 

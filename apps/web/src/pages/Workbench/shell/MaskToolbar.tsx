@@ -265,7 +265,7 @@ export function MaskToolbar({
             <DropdownMenuContent
               data-workbench-tool-menu
               align="start"
-              className="max-h-[min(32rem,var(--radix-dropdown-menu-content-available-height))] w-72 overflow-y-auto"
+              className="z-workbench-top max-h-[min(32rem,var(--radix-dropdown-menu-content-available-height))] w-72 overflow-y-auto"
             >
               <DropdownMenuLabel>区域工具</DropdownMenuLabel>
               <DropdownMenuItem disabled={largeCanvas} onSelect={() => onSetTool("fill_add")}>

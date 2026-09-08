@@ -176,7 +176,7 @@ export function ContextToolbar({
         sideOffset={0}
         collisionPadding={12}
         className={cn(
-          "flex w-[min(42rem,calc(100vw-1.5rem))] max-h-[var(--radix-popover-content-available-height)] flex-col gap-3 overflow-y-auto rounded-2xl border border-border bg-card px-3 py-3 shadow-lg",
+          "z-workbench-top flex w-[min(42rem,calc(100vw-1.5rem))] max-h-[var(--radix-popover-content-available-height)] flex-col gap-3 overflow-y-auto rounded-2xl border border-border bg-card px-3 py-3 shadow-lg",
           styles.panel,
         )}
         onOpenAutoFocus={(event) => {
