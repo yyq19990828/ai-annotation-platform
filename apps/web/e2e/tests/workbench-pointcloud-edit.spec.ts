@@ -1,3 +1,4 @@
+import { layoutCommand, openLayoutSettings } from "../helpers/workbench-layout";
 /**
  * v0.16.x · 点云工作台交互断言基线(P2)—— 拆 3D 整簇前的真正守护网。
  *
@@ -12,13 +13,6 @@
  */
 import type { Locator, Page } from "@playwright/test";
 import { test, expect } from "../fixtures/seed";
-
-async function layoutCommand(page: Page, name: string) {
-  await page.getByRole("button", { name: "布局", exact: true }).click();
-  const item = page.getByRole("menuitem", { name, exact: true });
-  await expect(item).toBeEnabled();
-  await item.click();
-}
 
 interface BrowserPointCloudViewState {
   position: [number, number, number];
@@ -353,7 +347,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
       end_frame: 1,
       conflict_policy: "skip_existing",
     });
-    await expect(dialog.getByText("已完成")).toBeVisible({ timeout: 10_000 });
+    await expect(dialog.getByText("已完成", { exact: true })).toBeVisible({ timeout: 10_000 });
     await expect(dialog.getByText("成功 1 · 跳过 0 · 失败 0 · 过期 0")).toBeVisible();
     expect(runtimeErrors).toEqual([]);
   });
@@ -1286,7 +1280,11 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
       if (item.selectBox) {
         // A visible tri-view can make the physical right side partially open
         // while the inspector is still hidden from the previous matrix case.
-        await layoutCommand(page, "标注详情");
+        if (
+          (await page.locator('[data-workbench-panel="inspector"]').getAttribute("aria-hidden")) ===
+          "true"
+        )
+          await layoutCommand(page, "标注详情");
         await page
           .locator('[data-testid^="box-list-item-"]')
           .first()
@@ -1303,11 +1301,14 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
       await expect(page.getByRole("button", { name: /布局菜单$/ })).toHaveCount(item.count);
       await layoutCommand(page, "框体精修");
 
-      await page.getByRole("button", { name: "布局", exact: true }).click();
+      const settings = await openLayoutSettings(page);
+      await settings.locator("summary").filter({ hasText: "面板与高级布局" }).click();
       for (const name of ["框体精修", "传感器融合", "点级分割"]) {
-        await expectCenterHitTarget(page.getByRole("menuitem", { name, exact: true }));
+        const command = settings.getByRole("button", { name, exact: true });
+        await command.scrollIntoViewIfNeeded();
+        await expectCenterHitTarget(command);
       }
-      await page.keyboard.press("Escape");
+      await settings.getByRole("button", { name: "关闭设置", exact: true }).click();
       for (const name of ["上一", "提交质检", "跳过", "下一"]) {
         await expectCenterHitTarget(page.getByRole("button", { name, exact: true }));
       }

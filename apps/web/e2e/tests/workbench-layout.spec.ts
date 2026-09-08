@@ -1,3 +1,4 @@
+import { layoutCommand, openLayoutSettings } from "../helpers/workbench-layout";
 import type { Page } from "@playwright/test";
 import type {
   PanelId,
@@ -8,13 +9,6 @@ import { expect, test } from "../fixtures/seed";
 
 const DESKTOP = { width: 1440, height: 900 };
 const panel = (page: Page, id: string) => page.locator(`[data-workbench-panel="${id}"]`);
-
-async function layoutCommand(page: Page, name: string) {
-  await page.getByRole("button", { name: "布局", exact: true }).click();
-  const command = page.getByRole("menuitem", { name, exact: true });
-  await expect(command).toBeEnabled({ timeout: 20_000 });
-  await command.click();
-}
 
 async function panelCommand(page: Page, title: string, name: string) {
   await page.getByRole("button", { name: `${title}菜单`, exact: true }).click();
@@ -172,31 +166,21 @@ test("图片布局预设、面板隐藏和浮动保留画布及未发送讨论�
     toStatus: "pending",
     annotatorEmail: data.annotator_email,
   });
+  const annotation = await seed.createTaskAnnotation(data.task_ids[0], data.admin_email, {
+    annotation_type: "bbox",
+    tool_unit_id: "bbox",
+    class_name: "car",
+    geometry: { type: "bbox", x: 0.3, y: 0.3, w: 0.3, h: 0.3 },
+  });
   await seed.injectToken(page, data.annotator_email);
   await page.goto(`/projects/${data.project_id}/annotate?task=${data.task_ids[0]}`);
   await layoutCommand(page, "标准标注布局");
   const sameCanvas = await rememberCanvas(page, "workbench-stage");
 
-  // Create and select a real annotation so the existing annotation-comment editor is enabled.
-  await page.getByTestId("tool-btn-box").click();
+  // This layout test needs a persisted selection to enable the comment editor.
   const stage = page.getByTestId("workbench-stage");
-  const box = await stage.boundingBox();
-  if (!box) throw new Error("Image stage has no bounds");
-  await page.mouse.move(box.x + box.width * 0.3, box.y + box.height * 0.3);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width * 0.6, box.y + box.height * 0.6, { steps: 8 });
-  await page.mouse.up();
-  // The default drawing mode keeps a geometry draft until the user picks a class.
-  const picker = page.getByTestId("class-picker-popover");
-  await expect(picker).toBeVisible();
-  const created = page.waitForResponse(
-    (response) =>
-      response.request().method() === "POST" &&
-      new URL(response.url()).pathname === `/api/v1/tasks/${data.task_ids[0]}/annotations`,
-    { timeout: 15_000 },
-  );
-  await picker.getByText("car", { exact: true }).click();
-  expect((await created).ok()).toBe(true);
+  await expect(stage).toHaveAttribute("data-image-ready", "true");
+  await page.getByTestId(`box-list-item-${annotation.id}`).click();
 
   const discussion = panel(page, "discussion");
   await page.getByRole("button", { name: "收起浮窗", exact: true }).click();
@@ -221,7 +205,9 @@ test("图片布局预设、面板隐藏和浮动保留画布及未发送讨论�
   await sameDraft();
   await layoutCommand(page, "讨论 / Issue");
   await expect(discussion).toHaveAttribute("aria-hidden", "false");
-  await layoutCommand(page, "讨论 / Issue"); // An already visible entry focuses instead of duplicating/hiding.
+  await layoutCommand(page, "讨论 / Issue");
+  await expect(discussion).toHaveAttribute("aria-hidden", "true");
+  await layoutCommand(page, "讨论 / Issue");
   await expect(discussion).toHaveCount(1);
   await expect(discussion).toHaveAttribute("aria-hidden", "false");
   await sameDraft();
@@ -472,10 +458,17 @@ test("视频紧凑布局禁止桌面写入，退出后恢复浮窗与非零帧�
   await page.setViewportSize({ width: 1024, height: DESKTOP.height });
   await expect(page.locator("[data-workbench-workspace]")).toHaveAttribute("data-compact", "true");
   await page.getByRole("button", { name: "布局", exact: true }).click();
-  for (const name of ["标准标注布局", "专注画布布局", "审核协作布局", "重置为标准布局"]) {
+  for (const name of ["标准标注布局", "专注画布布局"]) {
     await expect(page.getByRole("menuitem", { name, exact: true })).toBeDisabled();
   }
-  await page.getByRole("menuitem", { name: "任务队列", exact: true }).click();
+  await page.keyboard.press("Escape");
+  const settings = await openLayoutSettings(page);
+  await settings.locator("summary").filter({ hasText: "面板与高级布局" }).click();
+  for (const name of ["标准标注", "专注画布", "审核协作", "重置为标准布局"]) {
+    await expect(settings.getByRole("button", { name, exact: true })).toBeDisabled();
+  }
+  await settings.getByRole("button", { name: "任务队列", exact: true }).click();
+  await settings.getByRole("button", { name: "关闭设置", exact: true }).click();
   await expect(panel(page, "task-queue")).toBeVisible();
   await page.getByRole("button", { name: "任务队列菜单", exact: true }).click();
   await expect(page.getByRole("menuitem", { name: "浮动面板", exact: true })).toBeDisabled();
