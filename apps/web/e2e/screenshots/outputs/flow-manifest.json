@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-08T07:12:25.277Z",
+  "updated_at": "2026-09-08T07:19:39.610Z",
   "entries": {
     "docs-site/.vitepress/theme/assets/home/hero/pointcloud.webp": {
       "asset_id": "home-hero/pointcloud",
@@ -1432,8 +1432,8 @@
     "docs-site/public/media/ai/prediction-import-poster.webp": {
       "asset_id": "ai-prediction-import",
       "role": "poster",
-      "generated_at": "2026-09-08T06:18:10.365Z",
-      "captured_commit": "65a6702e9f1f3fe5dd300cb37c6a2d0ca81cad24",
+      "generated_at": "2026-09-08T07:19:39.610Z",
+      "captured_commit": "071319d73eb3e359d732e495c0e26dbaf9f3fff7",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-g",
       "source": "apps/web/scripts/media-derivation.mjs",
@@ -1452,8 +1452,8 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "f8a4268ec7d6412276483b9cd7f0399171e9ff6c8261daf0c8bb042243d87f98",
-      "bytes": 75124,
+      "sha256": "79821a84d81f6645fbc245716353ccfcd70be3430814fd62fefd727677e5cf0a",
+      "bytes": 76274,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -1467,21 +1467,21 @@
         "source_inference": "none"
       },
       "source_asset": {
-        "runId": "2026-09-08T05-42-58-490Z-524294",
+        "runId": "2026-09-08T07-15-21Z-import-rerun",
         "assetId": "ai-prediction-import",
-        "sha256": "e588a8de906c067ab1ca52b714265b2da0cba530acc6e8f89bb512300853029d",
+        "sha256": "d72f8620f4326fe64fbcb59888bd8208797178a1e0a8386defe17533446f4e71",
         "quality": "standard",
         "clip": {
-          "start": 174.6,
-          "duration": 2.92
+          "start": 4.5,
+          "duration": 7.7
         }
       }
     },
     "docs-site/public/media/ai/prediction-import.mp4": {
       "asset_id": "ai-prediction-import",
       "role": "docs-video",
-      "generated_at": "2026-09-08T06:18:10.284Z",
-      "captured_commit": "65a6702e9f1f3fe5dd300cb37c6a2d0ca81cad24",
+      "generated_at": "2026-09-08T07:19:39.534Z",
+      "captured_commit": "071319d73eb3e359d732e495c0e26dbaf9f3fff7",
       "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-g",
       "source": "apps/web/scripts/media-derivation.mjs",
@@ -1500,28 +1500,28 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "9ca0b3eeb2e38a224884842ed989912939640b1fdbbf7e3b6a5e4df5a26c5370",
-      "bytes": 217521,
+      "sha256": "876520c6532873b833030861c1a6fbc775aa41aaa33cc371812d81cdf641bd62",
+      "bytes": 306372,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "25/1",
-        "duration_seconds": 2.92
+        "duration_seconds": 7.72
       },
       "capture": {
         "source_quality": "standard",
         "source_inference": "none"
       },
       "source_asset": {
-        "runId": "2026-09-08T05-42-58-490Z-524294",
+        "runId": "2026-09-08T07-15-21Z-import-rerun",
         "assetId": "ai-prediction-import",
-        "sha256": "e588a8de906c067ab1ca52b714265b2da0cba530acc6e8f89bb512300853029d",
+        "sha256": "d72f8620f4326fe64fbcb59888bd8208797178a1e0a8386defe17533446f4e71",
         "quality": "standard",
         "clip": {
-          "start": 174.6,
-          "duration": 2.92
+          "start": 4.5,
+          "duration": 7.7
         }
       }
     },
