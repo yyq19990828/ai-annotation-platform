@@ -2703,13 +2703,15 @@ export function ImageStage({
                   <>
                     <Line
                       points={flat}
-                      closed={false}
+                      closed={!isPolyline}
                       stroke={draftColor}
                       strokeWidth={1.5 / vp.scale}
                       dash={[4 / vp.scale, 3 / vp.scale]}
                       lineCap="round"
                       lineJoin="round"
-                      fill={isPolyline ? undefined : hexToRgba(draftColor, 0.1)}
+                      fill={
+                        isPolyline ? undefined : hexToRgba(draftColor, annotationVisual.fillOpacity)
+                      }
                     />
                     {ps.length > 500 ? (
                       <Shape
@@ -3033,7 +3035,11 @@ export function ImageStage({
                     stroke="oklch(0.65 0.18 75)"
                     strokeWidth={2 / vp.scale}
                     dash={[5 / vp.scale, 3 / vp.scale]}
-                    fill={pendingDrawing.kind === "polygon" ? hexToRgba("#f59e0b", 0.1) : undefined}
+                    fill={
+                      pendingDrawing.kind === "polygon"
+                        ? hexToRgba("#f59e0b", annotationVisual.fillOpacity)
+                        : undefined
+                    }
                     lineCap="round"
                     lineJoin="round"
                     listening={false}

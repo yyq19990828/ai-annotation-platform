@@ -28,9 +28,18 @@ vi.mock("react-konva", async () => {
   };
 });
 
+const draftVisual = vi.hoisted(() => ({ fillOpacity: 0.37 }));
+
 vi.mock("../state/useWorkbenchConfig", async () => {
   const { DEFAULT_WORKBENCH_PREFERENCES } = await import("@/api/auth");
-  return { useWorkbenchConfig: () => ({ config: DEFAULT_WORKBENCH_PREFERENCES }) };
+  return {
+    useWorkbenchConfig: () => ({
+      config: {
+        ...DEFAULT_WORKBENCH_PREFERENCES,
+        common: { ...DEFAULT_WORKBENCH_PREFERENCES.common, fillOpacity: draftVisual.fillOpacity },
+      },
+    }),
+  };
 });
 vi.mock("../state/useViewportTransform", () => ({
   useElementSize: (ref: MutableRefObject<HTMLDivElement | null>) => ({
@@ -229,6 +238,42 @@ describe("ImageStage drag scheduling", () => {
       expect(screen.getByTestId("workbench-stage")).toHaveAttribute("data-drag-kind", "none");
       fireEvent.mouseUp(canvas, { clientX: 60, clientY: 80, button: 0 });
       expect(commit).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe("ImageStage polygon fill preview", () => {
+  it.each([true, false])(
+    "previews cursor geometry with closed=%s and configured fill",
+    (closed) => {
+      const polygonDraft = {
+        points: [
+          [0.1, 0.1],
+          [0.8, 0.1],
+        ] as [number, number][],
+        addPoint: vi.fn(),
+        close: vi.fn(),
+        cancel: vi.fn(),
+        closed,
+      };
+      draftVisual.fillOpacity = 0.37;
+      const props = {
+        ...defaults,
+        tool: closed ? ("polygon" as const) : ("polyline" as const),
+        polygonDraft,
+      };
+      const view = render(<ImageStage {...props} />);
+      fireEvent.mouseMove(screen.getByTestId("konva-stage"), { clientX: 80, clientY: 80 });
+      const line = () => view.container.querySelector('[data-konva="Line"][data-dash]')!;
+      expect(line()).toHaveAttribute("data-closed", String(closed));
+      expect(JSON.parse(line().getAttribute("data-points")!)).toEqual([10, 10, 80, 10, 80, 80]);
+      if (closed) expect(line().getAttribute("data-fill")).toContain("0.37");
+      else expect(line()).not.toHaveAttribute("data-fill");
+      draftVisual.fillOpacity = 0;
+      view.rerender(<ImageStage {...props} />);
+      if (closed) expect(line().getAttribute("data-fill")).toMatch(/,\s*0\)$/);
+      expect(polygonDraft.close).not.toHaveBeenCalled();
+      view.unmount();
     },
   );
 });
