@@ -283,10 +283,16 @@ test.describe("Mask phase primary actions", () => {
     );
     await seed.injectToken(page, data.admin_email);
     await page.goto(`/projects/${data.project_id}/annotate?task=${taskId}`);
-    await expect(page.getByTestId("video-konva-stage")).toBeVisible({ timeout: 20_000 });
+    const videoStage = page.getByTestId("video-konva-stage");
+    await expect(videoStage).toBeVisible({ timeout: 20_000 });
     await page.getByTestId(`video-mask-track-${original.id}`).click();
+    // The selected track button intentionally consumes arrow keys while focused;
+    // navigation is a canvas/workbench shortcut after focus returns to the page.
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await page.keyboard.press("ArrowRight");
-    await expect(page.getByText(/F 1 \//)).toBeVisible();
+    await expect(videoStage).toHaveAttribute("data-video-frame-index", "1", {
+      timeout: 15_000,
+    });
     await page.getByTestId("video-tool-btn-mask-track").click();
     const toolbar = page.getByTestId("mask-toolbar");
     await expect(toolbar).toContainText("当前帧保持 F0 的 Mask");
@@ -410,19 +416,13 @@ test.describe("Mask phase primary actions", () => {
     seed,
     request,
   }) => {
-    // This explicitly reduces only the development module's tile cache budget.
-    // Real pointer/zoom input triggers resource admission; no editor state is injected.
-    let budgetPatched = false;
-    await page.route("**/sparseMaskTileStore.ts*", async (route) => {
-      const response = await route.fetch();
-      const source = await response.text();
-      const replacement = source.replace(
-        /function navigatorTileBudgetBytes\(\) \{\s*return sparseMaskTileBudgetBytes\(navigatorDeviceMemory\(\)\);\s*\}/,
-        "function navigatorTileBudgetBytes() { return 327776; }",
-      );
-      expect(replacement).not.toBe(source);
-      budgetPatched = true;
-      await route.fulfill({ response, body: replacement });
+    // The e2e build bundles this module, so source interception is unavailable in preview.
+    // The app consumes this override only in development/e2e builds; pointer/zoom input still
+    // drives the real resource-admission path and no editor state is injected.
+    await page.addInitScript(() => {
+      (
+        window as typeof window & { __E2E_MASK_TILE_MAX_BYTES__?: number }
+      ).__E2E_MASK_TILE_MAX_BYTES__ = 327776;
     });
     const data = await seed.reset();
     const taskId = data.task_ids[0];
@@ -435,7 +435,6 @@ test.describe("Mask phase primary actions", () => {
     const before = await content(request, fixture.annotation_id, token);
     await openImage(page, seed, data, taskId);
     await beginEdit(page, fixture.annotation_id);
-    expect(budgetPatched).toBe(true);
     const point = await paintImage(page, 2816, 4864, [8192, 8192]);
     await page.mouse.move(point.x, point.y);
     // Ctrl+wheel is image zoom; ordinary wheel controls the Mask brush radius.
@@ -456,7 +455,6 @@ test.describe("Mask phase primary actions", () => {
     await saveImage(page, taskId, fixture.annotation_id, "keyboard");
     const saved = await content(request, fixture.annotation_id, token);
     expect(saved).not.toEqual(before);
-    await page.unroute("**/sparseMaskTileStore.ts*");
     await page.reload();
     await beginEdit(page, fixture.annotation_id);
     expect(await content(request, fixture.annotation_id, token)).toEqual(saved);

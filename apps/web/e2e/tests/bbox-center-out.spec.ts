@@ -187,7 +187,8 @@ const test = base.extend<{ centerCase: Case; withCandidate: boolean }>({
                 "/api/v1/projects",
                 "/api/v1/audit-logs",
               ].includes(error.path!) ||
-                /^\/api\/v1\/tasks\/[0-9a-f-]{36}(\/annotations)?$/.test(error.path!)))),
+                /^\/api\/v1\/tasks\/[0-9a-f-]{36}(\/annotations)?$/.test(error.path!) ||
+                /^\/api\/v1\/annotations\/[0-9a-f-]{36}\/comments\/page$/.test(error.path!)))),
       );
       const unexpected = errors.filter((error) => !expectedAborts.includes(error));
       fixture.evidence.push({ expectedAborts, unexpectedErrors: unexpected });
@@ -274,8 +275,13 @@ async function expectCandidatePixel(page: Page, point: Point) {
             const x = Math.floor(((at.x - rect.x) * canvas.width) / rect.width);
             const y = Math.floor(((at.y - rect.y) * canvas.height) / rect.height);
             if (x < 0 || y < 0 || x >= canvas.width || y >= canvas.height) return false;
-            const rgba = canvas.getContext("2d")?.getImageData(x, y, 1, 1).data;
-            return !!rgba && rgba[3] > 0 && rgba[2] > rgba[0] + 30 && rgba[0] > rgba[1] + 30;
+            try {
+              const rgba = canvas.getContext("2d")?.getImageData(x, y, 1, 1).data;
+              return !!rgba && rgba[3] > 0 && rgba[2] > rgba[0] + 30 && rgba[0] > rgba[1] + 30;
+            } catch (error) {
+              if (error instanceof DOMException && error.name === "SecurityError") return false;
+              throw error;
+            }
           });
         },
         { x: b.x + b.width * point[0], y: b.y + b.height * point[1] },

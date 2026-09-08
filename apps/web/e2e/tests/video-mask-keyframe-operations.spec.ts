@@ -204,6 +204,10 @@ test("视频 Mask 关键帧复制、outside、删除撤销与组件拆轨保持�
   await expect(page.getByTestId("video-track-context-state")).toHaveAttribute("data-state", "held");
   await expect(page.getByTestId("video-track-context-source")).toContainText("保持自 F0");
 
+  // The context bar intentionally owns its own keyboard controls; return focus to the
+  // workbench's Mask editor before sending the global undo shortcut.
+  await page.getByTestId("mask-toolbar").getByText("Mask 编辑", { exact: true }).click();
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   const undone = page.waitForResponse((response) =>
     isKeyframeResponse(response, taskId, source.id, 1, "PUT"),
   );

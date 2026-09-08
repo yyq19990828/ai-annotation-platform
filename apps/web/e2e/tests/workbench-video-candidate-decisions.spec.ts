@@ -89,7 +89,9 @@ test("A/D 按持久结果在当前帧前进，失败可重试，真实 422 补�
   await batchSelect.press("a");
   await batchSelect.press("d");
   await expect(firstRow).toHaveClass(/!border-brand/);
-  await firstRow.click();
+  // The selected-object floating card can cover the list row. Selection already remains
+  // active, so only return focus to the workbench before dispatching the global hotkey.
+  await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   const accepted = page.waitForResponse(
     (r) =>
       r.url().includes(`/predictions/${first.predictionId}/accept`) &&

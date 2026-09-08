@@ -387,12 +387,16 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
       });
       const command = e.ctrlKey || e.metaKey;
       if (command && (e.key.toLowerCase() === "z" || e.key.toLowerCase() === "y")) {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        if (!maskEditable) return;
-        if (e.key.toLowerCase() === "y" || e.shiftKey) maskEditor.redo();
-        else maskEditor.undo();
-        return;
+        const isRedo = e.key.toLowerCase() === "y" || e.shiftKey;
+        const canHandle = isRedo ? maskEditor.canRedo : maskEditor.canUndo;
+        if (!maskEditable || canHandle) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          if (!maskEditable) return;
+          if (isRedo) maskEditor.redo();
+          else maskEditor.undo();
+          return;
+        }
       }
       if (e.key === "b" || e.key === "B") {
         e.preventDefault();

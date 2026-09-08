@@ -207,6 +207,12 @@ export function useMaskEditor({
   resourceCoordinator,
 }: UseMaskEditorOptions): UseMaskEditorReturn {
   const webGpuCandidateEnabled = import.meta.env.VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU !== "false";
+  const e2eTileMaxBytes =
+    (import.meta.env.DEV || import.meta.env.MODE === "e2e") && typeof window !== "undefined"
+      ? (window as typeof window & { __E2E_MASK_TILE_MAX_BYTES__?: number })
+          .__E2E_MASK_TILE_MAX_BYTES__
+      : undefined;
+  const resolvedTileMaxBytes = tileMaxBytes ?? e2eTileMaxBytes;
   const resolvedHistoryMaxBytes =
     historyMaxBytes ??
     (deviceMemory === undefined
@@ -446,7 +452,7 @@ export function useMaskEditor({
                 : 0,
             }),
         ...(deviceMemory === undefined ? {} : { deviceMemory }),
-        ...(tileMaxBytes === undefined ? {} : { maxCacheBytes: tileMaxBytes }),
+        ...(resolvedTileMaxBytes === undefined ? {} : { maxCacheBytes: resolvedTileMaxBytes }),
         resourceCoordinator,
       });
       disposeTiledStore();
@@ -473,7 +479,7 @@ export function useMaskEditor({
       disposeTiledStore,
       resetHistory,
       resourceCoordinator,
-      tileMaxBytes,
+      resolvedTileMaxBytes,
       webGpuCandidateEnabled,
       workerPool,
     ],

@@ -90,6 +90,8 @@ function makeMaskEditor(overrides: Partial<UseMaskEditorReturn> = {}) {
     backend: "dense",
     operationPreview: null,
     instanceOperationPreview: null,
+    canUndo: true,
+    canRedo: true,
     setMode: vi.fn(),
     undo: vi.fn(),
     redo: vi.fn(),
@@ -999,6 +1001,39 @@ describe("VideoKonvaStage · konva mock", () => {
     expect(editor.setMode).toHaveBeenNthCalledWith(2, "erase");
     expect(editor.undo).toHaveBeenCalledTimes(1);
     expect(editor.redo).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets global history own undo when the video Mask session has no local command", () => {
+    const editor = makeMaskEditor({
+      dirty: false,
+      phase: "ready",
+      canUndo: false,
+      canRedo: false,
+    });
+    const globalUndo = vi.fn((event: KeyboardEvent) => {
+      if (["z", "y"].includes(event.key.toLowerCase()) && (event.ctrlKey || event.metaKey))
+        event.preventDefault();
+    });
+    const view = render(
+      <VideoKonvaStage manifest={manifest} videoTool="mask" maskEditor={editor} />,
+    );
+    window.addEventListener("keydown", globalUndo);
+    try {
+      const undo = new KeyboardEvent("keydown", { key: "z", ctrlKey: true, cancelable: true });
+      const redo = new KeyboardEvent("keydown", { key: "y", ctrlKey: true, cancelable: true });
+      act(() => {
+        window.dispatchEvent(undo);
+        window.dispatchEvent(redo);
+      });
+      expect(globalUndo).toHaveBeenCalledTimes(2);
+      expect(editor.undo).not.toHaveBeenCalled();
+      expect(editor.redo).not.toHaveBeenCalled();
+      expect(undo.defaultPrevented).toBe(true);
+      expect(redo.defaultPrevented).toBe(true);
+    } finally {
+      window.removeEventListener("keydown", globalUndo);
+      view.unmount();
+    }
   });
 
   it.each([

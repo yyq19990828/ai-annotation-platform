@@ -1412,20 +1412,17 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
           segmentLocked: false,
           editorPhase: phase,
         });
-        if (command && event.key.toLowerCase() === "z") {
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          if (!editable) return;
-          if (event.shiftKey) maskEditor.redo();
-          else maskEditor.undo();
-          return;
-        }
-        if (command && event.key.toLowerCase() === "y") {
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          if (!editable) return;
-          maskEditor.redo();
-          return;
+        if (command && (event.key.toLowerCase() === "z" || event.key.toLowerCase() === "y")) {
+          const isRedo = event.key.toLowerCase() === "y" || event.shiftKey;
+          const canHandle = isRedo ? maskEditor.canRedo : maskEditor.canUndo;
+          if (!editable || canHandle) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            if (!editable) return;
+            if (isRedo) maskEditor.redo();
+            else maskEditor.undo();
+            return;
+          }
         }
         if (event.key === "b" || event.key === "B") {
           event.preventDefault();

@@ -60,6 +60,8 @@ function makeMaskArgs(
     active: true,
     dirty: true,
     phase: "dirty",
+    canUndo: true,
+    canRedo: true,
     operationPreview: null,
     instanceOperationPreview: null,
     setMode: vi.fn(),
@@ -241,6 +243,29 @@ describe("Mask keyboard action ownership", () => {
     expect(args.history.undo).not.toHaveBeenCalled();
     expect(args.history.redo).not.toHaveBeenCalled();
     expect(args.s.setTool).not.toHaveBeenCalled();
+  });
+
+  it("falls back to annotation history when the mask session has no local command", () => {
+    const { args, editor } = makeMaskArgs({
+      active: true,
+      dirty: false,
+      phase: "ready",
+      canUndo: false,
+      canRedo: false,
+    });
+    renderHook(() => useWorkbenchHotkeys(args));
+    act(() => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "z", ctrlKey: true, cancelable: true }),
+      );
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "y", ctrlKey: true, cancelable: true }),
+      );
+    });
+    expect(editor.undo).not.toHaveBeenCalled();
+    expect(editor.redo).not.toHaveBeenCalled();
+    expect(args.history.undo).toHaveBeenCalledTimes(1);
+    expect(args.history.redo).toHaveBeenCalledTimes(1);
   });
 
   it("comparison freezes Mask commands without falling through to a tool change", () => {

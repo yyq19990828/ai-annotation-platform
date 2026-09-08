@@ -367,7 +367,11 @@ export class SeedAPI {
   }
 
   async reset(): Promise<SeedData> {
-    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/reset`);
+    // Cleanup may remove WebCodecs objects in MinIO before rebuilding the fixture;
+    // do not abandon that idempotent reset while the server is still completing it.
+    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/reset`, {
+      timeout: 60_000,
+    });
     if (!res.ok()) {
       throw new Error(`seed/reset failed: ${res.status()} ${await res.text()}`);
     }
