@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-08T02:51:29.835Z",
+  "updated_at": "2026-09-08T04:55:58.591Z",
   "entries": {
     "docs-site/.vitepress/theme/assets/home/hero/pointcloud.webp": {
       "asset_id": "home-hero/pointcloud",
@@ -1296,19 +1296,28 @@
     "docs-site/public/media/ai/preannotate-poster.webp": {
       "asset_id": "ai-preannotate",
       "role": "poster",
-      "generated_at": "2026-09-05T14:43:22.843Z",
-      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
-      "source_worktree_dirty": true,
-      "seed_revision": "screenshots-2026-08-e",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › ai-preannotate",
+      "generated_at": "2026-09-08T04:55:58.591Z",
+      "captured_commit": "43a4f9f80cd1059375ac555ab903d1068d301d4c",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive webp › ai-preannotate",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
+        "apps/web/e2e/screenshots/flows/ai-preannotate.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/scripts/derive-doc-media.mjs"
+        "apps/web/e2e/screenshots/recording-plan.mjs",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "3108ee02d4f573111d307f2be652d4b77b9d0e7f332d4118b89c01213a980f6a",
-      "bytes": 89466,
+      "sha256": "67e0414f5d2d546d368faaaa0c8f951ed558b9e927407ee17da9df4af8c4305e",
+      "bytes": 87086,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -1317,45 +1326,67 @@
         "fps": "25/1",
         "duration_seconds": null
       },
-      "source_asset": {
-        "runId": "20260815T001709Z-435b32ac23d6",
-        "assetId": "ai-preannotate",
-        "sha256": "ec18456d4f75a49c968b041408b655671650682496fa4f31b61aa65f93705509"
+      "capture": {
+        "source_quality": "standard",
+        "source_inference": "live"
       },
-      "postprocess": {
-        "source_video": "docs-site/public/media/ai/preannotate.mp4",
-        "poster_timestamp_seconds": 11.3,
-        "note": "Replaced loading skeleton with the completed preannotation result."
+      "source_asset": {
+        "runId": "2026-09-08T04-40-38-568Z-363088",
+        "assetId": "ai-preannotate",
+        "sha256": "95b20e918064b9991f353f659c03d5b152f17df23d940b9b9d6a637fe4e8cf65",
+        "quality": "standard",
+        "clip": {
+          "start": 211,
+          "duration": 14.2
+        }
       }
     },
     "docs-site/public/media/ai/preannotate.mp4": {
       "asset_id": "ai-preannotate",
       "role": "docs-video",
-      "generated_at": "2026-08-15T06:08:51.817Z",
-      "captured_commit": "435b32ac23d6a8d48d935a68fe9ee2478491cfd9",
-      "source_worktree_dirty": true,
-      "seed_revision": "screenshots-2026-08-e",
-      "source": "apps/web/scripts/derive-doc-media.mjs",
-      "test_title": "derive docs media › ai-preannotate",
+      "generated_at": "2026-09-08T04:55:58.517Z",
+      "captured_commit": "43a4f9f80cd1059375ac555ab903d1068d301d4c",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive mp4 › ai-preannotate",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
+        "apps/web/e2e/screenshots/flows/ai-preannotate.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/scripts/derive-doc-media.mjs"
+        "apps/web/e2e/screenshots/recording-plan.mjs",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "0b7f6a8bb4fb9f5418f576d8f23c77764188abe0f0814eed6661cde00d8dd1a7",
-      "bytes": 395953,
+      "sha256": "517f569d427456f4095e7eff31a404d137d7c5d19130b895c2e181d6cd7b5ede",
+      "bytes": 518822,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
-        "fps": "30/1",
-        "duration_seconds": 12.3
+        "fps": "25/1",
+        "duration_seconds": 14.2
+      },
+      "capture": {
+        "source_quality": "standard",
+        "source_inference": "live"
       },
       "source_asset": {
-        "runId": "20260815T001709Z-435b32ac23d6",
+        "runId": "2026-09-08T04-40-38-568Z-363088",
         "assetId": "ai-preannotate",
-        "sha256": "ec18456d4f75a49c968b041408b655671650682496fa4f31b61aa65f93705509"
+        "sha256": "95b20e918064b9991f353f659c03d5b152f17df23d940b9b9d6a637fe4e8cf65",
+        "quality": "standard",
+        "clip": {
+          "start": 211,
+          "duration": 14.2
+        }
       }
     },
     "docs-site/public/media/ai/prediction-import-poster.webp": {
