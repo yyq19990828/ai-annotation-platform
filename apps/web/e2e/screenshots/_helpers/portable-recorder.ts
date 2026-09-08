@@ -4,19 +4,9 @@ import path from "node:path";
 import type { Page } from "@playwright/test";
 import { recordFlowArtifact, type FlowArtifactProvenance } from "./flow-manifest.ts";
 
-export interface PortableRecordingClip {
-  startSec: number;
-  durationSec: number;
-}
-
-type PortableRecordingInput = Omit<FlowArtifactProvenance, "targetPath" | "role"> & {
-  runId: string;
-  clip?: PortableRecordingClip;
-};
-
 export async function archivePortableRecording(
   page: Page,
-  input: PortableRecordingInput,
+  input: Omit<FlowArtifactProvenance, "targetPath" | "role"> & { runId: string },
 ): Promise<void> {
   if (
     !/^[a-zA-Z0-9_-]+$/.test(input.runId) ||
@@ -32,18 +22,9 @@ export async function archivePortableRecording(
   const target = path.join(root, `${input.assetId}.mp4`);
   const source = path.join(root, `${input.assetId}.webm`);
   const temporary = `${target}.tmp.mp4`;
-  if (
-    input.clip &&
-    (!Number.isFinite(input.clip.startSec) ||
-      !Number.isFinite(input.clip.durationSec) ||
-      input.clip.startSec < 0 ||
-      input.clip.durationSec <= 0)
-  ) {
-    throw new Error("Portable recording clip must have a non-negative start and positive duration");
-  }
   fs.mkdirSync(path.dirname(target), { recursive: true });
   // Preserve the complete source: Playwright's video start has no exact epoch contract.
-  // An explicit clip only affects the reviewable MP4; the source WebM remains complete.
+  // Do not apply X11 epoch trims or advertise a measured capture cadence here.
   await page.close();
   await video.saveAs(source);
   try {
@@ -53,9 +34,6 @@ export async function archivePortableRecording(
         "-y",
         "-i",
         source,
-        ...(input.clip
-          ? ["-ss", String(input.clip.startSec), "-t", String(input.clip.durationSec)]
-          : []),
         "-an",
         "-c:v",
         "libx264",
@@ -84,13 +62,7 @@ export async function archivePortableRecording(
         platform: process.platform,
         browser_version: browserVersion,
         viewport,
-        trim: input.clip
-          ? {
-              type: "source_clip",
-              start_seconds: input.clip.startSec,
-              duration_seconds: input.clip.durationSec,
-            }
-          : "untrimmed",
+        trim: "untrimmed",
         source: path.relative(input.repoRoot, source),
       },
     });
