@@ -10,6 +10,7 @@
 // AnnotationActions handler（state/useWorkbenchAnnotationActions.ts）。
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { PolygonDraftHandle } from "../stage/tools";
 import { isWorkbenchInteractionBlocked } from "./workbenchInteractionGuards";
 
 import {
@@ -119,6 +120,7 @@ export interface UseWorkbenchHotkeysArgs {
 
   // polygon hookup（来自 AnnotationActions hook）
   polygonDraftPoints: [number, number][];
+  polygonDraft?: PolygonDraftHandle;
   setPolygonDraftPoints: React.Dispatch<React.SetStateAction<[number, number][]>>;
   submitPolygon: (points: [number, number][]) => void;
   // v0.10.28 · polyline 复用同一草稿 state，Enter 阈值为 2 顶点。
@@ -221,6 +223,7 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     pushToast,
     stageGeom,
     polygonDraftPoints,
+    polygonDraft,
     setPolygonDraftPoints,
     submitPolygon,
     submitPolyline,
@@ -318,12 +321,15 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)
       )
         return;
-      if (polygonDraftPoints.length === 0) return;
-      if (e.key === "Enter" && polygonDraftPoints.length >= minPts) {
+      if (e.key === "Enter" || e.key === "Backspace")
+        polygonDraft?.autoPoints?.beforeKey.current?.();
+      const points = polygonDraft?.autoPoints?.getPoints() ?? polygonDraftPoints;
+      if (points.length === 0) return;
+      if (e.key === "Enter" && points.length >= minPts) {
         e.preventDefault();
         e.stopPropagation();
-        if (isPolyline) submitPolyline(polygonDraftPoints);
-        else submitPolygon(polygonDraftPoints);
+        if (isPolyline) submitPolyline(points);
+        else submitPolygon(points);
         return;
       }
       if (e.key === "Escape") {
@@ -341,7 +347,15 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [disabled, s.tool, polygonDraftPoints, submitPolygon, submitPolyline, setPolygonDraftPoints]);
+  }, [
+    disabled,
+    s.tool,
+    polygonDraft,
+    polygonDraftPoints,
+    submitPolygon,
+    submitPolyline,
+    setPolygonDraftPoints,
+  ]);
 
   // v0.10.8 · I11 · Mask 工具专用键（capture 阶段，先于主 dispatchKey 抢键）：
   //   B → brush 模式  · E → erase 模式  · Enter/Esc → 当前阶段主/次动作

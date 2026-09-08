@@ -5991,6 +5991,7 @@ export function useWorkbenchShellModel({
     pushToast,
     stageGeom,
     polygonDraftPoints,
+    polygonDraft: s.tool === "polygon" ? polygonHandle : undefined,
     setPolygonDraftPoints,
     submitPolygon,
     submitPolyline,

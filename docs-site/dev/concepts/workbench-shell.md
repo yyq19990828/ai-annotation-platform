@@ -171,6 +171,8 @@ Inspector 的候选属性按候选自身的工具单位读取 schema，由原候
 
 ### 图片手工创建事务
 
+图片 Polygon 的点集仍由 `useWorkbenchAnnotationActions` 管理；`usePolygonDraftPoints` 同步发布点集引用，使撤销、取消和任务切换能立即使旧批次失效。`usePolygonAutoPoints` 只保存本次 Shift 拖动的采样余量和待刷新的点，按累计 8 CSS px 距离重采样，一帧批量追加；追加时检查原点集引用、图像身份、视口和编辑许可。松手或释放 Shift 保留终点，Enter / Backspace 通过原快捷键所有者先完成当前批次再操作最新草稿。20,000 点预算只暂停自动采样，已有点保留；超过 500 个草稿顶点时使用一个 Konva Shape 绘制全部顶点，避免逐顶点创建 React 节点。手工单击、吸附、闭合与创建事务保持原入口。
+
 普通矩形框的 `bboxCreationMode` 保存在 `useWorkbenchState` 会话中；`BboxTool` 在按下时锁存中心选项或 Alt，`ImageStage` 的预览与提交共用 `imageBoxFromDrag`。中心创建按两侧最近图像边界限制半径，松手读取最终指针坐标，避免最后一次 move 尚未渲染时丢失终点。几何随后仍进入原创建事务，过小、零面积和属性校验由已有漏斗处理；起点选项不写入用户偏好或标注合同。
 
 `useWorkbenchState` 保存会话级连续创建意图 `(projectId, tool_unit_id, class_name, tool)`，只允许矩形框、旋转框、多边形、折线和模板关键点；区域单元恢复 Polygon。`useWorkbenchAnnotationActions` 仍是几何创建 owner。完成的几何附带唯一草稿 ID、任务、工具单元、类别、独立属性和 `class / attributes / saving / error` 阶段，类别和属性均从该单元读取，不使用展示层的跨单元兜底。默认值逐对象复制，缺失必填项复用 `AttributeForm.getMissingRequired`，草稿表单同步更新以支持输入后立即 Enter；旧草稿 ID 的更新无效。

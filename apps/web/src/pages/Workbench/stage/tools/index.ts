@@ -99,6 +99,12 @@ export interface PolygonDraftHandle {
   cancel: () => void;
   /** v0.10.28 · false 表示折线（不闭合）；缺省 / true 表示多边形。 */
   closed?: boolean;
+  /** Image Polygon drag batches share the existing draft and reject a retired snapshot. */
+  autoPoints?: {
+    getPoints: () => [number, number][];
+    append: (points: [number, number][], expected: [number, number][]) => boolean;
+    beforeKey: { current: (() => void) | null };
+  };
 }
 
 /**
@@ -130,6 +136,7 @@ export interface ToolPointerContext {
   snapPoint?: (pt: { x: number; y: number }, evt: MouseEvent) => { x: number; y: number };
   /** 仅 PolygonTool 用. */
   polygonDraft?: PolygonDraftHandle;
+  startPolygonAutoPoints?: (point: [number, number], event: MouseEvent) => void;
   /** v0.10.28 · 仅 KeypointTool 用. */
   keypointDraft?: KeypointDraftHandle;
   /** v0.10.2 · 仅 SmartPointTool 消费, "+/-" 极性 (与 Alt 修饰键合并). */

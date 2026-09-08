@@ -82,6 +82,40 @@ function makeMaskArgs(
 }
 
 describe("video tool admission", () => {
+  it("flushes the active polygon stroke before Enter reads the existing draft", () => {
+    let points: [number, number][] = [[0, 0]];
+    const args = makeArgs({
+      polygonDraftPoints: points,
+      polygonDraft: {
+        points,
+        addPoint: vi.fn(),
+        close: vi.fn(),
+        cancel: vi.fn(),
+        autoPoints: {
+          getPoints: () => points,
+          append: vi.fn(),
+          beforeKey: {
+            current: () => {
+              points = [
+                [0, 0],
+                [1, 0],
+                [1, 1],
+              ];
+            },
+          },
+        },
+      },
+    });
+    args.s.tool = "polygon";
+    const view = renderHook(() => useWorkbenchHotkeys(args));
+    act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })));
+    expect(args.submitPolygon).toHaveBeenCalledWith([
+      [0, 0],
+      [1, 0],
+      [1, 1],
+    ]);
+    view.unmount();
+  });
   it.each([
     ["b", "box"],
     ["p", "polygon"],

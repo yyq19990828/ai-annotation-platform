@@ -18,6 +18,7 @@ import {
   Label,
   Tag,
   Text,
+  Shape,
 } from "react-konva";
 import type Konva from "konva";
 import type { Annotation, Geometry, RotatedBboxGeometry, Keypoint, KeypointSchema } from "@/types";
@@ -31,6 +32,8 @@ import { classColorForCanvas, displayClassName, hexToRgb, hexToRgba } from "./co
 import { SelectionOverlay } from "./SelectionOverlay";
 import { TOOL_REGISTRY, type PolygonDraftHandle, type KeypointDraftHandle } from "./tools";
 import { CLOSE_DISTANCE } from "./tools/PolygonTool";
+import { usePolygonAutoPoints } from "./usePolygonAutoPoints";
+import { POLYGON_AUTO_POINT_LIMIT } from "./polygonAutoPoints";
 import { CanvasDrawingLayer } from "./CanvasDrawingLayer";
 import { MaskOverlayLayer } from "./overlays/MaskOverlayLayer";
 import { TiledMaskOverlayLayer } from "./overlays/TiledMaskOverlayLayer";
@@ -977,6 +980,16 @@ export function ImageStage({
     autoFitOnResize: workbenchConfig.image.autoFitOnResize,
   });
   const imageReady = imageStatus === "loaded" && imageLoaded && fitted;
+  const startPolygonAutoPoints = usePolygonAutoPoints({
+    enabled: tool === "polygon" && imageReady && !readOnly && !pendingDrawing && !spacePan,
+    owner: imageIdentity,
+    view: `${vp.scale}:${vp.tx}:${vp.ty}`,
+    width: imgW * vp.scale,
+    height: imgH * vp.scale,
+    draft: polygonDraft,
+    toImage: toImg,
+    snap: snapImagePoint,
+  });
 
   // 揭开 konvaHost 前强制同步重绘一次: react-konva 的 batchDraw 是 rAF 异步, 否则 fitted 翻 true、
   // konvaHost 转可见的那一帧 canvas 像素还停在旧 vp (上一张) → 残留「左上角小比例闪一下」。
@@ -1428,12 +1441,30 @@ export function ImageStage({
   }, [customMaskCursorActive, updateMaskCursor]);
 
   // ── stage event handlers ─────────────────────────────────────────────────
+  const polygonClickPair = useRef<{ previousPlain: Pt | null; allowDoubleClick: boolean }>({
+    previousPlain: null,
+    allowDoubleClick: false,
+  });
+  useEffect(() => {
+    polygonClickPair.current = { previousPlain: null, allowDoubleClick: false };
+  }, [tool, imageIdentity]);
   const handleStageMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
     if (e.target !== (stageRef.current as unknown)) {
       return;
     }
     const pt = toImg(e.evt.clientX, e.evt.clientY);
     if (!pt) return;
+    if (tool === "polygon") {
+      const plain = !e.evt.shiftKey && !spacePan && e.evt.button === 0;
+      const previous = polygonClickPair.current.previousPlain;
+      polygonClickPair.current = {
+        previousPlain: plain ? [e.evt.clientX, e.evt.clientY] : null,
+        allowDoubleClick:
+          plain &&
+          !!previous &&
+          Math.hypot(previous[0] - e.evt.clientX, previous[1] - e.evt.clientY) <= 4,
+      };
+    }
     if (tool === "mask" && !spacePan && !isNormalizedImagePoint(pt)) return;
     if ((e.evt.ctrlKey || e.evt.metaKey) && samMaskRecords.length > 0) {
       const candidate = pickTopRasterMaskAt(samMaskRecords, pt);
@@ -1472,6 +1503,7 @@ export function ImageStage({
         return snapped.point;
       },
       polygonDraft,
+      startPolygonAutoPoints,
       keypointDraft,
       samPolarity,
       maskEditor,
@@ -1482,6 +1514,9 @@ export function ImageStage({
   };
 
   const handleStageDblClick = () => {
+    // Konva counts Shift drags and distant clicks on the same Stage as a double click.
+    // Closing requires two plain clicks at the same screen position.
+    if (tool === "polygon" && !polygonClickPair.current.allowDoubleClick) return;
     // polygon 模式下双击 → 闭合（≥ 3 点）；polyline 模式下双击 → 结束（≥ 2 点，不闭合）；否则适应视口
     if (tool === "polygon" && polygonDraft && polygonDraft.points.length >= 3) {
       polygonDraft.close();
@@ -1768,6 +1803,7 @@ export function ImageStage({
       data-ai-box-count={aiBoxes.length}
       data-sam-candidate-count={samCandidates?.length ?? 0}
       data-pending-drawing={pendingDrawing ? "true" : "false"}
+      data-polygon-draft-count={polygonDraft?.points.length ?? 0}
       data-drag-kind={drag?.kind ?? "none"}
       data-drag-changed={
         drag?.kind === "draw" && (drag.cx !== drag.sx || drag.cy !== drag.sy) ? "true" : "false"
@@ -1793,6 +1829,17 @@ export function ImageStage({
         setDrag({ kind: "pan", sx: evt.clientX, sy: evt.clientY });
       }}
     >
+      {tool === "polygon" && (polygonDraft?.points.length ?? 0) > 0 && (
+        <div
+          role="status"
+          data-testid="polygon-auto-points-status"
+          className="pointer-events-none absolute bottom-3 left-3 z-local-overlay rounded border border-border bg-card px-3 py-2 text-2xs text-muted-foreground"
+        >
+          {(polygonDraft?.points.length ?? 0) >= POLYGON_AUTO_POINT_LIMIT
+            ? "已达 20,000 点，自动落点已暂停；Backspace 撤一点，Esc 取消草稿"
+            : `${polygonDraft?.points.length} 点 · Shift 拖动自动落点 · Enter 闭合 · Backspace 撤一点`}
+        </div>
+      )}
       {/* blurhash 占位（图像加载前） */}
       {!imageLoaded && previewSourceUrl && blurhash && <BlurhashLayer hash={blurhash} />}
 
@@ -2453,17 +2500,41 @@ export function ImageStage({
                       lineJoin="round"
                       fill={isPolyline ? undefined : hexToRgba(draftColor, 0.1)}
                     />
-                    {ps.map(([px, py], i) => (
-                      <Circle
-                        key={i}
-                        x={px * imgW}
-                        y={py * imgH}
-                        radius={(i === 0 ? 4.5 : 3) / vp.scale}
-                        fill={i === 0 && canClose ? draftColor : "white"}
-                        stroke={draftColor}
-                        strokeWidth={1.5 / vp.scale}
+                    {ps.length > 500 ? (
+                      <Shape
+                        sceneFunc={(ctx) => {
+                          ctx.setAttr("fillStyle", "white");
+                          ctx.setAttr("strokeStyle", draftColor);
+                          ctx.setAttr("lineWidth", 1.5 / vp.scale);
+                          ctx.beginPath();
+                          for (const [px, py] of ps.slice(1)) {
+                            const x = px * imgW;
+                            const y = py * imgH;
+                            ctx.moveTo(x + 3 / vp.scale, y);
+                            ctx.arc(x, y, 3 / vp.scale, 0, Math.PI * 2);
+                          }
+                          ctx.fill();
+                          ctx.stroke();
+                          ctx.beginPath();
+                          ctx.arc(ps[0][0] * imgW, ps[0][1] * imgH, 4.5 / vp.scale, 0, Math.PI * 2);
+                          ctx.setAttr("fillStyle", canClose ? draftColor : "white");
+                          ctx.fill();
+                          ctx.stroke();
+                        }}
                       />
-                    ))}
+                    ) : (
+                      ps.map(([px, py], i) => (
+                        <Circle
+                          key={i}
+                          x={px * imgW}
+                          y={py * imgH}
+                          radius={(i === 0 ? 4.5 : 3) / vp.scale}
+                          fill={i === 0 && canClose ? draftColor : "white"}
+                          stroke={draftColor}
+                          strokeWidth={1.5 / vp.scale}
+                        />
+                      ))
+                    )}
                   </>
                 );
               })()}

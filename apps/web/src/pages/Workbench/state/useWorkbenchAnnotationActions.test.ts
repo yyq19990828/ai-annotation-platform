@@ -90,6 +90,36 @@ function setup({
 }
 
 describe("useWorkbenchAnnotationActions module", () => {
+  it("auto point batches reject undo/cancel/task snapshots and retain the full point budget", () => {
+    const hook = setup({ tool: "polygon", intent: null });
+    const auto = () => hook.result.current.polygonHandle.autoPoints!;
+    const old = auto().getPoints();
+    act(() =>
+      expect(
+        auto().append(
+          [
+            [0.1, 0.1],
+            [0.2, 0.1],
+          ],
+          old,
+        ),
+      ).toBe(true),
+    );
+    act(() => hook.result.current.setPolygonDraftPoints((points) => points.slice(0, -1)));
+    act(() => expect(auto().append([[0.3, 0.1]], old)).toBe(false));
+    const beforeTask = auto().getPoints();
+    hook.rerender({ taskId: "task-2", locked: false });
+    act(() => expect(auto().append([[0.3, 0.1]], beforeTask)).toBe(false));
+    const many = Array.from({ length: 20_000 }, (_, i): [number, number] => [i / 20_000, 0.2]);
+    act(() => expect(auto().append(many, auto().getPoints())).toBe(true));
+    act(() => expect(auto().append([[1, 0.2]], auto().getPoints())).toBe(false));
+    expect(auto().getPoints()).toEqual(many);
+    act(() => hook.result.current.polygonHandle.cancel());
+    expect(auto().getPoints()).toEqual([]);
+    expect(hook.create).not.toHaveBeenCalled();
+    hook.unmount();
+    hook.queryClient.clear();
+  });
   it("exports the hook", () => {
     expect(typeof useWorkbenchAnnotationActions).toBe("function");
   });

@@ -32,6 +32,8 @@ import {
   type ManualCreationDraft,
 } from "./manualImageCreation";
 import type { PendingDrawing } from "./useWorkbenchState";
+import { usePolygonDraftPoints } from "./usePolygonDraftPoints";
+import { POLYGON_AUTO_POINT_LIMIT } from "../stage/polygonAutoPoints";
 import type { useWorkbenchState } from "../state/useWorkbenchState";
 import type { useAnnotationHistory } from "../state/useAnnotationHistory";
 import type { AnnotationPayload, AnnotationUpdatePayload } from "@/api/tasks";
@@ -571,14 +573,19 @@ export function useWorkbenchAnnotationActions({
   );
 
   // ── polygon / polyline 草稿（共用顶点累积 state）──────────────────────
-  const [polygonDraftPoints, setPolygonDraftPoints] = useState<[number, number][]>([]);
+  const {
+    points: polygonDraftPoints,
+    setPoints: setPolygonDraftPoints,
+    getPoints: getPolygonDraftPoints,
+  } = usePolygonDraftPoints();
+  const polygonBeforeKey = useRef<(() => void) | null>(null);
   // Each tool owns its unfinished vertices, including Polygon ↔ Polyline switches.
   useEffect(() => {
     setPolygonDraftPoints([]);
-  }, [s.tool]);
+  }, [s.tool, setPolygonDraftPoints]);
   useEffect(() => {
     setPolygonDraftPoints([]);
-  }, [taskId]);
+  }, [taskId, setPolygonDraftPoints]);
 
   const submitPolygon = useCallback(
     (points: [number, number][]) => {
@@ -607,6 +614,7 @@ export function useWorkbenchAnnotationActions({
       pointsBounds,
       pushToast,
       s,
+      setPolygonDraftPoints,
     ],
   );
 
@@ -616,11 +624,26 @@ export function useWorkbenchAnnotationActions({
       addPoint: (pt) => {
         if (!manualDraftRef.current && !isLocked) setPolygonDraftPoints((p) => [...p, pt]);
       },
-      close: () => submitPolygon(polygonDraftPoints),
+      close: () => submitPolygon(getPolygonDraftPoints()),
       cancel: () => setPolygonDraftPoints([]),
       closed: true,
+      autoPoints: {
+        getPoints: getPolygonDraftPoints,
+        beforeKey: polygonBeforeKey,
+        append: (batch, expected) => {
+          if (
+            manualDraftRef.current ||
+            isLocked ||
+            getPolygonDraftPoints() !== expected ||
+            expected.length + batch.length > POLYGON_AUTO_POINT_LIMIT
+          )
+            return false;
+          setPolygonDraftPoints([...expected, ...batch]);
+          return true;
+        },
+      },
     }),
-    [polygonDraftPoints, submitPolygon, isLocked],
+    [polygonDraftPoints, submitPolygon, isLocked, getPolygonDraftPoints, setPolygonDraftPoints],
   );
 
   // ── polyline 提交 (v0.10.28) ──────────────────────────────────────
@@ -651,6 +674,7 @@ export function useWorkbenchAnnotationActions({
       pointsBounds,
       pushToast,
       s,
+      setPolygonDraftPoints,
     ],
   );
 
@@ -664,7 +688,7 @@ export function useWorkbenchAnnotationActions({
       cancel: () => setPolygonDraftPoints([]),
       closed: false,
     }),
-    [polygonDraftPoints, submitPolyline, isLocked],
+    [polygonDraftPoints, submitPolyline, isLocked, setPolygonDraftPoints],
   );
 
   // ── v0.10.28 · keypoint 草稿 ──────────────────────────────────────────
@@ -673,7 +697,7 @@ export function useWorkbenchAnnotationActions({
     if (!isLocked) return;
     setPolygonDraftPoints([]);
     setKeypointDraftPoints([]);
-  }, [isLocked]);
+  }, [isLocked, setPolygonDraftPoints]);
   useEffect(() => {
     if (s.tool !== "keypoint") setKeypointDraftPoints([]);
   }, [s.tool]);
@@ -758,7 +782,13 @@ export function useWorkbenchAnnotationActions({
       return true;
     }
     return false;
-  }, [pushToast, publishManualDraft, polygonDraftPoints.length, keypointDraftPoints.length]);
+  }, [
+    pushToast,
+    publishManualDraft,
+    polygonDraftPoints.length,
+    keypointDraftPoints.length,
+    setPolygonDraftPoints,
+  ]);
 
   const handleCommitKeypointGeometry = useCallback(
     (id: string, before: Keypoint[], after: Keypoint[]) => {
