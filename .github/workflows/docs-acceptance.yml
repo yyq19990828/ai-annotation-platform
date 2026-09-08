@@ -21,24 +21,64 @@ jobs:
           node-version: "20"
       - uses: pnpm/action-setup@v4
       - name: Install
+        id: install
         run: pnpm install --frozen-lockfile
-      - name: Documentation checks
-        run: pnpm --filter @anno/docs-site check:all
+      # Independent gates keep running after failures; a failed gate still fails the job.
+      - name: Snippet anchor consistency
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm --filter @anno/docs-site check:snippets
+      - name: ADR numbering and status
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm --filter @anno/docs-site check:adr
+      - name: Plans freshness
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm --filter @anno/docs-site check:plans
+      - name: Changelog consistency
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm --filter @anno/docs-site check:changelog
+      - name: Frontmatter metadata
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm --filter @anno/docs-site check:frontmatter
+      - name: Documentation freshness
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm --filter @anno/docs-site check:freshness
+      - name: Media policy tests
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm --filter @anno/docs-site media:test
+      - name: Diagram integrity
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm --filter @anno/docs-site check:diagrams
+      - name: Generated documentation consistency
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: pnpm --filter @anno/docs-site check:codegen
       - name: Navigation coverage
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm --filter @anno/docs-site check:navigation -- --strict
       - name: Complete screenshot manifest
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: node docs-site/scripts/check-image-manifest.mjs --release
+      - name: Orphan images
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: node docs-site/scripts/check-orphan-images.mjs --strict
+      - name: Materialize generated link targets
+        id: link-targets
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: |
+          node docs-site/scripts/sync-openapi.mjs
+          node docs-site/scripts/mirror-adr.mjs
       - name: Build docs site
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         env:
           DOCS_BASE: /ai-annotation-platform/
         run: pnpm --filter @anno/docs-site build
       - name: Internal Markdown links
+        if: ${{ !cancelled() && steps.link-targets.outcome == 'success' }}
         run: node scripts/check-dead-links.mjs docs-site
       - name: Release media review and provenance
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: pnpm --filter @anno/docs-site media:audit -- --release --output ../.artifacts/docs-acceptance.json
       - name: Upload acceptance report
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: docs-acceptance
