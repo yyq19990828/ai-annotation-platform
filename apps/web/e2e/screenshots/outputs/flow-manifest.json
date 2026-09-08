@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-08T08:12:32.629Z",
+  "updated_at": "2026-09-08T08:36:58.131Z",
   "entries": {
     "docs-site/.vitepress/theme/assets/home/hero/pointcloud.webp": {
       "asset_id": "home-hero/pointcloud",
@@ -2723,19 +2723,19 @@
     "docs-site/public/media/pointcloud/crossframe-track-poster.webp": {
       "asset_id": "pointcloud-crossframe-track",
       "role": "poster",
-      "generated_at": "2026-09-05T14:19:41.575Z",
-      "captured_commit": "269c3fedf03b843b521e7751c707842c7cb726f9",
-      "source_worktree_dirty": true,
-      "seed_revision": null,
-      "source": "apps/web/e2e/screenshots/flows/pointcloud-crossframe-track.ts",
-      "test_title": "PR 71 browser replay: pointcloud-crossframe-track",
+      "generated_at": "2026-09-08T08:36:58.131Z",
+      "captured_commit": "80f0234760547edee21bbeb79f3e4f51b3281d24",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive webp › pointcloud-crossframe-track",
       "watch_paths": [
-        "apps/web/e2e/screenshots/flows/pointcloud-crossframe-track.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/api/app/services/screenshot_seed_spec.py"
+        "apps/web/scripts/derive-doc-media.mjs",
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "3392edef0e4c8896789e1d5774dc3392dd52080ad3d9f1b33360b9c51d16ddb0",
-      "bytes": 64712,
+      "sha256": "ddfeccde31634fa784e1ab9b29d72ce45ccd3582295fe40e40d1ff9f052f6710",
+      "bytes": 76088,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -2744,55 +2744,59 @@
         "fps": "25/1",
         "duration_seconds": null
       },
-      "provenance": "targeted-browser-capture",
-      "fixture": {
-        "dataset": "nuscenes-mini",
-        "scene": "scene-0061",
-        "frame_indices": [
-          0,
-          1,
-          2
-        ],
-        "axis_convention": "iso_8855"
+      "capture": {
+        "source_quality": "marketing",
+        "source_inference": "unverified"
       },
-      "note": "Captured from the PR frontend with the existing local nuScenes-mini fixture; the full screenshot seed catalog was not revalidated. Preferences were sandboxed in browser memory, and temporary annotations were deleted after recording. Documentation output only (1280x720, 30fps), not a 4K60 marketing master."
+      "source_asset": {
+        "runId": "20260908T083414Z-80f023476054",
+        "assetId": "pointcloud-crossframe-track",
+        "sha256": "ac516e275fa9f27221fee35120e089ee046255b67ba5ecf5b35d405fd079b126",
+        "quality": "marketing",
+        "clip": {
+          "start": 0,
+          "duration": 30.634
+        }
+      }
     },
     "docs-site/public/media/pointcloud/crossframe-track.mp4": {
       "asset_id": "pointcloud-crossframe-track",
       "role": "docs-video",
-      "generated_at": "2026-09-05T14:19:41.575Z",
-      "captured_commit": "269c3fedf03b843b521e7751c707842c7cb726f9",
-      "source_worktree_dirty": true,
-      "seed_revision": null,
-      "source": "apps/web/e2e/screenshots/flows/pointcloud-crossframe-track.ts",
-      "test_title": "PR 71 browser replay: pointcloud-crossframe-track",
+      "generated_at": "2026-09-08T08:36:58.044Z",
+      "captured_commit": "80f0234760547edee21bbeb79f3e4f51b3281d24",
+      "source_worktree_dirty": false,
+      "seed_revision": "screenshots-2026-08-g",
+      "source": "apps/web/scripts/media-derivation.mjs",
+      "test_title": "derive mp4 › pointcloud-crossframe-track",
       "watch_paths": [
-        "apps/web/e2e/screenshots/flows/pointcloud-crossframe-track.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/api/app/services/screenshot_seed_spec.py"
+        "apps/web/scripts/derive-doc-media.mjs",
+        "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "95e0b7c773072e42448e5c41026180dac811841c9dad8e7122450e2a0c0c5638",
-      "bytes": 1725667,
+      "sha256": "ac8c28354f7a95ed9383ea21539af9256eb2e702052c1827db0403bc23903666",
+      "bytes": 1139040,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "30/1",
-        "duration_seconds": 22.166667
+        "duration_seconds": 30.634
       },
-      "provenance": "targeted-browser-capture",
-      "fixture": {
-        "dataset": "nuscenes-mini",
-        "scene": "scene-0061",
-        "frame_indices": [
-          0,
-          1,
-          2
-        ],
-        "axis_convention": "iso_8855"
+      "capture": {
+        "source_quality": "marketing",
+        "source_inference": "unverified"
       },
-      "note": "Captured from the PR frontend with the existing local nuScenes-mini fixture; the full screenshot seed catalog was not revalidated. Preferences were sandboxed in browser memory, and temporary annotations were deleted after recording. Documentation output only (1280x720, 30fps), not a 4K60 marketing master."
+      "source_asset": {
+        "runId": "20260908T083414Z-80f023476054",
+        "assetId": "pointcloud-crossframe-track",
+        "sha256": "ac516e275fa9f27221fee35120e089ee046255b67ba5ecf5b35d405fd079b126",
+        "quality": "marketing",
+        "clip": {
+          "start": 0,
+          "duration": 30.634
+        }
+      }
     },
     "docs-site/public/media/pointcloud/orbit-poster.webp": {
       "asset_id": "pointcloud-view",
