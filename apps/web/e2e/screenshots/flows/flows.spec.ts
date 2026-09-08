@@ -2001,7 +2001,14 @@ test.describe("flow recordings", () => {
     await installScreenshotEnvironment(page);
     await seed.injectToken(page, cached.users.project_admin.email);
     await applyScreenshotTheme(page, "dark");
-    await installRecordingWorkbenchLayout(page, "both");
+    await installRecordingWorkbenchLayout(page, "both", {
+      // Keep the selected-object card inside the canvas so its action buttons
+      // are physically reachable; the default right-side position is behind
+      // the inspector Dockview sash at this recording viewport.
+      layout: {
+        floatingSelection: { collapsed: false, x: 720, y: 88, w: 340, h: 440 },
+      },
+    });
     const win = await runVideoMaskCorrectionPropagate(page, cached);
     await finalize(page, "video-mask-correction-propagate", undefined, drawTrim(win, t0));
   });
