@@ -1,3 +1,4 @@
+import { panelCommand } from "../fixtures/workbench-panel-actions";
 import type { APIRequestContext, APIResponse, Locator, Page } from "@playwright/test";
 import { writeFile } from "node:fs/promises";
 
@@ -297,11 +298,6 @@ async function annotationWrite(page: Page, fixture: TrackCase, track: Track, act
   );
   await bar(page).getByRole("button", { name: action, exact: true }).click();
   expect((await saved).status()).toBe(200);
-}
-
-async function panelCommand(page: Page, title: string, command: string) {
-  await page.getByRole("button", { name: `${title}菜单`, exact: true }).click();
-  await page.getByRole("menuitem", { name: command, exact: true }).click();
 }
 
 test.describe("当前视频轨迹条：真实几何与持久化", () => {

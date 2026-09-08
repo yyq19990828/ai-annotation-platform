@@ -1,3 +1,4 @@
+import { panelCommand } from "../fixtures/workbench-panel-actions";
 import type { Page } from "@playwright/test";
 import type {
   PanelId,
@@ -14,11 +15,6 @@ async function layoutCommand(page: Page, name: string) {
   const command = page.getByRole("menuitem", { name, exact: true });
   await expect(command).toBeEnabled({ timeout: 20_000 });
   await command.click();
-}
-
-async function panelCommand(page: Page, title: string, name: string) {
-  await page.getByRole("button", { name: `${title}菜单`, exact: true }).click();
-  await page.getByRole("menuitem", { name, exact: true }).click();
 }
 
 async function savedSnapshot(page: Page, context: string): Promise<WorkspaceSnapshot | undefined> {
@@ -477,10 +473,7 @@ test("视频紧凑布局禁止桌面写入，退出后恢复浮窗与非零帧�
   }
   await page.getByRole("menuitem", { name: "任务队列", exact: true }).click();
   await expect(panel(page, "task-queue")).toBeVisible();
-  await page.getByRole("button", { name: "任务队列菜单", exact: true }).click();
-  await expect(page.getByRole("menuitem", { name: "浮动面板", exact: true })).toBeDisabled();
-  await expect(page.getByRole("menuitem", { name: "停靠到左侧", exact: true })).toBeDisabled();
-  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "任务队列菜单", exact: true })).toHaveCount(0);
   await layoutCommand(page, "讨论 / Issue");
   await expect(discussion).toHaveAttribute("aria-hidden", "false");
   await expect(panel(page, "task-queue")).toBeHidden();

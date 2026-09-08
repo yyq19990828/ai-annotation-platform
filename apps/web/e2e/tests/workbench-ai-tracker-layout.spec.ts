@@ -1,13 +1,9 @@
+import { panelCommand } from "../fixtures/workbench-panel-actions";
 import type { Page } from "@playwright/test";
 import { expect, test } from "../fixtures/seed";
 
 async function layoutCommand(page: Page, name: string) {
   await page.getByRole("button", { name: "布局", exact: true }).click();
-  await page.getByRole("menuitem", { name, exact: true }).click();
-}
-
-async function panelCommand(page: Page, title: string, name: string) {
-  await page.getByRole("button", { name: `${title}菜单`, exact: true }).click();
   await page.getByRole("menuitem", { name, exact: true }).click();
 }
 

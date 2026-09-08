@@ -1,3 +1,4 @@
+import { panelCommand } from "../fixtures/workbench-panel-actions";
 import type { Page, Request } from "@playwright/test";
 import type {
   WorkspaceContext,
@@ -18,14 +19,6 @@ async function layoutCommand(page: Page, name: string) {
   await page.getByRole("button", { name: "布局", exact: true }).click();
   const command = page.getByRole("menuitem", { name, exact: true });
   await expect(command).toBeEnabled({ timeout: 20_000 });
-  await command.click();
-}
-
-async function panelCommand(page: Page, title: string, name: string) {
-  // Floating panels may cover a docked tab; its keyboard menu remains reachable.
-  await page.getByRole("button", { name: `${title}菜单`, exact: true }).press("Enter");
-  const command = page.getByRole("menuitem", { name, exact: true });
-  await expect(command).toBeEnabled();
   await command.click();
 }
 
@@ -301,7 +294,7 @@ test("3D 自由布局保留共享 renderer，三视图移出画布与相机整�
 
 for (const mode of ["annotate", "review"] as const) {
   for (const kind of ["image", "video", "3d"] as const) {
-    test(`${mode}:${kind} 连续54次菜单重排保留画布，跨视口和紧凑模式后刷新恢复`, async ({
+    test(`${mode}:${kind} 连续54次拖动重排保留画布，跨视口和紧凑模式后刷新恢复`, async ({
       page,
       seed,
     }) => {
@@ -357,7 +350,7 @@ for (const mode of ["annotate", "review"] as const) {
         "浮动面板",
       ];
       for (let operation = 0; operation < 50; operation += 1) {
-        await test.step(`菜单重排 ${operation + 1}`, async () => {
+        await test.step(`拖动重排 ${operation + 1}`, async () => {
           if (operation === 25) await page.setViewportSize(finalViewport);
           // Leave a tab group and a floating group in the final saved tree.
           await panelCommand(

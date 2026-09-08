@@ -22,7 +22,7 @@ import {
   type DroptargetOverlayModel,
 } from "dockview-react";
 import { toast } from "sonner";
-import { DropdownMenu, type DropdownItem } from "@/components/ui/DropdownMenu";
+import { DropdownMenu } from "@/components/ui/DropdownMenu";
 import { Icon } from "@/components/ui/Icon";
 import { Tooltip } from "@/components/ui/Tooltip";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
@@ -68,7 +68,10 @@ export interface WorkbenchDockWorkspaceProps {
 
 type Executor = ReturnType<typeof createWorkbenchLayoutExecutor>;
 const SlotsContext = createContext<WorkbenchPanelSlots | null>(null);
-const TabMenuContext = createContext<(id: PanelId) => DropdownItem[]>(() => []);
+const PanelCloseContext = createContext<{ hide: (id: PanelId) => void; disabled: boolean }>({
+  hide: () => {},
+  disabled: true,
+});
 
 function isPanelContentVisible(api: IDockviewPanelProps["api"] | undefined): boolean {
   return Boolean(
@@ -129,7 +132,6 @@ function PanelContent({ api, containerApi }: IDockviewPanelProps) {
 }
 
 function PanelHeaderActions({ group }: IDockviewHeaderActionsProps) {
-  const getItems = useContext(TabMenuContext);
   const [id, setId] = useState(group.activePanel?.id as PanelId | undefined);
   useEffect(() => {
     const update = () => setId(group.activePanel?.id as PanelId | undefined);
@@ -138,8 +140,7 @@ function PanelHeaderActions({ group }: IDockviewHeaderActionsProps) {
     return () => subscription.dispose();
   }, [group]);
   const layout = useWorkbench3DLayout();
-  if (!id || !WORKBENCH_PANEL_REGISTRY[id].capabilities.hide) return null;
-  const hide = getItems(id).find((item) => item.id === "hide");
+  if (id !== "camera-view") return null;
   return (
     <div className="flex h-full items-center gap-1 pr-1" data-workbench-layout-control>
       {id === "camera-view" && (
@@ -156,57 +157,33 @@ function PanelHeaderActions({ group }: IDockviewHeaderActionsProps) {
           悬浮显示
         </button>
       )}
-      <Tooltip name={`隐藏${WORKBENCH_PANEL_REGISTRY[id].title}`} side="bottom">
-        <button
-          type="button"
-          aria-label={`隐藏${WORKBENCH_PANEL_REGISTRY[id].title}`}
-          disabled={hide?.disabled}
-          className="inline-flex size-6 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50"
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={(event) => {
-            event.stopPropagation();
-            hide?.onSelect?.();
-          }}
-        >
-          <Icon name="x" size={14} />
-        </button>
-      </Tooltip>
     </div>
   );
 }
 
 function PanelTab({ api }: IDockviewPanelHeaderProps) {
-  const items = useContext(TabMenuContext)(api.id as PanelId);
+  const id = api.id as PanelId;
+  const { hide, disabled } = useContext(PanelCloseContext);
   return (
-    <div
-      className="flex h-full items-center gap-1 pl-2 text-xs"
-      data-workbench-layout-control
-      onContextMenu={(event) => {
-        event.preventDefault();
-        event.currentTarget.querySelector("button")?.click();
-      }}
-    >
+    <div className="flex h-full items-center gap-1 pl-2 text-xs" data-workbench-layout-control>
       <span>{WORKBENCH_PANEL_REGISTRY[api.id as PanelId].title}</span>
-      <DropdownMenu
-        items={items}
-        trigger={({ ref, toggle, open }) => (
+      {WORKBENCH_PANEL_REGISTRY[id].capabilities.hide && (
+        <Tooltip name={`隐藏${WORKBENCH_PANEL_REGISTRY[id].title}`} side="bottom">
           <button
-            ref={ref}
             type="button"
-            aria-label={`${WORKBENCH_PANEL_REGISTRY[api.id as PanelId].title}菜单`}
-            aria-haspopup="menu"
-            aria-expanded={open}
+            aria-label={`隐藏${WORKBENCH_PANEL_REGISTRY[id].title}`}
+            disabled={disabled}
+            className="inline-flex size-6 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();
-              toggle();
+              hide(id);
             }}
-            className="rounded-sm p-1 text-muted-foreground hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
           >
-            <Icon name="more" size={14} />
+            <Icon name="x" size={14} />
           </button>
-        )}
-      />
+        </Tooltip>
+      )}
     </div>
   );
 }
@@ -449,44 +426,6 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
       restoring.current = false;
     }
   };
-  const tabItems = useCallback(
-    (id: PanelId): DropdownItem[] => [
-      ...(
-        [
-          ["left", "停靠到左侧"],
-          ["right", "停靠到右侧"],
-          ["below", "停靠到底部"],
-        ] as const
-      ).map(([position, label]) => ({
-        id: position,
-        label,
-        disabled: owner.readOnly || compact || id === "canvas",
-        onSelect: () => run((engine) => engine.dock(id, position)),
-      })),
-      ...availablePanels
-        .filter((target) => target !== id)
-        .map((target) => ({
-          id: `tab-${target}`,
-          label: `与${WORKBENCH_PANEL_REGISTRY[target].title}合并为标签`,
-          disabled: owner.readOnly || compact || id === "canvas",
-          onSelect: () => run((engine) => engine.tab(id, target)),
-        })),
-      {
-        id: "float",
-        label: "浮动面板",
-        disabled: owner.readOnly || compact || !WORKBENCH_PANEL_REGISTRY[id].capabilities.float,
-        onSelect: () => run((engine) => engine.float(id)),
-      },
-      {
-        id: "hide",
-        label: "隐藏面板",
-        disabled: owner.readOnly || id === "canvas",
-        onSelect: () => commands.hide(id),
-      },
-    ],
-    [availablePanels, commands, compact, owner.readOnly, run],
-  );
-
   useLayoutEffect(() => {
     if (!api) return;
     const session = `${userId ?? "anonymous"}:${context}`;
@@ -931,7 +870,7 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
       }}
     >
       <SlotsContext.Provider value={slots}>
-        <TabMenuContext.Provider value={tabItems}>
+        <PanelCloseContext.Provider value={{ hide: commands.hide, disabled: owner.readOnly }}>
           {renderTopbar(menu, view)}
           {(owner.error || owner.readOnlyReason) && (
             <div
@@ -1007,7 +946,7 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
               dropOverlayModel={dropOverlayModel}
             />
           </div>
-        </TabMenuContext.Provider>
+        </PanelCloseContext.Provider>
       </SlotsContext.Provider>
     </Workbench3DLayoutContext.Provider>
   );
