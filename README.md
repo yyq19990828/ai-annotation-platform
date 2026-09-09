@@ -301,6 +301,10 @@ ai-annotation-platform/
 | 文档 | VitePress、Mermaid、OpenAPI / Scalar、ADR                                        |
 | CI   | GitHub Actions、docs impact、visual regression、OpenAPI snapshot check           |
 
+项目开工检查和员工指南确认的 API 见[项目 API 指南](docs-site/api/guides/projects.md#开工状态)，操作说明见[快速开始](docs-site/user-guide/getting-started.md)与[项目设置](docs-site/user-guide/projects/index.md#开工准备与项目设置)。
+
+[成员管理](docs-site/user-guide/superadmin/user-management.md)支持服务端分页筛选、同范围导出、批量邀请和分组，以及角色影响预览；[批次分派](docs-site/user-guide/projects/batch.md#分配人员)确认前展示负责人变化与任务负载。
+
 ## 贡献前检查
 
 - 只改和当前目标直接相关的文件。
@@ -311,5 +315,3 @@ ai-annotation-platform/
 ## License
 
 MIT
-
-项目开工检查和员工指南确认的 API 见[项目 API 指南](docs-site/api/guides/projects.md#开工状态)，操作说明见[快速开始](docs-site/user-guide/getting-started.md)与[项目设置](docs-site/user-guide/projects/index.md#开工准备与项目设置)。

@@ -144,6 +144,8 @@
 | GET | `/unclassified-count` |
 | GET | `/{batch_id}` |
 | PATCH | `/{batch_id}` |
+| POST | `/{batch_id}/assignment-preview` |
+| POST | `/{batch_id}/assignment-apply` |
 | DELETE | `/{batch_id}` |
 | POST | `/{batch_id}/transition` |
 | POST | `/split` |
@@ -717,4 +719,4 @@
 
 ---
 
-_共 65 模块 / 410 路由_
+_共 65 模块 / 412 路由_

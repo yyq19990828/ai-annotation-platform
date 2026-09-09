@@ -132,7 +132,7 @@ Content-Type: application/json
 
 项目批次分派使用 `POST /api/v1/projects/{project_id}/batches/distribution-preview` 和 `POST /api/v1/projects/{project_id}/batches/distribution-apply`。预览默认只处理尚未分派的职责；将 `only_unassigned=false` 才会显示并执行覆盖已有分派的影响。预览返回逐批次映射、实际 `task_count`、每位接收人的新增待办和已有待办，以及 `preview_version`。执行必须原样携带版本；批次或任务负载已变化时返回 409，客户端应重新预览。旧的 `/distribute-batches` 调用保持兼容。
 
-任务负载按条数计算：标注待办包括待开始、进行中和退回，审核待办包括已提交和审核中；已有待办汇总该成员在各项目中的分派。任务类型、难度和工时不在这一数字中折算。
+任务负载按条数计算：标注待办包括待开始、进行中和退回，审核待办只包括审核中，已通过任务不计入待办；已有待办汇总该成员在各项目中的分派。任务类型、难度和工时不在这一数字中折算。
 
 用户角色变更前可调用 `GET /api/v1/users/{user_id}/role/preview?role=reviewer` 查看项目、批次和任务影响。平台角色对全部项目生效，已有成员身份和负责人不自动改写；项目管理员仅看到自己负责项目的详情，其他项目只返回数量和提醒。预览不向权限范围外的目标回显用户信息。
 
@@ -213,3 +213,7 @@ Authorization: Bearer ak_xxxxxxxxxxxx
 
 - [WebSocket token 续签](../../dev/adr/archive/0011-websocket-token-reauth)
 - [安全模型](../../ops/security/)
+
+单批次使用 `POST /api/v1/projects/{project_id}/batches/{batch_id}/assignment-preview` 预览，提交 `annotator_id`、`reviewer_id`（显式 `null` 表示清除）。确认时将同样字段和 `preview_version` 提交到 `/assignment-apply`。单批次与项目分派共用任务负载与版本校验，确认后写入分派审计。
+
+项目分派的请求可带 `batch_ids` 限定勾选批次（最多 500 个）；不带时处理当前项目全部非归档批次。预览和执行必须传递相同选择，选中的批次被删除、归档或不属于项目时拒绝执行。

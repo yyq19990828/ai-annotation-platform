@@ -5,9 +5,11 @@ import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
 import { useAssignUserGroup, useChangeUserRole, useDeleteUser } from "@/hooks/useUsers";
 import { useGroups } from "@/hooks/useGroups";
+import { isCurrentAuthOwner, useAuthStore } from "@/stores/authStore";
 import { usePermissions } from "@/hooks/usePermissions";
 import { ROLE_LABELS } from "@/constants/roles";
 import type { UserResponse } from "@/api/users";
+import { usersApi, type RoleImpactPreview } from "@/api/users";
 import type { UserRole } from "@/types";
 import styles from "./EditUserModal.module.css";
 
@@ -47,9 +49,14 @@ export function EditUserModal({ open, user, onClose }: Props) {
   const deleteUser = useDeleteUser();
   const pushToast = useToastStore((s) => s.push);
 
+  const ownerId = useAuthStore((state) => state.user?.id);
+  const [previewRevision, setPreviewRevision] = useState(0);
   const [roleVal, setRoleVal] = useState<UserRole>("annotator");
   const [groupId, setGroupId] = useState<string>("");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [rolePreview, setRolePreview] = useState<RoleImpactPreview | null>(null);
+  const [rolePreviewPending, setRolePreviewPending] = useState(false);
+  const [rolePreviewError, setRolePreviewError] = useState<string | null>(null);
 
   useEffect(() => {
     if (open && user) {
@@ -59,9 +66,34 @@ export function EditUserModal({ open, user, onClose }: Props) {
       changeRole.reset();
       assignGroup.reset();
       deleteUser.reset();
+      setRolePreview(null);
+      setRolePreviewError(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, user?.id]);
+
+  useEffect(() => {
+    if (!open || !user || !ownerId) return;
+    let alive = true;
+    setRolePreview(null);
+    setRolePreviewPending(true);
+    setRolePreviewError(null);
+    void usersApi
+      .previewRoleChange(user.id, roleVal)
+      .then((data) => {
+        if (alive && isCurrentAuthOwner(ownerId)) setRolePreview(data);
+      })
+      .catch((error) => {
+        if (alive && isCurrentAuthOwner(ownerId))
+          setRolePreviewError(error instanceof Error ? error.message : String(error));
+      })
+      .finally(() => {
+        if (alive) setRolePreviewPending(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [open, user?.id, ownerId, roleVal, previewRevision]);
 
   if (!user) return null;
 
@@ -76,22 +108,38 @@ export function EditUserModal({ open, user, onClose }: Props) {
   const dirtyGroup = (groupId || null) !== (user.group_id ?? null);
   const dirty = dirtyRole || dirtyGroup;
 
+  const loadRolePreview = () => setPreviewRevision((value) => value + 1);
+  const busy = changeRole.isPending || assignGroup.isPending || deleteUser.isPending;
+  const currentPreview =
+    rolePreview?.user_id === user.id && rolePreview.requested_role === roleVal ? rolePreview : null;
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    if (busy || !ownerId || !isCurrentAuthOwner(ownerId)) return;
+    const token = useAuthStore.getState().token;
+    const current = () => isCurrentAuthOwner(ownerId) && useAuthStore.getState().token === token;
     if (!dirty) {
       onClose();
       return;
     }
+    if (dirtyRole && !currentPreview) {
+      loadRolePreview();
+      return;
+    }
+    if (dirtyRole && currentPreview && !currentPreview.can_change) return;
     try {
       if (dirtyRole) {
         await changeRole.mutateAsync({ userId: user.id, role: roleVal });
       }
+      if (!current()) return;
       if (dirtyGroup) {
         await assignGroup.mutateAsync({ userId: user.id, groupId: groupId || null });
       }
+      if (!current()) return;
       pushToast({ msg: "已保存", kind: "success" });
       onClose();
     } catch (err) {
+      if (!current()) return;
       pushToast({
         msg: "保存失败",
         sub: err instanceof Error ? err.message : String(err),
@@ -127,7 +175,14 @@ export function EditUserModal({ open, user, onClose }: Props) {
         : "";
 
   return (
-    <Modal open={open} onClose={onClose} title={`编辑成员 · ${user.name}`} width={520}>
+    <Modal
+      open={open}
+      onClose={() => {
+        if (!busy) onClose();
+      }}
+      title={`编辑成员 · ${user.name}`}
+      width={520}
+    >
       <form onSubmit={submit} className={styles.form}>
         <Field label="邮箱">
           <input value={user.email} readOnly className={`${styles.input} ${styles.mutedInput}`} />
@@ -136,8 +191,12 @@ export function EditUserModal({ open, user, onClose }: Props) {
         <Field label={`角色${editRoleHint ? `（${editRoleHint}）` : ""}`}>
           <select
             value={roleVal}
-            onChange={(e) => setRoleVal(e.target.value as UserRole)}
-            disabled={!canEditRole}
+            onChange={(e) => {
+              setRoleVal(e.target.value as UserRole);
+              setRolePreview(null);
+              setRolePreviewError(null);
+            }}
+            disabled={!canEditRole || busy}
             className={`${styles.input} ${canEditRole ? "" : styles.disabledInput}`}
           >
             {roleOptions.map((r) => (
@@ -148,9 +207,75 @@ export function EditUserModal({ open, user, onClose }: Props) {
           </select>
         </Field>
 
+        {canEditRole && (
+          <div className="flex flex-col gap-2 rounded-md border border-border bg-muted/40 p-3 text-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="font-medium text-foreground">角色影响预览</span>
+              <Button
+                type="button"
+                size="sm"
+                onClick={loadRolePreview}
+                disabled={rolePreviewPending || busy}
+              >
+                {rolePreviewPending ? "读取中…" : rolePreview ? "重新预览" : "查看影响"}
+              </Button>
+            </div>
+            {rolePreviewError && <div className="text-status-danger">{rolePreviewError}</div>}
+            {currentPreview && (
+              <>
+                <div className="text-muted-foreground">
+                  平台角色：
+                  {ROLE_LABELS[currentPreview.current_role as UserRole] ??
+                    currentPreview.current_role}
+                  。项目身份与可操作范围见下方明细。
+                </div>
+                {currentPreview.other_project_count > 0 && (
+                  <div className="text-status-caution">
+                    另涉及 {currentPreview.other_project_count}{" "}
+                    个管理范围外的项目，详情由对应负责人管理。
+                  </div>
+                )}
+                {currentPreview.warnings.map((warning) => (
+                  <div key={warning} className="text-status-caution">
+                    {warning}
+                  </div>
+                ))}
+                {!currentPreview.can_change && (
+                  <div className="text-status-danger">
+                    无法修改：{currentPreview.blockers.join("；")}
+                  </div>
+                )}
+                <div className="text-muted-foreground">
+                  将影响 {currentPreview.projects.length} 个项目、
+                  {currentPreview.assigned_batch_count} 个已分派批次、
+                  {currentPreview.assigned_task_count} 个待办任务和{" "}
+                  {currentPreview.review_task_count} 个审核任务。
+                </div>
+                {currentPreview.projects.length > 0 && (
+                  <ul className="m-0 list-disc space-y-1 pl-4 text-muted-foreground">
+                    {currentPreview.projects.map((project) => (
+                      <li key={project.project_id}>
+                        {project.project_name} · 项目身份{" "}
+                        {project.membership_role
+                          ? (ROLE_LABELS[project.membership_role as UserRole] ??
+                            project.membership_role)
+                          : "非成员"}{" "}
+                        · 标注批次 {project.annotator_batch_count} · 审核批次{" "}
+                        {project.reviewer_batch_count} · 待办{" "}
+                        {project.assigned_task_count + project.review_task_count}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
         <Field label="数据组">
           <select
             value={groupId}
+            disabled={busy}
             onChange={(e) => setGroupId(e.target.value)}
             className={styles.input}
           >
@@ -194,13 +319,18 @@ export function EditUserModal({ open, user, onClose }: Props) {
             )}
           </div>
           <div className={styles.actions}>
-            <Button type="button" onClick={onClose}>
+            <Button type="button" disabled={busy} onClick={onClose}>
               取消
             </Button>
             <Button
               type="submit"
               variant="primary"
-              disabled={!dirty || changeRole.isPending || assignGroup.isPending}
+              disabled={
+                !dirty ||
+                changeRole.isPending ||
+                assignGroup.isPending ||
+                (dirtyRole && (!rolePreview || !rolePreview.can_change))
+              }
             >
               {changeRole.isPending || assignGroup.isPending ? "保存中…" : "保存"}
             </Button>

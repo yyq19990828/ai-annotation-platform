@@ -4686,6 +4686,40 @@
         "title": "BackendCostBreakdown",
         "type": "object"
       },
+      "BatchAssignmentPreviewRequest": {
+        "properties": {
+          "annotator_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotator Id"
+          },
+          "reviewer_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer Id"
+          }
+        },
+        "required": [
+          "annotator_id",
+          "reviewer_id"
+        ],
+        "title": "BatchAssignmentPreviewRequest",
+        "type": "object"
+      },
       "BatchCreate": {
         "properties": {
           "annotator_id": {
@@ -23829,6 +23863,23 @@
             "title": "Annotator Ids",
             "type": "array"
           },
+          "batch_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "maxItems": 500,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Ids"
+          },
           "only_unassigned": {
             "default": true,
             "title": "Only Unassigned",
@@ -27347,6 +27398,47 @@
         "title": "ReviewTaskItem",
         "type": "object"
       },
+      "ReviewedBatchAssignment": {
+        "properties": {
+          "annotator_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotator Id"
+          },
+          "preview_version": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Preview Version",
+            "type": "string"
+          },
+          "reviewer_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer Id"
+          }
+        },
+        "required": [
+          "annotator_id",
+          "reviewer_id",
+          "preview_version"
+        ],
+        "title": "ReviewedBatchAssignment",
+        "type": "object"
+      },
       "ReviewedBatchDistribution": {
         "properties": {
           "annotator_ids": {
@@ -27357,6 +27449,23 @@
             },
             "title": "Annotator Ids",
             "type": "array"
+          },
+          "batch_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "maxItems": 500,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Ids"
           },
           "only_unassigned": {
             "default": true,
@@ -49539,6 +49648,142 @@
           }
         ],
         "summary": "Admin Unlock Batch",
+        "tags": [
+          "batches"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/batches/{batch_id}/assignment-apply": {
+      "post": {
+        "operationId": "apply_batch_assignment_api_v1_projects__project_id__batches__batch_id__assignment_apply_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewedBatchAssignment"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Apply Batch Assignment",
+        "tags": [
+          "batches"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/batches/{batch_id}/assignment-preview": {
+      "post": {
+        "operationId": "preview_batch_assignment_api_v1_projects__project_id__batches__batch_id__assignment_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchAssignmentPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchDistributionPreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preview Batch Assignment",
         "tags": [
           "batches"
         ]

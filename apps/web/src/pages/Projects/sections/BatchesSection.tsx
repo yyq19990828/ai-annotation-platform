@@ -15,7 +15,6 @@ import {
   useSplitBatches,
   useBulkArchiveBatches,
   useBulkDeleteBatches,
-  useBulkReassignBatches,
   useBulkActivateBatches,
   useUnclassifiedTaskCount,
   useAdminLockBatch,
@@ -28,7 +27,6 @@ import { useIsProjectOwner } from "@/hooks/useIsProjectOwner";
 import { BatchAssignmentModal } from "@/components/projects/BatchAssignmentModal";
 import { ProjectDistributeBatchesModal } from "@/components/projects/ProjectDistributeBatchesModal";
 import { RejectBatchModal } from "./RejectBatchModal";
-import { BulkReassignModal } from "./BulkReassignModal";
 import { ReverseTransitionModal, type ReverseKind } from "./ReverseTransitionModal";
 import { ResetBatchModal } from "./ResetBatchModal";
 import { AdminLockModal } from "./AdminLockModal";
@@ -89,7 +87,6 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
   const splitBatches = useSplitBatches(project.id);
   const bulkArchive = useBulkArchiveBatches(project.id);
   const bulkDelete = useBulkDeleteBatches(project.id);
-  const bulkReassign = useBulkReassignBatches(project.id);
   const bulkActivate = useBulkActivateBatches(project.id);
   const bulkApprove = useBulkApproveBatches(project.id);
   const bulkReject = useBulkRejectBatches(project.id);
@@ -218,28 +215,6 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
         setConfirmBulk(null);
       },
       onError: (e) => pushToast({ msg: "批量激活失败", sub: (e as Error).message }),
-    });
-  };
-
-  const runBulkReassign = async (payload: {
-    annotator_id?: string | null;
-    reviewer_id?: string | null;
-  }) => {
-    return new Promise<void>((resolve) => {
-      bulkReassign.mutate(
-        { batch_ids: [...selectedIds], ...payload },
-        {
-          onSuccess: (data) => {
-            handleBulkResult("reassign", data);
-            setReassignOpen(false);
-            resolve();
-          },
-          onError: (e) => {
-            pushToast({ msg: "批量改派失败", sub: (e as Error).message });
-            resolve();
-          },
-        },
-      );
     });
   };
 
@@ -1037,12 +1012,10 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
 
       {/* v0.7.3：批量改派 Modal */}
       {reassignOpen && (
-        <BulkReassignModal
+        <ProjectDistributeBatchesModal
           projectId={project.id}
-          count={selectedCount}
+          batchIds={[...selectedIds]}
           onClose={() => setReassignOpen(false)}
-          onSubmit={runBulkReassign}
-          pending={bulkReassign.isPending}
         />
       )}
 

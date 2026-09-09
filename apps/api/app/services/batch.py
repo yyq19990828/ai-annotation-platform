@@ -786,6 +786,7 @@ class BatchService:
         reviewer_ids: list[uuid.UUID],
         only_unassigned: bool = True,
         preview_version: str | None = None,
+        batch_ids: list[uuid.UUID] | None = None,
     ) -> dict[str, Any]:
         """v0.7.2：把项目下的 batch 圆周分派给所选 annotator / reviewer。
         - 一 batch = 一标注员 + 一审核员
@@ -803,6 +804,7 @@ class BatchService:
             only_unassigned=only_unassigned,
             validate_targets=self._lock_and_validate_assignment_targets,
             lock_batches=True,
+            batch_ids=batch_ids,
         )
         if preview_version is not None and preview_version != plan.preview_version:
             raise HTTPException(

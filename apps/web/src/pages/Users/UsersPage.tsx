@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
@@ -10,7 +10,8 @@ import { StatCard } from "@/components/ui/StatCard";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { TabRow } from "@/components/ui/TabRow";
 import { useToastStore } from "@/components/ui/Toast";
-import { useUsers, useDeleteUser, useUsersStats } from "@/hooks/useUsers";
+import { useUsers, useUserPage, useDeleteUser, useUsersStats } from "@/hooks/useUsers";
+import { useProjects } from "@/hooks/useProjects";
 import { useGroups } from "@/hooks/useGroups";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useAuthStore } from "@/stores/authStore";
@@ -23,6 +24,8 @@ import {
 } from "@/constants/permissions";
 import { Can } from "@/components/guards/Can";
 import { InviteUserModal } from "@/components/users/InviteUserModal";
+import { BulkInviteModal } from "@/components/users/BulkInviteModal";
+import { BulkGroupAssignmentModal } from "@/components/users/BulkGroupAssignmentModal";
 import { EditUserModal } from "@/components/users/EditUserModal";
 import { GroupManageModal } from "@/components/users/GroupManageModal";
 import { InvitationListPanel } from "@/components/users/InvitationListPanel";
@@ -97,11 +100,24 @@ function formatDateTime(iso: string | null | undefined) {
 }
 
 export function UsersPage() {
+  const ownerId = useAuthStore((state) => state.user?.id);
+  return <UsersPageContent key={ownerId} />;
+}
+
+function UsersPageContent() {
   const [tab, setTab] = useState<"members" | "roles" | "groups" | "invitations">("members");
   const [userStatus, setUserStatus] = useState<"active" | "inactive" | "all">("active");
   const [selectedRole, setSelectedRole] = useState("全部");
   const [query, setQuery] = useState("");
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [bulkInviteOpen, setBulkInviteOpen] = useState(false);
+  const [bulkGroupOpen, setBulkGroupOpen] = useState(false);
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [selectedUsersById, setSelectedUsersById] = useState<Record<string, UserResponse>>({});
+  const [projectFilter, setProjectFilter] = useState("");
+  const [groupFilter, setGroupFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 25;
   const [editing, setEditing] = useState<UserResponse | null>(null);
   const [deleting, setDeleting] = useState<UserResponse | null>(null);
   const [resettingPwd, setResettingPwd] = useState<UserResponse | null>(null);
@@ -121,33 +137,58 @@ export function UsersPage() {
   const [reactivatingUser, setReactivatingUser] = useState<UserResponse | null>(null);
   const [manageGroupsOpen, setManageGroupsOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const clearSelection = () => {
+    setSelectedUserIds([]);
+    setSelectedUsersById({});
+  };
   const pushToast = useToastStore((s) => s.push);
   const deleteUser = useDeleteUser();
   const navigate = useNavigate();
   const { role: actorRole, hasPermission } = usePermissions();
   const me = useAuthStore((s) => s.user);
   const editableTargets = EDITABLE_TARGET_ROLES_BY_ACTOR[actorRole] ?? [];
+  const canManageGroups = hasPermission("group.manage");
   const canViewAudit = hasPermission("audit.view");
 
   const {
-    data: allUsers = [],
+    data: pageData,
     isLoading,
     isError: usersError,
     error: usersQueryError,
     refetch: refetchUsers,
     isFetching: usersFetching,
     fetchStatus: usersFetchStatus,
-  } = useUsers({ status: userStatus });
+  } = useUserPage({
+    status: userStatus,
+    role: selectedRole === "全部" ? undefined : selectedRole,
+    project_id: projectFilter || undefined,
+    group_id: groupFilter || undefined,
+    search: query.trim() || undefined,
+    page,
+    page_size: pageSize,
+  });
   const { data: groupsData = [] } = useGroups();
-  const { data: usersStats } = useUsersStats();
+  const { data: usersStats } = useUsersStats({
+    status: userStatus,
+    role: selectedRole === "全部" ? undefined : selectedRole,
+    project_id: projectFilter || undefined,
+    group_id: groupFilter || undefined,
+    search: query.trim() || undefined,
+  });
   const usersPaused = usersFetchStatus === "paused";
 
-  const filtered = allUsers.filter((u: UserResponse) => {
-    if (selectedRole !== "全部" && u.role !== selectedRole) return false;
-    if (query && !u.name.includes(query) && !u.email.toLowerCase().includes(query.toLowerCase()))
-      return false;
-    return true;
-  });
+  const allUsers = pageData?.items ?? [];
+  const filtered = allUsers;
+  const pageMeta = pageData;
+  const { data: projects = [] } = useProjects();
+  const { data: transferUsers = [] } = useUsers(
+    { status: "active" },
+    !!deleting && !!transferStage,
+  );
+  const selectedUsers = useMemo(() => Object.values(selectedUsersById), [selectedUsersById]);
+  const pageUserIds = filtered.map((user) => user.id);
+  const allPageSelected =
+    pageUserIds.length > 0 && pageUserIds.every((id) => selectedUserIds.includes(id));
 
   const userQueryStatus =
     usersQueryError instanceof ApiError
@@ -174,7 +215,13 @@ export function UsersPage() {
     if (exporting) return;
     setExporting(true);
     try {
-      await usersApi.exportUsers("csv");
+      await usersApi.exportUsers("csv", {
+        role: selectedRole === "全部" ? undefined : selectedRole,
+        project_id: projectFilter || undefined,
+        group_id: groupFilter || undefined,
+        status: userStatus,
+        search: query.trim() || undefined,
+      });
       pushToast({ msg: "已导出名单 CSV", kind: "success" });
     } catch (err) {
       pushToast({
@@ -190,7 +237,7 @@ export function UsersPage() {
   const roleKeys = Object.keys(ROLE_PERMISSIONS) as Array<keyof typeof ROLE_PERMISSIONS>;
 
   const tabLabels: Array<["members" | "roles" | "groups" | "invitations", string]> = [
-    ["members", `成员 (${allUsers.length})`],
+    ["members", `成员 (${usersStats?.total ?? pageMeta?.total ?? allUsers.length})`],
     ["roles", `角色 (${roleKeys.length})`],
     ["groups", `数据组 (${groupsData.length})`],
     ["invitations", "邀请记录"],
@@ -212,10 +259,16 @@ export function UsersPage() {
             </Button>
           </Can>
           <Can permission="user.invite">
-            <Button variant="primary" onClick={() => setInviteOpen(true)}>
-              <Icon name="plus" size={13} />
-              邀请成员
-            </Button>
+            <div className="flex gap-2">
+              <Button onClick={() => setBulkInviteOpen(true)}>
+                <Icon name="users" size={13} />
+                批量邀请
+              </Button>
+              <Button variant="primary" onClick={() => setInviteOpen(true)}>
+                <Icon name="plus" size={13} />
+                邀请成员
+              </Button>
+            </div>
           </Can>
         </div>
       </div>
@@ -224,25 +277,21 @@ export function UsersPage() {
         <StatCard
           icon="users"
           label="团队成员"
-          value={allUsers.length}
-          hint="启用"
-          sparkValues={[8, 9, 9, 10, 10, 11, 11, 11, 12, 12, 12, 12]}
-          sparkColor="var(--sc-brand)"
+          value={usersStats?.total ?? pageMeta?.total ?? allUsers.length}
+          hint={userStatus === "active" ? "当前筛选" : "同筛选范围"}
         />
-        <StatCard icon="shield" label="角色组" value={roleKeys.length} hint="自定义" />
+        <StatCard icon="shield" label="平台角色" value={roleKeys.length} hint="内置角色" />
         <StatCard icon="folder" label="数据组" value={groupsData.length} hint="可分配" />
         <StatCard
           icon="activity"
           label="本周活跃"
           value={usersStats?.weekly_active ?? "—"}
           hint={usersStats ? `在线 ${usersStats.online}` : "近 7 日"}
-          sparkValues={[6, 7, 8, 7, 9, 10, 11, 9]}
-          sparkColor="var(--sc-chart-4)"
         />
       </div>
 
       <Card>
-        <div className="flex items-center justify-between border-b border-border px-4 py-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-2.5">
           <TabRow
             tabs={tabLabels.map(([, l]) => l)}
             active={activeLabel}
@@ -254,9 +303,30 @@ export function UsersPage() {
           {tab === "members" && (
             <div className="flex flex-wrap justify-end gap-2">
               <select
+                aria-label="项目筛选"
+                value={projectFilter}
+                onChange={(event) => {
+                  setProjectFilter(event.target.value);
+                  setPage(1);
+                  clearSelection();
+                }}
+                className={`${SELECT_BASE} max-w-48 px-2 py-1.5 text-sm`}
+              >
+                <option value="">全部项目</option>
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+              <select
                 aria-label="账号状态"
                 value={userStatus}
-                onChange={(e) => setUserStatus(e.target.value as "active" | "inactive" | "all")}
+                onChange={(e) => {
+                  setUserStatus(e.target.value as "active" | "inactive" | "all");
+                  setPage(1);
+                  clearSelection();
+                }}
                 className={`${SELECT_BASE} px-2 py-1.5 text-sm`}
               >
                 {Object.entries(USER_STATUS_FILTER_LABELS).map(([value, label]) => (
@@ -266,8 +336,13 @@ export function UsersPage() {
                 ))}
               </select>
               <select
+                aria-label="角色筛选"
                 value={selectedRole}
-                onChange={(e) => setSelectedRole(e.target.value)}
+                onChange={(e) => {
+                  setSelectedRole(e.target.value);
+                  setPage(1);
+                  clearSelection();
+                }}
                 className={`${SELECT_BASE} px-2 py-1.5 text-sm`}
               >
                 <option>全部</option>
@@ -277,10 +352,31 @@ export function UsersPage() {
                   </option>
                 ))}
               </select>
+              <select
+                aria-label="数据组筛选"
+                value={groupFilter}
+                onChange={(event) => {
+                  setGroupFilter(event.target.value);
+                  setPage(1);
+                  clearSelection();
+                }}
+                className={`${SELECT_BASE} px-2 py-1.5 text-sm`}
+              >
+                <option value="">全部数据组</option>
+                {groupsData.map((group) => (
+                  <option key={group.id} value={group.id}>
+                    {group.name}
+                  </option>
+                ))}
+              </select>
               <SearchInput
                 placeholder="搜索姓名或邮箱..."
                 value={query}
-                onChange={setQuery}
+                onChange={(value) => {
+                  setQuery(value);
+                  setPage(1);
+                  clearSelection();
+                }}
                 width={240}
               />
             </div>
@@ -295,234 +391,324 @@ export function UsersPage() {
         </div>
 
         {tab === "members" && (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1040px] border-separate border-spacing-0 text-sm">
-              <thead>
-                <tr>
-                  {["成员", "角色", "数据组", "状态", "近期标注量", "准确率", "加入时间", ""].map(
-                    (h, i) => (
-                      <th key={i} className={`${TH_CLASS} ${i === 0 ? "pl-4" : ""}`}>
-                        {h}
-                      </th>
-                    ),
+          <div>
+            {selectedUserIds.length > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-muted/40 px-4 py-2 text-xs">
+                <span>已选择 {selectedUserIds.length} 名成员（可跨页累计）</span>
+                <div className="flex gap-2">
+                  {canManageGroups && (
+                    <Button size="sm" onClick={() => setBulkGroupOpen(true)}>
+                      批量分配数据组
+                    </Button>
                   )}
-                </tr>
-              </thead>
-              <tbody>
-                {usersPaused && filtered.length > 0 && (
+                  <Button size="sm" onClick={clearSelection}>
+                    清除选择
+                  </Button>
+                </div>
+              </div>
+            )}
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1040px] border-separate border-spacing-0 text-sm">
+                <thead>
                   <tr>
-                    <td colSpan={8} className="px-3 py-2.5 text-center text-xs text-status-caution">
-                      当前离线，正在等待网络恢复；以下为上次加载的数据。
-                    </td>
+                    <th className={TH_CLASS}>
+                      <input
+                        type="checkbox"
+                        aria-label="选择本页成员"
+                        checked={allPageSelected}
+                        onChange={(event) =>
+                          (() => {
+                            setSelectedUserIds((current) =>
+                              event.target.checked
+                                ? Array.from(new Set([...current, ...pageUserIds]))
+                                : current.filter((id) => !pageUserIds.includes(id)),
+                            );
+                            setSelectedUsersById((current) => {
+                              const next = { ...current };
+                              if (event.target.checked) {
+                                for (const user of filtered) next[user.id] = user;
+                              } else {
+                                for (const id of pageUserIds) delete next[id];
+                              }
+                              return next;
+                            });
+                          })()
+                        }
+                      />
+                    </th>
+                    {["成员", "角色", "数据组", "状态", "近期标注量", "准确率", "加入时间", ""].map(
+                      (h, i) => (
+                        <th key={i} className={`${TH_CLASS} ${i === 0 ? "pl-4" : ""}`}>
+                          {h}
+                        </th>
+                      ),
+                    )}
                   </tr>
-                )}
-                {usersPaused && filtered.length === 0 && !isLoading && !usersError && (
-                  <tr>
-                    <td colSpan={8} className="p-10 text-center">
-                      <div className="mx-auto flex max-w-md flex-col items-center gap-2 text-sm">
-                        <Icon name="monitor" size={22} className="text-status-caution" />
-                        <span className="font-medium">暂时离线，等待网络恢复</span>
-                        <span className="text-xs text-muted-foreground">
-                          网络恢复后会自动继续加载用户列表。
-                        </span>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-                {isLoading && (
-                  <tr>
-                    <td colSpan={8} className="p-10 text-center text-muted-foreground">
-                      加载中...
-                    </td>
-                  </tr>
-                )}
-                {usersError && !isLoading && !usersPaused && (
-                  <tr>
-                    <td colSpan={8} className="p-10 text-center">
-                      <div className="mx-auto flex max-w-md flex-col items-center gap-2 text-sm">
-                        <Icon
-                          name={userQueryStatus === 403 ? "shieldAlert" : "warning"}
-                          size={22}
-                          className={
-                            userQueryStatus === 403 ? "text-status-caution" : "text-status-danger"
-                          }
-                        />
-                        <span className="font-medium">{userQueryTitle}</span>
-                        <span className="text-xs text-muted-foreground">{userQueryErrorCopy}</span>
-                        <Button
-                          size="sm"
-                          onClick={() => void refetchUsers()}
-                          disabled={usersFetching}
-                        >
-                          <Icon name="refresh" size={12} /> {usersFetching ? "重试中…" : "重试"}
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                )}
-                {!isLoading && !usersError && !usersPaused && filtered.length === 0 && (
-                  <tr>
-                    <td colSpan={8} className="p-10 text-center text-sm text-muted-foreground">
-                      {query || selectedRole !== "全部"
-                        ? "没有匹配的账号。"
-                        : `暂无${USER_STATUS_FILTER_LABELS[userStatus]}。`}
-                    </td>
-                  </tr>
-                )}
-                {filtered.map((u: UserResponse) => {
-                  const isActive = u.is_active !== false;
-                  const statusLabel = isActive ? (STATUS_LABEL[u.status] ?? u.status) : "已停用";
-                  const disabledKindLabel = u.disabled_kind
-                    ? (DISABLED_KIND_LABELS[u.disabled_kind] ?? u.disabled_kind)
-                    : null;
-                  return (
-                    <tr key={u.id}>
-                      <td className={`${TD_CLASS} pl-4`}>
-                        <div className="flex items-center gap-2.5">
-                          <Avatar initial={u.name[0]} size="md" />
-                          <div className="min-w-0">
-                            <div className="max-w-[240px] truncate text-sm font-medium">
-                              {u.name}
-                            </div>
-                            <div className="mono max-w-[240px] truncate text-xs text-muted-foreground">
-                              {u.email}
-                            </div>
-                          </div>
+                </thead>
+                <tbody>
+                  {usersPaused && filtered.length > 0 && (
+                    <tr>
+                      <td
+                        colSpan={9}
+                        className="px-3 py-2.5 text-center text-xs text-status-caution"
+                      >
+                        当前离线，正在等待网络恢复；以下为上次加载的数据。
+                      </td>
+                    </tr>
+                  )}
+                  {usersPaused && filtered.length === 0 && !isLoading && !usersError && (
+                    <tr>
+                      <td colSpan={9} className="p-10 text-center">
+                        <div className="mx-auto flex max-w-md flex-col items-center gap-2 text-sm">
+                          <Icon name="monitor" size={22} className="text-status-caution" />
+                          <span className="font-medium">暂时离线，等待网络恢复</span>
+                          <span className="text-xs text-muted-foreground">
+                            网络恢复后会自动继续加载用户列表。
+                          </span>
                         </div>
                       </td>
-                      <td className={TD_CLASS}>
-                        <Badge variant={ROLE_COLORS[u.role] || "outline"}>
-                          {ROLE_LABELS[u.role as UserRole] ?? u.role}
-                        </Badge>
+                    </tr>
+                  )}
+                  {isLoading && (
+                    <tr>
+                      <td colSpan={9} className="p-10 text-center text-muted-foreground">
+                        加载中...
                       </td>
-                      <td className={`${TD_CLASS} max-w-[160px] truncate`}>
-                        {u.group_name ?? "—"}
+                    </tr>
+                  )}
+                  {usersError && !isLoading && !usersPaused && (
+                    <tr>
+                      <td colSpan={9} className="p-10 text-center">
+                        <div className="mx-auto flex max-w-md flex-col items-center gap-2 text-sm">
+                          <Icon
+                            name={userQueryStatus === 403 ? "shieldAlert" : "warning"}
+                            size={22}
+                            className={
+                              userQueryStatus === 403 ? "text-status-caution" : "text-status-danger"
+                            }
+                          />
+                          <span className="font-medium">{userQueryTitle}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {userQueryErrorCopy}
+                          </span>
+                          <Button
+                            size="sm"
+                            onClick={() => void refetchUsers()}
+                            disabled={usersFetching}
+                          >
+                            <Icon name="refresh" size={12} /> {usersFetching ? "重试中…" : "重试"}
+                          </Button>
+                        </div>
                       </td>
-                      <td className={TD_CLASS}>
-                        <Badge variant={STATUS_COLORS[statusLabel] || "outline"} dot>
-                          {statusLabel}
-                        </Badge>
-                        {!isActive && disabledKindLabel && (
-                          <div className="mt-1 max-w-[180px] text-2xs text-muted-foreground">
-                            <div className="truncate">{disabledKindLabel}</div>
-                            <div className="truncate">时间：{formatDateTime(u.disabled_at)}</div>
-                            <div className="truncate" title={u.disabled_reason ?? undefined}>
-                              原因：{u.disabled_reason || "未填写"}
+                    </tr>
+                  )}
+                  {!isLoading && !usersError && !usersPaused && filtered.length === 0 && (
+                    <tr>
+                      <td colSpan={9} className="p-10 text-center text-sm text-muted-foreground">
+                        {query || selectedRole !== "全部" || groupFilter
+                          ? "没有匹配的账号。"
+                          : `暂无${USER_STATUS_FILTER_LABELS[userStatus]}。`}
+                      </td>
+                    </tr>
+                  )}
+                  {filtered.map((u: UserResponse) => {
+                    const isActive = u.is_active !== false;
+                    const statusLabel = isActive ? (STATUS_LABEL[u.status] ?? u.status) : "已停用";
+                    const disabledKindLabel = u.disabled_kind
+                      ? (DISABLED_KIND_LABELS[u.disabled_kind] ?? u.disabled_kind)
+                      : null;
+                    return (
+                      <tr key={u.id}>
+                        <td className={TD_CLASS}>
+                          <input
+                            type="checkbox"
+                            aria-label={`选择 ${u.name}`}
+                            checked={selectedUserIds.includes(u.id)}
+                            onChange={(event) => {
+                              setSelectedUserIds((current) =>
+                                event.target.checked
+                                  ? [...current, u.id]
+                                  : current.filter((id) => id !== u.id),
+                              );
+                              setSelectedUsersById((current) => {
+                                const next = { ...current };
+                                if (event.target.checked) next[u.id] = u;
+                                else delete next[u.id];
+                                return next;
+                              });
+                            }}
+                          />
+                        </td>
+                        <td className={`${TD_CLASS} pl-4`}>
+                          <div className="flex items-center gap-2.5">
+                            <Avatar initial={u.name[0]} size="md" />
+                            <div className="min-w-0">
+                              <div className="max-w-[240px] truncate text-sm font-medium">
+                                {u.name}
+                              </div>
+                              <div className="mono max-w-[240px] truncate text-xs text-muted-foreground">
+                                {u.email}
+                              </div>
                             </div>
                           </div>
-                        )}
-                      </td>
-                      <td className={TD_CLASS}>
-                        <span className="text-xs text-muted-foreground">—</span>
-                      </td>
-                      <td className={TD_CLASS}>
-                        <span className="text-xs text-muted-foreground">—</span>
-                      </td>
-                      <td className={`${TD_CLASS} text-xs text-muted-foreground`}>
-                        {formatDate(u.created_at)}
-                      </td>
-                      <td className={`${TD_CLASS} whitespace-nowrap text-right`}>
-                        <div className="inline-flex gap-0.5 whitespace-nowrap">
-                          {canViewAudit && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => navigate(`/audit?actor_id=${u.id}`)}
-                              title={`查看 ${u.name} 的审计追溯`}
-                            >
-                              <Icon name="activity" size={11} />
-                            </Button>
+                        </td>
+                        <td className={TD_CLASS}>
+                          <Badge variant={ROLE_COLORS[u.role] || "outline"}>
+                            {ROLE_LABELS[u.role as UserRole] ?? u.role}
+                          </Badge>
+                        </td>
+                        <td className={`${TD_CLASS} max-w-[160px] truncate`}>
+                          {u.group_name ?? "—"}
+                        </td>
+                        <td className={TD_CLASS}>
+                          <Badge variant={STATUS_COLORS[statusLabel] || "outline"} dot>
+                            {statusLabel}
+                          </Badge>
+                          {!isActive && disabledKindLabel && (
+                            <div className="mt-1 max-w-[180px] text-2xs text-muted-foreground">
+                              <div className="truncate">{disabledKindLabel}</div>
+                              <div className="truncate">时间：{formatDateTime(u.disabled_at)}</div>
+                              <div className="truncate" title={u.disabled_reason ?? undefined}>
+                                原因：{u.disabled_reason || "未填写"}
+                              </div>
+                            </div>
                           )}
-                          {me?.id !== u.id && editableTargets.includes(u.role as UserRole) ? (
-                            <>
+                        </td>
+                        <td className={TD_CLASS}>
+                          <span className="text-xs text-muted-foreground">—</span>
+                        </td>
+                        <td className={TD_CLASS}>
+                          <span className="text-xs text-muted-foreground">—</span>
+                        </td>
+                        <td className={`${TD_CLASS} text-xs text-muted-foreground`}>
+                          {formatDate(u.created_at)}
+                        </td>
+                        <td className={`${TD_CLASS} whitespace-nowrap text-right`}>
+                          <div className="inline-flex gap-0.5 whitespace-nowrap">
+                            {canViewAudit && (
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => setEditing(u)}
-                                title="编辑成员"
+                                onClick={() => navigate(`/audit?actor_id=${u.id}`)}
+                                title={`查看 ${u.name} 的审计追溯`}
                               >
-                                <Icon name="edit" size={11} />
+                                <Icon name="activity" size={11} />
                               </Button>
-                              {isActive && (
+                            )}
+                            {me?.id !== u.id && editableTargets.includes(u.role as UserRole) ? (
+                              <>
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => setResettingPwd(u)}
-                                  title="重置密码"
+                                  onClick={() => setEditing(u)}
+                                  title="编辑成员"
                                 >
-                                  <Icon name="key" size={11} />
+                                  <Icon name="edit" size={11} />
                                 </Button>
-                              )}
-                              {isActive && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => setOffboardingUser(u)}
-                                  title="离职处理"
-                                >
-                                  <Icon
-                                    name="shieldAlert"
-                                    size={11}
-                                    className="text-status-caution"
-                                  />
-                                </Button>
-                              )}
-                              {isActive && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => setDeleting(u)}
-                                  title="删除账号"
-                                >
-                                  <Icon name="trash" size={11} className="text-status-danger" />
-                                </Button>
-                              )}
-                              {!isActive && REACTIVATABLE_KINDS.has(u.disabled_kind ?? "") && (
-                                <>
+                                {isActive && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setResettingPwd(u)}
+                                    title="重置密码"
+                                  >
+                                    <Icon name="key" size={11} />
+                                  </Button>
+                                )}
+                                {isActive && (
                                   <Button
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => setOffboardingUser(u)}
-                                    title="继续交接"
+                                    title="离职处理"
                                   >
                                     <Icon
-                                      name="arrowRight"
+                                      name="shieldAlert"
                                       size={11}
                                       className="text-status-caution"
                                     />
                                   </Button>
+                                )}
+                                {isActive && (
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => setReactivatingUser(u)}
-                                    title="恢复账号"
+                                    onClick={() => setDeleting(u)}
+                                    title="删除账号"
                                   >
-                                    <Icon
-                                      name="rotate-ccw"
-                                      size={11}
-                                      className="text-status-positive"
-                                    />
+                                    <Icon name="trash" size={11} className="text-status-danger" />
                                   </Button>
-                                </>
-                              )}
-                            </>
-                          ) : (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled
-                              title={me?.id === u.id ? "不能修改自己" : "无权修改该用户"}
-                            >
-                              <Icon name="edit" size={11} className="opacity-40" />
-                            </Button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                                )}
+                                {!isActive && REACTIVATABLE_KINDS.has(u.disabled_kind ?? "") && (
+                                  <>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => setOffboardingUser(u)}
+                                      title="继续交接"
+                                    >
+                                      <Icon
+                                        name="arrowRight"
+                                        size={11}
+                                        className="text-status-caution"
+                                      />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => setReactivatingUser(u)}
+                                      title="恢复账号"
+                                    >
+                                      <Icon
+                                        name="rotate-ccw"
+                                        size={11}
+                                        className="text-status-positive"
+                                      />
+                                    </Button>
+                                  </>
+                                )}
+                              </>
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled
+                                title={me?.id === u.id ? "不能修改自己" : "无权修改该用户"}
+                              >
+                                <Icon name="edit" size={11} className="opacity-40" />
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            {pageMeta && pageMeta.pages > 1 && (
+              <div className="flex items-center justify-between border-t border-border px-4 py-3 text-xs text-muted-foreground">
+                <span>
+                  第 {pageMeta.page} / {pageMeta.pages} 页 · 共 {pageMeta.total} 名成员
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    disabled={page <= 1}
+                    onClick={() => setPage((value) => value - 1)}
+                  >
+                    上一页
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={page >= pageMeta.pages}
+                    onClick={() => setPage((value) => value + 1)}
+                  >
+                    下一页
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -531,12 +717,10 @@ export function UsersPage() {
             {roleKeys.map((rk) => {
               const perms = ROLE_PERMISSIONS[rk];
               const permsSet = new Set<Permission>(perms);
-              const memberCount = allUsers.filter((u: UserResponse) => u.role === rk).length;
               return (
                 <div key={rk} className="rounded-lg border border-border bg-card p-3.5">
                   <div className="mb-1.5 flex items-center gap-2">
                     <Badge variant={ROLE_COLORS[rk] || "outline"}>{ROLE_LABELS[rk] ?? rk}</Badge>
-                    <span className="mono text-xs text-muted-foreground">{memberCount} 人</span>
                   </div>
                   <div className="mb-2.5 text-sm text-muted-foreground">{ROLE_DESC[rk]}</div>
                   <div className="flex flex-col gap-2">
@@ -588,7 +772,6 @@ export function UsersPage() {
               </div>
             )}
             {groupsData.map((g) => {
-              const members = allUsers.filter((u: UserResponse) => u.group_id === g.id);
               return (
                 <div
                   key={g.id}
@@ -599,16 +782,23 @@ export function UsersPage() {
                     <div>
                       <div className="text-sm font-medium">{g.name}</div>
                       <div className="text-xs text-muted-foreground">
-                        {members.length} 名成员{g.description ? ` · ${g.description}` : ""}
+                        {g.member_count ?? "—"} 名成员
+                        {g.description ? ` · ${g.description}` : ""}
                       </div>
                     </div>
                   </div>
-                  <div className="flex [&>div+div]:-ml-1.5 [&>div]:border-2 [&>div]:border-card">
-                    {members.slice(0, 5).map((m) => (
-                      <Avatar key={m.id} initial={m.name[0]} size="sm" />
-                    ))}
-                    {members.length > 5 && <Avatar initial={`+${members.length - 5}`} size="sm" />}
-                  </div>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setGroupFilter(g.id);
+                      setPage(1);
+                      clearSelection();
+                      setTab("members");
+                    }}
+                  >
+                    查看成员
+                  </Button>
                 </div>
               );
             })}
@@ -619,6 +809,13 @@ export function UsersPage() {
       </Card>
 
       <InviteUserModal open={inviteOpen} onClose={() => setInviteOpen(false)} />
+      <BulkInviteModal open={bulkInviteOpen} onClose={() => setBulkInviteOpen(false)} />
+      <BulkGroupAssignmentModal
+        open={bulkGroupOpen}
+        users={selectedUsers}
+        groups={groupsData}
+        onClose={() => setBulkGroupOpen(false)}
+      />
       <EditUserModal open={!!editing} user={editing} onClose={() => setEditing(null)} />
       <GroupManageModal open={manageGroupsOpen} onClose={() => setManageGroupsOpen(false)} />
       <OffboardingDialog
@@ -699,7 +896,7 @@ export function UsersPage() {
               请立即复制并通过安全渠道告知 <b>{tempPwdResult.user.email}</b>。
               关闭此窗口后无法再次查看；用户首次登录后系统会强制要求修改密码。
             </div>
-            <div className="break-all rounded-md border border-dashed border-amber-500 bg-muted p-3 font-mono text-sm font-medium select-all">
+            <div className="break-all rounded-md border border-dashed border-status-caution bg-muted p-3 font-mono text-sm font-medium select-all">
               {tempPwdResult.password}
             </div>
             <div className="flex justify-end gap-2">
@@ -757,7 +954,7 @@ export function UsersPage() {
 
             {transferStage && (
               <>
-                <div className="flex flex-col gap-1 rounded-md border border-amber-500 bg-status-caution-soft px-3 py-2.5 text-sm">
+                <div className="flex flex-col gap-1 rounded-md border border-status-caution bg-status-caution-soft px-3 py-2.5 text-sm">
                   <div>
                     <Icon name="warning" size={12} /> 未完成任务{" "}
                     <strong>{transferStage.pending}</strong> 个
@@ -785,7 +982,7 @@ export function UsersPage() {
                     className={`${SELECT_BASE} w-full cursor-pointer px-2.5 py-2 text-sm`}
                   >
                     <option value="">— 选择接收用户 —</option>
-                    {allUsers
+                    {transferUsers
                       .filter(
                         (u: UserResponse) =>
                           u.id !== deleting.id &&
@@ -805,7 +1002,7 @@ export function UsersPage() {
             )}
 
             {deleteUser.error && (
-              <div className="flex items-center gap-2 rounded-md border border-rose-500 bg-status-danger-soft px-3 py-2 text-sm text-status-danger">
+              <div className="flex items-center gap-2 rounded-md border border-status-danger bg-status-danger-soft px-3 py-2 text-sm text-status-danger">
                 <Icon name="warning" size={12} />{" "}
                 {(deleteUser.error as Error)?.message ?? "删除失败"}
               </div>

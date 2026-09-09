@@ -61,10 +61,44 @@ export interface InvitationResponse {
   created_at: string;
 }
 
+export interface InvitationPageParams {
+  status?: InvitationStatus | "all";
+  scope?: "me" | "all";
+  search?: string;
+  role?: string;
+  project_id?: string;
+  page?: number;
+  page_size?: number;
+}
+
+export interface InvitationPageResponse {
+  items: InvitationResponse[];
+  total: number;
+  page: number;
+  page_size: number;
+  pages: number;
+}
+
+export interface InvitationStats {
+  total: number;
+  pending: number;
+  accepted: number;
+  expired: number;
+  revoked: number;
+}
+
 export interface InvitationResendResponse {
   invite_url: string;
   token: string;
   expires_at: string;
+}
+
+export interface InvitationSendEmailResponse {
+  ok: boolean;
+  invitation_id: string;
+  email: string;
+  invite_url: string;
+  message: string;
 }
 
 export interface OpenRegisterPayload {
@@ -72,6 +106,14 @@ export interface OpenRegisterPayload {
   name: string;
   password: string;
   captcha_token?: string | null;
+}
+
+function invitationQuery(params: InvitationPageParams) {
+  return new URLSearchParams(
+    Object.entries(params)
+      .filter(([, value]) => value !== undefined)
+      .map(([key, value]) => [key, String(value)]),
+  ).toString();
 }
 
 export const invitationsApi = {
@@ -91,8 +133,35 @@ export const invitationsApi = {
     const qs = q.toString();
     return apiClient.get<InvitationResponse[]>(`/invitations${qs ? `?${qs}` : ""}`);
   },
+  page: (params: InvitationPageParams = {}) =>
+    apiClient.get<InvitationPageResponse>(`/invitations/query?${invitationQuery(params)}`),
+  stats: (params: Omit<InvitationPageParams, "page" | "page_size"> = {}) =>
+    apiClient.get<InvitationStats>(`/invitations/stats?${invitationQuery(params)}`),
+  exportInvitations: async (params: Omit<InvitationPageParams, "page" | "page_size"> = {}) => {
+    const token = localStorage.getItem("token");
+    const response = await fetch(
+      `/api/v1/invitations/export?format=csv&${invitationQuery(params)}`,
+      {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      },
+    );
+    if (!response.ok) throw new Error(`导出邀请失败 (${response.status})`);
+    const blob = await response.blob();
+    if (!token || token !== localStorage.getItem("token"))
+      throw new Error("当前登录状态已改变，请重新导出");
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "invitations.csv";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
   revoke: (id: string) => apiClient.delete<void>(`/invitations/${id}`),
   resend: (id: string) => apiClient.post<InvitationResendResponse>(`/invitations/${id}/resend`),
+  sendEmail: (id: string) =>
+    apiClient.post<InvitationSendEmailResponse>(`/invitations/${id}/send-email`, {}),
 
   registrationStatus: () =>
     apiClient.publicGet<{ open_registration_enabled: boolean }>("/auth/registration-status"),

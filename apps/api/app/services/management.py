@@ -599,10 +599,17 @@ async def preview_batch_distribution(
     only_unassigned: bool,
     validate_targets,
     lock_batches: bool = False,
+    batch_ids: list[UUID] | None = None,
+    single_batch_id: UUID | None = None,
+    clear_unselected: bool = False,
 ) -> BatchDistributionPreview:
     """Calculate distribution changes without changing batches or tasks."""
 
-    if not annotator_ids and not reviewer_ids:
+    if (
+        not annotator_ids
+        and not reviewer_ids
+        and not (single_batch_id and clear_unselected)
+    ):
         raise HTTPException(
             status_code=400, detail="annotator_ids or reviewer_ids required"
         )
@@ -613,13 +620,22 @@ async def preview_batch_distribution(
     )
     batch_query = (
         select(TaskBatch)
-        .where(TaskBatch.project_id == project_id, TaskBatch.status != "archived")
+        .where(
+            TaskBatch.project_id == project_id,
+            TaskBatch.status != "archived",
+            TaskBatch.id.in_(batch_ids) if batch_ids is not None else True,
+            TaskBatch.id == single_batch_id if single_batch_id is not None else True,
+        )
         .order_by(TaskBatch.priority.desc(), TaskBatch.created_at, TaskBatch.id)
         .execution_options(populate_existing=True)
     )
     if lock_batches:
         batch_query = batch_query.with_for_update()
     batches = (await db.execute(batch_query)).scalars().all()
+    if batch_ids is not None and len(batches) != len(set(batch_ids)):
+        raise HTTPException(
+            status_code=409, detail="选中批次已被移除或归档，请刷新后重新选择"
+        )
     if not batches:
         raise HTTPException(status_code=400, detail="没有可分派的批次")
     # Aggregate persisted tasks rather than trusting cached batch counters.
@@ -641,7 +657,7 @@ async def preview_batch_distribution(
         by_batch.setdefault(row.batch_id, []).append(row)
     pending_statuses = {
         "annotator": {"pending", "in_progress", "rejected"},
-        "reviewer": {"completed", "review"},
+        "reviewer": {"review"},
     }
     recipients: dict[tuple[str, UUID], BatchDistributionRecipient] = {}
     for role, user_ids in (("annotator", annotator_ids), ("reviewer", reviewer_ids)):
@@ -679,6 +695,12 @@ async def preview_batch_distribution(
         after_a = before_a
         after_r = before_r
         eligible = False
+        if clear_unselected and single_batch_id:
+            eligible = True
+            if not annotator_ids:
+                after_a = None
+            if not reviewer_ids:
+                after_r = None
         if annotator_ids and (not only_unassigned or before_a is None):
             eligible = True
             after_a = annotator_ids[a_idx % len(annotator_ids)]

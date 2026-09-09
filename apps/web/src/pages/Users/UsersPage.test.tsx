@@ -13,14 +13,37 @@ const mockDeleteReset = vi.fn();
 const mockUseUsers = vi.fn();
 const mockUseUsersStats = vi.fn();
 vi.mock("@/hooks/useUsers", () => ({
-  useUsers: () => mockUseUsers(),
-  useUsersStats: () => mockUseUsersStats(),
+  useUsers: () => ({ data: [] }),
+  useUserPage: (params: any) => {
+    const response = mockUseUsers(params);
+    const items = response.data?.filter(
+      (user: any) =>
+        (!params.role || user.role === params.role) &&
+        (!params.search ||
+          `${user.name} ${user.email}`.toLowerCase().includes(params.search.toLowerCase())),
+    );
+    return {
+      ...response,
+      data: items && {
+        items,
+        total: response.total ?? items.length,
+        page: params.page,
+        page_size: params.page_size,
+        pages: response.pages ?? 1,
+      },
+    };
+  },
+  useUsersStats: (params: unknown) => mockUseUsersStats(params),
   useDeleteUser: () => ({
     mutateAsync: mockDeleteMutateAsync,
     isPending: false,
     error: null,
     reset: mockDeleteReset,
   }),
+}));
+
+vi.mock("@/hooks/useProjects", () => ({
+  useProjects: () => ({ data: [{ id: "project-1", name: "Test project" }] }),
 }));
 
 // --- useGroups ---
@@ -84,6 +107,14 @@ vi.mock("@/api/client", () => ({
 vi.mock("@/components/users/InviteUserModal", () => ({
   InviteUserModal: ({ open }: { open: boolean }) =>
     open ? <div data-testid="invite-modal">InviteModal</div> : null,
+}));
+vi.mock("@/components/users/BulkInviteModal", () => ({
+  BulkInviteModal: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="bulk-invite-modal">BulkInviteModal</div> : null,
+}));
+vi.mock("@/components/users/BulkGroupAssignmentModal", () => ({
+  BulkGroupAssignmentModal: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="bulk-group-modal">BulkGroupAssignmentModal</div> : null,
 }));
 vi.mock("@/components/users/EditUserModal", () => ({
   EditUserModal: ({ open }: { open: boolean }) =>
@@ -283,5 +314,28 @@ describe("UsersPage", () => {
     renderUI();
     expect(screen.getByText("Alice")).toBeInTheDocument();
     expect(screen.getByText(/当前离线，正在等待网络恢复/)).toBeInTheDocument();
+  });
+  it("paginates 1000 members and passes the same project and role filters to stats and export", async () => {
+    mockUseUsers.mockReturnValue({ data: SAMPLE_USERS, total: 1000, pages: 40, isLoading: false });
+    renderUI();
+    fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+    expect(mockUseUsers).toHaveBeenLastCalledWith(
+      expect.objectContaining({ page: 2, page_size: 25 }),
+    );
+    fireEvent.change(screen.getByLabelText("项目筛选"), { target: { value: "project-1" } });
+    fireEvent.change(screen.getByLabelText("角色筛选"), { target: { value: "annotator" } });
+    expect(mockUseUsers).toHaveBeenLastCalledWith(
+      expect.objectContaining({ project_id: "project-1", role: "annotator", page: 1 }),
+    );
+    expect(mockUseUsersStats).toHaveBeenLastCalledWith(
+      expect.objectContaining({ project_id: "project-1", role: "annotator", status: "active" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /导出名单/ }));
+    await waitFor(() =>
+      expect(mockExportUsers).toHaveBeenCalledWith(
+        "csv",
+        expect.objectContaining({ project_id: "project-1", role: "annotator", status: "active" }),
+      ),
+    );
   });
 });

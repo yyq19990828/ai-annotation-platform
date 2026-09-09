@@ -74,15 +74,48 @@ export interface BatchSplitPayload {
 }
 
 export interface ProjectDistributeBatchesPayload {
+  batch_ids?: string[];
   annotator_ids?: string[];
   reviewer_ids?: string[];
   only_unassigned?: boolean;
+  preview_version?: string;
 }
 
 export interface BatchDistributeResultResponse {
   distributed_batches: number;
   annotator_per_batch: Record<string, string | null>;
   reviewer_per_batch: Record<string, string | null>;
+}
+
+export interface BatchDistributionPreviewItem {
+  batch_id: string;
+  display_id: string;
+  name: string;
+  status: string;
+  before_annotator_id: string | null;
+  after_annotator_id: string | null;
+  before_reviewer_id: string | null;
+  after_reviewer_id: string | null;
+  task_count: number;
+  will_change: boolean;
+  skipped_reason?: string | null;
+}
+
+export interface BatchDistributionPreview {
+  project_id: string;
+  only_unassigned: boolean;
+  total_batches: number;
+  candidate_batches: number;
+  changed_batches: number;
+  skipped_batches: number;
+  items: BatchDistributionPreviewItem[];
+  recipient_summary?: Array<{
+    user_id: string;
+    role: string;
+    new_task_count: number;
+    existing_backlog_count: number;
+  }>;
+  preview_version: string;
 }
 
 // v0.7.3 · 多选批量操作
@@ -157,6 +190,37 @@ export const batchesApi = {
   distributeBatches: (projectId: string, payload: ProjectDistributeBatchesPayload) =>
     apiClient.post<BatchDistributeResultResponse>(
       `/projects/${projectId}/batches/distribute-batches`,
+      payload,
+    ),
+
+  applyDistribution: (projectId: string, payload: ProjectDistributeBatchesPayload) =>
+    apiClient.post<BatchDistributeResultResponse>(
+      `/projects/${projectId}/batches/distribution-apply`,
+      payload,
+    ),
+
+  previewAssignment: (
+    projectId: string,
+    batchId: string,
+    payload: { annotator_id: string | null; reviewer_id: string | null },
+  ) =>
+    apiClient.post<BatchDistributionPreview>(
+      `/projects/${projectId}/batches/${batchId}/assignment-preview`,
+      payload,
+    ),
+  applyAssignment: (
+    projectId: string,
+    batchId: string,
+    payload: { annotator_id: string | null; reviewer_id: string | null; preview_version: string },
+  ) =>
+    apiClient.post<BatchResponse>(
+      `/projects/${projectId}/batches/${batchId}/assignment-apply`,
+      payload,
+    ),
+
+  previewDistribution: (projectId: string, payload: ProjectDistributeBatchesPayload) =>
+    apiClient.post<BatchDistributionPreview>(
+      `/projects/${projectId}/batches/distribution-preview`,
       payload,
     ),
 

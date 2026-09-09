@@ -1,20 +1,22 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   usersApi,
+  type BulkGroupAssignmentPayload,
+  type BulkInviteItemPayload,
   type InvitePayload,
   type OffboardingCommitRequest,
   type UserStatusFilter,
 } from "../api/users";
 
-export function useUsers(params?: {
-  role?: string;
-  project_id?: string;
-  status?: UserStatusFilter;
-}) {
-  return useQuery({
-    queryKey: ["users", params],
-    queryFn: () => usersApi.list(params),
-  });
+export function useUsers(
+  params?: { role?: string; project_id?: string; status?: UserStatusFilter },
+  enabled = true,
+) {
+  return useQuery({ queryKey: ["users", params], queryFn: () => usersApi.list(params), enabled });
+}
+
+export function useUserPage(params: import("@/api/users").UserPageParams) {
+  return useQuery({ queryKey: ["users", "page", params], queryFn: () => usersApi.page(params) });
 }
 
 export function useOffboardingPreview(userId: string | null, enabled = true) {
@@ -58,11 +60,58 @@ export function useReactivateUser() {
 }
 
 // v0.8.3 · UsersPage「本周活跃」/「在线」聚合卡（基于 last_seen_at）
-export function useUsersStats() {
+export function useUsersStats(params?: {
+  role?: string;
+  project_id?: string;
+  group_id?: string;
+  status?: UserStatusFilter;
+  search?: string;
+}) {
   return useQuery({
-    queryKey: ["users", "stats"],
-    queryFn: () => usersApi.stats(),
+    queryKey: ["users", "stats", params],
+    queryFn: () =>
+      usersApi.stats({
+        role: params?.role,
+        project_id: params?.project_id,
+        group_id: params?.group_id,
+        status: params?.status,
+        search: params?.search,
+      }),
     refetchInterval: 60_000,
+  });
+}
+
+export function usePreviewBulkInviteUsers() {
+  return useMutation({
+    mutationFn: (items: BulkInviteItemPayload[]) => usersApi.previewBulkInvite(items),
+  });
+}
+
+export function useBulkInviteUsers() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (items: BulkInviteItemPayload[]) => usersApi.bulkInvite(items),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["users"] });
+      qc.invalidateQueries({ queryKey: ["invitations"] });
+    },
+  });
+}
+
+export function usePreviewBulkUserGroup() {
+  return useMutation({
+    mutationFn: (payload: BulkGroupAssignmentPayload) => usersApi.previewBulkGroup(payload),
+  });
+}
+
+export function useBulkUserGroup() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: BulkGroupAssignmentPayload) => usersApi.bulkGroup(payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["users"] });
+      qc.invalidateQueries({ queryKey: ["groups"] });
+    },
   });
 }
 

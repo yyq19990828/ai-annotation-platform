@@ -5,6 +5,7 @@ import {
   type BatchUpdatePayload,
   type BatchSplitPayload,
   type BulkBatchReassignPayload,
+  type ProjectDistributeBatchesPayload,
 } from "../api/batches";
 
 export function useBatches(projectId: string, status?: string) {
@@ -160,21 +161,62 @@ export function useDistributeBatches(projectId: string) {
       annotatorIds,
       reviewerIds,
       onlyUnassigned = true,
+      previewVersion,
     }: {
       annotatorIds: string[];
       reviewerIds: string[];
       onlyUnassigned?: boolean;
+      previewVersion?: string;
     }) =>
       batchesApi.distributeBatches(projectId, {
         annotator_ids: annotatorIds,
         reviewer_ids: reviewerIds,
         only_unassigned: onlyUnassigned,
+        ...(previewVersion ? { preview_version: previewVersion } : {}),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["batches", projectId] });
       qc.invalidateQueries({ queryKey: ["tasks"] });
       qc.invalidateQueries({ queryKey: ["dashboard"] });
     },
+  });
+}
+
+export function useApplyDistributeBatches(projectId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      annotatorIds,
+      reviewerIds,
+      onlyUnassigned = true,
+      previewVersion,
+      batchIds,
+    }: {
+      annotatorIds: string[];
+      reviewerIds: string[];
+      onlyUnassigned?: boolean;
+      previewVersion: string;
+      batchIds?: string[];
+    }) =>
+      batchesApi.applyDistribution(projectId, {
+        annotator_ids: annotatorIds,
+        reviewer_ids: reviewerIds,
+        only_unassigned: onlyUnassigned,
+        preview_version: previewVersion,
+        ...(batchIds ? { batch_ids: batchIds } : {}),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["batches", projectId] });
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
+export function usePreviewDistributeBatches(projectId: string) {
+  return useMutation({
+    mutationFn: (payload: ProjectDistributeBatchesPayload) =>
+      batchesApi.previewDistribution(projectId, payload),
   });
 }
 

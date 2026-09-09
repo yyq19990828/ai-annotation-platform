@@ -47,7 +47,7 @@ async def test_distribution_counts_real_tasks_and_applies_identical_tied_order(
         )
         db_session.add(batch)
         await db_session.flush()
-        for status in ("pending", "in_progress", "approved"):
+        for status in ("pending", "in_progress", "completed"):
             task = await create_task(db_session, project_id=project.id, status=status)
             task.batch_id = batch.id
         batches.append(batch)
@@ -271,3 +271,169 @@ async def test_bulk_invite_validation_reports_invalid_email_per_item(
     assert [row["ok"] for row in result.json()["items"]] == [True, False, False]
     assert "邮箱格式不正确" in result.json()["items"][1]["error"]
     assert "重复" in result.json()["items"][2]["error"]
+
+
+async def test_single_batch_preview_counts_review_backlog_and_applies_exact_mapping(
+    httpx_client, super_admin, db_session
+):
+    admin, token = super_admin
+    headers = {"Authorization": f"Bearer {token}"}
+    project = await create_project(db_session, owner_id=admin.id)
+    anno = await create_user(db_session, "annotator", "single-anno@e.test", "Annotator")
+    review = await create_user(
+        db_session, "reviewer", "single-review@e.test", "Reviewer"
+    )
+    for user in (anno, review):
+        db_session.add(
+            ProjectMember(
+                project_id=project.id,
+                user_id=user.id,
+                role=user.role,
+                assigned_by=admin.id,
+            )
+        )
+    batch = TaskBatch(
+        project_id=project.id,
+        display_id="B-SINGLE",
+        name="Single",
+        status="draft",
+        total_tasks=100,
+    )
+    db_session.add(batch)
+    await db_session.flush()
+    tasks = []
+    for status in ("pending", "review", "completed"):
+        task = await create_task(db_session, project_id=project.id, status=status)
+        task.batch_id = batch.id
+        tasks.append(task)
+    reviewed = await create_task(db_session, project_id=project.id, status="completed")
+    reviewed.reviewer_id = review.id
+    await db_session.flush()
+    url = f"/api/v1/projects/{project.id}/batches/{batch.id}"
+    body = {"annotator_id": str(anno.id), "reviewer_id": str(review.id)}
+    response = await httpx_client.post(
+        f"{url}/assignment-preview", headers=headers, json=body
+    )
+    assert response.status_code == 200, response.text
+    preview = response.json()
+    assert preview["items"][0]["task_count"] == 3
+    assert [
+        (row["new_task_count"], row["existing_backlog_count"])
+        for row in preview["recipient_summary"]
+    ] == [(1, 0), (1, 0)]
+    response = await httpx_client.post(
+        f"{url}/assignment-apply",
+        headers=headers,
+        json={**body, "preview_version": preview["preview_version"]},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["annotator_id"] == str(anno.id)
+    assert response.json()["reviewer_id"] == str(review.id)
+    for task in tasks:
+        await db_session.refresh(task)
+        assert task.assignee_id == anno.id
+        assert task.reviewer_id == review.id
+    clear = {"annotator_id": None, "reviewer_id": None}
+    preview = (
+        await httpx_client.post(
+            f"{url}/assignment-preview", headers=headers, json=clear
+        )
+    ).json()
+    assert preview["items"][0]["before_annotator_id"] == str(anno.id)
+    assert preview["items"][0]["after_annotator_id"] is None
+    response = await httpx_client.post(
+        f"{url}/assignment-apply",
+        headers=headers,
+        json={**clear, "preview_version": preview["preview_version"]},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["annotator_id"] is response.json()["reviewer_id"] is None
+
+
+async def test_single_batch_apply_refuses_stale_preview_and_other_project_batch(
+    httpx_client, super_admin, db_session
+):
+    admin, token = super_admin
+    headers = {"Authorization": f"Bearer {token}"}
+    project = await create_project(db_session, owner_id=admin.id)
+    other = await create_project(db_session, owner_id=admin.id)
+    batch = TaskBatch(
+        project_id=project.id,
+        display_id="B-STALE-SINGLE",
+        name="Original",
+        status="draft",
+    )
+    db_session.add(batch)
+    await db_session.flush()
+    body = {"annotator_id": None, "reviewer_id": None}
+    url = f"/api/v1/projects/{project.id}/batches/{batch.id}"
+    preview = (
+        await httpx_client.post(f"{url}/assignment-preview", headers=headers, json=body)
+    ).json()
+    batch.name = "Changed by another manager"
+    await db_session.flush()
+    result = await httpx_client.post(
+        f"{url}/assignment-apply",
+        headers=headers,
+        json={**body, "preview_version": preview["preview_version"]},
+    )
+    assert result.status_code == 409, result.text
+    assert batch.annotator_id is batch.reviewer_id is None
+    result = await httpx_client.post(
+        f"/api/v1/projects/{other.id}/batches/{batch.id}/assignment-preview",
+        headers=headers,
+        json=body,
+    )
+    assert result.status_code in (400, 404)
+
+
+async def test_distribution_can_target_only_selected_batches(
+    httpx_client, super_admin, db_session
+):
+    admin, token = super_admin
+    project = await create_project(db_session, owner_id=admin.id)
+    user = await create_user(
+        db_session, "annotator", "selected-batches@e.test", "Worker"
+    )
+    db_session.add(
+        ProjectMember(
+            project_id=project.id,
+            user_id=user.id,
+            role="annotator",
+            assigned_by=admin.id,
+        )
+    )
+    batches = [
+        TaskBatch(
+            project_id=project.id,
+            display_id=f"B-SUB-{i}",
+            name=f"Batch {i}",
+            status="draft",
+        )
+        for i in range(2)
+    ]
+    db_session.add_all(batches)
+    await db_session.flush()
+    body = {"batch_ids": [str(batches[1].id)], "annotator_ids": [str(user.id)]}
+    headers = {"Authorization": f"Bearer {token}"}
+    url = f"/api/v1/projects/{project.id}/batches"
+    result = await httpx_client.post(
+        f"{url}/distribution-preview", json=body, headers=headers
+    )
+    assert result.status_code == 200, result.text
+    preview = result.json()
+    assert [row["batch_id"] for row in preview["items"]] == [str(batches[1].id)]
+    result = await httpx_client.post(
+        f"{url}/distribution-apply",
+        json={**body, "preview_version": preview["preview_version"]},
+        headers=headers,
+    )
+    assert result.status_code == 200, result.text
+    assert batches[0].annotator_id is None
+    assert batches[1].annotator_id == user.id
+    result = await httpx_client.post(
+        f"{url}/distribution-preview",
+        json={**body, "batch_ids": [str(uuid.uuid4())]},
+        headers=headers,
+    )
+    assert result.status_code == 409

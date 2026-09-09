@@ -5,6 +5,7 @@ import { Icon } from "@/components/ui/Icon";
 import { Badge } from "@/components/ui/Badge";
 import { useToastStore } from "@/components/ui/Toast";
 import { useInviteUser } from "@/hooks/useInvitation";
+import { useSendInvitationEmail } from "@/hooks/useInvitations";
 import { groupsApi, type GroupResponse } from "@/api/groups";
 import { projectsApi, type ProjectResponse } from "@/api/projects";
 import { ROLE_LABELS } from "@/constants/roles";
@@ -40,6 +41,7 @@ export function InviteUserModal({ open, onClose }: Props) {
   const [projects, setProjects] = useState<ProjectResponse[]>([]);
   const [result, setResult] = useState<InvitationCreated | null>(null);
   const invite = useInviteUser();
+  const sendEmail = useSendInvitationEmail();
   const pushToast = useToastStore((s) => s.push);
 
   const selectableRoles = projectId
@@ -113,6 +115,24 @@ export function InviteUserModal({ open, onClose }: Props) {
     } catch {
       pushToast({ msg: "复制失败，请手动选择" });
     }
+  };
+
+  const sendInvitationEmail = () => {
+    if (!result?.id || sendEmail.isPending) return;
+    sendEmail.mutate(result.id, {
+      onSuccess: (response) =>
+        pushToast({
+          msg: response.ok ? "邀请邮件已发送" : "邀请邮件未发送",
+          sub: response.message || `收件人：${response.email}`,
+          kind: response.ok ? "success" : "warning",
+        }),
+      onError: (error) =>
+        pushToast({
+          msg: "邀请邮件发送失败",
+          sub: error instanceof Error ? error.message : String(error),
+          kind: "warning",
+        }),
+    });
   };
 
   return (
@@ -218,7 +238,7 @@ export function InviteUserModal({ open, onClose }: Props) {
                 邀请已写入审计日志，链接 {formatExpiry(result.expires_at)} 内有效
               </div>
               <div className={styles.successText}>
-                请妥善转发链接给被邀请人。链接仅显示一次，本平台不会代为发送邮件。
+                请妥善转发链接给被邀请人。链接始终可复制；邮件发送需要在下方明确触发。
               </div>
             </div>
           </div>
@@ -248,6 +268,15 @@ export function InviteUserModal({ open, onClose }: Props) {
           </div>
 
           <div className={styles.actions}>
+            <Button
+              type="button"
+              onClick={sendInvitationEmail}
+              disabled={!result.id || sendEmail.isPending}
+              title={!result.id ? "当前 API 未返回邀请编号，请使用复制链接" : undefined}
+            >
+              <Icon name="mail" size={12} />
+              {sendEmail.isPending ? "发送中..." : "发送邀请邮件"}
+            </Button>
             <Button type="button" onClick={() => setResult(null)}>
               继续邀请
             </Button>

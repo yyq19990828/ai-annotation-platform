@@ -3,27 +3,20 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
-import { useInvitations, useResendInvitation, useRevokeInvitation } from "@/hooks/useInvitations";
+import {
+  useInvitationStats,
+  useInvitationPage,
+  useResendInvitation,
+  useRevokeInvitation,
+  useSendInvitationEmail,
+} from "@/hooks/useInvitations";
+import { useProjects } from "@/hooks/useProjects";
 import { ROLE_LABELS } from "@/constants/roles";
 import { usePermissions } from "@/hooks/usePermissions";
-import type { InvitationResponse, InvitationStatus } from "@/api/invitations";
+import { isCurrentAuthOwner, useAuthStore } from "@/stores/authStore";
+import { invitationsApi, type InvitationResponse, type InvitationStatus } from "@/api/invitations";
 import type { UserRole } from "@/types";
 import styles from "./InvitationListPanel.module.css";
-
-const STATUS_FILTERS: Array<{ key: InvitationStatus | "all"; label: string }> = [
-  { key: "all", label: "全部" },
-  { key: "pending", label: "待接受" },
-  { key: "accepted", label: "已接受" },
-  { key: "expired", label: "已过期" },
-  { key: "revoked", label: "已撤销" },
-];
-
-const STATUS_COLORS: Record<InvitationStatus, "success" | "warning" | "outline" | "danger"> = {
-  pending: "warning",
-  accepted: "success",
-  expired: "outline",
-  revoked: "danger",
-};
 
 const STATUS_LABEL: Record<InvitationStatus, string> = {
   pending: "待接受",
@@ -31,165 +24,324 @@ const STATUS_LABEL: Record<InvitationStatus, string> = {
   expired: "已过期",
   revoked: "已撤销",
 };
+const STATUS_COLORS = {
+  pending: "warning",
+  accepted: "success",
+  expired: "outline",
+  revoked: "danger",
+} as const;
 
 export function InvitationListPanel() {
   const { role } = usePermissions();
-  const canViewAll = role === "super_admin";
+  const ownerId = useAuthStore((state) => state.user?.id);
   const [filter, setFilter] = useState<InvitationStatus | "all">("all");
   const [scope, setScope] = useState<"me" | "all">("me");
-  const { data: invites = [], isLoading } = useInvitations({ status: filter, scope });
-  const revokeMut = useRevokeInvitation();
-  const resendMut = useResendInvitation();
-  const pushToast = useToastStore((s) => s.push);
-
-  const handleRevoke = async (inv: InvitationResponse) => {
-    try {
-      await revokeMut.mutateAsync(inv.id);
-      pushToast({ msg: `已撤销邀请：${inv.email}`, kind: "success" });
-    } catch (err) {
-      pushToast({
-        msg: "撤销失败",
-        sub: err instanceof Error ? err.message : String(err),
-        kind: "error",
-      });
-    }
+  const [search, setSearch] = useState("");
+  const [projectId, setProjectId] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const [exporting, setExporting] = useState(false);
+  const [copiedLink, setCopiedLink] = useState<string | null>(null);
+  const filters = {
+    status: filter,
+    scope,
+    search: search.trim() || undefined,
+    project_id: projectId || undefined,
+    role: roleFilter || undefined,
   };
+  const query = useInvitationPage({ ...filters, page, page_size: 25 });
+  const statsQuery = useInvitationStats(filters);
+  const { data: projects = [] } = useProjects();
+  const invites = query.data?.items ?? [];
+  const stats = statsQuery.data;
+  const revoke = useRevokeInvitation();
+  const resend = useResendInvitation();
+  const sendEmail = useSendInvitationEmail();
+  const pushToast = useToastStore((state) => state.push);
+  const busy = revoke.isPending || resend.isPending || sendEmail.isPending;
 
-  const handleResend = async (inv: InvitationResponse) => {
+  const actOnInvite = async (
+    invitation: InvitationResponse,
+    action: "revoke" | "resend" | "email",
+  ) => {
+    if (!ownerId || !isCurrentAuthOwner(ownerId) || busy) return;
+    const token = useAuthStore.getState().token;
+    const current = () => isCurrentAuthOwner(ownerId) && useAuthStore.getState().token === token;
     try {
-      const res = await resendMut.mutateAsync(inv.id);
-      try {
-        await navigator.clipboard.writeText(res.invite_url);
+      if (action === "revoke") await revoke.mutateAsync(invitation.id);
+      if (action === "email") await sendEmail.mutateAsync(invitation.id);
+      if (action === "resend") {
+        const result = await resend.mutateAsync(invitation.id);
+        if (!current()) return;
+        setCopiedLink(result.invite_url);
+        try {
+          await navigator.clipboard.writeText(result.invite_url);
+        } catch {
+          /* The visible link remains usable. */
+        }
+      }
+      if (current())
         pushToast({
-          msg: `已重发邀请：${inv.email}`,
-          sub: "新链接已复制到剪贴板",
+          msg:
+            action === "email"
+              ? "邀请邮件已发送"
+              : action === "revoke"
+                ? "邀请已撤销"
+                : "已生成新邀请链接",
           kind: "success",
         });
-      } catch {
-        pushToast({ msg: `已重发邀请：${inv.email}`, kind: "success" });
-      }
-    } catch (err) {
+    } catch (error) {
+      if (current())
+        pushToast({
+          msg: "邀请操作失败",
+          sub: error instanceof Error ? error.message : String(error),
+          kind: "error",
+        });
+    }
+  };
+  const exportRows = async () => {
+    if (exporting) return;
+    setExporting(true);
+    try {
+      await invitationsApi.exportInvitations(filters);
+    } catch (error) {
       pushToast({
-        msg: "重发失败",
-        sub: err instanceof Error ? err.message : String(err),
+        msg: "导出失败",
+        sub: error instanceof Error ? error.message : String(error),
         kind: "error",
       });
+    } finally {
+      setExporting(false);
     }
   };
 
   return (
     <div className={styles.root}>
-      <div className={styles.toolbar}>
-        <div className={styles.filters}>
-          {STATUS_FILTERS.map((f) => (
+      <div className={`${styles.toolbar} flex-wrap gap-2`}>
+        <div className={`${styles.filters} flex-wrap`}>
+          {(["all", "pending", "accepted", "expired", "revoked"] as const).map((value) => (
             <button
-              key={f.key}
-              onClick={() => setFilter(f.key)}
-              className={`${styles.filterButton} ${filter === f.key ? styles.filterButtonActive : ""}`}
+              type="button"
+              key={value}
+              onClick={() => {
+                setFilter(value);
+                setPage(1);
+              }}
+              className={`${styles.filterButton} ${filter === value ? styles.filterButtonActive : ""}`}
             >
-              {f.label}
+              {value === "all" ? "全部" : STATUS_LABEL[value]}
             </button>
           ))}
         </div>
-        {canViewAll && (
+        {role === "super_admin" && (
           <select
+            aria-label="邀请范围"
             value={scope}
-            onChange={(e) => setScope(e.target.value as "me" | "all")}
+            onChange={(event) => {
+              setScope(event.target.value as "me" | "all");
+              setPage(1);
+            }}
             className={styles.select}
           >
             <option value="me">我邀请的</option>
             <option value="all">全部邀请</option>
           </select>
         )}
+        <select
+          aria-label="邀请项目筛选"
+          value={projectId}
+          onChange={(event) => {
+            setProjectId(event.target.value);
+            setPage(1);
+          }}
+          className={styles.select}
+        >
+          <option value="">全部项目</option>
+          {projects.map((project) => (
+            <option key={project.id} value={project.id}>
+              {project.name}
+            </option>
+          ))}
+        </select>
+        <select
+          aria-label="邀请角色筛选"
+          value={roleFilter}
+          onChange={(event) => {
+            setRoleFilter(event.target.value);
+            setPage(1);
+          }}
+          className={styles.select}
+        >
+          <option value="">全部角色</option>
+          {Object.entries(ROLE_LABELS).map(([key, label]) => (
+            <option key={key} value={key}>
+              {label}
+            </option>
+          ))}
+        </select>
+        <input
+          value={search}
+          onChange={(event) => {
+            setSearch(event.target.value);
+            setPage(1);
+          }}
+          placeholder="搜索邮箱或邀请人"
+          className={styles.select}
+          aria-label="搜索邀请"
+        />
+        <Button size="sm" onClick={() => void exportRows()} disabled={exporting}>
+          {exporting ? "导出中…" : "导出筛选结果"}
+        </Button>
       </div>
-
+      {stats && (
+        <div className="grid grid-cols-2 gap-2 px-4 pb-3 text-xs text-muted-foreground sm:grid-cols-5">
+          <span>筛选结果 {stats.total}</span>
+          <span>待接受 {stats.pending}</span>
+          <span>已接受 {stats.accepted}</span>
+          <span>已过期 {stats.expired}</span>
+          <span>已撤销 {stats.revoked}</span>
+        </div>
+      )}
+      {(query.isError || statsQuery.isError) && (
+        <div
+          role="alert"
+          className="flex items-center justify-between gap-3 px-4 py-3 text-sm text-status-danger"
+        >
+          <span>邀请记录或统计加载失败，请重试。</span>
+          <Button
+            size="sm"
+            onClick={() => {
+              void query.refetch();
+              void statsQuery.refetch();
+            }}
+          >
+            重试
+          </Button>
+        </div>
+      )}
+      {copiedLink && (
+        <label className="flex flex-col gap-1 px-4 pb-3 text-xs text-muted-foreground">
+          新邀请链接（旧链接已失效；可选中复制）
+          <input
+            readOnly
+            value={copiedLink}
+            className={styles.select}
+            onFocus={(event) => event.target.select()}
+          />
+        </label>
+      )}
       <div className={styles.tableScroller}>
         <table className={styles.table}>
           <thead>
             <tr>
-              {["邮箱", "角色", "数据组", "状态", "邀请人", "过期时间", ""].map((h, i) => (
-                <th key={i} className={styles.th}>
-                  {h}
-                </th>
-              ))}
+              {["邮箱", "角色", "数据组", "项目", "状态", "邀请人", "过期时间", "操作"].map(
+                (title) => (
+                  <th key={title} className={styles.cell}>
+                    {title}
+                  </th>
+                ),
+              )}
             </tr>
           </thead>
           <tbody>
-            {isLoading && (
+            {query.isLoading && (
               <tr>
-                <td colSpan={7} className={styles.emptyCell}>
-                  加载中…
+                <td colSpan={8} className={styles.cell}>
+                  加载邀请中…
                 </td>
               </tr>
             )}
-            {!isLoading && invites.length === 0 && (
+            {!query.isLoading && !query.isError && invites.length === 0 && (
               <tr>
-                <td colSpan={7} className={styles.emptyCell}>
-                  暂无邀请记录
+                <td colSpan={8} className={styles.cell}>
+                  没有符合筛选条件的邀请。
                 </td>
               </tr>
             )}
-            {invites.map((inv) => {
-              const expired = inv.status === "expired";
-              const accepted = inv.status === "accepted";
-              const revoked = inv.status === "revoked";
-              return (
-                <tr key={inv.id}>
-                  <td className={styles.cell}>
-                    <span className={`mono ${styles.email}`} title={inv.email}>
-                      {inv.email}
-                    </span>
-                  </td>
-                  <td className={styles.cell}>{ROLE_LABELS[inv.role as UserRole] ?? inv.role}</td>
-                  <td className={styles.cell}>
-                    <span className={styles.truncateText} title={inv.group_name ?? undefined}>
-                      {inv.group_name ?? "—"}
-                    </span>
-                  </td>
-                  <td className={styles.cell}>
-                    <Badge variant={STATUS_COLORS[inv.status]}>{STATUS_LABEL[inv.status]}</Badge>
-                  </td>
-                  <td className={`${styles.cell} ${styles.muted}`}>
-                    <span className={styles.truncateText} title={inv.invited_by_name ?? undefined}>
-                      {inv.invited_by_name ?? "—"}
-                    </span>
-                  </td>
-                  <td className={`${styles.cell} ${styles.dateCell}`}>
-                    {new Date(inv.expires_at).toLocaleString("zh-CN")}
-                  </td>
-                  <td className={`${styles.cell} ${styles.actionsCell}`}>
-                    {!accepted && (
-                      <>
+            {invites.map((invitation) => (
+              <tr key={invitation.id}>
+                <td className={styles.cell}>
+                  <span className={`mono ${styles.email}`} title={invitation.email}>
+                    {invitation.email}
+                  </span>
+                </td>
+                <td className={styles.cell}>
+                  {ROLE_LABELS[invitation.role as UserRole] ?? invitation.role}
+                </td>
+                <td className={styles.cell}>{invitation.group_name ?? "—"}</td>
+                <td className={styles.cell}>{invitation.project_name ?? "未指定"}</td>
+                <td className={styles.cell}>
+                  <Badge variant={STATUS_COLORS[invitation.status]}>
+                    {STATUS_LABEL[invitation.status]}
+                  </Badge>
+                </td>
+                <td className={styles.cell}>{invitation.invited_by_name ?? "—"}</td>
+                <td className={`${styles.cell} ${styles.dateCell}`}>
+                  {new Date(invitation.expires_at).toLocaleString("zh-CN")}
+                </td>
+                <td className={`${styles.cell} ${styles.actionsCell}`}>
+                  {invitation.status !== "accepted" && (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={busy}
+                        onClick={() => void actOnInvite(invitation, "resend")}
+                        title="生成新链接（旧链接将失效）"
+                      >
+                        <Icon name="refresh" size={11} />
+                        新链接
+                      </Button>
+                      {invitation.status === "pending" && (
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => handleResend(inv)}
-                          disabled={resendMut.isPending}
-                          title="重发邀请（生成新链接并复制）"
+                          disabled={busy}
+                          onClick={() => void actOnInvite(invitation, "email")}
+                          title="发送邀请邮件（保留当前链接）"
                         >
-                          <Icon name="refresh" size={11} />
-                          {revoked || expired ? "重发" : "重发"}
+                          <Icon name="mail" size={11} />
+                          邮件
                         </Button>
-                        {!revoked && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleRevoke(inv)}
-                            disabled={revokeMut.isPending}
-                            title="撤销邀请"
-                          >
-                            <Icon name="x" size={11} />
-                          </Button>
-                        )}
-                      </>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
+                      )}
+                      {invitation.status !== "revoked" && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={busy}
+                          onClick={() => void actOnInvite(invitation, "revoke")}
+                          title="撤销邀请"
+                        >
+                          <Icon name="x" size={11} />
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
+      {query.data && query.data.pages > 1 && (
+        <div className="flex items-center justify-between border-t border-border px-4 py-3 text-xs text-muted-foreground">
+          <span>
+            第 {query.data.page} / {query.data.pages} 页 · 共 {query.data.total} 条
+          </span>
+          <div className="flex gap-2">
+            <Button size="sm" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>
+              上一页
+            </Button>
+            <Button
+              size="sm"
+              disabled={page >= query.data.pages}
+              onClick={() => setPage((value) => value + 1)}
+            >
+              下一页
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
