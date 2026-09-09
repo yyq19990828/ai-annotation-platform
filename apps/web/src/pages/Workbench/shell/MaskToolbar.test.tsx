@@ -1,5 +1,5 @@
-import type { ComponentProps } from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import type { ComponentProps, ReactElement } from "react";
+import { act, fireEvent, render as renderComponent, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -9,6 +9,16 @@ import {
 import type { MaskInstanceOperationPreview, MaskOperationPreview } from "../state/useMaskEditor";
 import { isWorkbenchInteractionBlocked } from "../state/workbenchInteractionGuards";
 import { MaskToolbar } from "./MaskToolbar";
+
+function render(element: ReactElement) {
+  const view = renderComponent(element);
+  fireEvent(
+    view.getByTestId("mask-tool-capsule"),
+    new MouseEvent("pointerover", { bubbles: true, buttons: 0 }),
+  );
+  fireEvent.click(view.getByRole("button", { name: "更多 Mask 工具" }));
+  return view;
+}
 
 function regionPreview(afterArea = 14): MaskOperationPreview {
   return {
@@ -86,6 +96,70 @@ function toolbarProps(
 }
 
 describe("MaskToolbar", () => {
+  it("starts collapsed, preserves settings, and lets the first outside pointer reach the canvas", async () => {
+    const user = userEvent.setup();
+    const props = toolbarProps();
+    const onDraw = vi.fn();
+    const view = renderComponent(
+      <>
+        <button onPointerDown={onDraw}>画布</button>
+        <MaskToolbar {...props} />
+      </>,
+    );
+    const capsule = screen.getByTestId("mask-tool-capsule");
+    const compact = screen.getByRole("button", { name: "Mask 常用工具：笔刷" });
+    expect(compact).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByTestId("mask-toolbar")).toBeNull();
+    fireEvent(capsule, new MouseEvent("pointerover", { bubbles: true, buttons: 1 }));
+    expect(compact).toHaveAttribute("aria-expanded", "false");
+    fireEvent(capsule, new MouseEvent("pointerover", { bubbles: true, buttons: 0 }));
+    expect(compact).toHaveAttribute("aria-expanded", "true");
+    await user.click(screen.getByRole("button", { name: "橡皮" }));
+    expect(props.onSetTool).toHaveBeenCalledWith("erase");
+    await user.click(screen.getByRole("button", { name: "更多 Mask 工具" }));
+    const slider = screen.getByTestId("mask-radius-slider");
+    fireEvent.change(slider, { target: { value: "24" } });
+    expect(props.onSetRadius).toHaveBeenCalledWith(24);
+    const seen: boolean[] = [];
+    const guard = (event: Event) => seen.push(isWorkbenchInteractionBlocked(event));
+    window.addEventListener("pointerdown", guard, true);
+    try {
+      await user.click(screen.getByRole("button", { name: "画布" }));
+    } finally {
+      window.removeEventListener("pointerdown", guard, true);
+    }
+    expect(onDraw).toHaveBeenCalledOnce();
+    expect(seen).toEqual([false]);
+    expect(screen.queryByTestId("mask-toolbar")).toBeNull();
+    expect(props.onSecondaryAction).not.toHaveBeenCalled();
+    view.rerender(<MaskToolbar {...props} radius={24} />);
+    fireEvent(
+      screen.getByTestId("mask-tool-capsule"),
+      new MouseEvent("pointerover", { bubbles: true, buttons: 0 }),
+    );
+    await user.click(screen.getByRole("button", { name: "更多 Mask 工具" }));
+    expect(screen.getByTestId("mask-radius-slider")).toHaveValue("24");
+    const keys: boolean[] = [];
+    const keyGuard = (event: KeyboardEvent) => keys.push(isWorkbenchInteractionBlocked(event));
+    window.addEventListener("keydown", keyGuard, true);
+    try {
+      await user.keyboard("{Escape}");
+      act(() => screen.getByTestId("mask-settings-trigger").focus());
+      await user.keyboard("b");
+    } finally {
+      window.removeEventListener("keydown", keyGuard, true);
+    }
+    expect(keys).toEqual([true, false]);
+    expect(props.onSecondaryAction).not.toHaveBeenCalled();
+    fireEvent(
+      screen.getByTestId("mask-tool-capsule"),
+      new MouseEvent("pointerover", { bubbles: true, buttons: 0 }),
+    );
+    await user.click(screen.getByRole("button", { name: "更多 Mask 工具" }));
+    await user.click(screen.getByRole("button", { name: "收起 Mask 设置" }));
+    expect(screen.queryByTestId("mask-toolbar")).toBeNull();
+  });
+
   it("offers image slice only for a saved eligible source and changes only the pointer tool", async () => {
     const user = userEvent.setup();
     const props = toolbarProps({}, { sliceUnavailableReason: null });
@@ -109,7 +183,7 @@ describe("MaskToolbar", () => {
     const view = render(<MaskToolbar {...toolbarProps()} />);
 
     expect(view.getByTestId("mask-toolbar").className).toContain("px-3");
-    expect(view.getByTestId("mask-toolbar").className).toContain("py-1.5");
+    expect(view.getByTestId("mask-toolbar").className).toContain("py-3");
     for (const button of [
       view.getByTitle("Mask 高级工具"),
       view.getByTestId("mask-primary-action"),

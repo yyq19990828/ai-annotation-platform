@@ -1,3 +1,4 @@
+import { openMaskSettings, closeMaskSettings } from "../fixtures/mask-toolbar";
 import type { APIRequestContext, APIResponse } from "@playwright/test";
 
 import { expect, test, type SeedNativeMaskCandidateData } from "../fixtures/seed";
@@ -140,6 +141,7 @@ test("视频 Mask 关键帧复制、outside、删除撤销与组件拆轨保持�
       keyframeWrites += 1;
   });
   await page.getByRole("button", { name: "粘贴当前轨迹" }).click();
+  await openMaskSettings(page);
   const toolbar = page.getByTestId("mask-toolbar");
   await expect(toolbar).toContainText("未保存", { timeout: 15_000 });
   expect(keyframeWrites).toBe(0);
@@ -149,7 +151,7 @@ test("视频 Mask 关键帧复制、outside、删除撤销与组件拆轨保持�
   await toolbar.getByTestId("mask-primary-action").click();
   expect((await materialized).status()).toBe(200);
   // 网络响应先于保存成功后的会话清理；等 UI 真正回到选择态再发起下一项操作。
-  await expect(toolbar).toBeHidden({ timeout: 10_000 });
+  await expect(page.getByTestId("mask-tool-capsule")).toHaveCount(0, { timeout: 10_000 });
 
   const copiedAtOne = page.waitForResponse((response) =>
     response.url().endsWith(`/api/v1/annotations/${source.id}/mask-content/1`),
@@ -163,6 +165,7 @@ test("视频 Mask 关键帧复制、outside、删除撤销与组件拆轨保持�
       mutationWrites += 1;
   });
   await page.getByRole("button", { name: "粘贴新轨迹" }).click();
+  await openMaskSettings(page);
   await expect(toolbar).toContainText("粘贴为新轨迹", { timeout: 15_000 });
   await expect(toolbar).toContainText("待原子提交");
   expect(mutationWrites).toBe(0);
@@ -205,12 +208,15 @@ test("视频 Mask 关键帧复制、outside、删除撤销与组件拆轨保持�
   await expect(page.getByTestId("video-track-context-source")).toContainText("保持自 F0");
 
   // The context bar intentionally owns its own keyboard controls; return focus to the
-  // workbench's Mask editor before sending the global undo shortcut.
-  await page.getByTestId("mask-toolbar").getByText("Mask 编辑", { exact: true }).click();
+  // workbench before sending the global undo shortcut.
   await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
   const undone = page.waitForResponse((response) =>
     isKeyframeResponse(response, taskId, source.id, 1, "PUT"),
   );
+  // Deleting the keyframe reloads the held Mask. Its loading guard consumes undo.
+  await openMaskSettings(page);
+  await expect(toolbar).toContainText("就绪");
+  await closeMaskSettings(page);
   await page.keyboard.press("Control+z");
   const undoResponse = await undone;
   expect(undoResponse.status(), await undoResponse.text()).toBe(200);
@@ -221,6 +227,7 @@ test("视频 Mask 关键帧复制、outside、删除撤销与组件拆轨保持�
   );
 
   await page.getByRole("button", { name: "组件拆轨" }).click();
+  await openMaskSettings(page);
   await expect(toolbar).toContainText("拆分组件", { timeout: 15_000 });
   await expect(toolbar).toContainText("1 个来源 → 3 个结果");
   const split = page.waitForResponse((response) => isMutationResponse(response, taskId));

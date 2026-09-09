@@ -2,13 +2,20 @@
 export function isWorkbenchInteractionBlocked(event: Event): boolean {
   if (typeof document === "undefined") return false;
   const selector =
-    "[data-workbench-settings], [data-workbench-tool-menu], [data-workbench-ai-toolbar], [data-workbench-track-context], [data-workbench-tracker-review], [data-workbench-video-tool-confirm], [data-workbench-issue-navigation], [data-workbench-issue-create], [data-workbench-polygon-trace]";
-  const triggerSelector = "[data-workbench-tool-menu-trigger]";
+    "[data-workbench-settings], [data-workbench-tool-menu], [data-workbench-ai-toolbar], [data-workbench-context-toolbar], [data-workbench-track-context], [data-workbench-tracker-review], [data-workbench-video-tool-confirm], [data-workbench-issue-navigation], [data-workbench-issue-create], [data-workbench-polygon-trace]";
+  const triggerSelector =
+    "[data-workbench-tool-menu-trigger], [data-workbench-context-toolbar-trigger]";
   // Closing may remove the marker before a later window listener sees this same event.
   return (
     event.composedPath().some((target) => {
       if (!(target instanceof Element)) return false;
       if (target.matches(selector)) return true;
+      if (target.matches("[data-workbench-context-quick-tools]")) {
+        return (
+          !(event instanceof KeyboardEvent) ||
+          ["Enter", " ", "Escape", "ArrowDown"].includes(event.key)
+        );
+      }
       if (target.matches("[data-workbench-video-tool-command]")) {
         return (
           !(event instanceof KeyboardEvent) ||

@@ -8,6 +8,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createRef } from "react";
 import { act, fireEvent, render, renderHook, screen, within } from "@testing-library/react";
+import { DEFAULT_ANNOTATION_VISUAL } from "./annotationVisual";
 import { VideoKonvaStage } from "./VideoKonvaStage";
 import type {
   VideoDrawingDraft,
@@ -486,6 +487,31 @@ describe("VideoKonvaStage · konva mock", () => {
     vi.spyOn(container, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, 1000, 500));
     return container.querySelector('[data-konva="Stage"]')!;
   }
+
+  it.each(["polygon", "polygon-track", "polyline", "polyline-track"] as const)(
+    "%s previews cursor geometry and responds to fill opacity settings",
+    (videoTool) => {
+      const visual = { ...DEFAULT_ANNOTATION_VISUAL, fillOpacity: 0.37 };
+      const onCreatePoints = vi.fn();
+      const props = { manifest, videoTool, visual, onCreatePoints };
+      const view = render(<VideoKonvaStage {...props} />);
+      const stage = drawingSurface();
+      pointer(stage, "pointerdown", 100, 100);
+      pointer(stage, "pointerdown", 300, 100);
+      pointer(stage, "pointermove", 300, 300);
+      const line = () => screen.getByTestId("points-draft").querySelector('[data-konva="Line"]')!;
+      const closed = videoTool.startsWith("polygon");
+      expect(line()).toHaveAttribute("data-closed", String(closed));
+      expect(JSON.parse(line().getAttribute("data-points")!)).toEqual([
+        100, 100, 300, 100, 300, 300,
+      ]);
+      if (closed) expect(line().getAttribute("data-fill")).toContain("0.37");
+      else expect(line()).not.toHaveAttribute("data-fill");
+      view.rerender(<VideoKonvaStage {...props} visual={{ ...visual, fillOpacity: 0 }} />);
+      if (closed) expect(line().getAttribute("data-fill")).toMatch(/,\s*0\)$/);
+      expect(onCreatePoints).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([
     ["polygon", "video_polygon", false],
