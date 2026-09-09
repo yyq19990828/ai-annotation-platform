@@ -159,7 +159,7 @@ export async function runPointcloudPanelLayout(
     .poll(async () =>
       page
         .locator(".dv-groupview-floating")
-        .filter({ has: page.getByRole("button", { name: "三视图精修菜单", exact: true }) })
+        .filter({ has: page.getByRole("button", { name: "隐藏三视图精修", exact: true }) })
         .count(),
     )
     .toBe(1);

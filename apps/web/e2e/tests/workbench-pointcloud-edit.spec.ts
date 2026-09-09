@@ -1309,7 +1309,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
         await expectCenterHitTarget(command);
       }
       await settings.getByRole("button", { name: "关闭设置", exact: true }).click();
-      for (const name of ["上一", "提交质检", "跳过", "下一"]) {
+      for (const name of ["上一个任务", "提交", "跳过", "下一个任务"]) {
         await expectCenterHitTarget(page.getByRole("button", { name, exact: true }));
       }
     }

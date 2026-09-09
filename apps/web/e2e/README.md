@@ -25,10 +25,16 @@ pnpm test:e2e --ui                       # 交互式 UI 模式
 
 首次运行需要 `pnpm exec playwright install chromium` 装浏览器。
 
+CI 使用 `line` reporter 显示正在执行的用例及重试，同时保留 GitHub annotations 和 HTML 报告。分片内按单 worker 串行运行；排查长时间执行时先查看当前用例和超时信息，不能只凭 WebSocket 断连日志判断测试卡死。
+
+CI 单用例最多重试一次，首个用例最终失败后终止当前分片；其他分片继续完成各自诊断。每个 Playwright 测试进程总限时 15 分钟，测试步骤限时 20 分钟，整个 E2E job（含安装和构建）限时 30 分钟。分层限时为清理和报告上传保留余量，并在测试进程无法自行退出时由 Actions 兜底。本地运行不启用这些 CI 早退限制。
+
 本地 E2E 固定使用 `annotation_e2e` 逻辑库、Web `127.0.0.1:3001`、API
 `127.0.0.1:8010`。Playwright 不会复用开发端口 `3000/8000`；专用端口被占用时
 直接失败，防止测试误写开发服务。如需使用其它隔离测试库，用
 `PLAYWRIGHT_E2E_DATABASE_URL` 覆盖；目标库名仍必须以 `_e2e` 或 `_test` 结尾。
+
+本地并行运行多组测试时，每组须使用独立测试数据库、服务端口和 `MINIO_DATASETS_BUCKET`。WebCodecs 夹具清理会删除桶内整个测试前缀；共享同一个桶的测试应串行执行，避免另一组 reset 删除正在读取的视频对象。CI 分片使用各自 runner 上的独立 MinIO 服务。
 
 ## 数据准备
 

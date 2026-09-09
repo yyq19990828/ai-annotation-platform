@@ -67,7 +67,7 @@ export async function runSamToolRecording(
     await page
       .getByRole("tab")
       .filter({
-        has: page.getByRole("button", { name: `${title}菜单`, exact: true }),
+        has: page.getByRole("button", { name: `隐藏${title}`, exact: true }),
       })
       .click();
   }

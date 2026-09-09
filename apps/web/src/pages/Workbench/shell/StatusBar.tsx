@@ -107,8 +107,11 @@ export function StatusBar({
   const inlineItem = "inline-flex items-center gap-1";
   const countValue = "mono text-sm font-semibold text-foreground";
   return (
-    <div className="flex justify-between border-t border-border bg-card px-4 py-2 text-xs text-muted-foreground">
-      <div className="flex items-center gap-3">
+    <div
+      data-testid="workbench-status-bar"
+      className="flex min-w-0 shrink-0 items-center justify-between gap-4 overflow-x-auto whitespace-nowrap border-t border-border bg-card px-3 py-1.5 text-xs text-muted-foreground"
+    >
+      <div className="flex shrink-0 items-center gap-3">
         {activeVideoSegment && (
           <>
             <span className={inlineItem}>
@@ -173,7 +176,7 @@ export function StatusBar({
           </span>
         </span>
       </div>
-      <div className="flex items-center gap-3">
+      <div className="flex shrink-0 items-center gap-3">
         {diffMode !== undefined && onSetDiffMode && (
           <>
             <div className="flex gap-0.5">
@@ -220,11 +223,20 @@ export function StatusBar({
         <span>
           分辨率 <span className="mono text-foreground">{dimText}</span>
         </span>
-        {cursorText && (
+        {Boolean(imageWidth && imageHeight) && (
           <>
             <Sep />
             <span>
-              光标 <span className="mono text-foreground">{cursorText}</span>
+              光标{" "}
+              <span
+                className="mono inline-grid tabular-nums text-foreground"
+                data-testid="status-cursor"
+              >
+                <span className="invisible col-start-1 row-start-1" aria-hidden="true">
+                  ({imageWidth}, {imageHeight})
+                </span>
+                <span className="col-start-1 row-start-1">{cursorText ?? "—"}</span>
+              </span>
             </span>
           </>
         )}

@@ -19,6 +19,7 @@ import {
   type IDockviewHeaderActionsProps,
   type DockviewWillShowOverlayLocationEvent,
   type DockviewWillDropEvent,
+  type DroptargetOverlayModel,
 } from "dockview-react";
 import { toast } from "sonner";
 import { DropdownMenu, type DropdownItem } from "@/components/ui/DropdownMenu";
@@ -29,7 +30,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { cn } from "@/lib/utils";
 import { useActiveIssueStore } from "../state/useActiveIssueStore";
 import { useWorkbenchWorkspaceLayout } from "../state/useWorkbenchWorkspaceLayout";
-import { createWorkbenchLayoutExecutor } from "./workbenchLayoutExecutor";
+import { createWorkbenchLayoutExecutor, defaultDockWidth } from "./workbenchLayoutExecutor";
 import {
   createWorkspacePreset,
   getActiveWorkspacePreset,
@@ -75,7 +76,10 @@ export interface WorkbenchDockWorkspaceProps {
 
 type Executor = ReturnType<typeof createWorkbenchLayoutExecutor>;
 const SlotsContext = createContext<WorkbenchPanelSlots | null>(null);
-const TabMenuContext = createContext<(id: PanelId) => DropdownItem[]>(() => []);
+const PanelCloseContext = createContext<{ hide: (id: PanelId) => void; disabled: boolean }>({
+  hide: () => {},
+  disabled: true,
+});
 
 function isPanelContentVisible(api: IDockviewPanelProps["api"] | undefined): boolean {
   return Boolean(
@@ -136,7 +140,6 @@ function PanelContent({ api, containerApi }: IDockviewPanelProps) {
 }
 
 function PanelHeaderActions({ group }: IDockviewHeaderActionsProps) {
-  const getItems = useContext(TabMenuContext);
   const [id, setId] = useState(group.activePanel?.id as PanelId | undefined);
   useEffect(() => {
     const update = () => setId(group.activePanel?.id as PanelId | undefined);
@@ -145,8 +148,7 @@ function PanelHeaderActions({ group }: IDockviewHeaderActionsProps) {
     return () => subscription.dispose();
   }, [group]);
   const layout = useWorkbench3DLayout();
-  if (!id || !WORKBENCH_PANEL_REGISTRY[id].capabilities.hide) return null;
-  const hide = getItems(id).find((item) => item.id === "hide");
+  if (id !== "camera-view") return null;
   return (
     <div className="flex h-full items-center gap-1 pr-1" data-workbench-layout-control>
       {id === "camera-view" && (
@@ -163,57 +165,33 @@ function PanelHeaderActions({ group }: IDockviewHeaderActionsProps) {
           悬浮显示
         </button>
       )}
-      <Tooltip name={`隐藏${WORKBENCH_PANEL_REGISTRY[id].title}`} side="bottom">
-        <button
-          type="button"
-          aria-label={`隐藏${WORKBENCH_PANEL_REGISTRY[id].title}`}
-          disabled={hide?.disabled}
-          className="inline-flex size-6 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50"
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={(event) => {
-            event.stopPropagation();
-            hide?.onSelect?.();
-          }}
-        >
-          <Icon name="x" size={14} />
-        </button>
-      </Tooltip>
     </div>
   );
 }
 
 function PanelTab({ api }: IDockviewPanelHeaderProps) {
-  const items = useContext(TabMenuContext)(api.id as PanelId);
+  const id = api.id as PanelId;
+  const { hide, disabled } = useContext(PanelCloseContext);
   return (
-    <div
-      className="flex h-full items-center gap-1 pl-2 text-xs"
-      data-workbench-layout-control
-      onContextMenu={(event) => {
-        event.preventDefault();
-        event.currentTarget.querySelector("button")?.click();
-      }}
-    >
+    <div className="flex h-full items-center gap-1 pl-2 text-xs" data-workbench-layout-control>
       <span>{WORKBENCH_PANEL_REGISTRY[api.id as PanelId].title}</span>
-      <DropdownMenu
-        items={items}
-        trigger={({ ref, toggle, open }) => (
+      {WORKBENCH_PANEL_REGISTRY[id].capabilities.hide && (
+        <Tooltip name={`隐藏${WORKBENCH_PANEL_REGISTRY[id].title}`} side="bottom">
           <button
-            ref={ref}
             type="button"
-            aria-label={`${WORKBENCH_PANEL_REGISTRY[api.id as PanelId].title}菜单`}
-            aria-haspopup="menu"
-            aria-expanded={open}
+            aria-label={`隐藏${WORKBENCH_PANEL_REGISTRY[id].title}`}
+            disabled={disabled}
+            className="inline-flex size-6 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={(event) => {
               event.stopPropagation();
-              toggle();
+              hide(id);
             }}
-            className="rounded-sm p-1 text-muted-foreground hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
           >
-            <Icon name="more" size={14} />
+            <Icon name="x" size={14} />
           </button>
-        )}
-      />
+        </Tooltip>
+      )}
     </div>
   );
 }
@@ -307,6 +285,21 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
   );
   const owner = useWorkbenchWorkspaceLayout(context, fallback, standard, compact);
   const [api, setApi] = useState<DockviewApi | null>(null);
+  const dropOverlays = useMemo(
+    () => ({
+      content: { smallWidthBoundary: 0 } as DroptargetOverlayModel,
+      edge: {
+        smallWidthBoundary: 0,
+        activationSize: { type: "pixels", value: 10 },
+      } as DroptargetOverlayModel,
+    }),
+    [],
+  );
+  const dropOverlayModel = useCallback(
+    ({ location }: { location: string }) =>
+      location === "content" ? dropOverlays.content : undefined,
+    [dropOverlays],
+  );
   const executor = useRef<Executor | null>(null);
   const latest = useRef({ owner, compact, onStateChange: props.onStateChange });
   latest.current = { owner, compact, onStateChange: props.onStateChange };
@@ -459,44 +452,6 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
       restoring.current = false;
     }
   };
-  const tabItems = useCallback(
-    (id: PanelId): DropdownItem[] => [
-      ...(
-        [
-          ["left", "停靠到左侧"],
-          ["right", "停靠到右侧"],
-          ["below", "停靠到底部"],
-        ] as const
-      ).map(([position, label]) => ({
-        id: position,
-        label,
-        disabled: owner.readOnly || compact || id === "canvas",
-        onSelect: () => run((engine) => engine.dock(id, position)),
-      })),
-      ...availablePanels
-        .filter((target) => target !== id)
-        .map((target) => ({
-          id: `tab-${target}`,
-          label: `与${WORKBENCH_PANEL_REGISTRY[target].title}合并为标签`,
-          disabled: owner.readOnly || compact || id === "canvas",
-          onSelect: () => run((engine) => engine.tab(id, target)),
-        })),
-      {
-        id: "float",
-        label: "浮动面板",
-        disabled: owner.readOnly || compact || !WORKBENCH_PANEL_REGISTRY[id].capabilities.float,
-        onSelect: () => run((engine) => engine.float(id)),
-      },
-      {
-        id: "hide",
-        label: "隐藏面板",
-        disabled: owner.readOnly || id === "canvas",
-        onSelect: () => commands.hide(id),
-      },
-    ],
-    [availablePanels, commands, compact, owner.readOnly, run],
-  );
-
   useLayoutEffect(() => {
     if (!api) return;
     const session = `${userId ?? "anonymous"}:${context}`;
@@ -662,7 +617,27 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
         if (blocked() || event.group.id === "canvas" || event.group.id === "parking")
           event.nativeEvent.preventDefault();
       }),
-      api.onWillShowOverlay(guardDrop),
+      api.onWillShowOverlay((event) => {
+        guardDrop(event);
+        if (event.defaultPrevented) return;
+        const source = event.getData();
+        const panels = source?.panelId
+          ? [source.panelId]
+          : (api.groups.find((group) => group.id === source?.groupId)?.panels.map((p) => p.id) ??
+            []);
+        const horizontal = event.position === "left" || event.position === "right";
+        const width = Math.max(
+          defaultDockWidth(api.width),
+          ...panels.map((id) => WORKBENCH_PANEL_REGISTRY[id as PanelId]?.minWidth ?? 0),
+        );
+        // Dockview reads these models immediately after this event, before painting.
+        dropOverlays.content.size = horizontal
+          ? { type: "pixels", value: width }
+          : { type: "percentage", value: 50 };
+        dropOverlays.edge.size = horizontal
+          ? { type: "pixels", value: width }
+          : { type: "pixels", value: 20 };
+      }),
       api.onWillDrop((event) => {
         guardDrop(event);
         if (!event.defaultPrevented) {
@@ -695,7 +670,7 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
       workspaceHost?.removeEventListener("pointerdown", guardShiftFloat, true);
       if (pendingFrame.current !== null) cancelAnimationFrame(pendingFrame.current);
     };
-  }, [api, persist]);
+  }, [api, persist, dropOverlays]);
 
   useEffect(() => {
     if (!host.current || !api) return;
@@ -876,13 +851,16 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
           ref={ref}
           type="button"
           data-workbench-layout-control
+          aria-label="布局"
+          title="布局"
           aria-haspopup="menu"
           aria-expanded={open}
           onClick={toggle}
-          className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+          className="inline-flex h-8 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 text-xs text-muted-foreground hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring @max-[1100px]:w-7 @max-[1100px]:justify-center @max-[1100px]:p-0"
         >
-          布局
-          <Icon name="chevDown" size={12} />
+          <span className="@max-[1100px]:hidden">布局</span>
+          <Icon name="grid" size={14} className="hidden @max-[1100px]:block" />
+          <Icon name="chevDown" size={12} className="@max-[1100px]:hidden" />
         </button>
       )}
     />
@@ -905,7 +883,7 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
       }}
     >
       <SlotsContext.Provider value={slots}>
-        <TabMenuContext.Provider value={tabItems}>
+        <PanelCloseContext.Provider value={{ hide: commands.hide, disabled: owner.readOnly }}>
           {renderTopbar(
             menu,
             view,
@@ -981,9 +959,11 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
               onReady={(event) => setApi(event.api)}
               floatingGroupBounds="boundedWithinViewport"
               floatingGroupDragHandle="tabbar"
+              dndEdges={dropOverlays.edge}
+              dropOverlayModel={dropOverlayModel}
             />
           </div>
-        </TabMenuContext.Provider>
+        </PanelCloseContext.Provider>
       </SlotsContext.Provider>
     </Workbench3DLayoutContext.Provider>
   );

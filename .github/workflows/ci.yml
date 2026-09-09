@@ -244,6 +244,7 @@ jobs:
   e2e-suites:
     name: Frontend E2E suites
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # Each runner owns its services: seed/reset and teardown delete shared fixtures.
     strategy:
       fail-fast: false
@@ -370,6 +371,7 @@ jobs:
         working-directory: apps/web
         run: pnpm exec playwright install --with-deps chromium
       - name: Run E2E suite
+        timeout-minutes: 20
         working-directory: apps/web
         run: pnpm ${{ matrix.command }}
       - uses: actions/upload-artifact@v4

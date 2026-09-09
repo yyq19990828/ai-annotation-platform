@@ -23,6 +23,7 @@ import {
 type SidePanelId = Exclude<PanelId, "canvas">;
 type DockPosition = "left" | "right" | "above" | "below";
 type Axis = "HORIZONTAL" | "VERTICAL";
+export const defaultDockWidth = (width: number): number => Math.round(width * 0.15);
 export type CanvasPlacement = "left" | "right" | "above" | "below" | "center";
 export type WorkspaceSide = "left" | "right";
 export type WorkspaceSideState = "empty" | "open" | "collapsed";
@@ -308,9 +309,19 @@ export function createWorkbenchLayoutExecutor(
         maximumWidth: floating ? 720 : Number.POSITIVE_INFINITY,
         maximumHeight: floating ? 900 : Number.POSITIVE_INFINITY,
       });
-      // Dockview emits layout before updating its explicit group constraints.
-      if (!floating && group.api.isVisible)
+      // Constraint changes resize the nested grid, but not a native floating window's
+      // outer bounds. Apply them before capture so replay cannot enlarge the window.
+      // Dockview also emits layout before updating its explicit group constraints.
+      if (floating) {
+        const rect = group.element.closest(".dv-resize-container")?.getBoundingClientRect();
+        if (rect) {
+          const width = Math.min(720, Math.max(minimumWidth, rect.width));
+          const height = Math.min(900, Math.max(minimumHeight, rect.height));
+          if (width !== rect.width || height !== rect.height) group.api.setSize({ width, height });
+        }
+      } else if (group.api.isVisible) {
         group.api.setSize({ width: group.api.width, height: group.api.height });
+      }
     }
   }
   function preserveGridSizes() {
@@ -563,7 +574,7 @@ export function createWorkbenchLayoutExecutor(
     });
     group.api.setVisible(true);
     group.api.setSize({
-      width: Math.round(getBounds().width * 0.15),
+      width: defaultDockWidth(getBounds().width),
       ...(id === "discussion" ? { height: spec.height } : {}),
     });
     return group;
@@ -699,7 +710,7 @@ export function createWorkbenchLayoutExecutor(
     });
     group.api.setVisible(true);
     group.api.setSize(
-      position === "below" ? { height: 260 } : { width: Math.round(getBounds().width * 0.15) },
+      position === "below" ? { height: 260 } : { width: defaultDockWidth(getBounds().width) },
     );
     panel(id).api.setActive();
     ensureParking();
@@ -901,7 +912,7 @@ export function createWorkbenchLayoutExecutor(
         return (
           previous?.get(node.group.id)?.[dimension] ??
           (previous && dimension === "width"
-            ? Math.round(bounds.width * 0.15)
+            ? defaultDockWidth(bounds.width)
             : getGroup(node.group.id)!.api[dimension])
         );
       const alongAxis = (node.axis === "HORIZONTAL") === (dimension === "width");
@@ -940,10 +951,18 @@ export function createWorkbenchLayoutExecutor(
         box[axis],
         minimum.reduce((sum, size) => sum + size, 0),
       );
-      const weights = node.children.map((child) =>
-        previous ? extent(child, axis) : child.size || 1,
-      );
       const canvasIndex = node.children.findIndex(containsCanvas);
+      // A newly stacked pair shares its column equally; the retained panel's
+      // pre-drop full height must not outweigh the incoming panel's split height.
+      const splitColumn =
+        previous &&
+        axis === "height" &&
+        canvasIndex === -1 &&
+        node.children.length === 2 &&
+        node.children.some((child) => !hasPreviousSize(child));
+      const weights = node.children.map((child) =>
+        splitColumn ? 1 : previous ? extent(child, axis) : child.size || 1,
+      );
       if (previous && canvasIndex !== -1)
         weights[canvasIndex] = Math.max(
           1,

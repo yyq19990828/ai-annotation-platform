@@ -1,3 +1,4 @@
+import { panelCommand } from "../fixtures/workbench-panel-actions";
 import { layoutCommand } from "../helpers/workbench-layout";
 import type { Page, Request } from "@playwright/test";
 import type {
@@ -13,14 +14,6 @@ const VIEWPORTS = [
   { width: 1920, height: 1080 },
 ] as const;
 const workspace = (page: Page) => page.locator("[data-workbench-workspace]");
-
-async function panelCommand(page: Page, title: string, name: string) {
-  // Floating panels may cover a docked tab; its keyboard menu remains reachable.
-  await page.getByRole("button", { name: `${title}菜单`, exact: true }).press("Enter");
-  const command = page.getByRole("menuitem", { name, exact: true });
-  await expect(command).toBeEnabled();
-  await command.click();
-}
 
 async function savedContext(page: Page, context: WorkspaceContext): Promise<WorkspaceEnvelope> {
   const token = await page.evaluate(() => localStorage.getItem("token"));
@@ -349,7 +342,7 @@ for (const mode of ["annotate", "review"] as const) {
         "浮动面板",
       ];
       for (let operation = 0; operation < 50; operation += 1) {
-        await test.step(`菜单重排 ${operation + 1}`, async () => {
+        await test.step(`拖动重排 ${operation + 1}`, async () => {
           if (operation === 25) await page.setViewportSize(finalViewport);
           // Leave a tab group and a floating group in the final saved tree.
           await panelCommand(

@@ -1,11 +1,7 @@
+import { panelCommand } from "../fixtures/workbench-panel-actions";
 import { layoutCommand, openLayoutSettings } from "../helpers/workbench-layout";
 import type { Page } from "@playwright/test";
 import { expect, test } from "../fixtures/seed";
-
-async function panelCommand(page: Page, title: string, name: string) {
-  await page.getByRole("button", { name: `${title}菜单`, exact: true }).click();
-  await page.getByRole("menuitem", { name, exact: true }).click();
-}
 
 async function savedVideoWorkspace(page: Page) {
   const token = await page.evaluate(() => localStorage.getItem("token"));

@@ -137,7 +137,7 @@ export async function runVideoMaskTrackEdit(
     for (const title of ["类别面板", "标注详情"]) {
       await page
         .getByRole("tab")
-        .filter({ has: page.getByRole("button", { name: `${title}菜单`, exact: true }) })
+        .filter({ has: page.getByRole("button", { name: `隐藏${title}`, exact: true }) })
         .click();
     }
     await waitForRecordingPanels(page, ["canvas", "class-palette", "inspector"]);

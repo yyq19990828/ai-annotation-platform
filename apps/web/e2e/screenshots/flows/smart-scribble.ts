@@ -256,11 +256,11 @@ export async function runSmartScribble(
     await recordingPanelCommand(page, "讨论 / Issue", "隐藏面板");
     await page
       .getByRole("tab")
-      .filter({ has: page.getByRole("button", { name: "类别面板菜单", exact: true }) })
+      .filter({ has: page.getByRole("button", { name: "隐藏类别面板", exact: true }) })
       .click();
     await page
       .getByRole("tab")
-      .filter({ has: page.getByRole("button", { name: "标注详情菜单", exact: true }) })
+      .filter({ has: page.getByRole("button", { name: "隐藏标注详情", exact: true }) })
       .click();
     await waitForRecordingPanels(page, ["canvas", "class-palette", "inspector"], ["discussion"]);
     await hidePredictions(page);

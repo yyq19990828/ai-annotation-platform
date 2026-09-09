@@ -82,7 +82,7 @@ export async function runCandidateReviewLifecycle(
   }
   await page
     .getByRole("tab")
-    .filter({ has: page.getByRole("button", { name: "标注详情菜单", exact: true }) })
+    .filter({ has: page.getByRole("button", { name: "隐藏标注详情", exact: true }) })
     .click();
   await waitForRecordingPanels(page, ["canvas", "inspector"], ["ai-task", "discussion"]);
 

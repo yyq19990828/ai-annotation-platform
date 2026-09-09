@@ -156,6 +156,7 @@ beforeEach(() => {
     if (
       this.classList.contains("dv-dockview") ||
       this.firstElementChild?.classList.contains("dv-dockview") ||
+      this.firstElementChild?.classList.contains("dv-shell") ||
       this.classList.contains("dv-shell")
     )
       return new DOMRect(0, 0, 1600, 900);
@@ -172,6 +173,37 @@ afterEach(async () => {
 });
 
 describe("stable Dockview React workspace", () => {
+  it.each(["left", "right"] as const)(
+    "previews a new %s column at its docked width",
+    async (side) => {
+      vi.stubGlobal("PointerEvent", class extends MouseEvent {});
+      vi.stubGlobal("DragEvent", MouseEvent);
+      vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(1600);
+      vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(900);
+      const { container } = render(fixture());
+      await waitFor(() => expect(state.api?.getPanel("class-palette")).toBeDefined());
+      const source = container.querySelector('[data-tab-panel-id="class-palette"]')!;
+      const target = container.querySelector(".dv-dockview")!;
+      const dataTransfer = {
+        setData: vi.fn(),
+        setDragImage: vi.fn(),
+        types: [],
+        items: [],
+        effectAllowed: "move",
+      };
+      fireEvent.dragStart(source, { dataTransfer });
+      fireEvent.dragOver(target, {
+        dataTransfer,
+        clientX: side === "left" ? 1 : 1599,
+        clientY: 450,
+      });
+      const preview = container.querySelector<HTMLElement>(`.dv-drop-target-${side}`)!;
+      expect(preview).not.toBeNull();
+      expect(preview.style.width).toBe("15%");
+      fireEvent.dragEnd(source, { dataTransfer });
+    },
+  );
+
   it("tool-menu portal keys do not save the workspace layout", async () => {
     render(
       fixture(
@@ -254,7 +286,7 @@ describe("stable Dockview React workspace", () => {
     expect(mounts).toBe(1);
   });
 
-  it("header X hides only the active tab and restores its draft without remounting canvas", async () => {
+  it("tab X hides its own inactive panel and restores its draft without remounting canvas", async () => {
     const commands = createRef<WorkbenchWorkspaceCommands>();
     render(fixture("annotate:image", commands));
     const draft = await screen.findByLabelText("讨论草稿");
@@ -263,16 +295,22 @@ describe("stable Dockview React workspace", () => {
       state
         .api!.getPanel("discussion")!
         .api.moveTo({ group: state.api!.getPanel("inspector")!.group, position: "center" });
-      state.api!.getPanel("discussion")!.api.setActive();
+      state.api!.getPanel("inspector")!.api.setActive();
     });
-    fireEvent.click(await screen.findByRole("button", { name: "隐藏讨论 / Issue" }));
+    const close = await screen.findByRole("button", { name: "隐藏讨论 / Issue" });
+    expect(screen.queryByRole("button", { name: /菜单$/ })).toBeNull();
+    fireEvent.contextMenu(close.closest('[role="tab"]')!);
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(state.api!.getPanel("discussion")!.group.id).not.toBe("parking");
+    expect(close.closest('[role="tab"]')).toHaveAttribute("data-tab-panel-id", "discussion");
+    expect(close.closest('[role="tab"]')).toHaveAttribute("aria-selected", "false");
+    fireEvent.click(close);
     await waitFor(() => expect(state.api!.getPanel("discussion")!.group.id).toBe("parking"));
     expect(state.api!.getPanel("inspector")!.group.id).not.toBe("parking");
     expect(screen.queryByRole("button", { name: "隐藏画布" })).toBeNull();
     act(() => commands.current!.show("discussion"));
     await waitFor(() => expect(screen.getByLabelText("讨论草稿")).toHaveValue("保留编辑"));
-    fireEvent.click(screen.getByRole("button", { name: "讨论 / Issue菜单" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "浮动面板" }));
+    act(() => state.api!.addFloatingGroup(state.api!.getPanel("discussion")!));
     await waitFor(() => {
       expect(screen.getAllByRole("button", { name: "隐藏讨论 / Issue" })).toHaveLength(1);
       expect(screen.getByRole("button", { name: "隐藏标注详情" })).toBeVisible();
@@ -309,44 +347,6 @@ describe("stable Dockview React workspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "悬浮显示" }));
     await waitFor(() => expect(state.api!.getPanel("camera-view")!.group.id).toBe("parking"));
     expect(mounts).toBe(1);
-  });
-
-  it.each(["停靠到左侧", "停靠到右侧", "停靠到底部"])(
-    "keeps unrelated sidebar widths through %s and merging the panel back",
-    async (command) => {
-      const commands = createRef<WorkbenchWorkspaceCommands>();
-      render(fixture("annotate:image", commands));
-      await screen.findByTestId("canvas-marker");
-      act(() => commands.current!.show("ai-task"));
-      const panels = ["task-queue", "class-palette", "inspector", "discussion"].map(
-        (id) => state.api!.getPanel(id)!,
-      );
-      const widths = panels.map((panel) => panel.group.api.width);
-      fireEvent.click(screen.getByRole("button", { name: "当前题 AI菜单" }));
-      fireEvent.click(screen.getByRole("menuitem", { name: command }));
-      expect(panels.map((panel) => panel.group.api.width)).toEqual(widths);
-      fireEvent.click(screen.getByRole("button", { name: "当前题 AI菜单" }));
-      fireEvent.click(screen.getByRole("menuitem", { name: "与标注详情合并为标签" }));
-      expect(panels.map((panel) => panel.group.api.width)).toEqual(widths);
-      expect(state.owner.failRestore).not.toHaveBeenCalled();
-      expect(mounts).toBe(1);
-    },
-  );
-
-  it("preserves docked widths when the AI tab floats out of a narrow sidebar", async () => {
-    const commands = createRef<WorkbenchWorkspaceCommands>();
-    render(fixture("annotate:image", commands));
-    await screen.findByTestId("canvas-marker");
-    act(() => commands.current!.show("ai-task"));
-    const panels = ["task-queue", "canvas", "inspector", "discussion"].map(
-      (id) => state.api!.getPanel(id)!,
-    );
-    const widths = panels.map((panel) => panel.group.api.width);
-    fireEvent.click(screen.getByRole("button", { name: "当前题 AI菜单" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "浮动面板" }));
-    await waitFor(() => expect(state.api!.getPanel("ai-task")!.api.location.type).toBe("floating"));
-    expect(panels.map((panel) => panel.group.api.width)).toEqual(widths);
-    expect(state.owner.failRestore).not.toHaveBeenCalled();
   });
 
   it.each([
