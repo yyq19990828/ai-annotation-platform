@@ -9,8 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.audit_log import AuditLog
 from app.db.models.project import Project
+from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
+from app.db.models.task_batch import TaskBatch
 from sqlalchemy import select
+from tests.factory import create_user
 
 
 async def _seed_project_task(
@@ -148,3 +151,79 @@ async def test_skip_task_assigns_to_caller_when_unassigned(
     assert task.assignee_id == user.id
     assert task.assigned_at is not None
     assert task.skip_reason == "other"
+
+
+@pytest.mark.asyncio
+async def test_skip_task_rejects_task_assigned_to_another_annotator(
+    httpx_client_bound, db_session, super_admin, annotator
+):
+    owner, _ = super_admin
+    actor, token = annotator
+    other = await create_user(
+        db_session,
+        "annotator",
+        f"skip-owner-{uuid.uuid4()}@test.local",
+        "Other annotator",
+    )
+    project = Project(
+        id=uuid.uuid4(),
+        display_id=f"P-SK-ASSIGN-{uuid.uuid4().hex[:6]}",
+        name="skip assignment guard",
+        type_label="image-det",
+        type_key="image-det",
+        owner_id=owner.id,
+        classes=["car"],
+    )
+    db_session.add(project)
+    await db_session.flush()
+    db_session.add_all(
+        [
+            ProjectMember(
+                project_id=project.id,
+                user_id=actor.id,
+                role="annotator",
+                assigned_by=owner.id,
+            ),
+            ProjectMember(
+                project_id=project.id,
+                user_id=other.id,
+                role="annotator",
+                assigned_by=owner.id,
+            ),
+        ]
+    )
+    batch = TaskBatch(
+        id=uuid.uuid4(),
+        project_id=project.id,
+        display_id=f"B-SK-ASSIGN-{uuid.uuid4().hex[:6]}",
+        name="assigned batch",
+        status="active",
+        annotator_id=other.id,
+    )
+    db_session.add(batch)
+    await db_session.flush()
+    task = Task(
+        id=uuid.uuid4(),
+        project_id=project.id,
+        batch_id=batch.id,
+        display_id=f"T-SK-ASSIGN-{uuid.uuid4().hex[:6]}",
+        file_name="assigned.jpg",
+        file_path="/tmp/assigned.jpg",
+        file_type="image",
+        status="pending",
+        assignee_id=other.id,
+    )
+    db_session.add(task)
+    await db_session.flush()
+    await db_session.commit()
+
+    resp = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/skip",
+        json={"reason": "no_target"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert resp.status_code == 404
+    await db_session.refresh(task)
+    assert task.status == "pending"
+    assert task.assignee_id == other.id

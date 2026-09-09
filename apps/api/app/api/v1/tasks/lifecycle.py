@@ -183,12 +183,36 @@ async def skip_task(
             detail={"reason": "invalid_skip_reason", "value": body.reason},
         )
 
-    task = await _load_task_or_404(db, task_id)
+    # Match submit/review mutations: serialize the decision with an in-flight
+    # handoff before checking the current assignment.  The lifecycle service
+    # acquires User rows before Task rows, while this endpoint has no User-row
+    # write, so taking the Task lock here cannot form the reverse lock cycle.
+    from app.db.models.task import Task
+
+    task = (
+        await db.execute(select(Task).where(Task.id == task_id).with_for_update())
+    ).scalar_one_or_none()
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
     if task.status not in ("pending", "in_progress"):
         raise HTTPException(
             status_code=409,
             detail={"reason": "task_not_skippable", "status": task.status},
         )
+
+    # A task with a batch must pass the same visibility/assignment rule as
+    # submit.  Keep the legacy orphan-task behavior for an unassigned task,
+    # but never let a non-privileged actor skip an orphan already assigned to
+    # somebody else.
+    if task.batch_id is not None:
+        await _assert_task_visible(db, task, current_user)
+    elif (
+        task.assignee_id is not None
+        and task.assignee_id != current_user.id
+        and current_user.role
+        not in (UserRole.SUPER_ADMIN.value, UserRole.PROJECT_ADMIN.value)
+    ):
+        raise HTTPException(status_code=404, detail="Task not found")
 
     now = datetime.now(timezone.utc)
     if task.assignee_id is None:

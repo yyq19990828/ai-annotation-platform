@@ -166,7 +166,7 @@ async def update_batch(
     batch = await svc.get(batch_id)
     if not batch or batch.project_id != project_id:
         raise HTTPException(status_code=404, detail="Batch not found")
-    batch = await svc.update(batch_id, data)
+    batch = await svc.update(batch_id, data, project_id=project_id)
     await db.commit()
     await db.refresh(batch)
     briefs = await _briefs_for_batches(db, project_id, [batch])
