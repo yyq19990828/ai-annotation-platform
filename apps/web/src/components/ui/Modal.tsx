@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 
 import { Icon } from "@/components/ui/Icon";
+import { cn } from "@/lib/utils";
 import { useElementStyle } from "./useElementStyle";
 
 /**
@@ -16,10 +17,19 @@ interface ModalProps {
   onClose: () => void;
   title?: ReactNode;
   width?: number;
+  /** Disable for live canvases where backdrop filtering makes compositing expensive. */
+  backdropBlur?: boolean;
   children: ReactNode;
 }
 
-export function Modal({ open, onClose, title, width = 560, children }: ModalProps) {
+export function Modal({
+  open,
+  onClose,
+  title,
+  width = 560,
+  backdropBlur = true,
+  children,
+}: ModalProps) {
   const contentRef = useElementStyle<HTMLDivElement>({ width });
 
   return (
@@ -32,7 +42,10 @@ export function Modal({ open, onClose, title, width = 560, children }: ModalProp
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay
           data-testid="modal-overlay"
-          className="fixed inset-0 z-modal bg-black/40 backdrop-blur-[2px] data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0"
+          className={cn(
+            "fixed inset-0 z-modal bg-black/40 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
+            backdropBlur && "backdrop-blur-[2px]",
+          )}
         />
         <DialogPrimitive.Content
           ref={contentRef}

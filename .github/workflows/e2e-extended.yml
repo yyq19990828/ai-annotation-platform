@@ -1,0 +1,35 @@
+name: E2E extended
+
+on:
+  schedule:
+    - cron: "0 19 * * *" # 03:00 Asia/Shanghai
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-extended-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Frontend extended planning
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Select extended suites
+        id: plan
+        run: node scripts/plan-e2e-suites.mjs >> "$GITHUB_OUTPUT"
+
+  suites:
+    name: Frontend extended execution
+    needs: [plan]
+    uses: ./.github/workflows/e2e-run.yml
+    with:
+      matrix: ${{ needs.plan.outputs.matrix }}

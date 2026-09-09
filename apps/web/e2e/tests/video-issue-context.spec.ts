@@ -1,3 +1,4 @@
+import { isVideoLifecycleCancellation } from "../helpers/video-request-errors";
 import type { APIRequestContext, APIResponse, Browser, Page, Route } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 
@@ -79,11 +80,12 @@ const modal = (page: Page) => page.getByRole("dialog").filter({ hasText: "标记
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 const pathOf = (url: string) => new URL(url).pathname;
 const isFixtureMedia = (url: URL, fixture: string) =>
-  url.pathname.endsWith(`/e2e/video/webcodecs/${fixture}/source.mp4`);
+  url.pathname.includes(`/e2e/video/webcodecs/${fixture}/`) &&
+  /\/(?:source|chunk-\d+)\.mp4$/.test(url.pathname);
 
 function expectedRequestAbort(error: EvidenceError, fixture: IssueCase) {
+  if (isVideoLifecycleCancellation(error)) return true;
   if (error.kind !== "request" || error.message !== "net::ERR_ABORTED" || !error.path) return false;
-  if (error.method === "POST") return error.path === "/api/v1/auth/me/heartbeat";
   if (error.method === "DELETE")
     return (
       (fixture.mediaLatency && /^\/api\/v1\/tasks\/[0-9a-f-]{36}\/lock$/.test(error.path)) ||
@@ -92,23 +94,40 @@ function expectedRequestAbort(error: EvidenceError, fixture: IssueCase) {
   if (error.method !== "GET") return false;
   if (fixture.actorChanged && ["/api/v1/projects", "/api/v1/audit-logs"].includes(error.path))
     return true;
-  // These exact read endpoints are cancelled by query ownership changes or document navigation.
-  if (
-    error.path === "/api/v1/auth/me" ||
-    error.path === "/api/v1/feedbacks" ||
-    /^\/api\/v1\/tasks\/[0-9a-f-]{36}$/.test(error.path)
-  )
-    return true;
-  return (
-    fixture.mediaLatency &&
-    (isFixtureMedia(new URL(error.path, API_BASE), fixture.fixtureName) ||
-      /^\/api\/v1\/videos\/[0-9a-f-]{36}\/chunks\/\d+$/.test(error.path))
-  );
+  return fixture.mediaLatency && isFixtureMedia(new URL(error.path, API_BASE), fixture.fixtureName);
 }
 
 async function json<T>(response: APIResponse): Promise<T> {
   expect(response.ok(), `${response.status()} ${await response.text()}`).toBe(true);
   return response.json() as Promise<T>;
+}
+
+async function expectSeededChunks(
+  request: APIRequestContext,
+  token: string,
+  video: { task_id: string; chunk_size_frames: number },
+) {
+  const base = `${API_BASE}/api/v1/tasks/${video.task_id}/video`;
+  const manifest = await json<{ frame_count: number; chunk_size_frames: number }>(
+    await request.get(`${base}/manifest-v2`, { headers: auth(token) }),
+  );
+  expect(video.chunk_size_frames).toBe(manifest.chunk_size_frames);
+  const { chunks } = await json<{
+    chunks: Array<{ chunk_id: number; start_frame: number; end_frame: number; status: string }>;
+  }>(
+    await request.get(`${base}/chunks`, {
+      headers: auth(token),
+      params: { from_frame: 0, to_frame: manifest.frame_count - 1 },
+    }),
+  );
+  expect(chunks).toHaveLength(Math.ceil(manifest.frame_count / manifest.chunk_size_frames));
+  for (const [index, chunk] of chunks.entries())
+    expect(chunk).toMatchObject({
+      chunk_id: index,
+      start_frame: index * manifest.chunk_size_frames,
+      end_frame: Math.min((index + 1) * manifest.chunk_size_frames, manifest.frame_count) - 1,
+      status: "ready",
+    });
 }
 
 async function graphicsEvidence(browser: Browser, page: Page) {
@@ -145,6 +164,7 @@ const test = base.extend<{ issueCase: IssueCase; videoFixture: string }>({
     const data = await seed.reset();
     const video = await seed.videoWebCodecs(data.project_id, { fixture: videoFixture });
     const token = await seed.accessToken(data.admin_email);
+    if (videoFixture === MAIN_FIXTURE) await expectSeededChunks(request, token, video);
     await json(
       await request.patch(`${API_BASE}/api/v1/projects/${data.project_id}`, {
         headers: auth(token),
@@ -1044,6 +1064,7 @@ test.describe("video Issue persisted context", () => {
     issueCase: fixture,
   }) => {
     const other = await seed.videoWebCodecs(fixture.data.project_id, { fixture: MAIN_FIXTURE });
+    await expectSeededChunks(request, fixture.token, other);
     const target = await createIssue(request, fixture, 143, [0.47, 0.53], {
       taskId: other.task_id,
       context: {
@@ -1109,6 +1130,7 @@ test.describe("video Issue persisted context", () => {
     issueCase: fixture,
   }) => {
     const other = await seed.videoWebCodecs(fixture.data.project_id, { fixture: MAIN_FIXTURE });
+    await expectSeededChunks(request, fixture.token, other);
     const contextA: VideoContext = {
       schema_version: 1,
       viewport: { center_x: 0.48, center_y: 0.51, zoom: 1.1 },
@@ -1194,6 +1216,7 @@ test.describe("video Issue persisted context", () => {
       fixture: MAIN_FIXTURE,
       batchId: batch.id,
     });
+    await expectSeededChunks(request, fixture.token, target);
     for (const status of ["active", "annotating"])
       await json(
         await request.post(

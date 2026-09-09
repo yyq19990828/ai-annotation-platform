@@ -220,7 +220,7 @@ jobs:
       # Enforce workflow and job naming across the repository.
       - name: Workflow naming
         run: |
-          node --test scripts/check-workflow-names.test.mjs
+          node --test scripts/check-workflow-names.test.mjs scripts/plan-e2e-suites.test.mjs
           node scripts/check-workflow-names.mjs --strict
 
   docs-build:
@@ -241,153 +241,46 @@ jobs:
           DOCS_BASE: /
         run: pnpm docs:build
 
-  e2e-suites:
-    name: Frontend E2E suites
+  e2e-plan:
+    name: Frontend E2E planning
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    # Each runner owns its services: seed/reset and teardown delete shared fixtures.
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - suite: default-one
-            command: test:e2e --shard=1/4
-            built: true
-          - suite: default-two
-            command: test:e2e --shard=2/4
-            built: true
-          - suite: default-three
-            command: test:e2e --shard=3/4
-            built: true
-          - suite: default-four
-            command: test:e2e --shard=4/4
-            built: true
-          - suite: mask-readonly
-            command: test:e2e:mask-readonly
-            built: false
-          - suite: mask-native
-            command: test:e2e:mask-native
-            built: false
-          - suite: mask-ai-native
-            command: test:e2e:mask-ai-native
-            built: false
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: user
-          POSTGRES_PASSWORD: pass
-          POSTGRES_DB: annotation_test
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
-      redis:
-        image: redis:7
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 6379:6379
-    env:
-      DATABASE_URL: postgresql+asyncpg://user:pass@localhost:5432/annotation_test
-      PLAYWRIGHT_E2E_DATABASE_URL: postgresql+asyncpg://user:pass@localhost:5432/annotation_test
-      SECRET_KEY: ci-test-secret
-      REDIS_URL: redis://localhost:6379/0
-      MINIO_ENDPOINT: localhost:9000
-      MINIO_ACCESS_KEY: minioadmin
-      MINIO_SECRET_KEY: minioadmin
-      MINIO_BUCKET: annotations-test
-      # The test router is opt-in and also validates the _test database suffix.
-      E2E_SEED_ENABLED: "true"
-      ENVIRONMENT: development
-      # CI 上 Node 把 localhost 解析成 ::1，但 uvicorn --host 0.0.0.0 只听 IPv4，
-      # 用 127.0.0.1 强制 IPv4 避免 ECONNREFUSED ::1:8000。
-      PLAYWRIGHT_API_BASE: http://127.0.0.1:8000
+    permissions:
+      contents: read
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Install video fixture tools
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
-      - name: Install uv
-        run: pip install uv
-      - name: Sync API deps
-        working-directory: apps/api
-        run: uv sync --extra test
-      # services 没法给 minio/minio 镜像传 server 子命令；bitnami/minio:latest 已被下架。
-      # 直接 docker run 启容器最稳，并等到 health endpoint 通后再继续，避免后续 FastAPI
-      # startup 阶段反复重试拉满 health-check 窗口。
-      - name: Start MinIO
-        run: |
-          docker run -d --name minio \
-            -p 9000:9000 \
-            -e MINIO_ROOT_USER=minioadmin \
-            -e MINIO_ROOT_PASSWORD=minioadmin \
-            minio/minio:latest server /data
-          for i in {1..30}; do
-            curl -sf http://127.0.0.1:9000/minio/health/live && break
-            sleep 1
-          done
-      - name: alembic upgrade head
-        if: matrix.built
-        working-directory: apps/api
-        run: uv run alembic upgrade head
-      - name: Start FastAPI in background
-        if: matrix.built
-        working-directory: apps/api
-        run: |
-          uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 &
-          for i in {1..30}; do
-            curl -s http://127.0.0.1:8000/health && break
-            sleep 1
-          done
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - uses: pnpm/action-setup@v4
-      - name: pnpm install
-        working-directory: apps/web
-        run: pnpm install --frozen-lockfile
-      - name: Generate API types for Mask suites
-        if: ${{ !matrix.built }}
-        working-directory: apps/web
+      - name: Fetch PR base
+        if: github.event_name == 'pull_request'
         env:
-          OPENAPI_URL: ${{ github.workspace }}/apps/api/openapi.snapshot.json
-        run: pnpm codegen
-      - name: Build frontend
-        if: matrix.built
-        working-directory: apps/web
+          E2E_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: git fetch --no-tags --depth=1 origin "$E2E_BASE_SHA"
+      - name: Select E2E suites
+        id: plan
         env:
-          OPENAPI_URL: ${{ github.workspace }}/apps/api/openapi.snapshot.json
-        run: pnpm build --mode e2e
-      - name: Install Playwright browsers
-        working-directory: apps/web
-        run: pnpm exec playwright install --with-deps chromium
-      - name: Run E2E suite
-        timeout-minutes: 20
-        working-directory: apps/web
-        run: pnpm ${{ matrix.command }}
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: playwright-report-${{ matrix.suite }}
-          path: apps/web/playwright-report/
-          retention-days: 7
+          E2E_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: node scripts/plan-e2e-suites.mjs "$E2E_BASE_SHA" >> "$GITHUB_OUTPUT"
+
+  e2e-suites:
+    name: Frontend E2E execution
+    needs: [e2e-plan]
+    uses: ./.github/workflows/e2e-run.yml
+    with:
+      matrix: ${{ needs.e2e-plan.outputs.matrix }}
 
   e2e:
     name: Frontend E2E
     runs-on: ubuntu-latest
-    needs: [e2e-suites]
+    needs: [e2e-plan, e2e-suites]
     if: always()
     steps:
       - name: Require every E2E suite to pass
         env:
+          E2E_PLAN_RESULT: ${{ needs.e2e-plan.result }}
           E2E_RESULT: ${{ needs.e2e-suites.result }}
-        run: test "$E2E_RESULT" = success
+        run: |
+          test "$E2E_PLAN_RESULT" = success
+          test "$E2E_RESULT" = success
