@@ -28,6 +28,14 @@ export function useProject(id: string) {
   });
 }
 
+export function useProjectReadiness(id: string | undefined) {
+  return useQuery({
+    queryKey: ["project-readiness", id],
+    queryFn: () => projectsApi.getReadiness(id!),
+    enabled: Boolean(id),
+  });
+}
+
 export function useCreateProject() {
   const qc = useQueryClient();
   return useMutation({

@@ -9,6 +9,7 @@ import {
   buildWorkbenchUrl,
   currentWorkbenchReturnTo,
   getRememberedWorkbenchTask,
+  getRememberedWorkbenchTaskRecord,
 } from "@/utils/workbenchNavigation";
 
 function dueSoon(value: string | null | undefined): boolean {
@@ -34,17 +35,29 @@ export function WorkPriorityCard({
   const activeBatches = batches.filter((batch) =>
     ["active", "annotating", "rejected", "reviewing"].includes(batch.status),
   );
-  const continuation = activeBatches.find((batch) => {
-    const scope = userId ? `${userId}:annotate` : "annotate";
-    return Boolean(getRememberedWorkbenchTask(batch.batch_id, undefined, scope));
-  });
-  const rejected = activeBatches.find(
-    (batch) => batch.status === "rejected" || batch.rejected_tasks > 0,
-  );
-  const dueProject = projects.find(
-    (project) =>
-      dueSoon(project.due_date) && (project.total_tasks ?? 0) > (project.completed_tasks ?? 0),
-  );
+  const rememberedBatches = activeBatches
+    .map((batch) => ({
+      batch,
+      memory: getRememberedWorkbenchTaskRecord(
+        batch.batch_id,
+        undefined,
+        userId ? `${userId}:annotate` : "annotate",
+      ),
+    }))
+    .filter((entry) => entry.memory !== null)
+    .sort((a, b) => (b.memory?.lastOpenedAt ?? 0) - (a.memory?.lastOpenedAt ?? 0));
+  const continuation = rememberedBatches[0]?.batch;
+  const rejected = activeBatches.find((batch) => batch.rejected_tasks > 0);
+  const dueProject = [...projects]
+    .filter(
+      (project) =>
+        dueSoon(project.due_date) && (project.total_tasks ?? 0) > (project.completed_tasks ?? 0),
+    )
+    .sort((a, b) => {
+      const aDue = a.due_date ? new Date(`${a.due_date}T00:00:00`).getTime() : Infinity;
+      const bDue = b.due_date ? new Date(`${b.due_date}T00:00:00`).getTime() : Infinity;
+      return aDue - bDue;
+    })[0];
 
   const openBatch = (batch: MyBatchItem, status?: string) => {
     const scope = userId ? `${userId}:annotate` : "annotate";
@@ -102,7 +115,7 @@ export function WorkPriorityCard({
             </div>
             <div className="mt-1.5 truncate text-sm font-medium">{rejected.batch_name}</div>
             <div className="mt-1 text-xs text-muted-foreground">
-              {rejected.rejected_tasks || 1} 个任务需要重做
+              {rejected.rejected_tasks} 个任务需要重做
             </div>
             <Button
               size="sm"

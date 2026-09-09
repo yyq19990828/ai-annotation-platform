@@ -294,6 +294,10 @@ export interface OnboardingPreferences {
   projects: Record<string, OnboardingProjectState>;
 }
 
+export interface OnboardingPreferencesPatch {
+  projects?: Record<string, Partial<OnboardingProjectState>>;
+}
+
 export interface UserPreferences {
   workbench: WorkbenchPreferences;
   ai: AIToolPreferences;
@@ -301,11 +305,11 @@ export interface UserPreferences {
   onboarding?: OnboardingPreferences;
 }
 
-export type UserPreferencesPatch = Omit<Partial<UserPreferences>, "workbench"> & {
+export type UserPreferencesPatch = Omit<Partial<UserPreferences>, "workbench" | "onboarding"> & {
   workbench?: Omit<Partial<WorkbenchPreferences>, "layout"> & {
     layout?: Partial<WorkbenchLayoutPreferences>;
   };
-  onboarding?: Partial<OnboardingPreferences>;
+  onboarding?: OnboardingPreferencesPatch;
 };
 
 export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {

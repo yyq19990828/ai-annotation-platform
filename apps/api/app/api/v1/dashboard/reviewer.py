@@ -8,9 +8,9 @@ from app.deps import (
 )
 from app.db.models.user import User
 from app.db.models.project import Project
+from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.dataset import DatasetItem
-from app.db.models.audit_log import AuditLog
 from app.db.models.task_batch import TaskBatch
 from app.services.storage import storage_service
 from app.db.enums import UserRole, TaskStatus
@@ -26,6 +26,31 @@ from app.services.user_brief import resolve_briefs_with_project_role
 router = APIRouter()
 
 
+def _visible_project_clause(user: User):
+    """Dashboard scope matching project visibility and task authorization."""
+    if user.role == UserRole.SUPER_ADMIN:
+        return None
+    return or_(
+        (Project.owner_id == user.id) if user.role == UserRole.PROJECT_ADMIN else False,
+        Project.id.in_(
+            select(ProjectMember.project_id).where(
+                ProjectMember.user_id == user.id,
+            )
+        ),
+    )
+
+
+def _reviewable_claim_clause(user: User):
+    """A reviewer cannot be sent to a task claimed by another reviewer."""
+    if user.role == UserRole.SUPER_ADMIN:
+        return None
+    return or_(
+        Project.owner_id == user.id,
+        Task.reviewer_claimed_at.is_(None),
+        Task.reviewer_id == user.id,
+    )
+
+
 @router.get("/reviewer", response_model=ReviewerDashboardStats)
 async def reviewer_dashboard(
     db: AsyncSession = Depends(get_db),
@@ -33,8 +58,16 @@ async def reviewer_dashboard(
         require_roles(UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.REVIEWER)
     ),
 ):
+    project_scope = _visible_project_clause(current_user)
+    claim_scope = _reviewable_claim_clause(current_user)
+
     pending_result = await db.execute(
-        select(func.count()).select_from(Task).where(Task.status == TaskStatus.REVIEW)
+        select(func.count())
+        .select_from(Task)
+        .join(Project, Task.project_id == Project.id)
+        .where(Task.status == TaskStatus.REVIEW)
+        .where(project_scope if project_scope is not None else True)
+        .where(claim_scope if claim_scope is not None else True)
     )
     pending_review_count = pending_result.scalar() or 0
 
@@ -44,9 +77,12 @@ async def reviewer_dashboard(
     today_reviewed_result = await db.execute(
         select(func.count())
         .select_from(Task)
+        .join(Project, Task.project_id == Project.id)
         .where(
-            Task.status == TaskStatus.COMPLETED,
-            Task.updated_at >= today_start,
+            Task.reviewer_id == current_user.id,
+            Task.reviewed_at.is_not(None),
+            Task.reviewed_at >= today_start,
+            project_scope if project_scope is not None else True,
         )
     )
     today_reviewed = today_reviewed_result.scalar() or 0
@@ -54,22 +90,50 @@ async def reviewer_dashboard(
     total_completed_result = await db.execute(
         select(func.count())
         .select_from(Task)
-        .where(Task.status == TaskStatus.COMPLETED)
+        .join(Project, Task.project_id == Project.id)
+        .where(
+            Task.reviewer_id == current_user.id,
+            Task.status == TaskStatus.COMPLETED,
+            Task.reviewed_at.is_not(None),
+            project_scope if project_scope is not None else True,
+        )
     )
     total_completed = total_completed_result.scalar() or 0
 
-    total_all_reviewed = total_completed + pending_review_count
+    total_rejected = int(
+        await db.scalar(
+            select(func.count())
+            .select_from(Task)
+            .join(Project, Task.project_id == Project.id)
+            .where(
+                Task.reviewer_id == current_user.id,
+                Task.reviewed_at.is_not(None),
+                Task.status == "rejected",
+                project_scope if project_scope is not None else True,
+            )
+        )
+        or 0
+    )
+    total_all_reviewed = total_completed + total_rejected
     approval_rate = (
         (total_completed / total_all_reviewed * 100) if total_all_reviewed > 0 else 0.0
     )
 
-    # v0.6.6 · 24h 滚动通过率：基于 audit_logs 中过去 24h 的 task.approve / task.reject 计数
+    # v0.6.6 · 24h 滚动通过率：只统计当前审核员实际处理且在可见项目内的任务。
     cutoff_24h = now - timedelta(hours=24)
     rate_24h_result = await db.execute(
         select(
-            func.count().filter(AuditLog.action == "task.approve").label("approve_n"),
-            func.count().filter(AuditLog.action == "task.reject").label("reject_n"),
-        ).where(AuditLog.created_at >= cutoff_24h)
+            func.count().filter(Task.status == TaskStatus.COMPLETED).label("approve_n"),
+            func.count().filter(Task.status == "rejected").label("reject_n"),
+        )
+        .select_from(Task)
+        .join(Project, Task.project_id == Project.id)
+        .where(
+            Task.reviewer_id == current_user.id,
+            Task.reviewed_at.is_not(None),
+            Task.reviewed_at >= cutoff_24h,
+            project_scope if project_scope is not None else True,
+        )
     )
     row = rate_24h_result.one()
     approve_n = row.approve_n or 0
@@ -80,7 +144,11 @@ async def reviewer_dashboard(
     pending_tasks_result = await db.execute(
         select(Task, Project.name)
         .join(Project, Task.project_id == Project.id)
-        .where(Task.status == TaskStatus.REVIEW)
+        .where(
+            Task.status == TaskStatus.REVIEW,
+            project_scope if project_scope is not None else True,
+            claim_scope if claim_scope is not None else True,
+        )
         .order_by(Task.updated_at.desc())
         .limit(50)
     )
@@ -102,6 +170,11 @@ async def reviewer_dashboard(
     # v0.7.0：批次级聚合 — 列出处于 reviewing 状态的批次（reviewer 跨批次审核）。
     # v0.7.1 B-18：扩展为「reviewing 批次 ∪ 任意 review_tasks > 0 的批次」，让单任务级提交质检
     # 也能在 ReviewPage 的批次树里看到，避免 reviewer 找不到入口。
+    actionable_review = select(Task.id).where(
+        Task.batch_id == TaskBatch.id,
+        Task.status == TaskStatus.REVIEW,
+        claim_scope if claim_scope is not None else True,
+    )
     batch_rows = (
         await db.execute(
             select(TaskBatch, Project.name)
@@ -110,9 +183,11 @@ async def reviewer_dashboard(
                 or_(
                     TaskBatch.status == "reviewing",
                     TaskBatch.review_tasks > 0,
-                )
+                ),
+                TaskBatch.status.in_(["active", "annotating", "reviewing"]),
+                project_scope if project_scope is not None else True,
+                actionable_review.exists(),
             )
-            .where(TaskBatch.status.in_(["active", "annotating", "reviewing"]))
             .order_by(Project.name, TaskBatch.updated_at.desc())
             .limit(100)
         )
@@ -193,10 +268,14 @@ async def reviewer_dashboard(
                     ).asc()
                 )
                 .label("median_ms")
-            ).where(
+            )
+            .select_from(Task)
+            .join(Project, Task.project_id == Project.id)
+            .where(
                 Task.reviewer_id == current_user.id,
                 Task.reviewer_claimed_at.isnot(None),
                 Task.reviewed_at.isnot(None),
+                project_scope if project_scope is not None else True,
             )
         )
     ).first()
@@ -220,7 +299,13 @@ async def reviewer_dashboard(
                     Task.reopened_count > 0,
                 )
                 .label("reopened_n"),
-            ).where(Task.reviewer_id == current_user.id)
+            )
+            .select_from(Task)
+            .join(Project, Task.project_id == Project.id)
+            .where(
+                Task.reviewer_id == current_user.id,
+                project_scope if project_scope is not None else True,
+            )
         )
     ).first()
     approved_n = int(reopen_after_row.approved_n or 0) if reopen_after_row else 0
@@ -244,7 +329,9 @@ async def reviewer_dashboard(
                     Task.reviewed_at.isnot(None),
                     Task.reviewed_at >= ds,
                     Task.reviewed_at < de,
+                    project_scope if project_scope is not None else True,
                 )
+                .join(Project, Task.project_id == Project.id)
             )
         ).scalar() or 0
         daily_review_counts.append(int(n))
@@ -260,7 +347,9 @@ async def reviewer_dashboard(
                 Task.reviewer_id == current_user.id,
                 Task.reviewed_at.isnot(None),
                 Task.reviewed_at >= week_start_r,
+                project_scope if project_scope is not None else True,
             )
+            .join(Project, Task.project_id == Project.id)
         )
     ).scalar() or 0
     last_week_n = (
@@ -272,7 +361,9 @@ async def reviewer_dashboard(
                 Task.reviewed_at.isnot(None),
                 Task.reviewed_at >= last_week_start_r,
                 Task.reviewed_at < week_start_r,
+                project_scope if project_scope is not None else True,
             )
+            .join(Project, Task.project_id == Project.id)
         )
     ).scalar() or 0
     weekly_compare_pct_r: float | None
@@ -332,10 +423,16 @@ async def reviewer_today_mini(
                 func.avg(
                     func.extract("epoch", Task.reviewed_at - Task.reviewer_claimed_at)
                 ).label("avg_seconds"),
-            ).where(
+            )
+            .select_from(Task)
+            .join(Project, Task.project_id == Project.id)
+            .where(
                 Task.reviewer_id == current_user.id,
                 Task.reviewed_at.isnot(None),
                 Task.reviewed_at >= today_start,
+                _visible_project_clause(current_user)
+                if _visible_project_clause(current_user) is not None
+                else True,
             )
         )
     ).first()
@@ -366,8 +463,13 @@ async def my_recent_reviews(
     result = await db.execute(
         select(Task, Project.name)
         .join(Project, Task.project_id == Project.id)
-        .where(Task.reviewer_id == current_user.id)
-        .where(Task.reviewed_at.isnot(None))
+        .where(
+            Task.reviewer_id == current_user.id,
+            Task.reviewed_at.isnot(None),
+            _visible_project_clause(current_user)
+            if _visible_project_clause(current_user) is not None
+            else True,
+        )
         .order_by(Task.reviewed_at.desc())
         .limit(limit)
     )

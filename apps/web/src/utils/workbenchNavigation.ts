@@ -1,6 +1,7 @@
 const LAST_TASK_BY_BATCH_KEY = "anno.workbench.lastTaskByBatch.v1";
 
 type StorageLike = Pick<Storage, "getItem" | "setItem">;
+type RememberedTaskValue = string | { taskId: string; lastOpenedAt: number };
 
 function getStorage(): StorageLike | null {
   if (typeof window === "undefined") return null;
@@ -11,13 +12,13 @@ function getStorage(): StorageLike | null {
   }
 }
 
-function readLastTaskMap(storage: StorageLike | null): Record<string, string> {
+function readLastTaskMap(storage: StorageLike | null): Record<string, RememberedTaskValue> {
   if (!storage) return {};
   try {
     const raw = storage.getItem(LAST_TASK_BY_BATCH_KEY);
     const parsed = raw ? JSON.parse(raw) : {};
     return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, string>)
+      ? (parsed as Record<string, RememberedTaskValue>)
       : {};
   } catch {
     return {};
@@ -33,9 +34,32 @@ export function getRememberedWorkbenchTask(
   storage = getStorage(),
   scope?: string | null,
 ) {
+  return getRememberedWorkbenchTaskRecord(batchId, storage, scope)?.taskId ?? null;
+}
+
+/** Return the remembered task and its last real selection time.
+ * Legacy string entries remain readable with an unknown (zero) timestamp. */
+export function getRememberedWorkbenchTaskRecord(
+  batchId: string | null | undefined,
+  storage = getStorage(),
+  scope?: string | null,
+) {
   if (!batchId) return null;
-  const taskId = readLastTaskMap(storage)[scopedBatchKey(batchId, scope)];
-  return typeof taskId === "string" && taskId ? taskId : null;
+  const value = readLastTaskMap(storage)[scopedBatchKey(batchId, scope)];
+  if (typeof value === "string") {
+    return value ? { taskId: value, lastOpenedAt: 0 } : null;
+  }
+  if (
+    value &&
+    typeof value === "object" &&
+    typeof value.taskId === "string" &&
+    value.taskId &&
+    typeof value.lastOpenedAt === "number" &&
+    Number.isFinite(value.lastOpenedAt)
+  ) {
+    return value;
+  }
+  return null;
 }
 
 export function rememberWorkbenchTask(
@@ -46,7 +70,7 @@ export function rememberWorkbenchTask(
 ) {
   if (!batchId || !taskId || !storage) return;
   const next = readLastTaskMap(storage);
-  next[scopedBatchKey(batchId, scope)] = taskId;
+  next[scopedBatchKey(batchId, scope)] = { taskId, lastOpenedAt: Date.now() };
   try {
     storage.setItem(LAST_TASK_BY_BATCH_KEY, JSON.stringify(next));
   } catch {

@@ -66,6 +66,26 @@ export type ProjectResponse = Omit<ProjectOut, "preannotate_pipeline"> & {
 };
 export type ProjectStatsResponse = ProjectStats;
 export type ProjectMemberResponse = ProjectMemberOut;
+
+export interface ProjectReadinessSummary {
+  project_id: string;
+  guide_ready: boolean;
+  classes_ready: boolean;
+  linked_dataset_count: number;
+  dataset_item_count: number;
+  task_count: number;
+  linked_task_count: number;
+  task_creation_active_jobs: number;
+  task_creation_failed_jobs: number;
+  latest_task_creation_status: string | null;
+  batch_count: number;
+  nonempty_batch_count: number;
+  executable_batch_count: number;
+  assigned_batch_count: number;
+  active_annotator_count: number;
+  active_reviewer_count: number;
+  activated_batch_count: number;
+}
 // v0.9.7 · 加 ml_backend_source_id (Wizard step 4 复用全局 backend), 待 codegen 重跑.
 // v0.10.11 · 加 source_project_id (从已有项目复制配置), 同样待 codegen 重跑.
 export type ProjectCreatePayload = ProjectCreate & {
@@ -237,6 +257,7 @@ export const projectsApi = {
   stats: () => apiClient.get<ProjectStatsResponse>("/projects/stats"),
 
   get: (id: string) => apiClient.get<ProjectResponse>(`/projects/${id}`),
+  getReadiness: (id: string) => apiClient.get<ProjectReadinessSummary>(`/projects/${id}/readiness`),
 
   create: (payload: ProjectCreatePayload) => apiClient.post<ProjectResponse>("/projects", payload),
 

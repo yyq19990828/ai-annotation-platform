@@ -20733,6 +20733,53 @@
         "title": "OnboardingProjectState",
         "type": "object"
       },
+      "OnboardingProjectSummary": {
+        "description": "Server-observed progress for one employee's project checklist.",
+        "properties": {
+          "assigned_task_count": {
+            "default": 0,
+            "title": "Assigned Task Count",
+            "type": "integer"
+          },
+          "opened_task_count": {
+            "default": 0,
+            "title": "Opened Task Count",
+            "type": "integer"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "reviewed_task_count": {
+            "default": 0,
+            "title": "Reviewed Task Count",
+            "type": "integer"
+          },
+          "reviewed_task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed Task Id"
+          },
+          "saved_annotation_count": {
+            "default": 0,
+            "title": "Saved Annotation Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "title": "OnboardingProjectSummary",
+        "type": "object"
+      },
       "OpenRegisterRequest": {
         "properties": {
           "captcha_token": {
@@ -24637,6 +24684,107 @@
           }
         },
         "title": "ProjectPipelineUpdate",
+        "type": "object"
+      },
+      "ProjectReadinessSummary": {
+        "description": "Owner-only, database-backed checklist for starting a project.\n\nThe dashboard deliberately keeps this separate from client preferences: a\nproject is ready because the server has observed the required data,\nbatches and assignments, rather than because a browser marked a step done.",
+        "properties": {
+          "activated_batch_count": {
+            "title": "Activated Batch Count",
+            "type": "integer"
+          },
+          "active_annotator_count": {
+            "title": "Active Annotator Count",
+            "type": "integer"
+          },
+          "active_reviewer_count": {
+            "title": "Active Reviewer Count",
+            "type": "integer"
+          },
+          "assigned_batch_count": {
+            "title": "Assigned Batch Count",
+            "type": "integer"
+          },
+          "batch_count": {
+            "title": "Batch Count",
+            "type": "integer"
+          },
+          "classes_ready": {
+            "title": "Classes Ready",
+            "type": "boolean"
+          },
+          "dataset_item_count": {
+            "title": "Dataset Item Count",
+            "type": "integer"
+          },
+          "executable_batch_count": {
+            "title": "Executable Batch Count",
+            "type": "integer"
+          },
+          "guide_ready": {
+            "title": "Guide Ready",
+            "type": "boolean"
+          },
+          "latest_task_creation_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Task Creation Status"
+          },
+          "linked_dataset_count": {
+            "title": "Linked Dataset Count",
+            "type": "integer"
+          },
+          "linked_task_count": {
+            "title": "Linked Task Count",
+            "type": "integer"
+          },
+          "nonempty_batch_count": {
+            "title": "Nonempty Batch Count",
+            "type": "integer"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "task_count": {
+            "title": "Task Count",
+            "type": "integer"
+          },
+          "task_creation_active_jobs": {
+            "default": 0,
+            "title": "Task Creation Active Jobs",
+            "type": "integer"
+          },
+          "task_creation_failed_jobs": {
+            "default": 0,
+            "title": "Task Creation Failed Jobs",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "project_id",
+          "guide_ready",
+          "classes_ready",
+          "linked_dataset_count",
+          "dataset_item_count",
+          "task_count",
+          "linked_task_count",
+          "batch_count",
+          "nonempty_batch_count",
+          "executable_batch_count",
+          "assigned_batch_count",
+          "active_annotator_count",
+          "active_reviewer_count",
+          "activated_batch_count"
+        ],
+        "title": "ProjectReadinessSummary",
         "type": "object"
       },
       "ProjectRenderingConfig": {
@@ -43382,6 +43530,55 @@
         ]
       }
     },
+    "/api/v1/dashboard/annotator/projects/{project_id}/onboarding": {
+      "get": {
+        "description": "Return durable checklist signals for the current user and project.\n\nOpening is based on task events, annotation completion is based on active\nannotations owned by the user, and review completion is based on the\nassignee's task review fields.  Client-side remembered task state is only a\nsupplemental signal for the currently open browser tab.",
+        "operationId": "annotator_project_onboarding_api_v1_dashboard_annotator_projects__project_id__onboarding_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingProjectSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Annotator Project Onboarding",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
     "/api/v1/dashboard/me/performance": {
       "get": {
         "description": "v0.12.3 · 标注员自助绩效（取经合集 §4.1 个人页）。\n\n任意已认证用户看**自己**的 4 周趋势 + 耗时直方图，并叠加团队（annotator 群体）\n每周平均产出作对标基线。强制 self，不接受他人 user_id。",
@@ -53985,6 +54182,55 @@
         "summary": "Purge Predictions",
         "tags": [
           "predictions"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/readiness": {
+      "get": {
+        "description": "Return the owner-facing, server-observed project start conditions.\n\nThis endpoint intentionally reports task-creation jobs and active member\naccounts together with counters.  The settings page can therefore explain\na pending or failed worker without treating a partially created project as\nready.",
+        "operationId": "get_project_readiness_api_v1_projects__project_id__readiness_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectReadinessSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Project Readiness",
+        "tags": [
+          "projects"
         ]
       }
     },

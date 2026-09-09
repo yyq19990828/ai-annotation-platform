@@ -2,10 +2,10 @@
 //
 // 行为:
 // - 项目 annotation_guide 为空 / null → 整个 panel 不渲染.
-// - localStorage 按用户、项目和指南版本隔离；首次进入自动展开并写入阅读标记.
+// - localStorage 按用户、项目和指南版本隔离；首次进入自动展开，需用户明确确认阅读.
 // - 用户手动折叠后保存当前指南版本的折叠状态，后续保持折叠.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { GuideMarkdownView } from "@/components/markdown/GuideMarkdownView";
 import { useGuideAssets } from "@/hooks/useGuideAssets";
@@ -30,8 +30,14 @@ export function GuidePanel({ projectId, userId, guideVersion, content }: GuidePa
   const trimmed = (content ?? "").trim();
   const version = guideVersion ?? annotationGuideVersion(content);
   const { signAsset } = useGuideAssets(projectId);
-  const { markGuideRead } = useOnboardingProjectState(projectId, version);
-  const guideReadEffectKey = useRef<string | null>(null);
+  const {
+    markGuideRead,
+    retry,
+    saveError,
+    isSaving,
+    guideRead: serverGuideRead,
+  } = useOnboardingProjectState(projectId, version);
+  const [confirmed, setConfirmed] = useState(() => isGuideSeen(userId, projectId, version));
 
   const [open, setOpen] = useState<boolean>(() => {
     if (!trimmed) return false;
@@ -46,25 +52,32 @@ export function GuidePanel({ projectId, userId, guideVersion, content }: GuidePa
   useEffect(() => {
     if (!trimmed) {
       setOpen(false);
+      setConfirmed(false);
       return;
     }
+    setConfirmed(isGuideSeen(userId, projectId, version));
     setOpen(
       !(isGuideSeen(userId, projectId, version) && isGuideCollapsed(userId, projectId, version)),
     );
   }, [projectId, trimmed, userId, version]);
 
-  // 首次自动展开时立即写入 seen 标记, 防止刷新后再次自动展开打扰用户.
-  useEffect(() => {
-    if (!trimmed) return;
-    if (typeof window === "undefined") return;
-    const effectKey = `${userId ?? "anonymous"}:${projectId}:${version}`;
-    if (guideReadEffectKey.current === effectKey) return;
-    guideReadEffectKey.current = effectKey;
-    if (!isGuideSeen(userId, projectId, version)) {
+  const guideRead = serverGuideRead || confirmed || isGuideSeen(userId, projectId, version);
+
+  const confirmRead = async () => {
+    const ok = await markGuideRead();
+    if (ok) {
       markGuideSeen(userId, projectId, version);
+      setConfirmed(true);
     }
-    markGuideRead();
-  }, [markGuideRead, projectId, trimmed, userId, version]);
+  };
+
+  const retryRead = async () => {
+    const ok = await retry();
+    if (ok) {
+      markGuideSeen(userId, projectId, version);
+      setConfirmed(true);
+    }
+  };
 
   const handleToggle = () => {
     setOpen((prev) => {
@@ -85,31 +98,53 @@ export function GuidePanel({ projectId, userId, guideVersion, content }: GuidePa
       aria-label="标注指引"
       data-testid="wb-guide-panel"
     >
-      <div
-        className="flex items-center gap-1.5 px-3 py-2 border-b border-border bg-muted cursor-pointer select-none"
+      <button
+        type="button"
+        className="flex items-center gap-1.5 px-3 py-2 border-0 border-b border-border bg-muted cursor-pointer text-left"
         onClick={handleToggle}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            handleToggle();
-          }
-        }}
+        aria-expanded={open}
+        aria-label={open ? "折叠标注指引" : "展开标注指引"}
       >
         <Icon name="book" size={14} />
         <span className="text-sm font-semibold text-foreground">标注指引</span>
-        <button
-          type="button"
-          className="ml-auto bg-transparent border-0 text-muted-foreground cursor-pointer px-1.5 py-0.5 text-sm"
-          aria-label={open ? "折叠" : "展开"}
-        >
-          {open ? "▾" : "▸"}
-        </button>
-      </div>
+        <Icon
+          name={open ? "chevDown" : "chevRight"}
+          size={14}
+          className="ml-auto text-muted-foreground"
+        />
+      </button>
       {open && (
         <div className="px-3.5 py-3 overflow-auto flex-1 min-h-0">
           <GuideMarkdownView content={trimmed} resolveAssetUrl={resolver} />
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
+            <span className="text-xs text-muted-foreground">
+              {guideRead ? "已确认阅读当前版本" : "阅读完整指引后确认，指南更新后需重新确认"}
+            </span>
+            <button
+              type="button"
+              className="rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={() => void confirmRead()}
+              disabled={guideRead || isSaving}
+            >
+              {isSaving ? "保存中…" : guideRead ? "已确认阅读" : "确认已阅读"}
+            </button>
+          </div>
+          {saveError && (
+            <div
+              role="alert"
+              className="mt-2 flex items-center justify-between gap-2 text-xs text-status-danger"
+            >
+              <span>{saveError}</span>
+              <button
+                type="button"
+                className="shrink-0 underline"
+                onClick={() => void retryRead()}
+                disabled={isSaving}
+              >
+                重试
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

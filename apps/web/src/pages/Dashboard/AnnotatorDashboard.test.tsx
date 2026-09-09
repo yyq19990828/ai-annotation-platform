@@ -13,10 +13,12 @@ import { ApiError } from "@/api/client";
 const mockUseAnnotatorStats = vi.fn();
 const mockUseProjects = vi.fn();
 const mockUseMyBatches = vi.fn();
+const mockUseOnboardingProjectSummary = vi.fn();
 
 vi.mock("@/hooks/useDashboard", () => ({
   useAnnotatorStats: () => mockUseAnnotatorStats(),
   useMyBatches: () => mockUseMyBatches(),
+  useOnboardingProjectSummary: (projectId: string) => mockUseOnboardingProjectSummary(projectId),
 }));
 vi.mock("@/hooks/useProjects", () => ({
   useProjects: () => mockUseProjects(),
@@ -60,7 +62,13 @@ describe("AnnotatorDashboard", () => {
     mockUseAnnotatorStats.mockReset();
     mockUseProjects.mockReset();
     mockUseMyBatches.mockReset();
+    mockUseOnboardingProjectSummary.mockReset();
     mockUseMyBatches.mockReturnValue({ data: [], isLoading: false });
+    mockUseOnboardingProjectSummary.mockReturnValue({
+      data: undefined,
+      isError: false,
+      refetch: vi.fn(),
+    });
   });
 
   it("isLoading=true → 显示加载中文案", () => {

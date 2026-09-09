@@ -34,7 +34,7 @@ export function guideSeenStorageKey(
   projectId: string,
   version: string,
 ) {
-  return `wb:guide-seen:${guideStorageScope(userId, projectId, version)}`;
+  return `wb:guide-read:${guideStorageScope(userId, projectId, version)}`;
 }
 
 export function guideCollapsedStorageKey(

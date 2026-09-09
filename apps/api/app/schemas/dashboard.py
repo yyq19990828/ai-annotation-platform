@@ -6,6 +6,17 @@ from pydantic import BaseModel
 from app.schemas.user import UserBrief
 
 
+class OnboardingProjectSummary(BaseModel):
+    """Server-observed progress for one employee's project checklist."""
+
+    project_id: UUID
+    assigned_task_count: int = 0
+    opened_task_count: int = 0
+    saved_annotation_count: int = 0
+    reviewed_task_count: int = 0
+    reviewed_task_id: UUID | None = None
+
+
 class RegistrationDayPoint(BaseModel):
     """v0.8.1 · 注册来源按日聚合：邀请 vs 开放注册。"""
 

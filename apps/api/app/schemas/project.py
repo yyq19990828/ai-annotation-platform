@@ -207,6 +207,33 @@ class ProjectBatchSummary(BaseModel):
     in_review: int = 0
 
 
+class ProjectReadinessSummary(BaseModel):
+    """Owner-only, database-backed checklist for starting a project.
+
+    The dashboard deliberately keeps this separate from client preferences: a
+    project is ready because the server has observed the required data,
+    batches and assignments, rather than because a browser marked a step done.
+    """
+
+    project_id: UUID
+    guide_ready: bool
+    classes_ready: bool
+    linked_dataset_count: int
+    dataset_item_count: int
+    task_count: int
+    linked_task_count: int
+    task_creation_active_jobs: int = 0
+    task_creation_failed_jobs: int = 0
+    latest_task_creation_status: str | None = None
+    batch_count: int
+    nonempty_batch_count: int
+    executable_batch_count: int
+    assigned_batch_count: int
+    active_annotator_count: int
+    active_reviewer_count: int
+    activated_batch_count: int
+
+
 class ProjectOut(BaseModel):
     id: UUID
     organization_id: UUID | None = None

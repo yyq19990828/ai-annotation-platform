@@ -193,6 +193,7 @@
 
 | Method | Path |
 |---|---|
+| GET | `/annotator/projects/{project_id}/onboarding` |
 | GET | `/annotator` |
 | GET | `/annotator/batches` |
 | GET | `/me/performance` |
@@ -425,6 +426,7 @@
 |---|---|
 | GET | `/stats` |
 | GET | `/{project_id}` |
+| GET | `/{project_id}/readiness` |
 | PATCH | `/{project_id}` |
 | POST | `/{project_id}/pipelines/apply` |
 | DELETE | `/{project_id}` |
@@ -715,4 +717,4 @@
 
 ---
 
-_共 65 模块 / 408 路由_
+_共 65 模块 / 410 路由_

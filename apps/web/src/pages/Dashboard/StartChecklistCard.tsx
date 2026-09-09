@@ -1,11 +1,14 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
+import { GuideMarkdownView } from "@/components/markdown/GuideMarkdownView";
 import type { ProjectResponse } from "@/api/projects";
 import type { MyBatchItem } from "@/api/dashboard";
+import { useOnboardingProjectSummary } from "@/hooks/useDashboard";
+import { useGuideAssets } from "@/hooks/useGuideAssets";
 import { useOnboardingProjectState } from "@/hooks/useOnboardingProjectState";
 import { annotationGuideVersion, isGuideSeen } from "@/utils/annotationGuide";
 import {
@@ -44,49 +47,41 @@ export function StartChecklistCard({
   const navigate = useNavigate();
   const location = useLocation();
   const userId = useAuthStore((state) => state.user?.id);
+  const [guideOpen, setGuideOpen] = useState(false);
   const guideVersion = annotationGuideVersion(project.annotation_guide);
-  const { dismissed, guideRead, isSaving, dismiss, reopen } = useOnboardingProjectState(
-    project.id,
-    guideVersion,
-  );
+  const { dismissed, guideRead, isSaving, saveError, dismiss, reopen, retry, markGuideRead } =
+    useOnboardingProjectState(project.id, guideVersion);
+  const summaryQuery = useOnboardingProjectSummary(project.id);
+  const summary = summaryQuery.isError ? undefined : summaryQuery.data;
+  const { signAsset } = useGuideAssets(project.id);
   const batchesForProject = useMemo(
     () => projectBatches(project.id, batches),
     [batches, project.id],
   );
   const activeBatch = batchesForProject[0] ?? null;
-  const rememberedTaskId = activeBatch
-    ? getRememberedWorkbenchTask(
-        activeBatch.batch_id,
-        undefined,
-        userId ? `${userId}:annotate` : "annotate",
-      )
+  const memoryScope = userId ? `${userId}:annotate` : "annotate";
+  const rememberedBatch = batchesForProject.find((batch) =>
+    getRememberedWorkbenchTask(batch.batch_id, undefined, memoryScope),
+  );
+  const rememberedTaskId = rememberedBatch
+    ? getRememberedWorkbenchTask(rememberedBatch.batch_id, undefined, memoryScope)
     : null;
   const guideExists = Boolean(project.annotation_guide?.trim());
-  const hasAssignedTask = batchesForProject.some((batch) => batch.total_tasks > 0);
-  const hasAnnotation = batchesForProject.some(
-    (batch) =>
-      (batch.in_progress_tasks ?? 0) > 0 ||
-      batch.review_tasks > 0 ||
-      batch.completed_tasks > 0 ||
-      batch.approved_tasks > 0 ||
-      batch.rejected_tasks > 0,
-  );
-  const hasSubmissionResult = batchesForProject.some(
-    (batch) =>
-      batch.review_tasks > 0 ||
-      batch.completed_tasks > 0 ||
-      batch.rejected_tasks > 0 ||
-      ["reviewing", "rejected"].includes(batch.status),
-  );
+  const hasAssignedTask =
+    (summary?.assigned_task_count ?? 0) > 0 ||
+    batchesForProject.some((batch) => batch.total_tasks > 0);
+  const hasOpenedTask = (summary?.opened_task_count ?? 0) > 0 || Boolean(rememberedTaskId);
+  const hasAnnotation = (summary?.saved_annotation_count ?? 0) > 0;
+  const hasSubmissionResult = (summary?.reviewed_task_count ?? 0) > 0;
 
   const openProjectWork = (taskId?: string | null) => {
-    if (!activeBatch) {
-      navigate(`/annotate?returnTo=${encodeURIComponent(currentWorkbenchReturnTo(location))}`);
-      return;
-    }
     navigate(
       buildWorkbenchUrl(project.id, {
-        batchId: activeBatch.batch_id,
+        batchId: taskId
+          ? taskId === rememberedTaskId
+            ? rememberedBatch?.batch_id
+            : undefined
+          : activeBatch?.batch_id,
         taskId: taskId ?? undefined,
         returnTo: currentWorkbenchReturnTo(location),
       }),
@@ -97,37 +92,44 @@ export function StartChecklistCard({
     {
       id: "guide",
       label: "阅读项目指引",
-      detail: guideExists ? "先了解类别定义、边界和常见反例" : "项目管理员尚未发布标注指引",
+      detail: guideExists
+        ? "先了解类别定义、边界和常见反例"
+        : `项目负责人尚未发布标注指引${project.owner_name ? `，请联系 ${project.owner_name}` : "，请联系项目负责人"}`,
       done: guideExists && guideRead,
-      actionLabel: guideExists ? "打开工作台阅读" : "查看项目设置",
-      onAction: () =>
-        guideExists
-          ? openProjectWork(rememberedTaskId)
-          : navigate(`/projects/${project.id}/settings?section=annotation-guide`),
+      actionLabel: guideExists ? "打开指引" : "等待负责人发布",
+      onAction: () => {
+        if (guideExists) setGuideOpen(true);
+      },
     },
     {
       id: "task",
       label: "打开分派任务",
-      detail: hasAssignedTask ? "已有分派批次，可以从上次位置继续" : "等待项目管理员创建并分派任务",
-      done: hasAssignedTask,
-      actionLabel: "打开任务",
+      detail: hasAssignedTask
+        ? hasOpenedTask
+          ? "已记录打开任务，可从上次位置继续"
+          : "已有分派任务，打开后才会完成此步"
+        : "等待项目负责人创建并分派任务",
+      done: hasOpenedTask,
+      actionLabel: hasOpenedTask ? "再次打开任务" : "打开任务",
       onAction: () => openProjectWork(rememberedTaskId),
     },
     {
       id: "annotation",
       label: "完成首条标注",
-      detail: hasAnnotation ? "已检测到你的标注进度" : "在工作台保存一条有效标注",
+      detail: hasAnnotation ? "已检测到你保存的有效标注" : "在工作台保存一条有效标注",
       done: hasAnnotation,
-      actionLabel: "继续标注",
+      actionLabel: hasAnnotation ? "继续标注" : "开始标注",
       onAction: () => openProjectWork(rememberedTaskId),
     },
     {
       id: "result",
       label: "查看送审结果",
-      detail: hasSubmissionResult ? "已有送审、通过或退回结果" : "送审后可在这里看到审核结果",
+      detail: hasSubmissionResult
+        ? "已检测到审核产生的通过或退回结果"
+        : "送审后可在这里看到审核结果",
       done: hasSubmissionResult,
-      actionLabel: "查看结果",
-      onAction: () => openProjectWork(rememberedTaskId),
+      actionLabel: hasSubmissionResult ? "再次查看结果" : "查看结果",
+      onAction: () => openProjectWork(summary?.reviewed_task_id),
     },
   ];
 
@@ -145,6 +147,17 @@ export function StartChecklistCard({
             重新打开清单
           </Button>
         </div>
+        {saveError && (
+          <div
+            role="alert"
+            className="flex items-center gap-2 border-t border-border px-4 py-2 text-xs text-status-danger"
+          >
+            <span>{saveError}</span>
+            <button type="button" className="underline" onClick={() => void retry()}>
+              重试
+            </button>
+          </div>
+        )}
       </Card>
     );
   }
@@ -189,15 +202,73 @@ export function StartChecklistCard({
                 <div className="text-sm font-medium">{step.label}</div>
                 <div className="mt-0.5 text-xs text-muted-foreground">{step.detail}</div>
               </div>
-              {!done && (
-                <Button size="sm" variant="ghost" onClick={step.onAction}>
-                  {step.actionLabel}
+              {(step.id !== "guide" || guideExists) && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={step.onAction}
+                  disabled={
+                    step.id === "result"
+                      ? !hasSubmissionResult
+                      : step.id !== "guide" && !hasAssignedTask
+                  }
+                >
+                  {done && step.id === "guide" ? "再次阅读" : step.actionLabel}
                 </Button>
               )}
             </div>
           );
         })}
       </div>
+      {summaryQuery.isError && (
+        <div
+          role="alert"
+          className="flex items-center gap-2 border-t border-border px-4 py-2 text-xs text-status-danger"
+        >
+          <span>无法读取项目真实进度，当前清单不会据此标记完成。</span>
+          <button type="button" className="underline" onClick={() => void summaryQuery.refetch()}>
+            重试
+          </button>
+        </div>
+      )}
+      {saveError && (
+        <div
+          role="alert"
+          className="flex items-center gap-2 border-t border-border px-4 py-2 text-xs text-status-danger"
+        >
+          <span>{saveError}</span>
+          <button type="button" className="underline" onClick={() => void retry()}>
+            重试
+          </button>
+        </div>
+      )}
+      {guideOpen && guideExists && (
+        <div
+          className="border-t border-border bg-muted/30 px-4 py-3"
+          data-testid="start-checklist-guide"
+        >
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div className="text-sm font-semibold">项目标注指引</div>
+            <Button size="sm" variant="ghost" onClick={() => setGuideOpen(false)}>
+              收起
+            </Button>
+          </div>
+          <div className="max-h-[32rem] overflow-auto rounded-md border border-border bg-card p-3">
+            <GuideMarkdownView
+              content={project.annotation_guide!.trim()}
+              resolveAssetUrl={signAsset}
+            />
+          </div>
+          <Button
+            size="sm"
+            className="mt-3"
+            disabled={visibleGuideRead || isSaving}
+            onClick={() => void markGuideRead()}
+          >
+            {isSaving ? "保存中…" : visibleGuideRead ? "已确认阅读" : "确认已阅读"}
+          </Button>
+        </div>
+      )}
     </Card>
   );
 }
