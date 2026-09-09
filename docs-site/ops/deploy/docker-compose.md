@@ -8,6 +8,8 @@ last_reviewed: 2026-08-14
 
 # 生产部署（Docker Compose）
 
+需要保留已有开发环境，复用 PostgreSQL、MinIO、模型服务，同时另建生产账号与业务数据时，使用[局域网生产部署](./lan-production)的独立 Compose 入口。该入口提供 HTTPS 3030 / 8080，不叠加本页的整栈生产覆盖文件。
+
 > 适用读者：第一次把平台搬到 staging / production 的运维或开发者。本机开发部署见[开发部署（本地）](/ops/deploy/development)，不确定去哪先看[部署总览](/ops/deploy/)。
 >
 > 当前部署形态：叠加 `docker-compose.prod.yml` 把 **api / web 容器化**（api 镜像 entrypoint 自动跑迁移 + uvicorn，web 镜像 nginx 托管构建产物 + 反代），基础设施（PG / Redis / MinIO / Celery）沿用基础 `docker-compose.yml`。完整 K8s / Terraform 模板暂未维护。不走容器、改 systemd 进程式跑 api/web 的替代路径见 §4.5。
@@ -310,7 +312,7 @@ worker/beat 容器已在 `docker-compose.yml` 定义、由 §4.1 一并拉起，
 
 ### 4.3 首个 super_admin（bootstrap_admin）
 
-平台没有「第一个用户自动当管理员」的逻辑。第一次部署后在 api 容器内跑一次（依赖已 `--system` 装在镜像里，可直接 `python -m`）：
+平台没有「第一个用户自动当管理员」的逻辑。第一次部署后在 api 容器内跑一次（依赖已装到 `/opt/venv`，容器 `PATH` 已包含该环境，可直接 `python -m`）：
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml exec \

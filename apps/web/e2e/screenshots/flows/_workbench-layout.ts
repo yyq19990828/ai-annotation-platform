@@ -1,3 +1,5 @@
+import { layoutCommand } from "../../helpers/workbench-layout";
+import { panelCommand } from "../../fixtures/workbench-panel-actions";
 /**
  * 工作台流程录制的用户偏好沙箱。
  *
@@ -266,27 +268,14 @@ export function isAiPanelSafelyDockedRight(
  */
 export async function dockAiPanelAtViewportRight(page: Page, panel: Locator): Promise<void> {
   await panel.waitFor({ state: "visible", timeout: 5_000 });
-  await page.getByRole("button", { name: "当前题 AI菜单", exact: true }).click();
-  await page.getByRole("menuitem", { name: "停靠到右侧", exact: true }).click();
+  await panelCommand(page, "当前题 AI", "停靠到右侧");
   await panel.waitFor({ state: "visible", timeout: 5_000 });
 }
 
 /** The same user commands select presets during visible layout demonstrations. */
-export async function recordingLayoutCommand(page: Page, name: string): Promise<void> {
-  await page.getByRole("button", { name: "布局", exact: true }).click();
-  const command = page.getByRole("menuitem", { name, exact: true });
-  await expect(command).toBeEnabled({ timeout: 20_000 });
-  await command.click();
-}
+export const recordingLayoutCommand = layoutCommand;
 
-export async function recordingPanelCommand(
-  page: Page,
-  title: string,
-  name: string,
-): Promise<void> {
-  await page.getByRole("button", { name: `${title}菜单`, exact: true }).click();
-  await page.getByRole("menuitem", { name, exact: true }).click();
-}
+export const recordingPanelCommand = panelCommand;
 
 export async function waitForRecordingPanels(
   page: Page,

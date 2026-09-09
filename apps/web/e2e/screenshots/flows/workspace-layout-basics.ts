@@ -143,10 +143,10 @@ export async function runWorkspaceLayoutBasics(
 
     await recordingPanelCommand(page, "讨论 / Issue", "与标注详情合并为标签");
     const discussionTab = page.getByRole("tab").filter({
-      has: page.getByRole("button", { name: "讨论 / Issue菜单", exact: true }),
+      has: page.getByRole("button", { name: "隐藏讨论 / Issue", exact: true }),
     });
     const inspectorTab = page.getByRole("tab").filter({
-      has: page.getByRole("button", { name: "标注详情菜单", exact: true }),
+      has: page.getByRole("button", { name: "隐藏标注详情", exact: true }),
     });
     await expect(discussionTab).toHaveCount(1);
     await expect(inspectorTab).toHaveCount(1);

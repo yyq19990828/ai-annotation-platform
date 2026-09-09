@@ -1,3 +1,4 @@
+import { panelCommand } from "../fixtures/workbench-panel-actions";
 import type { APIRequestContext, Page } from "@playwright/test";
 import { expect, test, type SeedAPI } from "../fixtures/seed";
 import { launchNativeBrowserZoom } from "../fixtures/native-browser-zoom";
@@ -251,8 +252,7 @@ for (const video of [false, true]) {
       );
       expect((await dock.boundingBox())!.y).toBeCloseTo(beforeTimeline.y);
     }
-    await page.getByRole("button", { name: "讨论 / Issue菜单" }).click();
-    await page.getByRole("menuitem", { name: "停靠到底部", exact: true }).click();
+    await panelCommand(page, "讨论 / Issue", "停靠到底部");
     await expect(page.getByText("布局恢复失败", { exact: false })).toHaveCount(0);
     expect(
       await page
@@ -279,7 +279,9 @@ for (const video of [false, true]) {
     await page.mouse.down();
     await page.mouse.move(sashX, sash.y - (video ? 150 : 65), { steps: 8 });
     await page.mouse.up();
-    await expect.poll(async () => (await dock.boundingBox())!.height).toBeLessThan(beforeDrag - 40);
+    // Native docking splits the canvas in half; its minimum height can leave
+    // less than 40px to shrink. Verify resizing and the resulting overflow below.
+    await expect.poll(async () => (await dock.boundingBox())!.height).toBeLessThan(beforeDrag);
     const more = page.getByTestId("tool-dock-more");
     await expect(more).toBeVisible();
     await more.press("ArrowDown");

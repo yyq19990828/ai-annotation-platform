@@ -1,3 +1,4 @@
+import { panelCommand } from "../fixtures/workbench-panel-actions";
 import { layoutCommand, openLayoutSettings } from "../helpers/workbench-layout";
 import type { Page } from "@playwright/test";
 import type {
@@ -9,11 +10,6 @@ import { expect, test } from "../fixtures/seed";
 
 const DESKTOP = { width: 1440, height: 900 };
 const panel = (page: Page, id: string) => page.locator(`[data-workbench-panel="${id}"]`);
-
-async function panelCommand(page: Page, title: string, name: string) {
-  await page.getByRole("button", { name: `${title}菜单`, exact: true }).click();
-  await page.getByRole("menuitem", { name, exact: true }).click();
-}
 
 async function savedSnapshot(page: Page, context: string): Promise<WorkspaceSnapshot | undefined> {
   const token = await page.evaluate(() => localStorage.getItem("token"));
@@ -244,19 +240,45 @@ test("图片布局预设、面板隐藏和浮动保留画布及未发送讨论�
     )
     .toBeGreaterThan(oldRect.width + 60);
   await panelCommand(page, "讨论 / Issue", "与标注详情合并为标签");
+  await expect
+    .poll(async () => {
+      const root = (await savedSnapshot(page, "annotate:image"))?.layout.grid.root;
+      if (!root) return false;
+      const discussionGroup = groupFor(root, "discussion");
+      return !!discussionGroup && discussionGroup === groupFor(root, "inspector");
+    })
+    .toBe(true);
   await sameCanvas();
   await sameDraft();
+  const mergedDiscussionGroup = groupFor(
+    (await savedSnapshot(page, "annotate:image"))!.layout.grid.root,
+    "discussion",
+  );
   await panelCommand(page, "讨论 / Issue", "停靠到底部");
   await expect
     .poll(async () => {
       const snapshot = await savedSnapshot(page, "annotate:image");
-      return snapshot && groupFor(snapshot.layout.grid.root, "discussion");
+      const discussionGroup = snapshot && groupFor(snapshot.layout.grid.root, "discussion");
+      return !!discussionGroup && discussionGroup !== mergedDiscussionGroup;
     })
-    .toBe("dock-discussion");
+    .toBe(true);
+  const dockedDiscussionGroup = groupFor(
+    (await savedSnapshot(page, "annotate:image"))!.layout.grid.root,
+    "discussion",
+  );
+  await expect
+    .poll(async () => {
+      const canvasRect = await panel(page, "canvas").boundingBox();
+      const discussionRect = await discussion.boundingBox();
+      return (
+        !!canvasRect && !!discussionRect && discussionRect.y >= canvasRect.y + canvasRect.height
+      );
+    })
+    .toBe(true);
   await sameCanvas();
   await sameDraft();
 
-  // Exercise native HTML drag/drop as well as the equivalent accessible menu commands.
+  // Native tab regrouping persists once and a rejected canvas-center drop preserves the tree.
   await page.waitForTimeout(650);
   const dragWrites: string[] = [];
   const businessWrites: string[] = [];
@@ -306,7 +328,7 @@ test("图片布局预设、面板隐藏和浮动保留画布及未发送讨论�
   ).toHaveCount(0);
   expect(
     groupFor((await savedSnapshot(page, "annotate:image"))!.layout.grid.root, "discussion"),
-  ).toBe("dock-discussion");
+  ).toBe(dockedDiscussionGroup);
 });
 
 test("标准和浮动布局使用日间与夜间语义主题", async ({ page, seed }) => {
@@ -470,10 +492,7 @@ test("视频紧凑布局禁止桌面写入，退出后恢复浮窗与非零帧�
   await settings.getByRole("button", { name: "任务队列", exact: true }).click();
   await settings.getByRole("button", { name: "关闭设置", exact: true }).click();
   await expect(panel(page, "task-queue")).toBeVisible();
-  await page.getByRole("button", { name: "任务队列菜单", exact: true }).click();
-  await expect(page.getByRole("menuitem", { name: "浮动面板", exact: true })).toBeDisabled();
-  await expect(page.getByRole("menuitem", { name: "停靠到左侧", exact: true })).toBeDisabled();
-  await page.keyboard.press("Escape");
+  await expect(page.getByRole("button", { name: "任务队列菜单", exact: true })).toHaveCount(0);
   await layoutCommand(page, "讨论 / Issue");
   await expect(discussion).toHaveAttribute("aria-hidden", "false");
   await expect(panel(page, "task-queue")).toBeHidden();

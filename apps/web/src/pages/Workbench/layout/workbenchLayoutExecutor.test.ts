@@ -444,6 +444,8 @@ describe("workspace executor with Dockview 8", () => {
       expect(item.group).not.toBe(target);
       expect(item.group.api.width).toBe(width);
       expect(target.api.width).toBe(width);
+      expect(item.group.api.height).toBe(bounds.height / 2);
+      expect(target.api.height).toBe(bounds.height / 2);
       expect(api.getPanel("discussion")!.group.api.width).toBe(rightWidth);
       expect(api.getPanel("canvas")!.group.api.width).toBeGreaterThan(canvasWidth);
     },
@@ -766,6 +768,23 @@ describe("workspace executor with Dockview 8", () => {
     after.sizes.forEach((size, index) =>
       expect(Math.abs(size - before.sizes[index])).toBeLessThanOrEqual(1),
     );
+  });
+
+  it("sizes native floating windows to the same constraints used by saved snapshots", () => {
+    const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+    controller.syncConstraints();
+    api.addFloatingGroup(api.getPanel("discussion")!, {
+      x: 32,
+      y: 32,
+      width: 300,
+      height: 300,
+    });
+    controller.syncConstraints();
+    const before = api.toJSON().floatingGroups;
+    expect(before?.[0].position).toMatchObject({ width: 320, height: 320 });
+    controller.enterCompact();
+    controller.exitCompact();
+    expect(api.toJSON().floatingGroups).toEqual(before);
   });
 
   it("latches right-edge floating geometry before the host becomes compact", () => {

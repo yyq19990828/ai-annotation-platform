@@ -1,3 +1,4 @@
+import { panelCommand } from "../fixtures/workbench-panel-actions";
 import type { APIRequestContext, APIResponse, Page } from "@playwright/test";
 import { writeFile } from "node:fs/promises";
 import { expect, test as seededTest, type SeedData } from "../fixtures/seed";
@@ -38,10 +39,7 @@ async function annotations(request: APIRequestContext, taskId: string, token: st
     }>
   >(await request.get(`${API_BASE}/api/v1/tasks/${taskId}/annotations`, { headers: auth(token) }));
 }
-async function panelCommand(page: Page, title: string, command: string) {
-  await page.getByRole("button", { name: `${title}菜单`, exact: true }).click();
-  await page.getByRole("menuitem", { name: command, exact: true }).click();
-}
+
 async function openAi(page: Page, data: SeedData, taskId: string, video = false) {
   await page.goto(`/projects/${data.project_id}/annotate?task=${taskId}`);
   await expect(page.getByTestId(video ? "video-konva-stage" : "workbench-stage")).toBeVisible({

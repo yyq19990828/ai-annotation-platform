@@ -1,3 +1,4 @@
+import { recordingPanelCommand } from "./_workbench-layout";
 /**
  * 流程录制：AI 追踪面板——顶部打开、Dockview 换位、隐藏恢复与 AI 单题成组。
  *
@@ -46,17 +47,14 @@ export async function runAiTrackerPanel(
   await expectTrackerState();
   await page.waitForTimeout(1400);
 
-  await page.getByRole("button", { name: "视频追踪菜单", exact: true }).click();
-  await page.getByRole("menuitem", { name: "浮动面板", exact: true }).click();
+  await recordingPanelCommand(page, "视频追踪", "浮动面板");
   await expectTrackerState();
   await page.waitForTimeout(1600);
-  await page.getByRole("button", { name: "视频追踪菜单", exact: true }).click();
-  await page.getByRole("menuitem", { name: "停靠到右侧", exact: true }).click();
+  await recordingPanelCommand(page, "视频追踪", "停靠到右侧");
   await expectTrackerState();
   await page.waitForTimeout(1600);
 
-  await page.getByRole("button", { name: "视频追踪菜单", exact: true }).click();
-  await page.getByRole("menuitem", { name: "隐藏面板", exact: true }).click();
+  await recordingPanelCommand(page, "视频追踪", "隐藏面板");
   await tracker.waitFor({ state: "hidden", timeout: 3000 });
   await expect(tracker).toHaveCount(1);
   await page.waitForTimeout(700);
@@ -71,13 +69,12 @@ export async function runAiTrackerPanel(
   await expectTrackerState();
   await page.waitForTimeout(2200);
 
-  await page.getByRole("button", { name: "当前题 AI菜单", exact: true }).click();
-  await page.getByRole("menuitem", { name: "与视频追踪合并为标签", exact: true }).click();
+  await recordingPanelCommand(page, "当前题 AI", "与视频追踪合并为标签");
   const trackerTab = page.getByRole("tab").filter({
-    has: page.getByRole("button", { name: "视频追踪菜单", exact: true }),
+    has: page.getByRole("button", { name: "隐藏视频追踪", exact: true }),
   });
   const singleTab = page.getByRole("tab").filter({
-    has: page.getByRole("button", { name: "当前题 AI菜单", exact: true }),
+    has: page.getByRole("button", { name: "隐藏当前题 AI", exact: true }),
   });
   await expect(trackerTab).toHaveCount(1);
   await expect(singleTab).toHaveCount(1);
