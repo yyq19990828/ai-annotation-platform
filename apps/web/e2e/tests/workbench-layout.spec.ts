@@ -69,7 +69,7 @@ test("AI 候选和多选不会作为标注身份查询隐藏讨论面板", async
   });
   try {
     await seed.advanceTask({ taskId, toStatus: "pending", annotatorEmail: data.annotator_email });
-    const annotations = [];
+    const annotations: Awaited<ReturnType<typeof seed.createTaskAnnotation>>[] = [];
     for (const x of [0.1, 0.5]) {
       annotations.push(
         await seed.createTaskAnnotation(taskId, data.admin_email, {
@@ -331,7 +331,7 @@ test("图片布局预设、面板隐藏和浮动保留画布及未发送讨论�
   ).toBe(dockedDiscussionGroup);
 });
 
-test("标准和浮动布局使用日间与夜间语义主题", async ({ page, seed }) => {
+test("标准和浮动布局使用日间与夜间语义主题", { tag: "@visual" }, async ({ page, seed }) => {
   test.setTimeout(90_000);
   const data = await seed.reset();
   await seed.injectToken(page, data.admin_email);
@@ -443,7 +443,9 @@ test("视频紧凑布局禁止桌面写入，退出后恢复浮窗与非零帧�
       timeout: 20_000,
     })
     .toBeGreaterThanOrEqual(2);
-  await stage.click({ position: { x: 12, y: 12 } });
+  // Focus the selectable canvas, away from the contextual capsule at its top-left edge.
+  await page.getByTestId("video-tool-btn-select").click();
+  await stage.click();
   for (let frame = 1; frame <= 3; frame += 1) {
     await page.keyboard.press("ArrowRight");
     await expect(stage).toHaveAttribute("data-video-frame-index", String(frame));

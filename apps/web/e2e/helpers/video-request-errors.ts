@@ -1,0 +1,21 @@
+export interface VideoRequestError {
+  kind: string;
+  message: string;
+  method?: string;
+  path?: string;
+}
+
+/** Only known lifecycle cancellations are expected; write failures and HTTP errors remain errors. */
+export function isVideoLifecycleCancellation(error: VideoRequestError): boolean {
+  if (error.kind !== "request" || error.message !== "net::ERR_ABORTED" || !error.path) return false;
+  if (error.method === "POST")
+    return ["/api/v1/auth/me/heartbeat", "/api/v1/auth/me/task-events:batch"].includes(error.path);
+  if (error.method !== "GET") return false;
+  return (
+    error.path === "/api/v1/auth/me" ||
+    error.path === "/api/v1/feedbacks" ||
+    /^\/api\/v1\/tasks\/[0-9a-f-]{36}$/.test(error.path) ||
+    /^\/api\/v1\/tasks\/[0-9a-f-]{36}\/video\/frames\/\d+$/.test(error.path) ||
+    /^\/api\/v1\/videos\/[0-9a-f-]{36}\/chunks\/\d+(?:\/samples)?$/.test(error.path)
+  );
+}

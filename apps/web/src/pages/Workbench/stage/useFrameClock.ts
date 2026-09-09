@@ -342,6 +342,9 @@ export function useFrameClock({
 
   useEffect(() => {
     cancelPendingSeek();
+    // The previous owner's cleanup already cancelled its pending seek without publishing.
+    // Release that owner's gate even when no new seek is needed at the current media time.
+    setIsSeeking(false);
     nativeFrameRef.current = null;
     setNativeFrame(null);
     return () => {

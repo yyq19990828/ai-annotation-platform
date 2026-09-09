@@ -187,6 +187,7 @@ export async function runVideoTrackerRange(
     onAnnotationsCreated?.(added.map((item) => item.id));
     return added;
   });
+  await openContextToolbar(page, "tracker-review");
   await review.getByTestId("tracker-review-accept").click();
   const [accepted, saved] = await Promise.all([acceptedResponse, savedResponse]);
   expect(accepted.ok()).toBe(true);

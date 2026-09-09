@@ -229,6 +229,48 @@ describe("useFrameClock", () => {
     act(() => oldCallback(0, { mediaTime: 10 / 30 }));
     expect(result.current.getFrameEvidence(10)).toBeNull();
     expect(native.cancel).toHaveBeenCalled();
+    expect(result.current.isSeeking).toBe(false);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(result.current.isSeeking).toBe(false);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("releases the first-frame seeking gate when the exact timetable replaces an estimate", async () => {
+    const native = nativeVideo();
+    const estimated: FrameTimebase = { ...timebase, source: "estimated", ptsMs: null };
+    const { result, rerender } = renderHook(
+      ({ sourceTimebase }) =>
+        useFrameClock({
+          videoRef: { current: native.video },
+          sourceKey: "task-A",
+          frameIndex: 0,
+          timebase: sourceTimebase,
+          isPlaying: false,
+          onFrameChange: vi.fn(),
+        }),
+      { initialProps: { sourceTimebase: estimated } },
+    );
+    let pending!: Promise<FrameSeekResult>;
+    act(() => {
+      pending = result.current.seekToAsync(0);
+    });
+    expect(result.current.isSeeking).toBe(true);
+    const oldCallbacks = [...native.callbacks.values()];
+
+    // The browser clock already reached frame 0, so the new owner will not seek again.
+    rerender({ sourceTimebase: timebase });
+    expect(await pending).toEqual({ status: "cancelled", frameIndex: 0, source: null });
+    expect(result.current.isSeeking).toBe(false);
+    act(() => oldCallbacks.forEach((callback) => callback(0, { mediaTime: 0 })));
+    expect(result.current.getFrameEvidence(0)).toBeNull();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(result.current.isSeeking).toBe(false);
+    expect(result.current.diagnostics.seekCount).toBe(1);
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it("settles pending work and cancels the rVFC handle on unmount", async () => {

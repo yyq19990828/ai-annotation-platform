@@ -2,7 +2,7 @@ import { openContextToolbar } from "../../fixtures/context-toolbar";
 /**
  * 流程录制：两条已有公交车轨迹多选后，以一个真实 SAM3 作业批量延展、跨帧复核并回填原轨迹。
  */
-import type { Locator, Page, Response } from "@playwright/test";
+import { expect, type Locator, type Page, type Response } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
 import { movePointerAtRefreshRate, normalizedBboxIoU, recordingAnchor } from "./_canvas";
 import type { NormalizedBbox } from "./_canvas";
@@ -216,7 +216,9 @@ export async function runVideoTrackBatchPropagate(
     await openContextToolbar(page, "tracker-review");
     const reviewBar = page.getByTestId("video-tracker-review-bar");
     await reviewBar.waitFor({ state: "visible", timeout: 120_000 });
-    await reviewBar.getByText(/当前选区 \d+ 个候选/).waitFor({ timeout: 5_000 });
+    await expect(reviewBar.getByTestId("tracker-review-scope-summary")).toContainText(
+      /所选待审 \d+/,
+    );
     await reviewBar.getByTestId("tracker-review-instance-1").waitFor({ timeout: 5_000 });
     await reviewBar.getByTestId("tracker-review-instance-2").waitFor({ timeout: 5_000 });
     await page.waitForTimeout(1_500);
@@ -227,9 +229,12 @@ export async function runVideoTrackBatchPropagate(
     await fromFrame.click();
     await page.keyboard.press("Control+A");
     await page.keyboard.type("1", { delay: 120 });
-    await reviewBar.getByText("当前选区 20 个候选", { exact: false }).waitFor({ timeout: 5_000 });
+    await expect(reviewBar.getByTestId("tracker-review-scope-summary")).toContainText(
+      "所选待审 20",
+    );
     await page.waitForTimeout(800);
     await scrubCandidateFrames(page, timeline);
+    await openContextToolbar(page, "tracker-review");
 
     const accepted = page.waitForResponse(
       (response) =>
@@ -252,9 +257,14 @@ export async function runVideoTrackBatchPropagate(
       sourceAnnotationIds,
       anchors.map((anchor) => anchor.bbox),
     );
-    await reviewBar
-      .getByText("已审 20/22，当前选区 2 个候选", { exact: false })
-      .waitFor({ timeout: 5_000 });
+    await expect(reviewBar).toContainText("已审 20/22");
+    // Partial acceptance retains the selected frame window. Select the remaining seed frames explicitly.
+    const remainingInstances = reviewBar.locator('input[data-testid^="tracker-review-instance-"]');
+    for (let index = 0; index < (await remainingInstances.count()); index += 1)
+      await remainingInstances.nth(index).setChecked(true);
+    await reviewBar.getByTestId("tracker-review-from-frame").fill("0");
+    await reviewBar.getByTestId("tracker-review-to-frame").fill("0");
+    await expect(reviewBar.getByTestId("tracker-review-scope-summary")).toContainText("所选待审 2");
     await page.waitForTimeout(700);
     const rejectedSeedFrames = page.waitForResponse(
       (response) =>

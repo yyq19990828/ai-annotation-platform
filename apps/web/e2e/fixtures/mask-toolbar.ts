@@ -4,8 +4,20 @@ export async function openMaskSettings(page: Page) {
   const capsule = page.getByTestId("mask-tool-capsule");
   await expect(capsule).toBeAttached();
   if ((await capsule.getAttribute("data-panel-open")) !== "true") {
-    await page.getByTestId("mask-settings-trigger").click();
+    if ((await capsule.getAttribute("data-expanded")) !== "true")
+      await page.getByTestId("mask-settings-trigger").click();
+    await expect(capsule).toHaveAttribute("data-expanded", "true");
+    // Expansion changes the clipped quick-tools width and clamps its scroll position.
+    await capsule.evaluate((node) =>
+      Promise.allSettled(
+        node
+          .getAnimations({ subtree: true })
+          .filter((animation) => animation.effect?.getComputedTiming().iterations !== Infinity)
+          .map((animation) => animation.finished),
+      ),
+    );
     await page.getByRole("button", { name: "更多 Mask 工具", exact: true }).click();
+    await expect(capsule).toHaveAttribute("data-panel-open", "true");
   }
   await expect(page.getByTestId("mask-toolbar")).toBeVisible();
 }

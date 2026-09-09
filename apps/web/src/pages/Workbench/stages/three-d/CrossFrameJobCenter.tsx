@@ -182,7 +182,7 @@ export function CrossFrameJobCenter({
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="3D 跨帧任务中心" width={720}>
+    <Modal open={open} onClose={onClose} title="3D 跨帧任务中心" width={720} backdropBlur={false}>
       <div className="mb-4 grid grid-cols-2 gap-2" role="tablist" aria-label="跨帧任务类型">
         <Button
           size="sm"

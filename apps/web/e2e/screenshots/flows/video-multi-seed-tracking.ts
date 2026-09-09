@@ -409,6 +409,7 @@ export async function runVideoMultiSeedTracking(
     }
     await page.waitForTimeout(1_200);
     await scrubPendingTrackerFrames(page);
+    await openContextToolbar(page, "tracker-review");
     const accepted = page.waitForResponse(
       (response) =>
         response.request().method() === "POST" &&

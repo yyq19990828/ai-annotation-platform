@@ -1,0 +1,158 @@
+name: E2E execution
+
+on:
+  workflow_call:
+    inputs:
+      matrix:
+        description: "E2E suites selected by the caller"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  suites:
+    name: Frontend E2E suites
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Each runner owns its services; never parallelize workers against shared fixtures.
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(inputs.matrix) }}
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: pass
+          POSTGRES_DB: annotation_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    env:
+      DATABASE_URL: postgresql+asyncpg://user:pass@localhost:5432/annotation_test
+      PLAYWRIGHT_E2E_DATABASE_URL: postgresql+asyncpg://user:pass@localhost:5432/annotation_test
+      SECRET_KEY: ci-test-secret
+      REDIS_URL: redis://localhost:6379/0
+      MINIO_ENDPOINT: localhost:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: annotations-test
+      # The test router is opt-in and also validates the _test database suffix.
+      E2E_SEED_ENABLED: "true"
+      ENVIRONMENT: development
+      # CI 上 Node 把 localhost 解析成 ::1，但 uvicorn --host 0.0.0.0 只听 IPv4，
+      # 用 127.0.0.1 强制 IPv4 避免 ECONNREFUSED ::1:8000。
+      PLAYWRIGHT_API_BASE: http://127.0.0.1:8000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install video fixture tools
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install uv
+        run: pip install uv
+      - name: Sync API deps
+        working-directory: apps/api
+        run: uv sync --extra test
+      # services 没法给 minio/minio 镜像传 server 子命令；bitnami/minio:latest 已被下架。
+      # 直接 docker run 启容器最稳，并等到 health endpoint 通后再继续，避免后续 FastAPI
+      # startup 阶段反复重试拉满 health-check 窗口。
+      - name: Start MinIO
+        run: |
+          docker run -d --name minio \
+            -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin \
+            -e MINIO_ROOT_PASSWORD=minioadmin \
+            minio/minio:latest server /data
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:9000/minio/health/live; then exit 0; fi
+            sleep 1
+          done
+          docker logs minio
+          exit 1
+      - name: alembic upgrade head
+        if: matrix.built
+        working-directory: apps/api
+        run: uv run alembic upgrade head
+      - name: Start FastAPI in background
+        if: matrix.built
+        working-directory: apps/api
+        run: |
+          uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 > "$GITHUB_WORKSPACE/apps/web/e2e-api.log" 2>&1 &
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8000/health/db; then exit 0; fi
+            sleep 1
+          done
+          cat "$GITHUB_WORKSPACE/apps/web/e2e-api.log"
+          exit 1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: pnpm/action-setup@v4
+      - name: pnpm install
+        working-directory: apps/web
+        run: pnpm install --frozen-lockfile
+      - name: Generate API types for Mask suites
+        if: ${{ !matrix.built }}
+        working-directory: apps/web
+        env:
+          OPENAPI_URL: ${{ github.workspace }}/apps/api/openapi.snapshot.json
+        run: pnpm codegen
+      - name: Build frontend
+        if: matrix.built
+        working-directory: apps/web
+        env:
+          OPENAPI_URL: ${{ github.workspace }}/apps/api/openapi.snapshot.json
+        run: pnpm build --mode e2e
+      - name: Install Playwright browsers
+        working-directory: apps/web
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Run E2E suite
+        id: e2e
+        timeout-minutes: 20
+        working-directory: apps/web
+        run: pnpm ${{ matrix.command }}
+      - name: Summarize E2E results
+        if: always()
+        env:
+          E2E_SUITE: ${{ matrix.suite }}
+          E2E_OUTCOME: ${{ steps.e2e.outcome }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+          const path = 'apps/web/e2e-results.json';
+          const heading = `### ${process.env.E2E_SUITE}\n\nOutcome: ${process.env.E2E_OUTCOME}\n\n`;
+          const body = existsSync(path)
+            ? (() => {
+                const { stats, errors } = JSON.parse(readFileSync(path, 'utf8'));
+                return `| Passed | Failed | Flaky | Skipped | Global errors | Duration |\n| --- | --- | --- | --- | --- | --- |\n| ${stats.expected} | ${stats.unexpected} | ${stats.flaky} | ${stats.skipped} | ${errors.length} | ${(stats.duration / 1000).toFixed(1)}s |\n`;
+              })()
+            : 'No completed Playwright report. Inspect setup, server startup or timeout logs.\n';
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY, heading + body);
+          NODE
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report-${{ matrix.suite }}
+          path: |
+            apps/web/playwright-report/
+            apps/web/test-results/
+            apps/web/e2e-results.json
+            apps/web/e2e-api.log
+          retention-days: 7
