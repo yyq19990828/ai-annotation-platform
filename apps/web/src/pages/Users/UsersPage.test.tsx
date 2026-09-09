@@ -95,6 +95,12 @@ vi.mock("@/components/users/GroupManageModal", () => ({
 vi.mock("@/components/users/InvitationListPanel", () => ({
   InvitationListPanel: () => <div data-testid="invitation-panel">InvitationPanel</div>,
 }));
+vi.mock("@/components/users/OffboardingDialog", () => ({
+  OffboardingDialog: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="offboarding-dialog">OffboardingDialog</div> : null,
+  ReactivateDialog: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="reactivate-dialog">ReactivateDialog</div> : null,
+}));
 
 // --- toast ---
 vi.mock("@/components/ui/Toast", async () => {
@@ -131,6 +137,21 @@ const SAMPLE_USERS = [
     created_at: "2026-02-01T00:00:00Z",
   },
 ];
+
+const INACTIVE_USER = {
+  id: "u3",
+  name: "Emergency Bob",
+  email: "emergency@example.com",
+  role: "annotator",
+  is_active: false,
+  disabled_kind: "emergency_suspended",
+  disabled_at: "2026-09-08T10:00:00Z",
+  disabled_reason: "账号疑似泄露",
+  status: "offline",
+  group_id: null,
+  group_name: null,
+  created_at: "2026-03-01T00:00:00Z",
+};
 
 function renderUI() {
   return render(
@@ -226,5 +247,16 @@ describe("UsersPage", () => {
     const groupTab = screen.getAllByRole("button").find((b) => b.textContent?.includes("数据组"));
     fireEvent.click(groupTab!);
     expect(screen.getByText(/暂无数据组/)).toBeInTheDocument();
+  });
+
+  it("账号状态筛选显示已停用账号，并保留继续交接与恢复入口", () => {
+    mockUseUsers.mockReturnValue({ data: [INACTIVE_USER], isLoading: false });
+    renderUI();
+    fireEvent.change(screen.getByLabelText("账号状态"), { target: { value: "inactive" } });
+    expect(screen.getByText("Emergency Bob")).toBeInTheDocument();
+    expect(screen.getByText("紧急停用")).toBeInTheDocument();
+    expect(screen.getByTitle("继续交接")).toBeInTheDocument();
+    expect(screen.getByTitle("恢复账号")).toBeInTheDocument();
+    expect(screen.queryByTitle("删除账号")).not.toBeInTheDocument();
   });
 });

@@ -1,10 +1,54 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { usersApi, type InvitePayload } from "../api/users";
+import {
+  usersApi,
+  type InvitePayload,
+  type OffboardingCommitRequest,
+  type UserStatusFilter,
+} from "../api/users";
 
-export function useUsers(params?: { role?: string; project_id?: string }) {
+export function useUsers(params?: {
+  role?: string;
+  project_id?: string;
+  status?: UserStatusFilter;
+}) {
   return useQuery({
     queryKey: ["users", params],
     queryFn: () => usersApi.list(params),
+  });
+}
+
+export function useOffboardingPreview(userId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: ["users", "offboarding-preview", userId],
+    queryFn: () => usersApi.offboardingPreview(userId as string),
+    enabled: enabled && !!userId,
+    retry: false,
+  });
+}
+
+export function useOffboardUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userId, payload }: { userId: string; payload: OffboardingCommitRequest }) =>
+      usersApi.offboard(userId, payload),
+    onSuccess: (_result, variables) => {
+      qc.invalidateQueries({ queryKey: ["users"] });
+      qc.invalidateQueries({ queryKey: ["users", "offboarding-preview", variables.userId] });
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["project-members"] });
+    },
+  });
+}
+
+export function useReactivateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userId, reason }: { userId: string; reason?: string }) =>
+      usersApi.reactivate(userId, reason ? { reason } : undefined),
+    onSuccess: (_user, variables) => {
+      qc.invalidateQueries({ queryKey: ["users"] });
+      qc.invalidateQueries({ queryKey: ["users", "offboarding-preview", variables.userId] });
+    },
   });
 }
 

@@ -10,7 +10,18 @@ export type { LoginPayload, TokenResponse, MeResponse } from "./auth";
 export type { ProjectResponse, ProjectStatsResponse, ProjectCreatePayload } from "./projects";
 export type { TaskListResponse, AnnotationPayload, SubmitResponse } from "./tasks";
 export type { TaskResponse, AnnotationResponse } from "@/types";
-export type { UserResponse, InvitePayload, InvitationCreated } from "./users";
+export type {
+  UserResponse,
+  UserStatusFilter,
+  InvitePayload,
+  InvitationCreated,
+  OffboardingMode,
+  OffboardingRole,
+  OffboardingPreview,
+  OffboardingResult,
+  OffboardingCommitRequest,
+  ReactivateRequest,
+} from "./users";
 export { auditApi } from "./audit";
 export type { AuditLogResponse, AuditLogList, AuditQuery } from "./audit";
 export { invitationsApi } from "./invitations";

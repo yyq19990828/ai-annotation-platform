@@ -26,6 +26,7 @@ import { InviteUserModal } from "@/components/users/InviteUserModal";
 import { EditUserModal } from "@/components/users/EditUserModal";
 import { GroupManageModal } from "@/components/users/GroupManageModal";
 import { InvitationListPanel } from "@/components/users/InvitationListPanel";
+import { OffboardingDialog, ReactivateDialog } from "@/components/users/OffboardingDialog";
 import { usersApi, type UserResponse } from "@/api/users";
 import { ApiError } from "@/api/client";
 import type { UserRole } from "@/types";
@@ -61,6 +62,21 @@ const STATUS_COLORS: Record<string, "success" | "warning" | "outline"> = {
   离线: "outline",
 };
 
+const USER_STATUS_FILTER_LABELS = {
+  active: "活跃账号",
+  inactive: "已停用",
+  all: "全部账号",
+} as const;
+
+const DISABLED_KIND_LABELS: Record<string, string> = {
+  suspended: "正常离职停用",
+  emergency_suspended: "紧急停用",
+  deleted: "已删除",
+  historical_unknown: "历史未知状态",
+};
+
+const REACTIVATABLE_KINDS = new Set(["suspended", "emergency_suspended"]);
+
 // 表头单元 / 主表数据单元
 const TH_CLASS =
   "border-b border-border bg-muted px-3 py-2.5 text-left text-xs font-medium text-muted-foreground whitespace-nowrap";
@@ -75,8 +91,14 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("zh-CN");
 }
 
+function formatDateTime(iso: string | null | undefined) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("zh-CN", { hour12: false });
+}
+
 export function UsersPage() {
   const [tab, setTab] = useState<"members" | "roles" | "groups" | "invitations">("members");
+  const [userStatus, setUserStatus] = useState<"active" | "inactive" | "all">("active");
   const [selectedRole, setSelectedRole] = useState("全部");
   const [query, setQuery] = useState("");
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -95,6 +117,8 @@ export function UsersPage() {
     sample: string[];
   } | null>(null);
   const [transferToId, setTransferToId] = useState<string>("");
+  const [offboardingUser, setOffboardingUser] = useState<UserResponse | null>(null);
+  const [reactivatingUser, setReactivatingUser] = useState<UserResponse | null>(null);
   const [manageGroupsOpen, setManageGroupsOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
   const pushToast = useToastStore((s) => s.push);
@@ -105,7 +129,14 @@ export function UsersPage() {
   const editableTargets = EDITABLE_TARGET_ROLES_BY_ACTOR[actorRole] ?? [];
   const canViewAudit = hasPermission("audit.view");
 
-  const { data: allUsers = [], isLoading } = useUsers();
+  const {
+    data: allUsers = [],
+    isLoading,
+    isError: usersError,
+    error: usersQueryError,
+    refetch: refetchUsers,
+    isFetching: usersFetching,
+  } = useUsers({ status: userStatus });
   const { data: groupsData = [] } = useGroups();
   const { data: usersStats } = useUsersStats();
 
@@ -115,6 +146,27 @@ export function UsersPage() {
       return false;
     return true;
   });
+
+  const userQueryStatus =
+    usersQueryError instanceof ApiError
+      ? usersQueryError.status
+      : usersQueryError && typeof usersQueryError === "object" && "status" in usersQueryError
+        ? Number((usersQueryError as { status?: unknown }).status)
+        : undefined;
+  const userQueryTitle =
+    userQueryStatus === 403
+      ? "无权查看用户列表"
+      : userQueryStatus !== undefined && userQueryStatus >= 500
+        ? "服务器暂时不可用"
+        : "用户列表加载失败";
+  const userQueryErrorCopy =
+    userQueryStatus === 403
+      ? "没有权限查看用户列表，请联系管理员。"
+      : userQueryStatus !== undefined && userQueryStatus >= 500
+        ? "服务器暂时不可用，请稍后重试。"
+        : usersQueryError instanceof Error
+          ? usersQueryError.message
+          : "加载用户列表失败，请重试。";
 
   const handleExport = async () => {
     if (exporting) return;
@@ -198,7 +250,19 @@ export function UsersPage() {
             }}
           />
           {tab === "members" && (
-            <div className="flex gap-2">
+            <div className="flex flex-wrap justify-end gap-2">
+              <select
+                aria-label="账号状态"
+                value={userStatus}
+                onChange={(e) => setUserStatus(e.target.value as "active" | "inactive" | "all")}
+                className={`${SELECT_BASE} px-2 py-1.5 text-sm`}
+              >
+                {Object.entries(USER_STATUS_FILTER_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
               <select
                 value={selectedRole}
                 onChange={(e) => setSelectedRole(e.target.value)}
@@ -250,8 +314,45 @@ export function UsersPage() {
                     </td>
                   </tr>
                 )}
+                {usersError && !isLoading && (
+                  <tr>
+                    <td colSpan={8} className="p-10 text-center">
+                      <div className="mx-auto flex max-w-md flex-col items-center gap-2 text-sm">
+                        <Icon
+                          name={userQueryStatus === 403 ? "shieldAlert" : "warning"}
+                          size={22}
+                          className={
+                            userQueryStatus === 403 ? "text-status-caution" : "text-status-danger"
+                          }
+                        />
+                        <span className="font-medium">{userQueryTitle}</span>
+                        <span className="text-xs text-muted-foreground">{userQueryErrorCopy}</span>
+                        <Button
+                          size="sm"
+                          onClick={() => void refetchUsers()}
+                          disabled={usersFetching}
+                        >
+                          <Icon name="refresh" size={12} /> {usersFetching ? "重试中…" : "重试"}
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                {!isLoading && !usersError && filtered.length === 0 && (
+                  <tr>
+                    <td colSpan={8} className="p-10 text-center text-sm text-muted-foreground">
+                      {query || selectedRole !== "全部"
+                        ? "没有匹配的账号。"
+                        : `暂无${USER_STATUS_FILTER_LABELS[userStatus]}。`}
+                    </td>
+                  </tr>
+                )}
                 {filtered.map((u: UserResponse) => {
-                  const statusLabel = STATUS_LABEL[u.status] ?? u.status;
+                  const isActive = u.is_active !== false;
+                  const statusLabel = isActive ? (STATUS_LABEL[u.status] ?? u.status) : "已停用";
+                  const disabledKindLabel = u.disabled_kind
+                    ? (DISABLED_KIND_LABELS[u.disabled_kind] ?? u.disabled_kind)
+                    : null;
                   return (
                     <tr key={u.id}>
                       <td className={`${TD_CLASS} pl-4`}>
@@ -279,6 +380,15 @@ export function UsersPage() {
                         <Badge variant={STATUS_COLORS[statusLabel] || "outline"} dot>
                           {statusLabel}
                         </Badge>
+                        {!isActive && disabledKindLabel && (
+                          <div className="mt-1 max-w-[180px] text-2xs text-muted-foreground">
+                            <div className="truncate">{disabledKindLabel}</div>
+                            <div className="truncate">时间：{formatDateTime(u.disabled_at)}</div>
+                            <div className="truncate" title={u.disabled_reason ?? undefined}>
+                              原因：{u.disabled_reason || "未填写"}
+                            </div>
+                          </div>
+                        )}
                       </td>
                       <td className={TD_CLASS}>
                         <span className="text-xs text-muted-foreground">—</span>
@@ -311,7 +421,7 @@ export function UsersPage() {
                               >
                                 <Icon name="edit" size={11} />
                               </Button>
-                              {u.is_active && (
+                              {isActive && (
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -321,7 +431,21 @@ export function UsersPage() {
                                   <Icon name="key" size={11} />
                                 </Button>
                               )}
-                              {u.is_active && (
+                              {isActive && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setOffboardingUser(u)}
+                                  title="离职处理"
+                                >
+                                  <Icon
+                                    name="shieldAlert"
+                                    size={11}
+                                    className="text-status-caution"
+                                  />
+                                </Button>
+                              )}
+                              {isActive && (
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -330,6 +454,34 @@ export function UsersPage() {
                                 >
                                   <Icon name="trash" size={11} className="text-status-danger" />
                                 </Button>
+                              )}
+                              {!isActive && REACTIVATABLE_KINDS.has(u.disabled_kind ?? "") && (
+                                <>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setOffboardingUser(u)}
+                                    title="继续交接"
+                                  >
+                                    <Icon
+                                      name="arrowRight"
+                                      size={11}
+                                      className="text-status-caution"
+                                    />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setReactivatingUser(u)}
+                                    title="恢复账号"
+                                  >
+                                    <Icon
+                                      name="rotate-ccw"
+                                      size={11}
+                                      className="text-status-positive"
+                                    />
+                                  </Button>
+                                </>
                               )}
                             </>
                           ) : (
@@ -447,6 +599,16 @@ export function UsersPage() {
       <InviteUserModal open={inviteOpen} onClose={() => setInviteOpen(false)} />
       <EditUserModal open={!!editing} user={editing} onClose={() => setEditing(null)} />
       <GroupManageModal open={manageGroupsOpen} onClose={() => setManageGroupsOpen(false)} />
+      <OffboardingDialog
+        open={!!offboardingUser}
+        user={offboardingUser}
+        onClose={() => setOffboardingUser(null)}
+      />
+      <ReactivateDialog
+        open={!!reactivatingUser}
+        user={reactivatingUser}
+        onClose={() => setReactivatingUser(null)}
+      />
 
       <Modal
         open={!!resettingPwd}
