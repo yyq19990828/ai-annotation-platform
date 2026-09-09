@@ -356,6 +356,8 @@ node --test scripts/check-workflow-names.test.mjs
 pnpm test                        # vitest 单测
 pnpm --filter @anno/web test:coverage  # 前端带覆盖率
 pnpm test:e2e                    # Playwright E2E（自启 :3001/:8010，使用 annotation_e2e）
+pnpm --filter @anno/web test:e2e:visual  # 独立视觉基线
+pnpm --filter @anno/web test:e2e:stress  # 完整布局压力矩阵
 
 # 后端 / 共享包测试
 cd apps/api && uv run pytest                                            # FastAPI 平台后端
@@ -381,15 +383,21 @@ artifact 的 JUnit XML 中。测试用户工厂在进程内复用默认密码 `T
 首页请求。调用后需显式导航到测试页面；已有 localStorage 偏好会保留，真实请求
 错误检查不作放宽。
 
-CI E2E 使用 4 个默认测试分片，以及 readonly Mask、native Mask、native Mask AI
-三个独立任务。每个任务拥有自己的 PostgreSQL、Redis 和 MinIO；同一数据库仍只用
-一个 Playwright worker，因为 seed/reset 和 teardown 会清理共享 E2E 数据。
-默认分片使用构建产物，Mask 任务由 Playwright 启动隔离 API 和 Vite dev。
-所有任务保持原有用例和重试策略，`Frontend E2E` 汇总门禁仅在全部成功时通过。
-每组 HTML 报告分别保存在 `playwright-report-<suite>` artifact，便于查看耗时与重试。
+CI E2E 每个 PR 保留 4 个功能分片，以及 readonly Mask、native Mask、native Mask AI
+三个任务。应用、共享依赖和相关 CI 配置变更时，路由脚本
+`scripts/plan-e2e-suites.mjs` 追加独立视觉与压力套件；main 始终运行全部九套件，
+`E2E extended` 每晚和手动运行两个扩展套件。默认配置排除 `@visual` / `@stress`，
+但六种布局上下文的 14 次短流程及全部恢复断言仍属于每个 PR 的功能回归。
+每个任务通过可复用的 `e2e-run.yml` 拥有独立 PostgreSQL、Redis 和 MinIO；同一数据库
+只用一个 Playwright worker，因为 seed/reset 和 teardown 会清理共享数据。
+默认、视觉和压力套件使用构建产物，Mask 任务由 Playwright 启动隔离 API 和 Vite dev。
+功能用例最多重试一次，扩展用例不重试；进程/步骤/job 保留 15/20/30 分钟限时。
+`Frontend E2E` 汇总门禁同时要求路由和全部已选任务成功。每个套件的 HTML、JSON、
+失败截图和 trace 分别上传到 `playwright-report-<suite>`，Actions 摘要展示结果与耗时，
+并区分失败、flaky、跳过及全局错误。详见 [E2E 运行说明](apps/web/e2e/README.md)。
 同一 PR 的新提交会取消旧 CI；main 的每次 push 验证均保留。
 
-分片只缩短并行等待时间，可能增加 runner 总用量。调整分片数量时，使用
+独立套件和分片缩短并行等待时间，可能增加 runner 总用量。调整分片数量时，使用
 `pnpm exec playwright test --list --shard=1/4`（依次检查四片）确认默认用例无遗漏、
 无重复，并观察远端最慢分片的耗时与排队时间；不要在共享本地数据库上并发运行分片。
 
