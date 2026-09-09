@@ -169,6 +169,7 @@ async def test_invitation_mutations_use_database_locks() -> None:
     resolve_result.scalar_one_or_none.return_value = invitation
     resolve_db = AsyncMock(spec=AsyncSession)
     resolve_db.execute.return_value = resolve_result
+    resolve_db.scalar.return_value = actor
     await InvitationService.resolve(resolve_db, invitation.token, for_update=True)
     resolve_query = resolve_db.execute.await_args.args[0]
 

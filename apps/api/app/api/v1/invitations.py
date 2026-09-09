@@ -124,18 +124,3 @@ async def _accept_existing_invitation(
         user=UserOut.model_validate(accepted_user),
         acceptance=acceptance,
     )
-
-
-@router.post(
-    "/invitations/{token}/accept",
-    response_model=AcceptInvitationResponse,
-)
-async def accept_invitation_for_existing_user_by_token(
-    token: str,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    """Path-token alias for clients that keep the invite URL as their action target."""
-
-    return await _accept_existing_invitation(db, token, request, user)

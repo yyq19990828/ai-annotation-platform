@@ -8,7 +8,7 @@
  * - 邀请 token 失效（404 / 410）
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -17,6 +17,7 @@ const mockRegister: any = { isPending: false, isError: false, error: null, mutat
 const mockOpenRegister: any = { isPending: false, isError: false, error: null, mutate: vi.fn() };
 const mockRegStatus: any = { isLoading: false, data: { open_registration_enabled: true } };
 const mockResend: any = { isPending: false, mutate: vi.fn() };
+const mockAccept = { isPending: false, isError: false, error: null, mutate: vi.fn() };
 
 vi.mock("@/hooks/useInvitation", () => ({
   useResolveInvitation: () => mockResolve,
@@ -24,6 +25,7 @@ vi.mock("@/hooks/useInvitation", () => ({
   useRegistrationStatus: () => mockRegStatus,
   useOpenRegister: () => mockOpenRegister,
   useResendVerification: () => mockResend,
+  useAcceptExistingInvitation: () => mockAccept,
 }));
 
 import { RegisterPage } from "./RegisterPage";
@@ -44,6 +46,73 @@ function fillPwd(pwd: string, pwd2 = pwd) {
   fireEvent.change(all[0], { target: { value: pwd } });
   fireEvent.change(all[1], { target: { value: pwd2 } });
 }
+
+describe("existing project invitation", () => {
+  const invitedUser = {
+    id: "invited",
+    email: "employee@example.test",
+    name: "Employee",
+    role: "annotator",
+  } as any;
+  const acceptance = {
+    project_id: "project",
+    project_name: "Road QA",
+    project_member_role: "annotator",
+    next_action: "wait_for_allocation",
+    next_action_label: "等待分派",
+    responsible_person_name: "Manager",
+    active_batch_count: 0,
+  };
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    useAuthStore.getState().setAuth("invited-token", invitedUser);
+    Object.assign(mockResolve, {
+      isLoading: false,
+      isError: false,
+      error: null,
+      data: {
+        email: invitedUser.email,
+        role: "annotator",
+        project_id: "project",
+        project_name: "Road QA",
+        expires_at: "2030-01-01",
+      },
+    });
+  });
+
+  it("requires the matching signed-in email before confirmation", () => {
+    useAuthStore
+      .getState()
+      .setAuth("other-token", { ...invitedUser, id: "other", email: "other@example.test" });
+    renderUI("/register?token=invite-token");
+    expect(screen.getByRole("button", { name: "确认并加入" })).toBeDisabled();
+    expect(screen.getByText(/与邀请邮箱 employee@example.test 不一致/)).toBeInTheDocument();
+  });
+
+  it("shows the actual waiting state after explicit acceptance", () => {
+    renderUI("/register?token=invite-token");
+    fireEvent.click(screen.getByRole("button", { name: "确认并加入" }));
+    expect(mockAccept.mutate).toHaveBeenCalledWith("invite-token", expect.any(Object));
+    act(() => mockAccept.mutate.mock.calls[0][1].onSuccess({ user: invitedUser, acceptance }));
+    expect(screen.getByText("等待分派")).toBeInTheDocument();
+    expect(screen.getByText(/项目负责人：Manager/)).toBeInTheDocument();
+  });
+
+  it("ignores a previous account's late acceptance response", () => {
+    renderUI("/register?token=invite-token");
+    fireEvent.click(screen.getByRole("button", { name: "确认并加入" }));
+    const callback = mockAccept.mutate.mock.calls[0][1].onSuccess;
+    act(() =>
+      useAuthStore
+        .getState()
+        .setAuth("other-token", { ...invitedUser, id: "other", email: "other@example.test" }),
+    );
+    act(() => callback({ user: invitedUser, acceptance }));
+    expect(useAuthStore.getState().user?.id).toBe("other");
+    expect(screen.queryByText("邀请已完成")).not.toBeInTheDocument();
+  });
+});
 
 describe("RegisterPage / OpenRegisterForm", () => {
   beforeEach(() => {

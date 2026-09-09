@@ -7,13 +7,15 @@ from datetime import datetime, timedelta, timezone
 
 import httpx
 import pytest
-from sqlalchemy import select
+from fastapi import HTTPException
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.project_member import ProjectMember
 from app.db.models.user import User
 from app.db.models.user_invitation import UserInvitation
 from tests.factory import create_project, create_user
+from app.services.invitation import InvitationService
 
 pytestmark = pytest.mark.asyncio
 
@@ -98,20 +100,24 @@ async def test_existing_account_must_explicitly_confirm_matching_project_invitat
         db_session, "reviewer", "existing-project@invite.test", "Existing"
     )
     project = await create_project(db_session, owner_id=admin.id, name="Existing QA")
-    invitation = await _target_invitation(
-        db_session,
-        inviter=admin,
-        email=existing.email,
-        project_id=project.id,
-        role="reviewer",
+    created = await httpx_client.post(
+        "/api/v1/users/invite",
+        json={
+            "email": existing.email,
+            "project_id": str(project.id),
+            "role": "reviewer",
+        },
+        headers=_headers(super_admin),
     )
+    assert created.status_code == 201, created.text
+    invitation_token = created.json()["token"]
     token = __import__(
         "app.core.security", fromlist=["create_access_token"]
     ).create_access_token(subject=str(existing.id), role=existing.role)
 
     accepted = await httpx_client.post(
         "/api/v1/auth/invitations/accept",
-        json={"token": invitation.token},
+        json={"token": invitation_token},
         headers={"Authorization": f"Bearer {token}"},
     )
     assert accepted.status_code == 200, accepted.text
@@ -126,7 +132,7 @@ async def test_existing_account_must_explicitly_confirm_matching_project_invitat
 
     repeated = await httpx_client.post(
         "/api/v1/auth/invitations/accept",
-        json={"token": invitation.token},
+        json={"token": invitation_token},
         headers={"Authorization": f"Bearer {token}"},
     )
     assert repeated.status_code == 410
@@ -257,3 +263,45 @@ async def test_deactivated_project_inviter_cannot_accept_target_invitation(
     response = await httpx_client.get(f"/api/v1/auth/invitations/{invitation.token}")
     assert response.status_code == 410
     assert "停用" in response.json()["detail"]
+
+
+async def test_create_refreshes_stale_authenticated_inviter(db_session, super_admin):
+    admin, _ = super_admin
+    await db_session.execute(
+        update(User)
+        .where(User.id == admin.id)
+        .values(is_active=False)
+        .execution_options(synchronize_session=False)
+    )
+    assert admin.is_active is True
+    with pytest.raises(HTTPException) as error:
+        await InvitationService.create(
+            db_session,
+            email="stale-admin@invite.test",
+            role="annotator",
+            group_name=None,
+            actor=admin,
+        )
+    assert error.value.status_code == 403
+
+
+async def test_legacy_invitation_rechecks_stale_inviter(db_session, super_admin):
+    admin, _ = super_admin
+    invitation = await _target_invitation(
+        db_session, inviter=admin, email="stale-legacy@invite.test", project_id=None
+    )
+    await db_session.execute(
+        update(User)
+        .where(User.id == admin.id)
+        .values(is_active=False)
+        .execution_options(synchronize_session=False)
+    )
+    with pytest.raises(HTTPException) as error:
+        await InvitationService.accept(
+            db_session, token=invitation.token, name="Blocked", password="Strong123"
+        )
+    assert error.value.status_code == 410
+    assert (
+        await db_session.scalar(select(User.id).where(User.email == invitation.email))
+        is None
+    )

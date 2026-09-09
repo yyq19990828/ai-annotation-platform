@@ -11,7 +11,7 @@ import {
   useOpenRegister,
   useResendVerification,
 } from "@/hooks/useInvitation";
-import { useAuthStore } from "@/stores/authStore";
+import { isCurrentAuthOwner, useAuthStore } from "@/stores/authStore";
 import { ROLE_LABELS } from "@/constants/roles";
 import type { UserRole } from "@/types";
 import type { ApiError } from "@/api/client";
@@ -37,17 +37,22 @@ export function RegisterPage() {
   const [params] = useSearchParams();
   const token = params.get("token");
   const existingToken = useAuthStore((s) => s.token);
+  const currentUserId = useAuthStore((s) => s.user?.id);
   // Keep the entry mode stable while a newly created invitation account is
   // written to the auth store; otherwise the same render would switch into
   // the existing-account confirmation flow before the success panel appears.
   const [hadAuthOnEntry] = useState(() => Boolean(useAuthStore.getState().token));
 
   if (hadAuthOnEntry && existingToken) {
-    return token ? <ExistingAccountInviteForm token={token} /> : <Navigate to="/dashboard" replace />;
+    return token ? (
+      <ExistingAccountInviteForm key={`${token}:${currentUserId}`} token={token} />
+    ) : (
+      <Navigate to="/dashboard" replace />
+    );
   }
 
   if (token) {
-    return <InviteRegisterForm token={token} />;
+    return <InviteRegisterForm key={token} token={token} />;
   }
   return <OpenRegisterForm />;
 }
@@ -145,7 +150,7 @@ function OpenRegisterForm() {
             />
           </Field>
 
-          <Field label="密码（至少 8 位，需含大小写字母��数字）">
+          <Field label="密码（至少 8 位，需含大小写字母和数字）">
             <div className={styles.passwordField}>
               <input
                 required
@@ -254,12 +259,18 @@ function InviteRegisterForm({ token }: { token: string }) {
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !isPasswordStrong(pwd) || pwd !== pwd2) return;
+    const ownerToken = useAuthStore.getState().token;
     register.mutate(
       { token, name: name.trim(), password: pwd },
       {
         onSuccess: (data) => {
           // 邀请注册恒返回 token（不走邮箱验证）；先展示项目落点和分派状态。
-          if (!data.access_token) return;
+          if (
+            !data.access_token ||
+            useAuthStore.getState().token !== ownerToken ||
+            localStorage.getItem("token") !== ownerToken
+          )
+            return;
           setAuth(data.access_token, data.user);
           if (data.acceptance) setAccepted(data);
           else navigate("/dashboard", { replace: true });
@@ -381,7 +392,12 @@ function ExistingAccountInviteForm({ token }: { token: string }) {
     );
   }
   if (resolve.isError) {
-    return <ErrorPanel title={invitationError(resolve.error as ApiError)} hint="请联系管理员重新发送邀请。" />;
+    return (
+      <ErrorPanel
+        title={invitationError(resolve.error as ApiError)}
+        hint="请联系管理员重新发送邀请。"
+      />
+    );
   }
 
   const inv = resolve.data!;
@@ -393,9 +409,13 @@ function ExistingAccountInviteForm({ token }: { token: string }) {
       />
     );
   }
+  const emailMatches = currentUser?.email.trim().toLowerCase() === inv.email.trim().toLowerCase();
   const submit = () => {
+    const ownerId = currentUser?.id;
+    if (!emailMatches || !ownerId || !isCurrentAuthOwner(ownerId)) return;
     accept.mutate(token, {
       onSuccess: (data) => {
+        if (!isCurrentAuthOwner(ownerId)) return;
         setUser(data.user);
         setAccepted(data.acceptance);
       },
@@ -408,8 +428,11 @@ function ExistingAccountInviteForm({ token }: { token: string }) {
       <div className={styles.card}>
         <h1 className={styles.title}>确认加入项目</h1>
         <p className={styles.description}>
-          当前登录账号 <span className={clsx("mono", styles.inviteEmail)}>{currentUser?.email}</span>{" "}
-          与邀请邮箱一致。确认后会保留你的全局角色，只新增目标项目成员关系。
+          当前登录账号{" "}
+          <span className={clsx("mono", styles.inviteEmail)}>{currentUser?.email}</span>{" "}
+          {emailMatches
+            ? "与邀请邮箱一致。确认后会保留你的全局角色，只新增目标项目成员关系。"
+            : `与邀请邮箱 ${inv.email} 不一致。请返回首页退出当前账号，再使用被邀请邮箱登录。`}
         </p>
         <div className={styles.pillRow}>
           <Pill>{ROLE_LABELS[inv.role as UserRole] ?? inv.role}</Pill>
@@ -421,7 +444,7 @@ function ExistingAccountInviteForm({ token }: { token: string }) {
         <button
           type="button"
           onClick={submit}
-          disabled={accept.isPending}
+          disabled={accept.isPending || !emailMatches}
           className={clsx(styles.primaryButton, accept.isPending && styles.primaryButtonPending)}
         >
           {accept.isPending ? "确认中…" : "确认并加入"}

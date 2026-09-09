@@ -85,6 +85,36 @@
         "title": "AIToolPreferences",
         "type": "object"
       },
+      "AcceptInvitationRequest": {
+        "properties": {
+          "token": {
+            "minLength": 1,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "AcceptInvitationRequest",
+        "type": "object"
+      },
+      "AcceptInvitationResponse": {
+        "properties": {
+          "acceptance": {
+            "$ref": "#/components/schemas/InvitationAcceptance"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserOut"
+          }
+        },
+        "required": [
+          "user",
+          "acceptance"
+        ],
+        "title": "AcceptInvitationResponse",
+        "type": "object"
+      },
       "AdminDashboardStats": {
         "properties": {
           "active_users": {
@@ -13893,6 +13923,74 @@
         "title": "InterpolateRangeResponse",
         "type": "object"
       },
+      "InvitationAcceptance": {
+        "properties": {
+          "active_batch_count": {
+            "default": 0,
+            "title": "Active Batch Count",
+            "type": "integer"
+          },
+          "next_action": {
+            "title": "Next Action",
+            "type": "string"
+          },
+          "next_action_label": {
+            "title": "Next Action Label",
+            "type": "string"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "project_member_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Member Role"
+          },
+          "project_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Name"
+          },
+          "responsible_person_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responsible Person Name"
+          }
+        },
+        "required": [
+          "next_action",
+          "next_action_label"
+        ],
+        "title": "InvitationAcceptance",
+        "type": "object"
+      },
       "InvitationCreate": {
         "properties": {
           "email": {
@@ -13910,6 +14008,18 @@
               }
             ],
             "title": "Group Name"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
           },
           "role": {
             "title": "Role",
@@ -13933,6 +14043,40 @@
           "invite_url": {
             "title": "Invite Url",
             "type": "string"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "project_member_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Member Role"
+          },
+          "project_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Name"
           },
           "token": {
             "title": "Token",
@@ -14006,6 +14150,40 @@
               }
             ],
             "title": "Invited By Name"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "project_member_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Member Role"
+          },
+          "project_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Name"
           },
           "revoked_at": {
             "anyOf": [
@@ -14097,6 +14275,40 @@
               }
             ],
             "title": "Invited By Name"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "project_member_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Member Role"
+          },
+          "project_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Name"
           },
           "role": {
             "title": "Role",
@@ -23005,7 +23217,8 @@
           "role": {
             "enum": [
               "annotator",
-              "reviewer"
+              "reviewer",
+              "viewer"
             ],
             "title": "Role",
             "type": "string"
@@ -25770,6 +25983,16 @@
       },
       "RegisterResponse": {
         "properties": {
+          "acceptance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InvitationAcceptance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "access_token": {
             "anyOf": [
               {
@@ -29196,11 +29419,118 @@
         "title": "SystemHealthResponse",
         "type": "object"
       },
+      "SystemSettingMetadata": {
+        "description": "Non-secret provenance and validation metadata for one system setting.",
+        "properties": {
+          "deployment_default": {
+            "title": "Deployment Default"
+          },
+          "effect": {
+            "title": "Effect",
+            "type": "string"
+          },
+          "in_range": {
+            "title": "In Range",
+            "type": "boolean"
+          },
+          "max_value": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Value"
+          },
+          "min_value": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Value"
+          },
+          "source": {
+            "enum": [
+              "deployment",
+              "override"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "value_type": {
+            "enum": [
+              "bool",
+              "int",
+              "str",
+              "json"
+            ],
+            "title": "Value Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "deployment_default",
+          "value_type",
+          "effect",
+          "in_range"
+        ],
+        "title": "SystemSettingMetadata",
+        "type": "object"
+      },
       "SystemSettingsOut": {
         "properties": {
           "allow_open_registration": {
             "title": "Allow Open Registration",
             "type": "boolean"
+          },
+          "dataset_import_max_files": {
+            "title": "Dataset Import Max Files",
+            "type": "integer"
+          },
+          "dataset_import_max_total_bytes": {
+            "title": "Dataset Import Max Total Bytes",
+            "type": "integer"
           },
           "environment": {
             "title": "Environment",
@@ -29214,8 +29544,35 @@
             "title": "Invitation Ttl Days",
             "type": "integer"
           },
+          "max_invitations_per_day": {
+            "title": "Max Invitations Per Day",
+            "type": "integer"
+          },
+          "metadata": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SystemSettingMetadata"
+            },
+            "title": "Metadata",
+            "type": "object"
+          },
+          "offline_threshold_minutes": {
+            "title": "Offline Threshold Minutes",
+            "type": "integer"
+          },
           "smtp": {
             "$ref": "#/components/schemas/SmtpStatus"
+          },
+          "task_create_sync_threshold": {
+            "title": "Task Create Sync Threshold",
+            "type": "integer"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          },
+          "video_chunk_warmup_lookahead": {
+            "title": "Video Chunk Warmup Lookahead",
+            "type": "integer"
           }
         },
         "required": [
@@ -29223,12 +29580,51 @@
           "invitation_ttl_days",
           "frontend_base_url",
           "smtp",
-          "allow_open_registration"
+          "allow_open_registration",
+          "max_invitations_per_day",
+          "offline_threshold_minutes",
+          "dataset_import_max_files",
+          "dataset_import_max_total_bytes",
+          "task_create_sync_threshold",
+          "video_chunk_warmup_lookahead",
+          "version",
+          "metadata"
         ],
         "title": "SystemSettingsOut",
         "type": "object"
       },
+      "SystemSettingsReset": {
+        "additionalProperties": false,
+        "description": "Explicitly remove DB overrides; PATCH null never means reset.",
+        "properties": {
+          "expected_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Version"
+          },
+          "keys": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Keys",
+            "type": "array"
+          }
+        },
+        "required": [
+          "keys"
+        ],
+        "title": "SystemSettingsReset",
+        "type": "object"
+      },
       "SystemSettingsUpdate": {
+        "additionalProperties": false,
         "description": "v0.8.1 · admin UI PATCH 入参，全部 Optional：未提供字段不变更。\nsmtp_password 传空串视为清除；未提供则不动现有值。",
         "properties": {
           "allow_open_registration": {
@@ -29241,6 +29637,41 @@
               }
             ],
             "title": "Allow Open Registration"
+          },
+          "dataset_import_max_files": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Import Max Files"
+          },
+          "dataset_import_max_total_bytes": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Import Max Total Bytes"
+          },
+          "expected_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Version"
           },
           "frontend_base_url": {
             "anyOf": [
@@ -29266,6 +29697,32 @@
               }
             ],
             "title": "Invitation Ttl Days"
+          },
+          "max_invitations_per_day": {
+            "anyOf": [
+              {
+                "maximum": 1000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Invitations Per Day"
+          },
+          "offline_threshold_minutes": {
+            "anyOf": [
+              {
+                "maximum": 60.0,
+                "minimum": 2.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Offline Threshold Minutes"
           },
           "smtp_from": {
             "anyOf": [
@@ -29327,6 +29784,30 @@
               }
             ],
             "title": "Smtp User"
+          },
+          "task_create_sync_threshold": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Create Sync Threshold"
+          },
+          "video_chunk_warmup_lookahead": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Video Chunk Warmup Lookahead"
           }
         },
         "title": "SystemSettingsUpdate",
@@ -40117,6 +40598,53 @@
           }
         },
         "summary": "Forgot Password",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/invitations/accept": {
+      "post": {
+        "description": "Explicitly attach an existing, matching account to an invitation project.",
+        "operationId": "accept_invitation_for_existing_user_api_v1_auth_invitations_accept_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptInvitationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcceptInvitationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Accept Invitation For Existing User",
         "tags": [
           "auth"
         ]
@@ -52685,6 +53213,52 @@
           }
         ],
         "summary": "Update System Settings",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/system/reset": {
+      "post": {
+        "operationId": "reset_system_settings_api_v1_settings_system_reset_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SystemSettingsReset"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reset System Settings",
         "tags": [
           "settings"
         ]

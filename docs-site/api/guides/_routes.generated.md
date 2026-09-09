@@ -283,6 +283,7 @@
 |---|---|
 | GET | `/invitations/{token}` |
 | POST | `/register` |
+| POST | `/invitations/accept` |
 
 ## `mask_formats.py`
 
@@ -470,6 +471,7 @@
 |---|---|
 | GET | `/system` |
 | PATCH | `/system` |
+| POST | `/system/reset` |
 | POST | `/system/test-smtp` |
 
 ## `task_views.py`
@@ -700,4 +702,4 @@
 
 ---
 
-_共 65 模块 / 393 路由_
+_共 65 模块 / 395 路由_

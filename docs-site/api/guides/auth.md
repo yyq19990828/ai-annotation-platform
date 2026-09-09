@@ -35,6 +35,24 @@ GET /api/v1/auth/me
 Authorization: Bearer <access_token>
 ```
 
+## 项目邀请与注册
+
+管理角色通过 `POST /api/v1/users/invite` 提交 `email`、`role`、可选 `group_name` 和 `project_id`。省略项目时保留原有新账号邀请；指定项目时只允许标注员、审核员或观察者角色，已有账号的全局角色必须一致。响应中的 `invite_url` 可直接复制使用。
+
+公开的 `GET /api/v1/auth/invitations/{token}` 校验邀请并返回目标项目摘要。新账号通过 `POST /api/v1/auth/register` 提交 `token`、`name`、`password`，账号、用户组和项目成员关系在同一事务内建立。已有账号先登录，再调用：
+
+```http
+POST /api/v1/auth/invitations/accept
+Authorization: Bearer <access_token>
+Content-Type: application/json
+
+{ "token": "<invitation-token>" }
+```
+
+接口核对登录邮箱、账号启用状态、全局角色、邀请人当前管理权限及目标项目；不会静默合并账号或更改角色。项目删除、邀请过期、撤销或重复接受返回可解释的错误，失败不留下半完成的账号和项目关系。
+
+接受响应的 `acceptance` 包含 `project_id`、`project_name`、`project_member_role`、`next_action`、`next_action_label`、`responsible_person_name` 和 `active_batch_count`。客户端据此显示开始工作或等待分派；加入项目不代表已有激活批次。
+
 ## 账号恢复
 
 忘记密码时提交邮箱地址：
