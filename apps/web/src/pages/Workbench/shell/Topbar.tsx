@@ -173,6 +173,12 @@ export function Topbar({
       aria-label="当前视频分段"
       value={activeVideoSegmentId ?? ""}
       onChange={(event) => onSelectVideoSegment(event.target.value || null)}
+      onKeyDown={(event) => {
+        // Keep native select keys out of the overflow menu's item navigation.
+        if (["ArrowUp", "ArrowDown", "Home", "End", "Enter", " "].includes(event.key)) {
+          event.stopPropagation();
+        }
+      }}
       className="h-7 min-w-0 w-32 max-w-full rounded border border-border bg-card px-2 text-xs text-foreground focus-visible:ring-2 focus-visible:ring-ring"
     >
       <option value="">选择分段</option>
