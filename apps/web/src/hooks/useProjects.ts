@@ -31,6 +31,7 @@ export function useProject(id: string) {
 export function useProjectReadiness(id: string | undefined) {
   return useQuery({
     queryKey: ["project-readiness", id],
+    refetchInterval: (query) => (query.state.data?.task_creation_active_jobs ? 5_000 : 30_000),
     queryFn: () => projectsApi.getReadiness(id!),
     enabled: Boolean(id),
   });
