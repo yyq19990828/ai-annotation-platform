@@ -6,8 +6,9 @@
  * 引入 react-query / MSW 依赖。
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { ApiError } from "@/api/client";
 
 const mockUseAnnotatorStats = vi.fn();
 const mockUseProjects = vi.fn();
@@ -74,6 +75,82 @@ describe("AnnotatorDashboard", () => {
     mockUseProjects.mockReturnValue({ data: [] });
     renderUI();
     expect(screen.getByText("加载中...")).toBeInTheDocument();
+  });
+
+  it("统计初始失败 → 显示错误态并支持重试", () => {
+    const refetch = vi.fn();
+    mockUseAnnotatorStats.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error("server unavailable"),
+      refetch,
+    });
+    mockUseProjects.mockReturnValue({ data: [] });
+    renderUI();
+    expect(screen.getByRole("alert")).toHaveTextContent("无法加载标注统计");
+    fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
+    expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  it("统计刷新失败 → 保留上一次 KPI 并提示更新失败", () => {
+    const refetch = vi.fn();
+    mockUseAnnotatorStats.mockReturnValue({
+      data: fullStats,
+      isLoading: false,
+      isError: true,
+      error: new Error("network"),
+      refetch,
+    });
+    mockUseProjects.mockReturnValue({ data: [] });
+    renderUI();
+    expect(screen.getByText("5")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("标注统计更新失败");
+    fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
+    expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  it("项目查询 403 → 独立显示权限错误，不把项目列表当成空态", () => {
+    const refetch = vi.fn();
+    mockUseAnnotatorStats.mockReturnValue({ data: fullStats, isLoading: false });
+    mockUseProjects.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new ApiError(403, "forbidden"),
+      refetch,
+    });
+    renderUI();
+    expect(screen.getByRole("alert")).toHaveTextContent("没有权限查看项目列表");
+    expect(screen.queryByText("暂无分配项目")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
+    expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  it("项目刷新失败 → 保留已有项目行并提示更新失败", () => {
+    const refetch = vi.fn();
+    mockUseAnnotatorStats.mockReturnValue({ data: fullStats, isLoading: false });
+    mockUseProjects.mockReturnValue({
+      data: [
+        {
+          id: "p1",
+          display_id: "P-1",
+          name: "项目一",
+          type_label: "图像检测",
+          total_tasks: 3,
+          completed_tasks: 1,
+        },
+      ],
+      isLoading: false,
+      isError: true,
+      error: new Error("network"),
+      refetch,
+    });
+    renderUI();
+    expect(screen.getByText("项目一")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("项目列表更新失败");
+    fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
+    expect(refetch).toHaveBeenCalledOnce();
   });
 
   it("有 stats + 0 项目 → 显示「暂无分配项目」空态", () => {

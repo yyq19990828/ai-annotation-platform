@@ -10,6 +10,7 @@ import { Histogram } from "@/components/ui/Histogram";
 import { SectionDivider } from "@/components/ui/SectionDivider";
 import { useAnnotatorStats } from "@/hooks/useDashboard";
 import { useProjects } from "@/hooks/useProjects";
+import { ApiError } from "@/api/client";
 import type { ProjectResponse } from "@/api/projects";
 import { MyBatchesCard } from "./MyBatchesCard";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
@@ -35,9 +36,77 @@ function formatMs(ms: number | null | undefined): string {
   return `${m}m${s.toString().padStart(2, "0")}s`;
 }
 
+function queryErrorMessage(error: unknown, resource: string): string {
+  if (error instanceof ApiError && error.status === 403) {
+    return `当前账号没有权限查看${resource}，请联系项目管理员。`;
+  }
+  if (error instanceof ApiError && error.status === 404) {
+    return `${resource}已不存在或已被移除，请刷新后重试。`;
+  }
+  if (error instanceof ApiError && error.status >= 500) {
+    return `${resource}服务暂时不可用，请稍后重试。`;
+  }
+  return `${resource}加载失败，请检查网络后重试。`;
+}
+
+function QueryErrorState({
+  resource,
+  error,
+  onRetry,
+}: {
+  resource: string;
+  error: unknown;
+  onRetry: () => void;
+}) {
+  return (
+    <div role="alert" className="rounded-lg border border-border bg-card p-6">
+      <h1 className="text-lg font-semibold">无法加载{resource}</h1>
+      <p className="mb-4 mt-2 text-sm text-muted-foreground">
+        {queryErrorMessage(error, resource)}
+      </p>
+      <Button onClick={onRetry}>重新加载</Button>
+    </div>
+  );
+}
+
+function RefreshNotice({
+  resource,
+  error,
+  onRetry,
+}: {
+  resource: string;
+  error: unknown;
+  onRetry: () => void;
+}) {
+  return (
+    <div
+      role="alert"
+      className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-status-caution-soft p-3"
+    >
+      <p className="m-0 text-sm">
+        <strong className="mr-2 text-status-caution">{resource}更新失败</strong>
+        <span className="text-muted-foreground">
+          {queryErrorMessage(error, resource)} 当前内容已保留。
+        </span>
+      </p>
+      <Button size="sm" onClick={onRetry}>
+        重新加载
+      </Button>
+    </div>
+  );
+}
+
 export function AnnotatorDashboard() {
-  const { data: stats, isLoading } = useAnnotatorStats();
-  const { data: myProjects = [] } = useProjects();
+  const statsQuery = useAnnotatorStats();
+  const stats = statsQuery.data;
+  const hasStatsData = statsQuery.data !== undefined;
+  const statsLoading = statsQuery.isLoading && !hasStatsData;
+  const statsInitialError = statsQuery.isError && !hasStatsData;
+  const projectsQuery = useProjects();
+  const myProjects = useMemo(() => projectsQuery.data ?? [], [projectsQuery.data]);
+  const hasProjectData = projectsQuery.data !== undefined;
+  const projectsLoading = projectsQuery.isLoading && !hasProjectData;
+  const projectsInitialError = projectsQuery.isError && !hasProjectData;
   const navigate = useNavigate();
   const location = useLocation();
   const openWorkbench = (projectId: string) =>
@@ -53,7 +122,19 @@ export function AnnotatorDashboard() {
     [myProjects],
   );
 
-  if (isLoading || !stats) {
+  if (statsInitialError) {
+    return (
+      <PageContainer>
+        <QueryErrorState
+          resource="标注统计"
+          error={statsQuery.error}
+          onRetry={() => void statsQuery.refetch()}
+        />
+      </PageContainer>
+    );
+  }
+
+  if (statsLoading || !stats) {
     return <div className="px-7 py-15 text-center text-muted-foreground">加载中...</div>;
   }
 
@@ -64,6 +145,13 @@ export function AnnotatorDashboard() {
 
   return (
     <PageContainer>
+      {statsQuery.isError && hasStatsData && (
+        <RefreshNotice
+          resource="标注统计"
+          error={statsQuery.error}
+          onRetry={() => void statsQuery.refetch()}
+        />
+      )}
       <div className="mb-3 flex items-end justify-between">
         <div>
           <h1 className="mb-1 text-xl font-semibold">标注工作台</h1>
@@ -232,9 +320,30 @@ export function AnnotatorDashboard() {
         <Card>
           <div className="flex items-center justify-between border-b border-border px-4 py-3.5">
             <h3 className={CARD_TITLE}>我的项目</h3>
-            <span className="text-xs text-muted-foreground">共 {sortedProjects.length} 个</span>
+            {!projectsInitialError && (
+              <span className="text-xs text-muted-foreground">共 {sortedProjects.length} 个</span>
+            )}
           </div>
-          {noProjects ? (
+          {projectsQuery.isError && hasProjectData && (
+            <div className="px-4 pt-3">
+              <RefreshNotice
+                resource="项目列表"
+                error={projectsQuery.error}
+                onRetry={() => void projectsQuery.refetch()}
+              />
+            </div>
+          )}
+          {projectsLoading ? (
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground">加载中...</div>
+          ) : projectsInitialError ? (
+            <div className="p-4">
+              <QueryErrorState
+                resource="项目列表"
+                error={projectsQuery.error}
+                onRetry={() => void projectsQuery.refetch()}
+              />
+            </div>
+          ) : noProjects ? (
             <div className="px-4 py-8 text-center text-sm text-muted-foreground">
               <Icon name="folder" size={28} className="mb-2 opacity-25" />
               <div>暂无分配项目</div>

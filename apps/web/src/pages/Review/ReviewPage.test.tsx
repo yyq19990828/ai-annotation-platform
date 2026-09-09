@@ -4,6 +4,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { ApiError } from "@/api/client";
 
 const mockUseReviewerStats = vi.fn();
 const mockUseTaskList = vi.fn();
@@ -19,6 +20,18 @@ vi.mock("@/hooks/useDashboard", () => ({
 
 vi.mock("@/hooks/useTasks", () => ({
   useTaskList: (...args: unknown[]) => mockUseTaskList(...args),
+  flattenTaskPages: (pages: any[] | undefined) => {
+    const seen = new Set<string>();
+    return (
+      pages
+        ?.flatMap((page) => page.items)
+        .filter((task) => {
+          if (seen.has(task.id)) return false;
+          seen.add(task.id);
+          return true;
+        }) ?? []
+    );
+  },
   useAnnotations: () => mockUseAnnotations(),
   useApproveTask: () => mockUseApproveTask(),
   useRejectTask: () => mockUseRejectTask(),
@@ -215,5 +228,167 @@ describe("ReviewPage", () => {
     fireEvent.click(checkboxes[0]);
     fireEvent.click(screen.getByRole("button", { name: /批量退回/ }));
     expect(screen.getByTestId("reject-modal")).toBeInTheDocument();
+  });
+
+  it("任务首页请求失败 → 显示错误态而不是空队列，并可重试", () => {
+    const refetch = vi.fn();
+    mockUseReviewerStats.mockReturnValue({
+      data: {
+        reviewing_batches: [
+          {
+            batch_id: "b1",
+            batch_name: "批次A",
+            batch_display_id: "B-1",
+            project_id: "p1",
+            project_name: "项目X",
+            total_tasks: 5,
+            review_tasks: 2,
+            completed_tasks: 1,
+          },
+        ],
+      },
+    });
+    mockUseTaskList.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error("server unavailable"),
+      refetch,
+    });
+    renderUI("/review?project=p1&batch=b1");
+    expect(screen.getByRole("alert")).toHaveTextContent("无法加载待审核任务");
+    expect(screen.queryByText("该批次暂无待审核任务")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
+    expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  it("403 任务查询 → 显示权限提示，不伪装成空队列", () => {
+    mockUseReviewerStats.mockReturnValue({
+      data: {
+        reviewing_batches: [
+          {
+            batch_id: "b1",
+            batch_name: "批次A",
+            batch_display_id: "B-1",
+            project_id: "p1",
+            project_name: "项目X",
+            total_tasks: 5,
+            review_tasks: 2,
+            completed_tasks: 1,
+          },
+        ],
+      },
+    });
+    mockUseTaskList.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new ApiError(403, "forbidden"),
+      refetch: vi.fn(),
+    });
+    renderUI("/review?project=p1&batch=b1");
+    expect(screen.getByRole("alert")).toHaveTextContent("没有权限查看待审核任务");
+    expect(screen.queryByText("该批次暂无待审核任务")).not.toBeInTheDocument();
+  });
+
+  it("500 任务查询 → 显示服务不可用，不混淆为网络或空队列", () => {
+    mockUseReviewerStats.mockReturnValue({
+      data: {
+        reviewing_batches: [
+          {
+            batch_id: "b1",
+            batch_name: "批次A",
+            batch_display_id: "B-1",
+            project_id: "p1",
+            project_name: "项目X",
+            total_tasks: 5,
+            review_tasks: 2,
+            completed_tasks: 1,
+          },
+        ],
+      },
+    });
+    mockUseTaskList.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new ApiError(500, "server error"),
+      refetch: vi.fn(),
+    });
+    renderUI("/review?project=p1&batch=b1");
+    expect(screen.getByRole("alert")).toHaveTextContent("服务暂时不可用");
+    expect(screen.queryByText("该批次暂无待审核任务")).not.toBeInTheDocument();
+  });
+
+  it("刷新失败时保留已加载任务，并可继续加载下一页", () => {
+    const refetch = vi.fn();
+    const fetchNextPage = vi.fn();
+    mockUseReviewerStats.mockReturnValue({
+      data: {
+        reviewing_batches: [
+          {
+            batch_id: "b1",
+            batch_name: "批次A",
+            batch_display_id: "B-1",
+            project_id: "p1",
+            project_name: "项目X",
+            total_tasks: 250,
+            review_tasks: 250,
+            completed_tasks: 0,
+          },
+        ],
+      },
+    });
+    mockUseTaskList.mockReturnValue({
+      data: { pages: [{ items: [sampleTask], total: 250 }] },
+      isLoading: false,
+      isError: true,
+      error: new Error("network"),
+      refetch,
+      hasNextPage: true,
+      isFetchingNextPage: false,
+      fetchNextPage,
+    });
+    renderUI("/review?project=p1&batch=b1");
+    expect(screen.getByText("T-1")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("当前内容已保留");
+    expect(screen.getByText("共 250 个待审核任务（已加载 1）")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "加载更多" }));
+    expect(fetchNextPage).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
+    expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  it("跨页任务去重并保留总数口径", () => {
+    mockUseReviewerStats.mockReturnValue({
+      data: {
+        reviewing_batches: [
+          {
+            batch_id: "b1",
+            batch_name: "批次A",
+            batch_display_id: "B-1",
+            project_id: "p1",
+            project_name: "项目X",
+            total_tasks: 3,
+            review_tasks: 3,
+            completed_tasks: 0,
+          },
+        ],
+      },
+    });
+    mockUseTaskList.mockReturnValue({
+      data: {
+        pages: [
+          { items: [sampleTask], total: 3 },
+          { items: [sampleTask, { ...sampleTask, id: "t2", display_id: "T-2" }] },
+        ],
+      },
+      isLoading: false,
+      hasNextPage: false,
+    });
+    renderUI("/review?project=p1&batch=b1");
+    expect(screen.getByText("共 3 个待审核任务（已加载 2）")).toBeInTheDocument();
+    expect(screen.getAllByText("T-1")).toHaveLength(1);
+    expect(screen.getByText("T-2")).toBeInTheDocument();
   });
 });

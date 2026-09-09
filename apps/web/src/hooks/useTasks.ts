@@ -13,7 +13,7 @@ import {
   type AnnotationUpdatePayload,
   type TaskListParams,
 } from "../api/tasks";
-import type { AnnotationResponse } from "@/types";
+import type { AnnotationResponse, TaskResponse } from "@/types";
 import { ApiError } from "../api/client";
 import { randomId } from "@/utils/id";
 
@@ -32,12 +32,38 @@ export class ConflictError extends Error {
 export function useTaskList(projectId: string | undefined, params?: TaskListParams) {
   return useInfiniteQuery({
     queryKey: ["tasks", projectId, params],
-    queryFn: ({ pageParam }: { pageParam: string | undefined }) =>
-      tasksApi.listByProject(projectId!, { ...params, limit: TASK_PAGE_SIZE, cursor: pageParam }),
+    queryFn: ({ pageParam, signal }: { pageParam: string | undefined; signal: AbortSignal }) =>
+      tasksApi.listByProject(
+        projectId!,
+        { ...params, limit: TASK_PAGE_SIZE, cursor: pageParam },
+        { signal },
+      ),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     enabled: !!projectId,
   });
+}
+
+/**
+ * Merge task pages while keeping the first occurrence of each task.
+ * Cursor pages can overlap when a task changes during a refresh; rendering a
+ * task twice would make counts, bulk selection, and the load-more boundary
+ * misleading.
+ */
+export function flattenTaskPages(
+  pages: Array<{ items: TaskResponse[] }> | undefined,
+): TaskResponse[] {
+  if (!pages) return [];
+  const seen = new Set<string>();
+  const tasks: TaskResponse[] = [];
+  for (const page of pages) {
+    for (const task of page.items) {
+      if (seen.has(task.id)) continue;
+      seen.add(task.id);
+      tasks.push(task);
+    }
+  }
+  return tasks;
 }
 
 export function useNextTask(projectId: string | undefined, batchId?: string) {

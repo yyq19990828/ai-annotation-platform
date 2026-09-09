@@ -7,9 +7,10 @@ import { Badge } from "@/components/ui/Badge";
 import { useToastStore } from "@/components/ui/Toast";
 import { Thumbnail } from "@/components/Thumbnail";
 import { useElementStyle } from "@/components/ui/useElementStyle";
-import { useTaskList } from "@/hooks/useTasks";
+import { flattenTaskPages, useTaskList } from "@/hooks/useTasks";
 import { useMyBatches } from "@/hooks/useDashboard";
 import { batchesApi, type BatchResponse } from "@/api/batches";
+import { ApiError } from "@/api/client";
 import type { MyBatchItem } from "@/api/dashboard";
 import type { TaskResponse } from "@/types";
 import { AnnotateSidebar } from "./AnnotateSidebar";
@@ -107,6 +108,64 @@ function TaskRow({ task, onOpen }: { task: TaskResponse; onOpen: () => void }) {
   );
 }
 
+function queryErrorMessage(error: unknown, resource: string): string {
+  if (error instanceof ApiError && error.status === 403) {
+    return `当前账号没有权限查看${resource}，请联系项目管理员。`;
+  }
+  if (error instanceof ApiError && error.status === 404) {
+    return `${resource}已不存在或已被移除，请刷新后重试。`;
+  }
+  if (error instanceof ApiError && error.status >= 500) {
+    return `${resource}服务暂时不可用，请稍后重试。`;
+  }
+  return `${resource}加载失败，请检查网络后重试。`;
+}
+
+function QueryErrorState({
+  resource,
+  error,
+  onRetry,
+  compact = false,
+}: {
+  resource: string;
+  error: unknown;
+  onRetry: () => void;
+  compact?: boolean;
+}) {
+  return (
+    <div className={`${styles.errorState} ${compact ? styles.errorStateCompact : ""}`} role="alert">
+      <Icon name="warning" size={compact ? 20 : 28} className={styles.errorIcon} />
+      <div className={styles.errorTitle}>无法加载{resource}</div>
+      <div className={styles.errorMessage}>{queryErrorMessage(error, resource)}</div>
+      <Button size="sm" onClick={onRetry}>
+        重新加载
+      </Button>
+    </div>
+  );
+}
+
+function RefreshNotice({
+  resource,
+  error,
+  onRetry,
+}: {
+  resource: string;
+  error: unknown;
+  onRetry: () => void;
+}) {
+  return (
+    <div className={styles.refreshNotice} role="alert">
+      <div>
+        <strong>{resource}更新失败</strong>
+        <span>{queryErrorMessage(error, resource)} 当前内容已保留。</span>
+      </div>
+      <Button size="sm" onClick={onRetry}>
+        重新加载
+      </Button>
+    </div>
+  );
+}
+
 export function AnnotatePage() {
   const pushToast = useToastStore((s) => s.push);
   const navigate = useNavigate();
@@ -116,7 +175,11 @@ export function AnnotatePage() {
   const initialBatchId = searchParams.get("batch") ?? "";
   const [selectedBatchId, setSelectedBatchId] = useState<string>(initialBatchId);
 
-  const { data: batches = [], isLoading: batchesLoading } = useMyBatches();
+  const batchesQuery = useMyBatches();
+  const batches = useMemo(() => batchesQuery.data ?? [], [batchesQuery.data]);
+  const hasBatchData = batchesQuery.data !== undefined;
+  const batchesLoading = batchesQuery.isLoading && !hasBatchData;
+  const batchesInitialError = batchesQuery.isError && !hasBatchData;
   const selectedBatch = useMemo(
     () => batches.find((b) => b.batch_id === selectedBatchId) ?? null,
     [batches, selectedBatchId],
@@ -127,8 +190,11 @@ export function AnnotatePage() {
     () => (selectedBatchId ? { batch_id: selectedBatchId } : undefined),
     [selectedBatchId],
   );
-  const { data: taskListData, isLoading: tasksLoading } = useTaskList(projectId, taskListParams);
-  const tasks = taskListData?.pages.flatMap((p) => p.items) ?? [];
+  const taskListQuery = useTaskList(projectId, taskListParams);
+  const taskListData = taskListQuery.data;
+  const hasTaskData = taskListData !== undefined;
+  const tasksLoading = taskListQuery.isLoading && !hasTaskData;
+  const tasks = useMemo(() => flattenTaskPages(taskListData?.pages), [taskListData?.pages]);
   const total = taskListData?.pages[0]?.total ?? tasks.length;
 
   const submitMut = useMutation({
@@ -190,6 +256,13 @@ export function AnnotatePage() {
         </div>
         {batchesLoading ? (
           <div className={styles.sidebarLoading}>加载中...</div>
+        ) : batchesInitialError ? (
+          <QueryErrorState
+            resource="分派批次"
+            error={batchesQuery.error}
+            onRetry={() => void batchesQuery.refetch()}
+            compact
+          />
         ) : (
           <AnnotateSidebar
             batches={batches}
@@ -303,9 +376,31 @@ export function AnnotatePage() {
           </div>
         )}
 
+        {batchesQuery.isError && hasBatchData && (
+          <RefreshNotice
+            resource="分派批次"
+            error={batchesQuery.error}
+            onRetry={() => void batchesQuery.refetch()}
+          />
+        )}
+
+        {selectedBatch && taskListQuery.isError && hasTaskData && (
+          <RefreshNotice
+            resource="任务列表"
+            error={taskListQuery.error}
+            onRetry={() => void taskListQuery.refetch()}
+          />
+        )}
+
         {!selectedBatch ? (
           batchesLoading ? (
             <div className={styles.loadingState}>加载中...</div>
+          ) : batchesInitialError ? (
+            <QueryErrorState
+              resource="分派批次"
+              error={batchesQuery.error}
+              onRetry={() => void batchesQuery.refetch()}
+            />
           ) : batches.length === 0 ? (
             <div className={styles.emptyState}>
               <Icon name="inbox" size={40} className={styles.emptyIcon} />
@@ -316,6 +411,12 @@ export function AnnotatePage() {
           )
         ) : tasksLoading ? (
           <div className={styles.loadingState}>加载中...</div>
+        ) : taskListQuery.isError && !hasTaskData ? (
+          <QueryErrorState
+            resource="任务列表"
+            error={taskListQuery.error}
+            onRetry={() => void taskListQuery.refetch()}
+          />
         ) : tasks.length === 0 ? (
           <div className={styles.emptyState}>
             <Icon name="inbox" size={40} className={styles.emptyIcon} />
@@ -332,6 +433,23 @@ export function AnnotatePage() {
             {tasks.map((t) => (
               <TaskRow key={t.id} task={t} onOpen={() => openWorkbench(t.id)} />
             ))}
+            {taskListQuery.hasNextPage && (
+              <div className={styles.loadMore}>
+                <span className={styles.loadMoreText}>
+                  已加载 {tasks.length}
+                  {typeof total === "number" ? ` / ${total}` : ""} 个任务
+                </span>
+                <Button
+                  size="sm"
+                  disabled={taskListQuery.isFetchingNextPage}
+                  onClick={() =>
+                    void Promise.resolve(taskListQuery.fetchNextPage()).catch(() => undefined)
+                  }
+                >
+                  {taskListQuery.isFetchingNextPage ? "加载中…" : "加载更多"}
+                </Button>
+              </div>
+            )}
           </>
         )}
       </section>

@@ -6,9 +6,16 @@ import { Badge } from "@/components/ui/Badge";
 import { Thumbnail } from "@/components/Thumbnail";
 import { useToastStore } from "@/components/ui/Toast";
 import { useElementStyle } from "@/components/ui/useElementStyle";
-import { useTaskList, useAnnotations, useApproveTask, useRejectTask } from "@/hooks/useTasks";
+import {
+  flattenTaskPages,
+  useTaskList,
+  useAnnotations,
+  useApproveTask,
+  useRejectTask,
+} from "@/hooks/useTasks";
 import { useRejectBatch } from "@/hooks/useBatches";
 import { useReviewerStats } from "@/hooks/useDashboard";
+import { ApiError } from "@/api/client";
 import type { TaskResponse } from "@/types";
 import type { ReviewingBatchItem } from "@/api/dashboard";
 import { buildReviewWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
@@ -96,6 +103,74 @@ function TaskRow({
   );
 }
 
+function queryErrorMessage(error: unknown, resource: string): string {
+  if (error instanceof ApiError && error.status === 403) {
+    return `当前账号没有权限查看${resource}，请联系项目管理员。`;
+  }
+  if (error instanceof ApiError && error.status === 404) {
+    return `${resource}已不存在或已被移除，请刷新后重试。`;
+  }
+  if (error instanceof ApiError && error.status >= 500) {
+    return `${resource}服务暂时不可用，请稍后重试。`;
+  }
+  return `${resource}加载失败，请检查网络后重试。`;
+}
+
+function QueryErrorState({
+  resource,
+  error,
+  onRetry,
+  compact = false,
+}: {
+  resource: string;
+  error: unknown;
+  onRetry: () => void;
+  compact?: boolean;
+}) {
+  return (
+    <div
+      className={`flex flex-col items-center gap-2 rounded-md border border-border bg-card p-10 text-center ${compact ? "m-2 p-6" : ""}`}
+      role="alert"
+    >
+      <Icon name="warning" size={compact ? 20 : 28} className="text-status-danger" />
+      <div className="text-sm font-semibold">无法加载{resource}</div>
+      <div className="max-w-[360px] text-xs leading-relaxed text-muted-foreground">
+        {queryErrorMessage(error, resource)}
+      </div>
+      <Button size="sm" onClick={onRetry}>
+        重新加载
+      </Button>
+    </div>
+  );
+}
+
+function RefreshNotice({
+  resource,
+  error,
+  onRetry,
+}: {
+  resource: string;
+  error: unknown;
+  onRetry: () => void;
+}) {
+  return (
+    <div
+      className="mb-3 flex items-center justify-between gap-3 rounded-md border border-border bg-status-caution-soft px-3 py-2.5 text-xs"
+      role="alert"
+    >
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <strong className="text-status-caution">{resource}更新失败</strong>
+        <span className="text-muted-foreground">
+          {queryErrorMessage(error, resource)} 当前内容已保留。
+        </span>
+      </div>
+      <Button size="sm" onClick={onRetry}>
+        重新加载
+      </Button>
+    </div>
+  );
+}
+
 export function ReviewPage() {
   const pushToast = useToastStore((s) => s.push);
   const navigate = useNavigate();
@@ -109,7 +184,11 @@ export function ReviewPage() {
   );
 
   // v0.7.1 B-18：批次树数据来自 reviewer dashboard 聚合（已扩展为「reviewing 或 review_tasks>0」）。
-  const { data: reviewerStats } = useReviewerStats();
+  const reviewerStatsQuery = useReviewerStats();
+  const reviewerStats = reviewerStatsQuery.data;
+  const hasReviewerStats = reviewerStats !== undefined;
+  const reviewerStatsLoading = reviewerStatsQuery.isLoading && !hasReviewerStats;
+  const reviewerStatsInitialError = reviewerStatsQuery.isError && !hasReviewerStats;
   const sidebarBatches = useMemo<ReviewingBatchItem[]>(
     () => reviewerStats?.reviewing_batches ?? [],
     [reviewerStats?.reviewing_batches],
@@ -133,17 +212,27 @@ export function ReviewPage() {
     }),
     [selectedBatchId, assigneeFilter],
   );
-  const { data: taskListData, isLoading } = useTaskList(projectId, taskListParams);
-  const tasks = useMemo(
-    () => taskListData?.pages.flatMap((p) => p.items) ?? [],
-    [taskListData?.pages],
-  );
+  const taskListQuery = useTaskList(projectId, taskListParams);
+  const taskListData = taskListQuery.data;
+  const hasTaskData = taskListData !== undefined;
+  const isLoading = taskListQuery.isLoading && !hasTaskData;
+  const tasks = useMemo(() => flattenTaskPages(taskListData?.pages), [taskListData?.pages]);
+  const total = taskListData?.pages[0]?.total ?? tasks.length;
 
   const approveMut = useApproveTask();
   const rejectMut = useRejectTask();
 
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [rejectingIds, setRejectingIds] = useState<string[] | null>(null);
+
+  useEffect(() => {
+    const taskIds = new Set(tasks.map((task) => task.id));
+    setCheckedIds((previous) => {
+      const next = new Set([...previous].filter((id) => taskIds.has(id)));
+      if (next.size === previous.size) return previous;
+      return next;
+    });
+  }, [tasks]);
 
   const handleSelectBatch = (b: ReviewingBatchItem | null) => {
     // 合并而非整体重写：保留 assignee 等下钻带入的过滤 param。
@@ -308,11 +397,22 @@ export function ReviewPage() {
           <div className="text-sm font-semibold">项目 · 批次</div>
           <div className="mt-0.5 text-xs text-muted-foreground">按项目分组的待审核批次</div>
         </div>
-        <ReviewSidebar
-          batches={sidebarBatches}
-          selectedBatchId={selectedBatchId}
-          onSelect={handleSelectBatch}
-        />
+        {reviewerStatsLoading ? (
+          <div className="p-6 text-center text-xs text-muted-foreground">加载中...</div>
+        ) : reviewerStatsInitialError ? (
+          <QueryErrorState
+            resource="审核批次"
+            error={reviewerStatsQuery.error}
+            onRetry={() => void reviewerStatsQuery.refetch()}
+            compact
+          />
+        ) : (
+          <ReviewSidebar
+            batches={sidebarBatches}
+            selectedBatchId={selectedBatchId}
+            onSelect={handleSelectBatch}
+          />
+        )}
       </aside>
 
       <section className="max-h-[calc(100vh-80px)] min-w-0 overflow-auto max-[900px]:max-h-none">
@@ -391,6 +491,30 @@ export function ReviewPage() {
           )}
         </div>
 
+        {reviewerStatsQuery.isError && hasReviewerStats && (
+          <RefreshNotice
+            resource="审核批次"
+            error={reviewerStatsQuery.error}
+            onRetry={() => void reviewerStatsQuery.refetch()}
+          />
+        )}
+
+        {reviewerStatsInitialError ? (
+          <QueryErrorState
+            resource="审核批次"
+            error={reviewerStatsQuery.error}
+            onRetry={() => void reviewerStatsQuery.refetch()}
+          />
+        ) : reviewerStatsLoading ? (
+          <div className="p-10 text-center text-muted-foreground">加载中...</div>
+        ) : taskListQuery.isError && hasTaskData ? (
+          <RefreshNotice
+            resource="任务列表"
+            error={taskListQuery.error}
+            onRetry={() => void taskListQuery.refetch()}
+          />
+        ) : null}
+
         {selectedBatch && (
           <div className="mb-3 rounded-md border border-border bg-card px-3 py-2.5">
             <div className="mb-1.5 flex items-center justify-between">
@@ -424,10 +548,16 @@ export function ReviewPage() {
           </div>
         )}
 
-        {showOverview ? (
+        {reviewerStatsInitialError || reviewerStatsLoading ? null : showOverview ? (
           <ReviewBatchCardGrid batches={sidebarBatches} onSelect={handleSelectBatch} />
         ) : isLoading ? (
           <div className="p-10 text-center text-muted-foreground">加载中...</div>
+        ) : taskListQuery.isError && !hasTaskData ? (
+          <QueryErrorState
+            resource="待审核任务"
+            error={taskListQuery.error}
+            onRetry={() => void taskListQuery.refetch()}
+          />
         ) : tasks.length === 0 ? (
           <div className="p-15 text-center text-muted-foreground">
             <Icon name="check" size={40} className="mx-auto mb-3 opacity-30" />
@@ -452,7 +582,7 @@ export function ReviewPage() {
                 <span>
                   {checkedIds.size > 0
                     ? `已选 ${checkedIds.size}/${tasks.length}`
-                    : `共 ${tasks.length} 个待审核任务`}
+                    : `共 ${total} 个待审核任务${tasks.length < total ? `（已加载 ${tasks.length}）` : ""}`}
                 </span>
               </label>
               {checkedIds.size > 0 && (
@@ -481,6 +611,23 @@ export function ReviewPage() {
                 onOpen={() => openTask(t.id)}
               />
             ))}
+            {taskListQuery.hasNextPage && (
+              <div className="mb-4 flex items-center justify-center gap-3 rounded-md border border-border bg-card px-3 py-3">
+                <span className="text-xs text-muted-foreground">
+                  已加载 {tasks.length}
+                  {typeof total === "number" ? ` / ${total}` : ""} 个任务
+                </span>
+                <Button
+                  size="sm"
+                  disabled={taskListQuery.isFetchingNextPage}
+                  onClick={() =>
+                    void Promise.resolve(taskListQuery.fetchNextPage()).catch(() => undefined)
+                  }
+                >
+                  {taskListQuery.isFetchingNextPage ? "加载中…" : "加载更多"}
+                </Button>
+              </div>
+            )}
           </>
         )}
       </section>

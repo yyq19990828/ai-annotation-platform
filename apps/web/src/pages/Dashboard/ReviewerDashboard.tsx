@@ -11,6 +11,7 @@ import { useToastStore } from "@/components/ui/Toast";
 import { useReviewerStats, useMyRecentReviews } from "@/hooks/useDashboard";
 import { useApproveTask, useRejectTask } from "@/hooks/useTasks";
 import { useQueryClient } from "@tanstack/react-query";
+import { ApiError } from "@/api/client";
 import type { ReviewTaskItem, RecentReviewItem } from "@/api/dashboard";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import { RejectReasonModal } from "@/pages/Review/RejectReasonModal";
@@ -25,9 +26,77 @@ const TASK_ID = "text-xs font-semibold text-brand";
 const FILE_NAME = "text-sm";
 const ROW_DATE = "text-xs text-muted-foreground max-md:hidden";
 
+function queryErrorMessage(error: unknown, resource: string): string {
+  if (error instanceof ApiError && error.status === 403) {
+    return `当前账号没有权限查看${resource}，请联系项目管理员。`;
+  }
+  if (error instanceof ApiError && error.status === 404) {
+    return `${resource}已不存在或已被移除，请刷新后重试。`;
+  }
+  if (error instanceof ApiError && error.status >= 500) {
+    return `${resource}服务暂时不可用，请稍后重试。`;
+  }
+  return `${resource}加载失败，请检查网络后重试。`;
+}
+
+function QueryErrorState({
+  resource,
+  error,
+  onRetry,
+}: {
+  resource: string;
+  error: unknown;
+  onRetry: () => void;
+}) {
+  return (
+    <div role="alert" className="rounded-lg border border-border bg-card p-6">
+      <h1 className="text-lg font-semibold">无法加载{resource}</h1>
+      <p className="mb-4 mt-2 text-sm text-muted-foreground">
+        {queryErrorMessage(error, resource)}
+      </p>
+      <Button onClick={onRetry}>重新加载</Button>
+    </div>
+  );
+}
+
+function RefreshNotice({
+  resource,
+  error,
+  onRetry,
+}: {
+  resource: string;
+  error: unknown;
+  onRetry: () => void;
+}) {
+  return (
+    <div
+      role="alert"
+      className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-status-caution-soft p-3"
+    >
+      <p className="m-0 text-sm">
+        <strong className="mr-2 text-status-caution">{resource}更新失败</strong>
+        <span className="text-muted-foreground">
+          {queryErrorMessage(error, resource)} 当前内容已保留。
+        </span>
+      </p>
+      <Button size="sm" onClick={onRetry}>
+        重新加载
+      </Button>
+    </div>
+  );
+}
+
 export function ReviewerDashboard() {
-  const { data: stats, isLoading } = useReviewerStats();
-  const { data: recentReviews = [] } = useMyRecentReviews(20);
+  const statsQuery = useReviewerStats();
+  const stats = statsQuery.data;
+  const hasStatsData = statsQuery.data !== undefined;
+  const statsLoading = statsQuery.isLoading && !hasStatsData;
+  const statsInitialError = statsQuery.isError && !hasStatsData;
+  const recentReviewsQuery = useMyRecentReviews(20);
+  const recentReviews = recentReviewsQuery.data ?? [];
+  const hasRecentReviewsData = recentReviewsQuery.data !== undefined;
+  const recentReviewsLoading = recentReviewsQuery.isLoading && !hasRecentReviewsData;
+  const recentReviewsInitialError = recentReviewsQuery.isError && !hasRecentReviewsData;
   const navigate = useNavigate();
   const location = useLocation();
   const pushToast = useToastStore((s) => s.push);
@@ -64,12 +133,31 @@ export function ReviewerDashboard() {
     setRejectingTaskId(null);
   };
 
-  if (isLoading || !stats) {
+  if (statsInitialError) {
+    return (
+      <PageContainer>
+        <QueryErrorState
+          resource="审核统计"
+          error={statsQuery.error}
+          onRetry={() => void statsQuery.refetch()}
+        />
+      </PageContainer>
+    );
+  }
+
+  if (statsLoading || !stats) {
     return <div className="px-7 py-15 text-center text-muted-foreground">加载中...</div>;
   }
 
   return (
     <PageContainer>
+      {statsQuery.isError && hasStatsData && (
+        <RefreshNotice
+          resource="审核统计"
+          error={statsQuery.error}
+          onRetry={() => void statsQuery.refetch()}
+        />
+      )}
       <div className="mb-5 flex items-end justify-between max-md:flex-col max-md:items-start max-md:gap-2.5">
         <div>
           <h1 className="mb-1 text-xl font-semibold">质检工作台</h1>
@@ -212,14 +300,33 @@ export function ReviewerDashboard() {
           <div className={CARD_HEADER_PLAIN}>
             <h3 className={CARD_TITLE}>
               我的最近审核记录
-              {recentReviews.length > 0 && (
+              {recentReviews.length > 0 && !recentReviewsInitialError && (
                 <span className={TITLE_BADGE}>
                   <Badge variant="outline">{recentReviews.length}</Badge>
                 </span>
               )}
             </h3>
           </div>
-          {recentReviews.length === 0 ? (
+          {recentReviewsQuery.isError && hasRecentReviewsData && (
+            <div className="px-4 pt-3">
+              <RefreshNotice
+                resource="最近审核记录"
+                error={recentReviewsQuery.error}
+                onRetry={() => void recentReviewsQuery.refetch()}
+              />
+            </div>
+          )}
+          {recentReviewsLoading ? (
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground">加载中...</div>
+          ) : recentReviewsInitialError ? (
+            <div className="p-4">
+              <QueryErrorState
+                resource="最近审核记录"
+                error={recentReviewsQuery.error}
+                onRetry={() => void recentReviewsQuery.refetch()}
+              />
+            </div>
+          ) : recentReviews.length === 0 ? (
             <div className="px-4 py-8 text-center text-sm text-muted-foreground">暂无审核记录</div>
           ) : (
             <div>
