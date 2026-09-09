@@ -36,6 +36,11 @@ export function useOffboardUser() {
       qc.invalidateQueries({ queryKey: ["users", "offboarding-preview", variables.userId] });
       qc.invalidateQueries({ queryKey: ["tasks"] });
       qc.invalidateQueries({ queryKey: ["project-members"] });
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["project"] });
+      qc.invalidateQueries({ queryKey: ["batches"] });
+      qc.invalidateQueries({ queryKey: ["batch"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 }

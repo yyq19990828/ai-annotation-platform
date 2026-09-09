@@ -33,7 +33,7 @@ const UNRESOLVED_REASON_LABELS: Record<string, string> = {
   emergency_suspension_requires_later_handoff: "紧急停用，需后续交接",
 };
 const DISABLED_KIND_LABELS: Record<string, string> = {
-  suspended: "正常离职停用",
+  suspended: "停用（可恢复）",
   emergency_suspended: "紧急停用",
   deleted: "已删除",
   historical_unknown: "历史未知状态",
@@ -121,7 +121,7 @@ function UserSummary({ user }: { user: UserResponse }) {
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">
             <span>{user.name}</span>
-            <Badge variant={isActive ? "success" : "warning"}>{isActive ? "活跃" : "已停用"}</Badge>
+            <Badge variant={isActive ? "success" : "warning"}>{isActive ? "启用" : "已停用"}</Badge>
           </div>
           <div className="mono mt-0.5 truncate text-xs text-muted-foreground">{user.email}</div>
         </div>
@@ -261,7 +261,7 @@ function ProjectCard({
                   </select>
                   {rolePreview.receiver_options.length === 0 && (
                     <span className="mt-1 block text-2xs text-status-caution">
-                      当前没有符合该角色要求的活跃接收人。
+                      当前没有符合该角色要求的启用接收人。
                     </span>
                   )}
                 </label>
@@ -401,6 +401,7 @@ export function OffboardingDialog({ open, user, onClose }: OffboardingDialogProp
   const previewQuery = useOffboardingPreview(userId, open);
   const offboard = useOffboardUser();
   const pushToast = useToastStore((state) => state.push);
+  const previewPaused = previewQuery.fetchStatus === "paused";
   const [mode, setMode] = useState<OffboardingMode>("handoff");
   const [reason, setReason] = useState("");
   const [selections, setSelections] = useState<ReceiverSelections>({});
@@ -460,14 +461,27 @@ export function OffboardingDialog({ open, user, onClose }: OffboardingDialogProp
     missingReceivers.length > 0 ||
     stale ||
     offboard.isPending ||
+    previewQuery.isFetching ||
     !canStartLifecycle;
-  const emergencyDisabled = !preview || stale || offboard.isPending || !canStartLifecycle;
+  const emergencyDisabled =
+    !preview || stale || offboard.isPending || previewQuery.isFetching || !canStartLifecycle;
 
-  const refreshPreview = () => {
+  const refreshPreview = async () => {
     setSelections({});
-    setFormError(null);
-    setStale(false);
-    void previewQuery.refetch();
+    setStale(true);
+    try {
+      const result = await previewQuery.refetch();
+      if (result.error) {
+        setStale(true);
+        setFormError("刷新离职预览失败，请检查网络后重试。旧接收人选择已清空。");
+        return;
+      }
+      setStale(false);
+      setFormError(null);
+    } catch (error) {
+      setStale(true);
+      setFormError(`刷新离职预览失败：${getErrorMessage(error)}`);
+    }
   };
 
   const selectReceiver = (projectId: string, role: OffboardingRole, receiverId: string) => {
@@ -535,7 +549,7 @@ export function OffboardingDialog({ open, user, onClose }: OffboardingDialogProp
             ? "项目或接收人状态已变化，旧预览不能继续提交。请刷新后重新选择。"
             : "提交时发现项目或接收人状态已变化，请刷新预览并重新确认。",
         );
-        void previewQuery.refetch();
+        void refreshPreview();
         return;
       }
       if (status === 403) {
@@ -559,6 +573,14 @@ export function OffboardingDialog({ open, user, onClose }: OffboardingDialogProp
     >
       {!user ? null : result ? (
         <CommitResult result={result} onClose={onClose} />
+      ) : previewPaused && !preview ? (
+        <div className="flex flex-col items-center gap-2 rounded-lg border border-status-caution/30 bg-status-caution-soft px-4 py-10 text-center text-sm">
+          <Icon name="monitor" size={22} className="text-status-caution" />
+          <div className="font-medium">暂时离线，等待网络恢复</div>
+          <div className="max-w-md text-xs text-muted-foreground">
+            离职预览会在网络恢复后自动继续加载，请保持此窗口打开。
+          </div>
+        </div>
       ) : previewQuery.isLoading ? (
         <div className="flex flex-col items-center gap-2 py-12 text-center text-sm text-muted-foreground">
           <Icon name="loader2" size={22} className="animate-spin text-brand" />
@@ -571,6 +593,13 @@ export function OffboardingDialog({ open, user, onClose }: OffboardingDialogProp
       ) : (
         <div className="flex flex-col gap-3.5">
           <UserSummary user={preview.user ?? user} />
+
+          {previewPaused && (
+            <div className="flex items-start gap-2 rounded-md border border-status-caution/30 bg-status-caution-soft px-3 py-2.5 text-xs text-muted-foreground">
+              <Icon name="monitor" size={14} className="mt-0.5 shrink-0 text-status-caution" />
+              <span>当前离线，以下为上次加载的离职预览；网络恢复后会自动继续更新。</span>
+            </div>
+          )}
 
           {pendingHandoff && (
             <div className="flex items-start gap-2 rounded-md border border-status-caution/30 bg-status-caution-soft px-3 py-2.5 text-xs text-muted-foreground">
@@ -614,7 +643,7 @@ export function OffboardingDialog({ open, user, onClose }: OffboardingDialogProp
                 setMode("handoff");
                 setFormError(null);
               }}
-              disabled={historical}
+              disabled={historical || offboard.isPending || previewQuery.isFetching}
             >
               <div className="flex items-center gap-2 text-sm font-semibold">
                 <Icon name="arrowRight" size={14} className="text-brand" /> 正常离职交接
@@ -630,7 +659,7 @@ export function OffboardingDialog({ open, user, onClose }: OffboardingDialogProp
                 setMode("emergency_suspend");
                 setFormError(null);
               }}
-              disabled={historical}
+              disabled={historical || offboard.isPending || previewQuery.isFetching}
             >
               <div className="flex items-center gap-2 text-sm font-semibold">
                 <Icon name="shieldAlert" size={14} className="text-status-caution" /> 紧急停用
@@ -661,7 +690,13 @@ export function OffboardingDialog({ open, user, onClose }: OffboardingDialogProp
                   onSelect={(role, receiverId) =>
                     selectReceiver(project.project_id, role, receiverId)
                   }
-                  disabled={mode === "emergency_suspend" || stale || historical}
+                  disabled={
+                    mode === "emergency_suspend" ||
+                    stale ||
+                    historical ||
+                    offboard.isPending ||
+                    previewQuery.isFetching
+                  }
                 />
               ))}
             </div>
@@ -696,7 +731,11 @@ export function OffboardingDialog({ open, user, onClose }: OffboardingDialogProp
               <span className="flex items-center gap-1.5">
                 <Icon name="refresh" size={12} /> 预览已刷新要求，旧接收人选择已清空。
               </span>
-              <Button size="xs" onClick={refreshPreview} disabled={previewQuery.isFetching}>
+              <Button
+                size="xs"
+                onClick={() => void refreshPreview()}
+                disabled={previewQuery.isFetching}
+              >
                 刷新预览
               </Button>
             </div>
@@ -795,7 +834,7 @@ export function ReactivateDialog({ open, user, onClose }: ReactivateDialogProps)
           <UserSummary user={user} />
           {!canReactivate ? (
             <div className="rounded-md border border-status-danger/30 bg-status-danger-soft px-3 py-2.5 text-xs text-status-danger">
-              只有正常离职停用或紧急停用的账号可以恢复；已删除或历史未知状态不能恢复。
+              只有“停用（可恢复）”或“紧急停用”的账号可以恢复；已删除或历史未知状态不能恢复。
             </div>
           ) : (
             <>

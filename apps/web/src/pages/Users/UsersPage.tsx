@@ -63,13 +63,13 @@ const STATUS_COLORS: Record<string, "success" | "warning" | "outline"> = {
 };
 
 const USER_STATUS_FILTER_LABELS = {
-  active: "活跃账号",
+  active: "启用账号",
   inactive: "已停用",
   all: "全部账号",
 } as const;
 
 const DISABLED_KIND_LABELS: Record<string, string> = {
-  suspended: "正常离职停用",
+  suspended: "停用（可恢复）",
   emergency_suspended: "紧急停用",
   deleted: "已删除",
   historical_unknown: "历史未知状态",
@@ -136,9 +136,11 @@ export function UsersPage() {
     error: usersQueryError,
     refetch: refetchUsers,
     isFetching: usersFetching,
+    fetchStatus: usersFetchStatus,
   } = useUsers({ status: userStatus });
   const { data: groupsData = [] } = useGroups();
   const { data: usersStats } = useUsersStats();
+  const usersPaused = usersFetchStatus === "paused";
 
   const filtered = allUsers.filter((u: UserResponse) => {
     if (selectedRole !== "全部" && u.role !== selectedRole) return false;
@@ -223,7 +225,7 @@ export function UsersPage() {
           icon="users"
           label="团队成员"
           value={allUsers.length}
-          hint="活跃"
+          hint="启用"
           sparkValues={[8, 9, 9, 10, 10, 11, 11, 11, 12, 12, 12, 12]}
           sparkColor="var(--sc-brand)"
         />
@@ -307,6 +309,26 @@ export function UsersPage() {
                 </tr>
               </thead>
               <tbody>
+                {usersPaused && filtered.length > 0 && (
+                  <tr>
+                    <td colSpan={8} className="px-3 py-2.5 text-center text-xs text-status-caution">
+                      当前离线，正在等待网络恢复；以下为上次加载的数据。
+                    </td>
+                  </tr>
+                )}
+                {usersPaused && filtered.length === 0 && !isLoading && !usersError && (
+                  <tr>
+                    <td colSpan={8} className="p-10 text-center">
+                      <div className="mx-auto flex max-w-md flex-col items-center gap-2 text-sm">
+                        <Icon name="monitor" size={22} className="text-status-caution" />
+                        <span className="font-medium">暂时离线，等待网络恢复</span>
+                        <span className="text-xs text-muted-foreground">
+                          网络恢复后会自动继续加载用户列表。
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                )}
                 {isLoading && (
                   <tr>
                     <td colSpan={8} className="p-10 text-center text-muted-foreground">
@@ -314,7 +336,7 @@ export function UsersPage() {
                     </td>
                   </tr>
                 )}
-                {usersError && !isLoading && (
+                {usersError && !isLoading && !usersPaused && (
                   <tr>
                     <td colSpan={8} className="p-10 text-center">
                       <div className="mx-auto flex max-w-md flex-col items-center gap-2 text-sm">
@@ -338,7 +360,7 @@ export function UsersPage() {
                     </td>
                   </tr>
                 )}
-                {!isLoading && !usersError && filtered.length === 0 && (
+                {!isLoading && !usersError && !usersPaused && filtered.length === 0 && (
                   <tr>
                     <td colSpan={8} className="p-10 text-center text-sm text-muted-foreground">
                       {query || selectedRole !== "全部"
@@ -755,7 +777,7 @@ export function UsersPage() {
                 </div>
                 <div>
                   <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                    转交给（同项目活跃用户）
+                    转交给（同项目启用用户）
                   </label>
                   <select
                     value={transferToId}

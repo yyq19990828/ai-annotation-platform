@@ -259,4 +259,29 @@ describe("UsersPage", () => {
     expect(screen.getByTitle("恢复账号")).toBeInTheDocument();
     expect(screen.queryByTitle("删除账号")).not.toBeInTheDocument();
   });
+
+  it("初次离线且没有用户数据时显示等待网络恢复，而不是空列表", () => {
+    mockUseUsers.mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+      fetchStatus: "paused",
+    });
+    renderUI();
+    expect(screen.getByText("暂时离线，等待网络恢复")).toBeInTheDocument();
+    expect(screen.getByText(/网络恢复后会自动继续加载用户列表/)).toBeInTheDocument();
+    expect(screen.queryByText(/暂无启用账号/)).not.toBeInTheDocument();
+  });
+
+  it("已有用户数据但请求暂停时保留旧数据并显示离线提示", () => {
+    mockUseUsers.mockReturnValue({
+      data: SAMPLE_USERS,
+      isLoading: false,
+      isError: false,
+      fetchStatus: "paused",
+    });
+    renderUI();
+    expect(screen.getByText("Alice")).toBeInTheDocument();
+    expect(screen.getByText(/当前离线，正在等待网络恢复/)).toBeInTheDocument();
+  });
 });

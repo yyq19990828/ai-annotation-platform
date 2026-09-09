@@ -9,6 +9,7 @@ const mockMutationReset = vi.fn();
 const mockReactivateMutateAsync = vi.fn();
 const mockReactivateReset = vi.fn();
 const mockPushToast = vi.fn();
+let offboardPending = false;
 
 let previewQuery: {
   data: OffboardingPreview | undefined;
@@ -16,6 +17,7 @@ let previewQuery: {
   isError: boolean;
   error: unknown;
   isFetching: boolean;
+  fetchStatus: "idle" | "fetching" | "paused";
   refetch: typeof mockRefetch;
 };
 
@@ -23,7 +25,7 @@ vi.mock("@/hooks/useUsers", () => ({
   useOffboardingPreview: () => previewQuery,
   useOffboardUser: () => ({
     mutateAsync: mockMutateAsync,
-    isPending: false,
+    isPending: offboardPending,
     reset: mockMutationReset,
   }),
   useReactivateUser: () => ({
@@ -121,14 +123,17 @@ describe("OffboardingDialog", () => {
     mockReactivateMutateAsync.mockReset();
     mockReactivateReset.mockReset();
     mockPushToast.mockReset();
+    offboardPending = false;
     previewQuery = {
       data: PREVIEW,
       isLoading: false,
       isError: false,
       error: null,
       isFetching: false,
+      fetchStatus: "idle",
       refetch: mockRefetch,
     };
+    mockRefetch.mockResolvedValue({ error: null });
   });
 
   it("展示项目批次、任务锁和 API Key，并只允许选择预览中的接收人", () => {
@@ -149,6 +154,15 @@ describe("OffboardingDialog", () => {
       target: { value: "receiver-annotator" },
     });
     expect(screen.getByRole("button", { name: "确认交接并停用" })).toBeEnabled();
+  });
+
+  it("提交进行中锁定模式和接收人选择，避免改变已发送 payload", () => {
+    offboardPending = true;
+    renderDialog();
+    expect(screen.getByRole("button", { name: /正常离职交接/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /紧急停用/ })).toBeDisabled();
+    expect(screen.getByLabelText("城市道路项目 项目负责人接收人")).toBeDisabled();
+    expect(screen.getByRole("button", { name: /提交中/ })).toBeDisabled();
   });
 
   it("紧急停用不要求接收人，并保留服务器返回的未交接清单", async () => {
@@ -218,8 +232,47 @@ describe("OffboardingDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "确认交接并停用" }));
 
     await waitFor(() => expect(mockRefetch).toHaveBeenCalledTimes(1));
-    expect(screen.getByText(/旧接收人选择已清空/)).toBeInTheDocument();
+    expect(screen.queryByText(/旧接收人选择已清空/)).not.toBeInTheDocument();
     expect(screen.getByLabelText("城市道路项目 项目负责人接收人")).toHaveValue("");
+  });
+
+  it("409 后刷新预览失败会保留过期状态，禁止直接提交", async () => {
+    mockMutateAsync.mockRejectedValue({
+      status: 409,
+      detailRaw: { code: "offboarding_preview_stale" },
+      message: "预览已过期",
+    });
+    mockRefetch.mockResolvedValue({ error: new Error("offline") });
+    renderDialog();
+    fireEvent.change(screen.getByLabelText("城市道路项目 项目负责人接收人"), {
+      target: { value: "receiver-owner" },
+    });
+    fireEvent.change(screen.getByLabelText("城市道路项目 标注员接收人"), {
+      target: { value: "receiver-annotator" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "确认交接并停用" }));
+
+    await waitFor(() => expect(mockRefetch).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("button", { name: "刷新预览" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "确认交接并停用" })).toBeDisabled();
+  });
+
+  it("初次离线且没有旧预览时显示等待网络恢复", () => {
+    previewQuery = {
+      ...previewQuery,
+      data: undefined,
+      fetchStatus: "paused",
+    };
+    render(<OffboardingDialog open user={USER} onClose={vi.fn()} />);
+    expect(screen.getByText("暂时离线，等待网络恢复")).toBeInTheDocument();
+    expect(screen.getByText(/网络恢复后自动继续加载/)).toBeInTheDocument();
+  });
+
+  it("已有预览时离线保留内容并提示数据可能过期", () => {
+    previewQuery = { ...previewQuery, fetchStatus: "paused" };
+    renderDialog();
+    expect(screen.getByText("城市道路项目")).toBeInTheDocument();
+    expect(screen.getByText(/当前离线，以下为上次加载的离职预览/)).toBeInTheDocument();
   });
 });
 
