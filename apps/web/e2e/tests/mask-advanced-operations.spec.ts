@@ -1,3 +1,4 @@
+import { openMaskSettings, closeMaskSettings } from "../fixtures/mask-toolbar";
 import type { APIRequestContext, APIResponse, Page } from "@playwright/test";
 
 import { expect, test, type SeedAPI, type SeedData } from "../fixtures/seed";
@@ -92,6 +93,7 @@ async function beginEdit(page: Page, annotationId: string): Promise<void> {
   if (await collapse.isVisible()) await collapse.click();
   await row.getByRole("button", { name: "更多操作" }).hover();
   await page.getByTestId(`user-refine-${annotationId}`).click();
+  await openMaskSettings(page);
   await expect(page.getByTestId("mask-toolbar")).toContainText("就绪", { timeout: 15_000 });
   // 就绪 ≠ 画布可交互：等媒体与 Konva 画布真正可见后再让用例做指针操作，
   // 否则 fitted 前的合成指针事件被丢弃, 笔迹无声丢失。
@@ -113,8 +115,10 @@ async function imagePoint(page: Page, x: number, y: number): Promise<{ x: number
 }
 
 async function clickPixel(page: Page, x: number, y: number): Promise<void> {
+  await closeMaskSettings(page);
   const point = await imagePoint(page, x, y);
   await page.mouse.click(point.x, point.y);
+  await openMaskSettings(page);
 }
 
 async function waitToastsGone(page: Page): Promise<void> {
@@ -129,20 +133,24 @@ async function paintStroke(
   to: [number, number],
 ): Promise<void> {
   await waitToastsGone(page);
+  await closeMaskSettings(page);
   const start = await imagePoint(page, from[0], from[1]);
   const end = await imagePoint(page, to[0], to[1]);
   await page.mouse.move(start.x, start.y);
   await page.mouse.down();
   await page.mouse.move(end.x, end.y, { steps: 8 });
   await page.mouse.up();
+  await openMaskSettings(page);
 }
 
 async function drawLasso(page: Page, points: Array<[number, number]>): Promise<void> {
+  await closeMaskSettings(page);
   const [first, ...rest] = await Promise.all(points.map(([x, y]) => imagePoint(page, x, y)));
   await page.mouse.move(first.x, first.y);
   await page.mouse.down();
   for (const point of rest) await page.mouse.move(point.x, point.y, { steps: 3 });
   await page.mouse.up();
+  await openMaskSettings(page);
 }
 
 async function openAdvanced(page: Page): Promise<void> {
@@ -212,9 +220,13 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     await applyPreview(page);
     await expect(toolbar).toContainText("未保存");
 
+    await closeMaskSettings(page);
     await page.keyboard.press("Control+z");
+    await openMaskSettings(page);
     await expect(toolbar.getByTitle("重做笔画 (Ctrl+Y)")).toBeEnabled();
+    await closeMaskSettings(page);
     await page.keyboard.press("Control+y");
+    await openMaskSettings(page);
     await expect(toolbar.getByTitle("撤销笔画 (Ctrl+Z)")).toBeEnabled();
 
     const savedResponse = page.waitForResponse(
@@ -321,7 +333,7 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
       else await dialog.dismiss();
     });
     await toolbar.getByTestId("mask-secondary-action").click();
-    await expect(toolbar).toBeHidden();
+    await expect(page.getByTestId("mask-tool-capsule")).toHaveCount(0);
     expect(await maskContent(request, fixture.annotation_id, token)).toEqual(persisted);
   });
 
@@ -504,6 +516,7 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     await expect(islandRow).toHaveClass(/!border-brand/);
     await islandRow.getByRole("button", { name: "更多操作" }).hover();
     await page.getByTestId(`user-refine-${island.annotation_id}`).click();
+    await openMaskSettings(page);
     const toolbar = page.getByTestId("mask-toolbar");
     await expect(toolbar).toContainText("就绪", { timeout: 15_000 });
     await expect(donutRow).toHaveClass(/!border-brand/);
@@ -607,7 +620,7 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     );
     await toolbar.getByTestId("mask-primary-action").click();
     await saved;
-    await expect(toolbar).toBeHidden({ timeout: 10_000 });
+    await expect(toolbar.getByTestId("mask-primary-action")).toHaveText("已保存");
     expect(await maskContent(request, sameClass.annotation_id, token)).toEqual(sameBefore);
     expect(await maskContent(request, otherClass.annotation_id, token)).toEqual(otherBefore);
 
@@ -650,6 +663,7 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     await openTask(page, seed, data, taskId);
     await page.getByTestId(`box-list-item-${fixture.annotation_id}`).click();
     await page.keyboard.press("m");
+    await openMaskSettings(page);
     const toolbar = page.getByTestId("mask-toolbar");
     await expect(toolbar).toContainText("不可编辑：当前标注已锁定", { timeout: 15_000 });
     await expect(toolbar.getByTitle("Mask 高级工具")).toBeDisabled();
@@ -659,6 +673,7 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     page.on("request", (outgoing) => {
       if (outgoing.url().includes("mask-mutations:commit")) mutationRequests += 1;
     });
+    await closeMaskSettings(page);
     await page.keyboard.press("b");
     await page.keyboard.press("e");
     await page.keyboard.press("Enter");

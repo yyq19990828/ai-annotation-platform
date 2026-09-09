@@ -15,6 +15,7 @@
  * 选择策略: 用 API 建一个居中较大 bbox 并锁定; 显式定位到所属任务,
  * 再从标注列表选中它，避免受任务默认排序与画布缩放影响。
  */
+import { openMaskSettings, closeMaskSettings } from "../fixtures/mask-toolbar";
 import { test, expect } from "../fixtures/seed";
 
 const API_BASE = process.env.PLAYWRIGHT_API_BASE ?? "http://127.0.0.1:8010";
@@ -73,18 +74,23 @@ test.describe("mask lock bypass (v0.23.5 A4)", () => {
 
     // 4. 按 M 进 mask 工具 (task 可编辑 → 工具条正常渲染)。
     await page.keyboard.press("m");
-    await expect(page.getByTestId("mask-toolbar")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId("mask-tool-capsule")).toBeVisible({ timeout: 10_000 });
 
     // 5. 工具栏笔刷 / 橡皮应 disabled (canEdit=false: 选中 annotation is_locked=true)。
     //    这是 canEditMask 在生产 UI 的直接证据 (toolbar canEdit prop 由 canEditMask 计算)。
+    await openMaskSettings(page);
     const toolbar = page.getByTestId("mask-toolbar");
     await expect(toolbar.getByRole("radio", { name: "笔刷" })).toBeDisabled({ timeout: 5_000 });
     await expect(toolbar.getByRole("radio", { name: "橡皮" })).toBeDisabled({ timeout: 5_000 });
 
     // 6. B / E 快捷键不切换模式 (锁定时 hotkey 经 canEditMask 拦截)。
+    await closeMaskSettings(page);
     await page.keyboard.press("b");
+    await openMaskSettings(page);
     await expect(toolbar.getByRole("radio", { name: "笔刷" })).toBeDisabled();
+    await closeMaskSettings(page);
     await page.keyboard.press("e");
+    await openMaskSettings(page);
     await expect(toolbar.getByRole("radio", { name: "橡皮" })).toBeDisabled();
 
     // 7. 真实 pointer → Enter 闭环不得产生任何 annotation mutation。
@@ -96,6 +102,7 @@ test.describe("mask lock bypass (v0.23.5 A4)", () => {
       )
         mutationCount += 1;
     });
+    await closeMaskSettings(page);
     await page.mouse.move(cx, cy);
     await page.mouse.down();
     await page.mouse.move(cx + 40, cy + 40, { steps: 5 });

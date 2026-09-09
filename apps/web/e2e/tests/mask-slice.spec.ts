@@ -1,3 +1,4 @@
+import { openMaskSettings, closeMaskSettings } from "../fixtures/mask-toolbar";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import type { APIRequestContext, APIResponse, Page, Response } from "@playwright/test";
@@ -395,9 +396,11 @@ async function seedMask(request: APIRequestContext, fixture: Case, rle = holed()
 async function begin(page: Page, id: string) {
   await page.getByTestId(`box-list-item-${id}`).click();
   await page.locator('button[aria-label="编辑 Mask"]:visible').last().click();
+  await openMaskSettings(page);
   await expect(controls(page)).toContainText("就绪", { timeout: 15_000 });
   await controls(page).getByTitle("Mask 高级工具").click();
   await page.getByRole("menuitem", { name: "直线切割为两个实例", exact: true }).click();
+  await expect(page.getByRole("menu")).toBeHidden();
   await expect(controls(page)).toContainText("拖动两点定义直线");
   await expect(page.locator("[data-sonner-toast]")).toHaveCount(0, { timeout: 10_000 });
 }
@@ -408,6 +411,7 @@ async function draw(
     [0.58, 0.94],
   ],
 ) {
+  await closeMaskSettings(page);
   const rect = await bounds(page);
   await page.mouse.move(rect.x + cut[0][0] * rect.width, rect.y + cut[0][1] * rect.height);
   await page.mouse.down();
@@ -415,6 +419,7 @@ async function draw(
     steps: 8,
   });
   await page.mouse.up();
+  await openMaskSettings(page);
 }
 async function preview(page: Page, cut?: [Point, Point]) {
   await draw(page, cut);
@@ -423,7 +428,7 @@ async function preview(page: Page, cut?: [Point, Point]) {
   await expect(controls(page)).toContainText(/面积 \d+ → \d+\+\d+ px/);
 }
 async function primaryKey(page: Page, key = "Enter") {
-  await controls(page).getByText("Mask 编辑", { exact: true }).click();
+  await closeMaskSettings(page);
   await page.keyboard.press(key);
 }
 async function commit(page: Page, fixture: Case, keyboard = false) {
@@ -435,7 +440,7 @@ async function commit(page: Page, fixture: Case, keyboard = false) {
   if (keyboard) await primaryKey(page);
   else await page.getByTestId("mask-primary-action").click();
   const response = await json<MutationResult>(await pending);
-  await expect(controls(page)).toBeHidden();
+  await expect(page.getByTestId("mask-tool-capsule")).toHaveCount(0);
   expect(response.slice_restore).toBeTruthy();
   return response;
 }
@@ -631,7 +636,7 @@ test("H4b-3 repeated button and held Enter submit one transaction", async ({
   try {
     await page.getByTestId("mask-primary-action").dblclick();
     await expect.poll(() => requests).toBe(1);
-    await controls(page).getByText("Mask 编辑", { exact: true }).click();
+    await closeMaskSettings(page);
     await page.keyboard.down("Enter");
     await page.keyboard.down("Enter");
     await page.keyboard.up("Enter");
@@ -640,7 +645,7 @@ test("H4b-3 repeated button and held Enter submit one transaction", async ({
     release();
   }
   const response = await json<MutationResult>(await pending);
-  await expect(controls(page)).toBeHidden();
+  await expect(page.getByTestId("mask-tool-capsule")).toHaveCount(0);
   await reloadAndRead(page, request, fixture);
   await checkPartition(request, fixture, original, response.slice_restore);
   expect(ledger(fixture).operations).toHaveLength(1);
@@ -813,6 +818,7 @@ test("H4b-3 source locking conflicts preserve preview; active children disable t
   await reloadAndRead(page, request, fixture);
   await page.getByTestId(`box-list-item-${source.id}`).click();
   await page.locator('button[aria-label="编辑 Mask"]:visible').last().click();
+  await openMaskSettings(page);
   await expect(controls(page)).toContainText("就绪");
   await controls(page).getByTitle("Mask 高级工具").click();
   await expect(page.getByRole("menuitem", { name: "直线切割为两个实例" })).toBeDisabled();
@@ -854,6 +860,7 @@ test("H4b-3 discard on task switch retires the mask slice preview without writes
   await page.getByText(next.display_id, { exact: true }).first().click();
   await expect(page).toHaveURL(new RegExp(`task=${nextId}`));
   await expect(stage(page)).toHaveAttribute("data-image-ready", "true");
+  await openMaskSettings(page);
   await expect(page.getByTestId("mask-primary-action")).toHaveText("已保存");
   await expect(page.getByTestId("mask-primary-action")).toBeDisabled();
   await expect(controls(page)).not.toContainText("待原子提交");

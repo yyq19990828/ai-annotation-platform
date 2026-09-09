@@ -1,3 +1,4 @@
+import { openMaskSettings, closeMaskSettings } from "../fixtures/mask-toolbar";
 import type { APIRequestContext, APIResponse, Page } from "@playwright/test";
 import { expect, test, type SeedAPI, type SeedData } from "../fixtures/seed";
 
@@ -56,6 +57,7 @@ async function openImage(page: Page, seed: SeedAPI, data: SeedData, taskId: stri
 async function beginEdit(page: Page, annotationId: string) {
   await page.getByTestId(`box-list-item-${annotationId}`).click();
   await page.locator('button[aria-label="编辑 Mask"]:visible').last().click();
+  await openMaskSettings(page);
   await expect(page.getByTestId("mask-toolbar")).toContainText("就绪", { timeout: 15_000 });
   await expect(page.getByTestId("mask-primary-action")).toHaveText("已保存");
 }
@@ -65,18 +67,19 @@ async function chooseAdvanced(page: Page, name: string) {
   await expect(page.getByRole("menu")).toBeHidden();
 }
 async function primaryKey(page: Page, key = "Enter") {
-  // Return focus through a real click; a focused menu trigger keeps its native Enter action.
-  await page.getByTestId("mask-toolbar").getByText("Mask 编辑", { exact: true }).click();
+  await closeMaskSettings(page);
   await page.keyboard.press(key);
 }
 async function paintImage(page: Page, x: number, y: number, size = [64, 48]) {
   await expect(page.locator("[data-sonner-toast]")).toHaveCount(0, { timeout: 10_000 });
+  await closeMaskSettings(page);
   const box = await page.getByTestId("workbench-stage").boundingBox();
   if (!box) throw new Error("Missing image stage");
   const scale = Math.min(box.width / size[0], box.height / size[1]);
   const px = box.x + (box.width - size[0] * scale) / 2 + x * scale;
   const py = box.y + (box.height - size[1] * scale) / 2 + y * scale;
   await page.mouse.click(px, py);
+  await openMaskSettings(page);
   await expect(page.getByTestId("mask-toolbar")).toContainText("未保存");
   return { x: px, y: py };
 }
@@ -95,7 +98,8 @@ async function saveImage(
   if (via === "button") await page.getByTestId("mask-primary-action").click();
   else await primaryKey(page);
   await saved;
-  await expect(page.getByTestId("mask-toolbar")).toBeHidden();
+  await openMaskSettings(page);
+  await expect(page.getByTestId("mask-primary-action")).toHaveText("已保存");
 }
 
 test.describe("Mask phase primary actions", () => {
@@ -126,6 +130,7 @@ test.describe("Mask phase primary actions", () => {
       await expect(page.getByTestId("mask-primary-action")).toHaveText("应用区域预览");
       if (via === "button") await page.getByTestId("mask-primary-action").click();
       else await primaryKey(page);
+      await openMaskSettings(page);
       await expect(page.getByTestId("mask-primary-action")).toHaveText("保存 Mask");
       expect(await content(request, fixture.annotation_id, token)).toEqual(before);
       await saveImage(page, taskId, fixture.annotation_id, via);
@@ -168,13 +173,13 @@ test.describe("Mask phase primary actions", () => {
     try {
       await page.getByTestId("mask-primary-action").dblclick();
       await expect.poll(() => writes).toBe(1);
-      await page.getByTestId("mask-toolbar").getByText("Mask 编辑", { exact: true }).click();
+      await closeMaskSettings(page);
       await page.keyboard.down("Enter");
       await page.keyboard.down("Enter");
       await page.keyboard.down("Enter");
       await page.keyboard.up("Enter");
       await page.keyboard.press("Escape");
-      await expect(page.getByTestId("mask-toolbar")).toBeVisible();
+      await expect(page.getByTestId("mask-tool-capsule")).toBeVisible();
       expect(writes).toBe(1);
     } finally {
       release();
@@ -202,6 +207,7 @@ test.describe("Mask phase primary actions", () => {
     await paintImage(page, 50, 34);
     await chooseAdvanced(page, "膨胀");
     await primaryKey(page, "Escape");
+    await openMaskSettings(page);
     await expect(page.getByTestId("mask-primary-action")).toHaveText("保存 Mask");
     await expect(page.getByTitle("撤销笔画 (Ctrl+Z)")).toBeEnabled();
 
@@ -217,12 +223,15 @@ test.describe("Mask phase primary actions", () => {
       expect(await content(request, fixture.annotation_id, token)).toEqual(before);
       if (via === "button") {
         await confirm.getByRole("button", { name: "返回预览" }).click({ timeout: 10_000 });
+        await openMaskSettings(page);
         await expect(page.getByTestId("mask-primary-action")).toHaveText("应用区域预览");
       } else {
         await confirm.getByRole("button", { name: "确认清空" }).click();
+        await openMaskSettings(page);
         await expect(page.getByTestId("mask-primary-action")).toHaveText("保存 Mask");
         expect(await content(request, fixture.annotation_id, token)).toEqual(before);
         await primaryKey(page, "Control+z");
+        await openMaskSettings(page);
         await expect(page.getByTitle("撤销笔画 (Ctrl+Z)")).toBeEnabled();
       }
     }
@@ -233,6 +242,7 @@ test.describe("Mask phase primary actions", () => {
     };
     page.on("dialog", continueEditing);
     await primaryKey(page, "Escape");
+    await openMaskSettings(page);
     await expect.poll(() => dialogs.length).toBe(2);
     await expect(page.getByTestId("mask-primary-action")).toHaveText("保存 Mask");
     await expect(page.getByTitle("撤销笔画 (Ctrl+Z)")).toBeEnabled();
@@ -242,7 +252,7 @@ test.describe("Mask phase primary actions", () => {
       else await dialog.dismiss();
     });
     await page.getByTestId("mask-secondary-action").click();
-    await expect(page.getByTestId("mask-toolbar")).toBeHidden();
+    await expect(page.getByTestId("mask-tool-capsule")).toHaveCount(0);
     expect(await content(request, fixture.annotation_id, token)).toEqual(before);
   });
 
@@ -294,6 +304,7 @@ test.describe("Mask phase primary actions", () => {
       timeout: 15_000,
     });
     await page.getByTestId("video-tool-btn-mask-track").click();
+    await openMaskSettings(page);
     const toolbar = page.getByTestId("mask-toolbar");
     await expect(toolbar).toContainText("当前帧保持 F0 的 Mask");
     await expect(page.getByTestId("mask-primary-action")).toHaveText("已保存");
@@ -313,9 +324,10 @@ test.describe("Mask phase primary actions", () => {
     await page.mouse.down();
     await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.65, { steps: 8 });
     await page.mouse.up();
+    await openMaskSettings(page);
     await expect(page.getByTestId("mask-primary-action")).toHaveText("保存当前帧关键帧");
     await primaryKey(page);
-    await expect(toolbar).toBeHidden();
+    await expect(page.getByTestId("mask-tool-capsule")).toHaveCount(0);
     const saved = (await annotations(request, taskId, token)).find(
       (item) => item.id === original.id,
     )!;
@@ -358,6 +370,7 @@ test.describe("Mask phase primary actions", () => {
     await expect(page.getByTestId("mask-primary-action")).toHaveText("恢复编辑");
     expect(await content(request, fixture.annotation_id, token)).toEqual(before);
     await primaryKey(page);
+    await openMaskSettings(page);
     await expect(page.getByTestId("mask-primary-action")).toHaveText("保存 Mask");
     await expect(page.getByTitle("撤销笔画 (Ctrl+Z)")).toBeEnabled();
     expect(await content(request, fixture.annotation_id, token)).toEqual(before);
@@ -400,6 +413,7 @@ test.describe("Mask phase primary actions", () => {
     );
     await primaryKey(page);
     expect((await conflict).status()).toBe(409);
+    await openMaskSettings(page);
     await expect(page.getByTestId("mask-primary-action")).toHaveText("刷新范围");
     expect(await annotations(request, taskId, token)).toHaveLength(1);
     await page.getByTestId("mask-primary-action").click();
@@ -436,6 +450,7 @@ test.describe("Mask phase primary actions", () => {
     await openImage(page, seed, data, taskId);
     await beginEdit(page, fixture.annotation_id);
     const point = await paintImage(page, 2816, 4864, [8192, 8192]);
+    await closeMaskSettings(page);
     await page.mouse.move(point.x, point.y);
     // Ctrl+wheel is image zoom; ordinary wheel controls the Mask brush radius.
     await page.keyboard.down("Control");
@@ -444,6 +459,7 @@ test.describe("Mask phase primary actions", () => {
       await page.waitForTimeout(30);
     }
     await page.keyboard.up("Control");
+    await openMaskSettings(page);
     await expect(page.getByTestId("mask-toolbar")).toContainText("当前设备无法容纳可见分块", {
       timeout: 20_000,
     });

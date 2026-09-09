@@ -337,3 +337,25 @@ workbench
 <!-- history: DiscussionPanel and the split right rail shipped through the v0.11 workbench slices. FloatingPanelShell + layout preferences shipped in v0.13.10. The four-subtree preferences split + settings window shipped in v0.15.3. -->
 
 Mask 切割复用 `MaskToolbar`、`useMaskEditor` 的实例预览和 D 的主动作解析器。画布只持有两点直线的拖动状态；切题、来源 / 工具 / buffer 变化或取消时清理。`slice_mask` 预览计算只分区本地 alpha；确认才沿 `mask-mutations:commit` 上传两个结果并提交固定请求。收到 `slice_restore` 即向原任务入栈同一种受限 slice 命令；客户端不创建独立的 Mask 回滚栈。服务端恢复通过 `MaskAnnotationRevision` 解析前后版本，先锁定并校验内容，再锁对象，并在触发器捕获旧版本后保护引用期限，保持现有 GC 合同。
+
+## 可复用的上下文工具栏
+
+`shell/ContextToolbar.tsx` 负责左侧胶囊、悬停常用操作、顶部居中的完整栏，以及展开/收起的位移和缩放动画。Mask 是当前接入者；后续具有居中工具栏的工具复用该容器，不再复制弹层和焦点逻辑。
+
+工具提供 `id`、`label`、`summary`（图标和必要状态）、`summaryLabel`、`quickActions`，以及接收 `close` 的内容渲染函数：
+
+```tsx
+<ContextToolbar
+  id="example"
+  label="示例"
+  summary={<ToolIcon />}
+  summaryLabel="示例常用工具"
+  quickActions={[{ id: "pick", label: "点选", icon: <PickIcon />, onSelect: selectTool }]}
+>
+  {(close) => <ToolSettings onCollapse={close} />}
+</ContextToolbar>
+```
+
+参数、草稿、保存、撤销和异步任务仍由工具原有 owner 持有。收起只改变显示；完整栏内容在关闭动画结束后卸载，因此需要保留的状态应放在容器外。`id` 在同时挂载的实例之间保持唯一；切换到不同 owner 时按原有生命周期卸载或使用对应的 React key。
+
+容器使用通用 `data-workbench-context-*` 标记接入事件守卫，允许点击画布关闭并开始绘制；关闭后恢复焦点到胶囊，点击外部时不抢回焦点。动画在挂载后测量真实起终点，关闭前重新测量以适应缩放与窗口大小变化；快速反向切换沿用当前变换，组件卸载时取消待执行帧，系统开启减少动态效果时跳过明显位移过程。

@@ -1409,8 +1409,9 @@ export function useImageAnnotationActions({
           }
           pendingRefineRef.current = null;
           maskEditor.cancel();
-          s.setTool("box");
-          s.setSelectedId(committedAnnotation.id);
+          maskEditor.beginBlank();
+          // A selected result would be reloaded for editing instead of starting the next Mask.
+          s.setSelectedId(null);
           pushToast({
             msg: updateTarget ? "已更新原生 Mask" : "已创建原生 Mask",
             sub: `${foregroundPixels} 像素 · ${labelForCommit}`,
@@ -1514,8 +1515,8 @@ export function useImageAnnotationActions({
         }
         pendingRefineRef.current = null;
         maskEditor.cancel();
-        s.setTool("box");
-        if (createdAnnotation) s.setSelectedId(createdAnnotation.id);
+        maskEditor.beginBlank();
+        s.setSelectedId(null);
         return result;
       });
     // v0.23.5 WS-E · multipleComponents 的「仅落最大外环」toast 已移除: lossy 转换在

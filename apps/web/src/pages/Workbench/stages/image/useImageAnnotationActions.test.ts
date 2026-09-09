@@ -630,6 +630,7 @@ function maskCommitHarness() {
     }),
     save: vi.fn(async (commit: () => Promise<MaskSaveResult>) => commit()),
     rebaseSession: vi.fn(),
+    beginBlank: vi.fn(),
     cancel: vi.fn(),
     initFromPolygon: vi.fn(),
     undo: vi.fn(),
@@ -663,6 +664,7 @@ function expectNoMaskCompletion(view: ReturnType<typeof maskCommitHarness>) {
   expect(view.args.recordRecentClass).not.toHaveBeenCalled();
   expect(view.args.pushToast).not.toHaveBeenCalled();
   expect(view.editor.cancel).not.toHaveBeenCalled();
+  expect(view.editor.beginBlank).not.toHaveBeenCalled();
   expect(view.s.setTool).not.toHaveBeenCalled();
   expect(view.s.setSelectedId).not.toHaveBeenCalled();
 }
@@ -849,8 +851,9 @@ describe("ordinary image Mask commit ownership", () => {
       view.editor.cancel.mock.invocationCallOrder[0],
     );
     expect(view.editor.cancel).toHaveBeenCalledTimes(1);
-    expect(view.s.setTool).toHaveBeenCalledWith("box");
-    expect(view.s.setSelectedId).toHaveBeenCalledWith(savedMask.id);
+    expect(view.s.setTool).not.toHaveBeenCalled();
+    expect(view.editor.beginBlank).toHaveBeenCalledOnce();
+    expect(view.s.setSelectedId).toHaveBeenCalledWith(null);
   });
 
   it("删除空 Mask 的迟到成功不清空新会话选择和历史", async () => {
@@ -901,20 +904,32 @@ describe("ordinary image Mask commit ownership", () => {
     expectNoMaskCompletion(view);
   });
 
-  it("原会话正常创建只写一次历史并选中结果", async () => {
-    const view = maskCommitHarness();
-    await act(async () => {
-      expect(await view.result.current.commitMaskAsPolygon()).toEqual({
-        ok: true,
-        retryable: false,
+  it.each(["native", "legacy"] as const)(
+    "%s 保存后保留 Mask 工具并准备独立的新草稿",
+    async (mode) => {
+      const view = maskCommitHarness();
+      view.args.maskPersistenceMode = mode;
+      view.rerender();
+      await act(async () => {
+        expect(await view.result.current.commitMaskAsPolygon()).toEqual({
+          ok: true,
+          retryable: false,
+        });
       });
-    });
-    expect(nativeRequests.upload).toHaveBeenCalledWith("task-1", maskRle);
-    expect(view.args.createAnnotationAsync).toHaveBeenCalledTimes(1);
-    expect(view.args.history.push).toHaveBeenCalledTimes(1);
-    expect(view.editor.cancel).toHaveBeenCalledTimes(1);
-    expect(view.s.setSelectedId).toHaveBeenCalledWith(savedMask.id);
-  });
+      expect(view.args.createAnnotationAsync).toHaveBeenCalledTimes(1);
+      if (mode === "native") {
+        expect(nativeRequests.upload).toHaveBeenCalledWith("task-1", maskRle);
+        expect(view.args.history.push).toHaveBeenCalledTimes(1);
+      }
+      expect(view.editor.cancel).toHaveBeenCalledTimes(1);
+      expect(view.editor.beginBlank).toHaveBeenCalledTimes(1);
+      expect(view.editor.cancel.mock.invocationCallOrder[0]).toBeLessThan(
+        view.editor.beginBlank.mock.invocationCallOrder[0],
+      );
+      expect(view.s.setTool).not.toHaveBeenCalled();
+      expect(view.s.setSelectedId).toHaveBeenCalledWith(null);
+    },
+  );
 
   it("锁定对象不能开始合并或保存", async () => {
     const view = maskCommitHarness();

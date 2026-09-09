@@ -24,7 +24,7 @@ test.describe("mask session guard (v0.23.5 WS-B/C)", () => {
     await page.waitForLoadState("networkidle");
 
     await page.keyboard.press("m");
-    await expect(page.getByTestId("mask-toolbar")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId("mask-tool-capsule")).toBeVisible({ timeout: 10_000 });
 
     // 未涂抹: Enter 不应产生 POST。
     const noPrematurePost = page
@@ -46,7 +46,10 @@ test.describe("mask session guard (v0.23.5 WS-B/C)", () => {
     await page.mouse.down();
     await page.mouse.move(box.x + box.width * 0.55, box.y + box.height * 0.55, { steps: 10 });
     await page.mouse.up();
-    await expect(page.getByTestId("mask-toolbar")).toContainText("未保存");
+    await expect(page.getByTestId("mask-tool-capsule").getByRole("status")).toHaveAttribute(
+      "aria-label",
+      "未保存",
+    );
 
     // 第一次 Enter 只打开类别选择，第二次 Enter 才确认提交。
     let commitPostCount = 0;
@@ -86,7 +89,7 @@ test.describe("mask session guard (v0.23.5 WS-B/C)", () => {
     await page.waitForLoadState("networkidle");
 
     await page.keyboard.press("m");
-    await expect(page.getByTestId("mask-toolbar")).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByTestId("mask-tool-capsule")).toBeVisible({ timeout: 10_000 });
 
     const stage = page.getByTestId("workbench-stage");
     const box = await stage.boundingBox();
@@ -95,7 +98,10 @@ test.describe("mask session guard (v0.23.5 WS-B/C)", () => {
     await page.mouse.down();
     await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.5, { steps: 10 });
     await page.mouse.up();
-    await expect(page.getByTestId("mask-toolbar")).toContainText("未保存");
+    await expect(page.getByTestId("mask-tool-capsule").getByRole("status")).toHaveAttribute(
+      "aria-label",
+      "未保存",
+    );
 
     // 两段确认均取消 = continue，必须恢复旧工具与 Buffer。
     page.on("dialog", (dialog) => void dialog.dismiss());
@@ -103,7 +109,10 @@ test.describe("mask session guard (v0.23.5 WS-B/C)", () => {
     await expect(bboxBtn).toBeVisible();
     await bboxBtn.click();
     await expect(page.getByText("有未保存的 Mask 稿件").first()).toBeVisible({ timeout: 5_000 });
-    await expect(page.getByTestId("mask-toolbar")).toBeVisible();
-    await expect(page.getByTestId("mask-toolbar")).toContainText("未保存");
+    await expect(page.getByTestId("mask-tool-capsule")).toBeVisible();
+    await expect(page.getByTestId("mask-tool-capsule").getByRole("status")).toHaveAttribute(
+      "aria-label",
+      "未保存",
+    );
   });
 });

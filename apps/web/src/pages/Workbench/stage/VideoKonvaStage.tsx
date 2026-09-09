@@ -2571,13 +2571,13 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
                   <Layer name="points-draft" listening={false}>
                     <Line
                       points={flat}
-                      closed={false}
+                      closed={!isPolyline}
                       stroke={hex}
                       strokeWidth={1.5 / vp.scale}
                       dash={[6 / vp.scale, 4 / vp.scale]}
                       lineCap="round"
                       lineJoin="round"
-                      fill={isPolyline ? undefined : hexToRgba(hex, 0.1)}
+                      fill={isPolyline ? undefined : hexToRgba(hex, visual.fillOpacity)}
                       listening={false}
                     />
                     {ps.map(([px, py], i) => (
@@ -2611,7 +2611,9 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
                       dash={[6 / vp.scale, 4 / vp.scale]}
                       lineCap="round"
                       lineJoin="round"
-                      fill={pendingPointsDraft.closed ? hexToRgba(hex, 0.1) : undefined}
+                      fill={
+                        pendingPointsDraft.closed ? hexToRgba(hex, visual.fillOpacity) : undefined
+                      }
                       listening={false}
                     />
                     {pendingPointsDraft.points.map(([px, py], index) => (

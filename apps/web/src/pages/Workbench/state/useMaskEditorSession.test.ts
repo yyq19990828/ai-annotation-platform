@@ -49,6 +49,37 @@ const RLE_DIFFERENT: { encoding: "coco_rle"; size: [number, number]; counts: num
   counts: [200, 200],
 };
 
+it("保存后重开空白草稿可立即落笔，保留半径与笔刷形状", async () => {
+  const { result } = renderSession({ sessionKey: { ...KEY_A, selectionKey: "blank" } });
+  act(() => {
+    result.current.loadBlank(result.current.generation);
+    result.current.setRadius(2);
+    result.current.setBrushShape("square");
+  });
+  act(() => result.current.paintAt(5, 5));
+  const savedBuffer = result.current.buffer;
+  expect(savedBuffer?.countSet()).toBeGreaterThan(0);
+  await act(async () => {
+    expect(await result.current.save(async () => ({ ok: true, retryable: false }))).toEqual({
+      ok: true,
+      retryable: false,
+    });
+    result.current.cancel();
+    result.current.beginBlank();
+  });
+  expect(result.current.phase).toBe("ready");
+  expect(result.current.active).toBe(true);
+  expect(result.current.dirty).toBe(false);
+  expect(result.current.buffer).not.toBe(savedBuffer);
+  expect(result.current.buffer?.countSet()).toBe(0);
+  expect(result.current.canUndo).toBe(false);
+  expect(result.current.radius).toBe(2);
+  expect(result.current.brushShape).toBe("square");
+  act(() => result.current.paintAt(15, 15));
+  expect(result.current.buffer?.countSet()).toBeGreaterThan(0);
+  expect(result.current.phase).toBe("dirty");
+});
+
 describe("useMaskEditorSession · A1 迟到 GET 不得覆盖当前 Buffer", () => {
   it("paint revision 变化不会改变 load callback 引用", async () => {
     const { result } = renderSession();
