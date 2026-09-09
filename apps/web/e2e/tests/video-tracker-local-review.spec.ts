@@ -1,3 +1,4 @@
+import { expectStableContextCapsule, openContextToolbar } from "../fixtures/context-toolbar";
 import type { APIRequestContext, Page, Response } from "@playwright/test";
 
 import { expect, test } from "../fixtures/seed";
@@ -105,6 +106,8 @@ test("Tracker 可按目标/帧窗局部接受拒绝并二次确认人工帧", as
     await page.goto(`/projects/${data.project_id}/annotate?task=${video.task_id}`);
 
     const review = page.getByTestId("video-tracker-review-bar");
+    await expectStableContextCapsule(page, "tracker-review");
+    await openContextToolbar(page, "tracker-review");
     await expect(review).toBeVisible({ timeout: 20_000 });
     await page.getByTestId("tracker-review-job").selectOption(fixture.job_id);
     await expect(review).toContainText("已审 0/20");
@@ -145,6 +148,7 @@ test("Tracker 可按目标/帧窗局部接受拒绝并二次确认人工帧", as
 
     // 部分状态可跨刷新恢复。
     await page.reload();
+    await openContextToolbar(page, "tracker-review");
     await expect(review).toBeVisible({ timeout: 20_000 });
     await page.getByTestId("tracker-review-job").selectOption(fixture.job_id);
     await expect(review).toContainText("已审 6/20");
@@ -218,6 +222,7 @@ test("Tracker 可按目标/帧窗局部接受拒绝并二次确认人工帧", as
     });
     expect(decisions[3]).toEqual({ ...decisions[2], override_manual: true });
     await page.reload();
+    await openContextToolbar(page, "tracker-review");
     await expect(review).toBeVisible({ timeout: 20_000 });
     await expect(review).toContainText("已审 13/20");
     expect(await annotations(request, video.task_id, token)).toEqual(rows);

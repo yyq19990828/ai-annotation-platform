@@ -272,7 +272,7 @@ test.describe("annotation workbench", () => {
     // ③ 激活 smart-point → 画布顶部交互工具栏出现 (v0.18.25 AIToolDrawer 退役改 InteractiveToolBar)
     await pointBtn.click();
     await expect(pointBtn).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByTestId("interactive-toolbar")).toBeVisible();
+    await expect(page.getByTestId("interactive-tool-capsule")).toBeVisible();
 
     // ④ 点击 stage → dispatch context.type === "point"
     const stage = page.getByTestId("workbench-stage");

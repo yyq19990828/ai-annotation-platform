@@ -443,7 +443,9 @@ test("视频紧凑布局禁止桌面写入，退出后恢复浮窗与非零帧�
       timeout: 20_000,
     })
     .toBeGreaterThanOrEqual(2);
-  await stage.click({ position: { x: 12, y: 12 } });
+  // Focus the selectable canvas, away from the contextual capsule at its top-left edge.
+  await page.getByTestId("video-tool-btn-select").click();
+  await stage.click();
   for (let frame = 1; frame <= 3; frame += 1) {
     await page.keyboard.press("ArrowRight");
     await expect(stage).toHaveAttribute("data-video-frame-index", String(frame));

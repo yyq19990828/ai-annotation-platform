@@ -131,6 +131,8 @@ import { useCapabilityValidation } from "./useCapabilityValidation";
 import { useAiToolModelPref } from "./useAiToolModelPref";
 import { useInteractiveBackendPref } from "./useInteractiveBackendPref";
 import { InteractiveToolBar } from "../shell/InteractiveToolBar";
+import { resolveContextToolbar } from "./workbenchContextToolbar";
+import { useSecondaryCapabilities } from "./useSecondaryInference";
 import { SecondaryInferenceBar } from "../shell/SecondaryInferenceBar";
 import { useSecondaryBarHiddenPref } from "./useSecondaryBarHiddenPref";
 import { IssueCreateModal } from "../shell/IssueCreateModal";
@@ -2178,20 +2180,21 @@ export function useWorkbenchShellModel({
     };
   }, [isVideoTask, videoFrameIndex]);
 
+  const samSessionScope = [
+    isVideoTask ? videoFrameIndex : "image",
+    mlCapabilities.activeModelId ?? "default",
+    effectiveSingleFrameOutputGeometry,
+    canRefineSelectedMask && selectedMaskPromptSource
+      ? `${selectedMaskPromptSource.annotation_id}@${selectedMaskPromptSource.source_version}`
+      : "no-mask-prompt",
+  ].join(":");
   const sam = useInteractiveAI({
     projectId,
     taskId,
     mlBackendId: interactiveBackendId,
     transport: samTransport,
     // 候选缓存 / 点会话按帧隔离; 切帧即失效 (mask_input 的 logits 绑定具体图像)。
-    cacheScope: [
-      isVideoTask ? videoFrameIndex : "image",
-      mlCapabilities.activeModelId ?? "default",
-      effectiveSingleFrameOutputGeometry,
-      canRefineSelectedMask && selectedMaskPromptSource
-        ? `${selectedMaskPromptSource.annotation_id}@${selectedMaskPromptSource.source_version}`
-        : "no-mask-prompt",
-    ].join(":"),
+    cacheScope: samSessionScope,
     requestContextDefaults: samRequestContextDefaults,
   });
   const samDisplayCandidates = useMemo(
@@ -6693,6 +6696,17 @@ export function useWorkbenchShellModel({
     [],
   );
 
+  const secondaryEligible =
+    !secondaryBarHidden &&
+    !maskToolActive &&
+    !isAIToolId(activeAiTool) &&
+    stageKind === "image" &&
+    !!selectedAnnotationForPanel &&
+    !isLocked;
+  const { capabilities: secondaryCapabilities } = useSecondaryCapabilities(
+    secondaryEligible ? projectId : undefined,
+  );
+
   if (
     isProjectLoading ||
     isTaskListLoading ||
@@ -6770,6 +6784,20 @@ export function useWorkbenchShellModel({
     trackerJobs.activeReview && trackerJobs.jobs[trackerJobs.activeReview.jobId]?.taskId === taskId
       ? trackerJobs.activeReview
       : null;
+  const contextToolbar = resolveContextToolbar({
+    maskActive: maskToolActive,
+    interactiveActive: isAIToolId(activeAiTool),
+    seedCollecting,
+    editingPending:
+      hasPendingMaskDraft ||
+      sam.isRunning ||
+      sam.candidates.length > 0 ||
+      !!videoSamPendingAccept ||
+      imageActions.samClassPickerActive,
+    trackerReviewAvailable: !!trackerReviewCandidate,
+    secondaryAvailable: secondaryEligible && secondaryCapabilities.length > 0,
+    capabilityRecovery: stageKind !== "3d" && !!capabilityError,
+  });
   const reviewReferenceIds = trackerReviewCandidate
     ? referenceReviewInstanceIds(trackerReviewCandidate.preview, s.selectedId)
     : [];
@@ -7262,102 +7290,113 @@ export function useWorkbenchShellModel({
                 与 MaskToolbar 互斥 (mask 非 AI 工具)。引擎选择经 modelPref 服务端持久化。
                 v0.21.27 · U-pvs-1 · PVS 种子采集态借用 smart-point 工具落点, 此时抑制本工具条
                 (否则与顶部居中的传播对话框撞位); 采集是「落 PVS 种子」而非帧级 SAM 分割。 */}
-            {(isAIToolId(activeAiTool) ||
-              (stageKind !== "3d" && capabilityError && !maskToolActive)) &&
-              !seedCollecting && (
-                <InteractiveToolBar
-                  tool={isAIToolId(activeAiTool) ? activeAiTool : "smart-point"}
-                  capabilityRecoveryOnly={!isAIToolId(activeAiTool)}
-                  backendName={mlCapabilities.capability?.name}
-                  capability={mlCapabilities.capability}
-                  samPolarity={s.samPolarity}
-                  onSetSamPolarity={s.setSamPolarity}
-                  isLoading={routing.isLoading || mlCapabilities.isLoading}
-                  isError={!!capabilityError}
-                  capabilityError={capabilityError}
-                  onRetryCapabilities={retryInteractiveCapabilities}
-                  isCapabilityRetrying={routing.isFetching || mlCapabilities.isFetching}
-                  isRunning={sam.isRunning}
-                  inferenceError={sam.error}
-                  candidateCount={sam.candidates.length}
-                  activeCandidateIndex={sam.activeIdx}
-                  canAcceptCandidates={sam.canAcceptCandidates && !isLockedForActions}
-                  candidateActionPending={
-                    isVideoTask ? videoSamPendingAccept !== null : imageActions.samClassPickerActive
-                  }
-                  onCycleCandidate={sam.cycle}
-                  onAcceptCandidate={
-                    isVideoTask ? requestVideoSamAccept : imageActions.requestSamAccept
-                  }
-                  onCancelCandidates={sam.cancel}
-                  canRetry={sam.canRetry}
-                  onRetry={sam.retryLast}
-                  exemplarOutputMode={s.exemplarOutputMode}
-                  singleFrameOutputGeometry={effectiveSingleFrameOutputGeometry}
-                  onSetSingleFrameOutputGeometry={setSingleFrameOutputGeometry}
-                  nativeMaskOutputDisabledReason={nativeMaskOutputDisabledReason}
-                  maskPromptSourceLabel={
-                    canRefineSelectedMask && selectedMaskPromptSource
-                      ? `精修 Mask · ${selectedMaskPromptSource.class_name}`
-                      : undefined
-                  }
-                  onSetExemplarOutputMode={(mode) => {
-                    // 切输出形态时若 exemplar 会话进行中, 用当前会话重跑 (output 透传)。
-                    handleSetExemplarOutputMode(mode);
-                    sam.rerunExemplar(mode);
-                  }}
-                  exemplarText={sam.exemplarText}
-                  onSetExemplarText={sam.setExemplarText}
-                  exemplarThreshold={sam.exemplarThreshold}
-                  onSetExemplarThreshold={sam.setExemplarThreshold}
-                  exemplarThresholdDefault={((): number | undefined => {
-                    const def = (
-                      mlCapabilities.paramsSchema?.properties?.score_threshold as
-                        | { default?: unknown }
-                        | undefined
-                    )?.default;
-                    return typeof def === "number" ? def : undefined;
-                  })()}
-                  exemplarSessionActive={sam.sessionExemplars.length > 0}
-                  models={mlCapabilities.models}
-                  activeModelId={mlCapabilities.activeModelId}
-                  onSetActiveModelId={(id) => {
-                    // 会话内选中 + 服务端持久化 (按 backend, 跨设备)。
-                    mlCapabilities.setActiveModelId(id);
-                    modelPref.save(id);
-                  }}
-                  capabilityWarnings={capabilityWarnings}
-                  onFillAttribute={handleFillAttribute}
-                  interactiveBackends={(activeInteractivePrompt
-                    ? routing.candidatesFor(activeInteractivePrompt)
-                    : []
-                  )
-                    .map((id) => backends.find((b) => b.id === id))
-                    .filter((b): b is MLBackendResponse => !!b)}
-                  selectedInteractiveId={interactiveBackendId}
-                  onSelectInteractive={routing.setPreferredInteractiveId}
-                  variantGroups={interactiveVariantGroups}
-                  variantCombinations={interactiveVariantCombos}
-                  variantDefaults={interactiveVariantSlice}
-                  variantValue={interactiveProjectVariantSlice}
-                  onVariantChange={handleInteractiveVariantChange}
-                />
-              )}
+            {(isAIToolId(activeAiTool) || (stageKind !== "3d" && capabilityError)) && (
+              <InteractiveToolBar
+                presentationHidden={
+                  contextToolbar !== "interactive" && contextToolbar !== "recovery"
+                }
+                presentationKey={JSON.stringify([
+                  projectId,
+                  taskId,
+                  activeAiTool,
+                  isVideoTask ? videoFrameIndex : "image",
+                  canRefineSelectedMask ? selectedMaskPromptSource : null,
+                ])}
+                tool={isAIToolId(activeAiTool) ? activeAiTool : "smart-point"}
+                capabilityRecoveryOnly={!isAIToolId(activeAiTool)}
+                backendName={mlCapabilities.capability?.name}
+                capability={mlCapabilities.capability}
+                samPolarity={s.samPolarity}
+                onSetSamPolarity={s.setSamPolarity}
+                isLoading={routing.isLoading || mlCapabilities.isLoading}
+                isError={!!capabilityError}
+                capabilityError={capabilityError}
+                onRetryCapabilities={retryInteractiveCapabilities}
+                isCapabilityRetrying={routing.isFetching || mlCapabilities.isFetching}
+                isRunning={sam.isRunning}
+                inferenceError={sam.error}
+                candidateCount={sam.candidates.length}
+                activeCandidateIndex={sam.activeIdx}
+                canAcceptCandidates={sam.canAcceptCandidates && !isLockedForActions}
+                candidateActionPending={
+                  isVideoTask ? videoSamPendingAccept !== null : imageActions.samClassPickerActive
+                }
+                onCycleCandidate={sam.cycle}
+                onAcceptCandidate={
+                  isVideoTask ? requestVideoSamAccept : imageActions.requestSamAccept
+                }
+                onCancelCandidates={sam.cancel}
+                canRetry={sam.canRetry}
+                onRetry={sam.retryLast}
+                exemplarOutputMode={s.exemplarOutputMode}
+                singleFrameOutputGeometry={effectiveSingleFrameOutputGeometry}
+                onSetSingleFrameOutputGeometry={setSingleFrameOutputGeometry}
+                nativeMaskOutputDisabledReason={nativeMaskOutputDisabledReason}
+                maskPromptSourceLabel={
+                  canRefineSelectedMask && selectedMaskPromptSource
+                    ? `精修 Mask · ${selectedMaskPromptSource.class_name}`
+                    : undefined
+                }
+                onSetExemplarOutputMode={(mode) => {
+                  // 切输出形态时若 exemplar 会话进行中, 用当前会话重跑 (output 透传)。
+                  handleSetExemplarOutputMode(mode);
+                  sam.rerunExemplar(mode);
+                }}
+                exemplarText={sam.exemplarText}
+                onSetExemplarText={sam.setExemplarText}
+                exemplarThreshold={sam.exemplarThreshold}
+                onSetExemplarThreshold={sam.setExemplarThreshold}
+                exemplarThresholdDefault={((): number | undefined => {
+                  const def = (
+                    mlCapabilities.paramsSchema?.properties?.score_threshold as
+                      | { default?: unknown }
+                      | undefined
+                  )?.default;
+                  return typeof def === "number" ? def : undefined;
+                })()}
+                hasPromptSession={
+                  sam.sessionPoints.length > 0 ||
+                  sam.sessionScribbles.length > 0 ||
+                  sam.sessionExemplars.length > 0
+                }
+                exemplarSessionActive={sam.sessionExemplars.length > 0}
+                models={mlCapabilities.models}
+                activeModelId={mlCapabilities.activeModelId}
+                onSetActiveModelId={(id) => {
+                  // 会话内选中 + 服务端持久化 (按 backend, 跨设备)。
+                  mlCapabilities.setActiveModelId(id);
+                  modelPref.save(id);
+                }}
+                capabilityWarnings={capabilityWarnings}
+                onFillAttribute={handleFillAttribute}
+                interactiveBackends={(activeInteractivePrompt
+                  ? routing.candidatesFor(activeInteractivePrompt)
+                  : []
+                )
+                  .map((id) => backends.find((b) => b.id === id))
+                  .filter((b): b is MLBackendResponse => !!b)}
+                selectedInteractiveId={interactiveBackendId}
+                onSelectInteractive={routing.setPreferredInteractiveId}
+                variantGroups={interactiveVariantGroups}
+                variantCombinations={interactiveVariantCombos}
+                variantDefaults={interactiveVariantSlice}
+                variantValue={interactiveProjectVariantSlice}
+                onVariantChange={handleInteractiveVariantChange}
+              />
+            )}
             {/* v0.20.11 · 选中单框二次推理入口: 非 AI 工具 (与 InteractiveToolBar 互斥) 且单选一个
                 已落库框时浮顶部, 列该框可跑能力。图片任务 only (视频/3D 走各自轨迹面板)。 */}
-            {!secondaryBarHidden &&
-              !isAIToolId(s.tool) &&
-              stageKind === "image" &&
-              selectedAnnotationForPanel && (
-                <SecondaryInferenceBar
-                  projectId={projectId}
-                  taskId={selectedAnnotationForPanel.task_id}
-                  annotation={selectedAnnotationForPanel}
-                  readOnly={isLocked}
-                  existingAttributeKeys={projectAttributeKeys}
-                  onEnsureAttributeFields={handleEnsureAttributeFields}
-                />
-              )}
+            {selectedAnnotationForPanel && stageKind === "image" && (
+              <SecondaryInferenceBar
+                presentationHidden={contextToolbar !== "secondary"}
+                projectId={projectId}
+                taskId={selectedAnnotationForPanel.task_id}
+                annotation={selectedAnnotationForPanel}
+                readOnly={isLocked}
+                existingAttributeKeys={projectAttributeKeys}
+                onEnsureAttributeFields={handleEnsureAttributeFields}
+              />
+            )}
             {/* SAM 候选的类选择器: 图片给 geom 走 vp 换算, 视频给 anchor 走 fixed 定位 (二者互斥)。 */}
             {!s.pendingDrawing?.creation && (
               <WorkbenchOverlays
@@ -7981,6 +8020,8 @@ export function useWorkbenchShellModel({
 
   // v0.21.28 · 候选/接受审阅条 props。
   const trackerReviewProps: ComponentProps<typeof VideoTrackerReviewBar> = {
+    taskId,
+    presentationHidden: contextToolbar !== "tracker",
     review: trackerReviewCandidate,
     jobs: Object.keys(trackerJobs.candidates)
       .filter((jobId) => trackerJobs.jobs[jobId]?.taskId === taskId)

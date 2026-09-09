@@ -1,3 +1,4 @@
+import { openContextToolbar } from "../../fixtures/context-toolbar";
 /**
  * 流程录制：按目标外观选择点、正负点或整车框，分别演示三种追踪种子。
  */
@@ -385,6 +386,11 @@ export async function runVideoMultiSeedTracking(
         }
       }
     }
+    await page.getByTestId("tool-btn-select").click();
+    await page
+      .getByTestId("tracker-review-tool-capsule")
+      .waitFor({ state: "visible", timeout: 120_000 });
+    await openContextToolbar(page, "tracker-review");
     const review = page.getByTestId("video-tracker-review-bar");
     await review.waitFor({ state: "visible", timeout: 120_000 });
     const preview = await readVideoRecordingJson<VideoTrackerJobPreview>(
@@ -403,6 +409,7 @@ export async function runVideoMultiSeedTracking(
     }
     await page.waitForTimeout(1_200);
     await scrubPendingTrackerFrames(page);
+    await openContextToolbar(page, "tracker-review");
     const accepted = page.waitForResponse(
       (response) =>
         response.request().method() === "POST" &&

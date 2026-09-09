@@ -4,7 +4,7 @@
 // - attributes-型选中且缺承接字段 → 出现补全 CTA; 运行后 warning toast
 // - 有可调参数 → ⚙ 显隐 + 展开参数面板
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render as rtlRender, fireEvent, waitFor } from "@testing-library/react";
+import { act, render as rtlRender, fireEvent, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement, type ReactNode } from "react";
 import type { MLModelCapability } from "@/api/ml-backends";
@@ -64,7 +64,15 @@ const annotation = {
 let queryClient: QueryClient;
 const wrapper = ({ children }: { children: ReactNode }) =>
   createElement(QueryClientProvider, { client: queryClient }, children);
-const render = (ui: Parameters<typeof rtlRender>[0]) => rtlRender(ui, { wrapper });
+const render = (ui: Parameters<typeof rtlRender>[0]) => {
+  const result = rtlRender(ui, { wrapper });
+  const trigger = result.queryByTestId("secondary-settings-trigger");
+  if (trigger) {
+    fireEvent.click(trigger);
+    fireEvent.click(result.getByRole("button", { name: "更多 二次推理 工具" }));
+  }
+  return result;
+};
 
 beforeEach(() => {
   pushToast.mockReset();
@@ -76,6 +84,185 @@ beforeEach(() => {
 });
 
 describe("SecondaryInferenceBar", () => {
+  it("keeps required text and Run usable while settings are collapsed", () => {
+    capabilitiesRef.current = [attrCap({ supported_prompts: ["text"] })];
+    const view = rtlRender(
+      <SecondaryInferenceBar projectId="p" taskId="task-1" annotation={annotation} />,
+      { wrapper },
+    );
+    expect(view.queryByTestId("secondary-cap-select")).toBeNull();
+    expect(view.getByTestId("secondary-run")).toBeDisabled();
+    fireEvent.change(view.getByTestId("secondary-prompt"), { target: { value: "car" } });
+    expect(view.getByTestId("secondary-run")).toBeEnabled();
+    fireEvent.click(view.getByTestId("secondary-settings-trigger"));
+    fireEvent.click(view.getByRole("button", { name: "更多 二次推理 工具" }));
+    expect(view.getByTestId("secondary-prompt")).toHaveValue("car");
+    fireEvent.click(view.getByRole("button", { name: "收起二次推理设置" }));
+    expect(view.getByTestId("secondary-prompt")).toHaveValue("car");
+    expect(mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it("shares capsule confidence with full parameters and keeps other fields in the request", async () => {
+    capabilitiesRef.current = [
+      attrCap({
+        params: {
+          type: "object",
+          properties: {
+            custom_score: {
+              type: "number",
+              minimum: 0,
+              maximum: 1,
+              default: 0.4,
+              "x-platform-role": "confidence",
+            },
+            iou: { type: "number", minimum: 0, maximum: 1, default: 0.6, "x-platform-role": "iou" },
+          },
+        },
+      }),
+      geomCap(),
+    ];
+    mutateAsync.mockResolvedValue({
+      annotation: { ...annotation, attributes_meta: {} },
+      created_children: [],
+    });
+    const view = rtlRender(
+      <SecondaryInferenceBar projectId="p" taskId="task-1" annotation={annotation} />,
+      { wrapper },
+    );
+    fireEvent.click(view.getByTestId("secondary-settings-trigger"));
+    const quick = within(view.getByTestId("secondary-quick-confidence"));
+    expect(quick.queryByTestId("schema-field-iou")).toBeNull();
+    fireEvent.change(quick.getByRole("slider"), { target: { value: "0.8" } });
+    fireEvent.click(view.getByRole("button", { name: "更多 二次推理 工具" }));
+    fireEvent.click(view.getByTestId("secondary-params-toggle"));
+    expect(within(view.getByTestId("schema-field-custom_score")).getByRole("slider")).toHaveValue(
+      "0.8",
+    );
+    fireEvent.change(within(view.getByTestId("schema-field-iou")).getByRole("slider"), {
+      target: { value: "0.7" },
+    });
+    fireEvent.change(view.getByTestId("secondary-cap-select"), { target: { value: "be-2:det" } });
+    const close = view.getByRole("button", { name: "收起二次推理设置" });
+    expect(close).toHaveTextContent("");
+    fireEvent.click(close);
+    expect(view.queryByTestId("secondary-quick-confidence")).toBeNull();
+    expect(view.getByTestId("secondary-summary-capability")).toHaveTextContent("车牌检测");
+    fireEvent.click(view.getByTestId("secondary-settings-trigger"));
+    fireEvent.click(view.getByRole("button", { name: "更多 二次推理 工具" }));
+    fireEvent.change(view.getByTestId("secondary-cap-select"), { target: { value: "be-1:m1" } });
+    fireEvent.click(view.getByRole("button", { name: "收起二次推理设置" }));
+    fireEvent.click(view.getByTestId("secondary-settings-trigger"));
+    expect(within(view.getByTestId("secondary-quick-confidence")).getByRole("slider")).toHaveValue(
+      "0.8",
+    );
+    expect(mutateAsync).not.toHaveBeenCalled();
+    fireEvent.click(view.getByTestId("secondary-run"));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledOnce());
+    expect(mutateAsync.mock.calls[0][0].body.params).toEqual({ custom_score: 0.8, iou: 0.7 });
+  });
+
+  it("only exposes editable numeric confidence fields, including legacy model keys", () => {
+    capabilitiesRef.current = [
+      attrCap({
+        params: {
+          type: "object",
+          properties: {
+            score_threshold: { type: "number", default: 0.4 },
+            confidence: { type: "number", default: 0.5, readOnly: true },
+            conf: { type: "string", default: "auto" },
+            box_threshold: { type: "number", default: 0.3, "x-platform-role": "iou" },
+          },
+        },
+      }),
+    ];
+    const view = rtlRender(
+      <SecondaryInferenceBar projectId="p" taskId="task-1" annotation={annotation} />,
+      { wrapper },
+    );
+    fireEvent.click(view.getByTestId("secondary-settings-trigger"));
+    const quick = within(view.getByTestId("secondary-quick-confidence"));
+    expect(quick.getByRole("spinbutton")).toHaveValue(0.4);
+    expect(quick.queryByTestId("schema-field-confidence")).toBeNull();
+    expect(quick.queryByTestId("schema-field-conf")).toBeNull();
+    expect(quick.queryByTestId("schema-field-box_threshold")).toBeNull();
+  });
+
+  it("single-flights each annotation and lets old requests finish without changing the new owner", async () => {
+    capabilitiesRef.current = [attrCap()];
+    let finishA!: (value: unknown) => void;
+    let finishB!: (value: unknown) => void;
+    mutateAsync
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishA = resolve;
+          }),
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishB = resolve;
+          }),
+      );
+    const view = rtlRender(
+      <SecondaryInferenceBar projectId="p" taskId="task-1" annotation={annotation} />,
+      { wrapper },
+    );
+    const runA = view.getByTestId("secondary-run");
+    act(() => {
+      runA.click();
+      runA.click();
+    });
+    expect(mutateAsync).toHaveBeenCalledOnce();
+    expect(mutateAsync.mock.calls[0][0]).toMatchObject({
+      taskId: "task-1",
+      annotationId: "anno-1",
+    });
+    const other = { ...annotation, id: "anno-2", task_id: "task-2" };
+    view.rerender(<SecondaryInferenceBar projectId="p" taskId="task-2" annotation={other} />);
+    fireEvent.click(view.getByTestId("secondary-run"));
+    expect(mutateAsync).toHaveBeenCalledTimes(2);
+    await act(async () => {
+      finishA({ annotation: { ...annotation, attributes_meta: {} }, created_children: [] });
+    });
+    expect(pushToast).not.toHaveBeenCalled();
+    expect(view.getByTestId("secondary-run")).toBeDisabled();
+    view.rerender(
+      <SecondaryInferenceBar projectId="p" taskId="task-2" annotation={other} presentationHidden />,
+    );
+    expect(view.queryByTestId("secondary-settings-trigger")).toBeNull();
+    view.rerender(<SecondaryInferenceBar projectId="p" taskId="task-2" annotation={other} />);
+    expect(view.getByTestId("secondary-run")).toBeDisabled();
+    await act(async () => {
+      finishB({ annotation: { ...other, attributes_meta: {} }, created_children: [] });
+    });
+    expect(view.getByTestId("secondary-run")).toBeEnabled();
+    expect(pushToast).toHaveBeenCalledOnce();
+  });
+
+  it("retains the selected capability and values through a failed request and collapse", async () => {
+    capabilitiesRef.current = [
+      attrCap(),
+      { ...geomCap(), model: { ...geomCap().model, supported_prompts: ["text"] } },
+    ];
+    mutateAsync.mockRejectedValue(new Error("离线"));
+    const view = render(
+      <SecondaryInferenceBar projectId="p" taskId="task-1" annotation={annotation} />,
+    );
+    fireEvent.change(view.getByTestId("secondary-cap-select"), { target: { value: "be-2:det" } });
+    fireEvent.change(view.getByTestId("secondary-prompt"), { target: { value: "car" } });
+    fireEvent.click(view.getByTestId("secondary-run"));
+    await waitFor(() =>
+      expect(pushToast).toHaveBeenCalledWith(expect.objectContaining({ kind: "error" })),
+    );
+    fireEvent.click(view.getByRole("button", { name: "收起二次推理设置" }));
+    expect(view.getByTestId("secondary-prompt")).toHaveValue("car");
+    expect(view.getByTestId("secondary-run")).toBeEnabled();
+    fireEvent.click(view.getByTestId("secondary-settings-trigger"));
+    fireEvent.click(view.getByRole("button", { name: "更多 二次推理 工具" }));
+    expect(view.getByTestId("secondary-cap-select")).toHaveValue("be-2:det");
+    expect(mutateAsync).toHaveBeenCalledOnce();
+  });
   it("无能力 → 不渲染", () => {
     const { container } = render(
       <SecondaryInferenceBar projectId="p" taskId="task-1" annotation={annotation} />,

@@ -1,3 +1,4 @@
+import { openContextToolbar } from "../../fixtures/context-toolbar";
 /**
  * 流程录制：在同一条真实中间卡车轨迹上对比纯几何复制与 SAM3 AI 延展。
  */
@@ -203,16 +204,22 @@ export async function runVideoPropagateTrackVsCopy(
     }
     onJobCreated(createdPayload.id);
 
+    await page.getByTestId("tool-btn-select").click();
+    await page
+      .getByTestId("tracker-review-tool-capsule")
+      .waitFor({ state: "visible", timeout: 120_000 });
+    await openContextToolbar(page, "tracker-review");
     const review = page.getByTestId("video-tracker-review-bar");
     await review.waitFor({ state: "visible", timeout: 120_000 });
     await review.getByTestId("tracker-review-instance-1").waitFor({ timeout: 5_000 });
-    await review.getByText(/当前选区 \d+ 个候选/).waitFor({ timeout: 5_000 });
+    await expect(review.getByTestId("tracker-review-scope-summary")).toContainText(/所选待审 \d+/);
     const fromFrame = review.getByTestId("tracker-review-from-frame");
     await fromFrame.click();
     await page.keyboard.press("Control+A");
     await page.keyboard.type("1", { delay: 100 });
-    await review.getByText("当前选区 30 个候选", { exact: false }).waitFor({ timeout: 5_000 });
+    await expect(review.getByTestId("tracker-review-scope-summary")).toContainText("所选待审 30");
     await scrubToFrame(page, timeline, 0, TARGET_FRAME, 1_500);
+    await openContextToolbar(page, "tracker-review");
     await page.waitForTimeout(1_350);
 
     const accepted = page.waitForResponse(
@@ -266,9 +273,14 @@ export async function runVideoPropagateTrackVsCopy(
       );
     }
 
-    await review.getByText("已审 30/31，当前选区 1 个候选", { exact: false }).waitFor({
-      timeout: 5_000,
-    });
+    await expect(review).toContainText("已审 30/31");
+    // Partial acceptance retains the selected frame window. Select the remaining seed frames explicitly.
+    const remainingInstances = review.locator('input[data-testid^="tracker-review-instance-"]');
+    for (let index = 0; index < (await remainingInstances.count()); index += 1)
+      await remainingInstances.nth(index).setChecked(true);
+    await review.getByTestId("tracker-review-from-frame").fill("0");
+    await review.getByTestId("tracker-review-to-frame").fill("0");
+    await expect(review.getByTestId("tracker-review-scope-summary")).toContainText("所选待审 1");
     const discardedSeed = page.waitForResponse(
       (response) =>
         response.request().method() === "POST" &&

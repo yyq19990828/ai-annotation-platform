@@ -1,3 +1,4 @@
+import { openContextToolbar } from "../fixtures/context-toolbar";
 import { openMaskSettings, closeMaskSettings } from "../fixtures/mask-toolbar";
 import type { APIResponse, Page, Request } from "@playwright/test";
 import { expect, test, type SeedNativeMaskCandidateData } from "../fixtures/seed";
@@ -212,6 +213,7 @@ async function generateAndAccept(
   await expect(point).toBeVisible({ timeout: 15_000 });
   await expect(point).not.toHaveAttribute("aria-disabled", "true");
   await point.click();
+  await openContextToolbar(page, "interactive");
   await expect(page.getByTestId("single-frame-output-geometry-select")).toHaveValue("mask");
 
   const box = await stage.boundingBox();
@@ -224,18 +226,6 @@ async function generateAndAccept(
   const pendingLabel = options?.candidateCycles
     ? `${options.candidateCycles + 1} 个候选待处理`
     : "候选待处理";
-  await page.waitForTimeout(1200); // TEMP-DEBUG
-  console.log(
-    "PET_DUMP:",
-    await page.evaluate(() => {
-      const pet = document.querySelector("[data-pet-mood]");
-      return JSON.stringify({
-        petMood: pet?.getAttribute("data-pet-mood") ?? null,
-        petText: pet?.textContent?.slice(0, 60) ?? null,
-        hasPending: (document.body.textContent ?? "").includes("候选待处理"),
-      });
-    }),
-  );
   await expect(page.getByText(pendingLabel, { exact: true })).toBeVisible({ timeout: 10_000 });
   // Polygon outlines are immediate; only the active candidate's pixel preview is decoded lazily.
   await page.waitForTimeout(media === "image" ? 250 : 750);
@@ -347,6 +337,7 @@ test.describe("native Mask interactive candidate acceptance", () => {
     const stage = page.getByTestId("workbench-stage");
     await expect(stage).toBeVisible({ timeout: 20_000 });
     await page.getByTestId("tool-btn-smart-point").click();
+    await openContextToolbar(page, "interactive");
     const output = page.getByTestId("single-frame-output-geometry-select");
     await expect(output).toHaveValue("polygon");
     await expect(output).toHaveAttribute("title", "当前模型未声明原生 Mask 输出能力");
@@ -718,8 +709,11 @@ test.describe("native Mask interactive candidate acceptance", () => {
       mask: (await maskResponse.json()) as SeedNativeMaskCandidateData["rle"],
     });
 
-    const review = page.getByRole("dialog", { name: "Mask 纠错候选审阅" });
-    await expect(review).toBeVisible({ timeout: 15_000 });
+    const capsule = page.getByTestId("tracker-review-tool-capsule");
+    await expect(capsule).toContainText("Mask 纠错", { timeout: 15_000 });
+    const review = page.getByTestId("video-tracker-review-bar");
+    await expect(review).toBeHidden();
+    await openContextToolbar(page, "tracker-review");
     await expect(review.getByTestId("tracker-review-correction-summary")).toContainText(
       "向更早帧 · 原生 Mask seed · 保护人工帧",
     );
@@ -779,6 +773,7 @@ test.describe("native Mask interactive candidate acceptance", () => {
     await expect(point).not.toHaveAttribute("aria-disabled", "true");
     await point.click();
     await expect(page.getByTestId("mask-prompt-source")).toContainText("精修 Mask");
+    await openContextToolbar(page, "interactive");
     const polarity = page.getByTestId("ai-tool-polarity");
     await polarity.click();
     await expect(polarity).toHaveAttribute("title", /负向/);
@@ -802,7 +797,10 @@ test.describe("native Mask interactive candidate acceptance", () => {
     const scribble = page.getByTestId("tool-btn-smart-scribble");
     await expect(scribble).not.toHaveAttribute("aria-disabled", "true");
     await scribble.click();
-    await expect(polarity).toHaveAttribute("title", /负向/);
+    await expect(page.getByTestId("interactive-summary-polarity")).toHaveAttribute(
+      "aria-label",
+      "负向笔迹",
+    );
     await page.mouse.move(box.x + box.width * 0.46, box.y + box.height * 0.46);
     await page.mouse.down();
     await page.mouse.move(box.x + box.width * 0.62, box.y + box.height * 0.54, { steps: 8 });
@@ -810,6 +808,8 @@ test.describe("native Mask interactive candidate acceptance", () => {
     const scribbleContexts = () => routed.contexts.filter((context) => context.type === "scribble");
     await expect.poll(() => scribbleContexts().length, { timeout: 10_000 }).toBe(1);
 
+    // Hover reveals retry without taking keyboard focus from the canvas.
+    await page.getByTestId("interactive-settings-trigger").hover();
     const retry = page.getByTestId("interactive-prompt-retry");
     await expect(retry).toBeVisible({ timeout: 10_000 });
     const staleAcceptRequests: string[] = [];
@@ -819,6 +819,14 @@ test.describe("native Mask interactive candidate acceptance", () => {
       }
     };
     page.on("request", captureAccept);
+    expect(
+      await page.evaluate(
+        () =>
+          document.activeElement?.closest(
+            "[data-workbench-context-toolbar], [data-workbench-context-primary], [data-workbench-context-toolbar-trigger]",
+          ) != null,
+      ),
+    ).toBe(false);
     await page.keyboard.press("Enter");
     await expect(page.getByTestId("class-picker-popover")).toBeHidden();
     await page.waitForTimeout(200);

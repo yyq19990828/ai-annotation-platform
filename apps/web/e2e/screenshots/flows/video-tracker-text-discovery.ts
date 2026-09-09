@@ -1,3 +1,4 @@
+import { openContextToolbar } from "../../fixtures/context-toolbar";
 /** Discover the two anchored buses with real text inference and verify persisted tracks. */
 import { expect, type Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
@@ -180,6 +181,11 @@ export async function runVideoTrackerTextDiscovery(
   );
   const selectedIds = match.items.map((result) => result.instance_id ?? "1");
   expect(new Set(selectedIds).size).toBe(2);
+  await page.getByTestId("tool-btn-select").click();
+  await page
+    .getByTestId("tracker-review-tool-capsule")
+    .waitFor({ state: "visible", timeout: 120_000 });
+  await openContextToolbar(page, "tracker-review");
   const review = page.getByTestId("video-tracker-review-bar");
   await expect(review).toBeVisible({ timeout: 10_000 });
   await expect(review).toBeInViewport({ ratio: 1 });
@@ -228,6 +234,7 @@ export async function runVideoTrackerTextDiscovery(
     onAnnotationsCreated?.(added.map((item) => item.id));
     return added;
   });
+  await openContextToolbar(page, "tracker-review");
   await review.getByTestId("tracker-review-accept").click();
   const [accepted, saved] = await Promise.all([acceptedResponse, savedResponse]);
   expect(accepted.ok()).toBe(true);

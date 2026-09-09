@@ -1,11 +1,134 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { ContextToolbar } from "./ContextToolbar";
 import { isWorkbenchInteractionBlocked } from "../state/workbenchInteractionGuards";
 
 // A second, non-Mask consumer verifies the shell has no editing or persistence assumptions.
 describe("ContextToolbar", () => {
+  it("reveals required input on hover and guards its keys without opening full settings", async () => {
+    const user = userEvent.setup();
+    const command = vi.fn();
+    function Owner() {
+      const [text, setText] = useState("");
+      const input = (
+        <input aria-label="目标" value={text} onChange={(event) => setText(event.target.value)} />
+      );
+      return (
+        <ContextToolbar
+          id="primary"
+          label="示例"
+          summary="工具"
+          summaryLabel="示例常用工具"
+          quickActions={[]}
+          primaryContent={
+            <>
+              {input}
+              <button onClick={command}>运行</button>
+            </>
+          }
+        >
+          {(close) => (
+            <>
+              {input}
+              <button onClick={close}>收起</button>
+            </>
+          )}
+        </ContextToolbar>
+      );
+    }
+    render(<Owner />);
+    const blocked = vi.fn();
+    const keyListener = (event: KeyboardEvent) => blocked(isWorkbenchInteractionBlocked(event));
+    window.addEventListener("keydown", keyListener);
+    try {
+      expect(screen.queryByRole("textbox", { name: "目标" })).toBeNull();
+      await user.hover(screen.getByTestId("primary-settings-trigger"));
+      await user.type(screen.getByRole("textbox", { name: "目标" }), "car");
+      expect(blocked.mock.calls.every(([value]) => value)).toBe(true);
+      expect(screen.queryByTestId("primary-toolbar")).toBeNull();
+      await user.click(screen.getByRole("button", { name: "更多 示例 工具" }));
+      expect(screen.getByRole("textbox", { name: "目标" })).toHaveValue("car");
+      await user.type(screen.getByRole("textbox", { name: "目标" }), " . person");
+      fireEvent.keyDown(screen.getByRole("textbox", { name: "目标" }), {
+        key: "Escape",
+        isComposing: true,
+      });
+      expect(screen.getByTestId("primary-toolbar")).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "收起" }));
+      await user.hover(screen.getByTestId("primary-settings-trigger"));
+      expect(screen.getByRole("textbox", { name: "目标" })).toHaveValue("car . person");
+      expect(command).not.toHaveBeenCalled();
+      await user.click(screen.getByRole("button", { name: "运行" }));
+      expect(command).toHaveBeenCalledOnce();
+    } finally {
+      window.removeEventListener("keydown", keyListener);
+    }
+  });
+
+  it("uses the fixed capsule dimensions when closing with primary controls", async () => {
+    const rect = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        if (this.dataset.testid === "closing-tool-capsule") return new DOMRect(10, 20, 100, 40);
+        if (this.hasAttribute("data-radix-popper-content-wrapper"))
+          return new DOMRect(300, 20, 600, 120);
+        return new DOMRect();
+      });
+    try {
+      const user = userEvent.setup();
+      render(
+        <ContextToolbar
+          id="closing"
+          label="示例"
+          summary="工具"
+          summaryLabel="示例常用工具"
+          quickActions={[]}
+          primaryContent={<input aria-label="目标" />}
+        >
+          {(close) => <button onClick={close}>收起</button>}
+        </ContextToolbar>,
+      );
+      await user.click(screen.getByRole("button", { name: "示例常用工具" }));
+      await user.click(screen.getByRole("button", { name: "更多 示例 工具" }));
+      const panel = screen.getByTestId("closing-toolbar");
+      await waitFor(() => expect(panel).toHaveAttribute("data-motion-ready", "true"));
+      // Preserve Radix's exit presence in jsdom, whose CSS animations are disabled.
+      panel.style.animationName = "toolbarCollapse";
+      await user.click(screen.getByRole("button", { name: "收起" }));
+      expect(panel.style.getPropertyValue("--toolbar-target")).toBe(
+        "translate(-290px, 0px) scale(0.16666666666666666, 0.3333333333333333)",
+      );
+    } finally {
+      rect.mockRestore();
+    }
+  });
+  it("keeps focused quick actions available when the pointer leaves and ignores drawing drags", async () => {
+    const user = userEvent.setup();
+    render(
+      <ContextToolbar
+        id="pointer"
+        label="示例"
+        summary="工具"
+        summaryLabel="示例工具"
+        quickActions={[]}
+      >
+        {() => <p>设置</p>}
+      </ContextToolbar>,
+    );
+    const capsule = screen.getByTestId("pointer-tool-capsule");
+    fireEvent.pointerEnter(capsule, { buttons: 1 });
+    expect(capsule).toHaveAttribute("data-expanded", "false");
+    await user.tab();
+    await user.tab();
+    const more = screen.getByRole("button", { name: "更多 示例 工具" });
+    expect(more).toHaveFocus();
+    fireEvent.pointerLeave(capsule);
+    expect(more).toBeVisible();
+    expect(more).toHaveFocus();
+  });
+
   it("focuses the full panel and lets Escape reach the workbench after collapsing", async () => {
     const user = userEvent.setup();
     const escape = vi.fn();

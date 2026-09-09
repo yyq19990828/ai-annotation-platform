@@ -1,3 +1,4 @@
+import { openContextToolbar } from "../fixtures/context-toolbar";
 import type {
   APIRequestContext,
   APIResponse,
@@ -195,12 +196,14 @@ const test = base.extend<{ reviewCase: ReviewCase }>({
 async function open(page: Page, fixture: ReviewCase) {
   await page.goto(`/projects/${fixture.data.project_id}/annotate?task=${fixture.taskId}`);
   await expect(page.getByTestId("video-konva-stage")).toBeVisible({ timeout: 25_000 });
+  await openContextToolbar(page, "tracker-review");
   await expect(review(page)).toBeVisible({ timeout: 20_000 });
   await expect(page.getByTestId("tracker-review-job").locator("option")).toHaveCount(2);
 }
 
 async function chooseJob(page: Page, jobId: string) {
   await page.getByTestId("tracker-review-job").selectOption(jobId);
+  await openContextToolbar(page, "tracker-review");
   await expect(review(page)).toHaveAttribute("data-review-job-id", jobId);
 }
 
@@ -230,6 +233,7 @@ async function expectScope(
   selected: number,
   pending = 20,
 ) {
+  await openContextToolbar(page, "tracker-review");
   await expect(page.getByTestId("tracker-review-job")).toHaveValue(jobId);
   await expect(review(page)).toHaveAttribute("data-review-job-id", jobId);
   await expect(page.getByTestId("tracker-review-from-frame")).toHaveValue(String(from));
@@ -440,6 +444,7 @@ test.describe("Tracker 审阅范围：真实服务与范围所有权", () => {
     });
     expect(await annotations(request, fixture)).toEqual(before);
     await page.reload();
+    await openContextToolbar(page, "tracker-review");
     await expect(review(page)).toBeVisible({ timeout: 20_000 });
     await chooseJob(page, second.job_id);
     await expect(review(page)).toContainText("已审 0/20");
@@ -519,6 +524,7 @@ test.describe("Tracker 审阅范围：真实服务与范围所有权", () => {
     });
     expect(remaining.results.map((row) => row.frame_index)).toEqual([10, 11, 16, 17, 18, 19]);
     await page.reload();
+    await openContextToolbar(page, "tracker-review");
     await expect(review(page)).toBeVisible({ timeout: 20_000 });
     await chooseJob(page, job.job_id);
     await expect(review(page)).toContainText("已审 14/20");
@@ -618,6 +624,7 @@ test.describe("F3-4 故障注入：延迟真实 API 响应交付", () => {
       expect(remaining).toMatchObject({ candidate_pending: 16, candidate_accepted: 4 });
       await delayed.cleanup();
       await page.reload();
+      await openContextToolbar(page, "tracker-review");
       await expect(review(page)).toBeVisible({ timeout: 20_000 });
       await chooseJob(page, oldJob.job_id);
       await expect(review(page)).toContainText("已审 4/20");
@@ -691,6 +698,7 @@ test.describe("F3-4 故障注入：延迟真实 API 响应交付", () => {
             .getByText(taskDisplayId!, { exact: true })
             .click();
           await expect(page).toHaveURL(new RegExp(`task=${targetTaskId}`));
+          await openContextToolbar(page, "tracker-review");
           await expect(review(page)).toHaveAttribute("data-review-job-id", currentJob.job_id);
         } else await chooseJob(page, currentJob.job_id);
         await setScope(page, ["B"], 12, 15);
@@ -726,6 +734,7 @@ test.describe("F3-4 故障注入：延迟真实 API 响应交付", () => {
         expect(remaining).toMatchObject({ candidate_pending: 20, candidate_accepted: 0 });
         await delayed.cleanup();
         await page.reload();
+        await openContextToolbar(page, "tracker-review");
         await expect(review(page)).toBeVisible({ timeout: 20_000 });
         await chooseJob(page, currentJob.job_id);
         await expect(review(page)).toContainText("已审 0/20");

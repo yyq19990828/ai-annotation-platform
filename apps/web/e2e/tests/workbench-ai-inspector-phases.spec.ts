@@ -1,3 +1,4 @@
+import { openContextToolbar } from "../fixtures/context-toolbar";
 import { panelCommand } from "../fixtures/workbench-panel-actions";
 import type { APIRequestContext, APIResponse, Page } from "@playwright/test";
 import { writeFile } from "node:fs/promises";
@@ -306,6 +307,7 @@ test.describe("当前题 AI 的真实请求归属与阶段", () => {
     const video = await seed.videoTask(data.project_id);
     const tracker = await seed.trackerReview(video.task_id, data.admin_email);
     await openAi(page, data, video.task_id, true);
+    await openContextToolbar(page, "tracker-review");
     const review = page.getByTestId("video-tracker-review-bar");
     await expect(review).toContainText("已审 0/20");
     const original = await annotations(request, video.task_id, token);
@@ -337,6 +339,7 @@ test.describe("当前题 AI 的真实请求归属与阶段", () => {
     await page.getByTestId("ai-candidate-accept").click();
     expect((await saved).status()).toBe(200);
     await page.reload();
+    await openContextToolbar(page, "tracker-review");
     await expect(review).toContainText("已审 0/20", { timeout: 20_000 });
     const rows = await annotations(request, video.task_id, token);
     expect(rows.filter((row) => original.some((source) => source.id === row.id))).toEqual(original);
@@ -369,6 +372,7 @@ test.describe("当前题 AI 的真实请求归属与阶段", () => {
     expect((await rejected).status()).toBe(204);
     await page.reload();
     expect(await annotations(request, video.task_id, token)).toEqual(rows);
+    await openContextToolbar(page, "tracker-review");
     await expect(review).toContainText("已审 0/20", { timeout: 20_000 });
     expect(await jobs(request, data.project_id, token)).toEqual([]);
     expect(backend.requests).toHaveLength(2);

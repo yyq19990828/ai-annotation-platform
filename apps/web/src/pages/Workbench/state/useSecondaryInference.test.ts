@@ -1,5 +1,9 @@
 // v0.20.11 · buildSecondaryInferencePayload 能力→请求参数映射单测。
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
+import { act, renderHook } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { createElement, type ReactNode } from "react";
+import { tasksApi } from "@/api/tasks";
 import type { MLModelCapability } from "@/api/ml-backends";
 import type { SecondaryInferenceResponse } from "@/api/tasks";
 import type { AnnotationResponse } from "@/types";
@@ -7,8 +11,72 @@ import {
   buildSecondaryInferencePayload,
   mergeSecondaryResult,
   needsTextPrompt,
+  useRunSecondaryInference,
   type SecondaryCapability,
 } from "./useSecondaryInference";
+
+it("updates only the originating task cache when concurrent task requests finish out of order", async () => {
+  const client = new QueryClient({
+    defaultOptions: { mutations: { retry: false }, queries: { gcTime: Infinity } },
+  });
+  const a = { id: "a", task_id: "task-a", attributes: {} } as AnnotationResponse;
+  const b = { id: "b", task_id: "task-b", attributes: {} } as AnnotationResponse;
+  client.setQueryData(["annotations", "task-a"], [a]);
+  client.setQueryData(["annotations", "task-b"], [b]);
+  let resolveA!: (response: SecondaryInferenceResponse) => void;
+  const request = vi
+    .spyOn(tasksApi, "secondaryInference")
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveA = resolve;
+        }),
+    )
+    .mockResolvedValueOnce({
+      annotation: { ...b, attributes: { result: "B" } },
+      created_children: [],
+    } as unknown as SecondaryInferenceResponse);
+  const wrapper = ({ children }: { children: ReactNode }) =>
+    createElement(QueryClientProvider, { client }, children);
+  const view = renderHook(() => useRunSecondaryInference(), { wrapper });
+  try {
+    let pendingA!: Promise<SecondaryInferenceResponse>;
+    await act(async () => {
+      pendingA = view.result.current.mutateAsync({
+        taskId: "task-a",
+        annotationId: "a",
+        body: { ml_backend_id: "be", model_id: "model" },
+      });
+    });
+    view.rerender();
+    await act(async () => {
+      await view.result.current.mutateAsync({
+        taskId: "task-b",
+        annotationId: "b",
+        body: { ml_backend_id: "be", model_id: "model" },
+      });
+    });
+    await act(async () => {
+      resolveA({
+        annotation: { ...a, attributes: { result: "A" } },
+        created_children: [],
+      } as unknown as SecondaryInferenceResponse);
+      await pendingA;
+    });
+    expect(request).toHaveBeenNthCalledWith(1, "task-a", "a", expect.anything());
+    expect(request).toHaveBeenNthCalledWith(2, "task-b", "b", expect.anything());
+    expect(client.getQueryData(["annotations", "task-a"])).toEqual([
+      expect.objectContaining({ id: "a", attributes: { result: "A" } }),
+    ]);
+    expect(client.getQueryData(["annotations", "task-b"])).toEqual([
+      expect.objectContaining({ id: "b", attributes: { result: "B" } }),
+    ]);
+  } finally {
+    view.unmount();
+    client.clear();
+    request.mockRestore();
+  }
+});
 
 function cap(
   model: Partial<MLModelCapability>,

@@ -1,3 +1,4 @@
+import { openContextToolbar } from "../../fixtures/context-toolbar";
 import type { ScreenshotScene } from "./_types";
 import { expect, type Page } from "@playwright/test";
 import type { WorkbenchLayoutPreferences } from "../../../src/api/auth";
@@ -67,7 +68,8 @@ export const WORKBENCH_MEDIA_SCENES: ScreenshotScene[] = [
 
       // 后台追踪若在 seed repair 前刚好完成，候选审阅条可能晚到；静态场景只展示干净工作台。
       const trackerReview = page.getByTestId("video-tracker-review-bar");
-      if (await trackerReview.isVisible()) {
+      if (await page.getByTestId("tracker-review-tool-capsule").isVisible()) {
+        await openContextToolbar(page, "tracker-review");
         await page.getByTestId("tracker-review-discard").click();
         await trackerReview.waitFor({ state: "hidden", timeout: 5000 });
         await page
@@ -100,7 +102,8 @@ export const WORKBENCH_MEDIA_SCENES: ScreenshotScene[] = [
       await page.getByTestId("video-konva-stage").waitFor({ state: "visible", timeout: 10_000 });
 
       const trackerReview = page.getByTestId("video-tracker-review-bar");
-      if (await trackerReview.isVisible()) {
+      if (await page.getByTestId("tracker-review-tool-capsule").isVisible()) {
+        await openContextToolbar(page, "tracker-review");
         await page.getByTestId("tracker-review-discard").click();
         await trackerReview.waitFor({ state: "hidden", timeout: 5000 });
       }

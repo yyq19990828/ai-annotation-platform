@@ -1,3 +1,4 @@
+import { openContextToolbar } from "../../fixtures/context-toolbar";
 /**
  * 高清母版：在漂移帧用笔刷添加、橡皮扣除纠正 Mask，再以原生 Mask seed 向后续帧重传播。
  */
@@ -346,13 +347,17 @@ export async function runVideoMaskCorrectionPropagate(
     await correctionDialog.getByRole("button", { name: "保存并启动传播" }).click();
     await Promise.all([keyframeSaved, jobCreated]);
 
-    const review = page.getByRole("dialog", { name: "Mask 纠错候选审阅" });
-    await review.waitFor({ state: "visible", timeout: 120_000 });
+    await page
+      .getByTestId("tracker-review-tool-capsule")
+      .waitFor({ state: "visible", timeout: 120_000 });
+    await openContextToolbar(page, "tracker-review");
+    const review = page.getByTestId("video-tracker-review-bar");
     await expectCorrectionSummary(review);
-    await review.getByText(/当前选区 \d+ 个候选/).waitFor({ timeout: 5_000 });
+    await expect(review.getByTestId("tracker-review-scope-summary")).toContainText(/所选待审 \d+/);
     await page.waitForTimeout(1_200);
 
     await scrubCorrectionCandidates(page, timeline);
+    await openContextToolbar(page, "tracker-review");
 
     const accepted = page.waitForResponse(
       (response) =>

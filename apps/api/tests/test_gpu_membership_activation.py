@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 import uuid
 
@@ -991,75 +991,63 @@ async def test_trigger_writers_fail_fast_when_global_promotion_barrier_is_busy(
     promotion_db,
 ) -> None:
     factory, backend_ids = promotion_db
-    holder = factory()
-    transaction = await holder.begin()
-    await holder.execute(
-        text(
-            "SELECT pg_advisory_xact_lock("
-            "hashtextextended('aap:gpu-membership-promotion', 0))"
+
+    async def assert_barrier_busy(
+        write: Callable[[AsyncSession], Awaitable[None]],
+    ) -> None:
+        async with factory.begin() as holder, factory() as writer:
+            # Bound database lock waits independently of cold connections and
+            # client scheduling. A blocking trigger returns 55P03, not 40001.
+            await writer.execute(text("SET LOCAL lock_timeout = '500ms'"))
+            await holder.execute(
+                text(
+                    "SELECT pg_advisory_xact_lock("
+                    "hashtextextended('aap:gpu-membership-promotion', 0))"
+                )
+            )
+
+            async def flush_write() -> None:
+                await write(writer)
+                await writer.flush()
+
+            with pytest.raises(DBAPIError) as error:
+                await asyncio.wait_for(flush_write(), timeout=5)
+            assert _is_serialization_failure(error.value)
+
+    async def insert_backend(db: AsyncSession) -> None:
+        backend_id = uuid.uuid4()
+        db.add(
+            MLBackendRegistry(
+                id=backend_id,
+                name=f"gpu-promotion-{backend_id}",
+                url=f"http://gpu-promotion-{backend_id}.test",
+                gpu_resource_id=_RESOURCE_B,
+                vram_budget_mb=1024,
+                eviction_priority=2,
+                extra_params={"max_concurrency": 4},
+            )
         )
-    )
-    insert_task = asyncio.create_task(_create_pending_backend(factory, _RESOURCE_B))
-    try:
-        with pytest.raises(DBAPIError) as insert_error:
-            await asyncio.wait_for(insert_task, timeout=0.5)
-        assert _is_serialization_failure(insert_error.value)
-    finally:
-        await transaction.rollback()
-        await holder.close()
+
+    await assert_barrier_busy(insert_backend)
 
     backend_id = await _create_pending_backend(factory, _RESOURCE_B)
     backend_ids.append(backend_id)
 
-    holder = factory()
-    transaction = await holder.begin()
-    await holder.execute(
-        text(
-            "SELECT pg_advisory_xact_lock("
-            "hashtextextended('aap:gpu-membership-promotion', 0))"
+    async def update_endpoint(db: AsyncSession) -> None:
+        backend = await db.get(MLBackendRegistry, backend_id)
+        assert backend is not None
+        backend.url = f"http://updated-{backend_id}.test"
+
+    await assert_barrier_busy(update_endpoint)
+
+    async def clear_health_proof(db: AsyncSession) -> None:
+        await db.execute(
+            update(MLBackendRegistry)
+            .where(MLBackendRegistry.id == backend_id)
+            .values(state="error", health_meta=None, last_checked_at=None)
         )
-    )
 
-    async def update_endpoint() -> None:
-        async with factory.begin() as db:
-            backend = await db.get(MLBackendRegistry, backend_id)
-            assert backend is not None
-            backend.url = f"http://updated-{backend_id}.test"
-
-    update_task = asyncio.create_task(update_endpoint())
-    try:
-        with pytest.raises(DBAPIError) as update_error:
-            await asyncio.wait_for(update_task, timeout=0.5)
-        assert _is_serialization_failure(update_error.value)
-    finally:
-        await transaction.rollback()
-        await holder.close()
-
-    holder = factory()
-    transaction = await holder.begin()
-    await holder.execute(
-        text(
-            "SELECT pg_advisory_xact_lock("
-            "hashtextextended('aap:gpu-membership-promotion', 0))"
-        )
-    )
-
-    async def clear_health_proof() -> None:
-        async with factory.begin() as db:
-            await db.execute(
-                update(MLBackendRegistry)
-                .where(MLBackendRegistry.id == backend_id)
-                .values(state="error", health_meta=None, last_checked_at=None)
-            )
-
-    health_task = asyncio.create_task(clear_health_proof())
-    try:
-        with pytest.raises(DBAPIError) as health_error:
-            await asyncio.wait_for(health_task, timeout=0.5)
-        assert _is_serialization_failure(health_error.value)
-    finally:
-        await transaction.rollback()
-        await holder.close()
+    await assert_barrier_busy(clear_health_proof)
 
 
 async def test_multi_resource_trigger_writers_do_not_form_lock_cycle(

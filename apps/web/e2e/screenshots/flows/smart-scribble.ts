@@ -1,3 +1,4 @@
+import { openContextToolbar } from "../../fixtures/context-toolbar";
 /** Real SAM3 refinement of one stored road-vehicle Mask; no inference fixtures. */
 import { expect, type Page, type Request, type Response } from "@playwright/test";
 import type Konva from "konva";
@@ -279,6 +280,8 @@ export async function runSmartScribble(
     await expect(tool).toBeEnabled({ timeout: 20_000 });
     await tool.click();
     await expect(page.getByTestId("mask-prompt-source")).toBeVisible();
+    await openContextToolbar(page, "interactive");
+    await page.getByTestId("interactive-toolbar-advanced-toggle").click();
     const modelSelect = page.getByTestId("ai-tool-model-select");
     if (await modelSelect.isVisible()) await modelSelect.selectOption(SMART_SCRIBBLE_MODEL);
     await expect(page.getByTestId("single-frame-output-geometry-select")).toHaveValue("mask");
@@ -291,6 +294,7 @@ export async function runSmartScribble(
     for (const [index, anchors] of [anchor.positive_stroke, anchor.negative_stroke].entries()) {
       const [first, last] = anchors;
       if (!first || !last) throw new Error("[smart-scribble] primary_vehicle 缺少正负笔迹锚点");
+      await openContextToolbar(page, "interactive");
       if (index === 1) await page.getByTestId("ai-tool-polarity").click();
       await expect(page.getByTestId("ai-tool-polarity")).toHaveAttribute(
         "title",
