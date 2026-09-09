@@ -33,6 +33,7 @@ from app.schemas.management import (
 )
 from app.services.audit import AuditService, export_detail, export_metadata_header
 from app.services.email import SmtpConfigError, send_invitation_email
+from app.services.csv_export import csv_literal
 from app.services.invitation import InvitationService
 from app.services.management import (
     fetch_invitation_page,
@@ -124,7 +125,7 @@ async def _query_args(
     db: AsyncSession,
     actor: User,
     page: int,
-    page_size: int,
+    page_size: int | None,
     status_filter: _StatusFilter,
     scope: _ScopeFilter,
     project_id: uuid.UUID | None,
@@ -237,7 +238,7 @@ async def export_invitations(
         db=db,
         actor=actor,
         page=1,
-        page_size=500_000,
+        page_size=None,
         status_filter=status_filter,
         scope=scope,
         project_id=project_id,
@@ -307,15 +308,15 @@ async def export_invitations(
         writer.writerow(
             [
                 str(item.id),
-                item.email,
+                csv_literal(item.email),
                 item.role,
-                item.group_name or "",
+                csv_literal(item.group_name or ""),
                 str(item.project_id) if item.project_id else "",
-                item.project_name or "",
+                csv_literal(item.project_name or ""),
                 item.status,
                 item.expires_at.isoformat(),
                 str(item.invited_by),
-                item.invited_by_name or "",
+                csv_literal(item.invited_by_name or ""),
                 item.accepted_at.isoformat() if item.accepted_at else "",
                 item.revoked_at.isoformat() if item.revoked_at else "",
                 item.created_at.isoformat(),

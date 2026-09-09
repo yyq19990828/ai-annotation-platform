@@ -351,7 +351,7 @@ async def test_batch_distribution_preview_is_read_only_and_apply_respects_defaul
 
     applied = await httpx_client.post(
         f"/api/v1/projects/{project.id}/batches/distribution-apply",
-        json=body,
+        json={**body, "preview_version": preview.json()["preview_version"]},
         headers=_headers(super_admin),
     )
     assert applied.status_code == 200, applied.text

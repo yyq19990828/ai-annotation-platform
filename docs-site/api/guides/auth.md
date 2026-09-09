@@ -130,7 +130,11 @@ Content-Type: application/json
 
 批量邀请先调用 `POST /api/v1/users/bulk-invite/preview`，确认每行的校验结果后调用 `POST /api/v1/users/bulk-invite`。批量接口为每行建立独立保存点；成功行提交，失败行返回 `retryable` 和错误信息，客户端可以只重试失败行。数据组批量替换使用 `POST /api/v1/users/groups/bulk/preview` 和 `POST /api/v1/users/groups/bulk`，`group_id=null` 表示清除数据组。
 
-项目批次分派使用 `POST /api/v1/projects/{project_id}/batches/distribution-preview` 和 `POST /api/v1/projects/{project_id}/batches/distribution-apply`。预览默认只处理尚未分派的职责；将 `only_unassigned=false` 才会显示并执行覆盖已有分派的影响。用户角色变更前可调用 `GET /api/v1/users/{user_id}/role/preview?role=reviewer` 查看项目、批次和任务影响；该预检使用与角色修改相同的权限和最后一名超级管理员保护。
+项目批次分派使用 `POST /api/v1/projects/{project_id}/batches/distribution-preview` 和 `POST /api/v1/projects/{project_id}/batches/distribution-apply`。预览默认只处理尚未分派的职责；将 `only_unassigned=false` 才会显示并执行覆盖已有分派的影响。预览返回逐批次映射、实际 `task_count`、每位接收人的新增待办和已有待办，以及 `preview_version`。执行必须原样携带版本；批次或任务负载已变化时返回 409，客户端应重新预览。旧的 `/distribute-batches` 调用保持兼容。
+
+任务负载按条数计算：标注待办包括待开始、进行中和退回，审核待办包括已提交和审核中；已有待办汇总该成员在各项目中的分派。任务类型、难度和工时不在这一数字中折算。
+
+用户角色变更前可调用 `GET /api/v1/users/{user_id}/role/preview?role=reviewer` 查看项目、批次和任务影响。平台角色对全部项目生效，已有成员身份和负责人不自动改写；项目管理员仅看到自己负责项目的详情，其他项目只返回数量和提醒。预览不向权限范围外的目标回显用户信息。
 
 ## 刷新
 

@@ -97,6 +97,10 @@ class ProjectDistributeBatches(BaseModel):
     only_unassigned: bool = True
 
 
+class ReviewedBatchDistribution(ProjectDistributeBatches):
+    preview_version: str = Field(min_length=64, max_length=64)
+
+
 class BatchDistributeResult(BaseModel):
     distributed_batches: int
     annotator_per_batch: dict[str, str | None] = {}

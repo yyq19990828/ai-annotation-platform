@@ -785,6 +785,7 @@ class BatchService:
         annotator_ids: list[uuid.UUID],
         reviewer_ids: list[uuid.UUID],
         only_unassigned: bool = True,
+        preview_version: str | None = None,
     ) -> dict[str, Any]:
         """v0.7.2：把项目下的 batch 圆周分派给所选 annotator / reviewer。
         - 一 batch = 一标注员 + 一审核员
@@ -792,68 +793,57 @@ class BatchService:
         - 不会处理 archived 状态的 batch
         - 同时回填 batch 下所有 task 的 assignee_id / reviewer_id
         """
-        if not annotator_ids and not reviewer_ids:
+        from app.services.management import preview_batch_distribution
+
+        plan = await preview_batch_distribution(
+            self.db,
+            project_id=project_id,
+            annotator_ids=annotator_ids,
+            reviewer_ids=reviewer_ids,
+            only_unassigned=only_unassigned,
+            validate_targets=self._lock_and_validate_assignment_targets,
+            lock_batches=True,
+        )
+        if preview_version is not None and preview_version != plan.preview_version:
             raise HTTPException(
-                status_code=400, detail="annotator_ids or reviewer_ids required"
+                status_code=409,
+                detail={
+                    "code": "distribution_preview_stale",
+                    "message": "批次分派或任务负载已变化，请重新预览后确认",
+                },
             )
 
-        await self._lock_and_validate_assignment_targets(
-            project_id,
-            [("annotator", user_id) for user_id in annotator_ids]
-            + [("reviewer", user_id) for user_id in reviewer_ids],
-        )
-
-        # 取项目下非 archived 的 batch
+        # Keep the exact locked batch set used to compute the reviewed plan.
         batches = (
             (
                 await self.db.execute(
-                    select(TaskBatch)
-                    .where(TaskBatch.project_id == project_id)
-                    .where(TaskBatch.status != BatchStatus.ARCHIVED)
-                    .order_by(TaskBatch.priority.desc(), TaskBatch.created_at)
-                    .with_for_update()
+                    select(TaskBatch).where(
+                        TaskBatch.id.in_([item.batch_id for item in plan.items])
+                    )
                 )
             )
             .scalars()
             .all()
         )
-        if not batches:
-            raise HTTPException(status_code=400, detail="No batches to distribute")
-
+        batches_by_id = {batch.id: batch for batch in batches}
         annotator_per_batch: dict[str, str | None] = {}
         reviewer_per_batch: dict[str, str | None] = {}
         affected = 0
-        a_idx = 0
-        r_idx = 0
-        for b in batches:
-            changed = False
-            if annotator_ids and (not only_unassigned or b.annotator_id is None):
-                pick = annotator_ids[a_idx % len(annotator_ids)]
-                a_idx += 1
-                if b.annotator_id != pick:
-                    b.annotator_id = pick
-                    await self._cascade_task_assignee(b.id, pick)
-                    changed = True
-                annotator_per_batch[str(b.id)] = str(pick)
-            else:
-                annotator_per_batch[str(b.id)] = (
-                    str(b.annotator_id) if b.annotator_id else None
-                )
-
-            if reviewer_ids and (not only_unassigned or b.reviewer_id is None):
-                pick = reviewer_ids[r_idx % len(reviewer_ids)]
-                r_idx += 1
-                if b.reviewer_id != pick:
-                    b.reviewer_id = pick
-                    await self._cascade_task_reviewer(b.id, pick)
-                    changed = True
-                reviewer_per_batch[str(b.id)] = str(pick)
-            else:
-                reviewer_per_batch[str(b.id)] = (
-                    str(b.reviewer_id) if b.reviewer_id else None
-                )
-
-            if changed:
+        for item in plan.items:
+            b = batches_by_id[item.batch_id]
+            if item.before_annotator_id != item.after_annotator_id:
+                b.annotator_id = item.after_annotator_id
+                await self._cascade_task_assignee(b.id, b.annotator_id)
+            if item.before_reviewer_id != item.after_reviewer_id:
+                b.reviewer_id = item.after_reviewer_id
+                await self._cascade_task_reviewer(b.id, b.reviewer_id)
+            annotator_per_batch[str(b.id)] = (
+                str(b.annotator_id) if b.annotator_id else None
+            )
+            reviewer_per_batch[str(b.id)] = (
+                str(b.reviewer_id) if b.reviewer_id else None
+            )
+            if item.will_change:
                 self._sync_assigned_user_ids(b)
                 affected += 1
 

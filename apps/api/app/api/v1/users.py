@@ -11,7 +11,7 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request, sta
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, update, delete, text
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from app.config import settings
 from app.core.ratelimit import limiter
@@ -41,6 +41,7 @@ from app.schemas.management import (
     UserPage,
 )
 from app.services.invitation import InvitationService
+from app.services.csv_export import csv_literal
 from app.services.management import (
     build_user_query,
     fetch_user_page,
@@ -351,10 +352,10 @@ async def export_users(
         writer.writerow(
             [
                 str(u.id),
-                u.email,
-                u.name,
+                csv_literal(u.email),
+                csv_literal(u.name),
                 u.role,
-                u.group_name or "",
+                csv_literal(u.group_name or ""),
                 str(u.group_id) if u.group_id else "",
                 u.status,
                 u.created_at.isoformat(),
@@ -447,7 +448,9 @@ def _bulk_error(exc: Exception) -> str:
         if isinstance(detail, dict):
             return str(detail.get("message") or detail.get("reason") or detail)
         return str(detail)
-    return str(exc) or exc.__class__.__name__
+    if isinstance(exc, ValidationError):
+        return "; ".join(error["msg"] for error in exc.errors())
+    return "处理失败，请稍后重试"
 
 
 async def _bulk_invite(
@@ -476,7 +479,20 @@ async def _bulk_invite(
         or settings.frontend_base_url
     )
     try:
-        for index, item in enumerate(payload.items):
+        for index, raw_item in enumerate(payload.items):
+            try:
+                item = InvitationCreate.model_validate(raw_item.model_dump())
+            except ValidationError as exc:
+                results.append(
+                    BulkInviteResultItem(
+                        index=index,
+                        email=raw_item.email,
+                        ok=False,
+                        retryable=True,
+                        error=_bulk_error(exc),
+                    )
+                )
+                continue
             if item.email in seen_emails:
                 results.append(
                     BulkInviteResultItem(
@@ -595,22 +611,14 @@ async def _group_assignment_item(
     user_id: UUID,
     group_id: UUID | None,
 ) -> GroupAssignmentPreviewItem:
-    target = await db.scalar(select(User).where(User.id == user_id))
-    if target is None:
-        return GroupAssignmentPreviewItem(user_id=user_id, ok=False, error="用户不存在")
-    visible = await db.scalar(
-        select(User.id).where(
-            User.id == user_id,
-            user_scope_clause(actor),
-        )
+    target = await db.scalar(
+        select(User).where(User.id == user_id, user_scope_clause(actor))
     )
-    if visible is None:
+    if target is None:
         return GroupAssignmentPreviewItem(
             user_id=user_id,
-            email=target.email,
-            name=target.name,
             ok=False,
-            error="该用户不在你的管理范围内",
+            error="用户不存在或不在管理范围内",
         )
     group_name = None
     if group_id is not None:
@@ -741,6 +749,8 @@ async def preview_user_role_change(
     managed = True
     if actor.role == UserRole.PROJECT_ADMIN.value:
         managed = await _project_admin_manages_target(db, actor=actor, target=target)
+        if not managed and target.id != actor.id:
+            raise HTTPException(status_code=404, detail="用户不存在或不在管理范围内")
     return await role_impact_preview(
         db,
         actor=actor,

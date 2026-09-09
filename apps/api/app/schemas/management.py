@@ -13,7 +13,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from app.schemas.group import GroupOut
-from app.schemas.invitation import InvitationCreate, InvitationOut
+from app.schemas.invitation import InvitationOut
 from app.schemas.user import UserOut
 
 
@@ -63,8 +63,17 @@ class InvitationSendEmailResponse(BaseModel):
     message: str
 
 
+class BulkInviteItem(BaseModel):
+    # Validate business fields per item, so one invalid email does not discard
+    # every otherwise valid invitation in the same request.
+    email: str = Field(max_length=1000)
+    role: str = Field(max_length=100)
+    group_name: str | None = Field(default=None, max_length=1000)
+    project_id: UUID | None = None
+
+
 class BulkInviteRequest(BaseModel):
-    items: list[InvitationCreate] = Field(min_length=1, max_length=500)
+    items: list[BulkInviteItem] = Field(min_length=1, max_length=500)
 
 
 class BulkInviteResultItem(BaseModel):
@@ -130,12 +139,20 @@ class BatchDistributionPreviewItem(BaseModel):
     display_id: str
     name: str
     status: str
+    task_count: int = 0
     before_annotator_id: UUID | None = None
     after_annotator_id: UUID | None = None
     before_reviewer_id: UUID | None = None
     after_reviewer_id: UUID | None = None
     will_change: bool
     skipped_reason: str | None = None
+
+
+class BatchDistributionRecipient(BaseModel):
+    user_id: UUID
+    role: Literal["annotator", "reviewer"]
+    new_task_count: int
+    existing_backlog_count: int
 
 
 class BatchDistributionPreview(BaseModel):
@@ -146,6 +163,8 @@ class BatchDistributionPreview(BaseModel):
     changed_batches: int
     skipped_batches: int
     items: list[BatchDistributionPreviewItem]
+    recipient_summary: list[BatchDistributionRecipient]
+    preview_version: str
 
 
 class RoleImpactProject(BaseModel):
@@ -169,6 +188,8 @@ class RoleImpactPreview(BaseModel):
     assigned_batch_count: int = 0
     assigned_task_count: int = 0
     review_task_count: int = 0
+    other_project_count: int = 0
+    warnings: list[str] = Field(default_factory=list)
 
 
 class ManagementStatusFilter(BaseModel):

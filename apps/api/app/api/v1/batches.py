@@ -31,6 +31,7 @@ from app.schemas.batch import (
     BulkBatchReject,
 )
 from app.schemas.management import BatchDistributionPreview
+from app.schemas.batch import ReviewedBatchDistribution
 from app.schemas.export import (
     ExportRequestBody,
     LidarExportPreflightRequest,
@@ -383,7 +384,7 @@ async def preview_distribution_in_project(
 @router.post("/distribution-apply", response_model=BatchDistributeResult)
 async def apply_distribution_in_project(
     project_id: uuid.UUID,
-    data: ProjectDistributeBatches,
+    data: ReviewedBatchDistribution,
     request: Request,
     project: Project = Depends(require_project_owner),
     db: AsyncSession = Depends(get_db),
@@ -398,6 +399,7 @@ async def apply_distribution_in_project(
         annotator_ids=data.annotator_ids,
         reviewer_ids=data.reviewer_ids,
         only_unassigned=data.only_unassigned,
+        preview_version=data.preview_version,
     )
     await AuditService.log(
         db,

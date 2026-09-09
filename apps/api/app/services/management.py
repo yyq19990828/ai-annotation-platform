@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime, timezone
 from typing import Literal
 from uuid import UUID
@@ -23,6 +25,7 @@ from app.schemas.invitation import InvitationOut
 from app.schemas.management import (
     BatchDistributionPreview,
     BatchDistributionPreviewItem,
+    BatchDistributionRecipient,
     InvitationStats,
     RoleImpactPreview,
     RoleImpactProject,
@@ -354,7 +357,7 @@ async def fetch_invitation_page(
     actor: User,
     *,
     page: int,
-    page_size: int,
+    page_size: int | None,
     status_filter: INVITATION_STATUS = "all",
     scope: Literal["me", "all"] = "me",
     project_id: UUID | None = None,
@@ -381,19 +384,10 @@ async def fetch_invitation_page(
         )
         or 0
     )
-    rows = (
-        (
-            await db.execute(
-                base.order_by(
-                    UserInvitation.created_at.desc(), UserInvitation.id.desc()
-                )
-                .offset((page - 1) * page_size)
-                .limit(page_size)
-            )
-        )
-        .scalars()
-        .all()
-    )
+    ordered = base.order_by(UserInvitation.created_at.desc(), UserInvitation.id.desc())
+    if page_size is not None:
+        ordered = ordered.offset((page - 1) * page_size).limit(page_size)
+    rows = (await db.execute(ordered)).scalars().all()
     return await _invitation_outputs(db, rows), total
 
 
@@ -501,8 +495,17 @@ async def role_impact_preview(
         .join(Project, Project.id == ProjectMember.project_id)
         .where(ProjectMember.user_id == target.id)
     )
+    other_project_count = 0
     if actor.role == UserRole.PROJECT_ADMIN.value:
         project_query = project_query.where(Project.owner_id == actor.id)
+        other_project_count = int(
+            await db.scalar(
+                select(func.count(ProjectMember.id))
+                .join(Project, Project.id == ProjectMember.project_id)
+                .where(ProjectMember.user_id == target.id, Project.owner_id != actor.id)
+            )
+            or 0
+        )
     project_rows = (
         await db.execute(project_query.order_by(Project.name.asc(), Project.id))
     ).all()
@@ -572,6 +575,18 @@ async def role_impact_preview(
         assigned_batch_count=assigned_batch_count,
         assigned_task_count=assigned_task_count,
         review_task_count=review_task_count,
+        other_project_count=other_project_count,
+        warnings=[
+            "平台角色对所有项目生效；已有项目成员身份和批次负责人不会自动改变。",
+            "若新平台角色与现有项目身份不匹配，成员可能无法继续标注或审核；请检查并重新分派。",
+        ]
+        + (
+            [
+                f"另有 {other_project_count} 个你无权查看的项目受到影响，请联系超级管理员核对。"
+            ]
+            if other_project_count
+            else []
+        ),
     )
 
 
@@ -583,6 +598,7 @@ async def preview_batch_distribution(
     reviewer_ids: list[UUID],
     only_unassigned: bool,
     validate_targets,
+    lock_batches: bool = False,
 ) -> BatchDistributionPreview:
     """Calculate distribution changes without changing batches or tasks."""
 
@@ -595,20 +611,62 @@ async def preview_batch_distribution(
         [("annotator", user_id) for user_id in annotator_ids]
         + [("reviewer", user_id) for user_id in reviewer_ids],
     )
-    batches = (
-        (
-            await db.execute(
-                select(TaskBatch)
-                .where(
-                    TaskBatch.project_id == project_id,
-                    TaskBatch.status != "archived",
-                )
-                .order_by(TaskBatch.priority.desc(), TaskBatch.created_at, TaskBatch.id)
-            )
-        )
-        .scalars()
-        .all()
+    batch_query = (
+        select(TaskBatch)
+        .where(TaskBatch.project_id == project_id, TaskBatch.status != "archived")
+        .order_by(TaskBatch.priority.desc(), TaskBatch.created_at, TaskBatch.id)
+        .execution_options(populate_existing=True)
     )
+    if lock_batches:
+        batch_query = batch_query.with_for_update()
+    batches = (await db.execute(batch_query)).scalars().all()
+    if not batches:
+        raise HTTPException(status_code=400, detail="没有可分派的批次")
+    # Aggregate persisted tasks rather than trusting cached batch counters.
+    task_groups = (
+        await db.execute(
+            select(
+                Task.batch_id,
+                Task.assignee_id,
+                Task.reviewer_id,
+                Task.status,
+                func.count(),
+            )
+            .where(Task.batch_id.in_([batch.id for batch in batches]))
+            .group_by(Task.batch_id, Task.assignee_id, Task.reviewer_id, Task.status)
+        )
+    ).all()
+    by_batch: dict[UUID, list] = {}
+    for row in task_groups:
+        by_batch.setdefault(row.batch_id, []).append(row)
+    pending_statuses = {
+        "annotator": {"pending", "in_progress", "rejected"},
+        "reviewer": {"completed", "review"},
+    }
+    recipients: dict[tuple[str, UUID], BatchDistributionRecipient] = {}
+    for role, user_ids in (("annotator", annotator_ids), ("reviewer", reviewer_ids)):
+        if not user_ids:
+            continue
+        owner_column = Task.assignee_id if role == "annotator" else Task.reviewer_id
+        backlog = dict(
+            (
+                await db.execute(
+                    select(owner_column, func.count())
+                    .where(
+                        owner_column.in_(user_ids),
+                        Task.status.in_(pending_statuses[role]),
+                    )
+                    .group_by(owner_column)
+                )
+            ).all()
+        )
+        for user_id in dict.fromkeys(user_ids):
+            recipients[role, user_id] = BatchDistributionRecipient(
+                user_id=user_id,
+                role=role,
+                new_task_count=0,
+                existing_backlog_count=backlog.get(user_id, 0),
+            )
     items: list[BatchDistributionPreviewItem] = []
     a_idx = 0
     r_idx = 0
@@ -632,6 +690,17 @@ async def preview_batch_distribution(
         if eligible:
             candidate += 1
         will_change = after_a != before_a or after_r != before_r
+        rows = by_batch.get(batch.id, [])
+        for role, before, after, index in (
+            ("annotator", before_a, after_a, 1),
+            ("reviewer", before_r, after_r, 2),
+        ):
+            if after is not None and after != before:
+                recipients[role, after].new_task_count += sum(
+                    row[4]
+                    for row in rows
+                    if row[index] != after and row.status in pending_statuses[role]
+                )
         reason = None
         if not eligible:
             skipped += 1
@@ -651,6 +720,7 @@ async def preview_batch_distribution(
                 display_id=batch.display_id,
                 name=batch.name,
                 status=batch.status,
+                task_count=sum(row[4] for row in rows),
                 before_annotator_id=before_a,
                 after_annotator_id=after_a,
                 before_reviewer_id=before_r,
@@ -659,6 +729,21 @@ async def preview_batch_distribution(
                 skipped_reason=reason,
             )
         )
+    version = hashlib.sha256(
+        json.dumps(
+            {
+                "project_id": str(project_id),
+                "annotator_ids": [str(value) for value in annotator_ids],
+                "reviewer_ids": [str(value) for value in reviewer_ids],
+                "only_unassigned": only_unassigned,
+                "items": [item.model_dump(mode="json") for item in items],
+                "recipients": [
+                    item.model_dump(mode="json") for item in recipients.values()
+                ],
+            },
+            sort_keys=True,
+        ).encode()
+    ).hexdigest()
     return BatchDistributionPreview(
         project_id=project_id,
         only_unassigned=only_unassigned,
@@ -667,4 +752,6 @@ async def preview_batch_distribution(
         changed_batches=changed,
         skipped_batches=skipped,
         items=items,
+        recipient_summary=list(recipients.values()),
+        preview_version=version,
     )

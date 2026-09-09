@@ -148,6 +148,8 @@
 | POST | `/{batch_id}/transition` |
 | POST | `/split` |
 | POST | `/distribute-batches` |
+| POST | `/distribution-preview` |
+| POST | `/distribution-apply` |
 | POST | `/{batch_id}/reject` |
 | POST | `/{batch_id}/reset` |
 | POST | `/{batch_id}/admin-lock` |
@@ -252,6 +254,7 @@
 
 | Method | Path |
 |---|---|
+| GET | `/query` |
 | PATCH | `/{group_id}` |
 | DELETE | `/{group_id}` |
 
@@ -274,8 +277,12 @@
 
 | Method | Path |
 |---|---|
+| GET | `/query` |
+| GET | `/stats` |
+| GET | `/export` |
 | DELETE | `/{invitation_id}` |
 | POST | `/{invitation_id}/resend` |
+| POST | `/{invitation_id}/send-email` |
 
 ## `invitations.py`
 
@@ -659,8 +666,14 @@
 | Method | Path |
 |---|---|
 | GET | `/stats` |
+| GET | `/query` |
 | GET | `/export` |
 | POST | `/invite` |
+| POST | `/bulk-invite/preview` |
+| POST | `/bulk-invite` |
+| POST | `/groups/bulk/preview` |
+| POST | `/groups/bulk` |
+| GET | `/{user_id}/role/preview` |
 | PATCH | `/{user_id}/role` |
 | POST | `/{user_id}/admin-reset-password` |
 | DELETE | `/{user_id}` |
@@ -702,4 +715,4 @@
 
 ---
 
-_共 65 模块 / 395 路由_
+_共 65 模块 / 408 路由_
