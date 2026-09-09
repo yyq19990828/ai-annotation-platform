@@ -5,7 +5,7 @@ import { ApiError } from "@/api/client";
 import { asyncJobsApi } from "@/api/asyncJobs";
 import { datasetsApi } from "@/api/datasets";
 import { projectsApi } from "@/api/projects";
-import { useAuthStore } from "@/stores/authStore";
+import { isCurrentAuthOwner, useAuthStore } from "@/stores/authStore";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -35,6 +35,25 @@ function formatDate(iso: string | null) {
   return new Date(iso).toLocaleString("zh-CN");
 }
 
+interface AuthOwner {
+  userId: string | null;
+  token: string | null;
+}
+
+function captureAuthOwner(): AuthOwner {
+  const auth = useAuthStore.getState();
+  return { userId: auth.user?.id ?? null, token: auth.token };
+}
+
+function isCurrentOwner(owner: AuthOwner): boolean {
+  return (
+    !!owner.userId &&
+    !!owner.token &&
+    isCurrentAuthOwner(owner.userId) &&
+    useAuthStore.getState().token === owner.token
+  );
+}
+
 /** Shared by job history, notifications and the background-job list. */
 export function AsyncJobDetailModal({
   jobId,
@@ -52,12 +71,6 @@ export function AsyncJobDetailModal({
   const [targetError, setTargetError] = useState<string | null>(null);
   const [openingTarget, setOpeningTarget] = useState(false);
   const navigationRequest = useRef(0);
-  useEffect(
-    () => () => {
-      navigationRequest.current += 1;
-    },
-    [jobId, userId],
-  );
   const jobQ = useQuery({
     queryKey: ["async-jobs", "detail", jobId, userId],
     queryFn: () => asyncJobsApi.get(jobId),
@@ -67,8 +80,9 @@ export function AsyncJobDetailModal({
   });
   const retryMut = useMutation({
     mutationFn: () => asyncJobsApi.retryFailed(jobId),
-    onSuccess: (response) => {
-      if (useAuthStore.getState().user?.id !== userId) return;
+    onMutate: () => ({ owner: captureAuthOwner() }),
+    onSuccess: (response, _variables, context) => {
+      if (!context || !isCurrentOwner(context.owner)) return;
       onRetryQueued?.(response.queued);
       if (!onRetryQueued) {
         pushToast({ msg: `已重新排队 ${response.queued} 条失败项`, kind: "success" });
@@ -77,6 +91,16 @@ export function AsyncJobDetailModal({
       void queryClient.invalidateQueries({ queryKey: ["admin", "failed-predictions"] });
     },
   });
+  const resetRetryMutation = retryMut.reset;
+  useEffect(() => {
+    navigationRequest.current += 1;
+    setTargetError(null);
+    setOpeningTarget(false);
+    resetRetryMutation();
+    return () => {
+      navigationRequest.current += 1;
+    };
+  }, [jobId, resetRetryMutation, userId]);
   const job = jobQ.isError ? undefined : jobQ.data;
   const failedIds = job?.result.failed_prediction_ids;
   const canRetry =
@@ -99,8 +123,8 @@ export function AsyncJobDetailModal({
   const openTarget = async (kind: "dataset" | "project") => {
     if (!job) return;
     const request = ++navigationRequest.current;
-    const current = () =>
-      request === navigationRequest.current && useAuthStore.getState().user?.id === userId;
+    const owner = captureAuthOwner();
+    const current = () => request === navigationRequest.current && isCurrentOwner(owner);
     setOpeningTarget(true);
     setTargetError(null);
     try {
@@ -113,6 +137,7 @@ export function AsyncJobDetailModal({
         if (!current()) return;
         navigate(`/projects/${job.project_id}/data-manager`);
       }
+      if (!current()) return;
       onClose();
     } catch (error) {
       if (!current()) return;

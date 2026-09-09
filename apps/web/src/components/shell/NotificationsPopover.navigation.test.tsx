@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   batch: vi.fn(),
   job: vi.fn(),
   read: vi.fn(),
+  delete: vi.fn(),
   notifications: [] as NotificationItem[],
 }));
 vi.mock("@/api/tasks", () => ({ tasksApi: { get: mocks.task } }));
@@ -26,7 +27,7 @@ vi.mock("@/hooks/useNotifications", () => ({
   useMarkRead: () => ({ mutate: mocks.read }),
   useMarkAllRead: () => ({ mutate: vi.fn() }),
   useClearReadNotifications: () => ({ mutate: vi.fn() }),
-  useDeleteNotification: () => ({ mutate: vi.fn() }),
+  useDeleteNotification: () => ({ mutate: mocks.delete }),
 }));
 import { NotificationsPopover } from "./NotificationsPopover";
 
@@ -93,6 +94,18 @@ describe("通知直达当前目标", () => {
     );
     expect(mocks.task).toHaveBeenCalledWith("t1");
     expect(mocks.read).toHaveBeenCalledWith("n1");
+  });
+
+  it("deletes a notification without opening or marking its target read", async () => {
+    renderUI();
+    fireEvent.click(screen.getByTitle("通知"));
+    const open = await screen.findByRole("button", { name: "打开通知：退回了任务 T-1" });
+    const remove = screen.getByRole("button", { name: "删除通知" });
+    expect(open.contains(remove)).toBe(false);
+    fireEvent.click(remove);
+    expect(mocks.delete).toHaveBeenCalledWith("n1");
+    expect(mocks.task).not.toHaveBeenCalled();
+    expect(mocks.read).not.toHaveBeenCalled();
   });
 
   it.each([403, 404])("目标 %s 保留说明且不误开首条任务", async (status) => {

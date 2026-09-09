@@ -26,6 +26,7 @@ import {
   type AsyncJob,
   type AsyncJobStatus,
 } from "@/api/asyncJobs";
+import { isCurrentAuthOwner, useAuthStore } from "@/stores/authStore";
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -38,25 +39,31 @@ type JobFilter = "all" | "active";
 const TERMINAL_STATUSES: AsyncJobStatus[] = ["completed", "failed", "cancelled"];
 const isTerminal = (s: AsyncJobStatus) => TERMINAL_STATUSES.includes(s);
 
-function readFilter(): JobFilter {
+function scopedStorageKey(key: string, userId: string | null): string {
+  return `${key}:${userId ?? "anonymous"}`;
+}
+
+function readFilter(userId: string | null): JobFilter {
   try {
-    return localStorage.getItem(FILTER_KEY) === "active" ? "active" : "all";
+    return localStorage.getItem(scopedStorageKey(FILTER_KEY, userId)) === "active"
+      ? "active"
+      : "all";
   } catch {
     return "all";
   }
 }
 
-function persistFilter(filter: JobFilter) {
+function persistFilter(filter: JobFilter, userId: string | null) {
   try {
-    localStorage.setItem(FILTER_KEY, filter);
+    localStorage.setItem(scopedStorageKey(FILTER_KEY, userId), filter);
   } catch {
     /* localStorage 不可用时忽略，显示退回默认 */
   }
 }
 
-function readDismissed(): Set<string> {
+function readDismissed(userId: string | null): Set<string> {
   try {
-    const raw = localStorage.getItem(DISMISSED_KEY);
+    const raw = localStorage.getItem(scopedStorageKey(DISMISSED_KEY, userId));
     if (!raw) return new Set();
     const arr: unknown = JSON.parse(raw);
     return Array.isArray(arr)
@@ -67,12 +74,31 @@ function readDismissed(): Set<string> {
   }
 }
 
-function persistDismissed(set: Set<string>) {
+function persistDismissed(set: Set<string>, userId: string | null) {
   try {
-    localStorage.setItem(DISMISSED_KEY, JSON.stringify([...set]));
+    localStorage.setItem(scopedStorageKey(DISMISSED_KEY, userId), JSON.stringify([...set]));
   } catch {
     /* localStorage 不可用时忽略 */
   }
+}
+
+interface AuthOwner {
+  userId: string | null;
+  token: string | null;
+}
+
+function captureAuthOwner(): AuthOwner {
+  const auth = useAuthStore.getState();
+  return { userId: auth.user?.id ?? null, token: auth.token };
+}
+
+function isCurrentOwner(owner: AuthOwner): boolean {
+  return (
+    !!owner.userId &&
+    !!owner.token &&
+    isCurrentAuthOwner(owner.userId) &&
+    useAuthStore.getState().token === owner.token
+  );
 }
 
 const EXPORT_TARGET_LABELS: Record<string, string> = {
@@ -142,9 +168,9 @@ function ProgressBar({ pct, status }: { pct: number; status: AsyncJobStatus }) {
   } as CSSProperties);
   const fillColor =
     status === "completed"
-      ? "bg-emerald-500"
+      ? "bg-status-positive"
       : status === "failed"
-        ? "bg-rose-500"
+        ? "bg-status-danger"
         : status === "cancelled"
           ? "bg-muted-foreground"
           : "bg-brand";
@@ -163,9 +189,9 @@ function StatusPill({ status }: { status: AsyncJobStatus }) {
     status === "running"
       ? "bg-brand/20 text-brand"
       : status === "completed"
-        ? "bg-emerald-500/[0.18] text-status-positive"
+        ? "bg-status-positive-soft text-status-positive"
         : status === "failed"
-          ? "bg-rose-500/[0.18] text-status-danger"
+          ? "bg-status-danger-soft text-status-danger"
           : "bg-muted text-muted-foreground";
   return (
     <span
@@ -281,20 +307,25 @@ function JobRow({
 }
 
 export function JobsBell() {
+  const userId = useAuthStore((state) => state.user?.id ?? null);
+  const token = useAuthStore((state) => state.token);
+  const ownerKey = `${userId ?? "anonymous"}:${token ?? "none"}`;
   const [open, setOpen] = useState(false);
-  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [selectedJob, setSelectedJob] = useState<{ id: string; ownerKey: string } | null>(null);
+  const [renderedOwnerKey, setRenderedOwnerKey] = useState(ownerKey);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const queryClient = useQueryClient();
   const pushToast = useToastStore((state) => state.push);
 
   const jobsQuery = useInfiniteQuery({
-    queryKey: ["async-jobs", "recent"],
+    queryKey: ["async-jobs", "recent", userId],
     queryFn: ({ pageParam }) => asyncJobsApi.list({ limit: 20, offset: pageParam }),
     initialPageParam: 0,
     getNextPageParam: (lastPage, _pages, lastOffset) =>
       lastPage.items.length > 0 && lastOffset + lastPage.items.length < lastPage.total
         ? lastOffset + lastPage.items.length
         : undefined,
+    enabled: Boolean(userId && token),
     refetchInterval: POLL_INTERVAL_MS,
     refetchIntervalInBackground: false,
   });
@@ -309,29 +340,45 @@ export function JobsBell() {
     [data],
   );
   const runningCount = useMemo(
-    () => jobs.filter((j) => j.status === "running" || j.status === "pending").length,
-    [jobs],
+    () =>
+      renderedOwnerKey === ownerKey
+        ? jobs.filter((j) => j.status === "running" || j.status === "pending").length
+        : 0,
+    [jobs, ownerKey, renderedOwnerKey],
   );
 
-  const [filter, setFilter] = useState<JobFilter>(readFilter);
-  const [dismissed, setDismissed] = useState<Set<string>>(readDismissed);
+  const [filter, setFilter] = useState<JobFilter>(() => readFilter(userId));
+  const [dismissed, setDismissed] = useState<Set<string>>(() => readDismissed(userId));
   const cancelMut = useMutation({
     mutationFn: (jobId: string) => asyncJobsApi.cancel(jobId),
-    onSuccess: (result) => {
+    onMutate: () => ({ owner: captureAuthOwner() }),
+    onSuccess: (result, _jobId, context) => {
+      if (!context || !isCurrentOwner(context.owner)) return;
       pushToast({
         msg: result.status === "cancel_requested" ? "已请求取消后台任务" : "后台任务已取消",
         kind: "success",
       });
       queryClient.invalidateQueries({ queryKey: ["async-jobs"] });
     },
-    onError: (error) => {
+    onError: (error, _jobId, context) => {
+      if (!context || !isCurrentOwner(context.owner)) return;
       pushToast({ msg: "取消后台任务失败", sub: (error as Error).message, kind: "error" });
     },
   });
+  const resetCancelMutation = cancelMut.reset;
+
+  useEffect(() => {
+    setRenderedOwnerKey(ownerKey);
+    setOpen(false);
+    setSelectedJob(null);
+    setFilter(readFilter(userId));
+    setDismissed(readDismissed(userId));
+    resetCancelMutation();
+  }, [ownerKey, resetCancelMutation, userId]);
 
   const changeFilter = (next: JobFilter) => {
     setFilter(next);
-    persistFilter(next);
+    persistFilter(next, userId);
   };
 
   // 终态任务才进 dismiss 集合；进行中无 dismiss 入口，集合永不含其 id。
@@ -339,7 +386,7 @@ export function JobsBell() {
     setDismissed((prev) => {
       if (prev.has(id)) return prev;
       const next = new Set(prev).add(id);
-      persistDismissed(next);
+      persistDismissed(next, userId);
       return next;
     });
   };
@@ -348,25 +395,26 @@ export function JobsBell() {
   // 又会让 localStorage 无限增长，故每次窗口更新后用当前 id 集合求交集裁剪。
   // 守卫 data：loading 态 jobs 为空，若此时收敛会把整个集合误清空。
   useEffect(() => {
-    if (!data) return;
+    if (!data || renderedOwnerKey !== ownerKey) return;
     setDismissed((prev) => {
       if (prev.size === 0) return prev;
       const windowIds = new Set(jobs.map((j) => j.id));
       const next = new Set([...prev].filter((id) => windowIds.has(id)));
       if (next.size === prev.size) return prev;
-      persistDismissed(next);
+      persistDismissed(next, userId);
       return next;
     });
-  }, [data, jobs]);
+  }, [data, jobs, ownerKey, renderedOwnerKey, userId]);
 
   // 渲染列表：先按 filter 过滤，再剔除已 dismiss 的终态项（进行中永不隐藏）。
   const visibleJobs = useMemo(() => {
+    if (renderedOwnerKey !== ownerKey) return [];
     return jobs.filter((j) => {
       if (filter === "active" && isTerminal(j.status)) return false;
       if (isTerminal(j.status) && dismissed.has(j.id)) return false;
       return true;
     });
-  }, [jobs, filter, dismissed]);
+  }, [jobs, filter, dismissed, ownerKey, renderedOwnerKey]);
 
   const visibleTerminalIds = useMemo(
     () => visibleJobs.filter((j) => isTerminal(j.status)).map((j) => j.id),
@@ -378,7 +426,7 @@ export function JobsBell() {
     setDismissed((prev) => {
       const next = new Set(prev);
       visibleTerminalIds.forEach((id) => next.add(id));
-      persistDismissed(next);
+      persistDismissed(next, userId);
       return next;
     });
   };
@@ -409,7 +457,7 @@ export function JobsBell() {
         )}
       </button>
 
-      {open && (
+      {open && renderedOwnerKey === ownerKey && (
         <>
           <div onClick={() => setOpen(false)} className="fixed inset-0 z-notification-backdrop" />
           <div
@@ -498,7 +546,7 @@ export function JobsBell() {
                     onCancel={(jobId) => cancelMut.mutate(jobId)}
                     onDetail={(jobId) => {
                       setOpen(false);
-                      setSelectedJobId(jobId);
+                      setSelectedJob({ id: jobId, ownerKey });
                     }}
                     cancelPending={cancelMut.isPending && cancelMut.variables === j.id}
                   />
@@ -518,11 +566,11 @@ export function JobsBell() {
           </div>
         </>
       )}
-      {selectedJobId && (
+      {selectedJob && selectedJob.ownerKey === ownerKey && renderedOwnerKey === ownerKey && (
         <AsyncJobDetailModal
-          key={selectedJobId}
-          jobId={selectedJobId}
-          onClose={() => setSelectedJobId(null)}
+          key={`${selectedJob.ownerKey}:${selectedJob.id}`}
+          jobId={selectedJob.id}
+          onClose={() => setSelectedJob(null)}
         />
       )}
     </div>

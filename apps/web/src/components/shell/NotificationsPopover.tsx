@@ -249,59 +249,58 @@ function NotifRow({ item, onClick, onDelete, deletePending }: NotifRowProps) {
 
   return (
     <div
-      onClick={onClick}
-      role="button"
-      tabIndex={0}
-      aria-label={`打开通知：${verb}${displayId ? ` ${displayId}` : ""}`}
-      onKeyDown={(event) => {
-        if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
-          event.preventDefault();
-          onClick();
-        }
-      }}
       className={clsx(
-        "group flex cursor-pointer items-start gap-2.5 border-b border-border px-3.5 py-2.5",
+        "group flex items-start gap-2.5 border-b border-border px-3.5 py-2.5",
         isUnread && "bg-brand/10",
       )}
     >
-      <div
-        className={clsx(
-          "relative mt-px inline-flex h-[26px] w-[26px] flex-shrink-0 items-center justify-center rounded-md border",
-          TONE_CLASS[visual.tone],
-          isUnread ? "border-brand" : "border-border",
-        )}
-      >
-        <Icon name={visual.icon} size={14} />
-        {isUnread && (
-          <span className="absolute -right-0.5 -top-0.5 h-[7px] w-[7px] rounded-full border border-popover bg-brand" />
-        )}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="text-sm">
-          <span className="font-medium">{actorName}</span>{" "}
-          <span className="text-muted-foreground">{verb}</span>
-          {displayId && (
-            <>
-              {" "}
-              <span className="text-muted-foreground">· {displayId}</span>
-            </>
-          )}
-        </div>
-        {title && (
-          <div className="mt-0.5 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-foreground">
-            {title}
-          </div>
-        )}
-        {snippet && (
-          <div className="mt-0.5 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
-            "{snippet}"
-          </div>
-        )}
-        <div className="mt-0.5 text-xs text-muted-foreground">{relativeTime(item.created_at)}</div>
-      </div>
       <button
         type="button"
-        className="-mt-0.5 inline-flex h-[22px] w-[22px] flex-shrink-0 cursor-pointer appearance-none items-center justify-center rounded-sm border border-transparent bg-transparent text-muted-foreground opacity-0 hover:bg-status-danger-soft hover:text-rose-500 focus-visible:opacity-100 group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
+        onClick={onClick}
+        aria-label={`打开通知：${verb}${displayId ? ` ${displayId}` : ""}`}
+        className="flex min-w-0 flex-1 cursor-pointer appearance-none items-start gap-2.5 border-0 bg-transparent p-0 text-left"
+      >
+        <div
+          className={clsx(
+            "relative mt-px inline-flex h-[26px] w-[26px] flex-shrink-0 items-center justify-center rounded-md border",
+            TONE_CLASS[visual.tone],
+            isUnread ? "border-brand" : "border-border",
+          )}
+        >
+          <Icon name={visual.icon} size={14} />
+          {isUnread && (
+            <span className="absolute -right-0.5 -top-0.5 h-[7px] w-[7px] rounded-full border border-popover bg-brand" />
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="text-sm">
+            <span className="font-medium">{actorName}</span>{" "}
+            <span className="text-muted-foreground">{verb}</span>
+            {displayId && (
+              <>
+                {" "}
+                <span className="text-muted-foreground">· {displayId}</span>
+              </>
+            )}
+          </div>
+          {title && (
+            <div className="mt-0.5 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-foreground">
+              {title}
+            </div>
+          )}
+          {snippet && (
+            <div className="mt-0.5 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-muted-foreground">
+              "{snippet}"
+            </div>
+          )}
+          <div className="mt-0.5 text-xs text-muted-foreground">
+            {relativeTime(item.created_at)}
+          </div>
+        </div>
+      </button>
+      <button
+        type="button"
+        className="-mt-0.5 inline-flex h-[22px] w-[22px] flex-shrink-0 cursor-pointer appearance-none items-center justify-center rounded-sm border border-transparent bg-transparent text-muted-foreground opacity-0 hover:bg-status-danger-soft hover:text-status-danger focus-visible:opacity-100 group-hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-40"
         title="删除通知"
         aria-label="删除通知"
         disabled={deletePending}

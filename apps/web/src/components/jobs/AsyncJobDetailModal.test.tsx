@@ -1,9 +1,11 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, useLocation } from "react-router-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/api/client";
+import type { MeResponse } from "@/api/auth";
 import type { AsyncJob } from "@/api/asyncJobs";
+import { useAuthStore } from "@/stores/authStore";
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
@@ -44,7 +46,10 @@ function Location() {
     </output>
   );
 }
-function renderModal() {
+function renderModal({
+  jobId = "j1",
+  onRetryQueued,
+}: { jobId?: string; onRetryQueued?: (queued: number) => void } = {}) {
   const onClose = vi.fn();
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -53,7 +58,7 @@ function renderModal() {
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
         <Location />
-        <AsyncJobDetailModal jobId="j1" onClose={onClose} />
+        <AsyncJobDetailModal jobId={jobId} onClose={onClose} onRetryQueued={onRetryQueued} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -63,9 +68,16 @@ function renderModal() {
 describe("共享后台任务详情", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
+    useAuthStore
+      .getState()
+      .setAuth("detail-u1-token", { id: "u1", role: "annotator" } as MeResponse);
     mocks.get.mockResolvedValue(job);
     mocks.retry.mockResolvedValue({ queued: 1 });
     mocks.dataset.mockResolvedValue({ id: "d1" });
+  });
+  afterEach(() => {
+    act(() => useAuthStore.getState().logout());
   });
 
   it("读回指定作业结果并直接打开通过权限检查的数据集", async () => {
@@ -142,5 +154,69 @@ describe("共享后台任务详情", () => {
     view.unmount();
     await act(async () => resolve({ id: "d1" }));
     expect(view.onClose).not.toHaveBeenCalled();
+  });
+
+  it("重试响应迟到到另一账号时不触发原账号回调", async () => {
+    let resolveRetry!: (value: unknown) => void;
+    mocks.get.mockResolvedValue({
+      ...job,
+      kind: "batch_predict",
+      status: "failed",
+      result: { failed_count: 1, failed_prediction_ids: ["fp1"] },
+    });
+    mocks.retry.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveRetry = resolve;
+        }),
+    );
+    const onRetryQueued = vi.fn();
+    renderModal({ onRetryQueued });
+    fireEvent.click(await screen.findByRole("button", { name: "重试失败项" }));
+    await waitFor(() => expect(mocks.retry).toHaveBeenCalledOnce());
+    act(() =>
+      useAuthStore
+        .getState()
+        .setAuth("detail-u2-token", { id: "u2", role: "annotator" } as MeResponse),
+    );
+    await act(async () => resolveRetry({ queued: 1 }));
+    expect(onRetryQueued).not.toHaveBeenCalled();
+  });
+
+  it("目标读取期间 localStorage 账号被另一 tab 替换时不导航或关闭", async () => {
+    let resolveDataset!: (value: unknown) => void;
+    mocks.dataset.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveDataset = resolve;
+        }),
+    );
+    const view = renderModal();
+    fireEvent.click(await screen.findByRole("button", { name: "查看数据集" }));
+    localStorage.setItem("token", "detail-u2-token");
+    await act(async () => resolveDataset({ id: "d1" }));
+    expect(view.onClose).not.toHaveBeenCalled();
+    expect(screen.getByTestId("location")).toHaveTextContent("/");
+  });
+
+  it("jobId 改变时清除旧的关联目标错误和打开状态", async () => {
+    mocks.dataset.mockRejectedValue(new ApiError(404, "gone"));
+    const view = renderModal();
+    fireEvent.click(await screen.findByRole("button", { name: "查看数据集" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("关联目标已被删除");
+
+    mocks.get.mockResolvedValue({ ...job, id: "j2" });
+    view.rerender(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <MemoryRouter>
+          <Location />
+          <AsyncJobDetailModal jobId="j2" onClose={view.onClose} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await screen.findByText("导入 10 / 跳过 0 / 错误 0");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 });
