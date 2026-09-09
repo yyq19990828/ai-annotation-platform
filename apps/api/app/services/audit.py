@@ -94,6 +94,8 @@ class AuditAction(str, Enum):
     USER_DEACTIVATION_REQUEST = "user.deactivation_request"
     USER_DEACTIVATION_CANCEL = "user.deactivation_cancel"
     USER_DEACTIVATION_APPROVE = "user.deactivation_approve"
+    USER_OFFBOARD = "user.offboard"
+    USER_REACTIVATE = "user.reactivate"
     AUDIT_ARCHIVE = "audit.archive"
     USER_EXPORT = "user.export"
     AUDIT_LOG_EXPORT = "audit.export"

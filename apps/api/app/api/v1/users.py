@@ -19,7 +19,13 @@ from app.core.security import hash_password
 from app.deps import get_db, require_roles
 from app.db.models.user import User
 from app.db.enums import UserRole
-from app.schemas.user import UserOut
+from app.schemas.user import (
+    OffboardingCommitRequest,
+    OffboardingPreview,
+    OffboardingResult,
+    ReactivateRequest,
+    UserOut,
+)
 from app.schemas.invitation import InvitationCreate, InvitationCreated
 from app.services.invitation import InvitationService
 from app.services.audit import (
@@ -29,6 +35,10 @@ from app.services.audit import (
     export_metadata_header,
 )
 from app.services.system_settings_service import SystemSettingsService
+from app.services.user_lifecycle import (
+    UserLifecycleService,
+    set_disabled_metadata,
+)
 
 router = APIRouter()
 
@@ -129,6 +139,9 @@ async def users_stats(
 @router.get("", response_model=list[UserOut])
 async def list_users(
     role: str | None = None,
+    status_filter: Literal["active", "inactive", "all"] = Query(
+        "active", alias="status"
+    ),
     project_id: UUID | None = Query(
         None, description="可选项目过滤；project_admin 入参被忽略，强制限定到其管理项目"
     ),
@@ -144,7 +157,11 @@ async def list_users(
     from app.db.models.project import Project
     from app.db.models.project_member import ProjectMember
 
-    q = select(User).where(User.is_active.is_(True))
+    q = select(User)
+    if status_filter == "active":
+        q = q.where(User.is_active.is_(True))
+    elif status_filter == "inactive":
+        q = q.where(User.is_active.is_(False))
     if role:
         q = q.where(User.role == role)
 
@@ -629,7 +646,12 @@ async def delete_user(
         # 清除原 user 持有的所有 task_lock（释放锁，不转给 receiver）
         await db.execute(delete(TaskLock).where(TaskLock.user_id == user.id))
 
-    user.is_active = False
+    set_disabled_metadata(
+        user,
+        kind="deleted",
+        actor_id=actor.id,
+        reason="管理员删除账号",
+    )
     await AuditService.log(
         db,
         actor=actor,
@@ -712,7 +734,12 @@ async def deactivate_user(
         if await _count_active_super_admins(db) <= 1:
             raise HTTPException(status_code=400, detail="不能停用最后一名超级管理员")
 
-    user.is_active = False
+    set_disabled_metadata(
+        user,
+        kind="suspended",
+        actor_id=actor.id,
+        reason="管理员停用账号",
+    )
     await AuditService.log(
         db,
         actor=actor,
@@ -725,6 +752,68 @@ async def deactivate_user(
     )
     await db.commit()
     await db.refresh(user)
+    return user
+
+
+@router.get(
+    "/{user_id}/offboarding-preview",
+    response_model=OffboardingPreview,
+)
+async def offboarding_preview(
+    user_id: UUID,
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(require_roles(*_MANAGERS)),
+):
+    """Return a complete, versioned handoff snapshot without mutating data."""
+
+    return await UserLifecycleService.preview(db, target_id=user_id, actor=actor)
+
+
+@router.post(
+    "/{user_id}/offboarding",
+    response_model=OffboardingResult,
+)
+async def offboarding_commit(
+    user_id: UUID,
+    payload: OffboardingCommitRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(require_roles(*_MANAGERS)),
+):
+    """Atomically transfer current responsibilities and suspend the account."""
+
+    result = await UserLifecycleService.offboard(
+        db,
+        target_id=user_id,
+        actor=actor,
+        payload=payload,
+        request=request,
+    )
+    await db.commit()
+    return result
+
+
+@router.post(
+    "/{user_id}/reactivate",
+    response_model=UserOut,
+)
+async def reactivate_user(
+    user_id: UUID,
+    request: Request,
+    payload: ReactivateRequest | None = Body(None),
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(require_roles(*_MANAGERS)),
+):
+    """Reactivate only an explicitly suspended account."""
+
+    user = await UserLifecycleService.reactivate(
+        db,
+        target_id=user_id,
+        actor=actor,
+        reason=payload.reason if payload else None,
+        request=request,
+    )
+    await db.commit()
     return user
 
 

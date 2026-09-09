@@ -27,6 +27,22 @@ class User(Base):
     )
     status: Mapped[str] = mapped_column(String(20), default="offline")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Account lifecycle metadata is deliberately separate from ``status``.
+    # ``status`` is the transient online/offline heartbeat state; these fields
+    # describe why an account stopped authenticating and whether that state is
+    # eligible for explicit reactivation.
+    disabled_kind: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True
+    )
+    disabled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    disabled_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    disabled_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
     # v0.12.0 · 邮箱验证时间戳。None = 未验证；非空 = 已验证。仅在开放注册 +
     # require_email_verification 打开时作为登录 gate；邀请注册 / 管理员建号恒视为已验证。
     # is_active 保持「停用/注销」单一语义，不背验证含义。

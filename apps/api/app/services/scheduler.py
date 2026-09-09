@@ -16,7 +16,7 @@ from app.db.models.prediction import Prediction
 from app.db.models.project import Project
 from app.db.models.user import User
 from app.services.scene import resolve_primary_item_id
-from app.services.task_lock import TaskLockService
+from app.services.task_lock import TaskLockService, assert_task_user_active
 
 _PRIMARY_LIDAR_ROLE = "primary_lidar"
 
@@ -237,6 +237,11 @@ async def get_next_task(
     batch_id: uuid.UUID | None = None,
 ) -> Task | None:
     user_id = user.id
+    # Authentication may have completed before an administrator suspended the
+    # account. Take the same User share lock used by TaskLockService before
+    # returning an already-held lock or attempting to claim a new task.
+    if not await assert_task_user_active(db, user_id):
+        return None
     lock_svc = TaskLockService(db)
 
     # 1. Check if user already has a locked task in this project

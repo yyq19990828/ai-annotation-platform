@@ -365,6 +365,10 @@ class UserOut(BaseModel):
     group_id: UUID | None = None
     status: str
     is_active: bool = True
+    disabled_kind: str | None = None
+    disabled_at: datetime | None = None
+    disabled_by: UUID | None = None
+    disabled_reason: str | None = None
     # v0.12.0 · 邮箱验证时间戳；None = 未验证。仅开放注册 + 验证开关打开时作登录 gate。
     email_verified_at: datetime | None = None
     last_login_at: datetime | None = None
@@ -381,6 +385,104 @@ class UserOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class UserReceiverOption(BaseModel):
+    """A role-specific, currently eligible offboarding receiver."""
+
+    id: UUID
+    name: str
+    email: str
+    role: str
+    project_member_role: str | None = None
+
+
+class OffboardingBlocker(BaseModel):
+    code: str
+    message: str
+
+
+class OffboardingBatchRef(BaseModel):
+    batch_id: UUID
+    batch_name: str
+
+
+class OffboardingRolePreview(BaseModel):
+    present: bool = False
+    batches: list[OffboardingBatchRef] = Field(default_factory=list)
+    receiver_options: list[UserReceiverOption] = Field(default_factory=list)
+
+
+class OffboardingProjectPreview(BaseModel):
+    project_id: UUID
+    project_name: str
+    roles: dict[str, OffboardingRolePreview]
+    tasks: dict[str, dict[str, int]]
+    blockers: list[OffboardingBlocker] = Field(default_factory=list)
+
+
+class OffboardingApiKeyPreview(BaseModel):
+    id: UUID
+    name: str
+    key_prefix: str
+    last_used_at: datetime | None = None
+    revoked_at: datetime | None = None
+
+
+class OffboardingPreview(BaseModel):
+    user: UserOut
+    preview_version: str
+    generated_at: datetime
+    projects: list[OffboardingProjectPreview] = Field(default_factory=list)
+    api_keys: list[OffboardingApiKeyPreview] = Field(default_factory=list)
+    blockers: list[OffboardingBlocker] = Field(default_factory=list)
+    can_commit: bool = False
+
+
+class OffboardingProjectRequest(BaseModel):
+    project_id: UUID
+    owner_receiver_id: UUID | None = None
+    annotator_receiver_id: UUID | None = None
+    reviewer_receiver_id: UUID | None = None
+
+
+class OffboardingCommitRequest(BaseModel):
+    preview_version: str
+    reason: str = Field(default="", max_length=500)
+    mode: Literal["handoff", "emergency_suspend"] = "handoff"
+    projects: list[OffboardingProjectRequest] = Field(default_factory=list)
+
+
+class OffboardingTransferResult(BaseModel):
+    project_id: UUID
+    role: str
+    receiver_id: UUID | None = None
+    batch_ids: list[UUID] = Field(default_factory=list)
+    task_count: int = 0
+    lock_count: int = 0
+
+
+class OffboardingUnresolvedResult(BaseModel):
+    project_id: UUID | None = None
+    role: str | None = None
+    reason: str
+    batch_ids: list[UUID] = Field(default_factory=list)
+    task_count: int = 0
+    lock_count: int = 0
+
+
+class OffboardingResult(BaseModel):
+    user: UserOut
+    status: str
+    mode: Literal["handoff", "emergency_suspend"]
+    transfers: list[OffboardingTransferResult] = Field(default_factory=list)
+    unresolved: list[OffboardingUnresolvedResult] = Field(default_factory=list)
+    revoked_api_key_ids: list[UUID] = Field(default_factory=list)
+    audit_id: int | None = None
+
+
+class ReactivateRequest(BaseModel):
+    reason: str | None = Field(default=None, max_length=500)
 
 
 class UserBrief(BaseModel):

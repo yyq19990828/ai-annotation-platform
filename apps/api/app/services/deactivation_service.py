@@ -20,6 +20,7 @@ from app.db.models.audit_log import AuditLog
 from app.db.models.user import User
 from app.services.audit import AuditAction, AuditService
 from app.services.notification import NotificationService
+from app.services.user_lifecycle import set_disabled_metadata
 
 
 COOLDOWN_DAYS = 7
@@ -156,8 +157,15 @@ class DeactivationService:
         notif = NotificationService(db)
 
         for user in rows:
-            user.is_active = False
             previous_scheduled = user.deactivation_scheduled_at
+            previous_reason = user.deactivation_reason
+            set_disabled_metadata(
+                user,
+                kind="deleted",
+                actor_id=user.id,
+                reason=previous_reason or "自助注销申请到期",
+                at=now,
+            )
             user.deactivation_requested_at = None
             user.deactivation_reason = None
             user.deactivation_scheduled_at = None
