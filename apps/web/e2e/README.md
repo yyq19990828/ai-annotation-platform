@@ -46,6 +46,8 @@ CI 调度规则由根目录 `scripts/plan-e2e-suites.mjs` 维护：
 
 `seed` 只用于准备前置数据。核心创建用例必须验证真实 UI 操作、保存响应、API 读回和刷新恢复；不能在 UI 保存失败后调用 `seed.advanceTask` 等接口伪造成功。Canvas 指针坐标应依据当前媒体位置和尺寸计算，并确认没有被浮层遮挡。连续执行相互独立的边缘绘制时，通过真实 UI 收起前一个标注的浮窗，并检查拖拽起点命中画布。截图检查不能替代保存检查，存储状态检查也不能替代真实渲染检查。
 
+Mask 设置统一通过 `fixtures/mask-toolbar.ts` 打开：等待胶囊展开及有限动画完成，再点击更多工具，防止展开期间滚动位置变化使按下和抬起命中不同位置。虚拟标注列表进入编辑时，优先使用选中信息卡上的真实按钮；不要依赖滚动后可能失去 hover 的行内操作，也不要用强制点击绕过命中检查。
+
 修改测试分类后先执行各命令的 `--list --reporter=line`，确认标签不会造成漏选；修改 CI 路由时执行 `node --test scripts/plan-e2e-suites.test.mjs`。本地验证结束后清理当前测试生成的 `test-results/`、`playwright-report/`、`e2e-results.json` 及专用环境数据，保留人工确认需要提交的基线图片。
 
 本地 E2E 固定使用 `annotation_e2e` 逻辑库、Web `127.0.0.1:3001`、API
@@ -97,7 +99,7 @@ PLAYWRIGHT_AI_REQUEST_WORKER=1 pnpm test:e2e \
 
 ## WebCodecs 精确帧 E2E
 
-视频 Issue 的 180 帧夹具按测试 API 的 `VIDEO_CHUNK_SIZE_FRAMES` 生成完整真实分片，默认三块，每块 60 帧。测试开始前核对正式 manifest 与分片范围、就绪状态；不能依赖未启动的媒体 worker 补齐缺失分片。像素身份仍从实际编码视频验证。诊断收集器只允许明确端点的生命周期取消（心跳、会话统计及帧预览等）；标注、Issue 写入失败与 HTTP 错误仍须报告。
+视频 Issue 的 180 帧夹具按测试 API 的 `VIDEO_CHUNK_SIZE_FRAMES` 生成完整真实分片，默认三块，每块 60 帧。测试开始前核对正式 manifest 与分片范围、就绪状态；不能依赖未启动的媒体 worker 补齐缺失分片。像素身份仍从实际编码视频验证。两个 Issue 套件共用 `helpers/video-request-errors.ts`，只允许明确端点的 `net::ERR_ABORTED` 生命周期取消（心跳、会话统计、帧预览及分片元数据/样本）；标注、Issue 写入失败、其他网络错误与 HTTP 错误仍须报告。`pnpm --filter @anno/web test scripts/video-request-errors.test.ts` 验证这些边界，CI 的前端单元测试同步执行。
 
 `e2e/tests/video-webcodecs-precise-frame.spec.ts` 用 `seed/video-webcodecs`
 造确定性 H.264 fixture（baseline / 主 profile B 帧 / 短 GOP / VFR），验证精确帧

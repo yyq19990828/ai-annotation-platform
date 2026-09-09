@@ -1,3 +1,4 @@
+import { isVideoLifecycleCancellation } from "../helpers/video-request-errors";
 import type { APIRequestContext, APIResponse, Browser, Page, Route } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 
@@ -83,10 +84,8 @@ const isFixtureMedia = (url: URL, fixture: string) =>
   /\/(?:source|chunk-\d+)\.mp4$/.test(url.pathname);
 
 function expectedRequestAbort(error: EvidenceError, fixture: IssueCase) {
+  if (isVideoLifecycleCancellation(error)) return true;
   if (error.kind !== "request" || error.message !== "net::ERR_ABORTED" || !error.path) return false;
-  if (error.method === "POST")
-    // Both best-effort session reports may be cancelled when the document unloads.
-    return ["/api/v1/auth/me/heartbeat", "/api/v1/auth/me/task-events:batch"].includes(error.path);
   if (error.method === "DELETE")
     return (
       (fixture.mediaLatency && /^\/api\/v1\/tasks\/[0-9a-f-]{36}\/lock$/.test(error.path)) ||
@@ -94,16 +93,6 @@ function expectedRequestAbort(error: EvidenceError, fixture: IssueCase) {
     );
   if (error.method !== "GET") return false;
   if (fixture.actorChanged && ["/api/v1/projects", "/api/v1/audit-logs"].includes(error.path))
-    return true;
-  // These exact read endpoints are cancelled by query ownership changes or document navigation.
-  if (
-    error.path === "/api/v1/auth/me" ||
-    error.path === "/api/v1/feedbacks" ||
-    /^\/api\/v1\/tasks\/[0-9a-f-]{36}$/.test(error.path) ||
-    // Frame preview ownership changes abort the previous foreground/prefetch request.
-    /^\/api\/v1\/tasks\/[0-9a-f-]{36}\/video\/frames\/\d+$/.test(error.path) ||
-    /^\/api\/v1\/videos\/[0-9a-f-]{36}\/chunks\/\d+(?:\/samples)?$/.test(error.path)
-  )
     return true;
   return fixture.mediaLatency && isFixtureMedia(new URL(error.path, API_BASE), fixture.fixtureName);
 }
