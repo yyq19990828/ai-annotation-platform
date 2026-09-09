@@ -114,6 +114,24 @@ Content-Type: application/json
 
 原有删除入口继续具有独立语义，参见[人员管理](../../user-guide/superadmin/user-management.md)。
 
+## 管理查询与批量操作
+
+超级管理员可以查看全局数据；项目管理员的管理接口只返回自己负责项目中的成员和自己账号。分页、统计、导出和批量操作使用同一范围规则。旧的用户、数据组和邀请数组接口保持兼容。
+
+| 方法与路径                                                                                | 行为                                                                                          |
+| ----------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `GET /api/v1/users/query?page=1&page_size=50&project_id=&group_id=&role=&status=&search=` | 返回 `{items,total,page,page_size,pages}`；`status` 为 `active`、`inactive` 或 `all`          |
+| `GET /api/v1/users/stats`                                                                 | 接受与用户分页相同的过滤参数，返回 `total`、`online`、`weekly_active`                         |
+| `GET /api/v1/users/export?format=csv\|json`                                               | 按同一过滤和权限范围导出并写入审计                                                            |
+| `GET /api/v1/groups/query?page=1&page_size=50&search=`                                    | 分页返回数据组及启用成员数                                                                    |
+| `GET /api/v1/invitations/query`                                                           | 支持 `status`、`scope`、`project_id`、`role`、`email`、`search`、`created_from`、`created_to` |
+| `GET /api/v1/invitations/stats` / `GET /api/v1/invitations/export`                        | 使用邀请列表的同一过滤和权限范围                                                              |
+| `POST /api/v1/invitations/{id}/send-email`                                                | 使用当前有效 token 发送邀请邮件；不轮换链接，SMTP 失败返回 `502` 且邀请保持有效               |
+
+批量邀请先调用 `POST /api/v1/users/bulk-invite/preview`，确认每行的校验结果后调用 `POST /api/v1/users/bulk-invite`。批量接口为每行建立独立保存点；成功行提交，失败行返回 `retryable` 和错误信息，客户端可以只重试失败行。数据组批量替换使用 `POST /api/v1/users/groups/bulk/preview` 和 `POST /api/v1/users/groups/bulk`，`group_id=null` 表示清除数据组。
+
+项目批次分派使用 `POST /api/v1/projects/{project_id}/batches/distribution-preview` 和 `POST /api/v1/projects/{project_id}/batches/distribution-apply`。预览默认只处理尚未分派的职责；将 `only_unassigned=false` 才会显示并执行覆盖已有分派的影响。用户角色变更前可调用 `GET /api/v1/users/{user_id}/role/preview?role=reviewer` 查看项目、批次和任务影响；该预检使用与角色修改相同的权限和最后一名超级管理员保护。
+
 ## 刷新
 
 ```http

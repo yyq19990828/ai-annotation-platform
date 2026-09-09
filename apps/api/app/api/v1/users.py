@@ -18,6 +18,7 @@ from app.core.ratelimit import limiter
 from app.core.security import hash_password
 from app.deps import get_db, require_roles
 from app.db.models.user import User
+from app.db.models.group import Group
 from app.db.enums import UserRole
 from app.schemas.user import (
     OffboardingCommitRequest,
@@ -27,7 +28,26 @@ from app.schemas.user import (
     UserOut,
 )
 from app.schemas.invitation import InvitationCreate, InvitationCreated
+from app.schemas.management import (
+    BulkGroupAssignmentPreview,
+    BulkGroupAssignmentRequest,
+    BulkGroupAssignmentResponse,
+    BulkGroupAssignmentResultItem,
+    BulkInviteRequest,
+    BulkInviteResponse,
+    BulkInviteResultItem,
+    GroupAssignmentPreviewItem,
+    RoleImpactPreview,
+    UserPage,
+)
 from app.services.invitation import InvitationService
+from app.services.management import (
+    build_user_query,
+    fetch_user_page,
+    role_impact_preview,
+    user_scope_clause,
+    user_stats as management_user_stats,
+)
 from app.services.audit import (
     AuditService,
     AuditAction,
@@ -107,35 +127,70 @@ class UsersStats(BaseModel):
 
 @router.get("/stats", response_model=UsersStats)
 async def users_stats(
+    status_filter: Literal["active", "inactive", "all"] = Query(
+        "active", alias="status"
+    ),
+    project_id: UUID | None = Query(None),
+    group_id: UUID | None = Query(None),
+    role: str | None = Query(None),
+    search: str | None = Query(None, max_length=255),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_roles(*_MANAGERS)),
+    actor: User = Depends(require_roles(*_MANAGERS)),
 ):
     """v0.8.3 · UsersPage 顶部 4 卡之「本周活跃」与状态聚合。
 
     weekly_active 基于 last_seen_at >= now-7d，比旧的 status==online 更准确
     （旧逻辑只反映瞬时在线状态）。
     """
-    from datetime import timedelta
+    stats = await management_user_stats(
+        db,
+        actor,
+        project_id=project_id,
+        group_id=group_id,
+        role=role,
+        status_filter=status_filter,
+        search=search,
+    )
+    return UsersStats(
+        total=stats.total,
+        online=stats.online,
+        weekly_active=stats.weekly_active,
+    )
 
-    cutoff = datetime.now(timezone.utc) - timedelta(days=7)
-    total = (
-        await db.execute(select(func.count(User.id)).where(User.is_active.is_(True)))
-    ).scalar_one()
-    online = (
-        await db.execute(
-            select(func.count(User.id)).where(
-                User.is_active.is_(True), User.status == "online"
-            )
-        )
-    ).scalar_one()
-    weekly_active = (
-        await db.execute(
-            select(func.count(User.id)).where(
-                User.is_active.is_(True), User.last_seen_at >= cutoff
-            )
-        )
-    ).scalar_one()
-    return UsersStats(total=total, online=online, weekly_active=weekly_active)
+
+@router.get("/query", response_model=UserPage)
+async def query_users(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=500),
+    status_filter: Literal["active", "inactive", "all"] = Query(
+        "active", alias="status"
+    ),
+    project_id: UUID | None = Query(None),
+    group_id: UUID | None = Query(None),
+    role: str | None = Query(None),
+    search: str | None = Query(None, max_length=255),
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(require_roles(*_MANAGERS)),
+):
+    rows, total = await fetch_user_page(
+        db,
+        actor,
+        page=page,
+        page_size=page_size,
+        project_id=project_id,
+        group_id=group_id,
+        role=role,
+        status_filter=status_filter,
+        search=search,
+    )
+    pages = (total + page_size - 1) // page_size if total else 0
+    return UserPage(
+        items=[UserOut.model_validate(user) for user in rows],
+        total=total,
+        page=page,
+        page_size=page_size,
+        pages=pages,
+    )
 
 
 @router.get("", response_model=list[UserOut])
@@ -195,6 +250,13 @@ _ExportFormat = Literal["csv", "json"]
 @router.get("/export")
 async def export_users(
     format: _ExportFormat = Query("csv"),
+    status_filter: Literal["active", "inactive", "all"] = Query(
+        "active", alias="status"
+    ),
+    project_id: UUID | None = Query(None),
+    group_id: UUID | None = Query(None),
+    role: str | None = Query(None),
+    search: str | None = Query(None, max_length=255),
     request: Request = None,  # type: ignore[assignment]
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_roles(*_MANAGERS)),
@@ -202,9 +264,14 @@ async def export_users(
     rows = (
         (
             await db.execute(
-                select(User)
-                .where(User.is_active.is_(True))
-                .order_by(User.created_at.desc())
+                build_user_query(
+                    actor,
+                    project_id=project_id,
+                    group_id=group_id,
+                    role=role,
+                    status_filter=status_filter,
+                    search=search,
+                ).order_by(User.created_at.desc(), User.id.desc())
             )
         )
         .scalars()
@@ -374,8 +441,314 @@ async def invite_user(
     )
 
 
+def _bulk_error(exc: Exception) -> str:
+    if isinstance(exc, HTTPException):
+        detail = exc.detail
+        if isinstance(detail, dict):
+            return str(detail.get("message") or detail.get("reason") or detail)
+        return str(detail)
+    return str(exc) or exc.__class__.__name__
+
+
+async def _bulk_invite(
+    payload: BulkInviteRequest,
+    *,
+    preview: bool,
+    request: Request,
+    db: AsyncSession,
+    actor: User,
+) -> BulkInviteResponse:
+    """Run each invitation in its own savepoint.
+
+    Preview uses one enclosing savepoint so quota and duplicate checks see the
+    earlier rows in the same request; the enclosing savepoint is rolled back at
+    the end. Apply keeps successful item savepoints and commits once after all
+    rows have been attempted, allowing failed rows to be retried alone.
+    """
+
+    from app.db.models.project import Project
+
+    preview_tx = await db.begin_nested() if preview else None
+    results: list[BulkInviteResultItem] = []
+    seen_emails: set[str] = set()
+    base_url = (
+        await SystemSettingsService.get(db, "frontend_base_url")
+        or settings.frontend_base_url
+    )
+    try:
+        for index, item in enumerate(payload.items):
+            if item.email in seen_emails:
+                results.append(
+                    BulkInviteResultItem(
+                        index=index,
+                        email=item.email,
+                        ok=False,
+                        retryable=True,
+                        error="本批次中邮箱重复",
+                    )
+                )
+                continue
+            item_tx = await db.begin_nested()
+            try:
+                inv = await InvitationService.create(
+                    db,
+                    email=item.email,
+                    role=item.role,
+                    group_name=item.group_name,
+                    project_id=item.project_id,
+                    actor=actor,
+                )
+                await AuditService.log(
+                    db,
+                    actor=actor,
+                    action="user.bulk_invite",
+                    target_type="invitation",
+                    target_id=str(inv.id),
+                    request=request,
+                    status_code=200,
+                    detail={
+                        "email": inv.email,
+                        "role": inv.role,
+                        "project_id": str(inv.project_id) if inv.project_id else None,
+                        "preview": preview,
+                    },
+                )
+                project_name = None
+                if inv.project_id:
+                    project_name = await db.scalar(
+                        select(Project.name).where(Project.id == inv.project_id)
+                    )
+                await item_tx.commit()
+                seen_emails.add(item.email)
+                results.append(
+                    BulkInviteResultItem(
+                        index=index,
+                        email=item.email,
+                        ok=True,
+                        invitation_id=inv.id,
+                        token=inv.token if not preview else None,
+                        invite_url=(
+                            f"{str(base_url).rstrip('/')}/register?token={inv.token}"
+                            if not preview
+                            else None
+                        ),
+                        project_id=inv.project_id,
+                        project_name=project_name,
+                    )
+                )
+            except Exception as exc:
+                await item_tx.rollback()
+                results.append(
+                    BulkInviteResultItem(
+                        index=index,
+                        email=item.email,
+                        ok=False,
+                        retryable=True,
+                        error=_bulk_error(exc),
+                    )
+                )
+        if preview:
+            await preview_tx.rollback()  # type: ignore[union-attr]
+        else:
+            await db.commit()
+    except Exception:
+        if preview_tx is not None and preview_tx.is_active:
+            await preview_tx.rollback()
+        raise
+
+    return BulkInviteResponse(
+        items=results,
+        succeeded=sum(item.ok for item in results),
+        failed=sum(not item.ok for item in results),
+        preview=preview,
+    )
+
+
+@router.post("/bulk-invite/preview", response_model=BulkInviteResponse)
+async def preview_bulk_invites(
+    payload: BulkInviteRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(require_roles(*_MANAGERS)),
+):
+    return await _bulk_invite(
+        payload, preview=True, request=request, db=db, actor=actor
+    )
+
+
+@router.post("/bulk-invite", response_model=BulkInviteResponse)
+async def apply_bulk_invites(
+    payload: BulkInviteRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(require_roles(*_MANAGERS)),
+):
+    return await _bulk_invite(
+        payload, preview=False, request=request, db=db, actor=actor
+    )
+
+
+async def _group_assignment_item(
+    db: AsyncSession,
+    *,
+    actor: User,
+    user_id: UUID,
+    group_id: UUID | None,
+) -> GroupAssignmentPreviewItem:
+    target = await db.scalar(select(User).where(User.id == user_id))
+    if target is None:
+        return GroupAssignmentPreviewItem(user_id=user_id, ok=False, error="用户不存在")
+    visible = await db.scalar(
+        select(User.id).where(
+            User.id == user_id,
+            user_scope_clause(actor),
+        )
+    )
+    if visible is None:
+        return GroupAssignmentPreviewItem(
+            user_id=user_id,
+            email=target.email,
+            name=target.name,
+            ok=False,
+            error="该用户不在你的管理范围内",
+        )
+    group_name = None
+    if group_id is not None:
+        group_name = await db.scalar(select(Group.name).where(Group.id == group_id))
+        if group_name is None:
+            return GroupAssignmentPreviewItem(
+                user_id=user_id,
+                email=target.email,
+                name=target.name,
+                ok=False,
+                error="数据组不存在",
+            )
+    return GroupAssignmentPreviewItem(
+        user_id=user_id,
+        email=target.email,
+        name=target.name,
+        ok=True,
+        current_group_id=target.group_id,
+        current_group_name=target.group_name,
+        next_group_id=group_id,
+        next_group_name=group_name,
+    )
+
+
+@router.post("/groups/bulk/preview", response_model=BulkGroupAssignmentPreview)
+async def preview_bulk_group_assignment(
+    payload: BulkGroupAssignmentRequest,
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(require_roles(*_MANAGERS)),
+):
+    items = [
+        await _group_assignment_item(
+            db, actor=actor, user_id=user_id, group_id=payload.group_id
+        )
+        for user_id in payload.user_ids
+    ]
+    return BulkGroupAssignmentPreview(
+        group_id=payload.group_id,
+        group_name=next((item.next_group_name for item in items if item.ok), None),
+        items=items,
+        applicable=sum(item.ok for item in items),
+        blocked=sum(not item.ok for item in items),
+    )
+
+
+@router.post("/groups/bulk", response_model=BulkGroupAssignmentResponse)
+async def apply_bulk_group_assignment(
+    payload: BulkGroupAssignmentRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(require_roles(*_MANAGERS)),
+):
+    if (
+        payload.group_id is not None
+        and await db.scalar(select(Group.id).where(Group.id == payload.group_id))
+        is None
+    ):
+        raise HTTPException(status_code=404, detail="数据组不存在")
+    results: list[BulkGroupAssignmentResultItem] = []
+    for user_id in payload.user_ids:
+        item_tx = await db.begin_nested()
+        try:
+            target = await db.scalar(
+                select(User)
+                .where(User.id == user_id, user_scope_clause(actor))
+                .with_for_update()
+            )
+            if target is None:
+                raise HTTPException(
+                    status_code=404, detail="用户不存在或不在管理范围内"
+                )
+            group = (
+                await db.scalar(select(Group).where(Group.id == payload.group_id))
+                if payload.group_id is not None
+                else None
+            )
+            target.group_id = group.id if group else None
+            target.group_name = group.name if group else None
+            await AuditService.log(
+                db,
+                actor=actor,
+                action="user.bulk_group_assign",
+                target_type="user",
+                target_id=str(target.id),
+                request=request,
+                status_code=200,
+                detail={
+                    "group_id": str(group.id) if group else None,
+                    "group_name": group.name if group else None,
+                },
+            )
+            await item_tx.commit()
+            results.append(BulkGroupAssignmentResultItem(user_id=user_id, ok=True))
+        except Exception as exc:
+            await item_tx.rollback()
+            results.append(
+                BulkGroupAssignmentResultItem(
+                    user_id=user_id,
+                    ok=False,
+                    retryable=True,
+                    error=_bulk_error(exc),
+                )
+            )
+    await db.commit()
+    return BulkGroupAssignmentResponse(
+        items=results,
+        succeeded=sum(item.ok for item in results),
+        failed=sum(not item.ok for item in results),
+    )
+
+
 class RoleChangePayload(BaseModel):
     role: str
+
+
+@router.get("/{user_id}/role/preview", response_model=RoleImpactPreview)
+async def preview_user_role_change(
+    user_id: UUID,
+    role: str = Query(..., min_length=1),
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(require_roles(*_MANAGERS)),
+):
+    if role not in {item.value for item in UserRole}:
+        raise HTTPException(status_code=400, detail=f"非法角色: {role}")
+    target = await db.get(User, user_id)
+    if target is None or not target.is_active:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    managed = True
+    if actor.role == UserRole.PROJECT_ADMIN.value:
+        managed = await _project_admin_manages_target(db, actor=actor, target=target)
+    return await role_impact_preview(
+        db,
+        actor=actor,
+        target=target,
+        requested_role=role,
+        manager_target_check=managed,
+        assignable_roles=_PA_ASSIGNABLE_ROLES,
+    )
 
 
 @router.patch("/{user_id}/role", response_model=UserOut)

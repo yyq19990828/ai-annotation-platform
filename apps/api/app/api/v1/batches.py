@@ -30,12 +30,14 @@ from app.schemas.batch import (
     BulkBatchApprove,
     BulkBatchReject,
 )
+from app.schemas.management import BatchDistributionPreview
 from app.schemas.export import (
     ExportRequestBody,
     LidarExportPreflightRequest,
     LidarExportPreflightResponse,
 )
 from app.services.batch import BatchService, assert_can_transition, REVERSE_TRANSITIONS
+from app.services.management import preview_batch_distribution
 from app.services.audit import AuditService, AuditAction
 from app.services.notification import NotificationService
 from app.services.user_brief import resolve_briefs_with_project_role
@@ -346,6 +348,67 @@ async def distribute_batches_in_project(
         status_code=200,
         detail={
             "scope": "project_batches",
+            "distributed_batches": summary["distributed_batches"],
+            "annotator_count": len(data.annotator_ids),
+            "reviewer_count": len(data.reviewer_ids),
+            "only_unassigned": data.only_unassigned,
+        },
+    )
+    await db.commit()
+    return summary
+
+
+@router.post("/distribution-preview", response_model=BatchDistributionPreview)
+async def preview_distribution_in_project(
+    project_id: uuid.UUID,
+    data: ProjectDistributeBatches,
+    project: Project = Depends(require_project_owner),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Preview assignment changes without mutating batches or task rows."""
+
+    del project, current_user
+    svc = BatchService(db)
+    return await preview_batch_distribution(
+        db,
+        project_id=project_id,
+        annotator_ids=data.annotator_ids,
+        reviewer_ids=data.reviewer_ids,
+        only_unassigned=data.only_unassigned,
+        validate_targets=svc._lock_and_validate_assignment_targets,
+    )
+
+
+@router.post("/distribution-apply", response_model=BatchDistributeResult)
+async def apply_distribution_in_project(
+    project_id: uuid.UUID,
+    data: ProjectDistributeBatches,
+    request: Request,
+    project: Project = Depends(require_project_owner),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Apply a previously reviewed project distribution plan."""
+
+    del project
+    svc = BatchService(db)
+    summary = await svc.distribute_batches_in_project(
+        project_id,
+        annotator_ids=data.annotator_ids,
+        reviewer_ids=data.reviewer_ids,
+        only_unassigned=data.only_unassigned,
+    )
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.BATCH_DISTRIBUTE_EVEN,
+        target_type="project",
+        target_id=str(project_id),
+        request=request,
+        status_code=200,
+        detail={
+            "scope": "project_batches_management_apply",
             "distributed_batches": summary["distributed_batches"],
             "annotator_count": len(data.annotator_ids),
             "reviewer_count": len(data.reviewer_ids),

@@ -14,6 +14,7 @@ import socket
 import ssl
 from email.mime.text import MIMEText
 from email.utils import formatdate
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -107,6 +108,34 @@ async def send_password_reset_email(
         "如果你没有发起此请求，请忽略此邮件。你的密码不会因此改变。\n"
     )
     await _send(db, to_address, "[AI 标注平台] 重置你的密码", body)
+
+
+async def send_invitation_email(
+    db: AsyncSession,
+    to_address: str,
+    invite_url: str,
+    *,
+    project_name: str | None = None,
+    role: str | None = None,
+    expires_at: datetime | None = None,
+) -> None:
+    """Send an already-created invitation without changing its token."""
+
+    target = f"项目「{project_name}」" if project_name else "AI 标注平台"
+    role_line = f"项目角色：{role}\n" if role else ""
+    expiry_line = (
+        f"链接有效期至：{expires_at.astimezone().isoformat()}\n"
+        if expires_at is not None
+        else ""
+    )
+    body = (
+        f"你收到一份加入 {target} 的邀请。\n\n"
+        f"{role_line}{expiry_line}"
+        "请点击以下链接接受邀请：\n"
+        f"{invite_url}\n\n"
+        "如果你不认识邀请人，请忽略此邮件。\n"
+    )
+    await _send(db, to_address, "[AI 标注平台] 你有一份新的邀请", body)
 
 
 async def send_test_email(db: AsyncSession, to_address: str) -> dict[str, Any]:
