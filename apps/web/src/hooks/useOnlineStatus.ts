@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { count, subscribe } from "@/pages/Workbench/state/offlineQueue";
+import { count, subscribe, type OfflineQueueScope } from "@/pages/Workbench/state/offlineQueue";
 
 /**
  * 监听 navigator online/offline + 离线队列长度。
  *
  * 注：autoflush 由调用方注册到 online 事件；这个 hook 仅暴露状态。
  */
-export function useOnlineStatus() {
+export function useOnlineStatus(scope?: OfflineQueueScope) {
   const [online, setOnline] = useState<boolean>(
     typeof navigator !== "undefined" ? navigator.onLine : true,
   );
@@ -24,10 +24,20 @@ export function useOnlineStatus() {
   }, []);
 
   useEffect(() => {
-    const unsub = subscribe(setQueueCount);
-    count().then(setQueueCount);
-    return unsub;
-  }, []);
+    let active = true;
+    // Do not render the previous account's queue while the new scope is being read.
+    setQueueCount(0);
+    const unsub = subscribe((next) => {
+      if (active) setQueueCount(next);
+    }, scope);
+    void count(scope).then((next) => {
+      if (active) setQueueCount(next);
+    });
+    return () => {
+      active = false;
+      unsub();
+    };
+  }, [scope]);
 
   return { online, queueCount };
 }

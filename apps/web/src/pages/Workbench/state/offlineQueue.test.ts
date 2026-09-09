@@ -105,6 +105,7 @@ import {
   replaceAnnotationId,
   subscribe,
   type OfflineOp,
+  type OfflineQueueScope,
 } from "./offlineQueue";
 
 beforeEach(async () => {
@@ -123,6 +124,10 @@ const KEY = "anno.offline-queue.v1";
 
 function deleteOp(id: string, annotationId = id): OfflineOp {
   return { kind: "delete", id, taskId: "task", annotationId, ts: 1 };
+}
+
+function ownedDeleteOp(id: string, userId: string): OfflineOp {
+  return { ...deleteOp(id), userId };
 }
 
 function deferred() {
@@ -465,4 +470,68 @@ describe("offlineQueue concurrent mutations", () => {
       expect(await getAll()).toEqual([deleteOp("saved", "tmp")]);
     },
   );
+});
+
+describe("offlineQueue account ownership", () => {
+  it("scoped count/getAll/drain only expose the owning account", async () => {
+    const alice: OfflineQueueScope = { userId: "alice" };
+    const bob: OfflineQueueScope = { userId: "bob" };
+    await enqueueDurably(ownedDeleteOp("alice-op", "alice"));
+    await enqueueDurably(ownedDeleteOp("bob-op", "bob"));
+
+    expect(await count(alice)).toBe(1);
+    expect((await getAll(alice)).map((op) => op.id)).toEqual(["alice-op"]);
+    const handled: string[] = [];
+    expect(
+      await drain(async (op) => {
+        handled.push(op.id);
+      }, alice),
+    ).toEqual({ ok: 1, failed: 0 });
+    expect(handled).toEqual(["alice-op"]);
+    expect((await getAll(bob)).map((op) => op.id)).toEqual(["bob-op"]);
+  });
+
+  it("keeps legacy rows unclaimed and stops a stale drain before handler or dequeue", async () => {
+    await enqueueDurably(deleteOp("legacy"));
+    await enqueueDurably(ownedDeleteOp("alice-op", "alice"));
+    const scope: OfflineQueueScope = { userId: "alice", isCurrent: () => false };
+    const handler = vi.fn(async () => {});
+
+    expect(await count({ userId: "alice" })).toBe(1);
+    expect(await drain(handler, scope)).toEqual({ ok: 0, failed: 0 });
+    expect(handler).not.toHaveBeenCalled();
+    expect((await getAll()).map((op) => op.id)).toEqual(["legacy", "alice-op"]);
+  });
+
+  it("dequeues a successful old-owner operation after the account switches during its handler", async () => {
+    let currentUser = "alice";
+    const scope: OfflineQueueScope = {
+      userId: "alice",
+      isCurrent: () => currentUser === "alice",
+    };
+    await enqueueDurably(ownedDeleteOp("alice-op", "alice"));
+    await enqueueDurably(ownedDeleteOp("bob-op", "bob"));
+    const entered = deferred();
+    const release = deferred();
+
+    const running = drain(async () => {
+      entered.resolve();
+      currentUser = "bob";
+      await release.promise;
+    }, scope);
+    await entered.promise;
+    release.resolve();
+
+    expect(await running).toEqual({ ok: 1, failed: 0 });
+    expect((await getAll()).map((op) => op.id)).toEqual(["bob-op"]);
+  });
+
+  it("scoped clear leaves another account and legacy rows intact", async () => {
+    await enqueueDurably(deleteOp("legacy"));
+    await enqueueDurably(ownedDeleteOp("alice-op", "alice"));
+    await enqueueDurably(ownedDeleteOp("bob-op", "bob"));
+
+    await clearAll({ userId: "alice" });
+    expect((await getAll()).map((op) => op.id)).toEqual(["legacy", "bob-op"]);
+  });
 });

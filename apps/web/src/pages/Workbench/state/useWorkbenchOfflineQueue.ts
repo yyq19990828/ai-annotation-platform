@@ -5,17 +5,19 @@
 // 不在这里管的：乐观 cache 写入（依赖 taskId / projectId / meUserId / s.setSelectedId 太多 shell 上下文，
 // 仍由 WorkbenchShell 持有 `optimisticEnqueueCreate` helper），以及 history 的 push 行为本身。
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 
 import { tasksApi } from "@/api/tasks";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
+import { useAuthStore } from "@/stores/authStore";
 import type { AnnotationResponse } from "@/types";
 
 import {
   drain,
   isOfflineCandidate,
   replaceAnnotationId as offlineQueueReplaceAnnotationId,
+  type OfflineQueueScope,
   type OfflineOp,
 } from "./offlineQueue";
 
@@ -33,11 +35,17 @@ export interface UseWorkbenchOfflineQueueArgs {
   history: HistoryLike;
   queryClient: QueryClient;
   pushToast: (toast: ToastInput) => void;
+  /** The account that owns the current Workbench queue. */
+  userId?: string | null;
+  /** Current task owner for history/UI writebacks; queue syncing may include other tasks. */
+  taskId?: string;
 }
 
 export interface UseWorkbenchOfflineQueueReturn {
   online: boolean;
   queueCount: number;
+  queueScope?: OfflineQueueScope;
+  syncError: string | null;
   /** 网络抖动 / 5xx → fallback() 入队；业务错（4xx 等）→ 直接 toast */
   enqueueOnError: (err: unknown, fallback: () => void) => void;
   /** 单条 op 的远端执行；create 成功时调 history.replaceAnnotationId + 改 cache + 跨队列替换 tmpId */
@@ -53,9 +61,34 @@ export function useWorkbenchOfflineQueue({
   history,
   queryClient,
   pushToast,
+  userId,
+  taskId,
 }: UseWorkbenchOfflineQueueArgs): UseWorkbenchOfflineQueueReturn {
-  const { online, queueCount } = useOnlineStatus();
+  const queueScope = useMemo<OfflineQueueScope | undefined>(() => {
+    if (!userId) return undefined;
+    return {
+      userId,
+      isCurrent: () => useAuthStore.getState().user?.id === userId,
+    };
+  }, [userId]);
+  const { online, queueCount } = useOnlineStatus(queueScope);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+  const currentTaskRef = useRef<string | undefined>(taskId);
+  currentTaskRef.current = taskId;
+
+  useEffect(() => {
+    setSyncError(null);
+  }, [userId]);
+  useEffect(() => {
+    if (queueCount === 0) setSyncError(null);
+  }, [queueCount]);
+
+  const assertCurrentOwner = useCallback(() => {
+    if (!queueScope || useAuthStore.getState().user?.id !== queueScope.userId) {
+      throw new Error("离线队列所属账号已切换，已暂停同步");
+    }
+  }, [queueScope]);
 
   const enqueueOnError = useCallback(
     (err: unknown, fallback: () => void) => {
@@ -71,21 +104,31 @@ export function useWorkbenchOfflineQueue({
 
   const flushOne = useCallback(
     async (op: OfflineOp) => {
+      assertCurrentOwner();
+      if (!op.userId || op.userId !== userId) {
+        throw new Error("离线操作没有当前账号归属，已保留待原账号处理");
+      }
       if (op.kind === "create") {
         const real = await tasksApi.createAnnotation(
           op.taskId,
           op.payload as Parameters<typeof tasksApi.createAnnotation>[1],
         );
+        const canWriteCurrentTask =
+          useAuthStore.getState().user?.id === userId && currentTaskRef.current === op.taskId;
         if (op.tmpId) {
-          history.replaceAnnotationId(op.tmpId, real.id);
-          queryClient.setQueryData<AnnotationResponse[]>(["annotations", op.taskId], (prev) =>
-            (prev ?? []).map((a) =>
-              a.id === op.tmpId ? { ...real, render_key: a.render_key ?? op.tmpId } : a,
-            ),
-          );
+          // A queue can contain another task from the same account. Its server
+          // result is safe to cache, but the current task's history owner is not.
+          if (canWriteCurrentTask) {
+            history.replaceAnnotationId(op.tmpId, real.id);
+            queryClient.setQueryData<AnnotationResponse[]>(["annotations", op.taskId], (prev) =>
+              (prev ?? []).map((a) =>
+                a.id === op.tmpId ? { ...real, render_key: a.render_key ?? op.tmpId } : a,
+              ),
+            );
+          }
           // v0.6.3 P0：跨队列替换 tmpId → realId，保后续 update/delete 不 404
-          await offlineQueueReplaceAnnotationId(op.tmpId, real.id);
-        } else {
+          await offlineQueueReplaceAnnotationId(op.tmpId, real.id, queueScope);
+        } else if (canWriteCurrentTask) {
           queryClient.invalidateQueries({ queryKey: ["annotations", op.taskId] });
         }
       } else if (op.kind === "update") {
@@ -98,26 +141,29 @@ export function useWorkbenchOfflineQueue({
         await tasksApi.deleteAnnotation(op.taskId, op.annotationId);
       }
     },
-    [history, queryClient],
+    [assertCurrentOwner, currentTaskRef, history, queryClient, queueScope, userId],
   );
 
   const flushAll = useCallback(async () => {
-    const result = await drain(flushOne);
+    if (!queueScope) return;
+    const result = await drain(flushOne, queueScope);
+    if (!queueScope.isCurrent?.()) return;
     if (result.ok > 0) {
+      setSyncError(null);
       queryClient.invalidateQueries({ queryKey: ["annotations"] });
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
       pushToast({ msg: `已同步 ${result.ok} 条离线操作`, kind: "success" });
     }
     if (result.failed > 0) {
+      setSyncError("部分离线操作同步失败");
       pushToast({ msg: "部分操作仍未能同步", sub: "请检查网络后重试", kind: "warning" });
     }
-  }, [flushOne, queryClient, pushToast]);
+  }, [flushOne, pushToast, queryClient, queueScope]);
 
   // online 事件触发自动 flush
   useEffect(() => {
     if (online && queueCount > 0) flushAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [online]);
+  }, [flushAll, online, queueCount]);
 
   const openDrawer = useCallback(() => setDrawerOpen(true), []);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
@@ -125,6 +171,8 @@ export function useWorkbenchOfflineQueue({
   return {
     online,
     queueCount,
+    queueScope,
+    syncError,
     enqueueOnError,
     flushOne,
     flushAll,

@@ -14,6 +14,7 @@ interface SwitchProps {
   label?: string;
   title?: string;
   "data-testid"?: string;
+  "data-attribute-key"?: string;
 }
 
 export function Switch({
@@ -23,6 +24,7 @@ export function Switch({
   label,
   title,
   "data-testid": testId,
+  "data-attribute-key": attributeKey,
 }: SwitchProps) {
   const control = (
     <ShadcnSwitch
@@ -31,6 +33,7 @@ export function Switch({
       disabled={disabled}
       title={title}
       data-testid={testId}
+      data-attribute-key={attributeKey}
     />
   );
   if (label === undefined) return control;

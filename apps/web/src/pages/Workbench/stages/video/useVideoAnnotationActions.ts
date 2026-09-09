@@ -22,7 +22,7 @@ import type {
   VideoTrackMaskGeometry,
 } from "@/types";
 import { UNKNOWN_CLASS } from "../../stage/colors";
-import { enqueue } from "../../state/offlineQueue";
+import { enqueue as enqueueOffline, type OfflineOp } from "../../state/offlineQueue";
 import type { useAnnotationHistory, Command } from "../../state/useAnnotationHistory";
 import { randomId } from "@/utils/id";
 import type { PendingDrawing, useWorkbenchState } from "../../state/useWorkbenchState";
@@ -82,6 +82,7 @@ interface VideoAnnotationMutations {
 
 interface UseVideoAnnotationActionsArgs {
   taskId: string | undefined;
+  meUserId?: string | null;
   queryClient: QueryClient;
   history: ReturnType<typeof useAnnotationHistory>;
   s: ReturnType<typeof useWorkbenchState>;
@@ -381,6 +382,7 @@ function videoClassPickerAnchor(geom: Geom): { left: number; top: number } {
 
 export function useVideoAnnotationActions({
   taskId,
+  meUserId,
   queryClient,
   history,
   s,
@@ -393,6 +395,13 @@ export function useVideoAnnotationActions({
   activeToolHasOwnClasses = true,
   annotationQueryKey = ["annotations", taskId],
 }: UseVideoAnnotationActionsArgs) {
+  const enqueueOwned = useCallback(
+    (op: OfflineOp) => {
+      if (!meUserId) return;
+      void enqueueOffline(op, { userId: meUserId });
+    },
+    [meUserId],
+  );
   const pendingMaskClassResolverRef = useRef<((className: string | null) => void) | null>(null);
   useEffect(
     () => () => {
@@ -668,7 +677,7 @@ export function useVideoAnnotationActions({
               optimisticUpdateAnnotation(ann.id, { geometry });
               history.push(command);
               if (taskId)
-                enqueue({
+                enqueueOwned({
                   kind: "update",
                   id: randomId(),
                   taskId,
@@ -681,7 +690,7 @@ export function useVideoAnnotationActions({
         },
       );
     },
-    [enqueueOnError, history, mutations.update, optimisticUpdateAnnotation, taskId],
+    [enqueueOnError, enqueueOwned, history, mutations.update, optimisticUpdateAnnotation, taskId],
   );
 
   const handleVideoMaskCommit = useCallback(
@@ -785,7 +794,7 @@ export function useVideoAnnotationActions({
               optimisticUpdateAnnotation(ann.id, { class_name: className });
               history.push({ kind: "update", annotationId: ann.id, before, after });
               if (taskId)
-                enqueue({
+                enqueueOwned({
                   kind: "update",
                   id: randomId(),
                   taskId,
@@ -798,7 +807,7 @@ export function useVideoAnnotationActions({
         },
       );
     },
-    [enqueueOnError, history, mutations.update, optimisticUpdateAnnotation, taskId],
+    [enqueueOnError, enqueueOwned, history, mutations.update, optimisticUpdateAnnotation, taskId],
   );
 
   const handleVideoBatchRename = useCallback(
@@ -1025,7 +1034,7 @@ export function useVideoAnnotationActions({
               );
               history.push({ kind: "update", annotationId: ann.id, before, after });
               if (taskId)
-                enqueue({
+                enqueueOwned({
                   kind: "update",
                   id: randomId(),
                   taskId,
@@ -1038,7 +1047,7 @@ export function useVideoAnnotationActions({
         },
       );
     },
-    [enqueueOnError, history, mutations.update, queryClient, taskId],
+    [enqueueOnError, enqueueOwned, history, mutations.update, queryClient, taskId],
   );
 
   // v0.10.30 · 2.3 当前帧逐帧覆盖: 写入该帧 keyframe.attributes。复用 upsertKeyframe (保留当前帧框)

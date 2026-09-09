@@ -2,13 +2,22 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
-import { type OfflineOp, clearAll, getAll, removeById, subscribe } from "../state/offlineQueue";
+import {
+  type OfflineOp,
+  clearAll,
+  getAll,
+  removeById,
+  subscribe,
+  type OfflineQueueScope,
+} from "../state/offlineQueue";
 
 interface OfflineQueueDrawerProps {
   open: boolean;
   onClose: () => void;
   /** 当前题（v0.6.4：用于「当前题」筛选 + 默认展开当前题分组）。*/
   currentTaskId?: string;
+  /** Current account scope. Legacy rows without an owner are intentionally excluded. */
+  queueScope?: OfflineQueueScope;
   /** 单条同步：执行远端请求；抛错 = 不弹出，调用方 toast 错误。成功后 drawer 自己 removeById。 */
   onFlushOne: (op: OfflineOp) => Promise<void>;
   /** 全部同步：drain 整个队列，调用方负责 invalidate cache + 提示。 */
@@ -51,6 +60,7 @@ export function OfflineQueueDrawer({
   open,
   onClose,
   currentTaskId,
+  queueScope,
   onFlushOne,
   onFlushAll,
 }: OfflineQueueDrawerProps) {
@@ -67,17 +77,17 @@ export function OfflineQueueDrawer({
     if (!open) return;
     let cancelled = false;
     const refresh = () => {
-      getAll().then((q) => {
+      getAll(queueScope).then((q) => {
         if (!cancelled) setItems(q);
       });
     };
-    const unsub = subscribe(() => refresh());
+    const unsub = subscribe(() => refresh(), queueScope);
     refresh();
     return () => {
       cancelled = true;
       unsub();
     };
-  }, [open]);
+  }, [open, queueScope]);
 
   useEffect(() => {
     if (!open) return;
@@ -123,7 +133,7 @@ export function OfflineQueueDrawer({
       setBusyId(op.id);
       try {
         await onFlushOne(op);
-        await removeById(op.id);
+        await removeById(op.id, queueScope);
         pushToast({ msg: "已同步该操作", kind: "success" });
       } catch (err) {
         pushToast({ msg: "同步失败", sub: String(err), kind: "error" });
@@ -131,28 +141,28 @@ export function OfflineQueueDrawer({
         setBusyId(null);
       }
     },
-    [onFlushOne, pushToast],
+    [onFlushOne, pushToast, queueScope],
   );
 
   const handleDelete = useCallback(
     async (op: OfflineOp) => {
       setBusyId(op.id);
       try {
-        await removeById(op.id);
+        await removeById(op.id, queueScope);
         pushToast({ msg: "已从队列删除", kind: "success" });
       } finally {
         setBusyId(null);
       }
     },
-    [pushToast],
+    [pushToast, queueScope],
   );
 
   const handleClearAll = useCallback(async () => {
     if (items.length === 0) return;
     if (!window.confirm(`确认丢弃全部 ${items.length} 条离线操作？此操作不可撤销。`)) return;
-    await clearAll();
+    await clearAll(queueScope);
     pushToast({ msg: "队列已清空", kind: "warning" });
-  }, [items.length, pushToast]);
+  }, [items.length, pushToast, queueScope]);
 
   const handleFlushAll = useCallback(async () => {
     setFlushAllBusy(true);

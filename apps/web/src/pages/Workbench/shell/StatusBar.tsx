@@ -13,6 +13,8 @@ interface PreannotationProgress {
 
 type DiffMode = "final" | "raw" | "diff";
 
+export type WorkbenchSaveState = "saving" | "saved" | "local" | "sync-error";
+
 interface StatusBarProps {
   userBoxesCount: number;
   aiBoxesCount: number;
@@ -41,6 +43,9 @@ interface StatusBarProps {
   onSetDiffMode?: (m: DiffMode) => void;
   activeVideoSegment?: VideoSegment | null;
   segmentLeaseError?: string | null;
+  /** Derived from existing mutation, mask and durable queue owners. */
+  saveState?: WorkbenchSaveState;
+  saveError?: string | null;
 }
 
 function formatLockTime(ms: number): string {
@@ -81,6 +86,8 @@ export function StatusBar({
   onSetDiffMode,
   activeVideoSegment,
   segmentLeaseError,
+  saveState = "saved",
+  saveError,
 }: StatusBarProps) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -177,6 +184,31 @@ export function StatusBar({
         </span>
       </div>
       <div className="flex shrink-0 items-center gap-3">
+        <span
+          className={cn(
+            inlineItem,
+            saveState === "saving" && "text-status-info",
+            saveState === "saved" && "text-status-positive",
+            saveState === "local" && "text-status-caution",
+            saveState === "sync-error" && "text-status-danger",
+          )}
+          role="status"
+          aria-live="polite"
+          title={saveError ?? undefined}
+          data-testid="workbench-save-state"
+        >
+          <Icon
+            name={
+              saveState === "saving" ? "loader2" : saveState === "sync-error" ? "warning" : "check"
+            }
+            size={11}
+          />
+          {saveState === "saving" && "保存中…"}
+          {saveState === "saved" && "已保存"}
+          {saveState === "local" && "仅保存在本机"}
+          {saveState === "sync-error" && "同步失败"}
+        </span>
+        <Sep />
         {diffMode !== undefined && onSetDiffMode && (
           <>
             <div className="flex gap-0.5">

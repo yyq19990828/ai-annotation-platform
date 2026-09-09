@@ -24,3 +24,31 @@ it("keeps the cursor slot mounted when the pointer enters and leaves the image",
   expect(screen.getByTestId("status-cursor")).toBe(slot);
   expect(slot).toHaveTextContent("—");
 });
+
+it.each([
+  ["saving", "保存中…"],
+  ["saved", "已保存"],
+  ["local", "仅保存在本机"],
+  ["sync-error", "同步失败"],
+] as const)(
+  "renders the derived save state %s independently from preannotation status",
+  (state, label) => {
+    render(
+      <StatusBar
+        userBoxesCount={0}
+        aiBoxesCount={0}
+        activeClass="person"
+        imageWidth={null}
+        imageHeight={null}
+        cursor={null}
+        preannotationProgress={null}
+        preannotationConn="reconnecting"
+        preannotationRetries={2}
+        saveState={state}
+      />,
+    );
+
+    expect(screen.getByTestId("workbench-save-state")).toHaveTextContent(label);
+    expect(screen.getByText(/重连中/)).toBeInTheDocument();
+  },
+);

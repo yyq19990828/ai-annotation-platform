@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { ApiError } from "@/api/client";
 import { useAcceptRejection, useReopenTask, useSkipTask, useWithdrawTask } from "@/hooks/useTasks";
 import type { TaskResponse } from "@/types";
@@ -20,6 +20,7 @@ interface UseAnnotateModeParams {
   onSubmit: () => void;
   isSubmitting: boolean;
   pushToast: PushToast;
+  isCurrentContext?: () => boolean;
 }
 
 const noop = () => {};
@@ -33,20 +34,33 @@ export function useAnnotateMode({
   onSubmit,
   isSubmitting,
   pushToast,
+  isCurrentContext,
 }: UseAnnotateModeParams): WorkbenchModeState {
   const withdrawTaskMut = useWithdrawTask();
   const reopenTaskMut = useReopenTask();
   const acceptRejectionMut = useAcceptRejection();
   const skipTaskMut = useSkipTask();
+  const currentTaskIdRef = useRef(taskId);
+  currentTaskIdRef.current = taskId;
+  const ownsContext = useCallback(
+    (ownerTaskId: string) => () =>
+      currentTaskIdRef.current === ownerTaskId && isCurrentContext?.() !== false,
+    [isCurrentContext],
+  );
 
   const canWithdraw = task?.status === "review" && !task?.reviewer_claimed_at;
   const canReopen = task?.status === "completed";
 
   const handleWithdrawTask = useCallback(() => {
     if (!taskId || !canWithdraw) return;
+    const owns = ownsContext(taskId);
     withdrawTaskMut.mutate(taskId, {
-      onSuccess: () => pushToast({ msg: "已撤回提交，可继续编辑", kind: "success" }),
+      onSuccess: () => {
+        if (!owns()) return;
+        pushToast({ msg: "已撤回提交，可继续编辑", kind: "success" });
+      },
       onError: (err) => {
+        if (!owns()) return;
         const isApi = err instanceof ApiError;
         const reason = isApi
           ? (err.detailRaw as { reason?: string } | undefined)?.reason
@@ -58,35 +72,41 @@ export function useAnnotateMode({
         pushToast({ msg, kind: "error" });
       },
     });
-  }, [taskId, canWithdraw, withdrawTaskMut, pushToast]);
+  }, [taskId, canWithdraw, ownsContext, withdrawTaskMut, pushToast]);
 
   const handleReopenTask = useCallback(() => {
     if (!taskId || !canReopen) return;
+    const owns = ownsContext(taskId);
     reopenTaskMut.mutate(taskId, {
       onSuccess: () =>
+        owns() &&
         pushToast({ msg: "已重开任务，可继续编辑", sub: "改完记得重新提交质检", kind: "success" }),
-      onError: () => pushToast({ msg: "重开失败，请刷新后重试", kind: "error" }),
+      onError: () => owns() && pushToast({ msg: "重开失败，请刷新后重试", kind: "error" }),
     });
-  }, [taskId, canReopen, reopenTaskMut, pushToast]);
+  }, [taskId, canReopen, ownsContext, reopenTaskMut, pushToast]);
 
   const handleAcceptRejection = useCallback(() => {
     if (!taskId) return;
+    const owns = ownsContext(taskId);
     acceptRejectionMut.mutate(taskId, {
-      onError: () => pushToast({ kind: "error", msg: "接受退回失败，请重试" }),
+      onError: () => owns() && pushToast({ kind: "error", msg: "接受退回失败，请重试" }),
     });
-  }, [acceptRejectionMut, pushToast, taskId]);
+  }, [acceptRejectionMut, ownsContext, pushToast, taskId]);
 
   const handleSkipTask = useCallback(
     (reason: SkipReason, note?: string) => {
       if (!taskId) return;
+      const owns = ownsContext(taskId);
       skipTaskMut.mutate(
         { taskId, reason, note },
         {
           onSuccess: () => {
+            if (!owns()) return;
             pushToast({ msg: "已跳过本题，等待审核员复核", kind: "success" });
             navigateTask("next");
           },
           onError: (err) => {
+            if (!owns()) return;
             const isApi = err instanceof ApiError;
             const reason = isApi
               ? (err.detailRaw as { reason?: string } | undefined)?.reason
@@ -99,7 +119,7 @@ export function useAnnotateMode({
         },
       );
     },
-    [taskId, skipTaskMut, pushToast, navigateTask],
+    [taskId, ownsContext, skipTaskMut, pushToast, navigateTask],
   );
 
   const topbarActions = useMemo(

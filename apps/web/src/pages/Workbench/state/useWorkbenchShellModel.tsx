@@ -107,7 +107,7 @@ import { useSessionStats } from "./useSessionStats";
 import { useWorkbenchHotkeys } from "./useWorkbenchHotkeys";
 import { isSamCandidateHotkeyBlocked } from "./hotkeys";
 import { useCanvasDraftPersistence } from "./useCanvasDraftPersistence";
-import { useWorkbenchTaskFlow } from "./useWorkbenchTaskFlow";
+import { resolveSubmitBlockedReason, useWorkbenchTaskFlow } from "./useWorkbenchTaskFlow";
 import {
   useInteractiveAI,
   type InteractiveTransport,
@@ -233,7 +233,11 @@ import {
   pointCloudNavigationGenerationForTask,
   publishPointCloudNavigationTrace,
 } from "@/utils/pointCloudNavigationDiagnostics";
-import { getAll as offlineQueueGetAll, removeById as offlineQueueRemoveById } from "./offlineQueue";
+import {
+  getAll as offlineQueueGetAll,
+  removeById as offlineQueueRemoveById,
+  type OfflineQueueScope,
+} from "./offlineQueue";
 import { useWorkbenchOfflineQueue } from "./useWorkbenchOfflineQueue";
 import { useImageAnnotationActions } from "../stages/image/useImageAnnotationActions";
 import {
@@ -2698,13 +2702,14 @@ export function useWorkbenchShellModel({
       return updated;
     },
     removeLocalCreate: async (id: string) => {
-      if (!taskId) return;
+      if (!taskId || !meUserId) return;
       queryClient.setQueryData<AnnotationResponse[]>(annotationQueryKey, (prev) =>
         (prev ?? []).filter((a) => a.id !== id),
       );
-      const all = await offlineQueueGetAll();
+      const scope: OfflineQueueScope = { userId: meUserId };
+      const all = await offlineQueueGetAll(scope);
       const target = all.find((op) => op.kind === "create" && op.tmpId === id);
-      if (target) await offlineQueueRemoveById(target.id);
+      if (target) await offlineQueueRemoveById(target.id, scope);
     },
     // v0.20.22 · accept undo 防御过滤依赖 (改动 1.5): annotationsRef 已含全量当前标注,
     // undo 时按 id 查 parent_prediction_id, 只删本 predictionId 派生的那批。
@@ -2724,10 +2729,18 @@ export function useWorkbenchShellModel({
     return tasks.filter((t) => t.status !== "completed" && t.id !== taskId).length;
   }, [tasks, taskId]);
 
-  const offlineQ = useWorkbenchOfflineQueue({ history, queryClient, pushToast });
+  const offlineQ = useWorkbenchOfflineQueue({
+    history,
+    queryClient,
+    pushToast,
+    userId: meUserId,
+    taskId,
+  });
   const {
     online,
     queueCount,
+    queueScope,
+    syncError,
     enqueueOnError,
     flushOne: executeOp,
     flushAll: flushOffline,
@@ -3403,6 +3416,7 @@ export function useWorkbenchShellModel({
     handlePropagateKeyframe,
   } = useVideoAnnotationActions({
     taskId,
+    meUserId,
     annotationQueryKey,
     queryClient,
     history,
@@ -5779,7 +5793,76 @@ export function useWorkbenchShellModel({
     [updateAnnotationMut, history, isLockedForActions, setScenePlayback],
   );
 
+  const focusRequiredAttribute = useCallback(
+    (annotationId: string, fieldKey?: string) => {
+      const requestedTaskId = currentTaskIdRef.current;
+      const requestedUserId = meUserId;
+      setSelectedId(annotationId);
+      if (!fieldKey) return;
+      window.setTimeout(() => {
+        if (
+          currentTaskIdRef.current !== requestedTaskId ||
+          useAuthStore.getState().user?.id !== requestedUserId
+        )
+          return;
+        const escapedKey =
+          typeof CSS !== "undefined" && typeof CSS.escape === "function"
+            ? CSS.escape(fieldKey)
+            : fieldKey.replace(/["\\]/g, "\\$&");
+        const controls = Array.from(
+          document.querySelectorAll<HTMLElement>(`[data-attribute-key="${escapedKey}"]`),
+        );
+        const control = controls.find((candidate) => {
+          const rect = candidate.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        });
+        if (!control) return;
+        const target = control.matches("input,select,button,textarea,[tabindex]")
+          ? control
+          : control.querySelector<HTMLElement>("input,select,button,textarea,[tabindex]");
+        target?.focus();
+      }, 0);
+    },
+    [meUserId, setSelectedId],
+  );
+
   const hoveredCommentShapes = useHoveredCommentStore(selectEffectiveShapes);
+
+  const getAnnotationAttributeSchema = useCallback(
+    (annotation: AnnotationResponse) => {
+      const unit = annotation.tool_unit_id as ToolUnitId | undefined;
+      return unit
+        ? attributeSchemaForUnit(currentProject?.tool_bindings, unit)
+        : toolView.attributeSchema;
+    },
+    [currentProject?.tool_bindings, toolView.attributeSchema],
+  );
+  const submitBlockedReason = useMemo(() => {
+    return resolveSubmitBlockedReason({
+      pendingWrites: pendingWorkbenchWrites,
+      maskSaving: maskInstanceTransitionBusy || maskPrimaryPending || maskEditor.phase === "saving",
+      maskDraft: hasPendingMaskDraft,
+      localDraft: imageActions.hasManualDraft,
+      queueCount,
+      syncError,
+    });
+  }, [
+    hasPendingMaskDraft,
+    imageActions.hasManualDraft,
+    maskEditor.phase,
+    maskInstanceTransitionBusy,
+    maskPrimaryPending,
+    pendingWorkbenchWrites,
+    queueCount,
+    syncError,
+  ]);
+  const isCurrentSubmitContext = useCallback(
+    () =>
+      Boolean(meUserId) &&
+      useAuthStore.getState().user?.id === meUserId &&
+      currentTaskIdRef.current === taskId,
+    [meUserId, taskId],
+  );
 
   const {
     navigateTask,
@@ -5795,9 +5878,15 @@ export function useWorkbenchShellModel({
     annotationsRef,
     annotationsData,
     currentProject,
+    attributeSchema: toolView.attributeSchema,
+    getAttributeSchema: getAnnotationAttributeSchema,
     userBoxesCount: userBoxes.length,
+    submitBlockedReason,
+    isCurrentContext: isCurrentSubmitContext,
+    currentUserId: meUserId,
     setCurrentTaskId: selectTask,
     setSelectedId: s.setSelectedId,
+    focusRequiredAttribute,
     pushToast,
     submitTaskMut,
   });
@@ -5887,6 +5976,7 @@ export function useWorkbenchShellModel({
     onSubmit: handleSubmitTask,
     isSubmitting: submitTaskMut.isPending,
     pushToast,
+    isCurrentContext: isCurrentSubmitContext,
   });
   const reviewModeState = useReviewMode({
     mode,
@@ -5894,6 +5984,7 @@ export function useWorkbenchShellModel({
     task,
     navigateTask,
     pushToast,
+    isCurrentContext: isCurrentSubmitContext,
   });
   const modeState = mode === "review" ? reviewModeState : annotateModeState;
   const { topbarActions, bannerActions } = modeState;
@@ -5925,6 +6016,18 @@ export function useWorkbenchShellModel({
     hoveredChapterId,
   ]);
   const isSubmittingTask = topbarActions.isSubmitting ?? submitTaskMut.isPending;
+  const saveState = syncError
+    ? ("sync-error" as const)
+    : pendingWorkbenchWrites > 0 ||
+        maskInstanceTransitionBusy ||
+        maskPrimaryPending ||
+        maskEditor.phase === "saving" ||
+        hasPendingMaskDraft ||
+        imageActions.hasManualDraft
+      ? ("saving" as const)
+      : queueCount > 0
+        ? ("local" as const)
+        : ("saved" as const);
 
   // v0.16.14 · 选中 AI 预测框反查:预测与普通框共用 s.selectedId,但预测 id 带 pred- 前缀且
   // 只在 aiBoxes(非 visibleAnnotationsData)里,故 selectedAnnotationForPanel 必为 null。
@@ -6999,7 +7102,7 @@ export function useWorkbenchShellModel({
       aiRunning,
       batchStatus: currentBatchStatus,
       isSubmitting: isSubmittingTask,
-      submitDisabled: sceneWriteBlocked,
+      submitDisabled: sceneWriteBlocked || !!submitBlockedReason,
       confThreshold: s.confThreshold,
       onShowHotkeys: () => setShowHotkeys(true),
       onBack,
@@ -7646,6 +7749,8 @@ export function useWorkbenchShellModel({
       remainingTaskCount,
       offlineQueueCount: queueCount,
       online,
+      saveState,
+      saveError: syncError,
       onShowQueueDrawer: openOfflineDrawer,
       lockRemainingMs: remainingMs,
       lockError,
@@ -7805,6 +7910,7 @@ export function useWorkbenchShellModel({
       open: offlineDrawerOpen,
       onClose: closeOfflineDrawer,
       currentTaskId: taskId,
+      queueScope,
       onFlushOne: executeOp,
       onFlushAll: flushOffline,
     },
