@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+import hmac
 import json
 import time
 from typing import Any, Literal
@@ -54,7 +55,7 @@ class SettingSpec:
         default = self.deployment_default
         if isinstance(default, bool) or not isinstance(default, int):
             default = 0
-        code_default = getattr(_CODE_DEFAULTS, self.env_attr)
+        code_default = type(settings).model_fields[self.env_attr].default
         upper = max(int(code_default), int(default))
         return self.min_value, upper
 
@@ -76,20 +77,6 @@ class SettingsVersionConflict(RuntimeError):
             f"system settings version conflict: expected {expected}, "
             f"current {current.version}"
         )
-
-
-class _CodeDefaults:
-    """Stable code defaults used to derive deployment-aware upper bounds."""
-
-    max_invitations_per_day = 30
-    offline_threshold_minutes = 5
-    dataset_import_max_files = 50_000
-    dataset_import_max_total_bytes = 200 * 1024 * 1024 * 1024
-    task_create_sync_threshold = 2_000
-    video_chunk_warmup_lookahead = 1
-
-
-_CODE_DEFAULTS = _CodeDefaults()
 
 
 SETTING_SPECS: dict[str, SettingSpec] = {
@@ -143,7 +130,7 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         "int",
         "max_invitations_per_day",
         unit="次/滚动 24 小时",
-        effect="按邀请人限制后续创建邀请的数量。",
+        effect="按邀请人限制后续创建邀请的数量，滚动统计最近 24 小时；跨进程配置缓存最多约 30 秒。",
         min_value=1,
         max_value=1_000,
     ),
@@ -152,7 +139,7 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         "int",
         "offline_threshold_minutes",
         unit="分钟",
-        effect="仅控制在线状态扫描将用户标记为 offline 的时间窗口。",
+        effect="仅影响在线状态显示，不退出会话；配置缓存最多约 30 秒，之后由每 2 分钟执行的下一轮扫描采用。",
         min_value=2,
         max_value=60,
     ),
@@ -161,7 +148,7 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         "int",
         "dataset_import_max_files",
         unit="文件",
-        effect="每个连接器导入任务在枚举阶段允许的文件数。",
+        effect="新导入受理时与字节预算一起固定；排队、运行及重试任务保持原预算，仅限制连接器枚举阶段。",
         min_value=1,
         dynamic_max=True,
     ),
@@ -170,7 +157,7 @@ SETTING_SPECS: dict[str, SettingSpec] = {
         "int",
         "dataset_import_max_total_bytes",
         unit="bytes",
-        effect="每个连接器导入任务在枚举阶段允许的总字节数。",
+        effect="新导入受理时与文件数一起固定；排队、运行及重试任务保持原预算，不作为全部上传或网络流量限制。",
         min_value=1,
         dynamic_max=True,
     ),
@@ -268,14 +255,16 @@ def _cache_get(key: str) -> tuple[bool, Any]:
     if rec is None:
         return False, None
     timestamp, value = rec
-    if time.time() - timestamp > _CACHE_TTL_SECONDS:
+    if time.monotonic() - timestamp >= _CACHE_TTL_SECONDS:
         _cache.pop(key, None)
         return False, None
     return True, value
 
 
-def _cache_set(key: str, value: Any) -> None:
-    _cache[key] = (time.time(), value)
+def _cache_set(key: str, value: Any, read_started_at: float) -> None:
+    # A slow read may finish after another process commits. Its TTL starts
+    # before the query, so it cannot extend the propagation window.
+    _cache[key] = (read_started_at, value)
 
 
 def _version(rows: dict[str, SystemSetting]) -> str:
@@ -296,9 +285,22 @@ def _version(rows: dict[str, SystemSetting]) -> str:
             }
         )
     encoded = json.dumps(
-        payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        {
+            "overrides": payload,
+            "deployment": {
+                key: spec.deployment_default for key, spec in SETTING_SPECS.items()
+            },
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
     )
-    return f"v1-{hashlib.sha256(encoded.encode('utf-8')).hexdigest()}"
+    # Include deployment changes in concurrency checks without exposing an
+    # unkeyed fingerprint that could be used to guess an SMTP password.
+    digest = hmac.new(
+        settings.secret_key.encode(), encoded.encode(), hashlib.sha256
+    ).hexdigest()
+    return f"v1-{digest}"
 
 
 def _mark_changed(db: AsyncSession, keys: set[str]) -> None:
@@ -308,6 +310,8 @@ def _mark_changed(db: AsyncSession, keys: set[str]) -> None:
 
 @event.listens_for(Session, "after_commit")
 def _invalidate_after_commit(session: Session) -> None:
+    if session.in_nested_transaction():
+        return
     keys = session.info.pop(_CHANGED_KEYS_INFO, set())
     if keys:
         SystemSettingsService.invalidate_many(keys)
@@ -315,7 +319,10 @@ def _invalidate_after_commit(session: Session) -> None:
 
 @event.listens_for(Session, "after_rollback")
 def _discard_pending_invalidation(session: Session) -> None:
-    session.info.pop(_CHANGED_KEYS_INFO, None)
+    if session.in_nested_transaction():
+        return
+    keys = session.info.pop(_CHANGED_KEYS_INFO, set())
+    SystemSettingsService.invalidate_many(keys)
 
 
 class SystemSettingsService:
@@ -355,7 +362,8 @@ class SystemSettingsService:
         if unknown:
             raise ValueError(f"非法配置项: {', '.join(sorted(unknown))}")
 
-        query = select(SystemSetting)
+        read_started_at = time.monotonic()
+        query = select(SystemSetting).execution_options(populate_existing=True)
         if selected_keys:
             query = query.where(SystemSetting.key.in_(selected_keys))
         if for_update:
@@ -379,17 +387,21 @@ class SystemSettingsService:
                     # type-invalid data falls back to the deployment value.
                     value = _env_default(key)
             values[key] = value
-            if not bypass_cache:
-                _cache_set(key, value)
+            # A transaction can see its own uncommitted overrides. They must
+            # never become a process-wide effective value, including after a
+            # nested commit followed by an outer rollback.
+            if not bypass_cache and not db.sync_session.info.get(_CHANGED_KEYS_INFO):
+                _cache_set(key, value, read_started_at)
         return SettingsSnapshot(values=values, rows=rows, version=_version(rows))
 
     @staticmethod
     async def get(db: AsyncSession, key: str) -> Any:
         if key not in SETTING_SPECS:
             return _env_default(key)
-        hit, value = _cache_get(key)
-        if hit:
-            return value
+        if not db.sync_session.info.get(_CHANGED_KEYS_INFO):
+            hit, value = _cache_get(key)
+            if hit:
+                return value
         snapshot = await SystemSettingsService._load_snapshot(db, keys={key})
         return snapshot.values[key]
 
@@ -424,7 +436,6 @@ class SystemSettingsService:
     async def get_import_limits_snapshot(db: AsyncSession) -> dict[str, Any]:
         snapshot = await SystemSettingsService._load_snapshot(
             db,
-            keys={"dataset_import_max_files", "dataset_import_max_total_bytes"},
             bypass_cache=True,
         )
         return {
@@ -448,6 +459,14 @@ class SystemSettingsService:
         unknown = set(updates).difference(SETTING_SPECS)
         if unknown:
             raise ValueError(f"非法配置项: {', '.join(sorted(unknown))}")
+        validated: dict[str, Any] = {}
+        for key, raw in updates.items():
+            if raw is None:
+                continue
+            try:
+                validated[key] = _validate_stored_value(SETTING_SPECS[key], raw)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"{key} 类型或范围错误: {exc}") from exc
         await SystemSettingsService._lock(db)
         current = await SystemSettingsService._load_snapshot(
             db, keys=set(SETTING_SPECS), bypass_cache=True, for_update=True
@@ -457,18 +476,11 @@ class SystemSettingsService:
 
         changes: dict[str, tuple[Any, Any]] = {}
         changed_keys: set[str] = set()
-        for key, raw in updates.items():
+        for key, stored in validated.items():
             spec = SETTING_SPECS[key]
-            if raw is None:
-                # PATCH schemas treat null as omitted for compatibility.  The
-                # explicit reset endpoint is the only public removal operation.
-                continue
-            try:
-                stored = _validate_stored_value(spec, raw)
-            except (TypeError, ValueError) as exc:
-                raise ValueError(f"{key} 类型或范围错误: {exc}") from exc
             old_value = current.values[key]
-            if old_value == stored:
+            row = current.rows.get(key)
+            if row is not None and row.value_json is not None and old_value == stored:
                 continue
 
             stmt = pg_insert(SystemSetting).values(

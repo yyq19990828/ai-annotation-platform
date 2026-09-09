@@ -39,7 +39,7 @@ vi.mock("../pages/Workbench/state/offlineQueue", () => ({
   replaceAnnotationId: mockOfflineQueue.replaceAnnotationId,
 }));
 
-import { useLogin, useLogout } from "./useAuth";
+import { useLogin, useLogout, useLogoutAll } from "./useAuth";
 
 const fakeUser: MeResponse = {
   id: "1",
@@ -70,6 +70,39 @@ function wrapper({ children }: { children: ReactNode }) {
   });
   return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
 }
+
+describe("useLogoutAll", () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    useAuthStore.getState().setAuth("original-token", fakeUser);
+  });
+
+  it("keeps the current device signed in with the replacement token", async () => {
+    mockAuthApi.logoutAll.mockResolvedValue({ access_token: "replacement-token" });
+    const { result } = renderHook(() => useLogoutAll(), { wrapper });
+    await act(async () => {
+      await result.current.mutateAsync();
+    });
+    expect(useAuthStore.getState()).toMatchObject({ token: "replacement-token", user: fakeUser });
+  });
+
+  it("never installs a previous account's late replacement token", async () => {
+    const response = deferred<{ access_token: string }>();
+    mockAuthApi.logoutAll.mockReturnValue(response.promise);
+    const { result } = renderHook(() => useLogoutAll(), { wrapper });
+    let request: Promise<unknown>;
+    act(() => {
+      request = result.current.mutateAsync();
+    });
+    await waitFor(() => expect(mockAuthApi.logoutAll).toHaveBeenCalled());
+    useAuthStore.getState().setAuth("other-token", { ...fakeUser, id: "other" });
+    await act(async () => {
+      response.resolve({ access_token: "late-original-token" });
+      await request;
+    });
+    expect(useAuthStore.getState()).toMatchObject({ token: "other-token", user: { id: "other" } });
+  });
+});
 
 describe("useLogin", () => {
   beforeEach(() => {

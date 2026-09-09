@@ -9,6 +9,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, BinaryIO, Iterable
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -74,6 +75,17 @@ async def _resolve_import_limits_snapshot(
 ) -> dict[str, Any]:
     """Load or persist the immutable budget used by this import job."""
 
+    # Re-read under a row lock: two deliveries of a legacy queued job must not
+    # both capture different live budgets and overwrite each other's snapshot.
+    locked_job = await db.scalar(
+        select(AsyncJob)
+        .where(AsyncJob.id == job.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if locked_job is None:
+        raise ValueError("dataset import job not found")
+    job = locked_job
     payload = job.payload or {}
     snapshot = payload.get("settings_snapshot")
     if snapshot is None:

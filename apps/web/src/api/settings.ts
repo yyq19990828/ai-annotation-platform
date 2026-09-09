@@ -43,7 +43,7 @@ export interface SmtpStatusResponse {
 }
 
 export interface SystemSettingsResponse {
-  /** Monotonic server-side settings revision used for optimistic concurrency. */
+  /** Opaque server-side settings revision used for optimistic concurrency. */
   version?: string;
   /** Non-secret provenance and validation information for editable settings. */
   metadata?: Partial<Record<SystemSettingKey, SystemSettingMetadata>>;

@@ -515,6 +515,29 @@ function cloneSmtp(value: SmtpDraft): SmtpDraft {
   return { ...value };
 }
 
+function matchesSmtpSearch(search: string): boolean {
+  const needle = search.trim().toLocaleLowerCase();
+  return (
+    !needle ||
+    [
+      "smtp",
+      "邮件",
+      "访问地址",
+      "主机",
+      "端口",
+      "账号",
+      "用户",
+      "发件人",
+      "密码",
+      "smtp_host",
+      "smtp_port",
+      "smtp_user",
+      "smtp_password",
+      "smtp_from",
+    ].some((term) => term.includes(needle))
+  );
+}
+
 function ErrorBanner({ children }: { children: ReactNode }) {
   return (
     <div
@@ -549,6 +572,7 @@ export function SystemSettingsSection({ onDirtyChange }: SystemSettingsSectionPr
   const [conflict, setConflict] = useState(false);
   const [resettingKey, setResettingKey] = useState<SystemSettingKey | null>(null);
   const initializedRef = useRef(false);
+  const baselineVersionRef = useRef<string | undefined>(undefined);
   const draftsRef = useRef<Drafts>({});
   const baselineRef = useRef<Drafts>({});
   const smtpDraftRef = useRef(smtpDraft);
@@ -564,7 +588,12 @@ export function SystemSettingsSection({ onDirtyChange }: SystemSettingsSectionPr
   }, []);
 
   const applyServerData = useCallback(
-    (nextData: SystemSettingsResponse, preserveDirty = false, preserveKey?: SystemSettingKey) => {
+    (
+      nextData: SystemSettingsResponse,
+      preserveDirty = false,
+      preserveKey?: SystemSettingKey,
+      savedGroup?: SettingGroup,
+    ) => {
       const nextBaseline = initialDrafts(nextData);
       const nextSmtpBaseline = initialSmtpDraft(nextData);
       const preservedDrafts: Drafts = {};
@@ -572,6 +601,7 @@ export function SystemSettingsSection({ onDirtyChange }: SystemSettingsSectionPr
         for (const definition of SETTING_DEFINITIONS) {
           if (
             definition.key !== preserveKey &&
+            definition.group !== savedGroup &&
             !sameDraft(draftsRef.current[definition.key], baselineRef.current[definition.key])
           ) {
             preservedDrafts[definition.key] = draftsRef.current[definition.key];
@@ -579,7 +609,11 @@ export function SystemSettingsSection({ onDirtyChange }: SystemSettingsSectionPr
         }
       }
       let preservedSmtp = nextSmtpBaseline;
-      if (preserveDirty && !sameSmtpDraft(smtpDraftRef.current, smtpBaselineRef.current)) {
+      if (
+        preserveDirty &&
+        savedGroup !== "mail" &&
+        !sameSmtpDraft(smtpDraftRef.current, smtpBaselineRef.current)
+      ) {
         preservedSmtp = cloneSmtp(smtpDraftRef.current);
         if (preserveKey === "smtp_host") preservedSmtp.host = nextSmtpBaseline.host;
         if (preserveKey === "smtp_port") preservedSmtp.port = nextSmtpBaseline.port;
@@ -592,6 +626,7 @@ export function SystemSettingsSection({ onDirtyChange }: SystemSettingsSectionPr
       }
       const nextDrafts = preserveDirty ? { ...nextBaseline, ...preservedDrafts } : nextBaseline;
       baselineRef.current = nextBaseline;
+      baselineVersionRef.current = nextData.version;
       smtpBaselineRef.current = nextSmtpBaseline;
       setBaseline(nextBaseline);
       setSmtpBaseline(nextSmtpBaseline);
@@ -618,7 +653,12 @@ export function SystemSettingsSection({ onDirtyChange }: SystemSettingsSectionPr
 
     // Query refreshes update the readback/provenance surface, but never replace a
     // draft the user is actively editing. A clean form follows the latest server data.
+    if (isDirty) {
+      if (data.version !== baselineVersionRef.current) setConflict(true);
+      return;
+    }
     baselineRef.current = nextBaseline;
+    baselineVersionRef.current = data.version;
     smtpBaselineRef.current = nextSmtpBaseline;
     setBaseline(nextBaseline);
     setSmtpBaseline(nextSmtpBaseline);
@@ -682,7 +722,10 @@ export function SystemSettingsSection({ onDirtyChange }: SystemSettingsSectionPr
       if (!data || resettingKey) return;
       setResettingKey(key);
       resetMut.mutate(
-        { keys: [key], ...(data.version ? { expected_version: data.version } : {}) },
+        {
+          keys: [key],
+          ...(baselineVersionRef.current ? { expected_version: baselineVersionRef.current } : {}),
+        },
         {
           onSuccess: (saved) => {
             applyServerData(saved, true, key);
@@ -707,6 +750,7 @@ export function SystemSettingsSection({ onDirtyChange }: SystemSettingsSectionPr
     (definition: SettingDefinition, value: DraftValue): SystemSettingsPatch | string => {
       if (definition.input === "boolean") return { [definition.key]: value === true };
       if (typeof value !== "string" || value.trim() === "") return `${definition.label}不能为空`;
+      if (definition.input === "string") return { [definition.key]: value.trim() };
       const metadata = data ? settingMetadata(data, definition) : DEFAULT_METADATA[definition.key];
       if (definition.input === "bytes") {
         try {
@@ -743,7 +787,7 @@ export function SystemSettingsSection({ onDirtyChange }: SystemSettingsSectionPr
       event?.preventDefault();
       if (!data || updateMut.isPending) return;
       const patch: SystemSettingsPatch = {
-        ...(data.version ? { expected_version: data.version } : {}),
+        ...(baselineVersionRef.current ? { expected_version: baselineVersionRef.current } : {}),
       };
       const changedDefinitions = SETTING_DEFINITIONS.filter(
         (definition) =>
@@ -759,11 +803,10 @@ export function SystemSettingsSection({ onDirtyChange }: SystemSettingsSectionPr
         Object.assign(patch, result);
       }
       if (group === "mail") {
-        const original = initialSmtpDraft(data);
+        const original = smtpBaselineRef.current;
         if (smtpDraft.host !== original.host) patch.smtp_host = smtpDraft.host.trim();
         if (smtpDraft.port !== original.port) {
-          if (smtpDraft.port.trim() === "") patch.smtp_port = null;
-          else if (!/^\d+$/.test(smtpDraft.port.trim())) {
+          if (!/^\d+$/.test(smtpDraft.port.trim())) {
             pushToast({ msg: "无法保存设置", sub: "SMTP 端口必须是整数", kind: "warning" });
             return;
           } else {
@@ -799,7 +842,7 @@ export function SystemSettingsSection({ onDirtyChange }: SystemSettingsSectionPr
         onSuccess: (saved) => {
           // The server response is the source of truth: in particular it only
           // exposes password_set, never the password that was submitted.
-          applyServerData(saved);
+          applyServerData(saved, true, undefined, group);
           pushToast({
             msg: `${GROUPS.find((item) => item.key === group)?.label ?? "设置"}已保存`,
             kind: "success",
@@ -846,7 +889,7 @@ export function SystemSettingsSection({ onDirtyChange }: SystemSettingsSectionPr
   );
 
   const handleSmtpTest = useCallback(() => {
-    if (smtpDirty || !data?.smtp.configured) return;
+    if (smtpDirty || dirtyKeys.includes("frontend_base_url") || !data?.smtp.configured) return;
     testSmtpMut.mutate(undefined, {
       onSuccess: (result) =>
         pushToast({
@@ -857,7 +900,7 @@ export function SystemSettingsSection({ onDirtyChange }: SystemSettingsSectionPr
       onError: (testError) =>
         pushToast({ msg: "SMTP 测试失败", sub: errorMessage(testError), kind: "warning" }),
     });
-  }, [data?.smtp.configured, pushToast, smtpDirty, testSmtpMut]);
+  }, [data?.smtp.configured, dirtyKeys, pushToast, smtpDirty, testSmtpMut]);
 
   if (isLoading || !data) {
     return (
@@ -873,11 +916,7 @@ export function SystemSettingsSection({ onDirtyChange }: SystemSettingsSectionPr
 
   const renderGroup = (group: (typeof GROUPS)[number]) => {
     const definitions = visibleDefinitions.filter((definition) => definition.group === group.key);
-    const mailSearchMatch =
-      !search.trim() ||
-      ["smtp", "邮件", "访问地址", "主机", "端口", "账号", "发件人", "密码"].some((term) =>
-        search.trim().toLocaleLowerCase().includes(term.toLocaleLowerCase()),
-      );
+    const mailSearchMatch = matchesSmtpSearch(search);
     const groupKeys = SETTING_DEFINITIONS.filter(
       (definition) => definition.group === group.key,
     ).map((definition) => definition.key);
@@ -899,60 +938,62 @@ export function SystemSettingsSection({ onDirtyChange }: SystemSettingsSectionPr
           </Badge>
         </div>
         <form className={FORM_CLASS} onSubmit={(event) => saveGroup(group.key, event)}>
-          {definitions.map((definition) => (
-            <SettingRow
-              key={definition.key}
-              data={data}
-              definition={definition}
-              metadata={settingMetadata(data, definition)}
-              draft={drafts[definition.key]}
-              baseline={baseline[definition.key]}
-              onChange={(value) => setDrafts({ ...draftsRef.current, [definition.key]: value })}
-              onReset={() => resetKey(definition.key)}
-              resetting={resettingKey === definition.key}
-            />
-          ))}
-          {group.key === "mail" && (
-            <SmtpFields
-              data={data}
-              draft={smtpDraft}
-              dirty={smtpDirty}
-              onChange={setSmtpDraft}
-              onTest={handleSmtpTest}
-              testPending={testSmtpMut.isPending}
-              onReset={resetKey}
-              resettingKey={resettingKey}
-            />
-          )}
-          {groupDirty && (
-            <ChangeSummary
-              data={data}
-              definitions={SETTING_DEFINITIONS.filter(
-                (definition) => definition.group === group.key,
-              )}
-              drafts={drafts}
-              baseline={baseline}
-              smtpDraft={smtpDraft}
-              smtpBaseline={smtpBaseline}
-            />
-          )}
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <button
-              type="button"
-              className={BUTTON_CLASS}
-              disabled={!groupDirty || updateMut.isPending}
-              onClick={() => cancelGroup(group.key)}
-            >
-              取消修改
-            </button>
-            <button
-              type="submit"
-              className={PRIMARY_BUTTON_CLASS}
-              disabled={!groupDirty || updateMut.isPending}
-            >
-              {updateMut.isPending ? "保存中..." : `保存${group.label}`}
-            </button>
-          </div>
+          <fieldset disabled={updateMut.isPending || resetMut.isPending} className="contents">
+            {definitions.map((definition) => (
+              <SettingRow
+                key={definition.key}
+                data={data}
+                definition={definition}
+                metadata={settingMetadata(data, definition)}
+                draft={drafts[definition.key]}
+                baseline={baseline[definition.key]}
+                onChange={(value) => setDrafts({ ...draftsRef.current, [definition.key]: value })}
+                onReset={() => resetKey(definition.key)}
+                resetting={resettingKey === definition.key}
+              />
+            ))}
+            {group.key === "mail" && mailSearchMatch && (
+              <SmtpFields
+                data={data}
+                draft={smtpDraft}
+                dirty={groupDirty}
+                onChange={setSmtpDraft}
+                onTest={handleSmtpTest}
+                testPending={testSmtpMut.isPending}
+                onReset={resetKey}
+                resettingKey={resettingKey}
+              />
+            )}
+            {groupDirty && (
+              <ChangeSummary
+                data={data}
+                definitions={SETTING_DEFINITIONS.filter(
+                  (definition) => definition.group === group.key,
+                )}
+                drafts={drafts}
+                baseline={baseline}
+                smtpDraft={smtpDraft}
+                smtpBaseline={smtpBaseline}
+              />
+            )}
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <button
+                type="button"
+                className={BUTTON_CLASS}
+                disabled={!groupDirty || updateMut.isPending}
+                onClick={() => cancelGroup(group.key)}
+              >
+                取消修改
+              </button>
+              <button
+                type="submit"
+                className={PRIMARY_BUTTON_CLASS}
+                disabled={!groupDirty || updateMut.isPending}
+              >
+                {updateMut.isPending ? "保存中..." : `保存${group.label}`}
+              </button>
+            </div>
+          </fieldset>
         </form>
       </Card>
     );
@@ -999,14 +1040,21 @@ export function SystemSettingsSection({ onDirtyChange }: SystemSettingsSectionPr
           {saveError && <ErrorBanner>{saveError}</ErrorBanner>}
           {conflict && (
             <div className="rounded-md border border-status-warning/40 bg-status-warning-soft px-3 py-2 text-sm text-foreground">
-              最新服务器值已显示在每一项的“当前有效值”中；你的草稿仍保留，请确认后再次保存。
+              最新服务器值已显示在每一项的“当前有效值”中；你的草稿仍保留，请核对差异。
+              <button
+                type="button"
+                className={`${BUTTON_CLASS} mt-2`}
+                onClick={() => applyServerData(data, true)}
+              >
+                已核对最新值，保留草稿继续编辑
+              </button>
             </div>
           )}
         </div>
       )}
 
       {GROUPS.map(renderGroup)}
-      {search.trim() && visibleDefinitions.length === 0 && (
+      {search.trim() && visibleDefinitions.length === 0 && !matchesSmtpSearch(search) && (
         <Card>
           <div className="p-6 text-center text-sm text-muted-foreground">没有匹配的系统设置</div>
         </Card>
@@ -1066,7 +1114,8 @@ function SettingRow({
       <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(230px,1fr)]">
         <div>
           <div className={FIELD_LABEL_CLASS}>
-            编辑值{metadata.unit ? `（${metadata.unit}）` : ""}
+            编辑值
+            {definition.input === "bytes" ? "（GiB）" : metadata.unit ? `（${metadata.unit}）` : ""}
           </div>
           {definition.input === "boolean" ? (
             <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 text-sm text-foreground">
@@ -1090,7 +1139,13 @@ function SettingRow({
             <input
               id={id}
               type={definition.input === "integer" ? "number" : "text"}
-              inputMode={definition.input === "bytes" ? "decimal" : "numeric"}
+              inputMode={
+                definition.input === "bytes"
+                  ? "decimal"
+                  : definition.input === "string"
+                    ? "url"
+                    : "numeric"
+              }
               value={typeof draft === "boolean" || draft == null ? "" : draft}
               onChange={(event) => onChange(event.target.value)}
               className={INPUT_CLASS}

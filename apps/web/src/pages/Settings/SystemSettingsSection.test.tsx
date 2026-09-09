@@ -105,6 +105,54 @@ describe("SystemSettingsSection", () => {
     );
   });
 
+  it("saves a front-end address as text", () => {
+    renderSettings();
+    fireEvent.change(screen.getByLabelText("前端基础地址"), {
+      target: { value: "https://labels.example.test" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存邮件与访问地址" }));
+    expect(mockUpdate.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({ frontend_base_url: "https://labels.example.test" }),
+      expect.any(Object),
+    );
+  });
+
+  it("saving one group keeps edits in other groups", () => {
+    renderSettings();
+    fireEvent.change(screen.getByLabelText("视频向后预热块数"), { target: { value: "0" } });
+    fireEvent.change(screen.getByLabelText("每位管理员邀请上限"), { target: { value: "25" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存视频体验" }));
+    act(() =>
+      mockUpdate.mutate.mock.calls[0][1].onSuccess(
+        response({ version: "v2", video_chunk_warmup_lookahead: 0 }),
+      ),
+    );
+    expect(screen.getByLabelText("每位管理员邀请上限")).toHaveValue(25);
+    expect(screen.getByRole("button", { name: "保存成员与邀请" })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: "保存视频体验" })).toBeDisabled();
+  });
+
+  it("requires explicit acknowledgement before rebasing a dirty draft version", () => {
+    const first = response();
+    const second = response({ version: "v2", max_invitations_per_day: 40 });
+    const view = renderSettings(first);
+    fireEvent.change(screen.getByLabelText("视频向后预热块数"), { target: { value: "0" } });
+    mockUseSystemSettings.mockReturnValue({ data: second, isLoading: false, error: null });
+    view.rerender(<SystemSettingsSection />);
+    fireEvent.click(screen.getByRole("button", { name: "保存视频体验" }));
+    expect(mockUpdate.mutate.mock.calls[0][0]).toEqual({
+      expected_version: "v1",
+      video_chunk_warmup_lookahead: 0,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "已核对最新值，保留草稿继续编辑" }));
+    fireEvent.click(screen.getByRole("button", { name: "保存视频体验" }));
+    expect(mockUpdate.mutate.mock.calls[1][0]).toEqual({
+      expected_version: "v2",
+      video_chunk_warmup_lookahead: 0,
+    });
+    expect(screen.getByLabelText("每位管理员邀请上限")).toHaveValue(40);
+  });
+
   it("keeps a dirty draft when refreshed data arrives", async () => {
     const first = response();
     const second = response({ version: "v2", video_chunk_warmup_lookahead: 4 });

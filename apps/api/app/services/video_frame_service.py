@@ -4,6 +4,7 @@ import io
 import logging
 import uuid
 from collections import OrderedDict
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
@@ -251,7 +252,8 @@ async def _warmup_neighbor_chunks(
     except Exception:  # noqa: BLE001
         # Warmup is an optional optimization.  A settings DB outage must not
         # turn the primary video chunk response into a playback failure.
-        await db.rollback()
+        with suppress(Exception):
+            await db.rollback()
         log.exception("video chunk warmup setting unavailable; skipping warmup")
         return
 
@@ -291,15 +293,17 @@ async def list_chunks(
 
         ensure_video_chunks.delay(str(ctx.item.id), missing)
 
-    await _warmup_neighbor_chunks(db, ctx, requested_ids)
-
-    return VideoChunksResponse(
+    # Freeze the primary response before optional I/O: a failed setting read
+    # rolls back its transaction and expires ORM objects in this session.
+    response = VideoChunksResponse(
         dataset_item_id=ctx.item.id,
         task_id=ctx.task_id,
         chunk_size_frames=settings.video_chunk_size_frames,
         fallback_video_url=_asset_url(_source_key(ctx.item, ctx.metadata)),
         chunks=[_chunk_out(row) for row in rows],
     )
+    await _warmup_neighbor_chunks(db, ctx, requested_ids)
+    return response
 
 
 async def get_chunk(
@@ -323,8 +327,9 @@ async def get_chunk(
         from app.workers.media import ensure_video_chunks
 
         ensure_video_chunks.delay(str(ctx.item.id), [chunk_id])
+    response = _chunk_out(row)
     await _warmup_neighbor_chunks(db, ctx, [chunk_id])
-    return _chunk_out(row)
+    return response
 
 
 async def _ensure_frame_row(

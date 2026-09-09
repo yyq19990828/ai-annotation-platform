@@ -32,6 +32,7 @@ import type { UserRole } from "@/types";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { getPasswordValidationErrors, isPasswordStrong } from "@/utils/password";
 import { SystemSettingsSection } from "./SystemSettingsSection";
+import { useUnsavedSettingsGuard } from "./useUnsavedSettingsGuard";
 
 type SectionKey = "profile" | "workbench" | "apikeys" | "feedback" | "notifications" | "system";
 
@@ -48,9 +49,11 @@ const SECTION_HEADER_CLASS = "flex items-center justify-between border-b border-
 
 export function SettingsPage() {
   const { role } = usePermissions();
+  const currentUserId = useAuthStore((state) => state.user?.id);
   const isAdmin = role === "super_admin";
   const [section, setSection] = useState<SectionKey>("profile");
   const [systemDirty, setSystemDirty] = useState(false);
+  useUnsavedSettingsGuard(systemDirty);
 
   const sections: {
     key: SectionKey;
@@ -117,7 +120,7 @@ export function SettingsPage() {
           {section === "notifications" && <NotificationPreferencesSection />}
           {section === "system" && isAdmin && (
             <div className="flex flex-col gap-4">
-              <SystemSettingsSection onDirtyChange={setSystemDirty} />
+              <SystemSettingsSection key={currentUserId} onDirtyChange={setSystemDirty} />
               <ConnectorAllowlistSettings />
             </div>
           )}

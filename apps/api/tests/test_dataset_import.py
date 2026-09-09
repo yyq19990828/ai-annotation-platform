@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 import hashlib
 import io
@@ -9,7 +10,8 @@ from types import SimpleNamespace
 import uuid
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
+from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.db.models.async_job import AsyncJob, AsyncJobKind, AsyncJobStatus
 from app.db.models.dataset import Dataset, DatasetItem
@@ -174,6 +176,73 @@ async def test_legacy_import_job_freezes_limits_on_first_execution(
 
     assert job.payload["settings_snapshot"] == snapshot
     assert snapshot["version"].startswith("v1-")
+
+
+async def test_concurrent_legacy_deliveries_capture_only_one_budget(
+    test_engine, monkeypatch
+):
+    """Two real database sessions cannot freeze different budgets for one job."""
+    sessions = async_sessionmaker(test_engine, expire_on_commit=False)
+    job_id = uuid.uuid4()
+    async with sessions() as setup:
+        setup.add(AsyncJob(id=job_id, kind="dataset_import", payload={}))
+        await setup.commit()
+
+    first_capture = asyncio.Event()
+    second_capture = asyncio.Event()
+    release_capture = asyncio.Event()
+    captures = []
+
+    async def capture(db):
+        number = len(captures) + 1
+        snapshot = {
+            "dataset_import_max_files": number,
+            "dataset_import_max_total_bytes": number * 100,
+            "version": f"v1-{number}",
+        }
+        captures.append(snapshot)
+        if number == 1:
+            first_capture.set()
+            await release_capture.wait()
+        else:
+            second_capture.set()
+        return snapshot
+
+    monkeypatch.setattr(
+        dataset_import.SystemSettingsService, "get_import_limits_snapshot", capture
+    )
+
+    async def deliver():
+        async with sessions() as db:
+            job = await db.get(AsyncJob, job_id)
+            return await dataset_import._resolve_import_limits_snapshot(db, job)
+
+    deliveries = []
+    try:
+        deliveries.append(asyncio.create_task(deliver()))
+        await asyncio.wait_for(first_capture.wait(), 5)
+        deliveries.append(asyncio.create_task(deliver()))
+        try:
+            await asyncio.wait_for(second_capture.wait(), 0.2)
+        except TimeoutError:
+            pass
+        finally:
+            release_capture.set()
+        first, second = await asyncio.wait_for(asyncio.gather(*deliveries), 5)
+        assert first == second
+        assert len(captures) == 1
+        async with sessions() as check:
+            job = await check.get(AsyncJob, job_id)
+            assert job.payload["settings_snapshot"] == first
+    finally:
+        release_capture.set()
+        for delivery in deliveries:
+            if not delivery.done():
+                delivery.cancel()
+        await asyncio.gather(*deliveries, return_exceptions=True)
+        async with sessions() as cleanup:
+            await cleanup.execute(delete(AsyncJob).where(AsyncJob.id == job_id))
+            await cleanup.commit()
 
 
 class _FakeSftpAttr:

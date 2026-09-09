@@ -4,7 +4,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-09-09
+last_reviewed: 2026-09-10
 ---
 
 # 环境变量参考
@@ -239,6 +239,8 @@ last_reviewed: 2026-09-09
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `ALLOW_OPEN_REGISTRATION` | `false` | true  — 任何人可自行注册，默认获得 viewer 角色 false — 仅管理员可创建账号 |
+| `MAX_INVITATIONS_PER_DAY` | `30` | 每位管理员滚动 24 小时最多创建的邀请数（后台系统设置可覆盖；0 不表示无限）。 |
+| `OFFLINE_THRESHOLD_MINUTES` | `5` | 在线状态扫描把无心跳用户标记为 offline 的时间窗口（分钟；后台系统设置可覆盖）。 |
 
 ## 开放注册是否强制邮箱验证
 

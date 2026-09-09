@@ -198,7 +198,15 @@ export function useLogoutAll() {
   const { setToken } = useAuthStore();
   return useMutation({
     mutationFn: async () => {
+      const owner = useAuthStore.getState();
       const { access_token } = await authApi.logoutAll();
+      const current = useAuthStore.getState();
+      if (
+        current.user?.id !== owner.user?.id ||
+        current.token !== owner.token ||
+        localStorage.getItem("token") !== owner.token
+      )
+        return;
       setToken(access_token);
     },
   });

@@ -29,11 +29,13 @@ last_reviewed: 2026-09-09
 
 GET 返回不透明 `version` 和每项 `metadata`。metadata 包含 `source`、`deployment_default`、`updated_at`、`updated_by`、`value_type`、`unit`、`effect`、`min_value`、`max_value` 和 `in_range`。PATCH/RESET 可携带读取时的 `expected_version`；服务在 PostgreSQL 事务中取得 advisory lock 后比较版本，冲突返回 409，并提供最新的非敏感读回。写入和审计在同一事务中完成；提交后才失效本进程缓存，回滚不会污染缓存。业务读取最多使用 30 秒进程缓存，管理 GET 在提交后绕过缓存读回。
 
-SMTP 密码只在内部用于发送，响应和冲突详情只返回 `password_set`；审计只记录是否变更。密码传空串表示保存一个明确的空值，reset 表示删除数据库覆盖，两者语义不同。
+版本包含数据库覆盖及部署基线的带密钥摘要，部署默认变化也会使旧编辑版本失效。未提交的事务读取不会写入进程缓存，嵌套事务提交也不会提前发布外层事务的修改。
+
+SMTP 密码只在内部用于发送，响应和冲突详情只返回 `password_set`；审计只记录是否变更。密码传空串表示保存一个明确的空值，reset 表示删除数据库覆盖，两者语义不同。发送邮件用单次查询读取已保存的主机、端口、账号、密码和发件人，避免混用不同版本的邮件配置。
 
 ## 导入快照
 
-连接器导入 API 用同一次数据库读取把文件数、总字节和设置版本写入 `AsyncJob.payload.settings_snapshot`。worker 将快照显式传给 `_collect_within_limits()`，枚举超限在产生任何业务导入前失败，逐文件循环不查询系统设置。旧任务第一次执行时补写快照并在枚举前提交；重试继续使用原快照。
+连接器导入 API 用同一次数据库读取把文件数、总字节和设置版本写入 `AsyncJob.payload.settings_snapshot`。worker 将快照显式传给 `_collect_within_limits()`，枚举超限在产生任何业务导入前失败，逐文件循环不查询系统设置。旧任务第一次执行时在作业行锁内补写快照并在枚举前提交；重复投递及重试继续使用同一快照。
 
 导入 worker 的 `payload.stage` 在枚举时为 `collecting`，进入逐项导入后为 `importing`，终态以 `AsyncJob.status` 为准。数据库无法取得预算快照时任务失败，不回退到更宽松的部署值。
 
