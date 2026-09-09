@@ -150,16 +150,16 @@ export function createWorkspacePreset(
               [
                 branch(
                   [
-                    leaf("task-queue", ["task-queue"], height * 0.55),
-                    leaf("class-palette", ["class-palette"], height * 0.45),
+                    leaf("task-queue", ["task-queue"], height * 0.5),
+                    leaf("class-palette", ["class-palette"], height * 0.5),
                   ],
                   width * 0.15,
                 ),
                 leaf("canvas", ["canvas"], width * 0.7),
                 branch(
                   [
-                    leaf("inspector", ["inspector"], Math.min(360, height * 0.65)),
-                    leaf("discussion", ["discussion"], Math.max(height - 360, height * 0.35)),
+                    leaf("inspector", ["inspector"], height * 0.5),
+                    leaf("discussion", ["discussion"], height * 0.5),
                   ],
                   width * 0.15,
                 ),
