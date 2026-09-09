@@ -333,6 +333,7 @@ async def invite_user(
         email=payload.email,
         role=payload.role,
         group_name=payload.group_name,
+        project_id=payload.project_id,
         actor=actor,
     )
     await AuditService.log(
@@ -343,7 +344,11 @@ async def invite_user(
         target_id=inv.email,
         request=request,
         status_code=201,
-        detail={"role": inv.role, "group_name": inv.group_name},
+        detail={
+            "role": inv.role,
+            "group_name": inv.group_name,
+            "project_id": str(inv.project_id) if inv.project_id else None,
+        },
     )
     await db.commit()
 
@@ -352,10 +357,20 @@ async def invite_user(
         or settings.frontend_base_url
     )
     invite_url = f"{str(base_url).rstrip('/')}/register?token={inv.token}"
+    project_name = None
+    if inv.project_id:
+        from app.db.models.project import Project
+
+        project_name = await db.scalar(
+            select(Project.name).where(Project.id == inv.project_id)
+        )
     return InvitationCreated(
         invite_url=invite_url,
         token=inv.token,
         expires_at=inv.expires_at,
+        project_id=inv.project_id,
+        project_name=project_name,
+        project_member_role=inv.role if inv.project_id else None,
     )
 
 

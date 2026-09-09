@@ -13,6 +13,9 @@ from app.config import settings
 from app.core.security import hash_password
 from app.db.enums import UserRole
 from app.db.models.group import Group
+from app.db.models.project import Project
+from app.db.models.project_member import ProjectMember
+from app.db.models.task_batch import TaskBatch
 from app.db.models.user import User
 from app.db.models.user_invitation import UserInvitation
 from app.services.system_settings_service import SystemSettingsService
@@ -28,9 +31,27 @@ _PRIVILEGED_ROLES = {
     UserRole.SUPER_ADMIN.value,
     UserRole.PROJECT_ADMIN.value,
 }
+_PROJECT_MEMBER_ROLES = {
+    UserRole.REVIEWER.value,
+    UserRole.ANNOTATOR.value,
+    UserRole.VIEWER.value,
+}
+_MANAGER_ROLES = {
+    UserRole.SUPER_ADMIN.value,
+    UserRole.PROJECT_ADMIN.value,
+}
+_ROLE_LABELS = {
+    UserRole.SUPER_ADMIN.value: "超级管理员",
+    UserRole.PROJECT_ADMIN.value: "项目管理员",
+    UserRole.REVIEWER.value: "审核员",
+    UserRole.ANNOTATOR.value: "标注员",
+    UserRole.VIEWER.value: "观察者",
+}
 
 
 async def _lock_invitation_email(db: AsyncSession, email: str) -> None:
+    """Serialize account creation and invitation replacement for one email."""
+
     await db.execute(
         select(func.pg_advisory_xact_lock(func.hashtextextended(email, 0)))
     )
@@ -65,9 +86,177 @@ async def _get_manageable_invitation(
     return invitation
 
 
+async def _lock_user(db: AsyncSession, user_id: uuid.UUID) -> User | None:
+    return await db.scalar(select(User).where(User.id == user_id).with_for_update())
+
+
+async def _project_for_invitation(
+    db: AsyncSession, invitation: UserInvitation, *, for_update: bool = False
+) -> Project | None:
+    if invitation.project_id is None:
+        return None
+    query = select(Project).where(Project.id == invitation.project_id)
+    if for_update:
+        query = query.with_for_update()
+    project = await db.scalar(query)
+    if project is None:
+        raise HTTPException(status_code=410, detail="目标项目已删除，无法接受邀请")
+    return project
+
+
+async def _validate_inviter_scope(
+    db: AsyncSession,
+    invitation: UserInvitation,
+    project: Project | None,
+    *,
+    inviter: User | None = None,
+) -> User:
+    """Re-check issuer and project authority on every resolve/accept path."""
+
+    if inviter is None:
+        inviter = await db.scalar(select(User).where(User.id == invitation.invited_by))
+    # Invitations created before project targeting retain their payload and
+    # route, but a real issuer is still rechecked for account safety.  The
+    # defensive ``isinstance`` branch keeps the lightweight lock unit tests
+    # (which provide an AsyncMock instead of a persisted User) compatible.
+    if project is None and invitation.role not in _PRIVILEGED_ROLES:
+        if isinstance(inviter, User) and (
+            not inviter.is_active or inviter.role not in _MANAGER_ROLES
+        ):
+            raise HTTPException(
+                status_code=410, detail="邀请人已停用或不再具备管理权限"
+            )
+        return inviter  # type: ignore[return-value]
+    if inviter is None or not inviter.is_active or inviter.role not in _MANAGER_ROLES:
+        raise HTTPException(status_code=410, detail="邀请人已停用或不再具备管理权限")
+
+    # Legacy privileged invitations have always required a live super admin.
+    if (
+        invitation.role in _PRIVILEGED_ROLES
+        and inviter.role != UserRole.SUPER_ADMIN.value
+    ):
+        raise HTTPException(status_code=410, detail="该邀请权限已失效")
+
+    if project is not None:
+        owner = await db.scalar(select(User).where(User.id == project.owner_id))
+        if owner is None or not owner.is_active or owner.role not in _MANAGER_ROLES:
+            raise HTTPException(status_code=410, detail="目标项目当前没有可用的负责人")
+        if (
+            inviter.role == UserRole.PROJECT_ADMIN.value
+            and project.owner_id != inviter.id
+        ):
+            raise HTTPException(status_code=410, detail="邀请人已不再管理目标项目")
+    return inviter
+
+
+def _assert_project_role_compatible(role: str) -> None:
+    if role not in _PROJECT_MEMBER_ROLES:
+        raise HTTPException(
+            status_code=400,
+            detail="目标项目只能分配标注员、审核员或观察者角色；超级管理员和项目管理员是全局角色",
+        )
+
+
+def _assert_existing_role_compatible(user: User, role: str) -> None:
+    if user.role != role:
+        current = _ROLE_LABELS.get(user.role, user.role)
+        invited = _ROLE_LABELS.get(role, role)
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"当前账号是{current}，邀请要求{invited}。为避免静默修改全局角色，"
+                "请联系管理员调整账号角色后再接受邀请"
+            ),
+        )
+
+
+async def _add_project_membership(
+    db: AsyncSession,
+    *,
+    project_id: uuid.UUID,
+    user_id: uuid.UUID,
+    role: str,
+    assigned_by: uuid.UUID,
+) -> None:
+    """Insert membership atomically and turn a concurrent duplicate into 409."""
+
+    result = await db.execute(
+        pg_insert(ProjectMember)
+        .values(
+            id=uuid.uuid4(),
+            project_id=project_id,
+            user_id=user_id,
+            role=role,
+            assigned_by=assigned_by,
+        )
+        .on_conflict_do_nothing(index_elements=["project_id", "user_id"])
+        .returning(ProjectMember.id)
+    )
+    if result.scalar_one_or_none() is None:
+        raise HTTPException(status_code=409, detail="该账号已是目标项目成员")
+
+
+async def _acceptance_summary(
+    db: AsyncSession,
+    *,
+    user: User,
+    project: Project | None,
+    member_role: str | None,
+) -> dict[str, object]:
+    if project is None:
+        return {
+            "project_id": None,
+            "project_name": None,
+            "project_member_role": None,
+            "next_action": "wait_for_allocation",
+            "next_action_label": "等待管理员分配项目",
+            "responsible_person_name": None,
+            "active_batch_count": 0,
+        }
+
+    owner = await db.scalar(select(User).where(User.id == project.owner_id))
+    active_batch_count = 0
+    if member_role == UserRole.ANNOTATOR.value:
+        active_batch_count = int(
+            await db.scalar(
+                select(func.count(TaskBatch.id)).where(
+                    TaskBatch.project_id == project.id,
+                    TaskBatch.status.in_(["active", "annotating", "rejected"]),
+                    TaskBatch.annotator_id == user.id,
+                )
+            )
+            or 0
+        )
+    elif member_role == UserRole.REVIEWER.value:
+        active_batch_count = int(
+            await db.scalar(
+                select(func.count(TaskBatch.id)).where(
+                    TaskBatch.project_id == project.id,
+                    TaskBatch.status.in_(["active", "annotating", "reviewing"]),
+                    TaskBatch.reviewer_id == user.id,
+                )
+            )
+            or 0
+        )
+
+    has_work = active_batch_count > 0
+    return {
+        "project_id": project.id,
+        "project_name": project.name,
+        "project_member_role": member_role,
+        "next_action": "start_work" if has_work else "wait_for_allocation",
+        "next_action_label": "开始工作" if has_work else "等待分派",
+        "responsible_person_name": owner.name if owner else None,
+        "active_batch_count": active_batch_count,
+    }
+
+
 class InvitationService:
     @staticmethod
     async def check_daily_limit(db: AsyncSession, actor_id: uuid.UUID) -> None:
+        # Lock the inviter row so concurrent API workers cannot all pass the
+        # count check before their invitation rows become visible.
+        await db.scalar(select(User.id).where(User.id == actor_id).with_for_update())
         since = datetime.now(timezone.utc) - timedelta(hours=24)
         result = await db.execute(
             select(func.count())
@@ -78,10 +267,20 @@ class InvitationService:
             )
         )
         count = result.scalar_one()
-        if count >= settings.max_invitations_per_day:
+        configured = await SystemSettingsService.get(db, "max_invitations_per_day")
+        try:
+            limit = int(
+                settings.max_invitations_per_day if configured is None else configured
+            )
+        except (TypeError, ValueError):
+            limit = int(settings.max_invitations_per_day)
+        # A zero/invalid deployment value is fail-closed.  System settings
+        # validation normally prevents it, but a bad historical override must
+        # never turn the quota into an unlimited path.
+        if count >= limit:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail=f"每日邀请上限 {settings.max_invitations_per_day} 次，请明天再试",
+                detail=f"每位管理员滚动 24 小时最多邀请 {limit} 人，请稍后再试",
             )
 
     @staticmethod
@@ -91,6 +290,7 @@ class InvitationService:
         email: str,
         role: str,
         group_name: str | None,
+        project_id: uuid.UUID | None = None,
         actor: User,
     ) -> UserInvitation:
         if role not in _ALLOWED_ROLES:
@@ -104,7 +304,28 @@ class InvitationService:
                 detail="项目管理员仅能邀请审核员、标注员或观察者",
             )
 
+        if project_id is not None:
+            _assert_project_role_compatible(role)
+
+        # Acquire the inviter lock before the project lock. Acceptance follows
+        # the same order, which keeps quota checks and target validation from
+        # deadlocking under concurrent operations.
         await InvitationService.check_daily_limit(db, actor.id)
+
+        project: Project | None = None
+        if project_id is not None:
+            project = await db.scalar(
+                select(Project).where(Project.id == project_id).with_for_update()
+            )
+            if project is None:
+                raise HTTPException(status_code=404, detail="目标项目不存在")
+            await _validate_inviter_scope(
+                db,
+                UserInvitation(invited_by=actor.id, role=role),
+                project,
+                inviter=actor,
+            )
+
         await _lock_invitation_email(db, email)
 
         # 已激活用户存在 → 拒绝
@@ -114,7 +335,7 @@ class InvitationService:
         if active.scalar_one_or_none() is not None:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"邮箱 {email} 已注册",
+                detail=f"邮箱 {email} 已注册，请让该用户登录后确认项目邀请",
             )
 
         # 作废同 email 仍 pending 的旧邀请（accepted_at IS NULL）
@@ -128,14 +349,16 @@ class InvitationService:
         await db.execute(expire_old.values(expires_at=now))
 
         token = secrets.token_urlsafe(32)
-        ttl_days = int(
-            await SystemSettingsService.get(db, "invitation_ttl_days")
-            or settings.invitation_ttl_days
-        )
+        ttl_raw = await SystemSettingsService.get(db, "invitation_ttl_days")
+        try:
+            ttl_days = int(settings.invitation_ttl_days if ttl_raw is None else ttl_raw)
+        except (TypeError, ValueError):
+            ttl_days = int(settings.invitation_ttl_days)
         inv = UserInvitation(
             email=email,
             role=role,
             group_name=group_name,
+            project_id=project_id,
             token=token,
             expires_at=now + timedelta(days=ttl_days),
             invited_by=actor.id,
@@ -161,16 +384,10 @@ class InvitationService:
             raise HTTPException(status_code=410, detail="该邀请已撤销")
         if inv.expires_at <= datetime.now(timezone.utc):
             raise HTTPException(status_code=410, detail="该邀请已过期")
-        if inv.role in _PRIVILEGED_ROLES:
-            authorized_inviter = await db.scalar(
-                select(User.id).where(
-                    User.id == inv.invited_by,
-                    User.role == UserRole.SUPER_ADMIN.value,
-                    User.is_active.is_(True),
-                )
-            )
-            if authorized_inviter is None:
-                raise HTTPException(status_code=410, detail="该邀请权限已失效")
+        project = await _project_for_invitation(db, inv, for_update=False)
+        await _validate_inviter_scope(db, inv, project)
+        if project is not None:
+            _assert_project_role_compatible(inv.role)
         return inv
 
     @staticmethod
@@ -204,10 +421,11 @@ class InvitationService:
         if inv.accepted_at is not None:
             raise HTTPException(status_code=400, detail="该邀请已被接受，无法重发")
         inv.token = secrets.token_urlsafe(32)
-        ttl_days = int(
-            await SystemSettingsService.get(db, "invitation_ttl_days")
-            or settings.invitation_ttl_days
-        )
+        ttl_raw = await SystemSettingsService.get(db, "invitation_ttl_days")
+        try:
+            ttl_days = int(settings.invitation_ttl_days if ttl_raw is None else ttl_raw)
+        except (TypeError, ValueError):
+            ttl_days = int(settings.invitation_ttl_days)
         inv.expires_at = datetime.now(timezone.utc) + timedelta(days=ttl_days)
         inv.revoked_at = None
         await db.flush()
@@ -220,17 +438,25 @@ class InvitationService:
         token: str,
         name: str,
         password: str,
-    ) -> tuple[User, UserInvitation]:
-        inv = await InvitationService.resolve(db, token)
-        await _lock_invitation_email(db, inv.email)
+    ) -> tuple[User, UserInvitation, dict[str, object]]:
+        # First resolve gives a useful public error before taking locks.  The
+        # second resolve is the authoritative, row-locked check.
+        initial = await InvitationService.resolve(db, token)
+        await _lock_user(db, initial.invited_by)
+        await _lock_invitation_email(db, initial.email)
         inv = await InvitationService.resolve(db, token, for_update=True)
+        project = await _project_for_invitation(db, inv, for_update=True)
+        inviter = await _validate_inviter_scope(db, inv, project)
 
         # 二次防御：注册期间该 email 是否被抢占
         existing = await db.execute(
             select(User).where(User.email == inv.email, User.is_active.is_(True))
         )
         if existing.scalar_one_or_none() is not None:
-            raise HTTPException(status_code=409, detail="该邮箱已被注册")
+            raise HTTPException(
+                status_code=409,
+                detail="该邮箱已注册，请让该用户登录后确认项目邀请",
+            )
 
         group_name = (inv.group_name or "").strip() or None
         if group_name is not None and len(group_name) > 100:
@@ -243,6 +469,7 @@ class InvitationService:
             if group_name is not None
             else None
         )
+        inv.group_name = group.name if group else None
 
         user = User(
             email=inv.email,
@@ -253,14 +480,76 @@ class InvitationService:
             group_id=group.id if group else None,
             status="online",
             is_active=True,
-            # v0.12.0 · 邀请 token 本身即身份证明，邀请注册恒视为已验证
+            # 邀请 token 本身即身份证明，邀请注册恒视为已验证
             email_verified_at=datetime.now(timezone.utc),
         )
         db.add(user)
         await db.flush()
 
-        inv.group_name = group.name if group else None
+        if project is not None:
+            _assert_project_role_compatible(inv.role)
+            await _add_project_membership(
+                db,
+                project_id=project.id,
+                user_id=user.id,
+                role=inv.role,
+                assigned_by=inviter.id,
+            )
+
         inv.accepted_at = datetime.now(timezone.utc)
         inv.accepted_user_id = user.id
         await db.flush()
-        return user, inv
+        acceptance = await _acceptance_summary(
+            db,
+            user=user,
+            project=project,
+            member_role=inv.role if project is not None else None,
+        )
+        return user, inv, acceptance
+
+    @staticmethod
+    async def accept_existing(
+        db: AsyncSession, *, token: str, user: User
+    ) -> tuple[User, UserInvitation, dict[str, object]]:
+        initial = await InvitationService.resolve(db, token)
+        await _lock_user(db, initial.invited_by)
+        await _lock_invitation_email(db, initial.email)
+        inv = await InvitationService.resolve(db, token, for_update=True)
+        project = await _project_for_invitation(db, inv, for_update=True)
+        if project is None:
+            raise HTTPException(
+                status_code=409,
+                detail="该邀请仅用于创建新账号，已有账号只能接受带目标项目的邀请",
+            )
+        inviter = await _validate_inviter_scope(db, inv, project)
+
+        locked_user = await _lock_user(db, user.id)
+        if locked_user is None or not locked_user.is_active:
+            raise HTTPException(status_code=401, detail="账号已停用，请重新登录")
+        if locked_user.email.strip().lower() != inv.email.strip().lower():
+            raise HTTPException(
+                status_code=403,
+                detail="当前登录邮箱与邀请邮箱不一致，请使用被邀请邮箱登录",
+            )
+
+        if project is not None:
+            _assert_project_role_compatible(inv.role)
+            _assert_existing_role_compatible(locked_user, inv.role)
+            await _add_project_membership(
+                db,
+                project_id=project.id,
+                user_id=locked_user.id,
+                role=inv.role,
+                assigned_by=inviter.id,
+            )
+
+        inv.accepted_at = datetime.now(timezone.utc)
+        inv.accepted_user_id = locked_user.id
+        await db.flush()
+        acceptance = await _acceptance_summary(
+            db,
+            user=locked_user,
+            project=project,
+            member_role=inv.role if project is not None else None,
+        )
+        return locked_user, inv, acceptance

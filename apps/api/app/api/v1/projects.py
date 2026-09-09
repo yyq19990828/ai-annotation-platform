@@ -1215,10 +1215,17 @@ async def add_member(
     target = await db.get(User, body.user_id)
     if target is None or not target.is_active:
         raise HTTPException(status_code=404, detail="目标用户不存在")
-    if body.role == "annotator" and target.role != UserRole.ANNOTATOR:
-        raise HTTPException(status_code=400, detail="目标用户角色不是标注员")
-    if body.role == "reviewer" and target.role != UserRole.REVIEWER:
-        raise HTTPException(status_code=400, detail="目标用户角色不是审核员")
+    expected_roles = {
+        "annotator": UserRole.ANNOTATOR.value,
+        "reviewer": UserRole.REVIEWER.value,
+        "viewer": UserRole.VIEWER.value,
+    }
+    if target.role != expected_roles[body.role]:
+        labels = {"annotator": "标注员", "reviewer": "审核员", "viewer": "观察者"}
+        raise HTTPException(
+            status_code=400,
+            detail=f"目标用户角色不是{labels[body.role]}，项目成员职责必须与全局角色匹配",
+        )
 
     existing = await db.execute(
         select(ProjectMember).where(

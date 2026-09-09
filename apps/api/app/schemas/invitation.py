@@ -17,6 +17,7 @@ class InvitationCreate(BaseModel):
     email: str
     role: str
     group_name: str | None = Field(default=None, max_length=100)
+    project_id: UUID | None = None
 
     @field_validator("email")
     @classmethod
@@ -36,14 +37,39 @@ class InvitationCreated(BaseModel):
     invite_url: str
     token: str
     expires_at: datetime
+    project_id: UUID | None = None
+    project_name: str | None = None
+    project_member_role: str | None = None
 
 
 class InvitationResolve(BaseModel):
     email: str
     role: str
     group_name: str | None
+    project_id: UUID | None = None
+    project_name: str | None = None
+    project_member_role: str | None = None
     expires_at: datetime
     invited_by_name: str | None = None
+
+
+class InvitationAcceptance(BaseModel):
+    project_id: UUID | None = None
+    project_name: str | None = None
+    project_member_role: str | None = None
+    next_action: str
+    next_action_label: str
+    responsible_person_name: str | None = None
+    active_batch_count: int = 0
+
+
+class AcceptInvitationRequest(BaseModel):
+    token: str = Field(min_length=1)
+
+
+class AcceptInvitationResponse(BaseModel):
+    user: UserOut
+    acceptance: InvitationAcceptance
 
 
 class RegisterRequest(BaseModel):
@@ -69,6 +95,7 @@ class RegisterResponse(BaseModel):
     token_type: str = "bearer"
     user: UserOut
     email_verification_required: bool = False
+    acceptance: InvitationAcceptance | None = None
 
 
 class InvitationOut(BaseModel):
@@ -76,6 +103,9 @@ class InvitationOut(BaseModel):
     email: str
     role: str
     group_name: str | None
+    project_id: UUID | None = None
+    project_name: str | None = None
+    project_member_role: str | None = None
     status: str  # pending | accepted | expired | revoked
     expires_at: datetime
     invited_by: UUID

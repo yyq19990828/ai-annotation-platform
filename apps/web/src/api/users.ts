@@ -116,12 +116,16 @@ export interface InvitePayload {
   email: string;
   role: string;
   group_name?: string;
+  project_id?: string;
 }
 
 export interface InvitationCreated {
   invite_url: string;
   token: string;
   expires_at: string;
+  project_id?: string | null;
+  project_name?: string | null;
+  project_member_role?: string | null;
 }
 
 export type UserExportFormat = "csv" | "json";

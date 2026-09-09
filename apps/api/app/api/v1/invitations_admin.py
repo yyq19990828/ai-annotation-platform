@@ -18,6 +18,7 @@ from app.config import settings
 from app.db.enums import UserRole
 from app.db.models.user import User
 from app.db.models.user_invitation import UserInvitation
+from app.db.models.project import Project
 from app.deps import get_db, require_roles
 from app.schemas.invitation import InvitationOut, InvitationResendResponse
 from app.services.audit import AuditService
@@ -31,12 +32,19 @@ _StatusFilter = Literal["pending", "accepted", "expired", "revoked", "all"]
 _ScopeFilter = Literal["me", "all"]
 
 
-def _to_out(inv: UserInvitation, inviter: User | None) -> InvitationOut:
+def _to_out(
+    inv: UserInvitation,
+    inviter: User | None,
+    project_name: str | None = None,
+) -> InvitationOut:
     return InvitationOut(
         id=inv.id,
         email=inv.email,
         role=inv.role,
         group_name=inv.group_name,
+        project_id=inv.project_id,
+        project_name=project_name,
+        project_member_role=inv.role if inv.project_id else None,
         status=inv.status,
         expires_at=inv.expires_at,
         invited_by=inv.invited_by,
@@ -78,7 +86,17 @@ async def list_invitations(
         )
         inviters = {u.id: u for u in u_rows}
 
-    return [_to_out(r, inviters.get(r.invited_by)) for r in rows]
+    project_ids = {r.project_id for r in rows if r.project_id is not None}
+    projects: dict[uuid.UUID, str] = {}
+    if project_ids:
+        project_rows = (
+            await db.execute(select(Project).where(Project.id.in_(project_ids)))
+        ).all()
+        projects = {p.id: p.name for (p,) in project_rows}
+
+    return [
+        _to_out(r, inviters.get(r.invited_by), projects.get(r.project_id)) for r in rows
+    ]
 
 
 @router.delete("/{invitation_id}", status_code=status.HTTP_204_NO_CONTENT)

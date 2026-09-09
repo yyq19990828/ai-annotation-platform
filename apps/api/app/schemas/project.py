@@ -342,7 +342,7 @@ class ProjectMemberOut(BaseModel):
 
 class ProjectMemberCreate(BaseModel):
     user_id: UUID
-    role: Literal["annotator", "reviewer"]
+    role: Literal["annotator", "reviewer", "viewer"]
 
 
 class ProjectTransferRequest(BaseModel):

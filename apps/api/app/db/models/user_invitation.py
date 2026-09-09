@@ -17,6 +17,13 @@ class UserInvitation(Base):
     email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     role: Mapped[str] = mapped_column(String(32), nullable=False)
     group_name: Mapped[str | None] = mapped_column(String(128))
+    # Optional project target.  This deliberately is not a foreign key: a
+    # deleted project must not block project deletion, and a stale invitation
+    # must fail closed at acceptance instead of silently becoming a legacy
+    # account invitation.
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )
     token: Mapped[str] = mapped_column(
         String(64), nullable=False, unique=True, index=True
     )

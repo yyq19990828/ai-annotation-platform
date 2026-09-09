@@ -5,6 +5,9 @@ export interface InvitationResolved {
   email: string;
   role: string;
   group_name: string | null;
+  project_id: string | null;
+  project_name: string | null;
+  project_member_role: string | null;
   expires_at: string;
   invited_by_name: string | null;
 }
@@ -21,6 +24,22 @@ export interface RegisterResponse {
   token_type: string;
   user: MeResponse;
   email_verification_required: boolean;
+  acceptance?: InvitationAcceptance | null;
+}
+
+export interface InvitationAcceptance {
+  project_id: string | null;
+  project_name: string | null;
+  project_member_role: string | null;
+  next_action: "start_work" | "wait_for_allocation";
+  next_action_label: string;
+  responsible_person_name: string | null;
+  active_batch_count: number;
+}
+
+export interface ExistingInvitationAcceptanceResponse {
+  user: MeResponse;
+  acceptance: InvitationAcceptance;
 }
 
 export type InvitationStatus = "pending" | "accepted" | "expired" | "revoked";
@@ -30,6 +49,9 @@ export interface InvitationResponse {
   email: string;
   role: string;
   group_name: string | null;
+  project_id: string | null;
+  project_name: string | null;
+  project_member_role: string | null;
   status: InvitationStatus;
   expires_at: string;
   invited_by: string;
@@ -57,6 +79,10 @@ export const invitationsApi = {
     apiClient.publicGet<InvitationResolved>(`/auth/invitations/${encodeURIComponent(token)}`),
   register: (payload: RegisterPayload) =>
     apiClient.publicPost<RegisterResponse>("/auth/register", payload),
+  acceptExisting: (token: string) =>
+    apiClient.post<ExistingInvitationAcceptanceResponse>("/auth/invitations/accept", {
+      token,
+    }),
 
   list: (params?: { status?: InvitationStatus | "all"; scope?: "me" | "all" }) => {
     const q = new URLSearchParams();
