@@ -40,6 +40,7 @@ import {
   useVideoManifest,
   useVideoFrameTimetable,
   useMaskCapabilities,
+  isOfflineMutationQueued,
 } from "@/hooks/useTasks";
 import { usePredictions } from "@/hooks/usePredictions";
 import { useAnnotationBulkUpdate } from "@/hooks/useAnnotationGroup";
@@ -221,7 +222,7 @@ import { VideoPointsTrackCardContent } from "../shell/selectionCard/VideoPointsT
 import { ConversionBatchCardContent } from "../shell/selectionCard/ConversionBatchCardContent";
 import type { PetSelectionSourceKind, WorkbenchPetContext } from "../shell/pet/usePetState";
 import type { FloatingPanelRect } from "../shell/FloatingPanelShell";
-import { useAuthStore } from "@/stores/authStore";
+import { isCurrentAuthOwner, useAuthStore } from "@/stores/authStore";
 import {
   getRememberedWorkbenchTask,
   rememberWorkbenchTask,
@@ -5779,6 +5780,8 @@ export function useWorkbenchShellModel({
       if (isLockedForActions) return;
       const ann = annotationsRef.current.find((a) => a.id === annotationId);
       if (!ann) return;
+      const requestedTaskId = taskId;
+      const requestedUserId = meUserId;
       const before = { attributes: ann.attributes ?? {} };
       const after = { attributes: next };
       updateAnnotationMut.mutate(
@@ -5787,10 +5790,23 @@ export function useWorkbenchShellModel({
           onSuccess: () => {
             history.push({ kind: "update", annotationId, before, after });
           },
+          // The mutation hook durably accepts transport failures when this
+          // call has no caller-owned onError fallback.  Record the edit only
+          // after that acknowledgement; storage failure stays retryable.
+          onSettled: (_data, error) => {
+            if (
+              isOfflineMutationQueued(error) &&
+              currentTaskIdRef.current === requestedTaskId &&
+              !!requestedUserId &&
+              isCurrentAuthOwner(requestedUserId)
+            ) {
+              history.push({ kind: "update", annotationId, before, after });
+            }
+          },
         },
       );
     },
-    [updateAnnotationMut, history, isLockedForActions, setScenePlayback],
+    [updateAnnotationMut, history, isLockedForActions, setScenePlayback, taskId, meUserId],
   );
 
   const focusRequiredAttribute = useCallback(
