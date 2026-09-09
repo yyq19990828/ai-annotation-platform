@@ -4,7 +4,7 @@ audience: [dev, ops]
 type: reference
 since: v0.9.0
 status: stable
-last_reviewed: 2026-09-06
+last_reviewed: 2026-09-09
 ---
 
 # 环境变量参考
@@ -361,6 +361,15 @@ last_reviewed: 2026-09-06
 | 变量 | 默认值 | 说明 |
 |---|---|---|
 | `ENVIRONMENT` | `development` | 当前运行环境，影响 CORS 策略、日志级别、调试开关等 可选值：development | staging | production |
+
+## 独立局域网生产栈专用：只放入 .env.production，使用 docker-compose.lan-prod.yml。
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `LAN_BIND_IP` | `192.168.1.20` | 固定局域网网卡地址；3030 和 8080 都由 Caddy 提供 HTTPS。 |
+| `AAP_SHARED_NETWORK` | `ai-annotation-platform_default` | 现有 PostgreSQL / MinIO / 模型服务所在 Docker 网络。 |
+| `AAP_IMAGE_TAG` | `local-production` | 应用镜像的源代码标识；每次部署保留旧标识用于回退。 |
+| `AAP_PRODUCTION_STATE_DIR` | `/srv/aap-production` | 权限 0700 的本机目录；migration-database-url 文件只提供给一次性迁移服务。 |
 
 ## Playwright 专用 seed/login/cleanup 路由总闸，默认关闭。开启后仍只允许连接
 

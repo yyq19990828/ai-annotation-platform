@@ -74,7 +74,7 @@ environment: Literal["development", "staging", "production"] = "development"
 
 ## 镜像构建差异（为什么 dev 能热挂载）
 
-- `infra/docker/Dockerfile.api`：依赖装到 `--system` site-packages（不在 `/app` 下）。所以开发态把 `./apps/api` 挂到 `/app` 不会覆盖依赖；匿名卷 `/app/.venv` 屏蔽宿主机 venv。Celery 无 `--reload`，改业务码后仍需 `docker restart`。
+- `infra/docker/Dockerfile.api`：按 `uv.lock` 安装依赖到 `/opt/venv`（不在 `/app` 下），容器 `PATH` 默认使用这个环境。所以开发态把 `./apps/api` 挂到 `/app` 不会覆盖依赖；匿名卷 `/app/.venv` 屏蔽宿主机 venv。Celery 无 `--reload`，改业务码后仍需 `docker restart`。
 - `infra/docker/Dockerfile.web`：多阶段构建，`pnpm build` 产物交给 nginx 托管。前端 API base 硬编码同源相对路径 `/api/v1`（`apps/web/src/api/client.ts`），dev 由 vite proxy、生产由容器内 `nginx.conf` 反代 `/api/` `/ws/` 到 `api:8000`，**无需 build arg / API 地址变量**。
 
 ## 相关

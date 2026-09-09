@@ -1,0 +1,184 @@
+# Independent production application stack. Shared infrastructure is external:
+# never combine this file with the development or whole-stack prod overlays.
+# docker compose --env-file .env.production -f docker-compose.lan-prod.yml up -d
+name: aap-production
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-runtime: &runtime
+  image: aap-production-api:${AAP_IMAGE_TAG:?Set AAP_IMAGE_TAG to the deployed revision}
+  env_file: .env.production
+  environment:
+    ALEMBIC_AUTO_UPGRADE: "false"
+  restart: unless-stopped
+  init: true
+  logging: *logging
+  networks: [production, shared]
+  depends_on:
+    redis-production:
+      condition: service_healthy
+  stop_grace_period: 60s
+
+x-worker: &worker
+  <<: *runtime
+  healthcheck:
+    test: ["CMD-SHELL", "celery -A app.workers.celery_app inspect ping -d celery@$$HOSTNAME -t 10"]
+    interval: 30s
+    timeout: 15s
+    retries: 3
+    start_period: 60s
+
+services:
+  api:
+    <<: *runtime
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.api
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips=*
+    volumes:
+      - duckdb:/var/lib/duckdb:ro
+      - type: bind
+        source: ${AAP_PRODUCTION_STATE_DIR}/known_hosts
+        target: /root/.ssh/known_hosts
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=10)",
+        ]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 90s
+
+  migrate:
+    <<: *runtime
+    profiles: [maintenance]
+    restart: "no"
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - 'export MIGRATION_DATABASE_URL="$$(cat /run/secrets/migration_database_url)"; exec alembic upgrade head'
+    secrets: [migration_database_url]
+
+  web:
+    image: aap-production-web:${AAP_IMAGE_TAG:?Set AAP_IMAGE_TAG to the deployed revision}
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.web
+      args:
+        VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU: ${VITE_EXPERIMENTAL_RASTER_MASK_WEBGPU:-true}
+        VITE_EXPERIMENTAL_LARGE_IMAGE_TILES: ${VITE_EXPERIMENTAL_LARGE_IMAGE_TILES:-true}
+    restart: unless-stopped
+    logging: *logging
+    networks: [production, shared]
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  gateway:
+    image: caddy:2-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      LAN_BIND_IP: ${LAN_BIND_IP:?Set the production host LAN IPv4 address}
+    ports:
+      - "${LAN_BIND_IP}:3030:3030"
+      - "${LAN_BIND_IP}:8080:8080"
+    volumes:
+      - ./infra/docker/Caddyfile.lan-prod:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [production]
+    depends_on:
+      web:
+        condition: service_healthy
+
+  redis-production:
+    image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+    command: redis-server --appendonly yes --appendfsync everysec
+    restart: unless-stopped
+    logging: *logging
+    volumes:
+      - redis_data:/data
+    networks: [production]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  celery-worker:
+    <<: *worker
+    command: celery -A app.workers.celery_app worker -l info -Q default,media,cleanup,audit --concurrency=4
+    volumes:
+      - duckdb:/var/lib/duckdb
+      - type: bind
+        source: ${AAP_PRODUCTION_STATE_DIR}/known_hosts
+        target: /root/.ssh/known_hosts
+        read_only: true
+        bind:
+          create_host_path: false
+
+  celery-worker-gpu:
+    <<: *worker
+    command: celery -A app.workers.celery_app worker -l info -Q ml,gpu --concurrency=1
+
+  celery-worker-cpu:
+    <<: *worker
+    command: celery -A app.workers.celery_app worker -l info -Q ml.cpu --concurrency=4
+
+  celery-worker-export:
+    <<: *worker
+    command: celery -A app.workers.celery_app worker -l info -Q export --concurrency=2
+
+  celery-worker-image-pyramid:
+    <<: *worker
+    command: celery -A app.workers.celery_app worker -l info -Q image-pyramid --concurrency=1 --prefetch-multiplier=1 --max-memory-per-child=1572864
+    environment:
+      ALEMBIC_AUTO_UPGRADE: "false"
+      VIPS_CONCURRENCY: "4"
+      MALLOC_ARENA_MAX: "2"
+      MALLOC_TRIM_THRESHOLD_: "131072"
+
+  celery-worker-gpu-control:
+    <<: *worker
+    command: celery -A app.workers.celery_app worker -l info -Q gpu.control --concurrency=1 --prefetch-multiplier=1
+    # This deployment shares model services in observe mode. It never mounts the
+    # development collector credential or creates a second enforce controller.
+
+  celery-beat:
+    <<: *runtime
+    command: celery -A app.workers.celery_app beat -l info --schedule=/var/lib/celery/celerybeat-schedule
+    volumes:
+      - beat_data:/var/lib/celery
+
+networks:
+  production:
+  shared:
+    external: true
+    name: ${AAP_SHARED_NETWORK:?Set the existing infrastructure network name}
+
+volumes:
+  redis_data:
+  duckdb:
+  beat_data:
+  caddy_data:
+  caddy_config:
+
+secrets:
+  migration_database_url:
+    file: ${AAP_PRODUCTION_STATE_DIR:?Set the local production state directory}/migration-database-url

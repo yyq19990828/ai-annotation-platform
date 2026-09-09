@@ -170,6 +170,10 @@ PYTHONPATH=. uv run python scripts/seed.py
 | Mailpit       | http://localhost:8025      | 开发邮件收件箱                  |
 | Grafana       | http://localhost:3001      | `monitoring` profile 启动后打开 |
 
+### 局域网生产部署
+
+已有开发环境时，可使用独立 `docker-compose.lan-prod.yml` 复用 PostgreSQL、MinIO 和模型服务，生产账号、项目、数据集、队列和存储桶单独管理。前端提供局域网 HTTPS 3030，API 提供 HTTPS 8080；客户端首次导入内部 CA 公共证书。配置、初始化与回退步骤见[局域网生产部署](./docs-site/ops/deploy/lan-production.md)。
+
 ## 可选服务
 
 ```bash

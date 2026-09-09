@@ -1,0 +1,34 @@
+{
+	admin off
+	auto_https disable_redirects
+	# IP clients commonly omit SNI; select the managed IP certificate explicitly.
+	default_sni {$LAN_BIND_IP}
+	servers {
+		protocols h1 h2
+	}
+	# Client trust is installed explicitly; a container cannot configure clients.
+	skip_install_trust
+}
+
+(internal_endpoints) {
+	@internal path /metrics /metrics/* /api/v1/internal /api/v1/internal/*
+	respond @internal 404
+}
+
+https://{$LAN_BIND_IP}:3030 {
+	tls internal
+	import internal_endpoints
+
+	@other_storage {
+		path /minio /minio/*
+		not path /minio/prod-annotations/* /minio/prod-datasets/* /minio/prod-bug-reports/* /minio/prod-media-cache/* /minio/prod-audit-archive/* /minio/prod-import/* /minio/prod-export/*
+	}
+	respond @other_storage 404
+	reverse_proxy web:80
+}
+
+https://{$LAN_BIND_IP}:8080 {
+	tls internal
+	import internal_endpoints
+	reverse_proxy api:8000
+}
