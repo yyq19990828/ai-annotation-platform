@@ -296,6 +296,15 @@ async function drag(
   options: { alt?: boolean; releaseAlt?: boolean; lateAlt?: boolean } = {},
 ) {
   const b = await bounds(page);
+  const origin = { x: b.x + b.width * start[0], y: b.y + b.height * start[1] };
+  await expect
+    .poll(() =>
+      stage(page).evaluate((node, at) => {
+        const target = document.elementFromPoint(at.x, at.y);
+        return target instanceof HTMLCanvasElement && node.contains(target);
+      }, origin),
+    )
+    .toBe(true);
   // Independent receipts use the real browser event coordinates, including pixel quantization.
   await page.evaluate(() => {
     const target = window as unknown as { __h1Pointer?: { down?: Point; up?: Point } };
@@ -315,7 +324,7 @@ async function drag(
       { capture: true, once: true },
     );
   });
-  await page.mouse.move(b.x + b.width * start[0], b.y + b.height * start[1]);
+  await page.mouse.move(origin.x, origin.y);
   if (options.alt) await page.keyboard.down("Alt");
   try {
     await page.mouse.down();
@@ -457,6 +466,12 @@ test.describe("H1 center bbox creation", () => {
       expectCentered(annotation.geometry, receipt);
       saved.push(annotation);
       fixture.evidence.push({ receipt, annotation });
+      if (saved.length === 1) {
+        // Collapse once: the preference persists across selections and exposes the right edge.
+        const collapseSelection = page.getByRole("button", { name: "收起浮窗", exact: true });
+        await collapseSelection.click();
+        await expect(collapseSelection).toBeHidden();
+      }
     }
     await drag(page, [0.5, 0.5], [0.5, 0.5], { alt: true });
     await expect(stage(page)).toHaveAttribute("data-drag-kind", "none");
