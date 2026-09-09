@@ -15,6 +15,11 @@ from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.db.models.video_tracker_job import VideoTrackerJob
 from app.cli.video.rebuild_timetable import rebuild_item_timetable
+from app.services.system_settings_service import SystemSettingsService
+from app.services.video_frame_service import (
+    build_context_from_dataset_item,
+    list_chunks,
+)
 
 
 async def _make_video_task(db_session, owner_id):
@@ -456,6 +461,33 @@ async def test_video_chunks_create_pending_rows_and_enqueue(
         )
     ).all()
     assert len(rows) == 2
+
+
+async def test_video_warmup_zero_skips_neighbor_enqueue(
+    db_session, super_admin, monkeypatch
+):
+    user, _ = super_admin
+    _, item = await _make_video_task(db_session, user.id)
+    await SystemSettingsService.set_many(
+        db_session, {"video_chunk_warmup_lookahead": 0}, actor_id=user.id
+    )
+    await db_session.flush()
+    queued: list[tuple[str, list[int]]] = []
+    monkeypatch.setattr(
+        "app.workers.media.ensure_video_chunks.delay",
+        lambda item_id, chunk_ids: queued.append((item_id, chunk_ids)),
+    )
+
+    ctx = await build_context_from_dataset_item(db_session, item.id)
+    await list_chunks(db_session, ctx, 0, 0)
+
+    assert queued == [(str(item.id), [0])]
+    rows = (
+        await db_session.execute(
+            VideoChunk.__table__.select().where(VideoChunk.dataset_item_id == item.id)
+        )
+    ).all()
+    assert [row.chunk_id for row in rows] == [0]
 
 
 async def test_video_chunk_api_exposes_generation_diagnostics(

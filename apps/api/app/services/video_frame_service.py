@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import logging
 import uuid
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -34,11 +35,13 @@ from app.schemas.video_frame_service import (
     VideoManifestV2Response,
 )
 from app.services.storage import storage_service
+from app.services.system_settings_service import SystemSettingsService
 
 
 FrameFormat = Literal["webp", "jpeg"]
 _FRAME_ARRAY_CACHE: OrderedDict[tuple[uuid.UUID, int, int, str], Any] = OrderedDict()
 PENDING_FRAME_REQUEUE_AFTER = timedelta(seconds=30)
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -243,10 +246,19 @@ async def _warmup_neighbor_chunks(
     保守降级: 只对「还没 ready 且没在 pending 进行中」的相邻 chunk 投递, 不重复
     投递、不阻塞主请求。warmup 失败/被关闭时静默跳过, 不影响主流程。
     """
+    try:
+        look_ahead = await SystemSettingsService.get(db, "video_chunk_warmup_lookahead")
+    except Exception:  # noqa: BLE001
+        # Warmup is an optional optimization.  A settings DB outage must not
+        # turn the primary video chunk response into a playback failure.
+        await db.rollback()
+        log.exception("video chunk warmup setting unavailable; skipping warmup")
+        return
+
     candidates = warmup_chunk_ids(
         requested_chunk_ids,
         _last_chunk_id(ctx.metadata),
-        settings.video_chunk_warmup_lookahead,
+        look_ahead,
     )
     if not candidates:
         return

@@ -152,7 +152,8 @@ class Settings(BaseSettings):
             return [entry.strip() for entry in v.split(",") if entry.strip()]
         return v
 
-    # v0.11.15 · 连接器导入护栏。超限 job 会失败，不会部分导入。
+    # v0.11.15 · 连接器导入护栏。超限 job 会失败，不会部分导入；super_admin
+    # 可通过 system_settings 覆盖，导入请求会固定预算快照。
     dataset_import_max_files: int = 50_000
     dataset_import_max_total_bytes: int = 200 * 1024 * 1024 * 1024
 
@@ -165,6 +166,7 @@ class Settings(BaseSettings):
 
     # v0.12.0 · dataset link 建 task 同步阈值：item 数 ≤ 阈值走同步快路径，
     # > 阈值改入 Celery 异步建 task（避免大 dataset 在 HTTP 单事务里超时 + 长事务锁）。
+    # super_admin 可通过 system_settings 覆盖，0 表示非空数据集全部异步。
     task_create_sync_threshold: int = 2000
 
     minio_endpoint: str = "localhost:9000"
@@ -354,6 +356,7 @@ class Settings(BaseSettings):
     video_chunk_size_frames: int = 60
     # v0.10.29 · chunk warmup look-ahead: 请求命中 chunk N 时顺带预解码 N+1..N+K。
     # 默认 1 (只 warmup 紧邻的下一个 chunk), 保守且向后兼容; 设 0 完全关闭 warmup。
+    # super_admin 可通过 system_settings 覆盖，仅影响新视频请求。
     video_chunk_warmup_lookahead: int = 1
     video_frame_cache_ttl_days: int = 14
     video_chunk_cache_ttl_days: int = 30
@@ -400,7 +403,8 @@ class Settings(BaseSettings):
     # DUCKDB_PATH env 覆盖。
     duckdb_path: str = _REPO_ROOT_DUCKDB
 
-    # Governance / invitations
+    # Governance / invitations. max_invitations_per_day 与 offline_threshold_minutes
+    # 可由 super_admin 通过 system_settings 覆盖；env 始终保留为部署默认。
     frontend_base_url: str = "http://localhost:5173"
     invitation_ttl_days: int = 7
     allow_open_registration: bool = False

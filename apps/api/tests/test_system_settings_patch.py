@@ -177,3 +177,117 @@ async def test_audit_log_excludes_smtp_password_value(
         headers=headers,
         json={"smtp_password": ""},
     )
+
+
+async def test_runtime_knobs_metadata_zero_and_reset_contract(
+    httpx_client, super_admin
+):
+    """The six operational knobs retain zero/false and expose reset metadata."""
+
+    _, token = super_admin
+    headers = {"Authorization": f"Bearer {token}"}
+    initial = (
+        await httpx_client.get("/api/v1/settings/system", headers=headers)
+    ).json()
+
+    assert initial["version"].startswith("v1-")
+    for key in (
+        "max_invitations_per_day",
+        "offline_threshold_minutes",
+        "dataset_import_max_files",
+        "dataset_import_max_total_bytes",
+        "task_create_sync_threshold",
+        "video_chunk_warmup_lookahead",
+    ):
+        assert key in initial["metadata"]
+        assert {
+            "source",
+            "deployment_default",
+            "updated_at",
+            "updated_by",
+            "value_type",
+            "unit",
+            "effect",
+            "min_value",
+            "max_value",
+            "in_range",
+        } <= set(initial["metadata"][key])
+
+    updated = await httpx_client.patch(
+        "/api/v1/settings/system",
+        headers=headers,
+        json={
+            "max_invitations_per_day": 1,
+            "offline_threshold_minutes": 2,
+            "dataset_import_max_files": 1,
+            "dataset_import_max_total_bytes": 1,
+            "task_create_sync_threshold": 0,
+            "video_chunk_warmup_lookahead": 0,
+            "expected_version": initial["version"],
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    body = updated.json()
+    assert body["max_invitations_per_day"] == 1
+    assert body["offline_threshold_minutes"] == 2
+    assert body["dataset_import_max_files"] == 1
+    assert body["dataset_import_max_total_bytes"] == 1
+    assert body["task_create_sync_threshold"] == 0
+    assert body["video_chunk_warmup_lookahead"] == 0
+    assert body["metadata"]["task_create_sync_threshold"]["source"] == "override"
+
+    stale = await httpx_client.patch(
+        "/api/v1/settings/system",
+        headers=headers,
+        json={"task_create_sync_threshold": 1, "expected_version": initial["version"]},
+    )
+    assert stale.status_code == 409, stale.text
+    assert stale.json()["detail"]["settings"]["version"] == body["version"]
+
+    reset = await httpx_client.post(
+        "/api/v1/settings/system/reset",
+        headers=headers,
+        json={
+            "keys": [
+                "max_invitations_per_day",
+                "offline_threshold_minutes",
+                "dataset_import_max_files",
+                "dataset_import_max_total_bytes",
+                "task_create_sync_threshold",
+                "video_chunk_warmup_lookahead",
+            ],
+            "expected_version": body["version"],
+        },
+    )
+    assert reset.status_code == 200, reset.text
+    reset_body = reset.json()
+    for key in (
+        "max_invitations_per_day",
+        "offline_threshold_minutes",
+        "dataset_import_max_files",
+        "dataset_import_max_total_bytes",
+        "task_create_sync_threshold",
+        "video_chunk_warmup_lookahead",
+    ):
+        assert reset_body["metadata"][key]["source"] == "deployment"
+
+
+async def test_system_settings_patch_rejects_coercion_and_unknown_keys(
+    httpx_client, super_admin
+):
+    _, token = super_admin
+    headers = {"Authorization": f"Bearer {token}"}
+
+    bool_text = await httpx_client.patch(
+        "/api/v1/settings/system",
+        headers=headers,
+        json={"allow_open_registration": "false"},
+    )
+    assert bool_text.status_code == 422
+
+    unknown = await httpx_client.patch(
+        "/api/v1/settings/system",
+        headers=headers,
+        json={"not_a_setting": 1},
+    )
+    assert unknown.status_code == 422

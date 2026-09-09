@@ -11,7 +11,7 @@ import uuid
 import pytest
 from sqlalchemy import func, select
 
-from app.db.models.async_job import AsyncJob, AsyncJobStatus
+from app.db.models.async_job import AsyncJob, AsyncJobKind, AsyncJobStatus
 from app.db.models.dataset import Dataset, DatasetItem
 from app.db.models.storage_connection import StorageConnection
 from app.services import async_job as async_job_svc
@@ -140,6 +140,40 @@ def test_collect_within_limits_returns_all_when_under(monkeypatch):
     )
     assert [o.relpath for o in collected] == ["f0.jpg", "f1.jpg", "f2.jpg"]
     assert total_bytes == 6
+
+
+def test_collect_within_limits_uses_explicit_snapshot(monkeypatch):
+    """Worker enumeration obeys the accepted job snapshot, not mutable env state."""
+
+    monkeypatch.setattr(dataset_import.settings, "dataset_import_max_files", 100)
+    monkeypatch.setattr(
+        dataset_import.settings, "dataset_import_max_total_bytes", 10_000
+    )
+    with pytest.raises(ValueError, match="file count exceeds limit"):
+        dataset_import._collect_within_limits(
+            (_obj(f"f{i}.jpg", size=1) for i in range(3)),
+            max_files=2,
+            max_total_bytes=10_000,
+        )
+
+
+async def test_legacy_import_job_freezes_limits_on_first_execution(
+    db_session, annotator
+):
+    """A pre-snapshot job persists one effective budget before enumeration."""
+
+    user, _ = annotator
+    job = await async_job_svc.create_job(
+        db_session,
+        kind=AsyncJobKind.DATASET_IMPORT.value,
+        user_id=user.id,
+        payload={"dataset_id": str(uuid.uuid4()), "connection_id": str(uuid.uuid4())},
+    )
+    snapshot = await dataset_import._resolve_import_limits_snapshot(db_session, job)
+    await db_session.refresh(job)
+
+    assert job.payload["settings_snapshot"] == snapshot
+    assert snapshot["version"].startswith("v1-")
 
 
 class _FakeSftpAttr:
@@ -426,6 +460,10 @@ async def test_import_from_connection_api_creates_secretless_job(
     assert job.kind == "dataset_import"
     assert job.celery_task_id == "celery-dataset-import"
     assert job.payload["connection_id"] == str(conn.id)
+    snapshot = job.payload["settings_snapshot"]
+    assert snapshot["dataset_import_max_files"] > 0
+    assert snapshot["dataset_import_max_total_bytes"] > 0
+    assert snapshot["version"].startswith("v1-")
     assert "secret" not in job.payload
     assert "access_key" not in str(job.payload)
 
