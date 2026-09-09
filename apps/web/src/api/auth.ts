@@ -283,16 +283,29 @@ export interface UIPreferences {
   secondary_bar_hidden?: boolean;
 }
 
+/** v0.10.14 · 员工开工清单按账号、项目和指南版本持久化。 */
+export interface OnboardingProjectState {
+  guide_version: string;
+  dismissed: boolean;
+  guide_read: boolean;
+}
+
+export interface OnboardingPreferences {
+  projects: Record<string, OnboardingProjectState>;
+}
+
 export interface UserPreferences {
   workbench: WorkbenchPreferences;
   ai: AIToolPreferences;
   ui: UIPreferences;
+  onboarding?: OnboardingPreferences;
 }
 
 export type UserPreferencesPatch = Omit<Partial<UserPreferences>, "workbench"> & {
   workbench?: Omit<Partial<WorkbenchPreferences>, "layout"> & {
     layout?: Partial<WorkbenchLayoutPreferences>;
   };
+  onboarding?: Partial<OnboardingPreferences>;
 };
 
 export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {

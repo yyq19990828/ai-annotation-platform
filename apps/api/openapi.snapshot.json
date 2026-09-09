@@ -19721,6 +19721,48 @@
         "title": "OffboardingUnresolvedResult",
         "type": "object"
       },
+      "OnboardingPreferences": {
+        "additionalProperties": false,
+        "description": "Cross-device state for the employee/project start checklist.",
+        "properties": {
+          "projects": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/OnboardingProjectState"
+            },
+            "title": "Projects",
+            "type": "object"
+          }
+        },
+        "title": "OnboardingPreferences",
+        "type": "object"
+      },
+      "OnboardingProjectState": {
+        "additionalProperties": false,
+        "description": "Per-user onboarding state for one project's current guide revision.\n\nThis lives in the existing user preferences JSONB so guide dismissal and\nreading progress follows the employee across devices without introducing a\nsecond onboarding table.  ``guide_version`` is supplied by the client from\nthe persisted project guide; a changed guide naturally starts a new state.",
+        "properties": {
+          "dismissed": {
+            "default": false,
+            "title": "Dismissed",
+            "type": "boolean"
+          },
+          "guide_read": {
+            "default": false,
+            "title": "Guide Read",
+            "type": "boolean"
+          },
+          "guide_version": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Guide Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "guide_version"
+        ],
+        "title": "OnboardingProjectState",
+        "type": "object"
+      },
       "OpenRegisterRequest": {
         "properties": {
           "captcha_token": {
@@ -26122,6 +26164,11 @@
             "title": "File Name",
             "type": "string"
           },
+          "is_rework": {
+            "default": false,
+            "title": "Is Rework",
+            "type": "boolean"
+          },
           "project_id": {
             "title": "Project Id",
             "type": "string"
@@ -31294,6 +31341,9 @@
         "properties": {
           "ai": {
             "$ref": "#/components/schemas/AIToolPreferences"
+          },
+          "onboarding": {
+            "$ref": "#/components/schemas/OnboardingPreferences"
           },
           "ui": {
             "$ref": "#/components/schemas/UIPreferences"

@@ -2,51 +2,74 @@
 //
 // 行为:
 // - 项目 annotation_guide 为空 / null → 整个 panel 不渲染.
-// - localStorage `wb:guide-seen:{projectId}` 不存在 → 首次自动展开 + 写入标记.
-// - 用户手动折叠后写入 localStorage `wb:guide-collapsed:{projectId}`, 后续保持折叠.
+// - localStorage 按用户、项目和指南版本隔离；首次进入自动展开并写入阅读标记.
+// - 用户手动折叠后保存当前指南版本的折叠状态，后续保持折叠.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { GuideMarkdownView } from "@/components/markdown/GuideMarkdownView";
 import { useGuideAssets } from "@/hooks/useGuideAssets";
+import { useOnboardingProjectState } from "@/hooks/useOnboardingProjectState";
+import {
+  annotationGuideVersion,
+  isGuideCollapsed,
+  isGuideSeen,
+  markGuideSeen,
+  markGuideCollapsed,
+} from "@/utils/annotationGuide";
 
 interface GuidePanelProps {
   projectId: string;
+  userId?: string | null;
+  guideVersion?: string;
   /** 项目级 Markdown 原文; null/空字符串 → panel 不渲染. */
   content: string | null | undefined;
 }
 
-const SEEN_KEY = (id: string) => `wb:guide-seen:${id}`;
-const COLLAPSED_KEY = (id: string) => `wb:guide-collapsed:${id}`;
-
-export function GuidePanel({ projectId, content }: GuidePanelProps) {
+export function GuidePanel({ projectId, userId, guideVersion, content }: GuidePanelProps) {
   const trimmed = (content ?? "").trim();
+  const version = guideVersion ?? annotationGuideVersion(content);
   const { signAsset } = useGuideAssets(projectId);
+  const { markGuideRead } = useOnboardingProjectState(projectId, version);
+  const guideReadEffectKey = useRef<string | null>(null);
 
   const [open, setOpen] = useState<boolean>(() => {
     if (!trimmed) return false;
-    if (typeof window === "undefined") return false;
-    const seen = window.localStorage.getItem(SEEN_KEY(projectId));
-    const collapsed = window.localStorage.getItem(COLLAPSED_KEY(projectId));
-    if (seen && collapsed === "1") return false;
-    return true;
+    const seen = isGuideSeen(userId, projectId, version);
+    const collapsed = isGuideCollapsed(userId, projectId, version);
+    return !(seen && collapsed);
   });
+
+  // The workbench shell can keep this panel mounted while switching projects.
+  // Re-read the scoped state so one project's collapsed guide cannot leak into
+  // another project's guide.
+  useEffect(() => {
+    if (!trimmed) {
+      setOpen(false);
+      return;
+    }
+    setOpen(
+      !(isGuideSeen(userId, projectId, version) && isGuideCollapsed(userId, projectId, version)),
+    );
+  }, [projectId, trimmed, userId, version]);
 
   // 首次自动展开时立即写入 seen 标记, 防止刷新后再次自动展开打扰用户.
   useEffect(() => {
     if (!trimmed) return;
     if (typeof window === "undefined") return;
-    if (!window.localStorage.getItem(SEEN_KEY(projectId))) {
-      window.localStorage.setItem(SEEN_KEY(projectId), String(Date.now()));
+    const effectKey = `${userId ?? "anonymous"}:${projectId}:${version}`;
+    if (guideReadEffectKey.current === effectKey) return;
+    guideReadEffectKey.current = effectKey;
+    if (!isGuideSeen(userId, projectId, version)) {
+      markGuideSeen(userId, projectId, version);
     }
-  }, [projectId, trimmed]);
+    markGuideRead();
+  }, [markGuideRead, projectId, trimmed, userId, version]);
 
   const handleToggle = () => {
     setOpen((prev) => {
       const next = !prev;
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(COLLAPSED_KEY(projectId), next ? "0" : "1");
-      }
+      markGuideCollapsed(userId, projectId, version, !next);
       return next;
     });
   };

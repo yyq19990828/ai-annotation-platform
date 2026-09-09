@@ -81,6 +81,7 @@ import type {
   MLBackendResponse,
 } from "@/types";
 import { ANNOTATION_GUIDE_UI_ENABLED } from "@/config/featureFlags";
+import { annotationGuideVersion } from "@/utils/annotationGuide";
 import { publishTaskBoxCount } from "@/components/PerfHud/useTaskBoxCount";
 import { useWorkbenchState, type VideoTool } from "./useWorkbenchState";
 import { usePendingGeom } from "./usePendingGeom";
@@ -1312,7 +1313,12 @@ export function useWorkbenchShellModel({
     }
     if (!requestedTaskId && currentTaskId && tasks.some((t) => t.id === currentTaskId)) return;
 
-    const rememberedTaskId = getRememberedWorkbenchTask(selectedBatchId, undefined, mode);
+    const workbenchMemoryScope = meUserId ? `${meUserId}:${mode}` : mode;
+    const rememberedTaskId = getRememberedWorkbenchTask(
+      selectedBatchId,
+      undefined,
+      workbenchMemoryScope,
+    );
     const nextTaskId =
       rememberedTaskId && tasks.some((t) => t.id === rememberedTaskId)
         ? rememberedTaskId
@@ -1328,13 +1334,15 @@ export function useWorkbenchShellModel({
     setSelectedId,
     selectTask,
     mode,
+    meUserId,
     directTaskQuery.data,
   ]);
 
   useEffect(() => {
     if (currentTaskId !== taskId) return;
-    rememberWorkbenchTask(selectedBatchId, taskId, undefined, mode);
-  }, [selectedBatchId, taskId, currentTaskId, mode]);
+    const workbenchMemoryScope = meUserId ? `${meUserId}:${mode}` : mode;
+    rememberWorkbenchTask(selectedBatchId, taskId, undefined, workbenchMemoryScope);
+  }, [selectedBatchId, taskId, currentTaskId, meUserId, mode]);
 
   const handleSelectBatch = useCallback(
     (batchId: string | null) => {
@@ -7982,6 +7990,11 @@ export function useWorkbenchShellModel({
       ANNOTATION_GUIDE_UI_ENABLED && projectId
         ? {
             projectId,
+            userId: meUserId ?? null,
+            guideVersion: annotationGuideVersion(
+              (currentProject as unknown as { annotation_guide?: string | null } | undefined)
+                ?.annotation_guide,
+            ),
             content:
               (currentProject as unknown as { annotation_guide?: string | null } | undefined)
                 ?.annotation_guide ?? null,

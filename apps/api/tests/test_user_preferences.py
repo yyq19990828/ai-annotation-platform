@@ -152,3 +152,56 @@ def test_workbench_sidebar_width_pct_in_range_and_default():
     default = UserPreferences.model_validate({})
     assert default.workbench.common.leftWidthPct == 15
     assert default.workbench.common.rightWidthPct == 15
+
+
+def test_onboarding_preferences_are_versioned_per_project():
+    prefs = UserPreferences.model_validate(
+        {
+            "onboarding": {
+                "projects": {
+                    "project-a": {
+                        "guide_version": "guide-v1-abcd",
+                        "dismissed": True,
+                        "guide_read": False,
+                    }
+                }
+            }
+        }
+    )
+
+    state = prefs.onboarding.projects["project-a"]
+    assert state.guide_version == "guide-v1-abcd"
+    assert state.dismissed is True
+    assert state.guide_read is False
+
+    dumped = prefs.model_dump(mode="json", exclude_unset=True, by_alias=True)
+    assert dumped["onboarding"]["projects"]["project-a"] == {
+        "guide_version": "guide-v1-abcd",
+        "dismissed": True,
+        "guide_read": False,
+    }
+
+
+def test_onboarding_preferences_reject_unknown_project_state_fields():
+    try:
+        UserPreferences.model_validate(
+            {
+                "onboarding": {
+                    "projects": {
+                        "project-a": {
+                            "guide_version": "guide-v1-abcd",
+                            "completed": True,
+                        }
+                    }
+                }
+            }
+        )
+    except ValidationError as exc:
+        errors = {(tuple(err["loc"]), err["type"]) for err in exc.errors()}
+    else:  # pragma: no cover
+        raise AssertionError("expected validation error")
+
+    assert (
+        ("onboarding", "projects", "project-a", "completed"),
+        "extra_forbidden",
+    ) in errors

@@ -94,6 +94,7 @@ async def reviewer_dashboard(
             total_annotations=t.total_annotations,
             total_predictions=t.total_predictions,
             updated_at=t.updated_at.isoformat() if t.updated_at else None,
+            is_rework=(t.reopened_count or 0) > 0,
         )
         for t, pname in pending_tasks_result.all()
     ]

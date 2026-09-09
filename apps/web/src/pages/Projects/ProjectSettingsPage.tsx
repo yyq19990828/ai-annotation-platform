@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
@@ -17,6 +17,7 @@ import { MlBackendsSection } from "./sections/MlBackendsSection";
 import { RenderingConfigSection } from "./sections/RenderingConfigSection";
 import { VideoSamplingSection } from "./sections/VideoSamplingSection";
 import { AnnotationGuideSection } from "./sections/AnnotationGuideSection";
+import { ProjectReadinessSection } from "./sections/ProjectReadinessSection";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import { ANNOTATION_GUIDE_UI_ENABLED } from "@/config/featureFlags";
 import { PageContainer } from "@/components/layout/PageContainer";
@@ -26,6 +27,7 @@ const NAV_BUTTON_BASE =
 
 type SectionKey =
   | "general"
+  | "readiness"
   | "classes"
   | "attributes"
   | "members"
@@ -56,6 +58,7 @@ const SECTIONS: {
     | "target";
 }[] = [
   { key: "general", label: "基本信息", icon: "settings" },
+  { key: "readiness", label: "开工准备", icon: "target" },
   { key: "classes", label: "类别与属性", icon: "rect" },
   { key: "members", label: "成员管理", icon: "users" },
   { key: "datasets", label: "关联数据集", icon: "db" },
@@ -73,6 +76,7 @@ const SECTIONS: {
 
 const VALID_SECTIONS: SectionKey[] = [
   "general",
+  "readiness",
   "classes",
   "attributes",
   "members",
@@ -90,7 +94,7 @@ export function ProjectSettingsPage() {
   const { id = "" } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { role } = usePermissions();
   const { data: project, isLoading, error } = useProject(id);
   const isOwner = useIsProjectOwner(project ?? null);
@@ -103,6 +107,32 @@ export function ProjectSettingsPage() {
     return q as SectionKey;
   })();
   const [section, setSection] = useState<SectionKey>(initialSection);
+
+  // Keep deep links reactive when a readiness item, browser history entry, or
+  // another tab changes ?section after the page has mounted.
+  useEffect(() => {
+    const requested = searchParams.get("section");
+    if (!requested || !(VALID_SECTIONS as string[]).includes(requested)) {
+      setSection("general");
+      return;
+    }
+    if (requested === "attributes") {
+      setSection("classes");
+      return;
+    }
+    if (requested === "annotation-guide" && !ANNOTATION_GUIDE_UI_ENABLED) {
+      setSection("general");
+      return;
+    }
+    setSection(requested as SectionKey);
+  }, [searchParams]);
+
+  const selectSection = (next: SectionKey) => {
+    setSection(next);
+    const params = new URLSearchParams(searchParams);
+    params.set("section", next);
+    setSearchParams(params, { replace: true });
+  };
 
   if (isLoading) {
     return <div className="p-15 text-center text-muted-foreground">加载中...</div>;
@@ -208,7 +238,7 @@ export function ProjectSettingsPage() {
                 key={s.key}
                 type="button"
                 data-testid={`settings-tab-${s.key}`}
-                onClick={() => setSection(s.key)}
+                onClick={() => selectSection(s.key)}
                 className={`${NAV_BUTTON_BASE} ${
                   active ? "bg-muted font-semibold text-foreground" : "text-muted-foreground"
                 }`}
@@ -222,6 +252,7 @@ export function ProjectSettingsPage() {
 
         <div className="min-w-0">
           {section === "general" && <GeneralSection project={project} />}
+          {section === "readiness" && <ProjectReadinessSection project={project} />}
           {section === "classes" && <ClassesSection project={project} />}
           {section === "members" && <MembersSection project={project} />}
           {section === "datasets" && <DatasetsSection project={project} />}

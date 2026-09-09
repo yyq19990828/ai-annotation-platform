@@ -42,6 +42,8 @@ class ReviewTaskItem(BaseModel):
     total_annotations: int
     total_predictions: int
     updated_at: str | None
+    # 返修后重新送审的任务，在 reviewer 首页单独标明，避免和首审混在一起。
+    is_rework: bool = False
 
     class Config:
         from_attributes = True

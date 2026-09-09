@@ -8,11 +8,13 @@ import { StatCard } from "@/components/ui/StatCard";
 import { Sparkline } from "@/components/ui/Sparkline";
 import { Histogram } from "@/components/ui/Histogram";
 import { SectionDivider } from "@/components/ui/SectionDivider";
-import { useAnnotatorStats } from "@/hooks/useDashboard";
+import { useAnnotatorStats, useMyBatches } from "@/hooks/useDashboard";
 import { useProjects } from "@/hooks/useProjects";
 import { ApiError } from "@/api/client";
 import type { ProjectResponse } from "@/api/projects";
 import { MyBatchesCard } from "./MyBatchesCard";
+import { StartChecklistCard } from "./StartChecklistCard";
+import { WorkPriorityCard } from "./WorkPriorityCard";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import { projectDisplayType } from "@/utils/projectDisplay";
 import { PageContainer } from "@/components/layout/PageContainer";
@@ -104,6 +106,7 @@ function RefreshNotice({
 
 export function AnnotatorDashboard() {
   const statsQuery = useAnnotatorStats();
+  const batchesQuery = useMyBatches();
   const stats = statsQuery.data;
   const hasStatsData = statsQuery.data !== undefined;
   const statsLoading = statsQuery.isLoading && !hasStatsData;
@@ -130,6 +133,14 @@ export function AnnotatorDashboard() {
         return rb - ra;
       }),
     [myProjects],
+  );
+  const myBatches = useMemo(() => batchesQuery.data ?? [], [batchesQuery.data]);
+  const checklistProject = useMemo(
+    () =>
+      sortedProjects.find((project) =>
+        myBatches.some((batch) => batch.project_id === project.id && batch.total_tasks > 0),
+      ) ?? sortedProjects[0],
+    [myBatches, sortedProjects],
   );
 
   if (statsInitialPaused) {
@@ -200,6 +211,13 @@ export function AnnotatorDashboard() {
         </div>
       )}
 
+      {checklistProject && batchesQuery.data !== undefined && (
+        <div className="mb-4 grid gap-3">
+          <StartChecklistCard project={checklistProject} batches={myBatches} />
+          <WorkPriorityCard projects={sortedProjects} batches={myBatches} />
+        </div>
+      )}
+
       {/* 产能 */}
       <SectionDivider label="产能" hint="完成数 / 单题耗时" />
       <div className={STATS_GRID_FOUR}>
@@ -239,20 +257,20 @@ export function AnnotatorDashboard() {
         />
       </div>
 
-      {/* 投入（依赖心跳；本期占位） */}
-      <SectionDivider label="投入" hint="活跃时长 / 连续天数（待心跳上线）" />
+      {/* 投入：来自任务事件与当前账号的真实活动记录。 */}
+      <SectionDivider label="投入" hint="活跃时长 / 连续天数" />
       <div className={STATS_GRID_THREE}>
         <StatCard
           icon="clock"
           label="今日活跃时长"
           value={stats.active_minutes_today == null ? "—" : `${stats.active_minutes_today}m`}
-          hint="心跳依赖"
+          hint="任务事件"
         />
         <StatCard
           icon="flame"
           label="连续标注天数"
           value={stats.streak_days == null ? "—" : `${stats.streak_days}天`}
-          hint="心跳依赖"
+          hint="任务事件"
         />
         <StatCard icon="layers" label="累计标注" value={stats.total_completed} />
       </div>

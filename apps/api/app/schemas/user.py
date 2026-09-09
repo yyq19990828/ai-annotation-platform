@@ -326,6 +326,30 @@ class AIToolPreferences(BaseModel):
     secondary_by_model: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
+class OnboardingProjectState(BaseModel):
+    """Per-user onboarding state for one project's current guide revision.
+
+    This lives in the existing user preferences JSONB so guide dismissal and
+    reading progress follows the employee across devices without introducing a
+    second onboarding table.  ``guide_version`` is supplied by the client from
+    the persisted project guide; a changed guide naturally starts a new state.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    guide_version: str = Field(min_length=1, max_length=128)
+    dismissed: bool = False
+    guide_read: bool = False
+
+
+class OnboardingPreferences(BaseModel):
+    """Cross-device state for the employee/project start checklist."""
+
+    model_config = {"extra": "forbid"}
+
+    projects: dict[str, OnboardingProjectState] = Field(default_factory=dict)
+
+
 class UIPreferences(BaseModel):
     """v0.15.25 · 全局 UI 偏好（工作台之外）。当前仅主题；跟随账号跨设备。
 
@@ -347,6 +371,7 @@ class UserPreferences(BaseModel):
     workbench: WorkbenchPreferences = Field(default_factory=WorkbenchPreferences)
     ai: AIToolPreferences = Field(default_factory=AIToolPreferences)
     ui: UIPreferences = Field(default_factory=UIPreferences)
+    onboarding: OnboardingPreferences = Field(default_factory=OnboardingPreferences)
 
 
 class UserCreate(BaseModel):

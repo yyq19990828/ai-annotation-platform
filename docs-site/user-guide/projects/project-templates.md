@@ -45,7 +45,7 @@ last_reviewed: 2026-06-10
 
 ### 1. 「+ 新建模板」
 
-- **基础信息**: 名称 / 描述 / 项目类型 / 可见范围，以及用于兼容已有数据的标注指引 Markdown 字段。项目设置页和工作台当前不展示该字段。
+- **基础信息**: 名称 / 描述 / 项目类型 / 可见范围，以及用于保留模板内容的标注指引 Markdown 字段。应用模板创建项目后，可在项目设置页继续编辑，并在工作台向成员展示。
 - **工具与类别**: 与新建项目向导相同的多 unit 编辑界面 — 勾启用工具单位（如 bbox / region / polyline），在每个 unit 内独立编辑类别与属性 schema。交互式 AI 由项目级开关控制，其标注按产出几何归入 bbox / region。详见[创建项目 · 工具维度类别 / 属性](./index.md#工具维度类别--属性)。
 - **渲染配置**: 模板可携带渲染配置；若需要细调，也可以应用模板创建项目后再到项目设置页修改。
 
@@ -66,7 +66,7 @@ last_reviewed: 2026-06-10
 
 - 新项目的字段从模板 deepcopy（**修改新项目不影响模板**）。复制白名单（`CLONEABLE_PROJECT_FIELDS`）为：`type_label`、`type_key`、`data_type`、`tool_bindings`（类别与属性 schema）、`ai_enabled`、`label_config`、`sampling`、`maximum_annotations`、`show_overlap_first`、`iou_dedup_threshold`、`box_threshold`、`text_threshold`、`rendering_config`。**不复制**运行时数据（datasets / tasks / annotations / members / batches）。
 - 模板 `usage_count` + 1。
-- 模板的 `annotation_guide` 兼容数据会复制到新项目，但项目设置页和工作台当前不展示；**guide_assets（图片资源）不会复制**。
+- 模板的 `annotation_guide` Markdown 会复制到新项目；**guide_assets（项目指引图片资源）不会随模板复制**，需要在新项目的「标注指引」中重新上传。
 
 ## 可见范围（scope）
 
@@ -85,15 +85,15 @@ last_reviewed: 2026-06-10
 - 仅创建者 / 超级管理员可删除。
 - 删除带 `usage_count > 0` 的模板会弹确认提示，但**不阻拦**；删除后已基于该模板创建的项目不受影响（字段已 deepcopy 落到项目上）。
 
-## 标注指引兼容字段
+## 标注指引字段
 
-- 模板会保留 `annotation_guide` Markdown 文本，但当前项目设置页和工作台不提供展示或编辑入口。
+- 模板会保留 `annotation_guide` Markdown 文本。应用模板后，新项目管理员可以在项目设置页的「标注指引」编辑 Markdown，标注员在工作台打开「标注指引」浮层阅读。
 - 模板**不存** `guide_assets`（图片资源 storage key）——
   - 跨实例 storage key 引用混乱；
   - 跨组织私密性风险；
   - 源项目删除资产会让所有依赖模板的项目失效。
 
-该字段仅用于保持既有模板和项目数据兼容，不应作为当前模板工作流的配置入口。
+模板只负责提供初始 Markdown；图片资源请在目标项目中重新上传，避免新项目继续引用源项目的私有对象。
 
 ## 常见问题
 

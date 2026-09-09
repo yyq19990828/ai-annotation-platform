@@ -13,7 +13,11 @@ import { useApproveTask, useRejectTask } from "@/hooks/useTasks";
 import { useQueryClient } from "@tanstack/react-query";
 import { ApiError } from "@/api/client";
 import type { ReviewTaskItem, RecentReviewItem } from "@/api/dashboard";
-import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
+import {
+  buildReviewWorkbenchUrl,
+  buildWorkbenchUrl,
+  currentWorkbenchReturnTo,
+} from "@/utils/workbenchNavigation";
 import { RejectReasonModal } from "@/pages/Review/RejectReasonModal";
 import { PageContainer } from "@/components/layout/PageContainer";
 import {
@@ -188,6 +192,55 @@ export function ReviewerDashboard() {
         </Button>
       </div>
 
+      {(stats.pending_tasks.length > 0 || (stats.reviewing_batches?.length ?? 0) > 0) && (
+        <Card className="mb-4">
+          <div className={CARD_HEADER_PLAIN}>
+            <h2 className={CARD_TITLE}>优先处理</h2>
+            <p className="m-0 mt-1 text-xs text-muted-foreground">
+              入口直接定位到当前待复核或返修重提任务
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2 p-3">
+            {stats.pending_tasks.slice(0, 3).map((task) => (
+              <button
+                key={task.task_id}
+                type="button"
+                className="flex min-w-[230px] flex-1 cursor-pointer items-center gap-3 rounded-md border border-border bg-card px-3 py-2.5 text-left hover:bg-muted"
+                onClick={() =>
+                  navigate(
+                    buildReviewWorkbenchUrl(task.project_id, {
+                      taskId: task.task_id,
+                      returnTo: currentWorkbenchReturnTo(location),
+                    }),
+                  )
+                }
+              >
+                <Icon name={task.is_rework ? "refresh" : "flag"} size={15} className="text-brand" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium">{task.file_name}</span>
+                  <span className="mt-0.5 block text-xs text-muted-foreground">
+                    {task.is_rework ? "返修重提" : "首次复核"} · {task.project_name}
+                  </span>
+                </span>
+                <Icon name="chevRight" size={13} className="text-muted-foreground" />
+              </button>
+            ))}
+            {stats.pending_tasks.length === 0 && stats.reviewing_batches?.[0] && (
+              <Button
+                size="sm"
+                variant="primary"
+                onClick={() => {
+                  const batch = stats.reviewing_batches![0];
+                  navigate(`/review?project=${batch.project_id}&batch=${batch.batch_id}`);
+                }}
+              >
+                打开审核批次
+              </Button>
+            )}
+          </div>
+        </Card>
+      )}
+
       {/* 产能 */}
       <SectionDivider label="产能" hint="待审 / 今日 / 单题耗时" />
       <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-3">
@@ -257,6 +310,14 @@ export function ReviewerDashboard() {
                 task={task}
                 onApprove={handleApprove}
                 onReject={handleReject}
+                onOpen={() =>
+                  navigate(
+                    buildReviewWorkbenchUrl(task.project_id, {
+                      taskId: task.task_id,
+                      returnTo: currentWorkbenchReturnTo(location),
+                    }),
+                  )
+                }
               />
             ))}
           </div>
@@ -435,10 +496,12 @@ function ReviewTaskRow({
   task,
   onApprove,
   onReject,
+  onOpen,
 }: {
   task: ReviewTaskItem;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
+  onOpen: () => void;
 }) {
   const updated = task.updated_at ? new Date(task.updated_at).toLocaleDateString("zh-CN") : "—";
 
@@ -454,6 +517,7 @@ function ReviewTaskRow({
             <Badge variant="outline">{task.project_name}</Badge>
           </span>
           {task.total_annotations} 个标注 · {task.total_predictions} 个预测
+          {task.is_rework && <span className="ml-2 text-status-danger">返修重提</span>}
         </div>
       </div>
       <div className={ROW_DATE}>更新 {updated}</div>
@@ -463,6 +527,10 @@ function ReviewTaskRow({
         </Badge>
       </div>
       <div className="flex justify-end gap-1.5">
+        <Button size="sm" onClick={onOpen}>
+          <Icon name="target" size={11} />
+          打开
+        </Button>
         <Button variant="primary" size="sm" onClick={() => onApprove(task.task_id)}>
           <Icon name="check" size={11} />
           通过

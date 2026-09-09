@@ -49,6 +49,9 @@ vi.mock("./sections/VideoSamplingSection", () => ({
 vi.mock("./sections/AnnotationGuideSection", () => ({
   AnnotationGuideSection: () => <div>annotation-guide-section</div>,
 }));
+vi.mock("./sections/ProjectReadinessSection", () => ({
+  ProjectReadinessSection: () => <div>project-readiness-section</div>,
+}));
 
 import { ProjectSettingsPage } from "./ProjectSettingsPage";
 

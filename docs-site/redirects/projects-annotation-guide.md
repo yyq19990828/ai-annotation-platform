@@ -15,4 +15,4 @@ onMounted(() => router.go("/user-guide/projects/"));
 
 # 页面已迁移
 
-标注指引界面已经下线，正在返回[项目管理](/user-guide/projects/)。
+标注指引已移到项目设置页的「标注指引」区，正在返回[项目管理](/user-guide/projects/)。进入具体项目后选择「项目设置 → 标注指引」即可编辑和预览。

@@ -34,6 +34,7 @@ export interface ReviewTaskItem {
   total_annotations: number;
   total_predictions: number;
   updated_at: string | null;
+  is_rework?: boolean;
 }
 
 export interface ReviewingBatchItem {
