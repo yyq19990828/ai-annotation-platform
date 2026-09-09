@@ -18,7 +18,13 @@ from app.db.models.mask_repair_batch import MaskRepairBatch
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.user import User
-from app.deps import get_db, require_project_visible, require_roles, require_scopes
+from app.deps import (
+    get_db,
+    require_project_visible,
+    require_roles,
+    require_scopes,
+    require_active_task_actor,
+)
 from app.schemas.mask_qc import (
     MASK_QC_RULE_CODES,
     MaskCompareBaseline,
@@ -64,7 +70,7 @@ from app.services.mask_repair import (
 )
 from app.services.scheduler import is_privileged_for_project
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_active_task_actor)])
 
 
 def _raise_mask_repair_error(exc: MaskRepairError) -> None:

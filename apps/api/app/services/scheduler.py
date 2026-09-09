@@ -74,6 +74,31 @@ def visible_batch_statuses_for(user: User) -> list[str]:
     return list(ANNOTATOR_VISIBLE_BATCH_STATUSES)
 
 
+def annotator_can_rework_task(user: User, batch: TaskBatch, task_status: str) -> bool:
+    """A single rejected task may be redone while its peers remain in review."""
+    return (
+        user.role == UserRole.ANNOTATOR
+        and batch.annotator_id == user.id
+        and batch.status == "reviewing"
+        and task_status in {"rejected", "in_progress"}
+    )
+
+
+def task_visibility_clause(user: User):
+    """Task lists include assigned rework without reopening the whole batch."""
+    ordinary = batch_visibility_clause(user)
+    if user.role != UserRole.ANNOTATOR:
+        return ordinary
+    return or_(
+        ordinary,
+        and_(
+            TaskBatch.annotator_id == user.id,
+            TaskBatch.status == "reviewing",
+            Task.status.in_(["rejected", "in_progress"]),
+        ),
+    )
+
+
 # 兼容别名
 assigned_user_ids_clause = batch_visibility_clause
 

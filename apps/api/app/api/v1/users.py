@@ -37,8 +37,10 @@ from app.services.audit import (
 from app.services.system_settings_service import SystemSettingsService
 from app.services.user_lifecycle import (
     UserLifecycleService,
+    retire_account_credentials,
     set_disabled_metadata,
 )
+from sqlalchemy.exc import DBAPIError
 
 router = APIRouter()
 
@@ -166,7 +168,7 @@ async def list_users(
         q = q.where(User.role == role)
 
     if actor.role == UserRole.PROJECT_ADMIN.value:
-        if role in _PA_ASSIGNABLE_ROLES:
+        if role in _PA_ASSIGNABLE_ROLES and status_filter == "active":
             # 指派候选人场景：必须看到全量 annotator / reviewer，否则永远没有可指派对象
             pass
         else:
@@ -519,6 +521,7 @@ _PENDING_TASK_STATUSES = (
     "pending",
     "in_progress",
     "review",
+    "rejected",
 )
 
 
@@ -555,6 +558,30 @@ async def _count_task_locks(db: AsyncSession, *, target_id: UUID) -> int:
     ).scalar_one()
 
 
+async def _lock_legacy_lifecycle_target(
+    db: AsyncSession, user_id: str, actor: User, receiver_id: UUID | None = None
+) -> tuple[User, User]:
+    try:
+        target_id = UUID(user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail="用户不存在") from exc
+    ids = [target_id, actor.id]
+    if receiver_id:
+        ids.append(receiver_id)
+    accounts = await UserLifecycleService.lock_accounts(db, ids)
+    fresh_actor = accounts.get(actor.id)
+    if (
+        fresh_actor is None
+        or not fresh_actor.is_active
+        or fresh_actor.role not in _MANAGERS
+    ):
+        raise HTTPException(status_code=403, detail="当前账号已无管理权限")
+    target = accounts.get(target_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    return target, fresh_actor
+
+
 @router.delete("/{user_id}", response_model=UserOut)
 async def delete_user(
     user_id: str,
@@ -572,9 +599,9 @@ async def delete_user(
     from app.db.models.task import Task
     from app.db.models.task_lock import TaskLock
 
-    user = await db.get(User, user_id)
-    if user is None:
-        raise HTTPException(status_code=404, detail="用户不存在")
+    user, actor = await _lock_legacy_lifecycle_target(
+        db, user_id, actor, payload.transfer_to_user_id if payload else None
+    )
     if user.id == actor.id:
         raise HTTPException(status_code=400, detail="不能删除自己")
     if not user.is_active:
@@ -710,9 +737,7 @@ async def deactivate_user(
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(require_roles(*_MANAGERS)),
 ):
-    user = await db.get(User, user_id)
-    if user is None:
-        raise HTTPException(status_code=404, detail="用户不存在")
+    user, actor = await _lock_legacy_lifecycle_target(db, user_id, actor)
     if user.id == actor.id:
         raise HTTPException(status_code=400, detail="不能停用自己")
     if not user.is_active:
@@ -740,6 +765,7 @@ async def deactivate_user(
         actor_id=actor.id,
         reason="管理员停用账号",
     )
+    await retire_account_credentials(db, user.id)
     await AuditService.log(
         db,
         actor=actor,
@@ -782,14 +808,26 @@ async def offboarding_commit(
 ):
     """Atomically transfer current responsibilities and suspend the account."""
 
-    result = await UserLifecycleService.offboard(
-        db,
-        target_id=user_id,
-        actor=actor,
-        payload=payload,
-        request=request,
-    )
-    await db.commit()
+    try:
+        result = await UserLifecycleService.offboard(
+            db,
+            target_id=user_id,
+            actor=actor,
+            payload=payload,
+            request=request,
+        )
+        await db.commit()
+    except DBAPIError as exc:
+        await db.rollback()
+        if getattr(exc.orig, "sqlstate", None) in {"55P03", "40P01", "40001"}:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "offboarding_busy",
+                    "message": "职责正在变化，请刷新预览后重试",
+                },
+            ) from exc
+        raise
     return result
 
 
@@ -806,14 +844,22 @@ async def reactivate_user(
 ):
     """Reactivate only an explicitly suspended account."""
 
-    user = await UserLifecycleService.reactivate(
-        db,
-        target_id=user_id,
-        actor=actor,
-        reason=payload.reason if payload else None,
-        request=request,
-    )
-    await db.commit()
+    try:
+        user = await UserLifecycleService.reactivate(
+            db,
+            target_id=user_id,
+            actor=actor,
+            reason=payload.reason if payload else None,
+            request=request,
+        )
+        await db.commit()
+    except DBAPIError as exc:
+        await db.rollback()
+        if getattr(exc.orig, "sqlstate", None) in {"55P03", "40P01", "40001"}:
+            raise HTTPException(
+                status_code=409, detail="账号正在更新，请刷新后重试"
+            ) from exc
+        raise
     return user
 
 

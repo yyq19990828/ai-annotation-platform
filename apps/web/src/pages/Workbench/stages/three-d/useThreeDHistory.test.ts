@@ -1,7 +1,18 @@
-import { act, renderHook, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { MeResponse } from "@/api/auth";
+import { useAuthStore } from "@/stores/authStore";
 
 import { useThreeDHistory } from "./useThreeDHistory";
+
+beforeEach(() =>
+  useAuthStore.getState().setAuth("history-token", { id: "history-test" } as MeResponse),
+);
+afterEach(() => {
+  cleanup();
+  useAuthStore.getState().logout();
+  sessionStorage.removeItem("wb:hist:history-test:t1");
+});
 
 function makeMutations() {
   return {
@@ -101,7 +112,7 @@ describe("useThreeDHistory", () => {
     });
     await waitFor(() => expect(result.current.canUndo).toBe(true));
     expect(mutations.createAnnotation.mutate).toHaveBeenCalledWith(
-      payload,
+      expect.objectContaining({ ...payload, client_request_id: expect.any(String) }),
       expect.objectContaining({ onSuccess: expect.any(Function), onError: expect.any(Function) }),
     );
   });

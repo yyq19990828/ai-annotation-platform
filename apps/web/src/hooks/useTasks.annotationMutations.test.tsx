@@ -176,7 +176,7 @@ describe("annotation update mutation offline ownership", () => {
     );
     expect(updateAnnotationMock).not.toHaveBeenCalled();
     expect(client.getQueryData<AnnotationResponse[]>(queryKey(A))?.[0].attributes).toEqual({
-      checked: true,
+      checked: false,
     });
     expect(client.getQueryData(queryKey(B))).toEqual([oldB]);
     expect(isOfflineMutationQueued(settledError)).toBe(true);
@@ -248,6 +248,28 @@ describe("annotation update mutation offline ownership", () => {
       expect.anything(),
     );
   });
+});
+
+it("does not overwrite the next account's cache after query cancellation yields", async () => {
+  const { result, client } = setupUpdate();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const cancel = vi.spyOn(client, "cancelQueries").mockReturnValueOnce(gate);
+  const request = track(
+    result.current.mutateAsync({ annotationId: "old", payload: { attributes: { checked: true } } }),
+  );
+  await waitFor(() => expect(cancel).toHaveBeenCalled());
+  authState.user = { id: "user-b" };
+  const next = annotation("old", A);
+  next.attributes = { checked: "next-account" };
+  client.setQueryData(queryKey(A), [next]);
+  release();
+  await expect(request).rejects.toMatchObject({ name: "AnnotationMutationOwnerChangedError" });
+  expect(client.getQueryData(queryKey(A))).toEqual([next]);
+  expect(updateAnnotationMock).not.toHaveBeenCalled();
+  expect(enqueueDurablyMock).toHaveBeenCalledWith(expect.anything(), { userId: "user-a" });
 });
 
 describe("annotation delete mutation offline ownership", () => {

@@ -740,6 +740,7 @@ export function useWorkbenchShellModel({
   const scenePropagationPendingRef = useRef(false);
   const [scenePropagationPending, setScenePropagationPending] = useState(false);
   const pendingWorkbenchWrites = useIsMutating();
+  const pendingAnnotationWrites = useIsMutating({ mutationKey: ["annotation-write", taskId] });
   const setScenePlayback = useCallback(
     (active: boolean) => {
       if (active && (queryClient.isMutating() > 0 || scenePropagationPendingRef.current)) return;
@@ -2608,114 +2609,125 @@ export function useWorkbenchShellModel({
     return batchList.find((b) => b.id === task.batch_id)?.status;
   }, [task?.batch_id, batchList]);
 
-  const history = useAnnotationHistory(taskId, {
-    restoreSlice: async (ownerTaskId, operationId, payload) => {
-      const result = await annotationSlicesApi.restore(ownerTaskId, operationId, payload);
-      void queryClient.invalidateQueries({ queryKey: ["annotations", ownerTaskId] });
-      return result;
-    },
-    onSliceError: (error) =>
-      pushToast({
-        msg: "切割恢复失败，历史记录已保留",
-        sub: error instanceof Error ? error.message : String(error),
-        kind: "error",
-      }),
-    createAnnotation: (payload) => createAnnotation.mutateAsync(payload),
-    deleteAnnotation: (id) => deleteAnnotationMut.mutateAsync(id),
-    updateAnnotation: (id, payload) => {
-      const cached = queryClient.getQueryData<AnnotationResponse[]>(annotationQueryKey);
-      const current =
-        cached?.find((annotation) => annotation.id === id) ??
-        annotationsRef.current.find((annotation) => annotation.id === id);
-      const previousType = current?.geometry.type;
-      const nextType = payload.geometry?.type;
-      const requiresPrecondition =
-        !!nextType &&
-        (previousType !== nextType || nextType === "raster_mask" || nextType === "video_mask");
-      const etag =
-        requiresPrecondition && current?.version != null ? `W/"${current.version}"` : undefined;
-      return updateAnnotationMut.mutateAsync({ annotationId: id, payload, etag });
-    },
-    updateVideoKeyframe: async (id, frameIndex, keyframe) => {
-      const ann = annotationsRef.current.find((a) => a.id === id);
-      if (!ann || ann.geometry.type !== "video_track_bbox")
-        throw new Error("Video track not found");
-      const geometry = applyVideoKeyframeToGeometry(ann.geometry, frameIndex, keyframe);
-      await updateAnnotationMut.mutateAsync({ annotationId: id, payload: { geometry } });
-    },
-    updateVideoMaskFrame: async (id: string, frameIndex: number, target: VideoMaskFrameState) => {
-      if (!taskId) throw new Error("Task is not available");
-      const cached = queryClient.getQueryData<AnnotationResponse[]>(annotationQueryKey);
-      const current =
-        cached?.find((annotation) => annotation.id === id) ??
-        annotationsRef.current.find((annotation) => annotation.id === id);
-      if (!current || current.geometry.type !== "video_track_mask" || current.version == null) {
-        throw new Error("Video Mask track not found");
-      }
-      let updated = current;
-      const exact =
-        current.geometry.keyframes.find((item) => item.frame_index === frameIndex) ?? null;
-      const sameKeyframe = (left: VideoTrackMaskKeyframe, right: VideoTrackMaskKeyframe) =>
-        left.mask.sha256 === right.mask.sha256 &&
-        left.source === right.source &&
-        Boolean(left.occluded) === Boolean(right.occluded) &&
-        JSON.stringify(left.attributes ?? null) === JSON.stringify(right.attributes ?? null);
-      if (target.keyframe && (!exact || !sameKeyframe(exact, target.keyframe))) {
-        updated = await videoTrackerApi.saveMaskKeyframe(
-          taskId,
-          id,
-          frameIndex,
-          target.keyframe.mask,
-          Number(updated.version),
-          {
-            source: target.keyframe.source,
-            occluded: target.keyframe.occluded,
-            attributes: target.keyframe.attributes,
-          },
+  const history = useAnnotationHistory(
+    taskId,
+    {
+      restoreSlice: async (ownerTaskId, operationId, payload) => {
+        const result = await annotationSlicesApi.restore(ownerTaskId, operationId, payload);
+        void queryClient.invalidateQueries({ queryKey: ["annotations", ownerTaskId] });
+        return result;
+      },
+      onSliceError: (error) =>
+        pushToast({
+          msg: "切割恢复失败，历史记录已保留",
+          sub: error instanceof Error ? error.message : String(error),
+          kind: "error",
+        }),
+      createAnnotation: (payload) => createAnnotation.mutateAsync(payload),
+      deleteAnnotation: (id) =>
+        deleteAnnotationMut.mutateAsync(id).catch((error) => {
+          if (!isOfflineMutationQueued(error)) throw error;
+        }),
+      updateAnnotation: (id, payload) => {
+        const cached = queryClient.getQueryData<AnnotationResponse[]>(annotationQueryKey);
+        const current =
+          cached?.find((annotation) => annotation.id === id) ??
+          annotationsRef.current.find((annotation) => annotation.id === id);
+        const previousType = current?.geometry.type;
+        const nextType = payload.geometry?.type;
+        const requiresPrecondition =
+          !!nextType &&
+          (previousType !== nextType || nextType === "raster_mask" || nextType === "video_mask");
+        const etag =
+          requiresPrecondition && current?.version != null ? `W/"${current.version}"` : undefined;
+        return updateAnnotationMut
+          .mutateAsync({ annotationId: id, payload, etag })
+          .catch((error) => {
+            if (!isOfflineMutationQueued(error)) throw error;
+          });
+      },
+      updateVideoKeyframe: async (id, frameIndex, keyframe) => {
+        const ann = annotationsRef.current.find((a) => a.id === id);
+        if (!ann || ann.geometry.type !== "video_track_bbox")
+          throw new Error("Video track not found");
+        const geometry = applyVideoKeyframeToGeometry(ann.geometry, frameIndex, keyframe);
+        await updateAnnotationMut.mutateAsync({ annotationId: id, payload: { geometry } });
+      },
+      updateVideoMaskFrame: async (id: string, frameIndex: number, target: VideoMaskFrameState) => {
+        if (!taskId) throw new Error("Task is not available");
+        const cached = queryClient.getQueryData<AnnotationResponse[]>(annotationQueryKey);
+        const current =
+          cached?.find((annotation) => annotation.id === id) ??
+          annotationsRef.current.find((annotation) => annotation.id === id);
+        if (!current || current.geometry.type !== "video_track_mask" || current.version == null) {
+          throw new Error("Video Mask track not found");
+        }
+        let updated = current;
+        const exact =
+          current.geometry.keyframes.find((item) => item.frame_index === frameIndex) ?? null;
+        const sameKeyframe = (left: VideoTrackMaskKeyframe, right: VideoTrackMaskKeyframe) =>
+          left.mask.sha256 === right.mask.sha256 &&
+          left.source === right.source &&
+          Boolean(left.occluded) === Boolean(right.occluded) &&
+          JSON.stringify(left.attributes ?? null) === JSON.stringify(right.attributes ?? null);
+        if (target.keyframe && (!exact || !sameKeyframe(exact, target.keyframe))) {
+          updated = await videoTrackerApi.saveMaskKeyframe(
+            taskId,
+            id,
+            frameIndex,
+            target.keyframe.mask,
+            Number(updated.version),
+            {
+              source: target.keyframe.source,
+              occluded: target.keyframe.occluded,
+              attributes: target.keyframe.attributes,
+            },
+          );
+        } else if (!target.keyframe && exact) {
+          updated = await videoTrackerApi.operateMaskKeyframe(
+            taskId,
+            id,
+            frameIndex,
+            "delete_keyframe",
+            Number(updated.version),
+          );
+        }
+        const manualOutside =
+          updated.geometry.type === "video_track_mask" &&
+          (updated.geometry.outside ?? []).some(
+            (range) =>
+              range.source !== "prediction" && range.from <= frameIndex && frameIndex <= range.to,
+          );
+        if (manualOutside !== target.manualOutside) {
+          updated = await videoTrackerApi.operateMaskKeyframe(
+            taskId,
+            id,
+            frameIndex,
+            target.manualOutside ? "mark_outside" : "restore_held",
+            Number(updated.version),
+          );
+        }
+        queryClient.setQueryData<AnnotationResponse[]>(annotationQueryKey, (items) =>
+          (items ?? []).map((item) => (item.id === id ? updated : item)),
         );
-      } else if (!target.keyframe && exact) {
-        updated = await videoTrackerApi.operateMaskKeyframe(
-          taskId,
-          id,
-          frameIndex,
-          "delete_keyframe",
-          Number(updated.version),
+        return updated;
+      },
+      removeLocalCreate: async (id: string) => {
+        if (!taskId || !meUserId) return;
+        queryClient.setQueryData<AnnotationResponse[]>(annotationQueryKey, (prev) =>
+          (prev ?? []).filter((a) => a.id !== id),
         );
-      }
-      const manualOutside =
-        updated.geometry.type === "video_track_mask" &&
-        (updated.geometry.outside ?? []).some(
-          (range) =>
-            range.source !== "prediction" && range.from <= frameIndex && frameIndex <= range.to,
-        );
-      if (manualOutside !== target.manualOutside) {
-        updated = await videoTrackerApi.operateMaskKeyframe(
-          taskId,
-          id,
-          frameIndex,
-          target.manualOutside ? "mark_outside" : "restore_held",
-          Number(updated.version),
-        );
-      }
-      queryClient.setQueryData<AnnotationResponse[]>(annotationQueryKey, (items) =>
-        (items ?? []).map((item) => (item.id === id ? updated : item)),
-      );
-      return updated;
+        const scope: OfflineQueueScope = { userId: meUserId };
+        const all = await offlineQueueGetAll(scope);
+        const target = all.find((op) => op.kind === "create" && op.tmpId === id);
+        if (target) await offlineQueueRemoveById(target.id, scope);
+      },
+      // v0.20.22 · accept undo 防御过滤依赖 (改动 1.5): annotationsRef 已含全量当前标注,
+      // undo 时按 id 查 parent_prediction_id, 只删本 predictionId 派生的那批。
+      getAnnotation: (id) => annotationsRef.current.find((a) => a.id === id) ?? null,
     },
-    removeLocalCreate: async (id: string) => {
-      if (!taskId || !meUserId) return;
-      queryClient.setQueryData<AnnotationResponse[]>(annotationQueryKey, (prev) =>
-        (prev ?? []).filter((a) => a.id !== id),
-      );
-      const scope: OfflineQueueScope = { userId: meUserId };
-      const all = await offlineQueueGetAll(scope);
-      const target = all.find((op) => op.kind === "create" && op.tmpId === id);
-      if (target) await offlineQueueRemoveById(target.id, scope);
-    },
-    // v0.20.22 · accept undo 防御过滤依赖 (改动 1.5): annotationsRef 已含全量当前标注,
-    // undo 时按 id 查 parent_prediction_id, 只删本 predictionId 派生的那批。
-    getAnnotation: (id) => annotationsRef.current.find((a) => a.id === id) ?? null,
-  });
+    meUserId ?? "",
+  );
   const acceptNativeMaskCandidate = useAcceptNativeMaskCandidate({
     taskId,
     videoSegmentId: annotationSegmentId,
@@ -2740,6 +2752,7 @@ export function useWorkbenchShellModel({
   const {
     online,
     queueCount,
+    queueReady,
     queueScope,
     syncError,
     enqueueOnError,
@@ -5854,8 +5867,9 @@ export function useWorkbenchShellModel({
     [currentProject?.tool_bindings, toolView.attributeSchema],
   );
   const submitBlockedReason = useMemo(() => {
+    if (!queueReady) return "正在检查本机待同步记录，请稍候";
     return resolveSubmitBlockedReason({
-      pendingWrites: pendingWorkbenchWrites,
+      pendingWrites: pendingAnnotationWrites,
       maskSaving: maskInstanceTransitionBusy || maskPrimaryPending || maskEditor.phase === "saving",
       maskDraft: hasPendingMaskDraft,
       localDraft: imageActions.hasManualDraft,
@@ -5868,8 +5882,9 @@ export function useWorkbenchShellModel({
     maskEditor.phase,
     maskInstanceTransitionBusy,
     maskPrimaryPending,
-    pendingWorkbenchWrites,
+    pendingAnnotationWrites,
     queueCount,
+    queueReady,
     syncError,
   ]);
   const isCurrentSubmitContext = useCallback(
@@ -6034,7 +6049,8 @@ export function useWorkbenchShellModel({
   const isSubmittingTask = topbarActions.isSubmitting ?? submitTaskMut.isPending;
   const saveState = syncError
     ? ("sync-error" as const)
-    : pendingWorkbenchWrites > 0 ||
+    : !queueReady ||
+        pendingAnnotationWrites > 0 ||
         maskInstanceTransitionBusy ||
         maskPrimaryPending ||
         maskEditor.phase === "saving" ||

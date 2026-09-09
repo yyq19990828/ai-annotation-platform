@@ -58,6 +58,30 @@ describe("applyLeaf · create undo (v0.6.3 P0 tmpId 本地分支)", () => {
 });
 
 describe("applyLeaf · create redo / update / delete 不受 tmpId 分支影响", () => {
+  it("uses a new creation key after undo and retains it for a failed redo retry", async () => {
+    const create = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError("lost response"))
+      .mockResolvedValue({ id: "redo-created" });
+    const handlers = makeHandlers({ createAnnotation: create });
+    const cmd = {
+      kind: "create" as const,
+      annotationId: "original",
+      payload: {
+        ...dummyPayload,
+        client_request_id: "original-key",
+      },
+    };
+    await applyLeaf(cmd, "undo", handlers);
+    const redoKey = cmd.payload.client_request_id;
+    expect(redoKey).not.toBe("original-key");
+    await expect(applyLeaf(cmd, "redo", handlers)).rejects.toBeInstanceOf(TypeError);
+    await applyLeaf(cmd, "redo", handlers);
+    expect(create.mock.calls[0][0].client_request_id).toBe(redoKey);
+    expect(create.mock.calls[1][0].client_request_id).toBe(redoKey);
+    await applyLeaf(cmd, "undo", handlers);
+    expect(cmd.payload.client_request_id).not.toBe(redoKey);
+  });
   it("redo create → 调 createAnnotation，cmd.annotationId 改写为新 id", async () => {
     const h = makeHandlers({
       createAnnotation: vi.fn(async () => ({ id: "fresh-1" }) as never),

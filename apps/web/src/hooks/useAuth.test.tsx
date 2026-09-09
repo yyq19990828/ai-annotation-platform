@@ -34,7 +34,7 @@ vi.mock("../api/tasks", () => ({
 }));
 
 vi.mock("../pages/Workbench/state/offlineQueue", () => ({
-  count: mockOfflineQueue.count,
+  countDurably: mockOfflineQueue.count,
   drain: mockOfflineQueue.drain,
   replaceAnnotationId: mockOfflineQueue.replaceAnnotationId,
 }));
@@ -129,8 +129,10 @@ describe("useLogin", () => {
 
 describe("useLogout", () => {
   beforeEach(() => {
-    vi.clearAllMocks();
-    useAuthStore.setState({ token: "jwt", user: fakeUser });
+    vi.resetAllMocks();
+    useAuthStore.getState().setAuth("jwt", fakeUser);
+    mockOfflineQueue.count.mockResolvedValue(0);
+    mockOfflineQueue.drain.mockResolvedValue({ ok: 0, failed: 0 });
     mockAuthApi.logout.mockResolvedValue(undefined);
   });
 
@@ -223,6 +225,7 @@ describe("useLogout", () => {
     };
     mockOfflineQueue.drain.mockImplementation(async (handler) => {
       await handler(queued);
+      mockOfflineQueue.count.mockResolvedValue(0);
       return { ok: 1, failed: 0 };
     });
     mockTasksApi.updateAnnotation.mockResolvedValue(undefined);
@@ -284,5 +287,36 @@ describe("useLogout", () => {
 
     expect(useAuthStore.getState().user).toBeNull();
     expect(mockOfflineQueue.drain).not.toHaveBeenCalled();
+  });
+
+  it("读取本机记录失败时先说明未知状态，不直接退出", async () => {
+    mockOfflineQueue.count.mockRejectedValue(new Error("IndexedDB unavailable"));
+    const { result } = renderHook(() => useLogout(), { wrapper });
+    await act(async () => {
+      await result.current.requestLogout();
+    });
+    expect(result.current.prompt).toEqual({ userId: fakeUser.id, pendingCount: null });
+    expect(result.current.syncError).toContain("无法读取");
+    expect(mockAuthApi.logout).not.toHaveBeenCalled();
+    expect(useAuthStore.getState().user).toEqual(fakeUser);
+    await act(async () => {
+      await result.current.confirmLogout("keep");
+    });
+    expect(mockAuthApi.logout).toHaveBeenCalledOnce();
+  });
+
+  it("其他标签页换了凭证后不会同步旧账号或登出新账号", async () => {
+    mockOfflineQueue.count.mockResolvedValue(1);
+    const { result } = renderHook(() => useLogout(), { wrapper });
+    await act(async () => {
+      await result.current.requestLogout();
+    });
+    localStorage.setItem("token", "other-tab-token");
+    await act(async () => {
+      await result.current.confirmLogout("sync");
+    });
+    expect(mockOfflineQueue.drain).not.toHaveBeenCalled();
+    expect(mockAuthApi.logout).not.toHaveBeenCalled();
+    expect(localStorage.getItem("token")).toBe("other-tab-token");
   });
 });

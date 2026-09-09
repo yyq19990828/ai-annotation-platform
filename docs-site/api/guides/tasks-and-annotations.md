@@ -21,29 +21,31 @@ pending → in_progress → completed → review
 ## 拉取下一个任务
 
 ```http
-POST /api/v1/tasks/next
-{ "project_id": 1, "batch_id": 5 }
+GET /api/v1/tasks/next?project_id=<project_uuid>&batch_id=<batch_uuid>
 ```
 
-返回一个未被锁定的任务并**加锁 30 分钟**（[ADR 0005](../../dev/adr/archive/0005-task-lock-and-review-matrix)）。同一标注员重复调用拿同一个；其他人拿不到。
+调度器优先复用当前账号的任务，再选择可领取任务。客户端进入工作台后通过显式锁接口取得或续期编辑锁；返回任务本身不保证残留锁仍有效，详见[任务锁](../../dev/concepts/task-locking)。
 
-## 提交标注
+## 保存标注与提交任务
 
 ```http
 POST /api/v1/tasks/:id/annotations
+Idempotency-Key: 61fffd41-c706-48c7-818e-0c40cdbeb6c9
+
 {
-  "shapes": [
-    {
-      "type": "rectanglelabels",
-      "class_name": "dog",
-      "geometry": { "x": 12, "y": 34, "width": 56, "height": 78 },
-      "attributes": { "color": "brown" }
-    }
-  ]
+  "annotation_type": "bbox",
+  "tool_unit_id": "bbox",
+  "class_name": "dog",
+  "geometry": { "type": "bbox", "x": 0.12, "y": 0.34, "w": 0.56, "h": 0.28 },
+  "attributes": { "color": "brown" }
 }
 ```
 
-提交后任务状态进入完成或待审核路径，锁释放。
+该接口保存单条标注，返回 `201` 和标注对象。可选 `Idempotency-Key` 长度为 1–128 字符：同一任务、账号、键和请求内容的重试返回首次结果；复用键发送不同内容返回 `409 idempotency_conflict`。新操作使用新键；不带键时保留每次创建新对象的行为。服务端将标注、去重记录和审计一起提交，避免响应丢失后的重试重复创建。
+
+每次写入和重试都会重新检查账号、任务可见性、当前归属及可编辑状态。员工停用后重新启用，也不能用旧离线操作修改已经交接的任务。
+
+全部标注保存并同步后，调用 `POST /api/v1/tasks/:id/submit` 将任务送审并释放当前锁；保存标注本身不会提交审核。
 
 ## 视频问题反馈
 

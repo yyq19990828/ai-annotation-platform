@@ -16,11 +16,13 @@ from datetime import datetime, timezone
 from typing import Any, Iterable
 
 from fastapi import HTTPException, Request, status
-from sqlalchemy import delete, func, or_, select, text
+from sqlalchemy import delete, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import DBAPIError
 
 from app.db.enums import UserRole
 from app.db.models.api_key import ApiKey
+from app.db.models.password_reset_token import PasswordResetToken
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
@@ -37,6 +39,7 @@ from app.schemas.user import (
     UserOut,
 )
 from app.services.audit import AuditAction, AuditService
+from app.core.token_blacklist import increment_user_generation
 
 
 ACTIVE_HANDOFF_STATUSES = ("pending", "in_progress", "review", "rejected")
@@ -62,14 +65,66 @@ def set_disabled_metadata(
     """Set all lifecycle fields together for every deactivation writer."""
 
     user.is_active = False
+    user.status = "offline"
     user.disabled_kind = kind
     user.disabled_at = at or datetime.now(timezone.utc)
     user.disabled_by = actor_id
     user.disabled_reason = (reason or "").strip()[:500] or None
 
 
+async def retire_account_credentials(
+    db: AsyncSession, user_id: uuid.UUID
+) -> list[uuid.UUID]:
+    """Retire all existing credentials while the caller holds the account lock."""
+
+    now = datetime.now(timezone.utc)
+    keys = list(
+        (
+            await db.scalars(
+                select(ApiKey)
+                .where(ApiKey.user_id == user_id, ApiKey.revoked_at.is_(None))
+                .order_by(ApiKey.id)
+                .with_for_update(nowait=True)
+                .execution_options(populate_existing=True)
+            )
+        ).all()
+    )
+    for key in keys:
+        key.revoked_at = now
+    await db.execute(
+        update(PasswordResetToken)
+        .where(
+            PasswordResetToken.user_id == user_id, PasswordResetToken.used_at.is_(None)
+        )
+        .values(used_at=now)
+    )
+    await increment_user_generation(str(user_id))
+    return [key.id for key in keys]
+
+
 class UserLifecycleService:
     """Build and apply a versioned account offboarding snapshot."""
+
+    @staticmethod
+    async def lock_accounts(
+        db: AsyncSession, user_ids: Iterable[uuid.UUID]
+    ) -> dict[uuid.UUID, User]:
+        try:
+            accounts = await db.scalars(
+                select(User)
+                .where(User.id.in_(sorted(set(user_ids))))
+                .order_by(User.id)
+                .with_for_update(nowait=True)
+                .execution_options(populate_existing=True)
+            )
+        except DBAPIError as exc:
+            await db.rollback()
+            if getattr(exc.orig, "sqlstate", None) in {"55P03", "40P01", "40001"}:
+                raise HTTPException(
+                    status_code=409, detail="账号正在更新，请刷新后重试"
+                ) from exc
+            raise
+        return {user.id: user for user in accounts}
 
     @staticmethod
     async def _load_target(
@@ -77,7 +132,9 @@ class UserLifecycleService:
     ) -> User:
         stmt = select(User).where(User.id == target_id)
         if for_update:
-            stmt = stmt.with_for_update()
+            stmt = stmt.with_for_update(nowait=True).execution_options(
+                populate_existing=True
+            )
         target = (await db.execute(stmt)).scalar_one_or_none()
         if target is None:
             raise HTTPException(status_code=404, detail="用户不存在")
@@ -97,7 +154,7 @@ class UserLifecycleService:
             )
         )
         task_ids = select(Task.project_id).where(
-            or_(Task.assignee_id == target_id, Task.reviewer_id == target_id)
+            UserLifecycleService._target_task_filter(target_id)
         )
         rows = await db.execute(
             select(Project.id).where(
@@ -112,17 +169,32 @@ class UserLifecycleService:
         return {row[0] for row in rows.all()}
 
     @staticmethod
+    def _target_task_filter(target_id: uuid.UUID):
+        return or_(
+            Task.assignee_id == target_id,
+            Task.reviewer_id == target_id,
+            Task.id.in_(select(TaskLock.task_id).where(TaskLock.user_id == target_id)),
+        )
+
+    @staticmethod
     async def _lock_task_scope(db: AsyncSession, task_id: uuid.UUID) -> None:
         # Keep this after the Task row lock. Annotation writes already use
         # Task -> advisory -> annotation; matching that order avoids a cycle.
-        await db.execute(
-            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+        acquired = await db.scalar(
+            text("SELECT pg_try_advisory_xact_lock(hashtextextended(:key, 0))"),
             {"key": f"aap:task-edit-lock:{task_id}"},
         )
+        if not acquired:
+            raise HTTPException(status_code=409, detail={"code": "offboarding_busy"})
 
     @classmethod
     async def _lock_snapshot_rows(cls, db: AsyncSession, target_id: uuid.UUID) -> None:
-        """Lock resource rows in a stable order before execution recheck."""
+        """Lock a stable snapshot without waiting behind task or batch writers.
+
+        Existing task writes and batch administration acquire resource rows in
+        different orders. NOWAIT and the nonblocking advisory lock turn busy
+        resources into a retryable conflict without introducing a lock cycle.
+        """
 
         project_ids = await cls._project_ids_for_target(db, target_id)
         if project_ids:
@@ -130,7 +202,7 @@ class UserLifecycleService:
                 select(Project)
                 .where(Project.id.in_(sorted(project_ids)))
                 .order_by(Project.id)
-                .with_for_update()
+                .with_for_update(nowait=True)
             )
             await db.execute(
                 select(TaskBatch)
@@ -142,17 +214,17 @@ class UserLifecycleService:
                     ),
                 )
                 .order_by(TaskBatch.id)
-                .with_for_update()
+                .with_for_update(nowait=True)
             )
 
         # Task rows are locked before the per-task advisory lock to match the
-        # existing annotation write path. TaskLockService takes the advisory
-        # lock before touching task_locks and never waits on Task rows.
+        # existing annotation write path. NOWAIT also handles lock acquisition
+        # that holds the advisory lock while checking its Task foreign key.
         task_rows = await db.execute(
             select(Task)
-            .where(or_(Task.assignee_id == target_id, Task.reviewer_id == target_id))
+            .where(cls._target_task_filter(target_id))
             .order_by(Task.id)
-            .with_for_update()
+            .with_for_update(nowait=True)
         )
         task_ids = [task.id for task in task_rows.scalars().all()]
         for task_id in task_ids:
@@ -162,7 +234,7 @@ class UserLifecycleService:
             select(TaskLock)
             .where(TaskLock.user_id == target_id)
             .order_by(TaskLock.id)
-            .with_for_update()
+            .with_for_update(nowait=True)
         )
 
     @staticmethod
@@ -273,11 +345,7 @@ class UserLifecycleService:
             (
                 await db.execute(
                     select(Task)
-                    .where(
-                        or_(
-                            Task.assignee_id == target_id, Task.reviewer_id == target_id
-                        )
-                    )
+                    .where(cls._target_task_filter(target_id))
                     .order_by(Task.project_id, Task.id)
                 )
             ).scalars()
@@ -499,6 +567,10 @@ class UserLifecycleService:
                     "project_name": project.name,
                     "roles": role_payload,
                     "tasks": task_counts,
+                    "locked_task_count": sum(
+                        locks_by_task.get(task.id, 0)
+                        for task in tasks_by_project[project.id]
+                    ),
                     "blockers": project_blockers,
                 }
             )
@@ -564,6 +636,11 @@ class UserLifecycleService:
         db: AsyncSession, *, actor: User, snapshot: dict[str, Any]
     ) -> None:
         target: User = snapshot["target"]
+        if not actor.is_active or actor.role not in {
+            UserRole.SUPER_ADMIN.value,
+            UserRole.PROJECT_ADMIN.value,
+        }:
+            raise HTTPException(status_code=403, detail="当前账号已无管理权限")
         if actor.id == target.id:
             raise HTTPException(status_code=400, detail="不能交接自己")
         if target.role == UserRole.SUPER_ADMIN.value:
@@ -671,21 +748,14 @@ class UserLifecycleService:
             )
             if receiver_id is not None
         }
-        user_ids = sorted({target_id, *receiver_ids})
-        locked_users = list(
-            (
-                await db.execute(
-                    select(User)
-                    .where(User.id.in_(user_ids))
-                    .order_by(User.id)
-                    .with_for_update()
-                )
-            ).scalars()
-        )
-        users_by_id = {user.id: user for user in locked_users}
+        user_ids = sorted({actor.id, target_id, *receiver_ids})
+        users_by_id = await cls.lock_accounts(db, user_ids)
         target = users_by_id.get(target_id)
         if target is None:
             raise HTTPException(status_code=404, detail="用户不存在")
+        actor = users_by_id.get(actor.id)
+        if actor is None or not actor.is_active:
+            raise HTTPException(status_code=403, detail="当前账号已无管理权限")
 
         # Lock the concrete membership rows used to qualify submitted
         # receivers before rebuilding options. User row locks alone do not
@@ -701,7 +771,7 @@ class UserLifecycleService:
                     ProjectMember.user_id.in_(sorted(receiver_ids)),
                 )
                 .order_by(ProjectMember.project_id, ProjectMember.user_id)
-                .with_for_update()
+                .with_for_update(nowait=True)
             )
 
         # All resource rows are now locked in a deterministic order. A second
@@ -885,10 +955,7 @@ class UserLifecycleService:
         # API keys are account resources. Authentication already checks
         # is_active, but revocation makes the offboarding result explicit and
         # ensures reactivation can never resurrect an old credential.
-        for key in snapshot["api_keys"]:
-            if key.revoked_at is None:
-                key.revoked_at = now
-                revoked_key_ids.append(key.id)
+        revoked_key_ids = await retire_account_credentials(db, target_id)
         await db.execute(delete(TaskLock).where(TaskLock.user_id == target_id))
         audit = await AuditService.log(
             db,
@@ -929,7 +996,18 @@ class UserLifecycleService:
         reason: str | None,
         request: Request | None = None,
     ) -> UserOut:
-        target = await cls._load_target(db, target_id, for_update=True)
+        accounts = await cls.lock_accounts(db, [target_id, actor.id])
+        target = accounts.get(target_id)
+        actor = accounts.get(actor.id)
+        if target is None:
+            raise HTTPException(status_code=404, detail="用户不存在")
+        if (
+            actor is None
+            or not actor.is_active
+            or actor.role
+            not in {UserRole.SUPER_ADMIN.value, UserRole.PROJECT_ADMIN.value}
+        ):
+            raise HTTPException(status_code=403, detail="当前账号已无管理权限")
         if actor.id == target.id:
             raise HTTPException(status_code=400, detail="不能恢复自己")
         if actor.role == UserRole.PROJECT_ADMIN.value:
@@ -939,12 +1017,14 @@ class UserLifecycleService:
             if not project_ids:
                 raise HTTPException(status_code=403, detail="该用户不在你管理的项目内")
             owned = await db.scalars(
-                select(Project.id).where(
+                select(Project.id)
+                .where(
                     Project.id.in_(sorted(project_ids))
                     if project_ids
                     else text("false"),
                     Project.owner_id == actor.id,
                 )
+                .with_for_update(read=True, nowait=True)
             )
             if set(owned.all()) != project_ids:
                 raise HTTPException(
@@ -954,7 +1034,10 @@ class UserLifecycleService:
             raise HTTPException(status_code=409, detail="账号当前已启用")
         if target.disabled_kind not in REACTIVATABLE_KINDS:
             raise HTTPException(status_code=409, detail="该停用状态不可恢复")
+        # Also covers accounts suspended through the compatible legacy endpoint.
+        await retire_account_credentials(db, target_id)
         target.is_active = True
+        target.status = "offline"
         target.disabled_kind = None
         target.disabled_at = None
         target.disabled_by = None

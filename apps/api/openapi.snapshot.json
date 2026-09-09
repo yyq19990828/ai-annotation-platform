@@ -19265,6 +19265,462 @@
         "title": "ObserveTarget",
         "type": "object"
       },
+      "OffboardingApiKeyPreview": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "key_prefix": {
+            "title": "Key Prefix",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "key_prefix"
+        ],
+        "title": "OffboardingApiKeyPreview",
+        "type": "object"
+      },
+      "OffboardingBatchRef": {
+        "properties": {
+          "batch_id": {
+            "format": "uuid",
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "batch_name": {
+            "title": "Batch Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "batch_id",
+          "batch_name"
+        ],
+        "title": "OffboardingBatchRef",
+        "type": "object"
+      },
+      "OffboardingBlocker": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "OffboardingBlocker",
+        "type": "object"
+      },
+      "OffboardingCommitRequest": {
+        "properties": {
+          "mode": {
+            "default": "handoff",
+            "enum": [
+              "handoff",
+              "emergency_suspend"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "preview_version": {
+            "title": "Preview Version",
+            "type": "string"
+          },
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/OffboardingProjectRequest"
+            },
+            "title": "Projects",
+            "type": "array"
+          },
+          "reason": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "preview_version"
+        ],
+        "title": "OffboardingCommitRequest",
+        "type": "object"
+      },
+      "OffboardingPreview": {
+        "properties": {
+          "api_keys": {
+            "items": {
+              "$ref": "#/components/schemas/OffboardingApiKeyPreview"
+            },
+            "title": "Api Keys",
+            "type": "array"
+          },
+          "blockers": {
+            "items": {
+              "$ref": "#/components/schemas/OffboardingBlocker"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "can_commit": {
+            "default": false,
+            "title": "Can Commit",
+            "type": "boolean"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "preview_version": {
+            "title": "Preview Version",
+            "type": "string"
+          },
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/OffboardingProjectPreview"
+            },
+            "title": "Projects",
+            "type": "array"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserOut"
+          }
+        },
+        "required": [
+          "user",
+          "preview_version",
+          "generated_at"
+        ],
+        "title": "OffboardingPreview",
+        "type": "object"
+      },
+      "OffboardingProjectPreview": {
+        "properties": {
+          "blockers": {
+            "items": {
+              "$ref": "#/components/schemas/OffboardingBlocker"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "locked_task_count": {
+            "default": 0,
+            "title": "Locked Task Count",
+            "type": "integer"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "project_name": {
+            "title": "Project Name",
+            "type": "string"
+          },
+          "roles": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/OffboardingRolePreview"
+            },
+            "title": "Roles",
+            "type": "object"
+          },
+          "tasks": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "type": "integer"
+              },
+              "type": "object"
+            },
+            "title": "Tasks",
+            "type": "object"
+          }
+        },
+        "required": [
+          "project_id",
+          "project_name",
+          "roles",
+          "tasks"
+        ],
+        "title": "OffboardingProjectPreview",
+        "type": "object"
+      },
+      "OffboardingProjectRequest": {
+        "properties": {
+          "annotator_receiver_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotator Receiver Id"
+          },
+          "owner_receiver_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Receiver Id"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "reviewer_receiver_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer Receiver Id"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "title": "OffboardingProjectRequest",
+        "type": "object"
+      },
+      "OffboardingResult": {
+        "properties": {
+          "audit_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audit Id"
+          },
+          "mode": {
+            "enum": [
+              "handoff",
+              "emergency_suspend"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "revoked_api_key_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Revoked Api Key Ids",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "transfers": {
+            "items": {
+              "$ref": "#/components/schemas/OffboardingTransferResult"
+            },
+            "title": "Transfers",
+            "type": "array"
+          },
+          "unresolved": {
+            "items": {
+              "$ref": "#/components/schemas/OffboardingUnresolvedResult"
+            },
+            "title": "Unresolved",
+            "type": "array"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserOut"
+          }
+        },
+        "required": [
+          "user",
+          "status",
+          "mode"
+        ],
+        "title": "OffboardingResult",
+        "type": "object"
+      },
+      "OffboardingRolePreview": {
+        "properties": {
+          "batches": {
+            "items": {
+              "$ref": "#/components/schemas/OffboardingBatchRef"
+            },
+            "title": "Batches",
+            "type": "array"
+          },
+          "present": {
+            "default": false,
+            "title": "Present",
+            "type": "boolean"
+          },
+          "receiver_options": {
+            "items": {
+              "$ref": "#/components/schemas/UserReceiverOption"
+            },
+            "title": "Receiver Options",
+            "type": "array"
+          }
+        },
+        "title": "OffboardingRolePreview",
+        "type": "object"
+      },
+      "OffboardingTransferResult": {
+        "properties": {
+          "batch_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Batch Ids",
+            "type": "array"
+          },
+          "lock_count": {
+            "default": 0,
+            "title": "Lock Count",
+            "type": "integer"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "receiver_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receiver Id"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "task_count": {
+            "default": 0,
+            "title": "Task Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "project_id",
+          "role"
+        ],
+        "title": "OffboardingTransferResult",
+        "type": "object"
+      },
+      "OffboardingUnresolvedResult": {
+        "properties": {
+          "batch_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Batch Ids",
+            "type": "array"
+          },
+          "lock_count": {
+            "default": 0,
+            "title": "Lock Count",
+            "type": "integer"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "task_count": {
+            "default": 0,
+            "title": "Task Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "OffboardingUnresolvedResult",
+        "type": "object"
+      },
       "OpenRegisterRequest": {
         "properties": {
           "captcha_token": {
@@ -25175,6 +25631,24 @@
         "title": "RasterMaskGeometry",
         "type": "object"
       },
+      "ReactivateRequest": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "title": "ReactivateRequest",
+        "type": "object"
+      },
       "RecentReviewItem": {
         "properties": {
           "file_name": {
@@ -30653,6 +31127,52 @@
             ],
             "title": "Deactivation Scheduled At"
           },
+          "disabled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled At"
+          },
+          "disabled_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled By"
+          },
+          "disabled_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled Kind"
+          },
+          "disabled_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled Reason"
+          },
           "email": {
             "title": "Email",
             "type": "string"
@@ -30783,6 +31303,47 @@
           }
         },
         "title": "UserPreferences",
+        "type": "object"
+      },
+      "UserReceiverOption": {
+        "description": "A role-specific, currently eligible offboarding receiver.",
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "project_member_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Member Role"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "email",
+          "role"
+        ],
+        "title": "UserReceiverOption",
         "type": "object"
       },
       "UsersStats": {
@@ -53248,6 +53809,24 @@
               "title": "Task Id",
               "type": "string"
             }
+          },
+          {
+            "description": "Optional durable creation identity (1–128 characters). Reuse only with the same request.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional durable creation identity (1–128 characters). Reuse only with the same request.",
+              "title": "Idempotency-Key"
+            }
           }
         ],
         "requestBody": {
@@ -58507,6 +59086,21 @@
             }
           },
           {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "active",
+              "enum": [
+                "active",
+                "inactive",
+                "all"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
             "description": "可选项目过滤；project_admin 入参被忽略，强制限定到其管理项目",
             "in": "query",
             "name": "project_id",
@@ -58898,6 +59492,180 @@
           }
         ],
         "summary": "Assign User Group",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/v1/users/{user_id}/offboarding": {
+      "post": {
+        "description": "Atomically transfer current responsibilities and suspend the account.",
+        "operationId": "offboarding_commit_api_v1_users__user_id__offboarding_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OffboardingCommitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OffboardingResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Offboarding Commit",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/v1/users/{user_id}/offboarding-preview": {
+      "get": {
+        "description": "Return a complete, versioned handoff snapshot without mutating data.",
+        "operationId": "offboarding_preview_api_v1_users__user_id__offboarding_preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OffboardingPreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Offboarding Preview",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/v1/users/{user_id}/reactivate": {
+      "post": {
+        "description": "Reactivate only an explicitly suspended account.",
+        "operationId": "reactivate_user_api_v1_users__user_id__reactivate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ReactivateRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reactivate User",
         "tags": [
           "users"
         ]

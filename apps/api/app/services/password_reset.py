@@ -19,7 +19,12 @@ class PasswordResetService:
 
     async def create_token(self, email: str) -> str | None:
         """生成重置 token。返回 None 表示邮箱不存在或账号不可用（防枚举）。"""
-        result = await self.db.execute(select(User).where(User.email == email))
+        result = await self.db.execute(
+            select(User)
+            .where(User.email == email)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
         user = result.scalar_one_or_none()
         if not user or not user.is_active:
             return None
@@ -38,10 +43,24 @@ class PasswordResetService:
 
     async def consume_token(self, token: str) -> User | None:
         """验证并消费 token，返回关联用户。返回 None 表示无效/过期/已用。"""
+        # Lifecycle changes lock User before retiring reset tokens. Resolve the
+        # immutable owner first, then use the same User -> token lock order.
+        user_id = await self.db.scalar(
+            select(PasswordResetToken.user_id).where(PasswordResetToken.token == token)
+        )
+        if user_id is None:
+            return None
+        user = await self.db.scalar(
+            select(User)
+            .where(User.id == user_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
         result = await self.db.execute(
             select(PasswordResetToken)
             .where(PasswordResetToken.token == token)
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
         entry = result.scalar_one_or_none()
         if not entry:
@@ -52,11 +71,6 @@ class PasswordResetService:
             return None
 
         entry.used_at = datetime.now(timezone.utc)
-        # 与登录路径的用户行锁配合，避免密码重置和并发登录交叉时产生
-        # 使用旧密码、却拿到新 generation 的会话。
-        user = await self.db.scalar(
-            select(User).where(User.id == entry.user_id).with_for_update()
-        )
         await self.db.flush()
         if user is None or not user.is_active:
             return None

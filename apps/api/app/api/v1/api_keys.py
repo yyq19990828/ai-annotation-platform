@@ -13,12 +13,12 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.deps import get_current_user, get_db
+from app.deps import get_current_user, get_db, require_active_task_actor
 from app.db.models.user import User
 from app.schemas.api_key import ApiKeyCreate, ApiKeyCreated, ApiKeyOut, ApiKeyUpdate
 from app.services import api_key_service
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_active_task_actor)])
 
 
 def _expires_at_from_days(days: int | None) -> datetime | None:

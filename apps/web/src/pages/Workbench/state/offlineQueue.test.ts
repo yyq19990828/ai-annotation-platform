@@ -118,6 +118,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   vi.clearAllMocks();
+  vi.unstubAllGlobals();
 });
 
 const KEY = "anno.offline-queue.v1";
@@ -137,6 +138,35 @@ function deferred() {
   });
   return { promise, resolve };
 }
+
+it("serializes overlapping drains from independent tabs with one browser lock", async () => {
+  let tail = Promise.resolve();
+  const request = vi.fn((_name: string, work: () => Promise<unknown>) => {
+    const result = tail.then(work);
+    tail = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  });
+  vi.stubGlobal("navigator", { locks: { request } });
+  vi.resetModules();
+  const otherTab = await import("./offlineQueue");
+  await enqueueDurably(ownedDeleteOp("shared", "alice"));
+  const gate = deferred();
+  const handler = vi.fn(async () => {
+    await gate.promise;
+  });
+  const first = drain(handler, { userId: "alice", taskId: "task" });
+  const second = otherTab.drain(handler, { userId: "alice" });
+  await vi.waitFor(() => expect(handler).toHaveBeenCalledTimes(1));
+  expect(request).toHaveBeenCalledTimes(2);
+  expect(request.mock.calls[0][0]).toBe(request.mock.calls[1][0]);
+  gate.resolve();
+  await Promise.all([first, second]);
+  expect(handler).toHaveBeenCalledTimes(1);
+  expect(await getAll({ userId: "alice" })).toEqual([]);
+});
 
 describe("offlineQueue durable acceptance", () => {
   it("waits for transaction completion before resolving or notifying subscribers", async () => {
@@ -524,6 +554,20 @@ describe("offlineQueue account ownership", () => {
 
     expect(await running).toEqual({ ok: 1, failed: 0 });
     expect((await getAll()).map((op) => op.id)).toEqual(["bob-op"]);
+  });
+
+  it("rechecks the account after awaiting the stored queue", async () => {
+    await enqueueDurably(ownedDeleteOp("alice-op", "alice"));
+    let currentUser = "alice";
+    const handler = vi.fn(async () => {});
+    const running = drain(handler, {
+      userId: "alice",
+      isCurrent: () => currentUser === "alice",
+    });
+    currentUser = "bob";
+    await running;
+    expect(handler).not.toHaveBeenCalled();
+    expect((await getAll({ userId: "alice" })).map((op) => op.id)).toEqual(["alice-op"]);
   });
 
   it("scoped clear leaves another account and legacy rows intact", async () => {

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
@@ -31,6 +32,17 @@ def _reset_rate_limit():
     limiter.reset()
     yield
     limiter.reset()
+
+
+@pytest.fixture(autouse=True)
+def _background_database(db_session, monkeypatch):
+    # Background delivery opens its own session in production. Keep this test
+    # within the fixture's rollback boundary while exercising the same task.
+    @asynccontextmanager
+    async def session():
+        yield db_session
+
+    monkeypatch.setattr("app.api.v1.auth.async_session", session)
 
 
 async def test_forgot_password_sends_reset_email_and_keeps_response_uniform(

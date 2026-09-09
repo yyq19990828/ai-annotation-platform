@@ -206,6 +206,12 @@ function ProjectCard({
         )}
       </div>
 
+      {(project.locked_task_count ?? 0) > 0 && (
+        <div className="mb-3 text-xs text-muted-foreground">
+          此账号持有 {project.locked_task_count} 个编辑锁，停用时将释放。
+        </div>
+      )}
+
       {project.blockers.length > 0 && (
         <div className="mb-3 flex flex-col gap-1 rounded-md border border-status-caution/30 bg-status-caution-soft px-3 py-2 text-xs text-status-caution">
           {project.blockers.map((blocker) => (

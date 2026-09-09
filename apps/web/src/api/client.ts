@@ -1,4 +1,5 @@
 import { recordApiDuration } from "./_metrics";
+import { useAuthStore } from "../stores/authStore";
 
 const BASE = "/api/v1";
 
@@ -55,6 +56,10 @@ async function request<T>(
   opts?: { anonymous?: boolean; silent?: boolean },
 ): Promise<T> {
   const token = opts?.anonymous ? null : localStorage.getItem("token");
+  const owner = useAuthStore.getState();
+  if (!opts?.anonymous && owner.user && owner.token !== token) {
+    throw new ApiError(401, "登录账号已在其他页面变更，请等待同步或刷新页面");
+  }
   // v0.10.18 · PerfHud 浏览器侧 API p95 指标; recordApiDuration 内部包 try/catch 不会抛.
   const t0 = performance.now();
   const res = await fetch(`${BASE}${path}`, {
@@ -78,7 +83,9 @@ async function request<T>(
 
     if (res.status === 401 && !opts?.anonymous) {
       const { useAuthStore } = await import("../stores/authStore");
-      useAuthStore.getState().logout();
+      // A response belongs to the credentials captured before fetch. A late
+      // rejection must not clear a session established in the meantime.
+      if (localStorage.getItem("token") === token) useAuthStore.getState().logout();
     } else if (!opts?.anonymous && !opts?.silent && (res.status === 403 || res.status >= 500)) {
       const { useToastStore } = await import("../components/ui/Toast");
       if (res.status === 403) {

@@ -8,8 +8,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import smtplib
 import socket
+import ssl
 from email.mime.text import MIMEText
 from email.utils import formatdate
 from typing import Any
@@ -42,6 +44,10 @@ async def _send(db: AsyncSession, to_address: str, subject: str, body: str) -> N
     msg["To"] = to_address
     msg["Date"] = formatdate(localtime=True)
 
+    await asyncio.to_thread(_send_message, cfg, msg)
+
+
+def _send_message(cfg: dict[str, Any], msg: MIMEText) -> None:
     host = cfg["smtp_host"]
     port = int(cfg["smtp_port"])
     user = cfg["smtp_user"]
@@ -49,17 +55,18 @@ async def _send(db: AsyncSession, to_address: str, subject: str, body: str) -> N
 
     try:
         if port == 465:
-            client = smtplib.SMTP_SSL(host, port, timeout=15)
+            client = smtplib.SMTP_SSL(
+                host, port, timeout=15, context=ssl.create_default_context()
+            )
         else:
             client = smtplib.SMTP(host, port, timeout=15)
         with client:
             client.ehlo()
-            if port != 465:
-                try:
-                    client.starttls()
-                    client.ehlo()
-                except smtplib.SMTPException:
-                    pass
+            if port != 465 and (port == 587 or client.has_extn("starttls")):
+                # Submission on 587 requires TLS. An advertised TLS upgrade
+                # must succeed; never send a recovery token after its failure.
+                client.starttls(context=ssl.create_default_context())
+                client.ehlo()
             if user and password:
                 client.login(user, password)
             client.send_message(msg)
@@ -116,29 +123,11 @@ async def send_test_email(db: AsyncSession, to_address: str) -> dict[str, Any]:
     msg["To"] = to_address
     msg["Date"] = formatdate(localtime=True)
 
-    host = cfg["smtp_host"]
-    port = int(cfg["smtp_port"])
-    user = cfg["smtp_user"]
-    password = cfg["smtp_password"]
+    await asyncio.to_thread(_send_message, cfg, msg)
 
-    try:
-        if port == 465:
-            client = smtplib.SMTP_SSL(host, port, timeout=15)
-        else:
-            client = smtplib.SMTP(host, port, timeout=15)
-        with client:
-            client.ehlo()
-            if port != 465:
-                # 尝试 STARTTLS（多数公网 SMTP 587 端口要求）
-                try:
-                    client.starttls()
-                    client.ehlo()
-                except smtplib.SMTPException:
-                    pass
-            if user and password:
-                client.login(user, password)
-            client.send_message(msg)
-    except (smtplib.SMTPException, socket.error, OSError) as e:
-        raise SmtpConfigError(f"SMTP 发送失败: {e}") from e
-
-    return {"to": to_address, "from": cfg["smtp_from"], "host": host, "port": port}
+    return {
+        "to": to_address,
+        "from": cfg["smtp_from"],
+        "host": cfg["smtp_host"],
+        "port": int(cfg["smtp_port"]),
+    }

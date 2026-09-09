@@ -80,9 +80,8 @@ class BatchService:
         """Lock and validate every user that will receive batch work.
 
         User rows are locked before any batch or task row in all assignment
-        paths.  UserLifecycleService uses the same order for handoff, so an
-        offboarding transaction either waits for this assignment to finish or
-        wins the user lock before this method proceeds.  Project membership is
+        paths. Offboarding uses nonblocking locks and either retries a busy
+        account or completes before this method rechecks its state. Membership is
         checked separately because the member role is part of the assignment
         contract, not merely a UI filter.
         """
@@ -96,7 +95,8 @@ class BatchService:
                     select(User)
                     .where(User.id.in_(target_ids))
                     .order_by(User.id)
-                    .with_for_update()
+                    .with_for_update(read=True)
+                    .execution_options(populate_existing=True)
                 )
             )
             .scalars()
@@ -113,7 +113,8 @@ class BatchService:
                         ProjectMember.user_id.in_(target_ids),
                     )
                     .order_by(ProjectMember.user_id)
-                    .with_for_update()
+                    .with_for_update(read=True)
+                    .execution_options(populate_existing=True)
                 )
             )
             .scalars()
@@ -133,6 +134,7 @@ class BatchService:
                     status_code=400,
                     detail={
                         "reason": "assignment_user_unavailable",
+                        "message": "接收账号已停用或不存在，请刷新成员列表后重新分派",
                         "assignment_role": assignment_role,
                         "user_id": str(user_id),
                     },
@@ -142,6 +144,7 @@ class BatchService:
                     status_code=400,
                     detail={
                         "reason": "assignment_role_mismatch",
+                        "message": "接收账号的角色与分派职责不匹配",
                         "assignment_role": assignment_role,
                         "user_id": str(user_id),
                         "user_role": user.role,
@@ -153,6 +156,7 @@ class BatchService:
                     status_code=400,
                     detail={
                         "reason": "assignment_project_member_required",
+                        "message": "接收账号不具备目标项目的对应成员职责",
                         "assignment_role": assignment_role,
                         "user_id": str(user_id),
                     },

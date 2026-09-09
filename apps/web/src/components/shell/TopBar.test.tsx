@@ -19,7 +19,10 @@ const mockTasksApi = vi.hoisted(() => ({
 
 vi.mock("@/api/auth", () => ({ authApi: mockAuthApi }));
 vi.mock("@/api/tasks", () => ({ tasksApi: mockTasksApi }));
-vi.mock("@/pages/Workbench/state/offlineQueue", () => mockOfflineQueue);
+vi.mock("@/pages/Workbench/state/offlineQueue", () => ({
+  ...mockOfflineQueue,
+  countDurably: mockOfflineQueue.count,
+}));
 vi.mock("@/hooks/useTheme", () => ({
   useTheme: () => ({ resolved: "light", setTheme: vi.fn() }),
 }));
@@ -58,7 +61,7 @@ function renderTopBar() {
 describe("TopBar logout queue prompt", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    useAuthStore.setState({ token: "jwt", user });
+    useAuthStore.getState().setAuth("jwt", user);
     mockAuthApi.logout.mockResolvedValue(undefined);
     mockOfflineQueue.count.mockResolvedValue(0);
     mockOfflineQueue.drain.mockResolvedValue({ ok: 0, failed: 0 });

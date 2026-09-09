@@ -663,6 +663,9 @@
 | POST | `/{user_id}/admin-reset-password` |
 | DELETE | `/{user_id}` |
 | POST | `/{user_id}/deactivate` |
+| GET | `/{user_id}/offboarding-preview` |
+| POST | `/{user_id}/offboarding` |
+| POST | `/{user_id}/reactivate` |
 | PATCH | `/{user_id}/group` |
 
 ## `video_tracker_jobs.py`
@@ -697,4 +700,4 @@
 
 ---
 
-_共 65 模块 / 390 路由_
+_共 65 模块 / 393 路由_

@@ -3,13 +3,13 @@ import { useMutation } from "@tanstack/react-query";
 import { authApi, type LoginPayload } from "../api/auth";
 import { tasksApi } from "../api/tasks";
 import {
-  count as offlineQueueCount,
+  countDurably as offlineQueueCount,
   drain as drainOfflineQueue,
   replaceAnnotationId as replaceOfflineAnnotationId,
   type OfflineOp,
   type OfflineQueueScope,
 } from "../pages/Workbench/state/offlineQueue";
-import { useAuthStore } from "../stores/authStore";
+import { isCurrentAuthOwner, useAuthStore } from "../stores/authStore";
 
 export function useLogin() {
   const setAuth = useAuthStore((s) => s.setAuth);
@@ -32,7 +32,7 @@ export type LogoutDecision = "sync" | "keep";
 
 export interface LogoutPrompt {
   userId: string;
-  pendingCount: number;
+  pendingCount: number | null;
 }
 
 export interface LogoutController {
@@ -47,15 +47,19 @@ export interface LogoutController {
 function scopeForUser(userId: string): OfflineQueueScope {
   return {
     userId,
-    isCurrent: () => useAuthStore.getState().user?.id === userId,
+    isCurrent: () => isCurrentAuthOwner(userId),
   };
 }
 
 async function flushLogoutOperation(op: OfflineOp, scope: OfflineQueueScope): Promise<void> {
+  if (!scope.isCurrent?.() || op.userId !== scope.userId) {
+    throw new Error("登录状态已变化，请刷新页面后使用原账号同步");
+  }
   if (op.kind === "create") {
     const real = await tasksApi.createAnnotation(
       op.taskId,
       op.payload as Parameters<typeof tasksApi.createAnnotation>[1],
+      op.id,
     );
     if (op.tmpId) await replaceOfflineAnnotationId(op.tmpId, real.id, scope);
     return;
@@ -84,10 +88,12 @@ export function useLogout(): LogoutController {
   const completeLogout = useCallback(
     async (ownerId?: string) => {
       const currentUserId = useAuthStore.getState().user?.id;
-      if (ownerId && currentUserId && currentUserId !== ownerId) return;
+      const requestToken = useAuthStore.getState().token;
+      if (ownerId && !isCurrentAuthOwner(ownerId)) return;
       if (currentUserId) await authApi.logout().catch(() => {});
       if (
-        (ownerId && useAuthStore.getState().user?.id !== ownerId) ||
+        (ownerId && !isCurrentAuthOwner(ownerId)) ||
+        useAuthStore.getState().token !== requestToken ||
         (!ownerId && useAuthStore.getState().user?.id !== currentUserId)
       )
         return;
@@ -114,6 +120,11 @@ export function useLogout(): LogoutController {
         return;
       }
       await completeLogout(ownerId);
+    } catch {
+      if (isCurrentAuthOwner(ownerId)) {
+        setPrompt({ userId: ownerId, pendingCount: null });
+        setSyncError("无法读取本机待同步记录，请重试，或明确选择保留记录并退出");
+      }
     } finally {
       setIsLoggingOut(false);
     }
@@ -131,7 +142,7 @@ export function useLogout(): LogoutController {
           await completeLogout(pending.userId);
           return;
         }
-        if (useAuthStore.getState().user?.id !== pending.userId) {
+        if (!isCurrentAuthOwner(pending.userId)) {
           setPrompt(null);
           setSyncError(null);
           return;
@@ -141,7 +152,7 @@ export function useLogout(): LogoutController {
           const scope = scopeForUser(pending.userId);
           result = await drainOfflineQueue((op) => flushLogoutOperation(op, scope), scope);
         } catch (error) {
-          if (useAuthStore.getState().user?.id !== pending.userId) {
+          if (!isCurrentAuthOwner(pending.userId)) {
             setPrompt(null);
             setSyncError(null);
             return;
@@ -149,18 +160,23 @@ export function useLogout(): LogoutController {
           setSyncError(`同步失败：${error instanceof Error ? error.message : String(error)}`);
           return;
         }
-        if (useAuthStore.getState().user?.id !== pending.userId) {
+        if (!isCurrentAuthOwner(pending.userId)) {
           setPrompt(null);
           setSyncError(null);
           return;
         }
-        if (result.failed > 0) {
-          setSyncError(`仍有 ${result.failed} 条操作未同步，请重试或保留记录并退出`);
+        const remaining = await offlineQueueCount(scopeForUser(pending.userId));
+        if (result.failed > 0 || remaining > 0) {
+          setSyncError("仍有操作未同步，请重试或保留记录并退出");
           return;
         }
         setPrompt(null);
         setSyncError(null);
         await completeLogout(pending.userId);
+      } catch {
+        if (isCurrentAuthOwner(pending.userId)) {
+          setSyncError("无法确认本机记录已同步，请重试或保留记录并退出");
+        }
       } finally {
         setIsLoggingOut(false);
       }

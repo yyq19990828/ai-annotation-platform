@@ -19,6 +19,7 @@ from app.api.v1.tasks._shared import (
     _load_task_or_404,
     _ANNOTATORS,
     _assert_task_visible,
+    _assert_task_editable,
 )
 
 router = APIRouter()
@@ -34,7 +35,12 @@ async def submit_task(
     from app.db.models.task import Task
 
     task = (
-        await db.execute(select(Task).where(Task.id == task_id).with_for_update())
+        await db.execute(
+            select(Task)
+            .where(Task.id == task_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
     ).scalar_one_or_none()
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -44,6 +50,8 @@ async def submit_task(
             status_code=409,
             detail={"reason": "task_not_submittable", "status": task.status},
         )
+
+    _assert_task_editable(task, current_user)
 
     # v0.6.6: 提交者即 assignee。任务初始 assignee_id 为 NULL（创建时未指派），
     # 否则后续 withdraw/reopen 会因 assignee 校验失败而拒绝（"only assignee can withdraw"）。
@@ -183,14 +191,17 @@ async def skip_task(
             detail={"reason": "invalid_skip_reason", "value": body.reason},
         )
 
-    # Match submit/review mutations: serialize the decision with an in-flight
-    # handoff before checking the current assignment.  The lifecycle service
-    # acquires User rows before Task rows, while this endpoint has no User-row
-    # write, so taking the Task lock here cannot form the reverse lock cycle.
+    # The router holds the actor User lock before this Task lock. Refresh the
+    # assignment under the Task lock before checking visibility and ownership.
     from app.db.models.task import Task
 
     task = (
-        await db.execute(select(Task).where(Task.id == task_id).with_for_update())
+        await db.execute(
+            select(Task)
+            .where(Task.id == task_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
     ).scalar_one_or_none()
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -200,19 +211,8 @@ async def skip_task(
             detail={"reason": "task_not_skippable", "status": task.status},
         )
 
-    # A task with a batch must pass the same visibility/assignment rule as
-    # submit.  Keep the legacy orphan-task behavior for an unassigned task,
-    # but never let a non-privileged actor skip an orphan already assigned to
-    # somebody else.
-    if task.batch_id is not None:
-        await _assert_task_visible(db, task, current_user)
-    elif (
-        task.assignee_id is not None
-        and task.assignee_id != current_user.id
-        and current_user.role
-        not in (UserRole.SUPER_ADMIN.value, UserRole.PROJECT_ADMIN.value)
-    ):
-        raise HTTPException(status_code=404, detail="Task not found")
+    await _assert_task_visible(db, task, current_user)
+    _assert_task_editable(task, current_user)
 
     now = datetime.now(timezone.utc)
     if task.assignee_id is None:

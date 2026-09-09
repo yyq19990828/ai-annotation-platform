@@ -197,8 +197,10 @@ export function TopBar({
           <AlertDialogHeader>
             <AlertDialogTitle>退出前处理离线操作</AlertDialogTitle>
             <AlertDialogDescription>
-              当前账号还有 {logout.prompt?.pendingCount ?? 0}{" "}
-              条待同步操作。请选择如何处理；保留本机记录不会删除这些操作，重新登录当前账号后仍可继续同步。
+              {logout.prompt?.pendingCount == null
+                ? "暂时无法确认本机待同步记录。"
+                : `当前账号还有 ${logout.prompt.pendingCount} 条待同步操作。`}
+              请选择如何处理；保留本机记录不会删除这些操作，重新登录当前账号后仍可继续同步。
             </AlertDialogDescription>
           </AlertDialogHeader>
           {logout.syncError && (

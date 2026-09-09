@@ -51,6 +51,7 @@ export interface OfflineQueueScope {
   /** Optional task/project narrowing for drawer actions and targeted cleanup. */
   taskId?: string;
   projectId?: string;
+  operationId?: string;
   /** Stop a stale drain before it can use a new account's credentials or UI owner. */
   isCurrent?: () => boolean;
 }
@@ -67,6 +68,19 @@ const subs = new Set<QueueSubscription>();
 const queueStore = createStore("keyval-store", "keyval");
 let accessTail: Promise<unknown> = Promise.resolve();
 const activeDrains = new Map<string, Promise<{ ok: number; failed: number }>>();
+let drainTail: Promise<unknown> = Promise.resolve();
+
+function withDrainLock<T>(work: () => Promise<T>): Promise<T> {
+  // The entire request + durable acknowledgement must share one lock across
+  // tabs and overlapping user/task/single-item scopes. The browser releases it
+  // if a tab closes. Server idempotency also covers a lost response/acknowledgement.
+  if (typeof navigator !== "undefined" && navigator.locks) {
+    return navigator.locks.request(`${KEY}.drain`, work);
+  }
+  const pending = drainTail.then(work);
+  drainTail = pending.catch(() => undefined);
+  return pending;
+}
 
 function serialize<T>(work: () => Promise<T>): Promise<T> {
   const result = accessTail.then(work);
@@ -88,7 +102,7 @@ function normalizeScope(scope: QueueScopeInput): OfflineQueueScope | undefined {
 function scopeKey(scope: QueueScopeInput): string {
   const normalized = normalizeScope(scope);
   if (!normalized) return "*";
-  return `${normalized.userId}|${normalized.projectId ?? "*"}|${normalized.taskId ?? "*"}`;
+  return `${normalized.userId}|${normalized.projectId ?? "*"}|${normalized.taskId ?? "*"}|${normalized.operationId ?? "*"}`;
 }
 
 function currentUserId(): string | undefined {
@@ -108,6 +122,7 @@ function isOwnedBy(op: OfflineOp, scope: QueueScopeInput): boolean {
   if (!op.userId || op.userId !== normalized.userId) return false;
   if (normalized.taskId && op.taskId !== normalized.taskId) return false;
   if (normalized.projectId && op.projectId !== normalized.projectId) return false;
+  if (normalized.operationId && op.id !== normalized.operationId) return false;
   return true;
 }
 
@@ -247,6 +262,11 @@ export async function count(scope?: QueueScopeInput): Promise<number> {
   return scopedQueue(q, scope).length;
 }
 
+/** Authoritative read for submission/logout gates; storage failure is unknown, not zero. */
+export async function countDurably(scope?: QueueScopeInput): Promise<number> {
+  return scopedQueue(await readStored(), scope).length;
+}
+
 /** 返回当前队列快照（拷贝，外部修改不会反向影响）。供 OfflineQueueDrawer 渲染。 */
 export async function getAll(scope?: QueueScopeInput): Promise<OfflineOp[]> {
   const q = await load();
@@ -259,7 +279,7 @@ export async function removeById(id: string, scope?: QueueScopeInput): Promise<v
   await removeDurablyById(id, scope).catch(() => undefined);
 }
 
-async function removeDurablyById(id: string, scope?: QueueScopeInput): Promise<void> {
+export async function removeDurablyById(id: string, scope?: QueueScopeInput): Promise<void> {
   await mutateQueue((queue) =>
     queue.some((op) => op.id === id && isOwnedBy(op, scope))
       ? queue.filter((op) => !(op.id === id && isOwnedBy(op, scope)))
@@ -301,7 +321,7 @@ export function drain(
   const key = scopeKey(scope);
   const existing = activeDrains.get(key);
   if (existing) return existing;
-  const running = runDrain(handler, scope).finally(() => {
+  const running = withDrainLock(() => runDrain(handler, scope)).finally(() => {
     if (activeDrains.get(key) === running) activeDrains.delete(key);
   });
   activeDrains.set(key, running);
@@ -323,6 +343,9 @@ async function runDrain(handler: (op: OfflineOp) => Promise<void>, scope?: Queue
       break;
     }
     if (!op) break;
+    // IndexedDB access yields: logout may have switched credentials while the
+    // stored operation was being read. Check again before starting the request.
+    if (normalizedScope?.isCurrent && !normalizedScope.isCurrent()) break;
     try {
       // The network handler may enqueue or replace IDs: never hold accessTail here.
       await handler(structuredClone(op));

@@ -16,7 +16,12 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.deps import assert_project_visible, get_db, require_roles
+from app.deps import (
+    assert_project_visible,
+    get_db,
+    require_roles,
+    require_active_task_actor,
+)
 from app.db.enums import UserRole
 from app.db.models.annotation import Annotation
 from app.db.models.annotation_comment import AnnotationComment
@@ -34,7 +39,7 @@ from app.schemas.annotation_comment import (
 from app.services.audit import AuditAction, AuditService
 from app.services.storage import storage_service
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_active_task_actor)])
 
 _ALL_ANNOTATORS = (
     UserRole.SUPER_ADMIN,

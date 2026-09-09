@@ -7,6 +7,7 @@ import {
   clearAll,
   getAll,
   removeById,
+  drain,
   subscribe,
   type OfflineQueueScope,
 } from "../state/offlineQueue";
@@ -64,7 +65,11 @@ export function OfflineQueueDrawer({
   onFlushOne,
   onFlushAll,
 }: OfflineQueueDrawerProps) {
-  const [items, setItems] = useState<OfflineOp[]>([]);
+  const [storedItems, setItems] = useState<OfflineOp[]>([]);
+  const items = useMemo(
+    () => storedItems.filter((op) => op.userId === queueScope?.userId),
+    [storedItems, queueScope?.userId],
+  );
   const [busyId, setBusyId] = useState<string | null>(null);
   const [flushAllBusy, setFlushAllBusy] = useState(false);
   const [taskFilter, setTaskFilter] = useState<TaskFilter>("all");
@@ -132,8 +137,13 @@ export function OfflineQueueDrawer({
     async (op: OfflineOp) => {
       setBusyId(op.id);
       try {
-        await onFlushOne(op);
-        await removeById(op.id, queueScope);
+        const result = await drain(onFlushOne, {
+          ...queueScope,
+          userId: queueScope?.userId ?? "",
+          operationId: op.id,
+        });
+        if (result.failed) throw new Error("该操作仍未同步，请检查连接和任务权限后重试");
+        if (!queueScope?.isCurrent?.()) return;
         pushToast({ msg: "已同步该操作", kind: "success" });
       } catch (err) {
         pushToast({ msg: "同步失败", sub: String(err), kind: "error" });

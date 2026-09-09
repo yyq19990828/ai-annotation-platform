@@ -1,5 +1,9 @@
 import { useEffect, useState } from "react";
-import { count, subscribe, type OfflineQueueScope } from "@/pages/Workbench/state/offlineQueue";
+import {
+  countDurably,
+  subscribe,
+  type OfflineQueueScope,
+} from "@/pages/Workbench/state/offlineQueue";
 
 /**
  * 监听 navigator online/offline + 离线队列长度。
@@ -11,6 +15,9 @@ export function useOnlineStatus(scope?: OfflineQueueScope) {
     typeof navigator !== "undefined" ? navigator.onLine : true,
   );
   const [queueCount, setQueueCount] = useState<number>(0);
+  const [queueReady, setQueueReady] = useState(false);
+  const [queueReadError, setQueueReadError] = useState<string | null>(null);
+  const [readScope, setReadScope] = useState(scope);
 
   useEffect(() => {
     const onOn = () => setOnline(true);
@@ -27,17 +34,43 @@ export function useOnlineStatus(scope?: OfflineQueueScope) {
     let active = true;
     // Do not render the previous account's queue while the new scope is being read.
     setQueueCount(0);
+    setQueueReady(false);
+    setQueueReadError(null);
     const unsub = subscribe((next) => {
-      if (active) setQueueCount(next);
+      if (active) {
+        setReadScope(scope);
+        setQueueCount(next);
+        setQueueReady(true);
+        setQueueReadError(null);
+      }
     }, scope);
-    void count(scope).then((next) => {
-      if (active) setQueueCount(next);
-    });
+    void countDurably(scope).then(
+      (next) => {
+        if (active) {
+          setReadScope(scope);
+          setQueueCount(next);
+          setQueueReady(true);
+          setQueueReadError(null);
+        }
+      },
+      () => {
+        if (active) {
+          setReadScope(scope);
+          setQueueReady(false);
+          setQueueReadError("无法读取本机待同步记录，请检查浏览器存储后重试");
+        }
+      },
+    );
     return () => {
       active = false;
       unsub();
     };
   }, [scope]);
 
-  return { online, queueCount };
+  return {
+    online,
+    queueCount: readScope === scope ? queueCount : 0,
+    queueReady: readScope === scope && queueReady,
+    queueReadError: readScope === scope ? queueReadError : null,
+  };
 }

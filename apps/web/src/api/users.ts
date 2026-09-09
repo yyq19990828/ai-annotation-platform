@@ -44,6 +44,7 @@ export interface OffboardingProjectPreview {
   project_name: string;
   roles: Record<OffboardingRole, OffboardingRolePreview>;
   tasks: Record<string, Record<string, number>>;
+  locked_task_count?: number;
   blockers: OffboardingBlocker[];
 }
 

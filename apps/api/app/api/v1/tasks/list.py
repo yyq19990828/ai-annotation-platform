@@ -20,7 +20,7 @@ from app.schemas.scene import NeighborsResponse
 from app.services.scheduler import (
     get_next_task,
     is_privileged_for_project,
-    batch_visibility_clause,
+    task_visibility_clause,
 )
 from app.services.user_brief import resolve_briefs
 from app.db.models.task_batch import TaskBatch
@@ -67,10 +67,10 @@ async def list_tasks(
     # 且自己在 assigned_user_ids 中（或批次未分派）。无 batch 的孤儿对非特权不可见。
     if not is_privileged_for_project(user, project):
         q = q.join(TaskBatch, Task.batch_id == TaskBatch.id).where(
-            batch_visibility_clause(user)
+            task_visibility_clause(user)
         )
         count_q = count_q.join(TaskBatch, Task.batch_id == TaskBatch.id).where(
-            batch_visibility_clause(user)
+            task_visibility_clause(user)
         )
 
     if status:

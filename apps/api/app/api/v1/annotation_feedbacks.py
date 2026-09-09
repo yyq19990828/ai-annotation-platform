@@ -24,7 +24,12 @@ from app.db.models.mask_qc import MaskQCIssue
 from app.db.models.point_cloud_quality import PointCloudQualityIssue
 from app.db.models.task import Task
 from app.db.models.user import User
-from app.deps import assert_project_visible, get_db, require_roles
+from app.deps import (
+    assert_project_visible,
+    get_db,
+    require_roles,
+    require_active_task_actor,
+)
 from app.schemas.annotation_feedback import (
     AnnotationFeedbackCreate,
     AnnotationFeedbackListPage,
@@ -39,7 +44,7 @@ from app.services.point_cloud_quality.service import refresh_issue_staleness
 from app.services.scheduler import is_privileged_for_project
 from app.services.user_brief import resolve_briefs
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_active_task_actor)])
 logger = logging.getLogger(__name__)
 
 _ALL = (

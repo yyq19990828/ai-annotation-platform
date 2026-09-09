@@ -6,6 +6,8 @@ import * as Sentry from "@sentry/react";
 import { App } from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { initThemeFromStorage } from "./hooks/useTheme";
+import { bindAuthQueryCache } from "./stores/authQueryCache";
+import { bindAuthStorage } from "./stores/authStore";
 import "./styles/shadcn.css";
 
 // v0.6.6 · Sentry：DSN 留空则完全不启用（dev 默认关闭）
@@ -29,6 +31,13 @@ const queryClient = new QueryClient({
     },
   },
 });
+const unbindAuthQueryCache = bindAuthQueryCache(queryClient);
+const unbindAuthStorage = bindAuthStorage();
+if (import.meta.hot)
+  import.meta.hot.dispose(() => {
+    unbindAuthQueryCache();
+    unbindAuthStorage();
+  });
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

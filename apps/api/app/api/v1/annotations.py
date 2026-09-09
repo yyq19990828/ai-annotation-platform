@@ -29,7 +29,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.tasks._shared import _assert_task_visible
+from app.api.v1.tasks._shared import _assert_task_editable, _assert_task_visible
 from app.config import settings
 from app.db.enums import UserRole
 from app.db.models.annotation import Annotation
@@ -42,6 +42,7 @@ from app.deps import (
     assert_project_visible,
     get_current_user,
     get_db,
+    require_active_task_actor,
     require_project_owner,
     require_roles,
     require_scopes,
@@ -77,7 +78,7 @@ from app.utils.raster_mask_rle import (
     MAX_VIDEO_MASK_PIXELS,
 )
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_active_task_actor)])
 logger = logging.getLogger(__name__)
 
 _ANNOTATORS = (
@@ -86,8 +87,6 @@ _ANNOTATORS = (
     UserRole.REVIEWER,
     UserRole.ANNOTATOR,
 )
-_REVIEWERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.REVIEWER)
-_LOCKED_STATUSES = {"review", "completed"}
 
 # v0.23.5 · WS-D · D3 · per-task cap on unclaimed raster-mask uploads.
 # The upload endpoint returns an anonymous reference (not yet linked to an
@@ -96,19 +95,6 @@ _LOCKED_STATUSES = {"review", "completed"}
 # transaction claims them; the cap is serialized by a task-level advisory lock
 # so concurrent requests cannot race.
 MAX_MASK_OBJECTS_PER_TASK = 256
-
-
-def _assert_task_editable(task: Task, user: User | None) -> None:
-    """复用 tasks.py 同名守卫的语义: review / completed 锁;
-    reviewer 在 review 态可微调."""
-    if task.status not in _LOCKED_STATUSES:
-        return
-    if task.status == "review" and user is not None and user.role in _REVIEWERS:
-        return
-    raise HTTPException(
-        status_code=409,
-        detail={"reason": "task_locked", "status": task.status},
-    )
 
 
 async def _count_task_mask_references(db: AsyncSession, task_id: uuid.UUID) -> int:
@@ -496,7 +482,7 @@ async def bulk_update_annotations(
     - 不允许 bulk 改 tool_unit_id (会破坏 class_name 校验链)
     """
     task = await _load_single_task_for_ids(db, payload.ids)
-    await assert_project_visible(task.project_id, db, user)
+    await _assert_task_visible(db, task, user)
     _assert_task_editable(task, user)
 
     service = AnnotationService(db)

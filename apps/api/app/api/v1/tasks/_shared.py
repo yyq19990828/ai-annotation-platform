@@ -18,6 +18,7 @@ from app.schemas.image_pyramid import ImagePyramidSummary
 from app.services.scheduler import (
     is_privileged_for_project,
     visible_batch_statuses_for,
+    annotator_can_rework_task,
 )
 from app.services.storage import storage_service
 from app.db.models.task_batch import TaskBatch
@@ -40,6 +41,13 @@ def _assert_task_editable(task: Task, user: User | None = None) -> None:
     """v0.6.5: 已提交质检 / 已通过审核的任务对所有 annotation 写动作锁死。
     标注员要继续编辑必须先 withdraw（review 态）或 reopen（completed 态）。
     M2: 审核员可在 status=review 时直接微调标注（审计记 TASK_REVIEWER_EDIT）。"""
+    if (
+        user is not None
+        and user.role == UserRole.ANNOTATOR
+        and task.assignee_id is not None
+        and task.assignee_id != user.id
+    ):
+        raise HTTPException(status_code=403, detail="Task belongs to another annotator")
     if task.status not in _LOCKED_STATUSES:
         return
     if task.status == "review" and user is not None and user.role in _REVIEWERS:
@@ -90,7 +98,9 @@ async def _assert_task_visible(db: AsyncSession, task: Task, user: User) -> None
         raise HTTPException(status_code=404, detail="Task not found")
 
     visible_statuses = visible_batch_statuses_for(user)
-    if batch.status not in visible_statuses:
+    if batch.status not in visible_statuses and not annotator_can_rework_task(
+        user, batch, task.status
+    ):
         raise HTTPException(status_code=404, detail="Task not found")
 
     # reviewer 不受 annotator 约束（跨批次审核）
@@ -126,9 +136,11 @@ async def _visible_task_ids(
         return set(task_ids)
 
     rows = (
-        await db.execute(select(Task.id, Task.batch_id).where(Task.id.in_(task_ids)))
+        await db.execute(
+            select(Task.id, Task.batch_id, Task.status).where(Task.id.in_(task_ids))
+        )
     ).all()
-    batch_ids = {bid for _, bid in rows if bid is not None}
+    batch_ids = {bid for _, bid, _ in rows if bid is not None}
     batches: dict[uuid.UUID, TaskBatch] = {}
     if batch_ids:
         result = await db.execute(select(TaskBatch).where(TaskBatch.id.in_(batch_ids)))
@@ -137,11 +149,14 @@ async def _visible_task_ids(
     visible_statuses = visible_batch_statuses_for(user)
     is_reviewer = user.role == UserRole.REVIEWER
     visible: set[uuid.UUID] = set()
-    for tid, bid in rows:
+    for tid, bid, task_status in rows:
         if bid is None:
             continue
         batch = batches.get(bid)
-        if batch is None or batch.status not in visible_statuses:
+        if batch is None or (
+            batch.status not in visible_statuses
+            and not annotator_can_rework_task(user, batch, task_status)
+        ):
             continue
         if is_reviewer:
             visible.add(tid)

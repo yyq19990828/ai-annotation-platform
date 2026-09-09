@@ -189,12 +189,9 @@ export function useCreateAnnotation(taskId: string | undefined, videoSegmentId?:
       const { taskId, videoSegmentId, payload } = variables;
       if (!taskId) return { prev: undefined, tmpId: undefined };
       const queryKey = createAnnotationQueryKey(variables);
-      const ownerAtStart = isCurrentAnnotationMutationOwner(variables.ownerUserId);
       await qc.cancelQueries({ queryKey });
-      // The optimistic write belongs to the submitted query key and is part of
-      // the old owner's local transaction. A later account switch is handled by
-      // mutationFn/onError; onSuccess and rollback never write the new owner.
-      if (!ownerAtStart) {
+      // Cancellation yields; the cache may already belong to another account.
+      if (!isCurrentAnnotationMutationOwner(variables.ownerUserId)) {
         return { prev: undefined, tmpId: undefined, ownerValid: false };
       }
       const prev = qc.getQueryData<AnnotationResponse[]>(queryKey);
@@ -306,10 +303,7 @@ class AnnotationMutationOwnerChangedError extends Error {
 }
 
 function isCurrentAnnotationMutationOwner(userId: string | undefined): boolean {
-  // Public hook tests and a few unauthenticated call sites use this hook before
-  // an auth identity exists. There is no captured account to switch away from
-  // in that case; authenticated workbench writes always capture a user id.
-  if (!userId) return true;
+  if (!userId) return false;
   return isCurrentAuthOwner(userId);
 }
 
@@ -363,9 +357,8 @@ export function useDeleteAnnotation(taskId: string | undefined, videoSegmentId?:
     },
     onMutate: async ({ annotationId, taskId: submittedTaskId, videoSegmentId, ownerUserId }) => {
       const queryKey = annotationQueryKey(submittedTaskId, videoSegmentId);
-      const ownerAtStart = isCurrentAnnotationMutationOwner(ownerUserId);
       await qc.cancelQueries({ queryKey });
-      if (!ownerAtStart) {
+      if (!isCurrentAnnotationMutationOwner(ownerUserId)) {
         return { prev: undefined, queryKey, ownerValid: false };
       }
       const prev = qc.getQueryData<AnnotationResponse[]>(queryKey);
@@ -505,9 +498,8 @@ export function useUpdateAnnotation(
       ownerUserId,
     }) => {
       const queryKey = annotationQueryKey(submittedTaskId, videoSegmentId);
-      const ownerAtStart = isCurrentAnnotationMutationOwner(ownerUserId);
       await qc.cancelQueries({ queryKey });
-      if (!ownerAtStart) {
+      if (!isCurrentAnnotationMutationOwner(ownerUserId)) {
         return { prev: undefined, queryKey, ownerValid: false };
       }
       const prev = qc.getQueryData<AnnotationResponse[]>(queryKey);

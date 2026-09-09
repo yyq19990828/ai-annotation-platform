@@ -418,6 +418,7 @@ class OffboardingProjectPreview(BaseModel):
     project_name: str
     roles: dict[str, OffboardingRolePreview]
     tasks: dict[str, dict[str, int]]
+    locked_task_count: int = 0
     blockers: list[OffboardingBlocker] = Field(default_factory=list)
 
 

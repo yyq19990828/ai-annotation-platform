@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from pydantic import BaseModel, Field, field_validator
@@ -11,6 +11,7 @@ from app.core.password import validate_password_strength
 from app.core.security import ALGORITHM
 from app.deps import get_db, get_current_user
 from app.db.models.user import User
+from app.db.base import async_session
 from app.db.enums import UserRole
 from app.schemas.user import Token, LoginRequest, UserOut
 from app.schemas.invitation import OpenRegisterRequest, RegisterResponse
@@ -236,17 +237,30 @@ async def get_me(current_user: User = Depends(get_current_user)):
 async def forgot_password(
     data: ForgotPasswordRequest,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    background_tasks: BackgroundTasks,
 ):
     if not await verify_turnstile_token(
         data.captcha_token, request.client.host if request.client else None
     ):
         raise HTTPException(status_code=400, detail="captcha_failed")
 
-    svc = PasswordResetService(db)
-    token = await svc.create_token(data.email)
+    # Run both existing and unknown addresses through the same post-response
+    # path so SMTP latency cannot identify registered accounts.
+    background_tasks.add_task(_complete_password_recovery, data.email)
+    return {
+        "message": (
+            "如果该邮箱已注册，您将收到一封包含重置链接的邮件。"
+            "若未收到，请联系管理员协助重置。"
+        )
+    }
 
-    if token:
+
+async def _complete_password_recovery(email: str) -> None:
+    async with async_session() as db:
+        svc = PasswordResetService(db)
+        token = await svc.create_token(email)
+        if not token:
+            return
         # 先持久化 token，再触发外部 SMTP 副作用，避免「邮件已发送但提交失败」
         # 产生用户永远无法使用的链接。发送失败时在后续事务中立即标记失效。
         await db.commit()
@@ -258,29 +272,19 @@ async def forgot_password(
         try:
             await send_password_reset_email(
                 db,
-                data.email,
+                email,
                 reset_url,
                 expires_in_hours=svc.TOKEN_EXPIRY_HOURS,
             )
         except SmtpConfigError as exc:
             # 保持统一 202 响应以防邮箱枚举；仅记录不含 token 的定位信息。
             await svc.invalidate_token(token)
-            logger.warning(
-                "Password reset email unavailable for %s: %s", data.email, exc
-            )
+            logger.warning("Password reset email unavailable for %s: %s", email, exc)
         else:
             # 只有 SMTP 调用正常返回后才记录已发送；token 已在调用前持久化。
-            logger.info("Password reset email sent for %s", data.email)
+            logger.info("Password reset email sent for %s", email)
 
-    await db.commit()
-
-    # 无论成功与否都返回 202，防邮箱枚举
-    return {
-        "message": (
-            "如果该邮箱已注册，您将收到一封包含重置链接的邮件。"
-            "若未收到，请联系管理员协助重置。"
-        )
-    }
+        await db.commit()
 
 
 @router.post("/reset-password")

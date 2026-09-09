@@ -39,13 +39,45 @@ def upgrade() -> None:
     op.create_index("ix_users_disabled_kind", "users", ["disabled_kind"])
     op.create_index("ix_users_disabled_at", "users", ["disabled_at"])
 
-    # Existing inactive rows predate lifecycle metadata. They must remain
-    # visible to administrators but are intentionally not made reactivatable.
+    # Successful irreversible operations take precedence over later legacy
+    # deactivation events. Unknown history stays non-reactivatable without
+    # inventing a suspension timestamp from the account creation date.
     op.execute(
         sa.text(
-            "UPDATE users SET disabled_kind = 'historical_unknown', "
-            "disabled_at = COALESCE(disabled_at, created_at) "
+            "UPDATE users SET disabled_kind = 'historical_unknown' "
             "WHERE is_active IS FALSE AND disabled_kind IS NULL"
+        )
+    )
+    op.execute(
+        sa.text(
+            """
+            WITH known_history AS (
+                SELECT DISTINCT ON (u.id)
+                    u.id AS user_id,
+                    CASE WHEN a.action = 'user.deactivate'
+                        THEN 'suspended' ELSE 'deleted' END AS disabled_kind,
+                    a.created_at AS disabled_at,
+                    actor.id AS disabled_by
+                FROM users u
+                JOIN audit_logs a ON a.target_id = u.id::text
+                    AND a.target_type = 'user'
+                    AND a.status_code BETWEEN 200 AND 299
+                    AND a.action IN (
+                        'user.deactivate', 'user.delete',
+                        'user.deactivation_approve'
+                    )
+                LEFT JOIN users actor ON actor.id = a.actor_id
+                WHERE u.is_active IS FALSE
+                ORDER BY u.id,
+                    (a.action <> 'user.deactivate') DESC,
+                    a.created_at DESC, a.id DESC
+            )
+            UPDATE users u SET
+                disabled_kind = h.disabled_kind,
+                disabled_at = h.disabled_at,
+                disabled_by = h.disabled_by
+            FROM known_history h WHERE u.id = h.user_id
+            """
         )
     )
 

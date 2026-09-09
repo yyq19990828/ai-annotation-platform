@@ -9,7 +9,13 @@ import type { ContinuousImageCreation } from "./manualImageCreation";
 import type { PendingDrawing, Tool } from "./useWorkbenchState";
 
 const { enqueueDurably } = vi.hoisted(() => ({ enqueueDurably: vi.fn(async () => {}) }));
-vi.mock("./offlineQueue", () => ({ enqueue: vi.fn(), enqueueDurably }));
+vi.mock("./offlineQueue", () => ({
+  enqueue: vi.fn(),
+  enqueueDurably,
+  isOfflineCandidate: (error: unknown) =>
+    error instanceof TypeError ||
+    (!!error && typeof error === "object" && "status" in error && Number(error.status) >= 500),
+}));
 
 const authState = vi.hoisted(() => ({ userId: "user-1", active: true }));
 vi.mock("@/stores/authStore", () => ({
@@ -252,7 +258,7 @@ describe("useWorkbenchAnnotationActions module", () => {
   it("业务失败保留同一草稿，重试不重复落库", async () => {
     const create = vi
       .fn()
-      .mockRejectedValueOnce({ status: 503 })
+      .mockRejectedValueOnce({ status: 422 })
       .mockResolvedValue({ id: "retry-1" });
     const { result, history } = setup({ create });
     await act(async () => {
@@ -382,7 +388,11 @@ describe("useWorkbenchAnnotationActions module", () => {
     await act(async () => normal.result.current.handlePickPendingClass("car"));
     const repeated = setup();
     await act(async () => repeated.result.current.beginBboxDrawing(geom));
-    expect(normal.create.mock.calls[0][0]).toEqual(repeated.create.mock.calls[0][0]);
+    const { client_request_id: firstKey, ...firstBody } = normal.create.mock.calls[0][0];
+    const { client_request_id: nextKey, ...nextBody } = repeated.create.mock.calls[0][0];
+    expect(firstBody).toEqual(nextBody);
+    expect(firstKey).toBeTruthy();
+    expect(nextKey).not.toBe(firstKey);
   });
 
   it("Esc 分别取消关键点半成品和待属性几何；保存中不能取消", async () => {

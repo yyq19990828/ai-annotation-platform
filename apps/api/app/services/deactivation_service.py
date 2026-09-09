@@ -20,7 +20,7 @@ from app.db.models.audit_log import AuditLog
 from app.db.models.user import User
 from app.services.audit import AuditAction, AuditService
 from app.services.notification import NotificationService
-from app.services.user_lifecycle import set_disabled_metadata
+from app.services.user_lifecycle import UserLifecycleService, set_disabled_metadata
 
 
 COOLDOWN_DAYS = 7
@@ -51,6 +51,9 @@ class DeactivationService:
         reason: str | None,
         request: Request | None = None,
     ) -> User:
+        user = (await UserLifecycleService.lock_accounts(db, [user.id])).get(user.id)
+        if user is None:
+            raise HTTPException(status_code=404, detail="用户不存在")
         if not user.is_active:
             raise HTTPException(status_code=400, detail="账号当前已停用")
         if user.deactivation_requested_at is not None:
@@ -116,6 +119,9 @@ class DeactivationService:
         user: User,
         request: Request | None = None,
     ) -> User:
+        user = (await UserLifecycleService.lock_accounts(db, [user.id])).get(user.id)
+        if user is None or not user.is_active:
+            raise HTTPException(status_code=400, detail="账号当前已停用")
         if user.deactivation_requested_at is None:
             raise HTTPException(status_code=400, detail="当前无待生效的注销申请")
         user.deactivation_requested_at = None
@@ -140,11 +146,15 @@ class DeactivationService:
         rows = (
             (
                 await db.execute(
-                    select(User).where(
+                    select(User)
+                    .where(
                         User.is_active.is_(True),
                         User.deactivation_scheduled_at.isnot(None),
                         User.deactivation_scheduled_at <= now,
                     )
+                    .order_by(User.id)
+                    .with_for_update(skip_locked=True)
+                    .execution_options(populate_existing=True)
                 )
             )
             .scalars()
