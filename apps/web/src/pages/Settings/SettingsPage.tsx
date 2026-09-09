@@ -2,18 +2,16 @@ import { useState, useEffect } from "react";
 import { clsx } from "clsx";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
-import { Badge } from "@/components/ui/Badge";
 import { useToastStore } from "@/components/ui/Toast";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useAuthStore } from "@/stores/authStore";
+import { useLogoutAll } from "@/hooks/useAuth";
 import {
   useChangePassword,
   useUpdateProfile,
   useRequestDeactivation,
   useCancelDeactivation,
 } from "@/hooks/useMe";
-import { useSystemSettings, useUpdateSystemSettings, useTestSmtp } from "@/hooks/useSystemSettings";
-import type { SystemSettingsPatch } from "@/api/settings";
 import { ROLE_LABELS } from "@/constants/roles";
 import { bugReportsApi, type BugReportResponse } from "@/api/bug-reports";
 import { notificationsApi, type NotificationPreferenceItem } from "@/api/notifications";
@@ -33,6 +31,7 @@ import {
 import type { UserRole } from "@/types";
 import { PageContainer } from "@/components/layout/PageContainer";
 import { getPasswordValidationErrors, isPasswordStrong } from "@/utils/password";
+import { SystemSettingsSection } from "./SystemSettingsSection";
 
 type SectionKey = "profile" | "workbench" | "apikeys" | "feedback" | "notifications" | "system";
 
@@ -51,6 +50,7 @@ export function SettingsPage() {
   const { role } = usePermissions();
   const isAdmin = role === "super_admin";
   const [section, setSection] = useState<SectionKey>("profile");
+  const [systemDirty, setSystemDirty] = useState(false);
 
   const sections: {
     key: SectionKey;
@@ -83,7 +83,16 @@ export function SettingsPage() {
                 return (
                   <li key={s.key}>
                     <button
-                      onClick={() => setSection(s.key)}
+                      onClick={() => {
+                        if (
+                          section === "system" &&
+                          systemDirty &&
+                          !window.confirm("系统设置有未保存修改，确定离开吗？")
+                        ) {
+                          return;
+                        }
+                        setSection(s.key);
+                      }}
                       className={clsx(
                         "flex w-full cursor-pointer appearance-none items-center gap-2 rounded-md border-0 bg-transparent px-3 py-2.5 text-left text-sm font-medium max-[760px]:whitespace-nowrap",
                         active ? "bg-muted font-semibold text-foreground" : "text-muted-foreground",
@@ -108,7 +117,7 @@ export function SettingsPage() {
           {section === "notifications" && <NotificationPreferencesSection />}
           {section === "system" && isAdmin && (
             <div className="flex flex-col gap-4">
-              <SystemSection />
+              <SystemSettingsSection onDirtyChange={setSystemDirty} />
               <ConnectorAllowlistSettings />
             </div>
           )}
@@ -262,8 +271,44 @@ function ProfileSection() {
         </form>
       </Card>
 
+      <SecuritySessionsCard />
       <DangerZoneCard />
     </div>
+  );
+}
+
+function SecuritySessionsCard() {
+  const logoutAllMut = useLogoutAll();
+  const pushToast = useToastStore((s) => s.push);
+
+  const logoutOtherDevices = () => {
+    logoutAllMut.mutate(undefined, {
+      onSuccess: () =>
+        pushToast({ msg: "已退出其他设备", sub: "当前设备仍保持登录", kind: "success" }),
+      onError: (error) =>
+        pushToast({ msg: "退出其他设备失败", sub: (error as Error).message, kind: "warning" }),
+    });
+  };
+
+  return (
+    <Card>
+      <SectionHeader title="登录会话" />
+      <div className="flex flex-col gap-3 p-4">
+        <div className="text-sm text-muted-foreground">
+          退出其他设备上的登录会话，当前设备继续使用。个人 API 密钥是独立入口，不会被此操作撤销。
+        </div>
+        <div className={ACTIONS_END_CLASS}>
+          <button
+            type="button"
+            className={INPUT_BUTTON_CLASS}
+            disabled={logoutAllMut.isPending}
+            onClick={logoutOtherDevices}
+          >
+            {logoutAllMut.isPending ? "退出中..." : "退出其他设备"}
+          </button>
+        </div>
+      </div>
+    </Card>
   );
 }
 
@@ -401,249 +446,6 @@ function DangerZoneCard() {
         </div>
       </Card>
     </div>
-  );
-}
-
-function SystemSection() {
-  const { data, isLoading, error } = useSystemSettings();
-  const updateMut = useUpdateSystemSettings();
-  const testSmtpMut = useTestSmtp();
-  const pushToast = useToastStore((s) => s.push);
-
-  // 受控表单：仅在 data 加载后初始化一次
-  const [allowOpen, setAllowOpen] = useState<boolean | null>(null);
-  const [invTtl, setInvTtl] = useState<string>("");
-  const [frontUrl, setFrontUrl] = useState<string>("");
-  const [smtpHost, setSmtpHost] = useState<string>("");
-  const [smtpPort, setSmtpPort] = useState<string>("");
-  const [smtpUser, setSmtpUser] = useState<string>("");
-  const [smtpPwd, setSmtpPwd] = useState<string>("");
-  const [smtpFrom, setSmtpFrom] = useState<string>("");
-  const [pwdEditing, setPwdEditing] = useState(false);
-
-  useEffect(() => {
-    if (!data) return;
-    setAllowOpen(data.allow_open_registration);
-    setInvTtl(String(data.invitation_ttl_days));
-    setFrontUrl(data.frontend_base_url);
-    setSmtpHost(data.smtp.host ?? "");
-    setSmtpPort(data.smtp.port != null ? String(data.smtp.port) : "");
-    setSmtpUser(data.smtp.user ?? "");
-    setSmtpFrom(data.smtp.from_address ?? "");
-    setSmtpPwd("");
-    setPwdEditing(false);
-  }, [data]);
-
-  if (isLoading || !data || allowOpen === null) {
-    return (
-      <Card>
-        <SectionHeader title="系统设置" />
-        <div className="p-4 text-sm text-muted-foreground">
-          {isLoading ? "加载中..." : null}
-          {error && <ErrorBanner msg={(error as Error).message} />}
-        </div>
-      </Card>
-    );
-  }
-
-  const dirty =
-    allowOpen !== data.allow_open_registration ||
-    invTtl !== String(data.invitation_ttl_days) ||
-    frontUrl !== data.frontend_base_url ||
-    smtpHost !== (data.smtp.host ?? "") ||
-    smtpPort !== (data.smtp.port != null ? String(data.smtp.port) : "") ||
-    smtpUser !== (data.smtp.user ?? "") ||
-    smtpFrom !== (data.smtp.from_address ?? "") ||
-    (pwdEditing && smtpPwd.length > 0);
-
-  const onSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    const patch: SystemSettingsPatch = {};
-    if (allowOpen !== data.allow_open_registration) patch.allow_open_registration = allowOpen;
-    if (invTtl !== String(data.invitation_ttl_days)) {
-      const n = parseInt(invTtl, 10);
-      if (!Number.isFinite(n) || n < 1 || n > 90) {
-        pushToast({ msg: "邀请有效期需在 1–90 天之间", kind: "warning" });
-        return;
-      }
-      patch.invitation_ttl_days = n;
-    }
-    if (frontUrl !== data.frontend_base_url) patch.frontend_base_url = frontUrl.trim();
-    if (smtpHost !== (data.smtp.host ?? "")) patch.smtp_host = smtpHost.trim();
-    if (smtpPort !== (data.smtp.port != null ? String(data.smtp.port) : "")) {
-      patch.smtp_port = smtpPort ? parseInt(smtpPort, 10) : null;
-    }
-    if (smtpUser !== (data.smtp.user ?? "")) patch.smtp_user = smtpUser.trim();
-    if (smtpFrom !== (data.smtp.from_address ?? "")) patch.smtp_from = smtpFrom.trim();
-    if (pwdEditing) patch.smtp_password = smtpPwd;
-
-    updateMut.mutate(patch, {
-      onSuccess: () => pushToast({ msg: "系统设置已更新", kind: "success" }),
-      onError: (e) => pushToast({ msg: "保存失败", sub: (e as Error).message, kind: "warning" }),
-    });
-  };
-
-  const onTestSmtp = () => {
-    testSmtpMut.mutate(undefined, {
-      onSuccess: (r) => pushToast({ msg: "测试邮件已发送", sub: `→ ${r.to}`, kind: "success" }),
-      onError: (e) =>
-        pushToast({ msg: "SMTP 测试失败", sub: (e as Error).message, kind: "warning" }),
-    });
-  };
-
-  return (
-    <Card>
-      <SectionHeader title="系统设置" />
-      <form onSubmit={onSave} className={FORM_CLASS}>
-        <ReadOnly
-          label="环境"
-          value={data.environment}
-          hint={
-            <Badge
-              variant={
-                data.environment === "production"
-                  ? "danger"
-                  : data.environment === "staging"
-                    ? "warning"
-                    : "outline"
-              }
-            >
-              {data.environment}
-            </Badge>
-          }
-        />
-
-        <Field label="开放注册（🟢 立即生效）">
-          <label className="inline-flex cursor-pointer items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={allowOpen}
-              onChange={(e) => setAllowOpen(e.target.checked)}
-            />
-            <span>{allowOpen ? "已启用 — 新用户自助注册为 Viewer" : "已关闭 — 仅邀请注册"}</span>
-          </label>
-        </Field>
-
-        <Field label="邀请有效期（天，🟢 仅影响新邀请）">
-          <input
-            type="number"
-            min={1}
-            max={90}
-            value={invTtl}
-            onChange={(e) => setInvTtl(e.target.value)}
-            className={INPUT_CLASS}
-          />
-        </Field>
-
-        <Field label="前端基础地址（🟡 用于新邀请/重置链接）">
-          <input
-            value={frontUrl}
-            onChange={(e) => setFrontUrl(e.target.value)}
-            placeholder="https://your-domain.com"
-            className={INPUT_CLASS}
-          />
-        </Field>
-
-        <div>
-          <div className={GROUP_LABEL_CLASS}>
-            SMTP 邮件 ·{" "}
-            <Badge variant={data.smtp.configured ? "success" : "outline"} dot>
-              {data.smtp.configured ? "已配置" : "未配置"}
-            </Badge>
-          </div>
-          <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-2.5">
-            <Field label="主机">
-              <input
-                value={smtpHost}
-                onChange={(e) => setSmtpHost(e.target.value)}
-                className={INPUT_CLASS}
-                placeholder="smtp.example.com"
-              />
-            </Field>
-            <Field label="端口">
-              <input
-                type="number"
-                value={smtpPort}
-                onChange={(e) => setSmtpPort(e.target.value)}
-                className={INPUT_CLASS}
-                placeholder="587 / 465"
-              />
-            </Field>
-            <Field label="账号">
-              <input
-                value={smtpUser}
-                onChange={(e) => setSmtpUser(e.target.value)}
-                className={INPUT_CLASS}
-              />
-            </Field>
-            <Field label="发件人">
-              <input
-                value={smtpFrom}
-                onChange={(e) => setSmtpFrom(e.target.value)}
-                className={INPUT_CLASS}
-                placeholder="noreply@example.com"
-              />
-            </Field>
-          </div>
-          <div className="mt-2.5">
-            <div className={LABEL_CLASS}>
-              密码 {data.smtp.password_set && !pwdEditing ? "（已设置）" : ""}
-            </div>
-            {pwdEditing ? (
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  value={smtpPwd}
-                  onChange={(e) => setSmtpPwd(e.target.value)}
-                  placeholder="留空保存视为清除"
-                  className={clsx(INPUT_CLASS, "flex-1")}
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPwdEditing(false);
-                    setSmtpPwd("");
-                  }}
-                  className={INPUT_BUTTON_CLASS}
-                >
-                  取消
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setPwdEditing(true)}
-                className={INPUT_BUTTON_CLASS}
-              >
-                {data.smtp.password_set ? "更换密码" : "设置密码"}
-              </button>
-            )}
-          </div>
-          <div className="mt-2.5">
-            <button
-              type="button"
-              onClick={onTestSmtp}
-              disabled={testSmtpMut.isPending || !data.smtp.configured}
-              className={INPUT_BUTTON_CLASS}
-            >
-              {testSmtpMut.isPending ? "发送中..." : "发送测试邮件到我"}
-            </button>
-            <span className="ml-2.5 text-xs text-muted-foreground">收件人：当前账号邮箱</span>
-          </div>
-        </div>
-
-        {updateMut.isError && <ErrorBanner msg={(updateMut.error as Error).message} />}
-        <div className={ACTIONS_END_CLASS}>
-          <button
-            type="submit"
-            disabled={!dirty || updateMut.isPending}
-            className={primaryButtonClassName(updateMut.isPending)}
-          >
-            {updateMut.isPending ? "保存中..." : "保存"}
-          </button>
-        </div>
-      </form>
-    </Card>
   );
 }
 

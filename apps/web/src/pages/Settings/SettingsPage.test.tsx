@@ -55,6 +55,12 @@ vi.mock("@/hooks/useMe", () => ({
   useCancelDeactivation: () => mockCancelDeactivation,
 }));
 
+// --- session control ---
+const mockLogoutAll = { mutate: vi.fn(), isPending: false };
+vi.mock("@/hooks/useAuth", () => ({
+  useLogoutAll: () => mockLogoutAll,
+}));
+
 // --- system settings ---
 const mockSystemSettingsData = {
   environment: "development",
@@ -72,10 +78,12 @@ const mockSystemSettingsData = {
 };
 const mockUseSystemSettings = vi.fn();
 const mockUpdateSystemSettings = { mutate: vi.fn(), isPending: false, isError: false };
+const mockResetSystemSettings = { mutate: vi.fn(), isPending: false, isError: false };
 const mockTestSmtp = { mutate: vi.fn(), isPending: false };
 vi.mock("@/hooks/useSystemSettings", () => ({
   useSystemSettings: () => mockUseSystemSettings(),
   useUpdateSystemSettings: () => mockUpdateSystemSettings,
+  useResetSystemSettings: () => mockResetSystemSettings,
   useTestSmtp: () => mockTestSmtp,
 }));
 
@@ -141,8 +149,10 @@ describe("SettingsPage", () => {
     mockSettingsUser.password_admin_reset_at = null;
     mockPushToast.mockReset();
     mockUpdateProfile.mutate.mockReset();
+    mockLogoutAll.mutate.mockReset();
     mockChangePassword.mutate.mockReset();
     mockUpdateSystemSettings.mutate.mockReset();
+    mockResetSystemSettings.mutate.mockReset();
     mockTestSmtp.mutate.mockReset();
     mockWorkbenchUpdate.mockReset().mockResolvedValue(undefined);
     mockUseSystemSettings.mockReturnValue({
@@ -202,6 +212,12 @@ describe("SettingsPage", () => {
     renderUI();
     expect(screen.getByRole("alert")).toHaveTextContent("管理员为你生成了临时密码");
     expect(screen.getByText("请先修改密码")).toBeInTheDocument();
+  });
+
+  it("退出其他设备保留当前会话并调用既有 logout-all action", () => {
+    renderUI();
+    fireEvent.click(screen.getByRole("button", { name: "退出其他设备" }));
+    expect(mockLogoutAll.mutate).toHaveBeenCalledWith(undefined, expect.any(Object));
   });
 
   it("点击「系统设置」tab → 显示系统设置表单（super_admin 才可见）", () => {
