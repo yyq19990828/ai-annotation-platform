@@ -345,6 +345,46 @@ describe("RegisterPage / InviteRegisterForm", () => {
     expect(screen.getByText("邀请已过期")).toBeInTheDocument();
   });
 
+  it("keeps confirmed project acceptance when login invalidates the consumed invitation query", () => {
+    mockResolve.data = {
+      email: "x@y.com",
+      role: "annotator",
+      project_id: "project",
+      project_name: "Road QA",
+      expires_at: "2030-01-01",
+    };
+    mockRegister.mutate = vi.fn((_args, opts) => {
+      // Auth adoption clears the anonymous cache; the token is now consumed.
+      Object.assign(mockResolve, {
+        data: undefined,
+        isError: true,
+        error: { status: 410, message: "邀请已使用" },
+      });
+      opts.onSuccess({
+        access_token: "new-account-token",
+        user: { id: "new-account", email: "x@y.com", role: "annotator" },
+        acceptance: {
+          project_id: "project",
+          project_name: "Road QA",
+          project_member_role: "annotator",
+          next_action: "wait_for_allocation",
+          next_action_label: "等待分派",
+          responsible_person_name: "Manager",
+          active_batch_count: 0,
+        },
+      });
+    });
+    renderUI("/register?token=abc");
+    fireEvent.change(screen.getByPlaceholderText("如何在平台中称呼你"), {
+      target: { value: "New account" },
+    });
+    fillPwd("Abcdef12");
+    fireEvent.click(screen.getByRole("button", { name: "完成注册并登录" }));
+    expect(screen.getByRole("heading", { name: "邀请已完成" })).toBeInTheDocument();
+    expect(screen.getByText("等待分派")).toBeInTheDocument();
+    expect(screen.queryByText("邀请已使用")).not.toBeInTheDocument();
+  });
+
   it("无效填写 → 不调用 register.mutate", () => {
     mockResolve.data = {
       email: "x@y.com",

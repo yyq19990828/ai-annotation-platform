@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { flushSync } from "react-dom";
 import { clsx } from "clsx";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
@@ -220,15 +221,18 @@ function OpenRegisterForm() {
 function InviteRegisterForm({ token }: { token: string }) {
   const navigate = useNavigate();
   const setAuth = useAuthStore((s) => s.setAuth);
-
-  const resolve = useResolveInvitation(token);
+  const [accepted, setAccepted] = useState<RegisterResponse | null>(null);
+  const resolve = useResolveInvitation(accepted ? null : token);
   const register = useRegister();
 
   const [name, setName] = useState("");
   const [pwd, setPwd] = useState("");
   const [pwd2, setPwd2] = useState("");
   const [showPwd, setShowPwd] = useState(false);
-  const [accepted, setAccepted] = useState<RegisterResponse | null>(null);
+
+  // Login clears the previous anonymous query cache. A consumed invitation
+  // must not be resolved again or replace this confirmed acceptance result.
+  if (accepted) return <InviteAcceptedPanel acceptance={accepted.acceptance} />;
 
   if (resolve.isLoading) {
     return (
@@ -252,10 +256,6 @@ function InviteRegisterForm({ token }: { token: string }) {
 
   const inv = resolve.data!;
 
-  if (accepted) {
-    return <InviteAcceptedPanel acceptance={accepted.acceptance} />;
-  }
-
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !isPasswordStrong(pwd) || pwd !== pwd2) return;
@@ -271,9 +271,11 @@ function InviteRegisterForm({ token }: { token: string }) {
             localStorage.getItem("token") !== ownerToken
           )
             return;
+          // Remove the consumed-token query observer before auth adoption
+          // synchronously invalidates the previous account's query cache.
+          if (data.acceptance) flushSync(() => setAccepted(data));
           setAuth(data.access_token, data.user);
-          if (data.acceptance) setAccepted(data);
-          else navigate("/dashboard", { replace: true });
+          if (!data.acceptance) navigate("/dashboard", { replace: true });
         },
       },
     );
