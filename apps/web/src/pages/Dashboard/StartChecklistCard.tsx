@@ -48,6 +48,7 @@ export function StartChecklistCard({
   const location = useLocation();
   const userId = useAuthStore((state) => state.user?.id);
   const [guideOpen, setGuideOpen] = useState(false);
+  const [resultOpen, setResultOpen] = useState(false);
   const guideVersion = annotationGuideVersion(project.annotation_guide);
   const { dismissed, guideRead, isSaving, saveError, dismiss, reopen, retry, markGuideRead } =
     useOnboardingProjectState(project.id, guideVersion);
@@ -129,7 +130,7 @@ export function StartChecklistCard({
         : "送审后可在这里看到审核结果",
       done: hasSubmissionResult,
       actionLabel: hasSubmissionResult ? "再次查看结果" : "查看结果",
-      onAction: () => openProjectWork(summary?.reviewed_task_id),
+      onAction: () => setResultOpen(true),
     },
   ];
 
@@ -240,6 +241,28 @@ export function StartChecklistCard({
           <button type="button" className="underline" onClick={() => void retry()}>
             重试
           </button>
+        </div>
+      )}
+      {resultOpen && hasSubmissionResult && summary && (
+        <div className="border-t border-border px-4 py-3" data-testid="start-checklist-result">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-sm font-semibold">
+              最近审核结果 · {summary.reviewed_task_display_id ?? "任务"}
+            </div>
+            <Button size="sm" variant="ghost" onClick={() => setResultOpen(false)}>
+              收起结果
+            </Button>
+          </div>
+          <p className="mb-0 mt-2 text-sm">
+            {summary.reviewed_task_status === "rejected"
+              ? "任务已退回，请按审核意见修改。"
+              : "任务已通过审核。"}
+          </p>
+          {summary.reviewed_task_status === "rejected" && (
+            <p className="mb-0 mt-2 whitespace-pre-wrap text-xs text-muted-foreground">
+              退回理由：{summary.reviewed_task_reason || "审核员未填写退回理由"}
+            </p>
+          )}
         </div>
       )}
       {guideOpen && guideExists && (

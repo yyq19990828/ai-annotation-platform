@@ -106,6 +106,9 @@ export interface OnboardingProjectSummary {
   saved_annotation_count: number;
   reviewed_task_count: number;
   reviewed_task_id: string | null;
+  reviewed_task_display_id: string | null;
+  reviewed_task_status: "completed" | "rejected" | null;
+  reviewed_task_reason: string | null;
 }
 
 // v0.8.4 · 管理员人员看板

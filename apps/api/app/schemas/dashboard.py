@@ -15,6 +15,9 @@ class OnboardingProjectSummary(BaseModel):
     saved_annotation_count: int = 0
     reviewed_task_count: int = 0
     reviewed_task_id: UUID | None = None
+    reviewed_task_display_id: str | None = None
+    reviewed_task_status: Literal["completed", "rejected"] | None = None
+    reviewed_task_reason: str | None = None
 
 
 class RegistrationDayPoint(BaseModel):

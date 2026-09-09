@@ -20790,6 +20790,17 @@
             "title": "Reviewed Task Count",
             "type": "integer"
           },
+          "reviewed_task_display_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed Task Display Id"
+          },
           "reviewed_task_id": {
             "anyOf": [
               {
@@ -20801,6 +20812,32 @@
               }
             ],
             "title": "Reviewed Task Id"
+          },
+          "reviewed_task_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed Task Reason"
+          },
+          "reviewed_task_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "completed",
+                  "rejected"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed Task Status"
           },
           "saved_annotation_count": {
             "default": 0,

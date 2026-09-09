@@ -236,7 +236,7 @@ export function InvitationListPanel() {
             <tr>
               {["邮箱", "角色", "数据组", "项目", "状态", "邀请人", "过期时间", "操作"].map(
                 (title) => (
-                  <th key={title} className={styles.cell}>
+                  <th key={title} className={styles.th}>
                     {title}
                   </th>
                 ),
@@ -268,14 +268,32 @@ export function InvitationListPanel() {
                 <td className={styles.cell}>
                   {ROLE_LABELS[invitation.role as UserRole] ?? invitation.role}
                 </td>
-                <td className={styles.cell}>{invitation.group_name ?? "—"}</td>
-                <td className={styles.cell}>{invitation.project_name ?? "未指定"}</td>
+                <td className={styles.cell}>
+                  <span className={styles.truncateText} title={invitation.group_name ?? undefined}>
+                    {invitation.group_name ?? "—"}
+                  </span>
+                </td>
+                <td className={styles.cell}>
+                  <span
+                    className={styles.truncateText}
+                    title={invitation.project_name ?? undefined}
+                  >
+                    {invitation.project_name ?? "未指定"}
+                  </span>
+                </td>
                 <td className={styles.cell}>
                   <Badge variant={STATUS_COLORS[invitation.status]}>
                     {STATUS_LABEL[invitation.status]}
                   </Badge>
                 </td>
-                <td className={styles.cell}>{invitation.invited_by_name ?? "—"}</td>
+                <td className={styles.cell}>
+                  <span
+                    className={styles.truncateText}
+                    title={invitation.invited_by_name ?? undefined}
+                  >
+                    {invitation.invited_by_name ?? "—"}
+                  </span>
+                </td>
                 <td className={`${styles.cell} ${styles.dateCell}`}>
                   {new Date(invitation.expires_at).toLocaleString("zh-CN")}
                 </td>

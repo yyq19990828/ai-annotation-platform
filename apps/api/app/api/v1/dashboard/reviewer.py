@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, and_
 from app.deps import (
     get_db,
     require_roles,
@@ -13,6 +13,7 @@ from app.db.models.task import Task
 from app.db.models.dataset import DatasetItem
 from app.db.models.task_batch import TaskBatch
 from app.services.storage import storage_service
+from app.services.scheduler import batch_visibility_clause
 from app.db.enums import UserRole, TaskStatus
 from app.schemas.dashboard import (
     ReviewerDashboardStats,
@@ -41,13 +42,23 @@ def _visible_project_clause(user: User):
 
 
 def _reviewable_claim_clause(user: User):
-    """A reviewer cannot be sent to a task claimed by another reviewer."""
+    """Match workbench task visibility and prevent taking another claim."""
     if user.role == UserRole.SUPER_ADMIN:
         return None
-    return or_(
-        Project.owner_id == user.id,
-        Task.reviewer_claimed_at.is_(None),
-        Task.reviewer_id == user.id,
+    visible_batch = Task.batch_id.in_(
+        select(TaskBatch.id).where(batch_visibility_clause(user)).correlate(None)
+    )
+    collaborative_video = and_(
+        Task.file_type == "video",
+        Project.video_collaboration["enabled"].as_boolean().is_(True),
+    )
+    return and_(
+        or_(Project.owner_id == user.id, visible_batch, collaborative_video),
+        or_(
+            Project.owner_id == user.id,
+            Task.reviewer_claimed_at.is_(None),
+            Task.reviewer_id == user.id,
+        ),
     )
 
 

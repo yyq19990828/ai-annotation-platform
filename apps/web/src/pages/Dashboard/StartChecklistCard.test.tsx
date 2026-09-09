@@ -68,23 +68,33 @@ it("does not complete guide by opening it and disables work without assignments"
   fireEvent.click(screen.getByRole("button", { name: "确认已阅读" }));
   expect(mocks.markGuideRead).toHaveBeenCalledOnce();
 });
-it("opens the actual reviewed task directly", () => {
-  mocks.summary.data = {
-    assigned_task_count: 1,
-    opened_task_count: 1,
-    saved_annotation_count: 1,
-    reviewed_task_count: 1,
-    reviewed_task_id: "reviewed-task",
-  };
-  render(
-    <MemoryRouter>
-      <StartChecklistCard project={project} batches={[]} />
-      <Location />
-    </MemoryRouter>,
-  );
-  fireEvent.click(screen.getByRole("button", { name: "再次查看结果" }));
-  expect(screen.getByTestId("location").textContent).toContain("task=reviewed-task");
-});
+it.each(["completed", "rejected"])(
+  "shows the %s result without requiring access to the editing workbench",
+  (status) => {
+    mocks.summary.data = {
+      assigned_task_count: 1,
+      opened_task_count: 1,
+      saved_annotation_count: 1,
+      reviewed_task_count: 1,
+      reviewed_task_id: "reviewed-task",
+      reviewed_task_display_id: "T-RESULT",
+      reviewed_task_status: status,
+      reviewed_task_reason: status === "rejected" ? "最新退回理由" : null,
+    };
+    render(
+      <MemoryRouter>
+        <StartChecklistCard project={project} batches={[]} />
+        <Location />
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "再次查看结果" }));
+    expect(screen.getByTestId("location").textContent).toBe("/");
+    expect(screen.getByTestId("start-checklist-result")).toHaveTextContent("T-RESULT");
+    expect(screen.getByTestId("start-checklist-result")).toHaveTextContent(
+      status === "rejected" ? "最新退回理由" : "任务已通过审核",
+    );
+  },
+);
 it("does not treat stale successful counters as true after a failed refresh", () => {
   mocks.summary.data = {
     assigned_task_count: 1,

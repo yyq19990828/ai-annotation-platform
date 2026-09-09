@@ -30,6 +30,17 @@ async def test_onboarding_uses_current_users_active_work_and_real_review(
     )
     task = await _seed_task(db_session, project_id=project.id, status="review")
     task.assignee_id = user.id
+    batch = TaskBatch(
+        id=uuid.uuid4(),
+        project_id=project.id,
+        display_id="B-ONBOARD",
+        name="Assigned",
+        status="active",
+        annotator_id=user.id,
+    )
+    db_session.add(batch)
+    await db_session.flush()
+    task.batch_id = batch.id
     now = datetime.now(timezone.utc)
     for actor, kind in [
         (user, "annotate"),
@@ -76,13 +87,25 @@ async def test_onboarding_uses_current_users_active_work_and_real_review(
         saved_annotation_count=1,
         reviewed_task_count=0,
         reviewed_task_id=None,
+        reviewed_task_display_id=None,
+        reviewed_task_status=None,
+        reviewed_task_reason=None,
     )
     task.status = "rejected"
     task.reviewed_at = now
+    task.reject_reason = "最新退回理由"
     await db_session.flush()
     data = (await httpx_client.get(url, headers=headers(token))).json()
     assert data["reviewed_task_count"] == 1
     assert data["reviewed_task_id"] == str(task.id)
+    assert data["reviewed_task_reason"] == "最新退回理由"
+    task.status = "completed"
+    batch.status = "archived"
+    await db_session.flush()
+    data = (await httpx_client.get(url, headers=headers(token))).json()
+    assert data["assigned_task_count"] == 0
+    assert data["reviewed_task_status"] == "completed"
+    assert data["reviewed_task_reason"] is None
 
 
 @pytest.mark.asyncio
@@ -183,24 +206,46 @@ async def test_reviewer_dashboard_filters_invisible_and_other_claimed_work(
         ProjectMember(project_id=visible.id, user_id=review.id, role="reviewer")
     )
     now = datetime.now(timezone.utc)
+    batch = TaskBatch(
+        id=uuid.uuid4(),
+        project_id=visible.id,
+        display_id="B-QUEUE",
+        name="Review",
+        status="reviewing",
+    )
+    archived = TaskBatch(
+        id=uuid.uuid4(),
+        project_id=visible.id,
+        display_id="B-ARCHIVED-QUEUE",
+        name="Archived",
+        status="archived",
+    )
+    db_session.add_all([batch, archived])
+    await db_session.flush()
     pending = await _seed_task(db_session, project_id=visible.id, status="review")
+    pending.batch_id = batch.id
     pending.reopened_count = 1
-    await _seed_task(
+    claimed = await _seed_task(
         db_session,
         project_id=visible.id,
         status="review",
         reviewer_id=other.id,
         reviewer_claimed_at=now,
     )
+    claimed.batch_id = batch.id
     await _seed_task(db_session, project_id=hidden.id, status="review")
+    await _seed_task(db_session, project_id=visible.id, status="review")
+    archived_task = await _seed_task(db_session, project_id=visible.id, status="review")
+    archived_task.batch_id = archived.id
     for status in ["completed", "rejected", "review"]:
-        await _seed_task(
+        task = await _seed_task(
             db_session,
             project_id=visible.id,
             status=status,
             reviewer_id=review.id,
             reviewed_at=now if status != "review" else None,
         )
+        task.batch_id = batch.id
     await db_session.flush()
     response = await httpx_client.get(
         "/api/v1/dashboard/reviewer", headers=headers(token)

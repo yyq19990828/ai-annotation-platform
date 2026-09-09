@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, cast, Date
+from sqlalchemy import select, func, cast, Date, or_, and_
 from app.deps import (
     assert_project_visible,
     get_current_user,
@@ -24,6 +24,7 @@ from app.schemas.dashboard import (
     OnboardingProjectSummary,
 )
 from app.services.storage import storage_service
+from app.services.scheduler import task_visibility_clause, is_privileged_for_project
 from app.services.user_brief import resolve_briefs_with_project_role
 from app.services.dashboard_stats import (
     _class_distribution,
@@ -58,7 +59,20 @@ async def annotator_project_onboarding(
     assignee's task review fields.  Client-side remembered task state is only a
     supplemental signal for the currently open browser tab.
     """
-    await assert_project_visible(project_id, db, current_user)
+    project = await assert_project_visible(project_id, db, current_user)
+    assignment_scope = True
+    if not is_privileged_for_project(current_user, project):
+        assignment_scope = or_(
+            Task.batch_id.in_(
+                select(TaskBatch.id)
+                .where(task_visibility_clause(current_user))
+                .correlate_except(TaskBatch)
+            ),
+            and_(
+                Task.file_type == "video",
+                bool((project.video_collaboration or {}).get("enabled")),
+            ),
+        )
 
     assigned_task_count = int(
         (
@@ -68,6 +82,8 @@ async def annotator_project_onboarding(
                 .where(
                     Task.project_id == project_id,
                     Task.assignee_id == current_user.id,
+                    Task.status != "uploading",
+                    assignment_scope,
                 )
             )
         ).scalar()
@@ -120,8 +136,8 @@ async def annotator_project_onboarding(
         ).scalar()
         or 0
     )
-    reviewed_task_id = await db.scalar(
-        select(Task.id)
+    reviewed_task = await db.scalar(
+        select(Task)
         .where(
             Task.project_id == project_id,
             Task.assignee_id == current_user.id,
@@ -137,7 +153,14 @@ async def annotator_project_onboarding(
         opened_task_count=opened_task_count,
         saved_annotation_count=saved_annotation_count,
         reviewed_task_count=reviewed_task_count,
-        reviewed_task_id=reviewed_task_id,
+        reviewed_task_id=reviewed_task.id if reviewed_task else None,
+        reviewed_task_display_id=reviewed_task.display_id if reviewed_task else None,
+        reviewed_task_status=reviewed_task.status if reviewed_task else None,
+        reviewed_task_reason=(
+            reviewed_task.reject_reason
+            if reviewed_task and reviewed_task.status == "rejected"
+            else None
+        ),
     )
 
 
