@@ -32,6 +32,7 @@ import {
 } from "@/pages/Workbench/state/workbenchSettingsFields";
 import type { UserRole } from "@/types";
 import { PageContainer } from "@/components/layout/PageContainer";
+import { getPasswordValidationErrors, isPasswordStrong } from "@/utils/password";
 
 type SectionKey = "profile" | "workbench" | "apikeys" | "feedback" | "notifications" | "system";
 
@@ -119,6 +120,7 @@ export function SettingsPage() {
 
 function ProfileSection() {
   const user = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
   const pushToast = useToastStore((s) => s.push);
   const updateProfile = useUpdateProfile();
   const changePwd = useChangePassword();
@@ -141,12 +143,19 @@ function ProfileSection() {
 
   const submitPwd = (e: React.FormEvent) => {
     e.preventDefault();
-    if (newPwd.length < 6 || newPwd !== newPwd2) return;
+    if (!oldPwd || !isPasswordStrong(newPwd) || !newPwd2 || newPwd !== newPwd2) return;
     changePwd.mutate(
       { old_password: oldPwd, new_password: newPwd },
       {
         onSuccess: () => {
           pushToast({ msg: "密码已修改", kind: "success" });
+          // /auth/me/password 返回 204；同步清除登录态里的临时密码标记，
+          // 否则刷新前会继续把用户送回强制改密入口。
+          // 回调可能晚于账号切换到达，先确认 store 仍属于提交者。
+          const latestUser = useAuthStore.getState().user;
+          if (latestUser?.id === user.id) {
+            setUser({ ...latestUser, password_admin_reset_at: null });
+          }
           setOldPwd("");
           setNewPwd("");
           setNewPwd2("");
@@ -155,7 +164,10 @@ function ProfileSection() {
     );
   };
 
-  const passwordsMatch = !newPwd || !newPwd2 || newPwd === newPwd2;
+  const passwordsMatch = newPwd === newPwd2;
+  const passwordValid = isPasswordStrong(newPwd);
+  const showPasswordMismatch = newPwd2.length > 0 && !passwordsMatch;
+  const requiresPasswordChange = Boolean(user.password_admin_reset_at);
 
   return (
     <div className="flex flex-col gap-4">
@@ -188,8 +200,16 @@ function ProfileSection() {
       </Card>
 
       <Card>
-        <SectionHeader title="修改密码" />
+        <SectionHeader title={requiresPasswordChange ? "请先修改密码" : "修改密码"} />
         <form onSubmit={submitPwd} className={FORM_CLASS}>
+          {requiresPasswordChange && (
+            <div
+              role="alert"
+              className="rounded-md border border-status-warning/40 bg-status-warning-soft px-3 py-2 text-sm text-foreground"
+            >
+              管理员为你生成了临时密码，请先设置个人密码。
+            </div>
+          )}
           <Field label="原密码">
             <input
               required
@@ -205,9 +225,15 @@ function ProfileSection() {
               type="password"
               value={newPwd}
               onChange={(e) => setNewPwd(e.target.value)}
-              minLength={6}
+              minLength={8}
+              maxLength={128}
               className={INPUT_CLASS}
             />
+            {newPwd && !passwordValid && (
+              <div className="mt-1 text-xs text-status-danger">
+                还需：{getPasswordValidationErrors(newPwd).join("、")}
+              </div>
+            )}
           </Field>
           <Field label="再次输入新密码">
             <input
@@ -215,9 +241,9 @@ function ProfileSection() {
               type="password"
               value={newPwd2}
               onChange={(e) => setNewPwd2(e.target.value)}
-              className={clsx(INPUT_CLASS, !passwordsMatch && "border-rose-500")}
+              className={clsx(INPUT_CLASS, showPasswordMismatch && "border-status-danger")}
             />
-            {!passwordsMatch && (
+            {showPasswordMismatch && (
               <div className="mt-1 text-xs text-status-danger">两次密码不一致</div>
             )}
           </Field>
@@ -225,7 +251,9 @@ function ProfileSection() {
           <div className={ACTIONS_END_CLASS}>
             <button
               type="submit"
-              disabled={!oldPwd || newPwd.length < 6 || !passwordsMatch || changePwd.isPending}
+              disabled={
+                !oldPwd || !passwordValid || !newPwd2 || !passwordsMatch || changePwd.isPending
+              }
               className={primaryButtonClassName(changePwd.isPending)}
             >
               {changePwd.isPending ? "提交中..." : "修改密码"}

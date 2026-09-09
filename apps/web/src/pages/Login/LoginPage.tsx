@@ -14,6 +14,7 @@ const CAPTCHA_THRESHOLD = 5;
 
 export function LoginPage() {
   const token = useAuthStore((s) => s.token);
+  const user = useAuthStore((s) => s.user);
   const location = useLocation();
   const from =
     (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? "/dashboard";
@@ -42,7 +43,10 @@ export function LoginPage() {
     }
   }, [login.isError, login.error]);
 
-  if (token) return <Navigate to={from} replace />;
+  if (token) {
+    const destination = user?.password_admin_reset_at ? "/settings" : from;
+    return <Navigate to={destination} replace />;
+  }
 
   const captchaRequired = failedCount >= CAPTCHA_THRESHOLD;
 

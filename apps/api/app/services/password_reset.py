@@ -18,10 +18,10 @@ class PasswordResetService:
         self.db = db
 
     async def create_token(self, email: str) -> str | None:
-        """生成重置 token。返回 None 表示 email 不存在（防枚举）。"""
+        """生成重置 token。返回 None 表示邮箱不存在或账号不可用（防枚举）。"""
         result = await self.db.execute(select(User).where(User.email == email))
         user = result.scalar_one_or_none()
-        if not user:
+        if not user or not user.is_active:
             return None
 
         token = secrets.token_hex(32)
@@ -39,17 +39,42 @@ class PasswordResetService:
     async def consume_token(self, token: str) -> User | None:
         """验证并消费 token，返回关联用户。返回 None 表示无效/过期/已用。"""
         result = await self.db.execute(
-            select(PasswordResetToken).where(PasswordResetToken.token == token)
+            select(PasswordResetToken)
+            .where(PasswordResetToken.token == token)
+            .with_for_update()
         )
         entry = result.scalar_one_or_none()
         if not entry:
             return None
         if entry.used_at is not None:
             return None
-        if datetime.now(timezone.utc) > entry.expires_at:
+        if datetime.now(timezone.utc) >= entry.expires_at:
             return None
 
         entry.used_at = datetime.now(timezone.utc)
-        user = await self.db.get(User, entry.user_id)
+        # 与登录路径的用户行锁配合，避免密码重置和并发登录交叉时产生
+        # 使用旧密码、却拿到新 generation 的会话。
+        user = await self.db.scalar(
+            select(User).where(User.id == entry.user_id).with_for_update()
+        )
         await self.db.flush()
+        if user is None or not user.is_active:
+            return None
         return user
+
+    async def invalidate_token(self, token: str) -> None:
+        """让尚未发送出去的 token 失效。
+
+        邮件发送属于数据库事务之外的外部副作用。发送明确失败时将 token 标记
+        为已使用，避免失败请求留下可猜测或被误用的有效恢复凭据；申请入口仍
+        由现有速率限制保护，用户可以稍后重新申请。
+        """
+        result = await self.db.execute(
+            select(PasswordResetToken)
+            .where(PasswordResetToken.token == token)
+            .with_for_update()
+        )
+        entry = result.scalar_one_or_none()
+        if entry is not None and entry.used_at is None:
+            entry.used_at = datetime.now(timezone.utc)
+            await self.db.flush()

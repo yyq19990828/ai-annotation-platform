@@ -80,6 +80,28 @@ async def send_verification_email(
     await _send(db, to_address, "[AI 标注平台] 验证你的邮箱", body)
 
 
+async def send_password_reset_email(
+    db: AsyncSession,
+    to_address: str,
+    reset_url: str,
+    *,
+    expires_in_hours: int = 1,
+) -> None:
+    """发送密码重置链接。
+
+    复用现有 SMTP 配置和发送路径；配置缺失或 SMTP 调用失败时向调用方抛出
+    :class:`SmtpConfigError`，由账号恢复入口记录可定位的诊断信息并保持对外
+    的防枚举响应。
+    """
+    body = (
+        "你收到这封邮件，是因为有人请求重置你的 AI 标注平台密码。\n\n"
+        f"请在 {expires_in_hours} 小时内点击以下链接设置新密码：\n"
+        f"{reset_url}\n\n"
+        "如果你没有发起此请求，请忽略此邮件。你的密码不会因此改变。\n"
+    )
+    await _send(db, to_address, "[AI 标注平台] 重置你的密码", body)
+
+
 async def send_test_email(db: AsyncSession, to_address: str) -> dict[str, Any]:
     """连 SMTP 发一封测试邮件。返回诊断字典；失败抛 SmtpConfigError。"""
     cfg = await _load_smtp_config(db)

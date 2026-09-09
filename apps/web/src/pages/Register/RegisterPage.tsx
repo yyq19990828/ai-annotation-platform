@@ -14,20 +14,12 @@ import { useAuthStore } from "@/stores/authStore";
 import { ROLE_LABELS } from "@/constants/roles";
 import type { UserRole } from "@/types";
 import type { ApiError } from "@/api/client";
+import { getPasswordRequirements, isPasswordStrong } from "@/utils/password";
 import styles from "./RegisterPage.module.css";
-
-function isPasswordStrong(pwd: string): boolean {
-  return pwd.length >= 8 && /[A-Z]/.test(pwd) && /[a-z]/.test(pwd) && /\d/.test(pwd);
-}
 
 function PasswordStrengthIndicator({ pwd }: { pwd: string }) {
   if (!pwd) return null;
-  const rules = [
-    { ok: pwd.length >= 8, label: "至少 8 位" },
-    { ok: /[A-Z]/.test(pwd), label: "含大写字母" },
-    { ok: /[a-z]/.test(pwd), label: "含小写字母" },
-    { ok: /\d/.test(pwd), label: "含数字" },
-  ];
+  const rules = getPasswordRequirements(pwd);
   return (
     <div className={styles.passwordRules}>
       {rules.map((r) => (
@@ -153,6 +145,7 @@ function OpenRegisterForm() {
                 value={pwd}
                 onChange={(e) => setPwd(e.target.value)}
                 minLength={8}
+                maxLength={128}
                 className={clsx(styles.input, styles.passwordInput)}
               />
               <button
@@ -173,6 +166,7 @@ function OpenRegisterForm() {
               type={showPwd ? "text" : "password"}
               value={pwd2}
               onChange={(e) => setPwd2(e.target.value)}
+              maxLength={128}
               className={clsx(styles.input, !passwordsMatch && styles.inputInvalid)}
             />
             {!passwordsMatch && <div className={styles.mismatchText}>两次密码不一致</div>}
@@ -302,6 +296,7 @@ function InviteRegisterForm({ token }: { token: string }) {
                 value={pwd}
                 onChange={(e) => setPwd(e.target.value)}
                 minLength={8}
+                maxLength={128}
                 className={clsx(styles.input, styles.passwordInput)}
               />
               <button
@@ -322,6 +317,7 @@ function InviteRegisterForm({ token }: { token: string }) {
               type={showPwd ? "text" : "password"}
               value={pwd2}
               onChange={(e) => setPwd2(e.target.value)}
+              maxLength={128}
               className={clsx(styles.input, !passwordsMatch && styles.inputInvalid)}
             />
             {!passwordsMatch && <div className={styles.mismatchText}>两次密码不一致</div>}

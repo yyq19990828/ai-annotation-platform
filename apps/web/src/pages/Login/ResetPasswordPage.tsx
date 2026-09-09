@@ -4,6 +4,7 @@ import { apiClient } from "@/api/client";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { Input } from "@/components/shadcn/ui/input";
+import { getPasswordRequirements, isPasswordStrong } from "@/utils/password";
 
 export function ResetPasswordPage() {
   const [searchParams] = useSearchParams();
@@ -18,9 +19,10 @@ export function ResetPasswordPage() {
   if (!token) return <Navigate to="/login" replace />;
 
   const mismatch = confirm && password !== confirm;
+  const passwordValid = isPasswordStrong(password);
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!password || mismatch) return;
+    if (!password || !passwordValid || mismatch) return;
     setLoading(true);
     setError("");
     try {
@@ -66,7 +68,21 @@ export function ResetPasswordPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                minLength={8}
+                maxLength={128}
               />
+              {password && (
+                <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs">
+                  {getPasswordRequirements(password).map((rule) => (
+                    <span
+                      key={rule.key}
+                      className={rule.ok ? "text-status-success" : "text-status-danger"}
+                    >
+                      {rule.ok ? "✓" : "✗"} {rule.label}
+                    </span>
+                  ))}
+                </div>
+              )}
 
               <label className="mb-1.5 mt-3.5 block text-sm font-medium text-muted-foreground">
                 确认密码
@@ -78,13 +94,14 @@ export function ResetPasswordPage() {
                 value={confirm}
                 onChange={(e) => setConfirm(e.target.value)}
                 required
+                maxLength={128}
               />
               {mismatch && <div className="mt-2 text-sm text-status-danger">两次密码不一致</div>}
               {error && <div className="mt-2 text-sm text-status-danger">{error}</div>}
               <Button
                 type="submit"
                 variant="primary"
-                disabled={loading || !!mismatch}
+                disabled={loading || !passwordValid || !!mismatch}
                 className="mt-3.5 w-full"
               >
                 {loading ? "提交中..." : "重置密码"}

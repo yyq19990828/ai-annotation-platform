@@ -36,6 +36,32 @@ GET /api/v1/me
 Authorization: Bearer <access_token>
 ```
 
+## 账号恢复
+
+忘记密码时提交邮箱地址：
+
+```http
+POST /api/v1/auth/forgot-password
+Content-Type: application/json
+
+{ "email": "alice@example.com", "captcha_token": null }
+```
+
+接口对已注册和未注册地址都返回 `202` 及相同提示，避免通过响应枚举邮箱。已注册账号会通过系统 SMTP 设置发送一小时有效的重置链接；SMTP 未配置或发送失败时，服务端不会把 token 写入日志，管理员应在设置页发送测试邮件后让用户联系管理员协助重置或重新申请。
+
+用户提交邮件中的 token 设置新密码：
+
+```http
+POST /api/v1/auth/reset-password
+Content-Type: application/json
+
+{ "token": "<one-time-token>", "new_password": "..." }
+```
+
+密码至少 8 位，并且必须包含大写字母、小写字母和数字。token 过期或消费后不能再次使用；重置成功会使该账号已有的 JWT 会话失效，用户需要使用新密码重新登录。
+
+管理员无法发送邮件时，可以先在 `/settings` 的系统设置中检查 `frontend_base_url` 与 SMTP host / port / 发件人，并使用「发送测试邮件到我」定位配置问题。管理员生成的临时密码只用于首次登录，用户登录后会被带到设置页完成改密。
+
 ## 刷新
 
 ```http
