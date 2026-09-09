@@ -240,19 +240,45 @@ test("图片布局预设、面板隐藏和浮动保留画布及未发送讨论�
     )
     .toBeGreaterThan(oldRect.width + 60);
   await panelCommand(page, "讨论 / Issue", "与标注详情合并为标签");
+  await expect
+    .poll(async () => {
+      const root = (await savedSnapshot(page, "annotate:image"))?.layout.grid.root;
+      if (!root) return false;
+      const discussionGroup = groupFor(root, "discussion");
+      return !!discussionGroup && discussionGroup === groupFor(root, "inspector");
+    })
+    .toBe(true);
   await sameCanvas();
   await sameDraft();
+  const mergedDiscussionGroup = groupFor(
+    (await savedSnapshot(page, "annotate:image"))!.layout.grid.root,
+    "discussion",
+  );
   await panelCommand(page, "讨论 / Issue", "停靠到底部");
   await expect
     .poll(async () => {
       const snapshot = await savedSnapshot(page, "annotate:image");
-      return snapshot && groupFor(snapshot.layout.grid.root, "discussion");
+      const discussionGroup = snapshot && groupFor(snapshot.layout.grid.root, "discussion");
+      return !!discussionGroup && discussionGroup !== mergedDiscussionGroup;
     })
-    .toBe("dock-discussion");
+    .toBe(true);
+  const dockedDiscussionGroup = groupFor(
+    (await savedSnapshot(page, "annotate:image"))!.layout.grid.root,
+    "discussion",
+  );
+  await expect
+    .poll(async () => {
+      const canvasRect = await panel(page, "canvas").boundingBox();
+      const discussionRect = await discussion.boundingBox();
+      return (
+        !!canvasRect && !!discussionRect && discussionRect.y >= canvasRect.y + canvasRect.height
+      );
+    })
+    .toBe(true);
   await sameCanvas();
   await sameDraft();
 
-  // Exercise native HTML drag/drop as well as the equivalent accessible menu commands.
+  // Native tab regrouping persists once and a rejected canvas-center drop preserves the tree.
   await page.waitForTimeout(650);
   const dragWrites: string[] = [];
   const businessWrites: string[] = [];
@@ -302,7 +328,7 @@ test("图片布局预设、面板隐藏和浮动保留画布及未发送讨论�
   ).toHaveCount(0);
   expect(
     groupFor((await savedSnapshot(page, "annotate:image"))!.layout.grid.root, "discussion"),
-  ).toBe("dock-discussion");
+  ).toBe(dockedDiscussionGroup);
 });
 
 test("标准和浮动布局使用日间与夜间语义主题", async ({ page, seed }) => {

@@ -23,29 +23,27 @@ export async function panelCommand(page: Page, title: string, name: string): Pro
     }
     return;
   }
-  const redocking = await tab.evaluate((element) => {
-    const floating = element.closest(".dv-floating-overlay-host");
-    return !!floating && floating.querySelectorAll("[data-tab-panel-id]").length === 1;
-  });
-  if (redocking) await page.keyboard.down("Shift");
-  try {
-    if (name.startsWith("与") && name.endsWith("合并为标签")) {
-      const target = page.getByRole("tab", { name: name.slice(1, -5), exact: true });
-      await source.dragTo(target);
-      return;
-    }
-    const canvas = page.locator('[data-workbench-panel="canvas"]');
-    const box = await canvas.boundingBox();
+  // Shift on floating content captures the pointer for moving the whole window.
+  // Redock a tab with native HTML drag/drop; reserve Shift for creating a float.
+  if (name.startsWith("与") && name.endsWith("合并为标签")) {
+    const target = page.getByRole("tab", { name: name.slice(1, -5), exact: true });
+    const box = await target.boundingBox();
     expect(box).not.toBeNull();
-    const positions: Record<string, { x: number; y: number }> = {
-      停靠到左侧: { x: 8, y: box!.height / 2 },
-      停靠到右侧: { x: box!.width - 8, y: box!.height / 2 },
-      停靠到底部: { x: box!.width / 2, y: box!.height - 8 },
-    };
-    const targetPosition = positions[name];
-    if (!targetPosition) throw new Error(`Unknown panel action: ${name}`);
-    await source.dragTo(canvas, { targetPosition });
-  } finally {
-    if (redocking) await page.keyboard.up("Shift");
+    // Drop on the right half to append, matching the panel action's tab order.
+    await source.dragTo(target, {
+      targetPosition: { x: box!.width * 0.75, y: box!.height / 2 },
+    });
+    return;
   }
+  const canvas = page.locator('[data-workbench-panel="canvas"]');
+  const box = await canvas.boundingBox();
+  expect(box).not.toBeNull();
+  const positions: Record<string, { x: number; y: number }> = {
+    停靠到左侧: { x: 8, y: box!.height / 2 },
+    停靠到右侧: { x: box!.width - 8, y: box!.height / 2 },
+    停靠到底部: { x: box!.width / 2, y: box!.height - 8 },
+  };
+  const targetPosition = positions[name];
+  if (!targetPosition) throw new Error(`Unknown panel action: ${name}`);
+  await source.dragTo(canvas, { targetPosition });
 }

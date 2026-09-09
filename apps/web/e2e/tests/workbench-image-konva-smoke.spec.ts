@@ -17,6 +17,27 @@ import { test, expect } from "../fixtures/seed";
 test.describe("workbench image konva smoke", () => {
   test("画框后对 workbench-stage 容器截图(Konva 渲染基线)", async ({ page, seed }) => {
     const data = await seed.reset();
+    // The rendering baseline must not depend on an external ML service's error banner.
+    const headers = { Authorization: `Bearer ${await seed.accessToken(data.admin_email)}` };
+    const configured = await page.request.patch(`/api/v1/projects/${data.project_id}`, {
+      headers,
+      data: {
+        ai_enabled: false,
+        ai_interactive_enabled: false,
+        ml_backend_id: null,
+      },
+    });
+    expect(configured.ok(), await configured.text()).toBe(true);
+    const removed = await page.request.delete(
+      `/api/v1/projects/${data.project_id}/ml-backends/${data.ml_backend_id}`,
+      { headers },
+    );
+    expect(removed.status()).toBe(204);
+    const enabledBackends = await page.request.get(
+      `/api/v1/projects/${data.project_id}/ml-backends`,
+      { headers },
+    );
+    expect(await enabledBackends.json()).toEqual([]);
     // seed 默认 task 无 assignee,先把 task[0] 分给 annotator(同 annotation.spec.ts)
     await seed.advanceTask({
       taskId: data.task_ids[0],
@@ -60,6 +81,7 @@ test.describe("workbench image konva smoke", () => {
     await page.keyboard.press("Enter");
     await expect(page.getByTestId("class-picker-popover")).toBeHidden();
     await expect(stage).toHaveAttribute("data-user-box-count", "1", { timeout: 15_000 });
+    await expect(page.getByText("AI 能力", { exact: true })).toHaveCount(0);
 
     // 等画布稳定,关动画
     await page.waitForTimeout(500);

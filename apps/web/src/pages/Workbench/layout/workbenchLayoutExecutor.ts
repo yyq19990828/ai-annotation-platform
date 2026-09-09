@@ -309,9 +309,19 @@ export function createWorkbenchLayoutExecutor(
         maximumWidth: floating ? 720 : Number.POSITIVE_INFINITY,
         maximumHeight: floating ? 900 : Number.POSITIVE_INFINITY,
       });
-      // Dockview emits layout before updating its explicit group constraints.
-      if (!floating && group.api.isVisible)
+      // Constraint changes resize the nested grid, but not a native floating window's
+      // outer bounds. Apply them before capture so replay cannot enlarge the window.
+      // Dockview also emits layout before updating its explicit group constraints.
+      if (floating) {
+        const rect = group.element.closest(".dv-resize-container")?.getBoundingClientRect();
+        if (rect) {
+          const width = Math.min(720, Math.max(minimumWidth, rect.width));
+          const height = Math.min(900, Math.max(minimumHeight, rect.height));
+          if (width !== rect.width || height !== rect.height) group.api.setSize({ width, height });
+        }
+      } else if (group.api.isVisible) {
         group.api.setSize({ width: group.api.width, height: group.api.height });
+      }
     }
   }
   function preserveGridSizes() {

@@ -770,6 +770,23 @@ describe("workspace executor with Dockview 8", () => {
     );
   });
 
+  it("sizes native floating windows to the same constraints used by saved snapshots", () => {
+    const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+    controller.syncConstraints();
+    api.addFloatingGroup(api.getPanel("discussion")!, {
+      x: 32,
+      y: 32,
+      width: 300,
+      height: 300,
+    });
+    controller.syncConstraints();
+    const before = api.toJSON().floatingGroups;
+    expect(before?.[0].position).toMatchObject({ width: 320, height: 320 });
+    controller.enterCompact();
+    controller.exitCompact();
+    expect(api.toJSON().floatingGroups).toEqual(before);
+  });
+
   it("latches right-edge floating geometry before the host becomes compact", () => {
     bounds = { width: 1920, height: 1080 };
     api.layout(bounds.width, bounds.height);

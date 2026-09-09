@@ -64,9 +64,12 @@ export default defineConfig({
   // worker per database; CI shards use independent runners and services.
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: isCI ? 2 : 0,
+  retries: isCI ? 1 : 0,
+  // Bound each CI shard, including serial failures and retries.
+  maxFailures: isCI ? 1 : 0,
+  globalTimeout: isCI ? 15 * 60_000 : 0,
   workers: 1,
-  reporter: isCI ? [["github"], ["html"]] : "html",
+  reporter: isCI ? [["line"], ["github"], ["html"]] : "html",
 
   globalTeardown: "./e2e/global-teardown.ts",
 
