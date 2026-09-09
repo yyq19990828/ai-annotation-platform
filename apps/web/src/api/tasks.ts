@@ -101,6 +101,8 @@ export interface TaskListParams {
 }
 
 export interface AnnotationPayload {
+  /** Offline mutation identity; stripped from JSON and sent as Idempotency-Key. */
+  client_request_id?: string;
   video_segment_id?: string | null;
   annotation_type?: string;
   /** v0.10.17 · 工具维度绑定; service 层据此校验 class_name 在对应 unit 类别集内. */
@@ -527,8 +529,15 @@ export const tasksApi = {
     return apiClient.get<AnnotationResponse[]>(`/tasks/${id}/annotations${query}`, init);
   },
 
-  createAnnotation: (id: string, payload: AnnotationPayload) =>
-    apiClient.post<AnnotationResponse>(`/tasks/${id}/annotations`, payload),
+  createAnnotation: (id: string, payload: AnnotationPayload, idempotencyKey?: string) => {
+    const { client_request_id, ...body } = payload;
+    const key = idempotencyKey ?? client_request_id;
+    return apiClient.post<AnnotationResponse>(
+      `/tasks/${id}/annotations`,
+      body,
+      key === undefined ? undefined : { headers: { "Idempotency-Key": key } },
+    );
+  },
 
   updateAnnotation: (
     taskId: string,

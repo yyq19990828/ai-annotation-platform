@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
 import logging
 import uuid
 from collections import Counter
@@ -51,6 +53,25 @@ from app.services.scene_track_domain import (
 logger = logging.getLogger("app.services.annotation")
 
 VIDEO_BBOX_CONVERSION_LIMIT = 5000
+ANNOTATION_CREATE_OPERATION_KIND = "create_annotation"
+
+
+def annotation_create_request_digest(payload: dict) -> str:
+    """Return a stable digest for one normalized annotation create request.
+
+    The idempotency key is carried in a header, so it is deliberately excluded
+    from this digest.  Pydantic has already normalized the request before the
+    endpoint calls this helper; sorting keys keeps retries independent of JSON
+    object insertion order.
+    """
+    raw = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    ).encode()
+    return hashlib.sha256(raw).hexdigest()
 
 
 def _raise_scene_track_conflict(exc: SceneTrackIntegrityError) -> None:
