@@ -24,6 +24,8 @@ scene 模式的项目里，同一物体会在一段录像里连续出现多帧�
 
 展开时间轴后可对照对象存在区间、关键帧 / 派生 / 采样成员与质检问题。连续播放期间为只读预览，跨帧任务中心仍可查看作业；传播、插值和其他修改需先暂停，等待当前帧获得编辑权限。浏览速率、缺帧跳过及键盘定位见[点云工作台](/user-guide/workbench/pointcloud-view)。
 
+跨帧任务中心使用半透明遮罩，不模糊背后的点云，以降低软件渲染环境的开销。批量传播与轨迹生命周期共用此弹窗，仍可按 `Esc` 或点击遮罩关闭。
+
 ## 跨帧目标延续
 
 <!-- TODO(v0.14.18) IMAGE_CHECKLIST: images/pointcloud-crossframe/crossframe-propagate-toast.png — 按 Alt+→ 跳帧自动选中新框 + toast [manual] -->

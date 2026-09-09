@@ -331,6 +331,8 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     await expect(page.getByTestId("scene-cross-frame-job-center")).toBeVisible({ timeout: 20_000 });
     await page.getByTestId("scene-cross-frame-job-center").click();
     const dialog = page.getByRole("dialog", { name: "3D 跨帧任务中心" });
+    // Blurring the live point cloud stalls SwiftShader cleanup and the next context creation.
+    await expect(page.getByTestId("modal-overlay")).toHaveCSS("backdrop-filter", "none");
     await expect(dialog).toBeVisible();
     await expect(dialog.getByRole("radio", { name: /当前帧全部框/ })).toBeChecked();
     await expect(dialog.getByText("目标 F1–F1 · 1 个逻辑帧")).toBeVisible();
