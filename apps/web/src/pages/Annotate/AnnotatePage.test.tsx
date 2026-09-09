@@ -244,6 +244,24 @@ describe("AnnotatePage", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
+  it("退回入口过滤批次和任务，切批次及返回后保留状态条件", () => {
+    mockUseMyBatches.mockReturnValue({
+      data: [{ ...batch, rejected_tasks: 2 }, secondBatch],
+      isLoading: false,
+      isError: false,
+    });
+    renderUI("/annotate?status=rejected");
+    expect(screen.getByRole("button", { name: "选择 b1" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "选择 b2" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "选择 b1" }));
+    expect(mockUseTaskList).toHaveBeenLastCalledWith("p1", { batch_id: "b1", status: "rejected" });
+    expect(screen.getByText("该批次没有待重做任务")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "返回全部批次" }));
+    expect(screen.queryByRole("button", { name: "选择 b2" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "全部任务" }));
+    expect(screen.getByRole("button", { name: "选择 b2" })).toBeInTheDocument();
+  });
+
   it("250 条任务可加载到末页、跨页去重，并在切批次后丢弃旧列表", () => {
     const firstHundred = Array.from({ length: 100 }, (_, index) =>
       task(`t-${index + 1}`, `T-${index + 1}`),

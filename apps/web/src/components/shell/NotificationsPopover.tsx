@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { clsx } from "clsx";
 import { Icon } from "@/components/ui/Icon";
@@ -12,10 +12,20 @@ import {
   useUnreadCount,
 } from "@/hooks/useNotifications";
 import type { NotificationItem } from "@/api/notifications";
-import { useAuthStore } from "@/stores/authStore";
+import { isCurrentAuthOwner, useAuthStore } from "@/stores/authStore";
 import { useBugDrawerStore } from "@/stores/bugDrawerStore";
 import { DropdownMenu } from "@/components/ui/DropdownMenu";
-import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
+import { Modal } from "@/components/ui/Modal";
+import { Button } from "@/components/ui/Button";
+import { AsyncJobDetailModal } from "@/components/jobs/AsyncJobDetailModal";
+import { ApiError } from "@/api/client";
+import { tasksApi } from "@/api/tasks";
+import { batchesApi } from "@/api/batches";
+import {
+  buildReviewWorkbenchUrl,
+  buildWorkbenchUrl,
+  currentWorkbenchReturnTo,
+} from "@/utils/workbenchNavigation";
 import {
   FILTERS,
   GROUP_LABELS,
@@ -213,7 +223,7 @@ function NotifRow({ item, onClick, onDelete, deletePending }: NotifRowProps) {
               (payload as { task_display_id?: unknown }).task_display_id ||
               (payload as { project_display_id?: unknown }).project_display_id,
           )
-        : (payload as { display_id?: string }).display_id || "";
+        : stringValue(payload.task_display_id) || stringValue(payload.display_id);
   const title = isBatchRejected
     ? (payload as { batch_name?: string }).batch_name || ""
     : isExport
@@ -227,7 +237,7 @@ function NotifRow({ item, onClick, onDelete, deletePending }: NotifRowProps) {
       ? (payload as { error?: string }).error || ""
       : isJob
         ? jobSnippet(item)
-        : (payload as { snippet?: string }).snippet || "";
+        : stringValue(payload.reject_reason) || stringValue(payload.snippet);
 
   const verb =
     jobVerb(item) ??
@@ -240,6 +250,15 @@ function NotifRow({ item, onClick, onDelete, deletePending }: NotifRowProps) {
   return (
     <div
       onClick={onClick}
+      role="button"
+      tabIndex={0}
+      aria-label={`打开通知：${verb}${displayId ? ` ${displayId}` : ""}`}
+      onKeyDown={(event) => {
+        if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) {
+          event.preventDefault();
+          onClick();
+        }
+      }}
       className={clsx(
         "group flex cursor-pointer items-start gap-2.5 border-b border-border px-3.5 py-2.5",
         isUnread && "bg-brand/10",
@@ -308,79 +327,145 @@ export function NotificationsPopover() {
   const openBugDrawer = useBugDrawerStore((s) => s.openDrawer);
   const { data: unreadData } = useUnreadCount();
   const unread = unreadData?.unread ?? 0;
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+  const [target, setTarget] = useState<{ item: NotificationItem; error: string | null } | null>(
+    null,
+  );
+  const navigationRequest = useRef(0);
+  const userId = useAuthStore((state) => state.user?.id);
+  useEffect(() => {
+    navigationRequest.current += 1;
+    setTarget(null);
+    setSelectedJobId(null);
+    return () => {
+      navigationRequest.current += 1;
+    };
+  }, [userId]);
+
+  const openTaskTarget = async (item: NotificationItem) => {
+    const request = ++navigationRequest.current;
+    const owner = useAuthStore.getState().user?.id;
+    const current = () =>
+      request === navigationRequest.current && !!owner && isCurrentAuthOwner(owner);
+    setTarget({ item, error: null });
+    try {
+      const buildUrl = role === "reviewer" ? buildReviewWorkbenchUrl : buildWorkbenchUrl;
+      const returnTo = currentWorkbenchReturnTo(location);
+      let url: string;
+      if (item.target_type === "task") {
+        // Read the current target: notification payloads may precede a transfer or another review.
+        const task = await tasksApi.get(item.target_id);
+        url = buildUrl(task.project_id, { taskId: task.id, batchId: task.batch_id, returnTo });
+      } else {
+        const projectId = stringValue(item.payload?.project_id);
+        if (!projectId) throw new Error("通知缺少项目信息，请从任务列表查看该批次。");
+        const batch = await batchesApi.get(projectId, item.target_id);
+        url = buildUrl(batch.project_id, { batchId: batch.id, returnTo });
+      }
+      if (!current()) return;
+      setTarget(null);
+      navigate(url);
+    } catch (error) {
+      if (!current()) return;
+      const message =
+        error instanceof ApiError && [403, 404].includes(error.status)
+          ? "任务已被删除、转派或访问权限已变更，请从当前任务列表查找或联系项目负责人。"
+          : error instanceof ApiError
+            ? "暂时无法打开该任务，请检查网络后重试。"
+            : error instanceof Error
+              ? error.message
+              : "暂时无法打开该任务，请稍后重试。";
+      setTarget({ item, error: message });
+    }
+  };
 
   return (
-    <DropdownMenu
-      align="end"
-      minWidth={0}
-      zIndex={200}
-      panelStyle={{ width: "min(520px, calc(100vw - 24px))" }}
-      disablePanelPadding
-      trigger={({ open, toggle, ref }) => (
-        <button
-          ref={ref}
-          type="button"
-          title="通知"
-          aria-haspopup="menu"
-          aria-expanded={open}
-          onClick={toggle}
-          className={clsx(
-            "relative inline-flex h-[30px] w-[30px] cursor-pointer appearance-none items-center justify-center rounded-md border border-transparent bg-transparent text-muted-foreground",
-            open && "bg-muted",
-          )}
-        >
-          <Icon name="bell" size={15} />
-          {unread > 0 && (
-            <span className="absolute right-[5px] top-1.5 h-[7px] w-[7px] rounded-full border-[1.5px] border-card bg-rose-500" />
-          )}
-        </button>
-      )}
-      content={({ close }) => (
-        <NotificationsPanel
-          unread={unread}
-          onItemClick={(item) => {
-            if (item.target_type === "bug_report") {
-              if (role === "super_admin" || role === "project_admin") {
-                navigate("/bugs");
-              } else {
-                openBugDrawer(item.target_id);
+    <>
+      <DropdownMenu
+        align="end"
+        minWidth={0}
+        zIndex={200}
+        panelStyle={{ width: "min(520px, calc(100vw - 24px))" }}
+        disablePanelPadding
+        trigger={({ open, toggle, ref }) => (
+          <button
+            ref={ref}
+            type="button"
+            title="通知"
+            aria-haspopup="menu"
+            aria-expanded={open}
+            onClick={toggle}
+            className={clsx(
+              "relative inline-flex h-[30px] w-[30px] cursor-pointer appearance-none items-center justify-center rounded-md border border-transparent bg-transparent text-muted-foreground",
+              open && "bg-muted",
+            )}
+          >
+            <Icon name="bell" size={15} />
+            {unread > 0 && (
+              <span className="absolute right-[5px] top-1.5 h-[7px] w-[7px] rounded-full border-[1.5px] border-card bg-rose-500" />
+            )}
+          </button>
+        )}
+        content={({ close }) => (
+          <NotificationsPanel
+            unread={unread}
+            onItemClick={(item) => {
+              if (item.target_type === "bug_report") {
+                if (role === "super_admin" || role === "project_admin") {
+                  navigate("/bugs");
+                } else {
+                  openBugDrawer(item.target_id);
+                }
+              } else if (item.target_type === "task" || item.target_type === "batch") {
+                void openTaskTarget(item);
+              } else if (item.target_type === "export" || item.target_type === "async_job") {
+                setSelectedJobId(item.target_id);
               }
-            } else if (item.target_type === "batch") {
-              const payload = (item.payload || {}) as { project_id?: string };
-              const projectId = payload.project_id;
-              if (projectId) {
-                navigate(
-                  buildWorkbenchUrl(projectId, {
-                    batchId: item.target_id,
-                    returnTo: currentWorkbenchReturnTo(location),
-                  }),
-                );
-              }
-            } else if (item.target_type === "export") {
-              // v0.10.27：点导出完成通知 → 用预签名 URL 触发下载（7 天内有效）。
-              const payload = (item.payload || {}) as { download_url?: string };
-              if (payload.download_url) {
-                window.open(payload.download_url, "_blank", "noopener");
-              }
-            } else if (item.target_type === "async_job") {
-              const payload = (item.payload || {}) as {
-                kind?: string;
-                dataset_id?: string;
-              };
-              if (payload.kind === "dataset_import" && payload.dataset_id) {
-                // 数据集导入完成 → 跳数据集列表并自动展开该数据集
-                navigate(`/datasets?dataset=${payload.dataset_id}`);
-              } else {
-                navigate(
-                  payload.kind === "video_tracker" ? "/ai-pre/jobs?tab=video" : "/ai-pre/jobs",
-                );
-              }
-            }
-            close();
-          }}
+              close();
+            }}
+          />
+        )}
+      />
+      {selectedJobId && (
+        <AsyncJobDetailModal
+          key={selectedJobId}
+          jobId={selectedJobId}
+          onClose={() => setSelectedJobId(null)}
         />
       )}
-    />
+      {target && (
+        <Modal
+          open
+          title="打开通知目标"
+          onClose={() => {
+            navigationRequest.current += 1;
+            setTarget(null);
+          }}
+        >
+          {target.error ? (
+            <div className="space-y-3 text-sm">
+              <p role="alert">{target.error}</p>
+              <div className="flex gap-2">
+                <Button onClick={() => void openTaskTarget(target.item)}>重新打开</Button>
+                <Button
+                  onClick={() => {
+                    navigationRequest.current += 1;
+                    setTarget(null);
+                    navigate(role === "reviewer" ? "/review" : "/annotate");
+                  }}
+                >
+                  查看当前任务
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <p role="status" className="text-sm text-muted-foreground">
+              正在核对任务和访问权限…
+            </p>
+          )}
+        </Modal>
+      )}
+    </>
   );
 }
 

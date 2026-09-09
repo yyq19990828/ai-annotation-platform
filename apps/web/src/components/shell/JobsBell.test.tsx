@@ -4,9 +4,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
 
 const mockList = vi.fn();
 const mockCancel = vi.fn();
+const mockGet = vi.fn();
 vi.mock("@/api/asyncJobs", () => ({
   CANCELLABLE_ASYNC_JOB_KINDS: new Set([
     "batch_predict",
@@ -18,6 +20,7 @@ vi.mock("@/api/asyncJobs", () => ({
   asyncJobsApi: {
     list: (params: unknown) => mockList(params),
     cancel: (id: string) => mockCancel(id),
+    get: (id: string) => mockGet(id),
   },
 }));
 
@@ -29,7 +32,9 @@ function renderBell() {
   });
   return render(
     <QueryClientProvider client={qc}>
-      <JobsBell />
+      <MemoryRouter>
+        <JobsBell />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -56,6 +61,7 @@ describe("JobsBell", () => {
     localStorage.clear();
     mockList.mockReset();
     mockCancel.mockReset();
+    mockGet.mockReset();
     mockCancel.mockResolvedValue({ status: "cancel_requested", id: "j1" });
   });
 
@@ -94,6 +100,44 @@ describe("JobsBell", () => {
     expect(screen.queryByTestId("jobs-bell-badge")).toBeNull();
   });
 
+  it("加载更早记录后可直达指定作业，跨页重复记录只显示一次", async () => {
+    mockList.mockImplementation(({ offset }: { offset: number }) =>
+      offset === 0
+        ? { items: [baseRow], total: 3 }
+        : {
+            items: [
+              baseRow,
+              { ...baseRow, id: "older", kind: "dataset_import", status: "completed" },
+            ],
+            total: 3,
+          },
+    );
+    mockGet.mockResolvedValue({
+      ...baseRow,
+      id: "older",
+      kind: "dataset_import",
+      status: "completed",
+      result: { imported: 6, skipped: 0 },
+    });
+    renderBell();
+    fireEvent.click(await screen.findByTestId("jobs-bell-trigger"));
+    fireEvent.click(await screen.findByRole("button", { name: "加载更早任务" }));
+    expect(await screen.findByTestId("job-row-older")).toBeInTheDocument();
+    expect(screen.getAllByTestId("job-row-j1")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "查看数据集导入详情" }));
+    expect(await screen.findByText("导入 6 / 跳过 0")).toBeInTheDocument();
+    expect(mockGet).toHaveBeenCalledWith("older");
+    expect(mockList).toHaveBeenCalledWith({ limit: 20, offset: 1 });
+  });
+
+  it("查询失败显示重试，不误报没有后台任务", async () => {
+    mockList.mockRejectedValue(new Error("offline"));
+    renderBell();
+    fireEvent.click(await screen.findByTestId("jobs-bell-trigger"));
+    expect(await screen.findByRole("alert")).toHaveTextContent("后台任务加载失败");
+    expect(screen.queryByText("暂无后台任务")).not.toBeInTheDocument();
+  });
+
   it("导出作业显示多目标格式和产物摘要", async () => {
     mockList.mockResolvedValue({
       items: [
@@ -107,6 +151,7 @@ describe("JobsBell", () => {
             download_url: "https://download.example/export.zip",
             file_count: 3,
             size_bytes: 1536,
+            expires_at: "2099-01-01T00:00:00Z",
           },
         },
       ],

@@ -194,7 +194,7 @@ export function AnnotatorDashboard() {
               请进入工作台查看退回原因并重新提交
             </span>
           </div>
-          <Button size="sm" variant="danger" onClick={() => navigate("/annotate")}>
+          <Button size="sm" variant="danger" onClick={() => navigate("/annotate?status=rejected")}>
             进入工作台
           </Button>
         </div>

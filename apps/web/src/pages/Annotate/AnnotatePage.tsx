@@ -179,11 +179,15 @@ export function AnnotatePage() {
   const location = useLocation();
   const qc = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialBatchId = searchParams.get("batch") ?? "";
-  const [selectedBatchId, setSelectedBatchId] = useState<string>(initialBatchId);
+  const selectedBatchId = searchParams.get("batch") ?? "";
+  const rejectedOnly = searchParams.get("status") === "rejected";
 
   const batchesQuery = useMyBatches();
   const batches = useMemo(() => batchesQuery.data ?? [], [batchesQuery.data]);
+  const visibleBatches = useMemo(
+    () => (rejectedOnly ? batches.filter((batch) => batch.rejected_tasks > 0) : batches),
+    [batches, rejectedOnly],
+  );
   const hasBatchData = batchesQuery.data !== undefined;
   const batchesLoading = batchesQuery.isLoading && !hasBatchData;
   const batchesInitialPaused = isInitialQueryPaused(batchesQuery, hasBatchData);
@@ -196,8 +200,11 @@ export function AnnotatePage() {
 
   const projectId = selectedBatch?.project_id;
   const taskListParams = useMemo(
-    () => (selectedBatchId ? { batch_id: selectedBatchId } : undefined),
-    [selectedBatchId],
+    () =>
+      selectedBatchId
+        ? { batch_id: selectedBatchId, ...(rejectedOnly ? { status: "rejected" } : {}) }
+        : undefined,
+    [selectedBatchId, rejectedOnly],
   );
   const taskListQuery = useTaskList(projectId, taskListParams);
   const taskListData = taskListQuery.data;
@@ -231,13 +238,12 @@ export function AnnotatePage() {
   });
 
   const handleSelectBatch = (b: MyBatchItem | null) => {
-    if (!b) {
-      setSelectedBatchId("");
-      setSearchParams({});
-    } else {
-      setSelectedBatchId(b.batch_id);
-      setSearchParams({ batch: b.batch_id });
-    }
+    setSearchParams((previous) => {
+      const next = new URLSearchParams(previous);
+      if (b) next.set("batch", b.batch_id);
+      else next.delete("batch");
+      return next;
+    });
   };
 
   const openWorkbench = (taskId?: string) => {
@@ -285,7 +291,7 @@ export function AnnotatePage() {
           />
         ) : (
           <AnnotateSidebar
-            batches={batches}
+            batches={visibleBatches}
             selectedBatchId={selectedBatchId}
             onSelect={handleSelectBatch}
           />
@@ -396,6 +402,34 @@ export function AnnotatePage() {
           </div>
         )}
 
+        <div role="group" aria-label="任务状态筛选" className="mb-3 flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant={rejectedOnly ? "default" : "primary"}
+            onClick={() =>
+              setSearchParams((previous) => {
+                const next = new URLSearchParams(previous);
+                next.delete("status");
+                return next;
+              })
+            }
+          >
+            全部任务
+          </Button>
+          <Button
+            size="sm"
+            variant={rejectedOnly ? "primary" : "default"}
+            onClick={() =>
+              setSearchParams((previous) => {
+                const next = new URLSearchParams(previous);
+                next.set("status", "rejected");
+                return next;
+              })
+            }
+          >
+            待重做
+          </Button>
+        </div>
         {batchesRefreshPaused && <QueryPausedNotice resource="分派批次" />}
 
         {batchesQuery.isError && hasBatchData && (
@@ -429,13 +463,15 @@ export function AnnotatePage() {
               error={batchesQuery.error}
               onRetry={() => void batchesQuery.refetch()}
             />
-          ) : batches.length === 0 ? (
+          ) : visibleBatches.length === 0 ? (
             <div className={styles.emptyState}>
               <Icon name="inbox" size={40} className={styles.emptyIcon} />
-              <div className={styles.emptyTitle}>暂无分派批次</div>
+              <div className={styles.emptyTitle}>
+                {rejectedOnly ? "没有待重做任务" : "暂无分派批次"}
+              </div>
             </div>
           ) : (
-            <BatchCardGrid batches={batches} onSelect={handleSelectBatch} />
+            <BatchCardGrid batches={visibleBatches} onSelect={handleSelectBatch} />
           )
         ) : tasksLoading ? (
           <div className={styles.loadingState}>加载中...</div>
@@ -450,7 +486,9 @@ export function AnnotatePage() {
         ) : tasks.length === 0 ? (
           <div className={styles.emptyState}>
             <Icon name="inbox" size={40} className={styles.emptyIcon} />
-            <div className={styles.emptyTitle}>该批次暂无任务</div>
+            <div className={styles.emptyTitle}>
+              {rejectedOnly ? "该批次没有待重做任务" : "该批次暂无任务"}
+            </div>
           </div>
         ) : (
           <>

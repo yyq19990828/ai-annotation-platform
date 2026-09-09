@@ -9,10 +9,17 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@/components/ui/Icon";
 import { useElementStyle } from "@/components/ui/useElementStyle";
 import { useToastStore } from "@/components/ui/Toast";
+import { AsyncJobDetailModal } from "@/components/jobs/AsyncJobDetailModal";
+import {
+  JOB_KIND_LABEL as KIND_LABEL,
+  exportDownloadState,
+  jobResultSummary,
+  jobStage,
+} from "@/components/jobs/asyncJobPresentation";
 import {
   asyncJobsApi,
   CANCELLABLE_ASYNC_JOB_KINDS,
@@ -68,29 +75,6 @@ function persistDismissed(set: Set<string>) {
   }
 }
 
-const KIND_LABEL: Record<string, string> = {
-  batch_predict: "批量预标",
-  video_tracker: "视频追踪",
-  video_correction: "视频 Mask 纠错",
-  audit_archive: "审计分区归档",
-  predictions_import: "预测导入",
-  prediction_retry: "失败预测重试",
-  dataset_import: "数据集导入",
-  create_tasks: "建任务",
-  export: "数据导出",
-  mask_qc: "Mask 质检",
-  mask_repair: "Mask 批量修复",
-  mask_repair_rollback: "Mask 修复回滚",
-  mask_format_import: "Mask 格式导入",
-  point_cloud_cross_frame: "3D 跨帧传播",
-};
-
-/** export job 完成时 result 的下载字段（后端 mark_complete 写入）。 */
-function exportDownloadUrl(result: Record<string, unknown>): string | null {
-  const url = result?.download_url;
-  return typeof url === "string" && url ? url : null;
-}
-
 const EXPORT_TARGET_LABELS: Record<string, string> = {
   aap_json: "AAP JSON",
   "yolo-det": "YOLO DET",
@@ -108,7 +92,11 @@ function exportTargetLabel(target: string): string {
 /** 从 payload 取一段副标题（导出 job 显示「项目 display_id · 目标格式」）。 */
 function jobDetail(job: AsyncJob): string | null {
   const p = job.payload || {};
-  const display = typeof p.project_display_id === "string" ? p.project_display_id : null;
+  const display =
+    job.project_name ??
+    job.project_display_id ??
+    (typeof p.project_display_id === "string" ? p.project_display_id : null);
+  const dataset = typeof p.dataset_name === "string" ? p.dataset_name : null;
   const targets = Array.isArray(p.targets)
     ? p.targets.filter((target): target is string => typeof target === "string")
     : [];
@@ -118,7 +106,7 @@ function jobDetail(job: AsyncJob): string | null {
       : typeof p.format === "string"
         ? exportTargetLabel(p.format)
         : null;
-  const parts = [display, fmt].filter(Boolean);
+  const parts = [display, dataset, fmt].filter(Boolean);
   return parts.length ? parts.join(" · ") : null;
 }
 
@@ -193,20 +181,24 @@ function JobRow({
   job,
   onDismiss,
   onCancel,
+  onDetail,
   cancelPending = false,
 }: {
   job: AsyncJob;
   onDismiss?: (id: string) => void;
   onCancel?: (id: string) => void;
+  onDetail: (id: string) => void;
   cancelPending?: boolean;
 }) {
   const kindLabel = KIND_LABEL[job.kind] ?? job.kind;
   const pct = Math.max(0, Math.min(100, job.progress_pct));
   // v0.10.27 · 导出完成后的下载链接（预签名 URL，7 天内可反复点）。
-  const downloadUrl =
-    job.kind === "export" && job.status === "completed" ? exportDownloadUrl(job.result) : null;
+  const download =
+    job.kind === "export" && job.status === "completed" ? exportDownloadState(job.result) : null;
+  const downloadUrl = download?.url;
   const detail = jobDetail(job);
-  const resultDetail = job.kind === "export" ? exportResultDetail(job.result) : null;
+  const resultDetail =
+    job.kind === "export" ? exportResultDetail(job.result) : jobResultSummary(job);
   // v0.11.17 · 仅终态任务可单条本地 dismiss；进行中永不可隐藏。
   const canDismiss = onDismiss && isTerminal(job.status);
   const cancelRequested = job.payload?.cancel_requested === true;
@@ -241,14 +233,26 @@ function JobRow({
       <ProgressBar pct={pct} status={job.status} />
       <div className="text-xs tabular-nums text-muted-foreground">
         {job.status === "running" || job.status === "pending"
-          ? `${pct}%`
+          ? `${jobStage(job)} · ${pct}%`
           : job.status === "failed"
             ? (job.error_message ?? "失败").slice(0, 80)
             : new Date(job.completed_at ?? job.updated_at).toLocaleString("zh-CN")}
       </div>
       {resultDetail && (
-        <div className="text-xs tabular-nums text-muted-foreground">ZIP · {resultDetail}</div>
+        <div className="text-xs tabular-nums text-muted-foreground">
+          {job.kind === "export" ? "ZIP · " : ""}
+          {resultDetail}
+        </div>
       )}
+      <button
+        type="button"
+        onClick={() => onDetail(job.id)}
+        className="self-start rounded-sm px-1 py-0.5 text-xs font-medium text-brand hover:bg-muted"
+        aria-label={`查看${kindLabel}详情`}
+      >
+        查看详情
+      </button>
+      {download?.reason && <p className="m-0 text-xs text-status-caution">{download.reason}</p>}
       {canCancel && (
         <button
           type="button"
@@ -278,18 +282,32 @@ function JobRow({
 
 export function JobsBell() {
   const [open, setOpen] = useState(false);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const queryClient = useQueryClient();
   const pushToast = useToastStore((state) => state.push);
 
-  const { data } = useQuery({
+  const jobsQuery = useInfiniteQuery({
     queryKey: ["async-jobs", "recent"],
-    queryFn: () => asyncJobsApi.list({ limit: 20 }),
+    queryFn: ({ pageParam }) => asyncJobsApi.list({ limit: 20, offset: pageParam }),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, _pages, lastOffset) =>
+      lastPage.items.length > 0 && lastOffset + lastPage.items.length < lastPage.total
+        ? lastOffset + lastPage.items.length
+        : undefined,
     refetchInterval: POLL_INTERVAL_MS,
     refetchIntervalInBackground: false,
   });
+  const data = jobsQuery.data;
 
-  const jobs = useMemo(() => data?.items ?? [], [data]);
+  const jobs = useMemo(
+    () => [
+      ...new Map(
+        data?.pages.flatMap((page) => page.items).map((job) => [job.id, job]) ?? [],
+      ).values(),
+    ],
+    [data],
+  );
   const runningCount = useMemo(
     () => jobs.filter((j) => j.status === "running" || j.status === "pending").length,
     [jobs],
@@ -449,7 +467,25 @@ export function JobsBell() {
               )}
             </div>
             <div className="flex-1 overflow-y-auto p-1">
-              {visibleJobs.length === 0 ? (
+              {jobsQuery.isError && (
+                <div role="alert" className="space-y-2 px-3 py-2 text-xs text-status-danger">
+                  <p className="m-0">后台任务加载失败，已有记录已保留。</p>
+                  <button
+                    type="button"
+                    onClick={() => void jobsQuery.refetch()}
+                    className="rounded border border-border px-2 py-1 text-foreground"
+                  >
+                    重新加载
+                  </button>
+                </div>
+              )}
+              {jobsQuery.isPending ? (
+                <p role="status" className="px-3 py-5 text-center text-xs text-muted-foreground">
+                  {jobsQuery.fetchStatus === "paused"
+                    ? "当前离线，联网后加载任务"
+                    : "正在加载后台任务…"}
+                </p>
+              ) : !jobsQuery.isError && visibleJobs.length === 0 ? (
                 <div className="px-3 py-5 text-center text-xs text-muted-foreground">
                   {filter === "active" ? "暂无进行中任务" : "暂无后台任务"}
                 </div>
@@ -460,13 +496,34 @@ export function JobsBell() {
                     job={j}
                     onDismiss={dismissOne}
                     onCancel={(jobId) => cancelMut.mutate(jobId)}
+                    onDetail={(jobId) => {
+                      setOpen(false);
+                      setSelectedJobId(jobId);
+                    }}
                     cancelPending={cancelMut.isPending && cancelMut.variables === j.id}
                   />
                 ))
               )}
+              {jobsQuery.hasNextPage && (
+                <button
+                  type="button"
+                  onClick={() => void jobsQuery.fetchNextPage()}
+                  disabled={jobsQuery.isFetchingNextPage}
+                  className="w-full rounded-sm px-3 py-2 text-xs font-medium text-brand hover:bg-muted disabled:opacity-50"
+                >
+                  {jobsQuery.isFetchingNextPage ? "正在加载…" : "加载更早任务"}
+                </button>
+              )}
             </div>
           </div>
         </>
+      )}
+      {selectedJobId && (
+        <AsyncJobDetailModal
+          key={selectedJobId}
+          jobId={selectedJobId}
+          onClose={() => setSelectedJobId(null)}
+        />
       )}
     </div>
   );
