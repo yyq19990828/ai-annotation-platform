@@ -121,6 +121,54 @@ describe("ReviewPage", () => {
     expect(screen.getByText(/选择一个批次开始审核/)).toBeInTheDocument();
   });
 
+  it("审核批次首屏离线暂停 → 显示等待网络连接而不是暂无任务", () => {
+    mockUseReviewerStats.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: false,
+      isPaused: true,
+      fetchStatus: "paused",
+      refetch: vi.fn(),
+    });
+    renderUI();
+    expect(screen.getAllByRole("status")[0]).toHaveTextContent(
+      "网络连接已断开，审核批次会在恢复后自动继续",
+    );
+    expect(screen.queryByText("暂无待审核任务")).not.toBeInTheDocument();
+  });
+
+  it("待审核任务首屏离线暂停 → 显示等待网络连接而不是空队列", () => {
+    mockUseReviewerStats.mockReturnValue({
+      data: {
+        reviewing_batches: [
+          {
+            batch_id: "b1",
+            batch_name: "批次A",
+            batch_display_id: "B-1",
+            project_id: "p1",
+            project_name: "项目X",
+            total_tasks: 5,
+            review_tasks: 2,
+            completed_tasks: 1,
+          },
+        ],
+      },
+    });
+    mockUseTaskList.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: false,
+      isPaused: true,
+      fetchStatus: "paused",
+      refetch: vi.fn(),
+    });
+    renderUI("/review?project=p1&batch=b1");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "网络连接已断开，待审核任务会在恢复后自动继续",
+    );
+    expect(screen.queryByText("该批次暂无待审核任务")).not.toBeInTheDocument();
+  });
+
   it("isLoading=true → 显示「加载中...」", () => {
     mockUseTaskList.mockReturnValue({ data: undefined, isLoading: true });
     renderUI();

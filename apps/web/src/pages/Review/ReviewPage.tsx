@@ -22,6 +22,13 @@ import { buildReviewWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workb
 import { RejectReasonModal } from "./RejectReasonModal";
 import { ReviewSidebar } from "./ReviewSidebar";
 import { ReviewBatchCardGrid } from "./ReviewBatchCardGrid";
+import {
+  isInitialQueryPaused,
+  isQueryPaused,
+  isRefreshQueryPaused,
+  QueryPausedNotice,
+  QueryPausedState,
+} from "@/pages/shared/QueryState";
 import type { CSSProperties } from "react";
 
 function ProgressFill({ pct, barClass }: { pct: number; barClass: string }) {
@@ -188,6 +195,8 @@ export function ReviewPage() {
   const reviewerStats = reviewerStatsQuery.data;
   const hasReviewerStats = reviewerStats !== undefined;
   const reviewerStatsLoading = reviewerStatsQuery.isLoading && !hasReviewerStats;
+  const reviewerStatsInitialPaused = isInitialQueryPaused(reviewerStatsQuery, hasReviewerStats);
+  const reviewerStatsRefreshPaused = isRefreshQueryPaused(reviewerStatsQuery, hasReviewerStats);
   const reviewerStatsInitialError = reviewerStatsQuery.isError && !hasReviewerStats;
   const sidebarBatches = useMemo<ReviewingBatchItem[]>(
     () => reviewerStats?.reviewing_batches ?? [],
@@ -216,6 +225,15 @@ export function ReviewPage() {
   const taskListData = taskListQuery.data;
   const hasTaskData = taskListData !== undefined;
   const isLoading = taskListQuery.isLoading && !hasTaskData;
+  const taskListInitialPaused = isInitialQueryPaused(taskListQuery, hasTaskData);
+  const taskListRefreshPaused = isRefreshQueryPaused(taskListQuery, hasTaskData);
+  const taskListPaused = isQueryPaused(taskListQuery);
+  const [loadMoreRequested, setLoadMoreRequested] = useState(false);
+  useEffect(() => {
+    if (!taskListPaused && !taskListQuery.isFetchingNextPage) {
+      setLoadMoreRequested(false);
+    }
+  }, [taskListPaused, taskListQuery.isFetchingNextPage]);
   const tasks = useMemo(() => flattenTaskPages(taskListData?.pages), [taskListData?.pages]);
   const total = taskListData?.pages[0]?.total ?? tasks.length;
 
@@ -399,6 +417,8 @@ export function ReviewPage() {
         </div>
         {reviewerStatsLoading ? (
           <div className="p-6 text-center text-xs text-muted-foreground">加载中...</div>
+        ) : reviewerStatsInitialPaused ? (
+          <QueryPausedState resource="审核批次" compact />
         ) : reviewerStatsInitialError ? (
           <QueryErrorState
             resource="审核批次"
@@ -491,6 +511,8 @@ export function ReviewPage() {
           )}
         </div>
 
+        {reviewerStatsRefreshPaused && <QueryPausedNotice resource="审核批次" />}
+
         {reviewerStatsQuery.isError && hasReviewerStats && (
           <RefreshNotice
             resource="审核批次"
@@ -505,8 +527,12 @@ export function ReviewPage() {
             error={reviewerStatsQuery.error}
             onRetry={() => void reviewerStatsQuery.refetch()}
           />
+        ) : reviewerStatsInitialPaused ? (
+          <QueryPausedState resource="审核批次" />
         ) : reviewerStatsLoading ? (
           <div className="p-10 text-center text-muted-foreground">加载中...</div>
+        ) : taskListRefreshPaused ? (
+          <QueryPausedNotice resource={loadMoreRequested ? "更多任务" : "任务列表"} />
         ) : taskListQuery.isError && hasTaskData ? (
           <RefreshNotice
             resource="任务列表"
@@ -548,10 +574,14 @@ export function ReviewPage() {
           </div>
         )}
 
-        {reviewerStatsInitialError || reviewerStatsLoading ? null : showOverview ? (
+        {reviewerStatsInitialError ||
+        reviewerStatsInitialPaused ||
+        reviewerStatsLoading ? null : showOverview ? (
           <ReviewBatchCardGrid batches={sidebarBatches} onSelect={handleSelectBatch} />
         ) : isLoading ? (
           <div className="p-10 text-center text-muted-foreground">加载中...</div>
+        ) : taskListInitialPaused ? (
+          <QueryPausedState resource="待审核任务" />
         ) : taskListQuery.isError && !hasTaskData ? (
           <QueryErrorState
             resource="待审核任务"
@@ -620,9 +650,10 @@ export function ReviewPage() {
                 <Button
                   size="sm"
                   disabled={taskListQuery.isFetchingNextPage}
-                  onClick={() =>
-                    void Promise.resolve(taskListQuery.fetchNextPage()).catch(() => undefined)
-                  }
+                  onClick={() => {
+                    setLoadMoreRequested(true);
+                    void Promise.resolve(taskListQuery.fetchNextPage()).catch(() => undefined);
+                  }}
                 >
                   {taskListQuery.isFetchingNextPage ? "加载中…" : "加载更多"}
                 </Button>

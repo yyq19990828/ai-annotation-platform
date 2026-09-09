@@ -77,6 +77,20 @@ describe("ReviewerDashboard", () => {
     expect(screen.getByText("加载中...")).toBeInTheDocument();
   });
 
+  it("统计首屏离线暂停 → 显示等待网络连接而不是持续加载", () => {
+    mockUseReviewerStats.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: false,
+      isPaused: true,
+      fetchStatus: "paused",
+    });
+    renderUI();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "网络连接已断开，审核统计会在恢复后自动继续",
+    );
+  });
+
   it("统计初始失败 → 显示错误态并支持重试", () => {
     const refetch = vi.fn();
     mockUseReviewerStats.mockReturnValue({
@@ -125,6 +139,22 @@ describe("ReviewerDashboard", () => {
     renderUI();
     expect(screen.getByText("暂无待审核任务")).toBeInTheDocument();
     expect(screen.getByText("所有标注任务已审核完毕")).toBeInTheDocument();
+  });
+
+  it("最近审核记录首屏离线暂停 → 显示等待网络连接而不是空态", () => {
+    mockUseReviewerStats.mockReturnValue({ data: baseStats, isLoading: false });
+    mockUseMyRecentReviews.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: false,
+      isPaused: true,
+      fetchStatus: "paused",
+    });
+    renderUI();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "网络连接已断开，最近审核记录会在恢复后自动继续",
+    );
+    expect(screen.queryByText("暂无审核记录")).not.toBeInTheDocument();
   });
 
   it("产能/质量数值正确显示", () => {

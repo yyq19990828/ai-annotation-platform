@@ -16,6 +16,12 @@ import { MyBatchesCard } from "./MyBatchesCard";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import { projectDisplayType } from "@/utils/projectDisplay";
 import { PageContainer } from "@/components/layout/PageContainer";
+import {
+  isInitialQueryPaused,
+  isRefreshQueryPaused,
+  QueryPausedNotice,
+  QueryPausedState,
+} from "@/pages/shared/QueryState";
 
 const STATS_GRID_FOUR = "grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3";
 const STATS_GRID_THREE = "grid grid-cols-[repeat(auto-fit,minmax(180px,1fr))] gap-3";
@@ -101,11 +107,15 @@ export function AnnotatorDashboard() {
   const stats = statsQuery.data;
   const hasStatsData = statsQuery.data !== undefined;
   const statsLoading = statsQuery.isLoading && !hasStatsData;
+  const statsInitialPaused = isInitialQueryPaused(statsQuery, hasStatsData);
+  const statsRefreshPaused = isRefreshQueryPaused(statsQuery, hasStatsData);
   const statsInitialError = statsQuery.isError && !hasStatsData;
   const projectsQuery = useProjects();
   const myProjects = useMemo(() => projectsQuery.data ?? [], [projectsQuery.data]);
   const hasProjectData = projectsQuery.data !== undefined;
   const projectsLoading = projectsQuery.isLoading && !hasProjectData;
+  const projectsInitialPaused = isInitialQueryPaused(projectsQuery, hasProjectData);
+  const projectsRefreshPaused = isRefreshQueryPaused(projectsQuery, hasProjectData);
   const projectsInitialError = projectsQuery.isError && !hasProjectData;
   const navigate = useNavigate();
   const location = useLocation();
@@ -121,6 +131,14 @@ export function AnnotatorDashboard() {
       }),
     [myProjects],
   );
+
+  if (statsInitialPaused) {
+    return (
+      <PageContainer>
+        <QueryPausedState resource="标注统计" />
+      </PageContainer>
+    );
+  }
 
   if (statsInitialError) {
     return (
@@ -145,6 +163,7 @@ export function AnnotatorDashboard() {
 
   return (
     <PageContainer>
+      {statsRefreshPaused && <QueryPausedNotice resource="标注统计" />}
       {statsQuery.isError && hasStatsData && (
         <RefreshNotice
           resource="标注统计"
@@ -333,8 +352,17 @@ export function AnnotatorDashboard() {
               />
             </div>
           )}
+          {projectsRefreshPaused && (
+            <div className="px-4 pt-3">
+              <QueryPausedNotice resource="项目列表" />
+            </div>
+          )}
           {projectsLoading ? (
             <div className="px-4 py-8 text-center text-sm text-muted-foreground">加载中...</div>
+          ) : projectsInitialPaused ? (
+            <div className="p-4">
+              <QueryPausedState resource="项目列表" compact />
+            </div>
           ) : projectsInitialError ? (
             <div className="p-4">
               <QueryErrorState

@@ -155,6 +155,56 @@ describe("AnnotatePage", () => {
     expect(refetch).toHaveBeenCalledOnce();
   });
 
+  it("批次首屏离线暂停 → 显示等待网络连接而不是暂无分派批次", () => {
+    mockUseMyBatches.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: false,
+      isPaused: true,
+      fetchStatus: "paused",
+      refetch: vi.fn(),
+    });
+    renderUI();
+    expect(screen.getAllByRole("status")[0]).toHaveTextContent(
+      "网络连接已断开，分派批次会在恢复后自动继续",
+    );
+    expect(screen.queryByText("暂无分派批次")).not.toBeInTheDocument();
+  });
+
+  it("任务首屏离线暂停 → 显示等待网络连接而不是暂无任务", () => {
+    mockUseTaskList.mockReturnValue(
+      taskQuery({
+        data: undefined,
+        isPaused: true,
+        fetchStatus: "paused",
+      }),
+    );
+    renderUI("/annotate?batch=b1");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "网络连接已断开，任务列表会在恢复后自动继续",
+    );
+    expect(screen.queryByText("该批次暂无任务")).not.toBeInTheDocument();
+  });
+
+  it("加载更多离线暂停 → 提示更多任务会在恢复后继续", () => {
+    const fetchNextPage = vi.fn().mockResolvedValue(undefined);
+    mockUseTaskList.mockReturnValue(
+      taskQuery({
+        data: { pages: [{ items: [task("t1"), task("t2")], total: 3 }] },
+        hasNextPage: true,
+        fetchNextPage,
+        isPaused: true,
+        fetchStatus: "paused",
+      }),
+    );
+    renderUI("/annotate?batch=b1");
+    fireEvent.click(screen.getByRole("button", { name: "加载更多" }));
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "网络连接已断开，更多任务当前内容已保留，恢复连接后会自动更新",
+    );
+    expect(fetchNextPage).toHaveBeenCalledOnce();
+  });
+
   it("任务查询 403 → 显示权限提示而不是暂无任务", () => {
     mockUseTaskList.mockReturnValue(
       taskQuery({

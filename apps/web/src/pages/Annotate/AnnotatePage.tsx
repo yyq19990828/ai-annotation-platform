@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@/components/ui/Icon";
@@ -16,6 +16,13 @@ import type { TaskResponse } from "@/types";
 import { AnnotateSidebar } from "./AnnotateSidebar";
 import { BatchCardGrid } from "./BatchCardGrid";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
+import {
+  isInitialQueryPaused,
+  isQueryPaused,
+  isRefreshQueryPaused,
+  QueryPausedNotice,
+  QueryPausedState,
+} from "@/pages/shared/QueryState";
 import styles from "./AnnotatePage.module.css";
 import type { CSSProperties } from "react";
 
@@ -179,6 +186,8 @@ export function AnnotatePage() {
   const batches = useMemo(() => batchesQuery.data ?? [], [batchesQuery.data]);
   const hasBatchData = batchesQuery.data !== undefined;
   const batchesLoading = batchesQuery.isLoading && !hasBatchData;
+  const batchesInitialPaused = isInitialQueryPaused(batchesQuery, hasBatchData);
+  const batchesRefreshPaused = isRefreshQueryPaused(batchesQuery, hasBatchData);
   const batchesInitialError = batchesQuery.isError && !hasBatchData;
   const selectedBatch = useMemo(
     () => batches.find((b) => b.batch_id === selectedBatchId) ?? null,
@@ -194,6 +203,15 @@ export function AnnotatePage() {
   const taskListData = taskListQuery.data;
   const hasTaskData = taskListData !== undefined;
   const tasksLoading = taskListQuery.isLoading && !hasTaskData;
+  const tasksInitialPaused = isInitialQueryPaused(taskListQuery, hasTaskData);
+  const tasksRefreshPaused = isRefreshQueryPaused(taskListQuery, hasTaskData);
+  const taskListPaused = isQueryPaused(taskListQuery);
+  const [loadMoreRequested, setLoadMoreRequested] = useState(false);
+  useEffect(() => {
+    if (!taskListPaused && !taskListQuery.isFetchingNextPage) {
+      setLoadMoreRequested(false);
+    }
+  }, [taskListPaused, taskListQuery.isFetchingNextPage]);
   const tasks = useMemo(() => flattenTaskPages(taskListData?.pages), [taskListData?.pages]);
   const total = taskListData?.pages[0]?.total ?? tasks.length;
 
@@ -256,6 +274,8 @@ export function AnnotatePage() {
         </div>
         {batchesLoading ? (
           <div className={styles.sidebarLoading}>加载中...</div>
+        ) : batchesInitialPaused ? (
+          <QueryPausedState resource="分派批次" compact />
         ) : batchesInitialError ? (
           <QueryErrorState
             resource="分派批次"
@@ -376,12 +396,18 @@ export function AnnotatePage() {
           </div>
         )}
 
+        {batchesRefreshPaused && <QueryPausedNotice resource="分派批次" />}
+
         {batchesQuery.isError && hasBatchData && (
           <RefreshNotice
             resource="分派批次"
             error={batchesQuery.error}
             onRetry={() => void batchesQuery.refetch()}
           />
+        )}
+
+        {tasksRefreshPaused && (
+          <QueryPausedNotice resource={loadMoreRequested ? "更多任务" : "任务列表"} />
         )}
 
         {selectedBatch && taskListQuery.isError && hasTaskData && (
@@ -395,6 +421,8 @@ export function AnnotatePage() {
         {!selectedBatch ? (
           batchesLoading ? (
             <div className={styles.loadingState}>加载中...</div>
+          ) : batchesInitialPaused ? (
+            <QueryPausedState resource="分派批次" />
           ) : batchesInitialError ? (
             <QueryErrorState
               resource="分派批次"
@@ -411,6 +439,8 @@ export function AnnotatePage() {
           )
         ) : tasksLoading ? (
           <div className={styles.loadingState}>加载中...</div>
+        ) : tasksInitialPaused ? (
+          <QueryPausedState resource="任务列表" />
         ) : taskListQuery.isError && !hasTaskData ? (
           <QueryErrorState
             resource="任务列表"
@@ -442,9 +472,10 @@ export function AnnotatePage() {
                 <Button
                   size="sm"
                   disabled={taskListQuery.isFetchingNextPage}
-                  onClick={() =>
-                    void Promise.resolve(taskListQuery.fetchNextPage()).catch(() => undefined)
-                  }
+                  onClick={() => {
+                    setLoadMoreRequested(true);
+                    void Promise.resolve(taskListQuery.fetchNextPage()).catch(() => undefined);
+                  }}
                 >
                   {taskListQuery.isFetchingNextPage ? "加载中…" : "加载更多"}
                 </Button>

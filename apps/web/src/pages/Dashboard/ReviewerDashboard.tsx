@@ -16,6 +16,12 @@ import type { ReviewTaskItem, RecentReviewItem } from "@/api/dashboard";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import { RejectReasonModal } from "@/pages/Review/RejectReasonModal";
 import { PageContainer } from "@/components/layout/PageContainer";
+import {
+  isInitialQueryPaused,
+  isRefreshQueryPaused,
+  QueryPausedNotice,
+  QueryPausedState,
+} from "@/pages/shared/QueryState";
 
 const CARD_TITLE = "m-0 text-sm font-semibold";
 const CARD_HEADER_PLAIN = "border-b border-border px-4 py-3.5";
@@ -91,11 +97,15 @@ export function ReviewerDashboard() {
   const stats = statsQuery.data;
   const hasStatsData = statsQuery.data !== undefined;
   const statsLoading = statsQuery.isLoading && !hasStatsData;
+  const statsInitialPaused = isInitialQueryPaused(statsQuery, hasStatsData);
+  const statsRefreshPaused = isRefreshQueryPaused(statsQuery, hasStatsData);
   const statsInitialError = statsQuery.isError && !hasStatsData;
   const recentReviewsQuery = useMyRecentReviews(20);
   const recentReviews = recentReviewsQuery.data ?? [];
   const hasRecentReviewsData = recentReviewsQuery.data !== undefined;
   const recentReviewsLoading = recentReviewsQuery.isLoading && !hasRecentReviewsData;
+  const recentReviewsInitialPaused = isInitialQueryPaused(recentReviewsQuery, hasRecentReviewsData);
+  const recentReviewsRefreshPaused = isRefreshQueryPaused(recentReviewsQuery, hasRecentReviewsData);
   const recentReviewsInitialError = recentReviewsQuery.isError && !hasRecentReviewsData;
   const navigate = useNavigate();
   const location = useLocation();
@@ -133,6 +143,14 @@ export function ReviewerDashboard() {
     setRejectingTaskId(null);
   };
 
+  if (statsInitialPaused) {
+    return (
+      <PageContainer>
+        <QueryPausedState resource="审核统计" />
+      </PageContainer>
+    );
+  }
+
   if (statsInitialError) {
     return (
       <PageContainer>
@@ -151,6 +169,7 @@ export function ReviewerDashboard() {
 
   return (
     <PageContainer>
+      {statsRefreshPaused && <QueryPausedNotice resource="审核统计" />}
       {statsQuery.isError && hasStatsData && (
         <RefreshNotice
           resource="审核统计"
@@ -316,8 +335,17 @@ export function ReviewerDashboard() {
               />
             </div>
           )}
+          {recentReviewsRefreshPaused && (
+            <div className="px-4 pt-3">
+              <QueryPausedNotice resource="最近审核记录" />
+            </div>
+          )}
           {recentReviewsLoading ? (
             <div className="px-4 py-8 text-center text-sm text-muted-foreground">加载中...</div>
+          ) : recentReviewsInitialPaused ? (
+            <div className="p-4">
+              <QueryPausedState resource="最近审核记录" compact />
+            </div>
           ) : recentReviewsInitialError ? (
             <div className="p-4">
               <QueryErrorState

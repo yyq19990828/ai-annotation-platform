@@ -12,6 +12,12 @@ import { useMyBatches } from "@/hooks/useDashboard";
 import { ApiError } from "@/api/client";
 import { batchesApi, type BatchResponse } from "@/api/batches";
 import type { MyBatchItem } from "@/api/dashboard";
+import {
+  isInitialQueryPaused,
+  isRefreshQueryPaused,
+  QueryPausedNotice,
+  QueryPausedState,
+} from "@/pages/shared/QueryState";
 
 const STATUS_LABEL: Record<
   string,
@@ -93,6 +99,8 @@ export function MyBatchesCard() {
   const batches = batchesQuery.data ?? [];
   const hasBatchData = batchesQuery.data !== undefined;
   const isLoading = batchesQuery.isLoading && !hasBatchData;
+  const initialPaused = isInitialQueryPaused(batchesQuery, hasBatchData);
+  const refreshPaused = isRefreshQueryPaused(batchesQuery, hasBatchData);
   const navigate = useNavigate();
   const pushToast = useToastStore((s) => s.push);
   const qc = useQueryClient();
@@ -125,6 +133,19 @@ export function MyBatchesCard() {
       return next;
     });
   };
+
+  if (initialPaused) {
+    return (
+      <div className="mt-4">
+        <Card>
+          <div className="border-b border-border px-4 py-3.5">
+            <h3 className="m-0 text-sm font-semibold">我的批次</h3>
+          </div>
+          <QueryPausedState resource="分派批次" compact />
+        </Card>
+      </div>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -241,6 +262,7 @@ export function MyBatchesCard() {
             </div>
           )}
         </div>
+        {refreshPaused && <QueryPausedNotice resource="分派批次" />}
         {batchesQuery.isError && hasBatchData && (
           <div
             role="alert"

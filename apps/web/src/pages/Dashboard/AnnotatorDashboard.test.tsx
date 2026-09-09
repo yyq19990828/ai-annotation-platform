@@ -70,6 +70,21 @@ describe("AnnotatorDashboard", () => {
     expect(screen.getByText("加载中...")).toBeInTheDocument();
   });
 
+  it("统计首屏离线暂停 → 显示等待网络连接", () => {
+    mockUseAnnotatorStats.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: false,
+      isPaused: true,
+      fetchStatus: "paused",
+    });
+    mockUseProjects.mockReturnValue({ data: [] });
+    renderUI();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "网络连接已断开，标注统计会在恢复后自动继续",
+    );
+  });
+
   it("stats=null（未加载完）→ 显示加载中文案，不崩", () => {
     mockUseAnnotatorStats.mockReturnValue({ data: null, isLoading: false });
     mockUseProjects.mockReturnValue({ data: [] });
@@ -125,6 +140,22 @@ describe("AnnotatorDashboard", () => {
     expect(screen.queryByText("暂无分配项目")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
     expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  it("项目首屏离线暂停 → 显示等待网络连接而不是暂无分配项目", () => {
+    mockUseAnnotatorStats.mockReturnValue({ data: fullStats, isLoading: false });
+    mockUseProjects.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: false,
+      isPaused: true,
+      fetchStatus: "paused",
+    });
+    renderUI();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "网络连接已断开，项目列表会在恢复后自动继续",
+    );
+    expect(screen.queryByText("暂无分配项目")).not.toBeInTheDocument();
   });
 
   it("项目刷新失败 → 保留已有项目行并提示更新失败", () => {
