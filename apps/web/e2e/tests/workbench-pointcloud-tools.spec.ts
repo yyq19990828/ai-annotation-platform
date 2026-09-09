@@ -451,13 +451,14 @@ test.describe("workbench pointcloud tools (键盘 handler 守护)", () => {
         pointIndex: number;
         position: [number, number, number];
       }> = [];
+      // MouseEvent client coordinates are integers; probe the same pixels the clicks use.
       for (
-        let y = bounds.top + bounds.height * 0.15;
+        let y = Math.ceil(bounds.top + bounds.height * 0.15);
         y <= bounds.bottom - bounds.height * 0.15;
         y += 8
       ) {
         for (
-          let x = bounds.left + bounds.width * 0.15;
+          let x = Math.ceil(bounds.left + bounds.width * 0.15);
           x <= bounds.right - bounds.width * 0.15;
           x += 8
         ) {
