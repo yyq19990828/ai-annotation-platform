@@ -112,6 +112,54 @@ def test_issue_context_fixture_has_180_unique_decoded_frame_identities(tmp_path)
     ) == list(range(0, 180, 30))
     assert len({tuple(frame["center_bits"]) for frame in expected["frames"]}) == 180
 
+    chunks = meta["chunks"]
+    assert meta["chunk_size_frames"] == 60
+    assert [(chunk["start_frame"], chunk["end_frame"]) for chunk in chunks] == [
+        (0, 59),
+        (60, 119),
+        (120, 179),
+    ]
+    for chunk in chunks:
+        assert chunk["generation_mode"] == "transcode"
+        assert sorted(sample["frame_index"] for sample in chunk["samples"]) == list(
+            range(chunk["start_frame"], chunk["end_frame"] + 1)
+        )
+        assert chunk["codec_string"] and chunk["description"]
+        for sample in chunk["samples"]:
+            assert 0 <= sample["offset_in_chunk"]
+            assert sample["size_bytes"] > 0
+            assert sample["offset_in_chunk"] + sample["size_bytes"] <= len(
+                chunk["bytes"]
+            )
+
+        decoded_chunk = subprocess.run(
+            [
+                "ffmpeg",
+                "-v",
+                "error",
+                "-i",
+                str(tmp_path / f"chunk-{chunk['chunk_id']:04d}.mp4"),
+                "-f",
+                "rawvideo",
+                "-pix_fmt",
+                "rgb24",
+                "-",
+            ],
+            capture_output=True,
+            check=True,
+        )
+        chunk_pixels = np.frombuffer(decoded_chunk.stdout, dtype=np.uint8).reshape(
+            60, 120, 160, 3
+        )
+        for index, pixels in enumerate(chunk_pixels):
+            frame = expected["frames"][chunk["start_frame"] + index]
+            for region in expected["sample_regions"]["center_bits"]:
+                x = round((region["x"] + region["w"] / 2) * 160)
+                y = round((region["y"] + region["h"] / 2) * 120)
+                bit = frame["center_bits"][region["bit"]]
+                luma = pixels[y - 2 : y + 3, x - 2 : x + 3].mean()
+                assert luma > 160 if bit else luma < 95
+
     # Decode the actual MP4, then verify every signature in presentation order.
     decoded = subprocess.run(
         [
@@ -150,6 +198,19 @@ def test_existing_fixture_pixel_contract_does_not_gain_center_code():
         expected = frame_expectations(name)
         assert "center_bits" not in expected["sample_regions"]
         assert all("center_bits" not in frame for frame in expected["frames"])
+
+
+def test_issue_context_chunks_follow_configured_size_without_keyframe_alignment(
+    tmp_path,
+):
+    meta = generate_fixture("h264-issue-context", tmp_path, chunk_size_frames=64)
+    assert meta["chunk_size_frames"] == 64
+    assert [(chunk["start_frame"], chunk["end_frame"]) for chunk in meta["chunks"]] == [
+        (0, 63),
+        (64, 127),
+        (128, 179),
+    ]
+    assert [len(chunk["samples"]) for chunk in meta["chunks"]] == [64, 64, 52]
 
 
 def test_boundary_fixture_has_multiple_gops(tmp_path):

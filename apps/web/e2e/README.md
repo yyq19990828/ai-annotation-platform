@@ -97,6 +97,8 @@ PLAYWRIGHT_AI_REQUEST_WORKER=1 pnpm test:e2e \
 
 ## WebCodecs 精确帧 E2E
 
+视频 Issue 的 180 帧夹具按测试 API 的 `VIDEO_CHUNK_SIZE_FRAMES` 生成完整真实分片，默认三块，每块 60 帧。测试开始前核对正式 manifest 与分片范围、就绪状态；不能依赖未启动的媒体 worker 补齐缺失分片。像素身份仍从实际编码视频验证。诊断收集器只允许明确端点的生命周期取消（心跳、会话统计及帧预览等）；标注、Issue 写入失败与 HTTP 错误仍须报告。
+
 `e2e/tests/video-webcodecs-precise-frame.spec.ts` 用 `seed/video-webcodecs`
 造确定性 H.264 fixture（baseline / 主 profile B 帧 / 短 GOP / VFR），验证精确帧
 pipeline 的开关边界、精确解码或安全回退、pending→ready 切换。视频舞台容器暴露

@@ -24,7 +24,7 @@ import numpy as np
 from PIL import Image
 
 from app.workers.media_codec import _extract_decoder_config
-from app.workers.media_chunks import extract_video_chunk_smart_copy
+from app.workers.media_chunks import extract_video_chunk, extract_video_chunk_smart_copy
 from app.workers.media_probe import probe_chunk_samples, probe_video_frame_timetable
 
 FRAME_W = 160
@@ -204,7 +204,12 @@ def _ffmpeg_encode(spec: dict[str, Any], frames_dir: Path, out: Path) -> None:
         )
 
 
-def generate_fixture(fixture: str, tmpdir: str | Path) -> dict[str, Any]:
+def generate_fixture(
+    fixture: str,
+    tmpdir: str | Path,
+    *,
+    chunk_size_frames: int = QUALIFICATION_CHUNK_SIZE_FRAMES,
+) -> dict[str, Any]:
     """生成真实编码 fixture 的 mp4 bytes 与生产同结构 chunk samples / codec metadata。
 
     返回:{mp4_bytes, samples, codec_string, description, width, height, fps, frame_count}。
@@ -235,7 +240,7 @@ def generate_fixture(fixture: str, tmpdir: str | Path) -> dict[str, Any]:
     duration_ms = max(
         int(sample["pts_ms"]) + int(sample["duration_ms"]) for sample in samples
     )
-    return {
+    meta = {
         "mp4_bytes": out.read_bytes(),
         "frame_timetable": probe_video_frame_timetable(out),
         "samples": samples,
@@ -247,6 +252,70 @@ def generate_fixture(fixture: str, tmpdir: str | Path) -> dict[str, Any]:
         "frame_count": spec["frames"],
         "duration_ms": duration_ms,
     }
+    if fixture == "h264-issue-context":
+        # Frame-count transcode keeps B-frame packet overlap out of chunk boundaries.
+        meta["chunk_size_frames"] = chunk_size_frames
+        meta["chunks"] = _generate_chunks(
+            out,
+            Path(tmpdir),
+            spec["frames"],
+            FRAME_FPS,
+            chunk_size_frames,
+            generation_mode="transcode",
+        )
+    return meta
+
+
+def _generate_chunks(
+    source: Path,
+    root: Path,
+    frame_count: int,
+    fps: int,
+    chunk_size_frames: int,
+    *,
+    generation_mode: Literal["smart_copy", "transcode"],
+) -> list[dict[str, Any]]:
+    chunks: list[dict[str, Any]] = []
+    for chunk_id, start_frame in enumerate(range(0, frame_count, chunk_size_frames)):
+        chunk_frames = min(chunk_size_frames, frame_count - start_frame)
+        start_ms = round(start_frame / fps * 1000)
+        duration_ms = round(chunk_frames / fps * 1000)
+        chunk_path = root / f"chunk-{chunk_id:04d}.mp4"
+        if generation_mode == "smart_copy":
+            extract_video_chunk_smart_copy(source, chunk_path, start_ms, duration_ms)
+        else:
+            # Seek just before fractional frame timestamps so rounding cannot drop the first frame.
+            extract_video_chunk(
+                source, chunk_path, int(start_frame / fps * 1000), chunk_frames
+            )
+        samples = probe_chunk_samples(chunk_path, start_frame)
+        codec, description = _extract_decoder_config(chunk_path)
+        expected_indexes = list(range(start_frame, start_frame + chunk_frames))
+        if (
+            not codec
+            or not description
+            or sorted(int(sample["frame_index"]) for sample in samples)
+            != expected_indexes
+        ):
+            raise RuntimeError(
+                f"webcodecs fixture chunk {chunk_id} did not preserve "
+                f"the {chunk_frames}-frame contract"
+            )
+        chunks.append(
+            {
+                "chunk_id": chunk_id,
+                "generation_mode": generation_mode,
+                "start_frame": start_frame,
+                "end_frame": start_frame + chunk_frames - 1,
+                "start_pts_ms": start_ms,
+                "end_pts_ms": start_ms + duration_ms,
+                "bytes": chunk_path.read_bytes(),
+                "samples": samples,
+                "codec_string": codec,
+                "description": description,
+            }
+        )
+    return chunks
 
 
 def generate_qualification_fixture(fixture: str, tmpdir: str | Path) -> dict[str, Any]:
@@ -308,41 +377,14 @@ def generate_qualification_fixture(fixture: str, tmpdir: str | Path) -> dict[str
             or f"webcodecs qualification fixture {fixture} encode failed"
         )
 
-    chunks: list[dict[str, Any]] = []
-    for chunk_id, start_frame in enumerate(
-        range(0, frame_count, QUALIFICATION_CHUNK_SIZE_FRAMES)
-    ):
-        chunk_frames = min(QUALIFICATION_CHUNK_SIZE_FRAMES, frame_count - start_frame)
-        start_ms = round(start_frame / spec["fps"] * 1000)
-        duration_ms = round(chunk_frames / spec["fps"] * 1000)
-        chunk_path = root / f"chunk-{chunk_id:04d}.mp4"
-        extract_video_chunk_smart_copy(source, chunk_path, start_ms, duration_ms)
-        samples = probe_chunk_samples(chunk_path, start_frame)
-        codec, description = _extract_decoder_config(chunk_path)
-        expected_indexes = list(range(start_frame, start_frame + chunk_frames))
-        if (
-            not codec
-            or not description
-            or sorted(int(sample["frame_index"]) for sample in samples)
-            != expected_indexes
-        ):
-            raise RuntimeError(
-                f"webcodecs qualification fixture {fixture} chunk {chunk_id} "
-                "did not preserve the 60-frame contract"
-            )
-        chunks.append(
-            {
-                "chunk_id": chunk_id,
-                "start_frame": start_frame,
-                "end_frame": start_frame + chunk_frames - 1,
-                "start_pts_ms": start_ms,
-                "end_pts_ms": start_ms + duration_ms,
-                "bytes": chunk_path.read_bytes(),
-                "samples": samples,
-                "codec_string": codec,
-                "description": description,
-            }
-        )
+    chunks = _generate_chunks(
+        source,
+        root,
+        frame_count,
+        spec["fps"],
+        QUALIFICATION_CHUNK_SIZE_FRAMES,
+        generation_mode="smart_copy",
+    )
     return {
         "mp4_bytes": source.read_bytes(),
         "frame_timetable": probe_video_frame_timetable(source),
