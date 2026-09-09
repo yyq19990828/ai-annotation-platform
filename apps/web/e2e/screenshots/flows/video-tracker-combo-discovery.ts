@@ -1,3 +1,4 @@
+import { openContextToolbar } from "../../fixtures/context-toolbar";
 /**
  * 高清母版：SAM3 combo 先按文本发现，再用逐对象 PVS memory 跨窗追踪并人工采纳。
  */
@@ -161,6 +162,11 @@ export async function runVideoTrackerComboDiscovery(
   page.on("response", collectServerError);
   try {
     await dialog.getByRole("button", { name: "开始发现" }).click();
+    await page.getByTestId("tool-btn-select").click();
+    await page
+      .getByTestId("tracker-review-tool-capsule")
+      .waitFor({ state: "visible", timeout: 120_000 });
+    await openContextToolbar(page, "tracker-review");
     const review = page.getByTestId("video-tracker-review-bar");
     await review.waitFor({ state: "visible", timeout: 120_000 });
     await review.getByText(/当前选区 217 个候选/).waitFor({ timeout: 5_000 });

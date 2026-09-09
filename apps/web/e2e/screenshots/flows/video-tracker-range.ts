@@ -1,3 +1,4 @@
+import { openContextToolbar } from "../../fixtures/context-toolbar";
 /** Record a seeded range brush, real tracking, and the saved trajectory within that range. */
 import { expect, type Page } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
@@ -155,6 +156,11 @@ export async function runVideoTrackerRange(
   expect(
     preview.results.every((result) => result.frame_index >= 0 && result.frame_index <= endFrame),
   ).toBe(true);
+  await page.getByTestId("tool-btn-select").click();
+  await page
+    .getByTestId("tracker-review-tool-capsule")
+    .waitFor({ state: "visible", timeout: 120_000 });
+  await openContextToolbar(page, "tracker-review");
   const review = page.getByTestId("video-tracker-review-bar");
   await expect(review).toBeVisible({ timeout: 10_000 });
   await page.getByRole("tab", { name: "标注详情", exact: true }).click();

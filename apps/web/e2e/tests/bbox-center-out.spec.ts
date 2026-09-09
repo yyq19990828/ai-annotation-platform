@@ -1,3 +1,4 @@
+import { openContextToolbar } from "../fixtures/context-toolbar";
 import type { APIRequestContext, APIResponse, Page, Response } from "@playwright/test";
 import {
   expect,
@@ -578,17 +579,21 @@ test.describe("H1 candidate modifier compatibility", () => {
     await open(page, fixture);
     await mode(page, "中心").click();
     await page.getByTestId("tool-btn-smart-point").click();
+    await openContextToolbar(page, "interactive");
     await expect(page.getByTestId("single-frame-output-geometry-select")).toHaveValue("mask");
     const b = await bounds(page);
     const generated = page.waitForResponse(inference);
     await page.mouse.click(b.x + b.width * 0.6, b.y + b.height * 0.5);
     expect((await generated).ok()).toBe(true);
+    await expect(page.getByTestId("interactive-toolbar")).toBeHidden();
     const count = page.getByTestId("interactive-candidate-count");
     await expect(count).toContainText(/1\s*\/\s*3/);
     // The native preview owner decodes only the active mask. Modifier clicks must consume
     // its actual foreground without adding a fresh inference prompt or bbox draft.
+    await page.getByTestId("interactive-settings-trigger").hover();
     await page.getByTestId("interactive-candidate-next").click();
     await expect(count).toContainText(/2\s*\/\s*3/);
+    await page.getByTestId("interactive-settings-trigger").hover();
     await page.getByTestId("interactive-candidate-next").click();
     await expect(count).toContainText(/3\s*\/\s*3/);
     for (const [modifier, point, expected] of [
@@ -596,6 +601,7 @@ test.describe("H1 candidate modifier compatibility", () => {
       ["Meta", [0.2, 0.6], 2],
     ] as const) {
       if (expected === 2) {
+        await page.getByTestId("interactive-settings-trigger").hover();
         await page.getByTestId("interactive-candidate-previous").click();
         await expect(count).toContainText(/2\s*\/\s*3/);
       }
@@ -612,6 +618,7 @@ test.describe("H1 candidate modifier compatibility", () => {
     }
     expect(fixture.writes).toEqual([]);
     expect(fixture.prompts).toHaveLength(1);
+    await page.getByTestId("interactive-settings-trigger").hover();
     await page.getByTestId("interactive-candidate-accept").click();
     await expect(picker(page)).toBeVisible();
     const accepted = page.waitForResponse(

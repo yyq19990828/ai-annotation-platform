@@ -1,3 +1,4 @@
+import { openContextToolbar } from "../../fixtures/context-toolbar";
 /**
  * 流程录制：在同一条真实中间卡车轨迹上对比纯几何复制与 SAM3 AI 延展。
  */
@@ -203,6 +204,11 @@ export async function runVideoPropagateTrackVsCopy(
     }
     onJobCreated(createdPayload.id);
 
+    await page.getByTestId("tool-btn-select").click();
+    await page
+      .getByTestId("tracker-review-tool-capsule")
+      .waitFor({ state: "visible", timeout: 120_000 });
+    await openContextToolbar(page, "tracker-review");
     const review = page.getByTestId("video-tracker-review-bar");
     await review.waitFor({ state: "visible", timeout: 120_000 });
     await review.getByTestId("tracker-review-instance-1").waitFor({ timeout: 5_000 });

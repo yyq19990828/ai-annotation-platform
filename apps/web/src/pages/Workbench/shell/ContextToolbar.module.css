@@ -1,5 +1,13 @@
 .capsule {
-  transition: opacity 100ms ease 140ms;
+  --toolbar-expanded-width: max(160px, calc(var(--toolbar-compact-width, 0px) + 22px));
+  width: var(--toolbar-compact-width, max-content);
+  transition:
+    width 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 100ms ease 140ms;
+}
+
+.capsule[data-expanded="true"][data-panel-open="false"] {
+  width: var(--toolbar-expanded-width);
 }
 
 .capsule[data-panel-open="true"] {
@@ -59,4 +67,32 @@
   .panel[data-motion-ready="true"][data-state] {
     animation-duration: 1ms;
   }
+}
+
+/* Width and disclosure height share timing; both grow from the same top-left anchor. */
+.quickDisclosure {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    grid-template-rows 160ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 120ms ease,
+    visibility 160ms;
+}
+
+.quickDisclosureOpen {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quickDisclosure {
+    transition: none;
+  }
+}
+
+.quickContent {
+  width: var(--toolbar-expanded-width);
 }

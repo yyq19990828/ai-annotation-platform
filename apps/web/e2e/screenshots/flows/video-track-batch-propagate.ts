@@ -1,3 +1,4 @@
+import { openContextToolbar } from "../../fixtures/context-toolbar";
 /**
  * 流程录制：两条已有公交车轨迹多选后，以一个真实 SAM3 作业批量延展、跨帧复核并回填原轨迹。
  */
@@ -208,6 +209,11 @@ export async function runVideoTrackBatchPropagate(
     if (!createdPayload.id) throw new Error("[video-track-batch-propagate] 追踪作业未返回 ID");
     onJobCreated(createdPayload.id);
 
+    await page.getByTestId("tool-btn-select").click();
+    await page
+      .getByTestId("tracker-review-tool-capsule")
+      .waitFor({ state: "visible", timeout: 120_000 });
+    await openContextToolbar(page, "tracker-review");
     const reviewBar = page.getByTestId("video-tracker-review-bar");
     await reviewBar.waitFor({ state: "visible", timeout: 120_000 });
     await reviewBar.getByText(/当前选区 \d+ 个候选/).waitFor({ timeout: 5_000 });

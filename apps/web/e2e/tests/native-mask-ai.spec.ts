@@ -1,3 +1,4 @@
+import { openContextToolbar } from "../fixtures/context-toolbar";
 import { openMaskSettings, closeMaskSettings } from "../fixtures/mask-toolbar";
 import type { APIResponse, Page, Request } from "@playwright/test";
 import { expect, test, type SeedNativeMaskCandidateData } from "../fixtures/seed";
@@ -212,6 +213,7 @@ async function generateAndAccept(
   await expect(point).toBeVisible({ timeout: 15_000 });
   await expect(point).not.toHaveAttribute("aria-disabled", "true");
   await point.click();
+  await openContextToolbar(page, "interactive");
   await expect(page.getByTestId("single-frame-output-geometry-select")).toHaveValue("mask");
 
   const box = await stage.boundingBox();
@@ -347,6 +349,7 @@ test.describe("native Mask interactive candidate acceptance", () => {
     const stage = page.getByTestId("workbench-stage");
     await expect(stage).toBeVisible({ timeout: 20_000 });
     await page.getByTestId("tool-btn-smart-point").click();
+    await openContextToolbar(page, "interactive");
     const output = page.getByTestId("single-frame-output-geometry-select");
     await expect(output).toHaveValue("polygon");
     await expect(output).toHaveAttribute("title", "当前模型未声明原生 Mask 输出能力");
@@ -779,6 +782,7 @@ test.describe("native Mask interactive candidate acceptance", () => {
     await expect(point).not.toHaveAttribute("aria-disabled", "true");
     await point.click();
     await expect(page.getByTestId("mask-prompt-source")).toContainText("精修 Mask");
+    await openContextToolbar(page, "interactive");
     const polarity = page.getByTestId("ai-tool-polarity");
     await polarity.click();
     await expect(polarity).toHaveAttribute("title", /负向/);

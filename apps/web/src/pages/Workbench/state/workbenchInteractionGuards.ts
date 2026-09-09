@@ -2,7 +2,7 @@
 export function isWorkbenchInteractionBlocked(event: Event): boolean {
   if (typeof document === "undefined") return false;
   const selector =
-    "[data-workbench-settings], [data-workbench-tool-menu], [data-workbench-ai-toolbar], [data-workbench-context-toolbar], [data-workbench-track-context], [data-workbench-tracker-review], [data-workbench-video-tool-confirm], [data-workbench-issue-navigation], [data-workbench-issue-create], [data-workbench-polygon-trace]";
+    "[data-workbench-settings], [data-workbench-tool-menu], [data-workbench-ai-toolbar], [data-workbench-context-toolbar], [data-workbench-context-primary], [data-workbench-track-context], [data-workbench-tracker-review], [data-workbench-video-tool-confirm], [data-workbench-issue-navigation], [data-workbench-issue-create], [data-workbench-polygon-trace]";
   const triggerSelector =
     "[data-workbench-tool-menu-trigger], [data-workbench-context-toolbar-trigger]";
   // Closing may remove the marker before a later window listener sees this same event.

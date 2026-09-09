@@ -1,3 +1,4 @@
+import { openContextToolbar } from "../../fixtures/context-toolbar";
 import type { ScreenshotScene } from "./_types";
 
 const DARK_WORKBENCH_MATRIX: NonNullable<ScreenshotScene["matrix"]> = {
@@ -80,7 +81,7 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
       if (!(await button.isEnabled()))
         throw new Error("sam/smart-point-toolbar: smart-point 被禁用");
       await button.click();
-      await page.getByTestId("interactive-toolbar").waitFor({ state: "visible" });
+      await openContextToolbar(page, "interactive");
       await page.waitForTimeout(200);
     },
     capture: { kind: "locator", selector: '[data-testid="interactive-toolbar"]', padding: 8 },
@@ -103,7 +104,7 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
       await button.waitFor({ state: "visible" });
       if (!(await button.isEnabled())) throw new Error("sam/interactive-toolbar: smart-box 被禁用");
       await button.click();
-      await page.getByTestId("interactive-toolbar").waitFor({ state: "visible" });
+      await openContextToolbar(page, "interactive");
       await page.waitForTimeout(200);
     },
     capture: { kind: "locator", selector: '[data-testid="interactive-toolbar"]', padding: 8 },
@@ -126,7 +127,7 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
       await button.waitFor({ state: "visible" });
       if (!(await button.isEnabled())) throw new Error("sam/magic-box-toolbar: magic-box 被禁用");
       await button.click();
-      await page.getByTestId("interactive-toolbar").waitFor({ state: "visible" });
+      await openContextToolbar(page, "interactive");
       await page.waitForTimeout(200);
     },
     capture: { kind: "locator", selector: '[data-testid="interactive-toolbar"]', padding: 8 },
@@ -149,6 +150,7 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
       await btn.waitFor({ state: "visible" });
       if (!(await btn.isEnabled())) throw new Error("sam/exemplar-output-mode: exemplar 被禁用");
       await btn.click({ timeout: 4000 });
+      await openContextToolbar(page, "interactive");
       await page.waitForSelector('[data-testid="exemplar-output-mode"]', { timeout: 3000 });
       await page.waitForTimeout(200);
     },

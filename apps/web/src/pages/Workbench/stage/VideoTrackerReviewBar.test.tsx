@@ -1,5 +1,15 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render as rtlRender, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+function render(ui: Parameters<typeof rtlRender>[0]) {
+  const result = rtlRender(ui);
+  const trigger = screen.queryByTestId("tracker-review-settings-trigger");
+  if (trigger) {
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("button", { name: "更多 追踪审阅 工具" }));
+  }
+  return result;
+}
 
 import type { VideoTrackerJobPreview } from "@/api/videoTracker";
 import type { TrackerReviewDecisionOutcome } from "@/hooks/useVideoTrackerJobs";
@@ -75,6 +85,28 @@ function deferredOutcome() {
 afterEach(() => vi.restoreAllMocks());
 
 describe("VideoTrackerReviewBar", () => {
+  it("keeps selected scope and decisions visible when collapsed without clearing pending work", async () => {
+    const deferred = deferredOutcome();
+    const initial = props({ onDecide: vi.fn().mockReturnValue(deferred.promise) });
+    const view = rtlRender(<VideoTrackerReviewBar {...initial} />);
+    expect(screen.getByTestId("tracker-review-scope-summary")).toHaveTextContent("F10–F12");
+    fireEvent.click(screen.getByTestId("tracker-review-accept"));
+    expect(initial.onDecide).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByTestId("tracker-review-settings-trigger"));
+    fireEvent.click(screen.getByRole("button", { name: "更多 追踪审阅 工具" }));
+    expect(screen.getByTestId("tracker-review-accept")).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "收起" }));
+    expect(screen.getByTestId("tracker-review-accept")).toBeDisabled();
+    view.rerender(<VideoTrackerReviewBar {...initial} presentationHidden />);
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    await act(async () => deferred.resolve({ ok: false, reason: "manual_keyframe_protected" }));
+    expect(confirm).not.toHaveBeenCalled();
+    expect(initial.onDecide).toHaveBeenCalledOnce();
+    view.rerender(<VideoTrackerReviewBar {...initial} />);
+    expect(screen.getByTestId("tracker-review-accept")).toBeEnabled();
+    expect(initial.onSetInstances).not.toHaveBeenCalled();
+    expect(initial.onSetWindow).not.toHaveBeenCalled();
+  });
   it("没有当前审阅任务时不渲染", () => {
     render(<VideoTrackerReviewBar {...props({ review: null })} />);
     expect(screen.queryByTestId("video-tracker-review-bar")).toBeNull();
@@ -129,6 +161,13 @@ describe("VideoTrackerReviewBar", () => {
         review={review({ instanceIds: ["B"] }, { ...preview, job_id: "job-2" })}
       />,
     );
+    expect(screen.queryByTestId("tracker-review-job")).toBeNull();
+    expect(screen.getByTestId("video-tracker-review-compact")).toHaveAttribute(
+      "data-review-job-id",
+      "job-2",
+    );
+    fireEvent.click(screen.getByTestId("tracker-review-settings-trigger"));
+    fireEvent.click(screen.getByRole("button", { name: "更多 追踪审阅 工具" }));
     expect(screen.getByTestId("tracker-review-job")).toHaveValue("job-2");
     expect(screen.getByTestId("video-tracker-review-bar")).toHaveAttribute(
       "data-review-job-id",
