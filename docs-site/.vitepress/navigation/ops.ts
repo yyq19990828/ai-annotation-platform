@@ -14,6 +14,7 @@ export const opsSidebar: DefaultTheme.SidebarItem[] = [
       { text: "部署总览", link: "/ops/deploy/" },
       { text: "开发部署（本地）", link: "/ops/deploy/development" },
       { text: "生产部署（Docker Compose）", link: "/ops/deploy/docker-compose" },
+      { text: "局域网生产部署", link: "/ops/deploy/lan-production" },
       { text: "端口暴露与网络安全", link: "/ops/deploy/network-security" },
     ],
   },
