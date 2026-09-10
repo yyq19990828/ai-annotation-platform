@@ -1,23 +1,23 @@
 /**
- * v0.10.13 · E1 · AnnotationGuideSection 单测 — 编辑 / 预览 / 保存 mutation 主路径.
+ * AnnotationGuideSection 单测 — 共享编辑器接入 / 保存 mutation 主路径.
  *
  * 覆盖:
- * - 渲染 tabs (编辑 / 预览) 默认进入编辑 + 加载初值
- * - 切到预览 tab 渲染 GuideMarkdownView
- * - 修改 markdown → "保存" 触发 useUpdateProject.mutate({ annotation_guide })
+ * - 渲染共享编辑器 + 加载初值
+ * - 空指引显式插入 starter 模板
+ * - 修改 markdown → "保存" 触发 useUpdateProject.mutateAsync({ annotation_guide })
  * - 已上传 guide_assets 列表渲染 + 删除按钮调 useGuideAssets.deleteAsset
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 
-const mockMutate = vi.fn();
+const mockMutateAsync = vi.fn().mockResolvedValue({});
 const mockPushToast = vi.fn();
 const mockUploadAsset = vi.fn();
 const mockDeleteAsset = vi.fn();
 const mockSignAsset = vi.fn().mockResolvedValue("http://signed/x");
 
 vi.mock("@/hooks/useProjects", () => ({
-  useUpdateProject: () => ({ mutate: mockMutate, isPending: false }),
+  useUpdateProject: () => ({ mutateAsync: mockMutateAsync, isPending: false }),
 }));
 vi.mock("@/hooks/useGuideAssets", () => ({
   useGuideAssets: () => ({
@@ -93,18 +93,18 @@ function makeProject(
 
 describe("AnnotationGuideSection", () => {
   beforeEach(() => {
-    mockMutate.mockReset();
+    mockMutateAsync.mockReset().mockResolvedValue({});
     mockPushToast.mockReset();
     mockUploadAsset.mockReset();
     mockDeleteAsset.mockReset().mockResolvedValue(undefined);
     mockSignAsset.mockClear();
   });
 
-  it("加载初值并默认进入编辑 tab", async () => {
+  it("加载初值并渲染共享编辑器", async () => {
     render(<AnnotationGuideSection project={makeProject({ annotation_guide: "# 初始指引" })} />);
     const editor = await screen.findByTestId("markdown-editor");
     expect((editor as HTMLTextAreaElement).value).toBe("# 初始指引");
-    expect(screen.getByTestId("guide-tab-edit")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("heading", { level: 3, name: "标注指引" })).toBeInTheDocument();
   });
 
   it("修改 markdown 后失焦 → mutation 携带 annotation_guide", async () => {
@@ -112,25 +112,61 @@ describe("AnnotationGuideSection", () => {
     const editor = (await screen.findByTestId("markdown-editor")) as HTMLTextAreaElement;
     fireEvent.change(editor, { target: { value: "# 新指引\n第一条" } });
     fireEvent.blur(editor);
-    expect(mockMutate).toHaveBeenCalledWith(
-      { annotation_guide: "# 新指引\n第一条" },
-      expect.any(Object),
-    );
+    await waitFor(() => {
+      expect(mockMutateAsync).toHaveBeenCalledWith({ annotation_guide: "# 新指引\n第一条" });
+      expect(screen.getByTestId("guide-save-status")).toHaveTextContent("已保存");
+    });
   });
 
   it("内容未变化失焦 → 不触发 mutation", async () => {
     render(<AnnotationGuideSection project={makeProject({ annotation_guide: "# 初始" })} />);
     const editor = (await screen.findByTestId("markdown-editor")) as HTMLTextAreaElement;
     fireEvent.blur(editor);
-    expect(mockMutate).not.toHaveBeenCalled();
+    expect(mockMutateAsync).not.toHaveBeenCalled();
   });
 
-  it("切到预览 tab 渲染 markdown 内容", async () => {
-    render(<AnnotationGuideSection project={makeProject({ annotation_guide: "# 预览标题" })} />);
-    fireEvent.click(screen.getByTestId("guide-tab-preview"));
-    await waitFor(() => {
-      expect(screen.getByRole("heading", { level: 1, name: "预览标题" })).toBeInTheDocument();
-    });
+  it("旧项目保存未完成时切换项目不会写入新项目，且新项目可独立保存", async () => {
+    let resolveA: (() => void) | undefined;
+    mockMutateAsync.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveA = resolve;
+        }),
+    );
+
+    const { rerender } = render(
+      <AnnotationGuideSection project={makeProject({ id: "p-a", annotation_guide: "# A" })} />,
+    );
+    const editorA = (await screen.findByTestId("markdown-editor")) as HTMLTextAreaElement;
+    fireEvent.change(editorA, { target: { value: "# A 修改" } });
+    fireEvent.blur(editorA);
+    await waitFor(() =>
+      expect(mockMutateAsync).toHaveBeenCalledWith({ annotation_guide: "# A 修改" }),
+    );
+
+    rerender(
+      <AnnotationGuideSection project={makeProject({ id: "p-b", annotation_guide: "# B" })} />,
+    );
+    const editorB = (await screen.findByTestId("markdown-editor")) as HTMLTextAreaElement;
+    fireEvent.blur(editorB);
+    await waitFor(() => expect(mockMutateAsync).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(editorB, { target: { value: "# B 修改" } });
+    fireEvent.blur(editorB);
+    await waitFor(() =>
+      expect(mockMutateAsync).toHaveBeenCalledWith({ annotation_guide: "# B 修改" }),
+    );
+    expect(mockMutateAsync).toHaveBeenCalledTimes(2);
+
+    resolveA?.();
+  });
+
+  it("空指引仅在显式操作后插入 starter 模板", async () => {
+    render(<AnnotationGuideSection project={makeProject({ annotation_guide: "" })} />);
+    const editor = (await screen.findByTestId("markdown-editor")) as HTMLTextAreaElement;
+    expect(editor.value).toBe("");
+    fireEvent.click(screen.getByTestId("guide-starter"));
+    expect(editor.value).toContain("## 类别定义");
   });
 
   it("guide_assets 列表渲染 + 删除按钮调 deleteAsset", async () => {

@@ -1,0 +1,94 @@
+/**
+ * MDXEditor labels used by the annotation guide and template authoring surfaces.
+ *
+ * Keeping the translation function local means the editor can be loaded lazily
+ * without making the application i18n provider a dependency of this shared
+ * component.
+ */
+
+export const MARKDOWN_EDITOR_LABELS = {
+  edit: "编辑",
+  source: "源码",
+  preview: "预览",
+} as const;
+
+const TRANSLATIONS: Record<string, string> = {
+  "toolbar.richText": MARKDOWN_EDITOR_LABELS.edit,
+  "toolbar.source": MARKDOWN_EDITOR_LABELS.source,
+  "toolbar.diffMode": "差异",
+  "toolbar.undo": "撤销 {{shortcut}}",
+  "toolbar.redo": "重做 {{shortcut}}",
+  "toolbar.bold": "粗体",
+  "toolbar.removeBold": "取消粗体",
+  "toolbar.italic": "斜体",
+  "toolbar.removeItalic": "取消斜体",
+  "toolbar.strikethrough": "删除线",
+  "toolbar.removeStrikethrough": "取消删除线",
+  "toolbar.inlineCode": "行内代码",
+  "toolbar.removeInlineCode": "取消行内代码",
+  "toolbar.bulletedList": "无序列表",
+  "toolbar.numberedList": "有序列表",
+  "toolbar.checkList": "任务列表",
+  "toolbar.blockTypeSelect.selectBlockTypeTooltip": "选择段落类型",
+  "toolbar.blockTypeSelect.placeholder": "段落类型",
+  "toolbar.blockTypes.paragraph": "正文",
+  "toolbar.blockTypes.quote": "引用",
+  "toolbar.blockTypes.heading": "标题 {{level}}",
+  "toolbar.link": "插入链接",
+  "toolbar.image": "插入图片",
+  "toolbar.table": "插入表格",
+  "toolbar.codeBlock": "插入代码块",
+  "toolbar.toggleGroup": "工具栏分组",
+  "uploadImage.dialogTitle": "插入图片",
+  "uploadImage.uploadInstructions": "从设备上传图片：",
+  "uploadImage.addViaUrlInstructions": "或输入图片地址：",
+  "uploadImage.addViaUrlInstructionsNoUpload": "输入图片地址：",
+  "uploadImage.autoCompletePlaceholder": "选择或粘贴图片地址",
+  "uploadImage.alt": "替代文本",
+  "uploadImage.title": "标题",
+  "uploadImage.width": "宽度",
+  "uploadImage.height": "高度",
+  "dialogControls.save": "保存",
+  "dialogControls.cancel": "取消",
+  "dialog.close": "关闭",
+  "imageEditor.editImage": "编辑图片",
+  "imageEditor.deleteImage": "删除图片",
+  "linkPreview.edit": "编辑链接",
+  "linkPreview.open": "打开链接",
+  "linkPreview.remove": "移除链接",
+  "linkPreview.copyToClipboard": "复制链接",
+  "linkPreview.copied": "已复制链接",
+  "createLink.title": "链接标题",
+  "createLink.text": "文本",
+  "createLink.textTooltip": "链接文本",
+  "createLink.url": "地址",
+  "createLink.urlPlaceholder": "https://",
+  "createLink.titleTooltip": "链接标题（可选）",
+  "createLink.cancelTooltip": "取消",
+  "createLink.saveTooltip": "保存链接",
+  "table.columnMenu": "列菜单",
+  "table.rowMenu": "行菜单",
+  "table.insertColumnLeft": "向左插入列",
+  "table.insertColumnRight": "向右插入列",
+  "table.insertRowAbove": "向上插入行",
+  "table.insertRowBelow": "向下插入行",
+  "table.deleteColumn": "删除列",
+  "table.deleteRow": "删除行",
+  "table.deleteTable": "删除表格",
+  "table.textAlignment": "文本对齐",
+  "table.alignLeft": "左对齐",
+  "table.alignCenter": "居中对齐",
+  "table.alignRight": "右对齐",
+};
+
+export function translateMarkdownEditor(
+  key: string,
+  defaultValue: string,
+  interpolations?: Record<string, unknown>,
+): string {
+  let value = TRANSLATIONS[key] ?? defaultValue;
+  for (const [name, replacement] of Object.entries(interpolations ?? {})) {
+    value = value.split(`{{${name}}}`).join(String(replacement));
+  }
+  return value;
+}

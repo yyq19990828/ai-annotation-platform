@@ -5,7 +5,7 @@
 // - localStorage 按用户、项目和指南版本隔离；首次进入自动展开，需用户明确确认阅读.
 // - 用户手动折叠后保存当前指南版本的折叠状态，后续保持折叠.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { GuideMarkdownView } from "@/components/markdown/GuideMarkdownView";
 import { useGuideAssets } from "@/hooks/useGuideAssets";
@@ -29,7 +29,7 @@ interface GuidePanelProps {
 export function GuidePanel({ projectId, userId, guideVersion, content }: GuidePanelProps) {
   const trimmed = (content ?? "").trim();
   const version = guideVersion ?? annotationGuideVersion(content);
-  const { signAsset } = useGuideAssets(projectId);
+  const { resolveImage } = useGuideAssets(projectId);
   const {
     markGuideRead,
     retry,
@@ -87,8 +87,6 @@ export function GuidePanel({ projectId, userId, guideVersion, content }: GuidePa
     });
   };
 
-  const resolver = useMemo(() => signAsset, [signAsset]);
-
   if (!trimmed) return null;
 
   return (
@@ -115,7 +113,7 @@ export function GuidePanel({ projectId, userId, guideVersion, content }: GuidePa
       </button>
       {open && (
         <div className="px-3.5 py-3 overflow-auto flex-1 min-h-0">
-          <GuideMarkdownView content={trimmed} resolveAssetUrl={resolver} />
+          <GuideMarkdownView content={trimmed} resolveImage={resolveImage} imageScope={projectId} />
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
             <span className="text-xs text-muted-foreground">
               {guideRead ? "已确认阅读当前版本" : "阅读完整指引后确认，指南更新后需重新确认"}

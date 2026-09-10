@@ -1,73 +1,275 @@
-// v0.10.13 · E1 · 项目标注指引（CVAT-style Markdown guide + asset 上传）。
-//
-// 编辑模式: CodeMirror 6 MarkdownEditor (dynamic import 避免污染首屏 bundle).
-// 预览模式: GuideMarkdownView (react-markdown + remark-gfm + guide-asset:KEY 签名 URL 解析).
-// 拖拽 / 粘贴图片走 POST /projects/{id}/guide-assets/upload-init -> PUT -> upload-complete,
-// 完成后把 ![alt](guide-asset:KEY) 注入编辑器光标位置.
-
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { useToastStore } from "@/components/ui/Toast";
 import { useUpdateProject } from "@/hooks/useProjects";
 import { useUnsavedWarning } from "@/hooks/useUnsavedWarning";
 import { useGuideAssets } from "@/hooks/useGuideAssets";
-import { GuideMarkdownView } from "@/components/markdown/GuideMarkdownView";
-import type { GuideAssetEntry, ProjectResponse } from "@/api/projects";
+import { ANNOTATION_GUIDE_STARTER } from "@/components/markdown/markdownGuideStarter";
+import type { GuideAssetEntry, ProjectResponse, ProjectUpdatePayload } from "@/api/projects";
 
 const DESCRIPTION_CLASS = "m-0 text-xs leading-relaxed text-muted-foreground";
-const TAB_BTN_BASE =
-  "-mb-px cursor-pointer appearance-none border-0 border-b-2 border-b-transparent bg-transparent px-3 py-1.5 text-sm text-muted-foreground";
-const PREVIEW_PLACEHOLDER_CLASS =
+const PLACEHOLDER_CLASS =
   "rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground";
 
 const MarkdownEditor = lazy(() =>
-  import("@/components/markdown/MarkdownEditor").then((m) => ({ default: m.MarkdownEditor })),
+  import("@/components/markdown/MarkdownEditor").then((module) => ({
+    default: module.MarkdownEditor,
+  })),
 );
 
-type Mode = "edit" | "preview";
+type SaveStatus = "saved" | "unsaved" | "saving" | "failed";
+type SaveMutation = (payload: ProjectUpdatePayload) => Promise<unknown>;
+
+interface SaveRequest {
+  epoch: number;
+  revision: number;
+  content: string;
+  mutateAsync: SaveMutation;
+}
+
+function getSaveErrorMessage(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : "网络或权限错误";
+}
 
 export function AnnotationGuideSection({ project }: { project: ProjectResponse }) {
-  const pushToast = useToastStore((s) => s.push);
-  const update = useUpdateProject(project.id);
-  const { uploadAsset, deleteAsset, signAsset } = useGuideAssets(project.id);
+  return <AnnotationGuideProjectBody key={project.id} project={project} />;
+}
 
-  // 后端 ProjectOut 已强类型, 但 codegen 未重跑前, annotation_guide / guide_assets 走宽松断言.
+function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
+  const pushToast = useToastStore((state) => state.push);
+  const update = useUpdateProject(project.id);
+  const updateMutateAsync = update.mutateAsync;
+  const { uploadAsset, deleteAsset, resolveImage } = useGuideAssets(project.id);
+
   const initialMarkdown =
     (project as unknown as { annotation_guide?: string | null }).annotation_guide ?? "";
-  const initialAssets =
-    (project as unknown as { guide_assets?: GuideAssetEntry[] }).guide_assets ?? [];
+  const initialAssets = useMemo(
+    () => (project as unknown as { guide_assets?: GuideAssetEntry[] | null }).guide_assets ?? [],
+    [project],
+  );
 
-  const [mode, setMode] = useState<Mode>("edit");
-  const [draft, setDraft] = useState<string>(initialMarkdown);
+  const [draft, setDraft] = useState(initialMarkdown);
+  const [savedMarkdown, setSavedMarkdown] = useState(initialMarkdown);
   const [assets, setAssets] = useState<GuideAssetEntry[]>(initialAssets);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
+  const [saveError, setSaveError] = useState<string | null>(null);
 
-  // blur 自动保存兜不住「未失焦直接关 tab / 刷新」的大段输入，补浏览器离开提示。
-  useUnsavedWarning(draft !== initialMarkdown);
+  const draftRef = useRef(initialMarkdown);
+  const savedMarkdownRef = useRef(initialMarkdown);
+  const revisionRef = useRef(0);
+  const projectEpochRef = useRef(0);
+  const projectIdRef = useRef(project.id);
+  const activeSaveRef = useRef<SaveRequest | null>(null);
+  const queuedSaveRef = useRef<SaveRequest | null>(null);
+  const drainingRef = useRef(false);
+  const drainPromiseRef = useRef<Promise<void> | null>(null);
+  const explicitSaveTimerRef = useRef<number | null>(null);
+  const statusRef = useRef<SaveStatus>("saved");
 
-  // 项目切换时同步.
+  const setStatus = useCallback((next: SaveStatus) => {
+    statusRef.current = next;
+    setSaveStatus(next);
+  }, []);
+
+  const mutateAsync = useCallback<SaveMutation>(
+    (payload) => updateMutateAsync(payload),
+    [updateMutateAsync],
+  );
+
+  // The server can refresh the same project after a successful mutation. It
+  // may update a clean form, but it must never clobber an active local draft.
   useEffect(() => {
-    setDraft(initialMarkdown);
-    setAssets(initialAssets);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project.id]);
+    if (projectIdRef.current !== project.id) {
+      projectIdRef.current = project.id;
+      projectEpochRef.current += 1;
+      revisionRef.current += 1;
+      queuedSaveRef.current = null;
+      draftRef.current = initialMarkdown;
+      savedMarkdownRef.current = initialMarkdown;
+      setDraft(initialMarkdown);
+      setSavedMarkdown(initialMarkdown);
+      setAssets(initialAssets);
+      setSaveError(null);
+      setStatus("saved");
+      return;
+    }
 
-  // 失焦自动保存：内容有变更才提交。失败弹 toast，成功静默（切到预览 tab
-  // 会让编辑器失焦，从而触发保存）。
+    if (
+      draftRef.current === savedMarkdownRef.current &&
+      savedMarkdownRef.current !== initialMarkdown
+    ) {
+      draftRef.current = initialMarkdown;
+      savedMarkdownRef.current = initialMarkdown;
+      setDraft(initialMarkdown);
+      setSavedMarkdown(initialMarkdown);
+      setSaveError(null);
+      setStatus("saved");
+    }
+  }, [initialAssets, initialMarkdown, project.id, setStatus]);
+
+  useEffect(
+    () => () => {
+      if (explicitSaveTimerRef.current !== null) {
+        window.clearTimeout(explicitSaveTimerRef.current);
+        explicitSaveTimerRef.current = null;
+      }
+    },
+    [],
+  );
+
+  useUnsavedWarning(draft !== savedMarkdown);
+
+  const drainSaveQueue = useCallback((): Promise<void> => {
+    if (drainingRef.current) return drainPromiseRef.current ?? Promise.resolve();
+
+    drainingRef.current = true;
+    const drain = (async () => {
+      try {
+        while (queuedSaveRef.current) {
+          const request = queuedSaveRef.current;
+          queuedSaveRef.current = null;
+
+          if (request.epoch !== projectEpochRef.current) continue;
+          activeSaveRef.current = request;
+          setStatus("saving");
+
+          let failure: unknown = null;
+          try {
+            await request.mutateAsync({ annotation_guide: request.content });
+          } catch (error: unknown) {
+            failure = error;
+          }
+          activeSaveRef.current = null;
+
+          if (request.epoch !== projectEpochRef.current) continue;
+
+          if (failure === null) {
+            // A response confirms the content it saved even when the user has
+            // edited again. Compare against the current draft only after
+            // advancing this baseline, otherwise A -> B -> A can lose its
+            // queued save when B resolves.
+            savedMarkdownRef.current = request.content;
+            setSavedMarkdown(request.content);
+            setSaveError(null);
+
+            const currentDraft = draftRef.current;
+            if (currentDraft !== request.content) {
+              const queued = queuedSaveRef.current as SaveRequest | null;
+              if (
+                queued === null ||
+                queued.epoch !== request.epoch ||
+                queued.content !== currentDraft
+              ) {
+                queuedSaveRef.current = {
+                  epoch: request.epoch,
+                  revision: revisionRef.current,
+                  content: currentDraft,
+                  mutateAsync,
+                };
+              }
+              setStatus("saving");
+            } else {
+              setStatus("saved");
+            }
+            continue;
+          }
+
+          // If a newer explicit request is already waiting, let it decide the
+          // final state. Otherwise retain the draft and expose a retryable
+          // failure.
+          if (queuedSaveRef.current) continue;
+          setSaveError(getSaveErrorMessage(failure));
+          setStatus("failed");
+          pushToast({ msg: "标注指引保存失败，可重试", kind: "warning" });
+        }
+      } finally {
+        drainingRef.current = false;
+        drainPromiseRef.current = null;
+      }
+    })();
+
+    drainPromiseRef.current = drain;
+    return drain;
+  }, [mutateAsync, pushToast, setStatus]);
+
+  const enqueueSave = useCallback((): Promise<void> => {
+    const content = draftRef.current;
+    const epoch = projectEpochRef.current;
+    const active = activeSaveRef.current;
+    const queued = queuedSaveRef.current;
+
+    if (active?.epoch === epoch && active.content === content) {
+      return drainPromiseRef.current ?? Promise.resolve();
+    }
+    if (queued?.epoch === epoch && queued.content === content) {
+      return drainPromiseRef.current ?? Promise.resolve();
+    }
+    if (!active && !queued && content === savedMarkdownRef.current) {
+      setStatus("saved");
+      return Promise.resolve();
+    }
+
+    queuedSaveRef.current = {
+      epoch,
+      revision: revisionRef.current,
+      content,
+      mutateAsync,
+    };
+    setSaveError(null);
+    setStatus("saving");
+    return drainSaveQueue();
+  }, [drainSaveQueue, mutateAsync, setStatus]);
+
+  const handleDraftChange = useCallback(
+    (next: string) => {
+      draftRef.current = next;
+      revisionRef.current += 1;
+      setDraft(next);
+      setSaveError(null);
+
+      const epoch = projectEpochRef.current;
+      const active = activeSaveRef.current;
+      const queued = queuedSaveRef.current;
+      const hasOutstandingSave = active?.epoch === epoch || queued?.epoch === epoch;
+      if (next === savedMarkdownRef.current && !hasOutstandingSave) {
+        setStatus("saved");
+      } else if (hasOutstandingSave) {
+        setStatus("saving");
+      } else {
+        setStatus("unsaved");
+      }
+    },
+    [setStatus],
+  );
+
   const handleAutoSave = useCallback(() => {
-    if (draft === initialMarkdown) return;
-    update.mutate(
-      { annotation_guide: draft },
-      { onError: () => pushToast({ msg: "保存失败", kind: "warning" }) },
-    );
-  }, [draft, initialMarkdown, pushToast, update]);
+    void enqueueSave();
+  }, [enqueueSave]);
+
+  const handleExplicitSave = useCallback(() => {
+    if (explicitSaveTimerRef.current !== null) {
+      window.clearTimeout(explicitSaveTimerRef.current);
+    }
+    // A table cell is a nested Lexical editor. Its blur handler flushes the
+    // cell into the parent editor before MDXEditor publishes the new Markdown.
+    // Read the draft on the next task so an explicit save cannot capture the
+    // pre-flush value.
+    explicitSaveTimerRef.current = window.setTimeout(() => {
+      explicitSaveTimerRef.current = null;
+      void enqueueSave();
+    }, 0);
+  }, [enqueueSave]);
 
   const handleUpload = useCallback(
     async (file: File) => {
+      const epoch = projectEpochRef.current;
+      const projectId = project.id;
       const result = await uploadAsset(file);
-      // upload-complete 已 append 到后端 guide_assets, 这里乐观更新本地视图.
-      // 严格起见可以 invalidate query, 但 useUpdateProject onSuccess 已挂.
-      setAssets((prev) => [
-        ...prev,
+      if (epoch !== projectEpochRef.current || projectId !== projectIdRef.current) {
+        throw new Error("项目已切换，上传结果已丢弃");
+      }
+      setAssets((previous) => [
+        ...previous,
         {
           key: result.src.replace(/^guide-asset:/, ""),
           original_name: file.name,
@@ -78,70 +280,70 @@ export function AnnotationGuideSection({ project }: { project: ProjectResponse }
       ]);
       return result;
     },
-    [uploadAsset],
+    [project.id, uploadAsset],
   );
 
   const handleDeleteAsset = useCallback(
     async (key: string) => {
+      const epoch = projectEpochRef.current;
       try {
         await deleteAsset(key);
-        setAssets((prev) => prev.filter((a) => a.key !== key));
+        if (epoch !== projectEpochRef.current) return;
+        setAssets((previous) => previous.filter((asset) => asset.key !== key));
         pushToast({ msg: "已删除指引图片", kind: "success" });
-      } catch {
-        pushToast({ msg: "删除失败", kind: "warning" });
+      } catch (error: unknown) {
+        pushToast({ msg: getSaveErrorMessage(error), kind: "warning" });
       }
     },
     [deleteAsset, pushToast],
   );
 
-  const resolver = useMemo(() => signAsset, [signAsset]);
+  const handleStarter = useCallback(() => {
+    if (draftRef.current.trim()) return;
+    handleDraftChange(ANNOTATION_GUIDE_STARTER);
+  }, [handleDraftChange]);
+
+  const saveButtonLabel = saveStatus === "failed" ? "重试保存" : "保存";
 
   return (
     <Card>
       <div className="flex flex-col gap-3 px-4 py-4">
-        <h3 className="m-0 text-md font-semibold">标注指引（CVAT-style Markdown）</h3>
+        <h3 className="m-0 text-md font-semibold">标注指引</h3>
         <p className={DESCRIPTION_CLASS}>
-          支持 Markdown 与 GFM 表格；拖拽 / 粘贴图片自动上传为项目资源。
-          工作台首次进入会自动展开「📖 指引」浮层让标注员阅读一次。
+          支持可视化 Markdown、源码和 GFM 表格；拖拽或粘贴图片会上传到当前项目资源。
+          工作台首次进入会自动展开「指引」浮层让标注员阅读一次。
         </p>
 
-        <div className="flex gap-1 border-b border-border" role="tablist">
-          <button
-            role="tab"
-            type="button"
-            aria-selected={mode === "edit"}
-            className={`${TAB_BTN_BASE} ${mode === "edit" ? "border-b-brand text-foreground" : ""}`}
-            onClick={() => setMode("edit")}
-            data-testid="guide-tab-edit"
-          >
-            编辑
-          </button>
-          <button
-            role="tab"
-            type="button"
-            aria-selected={mode === "preview"}
-            className={`${TAB_BTN_BASE} ${mode === "preview" ? "border-b-brand text-foreground" : ""}`}
-            onClick={() => setMode("preview")}
-            data-testid="guide-tab-preview"
-          >
-            预览
-          </button>
-        </div>
+        <Suspense fallback={<div className={PLACEHOLDER_CLASS}>编辑器加载中…</div>}>
+          <MarkdownEditor
+            key={project.id}
+            value={draft}
+            onChange={handleDraftChange}
+            onUploadImage={handleUpload}
+            onBlur={handleAutoSave}
+            documentId={project.id}
+            label="标注指引编辑器"
+            variant="document"
+            resolveImage={resolveImage}
+            imageScope={project.id}
+            placeholder="# 标注指引\n请描述类别定义、易混淆边界、典型反例…"
+          />
+        </Suspense>
 
-        {mode === "edit" ? (
-          <Suspense fallback={<div className={PREVIEW_PLACEHOLDER_CLASS}>编辑器加载中…</div>}>
-            <MarkdownEditor
-              value={draft}
-              onChange={setDraft}
-              onUploadImage={handleUpload}
-              onBlur={handleAutoSave}
-              placeholder="# 标注指引\n请描述类别定义、易混淆边界、典型反例…"
-            />
-          </Suspense>
-        ) : draft.trim() ? (
-          <GuideMarkdownView content={draft} resolveAssetUrl={resolver} />
-        ) : (
-          <div className={PREVIEW_PLACEHOLDER_CLASS}>暂无内容</div>
+        {!draft.trim() && (
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed border-border px-3 py-2">
+            <span className="text-xs text-muted-foreground">
+              从类别定义、边界规则和复核清单开始。
+            </span>
+            <button
+              type="button"
+              className="cursor-pointer rounded-md border border-border bg-transparent px-2.5 py-1 text-xs text-foreground hover:bg-accent"
+              onClick={handleStarter}
+              data-testid="guide-starter"
+            >
+              插入指引模板
+            </button>
+          </div>
         )}
 
         {assets.length > 0 && (
@@ -151,16 +353,16 @@ export function AnnotationGuideSection({ project }: { project: ProjectResponse }
               className="m-0 max-h-[200px] list-none overflow-auto rounded-md border border-border p-0"
               data-testid="guide-asset-list"
             >
-              {assets.map((a) => (
+              {assets.map((asset) => (
                 <li
                   className="flex items-center gap-2 border-b border-border px-2.5 py-1.5 text-xs last:border-b-0"
-                  key={a.key}
+                  key={asset.key}
                 >
-                  <span title={a.key}>{a.original_name}</span>
-                  <span className="text-muted-foreground">{(a.size / 1024).toFixed(1)} KB</span>
+                  <span title={asset.key}>{asset.original_name}</span>
+                  <span className="text-muted-foreground">{(asset.size / 1024).toFixed(1)} KB</span>
                   <button
                     type="button"
-                    onClick={() => void handleDeleteAsset(a.key)}
+                    onClick={() => void handleDeleteAsset(asset.key)}
                     className="ml-auto cursor-pointer appearance-none rounded-sm border border-border bg-transparent px-2 py-0.5 text-xs text-status-danger"
                   >
                     删除
@@ -171,8 +373,30 @@ export function AnnotationGuideSection({ project }: { project: ProjectResponse }
           </>
         )}
 
-        <div className="flex justify-end gap-2">
-          {update.isPending && <span className="text-xs text-muted-foreground">保存中…</span>}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span
+            className="text-xs text-muted-foreground"
+            role="status"
+            aria-live="polite"
+            data-testid="guide-save-status"
+          >
+            {saveStatus === "saving"
+              ? "保存中…"
+              : saveStatus === "unsaved"
+                ? "有未保存修改"
+                : saveStatus === "failed"
+                  ? `保存失败：${saveError ?? "请重试"}`
+                  : "已保存"}
+          </span>
+          <button
+            type="button"
+            onClick={handleExplicitSave}
+            disabled={saveStatus === "saving"}
+            className="cursor-pointer rounded-md border border-border bg-transparent px-3 py-1.5 text-xs font-medium text-foreground hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
+            data-testid="guide-save"
+          >
+            {saveButtonLabel}
+          </button>
         </div>
       </div>
     </Card>

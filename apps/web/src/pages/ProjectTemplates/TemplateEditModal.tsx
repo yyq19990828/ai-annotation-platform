@@ -2,7 +2,7 @@
 // v0.10.17 · 加 tool_bindings 编辑能力 (基础 / 工具与类别 / 渲染配置 三 tab),
 // 复用 ProjectSettings 的 ClassEditor / AttributeSchemaEditor / ToolUnitTabs.
 
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -22,6 +22,7 @@ import {
   type UnitBindingMap,
 } from "@/pages/Projects/sections/useProjectToolBindings";
 import { dataTypeFromLegacy, type ToolUnitId } from "@/constants/toolUnits";
+import { ANNOTATION_GUIDE_STARTER } from "@/components/markdown/markdownGuideStarter";
 
 import styles from "./ProjectTemplatesPage.module.css";
 
@@ -33,6 +34,12 @@ interface Props {
 }
 
 type Tab = "basic" | "tools" | "rendering";
+
+const MarkdownEditor = lazy(() =>
+  import("@/components/markdown/MarkdownEditor").then((module) => ({
+    default: module.MarkdownEditor,
+  })),
+);
 
 export function TemplateEditModal({ open, onClose, initial }: Props) {
   const pushToast = useToastStore((s) => s.push);
@@ -143,7 +150,9 @@ export function TemplateEditModal({ open, onClose, initial }: Props) {
       type_key: typeKey,
       classes,
       tool_bindings,
-      annotation_guide: annotationGuide.trim() || null,
+      // Preserve intentional Markdown whitespace. Empty or whitespace-only
+      // input keeps the existing nullable template contract.
+      annotation_guide: annotationGuide.trim() ? annotationGuide : null,
       scope,
       rendering_config: renderingConfig,
     };
@@ -228,15 +237,35 @@ export function TemplateEditModal({ open, onClose, initial }: Props) {
               </select>
             </label>
 
-            <label className={styles.label}>
-              标注指引（Markdown，可选）
-              <textarea
-                className={styles.textarea}
-                value={annotationGuide}
-                onChange={(e) => setAnnotationGuide(e.target.value)}
-                placeholder="# 类别定义&#10;..."
-              />
-            </label>
+            <div className={styles.label}>
+              <span>标注指引（Markdown，可选）</span>
+              <p className={styles.help}>
+                模板只保存 Markdown
+                文本；项目指引中的私有图片资源不会随模板复制，请在项目内重新上传。
+              </p>
+              <Suspense fallback={<div className={styles.help}>编辑器加载中…</div>}>
+                <MarkdownEditor
+                  key={initial?.id ?? "new-template"}
+                  value={annotationGuide}
+                  onChange={setAnnotationGuide}
+                  documentId={initial?.id ?? "new-template"}
+                  label="模板标注指引编辑器"
+                  variant="document"
+                  disabled={submitting}
+                  placeholder="# 类别定义\n..."
+                />
+              </Suspense>
+              {!annotationGuide.trim() && (
+                <button
+                  type="button"
+                  className={styles.tab}
+                  onClick={() => setAnnotationGuide(ANNOTATION_GUIDE_STARTER)}
+                  disabled={submitting}
+                >
+                  插入指引模板
+                </button>
+              )}
+            </div>
 
             <label className={styles.label}>
               可见范围

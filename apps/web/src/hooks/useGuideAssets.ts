@@ -1,15 +1,67 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useRef } from "react";
 import { projectsApi } from "@/api/projects";
+import type { MarkdownImageResolver } from "@/components/markdown/types";
 
 /** v0.10.13 · E1 · annotation guide 图片资源上传 / 签发 / 删除. */
 export function useGuideAssets(projectId: string | undefined) {
-  // 同一 key 同时多次签发会浪费 storage round-trip; 加内存缓存 (短期 1h, expires_in=3600).
-  const urlCacheRef = useRef<Map<string, { url: string; until: number }>>(new Map());
+  type CachedUrl = { url: string; expiresAt: number };
 
-  useEffect(() => {
-    // projectId 变更或卸载时清缓存, 防跨项目串味.
+  // The hook can stay mounted while a workbench switches projects. Update the
+  // scope during render so a new callback can never observe the old cache,
+  // even before React runs the next effect.
+  const projectScopeRef = useRef<string | undefined>(projectId);
+  const scopeVersionRef = useRef(0);
+  const urlCacheRef = useRef<Map<string, CachedUrl>>(new Map());
+  const inFlightRef = useRef<Map<string, Promise<CachedUrl>>>(new Map());
+  if (projectScopeRef.current !== projectId) {
+    projectScopeRef.current = projectId;
+    scopeVersionRef.current += 1;
     urlCacheRef.current.clear();
-  }, [projectId]);
+    inFlightRef.current.clear();
+  }
+
+  const signAssetInternal = useCallback(
+    async (key: string, options?: { refresh?: boolean }): Promise<CachedUrl> => {
+      if (!projectId) throw new Error("projectId is required");
+      if (!key) throw new Error("guide asset key is required");
+      if (projectScopeRef.current !== projectId) {
+        throw new Error("project context changed");
+      }
+
+      const scopeVersion = scopeVersionRef.current;
+      const cached = urlCacheRef.current.get(key);
+      const now = Date.now();
+      const forceRefresh = options?.refresh === true;
+      // Leave a 60s safety margin before expiry. A forced refresh always
+      // bypasses cache, while concurrent callers still share one request.
+      if (!forceRefresh && cached && cached.expiresAt - now > 60_000) return cached;
+
+      const existing = inFlightRef.current.get(key);
+      if (existing) return existing;
+
+      const request = projectsApi.guideAssets.signUrl(projectId, key).then((resp) => {
+        const entry: CachedUrl = {
+          url: resp.url,
+          expiresAt: Date.now() + Math.max(0, resp.expires_in) * 1000,
+        };
+        // A response from the previous project may complete after the hook
+        // has switched scopes. It remains useful to that old caller, but is
+        // never allowed to populate the current project's cache.
+        if (scopeVersion === scopeVersionRef.current && projectScopeRef.current === projectId) {
+          urlCacheRef.current.set(key, entry);
+        }
+        return entry;
+      });
+
+      inFlightRef.current.set(key, request);
+      const clearInFlight = () => {
+        if (inFlightRef.current.get(key) === request) inFlightRef.current.delete(key);
+      };
+      request.then(clearInFlight, clearInFlight);
+      return request;
+    },
+    [projectId],
+  );
 
   const uploadAsset = useCallback(
     async (file: File): Promise<{ src: string; alt?: string }> => {
@@ -40,30 +92,37 @@ export function useGuideAssets(projectId: string | undefined) {
   const deleteAsset = useCallback(
     async (key: string) => {
       if (!projectId) throw new Error("projectId is required");
+      const scopeVersion = scopeVersionRef.current;
       await projectsApi.guideAssets.remove(projectId, key);
-      urlCacheRef.current.delete(key);
+      if (scopeVersion === scopeVersionRef.current && projectScopeRef.current === projectId) {
+        urlCacheRef.current.delete(key);
+      }
     },
     [projectId],
   );
 
   const signAsset = useCallback(
-    async (key: string): Promise<string> => {
-      if (!projectId) throw new Error("projectId is required");
-      const cached = urlCacheRef.current.get(key);
-      const now = Date.now();
-      // 留 60s 安全垫, 早于过期就重签
-      if (cached && cached.until - now > 60_000) return cached.url;
-      const resp = await projectsApi.guideAssets.signUrl(projectId, key);
-      urlCacheRef.current.set(key, {
-        url: resp.url,
-        until: now + resp.expires_in * 1000,
-      });
-      return resp.url;
+    async (key: string, options?: { refresh?: boolean }): Promise<string> => {
+      const result = await signAssetInternal(key, options);
+      return result.url;
     },
-    [projectId],
+    [signAssetInternal],
   );
 
-  return { uploadAsset, deleteAsset, signAsset };
+  const resolveImage = useCallback<MarkdownImageResolver>(
+    async (src, options) => {
+      if (!src.startsWith("guide-asset:")) {
+        throw new Error("仅支持解析 guide-asset 图片资源");
+      }
+      const key = src.slice("guide-asset:".length);
+      if (!key) throw new Error("guide-asset 图片缺少资源标识");
+      const result = await signAssetInternal(key, options);
+      return { url: result.url, expiresAt: result.expiresAt };
+    },
+    [signAssetInternal],
+  );
+
+  return { uploadAsset, deleteAsset, signAsset, resolveImage };
 }
 
 /** 把 markdown 里 `guide-asset:KEY` 形式的 src 转成签名 URL (用于预览). */

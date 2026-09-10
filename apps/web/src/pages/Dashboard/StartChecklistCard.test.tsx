@@ -7,10 +7,13 @@ import { StartChecklistCard } from "./StartChecklistCard";
 
 const mocks = vi.hoisted(() => ({
   markGuideRead: vi.fn(),
+  resolveImage: vi.fn(),
   summary: { data: undefined as unknown, isError: false, refetch: vi.fn() },
 }));
 vi.mock("@/hooks/useDashboard", () => ({ useOnboardingProjectSummary: () => mocks.summary }));
-vi.mock("@/hooks/useGuideAssets", () => ({ useGuideAssets: () => ({ signAsset: vi.fn() }) }));
+vi.mock("@/hooks/useGuideAssets", () => ({
+  useGuideAssets: () => ({ resolveImage: mocks.resolveImage }),
+}));
 vi.mock("@/hooks/useOnboardingProjectState", () => ({
   useOnboardingProjectState: () => ({
     guideRead: false,
@@ -23,7 +26,23 @@ vi.mock("@/hooks/useOnboardingProjectState", () => ({
   }),
 }));
 vi.mock("@/components/markdown/GuideMarkdownView", () => ({
-  GuideMarkdownView: ({ content }: { content: string }) => <p>{content}</p>,
+  GuideMarkdownView: ({
+    content,
+    resolveImage,
+    imageScope,
+  }: {
+    content: string;
+    resolveImage?: unknown;
+    imageScope?: string;
+  }) => (
+    <p
+      data-testid="guide-view"
+      data-has-resolver={resolveImage ? "true" : "false"}
+      data-image-scope={imageScope}
+    >
+      {content}
+    </p>
+  ),
 }));
 const project = {
   id: "p1",
@@ -64,6 +83,8 @@ it("does not complete guide by opening it and disables work without assignments"
   expect(screen.getByRole("button", { name: "查看结果" })).toBeDisabled();
   fireEvent.click(screen.getByRole("button", { name: "打开指引" }));
   expect(screen.getByText("Draw one box")).toBeVisible();
+  expect(screen.getByTestId("guide-view")).toHaveAttribute("data-has-resolver", "true");
+  expect(screen.getByTestId("guide-view")).toHaveAttribute("data-image-scope", "p1");
   expect(mocks.markGuideRead).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "确认已阅读" }));
   expect(mocks.markGuideRead).toHaveBeenCalledOnce();

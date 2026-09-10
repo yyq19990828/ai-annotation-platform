@@ -7,11 +7,50 @@ const mocks = vi.hoisted(() => ({
   listMine: vi.fn(),
   get: vi.fn(),
   create: vi.fn(),
+  update: vi.fn(),
+  addComment: vi.fn(),
 }));
 
 vi.mock("@/components/ui/Toast", () => ({
   useToastStore: <T,>(selector: (s: { push: typeof mocks.pushToast }) => T) =>
     selector({ push: mocks.pushToast }),
+}));
+
+vi.mock("@/components/markdown/MarkdownEditor", () => ({
+  MarkdownEditor: ({
+    value,
+    onChange,
+    onBlur,
+    onUploadImage,
+    placeholder,
+    documentId,
+    label,
+    variant,
+    disabled,
+  }: {
+    value: string;
+    onChange: (next: string) => void;
+    onBlur?: () => void;
+    onUploadImage?: unknown;
+    placeholder?: string;
+    documentId?: string;
+    label?: string;
+    variant?: string;
+    disabled?: boolean;
+  }) => (
+    <textarea
+      data-testid="markdown-editor"
+      data-document-id={documentId}
+      data-label={label}
+      data-variant={variant}
+      data-has-upload={onUploadImage ? "true" : "false"}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onBlur={onBlur}
+      placeholder={placeholder}
+      disabled={disabled}
+    />
+  ),
 }));
 
 vi.mock("@/utils/bugReportCapture", () => ({
@@ -26,9 +65,9 @@ vi.mock("@/api/bug-reports", () => ({
     listMine: mocks.listMine,
     get: mocks.get,
     create: mocks.create,
-    update: vi.fn(),
+    update: mocks.update,
     delete: vi.fn(),
-    addComment: vi.fn(),
+    addComment: mocks.addComment,
     attachmentDownloadUrl: (_id: string, key: string) => `/download?key=${encodeURIComponent(key)}`,
   },
   uploadBugAttachment: vi.fn(),
@@ -41,6 +80,8 @@ describe("BugReportDrawer", () => {
     mocks.get.mockReset();
     mocks.create.mockReset();
     mocks.create.mockResolvedValue({});
+    mocks.update.mockReset().mockResolvedValue({});
+    mocks.addComment.mockReset().mockResolvedValue({});
     delete (window as unknown as { __videoWorkbenchDiagnostics?: unknown })
       .__videoWorkbenchDiagnostics;
     delete (window as unknown as { __videoFrameClockDiagnostics?: unknown })
@@ -54,21 +95,75 @@ describe("BugReportDrawer", () => {
 
     await screen.findByText("暂无反馈");
     fireEvent.click(screen.getByText("提交新反馈"));
-    const textarea = screen.getByPlaceholderText("详细描述问题...");
+    const textarea = await screen.findByPlaceholderText("详细描述问题...");
     const file = new File(["image"], "clip.png", { type: "image/png" });
+    const secondFile = new File(["image-2"], "clip-2.webp", { type: "image/webp" });
 
     fireEvent.paste(textarea, {
       clipboardData: {
-        files: [file],
+        files: [file, secondFile],
       },
     });
 
     expect(await screen.findByText(/图 1/)).toBeInTheDocument();
     expect(screen.getByText(/clip\.png/)).toBeInTheDocument();
+    expect(screen.getByText(/图 2/)).toBeInTheDocument();
+    expect(screen.getByText(/clip-2\.webp/)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("移除"));
+    fireEvent.click(screen.getAllByText("移除")[0]);
 
     expect(screen.queryByText(/clip\.png/)).not.toBeInTheDocument();
+  });
+
+  it("uses the compact editor without inline comment or attachment uploads", async () => {
+    render(<BugReportDrawer open onClose={() => {}} />);
+
+    await screen.findByText("暂无反馈");
+    fireEvent.click(screen.getByText("提交新反馈"));
+
+    const editor = await screen.findByPlaceholderText("详细描述问题...");
+    expect(editor).toHaveAttribute("data-variant", "compact");
+    expect(editor).toHaveAttribute("data-document-id", "bug-create");
+    expect(editor).toHaveAttribute("data-label", "反馈描述");
+    expect(editor).toHaveAttribute("data-has-upload", "false");
+  });
+
+  it("accepts the description boundary using Python-compatible Unicode length", async () => {
+    render(<BugReportDrawer open onClose={() => {}} />);
+
+    await screen.findByText("暂无反馈");
+    fireEvent.click(screen.getByText("提交新反馈"));
+    fireEvent.change(screen.getByPlaceholderText("发生了什么问题？"), {
+      target: { value: "Unicode boundary" },
+    });
+    fireEvent.change(await screen.findByPlaceholderText("详细描述问题..."), {
+      target: { value: "😀".repeat(20_000) },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "提交反馈" }));
+
+    await waitFor(() => expect(mocks.create).toHaveBeenCalledTimes(1));
+    expect(mocks.create.mock.calls[0][0].description).toBe("😀".repeat(20_000));
+  });
+
+  it("rejects an oversized description while retaining the draft", async () => {
+    render(<BugReportDrawer open onClose={() => {}} />);
+
+    await screen.findByText("暂无反馈");
+    fireEvent.click(screen.getByText("提交新反馈"));
+    fireEvent.change(screen.getByPlaceholderText("发生了什么问题？"), {
+      target: { value: "Too long" },
+    });
+    const editor = await screen.findByPlaceholderText("详细描述问题...");
+    const description = "😀".repeat(20_001);
+    fireEvent.change(editor, { target: { value: description } });
+    fireEvent.click(screen.getByRole("button", { name: "提交反馈" }));
+
+    expect(mocks.create).not.toHaveBeenCalled();
+    expect(mocks.pushToast).toHaveBeenCalledWith({
+      msg: "描述（含自动诊断）不能超过 20000 个字符",
+      kind: "error",
+    });
+    expect(editor).toHaveValue(description);
   });
 
   it("rejects oversized pasted screenshots", async () => {
@@ -76,7 +171,7 @@ describe("BugReportDrawer", () => {
 
     await screen.findByText("暂无反馈");
     fireEvent.click(screen.getByText("提交新反馈"));
-    const textarea = screen.getByPlaceholderText("详细描述问题...");
+    const textarea = await screen.findByPlaceholderText("详细描述问题...");
     const largeFile = new File(["x"], "large.png", { type: "image/png" });
     Object.defineProperty(largeFile, "size", { value: 10 * 1024 * 1024 + 1 });
 
@@ -110,7 +205,7 @@ describe("BugReportDrawer", () => {
     fireEvent.change(screen.getByPlaceholderText("发生了什么问题？"), {
       target: { value: "视频 seek 卡顿" },
     });
-    fireEvent.change(screen.getByPlaceholderText("详细描述问题..."), {
+    fireEvent.change(await screen.findByPlaceholderText("详细描述问题..."), {
       target: { value: "拖动时间轴后首帧很慢" },
     });
     fireEvent.click(screen.getByRole("button", { name: "提交反馈" }));
@@ -177,7 +272,7 @@ describe("BugReportDrawer", () => {
     fireEvent.change(screen.getByPlaceholderText("发生了什么问题？"), {
       target: { value: "Mask 膨胀慢" },
     });
-    fireEvent.change(screen.getByPlaceholderText("详细描述问题..."), {
+    fireEvent.change(await screen.findByPlaceholderText("详细描述问题..."), {
       target: { value: "大图操作回退" },
     });
     fireEvent.click(screen.getByRole("button", { name: "提交反馈" }));
@@ -239,7 +334,7 @@ describe("BugReportDrawer", () => {
     fireEvent.change(screen.getByPlaceholderText("发生了什么问题？"), {
       target: { value: "精确帧回退" },
     });
-    fireEvent.change(screen.getByPlaceholderText("详细描述问题..."), {
+    fireEvent.change(await screen.findByPlaceholderText("详细描述问题..."), {
       target: { value: "暂停后画面是原生 video" },
     });
     fireEvent.click(screen.getByRole("button", { name: "提交反馈" }));

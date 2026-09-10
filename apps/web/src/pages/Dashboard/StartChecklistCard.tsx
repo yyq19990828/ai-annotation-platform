@@ -54,7 +54,7 @@ export function StartChecklistCard({
     useOnboardingProjectState(project.id, guideVersion);
   const summaryQuery = useOnboardingProjectSummary(project.id);
   const summary = summaryQuery.isError ? undefined : summaryQuery.data;
-  const { signAsset } = useGuideAssets(project.id);
+  const { resolveImage } = useGuideAssets(project.id);
   const batchesForProject = useMemo(
     () => projectBatches(project.id, batches),
     [batches, project.id],
@@ -279,7 +279,8 @@ export function StartChecklistCard({
           <div className="max-h-[32rem] overflow-auto rounded-md border border-border bg-card p-3">
             <GuideMarkdownView
               content={project.annotation_guide!.trim()}
-              resolveAssetUrl={signAsset}
+              resolveImage={resolveImage}
+              imageScope={project.id}
             />
           </div>
           <Button

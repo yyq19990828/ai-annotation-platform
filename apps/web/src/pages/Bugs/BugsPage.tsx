@@ -1,12 +1,36 @@
-import { useState, useEffect, useCallback } from "react";
+import { lazy, Suspense, useState, useEffect, useCallback, useRef } from "react";
 import { bugReportsApi, type BugReportResponse, type BugReportDetail } from "@/api/bug-reports";
 import { useToastStore } from "@/components/ui/Toast";
 import { Icon } from "@/components/ui/Icon";
 import { MarkdownBlock } from "@/components/bugreport/MarkdownBlock";
+import type { MarkdownEditorProps } from "@/components/markdown/MarkdownEditor";
 import styles from "./BugsPage.module.css";
 
 const STATUS_OPTIONS = ["new", "triaged", "in_progress", "fixed", "wont_fix", "duplicate"];
 const SEVERITY_OPTIONS = ["low", "medium", "high", "critical"];
+const MAX_COMMENT_LENGTH = 10_000;
+
+type CompactMarkdownEditorProps = Pick<
+  MarkdownEditorProps,
+  "value" | "onChange" | "placeholder" | "documentId" | "label" | "variant" | "disabled"
+>;
+
+// 管理评论使用紧凑编辑器，延迟加载编辑器依赖以保持管理页首屏轻量。
+const MarkdownEditor = lazy(() =>
+  import("@/components/markdown/MarkdownEditor").then((m) => ({
+    default: m.MarkdownEditor,
+  })),
+);
+
+const codePointLength = (value: string) => Array.from(value).length;
+
+function CompactMarkdownEditor(props: CompactMarkdownEditorProps) {
+  return (
+    <Suspense fallback={<div className={styles.commentInput}>编辑器加载中…</div>}>
+      <MarkdownEditor {...props} />
+    </Suspense>
+  );
+}
 
 const statusLabel: Record<string, string> = {
   new: "新提交",
@@ -33,6 +57,10 @@ export function BugsPage() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const [detail, setDetail] = useState<BugReportDetail | null>(null);
   const [commentText, setCommentText] = useState("");
+  const [postingComment, setPostingComment] = useState(false);
+  const detailRequestRef = useRef(0);
+  const activeDetailIdRef = useRef<string | null>(null);
+  const commentRequestRef = useRef(0);
   const pushToast = useToastStore((s) => s.push);
 
   const loadList = useCallback(async () => {
@@ -57,35 +85,78 @@ export function BugsPage() {
   }, [loadList]);
 
   const loadDetail = async (id: string) => {
+    const requestId = ++detailRequestRef.current;
+    commentRequestRef.current += 1;
+    if (activeDetailIdRef.current !== id) setCommentText("");
+    activeDetailIdRef.current = id;
     setDetailId(id);
+    setDetail(null);
+    setPostingComment(false);
     try {
       const data = await bugReportsApi.get(id);
+      if (requestId !== detailRequestRef.current || activeDetailIdRef.current !== id) return;
       setDetail(data);
     } catch {
-      pushToast({ msg: "加载详情失败", kind: "error" });
+      if (requestId === detailRequestRef.current && activeDetailIdRef.current === id) {
+        pushToast({ msg: "加载详情失败", kind: "error" });
+      }
     }
   };
 
   const updateStatus = async (id: string, status: string) => {
+    const detailScope = detailRequestRef.current;
     try {
       await bugReportsApi.update(id, { status });
       pushToast({ msg: "状态已更新", kind: "success" });
-      loadList();
-      if (detailId === id) loadDetail(id);
+      void loadList();
+      if (activeDetailIdRef.current === id && detailRequestRef.current === detailScope) {
+        void loadDetail(id);
+      }
     } catch {
       pushToast({ msg: "更新失败", kind: "error" });
     }
   };
 
   const addComment = async () => {
-    if (!detailId || !commentText.trim()) return;
-    try {
-      await bugReportsApi.addComment(detailId, commentText.trim());
-      setCommentText("");
-      loadDetail(detailId);
-    } catch {
-      pushToast({ msg: "评论失败", kind: "error" });
+    if (!detailId || !commentText.trim() || postingComment) return;
+    const body = commentText.trim();
+    if (codePointLength(body) > MAX_COMMENT_LENGTH) {
+      pushToast({ msg: `评论不能超过 ${MAX_COMMENT_LENGTH} 个字符`, kind: "error" });
+      return;
     }
+    const reportId = detailId;
+    const detailScope = detailRequestRef.current;
+    const requestId = ++commentRequestRef.current;
+    setPostingComment(true);
+    try {
+      await bugReportsApi.addComment(reportId, body);
+      if (
+        requestId !== commentRequestRef.current ||
+        detailScope !== detailRequestRef.current ||
+        activeDetailIdRef.current !== reportId
+      ) {
+        return;
+      }
+      setCommentText("");
+      void loadDetail(reportId);
+    } catch {
+      if (
+        requestId === commentRequestRef.current &&
+        detailScope === detailRequestRef.current &&
+        activeDetailIdRef.current === reportId
+      ) {
+        pushToast({ msg: "评论失败", kind: "error" });
+      }
+    } finally {
+      if (requestId === commentRequestRef.current) setPostingComment(false);
+    }
+  };
+
+  const invalidateDetailScope = () => {
+    detailRequestRef.current += 1;
+    commentRequestRef.current += 1;
+    activeDetailIdRef.current = null;
+    setPostingComment(false);
   };
 
   return (
@@ -187,7 +258,14 @@ export function BugsPage() {
               <h2 className={styles.detailTitle}>
                 {detail.display_id}: {detail.title}
               </h2>
-              <button onClick={() => setDetailId(null)} className={styles.closeButton}>
+              <button
+                onClick={() => {
+                  invalidateDetailScope();
+                  setDetailId(null);
+                  setDetail(null);
+                }}
+                className={styles.closeButton}
+              >
                 <Icon name="x" size={14} />
               </button>
             </div>
@@ -280,22 +358,27 @@ export function BugsPage() {
               ))}
             </div>
             <div className={styles.commentForm}>
-              <textarea
-                value={commentText}
-                onChange={(e) => setCommentText(e.target.value)}
-                placeholder="添加评论，支持 Markdown..."
-                rows={3}
-                className={styles.commentInput}
+              <div
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                     e.preventDefault();
-                    addComment();
+                    void addComment();
                   }
                 }}
-              />
+              >
+                <CompactMarkdownEditor
+                  value={commentText}
+                  onChange={setCommentText}
+                  placeholder="添加评论，支持 Markdown..."
+                  documentId={`bug-comment-${detail.id}`}
+                  label="反馈评论"
+                  variant="compact"
+                  disabled={postingComment}
+                />
+              </div>
               <button
                 onClick={addComment}
-                disabled={!commentText.trim()}
+                disabled={postingComment || !commentText.trim()}
                 className={
                   commentText.trim()
                     ? styles.sendButton
