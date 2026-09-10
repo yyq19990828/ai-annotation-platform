@@ -30,6 +30,8 @@ export type OfflineOp =
       projectId?: string;
       annotationId: string;
       payload: unknown;
+      /** Preserve the original version check for conditional geometry updates. */
+      etag?: string;
       ts: number;
       retry_count?: number;
     }

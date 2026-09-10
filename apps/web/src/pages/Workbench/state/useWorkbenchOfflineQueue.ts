@@ -148,6 +148,7 @@ export function useWorkbenchOfflineQueue({
             op.taskId,
             op.annotationId,
             op.payload as Parameters<typeof tasksApi.updateAnnotation>[2],
+            op.etag,
           );
         } else {
           await tasksApi.deleteAnnotation(op.taskId, op.annotationId);

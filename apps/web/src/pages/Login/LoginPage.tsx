@@ -20,8 +20,8 @@ export function LoginPage() {
   const from =
     requestedNext?.startsWith("/") && !requestedNext.startsWith("//")
       ? requestedNext
-      : (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ??
-        "/dashboard";
+      : ((location.state as { from?: { pathname?: string } } | null)?.from?.pathname ??
+        "/dashboard");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPwd, setShowPwd] = useState(false);

@@ -47,7 +47,7 @@ test.describe("annotation workbench", () => {
   for (const saveFails of [false, true]) {
     test(
       saveFails
-        ? "bbox 保存失败不产生已保存标注，刷新仍为空"
+        ? "bbox 业务拒绝不产生已保存标注，刷新仍为空"
         : "bbox 真实绘制、选类、落库并刷新恢复",
       async ({ page, seed }) => {
         const data = await seed.reset();
@@ -70,7 +70,10 @@ test.describe("annotation workbench", () => {
             (url) => url.pathname === annotationPath,
             async (route) => {
               if (route.request().method() !== "POST") return route.fallback();
-              await route.fulfill({ status: 500, json: { detail: "E2E annotation save failure" } });
+              await route.fulfill({
+                status: 422,
+                json: { detail: "E2E annotation validation failure" },
+              });
             },
           );
         }
@@ -127,7 +130,7 @@ test.describe("annotation workbench", () => {
           annotation_type: "bbox",
           class_name: "car",
         });
-        expect(savedResponse.status()).toBe(saveFails ? 500 : 201);
+        expect(savedResponse.status()).toBe(saveFails ? 422 : 201);
         if (saveFails) {
           await expect(stage).toHaveAttribute("data-user-box-count", "0");
           expect(await readAnnotations()).toEqual([]);

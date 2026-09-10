@@ -140,6 +140,7 @@ const test = base.extend<{ sliceCase: Case }>({
                 "/api/v1/auth/registration-status",
                 "/api/v1/feedbacks",
                 "/api/v1/projects",
+                "/api/v1/tasks",
                 "/api/v1/audit-logs",
               ].includes(error.path!) ||
                 /^\/api\/v1\/tasks\/[0-9a-f-]{36}(\/annotations)?$/.test(error.path!)))),
@@ -359,10 +360,11 @@ async function reloadAndRead(page: Page, request: APIRequestContext, fixture: Ca
   return annotations;
 }
 function history(page: Page, taskId: string) {
-  return page.evaluate(
-    (id) => JSON.parse(sessionStorage.getItem(`wb:hist:${id}`) ?? "null"),
-    taskId,
-  ) as Promise<{ undo: unknown[]; redo: unknown[] }>;
+  return page.evaluate((id) => {
+    const userId = JSON.parse(localStorage.getItem("auth-storage") ?? "null")?.state?.user?.id;
+    if (!userId) throw new Error("Expected an authenticated workbench history owner");
+    return JSON.parse(sessionStorage.getItem(`wb:hist:${userId}:${id}`) ?? "null");
+  }, taskId) as Promise<{ undo: unknown[]; redo: unknown[] }>;
 }
 function allowHttpError(fixture: Case, path: string, status: number) {
   fixture.allowedErrors.add(`http:${path}:${status}`);

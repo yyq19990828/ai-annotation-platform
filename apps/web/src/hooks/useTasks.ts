@@ -457,7 +457,10 @@ type UpdateAnnotationOptions = MutateOptions<
   Error,
   UpdateAnnotationInput,
   UpdateAnnotationContext
->;
+> & {
+  /** Save transactions that retain their own draft also own failure and retry. */
+  queueOffline?: boolean;
+};
 
 interface SubmittedUpdateAnnotation extends UpdateAnnotationInput {
   taskId: string | undefined;
@@ -541,6 +544,7 @@ export function useUpdateAnnotation(
           taskId: variables.taskId,
           annotationId: variables.annotationId,
           payload: variables.payload,
+          etag: variables.etag,
           ts: Date.now(),
         };
         try {
@@ -592,7 +596,7 @@ export function useUpdateAnnotation(
         videoSegmentId,
         ownerUserId: useAuthStore.getState().user?.id ?? undefined,
         callbacks: options,
-        queueOffline: !options?.onError,
+        queueOffline: options?.queueOffline ?? !options?.onError,
       }),
     [runMutation, taskId, videoSegmentId],
   );
@@ -613,7 +617,10 @@ export function useUpdateAnnotation(
       : undefined,
     mutate,
     mutateAsync,
-  } as UseMutationResult<AnnotationResponse, Error, UpdateAnnotationInput, UpdateAnnotationContext>;
+  } as Omit<
+    UseMutationResult<AnnotationResponse, Error, UpdateAnnotationInput, UpdateAnnotationContext>,
+    "mutate" | "mutateAsync"
+  > & { mutate: typeof mutate; mutateAsync: typeof mutateAsync };
 }
 
 export function useSubmitTask() {

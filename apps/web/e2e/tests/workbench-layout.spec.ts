@@ -357,6 +357,10 @@ test("标准和浮动布局使用日间与夜间语义主题", { tag: "@visual" 
   await page.mouse.move(0, 0);
   await expect(page.locator("[data-sonner-toast]")).toHaveCount(0, { timeout: 12_000 });
   const workspace = page.locator("[data-workbench-workspace]");
+  const queue = page.getByRole("tabpanel", { name: "任务队列", exact: true });
+  await expect(queue.getByText("1 / 5", { exact: true })).toBeVisible();
+  await expect(queue.getByText("T-E2E-000001", { exact: true })).toHaveClass(/text-brand/);
+  await expect(queue.getByText("task-1.svg", { exact: true })).toBeVisible();
   for (const floating of [false, true]) {
     if (floating) await panelCommand(page, "讨论 / Issue", "浮动面板");
     for (const theme of ["light", "dark"]) {

@@ -94,6 +94,18 @@ def _install_legacy_class_kwargs_shim() -> None:
 _install_legacy_class_kwargs_shim()
 
 
+@pytest.fixture(autouse=True)
+def reset_rate_limiter():
+    """Keep request limits active while isolating the shared ASGI client IP."""
+    from app.core.ratelimit import limiter
+
+    limiter.reset()
+    try:
+        yield
+    finally:
+        limiter.reset()
+
+
 @pytest.fixture(scope="session")
 def test_db_url() -> str:
     return os.environ.get("TEST_DATABASE_URL", TEST_DB_DEFAULT)

@@ -3041,7 +3041,7 @@ export function useWorkbenchShellModel({
     acceptNativeMask: acceptNativeMaskCandidate,
     createAnnotationAsync: (payload) => createAnnotation.mutateAsync(payload),
     updateAnnotationAsync: (annotationId, payload, etag) =>
-      updateAnnotationMut.mutateAsync({ annotationId, payload, etag }),
+      updateAnnotationMut.mutateAsync({ annotationId, payload, etag }, { queueOffline: false }),
     isLocked: isLockedForActions,
     enqueueOnError,
     maskEditor,

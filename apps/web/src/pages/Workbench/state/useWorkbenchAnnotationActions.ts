@@ -350,7 +350,8 @@ export function useWorkbenchAnnotationActions({
         publishManualDraft(null);
       };
       const failed = async (err: unknown) => {
-        // A rejected business request remains retryable. Only a transport failure enters the queue.
+        // Business rejections keep the draft; transport failures and temporary server failures
+        // are accepted only after the offline queue durably stores the operation.
         if (isOfflineCandidate(err)) {
           const tmpId = `tmp_${randomId()}`;
           try {

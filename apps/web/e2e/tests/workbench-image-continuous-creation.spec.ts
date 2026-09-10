@@ -267,7 +267,7 @@ test("每个对象独立补必填属性，立即Enter使用最新值且Esc先取
   ]);
 });
 
-// These fault cases intentionally alter transport; accepted writes still use the real API.
+// Reject invalid input without entering the retryable transport/server-failure queue.
 test("业务失败可重试，保存中切题保持意图且迟到结果只归原题", async ({ page, request, seed }) => {
   test.setTimeout(90_000);
   const data = await prepare(request, seed);
@@ -285,9 +285,9 @@ test("业务失败可重试，保存中切题保持意图且迟到结果只归�
     if (route.request().method() === "POST" && rejectOnce) {
       rejectOnce = false;
       await route.fulfill({
-        status: 503,
+        status: 422,
         contentType: "application/json",
-        body: '{"detail":"C transport fault fixture"}',
+        body: '{"detail":"C validation fault fixture"}',
       });
     } else await route.continue();
   });
@@ -371,44 +371,55 @@ async function storedQueue(page: Page) {
   );
 }
 
-test("断网创建等待IndexedDB接收，刷新队列保留且恢复网络仅同步一次", async ({
-  page,
-  context,
-  request,
-  seed,
-}) => {
-  test.setTimeout(90_000);
-  const data = await prepare(request, seed);
-  await open(page, seed, data);
-  await choose(page);
-  await context.setOffline(true);
-  await drawBox(page, 0.3, 0.35, 0.14, 0.13);
-  await accepted(page, 1);
-  await expect.poll(async () => (await storedQueue(page)).length).toBe(1);
-  const path = `**/api/v1/tasks/${data.task_ids[0]}/annotations`;
-  // Keep writes offline while allowing the page bundle and read APIs to reload.
-  await page.route(path, (route) =>
-    route.request().method() === "POST" ? route.abort("internetdisconnected") : route.continue(),
-  );
-  await context.setOffline(false);
-  await page.reload();
-  await expect(page.getByTestId("workbench-stage")).toHaveAttribute("data-image-ready", "true");
-  const queued = await storedQueue(page);
-  expect(queued).toHaveLength(1);
-  expect(queued[0]).toMatchObject({
-    kind: "create",
-    taskId: data.task_ids[0],
-    payload: { class_name: "car" },
+for (const failure of ["offline", "server"] as const) {
+  test(`${failure === "offline" ? "断网" : "服务暂时不可用时"}创建等待IndexedDB接收，刷新队列保留且恢复网络仅同步一次`, async ({
+    page,
+    context,
+    request,
+    seed,
+  }) => {
+    test.setTimeout(90_000);
+    const data = await prepare(request, seed);
+    await open(page, seed, data);
+    await choose(page);
+    const path = `**/api/v1/tasks/${data.task_ids[0]}/annotations`;
+    if (failure === "offline") await context.setOffline(true);
+    else
+      await page.route(path, (route) =>
+        route.request().method() === "POST"
+          ? route.fulfill({ status: 503, json: { detail: "Temporary service failure" } })
+          : route.continue(),
+      );
+    await drawBox(page, 0.3, 0.35, 0.14, 0.13);
+    await accepted(page, 1);
+    await expect.poll(async () => (await storedQueue(page)).length).toBe(1);
+    // Keep writes offline while allowing the page bundle and read APIs to reload.
+    if (failure === "offline")
+      await page.route(path, (route) =>
+        route.request().method() === "POST"
+          ? route.abort("internetdisconnected")
+          : route.continue(),
+      );
+    await context.setOffline(false);
+    await page.reload();
+    await expect(page.getByTestId("workbench-stage")).toHaveAttribute("data-image-ready", "true");
+    const queued = await storedQueue(page);
+    expect(queued).toHaveLength(1);
+    expect(queued[0]).toMatchObject({
+      kind: "create",
+      taskId: data.task_ids[0],
+      payload: { class_name: "car" },
+    });
+    expect(await saved(request, data)).toHaveLength(0);
+    await page.unroute(path);
+    await context.setOffline(true);
+    await context.setOffline(false);
+    await expect.poll(async () => (await saved(request, data)).length).toBe(1);
+    await expect.poll(async () => (await storedQueue(page)).length).toBe(0);
+    await page.reload();
+    expect(await saved(request, data)).toHaveLength(1);
   });
-  expect(await saved(request, data)).toHaveLength(0);
-  await page.unroute(path);
-  await context.setOffline(true);
-  await context.setOffline(false);
-  await expect.poll(async () => (await saved(request, data)).length).toBe(1);
-  await expect.poll(async () => (await storedQueue(page)).length).toBe(0);
-  await page.reload();
-  expect(await saved(request, data)).toHaveLength(1);
-});
+}
 
 test("半成品Esc不保存，工具绑定失效和任务锁会退出连续创建", async ({
   page,

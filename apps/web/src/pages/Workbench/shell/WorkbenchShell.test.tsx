@@ -119,6 +119,7 @@ describe("WorkbenchShell", () => {
       fireEvent.click(screen.getByTestId("issue-pin-fab"));
       expect(onToggleIssuePinDrop).toHaveBeenCalledOnce();
       const progress = screen.getByTestId("issue-frame-navigation");
+      expect(screen.getByTestId("layout")).toContainElement(progress);
       expect(progress).toHaveAttribute("data-status", status);
       expect(progress).toHaveAttribute("data-frame-index", "0");
       expect(progress.textContent?.includes("已定位")).toBe(status === "ready");

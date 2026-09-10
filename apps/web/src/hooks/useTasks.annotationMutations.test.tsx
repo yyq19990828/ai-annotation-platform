@@ -248,6 +248,60 @@ describe("annotation update mutation offline ownership", () => {
       expect.anything(),
     );
   });
+
+  it("leaves a versioned save transaction in control of failure and retry", async () => {
+    const error = Object.assign(new Error("service unavailable"), { status: 503 });
+    updateAnnotationMock.mockRejectedValueOnce(error);
+    const { result, client } = setupUpdate();
+    const current = annotation("a-1", A);
+    client.setQueryData(queryKey(A), [current]);
+    const input = {
+      annotationId: current.id,
+      payload: { attributes: { checked: true } },
+      etag: 'W/"1"',
+    };
+    const request = track(result.current.mutateAsync(input, { queueOffline: false }));
+    await expect(request).rejects.toBe(error);
+    expect(updateAnnotationMock).toHaveBeenCalledTimes(1);
+    expect(enqueueDurablyMock).not.toHaveBeenCalled();
+    expect(isOfflineMutationQueued(error)).toBe(false);
+    expect(client.getQueryData(queryKey(A))).toEqual([current]);
+
+    const saved = { ...current, attributes: input.payload.attributes };
+    updateAnnotationMock.mockResolvedValueOnce(saved);
+    await track(result.current.mutateAsync(input, { queueOffline: false }));
+    expect(updateAnnotationMock).toHaveBeenCalledTimes(2);
+    expect(updateAnnotationMock).toHaveBeenLastCalledWith(
+      A.taskId,
+      current.id,
+      input.payload,
+      input.etag,
+    );
+    expect(client.getQueryData(queryKey(A))).toEqual([saved]);
+  });
+
+  it("preserves the version precondition when history durably queues an update", async () => {
+    const error = Object.assign(new Error("service unavailable"), { status: 503 });
+    updateAnnotationMock.mockRejectedValue(error);
+    const { result } = setupUpdate();
+    const input = {
+      annotationId: "a-1",
+      payload: { attributes: { checked: true } },
+      etag: 'W/"7"',
+    };
+    await expect(track(result.current.mutateAsync(input))).rejects.toBe(error);
+    expect(enqueueDurablyMock).toHaveBeenCalledOnce();
+    expect(enqueueDurablyMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "update",
+        annotationId: input.annotationId,
+        payload: input.payload,
+        etag: input.etag,
+      }),
+      { userId: "user-a" },
+    );
+    expect(isOfflineMutationQueued(error)).toBe(true);
+  });
 });
 
 it("does not overwrite the next account's cache after query cancellation yields", async () => {

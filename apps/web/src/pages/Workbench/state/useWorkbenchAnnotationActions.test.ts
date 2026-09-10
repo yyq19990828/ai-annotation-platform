@@ -8,7 +8,9 @@ import { useWorkbenchAnnotationActions } from "./useWorkbenchAnnotationActions";
 import type { ContinuousImageCreation } from "./manualImageCreation";
 import type { PendingDrawing, Tool } from "./useWorkbenchState";
 
-const { enqueueDurably } = vi.hoisted(() => ({ enqueueDurably: vi.fn(async () => {}) }));
+const { enqueueDurably } = vi.hoisted(() => ({
+  enqueueDurably: vi.fn<typeof import("./offlineQueue").enqueueDurably>(async () => {}),
+}));
 vi.mock("./offlineQueue", () => ({
   enqueue: vi.fn(),
   enqueueDurably,
@@ -358,28 +360,34 @@ describe("useWorkbenchAnnotationActions module", () => {
     expect(history.push).not.toHaveBeenCalled();
   });
 
-  it("离线创建必须等待持久化接收；失败留稿，没有虚假对象或历史", async () => {
-    const durable = deferred<void>();
-    enqueueDurably.mockReturnValueOnce(durable.promise);
-    const { result, queryClient, history } = setup({
-      create: vi.fn(async () => {
-        throw new TypeError("offline");
-      }),
-    });
-    await act(async () => {
-      result.current.beginBboxDrawing(geom);
-    });
-    expect(result.current.state.pendingDrawing?.creation?.phase).toBe("saving");
-    expect(queryClient.getQueryData(["annotations", "task-1"])).toBeUndefined();
-    await act(async () => durable.reject(new Error("quota")));
-    expect(result.current.state.pendingDrawing?.creation?.phase).toBe("error");
-    expect(history.push).not.toHaveBeenCalled();
-    expect(queryClient.getQueryData(["annotations", "task-1"])).toBeUndefined();
-    await act(async () => result.current.submitManualDrawing());
-    expect(result.current.state.pendingDrawing).toBeNull();
-    expect(queryClient.getQueryData(["annotations", "task-1"])).toHaveLength(1);
-    expect(history.push).toHaveBeenCalledTimes(1);
-  });
+  it.each([new TypeError("offline"), { status: 503 }])(
+    "创建遇到 %o 必须等待持久化接收；失败留稿，没有虚假对象或历史",
+    async (error) => {
+      enqueueDurably.mockClear();
+      const durable = deferred<void>();
+      enqueueDurably.mockReturnValueOnce(durable.promise);
+      const { result, queryClient, history } = setup({
+        create: vi.fn(async () => {
+          throw error;
+        }),
+      });
+      await act(async () => {
+        result.current.beginBboxDrawing(geom);
+      });
+      expect(result.current.state.pendingDrawing?.creation?.phase).toBe("saving");
+      expect(queryClient.getQueryData(["annotations", "task-1"])).toBeUndefined();
+      await act(async () => durable.reject(new Error("quota")));
+      expect(result.current.state.pendingDrawing?.creation?.phase).toBe("error");
+      expect(history.push).not.toHaveBeenCalled();
+      expect(queryClient.getQueryData(["annotations", "task-1"])).toBeUndefined();
+      await act(async () => result.current.submitManualDrawing());
+      expect(result.current.state.pendingDrawing).toBeNull();
+      expect(queryClient.getQueryData(["annotations", "task-1"])).toHaveLength(1);
+      expect(history.push).toHaveBeenCalledTimes(1);
+      expect(enqueueDurably).toHaveBeenCalledTimes(2);
+      expect(enqueueDurably.mock.calls[1][0].id).toBe(enqueueDurably.mock.calls[0][0].id);
+    },
+  );
 
   it("安全确认路径与连续路径生成相同 payload", async () => {
     const normal = setup({ intent: null });
