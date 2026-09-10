@@ -14,6 +14,7 @@ from app.deps import (
     require_roles,
     require_scopes,
 )
+from app.db.enums import UserRole
 from app.db.models.user import User
 from app.db.models.annotation import Annotation
 from app.db.models.annotation_operation import AnnotationOperation
@@ -468,12 +469,17 @@ async def secondary_inference(
     dispatch_context_factory: GPUDispatchContextFactory = Depends(
         get_gpu_dispatch_context_factory
     ),
-    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+    current_user: User = Depends(
+        require_roles(UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.ANNOTATOR)
+    ),
 ):
-    """v0.20.11 · 选中框单框二次推理: 在选中框 ROI 上同步跑一个能力, 产物落库。
+    """选中框单框二次推理: 在选中框 ROI 上同步跑一个能力, 产物落库。
 
     属性型写回原框 (origin=ai)、几何型建子框 (parent=选中框)。复用批量 pipeline 下游
     阶段的 crop 投递 + 产物归位, 不走 worker。
+
+    仅超级管理员、项目管理员和标注员可调用, 仍需通过任务可见性及可编辑状态校验。
+    审核员调用返回 403; 人工审核修改仍使用普通标注接口。
     """
     task = await _load_task_or_404(db, task_id)
     await _assert_task_visible(db, task, current_user)
