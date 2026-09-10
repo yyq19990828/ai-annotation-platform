@@ -7,17 +7,25 @@
  * - 修改 markdown → "保存" 触发 useUpdateProject.mutateAsync({ annotation_guide })
  * - 已上传 guide_assets 列表渲染 + 删除按钮调 useGuideAssets.deleteAsset
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 
 const mockMutateAsync = vi.fn().mockResolvedValue({});
+const mockMutationOwners: string[] = [];
 const mockPushToast = vi.fn();
 const mockUploadAsset = vi.fn();
 const mockDeleteAsset = vi.fn();
 const mockSignAsset = vi.fn().mockResolvedValue("http://signed/x");
 
 vi.mock("@/hooks/useProjects", () => ({
-  useUpdateProject: () => ({ mutateAsync: mockMutateAsync, isPending: false }),
+  useUpdateProject: (projectId: string) => ({
+    mutateAsync: (payload: unknown) => {
+      mockMutationOwners.push(projectId);
+      return mockMutateAsync(payload);
+    },
+    isPending: false,
+  }),
 }));
 vi.mock("@/hooks/useGuideAssets", () => ({
   useGuideAssets: () => ({
@@ -93,11 +101,17 @@ function makeProject(
 
 describe("AnnotationGuideSection", () => {
   beforeEach(() => {
+    vi.useRealTimers();
     mockMutateAsync.mockReset().mockResolvedValue({});
+    mockMutationOwners.length = 0;
     mockPushToast.mockReset();
     mockUploadAsset.mockReset();
     mockDeleteAsset.mockReset().mockResolvedValue(undefined);
     mockSignAsset.mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("加载初值并渲染共享编辑器", async () => {
@@ -187,5 +201,238 @@ describe("AnnotationGuideSection", () => {
     await waitFor(() => {
       expect(mockDeleteAsset).toHaveBeenCalledWith(asset.key);
     });
+  });
+
+  it("停止编辑 1000ms 后自动保存并合并连续输入", async () => {
+    const { unmount } = render(<AnnotationGuideSection project={makeProject()} />);
+    const editor = (await screen.findByTestId("markdown-editor")) as HTMLTextAreaElement;
+    vi.useFakeTimers();
+
+    fireEvent.change(editor, { target: { value: "# 第一版" } });
+    expect(screen.getByTestId("guide-save-status")).toHaveTextContent("等待自动保存");
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(999);
+    });
+    expect(mockMutateAsync).not.toHaveBeenCalled();
+
+    fireEvent.change(editor, { target: { value: "# 最终版" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    expect(mockMutateAsync).toHaveBeenCalledTimes(1);
+    expect(mockMutateAsync).toHaveBeenCalledWith({ annotation_guide: "# 最终版" });
+    expect(screen.getByTestId("guide-save-status")).toHaveTextContent("已保存");
+    unmount();
+  });
+
+  it("立即保存会取消自动计时器并避免重复请求", async () => {
+    const { unmount } = render(<AnnotationGuideSection project={makeProject()} />);
+    const editor = (await screen.findByTestId("markdown-editor")) as HTMLTextAreaElement;
+    vi.useFakeTimers();
+
+    fireEvent.change(editor, { target: { value: "# 手动保存" } });
+    fireEvent.click(screen.getByTestId("guide-save"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(mockMutateAsync).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(mockMutateAsync).toHaveBeenCalledTimes(1);
+    unmount();
+  });
+
+  it("自动保存失败后保留草稿，且只有重试或新编辑会再次请求", async () => {
+    mockMutateAsync
+      .mockReset()
+      .mockRejectedValueOnce(new Error("网络中断"))
+      .mockResolvedValueOnce({});
+    const { unmount } = render(<AnnotationGuideSection project={makeProject()} />);
+    const editor = (await screen.findByTestId("markdown-editor")) as HTMLTextAreaElement;
+    vi.useFakeTimers();
+
+    fireEvent.change(editor, { target: { value: "# 待重试" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(mockMutateAsync).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("guide-save-status")).toHaveTextContent("保存失败：网络中断");
+    expect(mockPushToast).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(mockMutateAsync).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByTestId("guide-save"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(mockMutateAsync).toHaveBeenCalledTimes(2);
+    expect(screen.getByTestId("guide-save-status")).toHaveTextContent("已保存");
+    unmount();
+  });
+
+  it("串行保存时旧响应不会绕过新稿的自动保存计时器", async () => {
+    const pending: Array<{
+      payload: { annotation_guide: string };
+      resolve: () => void;
+    }> = [];
+    mockMutateAsync.mockImplementation((payload: { annotation_guide: string }) => {
+      return new Promise<void>((resolve) => pending.push({ payload, resolve }));
+    });
+    const { unmount } = render(<AnnotationGuideSection project={makeProject()} />);
+    const editor = (await screen.findByTestId("markdown-editor")) as HTMLTextAreaElement;
+    vi.useFakeTimers();
+
+    fireEvent.change(editor, { target: { value: "A" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(pending.map((item) => item.payload.annotation_guide)).toEqual(["A"]);
+
+    fireEvent.change(editor, { target: { value: "B" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(999);
+    });
+    pending[0].resolve();
+    await act(async () => undefined);
+    expect(mockMutateAsync).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(pending.map((item) => item.payload.annotation_guide)).toEqual(["A", "B"]);
+
+    fireEvent.change(editor, { target: { value: "A" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(999);
+    });
+    pending[1].resolve();
+    await act(async () => undefined);
+    expect(mockMutateAsync).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+    expect(pending.map((item) => item.payload.annotation_guide)).toEqual(["A", "B", "A"]);
+    pending[2].resolve();
+    await act(async () => undefined);
+    unmount();
+  });
+
+  it("保存 B 时撤销回已确认的 A 仍拦截离页，A 保存完成后解除", async () => {
+    const pending: Array<{
+      payload: { annotation_guide: string };
+      resolve: () => void;
+    }> = [];
+    mockMutateAsync.mockImplementation((payload: { annotation_guide: string }) => {
+      return new Promise<void>((resolve) => pending.push({ payload, resolve }));
+    });
+    const { unmount } = render(
+      <AnnotationGuideSection project={makeProject({ annotation_guide: "A" })} />,
+    );
+    const editor = (await screen.findByTestId("markdown-editor")) as HTMLTextAreaElement;
+    vi.useFakeTimers();
+
+    fireEvent.change(editor, { target: { value: "B" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(pending.map((item) => item.payload.annotation_guide)).toEqual(["B"]);
+
+    fireEvent.change(editor, { target: { value: "A" } });
+    const beforeUnloadWhileBIsActive = new Event("beforeunload", { cancelable: true });
+    expect(window.dispatchEvent(beforeUnloadWhileBIsActive)).toBe(false);
+    expect(beforeUnloadWhileBIsActive.defaultPrevented).toBe(true);
+
+    pending[0].resolve();
+    await act(async () => undefined);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(pending.map((item) => item.payload.annotation_guide)).toEqual(["B", "A"]);
+
+    pending[1].resolve();
+    await act(async () => undefined);
+    const beforeUnloadAfterAIsSaved = new Event("beforeunload", { cancelable: true });
+    expect(window.dispatchEvent(beforeUnloadAfterAIsSaved)).toBe(true);
+    expect(beforeUnloadAfterAIsSaved.defaultPrevented).toBe(false);
+    unmount();
+  });
+
+  it("切换项目时 flush 原项目防抖中的最新草稿", async () => {
+    const { rerender } = render(
+      <AnnotationGuideSection project={makeProject({ id: "p-a", annotation_guide: "# A" })} />,
+    );
+    const editorA = (await screen.findByTestId("markdown-editor")) as HTMLTextAreaElement;
+    vi.useFakeTimers();
+    fireEvent.change(editorA, { target: { value: "# A 最新" } });
+
+    rerender(
+      <AnnotationGuideSection project={makeProject({ id: "p-b", annotation_guide: "# B" })} />,
+    );
+    expect(mockMutateAsync).toHaveBeenCalledTimes(1);
+    expect(mockMutateAsync).toHaveBeenCalledWith({ annotation_guide: "# A 最新" });
+    expect(mockMutationOwners).toEqual(["p-a"]);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(mockMutateAsync).toHaveBeenCalledTimes(1);
+
+    await act(async () => undefined);
+    const editorB = screen.getByTestId("markdown-editor") as HTMLTextAreaElement;
+    fireEvent.change(editorB, { target: { value: "# B 最新" } });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(mockMutateAsync).toHaveBeenCalledWith({ annotation_guide: "# B 最新" });
+    expect(mockMutationOwners).toEqual(["p-a", "p-b"]);
+  });
+
+  it("卸载时 flush 最新草稿，未改变内容不会写入", async () => {
+    const first = render(<AnnotationGuideSection project={makeProject()} />);
+    const editor = (await screen.findByTestId("markdown-editor")) as HTMLTextAreaElement;
+    vi.useFakeTimers();
+    fireEvent.change(editor, { target: { value: "# 卸载前保存" } });
+    first.unmount();
+    expect(mockMutateAsync).toHaveBeenCalledWith({ annotation_guide: "# 卸载前保存" });
+    vi.useRealTimers();
+
+    const second = render(
+      <StrictMode>
+        <AnnotationGuideSection project={makeProject({ annotation_guide: "# 不变" })} />
+      </StrictMode>,
+    );
+    await screen.findByTestId("markdown-editor");
+    second.unmount();
+    expect(mockMutateAsync).toHaveBeenCalledTimes(1);
+  });
+
+  it("退役项目的保存失败不会污染新项目状态或提示", async () => {
+    let rejectOld: ((error: Error) => void) | undefined;
+    mockMutateAsync.mockImplementationOnce(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          rejectOld = reject;
+        }),
+    );
+    const { rerender } = render(
+      <AnnotationGuideSection project={makeProject({ id: "p-old", annotation_guide: "# 旧" })} />,
+    );
+    const editor = (await screen.findByTestId("markdown-editor")) as HTMLTextAreaElement;
+    vi.useFakeTimers();
+    fireEvent.change(editor, { target: { value: "# 旧稿" } });
+    rerender(
+      <AnnotationGuideSection project={makeProject({ id: "p-new", annotation_guide: "# 新" })} />,
+    );
+
+    rejectOld?.(new Error("旧项目失败"));
+    await act(async () => undefined);
+    expect(mockPushToast).not.toHaveBeenCalled();
+    expect(screen.getByTestId("guide-save-status")).toHaveTextContent("已保存");
   });
 });

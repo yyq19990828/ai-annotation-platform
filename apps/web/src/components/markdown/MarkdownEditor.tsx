@@ -17,10 +17,12 @@ import {
   InsertTable,
   ListsToggle,
   MDXEditor,
+  NESTED_EDITOR_UPDATED_COMMAND,
   StrikeThroughSupSubToggles,
   UndoRedo,
   codeBlockPlugin,
   codeMirrorPlugin,
+  createActiveEditorSubscription$,
   createRootEditorSubscription$,
   defaultSvgIcons,
   diffSourcePlugin,
@@ -32,6 +34,7 @@ import {
   markdownShortcutPlugin,
   quotePlugin,
   realmPlugin,
+  rootEditor$,
   tablePlugin,
   toolbarPlugin,
   useCellValue,
@@ -218,6 +221,61 @@ function pendingImageAnchor(
   };
 }
 
+const TABLE_CELL_DRAFT_SYNC_DELAY_MS = 250;
+
+/**
+ * Table cells are independent Lexical editors. MDXEditor's public active
+ * editor subscription and nested editor command are the smallest supported
+ * way to export a changed cell into the root editor; this avoids serializing
+ * the whole document on every key.
+ */
+function isTableCellEditor(editor: LexicalEditor): boolean {
+  const parentTagName = editor.getRootElement()?.parentElement?.tagName;
+  return parentTagName === "TD" || parentTagName === "TH";
+}
+
+function registerTableCellDraftSync(editor: LexicalEditor): () => void {
+  let timer: number | null = null;
+
+  const cancel = () => {
+    if (timer !== null) {
+      window.clearTimeout(timer);
+      timer = null;
+    }
+  };
+
+  const schedule = () => {
+    cancel();
+    timer = window.setTimeout(() => {
+      timer = null;
+      if (editor.isComposing()) {
+        schedule();
+        return;
+      }
+
+      const root = editor.getRootElement();
+      const hadFocus = Boolean(root && root.contains(document.activeElement));
+      editor.dispatchCommand(NESTED_EDITOR_UPDATED_COMMAND, undefined);
+      // saveAndFocus(null) updates the table's active-cell marker. Reapply
+      // focus only when this cell still owned focus, preserving selection
+      // and preventing an idle timer from stealing focus after navigation.
+      if (hadFocus) editor.focus();
+    }, TABLE_CELL_DRAFT_SYNC_DELAY_MS);
+  };
+
+  const unregisterUpdate = editor.registerUpdateListener(({ dirtyElements, dirtyLeaves }) => {
+    // Selection-only updates have no dirty nodes and must not publish a
+    // duplicate Markdown draft.
+    if (dirtyElements.size === 0 && dirtyLeaves.size === 0) return;
+    schedule();
+  });
+
+  return () => {
+    cancel();
+    unregisterUpdate();
+  };
+}
+
 function visitLexicalNodes(node: LexicalNode, visit: (node: LexicalNode) => void): void {
   visit(node);
   if (node instanceof ElementNode) {
@@ -308,6 +366,9 @@ function MarkdownEditorDocument({
   const uploadQueueRef = useRef<Promise<void>>(Promise.resolve());
   const pendingUploadsRef = useRef<Map<string, PendingUpload>>(new Map());
   const blurTimerRef = useRef<number | null>(null);
+  const compositionFlushTimerRef = useRef<number | null>(null);
+  const composingRef = useRef(false);
+  const deferredPublishRef = useRef<string | null>(null);
   const aliveRef = useRef(true);
   const reconcilePendingRef = useRef<
     (editor: LexicalEditor, nodeKey: string, pending: PendingUpload) => void
@@ -333,6 +394,9 @@ function MarkdownEditorDocument({
     return () => {
       aliveRef.current = false;
       if (blurTimerRef.current !== null) window.clearTimeout(blurTimerRef.current);
+      if (compositionFlushTimerRef.current !== null) {
+        window.clearTimeout(compositionFlushTimerRef.current);
+      }
     };
   }, []);
 
@@ -371,8 +435,35 @@ function MarkdownEditorDocument({
 
   const publishValidDraft = useCallback((next: string) => {
     latestMarkdownRef.current = next;
+    if (composingRef.current) {
+      deferredPublishRef.current = next;
+      return;
+    }
+    deferredPublishRef.current = null;
     if (next !== valueRef.current) onChangeRef.current(next);
   }, []);
+
+  const flushDeferredCompositionDraft = useCallback(() => {
+    if (compositionFlushTimerRef.current !== null) {
+      window.clearTimeout(compositionFlushTimerRef.current);
+    }
+    compositionFlushTimerRef.current = window.setTimeout(() => {
+      compositionFlushTimerRef.current = null;
+      if (composingRef.current) return;
+      const deferred = deferredPublishRef.current;
+      deferredPublishRef.current = null;
+      if (deferred !== null) publishValidDraft(deferred);
+    }, 0);
+  }, [publishValidDraft]);
+
+  const handleCompositionStart = useCallback(() => {
+    composingRef.current = true;
+  }, []);
+
+  const handleCompositionEnd = useCallback(() => {
+    composingRef.current = false;
+    flushDeferredCompositionDraft();
+  }, [flushDeferredCompositionDraft]);
 
   const settleAfterPendingTransaction = useCallback(() => {
     queueMicrotask(() => {
@@ -476,6 +567,21 @@ function MarkdownEditorDocument({
           reconcilePendingRef.current(editor, nodeKey, pending),
         onMissingNode: (editor, pending) => missingPendingRef.current(editor, pending),
       }),
+    [],
+  );
+
+  const tableCellDraftPlugin = useMemo(
+    () =>
+      realmPlugin({
+        init(realm) {
+          realm.pub(createActiveEditorSubscription$, (editor) => {
+            if (editor === realm.getValue(rootEditor$) || !isTableCellEditor(editor)) {
+              return () => undefined;
+            }
+            return registerTableCellDraftSync(editor);
+          });
+        },
+      })(),
     [],
   );
 
@@ -766,6 +872,7 @@ function MarkdownEditorDocument({
       diffSourcePlugin({ viewMode: "rich-text" }),
       markdownShortcutPlugin(),
       pendingPlugin,
+      tableCellDraftPlugin,
       editorModePlugin({ mode }),
       toolbarPlugin({ toolbarContents: () => <MarkdownToolbar variant={variant} /> }),
     ];
@@ -776,6 +883,7 @@ function MarkdownEditorDocument({
     pendingPlugin,
     resolveImage,
     mode,
+    tableCellDraftPlugin,
     uploadHandler,
     variant,
   ]);
@@ -786,6 +894,8 @@ function MarkdownEditorDocument({
       className={`${styles.root} ${variant === "compact" ? styles.compact : styles.document}`}
       data-testid="markdown-editor"
       data-image-scope={imageScope}
+      onCompositionStartCapture={handleCompositionStart}
+      onCompositionEndCapture={handleCompositionEnd}
       onBlurCapture={(event: ReactFocusEvent<HTMLDivElement>) =>
         handleEditorBlur(event.nativeEvent)
       }

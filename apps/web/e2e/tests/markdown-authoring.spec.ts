@@ -339,6 +339,12 @@ test.describe("shared Markdown authoring", () => {
   }) => {
     const fixture = await prepareGuide(page, request, seed, "初始规则 A");
     const editor = await openGuide(page, fixture.project_id);
+    const hasUnsavedWarning = () =>
+      page.evaluate(() => {
+        const event = new Event("beforeunload", { cancelable: true });
+        window.dispatchEvent(event);
+        return event.defaultPrevented;
+      });
     let releaseResponse!: () => void;
     const responseGate = new Promise<void>((resolve) => {
       releaseResponse = resolve;
@@ -362,10 +368,13 @@ test.describe("shared Markdown authoring", () => {
       await firstStoredGate;
       expect((await fixture.read()).annotation_guide).toContain("编辑中的规则 B");
       await richText(editor).fill("初始规则 A");
+      await expect.poll(hasUnsavedWarning).toBe(true);
       await page.getByRole("heading", { name: "标注指引", exact: true }).click();
       releaseResponse();
       await expect.poll(async () => (await fixture.read()).annotation_guide).toBe("初始规则 A");
       await expect(richText(editor)).toHaveText("初始规则 A");
+      await expect(page.getByTestId("guide-save-status")).toHaveText("已保存");
+      await expect.poll(hasUnsavedWarning).toBe(false);
     } finally {
       releaseResponse();
     }

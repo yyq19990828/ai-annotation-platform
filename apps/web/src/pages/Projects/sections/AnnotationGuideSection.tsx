@@ -10,6 +10,7 @@ import type { GuideAssetEntry, ProjectResponse, ProjectUpdatePayload } from "@/a
 const DESCRIPTION_CLASS = "m-0 text-xs leading-relaxed text-muted-foreground";
 const PLACEHOLDER_CLASS =
   "rounded-md border border-dashed border-border p-6 text-center text-sm text-muted-foreground";
+const AUTO_SAVE_DELAY_MS = 1000;
 
 const MarkdownEditor = lazy(() =>
   import("@/components/markdown/MarkdownEditor").then((module) => ({
@@ -17,7 +18,7 @@ const MarkdownEditor = lazy(() =>
   })),
 );
 
-type SaveStatus = "saved" | "unsaved" | "saving" | "failed";
+type SaveStatus = "saved" | "pending" | "saving" | "failed";
 type SaveMutation = (payload: ProjectUpdatePayload) => Promise<unknown>;
 
 interface SaveRequest {
@@ -63,10 +64,13 @@ function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
   const queuedSaveRef = useRef<SaveRequest | null>(null);
   const drainingRef = useRef(false);
   const drainPromiseRef = useRef<Promise<void> | null>(null);
+  const autoSaveTimerRef = useRef<number | null>(null);
   const explicitSaveTimerRef = useRef<number | null>(null);
+  const ownerActiveRef = useRef(false);
   const statusRef = useRef<SaveStatus>("saved");
 
   const setStatus = useCallback((next: SaveStatus) => {
+    if (!ownerActiveRef.current) return;
     statusRef.current = next;
     setSaveStatus(next);
   }, []);
@@ -75,6 +79,13 @@ function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
     (payload) => updateMutateAsync(payload),
     [updateMutateAsync],
   );
+
+  const cancelAutoSave = useCallback(() => {
+    if (autoSaveTimerRef.current !== null) {
+      window.clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = null;
+    }
+  }, []);
 
   // The server can refresh the same project after a successful mutation. It
   // may update a clean form, but it must never clobber an active local draft.
@@ -107,17 +118,7 @@ function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
     }
   }, [initialAssets, initialMarkdown, project.id, setStatus]);
 
-  useEffect(
-    () => () => {
-      if (explicitSaveTimerRef.current !== null) {
-        window.clearTimeout(explicitSaveTimerRef.current);
-        explicitSaveTimerRef.current = null;
-      }
-    },
-    [],
-  );
-
-  useUnsavedWarning(draft !== savedMarkdown);
+  useUnsavedWarning(draft !== savedMarkdown || saveStatus !== "saved");
 
   const drainSaveQueue = useCallback((): Promise<void> => {
     if (drainingRef.current) return drainPromiseRef.current ?? Promise.resolve();
@@ -149,27 +150,41 @@ function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
             // advancing this baseline, otherwise A -> B -> A can lose its
             // queued save when B resolves.
             savedMarkdownRef.current = request.content;
-            setSavedMarkdown(request.content);
-            setSaveError(null);
+            if (ownerActiveRef.current) {
+              setSavedMarkdown(request.content);
+              setSaveError(null);
+            }
 
             const currentDraft = draftRef.current;
             if (currentDraft !== request.content) {
               const queued = queuedSaveRef.current as SaveRequest | null;
-              if (
-                queued === null ||
-                queued.epoch !== request.epoch ||
-                queued.content !== currentDraft
-              ) {
+              if (queued === null && autoSaveTimerRef.current === null) {
                 queuedSaveRef.current = {
                   epoch: request.epoch,
                   revision: revisionRef.current,
                   content: currentDraft,
                   mutateAsync,
                 };
+              } else if (
+                queued &&
+                (queued.epoch !== request.epoch || queued.content !== currentDraft)
+              ) {
+                queuedSaveRef.current =
+                  autoSaveTimerRef.current === null
+                    ? {
+                        epoch: request.epoch,
+                        revision: revisionRef.current,
+                        content: currentDraft,
+                        mutateAsync,
+                      }
+                    : null;
               }
-              setStatus("saving");
+              if (ownerActiveRef.current) {
+                setStatus(queuedSaveRef.current ? "saving" : "pending");
+              }
             } else {
-              setStatus("saved");
+              cancelAutoSave();
+              if (ownerActiveRef.current) setStatus("saved");
             }
             continue;
           }
@@ -178,9 +193,11 @@ function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
           // final state. Otherwise retain the draft and expose a retryable
           // failure.
           if (queuedSaveRef.current) continue;
-          setSaveError(getSaveErrorMessage(failure));
-          setStatus("failed");
-          pushToast({ msg: "标注指引保存失败，可重试", kind: "warning" });
+          if (ownerActiveRef.current) {
+            setSaveError(getSaveErrorMessage(failure));
+            setStatus("failed");
+            pushToast({ msg: "标注指引保存失败，可重试", kind: "warning" });
+          }
         }
       } finally {
         drainingRef.current = false;
@@ -190,7 +207,7 @@ function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
 
     drainPromiseRef.current = drain;
     return drain;
-  }, [mutateAsync, pushToast, setStatus]);
+  }, [cancelAutoSave, mutateAsync, pushToast, setStatus]);
 
   const enqueueSave = useCallback((): Promise<void> => {
     const content = draftRef.current;
@@ -215,10 +232,18 @@ function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
       content,
       mutateAsync,
     };
-    setSaveError(null);
+    if (ownerActiveRef.current) setSaveError(null);
     setStatus("saving");
     return drainSaveQueue();
   }, [drainSaveQueue, mutateAsync, setStatus]);
+
+  const scheduleAutoSave = useCallback(() => {
+    cancelAutoSave();
+    autoSaveTimerRef.current = window.setTimeout(() => {
+      autoSaveTimerRef.current = null;
+      void enqueueSave();
+    }, AUTO_SAVE_DELAY_MS);
+  }, [cancelAutoSave, enqueueSave]);
 
   const handleDraftChange = useCallback(
     (next: string) => {
@@ -228,25 +253,40 @@ function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
       setSaveError(null);
 
       const epoch = projectEpochRef.current;
-      const active = activeSaveRef.current;
       const queued = queuedSaveRef.current;
-      const hasOutstandingSave = active?.epoch === epoch || queued?.epoch === epoch;
+      if (queued && (queued.epoch !== epoch || queued.content !== next)) {
+        queuedSaveRef.current = null;
+      }
+      const active = activeSaveRef.current;
+      const queuedAfterChange = queuedSaveRef.current;
+      const hasOutstandingSave = active?.epoch === epoch || queuedAfterChange?.epoch === epoch;
       if (next === savedMarkdownRef.current && !hasOutstandingSave) {
+        cancelAutoSave();
         setStatus("saved");
-      } else if (hasOutstandingSave) {
+        return;
+      }
+
+      const requestAlreadyHasDraft =
+        (active?.epoch === epoch && active.content === next) ||
+        (queuedAfterChange?.epoch === epoch && queuedAfterChange.content === next);
+      if (requestAlreadyHasDraft) {
+        cancelAutoSave();
         setStatus("saving");
       } else {
-        setStatus("unsaved");
+        scheduleAutoSave();
+        setStatus(hasOutstandingSave ? "saving" : "pending");
       }
     },
-    [setStatus],
+    [cancelAutoSave, scheduleAutoSave, setStatus],
   );
 
   const handleAutoSave = useCallback(() => {
+    cancelAutoSave();
     void enqueueSave();
-  }, [enqueueSave]);
+  }, [cancelAutoSave, enqueueSave]);
 
   const handleExplicitSave = useCallback(() => {
+    cancelAutoSave();
     if (explicitSaveTimerRef.current !== null) {
       window.clearTimeout(explicitSaveTimerRef.current);
     }
@@ -258,7 +298,25 @@ function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
       explicitSaveTimerRef.current = null;
       void enqueueSave();
     }, 0);
-  }, [enqueueSave]);
+  }, [cancelAutoSave, enqueueSave]);
+
+  const retireFlushRef = useRef<() => void>(() => undefined);
+  retireFlushRef.current = () => {
+    cancelAutoSave();
+    if (explicitSaveTimerRef.current !== null) {
+      window.clearTimeout(explicitSaveTimerRef.current);
+      explicitSaveTimerRef.current = null;
+    }
+    void enqueueSave();
+  };
+
+  useEffect(() => {
+    ownerActiveRef.current = true;
+    return () => {
+      ownerActiveRef.current = false;
+      retireFlushRef.current();
+    };
+  }, []);
 
   const handleUpload = useCallback(
     async (file: File) => {
@@ -311,7 +369,7 @@ function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
         <h3 className="m-0 text-md font-semibold">标注指引</h3>
         <p className={DESCRIPTION_CLASS}>
           支持可视化 Markdown、源码和 GFM 表格；拖拽或粘贴图片会上传到当前项目资源。
-          标注员可通过工作台顶栏的「标注指引」按钮打开阅读窗口。
+          标注员可通过工作台顶栏的「标注指引」按钮打开阅读窗口。 停止输入后自动保存，也可手动保存。
         </p>
 
         <Suspense fallback={<div className={PLACEHOLDER_CLASS}>编辑器加载中…</div>}>
@@ -382,8 +440,8 @@ function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
           >
             {saveStatus === "saving"
               ? "保存中…"
-              : saveStatus === "unsaved"
-                ? "有未保存修改"
+              : saveStatus === "pending"
+                ? "等待自动保存"
                 : saveStatus === "failed"
                   ? `保存失败：${saveError ?? "请重试"}`
                   : "已保存"}
