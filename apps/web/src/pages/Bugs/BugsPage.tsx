@@ -12,7 +12,14 @@ const MAX_COMMENT_LENGTH = 10_000;
 
 type CompactMarkdownEditorProps = Pick<
   MarkdownEditorProps,
-  "value" | "onChange" | "placeholder" | "documentId" | "label" | "variant" | "disabled"
+  | "value"
+  | "onChange"
+  | "onSubmit"
+  | "placeholder"
+  | "documentId"
+  | "label"
+  | "variant"
+  | "disabled"
 >;
 
 // 管理评论使用紧凑编辑器，延迟加载编辑器依赖以保持管理页首屏轻量。
@@ -117,9 +124,9 @@ export function BugsPage() {
     }
   };
 
-  const addComment = async () => {
-    if (!detailId || !commentText.trim() || postingComment) return;
-    const body = commentText.trim();
+  const addComment = async (submittedText = commentText) => {
+    if (!detailId || !submittedText.trim() || postingComment) return;
+    const body = submittedText.trim();
     if (codePointLength(body) > MAX_COMMENT_LENGTH) {
       pushToast({ msg: `评论不能超过 ${MAX_COMMENT_LENGTH} 个字符`, kind: "error" });
       return;
@@ -358,17 +365,11 @@ export function BugsPage() {
               ))}
             </div>
             <div className={styles.commentForm}>
-              <div
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                    e.preventDefault();
-                    void addComment();
-                  }
-                }}
-              >
+              <div>
                 <CompactMarkdownEditor
                   value={commentText}
                   onChange={setCommentText}
+                  onSubmit={(next) => void addComment(next)}
                   placeholder="添加评论，支持 Markdown..."
                   documentId={`bug-comment-${detail.id}`}
                   label="反馈评论"
@@ -377,7 +378,7 @@ export function BugsPage() {
                 />
               </div>
               <button
-                onClick={addComment}
+                onClick={() => void addComment()}
                 disabled={postingComment || !commentText.trim()}
                 className={
                   commentText.trim()

@@ -107,6 +107,66 @@ async function pasteImage(target: Locator, name: string) {
   await pasteImages(target, [name]);
 }
 
+async function placeCaretAtTextOffset(target: Locator, offset: number) {
+  await target.evaluate((element, textOffset) => {
+    element.focus();
+    const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    let remaining = textOffset;
+    let current = walker.nextNode();
+    while (current) {
+      const length = current.textContent?.length ?? 0;
+      if (remaining <= length) {
+        const range = document.createRange();
+        range.setStart(current, remaining);
+        range.collapse(true);
+        const selection = window.getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+        return;
+      }
+      remaining -= length;
+      current = walker.nextNode();
+    }
+    throw new Error(`Unable to place caret at text offset ${textOffset}`);
+  }, offset);
+}
+
+async function submitTableCommentWithShortcut(
+  editor: Locator,
+  initialValue: string,
+  finalValue: string,
+) {
+  await mode(editor, "源码");
+  await editor
+    .locator(".cm-content:visible")
+    .fill(`| 类别 | 评论 |\n| --- | --- |\n| 图片 | ${initialValue} |`);
+  await mode(editor, "编辑");
+  const cell = editor.getByRole("cell", { name: initialValue, exact: true });
+  await cell.click();
+  const input = cell.locator('[contenteditable="true"]');
+  await input.fill(finalValue);
+  const updatedCell = editor.getByRole("cell", { name: finalValue, exact: true });
+  await expect(updatedCell).toBeVisible();
+  await updatedCell.locator('[contenteditable="true"]').press("Control+Enter");
+}
+
+async function submitSourceCommentAfterTableFocusWithShortcut(
+  editor: Locator,
+  tableValue: string,
+  finalValue: string,
+) {
+  await mode(editor, "源码");
+  await editor
+    .locator(".cm-content:visible")
+    .fill(`| 类别 | 评论 |\n| --- | --- |\n| 图片 | ${tableValue} |`);
+  await mode(editor, "编辑");
+  await editor.getByRole("cell", { name: tableValue, exact: true }).click();
+  await mode(editor, "源码");
+  const source = editor.locator(".cm-content:visible");
+  await source.fill(finalValue);
+  await source.press("Control+Enter");
+}
+
 test.describe("shared Markdown authoring", () => {
   test.setTimeout(90_000);
 
@@ -332,6 +392,192 @@ test.describe("shared Markdown authoring", () => {
     expect(saved.guide_assets).toHaveLength(1);
   });
 
+  test("a failed image retry preserves edits made in source mode", async ({
+    page,
+    request,
+    seed,
+  }) => {
+    const fixture = await prepareGuide(page, request, seed, "源码重试前");
+    const editor = await openGuide(page, fixture.project_id);
+    const body = richText(editor);
+    let rejectFirstUpload = true;
+    await page.route("**/guide-assets/upload-init", (route) => {
+      if (!rejectFirstUpload) return route.continue();
+      rejectFirstUpload = false;
+      return route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: '{"detail":"test source retry unavailable"}',
+      });
+    });
+
+    await body.focus();
+    await body.press("Control+End");
+    await pasteImage(body, "源码重试 [1].png");
+    const errors = editor.getByTestId("markdown-upload-errors");
+    await expect(errors).toBeVisible();
+    await mode(editor, "源码");
+    const source = editor.locator(".cm-content:visible");
+    await expect(source).toContainText("markdown-upload-pending:");
+    const pendingMarkdown = await source.innerText();
+    await source.fill(`源码模式新增\n\n${pendingMarkdown}`);
+
+    await errors.getByRole("button", { name: "重试", exact: true }).click();
+    await expect.poll(async () => await source.innerText()).toContain("guide-asset:");
+    await mode(editor, "编辑");
+    await expect(editor.getByRole("img", { name: "源码重试 [1].png" })).toBeVisible();
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await expect
+      .poll(async () => (await fixture.read()).annotation_guide)
+      .toContain("源码模式新增");
+    const saved = await fixture.read();
+    expect(saved.annotation_guide).toContain("源码重试");
+    expect(saved.annotation_guide).not.toContain("markdown-upload-pending:");
+  });
+
+  test("finishing an upload after leaving source mode preserves a fresh table edit", async ({
+    page,
+    request,
+    seed,
+  }) => {
+    const fixture = await prepareGuide(
+      page,
+      request,
+      seed,
+      "源码往返前\n\n| 类别 | 规则 |\n| --- | --- |\n| 图片 | 旧单元格 |\n\n尾段",
+    );
+    const editor = await openGuide(page, fixture.project_id);
+    const body = richText(editor);
+    let releaseUpload!: () => void;
+    const uploadGate = new Promise<void>((resolve) => {
+      releaseUpload = resolve;
+    });
+    let uploadReady!: () => void;
+    const uploadReadyGate = new Promise<void>((resolve) => {
+      uploadReady = resolve;
+    });
+    await page.route("**/guide-assets/upload-complete", async (route) => {
+      const response = await route.fetch();
+      uploadReady();
+      await uploadGate;
+      await route.fulfill({ response });
+    });
+
+    try {
+      await body.focus();
+      await body.press("Control+End");
+      await pasteImage(body, "源码往返图片.png");
+      await uploadReadyGate;
+      await mode(editor, "源码");
+      const source = editor.locator(".cm-content:visible");
+      const pendingMarkdown = await source.innerText();
+      expect(pendingMarkdown).toContain("markdown-upload-pending:");
+      await source.fill(`源码往返保留\n\n${pendingMarkdown}`);
+      await mode(editor, "编辑");
+      const cell = editor.getByRole("cell", { name: "旧单元格", exact: true });
+      await cell.click();
+      await cell.locator('[contenteditable="true"]').fill("即时单元格");
+      releaseUpload();
+
+      await expect(editor.getByRole("img", { name: "源码往返图片.png" })).toBeVisible({
+        timeout: 15_000,
+      });
+      await page.getByRole("button", { name: "保存", exact: true }).click();
+      await expect
+        .poll(async () => (await fixture.read()).annotation_guide)
+        .toContain("即时单元格");
+      const saved = await fixture.read();
+      expect(saved.annotation_guide).toContain("源码往返保留");
+      expect(saved.annotation_guide).toContain("guide-asset:");
+      expect(saved.annotation_guide).not.toContain("旧单元格");
+      expect(saved.annotation_guide).not.toContain("markdown-upload-pending:");
+      expect(saved.guide_assets).toHaveLength(1);
+    } finally {
+      releaseUpload();
+    }
+  });
+
+  test("undo after an image upload never publishes the internal pending source", async ({
+    page,
+    request,
+    seed,
+  }) => {
+    const fixture = await prepareGuide(page, request, seed, "撤销图片后保留正文");
+    const editor = await openGuide(page, fixture.project_id);
+    const body = richText(editor);
+    await body.focus();
+    await body.press("Control+End");
+    await pasteImage(body, "撤销图片.png");
+    const image = editor.getByRole("img", { name: "撤销图片.png" });
+    await expect(image).toBeVisible({ timeout: 15_000 });
+
+    await body.focus();
+    await body.press("Control+z");
+    await expect(image).toHaveCount(0);
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await expect
+      .poll(async () => (await fixture.read()).annotation_guide)
+      .toContain("撤销图片后保留正文");
+    const saved = await fixture.read();
+    expect(saved.annotation_guide).not.toMatch(/guide-asset:|markdown-upload-pending:/);
+  });
+
+  test("breaking a queued image marker cancels its upload before the request starts", async ({
+    page,
+    request,
+    seed,
+  }) => {
+    const fixture = await prepareGuide(page, request, seed, "排队图片正文");
+    const editor = await openGuide(page, fixture.project_id);
+    const body = richText(editor);
+    let uploadInitCount = 0;
+    await page.route("**/guide-assets/upload-init", async (route) => {
+      uploadInitCount += 1;
+      await route.continue();
+    });
+    let releaseFirstUpload!: () => void;
+    const firstUploadGate = new Promise<void>((resolve) => {
+      releaseFirstUpload = resolve;
+    });
+    let firstUploadReady!: () => void;
+    const firstUploadReadyGate = new Promise<void>((resolve) => {
+      firstUploadReady = resolve;
+    });
+    let gateFirstCompletion = true;
+    await page.route("**/guide-assets/upload-complete", async (route) => {
+      const response = await route.fetch();
+      if (gateFirstCompletion) {
+        gateFirstCompletion = false;
+        firstUploadReady();
+        await firstUploadGate;
+      }
+      await route.fulfill({ response });
+    });
+
+    await body.focus();
+    await body.press("Control+End");
+    await pasteImages(body, ["保留图片.png", "取消图片.png"]);
+    await firstUploadReadyGate;
+    await mode(editor, "源码");
+    const source = editor.locator(".cm-content:visible");
+    const pendingMarkdown = await source.innerText();
+    const pendingImages =
+      pendingMarkdown.match(/!\[(?:\\.|[^\]\n])*\]\(markdown-upload-pending:[a-z0-9-]+\)/gi) ?? [];
+    expect(pendingImages).toHaveLength(2);
+    await source.fill(pendingMarkdown.replace(pendingImages[1], pendingImages[1].slice(1)));
+    releaseFirstUpload();
+
+    await expect.poll(async () => await source.innerText()).toContain("guide-asset:");
+    await page.waitForTimeout(250);
+    expect(uploadInitCount).toBe(1);
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await expect.poll(async () => (await fixture.read()).guide_assets).toHaveLength(1);
+    const saved = await fixture.read();
+    expect(saved.annotation_guide).toContain("保留图片.png");
+    expect(saved.annotation_guide).not.toContain("取消图片.png");
+    expect(saved.annotation_guide).not.toContain("markdown-upload-pending:");
+  });
+
   test("editing back to the original while a save is pending cannot leave a stale saved value", async ({
     page,
     request,
@@ -470,6 +716,122 @@ test.describe("shared Markdown authoring", () => {
     await expect(
       page.getByTestId("markdown-editor").getByRole("cell", { name: "保持轮廓贴合，记录遮挡" }),
     ).toBeVisible();
+  });
+
+  test("an image pasted into a table cell is reconciled and survives reload", async ({
+    page,
+    request,
+    seed,
+  }) => {
+    const fixture = await prepareGuide(
+      page,
+      request,
+      seed,
+      "| 类别 | 反例 |\n| --- | --- |\n| 车辆 | 待插图 |\n\n上传期间回到正文。\n",
+    );
+    let editor = await openGuide(page, fixture.project_id);
+    const row = editor.getByRole("row").filter({ hasText: "车辆" });
+    const targetCell = row.getByRole("cell").nth(1).locator('[contenteditable="true"]');
+    let releaseUpload!: () => void;
+    const uploadGate = new Promise<void>((resolve) => {
+      releaseUpload = resolve;
+    });
+    let uploadReady!: () => void;
+    const uploadReadyGate = new Promise<void>((resolve) => {
+      uploadReady = resolve;
+    });
+    await page.route("**/guide-assets/upload-complete", async (route) => {
+      const response = await route.fetch();
+      uploadReady();
+      await uploadGate;
+      return route.fulfill({ response });
+    });
+
+    try {
+      await pasteImage(targetCell, "表格反例.png");
+      await uploadReadyGate;
+      await editor.getByText("上传期间回到正文。", { exact: true }).click();
+      await expect(richText(editor)).toBeFocused();
+    } finally {
+      releaseUpload();
+    }
+
+    await expect(editor.getByRole("img", { name: "表格反例.png" })).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await expect
+      .poll(async () => (await fixture.read()).annotation_guide)
+      .toContain("guide-asset:");
+    const saved = await fixture.read();
+    expect(saved.annotation_guide).not.toContain("markdown-upload-pending:");
+    expect(saved.guide_assets).toHaveLength(1);
+
+    await page.reload();
+    editor = page.getByTestId("markdown-editor");
+    await expect(editor.getByRole("img", { name: "表格反例.png" })).toBeVisible({
+      timeout: 30_000,
+    });
+  });
+
+  test("a failed table-cell image upload retries inside the same cell", async ({
+    page,
+    request,
+    seed,
+  }) => {
+    const fixture = await prepareGuide(
+      page,
+      request,
+      seed,
+      "| 类别 | 反例 |\n| --- | --- |\n| 车辆 | 前后 |\n",
+    );
+    let editor = await openGuide(page, fixture.project_id);
+    const targetRow = editor.getByRole("row").filter({ hasText: "车辆" });
+    const targetCell = targetRow.locator("td").nth(2).locator('[contenteditable="true"]');
+    const initialTargetCell = editor
+      .getByRole("cell", { name: "前后", exact: true })
+      .locator('[contenteditable="true"]');
+    let rejectFirstUpload = true;
+    await page.route("**/guide-assets/upload-init", (route) => {
+      if (!rejectFirstUpload) return route.continue();
+      rejectFirstUpload = false;
+      return route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: '{"detail":"test nested upload unavailable"}',
+      });
+    });
+
+    await initialTargetCell.click();
+    await page.keyboard.press("Home");
+    await page.keyboard.press("ArrowRight");
+    await pasteImage(initialTargetCell, "表格重试.png");
+    const errors = editor.getByTestId("markdown-upload-errors");
+    await expect(errors).toBeVisible();
+    await placeCaretAtTextOffset(targetCell, 0);
+    await page.keyboard.insertText("新");
+    await expect(targetCell).toContainText("新前");
+    await expect(targetCell).toContainText("后");
+    await errors.getByRole("button", { name: "重试", exact: true }).click();
+    await expect(targetCell.getByRole("img", { name: "表格重试.png" })).toBeVisible({
+      timeout: 15_000,
+    });
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await expect
+      .poll(async () => (await fixture.read()).annotation_guide)
+      .toContain("guide-asset:");
+    const saved = await fixture.read();
+    expect(saved.annotation_guide).toMatch(
+      /\|\s*车辆\s*\|[^\n]*新前!\[[^\]]*\]\(guide-asset:[^)]+\)后[^\n]*\|/,
+    );
+    expect(saved.annotation_guide).not.toContain("markdown-upload-pending:");
+    expect(saved.guide_assets).toHaveLength(1);
+
+    await page.reload();
+    editor = page.getByTestId("markdown-editor");
+    await expect(editor.getByRole("img", { name: "表格重试.png" })).toBeVisible({
+      timeout: 30_000,
+    });
   });
 
   test("a 100 KB guide with repeated images stays responsive without repeated signing", async ({
@@ -688,25 +1050,23 @@ test.describe("shared Markdown authoring", () => {
     await page.getByText(`${created.display_id}: Markdown 验收反馈`, { exact: true }).click();
     editor = page.getByTestId("markdown-editor");
     await expect(richText(editor)).toBeVisible();
-    await richText(editor).fill("补充：窄屏也需要正常显示。");
     const firstComment = page.waitForResponse(
       (result) =>
         result.url().includes(`/bug_reports/${created.id}/comments`) &&
         result.request().method() === "POST",
     );
-    await page.getByRole("button", { name: "发送", exact: true }).click();
+    await submitTableCommentWithShortcut(editor, "抽屉旧值", "抽屉最终值");
     expect((await firstComment).ok()).toBe(true);
     await page.reload();
     await page.getByRole("row").filter({ hasText: "Markdown 验收反馈" }).click();
     editor = page.getByTestId("markdown-editor");
     await expect(richText(editor)).toBeVisible();
-    await richText(editor).fill("管理员验证：内容与附件均保留。");
     const secondComment = page.waitForResponse(
       (result) =>
         result.url().includes(`/bug_reports/${created.id}/comments`) &&
         result.request().method() === "POST",
     );
-    await richText(editor).press("Control+Enter");
+    await submitSourceCommentAfterTableFocusWithShortcut(editor, "管理旧值", "管理源码最终值");
     expect((await secondComment).ok()).toBe(true);
     const token = await seed.accessToken(data.admin_email);
     const detailResponse = await request.get(`${API}/bug_reports/${created.id}`, {
@@ -717,9 +1077,13 @@ test.describe("shared Markdown authoring", () => {
     expect(detail.description).toContain("更新复现步骤");
     expect(detail.attachments).toHaveLength(1);
     expect(detail.comments).toHaveLength(2);
-    expect(detail.comments.map((comment: { body: string }) => comment.body).join("\n")).toContain(
-      "管理员验证",
-    );
+    const commentBodies = detail.comments
+      .map((comment: { body: string }) => comment.body)
+      .join("\n");
+    expect(commentBodies).toContain("抽屉最终值");
+    expect(commentBodies).toContain("管理源码最终值");
+    expect(commentBodies).not.toContain("抽屉旧值");
+    expect(commentBodies).not.toContain("管理旧值");
     await page.setViewportSize({ width: 375, height: 812 });
     await page.getByTitle("报告 Bug / 提交反馈").click();
     await page.getByRole("button", { name: "提交新反馈" }).click();

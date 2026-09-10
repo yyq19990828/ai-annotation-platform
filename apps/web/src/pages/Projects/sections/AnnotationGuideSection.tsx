@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { useToastStore } from "@/components/ui/Toast";
+import { isCurrentAuthOwner, useAuthStore } from "@/stores/authStore";
 import { useUpdateProject } from "@/hooks/useProjects";
 import { useUnsavedWarning } from "@/hooks/useUnsavedWarning";
 import { useGuideAssets } from "@/hooks/useGuideAssets";
@@ -28,15 +29,123 @@ interface SaveRequest {
   mutateAsync: SaveMutation;
 }
 
+interface RetainedGuideDraft {
+  content: string;
+  error: string | null;
+  saveAttempted: boolean;
+}
+
+const retainedGuideDrafts = new Map<string, RetainedGuideDraft>();
+
+interface GuideSaveChain {
+  tail: Promise<void>;
+  confirmed?: {
+    content: string;
+    updatedAt?: string;
+  };
+}
+
+const guideSaveChains = new Map<string, GuideSaveChain>();
+const guideOwnerGenerations = new Map<string, number>();
+
+function claimGuideOwner(ownerKey: string): number {
+  const generation = (guideOwnerGenerations.get(ownerKey) ?? 0) + 1;
+  guideOwnerGenerations.set(ownerKey, generation);
+  return generation;
+}
+
+function retainGuideDraft(
+  ownerKey: string,
+  content: string,
+  error: string | null,
+  saveAttempted: boolean,
+) {
+  retainedGuideDrafts.set(ownerKey, { content, error, saveAttempted });
+}
+
+function discardRetainedGuideDraft(ownerKey: string) {
+  retainedGuideDrafts.delete(ownerKey);
+}
+
+function clearRetainedGuideDraft(ownerKey: string, content: string) {
+  if (retainedGuideDrafts.get(ownerKey)?.content === content) {
+    retainedGuideDrafts.delete(ownerKey);
+  }
+}
+
+function markRetainedGuideDraftFailed(ownerKey: string, content: string, error: string) {
+  const retained = retainedGuideDrafts.get(ownerKey);
+  if (retained?.content === content) {
+    retainedGuideDrafts.set(ownerKey, { content, error, saveAttempted: true });
+  }
+}
+
+function runSerializedGuideSave(
+  resourceKey: string,
+  content: string,
+  operation: () => Promise<unknown>,
+): Promise<void> {
+  const chain = guideSaveChains.get(resourceKey) ?? {
+    tail: Promise.resolve(),
+  };
+  const confirmedOperation = async () => {
+    const result = await operation();
+    const updatedAt =
+      typeof result === "object" &&
+      result !== null &&
+      "updated_at" in result &&
+      typeof result.updated_at === "string"
+        ? result.updated_at
+        : undefined;
+    chain.confirmed = { content, updatedAt };
+  };
+  const request = chain.tail.then(confirmedOperation, confirmedOperation);
+  const tail = request.then(
+    () => undefined,
+    () => undefined,
+  );
+  chain.tail = tail;
+  guideSaveChains.set(resourceKey, chain);
+  void tail.then(() => {
+    if (guideSaveChains.get(resourceKey) === chain && chain.tail === tail) {
+      guideSaveChains.delete(resourceKey);
+    }
+  });
+  return request;
+}
+
+export function resetRetainedGuideDraftsForTests() {
+  retainedGuideDrafts.clear();
+  guideSaveChains.clear();
+  guideOwnerGenerations.clear();
+}
+
 function getSaveErrorMessage(error: unknown): string {
   return error instanceof Error && error.message ? error.message : "网络或权限错误";
 }
 
 export function AnnotationGuideSection({ project }: { project: ProjectResponse }) {
-  return <AnnotationGuideProjectBody key={project.id} project={project} />;
+  const userId = useAuthStore((state) => state.user?.id ?? null);
+  const ownerKey = `${userId ?? "anonymous"}:${project.id}`;
+  return (
+    <AnnotationGuideProjectBody
+      key={ownerKey}
+      ownerKey={ownerKey}
+      ownerUserId={userId}
+      project={project}
+    />
+  );
 }
 
-function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
+function AnnotationGuideProjectBody({
+  project,
+  ownerKey,
+  ownerUserId,
+}: {
+  project: ProjectResponse;
+  ownerKey: string;
+  ownerUserId: string | null;
+}) {
   const pushToast = useToastStore((state) => state.push);
   const update = useUpdateProject(project.id);
   const updateMutateAsync = update.mutateAsync;
@@ -49,13 +158,22 @@ function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
     [project],
   );
 
-  const [draft, setDraft] = useState(initialMarkdown);
+  const retainedDraft = retainedGuideDrafts.get(ownerKey);
+  const recoveredDraft = retainedDraft ?? null;
+  const startingMarkdown = recoveredDraft?.content ?? initialMarkdown;
+  const startingStatus: SaveStatus = recoveredDraft ? "failed" : "saved";
+  const startingError = recoveredDraft
+    ? (recoveredDraft.error ?? "离开页面时保存未确认，请重试")
+    : null;
+
+  const [draft, setDraft] = useState(startingMarkdown);
   const [savedMarkdown, setSavedMarkdown] = useState(initialMarkdown);
   const [assets, setAssets] = useState<GuideAssetEntry[]>(initialAssets);
-  const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
-  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>(startingStatus);
+  const [saveError, setSaveError] = useState<string | null>(startingError);
+  const [ownerGeneration] = useState(() => claimGuideOwner(ownerKey));
 
-  const draftRef = useRef(initialMarkdown);
+  const draftRef = useRef(startingMarkdown);
   const savedMarkdownRef = useRef(initialMarkdown);
   const revisionRef = useRef(0);
   const projectEpochRef = useRef(0);
@@ -67,7 +185,8 @@ function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
   const autoSaveTimerRef = useRef<number | null>(null);
   const explicitSaveTimerRef = useRef<number | null>(null);
   const ownerActiveRef = useRef(false);
-  const statusRef = useRef<SaveStatus>("saved");
+  const statusRef = useRef<SaveStatus>(startingStatus);
+  const mustSaveRef = useRef(Boolean(recoveredDraft));
 
   const setStatus = useCallback((next: SaveStatus) => {
     if (!ownerActiveRef.current) return;
@@ -76,8 +195,16 @@ function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
   }, []);
 
   const mutateAsync = useCallback<SaveMutation>(
-    (payload) => updateMutateAsync(payload),
-    [updateMutateAsync],
+    (payload) => {
+      if (!ownerUserId || !isCurrentAuthOwner(ownerUserId)) {
+        return Promise.reject(new Error("登录账号已变更，草稿未以新账号保存"));
+      }
+      if (guideOwnerGenerations.get(ownerKey) !== ownerGeneration) {
+        return Promise.reject(new Error("标注指引已由新页面接管，旧页面草稿未重复保存"));
+      }
+      return updateMutateAsync(payload);
+    },
+    [ownerGeneration, ownerKey, ownerUserId, updateMutateAsync],
   );
 
   const cancelAutoSave = useCallback(() => {
@@ -90,6 +217,20 @@ function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
   // The server can refresh the same project after a successful mutation. It
   // may update a clean form, but it must never clobber an active local draft.
   useEffect(() => {
+    const retainedMatchesDraft = retainedGuideDrafts.get(ownerKey)?.content === draftRef.current;
+    const resourceSavePending = guideSaveChains.has(project.id);
+
+    if (initialMarkdown === draftRef.current && !retainedMatchesDraft && !resourceSavePending) {
+      mustSaveRef.current = false;
+      if (savedMarkdownRef.current !== initialMarkdown || statusRef.current !== "saved") {
+        savedMarkdownRef.current = initialMarkdown;
+        cancelAutoSave();
+        setSavedMarkdown(initialMarkdown);
+        setSaveError(null);
+        setStatus("saved");
+      }
+    }
+
     if (projectIdRef.current !== project.id) {
       projectIdRef.current = project.id;
       projectEpochRef.current += 1;
@@ -97,6 +238,7 @@ function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
       queuedSaveRef.current = null;
       draftRef.current = initialMarkdown;
       savedMarkdownRef.current = initialMarkdown;
+      mustSaveRef.current = false;
       setDraft(initialMarkdown);
       setSavedMarkdown(initialMarkdown);
       setAssets(initialAssets);
@@ -106,6 +248,9 @@ function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
     }
 
     if (
+      !mustSaveRef.current &&
+      !retainedMatchesDraft &&
+      !resourceSavePending &&
       draftRef.current === savedMarkdownRef.current &&
       savedMarkdownRef.current !== initialMarkdown
     ) {
@@ -116,7 +261,7 @@ function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
       setSaveError(null);
       setStatus("saved");
     }
-  }, [initialAssets, initialMarkdown, project.id, setStatus]);
+  }, [cancelAutoSave, initialAssets, initialMarkdown, ownerKey, project.id, setStatus]);
 
   useUnsavedWarning(draft !== savedMarkdown || saveStatus !== "saved");
 
@@ -136,7 +281,9 @@ function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
 
           let failure: unknown = null;
           try {
-            await request.mutateAsync({ annotation_guide: request.content });
+            await runSerializedGuideSave(project.id, request.content, () =>
+              request.mutateAsync({ annotation_guide: request.content }),
+            );
           } catch (error: unknown) {
             failure = error;
           }
@@ -150,6 +297,7 @@ function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
             // advancing this baseline, otherwise A -> B -> A can lose its
             // queued save when B resolves.
             savedMarkdownRef.current = request.content;
+            clearRetainedGuideDraft(ownerKey, request.content);
             if (ownerActiveRef.current) {
               setSavedMarkdown(request.content);
               setSaveError(null);
@@ -183,6 +331,7 @@ function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
                 setStatus(queuedSaveRef.current ? "saving" : "pending");
               }
             } else {
+              mustSaveRef.current = false;
               cancelAutoSave();
               if (ownerActiveRef.current) setStatus("saved");
             }
@@ -193,8 +342,18 @@ function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
           // final state. Otherwise retain the draft and expose a retryable
           // failure.
           if (queuedSaveRef.current) continue;
+          if (draftRef.current === savedMarkdownRef.current && !mustSaveRef.current) {
+            discardRetainedGuideDraft(ownerKey);
+            if (ownerActiveRef.current) {
+              setSaveError(null);
+              setStatus("saved");
+            }
+            continue;
+          }
+          const message = getSaveErrorMessage(failure);
+          markRetainedGuideDraftFailed(ownerKey, draftRef.current, message);
           if (ownerActiveRef.current) {
-            setSaveError(getSaveErrorMessage(failure));
+            setSaveError(message);
             setStatus("failed");
             pushToast({ msg: "标注指引保存失败，可重试", kind: "warning" });
           }
@@ -207,7 +366,7 @@ function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
 
     drainPromiseRef.current = drain;
     return drain;
-  }, [cancelAutoSave, mutateAsync, pushToast, setStatus]);
+  }, [cancelAutoSave, mutateAsync, ownerKey, project.id, pushToast, setStatus]);
 
   const enqueueSave = useCallback((): Promise<void> => {
     const content = draftRef.current;
@@ -221,7 +380,7 @@ function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
     if (queued?.epoch === epoch && queued.content === content) {
       return drainPromiseRef.current ?? Promise.resolve();
     }
-    if (!active && !queued && content === savedMarkdownRef.current) {
+    if (!active && !queued && !mustSaveRef.current && content === savedMarkdownRef.current) {
       setStatus("saved");
       return Promise.resolve();
     }
@@ -232,10 +391,12 @@ function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
       content,
       mutateAsync,
     };
+    mustSaveRef.current = true;
+    retainGuideDraft(ownerKey, content, null, true);
     if (ownerActiveRef.current) setSaveError(null);
     setStatus("saving");
     return drainSaveQueue();
-  }, [drainSaveQueue, mutateAsync, setStatus]);
+  }, [drainSaveQueue, mutateAsync, ownerKey, setStatus]);
 
   const scheduleAutoSave = useCallback(() => {
     cancelAutoSave();
@@ -259,8 +420,20 @@ function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
       }
       const active = activeSaveRef.current;
       const queuedAfterChange = queuedSaveRef.current;
-      const hasOutstandingSave = active?.epoch === epoch || queuedAfterChange?.epoch === epoch;
-      if (next === savedMarkdownRef.current && !hasOutstandingSave) {
+      const resourceSavePending = guideSaveChains.has(project.id);
+      const previousSaveAttempted = retainedGuideDrafts.get(ownerKey)?.saveAttempted ?? false;
+      const hasOutstandingSave =
+        active?.epoch === epoch || queuedAfterChange?.epoch === epoch || resourceSavePending;
+      const saveAttempted = previousSaveAttempted || hasOutstandingSave;
+      const needsSave = next !== savedMarkdownRef.current || saveAttempted;
+      mustSaveRef.current = needsSave;
+      if (needsSave) {
+        retainGuideDraft(ownerKey, next, null, saveAttempted);
+      } else {
+        discardRetainedGuideDraft(ownerKey);
+      }
+
+      if (!needsSave) {
         cancelAutoSave();
         setStatus("saved");
         return;
@@ -277,7 +450,7 @@ function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
         setStatus(hasOutstandingSave ? "saving" : "pending");
       }
     },
-    [cancelAutoSave, scheduleAutoSave, setStatus],
+    [cancelAutoSave, ownerKey, project.id, scheduleAutoSave, setStatus],
   );
 
   const handleAutoSave = useCallback(() => {
@@ -307,6 +480,14 @@ function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
       window.clearTimeout(explicitSaveTimerRef.current);
       explicitSaveTimerRef.current = null;
     }
+    if (draftRef.current !== savedMarkdownRef.current) {
+      const retainedError =
+        statusRef.current === "failed" ? saveError : "离开页面时保存未确认，请重试";
+      const saveAttempted =
+        retainedGuideDrafts.get(ownerKey)?.saveAttempted ?? statusRef.current === "failed";
+      retainGuideDraft(ownerKey, draftRef.current, retainedError, saveAttempted);
+    }
+    if (statusRef.current === "failed") return;
     void enqueueSave();
   };
 
@@ -317,6 +498,72 @@ function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
       retireFlushRef.current();
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const observePendingResourceSaves = async () => {
+      let observedChain = guideSaveChains.get(project.id);
+      let confirmed: GuideSaveChain["confirmed"];
+      while (observedChain) {
+        const observedTail = observedChain.tail;
+        await observedTail;
+        if (cancelled) return;
+        if (observedChain.confirmed) {
+          confirmed = observedChain.confirmed;
+        }
+        const nextChain = guideSaveChains.get(project.id);
+        if (!nextChain || (nextChain === observedChain && nextChain.tail === observedTail)) {
+          break;
+        }
+        observedChain = nextChain;
+      }
+
+      if (cancelled) return;
+      const currentDraft = draftRef.current;
+      const confirmedTime = confirmed?.updatedAt ? Date.parse(confirmed.updatedAt) : Number.NaN;
+      const propsTime = Date.parse(project.updated_at);
+      const versionsAreComparable = Number.isFinite(confirmedTime) && Number.isFinite(propsTime);
+      const contentsDiffer = confirmed !== undefined && confirmed.content !== initialMarkdown;
+      const propsVersionWins =
+        contentsDiffer && versionsAreComparable && propsTime >= confirmedTime;
+      const chainVersionWins = contentsDiffer && versionsAreComparable && confirmedTime > propsTime;
+      const draftMatchesConfirmation = confirmed?.content === currentDraft;
+      const draftWasConfirmed = draftMatchesConfirmation && !propsVersionWins;
+      const untouchedConfirmedDraftWasSuperseded =
+        draftMatchesConfirmation && propsVersionWins && revisionRef.current === 0;
+
+      if (!draftWasConfirmed && !untouchedConfirmedDraftWasSuperseded) {
+        if (mustSaveRef.current) return;
+        if (retainedGuideDrafts.get(ownerKey)?.content === currentDraft) return;
+        if (currentDraft !== savedMarkdownRef.current) return;
+      } else {
+        clearRetainedGuideDraft(ownerKey, currentDraft);
+      }
+
+      const confirmedMarkdown = draftWasConfirmed
+        ? currentDraft
+        : chainVersionWins
+          ? (confirmed?.content ?? initialMarkdown)
+          : initialMarkdown;
+      if (confirmedMarkdown !== draftRef.current) {
+        draftRef.current = confirmedMarkdown;
+        setDraft(confirmedMarkdown);
+      }
+
+      mustSaveRef.current = false;
+      savedMarkdownRef.current = confirmedMarkdown;
+      cancelAutoSave();
+      setSavedMarkdown(confirmedMarkdown);
+      setSaveError(null);
+      setStatus("saved");
+    };
+
+    void observePendingResourceSaves();
+    return () => {
+      cancelled = true;
+    };
+  }, [cancelAutoSave, initialMarkdown, ownerKey, project.id, project.updated_at, setStatus]);
 
   const handleUpload = useCallback(
     async (file: File) => {

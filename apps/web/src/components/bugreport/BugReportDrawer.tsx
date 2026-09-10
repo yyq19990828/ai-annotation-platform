@@ -57,7 +57,14 @@ const MAX_COMMENT_LENGTH = 10_000;
 
 type CompactMarkdownEditorProps = Pick<
   MarkdownEditorProps,
-  "value" | "onChange" | "placeholder" | "documentId" | "label" | "variant" | "disabled"
+  | "value"
+  | "onChange"
+  | "onSubmit"
+  | "placeholder"
+  | "documentId"
+  | "label"
+  | "variant"
+  | "disabled"
 >;
 
 // BUG 表单使用紧凑编辑器，保持 MDXEditor 不进入抽屉首屏 bundle。
@@ -395,12 +402,12 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
     }
   };
 
-  const handlePostComment = async () => {
-    if (!detail || !commentBody.trim() || postingComment) return;
+  const handlePostComment = async (submittedBody = commentBody) => {
+    if (!detail || !submittedBody.trim() || postingComment) return;
     const reportId = detail.id;
     const detailScope = detailRequestRef.current;
     const requestId = ++commentRequestRef.current;
-    const body = commentBody.trim();
+    const body = submittedBody.trim();
     if (codePointLength(body) > MAX_COMMENT_LENGTH) {
       pushToast({ msg: `评论不能超过 ${MAX_COMMENT_LENGTH} 个字符`, kind: "error" });
       return;
@@ -830,17 +837,11 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
                       」，发送评论将自动重新打开此反馈
                     </div>
                   )}
-                  <div
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                        e.preventDefault();
-                        void handlePostComment();
-                      }
-                    }}
-                  >
+                  <div>
                     <CompactMarkdownEditor
                       value={commentBody}
                       onChange={setCommentBody}
+                      onSubmit={(next) => void handlePostComment(next)}
                       placeholder="写下你的回复 / 补充信息..."
                       documentId={`bug-comment-${detail.id}`}
                       label="反馈评论"
@@ -850,7 +851,7 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
                   </div>
                   <button
                     type="button"
-                    onClick={handlePostComment}
+                    onClick={() => void handlePostComment()}
                     disabled={postingComment || !commentBody.trim()}
                     className={styles.sendButton}
                   >

@@ -18,6 +18,7 @@ vi.mock("@/components/markdown/MarkdownEditor", () => ({
   MarkdownEditor: ({
     value,
     onChange,
+    onSubmit,
     onBlur,
     onUploadImage,
     placeholder,
@@ -28,6 +29,7 @@ vi.mock("@/components/markdown/MarkdownEditor", () => ({
   }: {
     value: string;
     onChange: (next: string) => void;
+    onSubmit?: (next: string) => void;
     onBlur?: () => void;
     onUploadImage?: unknown;
     placeholder?: string;
@@ -44,6 +46,9 @@ vi.mock("@/components/markdown/MarkdownEditor", () => ({
       data-has-upload={onUploadImage ? "true" : "false"}
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) onSubmit?.(value);
+      }}
       onBlur={onBlur}
       placeholder={placeholder}
       disabled={disabled}

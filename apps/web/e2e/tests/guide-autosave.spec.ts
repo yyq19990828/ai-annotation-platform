@@ -178,6 +178,45 @@ test.describe("guide autosave", () => {
     expect(fixture.errors).toEqual([]);
   });
 
+  test("a failed retirement save is restored when returning to the guide", async ({
+    page,
+    request,
+    seed,
+  }) => {
+    const fixture = await prepare(page, request, seed);
+    let reject = true;
+    let failedRequestHandled = false;
+    await page.route(`**/api/v1/projects/${fixture.project_id}`, async (route) => {
+      if (route.request().method() !== "PATCH" || !reject) return route.continue();
+      await route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: '{"detail":"test retirement save unavailable"}',
+      });
+      failedRequestHandled = true;
+    });
+
+    await fixture.body.fill("切页保存失败也不能丢失的规则");
+    await page.getByTestId("settings-tab-general").click();
+    await expect(fixture.editor).toHaveCount(0);
+    await expect.poll(() => failedRequestHandled).toBe(true);
+    expect(await fixture.read()).toBe("原有规则");
+
+    await page.getByTestId("settings-tab-annotation-guide").click();
+    const recoveredEditor = page.getByTestId("markdown-editor");
+    const recoveredBody = recoveredEditor
+      .locator('.mdxeditor-contenteditable-wrapper > [contenteditable="true"]')
+      .first();
+    await expect(recoveredBody).toHaveText("切页保存失败也不能丢失的规则");
+    await expect(page.getByTestId("guide-save-status")).toContainText("保存失败");
+
+    reject = false;
+    await page.getByRole("button", { name: "重试保存", exact: true }).click();
+    await expect.poll(fixture.read).toBe("切页保存失败也不能丢失的规则");
+    await expect(page.getByTestId("guide-save-status")).toHaveText("已保存");
+    expect(fixture.errors).toEqual([]);
+  });
+
   test("leaving a table cell immediately saves its last edit to the original project", async ({
     page,
     request,

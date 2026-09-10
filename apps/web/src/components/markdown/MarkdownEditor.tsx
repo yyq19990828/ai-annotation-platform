@@ -77,11 +77,16 @@ interface PendingUpload {
   result?: { src: string; alt?: string };
   error?: string;
   reconciling?: boolean;
+  failed?: boolean;
+  cancelled?: boolean;
+  exportedToMarkdown?: boolean;
 }
 
 export interface MarkdownEditorProps {
   value: string;
   onChange: (next: string) => void;
+  /** Ctrl/Cmd+Enter 时在提交前刷新嵌套表格单元格，并传出最新 Markdown。 */
+  onSubmit?: (next: string) => void;
   /** 拖拽 / 粘贴图片时上传; 返回 markdown 中要插入的 src (例如 "guide-asset:KEY"). */
   onUploadImage?: (file: File) => Promise<{ src: string; alt?: string }>;
   placeholder?: string;
@@ -185,28 +190,78 @@ function pendingImagePattern(source: string): RegExp {
   );
 }
 
+function pendingLinkPattern(source: string): RegExp {
+  const escapedSource = source.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(
+    `\\[((?:\\\\.|[^\\]\\n])*)\\]\\(\\s*<?${escapedSource}>?(?:\\s+(?:"(?:\\\\.|[^"])*"|'(?:\\\\.|[^'])*'|\\((?:\\\\.|[^)])*\\)))?\\s*\\)`,
+    "g",
+  );
+}
+
+function stripPendingSourceArtifacts(markdown: string, source: string): string {
+  const escapedSource = source.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return (
+    markdown
+      .replace(pendingImagePattern(source), "")
+      // If an author breaks the image syntax in source mode, retain an edited
+      // label but never publish the editor-internal destination.
+      .replace(pendingLinkPattern(source), (_link, rawLabel: string) => rawLabel)
+      .replace(new RegExp(`\\(\\s*<?${escapedSource}>?\\s*\\)`, "g"), "")
+      .replace(new RegExp(`<?${escapedSource}>?`, "g"), "")
+  );
+}
+
 export function stripPendingImageNodes(markdown: string, pending: Iterable<PendingSource>): string {
   let next = markdown;
   for (const item of pending) {
-    next = next.replace(pendingImagePattern(pendingSourceValue(item)), "");
+    next = stripPendingSourceArtifacts(next, pendingSourceValue(item));
+  }
+  // The prefix is an editor-internal protocol. History undo or an editor
+  // recreation can briefly resurrect a marker after its in-memory owner has
+  // settled, so strip any orphan marker as well as currently owned uploads.
+  const orphanSources = new Set(next.match(/markdown-upload-pending:[a-z0-9-]+/gi) ?? []);
+  for (const source of orphanSources) {
+    next = stripPendingSourceArtifacts(next, source);
   }
   return next;
+}
+
+function markdownImageDestination(source: string): string {
+  // Angle destinations support spaces and parentheses without changing the
+  // logical guide-asset key. Escape their delimiters and literal backslashes
+  // so the Markdown parser restores the exact source value.
+  const escaped = source.replace(/\\/g, "\\\\").replace(/[<>]/g, "\\$&");
+  return `<${escaped}>`;
+}
+
+function markdownImageAlt(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/[[\]]/g, "\\$&");
+}
+
+export function replacePendingImageNode(
+  markdown: string,
+  source: string,
+  result: { src: string; alt?: string },
+  filename: string,
+): { markdown: string; replaced: boolean } {
+  let replaced = false;
+  const next = markdown.replace(pendingImagePattern(source), (image, rawAlt: string) => {
+    if (replaced) return image;
+    replaced = true;
+    const alt = rawAlt.trim() ? rawAlt : markdownImageAlt(result.alt ?? filename);
+    return image
+      .replace(`![${rawAlt}]`, () => `![${alt}]`)
+      .replace(source, () => markdownImageDestination(result.src));
+  });
+  return { markdown: next, replaced };
 }
 
 function pendingImageBounds(
   markdown: string,
   source: string,
 ): { start: number; end: number } | null {
-  const sourceIndex = markdown.indexOf(source);
-  if (sourceIndex < 0) return null;
-  const pattern = pendingImagePattern(source);
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(markdown)) !== null) {
-    const start = match.index;
-    const end = start + match[0].length;
-    if (sourceIndex >= start && sourceIndex < end) return { start, end };
-  }
-  return null;
+  const match = pendingImagePattern(source).exec(markdown);
+  return match ? { start: match.index, end: match.index + match[0].length } : null;
 }
 
 function pendingImageAnchor(
@@ -287,6 +342,39 @@ interface PendingImagePluginParams {
   getPending: () => Map<string, PendingUpload>;
   onImageNode: (editor: LexicalEditor, nodeKey: string, pending: PendingUpload) => void;
   onMissingNode: (editor: LexicalEditor, pending: PendingUpload) => void;
+  onOrphanImage: (editor: LexicalEditor, nodeKey: string) => void;
+}
+
+function registerPendingImageObserver(
+  editor: LexicalEditor,
+  params: PendingImagePluginParams,
+): () => void {
+  return editor.registerUpdateListener(({ editorState }) => {
+    const seen = new Set<string>();
+    const orphanKeys: string[] = [];
+    editorState.read(() => {
+      visitLexicalNodes($getRoot(), (node) => {
+        if (!$isImageNode(node)) return;
+        const source = node.getSrc();
+        if (!source.startsWith(PENDING_SOURCE_PREFIX)) return;
+        const pendingId = source.slice(PENDING_SOURCE_PREFIX.length);
+        const pending = params.getPending().get(pendingId);
+        if (!pending) {
+          orphanKeys.push(node.getKey());
+          return;
+        }
+        seen.add(pendingId);
+        params.onImageNode(editor, node.getKey(), pending);
+      });
+    });
+    orphanKeys.forEach((nodeKey) => params.onOrphanImage(editor, nodeKey));
+
+    for (const pending of params.getPending().values()) {
+      if (pending.editor === editor && pending.nodeKey && !seen.has(pending.id)) {
+        params.onMissingNode(editor, pending);
+      }
+    }
+  });
 }
 
 /**
@@ -298,28 +386,14 @@ const pendingImagePlugin = realmPlugin<PendingImagePluginParams>({
   init(realm, params) {
     if (!params) return;
     realm.pub(createRootEditorSubscription$, (editor) =>
-      editor.registerUpdateListener(({ editorState }) => {
-        const seen = new Set<string>();
-        editorState.read(() => {
-          visitLexicalNodes($getRoot(), (node) => {
-            if (!$isImageNode(node)) return;
-            const source = node.getSrc();
-            if (!source.startsWith(PENDING_SOURCE_PREFIX)) return;
-            const pendingId = source.slice(PENDING_SOURCE_PREFIX.length);
-            const pending = params.getPending().get(pendingId);
-            if (!pending) return;
-            seen.add(pendingId);
-            params.onImageNode(editor, node.getKey(), pending);
-          });
-        });
-
-        for (const pending of params.getPending().values()) {
-          if (pending.nodeKey && !seen.has(pending.id)) {
-            params.onMissingNode(editor, pending);
-          }
-        }
-      }),
+      registerPendingImageObserver(editor, params),
     );
+    realm.pub(createActiveEditorSubscription$, (editor) => {
+      if (editor === realm.getValue(rootEditor$) || !isTableCellEditor(editor)) {
+        return () => undefined;
+      }
+      return registerPendingImageObserver(editor, params);
+    });
   },
 });
 
@@ -340,6 +414,7 @@ function PendingImagePlaceholder() {
 function MarkdownEditorDocument({
   value,
   onChange,
+  onSubmit,
   onUploadImage,
   placeholder,
   onBlur,
@@ -352,7 +427,9 @@ function MarkdownEditorDocument({
 }: MarkdownEditorProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const editorRef = useRef<MDXEditorMethods | null>(null);
+  const activeEditorRef = useRef<LexicalEditor | null>(null);
   const onChangeRef = useRef(onChange);
+  const onSubmitRef = useRef(onSubmit);
   const onBlurRef = useRef(onBlur);
   const onUploadRef = useRef(onUploadImage);
   const resolveImageRef = useRef(resolveImage);
@@ -370,6 +447,7 @@ function MarkdownEditorDocument({
   const composingRef = useRef(false);
   const deferredPublishRef = useRef<string | null>(null);
   const aliveRef = useRef(true);
+  const modeRef = useRef<EditorMode>("edit");
   const reconcilePendingRef = useRef<
     (editor: LexicalEditor, nodeKey: string, pending: PendingUpload) => void
   >(() => undefined);
@@ -382,10 +460,12 @@ function MarkdownEditorDocument({
   const [overlayContainer, setOverlayContainer] = useState<HTMLElement | null>(null);
 
   onChangeRef.current = onChange;
+  onSubmitRef.current = onSubmit;
   onBlurRef.current = onBlur;
   onUploadRef.current = onUploadImage;
   resolveImageRef.current = resolveImage;
   valueRef.current = value;
+  modeRef.current = mode;
 
   useEffect(() => {
     // React StrictMode intentionally mounts effects twice in development. The
@@ -465,6 +545,61 @@ function MarkdownEditorDocument({
     flushDeferredCompositionDraft();
   }, [flushDeferredCompositionDraft]);
 
+  const flushActiveTableCell = useCallback(() => {
+    if (modeRef.current !== "edit") return;
+    const activeEditor = activeEditorRef.current;
+    const activeRoot = activeEditor?.getRootElement();
+    if (
+      activeEditor &&
+      activeRoot &&
+      rootRef.current?.contains(activeRoot) &&
+      isTableCellEditor(activeEditor)
+    ) {
+      activeEditor.dispatchCommand(NESTED_EDITOR_UPDATED_COMMAND, undefined);
+    }
+  }, []);
+
+  const handleSubmitKeyDown = useCallback(
+    (event: KeyboardEvent) => {
+      const submit = onSubmitRef.current;
+      if (
+        !submit ||
+        event.key !== "Enter" ||
+        (!event.metaKey && !event.ctrlKey) ||
+        event.isComposing
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      flushActiveTableCell();
+      queueMicrotask(() => {
+        if (!aliveRef.current) return;
+        const next = validDraftFromEditor();
+        publishValidDraft(next);
+        submit(next);
+      });
+    },
+    [flushActiveTableCell, publishValidDraft, validDraftFromEditor],
+  );
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+
+    // MDXEditor's native handlers can publish the IME marker before React's
+    // delegated composition event runs, so mark the boundary in native capture.
+    root.addEventListener("compositionstart", handleCompositionStart, true);
+    root.addEventListener("compositionend", handleCompositionEnd, true);
+    root.addEventListener("keydown", handleSubmitKeyDown, true);
+    return () => {
+      root.removeEventListener("compositionstart", handleCompositionStart, true);
+      root.removeEventListener("compositionend", handleCompositionEnd, true);
+      root.removeEventListener("keydown", handleSubmitKeyDown, true);
+    };
+  }, [handleCompositionEnd, handleCompositionStart, handleSubmitKeyDown]);
+
   const settleAfterPendingTransaction = useCallback(() => {
     queueMicrotask(() => {
       if (!aliveRef.current) return;
@@ -474,14 +609,40 @@ function MarkdownEditorDocument({
 
   const reconcilePendingImage = useCallback(
     (editor: LexicalEditor, nodeKey: string, pending: PendingUpload) => {
-      if (!aliveRef.current || pending.epoch !== epochRef.current || pending.reconciling) {
+      if (!aliveRef.current || pending.epoch !== epochRef.current || pending.cancelled) {
         return;
       }
       pending.editor = editor;
       pending.nodeKey = nodeKey;
+      // A table cell can be recreated while the error banner remains. Refresh
+      // ownership before the failed/reconciling guards so retry still targets
+      // the live ImageNode rather than a detached editor instance.
+      if (pending.reconciling || pending.failed) return;
       const result = pending.result;
       const errorMessage = pending.error;
       if (!result && !errorMessage) return;
+
+      if (errorMessage) {
+        // Keep the failed ImageNode in the Lexical document as the retry
+        // anchor. Unlike sibling keys or character offsets, the node follows
+        // later edits and moves, so retry can replace the exact author-owned
+        // position even inside a nested table-cell editor.
+        pending.failed = true;
+        if (aliveRef.current && pending.epoch === epochRef.current) {
+          setUploadErrors((errors) => [
+            ...errors.filter((error) => error.id !== pending.id),
+            {
+              id: pending.id,
+              file: pending.file,
+              message: errorMessage,
+              anchor: pending.anchor,
+            },
+          ]);
+        }
+        settleAfterPendingTransaction();
+        return;
+      }
+      if (!result) return;
 
       pending.reconciling = true;
       // Remove the record before the Lexical transaction. The transaction's
@@ -493,34 +654,19 @@ function MarkdownEditorDocument({
         () => {
           const node = $getNodeByKey(nodeKey);
           if (!$isImageNode(node) || node.getSrc() !== pending.source) return;
-          if (result) {
-            node.setSrc(result.src);
-            // An author may edit alt text while the upload is in flight. Only
-            // fill the empty value created by MDXEditor's upload command.
-            node.setAltText(
-              resolveUploadedImageAlt(node.getAltText(), pending.file.name, result.alt),
-            );
-          } else {
-            node.remove();
-          }
+          node.setSrc(result.src);
+          // An author may edit alt text while the upload is in flight. Only
+          // fill the empty value created by MDXEditor's upload command.
+          node.setAltText(
+            resolveUploadedImageAlt(node.getAltText(), pending.file.name, result.alt),
+          );
         },
         {
           onUpdate: () => {
             pending.reconciling = false;
-            if (errorMessage) {
-              if (aliveRef.current && pending.epoch === epochRef.current) {
-                setUploadErrors((errors) => [
-                  ...errors.filter((error) => error.id !== pending.id),
-                  {
-                    id: pending.id,
-                    file: pending.file,
-                    message: errorMessage,
-                    anchor: pending.anchor,
-                  },
-                ]);
-              }
-            } else {
-              setUploadErrors((errors) => errors.filter((error) => error.id !== pending.id));
+            setUploadErrors((errors) => errors.filter((error) => error.id !== pending.id));
+            if (isTableCellEditor(editor)) {
+              editor.dispatchCommand(NESTED_EDITOR_UPDATED_COMMAND, undefined);
             }
             settleAfterPendingTransaction();
           },
@@ -532,32 +678,47 @@ function MarkdownEditorDocument({
 
   reconcilePendingRef.current = reconcilePendingImage;
 
-  const handleMissingPendingImage = useCallback(
-    (editor: LexicalEditor, pending: PendingUpload) => {
-      if (!aliveRef.current || pending.epoch !== epochRef.current || pending.reconciling) return;
+  const cancelPendingUpload = useCallback((pending: PendingUpload) => {
+    pending.cancelled = true;
+    if (pendingUploadsRef.current.get(pending.id) === pending) {
       pendingUploadsRef.current.delete(pending.id);
-      if (pending.error) {
-        const message = pending.error;
-        setUploadErrors((errors) => [
-          ...errors.filter((error) => error.id !== pending.id),
-          {
-            id: pending.id,
-            file: pending.file,
-            message,
-            anchor: pending.anchor,
-          },
-        ]);
-      }
-      // Keep the editor argument in the callback so the plugin remains tied
-      // to the active Lexical instance; reading it also makes this path safe
-      // when a document is replaced during an upload.
-      void editor;
+    }
+    setUploadErrors((errors) => errors.filter((error) => error.id !== pending.id));
+  }, []);
+
+  const handleMissingPendingImage = useCallback(
+    (_editor: LexicalEditor, pending: PendingUpload) => {
+      if (!aliveRef.current || pending.epoch !== epochRef.current || pending.reconciling) return;
+      cancelPendingUpload(pending);
       settleAfterPendingTransaction();
     },
-    [settleAfterPendingTransaction],
+    [cancelPendingUpload, settleAfterPendingTransaction],
   );
 
   missingPendingRef.current = handleMissingPendingImage;
+
+  const removeOrphanPendingImage = useCallback(
+    (editor: LexicalEditor, nodeKey: string) => {
+      editor.update(
+        () => {
+          const node = $getNodeByKey(nodeKey);
+          if ($isImageNode(node) && node.getSrc().startsWith(PENDING_SOURCE_PREFIX)) {
+            node.remove();
+          }
+        },
+        {
+          tag: "history-merge",
+          onUpdate: () => {
+            if (isTableCellEditor(editor)) {
+              editor.dispatchCommand(NESTED_EDITOR_UPDATED_COMMAND, undefined);
+            }
+            settleAfterPendingTransaction();
+          },
+        },
+      );
+    },
+    [settleAfterPendingTransaction],
+  );
 
   const pendingPlugin = useMemo(
     () =>
@@ -566,8 +727,9 @@ function MarkdownEditorDocument({
         onImageNode: (editor, nodeKey, pending) =>
           reconcilePendingRef.current(editor, nodeKey, pending),
         onMissingNode: (editor, pending) => missingPendingRef.current(editor, pending),
+        onOrphanImage: removeOrphanPendingImage,
       }),
-    [],
+    [removeOrphanPendingImage],
   );
 
   const tableCellDraftPlugin = useMemo(
@@ -575,10 +737,15 @@ function MarkdownEditorDocument({
       realmPlugin({
         init(realm) {
           realm.pub(createActiveEditorSubscription$, (editor) => {
-            if (editor === realm.getValue(rootEditor$) || !isTableCellEditor(editor)) {
-              return () => undefined;
-            }
-            return registerTableCellDraftSync(editor);
+            activeEditorRef.current = editor;
+            const unregister =
+              editor === realm.getValue(rootEditor$) || !isTableCellEditor(editor)
+                ? () => undefined
+                : registerTableCellDraftSync(editor);
+            return () => {
+              unregister();
+              if (activeEditorRef.current === editor) activeEditorRef.current = null;
+            };
           });
         },
       })(),
@@ -590,27 +757,107 @@ function MarkdownEditorDocument({
     editorRef.current?.setMarkdown(next);
   }, []);
 
+  const livePendingEditor = useCallback((pending: PendingUpload): LexicalEditor | null => {
+    const editor = pending.editor;
+    const nodeKey = pending.nodeKey;
+    const editorRoot = editor?.getRootElement();
+    if (!editor || !nodeKey || !editorRoot || !rootRef.current?.contains(editorRoot)) return null;
+
+    let ownsNode = false;
+    editor.getEditorState().read(() => {
+      const node = $getNodeByKey(nodeKey);
+      ownsNode = $isImageNode(node) && node.getSrc() === pending.source;
+    });
+    return ownsNode ? editor : null;
+  }, []);
+
+  const completeUploadInMarkdown = useCallback(
+    (pending: PendingUpload, result: { src: string; alt?: string }) => {
+      if (pendingUploadsRef.current.get(pending.id) !== pending) return;
+      const current = currentEditorMarkdown();
+      const replacement = replacePendingImageNode(
+        current,
+        pending.source,
+        result,
+        pending.file.name,
+      );
+      pendingUploadsRef.current.delete(pending.id);
+      setUploadErrors((errors) => errors.filter((error) => error.id !== pending.id));
+      if (!replacement.replaced) {
+        pending.cancelled = true;
+        publishValidDraft(stripPendingImageNodes(current, []));
+        return;
+      }
+      syncMarkdown(replacement.markdown);
+      publishValidDraft(
+        stripPendingImageNodes(replacement.markdown, pendingUploadsRef.current.values()),
+      );
+    },
+    [currentEditorMarkdown, publishValidDraft, syncMarkdown],
+  );
+
   const completeUpload = useCallback(
     (pending: PendingUpload, result: { src: string; alt?: string }) => {
-      if (!aliveRef.current || pending.epoch !== epochRef.current) return;
+      if (!aliveRef.current || pending.epoch !== epochRef.current || pending.cancelled) return;
       pending.result = result;
       pending.error = undefined;
-      // The plugin observes the ImageNode by identity after MDXEditor imports
-      // the returned marker. If the upload finished first, it reconciles when
-      // the node is inserted; if the node was already observed, schedule a
-      // harmless export update so the active transaction sees the result.
-      if (pending.nodeKey) {
-        const editor = pending.editor;
-        if (editor) reconcilePendingRef.current(editor, pending.nodeKey, pending);
+      pending.failed = false;
+      if (modeRef.current === "source") {
+        completeUploadInMarkdown(pending, result);
+        return;
       }
+
+      const editor = livePendingEditor(pending);
+      if (editor && pending.nodeKey) {
+        reconcilePendingRef.current(editor, pending.nodeKey, pending);
+        return;
+      }
+
+      // Returning from source mode rebuilds Lexical nodes. Give observers one
+      // microtask to refresh node ownership. If no live node appears, flush a
+      // just-edited table cell before the rare whole-Markdown fallback.
+      flushActiveTableCell();
+      queueMicrotask(() => {
+        if (
+          !aliveRef.current ||
+          pending.epoch !== epochRef.current ||
+          pending.cancelled ||
+          pendingUploadsRef.current.get(pending.id) !== pending
+        ) {
+          return;
+        }
+        if (modeRef.current === "source") {
+          completeUploadInMarkdown(pending, result);
+          return;
+        }
+        const refreshedEditor = livePendingEditor(pending);
+        if (refreshedEditor && pending.nodeKey) {
+          reconcilePendingRef.current(refreshedEditor, pending.nodeKey, pending);
+          return;
+        }
+        completeUploadInMarkdown(pending, result);
+      });
     },
-    [],
+    [completeUploadInMarkdown, flushActiveTableCell, livePendingEditor],
   );
 
   const failUpload = useCallback((pending: PendingUpload, error: unknown) => {
-    if (!aliveRef.current || pending.epoch !== epochRef.current) return;
+    if (!aliveRef.current || pending.epoch !== epochRef.current || pending.cancelled) return;
     pending.error = error instanceof Error ? error.message : "网络或权限错误";
     pending.result = undefined;
+    if (modeRef.current === "source" || !pending.nodeKey) {
+      pending.failed = true;
+      setUploadErrors((errors) => [
+        ...errors.filter((item) => item.id !== pending.id),
+        {
+          id: pending.id,
+          file: pending.file,
+          message: pending.error!,
+          anchor: pending.anchor,
+        },
+      ]);
+      return;
+    }
     // A node already observed by the plugin can be reconciled immediately;
     // otherwise its next Lexical update will do so after insertion.
     if (pending.nodeKey) {
@@ -622,7 +869,7 @@ function MarkdownEditorDocument({
   const runUpload = useCallback(
     (pending: PendingUpload) => {
       const task = uploadQueueRef.current.then(async () => {
-        if (!aliveRef.current || pending.epoch !== epochRef.current) return;
+        if (!aliveRef.current || pending.epoch !== epochRef.current || pending.cancelled) return;
         const upload = onUploadRef.current;
         if (!upload) {
           failUpload(pending, new Error("当前编辑器不支持图片上传"));
@@ -675,7 +922,7 @@ function MarkdownEditorDocument({
   const insertPlaceholderAtAnchor = useCallback(
     (pending: PendingUpload) => {
       const current = currentEditorMarkdown();
-      if (current.includes(pending.source)) return;
+      if (pendingImageBounds(current, pending.source)) return;
 
       const anchor = pending.anchor;
       let insertAt = -1;
@@ -698,19 +945,72 @@ function MarkdownEditorDocument({
     (id: string) => {
       const error = uploadErrors.find((item) => item.id === id);
       if (!error || !onUploadRef.current) return;
+      const existing = pendingUploadsRef.current.get(id);
+      const retryAsMarkdown = modeRef.current === "source";
+      if (existing && retryAsMarkdown) {
+        const current = currentEditorMarkdown();
+        if (!pendingImageBounds(current, existing.source)) {
+          cancelPendingUpload(existing);
+          publishValidDraft(stripPendingImageNodes(current, []));
+          return;
+        }
+        existing.error = undefined;
+        existing.result = undefined;
+        existing.failed = false;
+        setUploadErrors((errors) => errors.filter((item) => item.id !== id));
+        runUpload(existing);
+        return;
+      }
+
+      let retryInPlace = false;
+      const existingEditor = existing?.editor;
+      const existingRoot = existingEditor?.getRootElement();
+      if (
+        existing?.failed &&
+        existing.nodeKey &&
+        existingEditor &&
+        existingRoot &&
+        rootRef.current?.contains(existingRoot)
+      ) {
+        existingEditor.getEditorState().read(() => {
+          const node = $getNodeByKey(existing.nodeKey!);
+          retryInPlace = $isImageNode(node) && node.getSrc() === existing.source;
+        });
+      }
+
+      if (existing && retryInPlace) {
+        existing.error = undefined;
+        existing.result = undefined;
+        existing.failed = false;
+        setUploadErrors((errors) => errors.filter((item) => item.id !== id));
+        runUpload(existing);
+        return;
+      }
+
+      if (existing) {
+        existing.cancelled = true;
+        pendingUploadsRef.current.delete(id);
+      }
       const pending: PendingUpload = {
         id: error.id,
         epoch: epochRef.current,
         file: error.file,
         source: imagePlaceholderSource(error.id),
-        anchor: error.anchor,
+        anchor: existing?.anchor ?? error.anchor,
       };
       pendingUploadsRef.current.set(id, pending);
       insertPlaceholderAtAnchor(pending);
       setUploadErrors((errors) => errors.filter((item) => item.id !== id));
       runUpload(pending);
     },
-    [insertPlaceholderAtAnchor, runUpload, uploadErrors],
+    [
+      cancelPendingUpload,
+      currentEditorMarkdown,
+      insertPlaceholderAtAnchor,
+      publishValidDraft,
+      runUpload,
+      uploadErrors,
+    ],
   );
 
   const handleEditorChange = useCallback(
@@ -723,9 +1023,45 @@ function MarkdownEditorDocument({
 
       setParseError(null);
       const pending = pendingUploadsRef.current;
-      for (const item of pending.values()) {
-        if (item.anchor || !next.includes(item.source)) continue;
-        item.anchor = pendingImageAnchor(next, item.source);
+      const verifyDisposedNestedOwners: PendingUpload[] = [];
+      for (const item of Array.from(pending.values())) {
+        if (pendingImageBounds(next, item.source)) {
+          item.exportedToMarkdown = true;
+          if (!item.anchor) item.anchor = pendingImageAnchor(next, item.source);
+          continue;
+        }
+
+        const ownerRoot = item.editor?.getRootElement();
+        const ownsNestedNode = Boolean(item.editor && isTableCellEditor(item.editor));
+        const nestedOwnerWasDisposed =
+          ownsNestedNode && (!ownerRoot || !rootRef.current?.contains(ownerRoot));
+        if (
+          mode === "source" ||
+          (ownsNestedNode && item.exportedToMarkdown) ||
+          nestedOwnerWasDisposed
+        ) {
+          cancelPendingUpload(item);
+        } else if (ownsNestedNode) {
+          verifyDisposedNestedOwners.push(item);
+        }
+      }
+      if (verifyDisposedNestedOwners.length > 0) {
+        queueMicrotask(() => {
+          if (!aliveRef.current) return;
+          const current = currentEditorMarkdown();
+          for (const item of verifyDisposedNestedOwners) {
+            if (
+              pendingUploadsRef.current.get(item.id) !== item ||
+              pendingImageBounds(current, item.source)
+            ) {
+              continue;
+            }
+            const ownerRoot = item.editor?.getRootElement();
+            if (!ownerRoot || !rootRef.current?.contains(ownerRoot)) {
+              cancelPendingUpload(item);
+            }
+          }
+        });
       }
 
       // Undoing the first edit should restore the exact source supplied by
@@ -738,7 +1074,7 @@ function MarkdownEditorDocument({
           : stripPendingImageNodes(next, pending.values());
       publishValidDraft(restoredInitial);
     },
-    [publishValidDraft],
+    [cancelPendingUpload, currentEditorMarkdown, mode, publishValidDraft],
   );
 
   const handleEditorBlur = useCallback((event: FocusEvent) => {
@@ -894,8 +1230,6 @@ function MarkdownEditorDocument({
       className={`${styles.root} ${variant === "compact" ? styles.compact : styles.document}`}
       data-testid="markdown-editor"
       data-image-scope={imageScope}
-      onCompositionStartCapture={handleCompositionStart}
-      onCompositionEndCapture={handleCompositionEnd}
       onBlurCapture={(event: ReactFocusEvent<HTMLDivElement>) =>
         handleEditorBlur(event.nativeEvent)
       }
