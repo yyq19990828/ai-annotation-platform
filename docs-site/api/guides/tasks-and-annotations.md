@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-09-08
+last_reviewed: 2026-09-10
 ---
 
 # 任务与标注
@@ -46,6 +46,12 @@ Idempotency-Key: 61fffd41-c706-48c7-818e-0c40cdbeb6c9
 每次写入和重试都会重新检查账号、任务可见性、当前归属及可编辑状态。员工停用后重新启用，也不能用旧离线操作修改已经交接的任务。
 
 全部标注保存并同步后，调用 `POST /api/v1/tasks/:id/submit` 将任务送审并释放当前锁；保存标注本身不会提交审核。
+
+## 选中框二次推理
+
+`POST /api/v1/tasks/:id/annotations/:annotation_id/secondary-inference` 在选中标注的 ROI 上运行模型，按 `write_target` 写回属性或创建子标注。
+
+仅 `super_admin`、`project_admin`、`annotator` 可调用，且仍需通过项目与任务可见性、当前归属和可编辑状态检查；API Key 还需 `annotations:write` scope。审核员调用返回 `403`，不会执行推理或写入结果。审核员通过普通标注接口进行人工修正的权限保持原有规则。
 
 ## 视频问题反馈
 

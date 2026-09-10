@@ -123,6 +123,7 @@ export function WorkbenchLayout({
 }: WorkbenchLayoutProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const [petPosition, setPetPositionState] = useState(readWorkbenchPetPosition);
+  const [threeDDetailsVisible, setThreeDDetailsVisible] = useState(false);
   const linkedFloatingSelection =
     pet?.enabled && floatingSelection && !floatingSelection.collapsed
       ? carriedSelectionFromPet(floatingSelection.position, petPosition)
@@ -139,6 +140,7 @@ export function WorkbenchLayout({
       enabled: Boolean(pet?.enabled),
       position: petPosition,
       onPositionChange: setPetPosition,
+      onDetailsVisibleChange: setThreeDDetailsVisible,
     }),
     [pet?.enabled, petPosition, setPetPosition],
   );
@@ -252,6 +254,10 @@ export function WorkbenchLayout({
           context={pet.context}
           position={petPosition}
           onPositionChange={setPetPosition}
+          detailsVisible={
+            Boolean(linkedFloatingSelection) ||
+            (stageHost.common.stageKind === "3d" && threeDDetailsVisible)
+          }
           onExpand={pet.onExpand}
         />
       )}

@@ -69,6 +69,7 @@ import { resolveCrossFrameNavigation } from "./crossFrameTarget";
 import { useBatches } from "@/hooks/useBatches";
 import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
 import { useIsProjectOwner } from "@/hooks/useIsProjectOwner";
+import { usePermissions } from "@/hooks/usePermissions";
 import { predictionsApi } from "@/api/predictions";
 import { mlBackendsApi } from "@/api/ml-backends";
 import type {
@@ -564,6 +565,7 @@ export function useWorkbenchShellModel({
     selectedBackend?.name ?? (currentProject?.ml_backend_id ? "已接入模型" : "未接入模型");
 
   const meUserId = useAuthStore((s) => s.user?.id);
+  const { hasPermission } = usePermissions();
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(requestedBatchId);
   useEffect(() => {
     setSelectedBatchId((prev) => (prev === requestedBatchId ? prev : requestedBatchId));
@@ -6403,6 +6405,9 @@ export function useWorkbenchShellModel({
   // 多选 = 「N 个已选中 · 批量」精简态;无选中 = null(隐藏)。
   // 图片单选注入真实内容(改类 / 锁 / 隐藏 / 删除 / 几何 / 属性);视频单选搬入完整轨迹面板。
   const selectionCardEligible = stageKind === "image" || stageKind === "video";
+  // Review permits manual corrections; inference needs annotation authority independently.
+  const canConfigureSecondaryInference = mode === "annotate" && hasPermission("task.annotate");
+  const canUseSecondaryInference = stageKind === "image" && canConfigureSecondaryInference;
   const selectedIds = s.selectedIds;
   const selectionCount = selectedIds.length;
   // Only a visible tracking panel temporarily folds the selection card. A parked session
@@ -6685,14 +6690,15 @@ export function useWorkbenchShellModel({
         (stageKind === "image" && tool === "mask" && maskEditor.tool === "slice_mask"),
       onCollapse: collapseSelectionCard,
       onExpand: expandSelectionCard,
-      // v0.20.19 · 二次推理面板显隐 toggle 仅图片任务 (二次推理条本就图片限定)。
       secondaryBarHidden,
-      onToggleSecondaryBar:
-        stageKind === "image" ? () => setSecondaryBarHidden(!secondaryBarHidden) : undefined,
+      onToggleSecondaryBar: canUseSecondaryInference
+        ? () => setSecondaryBarHidden(!secondaryBarHidden)
+        : undefined,
       children,
     };
   }, [
     selectionCardEligible,
+    canUseSecondaryInference,
     secondaryBarHidden,
     setSecondaryBarHidden,
     selectionCount,
@@ -6840,10 +6846,10 @@ export function useWorkbenchShellModel({
   );
 
   const secondaryEligible =
+    canUseSecondaryInference &&
     !secondaryBarHidden &&
     !maskToolActive &&
     !isAIToolId(activeAiTool) &&
-    stageKind === "image" &&
     !!selectedAnnotationForPanel &&
     !isLocked;
   const { capabilities: secondaryCapabilities } = useSecondaryCapabilities(
@@ -7529,7 +7535,7 @@ export function useWorkbenchShellModel({
             )}
             {/* v0.20.11 · 选中单框二次推理入口: 非 AI 工具 (与 InteractiveToolBar 互斥) 且单选一个
                 已落库框时浮顶部, 列该框可跑能力。图片任务 only (视频/3D 走各自轨迹面板)。 */}
-            {selectedAnnotationForPanel && stageKind === "image" && (
+            {selectedAnnotationForPanel && canUseSecondaryInference && (
               <SecondaryInferenceBar
                 presentationHidden={contextToolbar !== "secondary"}
                 projectId={projectId}
@@ -7732,7 +7738,9 @@ export function useWorkbenchShellModel({
         onRejectPrediction: handleRejectPrediction,
         onPatchShapeFlag: handlePatchShapeFlag,
         secondaryBarHidden,
-        onToggleSecondaryBar: () => setSecondaryBarHidden(!secondaryBarHidden),
+        onToggleSecondaryBar: canUseSecondaryInference
+          ? () => setSecondaryBarHidden(!secondaryBarHidden)
+          : undefined,
         imageClipboardActions: imageContextMenuClipboard,
         onCommitDrawing: handleCommitDrawing,
         onCommitRotatedBbox: createRotatedBbox,
@@ -8000,7 +8008,9 @@ export function useWorkbenchShellModel({
       hideOrphanAnnotations,
       onToggleHideOrphans: () => setHideOrphanAnnotations((value) => !value),
       secondaryBarHidden,
-      onToggleSecondaryBar: () => setSecondaryBarHidden(!secondaryBarHidden),
+      onToggleSecondaryBar: canConfigureSecondaryInference
+        ? () => setSecondaryBarHidden(!secondaryBarHidden)
+        : undefined,
     },
     conflict: {
       open: conflictOpen,

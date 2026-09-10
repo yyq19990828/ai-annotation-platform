@@ -835,7 +835,7 @@ test.describe("native Mask interactive candidate acceptance", () => {
 
     await retry.click();
     await expect.poll(() => scribbleContexts().length, { timeout: 10_000 }).toBe(2);
-    await expect(page.getByText("候选待处理", { exact: true })).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('[data-pet-mood="candidateReady"]')).toBeVisible({ timeout: 10_000 });
 
     expect(scribbleContexts()[1]).toEqual(scribbleContexts()[0]);
     expect(scribbleContexts()[1]?.mask_prompt_source).toMatchObject({

@@ -15,6 +15,10 @@ const minioTarget = process.env.MINIO_PROXY_TARGET || "http://127.0.0.1:9000";
 // `/// <reference types="vitest" />` 已注入运行时 schema。
 const config: Parameters<typeof defineConfig>[0] = {
   plugins: [react(), tailwindcss(), cspNoncePlugin()],
+  // Worktrees may share node_modules, but Vite's optimizer cache is tied to one
+  // running module graph. Keep it in the checkout so parallel dev servers cannot
+  // overwrite each other's pre-bundled dependencies.
+  cacheDir: resolve(__dirname, "../../.vite/apps-web"),
   // v0.8.8 · 仓库根 `.env` 是前后端共用 SoT。vite 默认从 `apps/web/.env`
   // 读取会与后端 .env 漂移；显式指向仓库根确保 VITE_* 变量与后端 settings 同源。
   envDir: resolve(__dirname, "../../"),

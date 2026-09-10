@@ -57410,7 +57410,7 @@
     },
     "/api/v1/tasks/{task_id}/annotations/{annotation_id}/secondary-inference": {
       "post": {
-        "description": "v0.20.11 · 选中框单框二次推理: 在选中框 ROI 上同步跑一个能力, 产物落库。\n\n属性型写回原框 (origin=ai)、几何型建子框 (parent=选中框)。复用批量 pipeline 下游\n阶段的 crop 投递 + 产物归位, 不走 worker。",
+        "description": "选中框单框二次推理: 在选中框 ROI 上同步跑一个能力, 产物落库。\n\n属性型写回原框 (origin=ai)、几何型建子框 (parent=选中框)。复用批量 pipeline 下游\n阶段的 crop 投递 + 产物归位, 不走 worker。\n\n仅超级管理员、项目管理员和标注员可调用, 仍需通过任务可见性及可编辑状态校验。\n审核员调用返回 403; 人工审核修改仍使用普通标注接口。",
         "operationId": "secondary_inference_api_v1_tasks__task_id__annotations__annotation_id__secondary_inference_post",
         "parameters": [
           {
