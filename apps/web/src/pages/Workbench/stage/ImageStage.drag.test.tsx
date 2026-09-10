@@ -93,6 +93,35 @@ function CursorOwner() {
   );
 }
 
+const rotatedGeometry = {
+  type: "rotated_bbox" as const,
+  cx: 0.5,
+  cy: 0.5,
+  w: 0.2,
+  h: 0.1,
+  angle: 35,
+};
+const rotatedProps: ComponentProps<typeof ImageStage> = {
+  ...defaults,
+  tool: "select",
+  selectedId: "rotated",
+  userBoxes: [
+    {
+      id: "rotated",
+      cls: "car",
+      source: "manual",
+      conf: 1,
+      x: 0.4,
+      y: 0.45,
+      w: 0.2,
+      h: 0.1,
+      geometry: rotatedGeometry,
+    },
+  ],
+};
+const rotatedGroup = () => document.querySelector('[data-konva="Group"][data-id="rotated"]')!;
+const rotatedBody = () => rotatedGroup().querySelector('[data-konva="Rect"]')!;
+
 describe("ImageStage drag scheduling", () => {
   let frames: Map<number, FrameRequestCallback>;
   beforeEach(() => {
@@ -219,6 +248,100 @@ describe("ImageStage drag scheduling", () => {
       expect(before).toEqual(geometry);
       expect(after).toMatchObject({ ...geometry, angle: expect.any(Number) });
       expect(after.angle).toBeCloseTo((angle + 360) % 360, 8);
+    },
+  );
+
+  it.each([
+    { width: 1280, height: 720, scale: 1, tx: 0, ty: 0 },
+    { width: 720, height: 1280, scale: 0.6, tx: 70, ty: 30 },
+  ])("moves a selected rotated box without changing its size or angle: %j", (view) => {
+    const { width, height, scale, tx, ty } = view;
+    const onCommitRotateBbox = vi.fn();
+    const props = {
+      ...rotatedProps,
+      imageWidth: width,
+      imageHeight: height,
+      vp: { scale, tx, ty },
+      onCommitRotateBbox,
+    };
+    const rendered = render(<ImageStage {...props} />);
+    const startX = rotatedGeometry.cx * width * scale + tx;
+    const startY = rotatedGeometry.cy * height * scale + ty;
+    fireEvent.mouseDown(rotatedBody(), { clientX: startX, clientY: startY, button: 0 });
+    expect(screen.getByTestId("workbench-stage")).toHaveAttribute(
+      "data-drag-kind",
+      "moveRotatedBox",
+    );
+    fireEvent.mouseMove(window, {
+      clientX: startX + 0.1 * width * scale,
+      clientY: startY - 0.1 * height * scale,
+      buttons: 1,
+    });
+    flushFrame();
+    expect(Number(rotatedGroup().getAttribute("data-x"))).toBeCloseTo(0.6 * width);
+    expect(Number(rotatedGroup().getAttribute("data-y"))).toBeCloseTo(0.4 * height);
+    expect(rotatedGroup()).toHaveAttribute("data-rotation", "35");
+    expect(onCommitRotateBbox).not.toHaveBeenCalled();
+    fireEvent.mouseMove(window, {
+      clientX: startX + 0.2 * width * scale,
+      clientY: startY - 0.2 * height * scale,
+      buttons: 1,
+    });
+    fireEvent.mouseUp(window, { button: 0 });
+    expect(onCommitRotateBbox).toHaveBeenCalledOnce();
+    expect(onCommitRotateBbox).toHaveBeenCalledWith("rotated", rotatedGeometry, {
+      ...rotatedGeometry,
+      cx: expect.closeTo(0.7),
+      cy: expect.closeTo(0.3),
+    });
+    const saved = onCommitRotateBbox.mock.calls[0][2];
+    rendered.rerender(<ImageStage {...props} pendingGeomMap={new Map([["rotated", saved]])} />);
+    expect(Number(rotatedGroup().getAttribute("data-x"))).toBeCloseTo(0.7 * width);
+    expect(Number(rotatedGroup().getAttribute("data-y"))).toBeCloseTo(0.3 * height);
+    flushFrame();
+    expect(onCommitRotateBbox).toHaveBeenCalledOnce();
+  });
+
+  it("does not save a rotated box when its body is clicked without movement", () => {
+    const onCommitRotateBbox = vi.fn();
+    render(<ImageStage {...rotatedProps} onCommitRotateBbox={onCommitRotateBbox} />);
+    fireEvent.mouseDown(rotatedBody(), { clientX: 50, clientY: 50, button: 0 });
+    fireEvent.mouseUp(window, { button: 0 });
+    expect(onCommitRotateBbox).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { readOnly: true },
+    { selectedId: null },
+    { selectedIds: ["rotated", "other"] },
+    { userBoxes: [{ ...rotatedProps.userBoxes[0], is_locked: true }] },
+  ])("does not move a rotated box when editing is unavailable: %j", (guard) => {
+    const onCommitRotateBbox = vi.fn();
+    render(<ImageStage {...rotatedProps} {...guard} onCommitRotateBbox={onCommitRotateBbox} />);
+    fireEvent.mouseDown(rotatedBody(), { clientX: 50, clientY: 50, button: 0 });
+    fireEvent.mouseMove(window, { clientX: 70, clientY: 30, buttons: 1 });
+    fireEvent.mouseUp(window, { button: 0 });
+    expect(onCommitRotateBbox).not.toHaveBeenCalled();
+    expect(rotatedGroup()).toHaveAttribute("data-x", "50");
+    expect(rotatedGroup()).toHaveAttribute("data-y", "50");
+  });
+
+  it.each([{ mediaKey: "image-b" }, { readOnly: true }])(
+    "cancels a rotated box move when its owner changes: %j",
+    (next) => {
+      const onCommitRotateBbox = vi.fn();
+      const props = { ...rotatedProps, onCommitRotateBbox };
+      const view = render(<ImageStage {...props} />);
+      fireEvent.mouseDown(rotatedBody(), { clientX: 50, clientY: 50, button: 0 });
+      expect(screen.getByTestId("workbench-stage")).toHaveAttribute(
+        "data-drag-kind",
+        "moveRotatedBox",
+      );
+      fireEvent.mouseMove(window, { clientX: 70, clientY: 30, buttons: 1 });
+      view.rerender(<ImageStage {...props} {...next} />);
+      flushFrame();
+      fireEvent.mouseUp(window, { button: 0 });
+      expect(onCommitRotateBbox).not.toHaveBeenCalled();
     },
   );
 

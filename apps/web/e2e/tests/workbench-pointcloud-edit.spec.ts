@@ -560,6 +560,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
   });
 
   test("点选 box_3d → PSR 面板出现 → 改 cx → 几何 PATCH 落库", async ({ page, seed }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
     await seed.reset();
     const lidar = await seed.seedLidar();
     await seed.injectToken(page, "admin@e2e.test");
@@ -633,6 +634,15 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
         petPosition: { x: petPositionBefore.x + 24, y: petPositionBefore.y + 16 },
       });
 
+    const sprite = pet.locator("[data-pet-skin]");
+    const spriteBeforeExpand = await sprite.boundingBox();
+    expect(await pet.innerText()).not.toBe("");
+    await expandBtn.click();
+    await expect.poll(() => pet.innerText()).toBe("");
+    expect(await sprite.boundingBox()).toEqual(spriteBeforeExpand);
+    await page.getByLabel("收起详情").click();
+    await expect.poll(() => pet.innerText()).not.toBe("");
+    expect(await sprite.boundingBox()).toEqual(spriteBeforeExpand);
     await expandBtn.click();
 
     const cx = page.getByLabel("cx", { exact: true });

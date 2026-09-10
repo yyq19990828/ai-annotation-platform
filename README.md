@@ -30,6 +30,8 @@ AI Annotation Platform 把项目管理、Data Manager、多模态标注工作台
 
 ## 工作台 AI 案例
 
+图片标注工作台支持对已确认标注做[二次推理](./docs-site/user-guide/ai/current-task-inference.md)，由标注员、项目管理员或超级管理员使用。审核工作台隐藏相关入口，接口也拒绝审核员调用；人工审核修改保留。
+
 <table>
   <tr>
     <td width="50%" valign="top" align="center">
