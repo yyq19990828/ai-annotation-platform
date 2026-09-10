@@ -30,7 +30,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { cn } from "@/lib/utils";
 import { useActiveIssueStore } from "../state/useActiveIssueStore";
 import { useWorkbenchWorkspaceLayout } from "../state/useWorkbenchWorkspaceLayout";
-import { createWorkbenchLayoutExecutor, defaultDockWidth } from "./workbenchLayoutExecutor";
+import { createWorkbenchLayoutExecutor } from "./workbenchLayoutExecutor";
 import {
   createWorkspacePreset,
   getActiveWorkspacePreset,
@@ -44,6 +44,8 @@ import type { PanelId, WorkspaceContext } from "./workbenchLayoutSnapshot";
 import {
   PERIPHERAL_PANELS,
   WORKBENCH_PANEL_REGISTRY,
+  defaultDockWidth,
+  panelMinimumWidth,
   panelSupportsContext,
   type WorkbenchPanelSlots,
   type WorkbenchWorkspaceCommands,
@@ -494,7 +496,10 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
       for (const panel of api.panels) {
         const spec = WORKBENCH_PANEL_REGISTRY[panel.id as PanelId];
         panel.api.setRenderer(spec.renderer);
-        panel.api.setConstraints({ minimumWidth: spec.minWidth, minimumHeight: spec.minHeight });
+        panel.api.setConstraints({
+          minimumWidth: panelMinimumWidth(panel.id as PanelId, bounds().width),
+          minimumHeight: spec.minHeight,
+        });
       }
       const canvas = api.groups.find((group) => group.id === "canvas");
       if (canvas) {
@@ -620,16 +625,8 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
       api.onWillShowOverlay((event) => {
         guardDrop(event);
         if (event.defaultPrevented) return;
-        const source = event.getData();
-        const panels = source?.panelId
-          ? [source.panelId]
-          : (api.groups.find((group) => group.id === source?.groupId)?.panels.map((p) => p.id) ??
-            []);
         const horizontal = event.position === "left" || event.position === "right";
-        const width = Math.max(
-          defaultDockWidth(api.width),
-          ...panels.map((id) => WORKBENCH_PANEL_REGISTRY[id as PanelId]?.minWidth ?? 0),
-        );
+        const width = defaultDockWidth(api.width);
         // Dockview reads these models immediately after this event, before painting.
         dropOverlays.content.size = horizontal
           ? { type: "pixels", value: width }

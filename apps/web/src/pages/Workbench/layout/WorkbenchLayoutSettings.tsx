@@ -9,17 +9,25 @@ import {
 } from "./workbenchLayoutPresets";
 import { PANEL_TITLES, type WorkspaceNode } from "./workbenchLayoutSnapshot";
 
+const PREVIEW_BOUNDS = { width: 1600, height: 900 };
+
 function PreviewNode({ node, horizontal }: { node: WorkspaceNode; horizontal: boolean }) {
+  if (node.visible === false) return null;
   if (node.type === "leaf") {
-    if (node.data.id === "parking" || node.visible === false) return null;
+    if (node.data.id === "parking") return null;
     const panel = node.data.activeView ?? node.data.views[0];
     return (
       <span
         // eslint-disable-next-line no-restricted-syntax -- Preview weights come from the preset tree.
         style={{ "--preview-flex": `${node.size || 1} 1 0%` } as CSSProperties}
-        className={`flex flex-[var(--preview-flex)] min-h-0 min-w-0 items-center justify-center rounded-sm border p-1 text-2xs ${panel === "canvas" ? "border-brand/30 bg-brand/10 text-brand" : "border-border bg-muted text-muted-foreground"}`}
+        className="relative min-h-0 min-w-0 flex-[var(--preview-flex)]"
       >
-        {PANEL_TITLES[panel]}
+        {/* Labels and borders must not change the preset's flex proportions. */}
+        <span
+          className={`absolute inset-px flex items-center justify-center overflow-hidden rounded-sm border py-0.5 text-center text-2xs leading-tight ${panel === "canvas" ? "border-brand/30 bg-brand/10 text-brand" : "border-border bg-muted text-muted-foreground"}`}
+        >
+          {PANEL_TITLES[panel]}
+        </span>
       </span>
     );
   }
@@ -27,7 +35,7 @@ function PreviewNode({ node, horizontal }: { node: WorkspaceNode; horizontal: bo
     <span
       // eslint-disable-next-line no-restricted-syntax -- Preview weights come from the preset tree.
       style={{ "--preview-flex": `${node.size || 1} 1 0%` } as CSSProperties}
-      className={`flex flex-[var(--preview-flex)] min-h-0 min-w-0 gap-1 ${horizontal ? "flex-row" : "flex-col"}`}
+      className={`flex flex-[var(--preview-flex)] min-h-0 min-w-0 ${horizontal ? "flex-row" : "flex-col"}`}
     >
       {node.data.map((child, index) => (
         <PreviewNode key={index} node={child} horizontal={!horizontal} />
@@ -71,13 +79,13 @@ export function WorkbenchLayoutSettings({
       <div>
         <h3 className="text-md font-medium">布局预设</h3>
         <p className="mt-1 text-xs text-muted-foreground">
-          高亮项为当前布局。拖动面板可自由调整，切换预设后可撤销。
+          按 16:9 屏幕比例预览，高亮项为当前布局。切换预设后可撤销。
         </p>
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {presets.map((preset) => {
           const item = items.find((item) => item.id === preset.id)!;
-          const snapshot = createWorkspacePreset(preset.id);
+          const snapshot = createWorkspacePreset(preset.id, PREVIEW_BOUNDS);
           const selected = activePreset === preset.id;
           return (
             <button
@@ -91,9 +99,9 @@ export function WorkbenchLayoutSettings({
                 "hover:border-brand active:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50",
               )}
             >
-              <span aria-hidden="true" className="flex h-24 w-full gap-1">
+              <span aria-hidden="true" className="relative flex aspect-video w-full shrink-0">
                 {preset.id === "focus" ? (
-                  <span className="flex flex-1 items-center justify-center rounded-sm border border-brand/30 bg-brand/10 text-xs text-brand">
+                  <span className="absolute inset-px flex items-center justify-center rounded-sm border border-brand/30 bg-brand/10 text-2xs text-brand">
                     画布
                   </span>
                 ) : (
@@ -117,7 +125,7 @@ export function WorkbenchLayoutSettings({
         >
           <span
             aria-hidden="true"
-            className="flex h-24 items-center justify-center rounded-md border border-dashed border-border bg-muted/30 text-muted-foreground"
+            className="flex aspect-video w-full shrink-0 items-center justify-center rounded-md border border-dashed border-border bg-muted/30 text-muted-foreground"
           >
             <Icon name="grid" size={28} />
           </span>

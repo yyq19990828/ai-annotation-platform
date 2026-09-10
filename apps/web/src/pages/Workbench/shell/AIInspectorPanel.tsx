@@ -660,12 +660,12 @@ export function AIPredictionPopover({
       className={cn(AI_PANEL_SURFACE_CLASS, "flex h-full min-h-0 flex-col rounded-none border-0")}
     >
       <div className={AI_PANEL_HEADER_CLASS}>
-        <div className="flex items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <span className={AI_PANEL_ICON_CLASS}>
               <Icon name="bot" size={14} />
             </span>
-            <b className="text-sm">当前题 AI</b>
+            <b className="whitespace-nowrap text-sm">当前题 AI</b>
           </div>
           <div className="flex items-center gap-1.5">
             <Badge variant={phase === "error" ? "danger" : "ai"} className="gap-1 text-2xs">

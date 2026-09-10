@@ -183,6 +183,14 @@ export const PERIPHERAL_PANELS = [
   "camera-view",
 ] as const;
 
+export const defaultDockWidth = (width: number): number => Math.round(width * 0.15);
+
+/** A docked panel must fit the preset sidebar; floating groups keep their own limits. */
+export function panelMinimumWidth(id: PanelId, workspaceWidth: number): number {
+  const minimum = WORKBENCH_PANEL_REGISTRY[id].minWidth;
+  return id === "canvas" ? minimum : Math.min(minimum, defaultDockWidth(workspaceWidth));
+}
+
 export function panelSupportsContext(id: PanelId, context: WorkspaceContext): boolean {
   const [mode, stage] = context.split(":");
   const panel = WORKBENCH_PANEL_REGISTRY[id];

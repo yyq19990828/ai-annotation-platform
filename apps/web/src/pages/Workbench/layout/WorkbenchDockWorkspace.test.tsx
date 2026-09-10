@@ -443,6 +443,27 @@ describe("stable Dockview React workspace", () => {
     expect(standard).toHaveAttribute("aria-pressed", "true");
   });
 
+  it("applies review collaboration after the left panels were hidden", async () => {
+    const commands = createRef<WorkbenchWorkspaceCommands>();
+    render(fixture("review:image", commands));
+    const marker = await screen.findByTestId("canvas-marker");
+    const draft = screen.getByLabelText("讨论草稿");
+    fireEvent.change(draft, { target: { value: "保留审核意见" } });
+    act(() => {
+      commands.current!.hide("task-queue");
+      commands.current!.hide("class-palette");
+    });
+    const review = screen.getByRole("button", { name: "审核协作" });
+    expect(review).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(review);
+    expect(state.owner.failRestore).not.toHaveBeenCalled();
+    expect(review).toHaveAttribute("aria-pressed", "true");
+    expect(state.api!.getPanel("discussion")!.api.width).toBe(bounds.width);
+    expect(screen.getByTestId("canvas-marker")).toBe(marker);
+    expect(screen.getByLabelText("讨论草稿")).toHaveValue("保留审核意见");
+    expect(mounts).toBe(1);
+  });
+
   it.each(["preset", "hydration"])(
     "stops serializing an idle focus layout after %s",
     async (source) => {
