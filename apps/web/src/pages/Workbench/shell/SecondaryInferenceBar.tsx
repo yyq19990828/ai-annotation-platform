@@ -1,25 +1,24 @@
-// v0.20.11 · 选中框单框二次推理入口 (Q1b)。
-//
-// 选中单个已落库标注框时, 浮在画布顶部居中 (与 InteractiveToolBar 同风格、互斥: 那个只在 AI
-// 工具激活时显)。列出该框可跑的能力 (跨启用 backend, supported_inputs 含 crop): 检测子物 / 分类
-// 属性 / OCR。选一个 → 运行 → 属性写回原框 (带 AI 溯源 chip)、几何建子框 (侧栏缩进)。
-// 无可跑能力时不渲染 (不占位)。
-// v0.20.16-ui · 借鉴 InteractiveToolBar 悬浮面板: 能力用按 task 分组的 <select> 收成一个下拉
-// (取代平铺一大坨按钮), 选中项旁给 ⚙ 参数 / ⚠ 补字段, 右侧「运行」。有参数时下方展开 SchemaForm。
-// v0.20.17 · 几何能力加模型档位下拉 (复用交互条 VariantSelector); 参数 + 变体按 backendId:modelId
-// 持久化到用户偏好 (useSecondaryParamPrefs), 切框/刷新/换设备保留上次值。
-// v0.20.18 · 开集(开放词表)检测/分割模型 (supported_prompts 含 text) 加目标文本输入 (空则禁运行);
-// 参数面板改为 ⚙ 下方的独立 popover (固定列宽, 不随工具条变宽被拉满); ⚙ 用 Icon settings 替 emoji。
-import { useEffect, useState } from "react";
+// Secondary inference keeps prompt, configuration and request ownership outside the toolbar.
+// The compact primary area runs the selected capability; full settings disclose inline parameters.
+import { useEffect, useMemo, useRef, useState } from "react";
+import { X } from "lucide-react";
 
+import { ContextToolbar } from "./ContextToolbar";
 import { Button } from "@/components/ui/Button";
+import { Button as IconButton } from "@/components/shadcn/ui/button";
 import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
 import { VariantSelector } from "@/components/ml/VariantSelector";
 import type { AttributeField } from "@/api/projects";
 import type { AnnotationResponse } from "@/types";
 import { displayClassName } from "../stage/colors";
-import { SchemaForm, deriveDefaults, type JsonSchemaObject } from "../components/SchemaForm";
+import {
+  SchemaForm,
+  deriveDefaults,
+  type JsonSchemaField,
+  type JsonSchemaObject,
+} from "../components/SchemaForm";
+import { TOOLBAR_FIELD_LABEL_CLASS as FIELD_LABEL_CLASS } from "./workbenchToolbarChrome";
 import {
   buildSecondaryInferencePayload,
   hasConfigurableParams,
@@ -39,15 +38,21 @@ interface Props {
   /** v0.20.12 · 项目已有属性键: 判定 attributes-型能力的输出键是否有承接位 (无则产物看不见)。 */
   existingAttributeKeys?: Set<string>;
   /** v0.20.12 · 一次把缺失属性字段补进项目 (复用工作台属性补全)。 */
+  presentationHidden?: boolean;
   onEnsureAttributeFields?: (fields: AttributeField[]) => void;
 }
 
-// 与 InteractiveToolBar 同款样式常量, 保持悬浮面板视觉一致。
-// whitespace-nowrap + shrink-0: 标签不被 flex 挤压逐字竖排, 面板按内容自适应加宽。
-const FIELD_LABEL_CLASS = "shrink-0 whitespace-nowrap text-2xs text-muted-foreground";
+// Match the interactive toolbar's field geometry and semantic theme tokens.
 const SELECT_CLASS =
-  "appearance-none rounded-sm border border-border bg-muted px-1.5 py-1 text-xs text-foreground";
-const DIVIDER = <span aria-hidden className="h-5 w-px bg-border" />;
+  "h-8 min-w-0 w-full rounded-lg border border-border bg-muted/40 px-2 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring";
+// Older models may omit the platform role; only recognized confidence keys fall back.
+const CONFIDENCE_KEYS = new Set([
+  "confidence",
+  "conf",
+  "conf_threshold",
+  "score_threshold",
+  "box_threshold",
+]);
 
 const TASK_LABELS: Record<string, string> = {
   detection: "检测",
@@ -92,11 +97,23 @@ export function SecondaryInferenceBar({
   readOnly,
   existingAttributeKeys,
   onEnsureAttributeFields,
+  presentationHidden = false,
 }: Props) {
   const pushToast = useToastStore((s) => s.push);
   const { capabilities } = useSecondaryCapabilities(projectId);
-  const run = useRunSecondaryInference(taskId);
-  const [runningKey, setRunningKey] = useState<string | null>(null);
+  const run = useRunSecondaryInference();
+  const ownerKey = JSON.stringify([projectId, taskId, annotation.id]);
+  const owner = useMemo(() => ({ key: ownerKey }), [ownerKey]);
+  const latestOwner = useRef<typeof owner | null>(owner);
+  latestOwner.current = owner;
+  useEffect(() => {
+    latestOwner.current = owner;
+    return () => {
+      latestOwner.current = null;
+    };
+  }, [owner]);
+  const pendingRef = useRef(new Set<string>());
+  const [pending, setPending] = useState<ReadonlySet<string>>(() => new Set());
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   // v0.20.13 · 每能力的推理参数 (阈值等); paramsOpen = 当前是否展开选中能力的参数面板。
   const [paramsByKey, setParamsByKey] = useState<Record<string, Record<string, unknown>>>({});
@@ -141,7 +158,7 @@ export function SecondaryInferenceBar({
   // 选中能力: 用户选过的; 未选/失效则回落首个。
   const selected = capabilities.find((c) => capKey(c) === selectedKey) ?? capabilities[0];
   const selKey = capKey(selected);
-  const busy = runningKey !== null;
+  const busy = pending.has(ownerKey);
   const missing = missingAttributeFields(selected, existing);
   const canParams = hasConfigurableParams(selected.model);
   // v0.20.18 · 开集文本模型: 需用户输入检测/分割目标文本; 空文本禁运行 (跑了也检不出)。
@@ -162,9 +179,12 @@ export function SecondaryInferenceBar({
 
   const onRun = async (cap: SecondaryCapability) => {
     const key = capKey(cap);
-    setRunningKey(key);
+    if (readOnly || promptMissing || pendingRef.current.has(ownerKey)) return;
+    pendingRef.current.add(ownerKey);
+    setPending(new Set(pendingRef.current));
     try {
       const resp = await run.mutateAsync({
+        taskId,
         annotationId: annotation.id,
         body: buildSecondaryInferencePayload(
           cap,
@@ -173,6 +193,7 @@ export function SecondaryInferenceBar({
           promptByKey[key],
         ),
       });
+      if (latestOwner.current !== owner) return;
       const childCount = resp.created_children.length;
       const attrKeys = Object.keys(resp.annotation.attributes_meta ?? {});
       // 写了但项目缺承接字段 → 属性面板看不见, 提示去补全 (避免"跑了没反应")。
@@ -199,159 +220,252 @@ export function SecondaryInferenceBar({
               : "",
       });
     } catch (err) {
+      if (latestOwner.current !== owner) return;
       pushToast({
         msg: `${cap.label} 二次推理失败`,
         sub: String((err as Error)?.message ?? err),
         kind: "error",
       });
     } finally {
-      setRunningKey(null);
+      pendingRef.current.delete(ownerKey);
+      if (latestOwner.current) setPending(new Set(pendingRef.current));
     }
   };
 
-  return (
-    <div
-      data-testid="secondary-inference-bar"
-      className="absolute left-1/2 top-3 z-local-5 flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 flex-col gap-1 rounded-md border border-border bg-card px-3 py-1.5 shadow-md"
-      onMouseDown={(e) => e.stopPropagation()}
-    >
-      <div className="flex items-center gap-2.5">
-        {/* 标题 */}
-        <div className="flex shrink-0 items-center gap-1.5">
-          <b className="whitespace-nowrap text-xs">
-            <span className="text-brand">✦</span> 二次推理
-          </b>
-          <span className={FIELD_LABEL_CLASS}>「{displayClassName(annotation.class_name)}」框</span>
-        </div>
-
-        {DIVIDER}
-
-        {/* 能力: 按 task 分组的下拉 (取代平铺按钮) */}
-        <div className="flex items-center gap-1.5">
-          <span className={FIELD_LABEL_CLASS}>能力</span>
-          <select
-            data-testid="secondary-cap-select"
-            value={selKey}
+  const confidenceProperties = Object.fromEntries(
+    Object.entries(
+      (selected.model.params as JsonSchemaObject | undefined)?.properties ?? {},
+    ).filter(([key, raw]) => {
+      if (!raw || typeof raw !== "object") return false;
+      const field = raw as JsonSchemaField;
+      return (
+        !field.readOnly &&
+        (field.type === "number" || field.type === "integer") &&
+        (field["x-platform-role"] === "confidence" ||
+          (!field["x-platform-role"] && CONFIDENCE_KEYS.has(key)))
+      );
+    }),
+  );
+  const updateParams = (next: Record<string, unknown>) => {
+    setParamsByKey((prev) => ({ ...prev, [selKey]: next }));
+    savePref(selKey, { params: next });
+  };
+  // Both surfaces edit the existing per-model owner; preserve other defaults and edited fields.
+  const paramValues = {
+    ...deriveDefaults(selected.model.params as JsonSchemaObject),
+    ...paramsByKey[selKey],
+  };
+  const renderPrimary = (compact: boolean) => (
+    <div className="flex w-full min-w-0 flex-col gap-3">
+      {wantsText && (
+        <label className="flex min-w-0 flex-col gap-1.5">
+          <span className={FIELD_LABEL_CLASS}>目标文本</span>
+          <input
+            type="text"
+            value={promptByKey[selKey] ?? ""}
             disabled={busy}
-            onChange={(e) => {
-              setSelectedKey(e.target.value);
-              setParamsOpen(false);
-            }}
-            className={`${SELECT_CLASS} cursor-pointer`}
-            title="选择要在框 ROI 上跑的能力"
-          >
-            {groupByTask(capabilities).map(([task, group]) => (
-              <optgroup key={task} label={taskLabel(task)}>
-                {group.map((c) => (
-                  <option key={capKey(c)} value={capKey(c)}>
-                    {c.label}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-          <span className={FIELD_LABEL_CLASS}>{TARGET_HINT[selected.writeTarget]}</span>
-          {/* 模型档位下拉 (复用交互条同款紧凑变体选择器)。门开在「模型声明了变体轴」而非
-              「写几何」——OCR 等属性能力 (如 rapidocr rec/e2e 的 version/size/lang 轴) 同样要能选档;
-              无变体轴的能力 (onnxtools 分类) 不渲染。 */}
-          {(selected.model.supported_variants?.length ?? 0) > 0 && (
-            <VariantSelector
-              compact
-              supportedVariants={selected.model.supported_variants}
-              variantCombinations={selected.model.variant_combinations}
-              defaults={selected.model.default_variants ?? {}}
-              value={variantByKey[selKey] ?? {}}
-              disabled={busy}
-              onChange={(next) => {
-                setVariantByKey((prev) => ({ ...prev, [selKey]: next }));
-                savePref(selKey, { variants: next });
-              }}
-            />
+            onChange={(e) => setPromptByKey((prev) => ({ ...prev, [selKey]: e.target.value }))}
+            placeholder="如 car . person"
+            title="检测或分割目标，多个用 . 分隔"
+            aria-label="二次推理目标文本"
+            data-testid="secondary-prompt"
+            className={SELECT_CLASS}
+          />
+        </label>
+      )}
+      {compact && Object.keys(confidenceProperties).length > 0 && (
+        <div data-testid="secondary-quick-confidence" className="min-w-0 [&_input]:accent-brand">
+          <SchemaForm
+            schema={{ type: "object", properties: confidenceProperties }}
+            value={paramValues}
+            onChange={updateParams}
+            disabled={busy}
+          />
+        </div>
+      )}
+      <Button
+        size={compact ? "xs" : "sm"}
+        variant="ai"
+        className="w-full"
+        disabled={busy || promptMissing}
+        onClick={() => onRun(selected)}
+        title={
+          promptMissing
+            ? "请先输入检测/分割目标文本"
+            : `${selected.backendName} · ${TARGET_HINT[selected.writeTarget]}`
+        }
+        data-testid="secondary-run"
+      >
+        <Icon name={busy ? "loader2" : "sparkles"} size={13} />
+        {busy ? "运行中…" : "运行"}
+      </Button>
+    </div>
+  );
+  if (presentationHidden) return null;
+  return (
+    <ContextToolbar
+      key={ownerKey}
+      id="secondary"
+      label="二次推理"
+      summaryLabel="二次推理常用工具"
+      summaryTitle={`${displayClassName(annotation.class_name)} · ${selected.label} · ${TARGET_HINT[selected.writeTarget]}`}
+      panelSize="compact"
+      summary={
+        <>
+          <Icon name={busy ? "loader2" : "sparkles"} size={14} />
+          <span className="max-w-24 truncate" data-testid="secondary-summary-capability">
+            {selected.label}
+          </span>
+          {wantsText && (promptByKey[selKey] ?? "").trim() && (
+            <span
+              className="max-w-20 truncate text-muted-foreground"
+              data-testid="secondary-summary-prompt"
+            >
+              {promptByKey[selKey].trim()}
+            </span>
           )}
+        </>
+      }
+      quickActions={[]}
+      primaryContent={renderPrimary(true)}
+    >
+      {(close) => (
+        <div data-testid="secondary-inference-bar" className="flex min-w-0 flex-col gap-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-start gap-2.5">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
+                <Icon name="sparkles" size={16} />
+              </span>
+              <div className="min-w-0">
+                <h2 className="m-0 text-sm font-semibold">二次推理</h2>
+                <p className="mb-0 mt-1 text-2xs leading-relaxed text-muted-foreground">
+                  {selected.writeTarget === "attributes"
+                    ? "识别选中对象，补全属性"
+                    : "在选中区域内识别并创建子对象"}
+                </p>
+              </div>
+            </div>
+            <IconButton
+              size="icon-xs"
+              variant="ghost"
+              className="shrink-0 rounded-full text-muted-foreground"
+              aria-label="收起二次推理设置"
+              title="收起设置，继续标注"
+              onClick={close}
+            >
+              <X />
+            </IconButton>
+          </div>
+          <div className="grid min-w-0 grid-cols-2 gap-3">
+            <label className="flex min-w-0 flex-col gap-1.5">
+              <span className={FIELD_LABEL_CLASS}>识别能力</span>
+              <select
+                data-testid="secondary-cap-select"
+                aria-label="二次推理能力"
+                value={selKey}
+                disabled={busy}
+                onChange={(e) => {
+                  setSelectedKey(e.target.value);
+                  setParamsOpen(false);
+                }}
+                className={SELECT_CLASS}
+                title="选择在当前对象区域运行的模型"
+              >
+                {groupByTask(capabilities).map(([task, group]) => (
+                  <optgroup key={task} label={taskLabel(task)}>
+                    {group.map((c) => (
+                      <option key={capKey(c)} value={capKey(c)}>
+                        {c.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </label>
+            <div className="flex min-w-0 flex-col gap-1.5">
+              <span className={FIELD_LABEL_CLASS}>当前对象</span>
+              <span className="flex h-8 min-w-0 items-center gap-2 text-xs">
+                <Icon name="scan" size={14} />
+                <span className="min-w-0 truncate" title={displayClassName(annotation.class_name)}>
+                  {displayClassName(annotation.class_name)}
+                </span>
+              </span>
+            </div>
+            {(selected.model.supported_variants?.length ?? 0) > 0 && (
+              <div className="col-span-2 flex flex-wrap gap-2 [&_select]:h-8 [&_select]:rounded-lg">
+                <VariantSelector
+                  compact
+                  supportedVariants={selected.model.supported_variants}
+                  variantCombinations={selected.model.variant_combinations}
+                  defaults={selected.model.default_variants ?? {}}
+                  value={variantByKey[selKey] ?? {}}
+                  disabled={busy}
+                  onChange={(next) => {
+                    setVariantByKey((prev) => ({ ...prev, [selKey]: next }));
+                    savePref(selKey, { variants: next });
+                  }}
+                />
+              </div>
+            )}
+          </div>
+          {missing.length > 0 && onEnsureAttributeFields && (
+            <div className="flex items-center justify-between gap-2 rounded-lg bg-status-caution-soft p-2 text-xs text-status-caution">
+              <span className="flex min-w-0 items-center gap-1.5">
+                <Icon name="warning" size={13} />
+                缺少 {missing.length} 个属性字段
+              </span>
+              <Button
+                type="button"
+                size="xs"
+                variant="ghost"
+                onClick={() => onEnsureAttributeFields(missing)}
+                disabled={busy}
+                title={`补全 ${missing.map((f) => f.key).join(", ")}，以显示识别结果`}
+                data-testid="secondary-fill"
+              >
+                补全字段
+              </Button>
+            </div>
+          )}
+          {renderPrimary(false)}
           {canParams && (
-            <div className="relative">
+            <>
               <button
                 type="button"
                 onClick={() => openParamsFor(selected)}
                 disabled={busy}
                 title="推理参数 (阈值等)"
                 data-testid="secondary-params-toggle"
-                aria-pressed={paramsOpen}
-                className={`flex size-6 items-center justify-center rounded-sm border border-border ${paramsOpen ? "bg-muted text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+                aria-expanded={paramsOpen}
+                aria-controls="secondary-params-panel"
+                className="flex w-full items-center gap-2 border-t border-border/60 pt-3 text-left text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40"
               >
-                <Icon name="settings" size={14} />
+                <Icon name="settings" size={13} />
+                <span className="font-medium">推理参数</span>
+                <span className="ml-auto max-w-36 truncate text-2xs text-muted-foreground">
+                  {selected.backendName}
+                </span>
+                <Icon name={paramsOpen ? "chevUp" : "chevDown"} size={12} />
               </button>
-              {/* v0.20.18 · 参数以独立 popover 弹在 ⚙ 下方 (不再挂工具条底部被拉宽);
-                  固定列宽, 与工具条宽度无关。 */}
               {paramsOpen && (
-                <div
-                  className="absolute right-0 top-full z-local-2 mt-1 max-h-64 w-72 overflow-y-auto rounded-md border border-border bg-card p-2 shadow-lg [&_select]:self-start"
+                <section
+                  id="secondary-params-panel"
+                  className="min-w-0 [&_input]:accent-brand [&_select]:h-8 [&_select]:rounded-lg"
                   data-testid="secondary-params-panel"
+                  aria-label="二次推理参数"
                 >
                   <SchemaForm
                     schema={selected.model.params as JsonSchemaObject}
-                    value={paramsByKey[selKey] ?? {}}
-                    onChange={(next) => {
-                      setParamsByKey((prev) => ({ ...prev, [selKey]: next }));
-                      savePref(selKey, { params: next });
-                    }}
+                    value={paramValues}
+                    onChange={updateParams}
                     disabled={busy}
                   />
-                </div>
+                </section>
               )}
-            </div>
-          )}
-          {missing.length > 0 && onEnsureAttributeFields && (
-            <button
-              type="button"
-              onClick={() => onEnsureAttributeFields(missing)}
-              disabled={busy}
-              title={`该模型会输出 ${missing.map((f) => f.key).join(", ")}，但项目缺承接字段（跑了也不显示）。点此补全。`}
-              data-testid="secondary-fill"
-              className="rounded-sm border border-amber-400/60 px-1.5 py-1 text-2xs text-status-caution"
-            >
-              ⚠ 补 {missing.length} 字段
-            </button>
+            </>
           )}
         </div>
-
-        {/* v0.20.18 · 开集(开放词表)检测/分割: 需输入目标文本 (如 car . person)。 */}
-        {wantsText && (
-          <>
-            {DIVIDER}
-            <div className="flex shrink-0 items-center gap-1.5">
-              <span className={FIELD_LABEL_CLASS}>文本</span>
-              <input
-                type="text"
-                value={promptByKey[selKey] ?? ""}
-                disabled={busy}
-                onChange={(e) => setPromptByKey((prev) => ({ ...prev, [selKey]: e.target.value }))}
-                placeholder="如 car . person"
-                title="开集模型的检测/分割目标文本 (多个用 . 分隔)"
-                data-testid="secondary-prompt"
-                className="w-40 rounded-sm border border-border bg-muted px-1.5 py-1 text-xs text-foreground"
-              />
-            </div>
-          </>
-        )}
-
-        {DIVIDER}
-
-        <Button
-          size="sm"
-          variant="ai"
-          disabled={busy || promptMissing}
-          onClick={() => onRun(selected)}
-          title={
-            promptMissing
-              ? "请先输入检测/分割目标文本"
-              : `${selected.backendName} · ${TARGET_HINT[selected.writeTarget]}`
-          }
-          data-testid="secondary-run"
-        >
-          {busy ? "运行中…" : "运行"}
-        </Button>
-      </div>
-    </div>
+      )}
+    </ContextToolbar>
   );
 }

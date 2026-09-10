@@ -1,12 +1,6 @@
 /**
- * v0.8.5 · annotation E2E：smoke + bbox 拖框完整链路。
- *
- * - smoke: annotator 登录后 /annotate 路由可达
- * - bbox: 进项目工作台 → 切 box 工具 → 在 stage 容器内拖框 → 用 _test_seed.advance_task
- *   把 task 推到 submitted 模拟提交结果 → 断言 URL 未崩溃跳转
- *
- * 直接拖动 Konva Stage 的 DOM 容器需要绝对坐标，用 boundingBox 计算。
- * 工作台 data-testid: tool-btn-{id} / workbench-stage / workbench-submit。
+ * Annotation smoke and real bbox creation: draw, choose a class, persist and reload.
+ * Seed endpoints prepare prerequisites only; they never replace a failed UI save.
  */
 import { test, expect } from "../fixtures/seed";
 import type { Page } from "@playwright/test";
@@ -50,70 +44,132 @@ test.describe("annotation workbench", () => {
     await page.waitForLoadState("networkidle");
   });
 
-  test("annotator 进入项目工作台 → 选 bbox 工具 → 拖框", async ({ page, seed }) => {
-    const data = await seed.reset();
-    // seed 默认 task 无 assignee，工作台会显示「该项目暂无任务」；先把 task[0] 分给 annotator
-    await seed.advanceTask({
-      taskId: data.task_ids[0],
-      toStatus: "pending",
-      annotatorEmail: data.annotator_email,
-    });
-    await seed.injectToken(page, data.annotator_email);
-    await page.goto(`/projects/${data.project_id}/annotate`);
-    await page.waitForLoadState("networkidle");
+  for (const saveFails of [false, true]) {
+    test(
+      saveFails
+        ? "bbox 保存失败不产生已保存标注，刷新仍为空"
+        : "bbox 真实绘制、选类、落库并刷新恢复",
+      async ({ page, seed }) => {
+        const data = await seed.reset();
+        const taskId = data.task_ids[0];
+        await seed.advanceTask({
+          taskId,
+          toStatus: "pending",
+          annotatorEmail: data.annotator_email,
+        });
+        await seed.injectToken(page, data.annotator_email);
+        const headers = { Authorization: `Bearer ${await seed.accessToken(data.annotator_email)}` };
+        const annotationPath = `/api/v1/tasks/${taskId}/annotations`;
+        const readAnnotations = async () => {
+          const response = await page.request.get(annotationPath, { headers });
+          expect(response.ok(), await response.text()).toBe(true);
+          return response.json();
+        };
+        if (saveFails) {
+          await page.route(
+            (url) => url.pathname === annotationPath,
+            async (route) => {
+              if (route.request().method() !== "POST") return route.fallback();
+              await route.fulfill({ status: 500, json: { detail: "E2E annotation save failure" } });
+            },
+          );
+        }
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await page.goto(`/projects/${data.project_id}/annotate?task=${taskId}`);
+        const stage = page.getByTestId("workbench-stage");
+        await expect(stage).toHaveAttribute("data-image-ready", "true", { timeout: 15_000 });
+        const bboxBtn = page.getByTestId("tool-btn-box");
+        await bboxBtn.click();
+        await expect(bboxBtn).toHaveAttribute("aria-pressed", "true");
+        expect(await readAnnotations()).toEqual([]);
 
-    // 1. 工具栏 bbox 按钮可见 + 可激活
-    const bboxBtn = page.getByTestId("tool-btn-box");
-    await expect(bboxBtn).toBeVisible({ timeout: 10_000 });
-    await bboxBtn.click();
-    await expect(bboxBtn).toHaveAttribute("aria-pressed", "true");
-
-    // 2. Stage 容器可见，从 boundingBox 推算坐标拖框
-    const stage = page.getByTestId("workbench-stage");
-    await expect(stage).toBeVisible();
-    const box = await stage.boundingBox();
-    if (!box) throw new Error("workbench-stage boundingBox 不可用");
-
-    const startX = box.x + box.width * 0.3;
-    const startY = box.y + box.height * 0.3;
-    const endX = box.x + box.width * 0.6;
-    const endY = box.y + box.height * 0.6;
-
-    // v0.8.7 F3 · 监听 POST /annotations 真实落库
-    //    （Konva 是 canvas 渲染，单个 bbox 没有 DOM 节点可 selector 断言；
-    //     用 network response 200 间接验证 onCommit 链路通到后端）
-    const annotationPostPromise = page
-      .waitForResponse(
-        (resp) =>
-          /\/api\/v1\/(annotations|tasks\/[^/]+\/annotations)/.test(resp.url()) &&
-          resp.request().method() === "POST" &&
-          resp.status() < 400,
-        { timeout: 15_000 },
-      )
-      .catch(() => null);
-
-    await page.mouse.move(startX, startY);
-    await page.mouse.down();
-    await page.mouse.move(endX, endY, { steps: 8 });
-    await page.mouse.up();
-
-    // 3. 等 POST /annotations 落库，或在 5s 后退化为 advance_task fallback
-    const annotationPost = await Promise.race([
-      annotationPostPromise,
-      new Promise<null>((r) => setTimeout(() => r(null), 5_000)),
-    ]);
-    if (!annotationPost) {
-      // 拖框未触发落库（可能被项目阈值过滤），回退 advance_task 跑通后续断言
-      await seed.advanceTask({
-        taskId: data.task_ids[0],
-        toStatus: "submitted",
-        annotatorEmail: data.annotator_email,
-      });
-    }
-
-    // 4. URL 仍在工作台路径下，未发生异常崩溃跳转
-    await expect(page).toHaveURL(new RegExp(`/projects/${data.project_id}/annotate`));
-  });
+        // Existing media geometry accounts for letterboxing and changing panel sizes.
+        const points = await stage.evaluate((node) => {
+          const rect = node.getBoundingClientRect();
+          const width = Number(node.getAttribute("data-media-width"));
+          const height = Number(node.getAttribute("data-media-height"));
+          const x = rect.x + Number(node.getAttribute("data-media-x"));
+          const y = rect.y + Number(node.getAttribute("data-media-y"));
+          return {
+            width,
+            height,
+            start: { x: Math.round(x + width * 0.25), y: Math.round(y + height * 0.25) },
+            end: { x: Math.round(x + width * 0.55), y: Math.round(y + height * 0.55) },
+          };
+        });
+        expect(points.width).toBeGreaterThan(0);
+        expect(points.height).toBeGreaterThan(0);
+        for (const point of [points.start, points.end]) {
+          expect(
+            await stage.evaluate((node, at) => {
+              const target = document.elementFromPoint(at.x, at.y);
+              return target instanceof HTMLCanvasElement && node.contains(target);
+            }, point),
+            "绘制坐标必须命中画布，不能被面板遮挡",
+          ).toBe(true);
+        }
+        await page.mouse.move(points.start.x, points.start.y);
+        await page.mouse.down();
+        await expect(stage).toHaveAttribute("data-drag-kind", "draw");
+        await page.mouse.move(points.end.x, points.end.y, { steps: 8 });
+        await page.mouse.up();
+        const picker = page.getByTestId("class-picker-popover");
+        await expect(picker).toBeVisible();
+        const [savedResponse] = await Promise.all([
+          page.waitForResponse(
+            (response) =>
+              new URL(response.url()).pathname === annotationPath &&
+              response.request().method() === "POST",
+          ),
+          picker.locator("span").filter({ hasText: /^car$/ }).click(),
+        ]);
+        expect(savedResponse.request().postDataJSON()).toMatchObject({
+          annotation_type: "bbox",
+          class_name: "car",
+        });
+        expect(savedResponse.status()).toBe(saveFails ? 500 : 201);
+        if (saveFails) {
+          await expect(stage).toHaveAttribute("data-user-box-count", "0");
+          expect(await readAnnotations()).toEqual([]);
+          await page.reload();
+          await expect(stage).toHaveAttribute("data-image-ready", "true");
+          await expect(stage).toHaveAttribute("data-user-box-count", "0");
+          expect(await readAnnotations()).toEqual([]);
+          return;
+        }
+        const annotation = await savedResponse.json();
+        expect(annotation).toMatchObject({
+          id: expect.any(String),
+          task_id: taskId,
+          annotation_type: "bbox",
+          class_name: "car",
+          geometry: { type: "bbox" },
+        });
+        for (const [key, expected] of Object.entries({ x: 0.25, y: 0.25, w: 0.3, h: 0.3 })) {
+          expect(annotation.geometry[key]).toBeCloseTo(expected, 2);
+        }
+        await expect(picker).toBeHidden();
+        await expect(stage).toHaveAttribute("data-user-box-count", "1");
+        expect(await readAnnotations()).toEqual([
+          expect.objectContaining({
+            id: annotation.id,
+            class_name: "car",
+            geometry: annotation.geometry,
+          }),
+        ]);
+        await page.reload();
+        await expect(stage).toHaveAttribute("data-image-ready", "true");
+        await expect(stage).toHaveAttribute("data-user-box-count", "1");
+        expect(await readAnnotations()).toEqual([
+          expect.objectContaining({
+            id: annotation.id,
+            class_name: "car",
+            geometry: annotation.geometry,
+          }),
+        ]);
+      },
+    );
+  }
 
   /**
    * v0.10.2 · Prompt-first ToolDock + capability 协商.
@@ -216,7 +272,7 @@ test.describe("annotation workbench", () => {
     // ③ 激活 smart-point → 画布顶部交互工具栏出现 (v0.18.25 AIToolDrawer 退役改 InteractiveToolBar)
     await pointBtn.click();
     await expect(pointBtn).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByTestId("interactive-toolbar")).toBeVisible();
+    await expect(page.getByTestId("interactive-tool-capsule")).toBeVisible();
 
     // ④ 点击 stage → dispatch context.type === "point"
     const stage = page.getByTestId("workbench-stage");

@@ -1,3 +1,4 @@
+import { openContextToolbar } from "../fixtures/context-toolbar";
 import type { APIRequestContext, APIResponse, Page, Response } from "@playwright/test";
 import {
   expect,
@@ -296,6 +297,15 @@ async function drag(
   options: { alt?: boolean; releaseAlt?: boolean; lateAlt?: boolean } = {},
 ) {
   const b = await bounds(page);
+  const origin = { x: b.x + b.width * start[0], y: b.y + b.height * start[1] };
+  await expect
+    .poll(() =>
+      stage(page).evaluate((node, at) => {
+        const target = document.elementFromPoint(at.x, at.y);
+        return target instanceof HTMLCanvasElement && node.contains(target);
+      }, origin),
+    )
+    .toBe(true);
   // Independent receipts use the real browser event coordinates, including pixel quantization.
   await page.evaluate(() => {
     const target = window as unknown as { __h1Pointer?: { down?: Point; up?: Point } };
@@ -315,7 +325,7 @@ async function drag(
       { capture: true, once: true },
     );
   });
-  await page.mouse.move(b.x + b.width * start[0], b.y + b.height * start[1]);
+  await page.mouse.move(origin.x, origin.y);
   if (options.alt) await page.keyboard.down("Alt");
   try {
     await page.mouse.down();
@@ -457,6 +467,12 @@ test.describe("H1 center bbox creation", () => {
       expectCentered(annotation.geometry, receipt);
       saved.push(annotation);
       fixture.evidence.push({ receipt, annotation });
+      if (saved.length === 1) {
+        // Collapse once: the preference persists across selections and exposes the right edge.
+        const collapseSelection = page.getByRole("button", { name: "收起浮窗", exact: true });
+        await collapseSelection.click();
+        await expect(collapseSelection).toBeHidden();
+      }
     }
     await drag(page, [0.5, 0.5], [0.5, 0.5], { alt: true });
     await expect(stage(page)).toHaveAttribute("data-drag-kind", "none");
@@ -578,17 +594,21 @@ test.describe("H1 candidate modifier compatibility", () => {
     await open(page, fixture);
     await mode(page, "中心").click();
     await page.getByTestId("tool-btn-smart-point").click();
+    await openContextToolbar(page, "interactive");
     await expect(page.getByTestId("single-frame-output-geometry-select")).toHaveValue("mask");
     const b = await bounds(page);
     const generated = page.waitForResponse(inference);
     await page.mouse.click(b.x + b.width * 0.6, b.y + b.height * 0.5);
     expect((await generated).ok()).toBe(true);
+    await expect(page.getByTestId("interactive-toolbar")).toBeHidden();
     const count = page.getByTestId("interactive-candidate-count");
     await expect(count).toContainText(/1\s*\/\s*3/);
     // The native preview owner decodes only the active mask. Modifier clicks must consume
     // its actual foreground without adding a fresh inference prompt or bbox draft.
+    await page.getByTestId("interactive-settings-trigger").hover();
     await page.getByTestId("interactive-candidate-next").click();
     await expect(count).toContainText(/2\s*\/\s*3/);
+    await page.getByTestId("interactive-settings-trigger").hover();
     await page.getByTestId("interactive-candidate-next").click();
     await expect(count).toContainText(/3\s*\/\s*3/);
     for (const [modifier, point, expected] of [
@@ -596,6 +616,7 @@ test.describe("H1 candidate modifier compatibility", () => {
       ["Meta", [0.2, 0.6], 2],
     ] as const) {
       if (expected === 2) {
+        await page.getByTestId("interactive-settings-trigger").hover();
         await page.getByTestId("interactive-candidate-previous").click();
         await expect(count).toContainText(/2\s*\/\s*3/);
       }
@@ -612,6 +633,7 @@ test.describe("H1 candidate modifier compatibility", () => {
     }
     expect(fixture.writes).toEqual([]);
     expect(fixture.prompts).toHaveLength(1);
+    await page.getByTestId("interactive-settings-trigger").hover();
     await page.getByTestId("interactive-candidate-accept").click();
     await expect(picker(page)).toBeVisible();
     const accepted = page.waitForResponse(

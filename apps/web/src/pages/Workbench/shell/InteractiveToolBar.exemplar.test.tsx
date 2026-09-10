@@ -1,6 +1,16 @@
 // v0.18.25 · InteractiveToolBar (前 AIToolDrawer) exemplar 能力驱动渲染: 后端无负框/无 text 叠加时隐藏对应控件。
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render as rtlRender, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+
+function render(ui: Parameters<typeof rtlRender>[0]) {
+  const result = rtlRender(ui);
+  const trigger = screen.queryByTestId("interactive-settings-trigger");
+  if (trigger) {
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("button", { name: "更多 AI 工具" }));
+  }
+  return result;
+}
 
 import { InteractiveToolBar } from "./InteractiveToolBar";
 import type { MLModelCapability } from "@/api/ml-backends";

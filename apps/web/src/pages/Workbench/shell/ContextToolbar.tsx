@@ -1,5 +1,12 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Ellipsis } from "lucide-react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
+import { ChevronDown, Ellipsis } from "lucide-react";
 import {
   Popover,
   PopoverAnchor,
@@ -12,6 +19,7 @@ import styles from "./ContextToolbar.module.css";
 export interface ContextToolbarAction {
   id: string;
   label: string;
+  shortLabel?: string;
   icon: ReactNode;
   onSelect: () => void;
   active?: boolean;
@@ -25,6 +33,9 @@ interface ContextToolbarProps {
   summaryLabel: string;
   summaryTitle?: string;
   quickActions: readonly ContextToolbarAction[];
+  /** Frequent input and decisions appear in the hover disclosure, before full settings. */
+  primaryContent?: ReactNode;
+  panelSize?: "compact" | "wide";
   children: (close: () => void) => ReactNode;
 }
 
@@ -36,15 +47,36 @@ export function ContextToolbar({
   summaryLabel,
   summaryTitle,
   quickActions,
+  primaryContent,
+  panelSize = "wide",
   children,
 }: ContextToolbarProps) {
   const [open, setOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
   const summaryRef = useRef<HTMLButtonElement>(null);
+  const summaryContentRef = useRef<HTMLSpanElement>(null);
+  const [compactWidth, setCompactWidth] = useState<number>();
+  useLayoutEffect(() => {
+    const content = summaryContentRef.current;
+    if (!content) return;
+    const measure = () => {
+      const width = content.getBoundingClientRect().width;
+      if (width > 0) setCompactWidth(Math.min(240, Math.ceil(width) + 26));
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
   const interactedOutsideRef = useRef(false);
   const capsuleRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const motionFrameRef = useRef(0);
+  const [boundary, setBoundary] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    setBoundary(capsuleRef.current?.offsetParent as HTMLElement | null);
+  }, []);
   useEffect(() => () => cancelAnimationFrame(motionFrameRef.current), []);
   const sourceRef = useRef<DOMRect | null>(null);
 
@@ -54,7 +86,9 @@ export function ContextToolbar({
     // The Popper wrapper stays at the final position while its child animates.
     const target = panel?.parentElement?.getBoundingClientRect();
     if (!panel || !source || !target || !target.width || !target.height) return;
-    const capsuleTransform = `translate(${source.x - target.x}px, ${source.y - target.y}px) scale(${source.width / target.width}, ${source.height / target.height})`;
+    const sourceWidth =
+      !opening && compactWidth != null ? Math.min(compactWidth, source.width) : source.width;
+    const capsuleTransform = `translate(${source.x - target.x}px, ${source.y - target.y}px) scale(${sourceWidth / target.width}, ${source.height / target.height})`;
     const interrupted = panel.getAttribute("data-motion-ready") === "true";
     const current = getComputedStyle(panel);
     const from = interrupted ? current.transform : capsuleTransform;
@@ -71,6 +105,7 @@ export function ContextToolbar({
     cancelAnimationFrame(motionFrameRef.current);
     if (next) {
       sourceRef.current = capsuleRef.current?.getBoundingClientRect() ?? null;
+      setBoundary(capsuleRef.current?.offsetParent as HTMLElement | null);
       interactedOutsideRef.current = false;
     }
     prepareMotion(next);
@@ -86,11 +121,18 @@ export function ContextToolbar({
         data-expanded={quickOpen}
         data-panel-open={open}
         aria-hidden={open}
+        // eslint-disable-next-line no-restricted-syntax -- Intrinsic text measurement supplies a dynamic CSS width variable.
+        style={
+          {
+            "--toolbar-compact-width": compactWidth == null ? undefined : `${compactWidth}px`,
+          } as CSSProperties
+        }
         className={cn(
-          "absolute left-3 top-3 z-local-5 flex max-w-[calc(100%-1.5rem)] items-center rounded-full border border-border/70 bg-card/95 p-1 shadow-md backdrop-blur-md",
+          "absolute left-3 top-3 z-local-5 h-9 max-w-[calc(100%-1.5rem)]",
           styles.capsule,
         )}
         onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
           if (event.key === "Escape" && quickOpen) {
             event.preventDefault();
             event.stopPropagation();
@@ -100,7 +142,9 @@ export function ContextToolbar({
         onPointerEnter={(event) => {
           if (event.buttons === 0) setQuickOpen(true);
         }}
-        onPointerLeave={() => setQuickOpen(false)}
+        onPointerLeave={(event) => {
+          if (!event.currentTarget.querySelector(":focus-visible")) setQuickOpen(false);
+        }}
         onFocusCapture={() => setQuickOpen(true)}
         onBlurCapture={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget)) setQuickOpen(false);
@@ -108,60 +152,91 @@ export function ContextToolbar({
         onPointerDown={(event) => event.stopPropagation()}
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <button
-          ref={summaryRef}
-          type="button"
-          data-workbench-context-toolbar-trigger
-          data-testid={`${id}-settings-trigger`}
-          aria-label={summaryLabel}
-          aria-expanded={quickOpen}
-          title={summaryTitle}
-          className="flex h-7 shrink-0 items-center gap-2 rounded-full px-2 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          onClick={() => setQuickOpen(true)}
-        >
-          {summary}
-        </button>
-        <div
-          aria-hidden={!quickOpen}
-          className={cn(
-            "grid min-w-0 transition-[grid-template-columns,opacity] duration-200 ease-out motion-reduce:transition-none",
-            quickOpen
-              ? "grid-cols-[1fr] opacity-100"
-              : "pointer-events-none grid-cols-[0fr] opacity-0",
-          )}
-        >
-          <div className="min-w-0 overflow-hidden">
-            <div className="flex w-max items-center gap-0.5 pl-1">
-              <span aria-hidden className="mx-1 h-4 w-px bg-border" />
-              {quickActions.map((action) => (
-                <button
-                  key={action.id}
-                  type="button"
-                  aria-label={action.label}
-                  title={action.label}
-                  aria-pressed={action.active}
-                  disabled={action.disabled}
-                  tabIndex={quickOpen ? 0 : -1}
-                  className={cn(
-                    "relative flex size-7 shrink-0 items-center justify-center rounded-full outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none",
-                    action.active
-                      ? "bg-primary/10 text-primary"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                  onClick={action.onSelect}
-                >
-                  {action.icon}
-                </button>
-              ))}
-              <span aria-hidden className="mx-1 h-4 w-px bg-border" />
-              <PopoverTrigger
-                aria-label={`更多 ${label} 工具`}
-                title="更多工具与设置"
-                tabIndex={quickOpen ? 0 : -1}
-                className="flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        <div className="overflow-hidden rounded-[1.125rem] border border-border/60 bg-card/95 shadow-sm backdrop-blur-md">
+          <div className="flex h-[34px] min-w-0 items-center">
+            <button
+              ref={summaryRef}
+              type="button"
+              data-workbench-context-toolbar-trigger
+              data-testid={`${id}-settings-trigger`}
+              aria-label={summaryLabel}
+              aria-expanded={quickOpen}
+              title={summaryTitle}
+              className="flex h-full w-full min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap rounded-full px-3 text-xs text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              onClick={() => setQuickOpen(true)}
+            >
+              <span ref={summaryContentRef} className="flex w-max shrink-0 items-center gap-2">
+                {summary}
+              </span>
+              <ChevronDown
+                aria-hidden
+                className={cn(
+                  "absolute right-3 size-3.5 text-muted-foreground transition-[transform,opacity] duration-160 motion-reduce:transition-none",
+                  quickOpen ? "rotate-180 opacity-100" : "opacity-0",
+                )}
+              />
+            </button>
+          </div>
+          <div
+            data-testid={`${id}-quick-disclosure`}
+            aria-hidden={!quickOpen}
+            {...(!quickOpen ? { inert: "" } : {})}
+            className={cn(styles.quickDisclosure, quickOpen && styles.quickDisclosureOpen)}
+          >
+            <div className="min-h-0 overflow-hidden">
+              <div
+                className={cn(
+                  "flex max-h-[min(24rem,60vh)] flex-col gap-2 overflow-y-auto px-2 pb-2 pt-1",
+                  styles.quickContent,
+                )}
               >
-                <Ellipsis className="size-4" />
-              </PopoverTrigger>
+                <div
+                  data-testid={`${id}-quick-tools`}
+                  aria-hidden={!quickOpen}
+                  className="flex flex-col gap-0.5"
+                >
+                  {quickActions.map((action) => (
+                    <button
+                      key={action.id}
+                      type="button"
+                      aria-label={action.label}
+                      title={action.label}
+                      aria-pressed={action.active}
+                      disabled={action.disabled}
+                      tabIndex={quickOpen ? 0 : -1}
+                      className={cn(
+                        "relative flex h-7 w-full shrink-0 items-center gap-2 rounded-lg px-2 text-xs outline-none transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-40 motion-reduce:transition-none",
+                        action.active
+                          ? "bg-primary/10 text-primary"
+                          : "text-muted-foreground hover:text-foreground",
+                      )}
+                      onClick={action.onSelect}
+                    >
+                      <span className="flex size-4 shrink-0 items-center justify-center">
+                        {action.icon}
+                      </span>
+                      <span className="min-w-0 truncate">{action.shortLabel ?? action.label}</span>
+                    </button>
+                  ))}
+                </div>
+                {!open && primaryContent && (
+                  <div
+                    data-workbench-context-primary
+                    className="flex min-w-0 flex-wrap items-center gap-1.5 [&_input]:max-w-full [&_select]:max-w-full"
+                  >
+                    {primaryContent}
+                  </div>
+                )}
+                <PopoverTrigger
+                  aria-label={`更多 ${label} 工具`}
+                  title="更多工具与设置"
+                  tabIndex={quickOpen ? 0 : -1}
+                  className="flex h-7 w-full shrink-0 items-center gap-2 rounded-lg px-2 text-xs text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <Ellipsis className="size-4" />
+                  <span>更多设置</span>
+                </PopoverTrigger>
+              </div>
             </div>
           </div>
         </div>
@@ -175,8 +250,10 @@ export function ContextToolbar({
         align="center"
         sideOffset={0}
         collisionPadding={12}
+        collisionBoundary={boundary}
         className={cn(
-          "z-workbench-top flex w-[min(42rem,calc(100vw-1.5rem))] max-h-[var(--radix-popover-content-available-height)] flex-col gap-3 overflow-y-auto rounded-2xl border border-border bg-card px-3 py-3 shadow-lg",
+          "z-workbench-top flex w-[min(42rem,calc(100vw-1.5rem))] max-w-[var(--radix-popover-content-available-width)] max-h-[var(--radix-popover-content-available-height)] flex-col gap-3 overflow-y-auto rounded-2xl border border-border bg-card px-3 py-3 shadow-lg",
+          panelSize === "compact" && "w-[min(28rem,calc(100vw-1.5rem))]",
           styles.panel,
         )}
         onOpenAutoFocus={(event) => {
@@ -186,6 +263,9 @@ export function ContextToolbar({
             prepareMotion(true);
             panelRef.current.focus({ preventScroll: true });
           });
+        }}
+        onEscapeKeyDown={(event) => {
+          if (event.isComposing || event.keyCode === 229) event.preventDefault();
         }}
         onInteractOutside={() => {
           interactedOutsideRef.current = true;
@@ -200,6 +280,8 @@ export function ContextToolbar({
       >
         <div
           ref={panelRef}
+          aria-hidden={!open || undefined}
+          {...(!open ? { inert: "" } : {})}
           data-workbench-context-toolbar
           aria-label={`${label} 设置`}
           data-testid={`${id}-toolbar`}

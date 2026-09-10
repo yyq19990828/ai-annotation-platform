@@ -1,7 +1,8 @@
+import { openContextToolbar } from "../../fixtures/context-toolbar";
 /**
  * 高清母版：SAM3 combo 先按文本发现，再用逐对象 PVS memory 跨窗追踪并人工采纳。
  */
-import type { Page, Response } from "@playwright/test";
+import { expect, type Page, type Response } from "@playwright/test";
 import type { ScreenshotSeedCatalog } from "../../fixtures/seed";
 import { movePointerAtRefreshRate, normalizedBboxIoU, recordingAnchor } from "./_canvas";
 import type { NormalizedBbox } from "./_canvas";
@@ -161,9 +162,14 @@ export async function runVideoTrackerComboDiscovery(
   page.on("response", collectServerError);
   try {
     await dialog.getByRole("button", { name: "开始发现" }).click();
+    await page.getByTestId("tool-btn-select").click();
+    await page
+      .getByTestId("tracker-review-tool-capsule")
+      .waitFor({ state: "visible", timeout: 120_000 });
+    await openContextToolbar(page, "tracker-review");
     const review = page.getByTestId("video-tracker-review-bar");
     await review.waitFor({ state: "visible", timeout: 120_000 });
-    await review.getByText(/当前选区 217 个候选/).waitFor({ timeout: 5_000 });
+    await expect(review.getByTestId("tracker-review-scope-summary")).toContainText("所选待审 217");
     const instances = review.locator('input[data-testid^="tracker-review-instance-"]');
     if ((await instances.count()) !== 7) {
       throw new Error(
@@ -176,10 +182,11 @@ export async function runVideoTrackerComboDiscovery(
       await review.getByTestId(`tracker-review-instance-${instanceId}`).click();
       await page.waitForTimeout(150);
     }
-    await review.getByText(/当前选区 62 个候选/).waitFor({ timeout: 3_000 });
+    await expect(review.getByTestId("tracker-review-scope-summary")).toContainText("所选待审 62");
     await page.waitForTimeout(1_200);
 
     await scrubAcrossComboWindows(page, timeline);
+    await openContextToolbar(page, "tracker-review");
 
     const accepted = page.waitForResponse(
       (response) =>
@@ -202,7 +209,12 @@ export async function runVideoTrackerComboDiscovery(
       rightBus.bbox,
     ]);
 
-    await review.getByText(/已审 62\/217，当前选区 155 个候选/).waitFor({ timeout: 5_000 });
+    await expect(review).toContainText("已审 62/217");
+    // Accepted instances leave the current selection; explicitly select the remaining targets.
+    const remainingInstances = review.locator('input[data-testid^="tracker-review-instance-"]');
+    for (let index = 0; index < (await remainingInstances.count()); index += 1)
+      await remainingInstances.nth(index).setChecked(true);
+    await expect(review.getByTestId("tracker-review-scope-summary")).toContainText("所选待审 155");
     await page.waitForTimeout(800);
     const rejected = page.waitForResponse(
       (response) =>

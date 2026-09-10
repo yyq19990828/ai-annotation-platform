@@ -275,7 +275,10 @@ test.describe("workbench pointcloud tools (键盘 handler 守护)", () => {
     );
     await page.mouse.click(point.x, point.y);
     await firstResponse;
-    await page.getByText("pedestrian", { exact: true }).click();
+    await page
+      .locator('[data-workbench-panel="class-palette"]')
+      .getByText("pedestrian", { exact: true })
+      .click();
     await expect(status).toContainText("pedestrian");
 
     const secondResponse = page.waitForResponse(

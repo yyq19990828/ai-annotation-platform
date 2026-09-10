@@ -37,7 +37,7 @@ export interface AiRequestBackend {
 }
 
 const classes = [{ index: 0, name: "car" }];
-const setup = {
+const defaultSetup = {
   name: "E2 AI request fixture",
   version: "1",
   protocol_version: "2.1",
@@ -155,7 +155,19 @@ async function checked(response: APIResponse): Promise<APIResponse> {
  * batch_predict catches HTTP failures as failed predictions; its max_retries alone
  * does not retry. failAll(true) also makes repeated submissions deterministic.
  */
-export async function startAiRequestBackend(): Promise<AiRequestBackend> {
+export async function startAiRequestBackend(
+  options: { secondary?: boolean } = {},
+): Promise<AiRequestBackend> {
+  const setup = options.secondary
+    ? {
+        ...defaultSetup,
+        models: defaultSetup.models.map((model) => ({
+          ...model,
+          supported_inputs: ["full_image", "crop"],
+          supported_prompts: ["text"],
+        })),
+      }
+    : defaultSetup;
   const host = advertisedHost();
   const requests: AiRequestRecord[] = [];
   let gate: { promise: Promise<void>; resolve: () => void } | undefined;

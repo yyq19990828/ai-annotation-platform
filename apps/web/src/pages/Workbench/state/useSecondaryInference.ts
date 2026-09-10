@@ -220,13 +220,15 @@ export function mergeSecondaryResult(
 }
 
 /** 运行单框二次推理; 成功后把产物直接写进标注缓存 (画布 + 侧栏立即重渲染)。 */
-export function useRunSecondaryInference(taskId: string | undefined) {
+export function useRunSecondaryInference() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({
+      taskId,
       annotationId,
       body,
     }: {
+      taskId: string;
       annotationId: string;
       body: SecondaryInferenceRequest;
     }) => {
@@ -240,8 +242,7 @@ export function useRunSecondaryInference(taskId: string | undefined) {
     // invalidate(refetchType:"none") 只标 stale, 而工作台里这个 query 始终有活跃订阅者,
     // 标 stale 不触发重读, 子框 / 属性要刷新页面才出现。
     // 原框只并入二次推理实际会写的属性字段 (几何不动), 不整条替换。
-    onSuccess: (data) => {
-      if (!taskId) return;
+    onSuccess: (data, { taskId }) => {
       qc.setQueryData<AnnotationResponse[]>(["annotations", taskId], (prev) =>
         mergeSecondaryResult(prev, data),
       );

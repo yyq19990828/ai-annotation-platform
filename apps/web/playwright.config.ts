@@ -56,10 +56,10 @@ const isolatedApiCommand = [
  */
 export default defineConfig({
   testDir: "./e2e",
-  // v0.8.7 F4 · 默认 test:e2e 只跑 e2e/tests/**；截图自动化在 e2e/screenshots/，
-  // 通过 `pnpm screenshots --testMatch '**/screenshots/**/*.spec.ts'` 显式触发，
-  // 不进 CI 避免 baseline drift / flaky。
+  // Documentation capture remains separate. Visual baselines and stress scenarios
+  // in tests/ run through playwright.extended.config.ts with their own CI reports.
   testMatch: ["**/tests/**/*.spec.ts"],
+  grepInvert: /@visual|@stress/,
   // seed/reset and teardown delete the shared E2E fixture namespace. Keep one
   // worker per database; CI shards use independent runners and services.
   fullyParallel: false,
@@ -69,13 +69,15 @@ export default defineConfig({
   maxFailures: isCI ? 1 : 0,
   globalTimeout: isCI ? 15 * 60_000 : 0,
   workers: 1,
-  reporter: isCI ? [["line"], ["github"], ["html"]] : "html",
+  reporter: isCI
+    ? [["line"], ["github"], ["html"], ["json", { outputFile: "e2e-results.json" }]]
+    : "html",
 
   globalTeardown: "./e2e/global-teardown.ts",
 
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL ?? defaultBaseURL,
-    trace: "on-first-retry",
+    trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
 

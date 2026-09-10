@@ -1,3 +1,4 @@
+import { isVideoLifecycleCancellation } from "../helpers/video-request-errors";
 import type { APIRequestContext, APIResponse, Browser, Page, Route } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 
@@ -47,23 +48,12 @@ const isFixtureMedia = (url: URL, fixture: string) =>
   url.pathname.endsWith(`/e2e/video/webcodecs/${fixture}/source.mp4`);
 
 function expectedRequestAbort(error: EvidenceError, fixture: IssueCase) {
+  if (isVideoLifecycleCancellation(error)) return true;
   if (error.kind !== "request" || error.message !== "net::ERR_ABORTED" || !error.path) return false;
-  if (error.method === "POST") return error.path === "/api/v1/auth/me/heartbeat";
   if (error.method === "DELETE")
     return fixture.mediaLatency && /^\/api\/v1\/tasks\/[0-9a-f-]{36}\/lock$/.test(error.path);
   if (error.method !== "GET") return false;
-  // These exact read endpoints are cancelled by query ownership changes or document navigation.
-  if (
-    error.path === "/api/v1/auth/me" ||
-    error.path === "/api/v1/feedbacks" ||
-    /^\/api\/v1\/tasks\/[0-9a-f-]{36}$/.test(error.path)
-  )
-    return true;
-  return (
-    fixture.mediaLatency &&
-    (isFixtureMedia(new URL(error.path, API_BASE), fixture.fixtureName) ||
-      /^\/api\/v1\/videos\/[0-9a-f-]{36}\/chunks\/\d+$/.test(error.path))
-  );
+  return fixture.mediaLatency && isFixtureMedia(new URL(error.path, API_BASE), fixture.fixtureName);
 }
 
 async function json<T>(response: APIResponse): Promise<T> {

@@ -1,3 +1,4 @@
+import { openContextToolbar } from "../../fixtures/context-toolbar";
 /**
  * 高清母版：项目启用批量后端并把它设为主后端后，工作台仍按 prompt
  * 把交互工具路由到支持该能力的 SAM 后端。
@@ -186,6 +187,8 @@ export async function runProjectMlRouting(
   await expect(smartPoint).toBeEnabled();
   await moveTo(page, smartPoint);
   await smartPoint.click();
+  await openContextToolbar(page, "interactive");
+  await page.getByTestId("interactive-toolbar-advanced-toggle").click();
   const interactiveToolbar = page.getByTestId("interactive-toolbar");
   await expect(interactiveToolbar).toBeVisible();
   const interactiveSelector = interactiveToolbar.getByTestId("ai-tool-backend-select");

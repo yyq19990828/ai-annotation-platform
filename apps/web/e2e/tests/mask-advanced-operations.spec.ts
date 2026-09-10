@@ -1,5 +1,5 @@
 import { openMaskSettings, closeMaskSettings } from "../fixtures/mask-toolbar";
-import type { APIRequestContext, APIResponse, Page } from "@playwright/test";
+import type { APIRequestContext, APIResponse, Page, Response } from "@playwright/test";
 
 import { expect, test, type SeedAPI, type SeedData } from "../fixtures/seed";
 
@@ -36,11 +36,9 @@ function auth(token: string): Record<string, string> {
   return { Authorization: `Bearer ${token}` };
 }
 
-async function json<T>(response: APIResponse): Promise<T> {
+async function json<T>(response: APIResponse | Response): Promise<T> {
   if (!response.ok()) {
-    throw new Error(
-      `${response.request().method()} ${response.url()} failed: ${response.status()} ${await response.text()}`,
-    );
+    throw new Error(`${response.url()} failed: ${response.status()} ${await response.text()}`);
   }
   return (await response.json()) as T;
 }
@@ -89,10 +87,12 @@ async function beginEdit(page: Page, annotationId: string): Promise<void> {
   const row = page.getByTestId(`box-list-item-${annotationId}`);
   await expect(row).toBeVisible({ timeout: 15_000 });
   await row.click();
-  const collapse = page.getByRole("button", { name: "收起浮窗", exact: true });
-  if (await collapse.isVisible()) await collapse.click();
-  await row.getByRole("button", { name: "更多操作" }).hover();
-  await page.getByTestId(`user-refine-${annotationId}`).click();
+  const expand = page.getByLabel("展开选中信息卡(可拖动)", { exact: true });
+  if (await expand.isVisible()) await expand.click();
+  await page
+    .locator("section[data-floating-panel]")
+    .getByRole("button", { name: "编辑 Mask", exact: true })
+    .click();
   await openMaskSettings(page);
   await expect(page.getByTestId("mask-toolbar")).toContainText("就绪", { timeout: 15_000 });
   // 就绪 ≠ 画布可交互：等媒体与 Konva 画布真正可见后再让用例做指针操作，
@@ -600,6 +600,9 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     const sameBefore = await maskContent(request, sameClass.annotation_id, token);
     const otherBefore = await maskContent(request, otherClass.annotation_id, token);
     await openTask(page, seed, data, taskId);
+    await page.getByTestId(`box-list-item-${primary.annotation_id}`).click();
+    await page.getByRole("button", { name: "收起浮窗", exact: true }).click();
+    await expect(page.getByLabel("展开选中信息卡(可拖动)", { exact: true })).toBeVisible();
     await beginEdit(page, primary.annotation_id);
     const toolbar = page.getByTestId("mask-toolbar");
     const radiusSlider = toolbar.getByTestId("mask-radius-slider");

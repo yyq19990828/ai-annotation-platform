@@ -17,17 +17,38 @@
 docker compose up -d postgres redis minio
 
 # Playwright 自动准备 annotation_e2e、迁移数据库，并启动专用 Web/API
-cd apps/web && pnpm test:e2e            # 全跑
+cd apps/web && pnpm test:e2e            # 全部功能回归（含布局短流程）
 pnpm test:e2e e2e/tests/auth.spec.ts    # 单文件
 pnpm test:e2e --headed                   # 看着浏览器跑
 pnpm test:e2e --ui                       # 交互式 UI 模式
+pnpm test:e2e:visual                     # 独立截图比较
+pnpm test:e2e:stress                     # 完整布局压力矩阵
 ```
 
 首次运行需要 `pnpm exec playwright install chromium` 装浏览器。
 
-CI 使用 `line` reporter 显示正在执行的用例及重试，同时保留 GitHub annotations 和 HTML 报告。分片内按单 worker 串行运行；排查长时间执行时先查看当前用例和超时信息，不能只凭 WebSocket 断连日志判断测试卡死。
+CI 使用 `line` reporter 显示正在执行的用例及重试，同时保留 GitHub annotations、HTML 和 `e2e-results.json` 报告。Actions 摘要分别列出每个套件通过、失败、重试后通过（flaky）、跳过数量及执行时间。每次失败尝试都保留截图和 trace，包括禁用重试的扩展套件；报告缺失会明确提示检查启动或超时日志。分片内按单 worker 串行运行；排查长时间执行时先查看当前用例和超时信息，不能只凭 WebSocket 断连日志判断测试卡死。
 
-CI 单用例最多重试一次，首个用例最终失败后终止当前分片；其他分片继续完成各自诊断。每个 Playwright 测试进程总限时 15 分钟，测试步骤限时 20 分钟，整个 E2E job（含安装和构建）限时 30 分钟。分层限时为清理和报告上传保留余量，并在测试进程无法自行退出时由 Actions 兜底。本地运行不启用这些 CI 早退限制。
+CI 功能用例最多重试一次；视觉和压力用例不重试。首个用例最终失败后终止当前分片，其他分片继续完成各自诊断。每个 Playwright 测试进程总限时 15 分钟，测试步骤限时 20 分钟，整个 E2E job（含安装和构建）限时 30 分钟。分层限时为清理和报告上传保留余量，并在测试进程无法自行退出时由 Actions 兜底。本地运行不启用这些 CI 早退限制。
+
+## 功能、视觉与压力测试
+
+默认 `playwright.config.ts` 排除 `@visual`、`@stress`；`playwright.extended.config.ts` 复用相同项目、服务和数据隔离配置，只选择扩展标签。不要在功能测试中混入整页或整个工作区的截图断言。给视觉测试添加 `{ tag: "@visual" }`，保持其标题、文件位置和项目名以复用既有基线；有意的外观变化经人工核对差异后，用 `pnpm test:e2e:visual --update-snapshots` 更新并提交基线，不能自动接受差异。
+
+布局矩阵在图片/视频/点云 × 标注/审核六种上下文中都保留真实拖动、画布身份、上下文隔离、紧凑模式、保存与刷新恢复断言。功能集执行 14 次重排，`@stress` 执行完整 54 次；新增长循环必须放入压力集，并在功能集中保留覆盖关键状态转换的短流程。
+
+CI 调度规则由根目录 `scripts/plan-e2e-suites.mjs` 维护：
+
+- 每个 PR 始终执行四个功能分片和三个 Mask 套件。
+- `apps/web/`、`apps/api/`、`packages/`、共享依赖/容器配置、E2E workflow 或路由脚本变更时，追加视觉和压力套件。分类保守覆盖共享依赖；布局或样式 PR 也会跑完整压力矩阵，只是与功能检查独立执行和报告。
+- 主分支执行全部九个套件。`E2E extended` 每天 UTC 19:00（北京时间次日 03:00）及手动运行两个扩展套件。文档截图的每周 `Browser checks` 保持独立。
+- PR 路径读取失败会使计划 job 失败；`Frontend E2E` 汇总同时要求计划和所有已选套件成功，不会把漏跑当作通过。
+
+`seed` 只用于准备前置数据。核心创建用例必须验证真实 UI 操作、保存响应、API 读回和刷新恢复；不能在 UI 保存失败后调用 `seed.advanceTask` 等接口伪造成功。Canvas 指针坐标应依据当前媒体位置和尺寸计算，并确认没有被浮层遮挡。连续执行相互独立的边缘绘制时，通过真实 UI 收起前一个标注的浮窗，并检查拖拽起点命中画布。截图检查不能替代保存检查，存储状态检查也不能替代真实渲染检查。
+
+Mask 设置统一通过 `fixtures/mask-toolbar.ts` 打开：等待胶囊展开及有限动画完成，再点击更多工具，防止展开期间滚动位置变化使按下和抬起命中不同位置。虚拟标注列表进入编辑时，优先使用选中信息卡上的真实按钮；不要依赖滚动后可能失去 hover 的行内操作，也不要用强制点击绕过命中检查。
+
+修改测试分类后先执行各命令的 `--list --reporter=line`，确认标签不会造成漏选；修改 CI 路由时执行 `node --test scripts/plan-e2e-suites.test.mjs`。本地验证结束后清理当前测试生成的 `test-results/`、`playwright-report/`、`e2e-results.json` 及专用环境数据，保留人工确认需要提交的基线图片。
 
 本地 E2E 固定使用 `annotation_e2e` 逻辑库、Web `127.0.0.1:3001`、API
 `127.0.0.1:8010`。Playwright 不会复用开发端口 `3000/8000`；专用端口被占用时
@@ -77,6 +98,8 @@ PLAYWRIGHT_AI_REQUEST_WORKER=1 pnpm test:e2e \
 清理报告与临时端口配置。服务异常中断时仍需执行相同清理。
 
 ## WebCodecs 精确帧 E2E
+
+视频 Issue 的 180 帧夹具按测试 API 的 `VIDEO_CHUNK_SIZE_FRAMES` 生成完整真实分片，默认三块，每块 60 帧。测试开始前核对正式 manifest 与分片范围、就绪状态；不能依赖未启动的媒体 worker 补齐缺失分片。像素身份仍从实际编码视频验证。两个 Issue 套件共用 `helpers/video-request-errors.ts`，只允许明确端点的 `net::ERR_ABORTED` 生命周期取消（心跳、会话统计、帧预览及分片元数据/样本）；标注、Issue 写入失败、其他网络错误与 HTTP 错误仍须报告。`pnpm --filter @anno/web test scripts/video-request-errors.test.ts` 验证这些边界，CI 的前端单元测试同步执行。
 
 `e2e/tests/video-webcodecs-precise-frame.spec.ts` 用 `seed/video-webcodecs`
 造确定性 H.264 fixture（baseline / 主 profile B 帧 / 短 GOP / VFR），验证精确帧

@@ -1,3 +1,4 @@
+import { openContextToolbar } from "../../fixtures/context-toolbar";
 /**
  * 二次推理属性完整链路：已确认文字区域 → 真实裁剪 OCR → AI 属性 → 人工校正。
  */
@@ -91,6 +92,7 @@ export async function runSecondaryInferenceAttribute(
   await page.waitForTimeout(2_200);
 
   await annotationRow.click();
+  await openContextToolbar(page, "secondary");
   const bar = page.getByTestId("secondary-inference-bar");
   await bar.waitFor({ state: "visible", timeout: 15_000 });
   const capabilitySelect = page.getByTestId("secondary-cap-select");

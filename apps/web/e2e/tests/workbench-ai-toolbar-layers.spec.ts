@@ -1,3 +1,4 @@
+import { expectStableContextCapsule, openContextToolbar } from "../fixtures/context-toolbar";
 import { openMaskSettings } from "../fixtures/mask-toolbar";
 import type { APIRequestContext, APIResponse, Page, Request } from "@playwright/test";
 import { expect, test, type SeedAPI, type SeedNativeMaskCandidateData } from "../fixtures/seed";
@@ -139,6 +140,8 @@ async function selectTool(page: Page, media: Media, tool: string) {
   await expect(button).not.toHaveAttribute("aria-disabled", "true");
   await button.click();
   await expect(page.getByTestId("interactive-toolbar-advanced")).toBeHidden();
+  if (await page.getByTestId("interactive-settings-trigger").isVisible())
+    await page.getByTestId("interactive-settings-trigger").hover();
 }
 async function prompt(page: Page, media: Media, tool: "point" | "box" | "exemplar" | "scribble") {
   const stage = page.getByTestId(media === "image" ? "workbench-stage" : "video-konva-stage");
@@ -152,7 +155,10 @@ async function prompt(page: Page, media: Media, tool: "point" | "box" | "exempla
     await page.mouse.move(box.x + box.width * 0.68, box.y + box.height * 0.65, { steps: 8 });
     await page.mouse.up();
   }
-  return next;
+  const response = await next;
+  await expect(page.getByTestId("interactive-toolbar")).toBeHidden();
+  await page.getByTestId("interactive-settings-trigger").hover();
+  return response;
 }
 async function acceptCurrent(page: Page, taskId: string) {
   await expect(page.getByTestId("interactive-candidate-accept")).toBeEnabled();
@@ -206,7 +212,8 @@ test.describe("E1 interactive toolbar layers", () => {
       page.on("pageerror", (error) => errors.push(error.message));
       await openWorkbench(page, seed, data, taskId, media);
       await selectTool(page, media, "smart-point");
-      await expect(page.getByTestId("ai-tool-polarity")).toBeVisible();
+      await page.getByTestId("interactive-settings-trigger").click();
+      await expect(page.getByRole("button", { name: "切换到负向提示", exact: true })).toBeVisible();
       expect((await prompt(page, media, "point")).status()).toBe(200);
       await expect(page.getByTestId("interactive-candidate-count")).toContainText(/1\s*\/\s*3/);
       await page.getByTestId("interactive-candidate-next").click();
@@ -214,11 +221,14 @@ test.describe("E1 interactive toolbar layers", () => {
       await page.getByTestId("interactive-candidate-previous").click();
       await expect(page.getByTestId("interactive-candidate-count")).toContainText(/1\s*\/\s*3/);
       // Native button Enter must invoke that button, without accepting the candidate behind it.
+      await expectStableContextCapsule(page, "interactive");
+      await openContextToolbar(page, "interactive");
       await page.getByTestId("interactive-toolbar-advanced-toggle").press("Enter");
       await expect(page.getByTestId("interactive-toolbar-advanced")).toBeVisible();
       await expect(page.getByTestId("class-picker-popover")).toBeHidden();
       await page.getByTestId("ai-tool-model-select").press("Tab");
       await expect(page.getByTestId("interactive-candidate-count")).toContainText(/1\s*\/\s*3/);
+      await openContextToolbar(page, "interactive");
       await page.getByTestId("interactive-toolbar-advanced-toggle").click();
       expect(routed.calls).toHaveLength(1);
       await page.getByTestId("interactive-candidate-cancel").click();
@@ -229,6 +239,7 @@ test.describe("E1 interactive toolbar layers", () => {
       await page.getByTestId("interactive-candidate-cancel").click();
       await selectTool(page, media, "exemplar");
       await page.getByTestId("exemplar-text").getByRole("textbox").fill("car");
+      await openContextToolbar(page, "interactive");
       await page.getByTestId("exemplar-output-mode-select").selectOption("mask");
       expect((await prompt(page, media, "exemplar")).status()).toBe(200);
       expect(routed.calls.at(-1)?.context).toMatchObject({
@@ -239,6 +250,7 @@ test.describe("E1 interactive toolbar layers", () => {
       await expect(page.getByTestId("interactive-candidate-count")).toContainText(/1\s*\/\s*3/);
       await page.getByTestId("interactive-candidate-next").click();
       const accepted = await acceptCurrent(page, taskId);
+      await page.getByTestId("interactive-settings-trigger").hover();
       await expect(page.getByTestId("interactive-candidate-count")).toContainText(/\d\s*\/\s*2/);
       await page.getByTestId("interactive-candidate-cancel").click();
       expect(errors).toEqual([]);
@@ -272,7 +284,9 @@ test.describe("E1 interactive toolbar layers", () => {
         media,
       );
       await selectTool(page, media, "smart-point");
+      await openContextToolbar(page, "interactive");
       await page.getByTestId("single-frame-output-geometry-select").selectOption("polygon");
+      await openContextToolbar(page, "interactive");
       await page.getByTestId("interactive-toolbar-advanced-toggle").click();
       await page.getByTestId("ai-tool-backend-select").selectOption(second.id);
       await page.getByTestId("ai-tool-model-select").selectOption("e2e-alternate-model");
@@ -283,6 +297,7 @@ test.describe("E1 interactive toolbar layers", () => {
       );
       await page.getByTestId("ai-variant-size").selectOption("large");
       expect((await savedProject).ok()).toBe(true);
+      await openContextToolbar(page, "interactive");
       await page.getByTestId("interactive-toolbar-advanced-toggle").click();
       expect((await prompt(page, media, "point")).status()).toBe(200);
       expect(routed.calls.at(-1)).toMatchObject({
@@ -294,10 +309,12 @@ test.describe("E1 interactive toolbar layers", () => {
         },
       });
       const count = routed.calls.length;
+      await openContextToolbar(page, "interactive");
       await page.getByTestId("interactive-toolbar-advanced-toggle").click();
       await expect(page.getByTestId("ai-tool-backend-select")).toHaveValue(second.id);
       await expect(page.getByTestId("ai-tool-model-select")).toHaveValue("e2e-alternate-model");
       await expect(page.getByTestId("ai-variant-size")).toHaveValue("large");
+      await openContextToolbar(page, "interactive");
       await page.getByTestId("interactive-toolbar-advanced-toggle").click();
       await expect
         .poll(async () => {
@@ -320,6 +337,7 @@ test.describe("E1 interactive toolbar layers", () => {
       expect(routed.calls).toHaveLength(count);
       await page.reload();
       await selectTool(page, media, "smart-point");
+      await openContextToolbar(page, "interactive");
       await page.getByTestId("interactive-toolbar-advanced-toggle").click();
       await expect(page.getByTestId("ai-tool-backend-select")).toHaveValue(second.id);
       await expect(page.getByTestId("ai-tool-model-select")).toHaveValue("e2e-alternate-model");
@@ -338,6 +356,7 @@ test.describe("E1 interactive toolbar layers", () => {
     const routed = await routeML(page, fixture.response);
     routed.capabilityFailure = true;
     await openWorkbench(page, seed, data, taskId, "image");
+    await page.getByTestId("interactive-settings-trigger").hover();
     await expect(page.getByTestId("interactive-capability-error")).toContainText(
       "E1 capability unavailable",
     );
@@ -351,6 +370,7 @@ test.describe("E1 interactive toolbar layers", () => {
     await expect(page.getByRole("menuitem", { name: "直线切割为两个实例" })).toBeVisible();
     await page.keyboard.press("Escape");
     await selectTool(page, "image", "select");
+    await page.getByTestId("interactive-settings-trigger").hover();
     await expect(page.getByTestId("interactive-capability-error")).toBeVisible();
     routed.capabilityFailure = false;
     await page.getByTestId("interactive-capability-retry").click();
@@ -395,7 +415,8 @@ test.describe("E1 interactive toolbar layers", () => {
     await page.getByTestId(`box-list-item-${source.annotation_id}`).click();
     await selectTool(page, "image", "smart-scribble");
     await expect(page.getByTestId("mask-prompt-source")).toBeVisible();
-    await page.getByTestId("ai-tool-polarity").click();
+    await page.getByTestId("interactive-settings-trigger").click();
+    await page.getByRole("button", { name: "切换到负向提示", exact: true }).click();
     routed.failNextPrompt = true;
     expect((await prompt(page, "image", "scribble")).status()).toBe(503);
     await expect(page.getByTestId("interactive-inference-error")).toBeVisible();

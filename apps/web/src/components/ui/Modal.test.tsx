@@ -30,16 +30,34 @@ describe("<Modal />", () => {
     expect(dialog).toHaveAttribute("aria-labelledby");
   });
 
-  it("Escape 触发 onClose", () => {
+  it.each([true, false])("backdropBlur=%s 时 Escape 触发 onClose", (backdropBlur) => {
     const onClose = vi.fn();
     render(
-      <Modal open onClose={onClose}>
+      <Modal open onClose={onClose} backdropBlur={backdropBlur}>
         <p>x</p>
       </Modal>,
     );
     // Radix 的 Esc 监听挂在 document(旧实现挂 window),故在 document 上派发。
     fireEvent.keyDown(document.body, { key: "Escape" });
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("默认保留背景模糊，关闭模糊后仍保留模态遮罩", () => {
+    const { rerender } = render(
+      <Modal open onClose={() => {}}>
+        <p>canvas dialog</p>
+      </Modal>,
+    );
+    expect(screen.getByTestId("modal-overlay")).toHaveClass("backdrop-blur-[2px]");
+    rerender(
+      <Modal open onClose={() => {}} backdropBlur={false}>
+        <p>canvas dialog</p>
+      </Modal>,
+    );
+    expect(screen.getByTestId("modal-overlay")).not.toHaveClass("backdrop-blur-[2px]");
+    expect(screen.getByTestId("modal-overlay")).toHaveAttribute("data-state", "open");
+    expect(screen.getByTestId("modal-overlay")).toHaveClass("bg-black/40");
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
   it("点击内容不触发 onClose", () => {
@@ -56,10 +74,10 @@ describe("<Modal />", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("点击 overlay 触发 onClose(Radix 默认外部点击关闭 smoke)", async () => {
+  it.each([true, false])("backdropBlur=%s 时点击 overlay 触发 onClose", async (backdropBlur) => {
     const onClose = vi.fn();
     render(
-      <Modal open onClose={onClose}>
+      <Modal open onClose={onClose} backdropBlur={backdropBlur}>
         <p>x</p>
       </Modal>,
     );

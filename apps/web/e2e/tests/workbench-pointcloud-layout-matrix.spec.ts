@@ -284,123 +284,127 @@ test("3D 自由布局保留共享 renderer，三视图移出画布与相机整�
   await expect(floatMenus).toHaveCount(0);
 });
 
-for (const mode of ["annotate", "review"] as const) {
-  for (const kind of ["image", "video", "3d"] as const) {
-    test(`${mode}:${kind} 连续54次面板重排保留画布，跨视口和紧凑模式后刷新恢复`, async ({
-      page,
-      seed,
-    }) => {
-      test.setTimeout(180_000);
-      const context: WorkspaceContext = `${mode}:${kind}`;
-      const data = await seed.reset();
-      let projectId = data.project_id;
-      let taskId = data.task_ids[0];
-      if (kind === "video") taskId = (await seed.videoTask(projectId)).task_id;
-      if (kind === "3d") {
-        const lidar = await seed.seedLidar();
-        projectId = lidar.lidar_project_id;
-        taskId = lidar.lidar_task_ids[0];
-      }
-      if (mode === "review")
-        await seed.advanceTask({
-          taskId,
-          toStatus: "review",
-          annotatorEmail: data.annotator_email,
-          reviewerEmail: data.admin_email,
-        });
-      await seed.injectToken(page, data.admin_email);
-      const initialViewport = VIEWPORTS[mode === "annotate" ? 0 : 1];
-      const finalViewport = VIEWPORTS[mode === "annotate" ? 1 : 0];
-      await page.setViewportSize(initialViewport);
-      await page.goto(`/projects/${projectId}/${mode}?task=${taskId}`);
+// Two complete action cycles cover transitions; repetition belongs to @stress.
+for (const reorders of [10, 50]) {
+  for (const mode of ["annotate", "review"] as const) {
+    for (const kind of ["image", "video", "3d"] as const) {
+      test(
+        `${mode}:${kind} 连续${reorders + 4}次面板重排保留画布，跨视口和紧凑模式后刷新恢复`,
+        { tag: reorders === 50 ? "@stress" : "@layout" },
+        async ({ page, seed }) => {
+          test.setTimeout(reorders === 50 ? 180_000 : 90_000);
+          const context: WorkspaceContext = `${mode}:${kind}`;
+          const data = await seed.reset();
+          let projectId = data.project_id;
+          let taskId = data.task_ids[0];
+          if (kind === "video") taskId = (await seed.videoTask(projectId)).task_id;
+          if (kind === "3d") {
+            const lidar = await seed.seedLidar();
+            projectId = lidar.lidar_project_id;
+            taskId = lidar.lidar_task_ids[0];
+          }
+          if (mode === "review")
+            await seed.advanceTask({
+              taskId,
+              toStatus: "review",
+              annotatorEmail: data.annotator_email,
+              reviewerEmail: data.admin_email,
+            });
+          await seed.injectToken(page, data.admin_email);
+          const initialViewport = VIEWPORTS[mode === "annotate" ? 0 : 1];
+          const finalViewport = VIEWPORTS[mode === "annotate" ? 1 : 0];
+          await page.setViewportSize(initialViewport);
+          await page.goto(`/projects/${projectId}/${mode}?task=${taskId}`);
 
-      let latestSubmitted: WorkspaceSnapshot | undefined;
-      const writes: string[][] = [];
-      const inFlight = new Set<Request>();
-      page.on("request", (request) => {
-        if (
-          request.method() !== "PATCH" ||
-          new URL(request.url()).pathname !== "/api/v1/auth/me/preferences"
-        )
-          return;
-        const contexts = request.postDataJSON()?.workbench?.layout?.workspace?.contexts;
-        if (!contexts) return;
-        writes.push(Object.keys(contexts));
-        latestSubmitted = contexts[context]?.snapshot;
-        inFlight.add(request);
-      });
-      page.on("requestfinished", (request) => inFlight.delete(request));
-      page.on("requestfailed", (request) => inFlight.delete(request));
+          let latestSubmitted: WorkspaceSnapshot | undefined;
+          const writes: string[][] = [];
+          const inFlight = new Set<Request>();
+          page.on("request", (request) => {
+            if (
+              request.method() !== "PATCH" ||
+              new URL(request.url()).pathname !== "/api/v1/auth/me/preferences"
+            )
+              return;
+            const contexts = request.postDataJSON()?.workbench?.layout?.workspace?.contexts;
+            if (!contexts) return;
+            writes.push(Object.keys(contexts));
+            latestSubmitted = contexts[context]?.snapshot;
+            inFlight.add(request);
+          });
+          page.on("requestfinished", (request) => inFlight.delete(request));
+          page.on("requestfailed", (request) => inFlight.delete(request));
 
-      await layoutCommand(page, "标准标注布局");
-      const sameCanvas = await rememberCanvas(page, kind);
-      const commands = [
-        "停靠到左侧",
-        "停靠到右侧",
-        "停靠到底部",
-        "与标注详情合并为标签",
-        "浮动面板",
-      ];
-      for (let operation = 0; operation < 50; operation += 1) {
-        await test.step(`拖动重排 ${operation + 1}`, async () => {
-          if (operation === 25) await page.setViewportSize(finalViewport);
-          // Leave a tab group and a floating group in the final saved tree.
-          await panelCommand(
-            page,
-            operation === 49 ? "类别面板" : "讨论 / Issue",
-            commands[operation % commands.length],
-          );
+          await layoutCommand(page, "标准标注布局");
+          const sameCanvas = await rememberCanvas(page, kind);
+          const commands = [
+            "停靠到左侧",
+            "停靠到右侧",
+            "停靠到底部",
+            "与标注详情合并为标签",
+            "浮动面板",
+          ];
+          for (let operation = 0; operation < reorders; operation += 1) {
+            await test.step(`拖动重排 ${operation + 1}`, async () => {
+              if (operation === Math.floor(reorders / 2)) await page.setViewportSize(finalViewport);
+              // Leave a tab group and a floating group in the final saved tree.
+              await panelCommand(
+                page,
+                operation === reorders - 1 ? "类别面板" : "讨论 / Issue",
+                commands[operation % commands.length],
+              );
+              await sameCanvas();
+            });
+          }
+          for (const command of ["停靠到左侧", "停靠到右侧", "停靠到底部", "停靠到左侧"]) {
+            await panelCommand(page, "任务队列", command);
+            await sameCanvas();
+          }
+          // The owner debounces by 300 ms; wait for the last command and its serial request.
+          await page.waitForTimeout(650);
+          await expect.poll(() => inFlight.size).toBe(0);
+          expect(latestSubmitted).toBeDefined();
+          await expect
+            .poll(async () => (await savedContext(page, context))?.snapshot)
+            .toEqual(latestSubmitted);
+          const saved = await savedContext(page, context);
+          expect(saved.schemaVersion).toBe(5);
+          expect(writes.length).toBeGreaterThan(0);
+          expect(writes.every((keys) => keys.length === 1 && keys[0] === context)).toBe(true);
+          const desktopGroups = await renderedGroups(page);
+          expect(
+            desktopGroups.some((group) => group.tabs.join(",") === "inspector,discussion"),
+          ).toBe(true);
+          expect(
+            desktopGroups.some((group) => group.floating && group.tabs.includes("class-palette")),
+          ).toBe(true);
+
+          const writesBeforeCompact = writes.length;
+          await page.setViewportSize({ width: 1024, height: finalViewport.height });
+          await expect(workspace(page)).toHaveAttribute("data-compact", "true");
+          await layoutCommand(page, "任务队列");
           await sameCanvas();
-        });
-      }
-      for (const command of ["停靠到左侧", "停靠到右侧", "停靠到底部", "停靠到左侧"]) {
-        await panelCommand(page, "任务队列", command);
-        await sameCanvas();
-      }
-      // The owner debounces by 300 ms; wait for the last command and its serial request.
-      await page.waitForTimeout(650);
-      await expect.poll(() => inFlight.size).toBe(0);
-      expect(latestSubmitted).toBeDefined();
-      await expect
-        .poll(async () => (await savedContext(page, context))?.snapshot)
-        .toEqual(latestSubmitted);
-      const saved = await savedContext(page, context);
-      expect(saved.schemaVersion).toBe(5);
-      expect(writes.length).toBeGreaterThan(0);
-      expect(writes.every((keys) => keys.length === 1 && keys[0] === context)).toBe(true);
-      const desktopGroups = await renderedGroups(page);
-      expect(desktopGroups.some((group) => group.tabs.join(",") === "inspector,discussion")).toBe(
-        true,
+          await layoutCommand(page, "讨论 / Issue");
+          await sameCanvas();
+          await page.setViewportSize(finalViewport);
+          await expect(workspace(page)).toHaveAttribute("data-compact", "false");
+          await sameCanvas();
+          await expectRenderedGroups(page, desktopGroups);
+          await page.waitForTimeout(650);
+          expect(writes.length).toBe(writesBeforeCompact);
+          expect(await savedContext(page, context)).toEqual(saved);
+
+          await page.reload();
+          const restoredCanvas = await rememberCanvas(page, kind);
+          await restoredCanvas();
+          await expect(page.getByRole("button", { name: "布局", exact: true })).toBeVisible();
+          await expect(workspace(page)).toHaveAttribute("data-compact", "false");
+          await expect(
+            page.getByText("保存的布局无法恢复，请从布局菜单重置。", { exact: true }),
+          ).toHaveCount(0);
+          await expectRenderedGroups(page, desktopGroups);
+          expect(await savedContext(page, context)).toEqual(saved);
+        },
       );
-      expect(
-        desktopGroups.some((group) => group.floating && group.tabs.includes("class-palette")),
-      ).toBe(true);
-
-      const writesBeforeCompact = writes.length;
-      await page.setViewportSize({ width: 1024, height: finalViewport.height });
-      await expect(workspace(page)).toHaveAttribute("data-compact", "true");
-      await layoutCommand(page, "任务队列");
-      await sameCanvas();
-      await layoutCommand(page, "讨论 / Issue");
-      await sameCanvas();
-      await page.setViewportSize(finalViewport);
-      await expect(workspace(page)).toHaveAttribute("data-compact", "false");
-      await sameCanvas();
-      await expectRenderedGroups(page, desktopGroups);
-      await page.waitForTimeout(650);
-      expect(writes.length).toBe(writesBeforeCompact);
-      expect(await savedContext(page, context)).toEqual(saved);
-
-      await page.reload();
-      const restoredCanvas = await rememberCanvas(page, kind);
-      await restoredCanvas();
-      await expect(page.getByRole("button", { name: "布局", exact: true })).toBeVisible();
-      await expect(workspace(page)).toHaveAttribute("data-compact", "false");
-      await expect(
-        page.getByText("保存的布局无法恢复，请从布局菜单重置。", { exact: true }),
-      ).toHaveCount(0);
-      await expectRenderedGroups(page, desktopGroups);
-      expect(await savedContext(page, context)).toEqual(saved);
-    });
+    }
   }
 }

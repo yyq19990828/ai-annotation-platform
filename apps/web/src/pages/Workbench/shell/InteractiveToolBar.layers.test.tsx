@@ -1,6 +1,16 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render as rtlRender, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
+
+function render(ui: Parameters<typeof rtlRender>[0]) {
+  const result = rtlRender(ui);
+  const trigger = screen.queryByTestId("interactive-settings-trigger");
+  if (trigger) {
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("button", { name: "更多 AI 工具" }));
+  }
+  return result;
+}
 
 import type { AttributeField } from "@/api/projects";
 import { InteractiveToolBar, type InteractiveToolBarProps } from "./InteractiveToolBar";
@@ -69,10 +79,195 @@ function configuredProps(): InteractiveToolBarProps {
 }
 
 describe("InteractiveToolBar layers", () => {
+  it.each([
+    ["smart-point", "负向点", "Mask"],
+    ["smart-box", null, "Mask"],
+    ["smart-scribble", "负向笔迹", "精修 Mask · car"],
+    ["exemplar", "负例框", "car"],
+    ["magic-box", null, "矩形"],
+  ] as const)(
+    "summarizes effective %s settings without naming the tool",
+    (tool, polarity, detail) => {
+      rtlRender(
+        <InteractiveToolBar
+          {...props({
+            tool,
+            samPolarity: "negative",
+            singleFrameOutputGeometry: "mask",
+            exemplarOutputMode: "both",
+            exemplarText: "car",
+            maskPromptSourceLabel: tool === "smart-scribble" ? "精修 Mask · car" : undefined,
+          })}
+        />,
+      );
+      const summary = within(screen.getByTestId("interactive-settings-trigger"));
+      expect(summary.getByText(detail)).toBeVisible();
+      if (polarity)
+        expect(summary.getByTestId("interactive-summary-polarity")).toHaveAttribute(
+          "aria-label",
+          polarity,
+        );
+      else expect(summary.queryByTestId("interactive-summary-polarity")).toBeNull();
+      for (const name of ["智能点", "智能框", "智能笔迹", "示例召回", "魔法收紧"])
+        expect(summary.queryByText(name)).toBeNull();
+      expect(summary.queryByText("0/0")).toBeNull();
+    },
+  );
+
+  it.each(["smart-point", "smart-box"] as const)(
+    "identifies the existing refinement target for %s",
+    (tool) => {
+      rtlRender(
+        <InteractiveToolBar {...props({ tool, maskPromptSourceLabel: "精修 Mask · person" })} />,
+      );
+      expect(
+        within(screen.getByTestId("interactive-settings-trigger")).getByText("精修 Mask · person"),
+      ).toBeVisible();
+    },
+  );
+
+  it("hides Mask persistence options for a box-only exemplar session without changing its stored value", () => {
+    const base = configuredProps();
+    render(<InteractiveToolBar {...base} exemplarOutputMode="box" />);
+    expect(screen.queryByTestId("single-frame-output-geometry-select")).toBeNull();
+    expect(base.onSetSingleFrameOutputGeometry).not.toHaveBeenCalled();
+    expect(screen.getByTestId("exemplar-output-mode-select")).toHaveValue("box");
+  });
+
+  it("keeps unsupported exemplar polarity and text out of the capsule", () => {
+    const base = configuredProps();
+    rtlRender(
+      <InteractiveToolBar
+        {...base}
+        samPolarity="negative"
+        models={[
+          {
+            ...base.models![0],
+            exemplar_capabilities: { negative_box: false, text_combination: false },
+          },
+        ]}
+      />,
+    );
+    const summary = within(screen.getByTestId("interactive-settings-trigger"));
+    expect(summary.queryByTestId("interactive-summary-polarity")).toBeNull();
+    expect(summary.queryByText("car")).toBeNull();
+    expect(summary.getByText("框 + Mask")).toBeVisible();
+    expect(base.onSetSamPolarity).toHaveBeenCalledWith("positive");
+  });
+
+  it("updates capsule text, candidate position and busy state with its owner", () => {
+    const base = configuredProps();
+    const view = rtlRender(
+      <InteractiveToolBar {...base} candidateCount={3} activeCandidateIndex={1} />,
+    );
+    const summary = within(screen.getByTestId("interactive-settings-trigger"));
+    expect(summary.getByText("car")).toBeVisible();
+    expect(summary.getByText("2/3")).toBeVisible();
+    view.rerender(
+      <InteractiveToolBar
+        {...base}
+        exemplarText="person"
+        isRunning
+        candidateCount={3}
+        activeCandidateIndex={1}
+      />,
+    );
+    expect(summary.getByText("person")).toBeVisible();
+    expect(summary.queryByText("car")).toBeNull();
+    expect(summary.getByLabelText("本轮推理中…")).toBeVisible();
+    expect(base.onSetExemplarText).not.toHaveBeenCalled();
+  });
+
+  it("keeps text, candidate decisions and error recovery available in the compact shell", () => {
+    const base = configuredProps();
+    const accept = vi.fn();
+    const retry = vi.fn();
+    rtlRender(
+      <InteractiveToolBar
+        {...base}
+        candidateCount={2}
+        canAcceptCandidates
+        onAcceptCandidate={accept}
+        capabilityError="能力连接失败"
+        onRetryCapabilities={retry}
+      />,
+    );
+    fireEvent.click(screen.getByTestId("interactive-settings-trigger"));
+    expect(screen.getByRole("textbox", { name: "示例叠加文本" })).toHaveValue("car");
+    expect(screen.queryByTestId("interactive-toolbar-advanced")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "接受" }));
+    fireEvent.click(screen.getByRole("button", { name: "重试能力协商" }));
+    expect(accept).toHaveBeenCalledOnce();
+    expect(retry).toHaveBeenCalledOnce();
+  });
+
+  it("preserves owner values when closing settings, but resets presentation for a new session", () => {
+    const base = configuredProps();
+    const view = render(<InteractiveToolBar {...base} presentationKey="task:frame-1" />);
+    fireEvent.click(screen.getByTestId("interactive-toolbar-advanced-toggle"));
+    fireEvent.click(screen.getByRole("button", { name: "收起 AI 设置" }));
+    fireEvent.click(screen.getByTestId("interactive-settings-trigger"));
+    expect(screen.getByRole("textbox", { name: "示例叠加文本" })).toHaveValue("car");
+    fireEvent.click(screen.getByTestId("interactive-settings-trigger"));
+    fireEvent.click(screen.getByRole("button", { name: "更多 AI 工具" }));
+    expect(screen.getByTestId("interactive-toolbar-advanced")).toBeVisible();
+    expect(screen.getByTestId("ai-variant-size")).toHaveValue("small");
+    view.rerender(<InteractiveToolBar {...base} presentationKey="task:frame-2" />);
+    expect(screen.queryByTestId("interactive-toolbar")).toBeNull();
+    expect(base.onVariantChange).not.toHaveBeenCalled();
+    expect(base.onSetExemplarText).not.toHaveBeenCalled();
+  });
+
+  it("does not offer a geometry switch for magic-box", () => {
+    const base = props({
+      tool: "magic-box",
+      singleFrameOutputGeometry: "polygon",
+      onSetSingleFrameOutputGeometry: vi.fn(),
+    });
+    rtlRender(<InteractiveToolBar {...base} />);
+    fireEvent.click(screen.getByTestId("interactive-settings-trigger"));
+    expect(screen.queryByRole("button", { name: "提交为原生 Mask" })).toBeNull();
+    expect(base.onSetSingleFrameOutputGeometry).not.toHaveBeenCalled();
+  });
+  it("edits and resets exemplar confidence from the hover capsule without losing it in full settings", () => {
+    const base = configuredProps();
+    function Controlled() {
+      const [threshold, setThreshold] = useState<number | null>(null);
+      return (
+        <InteractiveToolBar
+          {...base}
+          exemplarThreshold={threshold}
+          onSetExemplarThreshold={(next) => {
+            base.onSetExemplarThreshold?.(next);
+            setThreshold(next);
+          }}
+        />
+      );
+    }
+    rtlRender(<Controlled />);
+    fireEvent.click(screen.getByTestId("interactive-settings-trigger"));
+    fireEvent.change(screen.getByRole("slider", { name: "示例召回阈值" }), {
+      target: { value: "0.75" },
+    });
+    expect(base.onSetExemplarThreshold).toHaveBeenCalledWith(0.75);
+    fireEvent.click(screen.getByRole("button", { name: "更多 AI 工具" }));
+    fireEvent.click(screen.getByTestId("interactive-toolbar-advanced-toggle"));
+    expect(screen.getByRole("slider", { name: "示例召回阈值" })).toHaveValue("0.75");
+    const close = screen.getByRole("button", { name: "收起 AI 设置" });
+    expect(close).toHaveTextContent("");
+    fireEvent.click(close);
+    fireEvent.click(screen.getByTestId("interactive-settings-trigger"));
+    fireEvent.click(screen.getByRole("button", { name: "重置为后端默认阈值" }));
+    expect(base.onSetExemplarThreshold).toHaveBeenLastCalledWith(null);
+    expect(base.onSetExemplarThreshold).toHaveBeenCalledTimes(2);
+  });
+
   it("keeps prompt inputs visible while configuration starts folded", () => {
     render(<InteractiveToolBar {...configuredProps()} />);
 
-    expect(screen.getByTestId("interactive-toolbar")).toHaveAttribute("data-workbench-ai-toolbar");
+    expect(screen.getByTestId("interactive-toolbar")).toHaveAttribute(
+      "data-workbench-context-toolbar",
+    );
     expect(screen.getByTestId("interactive-toolbar-advanced-toggle")).toHaveAttribute(
       "aria-expanded",
       "false",
@@ -215,8 +410,8 @@ describe("InteractiveToolBar layers", () => {
     });
     const { rerender } = render(<InteractiveToolBar {...base} />);
     expect(screen.getByTestId("interactive-candidate-count")).toHaveTextContent("候选 0 / 0");
-    expect(screen.getByRole("button", { name: "接受" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "下一个候选" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "接受" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "下一个候选" })).toBeNull();
 
     rerender(<InteractiveToolBar {...base} candidateCount={1} />);
     expect(screen.getByRole("button", { name: "接受" })).toBeEnabled();
@@ -227,6 +422,22 @@ describe("InteractiveToolBar layers", () => {
     expect(screen.getByRole("button", { name: "接受" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "取消本轮" })).toBeEnabled();
   });
+
+  it.each(["smart-point", "smart-scribble", "exemplar"] as const)(
+    "keeps cancellation for a zero-result %s prompt session",
+    (tool) => {
+      const cancel = vi.fn();
+      render(
+        <InteractiveToolBar
+          {...props({ tool, hasPromptSession: true, onCancelCandidates: cancel })}
+        />,
+      );
+      expect(screen.queryByRole("button", { name: "接受" })).toBeNull();
+      expect(screen.queryByRole("button", { name: "下一个候选" })).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "取消本轮" }));
+      expect(cancel).toHaveBeenCalledOnce();
+    },
+  );
 
   it("keeps capability loading separate from the current inference", () => {
     const base = props();
@@ -324,9 +535,7 @@ describe("InteractiveToolBar layers", () => {
         onRetry={vi.fn()}
       />,
     );
-    expect(
-      within(screen.getByTestId("interactive-toolbar-primary")).getByText("AI 能力"),
-    ).toBeVisible();
+    expect(screen.getByRole("heading", { name: "AI 连接" })).toBeVisible();
     expect(screen.queryByTestId("ai-tool-polarity")).toBeNull();
     expect(screen.queryByTestId("exemplar-text")).toBeNull();
     expect(screen.queryByTestId("exemplar-output-mode")).toBeNull();
@@ -354,7 +563,7 @@ describe("InteractiveToolBar layers", () => {
       />,
     );
     const toggle = screen.getByTestId("interactive-toolbar-advanced-toggle");
-    expect(toggle).toHaveTextContent("高级配置 · 1");
+    expect(toggle).toHaveTextContent("模型与参数 · 1");
     expect(screen.getByTestId("ai-tool-capability-warnings")).not.toBeVisible();
     fireEvent.click(toggle);
     expect(screen.getByTestId("ai-tool-capability-warnings")).toBeVisible();

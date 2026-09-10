@@ -1280,7 +1280,8 @@ async def seed_video_webcodecs(
     Generates a small machine-readable H.264 clip (numpy → ffmpeg), probes it with
     the same ffprobe / avcC pipeline the worker uses, and writes dataset item +
     task + source frame timetable + production-shaped VideoChunk diagnostics. Short correctness fixtures use
-    one chunk; qualification fixtures use ready 60-frame chunks. ``chunk_status``
+    one chunk; Issue fixtures follow the manifest chunk size, while qualification
+    fixtures use ready 60-frame chunks. ``chunk_status``
     lets specs exercise the pending → ready contract without a media Celery worker.
     """
     from tempfile import mkdtemp
@@ -1342,7 +1343,9 @@ async def seed_video_webcodecs(
         meta = (
             await asyncio.to_thread(generate_qualification_fixture, fixture, tmp)
             if qualification
-            else generate_fixture(fixture, tmp)
+            else generate_fixture(
+                fixture, tmp, chunk_size_frames=settings.video_chunk_size_frames
+            )
         )
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -1401,7 +1404,7 @@ async def seed_video_webcodecs(
     )
     db.add(task)
     await db.flush()
-    if qualification:
+    if "chunks" in meta:
         for chunk_meta in meta["chunks"]:
             chunk_key = (
                 f"e2e/video/webcodecs/{fixture}/chunk-{chunk_meta['chunk_id']:04d}.mp4"
@@ -1424,8 +1427,8 @@ async def seed_video_webcodecs(
                     end_pts_ms=chunk_meta["end_pts_ms"],
                     storage_key=chunk_key,
                     byte_size=len(chunk_bytes),
-                    generation_mode="smart_copy",
-                    status="ready",
+                    generation_mode=chunk_meta["generation_mode"],
+                    status="ready" if qualification else payload.chunk_status,
                     diagnostics={
                         "samples": chunk_meta["samples"],
                         "codec_string": chunk_meta["codec_string"],
@@ -1469,7 +1472,9 @@ async def seed_video_webcodecs(
         dataset_item_id=str(item.id),
         chunk_id=0,
         chunk_size_frames=(
-            QUALIFICATION_CHUNK_SIZE_FRAMES if qualification else meta["frame_count"]
+            QUALIFICATION_CHUNK_SIZE_FRAMES
+            if qualification
+            else meta.get("chunk_size_frames", meta["frame_count"])
         ),
         frame_expectations=(
             {} if qualification else frame_expectations(fixture, meta["samples"])

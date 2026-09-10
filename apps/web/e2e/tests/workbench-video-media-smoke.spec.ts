@@ -18,7 +18,7 @@ import { test, expect } from "../fixtures/seed";
 
 const VIDEO_KONVA_STORAGE_KEY = "video.experimental.konva";
 
-test.describe("workbench video media konva smoke", () => {
+test.describe("workbench video media konva smoke", { tag: "@visual" }, () => {
   // TODO(v0.16.x): 测试种子补视频任务后去掉 skip 并生成基线。
   test.skip("Konva 视频底图在暂停帧与旧栈像素一致", async ({ page, seed }) => {
     const data = await seed.reset();

@@ -1,3 +1,4 @@
+import { openContextToolbar } from "../../fixtures/context-toolbar";
 /**
  * Real SAM3 demonstrations use the primary vehicle as the prompt target.
  * Point candidates are selected by target geometry; Exemplar can accept a matching
@@ -84,7 +85,7 @@ export async function runSamToolRecording(
     throw new Error(`[sam-interactive] ${toolId} 被禁用，检查 image_demo 的 SAM3 能力绑定`);
   }
   await tool.click();
-  await page.getByTestId("interactive-toolbar").waitFor({ state: "visible" });
+  await openContextToolbar(page, "interactive");
   if (toolId === "exemplar") {
     // SAM3 exemplar 当前返回框候选；显式让请求几何与 Exemplar 形态都选择框，
     // 避免默认原生 Mask 合同把合法 rectangle candidate 当成无效 Mask。
