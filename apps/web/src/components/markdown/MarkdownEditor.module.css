@@ -178,6 +178,12 @@
   padding: 14px 16px;
   font-size: 13px;
   line-height: 1.7;
+}
+
+/* MDXEditor applies contentEditableClassName to both the editor and its
+   placeholder. Keep the authoring surface foreground on the actual editable
+   node so the placeholder can retain its muted color. */
+.contentEditable:global([contenteditable="true"]) {
   color: var(--mdx-editor-foreground);
 }
 

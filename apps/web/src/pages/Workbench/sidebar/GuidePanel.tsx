@@ -1,34 +1,56 @@
-// v0.10.13 · E1 · 工作台标注指引浮层.
-//
-// 行为:
-// - 项目 annotation_guide 为空 / null → 整个 panel 不渲染.
-// - localStorage 按用户、项目和指南版本隔离；首次进入自动展开，需用户明确确认阅读.
-// - 用户手动折叠后保存当前指南版本的折叠状态，后续保持折叠.
+import { useEffect, useRef, useState, type RefObject } from "react";
 
-import { useEffect, useState } from "react";
-import { Icon } from "@/components/ui/Icon";
 import { GuideMarkdownView } from "@/components/markdown/GuideMarkdownView";
+import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import { useGuideAssets } from "@/hooks/useGuideAssets";
 import { useOnboardingProjectState } from "@/hooks/useOnboardingProjectState";
 import {
-  annotationGuideVersion,
-  isGuideCollapsed,
-  isGuideSeen,
-  markGuideSeen,
-  markGuideCollapsed,
-} from "@/utils/annotationGuide";
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/shadcn/ui/dialog";
+import { annotationGuideVersion, isGuideSeen, markGuideSeen } from "@/utils/annotationGuide";
 
-interface GuidePanelProps {
+export interface GuidePanelProps {
   projectId: string;
   userId?: string | null;
   guideVersion?: string;
-  /** 项目级 Markdown 原文; null/空字符串 → panel 不渲染. */
+  /** 项目级 Markdown 原文; null/空字符串 → 不渲染入口. */
   content: string | null | undefined;
+  /** 顶栏提供的当前项目名称，用于对话框上下文。 */
+  projectName?: string;
 }
 
-export function GuidePanel({ projectId, userId, guideVersion, content }: GuidePanelProps) {
+export function guidePanelScopeKey({
+  projectId,
+  userId,
+  guideVersion,
+  content,
+}: Pick<GuidePanelProps, "projectId" | "userId" | "guideVersion" | "content">): string {
+  const version = guideVersion ?? annotationGuideVersion(content);
+  return `${userId ?? "anonymous"}:${projectId}:${version}`;
+}
+
+/**
+ * Workbench 标注指引入口与阅读对话框。
+ *
+ * 阅读状态只在用户点击确认后写入；关闭窗口、切换项目和版本都不会误记为已读。
+ * scope key 同时作为布局层的 React key，避免异步图片和保存响应串到下一份指南。
+ */
+export function GuidePanel({
+  projectId,
+  userId,
+  guideVersion,
+  content,
+  projectName,
+}: GuidePanelProps) {
   const trimmed = (content ?? "").trim();
   const version = guideVersion ?? annotationGuideVersion(content);
+  const scopeKey = guidePanelScopeKey({ projectId, userId, guideVersion, content });
   const { resolveImage } = useGuideAssets(projectId);
   const {
     markGuideRead,
@@ -37,114 +59,184 @@ export function GuidePanel({ projectId, userId, guideVersion, content }: GuidePa
     isSaving,
     guideRead: serverGuideRead,
   } = useOnboardingProjectState(projectId, version);
+  const [open, setOpen] = useState(false);
   const [confirmed, setConfirmed] = useState(() => isGuideSeen(userId, projectId, version));
+  const scopeRef = useRef(scopeKey);
+  const dialogContentRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const overlayPointerRef = useRef(false);
+  const wasOpenRef = useRef(false);
 
-  const [open, setOpen] = useState<boolean>(() => {
-    if (!trimmed) return false;
-    const seen = isGuideSeen(userId, projectId, version);
-    const collapsed = isGuideCollapsed(userId, projectId, version);
-    return !(seen && collapsed);
-  });
-
-  // The workbench shell can keep this panel mounted while switching projects.
-  // Re-read the scoped state so one project's collapsed guide cannot leak into
-  // another project's guide.
+  scopeRef.current = scopeKey;
   useEffect(() => {
-    if (!trimmed) {
-      setOpen(false);
-      setConfirmed(false);
+    scopeRef.current = scopeKey;
+    setOpen(false);
+    setConfirmed(isGuideSeen(userId, projectId, version));
+  }, [projectId, scopeKey, userId, version]);
+
+  useEffect(() => {
+    if (open) {
+      wasOpenRef.current = true;
       return;
     }
-    setConfirmed(isGuideSeen(userId, projectId, version));
-    setOpen(
-      !(isGuideSeen(userId, projectId, version) && isGuideCollapsed(userId, projectId, version)),
-    );
-  }, [projectId, trimmed, userId, version]);
+    if (!wasOpenRef.current) return;
+    wasOpenRef.current = false;
+    triggerRef.current?.focus();
+  }, [open]);
 
   const guideRead = serverGuideRead || confirmed || isGuideSeen(userId, projectId, version);
 
   const confirmRead = async () => {
+    const requestScope = scopeKey;
     const ok = await markGuideRead();
-    if (ok) {
-      markGuideSeen(userId, projectId, version);
-      setConfirmed(true);
-    }
+    if (scopeRef.current !== requestScope || !ok) return;
+    markGuideSeen(userId, projectId, version);
+    setConfirmed(true);
   };
 
   const retryRead = async () => {
+    const requestScope = scopeKey;
     const ok = await retry();
-    if (ok) {
-      markGuideSeen(userId, projectId, version);
-      setConfirmed(true);
-    }
-  };
-
-  const handleToggle = () => {
-    setOpen((prev) => {
-      const next = !prev;
-      markGuideCollapsed(userId, projectId, version, !next);
-      return next;
-    });
+    if (scopeRef.current !== requestScope || !ok) return;
+    markGuideSeen(userId, projectId, version);
+    setConfirmed(true);
   };
 
   if (!trimmed) return null;
 
   return (
-    <div
-      className={`flex flex-col overflow-hidden absolute top-14 left-3 z-drawer-backdrop bg-card border border-border rounded-lg shadow-lg ${open ? "w-80 max-h-[70vh]" : "w-auto max-h-none"}`}
-      role="region"
-      aria-label="标注指引"
-      data-testid="wb-guide-panel"
-    >
-      <button
-        type="button"
-        className="flex items-center gap-1.5 px-3 py-2 border-0 border-b border-border bg-muted cursor-pointer text-left"
-        onClick={handleToggle}
-        aria-expanded={open}
-        aria-label={open ? "折叠标注指引" : "展开标注指引"}
+    <Dialog open={open} onOpenChange={setOpen}>
+      <div className="relative flex shrink-0 items-center">
+        <DialogTrigger asChild>
+          <Button
+            ref={triggerRef}
+            variant="ghost"
+            size="sm"
+            type="button"
+            aria-label="标注指引"
+            title="标注指引"
+            data-workbench-guide-trigger=""
+            data-testid="wb-guide-trigger"
+            className="h-7 gap-1.5 px-2 text-muted-foreground hover:text-foreground @max-[700px]:w-7 @max-[700px]:p-0"
+          >
+            <Icon name="book" size={14} />
+            <span className="@max-[700px]:hidden">标注指引</span>
+          </Button>
+        </DialogTrigger>
+        {!guideRead && (
+          <span
+            role="status"
+            aria-label="未读"
+            title="有未读标注指引"
+            data-testid="wb-guide-unread"
+            className="pointer-events-none absolute -right-0.5 -top-0.5 size-2 rounded-full bg-status-info ring-2 ring-card"
+          />
+        )}
+      </div>
+      <DialogContent
+        ref={dialogContentRef}
+        showCloseButton={false}
+        aria-describedby={undefined}
+        data-testid="wb-guide-dialog"
+        data-workbench-guide=""
+        className="z-app-drawer flex h-dvh max-h-dvh w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-border bg-card p-0 text-foreground motion-reduce:animate-none sm:max-w-none md:h-[min(820px,85dvh)] md:max-h-[calc(100dvh-64px)] md:w-[min(1120px,calc(100vw-64px))] md:rounded-xl"
+        overlayProps={{
+          className: "z-app-drawer-backdrop bg-black/25 motion-reduce:animate-none",
+          "data-testid": "wb-guide-overlay",
+          "data-workbench-guide": "",
+          onPointerDown: (event) => {
+            overlayPointerRef.current = event.target === event.currentTarget;
+          },
+          onClick: (event) => {
+            if (event.target !== event.currentTarget || !overlayPointerRef.current) return;
+            event.preventDefault();
+            event.stopPropagation();
+            overlayPointerRef.current = false;
+            setOpen(false);
+          },
+        }}
+        onPointerDownCapture={() => {
+          overlayPointerRef.current = false;
+        }}
+        onPointerDownOutside={(event) => event.preventDefault()}
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          dialogContentRef.current?.focus();
+        }}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          triggerRef.current?.focus();
+        }}
       >
-        <Icon name="book" size={14} />
-        <span className="text-sm font-semibold text-foreground">标注指引</span>
-        <Icon
-          name={open ? "chevDown" : "chevRight"}
-          size={14}
-          className="ml-auto text-muted-foreground"
-        />
-      </button>
-      {open && (
-        <div className="px-3.5 py-3 overflow-auto flex-1 min-h-0">
-          <GuideMarkdownView content={trimmed} resolveImage={resolveImage} imageScope={projectId} />
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
-            <span className="text-xs text-muted-foreground">
-              {guideRead ? "已确认阅读当前版本" : "阅读完整指引后确认，指南更新后需重新确认"}
-            </span>
+        <header className="flex shrink-0 items-start justify-between gap-4 border-b border-border px-4 py-4 md:px-8 md:py-5">
+          <div className="flex min-w-0 flex-col gap-1">
+            <DialogTitle className="text-xl font-semibold text-foreground">标注指引</DialogTitle>
+            <DialogDescription className="text-sm text-muted-foreground">
+              {projectName ? `项目：${projectName}` : "当前项目的标注规则与示例"}
+            </DialogDescription>
+          </div>
+          <DialogClose asChild>
             <button
               type="button"
-              className="rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
-              onClick={() => void confirmRead()}
-              disabled={guideRead || isSaving}
+              aria-label="关闭指引"
+              title="关闭指引"
+              data-testid="wb-guide-close"
+              className="inline-flex size-8 shrink-0 items-center justify-center rounded-md border-0 bg-transparent text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
-              {isSaving ? "保存中…" : guideRead ? "已确认阅读" : "确认已阅读"}
+              <Icon name="x" size={16} />
             </button>
+          </DialogClose>
+        </header>
+
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-5 md:px-8 md:py-7">
+          <div className="mx-auto w-full max-w-3xl">
+            <GuideMarkdownView
+              content={trimmed}
+              resolveImage={resolveImage}
+              imageScope={scopeKey}
+              modalContainerRef={dialogContentRef as RefObject<HTMLElement | null>}
+            />
           </div>
-          {saveError && (
-            <div
-              role="alert"
-              className="mt-2 flex items-center justify-between gap-2 text-xs text-status-danger"
-            >
-              <span>{saveError}</span>
-              <button
+        </div>
+
+        <footer
+          data-testid="wb-guide-footer"
+          className="flex shrink-0 flex-col gap-3 border-t border-border bg-card px-4 py-3.5 md:flex-row md:items-center md:justify-between md:px-8"
+        >
+          <div className="min-w-0 text-sm text-muted-foreground">
+            {guideRead ? "已确认阅读当前版本" : "阅读完整指引后确认，指南更新后需重新确认"}
+            {saveError && (
+              <p role="alert" className="mt-1 text-xs text-status-danger">
+                {saveError}
+              </p>
+            )}
+          </div>
+          <div className="flex shrink-0 items-center justify-end gap-2">
+            {saveError && (
+              <Button
                 type="button"
-                className="shrink-0 underline"
+                variant="ghost"
+                size="sm"
                 onClick={() => void retryRead()}
                 disabled={isSaving}
+                data-testid="wb-guide-retry"
               >
-                重试
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
+                {isSaving ? "保存中…" : "重试"}
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              onClick={() => void confirmRead()}
+              disabled={guideRead || isSaving}
+              data-testid="wb-guide-confirm"
+            >
+              {isSaving ? "保存中…" : guideRead ? "已确认阅读" : "确认已阅读"}
+            </Button>
+          </div>
+        </footer>
+      </DialogContent>
+    </Dialog>
   );
 }

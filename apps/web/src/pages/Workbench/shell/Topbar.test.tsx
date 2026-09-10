@@ -125,6 +125,30 @@ it("gates layout buttons until preferences settle", () => {
   expect(screen.getByRole("button", { name: "布局" })).toBeVisible();
 });
 
+it("keeps the guide slot beside the desktop settings controls", () => {
+  render(
+    <Topbar
+      projectName="测试"
+      projectDisplayId="P-1"
+      task={undefined}
+      taskIdx={0}
+      taskTotal={1}
+      aiRunning={false}
+      isSubmitting={false}
+      onShowHotkeys={vi.fn()}
+      onPrev={vi.fn()}
+      onNext={vi.fn()}
+      onSubmit={vi.fn()}
+      onOpenWorkbenchSettings={vi.fn()}
+      guideSlot={<button aria-label="标注指引">指南</button>}
+    />,
+  );
+
+  const guide = screen.getByRole("button", { name: "标注指引" });
+  const settings = screen.getByRole("button", { name: "工作台设置" });
+  expect(guide.parentElement?.parentElement).toBe(settings.parentElement?.parentElement);
+});
+
 it("labels physical sides, exposes expanded state, and disables an empty side", () => {
   const toggle = vi.fn();
   render(

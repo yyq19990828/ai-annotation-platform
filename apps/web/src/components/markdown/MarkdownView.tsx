@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type RefObject,
 } from "react";
 import ReactMarkdown, {
   defaultUrlTransform,
@@ -30,6 +31,8 @@ export interface MarkdownViewProps {
   resolveImage?: MarkdownImageResolver;
   /** Logical identity of the document/project owning asynchronous images. */
   imageScope?: string;
+  /** Optional owner dialog ref for the image preview portal. */
+  modalContainerRef?: RefObject<HTMLElement | null>;
 }
 
 type ImageStatus = "loading" | "ready" | "unavailable";
@@ -476,6 +479,7 @@ export function MarkdownView({
   compact = false,
   resolveImage,
   imageScope,
+  modalContainerRef,
 }: MarkdownViewProps) {
   const [enlargedImage, setEnlargedImage] = useState<EnlargedImage | null>(null);
   const imageCacheRef = useRef<Map<string, ResolvedImage>>(new Map());
@@ -661,6 +665,8 @@ export function MarkdownView({
         onClose={() => setEnlargedImage(null)}
         title={visibleEnlargedImage?.alt || "图片预览"}
         width={720}
+        containerRef={modalContainerRef}
+        stopEscapePropagation={modalContainerRef !== undefined}
       >
         {visibleEnlargedImage && (
           <>

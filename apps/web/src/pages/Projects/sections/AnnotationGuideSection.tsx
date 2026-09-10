@@ -311,7 +311,7 @@ function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
         <h3 className="m-0 text-md font-semibold">标注指引</h3>
         <p className={DESCRIPTION_CLASS}>
           支持可视化 Markdown、源码和 GFM 表格；拖拽或粘贴图片会上传到当前项目资源。
-          工作台首次进入会自动展开「指引」浮层让标注员阅读一次。
+          标注员可通过工作台顶栏的「标注指引」按钮打开阅读窗口。
         </p>
 
         <Suspense fallback={<div className={PLACEHOLDER_CLASS}>编辑器加载中…</div>}>
@@ -326,7 +326,7 @@ function AnnotationGuideProjectBody({ project }: { project: ProjectResponse }) {
             variant="document"
             resolveImage={resolveImage}
             imageScope={project.id}
-            placeholder="# 标注指引\n请描述类别定义、易混淆边界、典型反例…"
+            placeholder="输入类别定义、易混淆边界和典型反例…"
           />
         </Suspense>
 

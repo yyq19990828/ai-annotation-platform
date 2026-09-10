@@ -35,7 +35,7 @@ import {
   type WorkbenchPetDock,
   type WorkbenchPetProps,
 } from "./pet/WorkbenchPet";
-import { GuidePanel } from "../sidebar/GuidePanel";
+import { GuidePanel, guidePanelScopeKey } from "../sidebar/GuidePanel";
 import {
   WorkbenchDockWorkspace,
   type WorkbenchDockWorkspaceProps,
@@ -64,7 +64,7 @@ interface WorkbenchLayoutProps {
   conflict: ComponentProps<typeof ConflictModal>;
   rejectModal?: ComponentProps<typeof RejectReasonModal>;
   deleteConfirm?: ComponentProps<typeof DeleteConfirmModal>;
-  // v0.10.13 · E1 · 标注指引浮层 (可选; 项目无 guide 时不渲染).
+  // v0.10.13 · E1 · 顶栏标注指引入口 (可选; 项目无 guide 时不渲染).
   guidePanel?: ComponentProps<typeof GuidePanel>;
   // v0.11.5 · B 组 · 右栏下段统一讨论面板 (转正; 上 AIInspectorPanel + 下 DiscussionPanel 两段固定).
   discussionPanel: ComponentProps<typeof DiscussionPanel>;
@@ -167,6 +167,15 @@ export function WorkbenchLayout({
           <>
             <Topbar
               {...topbar}
+              guideSlot={
+                guidePanel ? (
+                  <GuidePanel
+                    key={guidePanelScopeKey(guidePanel)}
+                    {...guidePanel}
+                    projectName={topbar.projectName}
+                  />
+                ) : undefined
+              }
               layoutMenuSlot={menu}
               layoutDisabled={state.disabled}
               sides={state.sides}
@@ -252,7 +261,6 @@ export function WorkbenchLayout({
       <ConflictModal {...conflict} />
       {rejectModal && <RejectReasonModal {...rejectModal} />}
       {deleteConfirm && <DeleteConfirmModal {...deleteConfirm} />}
-      {guidePanel && <GuidePanel {...guidePanel} />}
     </div>
   );
 }

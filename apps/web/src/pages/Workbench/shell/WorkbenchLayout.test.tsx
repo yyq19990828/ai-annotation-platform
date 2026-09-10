@@ -47,7 +47,9 @@ vi.mock("./WorkbenchBanners", () => ({
   WorkbenchBanners: () => <div data-testid="banners" />,
 }));
 vi.mock("./Topbar", () => ({
-  Topbar: () => <div data-testid="topbar" />,
+  Topbar: ({ guideSlot }: { guideSlot?: React.ReactNode }) => (
+    <div data-testid="topbar">{guideSlot}</div>
+  ),
 }));
 vi.mock("./WorkbenchStageHost", () => ({
   WorkbenchStageHost: forwardRef(function WorkbenchStageHost(
@@ -99,6 +101,7 @@ vi.mock("./DeleteConfirmModal", () => ({
 }));
 vi.mock("../sidebar/GuidePanel", () => ({
   GuidePanel: () => <div data-testid="guide-panel" />,
+  guidePanelScopeKey: () => "guide-scope",
 }));
 
 import { WorkbenchLayout } from "./WorkbenchLayout";
@@ -166,7 +169,7 @@ describe("WorkbenchLayout", () => {
     expect(screen.queryByTestId("guide-panel")).toBeNull();
   });
 
-  it("renders optional modals and guidePanel when provided", () => {
+  it("renders optional modals and guidePanel in the topbar slot when provided", () => {
     render(
       <WorkbenchLayout
         {...baseProps}
@@ -179,6 +182,7 @@ describe("WorkbenchLayout", () => {
     expect(screen.getByTestId("reject-modal")).toBeTruthy();
     expect(screen.getByTestId("delete-confirm-modal")).toBeTruthy();
     expect(screen.getByTestId("guide-panel")).toBeTruthy();
+    expect(screen.getByTestId("guide-panel").parentElement).toBe(screen.getByTestId("topbar"));
   });
 
   it("在中间画布定位容器内渲染 stage overlay", () => {

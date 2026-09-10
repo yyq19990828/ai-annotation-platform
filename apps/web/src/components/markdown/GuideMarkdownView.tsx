@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, type RefObject } from "react";
 
 import MarkdownView from "./MarkdownView";
 import type { MarkdownImageResolver } from "./types";
@@ -15,6 +15,8 @@ interface GuideMarkdownViewProps {
   resolveImage?: MarkdownImageResolver;
   /** 项目/文档身份，用于隔离图片解析的异步回调. */
   imageScope?: string;
+  /** Mount image previews in the owning guide dialog. */
+  modalContainerRef?: RefObject<HTMLElement | null>;
 }
 
 /**
@@ -29,6 +31,7 @@ export function GuideMarkdownView({
   resolveAssetUrl,
   resolveImage: providedResolver,
   imageScope,
+  modalContainerRef,
 }: GuideMarkdownViewProps) {
   const resolveImage = useMemo<MarkdownImageResolver | undefined>(() => {
     if (providedResolver) return providedResolver;
@@ -44,7 +47,14 @@ export function GuideMarkdownView({
     };
   }, [providedResolver, resolveAssetUrl]);
 
-  return <MarkdownView content={content} resolveImage={resolveImage} imageScope={imageScope} />;
+  return (
+    <MarkdownView
+      content={content}
+      resolveImage={resolveImage}
+      imageScope={imageScope}
+      modalContainerRef={modalContainerRef}
+    />
+  );
 }
 
 export default GuideMarkdownView;

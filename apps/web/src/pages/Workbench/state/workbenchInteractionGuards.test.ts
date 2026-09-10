@@ -45,6 +45,7 @@ it.each([
 
 describe.each([
   "workbenchSettings",
+  "workbenchGuide",
   "workbenchToolMenu",
   "workbenchVideoToolConfirm",
   "workbenchIssueCreate",

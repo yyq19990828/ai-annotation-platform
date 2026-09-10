@@ -27,6 +27,8 @@ interface TopbarProps {
   onBack?: () => void;
   onToggleSide?: (side: WorkspaceSide) => void;
   sides?: Record<WorkspaceSide, WorkspaceSideState>;
+  /** 工作台标注指引入口；由布局层按当前项目作用域提供。 */
+  guideSlot?: React.ReactNode;
   layoutMenuSlot?: React.ReactNode;
   layoutDisabled?: boolean;
   onRunAi?: () => void;
@@ -94,6 +96,7 @@ export function Topbar({
   onBack,
   onToggleSide,
   sides = { left: "empty", right: "empty" },
+  guideSlot,
   layoutMenuSlot,
   layoutDisabled = false,
   onRunAi,
@@ -472,6 +475,7 @@ export function Topbar({
               )}
             </>
           )}
+          {guideSlot && <div className="flex shrink-0 items-center">{guideSlot}</div>}
           <div className="flex items-center gap-1.5 @max-[700px]:hidden">
             <Button
               variant="ghost"

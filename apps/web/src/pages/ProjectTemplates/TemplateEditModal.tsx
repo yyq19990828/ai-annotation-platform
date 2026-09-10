@@ -252,7 +252,7 @@ export function TemplateEditModal({ open, onClose, initial }: Props) {
                   label="模板标注指引编辑器"
                   variant="document"
                   disabled={submitting}
-                  placeholder="# 类别定义\n..."
+                  placeholder="输入类别定义和标注规则…"
                 />
               </Suspense>
               {!annotationGuide.trim() && (
