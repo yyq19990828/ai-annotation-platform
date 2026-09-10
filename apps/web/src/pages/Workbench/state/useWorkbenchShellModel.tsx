@@ -6406,8 +6406,8 @@ export function useWorkbenchShellModel({
   // 图片单选注入真实内容(改类 / 锁 / 隐藏 / 删除 / 几何 / 属性);视频单选搬入完整轨迹面板。
   const selectionCardEligible = stageKind === "image" || stageKind === "video";
   // Review permits manual corrections; inference needs annotation authority independently.
-  const canUseSecondaryInference =
-    stageKind === "image" && mode === "annotate" && hasPermission("task.annotate");
+  const canConfigureSecondaryInference = mode === "annotate" && hasPermission("task.annotate");
+  const canUseSecondaryInference = stageKind === "image" && canConfigureSecondaryInference;
   const selectedIds = s.selectedIds;
   const selectionCount = selectedIds.length;
   // Only a visible tracking panel temporarily folds the selection card. A parked session
@@ -8008,7 +8008,7 @@ export function useWorkbenchShellModel({
       hideOrphanAnnotations,
       onToggleHideOrphans: () => setHideOrphanAnnotations((value) => !value),
       secondaryBarHidden,
-      onToggleSecondaryBar: canUseSecondaryInference
+      onToggleSecondaryBar: canConfigureSecondaryInference
         ? () => setSecondaryBarHidden(!secondaryBarHidden)
         : undefined,
     },
