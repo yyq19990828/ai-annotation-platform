@@ -3,12 +3,14 @@ audience: [annotator, reviewer, project_admin, super_admin]
 type: reference
 since: v0.10.50
 status: stable
-last_reviewed: 2026-06-10
+last_reviewed: 2026-09-10
 ---
 
 # 通知中心
 
 右上角铃铛是个人通知中心。通知会持久保存，浏览器离线或 WebSocket 断开后，重新打开面板仍能看到未读消息。面板按时间分组，并支持按类型筛选。
+
+顶栏的性能监控、后台任务和通知使用相同大小及位置的面板，内容较多时在面板内滚动。点击面板外任意位置、再次点击当前按钮或按 `Esc` 均可关闭；点击另一个入口直接切换面板。窄屏会自动缩小面板，性能监控展开趋势图时保持外框大小。
 
 ![通知中心面板](../images/notifications/panel-overview.png)
 

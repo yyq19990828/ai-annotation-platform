@@ -42,6 +42,7 @@ export function TopBar({
   onOpenDrawer,
 }: TopBarProps) {
   const user = useAuthStore((s) => s.user);
+  const perfHudVisible = usePerfHudStore((s) => s.visible);
   const logout = useLogout();
   const qc = useQueryClient();
   const isFetching = useIsFetching();
@@ -148,7 +149,11 @@ export function TopBar({
               title="性能监控 (Ctrl+Shift+P)"
               onClick={() => usePerfHudStore.getState().toggle()}
               aria-label="切换性能监控浮窗"
-              className={ICON_BTN_CLASS}
+              aria-haspopup="dialog"
+              aria-expanded={perfHudVisible}
+              aria-controls={perfHudVisible ? "shell-popover-performance" : undefined}
+              data-shell-popover-trigger="performance"
+              className={clsx(ICON_BTN_CLASS, perfHudVisible && "border-border bg-muted")}
             >
               <Icon name="activity" size={15} />
             </button>

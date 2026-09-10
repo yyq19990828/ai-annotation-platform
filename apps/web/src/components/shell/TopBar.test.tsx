@@ -31,7 +31,10 @@ vi.mock("./PreannotateJobsBadge", () => ({ PreannotateJobsBadge: () => null }));
 vi.mock("./JobsBell", () => ({ JobsBell: () => null }));
 vi.mock("@/components/CommandPalette", () => ({ CommandPalette: () => null }));
 vi.mock("@/components/PerfHud", () => ({
-  usePerfHudStore: { getState: () => ({ toggle: vi.fn() }) },
+  usePerfHudStore: Object.assign(
+    (selector: (state: { visible: boolean }) => unknown) => selector({ visible: false }),
+    { getState: () => ({ toggle: vi.fn() }) },
+  ),
 }));
 
 import type { MeResponse } from "@/api/auth";

@@ -14,13 +14,13 @@ import {
 import type { NotificationItem } from "@/api/notifications";
 import { isCurrentAuthOwner, useAuthStore } from "@/stores/authStore";
 import { useBugDrawerStore } from "@/stores/bugDrawerStore";
-import { DropdownMenu } from "@/components/ui/DropdownMenu";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { AsyncJobDetailModal } from "@/components/jobs/AsyncJobDetailModal";
 import { ApiError } from "@/api/client";
 import { tasksApi } from "@/api/tasks";
 import { batchesApi } from "@/api/batches";
+import { ShellPopover, SHELL_POPOVER_HEADER_CLASS } from "./ShellPopover";
 import {
   buildReviewWorkbenchUrl,
   buildWorkbenchUrl,
@@ -316,8 +316,7 @@ function NotifRow({ item, onClick, onDelete, deletePending }: NotifRowProps) {
 }
 
 /**
- * v0.7.6 · 自包含 trigger + popover；v0.9.3 改用 DropdownMenu content 模式以统一外观与键盘行为。
- * 触发按钮保留特殊视觉（铃铛 + 未读红点）；面板内容沿用原 header + 列表。
+ * Notification trigger and list share the top-bar panel's geometry and dismissal.
  */
 export function NotificationsPopover() {
   const navigate = useNavigate();
@@ -326,6 +325,7 @@ export function NotificationsPopover() {
   const openBugDrawer = useBugDrawerStore((s) => s.openDrawer);
   const { data: unreadData } = useUnreadCount();
   const unread = unreadData?.unread ?? 0;
+  const [open, setOpen] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [target, setTarget] = useState<{ item: NotificationItem; error: string | null } | null>(
     null,
@@ -334,6 +334,7 @@ export function NotificationsPopover() {
   const userId = useAuthStore((state) => state.user?.id);
   useEffect(() => {
     navigationRequest.current += 1;
+    setOpen(false);
     setTarget(null);
     setSelectedJobId(null);
     return () => {
@@ -380,32 +381,27 @@ export function NotificationsPopover() {
 
   return (
     <>
-      <DropdownMenu
-        align="end"
-        minWidth={0}
-        zIndex={200}
-        panelStyle={{ width: "min(520px, calc(100vw - 24px))" }}
-        disablePanelPadding
-        trigger={({ open, toggle, ref }) => (
-          <button
-            ref={ref}
-            type="button"
-            title="通知"
-            aria-haspopup="menu"
-            aria-expanded={open}
-            onClick={toggle}
-            className={clsx(
-              "relative inline-flex h-[30px] w-[30px] cursor-pointer appearance-none items-center justify-center rounded-md border border-transparent bg-transparent text-muted-foreground",
-              open && "bg-muted",
-            )}
-          >
-            <Icon name="bell" size={15} />
-            {unread > 0 && (
-              <span className="absolute right-[5px] top-1.5 h-[7px] w-[7px] rounded-full border-[1.5px] border-card bg-rose-500" />
-            )}
-          </button>
+      <button
+        type="button"
+        title="通知"
+        aria-label="通知"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-controls={open ? "shell-popover-notifications" : undefined}
+        data-shell-popover-trigger="notifications"
+        onClick={() => setOpen((value) => !value)}
+        className={clsx(
+          "relative inline-flex h-[30px] w-[30px] cursor-pointer appearance-none items-center justify-center rounded-md border border-transparent bg-transparent text-muted-foreground",
+          open && "bg-muted",
         )}
-        content={({ close }) => (
+      >
+        <Icon name="bell" size={15} />
+        {unread > 0 && (
+          <span className="absolute right-[5px] top-1.5 h-[7px] w-[7px] rounded-full border-[1.5px] border-card bg-status-danger" />
+        )}
+      </button>
+      {open && (
+        <ShellPopover id="notifications" label="通知" onClose={() => setOpen(false)}>
           <NotificationsPanel
             unread={unread}
             onItemClick={(item) => {
@@ -420,11 +416,11 @@ export function NotificationsPopover() {
               } else if (item.target_type === "export" || item.target_type === "async_job") {
                 setSelectedJobId(item.target_id);
               }
-              close();
+              setOpen(false);
             }}
           />
-        )}
-      />
+        </ShellPopover>
+      )}
       {selectedJobId && (
         <AsyncJobDetailModal
           key={selectedJobId}
@@ -500,10 +496,10 @@ function NotificationsPanel({
   };
 
   return (
-    <div className="w-full overflow-hidden rounded-md">
-      <div className="flex items-center justify-between border-b border-border px-3.5 pb-2.5 pt-3">
-        <span className="text-sm font-semibold">通知{unread > 0 ? ` · ${unread} 未读` : ""}</span>
-        <div className="flex items-center gap-2.5">
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden">
+      <div className={`${SHELL_POPOVER_HEADER_CLASS} justify-between`}>
+        <span className="font-semibold">通知{unread > 0 ? ` · ${unread} 未读` : ""}</span>
+        <div className="flex items-center gap-2.5 whitespace-nowrap">
           {hasRead && (
             <button
               type="button"
@@ -528,7 +524,7 @@ function NotificationsPanel({
       </div>
 
       <div
-        className="grid grid-cols-[repeat(auto-fit,minmax(62px,1fr))] gap-1.5 border-b border-border px-3.5 py-2.5"
+        className="grid shrink-0 grid-cols-3 gap-1.5 border-b border-border px-3.5 py-2.5 sm:grid-cols-6"
         role="tablist"
         aria-label="通知类型筛选"
       >
@@ -539,7 +535,7 @@ function NotificationsPanel({
             role="tab"
             aria-selected={activeFilter === filter.key}
             className={clsx(
-              "min-h-[30px] cursor-pointer appearance-none rounded-sm border px-2 py-1.5 text-center text-xs leading-[1.2]",
+              "min-h-[30px] cursor-pointer appearance-none whitespace-nowrap rounded-sm border px-1 py-1.5 text-center text-xs leading-[1.2]",
               activeFilter === filter.key
                 ? "border-brand bg-brand/10 text-brand"
                 : "border-transparent bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -551,9 +547,9 @@ function NotificationsPanel({
         ))}
       </div>
 
-      <div className="max-h-[min(560px,62vh)] min-h-[260px] overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto">
         {isEmpty || isFilteredEmpty ? (
-          <div className="flex min-h-[260px] flex-col items-center justify-center px-3.5 py-6 text-center text-sm text-muted-foreground">
+          <div className="flex h-full flex-col items-center justify-center px-3.5 py-6 text-center text-sm text-muted-foreground">
             <Icon name="bell" size={22} className="mb-1.5 opacity-25" />
             <div>{isFilteredEmpty ? "暂无此类型通知" : "暂无通知"}</div>
           </div>
@@ -581,7 +577,7 @@ function NotificationsPanel({
         )}
       </div>
       {notificationsQ.hasNextPage && (
-        <div className="border-t border-border px-3.5 py-2.5">
+        <div className="shrink-0 border-t border-border px-3.5 py-2.5">
           <button
             type="button"
             className="w-full cursor-pointer appearance-none rounded-sm border border-border bg-muted px-2.5 py-2 text-xs text-brand disabled:cursor-not-allowed disabled:text-muted-foreground"

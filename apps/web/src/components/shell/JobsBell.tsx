@@ -7,7 +7,7 @@
  * pub/sub 通道的任务），同时记录终态历史。
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@/components/ui/Icon";
@@ -27,6 +27,7 @@ import {
   type AsyncJobStatus,
 } from "@/api/asyncJobs";
 import { isCurrentAuthOwner, useAuthStore } from "@/stores/authStore";
+import { ShellPopover, SHELL_POPOVER_HEADER_CLASS } from "./ShellPopover";
 
 const POLL_INTERVAL_MS = 5000;
 
@@ -313,7 +314,6 @@ export function JobsBell() {
   const [open, setOpen] = useState(false);
   const [selectedJob, setSelectedJob] = useState<{ id: string; ownerKey: string } | null>(null);
   const [renderedOwnerKey, setRenderedOwnerKey] = useState(ownerKey);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const queryClient = useQueryClient();
   const pushToast = useToastStore((state) => state.push);
 
@@ -434,11 +434,14 @@ export function JobsBell() {
   return (
     <div className="relative">
       <button
-        ref={triggerRef}
         type="button"
         onClick={() => setOpen((o) => !o)}
         title="后台任务"
         aria-label="后台任务"
+        aria-haspopup="dialog"
+        aria-expanded={open && renderedOwnerKey === ownerKey}
+        aria-controls={open ? "shell-popover-jobs" : undefined}
+        data-shell-popover-trigger="jobs"
         className={`relative inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-sm border bg-transparent transition-colors duration-100 ${
           open
             ? "border-border bg-muted text-foreground"
@@ -458,113 +461,106 @@ export function JobsBell() {
       </button>
 
       {open && renderedOwnerKey === ownerKey && (
-        <>
-          <div onClick={() => setOpen(false)} className="fixed inset-0 z-notification-backdrop" />
-          <div
-            role="dialog"
-            aria-label="后台任务"
-            className="absolute right-0 top-[calc(100%+6px)] z-notification flex max-h-[480px] w-[min(420px,calc(100vw-24px))] min-w-0 flex-col overflow-hidden rounded-md border border-border bg-popover shadow-lg"
-          >
-            <div className="flex items-center justify-between border-b border-border px-3 py-2.5 text-xs font-semibold text-muted-foreground">
-              <span>后台任务 {runningCount > 0 ? `(${runningCount} 进行中)` : ""}</span>
-            </div>
-            <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
-              <div
-                role="tablist"
-                aria-label="任务筛选"
-                className="inline-flex rounded-sm bg-muted p-0.5"
+        <ShellPopover id="jobs" label="后台任务" onClose={() => setOpen(false)}>
+          <div className={`${SHELL_POPOVER_HEADER_CLASS} font-semibold`}>
+            <span>后台任务 {runningCount > 0 ? `(${runningCount} 进行中)` : ""}</span>
+          </div>
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2">
+            <div
+              role="tablist"
+              aria-label="任务筛选"
+              className="inline-flex rounded-sm bg-muted p-0.5"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={filter === "all"}
+                onClick={() => changeFilter("all")}
+                className={`cursor-pointer appearance-none rounded-sm border-0 bg-transparent px-2.5 py-1 text-xs font-semibold transition-colors duration-100 ${
+                  filter === "all"
+                    ? "bg-popover text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                data-testid="jobs-bell-filter-all"
               >
+                全部
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={filter === "active"}
+                onClick={() => changeFilter("active")}
+                className={`cursor-pointer appearance-none rounded-sm border-0 bg-transparent px-2.5 py-1 text-xs font-semibold transition-colors duration-100 ${
+                  filter === "active"
+                    ? "bg-popover text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                data-testid="jobs-bell-filter-active"
+              >
+                进行中
+              </button>
+            </div>
+            {visibleTerminalIds.length > 0 && (
+              <button
+                type="button"
+                onClick={dismissAllTerminal}
+                className="cursor-pointer appearance-none rounded-sm border border-border bg-transparent px-2 py-1 text-xs font-semibold text-muted-foreground transition-colors duration-100 hover:border-muted-foreground hover:bg-muted hover:text-foreground"
+                data-testid="jobs-bell-clear-terminal"
+              >
+                清空已结束
+              </button>
+            )}
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto p-1">
+            {jobsQuery.isError && (
+              <div role="alert" className="space-y-2 px-3 py-2 text-xs text-status-danger">
+                <p className="m-0">后台任务加载失败，已有记录已保留。</p>
                 <button
                   type="button"
-                  role="tab"
-                  aria-selected={filter === "all"}
-                  onClick={() => changeFilter("all")}
-                  className={`cursor-pointer appearance-none rounded-sm border-0 bg-transparent px-2.5 py-1 text-xs font-semibold transition-colors duration-100 ${
-                    filter === "all"
-                      ? "bg-popover text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                  data-testid="jobs-bell-filter-all"
+                  onClick={() => void jobsQuery.refetch()}
+                  className="rounded border border-border px-2 py-1 text-foreground"
                 >
-                  全部
-                </button>
-                <button
-                  type="button"
-                  role="tab"
-                  aria-selected={filter === "active"}
-                  onClick={() => changeFilter("active")}
-                  className={`cursor-pointer appearance-none rounded-sm border-0 bg-transparent px-2.5 py-1 text-xs font-semibold transition-colors duration-100 ${
-                    filter === "active"
-                      ? "bg-popover text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                  data-testid="jobs-bell-filter-active"
-                >
-                  进行中
+                  重新加载
                 </button>
               </div>
-              {visibleTerminalIds.length > 0 && (
-                <button
-                  type="button"
-                  onClick={dismissAllTerminal}
-                  className="cursor-pointer appearance-none rounded-sm border border-border bg-transparent px-2 py-1 text-xs font-semibold text-muted-foreground transition-colors duration-100 hover:border-muted-foreground hover:bg-muted hover:text-foreground"
-                  data-testid="jobs-bell-clear-terminal"
-                >
-                  清空已结束
-                </button>
-              )}
-            </div>
-            <div className="flex-1 overflow-y-auto p-1">
-              {jobsQuery.isError && (
-                <div role="alert" className="space-y-2 px-3 py-2 text-xs text-status-danger">
-                  <p className="m-0">后台任务加载失败，已有记录已保留。</p>
-                  <button
-                    type="button"
-                    onClick={() => void jobsQuery.refetch()}
-                    className="rounded border border-border px-2 py-1 text-foreground"
-                  >
-                    重新加载
-                  </button>
-                </div>
-              )}
-              {jobsQuery.isPending ? (
-                <p role="status" className="px-3 py-5 text-center text-xs text-muted-foreground">
-                  {jobsQuery.fetchStatus === "paused"
-                    ? "当前离线，联网后加载任务"
-                    : "正在加载后台任务…"}
-                </p>
-              ) : !jobsQuery.isError && visibleJobs.length === 0 ? (
-                <div className="px-3 py-5 text-center text-xs text-muted-foreground">
-                  {filter === "active" ? "暂无进行中任务" : "暂无后台任务"}
-                </div>
-              ) : (
-                visibleJobs.map((j) => (
-                  <JobRow
-                    key={j.id}
-                    job={j}
-                    onDismiss={dismissOne}
-                    onCancel={(jobId) => cancelMut.mutate(jobId)}
-                    onDetail={(jobId) => {
-                      setOpen(false);
-                      setSelectedJob({ id: jobId, ownerKey });
-                    }}
-                    cancelPending={cancelMut.isPending && cancelMut.variables === j.id}
-                  />
-                ))
-              )}
-              {jobsQuery.hasNextPage && (
-                <button
-                  type="button"
-                  onClick={() => void jobsQuery.fetchNextPage()}
-                  disabled={jobsQuery.isFetchingNextPage}
-                  className="w-full rounded-sm px-3 py-2 text-xs font-medium text-brand hover:bg-muted disabled:opacity-50"
-                >
-                  {jobsQuery.isFetchingNextPage ? "正在加载…" : "加载更早任务"}
-                </button>
-              )}
-            </div>
+            )}
+            {jobsQuery.isPending ? (
+              <p role="status" className="px-3 py-5 text-center text-xs text-muted-foreground">
+                {jobsQuery.fetchStatus === "paused"
+                  ? "当前离线，联网后加载任务"
+                  : "正在加载后台任务…"}
+              </p>
+            ) : !jobsQuery.isError && visibleJobs.length === 0 ? (
+              <div className="px-3 py-5 text-center text-xs text-muted-foreground">
+                {filter === "active" ? "暂无进行中任务" : "暂无后台任务"}
+              </div>
+            ) : (
+              visibleJobs.map((j) => (
+                <JobRow
+                  key={j.id}
+                  job={j}
+                  onDismiss={dismissOne}
+                  onCancel={(jobId) => cancelMut.mutate(jobId)}
+                  onDetail={(jobId) => {
+                    setOpen(false);
+                    setSelectedJob({ id: jobId, ownerKey });
+                  }}
+                  cancelPending={cancelMut.isPending && cancelMut.variables === j.id}
+                />
+              ))
+            )}
+            {jobsQuery.hasNextPage && (
+              <button
+                type="button"
+                onClick={() => void jobsQuery.fetchNextPage()}
+                disabled={jobsQuery.isFetchingNextPage}
+                className="w-full rounded-sm px-3 py-2 text-xs font-medium text-brand hover:bg-muted disabled:opacity-50"
+              >
+                {jobsQuery.isFetchingNextPage ? "正在加载…" : "加载更早任务"}
+              </button>
+            )}
           </div>
-        </>
+        </ShellPopover>
       )}
       {selectedJob && selectedJob.ownerKey === ownerKey && renderedOwnerKey === ownerKey && (
         <AsyncJobDetailModal
