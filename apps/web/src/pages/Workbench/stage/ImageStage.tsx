@@ -83,7 +83,11 @@ import {
   shouldRenderImageAnnotationShape,
   siblingHighlightChildren,
 } from "./ImageStage.helpers";
-import { canTranslateAnnotationGeometry, translateGeometry } from "../state/geometryTranslate";
+import {
+  canTranslateAnnotationGeometry,
+  clamp01,
+  translateGeometry,
+} from "../state/geometryTranslate";
 import { BOX_LABEL_FONT_FAMILY } from "./boxVisual";
 import {
   buildLabelText,
@@ -133,6 +137,14 @@ type Drag =
     }
   | { kind: "samScribble"; points: [number, number][]; alt: boolean }
   | { kind: "move"; id: string; start: Geom; sx: number; sy: number; cur: Geom; alt: boolean }
+  | {
+      kind: "moveRotatedBox";
+      id: string;
+      start: RotatedBboxGeometry;
+      sx: number;
+      sy: number;
+      cur: RotatedBboxGeometry;
+    }
   | {
       kind: "resize";
       id: string;
@@ -285,7 +297,7 @@ interface ImageStageProps {
   onCommitDrawing?: (geo: Geom) => void;
   /** v0.10.28 · 旋转框: 拖出轴对齐矩形松手 → 提交 angle=0 的 rotated_bbox (类别用 activeClass)。 */
   onCommitRotatedBbox?: (geo: Geom) => void;
-  /** v0.10.28 · 旋转框: 旋转 / 缩放手柄落定 → 更新完整 RotatedBboxGeometry。 */
+  /** 旋转框移动、旋转或缩放结束后更新完整几何。 */
   onCommitRotateBbox?: (
     id: string,
     before: RotatedBboxGeometry,
@@ -1214,6 +1226,20 @@ export function ImageStage({
             return { ...cur, cur: next };
           }),
         );
+      } else if (d.kind === "moveRotatedBox") {
+        schedule(() =>
+          setDrag((cur) => {
+            if (!cur || cur.kind !== "moveRotatedBox") return cur;
+            return {
+              ...cur,
+              cur: {
+                ...cur.start,
+                cx: clamp01(cur.start.cx + pt.x - cur.sx),
+                cy: clamp01(cur.start.cy + pt.y - cur.sy),
+              },
+            };
+          }),
+        );
       } else if (d.kind === "resizeRotatedBox") {
         const shiftKey = e.shiftKey;
         const altKey = e.altKey;
@@ -1411,6 +1437,10 @@ export function ImageStage({
               d.cur.h !== d.start.h)
           ) {
             onCommitResize?.(d.id, d.start, d.cur);
+          }
+        } else if (d.kind === "moveRotatedBox") {
+          if (rotatedBboxChanged(d.start, d.cur)) {
+            onCommitRotateBbox?.(d.id, d.start, d.cur);
           }
         } else if (d.kind === "resizeRotatedBox") {
           if (d.cur.w > 0.005 && d.cur.h > 0.005 && rotatedBboxChanged(d.start, d.cur)) {
@@ -2197,7 +2227,8 @@ export function ImageStage({
                 // v0.20.22 · 优先级: drag(实时拖拽) > pendingGeom(松手在途) > b.geometry。
                 const rotPending = rotatedOverride(b.id);
                 const liveGeometry =
-                  drag?.kind === "resizeRotatedBox" && drag.id === b.id
+                  (drag?.kind === "resizeRotatedBox" || drag?.kind === "moveRotatedBox") &&
+                  drag.id === b.id
                     ? drag.cur
                     : (rotPending ?? g);
                 // 拖拽中实时角度 override (rotateBox)。
@@ -2223,6 +2254,22 @@ export function ImageStage({
                     imgH={imgH}
                     scale={vp.scale}
                     onClick={(evt) => handleUserShapeClick(b.id, evt)}
+                    onMoveStart={
+                      isPrimarySingleSelect
+                        ? (e) => {
+                            const pt = toImg(e.evt.clientX, e.evt.clientY);
+                            if (!pt) return;
+                            setDrag({
+                              kind: "moveRotatedBox",
+                              id: b.id,
+                              start: liveGeometry,
+                              sx: pt.x,
+                              sy: pt.y,
+                              cur: liveGeometry,
+                            });
+                          }
+                        : null
+                    }
                     onRotateStart={
                       isPrimarySingleSelect
                         ? (e) => {

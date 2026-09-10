@@ -475,6 +475,7 @@ interface KonvaRotatedBoxProps {
   imgH: number;
   scale: number;
   onClick: (e?: Konva.KonvaEventObject<MouseEvent>) => void;
+  onMoveStart?: ((e: Konva.KonvaEventObject<MouseEvent>) => void) | null;
   onRotateStart: ((e: Konva.KonvaEventObject<MouseEvent>) => void) | null;
   onResizeStart: ((dir: ResizeDirection, e: Konva.KonvaEventObject<MouseEvent>) => void) | null;
 }
@@ -495,6 +496,7 @@ export function KonvaRotatedBox({
   imgH,
   scale,
   onClick,
+  onMoveStart,
   onRotateStart,
   onResizeStart,
 }: KonvaRotatedBoxProps) {
@@ -536,6 +538,19 @@ export function KonvaRotatedBox({
         onClick={(e) => {
           e.cancelBubble = true;
           onClick(e);
+        }}
+        onMouseDown={(e) => {
+          if (!isUserSelected || !onMoveStart || e.evt.button !== 0) return;
+          e.cancelBubble = true;
+          onMoveStart(e);
+        }}
+        onMouseEnter={(e) => {
+          const stage = e.target.getStage();
+          if (stage && isUserSelected && onMoveStart) stage.container().style.cursor = "move";
+        }}
+        onMouseLeave={(e) => {
+          const stage = e.target.getStage();
+          if (stage) stage.container().style.cursor = "";
         }}
       />
 
