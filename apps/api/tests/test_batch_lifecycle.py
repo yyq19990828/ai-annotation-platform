@@ -958,6 +958,15 @@ class TestBulkOperations:
             user.id,
             statuses=["active", "annotating"],
         )
+        db_session.add(
+            ProjectMember(
+                project_id=p.id,
+                user_id=rev.id,
+                role="reviewer",
+                assigned_by=owner.id,
+            )
+        )
+        await db_session.flush()
         await db_session.commit()
 
         # 把 reviewer_id 改派为 rev（annotator_id 不变）

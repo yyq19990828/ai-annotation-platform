@@ -6,6 +6,20 @@ from pydantic import BaseModel
 from app.schemas.user import UserBrief
 
 
+class OnboardingProjectSummary(BaseModel):
+    """Server-observed progress for one employee's project checklist."""
+
+    project_id: UUID
+    assigned_task_count: int = 0
+    opened_task_count: int = 0
+    saved_annotation_count: int = 0
+    reviewed_task_count: int = 0
+    reviewed_task_id: UUID | None = None
+    reviewed_task_display_id: str | None = None
+    reviewed_task_status: Literal["completed", "rejected"] | None = None
+    reviewed_task_reason: str | None = None
+
+
 class RegistrationDayPoint(BaseModel):
     """v0.8.1 · 注册来源按日聚合：邀请 vs 开放注册。"""
 
@@ -42,6 +56,8 @@ class ReviewTaskItem(BaseModel):
     total_annotations: int
     total_predictions: int
     updated_at: str | None
+    # 返修后重新送审的任务，在 reviewer 首页单独标明，避免和首审混在一起。
+    is_rework: bool = False
 
     class Config:
         from_attributes = True

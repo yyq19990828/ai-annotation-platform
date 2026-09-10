@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { useAuthStore } from "@/stores/authStore";
 
 import type { AnnotationPayload, AnnotationUpdatePayload } from "@/api/tasks";
 import type { AnnotationResponse } from "@/types";
@@ -43,6 +44,7 @@ export function useThreeDHistory(
     updateAnnotation: UpdateMutation;
   },
 ) {
+  const userId = useAuthStore((state) => state.user?.id ?? "");
   const handlers = useMemo<HistoryHandlers>(
     () => ({
       createAnnotation: (payload) =>
@@ -73,5 +75,5 @@ export function useThreeDHistory(
     [mutations.createAnnotation, mutations.deleteAnnotation, mutations.updateAnnotation],
   );
 
-  return useAnnotationHistory(taskId ?? undefined, handlers);
+  return useAnnotationHistory(taskId ?? undefined, handlers, userId);
 }

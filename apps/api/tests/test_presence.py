@@ -8,6 +8,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.user import User
+from app.services.system_settings_service import SystemSettingsService
 from app.workers.presence import mark_inactive_offline_with_session
 
 
@@ -106,6 +107,34 @@ async def test_mark_inactive_offline_flips_stale_users(db_session: AsyncSession)
     assert null_seen.status == "offline"
     assert fresh.status == "online"  # 30s 前活跃，远低于 5min 阈值
     assert already_offline.status == "offline"  # 本就是 offline
+
+
+async def test_presence_scan_reads_runtime_threshold(db_session: AsyncSession):
+    """A subsequent beat scan uses the DB override without a worker restart."""
+
+    from app.core.security import hash_password
+
+    await SystemSettingsService.set_many(
+        db_session, {"offline_threshold_minutes": 2}, actor_id=None
+    )
+    await db_session.commit()
+    now = datetime.now(timezone.utc)
+    user = User(
+        email="presence-runtime-threshold@test.local",
+        name="Runtime threshold",
+        password_hash=hash_password("Test1234"),
+        role="annotator",
+        is_active=True,
+        status="online",
+        last_seen_at=now - timedelta(minutes=3),
+    )
+    db_session.add(user)
+    await db_session.flush()
+
+    result = await mark_inactive_offline_with_session(db_session)
+    assert result["threshold_minutes"] == 2
+    await db_session.refresh(user)
+    assert user.status == "offline"
 
 
 async def test_users_stats_endpoint_weekly_active(

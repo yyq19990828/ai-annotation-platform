@@ -20,6 +20,7 @@ function invalidateTaskAnnotations(qc: ReturnType<typeof useQueryClient>, taskId
 export function useAnnotationBulkUpdate(taskId: string) {
   const qc = useQueryClient();
   return useMutation<BulkUpdateResponse, Error, { ids: string[]; patch: AnnotationBulkPatch }>({
+    mutationKey: ["annotation-write", taskId],
     mutationFn: ({ ids, patch }) => annotationGroupApi.bulkUpdate({ ids, patch }),
     onSuccess: () => invalidateTaskAnnotations(qc, taskId),
   });

@@ -22,6 +22,7 @@ class TaskStatus(str, Enum):
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     REVIEW = "review"
+    REJECTED = "rejected"
 
 
 class BatchStatus(str, Enum):

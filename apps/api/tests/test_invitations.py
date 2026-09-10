@@ -169,6 +169,7 @@ async def test_invitation_mutations_use_database_locks() -> None:
     resolve_result.scalar_one_or_none.return_value = invitation
     resolve_db = AsyncMock(spec=AsyncSession)
     resolve_db.execute.return_value = resolve_result
+    resolve_db.scalar.return_value = actor
     await InvitationService.resolve(resolve_db, invitation.token, for_update=True)
     resolve_query = resolve_db.execute.await_args.args[0]
 
@@ -503,3 +504,37 @@ async def test_accept_invitation_rejects_legacy_group_name_over_100_characters(
         select(User).where(User.email == invitation.email)
     )
     assert created is None
+
+
+@pytest.mark.parametrize("offset_us", [-1, 0, 1])
+async def test_rolling_invitation_quota_boundary_is_inclusive_and_actor_scoped(
+    db_session, super_admin, project_admin, monkeypatch, offset_us
+):
+    from fastapi import HTTPException
+    from app.services.system_settings_service import SystemSettingsService
+    import app.services.invitation as invitation_module
+
+    now = datetime(2026, 9, 10, 1, 0, tzinfo=timezone.utc)
+
+    class FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now
+
+    monkeypatch.setattr(invitation_module, "datetime", FrozenDatetime)
+    monkeypatch.setattr(SystemSettingsService, "get", AsyncMock(return_value=1))
+    actor, _ = super_admin
+    other, _ = project_admin
+    row = await _invitation(db_session, invited_by=actor, email="boundary@invite.test")
+    row.created_at = now - timedelta(hours=24) + timedelta(microseconds=offset_us)
+    other_row = await _invitation(
+        db_session, invited_by=other, email="other-quota@invite.test"
+    )
+    other_row.created_at = now
+    await db_session.flush()
+    if offset_us >= 0:
+        with pytest.raises(HTTPException) as raised:
+            await InvitationService.check_daily_limit(db_session, actor.id)
+        assert raised.value.status_code == 429
+    else:
+        await InvitationService.check_daily_limit(db_session, actor.id)

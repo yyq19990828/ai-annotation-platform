@@ -22,7 +22,13 @@ from app.db.models.video_tracker_job import (
     VideoTrackerJob,
     VideoTrackerJobStatus,
 )
-from app.deps import get_current_user, get_db, require_roles, require_scopes
+from app.deps import (
+    get_current_user,
+    get_db,
+    require_roles,
+    require_scopes,
+    require_active_task_actor,
+)
 from app.schemas.video_tracker_job import (
     TrackerJobStatus,
     VideoTrackerDecisionRequest,
@@ -42,7 +48,7 @@ from app.services.video_tracking.jobs import (
 )
 from app.observability.metrics import observe_mask_ai_phase, record_mask_ai_operation
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_active_task_actor)])
 
 
 class VideoTrackerJobListItem(BaseModel):

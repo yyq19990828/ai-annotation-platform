@@ -13,14 +13,37 @@ const mockDeleteReset = vi.fn();
 const mockUseUsers = vi.fn();
 const mockUseUsersStats = vi.fn();
 vi.mock("@/hooks/useUsers", () => ({
-  useUsers: () => mockUseUsers(),
-  useUsersStats: () => mockUseUsersStats(),
+  useUsers: () => ({ data: [] }),
+  useUserPage: (params: any) => {
+    const response = mockUseUsers(params);
+    const items = response.data?.filter(
+      (user: any) =>
+        (!params.role || user.role === params.role) &&
+        (!params.search ||
+          `${user.name} ${user.email}`.toLowerCase().includes(params.search.toLowerCase())),
+    );
+    return {
+      ...response,
+      data: items && {
+        items,
+        total: response.total ?? items.length,
+        page: params.page,
+        page_size: params.page_size,
+        pages: response.pages ?? 1,
+      },
+    };
+  },
+  useUsersStats: (params: unknown) => mockUseUsersStats(params),
   useDeleteUser: () => ({
     mutateAsync: mockDeleteMutateAsync,
     isPending: false,
     error: null,
     reset: mockDeleteReset,
   }),
+}));
+
+vi.mock("@/hooks/useProjects", () => ({
+  useProjects: () => ({ data: [{ id: "project-1", name: "Test project" }] }),
 }));
 
 // --- useGroups ---
@@ -85,6 +108,14 @@ vi.mock("@/components/users/InviteUserModal", () => ({
   InviteUserModal: ({ open }: { open: boolean }) =>
     open ? <div data-testid="invite-modal">InviteModal</div> : null,
 }));
+vi.mock("@/components/users/BulkInviteModal", () => ({
+  BulkInviteModal: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="bulk-invite-modal">BulkInviteModal</div> : null,
+}));
+vi.mock("@/components/users/BulkGroupAssignmentModal", () => ({
+  BulkGroupAssignmentModal: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="bulk-group-modal">BulkGroupAssignmentModal</div> : null,
+}));
 vi.mock("@/components/users/EditUserModal", () => ({
   EditUserModal: ({ open }: { open: boolean }) =>
     open ? <div data-testid="edit-modal">EditModal</div> : null,
@@ -94,6 +125,12 @@ vi.mock("@/components/users/GroupManageModal", () => ({
 }));
 vi.mock("@/components/users/InvitationListPanel", () => ({
   InvitationListPanel: () => <div data-testid="invitation-panel">InvitationPanel</div>,
+}));
+vi.mock("@/components/users/OffboardingDialog", () => ({
+  OffboardingDialog: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="offboarding-dialog">OffboardingDialog</div> : null,
+  ReactivateDialog: ({ open }: { open: boolean }) =>
+    open ? <div data-testid="reactivate-dialog">ReactivateDialog</div> : null,
 }));
 
 // --- toast ---
@@ -131,6 +168,21 @@ const SAMPLE_USERS = [
     created_at: "2026-02-01T00:00:00Z",
   },
 ];
+
+const INACTIVE_USER = {
+  id: "u3",
+  name: "Emergency Bob",
+  email: "emergency@example.com",
+  role: "annotator",
+  is_active: false,
+  disabled_kind: "emergency_suspended",
+  disabled_at: "2026-09-08T10:00:00Z",
+  disabled_reason: "账号疑似泄露",
+  status: "offline",
+  group_id: null,
+  group_name: null,
+  created_at: "2026-03-01T00:00:00Z",
+};
 
 function renderUI() {
   return render(
@@ -226,5 +278,64 @@ describe("UsersPage", () => {
     const groupTab = screen.getAllByRole("button").find((b) => b.textContent?.includes("数据组"));
     fireEvent.click(groupTab!);
     expect(screen.getByText(/暂无数据组/)).toBeInTheDocument();
+  });
+
+  it("账号状态筛选显示已停用账号，并保留继续交接与恢复入口", () => {
+    mockUseUsers.mockReturnValue({ data: [INACTIVE_USER], isLoading: false });
+    renderUI();
+    fireEvent.change(screen.getByLabelText("账号状态"), { target: { value: "inactive" } });
+    expect(screen.getByText("Emergency Bob")).toBeInTheDocument();
+    expect(screen.getByText("紧急停用")).toBeInTheDocument();
+    expect(screen.getByTitle("继续交接")).toBeInTheDocument();
+    expect(screen.getByTitle("恢复账号")).toBeInTheDocument();
+    expect(screen.queryByTitle("删除账号")).not.toBeInTheDocument();
+  });
+
+  it("初次离线且没有用户数据时显示等待网络恢复，而不是空列表", () => {
+    mockUseUsers.mockReturnValue({
+      data: [],
+      isLoading: false,
+      isError: false,
+      fetchStatus: "paused",
+    });
+    renderUI();
+    expect(screen.getByText("暂时离线，等待网络恢复")).toBeInTheDocument();
+    expect(screen.getByText(/网络恢复后会自动继续加载用户列表/)).toBeInTheDocument();
+    expect(screen.queryByText(/暂无启用账号/)).not.toBeInTheDocument();
+  });
+
+  it("已有用户数据但请求暂停时保留旧数据并显示离线提示", () => {
+    mockUseUsers.mockReturnValue({
+      data: SAMPLE_USERS,
+      isLoading: false,
+      isError: false,
+      fetchStatus: "paused",
+    });
+    renderUI();
+    expect(screen.getByText("Alice")).toBeInTheDocument();
+    expect(screen.getByText(/当前离线，正在等待网络恢复/)).toBeInTheDocument();
+  });
+  it("paginates 1000 members and passes the same project and role filters to stats and export", async () => {
+    mockUseUsers.mockReturnValue({ data: SAMPLE_USERS, total: 1000, pages: 40, isLoading: false });
+    renderUI();
+    fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+    expect(mockUseUsers).toHaveBeenLastCalledWith(
+      expect.objectContaining({ page: 2, page_size: 25 }),
+    );
+    fireEvent.change(screen.getByLabelText("项目筛选"), { target: { value: "project-1" } });
+    fireEvent.change(screen.getByLabelText("角色筛选"), { target: { value: "annotator" } });
+    expect(mockUseUsers).toHaveBeenLastCalledWith(
+      expect.objectContaining({ project_id: "project-1", role: "annotator", page: 1 }),
+    );
+    expect(mockUseUsersStats).toHaveBeenLastCalledWith(
+      expect.objectContaining({ project_id: "project-1", role: "annotator", status: "active" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /导出名单/ }));
+    await waitFor(() =>
+      expect(mockExportUsers).toHaveBeenCalledWith(
+        "csv",
+        expect.objectContaining({ project_id: "project-1", role: "annotator", status: "active" }),
+      ),
+    );
   });
 });

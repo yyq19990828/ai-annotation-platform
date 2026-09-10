@@ -8,6 +8,7 @@ from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.task_lock import TaskLock
+from app.db.models.user import User
 
 # 退出重进时 acquire 与 release(DELETE)/并发 acquire 会在 task_locks 上交错加锁，
 # Postgres 可能判定死锁(40P01) / 序列化失败(40001)。死锁会 abort 整个事务，
@@ -18,6 +19,24 @@ _MAX_DEADLOCK_RETRY = 3
 
 class TaskLockConflictError(RuntimeError):
     pass
+
+
+async def assert_task_user_active(
+    db: AsyncSession, user_id: uuid.UUID, *, lock: bool = True
+) -> bool:
+    """Serialize task acquisition with account suspension.
+
+    The shared read lock is acquired before the per-task advisory lock. User
+    offboarding takes the matching User write lock before locking task rows, so
+    a request that passed authentication before suspension either commits its
+    task operation first or observes the inactive account and stops.
+    """
+
+    stmt = select(User.is_active).where(User.id == user_id)
+    if lock:
+        stmt = stmt.with_for_update(read=True)
+    active = (await db.execute(stmt)).scalar_one_or_none()
+    return bool(active)
 
 
 def _is_retryable_db_error(exc: DBAPIError) -> bool:
@@ -68,6 +87,8 @@ class TaskLockService:
         ttl: int | None = None,
         force_takeover: bool = False,
     ) -> TaskLock | None:
+        if not await assert_task_user_active(self.db, user_id):
+            return None
         await self._lock_task_scope(task_id)
         # B-6 修复：表上 unique 约束是 (task_id, user_id)，并不阻止同一 task_id 出现多行（不同用户）。
         # 历史并发 / 残留可能留下重复行，原本 scalar_one_or_none() 会抛 MultipleResultsFound → 500。

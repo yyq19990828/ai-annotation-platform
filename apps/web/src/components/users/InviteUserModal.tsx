@@ -5,6 +5,9 @@ import { Icon } from "@/components/ui/Icon";
 import { Badge } from "@/components/ui/Badge";
 import { useToastStore } from "@/components/ui/Toast";
 import { useInviteUser } from "@/hooks/useInvitation";
+import { useSendInvitationEmail } from "@/hooks/useInvitations";
+import { groupsApi, type GroupResponse } from "@/api/groups";
+import { projectsApi, type ProjectResponse } from "@/api/projects";
 import { ROLE_LABELS } from "@/constants/roles";
 import { usePermissions } from "@/hooks/usePermissions";
 import type { InvitationCreated } from "@/api/users";
@@ -24,20 +27,63 @@ const INVITABLE_ROLES_BY_ACTOR: Record<UserRole, UserRole[]> = {
   viewer: [],
 };
 
+const PROJECT_MEMBER_ROLES = new Set<UserRole>(["annotator", "reviewer", "viewer"]);
+
 export function InviteUserModal({ open, onClose }: Props) {
   const { role } = usePermissions();
   const allowedRoles = INVITABLE_ROLES_BY_ACTOR[role] ?? [];
   const [email, setEmail] = useState("");
   const [roleVal, setRoleVal] = useState<UserRole>(allowedRoles[0] ?? "annotator");
   const [groupName, setGroupName] = useState("");
+  const [projectId, setProjectId] = useState("");
+  const [projectQuery, setProjectQuery] = useState("");
+  const [groups, setGroups] = useState<GroupResponse[]>([]);
+  const [projects, setProjects] = useState<ProjectResponse[]>([]);
   const [result, setResult] = useState<InvitationCreated | null>(null);
   const invite = useInviteUser();
+  const sendEmail = useSendInvitationEmail();
   const pushToast = useToastStore((s) => s.push);
+
+  const selectableRoles = projectId
+    ? allowedRoles.filter((candidate) => PROJECT_MEMBER_ROLES.has(candidate))
+    : allowedRoles;
+
+  useEffect(() => {
+    if (projectId && !PROJECT_MEMBER_ROLES.has(roleVal)) {
+      setRoleVal(selectableRoles[0] ?? "annotator");
+    }
+  }, [projectId, roleVal, selectableRoles]);
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    void groupsApi
+      .list()
+      .then((items) => {
+        if (active) setGroups(Array.isArray(items) ? items : []);
+      })
+      .catch(() => {
+        if (active) setGroups([]);
+      });
+    void projectsApi
+      .list()
+      .then((items) => {
+        if (active) setProjects(Array.isArray(items) ? items : []);
+      })
+      .catch(() => {
+        if (active) setProjects([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) {
       setEmail("");
       setGroupName("");
+      setProjectId("");
+      setProjectQuery("");
       setRoleVal(allowedRoles[0] ?? "annotator");
       setResult(null);
       invite.reset();
@@ -53,6 +99,7 @@ export function InviteUserModal({ open, onClose }: Props) {
         email: email.trim().toLowerCase(),
         role: roleVal,
         group_name: groupName.trim() || undefined,
+        project_id: projectId || undefined,
       },
       {
         onSuccess: (data) => setResult(data),
@@ -68,6 +115,24 @@ export function InviteUserModal({ open, onClose }: Props) {
     } catch {
       pushToast({ msg: "复制失败，请手动选择" });
     }
+  };
+
+  const sendInvitationEmail = () => {
+    if (!result?.id || sendEmail.isPending) return;
+    sendEmail.mutate(result.id, {
+      onSuccess: (response) =>
+        pushToast({
+          msg: response.ok ? "邀请邮件已发送" : "邀请邮件未发送",
+          sub: response.message || `收件人：${response.email}`,
+          kind: response.ok ? "success" : "warning",
+        }),
+      onError: (error) =>
+        pushToast({
+          msg: "邀请邮件发送失败",
+          sub: error instanceof Error ? error.message : String(error),
+          kind: "warning",
+        }),
+    });
   };
 
   return (
@@ -93,7 +158,7 @@ export function InviteUserModal({ open, onClose }: Props) {
               onChange={(e) => setRoleVal(e.target.value as UserRole)}
               className={styles.input}
             >
-              {allowedRoles.map((r) => (
+              {selectableRoles.map((r) => (
                 <option key={r} value={r}>
                   {ROLE_LABELS[r]}
                 </option>
@@ -104,11 +169,48 @@ export function InviteUserModal({ open, onClose }: Props) {
           <Field label="数据组（可选）">
             <input
               type="text"
+              list="invite-group-options"
               value={groupName}
               onChange={(e) => setGroupName(e.target.value)}
               placeholder="例如：标注组A"
               className={styles.input}
             />
+            <datalist id="invite-group-options">
+              {groups.map((group) => (
+                <option key={group.id} value={group.name} />
+              ))}
+            </datalist>
+          </Field>
+
+          <Field label="目标项目（可选）">
+            <input
+              type="text"
+              list="invite-project-options"
+              value={projectQuery}
+              onChange={(e) => {
+                const value = e.target.value;
+                const project = projects.find(
+                  (candidate) =>
+                    candidate.id === value ||
+                    candidate.name === value ||
+                    candidate.display_id === value,
+                );
+                setProjectQuery(value);
+                setProjectId(project?.id ?? "");
+              }}
+              placeholder="输入或选择项目名称"
+              className={styles.input}
+            />
+            <datalist id="invite-project-options">
+              {projects.map((project) => (
+                <option key={project.id} value={project.name}>
+                  {project.display_id}
+                </option>
+              ))}
+            </datalist>
+            <div className={styles.fieldHint}>
+              留空表示接受后再分配项目。指定项目时，邀请角色会同时成为项目成员；项目管理员和超级管理员属于全局角色，不能作为项目成员职责。
+            </div>
           </Field>
 
           {invite.isError && (
@@ -136,7 +238,7 @@ export function InviteUserModal({ open, onClose }: Props) {
                 邀请已写入审计日志，链接 {formatExpiry(result.expires_at)} 内有效
               </div>
               <div className={styles.successText}>
-                请妥善转发链接给被邀请人。链接仅显示一次，本平台不会代为发送邮件。
+                请妥善转发链接给被邀请人。链接始终可复制；邮件发送需要在下方明确触发。
               </div>
             </div>
           </div>
@@ -159,12 +261,22 @@ export function InviteUserModal({ open, onClose }: Props) {
           <div className={styles.metaRow}>
             <Badge variant="outline">{ROLE_LABELS[roleVal]}</Badge>
             {groupName && <Badge variant="outline">{groupName}</Badge>}
+            {result.project_name && <Badge variant="outline">项目：{result.project_name}</Badge>}
             <span className={`mono ${styles.expiresAt}`}>
               过期：{new Date(result.expires_at).toLocaleString("zh-CN")}
             </span>
           </div>
 
           <div className={styles.actions}>
+            <Button
+              type="button"
+              onClick={sendInvitationEmail}
+              disabled={!result.id || sendEmail.isPending}
+              title={!result.id ? "当前 API 未返回邀请编号，请使用复制链接" : undefined}
+            >
+              <Icon name="mail" size={12} />
+              {sendEmail.isPending ? "发送中..." : "发送邀请邮件"}
+            </Button>
             <Button type="button" onClick={() => setResult(null)}>
               继续邀请
             </Button>

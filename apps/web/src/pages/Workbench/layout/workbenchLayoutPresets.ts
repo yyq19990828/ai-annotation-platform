@@ -9,6 +9,7 @@ import {
   type WorkspaceNode,
   type WorkspaceSnapshot,
 } from "./workbenchLayoutSnapshot";
+import { defaultDockWidth } from "./workbenchPanelRegistry";
 
 export const WORKSPACE_PRESETS = [
   { id: "standard", title: "标准标注" },
@@ -88,6 +89,7 @@ export function createWorkspacePreset(
   _context?: WorkspaceContext,
 ): WorkspaceSnapshot {
   const { width, height } = bounds;
+  const sidebarWidth = defaultDockWidth(width);
   const parked: PanelId[] =
     preset === "review"
       ? ["task-queue", "class-palette", "ai-task", "video-tracker"]
@@ -104,9 +106,9 @@ export function createWorkspacePreset(
           [
             branch(
               [
-                leaf("task-tools", ["task-queue", "class-palette"], width * 0.16),
-                leaf("canvas", ["canvas"], width * 0.58),
-                leaf("inspector", ["inspector", "ai-task"], width * 0.26, false, "ai-task"),
+                leaf("task-tools", ["task-queue", "class-palette"], sidebarWidth),
+                leaf("canvas", ["canvas"], width - sidebarWidth * 2),
+                leaf("inspector", ["inspector", "ai-task"], sidebarWidth, false, "ai-task"),
               ],
               height * 0.72,
             ),
@@ -118,12 +120,12 @@ export function createWorkspacePreset(
       : preset === "video-tracking"
         ? branch(
             [
-              leaf("task-tools", ["task-queue", "class-palette"], width * 0.16),
-              leaf("canvas", ["canvas"], width * 0.58),
+              leaf("task-tools", ["task-queue", "class-palette"], sidebarWidth),
+              leaf("canvas", ["canvas"], width - sidebarWidth * 2),
               leaf(
                 "video-tracker",
                 ["video-tracker", "inspector"],
-                width * 0.26,
+                sidebarWidth,
                 false,
                 "video-tracker",
               ),
@@ -136,8 +138,8 @@ export function createWorkspacePreset(
               [
                 branch(
                   [
-                    leaf("canvas", ["canvas"], width * 0.65),
-                    leaf("inspector", ["inspector"], width * 0.35),
+                    leaf("canvas", ["canvas"], width - sidebarWidth),
+                    leaf("inspector", ["inspector"], sidebarWidth),
                   ],
                   height * 0.7,
                 ),
@@ -153,15 +155,15 @@ export function createWorkspacePreset(
                     leaf("task-queue", ["task-queue"], height * 0.5),
                     leaf("class-palette", ["class-palette"], height * 0.5),
                   ],
-                  width * 0.15,
+                  sidebarWidth,
                 ),
-                leaf("canvas", ["canvas"], width * 0.7),
+                leaf("canvas", ["canvas"], width - sidebarWidth * 2),
                 branch(
                   [
                     leaf("inspector", ["inspector"], height * 0.5),
                     leaf("discussion", ["discussion"], height * 0.5),
                   ],
-                  width * 0.15,
+                  sidebarWidth,
                 ),
                 parking,
               ],

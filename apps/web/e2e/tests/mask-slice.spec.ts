@@ -314,10 +314,11 @@ async function reloadAndRead(page: Page, request: APIRequestContext, fixture: Ca
   return annotations;
 }
 function history(page: Page, taskId: string) {
-  return page.evaluate(
-    (id) => JSON.parse(sessionStorage.getItem(`wb:hist:${id}`) ?? "null"),
-    taskId,
-  ) as Promise<{ undo: unknown[]; redo: unknown[] }>;
+  return page.evaluate((id) => {
+    const userId = JSON.parse(localStorage.getItem("auth-storage") ?? "null")?.state?.user?.id;
+    if (!userId) throw new Error("Expected an authenticated workbench history owner");
+    return JSON.parse(sessionStorage.getItem(`wb:hist:${userId}:${id}`) ?? "null");
+  }, taskId) as Promise<{ undo: unknown[]; redo: unknown[] }>;
 }
 function allowHttpError(fixture: Case, path: string, status: number) {
   fixture.allowedErrors.add(`http:${path}:${status}`);
@@ -552,25 +553,27 @@ test("H4b-2 native center cuts, reversed endpoints, equal-area identity and zero
   const original = full(),
     source = await seedMask(request, fixture, original);
   await open(page, fixture);
-  // Fit media width to an even integer CSS scale so pixel centers have native integer coordinates.
-  await page.setViewportSize({ width: 1440, height: 1200 });
-  // Wait for the layout transition, then align native input to an integer image scale.
-  await page.waitForTimeout(400);
-  for (let attempt = 0; attempt < 8; attempt += 1) {
-    const measured = await bounds(page);
-    const target = Math.floor(measured.width / 128) * 128;
-    if (measured.width === target) break;
-    await page.setViewportSize({
-      width: page.viewportSize()!.width + target - Math.round(measured.width),
-      height: 1200,
-    });
-    await page.waitForTimeout(250);
-    await page.getByTitle("适应视口（双击空白）").click();
-    await page.waitForTimeout(100);
-  }
-  const adjusted = await bounds(page);
-  expect(adjusted.width % 128).toBe(0);
-  fixture.evidence.push({ nativeCenterMediaBounds: adjusted });
+  const fitNativePixelCenters = async () => {
+    // Reload restores panel proportions, so re-establish the pixel-center
+    // precondition before every cut instead of reusing the previous viewport.
+    await page.setViewportSize({ width: 1440, height: 1200 });
+    await page.waitForTimeout(400);
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const measured = await bounds(page);
+      const target = Math.floor(measured.width / 128) * 128;
+      if (measured.width === target) break;
+      await page.setViewportSize({
+        width: page.viewportSize()!.width + target - Math.round(measured.width),
+        height: 1200,
+      });
+      await page.waitForTimeout(250);
+      await page.getByTitle("适应视口（双击空白）").click();
+      await page.waitForTimeout(100);
+    }
+    const adjusted = await bounds(page);
+    expect(adjusted.width % 128).toBe(0);
+    fixture.evidence.push({ nativeCenterMediaBounds: adjusted });
+  };
   const center = 31.5 / 64;
   const paths: Array<[Point, Point]> = [
     [
@@ -587,6 +590,7 @@ test("H4b-2 native center cuts, reversed endpoints, equal-area identity and zero
     ],
   ];
   for (let index = 0; index < paths.length; index += 1) {
+    await fitNativePixelCenters();
     await begin(page, source.id);
     if (index === 0) {
       await draw(page, [

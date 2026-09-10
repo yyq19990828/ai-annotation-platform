@@ -49,6 +49,23 @@ describe("LoginPage", () => {
     expect(screen.getByText("DASHBOARD")).toBeInTheDocument();
   });
 
+  it("管理员临时密码登录后 → 进入设置完成改密", () => {
+    useAuthStore.setState({
+      token: "t",
+      user: { password_admin_reset_at: "2026-09-09T00:00:00Z" } as never,
+    });
+    render(
+      <MemoryRouter initialEntries={["/login"]}>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/settings" element={<div>SETTINGS</div>} />
+          <Route path="/dashboard" element={<div>DASHBOARD</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(screen.getByText("SETTINGS")).toBeInTheDocument();
+  });
+
   it("未登录 → 渲染登录表单", () => {
     renderUI();
     expect(screen.getByPlaceholderText("输入账号或邮箱")).toBeInTheDocument();

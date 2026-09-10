@@ -34,6 +34,7 @@ export interface ReviewTaskItem {
   total_annotations: number;
   total_predictions: number;
   updated_at: string | null;
+  is_rework?: boolean;
 }
 
 export interface ReviewingBatchItem {
@@ -96,6 +97,18 @@ export interface AnnotatorDashboardStats {
   hour_buckets?: number[];
   // M1 · 当前待重做退回任务数
   rejected_tasks_count?: number;
+}
+
+export interface OnboardingProjectSummary {
+  project_id: string;
+  assigned_task_count: number;
+  opened_task_count: number;
+  saved_annotation_count: number;
+  reviewed_task_count: number;
+  reviewed_task_id: string | null;
+  reviewed_task_display_id: string | null;
+  reviewed_task_status: "completed" | "rejected" | null;
+  reviewed_task_reason: string | null;
 }
 
 // v0.8.4 · 管理员人员看板
@@ -237,6 +250,10 @@ export const dashboardApi = {
   getPredictionCostStats: (range: "7d" | "30d" = "30d") =>
     apiClient.get<PredictionCostStats>(`/dashboard/admin/prediction-cost-stats?range=${range}`),
   getMyBatches: () => apiClient.get<MyBatchItem[]>("/dashboard/annotator/batches"),
+  getOnboardingProjectSummary: (projectId: string) =>
+    apiClient.get<OnboardingProjectSummary>(
+      `/dashboard/annotator/projects/${projectId}/onboarding`,
+    ),
   getMyRecentReviews: (limit = 20) =>
     apiClient.get<RecentReviewItem[]>(`/dashboard/me/recent-reviews?limit=${limit}`),
   // v0.8.7 F5.3

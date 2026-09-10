@@ -19,6 +19,7 @@ from app.api.v1.tasks._shared import (
     _load_task_or_404,
     _ANNOTATORS,
     _assert_task_visible,
+    _assert_task_editable,
 )
 
 router = APIRouter()
@@ -34,7 +35,12 @@ async def submit_task(
     from app.db.models.task import Task
 
     task = (
-        await db.execute(select(Task).where(Task.id == task_id).with_for_update())
+        await db.execute(
+            select(Task)
+            .where(Task.id == task_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
     ).scalar_one_or_none()
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -44,6 +50,8 @@ async def submit_task(
             status_code=409,
             detail={"reason": "task_not_submittable", "status": task.status},
         )
+
+    _assert_task_editable(task, current_user)
 
     # v0.6.6: 提交者即 assignee。任务初始 assignee_id 为 NULL（创建时未指派），
     # 否则后续 withdraw/reopen 会因 assignee 校验失败而拒绝（"only assignee can withdraw"）。
@@ -183,12 +191,28 @@ async def skip_task(
             detail={"reason": "invalid_skip_reason", "value": body.reason},
         )
 
-    task = await _load_task_or_404(db, task_id)
+    # The router holds the actor User lock before this Task lock. Refresh the
+    # assignment under the Task lock before checking visibility and ownership.
+    from app.db.models.task import Task
+
+    task = (
+        await db.execute(
+            select(Task)
+            .where(Task.id == task_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
     if task.status not in ("pending", "in_progress"):
         raise HTTPException(
             status_code=409,
             detail={"reason": "task_not_skippable", "status": task.status},
         )
+
+    await _assert_task_visible(db, task, current_user)
+    _assert_task_editable(task, current_user)
 
     now = datetime.now(timezone.utc)
     if task.assignee_id is None:

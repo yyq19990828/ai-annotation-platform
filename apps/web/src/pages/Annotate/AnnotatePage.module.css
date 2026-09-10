@@ -189,6 +189,82 @@
   color: var(--sc-muted-foreground);
 }
 
+.errorState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 48px 24px;
+  border: 1px solid var(--sc-border);
+  border-radius: var(--radius-md);
+  background: var(--sc-card);
+  text-align: center;
+}
+
+.errorStateCompact {
+  margin: 8px;
+  padding: 24px 12px;
+}
+
+.errorIcon {
+  color: var(--sc-status-danger);
+}
+
+.errorTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--sc-foreground);
+}
+
+.errorMessage {
+  max-width: 360px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--sc-muted-foreground);
+}
+
+.refreshNotice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--sc-border);
+  border-radius: var(--radius-md);
+  background: var(--sc-status-caution-soft);
+  color: var(--sc-foreground);
+  font-size: 12px;
+}
+
+.refreshNotice > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: baseline;
+}
+
+.refreshNotice strong {
+  color: var(--sc-status-caution);
+}
+
+.loadMore {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 4px 0 16px;
+  padding: 12px;
+  border: 1px solid var(--sc-border);
+  border-radius: var(--radius-md);
+  background: var(--sc-card);
+}
+
+.loadMoreText {
+  color: var(--sc-muted-foreground);
+  font-size: 12px;
+}
+
 .emptyState {
   display: flex;
   flex-direction: column;

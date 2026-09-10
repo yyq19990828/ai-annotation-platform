@@ -23,6 +23,12 @@ export function useRegister() {
   });
 }
 
+export function useAcceptExistingInvitation() {
+  return useMutation({
+    mutationFn: (token: string) => invitationsApi.acceptExisting(token),
+  });
+}
+
 export function useRegistrationStatus() {
   return useQuery({
     queryKey: ["registration-status"],

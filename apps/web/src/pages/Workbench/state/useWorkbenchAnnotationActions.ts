@@ -22,7 +22,7 @@ import { isComplexPolygonGeometry } from "../stage/shared/geometry/geometryEditP
 import { bboxGeom, keypointGeom, polygonGeom, polylineGeom } from "../state/transforms";
 import type { Geometry, Keypoint } from "@/types";
 import { randomId } from "@/utils/id";
-import { enqueue, enqueueDurably } from "../state/offlineQueue";
+import { enqueueDurably, isOfflineCandidate, type OfflineOp } from "../state/offlineQueue";
 import { attributeSchemaForUnit, classesForUnit } from "./useToolBindings";
 import { getMissingRequired } from "../shell/AttributeForm";
 import {
@@ -39,6 +39,7 @@ import type { useAnnotationHistory } from "../state/useAnnotationHistory";
 import type { AnnotationPayload, AnnotationUpdatePayload } from "@/api/tasks";
 import { tasksApi } from "@/api/tasks";
 import type { AnnotationResponse, RotatedBboxGeometry } from "@/types";
+import { isCurrentAuthOwner } from "@/stores/authStore";
 
 type Geom = { x: number; y: number; w: number; h: number };
 
@@ -103,7 +104,7 @@ export interface UseWorkbenchAnnotationActionsArgs {
 
 export interface UseWorkbenchAnnotationActionsReturn {
   /** 共用 create fallback：分配 tmpId → cache → history → enqueue。*/
-  optimisticEnqueueCreate: (payload: AnnotationPayload) => void;
+  optimisticEnqueueCreate: (payload: AnnotationPayload) => Promise<void>;
   createBboxWithClass: (geom: Geom, cls: string) => boolean;
   beginBboxDrawing: (geom: Geom, cls?: string) => boolean;
   submitManualDrawing: () => void;
@@ -170,7 +171,17 @@ export function useWorkbenchAnnotationActions({
   markPendingGeom,
 }: UseWorkbenchAnnotationActionsArgs): UseWorkbenchAnnotationActionsReturn {
   const setQ = queryClient.setQueryData.bind(queryClient);
-  const owner = useMemo(() => ({ taskId, projectId, isLocked }), [taskId, projectId, isLocked]);
+  const enqueueOwnedDurably = useCallback(
+    (op: OfflineOp) => {
+      if (!meUserId) return Promise.reject(new Error("当前账号已退出，无法接收离线操作"));
+      return enqueueDurably(op, { userId: meUserId, projectId });
+    },
+    [meUserId, projectId],
+  );
+  const owner = useMemo(
+    () => ({ taskId, projectId, meUserId, isLocked }),
+    [taskId, projectId, meUserId, isLocked],
+  );
   const currentOwner = useRef(owner);
   currentOwner.current = owner;
   useEffect(() => {
@@ -209,31 +220,38 @@ export function useWorkbenchAnnotationActions({
   /** 共用：写入 annotations cache 中的某条 geometry（bbox 移动 / resize / polygon 编辑都用）。 */
   const optimisticUpdateGeom = useCallback(
     (id: string, afterG: Record<string, unknown>) => {
-      if (!taskId) return;
+      if (!taskId || !meUserId || !isCurrentAuthOwner(meUserId) || currentOwner.current !== owner)
+        return;
       setQ<AnnotationResponse[]>(["annotations", taskId], (prev) =>
         (prev ?? []).map((a) =>
           a.id === id ? { ...a, geometry: afterG as AnnotationResponse["geometry"] } : a,
         ),
       );
     },
-    [taskId, setQ],
+    [meUserId, taskId, setQ, owner],
   );
 
   /** 共用：从 annotations cache 中删除一条（delete fallback）。 */
   const optimisticDelete = useCallback(
     (id: string) => {
-      if (!taskId) return;
+      if (
+        !taskId ||
+        !owner.meUserId ||
+        !isCurrentAuthOwner(owner.meUserId) ||
+        currentOwner.current !== owner
+      )
+        return;
       setQ<AnnotationResponse[]>(["annotations", taskId], (prev) =>
         (prev ?? []).filter((a) => a.id !== id),
       );
     },
-    [taskId, setQ],
+    [taskId, setQ, owner],
   );
 
   /** v0.6.3 P0：create 失败兜底（共用 bbox / polygon）。*/
   const optimisticEnqueueCreate = useCallback(
-    (payload: AnnotationPayload) => {
-      if (!taskId) return;
+    async (payload: AnnotationPayload) => {
+      if (!taskId || !meUserId) throw new Error("当前账号无法接收离线操作");
       const tmpId = `tmp_${randomId()}`;
       const optimistic: AnnotationResponse = {
         id: tmpId,
@@ -255,12 +273,20 @@ export function useWorkbenchAnnotationActions({
         updated_at: null,
         render_key: tmpId,
       };
+      await enqueueOwnedDurably({
+        kind: "create",
+        id: payload.client_request_id ?? randomId(),
+        tmpId,
+        taskId,
+        payload,
+        ts: Date.now(),
+      });
+      if (currentOwner.current !== owner || !isCurrentAuthOwner(meUserId)) return;
       setQ<AnnotationResponse[]>(["annotations", taskId], (prev) => [...(prev ?? []), optimistic]);
       s.setSelectedId(tmpId);
       history.push({ kind: "create", annotationId: tmpId, payload });
-      enqueue({ kind: "create", id: randomId(), tmpId, taskId, payload, ts: Date.now() });
     },
-    [taskId, projectId, meUserId, setQ, s, history],
+    [taskId, projectId, meUserId, setQ, s, history, owner, enqueueOwnedDurably],
   );
 
   const submitManual = useCallback(
@@ -306,10 +332,13 @@ export function useWorkbenchAnnotationActions({
         });
         return;
       }
-      const payload = manualDrawingPayload(drawing, draft);
+      const payload = { ...manualDrawingPayload(drawing, draft), client_request_id: draft.id };
       publishManualDraft({ ...drawing, creation: { ...draft, phase: "saving", error: undefined } });
       const owns = () =>
-        currentOwner.current === owner && manualDraftRef.current?.creation?.id === draft.id;
+        currentOwner.current === owner &&
+        manualDraftRef.current?.creation?.id === draft.id &&
+        !!meUserId &&
+        isCurrentAuthOwner(meUserId);
       const accepted = (id: string) => {
         if (!owns()) return;
         history.push({ kind: "create", annotationId: id, payload });
@@ -321,18 +350,24 @@ export function useWorkbenchAnnotationActions({
         publishManualDraft(null);
       };
       const failed = async (err: unknown) => {
-        // A rejected business request remains retryable. Only a transport failure enters the queue.
-        if (err instanceof TypeError) {
+        // Business rejections keep the draft; transport failures and temporary server failures
+        // are accepted only after the offline queue durably stores the operation.
+        if (isOfflineCandidate(err)) {
           const tmpId = `tmp_${randomId()}`;
           try {
-            await enqueueDurably({
-              kind: "create",
-              id: randomId(),
-              tmpId,
-              taskId,
-              payload,
-              ts: Date.now(),
-            });
+            if (!meUserId) throw new Error("当前账号已退出，无法接收离线操作");
+            await enqueueDurably(
+              {
+                kind: "create",
+                id: payload.client_request_id,
+                tmpId,
+                taskId,
+                payload,
+                ts: Date.now(),
+              },
+              { userId: meUserId, projectId },
+            );
+            if (!owns()) return;
             const optimistic: AnnotationResponse = {
               id: tmpId,
               task_id: taskId,
@@ -498,6 +533,7 @@ export function useWorkbenchAnnotationActions({
     ): boolean => {
       if (blockIfLocked() || !cls) return false;
       const payload: AnnotationPayload = {
+        client_request_id: randomId(),
         annotation_type: annotationType,
         tool_unit_id: toolUnitId,
         class_name: cls,
@@ -510,6 +546,12 @@ export function useWorkbenchAnnotationActions({
       }
       mutations.create.mutate(payload, {
         onSuccess: (created) => {
+          if (
+            currentOwner.current !== owner ||
+            !owner.meUserId ||
+            !isCurrentAuthOwner(owner.meUserId)
+          )
+            return;
           history.push({ kind: "create", annotationId: created.id, payload });
           s.setSelectedId(created.id);
           pushToast({
@@ -531,6 +573,7 @@ export function useWorkbenchAnnotationActions({
       pushToast,
       recordRecentClass,
       s,
+      owner,
     ],
   );
 
@@ -839,6 +882,12 @@ export function useWorkbenchAnnotationActions({
         { annotationId: id, payload },
         {
           onSuccess: () => {
+            if (
+              currentOwner.current !== owner ||
+              !owner.meUserId ||
+              !isCurrentAuthOwner(owner.meUserId)
+            )
+              return;
             history.push({
               kind: "update",
               annotationId: id,
@@ -847,21 +896,27 @@ export function useWorkbenchAnnotationActions({
             });
           },
           onError: (err) =>
-            enqueueOnError(err, () => {
-              optimisticUpdateGeom(id, afterG);
-              history.push({
-                kind: "update",
-                annotationId: id,
-                before: { geometry: beforeG },
-                after: { geometry: afterG },
-              });
-              enqueue({
+            enqueueOnError(err, async () => {
+              await enqueueOwnedDurably({
                 kind: "update",
                 id: randomId(),
                 taskId,
                 annotationId: id,
                 payload,
                 ts: Date.now(),
+              });
+              if (
+                currentOwner.current !== owner ||
+                !owner.meUserId ||
+                !isCurrentAuthOwner(owner.meUserId)
+              )
+                return;
+              optimisticUpdateGeom(id, afterG);
+              history.push({
+                kind: "update",
+                annotationId: id,
+                before: { geometry: beforeG },
+                after: { geometry: afterG },
               });
             }),
         },
@@ -875,6 +930,8 @@ export function useWorkbenchAnnotationActions({
       enqueueOnError,
       optimisticUpdateGeom,
       markPendingGeom,
+      enqueueOwnedDurably,
+      owner,
     ],
   );
 
@@ -887,6 +944,7 @@ export function useWorkbenchAnnotationActions({
       if (!cls) return false;
       const isUnknown = cls === UNKNOWN_CLASS;
       const payload: AnnotationPayload = {
+        client_request_id: randomId(),
         annotation_type: "bbox",
         // v0.10.17 · 工具维度: bbox / smart-box / magic-box 各自映射的 unit.
         tool_unit_id: toolUnitForTool(s.tool),
@@ -901,6 +959,12 @@ export function useWorkbenchAnnotationActions({
       }
       mutations.create.mutate(payload, {
         onSuccess: (newAnnotation) => {
+          if (
+            currentOwner.current !== owner ||
+            !owner.meUserId ||
+            !isCurrentAuthOwner(owner.meUserId)
+          )
+            return;
           s.setSelectedId(newAnnotation.id);
           history.push({ kind: "create", annotationId: newAnnotation.id, payload });
         },
@@ -917,6 +981,7 @@ export function useWorkbenchAnnotationActions({
       recordRecentClass,
       enqueueOnError,
       optimisticEnqueueCreate,
+      owner,
     ],
   );
 
@@ -965,6 +1030,12 @@ export function useWorkbenchAnnotationActions({
         { annotationId: id, payload },
         {
           onSuccess: () => {
+            if (
+              currentOwner.current !== owner ||
+              !owner.meUserId ||
+              !isCurrentAuthOwner(owner.meUserId)
+            )
+              return;
             history.push({
               kind: "update",
               annotationId: id,
@@ -973,21 +1044,27 @@ export function useWorkbenchAnnotationActions({
             });
           },
           onError: (err) =>
-            enqueueOnError(err, () => {
-              optimisticUpdateGeom(id, after as unknown as Record<string, unknown>);
-              history.push({
-                kind: "update",
-                annotationId: id,
-                before: { geometry: before },
-                after: { geometry: after },
-              });
-              enqueue({
+            enqueueOnError(err, async () => {
+              await enqueueOwnedDurably({
                 kind: "update",
                 id: randomId(),
                 taskId,
                 annotationId: id,
                 payload,
                 ts: Date.now(),
+              });
+              if (
+                currentOwner.current !== owner ||
+                !owner.meUserId ||
+                !isCurrentAuthOwner(owner.meUserId)
+              )
+                return;
+              optimisticUpdateGeom(id, after as unknown as Record<string, unknown>);
+              history.push({
+                kind: "update",
+                annotationId: id,
+                before: { geometry: before },
+                after: { geometry: after },
               });
             }),
         },
@@ -1001,6 +1078,8 @@ export function useWorkbenchAnnotationActions({
       enqueueOnError,
       optimisticUpdateGeom,
       markPendingGeom,
+      enqueueOwnedDurably,
+      owner,
     ],
   );
 
@@ -1067,14 +1146,32 @@ export function useWorkbenchAnnotationActions({
       if (target && taskId) {
         mutations.delete.mutate(id, {
           onSuccess: () => {
+            if (
+              currentOwner.current !== owner ||
+              !owner.meUserId ||
+              !isCurrentAuthOwner(owner.meUserId)
+            )
+              return;
             history.push({ kind: "delete", annotation: target });
             pushToast({ msg: "已删除标注", kind: "success" });
           },
           onError: (err) =>
-            enqueueOnError(err, () => {
+            enqueueOnError(err, async () => {
+              await enqueueOwnedDurably({
+                kind: "delete",
+                id: randomId(),
+                taskId,
+                annotationId: id,
+                ts: Date.now(),
+              });
+              if (
+                currentOwner.current !== owner ||
+                !owner.meUserId ||
+                !isCurrentAuthOwner(owner.meUserId)
+              )
+                return;
               optimisticDelete(id);
               history.push({ kind: "delete", annotation: target });
-              enqueue({ kind: "delete", id: randomId(), taskId, annotationId: id, ts: Date.now() });
             }),
         });
       }
@@ -1090,6 +1187,8 @@ export function useWorkbenchAnnotationActions({
       enqueueOnError,
       optimisticDelete,
       annotationsRef,
+      enqueueOwnedDurably,
+      owner,
     ],
   );
 
@@ -1107,7 +1206,12 @@ export function useWorkbenchAnnotationActions({
       // v0.20.15 · Alt 拖父联动子: 父 + 子的几何更新作为一个 batch 命令进 history (单次 undo 全回退)。
       // 各更新独立 mutate; 失败走同款离线兜底 (乐观写 + enqueue), 但 history 只 pushBatch 一次 (不逐条 push)。
       if (childMoves && childMoves.length > 0) {
-        history.pushBatch([
+        const commands: {
+          kind: "update";
+          annotationId: string;
+          before: { geometry: Geometry };
+          after: { geometry: Geometry };
+        }[] = [
           {
             kind: "update",
             annotationId: id,
@@ -1120,7 +1224,20 @@ export function useWorkbenchAnnotationActions({
             before: { geometry: c.before },
             after: { geometry: c.after },
           })),
-        ]);
+        ];
+        let remaining = commands.length;
+        let accepted = 0;
+        const finish = (didAccept: boolean) => {
+          if (
+            currentOwner.current !== owner ||
+            !owner.meUserId ||
+            !isCurrentAuthOwner(owner.meUserId)
+          )
+            return;
+          if (didAccept) accepted += 1;
+          remaining -= 1;
+          if (remaining === 0 && accepted === commands.length) history.pushBatch(commands);
+        };
         const fire = (annotationId: string, geometry: Geometry) => {
           const p = { geometry };
           // v0.20.22 · 见 usePendingGeom。
@@ -1128,18 +1245,28 @@ export function useWorkbenchAnnotationActions({
           mutations.update.mutate(
             { annotationId, payload: p },
             {
+              onSuccess: () => finish(true),
               onError: (err) =>
-                enqueueOnError(err, () => {
-                  optimisticUpdateGeom(annotationId, geometry);
-                  enqueue({
-                    kind: "update",
-                    id: randomId(),
-                    taskId,
-                    annotationId,
-                    payload: p,
-                    ts: Date.now(),
-                  });
-                }),
+                isOfflineCandidate(err)
+                  ? enqueueOnError(err, async () => {
+                      await enqueueOwnedDurably({
+                        kind: "update",
+                        id: randomId(),
+                        taskId,
+                        annotationId,
+                        payload: p,
+                        ts: Date.now(),
+                      });
+                      if (
+                        currentOwner.current !== owner ||
+                        !owner.meUserId ||
+                        !isCurrentAuthOwner(owner.meUserId)
+                      )
+                        return;
+                      optimisticUpdateGeom(annotationId, geometry);
+                      finish(true);
+                    })
+                  : (enqueueOnError(err, () => undefined), finish(false)),
             },
           );
         };
@@ -1155,6 +1282,12 @@ export function useWorkbenchAnnotationActions({
         { annotationId: id, payload },
         {
           onSuccess: () => {
+            if (
+              currentOwner.current !== owner ||
+              !owner.meUserId ||
+              !isCurrentAuthOwner(owner.meUserId)
+            )
+              return;
             history.push({
               kind: "update",
               annotationId: id,
@@ -1163,21 +1296,27 @@ export function useWorkbenchAnnotationActions({
             });
           },
           onError: (err) =>
-            enqueueOnError(err, () => {
-              optimisticUpdateGeom(id, afterG);
-              history.push({
-                kind: "update",
-                annotationId: id,
-                before: { geometry: beforeG },
-                after: { geometry: afterG },
-              });
-              enqueue({
+            enqueueOnError(err, async () => {
+              await enqueueOwnedDurably({
                 kind: "update",
                 id: randomId(),
                 taskId,
                 annotationId: id,
                 payload,
                 ts: Date.now(),
+              });
+              if (
+                currentOwner.current !== owner ||
+                !owner.meUserId ||
+                !isCurrentAuthOwner(owner.meUserId)
+              )
+                return;
+              optimisticUpdateGeom(id, afterG);
+              history.push({
+                kind: "update",
+                annotationId: id,
+                before: { geometry: beforeG },
+                after: { geometry: afterG },
               });
             }),
         },
@@ -1192,6 +1331,8 @@ export function useWorkbenchAnnotationActions({
       optimisticUpdateGeom,
       pushToast,
       markPendingGeom,
+      enqueueOwnedDurably,
+      owner,
     ],
   );
 
@@ -1212,6 +1353,12 @@ export function useWorkbenchAnnotationActions({
         { annotationId: id, payload },
         {
           onSuccess: () => {
+            if (
+              currentOwner.current !== owner ||
+              !owner.meUserId ||
+              !isCurrentAuthOwner(owner.meUserId)
+            )
+              return;
             history.push({
               kind: "update",
               annotationId: id,
@@ -1220,21 +1367,27 @@ export function useWorkbenchAnnotationActions({
             });
           },
           onError: (err) =>
-            enqueueOnError(err, () => {
-              optimisticUpdateGeom(id, afterG);
-              history.push({
-                kind: "update",
-                annotationId: id,
-                before: { geometry: beforeG },
-                after: { geometry: afterG },
-              });
-              enqueue({
+            enqueueOnError(err, async () => {
+              await enqueueOwnedDurably({
                 kind: "update",
                 id: randomId(),
                 taskId,
                 annotationId: id,
                 payload,
                 ts: Date.now(),
+              });
+              if (
+                currentOwner.current !== owner ||
+                !owner.meUserId ||
+                !isCurrentAuthOwner(owner.meUserId)
+              )
+                return;
+              optimisticUpdateGeom(id, afterG);
+              history.push({
+                kind: "update",
+                annotationId: id,
+                before: { geometry: beforeG },
+                after: { geometry: afterG },
               });
             }),
         },
@@ -1249,6 +1402,8 @@ export function useWorkbenchAnnotationActions({
       enqueueOnError,
       optimisticUpdateGeom,
       markPendingGeom,
+      enqueueOwnedDurably,
+      owner,
     ],
   );
 
@@ -1291,6 +1446,12 @@ export function useWorkbenchAnnotationActions({
         { annotationId: id, payload },
         {
           onSuccess: () => {
+            if (
+              currentOwner.current !== owner ||
+              !owner.meUserId ||
+              !isCurrentAuthOwner(owner.meUserId)
+            )
+              return;
             history.push({
               kind: "update",
               annotationId: id,
@@ -1299,21 +1460,27 @@ export function useWorkbenchAnnotationActions({
             });
           },
           onError: (err) =>
-            enqueueOnError(err, () => {
-              optimisticUpdateGeom(id, afterG);
-              history.push({
-                kind: "update",
-                annotationId: id,
-                before: { geometry: beforeG },
-                after: { geometry: afterG },
-              });
-              enqueue({
+            enqueueOnError(err, async () => {
+              await enqueueOwnedDurably({
                 kind: "update",
                 id: randomId(),
                 taskId,
                 annotationId: id,
                 payload,
                 ts: Date.now(),
+              });
+              if (
+                currentOwner.current !== owner ||
+                !owner.meUserId ||
+                !isCurrentAuthOwner(owner.meUserId)
+              )
+                return;
+              optimisticUpdateGeom(id, afterG);
+              history.push({
+                kind: "update",
+                annotationId: id,
+                before: { geometry: beforeG },
+                after: { geometry: afterG },
               });
             }),
         },
@@ -1329,6 +1496,8 @@ export function useWorkbenchAnnotationActions({
       optimisticUpdateGeom,
       annotationsRef,
       markPendingGeom,
+      enqueueOwnedDurably,
+      owner,
     ],
   );
 
@@ -1346,6 +1515,12 @@ export function useWorkbenchAnnotationActions({
         { annotationId: id, payload },
         {
           onSuccess: () => {
+            if (
+              currentOwner.current !== owner ||
+              !owner.meUserId ||
+              !isCurrentAuthOwner(owner.meUserId)
+            )
+              return;
             history.push({
               kind: "update",
               annotationId: id,
@@ -1354,14 +1529,8 @@ export function useWorkbenchAnnotationActions({
             });
           },
           onError: (err) =>
-            enqueueOnError(err, () => {
-              history.push({
-                kind: "update",
-                annotationId: id,
-                before: { [flag]: before } as AnnotationUpdatePayload,
-                after: payload,
-              });
-              enqueue({
+            enqueueOnError(err, async () => {
+              await enqueueOwnedDurably({
                 kind: "update",
                 id: randomId(),
                 taskId,
@@ -1369,11 +1538,32 @@ export function useWorkbenchAnnotationActions({
                 payload,
                 ts: Date.now(),
               });
+              if (
+                currentOwner.current !== owner ||
+                !owner.meUserId ||
+                !isCurrentAuthOwner(owner.meUserId)
+              )
+                return;
+              history.push({
+                kind: "update",
+                annotationId: id,
+                before: { [flag]: before } as AnnotationUpdatePayload,
+                after: payload,
+              });
             }),
         },
       );
     },
-    [blockIfLocked, mutations, history, taskId, enqueueOnError, annotationsRef],
+    [
+      blockIfLocked,
+      mutations,
+      history,
+      taskId,
+      enqueueOnError,
+      annotationsRef,
+      enqueueOwnedDurably,
+      owner,
+    ],
   );
 
   return {

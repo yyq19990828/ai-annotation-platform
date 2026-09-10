@@ -15,6 +15,13 @@
   font-weight: 500;
 }
 
+.fieldHint {
+  margin-top: 5px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--sc-muted-foreground);
+}
+
 .input {
   box-sizing: border-box;
   width: 100%;

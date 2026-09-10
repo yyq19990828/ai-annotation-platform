@@ -12,7 +12,9 @@ from app.db.models.group import Group
 from app.db.models.user import User
 from app.deps import get_db, require_roles
 from app.schemas.group import GroupCreate, GroupOut, GroupUpdate
+from app.schemas.management import GroupPage
 from app.services.audit import AuditService
+from app.services.management import fetch_group_page
 
 router = APIRouter()
 
@@ -46,6 +48,28 @@ async def list_groups(
     _: User = Depends(require_roles(*_MANAGERS)),
 ):
     return await _list_with_counts(db)
+
+
+@router.get("/query", response_model=GroupPage)
+async def query_groups(
+    page: int = 1,
+    page_size: int = 50,
+    search: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_roles(*_MANAGERS)),
+):
+    if page < 1 or page_size < 1 or page_size > 500:
+        raise HTTPException(status_code=422, detail="分页参数超出范围")
+    items, total = await fetch_group_page(
+        db, page=page, page_size=page_size, search=search
+    )
+    return GroupPage(
+        items=items,
+        total=total,
+        page=page,
+        page_size=page_size,
+        pages=(total + page_size - 1) // page_size if total else 0,
+    )
 
 
 @router.post("", response_model=GroupOut, status_code=status.HTTP_201_CREATED)

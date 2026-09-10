@@ -336,9 +336,17 @@ async function videoMediaBounds(page: Page) {
     };
     if (!Object.values(media).every(Number.isFinite) || media.width <= 0 || media.height <= 0)
       throw new Error("Video media transform unavailable");
-    // Pointer and media coordinates share the actual Konva content origin.
+    // Konva maps browser input through DOM scale, including fractional CSS
+    // dimensions whose clientWidth/clientHeight are rounded to integers.
     const contentBounds = content.getBoundingClientRect();
-    return { ...media, x: contentBounds.left + media.x, y: contentBounds.top + media.y };
+    const scaleX = contentBounds.width / content.clientWidth;
+    const scaleY = contentBounds.height / content.clientHeight;
+    return {
+      x: contentBounds.left + media.x * scaleX,
+      y: contentBounds.top + media.y * scaleY,
+      width: media.width * scaleX,
+      height: media.height * scaleY,
+    };
   });
 }
 

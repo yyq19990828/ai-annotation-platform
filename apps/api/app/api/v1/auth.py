@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 from pydantic import BaseModel, Field, field_validator
@@ -11,6 +11,7 @@ from app.core.password import validate_password_strength
 from app.core.security import ALGORITHM
 from app.deps import get_db, get_current_user
 from app.db.models.user import User
+from app.db.base import async_session
 from app.db.enums import UserRole
 from app.schemas.user import Token, LoginRequest, UserOut
 from app.schemas.invitation import OpenRegisterRequest, RegisterResponse
@@ -25,7 +26,11 @@ from app.services.captcha_service import verify_turnstile_token
 from app.services import login_failed_counter
 from app.services.password_reset import PasswordResetService
 from app.services.email_verification import EmailVerificationService
-from app.services.email import send_verification_email, SmtpConfigError
+from app.services.email import (
+    SmtpConfigError,
+    send_password_reset_email,
+    send_verification_email,
+)
 from app.services.system_settings_service import SystemSettingsService
 from app.config import settings
 import logging
@@ -127,7 +132,11 @@ async def login(
                 headers={"X-Login-Failed-Count": str(failed_before)},
             )
 
-    result = await db.execute(select(User).where(User.email == data.email))
+    # 密码重置也锁定同一用户行；这样 reset 在提交 generation 前会与登录
+    # 串行化，旧密码不会在窗口内拿到递增后的 generation。
+    result = await db.execute(
+        select(User).where(User.email == data.email).with_for_update()
+    )
     user = result.scalar_one_or_none()
     if user is None or not verify_password(data.password, user.password_hash):
         new_count = await login_failed_counter.increment(client_ip)
@@ -228,47 +237,54 @@ async def get_me(current_user: User = Depends(get_current_user)):
 async def forgot_password(
     data: ForgotPasswordRequest,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    background_tasks: BackgroundTasks,
 ):
     if not await verify_turnstile_token(
         data.captcha_token, request.client.host if request.client else None
     ):
         raise HTTPException(status_code=400, detail="captcha_failed")
 
-    svc = PasswordResetService(db)
-    token = await svc.create_token(data.email)
-    await db.commit()
+    # Run both existing and unknown addresses through the same post-response
+    # path so SMTP latency cannot identify registered accounts.
+    background_tasks.add_task(_complete_password_recovery, data.email)
+    return {
+        "message": (
+            "如果该邮箱已注册，您将收到一封包含重置链接的邮件。"
+            "若未收到，请联系管理员协助重置。"
+        )
+    }
 
-    if token:
+
+async def _complete_password_recovery(email: str) -> None:
+    async with async_session() as db:
+        svc = PasswordResetService(db)
+        token = await svc.create_token(email)
+        if not token:
+            return
+        # 先持久化 token，再触发外部 SMTP 副作用，避免「邮件已发送但提交失败」
+        # 产生用户永远无法使用的链接。发送失败时在后续事务中立即标记失效。
+        await db.commit()
         base_url = (
             await SystemSettingsService.get(db, "frontend_base_url")
             or settings.frontend_base_url
         )
-        smtp_host = await SystemSettingsService.get(db, "smtp_host")
-        # 含明文一次性 token 的 url/token 仅在非 production 落日志（dev 友好）；
-        # production 只记 email + 是否配置 SMTP，防 token 经集中式日志扩散后被用于重置密码。
-        is_prod = settings.environment == "production"
-        if smtp_host:
-            if is_prod:
-                logger.info("Password reset email dispatched for %s", data.email)
-            else:
-                reset_url = f"{str(base_url).rstrip('/')}/reset-password?token={token}"
-                logger.info("Password reset token for %s: %s", data.email, reset_url)
+        reset_url = f"{str(base_url).rstrip('/')}/reset-password?token={token}"
+        try:
+            await send_password_reset_email(
+                db,
+                email,
+                reset_url,
+                expires_in_hours=svc.TOKEN_EXPIRY_HOURS,
+            )
+        except SmtpConfigError as exc:
+            # 保持统一 202 响应以防邮箱枚举；仅记录不含 token 的定位信息。
+            await svc.invalidate_token(token)
+            logger.warning("Password reset email unavailable for %s: %s", email, exc)
         else:
-            if is_prod:
-                logger.info(
-                    "Password reset requested for %s but SMTP not configured",
-                    data.email,
-                )
-            else:
-                logger.info(
-                    "Password reset token for %s (SMTP not configured): token=%s",
-                    data.email,
-                    token,
-                )
+            # 只有 SMTP 调用正常返回后才记录已发送；token 已在调用前持久化。
+            logger.info("Password reset email sent for %s", email)
 
-    # 无论成功与否都返回 202，防邮箱枚举
-    return {"message": "如果该邮箱已注册，您将收到一封包含重置链接的邮件"}
+        await db.commit()
 
 
 @router.post("/reset-password")
@@ -280,9 +296,14 @@ async def reset_password(
     svc = PasswordResetService(db)
     user = await svc.consume_token(data.token)
     if not user:
+        # consume_token 会将已关联停用账号的 token 标记为已消费；提交这个结果，
+        # 防止账号日后重新启用后仍可使用停用期间签发的旧链接。
+        await db.commit()
         raise HTTPException(status_code=400, detail="重置链接无效或已过期")
 
     user.password_hash = hash_password(data.new_password)
+    # 通过恢复链接设置新密码后，管理员临时密码的强制改密标记也已完成。
+    user.password_admin_reset_at = None
     await AuditService.log(
         db,
         actor=user,
@@ -293,6 +314,10 @@ async def reset_password(
         status_code=200,
         detail={"method": "reset_token"},
     )
+    # 密码恢复必须让之前签发的所有会话立即失效；新登录会读取递增后的代际号。
+    from app.core.token_blacklist import increment_user_generation
+
+    await increment_user_generation(str(user.id))
     await db.commit()
     return {"message": "密码已重置，请使用新密码登录"}
 

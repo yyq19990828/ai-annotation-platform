@@ -447,9 +447,17 @@ async function videoMediaBounds(page: Page) {
     };
     if (!Object.values(media).every(Number.isFinite) || media.width <= 0 || media.height <= 0)
       throw new Error("Video media transform unavailable");
-    // Pointer and media coordinates share the actual Konva content origin.
+    // Konva maps browser input through DOM scale, including fractional CSS
+    // dimensions whose clientWidth/clientHeight are rounded to integers.
     const contentBounds = content.getBoundingClientRect();
-    return { ...media, x: contentBounds.left + media.x, y: contentBounds.top + media.y };
+    const scaleX = contentBounds.width / content.clientWidth;
+    const scaleY = contentBounds.height / content.clientHeight;
+    return {
+      x: contentBounds.left + media.x * scaleX,
+      y: contentBounds.top + media.y * scaleY,
+      width: media.width * scaleX,
+      height: media.height * scaleY,
+    };
   });
 }
 
@@ -1204,6 +1212,23 @@ test.describe("video Issue persisted context", () => {
       await request.patch(`${API_BASE}/api/v1/users/${otherUser.id}/role`, {
         headers: auth(fixture.token),
         data: { role: "annotator" },
+      }),
+    );
+    // Assignment requires the project responsibility as well as the global role.
+    const membersPath = `${API_BASE}/api/v1/projects/${fixture.data.project_id}/members`;
+    const members = await json<Array<{ id: string; user_id: string }>>(
+      await request.get(membersPath, { headers: auth(fixture.token) }),
+    );
+    const previousMember = members.find((member) => member.user_id === otherUser.id);
+    expect(previousMember).toBeDefined();
+    const removed = await request.delete(`${membersPath}/${previousMember!.id}`, {
+      headers: auth(fixture.token),
+    });
+    expect(removed.status()).toBe(204);
+    await json(
+      await request.post(membersPath, {
+        headers: auth(fixture.token),
+        data: { user_id: otherUser.id, role: "annotator" },
       }),
     );
     const batch = await json<{ id: string }>(

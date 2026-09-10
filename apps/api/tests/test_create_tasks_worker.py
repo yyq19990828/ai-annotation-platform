@@ -19,6 +19,7 @@ from app.db.models.dataset import Dataset, DatasetItem, ProjectDataset
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.services.dataset import DatasetService, build_tasks_for_link
+from app.services.system_settings_service import SystemSettingsService
 
 
 async def _seed_dataset(db: AsyncSession, owner_id: uuid.UUID, n_items: int) -> Dataset:
@@ -128,3 +129,21 @@ async def test_link_project_small_dataset_is_sync(
         )
     ).scalar()
     assert count == n
+
+
+async def test_link_project_zero_threshold_is_async(
+    db_session: AsyncSession, super_admin
+):
+    """Zero is a real setting: every non-empty dataset link goes async."""
+
+    user, _ = super_admin
+    ds = await _seed_dataset(db_session, user.id, n_items=1)
+    project = await _seed_project(db_session, user.id)
+    await SystemSettingsService.set_many(
+        db_session, {"task_create_sync_threshold": 0}, actor_id=user.id
+    )
+    await db_session.flush()
+
+    result = await DatasetService(db_session).link_project(ds.id, project.id)
+    assert result.async_job_id is not None
+    assert result.created_tasks == 0

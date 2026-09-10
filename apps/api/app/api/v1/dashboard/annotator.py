@@ -1,8 +1,10 @@
+import uuid
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, cast, Date
+from sqlalchemy import select, func, cast, Date, or_, and_
 from app.deps import (
+    assert_project_visible,
     get_current_user,
     get_db,
     require_roles,
@@ -19,8 +21,10 @@ from app.schemas.dashboard import (
     AnnotatorDashboardStats,
     MyBatchItem,
     MyPerformance,
+    OnboardingProjectSummary,
 )
 from app.services.storage import storage_service
+from app.services.scheduler import task_visibility_clause, is_privileged_for_project
 from app.services.user_brief import resolve_briefs_with_project_role
 from app.services.dashboard_stats import (
     _class_distribution,
@@ -30,6 +34,134 @@ from app.services.dashboard_stats import (
 )
 
 router = APIRouter()
+
+
+@router.get(
+    "/annotator/projects/{project_id}/onboarding",
+    response_model=OnboardingProjectSummary,
+)
+async def annotator_project_onboarding(
+    project_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(
+        require_roles(
+            UserRole.SUPER_ADMIN,
+            UserRole.PROJECT_ADMIN,
+            UserRole.REVIEWER,
+            UserRole.ANNOTATOR,
+        )
+    ),
+):
+    """Return durable checklist signals for the current user and project.
+
+    Opening is based on task events, annotation completion is based on active
+    annotations owned by the user, and review completion is based on the
+    assignee's task review fields.  Client-side remembered task state is only a
+    supplemental signal for the currently open browser tab.
+    """
+    project = await assert_project_visible(project_id, db, current_user)
+    assignment_scope = True
+    if not is_privileged_for_project(current_user, project):
+        assignment_scope = or_(
+            Task.batch_id.in_(
+                select(TaskBatch.id)
+                .where(task_visibility_clause(current_user))
+                .correlate_except(TaskBatch)
+            ),
+            and_(
+                Task.file_type == "video",
+                bool((project.video_collaboration or {}).get("enabled")),
+            ),
+        )
+
+    assigned_task_count = int(
+        (
+            await db.execute(
+                select(func.count())
+                .select_from(Task)
+                .where(
+                    Task.project_id == project_id,
+                    Task.assignee_id == current_user.id,
+                    Task.status != "uploading",
+                    assignment_scope,
+                )
+            )
+        ).scalar()
+        or 0
+    )
+    opened_task_count = int(
+        (
+            await db.execute(
+                select(func.count(func.distinct(TaskEvent.task_id)))
+                .select_from(TaskEvent)
+                .join(Task, Task.id == TaskEvent.task_id)
+                .where(
+                    Task.project_id == project_id,
+                    TaskEvent.user_id == current_user.id,
+                    TaskEvent.project_id == project_id,
+                    TaskEvent.kind == "annotate",
+                )
+            )
+        ).scalar()
+        or 0
+    )
+    saved_annotation_count = int(
+        (
+            await db.execute(
+                select(func.count())
+                .select_from(Annotation)
+                .join(Task, Task.id == Annotation.task_id)
+                .where(
+                    Task.project_id == project_id,
+                    Annotation.user_id == current_user.id,
+                    Annotation.is_active.is_(True),
+                    Annotation.was_cancelled.is_(False),
+                )
+            )
+        ).scalar()
+        or 0
+    )
+    reviewed_task_count = int(
+        (
+            await db.execute(
+                select(func.count())
+                .select_from(Task)
+                .where(
+                    Task.project_id == project_id,
+                    Task.assignee_id == current_user.id,
+                    Task.reviewed_at.is_not(None),
+                    Task.status.in_([TaskStatus.COMPLETED, "rejected"]),
+                )
+            )
+        ).scalar()
+        or 0
+    )
+    reviewed_task = await db.scalar(
+        select(Task)
+        .where(
+            Task.project_id == project_id,
+            Task.assignee_id == current_user.id,
+            Task.reviewed_at.is_not(None),
+            Task.status.in_([TaskStatus.COMPLETED, "rejected"]),
+        )
+        .order_by(Task.reviewed_at.desc(), Task.id.desc())
+        .limit(1)
+    )
+    return OnboardingProjectSummary(
+        project_id=project_id,
+        assigned_task_count=assigned_task_count,
+        opened_task_count=opened_task_count,
+        saved_annotation_count=saved_annotation_count,
+        reviewed_task_count=reviewed_task_count,
+        reviewed_task_id=reviewed_task.id if reviewed_task else None,
+        reviewed_task_display_id=reviewed_task.display_id if reviewed_task else None,
+        reviewed_task_status=reviewed_task.status if reviewed_task else None,
+        reviewed_task_reason=(
+            reviewed_task.reject_reason
+            if reviewed_task and reviewed_task.status == "rejected"
+            else None
+        ),
+    )
 
 
 @router.get("/annotator", response_model=AnnotatorDashboardStats)

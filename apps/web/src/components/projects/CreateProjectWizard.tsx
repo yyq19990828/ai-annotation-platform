@@ -556,6 +556,10 @@ export function CreateProjectWizard({ open, onClose, sourceProjectId, templateId
               onClose();
               navigate(`/projects/${created.id}/settings`);
             }}
+            onOpenReadiness={() => {
+              onClose();
+              navigate(`/projects/${created.id}/settings?section=readiness`);
+            }}
             onDone={onClose}
           />
         )}

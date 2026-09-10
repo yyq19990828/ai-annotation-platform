@@ -11,6 +11,10 @@ import { describe, expect, it, vi } from "vitest";
 import { useWorkbenchAnnotationActions } from "./useWorkbenchAnnotationActions";
 import type { BboxGeometry, Geometry } from "@/types";
 
+vi.mock("@/stores/authStore", () => ({
+  isCurrentAuthOwner: (userId: string) => userId === "U-1",
+}));
+
 function bboxGeom(x: number, y: number, w = 0.2, h = 0.2): BboxGeometry {
   return { type: "bbox", x, y, w, h };
 }
@@ -76,6 +80,15 @@ describe("useWorkbenchAnnotationActions · Alt 拖动父子联动", () => {
         { id: "C2", before: c2Before, after: c2After },
       ]);
     });
+
+    // Persisted acceptance owns history; responses may finish out of order.
+    expect(pushBatch).not.toHaveBeenCalled();
+    act(() => {
+      updateMutate.mock.calls[2][1].onSuccess();
+      updateMutate.mock.calls[0][1].onSuccess();
+    });
+    expect(pushBatch).not.toHaveBeenCalled();
+    act(() => updateMutate.mock.calls[1][1].onSuccess());
 
     // 单次 pushBatch, 不逐条 push。
     expect(pushBatch).toHaveBeenCalledOnce();
@@ -165,5 +178,10 @@ describe("useWorkbenchAnnotationActions · Alt 拖动父子联动", () => {
     expect(pushBatch).not.toHaveBeenCalled();
     expect(updateMutate).toHaveBeenCalledOnce();
     expect(updateMutate.mock.calls[0][0].annotationId).toBe("P1");
+    expect(push).not.toHaveBeenCalled();
+    act(() => updateMutate.mock.calls[0][1].onSuccess());
+    expect(push).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "update", annotationId: "P1" }),
+    );
   });
 });

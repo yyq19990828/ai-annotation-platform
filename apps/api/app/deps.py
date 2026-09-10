@@ -116,6 +116,23 @@ def require_roles(*roles: str) -> Callable:
     return checker
 
 
+async def require_active_task_actor(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Recheck account state before a task handler takes any resource locks."""
+
+    from app.services.task_lock import assert_task_user_active
+
+    if not await assert_task_user_active(db, current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="账号已停用，请联系管理员",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return current_user
+
+
 # v0.15.11 · full-access 通配 scope；含 "*" 的 api_key 视为全权，绕过 scope 校验。
 WILDCARD_SCOPE = "*"
 

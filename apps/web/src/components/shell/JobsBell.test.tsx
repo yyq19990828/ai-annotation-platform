@@ -2,11 +2,15 @@
  * v0.10.16 · JobsBell 单测：badge 计数 / drawer 展开 / 空态 / 状态 pill。
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
+import type { MeResponse } from "@/api/auth";
+import { useAuthStore } from "@/stores/authStore";
 
 const mockList = vi.fn();
 const mockCancel = vi.fn();
+const mockGet = vi.fn();
 vi.mock("@/api/asyncJobs", () => ({
   CANCELLABLE_ASYNC_JOB_KINDS: new Set([
     "batch_predict",
@@ -18,6 +22,7 @@ vi.mock("@/api/asyncJobs", () => ({
   asyncJobsApi: {
     list: (params: unknown) => mockList(params),
     cancel: (id: string) => mockCancel(id),
+    get: (id: string) => mockGet(id),
   },
 }));
 
@@ -29,7 +34,9 @@ function renderBell() {
   });
   return render(
     <QueryClientProvider client={qc}>
-      <JobsBell />
+      <MemoryRouter>
+        <JobsBell />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -54,8 +61,10 @@ const baseRow = {
 describe("JobsBell", () => {
   beforeEach(() => {
     localStorage.clear();
+    useAuthStore.getState().setAuth("jobs-u1-token", { id: "u1", role: "annotator" } as MeResponse);
     mockList.mockReset();
     mockCancel.mockReset();
+    mockGet.mockReset();
     mockCancel.mockResolvedValue({ status: "cancel_requested", id: "j1" });
   });
 
@@ -94,6 +103,44 @@ describe("JobsBell", () => {
     expect(screen.queryByTestId("jobs-bell-badge")).toBeNull();
   });
 
+  it("加载更早记录后可直达指定作业，跨页重复记录只显示一次", async () => {
+    mockList.mockImplementation(({ offset }: { offset: number }) =>
+      offset === 0
+        ? { items: [baseRow], total: 3 }
+        : {
+            items: [
+              baseRow,
+              { ...baseRow, id: "older", kind: "dataset_import", status: "completed" },
+            ],
+            total: 3,
+          },
+    );
+    mockGet.mockResolvedValue({
+      ...baseRow,
+      id: "older",
+      kind: "dataset_import",
+      status: "completed",
+      result: { imported: 6, skipped: 0 },
+    });
+    renderBell();
+    fireEvent.click(await screen.findByTestId("jobs-bell-trigger"));
+    fireEvent.click(await screen.findByRole("button", { name: "加载更早任务" }));
+    expect(await screen.findByTestId("job-row-older")).toBeInTheDocument();
+    expect(screen.getAllByTestId("job-row-j1")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "查看数据集导入详情" }));
+    expect(await screen.findByText("导入 6 / 跳过 0")).toBeInTheDocument();
+    expect(mockGet).toHaveBeenCalledWith("older");
+    expect(mockList).toHaveBeenCalledWith({ limit: 20, offset: 1 });
+  });
+
+  it("查询失败显示重试，不误报没有后台任务", async () => {
+    mockList.mockRejectedValue(new Error("offline"));
+    renderBell();
+    fireEvent.click(await screen.findByTestId("jobs-bell-trigger"));
+    expect(await screen.findByRole("alert")).toHaveTextContent("后台任务加载失败");
+    expect(screen.queryByText("暂无后台任务")).not.toBeInTheDocument();
+  });
+
   it("导出作业显示多目标格式和产物摘要", async () => {
     mockList.mockResolvedValue({
       items: [
@@ -107,6 +154,7 @@ describe("JobsBell", () => {
             download_url: "https://download.example/export.zip",
             file_count: 3,
             size_bytes: 1536,
+            expires_at: "2099-01-01T00:00:00Z",
           },
         },
       ],
@@ -190,8 +238,8 @@ describe("JobsBell", () => {
     fireEvent.click(await screen.findByTestId("jobs-bell-trigger"));
     fireEvent.click(await screen.findByTestId("job-dismiss-done1"));
     fireEvent.click(screen.getByTestId("jobs-bell-filter-active"));
-    expect(localStorage.getItem("wb:jobsbell:filter")).toBe("active");
-    expect(JSON.parse(localStorage.getItem("wb:jobsbell:dismissed") ?? "[]")).toContain("done1");
+    expect(localStorage.getItem("wb:jobsbell:filter:u1")).toBe("active");
+    expect(JSON.parse(localStorage.getItem("wb:jobsbell:dismissed:u1") ?? "[]")).toContain("done1");
 
     first.unmount();
     renderBell();
@@ -206,7 +254,7 @@ describe("JobsBell", () => {
   });
 
   it("dismiss 集合收敛：滑出窗口的 id 从 localStorage 清掉", async () => {
-    localStorage.setItem("wb:jobsbell:dismissed", JSON.stringify(["done1", "slid-out-id"]));
+    localStorage.setItem("wb:jobsbell:dismissed:u1", JSON.stringify(["done1", "slid-out-id"]));
     mockList.mockResolvedValue({
       items: [{ ...baseRow, id: "done1", status: "completed" as const, progress_pct: 100 }],
       total: 1,
@@ -214,7 +262,73 @@ describe("JobsBell", () => {
     renderBell();
     await screen.findByTestId("jobs-bell-trigger");
     await waitFor(() => {
-      expect(JSON.parse(localStorage.getItem("wb:jobsbell:dismissed") ?? "[]")).toEqual(["done1"]);
+      expect(JSON.parse(localStorage.getItem("wb:jobsbell:dismissed:u1") ?? "[]")).toEqual([
+        "done1",
+      ]);
     });
+  });
+
+  it("切换账号时旧列表迟到响应不会泄露到新账号", async () => {
+    let resolveFirst!: (value: unknown) => void;
+    mockList
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = resolve;
+          }),
+      )
+      .mockResolvedValueOnce({ items: [], total: 0 });
+    renderBell();
+    await waitFor(() => expect(mockList).toHaveBeenCalledWith({ limit: 20, offset: 0 }));
+
+    act(() =>
+      useAuthStore
+        .getState()
+        .setAuth("jobs-u2-token", { id: "u2", role: "annotator" } as MeResponse),
+    );
+    await waitFor(() => expect(mockList).toHaveBeenCalledTimes(2));
+    await act(async () => resolveFirst({ items: [{ ...baseRow, id: "alice-job" }], total: 1 }));
+    expect(screen.queryByTestId("job-row-alice-job")).not.toBeInTheDocument();
+  });
+
+  it("切换账号时已选详情立即关闭，不保留旧账号作业", async () => {
+    mockList.mockResolvedValue({
+      items: [{ ...baseRow, status: "completed" as const, progress_pct: 100 }],
+      total: 1,
+    });
+    mockGet.mockResolvedValue({ ...baseRow, status: "completed" as const, progress_pct: 100 });
+    renderBell();
+    fireEvent.click(await screen.findByTestId("jobs-bell-trigger"));
+    fireEvent.click(await screen.findByRole("button", { name: "查看批量预标详情" }));
+    expect(await screen.findByRole("dialog", { name: "后台任务详情" })).toBeInTheDocument();
+
+    act(() =>
+      useAuthStore
+        .getState()
+        .setAuth("jobs-u2-token", { id: "u2", role: "annotator" } as MeResponse),
+    );
+    expect(screen.queryByRole("dialog", { name: "后台任务详情" })).not.toBeInTheDocument();
+  });
+
+  it("取消响应迟到到另一账号时不提示成功也不触发新账号刷新", async () => {
+    let resolveCancel!: (value: unknown) => void;
+    mockList.mockResolvedValue({ items: [baseRow], total: 1 });
+    mockCancel.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveCancel = resolve;
+        }),
+    );
+    renderBell();
+    fireEvent.click(await screen.findByTestId("jobs-bell-trigger"));
+    fireEvent.click(await screen.findByTestId("job-cancel-j1"));
+    act(() =>
+      useAuthStore
+        .getState()
+        .setAuth("jobs-u2-token", { id: "u2", role: "annotator" } as MeResponse),
+    );
+    await waitFor(() => expect(mockList).toHaveBeenCalledTimes(2));
+    await act(async () => resolveCancel({ status: "cancelled", id: "j1" }));
+    expect(mockList).toHaveBeenCalledTimes(2);
   });
 });

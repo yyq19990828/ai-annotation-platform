@@ -18,7 +18,12 @@ from app.db.models.point_cloud_quality import (
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.user import User
-from app.deps import get_db, require_project_visible, require_roles
+from app.deps import (
+    get_db,
+    require_project_visible,
+    require_roles,
+    require_active_task_actor,
+)
 from app.schemas.point_cloud_quality import (
     POINT_CLOUD_QUALITY_RULE_CODES,
     PointCloudQualityIssueOut,
@@ -47,7 +52,7 @@ from app.services.point_cloud_quality.evaluation import (
 from app.services.scheduler import is_privileged_for_project
 
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_active_task_actor)])
 
 
 def _raise_quality_error(exc: PointCloudQualityError) -> None:

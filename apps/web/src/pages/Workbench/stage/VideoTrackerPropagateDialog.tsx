@@ -571,7 +571,7 @@ export function VideoTrackerPropagateDialog({
       data-testid="video-tracker-propagate-dialog"
       className={cn(
         AI_PANEL_SURFACE_CLASS,
-        "flex h-full min-h-0 flex-col rounded-none border-0 text-card-foreground",
+        "@container/tracker-panel flex h-full min-h-0 flex-col rounded-none border-0 text-card-foreground",
       )}
     >
       {tracking ? (
@@ -637,9 +637,12 @@ export function VideoTrackerPropagateDialog({
         <>
           <header
             data-testid="tracker-panel-header"
-            className={cn(AI_PANEL_HEADER_CLASS, "flex items-start justify-between gap-3")}
+            className={cn(
+              AI_PANEL_HEADER_CLASS,
+              "flex flex-wrap items-start justify-between gap-3",
+            )}
           >
-            <div className="flex min-w-0 items-start gap-2">
+            <div className="flex min-w-0 flex-1 items-start gap-2">
               <span className={AI_PANEL_ICON_CLASS}>
                 <Bot className="size-3.5" />
               </span>
@@ -650,14 +653,14 @@ export function VideoTrackerPropagateDialog({
                     Ctrl+B
                   </kbd>
                 </div>
-                <p className="text-xs leading-relaxed text-muted-foreground">
-                  {scopeDescription}结果先进入候选审阅。
-                </p>
               </div>
             </div>
             <Button variant="ghost" size="xs" onClick={onCancel} aria-label={`关闭${scopeTitle}`}>
               <X data-icon="inline-start" />
             </Button>
+            <p className="w-full text-xs leading-relaxed text-muted-foreground">
+              {scopeDescription}结果先进入候选审阅。
+            </p>
           </header>
 
           <div className="min-h-0 flex-1 overflow-y-auto">
@@ -694,8 +697,8 @@ export function VideoTrackerPropagateDialog({
               <h3 id="tracker-settings-heading" className="text-xs font-semibold text-foreground">
                 本次追踪
               </h3>
-              <div className="grid grid-cols-2 gap-2.5">
-                <fieldset className="col-span-2 m-0 min-w-0 border-0 p-0">
+              <div className="grid grid-cols-1 gap-2.5 @min-[280px]/tracker-panel:grid-cols-2">
+                <fieldset className="col-span-full m-0 min-w-0 border-0 p-0">
                   <legend
                     className={cn(
                       TRACKER_FIELD_LABEL_CLASS,
@@ -704,7 +707,7 @@ export function VideoTrackerPropagateDialog({
                   >
                     追踪方向
                   </legend>
-                  <div className="grid h-8 grid-cols-3 gap-1 rounded-md bg-muted p-1 ring-1 ring-border">
+                  <div className="grid grid-cols-1 gap-1 rounded-md bg-muted p-1 ring-1 ring-border @min-[240px]/tracker-panel:grid-cols-3">
                     {(["forward", "backward", "bidirectional"] as VideoTrackerDirection[]).map(
                       (d) => (
                         <button
@@ -718,7 +721,7 @@ export function VideoTrackerPropagateDialog({
                             setCustomRange(null);
                           }}
                           className={cn(
-                            "cursor-pointer whitespace-nowrap rounded-sm px-2 text-xs font-medium outline-none transition-[background-color,color,box-shadow,transform] duration-200 focus-visible:ring-[3px] focus-visible:ring-ring/50 active:scale-[0.98]",
+                            "min-h-6 cursor-pointer whitespace-nowrap rounded-sm px-2 text-xs font-medium outline-none transition-[background-color,color,box-shadow,transform] duration-200 focus-visible:ring-[3px] focus-visible:ring-ring/50 active:scale-[0.98]",
                             direction === d
                               ? "bg-background text-foreground shadow-sm"
                               : "text-muted-foreground hover:bg-background/70 hover:text-foreground",
@@ -780,7 +783,7 @@ export function VideoTrackerPropagateDialog({
               </div>
 
               {(sourcelessLike || usesSamVariant(modelKey) || modelKey !== "mock_bbox") && (
-                <div className="grid grid-cols-2 gap-2.5">
+                <div className="grid grid-cols-1 gap-2.5 @min-[280px]/tracker-panel:grid-cols-2">
                   {sourcelessLike && (
                     <div className="flex min-w-0 flex-col gap-1.5">
                       <label htmlFor="tracker-target-class" className={TRACKER_FIELD_LABEL_CLASS}>
@@ -1091,17 +1094,18 @@ export function VideoTrackerPropagateDialog({
             )}
           </div>
 
-          <footer className="flex items-center justify-between gap-2 bg-card px-3.5 py-2.5">
+          <footer className="flex flex-col gap-2 bg-card px-3.5 py-2.5 @min-[320px]/tracker-panel:flex-row @min-[320px]/tracker-panel:items-center @min-[320px]/tracker-panel:justify-between">
             <span className="text-2xs leading-relaxed text-muted-foreground">
               Shift + 时间轴拖选范围
             </span>
-            <div className="flex shrink-0 items-center justify-end gap-2">
+            <div className="flex shrink-0 flex-col gap-2 @min-[240px]/tracker-panel:flex-row @min-[240px]/tracker-panel:items-center @min-[240px]/tracker-panel:justify-end">
               <Button variant="ghost" size="sm" onClick={onCancel} disabled={submitting}>
                 取消
               </Button>
               <Button
                 variant="ai"
                 size="sm"
+                className="h-auto min-h-8 min-w-0 whitespace-normal"
                 onClick={handleSubmit}
                 disabled={submitting || selectedModelDisabled || isPolylineTrack}
                 title={isPolylineTrack ? "polyline 轨迹追踪暂不支持" : undefined}

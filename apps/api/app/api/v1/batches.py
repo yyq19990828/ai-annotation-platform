@@ -15,6 +15,8 @@ from app.db.models.user import User
 from app.db.models.project import Project
 from app.schemas.batch import (
     BatchCreate,
+    BatchAssignmentPreviewRequest,
+    ReviewedBatchAssignment,
     BatchUpdate,
     BatchOut,
     BatchTransition,
@@ -30,12 +32,15 @@ from app.schemas.batch import (
     BulkBatchApprove,
     BulkBatchReject,
 )
+from app.schemas.management import BatchDistributionPreview
+from app.schemas.batch import ReviewedBatchDistribution
 from app.schemas.export import (
     ExportRequestBody,
     LidarExportPreflightRequest,
     LidarExportPreflightResponse,
 )
 from app.services.batch import BatchService, assert_can_transition, REVERSE_TRANSITIONS
+from app.services.management import preview_batch_distribution
 from app.services.audit import AuditService, AuditAction
 from app.services.notification import NotificationService
 from app.services.user_brief import resolve_briefs_with_project_role
@@ -166,11 +171,72 @@ async def update_batch(
     batch = await svc.get(batch_id)
     if not batch or batch.project_id != project_id:
         raise HTTPException(status_code=404, detail="Batch not found")
-    batch = await svc.update(batch_id, data)
+    batch = await svc.update(batch_id, data, project_id=project_id)
     await db.commit()
     await db.refresh(batch)
     briefs = await _briefs_for_batches(db, project_id, [batch])
     return _batch_to_out(batch, briefs)
+
+
+async def _assignment_plan(db, project_id, batch_id, data, *, lock=False):
+    svc = BatchService(db)
+    return await preview_batch_distribution(
+        db,
+        project_id=project_id,
+        annotator_ids=[data.annotator_id] if data.annotator_id else [],
+        reviewer_ids=[data.reviewer_id] if data.reviewer_id else [],
+        only_unassigned=False,
+        single_batch_id=batch_id,
+        clear_unselected=True,
+        validate_targets=svc._lock_and_validate_assignment_targets,
+        lock_batches=lock,
+    )
+
+
+@router.post("/{batch_id}/assignment-preview", response_model=BatchDistributionPreview)
+async def preview_batch_assignment(
+    project_id: uuid.UUID,
+    batch_id: uuid.UUID,
+    data: BatchAssignmentPreviewRequest,
+    project: Project = Depends(require_project_owner),
+    db: AsyncSession = Depends(get_db),
+):
+    return await _assignment_plan(db, project_id, batch_id, data)
+
+
+@router.post("/{batch_id}/assignment-apply", response_model=BatchOut)
+async def apply_batch_assignment(
+    project_id: uuid.UUID,
+    batch_id: uuid.UUID,
+    data: ReviewedBatchAssignment,
+    request: Request,
+    project: Project = Depends(require_project_owner),
+    db: AsyncSession = Depends(get_db),
+    actor: User = Depends(get_current_user),
+):
+    plan = await _assignment_plan(db, project_id, batch_id, data, lock=True)
+    if plan.preview_version != data.preview_version:
+        raise HTTPException(
+            status_code=409, detail="批次或成员负载已变化，请重新预览分派"
+        )
+    batch = await BatchService(db).update(
+        batch_id,
+        BatchUpdate(annotator_id=data.annotator_id, reviewer_id=data.reviewer_id),
+        project_id=project_id,
+    )
+    await AuditService.log(
+        db,
+        actor=actor,
+        action="batch.assignment_apply",
+        target_type="batch",
+        target_id=str(batch_id),
+        request=request,
+        status_code=200,
+        detail={"assignment": plan.items[0].model_dump(mode="json")},
+    )
+    await db.commit()
+    await db.refresh(batch)
+    return _batch_to_out(batch, await _briefs_for_batches(db, project_id, [batch]))
 
 
 @router.delete("/{batch_id}", status_code=204)
@@ -335,6 +401,7 @@ async def distribute_batches_in_project(
         annotator_ids=data.annotator_ids,
         reviewer_ids=data.reviewer_ids,
         only_unassigned=data.only_unassigned,
+        batch_ids=data.batch_ids,
     )
     await AuditService.log(
         db,
@@ -346,6 +413,70 @@ async def distribute_batches_in_project(
         status_code=200,
         detail={
             "scope": "project_batches",
+            "distributed_batches": summary["distributed_batches"],
+            "annotator_count": len(data.annotator_ids),
+            "reviewer_count": len(data.reviewer_ids),
+            "only_unassigned": data.only_unassigned,
+        },
+    )
+    await db.commit()
+    return summary
+
+
+@router.post("/distribution-preview", response_model=BatchDistributionPreview)
+async def preview_distribution_in_project(
+    project_id: uuid.UUID,
+    data: ProjectDistributeBatches,
+    project: Project = Depends(require_project_owner),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Preview assignment changes without mutating batches or task rows."""
+
+    del project, current_user
+    svc = BatchService(db)
+    return await preview_batch_distribution(
+        db,
+        project_id=project_id,
+        annotator_ids=data.annotator_ids,
+        reviewer_ids=data.reviewer_ids,
+        only_unassigned=data.only_unassigned,
+        batch_ids=data.batch_ids,
+        validate_targets=svc._lock_and_validate_assignment_targets,
+    )
+
+
+@router.post("/distribution-apply", response_model=BatchDistributeResult)
+async def apply_distribution_in_project(
+    project_id: uuid.UUID,
+    data: ReviewedBatchDistribution,
+    request: Request,
+    project: Project = Depends(require_project_owner),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Apply a previously reviewed project distribution plan."""
+
+    del project
+    svc = BatchService(db)
+    summary = await svc.distribute_batches_in_project(
+        project_id,
+        annotator_ids=data.annotator_ids,
+        reviewer_ids=data.reviewer_ids,
+        only_unassigned=data.only_unassigned,
+        batch_ids=data.batch_ids,
+        preview_version=data.preview_version,
+    )
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.BATCH_DISTRIBUTE_EVEN,
+        target_type="project",
+        target_id=str(project_id),
+        request=request,
+        status_code=200,
+        detail={
+            "scope": "project_batches_management_apply",
             "distributed_batches": summary["distributed_batches"],
             "annotator_count": len(data.annotator_ids),
             "reviewer_count": len(data.reviewer_ids),

@@ -46,6 +46,42 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
             <VideoMaskCorrectionDialog {...model.maskCorrectionDialog} />
             <MaskConversionDialog {...model.conversionDialog} />
             <VideoTrackerReviewBar {...model.trackerReview} />
+            {model.issueSection?.stageKind === "video" &&
+              model.issueSection.issueNavigation.status !== "idle" && (
+                <div
+                  className="absolute bottom-20 right-4 z-workbench-top flex max-w-sm items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs text-foreground shadow-lg"
+                  role="status"
+                  aria-live="polite"
+                  data-testid="issue-frame-navigation"
+                  data-status={model.issueSection.issueNavigation.status}
+                  data-frame-index={model.issueSection.issueNavigation.frameIndex ?? ""}
+                  data-workbench-issue-navigation
+                >
+                  <span>
+                    {model.issueSection.issueNavigation.message ??
+                      (model.issueSection.issueNavigation.status === "preparing"
+                        ? `正在准备源帧 F ${model.issueSection.issueNavigation.frameIndex}…`
+                        : model.issueSection.issueNavigation.status === "ready"
+                          ? `已定位源帧 F ${model.issueSection.issueNavigation.frameIndex}`
+                          : model.issueSection.issueNavigation.status === "timeout"
+                            ? "源帧准备超时，原锚点已保留"
+                            : model.issueSection.issueNavigation.status === "cancelled"
+                              ? "定位已取消，原锚点已保留"
+                              : "源帧暂不可用，原锚点已保留")}
+                  </span>
+                  {model.issueSection.issueNavigation.status !== "preparing" &&
+                    model.issueSection.issueNavigation.status !== "ready" && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        data-testid="issue-frame-retry"
+                        onClick={() => void model.issueSection?.onRetryIssueNavigation()}
+                      >
+                        重试
+                      </Button>
+                    )}
+                </div>
+              )}
           </>
         }
       />
@@ -103,42 +139,6 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
                   <Icon name="crosshair" size={14} />
                 </button>
               )}
-              {model.issueSection.stageKind === "video" &&
-                model.issueSection.issueNavigation.status !== "idle" && (
-                  <div
-                    className="fixed bottom-20 right-20 z-workbench-top flex max-w-sm items-center gap-2 rounded-md border border-border bg-card px-3 py-2 text-xs text-foreground shadow-lg"
-                    role="status"
-                    aria-live="polite"
-                    data-testid="issue-frame-navigation"
-                    data-status={model.issueSection.issueNavigation.status}
-                    data-frame-index={model.issueSection.issueNavigation.frameIndex ?? ""}
-                    data-workbench-issue-navigation
-                  >
-                    <span>
-                      {model.issueSection.issueNavigation.message ??
-                        (model.issueSection.issueNavigation.status === "preparing"
-                          ? `正在准备源帧 F ${model.issueSection.issueNavigation.frameIndex}…`
-                          : model.issueSection.issueNavigation.status === "ready"
-                            ? `已定位源帧 F ${model.issueSection.issueNavigation.frameIndex}`
-                            : model.issueSection.issueNavigation.status === "timeout"
-                              ? "源帧准备超时，原锚点已保留"
-                              : model.issueSection.issueNavigation.status === "cancelled"
-                                ? "定位已取消，原锚点已保留"
-                                : "源帧暂不可用，原锚点已保留")}
-                    </span>
-                    {model.issueSection.issueNavigation.status !== "preparing" &&
-                      model.issueSection.issueNavigation.status !== "ready" && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          data-testid="issue-frame-retry"
-                          onClick={() => void model.issueSection?.onRetryIssueNavigation()}
-                        >
-                          重试
-                        </Button>
-                      )}
-                  </div>
-                )}
               <IssueCreateModal {...model.issueSection.createModal} />
             </>
           );

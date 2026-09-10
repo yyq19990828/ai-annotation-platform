@@ -144,3 +144,10 @@ GET /api/v1/dashboard?view=projects        # 超管看全部
 
 - [批次与任务](./tasks-and-annotations)
 - [ML Backend](./ml-backend)
+
+## 开工状态
+
+- `GET /api/v1/projects/{project_id}/readiness`：项目负责人或超管读取真实数据、任务创建作业、非空批次及有效成员和分派状态。空批次不算可执行；停用账号或角色不匹配的成员不算有效接收人。
+- `GET /api/v1/dashboard/annotator/projects/{project_id}/onboarding`：当前用户在可见项目内的分派、访问、有效标注和审核结果计数，`reviewed_task_id` 指向最近产生审核结果的本人任务；reviewed_task_display_id、reviewed_task_status 和 reviewed_task_reason 可直接展示审核结论。分派计数只包含当前可进入的任务，历史结果不依赖任务仍可编辑。等待审核的任务不计入审核结果。
+
+清单的跳过与指南确认继续通过个人偏好接口持久化，按项目和指南版本隔离。

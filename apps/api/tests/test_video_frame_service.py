@@ -1,4 +1,6 @@
 import uuid
+import pytest
+from sqlalchemy import text
 
 from app.db.models.dataset import (
     Dataset,
@@ -15,6 +17,11 @@ from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.db.models.video_tracker_job import VideoTrackerJob
 from app.cli.video.rebuild_timetable import rebuild_item_timetable
+from app.services.system_settings_service import SystemSettingsService
+from app.services.video_frame_service import (
+    build_context_from_dataset_item,
+    list_chunks,
+)
 
 
 async def _make_video_task(db_session, owner_id):
@@ -456,6 +463,78 @@ async def test_video_chunks_create_pending_rows_and_enqueue(
         )
     ).all()
     assert len(rows) == 2
+
+
+async def test_video_warmup_zero_skips_neighbor_enqueue(
+    db_session, super_admin, monkeypatch
+):
+    user, _ = super_admin
+    _, item = await _make_video_task(db_session, user.id)
+    await SystemSettingsService.set_many(
+        db_session, {"video_chunk_warmup_lookahead": 0}, actor_id=user.id
+    )
+    await db_session.flush()
+    queued: list[tuple[str, list[int]]] = []
+    monkeypatch.setattr(
+        "app.workers.media.ensure_video_chunks.delay",
+        lambda item_id, chunk_ids: queued.append((item_id, chunk_ids)),
+    )
+
+    ctx = await build_context_from_dataset_item(db_session, item.id)
+    await list_chunks(db_session, ctx, 0, 0)
+
+    assert queued == [(str(item.id), [0])]
+    rows = (
+        await db_session.execute(
+            VideoChunk.__table__.select().where(VideoChunk.dataset_item_id == item.id)
+        )
+    ).all()
+    assert [row.chunk_id for row in rows] == [0]
+
+
+@pytest.mark.parametrize("path", ["chunks?from_frame=0&to_frame=0", "chunks/0"])
+async def test_warmup_setting_failure_does_not_expire_the_primary_response(
+    db_session, httpx_client_bound, super_admin, monkeypatch, path
+):
+    user, token = super_admin
+    task, item = await _make_video_task(db_session, user.id)
+    task_id, item_id = task.id, item.id
+    db_session.add(
+        VideoChunk(
+            dataset_item_id=item_id,
+            chunk_id=0,
+            start_frame=0,
+            end_frame=59,
+            storage_key="video-test/0.mp4",
+            status="ready",
+        )
+    )
+    await db_session.flush()
+    queued = []
+
+    async def unavailable(db, *args, **kwargs):
+        # A real failed statement leaves this transaction needing rollback.
+        await db.execute(text("SELECT 1 / 0"))
+
+    monkeypatch.setattr(SystemSettingsService, "get", unavailable)
+    monkeypatch.setattr(
+        "app.services.video_frame_service.storage_service.generate_download_url",
+        lambda key, **kwargs: f"http://storage.local/{key}",
+    )
+    monkeypatch.setattr(
+        "app.workers.media.ensure_video_chunks.delay",
+        lambda item_id, chunk_ids: queued.append((item_id, chunk_ids)),
+    )
+    response = await httpx_client_bound.get(
+        f"/api/v1/tasks/{task_id}/video/{path}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    chunks = body["chunks"] if "chunks" in body else [body]
+    assert [chunk["chunk_id"] for chunk in chunks] == [0]
+    assert chunks[0]["status"] == "ready"
+    assert queued == []
 
 
 async def test_video_chunk_api_exposes_generation_diagnostics(

@@ -19,6 +19,18 @@ test("known preview and document lifecycle requests may be cancelled", () => {
     assert.equal(isVideoLifecycleCancellation({ ...abort, method: "POST", path }), true, path);
 });
 
+test("task queue cancellation is limited to the exact GET lifecycle request", () => {
+  const request = { ...abort, method: "GET", path: "/api/v1/tasks" };
+  assert.equal(isVideoLifecycleCancellation(request), true);
+  assert.equal(isVideoLifecycleCancellation({ ...request, method: "POST" }), false);
+  assert.equal(isVideoLifecycleCancellation({ ...request, kind: "http" }), false);
+  assert.equal(
+    isVideoLifecycleCancellation({ ...request, message: "net::ERR_CONNECTION_RESET" }),
+    false,
+  );
+  assert.equal(isVideoLifecycleCancellation({ ...request, path: "/api/v1/tasks/export" }), false);
+});
+
 test("annotation and Issue writes never become expected cancellations", () => {
   for (const method of ["POST", "PATCH", "DELETE"])
     for (const path of [`${task}/annotations`, "/api/v1/annotations/a", "/api/v1/feedbacks"])

@@ -171,12 +171,21 @@ export function AttributeForm({
 
   // v0.10.6：form 整体 blur 时（焦点离开 form 容器）flush
   const handleFormBlur = (e: React.FocusEvent<HTMLDivElement>) => {
-    if (!useDirty) return;
     // relatedTarget 仍在 form 内 → 字段间跳转，不算 blur 出
     if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
-    dirtyTracker!.flush(annotationId!, () => {
-      onChange(draftRef.current);
-    });
+    if (useDirty) {
+      dirtyTracker!.flush(annotationId!, () => {
+        onChange(draftRef.current);
+      });
+      return;
+    }
+    // 提交/切题通常先让表单失焦；在这里立即释放普通 400ms 防抖，
+    // 让上层现有 mutation pending 门禁可以确认最后一笔属性修改。
+    if (debounceRef.current !== null) {
+      window.clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+      if (!immediateRef.current) onChangeRef.current(draftRef.current);
+    }
   };
 
   // v0.16.8 修复「改属性看似改了实则没保存」：debounce 路径下，组件卸载前若仍有未到点的提交
@@ -276,6 +285,7 @@ export function AttributeForm({
                 value={(v as string) ?? ""}
                 disabled={readOnly}
                 onChange={(e) => setValue(e.target.value)}
+                data-attribute-key={f.key}
                 className={INPUT_CLASS}
               />
             )}
@@ -290,17 +300,24 @@ export function AttributeForm({
                   const n = e.target.value === "" ? undefined : Number(e.target.value);
                   setValue(n);
                 }}
+                data-attribute-key={f.key}
                 className={INPUT_CLASS}
               />
             )}
             {f.type === "boolean" && (
-              <Switch checked={!!v} disabled={readOnly} onChange={(next) => setValue(next)} />
+              <Switch
+                checked={!!v}
+                disabled={readOnly}
+                onChange={(next) => setValue(next)}
+                data-attribute-key={f.key}
+              />
             )}
             {f.type === "select" && (
               <select
                 value={(v as string) ?? ""}
                 disabled={readOnly}
                 onChange={(e) => setValue(e.target.value || undefined)}
+                data-attribute-key={f.key}
                 className={`${INPUT_CLASS} cursor-pointer`}
               >
                 <option value="">—</option>
@@ -320,6 +337,7 @@ export function AttributeForm({
                   const arr = Array.from(e.target.selectedOptions).map((o) => o.value);
                   setValue(arr);
                 }}
+                data-attribute-key={f.key}
                 className={`${INPUT_CLASS} h-20`}
               >
                 {f.options?.map((o) => (
@@ -338,6 +356,7 @@ export function AttributeForm({
                   value={typeof v === "number" ? v : (f.min ?? 0)}
                   disabled={readOnly}
                   onChange={(e) => setValue(Number(e.target.value))}
+                  data-attribute-key={f.key}
                   className="flex-1 accent-brand"
                 />
                 <span className="mono min-w-[2.5ch] text-right text-xs text-muted-foreground">

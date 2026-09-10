@@ -14,6 +14,7 @@ export function isVideoLifecycleCancellation(error: VideoRequestError): boolean 
   return (
     error.path === "/api/v1/auth/me" ||
     error.path === "/api/v1/feedbacks" ||
+    error.path === "/api/v1/tasks" ||
     /^\/api\/v1\/tasks\/[0-9a-f-]{36}$/.test(error.path) ||
     /^\/api\/v1\/tasks\/[0-9a-f-]{36}\/video\/frames\/\d+$/.test(error.path) ||
     /^\/api\/v1\/videos\/[0-9a-f-]{36}\/chunks\/\d+(?:\/samples)?$/.test(error.path)

@@ -8,8 +8,21 @@ import { useWorkbenchAnnotationActions } from "./useWorkbenchAnnotationActions";
 import type { ContinuousImageCreation } from "./manualImageCreation";
 import type { PendingDrawing, Tool } from "./useWorkbenchState";
 
-const { enqueueDurably } = vi.hoisted(() => ({ enqueueDurably: vi.fn(async () => {}) }));
-vi.mock("./offlineQueue", () => ({ enqueue: vi.fn(), enqueueDurably }));
+const { enqueueDurably } = vi.hoisted(() => ({
+  enqueueDurably: vi.fn<typeof import("./offlineQueue").enqueueDurably>(async () => {}),
+}));
+vi.mock("./offlineQueue", () => ({
+  enqueue: vi.fn(),
+  enqueueDurably,
+  isOfflineCandidate: (error: unknown) =>
+    error instanceof TypeError ||
+    (!!error && typeof error === "object" && "status" in error && Number(error.status) >= 500),
+}));
+
+const authState = vi.hoisted(() => ({ userId: "user-1", active: true }));
+vi.mock("@/stores/authStore", () => ({
+  isCurrentAuthOwner: (userId: string) => authState.active && authState.userId === userId,
+}));
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -43,6 +56,9 @@ function setup({
   create = vi.fn<(payload: import("@/api/tasks").AnnotationPayload) => Promise<{ id: string }>>(
     async () => ({ id: "created-1" }),
   ),
+  update = vi.fn(),
+  deleteMutation = vi.fn(),
+  enqueueOnError = vi.fn(),
 } = {}) {
   const history = { push: vi.fn() };
   const queryClient = new QueryClient();
@@ -72,12 +88,12 @@ function setup({
         recordRecentClass: vi.fn(),
         mutations: {
           create: { mutate: vi.fn() },
-          update: { mutate: vi.fn() },
-          delete: { mutate: vi.fn() },
+          update: { mutate: update },
+          delete: { mutate: deleteMutation },
         },
         createAnnotationAsync: create as never,
         toolBindings: toolBindings as never,
-        enqueueOnError: vi.fn(),
+        enqueueOnError,
         annotationsRef: { current: [] },
         isLocked: locked,
         keypointNodeCount: 2,
@@ -86,7 +102,7 @@ function setup({
     },
     { initialProps: { taskId: "task-1", locked: false } },
   );
-  return { ...hook, create, history, queryClient, pushToast };
+  return { ...hook, create, update, deleteMutation, history, queryClient, pushToast };
 }
 
 describe("useWorkbenchAnnotationActions module", () => {
@@ -122,6 +138,43 @@ describe("useWorkbenchAnnotationActions module", () => {
   });
   it("exports the hook", () => {
     expect(typeof useWorkbenchAnnotationActions).toBe("function");
+  });
+
+  it("geometry fallback waits for durable queue acceptance before recording history", async () => {
+    enqueueDurably.mockClear();
+    const queued = deferred<void>();
+    enqueueDurably.mockReturnValueOnce(queued.promise);
+    const update = vi.fn();
+    const enqueueOnError = vi.fn((_error: unknown, fallback: () => void) => {
+      fallback();
+    });
+    const { result, history } = setup({
+      intent: null,
+      update,
+      enqueueOnError,
+    });
+    act(() =>
+      result.current.handleCommitMove(
+        "annotation-1",
+        { x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+        { x: 0.2, y: 0.1, w: 0.2, h: 0.2 },
+      ),
+    );
+    const onError = update.mock.calls[0][1].onError as (error: unknown) => void;
+    act(() => onError(new TypeError("offline")));
+    expect(enqueueDurably).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "update",
+        taskId: "task-1",
+        annotationId: "annotation-1",
+      }),
+      { userId: "user-1", projectId: "project-1" },
+    );
+    expect(history.push).not.toHaveBeenCalled();
+    await act(async () => queued.resolve());
+    expect(history.push).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "update", annotationId: "annotation-1" }),
+    );
   });
 
   it("多边形和旋转框完成后先选类，不直接使用推荐类别", () => {
@@ -207,7 +260,7 @@ describe("useWorkbenchAnnotationActions module", () => {
   it("业务失败保留同一草稿，重试不重复落库", async () => {
     const create = vi
       .fn()
-      .mockRejectedValueOnce({ status: 503 })
+      .mockRejectedValueOnce({ status: 422 })
       .mockResolvedValue({ id: "retry-1" });
     const { result, history } = setup({ create });
     await act(async () => {
@@ -307,28 +360,34 @@ describe("useWorkbenchAnnotationActions module", () => {
     expect(history.push).not.toHaveBeenCalled();
   });
 
-  it("离线创建必须等待持久化接收；失败留稿，没有虚假对象或历史", async () => {
-    const durable = deferred<void>();
-    enqueueDurably.mockReturnValueOnce(durable.promise);
-    const { result, queryClient, history } = setup({
-      create: vi.fn(async () => {
-        throw new TypeError("offline");
-      }),
-    });
-    await act(async () => {
-      result.current.beginBboxDrawing(geom);
-    });
-    expect(result.current.state.pendingDrawing?.creation?.phase).toBe("saving");
-    expect(queryClient.getQueryData(["annotations", "task-1"])).toBeUndefined();
-    await act(async () => durable.reject(new Error("quota")));
-    expect(result.current.state.pendingDrawing?.creation?.phase).toBe("error");
-    expect(history.push).not.toHaveBeenCalled();
-    expect(queryClient.getQueryData(["annotations", "task-1"])).toBeUndefined();
-    await act(async () => result.current.submitManualDrawing());
-    expect(result.current.state.pendingDrawing).toBeNull();
-    expect(queryClient.getQueryData(["annotations", "task-1"])).toHaveLength(1);
-    expect(history.push).toHaveBeenCalledTimes(1);
-  });
+  it.each([new TypeError("offline"), { status: 503 }])(
+    "创建遇到 %o 必须等待持久化接收；失败留稿，没有虚假对象或历史",
+    async (error) => {
+      enqueueDurably.mockClear();
+      const durable = deferred<void>();
+      enqueueDurably.mockReturnValueOnce(durable.promise);
+      const { result, queryClient, history } = setup({
+        create: vi.fn(async () => {
+          throw error;
+        }),
+      });
+      await act(async () => {
+        result.current.beginBboxDrawing(geom);
+      });
+      expect(result.current.state.pendingDrawing?.creation?.phase).toBe("saving");
+      expect(queryClient.getQueryData(["annotations", "task-1"])).toBeUndefined();
+      await act(async () => durable.reject(new Error("quota")));
+      expect(result.current.state.pendingDrawing?.creation?.phase).toBe("error");
+      expect(history.push).not.toHaveBeenCalled();
+      expect(queryClient.getQueryData(["annotations", "task-1"])).toBeUndefined();
+      await act(async () => result.current.submitManualDrawing());
+      expect(result.current.state.pendingDrawing).toBeNull();
+      expect(queryClient.getQueryData(["annotations", "task-1"])).toHaveLength(1);
+      expect(history.push).toHaveBeenCalledTimes(1);
+      expect(enqueueDurably).toHaveBeenCalledTimes(2);
+      expect(enqueueDurably.mock.calls[1][0].id).toBe(enqueueDurably.mock.calls[0][0].id);
+    },
+  );
 
   it("安全确认路径与连续路径生成相同 payload", async () => {
     const normal = setup({ intent: null });
@@ -337,7 +396,11 @@ describe("useWorkbenchAnnotationActions module", () => {
     await act(async () => normal.result.current.handlePickPendingClass("car"));
     const repeated = setup();
     await act(async () => repeated.result.current.beginBboxDrawing(geom));
-    expect(normal.create.mock.calls[0][0]).toEqual(repeated.create.mock.calls[0][0]);
+    const { client_request_id: firstKey, ...firstBody } = normal.create.mock.calls[0][0];
+    const { client_request_id: nextKey, ...nextBody } = repeated.create.mock.calls[0][0];
+    expect(firstBody).toEqual(nextBody);
+    expect(firstKey).toBeTruthy();
+    expect(nextKey).not.toBe(firstKey);
   });
 
   it("Esc 分别取消关键点半成品和待属性几何；保存中不能取消", async () => {

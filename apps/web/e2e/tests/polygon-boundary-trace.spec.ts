@@ -123,6 +123,7 @@ const test = base.extend<{ boundaryCase: Case }>({
                 "/api/v1/auth/registration-status",
                 "/api/v1/feedbacks",
                 "/api/v1/projects",
+                "/api/v1/tasks",
                 "/api/v1/audit-logs",
               ].includes(error.path!) ||
                 /^\/api\/v1\/tasks\/[0-9a-f-]{36}(\/annotations)?$/.test(error.path!)))),
@@ -328,7 +329,9 @@ test("H3-2 wraps closure, snaps near vertices, deduplicates joins and cancels pr
 }) => {
   const source = await createSource(request, fixture, { type: "polygon", points: square });
   await open(page, fixture);
-  await clickPoint(page, square[3]);
+  // Ordinary snapping chooses the nearest edge/vertex. Approach from outside
+  // the corner so pixel rounding cannot make an interior edge projection nearer.
+  await clickPoint(page, square[3], [-2, 2]);
   await count(page, 1);
   await controls(page).getByRole("button", { name: "沿已有边界", exact: true }).click();
   await clickPoint(page, square[3], [2, -2]);
@@ -347,7 +350,7 @@ test("H3-2 wraps closure, snaps near vertices, deduplicates joins and cancels pr
   ).toBeVisible();
   await count(page, 2);
   await expect(page.getByTestId("tool-btn-polygon")).toHaveAttribute("aria-pressed", "true");
-  await clickPoint(page, square[2]);
+  await clickPoint(page, square[2], [2, 2]);
   await page.keyboard.press("Enter");
   const saved = await save(page, fixture);
   expectPoints(saved.geometry.points, [square[3], square[0], square[2]]);

@@ -15,7 +15,7 @@ from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.user import User
 from app.db.models.video_chapter import VideoChapter
-from app.deps import get_current_user, get_db, require_roles
+from app.deps import get_current_user, get_db, require_roles, require_active_task_actor
 from app.schemas.task import (
     TaskVideoFrameTimetableResponse,
     VideoFrameTimetableEntry,
@@ -52,7 +52,7 @@ from app.services.video_frame_service import (
 )
 from app.services.video_segment_service import list_segments as list_video_segments
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_active_task_actor)])
 
 
 _CHAPTER_EDITORS = (

@@ -144,10 +144,14 @@
 | GET | `/unclassified-count` |
 | GET | `/{batch_id}` |
 | PATCH | `/{batch_id}` |
+| POST | `/{batch_id}/assignment-preview` |
+| POST | `/{batch_id}/assignment-apply` |
 | DELETE | `/{batch_id}` |
 | POST | `/{batch_id}/transition` |
 | POST | `/split` |
 | POST | `/distribute-batches` |
+| POST | `/distribution-preview` |
+| POST | `/distribution-apply` |
 | POST | `/{batch_id}/reject` |
 | POST | `/{batch_id}/reset` |
 | POST | `/{batch_id}/admin-lock` |
@@ -191,6 +195,7 @@
 
 | Method | Path |
 |---|---|
+| GET | `/annotator/projects/{project_id}/onboarding` |
 | GET | `/annotator` |
 | GET | `/annotator/batches` |
 | GET | `/me/performance` |
@@ -252,6 +257,7 @@
 
 | Method | Path |
 |---|---|
+| GET | `/query` |
 | PATCH | `/{group_id}` |
 | DELETE | `/{group_id}` |
 
@@ -274,8 +280,12 @@
 
 | Method | Path |
 |---|---|
+| GET | `/query` |
+| GET | `/stats` |
+| GET | `/export` |
 | DELETE | `/{invitation_id}` |
 | POST | `/{invitation_id}/resend` |
+| POST | `/{invitation_id}/send-email` |
 
 ## `invitations.py`
 
@@ -283,6 +293,7 @@
 |---|---|
 | GET | `/invitations/{token}` |
 | POST | `/register` |
+| POST | `/invitations/accept` |
 
 ## `mask_formats.py`
 
@@ -417,6 +428,7 @@
 |---|---|
 | GET | `/stats` |
 | GET | `/{project_id}` |
+| GET | `/{project_id}/readiness` |
 | PATCH | `/{project_id}` |
 | POST | `/{project_id}/pipelines/apply` |
 | DELETE | `/{project_id}` |
@@ -470,6 +482,7 @@
 |---|---|
 | GET | `/system` |
 | PATCH | `/system` |
+| POST | `/system/reset` |
 | POST | `/system/test-smtp` |
 
 ## `task_views.py`
@@ -657,12 +670,21 @@
 | Method | Path |
 |---|---|
 | GET | `/stats` |
+| GET | `/query` |
 | GET | `/export` |
 | POST | `/invite` |
+| POST | `/bulk-invite/preview` |
+| POST | `/bulk-invite` |
+| POST | `/groups/bulk/preview` |
+| POST | `/groups/bulk` |
+| GET | `/{user_id}/role/preview` |
 | PATCH | `/{user_id}/role` |
 | POST | `/{user_id}/admin-reset-password` |
 | DELETE | `/{user_id}` |
 | POST | `/{user_id}/deactivate` |
+| GET | `/{user_id}/offboarding-preview` |
+| POST | `/{user_id}/offboarding` |
+| POST | `/{user_id}/reactivate` |
 | PATCH | `/{user_id}/group` |
 
 ## `video_tracker_jobs.py`
@@ -697,4 +719,4 @@
 
 ---
 
-_共 65 模块 / 390 路由_
+_共 65 模块 / 412 路由_

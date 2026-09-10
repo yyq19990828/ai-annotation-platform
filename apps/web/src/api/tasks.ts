@@ -101,6 +101,8 @@ export interface TaskListParams {
 }
 
 export interface AnnotationPayload {
+  /** Offline mutation identity; stripped from JSON and sent as Idempotency-Key. */
+  client_request_id?: string;
   video_segment_id?: string | null;
   annotation_type?: string;
   /** v0.10.17 · 工具维度绑定; service 层据此校验 class_name 在对应 unit 类别集内. */
@@ -304,7 +306,7 @@ export interface SubmitResponse {
 }
 
 export const tasksApi = {
-  listByProject: (projectId: string, params?: TaskListParams) => {
+  listByProject: (projectId: string, params?: TaskListParams, init?: RequestInit) => {
     const q = new URLSearchParams({ project_id: projectId });
     if (params?.status) q.set("status", params.status);
     if (params?.assignee_id) q.set("assignee_id", params.assignee_id);
@@ -315,7 +317,7 @@ export const tasksApi = {
     if (params?.limit) q.set("limit", String(params.limit));
     if (params?.offset) q.set("offset", String(params.offset));
     if (params?.cursor) q.set("cursor", params.cursor);
-    return apiClient.get<TaskListResponse>(`/tasks?${q}`);
+    return apiClient.get<TaskListResponse>(`/tasks?${q}`, init);
   },
 
   getNext: (projectId: string, batchId?: string) => {
@@ -527,8 +529,15 @@ export const tasksApi = {
     return apiClient.get<AnnotationResponse[]>(`/tasks/${id}/annotations${query}`, init);
   },
 
-  createAnnotation: (id: string, payload: AnnotationPayload) =>
-    apiClient.post<AnnotationResponse>(`/tasks/${id}/annotations`, payload),
+  createAnnotation: (id: string, payload: AnnotationPayload, idempotencyKey?: string) => {
+    const { client_request_id, ...body } = payload;
+    const key = idempotencyKey ?? client_request_id;
+    return apiClient.post<AnnotationResponse>(
+      `/tasks/${id}/annotations`,
+      body,
+      key === undefined ? undefined : { headers: { "Idempotency-Key": key } },
+    );
+  },
 
   updateAnnotation: (
     taskId: string,

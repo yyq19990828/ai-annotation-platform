@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { flushSync } from "react-dom";
 import { clsx } from "clsx";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
@@ -6,28 +7,22 @@ import { Captcha, isCaptchaRequired } from "@/components/Captcha";
 import {
   useResolveInvitation,
   useRegister,
+  useAcceptExistingInvitation,
   useRegistrationStatus,
   useOpenRegister,
   useResendVerification,
 } from "@/hooks/useInvitation";
-import { useAuthStore } from "@/stores/authStore";
+import { isCurrentAuthOwner, useAuthStore } from "@/stores/authStore";
 import { ROLE_LABELS } from "@/constants/roles";
 import type { UserRole } from "@/types";
 import type { ApiError } from "@/api/client";
+import type { InvitationAcceptance, RegisterResponse } from "@/api/invitations";
+import { getPasswordRequirements, isPasswordStrong } from "@/utils/password";
 import styles from "./RegisterPage.module.css";
-
-function isPasswordStrong(pwd: string): boolean {
-  return pwd.length >= 8 && /[A-Z]/.test(pwd) && /[a-z]/.test(pwd) && /\d/.test(pwd);
-}
 
 function PasswordStrengthIndicator({ pwd }: { pwd: string }) {
   if (!pwd) return null;
-  const rules = [
-    { ok: pwd.length >= 8, label: "至少 8 位" },
-    { ok: /[A-Z]/.test(pwd), label: "含大写字母" },
-    { ok: /[a-z]/.test(pwd), label: "含小写字母" },
-    { ok: /\d/.test(pwd), label: "含数字" },
-  ];
+  const rules = getPasswordRequirements(pwd);
   return (
     <div className={styles.passwordRules}>
       {rules.map((r) => (
@@ -43,11 +38,22 @@ export function RegisterPage() {
   const [params] = useSearchParams();
   const token = params.get("token");
   const existingToken = useAuthStore((s) => s.token);
+  const currentUserId = useAuthStore((s) => s.user?.id);
+  // Keep the entry mode stable while a newly created invitation account is
+  // written to the auth store; otherwise the same render would switch into
+  // the existing-account confirmation flow before the success panel appears.
+  const [hadAuthOnEntry] = useState(() => Boolean(useAuthStore.getState().token));
 
-  if (existingToken) return <Navigate to="/dashboard" replace />;
+  if (hadAuthOnEntry && existingToken) {
+    return token ? (
+      <ExistingAccountInviteForm key={`${token}:${currentUserId}`} token={token} />
+    ) : (
+      <Navigate to="/dashboard" replace />
+    );
+  }
 
   if (token) {
-    return <InviteRegisterForm token={token} />;
+    return <InviteRegisterForm key={token} token={token} />;
   }
   return <OpenRegisterForm />;
 }
@@ -145,7 +151,7 @@ function OpenRegisterForm() {
             />
           </Field>
 
-          <Field label="密码（至少 8 位，需含大小写字母��数字）">
+          <Field label="密码（至少 8 位，需含大小写字母和数字）">
             <div className={styles.passwordField}>
               <input
                 required
@@ -153,6 +159,7 @@ function OpenRegisterForm() {
                 value={pwd}
                 onChange={(e) => setPwd(e.target.value)}
                 minLength={8}
+                maxLength={128}
                 className={clsx(styles.input, styles.passwordInput)}
               />
               <button
@@ -173,6 +180,7 @@ function OpenRegisterForm() {
               type={showPwd ? "text" : "password"}
               value={pwd2}
               onChange={(e) => setPwd2(e.target.value)}
+              maxLength={128}
               className={clsx(styles.input, !passwordsMatch && styles.inputInvalid)}
             />
             {!passwordsMatch && <div className={styles.mismatchText}>两次密码不一致</div>}
@@ -213,14 +221,18 @@ function OpenRegisterForm() {
 function InviteRegisterForm({ token }: { token: string }) {
   const navigate = useNavigate();
   const setAuth = useAuthStore((s) => s.setAuth);
-
-  const resolve = useResolveInvitation(token);
+  const [accepted, setAccepted] = useState<RegisterResponse | null>(null);
+  const resolve = useResolveInvitation(accepted ? null : token);
   const register = useRegister();
 
   const [name, setName] = useState("");
   const [pwd, setPwd] = useState("");
   const [pwd2, setPwd2] = useState("");
   const [showPwd, setShowPwd] = useState(false);
+
+  // Login clears the previous anonymous query cache. A consumed invitation
+  // must not be resolved again or replace this confirmed acceptance result.
+  if (accepted) return <InviteAcceptedPanel acceptance={accepted.acceptance} />;
 
   if (resolve.isLoading) {
     return (
@@ -247,14 +259,23 @@ function InviteRegisterForm({ token }: { token: string }) {
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !isPasswordStrong(pwd) || pwd !== pwd2) return;
+    const ownerToken = useAuthStore.getState().token;
     register.mutate(
       { token, name: name.trim(), password: pwd },
       {
         onSuccess: (data) => {
-          // 邀请注册恒返回 token（不走邮箱验证）
-          if (!data.access_token) return;
+          // 邀请注册恒返回 token（不走邮箱验证）；先展示项目落点和分派状态。
+          if (
+            !data.access_token ||
+            useAuthStore.getState().token !== ownerToken ||
+            localStorage.getItem("token") !== ownerToken
+          )
+            return;
+          // Remove the consumed-token query observer before auth adoption
+          // synchronously invalidates the previous account's query cache.
+          if (data.acceptance) flushSync(() => setAccepted(data));
           setAuth(data.access_token, data.user);
-          navigate("/dashboard", { replace: true });
+          if (!data.acceptance) navigate("/dashboard", { replace: true });
         },
       },
     );
@@ -276,6 +297,7 @@ function InviteRegisterForm({ token }: { token: string }) {
         <div className={styles.pillRow}>
           <Pill>{ROLE_LABELS[inv.role as UserRole] ?? inv.role}</Pill>
           {inv.group_name && <Pill>{inv.group_name}</Pill>}
+          {inv.project_name && <Pill>项目：{inv.project_name}</Pill>}
           <Pill>有效期至 {new Date(inv.expires_at).toLocaleString("zh-CN")}</Pill>
         </div>
 
@@ -302,6 +324,7 @@ function InviteRegisterForm({ token }: { token: string }) {
                 value={pwd}
                 onChange={(e) => setPwd(e.target.value)}
                 minLength={8}
+                maxLength={128}
                 className={clsx(styles.input, styles.passwordInput)}
               />
               <button
@@ -322,6 +345,7 @@ function InviteRegisterForm({ token }: { token: string }) {
               type={showPwd ? "text" : "password"}
               value={pwd2}
               onChange={(e) => setPwd2(e.target.value)}
+              maxLength={128}
               className={clsx(styles.input, !passwordsMatch && styles.inputInvalid)}
             />
             {!passwordsMatch && <div className={styles.mismatchText}>两次密码不一致</div>}
@@ -338,9 +362,152 @@ function InviteRegisterForm({ token }: { token: string }) {
             {register.isPending ? "创建中..." : "完成注册并登录"}
           </button>
         </form>
+
+        <div className={styles.loginPrompt}>
+          已有账号？
+          <a
+            href={`/login?next=${encodeURIComponent(`/register?token=${token}`)}`}
+            className={styles.link}
+          >
+            登录后确认加入
+          </a>
+        </div>
       </div>
     </CenteredCard>
   );
+}
+
+function ExistingAccountInviteForm({ token }: { token: string }) {
+  const navigate = useNavigate();
+  const currentUser = useAuthStore((s) => s.user);
+  const setUser = useAuthStore((s) => s.setUser);
+  const resolve = useResolveInvitation(token);
+  const accept = useAcceptExistingInvitation();
+  const [accepted, setAccepted] = useState<InvitationAcceptance | null>(null);
+
+  if (accepted) return <InviteAcceptedPanel acceptance={accepted} />;
+  if (resolve.isLoading) {
+    return (
+      <CenteredCard>
+        <span className={styles.mutedText}>正在校验邀请链接…</span>
+      </CenteredCard>
+    );
+  }
+  if (resolve.isError) {
+    return (
+      <ErrorPanel
+        title={invitationError(resolve.error as ApiError)}
+        hint="请联系管理员重新发送邀请。"
+      />
+    );
+  }
+
+  const inv = resolve.data!;
+  if (!inv.project_id) {
+    return (
+      <ErrorPanel
+        title="该邀请用于创建新账号"
+        hint="当前账号已经存在。请联系管理员创建带目标项目的邀请，再确认加入项目。"
+      />
+    );
+  }
+  const emailMatches = currentUser?.email.trim().toLowerCase() === inv.email.trim().toLowerCase();
+  const submit = () => {
+    const ownerId = currentUser?.id;
+    if (!emailMatches || !ownerId || !isCurrentAuthOwner(ownerId)) return;
+    accept.mutate(token, {
+      onSuccess: (data) => {
+        if (!isCurrentAuthOwner(ownerId)) return;
+        setUser(data.user);
+        setAccepted(data.acceptance);
+      },
+    });
+  };
+
+  return (
+    <CenteredCard>
+      <Brand />
+      <div className={styles.card}>
+        <h1 className={styles.title}>确认加入项目</h1>
+        <p className={styles.description}>
+          当前登录账号{" "}
+          <span className={clsx("mono", styles.inviteEmail)}>{currentUser?.email}</span>{" "}
+          {emailMatches
+            ? "与邀请邮箱一致。确认后会保留你的全局角色，只新增目标项目成员关系。"
+            : `与邀请邮箱 ${inv.email} 不一致。请返回首页退出当前账号，再使用被邀请邮箱登录。`}
+        </p>
+        <div className={styles.pillRow}>
+          <Pill>{ROLE_LABELS[inv.role as UserRole] ?? inv.role}</Pill>
+          {inv.group_name && <Pill>{inv.group_name}</Pill>}
+          {inv.project_name && <Pill>项目：{inv.project_name}</Pill>}
+          <Pill>有效期至 {new Date(inv.expires_at).toLocaleString("zh-CN")}</Pill>
+        </div>
+        {accept.isError && <ErrorBanner msg={(accept.error as Error).message} />}
+        <button
+          type="button"
+          onClick={submit}
+          disabled={accept.isPending || !emailMatches}
+          className={clsx(styles.primaryButton, accept.isPending && styles.primaryButtonPending)}
+        >
+          {accept.isPending ? "确认中…" : "确认并加入"}
+        </button>
+        <div className={styles.loginPrompt}>
+          <button type="button" onClick={() => navigate("/dashboard")} className={styles.link}>
+            返回首页
+          </button>
+        </div>
+      </div>
+    </CenteredCard>
+  );
+}
+
+function InviteAcceptedPanel({ acceptance }: { acceptance?: InvitationAcceptance | null }) {
+  const navigate = useNavigate();
+  const projectId = acceptance?.project_id;
+  const memberRole = acceptance?.project_member_role;
+  const workPath = projectId
+    ? memberRole === "reviewer"
+      ? `/projects/${projectId}/review`
+      : memberRole === "annotator"
+        ? `/projects/${projectId}/annotate`
+        : `/projects/${projectId}/data-manager`
+    : "/dashboard";
+  const hasWork = acceptance?.next_action === "start_work";
+
+  return (
+    <CenteredCard>
+      <Brand />
+      <div className={styles.card}>
+        <h1 className={styles.title}>邀请已完成</h1>
+        <p className={styles.description}>
+          {acceptance?.project_name
+            ? `你已加入项目「${acceptance.project_name}」。`
+            : "账号已创建，管理员可以继续为你分配项目。"}
+        </p>
+        {acceptance?.project_name && (
+          <div className={styles.acceptanceStatus}>
+            <div className={styles.acceptanceStatusTitle}>
+              {hasWork ? "已有可开始的工作" : acceptance.next_action_label}
+            </div>
+            <div className={styles.acceptanceStatusText}>
+              {hasWork
+                ? `当前有 ${acceptance.active_batch_count} 个活动批次。`
+                : `项目负责人：${acceptance.responsible_person_name ?? "待指定"}。加入项目本身不会自动产生激活批次。`}
+            </div>
+          </div>
+        )}
+        <button type="button" onClick={() => navigate(workPath)} className={styles.primaryButton}>
+          {hasWork ? "开始工作" : acceptance?.project_id ? "打开项目" : "进入首页"}
+        </button>
+      </div>
+    </CenteredCard>
+  );
+}
+
+function invitationError(error: ApiError): string {
+  if (error.status === 404) return "邀请链接无效";
+  if (error.status === 410) return error.message || "该邀请已失效";
+  return error.message || "无法读取邀请信息";
 }
 
 function Brand() {

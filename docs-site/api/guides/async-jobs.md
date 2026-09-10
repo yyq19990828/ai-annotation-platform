@@ -3,7 +3,7 @@ audience: [project_admin, super_admin, developer]
 type: reference
 since: v0.10.16
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-09-10
 ---
 
 # 异步任务（async_jobs）
@@ -79,7 +79,11 @@ last_reviewed: 2026-07-11
 
 ### `GET /api/v1/async-jobs/{id}`
 
-owner-scoped；非 owner（且非 super_admin）→ `403`。
+owner-scoped；非 owner（且非 super_admin）→ `403`，记录不存在返回 `404`。
+
+任务铃、终态通知与历史页共用详情入口，按 ID 重新读取该次作业，展示项目或数据集、阶段、结果计数及可展开的失败原因。任务铃每页加载 20 条，支持继续加载更早记录。切换账号时清除当前详情及该账号的待处理操作。
+
+数据集入口使用 `payload.dataset_id`，项目入口使用 `project_id`，打开前再次检查目标权限。导出只在已完成且 `result.download_url` 和 `result.expires_at` 均有效时提供下载；过期或缺少有效期时提示从项目列表重新导出。作业详情不为导入提供通用重试，只有满足已有重试条件的批量预标显示失败项重试。
 
 ### `POST /api/v1/async-jobs/{id}/cancel`
 
@@ -137,7 +141,7 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 通知 payload 至少包含 `kind` / `status`，并会带上可展示字段（如 `batch_display_id`、
 `task_display_id`、`project_display_id`）和结果摘要（如 `success_count` / `failed_count` /
 `imported` / `error_count`）。`export` 不使用通用 `job.*`，继续发 `export.ready` / `export.failed`
-以保留下载链接。
+以保留下载链接。通用作业通知使用 `target_type=async_job`，导出通知使用 `target_type=export`；两者的 `target_id` 都是作业 ID，前端依据最新详情判断可执行操作。
 
 ## 进度上报模型
 

@@ -12,7 +12,6 @@ from fastapi import HTTPException
 from sqlalchemy import select, func, delete, insert, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
 from app.db.models.async_job import AsyncJobKind
 from app.db.models.dataset import Dataset, DatasetItem, ProjectDataset, Scene
 from app.db.models.project import Project
@@ -28,6 +27,7 @@ from app.services.project_kind import (
     project_kind,
 )
 from app.services.storage import TRUSTED_NUSCENES_PREFIX, storage_service
+from app.services.system_settings_service import SystemSettingsService
 
 _STREAM_UPLOAD_CHUNK_BYTES = 8 * 1024 * 1024
 _IMAGE_HEAD_BYTES = 256 * 1024
@@ -840,7 +840,13 @@ class DatasetService:
 
         # v0.7.3：不再为新接入的 dataset 自建「默认包」batch。task 直接 batch_id=NULL，
         # 走「未归类任务」语义；BatchesSection 顶部横带提示，用户主动 split 才入 batch。
-        if item_count > settings.task_create_sync_threshold:
+        # Resolve this decision at link-request time.  A queued CREATE_TASKS
+        # job already has its branch chosen and must not change when an admin
+        # later adjusts the threshold.
+        task_create_sync_threshold = await SystemSettingsService.get(
+            self.db, "task_create_sync_threshold"
+        )
+        if item_count > task_create_sync_threshold:
             job = await async_job_svc.create_job(
                 self.db,
                 kind=AsyncJobKind.CREATE_TASKS.value,

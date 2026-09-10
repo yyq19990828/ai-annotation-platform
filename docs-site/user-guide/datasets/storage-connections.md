@@ -3,7 +3,7 @@ audience: [project_admin, super_admin]
 type: how-to
 since: v0.11.16
 status: stable
-last_reviewed: 2026-08-16
+last_reviewed: 2026-09-10
 ---
 
 # 存储连接器
@@ -226,10 +226,12 @@ last_reviewed: 2026-08-16
 
 ### 导入上限
 
-单次连接器导入有硬上限，**超限整体失败、不部分导入**（worker 在枚举过程中短路抛错）：
+单次连接器导入按文件数与总字节限制枚举范围，**枚举超限时整体失败，不产生本次部分导入**。代码默认值为：
 
-- 最多 **50000** 个文件（env `DATASET_IMPORT_MAX_FILES`，默认 `50000`）。
-- 总体积最多 **200 GB**（env `DATASET_IMPORT_MAX_TOTAL_BYTES`，默认 `214748364800`）。
+- 最多 **50000** 个文件（部署变量 `DATASET_IMPORT_MAX_FILES`）。
+- 总体积最多 **200 GiB**，即 `214748364800` bytes（部署变量 `DATASET_IMPORT_MAX_TOTAL_BYTES`）。
+
+实际有效值由本部署默认与超级管理员在「设置 → 系统设置 → 数据导入」保存的覆盖决定。每次导入受理时固定两项预算；修改设置只影响之后新建的导入，已经排队、运行或重试的作业继续使用原预算。恰好等于预算仍可导入。这些预算只约束连接器枚举，不代表浏览器上传限额或实际传输字节上限。
 
 超限时请用 `source_path` / `include_globs` 缩小范围，避免误扫整个存储桶。
 

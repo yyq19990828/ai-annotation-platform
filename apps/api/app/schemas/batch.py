@@ -90,11 +90,16 @@ class ProjectDistributeBatches(BaseModel):
     每个 batch 落到 1 个 annotator + 1 个 reviewer。
     """
 
+    batch_ids: list[UUID] | None = Field(default=None, min_length=1, max_length=500)
     annotator_ids: list[UUID] = []
     reviewer_ids: list[UUID] = []
     # only_unassigned=True：只分派 annotator_id IS NULL（或 reviewer 为空）的 batch；
     # False：覆盖所有 batch
     only_unassigned: bool = True
+
+
+class ReviewedBatchDistribution(ProjectDistributeBatches):
+    preview_version: str = Field(min_length=64, max_length=64)
 
 
 class BatchDistributeResult(BaseModel):
@@ -160,3 +165,12 @@ class BatchSplitRequest(BaseModel):
     # v0.7.2 · 切批默认分派（每个新切的 batch 都落到同一对人；后续可用项目级 distribute 重新分派）
     annotator_id: UUID | None = None
     reviewer_id: UUID | None = None
+
+
+class BatchAssignmentPreviewRequest(BaseModel):
+    annotator_id: UUID | None
+    reviewer_id: UUID | None
+
+
+class ReviewedBatchAssignment(BatchAssignmentPreviewRequest):
+    preview_version: str = Field(min_length=64, max_length=64)

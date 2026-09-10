@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import io
+import logging
 import uuid
 from collections import OrderedDict
+from contextlib import suppress
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
@@ -34,11 +36,13 @@ from app.schemas.video_frame_service import (
     VideoManifestV2Response,
 )
 from app.services.storage import storage_service
+from app.services.system_settings_service import SystemSettingsService
 
 
 FrameFormat = Literal["webp", "jpeg"]
 _FRAME_ARRAY_CACHE: OrderedDict[tuple[uuid.UUID, int, int, str], Any] = OrderedDict()
 PENDING_FRAME_REQUEUE_AFTER = timedelta(seconds=30)
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -243,10 +247,20 @@ async def _warmup_neighbor_chunks(
     保守降级: 只对「还没 ready 且没在 pending 进行中」的相邻 chunk 投递, 不重复
     投递、不阻塞主请求。warmup 失败/被关闭时静默跳过, 不影响主流程。
     """
+    try:
+        look_ahead = await SystemSettingsService.get(db, "video_chunk_warmup_lookahead")
+    except Exception:  # noqa: BLE001
+        # Warmup is an optional optimization.  A settings DB outage must not
+        # turn the primary video chunk response into a playback failure.
+        with suppress(Exception):
+            await db.rollback()
+        log.exception("video chunk warmup setting unavailable; skipping warmup")
+        return
+
     candidates = warmup_chunk_ids(
         requested_chunk_ids,
         _last_chunk_id(ctx.metadata),
-        settings.video_chunk_warmup_lookahead,
+        look_ahead,
     )
     if not candidates:
         return
@@ -279,15 +293,17 @@ async def list_chunks(
 
         ensure_video_chunks.delay(str(ctx.item.id), missing)
 
-    await _warmup_neighbor_chunks(db, ctx, requested_ids)
-
-    return VideoChunksResponse(
+    # Freeze the primary response before optional I/O: a failed setting read
+    # rolls back its transaction and expires ORM objects in this session.
+    response = VideoChunksResponse(
         dataset_item_id=ctx.item.id,
         task_id=ctx.task_id,
         chunk_size_frames=settings.video_chunk_size_frames,
         fallback_video_url=_asset_url(_source_key(ctx.item, ctx.metadata)),
         chunks=[_chunk_out(row) for row in rows],
     )
+    await _warmup_neighbor_chunks(db, ctx, requested_ids)
+    return response
 
 
 async def get_chunk(
@@ -311,8 +327,9 @@ async def get_chunk(
         from app.workers.media import ensure_video_chunks
 
         ensure_video_chunks.delay(str(ctx.item.id), [chunk_id])
+    response = _chunk_out(row)
     await _warmup_neighbor_chunks(db, ctx, [chunk_id])
-    return _chunk_out(row)
+    return response
 
 
 async def _ensure_frame_row(

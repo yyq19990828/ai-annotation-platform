@@ -13,9 +13,15 @@ import {
   type AnnotationUpdatePayload,
   type TaskListParams,
 } from "../api/tasks";
-import type { AnnotationResponse } from "@/types";
+import type { AnnotationResponse, TaskResponse } from "@/types";
 import { ApiError } from "../api/client";
 import { randomId } from "@/utils/id";
+import {
+  enqueueDurably,
+  isOfflineCandidate,
+  type OfflineOp,
+} from "../pages/Workbench/state/offlineQueue";
+import { isCurrentAuthOwner, useAuthStore } from "../stores/authStore";
 
 const TASK_PAGE_SIZE = 100;
 
@@ -32,12 +38,38 @@ export class ConflictError extends Error {
 export function useTaskList(projectId: string | undefined, params?: TaskListParams) {
   return useInfiniteQuery({
     queryKey: ["tasks", projectId, params],
-    queryFn: ({ pageParam }: { pageParam: string | undefined }) =>
-      tasksApi.listByProject(projectId!, { ...params, limit: TASK_PAGE_SIZE, cursor: pageParam }),
+    queryFn: ({ pageParam, signal }: { pageParam: string | undefined; signal: AbortSignal }) =>
+      tasksApi.listByProject(
+        projectId!,
+        { ...params, limit: TASK_PAGE_SIZE, cursor: pageParam },
+        { signal },
+      ),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     enabled: !!projectId,
   });
+}
+
+/**
+ * Merge task pages while keeping the first occurrence of each task.
+ * Cursor pages can overlap when a task changes during a refresh; rendering a
+ * task twice would make counts, bulk selection, and the load-more boundary
+ * misleading.
+ */
+export function flattenTaskPages(
+  pages: Array<{ items: TaskResponse[] }> | undefined,
+): TaskResponse[] {
+  if (!pages) return [];
+  const seen = new Set<string>();
+  const tasks: TaskResponse[] = [];
+  for (const page of pages) {
+    for (const task of page.items) {
+      if (seen.has(task.id)) continue;
+      seen.add(task.id);
+      tasks.push(task);
+    }
+  }
+  return tasks;
 }
 
 export function useNextTask(projectId: string | undefined, batchId?: string) {
@@ -102,11 +134,14 @@ interface CreateAnnotationVariables {
   readonly taskId: string | undefined;
   readonly videoSegmentId: string | null | undefined;
   readonly payload: AnnotationPayload;
+  readonly ownerUserId: string | undefined;
+  readonly callbacks?: CreateAnnotationOptions;
 }
 
 interface CreateAnnotationContext {
   prev: AnnotationResponse[] | undefined;
   tmpId: string | undefined;
+  ownerValid?: boolean;
 }
 
 type CreateAnnotationOptions = MutateOptions<
@@ -117,6 +152,10 @@ type CreateAnnotationOptions = MutateOptions<
 >;
 
 function createAnnotationQueryKey({ taskId, videoSegmentId }: CreateAnnotationVariables) {
+  return annotationQueryKey(taskId, videoSegmentId);
+}
+
+function annotationQueryKey(taskId: string | undefined, videoSegmentId?: string | null) {
   return videoSegmentId
     ? (["annotations", taskId, videoSegmentId] as const)
     : (["annotations", taskId] as const);
@@ -135,8 +174,11 @@ export function useCreateAnnotation(taskId: string | undefined, videoSegmentId?:
     networkMode: "always",
     // Pending mutations receive new options after a rerender. Their variables
     // retain the submitted owner, including while onMutate awaits cancellation.
-    mutationFn: ({ taskId, videoSegmentId, payload }) => {
+    mutationFn: ({ taskId, videoSegmentId, payload, ownerUserId }) => {
       if (!taskId) throw new Error("No task selected");
+      if (!isCurrentAnnotationMutationOwner(ownerUserId)) {
+        throw new AnnotationMutationOwnerChangedError();
+      }
       return tasksApi.createAnnotation(
         taskId,
         videoSegmentId ? { ...payload, video_segment_id: videoSegmentId } : payload,
@@ -148,6 +190,10 @@ export function useCreateAnnotation(taskId: string | undefined, videoSegmentId?:
       if (!taskId) return { prev: undefined, tmpId: undefined };
       const queryKey = createAnnotationQueryKey(variables);
       await qc.cancelQueries({ queryKey });
+      // Cancellation yields; the cache may already belong to another account.
+      if (!isCurrentAnnotationMutationOwner(variables.ownerUserId)) {
+        return { prev: undefined, tmpId: undefined, ownerValid: false };
+      }
       const prev = qc.getQueryData<AnnotationResponse[]>(queryKey);
       const tmpId = `tmp_${randomId()}`;
       const optimistic: AnnotationResponse = {
@@ -172,51 +218,59 @@ export function useCreateAnnotation(taskId: string | undefined, videoSegmentId?:
         render_key: tmpId,
       };
       qc.setQueryData<AnnotationResponse[]>(queryKey, (old) => [...(old ?? []), optimistic]);
-      return { prev, tmpId };
+      return { prev, tmpId, ownerValid: true };
     },
-    onError: (_err, variables, ctx) => {
+    onError: (_err, variables, ctx, mutationContext) => {
       // rollback；offline fallback（optimisticEnqueueCreate）会在同一同步流程内重新写入 tmp 条目，不会出现可见闪烁。
       // Other requests or a refetch may have updated this cache since onMutate.
-      if (ctx?.tmpId) {
+      if (
+        ctx?.tmpId &&
+        ctx.ownerValid !== false &&
+        isCurrentAnnotationMutationOwner(variables.ownerUserId)
+      ) {
         qc.setQueryData<AnnotationResponse[]>(createAnnotationQueryKey(variables), (old) =>
           old?.filter((annotation) => annotation.id !== ctx.tmpId),
         );
       }
+      variables.callbacks?.onError?.(_err, variables.payload, ctx, mutationContext);
     },
-    onSuccess: (created, variables, ctx) => {
-      if (ctx?.tmpId) {
-        qc.setQueryData<AnnotationResponse[]>(createAnnotationQueryKey(variables), (old = []) => {
-          // Returning to the task can refetch away the optimistic row, or already
-          // fetch the created annotation. Keep newer cache data and avoid duplicates.
-          if (old.some((annotation) => annotation.id === created.id))
-            return old.filter((annotation) => annotation.id !== ctx.tmpId);
-          const optimistic = old.find((annotation) => annotation.id === ctx.tmpId);
-          const saved = { ...created, render_key: optimistic?.render_key ?? ctx.tmpId };
-          return optimistic
-            ? old.map((annotation) => (annotation.id === ctx.tmpId ? saved : annotation))
-            : [...old, saved];
-        });
+    onSuccess: (created, variables, ctx, mutationContext) => {
+      if (ctx?.ownerValid !== false && isCurrentAnnotationMutationOwner(variables.ownerUserId)) {
+        if (ctx?.tmpId) {
+          qc.setQueryData<AnnotationResponse[]>(createAnnotationQueryKey(variables), (old = []) => {
+            // Returning to the task can refetch away the optimistic row, or already
+            // fetch the created annotation. Keep newer cache data and avoid duplicates.
+            if (old.some((annotation) => annotation.id === created.id))
+              return old.filter((annotation) => annotation.id !== ctx.tmpId);
+            const optimistic = old.find((annotation) => annotation.id === ctx.tmpId);
+            const saved = { ...created, render_key: optimistic?.render_key ?? ctx.tmpId };
+            return optimistic
+              ? old.map((annotation) => (annotation.id === ctx.tmpId ? saved : annotation))
+              : [...old, saved];
+          });
+        }
+        qc.invalidateQueries({ queryKey: ["tasks"] });
+        qc.invalidateQueries({ queryKey: ["scene-timeline"] });
+        // B-20 接续：首条标注会把 task 从 pending 转 in_progress，需刷新批次进度
+        qc.invalidateQueries({ queryKey: ["dashboard"] });
       }
-      qc.invalidateQueries({ queryKey: ["tasks"] });
-      qc.invalidateQueries({ queryKey: ["scene-timeline"] });
-      // B-20 接续：首条标注会把 task 从 pending 转 in_progress，需刷新批次进度
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      if (isCurrentAnnotationMutationOwner(variables.ownerUserId))
+        variables.callbacks?.onSuccess?.(created, variables.payload, ctx, mutationContext);
+    },
+    onSettled: (created, error, variables, ctx, mutationContext) => {
+      variables.callbacks?.onSettled?.(created, error, variables.payload, ctx, mutationContext);
     },
   });
   const { mutateAsync: runMutation } = mutation;
   const mutateAsync = useCallback(
     (payload: AnnotationPayload, options?: CreateAnnotationOptions) =>
-      runMutation(
-        { taskId, videoSegmentId, payload },
-        options && {
-          onSuccess: (created, variables, context, mutationContext) =>
-            options.onSuccess?.(created, variables.payload, context, mutationContext),
-          onError: (error, variables, context, mutationContext) =>
-            options.onError?.(error, variables.payload, context, mutationContext),
-          onSettled: (created, error, variables, context, mutationContext) =>
-            options.onSettled?.(created, error, variables.payload, context, mutationContext),
-        },
-      ),
+      runMutation({
+        taskId,
+        videoSegmentId,
+        payload,
+        ownerUserId: useAuthStore.getState().user?.id ?? undefined,
+        callbacks: options,
+      }),
     [runMutation, taskId, videoSegmentId],
   );
   const mutate = useCallback(
@@ -235,34 +289,186 @@ export function useCreateAnnotation(taskId: string | undefined, videoSegmentId?:
   } as UseMutationResult<AnnotationResponse, Error, AnnotationPayload, CreateAnnotationContext>;
 }
 
+const offlineQueuedErrors = new WeakSet<object>();
+
+class AnnotationMutationOwnerChangedError extends Error {
+  // Treat an owner switch like a transport failure for the existing queue
+  // classifier, while making sure no request is sent with the new account.
+  readonly status = 503;
+
+  constructor() {
+    super("Annotation mutation owner changed before the request was sent");
+    this.name = "AnnotationMutationOwnerChangedError";
+  }
+}
+
+function isCurrentAnnotationMutationOwner(userId: string | undefined): boolean {
+  if (!userId) return false;
+  return isCurrentAuthOwner(userId);
+}
+
+/**
+ * The update/delete mutation owns the durable fallback when the caller does
+ * not provide its own error fallback.  Per-call callbacks still receive the
+ * original error, so keep the acknowledgement out of the error shape itself.
+ */
+function markOfflineMutationQueued(error: unknown): void {
+  if (error && typeof error === "object") offlineQueuedErrors.add(error);
+}
+
+export function isOfflineMutationQueued(error: unknown): boolean {
+  return !!error && typeof error === "object" && offlineQueuedErrors.has(error);
+}
+
+type DeleteAnnotationInput = string;
+type DeleteAnnotationContext = {
+  prev: AnnotationResponse[] | undefined;
+  queryKey: readonly [string, string | undefined] | readonly [string, string | undefined, string];
+  ownerValid?: boolean;
+};
+type DeleteAnnotationOptions = MutateOptions<
+  void,
+  Error,
+  DeleteAnnotationInput,
+  DeleteAnnotationContext
+>;
+
+interface SubmittedDeleteAnnotation {
+  annotationId: string;
+  taskId: string | undefined;
+  videoSegmentId: string | null | undefined;
+  ownerUserId: string | undefined;
+  callbacks?: DeleteAnnotationOptions;
+  /** Existing action owners keep their own fallback and queue exactly once. */
+  queueOffline: boolean;
+}
+
 export function useDeleteAnnotation(taskId: string | undefined, videoSegmentId?: string | null) {
   const qc = useQueryClient();
-  const queryKey = videoSegmentId
-    ? (["annotations", taskId, videoSegmentId] as const)
-    : (["annotations", taskId] as const);
-  return useMutation({
-    mutationFn: (annotationId: string) => {
-      if (!taskId) throw new Error("No task selected");
-      return tasksApi.deleteAnnotation(taskId, annotationId);
+  const mutation = useMutation<void, Error, SubmittedDeleteAnnotation, DeleteAnnotationContext>({
+    mutationKey: ["annotation-write", taskId],
+    networkMode: "always",
+    mutationFn: ({ taskId: submittedTaskId, annotationId, ownerUserId }) => {
+      if (!submittedTaskId) throw new Error("No task selected");
+      if (!isCurrentAnnotationMutationOwner(ownerUserId)) {
+        throw new AnnotationMutationOwnerChangedError();
+      }
+      return tasksApi.deleteAnnotation(submittedTaskId, annotationId);
     },
-    onMutate: async (annotationId) => {
+    onMutate: async ({ annotationId, taskId: submittedTaskId, videoSegmentId, ownerUserId }) => {
+      const queryKey = annotationQueryKey(submittedTaskId, videoSegmentId);
       await qc.cancelQueries({ queryKey });
+      if (!isCurrentAnnotationMutationOwner(ownerUserId)) {
+        return { prev: undefined, queryKey, ownerValid: false };
+      }
       const prev = qc.getQueryData<AnnotationResponse[]>(queryKey);
       qc.setQueryData<AnnotationResponse[]>(queryKey, (old) =>
         (old ?? []).filter((a) => a.id !== annotationId),
       );
-      return { prev };
+      return { prev, queryKey, ownerValid: true };
     },
-    onError: (_err, _id, ctx) => {
-      if (ctx?.prev !== undefined) qc.setQueryData(queryKey, ctx.prev);
+    onError: async (err, variables, ctx, mutationContext) => {
+      if (
+        variables.queueOffline &&
+        isOfflineCandidate(err) &&
+        variables.taskId &&
+        variables.ownerUserId
+      ) {
+        const op: OfflineOp = {
+          kind: "delete",
+          id: randomId(),
+          taskId: variables.taskId,
+          annotationId: variables.annotationId,
+          ts: Date.now(),
+        };
+        try {
+          await enqueueDurably(op, { userId: variables.ownerUserId });
+          markOfflineMutationQueued(err);
+          return;
+        } catch {
+          // Storage failure must leave the mutation rejected and restore the
+          // cache.  The caller can retry after storage becomes available.
+        }
+      }
+      if (
+        ctx?.prev !== undefined &&
+        ctx.ownerValid !== false &&
+        isCurrentAnnotationMutationOwner(variables.ownerUserId)
+      )
+        qc.setQueryData(ctx.queryKey, ctx.prev);
+      await variables.callbacks?.onError?.(err, variables.annotationId, ctx, mutationContext);
     },
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey });
-      qc.invalidateQueries({ queryKey: ["tasks"] });
-      qc.invalidateQueries({ queryKey: ["dashboard"] });
-      qc.invalidateQueries({ queryKey: ["scene-timeline"] });
+    onSuccess: (_data, variables, ctx, mutationContext) => {
+      if (isCurrentAnnotationMutationOwner(variables.ownerUserId))
+        variables.callbacks?.onSuccess?.(_data, variables.annotationId, ctx, mutationContext);
+    },
+    onSettled: (_data, _err, variables, ctx, mutationContext) => {
+      const queryKey =
+        ctx?.queryKey ?? annotationQueryKey(variables.taskId, variables.videoSegmentId);
+      if (isCurrentAnnotationMutationOwner(variables.ownerUserId) && !isOfflineCandidate(_err)) {
+        qc.invalidateQueries({ queryKey });
+        qc.invalidateQueries({ queryKey: ["tasks"] });
+        qc.invalidateQueries({ queryKey: ["dashboard"] });
+        qc.invalidateQueries({ queryKey: ["scene-timeline"] });
+      }
+      variables.callbacks?.onSettled?.(_data, _err, variables.annotationId, ctx, mutationContext);
     },
   });
+
+  const { mutateAsync: runMutation } = mutation;
+  const mutateAsync = useCallback(
+    (annotationId: DeleteAnnotationInput, options?: DeleteAnnotationOptions) =>
+      runMutation({
+        annotationId,
+        taskId,
+        videoSegmentId,
+        ownerUserId: useAuthStore.getState().user?.id ?? undefined,
+        callbacks: options,
+        queueOffline: !options?.onError,
+      }),
+    [runMutation, taskId, videoSegmentId],
+  );
+  const mutate = useCallback(
+    (annotationId: DeleteAnnotationInput, options?: DeleteAnnotationOptions) => {
+      void mutateAsync(annotationId, options).catch(() => undefined);
+    },
+    [mutateAsync],
+  );
+  return {
+    ...mutation,
+    variables: mutation.variables?.annotationId,
+    mutate,
+    mutateAsync,
+  } as UseMutationResult<void, Error, DeleteAnnotationInput, DeleteAnnotationContext>;
+}
+
+type UpdateAnnotationInput = {
+  annotationId: string;
+  payload: AnnotationUpdatePayload;
+  etag?: string;
+};
+type UpdateAnnotationContext = {
+  prev: AnnotationResponse[] | undefined;
+  queryKey: readonly [string, string | undefined] | readonly [string, string | undefined, string];
+  ownerValid?: boolean;
+};
+type UpdateAnnotationOptions = MutateOptions<
+  AnnotationResponse,
+  Error,
+  UpdateAnnotationInput,
+  UpdateAnnotationContext
+> & {
+  /** Save transactions that retain their own draft also own failure and retry. */
+  queueOffline?: boolean;
+};
+
+interface SubmittedUpdateAnnotation extends UpdateAnnotationInput {
+  taskId: string | undefined;
+  videoSegmentId: string | null | undefined;
+  ownerUserId: string | undefined;
+  callbacks?: UpdateAnnotationOptions;
+  /** Existing action owners keep their own fallback and queue exactly once. */
+  queueOffline: boolean;
 }
 
 export function useUpdateAnnotation(
@@ -272,24 +478,33 @@ export function useUpdateAnnotation(
   videoSegmentId?: string | null,
 ) {
   const qc = useQueryClient();
-  const queryKey = videoSegmentId
-    ? (["annotations", taskId, videoSegmentId] as const)
-    : (["annotations", taskId] as const);
-  return useMutation({
-    mutationFn: ({
+  const mutation = useMutation<
+    AnnotationResponse,
+    Error,
+    SubmittedUpdateAnnotation,
+    UpdateAnnotationContext
+  >({
+    mutationKey: ["annotation-write", taskId],
+    networkMode: "always",
+    mutationFn: ({ annotationId, payload, etag, taskId: submittedTaskId, ownerUserId }) => {
+      if (!submittedTaskId) throw new Error("No task selected");
+      if (!isCurrentAnnotationMutationOwner(ownerUserId)) {
+        throw new AnnotationMutationOwnerChangedError();
+      }
+      return tasksApi.updateAnnotation(submittedTaskId, annotationId, payload, etag);
+    },
+    onMutate: async ({
       annotationId,
       payload,
-      etag,
-    }: {
-      annotationId: string;
-      payload: AnnotationUpdatePayload;
-      etag?: string;
+      taskId: submittedTaskId,
+      videoSegmentId,
+      ownerUserId,
     }) => {
-      if (!taskId) throw new Error("No task selected");
-      return tasksApi.updateAnnotation(taskId, annotationId, payload, etag);
-    },
-    onMutate: async ({ annotationId, payload }) => {
+      const queryKey = annotationQueryKey(submittedTaskId, videoSegmentId);
       await qc.cancelQueries({ queryKey });
+      if (!isCurrentAnnotationMutationOwner(ownerUserId)) {
+        return { prev: undefined, queryKey, ownerValid: false };
+      }
       const prev = qc.getQueryData<AnnotationResponse[]>(queryKey);
       qc.setQueryData<AnnotationResponse[]>(queryKey, (old) =>
         (old ?? []).map((a) =>
@@ -303,32 +518,109 @@ export function useUpdateAnnotation(
             : a,
         ),
       );
-      return { prev };
+      return { prev, queryKey, ownerValid: true };
     },
-    onError: (err, _vars, ctx) => {
+    onError: async (err, variables, ctx, mutationContext) => {
       if (err instanceof ApiError && err.status === 409) {
         const detail = err.detailRaw as { current_version?: number } | undefined;
-        const annotationId = (_vars as { annotationId?: string } | undefined)?.annotationId ?? "";
-        if (detail?.current_version && onConflict) {
+        const annotationId = variables.annotationId;
+        if (
+          detail?.current_version &&
+          onConflict &&
+          isCurrentAnnotationMutationOwner(variables.ownerUserId)
+        ) {
           onConflict(annotationId, detail.current_version);
         }
       }
-      if (ctx?.prev !== undefined) qc.setQueryData(queryKey, ctx.prev);
+      if (
+        variables.queueOffline &&
+        isOfflineCandidate(err) &&
+        variables.taskId &&
+        variables.ownerUserId
+      ) {
+        const op: OfflineOp = {
+          kind: "update",
+          id: randomId(),
+          taskId: variables.taskId,
+          annotationId: variables.annotationId,
+          payload: variables.payload,
+          etag: variables.etag,
+          ts: Date.now(),
+        };
+        try {
+          await enqueueDurably(op, { userId: variables.ownerUserId });
+          markOfflineMutationQueued(err);
+          return;
+        } catch {
+          // Storage failure must keep the mutation failed and roll back the
+          // optimistic cache instead of claiming a local success.
+        }
+      }
+      if (
+        ctx?.prev !== undefined &&
+        ctx.ownerValid !== false &&
+        isCurrentAnnotationMutationOwner(variables.ownerUserId)
+      )
+        qc.setQueryData(ctx.queryKey, ctx.prev);
+      await variables.callbacks?.onError?.(err, variables, ctx, mutationContext);
     },
-    onSuccess: (annotation) => {
-      qc.setQueryData<AnnotationResponse[]>(queryKey, (old) =>
-        (old ?? []).map((item) => (item.id === annotation.id ? annotation : item)),
-      );
+    onSuccess: (annotation, variables, ctx, mutationContext) => {
+      if (ctx?.ownerValid !== false && isCurrentAnnotationMutationOwner(variables.ownerUserId)) {
+        qc.setQueryData<AnnotationResponse[]>(ctx.queryKey, (old) =>
+          (old ?? []).map((item) => (item.id === annotation.id ? annotation : item)),
+        );
+        variables.callbacks?.onSuccess?.(annotation, variables, ctx, mutationContext);
+      }
     },
-    onSettled: (_data, _err, vars) => {
-      qc.invalidateQueries({ queryKey });
-      qc.invalidateQueries({ queryKey: ["scene-timeline"] });
+    onSettled: (_data, _err, vars, ctx, mutationContext) => {
+      const queryKey = ctx?.queryKey ?? annotationQueryKey(vars.taskId, vars.videoSegmentId);
+      if (isCurrentAnnotationMutationOwner(vars.ownerUserId) && !isOfflineCandidate(_err)) {
+        qc.invalidateQueries({ queryKey });
+        qc.invalidateQueries({ queryKey: ["scene-timeline"] });
+      }
       // 通知桥 (usePendingGeom): mutation 已 settle (成功或失败), 主动清 pending override,
       // 不依赖被动 800ms 兜底 — 避免慢网 (> 800ms) 回滚后 pending 已 drop 而画面闪到旧几何。
-      const annotationId = (vars as { annotationId?: string } | undefined)?.annotationId;
-      if (annotationId && onSettledAnnotation) onSettledAnnotation(annotationId);
+      const annotationId = vars?.annotationId;
+      if (annotationId && onSettledAnnotation && isCurrentAnnotationMutationOwner(vars.ownerUserId))
+        onSettledAnnotation(annotationId);
+      vars.callbacks?.onSettled?.(_data, _err, vars, ctx, mutationContext);
     },
   });
+
+  const { mutateAsync: runMutation } = mutation;
+  const mutateAsync = useCallback(
+    (input: UpdateAnnotationInput, options?: UpdateAnnotationOptions) =>
+      runMutation({
+        ...input,
+        taskId,
+        videoSegmentId,
+        ownerUserId: useAuthStore.getState().user?.id ?? undefined,
+        callbacks: options,
+        queueOffline: options?.queueOffline ?? !options?.onError,
+      }),
+    [runMutation, taskId, videoSegmentId],
+  );
+  const mutate = useCallback(
+    (input: UpdateAnnotationInput, options?: UpdateAnnotationOptions) => {
+      void mutateAsync(input, options).catch(() => undefined);
+    },
+    [mutateAsync],
+  );
+  return {
+    ...mutation,
+    variables: mutation.variables
+      ? {
+          annotationId: mutation.variables.annotationId,
+          payload: mutation.variables.payload,
+          etag: mutation.variables.etag,
+        }
+      : undefined,
+    mutate,
+    mutateAsync,
+  } as Omit<
+    UseMutationResult<AnnotationResponse, Error, UpdateAnnotationInput, UpdateAnnotationContext>,
+    "mutate" | "mutateAsync"
+  > & { mutate: typeof mutate; mutateAsync: typeof mutateAsync };
 }
 
 export function useSubmitTask() {

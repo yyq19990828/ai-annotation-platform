@@ -38,6 +38,7 @@ from app.services.mask_formats.safe_archive import (
     SafeZipArchive,
 )
 from app.services.storage import storage_service
+from app.services.system_settings_service import SystemSettingsService
 
 router = APIRouter()
 
@@ -248,6 +249,10 @@ async def import_from_connection(
         for pattern in (payload.include_globs or [])
         if pattern and pattern.strip()
     ]
+    # Capture both import budgets in the same committed request snapshot.  The
+    # worker must never re-read global settings while enumerating files: queued
+    # jobs retain the limits accepted here even after an admin changes them.
+    import_limits = await SystemSettingsService.get_import_limits_snapshot(db)
     job = await async_job_svc.create_job(
         db,
         kind=AsyncJobKind.DATASET_IMPORT.value,
@@ -262,6 +267,7 @@ async def import_from_connection(
             "source_path": payload.source_path,
             "recursive": payload.recursive,
             "include_globs": clean_globs,
+            "settings_snapshot": import_limits,
         },
     )
     await AuditService.log(
@@ -278,6 +284,7 @@ async def import_from_connection(
             "source_path": payload.source_path,
             "recursive": payload.recursive,
             "include_globs": clean_globs,
+            "settings_version": import_limits["version"],
         },
     )
     await db.commit()

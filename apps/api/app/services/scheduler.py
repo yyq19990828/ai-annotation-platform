@@ -16,7 +16,7 @@ from app.db.models.prediction import Prediction
 from app.db.models.project import Project
 from app.db.models.user import User
 from app.services.scene import resolve_primary_item_id
-from app.services.task_lock import TaskLockService
+from app.services.task_lock import TaskLockService, assert_task_user_active
 
 _PRIMARY_LIDAR_ROLE = "primary_lidar"
 
@@ -72,6 +72,31 @@ def visible_batch_statuses_for(user: User) -> list[str]:
     if user.role == UserRole.REVIEWER:
         return list(REVIEWER_VISIBLE_BATCH_STATUSES)
     return list(ANNOTATOR_VISIBLE_BATCH_STATUSES)
+
+
+def annotator_can_rework_task(user: User, batch: TaskBatch, task_status: str) -> bool:
+    """A single rejected task may be redone while its peers remain in review."""
+    return (
+        user.role == UserRole.ANNOTATOR
+        and batch.annotator_id == user.id
+        and batch.status == "reviewing"
+        and task_status in {"rejected", "in_progress"}
+    )
+
+
+def task_visibility_clause(user: User):
+    """Task lists include assigned rework without reopening the whole batch."""
+    ordinary = batch_visibility_clause(user)
+    if user.role != UserRole.ANNOTATOR:
+        return ordinary
+    return or_(
+        ordinary,
+        and_(
+            TaskBatch.annotator_id == user.id,
+            TaskBatch.status == "reviewing",
+            Task.status.in_(["rejected", "in_progress"]),
+        ),
+    )
 
 
 # 兼容别名
@@ -237,6 +262,11 @@ async def get_next_task(
     batch_id: uuid.UUID | None = None,
 ) -> Task | None:
     user_id = user.id
+    # Authentication may have completed before an administrator suspended the
+    # account. Take the same User share lock used by TaskLockService before
+    # returning an already-held lock or attempting to claim a new task.
+    if not await assert_task_user_active(db, user_id):
+        return None
     lock_svc = TaskLockService(db)
 
     # 1. Check if user already has a locked task in this project

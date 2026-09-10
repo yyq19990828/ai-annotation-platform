@@ -49,8 +49,9 @@ export function ForgotPasswordPage() {
         <div className="rounded-2xl border border-border bg-card px-8 py-7 shadow-xl">
           {sent ? (
             <div className="text-center">
-              <div className="mb-4 text-sm text-muted-foreground">
-                如果该邮箱已注册，您将收到一封包含重置链接的邮件。
+              <div className="mb-4 text-left text-sm text-muted-foreground">
+                <p className="m-0">如果该邮箱已注册，您将收到一封包含重置链接的邮件。</p>
+                <p className="mt-2 m-0">若未收到，请联系管理员协助重置。</p>
               </div>
               <Link to="/login" className="text-sm text-brand hover:underline">
                 返回登录

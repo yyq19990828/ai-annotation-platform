@@ -110,6 +110,18 @@ describe("ResetPasswordPage", () => {
     expect(btn.disabled).toBe(true);
   });
 
+  it("密码强度不符合服务端规则 → 显示规则并禁用按钮", () => {
+    renderUI();
+    const pwds = document.querySelectorAll(
+      'input[type="password"]',
+    ) as NodeListOf<HTMLInputElement>;
+    fireEvent.change(pwds[0], { target: { value: "abc12345" } });
+    fireEvent.change(pwds[1], { target: { value: "abc12345" } });
+    expect(screen.getByText("✗ 含大写字母")).toBeInTheDocument();
+    const btn = screen.getByRole("button", { name: "重置密码" });
+    expect(btn).toBeDisabled();
+  });
+
   it("提交成功 → 显示完成文案", async () => {
     mockPublicPost.mockResolvedValue(undefined);
     renderUI();

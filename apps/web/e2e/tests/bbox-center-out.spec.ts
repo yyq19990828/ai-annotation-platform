@@ -186,6 +186,7 @@ const test = base.extend<{ centerCase: Case; withCandidate: boolean }>({
                 "/api/v1/auth/registration-status",
                 "/api/v1/feedbacks",
                 "/api/v1/projects",
+                "/api/v1/tasks",
                 "/api/v1/audit-logs",
               ].includes(error.path!) ||
                 /^\/api\/v1\/tasks\/[0-9a-f-]{36}(\/annotations)?$/.test(error.path!) ||

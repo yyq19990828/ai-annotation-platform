@@ -49,6 +49,7 @@ watched_tags = ["projects", "datasets", "batches", "tasks", "annotations", "anno
 "GET /api/v1/projects/{project_id}/class-usage" = { status = "excluded", reason = "no-external-demand" }
 "GET /api/v1/projects/{project_id}/datasets" = { status = "excluded", reason = "no-external-demand" }
 "GET /api/v1/projects/{project_id}/members" = { status = "covered" }
+"GET /api/v1/projects/{project_id}/readiness" = { status = "excluded", reason = "no-external-demand" }
 "GET /api/v1/projects/{project_id}/ml-backends" = { status = "covered" }
 "GET /api/v1/projects/{project_id}/ml-backends/available" = { status = "covered" }
 "GET /api/v1/projects/{project_id}/ml-backends/pools/available" = { status = "covered" }
@@ -127,9 +128,13 @@ watched_tags = ["projects", "datasets", "batches", "tasks", "annotations", "anno
 "POST /api/v1/projects/{project_id}/batches/bulk-reassign" = { status = "covered" }
 "POST /api/v1/projects/{project_id}/batches/bulk-reject" = { status = "covered" }
 "POST /api/v1/projects/{project_id}/batches/distribute-batches" = { status = "covered" }
+"POST /api/v1/projects/{project_id}/batches/distribution-apply" = { status = "excluded", reason = "no-external-demand" }
+"POST /api/v1/projects/{project_id}/batches/distribution-preview" = { status = "excluded", reason = "no-external-demand" }
 "POST /api/v1/projects/{project_id}/batches/split" = { status = "excluded", reason = "no-external-demand" }
 "POST /api/v1/projects/{project_id}/batches/{batch_id}/admin-lock" = { status = "excluded", reason = "maintenance-risk" }
 "POST /api/v1/projects/{project_id}/batches/{batch_id}/admin-unlock" = { status = "excluded", reason = "maintenance-risk" }
+"POST /api/v1/projects/{project_id}/batches/{batch_id}/assignment-apply" = { status = "excluded", reason = "no-external-demand" }
+"POST /api/v1/projects/{project_id}/batches/{batch_id}/assignment-preview" = { status = "excluded", reason = "no-external-demand" }
 "POST /api/v1/projects/{project_id}/batches/{batch_id}/export" = { status = "covered" }
 "POST /api/v1/projects/{project_id}/batches/{batch_id}/exports/lidar:preflight" = { status = "excluded", reason = "no-external-demand" }
 "POST /api/v1/projects/{project_id}/batches/{batch_id}/reject" = { status = "covered" }

@@ -260,6 +260,8 @@ HTTP API 统一挂载在 `/api/v1`，而 WebSocket 单独挂载在 `/ws/...`。�
 
 通过环境变量或 `.env` 文件配置，参考 `.env.example`。
 
+系统设置白名单内的运营参数支持数据库覆盖，部署环境变量保留为默认值。邀请上限、离线判定、导入预算、同步建任务阈值与视频预热分别在业务消费入口读取；导入任务在受理时固定预算快照。详见[运行时覆盖契约](docs-site/dev/concepts/system-settings.md)。首次更新这些消费者代码后刷新对应 API/Celery 进程；此后通过设置页调参不需要重启，跨进程缓存最多约 30 秒，在线状态另需等待下一轮扫描。不要通过修改进程中的 `settings` 对象模拟后台设置生效。
+
 ## Grounded-SAM-2 ML Backend（v0.9.x）
 
 `apps/grounded-sam2-backend/` 独立 GPU 服务，提供工作台 `S` 工具与 `/ai-pre` 文本批量预标的 SAM mask 推理。三种 prompt（point / bbox / text）路由到 SAM 2.1 + GroundingDINO；mask→polygon 简化用 `apps/_shared/mask_utils`（v0.9.4 phase 3 抽出共用，与 v0.10.x sam3-backend 共享）。

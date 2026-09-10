@@ -2,7 +2,7 @@ import base64
 import uuid
 from datetime import datetime
 from typing import NoReturn
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +16,7 @@ from app.deps import (
 )
 from app.db.models.user import User
 from app.db.models.annotation import Annotation
+from app.db.models.annotation_operation import AnnotationOperation
 from app.db.models.task import Task
 from app.schemas.annotation import (
     AnnotationCreate,
@@ -45,7 +46,9 @@ from app.schemas.annotation_conversion import (
     AnnotationConversionExecuteResponse,
 )
 from app.services.annotation import (
+    ANNOTATION_CREATE_OPERATION_KIND,
     AnnotationService,
+    annotation_create_request_digest,
     validate_geometry_type_transition,
 )
 from app.services.audit import AuditAction, AuditService
@@ -326,8 +329,27 @@ async def create_annotation(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
+    idempotency_key: str | None = Header(
+        default=None,
+        alias="Idempotency-Key",
+        description="Optional durable creation identity (1–128 characters). Reuse only with the same request.",
+    ),
 ):
-    task = await _load_task_or_404(db, task_id)
+    # Every create, including an idempotent replay, is serialized by the task
+    # row.  The lock must be acquired before authorization and the ledger lookup
+    # so a handoff/deactivation cannot race a retry into a stale authorization
+    # decision, and concurrent tabs cannot both miss the same receipt.
+    task = (
+        await db.execute(
+            select(Task)
+            .where(Task.id == task_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    await _assert_task_visible(db, task, current_user)
     _assert_task_editable(task, current_user)
     await assert_video_annotation_write_scope(
         db,
@@ -336,6 +358,37 @@ async def create_annotation(
         segment_id=data.video_segment_id,
         geometry=data.geometry.model_dump(),
     )
+
+    if idempotency_key is not None:
+        idempotency_key = idempotency_key.strip()
+        if not idempotency_key or len(idempotency_key) > 128:
+            raise HTTPException(
+                status_code=400,
+                detail="Idempotency-Key must contain 1 to 128 characters",
+            )
+        request_digest = annotation_create_request_digest(data.model_dump(mode="json"))
+        existing = await db.scalar(
+            select(AnnotationOperation).where(
+                AnnotationOperation.task_id == task_id,
+                AnnotationOperation.actor_id == current_user.id,
+                AnnotationOperation.idempotency_key == idempotency_key,
+            )
+        )
+        if existing is not None:
+            if (
+                existing.kind != ANNOTATION_CREATE_OPERATION_KIND
+                or existing.request_digest != request_digest
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "reason": "idempotency_conflict",
+                        "message": "idempotency key was already used with another request",
+                        "operation_id": str(existing.id),
+                    },
+                )
+            return AnnotationOut.model_validate(existing.response_json)
+
     svc = AnnotationService(db)
     try:
         annotation = await svc.create(
@@ -355,6 +408,27 @@ async def create_annotation(
     except RasterMaskContractError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     await heartbeat_task_lock_for_legacy_video(db, task, current_user.id)
+
+    if idempotency_key is not None:
+        # ``AnnotationService.create`` flushes the annotation and task stats;
+        # refresh server defaults before persisting the historical response.
+        await db.refresh(annotation)
+        annotation_response = AnnotationOut.model_validate(annotation)
+        db.add(
+            AnnotationOperation(
+                task_id=task_id,
+                actor_id=current_user.id,
+                kind=ANNOTATION_CREATE_OPERATION_KIND,
+                idempotency_key=idempotency_key,
+                request_digest=request_digest,
+                scope_fingerprint=request_digest,
+                source_versions={},
+                result_versions={},
+                report={},
+                response_json=annotation_response.model_dump(mode="json"),
+            )
+        )
+
     # v0.7.2 · annotation 编辑历史可追溯
     await AuditService.log(
         db,
@@ -402,7 +476,8 @@ async def secondary_inference(
     阶段的 crop 投递 + 产物归位, 不走 worker。
     """
     task = await _load_task_or_404(db, task_id)
-    _assert_task_editable(task)
+    await _assert_task_visible(db, task, current_user)
+    _assert_task_editable(task, current_user)
 
     annotation = await db.get(Annotation, annotation_id)
     if annotation is None or annotation.task_id != task_id or not annotation.is_active:
@@ -714,6 +789,7 @@ async def update_annotation(
     ).scalar_one_or_none()
     if _task is None:
         raise HTTPException(status_code=404, detail="Task not found")
+    await _assert_task_visible(db, _task, current_user)
     _assert_task_editable(_task, current_user)
     svc = AnnotationService(db)
     fields = data.model_dump(exclude_unset=True)
@@ -1092,10 +1168,16 @@ async def delete_annotation(
     # mutations. Otherwise DELETE can hold Annotation while waiting for Task,
     # forming a deadlock cycle with a concurrent atomic mutation.
     task = (
-        await db.execute(select(Task).where(Task.id == task_id).with_for_update())
+        await db.execute(
+            select(Task)
+            .where(Task.id == task_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
     ).scalar_one_or_none()
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
+    await _assert_task_visible(db, task, current_user)
     _assert_task_editable(task, current_user)
     # 先取一份 detail 供 audit 用（soft delete 之后字段仍能读，但安全起见提前）
     pre = await db.get(Annotation, annotation_id)

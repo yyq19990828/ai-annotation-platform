@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { dashboardApi } from "../api/dashboard";
+import { useAuthStore } from "@/stores/authStore";
 
 export function useAdminStats(enabled: boolean = true) {
   return useQuery({
@@ -30,6 +31,15 @@ export function useMyBatches() {
     // B-20：标注员看进度需实时性，10s 轻量轮询；窗口可见时才轮询，避免后台 tab 浪费
     refetchInterval: 10_000,
     refetchIntervalInBackground: false,
+  });
+}
+
+export function useOnboardingProjectSummary(projectId: string | undefined) {
+  const userId = useAuthStore((state) => state.user?.id);
+  return useQuery({
+    queryKey: ["dashboard", "annotator", "onboarding", projectId, userId],
+    queryFn: () => dashboardApi.getOnboardingProjectSummary(projectId!),
+    enabled: Boolean(projectId && userId),
   });
 }
 

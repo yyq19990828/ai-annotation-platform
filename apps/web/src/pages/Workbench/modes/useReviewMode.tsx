@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isWorkbenchInteractionBlocked } from "../state/workbenchInteractionGuards";
 import { useApproveTask, useRejectTask, useReviewClaim } from "@/hooks/useTasks";
 import { ReviewerMiniPanel } from "@/pages/Review/ReviewerMiniPanel";
@@ -11,6 +11,7 @@ interface UseReviewModeParams {
   task: TaskResponse | undefined;
   navigateTask: NavigateTask;
   pushToast: PushToast;
+  isCurrentContext?: () => boolean;
 }
 
 const noop = () => {};
@@ -30,6 +31,7 @@ export function useReviewMode({
   task,
   navigateTask,
   pushToast,
+  isCurrentContext,
 }: UseReviewModeParams): WorkbenchModeState {
   const [diffMode, setDiffMode] = useState<DiffMode>("diff");
   const [rejectingTask, setRejectingTask] = useState(false);
@@ -37,27 +39,39 @@ export function useReviewMode({
   const approveMut = useApproveTask();
   const rejectMut = useRejectTask();
   const claimMut = useReviewClaim();
+  const currentTaskIdRef = useRef(taskId);
+  currentTaskIdRef.current = taskId;
+  const ownsContext = useCallback(
+    (ownerTaskId: string) => () =>
+      currentTaskIdRef.current === ownerTaskId && isCurrentContext?.() !== false,
+    [isCurrentContext],
+  );
 
   useEffect(() => {
     if (mode !== "review" || !taskId || task?.status !== "review") return;
+    const owns = ownsContext(taskId);
     claimMut.mutate(taskId, {
-      onSuccess: (data) => setClaimInfo(data),
+      onSuccess: (data) => {
+        if (owns()) setClaimInfo(data);
+      },
       onError: () => {},
     });
     // claimMut 故意不在依赖数组中（每次 taskId 变化只 fire 一次）
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, taskId, task?.status]);
+  }, [mode, taskId, task?.status, ownsContext]);
 
   const handleApproveTask = useCallback(() => {
     if (!taskId) return;
+    const owns = ownsContext(taskId);
     approveMut.mutate(taskId, {
       onSuccess: () => {
+        if (!owns()) return;
         pushToast({ msg: "任务已通过", kind: "success" });
         navigateTask("next");
       },
-      onError: () => pushToast({ msg: "通过失败，请重试", kind: "error" }),
+      onError: () => owns() && pushToast({ msg: "通过失败，请重试", kind: "error" }),
     });
-  }, [taskId, approveMut, pushToast, navigateTask]);
+  }, [taskId, ownsContext, approveMut, pushToast, navigateTask]);
 
   const handleRejectTask = useCallback(
     (payload: {
@@ -65,19 +79,21 @@ export function useReviewMode({
       reason?: string;
     }) => {
       if (!taskId) return;
+      const owns = ownsContext(taskId);
       rejectMut.mutate(
         { taskId, ...payload },
         {
           onSuccess: () => {
+            if (!owns()) return;
             pushToast({ msg: "任务已退回", kind: "success" });
             setRejectingTask(false);
             navigateTask("next");
           },
-          onError: () => pushToast({ msg: "退回失败，请重试", kind: "error" }),
+          onError: () => owns() && pushToast({ msg: "退回失败，请重试", kind: "error" }),
         },
       );
     },
-    [taskId, rejectMut, pushToast, navigateTask],
+    [taskId, ownsContext, rejectMut, pushToast, navigateTask],
   );
 
   useEffect(() => {

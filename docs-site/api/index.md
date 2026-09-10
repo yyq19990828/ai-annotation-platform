@@ -25,6 +25,7 @@ last_reviewed: 2026-07-12
 ### 认证
 
 - [认证](./guides/auth) — 登录、Token 刷新与鉴权
+- [系统设置](./guides/system-settings) — 超管运营配置、来源、重置与并发校验
 
 ### 核心资源
 

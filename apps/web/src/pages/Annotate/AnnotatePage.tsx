@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Icon } from "@/components/ui/Icon";
@@ -7,14 +7,22 @@ import { Badge } from "@/components/ui/Badge";
 import { useToastStore } from "@/components/ui/Toast";
 import { Thumbnail } from "@/components/Thumbnail";
 import { useElementStyle } from "@/components/ui/useElementStyle";
-import { useTaskList } from "@/hooks/useTasks";
+import { flattenTaskPages, useTaskList } from "@/hooks/useTasks";
 import { useMyBatches } from "@/hooks/useDashboard";
 import { batchesApi, type BatchResponse } from "@/api/batches";
+import { ApiError } from "@/api/client";
 import type { MyBatchItem } from "@/api/dashboard";
 import type { TaskResponse } from "@/types";
 import { AnnotateSidebar } from "./AnnotateSidebar";
 import { BatchCardGrid } from "./BatchCardGrid";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
+import {
+  isInitialQueryPaused,
+  isQueryPaused,
+  isRefreshQueryPaused,
+  QueryPausedNotice,
+  QueryPausedState,
+} from "@/pages/shared/QueryState";
 import styles from "./AnnotatePage.module.css";
 import type { CSSProperties } from "react";
 
@@ -107,16 +115,84 @@ function TaskRow({ task, onOpen }: { task: TaskResponse; onOpen: () => void }) {
   );
 }
 
+function queryErrorMessage(error: unknown, resource: string): string {
+  if (error instanceof ApiError && error.status === 403) {
+    return `当前账号没有权限查看${resource}，请联系项目管理员。`;
+  }
+  if (error instanceof ApiError && error.status === 404) {
+    return `${resource}已不存在或已被移除，请刷新后重试。`;
+  }
+  if (error instanceof ApiError && error.status >= 500) {
+    return `${resource}服务暂时不可用，请稍后重试。`;
+  }
+  return `${resource}加载失败，请检查网络后重试。`;
+}
+
+function QueryErrorState({
+  resource,
+  error,
+  onRetry,
+  compact = false,
+}: {
+  resource: string;
+  error: unknown;
+  onRetry: () => void;
+  compact?: boolean;
+}) {
+  return (
+    <div className={`${styles.errorState} ${compact ? styles.errorStateCompact : ""}`} role="alert">
+      <Icon name="warning" size={compact ? 20 : 28} className={styles.errorIcon} />
+      <div className={styles.errorTitle}>无法加载{resource}</div>
+      <div className={styles.errorMessage}>{queryErrorMessage(error, resource)}</div>
+      <Button size="sm" onClick={onRetry}>
+        重新加载
+      </Button>
+    </div>
+  );
+}
+
+function RefreshNotice({
+  resource,
+  error,
+  onRetry,
+}: {
+  resource: string;
+  error: unknown;
+  onRetry: () => void;
+}) {
+  return (
+    <div className={styles.refreshNotice} role="alert">
+      <div>
+        <strong>{resource}更新失败</strong>
+        <span>{queryErrorMessage(error, resource)} 当前内容已保留。</span>
+      </div>
+      <Button size="sm" onClick={onRetry}>
+        重新加载
+      </Button>
+    </div>
+  );
+}
+
 export function AnnotatePage() {
   const pushToast = useToastStore((s) => s.push);
   const navigate = useNavigate();
   const location = useLocation();
   const qc = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialBatchId = searchParams.get("batch") ?? "";
-  const [selectedBatchId, setSelectedBatchId] = useState<string>(initialBatchId);
+  const selectedBatchId = searchParams.get("batch") ?? "";
+  const rejectedOnly = searchParams.get("status") === "rejected";
 
-  const { data: batches = [], isLoading: batchesLoading } = useMyBatches();
+  const batchesQuery = useMyBatches();
+  const batches = useMemo(() => batchesQuery.data ?? [], [batchesQuery.data]);
+  const visibleBatches = useMemo(
+    () => (rejectedOnly ? batches.filter((batch) => batch.rejected_tasks > 0) : batches),
+    [batches, rejectedOnly],
+  );
+  const hasBatchData = batchesQuery.data !== undefined;
+  const batchesLoading = batchesQuery.isLoading && !hasBatchData;
+  const batchesInitialPaused = isInitialQueryPaused(batchesQuery, hasBatchData);
+  const batchesRefreshPaused = isRefreshQueryPaused(batchesQuery, hasBatchData);
+  const batchesInitialError = batchesQuery.isError && !hasBatchData;
   const selectedBatch = useMemo(
     () => batches.find((b) => b.batch_id === selectedBatchId) ?? null,
     [batches, selectedBatchId],
@@ -124,11 +200,26 @@ export function AnnotatePage() {
 
   const projectId = selectedBatch?.project_id;
   const taskListParams = useMemo(
-    () => (selectedBatchId ? { batch_id: selectedBatchId } : undefined),
-    [selectedBatchId],
+    () =>
+      selectedBatchId
+        ? { batch_id: selectedBatchId, ...(rejectedOnly ? { status: "rejected" } : {}) }
+        : undefined,
+    [selectedBatchId, rejectedOnly],
   );
-  const { data: taskListData, isLoading: tasksLoading } = useTaskList(projectId, taskListParams);
-  const tasks = taskListData?.pages.flatMap((p) => p.items) ?? [];
+  const taskListQuery = useTaskList(projectId, taskListParams);
+  const taskListData = taskListQuery.data;
+  const hasTaskData = taskListData !== undefined;
+  const tasksLoading = taskListQuery.isLoading && !hasTaskData;
+  const tasksInitialPaused = isInitialQueryPaused(taskListQuery, hasTaskData);
+  const tasksRefreshPaused = isRefreshQueryPaused(taskListQuery, hasTaskData);
+  const taskListPaused = isQueryPaused(taskListQuery);
+  const [loadMoreRequested, setLoadMoreRequested] = useState(false);
+  useEffect(() => {
+    if (!taskListPaused && !taskListQuery.isFetchingNextPage) {
+      setLoadMoreRequested(false);
+    }
+  }, [taskListPaused, taskListQuery.isFetchingNextPage]);
+  const tasks = useMemo(() => flattenTaskPages(taskListData?.pages), [taskListData?.pages]);
   const total = taskListData?.pages[0]?.total ?? tasks.length;
 
   const submitMut = useMutation({
@@ -147,13 +238,12 @@ export function AnnotatePage() {
   });
 
   const handleSelectBatch = (b: MyBatchItem | null) => {
-    if (!b) {
-      setSelectedBatchId("");
-      setSearchParams({});
-    } else {
-      setSelectedBatchId(b.batch_id);
-      setSearchParams({ batch: b.batch_id });
-    }
+    setSearchParams((previous) => {
+      const next = new URLSearchParams(previous);
+      if (b) next.set("batch", b.batch_id);
+      else next.delete("batch");
+      return next;
+    });
   };
 
   const openWorkbench = (taskId?: string) => {
@@ -190,9 +280,18 @@ export function AnnotatePage() {
         </div>
         {batchesLoading ? (
           <div className={styles.sidebarLoading}>加载中...</div>
+        ) : batchesInitialPaused ? (
+          <QueryPausedState resource="分派批次" compact />
+        ) : batchesInitialError ? (
+          <QueryErrorState
+            resource="分派批次"
+            error={batchesQuery.error}
+            onRetry={() => void batchesQuery.refetch()}
+            compact
+          />
         ) : (
           <AnnotateSidebar
-            batches={batches}
+            batches={visibleBatches}
             selectedBatchId={selectedBatchId}
             onSelect={handleSelectBatch}
           />
@@ -303,23 +402,93 @@ export function AnnotatePage() {
           </div>
         )}
 
+        <div role="group" aria-label="任务状态筛选" className="mb-3 flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            variant={rejectedOnly ? "default" : "primary"}
+            onClick={() =>
+              setSearchParams((previous) => {
+                const next = new URLSearchParams(previous);
+                next.delete("status");
+                return next;
+              })
+            }
+          >
+            全部任务
+          </Button>
+          <Button
+            size="sm"
+            variant={rejectedOnly ? "primary" : "default"}
+            onClick={() =>
+              setSearchParams((previous) => {
+                const next = new URLSearchParams(previous);
+                next.set("status", "rejected");
+                return next;
+              })
+            }
+          >
+            待重做
+          </Button>
+        </div>
+        {batchesRefreshPaused && <QueryPausedNotice resource="分派批次" />}
+
+        {batchesQuery.isError && hasBatchData && (
+          <RefreshNotice
+            resource="分派批次"
+            error={batchesQuery.error}
+            onRetry={() => void batchesQuery.refetch()}
+          />
+        )}
+
+        {tasksRefreshPaused && (
+          <QueryPausedNotice resource={loadMoreRequested ? "更多任务" : "任务列表"} />
+        )}
+
+        {selectedBatch && taskListQuery.isError && hasTaskData && (
+          <RefreshNotice
+            resource="任务列表"
+            error={taskListQuery.error}
+            onRetry={() => void taskListQuery.refetch()}
+          />
+        )}
+
         {!selectedBatch ? (
           batchesLoading ? (
             <div className={styles.loadingState}>加载中...</div>
-          ) : batches.length === 0 ? (
+          ) : batchesInitialPaused ? (
+            <QueryPausedState resource="分派批次" />
+          ) : batchesInitialError ? (
+            <QueryErrorState
+              resource="分派批次"
+              error={batchesQuery.error}
+              onRetry={() => void batchesQuery.refetch()}
+            />
+          ) : visibleBatches.length === 0 ? (
             <div className={styles.emptyState}>
               <Icon name="inbox" size={40} className={styles.emptyIcon} />
-              <div className={styles.emptyTitle}>暂无分派批次</div>
+              <div className={styles.emptyTitle}>
+                {rejectedOnly ? "没有待重做任务" : "暂无分派批次"}
+              </div>
             </div>
           ) : (
-            <BatchCardGrid batches={batches} onSelect={handleSelectBatch} />
+            <BatchCardGrid batches={visibleBatches} onSelect={handleSelectBatch} />
           )
         ) : tasksLoading ? (
           <div className={styles.loadingState}>加载中...</div>
+        ) : tasksInitialPaused ? (
+          <QueryPausedState resource="任务列表" />
+        ) : taskListQuery.isError && !hasTaskData ? (
+          <QueryErrorState
+            resource="任务列表"
+            error={taskListQuery.error}
+            onRetry={() => void taskListQuery.refetch()}
+          />
         ) : tasks.length === 0 ? (
           <div className={styles.emptyState}>
             <Icon name="inbox" size={40} className={styles.emptyIcon} />
-            <div className={styles.emptyTitle}>该批次暂无任务</div>
+            <div className={styles.emptyTitle}>
+              {rejectedOnly ? "该批次没有待重做任务" : "该批次暂无任务"}
+            </div>
           </div>
         ) : (
           <>
@@ -332,6 +501,24 @@ export function AnnotatePage() {
             {tasks.map((t) => (
               <TaskRow key={t.id} task={t} onOpen={() => openWorkbench(t.id)} />
             ))}
+            {taskListQuery.hasNextPage && (
+              <div className={styles.loadMore}>
+                <span className={styles.loadMoreText}>
+                  已加载 {tasks.length}
+                  {typeof total === "number" ? ` / ${total}` : ""} 个任务
+                </span>
+                <Button
+                  size="sm"
+                  disabled={taskListQuery.isFetchingNextPage}
+                  onClick={() => {
+                    setLoadMoreRequested(true);
+                    void Promise.resolve(taskListQuery.fetchNextPage()).catch(() => undefined);
+                  }}
+                >
+                  {taskListQuery.isFetchingNextPage ? "加载中…" : "加载更多"}
+                </Button>
+              </div>
+            )}
           </>
         )}
       </section>

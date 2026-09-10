@@ -9,22 +9,28 @@ import { DEFAULT_WORKBENCH_PREFERENCES } from "@/api/auth";
 const mockPushToast = vi.fn();
 
 // --- auth store ---
-vi.mock("@/stores/authStore", () => ({
-  useAuthStore: (sel: (s: any) => any) =>
-    sel({
-      token: "tok",
-      user: {
-        id: "u1",
-        name: "Alice",
-        email: "alice@example.com",
-        role: "super_admin",
-        group_name: null,
-        deactivation_scheduled_at: null,
-        deactivation_requested_at: null,
-      },
-      setAuth: vi.fn(),
-    }),
+const mockSettingsUser = vi.hoisted(() => ({
+  id: "u1",
+  name: "Alice",
+  email: "alice@example.com",
+  role: "super_admin",
+  group_name: null,
+  password_admin_reset_at: null as string | null,
+  deactivation_scheduled_at: null,
+  deactivation_requested_at: null,
 }));
+vi.mock("@/stores/authStore", () => {
+  const store = {
+    token: "tok",
+    user: mockSettingsUser,
+    setAuth: vi.fn(),
+    setUser: vi.fn(),
+  };
+  const useAuthStore = Object.assign((sel: (s: any) => any) => sel(store), {
+    getState: () => store,
+  });
+  return { useAuthStore };
+});
 
 // --- permissions ---
 vi.mock("@/hooks/usePermissions", () => ({
@@ -49,6 +55,12 @@ vi.mock("@/hooks/useMe", () => ({
   useCancelDeactivation: () => mockCancelDeactivation,
 }));
 
+// --- session control ---
+const mockLogoutAll = { mutate: vi.fn(), isPending: false };
+vi.mock("@/hooks/useAuth", () => ({
+  useLogoutAll: () => mockLogoutAll,
+}));
+
 // --- system settings ---
 const mockSystemSettingsData = {
   environment: "development",
@@ -66,10 +78,12 @@ const mockSystemSettingsData = {
 };
 const mockUseSystemSettings = vi.fn();
 const mockUpdateSystemSettings = { mutate: vi.fn(), isPending: false, isError: false };
+const mockResetSystemSettings = { mutate: vi.fn(), isPending: false, isError: false };
 const mockTestSmtp = { mutate: vi.fn(), isPending: false };
 vi.mock("@/hooks/useSystemSettings", () => ({
   useSystemSettings: () => mockUseSystemSettings(),
   useUpdateSystemSettings: () => mockUpdateSystemSettings,
+  useResetSystemSettings: () => mockResetSystemSettings,
   useTestSmtp: () => mockTestSmtp,
 }));
 
@@ -132,10 +146,13 @@ function renderUI() {
 
 describe("SettingsPage", () => {
   beforeEach(() => {
+    mockSettingsUser.password_admin_reset_at = null;
     mockPushToast.mockReset();
     mockUpdateProfile.mutate.mockReset();
+    mockLogoutAll.mutate.mockReset();
     mockChangePassword.mutate.mockReset();
     mockUpdateSystemSettings.mutate.mockReset();
+    mockResetSystemSettings.mutate.mockReset();
     mockTestSmtp.mutate.mockReset();
     mockWorkbenchUpdate.mockReset().mockResolvedValue(undefined);
     mockUseSystemSettings.mockReturnValue({
@@ -177,6 +194,30 @@ describe("SettingsPage", () => {
     fireEvent.change(pwdInputs[0], { target: { value: "newpass1" } });
     fireEvent.change(pwdInputs[1], { target: { value: "different2" } });
     expect(screen.getByText("两次密码不一致")).toBeInTheDocument();
+  });
+
+  it("修改密码：与服务端规则不一致时禁用提交", () => {
+    renderUI();
+    const pwdInputs = screen.getAllByDisplayValue("");
+    fireEvent.change(pwdInputs[0], { target: { value: "oldpass" } });
+    fireEvent.change(pwdInputs[1], { target: { value: "abc12345" } });
+    fireEvent.change(pwdInputs[2], { target: { value: "abc12345" } });
+    expect(screen.getByText(/还需：.*含大写字母/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "修改密码" })).toBeDisabled();
+    expect(mockChangePassword.mutate).not.toHaveBeenCalled();
+  });
+
+  it("管理员临时密码标记 → 设置页提示先完成改密", () => {
+    mockSettingsUser.password_admin_reset_at = "2026-09-09T00:00:00Z";
+    renderUI();
+    expect(screen.getByRole("alert")).toHaveTextContent("管理员为你生成了临时密码");
+    expect(screen.getByText("请先修改密码")).toBeInTheDocument();
+  });
+
+  it("退出其他设备保留当前会话并调用既有 logout-all action", () => {
+    renderUI();
+    fireEvent.click(screen.getByRole("button", { name: "退出其他设备" }));
+    expect(mockLogoutAll.mutate).toHaveBeenCalledWith(undefined, expect.any(Object));
   });
 
   it("点击「系统设置」tab → 显示系统设置表单（super_admin 才可见）", () => {

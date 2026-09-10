@@ -219,7 +219,7 @@ describe("AIPreAnnotateJobsPage", () => {
     });
   });
 
-  it("点击详情按钮打开 job 详情并展示 payload/result", async () => {
+  it("点击详情按钮打开该次后台任务详情并展示结果", async () => {
     const job = makeJob({
       result: {
         success_count: 7,
@@ -236,7 +236,7 @@ describe("AIPreAnnotateJobsPage", () => {
     const detailButton = await screen.findByTitle("详情");
     fireEvent.click(detailButton);
 
-    expect(await screen.findByText("Job 详情")).toBeInTheDocument();
+    expect(await screen.findByText("后台任务详情")).toBeInTheDocument();
     expect(mockAsyncJobsGet).toHaveBeenCalledWith("job-1");
     expect(await screen.findByText("$0.1234")).toBeInTheDocument();
     expect(screen.getAllByText("重试失败项").length).toBeGreaterThan(0);

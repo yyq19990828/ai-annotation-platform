@@ -111,6 +111,31 @@ describe("batchesApi · endpoint 契约", () => {
     });
   });
 
+  it("distribute preview carries the same assignment scope", () => {
+    batchesApi.previewDistribution("p1", {
+      annotator_ids: ["u1"],
+      reviewer_ids: ["u2"],
+      only_unassigned: true,
+    });
+    expect(post).toHaveBeenCalledWith("/projects/p1/batches/distribution-preview", {
+      annotator_ids: ["u1"],
+      reviewer_ids: ["u2"],
+      only_unassigned: true,
+    });
+    batchesApi.applyDistribution("p1", {
+      annotator_ids: ["u1"],
+      reviewer_ids: ["u2"],
+      only_unassigned: true,
+      preview_version: "preview-1",
+    });
+    expect(post).toHaveBeenCalledWith("/projects/p1/batches/distribution-apply", {
+      annotator_ids: ["u1"],
+      reviewer_ids: ["u2"],
+      only_unassigned: true,
+      preview_version: "preview-1",
+    });
+  });
+
   it("admin lock / unlock", () => {
     batchesApi.adminLock("p1", "b1", "why");
     expect(post).toHaveBeenCalledWith("/projects/p1/batches/b1/admin-lock", { reason: "why" });

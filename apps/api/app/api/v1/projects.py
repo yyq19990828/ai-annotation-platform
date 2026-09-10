@@ -21,6 +21,10 @@ from app.db.models.user import User
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
 from app.db.models.project_pipeline import ProjectPipeline
+from app.db.models.dataset import DatasetItem, ProjectDataset
+from app.db.models.task import Task
+from app.db.models.task_batch import TaskBatch
+from app.db.models.async_job import AsyncJob
 from app.schemas.project import (
     ProjectOut,
     ProjectCreate,
@@ -32,6 +36,7 @@ from app.schemas.project import (
     ProjectMemberOut,
     ProjectMemberCreate,
     ProjectTransferRequest,
+    ProjectReadinessSummary,
 )
 from app.schemas.project_pipeline import ProjectPipelineApplyRequest, ProjectPipelineOut
 from app.schemas.export import (
@@ -708,6 +713,170 @@ async def get_project(
     return await _serialize_project(db, project)
 
 
+@router.get("/{project_id}/readiness", response_model=ProjectReadinessSummary)
+async def get_project_readiness(
+    project: Project = Depends(require_project_owner),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return the owner-facing, server-observed project start conditions.
+
+    This endpoint intentionally reports task-creation jobs and active member
+    accounts together with counters.  The settings page can therefore explain
+    a pending or failed worker without treating a partially created project as
+    ready.
+    """
+    from app.services.project import derive_classes_list
+
+    dataset_ids = list(
+        (
+            await db.execute(
+                select(ProjectDataset.dataset_id).where(
+                    ProjectDataset.project_id == project.id
+                )
+            )
+        ).scalars()
+    )
+    linked_dataset_count = len(dataset_ids)
+
+    dataset_item_count = 0
+    linked_task_count = 0
+    if dataset_ids:
+        dataset_item_count = int(
+            (
+                await db.execute(
+                    select(func.count())
+                    .select_from(DatasetItem)
+                    .where(DatasetItem.dataset_id.in_(dataset_ids))
+                )
+            ).scalar()
+            or 0
+        )
+        linked_task_count = int(
+            (
+                await db.execute(
+                    select(func.count())
+                    .select_from(Task)
+                    .where(
+                        Task.project_id == project.id,
+                        Task.dataset_item_id.is_not(None),
+                        Task.status != "uploading",
+                        Task.dataset_item_id.in_(
+                            select(DatasetItem.id).where(
+                                DatasetItem.dataset_id.in_(dataset_ids)
+                            )
+                        ),
+                    )
+                )
+            ).scalar()
+            or 0
+        )
+
+    task_count = int(
+        (
+            await db.execute(
+                select(func.count())
+                .select_from(Task)
+                .where(Task.project_id == project.id, Task.status != "uploading")
+            )
+        ).scalar()
+        or 0
+    )
+
+    job_query = select(AsyncJob).where(
+        AsyncJob.project_id == project.id, AsyncJob.kind == "create_tasks"
+    )
+    job_counts = dict(
+        (
+            await db.execute(
+                select(AsyncJob.status, func.count())
+                .where(
+                    AsyncJob.project_id == project.id, AsyncJob.kind == "create_tasks"
+                )
+                .group_by(AsyncJob.status)
+            )
+        ).all()
+    )
+    latest_job = await db.scalar(
+        job_query.order_by(AsyncJob.created_at.desc(), AsyncJob.id.desc()).limit(1)
+    )
+    active_jobs = job_counts.get("pending", 0) + job_counts.get("running", 0)
+    failed_jobs = job_counts.get("failed", 0)
+
+    batch_rows = (
+        (
+            await db.execute(
+                select(TaskBatch).where(
+                    TaskBatch.project_id == project.id, TaskBatch.status != "archived"
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    task_counts = dict(
+        (
+            await db.execute(
+                select(Task.batch_id, func.count())
+                .where(Task.project_id == project.id, Task.status != "uploading")
+                .group_by(Task.batch_id)
+            )
+        ).all()
+    )
+    # Assignment validity includes the actual receiving account and membership,
+    # not merely the existence of some other active member with that role.
+    valid_members = (
+        await db.execute(
+            select(ProjectMember.user_id, ProjectMember.role)
+            .join(User, User.id == ProjectMember.user_id)
+            .where(
+                ProjectMember.project_id == project.id,
+                User.is_active.is_(True),
+                User.role == ProjectMember.role,
+            )
+        )
+    ).all()
+    annotators = {user_id for user_id, role in valid_members if role == "annotator"}
+    reviewers = {user_id for user_id, role in valid_members if role == "reviewer"}
+    executable_statuses = {
+        "active",
+        "pre_annotated",
+        "annotating",
+        "reviewing",
+        "rejected",
+    }
+    nonempty_batch_count = sum(task_counts.get(batch.id, 0) > 0 for batch in batch_rows)
+    executable_batch_count = sum(
+        batch.status in executable_statuses and task_counts.get(batch.id, 0) > 0
+        for batch in batch_rows
+    )
+    assigned_batch_count = sum(
+        batch.status in executable_statuses
+        and task_counts.get(batch.id, 0) > 0
+        and batch.annotator_id in annotators
+        and batch.reviewer_id in reviewers
+        for batch in batch_rows
+    )
+    return ProjectReadinessSummary(
+        project_id=project.id,
+        guide_ready=bool((project.annotation_guide or "").strip()),
+        classes_ready=bool(derive_classes_list(project.tool_bindings)),
+        linked_dataset_count=linked_dataset_count,
+        dataset_item_count=dataset_item_count,
+        task_count=task_count,
+        linked_task_count=linked_task_count,
+        task_creation_active_jobs=active_jobs,
+        task_creation_failed_jobs=failed_jobs,
+        latest_task_creation_status=latest_job.status if latest_job else None,
+        batch_count=len(batch_rows),
+        nonempty_batch_count=nonempty_batch_count,
+        executable_batch_count=executable_batch_count,
+        assigned_batch_count=assigned_batch_count,
+        active_annotator_count=len(annotators),
+        active_reviewer_count=len(reviewers),
+        activated_batch_count=executable_batch_count,
+    )
+
+
 @router.patch("/{project_id}", response_model=ProjectOut)
 async def update_project(
     data: ProjectUpdate,
@@ -1215,10 +1384,17 @@ async def add_member(
     target = await db.get(User, body.user_id)
     if target is None or not target.is_active:
         raise HTTPException(status_code=404, detail="目标用户不存在")
-    if body.role == "annotator" and target.role != UserRole.ANNOTATOR:
-        raise HTTPException(status_code=400, detail="目标用户角色不是标注员")
-    if body.role == "reviewer" and target.role != UserRole.REVIEWER:
-        raise HTTPException(status_code=400, detail="目标用户角色不是审核员")
+    expected_roles = {
+        "annotator": UserRole.ANNOTATOR.value,
+        "reviewer": UserRole.REVIEWER.value,
+        "viewer": UserRole.VIEWER.value,
+    }
+    if target.role != expected_roles[body.role]:
+        labels = {"annotator": "标注员", "reviewer": "审核员", "viewer": "观察者"}
+        raise HTTPException(
+            status_code=400,
+            detail=f"目标用户角色不是{labels[body.role]}，项目成员职责必须与全局角色匹配",
+        )
 
     existing = await db.execute(
         select(ProjectMember).where(

@@ -85,6 +85,36 @@
         "title": "AIToolPreferences",
         "type": "object"
       },
+      "AcceptInvitationRequest": {
+        "properties": {
+          "token": {
+            "minLength": 1,
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "AcceptInvitationRequest",
+        "type": "object"
+      },
+      "AcceptInvitationResponse": {
+        "properties": {
+          "acceptance": {
+            "$ref": "#/components/schemas/InvitationAcceptance"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserOut"
+          }
+        },
+        "required": [
+          "user",
+          "acceptance"
+        ],
+        "title": "AcceptInvitationResponse",
+        "type": "object"
+      },
       "AdminDashboardStats": {
         "properties": {
           "active_users": {
@@ -4656,6 +4686,40 @@
         "title": "BackendCostBreakdown",
         "type": "object"
       },
+      "BatchAssignmentPreviewRequest": {
+        "properties": {
+          "annotator_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotator Id"
+          },
+          "reviewer_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer Id"
+          }
+        },
+        "required": [
+          "annotator_id",
+          "reviewer_id"
+        ],
+        "title": "BatchAssignmentPreviewRequest",
+        "type": "object"
+      },
       "BatchCreate": {
         "properties": {
           "annotator_id": {
@@ -4772,6 +4836,197 @@
           "distributed_batches"
         ],
         "title": "BatchDistributeResult",
+        "type": "object"
+      },
+      "BatchDistributionPreview": {
+        "properties": {
+          "candidate_batches": {
+            "title": "Candidate Batches",
+            "type": "integer"
+          },
+          "changed_batches": {
+            "title": "Changed Batches",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BatchDistributionPreviewItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "only_unassigned": {
+            "title": "Only Unassigned",
+            "type": "boolean"
+          },
+          "preview_version": {
+            "title": "Preview Version",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "recipient_summary": {
+            "items": {
+              "$ref": "#/components/schemas/BatchDistributionRecipient"
+            },
+            "title": "Recipient Summary",
+            "type": "array"
+          },
+          "skipped_batches": {
+            "title": "Skipped Batches",
+            "type": "integer"
+          },
+          "total_batches": {
+            "title": "Total Batches",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "project_id",
+          "only_unassigned",
+          "total_batches",
+          "candidate_batches",
+          "changed_batches",
+          "skipped_batches",
+          "items",
+          "recipient_summary",
+          "preview_version"
+        ],
+        "title": "BatchDistributionPreview",
+        "type": "object"
+      },
+      "BatchDistributionPreviewItem": {
+        "properties": {
+          "after_annotator_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After Annotator Id"
+          },
+          "after_reviewer_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After Reviewer Id"
+          },
+          "batch_id": {
+            "format": "uuid",
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "before_annotator_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before Annotator Id"
+          },
+          "before_reviewer_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before Reviewer Id"
+          },
+          "display_id": {
+            "title": "Display Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "skipped_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skipped Reason"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "task_count": {
+            "default": 0,
+            "title": "Task Count",
+            "type": "integer"
+          },
+          "will_change": {
+            "title": "Will Change",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "batch_id",
+          "display_id",
+          "name",
+          "status",
+          "will_change"
+        ],
+        "title": "BatchDistributionPreviewItem",
+        "type": "object"
+      },
+      "BatchDistributionRecipient": {
+        "properties": {
+          "existing_backlog_count": {
+            "title": "Existing Backlog Count",
+            "type": "integer"
+          },
+          "new_task_count": {
+            "title": "New Task Count",
+            "type": "integer"
+          },
+          "role": {
+            "enum": [
+              "annotator",
+              "reviewer"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "role",
+          "new_task_count",
+          "existing_backlog_count"
+        ],
+        "title": "BatchDistributionRecipient",
         "type": "object"
       },
       "BatchOut": {
@@ -6711,6 +6966,336 @@
           }
         },
         "title": "BulkClearResponse",
+        "type": "object"
+      },
+      "BulkGroupAssignmentPreview": {
+        "properties": {
+          "applicable": {
+            "title": "Applicable",
+            "type": "integer"
+          },
+          "blocked": {
+            "title": "Blocked",
+            "type": "integer"
+          },
+          "group_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Id"
+          },
+          "group_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Name"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GroupAssignmentPreviewItem"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "applicable",
+          "blocked"
+        ],
+        "title": "BulkGroupAssignmentPreview",
+        "type": "object"
+      },
+      "BulkGroupAssignmentRequest": {
+        "properties": {
+          "group_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Id"
+          },
+          "user_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "User Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "user_ids"
+        ],
+        "title": "BulkGroupAssignmentRequest",
+        "type": "object"
+      },
+      "BulkGroupAssignmentResponse": {
+        "properties": {
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BulkGroupAssignmentResultItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "succeeded": {
+            "title": "Succeeded",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "succeeded",
+          "failed"
+        ],
+        "title": "BulkGroupAssignmentResponse",
+        "type": "object"
+      },
+      "BulkGroupAssignmentResultItem": {
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "retryable": {
+            "default": false,
+            "title": "Retryable",
+            "type": "boolean"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "ok"
+        ],
+        "title": "BulkGroupAssignmentResultItem",
+        "type": "object"
+      },
+      "BulkInviteItem": {
+        "properties": {
+          "email": {
+            "maxLength": 1000,
+            "title": "Email",
+            "type": "string"
+          },
+          "group_name": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Name"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "role": {
+            "maxLength": 100,
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "role"
+        ],
+        "title": "BulkInviteItem",
+        "type": "object"
+      },
+      "BulkInviteRequest": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BulkInviteItem"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "BulkInviteRequest",
+        "type": "object"
+      },
+      "BulkInviteResponse": {
+        "properties": {
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BulkInviteResultItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "preview": {
+            "default": false,
+            "title": "Preview",
+            "type": "boolean"
+          },
+          "succeeded": {
+            "title": "Succeeded",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "succeeded",
+          "failed"
+        ],
+        "title": "BulkInviteResponse",
+        "type": "object"
+      },
+      "BulkInviteResultItem": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "index": {
+            "title": "Index",
+            "type": "integer"
+          },
+          "invitation_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invitation Id"
+          },
+          "invite_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invite Url"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "project_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Name"
+          },
+          "retryable": {
+            "default": false,
+            "title": "Retryable",
+            "type": "boolean"
+          },
+          "token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token"
+          }
+        },
+        "required": [
+          "index",
+          "email",
+          "ok"
+        ],
+        "title": "BulkInviteResultItem",
         "type": "object"
       },
       "CacheStats": {
@@ -12283,6 +12868,104 @@
         "title": "GroupAssignPayload",
         "type": "object"
       },
+      "GroupAssignmentPreviewItem": {
+        "properties": {
+          "current_group_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Group Id"
+          },
+          "current_group_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Group Name"
+          },
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "next_group_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Group Id"
+          },
+          "next_group_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Group Name"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "ok"
+        ],
+        "title": "GroupAssignmentPreviewItem",
+        "type": "object"
+      },
       "GroupCreate": {
         "properties": {
           "description": {
@@ -12349,6 +13032,42 @@
           "created_at"
         ],
         "title": "GroupOut",
+        "type": "object"
+      },
+      "GroupPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GroupOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "pages": {
+            "title": "Pages",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "pages"
+        ],
+        "title": "GroupPage",
         "type": "object"
       },
       "GroupUpdate": {
@@ -13893,6 +14612,74 @@
         "title": "InterpolateRangeResponse",
         "type": "object"
       },
+      "InvitationAcceptance": {
+        "properties": {
+          "active_batch_count": {
+            "default": 0,
+            "title": "Active Batch Count",
+            "type": "integer"
+          },
+          "next_action": {
+            "title": "Next Action",
+            "type": "string"
+          },
+          "next_action_label": {
+            "title": "Next Action Label",
+            "type": "string"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "project_member_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Member Role"
+          },
+          "project_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Name"
+          },
+          "responsible_person_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Responsible Person Name"
+          }
+        },
+        "required": [
+          "next_action",
+          "next_action_label"
+        ],
+        "title": "InvitationAcceptance",
+        "type": "object"
+      },
       "InvitationCreate": {
         "properties": {
           "email": {
@@ -13910,6 +14697,18 @@
               }
             ],
             "title": "Group Name"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
           },
           "role": {
             "title": "Role",
@@ -13933,6 +14732,40 @@
           "invite_url": {
             "title": "Invite Url",
             "type": "string"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "project_member_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Member Role"
+          },
+          "project_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Name"
           },
           "token": {
             "title": "Token",
@@ -14007,6 +14840,40 @@
             ],
             "title": "Invited By Name"
           },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "project_member_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Member Role"
+          },
+          "project_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Name"
+          },
           "revoked_at": {
             "anyOf": [
               {
@@ -14039,6 +14906,42 @@
           "created_at"
         ],
         "title": "InvitationOut",
+        "type": "object"
+      },
+      "InvitationPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/InvitationOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "pages": {
+            "title": "Pages",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "pages"
+        ],
+        "title": "InvitationPage",
         "type": "object"
       },
       "InvitationResendResponse": {
@@ -14098,6 +15001,40 @@
             ],
             "title": "Invited By Name"
           },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "project_member_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Member Role"
+          },
+          "project_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Name"
+          },
           "role": {
             "title": "Role",
             "type": "string"
@@ -14110,6 +15047,73 @@
           "expires_at"
         ],
         "title": "InvitationResolve",
+        "type": "object"
+      },
+      "InvitationSendEmailResponse": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "invitation_id": {
+            "format": "uuid",
+            "title": "Invitation Id",
+            "type": "string"
+          },
+          "invite_url": {
+            "title": "Invite Url",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "ok": {
+            "default": true,
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "invitation_id",
+          "email",
+          "invite_url",
+          "message"
+        ],
+        "title": "InvitationSendEmailResponse",
+        "type": "object"
+      },
+      "InvitationStats": {
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "integer"
+          },
+          "expired": {
+            "title": "Expired",
+            "type": "integer"
+          },
+          "pending": {
+            "title": "Pending",
+            "type": "integer"
+          },
+          "revoked": {
+            "title": "Revoked",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "total",
+          "pending",
+          "accepted",
+          "expired",
+          "revoked"
+        ],
+        "title": "InvitationStats",
         "type": "object"
       },
       "Keypoint": {
@@ -19265,6 +20269,588 @@
         "title": "ObserveTarget",
         "type": "object"
       },
+      "OffboardingApiKeyPreview": {
+        "properties": {
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "key_prefix": {
+            "title": "Key Prefix",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "key_prefix"
+        ],
+        "title": "OffboardingApiKeyPreview",
+        "type": "object"
+      },
+      "OffboardingBatchRef": {
+        "properties": {
+          "batch_id": {
+            "format": "uuid",
+            "title": "Batch Id",
+            "type": "string"
+          },
+          "batch_name": {
+            "title": "Batch Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "batch_id",
+          "batch_name"
+        ],
+        "title": "OffboardingBatchRef",
+        "type": "object"
+      },
+      "OffboardingBlocker": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "OffboardingBlocker",
+        "type": "object"
+      },
+      "OffboardingCommitRequest": {
+        "properties": {
+          "mode": {
+            "default": "handoff",
+            "enum": [
+              "handoff",
+              "emergency_suspend"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "preview_version": {
+            "title": "Preview Version",
+            "type": "string"
+          },
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/OffboardingProjectRequest"
+            },
+            "title": "Projects",
+            "type": "array"
+          },
+          "reason": {
+            "default": "",
+            "maxLength": 500,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "preview_version"
+        ],
+        "title": "OffboardingCommitRequest",
+        "type": "object"
+      },
+      "OffboardingPreview": {
+        "properties": {
+          "api_keys": {
+            "items": {
+              "$ref": "#/components/schemas/OffboardingApiKeyPreview"
+            },
+            "title": "Api Keys",
+            "type": "array"
+          },
+          "blockers": {
+            "items": {
+              "$ref": "#/components/schemas/OffboardingBlocker"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "can_commit": {
+            "default": false,
+            "title": "Can Commit",
+            "type": "boolean"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "preview_version": {
+            "title": "Preview Version",
+            "type": "string"
+          },
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/OffboardingProjectPreview"
+            },
+            "title": "Projects",
+            "type": "array"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserOut"
+          }
+        },
+        "required": [
+          "user",
+          "preview_version",
+          "generated_at"
+        ],
+        "title": "OffboardingPreview",
+        "type": "object"
+      },
+      "OffboardingProjectPreview": {
+        "properties": {
+          "blockers": {
+            "items": {
+              "$ref": "#/components/schemas/OffboardingBlocker"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "locked_task_count": {
+            "default": 0,
+            "title": "Locked Task Count",
+            "type": "integer"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "project_name": {
+            "title": "Project Name",
+            "type": "string"
+          },
+          "roles": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/OffboardingRolePreview"
+            },
+            "title": "Roles",
+            "type": "object"
+          },
+          "tasks": {
+            "additionalProperties": {
+              "additionalProperties": {
+                "type": "integer"
+              },
+              "type": "object"
+            },
+            "title": "Tasks",
+            "type": "object"
+          }
+        },
+        "required": [
+          "project_id",
+          "project_name",
+          "roles",
+          "tasks"
+        ],
+        "title": "OffboardingProjectPreview",
+        "type": "object"
+      },
+      "OffboardingProjectRequest": {
+        "properties": {
+          "annotator_receiver_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotator Receiver Id"
+          },
+          "owner_receiver_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Receiver Id"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "reviewer_receiver_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer Receiver Id"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "title": "OffboardingProjectRequest",
+        "type": "object"
+      },
+      "OffboardingResult": {
+        "properties": {
+          "audit_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Audit Id"
+          },
+          "mode": {
+            "enum": [
+              "handoff",
+              "emergency_suspend"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "revoked_api_key_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Revoked Api Key Ids",
+            "type": "array"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "transfers": {
+            "items": {
+              "$ref": "#/components/schemas/OffboardingTransferResult"
+            },
+            "title": "Transfers",
+            "type": "array"
+          },
+          "unresolved": {
+            "items": {
+              "$ref": "#/components/schemas/OffboardingUnresolvedResult"
+            },
+            "title": "Unresolved",
+            "type": "array"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserOut"
+          }
+        },
+        "required": [
+          "user",
+          "status",
+          "mode"
+        ],
+        "title": "OffboardingResult",
+        "type": "object"
+      },
+      "OffboardingRolePreview": {
+        "properties": {
+          "batches": {
+            "items": {
+              "$ref": "#/components/schemas/OffboardingBatchRef"
+            },
+            "title": "Batches",
+            "type": "array"
+          },
+          "present": {
+            "default": false,
+            "title": "Present",
+            "type": "boolean"
+          },
+          "receiver_options": {
+            "items": {
+              "$ref": "#/components/schemas/UserReceiverOption"
+            },
+            "title": "Receiver Options",
+            "type": "array"
+          }
+        },
+        "title": "OffboardingRolePreview",
+        "type": "object"
+      },
+      "OffboardingTransferResult": {
+        "properties": {
+          "batch_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Batch Ids",
+            "type": "array"
+          },
+          "lock_count": {
+            "default": 0,
+            "title": "Lock Count",
+            "type": "integer"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "receiver_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receiver Id"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "task_count": {
+            "default": 0,
+            "title": "Task Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "project_id",
+          "role"
+        ],
+        "title": "OffboardingTransferResult",
+        "type": "object"
+      },
+      "OffboardingUnresolvedResult": {
+        "properties": {
+          "batch_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Batch Ids",
+            "type": "array"
+          },
+          "lock_count": {
+            "default": 0,
+            "title": "Lock Count",
+            "type": "integer"
+          },
+          "project_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Id"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "task_count": {
+            "default": 0,
+            "title": "Task Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "OffboardingUnresolvedResult",
+        "type": "object"
+      },
+      "OnboardingPreferences": {
+        "additionalProperties": false,
+        "description": "Cross-device state for the employee/project start checklist.",
+        "properties": {
+          "projects": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/OnboardingProjectState"
+            },
+            "title": "Projects",
+            "type": "object"
+          }
+        },
+        "title": "OnboardingPreferences",
+        "type": "object"
+      },
+      "OnboardingProjectState": {
+        "additionalProperties": false,
+        "description": "Per-user onboarding state for one project's current guide revision.\n\nThis lives in the existing user preferences JSONB so guide dismissal and\nreading progress follows the employee across devices without introducing a\nsecond onboarding table.  ``guide_version`` is supplied by the client from\nthe persisted project guide; a changed guide naturally starts a new state.",
+        "properties": {
+          "dismissed": {
+            "default": false,
+            "title": "Dismissed",
+            "type": "boolean"
+          },
+          "guide_read": {
+            "default": false,
+            "title": "Guide Read",
+            "type": "boolean"
+          },
+          "guide_version": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Guide Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "guide_version"
+        ],
+        "title": "OnboardingProjectState",
+        "type": "object"
+      },
+      "OnboardingProjectSummary": {
+        "description": "Server-observed progress for one employee's project checklist.",
+        "properties": {
+          "assigned_task_count": {
+            "default": 0,
+            "title": "Assigned Task Count",
+            "type": "integer"
+          },
+          "opened_task_count": {
+            "default": 0,
+            "title": "Opened Task Count",
+            "type": "integer"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "reviewed_task_count": {
+            "default": 0,
+            "title": "Reviewed Task Count",
+            "type": "integer"
+          },
+          "reviewed_task_display_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed Task Display Id"
+          },
+          "reviewed_task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed Task Id"
+          },
+          "reviewed_task_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed Task Reason"
+          },
+          "reviewed_task_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "completed",
+                  "rejected"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed Task Status"
+          },
+          "saved_annotation_count": {
+            "default": 0,
+            "title": "Saved Annotation Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "title": "OnboardingProjectSummary",
+        "type": "object"
+      },
       "OpenRegisterRequest": {
         "properties": {
           "captcha_token": {
@@ -22314,6 +23900,23 @@
             "title": "Annotator Ids",
             "type": "array"
           },
+          "batch_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "maxItems": 500,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Ids"
+          },
           "only_unassigned": {
             "default": true,
             "title": "Only Unassigned",
@@ -22507,7 +24110,8 @@
           "role": {
             "enum": [
               "annotator",
-              "reviewer"
+              "reviewer",
+              "viewer"
             ],
             "title": "Role",
             "type": "string"
@@ -23168,6 +24772,107 @@
           }
         },
         "title": "ProjectPipelineUpdate",
+        "type": "object"
+      },
+      "ProjectReadinessSummary": {
+        "description": "Owner-only, database-backed checklist for starting a project.\n\nThe dashboard deliberately keeps this separate from client preferences: a\nproject is ready because the server has observed the required data,\nbatches and assignments, rather than because a browser marked a step done.",
+        "properties": {
+          "activated_batch_count": {
+            "title": "Activated Batch Count",
+            "type": "integer"
+          },
+          "active_annotator_count": {
+            "title": "Active Annotator Count",
+            "type": "integer"
+          },
+          "active_reviewer_count": {
+            "title": "Active Reviewer Count",
+            "type": "integer"
+          },
+          "assigned_batch_count": {
+            "title": "Assigned Batch Count",
+            "type": "integer"
+          },
+          "batch_count": {
+            "title": "Batch Count",
+            "type": "integer"
+          },
+          "classes_ready": {
+            "title": "Classes Ready",
+            "type": "boolean"
+          },
+          "dataset_item_count": {
+            "title": "Dataset Item Count",
+            "type": "integer"
+          },
+          "executable_batch_count": {
+            "title": "Executable Batch Count",
+            "type": "integer"
+          },
+          "guide_ready": {
+            "title": "Guide Ready",
+            "type": "boolean"
+          },
+          "latest_task_creation_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latest Task Creation Status"
+          },
+          "linked_dataset_count": {
+            "title": "Linked Dataset Count",
+            "type": "integer"
+          },
+          "linked_task_count": {
+            "title": "Linked Task Count",
+            "type": "integer"
+          },
+          "nonempty_batch_count": {
+            "title": "Nonempty Batch Count",
+            "type": "integer"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "task_count": {
+            "title": "Task Count",
+            "type": "integer"
+          },
+          "task_creation_active_jobs": {
+            "default": 0,
+            "title": "Task Creation Active Jobs",
+            "type": "integer"
+          },
+          "task_creation_failed_jobs": {
+            "default": 0,
+            "title": "Task Creation Failed Jobs",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "project_id",
+          "guide_ready",
+          "classes_ready",
+          "linked_dataset_count",
+          "dataset_item_count",
+          "task_count",
+          "linked_task_count",
+          "batch_count",
+          "nonempty_batch_count",
+          "executable_batch_count",
+          "assigned_batch_count",
+          "active_annotator_count",
+          "active_reviewer_count",
+          "activated_batch_count"
+        ],
+        "title": "ProjectReadinessSummary",
         "type": "object"
       },
       "ProjectRenderingConfig": {
@@ -25175,6 +26880,24 @@
         "title": "RasterMaskGeometry",
         "type": "object"
       },
+      "ReactivateRequest": {
+        "properties": {
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "title": "ReactivateRequest",
+        "type": "object"
+      },
       "RecentReviewItem": {
         "properties": {
           "file_name": {
@@ -25254,6 +26977,16 @@
       },
       "RegisterResponse": {
         "properties": {
+          "acceptance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/InvitationAcceptance"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "access_token": {
             "anyOf": [
               {
@@ -25648,6 +27381,11 @@
             "title": "File Name",
             "type": "string"
           },
+          "is_rework": {
+            "default": false,
+            "title": "Is Rework",
+            "type": "boolean"
+          },
           "project_id": {
             "title": "Project Id",
             "type": "string"
@@ -25695,6 +27433,102 @@
           "updated_at"
         ],
         "title": "ReviewTaskItem",
+        "type": "object"
+      },
+      "ReviewedBatchAssignment": {
+        "properties": {
+          "annotator_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotator Id"
+          },
+          "preview_version": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Preview Version",
+            "type": "string"
+          },
+          "reviewer_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer Id"
+          }
+        },
+        "required": [
+          "annotator_id",
+          "reviewer_id",
+          "preview_version"
+        ],
+        "title": "ReviewedBatchAssignment",
+        "type": "object"
+      },
+      "ReviewedBatchDistribution": {
+        "properties": {
+          "annotator_ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Annotator Ids",
+            "type": "array"
+          },
+          "batch_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "maxItems": 500,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Ids"
+          },
+          "only_unassigned": {
+            "default": true,
+            "title": "Only Unassigned",
+            "type": "boolean"
+          },
+          "preview_version": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Preview Version",
+            "type": "string"
+          },
+          "reviewer_ids": {
+            "default": [],
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Reviewer Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "preview_version"
+        ],
+        "title": "ReviewedBatchDistribution",
         "type": "object"
       },
       "ReviewerDashboardStats": {
@@ -25906,6 +27740,131 @@
           "role"
         ],
         "title": "RoleChangePayload",
+        "type": "object"
+      },
+      "RoleImpactPreview": {
+        "properties": {
+          "assigned_batch_count": {
+            "default": 0,
+            "title": "Assigned Batch Count",
+            "type": "integer"
+          },
+          "assigned_task_count": {
+            "default": 0,
+            "title": "Assigned Task Count",
+            "type": "integer"
+          },
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "can_change": {
+            "title": "Can Change",
+            "type": "boolean"
+          },
+          "current_role": {
+            "title": "Current Role",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "other_project_count": {
+            "default": 0,
+            "title": "Other Project Count",
+            "type": "integer"
+          },
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/RoleImpactProject"
+            },
+            "title": "Projects",
+            "type": "array"
+          },
+          "requested_role": {
+            "title": "Requested Role",
+            "type": "string"
+          },
+          "review_task_count": {
+            "default": 0,
+            "title": "Review Task Count",
+            "type": "integer"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "user_id",
+          "email",
+          "current_role",
+          "requested_role",
+          "can_change"
+        ],
+        "title": "RoleImpactPreview",
+        "type": "object"
+      },
+      "RoleImpactProject": {
+        "properties": {
+          "annotator_batch_count": {
+            "default": 0,
+            "title": "Annotator Batch Count",
+            "type": "integer"
+          },
+          "assigned_task_count": {
+            "default": 0,
+            "title": "Assigned Task Count",
+            "type": "integer"
+          },
+          "membership_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Membership Role"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "project_name": {
+            "title": "Project Name",
+            "type": "string"
+          },
+          "review_task_count": {
+            "default": 0,
+            "title": "Review Task Count",
+            "type": "integer"
+          },
+          "reviewer_batch_count": {
+            "default": 0,
+            "title": "Reviewer Batch Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "project_id",
+          "project_name"
+        ],
+        "title": "RoleImpactProject",
         "type": "object"
       },
       "RotatedBboxGeometry": {
@@ -28675,11 +30634,118 @@
         "title": "SystemHealthResponse",
         "type": "object"
       },
+      "SystemSettingMetadata": {
+        "description": "Non-secret provenance and validation metadata for one system setting.",
+        "properties": {
+          "deployment_default": {
+            "title": "Deployment Default"
+          },
+          "effect": {
+            "title": "Effect",
+            "type": "string"
+          },
+          "in_range": {
+            "title": "In Range",
+            "type": "boolean"
+          },
+          "max_value": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Value"
+          },
+          "min_value": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min Value"
+          },
+          "source": {
+            "enum": [
+              "deployment",
+              "override"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "updated_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By"
+          },
+          "value_type": {
+            "enum": [
+              "bool",
+              "int",
+              "str",
+              "json"
+            ],
+            "title": "Value Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "deployment_default",
+          "value_type",
+          "effect",
+          "in_range"
+        ],
+        "title": "SystemSettingMetadata",
+        "type": "object"
+      },
       "SystemSettingsOut": {
         "properties": {
           "allow_open_registration": {
             "title": "Allow Open Registration",
             "type": "boolean"
+          },
+          "dataset_import_max_files": {
+            "title": "Dataset Import Max Files",
+            "type": "integer"
+          },
+          "dataset_import_max_total_bytes": {
+            "title": "Dataset Import Max Total Bytes",
+            "type": "integer"
           },
           "environment": {
             "title": "Environment",
@@ -28693,8 +30759,35 @@
             "title": "Invitation Ttl Days",
             "type": "integer"
           },
+          "max_invitations_per_day": {
+            "title": "Max Invitations Per Day",
+            "type": "integer"
+          },
+          "metadata": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SystemSettingMetadata"
+            },
+            "title": "Metadata",
+            "type": "object"
+          },
+          "offline_threshold_minutes": {
+            "title": "Offline Threshold Minutes",
+            "type": "integer"
+          },
           "smtp": {
             "$ref": "#/components/schemas/SmtpStatus"
+          },
+          "task_create_sync_threshold": {
+            "title": "Task Create Sync Threshold",
+            "type": "integer"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          },
+          "video_chunk_warmup_lookahead": {
+            "title": "Video Chunk Warmup Lookahead",
+            "type": "integer"
           }
         },
         "required": [
@@ -28702,12 +30795,51 @@
           "invitation_ttl_days",
           "frontend_base_url",
           "smtp",
-          "allow_open_registration"
+          "allow_open_registration",
+          "max_invitations_per_day",
+          "offline_threshold_minutes",
+          "dataset_import_max_files",
+          "dataset_import_max_total_bytes",
+          "task_create_sync_threshold",
+          "video_chunk_warmup_lookahead",
+          "version",
+          "metadata"
         ],
         "title": "SystemSettingsOut",
         "type": "object"
       },
+      "SystemSettingsReset": {
+        "additionalProperties": false,
+        "description": "Explicitly remove DB overrides; PATCH null never means reset.",
+        "properties": {
+          "expected_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Version"
+          },
+          "keys": {
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Keys",
+            "type": "array"
+          }
+        },
+        "required": [
+          "keys"
+        ],
+        "title": "SystemSettingsReset",
+        "type": "object"
+      },
       "SystemSettingsUpdate": {
+        "additionalProperties": false,
         "description": "v0.8.1 · admin UI PATCH 入参，全部 Optional：未提供字段不变更。\nsmtp_password 传空串视为清除；未提供则不动现有值。",
         "properties": {
           "allow_open_registration": {
@@ -28720,6 +30852,41 @@
               }
             ],
             "title": "Allow Open Registration"
+          },
+          "dataset_import_max_files": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Import Max Files"
+          },
+          "dataset_import_max_total_bytes": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Import Max Total Bytes"
+          },
+          "expected_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Version"
           },
           "frontend_base_url": {
             "anyOf": [
@@ -28745,6 +30912,32 @@
               }
             ],
             "title": "Invitation Ttl Days"
+          },
+          "max_invitations_per_day": {
+            "anyOf": [
+              {
+                "maximum": 1000.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Invitations Per Day"
+          },
+          "offline_threshold_minutes": {
+            "anyOf": [
+              {
+                "maximum": 60.0,
+                "minimum": 2.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Offline Threshold Minutes"
           },
           "smtp_from": {
             "anyOf": [
@@ -28806,6 +30999,30 @@
               }
             ],
             "title": "Smtp User"
+          },
+          "task_create_sync_threshold": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Create Sync Threshold"
+          },
+          "video_chunk_warmup_lookahead": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Video Chunk Warmup Lookahead"
           }
         },
         "title": "SystemSettingsUpdate",
@@ -30653,6 +32870,52 @@
             ],
             "title": "Deactivation Scheduled At"
           },
+          "disabled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled At"
+          },
+          "disabled_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled By"
+          },
+          "disabled_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled Kind"
+          },
+          "disabled_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled Reason"
+          },
           "email": {
             "title": "Email",
             "type": "string"
@@ -30768,12 +33031,51 @@
         "title": "UserOut",
         "type": "object"
       },
+      "UserPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/UserOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "pages": {
+            "title": "Pages",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "page_size",
+          "pages"
+        ],
+        "title": "UserPage",
+        "type": "object"
+      },
       "UserPreferences": {
         "additionalProperties": false,
         "description": "User.preferences JSONB root. 仅声明已知子树；未来按 epic 追加。",
         "properties": {
           "ai": {
             "$ref": "#/components/schemas/AIToolPreferences"
+          },
+          "onboarding": {
+            "$ref": "#/components/schemas/OnboardingPreferences"
           },
           "ui": {
             "$ref": "#/components/schemas/UIPreferences"
@@ -30783,6 +33085,47 @@
           }
         },
         "title": "UserPreferences",
+        "type": "object"
+      },
+      "UserReceiverOption": {
+        "description": "A role-specific, currently eligible offboarding receiver.",
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "project_member_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Member Role"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "email",
+          "role"
+        ],
+        "title": "UserReceiverOption",
         "type": "object"
       },
       "UsersStats": {
@@ -39511,6 +41854,53 @@
         ]
       }
     },
+    "/api/v1/auth/invitations/accept": {
+      "post": {
+        "description": "Explicitly attach an existing, matching account to an invitation project.",
+        "operationId": "accept_invitation_for_existing_user_api_v1_auth_invitations_accept_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptInvitationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcceptInvitationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Accept Invitation For Existing User",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/auth/invitations/{token}": {
       "get": {
         "operationId": "resolve_invitation_api_v1_auth_invitations__token__get",
@@ -41281,6 +43671,55 @@
           }
         ],
         "summary": "My Batches",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/api/v1/dashboard/annotator/projects/{project_id}/onboarding": {
+      "get": {
+        "description": "Return durable checklist signals for the current user and project.\n\nOpening is based on task events, annotation completion is based on active\nannotations owned by the user, and review completion is based on the\nassignee's task review fields.  Client-side remembered task state is only a\nsupplemental signal for the currently open browser tab.",
+        "operationId": "annotator_project_onboarding_api_v1_dashboard_annotator_projects__project_id__onboarding_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingProjectSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Annotator Project Onboarding",
         "tags": [
           "dashboard"
         ]
@@ -43198,6 +45637,80 @@
         ]
       }
     },
+    "/api/v1/groups/query": {
+      "get": {
+        "operationId": "query_groups_api_v1_groups_query_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroupPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Query Groups",
+        "tags": [
+          "groups"
+        ]
+      }
+    },
     "/api/v1/groups/{group_id}": {
       "delete": {
         "operationId": "delete_group_api_v1_groups__group_id__delete",
@@ -43368,6 +45881,551 @@
         ]
       }
     },
+    "/api/v1/invitations/export": {
+      "get": {
+        "operationId": "export_invitations_api_v1_invitations_export_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "csv",
+              "enum": [
+                "csv",
+                "json"
+              ],
+              "title": "Format",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "pending",
+                "accepted",
+                "expired",
+                "revoked",
+                "all"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "me",
+              "enum": [
+                "me",
+                "all"
+              ],
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Role"
+            }
+          },
+          {
+            "in": "query",
+            "name": "email",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Email"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Export Invitations",
+        "tags": [
+          "invitations"
+        ]
+      }
+    },
+    "/api/v1/invitations/query": {
+      "get": {
+        "operationId": "query_invitations_api_v1_invitations_query_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "pending",
+                "accepted",
+                "expired",
+                "revoked",
+                "all"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "me",
+              "enum": [
+                "me",
+                "all"
+              ],
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Role"
+            }
+          },
+          {
+            "in": "query",
+            "name": "email",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Email"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Query Invitations",
+        "tags": [
+          "invitations"
+        ]
+      }
+    },
+    "/api/v1/invitations/stats": {
+      "get": {
+        "operationId": "invitation_stats_endpoint_api_v1_invitations_stats_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "pending",
+                "accepted",
+                "expired",
+                "revoked",
+                "all"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "me",
+              "enum": [
+                "me",
+                "all"
+              ],
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Role"
+            }
+          },
+          {
+            "in": "query",
+            "name": "email",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Email"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "created_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Created To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationStats"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Invitation Stats Endpoint",
+        "tags": [
+          "invitations"
+        ]
+      }
+    },
     "/api/v1/invitations/{invitation_id}": {
       "delete": {
         "operationId": "revoke_invitation_api_v1_invitations__invitation_id__delete",
@@ -43452,6 +46510,55 @@
           }
         ],
         "summary": "Resend Invitation",
+        "tags": [
+          "invitations"
+        ]
+      }
+    },
+    "/api/v1/invitations/{invitation_id}/send-email": {
+      "post": {
+        "description": "Send an existing invitation; the link and token are never rotated.",
+        "operationId": "send_invitation_email_endpoint_api_v1_invitations__invitation_id__send_email_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invitation_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Invitation Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationSendEmailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Send Invitation Email Endpoint",
         "tags": [
           "invitations"
         ]
@@ -46057,6 +49164,124 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/batches/distribution-apply": {
+      "post": {
+        "description": "Apply a previously reviewed project distribution plan.",
+        "operationId": "apply_distribution_in_project_api_v1_projects__project_id__batches_distribution_apply_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewedBatchDistribution"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchDistributeResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Apply Distribution In Project",
+        "tags": [
+          "batches"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/batches/distribution-preview": {
+      "post": {
+        "description": "Preview assignment changes without mutating batches or task rows.",
+        "operationId": "preview_distribution_in_project_api_v1_projects__project_id__batches_distribution_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectDistributeBatches"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchDistributionPreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preview Distribution In Project",
+        "tags": [
+          "batches"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/batches/split": {
       "post": {
         "operationId": "split_batches_api_v1_projects__project_id__batches_split_post",
@@ -46460,6 +49685,142 @@
           }
         ],
         "summary": "Admin Unlock Batch",
+        "tags": [
+          "batches"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/batches/{batch_id}/assignment-apply": {
+      "post": {
+        "operationId": "apply_batch_assignment_api_v1_projects__project_id__batches__batch_id__assignment_apply_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewedBatchAssignment"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Apply Batch Assignment",
+        "tags": [
+          "batches"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/batches/{batch_id}/assignment-preview": {
+      "post": {
+        "operationId": "preview_batch_assignment_api_v1_projects__project_id__batches__batch_id__assignment_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "batch_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Batch Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchAssignmentPreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchDistributionPreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preview Batch Assignment",
         "tags": [
           "batches"
         ]
@@ -51106,6 +54467,55 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/readiness": {
+      "get": {
+        "description": "Return the owner-facing, server-observed project start conditions.\n\nThis endpoint intentionally reports task-creation jobs and active member\naccounts together with counters.  The settings page can therefore explain\na pending or failed worker without treating a partially created project as\nready.",
+        "operationId": "get_project_readiness_api_v1_projects__project_id__readiness_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectReadinessSummary"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Project Readiness",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/task-views": {
       "get": {
         "operationId": "list_task_views_api_v1_projects__project_id__task_views_get",
@@ -52074,6 +55484,52 @@
           }
         ],
         "summary": "Update System Settings",
+        "tags": [
+          "settings"
+        ]
+      }
+    },
+    "/api/v1/settings/system/reset": {
+      "post": {
+        "operationId": "reset_system_settings_api_v1_settings_system_reset_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SystemSettingsReset"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemSettingsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reset System Settings",
         "tags": [
           "settings"
         ]
@@ -53247,6 +56703,24 @@
               "format": "uuid",
               "title": "Task Id",
               "type": "string"
+            }
+          },
+          {
+            "description": "Optional durable creation identity (1–128 characters). Reuse only with the same request.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional durable creation identity (1–128 characters). Reuse only with the same request.",
+              "title": "Idempotency-Key"
             }
           }
         ],
@@ -58507,6 +61981,21 @@
             }
           },
           {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "active",
+              "enum": [
+                "active",
+                "inactive",
+                "all"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
             "description": "可选项目过滤；project_admin 入参被忽略，强制限定到其管理项目",
             "in": "query",
             "name": "project_id",
@@ -58563,6 +62052,98 @@
         ]
       }
     },
+    "/api/v1/users/bulk-invite": {
+      "post": {
+        "operationId": "apply_bulk_invites_api_v1_users_bulk_invite_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkInviteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkInviteResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Apply Bulk Invites",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/v1/users/bulk-invite/preview": {
+      "post": {
+        "operationId": "preview_bulk_invites_api_v1_users_bulk_invite_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkInviteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkInviteResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preview Bulk Invites",
+        "tags": [
+          "users"
+        ]
+      }
+    },
     "/api/v1/users/export": {
       "get": {
         "operationId": "export_users_api_v1_users_export_get",
@@ -58579,6 +62160,88 @@
               ],
               "title": "Format",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "active",
+              "enum": [
+                "active",
+                "inactive",
+                "all"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Role"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
             }
           }
         ],
@@ -58608,6 +62271,98 @@
           }
         ],
         "summary": "Export Users",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/v1/users/groups/bulk": {
+      "post": {
+        "operationId": "apply_bulk_group_assignment_api_v1_users_groups_bulk_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkGroupAssignmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkGroupAssignmentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Apply Bulk Group Assignment",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/v1/users/groups/bulk/preview": {
+      "post": {
+        "operationId": "preview_bulk_group_assignment_api_v1_users_groups_bulk_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkGroupAssignmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkGroupAssignmentPreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preview Bulk Group Assignment",
         "tags": [
           "users"
         ]
@@ -58659,10 +62414,237 @@
         ]
       }
     },
+    "/api/v1/users/query": {
+      "get": {
+        "operationId": "query_users_api_v1_users_query_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "page_size",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Page Size",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "active",
+              "enum": [
+                "active",
+                "inactive",
+                "all"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Role"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Query Users",
+        "tags": [
+          "users"
+        ]
+      }
+    },
     "/api/v1/users/stats": {
       "get": {
         "description": "v0.8.3 · UsersPage 顶部 4 卡之「本周活跃」与状态聚合。\n\nweekly_active 基于 last_seen_at >= now-7d，比旧的 status==online 更准确\n（旧逻辑只反映瞬时在线状态）。",
         "operationId": "users_stats_api_v1_users_stats_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "default": "active",
+              "enum": [
+                "active",
+                "inactive",
+                "all"
+              ],
+              "title": "Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "group_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Group Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Role"
+            }
+          },
+          {
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 255,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -58673,6 +62655,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "security": [
@@ -58903,6 +62895,180 @@
         ]
       }
     },
+    "/api/v1/users/{user_id}/offboarding": {
+      "post": {
+        "description": "Atomically transfer current responsibilities and suspend the account.",
+        "operationId": "offboarding_commit_api_v1_users__user_id__offboarding_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OffboardingCommitRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OffboardingResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Offboarding Commit",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/v1/users/{user_id}/offboarding-preview": {
+      "get": {
+        "description": "Return a complete, versioned handoff snapshot without mutating data.",
+        "operationId": "offboarding_preview_api_v1_users__user_id__offboarding_preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OffboardingPreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Offboarding Preview",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/v1/users/{user_id}/reactivate": {
+      "post": {
+        "description": "Reactivate only an explicitly suspended account.",
+        "operationId": "reactivate_user_api_v1_users__user_id__reactivate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/ReactivateRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reactivate User",
+        "tags": [
+          "users"
+        ]
+      }
+    },
     "/api/v1/users/{user_id}/role": {
       "patch": {
         "operationId": "change_user_role_api_v1_users__user_id__role_patch",
@@ -58955,6 +63121,64 @@
           }
         ],
         "summary": "Change User Role",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/v1/users/{user_id}/role/preview": {
+      "get": {
+        "operationId": "preview_user_role_change_api_v1_users__user_id__role_preview_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "User Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "role",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Role",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleImpactPreview"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preview User Role Change",
         "tags": [
           "users"
         ]

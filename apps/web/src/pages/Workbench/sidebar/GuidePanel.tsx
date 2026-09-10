@@ -2,51 +2,87 @@
 //
 // 行为:
 // - 项目 annotation_guide 为空 / null → 整个 panel 不渲染.
-// - localStorage `wb:guide-seen:{projectId}` 不存在 → 首次自动展开 + 写入标记.
-// - 用户手动折叠后写入 localStorage `wb:guide-collapsed:{projectId}`, 后续保持折叠.
+// - localStorage 按用户、项目和指南版本隔离；首次进入自动展开，需用户明确确认阅读.
+// - 用户手动折叠后保存当前指南版本的折叠状态，后续保持折叠.
 
 import { useEffect, useMemo, useState } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { GuideMarkdownView } from "@/components/markdown/GuideMarkdownView";
 import { useGuideAssets } from "@/hooks/useGuideAssets";
+import { useOnboardingProjectState } from "@/hooks/useOnboardingProjectState";
+import {
+  annotationGuideVersion,
+  isGuideCollapsed,
+  isGuideSeen,
+  markGuideSeen,
+  markGuideCollapsed,
+} from "@/utils/annotationGuide";
 
 interface GuidePanelProps {
   projectId: string;
+  userId?: string | null;
+  guideVersion?: string;
   /** 项目级 Markdown 原文; null/空字符串 → panel 不渲染. */
   content: string | null | undefined;
 }
 
-const SEEN_KEY = (id: string) => `wb:guide-seen:${id}`;
-const COLLAPSED_KEY = (id: string) => `wb:guide-collapsed:${id}`;
-
-export function GuidePanel({ projectId, content }: GuidePanelProps) {
+export function GuidePanel({ projectId, userId, guideVersion, content }: GuidePanelProps) {
   const trimmed = (content ?? "").trim();
+  const version = guideVersion ?? annotationGuideVersion(content);
   const { signAsset } = useGuideAssets(projectId);
+  const {
+    markGuideRead,
+    retry,
+    saveError,
+    isSaving,
+    guideRead: serverGuideRead,
+  } = useOnboardingProjectState(projectId, version);
+  const [confirmed, setConfirmed] = useState(() => isGuideSeen(userId, projectId, version));
 
   const [open, setOpen] = useState<boolean>(() => {
     if (!trimmed) return false;
-    if (typeof window === "undefined") return false;
-    const seen = window.localStorage.getItem(SEEN_KEY(projectId));
-    const collapsed = window.localStorage.getItem(COLLAPSED_KEY(projectId));
-    if (seen && collapsed === "1") return false;
-    return true;
+    const seen = isGuideSeen(userId, projectId, version);
+    const collapsed = isGuideCollapsed(userId, projectId, version);
+    return !(seen && collapsed);
   });
 
-  // 首次自动展开时立即写入 seen 标记, 防止刷新后再次自动展开打扰用户.
+  // The workbench shell can keep this panel mounted while switching projects.
+  // Re-read the scoped state so one project's collapsed guide cannot leak into
+  // another project's guide.
   useEffect(() => {
-    if (!trimmed) return;
-    if (typeof window === "undefined") return;
-    if (!window.localStorage.getItem(SEEN_KEY(projectId))) {
-      window.localStorage.setItem(SEEN_KEY(projectId), String(Date.now()));
+    if (!trimmed) {
+      setOpen(false);
+      setConfirmed(false);
+      return;
     }
-  }, [projectId, trimmed]);
+    setConfirmed(isGuideSeen(userId, projectId, version));
+    setOpen(
+      !(isGuideSeen(userId, projectId, version) && isGuideCollapsed(userId, projectId, version)),
+    );
+  }, [projectId, trimmed, userId, version]);
+
+  const guideRead = serverGuideRead || confirmed || isGuideSeen(userId, projectId, version);
+
+  const confirmRead = async () => {
+    const ok = await markGuideRead();
+    if (ok) {
+      markGuideSeen(userId, projectId, version);
+      setConfirmed(true);
+    }
+  };
+
+  const retryRead = async () => {
+    const ok = await retry();
+    if (ok) {
+      markGuideSeen(userId, projectId, version);
+      setConfirmed(true);
+    }
+  };
 
   const handleToggle = () => {
     setOpen((prev) => {
       const next = !prev;
-      if (typeof window !== "undefined") {
-        window.localStorage.setItem(COLLAPSED_KEY(projectId), next ? "0" : "1");
-      }
+      markGuideCollapsed(userId, projectId, version, !next);
       return next;
     });
   };
@@ -62,31 +98,53 @@ export function GuidePanel({ projectId, content }: GuidePanelProps) {
       aria-label="标注指引"
       data-testid="wb-guide-panel"
     >
-      <div
-        className="flex items-center gap-1.5 px-3 py-2 border-b border-border bg-muted cursor-pointer select-none"
+      <button
+        type="button"
+        className="flex items-center gap-1.5 px-3 py-2 border-0 border-b border-border bg-muted cursor-pointer text-left"
         onClick={handleToggle}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            handleToggle();
-          }
-        }}
+        aria-expanded={open}
+        aria-label={open ? "折叠标注指引" : "展开标注指引"}
       >
         <Icon name="book" size={14} />
         <span className="text-sm font-semibold text-foreground">标注指引</span>
-        <button
-          type="button"
-          className="ml-auto bg-transparent border-0 text-muted-foreground cursor-pointer px-1.5 py-0.5 text-sm"
-          aria-label={open ? "折叠" : "展开"}
-        >
-          {open ? "▾" : "▸"}
-        </button>
-      </div>
+        <Icon
+          name={open ? "chevDown" : "chevRight"}
+          size={14}
+          className="ml-auto text-muted-foreground"
+        />
+      </button>
       {open && (
         <div className="px-3.5 py-3 overflow-auto flex-1 min-h-0">
           <GuideMarkdownView content={trimmed} resolveAssetUrl={resolver} />
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
+            <span className="text-xs text-muted-foreground">
+              {guideRead ? "已确认阅读当前版本" : "阅读完整指引后确认，指南更新后需重新确认"}
+            </span>
+            <button
+              type="button"
+              className="rounded-md border border-border bg-card px-2.5 py-1.5 text-xs font-medium text-foreground hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60"
+              onClick={() => void confirmRead()}
+              disabled={guideRead || isSaving}
+            >
+              {isSaving ? "保存中…" : guideRead ? "已确认阅读" : "确认已阅读"}
+            </button>
+          </div>
+          {saveError && (
+            <div
+              role="alert"
+              className="mt-2 flex items-center justify-between gap-2 text-xs text-status-danger"
+            >
+              <span>{saveError}</span>
+              <button
+                type="button"
+                className="shrink-0 underline"
+                onClick={() => void retryRead()}
+                disabled={isSaving}
+              >
+                重试
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

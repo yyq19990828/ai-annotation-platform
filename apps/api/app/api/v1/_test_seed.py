@@ -437,7 +437,10 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
     await db.flush()
     db.add(ProjectDataset(project_id=project.id, dataset_id=image_dataset.id))
 
+    from datetime import datetime, timedelta, timezone
+
     tasks = []
+    task_created_at = datetime.now(timezone.utc)
     for index in range(5):
         image_key = f"e2e/image/task-{index + 1}.svg"
         svg = (
@@ -466,7 +469,12 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
         )
         db.add(item)
         await db.flush()
-        t = await create_task(db, project_id=project.id)
+        t = await create_task(
+            db, project_id=project.id, display_id=f"T-E2E-{index + 1:06d}"
+        )
+        # PostgreSQL now() is shared by this transaction. Distinct timestamps
+        # keep the normal image-task ordering independent of random UUIDs.
+        t.created_at = task_created_at + timedelta(microseconds=index)
         t.batch_id = batch.id
         t.dataset_item_id = item.id
         t.file_name = item.file_name

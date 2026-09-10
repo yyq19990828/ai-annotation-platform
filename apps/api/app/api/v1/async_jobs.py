@@ -152,7 +152,11 @@ async def list_async_jobs(
         stmt = stmt.where(search_filter)
         count_stmt = count_stmt.where(search_filter)
 
-    stmt = stmt.order_by(AsyncJob.created_at.desc()).offset(offset).limit(limit)
+    stmt = (
+        stmt.order_by(AsyncJob.created_at.desc(), AsyncJob.id.desc())
+        .offset(offset)
+        .limit(limit)
+    )
     rows = (await db.execute(stmt)).scalars().all()
     total = (await db.execute(count_stmt)).scalar_one()
     project_cache: dict[uuid.UUID, Project | None] = {}

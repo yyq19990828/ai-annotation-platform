@@ -26,7 +26,7 @@ class ProjectMember(Base):
     )
     role: Mapped[str] = mapped_column(
         String(30), nullable=False
-    )  # annotator | reviewer
+    )  # annotator | reviewer | viewer
     assigned_by: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id")
     )

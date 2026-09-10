@@ -46,7 +46,7 @@
 
 .table {
   width: 100%;
-  min-width: 820px;
+  min-width: 1040px;
   border-spacing: 0;
   border-collapse: separate;
   font-size: 13px;
@@ -67,6 +67,7 @@
   padding: 10px;
   border-bottom: 1px solid var(--sc-border);
   vertical-align: middle;
+  white-space: nowrap;
 }
 
 .emptyCell {

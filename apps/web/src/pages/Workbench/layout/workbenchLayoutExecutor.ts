@@ -1,5 +1,9 @@
 import type { DockviewApi, DockviewGroupPanel, IDockviewPanel } from "dockview-react";
-import { WORKBENCH_PANEL_REGISTRY } from "./workbenchPanelRegistry";
+import {
+  WORKBENCH_PANEL_REGISTRY,
+  defaultDockWidth,
+  panelMinimumWidth,
+} from "./workbenchPanelRegistry";
 import {
   createWorkspacePreset,
   PANEL_DEFAULT_POSITION,
@@ -23,7 +27,6 @@ import {
 type SidePanelId = Exclude<PanelId, "canvas">;
 type DockPosition = "left" | "right" | "above" | "below";
 type Axis = "HORIZONTAL" | "VERTICAL";
-export const defaultDockWidth = (width: number): number => Math.round(width * 0.15);
 export type CanvasPlacement = "left" | "right" | "above" | "below" | "center";
 export type WorkspaceSide = "left" | "right";
 export type WorkspaceSideState = "empty" | "open" | "collapsed";
@@ -298,11 +301,21 @@ export function createWorkbenchLayoutExecutor(
       if (["parking", "compact-overlay"].includes(group.id) || !group.panels.length) continue;
       const specs = group.panels.map((item) => WORKBENCH_PANEL_REGISTRY[item.id as PanelId]);
       const floating = group.api.location.type === "floating";
-      const minimumWidth = Math.max(floating ? 320 : 0, ...specs.map((spec) => spec.minWidth));
+      const minimumWidth = Math.max(
+        floating ? 320 : 0,
+        ...specs.map((spec) => panelMinimumWidth(spec.id, getBounds().width)),
+      );
       const minimumHeight = Math.max(floating ? 320 : 0, ...specs.map((spec) => spec.minHeight));
       const signature = `${minimumWidth}:${minimumHeight}:${floating}`;
       if (constraints.get(group) === signature) continue;
       constraints.set(group, signature);
+      for (const item of group.panels) {
+        const id = item.id as PanelId;
+        item.api.setConstraints({
+          minimumWidth: panelMinimumWidth(id, getBounds().width),
+          minimumHeight: WORKBENCH_PANEL_REGISTRY[id].minHeight,
+        });
+      }
       group.api.setConstraints({
         minimumWidth,
         minimumHeight,
@@ -724,7 +737,7 @@ export function createWorkbenchLayoutExecutor(
     move(id, group);
     group.api.setVisible(true);
     const minimumWidth = Math.max(
-      ...group.panels.map((p) => WORKBENCH_PANEL_REGISTRY[p.id as PanelId].minWidth),
+      ...group.panels.map((p) => panelMinimumWidth(p.id as PanelId, getBounds().width)),
     );
     const minimumHeight = Math.max(
       ...group.panels.map((p) => WORKBENCH_PANEL_REGISTRY[p.id as PanelId].minHeight),
@@ -777,6 +790,7 @@ export function createWorkbenchLayoutExecutor(
     }
     getGroup(snapshot.layout.activeGroup ?? "canvas")?.api.setActive();
     hiddenSizes = gridSizes(snapshot);
+    syncConstraints();
     sizeTree(tree, bounds, hiddenSizes);
     const restoreSizes = rememberGridSizes();
     function hideCollapsed(node: WorkspaceNode, visible = true) {
@@ -1168,9 +1182,8 @@ export function createWorkbenchLayoutExecutor(
         if (api.hasMaximizedGroup()) exitCanvasMaximized();
         else maximizeCanvas();
       } else {
-        const placement = preset === "standard" ? "center" : getCanvasPlacement(rawSnapshot());
-        const next = createWorkspacePreset(preset, getBounds());
-        replay(placement === "center" ? next : placeCanvas(next, placement, getBounds()));
+        // Presets own their complete topology, including the canvas position.
+        replay(createWorkspacePreset(preset, getBounds()));
       }
     },
     enterCompact() {

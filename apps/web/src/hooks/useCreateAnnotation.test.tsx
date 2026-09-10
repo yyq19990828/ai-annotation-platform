@@ -9,6 +9,8 @@ import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AnnotationPayload } from "@/api/tasks";
 import type { AnnotationResponse } from "@/types";
+import type { MeResponse } from "@/api/auth";
+import { useAuthStore } from "@/stores/authStore";
 
 const createAnnotationMock = vi.hoisted(() => vi.fn());
 vi.mock("../api/tasks", () => ({ tasksApi: { createAnnotation: createAnnotationMock } }));
@@ -106,14 +108,33 @@ function submit(mutation: ReturnType<typeof useCreateAnnotation>, input = payloa
   return promise;
 }
 
-beforeEach(() => createAnnotationMock.mockReset());
+beforeEach(() => {
+  createAnnotationMock.mockReset();
+  useAuthStore.getState().setAuth("test-token", { id: "test-owner" } as MeResponse);
+});
 afterEach(async () => {
   onlineManager.setOnline(true);
   cleanup();
   releasePending.splice(0).forEach((release) => release());
   await Promise.allSettled(completions.splice(0));
   clients.splice(0).forEach((client) => client.clear());
+  useAuthStore.getState().logout();
   vi.restoreAllMocks();
+});
+
+it("does not create or install an optimistic row after another account logs in during cancellation", async () => {
+  const { result, client } = setup();
+  const gate = deferred<void>();
+  const cancel = vi.spyOn(client, "cancelQueries").mockReturnValueOnce(gate.promise);
+  const request = submit(result.current);
+  await waitFor(() => expect(cancel).toHaveBeenCalled());
+  useAuthStore.getState().setAuth("next-token", { id: "next-owner" } as MeResponse);
+  const next = annotation("next-owner-row", A);
+  client.setQueryData(queryKey(A), [next]);
+  gate.resolve();
+  await expect(request).rejects.toMatchObject({ name: "AnnotationMutationOwnerChangedError" });
+  expect(createAnnotationMock).not.toHaveBeenCalled();
+  expect(client.getQueryData(queryKey(A))).toEqual([next]);
 });
 
 it("offline creation rejects to the durable queue owner instead of pausing forever", async () => {

@@ -62,6 +62,7 @@ export function createDevSidebar(
             { text: "AI 预标注接管", link: "/dev/concepts/ai-preannotate-handoff" },
             { text: "数据流", link: "/dev/concepts/data-flow" },
             { text: "存储连接器", link: "/dev/concepts/storage-connections" },
+            { text: "系统设置运行时覆盖", link: "/dev/concepts/system-settings" },
           ],
         },
         {

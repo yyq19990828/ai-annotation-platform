@@ -137,6 +137,26 @@
   color: #ef4444;
 }
 
+.acceptanceStatus {
+  padding: 11px 12px;
+  margin: 0 0 16px;
+  background: var(--sc-muted);
+  border: 1px solid var(--sc-border);
+  border-radius: var(--radius-md);
+}
+
+.acceptanceStatusTitle {
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.acceptanceStatusText {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--sc-muted-foreground);
+}
+
 .mismatchText {
   margin-top: 4px;
   font-size: 11.5px;

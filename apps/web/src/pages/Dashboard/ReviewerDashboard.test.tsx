@@ -5,6 +5,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { ApiError } from "@/api/client";
 
 const mockUseReviewerStats = vi.fn();
 const mockUseMyRecentReviews = vi.fn();
@@ -76,11 +77,84 @@ describe("ReviewerDashboard", () => {
     expect(screen.getByText("加载中...")).toBeInTheDocument();
   });
 
+  it("统计首屏离线暂停 → 显示等待网络连接而不是持续加载", () => {
+    mockUseReviewerStats.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: false,
+      isPaused: true,
+      fetchStatus: "paused",
+    });
+    renderUI();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "网络连接已断开，审核统计会在恢复后自动继续",
+    );
+  });
+
+  it("统计初始失败 → 显示错误态并支持重试", () => {
+    const refetch = vi.fn();
+    mockUseReviewerStats.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error("server unavailable"),
+      refetch,
+    });
+    renderUI();
+    expect(screen.getByRole("alert")).toHaveTextContent("无法加载审核统计");
+    fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
+    expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  it("统计刷新失败 → 保留已有 KPI 并提示更新失败", () => {
+    const refetch = vi.fn();
+    mockUseReviewerStats.mockReturnValue({
+      data: baseStats,
+      isLoading: false,
+      isError: true,
+      error: new Error("network"),
+      refetch,
+    });
+    renderUI();
+    expect(screen.getByText("220")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("审核统计更新失败");
+    fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
+    expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  it("统计 403 → 显示权限提示而不是空数据", () => {
+    mockUseReviewerStats.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new ApiError(403, "forbidden"),
+      refetch: vi.fn(),
+    });
+    renderUI();
+    expect(screen.getByRole("alert")).toHaveTextContent("没有权限查看审核统计");
+  });
+
   it("空 pending → 显示「暂无待审核任务」", () => {
     mockUseReviewerStats.mockReturnValue({ data: baseStats, isLoading: false });
     renderUI();
     expect(screen.getByText("暂无待审核任务")).toBeInTheDocument();
     expect(screen.getByText("所有标注任务已审核完毕")).toBeInTheDocument();
+  });
+
+  it("最近审核记录首屏离线暂停 → 显示等待网络连接而不是空态", () => {
+    mockUseReviewerStats.mockReturnValue({ data: baseStats, isLoading: false });
+    mockUseMyRecentReviews.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: false,
+      isPaused: true,
+      fetchStatus: "paused",
+    });
+    renderUI();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "网络连接已断开，最近审核记录会在恢复后自动继续",
+    );
+    expect(screen.queryByText("暂无审核记录")).not.toBeInTheDocument();
   });
 
   it("产能/质量数值正确显示", () => {
@@ -223,5 +297,49 @@ describe("ReviewerDashboard", () => {
     renderUI();
     expect(screen.getByText("R-1")).toBeInTheDocument();
     expect(screen.getByText("已完成")).toBeInTheDocument();
+  });
+
+  it("最近审核记录初始失败 → 保留独立区域并可重试", () => {
+    const refetch = vi.fn();
+    mockUseReviewerStats.mockReturnValue({ data: baseStats, isLoading: false });
+    mockUseMyRecentReviews.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error("network"),
+      refetch,
+    });
+    renderUI();
+    expect(screen.getByRole("alert")).toHaveTextContent("无法加载最近审核记录");
+    expect(screen.queryByText("暂无审核记录")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
+    expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  it("最近审核记录刷新失败 → 保留旧记录并提示更新失败", () => {
+    const refetch = vi.fn();
+    mockUseReviewerStats.mockReturnValue({ data: baseStats, isLoading: false });
+    mockUseMyRecentReviews.mockReturnValue({
+      data: [
+        {
+          task_id: "r1",
+          task_display_id: "R-1",
+          file_name: "x.jpg",
+          project_id: "p1",
+          project_name: "Proj",
+          status: "completed",
+          reviewed_at: "2026-01-02T08:00:00Z",
+        },
+      ],
+      isLoading: false,
+      isError: true,
+      error: new Error("network"),
+      refetch,
+    });
+    renderUI();
+    expect(screen.getByText("R-1")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("最近审核记录更新失败");
+    fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
+    expect(refetch).toHaveBeenCalledOnce();
   });
 });

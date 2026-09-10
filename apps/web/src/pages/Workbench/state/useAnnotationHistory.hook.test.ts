@@ -29,6 +29,58 @@ function makeHandlers(): HistoryHandlers {
 }
 
 describe("useAnnotationHistory · 栈状态机", () => {
+  it("isolates the same task history by account, including restoration", () => {
+    const handlers = makeHandlers();
+    const taskId = "account-isolation-task";
+    const { result, rerender, unmount } = renderHook(
+      ({ userId }) => useAnnotationHistory(taskId, handlers, userId),
+      { initialProps: { userId: "alice" } },
+    );
+    act(() =>
+      result.current.push({
+        kind: "create",
+        annotationId: "alice-object",
+        payload: {
+          class_name: "car",
+          geometry: {} as never,
+        },
+      }),
+    );
+    expect(result.current.canUndo).toBe(true);
+    rerender({ userId: "bob" });
+    expect(result.current.canUndo).toBe(false);
+    expect(loadHistoryFromSession(taskId, "bob")).toBeNull();
+    rerender({ userId: "alice" });
+    expect(result.current.canUndo).toBe(true);
+    unmount();
+    expect(loadHistoryFromSession(taskId, "alice")?.undo).toHaveLength(1);
+    sessionStorage.removeItem(`wb:hist:alice:${taskId}`);
+  });
+
+  it("retains a failed ordinary undo so it can be retried", async () => {
+    const handlers = makeHandlers();
+    vi.mocked(handlers.deleteAnnotation).mockRejectedValueOnce(new TypeError("offline"));
+    const { result } = renderHook(() => useAnnotationHistory("failed-undo-task", handlers));
+    act(() =>
+      result.current.push({
+        kind: "create",
+        annotationId: "created",
+        payload: {
+          class_name: "car",
+          geometry: {} as never,
+        },
+      }),
+    );
+    await act(async () => {
+      await result.current.undo();
+    });
+    expect(result.current.canUndo).toBe(true);
+    expect(result.current.canRedo).toBe(false);
+    await act(async () => {
+      await result.current.undo();
+    });
+    expect(result.current.canRedo).toBe(true);
+  });
   it("初始 canUndo / canRedo 全 false", () => {
     const handlers = makeHandlers();
     const { result } = renderHook(() => useAnnotationHistory("t1", handlers));

@@ -7,8 +7,9 @@ from contextlib import suppress
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import BinaryIO, Iterable
+from typing import Any, BinaryIO, Iterable
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -24,6 +25,7 @@ from app.services.async_job_notify import notify_job_terminal
 from app.services.dataset import DatasetService, IngestOutcome
 from app.services.sources import build_adapter
 from app.services.sources.base import SourceObject
+from app.services.system_settings_service import SystemSettingsService
 from app.workers.celery_app import celery_app
 
 log = logging.getLogger(__name__)
@@ -68,8 +70,52 @@ async def _finish_cancelled(
         job.result = result
 
 
+async def _resolve_import_limits_snapshot(
+    db: AsyncSession, job: AsyncJob
+) -> dict[str, Any]:
+    """Load or persist the immutable budget used by this import job."""
+
+    # Re-read under a row lock: two deliveries of a legacy queued job must not
+    # both capture different live budgets and overwrite each other's snapshot.
+    locked_job = await db.scalar(
+        select(AsyncJob)
+        .where(AsyncJob.id == job.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if locked_job is None:
+        raise ValueError("dataset import job not found")
+    job = locked_job
+    payload = job.payload or {}
+    snapshot = payload.get("settings_snapshot")
+    if snapshot is None:
+        # Jobs created before request-time snapshots get exactly one first-
+        # execution capture. Persist before enumeration so retries reuse it.
+        snapshot = await SystemSettingsService.get_import_limits_snapshot(db)
+        job.payload = {**payload, "settings_snapshot": snapshot}
+        await db.commit()
+    if not isinstance(snapshot, dict):
+        raise ValueError("invalid dataset import settings snapshot")
+    max_files = snapshot.get("dataset_import_max_files")
+    max_total_bytes = snapshot.get("dataset_import_max_total_bytes")
+    version = snapshot.get("version")
+    if (
+        type(max_files) is not int
+        or max_files <= 0
+        or type(max_total_bytes) is not int
+        or max_total_bytes <= 0
+        or type(version) is not str
+        or not version
+    ):
+        raise ValueError("invalid dataset import settings snapshot")
+    return snapshot
+
+
 def _collect_within_limits(
     objects: Iterable[SourceObject],
+    *,
+    max_files: int | None = None,
+    max_total_bytes: int | None = None,
 ) -> tuple[list[SourceObject], int]:
     """流式收集对象并在超限时立即短路抛错。
 
@@ -77,21 +123,26 @@ def _collect_within_limits(
     可能在触达 max_files / max_total_bytes 之前就 OOM。这里在枚举过程中对计数与
     字节累加做短路：超限即抛 ValueError 中止，内存上界钳制在 max_files+1 条目。
     """
+    # ``None`` is retained for direct legacy helper callers.  The worker path
+    # always passes the persisted request snapshot explicitly.
+    if max_files is None:
+        max_files = settings.dataset_import_max_files
+    if max_total_bytes is None:
+        max_total_bytes = settings.dataset_import_max_total_bytes
+    if type(max_files) is not int or max_files <= 0:
+        raise ValueError("invalid import file-count limit")
+    if type(max_total_bytes) is not int or max_total_bytes <= 0:
+        raise ValueError("invalid import byte limit")
+
     collected: list[SourceObject] = []
     total_bytes = 0
     for obj in objects:
         collected.append(obj)
         total_bytes += max(0, obj.size)
-        if len(collected) > settings.dataset_import_max_files:
-            raise ValueError(
-                "import file count exceeds limit "
-                f"(> {settings.dataset_import_max_files})"
-            )
-        if total_bytes > settings.dataset_import_max_total_bytes:
-            raise ValueError(
-                "import total bytes exceeds limit "
-                f"(> {settings.dataset_import_max_total_bytes})"
-            )
+        if len(collected) > max_files:
+            raise ValueError(f"import file count exceeds limit (> {max_files})")
+        if total_bytes > max_total_bytes:
+            raise ValueError(f"import total bytes exceeds limit (> {max_total_bytes})")
     return collected, total_bytes
 
 
@@ -149,6 +200,27 @@ async def _run_dataset_import(
                 if job is None:
                     return
                 payload = job.payload or {}
+                settings_snapshot = await _resolve_import_limits_snapshot(db, job)
+                max_files = settings_snapshot.get("dataset_import_max_files")
+                max_total_bytes = settings_snapshot.get(
+                    "dataset_import_max_total_bytes"
+                )
+                snapshot_version = settings_snapshot.get("version")
+                log.debug(
+                    "dataset_import using settings snapshot job=%s version=%s",
+                    job_id,
+                    snapshot_version,
+                )
+                await async_job_svc.update_progress(
+                    db,
+                    job_uuid,
+                    1,
+                    extra_payload={
+                        "stage": "collecting",
+                        "settings_version": snapshot_version,
+                    },
+                )
+                await db.commit()
                 dataset_id = uuid.UUID(str(payload["dataset_id"]))
                 connection_id = uuid.UUID(str(payload["connection_id"]))
                 source_path = str(payload.get("source_path") or "")
@@ -166,7 +238,9 @@ async def _run_dataset_import(
 
                 adapter = await build_adapter(db, conn)
                 objects, total_bytes = _collect_within_limits(
-                    adapter.list(source_path, recursive, include_globs)
+                    adapter.list(source_path, recursive, include_globs),
+                    max_files=max_files,
+                    max_total_bytes=max_total_bytes,
                 )
                 total = len(objects)
 
@@ -174,7 +248,12 @@ async def _run_dataset_import(
                     db,
                     job_uuid,
                     5 if total else 90,
-                    extra_payload={"total_files": total, "total_bytes": total_bytes},
+                    extra_payload={
+                        "stage": "importing",
+                        "total_files": total,
+                        "total_bytes": total_bytes,
+                        "settings_version": snapshot_version,
+                    },
                 )
                 await db.commit()
 

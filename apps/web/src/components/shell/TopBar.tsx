@@ -5,8 +5,19 @@ import { Icon } from "@/components/ui/Icon";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { Avatar } from "@/components/ui/Avatar";
 import { useAuthStore } from "@/stores/authStore";
+import { useLogout } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
 import type { IconName } from "@/components/ui/Icon";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/shadcn/ui/alert-dialog";
 import { NotificationsPopover } from "./NotificationsPopover";
 import { PreannotateJobsBadge } from "./PreannotateJobsBadge";
 import { JobsBell } from "./JobsBell";
@@ -31,7 +42,8 @@ export function TopBar({
   onOpenDrawer,
 }: TopBarProps) {
   const user = useAuthStore((s) => s.user);
-  const logout = useAuthStore((s) => s.logout);
+  const perfHudVisible = usePerfHudStore((s) => s.visible);
+  const logout = useLogout();
   const qc = useQueryClient();
   const isFetching = useIsFetching();
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -137,7 +149,11 @@ export function TopBar({
               title="性能监控 (Ctrl+Shift+P)"
               onClick={() => usePerfHudStore.getState().toggle()}
               aria-label="切换性能监控浮窗"
-              className={ICON_BTN_CLASS}
+              aria-haspopup="dialog"
+              aria-expanded={perfHudVisible}
+              aria-controls={perfHudVisible ? "shell-popover-performance" : undefined}
+              data-shell-popover-trigger="performance"
+              className={clsx(ICON_BTN_CLASS, perfHudVisible && "border-border bg-muted")}
             >
               <Icon name="activity" size={15} />
             </button>
@@ -164,12 +180,69 @@ export function TopBar({
               <span className="text-2xs text-muted-foreground">{user?.role ?? "—"}</span>
             </div>
           </div>
-          <button type="button" title="退出登录" onClick={logout} className={ICON_BTN_CLASS}>
+          <button
+            type="button"
+            title="退出登录"
+            onClick={() => void logout.requestLogout()}
+            disabled={logout.isLoggingOut}
+            className={ICON_BTN_CLASS}
+          >
             <Icon name="logout" size={15} />
           </button>
         </div>
       </header>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <AlertDialog
+        open={logout.prompt !== null}
+        onOpenChange={(open) => {
+          if (!open) logout.cancelLogout();
+        }}
+      >
+        <AlertDialogContent data-testid="logout-offline-prompt">
+          <AlertDialogHeader>
+            <AlertDialogTitle>退出前处理离线操作</AlertDialogTitle>
+            <AlertDialogDescription>
+              {logout.prompt?.pendingCount == null
+                ? "暂时无法确认本机待同步记录。"
+                : `当前账号还有 ${logout.prompt.pendingCount} 条待同步操作。`}
+              请选择如何处理；保留本机记录不会删除这些操作，重新登录当前账号后仍可继续同步。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {logout.syncError && (
+            <div
+              role="alert"
+              data-testid="logout-sync-error"
+              className="rounded-md border border-status-danger/30 bg-status-danger-soft px-3 py-2 text-sm text-status-danger"
+            >
+              {logout.syncError}
+            </div>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={logout.isLoggingOut}>继续使用</AlertDialogCancel>
+            <AlertDialogAction
+              variant="outline"
+              disabled={logout.isLoggingOut}
+              data-testid="logout-keep-queue"
+              onClick={(event) => {
+                event.preventDefault();
+                void logout.confirmLogout("keep");
+              }}
+            >
+              保留记录并退出
+            </AlertDialogAction>
+            <AlertDialogAction
+              disabled={logout.isLoggingOut}
+              data-testid="logout-sync-queue"
+              onClick={(event) => {
+                event.preventDefault();
+                void logout.confirmLogout("sync");
+              }}
+            >
+              {logout.isLoggingOut ? "处理中…" : "同步并退出"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

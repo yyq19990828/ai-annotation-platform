@@ -10,11 +10,13 @@ from fastapi import HTTPException
 from sqlalchemy import Integer, case, select, func, update, delete, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.enums import BatchStatus
+from app.db.enums import BatchStatus, UserRole
+from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.db.models.dataset import DatasetItem
 from app.db.models.project import Project
+from app.db.models.user import User
 from app.schemas.batch import BatchCreate, BatchUpdate, BatchSplitRequest
 from app.services.display_id import next_display_id
 from app.services.progress import publish_batch_status_change
@@ -70,6 +72,96 @@ class BatchService:
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
+    async def _lock_and_validate_assignment_targets(
+        self,
+        project_id: uuid.UUID,
+        targets: list[tuple[str, uuid.UUID]],
+    ) -> None:
+        """Lock and validate every user that will receive batch work.
+
+        User rows are locked before any batch or task row in all assignment
+        paths. Offboarding uses nonblocking locks and either retries a busy
+        account or completes before this method rechecks its state. Membership is
+        checked separately because the member role is part of the assignment
+        contract, not merely a UI filter.
+        """
+        if not targets:
+            return
+
+        target_ids = sorted({user_id for _, user_id in targets})
+        users = (
+            (
+                await self.db.execute(
+                    select(User)
+                    .where(User.id.in_(target_ids))
+                    .order_by(User.id)
+                    .with_for_update(read=True)
+                    .execution_options(populate_existing=True)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        users_by_id = {user.id: user for user in users}
+
+        members = (
+            (
+                await self.db.execute(
+                    select(ProjectMember)
+                    .where(
+                        ProjectMember.project_id == project_id,
+                        ProjectMember.user_id.in_(target_ids),
+                    )
+                    .order_by(ProjectMember.user_id)
+                    .with_for_update(read=True)
+                    .execution_options(populate_existing=True)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        members_by_user_id = {member.user_id: member for member in members}
+
+        expected_roles = {
+            "annotator": UserRole.ANNOTATOR.value,
+            "reviewer": UserRole.REVIEWER.value,
+        }
+        for assignment_role, user_id in targets:
+            expected_role = expected_roles[assignment_role]
+            user = users_by_id.get(user_id)
+            if user is None or not user.is_active:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "reason": "assignment_user_unavailable",
+                        "message": "接收账号已停用或不存在，请刷新成员列表后重新分派",
+                        "assignment_role": assignment_role,
+                        "user_id": str(user_id),
+                    },
+                )
+            if user.role != expected_role:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "reason": "assignment_role_mismatch",
+                        "message": "接收账号的角色与分派职责不匹配",
+                        "assignment_role": assignment_role,
+                        "user_id": str(user_id),
+                        "user_role": user.role,
+                    },
+                )
+            member = members_by_user_id.get(user_id)
+            if member is None or member.role != assignment_role:
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "reason": "assignment_project_member_required",
+                        "message": "接收账号不具备目标项目的对应成员职责",
+                        "assignment_role": assignment_role,
+                        "user_id": str(user_id),
+                    },
+                )
+
     # ── Queries ────────────────────────────────────────────────────────────
 
     async def list_by_project(
@@ -123,6 +215,12 @@ class BatchService:
         data: BatchCreate,
         created_by: uuid.UUID,
     ) -> TaskBatch:
+        assignment_targets: list[tuple[str, uuid.UUID]] = []
+        if data.annotator_id is not None:
+            assignment_targets.append(("annotator", data.annotator_id))
+        if data.reviewer_id is not None:
+            assignment_targets.append(("reviewer", data.reviewer_id))
+        await self._lock_and_validate_assignment_targets(project_id, assignment_targets)
         batch = TaskBatch(
             project_id=project_id,
             dataset_id=data.dataset_id,
@@ -141,11 +239,43 @@ class BatchService:
         await self.db.flush()
         return batch
 
-    async def update(self, batch_id: uuid.UUID, data: BatchUpdate) -> TaskBatch:
-        batch = await self.db.get(TaskBatch, batch_id)
+    async def update(
+        self,
+        batch_id: uuid.UUID,
+        data: BatchUpdate,
+        *,
+        project_id: uuid.UUID | None = None,
+    ) -> TaskBatch:
+        fields = data.model_dump(exclude_unset=True)
+
+        assignment_targets: list[tuple[str, uuid.UUID]] = []
+        if "annotator_id" in fields and data.annotator_id is not None:
+            assignment_targets.append(("annotator", data.annotator_id))
+        if "reviewer_id" in fields and data.reviewer_id is not None:
+            assignment_targets.append(("reviewer", data.reviewer_id))
+        if assignment_targets:
+            if project_id is None:
+                probe = await self.db.get(TaskBatch, batch_id)
+                if probe is None:
+                    raise HTTPException(status_code=404, detail="Batch not found")
+                project_id = probe.project_id
+            await self._lock_and_validate_assignment_targets(
+                project_id, assignment_targets
+            )
+            stmt = (
+                select(TaskBatch)
+                .where(TaskBatch.id == batch_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            if project_id is not None:
+                stmt = stmt.where(TaskBatch.project_id == project_id)
+            batch = (await self.db.execute(stmt)).scalar_one_or_none()
+        else:
+            batch = await self.db.get(TaskBatch, batch_id)
         if not batch:
             raise HTTPException(status_code=404, detail="Batch not found")
-        fields = data.model_dump(exclude_unset=True)
+
         for k, v in fields.items():
             setattr(batch, k, v)
 
@@ -341,6 +471,12 @@ class BatchService:
         data: BatchSplitRequest,
         created_by: uuid.UUID,
     ) -> list[TaskBatch]:
+        assignment_targets: list[tuple[str, uuid.UUID]] = []
+        if data.annotator_id is not None:
+            assignment_targets.append(("annotator", data.annotator_id))
+        if data.reviewer_id is not None:
+            assignment_targets.append(("reviewer", data.reviewer_id))
+        await self._lock_and_validate_assignment_targets(project_id, assignment_targets)
         # scene 模式项目分包只能按 scene:同一 scene 的连续帧必须落同一批次,random/顺序
         # 切分会把连续帧拆散给不同标注员。前端已只暴露 by_scene 入口,这里再加一道后端门
         # 防御直发 API 的越权策略。
@@ -649,6 +785,8 @@ class BatchService:
         annotator_ids: list[uuid.UUID],
         reviewer_ids: list[uuid.UUID],
         only_unassigned: bool = True,
+        preview_version: str | None = None,
+        batch_ids: list[uuid.UUID] | None = None,
     ) -> dict[str, Any]:
         """v0.7.2：把项目下的 batch 圆周分派给所选 annotator / reviewer。
         - 一 batch = 一标注员 + 一审核员
@@ -656,61 +794,58 @@ class BatchService:
         - 不会处理 archived 状态的 batch
         - 同时回填 batch 下所有 task 的 assignee_id / reviewer_id
         """
-        if not annotator_ids and not reviewer_ids:
+        from app.services.management import preview_batch_distribution
+
+        plan = await preview_batch_distribution(
+            self.db,
+            project_id=project_id,
+            annotator_ids=annotator_ids,
+            reviewer_ids=reviewer_ids,
+            only_unassigned=only_unassigned,
+            validate_targets=self._lock_and_validate_assignment_targets,
+            lock_batches=True,
+            batch_ids=batch_ids,
+        )
+        if preview_version is not None and preview_version != plan.preview_version:
             raise HTTPException(
-                status_code=400, detail="annotator_ids or reviewer_ids required"
+                status_code=409,
+                detail={
+                    "code": "distribution_preview_stale",
+                    "message": "批次分派或任务负载已变化，请重新预览后确认",
+                },
             )
 
-        # 取项目下非 archived 的 batch
+        # Keep the exact locked batch set used to compute the reviewed plan.
         batches = (
             (
                 await self.db.execute(
-                    select(TaskBatch)
-                    .where(TaskBatch.project_id == project_id)
-                    .where(TaskBatch.status != BatchStatus.ARCHIVED)
-                    .order_by(TaskBatch.priority.desc(), TaskBatch.created_at)
+                    select(TaskBatch).where(
+                        TaskBatch.id.in_([item.batch_id for item in plan.items])
+                    )
                 )
             )
             .scalars()
             .all()
         )
-        if not batches:
-            raise HTTPException(status_code=400, detail="No batches to distribute")
-
+        batches_by_id = {batch.id: batch for batch in batches}
         annotator_per_batch: dict[str, str | None] = {}
         reviewer_per_batch: dict[str, str | None] = {}
         affected = 0
-        a_idx = 0
-        r_idx = 0
-        for b in batches:
-            changed = False
-            if annotator_ids and (not only_unassigned or b.annotator_id is None):
-                pick = annotator_ids[a_idx % len(annotator_ids)]
-                a_idx += 1
-                if b.annotator_id != pick:
-                    b.annotator_id = pick
-                    await self._cascade_task_assignee(b.id, pick)
-                    changed = True
-                annotator_per_batch[str(b.id)] = str(pick)
-            else:
-                annotator_per_batch[str(b.id)] = (
-                    str(b.annotator_id) if b.annotator_id else None
-                )
-
-            if reviewer_ids and (not only_unassigned or b.reviewer_id is None):
-                pick = reviewer_ids[r_idx % len(reviewer_ids)]
-                r_idx += 1
-                if b.reviewer_id != pick:
-                    b.reviewer_id = pick
-                    await self._cascade_task_reviewer(b.id, pick)
-                    changed = True
-                reviewer_per_batch[str(b.id)] = str(pick)
-            else:
-                reviewer_per_batch[str(b.id)] = (
-                    str(b.reviewer_id) if b.reviewer_id else None
-                )
-
-            if changed:
+        for item in plan.items:
+            b = batches_by_id[item.batch_id]
+            if item.before_annotator_id != item.after_annotator_id:
+                b.annotator_id = item.after_annotator_id
+                await self._cascade_task_assignee(b.id, b.annotator_id)
+            if item.before_reviewer_id != item.after_reviewer_id:
+                b.reviewer_id = item.after_reviewer_id
+                await self._cascade_task_reviewer(b.id, b.reviewer_id)
+            annotator_per_batch[str(b.id)] = (
+                str(b.annotator_id) if b.annotator_id else None
+            )
+            reviewer_per_batch[str(b.id)] = (
+                str(b.reviewer_id) if b.reviewer_id else None
+            )
+            if item.will_change:
                 self._sync_assigned_user_ids(b)
                 affected += 1
 
@@ -1095,15 +1230,22 @@ class BatchService:
         self,
         project_id: uuid.UUID,
         batch_ids: list[uuid.UUID],
+        *,
+        for_update: bool = False,
     ) -> dict[uuid.UUID, TaskBatch]:
         if not batch_ids:
             return {}
-        result = await self.db.execute(
-            select(TaskBatch).where(
+        stmt = (
+            select(TaskBatch)
+            .where(
                 TaskBatch.project_id == project_id,
                 TaskBatch.id.in_(batch_ids),
             )
+            .order_by(TaskBatch.id)
         )
+        if for_update:
+            stmt = stmt.with_for_update()
+        result = await self.db.execute(stmt)
         return {b.id: b for b in result.scalars().all()}
 
     async def bulk_archive(
@@ -1210,7 +1352,15 @@ class BatchService:
             raise HTTPException(
                 status_code=400, detail="annotator_id or reviewer_id required"
             )
-        loaded = await self._list_batches_in_project(project_id, batch_ids)
+        assignment_targets: list[tuple[str, uuid.UUID]] = []
+        if annotator_set and annotator_id is not None:
+            assignment_targets.append(("annotator", annotator_id))
+        if reviewer_set and reviewer_id is not None:
+            assignment_targets.append(("reviewer", reviewer_id))
+        await self._lock_and_validate_assignment_targets(project_id, assignment_targets)
+        loaded = await self._list_batches_in_project(
+            project_id, batch_ids, for_update=True
+        )
         succeeded: list[uuid.UUID] = []
         failed: list[dict] = []
         for bid in batch_ids:

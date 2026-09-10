@@ -6,16 +6,19 @@
  * 引入 react-query / MSW 依赖。
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { ApiError } from "@/api/client";
 
 const mockUseAnnotatorStats = vi.fn();
 const mockUseProjects = vi.fn();
 const mockUseMyBatches = vi.fn();
+const mockUseOnboardingProjectSummary = vi.fn();
 
 vi.mock("@/hooks/useDashboard", () => ({
   useAnnotatorStats: () => mockUseAnnotatorStats(),
   useMyBatches: () => mockUseMyBatches(),
+  useOnboardingProjectSummary: (projectId: string) => mockUseOnboardingProjectSummary(projectId),
 }));
 vi.mock("@/hooks/useProjects", () => ({
   useProjects: () => mockUseProjects(),
@@ -59,7 +62,13 @@ describe("AnnotatorDashboard", () => {
     mockUseAnnotatorStats.mockReset();
     mockUseProjects.mockReset();
     mockUseMyBatches.mockReset();
+    mockUseOnboardingProjectSummary.mockReset();
     mockUseMyBatches.mockReturnValue({ data: [], isLoading: false });
+    mockUseOnboardingProjectSummary.mockReturnValue({
+      data: undefined,
+      isError: false,
+      refetch: vi.fn(),
+    });
   });
 
   it("isLoading=true → 显示加载中文案", () => {
@@ -69,11 +78,118 @@ describe("AnnotatorDashboard", () => {
     expect(screen.getByText("加载中...")).toBeInTheDocument();
   });
 
+  it("统计首屏离线暂停 → 显示等待网络连接", () => {
+    mockUseAnnotatorStats.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: false,
+      isPaused: true,
+      fetchStatus: "paused",
+    });
+    mockUseProjects.mockReturnValue({ data: [] });
+    renderUI();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "网络连接已断开，标注统计会在恢复后自动继续",
+    );
+  });
+
   it("stats=null（未加载完）→ 显示加载中文案，不崩", () => {
     mockUseAnnotatorStats.mockReturnValue({ data: null, isLoading: false });
     mockUseProjects.mockReturnValue({ data: [] });
     renderUI();
     expect(screen.getByText("加载中...")).toBeInTheDocument();
+  });
+
+  it("统计初始失败 → 显示错误态并支持重试", () => {
+    const refetch = vi.fn();
+    mockUseAnnotatorStats.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new Error("server unavailable"),
+      refetch,
+    });
+    mockUseProjects.mockReturnValue({ data: [] });
+    renderUI();
+    expect(screen.getByRole("alert")).toHaveTextContent("无法加载标注统计");
+    fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
+    expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  it("统计刷新失败 → 保留上一次 KPI 并提示更新失败", () => {
+    const refetch = vi.fn();
+    mockUseAnnotatorStats.mockReturnValue({
+      data: fullStats,
+      isLoading: false,
+      isError: true,
+      error: new Error("network"),
+      refetch,
+    });
+    mockUseProjects.mockReturnValue({ data: [] });
+    renderUI();
+    expect(screen.getByText("5")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("标注统计更新失败");
+    fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
+    expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  it("项目查询 403 → 独立显示权限错误，不把项目列表当成空态", () => {
+    const refetch = vi.fn();
+    mockUseAnnotatorStats.mockReturnValue({ data: fullStats, isLoading: false });
+    mockUseProjects.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: true,
+      error: new ApiError(403, "forbidden"),
+      refetch,
+    });
+    renderUI();
+    expect(screen.getByRole("alert")).toHaveTextContent("没有权限查看项目列表");
+    expect(screen.queryByText("暂无分配项目")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
+    expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  it("项目首屏离线暂停 → 显示等待网络连接而不是暂无分配项目", () => {
+    mockUseAnnotatorStats.mockReturnValue({ data: fullStats, isLoading: false });
+    mockUseProjects.mockReturnValue({
+      data: undefined,
+      isLoading: false,
+      isError: false,
+      isPaused: true,
+      fetchStatus: "paused",
+    });
+    renderUI();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "网络连接已断开，项目列表会在恢复后自动继续",
+    );
+    expect(screen.queryByText("暂无分配项目")).not.toBeInTheDocument();
+  });
+
+  it("项目刷新失败 → 保留已有项目行并提示更新失败", () => {
+    const refetch = vi.fn();
+    mockUseAnnotatorStats.mockReturnValue({ data: fullStats, isLoading: false });
+    mockUseProjects.mockReturnValue({
+      data: [
+        {
+          id: "p1",
+          display_id: "P-1",
+          name: "项目一",
+          type_label: "图像检测",
+          total_tasks: 3,
+          completed_tasks: 1,
+        },
+      ],
+      isLoading: false,
+      isError: true,
+      error: new Error("network"),
+      refetch,
+    });
+    renderUI();
+    expect(screen.getByText("项目一")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("项目列表更新失败");
+    fireEvent.click(screen.getByRole("button", { name: "重新加载" }));
+    expect(refetch).toHaveBeenCalledOnce();
   });
 
   it("有 stats + 0 项目 → 显示「暂无分配项目」空态", () => {

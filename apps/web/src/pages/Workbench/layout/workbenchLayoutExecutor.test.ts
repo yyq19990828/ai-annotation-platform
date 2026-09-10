@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createDockview, type DockviewApi } from "dockview-react";
 import { createWorkbenchLayoutExecutor, getCanvasPlacement } from "./workbenchLayoutExecutor";
-import { createWorkspacePreset, migrateLegacyWorkspace } from "./workbenchLayoutPresets";
+import {
+  createWorkspacePreset,
+  getActiveWorkspacePreset,
+  migrateLegacyWorkspace,
+} from "./workbenchLayoutPresets";
 import {
   PANEL_IDS,
   type WorkspaceBounds,
@@ -62,6 +66,26 @@ describe("workspace executor with Dockview 8", () => {
     expect(api.getPanel("task-queue")!.group.api.width).toBeCloseTo(352, 0);
     expect(api.getPanel("class-palette")!.group.api.width).toBeCloseTo(352, 0);
     expect(api.getPanel("inspector")!.group.api.width).toBe(rightWidth);
+  });
+
+  it.each([1100, 1440, 1600])("applies 15%% sidebars in every preset at %ipx", (width) => {
+    bounds.width = width;
+    api.layout(bounds.width, bounds.height);
+    const controller = createWorkbenchLayoutExecutor(api, () => bounds);
+    for (const preset of ["standard", "review", "ai-review", "video-tracking"] as const) {
+      controller.applyPreset(preset);
+      const context = preset === "video-tracking" ? "annotate:video" : "annotate:image";
+      expect(getActiveWorkspacePreset(controller.capture(), context)).toBe(preset);
+      const right = api.getPanel("inspector")!.group.api.width;
+      expect(Math.abs(right - width * 0.15), preset).toBeLessThanOrEqual(1);
+      if (preset !== "review")
+        expect(
+          Math.abs(api.getPanel("task-queue")!.group.api.width - width * 0.15),
+          preset,
+        ).toBeLessThanOrEqual(1);
+      if (preset === "review" || preset === "ai-review")
+        expect(api.getPanel("discussion")!.api.width).toBe(width);
+    }
   });
 
   afterEach(() => {
@@ -677,7 +701,7 @@ describe("workspace executor with Dockview 8", () => {
     },
   );
 
-  it("moves the existing canvas to every root edge and preserves that edge in review", () => {
+  it("moves the existing canvas to every root edge and reapplies preset topology", () => {
     const controller = createWorkbenchLayoutExecutor(api, () => bounds);
     const identities = PANEL_IDS.map((id) => api.getPanel(id));
     for (const position of ["left", "right", "above", "below"] as const) {
@@ -688,8 +712,13 @@ describe("workspace executor with Dockview 8", () => {
       expect(api.getPanel("canvas")?.group.panels.map((panel) => panel.id)).toEqual(["canvas"]);
       expect(PANEL_IDS.map((id) => api.getPanel(id))).toEqual(identities);
     }
-    controller.applyPreset("review");
-    expect(getCanvasPlacement(controller.capture())).toBe("below");
+    for (const preset of ["review", "ai-review", "video-tracking"] as const) {
+      controller.moveCanvas("left");
+      controller.applyPreset(preset);
+      const context = preset === "video-tracking" ? "annotate:video" : "annotate:image";
+      expect(getActiveWorkspacePreset(controller.capture(), context)).toBe(preset);
+      expect(PANEL_IDS.map((id) => api.getPanel(id))).toEqual(identities);
+    }
     controller.toggleCanvasMaximized();
     expect(controller.isCanvasMaximized()).toBe(true);
     controller.toggleCanvasMaximized();

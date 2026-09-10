@@ -1,4 +1,5 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { isCurrentAuthOwner } from "@/stores/authStore";
 import type { AnnotationResponse, VideoTrackKeyframe, VideoTrackMaskKeyframe } from "@/types";
 import type { AnnotationPayload, AnnotationUpdatePayload } from "@/api/tasks";
 import type {
@@ -64,6 +65,9 @@ export async function applyLeaf(cmd: LeafCommand, direction: "undo" | "redo", h:
       } else {
         await h.deleteAnnotation(cmd.annotationId);
       }
+      // A redo is a new creation. Keep its identity on the command so retries
+      // replay that creation, while the next undo/redo cycle gets another key.
+      cmd.payload = { ...cmd.payload, client_request_id: crypto.randomUUID() };
     } else {
       const fresh = await h.createAnnotation(cmd.payload);
       // redo 重新创建会拿到新 id；后续 undo 还得知道这个 id
@@ -151,6 +155,10 @@ export interface HistoryHandlers {
 const HIST_TTL_MS = 5 * 60 * 1000;
 const HIST_KEY_PREFIX = "wb:hist:";
 
+function historyKey(taskId: string | undefined, userId?: string): string {
+  return `${HIST_KEY_PREFIX}${userId === undefined ? "" : `${userId}:`}${taskId ?? ""}`;
+}
+
 interface PersistedHistory {
   undo: Command[];
   redo: Command[];
@@ -165,7 +173,10 @@ function readSessionStorage(): Storage | null {
   }
 }
 
-export function loadHistoryFromSession(taskId: string | undefined): {
+export function loadHistoryFromSession(
+  taskId: string | undefined,
+  userId?: string,
+): {
   undo: Command[];
   redo: Command[];
 } | null {
@@ -173,12 +184,12 @@ export function loadHistoryFromSession(taskId: string | undefined): {
   const ss = readSessionStorage();
   if (!ss) return null;
   try {
-    const raw = ss.getItem(`${HIST_KEY_PREFIX}${taskId}`);
+    const raw = ss.getItem(historyKey(taskId, userId));
     if (!raw) return null;
     const data = JSON.parse(raw) as PersistedHistory;
     if (typeof data.ts !== "number") return null;
     if (Date.now() - data.ts > HIST_TTL_MS) {
-      ss.removeItem(`${HIST_KEY_PREFIX}${taskId}`);
+      ss.removeItem(historyKey(taskId, userId));
       return null;
     }
     return { undo: data.undo ?? [], redo: data.redo ?? [] };
@@ -191,17 +202,18 @@ export function saveHistoryToSession(
   taskId: string | undefined,
   undo: Command[],
   redo: Command[],
+  userId?: string,
 ): void {
   if (!taskId) return;
   const ss = readSessionStorage();
   if (!ss) return;
   try {
     if (undo.length === 0 && redo.length === 0) {
-      ss.removeItem(`${HIST_KEY_PREFIX}${taskId}`);
+      ss.removeItem(historyKey(taskId, userId));
       return;
     }
     const payload: PersistedHistory = { undo, redo, ts: Date.now() };
-    ss.setItem(`${HIST_KEY_PREFIX}${taskId}`, JSON.stringify(payload));
+    ss.setItem(historyKey(taskId, userId), JSON.stringify(payload));
   } catch {
     // sessionStorage 写失败（quota / private mode）静默忽略；history 仍在内存可用。
   }
@@ -209,6 +221,7 @@ export function saveHistoryToSession(
 
 interface TaskHistory {
   taskId: string | undefined;
+  userId?: string;
   undo: Command[];
   redo: Command[];
   busy: boolean;
@@ -216,22 +229,31 @@ interface TaskHistory {
 }
 
 /** Each in-flight operation settles the history of the task that started it. */
-export function useAnnotationHistory(taskId: string | undefined, handlers: HistoryHandlers) {
+export function useAnnotationHistory(
+  taskId: string | undefined,
+  handlers: HistoryHandlers,
+  userId?: string,
+) {
   const histories = useRef(new Map<string | undefined, TaskHistory>());
-  const getHistory = useCallback((owner: string | undefined): TaskHistory => {
-    const existing = histories.current.get(owner);
-    if (existing) return existing;
-    const restored = loadHistoryFromSession(owner);
-    const created = {
-      taskId: owner,
-      undo: restored?.undo ?? [],
-      redo: restored?.redo ?? [],
-      busy: false,
-      revision: 0,
-    };
-    histories.current.set(owner, created);
-    return created;
-  }, []);
+  const getHistory = useCallback(
+    (owner: string | undefined): TaskHistory => {
+      const key = historyKey(owner, userId);
+      const existing = histories.current.get(key);
+      if (existing) return existing;
+      const restored = loadHistoryFromSession(owner, userId);
+      const created = {
+        taskId: owner,
+        userId,
+        undo: restored?.undo ?? [],
+        redo: restored?.redo ?? [],
+        busy: false,
+        revision: 0,
+      };
+      histories.current.set(key, created);
+      return created;
+    },
+    [userId],
+  );
   const current = useRef(getHistory(taskId));
   const [snapshot, setSnapshot] = useState(() => ({ ...current.current }));
   const handlersRef = useRef(handlers);
@@ -241,10 +263,11 @@ export function useAnnotationHistory(taskId: string | undefined, handlers: Histo
   });
   useLayoutEffect(() => {
     const previous = current.current;
-    if (previous.taskId !== taskId && !previous.busy) histories.current.delete(previous.taskId);
+    if ((previous.taskId !== taskId || previous.userId !== userId) && !previous.busy)
+      histories.current.delete(historyKey(previous.taskId, previous.userId));
     current.current = getHistory(taskId);
     setSnapshot({ ...current.current });
-  }, [taskId, getHistory]);
+  }, [taskId, getHistory, userId]);
   useLayoutEffect(() => {
     mounted.current = true;
     return () => {
@@ -253,7 +276,7 @@ export function useAnnotationHistory(taskId: string | undefined, handlers: Histo
   }, []);
 
   const publish = useCallback((record: TaskHistory) => {
-    saveHistoryToSession(record.taskId, record.undo, record.redo);
+    saveHistoryToSession(record.taskId, record.undo, record.redo, record.userId);
     if (mounted.current && current.current === record) setSnapshot({ ...record });
   }, []);
 
@@ -330,6 +353,11 @@ export function useAnnotationHistory(taskId: string | undefined, handlers: Histo
       if (cmd.kind !== "slice") record[from] = record[from].slice(0, -1);
       publish(record);
       try {
+        const assertOwner = () => {
+          if (record.userId !== undefined && !isCurrentAuthOwner(record.userId))
+            throw new Error("操作历史所属账号已切换");
+        };
+        assertOwner();
         if (cmd.kind === "slice") {
           if (!h.restoreSlice || !record.taskId) throw new Error("切割恢复接口不可用");
           const target = direction === "undo" ? "before" : "after";
@@ -354,6 +382,7 @@ export function useAnnotationHistory(taskId: string | undefined, handlers: Histo
           const ordered = direction === "undo" ? [...cmd.commands].reverse() : cmd.commands;
           for (const sub of ordered) {
             try {
+              assertOwner();
               await applyLeaf(sub, direction, h);
             } catch {
               /* Existing batch best effort behavior. */
@@ -374,6 +403,8 @@ export function useAnnotationHistory(taskId: string | undefined, handlers: Histo
         }
         // A new edit clears redo, even if the preceding undo settles later.
       } catch (error) {
+        if (cmd.kind !== "slice" && !record[from].includes(cmd))
+          record[from] = [...record[from], cmd];
         if (cmd.kind === "slice" && mounted.current && current.current === record)
           h.onSliceError?.(error);
       } finally {

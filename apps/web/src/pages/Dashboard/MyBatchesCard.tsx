@@ -9,8 +9,15 @@ import { useToastStore } from "@/components/ui/Toast";
 import { AssigneeAvatarStack } from "@/components/ui/AssigneeAvatarStack";
 import { useElementStyle } from "@/components/ui/useElementStyle";
 import { useMyBatches } from "@/hooks/useDashboard";
+import { ApiError } from "@/api/client";
 import { batchesApi, type BatchResponse } from "@/api/batches";
 import type { MyBatchItem } from "@/api/dashboard";
+import {
+  isInitialQueryPaused,
+  isRefreshQueryPaused,
+  QueryPausedNotice,
+  QueryPausedState,
+} from "@/pages/shared/QueryState";
 
 const STATUS_LABEL: Record<
   string,
@@ -28,6 +35,19 @@ function ProgressFill({ pct, barClass }: { pct: number; barClass: string }) {
   } as CSSProperties);
 
   return <div ref={ref} className={`h-full w-[var(--progress-pct)] ${barClass}`} />;
+}
+
+function batchesErrorMessage(error: unknown): string {
+  if (error instanceof ApiError && error.status === 403) {
+    return "当前账号没有权限查看分派批次，请联系项目管理员。";
+  }
+  if (error instanceof ApiError && error.status === 404) {
+    return "分派批次已不存在或已被移除，请刷新后重试。";
+  }
+  if (error instanceof ApiError && error.status >= 500) {
+    return "分派批次服务暂时不可用，请稍后重试。";
+  }
+  return "分派批次加载失败，请检查网络后重试。";
 }
 
 /** B-20：标注员视角的三段进度条 — 已动工 / 送审 / 通过。
@@ -75,7 +95,12 @@ function ProgressTriple({
  *  「审核中批次」对齐：button-row + display_id · 项目 · 计数 + 右侧进度% + chev。
  *  额外的 状态徽章 / 提交质检 / 修改 等动作放在右侧 action 区。 */
 export function MyBatchesCard() {
-  const { data: batches = [], isLoading } = useMyBatches();
+  const batchesQuery = useMyBatches();
+  const batches = batchesQuery.data ?? [];
+  const hasBatchData = batchesQuery.data !== undefined;
+  const isLoading = batchesQuery.isLoading && !hasBatchData;
+  const initialPaused = isInitialQueryPaused(batchesQuery, hasBatchData);
+  const refreshPaused = isRefreshQueryPaused(batchesQuery, hasBatchData);
   const navigate = useNavigate();
   const pushToast = useToastStore((s) => s.push);
   const qc = useQueryClient();
@@ -109,6 +134,19 @@ export function MyBatchesCard() {
     });
   };
 
+  if (initialPaused) {
+    return (
+      <div className="mt-4">
+        <Card>
+          <div className="border-b border-border px-4 py-3.5">
+            <h3 className="m-0 text-sm font-semibold">我的批次</h3>
+          </div>
+          <QueryPausedState resource="分派批次" compact />
+        </Card>
+      </div>
+    );
+  }
+
   if (isLoading) {
     return (
       <div className="mt-4">
@@ -122,7 +160,25 @@ export function MyBatchesCard() {
     );
   }
 
-  if (batches.length === 0) return null;
+  if (batchesQuery.isError && !hasBatchData) {
+    return (
+      <div className="mt-4">
+        <Card>
+          <div className="border-b border-border px-4 py-3.5">
+            <h3 className="m-0 text-sm font-semibold">我的批次</h3>
+          </div>
+          <div role="alert" className="p-4 text-sm">
+            <div className="text-status-danger">{batchesErrorMessage(batchesQuery.error)}</div>
+            <Button size="sm" className="mt-3" onClick={() => void batchesQuery.refetch()}>
+              重新加载
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  if (batches.length === 0 && !batchesQuery.isError) return null;
 
   // annotating 排前面，rejected 次之，其他靠后；同状态按 display_id 自然序
   const STATUS_ORDER: Record<string, number> = {
@@ -206,6 +262,21 @@ export function MyBatchesCard() {
             </div>
           )}
         </div>
+        {refreshPaused && <QueryPausedNotice resource="分派批次" />}
+        {batchesQuery.isError && hasBatchData && (
+          <div
+            role="alert"
+            className="mx-4 mt-3 flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-status-caution-soft px-3 py-2 text-xs"
+          >
+            <span className="text-muted-foreground">
+              <strong className="mr-1 text-status-caution">批次更新失败</strong>
+              {batchesErrorMessage(batchesQuery.error)} 当前内容已保留。
+            </span>
+            <Button size="sm" onClick={() => void batchesQuery.refetch()}>
+              重新加载
+            </Button>
+          </div>
+        )}
         <div className="py-2">
           {sorted.map((b) => {
             const meta = STATUS_LABEL[b.status] ?? { label: b.status, variant: "outline" as const };

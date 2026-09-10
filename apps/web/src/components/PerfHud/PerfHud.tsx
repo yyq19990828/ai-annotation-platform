@@ -4,6 +4,7 @@ import { Icon } from "@/components/ui/Icon";
 import { Sparkline } from "@/components/ui/Sparkline";
 import { useElementStyle } from "@/components/ui/useElementStyle";
 import { useAuthStore } from "@/stores/authStore";
+import { ShellPopover, SHELL_POPOVER_HEADER_CLASS } from "@/components/shell/ShellPopover";
 import { isCpuFallback } from "@/utils/mlBackendCompute";
 import { useMLBackendStats, type BackendSnapshot, type BackendHistory } from "./useMLBackendStats";
 import { useBrowserStats } from "./useBrowserStats";
@@ -225,12 +226,8 @@ export function PerfHud() {
   if (!visible || !isAdmin) return null;
 
   return (
-    <div
-      role="dialog"
-      aria-label="GPU 性能监控"
-      className={clsx(styles.panel, expanded && styles.panelExpanded)}
-    >
-      <div className={styles.header}>
+    <ShellPopover id="performance" label="GPU 性能监控" onClose={close}>
+      <div className={SHELL_POPOVER_HEADER_CLASS}>
         <span
           aria-hidden
           title={connected ? "实时连接中" : "未连接"}
@@ -296,6 +293,6 @@ export function PerfHud() {
         {/* v0.10.18 · 浏览器侧指标; 与后端连接无关, 始终展示 */}
         <BrowserPanel enabled={visible} />
       </div>
-    </div>
+    </ShellPopover>
   );
 }
