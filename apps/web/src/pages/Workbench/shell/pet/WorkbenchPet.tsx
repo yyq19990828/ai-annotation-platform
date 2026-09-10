@@ -12,6 +12,8 @@ export interface WorkbenchPetProps {
   position?: FloatingPanelPoint;
   /** 桌宠位置变化。 */
   onPositionChange?: (position: FloatingPanelPoint) => void;
+  /** Actual selection details visibility, supplied by the panel owner. */
+  detailsVisible?: boolean;
   /** 展开选中信息卡(点击举牌态精灵时调用)。 */
   onExpand: () => void;
 }
@@ -22,6 +24,7 @@ export interface WorkbenchPetDock {
   enabled: boolean;
   position: FloatingPanelPoint;
   onPositionChange: (position: FloatingPanelPoint) => void;
+  onDetailsVisibleChange?: (visible: boolean) => void;
 }
 
 const PET_POS_KEY = "workbench.pet.pos";
@@ -61,6 +64,7 @@ export function WorkbenchPet({
   context,
   position: controlledPosition,
   onPositionChange,
+  detailsVisible = false,
   onExpand,
 }: WorkbenchPetProps) {
   const [poke, setPoke] = useState(0);
@@ -71,7 +75,7 @@ export function WorkbenchPet({
   const { mood, message } = usePetState({ context, poke });
   const skin = DEFAULT_PET_SKIN;
   const position = controlledPosition ?? uncontrolledPosition;
-  const canExpand = context.selection.count > 0 && context.selection.collapsed;
+  const canExpand = !detailsVisible && context.selection.count > 0 && context.selection.collapsed;
 
   const onChange = useCallback(
     (pos: FloatingPanelPoint) => {
@@ -99,7 +103,7 @@ export function WorkbenchPet({
     onChange,
   });
 
-  const bubbleText = message;
+  const bubbleText = detailsVisible ? null : message;
 
   const act = () => {
     if (canExpand) onExpand();
@@ -116,7 +120,7 @@ export function WorkbenchPet({
         canExpand ? `展开选中信息卡:${context.selection.title ?? ""}(可拖动)` : "工作台桌宠(可拖动)"
       }
       className={cn(
-        "fixed left-[var(--pet-x)] top-[var(--pet-y)] z-popover-elevated flex cursor-grab touch-none select-none flex-col items-center gap-1",
+        "fixed left-[var(--pet-x)] top-[var(--pet-y)] z-popover-elevated flex size-14 cursor-grab touch-none select-none items-center justify-center",
         drag.isDragging && "cursor-grabbing",
       )}
       // eslint-disable-next-line no-restricted-syntax -- 拖动位置经 CSS 变量注入(对齐选中卡折叠 tab 的做法)。
@@ -135,7 +139,7 @@ export function WorkbenchPet({
       {bubbleText && (
         <div
           className={cn(
-            "pointer-events-none max-w-[200px] border bg-card px-2.5 py-1.5 text-xs text-foreground shadow-md",
+            "absolute bottom-full left-1/2 mb-1 w-max max-w-[200px] -translate-x-1/2 border bg-card px-2.5 py-1.5 text-xs text-foreground shadow-md",
             canExpand ? "rounded-md border-brand" : "rounded-lg border-border",
             mood === "warning" &&
               "border-status-caution bg-status-caution-soft text-status-caution",

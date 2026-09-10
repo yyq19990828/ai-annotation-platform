@@ -2757,6 +2757,14 @@ export function ThreeDWorkbench({
       : undefined,
   );
   const petLinked = petDock?.enabled === true;
+  const petDetailsVisible = Boolean(
+    petLinked && ((selectedBox && form && psrPanel.expanded) || (selectedPointMask && selectedAnn)),
+  );
+  const onPetDetailsVisibleChange = petDock?.onDetailsVisibleChange;
+  useLayoutEffect(() => {
+    onPetDetailsVisibleChange?.(petDetailsVisible);
+    return () => onPetDetailsVisibleChange?.(false);
+  }, [onPetDetailsVisibleChange, petDetailsVisible]);
   const editPanelRef = useElementStyle<HTMLDivElement>(
     petLinked
       ? ({
