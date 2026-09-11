@@ -804,7 +804,11 @@ def _same_task_value(left, right):
 def _same_scope(left: AnnotationFeedback, right: AnnotationFeedback) -> bool:
     if left.project_id != right.project_id:
         return False
-    return left.task_id == right.task_id
+    return (
+        left.task_id == right.task_id
+        and left.anchor_type == right.anchor_type
+        and left.annotation_id == right.annotation_id
+    )
 
 
 def _same_scope_clause(left: AnnotationFeedback, right: AnnotationFeedback):

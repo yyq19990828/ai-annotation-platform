@@ -350,7 +350,18 @@ async def test_root_queries_hide_cross_scope_parent_chains(
         parent_id=other_root.id,
         created_at=start + timedelta(seconds=3),
     )
-    db_session.add_all([root, cross_task, other_root, cross_project])
+    cross_anchor = _feedback(
+        author_id=user.id,
+        project_id=project.id,
+        task_id=task.id,
+        anchor_type="pixel",
+        anchor_position={"x": 0.1, "y": 0.2, "frame": 1},
+        body="cross-anchor child",
+        parent_id=root.id,
+        kind="comment",
+        created_at=start + timedelta(seconds=4),
+    )
+    db_session.add_all([root, cross_task, other_root, cross_project, cross_anchor])
     await db_session.flush()
     headers = {"Authorization": f"Bearer {token}"}
 
@@ -368,3 +379,7 @@ async def test_root_queries_hide_cross_scope_parent_chains(
     assert thread.status_code == 200, thread.text
     assert thread.json()["items"] == []
     assert thread.json()["total"] == 0
+    unavailable = await httpx_client.delete(
+        f"/api/v1/feedbacks/{cross_anchor.id}", headers=headers
+    )
+    assert unavailable.status_code == 404, unavailable.text

@@ -123,8 +123,11 @@ async def _assert_feedback_scope(
 
     svc = service or FeedbackService(db)
     root = await svc.resolve_root(entry.id)
-    if entry.project_id != root.project_id or not _same_task_id(
-        entry.task_id, root.task_id
+    if (
+        entry.project_id != root.project_id
+        or not _same_task_id(entry.task_id, root.task_id)
+        or entry.anchor_type != root.anchor_type
+        or entry.annotation_id != root.annotation_id
     ):
         raise HTTPException(status_code=404, detail="feedback thread is unavailable")
     await assert_project_visible(root.project_id, db, user)
