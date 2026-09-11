@@ -269,7 +269,7 @@ describe("通知直达当前目标", () => {
     });
     renderUI();
     fireEvent.click(screen.getByTitle("通知"));
-    fireEvent.click(await screen.findByRole("button", { name: "打开通知：提到了你的评论" }));
+    fireEvent.click(await screen.findByRole("button", { name: "打开通知：在标注评论中提到了你" }));
     await waitFor(() =>
       expect(screen.getByTestId("location")).toHaveTextContent(
         `/projects/${discussionIds.project}/review?batch=batch-discussion&task=${discussionIds.task}&returnTo=%2Fdashboard&discussion=comments&focus=${discussionIds.annotation}&comment=${discussionIds.comment}`,
@@ -305,7 +305,7 @@ describe("通知直达当前目标", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("正在核对任务和访问权限");
 
     fireEvent.click(screen.getByTitle("通知"));
-    fireEvent.click(await screen.findByRole("button", { name: "打开通知：提到了你的评论" }));
+    fireEvent.click(await screen.findByRole("button", { name: "打开通知：在标注评论中提到了你" }));
     await waitFor(() =>
       expect(screen.getByTestId("location")).toHaveTextContent(
         `/projects/${discussionIds.project}/annotate?batch=batch-discussion&task=${discussionIds.task}&returnTo=%2Fdashboard&discussion=comments&focus=${discussionIds.annotation}&comment=${discussionIds.comment}`,

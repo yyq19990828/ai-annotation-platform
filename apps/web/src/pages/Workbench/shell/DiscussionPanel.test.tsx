@@ -16,6 +16,7 @@ vi.mock("./MaskQcPanel", () => ({
 
 import { DiscussionPanel } from "./DiscussionPanel";
 import { useActiveIssueStore } from "../state/useActiveIssueStore";
+import type { DiscussionNavigation } from "../state/useDiscussionNavigation";
 
 const baseProps = {
   annotationId: null,
@@ -29,6 +30,70 @@ beforeEach(() => {
 });
 
 describe("DiscussionPanel Mask 质检", () => {
+  it("activates a validated notification once without replay on tab changes", () => {
+    const navigation: DiscussionNavigation = {
+      state: {
+        status: "ready",
+        requestId: "request",
+        target: { kind: "issue", issueId: "root-a", replyId: "reply-a" },
+      },
+      cancel: vi.fn(),
+      retry: vi.fn(),
+      dismiss: vi.fn(),
+      consume: vi.fn(),
+    };
+    const view = render(<DiscussionPanel {...baseProps} navigation={navigation} />);
+    expect(screen.getByRole("tab", { name: "问题" })).toHaveAttribute("aria-selected", "true");
+    expect(useActiveIssueStore.getState().detailTargetId).toBe("root-a");
+    expect(navigation.consume).toHaveBeenCalledOnce();
+    expect(navigation.consume).toHaveBeenCalledWith("request");
+    const tick = useActiveIssueStore.getState().detailRequestTick;
+    fireEvent.click(screen.getByRole("tab", { name: "历史" }));
+    view.rerender(
+      <DiscussionPanel
+        {...baseProps}
+        navigation={{ ...navigation, state: { status: "complete", requestId: "request" } }}
+      />,
+    );
+    expect(screen.getByRole("tab", { name: "历史" })).toHaveAttribute("aria-selected", "true");
+    expect(useActiveIssueStore.getState().detailRequestTick).toBe(tick);
+    expect(navigation.consume).toHaveBeenCalledTimes(1);
+  });
+
+  it("exposes navigation progress cancellation and recoverable failure controls", () => {
+    const navigation: DiscussionNavigation = {
+      state: {
+        status: "loading",
+        requestId: "request",
+        message: "正在查找通知中的回复",
+        checked: 50,
+      },
+      cancel: vi.fn(),
+      retry: vi.fn(),
+      dismiss: vi.fn(),
+      consume: vi.fn(),
+    };
+    const view = render(<DiscussionPanel {...baseProps} navigation={navigation} />);
+    expect(screen.getByRole("status")).toHaveTextContent("已检查 50 条");
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(navigation.cancel).toHaveBeenCalledOnce();
+    view.rerender(
+      <DiscussionPanel
+        {...baseProps}
+        navigation={{
+          ...navigation,
+          state: { status: "error", requestId: "request", message: "讨论加载失败，请重试" },
+        }}
+      />,
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("讨论加载失败");
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    expect(navigation.retry).toHaveBeenCalledOnce();
+    expect(navigation.dismiss).toHaveBeenCalledOnce();
+    expect(useActiveIssueStore.getState().detailTargetId).toBeNull();
+  });
+
   it("retires the old task activation even while the Issues tab is unmounted", () => {
     const view = render(<DiscussionPanel {...baseProps} allowProjectIssueScope />);
     act(() =>

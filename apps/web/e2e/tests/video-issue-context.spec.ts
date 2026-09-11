@@ -860,6 +860,64 @@ test.describe("video Issue persisted context", () => {
   test.setTimeout(180_000);
   test.use({ actionTimeout: 10_000 });
 
+  for (const allowSwitch of [false, true])
+    test(`浏览器返回讨论链接前确认视频草稿：${allowSwitch ? "允许后打开目标" : "拒绝后原任务帧和笔触保持不变"}`, async ({
+      page,
+      request,
+      seed,
+      issueCase: fixture,
+    }) => {
+      const issue = await createIssue(request, fixture, 33, [0.4, 0.5]);
+      const other = await seed.videoWebCodecs(fixture.data.project_id, { fixture: MAIN_FIXTURE });
+      const otherTask = await json<{ display_id: string }>(
+        await request.get(`${API_BASE}/api/v1/tasks/${other.task_id}`, {
+          headers: auth(fixture.token),
+        }),
+      );
+      await page.goto(
+        `/projects/${fixture.data.project_id}/annotate?task=${fixture.taskId}&discussion=issues&issue=${issue.id}`,
+      );
+      await expect(stage(page)).toBeVisible({ timeout: 25_000 });
+      await expect(page.getByTestId("discussion-issue-detail")).toHaveAttribute(
+        "data-issue-id",
+        issue.id,
+      );
+      await page.getByRole("button", { name: "布局", exact: true }).click();
+      await page.getByRole("menuitem", { name: "标准标注布局", exact: true }).click();
+      fixture.navigatedTaskIds.push(fixture.taskId, other.task_id);
+      await page
+        .getByRole("tabpanel", { name: "任务队列", exact: true })
+        .getByText(otherTask.display_id, { exact: true })
+        .click();
+      await expect(page).toHaveURL(new RegExp(`task=${other.task_id}(?:&|$)`));
+      expect(new URL(page.url()).searchParams.has("discussion")).toBe(false);
+      const previousUrl = page.url();
+      await seek(page, 3);
+      await createPolygonDraft(page);
+      await page.goBack();
+      const dialog = page.getByRole("alertdialog").filter({ hasText: "继续绘制" });
+      await expect(dialog).toBeVisible();
+      await expect(stage(page)).toHaveAttribute("data-video-frame-index", "3");
+      await expect(stage(page)).toHaveAttribute("data-video-draft-point-count", "2");
+      if (allowSwitch) {
+        await dialog.getByRole("button", { name: "丢弃并切换", exact: true }).click();
+        await expect(page).toHaveURL(new RegExp(`task=${fixture.taskId}(?:&|$)`));
+        await expect(page.getByTestId("discussion-issue-detail")).toHaveAttribute(
+          "data-issue-id",
+          issue.id,
+        );
+        await expect(stage(page)).toHaveAttribute("data-video-draft-point-count", "0");
+        expect(await annotations(request, fixture)).toEqual([]);
+        return;
+      }
+      await dialog.getByRole("button", { name: "继续绘制", exact: true }).click();
+      await expect(page).toHaveURL(previousUrl);
+      await expect(stage(page)).toHaveAttribute("data-video-frame-index", "3");
+      await expect(stage(page)).toHaveAttribute("data-video-draft-point-count", "2");
+      await expect(page.getByTestId("discussion-issue-detail")).toHaveCount(0);
+      expect(await annotations(request, fixture)).toEqual([]);
+    });
+
   test("讨论输入区 Enter 发送留言但保留视频多边形草稿", async ({
     page,
     request,

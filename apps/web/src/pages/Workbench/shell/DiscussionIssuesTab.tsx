@@ -20,8 +20,11 @@ import { useActiveIssueStore } from "../state/useActiveIssueStore";
 import { DiscussionIssueDetail } from "./DiscussionIssueDetail";
 import { readVideoIssueContext } from "../state/videoIssueContext";
 import { useAuthStore } from "@/stores/authStore";
+import type { DiscussionReplyFocus } from "../state/useDiscussionNavigation";
 
 interface Props {
+  replyFocus?: DiscussionReplyFocus | null;
+  onReplyFocusHandled?: (requestId: string) => void;
   projectId: string;
   taskId: string;
   /** Open the task-only Issue form with an explicit task intent. */
@@ -78,6 +81,8 @@ function errorMessage(error: unknown, fallback: string): string {
 }
 
 export function DiscussionIssuesTab({
+  replyFocus,
+  onReplyFocusHandled,
   projectId,
   taskId,
   onCreateTaskIssue,
@@ -283,6 +288,8 @@ export function DiscussionIssuesTab({
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {activeDetail ? (
         <DiscussionIssueDetail
+          replyFocus={replyFocus?.rootId === activeDetail.rootId ? replyFocus : null}
+          onReplyFocusHandled={onReplyFocusHandled}
           rootId={activeDetail.rootId}
           projectId={projectId}
           taskId={taskId}

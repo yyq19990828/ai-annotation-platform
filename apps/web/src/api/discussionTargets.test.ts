@@ -14,6 +14,7 @@ const annotation = {
   id: "annotation",
   task_id: "task",
   project_id: "project",
+  is_active: true,
 } as AnnotationResponse;
 
 beforeEach(() => vi.resetAllMocks());
@@ -62,6 +63,8 @@ describe("active discussion annotation resolution", () => {
   });
 
   it("rejects mismatched annotation ownership and returns missing only after successful reads", async () => {
+    mocks.annotations.mockResolvedValue([{ ...annotation, is_active: false }]);
+    expect(await resolveActiveDiscussionAnnotation(task, annotation.id)).toBeNull();
     mocks.annotations.mockResolvedValue([{ ...annotation, task_id: "other" }]);
     expect(await resolveActiveDiscussionAnnotation(task, annotation.id)).toBeNull();
     mocks.annotations.mockRejectedValue(new Error("temporary failure"));

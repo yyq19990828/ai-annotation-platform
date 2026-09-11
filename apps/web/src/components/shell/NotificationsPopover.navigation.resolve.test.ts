@@ -118,6 +118,38 @@ beforeEach(() => {
 });
 
 describe("notification discussion target resolution", () => {
+  it("accepts historical nested reply kinds through the authoritative root-bound reader", async () => {
+    mocks.thread.mockResolvedValue({
+      root,
+      items: [{ ...reply, kind: "issue", thread_parent_id: ids.otherReply }],
+      next_cursor: null,
+      total: 1,
+    });
+    await expect(
+      resolveDiscussionNotification(
+        feedbackNotification("feedback.reply_created"),
+        new AbortController().signal,
+      ),
+    ).resolves.toMatchObject({ target: { replyId: ids.reply } });
+  });
+
+  it("revalidates root ownership on later pages", async () => {
+    mocks.thread
+      .mockResolvedValueOnce({ root, items: [], next_cursor: "older", total: 1 })
+      .mockResolvedValueOnce({
+        root: { ...root, task_id: ids.otherReply },
+        items: [reply],
+        next_cursor: null,
+        total: 1,
+      });
+    await expect(
+      resolveDiscussionNotification(
+        feedbackNotification("feedback.reply_created"),
+        new AbortController().signal,
+      ),
+    ).rejects.toMatchObject({ kind: "unavailable" });
+  });
+
   it("finds a reply on a later thread page instead of treating the first page as missing", async () => {
     const item = feedbackNotification("feedback.reply_created");
     const signal = new AbortController().signal;

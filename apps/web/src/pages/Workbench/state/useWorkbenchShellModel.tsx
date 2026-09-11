@@ -233,7 +233,9 @@ import {
   rememberWorkbenchTask,
   resolveWorkbenchReturnTo,
   updateWorkbenchUrlSearch,
+  parseWorkbenchDiscussionRequest,
 } from "@/utils/workbenchNavigation";
+import { useDiscussionNavigation } from "./useDiscussionNavigation";
 import {
   ensurePointCloudNavigationGeneration,
   pointCloudNavigationGenerationForTask,
@@ -466,9 +468,16 @@ export function useWorkbenchShellModel({
   const returnTo = searchParams.get("returnTo");
   const requestedBatchId = searchParams.get("batch");
   const requestedTaskId = searchParams.get("task");
-  const requestedFocusId = searchParams.get("focus");
+  const discussionRequest = useMemo(
+    () => parseWorkbenchDiscussionRequest(location.search),
+    [location.search],
+  );
+  // Discussion focus is applied only after the original comment and active
+  // annotation are validated. The generic Data Manager path must not race it.
+  const requestedFocusId = discussionRequest.status === "none" ? searchParams.get("focus") : null;
   const requestedTrackId = searchParams.get("track");
   const requestedFrameIndex = (() => {
+    if (discussionRequest.status !== "none") return null;
     const raw = searchParams.get("frame");
     if (raw === null) return null;
     const value = Number(raw);
@@ -574,10 +583,19 @@ export function useWorkbenchShellModel({
 
   const meUserId = useAuthStore((s) => s.user?.id);
   const { hasPermission } = usePermissions();
+  const s = useWorkbenchState();
+  const pendingDiscussionTaskSwitch = Boolean(
+    s.currentTaskId &&
+    (discussionRequest.status === "invalid" ||
+      (discussionRequest.status === "valid" && s.currentTaskId !== discussionRequest.taskId)),
+  );
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(requestedBatchId);
   useEffect(() => {
+    // A history URL is an intent, not permission to replace the live task's
+    // query/layout owner. Apply its batch only after guarded task admission.
+    if (pendingDiscussionTaskSwitch) return;
     setSelectedBatchId((prev) => (prev === requestedBatchId ? prev : requestedBatchId));
-  }, [requestedBatchId]);
+  }, [requestedBatchId, pendingDiscussionTaskSwitch]);
   const { data: batchList } = useBatches(projectId ?? "", undefined);
   useBatchEventsSocket(projectId);
   const isOwner = useIsProjectOwner(currentProject ?? null);
@@ -617,10 +635,11 @@ export function useWorkbenchShellModel({
   const requestedTaskLoaded = Boolean(
     requestedTaskId && tasks.some((t) => t.id === requestedTaskId),
   );
-  const shouldLoadDirectTask = Boolean(requestedTaskId && !requestedTaskLoaded);
+  const shouldLoadDirectTask = Boolean(
+    requestedTaskId && !requestedTaskLoaded && discussionRequest.status !== "invalid",
+  );
   const directTaskQuery = useTask(shouldLoadDirectTask ? requestedTaskId! : "");
 
-  const s = useWorkbenchState();
   const discussionDraftStore = useDiscussionDraftStore();
   // v0.13.x · 点云 3D 项目无对应 2D 工具,按当前 3D 工具显式选择工具单位。
   const is3DProject = currentProject?.type_key === "lidar";
@@ -725,16 +744,33 @@ export function useWorkbenchShellModel({
   const task: TaskResponse | undefined = useMemo(() => {
     const loaded = tasks.find((t) => t.id === currentTaskId);
     if (loaded) return loaded;
+    if (pendingDiscussionTaskSwitch && currentTaskId) {
+      // A review/deep-linked task need not be in the queue. Keep its existing
+      // authoritative query while another task's access lookup is pending.
+      const admitted = queryClient.getQueryData<TaskResponse>(["task", currentTaskId]);
+      return admitted?.project_id === projectId ? admitted : undefined;
+    }
     const directTask = shouldLoadDirectTask ? directTaskQuery.data : undefined;
     if (
       directTask &&
+      (discussionRequest.status === "none" || directTask.project_id === projectId) &&
       (directTask.id === requestedTaskId || !currentTaskId || directTask.id === currentTaskId)
     ) {
       return directTask;
     }
     if (requestedTaskId) return undefined;
     return tasks[0];
-  }, [tasks, currentTaskId, requestedTaskId, shouldLoadDirectTask, directTaskQuery.data]);
+  }, [
+    tasks,
+    currentTaskId,
+    requestedTaskId,
+    shouldLoadDirectTask,
+    directTaskQuery.data,
+    pendingDiscussionTaskSwitch,
+    discussionRequest.status,
+    queryClient,
+    projectId,
+  ]);
   const taskId = task?.id;
   const currentTaskIdRef = useRef(taskId);
   currentTaskIdRef.current = taskId;
@@ -771,6 +807,8 @@ export function useWorkbenchShellModel({
         signal?: AbortSignal;
         scenePreview?: boolean;
         issueRestore?: boolean;
+        /** The requested URL is already visible; preserve its validated target. */
+        fromUrl?: boolean;
       } = {},
     ): Promise<boolean> => {
       if (!opts.issueRestore) cancelVideoIssueNavigationRef.current();
@@ -814,12 +852,13 @@ export function useWorkbenchShellModel({
             pendingLocalTaskIdRef.current = current.requestedTaskId === id ? null : id;
             setCurrentTaskId(id);
             setSelectedId(null);
-            updateUrl({
-              batchId: selectedBatchId,
-              taskId: id,
-              replace: opts.replace,
-              maskGuardApproved: true,
-            });
+            if (!opts.fromUrl)
+              updateUrl({
+                batchId: selectedBatchId,
+                taskId: id,
+                replace: opts.replace,
+                maskGuardApproved: true,
+              });
           },
         );
         publishPointCloudNavigationTrace({
@@ -1284,7 +1323,76 @@ export function useWorkbenchShellModel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [closePropagateDialog, taskId, resetVideoStageUi]);
 
+  const discussionTaskAvailable =
+    discussionRequest.status === "valid" &&
+    (tasks.some((item) => item.id === discussionRequest.taskId) ||
+      (directTaskQuery.data?.id === discussionRequest.taskId &&
+        directTaskQuery.data.project_id === projectId));
+  const discussionTaskError =
+    discussionRequest.status !== "valid" || !shouldLoadDirectTask || !projectId
+      ? null
+      : directTaskQuery.data && directTaskQuery.data.project_id !== projectId
+        ? "讨论目标不属于当前项目"
+        : directTaskQuery.isError
+          ? "讨论所在任务已删除、不可访问或暂时无法读取"
+          : null;
   useEffect(() => {
+    if (
+      discussionRequest.status !== "valid" ||
+      !discussionTaskAvailable ||
+      currentTaskId === discussionRequest.taskId ||
+      !meUserId
+    )
+      return;
+    const controller = new AbortController();
+    const previousTaskId = currentTaskId;
+    const previousBatchId = selectedBatchId;
+    // A URL can change through browser history while this Workbench remains
+    // mounted. Admit that switch through the same video/Mask transaction owner.
+    void Promise.resolve()
+      .then(async () => {
+        if (controller.signal.aborted || !isCurrentAuthOwner(meUserId)) return;
+        const allowed = await selectTask(discussionRequest.taskId, {
+          signal: controller.signal,
+          fromUrl: true,
+        });
+        if (allowed || controller.signal.aborted || !isCurrentAuthOwner(meUserId)) return;
+        if (previousTaskId) {
+          navigate(
+            updateWorkbenchUrlSearch(location, {
+              taskId: previousTaskId,
+              batchId: previousBatchId,
+            }),
+            { replace: true },
+          );
+        }
+        pushToast({ msg: "已取消切换到讨论所在任务", kind: "warning" });
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted && isCurrentAuthOwner(meUserId))
+          pushToast({
+            msg: "无法切换到讨论所在任务",
+            sub: error instanceof Error ? error.message : undefined,
+            kind: "error",
+          });
+      });
+    return () => controller.abort();
+  }, [
+    discussionRequest,
+    discussionTaskAvailable,
+    currentTaskId,
+    meUserId,
+    selectTask,
+    navigate,
+    location,
+    pushToast,
+    selectedBatchId,
+  ]);
+
+  useEffect(() => {
+    // Discussion URLs have their own one-shot admission above. In particular,
+    // malformed links must not enter the generic unguarded task hydration path.
+    if (discussionRequest.status !== "none") return;
     if (tasks.length === 0 && !directTaskQuery.data) return;
     const localUrlSync = resolveLocalTaskUrlSync(requestedTaskId, pendingLocalTaskIdRef.current);
     if (localUrlSync.clearPendingTarget) {
@@ -1338,6 +1446,7 @@ export function useWorkbenchShellModel({
         : tasks[0].id;
     selectTask(nextTaskId, { replace: true });
   }, [
+    discussionRequest.status,
     tasks,
     currentTaskId,
     requestedTaskId,
@@ -1539,6 +1648,7 @@ export function useWorkbenchShellModel({
   const urlFocusHydratedRef = useRef(false);
 
   useEffect(() => {
+    if (discussionRequest.status !== "none") return;
     if (urlFocusHydratedRef.current) return;
     if (!taskId || (requestedTaskId && taskId !== requestedTaskId)) return;
     if (isVideoTask && requestedFrameIndex !== null) {
@@ -1559,6 +1669,7 @@ export function useWorkbenchShellModel({
       urlFocusHydratedRef.current = true;
     }
   }, [
+    discussionRequest.status,
     annotationsData,
     isVideoTask,
     requestedFocusId,
@@ -2967,6 +3078,7 @@ export function useWorkbenchShellModel({
     requestTool: requestVideoTool,
     requestScope: requestVideoToolScope,
     requestSelection: requestVideoSelection,
+    requestSelectionReady: requestVideoSelectionReady,
     requestFrame: requestVideoReviewFrame,
     requestFrameReady: requestVideoIssueFrame,
     requestLeave: requestVideoLeave,
@@ -6909,10 +7021,66 @@ export function useWorkbenchShellModel({
     secondaryEligible ? projectId : undefined,
   );
 
+  const discussionNavigationKey = JSON.stringify([
+    location.key,
+    location.pathname,
+    location.search,
+  ]);
+  const discussionRetryOwner = JSON.stringify([meUserId, discussionNavigationKey]);
+  const discussionRetryOwnerRef = useRef(discussionRetryOwner);
+  discussionRetryOwnerRef.current = discussionRetryOwner;
+  const discussionNavigationOwner = useDiscussionNavigation({
+    navigationKey: discussionNavigationKey,
+    request: discussionTaskError
+      ? { status: "invalid", message: discussionTaskError }
+      : discussionRequest,
+    projectId,
+    taskId:
+      isProjectLoading || isTaskListLoading || (shouldLoadDirectTask && directTaskQuery.isLoading)
+        ? null
+        : taskId,
+    reveal: () => workspaceCommands.current?.show("discussion"),
+    selectAnnotation: async (annotation, isCurrent) => {
+      if (!isCurrent()) return false;
+      // Reading a notification never claims another annotator's segment or
+      // changes its lease. The annotation-scoped conversation is still readable.
+      if (videoCollaborationEnabled && annotation.video_segment_id !== activeVideoSegmentId)
+        return "unloaded";
+      if (s.selectedId === annotation.id) return true;
+      const result = await refetchAnnotations({ cancelRefetch: false });
+      if (!isCurrent()) return false;
+      if (result.isError) throw result.error;
+      if (!result.data?.some((item) => item.id === annotation.id && item.task_id === taskId))
+        throw new Error("评论所属标注已不可访问");
+      if (isVideoTask) {
+        videoIssueNavigation.cancel();
+        return requestVideoSelectionReady(annotation.id, isCurrent);
+      }
+      if (!(await maskNavigationGuardRef.current()) || !isCurrent()) return false;
+      handleSelectBox(annotation.id);
+      return true;
+    },
+  });
+  const discussionNavigation = {
+    ...discussionNavigationOwner,
+    retry: () => {
+      if (discussionTaskError) {
+        void directTaskQuery.refetch().then(() => {
+          if (
+            discussionRetryOwnerRef.current === discussionRetryOwner &&
+            meUserId &&
+            isCurrentAuthOwner(meUserId)
+          )
+            discussionNavigationOwner.retry();
+        });
+      } else discussionNavigationOwner.retry();
+    },
+  };
+
   if (
     isProjectLoading ||
     isTaskListLoading ||
-    (shouldLoadDirectTask && directTaskQuery.isLoading)
+    (shouldLoadDirectTask && directTaskQuery.isLoading && !pendingDiscussionTaskSwitch)
   ) {
     return { kind: "loading" };
   }
@@ -6923,6 +7091,19 @@ export function useWorkbenchShellModel({
       emptyState: {
         icon: "warning",
         message: "项目不存在或无访问权限",
+        onBack,
+      },
+    };
+  }
+
+  if (!task && (discussionRequest.status === "invalid" || discussionTaskError)) {
+    return {
+      kind: "empty",
+      emptyState: {
+        icon: "warning",
+        message:
+          discussionTaskError ??
+          (discussionRequest.status === "invalid" ? discussionRequest.message : "讨论目标不可访问"),
         onBack,
       },
     };
@@ -8116,6 +8297,7 @@ export function useWorkbenchShellModel({
         : undefined,
     // v0.11.5 · B 组 · DiscussionPanel 转正 → 右栏固定两段布局 (上 AIInspectorPanel + 下 DiscussionPanel)。
     discussionPanel: {
+      navigation: discussionNavigation,
       onCreateTaskIssue: openTaskIssue,
       onCreatePixelIssue:
         stageKind === "image" || stageKind === "video"

@@ -27,6 +27,7 @@ export async function resolveActiveDiscussionAnnotation(
     const annotation = annotations.find(
       (item) =>
         item.id === annotationId &&
+        item.is_active === true &&
         item.task_id === task.id &&
         (!item.project_id || item.project_id === task.project_id) &&
         (segmentId === null || item.video_segment_id === segmentId),

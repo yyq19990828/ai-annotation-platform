@@ -4,6 +4,12 @@ import { CommentsPanel } from "./CommentsPanel";
 import { DiscussionIssuesTab } from "./DiscussionIssuesTab";
 import { MaskQcPanel } from "./MaskQcPanel";
 import { useActiveIssueStore } from "../state/useActiveIssueStore";
+import { Button } from "@/components/ui/Button";
+import type {
+  DiscussionNavigation,
+  DiscussionReplyFocus,
+  DiscussionCommentFocus,
+} from "../state/useDiscussionNavigation";
 
 // 顶部 tab 切换条: 字号/字重与右栏上段"标注详情"标题 (text-sm font-semibold) 对齐,
 // 视觉上作为同级标题。v0.20.22 · 拆分中性/激活分支下发, 避免 border-transparent 与
@@ -53,6 +59,7 @@ type CommentsBridgeProps = Pick<
 >;
 
 interface DiscussionPanelProps extends CommentsBridgeProps {
+  navigation?: DiscussionNavigation;
   onCreateTaskIssue?: () => void;
   onCreatePixelIssue?: () => void;
   openIssueCount?: number | null;
@@ -73,6 +80,7 @@ interface DiscussionPanelProps extends CommentsBridgeProps {
 }
 
 export function DiscussionPanel({
+  navigation,
   onCreateTaskIssue,
   onCreatePixelIssue,
   openIssueCount,
@@ -105,6 +113,8 @@ export function DiscussionPanel({
   const [collapsedLocal, setCollapsedLocal] = useState(false);
   const collapsed = collapsedProp ?? collapsedLocal;
   const toggleCollapsed = onToggleCollapsed ?? (() => setCollapsedLocal((v) => !v));
+  const [replyFocus, setReplyFocus] = useState<DiscussionReplyFocus | null>(null);
+  const [commentFocus, setCommentFocus] = useState<DiscussionCommentFocus | null>(null);
 
   // The panel, not its conditionally mounted Issues tab, owns the activation
   // lifetime. Drafts have a separate authenticated owner and are not cleared.
@@ -115,6 +125,8 @@ export function DiscussionPanel({
     detailLeaseRef.current = {};
     if (detailOwnerRef.current !== detailOwner) {
       useActiveIssueStore.getState().closeIssueDetail();
+      setReplyFocus(null);
+      setCommentFocus(null);
       detailOwnerRef.current = detailOwner;
     }
     return () => {
@@ -135,6 +147,43 @@ export function DiscussionPanel({
       });
     };
   }, [detailOwner]);
+
+  const navigationState = navigation?.state;
+  useEffect(() => {
+    if (
+      !navigationState ||
+      navigationState.status === "idle" ||
+      navigationState.status === "complete"
+    )
+      return;
+    if (collapsed) toggleCollapsed();
+    if (navigationState.status !== "ready") return;
+    const { target, requestId } = navigationState;
+    if (target.kind === "issue" && projectId && taskId) {
+      setCommentFocus(null);
+      setTab("issues");
+      useActiveIssueStore
+        .getState()
+        .openIssueDetail(navigationState.root ?? target.issueId, { projectId, taskId });
+      setReplyFocus(
+        target.replyId ? { requestId, rootId: target.issueId, replyId: target.replyId } : null,
+      );
+    } else if (target.kind === "comment") {
+      setReplyFocus(null);
+      setTab("comments");
+      setCommentFocus({
+        requestId,
+        annotationId: target.annotationId,
+        commentId: target.commentId,
+        annotationLabel: navigationState.annotation?.class_name ?? "标注",
+        canvasAvailable: navigationState.canvasAvailable === true,
+      });
+    }
+    navigation?.consume(requestId);
+    // Activation is keyed by the owner-produced state, not by callback or
+    // presentation changes such as collapsing and reopening the panel.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [navigationState]);
 
   // v0.11.4 · 单击/hover IssueLayer 图钉 → store.tabRequestTick++ → 自动切到 issues tab。
   const tabRequestTick = useActiveIssueStore((s) => s.tabRequestTick);
@@ -255,6 +304,38 @@ export function DiscussionPanel({
           </button>
         )}
       </div>
+      {navigation &&
+        navigationState &&
+        ["loading", "error", "cancelled"].includes(navigationState.status) && (
+          <div
+            className={`mx-2 my-1 flex shrink-0 flex-wrap items-center gap-1.5 rounded px-2 py-1.5 text-xs ${navigationState.status === "error" ? "bg-status-danger-soft text-status-danger" : "bg-muted text-muted-foreground"}`}
+            role={navigationState.status === "error" ? "alert" : "status"}
+            data-testid="discussion-navigation-status"
+          >
+            {"message" in navigationState && (
+              <span className="min-w-0 flex-1">
+                {navigationState.message}
+                {navigationState.status === "loading" && navigationState.checked > 0
+                  ? `（已检查 ${navigationState.checked} 条）`
+                  : ""}
+              </span>
+            )}
+            {navigationState.status === "loading" ? (
+              <Button size="sm" variant="ghost" onClick={navigation.cancel}>
+                取消
+              </Button>
+            ) : (
+              <>
+                <Button size="sm" variant="ghost" onClick={navigation.retry}>
+                  重试
+                </Button>
+                <Button size="sm" variant="ghost" onClick={navigation.dismiss}>
+                  关闭
+                </Button>
+              </>
+            )}
+          </div>
+        )}
       {/* v0.20.22 · 完全收起时不渲染 tabpanel, 仅留 tab 头一条; 展开由 chevron 或 IssueLayer 图钉触发。 */}
       {!collapsed && (
         <div
@@ -270,6 +351,10 @@ export function DiscussionPanel({
           ) : tab === "issues" ? (
             projectId && taskId ? (
               <DiscussionIssuesTab
+                replyFocus={replyFocus}
+                onReplyFocusHandled={(requestId) =>
+                  setReplyFocus((current) => (current?.requestId === requestId ? null : current))
+                }
                 projectId={projectId}
                 taskId={taskId}
                 onCreateTaskIssue={onCreateTaskIssue}
@@ -279,6 +364,10 @@ export function DiscussionPanel({
             ) : null
           ) : (
             <CommentsPanel
+              commentFocus={commentFocus}
+              onCommentFocusHandled={(requestId) =>
+                setCommentFocus((current) => (current?.requestId === requestId ? null : current))
+              }
               annotationId={annotationId}
               taskId={taskId}
               projectId={projectId}

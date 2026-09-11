@@ -28,22 +28,23 @@ last_reviewed: 2026-09-11
   caption="审计与通知的写入、持久化和在线分发边界"
 />
 
-通知创建不是事务型 outbox：服务会先 `flush` 通知行、再尽力发布 Redis，调用方稍后才提交事务。Redis 失败不会删除持久化行；反过来，调用方最终回滚时，在线端也可能已经收到尚未持久化的消息。
+通知创建不是事务型 outbox。默认调用仍先 `flush` 通知行、再尽力发布 Redis，由调用方稍后提交；调用方最终回滚时，在线端可能已经收到消息。讨论事件使用显式延迟发布：业务与通知同事务提交成功后才推送，Redis 失败不改变已提交结果，也没有后台重试或恰好一次推送保证。
 
 ## 代码入口
 
-| 位置                                        | 作用                                              |
-| ------------------------------------------- | ------------------------------------------------- |
-| `apps/api/app/services/audit.py`            | `AuditAction`、`AuditService.log()`、`log_many()` |
-| `apps/api/app/middleware/audit.py`          | HTTP 写请求响应后的 `http.*` 元数据审计           |
-| `apps/api/app/workers/audit.py`             | 异步持久化 HTTP 审计；投递失败时中间件同步回退    |
-| `apps/api/app/db/models/audit_log.py`       | `AuditLog` 数据模型                               |
-| `apps/api/app/api/v1/audit_logs.py`         | audit 查询与导出                                  |
-| `apps/api/app/services/notification.py`     | 通知写表与 Redis PubSub                           |
-| `apps/api/app/services/async_job_notify.py` | `async_jobs` 终态 → 通用 `job.*` 通知 helper      |
-| `apps/api/app/db/models/notification.py`    | `Notification` 模型                               |
-| `apps/api/app/api/v1/notifications.py`      | 通知列表、已读、偏好设置                          |
-| `apps/api/app/api/v1/ws.py`                 | `/ws/notifications` 在线推送                      |
+| 位置                                                | 作用                                              |
+| --------------------------------------------------- | ------------------------------------------------- |
+| `apps/api/app/services/audit.py`                    | `AuditAction`、`AuditService.log()`、`log_many()` |
+| `apps/api/app/middleware/audit.py`                  | HTTP 写请求响应后的 `http.*` 元数据审计           |
+| `apps/api/app/workers/audit.py`                     | 异步持久化 HTTP 审计；投递失败时中间件同步回退    |
+| `apps/api/app/db/models/audit_log.py`               | `AuditLog` 数据模型                               |
+| `apps/api/app/api/v1/audit_logs.py`                 | audit 查询与导出                                  |
+| `apps/api/app/services/notification.py`             | 通知写表与 Redis PubSub                           |
+| `apps/api/app/services/discussion_notifications.py` | 讨论事件收件人、原始目标身份与延迟发布记录        |
+| `apps/api/app/services/async_job_notify.py`         | `async_jobs` 终态 → 通用 `job.*` 通知 helper      |
+| `apps/api/app/db/models/notification.py`            | `Notification` 模型                               |
+| `apps/api/app/api/v1/notifications.py`              | 通知列表、已读、偏好设置                          |
+| `apps/api/app/api/v1/ws.py`                         | `/ws/notifications` 在线推送                      |
 
 ## Audit：记录发生了什么
 
@@ -190,6 +191,16 @@ last_reviewed: 2026-09-11
 
 `notify_many()` 会自动去重 `user_ids`，避免重复通知同一收件人。
 
+### 讨论事件的提交与导航
+
+回复创建和问题根记录的实际状态变化，以及原标注评论创建时的已验证提及，会调用 `discussion_notifications.py`。收件人按当前项目、任务、批次归属与账号状态重新检查；状态事件通过根线程的递归查询收集全部有效后代作者，穿过已删除的中间回复，不受列表分页限制。排除操作人和重复收件人后，再应用通知偏好。
+
+这些路由调用 `notify` 或 `notify_many` 时显式传入 `defer_publish=True`，只收集本请求实际插入的通知行。业务 `commit` 成功后调用 `publish_committed(rows)`，失败则不推送；没有跨请求的待发布列表。其他通知调用方保留默认发布时序。
+
+问题事件以根问题 ID 为 `target_id`，来源为 `feedback`；提及事件以原标注评论 ID 为目标，来源为 `annotation_comment`，不引用反馈镜像。载荷保留项目、任务、操作人名称，以及需要的回复、标注或状态字段，不复制正文。
+
+通知入口和工作台都重新读取目标。工作台以路由导航身份消费一次激活请求，与面板的显示、折叠和重新挂载分开；旧回复按根游标继续读取，原评论使用标注评论接口查找，再通过既有讨论查询显示服务端操作权限。共享读取不会被单个导航的取消信号终止，已退休任务或账号的结果不能激活当前面板。视频选择与切任务继续使用已有绘制和 Mask 守卫，读取其他视频分段的评论不申请编辑租约。
+
 ### 偏好静音
 
 `NotificationService` 在写通知前会先查：
@@ -229,6 +240,9 @@ last_reviewed: 2026-09-11
 - `job.cancelled`
 - `user.deactivation_requested`
 - `user.deactivation_completed`
+- `feedback.reply_created`
+- `feedback.status_changed`
+- `annotation.comment_mentioned`
 
 **特殊类型（不在 `KNOWN_NOTIFICATION_TYPES`，因此用户不能静音）：**
 

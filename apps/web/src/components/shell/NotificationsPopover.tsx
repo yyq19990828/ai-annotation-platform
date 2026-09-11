@@ -68,7 +68,7 @@ const TYPE_LABEL: Record<string, string> = {
   "bug_report.reopened": "重新打开了反馈",
   "feedback.reply_created": "回复了问题",
   "feedback.status_changed": "更新了问题状态",
-  "annotation.comment_mentioned": "提到了你的评论",
+  "annotation.comment_mentioned": "在标注评论中提到了你",
   "batch.rejected": "驳回了批次",
   "batch.review_reopened": "重新打开了批次审核",
   "batch.admin_locked": "锁定了批次",

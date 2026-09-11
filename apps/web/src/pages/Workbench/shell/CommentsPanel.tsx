@@ -2,6 +2,7 @@ import {
   useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -47,6 +48,7 @@ import {
   useDiscussionDraftStore,
 } from "../state/DiscussionDraftProvider";
 import type { DiscussionDraftStore } from "../state/useDiscussionDraftStore";
+import type { DiscussionCommentFocus } from "../state/useDiscussionNavigation";
 
 type Tab = "comments" | "history";
 type CommentInputProps = ComponentProps<typeof CommentInput>;
@@ -64,6 +66,8 @@ const ICON_BUTTON =
   "inline-flex min-h-7 min-w-7 cursor-pointer appearance-none items-center justify-center rounded-[3px] border-0 bg-transparent text-muted-foreground active:scale-[0.96]";
 
 interface Props {
+  commentFocus?: DiscussionCommentFocus | null;
+  onCommentFocusHandled?: (requestId: string) => void;
   annotationId: string | null;
   /** Task context enables the authoritative mixed discussion feed. */
   taskId?: string | null;
@@ -195,6 +199,8 @@ function isTargetUnavailableError(error: unknown): boolean {
 }
 
 export function CommentsPanel({
+  commentFocus,
+  onCommentFocusHandled,
   annotationId,
   taskId,
   annotationTaskId,
@@ -233,6 +239,15 @@ export function CommentsPanel({
   const rowActionPendingRef = useRef(new Set<string>());
   const attachmentDownloadPendingRef = useRef(new Set<string>());
   const taskScopeKey = `${projectId ?? ""}:${taskId ?? ""}`;
+  const [readAnnotationOverride, setReadAnnotationOverride] = useState<{
+    owner: string;
+    selectedId: string | null;
+    annotationId: string;
+    label: string;
+  } | null>(null);
+  const [highlightedComment, setHighlightedComment] = useState<string | null>(null);
+  const focusedRequestRef = useRef<string | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const scopeOwnerRef = useRef(taskScopeKey);
   const scopeForTask = scopeOwnerRef.current === taskScopeKey ? readScope : "all";
   // Keep the first render after a retained-panel task switch on the default
@@ -243,6 +258,13 @@ export function CommentsPanel({
     isPersistedAnnotationId(annotationId) &&
     annotationAvailable !== false &&
     annotationIsKnown(annotationId, annotationClassById);
+  const readOverride =
+    readAnnotationOverride?.owner === taskScopeKey &&
+    readAnnotationOverride.selectedId === annotationId
+      ? readAnnotationOverride
+      : null;
+  const readAnnotationId = readOverride?.annotationId ?? annotationId;
+  const readAnnotationEligible = Boolean(readOverride) || annotationEligible;
   const taskContext = Boolean(taskId && projectId);
   const composerTaskId = taskId ?? annotationTaskId;
   const taskTarget = useMemo<Extract<DiscussionTarget, { kind: "task" }> | null>(
@@ -282,23 +304,50 @@ export function CommentsPanel({
     // complete discussion feed even when the panel instance is retained.
     setReadScope("all");
     setScopeNotice(null);
+    setReadAnnotationOverride(null);
+    setHighlightedComment(null);
   }, [projectId, taskId]);
 
   useEffect(() => {
-    if (scopeForTask === "annotation" && !annotationEligible) {
+    if (!commentFocus || focusedRequestRef.current === commentFocus.requestId) return;
+    setReadScope("annotation");
+    setReadAnnotationOverride({
+      owner: taskScopeKey,
+      selectedId: annotationId,
+      annotationId: commentFocus.annotationId,
+      label: commentFocus.annotationLabel,
+    });
+    setScopeNotice(
+      commentFocus.canvasAvailable
+        ? null
+        : "评论位于当前画布未载入的标注，已打开原评论；不会自动认领视频分段。",
+    );
+  }, [commentFocus, annotationId, taskScopeKey]);
+
+  useEffect(() => {
+    if (commentFocus && focusedRequestRef.current !== commentFocus.requestId) return;
+    if (scopeForTask === "annotation" && !readAnnotationEligible) {
       setReadScope("task");
       setScopeNotice("当前没有可用的已保存标注，已切换为仅任务留言。");
     }
-  }, [annotationEligible, scopeForTask]);
+  }, [commentFocus, readAnnotationEligible, scopeForTask]);
+
+  useEffect(() => {
+    if (readAnnotationOverride && readAnnotationOverride.selectedId !== annotationId) {
+      setReadAnnotationOverride(null);
+      setScopeNotice(null);
+      setHighlightedComment(null);
+    }
+  }, [annotationId, readAnnotationOverride]);
 
   const effectiveScope: DiscussionReadScope =
-    scopeForTask === "annotation" && annotationEligible ? "annotation" : scopeForTask;
+    scopeForTask === "annotation" && readAnnotationEligible ? "annotation" : scopeForTask;
 
   const taskDiscussionQuery = useTaskDiscussion(
     taskId,
     effectiveScope,
-    effectiveScope === "annotation" ? annotationId : null,
-    taskContext && (effectiveScope !== "annotation" || annotationEligible),
+    effectiveScope === "annotation" ? readAnnotationId : null,
+    taskContext && (effectiveScope !== "annotation" || readAnnotationEligible),
     projectId,
   );
   // Standalone ReviewWorkbench has no task context and keeps its legacy bounded
@@ -320,6 +369,35 @@ export function CommentsPanel({
   }, [currentUserId, legacyAnnotationQuery.data, taskContext, taskDiscussionQuery.data]);
 
   const activeQuery = taskContext ? taskDiscussionQuery : legacyAnnotationQuery;
+  useLayoutEffect(() => {
+    if (
+      !commentFocus ||
+      focusedRequestRef.current === commentFocus.requestId ||
+      effectiveScope !== "annotation" ||
+      readAnnotationId !== commentFocus.annotationId ||
+      activeQuery.isPending ||
+      activeQuery.isError
+    )
+      return;
+    const container = contentRef.current;
+    const row = container?.querySelector<HTMLElement>(
+      `[data-comment-key="annotation_comment:${commentFocus.commentId}"]`,
+    );
+    if (!container || !row) return;
+    focusedRequestRef.current = commentFocus.requestId;
+    setHighlightedComment(`annotation_comment:${commentFocus.commentId}`);
+    container.scrollTop += row.getBoundingClientRect().top - container.getBoundingClientRect().top;
+    row.focus({ preventScroll: true });
+    onCommentFocusHandled?.(commentFocus.requestId);
+  }, [
+    commentFocus,
+    effectiveScope,
+    readAnnotationId,
+    activeQuery.isPending,
+    activeQuery.isError,
+    discussionItems,
+    onCommentFocusHandled,
+  ]);
   const total = taskContext ? taskDiscussionQuery.data?.pages[0]?.total : discussionItems.length;
 
   const { data: members } = useProjectMembers(projectId ?? "");
@@ -778,19 +856,26 @@ export function CommentsPanel({
             value={effectiveScope}
             onChange={(event) => {
               const next = event.target.value as DiscussionReadScope;
-              if (next === "annotation" && !annotationEligible) {
+              if (next === "annotation" && !readAnnotationEligible) {
                 setReadScope("task");
                 setScopeNotice("当前没有可用的已保存标注，已切换为仅任务留言。");
                 return;
               }
               setReadScope(next);
               setScopeNotice(null);
+              if (next !== "annotation") setReadAnnotationOverride(null);
             }}
             className="min-h-7 max-w-full cursor-pointer rounded border border-border bg-background px-1.5 text-xs text-foreground [font:inherit] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand"
           >
             <option value="all">本任务全部讨论</option>
             <option value="task">仅任务留言</option>
-            {annotationEligible && <option value="annotation">当前标注</option>}
+            {readAnnotationEligible && (
+              <option value="annotation">
+                {readOverride && readOverride.annotationId !== annotationId
+                  ? "通知中的标注"
+                  : "当前标注"}
+              </option>
+            )}
           </select>
         </label>
       )}
@@ -802,6 +887,7 @@ export function CommentsPanel({
       )}
 
       <div
+        ref={contentRef}
         id={contentPanelId}
         role={hideTabs ? "region" : "tabpanel"}
         aria-label={tab === "comments" ? "评论列表" : "历史"}
@@ -869,15 +955,24 @@ export function CommentsPanel({
                   : null
                 : null;
               const rowAnnotationId = annotationData?.annotation_id ?? null;
-              const rowAnnotationAvailable = annotationIsKnown(
-                rowAnnotationId,
-                annotationClassById,
-              );
+              const isNavigationAnnotation = readOverride?.annotationId === rowAnnotationId;
+              const rowAnnotationAvailable = isNavigationAnnotation
+                ? Boolean(
+                    rowAnnotationId &&
+                    Object.prototype.hasOwnProperty.call(
+                      annotationClassById ?? {},
+                      rowAnnotationId,
+                    ),
+                  )
+                : annotationIsKnown(rowAnnotationId, annotationClassById);
               const attachments = data.attachments ?? [];
               return (
                 <div
                   key={itemKey}
                   data-testid="discussion-comment-row"
+                  data-comment-key={itemKey}
+                  aria-current={highlightedComment === itemKey ? true : undefined}
+                  tabIndex={-1}
                   onMouseEnter={() => {
                     if (hoverShapes) setHoveredShapes(hoverShapes);
                   }}
@@ -890,6 +985,8 @@ export function CommentsPanel({
                   }}
                   className={cn(
                     "rounded border border-border bg-card p-2",
+                    "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                    highlightedComment === itemKey && "border-brand ring-1 ring-brand",
                     isResolved && "bg-muted opacity-70",
                     hoverShapes && "cursor-crosshair",
                     pinnedCommentId === itemKey &&
@@ -961,14 +1058,18 @@ export function CommentsPanel({
                       title={
                         rowAnnotationAvailable
                           ? "跳转到该评论绑定的标注框"
-                          : "该标注已不可用，评论仍保留在历史中"
+                          : isNavigationAnnotation
+                            ? "标注尚未载入当前画布；阅读评论不会自动认领视频分段"
+                            : "该标注已不可用，评论仍保留在历史中"
                       }
                     >
                       <Icon name="crosshair" size={11} />
                       <span className="overflow-hidden text-ellipsis whitespace-nowrap">
                         {rowAnnotationAvailable
                           ? (annotationClassById?.[rowAnnotationId] ?? "标注框")
-                          : "标注已不可用"}
+                          : isNavigationAnnotation
+                            ? `${readOverride?.label ?? "标注"}（未载入画布）`
+                            : "标注已不可用"}
                       </span>
                     </button>
                   )}

@@ -15,8 +15,11 @@ import { CommentInput } from "./CommentInput";
 import type { DiscussionPayload } from "../state/discussionTypes";
 import { useDiscussionDraftStore } from "../state/DiscussionDraftProvider";
 import { useIssueSequence } from "../state/useIssueSequence";
+import type { DiscussionReplyFocus } from "../state/useDiscussionNavigation";
 
 export interface DiscussionIssueDetailProps {
+  replyFocus?: DiscussionReplyFocus | null;
+  onReplyFocusHandled?: (requestId: string) => void;
   rootId: string;
   projectId: string;
   taskId: string;
@@ -80,6 +83,8 @@ type ConfirmAction = { kind: "delete" } | null;
 type SequenceDirection = "previous" | "next";
 
 export function DiscussionIssueDetail({
+  replyFocus,
+  onReplyFocusHandled,
   rootId,
   projectId,
   taskId,
@@ -128,6 +133,9 @@ export function DiscussionIssueDetail({
     null,
   );
   const replyCount = thread.replies.length;
+  const [highlightedReply, setHighlightedReply] = useState<string | null>(null);
+  const focusedRequestRef = useRef<string | null>(null);
+  const highlightOwnerRef = useRef(ownerKey);
 
   useEffect(() => {
     setConfirmAction(null);
@@ -138,6 +146,31 @@ export function DiscussionIssueDetail({
     lastSequenceDirectionRef.current = null;
     setLastSequenceDirection(null);
   }, [ownerKey]);
+
+  useLayoutEffect(() => {
+    if (highlightOwnerRef.current === ownerKey) return;
+    highlightOwnerRef.current = ownerKey;
+    setHighlightedReply(null);
+  }, [ownerKey]);
+
+  useLayoutEffect(() => {
+    if (
+      !replyFocus ||
+      replyFocus.rootId !== rootId ||
+      thread.state !== "ready" ||
+      focusedRequestRef.current === replyFocus.requestId
+    )
+      return;
+    const container = threadScrollRef.current;
+    const row = container?.querySelector<HTMLElement>(`[data-reply-id="${replyFocus.replyId}"]`);
+    if (!container || !row) return;
+    focusedRequestRef.current = replyFocus.requestId;
+    restoreDistanceRef.current = null;
+    setHighlightedReply(replyFocus.replyId);
+    container.scrollTop += row.getBoundingClientRect().top - container.getBoundingClientRect().top;
+    row.focus({ preventScroll: true });
+    onReplyFocusHandled?.(replyFocus.requestId);
+  }, [replyFocus, rootId, thread.state, replyCount, onReplyFocusHandled]);
 
   // Preserve the reader's distance from the bottom while an older page is
   // prepended. This keeps the currently visible reply anchored in place.
@@ -522,8 +555,14 @@ export function DiscussionIssueDetail({
               {thread.replies.map((reply) => (
                 <article
                   key={reply.id}
-                  className="rounded border border-border bg-muted px-2.5 py-2"
+                  className={cn(
+                    "rounded border border-border bg-muted px-2.5 py-2 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                    highlightedReply === reply.id && "border-brand ring-1 ring-brand",
+                  )}
                   data-testid={`discussion-issue-reply-${reply.id}`}
+                  data-reply-id={reply.id}
+                  aria-current={highlightedReply === reply.id ? true : undefined}
+                  tabIndex={-1}
                 >
                   {reply.parentContext && (
                     <div className="mb-1 border-l-2 border-border pl-2 text-2xs text-muted-foreground">

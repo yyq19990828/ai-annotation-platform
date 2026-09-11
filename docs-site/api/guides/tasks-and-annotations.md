@@ -82,6 +82,18 @@ GET /api/v1/feedbacks/:root_id/thread?limit=50
 
 列表、线程和写接口都会检查项目与任务权限。`actions` 包含 `edit`、`change_status`、`delete`、`reply`，仅作客户端能力提示，服务端仍独立校验每次操作。作者和管理员可编辑、删除；非作者审核员仅可修改问题状态，混入正文、标题或严重度的请求整体返回 `403`。删除采用软删除，不会把子回复转成任务留言。
 
+### 讨论通知
+
+创建问题回复、修改根问题状态和创建含有效提及的原标注评论，会使用现有通知接口：`GET /notifications`、`POST /notifications/:id/read` 和 `/notification-preferences`。通知与业务数据同事务提交，成功后再尽力推送 WebSocket；Redis 故障不撤销已保存的回复或评论。
+
+| 事件                           | 目标                                        | 载荷中的额外身份           |
+| ------------------------------ | ------------------------------------------- | -------------------------- |
+| `feedback.reply_created`       | `target_type=feedback`，根问题 ID           | `reply_id`                 |
+| `feedback.status_changed`      | `target_type=feedback`，根问题 ID           | `from_status`、`to_status` |
+| `annotation.comment_mentioned` | `target_type=annotation_comment`，原评论 ID | `annotation_id`            |
+
+载荷共同包含 `project_id`、`task_id`、`source`、`actor_name`，不复制正文。收件人按当前访问权限、账号状态和偏好过滤，并排除操作人、去重；无实际状态变化不发通知。收到载荷不代表继续拥有目标权限，客户端打开时仍需通过任务、根线程或原标注评论接口重新校验。通知已读不代表整个线程已读，也不新增任务留言或问题回复的提及、附件能力。
+
 ## 视频问题反馈
 
 `POST /api/v1/feedbacks` 复用像素锚点合同保存视频问题，`anchor_position.frame` 为从 0 开始的源视频帧号，x/y 为画面内 0–1 相对坐标：

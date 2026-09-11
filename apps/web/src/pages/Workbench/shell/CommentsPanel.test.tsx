@@ -254,6 +254,128 @@ afterEach(() => {
 });
 
 describe("CommentsPanel discussion feed", () => {
+  it("admits a new verified comment focus before falling back from a cleared selection", () => {
+    const props = {
+      annotationId: "annotation-a",
+      taskId: "task-a",
+      projectId: "project-a",
+      currentUserId: "user-a",
+    };
+    const view = renderPanel(props);
+    fireEvent.change(screen.getByRole("combobox", { name: "评论阅读范围" }), {
+      target: { value: "annotation" },
+    });
+    mocks.taskQuery.data = {
+      pages: [
+        {
+          items: [
+            {
+              source: "annotation_comment",
+              data: annotationData("focused", "annotation-b"),
+              actions: { edit: false, delete: false, change_status: false, reply: false },
+            },
+          ],
+          total: 1,
+          next_cursor: null,
+        },
+      ],
+      pageParams: [null],
+    };
+    view.rerender(
+      <MemoryRouter>
+        <CommentsPanel
+          {...props}
+          annotationId={null}
+          commentFocus={{
+            requestId: "new-focus",
+            annotationId: "annotation-b",
+            commentId: "focused",
+            annotationLabel: "car",
+            canvasAvailable: false,
+          }}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("combobox", { name: "评论阅读范围" })).toHaveValue("annotation");
+    expect(mocks.useTaskDiscussion).toHaveBeenLastCalledWith(
+      "task-a",
+      "annotation",
+      "annotation-b",
+      true,
+      "project-a",
+    );
+    expect(
+      document.querySelector('[data-comment-key="annotation_comment:focused"]'),
+    ).toHaveAttribute("aria-current", "true");
+  });
+
+  it("opens an original annotation comment without changing the task composer or focusing an equal feedback id", () => {
+    const actions = { edit: false, delete: false, change_status: false, reply: false };
+    mocks.taskQuery.data = {
+      pages: [
+        {
+          items: [
+            { source: "feedback", data: feedbackData("same"), actions },
+            { source: "annotation_comment", data: annotationData("same", "unloaded"), actions },
+          ],
+          next_cursor: null,
+          total: 2,
+        },
+      ],
+      pageParams: [undefined],
+    };
+    const onCommentFocusHandled = vi.fn();
+    const props = {
+      annotationId: null,
+      taskId: "task-a",
+      projectId: "project-a",
+      currentUserId: "user-a",
+      commentFocus: {
+        requestId: "request",
+        annotationId: "unloaded",
+        commentId: "same",
+        annotationLabel: "车辆",
+        canvasAvailable: false,
+      },
+      onCommentFocusHandled,
+    };
+    const view = renderPanel(props);
+    expect(mocks.useTaskDiscussion).toHaveBeenLastCalledWith(
+      "task-a",
+      "annotation",
+      "unloaded",
+      true,
+      "project-a",
+    );
+    expect(screen.getByRole("combobox", { name: "评论阅读范围" })).toHaveValue("annotation");
+    expect(screen.getByTestId("mock-composer")).toHaveAttribute("data-target", "task");
+    const row = document.querySelector('[data-comment-key="annotation_comment:same"]');
+    expect(row).toHaveFocus();
+    expect(row).toHaveAttribute("aria-current", "true");
+    expect(document.querySelector('[data-comment-key="feedback:same"]')).not.toHaveAttribute(
+      "aria-current",
+    );
+    expect(screen.getByText(/不会自动认领视频分段/)).toBeInTheDocument();
+    expect(onCommentFocusHandled).toHaveBeenCalledOnce();
+    expect(onCommentFocusHandled).toHaveBeenCalledWith("request");
+    screen.getByRole("combobox", { name: "发送目标" }).focus();
+    view.rerender(
+      <MemoryRouter>
+        <CommentsPanel {...props} commentFocus={null} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("combobox", { name: "发送目标" })).toHaveFocus();
+    expect(onCommentFocusHandled).toHaveBeenCalledTimes(1);
+    view.rerender(
+      <MemoryRouter>
+        <CommentsPanel {...props} taskId="task-b" commentFocus={null} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("combobox", { name: "评论阅读范围" })).toHaveValue("all");
+    expect(screen.queryByText(/不会自动认领视频分段/)).toBeNull();
+    expect(row).not.toHaveAttribute("aria-current");
+  });
+
   it("无标注时默认读取全部讨论并提供任务纯文本 composer", () => {
     renderPanel();
 

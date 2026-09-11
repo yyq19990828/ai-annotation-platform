@@ -2,6 +2,7 @@ import type { APIResponse, Page } from "@playwright/test";
 import { expect, test, type SeedAPI } from "../fixtures/seed";
 import { layoutCommand } from "../helpers/workbench-layout";
 import { discussionTargetKey } from "../../src/pages/Workbench/state/discussionTypes";
+import type { NotificationItem } from "../../src/api/notifications";
 import type {
   AnnotationFeedback,
   AnnotationFeedbackThreadPage,
@@ -82,6 +83,299 @@ async function openTask(page: Page, projectId: string, taskId: string) {
 }
 
 test.use({ viewport: { width: 1440, height: 1000 } });
+
+async function notifications(page: Page, token: string) {
+  return json<{ items: NotificationItem[]; unread: number }>(
+    await page.request.get(`${API_BASE}/api/v1/notifications`, { headers: auth(token) }),
+  );
+}
+
+test("讨论通知通过实时推送打开五十条之后的旧回复，并刷新已缓存对话中的新回复", async ({
+  page,
+  seed,
+}) => {
+  test.setTimeout(120_000);
+  const data = await setup(page, seed);
+  const reviewerToken = await seed.accessToken(data.reviewer_email);
+  const root = await createIssue(page, data, data.task_ids[0], "通知分页问题");
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  try {
+    const received: Array<{ type?: string; target_id?: string }> = [];
+    const socketReady = page.waitForEvent("websocket", {
+      predicate: (socket) => new URL(socket.url()).pathname === "/ws/notifications",
+    });
+    page.on("websocket", (socket) => {
+      if (new URL(socket.url()).pathname !== "/ws/notifications") return;
+      socket.on("framereceived", ({ payload }) => {
+        try {
+          received.push(JSON.parse(String(payload)));
+        } catch {
+          /* Non-JSON frames are not events. */
+        }
+      });
+    });
+    await page.goto("/projects");
+    await socketReady;
+    await expect(page.getByRole("button", { name: "通知", exact: true })).toBeVisible();
+    const oldReply = await replyToIssue(page, reviewerToken, root.id, "通知中的最早回复");
+    await expect
+      .poll(() =>
+        received.some(
+          (event) => event.type === "feedback.reply_created" && event.target_id === root.id,
+        ),
+      )
+      .toBe(true);
+    for (let index = 0; index < 51; index++)
+      await replyToIssue(page, data.token, root.id, `后续回复 ${index}`);
+    const before = await notifications(page, data.token);
+    expect(before.items.filter((item) => item.type === "feedback.reply_created")).toHaveLength(1);
+    expect(before.items[0]).toMatchObject({
+      target_id: root.id,
+      read_at: null,
+      payload: { reply_id: oldReply.id, source: "feedback" },
+    });
+    await page.getByRole("button", { name: "通知", exact: true }).click();
+    await page.getByRole("button", { name: /^打开通知：回复了问题/ }).click();
+    await expect(page).toHaveURL(new RegExp(`reply=${oldReply.id}`));
+    await expect(page.getByTestId("discussion-issue-detail")).toHaveAttribute(
+      "data-issue-id",
+      root.id,
+    );
+    const oldRow = page.getByTestId(`discussion-issue-reply-${oldReply.id}`);
+    await expect(oldRow).toHaveAttribute("aria-current", "true");
+    await expect(oldRow).toBeVisible();
+    await expect(
+      page.getByTestId("discussion-issue-thread-scroll").getByTestId(/^discussion-issue-reply-/),
+    ).toHaveCount(52);
+    await expect
+      .poll(async () => (await notifications(page, data.token)).items[0].read_at)
+      .not.toBeNull();
+    // Browser back retains the authenticated query cache; the new reply must
+    // still be fetched when a later notification opens this same conversation.
+    await page.goBack();
+    await expect(page.getByRole("button", { name: "通知", exact: true })).toBeVisible();
+    const freshReply = await replyToIssue(page, reviewerToken, root.id, "缓存建立后才发布的新回复");
+    await page.getByRole("button", { name: "通知", exact: true }).click();
+    await expect(page.getByRole("button", { name: /^打开通知：回复了问题/ })).toHaveCount(2);
+    await page
+      .getByRole("button", { name: /^打开通知：回复了问题/ })
+      .first()
+      .click();
+    await expect(page.getByTestId(`discussion-issue-reply-${freshReply.id}`)).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+    await expect(page).toHaveURL(new RegExp(`reply=${freshReply.id}`));
+    expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+    await seed.reset();
+  }
+});
+
+test("标注提及通知定位原评论，保持任务草稿目标，支持静音和删除后的不可用提示", async ({
+  page,
+  seed,
+}) => {
+  test.setTimeout(120_000);
+  const data = await setup(page, seed);
+  const reviewerToken = await seed.accessToken(data.reviewer_email);
+  const admin = await json<{ id: string; name: string }>(
+    await page.request.get(`${API_BASE}/api/v1/auth/me`, { headers: auth(data.token) }),
+  );
+  const annotation = await seed.createTaskAnnotation(data.task_ids[0], data.admin_email, {
+    annotation_type: "bbox",
+    tool_unit_id: "bbox",
+    class_name: "car",
+    geometry: { type: "bbox", x: 0.2, y: 0.2, w: 0.3, h: 0.3 },
+  });
+  const mention = async () =>
+    json<{ id: string }>(
+      await page.request.post(`${API_BASE}/api/v1/annotations/${annotation.id}/comments`, {
+        headers: auth(reviewerToken),
+        data: {
+          body: `@${admin.name} 请检查原标注`,
+          mentions: [
+            { userId: admin.id, displayName: admin.name, offset: 0, length: admin.name.length + 1 },
+          ],
+          attachments: [],
+        },
+      }),
+    );
+  try {
+    const original = await mention();
+    for (let index = 0; index < 51; index++)
+      await json(
+        await page.request.post(`${API_BASE}/api/v1/annotations/${annotation.id}/comments`, {
+          headers: auth(data.token),
+          data: { body: `后续标注评论 ${index}`, mentions: [], attachments: [] },
+        }),
+      );
+    const before = await notifications(page, data.token);
+    expect(before.items).toHaveLength(1);
+    expect(before.items[0]).toMatchObject({
+      type: "annotation.comment_mentioned",
+      target_type: "annotation_comment",
+      target_id: original.id,
+      payload: { source: "annotation_comment", annotation_id: annotation.id },
+    });
+    await page.goto("/projects");
+    await page.getByRole("button", { name: "通知", exact: true }).click();
+    await page.getByRole("button", { name: /^打开通知：在标注评论中提到了你/ }).click();
+    await expect(page).toHaveURL(new RegExp(`comment=${original.id}`));
+    const row = discussion(page).locator(`[data-comment-key="annotation_comment:${original.id}"]`);
+    await expect(row).toHaveAttribute("aria-current", "true");
+    await expect(row).toBeVisible();
+    await expect(discussion(page).getByRole("combobox", { name: "评论阅读范围" })).toHaveValue(
+      "annotation",
+    );
+    await expect(discussion(page).getByRole("combobox", { name: "发送目标" })).toHaveValue(
+      discussionTargetKey({ projectId: data.project_id, taskId: data.task_ids[0], kind: "task" }),
+    );
+    await json(
+      await page.request.put(`${API_BASE}/api/v1/notification-preferences`, {
+        headers: auth(data.token),
+        data: { type: "annotation.comment_mentioned", in_app: false },
+      }),
+    );
+    await mention();
+    expect((await notifications(page, data.token)).items).toHaveLength(1);
+    await page.goBack();
+    await expect(page.getByRole("button", { name: "通知", exact: true })).toBeVisible();
+    const sourceUrl = page.url();
+    await seed.deleteTaskAnnotation(data.task_ids[0], annotation.id, data.admin_email);
+    await page.getByRole("button", { name: "通知", exact: true }).click();
+    await page.getByRole("button", { name: /^打开通知：在标注评论中提到了你/ }).click();
+    await expect(page.getByRole("dialog", { name: "打开通知目标" })).toContainText(
+      "标注已删除或当前账号不可见",
+    );
+    await expect(page).toHaveURL(sourceUrl);
+  } finally {
+    await page.close();
+    await seed.reset();
+  }
+});
+
+test("问题状态通知为审核员打开对应审核工作台并保留字段权限", async ({ page, seed }) => {
+  const data = await setup(page, seed);
+  const reviewerToken = await seed.accessToken(data.reviewer_email);
+  try {
+    const root = await createIssue(page, data, data.task_ids[0], "状态通知问题");
+    await replyToIssue(page, reviewerToken, root.id, "审核参与者回复");
+    await json(
+      await page.request.patch(`${API_BASE}/api/v1/feedbacks/${root.id}`, {
+        headers: auth(data.token),
+        data: { status: "resolved" },
+      }),
+    );
+    const rows = await notifications(page, reviewerToken);
+    expect(rows.items).toHaveLength(1);
+    expect(rows.items[0]).toMatchObject({
+      type: "feedback.status_changed",
+      target_id: root.id,
+      payload: { from_status: "open", to_status: "resolved" },
+    });
+    await seed.injectToken(page, data.reviewer_email);
+    await page.goto("/review");
+    await page.getByRole("button", { name: "通知", exact: true }).click();
+    await page.getByRole("button", { name: /^打开通知：状态 / }).click();
+    await expect(page).toHaveURL(new RegExp(`/projects/${data.project_id}/review\\?`));
+    const detail = page.getByTestId("discussion-issue-detail");
+    await expect(detail).toHaveAttribute("data-issue-id", root.id, { timeout: 20_000 });
+    await expect(detail.getByRole("button", { name: "重新打开", exact: true })).toBeVisible();
+    await expect(detail.getByRole("button", { name: "删除", exact: true })).toHaveCount(0);
+    await detail.getByRole("button", { name: "重新打开", exact: true }).click();
+    await expect
+      .poll(
+        async () =>
+          (
+            await json<AnnotationFeedbackThreadPage>(
+              await page.request.get(`${API_BASE}/api/v1/feedbacks/${root.id}/thread`, {
+                headers: auth(reviewerToken),
+              }),
+            )
+          ).root.status,
+      )
+      .toBe("open");
+  } finally {
+    await page.close();
+    await seed.reset();
+  }
+});
+
+test("失效讨论地址和跨项目任务不会永久加载或先显示错误画布", async ({ page, seed }) => {
+  test.setTimeout(120_000);
+  const data = await setup(page, seed);
+  try {
+    const root = await createIssue(page, data, data.task_ids[0], "校验地址问题");
+    for (const query of [
+      "discussion=bogus",
+      `discussion=issues&issue=${root.id}&issue=${root.id}`,
+    ]) {
+      await page.goto(`/projects/${data.project_id}/annotate?task=${data.task_ids[0]}&${query}`);
+      await expect(page.getByText("讨论链接不完整或格式无效", { exact: true })).toBeVisible({
+        timeout: 20_000,
+      });
+      await expect(page.getByTestId("workbench-stage")).toHaveCount(0);
+    }
+    // The standard seed cleanup owns projects with this exact fixture name.
+    const foreign = await json<{ id: string }>(
+      await page.request.post(`${API_BASE}/api/v1/projects`, {
+        headers: auth(data.token),
+        data: {
+          name: "E2E Demo Project",
+          type_label: "video",
+          type_key: "video-track",
+          classes: ["car"],
+        },
+      }),
+    );
+    const foreignCanvasReads: string[] = [];
+    page.on("request", (request) => {
+      if (new URL(request.url()).pathname === `/api/v1/tasks/${data.task_ids[0]}/annotations`)
+        foreignCanvasReads.push(request.method());
+    });
+    await page.goto(
+      `/projects/${foreign.id}/annotate?task=${data.task_ids[0]}&discussion=issues&issue=${root.id}`,
+    );
+    await expect(page.getByText("讨论目标不属于当前项目", { exact: true })).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(page.getByTestId("video-konva-stage")).toHaveCount(0);
+    expect(foreignCanvasReads).toEqual([]);
+
+    // Invalid history input must also preserve an already admitted canvas and
+    // its send destination, even when the URL attempts a new batch and task.
+    await openTask(page, data.project_id, data.task_ids[0]);
+    await editor(page).fill("无效链接不能更换当前草稿目标");
+    await page.getByTestId("workbench-stage").evaluate((element) => {
+      element.setAttribute("data-discussion-owner-probe", "retained");
+    });
+    await page.evaluate(
+      ({ projectId, taskId, invalidBatchId }) => {
+        window.history.pushState(
+          window.history.state,
+          "",
+          `/projects/${projectId}/annotate?task=${taskId}&batch=${invalidBatchId}&discussion=bogus`,
+        );
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      },
+      { projectId: data.project_id, taskId: data.task_ids[1], invalidBatchId: foreign.id },
+    );
+    await expect(
+      discussion(page).getByText("讨论链接不完整或格式无效", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByTestId("workbench-stage")).toHaveAttribute(
+      "data-discussion-owner-probe",
+      "retained",
+    );
+    await expect(editor(page)).toHaveText("无效链接不能更换当前草稿目标");
+  } finally {
+    await page.close();
+    await seed.reset();
+  }
+});
 
 test("未选标注可发送任务留言，失败保留正文，读回原生任务来源", async ({ page, seed }) => {
   const data = await setup(page, seed);

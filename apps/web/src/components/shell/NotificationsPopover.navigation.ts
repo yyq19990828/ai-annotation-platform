@@ -159,7 +159,7 @@ function validateIssueReply(
 ): AnnotationFeedback | null {
   if (!value || value.id !== replyId) return null;
   if (
-    value.kind !== "comment" ||
+    value.id === root.id ||
     value.thread_parent_id === null ||
     !value.is_active ||
     value.project_id !== root.project_id ||
@@ -232,8 +232,8 @@ async function resolveFeedbackNotification(
           "暂时无法核对问题所属任务，请检查网络后重试。",
         );
       }
-    } else if (page.root?.id !== root.id) {
-      throw new DiscussionNotificationError("通知返回的问题线程身份不一致。", "invalid");
+    } else {
+      validateIssueRoot(page.root, root.id, projectHint, taskHint);
     }
 
     if (replyId) {

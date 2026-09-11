@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { StrictMode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AnnotationFeedback } from "@/api/feedbacks";
 import { DiscussionIssueDetail } from "./DiscussionIssueDetail";
@@ -152,6 +153,50 @@ beforeEach(() => {
 });
 
 describe("DiscussionIssueDetail", () => {
+  it("keeps one-shot reply highlighting through StrictMode's effect replay", () => {
+    const onReplyFocusHandled = vi.fn();
+    render(
+      <StrictMode>
+        <DiscussionIssueDetail
+          rootId="root-1"
+          projectId="P1"
+          taskId="T1"
+          onBack={vi.fn()}
+          onOpenIssue={vi.fn()}
+          onLocate={vi.fn()}
+          replyFocus={{ requestId: "strict-request", rootId: "root-1", replyId: "reply-1" }}
+          onReplyFocusHandled={onReplyFocusHandled}
+        />
+      </StrictMode>,
+    );
+    expect(screen.getByTestId("discussion-issue-reply-reply-1")).toHaveAttribute(
+      "aria-current",
+      "true",
+    );
+    expect(onReplyFocusHandled).toHaveBeenCalledOnce();
+  });
+
+  it("focuses the requested reply once and does not steal focus on a background refresh", () => {
+    const onReplyFocusHandled = vi.fn();
+    const view = setup({
+      replyFocus: { requestId: "request", rootId: "root-1", replyId: "reply-1" },
+      onReplyFocusHandled,
+    });
+    const row = screen.getByTestId("discussion-issue-reply-reply-1");
+    expect(row).toHaveFocus();
+    expect(row).toHaveAttribute("aria-current", "true");
+    expect(onReplyFocusHandled).toHaveBeenCalledOnce();
+    expect(onReplyFocusHandled).toHaveBeenCalledWith("request");
+    const editor = screen.getByTestId("mock-comment-input");
+    editor.focus();
+    mocks.thread = readyThread({ replies: [reply("reply-1"), reply("reply-2")] });
+    view.rerender(<DiscussionIssueDetail {...view.props} />);
+    expect(editor).toHaveFocus();
+    expect(onReplyFocusHandled).toHaveBeenCalledTimes(1);
+    view.rerender(<DiscussionIssueDetail {...view.props} rootId="different-root" />);
+    expect(row).not.toHaveAttribute("aria-current");
+  });
+
   it("does not expose a pin snapshot before the independent root request is ready", () => {
     mocks.thread = readyThread({ root: null, replies: [], state: "loading" });
     setup({ rootSnapshot: issue({ body: "不应先显示" }) });
