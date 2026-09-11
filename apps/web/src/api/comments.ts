@@ -34,13 +34,18 @@ export const commentsApi = {
     apiClient.get<AnnotationCommentResponse[]>(`/annotations/${annotationId}/comments`),
 
   // v0.8.8 · keyset 分页：单标注 100+ 评论时按需「加载更早」，避免初始化卡顿。
-  listByAnnotationKeyset: (annotationId: string, params?: { limit?: number; cursor?: string }) => {
+  listByAnnotationKeyset: (
+    annotationId: string,
+    params?: { limit?: number; cursor?: string },
+    signal?: AbortSignal,
+  ) => {
     const search = new URLSearchParams();
     if (params?.limit) search.set("limit", String(params.limit));
     if (params?.cursor) search.set("cursor", params.cursor);
     const qs = search.toString();
     return apiClient.get<AnnotationCommentListPage>(
       `/annotations/${annotationId}/comments/page${qs ? `?${qs}` : ""}`,
+      signal ? { signal } : undefined,
     );
   },
 
