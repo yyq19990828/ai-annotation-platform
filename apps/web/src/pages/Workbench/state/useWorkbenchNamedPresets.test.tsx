@@ -2,11 +2,12 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
+import { ApiError } from "@/api/client";
 import {
   DEFAULT_WORKBENCH_PREFERENCES,
+  type NamedWorkspacePresetsPatch,
   type StoredNamedWorkspacePresets,
   type UserPreferences,
-  type UserPreferencesPatch,
 } from "@/api/auth";
 import { createWorkspacePreset } from "../layout/workbenchLayoutPresets";
 import { userPreferencesQueryKey } from "./useUserPreferences";
@@ -18,7 +19,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/api/auth", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/api/auth")>()),
-  authApi: { getPreferences: mocks.get, updatePreferences: mocks.patch },
+  authApi: { getPreferences: mocks.get, updateNamedPresets: mocks.patch },
 }));
 vi.mock("@/stores/authStore", () => ({
   useAuthStore: Object.assign(
@@ -31,8 +32,13 @@ import { useWorkbenchNamedPresets } from "./useWorkbenchNamedPresets";
 
 const bounds = { width: 1600, height: 900 };
 
-function preferences(engine: string, namedPresets: StoredNamedWorkspacePresets): UserPreferences {
+function preferences(
+  engine: string,
+  namedPresets: StoredNamedWorkspacePresets,
+  revision = "0",
+): UserPreferences {
   return {
+    namedPresetsRevision: revision,
     workbench: {
       ...DEFAULT_WORKBENCH_PREFERENCES,
       layout: {
@@ -75,9 +81,9 @@ describe("useWorkbenchNamedPresets", () => {
     };
     remote = preferences("dockview@8", raw);
     mocks.get.mockReset().mockResolvedValue(remote);
-    mocks.patch.mockReset().mockImplementation(async (payload: UserPreferencesPatch) => {
-      const next = payload.workbench?.layout?.workspace?.namedPresets ?? {};
-      return preferences("dockview@9", next);
+    mocks.patch.mockReset().mockImplementation(async (payload: NamedWorkspacePresetsPatch) => {
+      const next = payload.workbench.layout.workspace.namedPresets;
+      return preferences("dockview@9", next, "11111111111111111111111111111111");
     });
   });
 
@@ -109,6 +115,7 @@ describe("useWorkbenchNamedPresets", () => {
       expect(await result.current.rename("p1", "审核专用")).toBeNull();
     });
     const workspace = mocks.patch.mock.calls[0][0].workbench.layout.workspace;
+    expect(mocks.patch.mock.calls[0][0].namedPresetsRevision).toBe("0");
     expect(workspace).not.toHaveProperty("engine");
     expect(workspace.namedPresets).toEqual({
       ...raw,
@@ -124,6 +131,9 @@ describe("useWorkbenchNamedPresets", () => {
       const workspace = client.getQueryData<UserPreferences>(userPreferencesQueryKey("u1"))!
         .workbench.layout.workspace!;
       expect(workspace.engine).toBe("dockview@9");
+      expect(
+        client.getQueryData<UserPreferences>(userPreferencesQueryKey("u1"))?.namedPresetsRevision,
+      ).toBe("11111111111111111111111111111111");
       expect((workspace.namedPresets?.p1 as { name: string }).name).toBe("审核专用");
       expect(workspace.namedPresets?.["future.id"]).toEqual(raw["future.id"]);
       expect(workspace.namedPresets?.damaged).toEqual(raw.damaged);
@@ -150,19 +160,52 @@ describe("useWorkbenchNamedPresets", () => {
     expect(mocks.patch).not.toHaveBeenCalled();
   });
 
-  it("refetches the authoritative map after a rejected atomic write", async () => {
+  it("reports a revision conflict and refetches the authoritative map", async () => {
     const { result } = setup();
     await waitFor(() => expect(result.current.loaded).toBe(true));
-    mocks.patch.mockRejectedValueOnce(new Error("stale opaque map"));
-    mocks.get.mockResolvedValue(preferences("dockview@9", { p1: currentPreset("远端最新名称") }));
+    mocks.patch.mockRejectedValueOnce(
+      new ApiError(409, "conflict", { code: "named_presets_conflict" }),
+    );
+    mocks.get.mockResolvedValue(
+      preferences(
+        "dockview@9",
+        { p1: currentPreset("远端最新名称") },
+        "22222222222222222222222222222222",
+      ),
+    );
 
     await act(async () => {
-      expect(await result.current.rename("p1", "本地过期名称")).toBe("request");
+      expect(await result.current.rename("p1", "本地过期名称")).toBe("conflict");
     });
 
     await waitFor(() => {
       expect(result.current.presets.map((preset) => preset.name)).toEqual(["远端最新名称"]);
       expect(result.current.count).toBe(1);
+      expect(
+        client.getQueryData<UserPreferences>(userPreferencesQueryKey("u1"))?.namedPresetsRevision,
+      ).toBe("22222222222222222222222222222222");
+    });
+    expect(mocks.get).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps non-conflict failures distinct while refreshing the server map", async () => {
+    const { result } = setup();
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    mocks.patch.mockRejectedValueOnce(new Error("offline"));
+    mocks.get.mockResolvedValue(
+      preferences(
+        "dockview@8",
+        { p1: currentPreset("服务端保留名称") },
+        "33333333333333333333333333333333",
+      ),
+    );
+
+    await act(async () => {
+      expect(await result.current.rename("p1", "未保存名称")).toBe("request");
+    });
+
+    await waitFor(() => {
+      expect(result.current.presets.map((preset) => preset.name)).toEqual(["服务端保留名称"]);
     });
     expect(mocks.get).toHaveBeenCalledTimes(2);
   });

@@ -32,6 +32,7 @@ vi.mock("@/api/auth", async (importOriginal) => ({
   authApi: {
     getPreferences: state.getPreferences,
     updatePreferences: state.updatePreferences,
+    updateNamedPresets: state.updatePreferences,
   },
 }));
 vi.mock("@/stores/authStore", () => ({

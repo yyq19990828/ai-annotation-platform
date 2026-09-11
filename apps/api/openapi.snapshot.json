@@ -33120,6 +33120,12 @@
           "ai": {
             "$ref": "#/components/schemas/AIToolPreferences"
           },
+          "namedPresetsRevision": {
+            "default": "0",
+            "pattern": "^(?:0|[0-9a-f]{32})$",
+            "title": "Namedpresetsrevision",
+            "type": "string"
+          },
           "onboarding": {
             "$ref": "#/components/schemas/OnboardingPreferences"
           },
@@ -42340,6 +42346,9 @@
               }
             },
             "description": "Successful Response"
+          },
+          "409": {
+            "description": "Layout or named-preset revision conflict"
           },
           "422": {
             "content": {

@@ -230,6 +230,7 @@ const NAMED_PRESET_ERRORS: Record<NamedPresetFailure, string> = {
   "invalid-name": "预设名称不能为空，且不超过 40 个字。",
   "duplicate-name": "已有同名预设，请换一个名称。",
   limit: "最多保存 5 组布局预设，请先删除一组。",
+  conflict: "预设已在其他设备更新，已刷新最新内容，请重试。",
   request: "预设暂未保存，请稍后重试。",
 };
 

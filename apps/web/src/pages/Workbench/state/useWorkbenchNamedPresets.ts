@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useReducer, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { ApiError } from "@/api/client";
 import {
   authApi,
   MAX_NAMED_WORKSPACE_PRESETS,
@@ -25,6 +26,8 @@ import { userPreferencesQueryKey } from "./useUserPreferences";
  * 与 useWorkbenchWorkspaceLayout 的分工:那边只写 `workspace.contexts.<当前上下文>`
  * (当前布局自动记住), 这里只写 `workspace.namedPresets` (用户显式另存的清单)。两条
  * 路径的键互不相交, 后端把整份 namedPresets 当原子 map 替换, 所以省略某条即删除。
+ * 每次写入同时携带 GET 返回的 namedPresetsRevision；陈旧整图会被 API 拒绝并刷新，
+ * 不会覆盖另一设备已经提交的新版本。
  *
  * 无法解析的条目 (损坏 / 来自更新版本) 保留原样参与每次整表提交。界面只派生能
  * 识别名称与 context 的条目；无法恢复的条目只能删除，避免旧客户端改写新版预设。
@@ -38,7 +41,22 @@ export interface WorkbenchNamedPreset {
   snapshot: WorkspaceSnapshot | null;
 }
 
-export type NamedPresetFailure = "invalid-name" | "duplicate-name" | "limit" | "request";
+export type NamedPresetFailure =
+  | "invalid-name"
+  | "duplicate-name"
+  | "limit"
+  | "conflict"
+  | "request";
+
+function isNamedPresetsConflict(error: unknown): boolean {
+  if (!(error instanceof ApiError) || error.status !== 409) return false;
+  const detail = error.detailRaw;
+  return (
+    !!detail &&
+    typeof detail === "object" &&
+    (detail as { code?: unknown }).code === "named_presets_conflict"
+  );
+}
 
 function readStoredPresets(value: unknown): StoredNamedWorkspacePresets {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -84,6 +102,7 @@ export function useWorkbenchNamedPresets() {
     () => readStoredPresets(query.data?.workbench?.layout?.workspace?.namedPresets),
     [query.data],
   );
+  const revision = query.data?.namedPresetsRevision ?? "0";
 
   const presets = useMemo<WorkbenchNamedPreset[]>(
     () =>
@@ -95,14 +114,15 @@ export function useWorkbenchNamedPresets() {
   );
 
   const write = useCallback(
-    async (next: StoredNamedWorkspacePresets): Promise<boolean> => {
-      if (!userId || saving.current) return false;
+    async (next: StoredNamedWorkspacePresets): Promise<NamedPresetFailure | null> => {
+      if (!userId || saving.current) return "request";
       saving.current = true;
       refresh();
       const queryKey = userPreferencesQueryKey(userId);
       try {
         await queryClient.cancelQueries({ queryKey, exact: true });
-        const response = await authApi.updatePreferences({
+        const response = await authApi.updateNamedPresets({
+          namedPresetsRevision: revision,
           workbench: { layout: { workspace: { namedPresets: next } } },
         });
         // A refetch may have started while PATCH was in flight; do not let its old
@@ -115,6 +135,7 @@ export function useWorkbenchNamedPresets() {
             previous.workbench.layout.workspace ?? response.workbench.layout.workspace;
           return {
             ...previous,
+            namedPresetsRevision: response.namedPresetsRevision ?? previous.namedPresetsRevision,
             workbench: {
               ...previous.workbench,
               layout: {
@@ -128,16 +149,17 @@ export function useWorkbenchNamedPresets() {
             },
           };
         });
-        return true;
-      } catch {
+        return null;
+      } catch (error) {
+        const failure = isNamedPresetsConflict(error) ? "conflict" : "request";
         await queryClient.invalidateQueries({ queryKey, exact: true });
-        return false;
+        return failure;
       } finally {
         saving.current = false;
         refresh();
       }
     },
-    [queryClient, userId],
+    [queryClient, revision, userId],
   );
 
   /** 同名保存视为更新已有预设,不占新名额。 */
@@ -177,7 +199,7 @@ export function useWorkbenchNamedPresets() {
           snapshot: clean,
         },
       };
-      return (await write(next)) ? null : "request";
+      return write(next);
     },
     [presets, stored, write],
   );
@@ -193,7 +215,7 @@ export function useWorkbenchNamedPresets() {
       if (presets.some((value) => value.id !== id && value.name.trim() === trimmed))
         return "duplicate-name";
       const next = { ...stored, [id]: { ...raw, name: trimmed } };
-      return (await write(next)) ? null : "request";
+      return write(next);
     },
     [presets, stored, write],
   );
@@ -202,7 +224,7 @@ export function useWorkbenchNamedPresets() {
     async (id: string): Promise<NamedPresetFailure | null> => {
       if (!(id in stored)) return null;
       const next = Object.fromEntries(Object.entries(stored).filter(([other]) => other !== id));
-      return (await write(next)) ? null : "request";
+      return write(next);
     },
     [stored, write],
   );

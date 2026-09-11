@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from math import isfinite
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
@@ -12,7 +13,12 @@ from app.core.security import hash_password, verify_password
 from app.deps import get_current_user, get_db
 from app.db.models.user import User
 from app.schemas.me import PasswordChange, ProfileUpdate
-from app.schemas.user import UserOut, UserPreferences, UserPreferencesRead
+from app.schemas.user import (
+    NamedPresetsRevision,
+    UserOut,
+    UserPreferences,
+    UserPreferencesRead,
+)
 from app.schemas.workbench_workspace import (
     MAX_NAMED_PRESETS,
     NamedWorkspacePreset,
@@ -175,7 +181,10 @@ _ATOMIC_PREFERENCE_MAP_PATHS = {
 }
 _WORKSPACE_CONTEXTS_PATH = ("workbench", "layout", "workspace", "contexts")
 _WORKSPACE_PATH = ("workbench", "layout", "workspace")
+_NAMED_PRESETS_REVISION_KEY = "namedPresetsRevision"
+_INITIAL_NAMED_PRESETS_REVISION = "0"
 _NAMED_PRESET_ADAPTER = TypeAdapter(dict[PresetId, NamedWorkspacePreset])
+_NAMED_PRESETS_REVISION_ADAPTER = TypeAdapter(NamedPresetsRevision)
 
 
 def _becomes_null_in_javascript(value) -> bool:
@@ -246,6 +255,16 @@ def _with_workspace(prefs: dict, workspace: dict) -> dict:
     layout["workspace"] = workspace
     workbench["layout"] = layout
     return {**prefs, "workbench": workbench}
+
+
+def _named_presets_conflict(current_revision) -> HTTPException:
+    detail = {
+        "code": "named_presets_conflict",
+        "message": "命名布局预设已在其他会话更新，请刷新后重试",
+    }
+    if isinstance(current_revision, str):
+        detail["currentRevision"] = current_revision
+    return HTTPException(status_code=409, detail=detail)
 
 
 def _prepare_workspace_validation(
@@ -437,7 +456,11 @@ def _workspace_contexts(prefs: dict) -> dict:
     return value if isinstance(value, dict) else {}
 
 
-@router.patch("/preferences", response_model=UserPreferencesRead)
+@router.patch(
+    "/preferences",
+    response_model=UserPreferencesRead,
+    responses={409: {"description": "Layout or named-preset revision conflict"}},
+)
 async def update_preferences(
     payload: dict,
     db: AsyncSession = Depends(get_db),
@@ -457,6 +480,36 @@ async def update_preferences(
         )
     ).scalar_one()
     existing = user.preferences or {}
+    raw_workspace = _workspace_value(promoted)
+    named_presets_supplied = (
+        raw_workspace is not None and "namedPresets" in raw_workspace
+    )
+    revision_supplied = _NAMED_PRESETS_REVISION_KEY in promoted
+    if named_presets_supplied:
+        stored_revision_value = existing.get(
+            _NAMED_PRESETS_REVISION_KEY, _INITIAL_NAMED_PRESETS_REVISION
+        )
+        try:
+            stored_revision = _NAMED_PRESETS_REVISION_ADAPTER.validate_python(
+                stored_revision_value, strict=True
+            )
+        except ValidationError as exc:
+            raise _named_presets_conflict(stored_revision_value) from exc
+        if revision_supplied:
+            try:
+                expected_revision = _NAMED_PRESETS_REVISION_ADAPTER.validate_python(
+                    promoted[_NAMED_PRESETS_REVISION_KEY], strict=True
+                )
+            except ValidationError:
+                # The full request model below reports the normal field-level 422.
+                pass
+            else:
+                if expected_revision != stored_revision:
+                    raise _named_presets_conflict(stored_revision)
+        elif _NAMED_PRESETS_REVISION_KEY in existing:
+            # One compatibility write is allowed for a pre-revision stored row.
+            # Its successful commit establishes the token under the same row lock.
+            raise _named_presets_conflict(stored_revision)
     validation_payload, opaque_presets, engine_supplied, had_stored_workspace = (
         _prepare_workspace_validation(promoted, existing)
     )
@@ -476,6 +529,10 @@ async def update_preferences(
             ]
         ) from exc
     incoming = validated.model_dump(mode="json", exclude_unset=True, by_alias=True)
+    if revision_supplied and not named_presets_supplied:
+        raise HTTPException(status_code=422, detail="named_presets_revision_read_only")
+    if named_presets_supplied:
+        incoming.pop(_NAMED_PRESETS_REVISION_KEY, None)
     incoming_workspace = _workspace_value(incoming)
     if incoming_workspace is not None:
         incoming_workspace = dict(incoming_workspace)
@@ -501,6 +558,8 @@ async def update_preferences(
             raise HTTPException(status_code=409, detail="layout_schema_downgrade")
     merged = _deep_merge_preferences(existing, incoming)
     merged = _strip_removed_workbench_keys(merged)
+    if named_presets_supplied:
+        merged[_NAMED_PRESETS_REVISION_KEY] = uuid4().hex
     response = _preferences_response(merged)
     user.preferences = merged
     await db.commit()

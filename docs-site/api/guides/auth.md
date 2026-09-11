@@ -39,7 +39,9 @@ Authorization: Bearer <access_token>
 
 `GET /api/v1/auth/me/preferences` 读取当前账号偏好，`PATCH /api/v1/auth/me/preferences` 只提交要修改的子树。工作台布局位于 `workbench.layout.workspace`：`contexts` 是可选 map，每个 key 是 `annotate|review × image|video|3d` 中的一项，只提交某个 context 时会原子替换该快照，不会删除其他 context。写入 `contexts` 必须同时携带当前 `engine`；只有下述预设专用 PATCH 可以省略它。
 
-`namedPresets` 与 `contexts` 并列，是最多 5 条的命名布局 map。每条值在布局快照信封上增加 `name`（1–40 个字符）和 `context`，名称在账号内唯一。该 map 与 `contexts` 的合并规则不同：只要 PATCH 中出现 `namedPresets`，服务端就用它整份替换存量 map，省略某个 ID 即删除该预设。因此客户端增加、重命名或删除一条时，必须带上所有需保留的条目，但不带 `contexts`，也不需要重写 `engine`：
+`namedPresets` 与 `contexts` 并列，是最多 5 条的命名布局 map。每条值在布局快照信封上增加 `name`（1–40 个字符）和 `context`，名称在账号内唯一。该 map 与 `contexts` 的合并规则不同：只要 PATCH 中出现 `namedPresets`，服务端就用它整份替换存量 map，省略某个 ID 即删除该预设。因此客户端增加、重命名或删除一条时，必须带上所有需保留的条目，但不带 `contexts`，也不需要重写 `engine`。
+
+响应根部的 `namedPresetsRevision` 是该完整 map 的 opaque compare-and-swap token。预设写入必须把最近一次 GET 或成功 PATCH 返回的 token 原样放在请求根部；服务端在用户偏好行锁内比较 token，成功替换后生成新 token。若另一设备已经更新，陈旧请求返回 `409`，`detail.code` 为 `named_presets_conflict`。客户端必须重新 GET、在最新 map 上重做用户本次操作，不得把错误响应中的 `currentRevision` 填入原陈旧整图后直接重试：
 
 ```http
 PATCH /api/v1/auth/me/preferences
@@ -47,6 +49,7 @@ Authorization: Bearer <access_token>
 Content-Type: application/json
 
 {
+  "namedPresetsRevision": "<GET 返回的 token>",
   "workbench": {
     "layout": {
       "workspace": {
@@ -64,7 +67,7 @@ Content-Type: application/json
 }
 ```
 
-上例的 `snapshot` 仅展示字段位置，实际值必须满足 OpenAPI 中完整的 `WorkspaceSnapshot` 结构。若 GET 返回当前版本无法解析的存量预设或更新版 `engine`，旧客户端不得重写其内容或引擎标记；预设整表 PATCH 可以把同 ID、同内容的 opaque 条目原样带回，也可以省略它来删除。新建或修改为当前 schema 无法验证的条目返回 `422`，显式把更新版引擎改写为当前引擎返回 `409 layout_engine_downgrade`。
+上例的 `snapshot` 仅展示字段位置，实际值必须满足 OpenAPI 中完整的 `WorkspaceSnapshot` 结构。若 GET 返回当前版本无法解析的存量预设或更新版 `engine`，旧客户端不得重写其内容或引擎标记；预设整表 PATCH 可以把同 ID、同内容的 opaque 条目原样带回，也可以省略它来删除。新建或修改为当前 schema 无法验证的条目返回 `422`，显式把更新版引擎改写为当前引擎返回 `409 layout_engine_downgrade`。为兼容部署前已打开的标签页，存量尚无 revision 时允许一次不带 token 的预设写入；该写入会建立 revision，此后缺少 token 的旧请求同样返回冲突。
 
 ## 项目邀请与注册
 

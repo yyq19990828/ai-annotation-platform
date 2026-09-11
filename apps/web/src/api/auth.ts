@@ -248,18 +248,25 @@ export interface WorkspacePreferences {
   namedPresets?: StoredNamedWorkspacePresets;
 }
 
-export type WorkspacePreferencesPatch =
-  | {
-      engine: "dockview@8";
-      contexts?: Partial<Record<WorkspaceContext, WorkspaceEnvelope>>;
-      namedPresets?: StoredNamedWorkspacePresets;
-    }
-  | {
-      /** Preset-only writes preserve the stored enclosing engine and live contexts. */
-      engine?: never;
-      contexts?: never;
-      namedPresets: StoredNamedWorkspacePresets;
+export interface WorkspacePreferencesPatch {
+  engine: "dockview@8";
+  contexts?: Partial<Record<WorkspaceContext, WorkspaceEnvelope>>;
+  namedPresets?: never;
+}
+
+/** Compare-and-swap write owned exclusively by useWorkbenchNamedPresets. */
+export interface NamedWorkspacePresetsPatch {
+  namedPresetsRevision: string;
+  workbench: {
+    layout: {
+      workspace: {
+        engine?: never;
+        contexts?: never;
+        namedPresets: StoredNamedWorkspacePresets;
+      };
     };
+  };
+}
 
 export interface WorkbenchLayoutPreferences {
   /** GET may preserve an explicitly null historical/corrupt stored value. */
@@ -331,13 +338,18 @@ export interface OnboardingPreferencesPatch {
 }
 
 export interface UserPreferences {
+  /** Opaque compare-and-swap token for the complete namedPresets map. */
+  namedPresetsRevision?: string;
   workbench: WorkbenchPreferences;
   ai: AIToolPreferences;
   ui: UIPreferences;
   onboarding?: OnboardingPreferences;
 }
 
-export type UserPreferencesPatch = Omit<Partial<UserPreferences>, "workbench" | "onboarding"> & {
+export type UserPreferencesPatch = Omit<
+  Partial<UserPreferences>,
+  "workbench" | "onboarding" | "namedPresetsRevision"
+> & {
   workbench?: Omit<Partial<WorkbenchPreferences>, "layout"> & {
     layout?: Omit<Partial<WorkbenchLayoutPreferences>, "workspace"> & {
       workspace?: WorkspacePreferencesPatch;
@@ -484,5 +496,7 @@ export const authApi = {
   getPreferences: () => apiClient.get<UserPreferences>("/auth/me/preferences"),
   // 后端按顶层子树合并（exclude_unset），故可只提交单个子树（workbench 或 ai）。
   updatePreferences: (payload: UserPreferencesPatch) =>
+    apiClient.patch<UserPreferences>("/auth/me/preferences", payload),
+  updateNamedPresets: (payload: NamedWorkspacePresetsPatch) =>
     apiClient.patch<UserPreferences>("/auth/me/preferences", payload),
 };

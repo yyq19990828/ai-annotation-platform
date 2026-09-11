@@ -1,9 +1,14 @@
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 from uuid import UUID
 from datetime import datetime
 
 from app.schemas.workbench_workspace import WorkbenchWorkspacePreferences
+
+NamedPresetsRevision = Annotated[
+    str,
+    Field(strict=True, pattern=r"^(?:0|[0-9a-f]{32})$"),
+]
 
 
 class FloatingPanelState(BaseModel):
@@ -372,6 +377,11 @@ class UserPreferences(BaseModel):
     ai: AIToolPreferences = Field(default_factory=AIToolPreferences)
     ui: UIPreferences = Field(default_factory=UIPreferences)
     onboarding: OnboardingPreferences = Field(default_factory=OnboardingPreferences)
+    # Opaque compare-and-swap token for the atomic namedPresets map. "0" is the
+    # virtual revision before the first guarded write; successful writes use UUID hex.
+    named_presets_revision: NamedPresetsRevision = Field(
+        default="0", alias="namedPresetsRevision"
+    )
 
 
 class WorkbenchLayoutPreferencesRead(WorkbenchLayoutPreferences):
