@@ -22,6 +22,7 @@ from sqlalchemy import and_, func, literal, or_, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.tasks._shared import _assert_task_visible
+from app.deps import assert_project_visible
 from app.db.enums import UserRole
 from app.db.models.annotation import Annotation
 from app.db.models.annotation_comment import AnnotationComment
@@ -75,7 +76,7 @@ def encode_discussion_cursor(
     """
 
     payload = {
-        "version": _CURSOR_VERSION,
+        "schema_version": _CURSOR_VERSION,
         "task_id": str(task_id),
         "scope": scope,
         "annotation_id": str(annotation_id) if annotation_id is not None else None,
@@ -119,7 +120,8 @@ def decode_discussion_cursor(
         if not isinstance(payload, dict):
             raise ValueError
 
-        if payload.get("version") != _CURSOR_VERSION:
+        schema_version = payload["schema_version"]
+        if type(schema_version) is not int or schema_version != _CURSOR_VERSION:
             raise ValueError
         cursor_task_id = uuid.UUID(str(payload["task_id"]))
         if cursor_task_id != task_id:
@@ -180,6 +182,10 @@ async def require_visible_task(
     task = await db.get(Task, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
+    # `_assert_task_visible` applies batch/status and assignment rules, but it is
+    # intentionally usable by a few cross-project task flows and does not establish
+    # project membership.  Discussion routes must require both checks.
+    await assert_project_visible(task.project_id, db, user)
     await _assert_task_visible(db, task, user)
     return task
 

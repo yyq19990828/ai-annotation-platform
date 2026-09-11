@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import json
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -185,6 +187,8 @@ async def test_mixed_pages_are_source_aware_and_exactly_ordered(
     project, task, annotation_a, annotation_b = await _seed_task(db_session, user.id)
     base = datetime.now(timezone.utc)
     equal_id = uuid.uuid4()
+    same_source_high = uuid.UUID("00000000-0000-0000-0000-000000001002")
+    same_source_low = uuid.UUID("00000000-0000-0000-0000-000000001001")
     rows = [
         _annotation_comment(
             comment_id=equal_id,
@@ -195,12 +199,20 @@ async def test_mixed_pages_are_source_aware_and_exactly_ordered(
             body="legacy equal UUID",
         ),
         _annotation_comment(
-            comment_id=uuid.uuid4(),
+            comment_id=same_source_high,
             annotation_id=annotation_b.id,
             project_id=project.id,
             author_id=user.id,
             created_at=base + timedelta(seconds=2),
             body="legacy second",
+        ),
+        _annotation_comment(
+            comment_id=same_source_low,
+            annotation_id=annotation_a.id,
+            project_id=project.id,
+            author_id=user.id,
+            created_at=base + timedelta(seconds=2),
+            body="legacy same timestamp lower",
         ),
         _task_feedback(
             feedback_id=equal_id,
@@ -278,7 +290,7 @@ async def test_mixed_pages_are_source_aware_and_exactly_ordered(
     cursor = None
     pages = []
     for _ in range(3):
-        params = {"limit": 2}
+        params = {"limit": 3}
         if cursor:
             params["cursor"] = cursor
         response = await httpx_client_bound.get(
@@ -295,16 +307,25 @@ async def test_mixed_pages_are_source_aware_and_exactly_ordered(
             break
 
     assert len(pages) == 3
-    assert pages[0]["total"] == 6
+    assert pages[0]["total"] == 7
     assert [item["source"] for item in pages[0]["items"]] == [
         "feedback",
         "annotation_comment",
+        "feedback",
     ]
     assert pages[0]["items"][0]["data"]["id"] == str(equal_id)
     assert pages[0]["items"][1]["data"]["id"] == str(equal_id)
-    assert len(seen) == 6
-    assert len(set(seen)) == 6
+    assert len(seen) == 7
+    assert len(set(seen)) == 7
     assert pages[-1]["next_cursor"] is None
+    same_source_ids = [
+        item["data"]["id"]
+        for page in pages
+        for item in page["items"]
+        if item["source"] == "annotation_comment"
+        and item["data"]["body"] in {"legacy second", "legacy same timestamp lower"}
+    ]
+    assert same_source_ids == [str(same_source_high), str(same_source_low)]
     assert all(
         item["data"]["body"]
         not in {"stale annotation mirror", "issue root", "issue reply"}
@@ -324,6 +345,10 @@ async def test_mixed_pages_are_source_aware_and_exactly_ordered(
     )
     assert legacy["data"]["canvas_drawing"]["shapes"][0]["id"] == "stroke-1"
     assert legacy["data"]["anchor"]["frameIndex"] == 4
+    native = next(
+        item for page in pages for item in page["items"] if item["source"] == "feedback"
+    )
+    assert native["data"]["author_name"] == user.name
     assert legacy["actions"] == {
         "edit": True,
         "change_status": True,
@@ -403,6 +428,27 @@ async def test_scope_and_cursor_bindings_are_enforced(
     )
     cursor = first.json()["next_cursor"]
     assert cursor
+    cursor_payload = json.loads(base64.urlsafe_b64decode(cursor).decode("utf-8"))
+    cursor_payload["schema_version"] = True
+    bool_version_cursor = base64.urlsafe_b64encode(
+        json.dumps(cursor_payload, separators=(",", ":")).encode("utf-8")
+    ).decode("ascii")
+    bool_version = await httpx_client_bound.get(
+        f"/api/v1/tasks/{task.id}/discussion/page",
+        params={"cursor": bool_version_cursor},
+        headers=headers,
+    )
+    assert bool_version.status_code == 400
+
+    _, other_task, _, _ = await _seed_task(db_session, user.id)
+    await db_session.commit()
+    mismatched_task = await httpx_client_bound.get(
+        f"/api/v1/tasks/{other_task.id}/discussion/page",
+        params={"cursor": cursor},
+        headers=headers,
+    )
+    assert mismatched_task.status_code == 400
+
     mismatched_scope = await httpx_client_bound.get(
         f"/api/v1/tasks/{task.id}/discussion/page",
         params={"scope": "task", "cursor": cursor},
@@ -548,3 +594,90 @@ async def test_assigned_away_task_is_hidden_from_new_and_legacy_comment_routes(
         else:
             response = await httpx_client_bound.get(path, headers=headers)
         assert response.status_code == 404, (path, response.text)
+
+
+async def test_cross_project_reviewer_and_annotator_are_hidden_from_comment_surfaces(
+    httpx_client_bound,
+    db_session: AsyncSession,
+    super_admin,
+    reviewer,
+    annotator,
+):
+    """An active batch is not enough without target-project membership."""
+
+    owner, _ = super_admin
+    outsider_reviewer, reviewer_token = reviewer
+    outsider_annotator, annotator_token = annotator
+    project, task, annotation, _ = await _seed_task(db_session, owner.id)
+    batch = TaskBatch(
+        id=uuid.uuid4(),
+        project_id=project.id,
+        display_id=f"B-DISC-{uuid.uuid4().hex[:8]}",
+        name="visible only inside project",
+        status="active",
+        annotator_id=None,
+        assigned_user_ids=[],
+    )
+    db_session.add(batch)
+    await db_session.flush()
+    task.batch_id = batch.id
+    comment = _annotation_comment(
+        comment_id=uuid.uuid4(),
+        annotation_id=annotation.id,
+        project_id=project.id,
+        author_id=owner.id,
+        created_at=datetime.now(timezone.utc),
+        body="outside project",
+    )
+    db_session.add(comment)
+    await db_session.commit()
+
+    for outsider, token in (
+        (outsider_reviewer, reviewer_token),
+        (outsider_annotator, annotator_token),
+    ):
+        assert outsider.id not in {
+            owner.id,
+        }
+        headers = _bearer(token)
+        read_routes = (
+            f"/api/v1/tasks/{task.id}/discussion/page",
+            f"/api/v1/tasks/{task.id}/comments/page",
+            f"/api/v1/annotations/{annotation.id}/comments",
+            f"/api/v1/annotations/{annotation.id}/comments/page",
+        )
+        for path in read_routes:
+            response = await httpx_client_bound.get(path, headers=headers)
+            assert response.status_code == 404, (path, response.text)
+
+        create = await httpx_client_bound.post(
+            f"/api/v1/annotations/{annotation.id}/comments",
+            json={"body": "attempt", "mentions": [], "attachments": []},
+            headers=headers,
+        )
+        assert create.status_code == 404
+
+        patch = await httpx_client_bound.patch(
+            f"/api/v1/comments/{comment.id}",
+            json={"body": "attempt"},
+            headers=headers,
+        )
+        assert patch.status_code == 404
+        delete = await httpx_client_bound.delete(
+            f"/api/v1/comments/{comment.id}",
+            headers=headers,
+        )
+        assert delete.status_code == 404
+
+        upload = await httpx_client_bound.post(
+            f"/api/v1/annotations/{annotation.id}/comment-attachments/upload-init",
+            json={"file_name": "outside.txt", "content_type": "text/plain"},
+            headers=headers,
+        )
+        assert upload.status_code == 404
+        download = await httpx_client_bound.get(
+            f"/api/v1/annotations/{annotation.id}/comment-attachments/download",
+            params={"key": f"comment-attachments/{annotation.id}/file.png"},
+            headers=headers,
+        )
+        assert download.status_code == 404
