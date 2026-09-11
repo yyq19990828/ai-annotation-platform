@@ -29,7 +29,7 @@ async function prepare(request: APIRequestContext, seed: SeedAPI) {
 
 async function standardLayout(page: Page) {
   await page.getByRole("button", { name: "布局", exact: true }).click();
-  await page.getByRole("menuitem", { name: "标准标注布局", exact: true }).click();
+  await page.getByRole("button", { name: "标准标注布局", exact: true }).click();
 }
 
 async function accessibleTools(page: Page) {

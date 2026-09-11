@@ -551,7 +551,7 @@ test("视频紧凑布局禁止桌面写入，退出后恢复浮窗与非零帧�
   await expect(page.locator("[data-workbench-workspace]")).toHaveAttribute("data-compact", "true");
   await page.getByRole("button", { name: "布局", exact: true }).click();
   for (const name of ["标准标注布局", "专注画布布局"]) {
-    await expect(page.getByRole("menuitem", { name, exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name, exact: true })).toBeDisabled();
   }
   await page.keyboard.press("Escape");
   const settings = await openLayoutSettings(page);

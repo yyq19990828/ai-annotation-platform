@@ -108,7 +108,7 @@ test("3D 本地树等待首次权威回灌，复用原生画布与 WebGL context
 
     await page.getByRole("button", { name: "布局", exact: true }).click();
     for (const name of ["标准标注布局", "专注画布布局"]) {
-      await expect(page.getByRole("menuitem", { name, exact: true })).toBeDisabled();
+      await expect(page.getByRole("button", { name, exact: true })).toBeDisabled();
     }
     await page.keyboard.press("Escape");
     const settings = await openLayoutSettings(page);
@@ -142,7 +142,7 @@ test("3D 本地树等待首次权威回灌，复用原生画布与 WebGL context
       .toEqual(remote);
     await sameRenderer();
     await page.getByRole("button", { name: "布局", exact: true }).click();
-    await expect(page.getByRole("menuitem", { name: "标准标注布局", exact: true })).toBeEnabled();
+    await expect(page.getByRole("button", { name: "标准标注布局", exact: true })).toBeEnabled();
     await page.keyboard.press("Escape");
     const hydratedBounds = await wrapper.boundingBox();
 
