@@ -312,7 +312,7 @@ class ExportService:
             task_q = task_q.where(Task.batch_id == batch_id)
         if video_scope is not None:
             task_q = task_q.where(Task.id == video_scope.task_id)
-        task_q = task_q.order_by(Task.sequence_order, Task.created_at)
+        task_q = task_q.order_by(Task.sequence_order, Task.created_at, Task.id)
         tasks_result = await self.db.execute(task_q)
         tasks = list(tasks_result.scalars().all())
 
@@ -326,7 +326,7 @@ class ExportService:
             Annotation.was_cancelled.is_(False),
         )
         ann_q = ann_q.where(Annotation.task_id.in_(task_ids))
-        ann_q = ann_q.order_by(Annotation.created_at)
+        ann_q = ann_q.order_by(Annotation.created_at, Annotation.id)
         annotations_result = await self.db.execute(ann_q)
         annotations = list(annotations_result.scalars().all())
         class_names = set(derive_classes_list(project.tool_bindings))
@@ -390,7 +390,7 @@ class ExportService:
                 Prediction.project_id == project_id,
                 Prediction.task_id.in_(task_ids),
             )
-            .order_by(Prediction.created_at)
+            .order_by(Prediction.created_at, Prediction.id)
         )
         result = await self.db.execute(pred_q)
         return list(result.scalars().all())
@@ -470,7 +470,7 @@ class ExportService:
             id_q = id_q.where(Task.batch_id == batch_id)
         if video_scope is not None:
             id_q = id_q.where(Task.id == video_scope.task_id)
-        id_q = id_q.order_by(Task.sequence_order, Task.created_at)
+        id_q = id_q.order_by(Task.sequence_order, Task.created_at, Task.id)
         all_ids = [row[0] for row in (await self.db.execute(id_q)).all()]
 
         for start in range(0, len(all_ids), chunk_size):
@@ -480,7 +480,7 @@ class ExportService:
                     await self.db.execute(
                         select(Task)
                         .where(Task.id.in_(chunk_ids))
-                        .order_by(Task.sequence_order, Task.created_at)
+                        .order_by(Task.sequence_order, Task.created_at, Task.id)
                     )
                 )
                 .scalars()
@@ -498,7 +498,7 @@ class ExportService:
                         Annotation.was_cancelled.is_(False),
                         Annotation.task_id.in_(chunk_ids),
                     )
-                    .order_by(Annotation.created_at)
+                    .order_by(Annotation.created_at, Annotation.id)
                 )
                 for ann in (await self.db.execute(ann_q)).scalars().all():
                     if ann.class_name not in class_names:

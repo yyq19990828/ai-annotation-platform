@@ -302,21 +302,22 @@ async def test_export_coco_raster_mask_uses_pixel_bbox_area_and_rle(
     assert body["images"][0]["width"] == 3
     assert body["images"][0]["height"] == 2
     rows = body["annotations"]
-    assert rows[0]["bbox"] == [2.0, 1.0, 1.0, 1.0]
-    assert rows[0]["area"] == 1
-    assert rows[0]["iscrowd"] == 1
-    assert isinstance(rows[0]["segmentation"]["counts"], str)
+    assert len(rows) == 2
+    single_row = next(row for row in rows if row["area"] == 1)
+    empty_row = next(row for row in rows if row["area"] == 0)
+    assert single_row["bbox"] == [2.0, 1.0, 1.0, 1.0]
+    assert single_row["iscrowd"] == 1
+    assert isinstance(single_row["segmentation"]["counts"], str)
     assert (
         normalize_coco_segmentation_rle(
-            rows[0]["segmentation"], expected_width=3, expected_height=2
+            single_row["segmentation"], expected_width=3, expected_height=2
         )
         == single
     )
-    assert rows[1]["bbox"] == [0.0, 0.0, 0.0, 0.0]
-    assert rows[1]["area"] == 0
+    assert empty_row["bbox"] == [0.0, 0.0, 0.0, 0.0]
     assert (
         normalize_coco_segmentation_rle(
-            rows[1]["segmentation"], expected_width=3, expected_height=2
+            empty_row["segmentation"], expected_width=3, expected_height=2
         )
         == empty
     )

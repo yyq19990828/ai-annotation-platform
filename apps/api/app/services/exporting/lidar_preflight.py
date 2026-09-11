@@ -320,7 +320,7 @@ async def preflight_lidar_export(
         .outerjoin(DatasetItem, DatasetItem.id == Task.dataset_item_id)
         .outerjoin(Dataset, Dataset.id == DatasetItem.dataset_id)
         .where(Task.project_id == project_id)
-        .order_by(Task.sequence_order, Task.created_at)
+        .order_by(Task.sequence_order, Task.created_at, Task.id)
     )
     if batch_id is not None:
         task_query = task_query.where(Task.batch_id == batch_id)
