@@ -22,6 +22,7 @@ const state = vi.hoisted(() => ({
   api: null as DockviewApi | null,
   getPreferences: vi.fn(),
   updatePreferences: vi.fn(),
+  openLayoutSettings: vi.fn(),
 }));
 vi.mock("@/hooks/useMediaQuery", () => ({ useMediaQuery: () => state.compact }));
 vi.mock("../state/useWorkbenchWorkspaceLayout", () => ({
@@ -109,6 +110,7 @@ function fixture(
         legacy={{}}
         commandsRef={commands}
         onStateChange={onStateChange}
+        onOpenLayoutSettings={state.openLayoutSettings}
         slots={{
           canvas,
           "task-queue": <p>任务</p>,
@@ -173,6 +175,7 @@ beforeEach(() => {
   state.compact = false;
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   state.getPreferences.mockReset().mockResolvedValue(preferences());
+  state.openLayoutSettings.mockReset();
   state.updatePreferences
     .mockReset()
     .mockImplementation(async (payload) =>
@@ -455,22 +458,26 @@ describe("stable Dockview React workspace", () => {
     expect(mounts).toBe(1);
   });
 
-  it("keeps only quick presets and settings in the menu and preserves the canvas", async () => {
+  it("keeps quick presets, named preset actions and settings in the topbar panel", async () => {
     render(fixture());
     const marker = await screen.findByTestId("canvas-marker");
     fireEvent.click(screen.getByRole("button", { name: "布局" }));
-    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
-      "标准标注布局",
-      "专注画布布局",
-      "更多布局设置…",
-    ]);
-    fireEvent.click(screen.getByRole("menuitem", { name: "专注画布布局" }));
+    const panel = screen.getByRole("dialog", { name: "布局快捷设置" });
+    expect(within(panel).getByRole("button", { name: "标准标注布局" })).toBeInTheDocument();
+    expect(within(panel).getByLabelText("快速保存预设名称")).toBeInTheDocument();
+    expect(within(panel).getByRole("button", { name: "保存当前布局为预设" })).toBeDisabled();
+    expect(within(panel).getByRole("button", { name: "更多布局设置…" })).toBeInTheDocument();
+    fireEvent.click(within(panel).getByRole("button", { name: "专注画布布局" }));
     expect(state.api!.hasMaximizedGroup()).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "布局" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "恢复画布布局" }));
+    fireEvent.click(screen.getByRole("button", { name: "恢复画布布局" }));
     expect(state.api!.hasMaximizedGroup()).toBe(false);
     expect(screen.getByTestId("canvas-marker")).toBe(marker);
     expect(mounts).toBe(1);
+    fireEvent.click(screen.getByRole("button", { name: "布局" }));
+    fireEvent.click(screen.getByRole("button", { name: "更多布局设置…" }));
+    expect(state.openLayoutSettings).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("dialog", { name: "布局快捷设置" })).not.toBeInTheDocument();
   });
 
   it("highlights the live preset and custom layout after panel changes and focus restoration", async () => {
@@ -518,6 +525,30 @@ describe("stable Dockview React workspace", () => {
     expect(mounts).toBe(1);
   });
 
+  it("saves and reapplies a named preset directly from the topbar layout panel", async () => {
+    const commands = createRef<WorkbenchWorkspaceCommands>();
+    render(fixture("review:image", commands));
+    const marker = await screen.findByTestId("canvas-marker");
+    await waitFor(() => expect(state.getPreferences).toHaveBeenCalled());
+    act(() => commands.current!.hide("task-queue"));
+
+    fireEvent.click(screen.getByRole("button", { name: "布局" }));
+    fireEvent.change(screen.getByLabelText("快速保存预设名称"), {
+      target: { value: "快捷审核" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存当前布局为预设" }));
+    await waitFor(() => expect(state.updatePreferences).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("dialog", { name: "布局快捷设置" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "标准标注" }));
+    await waitFor(() => expect(state.api!.getPanel("task-queue")?.group.id).not.toBe("parking"));
+    fireEvent.click(screen.getByRole("button", { name: "布局" }));
+    fireEvent.click(screen.getByRole("button", { name: "应用预设 快捷审核" }));
+    await waitFor(() => expect(state.api!.getPanel("task-queue")?.group.id).toBe("parking"));
+    expect(screen.getByTestId("canvas-marker")).toBe(marker);
+    expect(mounts).toBe(1);
+  });
+
   it("only offers a saved preset in the context it was captured in", async () => {
     state.getPreferences.mockResolvedValue(
       preferences({
@@ -533,6 +564,13 @@ describe("stable Dockview React workspace", () => {
     await screen.findByTestId("canvas-marker");
     expect(await screen.findByRole("button", { name: "应用" })).toBeDisabled();
     expect(screen.getByText("视频标注")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "布局" }));
+    const panel = screen.getByRole("dialog", { name: "布局快捷设置" });
+    expect(
+      within(panel).queryByRole("button", { name: "应用预设 视频追踪自用" }),
+    ).not.toBeInTheDocument();
+    expect(within(panel).getByText("当前工作类型暂无预设")).toBeInTheDocument();
+    expect(within(panel).getByText("其他工作类型的预设请在更多设置中管理。")).toBeInTheDocument();
   });
 
   it("keeps an un-restorable preset delete-only and counts hidden raw entries", async () => {
@@ -656,7 +694,7 @@ describe("stable Dockview React workspace", () => {
     await screen.findByTestId("canvas-marker");
     expect(state.api!.hasMaximizedGroup()).toBe(true);
     fireEvent.click(screen.getByRole("button", { name: "布局" }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "恢复画布布局" }));
+    fireEvent.click(screen.getByRole("button", { name: "恢复画布布局" }));
     expect(state.api!.getPanel("inspector")!.group.api.width).toBe(240);
     expect(state.owner.failRestore).not.toHaveBeenCalled();
     expect(mounts).toBe(1);

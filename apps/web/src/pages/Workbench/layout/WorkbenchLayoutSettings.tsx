@@ -37,10 +37,155 @@ export interface NamedPresetControls {
   onRemove: (preset: WorkbenchNamedPreset) => void;
 }
 
+interface WorkbenchLayoutQuickMenuProps {
+  items: DropdownItem[];
+  activePreset: ActiveWorkspacePreset;
+  namedPresets: NamedPresetControls;
+  close: () => void;
+  onOpenSettings?: () => void;
+}
+
 const SMALL_ACTION_CLASS =
   "inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground active:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
 const TEXT_FIELD_CLASS =
   "min-w-0 flex-1 rounded-md border border-border bg-card px-2 py-1.5 text-sm text-foreground [font:inherit] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
+const QUICK_MENU_ACTION_CLASS =
+  "flex w-full min-w-0 items-center gap-2 rounded-sm px-2.5 py-2 text-left text-sm text-muted-foreground hover:bg-accent hover:text-foreground active:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50";
+
+export function WorkbenchLayoutQuickMenu({
+  items,
+  activePreset,
+  namedPresets,
+  close,
+  onOpenSettings,
+}: WorkbenchLayoutQuickMenuProps) {
+  const [name, setName] = useState("");
+  const applicable = namedPresets.presets.filter(
+    (preset) => preset.snapshot !== null && preset.context === namedPresets.context,
+  );
+  const overwrites = namedPresets.presets.some(
+    (preset) => preset.snapshot !== null && preset.name.trim() === name.trim(),
+  );
+  const saveBlocked =
+    namedPresets.disabled ||
+    namedPresets.busy ||
+    (namedPresets.full && !overwrites) ||
+    !name.trim();
+  const save = () => {
+    if (saveBlocked) return;
+    namedPresets.onSave(name);
+    close();
+  };
+
+  return (
+    <div className="w-full p-1">
+      <div className="space-y-0.5">
+        {items.map((item) => {
+          const selected = activePreset === item.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              aria-pressed={selected}
+              disabled={item.disabled}
+              className={cn(
+                QUICK_MENU_ACTION_CLASS,
+                selected && "bg-accent font-semibold text-foreground",
+              )}
+              onClick={() => {
+                item.onSelect?.();
+                close();
+              }}
+            >
+              <span className="min-w-0 flex-1 truncate">{item.label}</span>
+              {selected && <Icon name="check" size={12} className="shrink-0 text-brand" />}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="my-1 h-px bg-border" />
+      <div className="space-y-2 px-2.5 py-2">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs font-medium text-foreground">我的预设</span>
+          <span className="text-2xs text-muted-foreground">
+            {namedPresets.count} / {MAX_NAMED_WORKSPACE_PRESETS}
+          </span>
+        </div>
+        {applicable.length > 0 ? (
+          <div className="space-y-0.5">
+            {applicable.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                aria-label={`应用预设 ${preset.name}`}
+                disabled={namedPresets.disabled || namedPresets.busy}
+                className={cn(QUICK_MENU_ACTION_CLASS, "-mx-2.5 w-[calc(100%+1.25rem)]")}
+                onClick={() => {
+                  namedPresets.onApply(preset);
+                  close();
+                }}
+              >
+                <Icon name="grid" size={13} className="shrink-0" />
+                <span className="min-w-0 flex-1 truncate text-foreground">{preset.name}</span>
+                <span className="shrink-0 text-2xs">应用</span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">当前工作类型暂无预设</p>
+        )}
+        <form
+          className="flex items-center gap-1.5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            save();
+          }}
+        >
+          <input
+            autoFocus
+            value={name}
+            aria-label="快速保存预设名称"
+            placeholder="预设名称"
+            maxLength={MAX_WORKSPACE_PRESET_NAME_LENGTH}
+            disabled={namedPresets.disabled}
+            className={cn(TEXT_FIELD_CLASS, "h-8 py-1 text-xs")}
+            onChange={(event) => setName(event.target.value)}
+          />
+          <button
+            type="submit"
+            aria-label="保存当前布局为预设"
+            title={overwrites ? "覆盖同名预设" : "保存当前布局为预设"}
+            disabled={saveBlocked}
+            className="inline-flex h-8 shrink-0 items-center justify-center gap-1 rounded-md bg-brand px-2 text-xs text-primary-foreground hover:bg-brand/90 active:bg-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Icon name="save" size={13} />
+            {overwrites ? "覆盖" : "保存"}
+          </button>
+        </form>
+        {namedPresets.full && !overwrites && (
+          <p className="text-2xs text-status-caution">已存满；输入已有名称可覆盖。</p>
+        )}
+        {namedPresets.presets.length > applicable.length && (
+          <p className="text-2xs text-muted-foreground">其他工作类型的预设请在更多设置中管理。</p>
+        )}
+      </div>
+
+      <div className="my-1 h-px bg-border" />
+      <button
+        type="button"
+        className={QUICK_MENU_ACTION_CLASS}
+        onClick={() => {
+          close();
+          onOpenSettings?.();
+        }}
+      >
+        <Icon name="settings" size={13} className="shrink-0" />
+        <span className="flex-1">更多布局设置…</span>
+      </button>
+    </div>
+  );
+}
 
 function SavedPresetRow({
   preset,

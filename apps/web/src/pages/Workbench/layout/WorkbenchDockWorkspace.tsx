@@ -44,7 +44,11 @@ import {
   type WorkspacePresetId,
   type ActiveWorkspacePreset,
 } from "./workbenchLayoutPresets";
-import { WorkbenchLayoutSettings, type NamedPresetControls } from "./WorkbenchLayoutSettings";
+import {
+  WorkbenchLayoutQuickMenu,
+  WorkbenchLayoutSettings,
+  type NamedPresetControls,
+} from "./WorkbenchLayoutSettings";
 import type { PanelId, WorkspaceContext } from "./workbenchLayoutSnapshot";
 import {
   PERIPHERAL_PANELS,
@@ -891,10 +895,18 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
   ];
   const menu = (
     <DropdownMenu
-      items={[
-        ...layoutItems.filter((item) => ["standard", "focus"].includes(item.id)),
-        { id: "settings", label: "更多布局设置…", onSelect: props.onOpenLayoutSettings },
-      ]}
+      content={({ close }) => (
+        <WorkbenchLayoutQuickMenu
+          items={layoutItems.filter((item) => ["standard", "focus"].includes(item.id))}
+          activePreset={activePreset}
+          namedPresets={namedPresetControls}
+          close={close}
+          onOpenSettings={props.onOpenLayoutSettings}
+        />
+      )}
+      panelAriaLabel="布局快捷设置"
+      minWidth={296}
+      disablePanelPadding
       trigger={({ ref, toggle, open }) => (
         <button
           ref={ref}
@@ -902,7 +914,7 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
           data-workbench-layout-control
           aria-label="布局"
           title="布局"
-          aria-haspopup="menu"
+          aria-haspopup="dialog"
           aria-expanded={open}
           onClick={toggle}
           className="inline-flex h-8 shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 text-xs text-muted-foreground hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring @max-[1100px]:w-7 @max-[1100px]:justify-center @max-[1100px]:p-0"
