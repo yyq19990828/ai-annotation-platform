@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field, model_validator
 from uuid import UUID
 from datetime import datetime
@@ -9,6 +11,8 @@ from app.schemas._jsonb_types import (
     CommentAnchor,
     Mention,
 )
+from app.schemas.annotation_feedback import AnnotationFeedbackOut
+from app.schemas.discussion_actions import DiscussionActions
 
 
 # 兼容旧导入路径
@@ -22,6 +26,8 @@ __all__ = [
     "AnnotationCommentUpdate",
     "AnnotationCommentOut",
     "AnnotationCommentListPage",
+    "TaskDiscussionItem",
+    "TaskDiscussionPage",
     "CommentAttachmentUploadInitRequest",
     "CommentAttachmentUploadInitResponse",
 ]
@@ -82,6 +88,27 @@ class AnnotationCommentListPage(BaseModel):
 
     items: list[AnnotationCommentOut]
     next_cursor: str | None = None
+
+
+class TaskDiscussionItem(BaseModel):
+    """One row in the authoritative, mixed task discussion feed.
+
+    ``data`` deliberately retains the source endpoint's complete response shape.  The
+    source discriminator lives beside it because annotation comments and feedbacks can
+    have the same UUID; consumers must use ``(source, data.id)`` as the identity.
+    """
+
+    source: Literal["annotation_comment", "feedback"]
+    data: AnnotationCommentOut | AnnotationFeedbackOut
+    actions: DiscussionActions
+
+
+class TaskDiscussionPage(BaseModel):
+    """Keyset-paged task discussion read model."""
+
+    items: list[TaskDiscussionItem]
+    next_cursor: str | None = None
+    total: int = Field(ge=0)
 
 
 class CommentAttachmentUploadInitRequest(BaseModel):
