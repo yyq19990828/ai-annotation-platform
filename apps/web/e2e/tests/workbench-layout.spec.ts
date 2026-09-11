@@ -1,6 +1,7 @@
 import { panelCommand } from "../fixtures/workbench-panel-actions";
 import { layoutCommand, openLayoutSettings } from "../helpers/workbench-layout";
 import type { Page } from "@playwright/test";
+import type { NamedWorkspacePreset } from "../../src/api/auth";
 import type {
   PanelId,
   WorkspaceNode,
@@ -18,6 +19,15 @@ async function savedSnapshot(page: Page, context: string): Promise<WorkspaceSnap
   });
   expect(response.ok(), await response.text()).toBe(true);
   return (await response.json()).workbench.layout.workspace?.contexts[context]?.snapshot;
+}
+
+async function savedPresets(page: Page): Promise<Record<string, NamedWorkspacePreset>> {
+  const token = await page.evaluate(() => localStorage.getItem("token"));
+  const response = await page.request.get("/api/v1/auth/me/preferences", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(response.ok(), await response.text()).toBe(true);
+  return (await response.json()).workbench.layout.workspace?.namedPresets ?? {};
 }
 
 function groupFor(node: WorkspaceNode, id: PanelId): string | undefined {
@@ -376,6 +386,45 @@ test("标准和浮动布局使用日间与夜间语义主题", { tag: "@visual" 
       );
     }
   }
+});
+
+test("命名布局预设随账号保存，可跨刷新应用与删除", async ({ page, seed }) => {
+  test.setTimeout(90_000);
+  const data = await seed.reset();
+  await seed.injectToken(page, data.admin_email);
+  await page.goto(`/projects/${data.project_id}/annotate?task=${data.task_ids[0]}`);
+  await layoutCommand(page, "标准标注布局");
+
+  await panelCommand(page, "讨论 / Issue", "隐藏面板");
+  await expect(panel(page, "discussion")).toHaveAttribute("aria-hidden", "true");
+  let dialog = await openLayoutSettings(page);
+  await dialog.getByLabel("预设名称").fill("无讨论精简");
+  await dialog.getByRole("button", { name: "保存当前布局", exact: true }).click();
+  await expect(dialog.getByText("1 / 5")).toBeVisible();
+  await expect
+    .poll(async () => Object.values(await savedPresets(page)).map((preset) => preset.name))
+    .toEqual(["无讨论精简"]);
+  await dialog.getByRole("button", { name: "关闭设置", exact: true }).click();
+
+  // 换成内置预设，再从保存的预设套回来。
+  await layoutCommand(page, "标准标注布局");
+  await expect(panel(page, "discussion")).toHaveAttribute("aria-hidden", "false");
+  await page.reload();
+  await expect(page.getByTestId("workbench-stage")).toHaveAttribute("data-image-ready", "true");
+  // 重载会重建 DOM；套用预设不应再动画布实例。
+  const sameCanvas = await rememberCanvas(page, "workbench-stage");
+  dialog = await openLayoutSettings(page);
+  await expect(dialog.getByText("无讨论精简")).toBeVisible();
+  await dialog.getByRole("button", { name: "应用", exact: true }).click();
+  await dialog.getByRole("button", { name: "关闭设置", exact: true }).click();
+  await expect(panel(page, "discussion")).toHaveAttribute("aria-hidden", "true");
+  await sameCanvas();
+
+  dialog = await openLayoutSettings(page);
+  await dialog.getByRole("button", { name: "删除预设 无讨论精简", exact: true }).click();
+  await dialog.getByRole("button", { name: "确认删除", exact: true }).click();
+  await expect(dialog.getByText("0 / 5")).toBeVisible();
+  await expect.poll(async () => await savedPresets(page)).toEqual({});
 });
 
 test("预设撤销恢复自定义树，后续预设替换撤销点且紧凑模式清除撤销入口", async ({ page, seed }) => {

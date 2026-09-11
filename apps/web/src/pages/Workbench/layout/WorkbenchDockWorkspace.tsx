@@ -29,6 +29,11 @@ import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { useAuthStore } from "@/stores/authStore";
 import { cn } from "@/lib/utils";
 import { useActiveIssueStore } from "../state/useActiveIssueStore";
+import {
+  useWorkbenchNamedPresets,
+  type NamedPresetFailure,
+  type WorkbenchNamedPreset,
+} from "../state/useWorkbenchNamedPresets";
 import { useWorkbenchWorkspaceLayout } from "../state/useWorkbenchWorkspaceLayout";
 import { createWorkbenchLayoutExecutor } from "./workbenchLayoutExecutor";
 import {
@@ -39,7 +44,7 @@ import {
   type WorkspacePresetId,
   type ActiveWorkspacePreset,
 } from "./workbenchLayoutPresets";
-import { WorkbenchLayoutSettings } from "./WorkbenchLayoutSettings";
+import { WorkbenchLayoutSettings, type NamedPresetControls } from "./WorkbenchLayoutSettings";
 import type { PanelId, WorkspaceContext } from "./workbenchLayoutSnapshot";
 import {
   PERIPHERAL_PANELS,
@@ -220,6 +225,12 @@ const PRESET_LABELS: Record<WorkspacePresetId, string> = {
   review: "审核协作",
   "ai-review": "图片 AI 审阅",
   "video-tracking": "视频追踪",
+};
+const NAMED_PRESET_ERRORS: Record<NamedPresetFailure, string> = {
+  "invalid-name": "预设名称不能为空，且不超过 40 个字。",
+  "duplicate-name": "已有同名预设，请换一个名称。",
+  limit: "最多保存 5 组布局预设，请先删除一组。",
+  request: "预设暂未保存，请稍后重试。",
 };
 
 export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
@@ -453,6 +464,45 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
     } finally {
       restoring.current = false;
     }
+  };
+
+  const named = useWorkbenchNamedPresets();
+  const report = (failure: NamedPresetFailure | null, done: string) => {
+    if (failure === null) toast.success(done, { position: "bottom-center" });
+    else toast.error(NAMED_PRESET_ERRORS[failure], { position: "bottom-center" });
+  };
+  const applyNamedPreset = (entry: WorkbenchNamedPreset) => {
+    const snapshot = entry.snapshot;
+    if (!snapshot || entry.context !== context) return;
+    run((engine) => {
+      const before = engine.capture();
+      engine.restore(snapshot);
+      undo.current = toast(`已应用「${entry.name}」布局`, {
+        id: undo.current ?? undefined,
+        action: { label: "撤销", onClick: () => run((current) => current.restore(before)) },
+        duration: 8000,
+        position: "bottom-center",
+      });
+    });
+  };
+  const namedPresetControls: NamedPresetControls = {
+    presets: named.presets,
+    context,
+    full: named.full,
+    busy: named.saving,
+    disabled: owner.readOnly || compact || !named.loaded,
+    onSave: (name) => {
+      const engine = executor.current;
+      if (!engine || owner.readOnly || compact) return;
+      void named
+        .save(name, context, engine.capture())
+        .then((failure) => report(failure, `已保存布局预设「${name.trim()}」`));
+    },
+    onApply: applyNamedPreset,
+    onRename: (id, name) =>
+      void named.rename(id, name).then((failure) => report(failure, "已重命名布局预设")),
+    onRemove: (entry) =>
+      void named.remove(entry.id).then((failure) => report(failure, `已删除「${entry.name}」`)),
   };
   useLayoutEffect(() => {
     if (!api) return;
@@ -884,7 +934,11 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
           {renderTopbar(
             menu,
             view,
-            <WorkbenchLayoutSettings items={layoutItems} activePreset={activePreset} />,
+            <WorkbenchLayoutSettings
+              items={layoutItems}
+              activePreset={activePreset}
+              namedPresets={namedPresetControls}
+            />,
           )}
           {(owner.error || owner.readOnlyReason) && (
             <div

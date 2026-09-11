@@ -1331,6 +1331,120 @@ async def test_workspace_schema_downgrade_rejects_entire_patch(
     assert user.preferences == previous
 
 
+def _named_preset(name, context="annotate:image", version=5):
+    return {**_workspace_envelope(version), "name": name, "context": context}
+
+
+def _named_presets_patch(presets):
+    return {
+        "workbench": {
+            "layout": {"workspace": {"engine": "dockview@8", "namedPresets": presets}}
+        }
+    }
+
+
+async def _saved_presets(httpx_client, token):
+    response = await httpx_client.get(PREFS_URL, headers=_bearer(token))
+    assert response.status_code == 200, response.text
+    return response.json()["workbench"]["layout"]["workspace"]["namedPresets"]
+
+
+async def test_named_presets_survive_live_layout_writes_and_delete_by_omission(
+    httpx_client, annotator
+):
+    """两个 writer 各写各的：布局自动保存不碰预设，预设 CRUD 不碰当前布局。"""
+    _, token = annotator
+    presets = {
+        "p1": _named_preset("审核宽讨论"),
+        "p2": _named_preset("视频追踪自用", "annotate:video"),
+    }
+    response = await httpx_client.patch(
+        PREFS_URL, json=_named_presets_patch(presets), headers=_bearer(token)
+    )
+    assert response.status_code == 200, response.text
+    assert await _saved_presets(httpx_client, token) == presets
+
+    # 直播布局 PATCH 不带 namedPresets，两条预设必须原样留存。
+    live = _workspace_envelope(5)
+    response = await httpx_client.patch(
+        PREFS_URL, json=_workspace_patch(live), headers=_bearer(token)
+    )
+    assert response.status_code == 200, response.text
+    workspace = response.json()["workbench"]["layout"]["workspace"]
+    assert workspace["namedPresets"] == presets
+    assert workspace["contexts"]["annotate:image"] == live
+
+    # 预设 PATCH 不带 contexts，当前布局必须原样留存；省略某条即为删除。
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json=_named_presets_patch({"p2": presets["p2"]}),
+        headers=_bearer(token),
+    )
+    assert response.status_code == 200, response.text
+    workspace = response.json()["workbench"]["layout"]["workspace"]
+    assert workspace["namedPresets"] == {"p2": presets["p2"]}
+    assert workspace["contexts"]["annotate:image"] == live
+
+
+async def test_named_presets_cap_at_five_per_user(httpx_client, annotator):
+    user, token = annotator
+    five = {f"p{index}": _named_preset(f"布局 {index}") for index in range(5)}
+    response = await httpx_client.patch(
+        PREFS_URL, json=_named_presets_patch(five), headers=_bearer(token)
+    )
+    assert response.status_code == 200, response.text
+    previous = copy.deepcopy(user.preferences)
+
+    six = {**five, "p5": _named_preset("布局 5")}
+    response = await httpx_client.patch(
+        PREFS_URL, json=_named_presets_patch(six), headers=_bearer(token)
+    )
+    assert response.status_code == 422
+    assert user.preferences == previous
+
+    # 先删一条即可腾出名额。
+    freed = {key: value for key, value in five.items() if key != "p0"}
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json=_named_presets_patch({**freed, "p5": _named_preset("布局 5")}),
+        headers=_bearer(token),
+    )
+    assert response.status_code == 200, response.text
+    assert set(await _saved_presets(httpx_client, token)) == {*freed, "p5"}
+
+
+@pytest.mark.parametrize(
+    "presets",
+    [
+        {"p1": _named_preset("同名"), "p2": _named_preset("同名")},
+        {"p1": _named_preset("   ")},
+        {"p1": _named_preset("x" * 41)},
+        {"p1": {**_named_preset("缺上下文"), "context": "annotate:hologram"}},
+        {"bad id": _named_preset("非法 id")},
+    ],
+)
+async def test_named_presets_reject_invalid_entries(httpx_client, annotator, presets):
+    user, token = annotator
+    previous = copy.deepcopy(user.preferences)
+    response = await httpx_client.patch(
+        PREFS_URL, json=_named_presets_patch(presets), headers=_bearer(token)
+    )
+    assert response.status_code == 422
+    assert user.preferences == previous
+
+
+def test_named_preset_reuses_live_snapshot_grammar():
+    broken = _named_preset("三视图越界")
+    root = broken["snapshot"]["layout"]["grid"]["root"]
+    root["data"][-1]["data"]["views"].remove("tri-view")
+    root["data"][1]["data"]["views"].append("tri-view")
+    with pytest.raises(ValidationError, match="3D panels require parking"):
+        UserPreferences.model_validate(_named_presets_patch({"p1": broken}))
+    # 同一份快照在 3D 上下文里合法。
+    broken["context"] = "annotate:3d"
+    UserPreferences.model_validate(_named_presets_patch({"p1": broken}))
+
+
 async def test_workspace_invalid_patch_returns_422_without_writing(
     httpx_client, annotator
 ):

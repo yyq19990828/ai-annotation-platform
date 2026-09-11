@@ -19651,6 +19651,52 @@
         "title": "MyPerformance",
         "type": "object"
       },
+      "NamedWorkspacePreset": {
+        "additionalProperties": false,
+        "description": "A layout the user explicitly saved, alongside the live per-context snapshot.\n\nSaving is a personal shortcut: the entry records the context it was captured\nin so the client only offers it for the matching work type. The snapshot\nitself reuses the live envelope grammar, so a preset can never describe a\nlayout the workspace could not restore.",
+        "properties": {
+          "context": {
+            "enum": [
+              "annotate:image",
+              "annotate:video",
+              "annotate:3d",
+              "review:image",
+              "review:video",
+              "review:3d"
+            ],
+            "title": "Context",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 40,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "schemaVersion": {
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "title": "Schemaversion",
+            "type": "integer"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/WorkspaceSnapshot"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "snapshot",
+          "name",
+          "context"
+        ],
+        "title": "NamedWorkspacePreset",
+        "type": "object"
+      },
       "NativeMaskCandidate": {
         "additionalProperties": false,
         "description": "A transient native Mask candidate returned by an interactive backend.",
@@ -37889,11 +37935,20 @@
             "const": "dockview@8",
             "title": "Engine",
             "type": "string"
+          },
+          "namedPresets": {
+            "maxProperties": 5,
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$": {
+                "$ref": "#/components/schemas/NamedWorkspacePreset"
+              }
+            },
+            "title": "Namedpresets",
+            "type": "object"
           }
         },
         "required": [
-          "engine",
-          "contexts"
+          "engine"
         ],
         "title": "WorkbenchWorkspacePreferences",
         "type": "object"

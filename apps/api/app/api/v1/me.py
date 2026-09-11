@@ -162,7 +162,11 @@ def _promote_legacy_workbench_keys(payload: dict) -> dict:
 _REMOVED_WORKBENCH_LAYOUT_KEYS = ("leftWidth", "rightWidth")
 
 
-_ATOMIC_PREFERENCE_MAP_PATHS = {("workbench", "layout", "cameraPanels")}
+_ATOMIC_PREFERENCE_MAP_PATHS = {
+    ("workbench", "layout", "cameraPanels"),
+    # 命名布局预设按整份清单提交；递归合并会让被删掉的那条永远留在库里。
+    ("workbench", "layout", "workspace", "namedPresets"),
+}
 _WORKSPACE_CONTEXTS_PATH = ("workbench", "layout", "workspace", "contexts")
 
 

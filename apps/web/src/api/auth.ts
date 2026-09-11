@@ -225,9 +225,23 @@ export interface PointcloudCameraState {
   mode: "orbit" | "bev";
 }
 
+/**
+ * 用户显式另存的布局。与 `contexts` 的直播快照分开:后者是"当前布局自动记住",
+ * 本表是账号级最多 5 份可反复套用的命名副本,由布局设置里的 CRUD 整表提交。
+ */
+export interface NamedWorkspacePreset extends WorkspaceEnvelope {
+  name: string;
+  context: WorkspaceContext;
+}
+
+export const MAX_NAMED_WORKSPACE_PRESETS = 5;
+export const MAX_WORKSPACE_PRESET_NAME_LENGTH = 40;
+
 export interface WorkspacePreferences {
   engine: "dockview@8";
-  contexts: Partial<Record<WorkspaceContext, WorkspaceEnvelope>>;
+  /** 只存过命名预设的账号还没有任何直播快照,此时整个键缺席。 */
+  contexts?: Partial<Record<WorkspaceContext, WorkspaceEnvelope>>;
+  namedPresets?: Record<string, NamedWorkspacePreset>;
 }
 
 export interface WorkbenchLayoutPreferences {
