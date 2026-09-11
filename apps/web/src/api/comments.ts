@@ -72,4 +72,10 @@ export const commentsApi = {
       `/annotations/${annotationId}/comment-attachments/upload-init`,
       payload,
     ),
+
+  /** Resolve an authorized URL before fetching the attachment without bearer headers. */
+  attachmentDownloadUrl: (annotationId: string, storageKey: string) =>
+    apiClient.get<{ download_url: string }>(
+      `/annotations/${annotationId}/comment-attachments/download?as_json=true&key=${encodeURIComponent(storageKey)}`,
+    ),
 };

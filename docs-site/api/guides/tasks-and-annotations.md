@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-09-10
+last_reviewed: 2026-09-11
 ---
 
 # 任务与标注
@@ -52,6 +52,35 @@ Idempotency-Key: 61fffd41-c706-48c7-818e-0c40cdbeb6c9
 `POST /api/v1/tasks/:id/annotations/:annotation_id/secondary-inference` 在选中标注的 ROI 上运行模型，按 `write_target` 写回属性或创建子标注。
 
 仅 `super_admin`、`project_admin`、`annotator` 可调用，且仍需通过项目与任务可见性、当前归属和可编辑状态检查；API Key 还需 `annotations:write` scope。审核员调用返回 `403`，不会执行推理或写入结果。审核员通过普通标注接口进行人工修正的权限保持原有规则。
+
+## 任务讨论与问题线程
+
+```http
+GET /api/v1/tasks/:id/discussion/page?scope=all&limit=50
+GET /api/v1/feedbacks?project_id=…&task_id=…&kind=issue&root_only=true&include_counts=true&status=open
+GET /api/v1/feedbacks/:root_id/thread?limit=50
+```
+
+讨论分页接口默认读取当前任务的全部评论，`scope=task` 只读任务留言，`scope=annotation` 必须同时传入真实标注的 `annotation_id`。其他范围不接受 `annotation_id`。每页默认 50 条，最多 200 条；返回 `items`、`next_cursor` 和当前范围的准确 `total`。
+
+每条记录保留 `source`、原始 `data` 与服务端计算的 `actions`，客户端据此展示来源并调用原写入接口：
+
+| 来源                 | 读取内容                                                      | 写入与附件归属                                               |
+| -------------------- | ------------------------------------------------------------- | ------------------------------------------------------------ |
+| `annotation_comment` | 原标注评论的正文、提及、附件、画布批注和帧锚点                | 继续调用标注评论接口；附件下载使用记录本身的 `annotation_id` |
+| `feedback`           | `kind=comment`、`anchor_type=task` 且没有父回复的原生任务留言 | 创建调用 `POST /feedbacks`，修改和删除调用 `/feedbacks/:id`  |
+
+汇总不读取评论镜像或统一反馈视图，也不混入问题回复、BUG 和退回记录。结果按 `(created_at, source, id)` 降序排列；游标绑定任务、阅读范围和标注，不能用于其他查询。游标格式错误、超过 2048 字符或与查询不匹配时返回 `400`。旧标注评论接口继续保留。
+
+标注附件下载接口 `GET /annotations/:annotation_id/comment-attachments/download?key=...` 默认仍返回短期签名地址的 302 跳转。浏览器使用 Bearer 登录时，应先带认证头请求 `as_json=true`，取得 `{ download_url }` 后不携带 Bearer 头下载对象；直接打开 API 链接不会自动携带登录凭据。两种返回方式都重新校验原标注的任务权限和附件键前缀，签名有效期为五分钟。
+
+反馈列表的 `root_only` 和 `include_counts` 默认为 `false`，旧调用方式不变。开启 `include_counts` 后，`total` 为当前筛选的准确数量，`status_counts` 返回 `open`、`resolved`、`wont_fix` 各自数量，只忽略 `status` 筛选。未解决数量应读取 `status_counts.open`，不能用当前已加载卡片数替代。
+
+线程接口返回根记录 `root`、回复 `items`、`next_cursor` 和回复总数 `total`。回复按时间和 ID 降序分页，历史多层回复会展开为同一会话；已删除的中间回复不展示，其仍有效的后代可以读取。根记录删除、祖先链循环或跨项目、任务、标注锚点时，相关子树不可访问。标注评论镜像不能用作问题线程。
+
+新回复通过 `POST /feedbacks/:root_id/replies` 提交，工作台回复仅提供纯文本，不能为空白。已有回复 API 的附件字段保持兼容；任务或问题的附件上传下载、提及和富文本编辑不在工作台讨论功能范围内。
+
+列表、线程和写接口都会检查项目与任务权限。`actions` 包含 `edit`、`change_status`、`delete`、`reply`，仅作客户端能力提示，服务端仍独立校验每次操作。作者和管理员可编辑、删除；非作者审核员仅可修改问题状态，混入正文、标题或严重度的请求整体返回 `403`。删除采用软删除，不会把子回复转成任务留言。
 
 ## 视频问题反馈
 

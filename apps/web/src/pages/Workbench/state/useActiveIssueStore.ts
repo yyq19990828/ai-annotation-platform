@@ -16,10 +16,13 @@ interface ActiveIssueState {
   focusTick: number;
   focusTarget: AnnotationFeedback | null;
   tabRequestTick: number;
+  /** Explicit pin requests are distinct from a generic Issues-tab/FAB request. */
+  pinRequestTick: number;
+  pinTarget: AnnotationFeedback | null;
   /** 列表单击：高亮 + 请求画布定位到该图钉。 */
   focusIssue: (target: string | AnnotationFeedback) => void;
   /** 图钉单击/hover：高亮 + 请求切到 issues tab。 */
-  highlightFromPin: (id: string) => void;
+  highlightFromPin: (target: string | AnnotationFeedback) => void;
   /** 仅请求切到 issues tab (工作台 issue FAB)，不改高亮。 */
   requestIssuesTab: () => void;
   /** 仅设置高亮 (hover 等不触发 tab 切换的场景)。 */
@@ -31,13 +34,21 @@ export const useActiveIssueStore = create<ActiveIssueState>((set) => ({
   focusTick: 0,
   focusTarget: null,
   tabRequestTick: 0,
+  pinRequestTick: 0,
+  pinTarget: null,
   focusIssue: (target) =>
     set((s) => ({
       highlightId: typeof target === "string" ? target : target.id,
       focusTarget: typeof target === "string" ? null : structuredClone(target),
       focusTick: s.focusTick + 1,
     })),
-  highlightFromPin: (id) => set((s) => ({ highlightId: id, tabRequestTick: s.tabRequestTick + 1 })),
+  highlightFromPin: (target) =>
+    set((s) => ({
+      highlightId: typeof target === "string" ? target : target.id,
+      pinTarget: typeof target === "string" ? null : structuredClone(target),
+      pinRequestTick: s.pinRequestTick + 1,
+      tabRequestTick: s.tabRequestTick + 1,
+    })),
   requestIssuesTab: () => set((s) => ({ tabRequestTick: s.tabRequestTick + 1 })),
   setHighlightId: (highlightId) => set({ highlightId }),
 }));

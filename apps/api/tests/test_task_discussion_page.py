@@ -571,6 +571,7 @@ async def test_assigned_away_task_is_hidden_from_new_and_legacy_comment_routes(
         f"/api/v1/comments/{comment.id}",
         f"/api/v1/annotations/{annotation_a.id}/comment-attachments/upload-init",
         f"/api/v1/annotations/{annotation_a.id}/comment-attachments/download?key={valid_key}",
+        f"/api/v1/annotations/{annotation_a.id}/comment-attachments/download?as_json=true&key={valid_key}",
     ]
     for path in paths:
         if (
@@ -594,6 +595,57 @@ async def test_assigned_away_task_is_hidden_from_new_and_legacy_comment_routes(
         else:
             response = await httpx_client_bound.get(path, headers=headers)
         assert response.status_code == 404, (path, response.text)
+
+
+@pytest.mark.parametrize("as_json", [False, True])
+async def test_attachment_download_json_retains_visibility_and_legacy_redirect(
+    httpx_client_bound,
+    db_session: AsyncSession,
+    super_admin,
+    monkeypatch,
+    as_json: bool,
+):
+    from app.api.v1.annotation_comments import storage_service
+
+    user, token = super_admin
+    _, _, annotation, other_annotation = await _seed_task(db_session, user.id)
+    await db_session.commit()
+    key = f"comment-attachments/{annotation.id}/file.png"
+    url = "https://storage.example.test/short-lived-attachment"
+    issued = []
+
+    def generate_download_url(storage_key, **options):
+        issued.append((storage_key, options))
+        return url
+
+    monkeypatch.setattr(storage_service, "generate_download_url", generate_download_url)
+    path = f"/api/v1/annotations/{annotation.id}/comment-attachments/download"
+    params = {"as_json": str(as_json).lower(), "key": key}
+    anonymous = await httpx_client_bound.get(
+        path, params=params, follow_redirects=False
+    )
+    assert anonymous.status_code in {401, 403}
+    assert issued == []
+
+    response = await httpx_client_bound.get(
+        path, params=params, headers=_bearer(token), follow_redirects=False
+    )
+    if as_json:
+        assert response.status_code == 200, response.text
+        assert response.json() == {"download_url": url}
+    else:
+        assert response.status_code == 302, response.text
+        assert response.headers["location"] == url
+    assert issued == [(key, {"expires_in": 300, "align": False})]
+
+    other_path = (
+        f"/api/v1/annotations/{other_annotation.id}/comment-attachments/download"
+    )
+    mismatch = await httpx_client_bound.get(
+        other_path, params=params, headers=_bearer(token), follow_redirects=False
+    )
+    assert mismatch.status_code == 400
+    assert len(issued) == 1
 
 
 async def test_cross_project_reviewer_and_annotator_are_hidden_from_comment_surfaces(

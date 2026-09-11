@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -491,10 +491,16 @@ async def comment_attachment_upload_init(
 async def comment_attachment_download(
     annotation_id: uuid.UUID,
     key: str,
+    as_json: bool = False,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ALL_ANNOTATORS)),
 ):
-    """v0.6.3 P0：评论附件下载。校验 key 前缀防越权 + 项目可见性，302 跳转预签名 URL。"""
+    """Authorize the original annotation before issuing a short-lived download URL.
+
+    Legacy clients retain the redirect. Bearer-authenticated browser callers
+    request JSON first so a normal link does not omit the authorization header
+    or forward it to the object-storage redirect target.
+    """
     expected_prefix = f"{ATTACHMENT_KEY_PREFIX}{annotation_id}/"
     if not key.startswith(expected_prefix):
         raise HTTPException(status_code=400, detail="invalid attachment key")
@@ -503,4 +509,6 @@ async def comment_attachment_download(
     await require_visible_annotation(db, annotation_id, current_user)
     # 评论附件私链要求严格 5 分钟有效期, 不走缓存对齐 (否则可能被拉长到 ~15 分钟)。
     url = storage_service.generate_download_url(key, expires_in=300, align=False)
+    if as_json:
+        return JSONResponse({"download_url": url})
     return RedirectResponse(url, status_code=302)
