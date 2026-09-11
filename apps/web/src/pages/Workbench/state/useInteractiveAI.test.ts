@@ -903,6 +903,121 @@ describe("useInteractiveAI", () => {
 
   // v0.18.19 · exemplar refine 会话 (多正负框 + text 组合 + 阈值重过滤)
   describe("exemplar refine 会话", () => {
+    it("框与原生 Mask 混合候选消费矩形后仍保留 Mask 的签名索引", async () => {
+      const response = nativeResponse();
+      const mask = response.result[0];
+      const secondMask = { ...mask, candidate_id: `sha256:${"b".repeat(64)}` };
+      const box = {
+        type: "rectanglelabels",
+        value: { x: 0, y: 0, width: 1, height: 1, rectanglelabels: ["person"] },
+        score: 0.93,
+      };
+      interactiveAnnotateMock.mockResolvedValue({
+        ...response,
+        result: [box, mask, box, secondMask],
+        accept_receipts: {
+          [mask.candidate_id]: "receipt-index-1",
+          [secondMask.candidate_id]: "receipt-index-3",
+        },
+      });
+      const { result } = renderHook(() =>
+        useInteractiveAI({
+          ...ARGS,
+          requestContextDefaults: { model_id: "sam-mask", output_geometry: "mask" },
+        }),
+      );
+      act(() => result.current.runExemplar([0.1, 0.2, 0.4, 0.6], 1, "both"));
+      await waitFor(() => expect(result.current.candidates).toHaveLength(4));
+      expect(result.current.candidates.map((candidate) => candidate.type)).toEqual([
+        "rectanglelabels",
+        "mask",
+        "rectanglelabels",
+        "mask",
+      ]);
+      expect(interactiveAnnotateMock.mock.calls[0][2].context).toMatchObject({
+        output: "both",
+        output_geometry: "mask",
+      });
+      act(() => result.current.consume(0));
+      expect(result.current.candidates[0]).toMatchObject({
+        type: "mask",
+        candidateIndex: 1,
+        receipt: "receipt-index-1",
+      });
+      act(() => result.current.consume(0));
+      expect(result.current.candidates[1]).toMatchObject({
+        type: "mask",
+        candidateIndex: 3,
+        receipt: "receipt-index-3",
+      });
+    });
+
+    it("仅框召回不受 Mask 保存偏好影响，切回掩膜恢复原有设置", async () => {
+      const defaults = { model_id: "sam-mask", output_geometry: "mask" };
+      const extra = { output_geometry: "mask", score_threshold: 0.7 };
+      const boxResponse = {
+        result: [
+          {
+            type: "rectanglelabels",
+            value: { x: 0.1, y: 0.2, width: 0.3, height: 0.4, rectanglelabels: ["car"] },
+            score: 0.9,
+          },
+        ],
+      };
+      interactiveAnnotateMock
+        .mockResolvedValueOnce(boxResponse)
+        .mockResolvedValueOnce(nativeResponse());
+      const { result } = renderHook(() =>
+        useInteractiveAI({ ...ARGS, requestContextDefaults: defaults }),
+      );
+
+      act(() => result.current.runExemplar([0.1, 0.2, 0.4, 0.6], 1, "box", extra));
+      await waitFor(() => expect(result.current.candidates).toHaveLength(1));
+      expect(interactiveAnnotateMock.mock.calls[0][2].context).toMatchObject({
+        type: "exemplar",
+        output: "box",
+        output_geometry: "polygon",
+        model_id: "sam-mask",
+        score_threshold: 0.7,
+      });
+      expect(result.current.candidates[0].type).toBe("rectanglelabels");
+      expect(result.current.error).toBeNull();
+
+      act(() => result.current.rerunExemplar("mask"));
+      await waitFor(() => expect(result.current.candidates[0]?.type).toBe("mask"));
+      expect(interactiveAnnotateMock.mock.calls[1][2].context).toMatchObject({
+        output: "mask",
+        output_geometry: "mask",
+      });
+
+      act(() => result.current.rerunExemplar("box"));
+      await waitFor(() => expect(result.current.candidates[0]?.type).toBe("rectanglelabels"));
+      expect(interactiveAnnotateMock).toHaveBeenCalledTimes(2);
+      expect(defaults.output_geometry).toBe("mask");
+      expect(extra.output_geometry).toBe("mask");
+    });
+
+    it("视频自定义 transport 的仅框召回同样不携带原生 Mask 契约", async () => {
+      const transport = vi.fn().mockResolvedValue({ result: [], frame_index: 12 });
+      const { result } = renderHook(() =>
+        useInteractiveAI({
+          ...ARGS,
+          transport,
+          cacheScope: "frame:12",
+          requestContextDefaults: { model_id: "sam-mask", output_geometry: "mask" },
+        }),
+      );
+
+      act(() => result.current.runExemplar([0.1, 0.1, 0.3, 0.3], 1, "box"));
+      await waitFor(() => expect(transport).toHaveBeenCalledTimes(1));
+      expect(transport.mock.calls[0][0].context).toMatchObject({
+        type: "exemplar",
+        output: "box",
+        output_geometry: "polygon",
+      });
+      expect(interactiveAnnotateMock).not.toHaveBeenCalled();
+    });
+
     it("runExemplar 累加正/负框, 每次重发全量 exemplars[]", async () => {
       interactiveAnnotateMock.mockResolvedValue(POLY_RESPONSE);
       const { result } = renderHook(() => useInteractiveAI(ARGS));

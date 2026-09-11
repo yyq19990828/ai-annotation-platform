@@ -55,6 +55,8 @@ interface DropdownMenuBaseProps {
   minWidth?: number;
   /** 菜单 z-index，默认 30。 */
   zIndex?: number;
+  /** 面板的可访问名称，content 模式应与 trigger 的用途一致。 */
+  panelAriaLabel?: string;
   /** 面板根 style 覆盖（用于 NotificationsPopover 这类需要更宽 / 自管 padding 的场景）。 */
   panelStyle?: CSSProperties;
   /** 是否禁用面板默认 padding（content 模式下，自定义内容自管 padding 时设 true）。 */
@@ -156,6 +158,7 @@ export function DropdownMenu(props: DropdownMenuProps) {
     hostStyle,
     minWidth = 180,
     zIndex = 30,
+    panelAriaLabel,
     panelStyle,
     disablePanelPadding,
   } = props;
@@ -311,6 +314,7 @@ export function DropdownMenu(props: DropdownMenuProps) {
     <div
       ref={menuRef}
       role={items ? "menu" : "dialog"}
+      aria-label={panelAriaLabel}
       aria-orientation={items ? "vertical" : undefined}
       tabIndex={-1}
       onKeyDown={onMenuKey}

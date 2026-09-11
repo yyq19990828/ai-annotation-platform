@@ -226,7 +226,7 @@ async function open(page: Page, fixture: Case) {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto(`/projects/${fixture.data.project_id}/annotate?task=${fixture.taskId}`);
   await page.getByRole("button", { name: "布局", exact: true }).click();
-  await page.getByRole("menuitem", { name: "标准标注布局", exact: true }).click();
+  await page.getByRole("button", { name: "标准标注布局", exact: true }).click();
   await expect(stage(page)).toHaveAttribute("data-image-ready", "true", { timeout: 20_000 });
   await page.getByTestId("tool-btn-select").click();
 }

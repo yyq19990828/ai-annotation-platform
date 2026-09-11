@@ -225,13 +225,52 @@ export interface PointcloudCameraState {
   mode: "orbit" | "bev";
 }
 
+/**
+ * 用户显式另存的布局。与 `contexts` 的直播快照分开:后者是"当前布局自动记住",
+ * 本表是账号级最多 5 份可反复套用的命名副本,由布局设置里的 CRUD 整表提交。
+ */
+export interface NamedWorkspacePreset extends WorkspaceEnvelope {
+  name: string;
+  context: WorkspaceContext;
+}
+
+/** GET 保留无法由当前客户端解释的存量条目，写入时需原样带回。 */
+export type StoredNamedWorkspacePresets = Record<string, unknown>;
+
+export const MAX_NAMED_WORKSPACE_PRESETS = 5;
+export const MAX_WORKSPACE_PRESET_NAME_LENGTH = 40;
+
 export interface WorkspacePreferences {
+  /** GET 可能透传更新客户端写入的引擎标记。 */
+  engine: string;
+  /** 只存过命名预设的账号还没有任何直播快照,此时整个键缺席。 */
+  contexts?: Partial<Record<WorkspaceContext, WorkspaceEnvelope>>;
+  namedPresets?: StoredNamedWorkspacePresets;
+}
+
+export interface WorkspacePreferencesPatch {
   engine: "dockview@8";
-  contexts: Partial<Record<WorkspaceContext, WorkspaceEnvelope>>;
+  contexts?: Partial<Record<WorkspaceContext, WorkspaceEnvelope>>;
+  namedPresets?: never;
+}
+
+/** Compare-and-swap write owned exclusively by useWorkbenchNamedPresets. */
+export interface NamedWorkspacePresetsPatch {
+  namedPresetsRevision: string;
+  workbench: {
+    layout: {
+      workspace: {
+        engine?: never;
+        contexts?: never;
+        namedPresets: StoredNamedWorkspacePresets;
+      };
+    };
+  };
 }
 
 export interface WorkbenchLayoutPreferences {
-  workspace?: WorkspacePreferences;
+  /** GET may preserve an explicitly null historical/corrupt stored value. */
+  workspace?: WorkspacePreferences | null;
   leftOpen: boolean;
   rightOpen: boolean;
   /** v0.20.19 · 右栏「标注详情」属性区折叠态(随账号持久)。 */
@@ -299,15 +338,22 @@ export interface OnboardingPreferencesPatch {
 }
 
 export interface UserPreferences {
+  /** Opaque compare-and-swap token for the complete namedPresets map. */
+  namedPresetsRevision?: string;
   workbench: WorkbenchPreferences;
   ai: AIToolPreferences;
   ui: UIPreferences;
   onboarding?: OnboardingPreferences;
 }
 
-export type UserPreferencesPatch = Omit<Partial<UserPreferences>, "workbench" | "onboarding"> & {
+export type UserPreferencesPatch = Omit<
+  Partial<UserPreferences>,
+  "workbench" | "onboarding" | "namedPresetsRevision"
+> & {
   workbench?: Omit<Partial<WorkbenchPreferences>, "layout"> & {
-    layout?: Partial<WorkbenchLayoutPreferences>;
+    layout?: Omit<Partial<WorkbenchLayoutPreferences>, "workspace"> & {
+      workspace?: WorkspacePreferencesPatch;
+    };
   };
   onboarding?: OnboardingPreferencesPatch;
 };
@@ -450,5 +496,7 @@ export const authApi = {
   getPreferences: () => apiClient.get<UserPreferences>("/auth/me/preferences"),
   // 后端按顶层子树合并（exclude_unset），故可只提交单个子树（workbench 或 ai）。
   updatePreferences: (payload: UserPreferencesPatch) =>
+    apiClient.patch<UserPreferences>("/auth/me/preferences", payload),
+  updateNamedPresets: (payload: NamedWorkspacePresetsPatch) =>
     apiClient.patch<UserPreferences>("/auth/me/preferences", payload),
 };

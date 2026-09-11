@@ -211,7 +211,7 @@ async function open(page: Page, fixture: ScopeCase) {
   await expect(stage(page)).toBeVisible({ timeout: 25_000 });
   await expect(stage(page).locator(".konvajs-content > canvas").first()).toBeVisible();
   await page.getByRole("button", { name: "布局", exact: true }).click();
-  await page.getByRole("menuitem", { name: "标准标注布局", exact: true }).click();
+  await page.getByRole("button", { name: "标准标注布局", exact: true }).click();
   await expect(page.getByTestId("video-tool-scope")).toBeVisible();
 }
 

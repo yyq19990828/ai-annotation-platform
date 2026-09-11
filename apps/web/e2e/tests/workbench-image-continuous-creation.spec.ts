@@ -58,7 +58,7 @@ async function open(page: Page, seed: SeedAPI, data: Awaited<ReturnType<typeof p
   await seed.injectToken(page, data.annotator_email);
   await page.goto(`/projects/${data.project_id}/annotate?task=${data.task_ids[0]}`);
   await page.getByRole("button", { name: "布局", exact: true }).click();
-  await page.getByRole("menuitem", { name: "标准标注布局", exact: true }).click();
+  await page.getByRole("button", { name: "标准标注布局", exact: true }).click();
   await expect(page.getByTestId("workbench-stage")).toHaveAttribute("data-image-ready", "true");
 }
 

@@ -217,11 +217,12 @@ jobs:
         run: >-
           uv tool run --from pre-commit==4.6.1 pre-commit run
           --all-files --hook-stage manual --show-diff-on-failure
-      # Enforce workflow and job naming across the repository.
+      - name: Repository Node script tests
+        run: >-
+          node --test scripts/check-workflow-names.test.mjs
+          scripts/dev-worktree.test.mjs scripts/plan-e2e-suites.test.mjs
       - name: Workflow naming
-        run: |
-          node --test scripts/check-workflow-names.test.mjs scripts/plan-e2e-suites.test.mjs
-          node scripts/check-workflow-names.mjs --strict
+        run: node scripts/check-workflow-names.mjs --strict
 
   docs-build:
     name: Docs build

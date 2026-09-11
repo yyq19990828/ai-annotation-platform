@@ -204,7 +204,7 @@ Inspector 的候选属性按候选自身的工具单位读取 schema，由原候
 - **上段 `.rightSplitTop`**：`AIInspectorPanel`，与下段之间有一个上下拖拽 handle。上段高度持久化到 localStorage `workbench.rightSplit.topHeight`（默认 360px，范围 160–720px）。
 - **下段 `.rightSplitBottom`**：`DiscussionPanel`，承载评论 / 历史 / issue 的统一讨论入口。
 - **列宽拖拽 handle** 提升到 `.rightSplit` 全高层级，覆盖两段，不再只贴在 AI 检查器一侧。
-- **布局偏好**：左右栏开合、左右栏宽度、任务队列 / 类别面板 / 标注详情 / 讨论面板浮窗、3D 三视图浮层、2D 相机面板布局和点云主视角快照写入 `user.preferences.workbench.layout`；前端提交全量 `workbench` 子树，后端递归合并偏好字典，列表覆盖；`workbench.layout.cameraPanels` 按原子 map 替换。
+- **布局偏好**：左右栏开合、左右栏宽度、任务队列 / 类别面板 / 标注详情 / 讨论面板浮窗、3D 三视图浮层、2D 相机面板布局和点云主视角快照写入 `user.preferences.workbench.layout`；前端提交全量 `workbench` 子树，后端递归合并偏好字典，列表覆盖；`workbench.layout.cameraPanels` 按原子 map 替换，`workbench.layout.workspace.namedPresets` 还使用独立 revision 防止陈旧整图覆盖。
 - **侧栏区块分离**：`TaskQueuePanel` 内的任务队列和类别面板、`AIInspectorPanel`、`DiscussionPanel` 都可由 `WorkbenchLayout` 改用 `FloatingPanelShell` 渲染。分离操作默认收起对应侧栏；后续展开只显示仍嵌入的区块，不会自动合并浮窗。合并回侧栏只恢复嵌入状态，不主动展开侧栏。若一侧两个区块都已分离，侧栏 toggle 是可见 no-op。
 
 外围面板可放到画布左、右或底部，也可与其他外围面板组成标签。同窗口浮窗可以包含标签，但浮窗内部不支持再次切分网格。画布换位命令将同一个 `canvas` group 放到整棵可见树的左、右、上、下边缘；画布继续隐藏 header 并锁住原生拖放。`parking` 不显示 header，也不接收用户拖放。适配层不提供 popout，不调用 `addPopoutGroup`，快照清洗也不保留外部窗口描述。
@@ -279,6 +279,12 @@ context 是 `annotate|review × image|video|3d` 的六项闭集，按账号分�
 本地缓存按账号和 context 隔离，切换后取消旧 context 尚未发送的定时写入，旧请求回包不回灌新会话。`useWorkbenchConfig` 的 `setLayout`、`setFields` 和完整偏好保存继续负责其他字段，但通用本地与服务端 writer 都剔除 workspace 副本和已退役的 `triViewFloat`，不产生第二份布局写入。
 
 后端复用 `GET/PATCH /auth/me/preferences`。PATCH 在事务中锁定并刷新当前用户偏好，将 `workspace.contexts.<context>` 作为原子替换路径，锁内拒绝 schemaVersion 降级；不同 context 仍分别合并。同 context、同 schema 的多标签页和多设备采用最后一次写入生效，不引入 revision 或 ETag。部署时先上线后端 schema，再上线可写 workspace 的前端。
+
+### 命名布局预设
+
+`workspace.namedPresets` 与 `contexts` 并列，保存用户显式另存的布局：每账号至多 5 条，键是预设 ID，值在 context 快照信封上增加 `name`（不超过 40 字）与 `context`，同一账号内名称不重复。后端把它当作整份原子替换的 map，省略某条即删除；`contexts` 因此可以缺席，只存过预设的账号不算损坏快照。响应根部的 `namedPresetsRevision` 是该 map 独立的 opaque compare-and-swap token：预设写入必须回传最近 token，后端在刷新并锁定用户行后比较，成功写入生成新 token，陈旧写入返回 `409 named_presets_conflict`。其他偏好写入不推进该 revision。
+
+`useWorkbenchNamedPresets` 是它唯一的写入者，与 `useWorkbenchWorkspaceLayout` 共用同一个 React Query key，但两者提交的键互不相交：布局 PATCH 不带 `namedPresets`，预设 PATCH 不带 `contexts`，各自只在缓存里替换自己那一部分。预设写入遇到 revision 冲突时不自动重放陈旧 map，而是刷新权威清单并要求用户重做该次操作。同名保存视为更新既有条目，不占新名额。无法解析或来自更高 schema 的条目原样参与每次整表提交，界面上只允许删除，不允许应用，避免旧客户端洗掉新版预设。应用预设走与内置预设相同的原位重排路径，结果照常落入 `contexts.<context>`，不持久化“当前预设 ID”。
 
 ### 初次迁移与保留字段
 

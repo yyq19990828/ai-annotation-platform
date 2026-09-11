@@ -1,6 +1,7 @@
 import { panelCommand } from "../fixtures/workbench-panel-actions";
 import { layoutCommand, openLayoutSettings } from "../helpers/workbench-layout";
 import type { Page } from "@playwright/test";
+import type { NamedWorkspacePreset } from "../../src/api/auth";
 import type {
   PanelId,
   WorkspaceNode,
@@ -9,6 +10,9 @@ import type {
 import { expect, test } from "../fixtures/seed";
 
 const DESKTOP = { width: 1440, height: 900 };
+// 每次运行都新起 dev server，首屏要现编译整张模块图：本机实测 4.9–5.7s，
+// 超过 expect 的 5s 默认预算。首屏之后的断言不需要这个宽限。
+const FIRST_PAINT = { timeout: 20_000 };
 const panel = (page: Page, id: string) => page.locator(`[data-workbench-panel="${id}"]`);
 
 async function savedSnapshot(page: Page, context: string): Promise<WorkspaceSnapshot | undefined> {
@@ -18,6 +22,15 @@ async function savedSnapshot(page: Page, context: string): Promise<WorkspaceSnap
   });
   expect(response.ok(), await response.text()).toBe(true);
   return (await response.json()).workbench.layout.workspace?.contexts[context]?.snapshot;
+}
+
+async function savedPresets(page: Page): Promise<Record<string, NamedWorkspacePreset>> {
+  const token = await page.evaluate(() => localStorage.getItem("token"));
+  const response = await page.request.get("/api/v1/auth/me/preferences", {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  expect(response.ok(), await response.text()).toBe(true);
+  return (await response.json()).workbench.layout.workspace?.namedPresets ?? {};
 }
 
 function groupFor(node: WorkspaceNode, id: PanelId): string | undefined {
@@ -98,11 +111,11 @@ test("AI 候选和多选不会作为标注身份查询隐藏讨论面板", async
     });
     await seed.injectToken(page, data.annotator_email);
     await page.goto(`/projects/${data.project_id}/annotate?task=${taskId}`);
-    // A cold isolated Vite server compiles the renderer before loading the
-    // source image; use the same readiness budget as rememberCanvas below.
-    await expect(page.getByTestId("workbench-stage")).toHaveAttribute("data-image-ready", "true", {
-      timeout: 20_000,
-    });
+    await expect(page.getByTestId("workbench-stage")).toHaveAttribute(
+      "data-image-ready",
+      "true",
+      FIRST_PAINT,
+    );
     await layoutCommand(page, "标准标注布局");
     const discussion = panel(page, "discussion");
     const editor = discussion.locator('[contenteditable="true"]');
@@ -193,7 +206,7 @@ test("图片布局预设、面板隐藏和浮动保留画布及未发送讨论�
 
   // Keep a persisted selection while layout changes preserve the task composer.
   const stage = page.getByTestId("workbench-stage");
-  await expect(stage).toHaveAttribute("data-image-ready", "true");
+  await expect(stage).toHaveAttribute("data-image-ready", "true", FIRST_PAINT);
   await page.getByTestId(`box-list-item-${annotation.id}`).click();
 
   const discussion = panel(page, "discussion");
@@ -369,8 +382,12 @@ test("标准和浮动布局使用日间与夜间语义主题", { tag: "@visual" 
   await page.goto(`/projects/${data.project_id}/annotate?task=${data.task_ids[0]}`);
   await expect(
     page.getByTestId("workbench-stage").locator(".konvajs-content > canvas").first(),
-  ).toBeVisible();
-  await expect(page.getByTestId("workbench-stage")).toHaveAttribute("data-image-ready", "true");
+  ).toBeVisible(FIRST_PAINT);
+  await expect(page.getByTestId("workbench-stage")).toHaveAttribute(
+    "data-image-ready",
+    "true",
+    FIRST_PAINT,
+  );
   await layoutCommand(page, "标准标注布局");
   await page.mouse.move(0, 0);
   await expect(page.locator("[data-sonner-toast]")).toHaveCount(0, { timeout: 12_000 });
@@ -394,6 +411,49 @@ test("标准和浮动布局使用日间与夜间语义主题", { tag: "@visual" 
       );
     }
   }
+});
+
+test("命名布局预设随账号保存，可跨刷新应用与删除", async ({ page, seed }) => {
+  test.setTimeout(90_000);
+  const data = await seed.reset();
+  await seed.injectToken(page, data.admin_email);
+  await page.goto(`/projects/${data.project_id}/annotate?task=${data.task_ids[0]}`);
+  await layoutCommand(page, "标准标注布局");
+
+  await panelCommand(page, "讨论", "隐藏面板");
+  await expect(panel(page, "discussion")).toHaveAttribute("aria-hidden", "true");
+  let dialog = await openLayoutSettings(page);
+  await dialog.getByLabel("预设名称").fill("无讨论精简");
+  await dialog.getByRole("button", { name: "保存当前布局", exact: true }).click();
+  await expect(dialog.getByText("1 / 5")).toBeVisible();
+  await expect
+    .poll(async () => Object.values(await savedPresets(page)).map((preset) => preset.name))
+    .toEqual(["无讨论精简"]);
+  await dialog.getByRole("button", { name: "关闭设置", exact: true }).click();
+
+  // 换成内置预设，再从保存的预设套回来。
+  await layoutCommand(page, "标准标注布局");
+  await expect(panel(page, "discussion")).toHaveAttribute("aria-hidden", "false");
+  await page.reload();
+  await expect(page.getByTestId("workbench-stage")).toHaveAttribute(
+    "data-image-ready",
+    "true",
+    FIRST_PAINT,
+  );
+  // 重载会重建 DOM；套用预设不应再动画布实例。
+  const sameCanvas = await rememberCanvas(page, "workbench-stage");
+  dialog = await openLayoutSettings(page);
+  await expect(dialog.getByText("无讨论精简")).toBeVisible();
+  await dialog.getByRole("button", { name: "应用", exact: true }).click();
+  await dialog.getByRole("button", { name: "关闭设置", exact: true }).click();
+  await expect(panel(page, "discussion")).toHaveAttribute("aria-hidden", "true");
+  await sameCanvas();
+
+  dialog = await openLayoutSettings(page);
+  await dialog.getByRole("button", { name: "删除预设 无讨论精简", exact: true }).click();
+  await dialog.getByRole("button", { name: "确认删除", exact: true }).click();
+  await expect(dialog.getByText("0 / 5")).toBeVisible();
+  await expect.poll(async () => await savedPresets(page)).toEqual({});
 });
 
 test("预设撤销恢复自定义树，后续预设替换撤销点且紧凑模式清除撤销入口", async ({ page, seed }) => {
@@ -505,7 +565,7 @@ test("视频紧凑布局禁止桌面写入，退出后恢复浮窗与非零帧�
   await expect(page.locator("[data-workbench-workspace]")).toHaveAttribute("data-compact", "true");
   await page.getByRole("button", { name: "布局", exact: true }).click();
   for (const name of ["标准标注布局", "专注画布布局"]) {
-    await expect(page.getByRole("menuitem", { name, exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name, exact: true })).toBeDisabled();
   }
   await page.keyboard.press("Escape");
   const settings = await openLayoutSettings(page);

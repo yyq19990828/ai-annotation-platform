@@ -90,6 +90,7 @@ def test_workbench_layout_preferences_accept_camelcase_and_dump_aliases():
 def test_workbench_layout_preferences_keep_default_subtree():
     prefs = UserPreferences.model_validate({})
 
+    assert prefs.named_presets_revision == "0"
     assert prefs.workbench.image.smoothImage is True
     assert prefs.workbench.layout.left_open is None
     assert prefs.workbench.layout.floating_task_queue is None

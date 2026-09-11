@@ -25,10 +25,14 @@ PanelId = Literal[
     "camera-view",
 ]
 GroupId = Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")]
+PresetId = Annotated[str, Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")]
 CORE_PANELS = {"canvas", "task-queue", "class-palette", "inspector", "discussion"}
 TOOL_PANELS = {"ai-task", "video-tracker"}
 THREE_D_PANELS = {"tri-view", "camera-view"}
 MAX_SNAPSHOT_BYTES = 64 * 1024
+# Explicitly saved layouts are a personal shortlist, not a layout archive.
+MAX_NAMED_PRESETS = 5
+MAX_PRESET_NAME_LENGTH = 40
 
 
 class WorkspaceModel(BaseModel):
@@ -273,27 +277,67 @@ class WorkspaceContextEnvelope(WorkspaceModel):
         return self
 
 
+class NamedWorkspacePreset(WorkspaceContextEnvelope):
+    """A layout the user explicitly saved, alongside the live per-context snapshot.
+
+    Saving is a personal shortcut: the entry records the context it was captured
+    in so the client only offers it for the matching work type. The snapshot
+    itself reuses the live envelope grammar, so a preset can never describe a
+    layout the workspace could not restore.
+    """
+
+    name: str = Field(min_length=1, max_length=MAX_PRESET_NAME_LENGTH)
+    context: WorkspaceContext
+
+    @field_validator("name")
+    @classmethod
+    def _visible_name(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("preset name cannot be blank")
+        return value
+
+
+def _require_three_d_parking(
+    context: WorkspaceContext, envelope: WorkspaceContextEnvelope
+) -> None:
+    if context.endswith(":3d") or envelope.schemaVersion < 5:
+        return
+    pending = [envelope.snapshot.layout.grid.root]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, WorkspaceBranch):
+            pending.extend(node.data)
+        elif node.data.id != "parking" and set(node.data.views) & THREE_D_PANELS:
+            raise ValueError("3D panels require parking outside 3D contexts")
+    if any(
+        set(group.data.views) & THREE_D_PANELS
+        for group in envelope.snapshot.layout.floatingGroups
+    ):
+        raise ValueError("3D panels require parking outside 3D contexts")
+
+
 class WorkbenchWorkspacePreferences(WorkspaceModel):
     engine: Literal["dockview@8"]
-    contexts: dict[WorkspaceContext, WorkspaceContextEnvelope] = Field(max_length=6)
+    # Both maps are optional so one writer can replace saved presets without
+    # resubmitting live layouts, and the layout writer never carries presets.
+    contexts: dict[WorkspaceContext, WorkspaceContextEnvelope] = Field(
+        default_factory=dict, max_length=6
+    )
+    namedPresets: dict[PresetId, NamedWorkspacePreset] = Field(
+        default_factory=dict, max_length=MAX_NAMED_PRESETS
+    )
 
     @model_validator(mode="after")
     def _three_d_scope(self):
         for context, envelope in self.contexts.items():
-            if context.endswith(":3d") or envelope.schemaVersion < 5:
-                continue
-            pending = [envelope.snapshot.layout.grid.root]
-            while pending:
-                node = pending.pop()
-                if isinstance(node, WorkspaceBranch):
-                    pending.extend(node.data)
-                elif (
-                    node.data.id != "parking" and set(node.data.views) & THREE_D_PANELS
-                ):
-                    raise ValueError("3D panels require parking outside 3D contexts")
-            if any(
-                set(group.data.views) & THREE_D_PANELS
-                for group in envelope.snapshot.layout.floatingGroups
-            ):
-                raise ValueError("3D panels require parking outside 3D contexts")
+            _require_three_d_parking(context, envelope)
+        for preset in self.namedPresets.values():
+            _require_three_d_parking(preset.context, preset)
+        return self
+
+    @model_validator(mode="after")
+    def _distinct_preset_names(self):
+        names = [preset.name.strip() for preset in self.namedPresets.values()]
+        if len(names) != len(set(names)):
+            raise ValueError("preset names must be unique")
         return self
