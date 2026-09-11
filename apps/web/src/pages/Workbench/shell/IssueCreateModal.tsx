@@ -29,8 +29,10 @@ interface Props {
   listParams: ListFeedbacksParams;
   /** The clicked normalized point and, for video, its confirmed source frame. */
   prefilledAnchor?: IssuePinAnchor | null;
-  /** Task-only video entry cannot promote unverified coordinates into a pixel Issue. */
+  /** Explicit creation intent. Pixel creation is valid only with a confirmed anchor. */
   anchorMode?: "pixel" | "task";
+  /** Alias for coordinators wiring a separate creation-intent field. */
+  creationIntent?: "pixel" | "task";
   onClose: () => void;
 }
 
@@ -39,27 +41,40 @@ export function IssueCreateModal(props: Props) {
   return <IssueCreateSession key={JSON.stringify([props.projectId, props.taskId])} {...props} />;
 }
 
+function locationSummary(anchor: IssuePinAnchor): string {
+  const position = `画布位置 x ${anchor.x.toFixed(3)} · y ${anchor.y.toFixed(3)}`;
+  const frame = typeof anchor.frame === "number" ? ` · 源帧 F ${anchor.frame}` : "";
+  const object = anchor.annotationId
+    ? ` · 对象 ${anchor.annotationLabel ?? anchor.annotationId}`
+    : "";
+  return `${position}${frame}${object}`;
+}
+
 function IssueCreateSession({
   projectId,
   taskId,
   listParams,
   prefilledAnchor,
-  anchorMode = "pixel",
+  anchorMode,
+  creationIntent,
   onClose,
 }: Props) {
   // Each opening/task owns its form and mutation observer, including A → B → A.
-  const [snapshot] = useState(() => ({
-    projectId,
-    taskId,
-    listParams: { ...listParams },
-    anchor: anchorMode === "pixel" && prefilledAnchor ? structuredClone(prefilledAnchor) : null,
-    anchorMode,
-  }));
+  // The intent and anchor are snapshots: a late parent update cannot move a
+  // submission to another point or silently turn a task Issue into a pixel one.
+  const [snapshot] = useState(() => {
+    const mode = creationIntent ?? anchorMode ?? (prefilledAnchor ? "pixel" : "task");
+    return {
+      projectId,
+      taskId,
+      listParams: { ...listParams },
+      anchor: mode === "pixel" && prefilledAnchor ? structuredClone(prefilledAnchor) : null,
+      anchorMode: mode,
+    } as const;
+  });
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [severity, setSeverity] = useState<FeedbackSeverity>("warn");
-  const [x, setX] = useState(() => snapshot.anchor?.x.toFixed(3) ?? "");
-  const [y, setY] = useState(() => snapshot.anchor?.y.toFixed(3) ?? "");
   const [rangeEnabled, setRangeEnabled] = useState(false);
   const [rangeFrom, setRangeFrom] = useState(() => String(snapshot.anchor?.frame ?? 0));
   const [rangeTo, setRangeTo] = useState(() => String(snapshot.anchor?.frame ?? 0));
@@ -78,25 +93,24 @@ function IssueCreateSession({
     };
   }, []);
 
-  const parsedX = parseFloat(x);
-  const parsedY = parseFloat(y);
+  const pixelMode = snapshot.anchorMode === "pixel";
+  const anchor = snapshot.anchor;
   const hasValidPixel =
-    Number.isFinite(parsedX) &&
-    Number.isFinite(parsedY) &&
-    parsedX >= 0 &&
-    parsedX <= 1 &&
-    parsedY >= 0 &&
-    parsedY <= 1;
-  const pixelMode = snapshot.anchorMode === "pixel" && (x !== "" || y !== "");
+    !!anchor &&
+    Number.isFinite(anchor.x) &&
+    Number.isFinite(anchor.y) &&
+    anchor.x >= 0 &&
+    anchor.x <= 1 &&
+    anchor.y >= 0 &&
+    anchor.y <= 1;
   const pixelInvalid = pixelMode && !hasValidPixel;
-  const frame = snapshot.anchor?.frame;
-  const videoContext = snapshot.anchor?.videoContext;
+  const frame = anchor?.frame;
+  const videoContext = anchor?.videoContext;
   const rangeInvalid =
     pixelMode &&
     !!videoContext &&
     rangeEnabled &&
-    (frame === undefined ||
-      !validIssueFrameRange(rangeFrom, rangeTo, frame, snapshot.anchor?.maxFrame));
+    (frame === undefined || !validIssueFrameRange(rangeFrom, rangeTo, frame, anchor?.maxFrame));
 
   const canSubmit =
     body.trim().length > 0 && !pixelInvalid && !rangeInvalid && !submitting && !createMut.isPending;
@@ -113,21 +127,17 @@ function IssueCreateSession({
     requestRef.current = request;
     setSubmitting(true);
     setSubmitError(null);
-    const isCurrent = () =>
-      mountedRef.current && !closedRef.current && requestRef.current === request;
     createMut.mutate(
       {
         kind: "issue",
         anchor_type: pixelMode ? "pixel" : "task",
         project_id: snapshot.projectId,
         task_id: snapshot.taskId,
-        ...(pixelMode && snapshot.anchor?.annotationId
-          ? { annotation_id: snapshot.anchor.annotationId }
-          : {}),
+        ...(pixelMode && anchor?.annotationId ? { annotation_id: anchor.annotationId } : {}),
         anchor_position: pixelMode
           ? {
-              x: parsedX,
-              y: parsedY,
+              x: anchor!.x,
+              y: anchor!.y,
               ...(frame !== undefined ? { frame } : {}),
               ...(videoContext && frame !== undefined
                 ? {
@@ -152,17 +162,15 @@ function IssueCreateSession({
       },
       {
         onSuccess: () => {
-          if (!isCurrent()) return;
+          if (!mountedRef.current || closedRef.current || requestRef.current !== request) return;
           requestRef.current = null;
           setSubmitting(false);
           setTitle("");
           setBody("");
-          setX("");
-          setY("");
           handleClose();
         },
         onError: (error) => {
-          if (!isCurrent()) return;
+          if (!mountedRef.current || closedRef.current || requestRef.current !== request) return;
           requestRef.current = null;
           setSubmitting(false);
           setSubmitError(error instanceof Error ? error.message : "创建失败，请重试");
@@ -246,53 +254,43 @@ function IssueCreateSession({
           />
         </div>
 
-        {snapshot.anchorMode === "pixel" ? (
-          <div className="flex flex-col gap-1.5">
-            <label className="text-xs text-muted-foreground">像素锚点（可选, 0-1 相对坐标）</label>
+        {pixelMode ? (
+          <div className="flex flex-col gap-1.5" data-testid="issue-create-pixel-scope">
+            <span className="text-xs text-muted-foreground">已确认的画布位置（不可编辑）</span>
+            {anchor ? (
+              <span
+                className="rounded border border-border bg-muted px-2 py-1.5 text-xs text-foreground"
+                data-testid="issue-create-location-summary"
+              >
+                {locationSummary(anchor)}
+              </span>
+            ) : (
+              <span className="text-xs text-status-danger" role="alert">
+                尚未确认画布点，请关闭后使用「在画布选点」。
+              </span>
+            )}
+            {pixelInvalid && anchor && (
+              <span className="text-xs text-status-danger" role="alert">
+                画布位置无效，请重新在画布确认一个点。
+              </span>
+            )}
             {pixelMode && frame !== undefined && (
               <span className="text-xs text-muted-foreground" data-testid="issue-create-frame">
                 源帧 F {frame}
               </span>
             )}
-            <div className="flex gap-2">
-              <input
-                className={cn(FIELD_BASE, "min-w-0 flex-1")}
-                value={x}
-                onChange={(e) => setX(e.target.value)}
-                placeholder="x (0-1)"
-                type="number"
-                step="0.01"
-                min="0"
-                max="1"
-              />
-              <input
-                className={cn(FIELD_BASE, "min-w-0 flex-1")}
-                value={y}
-                onChange={(e) => setY(e.target.value)}
-                placeholder="y (0-1)"
-                type="number"
-                step="0.01"
-                min="0"
-                max="1"
-              />
-            </div>
-            {pixelInvalid && (
-              <span className="text-xs text-status-danger">
-                x/y 必须在 0-1 范围;留空则按任务级 issue 创建
-              </span>
-            )}
           </div>
         ) : (
-          <p className="m-0 text-xs text-muted-foreground">
-            任务级问题不绑定画面位置；标记位置请关闭表单后在视频画面落点。
+          <p className="m-0 text-xs text-muted-foreground" data-testid="issue-create-task-scope">
+            任务问题不绑定画布位置；需要定位具体点时，请关闭表单后选择「在画布选点」。
           </p>
         )}
 
         {pixelMode && videoContext && frame !== undefined && (
           <div className="flex flex-col gap-2 rounded border border-border bg-muted p-2 text-xs">
             <span data-testid="issue-context-object" className="text-muted-foreground">
-              {snapshot.anchor?.annotationId
-                ? `对象：${snapshot.anchor.annotationLabel ?? snapshot.anchor.annotationId}${videoContext.annotation_version ? ` · 版本 ${videoContext.annotation_version}` : ""}`
+              {anchor?.annotationId
+                ? `对象：${anchor.annotationLabel ?? anchor.annotationId}${videoContext.annotation_version ? ` · 版本 ${videoContext.annotation_version}` : ""}`
                 : "未关联对象"}{" "}
               · 已记录画布视图和时间窗
             </span>
@@ -312,7 +310,7 @@ function IssueCreateSession({
                   type="number"
                   step="1"
                   min="0"
-                  max={snapshot.anchor?.maxFrame}
+                  max={anchor?.maxFrame}
                   aria-label="起始源帧"
                   data-testid="issue-frame-range-from"
                   value={rangeFrom}
@@ -324,7 +322,7 @@ function IssueCreateSession({
                   type="number"
                   step="1"
                   min="0"
-                  max={snapshot.anchor?.maxFrame}
+                  max={anchor?.maxFrame}
                   aria-label="结束源帧"
                   data-testid="issue-frame-range-to"
                   value={rangeTo}

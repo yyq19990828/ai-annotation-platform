@@ -13,7 +13,7 @@ import {
   type AnnotationFeedback,
   type FeedbackVideoContext,
 } from "@/api/feedbacks";
-import { useFeedbacks } from "@/hooks/useFeedbacks";
+import { useInfiniteFeedbacks } from "@/hooks/useFeedbacks";
 import type { VideoFrameSeekResult } from "../stage/videoStageControls";
 import { useActiveIssueStore } from "./useActiveIssueStore";
 import type { Viewport } from "./useViewportTransform";
@@ -44,6 +44,7 @@ interface IssueOwner {
 interface IssueUiState {
   owner: IssueOwner;
   issueCreateOpen: boolean;
+  issueAnchorMode: "task" | "pixel";
   issuePinDropArmed: boolean;
   issuePinPrefill: IssuePinAnchor | null;
   issueNavigation: IssueNavigation;
@@ -59,6 +60,7 @@ function emptyIssueState(owner: IssueOwner): IssueUiState {
   return {
     owner,
     issueCreateOpen: false,
+    issueAnchorMode: "task",
     issuePinDropArmed: false,
     issuePinPrefill: null,
     issueNavigation: { status: "idle", frameIndex: null },
@@ -175,7 +177,11 @@ export function useIssuePins(params: {
     paramsRef.current.onCreateIntent?.();
     clearRequest();
     if (armed && isVideoTask) paramsRef.current.pauseVideoPlayback();
-    updateUi({ ...emptyIssueState(owner), issuePinDropArmed: armed });
+    updateUi({
+      ...emptyIssueState(owner),
+      issuePinDropArmed: armed,
+      issueAnchorMode: armed ? "pixel" : "task",
+    });
   }, [clearRequest, isVideoTask, owner, projectId, taskId, updateUi]);
 
   const openTaskIssue = useCallback(() => {
@@ -183,7 +189,7 @@ export function useIssuePins(params: {
     clearRequest();
     if (isVideoTask) paramsRef.current.pauseVideoPlayback();
     paramsRef.current.onCreateIntent?.();
-    updateUi({ ...emptyIssueState(owner), issueCreateOpen: true });
+    updateUi({ ...emptyIssueState(owner), issueCreateOpen: true, issueAnchorMode: "task" });
   }, [clearRequest, isVideoTask, owner, projectId, taskId, updateUi]);
 
   const onIssuePinDrop = useCallback(
@@ -203,7 +209,12 @@ export function useIssuePins(params: {
       }
       clearRequest();
       if (!isVideoTask) {
-        updateUi({ issuePinDropArmed: false, issuePinPrefill: { x, y }, issueCreateOpen: true });
+        updateUi({
+          issuePinDropArmed: false,
+          issuePinPrefill: { x, y },
+          issueCreateOpen: true,
+          issueAnchorMode: "pixel",
+        });
         return;
       }
       if (!isSourceFrame(frame)) {
@@ -214,7 +225,7 @@ export function useIssuePins(params: {
         return;
       }
       const anchor = { ...paramsRef.current.captureVideoContext?.(frame), x, y, frame };
-      updateUi({ issuePinDropArmed: false, issuePinPrefill: anchor });
+      updateUi({ issuePinDropArmed: false, issuePinPrefill: anchor, issueAnchorMode: "pixel" });
       await runNavigation({ owner, frameIndex: frame, anchor });
     },
     [clearRequest, isVideoTask, owner, runNavigation, updateUi],
@@ -245,12 +256,105 @@ export function useIssuePins(params: {
     await runNavigation(request);
   }, [owner, runNavigation]);
 
+  // One infinite root query is the source for both exact counts and canvas
+  // pins. It pages through the current task only (never the whole project),
+  // and keeps the first response's status_counts independent of the loaded
+  // pin rows. React Query supplies an AbortSignal for task replacement.
   const issueListParams = useMemo(
-    () => ({ project_id: projectId ?? "", task_id: taskId, kind: "issue" as const }),
+    () => ({
+      project_id: projectId ?? "",
+      task_id: taskId,
+      kind: "issue" as const,
+      root_only: true,
+      include_counts: true,
+      limit: 200,
+    }),
     [projectId, taskId],
   );
-  const issuesQuery = useFeedbacks(issueListParams, !!projectId && !!taskId);
-  const openIssueCount = (issuesQuery.data?.items ?? []).filter((i) => i.status === "open").length;
+  const issueQueryEnabled = !!projectId && !!taskId;
+  const issuePagesQuery = useInfiniteFeedbacks(issueListParams, issueQueryEnabled);
+  const fetchNextIssuePage = issuePagesQuery.fetchNextPage;
+  const refetchIssuePages = issuePagesQuery.refetch;
+  const pinOwnerKey = `${projectId ?? ""}:${taskId ?? ""}:${isVideoTask ? "video" : "image"}`;
+  const pinFetchRef = useRef({ ownerKey: pinOwnerKey, inFlight: false });
+  if (pinFetchRef.current.ownerKey !== pinOwnerKey) {
+    pinFetchRef.current = { ownerKey: pinOwnerKey, inFlight: false };
+  }
+
+  // Fetch all current-task pages so the shared IssueLayer does not silently
+  // omit pins after page one. The in-flight guard prevents an effect rerender
+  // from issuing duplicate fetchNextPage calls.
+  useEffect(() => {
+    if (
+      !issueQueryEnabled ||
+      issuePagesQuery.isError ||
+      issuePagesQuery.isLoading ||
+      issuePagesQuery.isFetching ||
+      issuePagesQuery.isFetchingNextPage ||
+      !issuePagesQuery.hasNextPage ||
+      pinFetchRef.current.inFlight
+    ) {
+      return;
+    }
+    const requestOwner = owner;
+    pinFetchRef.current.inFlight = true;
+    void Promise.resolve(fetchNextIssuePage()).finally(() => {
+      if (ownerRef.current === requestOwner) pinFetchRef.current.inFlight = false;
+    });
+  }, [
+    issueQueryEnabled,
+    issuePagesQuery.isError,
+    issuePagesQuery.isLoading,
+    issuePagesQuery.isFetching,
+    issuePagesQuery.isFetchingNextPage,
+    issuePagesQuery.hasNextPage,
+    issuePagesQuery.data,
+    fetchNextIssuePage,
+    owner,
+  ]);
+
+  const issueItems = issuePagesQuery.data?.pages.flatMap((page) => page.items) ?? [];
+  const firstIssuePage = issuePagesQuery.data?.pages[0];
+  const aggregatedIssuePage = firstIssuePage
+    ? {
+        ...firstIssuePage,
+        items: issueItems,
+        next_cursor:
+          issuePagesQuery.data?.pages[issuePagesQuery.data.pages.length - 1]?.next_cursor ?? null,
+      }
+    : undefined;
+  // Keep the old consumer shape (data.items/data.next_cursor/isLoading/etc.)
+  // while making its items complete. The real observer remains available for
+  // the coordinator through the spread properties below.
+  const issuesQuery = { ...issuePagesQuery, data: aggregatedIssuePage };
+  // A failed refresh invalidates the previous count as evidence. Keep the
+  // already loaded pins/cards for continuity, but report the badge unknown
+  // until a fresh first page supplies status_counts.
+  const openIssueCount = issuePagesQuery.isError
+    ? null
+    : (firstIssuePage?.status_counts?.open ?? null);
+  const openIssueCountLoading =
+    issueQueryEnabled &&
+    !firstIssuePage &&
+    (issuePagesQuery.isLoading || issuePagesQuery.isFetching);
+  const openIssueCountError = issueQueryEnabled && issuePagesQuery.isError;
+  const issuePinsLoading =
+    issueQueryEnabled &&
+    (issuePagesQuery.isLoading ||
+      issuePagesQuery.isFetchingNextPage ||
+      pinFetchRef.current.inFlight);
+  const issuePinsError = issueQueryEnabled && issuePagesQuery.isError;
+  const issuePinsComplete =
+    issueQueryEnabled &&
+    !!issuePagesQuery.data &&
+    !issuePagesQuery.isError &&
+    !issuePagesQuery.isFetching &&
+    !issuePagesQuery.hasNextPage;
+  const retryIssuePins = useCallback(async () => {
+    if (!issueQueryEnabled) return;
+    pinFetchRef.current.inFlight = false;
+    await refetchIssuePages();
+  }, [issueQueryEnabled, refetchIssuePages]);
   const activeIssueHighlightId = useActiveIssueStore((st) => st.highlightId);
   const highlightIssueFromPin = useActiveIssueStore((st) => st.highlightFromPin);
   const requestIssuesTab = useActiveIssueStore((st) => st.requestIssuesTab);
@@ -278,6 +382,9 @@ export function useIssuePins(params: {
       if (typeof frame === "number") void onSeekIssueFrame(frame);
       return;
     }
+    // Image/3D canvas navigation is task-local. A global highlight can arrive
+    // after a task switch; never apply its coordinates to the new task.
+    if (target.project_id !== projectId || target.task_id !== taskId) return;
     const { imgW, imgH, vpSize } = stageGeom;
     if (!imgW || !imgH || !vpSize.w || !vpSize.h || !hasPixelAnchor(target)) return;
     setVp((cur) => resolvePinViewport(cur, target.anchor_position, imgW, imgH, vpSize));
@@ -294,10 +401,13 @@ export function useIssuePins(params: {
     projectId,
     clearRequest,
     updateUi,
+    taskId,
   ]);
 
   return {
     issueCreateOpen: currentUi.issueCreateOpen,
+    /** Explicit creation intent consumed by IssueCreateModal. */
+    issueAnchorMode: currentUi.issueAnchorMode,
     issuePinDropArmed: currentUi.issuePinDropArmed,
     issuePinPrefill: currentUi.issuePinPrefill,
     issueNavigation: currentUi.issueNavigation,
@@ -310,6 +420,14 @@ export function useIssuePins(params: {
     issueListParams,
     issuesQuery,
     openIssueCount,
+    openIssueCountLoading,
+    openIssueCountError,
+    retryOpenIssueCount: retryIssuePins,
+    issuePixelFeedbacks: issueItems.filter(hasPixelAnchor),
+    issuePinsComplete,
+    issuePinsLoading,
+    issuePinsError,
+    retryIssuePins,
     activeIssueHighlightId,
     highlightIssueFromPin,
     requestIssuesTab,
