@@ -3,6 +3,7 @@ import {
   buildReviewWorkbenchUrl,
   buildWorkbenchUrl,
   getRememberedWorkbenchTask,
+  parseWorkbenchDiscussionRequest,
   rememberWorkbenchTask,
   resolveWorkbenchReturnTo,
   updateWorkbenchUrlSearch,
@@ -124,5 +125,148 @@ describe("workbenchNavigation", () => {
         { taskId: "next" },
       ),
     ).toBe("/projects/project-1/annotate?task=next&returnTo=%2Fdashboard");
+  });
+});
+
+describe("discussion navigation contract", () => {
+  const taskId = "10000000-0000-0000-0000-000000000001";
+  const issueId = "20000000-0000-0000-0000-000000000002";
+  const replyId = "30000000-0000-0000-0000-000000000003";
+  const annotationId = "40000000-0000-0000-0000-000000000004";
+  const commentId = "50000000-0000-0000-0000-000000000005";
+
+  it.each([buildWorkbenchUrl, buildReviewWorkbenchUrl])(
+    "builds validated root/reply and original-comment destinations",
+    (build) => {
+      for (const target of [
+        { kind: "issue" as const, issueId },
+        { kind: "issue" as const, issueId, replyId },
+        { kind: "comment" as const, annotationId, commentId },
+      ]) {
+        const url = new URL(
+          build("project", { taskId, discussion: target, returnTo: "/dashboard" }),
+          "http://app.local",
+        );
+        expect(parseWorkbenchDiscussionRequest(url.searchParams)).toEqual({
+          status: "valid",
+          taskId,
+          target,
+        });
+        expect(url.searchParams.get("returnTo")).toBe("/dashboard");
+      }
+    },
+  );
+
+  it("an explicit discussion target replaces competing annotation, track and frame focus", () => {
+    const url = new URL(
+      buildWorkbenchUrl("project", {
+        taskId,
+        annotationId: "old-annotation",
+        trackId: "old-track",
+        frameIndex: 8,
+        discussion: { kind: "issue", issueId, replyId },
+      }),
+      "http://app.local",
+    );
+    expect(url.searchParams.has("focus")).toBe(false);
+    expect(url.searchParams.has("track")).toBe(false);
+    expect(url.searchParams.has("frame")).toBe(false);
+    expect(parseWorkbenchDiscussionRequest(url.search)).toMatchObject({
+      status: "valid",
+      target: { kind: "issue", issueId, replyId },
+    });
+  });
+
+  it("does not interpret existing annotation and frame links as discussion activations", () => {
+    expect(parseWorkbenchDiscussionRequest("?task=legacy&focus=legacy-annotation&frame=8")).toEqual(
+      { status: "none" },
+    );
+  });
+
+  it.each([
+    "discussion=issues",
+    `discussion=issues&issue=${issueId}&task=bad`,
+    `discussion=issues&task=${taskId}&issue=bad`,
+    `discussion=issues&task=${taskId}&issue=${issueId}&reply=`,
+    `discussion=issues&task=${taskId}&issue=${issueId}&reply=https://evil.invalid`,
+    `discussion=issues&task=${taskId}&issue=${issueId}&comment=${commentId}`,
+    `discussion=issues&task=${taskId}&issue=${issueId}&focus=${annotationId}`,
+    `discussion=issues&task=${taskId}&issue=${issueId}&frame=8`,
+    `discussion=issues&task=${taskId}&issue=${issueId}&track=t`,
+    `discussion=issues&task=${taskId}&task=${taskId}&issue=${issueId}`,
+    `discussion=issues&discussion=comments&task=${taskId}&issue=${issueId}`,
+    `discussion=issues&task=${taskId}&issue=${issueId}&issue=${issueId}`,
+    `discussion=comments&task=${taskId}&comment=${commentId}`,
+    `discussion=comments&task=${taskId}&focus=${annotationId}&comment=bad`,
+    `discussion=comments&task=${taskId}&focus=${annotationId}&comment=${commentId}&reply=${replyId}`,
+    `discussion=comments&task=${taskId}&focus=${annotationId}&comment=${commentId}&focus=${annotationId}`,
+    `discussion=unknown&task=${taskId}&issue=${issueId}`,
+    `task=${taskId}&issue=${issueId}`,
+    `task=${taskId}&reply=${replyId}`,
+    `task=${taskId}&comment=${commentId}`,
+  ])("rejects incomplete, mixed, duplicate or malformed identity: %s", (search) => {
+    expect(parseWorkbenchDiscussionRequest(search)).toEqual({
+      status: "invalid",
+      message: "讨论链接不完整或格式无效",
+    });
+  });
+
+  it("rejects invalid builder inputs rather than emitting an ambiguous URL", () => {
+    expect(() => buildWorkbenchUrl("project", { discussion: { kind: "issue", issueId } })).toThrow(
+      TypeError,
+    );
+    expect(() =>
+      buildReviewWorkbenchUrl("project", { taskId, discussion: { kind: "issue", issueId: "bad" } }),
+    ).toThrow(TypeError);
+  });
+
+  it("clears stale discussion identity together with entity focus on task navigation", () => {
+    for (const discussion of [
+      { kind: "issue" as const, issueId, replyId },
+      { kind: "comment" as const, annotationId, commentId },
+    ]) {
+      const before = new URL(
+        buildWorkbenchUrl("project", { taskId, discussion, returnTo: "/dashboard" }),
+        "http://app.local",
+      );
+      for (const nextTask of ["next", taskId, null]) {
+        const after = new URL(
+          updateWorkbenchUrlSearch(before, { taskId: nextTask }),
+          "http://app.local",
+        );
+        expect(parseWorkbenchDiscussionRequest(after.search)).toEqual({ status: "none" });
+        expect(after.searchParams.has("focus")).toBe(false);
+        expect(after.searchParams.get("returnTo")).toBe("/dashboard");
+      }
+    }
+  });
+
+  it("allows an explicit replacement destination and can consume it without a leftover comment focus", () => {
+    const after = new URL(
+      updateWorkbenchUrlSearch(
+        {
+          pathname: "/projects/project/review",
+          search: "?task=old&discussion=issues&issue=old",
+          hash: "#stage",
+        },
+        {
+          taskId,
+          discussion: { kind: "comment", annotationId, commentId },
+        },
+      ),
+      "http://app.local",
+    );
+    expect(parseWorkbenchDiscussionRequest(after.search)).toEqual({
+      status: "valid",
+      taskId,
+      target: { kind: "comment", annotationId, commentId },
+    });
+    expect(after.hash).toBe("#stage");
+    const consumed = new URL(
+      updateWorkbenchUrlSearch(after, { discussion: null }),
+      "http://app.local",
+    );
+    expect(consumed.searchParams.has("focus")).toBe(false);
+    expect(parseWorkbenchDiscussionRequest(consumed.search)).toEqual({ status: "none" });
   });
 });

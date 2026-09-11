@@ -3,6 +3,94 @@ const LAST_TASK_BY_BATCH_KEY = "anno.workbench.lastTaskByBatch.v1";
 type StorageLike = Pick<Storage, "getItem" | "setItem">;
 type RememberedTaskValue = string | { taskId: string; lastOpenedAt: number };
 
+/** A discussion destination is data, never an arbitrary redirect URL. */
+export type WorkbenchDiscussionTarget =
+  | { kind: "issue"; issueId: string; replyId?: string | null }
+  | { kind: "comment"; annotationId: string; commentId: string };
+
+export type WorkbenchDiscussionRequest =
+  | { status: "none" }
+  | { status: "invalid"; message: string }
+  | { status: "valid"; taskId: string; target: WorkbenchDiscussionTarget };
+
+const DISCUSSION_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DISCUSSION_PARAMETERS = ["discussion", "issue", "reply", "comment"] as const;
+
+/** URL identities remain hints; callers must recheck task and record access. */
+export function parseWorkbenchDiscussionRequest(
+  search: string | URLSearchParams,
+): WorkbenchDiscussionRequest {
+  const q = typeof search === "string" ? new URLSearchParams(search) : search;
+  if (!DISCUSSION_PARAMETERS.some((key) => q.has(key))) return { status: "none" };
+  const invalid = (): WorkbenchDiscussionRequest => ({
+    status: "invalid",
+    message: "讨论链接不完整或格式无效",
+  });
+  if ([...DISCUSSION_PARAMETERS, "task", "focus"].some((key) => q.getAll(key).length > 1)) {
+    return invalid();
+  }
+  const taskId = q.get("task") ?? "";
+  if (!DISCUSSION_UUID.test(taskId)) return invalid();
+  if (q.get("discussion") === "issues") {
+    const issueId = q.get("issue") ?? "";
+    const replyId = q.get("reply");
+    if (
+      !DISCUSSION_UUID.test(issueId) ||
+      (replyId !== null && !DISCUSSION_UUID.test(replyId)) ||
+      q.has("comment") ||
+      q.has("focus") ||
+      q.has("track") ||
+      q.has("frame")
+    )
+      return invalid();
+    return {
+      status: "valid",
+      taskId,
+      target: { kind: "issue", issueId, ...(replyId ? { replyId } : {}) },
+    };
+  }
+  if (q.get("discussion") === "comments") {
+    const annotationId = q.get("focus") ?? "";
+    const commentId = q.get("comment") ?? "";
+    if (
+      !DISCUSSION_UUID.test(annotationId) ||
+      !DISCUSSION_UUID.test(commentId) ||
+      q.has("issue") ||
+      q.has("reply") ||
+      q.has("track") ||
+      q.has("frame")
+    )
+      return invalid();
+    return { status: "valid", taskId, target: { kind: "comment", annotationId, commentId } };
+  }
+  return invalid();
+}
+
+function setDiscussionTarget(q: URLSearchParams, target: WorkbenchDiscussionTarget | null) {
+  const previousMode = q.get("discussion");
+  for (const key of DISCUSSION_PARAMETERS) q.delete(key);
+  if (!target) {
+    if (previousMode === "comments") q.delete("focus");
+    return;
+  }
+  // Explicit discussion activation must not race a second entity/frame request.
+  q.delete("focus");
+  q.delete("track");
+  q.delete("frame");
+  if (target.kind === "issue") {
+    q.set("discussion", "issues");
+    q.set("issue", target.issueId);
+    if (target.replyId !== null && target.replyId !== undefined) q.set("reply", target.replyId);
+  } else {
+    q.set("discussion", "comments");
+    q.set("focus", target.annotationId);
+    q.set("comment", target.commentId);
+  }
+  if (parseWorkbenchDiscussionRequest(q).status !== "valid") {
+    throw new TypeError("Invalid Workbench discussion destination");
+  }
+}
+
 function getStorage(): StorageLike | null {
   if (typeof window === "undefined") return null;
   try {
@@ -110,6 +198,7 @@ export function buildWorkbenchUrl(
     trackId?: string | null;
     frameIndex?: number | null;
     returnTo?: string | null;
+    discussion?: WorkbenchDiscussionTarget | null;
   } = {},
 ) {
   const q = new URLSearchParams();
@@ -121,18 +210,25 @@ export function buildWorkbenchUrl(
     q.set("frame", String(opts.frameIndex));
   }
   if (opts.returnTo) q.set("returnTo", opts.returnTo);
+  if (opts.discussion) setDiscussionTarget(q, opts.discussion);
   const qs = q.toString();
   return `/projects/${projectId}/annotate${qs ? `?${qs}` : ""}`;
 }
 
 export function buildReviewWorkbenchUrl(
   projectId: string,
-  opts: { batchId?: string | null; taskId?: string | null; returnTo?: string | null } = {},
+  opts: {
+    batchId?: string | null;
+    taskId?: string | null;
+    returnTo?: string | null;
+    discussion?: WorkbenchDiscussionTarget | null;
+  } = {},
 ) {
   const q = new URLSearchParams();
   if (opts.batchId) q.set("batch", opts.batchId);
   if (opts.taskId) q.set("task", opts.taskId);
   if (opts.returnTo) q.set("returnTo", opts.returnTo);
+  if (opts.discussion) setDiscussionTarget(q, opts.discussion);
   const qs = q.toString();
   return `/projects/${projectId}/review${qs ? `?${qs}` : ""}`;
 }
@@ -145,6 +241,7 @@ export function updateWorkbenchUrlSearch(
     annotationId?: string | null;
     trackId?: string | null;
     frameIndex?: number | null;
+    discussion?: WorkbenchDiscussionTarget | null;
   } = {},
 ) {
   const q = new URLSearchParams(location.search ?? "");
@@ -158,6 +255,9 @@ export function updateWorkbenchUrlSearch(
     if (!("annotationId" in opts)) q.delete("focus");
     if (!("trackId" in opts)) q.delete("track");
     if (!("frameIndex" in opts)) q.delete("frame");
+    if (!("discussion" in opts)) {
+      for (const key of DISCUSSION_PARAMETERS) q.delete(key);
+    }
   }
   if ("annotationId" in opts) {
     if (opts.annotationId) q.set("focus", opts.annotationId);
@@ -174,6 +274,7 @@ export function updateWorkbenchUrlSearch(
       q.delete("frame");
     }
   }
+  if ("discussion" in opts) setDiscussionTarget(q, opts.discussion ?? null);
   const qs = q.toString();
   return `${location.pathname}${qs ? `?${qs}` : ""}${location.hash ?? ""}`;
 }
