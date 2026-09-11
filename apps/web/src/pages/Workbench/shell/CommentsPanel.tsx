@@ -252,7 +252,6 @@ export function CommentsPanel({
   const scopeForTask = scopeOwnerRef.current === taskScopeKey ? readScope : "all";
   // Keep the first render after a retained-panel task switch on the default
   // task scope. The effect below commits the reset for subsequent renders.
-  if (scopeOwnerRef.current !== taskScopeKey) scopeOwnerRef.current = taskScopeKey;
 
   const annotationEligible =
     isPersistedAnnotationId(annotationId) &&
@@ -291,22 +290,27 @@ export function CommentsPanel({
         })()
       : undefined;
 
-  useEffect(() => {
-    if (!taskTarget) {
-      setLocalSendTarget(null);
-      return;
+  useLayoutEffect(() => {
+    if (draftStore && projectId && taskId) {
+      draftStore.followAnnotationSelection(
+        projectId,
+        taskId,
+        currentAnnotationTarget?.annotationId ?? null,
+      );
+    } else {
+      setLocalSendTarget(currentAnnotationTarget ?? taskTarget);
     }
-    setLocalSendTarget(taskTarget);
-  }, [taskTarget]);
+  }, [currentAnnotationTarget, draftStore, projectId, taskId, taskTarget]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     // Reading scope is a task-local view preference. A new task starts at the
     // complete discussion feed even when the panel instance is retained.
+    scopeOwnerRef.current = taskScopeKey;
     setReadScope("all");
     setScopeNotice(null);
     setReadAnnotationOverride(null);
     setHighlightedComment(null);
-  }, [projectId, taskId]);
+  }, [taskScopeKey]);
 
   useEffect(() => {
     if (!commentFocus || focusedRequestRef.current === commentFocus.requestId) return;
@@ -520,23 +524,40 @@ export function CommentsPanel({
   const sendTargetOptions = useMemo(() => {
     const options: CommentDiscussionTarget[] = [];
     if (taskTarget) options.push(taskTarget);
-    const candidateTargets = [storedSendTarget, currentAnnotationTarget, taskLocalSendTarget];
+    const knownTargets: CommentDiscussionTarget[] = taskTarget
+      ? Object.keys(annotationClassById ?? {})
+          .filter(isPersistedAnnotationId)
+          .map((id) => ({ ...taskTarget, kind: "annotation", annotationId: id }))
+      : [];
+    const candidateTargets = [
+      currentAnnotationTarget,
+      ...knownTargets,
+      storedSendTarget,
+      taskLocalSendTarget,
+    ];
+    const seen = new Set<string>();
     for (const candidate of candidateTargets) {
       if (!candidate || candidate.kind !== "annotation") continue;
-      if (!options.some((item) => discussionTargetKey(item) === discussionTargetKey(candidate)))
-        options.push(candidate);
+      const key = discussionTargetKey(candidate);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      options.push(candidate);
     }
     return options;
-  }, [currentAnnotationTarget, storedSendTarget, taskLocalSendTarget, taskTarget]);
+  }, [
+    annotationClassById,
+    currentAnnotationTarget,
+    storedSendTarget,
+    taskLocalSendTarget,
+    taskTarget,
+  ]);
 
   const targetLabel = useCallback(
     (target: CommentDiscussionTarget) => {
       if (target.kind === "task") return "当前任务";
       const className = annotationClassById?.[target.annotationId];
       const isCurrent = target.annotationId === annotationId;
-      return isCurrent
-        ? `当前标注${className ? ` · ${className}` : ""}`
-        : `标注 ${className ?? target.annotationId.slice(0, 8)}`;
+      return `${isCurrent ? "当前标注" : "标注"}${className ? ` · ${className}` : ""} · ${target.annotationId.slice(0, 8)}`;
     },
     [annotationClassById, annotationId],
   );

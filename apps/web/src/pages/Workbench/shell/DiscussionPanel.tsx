@@ -5,6 +5,7 @@ import { DiscussionIssuesTab } from "./DiscussionIssuesTab";
 import { MaskQcPanel } from "./MaskQcPanel";
 import { useActiveIssueStore } from "../state/useActiveIssueStore";
 import { Button } from "@/components/ui/Button";
+import { useTaskDiscussion } from "@/hooks/useTaskDiscussion";
 import type {
   DiscussionNavigation,
   DiscussionReplyFocus,
@@ -18,6 +19,37 @@ const TAB_BUTTON_BASE =
   "shrink-0 cursor-pointer appearance-none border-0 border-b-2 bg-transparent px-2 py-1 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [font:inherit]";
 const TAB_BUTTON_ACTIVE = "border-brand text-foreground";
 const TAB_BUTTON_INACTIVE = "border-transparent text-muted-foreground";
+
+function DiscussionCountBadge({
+  count,
+  loading,
+  error,
+  issues = false,
+}: {
+  count: number | null | undefined;
+  loading?: boolean;
+  error?: boolean;
+  issues?: boolean;
+}) {
+  if (count === undefined || (count === 0 && !loading && !error)) return null;
+  const subject = issues ? "未解决" : "评论";
+  const label = error
+    ? `${subject}数量暂不可用`
+    : loading
+      ? `正在加载${subject}数量`
+      : count === null
+        ? `${subject}数量未知`
+        : `${count} ${issues ? "个未解决" : "条评论"}`;
+  return (
+    <span
+      className={`relative -top-1 ml-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-2xs font-medium leading-none tabular-nums ${issues ? "bg-status-danger-soft text-status-danger" : "bg-muted text-foreground"}`}
+      aria-label={label}
+      title={label}
+    >
+      {error ? "?" : loading ? "…" : count === null ? "?" : count > 9 ? "9+" : count}
+    </span>
+  );
+}
 
 /**
  * v0.11.2-4 · B 组 · 工作台右栏下段统一讨论面板。
@@ -115,6 +147,9 @@ export function DiscussionPanel({
   const toggleCollapsed = onToggleCollapsed ?? (() => setCollapsedLocal((v) => !v));
   const [replyFocus, setReplyFocus] = useState<DiscussionReplyFocus | null>(null);
   const [commentFocus, setCommentFocus] = useState<DiscussionCommentFocus | null>(null);
+  // Share the complete feed's cached total, independent of the active tab or
+  // reading filter. This observer also receives existing mutation invalidations.
+  const commentCountQuery = useTaskDiscussion(taskId, "all", null, Boolean(projectId), projectId);
 
   // The panel, not its conditionally mounted Issues tab, owns the activation
   // lifetime. Drafts have a separate authenticated owner and are not cleared.
@@ -269,25 +304,20 @@ export function DiscussionPanel({
               }}
             >
               {t.label}
-              {t.key === "issues" && openIssueCount !== undefined && (
-                <span
-                  className="ml-1 text-2xs font-normal text-muted-foreground"
-                  aria-label={
-                    openIssueCountError
-                      ? "未解决数量暂不可用"
-                      : openIssueCountLoading
-                        ? "正在加载未解决数量"
-                        : openIssueCount === null
-                          ? "未解决数量未知"
-                          : `${openIssueCount} 个未解决`
-                  }
-                >
-                  {openIssueCountError
-                    ? "?"
-                    : openIssueCountLoading
-                      ? "…"
-                      : (openIssueCount ?? "—")}
-                </span>
+              {t.key === "comments" && projectId && taskId && (
+                <DiscussionCountBadge
+                  count={commentCountQuery.data?.pages[0]?.total ?? null}
+                  loading={commentCountQuery.isPending}
+                  error={commentCountQuery.isError}
+                />
+              )}
+              {t.key === "issues" && (
+                <DiscussionCountBadge
+                  count={openIssueCount}
+                  loading={openIssueCountLoading}
+                  error={openIssueCountError}
+                  issues
+                />
               )}
             </button>
           ))}

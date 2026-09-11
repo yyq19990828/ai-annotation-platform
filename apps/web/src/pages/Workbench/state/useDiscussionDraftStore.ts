@@ -291,6 +291,7 @@ export interface DiscussionDraftStore {
   rejectSubmission(snapshot: DiscussionSubmissionSnapshot, error: unknown): boolean;
   setSendTarget(projectId: string, taskId: string, target: DiscussionTarget): boolean;
   getSendTarget(projectId: string, taskId: string): DiscussionTarget | undefined;
+  followAnnotationSelection(projectId: string, taskId: string, annotationId: string | null): void;
   hasDirtyDrafts(): boolean;
   hasDirtyTextDrafts(): boolean;
   dispose(): void;
@@ -309,6 +310,7 @@ export function createDiscussionDraftStore({
   const sessionOwner = clone(owner);
   const drafts = new Map<string, DraftInternal>();
   const sendTargets = new Map<string, DiscussionTarget>();
+  const selectedAnnotations = new Map<string, string | null>();
   const disposedOrigins = new Set<string>();
   /** Latest live-drawing transaction per target; stale results are ignored. */
   const latestCanvasOrigins = new Map<string, string>();
@@ -699,6 +701,20 @@ export function createDiscussionDraftStore({
       const target = sendTargets.get(projectTaskKey(projectId, taskId));
       return target ? clone(target) : undefined;
     },
+    followAnnotationSelection: (projectId, taskId, annotationId) => {
+      if (!ownerIsCurrent()) return;
+      const key = projectTaskKey(projectId, taskId);
+      if (selectedAnnotations.get(key) === annotationId) return;
+      selectedAnnotations.set(key, annotationId);
+      // Selection changes switch drafts; their contents stay with the original target.
+      store.setSendTarget(
+        projectId,
+        taskId,
+        annotationId
+          ? { projectId, taskId, kind: "annotation", annotationId }
+          : { projectId, taskId, kind: "task" },
+      );
+    },
     hasDirtyDrafts: () => ownerIsCurrent() && snapshot.dirty,
     hasDirtyTextDrafts: () => ownerIsCurrent() && snapshot.dirtyText,
     dispose: () => {
@@ -706,6 +722,7 @@ export function createDiscussionDraftStore({
       disposed = true;
       drafts.clear();
       sendTargets.clear();
+      selectedAnnotations.clear();
       disposedOrigins.clear();
       latestCanvasOrigins.clear();
       snapshot = {

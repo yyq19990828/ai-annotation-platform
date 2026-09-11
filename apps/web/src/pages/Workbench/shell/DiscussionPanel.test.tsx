@@ -1,6 +1,13 @@
 import { StrictMode } from "react";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const commentCounts = vi.hoisted(() => ({
+  data: { pages: [{ total: 0 }] } as { pages: { total: number }[] } | undefined,
+  isPending: false,
+  isError: false,
+}));
+vi.mock("@/hooks/useTaskDiscussion", () => ({ useTaskDiscussion: () => commentCounts }));
 
 vi.mock("./CommentsPanel", () => ({
   CommentsPanel: ({ forceTab }: { forceTab: string }) => (
@@ -27,6 +34,9 @@ const baseProps = {
 
 beforeEach(() => {
   useActiveIssueStore.getState().closeIssueDetail();
+  commentCounts.data = { pages: [{ total: 0 }] };
+  commentCounts.isPending = false;
+  commentCounts.isError = false;
 });
 
 describe("DiscussionPanel Mask 质检", () => {
@@ -152,11 +162,37 @@ describe("DiscussionPanel Mask 质检", () => {
 
   it("distinguishes an exact zero from pending and failed Issue counts", () => {
     const view = render(<DiscussionPanel {...baseProps} openIssueCount={0} />);
-    expect(screen.getByRole("tab", { name: "问题 0 个未解决" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "问题" })).toHaveTextContent(/^问题$/);
     view.rerender(<DiscussionPanel {...baseProps} openIssueCount={null} openIssueCountLoading />);
     expect(screen.getByRole("tab", { name: "问题 正在加载未解决数量" })).toHaveTextContent("…");
     view.rerender(<DiscussionPanel {...baseProps} openIssueCount={null} openIssueCountError />);
     expect(screen.getByRole("tab", { name: "问题 未解决数量暂不可用" })).toHaveTextContent("?");
+  });
+
+  it("shows neutral comment and red issue superscript counts, capped at 9+ with exact accessible totals", () => {
+    commentCounts.data = { pages: [{ total: 12 }] };
+    const view = render(<DiscussionPanel {...baseProps} openIssueCount={25} />);
+    const comments = screen.getByRole("tab", { name: "评论 12 条评论" });
+    const issues = screen.getByRole("tab", { name: "问题 25 个未解决" });
+    expect(within(comments).getByTitle("12 条评论")).toHaveTextContent("9+");
+    expect(within(comments).getByTitle("12 条评论")).toHaveClass("text-foreground", "-top-1");
+    expect(within(issues).getByTitle("25 个未解决")).toHaveTextContent("9+");
+    expect(within(issues).getByTitle("25 个未解决")).toHaveClass("text-status-danger", "-top-1");
+    fireEvent.click(issues);
+    expect(comments).toHaveTextContent("9+");
+    commentCounts.data = { pages: [{ total: 9 }] };
+    view.rerender(<DiscussionPanel {...baseProps} openIssueCount={1} />);
+    expect(screen.getByTitle("9 条评论")).toHaveTextContent(/^9$/);
+    expect(screen.getByTitle("1 个未解决")).toHaveTextContent(/^1$/);
+    commentCounts.data = undefined;
+    commentCounts.isPending = true;
+    view.rerender(<DiscussionPanel {...baseProps} taskId="task-2" openIssueCount={0} />);
+    expect(screen.queryByTitle("9 条评论")).not.toBeInTheDocument();
+    expect(screen.getByTitle("正在加载评论数量")).toHaveTextContent("…");
+    commentCounts.isPending = false;
+    commentCounts.isError = true;
+    view.rerender(<DiscussionPanel {...baseProps} taskId="task-2" openIssueCount={0} />);
+    expect(screen.getByTitle("评论数量暂不可用")).toHaveTextContent("?");
   });
 
   it("把 Mask 质检与人工 Issue 作为独立页签", () => {

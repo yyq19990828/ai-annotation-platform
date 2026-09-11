@@ -1165,7 +1165,9 @@ export function CommentInput({
                 !backgroundUrl && "cursor-default text-muted-foreground/60",
               )}
               title={
-                backgroundUrl ? "弹窗内绘制（与原图比例对齐）" : "题图未加载，无法在空白画布上批注"
+                backgroundUrl
+                  ? "在弹窗中圈点说明，随评论发送，不修改标注"
+                  : "题图未加载，无法在空白画布上批注"
               }
             >
               <Icon name="edit" size={12} />
@@ -1192,7 +1194,7 @@ export function CommentInput({
                 "inline-flex cursor-pointer appearance-none items-center gap-1 border-0 bg-transparent p-0 text-xs font-normal text-brand",
                 liveCanvas.active && "cursor-default text-muted-foreground/60",
               )}
-              title="直接在题图上绘制 — 缩放/平移自动跟随"
+              title="在题图上圈点说明，随评论发送，不修改标注；缩放和平移自动跟随"
             >
               <Icon name="target" size={12} />
               {liveCanvas.active ? "正在绘制…" : "在题图上绘制"}

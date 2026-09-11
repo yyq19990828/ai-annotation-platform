@@ -25,6 +25,33 @@ function makeStore(): DiscussionDraftStore {
 }
 
 describe("createDiscussionDraftStore", () => {
+  it("follows new annotation selections without moving drafts or overriding an unchanged selection's manual target", () => {
+    const store = makeStore();
+    const second = { ...annotation, annotationId: "annotation-b" } as DiscussionTarget;
+    store.patchDraft(annotation, { body: "A draft", canvas_drawing: line() });
+    store.patchDraft(second, { body: "B draft" });
+    store.followAnnotationSelection("project-a", "task-a", "annotation-a");
+    expect(store.getSendTarget("project-a", "task-a")).toEqual(annotation);
+    store.setSendTarget("project-a", "task-a", task);
+    store.followAnnotationSelection("project-a", "task-a", "annotation-a");
+    expect(store.getSendTarget("project-a", "task-a")).toEqual(task);
+    store.followAnnotationSelection("project-a", "task-a", "annotation-b");
+    expect(store.getSendTarget("project-a", "task-a")).toEqual(second);
+    expect(store.getDraft(annotation)).toMatchObject({ body: "A draft", canvas_drawing: line() });
+    expect(store.getDraft(second)).toMatchObject({ body: "B draft" });
+    store.followAnnotationSelection("project-a", "task-a", null);
+    expect(store.getSendTarget("project-a", "task-a")).toEqual(task);
+    expect(store.getDraft(second)?.body).toBe("B draft");
+    expect(store.getDraft(task)?.body).toBe("");
+    store.followAnnotationSelection("project-a", "task-b", "other-task-annotation");
+    expect(store.getSendTarget("project-a", "task-a")).toEqual(task);
+    store.followAnnotationSelection("project-a", "task-a", "annotation-a");
+    expect(store.getSendTarget("project-a", "task-a")).toEqual(annotation);
+    store.dispose();
+    store.followAnnotationSelection("project-a", "task-a", "annotation-b");
+    expect(store.getSendTarget("project-a", "task-a")).toBeUndefined();
+  });
+
   it("keeps task A/B/A drafts independently and creates them lazily", () => {
     const store = makeStore();
 

@@ -3,6 +3,10 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
 import type { ComponentProps } from "react";
 import type { TaskDiscussionPage } from "@/api/discussion";
+import {
+  createDiscussionDraftStore,
+  type DiscussionDraftStore,
+} from "../state/useDiscussionDraftStore";
 
 const mocks = vi.hoisted(() => {
   const taskQuery = {
@@ -47,7 +51,7 @@ const mocks = vi.hoisted(() => {
       refetch: vi.fn(),
     },
     members: { data: [] },
-    store: null,
+    store: null as DiscussionDraftStore | null,
     snapshot: null,
   };
 });
@@ -80,10 +84,19 @@ vi.mock("@/hooks/useAnnotationAuditHistory", () => ({
   useAnnotationAuditHistory: () => mocks.historyQuery,
   useTaskAuditHistory: () => mocks.historyQuery,
 }));
-vi.mock("../state/DiscussionDraftProvider", () => ({
-  useDiscussionDraftStore: () => mocks.store,
-  useDiscussionDraftSnapshot: () => mocks.snapshot,
-}));
+vi.mock("../state/DiscussionDraftProvider", async () => {
+  const { useSyncExternalStore } = await import("react");
+  const subscribe = () => () => {};
+  const getSnapshot = () => null;
+  return {
+    useDiscussionDraftStore: () => mocks.store,
+    useDiscussionDraftSnapshot: () =>
+      useSyncExternalStore(
+        mocks.store?.subscribe ?? subscribe,
+        mocks.store?.getSnapshot ?? getSnapshot,
+      ),
+  };
+});
 vi.mock("../state/useHoveredCommentStore", () => {
   const state = {
     setHover: vi.fn(),
@@ -105,20 +118,24 @@ vi.mock("./CommentInput", () => ({
     busy,
     enableCanvasDrawing,
     backgroundUrl,
+    liveCanvas,
     onReturnToTask,
   }: {
-    target?: { kind: string };
+    target?: { kind: string; annotationId?: string };
     annotationId?: string | null;
     taskId?: string | null;
     targetAvailable?: boolean;
     busy?: boolean;
     enableCanvasDrawing?: boolean;
     backgroundUrl?: string | null;
+    liveCanvas?: unknown;
     onReturnToTask?: () => void;
   }) => (
     <div
       data-testid="mock-composer"
       data-target={target?.kind ?? (annotationId ? "annotation" : "none")}
+      data-annotation-id={target?.annotationId ?? annotationId ?? ""}
+      data-live-canvas={String(Boolean(liveCanvas))}
       data-task-id={taskId ?? ""}
       data-target-available={targetAvailable === undefined ? "unknown" : String(targetAvailable)}
       data-busy={String(Boolean(busy))}
@@ -136,28 +153,65 @@ vi.mock("@/components/ui/Icon", () => ({ Icon: () => <span aria-hidden="true" />
 
 import { CommentsPanel } from "./CommentsPanel";
 
-it("keeps popup drawing available for the original destination after selection is cleared", () => {
-  const props = {
-    taskId: "task-a",
-    projectId: "project-a",
-    currentUserId: "user-a",
-    annotationClassById: { "annotation-a": "car" },
-    backgroundUrl: "/task-a.png",
-    enableCanvasDrawing: true,
-  };
-  const view = renderPanel({ ...props, annotationId: "annotation-a" });
-  fireEvent.change(screen.getByRole("combobox", { name: "发送目标" }), {
-    target: { value: JSON.stringify(["project-a", "task-a", "annotation", "annotation-a"]) },
-  });
-  view.rerender(
-    <MemoryRouter>
-      <CommentsPanel {...props} annotationId={null} />
-    </MemoryRouter>,
-  );
-  expect(screen.getByTestId("mock-composer")).toHaveAttribute("data-target", "annotation");
-  expect(screen.getByTestId("mock-composer")).toHaveAttribute("data-canvas-enabled", "true");
-  expect(screen.getByTestId("mock-composer")).toHaveAttribute("data-background", "/task-a.png");
-});
+it.each([false, true])(
+  "returns to the task when selection is cleared (session store: %s)",
+  (withStore) => {
+    if (withStore) {
+      mocks.store = createDiscussionDraftStore({
+        owner: { sessionId: "session-a", userId: "user-a" },
+      });
+      mocks.store.patchDraft(
+        {
+          projectId: "project-a",
+          taskId: "task-a",
+          kind: "annotation",
+          annotationId: "annotation-a",
+        },
+        { body: "keep annotation draft" },
+      );
+    }
+    const props = {
+      taskId: "task-a",
+      projectId: "project-a",
+      currentUserId: "user-a",
+      annotationClassById: { "annotation-a": "car" },
+      backgroundUrl: "/task-a.png",
+      enableCanvasDrawing: true,
+    };
+    const view = renderPanel({ ...props, annotationId: "annotation-a" });
+    fireEvent.change(screen.getByRole("combobox", { name: "发送目标" }), {
+      target: { value: JSON.stringify(["project-a", "task-a", "annotation", "annotation-a"]) },
+    });
+    view.rerender(
+      <MemoryRouter>
+        <CommentsPanel {...props} annotationId={null} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByTestId("mock-composer")).toHaveAttribute("data-target", "task");
+    expect(screen.getByRole("combobox", { name: "发送目标" })).toHaveValue(
+      JSON.stringify(["project-a", "task-a", "task", null]),
+    );
+    view.rerender(
+      <MemoryRouter>
+        <CommentsPanel {...props} annotationId="annotation-a" />
+      </MemoryRouter>,
+    );
+    expect(screen.getByTestId("mock-composer")).toHaveAttribute(
+      "data-annotation-id",
+      "annotation-a",
+    );
+    if (withStore) {
+      expect(
+        mocks.store?.getDraft({
+          projectId: "project-a",
+          taskId: "task-a",
+          kind: "annotation",
+          annotationId: "annotation-a",
+        })?.body,
+      ).toBe("keep annotation draft");
+    }
+  },
+);
 
 const annotationData = (id: string, annotationId = "annotation-a") => ({
   id,
@@ -395,7 +449,7 @@ describe("CommentsPanel discussion feed", () => {
     );
   });
 
-  it("阅读范围和发送目标彼此独立，选中标注后可显式切换发送目标", () => {
+  it("阅读范围和发送目标彼此独立，自动路由后可回退到任务", () => {
     renderPanel({
       annotationId: "annotation-a",
       annotationClassById: { "annotation-a": "person" },
@@ -411,28 +465,24 @@ describe("CommentsPanel discussion feed", () => {
       true,
       "project-a",
     );
-    expect(screen.getByTestId("mock-composer")).toHaveAttribute("data-target", "task");
+    expect(screen.getByTestId("mock-composer")).toHaveAttribute("data-target", "annotation");
 
     fireEvent.change(screen.getByRole("combobox", { name: "发送目标" }), {
-      target: { value: JSON.stringify(["project-a", "task-a", "annotation", "annotation-a"]) },
+      target: { value: JSON.stringify(["project-a", "task-a", "task", null]) },
     });
-    expect(screen.getByTestId("mock-composer")).toHaveAttribute("data-target", "annotation");
+    expect(screen.getByTestId("mock-composer")).toHaveAttribute("data-target", "task");
   });
 
-  it("保留任务内的旧发送目标，选中 B 后移除 A 仍禁用 A 并保留返回任务入口", () => {
-    const store = {
-      getSendTarget: vi.fn(() => ({
-        projectId: "project-a",
-        taskId: "task-a",
-        kind: "annotation" as const,
-        annotationId: "annotation-a",
-      })),
-      setSendTarget: vi.fn(),
-    };
-    (mocks as { store: typeof store | null }).store = store;
+  it("显式选择旧目标后，该标注移除时禁用发送并保留返回任务入口", () => {
+    mocks.store = createDiscussionDraftStore({
+      owner: { sessionId: "session-a", userId: "user-a" },
+    });
     const view = renderPanel({
       annotationId: "annotation-b",
       annotationClassById: { "annotation-a": "person", "annotation-b": "car" },
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "发送目标" }), {
+      target: { value: JSON.stringify(["project-a", "task-a", "annotation", "annotation-a"]) },
     });
 
     expect(screen.getByTestId("mock-composer")).toHaveAttribute("data-target", "annotation");
@@ -454,6 +504,41 @@ describe("CommentsPanel discussion feed", () => {
     expect(screen.getByTestId("mock-composer")).toHaveAttribute("data-target", "annotation");
     expect(screen.getByTestId("mock-composer")).toHaveAttribute("data-target-available", "false");
     expect(screen.getByTestId("mock-composer")).toHaveAttribute("data-has-return", "true");
+  });
+
+  it("lists same-class instances and follows selection while preserving task fallback across remounts", () => {
+    mocks.store = createDiscussionDraftStore({
+      owner: { sessionId: "session-a", userId: "user-a" },
+    });
+    const props = {
+      taskId: "task-a",
+      projectId: "project-a",
+      annotationClassById: { "aaaaaaaa-1": "bus", "bbbbbbbb-2": "bus" },
+      liveCanvas: { active: false, result: null, onStart: vi.fn(), onConsume: vi.fn() },
+    };
+    const view = renderPanel({ ...props, annotationId: "aaaaaaaa-1" });
+    const targets = screen.getByRole("combobox", { name: "发送目标" });
+    expect(
+      within(targets).getByRole("option", { name: "当前标注 · bus · aaaaaaaa" }),
+    ).toBeInTheDocument();
+    expect(
+      within(targets).getByRole("option", { name: "标注 · bus · bbbbbbbb" }),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("mock-composer")).toHaveAttribute("data-annotation-id", "aaaaaaaa-1");
+    expect(screen.getByTestId("mock-composer")).toHaveAttribute("data-live-canvas", "true");
+    fireEvent.change(targets, {
+      target: { value: JSON.stringify(["project-a", "task-a", "task", null]) },
+    });
+    view.unmount();
+    const returned = renderPanel({ ...props, annotationId: "aaaaaaaa-1" });
+    expect(screen.getByTestId("mock-composer")).toHaveAttribute("data-target", "task");
+    returned.rerender(
+      <MemoryRouter>
+        <CommentsPanel {...props} annotationId="bbbbbbbb-2" />
+      </MemoryRouter>,
+    );
+    expect(screen.getByTestId("mock-composer")).toHaveAttribute("data-annotation-id", "bbbbbbbb-2");
+    expect(screen.getByTestId("mock-composer")).toHaveAttribute("data-live-canvas", "true");
   });
 
   it("候选或多选 ID 不会触发 annotation endpoint，并给出范围回退说明", () => {
