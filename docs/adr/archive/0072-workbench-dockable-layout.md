@@ -91,3 +91,4 @@
 - 偏好边界：`apps/web/src/api/auth.ts`、`apps/api/app/schemas/user.py`、`apps/api/app/api/v1/me.py`。
 - 画布换位资格门已放行菜单路径：executor 原位重放后，图片、视频和点云 Stage 保持同一 DOM / renderer / decoder。原生 header 拖动未放行；它需要额外的根边缘 drop 与 Stage pointer 隔离合同。
 - 当前题 AI 与视频追踪已通过单实例、隐藏恢复与并存资格门；旧坐标 key 保留供旧构建回滚，新客户端不再读取或写入它们。
+- 后续扩展：`workspace` 增加与 `contexts` 并列的 `namedPresets`（每账号至多 5 条 `{name, context, schemaVersion, snapshot}`）。这是用户显式另存的快照集合，仍不持久化“活动预设 ID”：应用后结果照常落到 `contexts.<context>`，之后的手动调整依旧自然变为自定义工作副本。后端把该键作为原子 map 替换，省略即删除；两个 writer 的键互不相交，直播布局 PATCH 不带预设、预设 PATCH 不带 contexts。`contexts` 因此可缺席，仅存过预设的账号不算损坏快照。

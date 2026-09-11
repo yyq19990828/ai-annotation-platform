@@ -16,13 +16,39 @@ import pytest
 import sqlalchemy as sa
 from pydantic import ValidationError
 
-from app.schemas.user import UserPreferences
+from app.schemas.user import UserPreferences, UserPreferencesRead
 
 PREFS_URL = "/api/v1/auth/me/preferences"
 
 
 def _bearer(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+def test_preferences_read_model_accepts_opaque_workspace():
+    workspace = {
+        "engine": "dockview@9",
+        "namedPresets": {
+            "future.id": {
+                "name": "未来布局",
+                "schemaVersion": 99,
+                "snapshot": {"future": True},
+            }
+        },
+    }
+    parsed = UserPreferencesRead.model_validate(
+        {"workbench": {"layout": {"workspace": workspace}}}
+    )
+    assert (
+        parsed.model_dump(mode="json", by_alias=True)["workbench"]["layout"][
+            "workspace"
+        ]
+        == workspace
+    )
+    parsed_null = UserPreferencesRead.model_validate(
+        {"workbench": {"layout": {"workspace": None}}}
+    )
+    assert parsed_null.workbench.layout.workspace is None
 
 
 # ── 1. PATCH 子树合并 ────────────────────────────────────────────────
@@ -1331,6 +1357,574 @@ async def test_workspace_schema_downgrade_rejects_entire_patch(
     assert user.preferences == previous
 
 
+def _named_preset(name, context="annotate:image", version=5):
+    return {**_workspace_envelope(version), "name": name, "context": context}
+
+
+def _named_presets_patch(presets, revision="0"):
+    return {
+        "namedPresetsRevision": revision,
+        "workbench": {
+            "layout": {"workspace": {"engine": "dockview@8", "namedPresets": presets}}
+        },
+    }
+
+
+def _named_presets_only_patch(presets, revision="0"):
+    return {
+        "namedPresetsRevision": revision,
+        "workbench": {"layout": {"workspace": {"namedPresets": presets}}},
+    }
+
+
+async def _store_raw_named_presets(user, db_session, presets, engine="dockview@9"):
+    user.preferences = {
+        "workbench": {
+            "layout": {
+                "workspace": {
+                    "engine": engine,
+                    "namedPresets": copy.deepcopy(presets),
+                }
+            }
+        }
+    }
+    await db_session.flush()
+
+
+async def _saved_presets(httpx_client, token):
+    response = await httpx_client.get(PREFS_URL, headers=_bearer(token))
+    assert response.status_code == 200, response.text
+    return response.json()["workbench"]["layout"]["workspace"]["namedPresets"]
+
+
+async def test_named_presets_revision_defaults_to_initial_token(
+    httpx_client, annotator
+):
+    _, token = annotator
+    response = await httpx_client.get(PREFS_URL, headers=_bearer(token))
+    assert response.status_code == 200, response.text
+    assert response.json()["namedPresetsRevision"] == "0"
+
+
+async def test_named_presets_survive_live_layout_writes_and_delete_by_omission(
+    httpx_client, annotator
+):
+    """两个 writer 各写各的：布局自动保存不碰预设，预设 CRUD 不碰当前布局。"""
+    _, token = annotator
+    presets = {
+        "p1": _named_preset("审核宽讨论"),
+        "p2": _named_preset("视频追踪自用", "annotate:video"),
+    }
+    response = await httpx_client.patch(
+        PREFS_URL, json=_named_presets_patch(presets), headers=_bearer(token)
+    )
+    assert response.status_code == 200, response.text
+    revision = response.json()["namedPresetsRevision"]
+    assert await _saved_presets(httpx_client, token) == presets
+
+    # 直播布局 PATCH 不带 namedPresets，两条预设必须原样留存。
+    live = _workspace_envelope(5)
+    response = await httpx_client.patch(
+        PREFS_URL, json=_workspace_patch(live), headers=_bearer(token)
+    )
+    assert response.status_code == 200, response.text
+    workspace = response.json()["workbench"]["layout"]["workspace"]
+    assert workspace["namedPresets"] == presets
+    assert workspace["contexts"]["annotate:image"] == live
+
+    # 预设 PATCH 不带 contexts，当前布局必须原样留存；省略某条即为删除。
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json=_named_presets_patch({"p2": presets["p2"]}, revision),
+        headers=_bearer(token),
+    )
+    assert response.status_code == 200, response.text
+    workspace = response.json()["workbench"]["layout"]["workspace"]
+    assert workspace["namedPresets"] == {"p2": presets["p2"]}
+    assert workspace["contexts"]["annotate:image"] == live
+
+
+async def test_named_presets_cap_at_five_per_user(httpx_client, annotator):
+    user, token = annotator
+    five = {f"p{index}": _named_preset(f"布局 {index}") for index in range(5)}
+    response = await httpx_client.patch(
+        PREFS_URL, json=_named_presets_patch(five), headers=_bearer(token)
+    )
+    assert response.status_code == 200, response.text
+    revision = response.json()["namedPresetsRevision"]
+    previous = copy.deepcopy(user.preferences)
+
+    six = {**five, "p5": _named_preset("布局 5")}
+    response = await httpx_client.patch(
+        PREFS_URL, json=_named_presets_patch(six, revision), headers=_bearer(token)
+    )
+    assert response.status_code == 422
+    assert user.preferences == previous
+
+    # 先删一条即可腾出名额。
+    freed = {key: value for key, value in five.items() if key != "p0"}
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json=_named_presets_patch({**freed, "p5": _named_preset("布局 5")}, revision),
+        headers=_bearer(token),
+    )
+    assert response.status_code == 200, response.text
+    assert set(await _saved_presets(httpx_client, token)) == {*freed, "p5"}
+
+
+async def test_named_presets_revision_rejects_second_client_stale_map(
+    httpx_client, annotator
+):
+    user, token = annotator
+    original = {"p1": _named_preset("共同基线")}
+    response = await httpx_client.patch(
+        PREFS_URL, json=_named_presets_patch(original), headers=_bearer(token)
+    )
+    assert response.status_code == 200, response.text
+    shared_revision = response.json()["namedPresetsRevision"]
+
+    client_a = {**original, "p2": _named_preset("设备 A 新增")}
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json=_named_presets_patch(client_a, shared_revision),
+        headers=_bearer(token),
+    )
+    assert response.status_code == 200, response.text
+    current_revision = response.json()["namedPresetsRevision"]
+    previous = copy.deepcopy(user.preferences)
+
+    client_b = {"p1": {**original["p1"], "name": "设备 B 旧图重命名"}}
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json=_named_presets_patch(client_b, shared_revision),
+        headers=_bearer(token),
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"] == {
+        "code": "named_presets_conflict",
+        "message": "命名布局预设已在其他会话更新，请刷新后重试",
+        "currentRevision": current_revision,
+    }
+    assert user.preferences == previous
+    assert await _saved_presets(httpx_client, token) == client_a
+
+
+async def test_named_presets_stale_revision_precedes_map_validation(
+    httpx_client, annotator
+):
+    _, token = annotator
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json=_named_presets_patch({"p1": _named_preset("设备共享")}),
+        headers=_bearer(token),
+    )
+    assert response.status_code == 200, response.text
+    stale_revision = response.json()["namedPresetsRevision"]
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json=_named_presets_patch({}, stale_revision),
+        headers=_bearer(token),
+    )
+    assert response.status_code == 200, response.text
+    current_revision = response.json()["namedPresetsRevision"]
+
+    # This entry is invalid to the current schema and no longer exists in the latest
+    # map. The stale precondition must win over content validation so clients can
+    # reliably follow the conflict/refetch path.
+    stale_opaque_map = {
+        "future": {
+            "name": "新版布局",
+            "context": "annotate:image",
+            "schemaVersion": 99,
+            "snapshot": {"future": True},
+        }
+    }
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json=_named_presets_only_patch(stale_opaque_map, stale_revision),
+        headers=_bearer(token),
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["currentRevision"] == current_revision
+
+
+async def test_named_presets_legacy_write_establishes_revision_once(
+    httpx_client, annotator
+):
+    _, token = annotator
+    legacy_patch = _named_presets_only_patch({"p1": _named_preset("旧标签页")})
+    legacy_patch.pop("namedPresetsRevision")
+
+    response = await httpx_client.patch(
+        PREFS_URL, json=legacy_patch, headers=_bearer(token)
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["namedPresetsRevision"] != "0"
+
+    response = await httpx_client.patch(
+        PREFS_URL, json=legacy_patch, headers=_bearer(token)
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "named_presets_conflict"
+
+
+@pytest.mark.parametrize("revision", [None, 1, "1", "g" * 32, "a" * 31, "A" * 32])
+async def test_named_presets_reject_invalid_revision(httpx_client, annotator, revision):
+    user, token = annotator
+    previous = copy.deepcopy(user.preferences)
+    patch = _named_presets_only_patch({"p1": _named_preset("新布局")}, revision)
+
+    response = await httpx_client.patch(PREFS_URL, json=patch, headers=_bearer(token))
+    assert response.status_code == 422
+    assert user.preferences == previous
+
+
+async def test_named_presets_revision_is_read_only_without_map(httpx_client, annotator):
+    user, token = annotator
+    previous = copy.deepcopy(user.preferences)
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json={
+            "namedPresetsRevision": "0",
+            "ui": {"theme": "dark"},
+        },
+        headers=_bearer(token),
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == "named_presets_revision_read_only"
+    assert user.preferences == previous
+
+
+async def test_preset_only_patch_seeds_engine_when_workspace_is_missing(
+    httpx_client, annotator
+):
+    _, token = annotator
+    presets = {"p1": _named_preset("审核宽讨论")}
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json=_named_presets_only_patch(presets),
+        headers=_bearer(token),
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["workbench"]["layout"]["workspace"] == {
+        "engine": "dockview@8",
+        "namedPresets": presets,
+    }
+
+
+async def test_named_presets_round_trip_stored_opaque_entries_without_engine_downgrade(
+    httpx_client, annotator, db_session
+):
+    user, token = annotator
+    future = {
+        "name": "新版布局",
+        "context": "annotate:image",
+        "schemaVersion": 99,
+        "snapshot": {"future": [1, 2, 3]},
+        "futureMetadata": {"keep": True},
+    }
+    damaged = {"schemaVersion": 5, "snapshot": {"broken": True}}
+    stored = {"future.id": future, "damaged id": damaged}
+    await _store_raw_named_presets(user, db_session, stored)
+
+    current = _named_preset("当前版布局")
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json=_named_presets_only_patch({**stored, "p1": current}),
+        headers=_bearer(token),
+    )
+    assert response.status_code == 200, response.text
+    workspace = response.json()["workbench"]["layout"]["workspace"]
+    revision = response.json()["namedPresetsRevision"]
+    assert workspace["engine"] == "dockview@9"
+    assert workspace["namedPresets"] == {**stored, "p1": current}
+
+    # Omission remains deletion even for an entry the current schema cannot parse.
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json=_named_presets_only_patch({"future.id": future, "p1": current}, revision),
+        headers=_bearer(token),
+    )
+    assert response.status_code == 200, response.text
+    workspace = response.json()["workbench"]["layout"]["workspace"]
+    assert workspace["engine"] == "dockview@9"
+    assert workspace["namedPresets"] == {"future.id": future, "p1": current}
+
+
+async def test_named_presets_preserve_json_number_spelling_in_opaque_entry(
+    httpx_client, annotator, db_session
+):
+    user, token = annotator
+    stored_future = {
+        "name": "新版布局",
+        "context": "annotate:image",
+        "schemaVersion": 99,
+        "snapshot": {"futureRatio": 1.0},
+    }
+    await _store_raw_named_presets(user, db_session, {"future": stored_future})
+
+    browser_round_trip = copy.deepcopy(stored_future)
+    browser_round_trip["snapshot"]["futureRatio"] = 1
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json=_named_presets_only_patch({"future": browser_round_trip}),
+        headers=_bearer(token),
+    )
+    assert response.status_code == 200, response.text
+    stored_ratio = response.json()["workbench"]["layout"]["workspace"]["namedPresets"][
+        "future"
+    ]["snapshot"]["futureRatio"]
+    assert type(stored_ratio) is float
+    assert stored_ratio == 1.0
+
+
+@pytest.mark.parametrize(
+    ("stored_counter", "browser_counter"),
+    [
+        (9_007_199_254_740_993, 9_007_199_254_740_992),
+        (10**400, None),
+    ],
+)
+async def test_named_presets_preserve_unsafe_javascript_number_in_opaque_entry(
+    httpx_client, annotator, db_session, stored_counter, browser_counter
+):
+    user, token = annotator
+    stored_future = {
+        "name": "新版布局",
+        "context": "annotate:image",
+        "schemaVersion": 99,
+        "snapshot": {"futureCounter": stored_counter},
+    }
+    await _store_raw_named_presets(user, db_session, {"future": stored_future})
+
+    browser_round_trip = copy.deepcopy(stored_future)
+    browser_round_trip["snapshot"]["futureCounter"] = browser_counter
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json=_named_presets_only_patch({"future": browser_round_trip}),
+        headers=_bearer(token),
+    )
+    assert response.status_code == 200, response.text
+    assert (
+        response.json()["workbench"]["layout"]["workspace"]["namedPresets"]["future"][
+            "snapshot"
+        ]["futureCounter"]
+        == stored_counter
+    )
+
+
+async def test_named_presets_can_reduce_stored_over_limit_opaque_map(
+    httpx_client, annotator, db_session
+):
+    user, token = annotator
+    stored = {
+        f"future{index}": {
+            "name": f"新版布局 {index}",
+            "context": "annotate:image",
+            "schemaVersion": 99,
+            "snapshot": {"future": index},
+        }
+        for index in range(6)
+    }
+    await _store_raw_named_presets(user, db_session, stored)
+
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json=_named_presets_only_patch(stored),
+        headers=_bearer(token),
+    )
+    assert response.status_code == 200, response.text
+    revision = response.json()["namedPresetsRevision"]
+    assert response.json()["workbench"]["layout"]["workspace"]["namedPresets"] == stored
+
+    previous = copy.deepcopy(user.preferences)
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json=_named_presets_only_patch(
+            {
+                **stored,
+                "invented": {
+                    **stored["future0"],
+                    "name": "超限新增布局",
+                },
+            },
+            revision,
+        ),
+        headers=_bearer(token),
+    )
+    assert response.status_code == 422
+    assert user.preferences == previous
+
+    reduced = {key: value for key, value in stored.items() if key != "future0"}
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json=_named_presets_only_patch(reduced, revision),
+        headers=_bearer(token),
+    )
+    assert response.status_code == 200, response.text
+    assert (
+        response.json()["workbench"]["layout"]["workspace"]["namedPresets"] == reduced
+    )
+
+
+async def test_named_presets_reject_duplicate_name_against_opaque_entry(
+    httpx_client, annotator, db_session
+):
+    user, token = annotator
+    future = {
+        "name": "同名",
+        "context": "annotate:image",
+        "schemaVersion": 99,
+        "snapshot": {"future": True},
+    }
+    await _store_raw_named_presets(user, db_session, {"future": future})
+    previous = copy.deepcopy(user.preferences)
+
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json=_named_presets_only_patch(
+            {"future": future, "current": _named_preset("同名")}
+        ),
+        headers=_bearer(token),
+    )
+    assert response.status_code == 422
+    assert user.preferences == previous
+
+
+async def test_named_presets_can_shrink_stored_opaque_duplicate_group(
+    httpx_client, annotator, db_session
+):
+    user, token = annotator
+    stored = {
+        preset_id: {
+            "name": "存量同名",
+            "context": "annotate:image",
+            "schemaVersion": 99,
+            "snapshot": {"future": preset_id},
+        }
+        for preset_id in ("future-a", "future-b", "future-c")
+    }
+    await _store_raw_named_presets(user, db_session, stored)
+
+    revision = "0"
+    for removed in ("future-a", "future-b"):
+        stored.pop(removed)
+        response = await httpx_client.patch(
+            PREFS_URL,
+            json=_named_presets_only_patch(stored, revision),
+            headers=_bearer(token),
+        )
+        assert response.status_code == 200, response.text
+        revision = response.json()["namedPresetsRevision"]
+        assert (
+            response.json()["workbench"]["layout"]["workspace"]["namedPresets"]
+            == stored
+        )
+
+
+async def test_named_presets_reject_new_opaque_entry_and_engine_downgrade(
+    httpx_client, annotator, db_session
+):
+    user, token = annotator
+    future = {
+        "name": "新版布局",
+        "context": "annotate:image",
+        "schemaVersion": 99,
+        "snapshot": {"future": None},
+    }
+    await _store_raw_named_presets(user, db_session, {"future": future})
+    previous = copy.deepcopy(user.preferences)
+
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json={
+            "workbench": {
+                "layout": {
+                    "workspace": {
+                        "contexts": {"annotate:image": _workspace_envelope(5)}
+                    }
+                }
+            }
+        },
+        headers=_bearer(token),
+    )
+    assert response.status_code == 422
+    assert user.preferences == previous
+
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json=_named_presets_only_patch(
+            {"future": {**future, "snapshot": {"future": 10**400}}}
+        ),
+        headers=_bearer(token),
+    )
+    assert response.status_code == 422
+    assert user.preferences == previous
+
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json=_named_presets_only_patch(
+            {
+                "future": future,
+                "invented": {**future, "name": "伪造新版布局"},
+            }
+        ),
+        headers=_bearer(token),
+    )
+    assert response.status_code == 422
+    assert user.preferences == previous
+
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json={
+            "workbench": {
+                "layout": {
+                    "workspace": {
+                        "engine": "dockview@8",
+                        "namedPresets": {"future": future},
+                    }
+                }
+            }
+        },
+        headers=_bearer(token),
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"] == "layout_engine_downgrade"
+    assert user.preferences == previous
+
+
+@pytest.mark.parametrize(
+    "presets",
+    [
+        {"p1": _named_preset("同名"), "p2": _named_preset("同名")},
+        {"p1": _named_preset("   ")},
+        {"p1": _named_preset("x" * 41)},
+        {"p1": {**_named_preset("缺上下文"), "context": "annotate:hologram"}},
+        {"bad id": _named_preset("非法 id")},
+    ],
+)
+async def test_named_presets_reject_invalid_entries(httpx_client, annotator, presets):
+    user, token = annotator
+    previous = copy.deepcopy(user.preferences)
+    response = await httpx_client.patch(
+        PREFS_URL, json=_named_presets_patch(presets), headers=_bearer(token)
+    )
+    assert response.status_code == 422
+    assert user.preferences == previous
+
+
+def test_named_preset_reuses_live_snapshot_grammar():
+    broken = _named_preset("三视图越界")
+    root = broken["snapshot"]["layout"]["grid"]["root"]
+    root["data"][-1]["data"]["views"].remove("tri-view")
+    root["data"][1]["data"]["views"].append("tri-view")
+    with pytest.raises(ValidationError, match="3D panels require parking"):
+        UserPreferences.model_validate(_named_presets_patch({"p1": broken}))
+    # 同一份快照在 3D 上下文里合法。
+    broken["context"] = "annotate:3d"
+    UserPreferences.model_validate(_named_presets_patch({"p1": broken}))
+
+
 async def test_workspace_invalid_patch_returns_422_without_writing(
     httpx_client, annotator
 ):
@@ -1544,6 +2138,66 @@ async def test_workspace_concurrent_context_writes_refresh_locked_identity(test_
                 )
             assert caught.value.status_code == 409
             await second.rollback()
+    finally:
+        async with maker() as cleanup:
+            await cleanup.execute(sa.delete(User).where(User.id == user_id))
+            await cleanup.commit()
+
+
+async def test_named_presets_concurrent_writes_allow_only_one_stale_map(test_engine):
+    """Two pre-authenticated callers share revision 0; exactly one map may commit."""
+    import asyncio
+    import uuid
+
+    from fastapi import HTTPException
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from app.api.v1.me import update_preferences
+    from app.db.models.user import User
+
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    user_id = uuid.uuid4()
+    async with maker() as setup:
+        setup.add(
+            User(
+                id=user_id,
+                email=f"named-presets-{user_id}@test.local",
+                name="Named presets",
+                password_hash="unused",
+            )
+        )
+        await setup.commit()
+
+    first_map = {"first": _named_preset("设备 A")}
+    second_map = {"second": _named_preset("设备 B")}
+    try:
+        async with maker() as first, maker() as second:
+            user_a = await first.get(User, user_id)
+            user_b = await second.get(User, user_id)
+            results = await asyncio.gather(
+                update_preferences(_named_presets_only_patch(first_map), first, user_a),
+                update_preferences(
+                    _named_presets_only_patch(second_map), second, user_b
+                ),
+                return_exceptions=True,
+            )
+            conflicts = [
+                result
+                for result in results
+                if isinstance(result, HTTPException)
+                and result.status_code == 409
+                and result.detail["code"] == "named_presets_conflict"
+            ]
+            assert len(conflicts) == 1
+            assert sum(not isinstance(result, BaseException) for result in results) == 1
+            await first.rollback()
+            await second.rollback()
+
+        async with maker() as verification:
+            stored = await verification.get(User, user_id)
+            workspace = stored.preferences["workbench"]["layout"]["workspace"]
+            assert workspace["namedPresets"] in (first_map, second_map)
+            assert stored.preferences["namedPresetsRevision"] != "0"
     finally:
         async with maker() as cleanup:
             await cleanup.execute(sa.delete(User).where(User.id == user_id))

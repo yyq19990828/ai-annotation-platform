@@ -71,7 +71,9 @@ function contextEnvelope(workspace: unknown, context: WorkspaceContext): unknown
   if (workspace === undefined) return undefined;
   if (!workspace || typeof workspace !== "object" || Array.isArray(workspace)) return false;
   const value = workspace as Record<string, unknown>;
-  const contexts = value.contexts;
+  // An account that only saved named presets has no live snapshot yet; that is a
+  // missing context to seed, not a corrupt wrapper.
+  const contexts = value.contexts === undefined ? {} : value.contexts;
   if (
     value.engine !== "dockview@8" ||
     !contexts ||
@@ -227,6 +229,8 @@ export function useWorkbenchWorkspaceLayout(
                 layout: {
                   ...previous.workbench.layout,
                   workspace: {
+                    // Saved presets live beside contexts and have their own writer.
+                    ...previous.workbench.layout.workspace,
                     engine: "dockview@8",
                     contexts: {
                       ...previous.workbench.layout.workspace?.contexts,

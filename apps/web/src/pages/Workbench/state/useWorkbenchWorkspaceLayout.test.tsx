@@ -100,6 +100,11 @@ function preferences(
   };
 }
 
+/** `contexts` 在契约上可缺席(只存过命名预设的账号),测试里的 fixture 恒有。 */
+function contextsOf(prefs: UserPreferences) {
+  return (prefs.workbench.layout.workspace!.contexts ??= {});
+}
+
 function setup(context: WorkspaceContext = "annotate:image", paused = false) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   function wrapper({ children }: { children: ReactNode }) {
@@ -376,7 +381,7 @@ describe("workspace layout owner", () => {
     const patch = deferred<UserPreferences>();
     mocks.patch.mockReturnValue(patch.promise);
     const remote = preferences();
-    remote.workbench.layout.workspace!.contexts["review:video"] = v1(changed);
+    contextsOf(remote)["review:video"] = v1(changed);
     mocks.get.mockResolvedValue(remote);
     const { result, rerender, client } = setup();
     await waitFor(() => expect(result.current.initialized).toBe(true));
@@ -395,7 +400,7 @@ describe("workspace layout owner", () => {
     expect(result.current.snapshot).toEqual(latest);
     expect(
       client.getQueryData<UserPreferences>(userPreferencesQueryKey("u1"))?.workbench.layout
-        .workspace?.contexts["annotate:image"],
+        .workspace?.contexts?.["annotate:image"],
     ).toEqual(v5(latest));
   });
 
@@ -403,7 +408,7 @@ describe("workspace layout owner", () => {
     const patch = deferred<UserPreferences>();
     mocks.patch.mockReturnValue(patch.promise);
     const remote = preferences();
-    remote.workbench.layout.workspace!.contexts["review:video"] = v1(changed);
+    contextsOf(remote)["review:video"] = v1(changed);
     mocks.get.mockResolvedValue(remote);
     const { result, rerender } = setup();
     await waitFor(() => expect(result.current.initialized).toBe(true));
@@ -427,7 +432,7 @@ describe("workspace layout owner", () => {
   it.each([
     "broken",
     null,
-    { engine: "dockview@8" },
+    { engine: "dockview@8", contexts: null },
     { engine: "dockview@8", contexts: [] },
     { engine: "dockview@8", contexts: { "annotate:image": null } },
     { engine: "dockview@8", contexts: { unexpected: v1() } },
@@ -447,9 +452,51 @@ describe("workspace layout owner", () => {
     },
   );
 
+  it("seeds the initial layout for an account that only saved named presets", async () => {
+    const remote = preferences(undefined);
+    remote.workbench.layout.workspace = {
+      engine: "dockview@8",
+      namedPresets: {
+        p1: { schemaVersion: 5, snapshot: initial, name: "审核宽讨论", context: "review:image" },
+      },
+    };
+    mocks.get.mockResolvedValue(remote);
+    const { result } = setup();
+    await waitFor(() => expect(result.current.initialized).toBe(true));
+    expect(result.current.readOnlyReason).toBe(null);
+    expect(result.current.readOnly).toBe(false);
+    expect(result.current.snapshot).toEqual(initial);
+  });
+
+  it("keeps saved named presets in the shared cache after a layout write", async () => {
+    const preset = {
+      schemaVersion: 5 as const,
+      snapshot: initial,
+      name: "审核宽讨论",
+      context: "review:image" as const,
+    };
+    const remote = preferences();
+    remote.workbench.layout.workspace!.namedPresets = { p1: preset };
+    mocks.get.mockResolvedValue(remote);
+    const { result, client } = setup();
+    await waitFor(() => expect(result.current.initialized).toBe(true));
+    act(() => void result.current.save(changed));
+    await waitFor(() => expect(mocks.patch).toHaveBeenCalledTimes(1));
+    // The layout writer submits only its own context and must not drop the sibling map.
+    expect(mocks.patch.mock.calls[0][0].workbench.layout.workspace).not.toHaveProperty(
+      "namedPresets",
+    );
+    await waitFor(() =>
+      expect(
+        client.getQueryData<UserPreferences>(userPreferencesQueryKey("u1"))?.workbench.layout
+          .workspace?.namedPresets,
+      ).toEqual({ p1: preset }),
+    );
+  });
+
   it("flushes a previous context's pending snapshot before switching contexts", async () => {
     const get = preferences();
-    get.workbench.layout.workspace!.contexts["review:video"] = v1(latest);
+    contextsOf(get)["review:video"] = v1(latest);
     mocks.get.mockResolvedValue(get);
     const { result, rerender } = setup();
     await waitFor(() => expect(result.current.initialized).toBe(true));

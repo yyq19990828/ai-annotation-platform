@@ -100,6 +100,29 @@ Codex 清理脚本固定在当前 worktree 执行，并包含 API 测试缓存�
 apps/api/.venv/bin/python scripts/test-orca-worktree-setup.py
 ```
 
+### 多 Worktree 并行启动
+
+同时验证多个 worktree 时，在每个 checkout 根目录分别运行：
+
+```bash
+pnpm dev:worktree
+```
+
+启动器先执行 `alembic upgrade head`，然后默认从 API `8100` 和 Web `3100`
+开始向上扫描空闲端口。端口锁在启动器存活期间保留，避免两个 worktree
+同时启动时选中同一端口。Web 进程会自动获得当次 API 的
+`API_PROXY_TARGET`，`/api` 和 `/ws` 因此不会误连到主 checkout 的 `8000`。
+终端会打印实际分配的 Web 和 API 地址；按 `Ctrl+C` 会统一停止两个子进程。
+
+可指定自定义的扫描起点，已被占用时仍会继续向上寻找：
+
+```bash
+pnpm dev:worktree -- --api-port 8200 --web-port 3200
+```
+
+数据库已由其他流程完成迁移时，可使用 `--skip-migrations`。此命令只隔离两个 HTTP
+监听端口；Worktree 默认共享 `.env`，因此数据库、Redis、MinIO 与其他配置仍然可能共用。
+
 ## Codex 会话启动硬件上下文
 
 仓库内的 `.codex/hooks.json` 会在 Codex 会话启动、恢复、清空或压缩后运行

@@ -156,7 +156,14 @@ cd apps/api && uv run alembic upgrade head && cd ../..
 # 4. 启动后端和前端
 pnpm dev:api        # http://localhost:8000
 pnpm dev:web        # http://localhost:3000
+
+# 多 worktree 并行时可用一条命令启动当前 checkout 的前后端
+pnpm dev:worktree   # 自动选择空闲端口并配置前端代理
 ```
+
+`dev:worktree` 默认从 API `8100` 和 Web `3100` 开始向上寻找空闲端口，
+按 `Ctrl+C` 会同时停止两个服务。端口隔离不会隔离 `.env` 中的数据库、Redis
+和对象存储。
 
 需要演示数据时：
 
@@ -244,6 +251,8 @@ API 变更后同步跑 `pnpm openapi:export` 和 `pnpm codegen`；环境变量�
 内部账号支持邮件恢复、按状态查询、逐项目职责交接、紧急停用与恢复。管理员确认交接时会重新核对接收资格及预览状态；恢复不会拿回已交接工作或恢复已撤销的凭据。接口与兼容字段见[认证与账号生命周期](./docs-site/api/guides/auth.md)。
 
 工作台显示保存和本机待同步状态，并按账号保留离线操作；普通标注创建支持持久幂等键，避免重试生成重复对象。详见[任务与标注 API](./docs-site/api/guides/tasks-and-annotations.md#保存标注与提交任务)。
+
+命名布局预设通过账号偏好 API 跨设备保存；`namedPresets` 采用带 revision 的整份 map 替换与省略删除语义，陈旧设备写入返回冲突，而 `contexts` 可在预设专用 PATCH 中缺席。安全更新方式与兼容规则见[账号偏好与命名布局预设](./docs-site/api/guides/auth.md#账号偏好与命名布局预设)。
 
 图片 Polygon 和 Raster Mask 支持预览后原子切割与保留对象 ID 的撤销/重做。提交和恢复使用独立幂等请求，恢复受完整版本集与原切割后 30 天期限约束，Mask 支持保留全部像素的直线切割，撤销后的内容引用受资源清理保护。详见[Mask 切割](./docs-site/user-guide/workbench/mask-brush.md#直线切割为两个实例)、[Polygon 切割](./docs-site/user-guide/workbench/polygon.md#切割为两个对象)与[API 合同](./docs-site/api/guides/tasks-and-annotations.md#polygon-原子切割与恢复)。
 
