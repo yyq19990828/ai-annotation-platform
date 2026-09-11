@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AnnotationFeedback } from "@/api/feedbacks";
@@ -8,13 +8,19 @@ const mocks = vi.hoisted(() => ({
   useInfiniteFeedbacks: vi.fn(),
   patchMutate: vi.fn(),
   deleteMutate: vi.fn(),
-  query: null as Record<string, unknown> | null,
+  query: null as Record<string, any> | null,
   store: {
     highlightId: null as string | null,
-    pinRequestTick: 0,
-    pinTarget: null as AnnotationFeedback | null,
     focusIssue: vi.fn(),
+    detailRequestTick: 0,
+    detailTarget: null as AnnotationFeedback | null,
+    detailTargetId: null as string | null,
+    detailOwnerId: null as string | null,
+    detailScope: null as { projectId: string; taskId: string | null } | null,
+    openIssueDetail: vi.fn(),
+    closeIssueDetail: vi.fn(),
   },
+  detailProps: null as Record<string, any> | null,
 }));
 
 vi.mock("@/hooks/useFeedbacks", () => ({
@@ -25,6 +31,19 @@ vi.mock("@/hooks/useFeedbacks", () => ({
 
 vi.mock("../state/useActiveIssueStore", () => ({
   useActiveIssueStore: (selector: (state: typeof mocks.store) => unknown) => selector(mocks.store),
+}));
+
+vi.mock("./DiscussionIssueDetail", () => ({
+  DiscussionIssueDetail: (props: Record<string, any>) => {
+    mocks.detailProps = props;
+    return (
+      <div data-testid="discussion-issue-detail" data-issue-id={props.rootId}>
+        <button type="button" onClick={props.onBack}>
+          返回问题列表
+        </button>
+      </div>
+    );
+  },
 }));
 
 function issue(overrides: Partial<AnnotationFeedback> = {}): AnnotationFeedback {
@@ -78,16 +97,6 @@ function query(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (error: Error) => void;
-  const promise = new Promise<T>((yes, no) => {
-    resolve = yes;
-    reject = no;
-  });
-  return { promise, resolve, reject };
-}
-
 function setup(overrides: Partial<ComponentProps<typeof DiscussionIssuesTab>> = {}) {
   const onCreateTaskIssue = vi.fn();
   const onCreatePixelIssue = vi.fn();
@@ -109,16 +118,20 @@ function setup(overrides: Partial<ComponentProps<typeof DiscussionIssuesTab>> = 
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.store.highlightId = null;
-  mocks.store.pinRequestTick = 0;
-  mocks.store.pinTarget = null;
+  mocks.store.detailRequestTick = 0;
+  mocks.store.detailTarget = null;
+  mocks.store.detailTargetId = null;
+  mocks.store.detailOwnerId = null;
+  mocks.store.detailScope = null;
+  mocks.detailProps = null;
   mocks.query = query();
   mocks.useInfiniteFeedbacks.mockImplementation(() => mocks.query);
 });
 
 describe("DiscussionIssuesTab", () => {
-  it("defaults to open and sends status/root/count filters to the server", () => {
+  it("defaults to open, sends server filters, exposes exact counts and aria-pressed state", () => {
     setup();
-    expect(screen.getByTestId("issue-status-open").className).toContain("border-brand");
+    expect(screen.getByTestId("issue-status-open")).toHaveAttribute("aria-pressed", "true");
     expect(mocks.useInfiniteFeedbacks).toHaveBeenLastCalledWith(
       expect.objectContaining({
         task_id: "T1",
@@ -129,42 +142,23 @@ describe("DiscussionIssuesTab", () => {
       }),
     );
     expect(screen.getByTestId("issue-open-count")).toHaveTextContent("待处理 7");
-
     fireEvent.click(screen.getByTestId("issue-status-resolved"));
+    expect(screen.getByTestId("issue-status-resolved")).toHaveAttribute("aria-pressed", "true");
     expect(mocks.useInfiniteFeedbacks).toHaveBeenLastCalledWith(
       expect.objectContaining({ status: "resolved", root_only: true }),
     );
   });
 
-  it("uses the exact server count and keeps a matching item from a later loaded page", () => {
+  it("keeps unknown instead of deriving a count from loaded rows", () => {
     mocks.query = query({
-      data: {
-        pages: [
-          { items: [], next_cursor: "next", status_counts: { open: 12 } },
-          { items: [issue({ id: "issue-later" })], next_cursor: null },
-        ],
-        pageParams: [null, "next"],
-      },
-    });
-    const view = setup();
-    expect(screen.getByTestId("issue-open-count")).toHaveTextContent("待处理 12");
-    expect(screen.getByTestId("discussion-issue-card-issue-later")).toBeTruthy();
-    view.unmount();
-  });
-
-  it("shows unknown rather than a partial loaded-row count while counts are absent", () => {
-    mocks.query = query({
-      data: {
-        pages: [{ items: [issue(), issue({ id: "issue-2" })], next_cursor: null }],
-        pageParams: [null],
-      },
+      data: { pages: [{ items: [issue(), issue({ id: "issue-2" })], next_cursor: null }] },
     });
     setup();
     expect(screen.getByTestId("issue-open-count")).toHaveAttribute("data-state", "unknown");
     expect(screen.getByTestId("issue-open-count")).toHaveTextContent("待处理 —");
   });
 
-  it("exposes separate task and pixel entry intents", () => {
+  it("keeps task and pixel creation intents separate", () => {
     const view = setup();
     fireEvent.click(screen.getByTestId("issue-create-task"));
     fireEvent.click(screen.getByTestId("issue-create-pixel"));
@@ -172,284 +166,130 @@ describe("DiscussionIssuesTab", () => {
     expect(view.onCreatePixelIssue).toHaveBeenCalledTimes(1);
   });
 
-  it("honors server actions and surfaces status failures without hiding the Issue", async () => {
-    const target = issue({
-      actions: { edit: false, change_status: true, delete: false, reply: false },
-    });
+  it("opens a readable detail from the title without invoking canvas focus", () => {
+    const target = issue({ id: "task-only", title: "任务层问题" });
     mocks.query = query({
       data: { pages: [{ items: [target], next_cursor: null, status_counts: { open: 1 } }] },
     });
     setup();
-    expect(screen.getByTitle("标为已解决")).toBeTruthy();
-    expect(screen.queryByTitle("删除")).toBeNull();
-    fireEvent.click(screen.getByTitle("标为已解决"));
-    const callbacks = mocks.patchMutate.mock.calls[0][1] as {
-      onError: (e: Error) => void;
-      onSettled: () => void;
-    };
-    callbacks.onError(new Error("审核状态保存失败"));
-    callbacks.onSettled();
-    await waitFor(() =>
-      expect(screen.getByTestId("issue-mutation-error")).toHaveTextContent("审核状态保存失败"),
+    fireEvent.click(screen.getByTestId("discussion-issue-open-task-only"));
+    expect(screen.getByTestId("discussion-issue-detail")).toHaveAttribute(
+      "data-issue-id",
+      "task-only",
     );
-    expect(screen.getByTestId("discussion-issue-card-issue-1")).toBeTruthy();
+    expect(mocks.store.openIssueDetail).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "task-only" }),
+      { projectId: "P1", taskId: "T1" },
+    );
+    expect(mocks.store.focusIssue).not.toHaveBeenCalled();
   });
 
-  it("requires confirmation before delete and keeps a failed deletion visible", async () => {
+  it("keeps card identity and uses an explicit locate action with the full snapshot", () => {
+    const target = issue({
+      id: "pixel-1",
+      title: "画布问题",
+      anchor_type: "pixel",
+      anchor_position: { x: 0.2, y: 0.4, frame: 8 },
+    });
+    mocks.query = query({ data: { pages: [{ items: [target], next_cursor: null }] } });
     setup();
-    fireEvent.click(screen.getByTestId("issue-delete-issue-1"));
-    expect(screen.getByText("确认删除？")).toBeTruthy();
-    fireEvent.click(screen.getByTestId("issue-delete-confirm-issue-1"));
-    const callbacks = mocks.deleteMutate.mock.calls[0][1] as {
-      onError: (e: Error) => void;
-      onSettled: () => void;
-    };
-    callbacks.onError(new Error("删除失败"));
-    callbacks.onSettled();
-    await waitFor(() =>
-      expect(screen.getByTestId("issue-mutation-error")).toHaveTextContent("删除失败"),
+    expect(screen.getByTestId("discussion-issue-card-pixel-1")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("discussion-issue-locate-pixel-1"));
+    expect(mocks.store.focusIssue).toHaveBeenCalledWith(target);
+    expect(screen.getByTestId("discussion-issue-open-pixel-1")).toHaveAttribute(
+      "aria-label",
+      "打开问题：画布问题",
     );
-    expect(screen.getByTestId("discussion-issue-card-issue-1")).toBeTruthy();
   });
 
-  it("keeps a newer A request pending after A to B to A and ignores the old A callbacks", () => {
+  it("opens a filtered-out pin snapshot directly and preserves the selected list filter", () => {
+    const view = setup({ allowProjectScope: true });
+    fireEvent.click(screen.getByTestId("issue-status-resolved"));
+    mocks.store.detailTarget = issue({ id: "pin-unloaded", status: "resolved", task_id: "T1" });
+    mocks.store.detailTargetId = "pin-unloaded";
+    mocks.store.detailScope = { projectId: "P1", taskId: "T1" };
+    mocks.store.detailRequestTick = 1;
+    view.rerender(<DiscussionIssuesTab {...view.props} allowProjectScope />);
+    expect(screen.getByTestId("discussion-issue-detail")).toHaveAttribute(
+      "data-issue-id",
+      "pin-unloaded",
+    );
+    expect(mocks.useInfiniteFeedbacks).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: "resolved" }),
+    );
+  });
+
+  it("passes project read capability to task-scope detail and switches to project scope", () => {
+    const target = issue({ id: "foreign", task_id: "T2", title: "其他任务问题" });
+    mocks.store.detailTarget = target;
+    mocks.store.detailTargetId = target.id;
+    mocks.store.detailScope = { projectId: "P1", taskId: "T2" };
+    mocks.store.detailRequestTick = 1;
+    const view = setup({ allowProjectScope: true });
+    expect(screen.getByTestId("discussion-issue-detail")).toHaveAttribute(
+      "data-issue-id",
+      "foreign",
+    );
+    expect(mocks.detailProps).toEqual(
+      expect.objectContaining({
+        allowProjectScope: true,
+        listScope: "task",
+        taskId: "T1",
+        rootSnapshot: target,
+        onRequestProjectScope: expect.any(Function),
+      }),
+    );
+    act(() => {
+      mocks.detailProps?.onRequestProjectScope();
+    });
+    expect(mocks.detailProps).toEqual(expect.objectContaining({ listScope: "project" }));
+    expect(mocks.store.focusIssue).not.toHaveBeenCalled();
+    view.unmount();
+  });
+
+  it("remembers list scroll before an external pin opens detail", () => {
+    const view = setup({ allowProjectScope: true });
+    const list = screen.getByTestId("discussion-issue-list-scroll");
+    Object.defineProperty(list, "scrollTop", { configurable: true, value: 123, writable: true });
+    fireEvent.scroll(list);
+    mocks.store.detailTarget = issue({ id: "pin-scroll", task_id: "T1" });
+    mocks.store.detailTargetId = "pin-scroll";
+    mocks.store.detailScope = { projectId: "P1", taskId: "T1" };
+    mocks.store.detailRequestTick = 1;
+    view.rerender(<DiscussionIssuesTab {...view.props} allowProjectScope />);
+    fireEvent.click(screen.getByRole("button", { name: "返回问题列表" }));
+    expect(screen.getByTestId("discussion-issue-list-scroll")).toHaveProperty("scrollTop", 123);
+  });
+
+  it("ignores a stale detail snapshot from another task owner", () => {
+    mocks.store.detailTarget = issue({ id: "foreign", task_id: "T2" });
+    mocks.store.detailTargetId = "foreign";
+    mocks.store.detailScope = { projectId: "P1", taskId: "T2" };
+    mocks.store.detailRequestTick = 1;
+    setup();
+    expect(screen.queryByTestId("discussion-issue-detail")).toBeNull();
+  });
+
+  it("keeps failed status/delete mutations visible and ignores old owner callbacks", () => {
     const view = setup();
-    fireEvent.click(screen.getByTitle("标为已解决"));
     fireEvent.click(screen.getByTitle("标为已解决"));
     expect(mocks.patchMutate).toHaveBeenCalledTimes(1);
-    const oldRequest = mocks.patchMutate.mock.calls[0][1];
+    const oldPatch = mocks.patchMutate.mock.calls[0][1];
     view.rerender(<DiscussionIssuesTab {...view.props} taskId="T2" />);
-    view.rerender(<DiscussionIssuesTab {...view.props} />);
-    fireEvent.click(screen.getByTitle("标为已解决"));
-    expect(mocks.patchMutate).toHaveBeenCalledTimes(2);
-    const currentRequest = mocks.patchMutate.mock.calls[1][1];
     act(() => {
-      oldRequest.onError(new Error("old A error"));
-      oldRequest.onSettled();
+      oldPatch.onError(new Error("旧状态错误"));
+      oldPatch.onSettled();
     });
     expect(screen.queryByTestId("issue-mutation-error")).toBeNull();
-    expect(screen.getByTitle("标为已解决")).toBeDisabled();
+    fireEvent.click(screen.getByTestId("issue-delete-issue-1"));
+    fireEvent.click(screen.getByTestId("issue-delete-confirm-issue-1"));
+    expect(mocks.deleteMutate).toHaveBeenCalledTimes(1);
+    const oldDelete = mocks.deleteMutate.mock.calls[0][1];
+    view.rerender(<DiscussionIssuesTab {...view.props} taskId="T3" />);
     act(() => {
-      currentRequest.onError(new Error("current A error"));
-      currentRequest.onSettled();
+      oldDelete.onError(new Error("旧删除错误"));
+      oldDelete.onSettled();
     });
-    expect(screen.getByTestId("issue-mutation-error")).toHaveTextContent("current A error");
-    expect(screen.getByTitle("标为已解决")).toBeEnabled();
-  });
-
-  it("stops pin recovery after explicit cancellation even if its pending page settles", async () => {
-    const pendingPage = deferred<unknown>();
-    const fetchNextPage = vi.fn(() => pendingPage.promise);
-    mocks.query = query({
-      data: { pages: [{ items: [], next_cursor: "next" }], pageParams: [null] },
-      hasNextPage: true,
-      fetchNextPage,
-    });
-    const view = setup();
-    mocks.store.highlightId = "unloaded-target";
-    mocks.store.pinRequestTick = 1;
-    view.rerender(<DiscussionIssuesTab {...view.props} />);
-    await waitFor(() => expect(fetchNextPage).toHaveBeenCalledTimes(1));
-    fireEvent.click(screen.getByRole("button", { name: "取消查找" }));
-    await act(async () => {
-      pendingPage.resolve({});
-      await pendingPage.promise;
-    });
-    expect(screen.queryByTestId("issue-pin-recovery")).toBeNull();
-    expect(fetchNextPage).toHaveBeenCalledTimes(1);
-  });
-
-  it("restarts filtered-out pin recovery when the same pin is activated again", async () => {
-    const hidden = query({
-      data: { pages: [{ items: [], next_cursor: null }], pageParams: [null] },
-    });
-    mocks.query = hidden;
-    const view = setup();
-
-    fireEvent.click(screen.getByTestId("issue-status-resolved"));
-    mocks.store.highlightId = "issue-1";
-    mocks.store.pinRequestTick = 1;
-    view.rerender(<DiscussionIssuesTab {...view.props} />);
-    await waitFor(() =>
-      expect(mocks.useInfiniteFeedbacks).toHaveBeenLastCalledWith(
-        expect.objectContaining({ status: undefined }),
-      ),
-    );
-    await waitFor(() =>
-      expect(screen.getByTestId("issue-pin-recovery")).toHaveAttribute("data-state", "unavailable"),
-    );
-
-    fireEvent.click(screen.getByTestId("issue-status-resolved"));
-    mocks.store.pinRequestTick = 2;
-    view.rerender(<DiscussionIssuesTab {...view.props} />);
-    await waitFor(() =>
-      expect(mocks.useInfiniteFeedbacks).toHaveBeenLastCalledWith(
-        expect.objectContaining({ status: undefined }),
-      ),
-    );
-    await waitFor(() =>
-      expect(screen.getByTestId("issue-pin-recovery")).toHaveAttribute("data-state", "unavailable"),
-    );
-  });
-
-  it("does not recover a pin target from another task into the current Issue list", async () => {
-    mocks.query = query({
-      data: { pages: [{ items: [], next_cursor: "next" }], pageParams: [null] },
-      hasNextPage: true,
-    });
-    const view = setup();
-    mocks.store.highlightId = "foreign-target";
-    mocks.store.pinTarget = issue({
-      id: "foreign-target",
-      project_id: "P2",
-      task_id: "T2",
-    });
-    mocks.store.pinRequestTick = 1;
-    view.rerender(<DiscussionIssuesTab {...view.props} />);
-    await waitFor(() => expect(screen.queryByTestId("issue-pin-recovery")).toBeNull());
-    expect(mocks.useInfiniteFeedbacks).toHaveBeenLastCalledWith(
-      expect.objectContaining({ status: "open", task_id: "T1" }),
-    );
-  });
-
-  it("pages through three cursors before finding an unloaded pin", async () => {
-    const second = deferred<unknown>();
-    const third = deferred<unknown>();
-    const fetchNextPage = vi
-      .fn()
-      .mockReturnValueOnce(second.promise)
-      .mockReturnValueOnce(third.promise);
-    const page1 = {
-      items: [issue({ id: "first-page" })],
-      next_cursor: "cursor-2",
-      status_counts: { open: 3 },
-    };
-    const page2 = {
-      items: [issue({ id: "second-page" })],
-      next_cursor: "cursor-3",
-    };
-    const page3 = {
-      items: [issue({ id: "issue-target" })],
-      next_cursor: null,
-    };
-    const page1Query = query({
-      data: { pages: [page1], pageParams: [null] },
-      hasNextPage: true,
-      fetchNextPage,
-    });
-    mocks.query = page1Query;
-    const view = setup();
-    mocks.store.highlightId = "issue-target";
-    mocks.store.pinRequestTick = 1;
-    view.rerender(<DiscussionIssuesTab {...view.props} />);
-    await waitFor(() => expect(fetchNextPage).toHaveBeenCalledTimes(1));
-
-    mocks.query = query({
-      data: { pages: [page1], pageParams: [null] },
-      isFetchingNextPage: true,
-      hasNextPage: true,
-      fetchNextPage,
-    });
-    second.resolve({});
-    await act(async () => {
-      await second.promise;
-    });
-    mocks.query = query({
-      data: { pages: [page1, page2], pageParams: [null, "cursor-2"] },
-      hasNextPage: true,
-      fetchNextPage,
-    });
-    view.rerender(<DiscussionIssuesTab {...view.props} />);
-    await waitFor(() => expect(fetchNextPage).toHaveBeenCalledTimes(2));
-
-    mocks.query = query({
-      data: { pages: [page1, page2], pageParams: [null, "cursor-2"] },
-      isFetchingNextPage: true,
-      hasNextPage: true,
-      fetchNextPage,
-    });
-    third.resolve({});
-    await act(async () => {
-      await third.promise;
-    });
-    mocks.query = query({
-      data: { pages: [page1, page2, page3], pageParams: [null, "cursor-2", "cursor-3"] },
-      hasNextPage: false,
-      fetchNextPage,
-    });
-    view.rerender(<DiscussionIssuesTab {...view.props} />);
-    await waitFor(() =>
-      expect(screen.getByTestId("discussion-issue-card-issue-target")).toBeTruthy(),
-    );
-    expect(screen.queryByTestId("issue-pin-recovery")).toBeNull();
-    expect(fetchNextPage).toHaveBeenCalledTimes(2);
-  });
-
-  it("ignores a late recovery page after a new pin request supersedes it", async () => {
-    const oldPage = deferred<unknown>();
-    const newPage = deferred<unknown>();
-    const fetchNextPage = vi
-      .fn()
-      .mockReturnValueOnce(oldPage.promise)
-      .mockReturnValueOnce(newPage.promise);
-    const firstPage = { items: [], next_cursor: "old-next" };
-    const loadingQuery = () =>
-      query({
-        data: { pages: [firstPage], pageParams: [null] },
-        isFetchingNextPage: true,
-        hasNextPage: true,
-        fetchNextPage,
-      });
-    mocks.query = query({
-      data: { pages: [firstPage], pageParams: [null] },
-      hasNextPage: true,
-      fetchNextPage,
-    });
-    const view = setup();
-    mocks.store.highlightId = "old-target";
-    mocks.store.pinRequestTick = 1;
-    view.rerender(<DiscussionIssuesTab {...view.props} />);
-    await waitFor(() => expect(fetchNextPage).toHaveBeenCalledTimes(1));
-
-    mocks.store.highlightId = "new-target";
-    mocks.store.pinRequestTick = 2;
-    mocks.query = loadingQuery();
-    view.rerender(<DiscussionIssuesTab {...view.props} />);
-    oldPage.resolve({});
-    await act(async () => {
-      await oldPage.promise;
-    });
-    mocks.query = query({
-      data: { pages: [firstPage], pageParams: [null] },
-      hasNextPage: true,
-      fetchNextPage,
-    });
-    view.rerender(<DiscussionIssuesTab {...view.props} />);
-    await waitFor(() => expect(fetchNextPage).toHaveBeenCalledTimes(2));
-
-    mocks.query = query({
-      data: { pages: [firstPage], pageParams: [null] },
-      isFetchingNextPage: true,
-      hasNextPage: true,
-      fetchNextPage,
-    });
-    newPage.resolve({});
-    await act(async () => {
-      await newPage.promise;
-    });
-    mocks.query = query({
-      data: {
-        pages: [firstPage, { items: [issue({ id: "new-target" })], next_cursor: null }],
-        pageParams: [null, "old-next"],
-      },
-      hasNextPage: false,
-      fetchNextPage,
-    });
-    view.rerender(<DiscussionIssuesTab {...view.props} />);
-    await waitFor(() =>
-      expect(screen.getByTestId("discussion-issue-card-new-target")).toBeTruthy(),
-    );
-    expect(screen.queryByTestId("discussion-issue-card-old-target")).toBeNull();
-    expect(screen.queryByTestId("issue-pin-recovery")).toBeNull();
+    expect(screen.queryByTestId("issue-mutation-error")).toBeNull();
   });
 });
