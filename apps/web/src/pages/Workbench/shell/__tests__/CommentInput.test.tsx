@@ -475,6 +475,24 @@ describe("CommentInput session composer", () => {
     expect(store.getDraft(annotationB)?.canvas_drawing).toBeNull();
   });
 
+  it("keeps annotation-only popup adapters usable inside a discussion provider", () => {
+    const store = createDiscussionDraftStore({ owner: { userId: "u1", sessionId: "s1" } });
+    const view = render(
+      <CommentInput
+        annotationId="legacy-annotation"
+        draftStore={store}
+        members={[]}
+        onSubmit={vi.fn()}
+        enableCanvasDrawing
+        backgroundUrl="legacy-image"
+      />,
+    );
+    fireEvent.click(view.getByRole("button", { name: "弹窗批注" }));
+    expect(view.getByTestId("mock-canvas-save")).toBeVisible();
+    fireEvent.click(view.getByTestId("mock-canvas-save"));
+    expect(view.getByRole("button", { name: "批注 · 1 条" })).toBeVisible();
+  });
+
   it("autosaves popup drawing drafts and restores them after closing and reopening", () => {
     const store = createDiscussionDraftStore({ owner: { userId: "u1", sessionId: "s1" } });
     const view = render(

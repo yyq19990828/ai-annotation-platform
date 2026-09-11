@@ -318,10 +318,11 @@ async function clickPoint(page: Page, point: Point) {
     (receipt!.x - bounds.x) / bounds.width,
     (receipt!.y - bounds.y) / bounds.height,
   ];
-  // Browser mouse coordinates are quantized to screen pixels; the form keeps three decimals.
+  // The location summary rounds only its display; persistence retains the
+  // actual clicked point after browser screen-pixel quantization.
   expect(Math.abs(normalized[0] - point[0])).toBeLessThanOrEqual(1.1 / bounds.width);
   expect(Math.abs(normalized[1] - point[1])).toBeLessThanOrEqual(1.1 / bounds.height);
-  return { x: Number(normalized[0].toFixed(3)), y: Number(normalized[1].toFixed(3)) };
+  return { x: normalized[0], y: normalized[1] };
 }
 
 async function videoMediaBounds(page: Page) {
@@ -593,7 +594,9 @@ test.describe("video Issue source-frame ownership", () => {
     await seek(page, 17);
     const anchor = await dropReady(page, fixture, 17, [0.375, 0.625]);
     const issue = await saveIssue(page, fixture);
-    expect(issue.anchor_position).toMatchObject({ ...anchor, frame: 17 });
+    expect(issue.anchor_position).toMatchObject({ frame: 17 });
+    expect(issue.anchor_position!.x).toBeCloseTo(anchor.x, 12);
+    expect(issue.anchor_position!.y).toBeCloseTo(anchor.y, 12);
     expect((await listIssues(request, fixture)).find((item) => item.id === issue.id)).toEqual(
       issue,
     );
@@ -856,7 +859,9 @@ test.describe("video Issue source-frame ownership", () => {
     await expectReady(page, fixture, 3);
     await expect(page.getByTestId("issue-create-frame")).toHaveText("源帧 F 3");
     const issue = await saveIssue(page, fixture);
-    expect(issue.anchor_position).toMatchObject({ ...anchor, frame: 3 });
+    expect(issue.anchor_position).toMatchObject({ frame: 3 });
+    expect(issue.anchor_position!.x).toBeCloseTo(anchor.x, 12);
+    expect(issue.anchor_position!.y).toBeCloseTo(anchor.y, 12);
     expect((await listIssues(request, fixture)).find((item) => item.id === issue.id)).toEqual(
       issue,
     );
@@ -887,8 +892,9 @@ test.describe("video Issue source-frame ownership", () => {
     await page.getByTestId("issue-frame-retry").click();
     await expectReady(page, fixture, 3);
     await expect(modal(page)).toBeVisible();
-    await expect(modal(page).getByPlaceholder("x (0-1)")).toHaveValue(anchor.x.toFixed(3));
-    await expect(modal(page).getByPlaceholder("y (0-1)")).toHaveValue(anchor.y.toFixed(3));
+    await expect(modal(page)).toContainText(
+      `画布位置 x ${anchor.x.toFixed(3)} · y ${anchor.y.toFixed(3)}`,
+    );
     await expect(page.getByTestId("issue-create-frame")).toHaveText("源帧 F 3");
   });
 

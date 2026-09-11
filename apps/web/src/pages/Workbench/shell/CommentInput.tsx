@@ -980,7 +980,7 @@ export function CommentInput({
     )
       return;
     const origin = store && effectiveTarget ? store.makeOrigin(effectiveTarget) : null;
-    if (store && !origin) return;
+    if (store && effectiveTarget && !origin) return;
     const session: PopupCanvasSession = {
       identity: targetIdentity,
       targetKey,

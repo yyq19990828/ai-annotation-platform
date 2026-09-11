@@ -429,10 +429,11 @@ async function clickPoint(page: Page, point: Point) {
     (receipt!.x - bounds.x) / bounds.width,
     (receipt!.y - bounds.y) / bounds.height,
   ];
-  // Browser mouse coordinates are quantized to screen pixels; the form keeps three decimals.
+  // Browser input is quantized to screen pixels; preserve the actual clicked
+  // point. The read-only location summary rounds only its display.
   expect(Math.abs(normalized[0] - point[0])).toBeLessThanOrEqual(1.1 / bounds.width);
   expect(Math.abs(normalized[1] - point[1])).toBeLessThanOrEqual(1.1 / bounds.height);
-  return { x: Number(normalized[0].toFixed(3)), y: Number(normalized[1].toFixed(3)) };
+  return { x: normalized[0], y: normalized[1] };
 }
 
 async function videoMediaBounds(page: Page) {
@@ -795,7 +796,9 @@ async function createContextIssue(
     context.frame_range = { from_frame: range[0], to_frame: range[1] };
   }
   const issue = await saveIssue(page, fixture);
-  expect(issue.anchor_position).toMatchObject({ ...point, frame, video_context: context });
+  expect(issue.anchor_position).toMatchObject({ frame, video_context: context });
+  expect(issue.anchor_position!.x).toBeCloseTo(point.x, 12);
+  expect(issue.anchor_position!.y).toBeCloseTo(point.y, 12);
   return issue;
 }
 

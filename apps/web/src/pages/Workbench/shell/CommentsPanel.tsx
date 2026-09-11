@@ -399,6 +399,11 @@ export function CommentsPanel({
 
   const activeAnnotationComposer =
     sendTarget?.kind === "annotation" && sendTarget.annotationId === annotationId;
+  // Popup drawing belongs to the explicit destination, not current selection.
+  // Restored annotation drafts remain editable when SPA return clears selection;
+  // the live stage/hover bridge retains its stricter selected-object boundary.
+  const popupAnnotationComposer =
+    sendTarget?.kind === "annotation" && sendTargetAnnotationAvailable !== false;
   const reportPendingDrawing = useCallback(
     (drawing: CommentCanvasDrawing | null) =>
       setComposingShapes(
@@ -1150,10 +1155,10 @@ export function CommentsPanel({
                   : createTaskFeedbackMut.isPending
                 : false
             }
-            backgroundUrl={activeAnnotationComposer ? backgroundUrl : null}
+            backgroundUrl={popupAnnotationComposer ? backgroundUrl : null}
             imageWidth={imageWidth}
             imageHeight={imageHeight}
-            enableCanvasDrawing={activeAnnotationComposer ? enableCanvasDrawing : false}
+            enableCanvasDrawing={popupAnnotationComposer ? enableCanvasDrawing : false}
             liveCanvas={activeAnnotationComposer ? liveCanvas : undefined}
             anchor={
               sendTarget?.kind === "annotation" && sendTarget.annotationId === annotationId

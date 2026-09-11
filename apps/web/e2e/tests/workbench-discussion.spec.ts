@@ -36,7 +36,9 @@ async function setup(page: Page, seed: SeedAPI) {
 
 async function openTask(page: Page, projectId: string, taskId: string) {
   await page.goto(`/projects/${projectId}/annotate?task=${taskId}`);
-  await expect(page.getByTestId("workbench-stage")).toHaveAttribute("data-image-ready", "true");
+  await expect(page.getByTestId("workbench-stage")).toHaveAttribute("data-image-ready", "true", {
+    timeout: 20_000,
+  });
   await layoutCommand(page, "标准标注布局");
   await discussion(page).getByRole("tab", { name: "评论", exact: true }).click();
   await expect(editor(page)).toBeVisible();
@@ -257,6 +259,91 @@ test("任务 A 的晚响应不清空任务 B 草稿，离开工作台再返回�
     await expect(editor(page)).toHaveText("离开工作台仍保留的草稿");
   } finally {
     releaseResponse();
+    await page.close();
+    await seed.reset();
+  }
+});
+
+test("弹窗未保存笔触跨页签和工作台路由恢复，并提交到原标注", async ({ page, seed }) => {
+  test.setTimeout(90_000);
+  const data = await setup(page, seed);
+  const taskId = data.task_ids[0];
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  try {
+    const annotation = await seed.createTaskAnnotation(taskId, data.admin_email, {
+      annotation_type: "bbox",
+      tool_unit_id: "bbox",
+      class_name: "car",
+      geometry: { type: "bbox", x: 0.2, y: 0.2, w: 0.3, h: 0.3 },
+    });
+    await openTask(page, data.project_id, taskId);
+    await page.getByTestId(`box-list-item-${annotation.id}`).click();
+    await discussion(page)
+      .getByRole("combobox", { name: "发送目标" })
+      .selectOption(
+        discussionTargetKey({
+          projectId: data.project_id,
+          taskId,
+          kind: "annotation",
+          annotationId: annotation.id,
+        }),
+      );
+    const popupButton = discussion(page).getByTitle("弹窗内绘制（与原图比例对齐）");
+    await popupButton.click();
+    const popup = page.getByRole("dialog", { name: "画布批注", exact: true });
+    await expect(popup).toBeVisible();
+    const drawing = popup.locator('svg[viewBox="0 0 1 1"]');
+    const bounds = (await drawing.boundingBox())!;
+    await page.mouse.move(bounds.x + bounds.width * 0.2, bounds.y + bounds.height * 0.25);
+    await page.mouse.down();
+    await page.mouse.move(bounds.x + bounds.width * 0.7, bounds.y + bounds.height * 0.65, {
+      steps: 6,
+    });
+    await page.mouse.up();
+    await expect(drawing.locator("polyline")).toHaveCount(1);
+    const points = await drawing.locator("polyline").getAttribute("points");
+    // Closing the modal is not the explicit Save action: its unfinished
+    // composer draft must already own this stroke before presentation unmounts.
+    await page.keyboard.press("Escape");
+    await expect(popup).toHaveCount(0);
+    await discussion(page).getByRole("tab", { name: "历史", exact: true }).click();
+    await discussion(page).getByRole("tab", { name: "评论", exact: true }).click();
+    await expect(popupButton).toContainText("1 条");
+    await page
+      .getByTestId("workbench-topbar")
+      .getByRole("button", { name: "返回", exact: true })
+      .click();
+    await expect(page.getByTestId("workbench-topbar")).toHaveCount(0);
+    await page.goBack();
+    await expect(popupButton).toContainText("1 条");
+    await popupButton.click();
+    await expect(drawing.locator("polyline")).toHaveCount(1);
+    await expect(drawing.locator("polyline")).toHaveAttribute("points", points!);
+    await popup.getByRole("button", { name: "保存批注", exact: true }).click();
+    await editor(page).fill("关闭弹窗和离开工作台都未丢失的绘图");
+    await discussion(page).getByRole("button", { name: "发送", exact: true }).click();
+    const row = discussion(page).getByTestId("discussion-comment-row").filter({
+      hasText: "关闭弹窗和离开工作台都未丢失的绘图",
+    });
+    await expect(row).toBeVisible();
+    const stored = await json<{
+      items: Array<{
+        data: { annotation_id: string; canvas_drawing: { shapes: Array<{ points: number[] }> } };
+      }>;
+    }>(
+      await page.request.get(`${API_BASE}/api/v1/tasks/${taskId}/discussion/page`, {
+        headers: auth(data.token),
+      }),
+    );
+    expect(stored.items).toHaveLength(1);
+    expect(stored.items[0].data.annotation_id).toBe(annotation.id);
+    expect(stored.items[0].data.canvas_drawing.shapes).toHaveLength(1);
+    expect(stored.items[0].data.canvas_drawing.shapes[0].points).toEqual(
+      points!.split(/[ ,]/).map(Number),
+    );
+    expect(errors).toEqual([]);
+  } finally {
     await page.close();
     await seed.reset();
   }

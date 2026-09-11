@@ -103,6 +103,8 @@ vi.mock("./CommentInput", () => ({
     taskId,
     targetAvailable,
     busy,
+    enableCanvasDrawing,
+    backgroundUrl,
     onReturnToTask,
   }: {
     target?: { kind: string };
@@ -110,6 +112,8 @@ vi.mock("./CommentInput", () => ({
     taskId?: string | null;
     targetAvailable?: boolean;
     busy?: boolean;
+    enableCanvasDrawing?: boolean;
+    backgroundUrl?: string | null;
     onReturnToTask?: () => void;
   }) => (
     <div
@@ -118,6 +122,8 @@ vi.mock("./CommentInput", () => ({
       data-task-id={taskId ?? ""}
       data-target-available={targetAvailable === undefined ? "unknown" : String(targetAvailable)}
       data-busy={String(Boolean(busy))}
+      data-canvas-enabled={String(Boolean(enableCanvasDrawing))}
+      data-background={backgroundUrl ?? ""}
       data-has-return={onReturnToTask ? "true" : "false"}
     />
   ),
@@ -129,6 +135,29 @@ vi.mock("@/components/CanvasDrawingEditor", () => ({
 vi.mock("@/components/ui/Icon", () => ({ Icon: () => <span aria-hidden="true" /> }));
 
 import { CommentsPanel } from "./CommentsPanel";
+
+it("keeps popup drawing available for the original destination after selection is cleared", () => {
+  const props = {
+    taskId: "task-a",
+    projectId: "project-a",
+    currentUserId: "user-a",
+    annotationClassById: { "annotation-a": "car" },
+    backgroundUrl: "/task-a.png",
+    enableCanvasDrawing: true,
+  };
+  const view = renderPanel({ ...props, annotationId: "annotation-a" });
+  fireEvent.change(screen.getByRole("combobox", { name: "发送目标" }), {
+    target: { value: JSON.stringify(["project-a", "task-a", "annotation", "annotation-a"]) },
+  });
+  view.rerender(
+    <MemoryRouter>
+      <CommentsPanel {...props} annotationId={null} />
+    </MemoryRouter>,
+  );
+  expect(screen.getByTestId("mock-composer")).toHaveAttribute("data-target", "annotation");
+  expect(screen.getByTestId("mock-composer")).toHaveAttribute("data-canvas-enabled", "true");
+  expect(screen.getByTestId("mock-composer")).toHaveAttribute("data-background", "/task-a.png");
+});
 
 const annotationData = (id: string, annotationId = "annotation-a") => ({
   id,

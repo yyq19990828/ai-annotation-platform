@@ -41,6 +41,22 @@ test("annotation and Issue writes never become expected cancellations", () => {
       );
 });
 
+test("discussion tab cancellation permits only its exact GET read", () => {
+  const request = { ...abort, method: "GET", path: `${task}/discussion/page` };
+  assert.equal(isVideoLifecycleCancellation(request), true);
+  for (const method of ["POST", "PATCH", "DELETE"])
+    assert.equal(isVideoLifecycleCancellation({ ...request, method }), false);
+  assert.equal(isVideoLifecycleCancellation({ ...request, kind: "http" }), false);
+  assert.equal(
+    isVideoLifecycleCancellation({ ...request, message: "net::ERR_CONNECTION_RESET" }),
+    false,
+  );
+  assert.equal(
+    isVideoLifecycleCancellation({ ...request, path: `${task}/discussion/page/export` }),
+    false,
+  );
+});
+
 test("HTTP failures, other network failures and unrelated endpoints remain errors", () => {
   const known = { ...abort, method: "GET", path: `${video}/chunks/0/samples` };
   assert.equal(isVideoLifecycleCancellation(known), true);

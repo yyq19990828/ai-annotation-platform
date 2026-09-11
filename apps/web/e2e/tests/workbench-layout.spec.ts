@@ -98,11 +98,18 @@ test("AI 候选和多选不会作为标注身份查询隐藏讨论面板", async
     });
     await seed.injectToken(page, data.annotator_email);
     await page.goto(`/projects/${data.project_id}/annotate?task=${taskId}`);
-    await expect(page.getByTestId("workbench-stage")).toHaveAttribute("data-image-ready", "true");
+    // A cold isolated Vite server compiles the renderer before loading the
+    // source image; use the same readiness budget as rememberCanvas below.
+    await expect(page.getByTestId("workbench-stage")).toHaveAttribute("data-image-ready", "true", {
+      timeout: 20_000,
+    });
     await layoutCommand(page, "标准标注布局");
     const discussion = panel(page, "discussion");
     const editor = discussion.locator('[contenteditable="true"]');
-    const readScope = discussion.getByRole("combobox", { name: "评论阅读范围" });
+    const readScope = discussion.getByRole("combobox", {
+      name: "评论阅读范围",
+      includeHidden: true,
+    });
     const annotationRows = annotations.map((annotation) =>
       page.getByTestId(`box-list-item-${annotation.id}`),
     );
