@@ -221,8 +221,12 @@ export function CanvasDrawingEditor({
   };
 
   return (
-    <Modal open={open} onClose={handleClose} title="画布批注" width={680}>
-      <div className={styles.editor}>
+    <Modal open={open} onClose={handleClose} title="画布批注" width={680} stopEscapePropagation>
+      <div
+        className={styles.editor}
+        data-workbench-discussion
+        data-state={open ? "open" : "closed"}
+      >
         <div className={styles.toolbar}>
           <span className={styles.muted}>颜色：</span>
           {STROKE_COLORS.map((c) => (

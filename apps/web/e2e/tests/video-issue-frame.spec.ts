@@ -482,7 +482,10 @@ async function expectPin(page: Page, fixture: IssueCase, issue: Issue) {
   await expect(page.getByRole("tab", { name: /^问题/ })).toHaveAttribute("aria-selected", "false");
   await clickPoint(page, point);
   await expect(page.getByRole("tab", { name: /^问题/ })).toHaveAttribute("aria-selected", "true");
-  await expect(page.getByTestId(`discussion-issue-card-${issue.id}`)).toHaveClass(/shadow-/);
+  await expect(page.getByTestId("discussion-issue-detail")).toHaveAttribute(
+    "data-issue-id",
+    issue.id,
+  );
 }
 
 async function holdMedia(page: Page, fixture: IssueCase) {
@@ -612,7 +615,13 @@ test.describe("video Issue source-frame ownership", () => {
     await expect(stage(page)).toBeVisible({ timeout: 25_000 });
     await seek(page, 3);
     await openIssues(page);
-    await page.getByTestId(`discussion-issue-card-${issue.id}`).click();
+    await page.getByTestId(`discussion-issue-open-${issue.id}`).click();
+    await expect(page.getByTestId("discussion-issue-detail")).toHaveAttribute(
+      "data-issue-id",
+      issue.id,
+    );
+    await expect(stage(page)).toHaveAttribute("data-video-frame-index", "3");
+    await page.getByTestId(`discussion-issue-locate-${issue.id}`).click();
     await expectReady(page, fixture, 17);
     await expectPin(page, fixture, issue);
     await test.info().attach("persisted-F17-Issue-pin", {
@@ -647,7 +656,12 @@ test.describe("video Issue source-frame ownership", () => {
     await expect(stage(page)).toBeVisible({ timeout: 25_000 });
     await seek(page, 8);
     await openIssues(page);
-    await page.getByTestId(`discussion-issue-card-${issue.id}`).click();
+    await page.getByTestId(`discussion-issue-open-${issue.id}`).click();
+    await expect(page.getByTestId("discussion-issue-detail")).toHaveAttribute(
+      "data-issue-id",
+      issue.id,
+    );
+    await expect(page.getByTestId(`discussion-issue-locate-${issue.id}`)).toHaveCount(0);
     await expect(stage(page)).toHaveAttribute("data-video-frame-index", "8");
     await expect(navigation(page)).toBeHidden();
     await expect(page.getByTestId("video-issue-marker")).toHaveCount(0);
@@ -922,9 +936,9 @@ test.describe("video Issue source-frame ownership", () => {
     await held.fetched();
     await openIssues(page);
     await observeNavigation(page);
-    await page.getByTestId(`discussion-issue-card-${first.id}`).click();
+    await page.getByTestId(`discussion-issue-locate-${first.id}`).click();
     await expect(navigation(page)).toHaveAttribute("data-status", "preparing");
-    await page.getByTestId(`discussion-issue-card-${last.id}`).click();
+    await page.getByTestId(`discussion-issue-locate-${last.id}`).click();
     await expect(navigation(page)).toHaveAttribute("data-frame-index", "17");
     await held.finish();
     await expectReady(page, fixture, 17);
@@ -941,7 +955,7 @@ test.describe("video Issue source-frame ownership", () => {
     await secondGate.fetched();
     await openIssues(page);
     await observeNavigation(page);
-    await page.getByTestId(`discussion-issue-card-${first.id}`).click();
+    await page.getByTestId(`discussion-issue-locate-${first.id}`).click();
     await expect(navigation(page)).toHaveAttribute("data-status", "preparing");
     await page
       .getByRole("tabpanel", { name: "任务队列", exact: true })
@@ -970,7 +984,7 @@ test.describe("video Issue source-frame ownership", () => {
       returnedSourceFrame: returnedFrame,
     });
     await openIssues(page);
-    await page.getByTestId(`discussion-issue-card-${last.id}`).click();
+    await page.getByTestId(`discussion-issue-locate-${last.id}`).click();
     await expectReady(page, fixture, 17);
     expect(fixture.writes).toEqual([]);
     expect((await listIssues(request, fixture)).map((issue) => issue.id).sort()).toEqual(
@@ -991,7 +1005,7 @@ test.describe("video Issue explicit decoder and native-media faults", () => {
     const issue = await createIssue(request, fixture, 3);
     await open(page, fixture);
     await openIssues(page);
-    await page.getByTestId(`discussion-issue-card-${issue.id}`).click();
+    await page.getByTestId(`discussion-issue-locate-${issue.id}`).click();
     await expectReady(page, fixture, 3);
     await expect(stage(page)).toHaveAttribute("data-video-frame-source", /^(video|native-bitmap)$/);
     fixture.evidence.push({
@@ -1041,7 +1055,7 @@ test.describe("video Issue explicit decoder and native-media faults", () => {
     const issue = await createIssue(request, fixture, 3);
     await open(page, fixture);
     await openIssues(page);
-    await page.getByTestId(`discussion-issue-card-${issue.id}`).click();
+    await page.getByTestId(`discussion-issue-locate-${issue.id}`).click();
     await expect(navigation(page)).toHaveAttribute("data-status", /^(timeout|unavailable)$/, {
       timeout: 12_000,
     });

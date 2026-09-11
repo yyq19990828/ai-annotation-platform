@@ -2,7 +2,7 @@
 export function isWorkbenchInteractionBlocked(event: Event): boolean {
   if (typeof document === "undefined") return false;
   const selector =
-    "[data-workbench-settings], [data-workbench-guide], [data-workbench-tool-menu], [data-workbench-ai-toolbar], [data-workbench-context-toolbar], [data-workbench-context-primary], [data-workbench-track-context], [data-workbench-tracker-review], [data-workbench-video-tool-confirm], [data-workbench-issue-navigation], [data-workbench-issue-create], [data-workbench-polygon-trace]";
+    "[data-workbench-settings], [data-workbench-guide], [data-workbench-tool-menu], [data-workbench-ai-toolbar], [data-workbench-context-toolbar], [data-workbench-context-primary], [data-workbench-track-context], [data-workbench-tracker-review], [data-workbench-video-tool-confirm], [data-workbench-discussion], [data-workbench-issue-navigation], [data-workbench-issue-create], [data-workbench-polygon-trace]";
   const triggerSelector =
     "[data-workbench-tool-menu-trigger], [data-workbench-context-toolbar-trigger], [data-workbench-guide-trigger]";
   // Closing may remove the marker before a later window listener sees this same event.
@@ -32,7 +32,7 @@ export function isWorkbenchInteractionBlocked(event: Event): boolean {
       );
     }) ||
     document.querySelector(
-      '[data-workbench-settings][data-state="open"], [data-workbench-guide][data-state="open"], [data-workbench-tool-menu][data-state="open"], [data-workbench-tool-menu-trigger][data-state="open"], [data-workbench-video-tool-confirm][data-state="open"], [data-workbench-issue-create][data-state="open"], [data-workbench-polygon-slice][data-state="open"]',
+      '[data-workbench-settings][data-state="open"], [data-workbench-guide][data-state="open"], [data-workbench-tool-menu][data-state="open"], [data-workbench-tool-menu-trigger][data-state="open"], [data-workbench-video-tool-confirm][data-state="open"], [data-workbench-discussion][data-state="open"], [data-workbench-issue-create][data-state="open"], [data-workbench-polygon-slice][data-state="open"]',
     ) !== null
   );
 }

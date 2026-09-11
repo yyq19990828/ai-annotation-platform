@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ComponentProps } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ComponentProps } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { CommentsPanel } from "./CommentsPanel";
 import { DiscussionIssuesTab } from "./DiscussionIssuesTab";
@@ -106,6 +106,36 @@ export function DiscussionPanel({
   const collapsed = collapsedProp ?? collapsedLocal;
   const toggleCollapsed = onToggleCollapsed ?? (() => setCollapsedLocal((v) => !v));
 
+  // The panel, not its conditionally mounted Issues tab, owns the activation
+  // lifetime. Drafts have a separate authenticated owner and are not cleared.
+  const detailOwner = JSON.stringify([currentUserId, projectId, taskId]);
+  const detailOwnerRef = useRef(detailOwner);
+  const detailLeaseRef = useRef<object | null>(null);
+  useLayoutEffect(() => {
+    detailLeaseRef.current = {};
+    if (detailOwnerRef.current !== detailOwner) {
+      useActiveIssueStore.getState().closeIssueDetail();
+      detailOwnerRef.current = detailOwner;
+    }
+    return () => {
+      detailLeaseRef.current = null;
+      const { detailRequestTick, detailTargetId } = useActiveIssueStore.getState();
+      queueMicrotask(() => {
+        // StrictMode immediately reactivates this presentation. A real
+        // unmount retires only the request that was present at cleanup, never
+        // a newer navigation emitted by the replacement Workbench.
+        if (detailLeaseRef.current) return;
+        const state = useActiveIssueStore.getState();
+        if (
+          state.detailRequestTick === detailRequestTick &&
+          state.detailTargetId === detailTargetId
+        ) {
+          state.closeIssueDetail();
+        }
+      });
+    };
+  }, [detailOwner]);
+
   // v0.11.4 · 单击/hover IssueLayer 图钉 → store.tabRequestTick++ → 自动切到 issues tab。
   const tabRequestTick = useActiveIssueStore((s) => s.tabRequestTick);
   const lastTabRequestRef = useRef(tabRequestTick);
@@ -136,6 +166,7 @@ export function DiscussionPanel({
   return (
     <div
       className={`flex h-full min-h-0 flex-col bg-card ${floating ? "" : "border-t border-border"}`}
+      data-workbench-discussion
     >
       <div className="flex shrink-0 items-center justify-between gap-1 px-2 pt-1.5">
         {!floating && (

@@ -97,7 +97,6 @@ export function flattenIssueThread(
     for (const item of page.items) {
       if (
         item.id === root.id ||
-        item.kind !== "issue" ||
         item.thread_parent_id === null ||
         !item.is_active ||
         item.project_id !== root.project_id ||
@@ -105,6 +104,9 @@ export function flattenIssueThread(
         seen.has(item.id)
       )
         continue;
+      // The root is an Issue, but the reply endpoint writes kind=comment.
+      // The root-bound API owns ancestry; legacy descendants may retain a
+      // different kind and must not disappear from their conversation.
       seen.add(item.id);
       all.push(item);
     }

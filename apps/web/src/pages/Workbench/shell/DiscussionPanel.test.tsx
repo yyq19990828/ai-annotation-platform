@@ -1,5 +1,6 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { StrictMode } from "react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./CommentsPanel", () => ({
   CommentsPanel: ({ forceTab }: { forceTab: string }) => (
@@ -14,6 +15,7 @@ vi.mock("./MaskQcPanel", () => ({
 }));
 
 import { DiscussionPanel } from "./DiscussionPanel";
+import { useActiveIssueStore } from "../state/useActiveIssueStore";
 
 const baseProps = {
   annotationId: null,
@@ -22,7 +24,67 @@ const baseProps = {
   currentUserId: "user-1",
 };
 
+beforeEach(() => {
+  useActiveIssueStore.getState().closeIssueDetail();
+});
+
 describe("DiscussionPanel Mask 质检", () => {
+  it("retires the old task activation even while the Issues tab is unmounted", () => {
+    const view = render(<DiscussionPanel {...baseProps} allowProjectIssueScope />);
+    act(() =>
+      useActiveIssueStore.getState().openIssueDetail("root-a", {
+        projectId: baseProps.projectId,
+        taskId: baseProps.taskId,
+      }),
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "问题" }));
+    fireEvent.click(screen.getByRole("tab", { name: "历史" }));
+    expect(useActiveIssueStore.getState().detailTargetId).toBe("root-a");
+    view.rerender(<DiscussionPanel {...baseProps} taskId="task-2" allowProjectIssueScope />);
+    fireEvent.click(screen.getByRole("tab", { name: "问题" }));
+    expect(useActiveIssueStore.getState().detailTargetId).toBeNull();
+  });
+
+  it("keeps an explicit project-scope request across tabs but retires it on route unmount", async () => {
+    const view = render(<DiscussionPanel {...baseProps} allowProjectIssueScope />);
+    act(() =>
+      useActiveIssueStore.getState().openIssueDetail("root-b", {
+        projectId: baseProps.projectId,
+        taskId: "another-task",
+      }),
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "历史" }));
+    fireEvent.click(screen.getByRole("tab", { name: "问题" }));
+    expect(useActiveIssueStore.getState().detailTargetId).toBe("root-b");
+    view.unmount();
+    await waitFor(() => expect(useActiveIssueStore.getState().detailTargetId).toBeNull());
+  });
+
+  it("preserves a current request through StrictMode replay and does not clear a replacement request", async () => {
+    useActiveIssueStore.getState().openIssueDetail("root-before-mount", {
+      projectId: baseProps.projectId,
+      taskId: baseProps.taskId,
+    });
+    const view = render(
+      <StrictMode>
+        <DiscussionPanel {...baseProps} />
+      </StrictMode>,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(useActiveIssueStore.getState().detailTargetId).toBe("root-before-mount");
+    view.unmount();
+    useActiveIssueStore.getState().openIssueDetail("new-route-request", {
+      projectId: baseProps.projectId,
+      taskId: "task-2",
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(useActiveIssueStore.getState().detailTargetId).toBe("new-route-request");
+  });
+
   it("distinguishes an exact zero from pending and failed Issue counts", () => {
     const view = render(<DiscussionPanel {...baseProps} openIssueCount={0} />);
     expect(screen.getByRole("tab", { name: "问题 0 个未解决" })).toBeInTheDocument();

@@ -90,6 +90,7 @@ function issue(overrides: Partial<AnnotationFeedback> = {}): AnnotationFeedback 
 function reply(id: string, overrides: Partial<AnnotationFeedback> = {}): AnnotationFeedback {
   return issue({
     id,
+    kind: "comment",
     body: `回复 ${id}`,
     title: null,
     thread_parent_id: "root-1",

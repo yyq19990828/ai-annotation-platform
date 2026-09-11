@@ -1,6 +1,7 @@
 import { createEvent, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { CanvasDrawingEditor } from "./CanvasDrawingEditor";
+import { isWorkbenchInteractionBlocked } from "@/pages/Workbench/state/workbenchInteractionGuards";
 
 function setCanvasBounds(svg: SVGSVGElement) {
   vi.spyOn(svg, "getBoundingClientRect").mockReturnValue({
@@ -33,6 +34,18 @@ function firePointer(
 }
 
 describe("CanvasDrawingEditor draft ownership", () => {
+  it("keeps portal header and editor keyboard input away from the underlying canvas", () => {
+    const view = render(<CanvasDrawingEditor open onClose={vi.fn()} onSave={vi.fn()} />);
+    const event = new KeyboardEvent("keydown", { key: "Enter" });
+    // The modal header is not nested inside the editor body, so an active
+    // portal marker must also guard document-level capture listeners.
+    expect(isWorkbenchInteractionBlocked(event)).toBe(true);
+    const headerClose = screen.getByRole("button", { name: "关闭" });
+    expect(headerClose.closest("[data-workbench-discussion]")).toBeNull();
+    view.unmount();
+    expect(isWorkbenchInteractionBlocked(event)).toBe(false);
+  });
+
   it("reports pointer progress synchronously before React flushes state", () => {
     const onDraftChange = vi.fn();
     render(

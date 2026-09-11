@@ -1028,7 +1028,7 @@ export function CommentInput({
   const displayError = draft?.error ?? localError;
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-1.5" data-workbench-discussion>
       {!isAvailable && (
         <div className="flex items-center justify-between gap-2 rounded border border-status-danger/40 bg-status-danger-soft px-2 py-1.5 text-xs text-status-danger">
           <span>

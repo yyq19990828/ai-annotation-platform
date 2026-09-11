@@ -18,6 +18,8 @@ export function isVideoLifecycleCancellation(error: VideoRequestError): boolean 
     /^\/api\/v1\/tasks\/[0-9a-f-]{36}$/.test(error.path) ||
     // Leaving the comments tab retires its abortable task-discussion query.
     /^\/api\/v1\/tasks\/[0-9a-f-]{36}\/discussion\/page$/.test(error.path) ||
+    // Closing/replacing an Issue detail retires its root-bound thread query.
+    /^\/api\/v1\/feedbacks\/[0-9a-f-]{36}\/thread$/.test(error.path) ||
     /^\/api\/v1\/tasks\/[0-9a-f-]{36}\/video\/frames\/\d+$/.test(error.path) ||
     /^\/api\/v1\/videos\/[0-9a-f-]{36}\/chunks\/\d+(?:\/samples)?$/.test(error.path)
   );

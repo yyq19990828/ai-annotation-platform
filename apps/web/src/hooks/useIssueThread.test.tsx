@@ -49,6 +49,16 @@ function page(
   return { root, items, next_cursor, total: items.length } satisfies AnnotationFeedbackThreadPage;
 }
 
+function reply(overrides: Partial<AnnotationFeedback> = {}): AnnotationFeedback {
+  return issue({
+    kind: "comment",
+    title: null,
+    severity: null,
+    thread_parent_id: "root-1",
+    ...overrides,
+  });
+}
+
 function makeWrapper(client: QueryClient, userId = "U1", sessionId = "session-1") {
   return ({ children }: { children: ReactNode }) =>
     createElement(
@@ -120,7 +130,7 @@ describe("useIssueThread", () => {
   it("uses the feedback-thread prefix plus owner/session/project/task and flattens 50+ nested replies oldest-first", async () => {
     const root = issue();
     const newestFirst = Array.from({ length: 52 }, (_, index) =>
-      issue({
+      reply({
         id: `reply-${String(51 - index).padStart(2, "0")}`,
         body: `回复 ${51 - index}`,
         thread_parent_id: index === 0 ? root.id : `reply-${String(52 - index).padStart(2, "0")}`,
@@ -154,7 +164,7 @@ describe("useIssueThread", () => {
 
   it("retains a child and labels an unloaded or unavailable parent", () => {
     const root = issue();
-    const child = issue({
+    const child = reply({
       id: "child",
       body: "仍然存在的子回复",
       thread_parent_id: "deleted-parent",
@@ -175,10 +185,29 @@ describe("useIssueThread", () => {
     });
   });
 
+  it("keeps native comment replies and legacy descendant kinds without admitting unrelated roots", () => {
+    const root = issue();
+    const nativeReply = reply({ id: "native-reply" });
+    const legacyReply = reply({
+      id: "legacy-reply",
+      kind: "issue",
+      thread_parent_id: nativeReply.id,
+    });
+    const result = flattenIssueThread(
+      {
+        pages: [page(root, [legacyReply, nativeReply, issue({ id: "unrelated-root" })])],
+        pageParams: [null],
+      },
+      root,
+    );
+    expect(result.map((item) => item.id)).toEqual([nativeReply.id, legacyReply.id]);
+    expect(result[1].parentContext?.available).toBe(true);
+  });
+
   it("keeps the validated root after a 503 older-page failure and retries that page", async () => {
     const root = issue();
-    const firstReply = issue({ id: "reply-1", thread_parent_id: root.id, body: "已加载回复" });
-    const olderReply = issue({ id: "reply-0", thread_parent_id: root.id, body: "更早回复" });
+    const firstReply = reply({ id: "reply-1", thread_parent_id: root.id, body: "已加载回复" });
+    const olderReply = reply({ id: "reply-0", thread_parent_id: root.id, body: "更早回复" });
     threadMock.mockImplementation((_id: string, params: { cursor?: string }) =>
       params.cursor
         ? Promise.reject(new ApiError(503, "Service Unavailable"))
@@ -213,9 +242,9 @@ describe("useIssueThread", () => {
     const root = issue();
     threadMock.mockResolvedValue(
       page(root, [
-        issue({ id: "valid", thread_parent_id: root.id, body: "保留" }),
-        issue({ id: "foreign-project", project_id: "P2", thread_parent_id: root.id }),
-        issue({ id: "foreign-task", task_id: "T2", thread_parent_id: root.id }),
+        reply({ id: "valid", thread_parent_id: root.id, body: "保留" }),
+        reply({ id: "foreign-project", project_id: "P2", thread_parent_id: root.id }),
+        reply({ id: "foreign-task", task_id: "T2", thread_parent_id: root.id }),
       ]),
     );
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } });

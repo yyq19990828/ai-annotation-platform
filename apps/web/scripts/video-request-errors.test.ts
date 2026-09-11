@@ -69,3 +69,18 @@ test("HTTP failures, other network failures and unrelated endpoints remain error
   for (const path of [`${video}/chunks/0/samples/retry`, `${task}/lock`, "/api/v1/projects"])
     assert.equal(isVideoLifecycleCancellation({ ...known, path }), false, path);
 });
+
+test("replacing an Issue detail permits only its exact aborted GET thread read", () => {
+  const root = "/api/v1/feedbacks/00000000-0000-0000-0000-000000000000";
+  const request = { ...abort, method: "GET", path: `${root}/thread` };
+  assert.equal(isVideoLifecycleCancellation(request), true);
+  for (const method of ["POST", "PATCH", "DELETE"])
+    assert.equal(isVideoLifecycleCancellation({ ...request, method }), false);
+  assert.equal(isVideoLifecycleCancellation({ ...request, kind: "http" }), false);
+  assert.equal(
+    isVideoLifecycleCancellation({ ...request, message: "net::ERR_CONNECTION_RESET" }),
+    false,
+  );
+  for (const path of [`${root}/replies`, `${root}/thread/export`, root])
+    assert.equal(isVideoLifecycleCancellation({ ...request, path }), false);
+});

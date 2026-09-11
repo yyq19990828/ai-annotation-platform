@@ -2,11 +2,48 @@ import type { APIResponse, Page } from "@playwright/test";
 import { expect, test, type SeedAPI } from "../fixtures/seed";
 import { layoutCommand } from "../helpers/workbench-layout";
 import { discussionTargetKey } from "../../src/pages/Workbench/state/discussionTypes";
+import type {
+  AnnotationFeedback,
+  AnnotationFeedbackThreadPage,
+  CreateFeedbackPayload,
+} from "../../src/api/feedbacks";
 
 const API_BASE = process.env.PLAYWRIGHT_API_BASE ?? "http://127.0.0.1:8010";
 const discussion = (page: Page) => page.locator('[data-workbench-panel="discussion"]');
 const editor = (page: Page) => discussion(page).getByRole("textbox", { name: "留言" });
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
+
+async function createIssue(
+  page: Page,
+  data: { project_id: string; token: string },
+  taskId: string,
+  title: string,
+  extra: Partial<CreateFeedbackPayload> = {},
+) {
+  return json<AnnotationFeedback>(
+    await page.request.post(`${API_BASE}/api/v1/feedbacks`, {
+      headers: auth(data.token),
+      data: {
+        project_id: data.project_id,
+        task_id: taskId,
+        kind: "issue",
+        anchor_type: "task",
+        title,
+        body: `${title}：请确认标注结果`,
+        ...extra,
+      },
+    }),
+  );
+}
+
+async function replyToIssue(page: Page, token: string, rootId: string, body: string) {
+  return json<AnnotationFeedback>(
+    await page.request.post(`${API_BASE}/api/v1/feedbacks/${rootId}/replies`, {
+      headers: auth(token),
+      data: { body },
+    }),
+  );
+}
 
 async function json<T>(response: APIResponse): Promise<T> {
   expect(response.ok(), `${response.status()} ${await response.text()}`).toBe(true);
@@ -344,6 +381,266 @@ test("弹窗未保存笔触跨页签和工作台路由恢复，并提交到原�
     );
     expect(errors).toEqual([]);
   } finally {
+    await page.close();
+    await seed.reset();
+  }
+});
+
+test("任务问题完整读取旧回复和嵌套回复，失败重试后解决仍保留详情", async ({ page, seed }) => {
+  test.setTimeout(150_000);
+  const data = await setup(page, seed);
+  const taskId = data.task_ids[0];
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  try {
+    const root = await createIssue(page, data, taskId, "检查遮挡边缘");
+    const first = await replyToIssue(page, data.token, root.id, "最早的复核意见");
+    const child = await replyToIssue(page, data.token, first.id, "历史嵌套回复仍属于原问题");
+    for (let index = 0; index < 51; index++) {
+      await replyToIssue(page, data.token, root.id, `后续复核记录 ${index}`);
+    }
+    await openTask(page, data.project_id, taskId);
+    const panel = discussion(page);
+    await panel.getByRole("tab", { name: /^问题/ }).click();
+    await page.getByTestId(`discussion-issue-open-${root.id}`).click();
+    const detail = page.getByTestId("discussion-issue-detail");
+    await expect(detail).toHaveAttribute("data-issue-id", root.id);
+    await expect(detail).toContainText(root.body);
+    await expect(detail.getByTestId(`discussion-issue-locate-${root.id}`)).toHaveCount(0);
+    await expect(detail.locator('[data-testid^="discussion-issue-reply-"]')).toHaveCount(50);
+    await expect(detail.getByText(first.body, { exact: true })).toHaveCount(0);
+    let earlierAttempts = 0;
+    await page.route(`**/api/v1/feedbacks/${root.id}/thread?*`, async (route) => {
+      if (new URL(route.request().url()).searchParams.has("cursor") && earlierAttempts++ === 0) {
+        await route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: '{"detail":"test earlier replies retry"}',
+        });
+      } else await route.continue();
+    });
+    await detail.getByRole("button", { name: "加载更早回复", exact: true }).click();
+    const rows = detail.locator('[data-testid^="discussion-issue-reply-"]');
+    const threadError = detail.getByTestId("discussion-issue-thread-error");
+    await expect(threadError).toBeVisible();
+    await expect(rows).toHaveCount(50);
+    await expect(detail).toContainText(root.body);
+    await threadError.getByRole("button", { name: "重试", exact: true }).click();
+    await expect(rows).toHaveCount(53);
+    await expect(threadError).toHaveCount(0);
+    expect(earlierAttempts).toBe(2);
+    await expect(rows.first()).toContainText(first.body);
+    await expect(rows.nth(1)).toContainText(child.body);
+    await expect(detail.getByRole("button", { name: "加载更早回复", exact: true })).toHaveCount(0);
+
+    let replyAttempts = 0;
+    await page.route(`**/api/v1/feedbacks/${root.id}/replies`, async (route) => {
+      if (route.request().method() === "POST" && replyAttempts++ === 0) {
+        await route.fulfill({
+          status: 503,
+          contentType: "application/json",
+          body: '{"detail":"test reply retry"}',
+        });
+      } else await route.continue();
+    });
+    const replyBody = "已修正遮挡边缘，请再次确认";
+    const replyEditor = detail.getByRole("textbox", { name: "留言" });
+    await replyEditor.fill(replyBody);
+    await detail.getByRole("button", { name: "发送", exact: true }).click();
+    await expect(detail.getByRole("alert")).toBeVisible();
+    await expect(replyEditor).toHaveText(replyBody);
+    await detail.getByRole("button", { name: "重试", exact: true }).click();
+    await expect(detail.getByText(replyBody, { exact: true })).toBeVisible();
+    await expect(replyEditor).toBeEmpty();
+    expect(replyAttempts).toBe(2);
+    const readback = await json<AnnotationFeedbackThreadPage>(
+      await page.request.get(`${API_BASE}/api/v1/feedbacks/${root.id}/thread?limit=200`, {
+        headers: auth(data.token),
+      }),
+    );
+    expect(readback.total).toBe(54);
+    expect(readback.items.filter((item) => item.body === replyBody)).toHaveLength(1);
+    expect(readback.items.find((item) => item.body === replyBody)?.thread_parent_id).toBe(root.id);
+
+    await detail.getByRole("button", { name: "解决", exact: true }).click();
+    await expect(detail).toHaveAttribute("data-issue-id", root.id);
+    await expect(detail.getByRole("button", { name: "重新打开", exact: true })).toBeVisible();
+    const resolved = await json<AnnotationFeedbackThreadPage>(
+      await page.request.get(`${API_BASE}/api/v1/feedbacks/${root.id}/thread`, {
+        headers: auth(data.token),
+      }),
+    );
+    expect(resolved.root.status).toBe("resolved");
+    await detail.getByRole("button", { name: "返回问题列表", exact: true }).click();
+    await expect(panel.getByTestId(`discussion-issue-card-${root.id}`)).toHaveCount(0);
+    await expect(panel.getByTestId("issue-open-count")).toHaveText("待处理 0");
+    await panel.getByTestId("issue-status-resolved").click();
+    await panel.getByTestId(`discussion-issue-open-${root.id}`).click();
+    await detail.getByRole("button", { name: "重新打开", exact: true }).click();
+    await expect(detail.getByRole("button", { name: "解决", exact: true })).toBeVisible();
+    expect(errors).toEqual([]);
+  } finally {
+    await page.close();
+    await seed.reset();
+  }
+});
+
+test("未加载且被筛掉的图钉直接打开详情，不改列表筛选", async ({ page, seed }) => {
+  test.setTimeout(150_000);
+  const data = await setup(page, seed);
+  const taskId = data.task_ids[0];
+  try {
+    const oldRoot = await createIssue(page, data, taskId, "较早的边缘问题", {
+      anchor_type: "pixel",
+      anchor_position: { x: 0.3, y: 0.4 },
+    });
+    await json(
+      await page.request.patch(`${API_BASE}/api/v1/feedbacks/${oldRoot.id}`, {
+        headers: auth(data.token),
+        data: { status: "resolved" },
+      }),
+    );
+    for (let index = 0; index < 51; index++) {
+      await createIssue(page, data, taskId, `其他待处理问题 ${index}`);
+    }
+    await openTask(page, data.project_id, taskId);
+    const panel = discussion(page);
+    await panel.getByRole("tab", { name: /^问题/ }).click();
+    await expect(panel.getByTestId("issue-open-count")).toHaveText("待处理 51");
+    await expect(panel.getByTestId(`discussion-issue-card-${oldRoot.id}`)).toHaveCount(0);
+    await expect(page.getByTestId("issue-pin-coverage")).toHaveCount(0);
+    const stage = page.getByTestId("workbench-stage");
+    const bounds = await stage.boundingBox();
+    expect(bounds).not.toBeNull();
+    const point = await stage.evaluate((element) => ({
+      x:
+        Number(element.getAttribute("data-media-x")) +
+        Number(element.getAttribute("data-media-width")) * 0.3,
+      y:
+        Number(element.getAttribute("data-media-y")) +
+        Number(element.getAttribute("data-media-height")) * 0.4,
+    }));
+    await page.mouse.click(bounds!.x + point.x, bounds!.y + point.y);
+    const detail = page.getByTestId("discussion-issue-detail");
+    await expect(detail).toHaveAttribute("data-issue-id", oldRoot.id);
+    await expect(detail).toContainText(oldRoot.body);
+    await expect(detail.getByRole("button", { name: "重新打开", exact: true })).toBeVisible();
+    await detail.getByRole("button", { name: "返回问题列表", exact: true }).click();
+    await expect(panel.getByTestId("issue-status-open")).toHaveAttribute("aria-pressed", "true");
+    await expect(panel.getByTestId(`discussion-issue-card-${oldRoot.id}`)).toHaveCount(0);
+    await expect(panel.getByTestId("issue-open-count")).toHaveText("待处理 51");
+  } finally {
+    await page.close();
+    await seed.reset();
+  }
+});
+
+test("解决分页边界上的问题后继续下一条，返回列表保留阅读位置", async ({ page, seed }) => {
+  test.setTimeout(150_000);
+  const data = await setup(page, seed);
+  const taskId = data.task_ids[0];
+  try {
+    const roots: AnnotationFeedback[] = [];
+    for (let index = 0; index < 52; index++) {
+      roots.push(await createIssue(page, data, taskId, `顺序复核 ${index}`));
+    }
+    await openTask(page, data.project_id, taskId);
+    const panel = discussion(page);
+    await panel.getByRole("tab", { name: /^问题/ }).click();
+    await expect(panel.locator('[data-testid^="discussion-issue-card-"]')).toHaveCount(50);
+    const current = roots[2]; // The fiftieth item of the descending first page.
+    const next = roots[1];
+    const last = roots[0];
+    const openCurrent = panel.getByTestId(`discussion-issue-open-${current.id}`);
+    await openCurrent.scrollIntoViewIfNeeded();
+    const list = panel.getByTestId("discussion-issue-list-scroll");
+    const scrollTop = await list.evaluate((element) => element.scrollTop);
+    expect(scrollTop).toBeGreaterThan(0);
+    await openCurrent.click();
+    const detail = page.getByTestId("discussion-issue-detail");
+    await expect(detail).toHaveAttribute("data-issue-id", current.id);
+    await detail.getByRole("button", { name: "解决", exact: true }).click();
+    await expect(detail.getByRole("button", { name: "重新打开", exact: true })).toBeVisible();
+    await detail.getByRole("button", { name: "下一条", exact: true }).click();
+    await expect(detail).toHaveAttribute("data-issue-id", next.id);
+    await detail.getByRole("button", { name: "下一条", exact: true }).click();
+    await expect(detail).toHaveAttribute("data-issue-id", last.id);
+    await expect(detail.getByRole("button", { name: "下一条", exact: true })).toBeDisabled();
+    await detail.getByRole("button", { name: "上一条", exact: true }).click();
+    await expect(detail).toHaveAttribute("data-issue-id", next.id);
+    await detail.getByRole("button", { name: "返回问题列表", exact: true }).click();
+    // One resolved card was removed; the list restores the nearest available
+    // scroll offset instead of resetting to the top or rewinding pagination.
+    await expect
+      .poll(() => list.evaluate((element) => element.scrollTop))
+      .toBeGreaterThan(scrollTop / 2);
+    await expect(panel.getByTestId("issue-status-open")).toHaveAttribute("aria-pressed", "true");
+    await expect(panel.getByTestId("issue-open-count")).toHaveText("待处理 51");
+  } finally {
+    await page.close();
+    await seed.reset();
+  }
+});
+
+test("迟到的问题回复不清空另一问题或原问题的新草稿", async ({ page, seed }) => {
+  test.setTimeout(90_000);
+  const data = await setup(page, seed);
+  const taskId = data.task_ids[0];
+  let releaseResponse!: () => void;
+  const responseGate = new Promise<void>((resolve) => {
+    releaseResponse = resolve;
+  });
+  let committed = false;
+  try {
+    const first = await createIssue(page, data, taskId, "问题 A");
+    const second = await createIssue(page, data, taskId, "问题 B");
+    await page.route(`**/api/v1/feedbacks/${first.id}/replies`, async (route) => {
+      const response = await route.fetch();
+      expect(response.ok()).toBe(true);
+      committed = true;
+      await responseGate;
+      await route.fulfill({ response });
+    });
+    await openTask(page, data.project_id, taskId);
+    const panel = discussion(page);
+    await panel.getByRole("tab", { name: /^问题/ }).click();
+    const detail = page.getByTestId("discussion-issue-detail");
+    const input = detail.getByRole("textbox", { name: "留言" });
+    const openIssue = async (id: string) => {
+      await panel.getByTestId(`discussion-issue-open-${id}`).click();
+      await expect(detail).toHaveAttribute("data-issue-id", id);
+      await expect(input).toBeEditable();
+    };
+    const back = () => detail.getByRole("button", { name: "返回问题列表", exact: true }).click();
+    await openIssue(first.id);
+    await input.fill("问题 A 已提交的回复");
+    await detail.getByRole("button", { name: "发送", exact: true }).click();
+    await expect.poll(() => committed).toBe(true);
+    await back();
+    await openIssue(second.id);
+    await input.fill("问题 B 保留的草稿");
+    await back();
+    await openIssue(first.id);
+    await input.fill("问题 A 后续补充的新草稿");
+    releaseResponse();
+    await expect(detail.getByRole("button", { name: "发送", exact: true })).toBeEnabled();
+    await expect(input).toHaveText("问题 A 后续补充的新草稿");
+    const readback = await json<AnnotationFeedbackThreadPage>(
+      await page.request.get(`${API_BASE}/api/v1/feedbacks/${first.id}/thread`, {
+        headers: auth(data.token),
+      }),
+    );
+    expect(readback.items).toHaveLength(1);
+    expect(readback.items[0]).toMatchObject({
+      kind: "comment",
+      thread_parent_id: first.id,
+      body: "问题 A 已提交的回复",
+    });
+    await back();
+    await openIssue(second.id);
+    await expect(input).toHaveText("问题 B 保留的草稿");
+  } finally {
+    releaseResponse();
     await page.close();
     await seed.reset();
   }
