@@ -9,7 +9,7 @@
  */
 import { act, fireEvent, render, waitFor } from "@testing-library/react";
 import type { ComponentProps } from "react";
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import { serialize } from "../CommentInput";
 import { CommentInput } from "../CommentInput";
 import { commentsApi, type CommentCanvasDrawing } from "@/api/comments";
@@ -17,7 +17,7 @@ import {
   createDiscussionDraftStore,
   type DiscussionDraftStore,
 } from "../../state/useDiscussionDraftStore";
-import type { DiscussionTarget } from "../../state/discussionTypes";
+import type { DiscussionPayload, DiscussionTarget } from "../../state/discussionTypes";
 
 type MockCanvasProps = {
   open: boolean;
@@ -141,6 +141,19 @@ function editor(container: HTMLElement): HTMLElement {
   return container.querySelector('[contenteditable="true"]') as HTMLElement;
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+afterEach(() => {
+  canvasHarness.onSave = null;
+  vi.restoreAllMocks();
+});
+
 describe("CommentInput session composer", () => {
   it("restores independent annotation A/B/A drafts without rewriting on each edit", () => {
     const onSubmit = vi.fn();
@@ -237,6 +250,98 @@ describe("CommentInput session composer", () => {
     await waitFor(() =>
       expect(view.container.querySelector("[contenteditable]")?.textContent).toBe(""),
     );
+  });
+
+  it("keeps A and B submit controls independent when A finishes first", async () => {
+    const pendingA = deferred<void>();
+    const pendingB = deferred<void>();
+    const onSubmit = vi.fn((payload: DiscussionPayload) =>
+      payload.body === "A" ? pendingA.promise : pendingB.promise,
+    );
+    const store = createDiscussionDraftStore({ owner: { userId: "u1", sessionId: "s1" } });
+    const view = render(
+      <CommentInput target={annotationA} draftStore={store} members={[]} onSubmit={onSubmit} />,
+    );
+    const inputA = editor(view.container);
+    inputA.textContent = "A";
+    fireEvent.input(inputA);
+    const send = () => view.getByRole("button", { name: /发送/ });
+    expect(send()).toBeEnabled();
+    fireEvent.click(send());
+    expect(send()).toBeDisabled();
+
+    view.rerender(
+      <CommentInput target={annotationB} draftStore={store} members={[]} onSubmit={onSubmit} />,
+    );
+    const inputB = editor(view.container);
+    inputB.textContent = "B";
+    fireEvent.input(inputB);
+    expect(send()).toBeEnabled();
+    fireEvent.click(send());
+    expect(send()).toBeDisabled();
+
+    view.rerender(
+      <CommentInput target={annotationA} draftStore={store} members={[]} onSubmit={onSubmit} />,
+    );
+    expect(send()).toBeDisabled();
+    expect(editor(view.container).textContent).toBe("A");
+    view.rerender(
+      <CommentInput target={annotationB} draftStore={store} members={[]} onSubmit={onSubmit} />,
+    );
+    pendingA.resolve();
+    await waitFor(() => {
+      expect(send()).toBeDisabled();
+      expect(editor(view.container).textContent).toBe("B");
+    });
+
+    pendingB.resolve();
+    await waitFor(() => {
+      expect(send()).toBeEnabled();
+      expect(editor(view.container).textContent).toBe("");
+    });
+  });
+
+  it("keeps A pending when B completes first and blocks A on return", async () => {
+    const pendingA = deferred<void>();
+    const pendingB = deferred<void>();
+    const onSubmit = vi.fn((payload: DiscussionPayload) =>
+      payload.body === "A" ? pendingA.promise : pendingB.promise,
+    );
+    const store = createDiscussionDraftStore({ owner: { userId: "u1", sessionId: "s1" } });
+    const view = render(
+      <CommentInput target={annotationA} draftStore={store} members={[]} onSubmit={onSubmit} />,
+    );
+    const inputA = editor(view.container);
+    inputA.textContent = "A";
+    fireEvent.input(inputA);
+    const send = () => view.getByRole("button", { name: /发送/ });
+    fireEvent.click(send());
+
+    view.rerender(
+      <CommentInput target={annotationB} draftStore={store} members={[]} onSubmit={onSubmit} />,
+    );
+    const inputB = editor(view.container);
+    inputB.textContent = "B";
+    fireEvent.input(inputB);
+    expect(send()).toBeEnabled();
+    fireEvent.click(send());
+
+    pendingB.resolve();
+    await waitFor(() => {
+      expect(send()).toBeEnabled();
+      expect(editor(view.container).textContent).toBe("");
+    });
+    view.rerender(
+      <CommentInput target={annotationA} draftStore={store} members={[]} onSubmit={onSubmit} />,
+    );
+    expect(send()).toBeDisabled();
+    expect(editor(view.container).textContent).toBe("A");
+
+    pendingA.resolve();
+    await waitFor(() => {
+      expect(send()).toBeEnabled();
+      expect(editor(view.container).textContent).toBe("");
+    });
   });
 
   it("retains a failed draft and leaves newer content after an old request resolves", async () => {
@@ -426,5 +531,43 @@ describe("CommentInput session composer", () => {
     expect(upload).not.toHaveBeenCalled();
     current = true;
     expect(store.getDraft(annotationA)?.attachments).toEqual([]);
+  });
+
+  it("scopes upload disabled state to its target while A is pending", async () => {
+    const pendingInit = deferred<{
+      expires_in: number;
+      storage_key: string;
+      upload_url: string;
+    }>();
+    const init = vi.spyOn(commentsApi, "attachmentUploadInit").mockReturnValue(pendingInit.promise);
+    const upload = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue({ ok: true, status: 200 } as Response);
+    const store = createDiscussionDraftStore({ owner: { userId: "u1", sessionId: "s1" } });
+    const view = render(
+      <CommentInput target={annotationA} draftStore={store} members={[]} onSubmit={vi.fn()} />,
+    );
+    const file = new File(["a"], "a.png", { type: "image/png" });
+    const fileInput = () => view.container.querySelector('input[type="file"]')!;
+    expect(fileInput()).toBeEnabled();
+    fireEvent.change(fileInput(), { target: { files: [file] } });
+    await waitFor(() => expect(init).toHaveBeenCalledTimes(1));
+    expect(fileInput()).toBeDisabled();
+
+    view.rerender(
+      <CommentInput target={annotationB} draftStore={store} members={[]} onSubmit={vi.fn()} />,
+    );
+    expect(fileInput()).toBeEnabled();
+    view.rerender(
+      <CommentInput target={annotationA} draftStore={store} members={[]} onSubmit={vi.fn()} />,
+    );
+    expect(fileInput()).toBeDisabled();
+
+    pendingInit.resolve({ expires_in: 60, storage_key: "k-1", upload_url: "/upload-1" });
+    await waitFor(() => {
+      expect(upload).toHaveBeenCalledTimes(1);
+      expect(fileInput()).toBeEnabled();
+    });
+    expect(store.getDraft(annotationA)?.attachments).toHaveLength(1);
   });
 });

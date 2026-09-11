@@ -3,6 +3,7 @@ import {
   useEffect,
   useLayoutEffect,
   useMemo,
+  useReducer,
   useRef,
   useState,
   useSyncExternalStore,
@@ -263,12 +264,13 @@ export function CommentInput({
   const [attachments, setAttachments] = useState<CommentAttachment[]>([]);
   const [canvasDrawing, setCanvasDrawing] = useState<CommentCanvasDrawing | null>(null);
   const [canvasOpen, setCanvasOpen] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [localTargetAvailable, setLocalTargetAvailable] = useState(true);
   const composingRef = useRef(false);
-  const submitInFlightRef = useRef(false);
+  const activeUploadRequestsRef = useRef(new Map<string, string>());
+  const activeSubmissionRequestsRef = useRef(new Map<string, string>());
+  const mountedRef = useRef(true);
+  const [, forceRequestStateRender] = useReducer((version: number) => version + 1, 0);
   const hydratedElementRef = useRef<HTMLDivElement | null>(null);
   const hydratedTargetKeyRef = useRef<string | null>(null);
   const legacyIdentityRef = useRef<string | null>(null);
@@ -279,6 +281,17 @@ export function CommentInput({
   const liveResultIdRef = useRef<string | null>(null);
   const liveResultRef = useRef<CommentCanvasDrawing | null>(null);
   const pushToast = useToastStore((s) => s.push);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const bumpRequestState = useCallback(() => {
+    if (mountedRef.current) forceRequestStateRender();
+  }, []);
   const contextStore = useDiscussionDraftStore();
   const store = draftStoreProp ?? contextStore;
   const effectiveTarget = useMemo(
@@ -312,6 +325,13 @@ export function CommentInput({
   );
   const storeDraft = useSyncExternalStore(storeSubscribe, storeGetDraft, storeGetDraft);
   const draft = draftProp ?? storeDraft;
+  // Refs provide synchronous duplicate guards; the version state makes their
+  // changes visible to the current editor without sharing state with another
+  // target rendered by this component instance.
+  const uploadingCurrent = activeUploadRequestsRef.current.has(targetIdentity);
+  const draftSubmitting = draft?.status === "submitting" || Boolean(draft?.inFlightRequestId);
+  const submittingCurrent =
+    activeSubmissionRequestsRef.current.has(targetIdentity) || draftSubmitting;
   const targetCapabilities = effectiveTarget
     ? discussionTargetCapabilities(effectiveTarget)
     : { text: true, mentions: true, attachments: true, canvasDrawing: true, anchor: true };
@@ -579,28 +599,38 @@ export function CommentInput({
 
   const handleFileUpload = useCallback(
     async (files: FileList | null) => {
-      if (!files || files.length === 0 || uploading || busy || !isAnnotationComposer) return;
+      if (
+        !files ||
+        files.length === 0 ||
+        activeUploadRequestsRef.current.has(targetIdentity) ||
+        busy ||
+        !isAnnotationComposer
+      )
+        return;
       const uploadTarget = effectiveTarget;
       const uploadAnnotationId =
         uploadTarget?.kind === "annotation" ? uploadTarget.annotationId : annotationId;
       if (!uploadAnnotationId) return;
       const uploadIdentity = targetIdentity;
+      const uploadRequestId = `upload-${randomId()}`;
       const uploadOrigin: DiscussionOrigin | null =
         store && uploadTarget
           ? {
               owner: store.getOwner(),
               target: { ...uploadTarget },
-              requestId: `upload-${randomId()}`,
+              requestId: uploadRequestId,
             }
           : null;
-      setUploading(true);
+      activeUploadRequestsRef.current.set(uploadIdentity, uploadRequestId);
+      bumpRequestState();
       try {
         for (const f of Array.from(files)) {
           const uploadStillCurrent = () =>
-            store && uploadOrigin
+            activeUploadRequestsRef.current.get(uploadIdentity) === uploadRequestId &&
+            (store && uploadOrigin
               ? store.isOwned(uploadOrigin)
               : visibleIdentityRef.current === uploadIdentity &&
-                legacyIdentityRef.current === uploadIdentity;
+                legacyIdentityRef.current === uploadIdentity);
           // Do not start another init after logout/account or target change.
           if (!uploadStillCurrent()) return;
           if (f.size > MAX_ATTACH_BYTES) {
@@ -629,14 +659,17 @@ export function CommentInput({
           };
           if (store && uploadOrigin) {
             store.acceptUpload(uploadOrigin, attachment);
-          } else if (legacyIdentityRef.current === uploadIdentity) {
+          } else if (uploadStillCurrent()) {
             setAttachments((prev) => [...prev, attachment]);
           }
         }
       } catch (err) {
         pushToast({ msg: "附件上传失败", sub: String(err), kind: "error" });
       } finally {
-        setUploading(false);
+        if (activeUploadRequestsRef.current.get(uploadIdentity) === uploadRequestId) {
+          activeUploadRequestsRef.current.delete(uploadIdentity);
+          bumpRequestState();
+        }
       }
     },
     [
@@ -644,10 +677,10 @@ export function CommentInput({
       busy,
       effectiveTarget,
       isAnnotationComposer,
+      bumpRequestState,
       pushToast,
       store,
       targetIdentity,
-      uploading,
     ],
   );
 
@@ -667,9 +700,9 @@ export function CommentInput({
     if (
       !editorRef.current ||
       busy ||
-      uploading ||
-      submitting ||
-      submitInFlightRef.current ||
+      activeUploadRequestsRef.current.has(targetIdentity) ||
+      activeSubmissionRequestsRef.current.has(targetIdentity) ||
+      draftSubmitting ||
       !isAvailable ||
       (liveCanvas?.active ?? false)
     ) {
@@ -695,7 +728,8 @@ export function CommentInput({
     }
     let submission: DiscussionSubmissionSnapshot | null = null;
     const submittedEditor = editorRef.current;
-    const submittedIdentity = visibleIdentityRef.current;
+    const submittedIdentity = targetIdentity;
+    let requestId: string | null = null;
     try {
       if (store && effectiveTarget) {
         // Ensure the final editor state is represented in the structured draft
@@ -704,8 +738,13 @@ export function CommentInput({
         submission = store.beginSubmission(effectiveTarget, payload);
         if (!submission) return;
       }
-      submitInFlightRef.current = true;
-      setSubmitting(true);
+      requestId = submission?.requestId ?? `comment-${randomId()}`;
+      // Store-backed submissions are already serialized by draft.inFlight;
+      // this map also covers legacy adapters and closes the rapid-click gap
+      // before React can publish the next render.
+      if (activeSubmissionRequestsRef.current.has(submittedIdentity)) return;
+      activeSubmissionRequestsRef.current.set(submittedIdentity, requestId);
+      bumpRequestState();
       await onSubmit(payload, submission ?? undefined);
       if (store && submission) {
         // Only clear the editor when the store confirms the snapshot was
@@ -727,10 +766,13 @@ export function CommentInput({
       if (visibleIdentityRef.current === submittedIdentity) setLocalError(null);
     } catch (error) {
       if (store && submission) store.rejectSubmission(submission, error);
-      else setLocalError(error instanceof Error ? error.message : String(error));
+      else if (visibleIdentityRef.current === submittedIdentity)
+        setLocalError(error instanceof Error ? error.message : String(error));
     } finally {
-      submitInFlightRef.current = false;
-      setSubmitting(false);
+      if (requestId && activeSubmissionRequestsRef.current.get(submittedIdentity) === requestId) {
+        activeSubmissionRequestsRef.current.delete(submittedIdentity);
+        bumpRequestState();
+      }
     }
   }, [
     authOwnerIsUsable,
@@ -739,14 +781,15 @@ export function CommentInput({
     effectiveAttachments,
     effectiveCanvasDrawing,
     effectiveTarget,
+    bumpRequestState,
+    draftSubmitting,
     isAvailable,
     liveCanvas?.active,
     onSubmit,
     patchDraft,
     reset,
     store,
-    submitting,
-    uploading,
+    targetIdentity,
   ]);
 
   const startLiveCanvas = useCallback(() => {
@@ -769,7 +812,7 @@ export function CommentInput({
   }, [effectiveCanvasDrawing, effectiveTarget, maybeCaptureAnchor, store, targetIdentity]);
 
   const submitDisabled =
-    busy || uploading || submitting || !isAvailable || (liveCanvas?.active ?? false);
+    busy || uploadingCurrent || submittingCurrent || !isAvailable || (liveCanvas?.active ?? false);
   const displayError = draft?.error ?? localError;
 
   return (
@@ -866,15 +909,15 @@ export function CommentInput({
             <label
               className={cn(
                 "inline-flex items-center gap-1 text-xs text-muted-foreground",
-                uploading ? "cursor-wait" : "cursor-pointer",
+                uploadingCurrent ? "cursor-wait" : "cursor-pointer",
               )}
             >
               <Icon name="upload" size={12} />
-              {uploading ? "上传中…" : "附件"}
+              {uploadingCurrent ? "上传中…" : "附件"}
               <input
                 type="file"
                 multiple
-                disabled={uploading || busy || !isAvailable}
+                disabled={uploadingCurrent || busy || !isAvailable}
                 onChange={(e) => {
                   void handleFileUpload(e.target.files);
                   e.currentTarget.value = "";
@@ -887,7 +930,7 @@ export function CommentInput({
             <button
               type="button"
               onClick={openCanvasEditor}
-              disabled={!backgroundUrl || !isAvailable || submitting}
+              disabled={!backgroundUrl || !isAvailable || submittingCurrent}
               className={cn(
                 "inline-flex cursor-pointer appearance-none items-center gap-1 border-0 bg-transparent p-0 text-xs font-normal text-muted-foreground",
                 effectiveCanvasDrawing && "font-semibold text-brand",
@@ -907,7 +950,7 @@ export function CommentInput({
             <button
               type="button"
               onClick={startLiveCanvas}
-              disabled={liveCanvas.active || !isAvailable || submitting}
+              disabled={liveCanvas.active || !isAvailable || submittingCurrent}
               className={cn(
                 "inline-flex cursor-pointer appearance-none items-center gap-1 border-0 bg-transparent p-0 text-xs font-normal text-brand",
                 liveCanvas.active && "cursor-default text-muted-foreground/60",
@@ -920,7 +963,7 @@ export function CommentInput({
           )}
         </div>
         <Button size="sm" variant="primary" disabled={submitDisabled} onClick={handleSubmit}>
-          {busy || submitting ? "发送中..." : "发送"}
+          {busy || submittingCurrent ? "发送中..." : "发送"}
         </Button>
       </div>
       {displayError && (
