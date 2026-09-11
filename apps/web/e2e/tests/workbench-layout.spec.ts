@@ -10,6 +10,9 @@ import type {
 import { expect, test } from "../fixtures/seed";
 
 const DESKTOP = { width: 1440, height: 900 };
+// 每次运行都新起 dev server，首屏要现编译整张模块图：本机实测 4.9–5.7s，
+// 超过 expect 的 5s 默认预算。首屏之后的断言不需要这个宽限。
+const FIRST_PAINT = { timeout: 20_000 };
 const panel = (page: Page, id: string) => page.locator(`[data-workbench-panel="${id}"]`);
 
 async function savedSnapshot(page: Page, context: string): Promise<WorkspaceSnapshot | undefined> {
@@ -103,7 +106,11 @@ test("AI 候选和多选不会作为标注身份查询隐藏讨论面板", async
     });
     await seed.injectToken(page, data.annotator_email);
     await page.goto(`/projects/${data.project_id}/annotate?task=${taskId}`);
-    await expect(page.getByTestId("workbench-stage")).toHaveAttribute("data-image-ready", "true");
+    await expect(page.getByTestId("workbench-stage")).toHaveAttribute(
+      "data-image-ready",
+      "true",
+      FIRST_PAINT,
+    );
     await layoutCommand(page, "标准标注布局");
     const discussion = panel(page, "discussion");
     const editor = discussion.locator('[contenteditable="true"]');
@@ -185,7 +192,7 @@ test("图片布局预设、面板隐藏和浮动保留画布及未发送讨论�
 
   // This layout test needs a persisted selection to enable the comment editor.
   const stage = page.getByTestId("workbench-stage");
-  await expect(stage).toHaveAttribute("data-image-ready", "true");
+  await expect(stage).toHaveAttribute("data-image-ready", "true", FIRST_PAINT);
   await page.getByTestId(`box-list-item-${annotation.id}`).click();
 
   const discussion = panel(page, "discussion");
@@ -361,8 +368,12 @@ test("标准和浮动布局使用日间与夜间语义主题", { tag: "@visual" 
   await page.goto(`/projects/${data.project_id}/annotate?task=${data.task_ids[0]}`);
   await expect(
     page.getByTestId("workbench-stage").locator(".konvajs-content > canvas").first(),
-  ).toBeVisible();
-  await expect(page.getByTestId("workbench-stage")).toHaveAttribute("data-image-ready", "true");
+  ).toBeVisible(FIRST_PAINT);
+  await expect(page.getByTestId("workbench-stage")).toHaveAttribute(
+    "data-image-ready",
+    "true",
+    FIRST_PAINT,
+  );
   await layoutCommand(page, "标准标注布局");
   await page.mouse.move(0, 0);
   await expect(page.locator("[data-sonner-toast]")).toHaveCount(0, { timeout: 12_000 });
@@ -410,7 +421,11 @@ test("命名布局预设随账号保存，可跨刷新应用与删除", async ({
   await layoutCommand(page, "标准标注布局");
   await expect(panel(page, "discussion")).toHaveAttribute("aria-hidden", "false");
   await page.reload();
-  await expect(page.getByTestId("workbench-stage")).toHaveAttribute("data-image-ready", "true");
+  await expect(page.getByTestId("workbench-stage")).toHaveAttribute(
+    "data-image-ready",
+    "true",
+    FIRST_PAINT,
+  );
   // 重载会重建 DOM；套用预设不应再动画布实例。
   const sameCanvas = await rememberCanvas(page, "workbench-stage");
   dialog = await openLayoutSettings(page);
