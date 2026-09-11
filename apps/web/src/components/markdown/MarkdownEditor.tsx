@@ -1,236 +1,1337 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { EditorState } from "@codemirror/state";
-import { EditorView, keymap } from "@codemirror/view";
-import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import { markdown } from "@codemirror/lang-markdown";
+import {
+  cloneElement,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FocusEvent as ReactFocusEvent,
+} from "react";
+import {
+  BoldItalicUnderlineToggles,
+  BlockTypeSelect,
+  CodeToggle,
+  CreateLink,
+  InsertCodeBlock,
+  InsertImage,
+  InsertTable,
+  ListsToggle,
+  MDXEditor,
+  NESTED_EDITOR_UPDATED_COMMAND,
+  StrikeThroughSupSubToggles,
+  UndoRedo,
+  codeBlockPlugin,
+  codeMirrorPlugin,
+  createActiveEditorSubscription$,
+  createRootEditorSubscription$,
+  defaultSvgIcons,
+  diffSourcePlugin,
+  headingsPlugin,
+  imagePlugin,
+  linkDialogPlugin,
+  linkPlugin,
+  listsPlugin,
+  markdownShortcutPlugin,
+  quotePlugin,
+  realmPlugin,
+  rootEditor$,
+  tablePlugin,
+  toolbarPlugin,
+  useCellValue,
+  viewMode$,
+  $isImageNode,
+  type IconKey,
+  type MDXEditorMethods,
+  type Translation,
+} from "@mdxeditor/editor";
+import {
+  $getNodeByKey,
+  $getRoot,
+  ElementNode,
+  type LexicalEditor,
+  type LexicalNode,
+} from "lexical";
+import { EditorView } from "@codemirror/view";
+import "@mdxeditor/editor/style.css";
+
+import { MarkdownView } from "./MarkdownView";
+import { MARKDOWN_EDITOR_LABELS, translateMarkdownEditor } from "./markdownEditorLabels";
+import type { MarkdownImageResolver } from "./types";
 import styles from "./MarkdownEditor.module.css";
 
-interface MarkdownEditorProps {
+interface UploadError {
+  id: string;
+  file: File;
+  message: string;
+  anchor?: { before: string; after: string };
+}
+
+interface PendingUpload {
+  id: string;
+  epoch: number;
+  file: File;
+  source: string;
+  anchor?: { before: string; after: string };
+  editor?: LexicalEditor;
+  nodeKey?: string;
+  result?: { src: string; alt?: string };
+  error?: string;
+  reconciling?: boolean;
+  failed?: boolean;
+  cancelled?: boolean;
+  exportedToMarkdown?: boolean;
+}
+
+export interface MarkdownEditorProps {
   value: string;
   onChange: (next: string) => void;
+  /** Ctrl/Cmd+Enter 时在提交前刷新嵌套表格单元格，并传出最新 Markdown。 */
+  onSubmit?: (next: string) => void;
   /** 拖拽 / 粘贴图片时上传; 返回 markdown 中要插入的 src (例如 "guide-asset:KEY"). */
   onUploadImage?: (file: File) => Promise<{ src: string; alt?: string }>;
   placeholder?: string;
-  /** 编辑器失焦时回调 (供调用方做失焦自动保存). */
+  /** 编辑器离开整个交互边界时回调，工具栏和弹出框内移动不会触发。 */
   onBlur?: () => void;
+  /** 用于隔离异步上传、外部同步与项目/报告切换。 */
+  documentId?: string;
+  /** 内部编辑区的可访问名称。 */
+  label?: string;
+  /** document 展示完整工具栏，compact 展示紧凑工具栏。插件能力在两种变体中保持一致。 */
+  variant?: "document" | "compact";
+  resolveImage?: MarkdownImageResolver;
+  imageScope?: string;
+  disabled?: boolean;
+}
+
+const PENDING_SOURCE_PREFIX = "markdown-upload-pending:";
+const PENDING_SOURCE_LENGTH = 20;
+
+type EditorMode = "edit" | "source" | "preview";
+
+const editorModePlugin = realmPlugin<{ mode: EditorMode }>({
+  init(realm, params) {
+    if (params) realm.pub(viewMode$, params.mode === "source" ? "source" : "rich-text");
+  },
+  update(realm, params) {
+    if (params) realm.pub(viewMode$, params.mode === "source" ? "source" : "rich-text");
+  },
+});
+
+function MarkdownToolbar({ variant }: { variant: "document" | "compact" }) {
+  const viewMode = useCellValue(viewMode$);
+  if (viewMode === "source") {
+    return <span className={styles.toolbarModeTitle}>{MARKDOWN_EDITOR_LABELS.source}</span>;
+  }
+  return (
+    <>
+      <UndoRedo />
+      <BlockTypeSelect />
+      <BoldItalicUnderlineToggles options={["Bold", "Italic"]} />
+      <StrikeThroughSupSubToggles options={["Strikethrough"]} />
+      <CodeToggle />
+      <ListsToggle options={["bullet", "number", "check"]} />
+      <CreateLink />
+      {variant === "document" && <InsertImage />}
+      {variant === "document" && <InsertTable />}
+      <InsertCodeBlock />
+    </>
+  );
+}
+
+function isImageFile(file: File): boolean {
+  return file.type.startsWith("image/");
+}
+
+function isEditorBoundaryTarget(target: EventTarget | null, root: HTMLElement | null): boolean {
+  if (!(target instanceof Node)) return false;
+  if (root?.contains(target)) return true;
+  const popup = target instanceof Element ? target.closest(".mdxeditor-popup-container") : null;
+  return Boolean(popup && root?.contains(popup));
+}
+
+function imagePlaceholderSource(id: string): string {
+  return `${PENDING_SOURCE_PREFIX}${id}`;
+}
+
+export function imagePlaceholderMarkdown(source: string): string {
+  // The visual placeholder communicates progress. Keep Markdown alt empty so
+  // reconciliation can fill the filename without overwriting an author edit.
+  return `![](${source})`;
+}
+
+export function resolveUploadedImageAlt(
+  currentAlt: string,
+  filename: string,
+  resultAlt?: string,
+): string {
+  return currentAlt.trim() ? currentAlt : (resultAlt ?? filename);
 }
 
 /**
- * v0.10.13 · E1 · CodeMirror 6 Markdown 编辑器.
+ * Remove only image syntax generated by this editor's upload queue.
  *
- * - 行号 / 自动换行 / undo-redo / 默认 markdown 语法
- * - 工具栏: 粗体 / 斜体 / 标题 / 列表 / 链接 / 图片 / 代码块
- * - 拖拽 / 粘贴图片: 调 onUploadImage 上传后插入 ![](src)
- *
- * 通过路由级 dynamic import 加载, 避免污染 dashboard 首屏 bundle.
+ * MDXEditor exports ImageNode values as inline images. The source is a
+ * cryptographically-uninteresting but unique per-upload marker, so matching
+ * that exact source cannot alter ordinary author Markdown. The actual image
+ * node is reconciled through Lexical below; this function only keeps the
+ * controlled parent draft free of a temporary URL between transactions.
  */
-export function MarkdownEditor({
+type PendingSource = PendingUpload | string;
+
+function pendingSourceValue(item: PendingSource): string {
+  return typeof item === "string" ? item : item.source;
+}
+
+function pendingImagePattern(source: string): RegExp {
+  const escapedSource = source.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(
+    `!\\[((?:\\\\.|[^\\]\\n])*)\\]\\(\\s*<?${escapedSource}>?(?:\\s+(?:"(?:\\\\.|[^"])*"|'(?:\\\\.|[^'])*'|\\((?:\\\\.|[^)])*\\)))?\\s*\\)`,
+    "g",
+  );
+}
+
+function pendingLinkPattern(source: string): RegExp {
+  const escapedSource = source.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(
+    `\\[((?:\\\\.|[^\\]\\n])*)\\]\\(\\s*<?${escapedSource}>?(?:\\s+(?:"(?:\\\\.|[^"])*"|'(?:\\\\.|[^'])*'|\\((?:\\\\.|[^)])*\\)))?\\s*\\)`,
+    "g",
+  );
+}
+
+function stripPendingSourceArtifacts(markdown: string, source: string): string {
+  const escapedSource = source.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return (
+    markdown
+      .replace(pendingImagePattern(source), "")
+      // If an author breaks the image syntax in source mode, retain an edited
+      // label but never publish the editor-internal destination.
+      .replace(pendingLinkPattern(source), (_link, rawLabel: string) => rawLabel)
+      .replace(new RegExp(`\\(\\s*<?${escapedSource}>?\\s*\\)`, "g"), "")
+      .replace(new RegExp(`<?${escapedSource}>?`, "g"), "")
+  );
+}
+
+export function stripPendingImageNodes(markdown: string, pending: Iterable<PendingSource>): string {
+  let next = markdown;
+  for (const item of pending) {
+    next = stripPendingSourceArtifacts(next, pendingSourceValue(item));
+  }
+  // The prefix is an editor-internal protocol. History undo or an editor
+  // recreation can briefly resurrect a marker after its in-memory owner has
+  // settled, so strip any orphan marker as well as currently owned uploads.
+  const orphanSources = new Set(next.match(/markdown-upload-pending:[a-z0-9-]+/gi) ?? []);
+  for (const source of orphanSources) {
+    next = stripPendingSourceArtifacts(next, source);
+  }
+  return next;
+}
+
+function markdownImageDestination(source: string): string {
+  // Angle destinations support spaces and parentheses without changing the
+  // logical guide-asset key. Escape their delimiters and literal backslashes
+  // so the Markdown parser restores the exact source value.
+  const escaped = source.replace(/\\/g, "\\\\").replace(/[<>]/g, "\\$&");
+  return `<${escaped}>`;
+}
+
+function markdownImageAlt(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/[[\]]/g, "\\$&");
+}
+
+export function replacePendingImageNode(
+  markdown: string,
+  source: string,
+  result: { src: string; alt?: string },
+  filename: string,
+): { markdown: string; replaced: boolean } {
+  let replaced = false;
+  const next = markdown.replace(pendingImagePattern(source), (image, rawAlt: string) => {
+    if (replaced) return image;
+    replaced = true;
+    const alt = rawAlt.trim() ? rawAlt : markdownImageAlt(result.alt ?? filename);
+    return image
+      .replace(`![${rawAlt}]`, () => `![${alt}]`)
+      .replace(source, () => markdownImageDestination(result.src));
+  });
+  return { markdown: next, replaced };
+}
+
+function pendingImageBounds(
+  markdown: string,
+  source: string,
+): { start: number; end: number } | null {
+  const match = pendingImagePattern(source).exec(markdown);
+  return match ? { start: match.index, end: match.index + match[0].length } : null;
+}
+
+function pendingImageAnchor(
+  markdown: string,
+  source: string,
+): { before: string; after: string } | undefined {
+  const bounds = pendingImageBounds(markdown, source);
+  if (!bounds) return undefined;
+  return {
+    before: markdown.slice(Math.max(0, bounds.start - PENDING_SOURCE_LENGTH), bounds.start),
+    after: markdown.slice(bounds.end, bounds.end + PENDING_SOURCE_LENGTH),
+  };
+}
+
+const TABLE_CELL_DRAFT_SYNC_DELAY_MS = 250;
+
+/**
+ * Table cells are independent Lexical editors. MDXEditor's public active
+ * editor subscription and nested editor command are the smallest supported
+ * way to export a changed cell into the root editor; this avoids serializing
+ * the whole document on every key.
+ */
+function isTableCellEditor(editor: LexicalEditor): boolean {
+  const parentTagName = editor.getRootElement()?.parentElement?.tagName;
+  return parentTagName === "TD" || parentTagName === "TH";
+}
+
+function registerTableCellDraftSync(editor: LexicalEditor): () => void {
+  let timer: number | null = null;
+
+  const cancel = () => {
+    if (timer !== null) {
+      window.clearTimeout(timer);
+      timer = null;
+    }
+  };
+
+  const schedule = () => {
+    cancel();
+    timer = window.setTimeout(() => {
+      timer = null;
+      if (editor.isComposing()) {
+        schedule();
+        return;
+      }
+
+      const root = editor.getRootElement();
+      const hadFocus = Boolean(root && root.contains(document.activeElement));
+      editor.dispatchCommand(NESTED_EDITOR_UPDATED_COMMAND, undefined);
+      // saveAndFocus(null) updates the table's active-cell marker. Reapply
+      // focus only when this cell still owned focus, preserving selection
+      // and preventing an idle timer from stealing focus after navigation.
+      if (hadFocus) editor.focus();
+    }, TABLE_CELL_DRAFT_SYNC_DELAY_MS);
+  };
+
+  const unregisterUpdate = editor.registerUpdateListener(({ dirtyElements, dirtyLeaves }) => {
+    // Selection-only updates have no dirty nodes and must not publish a
+    // duplicate Markdown draft.
+    if (dirtyElements.size === 0 && dirtyLeaves.size === 0) return;
+    schedule();
+  });
+
+  return () => {
+    cancel();
+    unregisterUpdate();
+  };
+}
+
+function visitLexicalNodes(node: LexicalNode, visit: (node: LexicalNode) => void): void {
+  visit(node);
+  if (node instanceof ElementNode) {
+    node.getChildren().forEach((child) => visitLexicalNodes(child, visit));
+  }
+}
+
+interface PendingImagePluginParams {
+  getPending: () => Map<string, PendingUpload>;
+  onImageNode: (editor: LexicalEditor, nodeKey: string, pending: PendingUpload) => void;
+  onMissingNode: (editor: LexicalEditor, pending: PendingUpload) => void;
+  onOrphanImage: (editor: LexicalEditor, nodeKey: string) => void;
+}
+
+function registerPendingImageObserver(
+  editor: LexicalEditor,
+  params: PendingImagePluginParams,
+): () => void {
+  return editor.registerUpdateListener(({ editorState }) => {
+    const seen = new Set<string>();
+    const orphanKeys: string[] = [];
+    editorState.read(() => {
+      visitLexicalNodes($getRoot(), (node) => {
+        if (!$isImageNode(node)) return;
+        const source = node.getSrc();
+        if (!source.startsWith(PENDING_SOURCE_PREFIX)) return;
+        const pendingId = source.slice(PENDING_SOURCE_PREFIX.length);
+        const pending = params.getPending().get(pendingId);
+        if (!pending) {
+          orphanKeys.push(node.getKey());
+          return;
+        }
+        seen.add(pendingId);
+        params.onImageNode(editor, node.getKey(), pending);
+      });
+    });
+    orphanKeys.forEach((nodeKey) => params.onOrphanImage(editor, nodeKey));
+
+    for (const pending of params.getPending().values()) {
+      if (pending.editor === editor && pending.nodeKey && !seen.has(pending.id)) {
+        params.onMissingNode(editor, pending);
+      }
+    }
+  });
+}
+
+/**
+ * Reconcile uploads by ImageNode identity. A Markdown scan cannot distinguish
+ * a reference image, an image moved by the author, and a text occurrence of a
+ * URL. Lexical gives us the exact node and transaction that owns the marker.
+ */
+const pendingImagePlugin = realmPlugin<PendingImagePluginParams>({
+  init(realm, params) {
+    if (!params) return;
+    realm.pub(createRootEditorSubscription$, (editor) =>
+      registerPendingImageObserver(editor, params),
+    );
+    realm.pub(createActiveEditorSubscription$, (editor) => {
+      if (editor === realm.getValue(rootEditor$) || !isTableCellEditor(editor)) {
+        return () => undefined;
+      }
+      return registerPendingImageObserver(editor, params);
+    });
+  },
+});
+
+function PendingImagePlaceholder() {
+  return (
+    <span className={styles.imagePlaceholder} role="status">
+      图片上传中…
+    </span>
+  );
+}
+
+/**
+ * Lazy-loaded by the guide, template and BUG forms. MDXEditor emits an
+ * initial
+ * normalization callback when importing a document; that callback is
+ * intentionally ignored so opening a document never creates a write.
+ */
+function MarkdownEditorDocument({
   value,
   onChange,
+  onSubmit,
   onUploadImage,
   placeholder,
   onBlur,
+  documentId,
+  label = "Markdown 编辑器",
+  variant = "document",
+  resolveImage,
+  imageScope,
+  disabled = false,
 }: MarkdownEditorProps) {
-  const hostRef = useRef<HTMLDivElement | null>(null);
-  const viewRef = useRef<EditorView | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const editorRef = useRef<MDXEditorMethods | null>(null);
+  const activeEditorRef = useRef<LexicalEditor | null>(null);
   const onChangeRef = useRef(onChange);
-  const onUploadRef = useRef(onUploadImage);
+  const onSubmitRef = useRef(onSubmit);
   const onBlurRef = useRef(onBlur);
-  const [uploading, setUploading] = useState<string | null>(null);
-  const [dragging, setDragging] = useState(false);
+  const onUploadRef = useRef(onUploadImage);
+  const resolveImageRef = useRef(resolveImage);
+  const valueRef = useRef(value);
+  const latestMarkdownRef = useRef(value);
+  const editorMarkdownRef = useRef(value);
+  const initialSourceRef = useRef(value);
+  const initialNormalizedRef = useRef<string | null>(null);
+  const currentDocumentRef = useRef(documentId);
+  const epochRef = useRef(0);
+  const uploadQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const pendingUploadsRef = useRef<Map<string, PendingUpload>>(new Map());
+  const blurTimerRef = useRef<number | null>(null);
+  const compositionFlushTimerRef = useRef<number | null>(null);
+  const composingRef = useRef(false);
+  const deferredPublishRef = useRef<string | null>(null);
+  const aliveRef = useRef(true);
+  const modeRef = useRef<EditorMode>("edit");
+  const reconcilePendingRef = useRef<
+    (editor: LexicalEditor, nodeKey: string, pending: PendingUpload) => void
+  >(() => undefined);
+  const missingPendingRef = useRef<(editor: LexicalEditor, pending: PendingUpload) => void>(
+    () => undefined,
+  );
+  const [uploadErrors, setUploadErrors] = useState<UploadError[]>([]);
+  const [parseError, setParseError] = useState<string | null>(null);
+  const [mode, setMode] = useState<EditorMode>("edit");
+  const [overlayContainer, setOverlayContainer] = useState<HTMLElement | null>(null);
 
   onChangeRef.current = onChange;
-  onUploadRef.current = onUploadImage;
+  onSubmitRef.current = onSubmit;
   onBlurRef.current = onBlur;
+  onUploadRef.current = onUploadImage;
+  resolveImageRef.current = resolveImage;
+  valueRef.current = value;
+  modeRef.current = mode;
 
-  const insertAtCursor = useCallback((text: string) => {
-    const v = viewRef.current;
-    if (!v) return;
-    const { from, to } = v.state.selection.main;
-    v.dispatch({
-      changes: { from, to, insert: text },
-      selection: { anchor: from + text.length },
-    });
-    v.focus();
-  }, []);
-
-  const wrapSelection = useCallback((prefix: string, suffix = prefix) => {
-    const v = viewRef.current;
-    if (!v) return;
-    const { from, to } = v.state.selection.main;
-    const selected = v.state.doc.sliceString(from, to);
-    const insert = `${prefix}${selected}${suffix}`;
-    v.dispatch({
-      changes: { from, to, insert },
-      selection: {
-        anchor: from + prefix.length,
-        head: from + prefix.length + selected.length,
-      },
-    });
-    v.focus();
-  }, []);
-
-  const handleUpload = useCallback(
-    async (file: File) => {
-      const upload = onUploadRef.current;
-      if (!upload) return;
-      if (!file.type.startsWith("image/")) return;
-      setUploading(file.name);
-      try {
-        const { src, alt } = await upload(file);
-        insertAtCursor(`![${alt ?? file.name}](${src})`);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        insertAtCursor(`<!-- 上传失败: ${msg} -->`);
-      } finally {
-        setUploading(null);
-      }
-    },
-    [insertAtCursor],
-  );
-
-  // ── CodeMirror lifecycle ─────────────────────────────────
   useEffect(() => {
-    if (!hostRef.current) return;
-    const updateListener = EditorView.updateListener.of((u) => {
-      if (u.docChanged) {
-        onChangeRef.current(u.state.doc.toString());
-      }
-    });
-    const state = EditorState.create({
-      doc: value,
-      extensions: [
-        history(),
-        keymap.of([...defaultKeymap, ...historyKeymap]),
-        markdown(),
-        EditorView.lineWrapping,
-        updateListener,
-        EditorView.domEventHandlers({
-          drop: (event) => {
-            const files = Array.from(event.dataTransfer?.files ?? []);
-            const imgs = files.filter((f) => f.type.startsWith("image/"));
-            if (imgs.length > 0) {
-              event.preventDefault();
-              setDragging(false);
-              imgs.forEach((f) => void handleUpload(f));
-              return true;
-            }
-            return false;
-          },
-          dragover: (event) => {
-            event.preventDefault();
-            setDragging(true);
-            return false;
-          },
-          dragleave: () => {
-            setDragging(false);
-            return false;
-          },
-          paste: (event) => {
-            const items = Array.from(event.clipboardData?.items ?? []);
-            const imgs = items
-              .filter((it) => it.kind === "file" && it.type.startsWith("image/"))
-              .map((it) => it.getAsFile())
-              .filter((f): f is File => f !== null);
-            if (imgs.length > 0) {
-              event.preventDefault();
-              imgs.forEach((f) => void handleUpload(f));
-              return true;
-            }
-            return false;
-          },
-          blur: () => {
-            onBlurRef.current?.();
-            return false;
-          },
-        }),
-      ],
-    });
-    const view = new EditorView({ state, parent: hostRef.current });
-    viewRef.current = view;
+    // React StrictMode intentionally mounts effects twice in development. The
+    // ref must become live again for the second mount or uploads are ignored.
+    aliveRef.current = true;
     return () => {
-      view.destroy();
-      viewRef.current = null;
+      aliveRef.current = false;
+      if (blurTimerRef.current !== null) window.clearTimeout(blurTimerRef.current);
+      if (compositionFlushTimerRef.current !== null) {
+        window.clearTimeout(compositionFlushTimerRef.current);
+      }
     };
-    // 仅初始化一次; value 变更通过下面 effect 同步, 避免拆装。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 外部 value 变更同步到 CM (例如用户点"重置")
+  // MDXEditor's DownshiftAutoComplete omits the id that its surrounding label
+  // references. Add an explicit accessible name when the link dialog portal
+  // appears so keyboard and screen-reader users can identify the URL field.
   useEffect(() => {
-    const v = viewRef.current;
-    if (!v) return;
-    const current = v.state.doc.toString();
-    if (current !== value) {
-      v.dispatch({
-        changes: { from: 0, to: current.length, insert: value },
-      });
-    }
-  }, [value]);
+    const root = rootRef.current;
+    if (!root) return;
 
-  const onImageButton = useCallback(() => {
-    const upload = onUploadRef.current;
-    if (!upload) {
-      insertAtCursor("![alt](https://...)");
+    const applyLinkUrlLabel = () => {
+      root
+        .querySelectorAll<HTMLInputElement>('.mdxeditor-popup-container input[name="url"]')
+        .forEach((input) => input.setAttribute("aria-label", "地址"));
+    };
+
+    applyLinkUrlLabel();
+    if (typeof MutationObserver === "undefined") return;
+    const observer = new MutationObserver(applyLinkUrlLabel);
+    observer.observe(root, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, []);
+
+  const currentEditorMarkdown = useCallback(() => {
+    const markdown = editorRef.current?.getMarkdown();
+    if (typeof markdown === "string") {
+      editorMarkdownRef.current = markdown;
+      return markdown;
+    }
+    return editorMarkdownRef.current;
+  }, []);
+
+  const validDraftFromEditor = useCallback(() => {
+    return stripPendingImageNodes(currentEditorMarkdown(), pendingUploadsRef.current.values());
+  }, [currentEditorMarkdown]);
+
+  const publishValidDraft = useCallback((next: string) => {
+    latestMarkdownRef.current = next;
+    if (composingRef.current) {
+      deferredPublishRef.current = next;
       return;
     }
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = "image/png,image/jpeg,image/webp,image/gif,image/svg+xml";
-    input.onchange = () => {
-      const file = input.files?.[0];
-      if (file) void handleUpload(file);
-    };
-    input.click();
-  }, [handleUpload, insertAtCursor]);
+    deferredPublishRef.current = null;
+    if (next !== valueRef.current) onChangeRef.current(next);
+  }, []);
 
-  // placeholder 由首次 effect 设置只读副本，避免每次 render 干扰
-  useEffect(() => {
-    if (!placeholder) return;
-    const v = viewRef.current;
-    if (!v) return;
-    if (v.state.doc.length === 0) {
-      // CodeMirror 6 placeholder 需要 extension; 这里用 DOM attr 暗示
-      hostRef.current?.setAttribute("data-placeholder", placeholder);
+  const flushDeferredCompositionDraft = useCallback(() => {
+    if (compositionFlushTimerRef.current !== null) {
+      window.clearTimeout(compositionFlushTimerRef.current);
     }
-  }, [placeholder]);
+    compositionFlushTimerRef.current = window.setTimeout(() => {
+      compositionFlushTimerRef.current = null;
+      if (composingRef.current) return;
+      const deferred = deferredPublishRef.current;
+      deferredPublishRef.current = null;
+      if (deferred !== null) publishValidDraft(deferred);
+    }, 0);
+  }, [publishValidDraft]);
 
-  const toolbarButtons = useMemo(
-    () => [
-      { label: "B", title: "粗体", onClick: () => wrapSelection("**") },
-      { label: "I", title: "斜体", onClick: () => wrapSelection("*") },
-      { label: "H1", title: "一级标题", onClick: () => insertAtCursor("\n# ") },
-      { label: "H2", title: "二级标题", onClick: () => insertAtCursor("\n## ") },
-      { label: "·列表", title: "无序列表", onClick: () => insertAtCursor("\n- ") },
-      { label: "1.列表", title: "有序列表", onClick: () => insertAtCursor("\n1. ") },
-      { label: "🔗", title: "链接", onClick: () => insertAtCursor("[text](https://)") },
-      { label: "🖼", title: "图片", onClick: onImageButton },
-      { label: "</>", title: "代码块", onClick: () => insertAtCursor("\n```\n\n```\n") },
-    ],
-    [insertAtCursor, onImageButton, wrapSelection],
+  const handleCompositionStart = useCallback(() => {
+    composingRef.current = true;
+  }, []);
+
+  const handleCompositionEnd = useCallback(() => {
+    composingRef.current = false;
+    flushDeferredCompositionDraft();
+  }, [flushDeferredCompositionDraft]);
+
+  const flushActiveTableCell = useCallback(() => {
+    if (modeRef.current !== "edit") return;
+    const activeEditor = activeEditorRef.current;
+    const activeRoot = activeEditor?.getRootElement();
+    if (
+      activeEditor &&
+      activeRoot &&
+      rootRef.current?.contains(activeRoot) &&
+      isTableCellEditor(activeEditor)
+    ) {
+      activeEditor.dispatchCommand(NESTED_EDITOR_UPDATED_COMMAND, undefined);
+    }
+  }, []);
+
+  const handleSubmitKeyDown = useCallback(
+    (event: KeyboardEvent) => {
+      const submit = onSubmitRef.current;
+      if (
+        !submit ||
+        event.key !== "Enter" ||
+        (!event.metaKey && !event.ctrlKey) ||
+        event.isComposing
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      flushActiveTableCell();
+      queueMicrotask(() => {
+        if (!aliveRef.current) return;
+        const next = validDraftFromEditor();
+        publishValidDraft(next);
+        submit(next);
+      });
+    },
+    [flushActiveTableCell, publishValidDraft, validDraftFromEditor],
   );
 
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+
+    // MDXEditor's native handlers can publish the IME marker before React's
+    // delegated composition event runs, so mark the boundary in native capture.
+    root.addEventListener("compositionstart", handleCompositionStart, true);
+    root.addEventListener("compositionend", handleCompositionEnd, true);
+    root.addEventListener("keydown", handleSubmitKeyDown, true);
+    return () => {
+      root.removeEventListener("compositionstart", handleCompositionStart, true);
+      root.removeEventListener("compositionend", handleCompositionEnd, true);
+      root.removeEventListener("keydown", handleSubmitKeyDown, true);
+    };
+  }, [handleCompositionEnd, handleCompositionStart, handleSubmitKeyDown]);
+
+  const settleAfterPendingTransaction = useCallback(() => {
+    queueMicrotask(() => {
+      if (!aliveRef.current) return;
+      publishValidDraft(validDraftFromEditor());
+    });
+  }, [publishValidDraft, validDraftFromEditor]);
+
+  const reconcilePendingImage = useCallback(
+    (editor: LexicalEditor, nodeKey: string, pending: PendingUpload) => {
+      if (!aliveRef.current || pending.epoch !== epochRef.current || pending.cancelled) {
+        return;
+      }
+      pending.editor = editor;
+      pending.nodeKey = nodeKey;
+      // A table cell can be recreated while the error banner remains. Refresh
+      // ownership before the failed/reconciling guards so retry still targets
+      // the live ImageNode rather than a detached editor instance.
+      if (pending.reconciling || pending.failed) return;
+      const result = pending.result;
+      const errorMessage = pending.error;
+      if (!result && !errorMessage) return;
+
+      if (errorMessage) {
+        // Keep the failed ImageNode in the Lexical document as the retry
+        // anchor. Unlike sibling keys or character offsets, the node follows
+        // later edits and moves, so retry can replace the exact author-owned
+        // position even inside a nested table-cell editor.
+        pending.failed = true;
+        if (aliveRef.current && pending.epoch === epochRef.current) {
+          setUploadErrors((errors) => [
+            ...errors.filter((error) => error.id !== pending.id),
+            {
+              id: pending.id,
+              file: pending.file,
+              message: errorMessage,
+              anchor: pending.anchor,
+            },
+          ]);
+        }
+        settleAfterPendingTransaction();
+        return;
+      }
+      if (!result) return;
+
+      pending.reconciling = true;
+      // Remove the record before the Lexical transaction. The transaction's
+      // regular MDXEditor onChange callback can then publish the real source
+      // instead of treating it as another pending marker.
+      pendingUploadsRef.current.delete(pending.id);
+
+      editor.update(
+        () => {
+          const node = $getNodeByKey(nodeKey);
+          if (!$isImageNode(node) || node.getSrc() !== pending.source) return;
+          node.setSrc(result.src);
+          // An author may edit alt text while the upload is in flight. Only
+          // fill the empty value created by MDXEditor's upload command.
+          node.setAltText(
+            resolveUploadedImageAlt(node.getAltText(), pending.file.name, result.alt),
+          );
+        },
+        {
+          onUpdate: () => {
+            pending.reconciling = false;
+            setUploadErrors((errors) => errors.filter((error) => error.id !== pending.id));
+            if (isTableCellEditor(editor)) {
+              editor.dispatchCommand(NESTED_EDITOR_UPDATED_COMMAND, undefined);
+            }
+            settleAfterPendingTransaction();
+          },
+        },
+      );
+    },
+    [settleAfterPendingTransaction],
+  );
+
+  reconcilePendingRef.current = reconcilePendingImage;
+
+  const cancelPendingUpload = useCallback((pending: PendingUpload) => {
+    pending.cancelled = true;
+    if (pendingUploadsRef.current.get(pending.id) === pending) {
+      pendingUploadsRef.current.delete(pending.id);
+    }
+    setUploadErrors((errors) => errors.filter((error) => error.id !== pending.id));
+  }, []);
+
+  const handleMissingPendingImage = useCallback(
+    (_editor: LexicalEditor, pending: PendingUpload) => {
+      if (!aliveRef.current || pending.epoch !== epochRef.current || pending.reconciling) return;
+      cancelPendingUpload(pending);
+      settleAfterPendingTransaction();
+    },
+    [cancelPendingUpload, settleAfterPendingTransaction],
+  );
+
+  missingPendingRef.current = handleMissingPendingImage;
+
+  const removeOrphanPendingImage = useCallback(
+    (editor: LexicalEditor, nodeKey: string) => {
+      editor.update(
+        () => {
+          const node = $getNodeByKey(nodeKey);
+          if ($isImageNode(node) && node.getSrc().startsWith(PENDING_SOURCE_PREFIX)) {
+            node.remove();
+          }
+        },
+        {
+          tag: "history-merge",
+          onUpdate: () => {
+            if (isTableCellEditor(editor)) {
+              editor.dispatchCommand(NESTED_EDITOR_UPDATED_COMMAND, undefined);
+            }
+            settleAfterPendingTransaction();
+          },
+        },
+      );
+    },
+    [settleAfterPendingTransaction],
+  );
+
+  const pendingPlugin = useMemo(
+    () =>
+      pendingImagePlugin({
+        getPending: () => pendingUploadsRef.current,
+        onImageNode: (editor, nodeKey, pending) =>
+          reconcilePendingRef.current(editor, nodeKey, pending),
+        onMissingNode: (editor, pending) => missingPendingRef.current(editor, pending),
+        onOrphanImage: removeOrphanPendingImage,
+      }),
+    [removeOrphanPendingImage],
+  );
+
+  const tableCellDraftPlugin = useMemo(
+    () =>
+      realmPlugin({
+        init(realm) {
+          realm.pub(createActiveEditorSubscription$, (editor) => {
+            activeEditorRef.current = editor;
+            const unregister =
+              editor === realm.getValue(rootEditor$) || !isTableCellEditor(editor)
+                ? () => undefined
+                : registerTableCellDraftSync(editor);
+            return () => {
+              unregister();
+              if (activeEditorRef.current === editor) activeEditorRef.current = null;
+            };
+          });
+        },
+      })(),
+    [],
+  );
+
+  const syncMarkdown = useCallback((next: string) => {
+    editorMarkdownRef.current = next;
+    editorRef.current?.setMarkdown(next);
+  }, []);
+
+  const livePendingEditor = useCallback((pending: PendingUpload): LexicalEditor | null => {
+    const editor = pending.editor;
+    const nodeKey = pending.nodeKey;
+    const editorRoot = editor?.getRootElement();
+    if (!editor || !nodeKey || !editorRoot || !rootRef.current?.contains(editorRoot)) return null;
+
+    let ownsNode = false;
+    editor.getEditorState().read(() => {
+      const node = $getNodeByKey(nodeKey);
+      ownsNode = $isImageNode(node) && node.getSrc() === pending.source;
+    });
+    return ownsNode ? editor : null;
+  }, []);
+
+  const completeUploadInMarkdown = useCallback(
+    (pending: PendingUpload, result: { src: string; alt?: string }) => {
+      if (pendingUploadsRef.current.get(pending.id) !== pending) return;
+      const current = currentEditorMarkdown();
+      const replacement = replacePendingImageNode(
+        current,
+        pending.source,
+        result,
+        pending.file.name,
+      );
+      pendingUploadsRef.current.delete(pending.id);
+      setUploadErrors((errors) => errors.filter((error) => error.id !== pending.id));
+      if (!replacement.replaced) {
+        pending.cancelled = true;
+        publishValidDraft(stripPendingImageNodes(current, []));
+        return;
+      }
+      syncMarkdown(replacement.markdown);
+      publishValidDraft(
+        stripPendingImageNodes(replacement.markdown, pendingUploadsRef.current.values()),
+      );
+    },
+    [currentEditorMarkdown, publishValidDraft, syncMarkdown],
+  );
+
+  const completeUpload = useCallback(
+    (pending: PendingUpload, result: { src: string; alt?: string }) => {
+      if (!aliveRef.current || pending.epoch !== epochRef.current || pending.cancelled) return;
+      pending.result = result;
+      pending.error = undefined;
+      pending.failed = false;
+      if (modeRef.current === "source") {
+        completeUploadInMarkdown(pending, result);
+        return;
+      }
+
+      const editor = livePendingEditor(pending);
+      if (editor && pending.nodeKey) {
+        reconcilePendingRef.current(editor, pending.nodeKey, pending);
+        return;
+      }
+
+      // Returning from source mode rebuilds Lexical nodes. Give observers one
+      // microtask to refresh node ownership. If no live node appears, flush a
+      // just-edited table cell before the rare whole-Markdown fallback.
+      flushActiveTableCell();
+      queueMicrotask(() => {
+        if (
+          !aliveRef.current ||
+          pending.epoch !== epochRef.current ||
+          pending.cancelled ||
+          pendingUploadsRef.current.get(pending.id) !== pending
+        ) {
+          return;
+        }
+        if (modeRef.current === "source") {
+          completeUploadInMarkdown(pending, result);
+          return;
+        }
+        const refreshedEditor = livePendingEditor(pending);
+        if (refreshedEditor && pending.nodeKey) {
+          reconcilePendingRef.current(refreshedEditor, pending.nodeKey, pending);
+          return;
+        }
+        completeUploadInMarkdown(pending, result);
+      });
+    },
+    [completeUploadInMarkdown, flushActiveTableCell, livePendingEditor],
+  );
+
+  const failUpload = useCallback((pending: PendingUpload, error: unknown) => {
+    if (!aliveRef.current || pending.epoch !== epochRef.current || pending.cancelled) return;
+    pending.error = error instanceof Error ? error.message : "网络或权限错误";
+    pending.result = undefined;
+    if (modeRef.current === "source" || !pending.nodeKey) {
+      pending.failed = true;
+      setUploadErrors((errors) => [
+        ...errors.filter((item) => item.id !== pending.id),
+        {
+          id: pending.id,
+          file: pending.file,
+          message: pending.error!,
+          anchor: pending.anchor,
+        },
+      ]);
+      return;
+    }
+    // A node already observed by the plugin can be reconciled immediately;
+    // otherwise its next Lexical update will do so after insertion.
+    if (pending.nodeKey) {
+      const editor = pending.editor;
+      if (editor) reconcilePendingRef.current(editor, pending.nodeKey, pending);
+    }
+  }, []);
+
+  const runUpload = useCallback(
+    (pending: PendingUpload) => {
+      const task = uploadQueueRef.current.then(async () => {
+        if (!aliveRef.current || pending.epoch !== epochRef.current || pending.cancelled) return;
+        const upload = onUploadRef.current;
+        if (!upload) {
+          failUpload(pending, new Error("当前编辑器不支持图片上传"));
+          return;
+        }
+        try {
+          const result = await upload(pending.file);
+          completeUpload(pending, result);
+        } catch (error: unknown) {
+          failUpload(pending, error);
+        }
+      });
+      uploadQueueRef.current = task.then(
+        () => undefined,
+        () => undefined,
+      );
+    },
+    [completeUpload, failUpload],
+  );
+
+  const beginUpload = useCallback(
+    (file: File): string => {
+      const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+      const pending: PendingUpload = {
+        id,
+        epoch: epochRef.current,
+        file,
+        source: imagePlaceholderSource(id),
+      };
+      pendingUploadsRef.current.set(id, pending);
+      runUpload(pending);
+      return pending.source;
+    },
+    [runUpload],
+  );
+
+  const uploadHandler = useCallback(
+    async (file: File): Promise<string> => {
+      if (!isImageFile(file) || !onUploadRef.current) {
+        throw new Error("当前编辑器不支持图片上传");
+      }
+      // Return a source only. MDXEditor inserts the ImageNode at the current
+      // selection; the Lexical plugin above replaces that exact node after
+      // the serialized upload queue resolves.
+      return beginUpload(file);
+    },
+    [beginUpload],
+  );
+
+  const insertPlaceholderAtAnchor = useCallback(
+    (pending: PendingUpload) => {
+      const current = currentEditorMarkdown();
+      if (pendingImageBounds(current, pending.source)) return;
+
+      const anchor = pending.anchor;
+      let insertAt = -1;
+      if (anchor?.before) {
+        const beforeAt = current.lastIndexOf(anchor.before);
+        if (beforeAt >= 0) insertAt = beforeAt + anchor.before.length;
+      }
+      if (insertAt < 0 && anchor?.after) insertAt = current.indexOf(anchor.after);
+      const insertion = imagePlaceholderMarkdown(pending.source);
+      const next =
+        insertAt >= 0
+          ? `${current.slice(0, insertAt)}${insertion}${current.slice(insertAt)}`
+          : `${current}${current.endsWith("\n") || current.length === 0 ? "" : "\n"}${insertion}`;
+      syncMarkdown(next);
+    },
+    [currentEditorMarkdown, syncMarkdown],
+  );
+
+  const retryUpload = useCallback(
+    (id: string) => {
+      const error = uploadErrors.find((item) => item.id === id);
+      if (!error || !onUploadRef.current) return;
+      const existing = pendingUploadsRef.current.get(id);
+      const retryAsMarkdown = modeRef.current === "source";
+      if (existing && retryAsMarkdown) {
+        const current = currentEditorMarkdown();
+        if (!pendingImageBounds(current, existing.source)) {
+          cancelPendingUpload(existing);
+          publishValidDraft(stripPendingImageNodes(current, []));
+          return;
+        }
+        existing.error = undefined;
+        existing.result = undefined;
+        existing.failed = false;
+        setUploadErrors((errors) => errors.filter((item) => item.id !== id));
+        runUpload(existing);
+        return;
+      }
+
+      let retryInPlace = false;
+      const existingEditor = existing?.editor;
+      const existingRoot = existingEditor?.getRootElement();
+      if (
+        existing?.failed &&
+        existing.nodeKey &&
+        existingEditor &&
+        existingRoot &&
+        rootRef.current?.contains(existingRoot)
+      ) {
+        existingEditor.getEditorState().read(() => {
+          const node = $getNodeByKey(existing.nodeKey!);
+          retryInPlace = $isImageNode(node) && node.getSrc() === existing.source;
+        });
+      }
+
+      if (existing && retryInPlace) {
+        existing.error = undefined;
+        existing.result = undefined;
+        existing.failed = false;
+        setUploadErrors((errors) => errors.filter((item) => item.id !== id));
+        runUpload(existing);
+        return;
+      }
+
+      if (existing) {
+        existing.cancelled = true;
+        pendingUploadsRef.current.delete(id);
+      }
+      const pending: PendingUpload = {
+        id: error.id,
+        epoch: epochRef.current,
+        file: error.file,
+        source: imagePlaceholderSource(error.id),
+        anchor: existing?.anchor ?? error.anchor,
+      };
+      pendingUploadsRef.current.set(id, pending);
+      insertPlaceholderAtAnchor(pending);
+      setUploadErrors((errors) => errors.filter((item) => item.id !== id));
+      runUpload(pending);
+    },
+    [
+      cancelPendingUpload,
+      currentEditorMarkdown,
+      insertPlaceholderAtAnchor,
+      publishValidDraft,
+      runUpload,
+      uploadErrors,
+    ],
+  );
+
+  const handleEditorChange = useCallback(
+    (next: string, initialMarkdownNormalize: boolean) => {
+      editorMarkdownRef.current = next;
+      if (initialMarkdownNormalize) {
+        initialNormalizedRef.current = next;
+        return;
+      }
+
+      setParseError(null);
+      const pending = pendingUploadsRef.current;
+      const verifyDisposedNestedOwners: PendingUpload[] = [];
+      for (const item of Array.from(pending.values())) {
+        if (pendingImageBounds(next, item.source)) {
+          item.exportedToMarkdown = true;
+          if (!item.anchor) item.anchor = pendingImageAnchor(next, item.source);
+          continue;
+        }
+
+        const ownerRoot = item.editor?.getRootElement();
+        const ownsNestedNode = Boolean(item.editor && isTableCellEditor(item.editor));
+        const nestedOwnerWasDisposed =
+          ownsNestedNode && (!ownerRoot || !rootRef.current?.contains(ownerRoot));
+        if (
+          mode === "source" ||
+          (ownsNestedNode && item.exportedToMarkdown) ||
+          nestedOwnerWasDisposed
+        ) {
+          cancelPendingUpload(item);
+        } else if (ownsNestedNode) {
+          verifyDisposedNestedOwners.push(item);
+        }
+      }
+      if (verifyDisposedNestedOwners.length > 0) {
+        queueMicrotask(() => {
+          if (!aliveRef.current) return;
+          const current = currentEditorMarkdown();
+          for (const item of verifyDisposedNestedOwners) {
+            if (
+              pendingUploadsRef.current.get(item.id) !== item ||
+              pendingImageBounds(current, item.source)
+            ) {
+              continue;
+            }
+            const ownerRoot = item.editor?.getRootElement();
+            if (!ownerRoot || !rootRef.current?.contains(ownerRoot)) {
+              cancelPendingUpload(item);
+            }
+          }
+        });
+      }
+
+      // Undoing the first edit should restore the exact source supplied by
+      // the caller, even if MDXEditor's importer normalized equivalent syntax.
+      const restoredInitial =
+        pending.size === 0 &&
+        initialNormalizedRef.current !== null &&
+        next === initialNormalizedRef.current
+          ? initialSourceRef.current
+          : stripPendingImageNodes(next, pending.values());
+      publishValidDraft(restoredInitial);
+    },
+    [cancelPendingUpload, currentEditorMarkdown, mode, publishValidDraft],
+  );
+
+  const handleEditorBlur = useCallback((event: FocusEvent) => {
+    if (blurTimerRef.current !== null) window.clearTimeout(blurTimerRef.current);
+    blurTimerRef.current = window.setTimeout(() => {
+      blurTimerRef.current = null;
+      const active = document.activeElement;
+      if (isEditorBoundaryTarget(active, rootRef.current)) return;
+      if (!isEditorBoundaryTarget(event.relatedTarget, rootRef.current)) onBlurRef.current?.();
+    }, 0);
+  }, []);
+
+  const handleParseError = useCallback((payload: { error: string; source: string }) => {
+    editorMarkdownRef.current = payload.source;
+    latestMarkdownRef.current = stripPendingImageNodes(
+      payload.source,
+      pendingUploadsRef.current.values(),
+    );
+    setParseError(payload.error);
+  }, []);
+
+  const imagePreviewHandler = useCallback(async (src: string): Promise<string> => {
+    if (src.startsWith(PENDING_SOURCE_PREFIX)) {
+      // Keep the editor's own placeholder visible until the ImageNode is
+      // replaced. Resolving to a broken URL would make loading look like a
+      // missing asset.
+      return new Promise<string>(() => undefined);
+    }
+    if (!src.startsWith("guide-asset:")) return src;
+    const resolver = resolveImageRef.current;
+    const epoch = epochRef.current;
+    if (!resolver) return src;
+    try {
+      const resolved = await resolver(src);
+      if (!aliveRef.current || epoch !== epochRef.current) return src;
+      return resolved?.url ?? src;
+    } catch {
+      return src;
+    }
+  }, []);
+
+  useEffect(() => {
+    const documentChanged = currentDocumentRef.current !== documentId;
+    const editor = editorRef.current;
+    if (documentChanged) {
+      currentDocumentRef.current = documentId;
+      epochRef.current += 1;
+      pendingUploadsRef.current.clear();
+      uploadQueueRef.current = Promise.resolve();
+      setUploadErrors([]);
+      setParseError(null);
+      initialSourceRef.current = value;
+      initialNormalizedRef.current = null;
+      latestMarkdownRef.current = value;
+      editorMarkdownRef.current = value;
+      editor?.setMarkdown(value);
+      setMode("edit");
+      return;
+    }
+
+    if (editor && latestMarkdownRef.current !== value) {
+      // A controlled value that differs while a marker is pending is an
+      // external replacement. Drop the old async ownership before importing
+      // the new document so a late completion cannot reappear in it.
+      if (pendingUploadsRef.current.size > 0) {
+        epochRef.current += 1;
+        pendingUploadsRef.current.clear();
+        uploadQueueRef.current = Promise.resolve();
+        setUploadErrors([]);
+      }
+      initialSourceRef.current = value;
+      initialNormalizedRef.current = null;
+      latestMarkdownRef.current = value;
+      editorMarkdownRef.current = value;
+      editor.setMarkdown(value);
+      setParseError(null);
+    }
+  }, [documentId, value]);
+
+  const translation: Translation = useCallback(
+    (key, defaultValue, interpolations) => {
+      if (key === "contentArea.editableMarkdown") return label;
+      return translateMarkdownEditor(key, defaultValue, interpolations);
+    },
+    [label],
+  );
+
+  const iconComponentFor = useCallback((name: IconKey) => {
+    const icon = defaultSvgIcons[name];
+    if (name === "add_row" || name === "add_column") {
+      const accessibleLabel = name === "add_row" ? "向下插入行" : "向右插入列";
+      return cloneElement(icon, {
+        role: "img",
+        "aria-label": accessibleLabel,
+        title: accessibleLabel,
+      });
+    }
+    return icon;
+  }, []);
+
+  const plugins = useMemo(() => {
+    return [
+      headingsPlugin(),
+      listsPlugin(),
+      quotePlugin(),
+      linkPlugin(),
+      linkDialogPlugin(),
+      tablePlugin(),
+      codeBlockPlugin({ defaultCodeBlockLanguage: "text" }),
+      codeMirrorPlugin({
+        codeBlockLanguages: {
+          text: "纯文本",
+          bash: "Bash",
+          css: "CSS",
+          html: "HTML",
+          javascript: "JavaScript",
+          json: "JSON",
+          python: "Python",
+          typescript: "TypeScript",
+          tsx: "TypeScript React",
+        },
+        codeMirrorExtensions: [EditorView.contentAttributes.of({ "aria-label": label })],
+      }),
+      imagePlugin({
+        imageUploadHandler: onUploadImage ? uploadHandler : null,
+        imagePreviewHandler: onUploadImage || resolveImage ? imagePreviewHandler : null,
+        imagePlaceholder: onUploadImage ? PendingImagePlaceholder : null,
+        disableImageResize: true,
+        allowSetImageDimensions: false,
+      }),
+      diffSourcePlugin({ viewMode: "rich-text" }),
+      markdownShortcutPlugin(),
+      pendingPlugin,
+      tableCellDraftPlugin,
+      editorModePlugin({ mode }),
+      toolbarPlugin({ toolbarContents: () => <MarkdownToolbar variant={variant} /> }),
+    ];
+  }, [
+    imagePreviewHandler,
+    label,
+    onUploadImage,
+    pendingPlugin,
+    resolveImage,
+    mode,
+    tableCellDraftPlugin,
+    uploadHandler,
+    variant,
+  ]);
+
   return (
-    <div className={styles.root}>
-      <div className={styles.toolbar} role="toolbar" aria-label="Markdown 工具栏">
-        {toolbarButtons.map((b) => (
-          <button key={b.label} type="button" title={b.title} onClick={b.onClick}>
-            {b.label}
-          </button>
-        ))}
+    <div
+      ref={rootRef}
+      className={`${styles.root} ${variant === "compact" ? styles.compact : styles.document}`}
+      data-testid="markdown-editor"
+      data-image-scope={imageScope}
+      onBlurCapture={(event: ReactFocusEvent<HTMLDivElement>) =>
+        handleEditorBlur(event.nativeEvent)
+      }
+    >
+      <div className={styles.modeBar} role="tablist" aria-label="Markdown 编辑模式">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === "edit"}
+          className={mode === "edit" ? styles.modeButtonActive : styles.modeButton}
+          onClick={() => setMode("edit")}
+        >
+          {MARKDOWN_EDITOR_LABELS.edit}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === "source"}
+          className={mode === "source" ? styles.modeButtonActive : styles.modeButton}
+          onClick={() => setMode("source")}
+        >
+          {MARKDOWN_EDITOR_LABELS.source}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === "preview"}
+          className={mode === "preview" ? styles.modeButtonActive : styles.modeButton}
+          onClick={() => setMode("preview")}
+        >
+          {MARKDOWN_EDITOR_LABELS.preview}
+        </button>
       </div>
-      <div
-        ref={hostRef}
-        className={`${styles.cmHost} ${dragging ? styles.dragging : ""}`}
-        data-testid="markdown-editor"
-      />
-      {uploading && (
-        <div className={styles.uploading} aria-live="polite">
-          上传中: {uploading}
+
+      <div className={mode === "preview" ? styles.editorSurfaceHidden : undefined}>
+        <div ref={setOverlayContainer} className={styles.overlayHost}>
+          {overlayContainer && (
+            <MDXEditor
+              ref={editorRef}
+              markdown={value}
+              onChange={handleEditorChange}
+              onBlur={handleEditorBlur}
+              onError={handleParseError}
+              plugins={plugins}
+              className={styles.mdxEditor}
+              contentEditableClassName={styles.contentEditable}
+              placeholder={placeholder}
+              readOnly={disabled}
+              spellCheck
+              suppressHtmlProcessing
+              translation={translation}
+              iconComponentFor={iconComponentFor}
+              overlayContainer={overlayContainer}
+              trim={false}
+            />
+          )}
+        </div>
+      </div>
+
+      {mode === "preview" && (
+        <div className={styles.previewSurface} data-testid="markdown-preview">
+          <MarkdownView content={value} resolveImage={resolveImage} imageScope={imageScope} />
+        </div>
+      )}
+
+      {parseError && (
+        <div className={styles.parseError} role="alert" data-testid="markdown-parse-error">
+          <strong>无法以可视化模式解析当前内容。</strong>
+          <span>原文已保留，请切换“源码”检查或修复 Markdown。</span>
+          <code>{parseError}</code>
+        </div>
+      )}
+
+      {uploadErrors.length > 0 && (
+        <div
+          className={styles.uploadErrors}
+          aria-live="polite"
+          data-testid="markdown-upload-errors"
+        >
+          {uploadErrors.map((error) => (
+            <div className={styles.uploadError} role="alert" key={error.id}>
+              <span>
+                图片“{error.file.name}”上传失败：{error.message}
+              </span>
+              <button type="button" onClick={() => retryUpload(error.id)} disabled={disabled}>
+                重试
+              </button>
+            </div>
+          ))}
         </div>
       )}
     </div>
   );
+}
+
+/**
+ * Keep asynchronous upload and Lexical state owned by one document instance.
+ * A keyed inner owner unmounts the old editor during a document switch before
+ * a late upload callback can observe the new props.
+ */
+export function MarkdownEditor(props: MarkdownEditorProps) {
+  return <MarkdownEditorDocument key={props.documentId ?? "default-document"} {...props} />;
 }
 
 export default MarkdownEditor;

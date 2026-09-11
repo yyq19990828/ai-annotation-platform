@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, RefObject } from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
 
 import { Icon } from "@/components/ui/Icon";
@@ -19,6 +19,12 @@ interface ModalProps {
   width?: number;
   /** Disable for live canvases where backdrop filtering makes compositing expensive. */
   backdropBlur?: boolean;
+  /** Mount nested modal layers inside an owning dialog's stacking context. */
+  container?: HTMLElement | null;
+  /** Ref form for containers that mount after the first render of the modal owner. */
+  containerRef?: RefObject<HTMLElement | null>;
+  /** Keep Escape scoped to this modal when it is nested in another dialog. */
+  stopEscapePropagation?: boolean;
   children: ReactNode;
 }
 
@@ -28,9 +34,13 @@ export function Modal({
   title,
   width = 560,
   backdropBlur = true,
+  container,
+  containerRef,
+  stopEscapePropagation = false,
   children,
 }: ModalProps) {
   const contentRef = useElementStyle<HTMLDivElement>({ width });
+  const portalContainer = containerRef?.current ?? container ?? undefined;
 
   return (
     <DialogPrimitive.Root
@@ -39,7 +49,7 @@ export function Modal({
         if (!next) onClose();
       }}
     >
-      <DialogPrimitive.Portal>
+      <DialogPrimitive.Portal container={portalContainer}>
         <DialogPrimitive.Overlay
           data-testid="modal-overlay"
           className={cn(
@@ -50,6 +60,9 @@ export function Modal({
         <DialogPrimitive.Content
           ref={contentRef}
           aria-describedby={undefined}
+          onEscapeKeyDown={(event) => {
+            if (stopEscapePropagation) event.stopPropagation();
+          }}
           className="fixed left-1/2 top-1/2 z-modal flex max-h-[calc(100vh-48px)] w-full max-w-[calc(100%-48px)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-lg outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95"
         >
           {title !== undefined ? (

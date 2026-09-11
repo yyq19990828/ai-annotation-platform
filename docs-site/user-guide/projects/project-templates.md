@@ -87,7 +87,9 @@ last_reviewed: 2026-06-10
 
 ## 标注指引字段
 
-- 模板会保留 `annotation_guide` Markdown 文本。应用模板后，新项目管理员可以在项目设置页的「标注指引」编辑 Markdown，标注员在工作台打开「标注指引」浮层阅读。
+模板中的标注指引使用与项目设置相同的编辑器，支持可视化排版、Markdown 源码和预览。编辑模板后随表单一起保存。
+
+- 模板会保留 `annotation_guide` Markdown 文本。应用模板后，新项目管理员可以在项目设置页的「标注指引」编辑 Markdown，标注员通过工作台顶栏的「标注指引」按钮打开阅读窗口。
 - 模板**不存** `guide_assets`（图片资源 storage key）——
   - 跨实例 storage key 引用混乱；
   - 跨组织私密性风险；

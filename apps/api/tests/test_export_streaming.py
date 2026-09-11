@@ -12,8 +12,10 @@ import json
 import os
 import uuid
 import zipfile
+from datetime import UTC, datetime
 
 import pytest
+from sqlalchemy import delete, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.annotation import Annotation
@@ -119,6 +121,52 @@ async def test_iter_export_chunks_matches_load_data(super_admin, db_session):
     assert chunks == 3  # 5 个 task / chunk_size=2 → 3 块
     assert streamed_task_ids == [t.id for t in full_tasks]  # 同序
     assert streamed_ann_count == len(full_anns)
+
+
+async def test_export_annotations_use_id_as_equal_timestamp_tiebreaker(
+    super_admin, db_session
+):
+    """同一事务的 now() 时间戳相同时，全量与分块导出仍必须稳定同序。"""
+    user, _ = super_admin
+    project, tasks = await _seed(db_session, user.id, n=1)
+    svc = ExportService(db_session)
+    await db_session.execute(
+        delete(Annotation).where(Annotation.project_id == project.id)
+    )
+    await db_session.flush()
+
+    same_created_at = datetime(2026, 1, 1, tzinfo=UTC)
+    expected_ids = [uuid.UUID(int=value) for value in range(1, 9)]
+    for annotation_id in reversed(expected_ids):
+        db_session.add(
+            Annotation(
+                id=annotation_id,
+                task_id=tasks[0].id,
+                project_id=project.id,
+                user_id=user.id,
+                source="manual",
+                class_name="car",
+                geometry={"type": "bbox", "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4},
+                created_at=same_created_at,
+            )
+        )
+    await db_session.flush()
+    # 强制顺序结果来自显式 ORDER BY，不依赖测试库恰好选中
+    # (task_id, created_at, id) 索引所产生的偶然顺序。
+    await db_session.execute(text("SET LOCAL enable_indexscan = off"))
+    await db_session.execute(text("SET LOCAL enable_bitmapscan = off"))
+
+    _, _, full_annotations = await svc._load_data(project.id)
+    assert [annotation.id for annotation in full_annotations] == expected_ids
+
+    streamed_ids: list[uuid.UUID] = []
+    async for _, annotations_by_task, _ in svc.iter_export_chunks(
+        project.id, chunk_size=1
+    ):
+        streamed_ids.extend(
+            annotation.id for annotation in annotations_by_task[tasks[0].id]
+        )
+    assert streamed_ids == expected_ids
 
 
 async def test_iter_export_chunks_skips_annotations_when_disabled(
