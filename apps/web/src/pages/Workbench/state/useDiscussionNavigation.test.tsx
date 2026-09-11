@@ -7,6 +7,7 @@ import type { TaskDiscussionItem } from "@/api/discussion";
 import type { WorkbenchDiscussionRequest } from "@/utils/workbenchNavigation";
 import { issueThreadQueryKey } from "@/hooks/useIssueThread";
 import { useIssueThread } from "@/hooks/useIssueThread";
+import { taskDiscussionQueryKey, useTaskDiscussion } from "@/hooks/useTaskDiscussion";
 import { useAuthStore } from "@/stores/authStore";
 import { DiscussionDraftProvider } from "./DiscussionDraftProvider";
 import { useDiscussionNavigation } from "./useDiscussionNavigation";
@@ -122,6 +123,107 @@ beforeEach(() => {
 });
 
 describe("Workbench discussion URL navigation", () => {
+  it.each(["issue", "comment"] as const)(
+    "still rejects a repeated %s cursor after an actual page fetch",
+    async (kind) => {
+      const env = setup(kind === "issue" ? issueRequest("old") : commentRequest);
+      const api = kind === "issue" ? mocks.thread : mocks.feed;
+      api.mockResolvedValue(
+        kind === "issue"
+          ? threadPage([reply("first")], "repeated")
+          : { items: [comment("first")], next_cursor: "repeated", total: 2 },
+      );
+      mocks.legacy.mockResolvedValue({ items: [comment("old").data], next_cursor: null });
+      const view = renderHook(() => useDiscussionNavigation(env.options), { wrapper: env.wrapper });
+      try {
+        await waitFor(() => expect(view.result.current.state.status).toBe("error"));
+        expect(api.mock.calls.map((call) => call[1].cursor)).toEqual([undefined, "repeated"]);
+      } finally {
+        view.unmount();
+        env.client.clear();
+      }
+    },
+  );
+
+  it.each(["issue", "comment"] as const)(
+    "continues %s pagination when another reader starts a background refresh",
+    async (kind) => {
+      const env = setup(kind === "issue" ? issueRequest("old") : commentRequest);
+      const key =
+        kind === "issue"
+          ? issueThreadQueryKey(root.id, "user", "session", "project", "task")
+          : taskDiscussionQueryKey("task", "annotation", "annotation", "project", "user");
+      const firstPage =
+        kind === "issue"
+          ? threadPage([reply("first")], "older")
+          : { items: [comment("first")], next_cursor: "older", total: 2 };
+      const olderPage =
+        kind === "issue"
+          ? threadPage([reply("old")])
+          : { items: [comment("old")], next_cursor: null, total: 2 };
+      const held = deferred<typeof firstPage>();
+      const api = kind === "issue" ? mocks.thread : mocks.feed;
+      api
+        .mockResolvedValueOnce(firstPage)
+        .mockReturnValueOnce(held.promise)
+        .mockResolvedValue(olderPage);
+      mocks.legacy.mockResolvedValue({ items: [comment("old").data], next_cursor: null });
+      env.client.setQueryData(key, {
+        pages: [firstPage],
+        pageParams: [kind === "issue" ? null : undefined],
+      });
+      const reader = renderHook(
+        () => {
+          useIssueThread({
+            rootId: root.id,
+            projectId: "project",
+            taskId: "task",
+            enabled: kind === "issue",
+          });
+          useTaskDiscussion("task", "annotation", "annotation", kind === "comment", "project");
+        },
+        { wrapper: env.wrapper },
+      );
+      let background: Promise<void> | undefined;
+      const unsubscribe = env.client.getQueryCache().subscribe((event) => {
+        if (
+          !background &&
+          event.type === "updated" &&
+          event.action.type === "success" &&
+          JSON.stringify(event.query.queryKey) === JSON.stringify(key)
+        ) {
+          // An existing visible reader is invalidated just after the refreshed
+          // first page arrives, before navigation requests the older page.
+          background = env.client.refetchQueries(
+            { queryKey: key, exact: true },
+            { cancelRefetch: false },
+          );
+        }
+      });
+      const view = renderHook(() => useDiscussionNavigation(env.options), { wrapper: env.wrapper });
+      try {
+        await waitFor(() => expect(api).toHaveBeenCalledTimes(2), { timeout: 1000 });
+        expect(api.mock.calls[1][1].cursor).toBeUndefined();
+        act(() => held.resolve(firstPage));
+        await waitFor(() => expect(view.result.current.state.status).toBe("ready"), {
+          timeout: 1000,
+        });
+        await background;
+        expect(api.mock.calls.map((call) => call[1].cursor)).toEqual([
+          undefined,
+          undefined,
+          "older",
+        ]);
+        expect(api.mock.calls[1][2].aborted).toBe(false);
+      } finally {
+        unsubscribe();
+        view.unmount();
+        reader.unmount();
+        env.client.clear();
+      }
+    },
+  );
+
   it("waits for a pre-navigation fetch and then refreshes without cancelling the other reader", async () => {
     const env = setup(issueRequest("new"));
     const held = deferred<AnnotationFeedbackThreadPage>();

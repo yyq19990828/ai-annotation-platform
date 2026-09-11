@@ -208,8 +208,10 @@ export function useDiscussionNavigation(options: Options): DiscussionNavigation 
             const cursor = pages[pages.length - 1]?.next_cursor;
             if (!cursor) throw new UnavailableTarget("回复已删除或不属于这个问题");
             if (cursors.has(cursor)) throw new Error("Repeated thread cursor");
-            cursors.add(cursor);
             result = await threadReader.fetchNextPage({ cancelRefetch: false });
+            // A shared background refresh may be joined without advancing.
+            // Only a cursor present in the returned page parameters was used.
+            if (result.data?.pageParams.includes(cursor)) cursors.add(cursor);
           }
           return;
         }
@@ -280,8 +282,8 @@ export function useDiscussionNavigation(options: Options): DiscussionNavigation 
           const nextCursor = feedPages[feedPages.length - 1]?.next_cursor;
           if (!nextCursor) throw new UnavailableTarget("原标注评论已删除或不可访问");
           if (feedCursors.has(nextCursor)) throw new Error("Repeated discussion cursor");
-          feedCursors.add(nextCursor);
           result = await commentReader.fetchNextPage({ cancelRefetch: false });
+          if (result.data?.pageParams.includes(nextCursor)) feedCursors.add(nextCursor);
         }
       })
       .catch((error: unknown) => {
