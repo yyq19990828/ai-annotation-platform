@@ -7,14 +7,17 @@ ADR-0027 第二阶段 (v0.10.20): 旧 bug_reports / annotation_comments / tasks.
 from __future__ import annotations
 
 import base64
+import binascii
 import logging
 import uuid
 from datetime import datetime, timezone
 
 from fastapi import HTTPException
 from pydantic import ValidationError
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, any_, cast, func, or_, select
+from sqlalchemy.dialects.postgresql import ARRAY, UUID as PGUUID, array
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.db.models.annotation_feedback import AnnotationFeedback
 from app.db.models.annotation import Annotation
@@ -330,6 +333,87 @@ class FeedbackService:
         await self.db.flush()
         return entry
 
+    async def resolve_root(
+        self,
+        feedback_id: uuid.UUID,
+        *,
+        require_active_root: bool = True,
+    ) -> AnnotationFeedback:
+        """Resolve a feedback row to its root while validating the ancestry.
+
+        The feedback table deliberately keeps a nullable self-reference rather
+        than a materialized root column.  All mutation paths therefore use this
+        bounded, cycle-aware walk before changing or appending a row.  Deleted
+        intermediate replies are valid ancestry; only a deleted root makes the
+        thread unavailable.
+        """
+
+        current = await self.db.get(AnnotationFeedback, feedback_id)
+        if current is None:
+            raise HTTPException(status_code=404, detail="feedback not found")
+
+        seen: set[uuid.UUID] = set()
+        while current.thread_parent_id is not None:
+            if current.id in seen:
+                raise HTTPException(
+                    status_code=404, detail="feedback thread is unavailable"
+                )
+            seen.add(current.id)
+            parent = await self.db.get(AnnotationFeedback, current.thread_parent_id)
+            if parent is None:
+                raise HTTPException(
+                    status_code=404, detail="feedback thread is unavailable"
+                )
+            if not _same_scope(current, parent):
+                raise HTTPException(
+                    status_code=404, detail="feedback thread is unavailable"
+                )
+            current = parent
+
+        if current.id in seen:
+            raise HTTPException(
+                status_code=404, detail="feedback thread is unavailable"
+            )
+        if require_active_root and not current.is_active:
+            raise HTTPException(
+                status_code=404, detail="feedback thread is unavailable"
+            )
+        return current
+
+    async def validate_parent(
+        self,
+        parent_id: uuid.UUID,
+        *,
+        project_id: uuid.UUID,
+        task_id: uuid.UUID | None,
+        annotation_id: uuid.UUID | None,
+        anchor_type: str,
+        anchor_position: dict | None,
+    ) -> tuple[AnnotationFeedback, AnnotationFeedback]:
+        """Validate a direct-create parent exactly like the reply endpoint.
+
+        Keeping this in the service prevents a caller from bypassing
+        ``POST /feedbacks/{id}/replies`` by posting an arbitrary
+        ``thread_parent_id`` to the generic create endpoint.
+        """
+
+        parent = await self.db.get(AnnotationFeedback, parent_id)
+        if parent is None or not parent.is_active:
+            raise HTTPException(status_code=404, detail="feedback not found")
+        root = await self.resolve_root(parent_id)
+        if (
+            parent.project_id != project_id
+            or parent.task_id != task_id
+            or parent.annotation_id != annotation_id
+            or parent.anchor_type != anchor_type
+            or parent.anchor_position != anchor_position
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="reply parent must remain in the same feedback scope",
+            )
+        return parent, root
+
     async def list_paged(
         self,
         *,
@@ -342,28 +426,18 @@ class FeedbackService:
         allowed_task_ids: set[uuid.UUID] | None = None,
         cursor: str | None = None,
         limit: int = 50,
+        root_only: bool = False,
     ) -> tuple[list[AnnotationFeedback], str | None]:
-        q = select(AnnotationFeedback).where(
-            AnnotationFeedback.project_id == project_id,
-            AnnotationFeedback.is_active.is_(True),
+        q = self._scoped_query(
+            project_id=project_id,
+            task_id=task_id,
+            annotation_id=annotation_id,
+            kind=kind,
+            anchor_type=anchor_type,
+            status=status,
+            allowed_task_ids=allowed_task_ids,
+            root_only=root_only,
         )
-        if allowed_task_ids is not None:
-            q = q.where(
-                or_(
-                    AnnotationFeedback.task_id.is_(None),
-                    AnnotationFeedback.task_id.in_(allowed_task_ids),
-                )
-            )
-        if task_id is not None:
-            q = q.where(AnnotationFeedback.task_id == task_id)
-        if annotation_id is not None:
-            q = q.where(AnnotationFeedback.annotation_id == annotation_id)
-        if kind is not None:
-            q = q.where(AnnotationFeedback.kind == kind)
-        if anchor_type is not None:
-            q = q.where(AnnotationFeedback.anchor_type == anchor_type)
-        if status is not None:
-            q = q.where(AnnotationFeedback.status == status)
         if cursor:
             last_ts, last_id = _decode_cursor(cursor)
             q = q.where(
@@ -386,6 +460,259 @@ class FeedbackService:
             rows = rows[:limit]
         return rows, next_cursor
 
+    async def count_paged(
+        self,
+        *,
+        project_id: uuid.UUID,
+        task_id: uuid.UUID | None = None,
+        annotation_id: uuid.UUID | None = None,
+        kind: str | None = None,
+        anchor_type: str | None = None,
+        status: str | None = None,
+        allowed_task_ids: set[uuid.UUID] | None = None,
+        root_only: bool = False,
+    ) -> int:
+        """Return the exact count using the same root/scope predicates as list."""
+
+        scoped = self._scoped_query(
+            project_id=project_id,
+            task_id=task_id,
+            annotation_id=annotation_id,
+            kind=kind,
+            anchor_type=anchor_type,
+            status=status,
+            allowed_task_ids=allowed_task_ids,
+            root_only=root_only,
+        ).subquery()
+        return int(
+            (
+                await self.db.execute(select(func.count()).select_from(scoped))
+            ).scalar_one()
+        )
+
+    async def status_counts(
+        self,
+        *,
+        project_id: uuid.UUID,
+        task_id: uuid.UUID | None = None,
+        annotation_id: uuid.UUID | None = None,
+        kind: str | None = None,
+        anchor_type: str | None = None,
+        allowed_task_ids: set[uuid.UUID] | None = None,
+        root_only: bool = False,
+    ) -> dict[str, int]:
+        """Count each status while intentionally ignoring the status filter."""
+
+        scoped = self._scoped_query(
+            project_id=project_id,
+            task_id=task_id,
+            annotation_id=annotation_id,
+            kind=kind,
+            anchor_type=anchor_type,
+            status=None,
+            allowed_task_ids=allowed_task_ids,
+            root_only=root_only,
+        ).subquery()
+        rows = (
+            await self.db.execute(
+                select(scoped.c.status, func.count())
+                .group_by(scoped.c.status)
+                .order_by(scoped.c.status)
+            )
+        ).all()
+        counts = {status: int(count) for status, count in rows}
+        return {status: counts.get(status, 0) for status in _FEEDBACK_STATUSES}
+
+    async def thread_paged(
+        self,
+        root_feedback_id: uuid.UUID,
+        *,
+        cursor: str | None = None,
+        limit: int = 50,
+    ) -> tuple[AnnotationFeedback, list[AnnotationFeedback], str | None, int]:
+        """Read active descendants of a root through deleted intermediates.
+
+        The recursive CTE carries a UUID path to make malformed cyclic data
+        finite and to prevent a cycle from duplicating a reply.  Deleted rows
+        remain in the CTE as traversal nodes but are excluded from the returned
+        items and total.
+        """
+
+        root = await self.db.get(AnnotationFeedback, root_feedback_id)
+        if root is None or not root.is_active or root.thread_parent_id is not None:
+            raise HTTPException(
+                status_code=404, detail="feedback thread is unavailable"
+            )
+
+        descendants = self._descendants_cte(root)
+        active_ids = (
+            select(descendants.c.id).where(descendants.c.is_active.is_(True)).subquery()
+        )
+        count = int(
+            (
+                await self.db.execute(select(func.count()).select_from(active_ids))
+            ).scalar_one()
+        )
+
+        q = (
+            select(AnnotationFeedback)
+            .join(active_ids, AnnotationFeedback.id == active_ids.c.id)
+            .order_by(
+                AnnotationFeedback.created_at.desc(),
+                AnnotationFeedback.id.desc(),
+            )
+        )
+        if cursor:
+            cursor_root, last_ts, last_id = _decode_thread_cursor(cursor)
+            if cursor_root != root.id:
+                raise HTTPException(status_code=400, detail="invalid feedback cursor")
+            q = q.where(
+                or_(
+                    AnnotationFeedback.created_at < last_ts,
+                    and_(
+                        AnnotationFeedback.created_at == last_ts,
+                        AnnotationFeedback.id < last_id,
+                    ),
+                )
+            )
+        q = q.limit(limit + 1)
+        rows = list((await self.db.execute(q)).scalars().all())
+        next_cursor: str | None = None
+        if len(rows) > limit:
+            anchor = rows[limit - 1]
+            next_cursor = _encode_thread_cursor(root.id, anchor.created_at, anchor.id)
+            rows = rows[:limit]
+        return root, rows, next_cursor, count
+
+    def _scoped_query(
+        self,
+        *,
+        project_id: uuid.UUID,
+        task_id: uuid.UUID | None,
+        annotation_id: uuid.UUID | None,
+        kind: str | None,
+        anchor_type: str | None,
+        status: str | None,
+        allowed_task_ids: set[uuid.UUID] | None,
+        root_only: bool,
+    ):
+        """Build the canonical root-filtered feedback relation.
+
+        A row is visible only when its terminal root is active and has the same
+        project/task scope.  This deliberately excludes orphan descendants from
+        both normal and root-only queries, while retaining descendants below an
+        inactive *intermediate* reply.
+        """
+
+        af = AnnotationFeedback
+        root_map = self._root_map_cte(project_id)
+        root = aliased(AnnotationFeedback)
+        q = (
+            select(af)
+            .join(root_map, root_map.c.origin_id == af.id)
+            .join(root, root.id == root_map.c.root_id)
+            .where(
+                af.project_id == project_id,
+                af.is_active.is_(True),
+                root.is_active.is_(True),
+                root.project_id == project_id,
+                _same_scope_clause(af, root),
+                _same_anchor_scope_clause(af, root),
+                _valid_root_clause(root),
+            )
+        )
+        if allowed_task_ids is not None:
+            q = q.where(or_(af.task_id.is_(None), af.task_id.in_(allowed_task_ids)))
+        if task_id is not None:
+            q = q.where(af.task_id == task_id)
+        if annotation_id is not None:
+            q = q.where(af.annotation_id == annotation_id)
+        if kind is not None:
+            q = q.where(af.kind == kind)
+        if anchor_type is not None:
+            q = q.where(af.anchor_type == anchor_type)
+        if status is not None:
+            q = q.where(af.status == status)
+        if root_only:
+            q = q.where(af.thread_parent_id.is_(None))
+        return q
+
+    @staticmethod
+    def _root_map_cte(project_id: uuid.UUID):
+        af = AnnotationFeedback
+        lineage = (
+            select(
+                af.id.label("origin_id"),
+                af.id.label("ancestor_id"),
+                af.thread_parent_id.label("next_parent_id"),
+                cast(array([af.id]), ARRAY(PGUUID(as_uuid=True))).label("path"),
+            )
+            .where(af.project_id == project_id)
+            .cte("feedback_lineage", recursive=True)
+        )
+        parent = aliased(AnnotationFeedback)
+        lineage = lineage.union_all(
+            select(
+                lineage.c.origin_id,
+                parent.id.label("ancestor_id"),
+                parent.thread_parent_id.label("next_parent_id"),
+                lineage.c.path.concat(array([parent.id])).label("path"),
+            )
+            .join(parent, parent.id == lineage.c.next_parent_id)
+            .where(~(parent.id == any_(lineage.c.path)))
+        )
+        return (
+            select(
+                lineage.c.origin_id,
+                lineage.c.ancestor_id.label("root_id"),
+            )
+            .where(lineage.c.next_parent_id.is_(None))
+            .cte("feedback_roots")
+        )
+
+    @staticmethod
+    def _descendants_cte(root: AnnotationFeedback):
+        af = AnnotationFeedback
+        descendants = (
+            select(
+                af.id.label("id"),
+                af.thread_parent_id.label("parent_id"),
+                af.project_id.label("project_id"),
+                af.task_id.label("task_id"),
+                af.is_active.label("is_active"),
+                cast(array([af.id]), ARRAY(PGUUID(as_uuid=True))).label("path"),
+            )
+            .where(
+                af.thread_parent_id == root.id,
+                af.project_id == root.project_id,
+                _same_task_value(af.task_id, root.task_id),
+                af.anchor_type == root.anchor_type,
+                _same_optional_value(af.annotation_id, root.annotation_id),
+            )
+            .cte("feedback_descendants", recursive=True)
+        )
+        child = aliased(AnnotationFeedback)
+        descendants = descendants.union_all(
+            select(
+                child.id,
+                child.thread_parent_id,
+                child.project_id,
+                child.task_id,
+                child.is_active,
+                descendants.c.path.concat(array([child.id])).label("path"),
+            )
+            .select_from(descendants)
+            .join(child, child.thread_parent_id == descendants.c.id)
+            .where(
+                child.project_id == root.project_id,
+                _same_task_value(child.task_id, root.task_id),
+                child.anchor_type == root.anchor_type,
+                _same_optional_value(child.annotation_id, root.annotation_id),
+                ~(child.id == any_(descendants.c.path)),
+            )
+        )
+        return descendants
+
 
 def _encode_cursor(created_at: datetime, fid: uuid.UUID) -> str:
     ts = (
@@ -397,6 +724,117 @@ def _encode_cursor(created_at: datetime, fid: uuid.UUID) -> str:
 
 
 def _decode_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
-    raw = base64.urlsafe_b64decode(cursor.encode()).decode()
-    ts_str, id_hex = raw.split("|", 1)
-    return datetime.fromisoformat(ts_str), uuid.UUID(id_hex)
+    if not isinstance(cursor, str) or not cursor or len(cursor) > 2048:
+        raise HTTPException(status_code=400, detail="invalid feedback cursor")
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        raw = base64.b64decode(
+            padded.encode("ascii"), altchars=b"-_", validate=True
+        ).decode("utf-8")
+        parts = raw.split("|")
+        if len(parts) != 2:
+            raise ValueError("unexpected cursor fields")
+        ts = datetime.fromisoformat(parts[0])
+        fid = uuid.UUID(parts[1])
+        return ts, fid
+    except (ValueError, TypeError, UnicodeError, binascii.Error) as exc:
+        raise HTTPException(status_code=400, detail="invalid feedback cursor") from exc
+
+
+def _encode_thread_cursor(
+    root_id: uuid.UUID, created_at: datetime, fid: uuid.UUID
+) -> str:
+    ts = (
+        created_at.astimezone(timezone.utc).isoformat()
+        if created_at.tzinfo
+        else created_at.isoformat()
+    )
+    raw = f"thread-v1|{root_id.hex}|{ts}|{fid.hex}".encode()
+    return base64.urlsafe_b64encode(raw).decode()
+
+
+def _decode_thread_cursor(
+    cursor: str,
+) -> tuple[uuid.UUID, datetime, uuid.UUID]:
+    if not isinstance(cursor, str) or not cursor or len(cursor) > 2048:
+        raise HTTPException(status_code=400, detail="invalid feedback cursor")
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        raw = base64.b64decode(
+            padded.encode("ascii"), altchars=b"-_", validate=True
+        ).decode("utf-8")
+        version, root_id, ts_str, feedback_id = raw.split("|")
+        if version != "thread-v1":
+            raise ValueError("unexpected cursor version")
+        return (
+            uuid.UUID(root_id),
+            datetime.fromisoformat(ts_str),
+            uuid.UUID(feedback_id),
+        )
+    except (ValueError, TypeError, UnicodeError, binascii.Error) as exc:
+        raise HTTPException(status_code=400, detail="invalid feedback cursor") from exc
+
+
+_FEEDBACK_STATUSES = ("open", "resolved", "wont_fix")
+
+
+def _same_task_value(left, right) -> bool:
+    """Build a SQL null-safe equality expression for task scope."""
+
+    return or_(left == right, and_(left.is_(None), right is None))
+
+
+def _same_scope(left: AnnotationFeedback, right: AnnotationFeedback) -> bool:
+    if left.project_id != right.project_id:
+        return False
+    return left.task_id == right.task_id
+
+
+def _same_scope_clause(left: AnnotationFeedback, right: AnnotationFeedback):
+    return and_(
+        left.project_id == right.project_id,
+        _same_task_value(left.task_id, right.task_id),
+    )
+
+
+def _same_optional_value(left, right):
+    if right is None:
+        return left.is_(None)
+    if left is None:
+        return right.is_(None)
+    return or_(left == right, and_(left.is_(None), right.is_(None)))
+
+
+def _same_anchor_scope_clause(left: AnnotationFeedback, right: AnnotationFeedback):
+    return and_(
+        left.anchor_type == right.anchor_type,
+        _same_optional_value(left.annotation_id, right.annotation_id),
+    )
+
+
+def _valid_root_clause(root: AnnotationFeedback):
+    """Reject malformed roots that point at another task/project annotation."""
+
+    from app.db.models.annotation import Annotation
+    from app.db.models.task import Task
+
+    task_ok = (
+        ~select(Task.id)
+        .where(
+            Task.id == root.task_id,
+            Task.project_id != root.project_id,
+        )
+        .exists()
+    )
+    annotation_ok = (
+        ~select(Annotation.id)
+        .where(
+            Annotation.id == root.annotation_id,
+            or_(
+                Annotation.project_id != root.project_id,
+                ~_same_task_value(Annotation.task_id, root.task_id),
+            ),
+        )
+        .exists()
+    )
+    return and_(task_ok, annotation_ok)

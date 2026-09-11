@@ -8,6 +8,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.schemas.discussion_actions import DiscussionActions
+
 FeedbackKind = Literal["issue", "comment", "reject", "bug"]
 FeedbackAnchorType = Literal["project", "task", "annotation", "pixel", "point_cloud"]
 FeedbackStatus = Literal["open", "resolved", "wont_fix"]
@@ -147,7 +149,7 @@ class AnnotationFeedbackCreate(BaseModel):
     severity: FeedbackSeverity | None = None
     title: str | None = Field(default=None, max_length=500)
     body: str
-    attachments: list[dict[str, Any]] = []
+    attachments: list[dict[str, Any]] = Field(default_factory=list)
     thread_parent_id: UUID | None = None
 
     @model_validator(mode="after")
@@ -199,6 +201,16 @@ class AnnotationFeedbackCreate(BaseModel):
                 raise ValueError(
                     "point_cloud anchor requires point_cloud_quality_issue_id"
                 )
+        # Native task comments are the only text-only task discussion source.
+        # Rich annotation/pixel/point-cloud callers historically support an
+        # attachment-only body, so do not impose this rule on those records.
+        if (
+            self.kind == "comment"
+            and self.anchor_type == "task"
+            and not self.attachments
+            and not self.body.strip()
+        ):
+            raise ValueError("task comments must contain text or an attachment")
         return self
 
 
@@ -211,7 +223,7 @@ class AnnotationFeedbackPatch(BaseModel):
 
 class AnnotationFeedbackReply(BaseModel):
     body: str
-    attachments: list[dict[str, Any]] = []
+    attachments: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class AnnotationFeedbackOut(BaseModel):
@@ -235,6 +247,7 @@ class AnnotationFeedbackOut(BaseModel):
     resolved_by_id: UUID | None = None
     created_at: datetime
     updated_at: datetime | None = None
+    actions: DiscussionActions = Field(default_factory=DiscussionActions)
 
     @field_validator("anchor_position", mode="before")
     @classmethod
@@ -248,3 +261,12 @@ class AnnotationFeedbackOut(BaseModel):
 class AnnotationFeedbackListPage(BaseModel):
     items: list[AnnotationFeedbackOut]
     next_cursor: str | None = None
+    total: int | None = None
+    status_counts: dict[str, int] | None = None
+
+
+class AnnotationFeedbackThreadPage(BaseModel):
+    root: AnnotationFeedbackOut
+    items: list[AnnotationFeedbackOut]
+    next_cursor: str | None = None
+    total: int
