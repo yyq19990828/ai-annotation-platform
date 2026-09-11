@@ -4,15 +4,41 @@
   font-size: 11.5px;
 }
 
+.scope {
+  color: var(--sc-muted-foreground);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.retry {
+  min-height: 32px;
+  margin-top: 8px;
+  padding: 3px 9px;
+  cursor: pointer;
+  color: var(--sc-brand);
+  font: inherit;
+  font-size: 11.5px;
+  background: transparent;
+  border: 1px solid var(--sc-border);
+  border-radius: 4px;
+}
+
 .root {
   display: flex;
   flex-direction: column;
   gap: 10px;
   padding: 10px 12px;
-  /* v0.10.21 · B-45 反馈: 全部历史太长, 锚定最大高度 + 滚轮.
-     与 CommentsPanel .commentList max-height: 240px 保持一致, 给评论与历史
-     一样的可视高度上限, 让两 tab 在右栏不抢空间. */
+}
+
+.bounded {
+  /* ReviewWorkbench is a compact, bounded caller outside the dock fill layout. */
   max-height: 240px;
+  overflow-y: auto;
+}
+
+.fill {
+  min-height: 0;
+  flex: 1 1 auto;
   overflow-y: auto;
 }
 
@@ -59,10 +85,8 @@
 }
 
 .summary {
-  overflow: hidden;
   margin-top: 3px;
   color: var(--sc-muted-foreground);
   font-size: 11.5px;
   white-space: pre-wrap;
-  text-overflow: ellipsis;
 }

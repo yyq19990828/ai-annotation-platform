@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentProps,
+} from "react";
 import { useNavigate } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { useProjectMembers } from "@/hooks/useProjects";
@@ -9,73 +17,68 @@ import {
   useCreateComment,
   usePatchComment,
   useDeleteComment,
-  useTaskCommentsInfinite,
 } from "@/hooks/useAnnotationComments";
 import { useAnnotationAuditHistory, useTaskAuditHistory } from "@/hooks/useAnnotationAuditHistory";
 import { AnnotationHistoryTimeline } from "@/components/AnnotationHistoryTimeline";
 import { CommentInput, renderCommentBody } from "./CommentInput";
-import type {
-  AnnotationCommentAnchor,
-  CommentAttachment,
-  CommentCanvasDrawing,
-  CommentMention,
-} from "@/api/comments";
-// v0.10.20 · D1 · 任务级评论复用 POST /feedbacks (kind=comment, anchor_type=task).
-// v0.10.21 · D4 · 任务级 feedback patch/delete UI 入口开放.
+import type { AnnotationCommentAnchor, CommentCanvasDrawing, CommentMention } from "@/api/comments";
 import {
-  useFeedbacks,
-  useCreateFeedback,
-  usePatchFeedback,
-  useDeleteFeedback,
-} from "@/hooks/useFeedbacks";
+  discussionItemKey,
+  isFeedbackDiscussionItem,
+  isAnnotationDiscussionItem,
+  type TaskDiscussionItem,
+} from "@/api/discussion";
+import { useTaskDiscussion, flattenTaskDiscussion } from "@/hooks/useTaskDiscussion";
+import { useCreateFeedback, usePatchFeedback, useDeleteFeedback } from "@/hooks/useFeedbacks";
+import type {
+  DiscussionPayload,
+  DiscussionReadScope,
+  DiscussionTarget,
+} from "../state/discussionTypes";
+import { discussionTargetKey } from "../state/discussionTypes";
+import {
+  useDiscussionDraftSnapshot,
+  useDiscussionDraftStore,
+} from "../state/DiscussionDraftProvider";
+import type { DiscussionDraftStore } from "../state/useDiscussionDraftStore";
 
 type Tab = "comments" | "history";
+type CommentInputProps = ComponentProps<typeof CommentInput>;
+type CommentSubmit = NonNullable<CommentInputProps["onSubmit"]>;
+type LiveCanvas = CommentInputProps["liveCanvas"];
 
 function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
 
-// 顶部 tab 切换条:小写 chrome 风格的下划线 tab。
 const TAB_BUTTON =
-  "cursor-pointer appearance-none border-0 border-b-2 border-transparent bg-transparent px-2 py-1 text-xs font-semibold uppercase tracking-[0.4px] text-muted-foreground [font:inherit]";
+  "cursor-pointer appearance-none border-0 border-b-2 border-transparent bg-transparent px-2 py-1 text-xs font-semibold text-muted-foreground [font:inherit]";
 const TAB_BUTTON_ACTIVE = "border-brand text-foreground";
-
-// 评论卡片操作区的图标按钮(解决 / 删除)。
 const ICON_BUTTON =
-  "inline-flex h-5 w-5 cursor-pointer appearance-none items-center justify-center rounded-[3px] border-0 bg-transparent text-muted-foreground";
+  "inline-flex min-h-7 min-w-7 cursor-pointer appearance-none items-center justify-center rounded-[3px] border-0 bg-transparent text-muted-foreground active:scale-[0.96]";
 
 interface Props {
   annotationId: string | null;
-  /** I4 · 未选中标注时降级到任务级评论/历史 (聚合该 task 下所有标注的评论). */
+  /** Task context enables the authoritative mixed discussion feed. */
   taskId?: string | null;
-  /** 项目 id：用于拉取成员供 @ 提及 picker 选择。 */
+  /** Legacy annotation-only callers can still provide task ownership for drafts. */
+  annotationTaskId?: string | null;
   projectId?: string | null;
-  /** 当前用户 id（用于判断"作者操作权"）。 */
   currentUserId?: string;
-  /** Reviewer 端：传入题图 URL；启用画布批注按钮，渲染画布预览时也用作背景。 */
   backgroundUrl?: string | null;
-  /** v0.6.4：图像真实尺寸；CanvasDrawingEditor / Preview 都按真实比例渲染。*/
   imageWidth?: number | null;
   imageHeight?: number | null;
-  /** 是否启用画布批注入口（默认 false，仅 reviewer 端开启）。 */
   enableCanvasDrawing?: boolean;
-  /** v0.6.4：在题图上直接绘制的桥接，由 WorkbenchShell 通过 useWorkbenchState 提供。*/
-  liveCanvas?: {
-    active: boolean;
-    result: CommentCanvasDrawing | null;
-    onStart: (initial?: CommentCanvasDrawing | null) => void;
-    onConsume: () => void;
-  };
+  liveCanvas?: LiveCanvas;
   commentAnchor?: AnnotationCommentAnchor | null;
   onSeekFrame?: (frameIndex: number) => void;
-  /** 评论绑定标注框的类别名映射（annotation_id → class_name）；用于在评论卡片上显示绑定 chip。 */
   annotationClassById?: Record<string, string | undefined>;
-  /** 点击绑定 chip 时选中/跳转到对应标注框。 */
   onSelectAnnotation?: (annotationId: string) => void;
-  /** v0.11.2/3 · DiscussionPanel 自带顶层 tab 时, 隐藏本组件内部 comments/history 切换条。 */
   hideTabs?: boolean;
-  /** v0.11.2/3 · 由外层 DiscussionPanel 锁定显示哪一段 (配合 hideTabs)。 */
   forceTab?: Tab;
+  /** Coordinator can mark a selected annotation unavailable without retargeting its draft. */
+  annotationAvailable?: boolean;
+  annotationUnavailableReason?: string | null;
 }
 
 function anchorLabel(anchor: AnnotationCommentAnchor): string {
@@ -85,9 +88,99 @@ function anchorLabel(anchor: AnnotationCommentAnchor): string {
   return parts.join(" · ");
 }
 
+/** IDs from prediction/candidate/temporary selections must never reach annotation APIs. */
+function isPersistedAnnotationId(id: string | null | undefined): id is string {
+  if (!id) return false;
+  return !/^(?:pred(?:iction)?|temp(?:orary)?|candidate|ai)[-_:/]/i.test(id);
+}
+
+function annotationIsKnown(
+  annotationId: string | null | undefined,
+  annotationClassById: Record<string, string | undefined> | undefined,
+): boolean {
+  // The coordinator leaves this map undefined while annotations are loading.
+  // An empty, defined map means loading completed and the id is unavailable.
+  return (
+    annotationClassById === undefined ||
+    (annotationId !== null &&
+      annotationId !== undefined &&
+      Object.prototype.hasOwnProperty.call(annotationClassById, annotationId))
+  );
+}
+
+type CommentDiscussionTarget = Extract<DiscussionTarget, { kind: "task" | "annotation" }>;
+
+function isCommentTarget(
+  target: DiscussionTarget | null | undefined,
+): target is CommentDiscussionTarget {
+  return target?.kind === "task" || target?.kind === "annotation";
+}
+
+function targetBelongsToTask(
+  target: DiscussionTarget | null | undefined,
+  projectId: string | null | undefined,
+  taskId: string | null | undefined,
+): target is CommentDiscussionTarget {
+  return Boolean(
+    target && projectId && taskId && target.projectId === projectId && target.taskId === taskId,
+  );
+}
+
+function formatAttachment(attachment: unknown): {
+  key: string | null;
+  name: string;
+  size: number | null;
+} {
+  if (!attachment || typeof attachment !== "object") {
+    return { key: null, name: "附件", size: null };
+  }
+  const value = attachment as Record<string, unknown>;
+  const key =
+    typeof value.storageKey === "string"
+      ? value.storageKey
+      : typeof value.storage_key === "string"
+        ? value.storage_key
+        : null;
+  const name =
+    typeof value.fileName === "string"
+      ? value.fileName
+      : typeof value.file_name === "string"
+        ? value.file_name
+        : "附件";
+  const size = typeof value.size === "number" ? value.size : null;
+  return { key, name, size };
+}
+
+function feedbackStatusLabel(status: string): string {
+  if (status === "resolved") return "已解决";
+  if (status === "wont_fix") return "已搁置";
+  return "待处理";
+}
+
+function legacyActions(authorId: string, currentUserId: string | undefined) {
+  const isMine = !!currentUserId && authorId === currentUserId;
+  return {
+    edit: isMine,
+    change_status: isMine,
+    delete: isMine,
+    reply: false,
+  };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function isTargetUnavailableError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const status = (error as { status?: unknown }).status;
+  return status === 403 || status === 404;
+}
+
 export function CommentsPanel({
   annotationId,
   taskId,
+  annotationTaskId,
   projectId,
   currentUserId,
   backgroundUrl,
@@ -101,15 +194,121 @@ export function CommentsPanel({
   onSelectAnnotation,
   hideTabs,
   forceTab,
+  annotationAvailable,
+  annotationUnavailableReason,
 }: Props) {
   const navigate = useNavigate();
+  const panelId = useId();
   const [localTab, setTab] = useState<Tab>("comments");
   const tab = forceTab ?? localTab;
-  // I4 · annotationId null 时走 task 级 hook (DiscussionPanel 雏形 — 评论/历史常驻).
-  const annotationCommentsQuery = useAnnotationCommentsInfinite(annotationId);
-  const taskCommentsQuery = useTaskCommentsInfinite(taskId ?? null, !annotationId && !!taskId);
-  // v0.10.20 · D1 · 任务级评论从 annotation_feedbacks 读 (kind=comment, anchor_type=task); 与 annotation_comments 任务聚合合并展示.
-  const taskLevelFeedbacksParams = useMemo(
+  const [readScope, setReadScope] = useState<DiscussionReadScope>("all");
+  const [scopeNotice, setScopeNotice] = useState<string | null>(null);
+  const [localSendTarget, setLocalSendTarget] = useState<DiscussionTarget | null>(null);
+  const [rowActionStates, setRowActionStates] = useState<
+    Record<string, { pending: boolean; error: string | null }>
+  >({});
+  const [locallyUnavailableTargets, setLocallyUnavailableTargets] = useState<
+    Record<string, string>
+  >({});
+  const rowActionPendingRef = useRef(new Set<string>());
+  const taskScopeKey = `${projectId ?? ""}:${taskId ?? ""}`;
+  const scopeOwnerRef = useRef(taskScopeKey);
+  const scopeForTask = scopeOwnerRef.current === taskScopeKey ? readScope : "all";
+  // Keep the first render after a retained-panel task switch on the default
+  // task scope. The effect below commits the reset for subsequent renders.
+  if (scopeOwnerRef.current !== taskScopeKey) scopeOwnerRef.current = taskScopeKey;
+
+  const annotationEligible =
+    isPersistedAnnotationId(annotationId) &&
+    annotationAvailable !== false &&
+    annotationIsKnown(annotationId, annotationClassById);
+  const taskContext = Boolean(taskId && projectId);
+  const composerTaskId = taskId ?? annotationTaskId;
+  const taskTarget = useMemo<Extract<DiscussionTarget, { kind: "task" }> | null>(
+    () => (taskId && projectId ? { projectId, taskId, kind: "task" } : null),
+    [projectId, taskId],
+  );
+  const currentAnnotationTarget = useMemo<Extract<DiscussionTarget, { kind: "annotation" }> | null>(
+    () =>
+      annotationEligible && taskId && projectId
+        ? { projectId, taskId, kind: "annotation", annotationId }
+        : null,
+    [annotationEligible, annotationId, projectId, taskId],
+  );
+
+  const draftStore = useDiscussionDraftStore();
+  // Subscribe even though the snapshot value is not otherwise needed here:
+  // changing the persisted destination must re-render the controlled select.
+  useDiscussionDraftSnapshot();
+  const storedSendTarget =
+    draftStore && projectId && taskId
+      ? (() => {
+          const stored = draftStore.getSendTarget(projectId, taskId);
+          return isCommentTarget(stored) ? stored : undefined;
+        })()
+      : undefined;
+
+  useEffect(() => {
+    if (!taskTarget) {
+      setLocalSendTarget(null);
+      return;
+    }
+    setLocalSendTarget(taskTarget);
+  }, [taskTarget]);
+
+  useEffect(() => {
+    // Reading scope is a task-local view preference. A new task starts at the
+    // complete discussion feed even when the panel instance is retained.
+    setReadScope("all");
+    setScopeNotice(null);
+  }, [projectId, taskId]);
+
+  useEffect(() => {
+    if (scopeForTask === "annotation" && !annotationEligible) {
+      setReadScope("task");
+      setScopeNotice("当前没有可用的已保存标注，已切换为仅任务留言。");
+    }
+  }, [annotationEligible, scopeForTask]);
+
+  const effectiveScope: DiscussionReadScope =
+    scopeForTask === "annotation" && annotationEligible ? "annotation" : scopeForTask;
+
+  const taskDiscussionQuery = useTaskDiscussion(
+    taskId,
+    effectiveScope,
+    effectiveScope === "annotation" ? annotationId : null,
+    taskContext && (effectiveScope !== "annotation" || annotationEligible),
+    projectId,
+  );
+  // Standalone ReviewWorkbench has no task context and keeps its legacy bounded
+  // annotation reader. Passing null for every other case prevents candidate IDs
+  // from reaching annotation-comment endpoints.
+  const legacyAnnotationQuery = useAnnotationCommentsInfinite(
+    !taskContext && annotationEligible ? annotationId : null,
+  );
+
+  const discussionItems = useMemo<TaskDiscussionItem[]>(() => {
+    if (taskContext) return flattenTaskDiscussion(taskDiscussionQuery.data);
+    return (legacyAnnotationQuery.data?.pages ?? []).flatMap((page) =>
+      page.items.map((data) => ({
+        source: "annotation_comment" as const,
+        data,
+        actions: legacyActions(data.author_id, currentUserId),
+      })),
+    );
+  }, [currentUserId, legacyAnnotationQuery.data, taskContext, taskDiscussionQuery.data]);
+
+  const activeQuery = taskContext ? taskDiscussionQuery : legacyAnnotationQuery;
+  const total = taskContext ? taskDiscussionQuery.data?.pages[0]?.total : discussionItems.length;
+
+  const { data: members } = useProjectMembers(projectId ?? "");
+  const memberOptions = (members ?? []).map((member) => ({
+    id: member.user_id,
+    name: member.user_name,
+    email: member.user_email,
+  }));
+
+  const feedbackParams = useMemo(
     () => ({
       project_id: projectId ?? "",
       task_id: taskId ?? undefined,
@@ -118,56 +317,77 @@ export function CommentsPanel({
     }),
     [projectId, taskId],
   );
-  const taskLevelFeedbacksQuery = useFeedbacks(
-    taskLevelFeedbacksParams,
-    !annotationId && !!taskId && !!projectId,
+  const taskLocalSendTarget = targetBelongsToTask(localSendTarget, projectId, taskId)
+    ? localSendTarget
+    : null;
+  const sendTarget = useMemo<DiscussionTarget | null>(
+    () =>
+      (storedSendTarget ?? taskLocalSendTarget ?? taskTarget) ||
+      (annotationId && !taskContext
+        ? ({
+            projectId: projectId ?? "",
+            taskId: composerTaskId ?? "",
+            kind: "annotation",
+            annotationId,
+          } as DiscussionTarget)
+        : null),
+    [
+      annotationId,
+      composerTaskId,
+      projectId,
+      storedSendTarget,
+      taskContext,
+      taskLocalSendTarget,
+      taskTarget,
+    ],
   );
-  const createTaskFeedbackMut = useCreateFeedback(taskLevelFeedbacksParams);
-  // v0.10.21 · D4 · 任务级 feedback patch/delete UI 入口.
-  const patchTaskFeedbackMut = usePatchFeedback(taskLevelFeedbacksParams);
-  const deleteTaskFeedbackMut = useDeleteFeedback(taskLevelFeedbacksParams);
-  const commentsQuery = annotationId ? annotationCommentsQuery : taskCommentsQuery;
-  const comments = useMemo(() => {
-    const annComments = (commentsQuery.data?.pages ?? []).flatMap((p) => p.items);
-    if (annotationId) return annComments;
-    // 任务级模式: merge annotation_comments + 任务级 feedback (kind=comment), 按 created_at desc.
-    const fb = (taskLevelFeedbacksQuery.data?.items ?? []).map((f) => ({
-      id: f.id,
-      annotation_id: null as string | null,
-      author_id: f.author_id,
-      author_name: f.author_name,
-      body: f.body,
-      is_resolved: f.status === "resolved",
-      is_active: f.is_active,
-      mentions: [] as CommentMention[],
-      attachments: (f.attachments ?? []) as CommentAttachment[],
-      canvas_drawing: null as CommentCanvasDrawing | null,
-      anchor: null as AnnotationCommentAnchor | null,
-      created_at: f.created_at,
-      updated_at: f.updated_at,
-      // v0.10.20 · 标记任务级 feedback 行, UI 上不允许 patch/delete (走不同端点).
-      __source: "feedback" as const,
-    }));
-    const merged = [...annComments.map((c) => ({ ...c, __source: "comment" as const })), ...fb];
-    merged.sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""));
-    return merged;
-  }, [commentsQuery.data, taskLevelFeedbacksQuery.data, annotationId]);
-  const { data: members } = useProjectMembers(projectId ?? "");
-  const createMut = useCreateComment(annotationId);
-  const patchMut = usePatchComment(annotationId);
-  const deleteMut = useDeleteComment(annotationId);
-  const setHoveredShapes = useHoveredCommentStore((s) => s.setHover);
-  const togglePinnedComment = useHoveredCommentStore((s) => s.togglePin);
-  const clearPinnedComment = useHoveredCommentStore((s) => s.clearPin);
-  const pinnedCommentId = useHoveredCommentStore((s) => s.pinnedId);
-  const setComposingShapes = useHoveredCommentStore((s) => s.setComposing);
-  // CommentInput 上报 pending 批注 → 写入 composing 预览通道（仅提取 shapes）。
+
+  const sendTargetAnnotationAvailable =
+    sendTarget?.kind === "annotation"
+      ? locallyUnavailableTargets[discussionTargetKey(sendTarget)]
+        ? false
+        : sendTarget.annotationId === annotationId && annotationAvailable !== undefined
+          ? annotationAvailable
+          : annotationClassById === undefined
+            ? undefined
+            : Object.prototype.hasOwnProperty.call(annotationClassById, sendTarget.annotationId)
+      : undefined;
+  const sendTargetUnavailableReason =
+    sendTargetAnnotationAvailable === false
+      ? sendTarget?.kind === "annotation" && sendTarget.annotationId === annotationId
+        ? (locallyUnavailableTargets[discussionTargetKey(sendTarget)] ??
+          annotationUnavailableReason)
+        : "该标注已不可用，请返回任务留言。"
+      : undefined;
+
+  const createCommentMut = useCreateComment(
+    sendTarget?.kind === "annotation" ? sendTarget.annotationId : null,
+    composerTaskId,
+  );
+  const patchCommentMut = usePatchComment(annotationId, composerTaskId);
+  const deleteCommentMut = useDeleteComment(annotationId, composerTaskId);
+  const createTaskFeedbackMut = useCreateFeedback(feedbackParams);
+  const patchTaskFeedbackMut = usePatchFeedback(feedbackParams);
+  const deleteTaskFeedbackMut = useDeleteFeedback(feedbackParams);
+
+  const setHoveredShapes = useHoveredCommentStore((state) => state.setHover);
+  const togglePinnedComment = useHoveredCommentStore((state) => state.togglePin);
+  const clearPinnedComment = useHoveredCommentStore((state) => state.clearPin);
+  const pinnedCommentId = useHoveredCommentStore((state) => state.pinnedId);
+  const setComposingShapes = useHoveredCommentStore((state) => state.setComposing);
+
+  const activeAnnotationComposer =
+    sendTarget?.kind === "annotation" && sendTarget.annotationId === annotationId;
   const reportPendingDrawing = useCallback(
-    (d: CommentCanvasDrawing | null) =>
-      setComposingShapes(d?.shapes && d.shapes.length > 0 ? d.shapes : null),
-    [setComposingShapes],
+    (drawing: CommentCanvasDrawing | null) =>
+      setComposingShapes(
+        activeAnnotationComposer && drawing?.shapes && drawing.shapes.length > 0
+          ? drawing.shapes
+          : null,
+      ),
+    [activeAnnotationComposer, setComposingShapes],
   );
-  // 切换标注 / 卸载 → 清掉 pin 与 composing 预览，避免上一个标注的批注残留在画布上。
+
   useEffect(() => {
     clearPinnedComment();
     setComposingShapes(null);
@@ -175,248 +395,478 @@ export function CommentsPanel({
       clearPinnedComment();
       setComposingShapes(null);
     };
-  }, [annotationId, clearPinnedComment, setComposingShapes]);
-  // v0.7.2 · 历史 tab — 仅切到 history 时拉取; I4 · 未选中标注时拉 task 级.
+  }, [annotationId, clearPinnedComment, setComposingShapes, taskId]);
+
   const annotationHistoryQuery = useAnnotationAuditHistory(
-    tab === "history" && annotationId ? annotationId : null,
+    tab === "history" && annotationEligible ? annotationId : null,
   );
   const taskHistoryQuery = useTaskAuditHistory(
-    tab === "history" && !annotationId ? (taskId ?? null) : null,
-    tab === "history" && !annotationId,
+    tab === "history" && !annotationEligible ? (taskId ?? null) : null,
+    tab === "history" && !annotationEligible,
   );
-  const history = annotationId ? annotationHistoryQuery.data : taskHistoryQuery.data;
-  const historyLoading = annotationId
+  const history = annotationEligible ? annotationHistoryQuery.data : taskHistoryQuery.data;
+  const historyLoading = annotationEligible
     ? annotationHistoryQuery.isLoading
     : taskHistoryQuery.isLoading;
+  const historyError = annotationEligible ? annotationHistoryQuery.error : taskHistoryQuery.error;
+  const retryHistory = annotationEligible
+    ? annotationHistoryQuery.refetch
+    : taskHistoryQuery.refetch;
 
-  // I4 · annotationId 与 taskId 都无 → 真正没东西显示, return null.
+  const sendTargetOptions = useMemo(() => {
+    const options: CommentDiscussionTarget[] = [];
+    if (taskTarget) options.push(taskTarget);
+    const candidateTargets = [storedSendTarget, currentAnnotationTarget, taskLocalSendTarget];
+    for (const candidate of candidateTargets) {
+      if (!candidate || candidate.kind !== "annotation") continue;
+      if (!options.some((item) => discussionTargetKey(item) === discussionTargetKey(candidate)))
+        options.push(candidate);
+    }
+    return options;
+  }, [currentAnnotationTarget, storedSendTarget, taskLocalSendTarget, taskTarget]);
+
+  const targetLabel = useCallback(
+    (target: CommentDiscussionTarget) => {
+      if (target.kind === "task") return "当前任务";
+      const className = annotationClassById?.[target.annotationId];
+      const isCurrent = target.annotationId === annotationId;
+      return isCurrent
+        ? `当前标注${className ? ` · ${className}` : ""}`
+        : `标注 ${className ?? target.annotationId.slice(0, 8)}`;
+    },
+    [annotationClassById, annotationId],
+  );
+
+  const handleSendTargetChange = useCallback(
+    (value: string) => {
+      const next = sendTargetOptions.find((target) => discussionTargetKey(target) === value);
+      if (!next) return;
+      setLocalSendTarget(next);
+      if (draftStore && projectId && taskId) draftStore.setSendTarget(projectId, taskId, next);
+    },
+    [draftStore, projectId, sendTargetOptions, taskId],
+  );
+
+  const handleReturnToTask = useCallback(() => {
+    if (!taskTarget) return;
+    setLocalSendTarget(taskTarget);
+    if (draftStore && projectId && taskId) draftStore.setSendTarget(projectId, taskId, taskTarget);
+  }, [draftStore, projectId, taskId, taskTarget]);
+
+  const clearShapesPreviewFor = useCallback(
+    (item: TaskDiscussionItem) => {
+      const key = discussionItemKey(item);
+      setHoveredShapes(null);
+      if (pinnedCommentId === key) clearPinnedComment();
+    },
+    [clearPinnedComment, pinnedCommentId, setHoveredShapes],
+  );
+
+  const handleSubmit = useCallback<CommentSubmit>(
+    (payload: DiscussionPayload, snapshot) => {
+      // Session-backed CommentInput captures the immutable target before its
+      // first await. Never retarget a late completion to the currently visible
+      // composer; legacy adapters have no snapshot and use the live target.
+      const submissionTarget = snapshot?.target ?? sendTarget;
+      if (!isCommentTarget(submissionTarget)) return;
+      if (submissionTarget.kind === "annotation") {
+        if (!isPersistedAnnotationId(submissionTarget.annotationId)) return;
+        const request = createCommentMut.mutateAsync({
+          annotationId: submissionTarget.annotationId,
+          taskId: submissionTarget.taskId,
+          payload: {
+            body: payload.body,
+            mentions: payload.mentions,
+            attachments: payload.attachments,
+            canvas_drawing: payload.canvas_drawing,
+            anchor: payload.anchor,
+          },
+        });
+        return request.catch((error) => {
+          if (isTargetUnavailableError(error)) {
+            const key = discussionTargetKey(submissionTarget);
+            const reason = errorMessage(error);
+            setLocallyUnavailableTargets((previous) => ({ ...previous, [key]: reason }));
+            try {
+              draftStore?.setTargetAvailability(submissionTarget, false, reason);
+            } catch {
+              // An auth lease may retire the old store while the request fails.
+            }
+          }
+          throw error;
+        });
+      }
+      // Task discussion is intentionally plain text. F1 rejects unsupported
+      // fields before this callback; keep a second guard at the write owner so
+      // a legacy adapter cannot silently drop structured payload data.
+      if (
+        payload.mentions.length > 0 ||
+        payload.attachments.length > 0 ||
+        payload.canvas_drawing ||
+        payload.anchor
+      ) {
+        throw new Error("任务留言仅支持纯文本");
+      }
+      if (!submissionTarget.projectId || !submissionTarget.taskId) return;
+      return createTaskFeedbackMut.mutateAsync({
+        kind: "comment",
+        anchor_type: "task",
+        project_id: submissionTarget.projectId,
+        task_id: submissionTarget.taskId,
+        body: payload.body,
+      });
+    },
+    [createCommentMut, createTaskFeedbackMut, draftStore, sendTarget],
+  );
+
+  const mutationScopeKey = `${projectId ?? ""}:${composerTaskId ?? ""}`;
+  const handleToggleStatus = useCallback(
+    async (item: TaskDiscussionItem) => {
+      if (!item.actions.change_status) return;
+      const key = `${mutationScopeKey}:${discussionItemKey(item)}`;
+      if (rowActionPendingRef.current.has(key)) return;
+      rowActionPendingRef.current.add(key);
+      setRowActionStates((previous) => ({
+        ...previous,
+        [key]: { pending: true, error: null },
+      }));
+      try {
+        if (isAnnotationDiscussionItem(item)) {
+          await patchCommentMut.mutateAsync({
+            id: item.data.id,
+            payload: { is_resolved: !item.data.is_resolved },
+            annotationId: item.data.annotation_id,
+            taskId: composerTaskId,
+          });
+        } else {
+          await patchTaskFeedbackMut.mutateAsync({
+            id: item.data.id,
+            payload: { status: item.data.status === "resolved" ? "open" : "resolved" },
+          });
+        }
+      } catch (error) {
+        setRowActionStates((previous) => ({
+          ...previous,
+          [key]: { pending: false, error: errorMessage(error) },
+        }));
+      } finally {
+        rowActionPendingRef.current.delete(key);
+        setRowActionStates((previous) => {
+          const current = previous[key];
+          if (!current || current.error) return previous;
+          const next = { ...previous };
+          delete next[key];
+          return next;
+        });
+      }
+    },
+    [composerTaskId, mutationScopeKey, patchCommentMut, patchTaskFeedbackMut],
+  );
+
+  const handleDelete = useCallback(
+    async (item: TaskDiscussionItem) => {
+      if (!item.actions.delete) return;
+      const key = `${mutationScopeKey}:${discussionItemKey(item)}`;
+      if (rowActionPendingRef.current.has(key)) return;
+      rowActionPendingRef.current.add(key);
+      setRowActionStates((previous) => ({
+        ...previous,
+        [key]: { pending: true, error: null },
+      }));
+      clearShapesPreviewFor(item);
+      try {
+        if (isAnnotationDiscussionItem(item)) {
+          await deleteCommentMut.mutateAsync({
+            id: item.data.id,
+            annotationId: item.data.annotation_id,
+            taskId: composerTaskId,
+          });
+        } else {
+          await deleteTaskFeedbackMut.mutateAsync(item.data.id);
+        }
+      } catch (error) {
+        setRowActionStates((previous) => ({
+          ...previous,
+          [key]: { pending: false, error: errorMessage(error) },
+        }));
+      } finally {
+        rowActionPendingRef.current.delete(key);
+        setRowActionStates((previous) => {
+          const current = previous[key];
+          if (!current || current.error) return previous;
+          const next = { ...previous };
+          delete next[key];
+          return next;
+        });
+      }
+    },
+    [
+      clearShapesPreviewFor,
+      composerTaskId,
+      deleteCommentMut,
+      deleteTaskFeedbackMut,
+      mutationScopeKey,
+    ],
+  );
+
   if (!annotationId && !taskId) return null;
 
-  const memberOptions = (members ?? []).map((m) => ({
-    id: m.user_id,
-    name: m.user_name,
-    email: m.user_email,
-  }));
-
-  // 删除评论前清掉它在题图上的批注预览：卡片随删除卸载时 onMouseLeave 不会触发，
-  // hover/pinned 预览会残留在画布上直到 hover 别处或刷新。
-  const clearShapesPreviewFor = (commentId: string) => {
-    setHoveredShapes(null);
-    if (pinnedCommentId === commentId) clearPinnedComment();
-  };
-
-  const handleSubmit = ({
-    body,
-    mentions,
-    attachments,
-    canvas_drawing,
-    anchor,
-  }: {
-    body: string;
-    mentions: CommentMention[];
-    attachments: CommentAttachment[];
-    canvas_drawing: CommentCanvasDrawing | null;
-    anchor?: AnnotationCommentAnchor | null;
-  }) => {
-    if (!body && attachments.length === 0 && !canvas_drawing) return;
-    // 返回 mutateAsync 的 promise，让 CommentInput 在成功后才 reset（失败保留草稿）。
-    if (annotationId) {
-      return createMut.mutateAsync({ body, mentions, attachments, canvas_drawing, anchor });
-    }
-    // v0.10.20 · D1 · 任务级评论 POST /feedbacks (kind=comment, anchor_type=task).
-    // 任务级 feedback 不支持 mentions / canvas_drawing / anchor (走不同 schema), 仅传 body + attachments.
-    if (!taskId || !projectId) return;
-    return createTaskFeedbackMut.mutateAsync({
-      kind: "comment",
-      anchor_type: "task",
-      project_id: projectId,
-      task_id: taskId,
-      body,
-      attachments: attachments as Array<Record<string, unknown>>,
-    });
-  };
+  const commentsContentClass =
+    tab === "history"
+      ? "flex min-h-0 flex-1 flex-col overflow-hidden"
+      : "flex min-h-0 flex-1 flex-col overflow-y-auto";
+  const commentsTabId = `${panelId}-comments-tab`;
+  const historyTabId = `${panelId}-history-tab`;
+  const commentsPanelId = `${panelId}-comments-panel`;
+  const historyPanelId = `${panelId}-history-panel`;
+  const contentPanelId = tab === "comments" ? commentsPanelId : historyPanelId;
+  const activeTargetKey = sendTarget ? discussionTargetKey(sendTarget) : "";
 
   return (
-    <div className="flex flex-col gap-2 border-t border-border px-3 py-2.5">
+    <div className="flex min-h-0 flex-1 flex-col gap-2 border-t border-border px-3 py-2.5">
       {!hideTabs && (
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1" role="tablist" aria-label="讨论内容">
           <button
             type="button"
+            role="tab"
+            id={commentsTabId}
+            aria-selected={tab === "comments"}
+            aria-controls={commentsPanelId}
             onClick={() => setTab("comments")}
             className={cn(TAB_BUTTON, tab === "comments" && TAB_BUTTON_ACTIVE)}
           >
-            评论 {comments && comments.length > 0 && `(${comments.length})`}
+            评论{total !== undefined && ` (${total})`}
           </button>
           <button
             type="button"
+            role="tab"
+            id={historyTabId}
+            aria-selected={tab === "history"}
+            aria-controls={historyPanelId}
             onClick={() => setTab("history")}
             className={cn(TAB_BUTTON, tab === "history" && TAB_BUTTON_ACTIVE)}
           >
-            历史 {history && history.entries.length > 0 && `(${history.entries.length})`}
+            历史
           </button>
         </div>
       )}
 
-      {tab === "history" ? (
-        <AnnotationHistoryTimeline entries={history?.entries ?? []} loading={historyLoading} />
-      ) : (
-        <>
-          {annotationId ? (
-            <CommentInput
-              annotationId={annotationId}
-              members={memberOptions}
-              busy={createMut.isPending}
-              backgroundUrl={backgroundUrl}
-              imageWidth={imageWidth}
-              imageHeight={imageHeight}
-              enableCanvasDrawing={enableCanvasDrawing}
-              liveCanvas={liveCanvas}
-              anchor={commentAnchor}
-              onPendingDrawingChange={reportPendingDrawing}
-              onSubmit={handleSubmit}
-            />
-          ) : taskId && projectId ? (
-            // 未选中标注时禁用评论框：先要求选中一个标注再评论。
-            // 任务级评论 (POST /feedbacks · kind=comment / anchor_type=task) 的后端路径保留，
-            // 待后续有更好的交互方案再开启（handleSubmit 的 task 分支仍在）。
-            <div
-              className="cursor-not-allowed rounded border border-dashed border-border bg-card px-3 py-2.5 text-xs text-muted-foreground/70"
-              data-testid="comment-input-disabled"
-            >
-              请先选中一个标注后再评论
-            </div>
-          ) : null}
+      {tab === "comments" && taskContext && (
+        <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+          <span>范围</span>
+          <select
+            aria-label="评论阅读范围"
+            value={effectiveScope}
+            onChange={(event) => {
+              const next = event.target.value as DiscussionReadScope;
+              if (next === "annotation" && !annotationEligible) {
+                setReadScope("task");
+                setScopeNotice("当前没有可用的已保存标注，已切换为仅任务留言。");
+                return;
+              }
+              setReadScope(next);
+              setScopeNotice(null);
+            }}
+            className="min-h-7 max-w-full cursor-pointer rounded border border-border bg-background px-1.5 text-xs text-foreground [font:inherit] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand"
+          >
+            <option value="all">本任务全部讨论</option>
+            <option value="task">仅任务留言</option>
+            {annotationEligible && <option value="annotation">当前标注</option>}
+          </select>
+        </label>
+      )}
 
-          <div className="flex max-h-60 flex-col gap-1.5 overflow-y-auto">
-            {comments.length === 0 && (
-              <div className="text-xs text-muted-foreground/70">
-                {annotationId ? "暂无评论" : "该任务暂无任何评论"}
-              </div>
-            )}
-            {comments.map((c) => {
-              const isMine = !!currentUserId && currentUserId === c.author_id;
-              const hoverShapes =
-                c.canvas_drawing?.shapes && c.canvas_drawing.shapes.length > 0
-                  ? c.canvas_drawing.shapes
-                  : null;
+      {scopeNotice && tab === "comments" && (
+        <div className="shrink-0 text-xs text-status-caution" role="status">
+          {scopeNotice}
+        </div>
+      )}
+
+      <div
+        id={contentPanelId}
+        role={hideTabs ? "region" : "tabpanel"}
+        aria-label={tab === "comments" ? "评论列表" : "历史"}
+        {...(!hideTabs && {
+          "aria-labelledby": tab === "comments" ? commentsTabId : historyTabId,
+        })}
+        className={commentsContentClass}
+      >
+        {tab === "history" ? (
+          <AnnotationHistoryTimeline
+            entries={history?.entries ?? []}
+            loading={historyLoading}
+            error={historyError}
+            onRetry={() => void retryHistory()}
+            presentation={taskContext ? "fill" : "bounded"}
+            scopeLabel={annotationEligible ? "当前标注历史" : "本任务历史"}
+          />
+        ) : activeQuery.isPending ? (
+          <div
+            className="flex min-h-24 items-center justify-center text-xs text-muted-foreground"
+            role="status"
+          >
+            正在加载讨论…
+          </div>
+        ) : activeQuery.isError ? (
+          <div
+            className="flex min-h-24 flex-col items-center justify-center gap-2 px-2 text-center text-xs text-status-danger"
+            role="alert"
+          >
+            <span>无法加载讨论，请重试。</span>
+            <button
+              type="button"
+              onClick={() => void activeQuery.refetch()}
+              className="min-h-8 cursor-pointer rounded border border-border bg-transparent px-2.5 text-xs text-brand [font:inherit] active:scale-[0.96]"
+            >
+              重试
+            </button>
+          </div>
+        ) : !taskContext && !annotationEligible ? (
+          <div className="px-2 py-3 text-xs text-muted-foreground" role="status">
+            当前选择不是可评论的已保存标注。
+          </div>
+        ) : discussionItems.length === 0 ? (
+          <div className="px-2 py-3 text-xs text-muted-foreground/80" role="status">
+            暂无讨论
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1.5 px-0.5">
+            {discussionItems.map((item) => {
+              const annotationData = isAnnotationDiscussionItem(item) ? item.data : undefined;
+              const feedbackData = isFeedbackDiscussionItem(item) ? item.data : undefined;
+              const isAnnotation = annotationData !== undefined;
+              const data = annotationData ?? feedbackData;
+              if (!data) return null;
+              const itemKey = discussionItemKey(item);
+              const rowActionKey = `${mutationScopeKey}:${itemKey}`;
+              const rowActionState = rowActionStates[rowActionKey];
+              const isResolved = annotationData
+                ? annotationData.is_resolved
+                : feedbackData?.status === "resolved";
+              const hoverShapes = isAnnotation
+                ? annotationData.canvas_drawing?.shapes &&
+                  annotationData.canvas_drawing.shapes.length > 0
+                  ? annotationData.canvas_drawing.shapes
+                  : null
+                : null;
+              const rowAnnotationId = annotationData?.annotation_id ?? null;
+              const rowAnnotationAvailable = annotationIsKnown(
+                rowAnnotationId,
+                annotationClassById,
+              );
+              const attachments = data.attachments ?? [];
               return (
                 <div
-                  key={c.id}
+                  key={itemKey}
+                  data-testid="discussion-comment-row"
                   onMouseEnter={() => {
                     if (hoverShapes) setHoveredShapes(hoverShapes);
                   }}
                   onMouseLeave={() => {
                     if (hoverShapes) setHoveredShapes(null);
                   }}
-                  onClick={(e) => {
-                    // 卡片内的按钮 / 链接（解决、删除、跳标注、跳帧、附件）各有自己的动作，
-                    // 点它们不应顺带 toggle pin；其余区域点击 = pin 这条评论的批注到画布。
-                    if (!hoverShapes) return;
-                    if ((e.target as HTMLElement).closest("button, a")) return;
-                    togglePinnedComment(c.id, hoverShapes);
+                  onClick={(event) => {
+                    if (!hoverShapes || (event.target as HTMLElement).closest("button, a")) return;
+                    togglePinnedComment(itemKey, hoverShapes);
                   }}
                   className={cn(
                     "rounded border border-border bg-card p-2",
-                    c.is_resolved && "bg-muted opacity-70",
+                    isResolved && "bg-muted opacity-70",
                     hoverShapes && "cursor-crosshair",
-                    pinnedCommentId === c.id &&
+                    pinnedCommentId === itemKey &&
                       "border-brand shadow-[inset_2px_0_0_0_var(--sc-brand)]",
                   )}
                 >
-                  <div className="mb-1 flex items-center justify-between">
-                    <span className="text-xs font-medium text-foreground">
-                      {c.author_name ?? "—"}
-                      {c.is_resolved && (
-                        <span className="ml-1.5 text-2xs text-status-positive">已解决</span>
-                      )}
-                    </span>
-                    <div className="flex gap-1">
-                      {/* v0.10.21 · D4 · 任务级 feedback 行走 PATCH/DELETE /feedbacks; annotation_comments 行走原路径. */}
-                      {"__source" in c && c.__source === "feedback" ? (
-                        <>
-                          <button
-                            type="button"
-                            title={c.is_resolved ? "重开" : "标为已解决"}
-                            onClick={() =>
-                              patchTaskFeedbackMut.mutate({
-                                id: c.id,
-                                payload: { status: c.is_resolved ? "open" : "resolved" },
-                              })
-                            }
-                            className={ICON_BUTTON}
-                          >
-                            <Icon name="check" size={11} />
-                          </button>
-                          {isMine && (
-                            <button
-                              type="button"
-                              title="删除"
-                              onClick={() => {
-                                clearShapesPreviewFor(c.id);
-                                deleteTaskFeedbackMut.mutate(c.id);
-                              }}
-                              className={ICON_BUTTON}
-                            >
-                              <Icon name="trash" size={11} />
-                            </button>
-                          )}
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            title={c.is_resolved ? "标为未解决" : "标为已解决"}
-                            onClick={() =>
-                              patchMut.mutate({
-                                id: c.id,
-                                payload: { is_resolved: !c.is_resolved },
-                              })
-                            }
-                            className={ICON_BUTTON}
-                          >
-                            <Icon name="check" size={11} />
-                          </button>
-                          {isMine && (
-                            <button
-                              type="button"
-                              title="删除"
-                              onClick={() => {
-                                clearShapesPreviewFor(c.id);
-                                deleteMut.mutate(c.id);
-                              }}
-                              className={ICON_BUTTON}
-                            >
-                              <Icon name="trash" size={11} />
-                            </button>
-                          )}
-                        </>
+                  <div className="mb-1 flex items-start justify-between gap-2">
+                    <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                      <span className="text-xs font-medium text-foreground">
+                        {data.author_name ?? "—"}
+                      </span>
+                      <span
+                        data-testid="discussion-source-chip"
+                        className="rounded-[3px] bg-muted px-1 py-px text-2xs text-muted-foreground"
+                      >
+                        {isAnnotation ? "标注评论" : "任务留言"}
+                      </span>
+                      {isResolved && (
+                        <span className="text-2xs text-status-positive">
+                          {isAnnotation
+                            ? "已解决"
+                            : feedbackStatusLabel(feedbackData?.status ?? "open")}
+                        </span>
                       )}
                     </div>
+                    {(item.actions.change_status || item.actions.delete) && (
+                      <div className="flex shrink-0 gap-0.5">
+                        {item.actions.change_status && (
+                          <button
+                            type="button"
+                            title={isResolved ? "重新打开" : "标为已解决"}
+                            aria-label={isResolved ? "重新打开评论" : "标为已解决"}
+                            onClick={() => void handleToggleStatus(item)}
+                            disabled={rowActionState?.pending}
+                            className={cn(
+                              ICON_BUTTON,
+                              "disabled:cursor-default disabled:opacity-50",
+                            )}
+                          >
+                            <Icon name="check" size={12} />
+                          </button>
+                        )}
+                        {item.actions.delete && (
+                          <button
+                            type="button"
+                            title="删除"
+                            aria-label="删除评论"
+                            onClick={() => void handleDelete(item)}
+                            disabled={rowActionState?.pending}
+                            className={cn(
+                              ICON_BUTTON,
+                              "disabled:cursor-default disabled:opacity-50",
+                            )}
+                          >
+                            <Icon name="trash" size={12} />
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  {c.annotation_id && onSelectAnnotation && (
+
+                  {rowAnnotationId && (
                     <button
                       type="button"
                       data-testid="comment-annotation-chip"
-                      onClick={() => onSelectAnnotation(c.annotation_id!)}
-                      className="mb-1 inline-flex max-w-full cursor-pointer appearance-none items-center gap-1 rounded border border-border bg-muted px-1.5 py-px text-2xs text-muted-foreground [font:inherit] hover:border-brand hover:text-foreground"
-                      title="跳转到该评论绑定的标注框"
+                      onClick={() => onSelectAnnotation?.(rowAnnotationId)}
+                      disabled={!onSelectAnnotation || !rowAnnotationAvailable}
+                      className="mb-1 inline-flex max-w-full cursor-pointer appearance-none items-center gap-1 rounded border border-border bg-muted px-1.5 py-px text-2xs text-muted-foreground [font:inherit] hover:border-brand hover:text-foreground disabled:cursor-default"
+                      title={
+                        rowAnnotationAvailable
+                          ? "跳转到该评论绑定的标注框"
+                          : "该标注已不可用，评论仍保留在历史中"
+                      }
                     >
                       <Icon name="crosshair" size={11} />
                       <span className="overflow-hidden text-ellipsis whitespace-nowrap">
-                        {annotationClassById?.[c.annotation_id] ?? "标注框"}
+                        {rowAnnotationAvailable
+                          ? (annotationClassById?.[rowAnnotationId] ?? "标注框")
+                          : "标注已不可用"}
                       </span>
                     </button>
                   )}
-                  <div className="whitespace-pre-wrap text-xs text-foreground">
-                    {renderCommentBody(c.body, c.mentions ?? [], (uid) =>
-                      navigate(`/audit?actor=${uid}`),
+
+                  <div className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">
+                    {renderCommentBody(
+                      data.body,
+                      annotationData ? ((annotationData.mentions ?? []) as CommentMention[]) : [],
+                      (userId) => navigate(`/audit?actor=${userId}`),
                     )}
                   </div>
-                  {c.anchor?.kind === "video_frame" && (
+
+                  {annotationData && annotationData.anchor?.kind === "video_frame" && (
                     <button
                       type="button"
                       data-testid="comment-anchor-chip"
-                      onClick={() => onSeekFrame?.(c.anchor!.frameIndex)}
+                      onClick={() => onSeekFrame?.(annotationData.anchor!.frameIndex)}
                       className={cn(
                         "mt-1.5 inline-flex appearance-none items-center gap-1.5 rounded border border-border bg-muted px-1.5 py-0.5 text-xs text-muted-foreground [font:inherit]",
                         onSeekFrame ? "cursor-pointer" : "cursor-default",
@@ -424,61 +874,145 @@ export function CommentsPanel({
                       title="跳转到评论锚定的视频帧"
                     >
                       <Icon name="film" size={12} />
-                      <span className="mono">{anchorLabel(c.anchor)}</span>
+                      <span className="mono">{anchorLabel(annotationData.anchor)}</span>
                     </button>
                   )}
-                  {c.canvas_drawing &&
-                    c.canvas_drawing.shapes &&
-                    c.canvas_drawing.shapes.length > 0 && (
-                      <div className="mt-1.5">
-                        <CanvasDrawingPreview
-                          drawing={c.canvas_drawing}
-                          width={220}
-                          backgroundUrl={backgroundUrl}
-                          imageWidth={imageWidth}
-                          imageHeight={imageHeight}
-                        />
-                      </div>
-                    )}
-                  {(c.attachments ?? []).length > 0 && (
-                    <div className="mt-1.5 flex flex-wrap gap-1">
-                      {(c.attachments ?? []).map((a) => (
-                        <a
-                          key={a.storageKey}
-                          href={`/api/v1/annotations/${annotationId}/comment-attachments/download?key=${encodeURIComponent(a.storageKey)}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 rounded-[3px] border border-border bg-muted px-1.5 py-0.5 text-xs text-foreground no-underline"
-                          title={`${(a.size / 1024).toFixed(1)} KB`}
-                        >
-                          <Icon name="folder" size={11} />
-                          <span className="max-w-[140px] overflow-hidden text-ellipsis whitespace-nowrap">
-                            {a.fileName}
-                          </span>
-                        </a>
-                      ))}
+
+                  {annotationData && annotationData.canvas_drawing?.shapes?.length ? (
+                    <div className="mt-1.5">
+                      <CanvasDrawingPreview
+                        drawing={annotationData.canvas_drawing}
+                        width={220}
+                        backgroundUrl={backgroundUrl}
+                        imageWidth={imageWidth}
+                        imageHeight={imageHeight}
+                      />
+                    </div>
+                  ) : null}
+
+                  {rowActionState?.error && (
+                    <div
+                      className="mt-1 text-2xs text-status-danger"
+                      role="alert"
+                      data-testid="discussion-row-error"
+                    >
+                      操作失败：{rowActionState.error}
                     </div>
                   )}
+
+                  {attachments.length > 0 && (
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {attachments.map((attachment, index) => {
+                        const meta = formatAttachment(attachment);
+                        const downloadHref =
+                          isAnnotation && rowAnnotationId && meta.key
+                            ? `/api/v1/annotations/${rowAnnotationId}/comment-attachments/download?key=${encodeURIComponent(meta.key)}`
+                            : null;
+                        const label =
+                          meta.size !== null
+                            ? `${meta.name} · ${(meta.size / 1024).toFixed(1)} KB`
+                            : meta.name;
+                        return downloadHref ? (
+                          <a
+                            key={`${meta.key}-${index}`}
+                            href={downloadHref}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex max-w-full items-center gap-1 rounded-[3px] border border-border bg-muted px-1.5 py-0.5 text-xs text-foreground no-underline"
+                            title={label}
+                          >
+                            <Icon name="folder" size={11} />
+                            <span className="max-w-[140px] overflow-hidden text-ellipsis whitespace-nowrap">
+                              {meta.name}
+                            </span>
+                          </a>
+                        ) : (
+                          <span
+                            key={`${meta.name}-${index}`}
+                            className="inline-flex max-w-full items-center gap-1 rounded-[3px] border border-dashed border-border bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
+                            title="当前来源暂不支持附件下载"
+                          >
+                            <Icon name="folder" size={11} />
+                            <span className="max-w-[140px] overflow-hidden text-ellipsis whitespace-nowrap">
+                              {meta.name}（暂不支持下载）
+                            </span>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+
                   <div className="mt-1 text-2xs text-muted-foreground/70">
-                    {new Date(c.created_at).toLocaleString()}
+                    {new Date(data.created_at).toLocaleString()}
                   </div>
                 </div>
               );
             })}
-            {/* v0.8.8 · keyset 分页 「加载更早评论」按钮 */}
-            {commentsQuery.hasNextPage && (
+            {activeQuery.hasNextPage && (
               <button
                 type="button"
-                onClick={() => commentsQuery.fetchNextPage()}
-                disabled={commentsQuery.isFetchingNextPage}
+                onClick={() => void activeQuery.fetchNextPage()}
+                disabled={activeQuery.isFetchingNextPage}
                 data-testid="comments-load-more"
-                className="mt-1 cursor-pointer appearance-none self-center rounded-[3px] border border-border bg-transparent px-2.5 py-1 text-xs text-muted-foreground"
+                className="mt-1 min-h-8 cursor-pointer appearance-none self-center rounded-[3px] border border-border bg-transparent px-2.5 py-1 text-xs text-muted-foreground [font:inherit] active:scale-[0.96]"
               >
-                {commentsQuery.isFetchingNextPage ? "加载中…" : "加载更早评论"}
+                {activeQuery.isFetchingNextPage ? "加载中…" : "加载更早评论"}
               </button>
             )}
           </div>
-        </>
+        )}
+      </div>
+
+      {tab === "comments" && (taskContext || annotationId) && (
+        <div className="flex shrink-0 flex-col gap-1.5 border-t border-border pt-2">
+          {taskContext && sendTarget && sendTargetOptions.length > 0 && (
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span>发送到</span>
+              <select
+                aria-label="发送目标"
+                value={activeTargetKey}
+                onChange={(event) => handleSendTargetChange(event.target.value)}
+                className="min-h-7 min-w-0 flex-1 cursor-pointer rounded border border-border bg-background px-1.5 text-xs text-foreground [font:inherit] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand"
+              >
+                {sendTargetOptions.map((target) => (
+                  <option key={discussionTargetKey(target)} value={discussionTargetKey(target)}>
+                    {targetLabel(target)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <CommentInput
+            annotationId={!taskContext ? annotationId : undefined}
+            projectId={projectId}
+            taskId={composerTaskId}
+            target={taskContext ? sendTarget : undefined}
+            draftStore={draftStore as DiscussionDraftStore | null}
+            members={memberOptions}
+            busy={
+              !draftStore || !taskContext
+                ? sendTarget?.kind === "annotation"
+                  ? createCommentMut.isPending
+                  : createTaskFeedbackMut.isPending
+                : false
+            }
+            backgroundUrl={activeAnnotationComposer ? backgroundUrl : null}
+            imageWidth={imageWidth}
+            imageHeight={imageHeight}
+            enableCanvasDrawing={activeAnnotationComposer ? enableCanvasDrawing : false}
+            liveCanvas={activeAnnotationComposer ? liveCanvas : undefined}
+            anchor={
+              sendTarget?.kind === "annotation" && sendTarget.annotationId === annotationId
+                ? commentAnchor
+                : null
+            }
+            onPendingDrawingChange={reportPendingDrawing}
+            targetAvailable={sendTargetAnnotationAvailable}
+            targetUnavailableReason={sendTargetUnavailableReason}
+            onReturnToTask={handleReturnToTask}
+            onSubmit={handleSubmit}
+          />
+        </div>
       )}
     </div>
   );
