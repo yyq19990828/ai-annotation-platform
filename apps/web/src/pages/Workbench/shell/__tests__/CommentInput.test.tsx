@@ -7,8 +7,45 @@
  *  - 普通文本 + chip 混合：base 路径
  *  - 仅文本（无 chip）：mentions 为空
  */
-import { describe, it, expect } from "vitest";
+import { act, fireEvent, render, waitFor } from "@testing-library/react";
+import type { ComponentProps } from "react";
+import { describe, it, expect, vi } from "vitest";
 import { serialize } from "../CommentInput";
+import { CommentInput } from "../CommentInput";
+import { commentsApi, type CommentCanvasDrawing } from "@/api/comments";
+import {
+  createDiscussionDraftStore,
+  type DiscussionDraftStore,
+} from "../../state/useDiscussionDraftStore";
+import type { DiscussionTarget } from "../../state/discussionTypes";
+
+type MockCanvasProps = {
+  open: boolean;
+  onSave: (drawing: CommentCanvasDrawing | null) => void;
+};
+
+const canvasHarness = vi.hoisted(() => ({
+  onSave: null as MockCanvasProps["onSave"] | null,
+}));
+
+vi.mock("@/components/CanvasDrawingEditor", () => ({
+  CanvasDrawingEditor: ({ open, onSave }: MockCanvasProps) => {
+    if (open) canvasHarness.onSave = onSave;
+    return open ? (
+      <button
+        type="button"
+        data-testid="mock-canvas-save"
+        onClick={() =>
+          onSave({
+            shapes: [{ type: "line", points: [0, 0, 1, 1] }],
+          } as CommentCanvasDrawing)
+        }
+      >
+        保存批注
+      </button>
+    ) : null;
+  },
+}));
 
 function makeRoot(html: string): HTMLElement {
   const div = document.createElement("div");
@@ -72,5 +109,322 @@ describe("CommentInput.serialize", () => {
     expect(mentions[0].userId).toBe("u1");
     expect(mentions[0].displayName).toBe("@fallback");
     expect(body.startsWith("@@fallback")).toBe(true);
+  });
+});
+
+const annotationA: DiscussionTarget = {
+  projectId: "p",
+  taskId: "a",
+  kind: "annotation",
+  annotationId: "ann-a",
+};
+const annotationB: DiscussionTarget = {
+  projectId: "p",
+  taskId: "b",
+  kind: "annotation",
+  annotationId: "ann-b",
+};
+const textTask: DiscussionTarget = { projectId: "p", taskId: "a", kind: "task" };
+
+function renderComposer(
+  target: DiscussionTarget,
+  onSubmit: (payload: unknown) => void | Promise<unknown>,
+  extra: Partial<ComponentProps<typeof CommentInput>> = {},
+) {
+  const store = createDiscussionDraftStore({ owner: { userId: "u1", sessionId: "s1" } });
+  return render(
+    <CommentInput target={target} draftStore={store} members={[]} onSubmit={onSubmit} {...extra} />,
+  );
+}
+
+function editor(container: HTMLElement): HTMLElement {
+  return container.querySelector('[contenteditable="true"]') as HTMLElement;
+}
+
+describe("CommentInput session composer", () => {
+  it("restores independent annotation A/B/A drafts without rewriting on each edit", () => {
+    const onSubmit = vi.fn();
+    const store = createDiscussionDraftStore({ owner: { userId: "u1", sessionId: "s1" } });
+    const view = render(
+      <CommentInput target={annotationA} draftStore={store} members={[]} onSubmit={onSubmit} />,
+    );
+    const input = editor(view.container);
+    input.textContent = "draft A";
+    fireEvent.input(input);
+    view.rerender(
+      <CommentInput target={annotationB} draftStore={store} members={[]} onSubmit={onSubmit} />,
+    );
+    const inputB = editor(view.container);
+    inputB.textContent = "draft B";
+    fireEvent.input(inputB);
+    view.rerender(
+      <CommentInput target={annotationA} draftStore={store} members={[]} onSubmit={onSubmit} />,
+    );
+    expect(editor(view.container).textContent).toBe("draft A");
+  });
+
+  it("rehydrates the same target when the authenticated owner changes", () => {
+    const onSubmit = vi.fn();
+    const oldStore = createDiscussionDraftStore({
+      owner: { userId: "old-user", sessionId: "old-session" },
+    });
+    const newStore = createDiscussionDraftStore({
+      owner: { userId: "new-user", sessionId: "new-session" },
+    });
+    oldStore.patchDraft(annotationA, { body: "old account" });
+    newStore.patchDraft(annotationA, { body: "new account" });
+    const view = render(
+      <CommentInput target={annotationA} draftStore={oldStore} members={[]} onSubmit={onSubmit} />,
+    );
+    expect(editor(view.container).textContent).toBe("old account");
+
+    view.rerender(
+      <CommentInput target={annotationA} draftStore={newStore} members={[]} onSubmit={onSubmit} />,
+    );
+    expect(editor(view.container).textContent).toBe("new account");
+  });
+
+  it("rehydrates legacy annotation-only adapters when the annotation changes", () => {
+    const onSubmit = vi.fn();
+    const view = render(<CommentInput annotationId="ann-a" members={[]} onSubmit={onSubmit} />);
+    const input = editor(view.container);
+    input.textContent = "legacy A";
+    fireEvent.input(input);
+
+    view.rerender(<CommentInput annotationId="ann-b" members={[]} onSubmit={onSubmit} />);
+    expect(editor(view.container).textContent).toBe("");
+  });
+
+  it("keeps task comments text-only and rejects rich controls before submit", () => {
+    const onSubmit = vi.fn();
+    const view = renderComposer(textTask, onSubmit, { enableCanvasDrawing: true });
+    const input = editor(view.container);
+    expect(view.container.querySelector('input[type="file"]')).toBeNull();
+    expect(view.container.querySelector('button[title*="题图"]')).toBeNull();
+    input.textContent = "task note";
+    fireEvent.input(input);
+    fireEvent.click(view.getByRole("button", { name: /发送/ }));
+    expect(onSubmit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: "task note",
+        mentions: [],
+        attachments: [],
+        canvas_drawing: null,
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("does not submit during IME composition and ignores rapid duplicate Enter/click triggers", async () => {
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const onSubmit = vi.fn(() => pending);
+    const view = renderComposer(textTask, onSubmit);
+    const input = editor(view.container);
+    input.textContent = "中文";
+    fireEvent.input(input);
+    fireEvent.compositionStart(input);
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter", isComposing: true });
+    expect(onSubmit).not.toHaveBeenCalled();
+    fireEvent.compositionEnd(input);
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+    fireEvent.click(view.getByRole("button", { name: /发送/ }));
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() =>
+      expect(view.container.querySelector("[contenteditable]")?.textContent).toBe(""),
+    );
+  });
+
+  it("retains a failed draft and leaves newer content after an old request resolves", async () => {
+    let reject!: (error: Error) => void;
+    const failed = new Promise<void>((_, rejectPromise) => {
+      reject = rejectPromise;
+    });
+    const onSubmit = vi.fn(() => failed);
+    const view = renderComposer(annotationA, onSubmit);
+    const input = editor(view.container);
+    input.textContent = "keep me";
+    fireEvent.input(input);
+    fireEvent.click(view.getByRole("button", { name: /发送/ }));
+    input.textContent = "new edit";
+    fireEvent.input(input);
+    reject(new Error("offline"));
+    await waitFor(() => expect(view.getByRole("button", { name: "发送" })).toBeInTheDocument());
+    expect(view.container.querySelector('[role="alert"]')).toBeNull();
+    expect(editor(view.container).textContent).toBe("new edit");
+  });
+
+  it("does not clear the visible B editor when an A submission resolves after switching targets", async () => {
+    let resolve!: () => void;
+    const pending = new Promise<void>((done) => {
+      resolve = done;
+    });
+    const onSubmit = vi.fn(() => pending);
+    const store = createDiscussionDraftStore({ owner: { userId: "u1", sessionId: "s1" } });
+    const view = render(
+      <CommentInput target={annotationA} draftStore={store} members={[]} onSubmit={onSubmit} />,
+    );
+    const inputA = editor(view.container);
+    inputA.textContent = "A pending";
+    fireEvent.input(inputA);
+    fireEvent.click(view.getByRole("button", { name: /发送/ }));
+
+    view.rerender(
+      <CommentInput target={annotationB} draftStore={store} members={[]} onSubmit={onSubmit} />,
+    );
+    const inputB = editor(view.container);
+    inputB.textContent = "B draft";
+    fireEvent.input(inputB);
+    resolve();
+    await waitFor(() => expect(view.getByRole("button", { name: "发送" })).toBeInTheDocument());
+    expect(editor(view.container).textContent).toBe("B draft");
+    expect(store.getDraft(annotationA)?.body).toBe("");
+  });
+
+  it("routes a late live drawing result to its original target", async () => {
+    const store: DiscussionDraftStore = createDiscussionDraftStore({
+      owner: { userId: "u1", sessionId: "s1" },
+    });
+    const origin = store.makeOrigin(annotationA)!;
+    const onConsume = vi.fn();
+    const onSubmit = vi.fn();
+    const view = render(
+      <CommentInput
+        target={annotationA}
+        draftStore={store}
+        members={[]}
+        onSubmit={onSubmit}
+        liveCanvas={{ active: true, result: null, onStart: vi.fn(), onConsume }}
+      />,
+    );
+    view.rerender(
+      <CommentInput
+        target={annotationB}
+        draftStore={store}
+        members={[]}
+        onSubmit={onSubmit}
+        liveCanvas={{
+          active: false,
+          result: { shapes: [{ type: "line", points: [0, 0, 1, 1] }] },
+          resultId: "result-a",
+          origin,
+          onStart: vi.fn(),
+          onConsume,
+        }}
+      />,
+    );
+    await waitFor(() =>
+      expect(store.getDraft(annotationA)?.canvas_drawing?.shapes).toHaveLength(1),
+    );
+    expect(store.getDraft(annotationB)?.canvas_drawing).toBeNull();
+    expect(onConsume).toHaveBeenCalledWith("result-a");
+    view.unmount();
+  });
+
+  it("rejects a queued A modal save after switching to target B", () => {
+    canvasHarness.onSave = null;
+    const store = createDiscussionDraftStore({ owner: { userId: "u1", sessionId: "s1" } });
+    const onSubmit = vi.fn();
+    const view = render(
+      <CommentInput
+        target={annotationA}
+        draftStore={store}
+        members={[]}
+        onSubmit={onSubmit}
+        enableCanvasDrawing
+        backgroundUrl="image-a"
+      />,
+    );
+    fireEvent.click(view.getByRole("button", { name: "弹窗批注" }));
+    const saveA = canvasHarness.onSave as ((drawing: CommentCanvasDrawing | null) => void) | null;
+    if (!saveA) throw new Error("canvas save callback was not mounted");
+
+    view.rerender(
+      <CommentInput
+        target={annotationB}
+        draftStore={store}
+        members={[]}
+        onSubmit={onSubmit}
+        enableCanvasDrawing
+        backgroundUrl="image-b"
+      />,
+    );
+    saveA({ shapes: [{ type: "line", points: [0, 0, 1, 1] }] } as CommentCanvasDrawing);
+
+    expect(store.getDraft(annotationA)?.canvas_drawing).toBeNull();
+    expect(store.getDraft(annotationB)?.canvas_drawing).toBeNull();
+  });
+
+  it("stops a multi-file upload before the next init after its owner expires", async () => {
+    let current = true;
+    const store = createDiscussionDraftStore({
+      owner: { userId: "u1", sessionId: "s1" },
+      isOwnerCurrent: () => current,
+    });
+    const init = vi
+      .spyOn(commentsApi, "attachmentUploadInit")
+      .mockResolvedValue({ expires_in: 60, storage_key: "k-1", upload_url: "/upload-1" });
+    const upload = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      current = false;
+      return { ok: true, status: 200 } as Response;
+    });
+    const view = render(
+      <CommentInput target={annotationA} draftStore={store} members={[]} onSubmit={vi.fn()} />,
+    );
+    const files = [
+      new File(["a"], "a.png", { type: "image/png" }),
+      new File(["b"], "b.png", { type: "image/png" }),
+    ];
+    fireEvent.change(view.container.querySelector('input[type="file"]')!, {
+      target: { files },
+    });
+
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(init).toHaveBeenCalledTimes(1));
+    current = true;
+    expect(store.getDraft(annotationA)?.attachments).toEqual([]);
+  });
+
+  it("stops before PUT when the owner expires while upload init is pending", async () => {
+    let current = true;
+    const store = createDiscussionDraftStore({
+      owner: { userId: "u1", sessionId: "s1" },
+      isOwnerCurrent: () => current,
+    });
+    let releaseInit!: (value: {
+      expires_in: number;
+      storage_key: string;
+      upload_url: string;
+    }) => void;
+    const initResult = new Promise<{
+      expires_in: number;
+      storage_key: string;
+      upload_url: string;
+    }>((resolve) => {
+      releaseInit = resolve;
+    });
+    const init = vi.spyOn(commentsApi, "attachmentUploadInit").mockReturnValue(initResult);
+    const upload = vi.spyOn(globalThis, "fetch");
+    const view = render(
+      <CommentInput target={annotationA} draftStore={store} members={[]} onSubmit={vi.fn()} />,
+    );
+    const file = new File(["a"], "a.png", { type: "image/png" });
+    fireEvent.change(view.container.querySelector('input[type="file"]')!, {
+      target: { files: [file] },
+    });
+    await waitFor(() => expect(init).toHaveBeenCalledTimes(1));
+
+    current = false;
+    await act(async () => {
+      releaseInit({ expires_in: 60, storage_key: "k-1", upload_url: "/upload-1" });
+      await initResult;
+    });
+    expect(upload).not.toHaveBeenCalled();
+    current = true;
+    expect(store.getDraft(annotationA)?.attachments).toEqual([]);
   });
 });
