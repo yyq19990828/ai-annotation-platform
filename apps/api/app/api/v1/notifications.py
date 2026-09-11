@@ -48,6 +48,9 @@ KNOWN_NOTIFICATION_TYPES = [
     "job.cancelled",
     "user.deactivation_requested",
     "user.deactivation_completed",
+    "feedback.reply_created",
+    "feedback.status_changed",
+    "annotation.comment_mentioned",
 ]
 
 

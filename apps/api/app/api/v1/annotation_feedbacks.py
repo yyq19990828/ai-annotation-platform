@@ -41,11 +41,16 @@ from app.schemas.annotation_feedback import (
 )
 from app.schemas.user import UserBrief
 from app.services.audit import AuditAction, AuditService
+from app.services.discussion_notifications import (
+    prepare_feedback_reply_notifications,
+    prepare_feedback_status_notifications,
+)
 from app.services.discussion_actions import discussion_actions
 from app.services.feedback import FeedbackService
 from app.services.mask_qc.service import effective_issue_status
 from app.services.point_cloud_quality.service import refresh_issue_staleness
 from app.services.scheduler import is_privileged_for_project
+from app.services.notification import NotificationService
 from app.services.user_brief import resolve_briefs
 
 router = APIRouter(dependencies=[Depends(require_active_task_actor)])
@@ -461,6 +466,7 @@ async def create_feedback(
 ):
     await _assert_create_scope(db, payload, user)
     svc = FeedbackService(db)
+    root: AnnotationFeedback | None = None
     if payload.thread_parent_id is not None:
         if payload.kind != "comment":
             raise HTTPException(
@@ -588,7 +594,16 @@ async def create_feedback(
             ),
         },
     )
+    pending_notifications = []
+    if root is not None:
+        pending_notifications = await prepare_feedback_reply_notifications(
+            db,
+            root=root,
+            reply=entry,
+            actor=user,
+        )
     await db.commit()
+    await NotificationService(db).publish_committed(pending_notifications)
     await db.refresh(entry)
     return await _to_out(
         db,
@@ -678,7 +693,22 @@ async def patch_feedback(
             status_code=200,
             detail={"from": old_status, "to": payload.status},
         )
+    pending_notifications = []
+    if (
+        payload.status is not None
+        and payload.status != old_status
+        and entry.id == root.id
+        and root.kind == "issue"
+    ):
+        pending_notifications = await prepare_feedback_status_notifications(
+            db,
+            root=root,
+            actor=user,
+            from_status=old_status,
+            to_status=payload.status,
+        )
     await db.commit()
+    await NotificationService(db).publish_committed(pending_notifications)
     await db.refresh(updated)
     return await _to_out(
         db,
@@ -803,6 +833,13 @@ async def reply_feedback(
         status_code=200,
         detail={"reply_to": str(parent.id)},
     )
+    pending_notifications = await prepare_feedback_reply_notifications(
+        db,
+        root=root,
+        reply=reply,
+        actor=user,
+    )
     await db.commit()
+    await NotificationService(db).publish_committed(pending_notifications)
     await db.refresh(reply)
     return await _to_out(db, reply, user=user)

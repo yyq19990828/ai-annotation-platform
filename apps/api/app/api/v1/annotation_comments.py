@@ -39,7 +39,11 @@ from app.schemas.annotation_comment import (
     TaskDiscussionPage,
 )
 from app.services.audit import AuditAction, AuditService
+from app.services.discussion_notifications import (
+    prepare_annotation_comment_mention_notifications,
+)
 from app.services.discussion_actions import discussion_actions
+from app.services.notification import NotificationService
 from app.services.storage import storage_service
 from app.services.task_discussion import (
     list_task_discussion,
@@ -369,7 +373,15 @@ async def create_comment(
             "has_anchor": data.anchor is not None,
         },
     )
+    pending_notifications = await prepare_annotation_comment_mention_notifications(
+        db,
+        comment=comment,
+        task=task,
+        actor=current_user,
+        mentioned_user_ids=[mention.user_id for mention in data.mentions],
+    )
     await db.commit()
+    await NotificationService(db).publish_committed(pending_notifications)
     await db.refresh(comment)
     return _to_out(comment, current_user.name)
 
