@@ -156,7 +156,14 @@ cd apps/api && uv run alembic upgrade head && cd ../..
 # 4. 启动后端和前端
 pnpm dev:api        # http://localhost:8000
 pnpm dev:web        # http://localhost:3000
+
+# 多 worktree 并行时可用一条命令启动当前 checkout 的前后端
+pnpm dev:worktree   # 自动选择空闲端口并配置前端代理
 ```
+
+`dev:worktree` 默认从 API `8100` 和 Web `3100` 开始向上寻找空闲端口，
+按 `Ctrl+C` 会同时停止两个服务。端口隔离不会隔离 `.env` 中的数据库、Redis
+和对象存储。
 
 需要演示数据时：
 
