@@ -488,6 +488,7 @@ export function WorkbenchDockWorkspace(props: WorkbenchDockWorkspaceProps) {
   const namedPresetControls: NamedPresetControls = {
     presets: named.presets,
     context,
+    count: named.count,
     full: named.full,
     busy: named.saving,
     disabled: owner.readOnly || compact || !named.loaded,

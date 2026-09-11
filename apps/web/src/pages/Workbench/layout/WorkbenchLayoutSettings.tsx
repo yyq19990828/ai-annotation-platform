@@ -27,6 +27,8 @@ export interface NamedPresetControls {
   context: WorkspaceContext;
   /** 已存满 MAX_NAMED_WORKSPACE_PRESETS 条。 */
   full: boolean;
+  /** 包含界面无法解析、但仍需原样保留的条目。 */
+  count: number;
   busy: boolean;
   disabled: boolean;
   onSave: (name: string) => void;
@@ -95,7 +97,8 @@ function SavedPresetRow({
           <button
             type="button"
             className={SMALL_ACTION_CLASS}
-            disabled={controls.busy}
+            disabled={controls.busy || !restorable}
+            title={restorable ? undefined : "这份预设无法恢复，只能删除"}
             onClick={() => setDraft(preset.name)}
           >
             重命名
@@ -150,7 +153,9 @@ function SavedPresetRow({
 
 function SavedPresets({ controls }: { controls: NamedPresetControls }) {
   const [name, setName] = useState("");
-  const overwrites = controls.presets.some((preset) => preset.name === name.trim());
+  const overwrites = controls.presets.some(
+    (preset) => preset.snapshot !== null && preset.name.trim() === name.trim(),
+  );
   const blocked = controls.disabled || controls.busy || (controls.full && !overwrites);
   const submit = () => {
     if (blocked || !name.trim()) return;
@@ -162,7 +167,7 @@ function SavedPresets({ controls }: { controls: NamedPresetControls }) {
       <div className="flex items-baseline justify-between gap-3">
         <h3 className="text-md font-medium">我的预设</h3>
         <span className="text-xs text-muted-foreground">
-          {controls.presets.length} / {MAX_NAMED_WORKSPACE_PRESETS}
+          {controls.count} / {MAX_NAMED_WORKSPACE_PRESETS}
         </span>
       </div>
       <p className="text-xs text-muted-foreground">

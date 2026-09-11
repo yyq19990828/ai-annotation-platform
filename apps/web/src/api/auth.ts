@@ -234,18 +234,36 @@ export interface NamedWorkspacePreset extends WorkspaceEnvelope {
   context: WorkspaceContext;
 }
 
+/** GET 保留无法由当前客户端解释的存量条目，写入时需原样带回。 */
+export type StoredNamedWorkspacePresets = Record<string, unknown>;
+
 export const MAX_NAMED_WORKSPACE_PRESETS = 5;
 export const MAX_WORKSPACE_PRESET_NAME_LENGTH = 40;
 
 export interface WorkspacePreferences {
-  engine: "dockview@8";
+  /** GET 可能透传更新客户端写入的引擎标记。 */
+  engine: string;
   /** 只存过命名预设的账号还没有任何直播快照,此时整个键缺席。 */
   contexts?: Partial<Record<WorkspaceContext, WorkspaceEnvelope>>;
-  namedPresets?: Record<string, NamedWorkspacePreset>;
+  namedPresets?: StoredNamedWorkspacePresets;
 }
 
+export type WorkspacePreferencesPatch =
+  | {
+      engine: "dockview@8";
+      contexts?: Partial<Record<WorkspaceContext, WorkspaceEnvelope>>;
+      namedPresets?: StoredNamedWorkspacePresets;
+    }
+  | {
+      /** Preset-only writes preserve the stored enclosing engine and live contexts. */
+      engine?: never;
+      contexts?: never;
+      namedPresets: StoredNamedWorkspacePresets;
+    };
+
 export interface WorkbenchLayoutPreferences {
-  workspace?: WorkspacePreferences;
+  /** GET may preserve an explicitly null historical/corrupt stored value. */
+  workspace?: WorkspacePreferences | null;
   leftOpen: boolean;
   rightOpen: boolean;
   /** v0.20.19 · 右栏「标注详情」属性区折叠态(随账号持久)。 */
@@ -321,7 +339,9 @@ export interface UserPreferences {
 
 export type UserPreferencesPatch = Omit<Partial<UserPreferences>, "workbench" | "onboarding"> & {
   workbench?: Omit<Partial<WorkbenchPreferences>, "layout"> & {
-    layout?: Partial<WorkbenchLayoutPreferences>;
+    layout?: Omit<Partial<WorkbenchLayoutPreferences>, "workspace"> & {
+      workspace?: WorkspacePreferencesPatch;
+    };
   };
   onboarding?: OnboardingPreferencesPatch;
 };

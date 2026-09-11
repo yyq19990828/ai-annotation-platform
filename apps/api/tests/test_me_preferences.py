@@ -16,13 +16,39 @@ import pytest
 import sqlalchemy as sa
 from pydantic import ValidationError
 
-from app.schemas.user import UserPreferences
+from app.schemas.user import UserPreferences, UserPreferencesRead
 
 PREFS_URL = "/api/v1/auth/me/preferences"
 
 
 def _bearer(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+def test_preferences_read_model_accepts_opaque_workspace():
+    workspace = {
+        "engine": "dockview@9",
+        "namedPresets": {
+            "future.id": {
+                "name": "未来布局",
+                "schemaVersion": 99,
+                "snapshot": {"future": True},
+            }
+        },
+    }
+    parsed = UserPreferencesRead.model_validate(
+        {"workbench": {"layout": {"workspace": workspace}}}
+    )
+    assert (
+        parsed.model_dump(mode="json", by_alias=True)["workbench"]["layout"][
+            "workspace"
+        ]
+        == workspace
+    )
+    parsed_null = UserPreferencesRead.model_validate(
+        {"workbench": {"layout": {"workspace": None}}}
+    )
+    assert parsed_null.workbench.layout.workspace is None
 
 
 # ── 1. PATCH 子树合并 ────────────────────────────────────────────────
@@ -1343,6 +1369,24 @@ def _named_presets_patch(presets):
     }
 
 
+def _named_presets_only_patch(presets):
+    return {"workbench": {"layout": {"workspace": {"namedPresets": presets}}}}
+
+
+async def _store_raw_named_presets(user, db_session, presets, engine="dockview@9"):
+    user.preferences = {
+        "workbench": {
+            "layout": {
+                "workspace": {
+                    "engine": engine,
+                    "namedPresets": copy.deepcopy(presets),
+                }
+            }
+        }
+    }
+    await db_session.flush()
+
+
 async def _saved_presets(httpx_client, token):
     response = await httpx_client.get(PREFS_URL, headers=_bearer(token))
     assert response.status_code == 200, response.text
@@ -1411,6 +1455,299 @@ async def test_named_presets_cap_at_five_per_user(httpx_client, annotator):
     )
     assert response.status_code == 200, response.text
     assert set(await _saved_presets(httpx_client, token)) == {*freed, "p5"}
+
+
+async def test_preset_only_patch_seeds_engine_when_workspace_is_missing(
+    httpx_client, annotator
+):
+    _, token = annotator
+    presets = {"p1": _named_preset("审核宽讨论")}
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json=_named_presets_only_patch(presets),
+        headers=_bearer(token),
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["workbench"]["layout"]["workspace"] == {
+        "engine": "dockview@8",
+        "namedPresets": presets,
+    }
+
+
+async def test_named_presets_round_trip_stored_opaque_entries_without_engine_downgrade(
+    httpx_client, annotator, db_session
+):
+    user, token = annotator
+    future = {
+        "name": "新版布局",
+        "context": "annotate:image",
+        "schemaVersion": 99,
+        "snapshot": {"future": [1, 2, 3]},
+        "futureMetadata": {"keep": True},
+    }
+    damaged = {"schemaVersion": 5, "snapshot": {"broken": True}}
+    stored = {"future.id": future, "damaged id": damaged}
+    await _store_raw_named_presets(user, db_session, stored)
+
+    current = _named_preset("当前版布局")
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json=_named_presets_only_patch({**stored, "p1": current}),
+        headers=_bearer(token),
+    )
+    assert response.status_code == 200, response.text
+    workspace = response.json()["workbench"]["layout"]["workspace"]
+    assert workspace["engine"] == "dockview@9"
+    assert workspace["namedPresets"] == {**stored, "p1": current}
+
+    # Omission remains deletion even for an entry the current schema cannot parse.
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json=_named_presets_only_patch({"future.id": future, "p1": current}),
+        headers=_bearer(token),
+    )
+    assert response.status_code == 200, response.text
+    workspace = response.json()["workbench"]["layout"]["workspace"]
+    assert workspace["engine"] == "dockview@9"
+    assert workspace["namedPresets"] == {"future.id": future, "p1": current}
+
+
+async def test_named_presets_preserve_json_number_spelling_in_opaque_entry(
+    httpx_client, annotator, db_session
+):
+    user, token = annotator
+    stored_future = {
+        "name": "新版布局",
+        "context": "annotate:image",
+        "schemaVersion": 99,
+        "snapshot": {"futureRatio": 1.0},
+    }
+    await _store_raw_named_presets(user, db_session, {"future": stored_future})
+
+    browser_round_trip = copy.deepcopy(stored_future)
+    browser_round_trip["snapshot"]["futureRatio"] = 1
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json=_named_presets_only_patch({"future": browser_round_trip}),
+        headers=_bearer(token),
+    )
+    assert response.status_code == 200, response.text
+    stored_ratio = response.json()["workbench"]["layout"]["workspace"]["namedPresets"][
+        "future"
+    ]["snapshot"]["futureRatio"]
+    assert type(stored_ratio) is float
+    assert stored_ratio == 1.0
+
+
+@pytest.mark.parametrize(
+    ("stored_counter", "browser_counter"),
+    [
+        (9_007_199_254_740_993, 9_007_199_254_740_992),
+        (10**400, None),
+    ],
+)
+async def test_named_presets_preserve_unsafe_javascript_number_in_opaque_entry(
+    httpx_client, annotator, db_session, stored_counter, browser_counter
+):
+    user, token = annotator
+    stored_future = {
+        "name": "新版布局",
+        "context": "annotate:image",
+        "schemaVersion": 99,
+        "snapshot": {"futureCounter": stored_counter},
+    }
+    await _store_raw_named_presets(user, db_session, {"future": stored_future})
+
+    browser_round_trip = copy.deepcopy(stored_future)
+    browser_round_trip["snapshot"]["futureCounter"] = browser_counter
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json=_named_presets_only_patch({"future": browser_round_trip}),
+        headers=_bearer(token),
+    )
+    assert response.status_code == 200, response.text
+    assert (
+        response.json()["workbench"]["layout"]["workspace"]["namedPresets"]["future"][
+            "snapshot"
+        ]["futureCounter"]
+        == stored_counter
+    )
+
+
+async def test_named_presets_can_reduce_stored_over_limit_opaque_map(
+    httpx_client, annotator, db_session
+):
+    user, token = annotator
+    stored = {
+        f"future{index}": {
+            "name": f"新版布局 {index}",
+            "context": "annotate:image",
+            "schemaVersion": 99,
+            "snapshot": {"future": index},
+        }
+        for index in range(6)
+    }
+    await _store_raw_named_presets(user, db_session, stored)
+
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json=_named_presets_only_patch(stored),
+        headers=_bearer(token),
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["workbench"]["layout"]["workspace"]["namedPresets"] == stored
+
+    previous = copy.deepcopy(user.preferences)
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json=_named_presets_only_patch(
+            {
+                **stored,
+                "invented": {
+                    **stored["future0"],
+                    "name": "超限新增布局",
+                },
+            }
+        ),
+        headers=_bearer(token),
+    )
+    assert response.status_code == 422
+    assert user.preferences == previous
+
+    reduced = {key: value for key, value in stored.items() if key != "future0"}
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json=_named_presets_only_patch(reduced),
+        headers=_bearer(token),
+    )
+    assert response.status_code == 200, response.text
+    assert (
+        response.json()["workbench"]["layout"]["workspace"]["namedPresets"] == reduced
+    )
+
+
+async def test_named_presets_reject_duplicate_name_against_opaque_entry(
+    httpx_client, annotator, db_session
+):
+    user, token = annotator
+    future = {
+        "name": "同名",
+        "context": "annotate:image",
+        "schemaVersion": 99,
+        "snapshot": {"future": True},
+    }
+    await _store_raw_named_presets(user, db_session, {"future": future})
+    previous = copy.deepcopy(user.preferences)
+
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json=_named_presets_only_patch(
+            {"future": future, "current": _named_preset("同名")}
+        ),
+        headers=_bearer(token),
+    )
+    assert response.status_code == 422
+    assert user.preferences == previous
+
+
+async def test_named_presets_can_shrink_stored_opaque_duplicate_group(
+    httpx_client, annotator, db_session
+):
+    user, token = annotator
+    stored = {
+        preset_id: {
+            "name": "存量同名",
+            "context": "annotate:image",
+            "schemaVersion": 99,
+            "snapshot": {"future": preset_id},
+        }
+        for preset_id in ("future-a", "future-b", "future-c")
+    }
+    await _store_raw_named_presets(user, db_session, stored)
+
+    for removed in ("future-a", "future-b"):
+        stored.pop(removed)
+        response = await httpx_client.patch(
+            PREFS_URL,
+            json=_named_presets_only_patch(stored),
+            headers=_bearer(token),
+        )
+        assert response.status_code == 200, response.text
+        assert (
+            response.json()["workbench"]["layout"]["workspace"]["namedPresets"]
+            == stored
+        )
+
+
+async def test_named_presets_reject_new_opaque_entry_and_engine_downgrade(
+    httpx_client, annotator, db_session
+):
+    user, token = annotator
+    future = {
+        "name": "新版布局",
+        "context": "annotate:image",
+        "schemaVersion": 99,
+        "snapshot": {"future": None},
+    }
+    await _store_raw_named_presets(user, db_session, {"future": future})
+    previous = copy.deepcopy(user.preferences)
+
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json={
+            "workbench": {
+                "layout": {
+                    "workspace": {
+                        "contexts": {"annotate:image": _workspace_envelope(5)}
+                    }
+                }
+            }
+        },
+        headers=_bearer(token),
+    )
+    assert response.status_code == 422
+    assert user.preferences == previous
+
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json=_named_presets_only_patch(
+            {"future": {**future, "snapshot": {"future": 10**400}}}
+        ),
+        headers=_bearer(token),
+    )
+    assert response.status_code == 422
+    assert user.preferences == previous
+
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json=_named_presets_only_patch(
+            {
+                "future": future,
+                "invented": {**future, "name": "伪造新版布局"},
+            }
+        ),
+        headers=_bearer(token),
+    )
+    assert response.status_code == 422
+    assert user.preferences == previous
+
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json={
+            "workbench": {
+                "layout": {
+                    "workspace": {
+                        "engine": "dockview@8",
+                        "namedPresets": {"future": future},
+                    }
+                }
+            }
+        },
+        headers=_bearer(token),
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"] == "layout_engine_downgrade"
+    assert user.preferences == previous
 
 
 @pytest.mark.parametrize(

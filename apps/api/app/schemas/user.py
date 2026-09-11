@@ -374,6 +374,32 @@ class UserPreferences(BaseModel):
     onboarding: OnboardingPreferences = Field(default_factory=OnboardingPreferences)
 
 
+class WorkbenchLayoutPreferencesRead(WorkbenchLayoutPreferences):
+    """Read shape with an opaque fallback for rolling workspace upgrades."""
+
+    workspace: WorkbenchWorkspacePreferences | dict[str, Any] | None = None
+
+    @field_validator("workspace", mode="before")
+    @classmethod
+    def _workspace_cannot_be_cleared(cls, value):
+        """Override the write-only validator: stored null remains readable."""
+        return value
+
+
+class WorkbenchPreferencesRead(WorkbenchPreferences):
+    layout: WorkbenchLayoutPreferencesRead = Field(
+        default_factory=WorkbenchLayoutPreferencesRead
+    )
+
+
+class UserPreferencesRead(UserPreferences):
+    """Preference response; writes continue to validate against UserPreferences."""
+
+    workbench: WorkbenchPreferencesRead = Field(
+        default_factory=WorkbenchPreferencesRead
+    )
+
+
 class UserCreate(BaseModel):
     email: str
     name: str

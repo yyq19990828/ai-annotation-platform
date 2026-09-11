@@ -7,6 +7,7 @@ import type { DockviewApi } from "dockview-react";
 import {
   DEFAULT_WORKBENCH_PREFERENCES,
   type NamedWorkspacePreset,
+  type StoredNamedWorkspacePresets,
   type UserPreferences,
 } from "@/api/auth";
 import { createWorkspacePreset } from "./workbenchLayoutPresets";
@@ -62,7 +63,7 @@ const bounds = { width: 1600, height: 900 };
 let mounts = 0;
 let client = new QueryClient();
 
-function preferences(namedPresets: Record<string, NamedWorkspacePreset> = {}): UserPreferences {
+function preferences(namedPresets: StoredNamedWorkspacePresets = {}): UserPreferences {
   return {
     workbench: {
       ...DEFAULT_WORKBENCH_PREFERENCES,
@@ -531,6 +532,26 @@ describe("stable Dockview React workspace", () => {
     await screen.findByTestId("canvas-marker");
     expect(await screen.findByRole("button", { name: "应用" })).toBeDisabled();
     expect(screen.getByText("视频标注")).toBeInTheDocument();
+  });
+
+  it("keeps an un-restorable preset delete-only and counts hidden raw entries", async () => {
+    state.getPreferences.mockResolvedValue(
+      preferences({
+        future: {
+          name: "新版布局",
+          context: "review:image",
+          schemaVersion: 99,
+          snapshot: { future: true },
+        },
+        "future.id": { schemaVersion: 99, snapshot: { future: true } },
+      }),
+    );
+    render(fixture("review:image"));
+    const row = (await screen.findByText("新版布局")).closest("li")!;
+    expect(screen.getByText("2 / 5")).toBeInTheDocument();
+    expect(within(row).getByRole("button", { name: "应用" })).toBeDisabled();
+    expect(within(row).getByRole("button", { name: "重命名" })).toBeDisabled();
+    expect(within(row).getByRole("button", { name: "删除预设 新版布局" })).toBeEnabled();
   });
 
   it("deletes a saved preset after confirmation and frees its slot", async () => {

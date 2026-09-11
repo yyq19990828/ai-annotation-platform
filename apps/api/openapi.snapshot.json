@@ -33113,9 +33113,9 @@
         "title": "UserPage",
         "type": "object"
       },
-      "UserPreferences": {
+      "UserPreferencesRead": {
         "additionalProperties": false,
-        "description": "User.preferences JSONB root. 仅声明已知子树；未来按 epic 追加。",
+        "description": "Preference response; writes continue to validate against UserPreferences.",
         "properties": {
           "ai": {
             "$ref": "#/components/schemas/AIToolPreferences"
@@ -33127,10 +33127,10 @@
             "$ref": "#/components/schemas/UIPreferences"
           },
           "workbench": {
-            "$ref": "#/components/schemas/WorkbenchPreferences"
+            "$ref": "#/components/schemas/WorkbenchPreferencesRead"
           }
         },
-        "title": "UserPreferences",
+        "title": "UserPreferencesRead",
         "type": "object"
       },
       "UserReceiverOption": {
@@ -37573,9 +37573,9 @@
         "title": "WorkbenchImagePreferences",
         "type": "object"
       },
-      "WorkbenchLayoutPreferences": {
+      "WorkbenchLayoutPreferencesRead": {
         "additionalProperties": false,
-        "description": "v0.13.10 · 工作台布局偏好。\n\n后端只校验结构；默认值和 PATCH 全量 workbench 契约由前端维护。",
+        "description": "Read shape with an opaque fallback for rolling workspace upgrades.",
         "properties": {
           "aiSectionCollapsed": {
             "anyOf": [
@@ -37737,12 +37737,17 @@
                 "$ref": "#/components/schemas/WorkbenchWorkspacePreferences"
               },
               {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Workspace"
           }
         },
-        "title": "WorkbenchLayoutPreferences",
+        "title": "WorkbenchLayoutPreferencesRead",
         "type": "object"
       },
       "WorkbenchPointcloudPreferences": {
@@ -37848,9 +37853,8 @@
         "title": "WorkbenchPointcloudPreferences",
         "type": "object"
       },
-      "WorkbenchPreferences": {
+      "WorkbenchPreferencesRead": {
         "additionalProperties": false,
-        "description": "v0.9.41 · 标注工作台渲染偏好（I17 Configuration）。\nv0.13.10 · 增加 layout 子树承载跨设备布局偏好。\nv0.15.3 · 平铺字段拆为 common/image/video/pointcloud 四子树；layout 保持顶层。",
         "properties": {
           "common": {
             "$ref": "#/components/schemas/WorkbenchCommonPreferences"
@@ -37859,7 +37863,7 @@
             "$ref": "#/components/schemas/WorkbenchImagePreferences"
           },
           "layout": {
-            "$ref": "#/components/schemas/WorkbenchLayoutPreferences"
+            "$ref": "#/components/schemas/WorkbenchLayoutPreferencesRead"
           },
           "pointcloud": {
             "$ref": "#/components/schemas/WorkbenchPointcloudPreferences"
@@ -37868,7 +37872,7 @@
             "$ref": "#/components/schemas/WorkbenchVideoPreferences"
           }
         },
-        "title": "WorkbenchPreferences",
+        "title": "WorkbenchPreferencesRead",
         "type": "object"
       },
       "WorkbenchVideoPreferences": {
@@ -42294,7 +42298,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UserPreferences"
+                  "$ref": "#/components/schemas/UserPreferencesRead"
                 }
               }
             },
@@ -42331,7 +42335,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/UserPreferences"
+                  "$ref": "#/components/schemas/UserPreferencesRead"
                 }
               }
             },
