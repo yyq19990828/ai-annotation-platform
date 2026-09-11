@@ -1,4 +1,4 @@
-import { useState, useEffect, type ClipboardEvent } from "react";
+import { lazy, Suspense, useState, useEffect, useRef, type ClipboardEvent } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
 import {
@@ -38,6 +38,7 @@ import {
 import { readWorkbenchPerfSnapshot } from "@/pages/Workbench/stage/shared/useWorkbenchPerf";
 import { ScreenshotEditor } from "./ScreenshotEditor";
 import { MarkdownBlock } from "./MarkdownBlock";
+import type { MarkdownEditorProps } from "@/components/markdown/MarkdownEditor";
 import styles from "./BugReportDrawer.module.css";
 
 interface Props {
@@ -51,6 +52,37 @@ type ViewState = "list" | "create" | "detail" | "edit";
 const MAX_ATTACHMENTS = 5;
 const MAX_ATTACHMENT_SIZE = 10 * 1024 * 1024;
 const ALLOWED_ATTACHMENT_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+const MAX_DESCRIPTION_LENGTH = 20_000;
+const MAX_COMMENT_LENGTH = 10_000;
+
+type CompactMarkdownEditorProps = Pick<
+  MarkdownEditorProps,
+  | "value"
+  | "onChange"
+  | "onSubmit"
+  | "placeholder"
+  | "documentId"
+  | "label"
+  | "variant"
+  | "disabled"
+>;
+
+// BUG 表单使用紧凑编辑器，保持 MDXEditor 不进入抽屉首屏 bundle。
+const MarkdownEditor = lazy(() =>
+  import("@/components/markdown/MarkdownEditor").then((m) => ({
+    default: m.MarkdownEditor,
+  })),
+);
+
+const codePointLength = (value: string) => Array.from(value).length;
+
+function CompactMarkdownEditor(props: CompactMarkdownEditorProps) {
+  return (
+    <Suspense fallback={<div className={styles.field}>编辑器加载中…</div>}>
+      <MarkdownEditor {...props} />
+    </Suspense>
+  );
+}
 
 const cx = (...classNames: Array<string | false | null | undefined>) =>
   classNames.filter(Boolean).join(" ");
@@ -85,6 +117,9 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
   // detail-view comment composer
   const [commentBody, setCommentBody] = useState("");
   const [postingComment, setPostingComment] = useState(false);
+  const detailRequestRef = useRef(0);
+  const activeDetailIdRef = useRef<string | null>(null);
+  const commentRequestRef = useRef(0);
 
   // v0.6.6 · 截图状态
   const [screenshotBlob, setScreenshotBlob] = useState<Blob | null>(null);
@@ -121,16 +156,34 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
     }
   };
 
+  const invalidateDetailScope = () => {
+    detailRequestRef.current += 1;
+    commentRequestRef.current += 1;
+    activeDetailIdRef.current = null;
+    setPostingComment(false);
+  };
+
   const loadDetail = async (id: string) => {
+    const requestId = ++detailRequestRef.current;
+    commentRequestRef.current += 1;
+    if (activeDetailIdRef.current !== id) setCommentBody("");
+    activeDetailIdRef.current = id;
+    setPostingComment(false);
     setLoading(true);
+    setDetail(null);
     try {
       const data = await bugReportsApi.get(id);
+      if (requestId !== detailRequestRef.current || activeDetailIdRef.current !== id) return;
       setDetail(data);
       setView("detail");
     } catch {
-      pushToast({ msg: "加载失败", kind: "error" });
+      if (requestId === detailRequestRef.current && activeDetailIdRef.current === id) {
+        pushToast({ msg: "加载失败", kind: "error" });
+      }
     } finally {
-      setLoading(false);
+      if (requestId === detailRequestRef.current && activeDetailIdRef.current === id) {
+        setLoading(false);
+      }
     }
   };
 
@@ -168,6 +221,7 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
     );
     if (files.length === 0) return;
     e.preventDefault();
+    e.stopPropagation();
     const nextAttachments: PendingAttachment[] = [];
     let nextCount = pendingAttachments.length;
     for (const file of files) {
@@ -201,7 +255,38 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
   };
 
   const handleSubmit = async (skipScreenshot = false) => {
-    if (!title.trim() || !desc.trim()) return;
+    const trimmedTitle = title.trim();
+    const trimmedDescription = desc.trim();
+    if (!trimmedTitle || !trimmedDescription) return;
+
+    const videoDiagnostics = getVideoWorkbenchDiagnosticsSnapshot();
+    const videoDiagnosticsEntry = videoWorkbenchDiagnosticsConsoleEntry(videoDiagnostics);
+    const rasterMaskDiagnostics = getRasterMaskComputeDiagnosticsSnapshot();
+    const rasterMaskDiagnosticsEntry =
+      rasterMaskComputeDiagnosticsConsoleEntry(rasterMaskDiagnostics);
+    const imageTileDiagnostics = getImageTileDiagnosticsSnapshot();
+    const imageTileDiagnosticsEntry = imageTileDiagnosticsConsoleEntry(imageTileDiagnostics);
+    const rasterResourceDiagnostics = getRasterResourceDiagnosticsSnapshot();
+    const rasterResourceDiagnosticsEntry =
+      rasterResourceDiagnosticsConsoleEntry(rasterResourceDiagnostics);
+    const description = appendRasterResourceDiagnostics(
+      appendImageTileDiagnostics(
+        appendRasterMaskComputeDiagnostics(
+          appendVideoWorkbenchDiagnostics(trimmedDescription, videoDiagnostics),
+          rasterMaskDiagnostics,
+        ),
+        imageTileDiagnostics,
+      ),
+      rasterResourceDiagnostics,
+    );
+    if (codePointLength(description) > MAX_DESCRIPTION_LENGTH) {
+      pushToast({
+        msg: `描述（含自动诊断）不能超过 ${MAX_DESCRIPTION_LENGTH} 个字符`,
+        kind: "error",
+      });
+      return;
+    }
+
     setSubmitting(true);
     try {
       let uploadedAttachments: BugAttachment[] = [];
@@ -219,16 +304,6 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
           return;
         }
       }
-      const videoDiagnostics = getVideoWorkbenchDiagnosticsSnapshot();
-      const videoDiagnosticsEntry = videoWorkbenchDiagnosticsConsoleEntry(videoDiagnostics);
-      const rasterMaskDiagnostics = getRasterMaskComputeDiagnosticsSnapshot();
-      const rasterMaskDiagnosticsEntry =
-        rasterMaskComputeDiagnosticsConsoleEntry(rasterMaskDiagnostics);
-      const imageTileDiagnostics = getImageTileDiagnosticsSnapshot();
-      const imageTileDiagnosticsEntry = imageTileDiagnosticsConsoleEntry(imageTileDiagnostics);
-      const rasterResourceDiagnostics = getRasterResourceDiagnosticsSnapshot();
-      const rasterResourceDiagnosticsEntry =
-        rasterResourceDiagnosticsConsoleEntry(rasterResourceDiagnostics);
       const recentConsoleErrors = getRecentConsoleErrors().map((e) => ({
         msg: e.msg,
         stack: e.stack || "",
@@ -248,17 +323,8 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
         });
       }
       await bugReportsApi.create({
-        title: title.trim(),
-        description: appendRasterResourceDiagnostics(
-          appendImageTileDiagnostics(
-            appendRasterMaskComputeDiagnostics(
-              appendVideoWorkbenchDiagnostics(desc.trim(), videoDiagnostics),
-              rasterMaskDiagnostics,
-            ),
-            imageTileDiagnostics,
-          ),
-          rasterResourceDiagnostics,
-        ),
+        title: trimmedTitle,
+        description,
         severity: severity as "low" | "medium" | "high" | "critical",
         route: location.pathname + location.search,
         browser_ua: navigator.userAgent.slice(0, 200),
@@ -300,6 +366,7 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
   };
 
   const startEdit = (r: BugReportDetail) => {
+    invalidateDetailScope();
     setEditId(r.id);
     setTitle(r.title);
     setDesc(r.description);
@@ -308,12 +375,18 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
   };
 
   const handleUpdate = async () => {
-    if (!editId || !title.trim() || !desc.trim()) return;
+    const trimmedTitle = title.trim();
+    const description = desc.trim();
+    if (!editId || !trimmedTitle || !description) return;
+    if (codePointLength(description) > MAX_DESCRIPTION_LENGTH) {
+      pushToast({ msg: `描述不能超过 ${MAX_DESCRIPTION_LENGTH} 个字符`, kind: "error" });
+      return;
+    }
     setSubmitting(true);
     try {
       await bugReportsApi.update(editId, {
-        title: title.trim(),
-        description: desc.trim(),
+        title: trimmedTitle,
+        description,
         severity,
       });
       pushToast({ msg: "反馈已更新", kind: "success" });
@@ -329,24 +402,51 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
     }
   };
 
-  const handlePostComment = async () => {
-    if (!detail || !commentBody.trim() || postingComment) return;
-    const body = commentBody.trim();
+  const handlePostComment = async (submittedBody = commentBody) => {
+    if (!detail || !submittedBody.trim() || postingComment) return;
+    const reportId = detail.id;
+    const detailScope = detailRequestRef.current;
+    const requestId = ++commentRequestRef.current;
+    const body = submittedBody.trim();
+    if (codePointLength(body) > MAX_COMMENT_LENGTH) {
+      pushToast({ msg: `评论不能超过 ${MAX_COMMENT_LENGTH} 个字符`, kind: "error" });
+      return;
+    }
     const willReopen = ["fixed", "wont_fix", "duplicate"].includes(detail.status);
     setPostingComment(true);
     try {
-      await bugReportsApi.addComment(detail.id, body);
+      await bugReportsApi.addComment(reportId, body);
+      if (
+        requestId !== commentRequestRef.current ||
+        detailScope !== detailRequestRef.current ||
+        activeDetailIdRef.current !== reportId
+      ) {
+        return;
+      }
       setCommentBody("");
       pushToast({
         msg: willReopen ? "评论已发送，反馈已重新打开" : "评论已发送",
         kind: "success",
       });
-      const fresh = await bugReportsApi.get(detail.id);
+      const fresh = await bugReportsApi.get(reportId);
+      if (
+        requestId !== commentRequestRef.current ||
+        detailScope !== detailRequestRef.current ||
+        activeDetailIdRef.current !== reportId
+      ) {
+        return;
+      }
       setDetail(fresh);
     } catch {
-      pushToast({ msg: "评论发送失败", kind: "error" });
+      if (
+        requestId === commentRequestRef.current &&
+        detailScope === detailRequestRef.current &&
+        activeDetailIdRef.current === reportId
+      ) {
+        pushToast({ msg: "评论发送失败", kind: "error" });
+      }
     } finally {
-      setPostingComment(false);
+      if (requestId === commentRequestRef.current) setPostingComment(false);
     }
   };
 
@@ -373,9 +473,14 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
 
   if (!open) return null;
 
+  const handleClose = () => {
+    invalidateDetailScope();
+    onClose();
+  };
+
   return (
     <>
-      <div data-bug-drawer className={styles.overlay} onClick={onClose} />
+      <div data-bug-drawer className={styles.overlay} onClick={handleClose} />
       <div data-bug-drawer className={styles.drawer}>
         {/* Header */}
         <div className={styles.header}>
@@ -392,6 +497,7 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
             {view !== "list" && (
               <button
                 onClick={() => {
+                  invalidateDetailScope();
                   setView("list");
                   setDetail(null);
                 }}
@@ -400,7 +506,7 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
                 返回
               </button>
             )}
-            <button onClick={onClose} className={styles.closeButton}>
+            <button onClick={handleClose} className={styles.closeButton}>
               <Icon name="x" size={16} />
             </button>
           </div>
@@ -451,7 +557,7 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
 
           {view === "create" && (
             <form
-              onPaste={handlePasteImage}
+              onPasteCapture={handlePasteImage}
               onSubmit={(e) => {
                 e.preventDefault();
                 handleSubmit();
@@ -468,13 +574,14 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
               />
 
               <label className={styles.label}>描述 *</label>
-              <textarea
-                required
+              <CompactMarkdownEditor
                 value={desc}
-                onChange={(e) => setDesc(e.target.value)}
-                rows={4}
+                onChange={setDesc}
                 placeholder="详细描述问题..."
-                className={cx(styles.field, styles.textarea)}
+                documentId="bug-create"
+                label="反馈描述"
+                variant="compact"
+                disabled={submitting}
               />
 
               <label className={styles.label}>严重程度</label>
@@ -604,12 +711,13 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
                 className={styles.field}
               />
               <label className={styles.label}>描述 *</label>
-              <textarea
-                required
+              <CompactMarkdownEditor
                 value={desc}
-                onChange={(e) => setDesc(e.target.value)}
-                rows={4}
-                className={cx(styles.field, styles.textarea)}
+                onChange={setDesc}
+                documentId={editId ? `bug-edit-${editId}` : "bug-edit"}
+                label="反馈描述"
+                variant="compact"
+                disabled={submitting}
               />
               <label className={styles.label}>严重程度</label>
               <select
@@ -729,16 +837,21 @@ export function BugReportDrawer({ open, onClose, focusBugId = null }: Props) {
                       」，发送评论将自动重新打开此反馈
                     </div>
                   )}
-                  <textarea
-                    value={commentBody}
-                    onChange={(e) => setCommentBody(e.target.value)}
-                    placeholder="写下你的回复 / 补充信息..."
-                    rows={3}
-                    className={cx(styles.field, styles.textarea, styles.commentTextarea)}
-                  />
+                  <div>
+                    <CompactMarkdownEditor
+                      value={commentBody}
+                      onChange={setCommentBody}
+                      onSubmit={(next) => void handlePostComment(next)}
+                      placeholder="写下你的回复 / 补充信息..."
+                      documentId={`bug-comment-${detail.id}`}
+                      label="反馈评论"
+                      variant="compact"
+                      disabled={postingComment}
+                    />
+                  </div>
                   <button
                     type="button"
-                    onClick={handlePostComment}
+                    onClick={() => void handlePostComment()}
                     disabled={postingComment || !commentBody.trim()}
                     className={styles.sendButton}
                   >
