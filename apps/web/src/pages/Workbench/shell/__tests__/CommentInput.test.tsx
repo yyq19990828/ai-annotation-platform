@@ -22,15 +22,23 @@ import type { DiscussionPayload, DiscussionTarget } from "../../state/discussion
 type MockCanvasProps = {
   open: boolean;
   onSave: (drawing: CommentCanvasDrawing | null) => void;
+  onDraftChange?: (drawing: CommentCanvasDrawing | null) => void;
+  initial?: CommentCanvasDrawing | null;
 };
 
 const canvasHarness = vi.hoisted(() => ({
   onSave: null as MockCanvasProps["onSave"] | null,
+  onDraftChange: null as MockCanvasProps["onDraftChange"] | null,
+  initial: null as MockCanvasProps["initial"] | null,
 }));
 
 vi.mock("@/components/CanvasDrawingEditor", () => ({
-  CanvasDrawingEditor: ({ open, onSave }: MockCanvasProps) => {
-    if (open) canvasHarness.onSave = onSave;
+  CanvasDrawingEditor: ({ open, onSave, onDraftChange, initial }: MockCanvasProps) => {
+    if (open) {
+      canvasHarness.onSave = onSave;
+      canvasHarness.onDraftChange = onDraftChange ?? null;
+      canvasHarness.initial = initial ?? null;
+    }
     return open ? (
       <button
         type="button"
@@ -151,6 +159,8 @@ function deferred<T>() {
 
 afterEach(() => {
   canvasHarness.onSave = null;
+  canvasHarness.onDraftChange = null;
+  canvasHarness.initial = null;
   vi.restoreAllMocks();
 });
 
@@ -461,6 +471,185 @@ describe("CommentInput session composer", () => {
     );
     saveA({ shapes: [{ type: "line", points: [0, 0, 1, 1] }] } as CommentCanvasDrawing);
 
+    expect(store.getDraft(annotationA)?.canvas_drawing).toBeNull();
+    expect(store.getDraft(annotationB)?.canvas_drawing).toBeNull();
+  });
+
+  it("autosaves popup drawing drafts and restores them after closing and reopening", () => {
+    const store = createDiscussionDraftStore({ owner: { userId: "u1", sessionId: "s1" } });
+    const view = render(
+      <CommentInput
+        target={annotationA}
+        draftStore={store}
+        members={[]}
+        onSubmit={vi.fn()}
+        enableCanvasDrawing
+        backgroundUrl="image-a"
+      />,
+    );
+
+    fireEvent.click(view.getByRole("button", { name: "弹窗批注" }));
+    const drawing = {
+      shapes: [{ type: "line" as const, points: [0.1, 0.2, 0.8, 0.9] }],
+    };
+    canvasHarness.onDraftChange?.(drawing);
+    expect(store.getDraft(annotationA)?.canvas_drawing).toEqual(drawing);
+
+    // A target change closes the popup, but the store retains its composed
+    // drawing. Returning and opening a fresh popup hydrates the saved shape.
+    view.rerender(
+      <CommentInput
+        target={annotationB}
+        draftStore={store}
+        members={[]}
+        onSubmit={vi.fn()}
+        enableCanvasDrawing
+        backgroundUrl="image-b"
+      />,
+    );
+    view.rerender(
+      <CommentInput
+        target={annotationA}
+        draftStore={store}
+        members={[]}
+        onSubmit={vi.fn()}
+        enableCanvasDrawing
+        backgroundUrl="image-a"
+      />,
+    );
+    fireEvent.click(view.getByRole("button", { name: /批注/ }));
+    expect(canvasHarness.initial).toEqual(drawing);
+  });
+
+  it("keeps popup and live drawing mutually exclusive in either direction", () => {
+    const store = createDiscussionDraftStore({ owner: { userId: "u1", sessionId: "s1" } });
+    const onStart = vi.fn();
+    const onConsume = vi.fn();
+    const liveCanvas = {
+      active: false,
+      result: null,
+      onStart,
+      onConsume,
+    };
+    const view = render(
+      <CommentInput
+        target={annotationA}
+        draftStore={store}
+        members={[]}
+        onSubmit={vi.fn()}
+        enableCanvasDrawing
+        backgroundUrl="image-a"
+        liveCanvas={liveCanvas}
+      />,
+    );
+
+    fireEvent.click(view.getByRole("button", { name: "弹窗批注" }));
+    fireEvent.click(view.getByRole("button", { name: "在题图上绘制" }));
+    expect(onStart).not.toHaveBeenCalled();
+
+    view.unmount();
+    canvasHarness.onSave = null;
+    const liveView = render(
+      <CommentInput
+        target={annotationA}
+        draftStore={store}
+        members={[]}
+        onSubmit={vi.fn()}
+        enableCanvasDrawing
+        backgroundUrl="image-a"
+        liveCanvas={{ ...liveCanvas, active: true }}
+      />,
+    );
+    const popup = liveView.getByRole("button", { name: "弹窗批注" });
+    expect(popup).toBeDisabled();
+    expect(canvasHarness.onSave).toBeNull();
+    liveView.unmount();
+  });
+
+  it("blocks rapid duplicate live starts before the host publishes active=true", () => {
+    const store = createDiscussionDraftStore({ owner: { userId: "u1", sessionId: "s1" } });
+    const onStart = vi.fn();
+    const view = render(
+      <CommentInput
+        target={annotationA}
+        draftStore={store}
+        members={[]}
+        onSubmit={vi.fn()}
+        enableCanvasDrawing
+        backgroundUrl="image-a"
+        liveCanvas={{ active: false, result: null, onStart, onConsume: vi.fn() }}
+      />,
+    );
+    const live = view.getByRole("button", { name: "在题图上绘制" });
+    fireEvent.click(live);
+    fireEvent.click(live);
+    expect(onStart).toHaveBeenCalledTimes(1);
+    view.unmount();
+  });
+
+  it("uses the opening video anchor for a popup draft after playback changes", () => {
+    const store = createDiscussionDraftStore({ owner: { userId: "u1", sessionId: "s1" } });
+    const anchorAtOpen = { kind: "video_frame" as const, frameIndex: 12, trackId: "track-a" };
+    const anchorAfterPlayback = {
+      kind: "video_frame" as const,
+      frameIndex: 48,
+      trackId: "track-b",
+    };
+    const view = render(
+      <CommentInput
+        target={annotationA}
+        draftStore={store}
+        members={[]}
+        onSubmit={vi.fn()}
+        enableCanvasDrawing
+        backgroundUrl="frame-12"
+        anchor={anchorAtOpen}
+      />,
+    );
+    fireEvent.click(view.getByRole("button", { name: "弹窗批注" }));
+    view.rerender(
+      <CommentInput
+        target={annotationA}
+        draftStore={store}
+        members={[]}
+        onSubmit={vi.fn()}
+        enableCanvasDrawing
+        backgroundUrl="frame-48"
+        anchor={anchorAfterPlayback}
+      />,
+    );
+    canvasHarness.onDraftChange?.({
+      shapes: [{ type: "line", points: [0, 0, 1, 1] }],
+    });
+    expect(store.getDraft(annotationA)?.anchor).toEqual(anchorAtOpen);
+  });
+
+  it("ignores a late popup draft callback from A after switching to B", () => {
+    const store = createDiscussionDraftStore({ owner: { userId: "u1", sessionId: "s1" } });
+    const view = render(
+      <CommentInput
+        target={annotationA}
+        draftStore={store}
+        members={[]}
+        onSubmit={vi.fn()}
+        enableCanvasDrawing
+        backgroundUrl="image-a"
+      />,
+    );
+    fireEvent.click(view.getByRole("button", { name: "弹窗批注" }));
+    const lateDraft = canvasHarness.onDraftChange;
+    if (!lateDraft) throw new Error("canvas draft callback was not mounted");
+    view.rerender(
+      <CommentInput
+        target={annotationB}
+        draftStore={store}
+        members={[]}
+        onSubmit={vi.fn()}
+        enableCanvasDrawing
+        backgroundUrl="image-b"
+      />,
+    );
+    lateDraft({ shapes: [{ type: "line", points: [0, 0, 1, 1] }] });
     expect(store.getDraft(annotationA)?.canvas_drawing).toBeNull();
     expect(store.getDraft(annotationB)?.canvas_drawing).toBeNull();
   });

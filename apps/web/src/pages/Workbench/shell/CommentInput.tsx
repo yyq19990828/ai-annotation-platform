@@ -197,6 +197,34 @@ function cloneAnchor(
   return anchor ? { ...anchor } : null;
 }
 
+function cloneDrawing(
+  drawing: CommentCanvasDrawing | null | undefined,
+): CommentCanvasDrawing | null {
+  if (!drawing) return null;
+  return {
+    shapes: (drawing.shapes ?? []).map((shape) => ({
+      ...shape,
+      points: [...shape.points],
+    })),
+  };
+}
+
+interface PopupCanvasSession {
+  identity: string;
+  targetKey: string | null;
+  target: DiscussionTarget | null;
+  origin: DiscussionOrigin | null;
+  initial: CommentCanvasDrawing | null;
+  backgroundUrl: string | null;
+  imageWidth: number | null;
+  imageHeight: number | null;
+  anchor: AnnotationCommentAnchor | null;
+}
+
+type CanvasMode =
+  | { kind: "popup"; identity: string; session: PopupCanvasSession }
+  | { kind: "live"; identity: string; origin: DiscussionOrigin | null };
+
 /** Hydrate only when a target changes or the editor DOM is newly mounted. */
 function hydrateEditor(root: HTMLElement, body: string, mentions: CommentMention[]) {
   const sorted = [...mentions]
@@ -264,6 +292,7 @@ export function CommentInput({
   const [attachments, setAttachments] = useState<CommentAttachment[]>([]);
   const [canvasDrawing, setCanvasDrawing] = useState<CommentCanvasDrawing | null>(null);
   const [canvasOpen, setCanvasOpen] = useState(false);
+  const [canvasSession, setCanvasSession] = useState<PopupCanvasSession | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const [localTargetAvailable, setLocalTargetAvailable] = useState(true);
   const composingRef = useRef(false);
@@ -276,8 +305,9 @@ export function CommentInput({
   const legacyIdentityRef = useRef<string | null>(null);
   const visibleIdentityRef = useRef<string | null>(null);
   const capturedAnchorRef = useRef<AnnotationCommentAnchor | null>(null);
-  const drawingOriginRef = useRef<DiscussionOrigin | null>(null);
-  const canvasEditorIdentityRef = useRef<string | null>(null);
+  const canvasSessionRef = useRef<PopupCanvasSession | null>(null);
+  const canvasOpenRef = useRef(false);
+  const canvasModeRef = useRef<CanvasMode | null>(null);
   const liveResultIdRef = useRef<string | null>(null);
   const liveResultRef = useRef<CommentCanvasDrawing | null>(null);
   const pushToast = useToastStore((s) => s.push);
@@ -337,6 +367,13 @@ export function CommentInput({
     : { text: true, mentions: true, attachments: true, canvasDrawing: true, anchor: true };
   const isAnnotationComposer = targetCapabilities.attachments;
   const sessionTarget = Boolean(store && effectiveTarget);
+  const storedCanvasDraft = store && effectiveTarget ? store.getDraft(effectiveTarget) : undefined;
+  const canvasDraftActive = Boolean(draft?.canvasActive || storedCanvasDraft?.canvasActive);
+  const activeLiveMode = canvasModeRef.current;
+  const activeLiveModeDraft =
+    activeLiveMode?.kind === "live" && activeLiveMode.origin && store
+      ? Boolean(store.getDraft(activeLiveMode.origin.target)?.canvasActive)
+      : false;
   const effectiveAttachments = useMemo(
     () => draft?.attachments ?? (sessionTarget ? [] : attachments),
     [attachments, draft?.attachments, sessionTarget],
@@ -407,11 +444,34 @@ export function CommentInput({
     setCanvasDrawing(null);
     // Close a modal opened for the previous target. Keep its frozen identity
     // and origin so a queued onSave cannot fall back to the newly visible one.
+    if (canvasModeRef.current?.kind === "popup") {
+      canvasModeRef.current = null;
+      bumpRequestState();
+    }
+    const liveMode = canvasModeRef.current;
+    const oldLiveDraftActive = activeLiveModeDraft;
+    if (
+      liveMode?.kind === "live" &&
+      liveMode.identity !== identity &&
+      !liveCanvas?.active &&
+      !oldLiveDraftActive
+    ) {
+      canvasModeRef.current = null;
+      bumpRequestState();
+    }
+    canvasOpenRef.current = false;
     setCanvasOpen(false);
     setLocalError(null);
     setLocalTargetAvailable(true);
     setPicker(blankPicker());
-  }, [annotationId, targetIdentity]);
+  }, [
+    annotationId,
+    bumpRequestState,
+    liveCanvas?.active,
+    store,
+    activeLiveModeDraft,
+    targetIdentity,
+  ]);
 
   const patchDraft = useCallback(
     (patch: DiscussionDraftPatch): boolean => {
@@ -459,6 +519,19 @@ export function CommentInput({
     }
     if (!capturedAnchorRef.current) capturedAnchorRef.current = cloneAnchor(anchor);
   }, [anchor, effectiveTarget, store]);
+
+  const captureDrawingAnchor = useCallback(
+    (target: DiscussionTarget | null, frozenAnchor: AnnotationCommentAnchor | null) => {
+      if (!frozenAnchor) return;
+      if (store && target) {
+        const current = store.getDraft(target);
+        if (!current?.anchor) store.captureAnchor(target, frozenAnchor);
+        return;
+      }
+      if (!capturedAnchorRef.current) capturedAnchorRef.current = cloneAnchor(frozenAnchor);
+    },
+    [store],
+  );
 
   const syncEditorDraft = useCallback(() => {
     const editor = editorRef.current;
@@ -518,40 +591,84 @@ export function CommentInput({
     [picker.triggerRange, syncEditorDraft],
   );
 
+  const handleCanvasDraftChange = useCallback(
+    (drawing: CommentCanvasDrawing | null) => {
+      const session = canvasSession;
+      if (!session || canvasSessionRef.current !== session) return;
+      // The callback is bound to the popup's opening identity. A late callback
+      // after task/annotation/account replacement may never retarget itself.
+      if (visibleIdentityRef.current !== session.identity) return;
+      const normalized = cloneDrawing(drawing);
+      if (session.origin && store) {
+        if (!store.isOwned(session.origin)) return;
+        if (!store.saveDrawing(session.origin, normalized, { active: false })) return;
+      } else {
+        setCanvasDrawing(normalized);
+      }
+      if (normalized?.shapes?.length) captureDrawingAnchor(session.target, session.anchor);
+    },
+    [canvasSession, captureDrawingAnchor, store],
+  );
+
   const handleCanvasSave = useCallback(
     (drawing: CommentCanvasDrawing | null) => {
-      const normalized = drawing?.shapes?.length ? drawing : null;
+      const session = canvasSession;
+      if (!session || canvasSessionRef.current !== session) return;
       // Check the live identity as well as the callback's captured identity:
       // React can deliver an already queued callback after a target switch.
-      if (visibleIdentityRef.current !== targetIdentity) return;
-      if (store && effectiveTarget) {
-        const origin = drawingOriginRef.current;
-        // The modal is bound to the identity captured at open time. A target
-        // or auth-lease change must reject its late callback instead of
-        // attaching the drawing to the currently visible target.
+      if (visibleIdentityRef.current !== session.identity) return;
+      const normalized = cloneDrawing(drawing);
+      if (session.origin && store) {
         if (
-          !origin ||
-          canvasEditorIdentityRef.current !== targetIdentity ||
-          discussionTargetKey(origin.target) !== targetKey ||
-          !store.isOwned(origin) ||
-          !store.acceptDrawing(origin, normalized)
+          !store.isOwned(session.origin) ||
+          discussionTargetKey(session.origin.target) !== session.targetKey ||
+          !store.acceptDrawing(session.origin, normalized)
         )
           return;
       } else {
-        if (canvasEditorIdentityRef.current !== targetIdentity) return;
         setCanvasDrawing(normalized);
       }
-      if (normalized) maybeCaptureAnchor();
+      if (normalized?.shapes?.length) captureDrawingAnchor(session.target, session.anchor);
+      canvasOpenRef.current = false;
+      if (canvasModeRef.current?.kind === "popup" && canvasModeRef.current.session === session) {
+        canvasModeRef.current = null;
+      }
       setCanvasOpen(false);
     },
-    [effectiveTarget, maybeCaptureAnchor, store, targetIdentity, targetKey],
+    [canvasSession, captureDrawingAnchor, store],
   );
+
+  const handleCanvasClose = useCallback(() => {
+    const session = canvasSession;
+    if (!session || canvasSessionRef.current !== session) return;
+    if (visibleIdentityRef.current !== session.identity) return;
+    canvasOpenRef.current = false;
+    if (canvasModeRef.current?.kind === "popup" && canvasModeRef.current.session === session) {
+      canvasModeRef.current = null;
+    }
+    setCanvasOpen(false);
+  }, [canvasSession]);
 
   // v0.6.4：消费来自 ImageStage 的 live canvas 结果. A result with an
   // origin is never attached to the currently visible target by inference.
   useEffect(() => {
     const result = liveCanvas?.result;
-    if (!result) return;
+    if (!result) {
+      // A cancelled live session has no result to consume. Release the local
+      // duplicate-click guard once the owning stage reports it inactive.
+      const mode = canvasModeRef.current;
+      const modeDraftActive = activeLiveModeDraft;
+      if (
+        mode?.kind === "live" &&
+        (mode.identity === targetIdentity || !modeDraftActive) &&
+        !liveCanvas?.active &&
+        !modeDraftActive
+      ) {
+        canvasModeRef.current = null;
+        bumpRequestState();
+      }
+      return;
+    }
     const resultId = liveCanvas.resultId ?? null;
     if (resultId && liveResultIdRef.current === resultId) return;
     if (!resultId && liveResultRef.current === result) return;
@@ -579,7 +696,21 @@ export function CommentInput({
       if (!origin) setCanvasDrawing(result.shapes?.length ? result : null);
       liveCanvas.onConsume(resultId);
     }
-  }, [effectiveTarget, liveCanvas, maybeCaptureAnchor, store]);
+    const mode = canvasModeRef.current;
+    if (mode?.kind === "live" && (mode.origin?.requestId ?? null) === (origin?.requestId ?? null)) {
+      canvasModeRef.current = null;
+      bumpRequestState();
+    }
+  }, [
+    bumpRequestState,
+    activeLiveModeDraft,
+    canvasDraftActive,
+    effectiveTarget,
+    liveCanvas,
+    maybeCaptureAnchor,
+    store,
+    targetIdentity,
+  ]);
 
   // v0.11.12：把当前 pending 批注上报给画布预览通道；卸载时清空。
   useEffect(() => {
@@ -594,7 +725,6 @@ export function CommentInput({
     setPicker(blankPicker());
     setLocalError(null);
     capturedAnchorRef.current = null;
-    drawingOriginRef.current = null;
   }, []);
 
   const handleFileUpload = useCallback(
@@ -704,7 +834,10 @@ export function CommentInput({
       activeSubmissionRequestsRef.current.has(targetIdentity) ||
       draftSubmitting ||
       !isAvailable ||
-      (liveCanvas?.active ?? false)
+      (liveCanvas?.active ?? false) ||
+      canvasOpenRef.current ||
+      Boolean(canvasModeRef.current) ||
+      canvasDraftActive
     ) {
       return;
     }
@@ -777,6 +910,7 @@ export function CommentInput({
   }, [
     authOwnerIsUsable,
     busy,
+    canvasDraftActive,
     effectiveAnchor,
     effectiveAttachments,
     effectiveCanvasDrawing,
@@ -793,26 +927,104 @@ export function CommentInput({
   ]);
 
   const startLiveCanvas = useCallback(() => {
-    if (!liveCanvas || liveCanvas.active) return;
+    if (
+      !liveCanvas ||
+      liveCanvas.active ||
+      canvasOpenRef.current ||
+      canvasModeRef.current ||
+      canvasDraftActive ||
+      !isAvailable ||
+      busy ||
+      uploadingCurrent ||
+      submittingCurrent ||
+      !isAnnotationComposer
+    )
+      return;
     const origin = store && effectiveTarget ? store.makeOrigin(effectiveTarget) : null;
     if (origin && store) {
       if (!store.startCanvasSession(origin, effectiveCanvasDrawing)) return;
-      drawingOriginRef.current = origin;
     }
+    // Set this before invoking the host callback. The host may update its
+    // active prop asynchronously, and two same-tick clicks must still share
+    // one canvas owner.
+    canvasModeRef.current = { kind: "live", identity: targetIdentity, origin };
+    bumpRequestState();
     liveCanvas.onStart(effectiveCanvasDrawing, origin);
-  }, [effectiveCanvasDrawing, effectiveTarget, liveCanvas, store]);
+  }, [
+    busy,
+    bumpRequestState,
+    canvasDraftActive,
+    effectiveCanvasDrawing,
+    effectiveTarget,
+    isAvailable,
+    isAnnotationComposer,
+    liveCanvas,
+    submittingCurrent,
+    store,
+    targetIdentity,
+    uploadingCurrent,
+  ]);
 
   const openCanvasEditor = useCallback(() => {
+    if (
+      canvasOpenRef.current ||
+      canvasModeRef.current ||
+      liveCanvas?.active ||
+      canvasDraftActive ||
+      !isAvailable ||
+      !backgroundUrl ||
+      busy ||
+      uploadingCurrent ||
+      submittingCurrent ||
+      !isAnnotationComposer
+    )
+      return;
     const origin = store && effectiveTarget ? store.makeOrigin(effectiveTarget) : null;
-    if (store && effectiveTarget && !origin) return;
-    drawingOriginRef.current = origin;
-    canvasEditorIdentityRef.current = targetIdentity;
-    if (effectiveCanvasDrawing) maybeCaptureAnchor();
+    if (store && !origin) return;
+    const session: PopupCanvasSession = {
+      identity: targetIdentity,
+      targetKey,
+      target: effectiveTarget ? { ...effectiveTarget } : null,
+      origin,
+      initial: cloneDrawing(effectiveCanvasDrawing),
+      backgroundUrl,
+      imageWidth: imageWidth ?? null,
+      imageHeight: imageHeight ?? null,
+      anchor: cloneAnchor(effectiveAnchor),
+    };
+    canvasSessionRef.current = session;
+    canvasModeRef.current = { kind: "popup", identity: targetIdentity, session };
+    canvasOpenRef.current = true;
+    setCanvasSession(session);
     setCanvasOpen(true);
-  }, [effectiveCanvasDrawing, effectiveTarget, maybeCaptureAnchor, store, targetIdentity]);
+  }, [
+    backgroundUrl,
+    busy,
+    canvasDraftActive,
+    effectiveAnchor,
+    effectiveCanvasDrawing,
+    effectiveTarget,
+    imageHeight,
+    imageWidth,
+    isAvailable,
+    isAnnotationComposer,
+    liveCanvas?.active,
+    submittingCurrent,
+    store,
+    targetIdentity,
+    targetKey,
+    uploadingCurrent,
+  ]);
 
   const submitDisabled =
-    busy || uploadingCurrent || submittingCurrent || !isAvailable || (liveCanvas?.active ?? false);
+    busy ||
+    uploadingCurrent ||
+    submittingCurrent ||
+    !isAvailable ||
+    (liveCanvas?.active ?? false) ||
+    canvasOpenRef.current ||
+    Boolean(canvasModeRef.current) ||
+    canvasDraftActive;
   const displayError = draft?.error ?? localError;
 
   return (
@@ -936,7 +1148,17 @@ export function CommentInput({
             <button
               type="button"
               onClick={openCanvasEditor}
-              disabled={!backgroundUrl || !isAvailable || submittingCurrent}
+              disabled={
+                !backgroundUrl ||
+                !isAvailable ||
+                submittingCurrent ||
+                busy ||
+                uploadingCurrent ||
+                canvasOpenRef.current ||
+                Boolean(liveCanvas?.active) ||
+                canvasDraftActive ||
+                Boolean(canvasModeRef.current)
+              }
               className={cn(
                 "inline-flex cursor-pointer appearance-none items-center gap-1 border-0 bg-transparent p-0 text-xs font-normal text-muted-foreground",
                 effectiveCanvasDrawing && "font-semibold text-brand",
@@ -956,7 +1178,16 @@ export function CommentInput({
             <button
               type="button"
               onClick={startLiveCanvas}
-              disabled={liveCanvas.active || !isAvailable || submittingCurrent}
+              disabled={
+                liveCanvas.active ||
+                !isAvailable ||
+                submittingCurrent ||
+                busy ||
+                uploadingCurrent ||
+                canvasOpenRef.current ||
+                canvasDraftActive ||
+                Boolean(canvasModeRef.current)
+              }
               className={cn(
                 "inline-flex cursor-pointer appearance-none items-center gap-1 border-0 bg-transparent p-0 text-xs font-normal text-brand",
                 liveCanvas.active && "cursor-default text-muted-foreground/60",
@@ -992,13 +1223,15 @@ export function CommentInput({
       )}
       {enableCanvasDrawing && isAnnotationComposer && (
         <CanvasDrawingEditor
-          open={canvasOpen}
-          onClose={() => setCanvasOpen(false)}
+          key={targetIdentity}
+          open={canvasOpen && canvasSession?.identity === targetIdentity}
+          onClose={handleCanvasClose}
           onSave={handleCanvasSave}
-          initial={effectiveCanvasDrawing}
-          backgroundUrl={backgroundUrl}
-          imageWidth={imageWidth}
-          imageHeight={imageHeight}
+          onDraftChange={handleCanvasDraftChange}
+          initial={canvasSession?.initial}
+          backgroundUrl={canvasSession?.backgroundUrl}
+          imageWidth={canvasSession?.imageWidth}
+          imageHeight={canvasSession?.imageHeight}
         />
       )}
       {picker.open && (
