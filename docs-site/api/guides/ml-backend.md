@@ -147,6 +147,22 @@ POST /api/v1/projects/:id/ml-backends/:bid/capabilities/refresh
 
 字段语义与受控词表见 [ML Backend 协议 §4.1](../../dev/reference/ml-backend-protocol)。
 
+## 交互式示例候选
+
+图片通过 `POST /api/v1/projects/:id/ml-backends/:backend_id/interactive-annotating` 发起；视频当前帧使用同前缀的 `interactive-annotating-frame`，附带帧图和 `frame_index`。SAM3 的 `context.type=exemplar` 支持以下组合：
+
+| `output` | `output_geometry` | `result` 候选                                 |
+| -------- | ----------------- | --------------------------------------------- |
+| `box`    | `polygon`         | `rectanglelabels`                             |
+| `mask`   | `polygon`         | `polygonlabels`                               |
+| `both`   | `polygon`         | 按实例交错的 `rectanglelabels, polygonlabels` |
+| `mask`   | `mask`            | 原生 `mask`                                   |
+| `both`   | `mask`            | 按实例交错的 `rectanglelabels, mask`          |
+
+仅框召回不使用原生 Mask 合同。`both + mask` 的每对矩形和 Mask 必须具有相同标签与分数；矩形需为图像范围内的非空归一化框，空 Mask 不得留下孤立矩形。其他原生 Mask 请求不接受混入矩形。
+
+原生候选的 ID 与采纳回执绑定其在完整 `result` 中的索引，例如第二个实例的 Mask 索引为 `3`。`accept_receipts` 只为 Mask 签发；客户端删除或采纳其他候选后，仍须使用原索引采纳 Mask，不得按过滤后的列表重新编号。框沿用普通标注创建路径，Mask 使用[原子采纳接口](./tasks-and-annotations#原生-ai-mask-候选采纳)。
+
 ## 审计
 
 全局注册写入 `ml_registry.created / updated / deleted`，服务池及成员操作写入 `ml_service_pool.*`；项目兼容端点继续记录 `ml_backend.*`。全部事件进入 `audit_logs`。

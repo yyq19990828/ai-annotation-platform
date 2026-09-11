@@ -3,6 +3,7 @@ from __future__ import annotations
 import uuid
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -107,13 +108,14 @@ def _body(
     class_name: str = "object",
     frame_index: int | None = None,
     source: Annotation | None = None,
+    candidate_index: int = 0,
 ) -> dict:
     from aap_protocol_v2 import CocoRlePayload, native_mask_candidate_id
 
     prompt_revision = "rev:test:1"
     rle_model = CocoRlePayload.model_validate(rle)
     candidate_id = native_mask_candidate_id(
-        rle_model, prompt_revision=prompt_revision, candidate_index=0
+        rle_model, prompt_revision=prompt_revision, candidate_index=candidate_index
     )
     candidate = NativeMaskCandidate(
         value=NativeMaskCandidateValue(rle=rle_model, masklabels=["object"]),
@@ -163,7 +165,7 @@ def _body(
             "task_id": str(task.id),
             "frame_index": frame_index,
             "candidate_id": candidate_id,
-            "candidate_index": 0,
+            "candidate_index": candidate_index,
             "content_digest": content_digest,
             "prompt_revision": prompt_revision,
             "score": 0.91,
@@ -187,7 +189,7 @@ def _body(
         "idempotency_key": key or f"accept-{uuid.uuid4()}",
         "candidate": {
             "candidate": candidate.model_dump(mode="json"),
-            "candidate_index": 0,
+            "candidate_index": candidate_index,
             "prompt_revision": prompt_revision,
             "receipt": receipt,
         },
@@ -223,6 +225,79 @@ def accept_storage_mocks(monkeypatch):
 
 def _headers(token: str, **extra: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}", **extra}
+
+
+@pytest.mark.parametrize("media_type", ["image", "video"])
+async def test_exemplar_both_accept_uses_original_mask_index(
+    httpx_client_bound,
+    db_session,
+    super_admin,
+    monkeypatch,
+    accept_storage_mocks,
+    media_type,
+):
+    from app.api.v1.ml_backends import _interactive_response
+    from app.services.ml_client import PredictionResult
+
+    user, token = super_admin
+    task, backend, pool = await _seed(
+        db_session, owner_id=user.id, media_type=media_type
+    )
+    monkeypatch.setattr(settings, "raster_mask_create_enabled", True)
+    frame_index = 7 if media_type == "video" else None
+    bodies = [
+        _body(task, backend, pool, frame_index=frame_index, candidate_index=index)
+        for index in (1, 3)
+    ]
+    raw = []
+    for body in bodies:
+        raw.extend(
+            [
+                {
+                    "type": "rectanglelabels",
+                    "value": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "width": 1.0,
+                        "height": 1.0,
+                        "rectanglelabels": ["object"],
+                    },
+                    "score": 0.91,
+                },
+                body["candidate"]["candidate"],
+            ]
+        )
+    response = _interactive_response(
+        PredictionResult(task_id=str(task.id), result=raw, **bodies[1]["inference"]),
+        context={
+            "type": "exemplar",
+            "output": "both",
+            "output_geometry": "mask",
+            "prompt_revision": "rev:test:1",
+        },
+        expected_size=(3, 2),
+        client=SimpleNamespace(pool_id=pool.id, last_instance_id=backend.id),
+        requested_backend_id=backend.id,
+        model_id="sam-image",
+        task_id=task.id,
+        frame_index=frame_index,
+    )
+    body = bodies[1]
+    body["candidate"]["receipt"] = response["accept_receipts"][raw[3]["candidate_id"]]
+    body["prompt_summary"] = response["prompt_summary"]
+    accepted = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/ai-mask-candidates/accept",
+        json=body,
+        headers=_headers(token),
+    )
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json()["content_digest"] == build_rle_reference(RLE)["sha256"]
+    geometry = accepted.json()["annotation"]["geometry"]
+    if media_type == "video":
+        assert geometry["type"] == "video_track_mask"
+        assert geometry["keyframes"][0]["frame_index"] == 7
+    else:
+        assert geometry["type"] == "raster_mask"
 
 
 async def test_image_accept_is_atomic_and_replays_exact_result(

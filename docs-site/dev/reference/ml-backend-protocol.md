@@ -578,6 +578,16 @@ polygon 候选层完成全量动画、缩放和 `Tab` 高亮，只为当前候�
 接受与签名始终以 `value.rle` 为准，preview 不参与 `candidate_id`、回执或落库。
 旧 backend 不返回 preview 时协议仍兼容，但只能在当前候选的 RLE 分析完成后显示像素预览。
 
+SAM3 示例的 `type=exemplar, output=both, output_geometry=mask` 返回按实例交错的
+`[rectanglelabels, mask, rectanglelabels, mask, ...]`。每对使用同一标签和分数；矩形先裁剪至
+图像边界，宽高必须为正，空 Mask 连同其配对矩形一起跳过。平台只在这一请求组合放行配对矩形，
+Mask 的 RLE、媒体尺寸和 ID 校验保持不变。`candidate_id` 和采纳回执绑定完整数组下标
+（Mask 为 `1, 3, ...`），矩形不签发 Mask 回执；客户端消费候选时不得改变剩余 Mask 的原下标。
+
+平台代理转发此组合时设置 `context.native_mask_companion_boxes=true`，表示可以校验混合候选；
+该内部标志由平台覆盖，工作台无需传入。SAM3 仅在收到此标志时返回配对矩形，未传入时保留
+旧版全 Mask 数组，以兼容仍与同一模型服务连接的旧 API。平台与后端应配套更新以启用完整召回。
+
 全部候选为空时返回 `result=[]` 与
 `diagnostic={"reason":"empty_mask","retryable":false}`。单个 RLE 与整个交互响应的上限
 分别是 4 MiB 和 16 MiB；整体限额在读取 backend 响应流时执行，无 `Content-Length`

@@ -681,6 +681,10 @@ class SAM3Predictor:
                 rle = CocoRlePayload.model_validate(
                     encode_coco_rle(binary.reshape(-1), w, h)
                 )
+                if output == "both":
+                    results.append(
+                        self._box_to_rect_label(boxes[i], w, h, label, score)
+                    )
                 candidate_index = len(results)
                 candidate = NativeMaskCandidate(
                     value=NativeMaskCandidateValue(
@@ -727,13 +731,15 @@ class SAM3Predictor:
             float(box_px[2]),
             float(box_px[3]),
         )
+        x1, x2 = (max(0.0, min(float(w), x)) for x in (x1, x2))
+        y1, y2 = (max(0.0, min(float(h), y)) for y in (y1, y2))
         return {
             "type": "rectanglelabels",
             "value": {
-                "x": max(0.0, min(1.0, x1 / w)),
-                "y": max(0.0, min(1.0, y1 / h)),
-                "width": max(0.0, min(1.0, (x2 - x1) / w)),
-                "height": max(0.0, min(1.0, (y2 - y1) / h)),
+                "x": x1 / w,
+                "y": y1 / h,
+                "width": max(0.0, (x2 - x1) / w),
+                "height": max(0.0, (y2 - y1) / h),
                 "rectanglelabels": [label],
             },
             "score": score,

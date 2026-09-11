@@ -684,6 +684,9 @@ export function useInteractiveAI(args: UseInteractiveAIArgs): UseInteractiveAIRe
         type: "exemplar",
         exemplars,
         output: outputMode,
+        // Box recall uses the legacy geometry envelope; keep the saved Mask
+        // preference for the next segmentation request instead of validating boxes as Masks.
+        ...(outputMode === "box" ? { output_geometry: "polygon" } : {}),
         ...(text ? { text } : {}),
         ...(thr != null ? { score_threshold: thr } : {}),
       },
