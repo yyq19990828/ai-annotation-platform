@@ -1,179 +1,294 @@
-/**
- * v0.8.8 · useCanvasDraftPersistence 单测：sessionStorage TTL + active 写入 + 退出清理。
- */
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { useCanvasDraftPersistence } from "../useCanvasDraftPersistence";
 import type { CanvasDraft } from "../useWorkbenchState";
+import type { DiscussionDraftStore } from "../useDiscussionDraftStore";
+import type { DiscussionOrigin, DiscussionTarget } from "../discussionTypes";
+import { discussionTargetKey } from "../discussionTypes";
+import { canvasRecoveryKey, writeCanvasDraftRecovery } from "../discussionCanvasRecovery";
 
-const KEY = (taskId: string) => `canvas_draft:${taskId}`;
-
-const inactiveDraft: CanvasDraft = {
+const owner = { userId: "u", sessionId: "s" };
+const target: DiscussionTarget = {
+  projectId: "p",
+  taskId: "t1",
+  kind: "annotation",
+  annotationId: "a1",
+};
+const origin: DiscussionOrigin = { owner, target, requestId: "draw-a" };
+const shapes = [{ type: "line" as const, points: [0, 0, 0.2, 0.2] }];
+const inactive: CanvasDraft = {
   active: false,
   annotationId: null,
   shapes: [],
-  stroke: "#ef4444",
+  stroke: "#f00",
   pendingResult: null,
 };
+const active: CanvasDraft = { ...inactive, active: true, annotationId: "a1", shapes, origin };
 
-const activeDraft = (shapes: CanvasDraft["shapes"]): CanvasDraft => ({
-  active: true,
-  annotationId: "a1",
-  shapes,
-  stroke: "#ef4444",
-  pendingResult: null,
+/** Store revision/submission behavior has its own tests. */
+function memoryStore() {
+  const drafts: Record<
+    string,
+    {
+      target: DiscussionTarget;
+      canvas_drawing: { shapes: typeof shapes } | null;
+      canvasOrigin: DiscussionOrigin | null;
+      canvasActive: boolean;
+    }
+  > = {};
+  let disposed = false;
+  const saveDrawing = vi.fn(
+    (
+      source: DiscussionOrigin,
+      drawing: { shapes: typeof shapes } | null,
+      options?: { active?: boolean },
+    ) => {
+      if (
+        disposed ||
+        source.owner.userId !== owner.userId ||
+        source.owner.sessionId !== owner.sessionId
+      )
+        return false;
+      drafts[discussionTargetKey(source.target)] = {
+        target: source.target,
+        canvas_drawing: drawing,
+        canvasOrigin: source,
+        canvasActive: options?.active ?? false,
+      };
+      return true;
+    },
+  );
+  const store = {
+    owner,
+    isOwned: (source: DiscussionOrigin) =>
+      !disposed &&
+      source.owner.userId === owner.userId &&
+      source.owner.sessionId === owner.sessionId,
+    getSnapshot: () => ({ owner, drafts, disposed }),
+    getDraft: (destination: DiscussionTarget) => drafts[discussionTargetKey(destination)],
+    makeOrigin: (destination: DiscussionTarget) => ({
+      owner,
+      target: destination,
+      requestId: "restored",
+    }),
+    saveDrawing,
+    getSendTarget: () => undefined,
+    setSendTarget: vi.fn(),
+    dispose: () => {
+      disposed = true;
+    },
+  } as unknown as DiscussionDraftStore;
+  return { store, saveDrawing, drafts };
+}
+
+beforeEach(() => {
+  sessionStorage.clear();
+  vi.useRealTimers();
+});
+afterEach(() => {
+  sessionStorage.clear();
+  vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 
-describe("useCanvasDraftPersistence", () => {
-  beforeEach(() => {
-    sessionStorage.clear();
-    vi.useRealTimers();
+describe("useCanvasDraftPersistence scoped lifecycle", () => {
+  it("does not overwrite or clear recovery when the session rejects a stale canvas origin", () => {
+    const { store, saveDrawing } = memoryStore();
+    saveDrawing.mockReturnValue(false);
+    const newer = { shapes: [{ type: "line" as const, points: [0.1, 0.1, 0.8, 0.8] }] };
+    writeCanvasDraftRecovery({ ...origin, requestId: "new-drawing" }, newer);
+    const key = canvasRecoveryKey({ userId: "u", projectId: "p", taskId: "t1" }, "a1");
+    const { rerender } = renderHook(
+      ({ draft }: { draft: CanvasDraft }) =>
+        useCanvasDraftPersistence({
+          taskId: "t1",
+          projectId: "p",
+          store,
+          canvasDraft: draft,
+          beginCanvasDraft: vi.fn(),
+        }),
+      { initialProps: { draft: active } },
+    );
+    expect(JSON.parse(sessionStorage.getItem(key)!).shapes).toEqual(newer.shapes);
+    rerender({
+      draft: { ...inactive, origin, pendingResult: { shapes }, resultId: "stale-result" },
+    });
+    expect(JSON.parse(sessionStorage.getItem(key)!).shapes).toEqual(newer.shapes);
   });
 
-  it("active + shapes 时把 payload 写到 sessionStorage", () => {
-    const begin = vi.fn();
-    const shapes = [{ type: "line" as const, points: [0.1, 0.1, 0.2, 0.2], stroke: "#f00" }];
+  it("flushes to the original draft and scoped recovery record", () => {
+    const { store, saveDrawing } = memoryStore();
     renderHook(() =>
       useCanvasDraftPersistence({
         taskId: "t1",
-        canvasDraft: activeDraft(shapes),
-        beginCanvasDraft: begin,
-      }),
-    );
-    const raw = sessionStorage.getItem(KEY("t1"));
-    expect(raw).toBeTruthy();
-    const parsed = JSON.parse(raw!);
-    expect(parsed.shapes).toEqual(shapes);
-    expect(parsed.annotationId).toBe("a1");
-    expect(typeof parsed.ts).toBe("number");
-  });
-
-  it("非 active 时清掉 sessionStorage 条目", () => {
-    sessionStorage.setItem(
-      KEY("t1"),
-      JSON.stringify({
-        annotationId: null,
-        shapes: [{ type: "line", points: [0.1, 0.1, 0.2, 0.2] }],
-        ts: Date.now(),
-      }),
-    );
-    renderHook(() =>
-      useCanvasDraftPersistence({
-        taskId: "t1",
-        canvasDraft: inactiveDraft,
+        projectId: "p",
+        store,
+        canvasDraft: active,
         beginCanvasDraft: vi.fn(),
       }),
     );
-    expect(sessionStorage.getItem(KEY("t1"))).toBeNull();
+    expect(saveDrawing).toHaveBeenCalledWith(origin, { shapes }, { active: true });
+    expect(
+      JSON.parse(
+        sessionStorage.getItem(
+          canvasRecoveryKey({ userId: "u", projectId: "p", taskId: "t1" }, "a1"),
+        )!,
+      ),
+    ).toMatchObject({ annotationId: "a1", shapes });
   });
 
-  it("切到 taskId 时若有未过期 stored 则调用 beginCanvasDraft 恢复", () => {
-    const begin = vi.fn();
-    const shapes = [{ kind: "free" as const, points: [[0.2, 0.2]], color: "#f00" }];
-    sessionStorage.setItem(
-      KEY("t2"),
-      JSON.stringify({ annotationId: "ann-x", shapes, ts: Date.now() }),
+  it("flushes then releases on task change without copying old shapes to the new task", () => {
+    const { store, saveDrawing } = memoryStore();
+    const release = vi.fn();
+    const { rerender } = renderHook(
+      ({ taskId }) =>
+        useCanvasDraftPersistence({
+          taskId,
+          projectId: "p",
+          store,
+          canvasDraft: active,
+          beginCanvasDraft: vi.fn(),
+          releaseCanvasDraft: release,
+        }),
+      { initialProps: { taskId: "t1" } },
     );
+    rerender({ taskId: "t2" });
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(saveDrawing.mock.calls[saveDrawing.mock.calls.length - 1]?.[0].target.taskId).toBe("t1");
+    expect(
+      sessionStorage.getItem(
+        canvasRecoveryKey({ userId: "u", projectId: "p", taskId: "t2" }, "a1"),
+      ),
+    ).toBeNull();
+  });
+
+  it("retains memory across route unmount beyond the recovery TTL", () => {
+    vi.useFakeTimers();
+    const { store } = memoryStore();
+    const first = renderHook(() =>
+      useCanvasDraftPersistence({
+        taskId: "t1",
+        projectId: "p",
+        store,
+        canvasDraft: active,
+        beginCanvasDraft: vi.fn(),
+      }),
+    );
+    first.unmount();
+    vi.advanceTimersByTime(6 * 60 * 1000);
+    const begin = vi.fn();
+    renderHook(() =>
+      useCanvasDraftPersistence({
+        taskId: "t1",
+        projectId: "p",
+        store,
+        annotationIds: ["a1"],
+        canvasDraft: inactive,
+        beginCanvasDraft: begin,
+      }),
+    );
+    expect(begin).toHaveBeenCalledWith("a1", { shapes }, origin);
+  });
+
+  it("waits for annotation validation and restores storage into the current session", () => {
+    const { store } = memoryStore();
+    writeCanvasDraftRecovery(
+      { ...origin, owner: { ...owner, sessionId: "old-session" } },
+      { shapes },
+    );
+    const begin = vi.fn();
+    const { rerender } = renderHook(
+      ({ annotationIds }: { annotationIds?: string[] }) =>
+        useCanvasDraftPersistence({
+          taskId: "t1",
+          projectId: "p",
+          store,
+          annotationIds,
+          canvasDraft: inactive,
+          beginCanvasDraft: begin,
+        }),
+      { initialProps: {} },
+    );
+    expect(begin).not.toHaveBeenCalled();
+    rerender({ annotationIds: ["a1"] });
+    expect(begin).toHaveBeenCalledWith("a1", { shapes }, { owner, target, requestId: "restored" });
+  });
+
+  it("does not restore deleted targets or overwrite an existing empty memory draft", () => {
+    writeCanvasDraftRecovery(origin, { shapes });
+    const first = memoryStore();
+    const begin = vi.fn();
+    const view = renderHook(() =>
+      useCanvasDraftPersistence({
+        taskId: "t1",
+        projectId: "p",
+        store: first.store,
+        annotationIds: [],
+        canvasDraft: inactive,
+        beginCanvasDraft: begin,
+      }),
+    );
+    expect(begin).not.toHaveBeenCalled();
+    view.unmount();
+    const second = memoryStore();
+    second.drafts[discussionTargetKey(target)] = {
+      target,
+      canvas_drawing: null,
+      canvasOrigin: null,
+      canvasActive: false,
+    };
+    renderHook(() =>
+      useCanvasDraftPersistence({
+        taskId: "t1",
+        projectId: "p",
+        store: second.store,
+        annotationIds: ["a1"],
+        canvasDraft: inactive,
+        beginCanvasDraft: begin,
+      }),
+    );
+    expect(begin).not.toHaveBeenCalled();
+  });
+
+  it("completes into the original draft without a mounted input and acknowledges only its result", () => {
+    const { store, saveDrawing } = memoryStore();
+    const consume = vi.fn();
+    writeCanvasDraftRecovery(origin, { shapes });
     renderHook(() =>
       useCanvasDraftPersistence({
         taskId: "t2",
-        canvasDraft: inactiveDraft,
-        beginCanvasDraft: begin,
+        projectId: "p",
+        store,
+        canvasDraft: { ...inactive, origin, resultId: "result-a", pendingResult: { shapes } },
+        beginCanvasDraft: vi.fn(),
+        consumeCanvasResult: consume,
       }),
     );
-    expect(begin).toHaveBeenCalledTimes(1);
-    expect(begin).toHaveBeenCalledWith("ann-x", { shapes });
+    expect(saveDrawing).toHaveBeenCalledWith(origin, { shapes }, { active: false });
+    expect(consume).toHaveBeenCalledWith("result-a");
+    expect(
+      sessionStorage.getItem(
+        canvasRecoveryKey({ userId: "u", projectId: "p", taskId: "t1" }, "a1"),
+      ),
+    ).toBeNull();
   });
 
-  it("已过期 stored（> 5min）不恢复且自动清理", () => {
-    const begin = vi.fn();
-    const tenMinAgo = Date.now() - 10 * 60 * 1000;
-    sessionStorage.setItem(
-      KEY("t3"),
-      JSON.stringify({
-        annotationId: null,
-        shapes: [{ type: "line", points: [0, 0, 0.1, 0.1] }],
-        ts: tenMinAgo,
-      }),
-    );
-    renderHook(() =>
+  it("does not revive disposed owners and removes beforeunload listeners on exit", () => {
+    const { store, saveDrawing } = memoryStore();
+    const remove = vi.spyOn(window, "removeEventListener");
+    const { unmount } = renderHook(() =>
       useCanvasDraftPersistence({
-        taskId: "t3",
-        canvasDraft: inactiveDraft,
-        beginCanvasDraft: begin,
+        taskId: "t1",
+        projectId: "p",
+        store,
+        canvasDraft: active,
+        beginCanvasDraft: vi.fn(),
       }),
     );
-    expect(begin).not.toHaveBeenCalled();
-    // 非 active effect 兜底也会清掉
-    expect(sessionStorage.getItem(KEY("t3"))).toBeNull();
-  });
-
-  it("draft 已 active 时不应反复 restore（防止 shapes 落库后又被弹回）", () => {
-    const begin = vi.fn();
-    const shapes = [{ type: "line" as const, points: [0.1, 0.1, 0.2, 0.2] }];
-    sessionStorage.setItem(
-      KEY("t4"),
-      JSON.stringify({ annotationId: null, shapes, ts: Date.now() }),
-    );
-    renderHook(() =>
-      useCanvasDraftPersistence({
-        taskId: "t4",
-        canvasDraft: activeDraft(shapes),
-        beginCanvasDraft: begin,
-      }),
-    );
-    expect(begin).not.toHaveBeenCalled();
-  });
-
-  it("undefined taskId 时一切都是 noop", () => {
-    const begin = vi.fn();
-    renderHook(() =>
-      useCanvasDraftPersistence({
-        taskId: undefined,
-        canvasDraft: activeDraft([{ type: "line", points: [0.1, 0.1, 0.2, 0.2] }]),
-        beginCanvasDraft: begin,
-      }),
-    );
-    expect(begin).not.toHaveBeenCalled();
-    expect(sessionStorage.length).toBe(0);
-  });
-
-  it("active + shapes 时挂上 beforeunload 监听，inactive 时清理", () => {
-    const addSpy = vi.spyOn(window, "addEventListener");
-    const removeSpy = vi.spyOn(window, "removeEventListener");
-
-    const { rerender, unmount } = renderHook(
-      (props: { draft: CanvasDraft }) =>
-        useCanvasDraftPersistence({
-          taskId: "t5",
-          canvasDraft: props.draft,
-          beginCanvasDraft: vi.fn(),
-        }),
-      { initialProps: { draft: activeDraft([{ type: "line", points: [0, 0, 0.1, 0.1] }]) } },
-    );
-    const beforeunloadAdds = addSpy.mock.calls.filter((c) => c[0] === "beforeunload");
-    expect(beforeunloadAdds.length).toBeGreaterThanOrEqual(1);
-
-    // 切回非 active 时应该 removeEventListener
-    rerender({ draft: inactiveDraft });
-    const beforeunloadRemoves = removeSpy.mock.calls.filter((c) => c[0] === "beforeunload");
-    expect(beforeunloadRemoves.length).toBeGreaterThanOrEqual(1);
-
+    const count = saveDrawing.mock.calls.length;
+    store.dispose();
     unmount();
-    addSpy.mockRestore();
-    removeSpy.mockRestore();
-  });
-
-  it("malformed JSON in sessionStorage → readStored 返回 null", () => {
-    sessionStorage.setItem(KEY("t6"), "{not valid json");
-    const begin = vi.fn();
-    renderHook(() =>
-      useCanvasDraftPersistence({
-        taskId: "t6",
-        canvasDraft: inactiveDraft,
-        beginCanvasDraft: begin,
-      }),
-    );
-    expect(begin).not.toHaveBeenCalled();
+    expect(saveDrawing).toHaveBeenCalledTimes(count);
+    expect(remove.mock.calls.some(([event]) => event === "beforeunload")).toBe(true);
   });
 });

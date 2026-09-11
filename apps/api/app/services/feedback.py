@@ -605,22 +605,32 @@ class FeedbackService:
         """
 
         af = AnnotationFeedback
-        root_map = self._root_map_cte(project_id)
-        root = aliased(AnnotationFeedback)
-        q = (
-            select(af)
-            .join(root_map, root_map.c.origin_id == af.id)
-            .join(root, root.id == root_map.c.root_id)
-            .where(
+        if root_only:
+            # A root has no ancestry to traverse. Keep current-task badges and
+            # pin pagination independent of unrelated replies in the project.
+            q = select(af).where(
                 af.project_id == project_id,
                 af.is_active.is_(True),
-                root.is_active.is_(True),
-                root.project_id == project_id,
-                _same_scope_clause(af, root),
-                _same_anchor_scope_clause(af, root),
-                _valid_root_clause(root),
+                af.thread_parent_id.is_(None),
+                _valid_root_clause(af),
             )
-        )
+        else:
+            root_map = self._root_map_cte(project_id)
+            root = aliased(AnnotationFeedback)
+            q = (
+                select(af)
+                .join(root_map, root_map.c.origin_id == af.id)
+                .join(root, root.id == root_map.c.root_id)
+                .where(
+                    af.project_id == project_id,
+                    af.is_active.is_(True),
+                    root.is_active.is_(True),
+                    root.project_id == project_id,
+                    _same_scope_clause(af, root),
+                    _same_anchor_scope_clause(af, root),
+                    _valid_root_clause(root),
+                )
+            )
         if allowed_task_ids is not None:
             q = q.where(or_(af.task_id.is_(None), af.task_id.in_(allowed_task_ids)))
         if task_id is not None:
@@ -633,8 +643,6 @@ class FeedbackService:
             q = q.where(af.anchor_type == anchor_type)
         if status is not None:
             q = q.where(af.status == status)
-        if root_only:
-            q = q.where(af.thread_parent_id.is_(None))
         return q
 
     @staticmethod

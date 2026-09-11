@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ComponentProps } from "react";
+import { useEffect, useId, useRef, useState, type ComponentProps } from "react";
 import { Icon } from "@/components/ui/Icon";
 import { CommentsPanel } from "./CommentsPanel";
 import { DiscussionIssuesTab } from "./DiscussionIssuesTab";
@@ -9,7 +9,7 @@ import { useActiveIssueStore } from "../state/useActiveIssueStore";
 // 视觉上作为同级标题。v0.20.22 · 拆分中性/激活分支下发, 避免 border-transparent 与
 // border-brand 同挂被源顺序覆盖 (memory: "Tailwind 激活态色类冲突")。text 色同理。
 const TAB_BUTTON_BASE =
-  "cursor-pointer appearance-none border-0 border-b-2 bg-transparent px-2 py-1 text-sm font-semibold [font:inherit]";
+  "shrink-0 cursor-pointer appearance-none border-0 border-b-2 bg-transparent px-2 py-1 text-sm font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring [font:inherit]";
 const TAB_BUTTON_ACTIVE = "border-brand text-foreground";
 const TAB_BUTTON_INACTIVE = "border-transparent text-muted-foreground";
 
@@ -31,8 +31,8 @@ type DiscussionTab = "comments" | "history" | "issues" | "mask_qc";
 
 const TABS: { key: DiscussionTab; label: string }[] = [
   { key: "comments", label: "评论" },
+  { key: "issues", label: "问题" },
   { key: "history", label: "历史" },
-  { key: "issues", label: "Issue" },
   { key: "mask_qc", label: "Mask 质检" },
 ];
 
@@ -48,10 +48,16 @@ type CommentsBridgeProps = Pick<
   | "liveCanvas"
   | "commentAnchor"
   | "onSeekFrame"
+  | "annotationClassById"
+  | "onSelectAnnotation"
 >;
 
 interface DiscussionPanelProps extends CommentsBridgeProps {
   onCreateTaskIssue?: () => void;
+  onCreatePixelIssue?: () => void;
+  openIssueCount?: number | null;
+  openIssueCountLoading?: boolean;
+  openIssueCountError?: boolean;
   allowProjectIssueScope?: boolean;
   maskQc?: ComponentProps<typeof MaskQcPanel>;
   annotationId: string | null;
@@ -68,6 +74,10 @@ interface DiscussionPanelProps extends CommentsBridgeProps {
 
 export function DiscussionPanel({
   onCreateTaskIssue,
+  onCreatePixelIssue,
+  openIssueCount,
+  openIssueCountLoading,
+  openIssueCountError,
   allowProjectIssueScope,
   maskQc,
   annotationId,
@@ -81,12 +91,16 @@ export function DiscussionPanel({
   liveCanvas,
   commentAnchor,
   onSeekFrame,
+  annotationClassById,
+  onSelectAnnotation,
   onDetach,
   floating = false,
   collapsed: collapsedProp,
   onToggleCollapsed,
 }: DiscussionPanelProps) {
+  const id = useId();
   const [tab, setTab] = useState<DiscussionTab>(maskQc?.activeIssue ? "mask_qc" : "comments");
+  const availableTabs = TABS.filter((t) => t.key !== "mask_qc" || maskQc);
   // v0.20.22 · 受控优先 (走 workbench.layout 持久), 缺省回落组件内会话态 (测试/独立使用)。
   const [collapsedLocal, setCollapsedLocal] = useState(false);
   const collapsed = collapsedProp ?? collapsedLocal;
@@ -123,34 +137,78 @@ export function DiscussionPanel({
     <div
       className={`flex h-full min-h-0 flex-col bg-card ${floating ? "" : "border-t border-border"}`}
     >
-      <div className="flex items-center justify-between gap-1 pl-2 pr-2 pt-1.5">
-        <div className="flex items-center gap-1" role="tablist" aria-label="讨论面板">
-          {!floating && (
-            // v0.20.22 · 收起 chevron: 只在嵌入布局显示 (浮层已是独立窗口, 无收起语义)。
-            <button
-              type="button"
-              onClick={toggleCollapsed}
-              aria-expanded={!collapsed}
-              title={collapsed ? "展开讨论" : "收起讨论"}
-              data-testid="discussion-toggle-collapsed"
-              className="inline-flex h-6 w-6 cursor-pointer appearance-none items-center justify-center rounded border-0 bg-transparent p-0 text-muted-foreground hover:bg-muted hover:text-foreground"
-            >
-              <Icon name={collapsed ? "chevRight" : "chevDown"} size={13} />
-            </button>
-          )}
-          {TABS.filter((t) => t.key !== "mask_qc" || maskQc).map((t) => (
+      <div className="flex shrink-0 items-center justify-between gap-1 px-2 pt-1.5">
+        {!floating && (
+          // v0.20.22 · 收起 chevron: 只在嵌入布局显示 (浮层已是独立窗口, 无收起语义)。
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            aria-expanded={!collapsed}
+            title={collapsed ? "展开讨论" : "收起讨论"}
+            data-testid="discussion-toggle-collapsed"
+            className="inline-flex h-6 w-6 cursor-pointer appearance-none items-center justify-center rounded border-0 bg-transparent p-0 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <Icon name={collapsed ? "chevRight" : "chevDown"} size={13} />
+          </button>
+        )}
+        <div
+          className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto"
+          role="tablist"
+          aria-label="讨论面板"
+        >
+          {availableTabs.map((t) => (
             <button
               key={t.key}
               type="button"
               role="tab"
+              id={`${id}-tab-${t.key}`}
+              aria-controls={`${id}-panel-${t.key}`}
               aria-selected={tab === t.key}
+              tabIndex={tab === t.key ? 0 : -1}
               className={`${TAB_BUTTON_BASE} ${tab === t.key ? TAB_BUTTON_ACTIVE : TAB_BUTTON_INACTIVE}`}
               onClick={() => {
                 setTab(t.key);
                 if (collapsed) toggleCollapsed();
               }}
+              onKeyDown={(event) => {
+                if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+                event.preventDefault();
+                event.stopPropagation();
+                const index = availableTabs.findIndex((item) => item.key === t.key);
+                const next =
+                  event.key === "Home"
+                    ? 0
+                    : event.key === "End"
+                      ? availableTabs.length - 1
+                      : (index + (event.key === "ArrowRight" ? 1 : -1) + availableTabs.length) %
+                        availableTabs.length;
+                const nextTab = availableTabs[next].key;
+                setTab(nextTab);
+                if (collapsed) toggleCollapsed();
+                document.getElementById(`${id}-tab-${nextTab}`)?.focus();
+              }}
             >
               {t.label}
+              {t.key === "issues" && openIssueCount !== undefined && (
+                <span
+                  className="ml-1 text-2xs font-normal text-muted-foreground"
+                  aria-label={
+                    openIssueCountError
+                      ? "未解决数量暂不可用"
+                      : openIssueCountLoading
+                        ? "正在加载未解决数量"
+                        : openIssueCount === null
+                          ? "未解决数量未知"
+                          : `${openIssueCount} 个未解决`
+                  }
+                >
+                  {openIssueCountError
+                    ? "?"
+                    : openIssueCountLoading
+                      ? "…"
+                      : (openIssueCount ?? "—")}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -168,7 +226,12 @@ export function DiscussionPanel({
       </div>
       {/* v0.20.22 · 完全收起时不渲染 tabpanel, 仅留 tab 头一条; 展开由 chevron 或 IssueLayer 图钉触发。 */}
       {!collapsed && (
-        <div className="flex min-h-0 flex-1 flex-col overflow-y-auto" role="tabpanel">
+        <div
+          className={`flex min-h-0 flex-1 flex-col ${tab === "mask_qc" ? "overflow-y-auto" : "overflow-hidden"}`}
+          role="tabpanel"
+          id={`${id}-panel-${tab}`}
+          aria-labelledby={`${id}-tab-${tab}`}
+        >
           {tab === "mask_qc" ? (
             maskQc ? (
               <MaskQcPanel {...maskQc} />
@@ -179,6 +242,7 @@ export function DiscussionPanel({
                 projectId={projectId}
                 taskId={taskId}
                 onCreateTaskIssue={onCreateTaskIssue}
+                onCreatePixelIssue={onCreatePixelIssue}
                 allowProjectScope={allowProjectIssueScope}
               />
             ) : null
@@ -195,6 +259,8 @@ export function DiscussionPanel({
               liveCanvas={liveCanvas}
               commentAnchor={commentAnchor}
               onSeekFrame={onSeekFrame}
+              annotationClassById={annotationClassById}
+              onSelectAnnotation={onSelectAnnotation}
               hideTabs
               forceTab={tab}
             />

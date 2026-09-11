@@ -101,6 +101,8 @@ import { useFabAutoHideDriver, useFabRevealed } from "@/stores/fabRevealStore";
 import { initBugReportCapture, patchFetchForBugCapture } from "@/utils/bugReportCapture";
 import { PageLoader } from "@/components/PageLoader";
 import { useBugDrawerStore } from "@/stores/bugDrawerStore";
+import { DiscussionDraftProvider } from "@/pages/Workbench/state/DiscussionDraftProvider";
+import { useAuthenticatedDiscussionSession } from "@/pages/Workbench/state/useAuthenticatedDiscussionSession";
 import styles from "./App.module.css";
 
 function DashboardRouter() {
@@ -276,202 +278,205 @@ function MobileWorkbenchBlock() {
 }
 
 export function App() {
+  const discussionSession = useAuthenticatedDiscussionSession();
   return (
-    <Routes>
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
-      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-      <Route path="/reset-password" element={<ResetPasswordPage />} />
-      <Route path="/verify-email" element={<VerifyEmailPage />} />
+    <DiscussionDraftProvider {...discussionSession}>
+      <Routes>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
+        <Route path="/verify-email" element={<VerifyEmailPage />} />
 
-      <Route
-        path="/projects/:id/annotate"
-        element={
-          <RequireAuth>
-            <RequireProjectMember>
-              <FullScreenWorkbench />
-            </RequireProjectMember>
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/projects/:id/review"
-        element={
-          <RequireAuth>
-            <RequireProjectMember>
-              <FullScreenWorkbench mode="review" />
-            </RequireProjectMember>
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/projects/:id/data-manager"
-        element={
-          <RequireAuth>
-            <RequireProjectMember>
-              <AppShell />
-            </RequireProjectMember>
-          </RequireAuth>
-        }
-      >
-        <Route index element={<ProjectDataManagerPage />} />
-      </Route>
-
-      <Route
-        element={
-          <RequireAuth>
-            <AppShell />
-          </RequireAuth>
-        }
-      >
-        <Route index element={<DefaultLandingRedirect />} />
-        <Route path="/dashboard" element={<DashboardRouter />} />
-        <Route path="/overview" element={<AdminOverviewRoute />} />
-        <Route path="/projects" element={<RedirectWithSearch to="/dashboard" />} />
         <Route
-          path="/admin/people"
+          path="/projects/:id/annotate"
           element={
-            <RequirePagePermission pageKey="admin-people">
-              <AdminPeoplePage />
-            </RequirePagePermission>
-          }
-        />
-        {/* v0.10.16 · DuckDB 离线分析面板（super_admin only） */}
-        <Route
-          path="/admin/analytics"
-          element={
-            <RequirePagePermission pageKey="admin-analytics">
-              <AnalyticsPage />
-            </RequirePagePermission>
+            <RequireAuth>
+              <RequireProjectMember>
+                <FullScreenWorkbench />
+              </RequireProjectMember>
+            </RequireAuth>
           }
         />
         <Route
-          path="/admin/health"
+          path="/projects/:id/review"
           element={
-            <RequirePagePermission pageKey="admin-health">
-              <SystemHealthPage />
-            </RequirePagePermission>
-          }
-        />
-        {/* v0.12.3 · 我的绩效（所有角色，自助自视） */}
-        <Route
-          path="/me/performance"
-          element={
-            <RequirePagePermission pageKey="my-performance">
-              <MyPerformancePage />
-            </RequirePagePermission>
-          }
-        />
-        {/* v0.9.3 phase 2 · /admin/failed-predictions 与 /admin/ml-integrations 已合并到 /model-market */}
-        <Route
-          path="/review"
-          element={
-            <RequirePagePermission pageKey="review">
-              <ReviewPage />
-            </RequirePagePermission>
+            <RequireAuth>
+              <RequireProjectMember>
+                <FullScreenWorkbench mode="review" />
+              </RequireProjectMember>
+            </RequireAuth>
           }
         />
         <Route
-          path="/annotate"
+          path="/projects/:id/data-manager"
           element={
-            <RequirePagePermission pageKey="annotate">
-              <AnnotatePage />
-            </RequirePagePermission>
-          }
-        />
-        <Route
-          path="/users"
-          element={
-            <RequirePagePermission pageKey="users">
-              <UsersPage />
-            </RequirePagePermission>
-          }
-        />
-        <Route
-          path="/datasets"
-          element={
-            <RequirePagePermission pageKey="datasets">
-              <DatasetsPage />
-            </RequirePagePermission>
-          }
-        />
-        <Route
-          path="/storage"
-          element={
-            <RequirePagePermission pageKey="storage">
-              <StoragePage />
-            </RequirePagePermission>
-          }
-        />
-        <Route
-          path="/ai-pre"
-          element={
-            <RequirePagePermission pageKey="ai-pre">
-              <AIPreAnnotateLayout />
-            </RequirePagePermission>
+            <RequireAuth>
+              <RequireProjectMember>
+                <AppShell />
+              </RequireProjectMember>
+            </RequireAuth>
           }
         >
-          <Route index element={<AIPreAnnotatePage />} />
-          <Route path="pipelines" element={<GlobalPipelineLibraryPage />} />
-          <Route path="jobs" element={<AIPreAnnotateJobsPage />} />
+          <Route index element={<ProjectDataManagerPage />} />
         </Route>
+
         <Route
-          path="/model-market"
           element={
-            <RequirePagePermission pageKey="model-market">
-              <ModelMarketPage />
-            </RequirePagePermission>
+            <RequireAuth>
+              <AppShell />
+            </RequireAuth>
           }
-        />
-        {/* v0.10.38 · 视频追踪监控并入 /ai-pre/jobs 视频 tab (epic 阶段 3); 旧链接 301 到新址 */}
-        <Route
-          path="/model-market/video-jobs"
-          element={<Navigate to="/ai-pre/jobs?tab=video" replace />}
-        />
-        <Route
-          path="/training"
-          element={
-            <RequirePagePermission pageKey="training">
-              <PlaceholderPage title="训练队列" />
-            </RequirePagePermission>
-          }
-        />
-        <Route
-          path="/audit"
-          element={
-            <RequirePagePermission pageKey="audit">
-              <AuditPage />
-            </RequirePagePermission>
-          }
-        />
-        <Route
-          path="/bugs"
-          element={
-            <RequirePagePermission pageKey="bugs">
-              <BugsPage />
-            </RequirePagePermission>
-          }
-        />
-        <Route
-          path="/settings"
-          element={
-            <RequirePagePermission pageKey="settings">
-              <SettingsPage />
-            </RequirePagePermission>
-          }
-        />
-        <Route path="/projects/:id/settings" element={<ProjectSettingsPage />} />
-        <Route
-          path="/project-templates"
-          element={
-            <RequirePagePermission pageKey="project-templates">
-              <ProjectTemplatesPage />
-            </RequirePagePermission>
-          }
-        />
-        <Route path="/unauthorized" element={<UnauthorizedPage />} />
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
-      </Route>
-    </Routes>
+        >
+          <Route index element={<DefaultLandingRedirect />} />
+          <Route path="/dashboard" element={<DashboardRouter />} />
+          <Route path="/overview" element={<AdminOverviewRoute />} />
+          <Route path="/projects" element={<RedirectWithSearch to="/dashboard" />} />
+          <Route
+            path="/admin/people"
+            element={
+              <RequirePagePermission pageKey="admin-people">
+                <AdminPeoplePage />
+              </RequirePagePermission>
+            }
+          />
+          {/* v0.10.16 · DuckDB 离线分析面板（super_admin only） */}
+          <Route
+            path="/admin/analytics"
+            element={
+              <RequirePagePermission pageKey="admin-analytics">
+                <AnalyticsPage />
+              </RequirePagePermission>
+            }
+          />
+          <Route
+            path="/admin/health"
+            element={
+              <RequirePagePermission pageKey="admin-health">
+                <SystemHealthPage />
+              </RequirePagePermission>
+            }
+          />
+          {/* v0.12.3 · 我的绩效（所有角色，自助自视） */}
+          <Route
+            path="/me/performance"
+            element={
+              <RequirePagePermission pageKey="my-performance">
+                <MyPerformancePage />
+              </RequirePagePermission>
+            }
+          />
+          {/* v0.9.3 phase 2 · /admin/failed-predictions 与 /admin/ml-integrations 已合并到 /model-market */}
+          <Route
+            path="/review"
+            element={
+              <RequirePagePermission pageKey="review">
+                <ReviewPage />
+              </RequirePagePermission>
+            }
+          />
+          <Route
+            path="/annotate"
+            element={
+              <RequirePagePermission pageKey="annotate">
+                <AnnotatePage />
+              </RequirePagePermission>
+            }
+          />
+          <Route
+            path="/users"
+            element={
+              <RequirePagePermission pageKey="users">
+                <UsersPage />
+              </RequirePagePermission>
+            }
+          />
+          <Route
+            path="/datasets"
+            element={
+              <RequirePagePermission pageKey="datasets">
+                <DatasetsPage />
+              </RequirePagePermission>
+            }
+          />
+          <Route
+            path="/storage"
+            element={
+              <RequirePagePermission pageKey="storage">
+                <StoragePage />
+              </RequirePagePermission>
+            }
+          />
+          <Route
+            path="/ai-pre"
+            element={
+              <RequirePagePermission pageKey="ai-pre">
+                <AIPreAnnotateLayout />
+              </RequirePagePermission>
+            }
+          >
+            <Route index element={<AIPreAnnotatePage />} />
+            <Route path="pipelines" element={<GlobalPipelineLibraryPage />} />
+            <Route path="jobs" element={<AIPreAnnotateJobsPage />} />
+          </Route>
+          <Route
+            path="/model-market"
+            element={
+              <RequirePagePermission pageKey="model-market">
+                <ModelMarketPage />
+              </RequirePagePermission>
+            }
+          />
+          {/* v0.10.38 · 视频追踪监控并入 /ai-pre/jobs 视频 tab (epic 阶段 3); 旧链接 301 到新址 */}
+          <Route
+            path="/model-market/video-jobs"
+            element={<Navigate to="/ai-pre/jobs?tab=video" replace />}
+          />
+          <Route
+            path="/training"
+            element={
+              <RequirePagePermission pageKey="training">
+                <PlaceholderPage title="训练队列" />
+              </RequirePagePermission>
+            }
+          />
+          <Route
+            path="/audit"
+            element={
+              <RequirePagePermission pageKey="audit">
+                <AuditPage />
+              </RequirePagePermission>
+            }
+          />
+          <Route
+            path="/bugs"
+            element={
+              <RequirePagePermission pageKey="bugs">
+                <BugsPage />
+              </RequirePagePermission>
+            }
+          />
+          <Route
+            path="/settings"
+            element={
+              <RequirePagePermission pageKey="settings">
+                <SettingsPage />
+              </RequirePagePermission>
+            }
+          />
+          <Route path="/projects/:id/settings" element={<ProjectSettingsPage />} />
+          <Route
+            path="/project-templates"
+            element={
+              <RequirePagePermission pageKey="project-templates">
+                <ProjectTemplatesPage />
+              </RequirePagePermission>
+            }
+          />
+          <Route path="/unauthorized" element={<UnauthorizedPage />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Route>
+      </Routes>
+    </DiscussionDraftProvider>
   );
 }

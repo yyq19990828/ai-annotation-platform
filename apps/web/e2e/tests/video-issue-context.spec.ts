@@ -560,10 +560,7 @@ async function createIssue(
 async function openIssues(page: Page) {
   await revealFab(page);
   await page.getByTestId("issue-fab").click();
-  await expect(page.getByRole("tab", { name: "Issue", exact: true })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
+  await expect(page.getByRole("tab", { name: /^问题/ })).toHaveAttribute("aria-selected", "true");
 }
 
 async function holdMedia(page: Page, fixture: IssueCase) {

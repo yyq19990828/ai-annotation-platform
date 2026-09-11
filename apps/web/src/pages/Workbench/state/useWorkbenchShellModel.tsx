@@ -110,6 +110,7 @@ import { useSessionStats } from "./useSessionStats";
 import { useWorkbenchHotkeys } from "./useWorkbenchHotkeys";
 import { isSamCandidateHotkeyBlocked } from "./hotkeys";
 import { useCanvasDraftPersistence } from "./useCanvasDraftPersistence";
+import { useDiscussionDraftStore } from "./DiscussionDraftProvider";
 import { resolveSubmitBlockedReason, useWorkbenchTaskFlow } from "./useWorkbenchTaskFlow";
 import {
   useInteractiveAI,
@@ -377,7 +378,14 @@ export interface UseWorkbenchShellModelParams {
 }
 
 interface WorkbenchShellIssueSection {
-  openIssueCount: number;
+  openIssueCount: number | null;
+  openIssueCountLoading: boolean;
+  openIssueCountError: boolean;
+  issuePinsComplete: boolean;
+  issuePinsLoading: boolean;
+  issuePinsError: boolean;
+  issuePinsLoadedCount: number;
+  onRetryIssuePins: () => Promise<void>;
   stageKind: StageKind;
   issuePinDropArmed: boolean;
   onOpenList: () => void;
@@ -613,6 +621,7 @@ export function useWorkbenchShellModel({
   const directTaskQuery = useTask(shouldLoadDirectTask ? requestedTaskId! : "");
 
   const s = useWorkbenchState();
+  const discussionDraftStore = useDiscussionDraftStore();
   // v0.13.x · 点云 3D 项目无对应 2D 工具,按当前 3D 工具显式选择工具单位。
   const is3DProject = currentProject?.type_key === "lidar";
   const setExemplarOutputMode = s.setExemplarOutputMode;
@@ -1683,6 +1692,7 @@ export function useWorkbenchShellModel({
   cancelVideoIssueNavigationRef.current = videoIssueNavigation.cancel;
   const {
     issueCreateOpen,
+    issueAnchorMode,
     issuePinDropArmed,
     issuePinPrefill,
     onToggleIssuePinDrop,
@@ -1695,6 +1705,13 @@ export function useWorkbenchShellModel({
     issueListParams,
     issuesQuery,
     openIssueCount,
+    openIssueCountLoading,
+    openIssueCountError,
+    issuePixelFeedbacks,
+    issuePinsComplete,
+    issuePinsLoading,
+    issuePinsError,
+    retryIssuePins,
     activeIssueHighlightId,
     highlightIssueFromPin,
     requestIssuesTab,
@@ -6144,11 +6161,47 @@ export function useWorkbenchShellModel({
     handleUpdateAttributes,
   ]);
 
+  const discussionAnnotationClassById = useMemo(
+    () =>
+      annotationsReady
+        ? Object.fromEntries((annotationsData ?? []).map((ann) => [ann.id, ann.class_name]))
+        : undefined,
+    [annotationsData, annotationsReady],
+  );
+  const discussionAnnotationIds = useMemo(
+    () => (annotationsReady ? (annotationsData ?? []).map((ann) => ann.id) : undefined),
+    [annotationsData, annotationsReady],
+  );
   useCanvasDraftPersistence({
     taskId,
+    projectId,
+    store: discussionDraftStore,
+    annotationIds: discussionAnnotationIds,
     canvasDraft: s.canvasDraft,
     beginCanvasDraft: s.beginCanvasDraft,
+    releaseCanvasDraft: s.releaseCanvasDraft,
+    consumeCanvasResult: s.consumeCanvasResult,
   });
+
+  // Pointer completions can outlive the rendered task or canvas transaction.
+  const discussionCanvasContextRef = useRef({ projectId, taskId, draft: s.canvasDraft });
+  discussionCanvasContextRef.current = { projectId, taskId, draft: s.canvasDraft };
+  const discussionCanvasOrigin = s.canvasDraft.origin;
+  const canEditDiscussionCanvas = () => {
+    const current = discussionCanvasContextRef.current;
+    const target = discussionCanvasOrigin?.target;
+    return Boolean(
+      discussionCanvasOrigin &&
+      discussionDraftStore?.isOwned(discussionCanvasOrigin) &&
+      current.draft.active &&
+      current.draft.origin?.requestId === discussionCanvasOrigin.requestId &&
+      target?.projectId === current.projectId &&
+      target?.taskId === current.taskId &&
+      target?.kind === "annotation" &&
+      annotationsRef.current.some((ann) => ann.id === target.annotationId),
+    );
+  };
+  const discussionCanvasEditable = canEditDiscussionCanvas();
 
   // v0.13.4 · 3D 工作台自管这些字母键(V/B 选/放、W/E/R gizmo 模式),交给它的本地
   // keydown 处理;否则全局 2D 热键会抢 —— 尤其 E=「提交质检」(dispatchKey → submit)会被
@@ -7787,32 +7840,44 @@ export function useWorkbenchShellModel({
           s.tool === "polygon" ? polygonHandle : s.tool === "polyline" ? polylineHandle : undefined,
         keypointDraft: s.tool === "keypoint" ? keypointHandle : undefined,
         keypointSchema: toolView.keypointSchema,
-        canvasShapes: s.canvasDraft.shapes,
-        canvasEditable: s.canvasDraft.active,
+        canvasShapes: discussionCanvasEditable ? s.canvasDraft.shapes : [],
+        canvasEditable: discussionCanvasEditable,
         canvasStroke: s.canvasDraft.stroke,
-        onCanvasStrokeCommit: (points, stroke) =>
-          s.appendCanvasShape({ type: "line", points, stroke }),
+        onCanvasStrokeCommit: (points, stroke) => {
+          if (canEditDiscussionCanvas()) s.appendCanvasShape({ type: "line", points, stroke });
+        },
         historicalShapes: hoveredCommentShapes ?? undefined,
         canUndo: history.canUndo,
         canRedo: history.canRedo,
         onUndo: history.undo,
         onRedo: history.redo,
-        onSetCanvasStroke: s.setCanvasStroke,
-        canvasShapeCount: s.canvasDraft.shapes.length,
-        onUndoCanvasShape: s.undoCanvasShape,
-        onClearCanvasShapes: s.clearCanvasShapes,
-        onCancelCanvasDraft: s.cancelCanvasDraft,
-        onDoneCanvasDraft: s.endCanvasDraft,
+        onSetCanvasStroke: (stroke) => {
+          if (canEditDiscussionCanvas()) s.setCanvasStroke(stroke);
+        },
+        canvasShapeCount: discussionCanvasEditable ? s.canvasDraft.shapes.length : 0,
+        onUndoCanvasShape: () => {
+          if (canEditDiscussionCanvas()) s.undoCanvasShape();
+        },
+        onClearCanvasShapes: () => {
+          if (canEditDiscussionCanvas()) s.clearCanvasShapes();
+        },
+        onCancelCanvasDraft: () => {
+          if (canEditDiscussionCanvas()) s.cancelCanvasDraft();
+        },
+        onDoneCanvasDraft: () => {
+          if (canEditDiscussionCanvas()) s.endCanvasDraft();
+        },
         stageGeom,
         maskEditor: stageMaskEditor,
         projectRenderingConfig: currentProject?.rendering_config ?? null,
-        issuePixelFeedbacks: issuesQuery.data?.items ?? [],
+        issuePixelFeedbacks,
         // v0.11.5 · 图钉高亮跟 DiscussionPanel issues tab 共享 store (旧浮层路径已删)。
         highlightIssueId: activeIssueHighlightId,
         // 单击图钉 → 高亮 + 请求 DiscussionPanel 切到 issues tab + 高亮对应列表行。
         onIssuePinClick: (id) => {
-          highlightIssueFromPin(id);
           const issue = issuesQuery.data?.items.find((item) => item.id === id);
+          if (!issue || issue.project_id !== projectId || issue.task_id !== taskId) return;
+          highlightIssueFromPin(issue);
           if (isVideoTask && issue) useActiveIssueStore.getState().focusIssue(issue);
         },
         issuePinDropArmed: issuePinDropArmed,
@@ -8052,6 +8117,15 @@ export function useWorkbenchShellModel({
     // v0.11.5 · B 组 · DiscussionPanel 转正 → 右栏固定两段布局 (上 AIInspectorPanel + 下 DiscussionPanel)。
     discussionPanel: {
       onCreateTaskIssue: openTaskIssue,
+      onCreatePixelIssue:
+        stageKind === "image" || stageKind === "video"
+          ? () => {
+              if (!issuePinDropArmed) onToggleIssuePinDrop();
+            }
+          : undefined,
+      openIssueCount,
+      openIssueCountLoading,
+      openIssueCountError,
       allowProjectIssueScope: isVideoTask,
       maskQc:
         mode === "review" && projectId && taskId
@@ -8097,18 +8171,44 @@ export function useWorkbenchShellModel({
       taskId: taskId ?? null,
       projectId: projectId ?? null,
       currentUserId: meUserId ?? null,
+      annotationClassById: discussionAnnotationClassById,
+      onSelectAnnotation: (annotationId) => {
+        if (annotationsRef.current.some((ann) => ann.id === annotationId))
+          handleSelectBox(annotationId);
+      },
       // v0.11.5+ · 评论内画布批注 (live 绘图) + 视频帧锚点 + 点评论跳帧的桥接，
       // 恢复 B1 去 flag 时随 AIInspectorPanel 内嵌一起删掉的接线。
       backgroundUrl: workbenchImagePreview,
       imageWidth,
       imageHeight,
-      enableCanvasDrawing: true,
-      liveCanvas: {
-        active: s.canvasDraft.active,
-        result: s.canvasDraft.pendingResult,
-        onStart: (initial) => s.beginCanvasDraft(selectedAnnotationForPanel?.id ?? null, initial),
-        onConsume: s.consumeCanvasResult,
-      },
+      enableCanvasDrawing: stageKind !== "3d",
+      // Only ImageWorkbench consumes the live drawing layer and toolbar.
+      // Video keeps its existing popup/anchor path; exposing live mode there
+      // would create an active draft with no way to finish it.
+      liveCanvas:
+        stageKind === "image"
+          ? {
+              active: discussionCanvasEditable,
+              result: s.canvasDraft.pendingResult,
+              resultId: s.canvasDraft.resultId,
+              origin: s.canvasDraft.origin,
+              onStart: (initial, origin) => {
+                const current = discussionCanvasContextRef.current;
+                const target = origin?.target;
+                if (
+                  !origin ||
+                  !discussionDraftStore?.isOwned(origin) ||
+                  target?.kind !== "annotation" ||
+                  target.projectId !== current.projectId ||
+                  target.taskId !== current.taskId ||
+                  !annotationsRef.current.some((ann) => ann.id === target.annotationId)
+                )
+                  return;
+                s.beginCanvasDraft(target.annotationId, initial, origin);
+              },
+              onConsume: (resultId) => s.consumeCanvasResult(resultId ?? undefined),
+            }
+          : undefined,
       commentAnchor: videoCommentAnchor,
       onSeekFrame: isVideoTask ? s.setVideoFrameIndex : undefined,
       // v0.20.22 · 讨论区完全收起 (同一 workbench.layout 管道跨设备持久)。
@@ -8235,6 +8335,13 @@ export function useWorkbenchShellModel({
     projectId && taskId
       ? ({
           openIssueCount,
+          openIssueCountLoading,
+          openIssueCountError,
+          issuePinsComplete,
+          issuePinsLoading,
+          issuePinsError,
+          issuePinsLoadedCount: issuePixelFeedbacks.length,
+          onRetryIssuePins: retryIssuePins,
           stageKind,
           issuePinDropArmed,
           // v0.11.5 · issue FAB → 切到 DiscussionPanel issues tab (旧浮层 IssueListPanel 已删)。
@@ -8252,7 +8359,7 @@ export function useWorkbenchShellModel({
             taskId,
             listParams: issueListParams,
             prefilledAnchor: issuePinPrefill,
-            anchorMode: isVideoTask && issuePinPrefill?.frame === undefined ? "task" : "pixel",
+            anchorMode: issueAnchorMode,
             onClose: closeIssueCreate,
           },
         } satisfies WorkbenchShellIssueSection)

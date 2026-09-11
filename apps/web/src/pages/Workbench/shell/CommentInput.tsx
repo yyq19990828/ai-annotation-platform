@@ -861,7 +861,13 @@ export function CommentInput({
             void handleSubmit();
           }
         }}
-        data-placeholder="留言（@ 提及成员，可附图）..."
+        data-placeholder={
+          targetCapabilities.mentions
+            ? "留言（@ 提及成员，可附图）..."
+            : effectiveTarget?.kind === "issue"
+              ? "输入问题回复…"
+              : "输入任务留言…"
+        }
         className="max-h-40 min-h-[56px] overflow-y-auto whitespace-pre-wrap rounded border border-border bg-card px-2 py-1.5 text-xs text-foreground outline-none [font:inherit] empty:before:text-muted-foreground empty:before:content-[attr(data-placeholder)]"
       />
       {effectiveAnchor?.kind === "video_frame" && (

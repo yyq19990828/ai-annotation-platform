@@ -31,8 +31,6 @@ interface Props {
   prefilledAnchor?: IssuePinAnchor | null;
   /** Explicit creation intent. Pixel creation is valid only with a confirmed anchor. */
   anchorMode?: "pixel" | "task";
-  /** Alias for coordinators wiring a separate creation-intent field. */
-  creationIntent?: "pixel" | "task";
   onClose: () => void;
 }
 
@@ -56,14 +54,13 @@ function IssueCreateSession({
   listParams,
   prefilledAnchor,
   anchorMode,
-  creationIntent,
   onClose,
 }: Props) {
   // Each opening/task owns its form and mutation observer, including A → B → A.
   // The intent and anchor are snapshots: a late parent update cannot move a
   // submission to another point or silently turn a task Issue into a pixel one.
   const [snapshot] = useState(() => {
-    const mode = creationIntent ?? anchorMode ?? (prefilledAnchor ? "pixel" : "task");
+    const mode = anchorMode ?? (prefilledAnchor ? "pixel" : "task");
     return {
       projectId,
       taskId,
@@ -211,6 +208,7 @@ function IssueCreateSession({
         <div className="flex flex-col gap-1.5">
           <label className="text-xs text-muted-foreground">标题（可选）</label>
           <input
+            aria-label="问题标题"
             className={FIELD_BASE}
             value={title}
             onChange={(e: ChangeEvent<HTMLInputElement>) => setTitle(e.target.value)}
@@ -246,6 +244,7 @@ function IssueCreateSession({
             详情 <span className="text-status-danger">*</span>
           </label>
           <textarea
+            aria-label="问题详情"
             className={cn(FIELD_BASE, "min-h-[60px] resize-y")}
             value={body}
             onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setBody(e.target.value)}

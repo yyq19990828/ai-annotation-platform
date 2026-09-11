@@ -442,10 +442,7 @@ async function createIssue(
 async function openIssues(page: Page) {
   await revealFab(page);
   await page.getByTestId("issue-fab").click();
-  await expect(page.getByRole("tab", { name: "Issue", exact: true })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
+  await expect(page.getByRole("tab", { name: /^问题/ })).toHaveAttribute("aria-selected", "true");
 }
 
 async function pinPixels(page: Page, point: Point) {
@@ -481,15 +478,9 @@ async function expectPin(page: Page, fixture: IssueCase, issue: Issue) {
     .toBe(true);
   fixture.evidence.push({ pin: issue.id, point, overlayPixels: await pinPixels(page, point) });
   await page.getByRole("tab", { name: "评论", exact: true }).click();
-  await expect(page.getByRole("tab", { name: "Issue", exact: true })).toHaveAttribute(
-    "aria-selected",
-    "false",
-  );
+  await expect(page.getByRole("tab", { name: /^问题/ })).toHaveAttribute("aria-selected", "false");
   await clickPoint(page, point);
-  await expect(page.getByRole("tab", { name: "Issue", exact: true })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
+  await expect(page.getByRole("tab", { name: /^问题/ })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByTestId(`discussion-issue-card-${issue.id}`)).toHaveClass(/shadow-/);
 }
 
@@ -634,16 +625,18 @@ test.describe("video Issue source-frame ownership", () => {
     );
   });
 
-  test("G1-3 清空两个坐标仍创建任务级Issue，刷新后没有伪造帧锚点", async ({
+  test("G1-3 显式任务问题不提供坐标，刷新后没有伪造帧锚点", async ({
     page,
     request,
     issueCase: fixture,
   }) => {
     await open(page, fixture);
     await seek(page, 3);
-    await dropReady(page, fixture, 3);
-    await modal(page).getByPlaceholder("x (0-1)").fill("");
-    await modal(page).getByPlaceholder("y (0-1)").fill("");
+    await openIssues(page);
+    await page.getByTestId("issue-create-task").click();
+    await expect(modal(page)).toBeVisible();
+    await expect(modal(page).getByPlaceholder("x (0-1)")).toHaveCount(0);
+    await expect(modal(page).getByPlaceholder("y (0-1)")).toHaveCount(0);
     await expect(page.getByTestId("issue-create-frame")).toBeHidden();
     const issue = await saveIssue(page, fixture);
     expect(issue).toMatchObject({ anchor_type: "task", anchor_position: null });
@@ -683,7 +676,7 @@ test.describe("video Issue source-frame ownership", () => {
     await expect(page.getByTestId("issue-pin-fab")).toHaveAttribute("data-armed", "false");
     await expect(modal(page).getByPlaceholder("x (0-1)")).toHaveCount(0);
     await expect(modal(page).getByPlaceholder("y (0-1)")).toHaveCount(0);
-    await expect(modal(page)).toContainText("任务级问题不绑定画面位置");
+    await expect(modal(page)).toContainText("任务问题不绑定画布位置");
     await expect(page.getByTestId("issue-create-frame")).toBeHidden();
     // No held source response has been delivered: task-level feedback is independent of media.
     const issue = await saveIssue(page, fixture);

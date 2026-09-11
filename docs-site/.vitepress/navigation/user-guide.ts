@@ -43,6 +43,7 @@ export const userGuideSidebar: DefaultTheme.SidebarItem[] = [
     items: [
       { text: "工作台概览与快捷键", link: "/user-guide/workbench/" },
       { text: "工作台设置", link: "/user-guide/workbench/settings" },
+      { text: "评论与问题", link: "/user-guide/workbench/discussion" },
       {
         text: "图片标注",
         collapsed: true,

@@ -18,6 +18,7 @@ import {
 } from "@/api/feedbacks";
 import { useActiveIssueStore } from "../state/useActiveIssueStore";
 import { readVideoIssueContext } from "../state/videoIssueContext";
+import { useAuthStore } from "@/stores/authStore";
 
 interface Props {
   projectId: string;
@@ -49,8 +50,8 @@ const STATUS_CARD_DIM: Record<FeedbackStatus, string> = {
 
 // status chip:柔底 + 同色描边/文字。
 const STATUS_CHIP: Record<FeedbackStatus, string> = {
-  open: "border-amber-500/60 bg-status-caution-soft text-status-caution",
-  resolved: "border-emerald-500/60 bg-status-positive-soft text-status-positive",
+  open: "border-status-caution/60 bg-status-caution-soft text-status-caution",
+  resolved: "border-status-positive/60 bg-status-positive-soft text-status-positive",
   wont_fix: "border-border bg-muted text-muted-foreground",
 };
 
@@ -66,11 +67,6 @@ type PinRecovery =
   | { id: string; state: "error"; message: string }
   | { id: string; state: "unavailable" }
   | null;
-
-interface PinRequestState {
-  pinRequestTick?: number;
-  pinTarget?: AnnotationFeedback | null;
-}
 
 function feedbackActions(issue: AnnotationFeedback) {
   // The server is authoritative. Missing capabilities are intentionally
@@ -104,7 +100,9 @@ export function DiscussionIssuesTab({
   const [pinRecovery, setPinRecovery] = useState<PinRecovery>(null);
   const recoveryGenerationRef = useRef(0);
   const recoveryFetchRef = useRef(false);
-  const ownerKey = `${projectId}:${taskId}`;
+  const mutationRequestRef = useRef<object | null>(null);
+  const userId = useAuthStore((state) => state.user?.id ?? null);
+  const ownerKey = JSON.stringify([userId, projectId, taskId]);
   const ownerKeyRef = useRef(ownerKey);
   const itemsRef = useRef<AnnotationFeedback[]>([]);
   const scopeRef = useRef(scope);
@@ -131,14 +129,8 @@ export function DiscussionIssuesTab({
   const patchMut = usePatchFeedback(params);
   const deleteMut = useDeleteFeedback(params);
   const highlightId = useActiveIssueStore((s) => s.highlightId);
-  // highlightFromPin bumps the dedicated pin request tick even when the same
-  // pin is clicked again. The optional cast keeps this F3 worktree compatible
-  // with the pre-G1 store; the coordinator's shared store supplies the typed
-  // fields at integration.
-  const pinRequestTick = useActiveIssueStore(
-    (s) => (s as typeof s & PinRequestState).pinRequestTick ?? 0,
-  );
-  const pinTarget = useActiveIssueStore((s) => (s as typeof s & PinRequestState).pinTarget ?? null);
+  const pinRequestTick = useActiveIssueStore((s) => s.pinRequestTick);
+  const pinTarget = useActiveIssueStore((s) => s.pinTarget);
   const focusIssue = useActiveIssueStore((s) => s.focusIssue);
 
   useEffect(() => {
@@ -148,8 +140,14 @@ export function DiscussionIssuesTab({
     setPendingMutation(null);
     setDeleteCandidate(null);
     setPinRecovery(null);
+    mutationRequestRef.current = null;
     recoveryGenerationRef.current += 1;
     recoveryFetchRef.current = false;
+    return () => {
+      mutationRequestRef.current = null;
+      recoveryGenerationRef.current += 1;
+      recoveryFetchRef.current = false;
+    };
   }, [ownerKey]);
 
   const items = useMemo(
@@ -173,6 +171,9 @@ export function DiscussionIssuesTab({
   };
 
   const setStatus = (id: string, next: FeedbackStatus) => {
+    if (mutationRequestRef.current) return;
+    const request = {};
+    mutationRequestRef.current = request;
     const requestOwner = ownerKey;
     setMutationError(null);
     setPendingMutation({ kind: "status", id });
@@ -180,17 +181,23 @@ export function DiscussionIssuesTab({
       { id, payload: { status: next } },
       {
         onError: (error) => {
-          if (ownerKeyRef.current === requestOwner)
+          if (ownerKeyRef.current === requestOwner && mutationRequestRef.current === request)
             reportMutationError(error, "状态更新失败，请重试");
         },
         onSettled: () => {
-          if (ownerKeyRef.current === requestOwner) setPendingMutation(null);
+          if (ownerKeyRef.current !== requestOwner || mutationRequestRef.current !== request)
+            return;
+          mutationRequestRef.current = null;
+          setPendingMutation(null);
         },
       },
     );
   };
 
   const deleteIssue = (id: string) => {
+    if (mutationRequestRef.current) return;
+    const request = {};
+    mutationRequestRef.current = request;
     const requestOwner = ownerKey;
     setMutationError(null);
     setPendingMutation({ kind: "delete", id });
@@ -198,10 +205,13 @@ export function DiscussionIssuesTab({
       { id, scope: params },
       {
         onError: (error) => {
-          if (ownerKeyRef.current === requestOwner) reportMutationError(error, "删除失败，请重试");
+          if (ownerKeyRef.current === requestOwner && mutationRequestRef.current === request)
+            reportMutationError(error, "删除失败，请重试");
         },
         onSettled: () => {
-          if (ownerKeyRef.current !== requestOwner) return;
+          if (ownerKeyRef.current !== requestOwner || mutationRequestRef.current !== request)
+            return;
+          mutationRequestRef.current = null;
           setPendingMutation(null);
           setDeleteCandidate(null);
         },
@@ -215,6 +225,12 @@ export function DiscussionIssuesTab({
     recoveryFetchRef.current = false;
     setPinRecovery({ id: pinRecovery.id, state: "loading" });
     void refetchIssueList();
+  };
+
+  const cancelPinRecovery = () => {
+    recoveryGenerationRef.current += 1;
+    recoveryFetchRef.current = false;
+    setPinRecovery(null);
   };
 
   // A pin can be outside the current status/project view. Reset to an
@@ -295,7 +311,10 @@ export function DiscussionIssuesTab({
             aria-label="问题列表范围"
             data-testid="issue-list-scope"
             value={scope}
-            onChange={(event) => setScope(event.target.value as "task" | "project")}
+            onChange={(event) => {
+              cancelPinRecovery();
+              setScope(event.target.value as "task" | "project");
+            }}
             className="rounded border border-border bg-muted px-1 py-0.5 text-xs text-foreground"
           >
             <option value="task">当前任务</option>
@@ -306,7 +325,10 @@ export function DiscussionIssuesTab({
           <button
             key={f.key}
             type="button"
-            onClick={() => setStatusFilter(f.key)}
+            onClick={() => {
+              cancelPinRecovery();
+              setStatusFilter(f.key);
+            }}
             className={cn(
               "cursor-pointer appearance-none rounded-[10px] border border-border bg-transparent px-2 py-0.5 text-2xs text-muted-foreground [font:inherit]",
               statusFilter === f.key && "border-brand text-foreground",
@@ -358,11 +380,14 @@ export function DiscussionIssuesTab({
 
       {pinRecovery?.state === "loading" && (
         <div
-          className="rounded border border-border bg-muted px-2 py-1.5 text-xs text-muted-foreground"
+          className="flex items-center justify-between gap-2 rounded border border-border bg-muted px-2 py-1.5 text-xs text-muted-foreground"
           data-testid="issue-pin-recovery"
           data-state="loading"
         >
-          正在查找图钉 Issue…
+          <span>正在查找图钉问题…</span>
+          <Button size="sm" variant="ghost" onClick={cancelPinRecovery}>
+            取消查找
+          </Button>
         </div>
       )}
       {pinRecovery?.state === "error" && (
@@ -419,7 +444,7 @@ export function DiscussionIssuesTab({
         const hasPin = pixelAnchor !== null;
         const videoContext = readVideoIssueContext(it);
         const actions = feedbackActions(it);
-        const pending = pendingMutation?.id === it.id;
+        const pending = pendingMutation !== null;
         const isDeleteCandidate = deleteCandidate === it.id;
         return (
           <div
@@ -433,7 +458,7 @@ export function DiscussionIssuesTab({
             className={cn(
               "flex flex-col gap-1 rounded-md border border-border bg-muted px-2.5 py-2",
               STATUS_CARD_DIM[it.status],
-              highlightId === it.id && "border-amber-500 shadow-[0_0_0_1px_var(--sc-caution)]",
+              highlightId === it.id && "border-status-caution shadow-[0_0_0_1px_var(--sc-caution)]",
               hasPin && "cursor-pointer hover:border-brand",
             )}
             data-testid={`discussion-issue-card-${it.id}`}

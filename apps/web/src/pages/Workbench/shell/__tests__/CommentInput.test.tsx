@@ -214,6 +214,7 @@ describe("CommentInput session composer", () => {
     const input = editor(view.container);
     expect(view.container.querySelector('input[type="file"]')).toBeNull();
     expect(view.container.querySelector('button[title*="题图"]')).toBeNull();
+    expect(input).toHaveAttribute("data-placeholder", "输入任务留言…");
     input.textContent = "task note";
     fireEvent.input(input);
     fireEvent.click(view.getByRole("button", { name: /发送/ }));

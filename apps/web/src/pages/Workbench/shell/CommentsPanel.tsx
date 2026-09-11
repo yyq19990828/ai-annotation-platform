@@ -158,16 +158,6 @@ function formatAttachment(attachment: unknown): {
 }
 
 type AttachmentDownloadState = { pending: boolean; error: string | null };
-type CommentsApiWithAttachmentDownload = typeof commentsApi & {
-  attachmentDownloadUrl: (
-    annotationId: string,
-    storageKey: string,
-  ) => Promise<{ download_url: string }>;
-};
-
-// The API helper is added alongside the backend contract. Keep this bounded
-// cast so this panel can be reviewed independently of generated API types.
-const commentsDownloadApi = commentsApi as CommentsApiWithAttachmentDownload;
 
 function attachmentErrorMessage(error: unknown): string {
   const status =
@@ -550,7 +540,12 @@ export function CommentsPanel({
     [createCommentMut, createTaskFeedbackMut, draftStore, sendTarget],
   );
 
-  const mutationScopeKey = `${projectId ?? ""}:${composerTaskId ?? ""}`;
+  const mutationScopeKey = JSON.stringify([
+    draftStore?.owner?.sessionId ?? null,
+    currentUserId ?? draftStore?.owner?.userId ?? null,
+    projectId ?? null,
+    composerTaskId ?? null,
+  ]);
   const handleAttachmentDownload = useCallback(
     async (rowKey: string, rowAnnotationId: string, storageKey: string, fileName: string) => {
       const stateKey = `${mutationScopeKey}:${rowKey}:${storageKey}`;
@@ -579,7 +574,7 @@ export function CommentsPanel({
       }));
 
       try {
-        const signed = await commentsDownloadApi.attachmentDownloadUrl(rowAnnotationId, storageKey);
+        const signed = await commentsApi.attachmentDownloadUrl(rowAnnotationId, storageKey);
         if (!isOwnerCurrent()) return;
         if (
           !signed ||

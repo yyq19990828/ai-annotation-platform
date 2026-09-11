@@ -61,10 +61,15 @@ test("AI 候选和多选不会作为标注身份查询隐藏讨论面板", async
   const data = await seed.reset();
   const taskId = data.task_ids[0];
   const annotationCommentRequests: string[] = [];
+  const scopedAnnotationIds: string[] = [];
   page.on("request", (request) => {
-    const pathname = new URL(request.url()).pathname;
+    const url = new URL(request.url());
+    const pathname = url.pathname;
     if (/\/annotations\/[^/]+\/comments\/page$/.test(pathname)) {
       annotationCommentRequests.push(pathname);
+    }
+    if (pathname.endsWith("/discussion/page") && url.searchParams.get("scope") === "annotation") {
+      scopedAnnotationIds.push(url.searchParams.get("annotation_id") ?? "");
     }
   });
   try {
@@ -97,44 +102,50 @@ test("AI 候选和多选不会作为标注身份查询隐藏讨论面板", async
     await layoutCommand(page, "标准标注布局");
     const discussion = panel(page, "discussion");
     const editor = discussion.locator('[contenteditable="true"]');
-    const disabledInput = discussion.getByTestId("comment-input-disabled");
+    const readScope = discussion.getByRole("combobox", { name: "评论阅读范围" });
     const annotationRows = annotations.map((annotation) =>
       page.getByTestId(`box-list-item-${annotation.id}`),
     );
-    const firstComments = page.waitForResponse(
-      (response) =>
-        new URL(response.url()).pathname ===
-        `/api/v1/annotations/${annotations[0].id}/comments/page`,
-    );
+    const firstComments = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        url.pathname === `/api/v1/tasks/${taskId}/discussion/page` &&
+        url.searchParams.get("scope") === "annotation" &&
+        url.searchParams.get("annotation_id") === annotations[0].id
+      );
+    });
+    await expect(editor).toBeVisible();
     await annotationRows[0].click();
+    await expect(readScope).toHaveValue("all");
+    await readScope.selectOption("annotation");
     expect((await firstComments).ok()).toBe(true);
     await expect(editor).toBeVisible();
     const collapseSelection = page.getByRole("button", { name: "收起浮窗", exact: true });
     if (await collapseSelection.isVisible()) await collapseSelection.click();
 
-    await panelCommand(page, "讨论 / Issue", "隐藏面板");
+    await panelCommand(page, "讨论", "隐藏面板");
     await expect(discussion).toHaveAttribute("aria-hidden", "true");
     const candidate = page.getByTestId(`box-list-item-pred-${prediction.prediction_id}-0`);
     await candidate.click();
     await expect(candidate).toHaveClass(/border-brand/);
     // Hidden Dockview panels remain mounted. Assert their settled task-comment state,
     // rather than relying on a delay or accepting the absence of every comment request.
-    await expect(disabledInput).toHaveCount(1);
-    await expect(editor).toHaveCount(0);
-    await layoutCommand(page, "讨论 / Issue");
-    await expect(disabledInput).toBeVisible();
+    await expect(readScope).toHaveValue("task");
+    await expect(editor).toHaveCount(1);
+    await layoutCommand(page, "讨论");
+    await expect(editor).toBeVisible();
 
     await annotationRows[0].click();
     await expect(editor).toBeVisible();
     await annotationRows[1].click({ modifiers: ["Shift"] });
-    await expect(disabledInput).toBeVisible();
-    await expect(editor).toHaveCount(0);
-    await annotationRows[1].click();
     await expect(editor).toBeVisible();
-    await expect
-      .poll(() => annotationCommentRequests)
-      .toContain(`/api/v1/annotations/${annotations[1].id}/comments/page`);
-    expect(annotationCommentRequests.length).toBeGreaterThanOrEqual(2);
+    await expect(readScope.locator('option[value="annotation"]')).toHaveCount(0);
+    await annotationRows[1].click();
+    await readScope.selectOption("annotation");
+    await expect(editor).toBeVisible();
+    await expect.poll(() => scopedAnnotationIds).toContain(annotations[1].id);
+    expect(scopedAnnotationIds.length).toBeGreaterThanOrEqual(2);
+    expect(scopedAnnotationIds.every((id) => annotations.some((ann) => ann.id === id))).toBe(true);
     expect(annotationCommentRequests).not.toEqual(
       expect.arrayContaining([expect.stringContaining("/annotations/pred-")]),
     );
@@ -173,7 +184,7 @@ test("图片布局预设、面板隐藏和浮动保留画布及未发送讨论�
   await layoutCommand(page, "标准标注布局");
   const sameCanvas = await rememberCanvas(page, "workbench-stage");
 
-  // This layout test needs a persisted selection to enable the comment editor.
+  // Keep a persisted selection while layout changes preserve the task composer.
   const stage = page.getByTestId("workbench-stage");
   await expect(stage).toHaveAttribute("data-image-ready", "true");
   await page.getByTestId(`box-list-item-${annotation.id}`).click();
@@ -196,19 +207,19 @@ test("图片布局预设、面板隐藏和浮动保留画布及未发送讨论�
     await sameCanvas();
     await sameDraft();
   }
-  await panelCommand(page, "讨论 / Issue", "隐藏面板");
+  await panelCommand(page, "讨论", "隐藏面板");
   await expect(discussion).toHaveAttribute("aria-hidden", "true");
   await sameDraft();
-  await layoutCommand(page, "讨论 / Issue");
+  await layoutCommand(page, "讨论");
   await expect(discussion).toHaveAttribute("aria-hidden", "false");
-  await layoutCommand(page, "讨论 / Issue");
+  await layoutCommand(page, "讨论");
   await expect(discussion).toHaveAttribute("aria-hidden", "true");
-  await layoutCommand(page, "讨论 / Issue");
+  await layoutCommand(page, "讨论");
   await expect(discussion).toHaveCount(1);
   await expect(discussion).toHaveAttribute("aria-hidden", "false");
   await sameDraft();
 
-  await panelCommand(page, "讨论 / Issue", "浮动面板");
+  await panelCommand(page, "讨论", "浮动面板");
   await expect
     .poll(async () =>
       (await savedSnapshot(page, "annotate:image"))?.layout.floatingGroups?.some((group) =>
@@ -218,7 +229,7 @@ test("图片布局预设、面板隐藏和浮动保留画布及未发送讨论�
     .toBe(true);
   await sameCanvas();
   await sameDraft();
-  const floating = page.getByRole("dialog", { name: "讨论 / Issue", exact: true });
+  const floating = page.getByRole("dialog", { name: "讨论", exact: true });
   const oldRect = await floating.boundingBox();
   const handle = await floating.locator(".dv-resize-handle-bottomright").boundingBox();
   if (!oldRect || !handle) throw new Error("Floating resize handle has no bounds");
@@ -239,7 +250,7 @@ test("图片布局预设、面板隐藏和浮动保留画布及未发送讨论�
         )?.position.width,
     )
     .toBeGreaterThan(oldRect.width + 60);
-  await panelCommand(page, "讨论 / Issue", "与标注详情合并为标签");
+  await panelCommand(page, "讨论", "与标注详情合并为标签");
   await expect
     .poll(async () => {
       const root = (await savedSnapshot(page, "annotate:image"))?.layout.grid.root;
@@ -254,7 +265,7 @@ test("图片布局预设、面板隐藏和浮动保留画布及未发送讨论�
     (await savedSnapshot(page, "annotate:image"))!.layout.grid.root,
     "discussion",
   );
-  await panelCommand(page, "讨论 / Issue", "停靠到底部");
+  await panelCommand(page, "讨论", "停靠到底部");
   await expect
     .poll(async () => {
       const snapshot = await savedSnapshot(page, "annotate:image");
@@ -362,7 +373,7 @@ test("标准和浮动布局使用日间与夜间语义主题", { tag: "@visual" 
   await expect(queue.getByText("T-E2E-000001", { exact: true })).toHaveClass(/text-brand/);
   await expect(queue.getByText("task-1.svg", { exact: true })).toBeVisible();
   for (const floating of [false, true]) {
-    if (floating) await panelCommand(page, "讨论 / Issue", "浮动面板");
+    if (floating) await panelCommand(page, "讨论", "浮动面板");
     for (const theme of ["light", "dark"]) {
       const current = await page.locator("html").getAttribute("data-theme");
       if (current !== theme) await page.getByRole("button", { name: /当前.*切到/ }).click();
@@ -387,7 +398,7 @@ test("预设撤销恢复自定义树，后续预设替换撤销点且紧凑模�
   const sameCanvas = await rememberCanvas(page, "workbench-stage");
   await panelCommand(page, "任务队列", "与类别面板合并为标签");
   await panelCommand(page, "标注详情", "隐藏面板");
-  await panelCommand(page, "讨论 / Issue", "浮动面板");
+  await panelCommand(page, "讨论", "浮动面板");
   await page.waitForTimeout(650);
   const custom = await savedSnapshot(page, "annotate:image");
   await layoutCommand(page, "审核协作布局");
@@ -454,7 +465,7 @@ test("视频紧凑布局禁止桌面写入，退出后恢复浮窗与非零帧�
     await page.keyboard.press("ArrowRight");
     await expect(stage).toHaveAttribute("data-video-frame-index", String(frame));
   }
-  await panelCommand(page, "讨论 / Issue", "浮动面板");
+  await panelCommand(page, "讨论", "浮动面板");
   await expect
     .poll(async () =>
       (await savedSnapshot(page, "annotate:video"))?.layout.floatingGroups?.some((group) =>
@@ -499,7 +510,7 @@ test("视频紧凑布局禁止桌面写入，退出后恢复浮窗与非零帧�
   await settings.getByRole("button", { name: "关闭设置", exact: true }).click();
   await expect(panel(page, "task-queue")).toBeVisible();
   await expect(page.getByRole("button", { name: "任务队列菜单", exact: true })).toHaveCount(0);
-  await layoutCommand(page, "讨论 / Issue");
+  await layoutCommand(page, "讨论");
   await expect(discussion).toHaveAttribute("aria-hidden", "false");
   await expect(panel(page, "task-queue")).toBeHidden();
   await sameCanvas();

@@ -2,6 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { videoToolScopeForTool, type VideoToolSelection } from "../stage/videoToolUnits";
 import { useWorkbenchState } from "./useWorkbenchState";
+import type { DiscussionOrigin } from "./discussionTypes";
 
 const config = vi.hoisted(() => ({
   config: {},
@@ -91,5 +92,75 @@ describe("useWorkbenchState video tool scope", () => {
     expect(config.update).not.toHaveBeenCalled();
     expect(config.setFields).not.toHaveBeenCalled();
     expect(config.setLayout).not.toHaveBeenCalled();
+  });
+});
+
+describe("useWorkbenchState discussion drawing ownership", () => {
+  const origin: DiscussionOrigin = {
+    owner: { sessionId: "session-a", userId: "user-a" },
+    target: { projectId: "p", taskId: "t", kind: "annotation", annotationId: "annotation-a" },
+    requestId: "drawing-a",
+  };
+  const drawing = { shapes: [{ type: "line" as const, points: [0, 0, 0.2, 0.2] }] };
+
+  it("keeps its originating annotation after selection changes and requires a matching result", () => {
+    const { result } = renderHook(() => useWorkbenchState());
+    act(() => result.current.beginCanvasDraft("annotation-a", drawing, origin));
+    act(() => result.current.setSelectedId("annotation-b"));
+    act(() => result.current.endCanvasDraft());
+    const resultId = result.current.canvasDraft.resultId!;
+    expect(result.current.canvasDraft.origin).toEqual(origin);
+    expect(result.current.canvasDraft.pendingResult).toEqual(drawing);
+    act(() => result.current.consumeCanvasResult());
+    expect(result.current.canvasDraft.pendingResult).toEqual(drawing);
+    act(() => result.current.consumeCanvasResult("different-completion"));
+    expect(result.current.canvasDraft.pendingResult).toEqual(drawing);
+    act(() => result.current.consumeCanvasResult(resultId));
+    expect(result.current.canvasDraft.pendingResult).toBeNull();
+    expect(result.current.canvasDraft.origin).toBeNull();
+  });
+
+  it("rejects mismatched targets and ignores an old acknowledgement after a new drawing starts", () => {
+    const { result } = renderHook(() => useWorkbenchState());
+    act(() => result.current.beginCanvasDraft("annotation-b", drawing, origin));
+    expect(result.current.canvasDraft.active).toBe(false);
+    act(() => result.current.beginCanvasDraft("annotation-a", drawing, origin));
+    act(() => result.current.endCanvasDraft());
+    const staleId = result.current.canvasDraft.resultId!;
+    act(() =>
+      result.current.beginCanvasDraft("annotation-a", drawing, {
+        ...origin,
+        requestId: "drawing-b",
+      }),
+    );
+    act(() => result.current.endCanvasDraft());
+    act(() => result.current.consumeCanvasResult(staleId));
+    expect(result.current.canvasDraft.pendingResult).toEqual(drawing);
+    expect(result.current.canvasDraft.origin?.requestId).toBe("drawing-b");
+  });
+
+  it("does not resurrect shapes or produce another completion after leaving drawing mode", () => {
+    const { result } = renderHook(() => useWorkbenchState());
+    act(() => result.current.beginCanvasDraft("annotation-a", drawing, origin));
+    act(() => result.current.endCanvasDraft());
+    const resultId = result.current.canvasDraft.resultId;
+    act(() => result.current.endCanvasDraft());
+    act(() => result.current.appendCanvasShape(drawing.shapes[0]));
+    expect(result.current.canvasDraft.resultId).toBe(resultId);
+    expect(result.current.canvasDraft.shapes).toEqual([]);
+  });
+
+  it("cancelling owned canvas editing restores its original attachment, while suspension does not complete it", () => {
+    const { result } = renderHook(() => useWorkbenchState());
+    act(() => result.current.beginCanvasDraft("annotation-a", drawing, origin));
+    act(() => result.current.appendCanvasShape({ type: "line", points: [0.1, 0.1, 0.7, 0.7] }));
+    act(() => result.current.cancelCanvasDraft());
+    expect(result.current.canvasDraft.pendingResult).toEqual(drawing);
+    expect(result.current.canvasDraft.origin).toEqual(origin);
+    act(() => result.current.beginCanvasDraft("annotation-a", drawing, origin));
+    act(() => result.current.releaseCanvasDraft());
+    expect(result.current.canvasDraft.active).toBe(false);
+    expect(result.current.canvasDraft.pendingResult).toBeNull();
+    expect(result.current.canvasDraft.origin).toBeNull();
   });
 });

@@ -46,6 +46,31 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
             <VideoMaskCorrectionDialog {...model.maskCorrectionDialog} />
             <MaskConversionDialog {...model.conversionDialog} />
             <VideoTrackerReviewBar {...model.trackerReview} />
+            {model.issueSection &&
+              model.issueSection.stageKind !== "3d" &&
+              !model.issueSection.issuePinsComplete && (
+                <div
+                  className="absolute bottom-8 right-4 z-workbench-top flex max-w-sm items-center gap-2 rounded border border-border bg-card px-2 py-1.5 text-xs text-muted-foreground shadow-lg"
+                  role="status"
+                  data-testid="issue-pin-coverage"
+                  data-status={model.issueSection.issuePinsError ? "error" : "loading"}
+                >
+                  <span>
+                    {model.issueSection.issuePinsError
+                      ? "部分图钉尚未加载，已显示的图钉仍可使用"
+                      : `图钉加载中，已显示 ${model.issueSection.issuePinsLoadedCount} 个`}
+                  </span>
+                  {model.issueSection.issuePinsError && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => void model.issueSection?.onRetryIssuePins()}
+                    >
+                      重试
+                    </Button>
+                  )}
+                </div>
+              )}
             {model.issueSection?.stageKind === "video" &&
               model.issueSection.issueNavigation.status !== "idle" && (
                 <div
@@ -90,12 +115,20 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
           // 落点模式(armed)进行中强制保持露出,否则用户移开光标会丢失高亮指示。
           const fabShown = fabRevealed || model.issueSection.issuePinDropArmed;
           const hiddenCls = fabShown ? false : FAB_HIDDEN_CLASS;
+          const count = model.issueSection.openIssueCount;
+          const countLabel = model.issueSection.openIssueCountError
+            ? "数量暂不可用"
+            : model.issueSection.openIssueCountLoading
+              ? "数量加载中"
+              : count === null
+                ? "数量未知"
+                : `${count} 个未解决`;
           return (
             <>
               <button
                 type="button"
-                aria-label={`查看讨论面板 Issue (${model.issueSection.openIssueCount} 待处理)`}
-                title={`Issue: ${model.issueSection.openIssueCount} 个待处理`}
+                aria-label={`查看问题（${countLabel}）`}
+                title={`本任务问题：${countLabel}`}
                 onClick={model.issueSection.onOpenList}
                 className={cn(ISSUE_FAB_CLASS, "bottom-20", hiddenCls)}
                 data-testid="issue-fab"
@@ -103,9 +136,9 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
                 data-workbench-fab
               >
                 <Icon name="flag" size={14} />
-                {model.issueSection.openIssueCount > 0 && (
+                {(count === null || count > 0) && (
                   <span className="absolute -right-1 -top-1 min-w-4 rounded-[10px] bg-status-caution-soft px-1.5 py-px text-center text-2xs text-status-caution">
-                    {model.issueSection.openIssueCount}
+                    {model.issueSection.openIssueCountError ? "?" : (count ?? "…")}
                   </span>
                 )}
               </button>

@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-07-29
+last_reviewed: 2026-09-11
 ---
 
 # 审计与通知
@@ -366,6 +366,18 @@ WS 握手时会校验 JWT，然后订阅：
 **自动对账**：上述手工对账已自动化为每日 03:00 UTC 的 celery beat 任务 `reconcile_annotation_feedback`。它逐源比对旧表「应 mirror 行数」与统一表「实际镜像行数」，发现缺失时写 `FEEDBACK_RECONCILE_DRIFT` 审计并通知全部 superadmin（`feedback.reconcile_drift`）。drift 长期为 0 是切单源的前置条件。机制详见 [反馈收敛与双写对账](./feedback-convergence)。
 
 <!-- history: feedback convergence was introduced across v0.10 and v0.11 slices; the visible table now describes current phases instead of release numbers. -->
+
+### 讨论读取与草稿归属
+
+工作台的 `GET /tasks/{task_id}/discussion/page` 是只读聚合接口，不改变写入归属。标注评论以 `annotation_comments` 为准；任务文字留言以原生 `annotation_feedbacks` 任务评论根记录为准。聚合结果携带 `source` 和原记录，客户端以 `(source, id)` 标识条目并路由修改、删除及附件下载。标注评论的旧镜像可能未同步后续编辑或删除，因此不能替代原记录；Issue 回复、BUG 和退回镜像不进入评论列表。
+
+聚合查询先在数据库中合并排序键，再分批读取完整记录；游标绑定任务、范围和标注。Issue 列表使用根记录与服务端状态筛选；数量独立于已加载页，图钉只有在当前任务全部页读取完毕后才视为完整。线程读取独立于列表，通过验证过项目、任务和锚点归属的父链读取后代；删除的中间回复不遮挡仍有效的子回复，但不可见或已删除根记录下的线程不可操作。
+
+接口返回的 `actions` 用于展示可用操作，不能代替写入时的权限校验。每次写入重新校验项目、任务及线程；审核员的状态权限不允许在同一 PATCH 中夹带他人正文、标题或严重程度修改。
+
+前端 `DiscussionDraftProvider` 位于路由展示层之上，按认证会话和用户隔离，再以项目、任务、目标类型及目标 ID 区分草稿。提交先捕获不可变的 owner、目标、revision 和 request ID；成功只清除仍对应同一 revision 的草稿。上传和画布完成结果也携带原 owner，注销后的结果失效，不会附加到新账号或当前选中目标。
+
+文字与结构化草稿只保存在当前登录会话内存中，不进入布局偏好或标注离线队列。活动画布笔触另用带用户、项目、任务、标注命名空间的五分钟 `sessionStorage` 恢复记录；任务切换和路由卸载前先同步保存原 owner，再释放画布。恢复优先读会话草稿，只有内存中不存在该草稿时才读有效恢复记录；注销清除原用户记录，不导入无法确定归属的旧记录。
 
 ## 常见修改落点
 

@@ -212,6 +212,53 @@ describe("DiscussionIssuesTab", () => {
     expect(screen.getByTestId("discussion-issue-card-issue-1")).toBeTruthy();
   });
 
+  it("keeps a newer A request pending after A to B to A and ignores the old A callbacks", () => {
+    const view = setup();
+    fireEvent.click(screen.getByTitle("标为已解决"));
+    fireEvent.click(screen.getByTitle("标为已解决"));
+    expect(mocks.patchMutate).toHaveBeenCalledTimes(1);
+    const oldRequest = mocks.patchMutate.mock.calls[0][1];
+    view.rerender(<DiscussionIssuesTab {...view.props} taskId="T2" />);
+    view.rerender(<DiscussionIssuesTab {...view.props} />);
+    fireEvent.click(screen.getByTitle("标为已解决"));
+    expect(mocks.patchMutate).toHaveBeenCalledTimes(2);
+    const currentRequest = mocks.patchMutate.mock.calls[1][1];
+    act(() => {
+      oldRequest.onError(new Error("old A error"));
+      oldRequest.onSettled();
+    });
+    expect(screen.queryByTestId("issue-mutation-error")).toBeNull();
+    expect(screen.getByTitle("标为已解决")).toBeDisabled();
+    act(() => {
+      currentRequest.onError(new Error("current A error"));
+      currentRequest.onSettled();
+    });
+    expect(screen.getByTestId("issue-mutation-error")).toHaveTextContent("current A error");
+    expect(screen.getByTitle("标为已解决")).toBeEnabled();
+  });
+
+  it("stops pin recovery after explicit cancellation even if its pending page settles", async () => {
+    const pendingPage = deferred<unknown>();
+    const fetchNextPage = vi.fn(() => pendingPage.promise);
+    mocks.query = query({
+      data: { pages: [{ items: [], next_cursor: "next" }], pageParams: [null] },
+      hasNextPage: true,
+      fetchNextPage,
+    });
+    const view = setup();
+    mocks.store.highlightId = "unloaded-target";
+    mocks.store.pinRequestTick = 1;
+    view.rerender(<DiscussionIssuesTab {...view.props} />);
+    await waitFor(() => expect(fetchNextPage).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", { name: "取消查找" }));
+    await act(async () => {
+      pendingPage.resolve({});
+      await pendingPage.promise;
+    });
+    expect(screen.queryByTestId("issue-pin-recovery")).toBeNull();
+    expect(fetchNextPage).toHaveBeenCalledTimes(1);
+  });
+
   it("restarts filtered-out pin recovery when the same pin is activated again", async () => {
     const hidden = query({
       data: { pages: [{ items: [], next_cursor: null }], pageParams: [null] },

@@ -660,6 +660,47 @@ async def test_webcodecs_object_cleanup_paginates_batches_and_verifies():
     assert client.list_calls == 3
 
 
+async def test_comment_attachment_cleanup_only_removes_resolved_fixture_annotation_prefix():
+    from types import SimpleNamespace
+    from uuid import uuid4
+
+    from app.api.v1._test_seed import _delete_comment_attachment_seed_objects
+
+    fixture_annotation = uuid4()
+    other_annotation = uuid4()
+    prefix = f"comment-attachments/{fixture_annotation}/"
+    keys = {
+        f"{prefix}completed.txt",
+        f"{prefix}unfinished-upload.txt",
+        f"comment-attachments/{other_annotation}/keep.txt",
+        "e2e/video/webcodecs/keep.mp4",
+    }
+
+    class Client:
+        def list_objects_v2(self, **kwargs):
+            assert kwargs["Bucket"] == "task-owned-annotations"
+            assert kwargs["Prefix"] == prefix
+            return {
+                "Contents": [{"Key": key} for key in keys if key.startswith(prefix)],
+                "IsTruncated": False,
+            }
+
+        def delete_objects(self, **kwargs):
+            assert kwargs["Bucket"] == "task-owned-annotations"
+            for item in kwargs["Delete"]["Objects"]:
+                assert item["Key"].startswith(prefix)
+                keys.remove(item["Key"])
+            return {}
+
+    storage = SimpleNamespace(client=Client(), bucket="task-owned-annotations")
+    _delete_comment_attachment_seed_objects(storage, [fixture_annotation])
+    _delete_comment_attachment_seed_objects(storage, [fixture_annotation])
+    assert keys == {
+        f"comment-attachments/{other_annotation}/keep.txt",
+        "e2e/video/webcodecs/keep.mp4",
+    }
+
+
 async def test_webcodecs_object_cleanup_fails_on_partial_delete():
     from types import SimpleNamespace
 

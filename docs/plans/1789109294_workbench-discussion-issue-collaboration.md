@@ -481,6 +481,13 @@ Review new watched endpoints in `packages/python-sdk/api-coverage.toml`; classif
 
 ## 9. Documentation and completion
 
+### Implementation evidence
+
+- G1 is integrated but not yet accepted. Integrated frontend checks passed 85 Issue/draft-lifecycle tests and 48 comment/layout tests, plus web typechecking and CSS-token checks. A dedicated browser against the task-owned database verified a native task comment, a coordinate-free image-task Issue with exact open count, task A → B → A drafts, and a 272px-wide compact panel in light/dark themes. Popup-drawing ownership and complete layout/video E2E remain acceptance work; these observations do not mark G1 complete.
+- The integrated task-discussion, feedback-thread, permission and existing comment/video API suites passed 117 tests in a task-owned disposable database before the root-query optimization.
+- A temporary transaction containing 20 tasks, 2,000 root Issues and 8,000 replies exposed unnecessary recursive ancestry traversal for `root_only` counts. Three `EXPLAIN (ANALYZE, BUFFERS)` runs measured 172.643–178.213 ms before the change and 0.233–0.317 ms after querying validated roots directly. The selected task's open count remained 66. This is local synthetic query evidence, not a production latency guarantee.
+- The same fixture's parent-thread lookup returned four replies in 2.731–3.005 ms. No index migration was required for these measured paths. Both measurement transactions were rolled back and the original feedback row count was verified afterward.
+
 The coordinator updates documentation with each accepted integration unit, keeping user-facing documentation about shipped behavior rather than proposed phases:
 
 | Change                          | Documentation/artifacts                                                                                                             |
