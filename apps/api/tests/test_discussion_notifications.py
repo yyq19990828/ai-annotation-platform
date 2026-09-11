@@ -188,6 +188,18 @@ async def test_feedback_status_event_reaches_all_active_descendant_authors(
     owner, owner_token = super_admin
     author, _ = annotator
     qa, _ = reviewer
+    old_only = await create_user(
+        db_session,
+        "reviewer",
+        f"old-only-{uuid4().hex}@test.local",
+        "Old-only",
+    )
+    grandchild_only = await create_user(
+        db_session,
+        "reviewer",
+        f"grandchild-only-{uuid4().hex}@test.local",
+        "Grandchild-only",
+    )
     inactive = await create_user(
         db_session, "annotator", f"inactive-{uuid4().hex}@test.local", "Inactive"
     )
@@ -199,6 +211,8 @@ async def test_feedback_status_event_reaches_all_active_descendant_authors(
     for user, role in (
         (author, "annotator"),
         (qa, "reviewer"),
+        (old_only, "reviewer"),
+        (grandchild_only, "reviewer"),
         (inactive, "annotator"),
         (away, "annotator"),
     ):
@@ -225,11 +239,18 @@ async def test_feedback_status_event_reaches_all_active_descendant_authors(
         created_at=now,
     )
     surviving_grandchild = _feedback_reply(
-        author_id=qa.id,
+        author_id=grandchild_only.id,
         project_id=project.id,
         task_id=task.id,
         parent_id=deleted_intermediate.id,
         created_at=now + timedelta(seconds=1),
+    )
+    old_reply = _feedback_reply(
+        author_id=old_only.id,
+        project_id=project.id,
+        task_id=task.id,
+        parent_id=root.id,
+        created_at=now - timedelta(seconds=1),
     )
     many_replies = [
         _feedback_reply(
@@ -266,6 +287,7 @@ async def test_feedback_status_event_reaches_all_active_descendant_authors(
         [
             deleted_intermediate,
             surviving_grandchild,
+            old_reply,
             *many_replies,
             author_reply,
             inactive_reply,
@@ -281,6 +303,15 @@ async def test_feedback_status_event_reaches_all_active_descendant_authors(
         headers=_headers(owner, owner_token),
     )
     assert descendant_patch.status_code == 200, descendant_patch.text
+    assert published == []
+
+    # A no-op root status request is not a status transition and must not emit.
+    noop_patch = await httpx_client.patch(
+        f"/api/v1/feedbacks/{root_id}",
+        json={"status": "open"},
+        headers=_headers(owner, owner_token),
+    )
+    assert noop_patch.status_code == 200, noop_patch.text
     assert published == []
 
     root_patch = await httpx_client.patch(
@@ -302,13 +333,23 @@ async def test_feedback_status_event_reaches_all_active_descendant_authors(
         .scalars()
         .all()
     )
-    assert len(rows) == 2
-    assert {row.user_id for row in rows} == {author.id, qa.id}
+    assert len(rows) == 4
+    assert {row.user_id for row in rows} == {
+        author.id,
+        qa.id,
+        old_only.id,
+        grandchild_only.id,
+    }
     assert {row.payload["from_status"] for row in rows} == {"open"}
     assert {row.payload["to_status"] for row in rows} == {"resolved"}
     assert all(row.payload["source"] == "feedback" for row in rows)
     assert all(row.target_type == "feedback" for row in rows)
-    assert {user_id for user_id, _message in published} == {author.id, qa.id}
+    assert {user_id for user_id, _message in published} == {
+        author.id,
+        qa.id,
+        old_only.id,
+        grandchild_only.id,
+    }
     assert batch.annotator_id == author.id
 
 
@@ -436,6 +477,63 @@ async def test_annotation_mentions_notify_original_comment_only_and_filter_acces
     )
     assert len(mirrors) == 1
     assert all(row.target_id != mirrors[0].id for row in notifications)
+
+
+@pytest.mark.asyncio
+async def test_feedback_status_route_honors_mute_and_noop_transition(
+    httpx_client, db_session, super_admin, annotator, reviewer, monkeypatch
+):
+    owner, owner_token = super_admin
+    author, _ = annotator
+    qa, qa_token = reviewer
+    project, _batch, task = await _seed_task_scope(db_session, owner, author)
+    await _add_member(db_session, project.id, author, "annotator", owner.id)
+    await _add_member(db_session, project.id, qa, "reviewer", owner.id)
+    db_session.add(
+        NotificationPreference(
+            user_id=author.id,
+            type="feedback.status_changed",
+            channels={"in_app": False, "email": False},
+        )
+    )
+    await db_session.flush()
+
+    published: list[tuple] = []
+
+    async def fake_publish(*, user_id, message):
+        published.append((user_id, message))
+
+    monkeypatch.setattr("app.services.notification._publish", fake_publish)
+    root_id = await _create_issue(httpx_client, project, task, author)
+
+    noop = await httpx_client.patch(
+        f"/api/v1/feedbacks/{root_id}",
+        json={"status": "open"},
+        headers=_headers(qa, qa_token),
+    )
+    assert noop.status_code == 200, noop.text
+    assert published == []
+
+    muted = await httpx_client.patch(
+        f"/api/v1/feedbacks/{root_id}",
+        json={"status": "resolved"},
+        headers=_headers(qa, qa_token),
+    )
+    assert muted.status_code == 200, muted.text
+    assert published == []
+    rows = list(
+        (
+            await db_session.execute(
+                select(Notification).where(
+                    Notification.type == "feedback.status_changed",
+                    Notification.target_id == root_id,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert rows == []
 
 
 @pytest.mark.asyncio

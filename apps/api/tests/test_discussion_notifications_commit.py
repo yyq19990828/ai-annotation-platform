@@ -1,137 +1,430 @@
-"""Real-commit notification transport ordering regression.
+"""Real-commit HTTP regressions for discussion notification delivery.
 
-This test is intentionally guarded to the separately owned notification commit
-database.  The normal ``db_session`` fixture is SAVEPOINT-bound and cannot prove
-visibility from a second PostgreSQL connection.
+The normal ``db_session`` fixture is SAVEPOINT-bound and cannot prove that a
+second PostgreSQL connection sees a committed notification while the route's
+post-commit publish hook runs. These tests therefore use an explicitly opted-in
+disposable database and fresh sessions for setup, each HTTP request, publishing,
+and assertions.
 """
 
 from __future__ import annotations
 
 import asyncio
+import os
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import dataclass
 
+import httpx
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
+from app.core.security import create_access_token
+from app.db.models.annotation_feedback import AnnotationFeedback
+from app.db.models.audit_log import AuditLog
 from app.db.models.notification import Notification
+from app.db.models.project_member import ProjectMember
+from app.db.models.task import Task
+from app.db.models.task_batch import TaskBatch
 from app.db.models.user import User
-from app.services.notification import NotificationService
+from app.deps import get_db
+from app.main import app
+from tests.factory import create_batch, create_project, create_task, create_user
 
 
-_OWNED_DATABASE = "annotation_discussion_260911_notifications_commit_test"
+_REAL_COMMIT_URL_ENV = "DISCUSSION_REAL_COMMIT_TEST_DATABASE_URL"
+_DISPOSABLE_DB_PREFIX = "annotation_discussion_"
+_DISPOSABLE_DB_SUFFIX = "_notifications_commit_test"
+_FORCE_COMMIT_FAILURE = "discussion_test_force_commit_failure"
+
+
+@dataclass(frozen=True)
+class _ReplyFixture:
+    project_id: uuid.UUID
+    batch_id: uuid.UUID
+    task_id: uuid.UUID
+    root_id: uuid.UUID
+    root_author_id: uuid.UUID
+    actor_id: uuid.UUID
+    actor_token: str
+    user_ids: tuple[uuid.UUID, ...]
+
+
+def _real_commit_test_url(normal_url: str) -> str:
+    """Return the explicitly opted-in URL without exposing credentials."""
+
+    raw_url = os.environ.get(_REAL_COMMIT_URL_ENV)
+    if not raw_url:
+        pytest.skip(f"set {_REAL_COMMIT_URL_ENV} to run the disposable DB test")
+
+    real = make_url(raw_url)
+    normal = make_url(normal_url)
+    database = real.database or ""
+    if not (
+        real.drivername == "postgresql+asyncpg"
+        and database.startswith(_DISPOSABLE_DB_PREFIX)
+        and database.endswith(_DISPOSABLE_DB_SUFFIX)
+    ):
+        pytest.fail(
+            "the real-commit test URL must use postgresql+asyncpg and a clearly "
+            "disposable annotation_discussion_*_notifications_commit_test database"
+        )
+    if database == normal.database or real.render_as_string(
+        hide_password=True
+    ) == normal.render_as_string(hide_password=True):
+        pytest.fail("the real-commit test database must differ from TEST_DATABASE_URL")
+    return real.render_as_string(hide_password=False)
+
+
+async def _upgrade(url: str) -> None:
+    """Alembic's async env must run outside pytest's active event loop."""
+
+    alembic_cfg = Config("alembic.ini")
+    alembic_cfg.set_main_option("sqlalchemy.url", url)
+    await asyncio.to_thread(command.upgrade, alembic_cfg, "head")
+
+
+async def _verify_database_identity(url: str) -> None:
+    """Confirm the connection reaches the named disposable DB before migration."""
+
+    expected = make_url(url).database
+    engine = create_async_engine(url, echo=False)
+    try:
+        async with engine.connect() as connection:
+            actual = await connection.scalar(text("SELECT current_database()"))
+        if actual != expected:
+            pytest.fail("the real-commit connection reached an unexpected database")
+    finally:
+        await engine.dispose()
+
+
+async def _seed_committed_fixture(
+    session_factory: async_sessionmaker[AsyncSession],
+) -> _ReplyFixture:
+    """Seed and commit all route prerequisites before opening the HTTP client."""
+
+    async with session_factory() as db:
+        owner = await create_user(
+            db, "super_admin", f"n1-owner-{uuid.uuid4().hex}@test.local", "N1 owner"
+        )
+        root_author = await create_user(
+            db,
+            "annotator",
+            f"n1-author-{uuid.uuid4().hex}@test.local",
+            "N1 author",
+        )
+        actor = await create_user(
+            db,
+            "reviewer",
+            f"n1-actor-{uuid.uuid4().hex}@test.local",
+            "N1 actor",
+        )
+        project = await create_project(db, owner_id=owner.id)
+        batch = await create_batch(db, project_id=project.id, status="active")
+        task = await create_task(db, project_id=project.id)
+        batch.annotator_id = root_author.id
+        task.batch_id = batch.id
+        db.add_all(
+            [
+                ProjectMember(
+                    project_id=project.id,
+                    user_id=root_author.id,
+                    role="annotator",
+                    assigned_by=owner.id,
+                ),
+                ProjectMember(
+                    project_id=project.id,
+                    user_id=actor.id,
+                    role="reviewer",
+                    assigned_by=owner.id,
+                ),
+            ]
+        )
+        root = AnnotationFeedback(
+            id=uuid.uuid4(),
+            kind="issue",
+            anchor_type="task",
+            project_id=project.id,
+            task_id=task.id,
+            annotation_id=None,
+            anchor_position=None,
+            severity="medium",
+            title="Committed root",
+            body="root seeded before the HTTP request",
+            author_id=root_author.id,
+            attachments=[],
+            thread_parent_id=None,
+            status="open",
+            is_active=True,
+        )
+        db.add(root)
+        await db.commit()
+
+    return _ReplyFixture(
+        project_id=project.id,
+        batch_id=batch.id,
+        task_id=task.id,
+        root_id=root.id,
+        root_author_id=root_author.id,
+        actor_id=actor.id,
+        actor_token=create_access_token(subject=str(actor.id), role="reviewer"),
+        user_ids=(owner.id, root_author.id, actor.id),
+    )
+
+
+async def _post_reply(
+    client: httpx.AsyncClient,
+    fixture: _ReplyFixture,
+    route_kind: str,
+    body: str,
+) -> httpx.Response:
+    headers = {"Authorization": f"Bearer {fixture.actor_token}"}
+    if route_kind == "generic":
+        return await client.post(
+            "/api/v1/feedbacks",
+            json={
+                "kind": "comment",
+                "anchor_type": "task",
+                "project_id": str(fixture.project_id),
+                "task_id": str(fixture.task_id),
+                "body": body,
+                "thread_parent_id": str(fixture.root_id),
+            },
+            headers=headers,
+        )
+    return await client.post(
+        f"/api/v1/feedbacks/{fixture.root_id}/replies",
+        json={"body": body},
+        headers=headers,
+    )
+
+
+async def _cleanup_fixture(
+    session_factory: async_sessionmaker[AsyncSession], fixture: _ReplyFixture
+) -> None:
+    """Delete only rows owned by this test's explicit IDs."""
+
+    async with session_factory() as db:
+        # The audit table is append-only by default. Its documented GDPR cleanup
+        # escape hatch is scoped to this cleanup transaction only.
+        await db.execute(text("SET LOCAL app.allow_audit_update = 'true'"))
+        await db.execute(
+            delete(Notification).where(Notification.target_id == fixture.root_id)
+        )
+        await db.execute(
+            delete(AuditLog).where(
+                AuditLog.actor_id.in_(fixture.user_ids),
+            )
+        )
+        # Reply IDs are generated inside the route. The root ID is the explicit
+        # parent scope, and no other test can reference this freshly generated root.
+        await db.execute(
+            delete(AnnotationFeedback).where(
+                AnnotationFeedback.thread_parent_id == fixture.root_id
+            )
+        )
+        await db.execute(
+            delete(AnnotationFeedback).where(AnnotationFeedback.id == fixture.root_id)
+        )
+        await db.execute(
+            delete(ProjectMember).where(ProjectMember.project_id == fixture.project_id)
+        )
+        await db.execute(delete(Task).where(Task.id == fixture.task_id))
+        await db.execute(delete(TaskBatch).where(TaskBatch.id == fixture.batch_id))
+        from app.db.models.project import Project
+
+        await db.execute(delete(Project).where(Project.id == fixture.project_id))
+        await db.execute(delete(User).where(User.id.in_(fixture.user_ids)))
+        await db.commit()
+
+
+@asynccontextmanager
+async def _http_client(
+    session_factory: async_sessionmaker[AsyncSession],
+    request_flags: dict[str, bool],
+) -> AsyncIterator[httpx.AsyncClient]:
+    """Route every dependency-injected request through a fresh DB session."""
+
+    async def override_get_db():
+        async with session_factory() as db:
+            if request_flags.get("fail_commit"):
+                db.info[_FORCE_COMMIT_FAILURE] = True
+            try:
+                yield db
+            finally:
+                await db.rollback()
+
+    app.dependency_overrides[get_db] = override_get_db
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+    try:
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as client:
+            yield client
+    finally:
+        app.dependency_overrides.pop(get_db, None)
 
 
 @pytest.mark.asyncio
-async def test_real_commit_precedes_publish_and_redis_failure_is_nonfatal(
-    test_db_url, monkeypatch
+@pytest.mark.parametrize("route_kind", ["generic", "dedicated"])
+async def test_real_commit_http_reply_routes_publish_after_commit_and_survive_redis_failure(
+    test_db_url, route_kind, monkeypatch
 ):
-    parsed_url = make_url(test_db_url)
-    if parsed_url.database != _OWNED_DATABASE:
-        pytest.skip("requires the separately owned notification commit database")
+    """Both reply entry points commit business + notification rows before publish."""
 
-    # This test owns the empty database's migration lifecycle; it deliberately
-    # avoids the SAVEPOINT fixture so a second connection can observe commits.
-    alembic_cfg = Config("alembic.ini")
-    alembic_cfg.set_main_option("sqlalchemy.url", test_db_url)
-    # Alembic's async env uses ``asyncio.run``; run it in a worker thread so
-    # it does not collide with pytest's event loop.
-    await asyncio.to_thread(command.upgrade, alembic_cfg, "head")
-
-    engine = create_async_engine(test_db_url, echo=False)
+    url = _real_commit_test_url(test_db_url)
+    await _verify_database_identity(url)
+    await _upgrade(url)
+    engine = create_async_engine(url, echo=False)
     session_factory = async_sessionmaker(
         engine, class_=AsyncSession, expire_on_commit=False
     )
-    user_id = uuid.uuid4()
-    notification_ids: list[uuid.UUID] = []
+    fixture = await _seed_committed_fixture(session_factory)
+    request_flags: dict[str, bool] = {}
     publish_calls: list[dict] = []
-    visible_during_publish: list[bool] = []
+    visibility_at_publish: list[tuple[bool, bool]] = []
+    fail_redis = False
 
     async def fake_publish(*, user_id, message):
+        nonlocal fail_redis
         publish_calls.append(message)
+        payload = message["payload"]
+        reply_id = uuid.UUID(payload["reply_id"])
         async with session_factory() as reader:
-            row = await reader.get(Notification, uuid.UUID(message["id"]))
-            visible_during_publish.append(row is not None)
-        if len(publish_calls) == 2:
+            notification = await reader.get(Notification, uuid.UUID(message["id"]))
+            reply = await reader.get(AnnotationFeedback, reply_id)
+            visibility_at_publish.append((notification is not None, reply is not None))
+        if fail_redis:
             raise RuntimeError("redis unavailable after commit")
 
     monkeypatch.setattr("app.services.notification._publish", fake_publish)
     try:
-        async with session_factory() as writer:
-            writer.add(
-                User(
-                    id=user_id,
-                    email=f"n1-commit-{user_id.hex}@test.local",
-                    name="N1 commit test",
-                    password_hash="not-used",
-                    role="super_admin",
-                    is_active=True,
-                )
+        async with _http_client(session_factory, request_flags) as client:
+            first = await _post_reply(
+                client, fixture, route_kind, "first committed reply"
             )
-            await writer.flush()
-            service = NotificationService(writer)
+            assert first.status_code == 200, first.text
+            first_reply_id = uuid.UUID(first.json()["id"])
+            assert len(publish_calls) == 1
+            assert visibility_at_publish == [(True, True)]
 
-            first = await service.notify(
-                user_id=user_id,
-                type="feedback.reply_created",
-                target_type="feedback",
-                target_id=uuid.uuid4(),
-                payload={"source": "feedback"},
-                defer_publish=True,
+            fail_redis = True
+            second = await _post_reply(
+                client, fixture, route_kind, "reply durable despite redis failure"
             )
-            assert first is not None
-            notification_ids.append(first.id)
-            assert publish_calls == []
-            await writer.commit()
-
-            # The independent reader in fake_publish sees this row, proving the
-            # route-level ordering is commit -> publish rather than publish -> commit.
-            await service.publish_committed([first])
-
-            second = await service.notify(
-                user_id=user_id,
-                type="feedback.status_changed",
-                target_type="feedback",
-                target_id=uuid.uuid4(),
-                payload={"source": "feedback"},
-                defer_publish=True,
-            )
-            assert second is not None
-            notification_ids.append(second.id)
-            await writer.commit()
-            # Redis failure is swallowed by publish_committed after the durable commit.
-            await service.publish_committed([second])
-
-            rolled_back = await service.notify(
-                user_id=user_id,
-                type="annotation.comment_mentioned",
-                target_type="annotation_comment",
-                target_id=uuid.uuid4(),
-                payload={"source": "annotation_comment"},
-                defer_publish=True,
-            )
-            assert rolled_back is not None
-            rolled_back_id = rolled_back.id
-            await writer.rollback()
-
-        assert len(publish_calls) == 2
-        assert visible_during_publish == [True, True]
+            assert second.status_code == 200, second.text
+            second_reply_id = uuid.UUID(second.json()["id"])
+            assert len(publish_calls) == 2
+            assert visibility_at_publish == [(True, True), (True, True)]
 
         async with session_factory() as reader:
-            persisted = await reader.execute(
-                select(Notification).where(Notification.id.in_(notification_ids))
-            )
-            assert {row.id for row in persisted.scalars()} == set(notification_ids)
-            assert await reader.get(Notification, rolled_back_id) is None
-    finally:
-        async with session_factory() as cleaner:
-            if notification_ids:
-                await cleaner.execute(
-                    delete(Notification).where(Notification.id.in_(notification_ids))
+            replies = list(
+                (
+                    await reader.execute(
+                        select(AnnotationFeedback).where(
+                            AnnotationFeedback.id.in_([first_reply_id, second_reply_id])
+                        )
+                    )
                 )
-            await cleaner.execute(delete(User).where(User.id == user_id))
-            await cleaner.commit()
+                .scalars()
+                .all()
+            )
+            assert {reply.id for reply in replies} == {
+                first_reply_id,
+                second_reply_id,
+            }
+            notifications = list(
+                (
+                    await reader.execute(
+                        select(Notification).where(
+                            Notification.target_id == fixture.root_id
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert len(notifications) == 2
+            assert {row.user_id for row in notifications} == {fixture.root_author_id}
+    finally:
+        await _cleanup_fixture(session_factory, fixture)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("route_kind", ["generic", "dedicated"])
+async def test_real_commit_http_reply_route_rolls_back_without_publish(
+    test_db_url, route_kind, monkeypatch
+):
+    """A failed business commit leaves neither reply nor deferred notification."""
+
+    url = _real_commit_test_url(test_db_url)
+    await _verify_database_identity(url)
+    await _upgrade(url)
+    engine = create_async_engine(url, echo=False)
+    session_factory = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+    fixture = await _seed_committed_fixture(session_factory)
+    request_flags = {"fail_commit": True}
+    publish_calls: list[dict] = []
+
+    original_commit = AsyncSession.commit
+
+    async def forced_commit_failure(self):
+        if self.info.get(_FORCE_COMMIT_FAILURE):
+            await self.rollback()
+            raise RuntimeError("forced business commit failure")
+        await original_commit(self)
+
+    async def fake_publish(*, user_id, message):
+        publish_calls.append(message)
+
+    monkeypatch.setattr(AsyncSession, "commit", forced_commit_failure)
+    monkeypatch.setattr("app.services.notification._publish", fake_publish)
+    try:
+        async with _http_client(session_factory, request_flags) as client:
+            failed = await _post_reply(
+                client, fixture, route_kind, "reply must roll back"
+            )
+            assert failed.status_code == 500
+
+        async with session_factory() as reader:
+            replies = list(
+                (
+                    await reader.execute(
+                        select(AnnotationFeedback).where(
+                            AnnotationFeedback.thread_parent_id == fixture.root_id,
+                            AnnotationFeedback.body == "reply must roll back",
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert replies == []
+            notifications = list(
+                (
+                    await reader.execute(
+                        select(Notification).where(
+                            Notification.target_id == fixture.root_id
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert notifications == []
+        assert publish_calls == []
+    finally:
+        await _cleanup_fixture(session_factory, fixture)
         await engine.dispose()
