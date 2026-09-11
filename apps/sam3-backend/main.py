@@ -1089,6 +1089,15 @@ def _coerce_output(ctx: dict) -> str:
             status_code=422,
             detail=f"context.output must be one of box|mask|both, got {mode!r}",
         )
+    if (
+        ctx.get("type") == "exemplar"
+        and mode == "both"
+        and ctx.get("output_geometry") == "mask"
+        and ctx.get("native_mask_companion_boxes") is not True
+    ):
+        # Older platform APIs require an all-Mask result array. Paired output is
+        # enabled only when the caller explicitly accepts companion boxes.
+        return "mask"
     return mode
 
 

@@ -662,13 +662,19 @@ def test_interactive_box_native_mask_output(predictor_with_mocks, fake_image):
     assert len(results[0]["value"]["preview"]["points"]) >= 4
 
 
-def test_exemplars_native_mask_output(predictor_with_mocks, fake_image):
+@pytest.mark.parametrize("output", ["mask", "both"])
+def test_exemplars_native_mask_output(predictor_with_mocks, fake_image, output):
+    from aap_protocol_v2 import CocoRlePayload, native_mask_candidate_id
+    from mask_utils import decode_coco_rle
+
     inst = predictor_with_mocks
     state = _fake_state_after_set_image()
     inst._processor.set_image = MagicMock(return_value=state)
 
     def add_geo(box, label, current_state):
-        _populate_state_with_outputs(current_state, 1)
+        _populate_state_with_outputs(current_state, 3)
+        current_state["masks"][1] = False
+        current_state["masks"][2, 0, 150, 150] = False
         return current_state
 
     inst._processor.add_geometric_prompt = MagicMock(side_effect=add_geo)
@@ -677,12 +683,38 @@ def test_exemplars_native_mask_output(predictor_with_mocks, fake_image):
     results, _ = inst.predict_exemplars(
         fake_image,
         [{"bbox": [0.2, 0.2, 0.45, 0.55], "label": True}],
+        output=output,
         output_geometry="mask",
         prompt_revision="sam3-exemplar-revision",
         cache_key="native-exemplar",
     )
 
-    assert len(results) == 1
-    assert results[0]["type"] == "mask"
-    assert results[0]["value"]["rle"]["size"] == [480, 640]
-    assert len(results[0]["value"]["preview"]["points"]) >= 4
+    expected_types = (
+        ["rectanglelabels", "mask"] * 2 if output == "both" else ["mask"] * 2
+    )
+    assert [result["type"] for result in results] == expected_types
+    for index, candidate in enumerate(results):
+        if candidate["type"] != "mask":
+            continue
+        rle = CocoRlePayload.model_validate(candidate["value"]["rle"])
+        assert rle.size == [480, 640]
+        assert candidate["candidate_id"] == native_mask_candidate_id(
+            rle, prompt_revision="sam3-exemplar-revision", candidate_index=index
+        )
+        pixels = np.array(decode_coco_rle(candidate["value"]["rle"])).reshape(480, 640)
+        assert pixels.sum() == (39999 if index == len(results) - 1 else 40000)
+        if output == "both":
+            box = results[index - 1]
+            assert box["score"] == candidate["score"]
+            assert box["value"]["rectanglelabels"] == candidate["value"]["masklabels"]
+            assert box["value"]["x"] == pytest.approx(100 / 640)
+
+
+def test_result_box_clips_endpoints_before_computing_size(predictor_with_mocks):
+    box = predictor_with_mocks._box_to_rect_label(
+        [100, -10, 700, 500], 640, 480, "object", 0.9
+    )
+    assert box["value"]["x"] == pytest.approx(100 / 640)
+    assert box["value"]["y"] == 0
+    assert box["value"]["width"] == pytest.approx(540 / 640)
+    assert box["value"]["height"] == 1

@@ -71,3 +71,15 @@ def test_setup_advertises_exemplar_capabilities(main_mod):
     assert caps["negative_box"] is True
     assert caps["text_combination"] is True
     assert caps["threshold_refilter"] is True
+
+
+@pytest.mark.parametrize("geometry", ["polygon", "mask"])
+@pytest.mark.parametrize("accepts_boxes", [None, False, "true", True])
+def test_native_exemplar_pairs_require_explicit_platform_support(
+    main_mod, geometry, accepts_boxes
+):
+    context = {"type": "exemplar", "output": "both", "output_geometry": geometry}
+    if accepts_boxes is not None:
+        context["native_mask_companion_boxes"] = accepts_boxes
+    expected = "both" if geometry == "polygon" or accepts_boxes is True else "mask"
+    assert main_mod._coerce_output(context) == expected

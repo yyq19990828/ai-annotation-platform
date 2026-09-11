@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import httpx
 import pytest
+import uuid
+from copy import deepcopy
+from types import SimpleNamespace
 from aap_protocol_v2 import (
     CocoRlePayload,
     NativeMaskCandidate,
@@ -27,6 +30,7 @@ def _capabilities(*, interactive_outputs: list[str]) -> dict:
                 "task": "interactive_seg",
                 "is_interactive": True,
                 "supported_prompts": [
+                    "exemplar",
                     "point",
                     "interactive_box",
                     "mask",
@@ -52,7 +56,7 @@ def _capabilities(*, interactive_outputs: list[str]) -> dict:
     }
 
 
-def _candidate(revision: str) -> dict:
+def _candidate(revision: str, candidate_index: int = 0) -> dict:
     rle = CocoRlePayload(
         encoding="coco_rle",
         size=[2, 3],
@@ -75,7 +79,7 @@ def _candidate(revision: str) -> dict:
         candidate_id=native_mask_candidate_id(
             rle,
             prompt_revision=revision,
-            candidate_index=0,
+            candidate_index=candidate_index,
         ),
     ).model_dump(mode="json")
 
@@ -355,6 +359,155 @@ def test_native_response_preserves_non_square_rle() -> None:
     )
     assert result == [raw]
     assert diagnostic is None
+
+
+def _native_pairs(revision: str) -> list[dict]:
+    results = []
+    for index in (1, 3):
+        results.extend(
+            [
+                {
+                    "type": "rectanglelabels",
+                    "value": {
+                        "x": 0.1,
+                        "y": 0.2,
+                        "width": 0.6,
+                        "height": 0.7,
+                        "rectanglelabels": ["object"],
+                    },
+                    "score": 0.9,
+                },
+                _candidate(revision, index),
+            ]
+        )
+    return results
+
+
+def test_native_exemplar_both_preserves_pairs_and_full_array_indices() -> None:
+    raw = _native_pairs("revision")
+    normalized, diagnostic = normalize_native_mask_response(
+        raw,
+        None,
+        context={
+            "type": "exemplar",
+            "output": "both",
+            "output_geometry": "mask",
+            "prompt_revision": "revision",
+        },
+        expected_size=(3, 2),
+    )
+    assert normalized == raw
+    assert diagnostic is None
+
+
+@pytest.mark.parametrize("output_geometry", ["polygon", "mask"])
+def test_native_companion_boxes_are_negotiated_by_platform(output_geometry) -> None:
+    context, _ = prepare_interactive_context(
+        {
+            "type": "exemplar",
+            "output": "both",
+            "output_geometry": output_geometry,
+            "native_mask_companion_boxes": "client-controlled",
+        },
+        _capabilities(interactive_outputs=["polygon", "mask"]),
+        task_id="task-1",
+    )
+    if output_geometry == "mask":
+        assert context["native_mask_companion_boxes"] is True
+    else:
+        assert "native_mask_companion_boxes" not in context
+
+
+@pytest.mark.parametrize("frame_index", [None, 7])
+def test_native_exemplar_both_signs_only_masks_at_original_indices(frame_index) -> None:
+    from app.api.v1.ml_backends import _interactive_response
+    from app.services.ai_mask_receipt import verify_ai_mask_receipt
+    from app.services.ml_client import PredictionResult
+
+    raw = _native_pairs("revision")
+    task_id, backend_id = uuid.uuid4(), uuid.uuid4()
+    response = _interactive_response(
+        PredictionResult(task_id=str(task_id), result=raw),
+        context={
+            "type": "exemplar",
+            "output": "both",
+            "output_geometry": "mask",
+            "prompt_revision": "revision",
+        },
+        expected_size=(3, 2),
+        client=SimpleNamespace(pool_id=None, last_instance_id=backend_id),
+        requested_backend_id=backend_id,
+        model_id="sam3-interactive-seg",
+        task_id=task_id,
+        frame_index=frame_index,
+    )
+    assert response["result"] == raw
+    assert len(response["accept_receipts"]) == 2
+    assert response["mask_input_next"] is None
+    for index in (1, 3):
+        candidate_id = raw[index]["candidate_id"]
+        receipt = verify_ai_mask_receipt(response["accept_receipts"][candidate_id])
+        assert receipt["candidate_index"] == index
+        assert receipt["candidate_id"] == candidate_id
+        assert receipt["frame_index"] == frame_index
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "point",
+        "mask_only",
+        "unpaired",
+        "wrong_order",
+        "wrong_label",
+        "wrong_score",
+        "zero_width",
+        "out_of_bounds",
+        "nan",
+        "boolean",
+        "extra",
+        "mask_id",
+        "mask_rle",
+    ],
+)
+def test_native_exemplar_both_rejects_invalid_pairs(case: str) -> None:
+    raw = deepcopy(_native_pairs("revision"))
+    context = {
+        "type": "exemplar",
+        "output": "both",
+        "output_geometry": "mask",
+        "prompt_revision": "revision",
+    }
+    if case == "point":
+        context["type"] = "point"
+    elif case == "mask_only":
+        context["output"] = "mask"
+    elif case == "unpaired":
+        raw.pop()
+    elif case == "wrong_order":
+        raw[0], raw[1] = raw[1], raw[0]
+    elif case == "wrong_label":
+        raw[0]["value"]["rectanglelabels"] = ["other"]
+    elif case == "wrong_score":
+        raw[0]["score"] = 0.5
+    elif case == "zero_width":
+        raw[0]["value"]["width"] = 0
+    elif case == "out_of_bounds":
+        raw[0]["value"]["width"] = 1
+    elif case == "nan":
+        raw[0]["value"]["x"] = float("nan")
+    elif case == "boolean":
+        raw[0]["value"]["x"] = True
+    elif case == "extra":
+        raw[0]["candidate_id"] = raw[1]["candidate_id"]
+    elif case == "mask_id":
+        raw[1]["candidate_id"] = _candidate("revision", 0)["candidate_id"]
+    elif case == "mask_rle":
+        raw[1]["value"]["rle"]["counts"] = [1]
+    with pytest.raises(HTTPException) as raised:
+        normalize_native_mask_response(raw, None, context=context, expected_size=(3, 2))
+    assert raised.value.status_code == 502
+    assert raised.value.detail["reason"] == "invalid_mask_payload"
 
 
 def test_native_response_rejects_candidate_id_mismatch() -> None:

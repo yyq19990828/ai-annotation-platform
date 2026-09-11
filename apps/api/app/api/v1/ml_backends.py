@@ -830,6 +830,8 @@ def _interactive_response(
     }
     if context.get("output_geometry") == "mask" and isinstance(prompt_revision, str):
         for candidate_index, candidate in enumerate(normalized):
+            if candidate["type"] != "mask":
+                continue
             rle = CocoRlePayload.model_validate(candidate["value"]["rle"])
             content_digest = hashlib.sha256(canonical_rle_bytes(rle)).hexdigest()
             candidate_id = str(candidate["candidate_id"])

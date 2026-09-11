@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any
+from typing import Any, Literal
 
 from aap_protocol_v2 import (
     MAX_MASK_DIMENSION,
@@ -19,9 +19,37 @@ from aap_protocol_v2 import (
     normalize_context_model_variants,
 )
 from fastapi import HTTPException
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from app.services.ai_mask_session import AiMaskSessionError, verify_ai_mask_session
+
+
+class _MaskCompanionBoxValue(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, allow_inf_nan=False)
+
+    x: float = Field(ge=0.0, lt=1.0)
+    y: float = Field(ge=0.0, lt=1.0)
+    width: float = Field(gt=0.0, le=1.0)
+    height: float = Field(gt=0.0, le=1.0)
+    rectanglelabels: list[str] = Field(min_length=1, max_length=1)
+
+    @model_validator(mode="after")
+    def _validate_bounds_and_label(self) -> "_MaskCompanionBoxValue":
+        if self.x + self.width > 1.0 + 1e-9 or self.y + self.height > 1.0 + 1e-9:
+            raise ValueError("box must stay inside normalized image bounds")
+        if not 1 <= len(self.rectanglelabels[0]) <= 128:
+            raise ValueError("box must have one non-empty label <= 128 chars")
+        return self
+
+
+class _MaskCompanionBox(BaseModel):
+    """A detection box paired with the next native exemplar Mask."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, allow_inf_nan=False)
+
+    type: Literal["rectanglelabels"]
+    value: _MaskCompanionBoxValue
+    score: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
 def _error(status_code: int, reason: str, message: str, **detail: Any) -> None:
@@ -42,6 +70,9 @@ def prepare_interactive_context(
     """Resolve one image-interactive model and bind its safe prompt contract."""
 
     prepared = dict(context)
+    # The shared backend may still serve older API instances that only accept
+    # Masks. Only this platform boundary negotiates the paired response.
+    prepared.pop("native_mask_companion_boxes", None)
     uses_mask_contract = any(
         key in prepared
         for key in (
@@ -295,6 +326,12 @@ def prepare_interactive_context(
 
     model_id = str(target.get("id"))
     prepared["model_id"] = model_id
+    if (
+        prompt == "exemplar"
+        and prepared.get("output") == "both"
+        and output_geometry == "mask"
+    ):
+        prepared["native_mask_companion_boxes"] = True
     session_origin: dict[str, Any] | None = None
     if "mask_input" in prepared:
         token = prepared.get("mask_input")
@@ -435,8 +472,28 @@ def normalize_native_mask_response(
     if not isinstance(prompt_revision, str) or not prompt_revision:
         _error(502, "invalid_backend_response", "native Mask revision is missing")
 
+    paired_boxes = context.get("type") == "exemplar" and context.get("output") == "both"
+    if paired_boxes and len(result) % 2:
+        _error(
+            502,
+            "invalid_mask_payload",
+            "native exemplar output requires complete box/Mask pairs",
+        )
+
     normalized: list[dict[str, Any]] = []
     for index, raw_candidate in enumerate(result):
+        if paired_boxes and index % 2 == 0:
+            try:
+                box = _MaskCompanionBox.model_validate(raw_candidate)
+            except ValidationError:
+                _error(
+                    502,
+                    "invalid_mask_payload",
+                    "backend returned an invalid native Mask companion box",
+                    candidate_index=index,
+                )
+            normalized.append(box.model_dump(mode="json"))
+            continue
         _precheck_rle_budget(raw_candidate, index)
         try:
             candidate = NativeMaskCandidate.model_validate(raw_candidate)
@@ -468,6 +525,18 @@ def normalize_native_mask_response(
                 "backend Mask candidate_id does not match its pixels and revision",
                 candidate_index=index,
             )
+        if paired_boxes:
+            box = normalized[index - 1]
+            if (
+                box["value"]["rectanglelabels"] != candidate.value.masklabels
+                or box["score"] != candidate.score
+            ):
+                _error(
+                    502,
+                    "invalid_mask_payload",
+                    "native Mask companion box must match its Mask label and score",
+                    candidate_index=index,
+                )
         normalized.append(candidate.model_dump(mode="json"))
 
     if not normalized:
