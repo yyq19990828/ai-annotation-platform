@@ -21,7 +21,13 @@ import {
 import { useAnnotationAuditHistory, useTaskAuditHistory } from "@/hooks/useAnnotationAuditHistory";
 import { AnnotationHistoryTimeline } from "@/components/AnnotationHistoryTimeline";
 import { CommentInput, renderCommentBody } from "./CommentInput";
-import type { AnnotationCommentAnchor, CommentCanvasDrawing, CommentMention } from "@/api/comments";
+import {
+  commentsApi,
+  type AnnotationCommentAnchor,
+  type CommentCanvasDrawing,
+  type CommentMention,
+} from "@/api/comments";
+import { isCurrentAuthOwner } from "@/stores/authStore";
 import {
   discussionItemKey,
   isFeedbackDiscussionItem,
@@ -151,6 +157,27 @@ function formatAttachment(attachment: unknown): {
   return { key, name, size };
 }
 
+type AttachmentDownloadState = { pending: boolean; error: string | null };
+type CommentsApiWithAttachmentDownload = typeof commentsApi & {
+  attachmentDownloadUrl: (
+    annotationId: string,
+    storageKey: string,
+  ) => Promise<{ download_url: string }>;
+};
+
+// The API helper is added alongside the backend contract. Keep this bounded
+// cast so this panel can be reviewed independently of generated API types.
+const commentsDownloadApi = commentsApi as CommentsApiWithAttachmentDownload;
+
+function attachmentErrorMessage(error: unknown): string {
+  const status =
+    error && typeof error === "object" && "status" in error
+      ? (error as { status?: unknown }).status
+      : undefined;
+  const detail = errorMessage(error);
+  return typeof status === "number" ? `HTTP ${status}${detail ? `：${detail}` : ""}` : detail;
+}
+
 function feedbackStatusLabel(status: string): string {
   if (status === "resolved") return "已解决";
   if (status === "wont_fix") return "已搁置";
@@ -207,10 +234,14 @@ export function CommentsPanel({
   const [rowActionStates, setRowActionStates] = useState<
     Record<string, { pending: boolean; error: string | null }>
   >({});
+  const [attachmentDownloadStates, setAttachmentDownloadStates] = useState<
+    Record<string, AttachmentDownloadState>
+  >({});
   const [locallyUnavailableTargets, setLocallyUnavailableTargets] = useState<
     Record<string, string>
   >({});
   const rowActionPendingRef = useRef(new Set<string>());
+  const attachmentDownloadPendingRef = useRef(new Set<string>());
   const taskScopeKey = `${projectId ?? ""}:${taskId ?? ""}`;
   const scopeOwnerRef = useRef(taskScopeKey);
   const scopeForTask = scopeOwnerRef.current === taskScopeKey ? readScope : "all";
@@ -520,6 +551,94 @@ export function CommentsPanel({
   );
 
   const mutationScopeKey = `${projectId ?? ""}:${composerTaskId ?? ""}`;
+  const handleAttachmentDownload = useCallback(
+    async (rowKey: string, rowAnnotationId: string, storageKey: string, fileName: string) => {
+      const stateKey = `${mutationScopeKey}:${rowKey}:${storageKey}`;
+      if (attachmentDownloadPendingRef.current.has(stateKey)) return;
+
+      // Capture the owner before the first await. A retained panel may finish
+      // this flow after logout, account replacement, or a task switch.
+      const capturedStore = draftStore;
+      const capturedOwner = capturedStore?.getOwner() ?? null;
+      const capturedUserId = currentUserId;
+      const isOwnerCurrent = () => {
+        try {
+          return capturedStore && capturedOwner
+            ? capturedStore.isOwned(capturedOwner)
+            : Boolean(capturedUserId && isCurrentAuthOwner(capturedUserId));
+        } catch {
+          return false;
+        }
+      };
+
+      if (!isOwnerCurrent()) return;
+      attachmentDownloadPendingRef.current.add(stateKey);
+      setAttachmentDownloadStates((previous) => ({
+        ...previous,
+        [stateKey]: { pending: true, error: null },
+      }));
+
+      try {
+        const signed = await commentsDownloadApi.attachmentDownloadUrl(rowAnnotationId, storageKey);
+        if (!isOwnerCurrent()) return;
+        if (
+          !signed ||
+          typeof signed.download_url !== "string" ||
+          signed.download_url.length === 0
+        ) {
+          throw new Error("下载地址无效");
+        }
+
+        const response = await fetch(signed.download_url, { credentials: "omit" });
+        if (!isOwnerCurrent()) return;
+        if (!response.ok) {
+          const error = new Error(`HTTP ${response.status}`) as Error & { status: number };
+          error.status = response.status;
+          throw error;
+        }
+
+        const blob = await response.blob();
+        if (!isOwnerCurrent()) return;
+        if (typeof URL.createObjectURL !== "function") {
+          throw new Error("当前浏览器不支持附件下载");
+        }
+        if (!isOwnerCurrent()) return;
+
+        const objectUrl = URL.createObjectURL(blob);
+        let anchor: HTMLAnchorElement | null = null;
+        try {
+          if (!isOwnerCurrent()) return;
+          anchor = document.createElement("a");
+          anchor.href = objectUrl;
+          anchor.download = fileName || "附件";
+          anchor.style.display = "none";
+          document.body.appendChild(anchor);
+          if (!isOwnerCurrent()) return;
+          anchor.click();
+        } finally {
+          anchor?.remove();
+          if (typeof URL.revokeObjectURL === "function") URL.revokeObjectURL(objectUrl);
+        }
+      } catch (error) {
+        if (!isOwnerCurrent()) return;
+        setAttachmentDownloadStates((previous) => ({
+          ...previous,
+          [stateKey]: { pending: false, error: attachmentErrorMessage(error) },
+        }));
+      } finally {
+        attachmentDownloadPendingRef.current.delete(stateKey);
+        if (isOwnerCurrent()) {
+          setAttachmentDownloadStates((previous) => {
+            const current = previous[stateKey];
+            if (!current) return previous;
+            return { ...previous, [stateKey]: { ...current, pending: false } };
+          });
+        }
+      }
+    },
+    [currentUserId, draftStore, mutationScopeKey],
+  );
+
   const handleToggleStatus = useCallback(
     async (item: TaskDiscussionItem) => {
       if (!item.actions.change_status) return;
@@ -904,28 +1023,40 @@ export function CommentsPanel({
                     <div className="mt-1.5 flex flex-wrap gap-1">
                       {attachments.map((attachment, index) => {
                         const meta = formatAttachment(attachment);
-                        const downloadHref =
-                          isAnnotation && rowAnnotationId && meta.key
-                            ? `/api/v1/annotations/${rowAnnotationId}/comment-attachments/download?key=${encodeURIComponent(meta.key)}`
-                            : null;
+                        const storageKey = meta.key;
+                        const attachmentStateKey = storageKey
+                          ? `${mutationScopeKey}:${itemKey}:${storageKey}`
+                          : null;
+                        const attachmentDownloadState = attachmentStateKey
+                          ? attachmentDownloadStates[attachmentStateKey]
+                          : undefined;
                         const label =
                           meta.size !== null
                             ? `${meta.name} · ${(meta.size / 1024).toFixed(1)} KB`
                             : meta.name;
-                        return downloadHref ? (
-                          <a
+                        return isAnnotation && rowAnnotationId && storageKey ? (
+                          <button
+                            type="button"
                             key={`${meta.key}-${index}`}
-                            href={downloadHref}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex max-w-full items-center gap-1 rounded-[3px] border border-border bg-muted px-1.5 py-0.5 text-xs text-foreground no-underline"
+                            data-testid="comment-attachment-download"
+                            aria-label={`${attachmentDownloadState?.pending ? "正在下载" : "下载"}附件 ${meta.name}`}
+                            onClick={() =>
+                              void handleAttachmentDownload(
+                                itemKey,
+                                rowAnnotationId,
+                                storageKey,
+                                meta.name,
+                              )
+                            }
+                            disabled={attachmentDownloadState?.pending}
+                            className="inline-flex max-w-full cursor-pointer appearance-none items-center gap-1 rounded-[3px] border border-border bg-muted px-1.5 py-0.5 text-xs text-foreground [font:inherit] disabled:cursor-default disabled:opacity-60"
                             title={label}
                           >
                             <Icon name="folder" size={11} />
                             <span className="max-w-[140px] overflow-hidden text-ellipsis whitespace-nowrap">
                               {meta.name}
                             </span>
-                          </a>
+                          </button>
                         ) : (
                           <span
                             key={`${meta.name}-${index}`}
@@ -939,6 +1070,34 @@ export function CommentsPanel({
                           </span>
                         );
                       })}
+                    </div>
+                  )}
+
+                  {attachments.some((attachment) => {
+                    const key = formatAttachment(attachment).key;
+                    return Boolean(
+                      isAnnotation &&
+                      rowAnnotationId &&
+                      key &&
+                      attachmentDownloadStates[`${mutationScopeKey}:${itemKey}:${key}`]?.error,
+                    );
+                  }) && (
+                    <div
+                      className="mt-1 text-2xs text-status-danger"
+                      role="alert"
+                      data-testid="discussion-attachment-error"
+                    >
+                      {attachments
+                        .map((attachment) => {
+                          const key = formatAttachment(attachment).key;
+                          return key
+                            ? attachmentDownloadStates[`${mutationScopeKey}:${itemKey}:${key}`]
+                                ?.error
+                            : null;
+                        })
+                        .filter(Boolean)
+                        .map((error) => `附件下载失败：${error}`)
+                        .join("；")}
                     </div>
                   )}
 
@@ -990,7 +1149,7 @@ export function CommentsPanel({
             draftStore={draftStore as DiscussionDraftStore | null}
             members={memberOptions}
             busy={
-              !draftStore || !taskContext
+              !draftStore || !composerTaskId
                 ? sendTarget?.kind === "annotation"
                   ? createCommentMut.isPending
                   : createTaskFeedbackMut.isPending
