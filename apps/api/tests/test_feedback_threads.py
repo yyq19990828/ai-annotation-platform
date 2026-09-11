@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import base64
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 import pytest
 
+from app.db.models.annotation import Annotation
 from app.db.models.annotation_feedback import AnnotationFeedback
 from tests.factory import create_project, create_task
 
@@ -22,13 +24,18 @@ def _feedback(
     active: bool = True,
     created_at: datetime,
     kind: str = "issue",
+    anchor_type: str = "task",
+    annotation_id=None,
+    anchor_position=None,
 ):
     return AnnotationFeedback(
         id=uuid4(),
         kind=kind,
-        anchor_type="task",
+        anchor_type=anchor_type,
         project_id=project_id,
         task_id=task_id,
+        annotation_id=annotation_id,
+        anchor_position=anchor_position,
         body=body,
         author_id=author_id,
         status=status,
@@ -196,3 +203,168 @@ async def test_feedback_roots_counts_and_deleted_intermediate_thread(
         headers=headers,
     )
     assert malformed.status_code == 400
+
+    naive_cursor = base64.urlsafe_b64encode(
+        f"2026-01-01T00:00:00|{root.id.hex}".encode()
+    ).decode()
+    malformed_timestamp = await httpx_client.get(
+        "/api/v1/feedbacks",
+        params={"project_id": str(project.id), "cursor": naive_cursor},
+        headers=headers,
+    )
+    assert malformed_timestamp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_project_and_annotated_pixel_roots_are_counted_and_threaded(
+    httpx_client, db_session, super_admin
+):
+    user, token = super_admin
+    project = await create_project(db_session, owner_id=user.id)
+    task = await create_task(db_session, project_id=project.id)
+    annotation = Annotation(
+        id=uuid4(),
+        project_id=project.id,
+        task_id=task.id,
+        user_id=user.id,
+        class_name="car",
+        geometry={"type": "bbox", "x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2},
+    )
+    db_session.add(annotation)
+    start = datetime(2026, 2, 1, tzinfo=timezone.utc)
+    project_root = _feedback(
+        author_id=user.id,
+        project_id=project.id,
+        task_id=None,
+        anchor_type="project",
+        body="project root",
+        created_at=start,
+    )
+    pixel_root = _feedback(
+        author_id=user.id,
+        project_id=project.id,
+        task_id=task.id,
+        annotation_id=annotation.id,
+        anchor_type="pixel",
+        anchor_position={"x": 0.2, "y": 0.3, "frame": 4},
+        body="pixel root",
+        created_at=start + timedelta(seconds=1),
+    )
+    pixel_reply = _feedback(
+        author_id=user.id,
+        project_id=project.id,
+        task_id=task.id,
+        annotation_id=annotation.id,
+        anchor_type="pixel",
+        anchor_position={"x": 0.2, "y": 0.3, "frame": 4},
+        body="pixel reply",
+        parent_id=pixel_root.id,
+        kind="comment",
+        created_at=start + timedelta(seconds=2),
+    )
+    db_session.add_all([project_root, pixel_root, pixel_reply])
+    await db_session.flush()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    listed = await httpx_client.get(
+        "/api/v1/feedbacks",
+        params={
+            "project_id": str(project.id),
+            "root_only": "true",
+            "include_counts": "true",
+        },
+        headers=headers,
+    )
+    assert listed.status_code == 200, listed.text
+    payload = listed.json()
+    assert {item["id"] for item in payload["items"]} == {
+        str(project_root.id),
+        str(pixel_root.id),
+    }
+    assert payload["total"] == 2
+    assert payload["status_counts"] == {
+        "open": 2,
+        "resolved": 0,
+        "wont_fix": 0,
+    }
+
+    thread = await httpx_client.get(
+        f"/api/v1/feedbacks/{pixel_root.id}/thread",
+        headers=headers,
+    )
+    assert thread.status_code == 200, thread.text
+    thread_payload = thread.json()
+    assert thread_payload["root"]["id"] == str(pixel_root.id)
+    assert [item["id"] for item in thread_payload["items"]] == [str(pixel_reply.id)]
+    assert thread_payload["total"] == 1
+    assert thread_payload["items"][0]["author_name"] == user.name
+
+    naive_thread_cursor = base64.urlsafe_b64encode(
+        f"thread-v1|{pixel_root.id.hex}|2026-01-01T00:00:00|{pixel_reply.id.hex}".encode()
+    ).decode()
+    malformed_thread = await httpx_client.get(
+        f"/api/v1/feedbacks/{pixel_root.id}/thread",
+        params={"cursor": naive_thread_cursor},
+        headers=headers,
+    )
+    assert malformed_thread.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_root_queries_hide_cross_scope_parent_chains(
+    httpx_client, db_session, super_admin
+):
+    user, token = super_admin
+    project = await create_project(db_session, owner_id=user.id)
+    other_project = await create_project(db_session, owner_id=user.id)
+    task = await create_task(db_session, project_id=project.id)
+    other_task = await create_task(db_session, project_id=other_project.id)
+    start = datetime(2026, 3, 1, tzinfo=timezone.utc)
+    root = _feedback(
+        author_id=user.id,
+        project_id=project.id,
+        task_id=task.id,
+        body="root",
+        created_at=start,
+    )
+    cross_task = _feedback(
+        author_id=user.id,
+        project_id=project.id,
+        task_id=other_task.id,
+        body="cross-task child",
+        parent_id=root.id,
+        created_at=start + timedelta(seconds=1),
+    )
+    other_root = _feedback(
+        author_id=user.id,
+        project_id=other_project.id,
+        task_id=other_task.id,
+        body="other project root",
+        created_at=start + timedelta(seconds=2),
+    )
+    cross_project = _feedback(
+        author_id=user.id,
+        project_id=project.id,
+        task_id=task.id,
+        body="cross-project child",
+        parent_id=other_root.id,
+        created_at=start + timedelta(seconds=3),
+    )
+    db_session.add_all([root, cross_task, other_root, cross_project])
+    await db_session.flush()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    listed = await httpx_client.get(
+        "/api/v1/feedbacks",
+        params={"project_id": str(project.id)},
+        headers=headers,
+    )
+    assert listed.status_code == 200, listed.text
+    assert [item["id"] for item in listed.json()["items"]] == [str(root.id)]
+
+    thread = await httpx_client.get(
+        f"/api/v1/feedbacks/{root.id}/thread", headers=headers
+    )
+    assert thread.status_code == 200, thread.text
+    assert thread.json()["items"] == []
+    assert thread.json()["total"] == 0

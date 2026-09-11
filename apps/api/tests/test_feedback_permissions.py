@@ -63,6 +63,28 @@ async def test_reviewer_mixed_patch_is_rejected_as_a_whole(
     assert status_only.status_code == 200, status_only.text
     assert status_only.json()["status"] == "resolved"
 
+    reviewer_owned = await httpx_client.post(
+        "/api/v1/feedbacks",
+        json={
+            "kind": "issue",
+            "anchor_type": "task",
+            "project_id": str(project.id),
+            "task_id": str(task.id),
+            "body": "reviewer original",
+            "severity": "info",
+        },
+        headers=qa_headers,
+    )
+    assert reviewer_owned.status_code == 200, reviewer_owned.text
+    reviewer_edit = await httpx_client.patch(
+        f"/api/v1/feedbacks/{reviewer_owned.json()['id']}",
+        json={"body": "reviewer edited", "severity": "blocker"},
+        headers=qa_headers,
+    )
+    assert reviewer_edit.status_code == 200, reviewer_edit.text
+    assert reviewer_edit.json()["body"] == "reviewer edited"
+    assert reviewer_edit.json()["severity"] == "blocker"
+
 
 @pytest.mark.asyncio
 async def test_direct_parent_create_rejects_cross_task_and_deleted_root(
@@ -143,3 +165,95 @@ async def test_whitespace_task_comment_requires_text_unless_attached(
         headers=headers,
     )
     assert attached.status_code == 200, attached.text
+
+
+@pytest.mark.asyncio
+async def test_native_feedback_replies_and_pixel_reply_text_guards(
+    httpx_client, db_session, super_admin
+):
+    owner, token = super_admin
+    project = await create_project(db_session, owner_id=owner.id)
+    task = await create_task(db_session, project_id=project.id)
+    headers = {"Authorization": f"Bearer {token}"}
+
+    native_root = await httpx_client.post(
+        "/api/v1/feedbacks",
+        json={
+            "kind": "comment",
+            "anchor_type": "task",
+            "project_id": str(project.id),
+            "task_id": str(task.id),
+            "body": "native root",
+        },
+        headers=headers,
+    )
+    assert native_root.status_code == 200, native_root.text
+    native_reply = await httpx_client.post(
+        f"/api/v1/feedbacks/{native_root.json()['id']}/replies",
+        json={"body": "native reply"},
+        headers=headers,
+    )
+    assert native_reply.status_code == 200, native_reply.text
+    assert native_reply.json()["body"] == "native reply"
+
+    pixel_position = {"x": 0.25, "y": 0.75, "frame": 3}
+    pixel_root = await httpx_client.post(
+        "/api/v1/feedbacks",
+        json={
+            "kind": "issue",
+            "anchor_type": "pixel",
+            "project_id": str(project.id),
+            "task_id": str(task.id),
+            "anchor_position": pixel_position,
+            "body": "pixel root",
+        },
+        headers=headers,
+    )
+    assert pixel_root.status_code == 200, pixel_root.text
+    pixel_root_id = pixel_root.json()["id"]
+
+    endpoint_blank = await httpx_client.post(
+        f"/api/v1/feedbacks/{pixel_root_id}/replies",
+        json={"body": " \n\t"},
+        headers=headers,
+    )
+    assert endpoint_blank.status_code == 422, endpoint_blank.text
+
+    direct_blank = await httpx_client.post(
+        "/api/v1/feedbacks",
+        json={
+            "kind": "comment",
+            "anchor_type": "pixel",
+            "project_id": str(project.id),
+            "task_id": str(task.id),
+            "anchor_position": pixel_position,
+            "body": " \n\t",
+            "thread_parent_id": pixel_root_id,
+        },
+        headers=headers,
+    )
+    assert direct_blank.status_code == 422, direct_blank.text
+
+    pixel_reply = await httpx_client.post(
+        f"/api/v1/feedbacks/{pixel_root_id}/replies",
+        json={"body": "pixel reply"},
+        headers=headers,
+    )
+    assert pixel_reply.status_code == 200, pixel_reply.text
+    patch_blank = await httpx_client.patch(
+        f"/api/v1/feedbacks/{pixel_reply.json()['id']}",
+        json={"body": " \n\t"},
+        headers=headers,
+    )
+    assert patch_blank.status_code == 422, patch_blank.text
+
+    attached_blank = await httpx_client.post(
+        f"/api/v1/feedbacks/{pixel_root_id}/replies",
+        json={
+            "body": " \n\t",
+            "attachments": [{"key": "discussion/pixel.txt"}],
+        },
+        headers=headers,
+    )
+    assert attached_blank.status_code == 200, attached_blank.text
+    assert attached_blank.json()["attachments"] == [{"key": "discussion/pixel.txt"}]

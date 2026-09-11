@@ -645,6 +645,10 @@ class FeedbackService:
                 af.id.label("origin_id"),
                 af.id.label("ancestor_id"),
                 af.thread_parent_id.label("next_parent_id"),
+                af.project_id.label("origin_project_id"),
+                af.task_id.label("origin_task_id"),
+                af.anchor_type.label("origin_anchor_type"),
+                af.annotation_id.label("origin_annotation_id"),
                 cast(array([af.id]), ARRAY(PGUUID(as_uuid=True))).label("path"),
             )
             .where(af.project_id == project_id)
@@ -656,10 +660,22 @@ class FeedbackService:
                 lineage.c.origin_id,
                 parent.id.label("ancestor_id"),
                 parent.thread_parent_id.label("next_parent_id"),
+                lineage.c.origin_project_id,
+                lineage.c.origin_task_id,
+                lineage.c.origin_anchor_type,
+                lineage.c.origin_annotation_id,
                 lineage.c.path.concat(array([parent.id])).label("path"),
             )
             .join(parent, parent.id == lineage.c.next_parent_id)
-            .where(~(parent.id == any_(lineage.c.path)))
+            .where(
+                parent.project_id == lineage.c.origin_project_id,
+                _same_optional_value(parent.task_id, lineage.c.origin_task_id),
+                parent.anchor_type == lineage.c.origin_anchor_type,
+                _same_optional_value(
+                    parent.annotation_id, lineage.c.origin_annotation_id
+                ),
+                ~(parent.id == any_(lineage.c.path)),
+            )
         )
         return (
             select(
@@ -715,11 +731,9 @@ class FeedbackService:
 
 
 def _encode_cursor(created_at: datetime, fid: uuid.UUID) -> str:
-    ts = (
-        created_at.astimezone(timezone.utc).isoformat()
-        if created_at.tzinfo
-        else created_at.isoformat()
-    )
+    if created_at.tzinfo is None or created_at.utcoffset() is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    ts = created_at.astimezone(timezone.utc).isoformat()
     return base64.urlsafe_b64encode(f"{ts}|{fid.hex}".encode()).decode()
 
 
@@ -735,6 +749,8 @@ def _decode_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
         if len(parts) != 2:
             raise ValueError("unexpected cursor fields")
         ts = datetime.fromisoformat(parts[0])
+        if ts.tzinfo is None or ts.utcoffset() is None:
+            raise ValueError("cursor timestamp must include timezone")
         fid = uuid.UUID(parts[1])
         return ts, fid
     except (ValueError, TypeError, UnicodeError, binascii.Error) as exc:
@@ -744,11 +760,9 @@ def _decode_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
 def _encode_thread_cursor(
     root_id: uuid.UUID, created_at: datetime, fid: uuid.UUID
 ) -> str:
-    ts = (
-        created_at.astimezone(timezone.utc).isoformat()
-        if created_at.tzinfo
-        else created_at.isoformat()
-    )
+    if created_at.tzinfo is None or created_at.utcoffset() is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    ts = created_at.astimezone(timezone.utc).isoformat()
     raw = f"thread-v1|{root_id.hex}|{ts}|{fid.hex}".encode()
     return base64.urlsafe_b64encode(raw).decode()
 
@@ -766,9 +780,12 @@ def _decode_thread_cursor(
         version, root_id, ts_str, feedback_id = raw.split("|")
         if version != "thread-v1":
             raise ValueError("unexpected cursor version")
+        timestamp = datetime.fromisoformat(ts_str)
+        if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+            raise ValueError("cursor timestamp must include timezone")
         return (
             uuid.UUID(root_id),
-            datetime.fromisoformat(ts_str),
+            timestamp,
             uuid.UUID(feedback_id),
         )
     except (ValueError, TypeError, UnicodeError, binascii.Error) as exc:
@@ -778,10 +795,10 @@ def _decode_thread_cursor(
 _FEEDBACK_STATUSES = ("open", "resolved", "wont_fix")
 
 
-def _same_task_value(left, right) -> bool:
+def _same_task_value(left, right):
     """Build a SQL null-safe equality expression for task scope."""
 
-    return or_(left == right, and_(left.is_(None), right is None))
+    return _same_optional_value(left, right)
 
 
 def _same_scope(left: AnnotationFeedback, right: AnnotationFeedback) -> bool:
@@ -802,7 +819,9 @@ def _same_optional_value(left, right):
         return left.is_(None)
     if left is None:
         return right.is_(None)
-    return or_(left == right, and_(left.is_(None), right.is_(None)))
+    if hasattr(left, "is_not_distinct_from"):
+        return left.is_not_distinct_from(right)
+    return right.is_not_distinct_from(left)
 
 
 def _same_anchor_scope_clause(left: AnnotationFeedback, right: AnnotationFeedback):

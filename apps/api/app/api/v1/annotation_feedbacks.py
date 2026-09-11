@@ -39,6 +39,7 @@ from app.schemas.annotation_feedback import (
     AnnotationFeedbackReply,
     AnnotationFeedbackThreadPage,
 )
+from app.schemas.user import UserBrief
 from app.services.audit import AuditAction, AuditService
 from app.services.discussion_actions import discussion_actions
 from app.services.feedback import FeedbackService
@@ -65,8 +66,10 @@ async def _to_out(
     user: User | None = None,
     is_accessible: bool = True,
     can_reply: bool = False,
+    briefs: dict[str, UserBrief] | None = None,
 ) -> AnnotationFeedbackOut:
-    briefs = await resolve_briefs(db, [entry.author_id])
+    if briefs is None:
+        briefs = await resolve_briefs(db, [entry.author_id])
     brief = briefs.get(str(entry.author_id))
     actions = discussion_actions(
         "feedback",
@@ -417,11 +420,14 @@ async def get_feedback_thread(
         cursor=cursor,
         limit=limit,
     )
+    author_ids = {root.author_id, *(reply.author_id for reply in replies)}
+    briefs = await resolve_briefs(db, author_ids)
     root_out = await _to_out(
         db,
         root,
         user=user,
         can_reply=(root.kind == "issue" and await _quality_anchor_is_current(db, root)),
+        briefs=briefs,
     )
     reply_out = [
         await _to_out(
@@ -431,6 +437,7 @@ async def get_feedback_thread(
             can_reply=(
                 reply.kind == "issue" and await _quality_anchor_is_current(db, reply)
             ),
+            briefs=briefs,
         )
         for reply in replies
     ]
@@ -462,7 +469,7 @@ async def create_feedback(
                 status_code=422,
                 detail="feedback replies cannot set severity or title",
             )
-        parent, parent_root = await svc.validate_parent(
+        parent, _ = await svc.validate_parent(
             payload.thread_parent_id,
             project_id=payload.project_id,
             task_id=payload.task_id,
@@ -475,18 +482,14 @@ async def create_feedback(
             raise HTTPException(
                 status_code=404, detail="feedback thread is unavailable"
             )
-        if not discussion_actions(
-            "feedback",
-            parent_root.kind,
-            is_author=parent_root.author_id == user.id,
-            is_admin=user.role in _ADMIN_ROLES,
-            is_reviewer=user.role == UserRole.REVIEWER,
-            is_accessible=True,
-            can_reply=True,
-        ).reply:
+        if not payload.attachments and not payload.body.strip():
             raise HTTPException(
-                status_code=403, detail="feedback cannot receive replies"
+                status_code=422, detail="feedback replies must contain text"
             )
+        # The generic create endpoint remains compatible with legacy native
+        # feedback replies (including non-Issue comment roots).  The shared
+        # policy intentionally keeps their UI ``actions.reply`` false; only
+        # annotation-comment mirror roots are unavailable here.
     anchor = payload.anchor_position
     if anchor and anchor.mask_qc_issue_id:
         issue = await db.get(MaskQCIssue, anchor.mask_qc_issue_id)
@@ -614,7 +617,8 @@ async def patch_feedback(
     is_reviewer = user.role == UserRole.REVIEWER
     fields = payload.model_fields_set
     forbidden_reviewer_fields = fields & {"severity", "title", "body"}
-    if is_reviewer and forbidden_reviewer_fields:
+    reviewer_status_only = is_reviewer and not (is_author or is_admin)
+    if reviewer_status_only and forbidden_reviewer_fields:
         raise HTTPException(
             status_code=403,
             detail="reviewers may update Issue status only",
@@ -630,7 +634,7 @@ async def patch_feedback(
     )
     wants_status = "status" in fields and payload.status is not None
     wants_content = bool(fields & {"severity", "title", "body"})
-    if is_reviewer and not wants_status:
+    if reviewer_status_only and not wants_status:
         raise HTTPException(
             status_code=403,
             detail="reviewers may update Issue status only",
@@ -641,12 +645,16 @@ async def patch_feedback(
         raise HTTPException(status_code=403, detail="not allowed")
     if (
         payload.body is not None
-        and entry.kind == "comment"
-        and entry.anchor_type == "task"
         and not entry.attachments
         and not payload.body.strip()
+        and (
+            entry.thread_parent_id is not None
+            or (entry.kind == "comment" and entry.anchor_type == "task")
+        )
     ):
-        raise HTTPException(status_code=422, detail="task comments must contain text")
+        raise HTTPException(
+            status_code=422, detail="feedback replies must contain text"
+        )
     old_status = entry.status
     updated = await svc.patch(
         feedback_id,
@@ -763,23 +771,10 @@ async def reply_feedback(
                 status_code=409,
                 detail={"reason": "point_cloud_quality_issue_stale"},
             )
-    if (
-        root.anchor_type == "task"
-        and not payload.attachments
-        and not payload.body.strip()
-    ):
-        raise HTTPException(status_code=422, detail="task replies must contain text")
-    capabilities = discussion_actions(
-        "feedback",
-        root.kind,
-        is_author=root.author_id == user.id,
-        is_admin=user.role in _ADMIN_ROLES,
-        is_reviewer=user.role == UserRole.REVIEWER,
-        is_accessible=True,
-        can_reply=True,
-    )
-    if not capabilities.reply:
-        raise HTTPException(status_code=403, detail="feedback cannot receive replies")
+    if not payload.attachments and not payload.body.strip():
+        raise HTTPException(
+            status_code=422, detail="feedback replies must contain text"
+        )
     # 子评论继承 parent 的 anchor; kind 强制为 comment.
     reply = await svc.create(
         author_id=user.id,
