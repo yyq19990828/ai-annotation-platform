@@ -256,6 +256,7 @@ def _feedback_out(
         author_id=feedback.author_id,
         author_name=author_name,
         attachments=feedback.attachments or [],
+        canvas_drawing=feedback.canvas_drawing,
         thread_parent_id=feedback.thread_parent_id,
         is_active=feedback.is_active,
         resolved_at=feedback.resolved_at,

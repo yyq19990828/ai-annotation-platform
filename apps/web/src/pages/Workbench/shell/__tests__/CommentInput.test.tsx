@@ -218,9 +218,9 @@ describe("CommentInput session composer", () => {
     expect(editor(view.container).textContent).toBe("");
   });
 
-  it("keeps task comments text-only and rejects rich controls before submit", () => {
+  it("keeps task comments text-only when its target has no drawing capability", () => {
     const onSubmit = vi.fn();
-    const view = renderComposer(textTask, onSubmit, { enableCanvasDrawing: true });
+    const view = renderComposer(textTask, onSubmit);
     const input = editor(view.container);
     expect(view.container.querySelector('input[type="file"]')).toBeNull();
     expect(view.container.querySelector('button[title*="题图"]')).toBeNull();
@@ -237,6 +237,24 @@ describe("CommentInput session composer", () => {
       }),
       expect.anything(),
     );
+  });
+
+  it("offers popup drawing for an explicitly enabled task target", () => {
+    const store = createDiscussionDraftStore({ owner: { userId: "u1", sessionId: "s1" } });
+    const view = render(
+      <CommentInput
+        target={textTask}
+        draftStore={store}
+        members={[]}
+        onSubmit={vi.fn()}
+        enableCanvasDrawing
+        backgroundUrl="task-image"
+      />,
+    );
+
+    fireEvent.click(view.getByRole("button", { name: "弹窗批注" }));
+    fireEvent.click(view.getByTestId("mock-canvas-save"));
+    expect(store.getDraft(textTask)?.canvas_drawing?.shapes).toHaveLength(1);
   });
 
   it("does not submit during IME composition and ignores rapid duplicate Enter/click triggers", async () => {
@@ -603,6 +621,41 @@ describe("CommentInput session composer", () => {
     fireEvent.click(live);
     expect(onStart).toHaveBeenCalledTimes(1);
     view.unmount();
+  });
+
+  it("releases a stale live guard when switching tasks with an unfinished drawing", () => {
+    const store = createDiscussionDraftStore({ owner: { userId: "u1", sessionId: "s1" } });
+    const onStart = vi.fn();
+    const view = render(
+      <CommentInput
+        target={textTask}
+        draftStore={store}
+        members={[]}
+        onSubmit={vi.fn()}
+        enableCanvasDrawing
+        backgroundUrl="image-a"
+        liveCanvas={{ active: false, result: null, onStart, onConsume: vi.fn() }}
+      />,
+    );
+    fireEvent.click(view.getByRole("button", { name: "在题图上绘制" }));
+    expect(onStart).toHaveBeenCalledWith(null, expect.objectContaining({ target: textTask }));
+
+    const taskB: DiscussionTarget = { projectId: "p", taskId: "b", kind: "task" };
+    view.rerender(
+      <CommentInput
+        target={taskB}
+        draftStore={store}
+        members={[]}
+        onSubmit={vi.fn()}
+        enableCanvasDrawing
+        backgroundUrl="image-b"
+        liveCanvas={{ active: false, result: null, onStart, onConsume: vi.fn() }}
+      />,
+    );
+
+    fireEvent.click(view.getByRole("button", { name: "在题图上绘制" }));
+    expect(onStart).toHaveBeenCalledTimes(2);
+    expect(onStart.mock.calls[1][1]?.target).toEqual(taskB);
   });
 
   it("uses the opening video anchor for a popup draft after playback changes", () => {

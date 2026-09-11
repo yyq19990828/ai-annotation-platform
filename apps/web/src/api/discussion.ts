@@ -29,6 +29,10 @@ export interface TaskDiscussionPage {
   total: number;
 }
 
+export interface AnnotationCommentCountsResponse {
+  counts: Record<string, number>;
+}
+
 export interface ListTaskDiscussionParams {
   scope?: DiscussionReadScope;
   annotation_id?: string | null;
@@ -62,6 +66,11 @@ export const discussionApi = {
     apiClient.get<TaskDiscussionPage>(`/tasks/${taskId}/discussion/page${buildQuery(params)}`, {
       signal,
     }),
+  getAnnotationCommentCounts: (taskId: string, signal?: AbortSignal) =>
+    apiClient.get<AnnotationCommentCountsResponse>(
+      `/tasks/${taskId}/discussion/annotation-counts`,
+      { signal },
+    ),
 };
 
 /** Compatibility alias for callers that name the resource explicitly. */

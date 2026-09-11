@@ -3,6 +3,7 @@ import type { DiscussionOrigin } from "./discussionTypes";
 
 export const CANVAS_RECOVERY_TTL_MS = 5 * 60 * 1000;
 const PREFIX = "canvas_draft:v2:";
+const CURRENT_SCHEMA_VERSION = 3;
 
 export interface CanvasRecoveryScope {
   userId: string;
@@ -11,13 +12,14 @@ export interface CanvasRecoveryScope {
 }
 
 export interface CanvasRecoveryRecord extends CanvasRecoveryScope {
-  schemaVersion: 2;
-  annotationId: string;
+  schemaVersion: 2 | 3;
+  targetKind: "task" | "annotation";
+  annotationId: string | null;
   shapes: NonNullable<CommentCanvasDrawing["shapes"]>;
   ts: number;
 }
 
-export function canvasRecoveryKey(scope: CanvasRecoveryScope, annotationId: string): string {
+export function canvasRecoveryKey(scope: CanvasRecoveryScope, annotationId: string | null): string {
   return PREFIX + JSON.stringify([scope.userId, scope.projectId, scope.taskId, annotationId]);
 }
 
@@ -27,27 +29,50 @@ function storageKeys(): string[] {
   ).filter((key): key is string => key !== null);
 }
 
-function validRecord(value: unknown): value is CanvasRecoveryRecord {
-  if (!value || typeof value !== "object") return false;
-  const record = value as CanvasRecoveryRecord;
+function validShapes(value: unknown): value is CanvasRecoveryRecord["shapes"] {
   return (
-    record.schemaVersion === 2 &&
-    [record.userId, record.projectId, record.taskId, record.annotationId].every(
-      (id) => typeof id === "string" && id.length > 0,
-    ) &&
-    Number.isFinite(record.ts) &&
-    Array.isArray(record.shapes) &&
-    record.shapes.length > 0 &&
-    record.shapes.every(
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every(
       (shape) =>
         shape &&
-        ["line", "arrow", "rect", "ellipse"].includes(shape.type) &&
-        Array.isArray(shape.points) &&
-        shape.points.length >= 4 &&
-        shape.points.length % 2 === 0 &&
-        shape.points.every((point) => Number.isFinite(point)),
+        typeof shape === "object" &&
+        ["line", "arrow", "rect", "ellipse"].includes(
+          (shape as { type?: unknown }).type as string,
+        ) &&
+        Array.isArray((shape as { points?: unknown }).points) &&
+        (shape as { points: unknown[] }).points.length >= 4 &&
+        (shape as { points: unknown[] }).points.length % 2 === 0 &&
+        (shape as { points: unknown[] }).points.every((point) => Number.isFinite(point)),
     )
   );
+}
+
+function validRecord(value: unknown): value is CanvasRecoveryRecord {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Partial<CanvasRecoveryRecord> & { schemaVersion?: unknown };
+  if (
+    ![record.userId, record.projectId, record.taskId].every(
+      (id) => typeof id === "string" && id.length > 0,
+    ) ||
+    !Number.isFinite(record.ts) ||
+    !validShapes(record.shapes)
+  )
+    return false;
+  if (record.schemaVersion === 2) {
+    return typeof record.annotationId === "string" && record.annotationId.length > 0;
+  }
+  return (
+    record.schemaVersion === CURRENT_SCHEMA_VERSION &&
+    (record.targetKind === "task" || record.targetKind === "annotation") &&
+    (record.targetKind === "task"
+      ? record.annotationId === null
+      : typeof record.annotationId === "string" && record.annotationId.length > 0)
+  );
+}
+
+function normalizeRecord(value: CanvasRecoveryRecord): CanvasRecoveryRecord {
+  return value.schemaVersion === 2 ? { ...value, targetKind: "annotation" } : value;
 }
 
 /** Reload recovery never guesses the owner of the old task-only storage format. */
@@ -74,19 +99,21 @@ export function readCanvasDraftRecovery(scope: CanvasRecoveryScope): CanvasRecov
       } catch {
         continue;
       }
-      if (!validRecord(value) || canvasRecoveryKey(value, value.annotationId) !== key) continue;
+      if (!validRecord(value)) continue;
+      const record = normalizeRecord(value);
+      if (canvasRecoveryKey(record, record.annotationId) !== key) continue;
       if (
-        value.userId !== scope.userId ||
-        value.projectId !== scope.projectId ||
-        value.taskId !== scope.taskId
+        record.userId !== scope.userId ||
+        record.projectId !== scope.projectId ||
+        record.taskId !== scope.taskId
       )
         continue;
-      const age = Date.now() - value.ts;
+      const age = Date.now() - record.ts;
       if (age > CANVAS_RECOVERY_TTL_MS || age < 0) {
         sessionStorage.removeItem(key);
         continue;
       }
-      records.push(value);
+      records.push(record);
     }
     return records.sort((a, b) => b.ts - a.ts);
   } catch {
@@ -98,21 +125,24 @@ export function writeCanvasDraftRecovery(
   origin: DiscussionOrigin,
   drawing: CommentCanvasDrawing,
 ): void {
-  if (origin.target.kind !== "annotation") return;
+  if (origin.target.kind !== "annotation" && origin.target.kind !== "task") return;
   const scope = {
     userId: origin.owner.userId,
     projectId: origin.target.projectId,
     taskId: origin.target.taskId,
   };
+  const targetKind = origin.target.kind;
+  const annotationId = targetKind === "annotation" ? origin.target.annotationId : null;
   const record: CanvasRecoveryRecord = {
     ...scope,
-    schemaVersion: 2,
-    annotationId: origin.target.annotationId,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    targetKind,
+    annotationId,
     shapes: drawing.shapes ?? [],
     ts: Date.now(),
   };
   try {
-    const key = canvasRecoveryKey(scope, record.annotationId);
+    const key = canvasRecoveryKey(scope, annotationId);
     if (!record.shapes.length) sessionStorage.removeItem(key);
     else sessionStorage.setItem(key, JSON.stringify(record));
   } catch {
@@ -121,12 +151,16 @@ export function writeCanvasDraftRecovery(
 }
 
 export function clearCanvasDraftRecovery(origin: DiscussionOrigin): void {
-  if (origin.target.kind !== "annotation") return;
+  if (origin.target.kind !== "annotation" && origin.target.kind !== "task") return;
   try {
     sessionStorage.removeItem(
       canvasRecoveryKey(
-        { userId: origin.owner.userId, ...origin.target },
-        origin.target.annotationId,
+        {
+          userId: origin.owner.userId,
+          projectId: origin.target.projectId,
+          taskId: origin.target.taskId,
+        },
+        origin.target.kind === "annotation" ? origin.target.annotationId : null,
       ),
     );
   } catch {

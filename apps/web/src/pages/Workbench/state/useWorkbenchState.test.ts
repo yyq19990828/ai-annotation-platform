@@ -139,6 +139,21 @@ describe("useWorkbenchState discussion drawing ownership", () => {
     expect(result.current.canvasDraft.origin?.requestId).toBe("drawing-b");
   });
 
+  it("accepts a task-origin drawing only with a null annotation selection", () => {
+    const { result } = renderHook(() => useWorkbenchState());
+    const taskOrigin: DiscussionOrigin = {
+      owner: { sessionId: "session-a", userId: "user-a" },
+      target: { projectId: "p", taskId: "t", kind: "task" },
+      requestId: "task-drawing",
+    };
+    act(() => result.current.beginCanvasDraft(null, drawing, taskOrigin));
+    expect(result.current.canvasDraft.active).toBe(true);
+    expect(result.current.canvasDraft.annotationId).toBeNull();
+    act(() => result.current.releaseCanvasDraft());
+    act(() => result.current.beginCanvasDraft("annotation-a", drawing, taskOrigin));
+    expect(result.current.canvasDraft.active).toBe(false);
+  });
+
   it("does not resurrect shapes or produce another completion after leaving drawing mode", () => {
     const { result } = renderHook(() => useWorkbenchState());
     act(() => result.current.beginCanvasDraft("annotation-a", drawing, origin));

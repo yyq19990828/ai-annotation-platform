@@ -61,6 +61,7 @@
 |---|---|
 | GET | `/annotations/{annotation_id}/comments` |
 | GET | `/tasks/{task_id}/discussion/page` |
+| GET | `/tasks/{task_id}/discussion/annotation-counts` |
 | GET | `/tasks/{task_id}/comments/page` |
 | GET | `/annotations/{annotation_id}/comments/page` |
 | POST | `/annotations/{annotation_id}/comments` |
@@ -721,4 +722,4 @@
 
 ---
 
-_共 65 模块 / 414 路由_
+_共 65 模块 / 415 路由_

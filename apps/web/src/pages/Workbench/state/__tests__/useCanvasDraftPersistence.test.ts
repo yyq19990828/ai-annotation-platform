@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderHook } from "@testing-library/react";
 import { useCanvasDraftPersistence } from "../useCanvasDraftPersistence";
 import type { CanvasDraft } from "../useWorkbenchState";
-import type { DiscussionDraftStore } from "../useDiscussionDraftStore";
+import { createDiscussionDraftStore, type DiscussionDraftStore } from "../useDiscussionDraftStore";
 import type { DiscussionOrigin, DiscussionTarget } from "../discussionTypes";
 import { discussionTargetKey } from "../discussionTypes";
 import { canvasRecoveryKey, writeCanvasDraftRecovery } from "../discussionCanvasRecovery";
@@ -15,6 +15,8 @@ const target: DiscussionTarget = {
   annotationId: "a1",
 };
 const origin: DiscussionOrigin = { owner, target, requestId: "draw-a" };
+const taskTarget: DiscussionTarget = { projectId: "p", taskId: "t1", kind: "task" };
+const taskOrigin: DiscussionOrigin = { owner, target: taskTarget, requestId: "draw-task" };
 const shapes = [{ type: "line" as const, points: [0, 0, 0.2, 0.2] }];
 const inactive: CanvasDraft = {
   active: false,
@@ -37,6 +39,7 @@ function memoryStore() {
     }
   > = {};
   let disposed = false;
+  let sendTarget: DiscussionTarget | undefined;
   const saveDrawing = vi.fn(
     (
       source: DiscussionOrigin,
@@ -72,8 +75,11 @@ function memoryStore() {
       requestId: "restored",
     }),
     saveDrawing,
-    getSendTarget: () => undefined,
-    setSendTarget: vi.fn(),
+    getSendTarget: () => sendTarget,
+    setSendTarget: vi.fn((_projectId: string, _taskId: string, target: DiscussionTarget) => {
+      sendTarget = target;
+      return true;
+    }),
     dispose: () => {
       disposed = true;
     },
@@ -162,6 +168,34 @@ describe("useCanvasDraftPersistence scoped lifecycle", () => {
     ).toBeNull();
   });
 
+  it("settles an empty live transaction when its task changes", () => {
+    const { store, saveDrawing } = memoryStore();
+    const release = vi.fn();
+    const emptyActive = { ...active, shapes: [] };
+    const { rerender } = renderHook(
+      ({ taskId }) =>
+        useCanvasDraftPersistence({
+          taskId,
+          projectId: "p",
+          store,
+          canvasDraft: emptyActive,
+          beginCanvasDraft: vi.fn(),
+          releaseCanvasDraft: release,
+        }),
+      { initialProps: { taskId: "t1" } },
+    );
+
+    rerender({ taskId: "t2" });
+
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(saveDrawing).toHaveBeenCalledWith(origin, { shapes: [] }, { active: false });
+    expect(
+      sessionStorage.getItem(
+        canvasRecoveryKey({ userId: "u", projectId: "p", taskId: "t1" }, "a1"),
+      ),
+    ).toBeNull();
+  });
+
   it("retains memory across route unmount beyond the recovery TTL", () => {
     vi.useFakeTimers();
     const { store } = memoryStore();
@@ -212,6 +246,79 @@ describe("useCanvasDraftPersistence scoped lifecycle", () => {
     expect(begin).not.toHaveBeenCalled();
     rerender({ annotationIds: ["a1"] });
     expect(begin).toHaveBeenCalledWith("a1", { shapes }, { owner, target, requestId: "restored" });
+  });
+
+  it("restores a task drawing before annotation ids load and does not revive a second target", () => {
+    writeCanvasDraftRecovery(origin, { shapes });
+    writeCanvasDraftRecovery(taskOrigin, { shapes });
+    const { store } = memoryStore();
+    const begin = vi.fn();
+    const { rerender } = renderHook(
+      ({ annotationIds }: { annotationIds?: string[] }) =>
+        useCanvasDraftPersistence({
+          taskId: "t1",
+          projectId: "p",
+          store,
+          annotationIds,
+          canvasDraft: inactive,
+          beginCanvasDraft: begin,
+        }),
+      { initialProps: {} },
+    );
+    expect(begin).toHaveBeenCalledWith(
+      null,
+      { shapes },
+      expect.objectContaining({ target: taskTarget }),
+    );
+
+    rerender({ annotationIds: ["a1"] });
+    expect(begin).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps recovery on the selected target instead of crossing annotation and task drafts", () => {
+    const { store } = memoryStore();
+    const begin = vi.fn();
+    const selectedTask: DiscussionTarget = { projectId: "p", taskId: "t1", kind: "task" };
+    store.setSendTarget("p", "t1", selectedTask);
+    writeCanvasDraftRecovery(origin, { shapes });
+    renderHook(() =>
+      useCanvasDraftPersistence({
+        taskId: "t1",
+        projectId: "p",
+        store,
+        annotationIds: ["a1"],
+        canvasDraft: inactive,
+        beginCanvasDraft: begin,
+      }),
+    );
+    expect(begin).not.toHaveBeenCalled();
+  });
+
+  it("keeps a legacy annotation recovery after the shell's first empty selection", () => {
+    const store = createDiscussionDraftStore({ owner });
+    store.followAnnotationSelection("p", "t1", null);
+    writeCanvasDraftRecovery(
+      { ...origin, owner: { ...owner, sessionId: "old-session" } },
+      { shapes },
+    );
+    const begin = vi.fn();
+
+    renderHook(() =>
+      useCanvasDraftPersistence({
+        taskId: "t1",
+        projectId: "p",
+        store,
+        annotationIds: ["a1"],
+        canvasDraft: inactive,
+        beginCanvasDraft: begin,
+      }),
+    );
+
+    expect(begin).toHaveBeenCalledWith(
+      "a1",
+      { shapes },
+      expect.objectContaining({ target, owner }),
+    );
   });
 
   it("does not restore deleted targets or overwrite an existing empty memory draft", () => {

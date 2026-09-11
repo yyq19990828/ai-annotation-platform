@@ -28,9 +28,12 @@ interface Args {
 function flushActiveDrawing(draft: CanvasDraft, store: DiscussionDraftStore | null | undefined) {
   if (!draft.active || !draft.origin || !store?.isOwned(draft.origin)) return;
   const drawing = { shapes: draft.shapes };
-  if (!store.saveDrawing(draft.origin, drawing, { active: true })) return;
-  // Never serialize an old drawing under the currently displayed task.
-  writeCanvasDraftRecovery(draft.origin, drawing);
+  const active = drawing.shapes.length > 0;
+  if (!store.saveDrawing(draft.origin, drawing, { active })) return;
+  // Never serialize an old drawing under the currently displayed task. An
+  // empty transaction has nothing to recover and must not stay blocking.
+  if (active) writeCanvasDraftRecovery(draft.origin, drawing);
+  else clearCanvasDraftRecovery(draft.origin);
 }
 
 /** Canvas is a view onto the session draft, with a scoped five-minute reload fallback. */
@@ -46,7 +49,8 @@ export function useCanvasDraftPersistence({
 }: Args) {
   const latest = useRef({ canvasDraft, store });
   latest.current = { canvasDraft, store };
-  const restoredForContext = useRef<string | null>(null);
+  const restoredTaskContext = useRef<string | null>(null);
+  const restoredAnnotationContext = useRef<string | null>(null);
 
   useLayoutEffect(() => {
     const origin = canvasDraft.origin;
@@ -76,19 +80,25 @@ export function useCanvasDraftPersistence({
   );
 
   useLayoutEffect(() => {
-    if (!store || !projectId || !taskId || !annotationIds || store.getSnapshot().disposed) return;
+    if (!store || !projectId || !taskId || store.getSnapshot().disposed) return;
     const context = JSON.stringify([store.owner.sessionId, projectId, taskId]);
-    if (restoredForContext.current === context) return;
     // The preceding effect releases the old task before restoration can run.
     if (canvasDraft.active || canvasDraft.pendingResult) return;
-    restoredForContext.current = context;
-    const available = new Set(annotationIds);
+    const restoreTask = restoredTaskContext.current !== context;
+    const restoreAnnotations =
+      annotationIds !== undefined && restoredAnnotationContext.current !== context;
+    if (!restoreTask && !restoreAnnotations) return;
+
+    const available = new Set(annotationIds ?? []);
     const memory = Object.values(store.getSnapshot().drafts).filter(
       (draft) =>
         draft.target.projectId === projectId &&
         draft.target.taskId === taskId &&
-        draft.target.kind === "annotation" &&
-        available.has(draft.target.annotationId) &&
+        ((restoreTask && draft.target.kind === "task") ||
+          (restoreAnnotations &&
+            annotationIds !== undefined &&
+            draft.target.kind === "annotation" &&
+            available.has(draft.target.annotationId))) &&
         draft.canvasActive &&
         draft.canvasOrigin &&
         store.isOwned(draft.canvasOrigin) &&
@@ -96,39 +106,66 @@ export function useCanvasDraftPersistence({
     );
     const selected = store.getSendTarget(projectId, taskId);
     const saved =
-      memory.find(
-        (draft) =>
-          selected?.kind === "annotation" &&
-          draft.target.kind === "annotation" &&
-          draft.target.annotationId === selected.annotationId,
-      ) ?? memory[memory.length - 1];
-    if (saved?.canvasOrigin && saved.target.kind === "annotation") {
+      selected?.kind === "annotation"
+        ? memory.find(
+            (draft) =>
+              draft.target.kind === "annotation" &&
+              draft.target.annotationId === selected.annotationId,
+          )
+        : selected?.kind === "task"
+          ? memory.find((draft) => draft.target.kind === "task")
+          : memory[memory.length - 1];
+    if (saved?.canvasOrigin) {
+      // A restored transaction owns the canvas until it is explicitly
+      // completed or cancelled. Do not resume a second target from storage
+      // after that transaction releases the view.
+      restoredTaskContext.current = context;
+      restoredAnnotationContext.current = context;
       store.setSendTarget(projectId, taskId, saved.target);
-      beginCanvasDraft(saved.target.annotationId, saved.canvas_drawing, saved.canvasOrigin);
+      beginCanvasDraft(
+        saved.target.kind === "annotation" ? saved.target.annotationId : null,
+        saved.canvas_drawing,
+        saved.canvasOrigin,
+      );
       return;
     }
-    // Any memory entry wins, including an empty draft after successful send.
+
     for (const record of readCanvasDraftRecovery({
       userId: store.owner.userId,
       projectId,
       taskId,
     })) {
-      if (!available.has(record.annotationId)) continue;
-      const target: DiscussionTarget = {
-        kind: "annotation",
-        projectId,
-        taskId,
-        annotationId: record.annotationId,
-      };
+      if (selected?.kind === "task" && record.targetKind !== "task") continue;
+      if (
+        selected?.kind === "annotation" &&
+        (record.targetKind !== "annotation" || record.annotationId !== selected.annotationId)
+      )
+        continue;
+      if (selected?.kind === "issue") continue;
+      if (
+        record.targetKind === "annotation" &&
+        (annotationIds === undefined || !available.has(record.annotationId ?? ""))
+      )
+        continue;
+      if (record.targetKind === "task" && !restoreTask) continue;
+      if (record.targetKind === "annotation" && !restoreAnnotations) continue;
+      const target: DiscussionTarget =
+        record.targetKind === "annotation"
+          ? { kind: "annotation", projectId, taskId, annotationId: record.annotationId! }
+          : { kind: "task", projectId, taskId };
       if (store.getDraft(target)) continue;
       const origin = store.makeOrigin(target);
       if (!origin) continue;
       const drawing = { shapes: record.shapes };
-      store.saveDrawing(origin, drawing, { active: true });
+      if (!store.saveDrawing(origin, drawing, { active: true })) continue;
+      restoredTaskContext.current = context;
+      restoredAnnotationContext.current = context;
       store.setSendTarget(projectId, taskId, target);
-      beginCanvasDraft(record.annotationId, drawing, origin);
+      beginCanvasDraft(target.kind === "annotation" ? target.annotationId : null, drawing, origin);
       break;
     }
+    if (restoreTask) restoredTaskContext.current = context;
+    if (restoreAnnotations) restoredAnnotationContext.current = context;
   }, [
     store,
     projectId,

@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-09-11
+last_reviewed: 2026-09-12
 ---
 
 # 任务与标注
@@ -57,6 +57,7 @@ Idempotency-Key: 61fffd41-c706-48c7-818e-0c40cdbeb6c9
 
 ```http
 GET /api/v1/tasks/:id/discussion/page?scope=all&limit=50
+GET /api/v1/tasks/:id/discussion/annotation-counts
 GET /api/v1/feedbacks?project_id=…&task_id=…&kind=issue&root_only=true&include_counts=true&status=open
 GET /api/v1/feedbacks/:root_id/thread?limit=50
 ```
@@ -71,6 +72,10 @@ GET /api/v1/feedbacks/:root_id/thread?limit=50
 | `feedback`           | `kind=comment`、`anchor_type=task` 且没有父回复的原生任务留言 | 创建调用 `POST /feedbacks`，修改和删除调用 `/feedbacks/:id`  |
 
 汇总不读取评论镜像或统一反馈视图，也不混入问题回复、BUG 和退回记录。结果按 `(created_at, source, id)` 降序排列；游标绑定任务、阅读范围和标注，不能用于其他查询。游标格式错误、超过 2048 字符或与查询不匹配时返回 `400`。旧标注评论接口继续保留。
+
+图片任务的原生留言可在 `POST /feedbacks` 携带可空的 `canvas_drawing`，沿用标注评论的 `CanvasDrawing` 结构（归一化坐标和非空笔触）。只允许 `kind=comment`、`anchor_type=task`、无父记录且属于可访问图片任务的目标；视频、点云、问题和回复不接受绘图。正文、已有兼容附件或非空绘图至少一项有内容，因此允许仅绘图的任务留言。读取反馈和讨论分页都会返回该字段；已有绘图的留言可将正文修改为空。此字段不扩展任务附件上传或提及能力。
+
+`discussion/annotation-counts` 返回 `{ "counts": { "annotation-uuid": 3 } }`，一次统计当前任务可用标注的全部有效原评论，包含已解决评论。按标注 ID 分组，只返回正数，不受分页影响，不计反馈镜像；已删除评论或不可用标注不计入。接口沿用任务讨论可见性检查，数量不代表每用户未读数。
 
 标注附件下载接口 `GET /annotations/:annotation_id/comment-attachments/download?key=...` 默认仍返回短期签名地址的 302 跳转。浏览器使用 Bearer 登录时，应先带认证头请求 `as_json=true`，取得 `{ download_url }` 后不携带 Bearer 头下载对象；直接打开 API 链接不会自动携带登录凭据。两种返回方式都重新校验原标注的任务权限和附件键前缀，签名有效期为五分钟。
 

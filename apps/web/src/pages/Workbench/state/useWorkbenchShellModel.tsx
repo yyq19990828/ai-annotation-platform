@@ -236,6 +236,7 @@ import {
   parseWorkbenchDiscussionRequest,
 } from "@/utils/workbenchNavigation";
 import { useDiscussionNavigation } from "./useDiscussionNavigation";
+import { useAnnotationCommentCounts } from "@/hooks/useAnnotationCommentCounts";
 import {
   ensurePointCloudNavigationGeneration,
   pointCloudNavigationGenerationForTask,
@@ -6284,6 +6285,12 @@ export function useWorkbenchShellModel({
     () => (annotationsReady ? (annotationsData ?? []).map((ann) => ann.id) : undefined),
     [annotationsData, annotationsReady],
   );
+  const annotationCommentCountsQuery = useAnnotationCommentCounts(
+    taskId,
+    projectId,
+    stageKind === "image" && s.workbenchConfig.common.showAnnotationComments,
+  );
+  const annotationCommentCounts = annotationCommentCountsQuery.data?.counts;
   useCanvasDraftPersistence({
     taskId,
     projectId,
@@ -6309,8 +6316,9 @@ export function useWorkbenchShellModel({
       current.draft.origin?.requestId === discussionCanvasOrigin.requestId &&
       target?.projectId === current.projectId &&
       target?.taskId === current.taskId &&
-      target?.kind === "annotation" &&
-      annotationsRef.current.some((ann) => ann.id === target.annotationId),
+      (target?.kind === "task" ||
+        (target?.kind === "annotation" &&
+          annotationsRef.current.some((ann) => ann.id === target.annotationId))),
     );
   };
   const discussionCanvasEditable = canEditDiscussionCanvas();
@@ -7029,6 +7037,63 @@ export function useWorkbenchShellModel({
   const discussionRetryOwner = JSON.stringify([meUserId, discussionNavigationKey]);
   const discussionRetryOwnerRef = useRef(discussionRetryOwner);
   discussionRetryOwnerRef.current = discussionRetryOwner;
+  const [annotationDiscussionRequest, setAnnotationDiscussionRequest] = useState<{
+    requestId: string;
+    projectId: string;
+    taskId: string;
+    annotationId: string;
+  } | null>(null);
+  const annotationDiscussionRequestOwnerRef = useRef<string | null>(meUserId ?? null);
+  useEffect(() => {
+    // A pending badge request belongs to the account that emitted it. Retire
+    // it before a retained shell can expose the request to a replacement user.
+    const ownerId = meUserId ?? null;
+    if (annotationDiscussionRequestOwnerRef.current !== ownerId) {
+      annotationDiscussionRequestOwnerRef.current = ownerId;
+      setAnnotationDiscussionRequest(null);
+    }
+  }, [meUserId]);
+  useEffect(() => {
+    setAnnotationDiscussionRequest((current) =>
+      current && (current.projectId !== projectId || current.taskId !== taskId) ? null : current,
+    );
+  }, [projectId, taskId]);
+  const openAnnotationComments = useCallback(
+    async (annotationId: string) => {
+      if (
+        stageKind !== "image" ||
+        !projectId ||
+        !taskId ||
+        !meUserId ||
+        !isCurrentAuthOwner(meUserId)
+      )
+        return;
+      const annotation = annotationsRef.current.find(
+        (item) => item.id === annotationId && item.task_id === taskId && !item.is_hidden,
+      );
+      if (!annotation) return;
+      if (!(await maskNavigationGuardRef.current())) return;
+      if (
+        !isCurrentAuthOwner(meUserId) ||
+        discussionCanvasContextRef.current.projectId !== projectId ||
+        discussionCanvasContextRef.current.taskId !== taskId ||
+        currentTaskIdRef.current !== taskId ||
+        !annotationsRef.current.some(
+          (item) => item.id === annotationId && item.task_id === taskId && !item.is_hidden,
+        )
+      )
+        return;
+      handleSelectBox(annotationId);
+      setAnnotationDiscussionRequest({
+        requestId: `annotation-discussion-${randomId()}`,
+        projectId,
+        taskId,
+        annotationId,
+      });
+      workspaceCommands.current?.show("discussion");
+    },
+    [handleSelectBox, meUserId, projectId, stageKind, taskId],
+  );
   const discussionNavigationOwner = useDiscussionNavigation({
     navigationKey: discussionNavigationKey,
     request: discussionTaskError
@@ -8017,6 +8082,11 @@ export function useWorkbenchShellModel({
         onRefineSamCandidate: handleRefineSamCandidate,
       },
       editors: {
+        annotationCommentCounts,
+        onOpenAnnotationComments:
+          stageKind === "image"
+            ? (annotationId: string) => void openAnnotationComments(annotationId)
+            : undefined,
         polygonDraft:
           s.tool === "polygon" ? polygonHandle : s.tool === "polyline" ? polylineHandle : undefined,
         keypointDraft: s.tool === "keypoint" ? keypointHandle : undefined,
@@ -8353,6 +8423,15 @@ export function useWorkbenchShellModel({
       taskId: taskId ?? null,
       projectId: projectId ?? null,
       currentUserId: meUserId ?? null,
+      annotationDiscussionRequest:
+        annotationDiscussionRequestOwnerRef.current === (meUserId ?? null)
+          ? annotationDiscussionRequest
+          : null,
+      onAnnotationDiscussionRequestConsumed: (requestId) => {
+        setAnnotationDiscussionRequest((current) =>
+          current?.requestId === requestId ? null : current,
+        );
+      },
       annotationClassById: discussionAnnotationClassById,
       onSelectAnnotation: (annotationId) => {
         if (annotationsRef.current.some((ann) => ann.id === annotationId))
@@ -8364,6 +8443,7 @@ export function useWorkbenchShellModel({
       imageWidth,
       imageHeight,
       enableCanvasDrawing: stageKind !== "3d",
+      enableTaskCanvasDrawing: stageKind === "image",
       // Only ImageWorkbench consumes the live drawing layer and toolbar.
       // Video keeps its existing popup/anchor path; exposing live mode there
       // would create an active draft with no way to finish it.
@@ -8379,14 +8459,20 @@ export function useWorkbenchShellModel({
                 const target = origin?.target;
                 if (
                   !origin ||
+                  !target ||
                   !discussionDraftStore?.isOwned(origin) ||
-                  target?.kind !== "annotation" ||
                   target.projectId !== current.projectId ||
                   target.taskId !== current.taskId ||
-                  !annotationsRef.current.some((ann) => ann.id === target.annotationId)
+                  (target.kind === "annotation" &&
+                    !annotationsRef.current.some((ann) => ann.id === target.annotationId)) ||
+                  target.kind === "issue"
                 )
                   return;
-                s.beginCanvasDraft(target.annotationId, initial, origin);
+                s.beginCanvasDraft(
+                  target.kind === "annotation" ? target.annotationId : null,
+                  initial,
+                  origin,
+                );
               },
               onConsume: (resultId) => s.consumeCanvasResult(resultId ?? undefined),
             }

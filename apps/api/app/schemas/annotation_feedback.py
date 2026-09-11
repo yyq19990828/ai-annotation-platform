@@ -8,6 +8,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.schemas._jsonb_types import CanvasDrawing
 from app.schemas.discussion_actions import DiscussionActions
 
 FeedbackKind = Literal["issue", "comment", "reject", "bug"]
@@ -150,6 +151,7 @@ class AnnotationFeedbackCreate(BaseModel):
     title: str | None = Field(default=None, max_length=500)
     body: str
     attachments: list[dict[str, Any]] = Field(default_factory=list)
+    canvas_drawing: CanvasDrawing | None = None
     thread_parent_id: UUID | None = None
 
     @model_validator(mode="after")
@@ -201,7 +203,20 @@ class AnnotationFeedbackCreate(BaseModel):
                 raise ValueError(
                     "point_cloud anchor requires point_cloud_quality_issue_id"
                 )
-        # Native task comments are the only text-only task discussion source.
+        has_drawing = (
+            self.canvas_drawing is not None and len(self.canvas_drawing.shapes) > 0
+        )
+        if self.canvas_drawing is not None:
+            if not has_drawing:
+                raise ValueError("canvas_drawing must contain at least one shape")
+            if not (
+                self.kind == "comment"
+                and self.anchor_type == "task"
+                and self.thread_parent_id is None
+            ):
+                raise ValueError("canvas_drawing requires a native root task comment")
+        # Native task comments are the only task discussion source that does not
+        # carry an annotation target.
         # Rich annotation/pixel/point-cloud callers historically support an
         # attachment-only body, so do not impose this rule on those records.
         if (
@@ -209,8 +224,11 @@ class AnnotationFeedbackCreate(BaseModel):
             and self.anchor_type == "task"
             and not self.attachments
             and not self.body.strip()
+            and not has_drawing
         ):
-            raise ValueError("task comments must contain text or an attachment")
+            raise ValueError(
+                "task comments must contain text, an attachment, or a drawing"
+            )
         return self
 
 
@@ -224,6 +242,13 @@ class AnnotationFeedbackPatch(BaseModel):
 class AnnotationFeedbackReply(BaseModel):
     body: str
     attachments: list[dict[str, Any]] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_canvas_drawing(cls, value):
+        if isinstance(value, dict) and value.get("canvas_drawing") is not None:
+            raise ValueError("canvas_drawing is not supported for feedback replies")
+        return value
 
 
 class AnnotationFeedbackOut(BaseModel):
@@ -241,6 +266,7 @@ class AnnotationFeedbackOut(BaseModel):
     author_id: UUID
     author_name: str | None = None
     attachments: list[dict[str, Any]] = []
+    canvas_drawing: CanvasDrawing | None = None
     thread_parent_id: UUID | None = None
     is_active: bool
     resolved_at: datetime | None = None

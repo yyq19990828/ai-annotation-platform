@@ -97,7 +97,7 @@ import { usePermissions } from "@/hooks/usePermissions";
 import { useAppStore } from "@/stores/appStore";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import { BugReportFAB } from "@/components/bugreport/BugReportFAB";
-import { useFabAutoHideDriver, useFabRevealed } from "@/stores/fabRevealStore";
+import { useFabAutoHideDriver } from "@/stores/fabRevealStore";
 import { initBugReportCapture, patchFetchForBugCapture } from "@/utils/bugReportCapture";
 import { PageLoader } from "@/components/PageLoader";
 import { useBugDrawerStore } from "@/stores/bugDrawerStore";
@@ -230,7 +230,6 @@ function FullScreenWorkbench({ mode }: { mode?: "annotate" | "review" }) {
   const tooNarrow = useMediaQuery("(max-width: 767px)");
   const bugDrawerOpen = useBugDrawerStore((s) => s.open);
   const bugDrawerFocusId = useBugDrawerStore((s) => s.focusBugId);
-  const openBugDrawer = useBugDrawerStore((s) => s.openDrawer);
   const closeBugDrawer = useBugDrawerStore((s) => s.close);
 
   useEffect(() => {
@@ -240,7 +239,6 @@ function FullScreenWorkbench({ mode }: { mode?: "annotate" | "review" }) {
   useHeartbeat();
   // 右下角按钮列日常隐藏:光标进右下角指定区域才露出。
   useFabAutoHideDriver();
-  const fabRevealed = useFabRevealed();
 
   return (
     <div className={styles.fullScreenWorkbench}>
@@ -248,7 +246,6 @@ function FullScreenWorkbench({ mode }: { mode?: "annotate" | "review" }) {
         <WorkbenchPage mode={mode} />
       </Suspense>
       <ToastRack />
-      <BugReportFAB hidden={!fabRevealed} onClick={() => openBugDrawer()} />
       {bugDrawerOpen && (
         <Suspense fallback={null}>
           <BugReportDrawer

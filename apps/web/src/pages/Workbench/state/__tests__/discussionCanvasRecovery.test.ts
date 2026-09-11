@@ -15,6 +15,11 @@ const origin: DiscussionOrigin = {
   target: { kind: "annotation", projectId: "p", taskId: "t", annotationId: "a" },
   requestId: "drawing",
 };
+const taskOrigin: DiscussionOrigin = {
+  owner: { userId: "u", sessionId: "ephemeral" },
+  target: { kind: "task", projectId: "p", taskId: "t" },
+  requestId: "task-drawing",
+};
 const drawing = { shapes: [{ type: "line" as const, points: [0, 0, 0.5, 0.5] }] };
 
 beforeEach(() => {
@@ -28,6 +33,28 @@ afterEach(() => {
 });
 
 describe("discussion canvas reload recovery", () => {
+  it("recovers task drawings without annotation validation and reads v2 annotation records", () => {
+    writeCanvasDraftRecovery(taskOrigin, drawing);
+    const legacyKey = canvasRecoveryKey(scope, "legacy-a");
+    sessionStorage.setItem(
+      legacyKey,
+      JSON.stringify({
+        schemaVersion: 2,
+        ...scope,
+        annotationId: "legacy-a",
+        shapes: drawing.shapes,
+        ts: Date.now(),
+      }),
+    );
+
+    expect(readCanvasDraftRecovery(scope)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ targetKind: "task", annotationId: null }),
+        expect.objectContaining({ targetKind: "annotation", annotationId: "legacy-a" }),
+      ]),
+    );
+  });
+
   it("binds recovery to user/project/task/annotation, not ephemeral session ID", () => {
     writeCanvasDraftRecovery(origin, drawing);
     expect(readCanvasDraftRecovery(scope)[0]).toMatchObject({

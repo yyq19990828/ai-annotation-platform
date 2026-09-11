@@ -1051,6 +1051,21 @@
         "title": "AnnotationBulkUpdateResponse",
         "type": "object"
       },
+      "AnnotationCommentCountsOut": {
+        "description": "Exact active annotation-comment counts for a visible task.",
+        "properties": {
+          "counts": {
+            "additionalProperties": {
+              "exclusiveMinimum": 0.0,
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          }
+        },
+        "title": "AnnotationCommentCountsOut",
+        "type": "object"
+      },
       "AnnotationCommentCreate": {
         "properties": {
           "anchor": {
@@ -1959,6 +1974,16 @@
             "title": "Body",
             "type": "string"
           },
+          "canvas_drawing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CanvasDrawing"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "kind": {
             "enum": [
               "issue",
@@ -2156,6 +2181,16 @@
           "body": {
             "title": "Body",
             "type": "string"
+          },
+          "canvas_drawing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CanvasDrawing"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "created_at": {
             "format": "date-time",
@@ -37647,6 +37682,11 @@
             "title": "Rightwidthpct",
             "type": "number"
           },
+          "showAnnotationComments": {
+            "default": true,
+            "title": "Showannotationcomments",
+            "type": "boolean"
+          },
           "strokeWidth": {
             "default": 1.5,
             "maximum": 5.0,
@@ -58172,6 +58212,55 @@
         "summary": "Retry Cross Frame Job",
         "tags": [
           "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/discussion/annotation-counts": {
+      "get": {
+        "description": "Return sparse counts for active comments on available saved annotations.",
+        "operationId": "list_annotation_comment_counts_api_v1_tasks__task_id__discussion_annotation_counts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationCommentCountsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Annotation Comment Counts",
+        "tags": [
+          "annotation-comments"
         ]
       }
     },

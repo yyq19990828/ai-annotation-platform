@@ -55,6 +55,13 @@ type CommentInputProps = ComponentProps<typeof CommentInput>;
 type CommentSubmit = NonNullable<CommentInputProps["onSubmit"]>;
 type LiveCanvas = CommentInputProps["liveCanvas"];
 
+export interface DiscussionAnnotationReadRequest {
+  requestId: string;
+  projectId: string;
+  taskId: string;
+  annotationId: string;
+}
+
 function cn(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(" ");
 }
@@ -79,6 +86,8 @@ interface Props {
   imageWidth?: number | null;
   imageHeight?: number | null;
   enableCanvasDrawing?: boolean;
+  /** Image tasks may draw on the task target; video task comments stay text-only. */
+  enableTaskCanvasDrawing?: boolean;
   liveCanvas?: LiveCanvas;
   commentAnchor?: AnnotationCommentAnchor | null;
   onSeekFrame?: (frameIndex: number) => void;
@@ -89,6 +98,9 @@ interface Props {
   /** Coordinator can mark a selected annotation unavailable without retargeting its draft. */
   annotationAvailable?: boolean;
   annotationUnavailableReason?: string | null;
+  /** One-shot badge activation after the shell has guarded annotation selection. */
+  annotationDiscussionRequest?: DiscussionAnnotationReadRequest | null;
+  onAnnotationDiscussionRequestConsumed?: (requestId: string) => void;
 }
 
 function anchorLabel(anchor: AnnotationCommentAnchor): string {
@@ -210,6 +222,7 @@ export function CommentsPanel({
   imageWidth,
   imageHeight,
   enableCanvasDrawing,
+  enableTaskCanvasDrawing = false,
   liveCanvas,
   commentAnchor,
   onSeekFrame,
@@ -219,6 +232,8 @@ export function CommentsPanel({
   forceTab,
   annotationAvailable,
   annotationUnavailableReason,
+  annotationDiscussionRequest,
+  onAnnotationDiscussionRequestConsumed,
 }: Props) {
   const navigate = useNavigate();
   const panelId = useId();
@@ -247,6 +262,7 @@ export function CommentsPanel({
   } | null>(null);
   const [highlightedComment, setHighlightedComment] = useState<string | null>(null);
   const focusedRequestRef = useRef<string | null>(null);
+  const consumedAnnotationRequestRef = useRef<string | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const scopeOwnerRef = useRef(taskScopeKey);
   const scopeForTask = scopeOwnerRef.current === taskScopeKey ? readScope : "all";
@@ -311,6 +327,42 @@ export function CommentsPanel({
     setReadAnnotationOverride(null);
     setHighlightedComment(null);
   }, [taskScopeKey]);
+
+  useEffect(() => {
+    const request = annotationDiscussionRequest;
+    if (
+      !request ||
+      !taskContext ||
+      request.projectId !== projectId ||
+      request.taskId !== taskId ||
+      request.annotationId !== annotationId ||
+      !isPersistedAnnotationId(request.annotationId)
+    )
+      return;
+    const requestKey = `${currentUserId ?? ""}:${taskScopeKey}:${request.requestId}`;
+    if (consumedAnnotationRequestRef.current === requestKey) return;
+    consumedAnnotationRequestRef.current = requestKey;
+    setReadScope("annotation");
+    setReadAnnotationOverride({
+      owner: taskScopeKey,
+      selectedId: annotationId,
+      annotationId: request.annotationId,
+      label: annotationClassById?.[request.annotationId] ?? "标注",
+    });
+    setScopeNotice(null);
+    setHighlightedComment(null);
+    onAnnotationDiscussionRequestConsumed?.(request.requestId);
+  }, [
+    annotationClassById,
+    annotationDiscussionRequest,
+    annotationId,
+    currentUserId,
+    onAnnotationDiscussionRequestConsumed,
+    projectId,
+    taskContext,
+    taskId,
+    taskScopeKey,
+  ]);
 
   useEffect(() => {
     if (!commentFocus || focusedRequestRef.current === commentFocus.requestId) return;
@@ -486,14 +538,19 @@ export function CommentsPanel({
   // the live stage/hover bridge retains its stricter selected-object boundary.
   const popupAnnotationComposer =
     sendTarget?.kind === "annotation" && sendTargetAnnotationAvailable !== false;
+  const taskCanvasComposer =
+    sendTarget?.kind === "task" && Boolean(enableTaskCanvasDrawing && enableCanvasDrawing);
+  const canvasDrawingTargetEnabled = Boolean(popupAnnotationComposer || taskCanvasComposer);
   const reportPendingDrawing = useCallback(
     (drawing: CommentCanvasDrawing | null) =>
       setComposingShapes(
-        activeAnnotationComposer && drawing?.shapes && drawing.shapes.length > 0
+        (activeAnnotationComposer || taskCanvasComposer) &&
+          drawing?.shapes &&
+          drawing.shapes.length > 0
           ? drawing.shapes
           : null,
       ),
-    [activeAnnotationComposer, setComposingShapes],
+    [activeAnnotationComposer, setComposingShapes, taskCanvasComposer],
   );
 
   useEffect(() => {
@@ -621,16 +678,17 @@ export function CommentsPanel({
           throw error;
         });
       }
-      // Task discussion is intentionally plain text. F1 rejects unsupported
-      // fields before this callback; keep a second guard at the write owner so
-      // a legacy adapter cannot silently drop structured payload data.
+      // F1 rejects unsupported fields before this callback; keep a second guard
+      // at the write owner so a legacy adapter cannot silently drop structured
+      // payload data. Image task comments may carry only their drawing.
       if (
         payload.mentions.length > 0 ||
         payload.attachments.length > 0 ||
-        payload.canvas_drawing ||
+        (payload.canvas_drawing &&
+          (submissionTarget.kind !== "task" || !enableTaskCanvasDrawing || !enableCanvasDrawing)) ||
         payload.anchor
       ) {
-        throw new Error("任务留言仅支持纯文本");
+        throw new Error("当前任务留言不支持该内容");
       }
       if (!submissionTarget.projectId || !submissionTarget.taskId) return;
       return createTaskFeedbackMut.mutateAsync({
@@ -639,9 +697,17 @@ export function CommentsPanel({
         project_id: submissionTarget.projectId,
         task_id: submissionTarget.taskId,
         body: payload.body,
+        canvas_drawing: payload.canvas_drawing,
       });
     },
-    [createCommentMut, createTaskFeedbackMut, draftStore, sendTarget],
+    [
+      createCommentMut,
+      createTaskFeedbackMut,
+      draftStore,
+      enableCanvasDrawing,
+      enableTaskCanvasDrawing,
+      sendTarget,
+    ],
   );
 
   const mutationScopeKey = JSON.stringify([
@@ -969,12 +1035,10 @@ export function CommentsPanel({
               const isResolved = annotationData
                 ? annotationData.is_resolved
                 : feedbackData?.status === "resolved";
-              const hoverShapes = isAnnotation
-                ? annotationData.canvas_drawing?.shapes &&
-                  annotationData.canvas_drawing.shapes.length > 0
-                  ? annotationData.canvas_drawing.shapes
-                  : null
-                : null;
+              const hoverShapes =
+                data.canvas_drawing?.shapes && data.canvas_drawing.shapes.length > 0
+                  ? data.canvas_drawing.shapes
+                  : null;
               const rowAnnotationId = annotationData?.annotation_id ?? null;
               const isNavigationAnnotation = readOverride?.annotationId === rowAnnotationId;
               const rowAnnotationAvailable = isNavigationAnnotation
@@ -1119,10 +1183,10 @@ export function CommentsPanel({
                     </button>
                   )}
 
-                  {annotationData && annotationData.canvas_drawing?.shapes?.length ? (
+                  {data.canvas_drawing?.shapes?.length ? (
                     <div className="mt-1.5">
                       <CanvasDrawingPreview
-                        drawing={annotationData.canvas_drawing}
+                        drawing={data.canvas_drawing}
                         width={220}
                         backgroundUrl={backgroundUrl}
                         imageWidth={imageWidth}
@@ -1277,11 +1341,11 @@ export function CommentsPanel({
                   : createTaskFeedbackMut.isPending
                 : false
             }
-            backgroundUrl={popupAnnotationComposer ? backgroundUrl : null}
+            backgroundUrl={canvasDrawingTargetEnabled ? backgroundUrl : null}
             imageWidth={imageWidth}
             imageHeight={imageHeight}
-            enableCanvasDrawing={popupAnnotationComposer ? enableCanvasDrawing : false}
-            liveCanvas={activeAnnotationComposer ? liveCanvas : undefined}
+            enableCanvasDrawing={canvasDrawingTargetEnabled ? enableCanvasDrawing : false}
+            liveCanvas={activeAnnotationComposer || taskCanvasComposer ? liveCanvas : undefined}
             anchor={
               sendTarget?.kind === "annotation" && sendTarget.annotationId === annotationId
                 ? commentAnchor

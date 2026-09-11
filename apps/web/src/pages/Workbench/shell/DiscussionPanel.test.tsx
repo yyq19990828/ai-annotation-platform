@@ -10,8 +10,31 @@ const commentCounts = vi.hoisted(() => ({
 vi.mock("@/hooks/useTaskDiscussion", () => ({ useTaskDiscussion: () => commentCounts }));
 
 vi.mock("./CommentsPanel", () => ({
-  CommentsPanel: ({ forceTab }: { forceTab: string }) => (
-    <div data-testid={`comments-${forceTab}`} />
+  CommentsPanel: ({
+    forceTab,
+    annotationDiscussionRequest,
+    onAnnotationDiscussionRequestConsumed,
+  }: {
+    forceTab: string;
+    annotationDiscussionRequest?: { requestId: string } | null;
+    onAnnotationDiscussionRequestConsumed?: (requestId: string) => void;
+  }) => (
+    <>
+      <div
+        data-testid={`comments-${forceTab}`}
+        data-annotation-request={annotationDiscussionRequest?.requestId ?? ""}
+      />
+      {annotationDiscussionRequest && (
+        <button
+          type="button"
+          onClick={() =>
+            onAnnotationDiscussionRequestConsumed?.(annotationDiscussionRequest.requestId)
+          }
+        >
+          consume annotation request
+        </button>
+      )}
+    </>
   ),
 }));
 vi.mock("./DiscussionIssuesTab", () => ({
@@ -40,6 +63,31 @@ beforeEach(() => {
 });
 
 describe("DiscussionPanel Mask 质检", () => {
+  it("passes a guarded annotation discussion request and clears it after consumption", () => {
+    const onConsumed = vi.fn();
+    const request = {
+      requestId: "annotation-request",
+      projectId: baseProps.projectId,
+      taskId: baseProps.taskId,
+      annotationId: "annotation-1",
+    };
+    render(
+      <DiscussionPanel
+        {...baseProps}
+        annotationId="annotation-1"
+        annotationDiscussionRequest={request}
+        onAnnotationDiscussionRequestConsumed={onConsumed}
+      />,
+    );
+    expect(screen.getByTestId("comments-comments")).toHaveAttribute(
+      "data-annotation-request",
+      request.requestId,
+    );
+    expect(onConsumed).toHaveBeenCalledWith(request.requestId);
+    fireEvent.click(screen.getByRole("button", { name: "consume annotation request" }));
+    expect(screen.getByTestId("comments-comments")).toHaveAttribute("data-annotation-request", "");
+  });
+
   it("activates a validated notification once without replay on tab changes", () => {
     const navigation: DiscussionNavigation = {
       state: {

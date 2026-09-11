@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, PositiveInt, model_validator
 from uuid import UUID
 from datetime import datetime
 
@@ -26,6 +26,7 @@ __all__ = [
     "AnnotationCommentUpdate",
     "AnnotationCommentOut",
     "AnnotationCommentListPage",
+    "AnnotationCommentCountsOut",
     "TaskDiscussionItem",
     "TaskDiscussionPage",
     "CommentAttachmentUploadInitRequest",
@@ -88,6 +89,12 @@ class AnnotationCommentListPage(BaseModel):
 
     items: list[AnnotationCommentOut]
     next_cursor: str | None = None
+
+
+class AnnotationCommentCountsOut(BaseModel):
+    """Exact active annotation-comment counts for a visible task."""
+
+    counts: dict[str, PositiveInt] = Field(default_factory=dict)
 
 
 class TaskDiscussionItem(BaseModel):

@@ -137,11 +137,12 @@ export function discussionTargetCapabilities(
   target: DiscussionTarget,
 ): DiscussionTargetCapabilities {
   const annotation = target.kind === "annotation";
+  const task = target.kind === "task";
   return {
     text: true,
     mentions: annotation,
     attachments: annotation,
-    canvasDrawing: annotation,
+    canvasDrawing: annotation || task,
     anchor: annotation,
   };
 }
@@ -704,9 +705,14 @@ export function createDiscussionDraftStore({
     followAnnotationSelection: (projectId, taskId, annotationId) => {
       if (!ownerIsCurrent()) return;
       const key = projectTaskKey(projectId, taskId);
+      const hadSelection = selectedAnnotations.has(key);
       if (selectedAnnotations.get(key) === annotationId) return;
       selectedAnnotations.set(key, annotationId);
       // Selection changes switch drafts; their contents stay with the original target.
+      // The first null observation is only the shell's default state. Keep an
+      // existing recovery/explicit target until the user actually clears a
+      // selected annotation.
+      if (!annotationId && !hadSelection) return;
       store.setSendTarget(
         projectId,
         taskId,

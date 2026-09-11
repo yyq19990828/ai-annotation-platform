@@ -89,7 +89,7 @@ type VideoGeometry =
  *   - video : video* / hidden|lockedVideoTrackIds + video 回调 (stageKind="video" 才消费)
  *   - image : fileUrl / blurhash / thumbnailUrl / tool / vp / image 标注回调 (stageKind="image" 才消费)
  *   - ai    : samCandidates / samActive* / sam 子工具 / onRefineSamCandidate
- *   - editors: maskEditor / polygonDraft / canvas* / projectRenderingConfig / issue*
+ *   - editors: maskEditor / polygonDraft / canvas* / projectRenderingConfig / issue* / comment badges
  */
 interface WorkbenchStageHostCommonProps {
   maskCompareStore?: MaskCompareTileStore | null;
@@ -346,6 +346,10 @@ interface WorkbenchStageHostEditorProps {
   issueNavigationPending?: boolean;
   onIssuePinDrop?: (x: number, y: number, frame?: number) => void;
   onSeekIssueFrame?: (frame: number) => void;
+  /** Per-annotation saved comment totals for the image canvas. */
+  annotationCommentCounts?: Record<string, number>;
+  /** Open an annotation's comment list through the guarded Workbench shell. */
+  onOpenAnnotationComments?: (annotationId: string) => void;
 }
 
 interface WorkbenchStageHostProps {
@@ -555,6 +559,8 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
       issueNavigationPending,
       onIssuePinDrop,
       onSeekIssueFrame,
+      annotationCommentCounts,
+      onOpenAnnotationComments,
     } = editorProps ?? ({} as WorkbenchStageHostEditorProps);
     return (
       <div className="relative flex min-h-0 flex-1 flex-col" data-workbench-stage>
@@ -767,6 +773,8 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onIssuePinClick={onIssuePinClick}
             issuePinDropArmed={issuePinDropArmed}
             onIssuePinDrop={onIssuePinDrop}
+            annotationCommentCounts={annotationCommentCounts}
+            onOpenAnnotationComments={onOpenAnnotationComments}
           />
         )}
         {stageKind === "3d" && overlays}

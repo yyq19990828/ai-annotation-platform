@@ -6,6 +6,7 @@ import { AssigneeAvatarStack } from "@/components/ui/AssigneeAvatarStack";
 import { SkipTaskModal, type SkipReason } from "./SkipTaskModal";
 import { BatchStatusBadge } from "@/components/badges/BatchStatusBadge";
 import { useTheme } from "@/hooks/useTheme";
+import { useBugDrawerStore } from "@/stores/bugDrawerStore";
 import type { TaskResponse } from "@/types";
 import type { VideoSegment } from "@/api/videoTracker";
 import type { WorkspaceSide, WorkspaceSideState } from "../layout/workbenchLayoutExecutor";
@@ -132,6 +133,7 @@ export function Topbar({
   submitLabel = "提交",
 }: TopbarProps) {
   const { resolved, setTheme } = useTheme();
+  const openBugDrawer = useBugDrawerStore((state) => state.openDrawer);
   // v0.8.7 F7 · 跳过任务 modal 状态
   const [skipOpen, setSkipOpen] = useState(false);
   const status = task?.status;
@@ -480,6 +482,17 @@ export function Topbar({
             <Button
               variant="ghost"
               size="sm"
+              onClick={() => openBugDrawer()}
+              title="报告 Bug / 提交反馈"
+              aria-label="报告 Bug / 提交反馈"
+              data-testid="workbench-report-bug"
+              className="justify-center w-7 h-7 p-0 text-muted-foreground bg-transparent border-transparent rounded-[var(--radius-sm)] shadow-none hover:text-foreground hover:bg-muted"
+            >
+              <Icon name="bug" size={14} />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => setTheme(nextTheme)}
               title={themeTitle}
               aria-label={themeTitle}
@@ -508,6 +521,7 @@ export function Topbar({
                 ...smartItems,
                 { id: "hotkeys", label: "快捷键", onSelect: onShowHotkeys },
                 { id: "theme", label: themeActionLabel, onSelect: () => setTheme(nextTheme) },
+                { id: "bug-report", label: "报告 Bug / 提交反馈", onSelect: openBugDrawer },
                 ...(onOpenWorkbenchSettings
                   ? [{ id: "settings", label: "工作台设置", onSelect: onOpenWorkbenchSettings }]
                   : []),

@@ -52,6 +52,19 @@ describe("createDiscussionDraftStore", () => {
     expect(store.getSendTarget("project-a", "task-a")).toBeUndefined();
   });
 
+  it("does not turn the first empty selection into a task recovery target", () => {
+    const store = makeStore();
+
+    store.followAnnotationSelection("project-a", "task-a", null);
+
+    expect(store.getSendTarget("project-a", "task-a")).toBeUndefined();
+    expect(store.getDraft(task)).toBeUndefined();
+
+    store.followAnnotationSelection("project-a", "task-a", "annotation-a");
+    store.followAnnotationSelection("project-a", "task-a", null);
+    expect(store.getSendTarget("project-a", "task-a")).toEqual(task);
+  });
+
   it("keeps task A/B/A drafts independently and creates them lazily", () => {
     const store = makeStore();
 
@@ -85,6 +98,16 @@ describe("createDiscussionDraftStore", () => {
     ).toThrow(UnsupportedDiscussionFieldError);
     expect(store.getDraft(task)).toBeDefined();
     expect(store.getDraft(task)?.body).toBe("");
+  });
+
+  it("keeps task drawings in the task draft and immutable submission snapshot", () => {
+    const store = makeStore();
+    store.patchDraft(task, { canvas_drawing: line() });
+    const submission = store.beginSubmission(task);
+    expect(submission?.target).toEqual(task);
+    expect(submission?.payload.canvas_drawing).toEqual(line());
+    expect(store.resolveSubmission(submission!)).toBe(true);
+    expect(store.getDraft(task)).toMatchObject({ canvas_drawing: null, status: "idle" });
   });
 
   it("allows one request per target and protects newer edits from a late success", () => {

@@ -8,9 +8,13 @@ import { createRef, forwardRef } from "react";
 
 const threeDWorkbenchMock = vi.hoisted(() => vi.fn());
 const videoWorkbenchMock = vi.hoisted(() => vi.fn());
+const imageWorkbenchMock = vi.hoisted(() => vi.fn());
 
 vi.mock("../stages/image/ImageWorkbench", () => ({
-  ImageWorkbench: () => <div data-testid="image-workbench" />,
+  ImageWorkbench: (props: Record<string, unknown>) => {
+    imageWorkbenchMock(props);
+    return <div data-testid="image-workbench" />;
+  },
 }));
 vi.mock("../stages/video/VideoWorkbench", () => ({
   VideoWorkbench: forwardRef(function VideoWorkbench(props: { overlays?: React.ReactNode }, _ref) {
@@ -162,11 +166,19 @@ function propsFor(stageKind: "image" | "video" | "3d"): StageHostProps {
 
 describe("WorkbenchStageHost", () => {
   it("stageKind=image: renders ImageWorkbench, not Video / 3d", () => {
-    render(<WorkbenchStageHost ref={createRef()} {...propsFor("image")} />);
+    const props = propsFor("image");
+    const annotationCommentCounts = { a1: 3 };
+    const onOpenAnnotationComments = vi.fn();
+    props.editors!.annotationCommentCounts = annotationCommentCounts;
+    props.editors!.onOpenAnnotationComments = onOpenAnnotationComments;
+    render(<WorkbenchStageHost ref={createRef()} {...props} />);
 
     expect(screen.getByTestId("image-workbench")).toBeTruthy();
     expect(screen.queryByTestId("video-workbench")).toBeNull();
     expect(screen.queryByTestId("three-d-workbench")).toBeNull();
+    expect(imageWorkbenchMock).toHaveBeenCalledWith(
+      expect.objectContaining({ annotationCommentCounts, onOpenAnnotationComments }),
+    );
   });
 
   it("stageKind=video: forwards overlays to the video viewport", () => {

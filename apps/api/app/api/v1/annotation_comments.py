@@ -15,7 +15,7 @@ from datetime import datetime
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, RedirectResponse
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import (
@@ -31,6 +31,7 @@ from app.db.models.user import User
 from app.schemas.annotation_comment import (
     ATTACHMENT_KEY_PREFIX,
     AnnotationCommentCreate,
+    AnnotationCommentCountsOut,
     AnnotationCommentListPage,
     AnnotationCommentOut,
     AnnotationCommentUpdate,
@@ -206,6 +207,37 @@ async def list_task_discussion_page(
         annotation_id=annotation_id,
         limit=limit,
         cursor=cursor,
+    )
+
+
+@router.get(
+    "/tasks/{task_id}/discussion/annotation-counts",
+    response_model=AnnotationCommentCountsOut,
+)
+async def list_annotation_comment_counts(
+    task_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ALL_ANNOTATORS)),
+):
+    """Return sparse counts for active comments on available saved annotations."""
+
+    task = await require_visible_task(db, task_id, current_user)
+    rows = (
+        await db.execute(
+            select(AnnotationComment.annotation_id, func.count(AnnotationComment.id))
+            .join(Annotation, Annotation.id == AnnotationComment.annotation_id)
+            .where(
+                Annotation.task_id == task_id,
+                Annotation.project_id == task.project_id,
+                Annotation.is_active.is_(True),
+                Annotation.was_cancelled.is_(False),
+                AnnotationComment.is_active.is_(True),
+            )
+            .group_by(AnnotationComment.annotation_id)
+        )
+    ).all()
+    return AnnotationCommentCountsOut(
+        counts={str(annotation_id): int(count) for annotation_id, count in rows}
     )
 
 

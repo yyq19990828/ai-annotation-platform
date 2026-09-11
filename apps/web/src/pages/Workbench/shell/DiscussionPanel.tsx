@@ -1,6 +1,14 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ComponentProps } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+} from "react";
 import { Icon } from "@/components/ui/Icon";
-import { CommentsPanel } from "./CommentsPanel";
+import { CommentsPanel, type DiscussionAnnotationReadRequest } from "./CommentsPanel";
 import { DiscussionIssuesTab } from "./DiscussionIssuesTab";
 import { MaskQcPanel } from "./MaskQcPanel";
 import { useActiveIssueStore } from "../state/useActiveIssueStore";
@@ -83,11 +91,14 @@ type CommentsBridgeProps = Pick<
   | "imageWidth"
   | "imageHeight"
   | "enableCanvasDrawing"
+  | "enableTaskCanvasDrawing"
   | "liveCanvas"
   | "commentAnchor"
   | "onSeekFrame"
   | "annotationClassById"
   | "onSelectAnnotation"
+  | "annotationDiscussionRequest"
+  | "onAnnotationDiscussionRequestConsumed"
 >;
 
 interface DiscussionPanelProps extends CommentsBridgeProps {
@@ -128,11 +139,14 @@ export function DiscussionPanel({
   imageWidth,
   imageHeight,
   enableCanvasDrawing,
+  enableTaskCanvasDrawing,
   liveCanvas,
   commentAnchor,
   onSeekFrame,
   annotationClassById,
   onSelectAnnotation,
+  annotationDiscussionRequest,
+  onAnnotationDiscussionRequestConsumed,
   onDetach,
   floating = false,
   collapsed: collapsedProp,
@@ -144,9 +158,13 @@ export function DiscussionPanel({
   // v0.20.22 · 受控优先 (走 workbench.layout 持久), 缺省回落组件内会话态 (测试/独立使用)。
   const [collapsedLocal, setCollapsedLocal] = useState(false);
   const collapsed = collapsedProp ?? collapsedLocal;
-  const toggleCollapsed = onToggleCollapsed ?? (() => setCollapsedLocal((v) => !v));
+  const toggleCollapsedLocal = useCallback(() => setCollapsedLocal((v) => !v), []);
+  const toggleCollapsed = onToggleCollapsed ?? toggleCollapsedLocal;
   const [replyFocus, setReplyFocus] = useState<DiscussionReplyFocus | null>(null);
   const [commentFocus, setCommentFocus] = useState<DiscussionCommentFocus | null>(null);
+  const [annotationReadRequest, setAnnotationReadRequest] =
+    useState<DiscussionAnnotationReadRequest | null>(null);
+  const consumedAnnotationRequestRef = useRef<string | null>(null);
   // Share the complete feed's cached total, independent of the active tab or
   // reading filter. This observer also receives existing mutation invalidations.
   const commentCountQuery = useTaskDiscussion(taskId, "all", null, Boolean(projectId), projectId);
@@ -162,6 +180,7 @@ export function DiscussionPanel({
       useActiveIssueStore.getState().closeIssueDetail();
       setReplyFocus(null);
       setCommentFocus(null);
+      setAnnotationReadRequest(null);
       detailOwnerRef.current = detailOwner;
     }
     return () => {
@@ -183,6 +202,34 @@ export function DiscussionPanel({
     };
   }, [detailOwner]);
 
+  useEffect(() => {
+    const request = annotationDiscussionRequest;
+    if (
+      !request ||
+      request.projectId !== projectId ||
+      request.taskId !== taskId ||
+      !request.annotationId
+    )
+      return;
+    const requestKey = `${currentUserId ?? ""}:${request.projectId}:${request.taskId}:${request.requestId}`;
+    if (consumedAnnotationRequestRef.current === requestKey) return;
+    consumedAnnotationRequestRef.current = requestKey;
+    setReplyFocus(null);
+    setCommentFocus(null);
+    setAnnotationReadRequest(request);
+    setTab("comments");
+    if (collapsed) toggleCollapsed();
+    onAnnotationDiscussionRequestConsumed?.(request.requestId);
+  }, [
+    annotationDiscussionRequest,
+    collapsed,
+    onAnnotationDiscussionRequestConsumed,
+    projectId,
+    taskId,
+    currentUserId,
+    toggleCollapsed,
+  ]);
+
   const navigationState = navigation?.state;
   useEffect(() => {
     if (
@@ -196,6 +243,7 @@ export function DiscussionPanel({
     const { target, requestId } = navigationState;
     if (target.kind === "issue" && projectId && taskId) {
       setCommentFocus(null);
+      setAnnotationReadRequest(null);
       setTab("issues");
       useActiveIssueStore
         .getState()
@@ -205,6 +253,7 @@ export function DiscussionPanel({
       );
     } else if (target.kind === "comment") {
       setReplyFocus(null);
+      setAnnotationReadRequest(null);
       setTab("comments");
       setCommentFocus({
         requestId,
@@ -406,11 +455,18 @@ export function DiscussionPanel({
               imageWidth={imageWidth}
               imageHeight={imageHeight}
               enableCanvasDrawing={enableCanvasDrawing}
+              enableTaskCanvasDrawing={enableTaskCanvasDrawing}
               liveCanvas={liveCanvas}
               commentAnchor={commentAnchor}
               onSeekFrame={onSeekFrame}
               annotationClassById={annotationClassById}
               onSelectAnnotation={onSelectAnnotation}
+              annotationDiscussionRequest={annotationReadRequest}
+              onAnnotationDiscussionRequestConsumed={(requestId) =>
+                setAnnotationReadRequest((current) =>
+                  current?.requestId === requestId ? null : current,
+                )
+              }
               hideTabs
               forceTab={tab}
             />

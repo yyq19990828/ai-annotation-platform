@@ -46,6 +46,7 @@ class FeedbackService:
         body: str,
         attachments: list[dict],
         thread_parent_id: uuid.UUID | None,
+        canvas_drawing: dict | None = None,
     ) -> AnnotationFeedback:
         if anchor_position and anchor_position.get("video_context") is not None:
             # A reply copies a persisted anchor, including future versions or a
@@ -83,6 +84,7 @@ class FeedbackService:
             title=title,
             body=body,
             attachments=attachments,
+            canvas_drawing=canvas_drawing,
             thread_parent_id=thread_parent_id,
             author_id=author_id,
             status="open",

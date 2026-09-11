@@ -410,7 +410,9 @@ export function useWorkbenchState() {
     ) => {
       if (
         origin &&
-        (origin.target.kind !== "annotation" || origin.target.annotationId !== annotationId)
+        ((origin.target.kind === "annotation" && origin.target.annotationId !== annotationId) ||
+          (origin.target.kind === "task" && annotationId !== null) ||
+          origin.target.kind === "issue")
       ) {
         return;
       }

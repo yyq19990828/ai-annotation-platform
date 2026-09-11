@@ -83,7 +83,7 @@ key 的权限在路由层经 `require_scopes` 校验，缺少所需 scope 的请
 
 ![我的反馈](../images/settings/my-feedback.png)
 
-罗列当前用户通过右下角浮动按钮提交过的 BUG 工单，按时间倒序。每条显示 `display_id` + 标题 + 严重度 + 状态。
+罗列当前用户通过工作台顶栏或其他页面右下角反馈入口提交过的 BUG 工单，按时间倒序。每条显示 `display_id` + 标题 + 严重度 + 状态。
 
 点击展开查看：
 

@@ -365,7 +365,8 @@ export function CommentInput({
   const targetCapabilities = effectiveTarget
     ? discussionTargetCapabilities(effectiveTarget)
     : { text: true, mentions: true, attachments: true, canvasDrawing: true, anchor: true };
-  const isAnnotationComposer = targetCapabilities.attachments;
+  const attachmentsEnabled = targetCapabilities.attachments;
+  const canvasDrawingEnabled = Boolean(enableCanvasDrawing && targetCapabilities.canvasDrawing);
   const sessionTarget = Boolean(store && effectiveTarget);
   const storedCanvasDraft = store && effectiveTarget ? store.getDraft(effectiveTarget) : undefined;
   const canvasDraftActive = Boolean(draft?.canvasActive || storedCanvasDraft?.canvasActive);
@@ -449,13 +450,7 @@ export function CommentInput({
       bumpRequestState();
     }
     const liveMode = canvasModeRef.current;
-    const oldLiveDraftActive = activeLiveModeDraft;
-    if (
-      liveMode?.kind === "live" &&
-      liveMode.identity !== identity &&
-      !liveCanvas?.active &&
-      !oldLiveDraftActive
-    ) {
+    if (liveMode?.kind === "live" && liveMode.identity !== identity && !liveCanvas?.active) {
       canvasModeRef.current = null;
       bumpRequestState();
     }
@@ -660,9 +655,8 @@ export function CommentInput({
       const modeDraftActive = activeLiveModeDraft;
       if (
         mode?.kind === "live" &&
-        (mode.identity === targetIdentity || !modeDraftActive) &&
         !liveCanvas?.active &&
-        !modeDraftActive
+        (mode.identity !== targetIdentity || !modeDraftActive)
       ) {
         canvasModeRef.current = null;
         bumpRequestState();
@@ -734,7 +728,7 @@ export function CommentInput({
         files.length === 0 ||
         activeUploadRequestsRef.current.has(targetIdentity) ||
         busy ||
-        !isAnnotationComposer
+        !attachmentsEnabled
       )
         return;
       const uploadTarget = effectiveTarget;
@@ -806,7 +800,7 @@ export function CommentInput({
       annotationId,
       busy,
       effectiveTarget,
-      isAnnotationComposer,
+      attachmentsEnabled,
       bumpRequestState,
       pushToast,
       store,
@@ -937,7 +931,7 @@ export function CommentInput({
       busy ||
       uploadingCurrent ||
       submittingCurrent ||
-      !isAnnotationComposer
+      !canvasDrawingEnabled
     )
       return;
     const origin = store && effectiveTarget ? store.makeOrigin(effectiveTarget) : null;
@@ -957,7 +951,7 @@ export function CommentInput({
     effectiveCanvasDrawing,
     effectiveTarget,
     isAvailable,
-    isAnnotationComposer,
+    canvasDrawingEnabled,
     liveCanvas,
     submittingCurrent,
     store,
@@ -976,7 +970,7 @@ export function CommentInput({
       busy ||
       uploadingCurrent ||
       submittingCurrent ||
-      !isAnnotationComposer
+      !canvasDrawingEnabled
     )
       return;
     const origin = store && effectiveTarget ? store.makeOrigin(effectiveTarget) : null;
@@ -1007,7 +1001,7 @@ export function CommentInput({
     imageHeight,
     imageWidth,
     isAvailable,
-    isAnnotationComposer,
+    canvasDrawingEnabled,
     liveCanvas?.active,
     submittingCurrent,
     store,
@@ -1123,7 +1117,7 @@ export function CommentInput({
       )}
       <div className="flex items-center justify-between gap-1.5">
         <div className="flex items-center gap-2">
-          {isAnnotationComposer && (
+          {attachmentsEnabled && (
             <label
               className={cn(
                 "inline-flex items-center gap-1 text-xs text-muted-foreground",
@@ -1144,7 +1138,7 @@ export function CommentInput({
               />
             </label>
           )}
-          {enableCanvasDrawing && isAnnotationComposer && (
+          {canvasDrawingEnabled && (
             <button
               type="button"
               onClick={openCanvasEditor}
@@ -1176,7 +1170,7 @@ export function CommentInput({
                 : "弹窗批注"}
             </button>
           )}
-          {liveCanvas && isAnnotationComposer && (
+          {liveCanvas && canvasDrawingEnabled && (
             <button
               type="button"
               onClick={startLiveCanvas}
@@ -1223,7 +1217,7 @@ export function CommentInput({
           )}
         </div>
       )}
-      {enableCanvasDrawing && isAnnotationComposer && (
+      {canvasDrawingEnabled && (
         <CanvasDrawingEditor
           key={targetIdentity}
           open={canvasOpen && canvasSession?.identity === targetIdentity}

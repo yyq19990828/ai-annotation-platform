@@ -244,6 +244,7 @@ const feedbackData = (id: string) => ({
   author_id: "user-b",
   author_name: "Priya Mehta",
   attachments: [],
+  canvas_drawing: null,
   thread_parent_id: null,
   is_active: true,
   resolved_at: null,
@@ -308,6 +309,35 @@ afterEach(() => {
 });
 
 describe("CommentsPanel discussion feed", () => {
+  it("passes image task drawing capability and renders task drawing previews", () => {
+    const taskDrawing = { shapes: [{ type: "line" as const, points: [0, 0, 1, 1] }] };
+    mocks.taskQuery.data = {
+      pages: [
+        {
+          items: [
+            {
+              source: "feedback",
+              data: { ...feedbackData("task-drawing"), canvas_drawing: taskDrawing },
+              actions: { edit: false, delete: false, change_status: false, reply: false },
+            },
+          ],
+          next_cursor: null,
+          total: 1,
+        },
+      ],
+      pageParams: [undefined],
+    };
+    renderPanel({
+      enableCanvasDrawing: true,
+      enableTaskCanvasDrawing: true,
+      backgroundUrl: "/task-a.png",
+    });
+
+    expect(screen.getByTestId("mock-composer")).toHaveAttribute("data-canvas-enabled", "true");
+    expect(screen.getByTestId("mock-composer")).toHaveAttribute("data-background", "/task-a.png");
+    expect(screen.getByTestId("drawing-preview")).toBeInTheDocument();
+  });
+
   it("admits a new verified comment focus before falling back from a cleared selection", () => {
     const props = {
       annotationId: "annotation-a",

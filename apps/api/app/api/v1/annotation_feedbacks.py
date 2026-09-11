@@ -100,6 +100,7 @@ async def _to_out(
         author_id=entry.author_id,
         author_name=brief.name if brief else None,
         attachments=entry.attachments or [],
+        canvas_drawing=entry.canvas_drawing,
         thread_parent_id=entry.thread_parent_id,
         is_active=entry.is_active,
         resolved_at=entry.resolved_at,
@@ -187,6 +188,20 @@ async def _assert_create_scope(
                 detail="Feedback annotation does not belong to task",
             )
     return task
+
+
+def _assert_canvas_drawing_scope(
+    payload: AnnotationFeedbackCreate, task: Task | None
+) -> None:
+    """Task drawings are native root comments on image tasks only."""
+
+    if payload.canvas_drawing is None:
+        return
+    if task is None or task.file_type != "image":
+        raise HTTPException(
+            status_code=422,
+            detail="canvas_drawing requires an image task",
+        )
 
 
 async def _quality_anchor_is_current(
@@ -375,6 +390,7 @@ async def list_feedbacks(
                 author_id=r.author_id,
                 author_name=brief.name if brief else None,
                 attachments=r.attachments or [],
+                canvas_drawing=r.canvas_drawing,
                 thread_parent_id=r.thread_parent_id,
                 is_active=r.is_active,
                 resolved_at=r.resolved_at,
@@ -464,7 +480,8 @@ async def create_feedback(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(require_roles(*_ALL)),
 ):
-    await _assert_create_scope(db, payload, user)
+    task = await _assert_create_scope(db, payload, user)
+    _assert_canvas_drawing_scope(payload, task)
     svc = FeedbackService(db)
     root: AnnotationFeedback | None = None
     if payload.thread_parent_id is not None:
@@ -575,6 +592,11 @@ async def create_feedback(
         body=payload.body,
         attachments=payload.attachments,
         thread_parent_id=payload.thread_parent_id,
+        canvas_drawing=(
+            payload.canvas_drawing.model_dump(mode="json")
+            if payload.canvas_drawing is not None
+            else None
+        ),
     )
     await AuditService.log(
         db,
@@ -664,6 +686,7 @@ async def patch_feedback(
     if (
         payload.body is not None
         and not entry.attachments
+        and not (entry.canvas_drawing or {}).get("shapes")
         and not payload.body.strip()
         and (
             entry.thread_parent_id is not None

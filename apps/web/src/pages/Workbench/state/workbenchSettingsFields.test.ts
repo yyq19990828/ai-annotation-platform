@@ -39,7 +39,7 @@ describe("workbenchSettingsFields 注册表", () => {
   });
 
   it("注册表默认值与现状一致", () => {
-    expect(WORKBENCH_SETTING_FIELDS).toHaveLength(48);
+    expect(WORKBENCH_SETTING_FIELDS).toHaveLength(49);
     const byKey = Object.fromEntries(
       WORKBENCH_SETTING_FIELDS.map((f) => [f.key, getFieldValue(DEFAULT_WORKBENCH_PREFERENCES, f)]),
     );
@@ -52,6 +52,7 @@ describe("workbenchSettingsFields 注册表", () => {
       "common.petEnabled": true,
       "common.focusSelectionEnabled": false,
       "common.autoAdvanceOnDecide": true,
+      "common.showAnnotationComments": true,
       "common.crossFrameOverlayEnabled": false,
       "common.crossFrameOverlayK": 1,
       "common.crossFrameOverlayScope": "selected",
@@ -136,7 +137,7 @@ describe("settings presentation", () => {
   });
   it("all settings share six purpose groups without missing or duplicating fields", () => {
     const fields = getVisibleWorkbenchSettingFields();
-    expect(fields).toHaveLength(47);
+    expect(fields).toHaveLength(48);
     expect(fields.some((field) => field.hidden)).toBe(false);
     const groups = groupWorkbenchSettings(fields);
     expect(groups.map((group) => group.key)).toEqual(Object.keys(WORKBENCH_SETTING_GROUPS));
@@ -144,7 +145,7 @@ describe("settings presentation", () => {
       group.sections.flatMap((section) => section.fields.map((field) => field.key)),
     );
     expect(groupedKeys.sort()).toEqual(fields.map((field) => field.key).sort());
-    expect(new Set(groupedKeys).size).toBe(47);
+    expect(new Set(groupedKeys).size).toBe(48);
     const canvas = groups.find((group) => group.key === "canvas")!;
     expect(
       new Set(canvas.sections.flatMap((section) => section.fields.map((field) => field.category))),

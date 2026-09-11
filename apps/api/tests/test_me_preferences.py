@@ -96,6 +96,29 @@ async def test_patch_image_subtree_only_touches_submitted_field(
     assert resp.json()["workbench"]["image"]["controlPointsSize"] == 10
 
 
+async def test_annotation_comment_badges_default_true_and_persist_false(
+    httpx_client, annotator
+):
+    _, token = annotator
+    headers = _bearer(token)
+
+    response = await httpx_client.get(PREFS_URL, headers=headers)
+    assert response.status_code == 200
+    assert response.json()["workbench"]["common"]["showAnnotationComments"] is True
+
+    response = await httpx_client.patch(
+        PREFS_URL,
+        json={"workbench": {"common": {"showAnnotationComments": False}}},
+        headers=headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["workbench"]["common"]["showAnnotationComments"] is False
+
+    response = await httpx_client.get(PREFS_URL, headers=headers)
+    assert response.status_code == 200
+    assert response.json()["workbench"]["common"]["showAnnotationComments"] is False
+
+
 async def test_patch_ai_subtree_deep_merges_params_and_model(httpx_client, annotator):
     """v0.18.25 · ai 子树深一层合并: params_by_backend / model_by_backend 由不同前端 hook
     各自只提交自己那半子键, 互不冲掉 (区别于 workbench 的整子树替换)。"""
