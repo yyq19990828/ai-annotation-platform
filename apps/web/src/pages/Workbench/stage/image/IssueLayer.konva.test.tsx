@@ -57,4 +57,39 @@ describe("IssueLayer", () => {
       "4",
     );
   });
+
+  it("centers every pin symbol in a fixed box at zoom", () => {
+    const symbols = [
+      { id: "warn", symbol: "!", status: "open", severity: "warn", x: 0.1, y: 0.2 },
+      { id: "info", symbol: "i", status: "open", severity: "info", x: 0.2, y: 0.3 },
+      { id: "blocker", symbol: "×", status: "open", severity: "blocker", x: 0.3, y: 0.4 },
+      { id: "resolved", symbol: "✓", status: "resolved", severity: "warn", x: 0.4, y: 0.5 },
+      { id: "wont-fix", symbol: "–", status: "wont_fix", severity: "warn", x: 0.5, y: 0.6 },
+    ] as const;
+    render(
+      <IssueLayer
+        pixelIssues={symbols.map(({ id, status, severity, x, y }) => ({
+          ...issue(id, severity),
+          status,
+          anchor_position: { x, y },
+        }))}
+        imgW={1000}
+        imgH={500}
+        scale={2}
+      />,
+    );
+
+    symbols.forEach(({ symbol, x, y }, index) => {
+      const text = document.querySelectorAll('[data-konva="Text"]')[index];
+      expect(text).toHaveAttribute("data-text", symbol);
+      expect(text).toHaveAttribute("data-x", String(x * 1000 - 4));
+      expect(text).toHaveAttribute("data-y", String(y * 500 - 4));
+      expect(text).toHaveAttribute("data-width", "8");
+      expect(text).toHaveAttribute("data-height", "8");
+      expect(text).toHaveAttribute("data-align", "center");
+      expect(text).toHaveAttribute("data-verticalalign", "middle");
+      expect(text).not.toHaveAttribute("data-offsetx");
+      expect(text).not.toHaveAttribute("data-offsety");
+    });
+  });
 });

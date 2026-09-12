@@ -130,14 +130,16 @@ export function VideoKonvaIssueLayer({
       {onFrame.map((issue) => (
         <Text
           key={`issue-label-${issue.id}`}
-          x={issue.anchor_position.x * size.w}
-          y={issue.anchor_position.y * size.h}
+          x={issue.anchor_position.x * size.w - radius}
+          y={issue.anchor_position.y * size.h - radius}
+          width={radius * 2}
+          height={radius * 2}
           text={issuePinSymbol(issue.status, issue.severity)}
           fontSize={symbolSize}
           fontStyle="bold"
           fill={ringColor}
-          offsetX={symbolSize * 0.18}
-          offsetY={symbolSize * 0.6}
+          align="center"
+          verticalAlign="middle"
           listening={false}
         />
       ))}

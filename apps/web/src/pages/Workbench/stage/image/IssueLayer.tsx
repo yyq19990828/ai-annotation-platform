@@ -144,12 +144,16 @@ export function IssueLayer({
         return (
           <Text
             key={`label-${issue.id}`}
-            x={x - textSize / 2}
-            y={y - textSize / 2}
+            x={x - pinR}
+            y={y - pinR}
+            width={pinR * 2}
+            height={pinR * 2}
             text={issuePinSymbol(issue.status, issue.severity)}
             fontSize={textSize}
             fontStyle="bold"
             fill={ringColor}
+            align="center"
+            verticalAlign="middle"
             listening={false}
           />
         );
