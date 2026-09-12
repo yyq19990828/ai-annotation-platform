@@ -99,7 +99,7 @@ describe("useDashboard hooks", () => {
       wrapper: makeWrapper(),
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockApi.getAdminPeople).toHaveBeenCalledWith(params);
+    expect(mockApi.getAdminPeople).toHaveBeenCalledWith(params, expect.any(AbortSignal));
   });
 
   it("useAdminPersonDetail userId=null → enabled=false 不触发请求", async () => {
@@ -119,7 +119,12 @@ describe("useDashboard hooks", () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     // v0.12.6 (A3)：useAdminPersonDetail 签名扩为 (userId, period, project)，
     // project 默认 undefined 仍会透传到第三参。
-    expect(mockApi.getAdminPersonDetail).toHaveBeenCalledWith("u1", "4w", undefined);
+    expect(mockApi.getAdminPersonDetail).toHaveBeenCalledWith(
+      "u1",
+      "4w",
+      undefined,
+      expect.any(AbortSignal),
+    );
   });
 
   it("useAdminPersonDetail 自定义 period 透传", async () => {
@@ -127,6 +132,11 @@ describe("useDashboard hooks", () => {
       wrapper: makeWrapper(),
     });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(mockApi.getAdminPersonDetail).toHaveBeenCalledWith("u2", "30d", undefined);
+    expect(mockApi.getAdminPersonDetail).toHaveBeenCalledWith(
+      "u2",
+      "30d",
+      undefined,
+      expect.any(AbortSignal),
+    );
   });
 });

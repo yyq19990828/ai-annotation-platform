@@ -174,13 +174,15 @@ describe("AuditPage", () => {
     );
   });
 
-  it("detail 键值输入框在键名为空时 disabled", () => {
+  it("detail 键值输入框在键名为空时 disabled", async () => {
     renderUI();
     const valueInput = screen.getByPlaceholderText(/detail 键值/) as HTMLInputElement;
     expect(valueInput.disabled).toBe(true);
     const keyInput = screen.getByPlaceholderText(/detail 键名/);
     fireEvent.change(keyInput, { target: { value: "role" } });
-    expect((screen.getByPlaceholderText(/detail 键值/) as HTMLInputElement).disabled).toBe(false);
+    await waitFor(() =>
+      expect((screen.getByPlaceholderText(/detail 键值/) as HTMLInputElement).disabled).toBe(false),
+    );
   });
 
   it("切换到全部事件 → 移除 business_only 查询参数", async () => {

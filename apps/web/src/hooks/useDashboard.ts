@@ -60,9 +60,10 @@ export function useAdminPeople(params: {
   enabled?: boolean;
 }) {
   const { enabled = true, ...query } = params;
+  const ownerId = useAuthStore((state) => state.user?.id);
   return useQuery({
-    queryKey: ["dashboard", "admin", "people", query],
-    queryFn: () => dashboardApi.getAdminPeople(query),
+    queryKey: ["dashboard", "admin", "people", ownerId, query],
+    queryFn: ({ signal }) => dashboardApi.getAdminPeople(query, signal),
     enabled,
   });
 }
@@ -72,9 +73,10 @@ export function useAdminPersonDetail(
   period: string = "4w",
   project?: string,
 ) {
+  const ownerId = useAuthStore((state) => state.user?.id);
   return useQuery({
-    queryKey: ["dashboard", "admin", "people", "detail", userId, period, project],
-    queryFn: () => dashboardApi.getAdminPersonDetail(userId!, period, project),
+    queryKey: ["dashboard", "admin", "people", "detail", ownerId, userId, period, project],
+    queryFn: ({ signal }) => dashboardApi.getAdminPersonDetail(userId!, period, project, signal),
     enabled: Boolean(userId),
   });
 }

@@ -1,12 +1,13 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type CSSProperties,
   type KeyboardEvent,
   type MouseEvent,
 } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Icon } from "@/components/ui/Icon";
 import { Card } from "@/components/ui/Card";
@@ -24,7 +25,17 @@ import { REJECT_REASON_TYPE_LABELS } from "@/pages/Review/rejectReasonTypes";
 import { dashboardApi, type AdminPersonItem } from "@/api/dashboard";
 import { tasksApi } from "@/api/tasks";
 import { useToastStore } from "@/components/ui/Toast";
+import { isCurrentAuthOwner, useAuthStore } from "@/stores/authStore";
 import { PageContainer } from "@/components/layout/PageContainer";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { useUrlFilterState } from "@/hooks/useUrlFilterState";
+import {
+  ADMIN_PEOPLE_URL_DEFAULTS,
+  ADMIN_PEOPLE_URL_KEYS,
+  adminPeopleUrlCodec,
+  type PeoplePeriod,
+  type PeopleSort,
+} from "./adminPeopleUrlState";
 
 const ROLE_OPTS = [
   { v: "", label: "全部" },
@@ -53,12 +64,22 @@ const DISTRIBUTION_LINK_CLASS = `${DISTRIBUTION_ROW_CLASS} w-full cursor-pointer
 
 export function AdminPeoplePage() {
   const navigate = useNavigate();
-  const [sp, setSp] = useSearchParams();
-  const role = sp.get("role") || "";
-  const period = sp.get("period") || "7d";
-  const sort = sp.get("sort") || "throughput";
-  const q = sp.get("q") || "";
-  const project = sp.get("project") || "";
+  const authOwnerId = useAuthStore((state) => state.user?.id);
+  const urlState = useUrlFilterState({
+    codec: adminPeopleUrlCodec,
+    defaults: ADMIN_PEOPLE_URL_DEFAULTS,
+    ownedKeys: ADMIN_PEOPLE_URL_KEYS,
+  });
+  const { state: filters, issues, patch } = urlState;
+  const [queryDraft, setQueryDraft] = useState(filters.q);
+  const syncingQueryDraft = useRef(false);
+  const lastUrlQuery = useRef(filters.q);
+  const debouncedQuery = useDebouncedValue(queryDraft, 250);
+  const role = filters.role;
+  const period = filters.period;
+  const sort = filters.sort;
+  const q = filters.q;
+  const project = filters.project;
 
   const [activeUserId, setActiveUserId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -68,34 +89,59 @@ export function AdminPeoplePage() {
   const { role: userRole } = usePermissions();
   const isProjectAdmin = userRole === "project_admin";
   const { data: projects } = useProjects();
-  const projectOpts = projects ?? [];
+  const projectOpts = useMemo(() => projects ?? [], [projects]);
 
-  const setQuery = (key: string, value: string) => {
-    const next = new URLSearchParams(sp);
-    if (value) next.set(key, value);
-    else next.delete(key);
-    setSp(next, { replace: true });
-  };
+  useEffect(() => {
+    if (lastUrlQuery.current === filters.q) return;
+    lastUrlQuery.current = filters.q;
+    if (queryDraft !== filters.q) {
+      syncingQueryDraft.current = true;
+      setQueryDraft(filters.q);
+    }
+  }, [filters.q, queryDraft]);
+
+  useEffect(() => {
+    if (syncingQueryDraft.current) {
+      if (debouncedQuery === filters.q) syncingQueryDraft.current = false;
+      return;
+    }
+    const nextQuery = debouncedQuery.trim();
+    if (nextQuery === filters.q) return;
+    patch({ q: nextQuery }, { replace: true });
+  }, [debouncedQuery, filters.q, patch]);
 
   // project_admin 未选项目时自动选第一个(后端对其强制项目范围,不选会 403)。
   useEffect(() => {
     if (isProjectAdmin && !project && projectOpts.length > 0) {
-      setQuery("project", projectOpts[0].id);
+      patch({ project: projectOpts[0].id });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isProjectAdmin, project, projectOpts]);
+  }, [isProjectAdmin, patch, project, projectOpts]);
+
+  const peopleParams = useMemo(
+    () => ({
+      role: role || undefined,
+      project: project || undefined,
+      period,
+      sort,
+      q: q || undefined,
+    }),
+    [period, project, q, role, sort],
+  );
 
   const handleExport = async () => {
+    const ownerId = authOwnerId;
+    const token = useAuthStore.getState().token;
+    const isCurrentOwner = () =>
+      Boolean(
+        ownerId && token && token === useAuthStore.getState().token && isCurrentAuthOwner(ownerId),
+      );
+    if (!isCurrentOwner()) return;
     setExporting(true);
     try {
-      await dashboardApi.exportPeople({
-        role: role || undefined,
-        project: project || undefined,
-        period,
-        sort,
-        q: q || undefined,
-      });
+      await dashboardApi.exportPeople(peopleParams);
+      if (!isCurrentOwner()) return;
     } catch (e) {
+      if (!isCurrentOwner()) return;
       pushToast({
         kind: "error",
         msg: "导出失败",
@@ -107,11 +153,7 @@ export function AdminPeoplePage() {
   };
 
   const { data, isLoading } = useAdminPeople({
-    role: role || undefined,
-    project: project || undefined,
-    period,
-    sort,
-    q: q || undefined,
+    ...peopleParams,
     // project_admin 在自动选定项目前不发请求(避免 403 噪声)
     enabled: !(isProjectAdmin && !project),
   });
@@ -124,6 +166,11 @@ export function AdminPeoplePage() {
         <div>
           <h1 className="mb-1 text-xl font-semibold">成员绩效</h1>
           <p className="text-sm text-muted-foreground">全员效率卡片网格 · 点击卡片查看详情</p>
+          {!!issues.length && (
+            <div role="alert" className="mt-1 text-xs text-status-caution">
+              URL 绩效筛选无法完整恢复，已使用安全默认值。
+            </div>
+          )}
         </div>
         <div className="flex gap-2">
           <Button variant="ghost" onClick={handleExport} disabled={exporting}>
@@ -145,19 +192,19 @@ export function AdminPeoplePage() {
               label="角色"
               opts={ROLE_OPTS}
               value={role}
-              onChange={(v: string) => setQuery("role", v)}
+              onChange={(v: string) => patch({ role: v }, { replace: false })}
             />
             <FilterGroup
               label="时间"
               opts={PERIOD_OPTS}
               value={period}
-              onChange={(v: string) => setQuery("period", v)}
+              onChange={(v: string) => patch({ period: v as PeoplePeriod }, { replace: false })}
             />
             <FilterGroup
               label="排序"
               opts={SORT_OPTS}
               value={sort}
-              onChange={(v: string) => setQuery("sort", v)}
+              onChange={(v: string) => patch({ sort: v as PeopleSort }, { replace: false })}
             />
             {/* v0.12.6 (A3) · 项目级范围下拉 */}
             <div className="flex items-center gap-1.5">
@@ -165,7 +212,7 @@ export function AdminPeoplePage() {
               <select
                 className={`${FIELD_CLASS} max-w-[200px]`}
                 value={project}
-                onChange={(e) => setQuery("project", e.target.value)}
+                onChange={(e) => patch({ project: e.target.value }, { replace: false })}
                 aria-label="项目范围"
               >
                 {!isProjectAdmin && <option value="">全部项目（全局）</option>}
@@ -179,9 +226,11 @@ export function AdminPeoplePage() {
             <input
               type="search"
               placeholder="姓名 / 邮箱"
-              defaultValue={q}
+              value={queryDraft}
+              onChange={(e) => setQueryDraft(e.target.value)}
               onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
-                if (e.key === "Enter") setQuery("q", e.currentTarget.value);
+                if (e.key === "Enter")
+                  patch({ q: e.currentTarget.value.trim() }, { replace: true });
               }}
               className={`${FIELD_CLASS} ml-auto min-w-[200px]`}
             />
@@ -628,15 +677,21 @@ function DrillTaskList({
   rejectReasonType?: string;
   classNameFilter?: string;
 }) {
+  const ownerId = useAuthStore((state) => state.user?.id);
   const { data, isLoading } = useQuery({
-    queryKey: ["drill-tasks", projectId, assigneeId, rejectReasonType, classNameFilter],
-    queryFn: () =>
-      tasksApi.listByProject(projectId, {
-        assignee_id: assigneeId,
-        reject_reason_type: rejectReasonType,
-        class_name: classNameFilter,
-        limit: 20,
-      }),
+    queryKey: ["drill-tasks", ownerId, projectId, assigneeId, rejectReasonType, classNameFilter],
+    queryFn: ({ signal }) =>
+      tasksApi.listByProject(
+        projectId,
+        {
+          assignee_id: assigneeId,
+          reject_reason_type: rejectReasonType,
+          class_name: classNameFilter,
+          limit: 20,
+        },
+        { signal },
+      ),
+    enabled: Boolean(ownerId),
   });
   const tasks = data?.items ?? [];
   return (

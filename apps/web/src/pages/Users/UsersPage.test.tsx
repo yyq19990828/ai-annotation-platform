@@ -3,7 +3,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 
 const mockPushToast = vi.fn();
 const mockDeleteMutateAsync = vi.fn();
@@ -184,9 +184,23 @@ const INACTIVE_USER = {
   created_at: "2026-03-01T00:00:00Z",
 };
 
-function renderUI() {
+function LocationProbe() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  return (
+    <>
+      <output data-testid="location-search">{location.search}</output>
+      <button aria-label="浏览器后退" onClick={() => navigate(-1)} />
+      <button aria-label="浏览器前进" onClick={() => navigate(1)} />
+    </>
+  );
+}
+
+function renderUI(initialEntries: string | string[] = "/users", initialIndex?: number) {
+  const entries = Array.isArray(initialEntries) ? initialEntries : [initialEntries];
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={entries} initialIndex={initialIndex}>
+      <LocationProbe />
       <UsersPage />
     </MemoryRouter>,
   );
@@ -216,12 +230,14 @@ describe("UsersPage", () => {
     expect(screen.getByText("加载中...")).toBeInTheDocument();
   });
 
-  it("搜索框过滤：输入 'Alice' 后只显示 Alice", () => {
+  it("搜索框过滤：输入 'Alice' 后只显示 Alice", async () => {
     renderUI();
     const searchInput = screen.getByPlaceholderText(/搜索姓名或邮箱/);
     fireEvent.change(searchInput, { target: { value: "Alice" } });
-    expect(screen.getByText("Alice")).toBeInTheDocument();
-    expect(screen.queryByText("Bob")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("Alice")).toBeInTheDocument();
+      expect(screen.queryByText("Bob")).not.toBeInTheDocument();
+    });
   });
 
   it("点击「角色」tab → 显示角色卡片", () => {
@@ -337,5 +353,82 @@ describe("UsersPage", () => {
         expect.objectContaining({ project_id: "project-1", role: "annotator", status: "active" }),
       ),
     );
+  });
+
+  it("clears selected members when filters change and preserves them across pages", async () => {
+    mockUseUsers.mockReturnValue({ data: SAMPLE_USERS, total: 1000, pages: 40, isLoading: false });
+    renderUI("/users?page=2");
+
+    fireEvent.click(screen.getByLabelText("选择 Alice"));
+    expect(screen.getByText(/已选择 1 名成员/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("角色筛选"), { target: { value: "annotator" } });
+    await waitFor(() =>
+      expect(screen.getByTestId("location-search")).toHaveTextContent("?role=annotator"),
+    );
+    expect(screen.queryByText(/已选择 1 名成员/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("location-search")).toHaveTextContent("?role=annotator&page=2"),
+    );
+    fireEvent.click(screen.getByLabelText("选择 Alice"));
+    fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("location-search")).toHaveTextContent("?role=annotator&page=3"),
+    );
+    expect(screen.getByText(/已选择 1 名成员/)).toBeInTheDocument();
+  });
+
+  it("rehydrates filter state on browser back and forward", async () => {
+    mockUseUsers.mockReturnValue({ data: SAMPLE_USERS, total: 1000, pages: 40, isLoading: false });
+    renderUI(["/users", "/users?status=inactive&page=2&q=Alice&project_id=project-1"], 1);
+    expect(screen.getByLabelText("账号状态")).toHaveValue("inactive");
+    expect(screen.getByPlaceholderText(/搜索姓名或邮箱/)).toHaveValue("Alice");
+    expect(screen.getByLabelText("项目筛选")).toHaveValue("project-1");
+    fireEvent.click(screen.getByLabelText("选择 Alice"));
+    expect(screen.getByText(/已选择 1 名成员/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "浏览器后退" }));
+    await waitFor(() => {
+      expect(screen.getByLabelText("账号状态")).toHaveValue("active");
+      expect(screen.getByTestId("location-search")).toHaveTextContent(/^$/);
+    });
+    expect(screen.queryByText(/已选择 1 名成员/)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "浏览器前进" }));
+    await waitFor(() => {
+      expect(screen.getByLabelText("账号状态")).toHaveValue("inactive");
+      expect(screen.getByPlaceholderText(/搜索姓名或邮箱/)).toHaveValue("Alice");
+      expect(screen.getByLabelText("项目筛选")).toHaveValue("project-1");
+      expect(screen.getByTestId("location-search")).toHaveTextContent(
+        "?status=inactive&page=2&q=Alice&project_id=project-1",
+      );
+      expect(mockUseUsers).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          status: "inactive",
+          project_id: "project-1",
+          search: "Alice",
+          page: 2,
+          page_size: 25,
+        }),
+      );
+    });
+  });
+
+  it("records discrete member filter changes as browser history entries", async () => {
+    mockUseUsers.mockReturnValue({ data: SAMPLE_USERS, total: 1000, pages: 40, isLoading: false });
+    renderUI(["/users", "/users?status=inactive"], 0);
+
+    fireEvent.change(screen.getByLabelText("账号状态"), { target: { value: "inactive" } });
+    await waitFor(() => {
+      expect(screen.getByTestId("location-search")).toHaveTextContent("?status=inactive");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "浏览器后退" }));
+    await waitFor(() => {
+      expect(screen.getByTestId("location-search")).toHaveTextContent(/^$/);
+      expect(screen.getByLabelText("账号状态")).toHaveValue("active");
+    });
   });
 });

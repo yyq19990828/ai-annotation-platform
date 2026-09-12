@@ -12,7 +12,7 @@ last_reviewed: 2026-07-23
 
 ## 入口
 
-`/admin/audit-logs`（仅 super_admin 有前端入口；API 列表端点 project_admin 可访问，导出仅 super_admin）
+`/audit`（仅 super_admin 有前端入口；API 列表端点 project_admin 可访问，导出仅 super_admin）
 
 ## 表结构要点
 
@@ -100,6 +100,10 @@ last_reviewed: 2026-07-23
 - `business_only=true` 排除 `http.*` 中间件元数据行
 - `detail_key` + `detail_value`：`detail_json` JSONB 字段级过滤（走 GIN 索引），例如 `?detail_key=role&detail_value=super_admin`
 - 行内点击展开 `detail_json`
+
+条件和页码保存在地址中，刷新与浏览器前进后退可以恢复。文本停止输入 250ms 后应用；列表和导出使用同一组已应用条件。默认仅显示业务事件，选择“全部”后保留该范围。
+
+填写 `detail_key` 后，空白的 `detail_value` 是明确的空字符串条件。例如 `detail_key=role&detail_value=` 会查找该字段为空字符串的记录，不会省略此条件。
 
 ### 月度概览
 

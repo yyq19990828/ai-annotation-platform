@@ -7,6 +7,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { useAuthStore } from "@/stores/authStore";
 
 const mockUseAdminPeople = vi.fn();
 const mockUseAdminPersonDetail = vi.fn();
@@ -109,6 +110,15 @@ function renderUI(initialPath = "/admin/people") {
 
 describe("AdminPeoplePage", () => {
   beforeEach(() => {
+    useAuthStore.getState().setAuth("people-test-token", {
+      id: "people-owner",
+      name: "People owner",
+      email: "people@test.local",
+      role: "super_admin",
+      group_name: null,
+      status: "active",
+      created_at: "2026-01-01T00:00:00Z",
+    });
     mockUseAdminPeople.mockReturnValue({ data: undefined, isLoading: false });
     mockUseAdminPersonDetail.mockReturnValue({ data: undefined, isLoading: true });
     mockNavigate.mockClear();
@@ -289,6 +299,7 @@ describe("AdminPeoplePage", () => {
       expect(mockListByProject).toHaveBeenCalledWith(
         "pd",
         expect.objectContaining({ assignee_id: "u1", reject_reason_type: "missing" }),
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
       ),
     );
   });

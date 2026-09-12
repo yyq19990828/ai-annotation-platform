@@ -1,9 +1,13 @@
-import { lazy, Suspense, useState, useEffect, useCallback, useRef } from "react";
-import { bugReportsApi, type BugReportResponse, type BugReportDetail } from "@/api/bug-reports";
+import { lazy, Suspense, useState, useEffect, useMemo, useRef } from "react";
+import { bugReportsApi, type BugReportDetail } from "@/api/bug-reports";
 import { useToastStore } from "@/components/ui/Toast";
 import { Icon } from "@/components/ui/Icon";
 import { MarkdownBlock } from "@/components/bugreport/MarkdownBlock";
 import type { MarkdownEditorProps } from "@/components/markdown/MarkdownEditor";
+import { useUrlFilterState } from "@/hooks/useUrlFilterState";
+import { useBugReports } from "@/hooks/useBugReports";
+import { isCurrentAuthOwner, useAuthStore } from "@/stores/authStore";
+import { BUGS_URL_DEFAULTS, BUGS_URL_KEYS, bugsUrlCodec } from "./bugsUrlState";
 import styles from "./BugsPage.module.css";
 
 const STATUS_OPTIONS = ["new", "triaged", "in_progress", "fixed", "wont_fix", "duplicate"];
@@ -55,12 +59,46 @@ const severityClass: Record<string, string> = {
   critical: styles.severityCritical,
 };
 
+interface AuthOwnerSnapshot {
+  userId: string | null;
+  token: string | null;
+}
+
+function captureAuthOwner(): AuthOwnerSnapshot {
+  const current = useAuthStore.getState();
+  return { userId: current.user?.id ?? null, token: current.token };
+}
+
+function isCurrentOwner(snapshot: AuthOwnerSnapshot): boolean {
+  return Boolean(
+    snapshot.userId &&
+    snapshot.token &&
+    snapshot.token === useAuthStore.getState().token &&
+    isCurrentAuthOwner(snapshot.userId),
+  );
+}
+
 export function BugsPage() {
-  const [items, setItems] = useState<BugReportResponse[]>([]);
-  const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [filterStatus, setFilterStatus] = useState("");
-  const [filterSeverity, setFilterSeverity] = useState("");
+  const urlState = useUrlFilterState({
+    codec: bugsUrlCodec,
+    defaults: BUGS_URL_DEFAULTS,
+    ownedKeys: BUGS_URL_KEYS,
+  });
+  const { state: filters, issues, patch } = urlState;
+  const authOwnerId = useAuthStore((state) => state.user?.id ?? null);
+  const authToken = useAuthStore((state) => state.token);
+  const listParams = useMemo(
+    () => ({
+      status: filters.status || undefined,
+      severity: filters.severity || undefined,
+      limit: 50,
+    }),
+    [filters.severity, filters.status],
+  );
+  const listQuery = useBugReports(listParams);
+  const items = listQuery.data?.items ?? [];
+  const total = listQuery.data?.total ?? 0;
+  const loading = listQuery.isLoading;
   const [detailId, setDetailId] = useState<string | null>(null);
   const [detail, setDetail] = useState<BugReportDetail | null>(null);
   const [commentText, setCommentText] = useState("");
@@ -68,30 +106,29 @@ export function BugsPage() {
   const detailRequestRef = useRef(0);
   const activeDetailIdRef = useRef<string | null>(null);
   const commentRequestRef = useRef(0);
+  const authScopeRef = useRef<AuthOwnerSnapshot>({ userId: authOwnerId, token: authToken });
   const pushToast = useToastStore((s) => s.push);
 
-  const loadList = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await bugReportsApi.list({
-        status: filterStatus || undefined,
-        severity: filterSeverity || undefined,
-        limit: 50,
-      });
-      setItems(data.items);
-      setTotal(data.total);
-    } catch {
-      pushToast({ msg: "加载失败", kind: "error" });
-    } finally {
-      setLoading(false);
-    }
-  }, [filterStatus, filterSeverity, pushToast]);
+  useEffect(() => {
+    const previous = authScopeRef.current;
+    if (previous.userId === authOwnerId && previous.token === authToken) return;
+    authScopeRef.current = { userId: authOwnerId, token: authToken };
+    detailRequestRef.current += 1;
+    commentRequestRef.current += 1;
+    activeDetailIdRef.current = null;
+    setDetailId(null);
+    setDetail(null);
+    setCommentText("");
+    setPostingComment(false);
+  }, [authOwnerId, authToken]);
 
   useEffect(() => {
-    loadList();
-  }, [loadList]);
+    if (listQuery.error) pushToast({ msg: "加载失败", kind: "error" });
+  }, [listQuery.error, pushToast]);
 
   const loadDetail = async (id: string) => {
+    const owner = captureAuthOwner();
+    if (!isCurrentOwner(owner)) return;
     const requestId = ++detailRequestRef.current;
     commentRequestRef.current += 1;
     if (activeDetailIdRef.current !== id) setCommentText("");
@@ -101,31 +138,45 @@ export function BugsPage() {
     setPostingComment(false);
     try {
       const data = await bugReportsApi.get(id);
-      if (requestId !== detailRequestRef.current || activeDetailIdRef.current !== id) return;
+      if (
+        !isCurrentOwner(owner) ||
+        requestId !== detailRequestRef.current ||
+        activeDetailIdRef.current !== id
+      )
+        return;
       setDetail(data);
     } catch {
-      if (requestId === detailRequestRef.current && activeDetailIdRef.current === id) {
+      if (
+        isCurrentOwner(owner) &&
+        requestId === detailRequestRef.current &&
+        activeDetailIdRef.current === id
+      ) {
         pushToast({ msg: "加载详情失败", kind: "error" });
       }
     }
   };
 
   const updateStatus = async (id: string, status: string) => {
+    const owner = captureAuthOwner();
+    if (!isCurrentOwner(owner)) return;
     const detailScope = detailRequestRef.current;
     try {
       await bugReportsApi.update(id, { status });
+      if (!isCurrentOwner(owner)) return;
       pushToast({ msg: "状态已更新", kind: "success" });
-      void loadList();
+      void listQuery.refetch();
       if (activeDetailIdRef.current === id && detailRequestRef.current === detailScope) {
         void loadDetail(id);
       }
     } catch {
+      if (!isCurrentOwner(owner)) return;
       pushToast({ msg: "更新失败", kind: "error" });
     }
   };
 
   const addComment = async (submittedText = commentText) => {
-    if (!detailId || !submittedText.trim() || postingComment) return;
+    const owner = captureAuthOwner();
+    if (!isCurrentOwner(owner) || !detailId || !submittedText.trim() || postingComment) return;
     const body = submittedText.trim();
     if (codePointLength(body) > MAX_COMMENT_LENGTH) {
       pushToast({ msg: `评论不能超过 ${MAX_COMMENT_LENGTH} 个字符`, kind: "error" });
@@ -138,6 +189,7 @@ export function BugsPage() {
     try {
       await bugReportsApi.addComment(reportId, body);
       if (
+        !isCurrentOwner(owner) ||
         requestId !== commentRequestRef.current ||
         detailScope !== detailRequestRef.current ||
         activeDetailIdRef.current !== reportId
@@ -148,6 +200,7 @@ export function BugsPage() {
       void loadDetail(reportId);
     } catch {
       if (
+        isCurrentOwner(owner) &&
         requestId === commentRequestRef.current &&
         detailScope === detailRequestRef.current &&
         activeDetailIdRef.current === reportId
@@ -155,7 +208,9 @@ export function BugsPage() {
         pushToast({ msg: "评论失败", kind: "error" });
       }
     } finally {
-      if (requestId === commentRequestRef.current) setPostingComment(false);
+      if (isCurrentOwner(owner) && requestId === commentRequestRef.current) {
+        setPostingComment(false);
+      }
     }
   };
 
@@ -173,8 +228,8 @@ export function BugsPage() {
       {/* Filters */}
       <div className={styles.filters}>
         <select
-          value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
+          value={filters.status}
+          onChange={(e) => patch({ status: e.target.value }, { replace: false })}
           className={styles.select}
         >
           <option value="">全部状态</option>
@@ -185,8 +240,8 @@ export function BugsPage() {
           ))}
         </select>
         <select
-          value={filterSeverity}
-          onChange={(e) => setFilterSeverity(e.target.value)}
+          value={filters.severity}
+          onChange={(e) => patch({ severity: e.target.value }, { replace: false })}
           className={styles.select}
         >
           <option value="">全部严重度</option>
@@ -198,6 +253,11 @@ export function BugsPage() {
         </select>
         <span className={styles.totalText}>共 {total} 条</span>
       </div>
+      {!!issues.length && (
+        <div role="alert" className="mb-3 text-xs text-status-caution">
+          URL BUG 筛选无法完整恢复，已使用安全默认值。
+        </div>
+      )}
 
       {/* List */}
       <div className={detailId ? styles.layoutWithDetail : styles.layout}>

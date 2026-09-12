@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
 import { InvitationListPanel } from "./InvitationListPanel";
 const api = vi.hoisted(() => ({ page: vi.fn(), stats: vi.fn(), exportInvitations: vi.fn() }));
@@ -33,12 +34,17 @@ it("paginates 1000 invitations and shares selected filters with stats and export
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
-      <InvitationListPanel />
+      <MemoryRouter>
+        <InvitationListPanel />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
   fireEvent.click(await screen.findByRole("button", { name: "下一页" }));
   await screen.findByText("第 2 / 40 页 · 共 1000 条");
-  expect(api.page).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2, page_size: 25 }));
+  expect(api.page).toHaveBeenLastCalledWith(
+    expect.objectContaining({ page: 2, page_size: 25 }),
+    expect.any(AbortSignal),
+  );
   fireEvent.change(screen.getByLabelText("邀请项目筛选"), { target: { value: "p1" } });
   fireEvent.change(screen.getByLabelText("邀请角色筛选"), { target: { value: "reviewer" } });
   fireEvent.click(screen.getByRole("button", { name: "待接受" }));
@@ -51,9 +57,12 @@ it("paginates 1000 invitations and shares selected filters with stats and export
     search: "test",
   };
   await waitFor(() =>
-    expect(api.page).toHaveBeenLastCalledWith({ ...filters, page: 1, page_size: 25 }),
+    expect(api.page).toHaveBeenLastCalledWith(
+      { ...filters, page: 1, page_size: 25 },
+      expect.any(AbortSignal),
+    ),
   );
-  expect(api.stats).toHaveBeenLastCalledWith(filters);
+  expect(api.stats).toHaveBeenLastCalledWith(filters, expect.any(AbortSignal));
   fireEvent.click(screen.getByRole("button", { name: "导出筛选结果" }));
   expect(api.exportInvitations).toHaveBeenCalledWith(filters);
   await waitFor(() => expect(screen.getByRole("button", { name: "导出筛选结果" })).toBeEnabled());

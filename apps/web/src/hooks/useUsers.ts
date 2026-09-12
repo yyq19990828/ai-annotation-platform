@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuthStore } from "@/stores/authStore";
 import {
   usersApi,
   type BulkGroupAssignmentPayload,
@@ -12,11 +13,20 @@ export function useUsers(
   params?: { role?: string; project_id?: string; status?: UserStatusFilter },
   enabled = true,
 ) {
-  return useQuery({ queryKey: ["users", params], queryFn: () => usersApi.list(params), enabled });
+  const ownerId = useAuthStore((state) => state.user?.id);
+  return useQuery({
+    queryKey: ["users", ownerId, params],
+    queryFn: ({ signal }) => usersApi.list(params, signal),
+    enabled,
+  });
 }
 
 export function useUserPage(params: import("@/api/users").UserPageParams) {
-  return useQuery({ queryKey: ["users", "page", params], queryFn: () => usersApi.page(params) });
+  const ownerId = useAuthStore((state) => state.user?.id);
+  return useQuery({
+    queryKey: ["users", "page", ownerId, params],
+    queryFn: ({ signal }) => usersApi.page(params, signal),
+  });
 }
 
 export function useOffboardingPreview(userId: string | null, enabled = true) {
@@ -67,16 +77,20 @@ export function useUsersStats(params?: {
   status?: UserStatusFilter;
   search?: string;
 }) {
+  const ownerId = useAuthStore((state) => state.user?.id);
   return useQuery({
-    queryKey: ["users", "stats", params],
-    queryFn: () =>
-      usersApi.stats({
-        role: params?.role,
-        project_id: params?.project_id,
-        group_id: params?.group_id,
-        status: params?.status,
-        search: params?.search,
-      }),
+    queryKey: ["users", "stats", ownerId, params],
+    queryFn: ({ signal }) =>
+      usersApi.stats(
+        {
+          role: params?.role,
+          project_id: params?.project_id,
+          group_id: params?.group_id,
+          status: params?.status,
+          search: params?.search,
+        },
+        signal,
+      ),
     refetchInterval: 60_000,
   });
 }

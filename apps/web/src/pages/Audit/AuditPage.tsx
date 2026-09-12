@@ -8,7 +8,6 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { useSearchParams } from "react-router-dom";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Bar,
@@ -35,6 +34,9 @@ import { ROLE_LABELS } from "@/constants/roles";
 import type { AuditLogResponse, AuditSummaryBucket } from "@/api/audit";
 import type { UserRole } from "@/types";
 import { useElementStyle } from "@/components/ui/useElementStyle";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { useUrlFilterState } from "@/hooks/useUrlFilterState";
+import { AUDIT_URL_DEFAULTS, AUDIT_URL_KEYS, auditUrlCodec } from "./auditUrlState";
 import styles from "./AuditPage.module.css";
 
 const PAGE_SIZE = 20;
@@ -45,15 +47,32 @@ function cssVar(name: string): string {
 }
 
 export function AuditPage() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [page, setPage] = useState(1);
-  const [actionFilter, setActionFilter] = useState(searchParams.get("action") ?? "");
-  const [targetType, setTargetType] = useState(searchParams.get("target_type") ?? "");
-  const [targetId, setTargetId] = useState(searchParams.get("target_id") ?? "");
-  const [actorId, setActorId] = useState(searchParams.get("actor_id") ?? "");
-  const [detailKey, setDetailKey] = useState(searchParams.get("detail_key") ?? "");
-  const [detailValue, setDetailValue] = useState(searchParams.get("detail_value") ?? "");
-  const [scope, setScope] = useState<"business" | "all">("business");
+  const urlState = useUrlFilterState({
+    codec: auditUrlCodec,
+    defaults: AUDIT_URL_DEFAULTS,
+    ownedKeys: AUDIT_URL_KEYS,
+  });
+  const { state: filters, issues, patch } = urlState;
+  const [targetIdDraft, setTargetIdDraft] = useState(filters.targetId);
+  const [detailKeyDraft, setDetailKeyDraft] = useState(filters.detailKey);
+  const [detailValueDraft, setDetailValueDraft] = useState(filters.detailValue);
+  const syncingTextDrafts = useRef(false);
+  const lastUrlText = useRef({
+    targetId: filters.targetId,
+    detailKey: filters.detailKey,
+    detailValue: filters.detailValue,
+  });
+  const debouncedTargetId = useDebouncedValue(targetIdDraft, 250);
+  const debouncedDetailKey = useDebouncedValue(detailKeyDraft, 250);
+  const debouncedDetailValue = useDebouncedValue(detailValueDraft, 250);
+  const page = filters.page;
+  const scope = filters.scope;
+  const actionFilter = filters.action;
+  const targetType = filters.targetType;
+  const targetId = filters.targetId;
+  const actorId = filters.actorId;
+  const detailKey = filters.detailKey;
+  const detailValue = filters.detailValue;
   const [detail, setDetail] = useState<AuditLogResponse | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -61,44 +80,100 @@ export function AuditPage() {
 
   const { data: usersData = [] } = useUsers();
 
-  // URL 参数变化（如从 UsersPage 跳过来）→ 更新筛选并回到第 1 页
   useEffect(() => {
-    setActionFilter(searchParams.get("action") ?? "");
-    setTargetType(searchParams.get("target_type") ?? "");
-    setTargetId(searchParams.get("target_id") ?? "");
-    setActorId(searchParams.get("actor_id") ?? "");
-    setDetailKey(searchParams.get("detail_key") ?? "");
-    setDetailValue(searchParams.get("detail_value") ?? "");
-    setPage(1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams.toString()]);
+    const previous = lastUrlText.current;
+    if (
+      previous.targetId === filters.targetId &&
+      previous.detailKey === filters.detailKey &&
+      previous.detailValue === filters.detailValue
+    ) {
+      return;
+    }
+    lastUrlText.current = {
+      targetId: filters.targetId,
+      detailKey: filters.detailKey,
+      detailValue: filters.detailValue,
+    };
+    const syncTargetId =
+      previous.targetId !== filters.targetId && targetIdDraft !== filters.targetId;
+    const syncDetailKey =
+      previous.detailKey !== filters.detailKey && detailKeyDraft !== filters.detailKey;
+    const syncDetailValue =
+      previous.detailValue !== filters.detailValue && detailValueDraft !== filters.detailValue;
+    syncingTextDrafts.current = syncTargetId || syncDetailKey || syncDetailValue;
+    if (syncTargetId) setTargetIdDraft(filters.targetId);
+    if (syncDetailKey) setDetailKeyDraft(filters.detailKey);
+    if (syncDetailValue) setDetailValueDraft(filters.detailValue);
+  }, [
+    detailKeyDraft,
+    detailValueDraft,
+    filters.detailKey,
+    filters.detailValue,
+    filters.targetId,
+    targetIdDraft,
+  ]);
+
+  useEffect(() => {
+    if (syncingTextDrafts.current) {
+      if (
+        debouncedTargetId === filters.targetId &&
+        debouncedDetailKey === filters.detailKey &&
+        debouncedDetailValue === filters.detailValue
+      ) {
+        syncingTextDrafts.current = false;
+      }
+      return;
+    }
+    const nextTargetId = debouncedTargetId.trim();
+    if (nextTargetId === filters.targetId) return;
+    patch({ targetId: nextTargetId, page: 1 }, { replace: true });
+  }, [
+    debouncedDetailKey,
+    debouncedDetailValue,
+    debouncedTargetId,
+    filters.detailKey,
+    filters.detailValue,
+    filters.targetId,
+    patch,
+  ]);
+
+  useEffect(() => {
+    if (syncingTextDrafts.current) return;
+    const nextDetailKey = debouncedDetailKey.trim();
+    if (nextDetailKey === filters.detailKey) return;
+    patch({ detailKey: nextDetailKey, page: 1 }, { replace: true });
+  }, [debouncedDetailKey, filters.detailKey, patch]);
+
+  useEffect(() => {
+    if (syncingTextDrafts.current) return;
+    if (debouncedDetailValue === filters.detailValue) return;
+    patch({ detailValue: debouncedDetailValue, page: 1 }, { replace: true });
+  }, [debouncedDetailValue, filters.detailValue, patch]);
 
   const focused = !!actorId || !!targetId || !!targetType || !!actionFilter || !!detailKey;
   const focusedActor = actorId ? usersData.find((u) => u.id === actorId) : null;
 
   const clearFocus = () => {
-    setSearchParams({}, { replace: true });
-    setActionFilter("");
-    setTargetType("");
-    setTargetId("");
-    setActorId("");
-    setDetailKey("");
-    setDetailValue("");
-    setPage(1);
+    patch(
+      {
+        action: "",
+        targetType: "",
+        targetId: "",
+        actorId: "",
+        detailKey: "",
+        detailValue: "",
+        page: 1,
+      },
+      { replace: false },
+    );
   };
 
   const drillDownAction = (action: string) => {
-    const next = new URLSearchParams(searchParams);
-    next.set("action", action);
-    setSearchParams(next, { replace: true });
-    setActionFilter(action);
-    setPage(1);
+    patch({ action, page: 1 }, { replace: false });
   };
 
-  const params = useMemo(
+  const appliedFilters = useMemo(
     () => ({
-      page,
-      page_size: PAGE_SIZE,
       action: actionFilter || undefined,
       target_type: targetType || undefined,
       target_id: targetId || undefined,
@@ -107,7 +182,11 @@ export function AuditPage() {
       detail_value: detailKey ? detailValue : undefined,
       business_only: scope === "business" ? true : undefined,
     }),
-    [page, actionFilter, targetType, targetId, actorId, detailKey, detailValue, scope],
+    [actionFilter, actorId, detailKey, detailValue, scope, targetId, targetType],
+  );
+  const params = useMemo(
+    () => ({ ...appliedFilters, page, page_size: PAGE_SIZE }),
+    [appliedFilters, page],
   );
   const { data, isLoading, refetch, isFetching } = useAuditLogs(params, {
     refetchInterval: autoRefresh ? 30_000 : false,
@@ -117,7 +196,7 @@ export function AuditPage() {
     if (exporting) return;
     setExporting(true);
     try {
-      await auditApi.export(params, format);
+      await auditApi.export(appliedFilters, format);
       pushToast({ msg: `已导出审计日志 ${format.toUpperCase()}`, kind: "success" });
     } catch (err) {
       pushToast({
@@ -225,6 +304,11 @@ export function AuditPage() {
           <p className={styles.description}>
             所有写操作（POST/PATCH/PUT/DELETE）由中间件捕获；关键业务事件携带结构化 detail。
           </p>
+          {!!issues.length && (
+            <div role="alert" className="mt-1 text-xs text-status-caution">
+              URL 审计筛选无法完整恢复，已使用安全默认值。
+            </div>
+          )}
         </div>
         <div className={styles.actions}>
           <label className={styles.autoRefresh}>
@@ -256,8 +340,7 @@ export function AuditPage() {
           <select
             value={scope}
             onChange={(e) => {
-              setScope(e.target.value as "business" | "all");
-              setPage(1);
+              patch({ scope: e.target.value as "business" | "all", page: 1 }, { replace: false });
             }}
             className={styles.control}
           >
@@ -267,8 +350,7 @@ export function AuditPage() {
           <select
             value={actionFilter}
             onChange={(e) => {
-              setActionFilter(e.target.value);
-              setPage(1);
+              patch({ action: e.target.value, page: 1 }, { replace: false });
             }}
             className={styles.control}
           >
@@ -282,8 +364,7 @@ export function AuditPage() {
           <select
             value={targetType}
             onChange={(e) => {
-              setTargetType(e.target.value);
-              setPage(1);
+              patch({ targetType: e.target.value, page: 1 }, { replace: false });
             }}
             className={styles.control}
           >
@@ -297,8 +378,7 @@ export function AuditPage() {
           <select
             value={actorId}
             onChange={(e) => {
-              setActorId(e.target.value);
-              setPage(1);
+              patch({ actorId: e.target.value, page: 1 }, { replace: false });
             }}
             className={`${styles.control} ${styles.actorControl}`}
           >
@@ -310,31 +390,28 @@ export function AuditPage() {
             ))}
           </select>
           <input
-            value={targetId}
+            value={targetIdDraft}
             placeholder="对象 ID（精确匹配）"
             onChange={(e) => {
-              setTargetId(e.target.value);
-              setPage(1);
+              setTargetIdDraft(e.target.value);
             }}
             className={`${styles.control} ${styles.targetInput}`}
           />
           <input
-            value={detailKey}
+            value={detailKeyDraft}
             placeholder="detail 键名（如 role）"
             title="A.3：detail_json 字段级 GIN 过滤——键名"
             onChange={(e) => {
-              setDetailKey(e.target.value);
-              setPage(1);
+              setDetailKeyDraft(e.target.value);
             }}
             className={`${styles.control} ${styles.detailKeyInput}`}
           />
           <input
-            value={detailValue}
+            value={detailValueDraft}
             placeholder="detail 键值（如 super_admin）"
             title="A.3：detail_json 字段级 GIN 过滤——键值（与键名共同生效）"
             onChange={(e) => {
-              setDetailValue(e.target.value);
-              setPage(1);
+              setDetailValueDraft(e.target.value);
             }}
             disabled={!detailKey}
             className={`${styles.control} ${styles.detailValueInput} ${detailKey ? "" : styles.controlDisabled}`}
@@ -440,8 +517,7 @@ export function AuditPage() {
                           <button
                             type="button"
                             onClick={() => {
-                              setActorId(it.actor_id!);
-                              setPage(1);
+                              patch({ actorId: it.actor_id!, page: 1 }, { replace: false });
                             }}
                             title="按操作人追溯"
                             className={styles.focusButton}
@@ -473,9 +549,14 @@ export function AuditPage() {
                       <button
                         type="button"
                         onClick={() => {
-                          setTargetType(it.target_type!);
-                          setTargetId(it.target_id!);
-                          setPage(1);
+                          patch(
+                            {
+                              targetType: it.target_type!,
+                              targetId: it.target_id!,
+                              page: 1,
+                            },
+                            { replace: false },
+                          );
                         }}
                         title={`按对象 ${it.target_type}/${it.target_id} 追溯`}
                         className={styles.focusButton}
@@ -505,11 +586,19 @@ export function AuditPage() {
         </div>
 
         <div className={styles.pagination}>
-          <Button size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+          <Button
+            size="sm"
+            disabled={page <= 1}
+            onClick={() => patch({ page: Math.max(1, page - 1) }, { replace: false })}
+          >
             <Icon name="chevLeft" size={11} />
             上一页
           </Button>
-          <Button size="sm" disabled={page >= pageCount} onClick={() => setPage((p) => p + 1)}>
+          <Button
+            size="sm"
+            disabled={page >= pageCount}
+            onClick={() => patch({ page: page + 1 }, { replace: false })}
+          >
             下一页
             <Icon name="chevRight" size={11} />
           </Button>
@@ -525,11 +614,16 @@ export function AuditPage() {
                   size="sm"
                   variant="ghost"
                   onClick={() => {
-                    setActorId(detail.actor_id!);
-                    setTargetType("");
-                    setTargetId("");
-                    setActionFilter("");
-                    setPage(1);
+                    patch(
+                      {
+                        actorId: detail.actor_id!,
+                        targetType: "",
+                        targetId: "",
+                        action: "",
+                        page: 1,
+                      },
+                      { replace: false },
+                    );
                     setDetail(null);
                   }}
                 >
@@ -541,11 +635,16 @@ export function AuditPage() {
                   size="sm"
                   variant="ghost"
                   onClick={() => {
-                    setTargetType(detail.target_type!);
-                    setTargetId(detail.target_id!);
-                    setActorId("");
-                    setActionFilter("");
-                    setPage(1);
+                    patch(
+                      {
+                        targetType: detail.target_type!,
+                        targetId: detail.target_id!,
+                        actorId: "",
+                        action: "",
+                        page: 1,
+                      },
+                      { replace: false },
+                    );
                     setDetail(null);
                   }}
                 >
