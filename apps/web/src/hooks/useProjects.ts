@@ -5,18 +5,25 @@ import {
   type ProjectUpdatePayload,
   type ProjectListParams,
 } from "../api/projects";
+import { useAuthStore } from "@/stores/authStore";
 
 export function useProjects(params?: ProjectListParams) {
+  const userId = useAuthStore((state) => state.user?.id ?? null);
+  const tokenEpoch = useAuthStore((state) => state.token);
   return useQuery({
-    queryKey: ["projects", params],
+    queryKey: ["projects", params, userId, tokenEpoch],
     queryFn: ({ signal }) => projectsApi.list(params, { signal }),
+    enabled: Boolean(userId),
   });
 }
 
 export function useProjectStats() {
+  const userId = useAuthStore((state) => state.user?.id ?? null);
+  const tokenEpoch = useAuthStore((state) => state.token);
   return useQuery({
-    queryKey: ["project-stats"],
+    queryKey: ["project-stats", userId, tokenEpoch],
     queryFn: projectsApi.stats,
+    enabled: Boolean(userId),
   });
 }
 

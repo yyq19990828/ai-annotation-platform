@@ -134,6 +134,9 @@ describe("Data Manager filter expressions", () => {
 
   it("retains an explicit nullable eq/ne null value from a saved view", () => {
     expect(isExpressionValid({ field: fields[0].key, op: "eq", value: null }, fields)).toBe(true);
+    expect(
+      isExpressionValid({ field: booleanField.key, op: "eq", value: null }, [booleanField]),
+    ).toBe(false);
   });
 
   it("validates restored scalar and array types without coercing JSON strings", () => {

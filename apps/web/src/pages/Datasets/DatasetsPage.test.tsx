@@ -18,6 +18,7 @@ const mockUseBackfillDimensions = vi.fn();
 const mockUseBackfillMedia = vi.fn();
 const mockUseUpdateDataset = vi.fn();
 const mockPushToast = vi.fn();
+const scrollIntoView = vi.fn();
 
 vi.mock("@/hooks/useDatasets", () => ({
   useDatasets: (...args: unknown[]) => mockUseDatasets(...args),
@@ -99,6 +100,8 @@ function LocationProbe() {
 
 describe("DatasetsPage", () => {
   beforeEach(() => {
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+    scrollIntoView.mockClear();
     mockUseDatasets.mockReset();
     mockPushToast.mockReset();
     mockUseCreateDataset.mockReturnValue(idleMutation);

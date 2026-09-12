@@ -358,7 +358,7 @@ export function isExpressionValid(
       if (expression.value === undefined) return false;
     }
     if (expression.value === null && (expression.op === "eq" || expression.op === "ne"))
-      return true;
+      return field.value_type !== "boolean";
     return isStoredFilterValueValid(field, expression.op, expression.value);
   }
   return (

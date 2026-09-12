@@ -8,13 +8,17 @@ import {
   type ProjectTemplateListParams,
   type ProjectTemplateUpdatePayload,
 } from "../api/projectTemplates";
+import { useAuthStore } from "@/stores/authStore";
 
 const KEY = "project-templates";
 
 export function useProjectTemplates(params?: ProjectTemplateListParams) {
+  const userId = useAuthStore((state) => state.user?.id ?? null);
+  const tokenEpoch = useAuthStore((state) => state.token);
   return useQuery({
-    queryKey: [KEY, params],
+    queryKey: [KEY, params, userId, tokenEpoch],
     queryFn: ({ signal }) => projectTemplatesApi.list(params, { signal }),
+    enabled: Boolean(userId),
   });
 }
 
