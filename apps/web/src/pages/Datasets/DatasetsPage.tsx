@@ -1,4 +1,4 @@
-import { useState, Fragment, useEffect } from "react";
+import { useState, Fragment, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
@@ -34,6 +34,14 @@ import type { ProjectResponse } from "@/api/projects";
 import type { IconName } from "@/components/ui/Icon";
 import type { LidarAxisConvention } from "@/pages/Workbench/stages/three-d/geometry/axisConvention";
 import { PageContainer } from "@/components/layout/PageContainer";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { useUrlFilterState } from "@/hooks/useUrlFilterState";
+import {
+  DATASET_FILTER_KEYS,
+  datasetsUrlCodec,
+  EMPTY_DATASETS_URL_STATE,
+  type DatasetDataType,
+} from "./datasetsUrlState";
 
 const TYPE_LABELS: Record<string, string> = {
   image: "图像",
@@ -60,7 +68,7 @@ const TYPE_VARIANTS: Record<string, "accent" | "ai" | "warning" | "success" | "o
 };
 
 const TYPE_FILTERS = ["全部", "图像", "视频", "3D", "多模态"] as const;
-const FILTER_MAP: Record<string, string | undefined> = {
+const FILTER_MAP: Record<string, DatasetDataType | undefined> = {
   全部: undefined,
   图像: "image",
   视频: "video",
@@ -656,18 +664,55 @@ const PAGE_TABS = ["数据集管理", "数据连接器"] as const;
 
 export function DatasetsPage() {
   const [activeTab, setActiveTab] = useState<string>("数据集管理");
-  const [filter, setFilter] = useState<string>("全部");
-  const [query, setQuery] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showConnForm, setShowConnForm] = useState(false);
+  const urlState = useUrlFilterState({
+    codec: datasetsUrlCodec,
+    defaults: EMPTY_DATASETS_URL_STATE,
+    ownedKeys: DATASET_FILTER_KEYS,
+  });
+  const currentUrl = urlState.state;
+  const [query, setQuery] = useState(currentUrl.query);
+  const [queryFlushKey, setQueryFlushKey] = useState(0);
+  const localQueryWriteRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (localQueryWriteRef.current === currentUrl.query) {
+      localQueryWriteRef.current = null;
+      return;
+    }
+    setQuery(currentUrl.query);
+    setQueryFlushKey((value) => value + 1);
+  }, [currentUrl.query]);
+  const debouncedQuery = useDebouncedValue(query, 250, queryFlushKey);
+  const queryForRequest =
+    localQueryWriteRef.current === null && query.trim() !== currentUrl.query
+      ? currentUrl.query
+      : debouncedQuery;
+  const filter =
+    currentUrl.data_type === "image"
+      ? "图像"
+      : currentUrl.data_type === "video"
+        ? "视频"
+        : currentUrl.data_type === "point_cloud"
+          ? "3D"
+          : currentUrl.data_type === "multimodal"
+            ? "多模态"
+            : "全部";
+  const filterSignature = `${currentUrl.query}\u0000${currentUrl.data_type ?? ""}`;
+  const previousFilterSignature = useRef(filterSignature);
+  useEffect(() => {
+    if (previousFilterSignature.current === filterSignature) return;
+    previousFilterSignature.current = filterSignature;
+    setExpandedId(null);
+  }, [filterSignature]);
   const { role } = usePermissions();
   const canManageConn = role === "super_admin" || role === "project_admin";
   const queryClient = useQueryClient();
 
   const { data: datasetsData, isLoading } = useDatasets({
-    search: query || undefined,
-    data_type: FILTER_MAP[filter],
+    search: queryForRequest.trim() || undefined,
+    data_type: currentUrl.data_type,
   });
 
   const datasets = datasetsData?.items ?? [];
@@ -687,10 +732,26 @@ export function DatasetsPage() {
         ?.scrollIntoView({ behavior: "smooth", block: "center" });
     });
     // 用过即清掉 query，避免刷新/再渲染时反复跳转
-    searchParams.delete("dataset");
-    setSearchParams(searchParams, { replace: true });
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.delete("dataset");
+        return next;
+      },
+      { replace: true },
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, isLoading, datasets]);
+  const updateQuery = (next: string) => {
+    setQuery(next);
+    localQueryWriteRef.current = next.trim();
+    setExpandedId(null);
+    urlState.patch({ query: next });
+  };
+  const updateFilter = (next: string) => {
+    setExpandedId(null);
+    urlState.patch({ data_type: FILTER_MAP[next] }, { replace: false });
+  };
   const totalFiles = datasets.reduce((sum, ds) => sum + ds.file_count, 0);
   const linkedCount = datasets.filter((ds) => (ds.project_count ?? 0) > 0).length;
 
@@ -752,12 +813,12 @@ export function DatasetsPage() {
             <div className="flex items-center justify-between border-b border-border px-4 py-3.5">
               <div className="flex items-center gap-3">
                 <h3 className="m-0 text-sm font-semibold">全部数据集</h3>
-                <TabRow tabs={[...TYPE_FILTERS]} active={filter} onChange={setFilter} />
+                <TabRow tabs={[...TYPE_FILTERS]} active={filter} onChange={updateFilter} />
               </div>
               <SearchInput
                 placeholder="搜索数据集..."
                 value={query}
-                onChange={setQuery}
+                onChange={updateQuery}
                 width={220}
               />
             </div>

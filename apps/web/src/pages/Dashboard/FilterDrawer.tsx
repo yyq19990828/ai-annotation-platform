@@ -6,23 +6,14 @@ import { Avatar } from "@/components/ui/Avatar";
 import { useUsers } from "@/hooks/useUsers";
 import { useAuthStore } from "@/stores/authStore";
 import { PROJECT_DATA_TYPES } from "@/constants/toolUnits";
+import {
+  EMPTY_FILTERS,
+  type DashboardDataType,
+  type DashboardFilters,
+  type DashboardStatus,
+} from "./dashboardUrlState";
 
-export interface DashboardFilters {
-  status?: string;
-  // v0.10.28 · 媒体维度筛选 (image / video / lidar), 取代任务级 type_key.
-  data_type: string[];
-  member_id?: string;
-  created_from?: string;
-  created_to?: string;
-}
-
-export const EMPTY_FILTERS: DashboardFilters = {
-  status: undefined,
-  data_type: [],
-  member_id: undefined,
-  created_from: undefined,
-  created_to: undefined,
-};
+export { EMPTY_FILTERS, type DashboardFilters } from "./dashboardUrlState";
 
 interface Props {
   open: boolean;
@@ -31,7 +22,7 @@ interface Props {
   onApply: (next: DashboardFilters) => void;
 }
 
-const STATUS_OPTIONS: { value: string; label: string }[] = [
+const STATUS_OPTIONS: { value: DashboardStatus | ""; label: string }[] = [
   { value: "", label: "全部" },
   { value: "in_progress", label: "进行中" },
   { value: "pending_review", label: "待审核" },
@@ -51,12 +42,16 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
   const [draft, setDraft] = useState<DashboardFilters>(initial);
   const currentUser = useAuthStore((s) => s.user);
   const { data: users = [] } = useUsers();
+  const invalidDateRange = Boolean(
+    draft.created_from && draft.created_to && draft.created_from > draft.created_to,
+  );
+  const mineActive = Boolean(currentUser && draft.member_id === currentUser.id);
 
   useEffect(() => {
     if (open) setDraft(initial);
   }, [open, initial]);
 
-  const toggleType = (key: string) => {
+  const toggleType = (key: DashboardDataType) => {
     setDraft((prev) => {
       const has = prev.data_type.includes(key);
       return {
@@ -87,6 +82,7 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
                   key={s.value}
                   type="button"
                   onClick={() => setDraft({ ...draft, status: s.value || undefined })}
+                  aria-pressed={active}
                   className={cn(CHIP_BASE, active && CHIP_ACTIVE)}
                 >
                   {s.label}
@@ -105,6 +101,7 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
                   key={t.id}
                   type="button"
                   onClick={() => toggleType(t.id)}
+                  aria-pressed={active}
                   className={cn(CHIP_BASE, active && CHIP_ACTIVE)}
                   title={t.hint}
                 >
@@ -120,13 +117,15 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
             <button
               type="button"
               onClick={() => setDraft({ ...draft, member_id: currentUser?.id })}
-              className={cn(CHIP_BASE, draft.member_id === currentUser?.id && CHIP_ACTIVE)}
+              aria-pressed={mineActive}
+              className={cn(CHIP_BASE, mineActive && CHIP_ACTIVE)}
             >
               我参与的
             </button>
             <button
               type="button"
               onClick={() => setDraft({ ...draft, member_id: undefined })}
+              aria-pressed={!draft.member_id}
               className={cn(CHIP_BASE, !draft.member_id && CHIP_ACTIVE)}
             >
               不限
@@ -143,6 +142,7 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
                   key={u.id}
                   type="button"
                   onClick={() => setDraft({ ...draft, member_id: active ? undefined : u.id })}
+                  aria-pressed={active}
                   className={cn(
                     "flex w-full cursor-pointer appearance-none items-center gap-2 border-0 border-b border-border bg-transparent px-2 py-1.5 text-left text-foreground [font:inherit]",
                     active && "bg-brand/10",
@@ -163,6 +163,7 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
           <div className="flex items-center gap-2">
             <input
               type="date"
+              aria-label="创建开始日期"
               value={draft.created_from ?? ""}
               onChange={(e) => setDraft({ ...draft, created_from: e.target.value || undefined })}
               className="appearance-none rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground [font:inherit]"
@@ -170,11 +171,17 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
             <span className="text-muted-foreground">至</span>
             <input
               type="date"
+              aria-label="创建结束日期"
               value={draft.created_to ?? ""}
               onChange={(e) => setDraft({ ...draft, created_to: e.target.value || undefined })}
               className="appearance-none rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground [font:inherit]"
             />
           </div>
+          {invalidDateRange && (
+            <div role="alert" className="mt-1 text-xs text-status-danger">
+              开始日期不能晚于结束日期
+            </div>
+          )}
         </Section>
 
         <div className="flex items-center justify-between border-t border-border pt-3">
@@ -185,7 +192,7 @@ export function FilterDrawer({ open, onClose, initial, onApply }: Props) {
             <Button onClick={onClose} size="sm">
               取消
             </Button>
-            <Button onClick={apply} size="sm" variant="primary">
+            <Button onClick={apply} size="sm" variant="primary" disabled={invalidDateRange}>
               应用
             </Button>
           </div>

@@ -89,7 +89,7 @@ export interface ProjectTemplateListParams {
 }
 
 export const projectTemplatesApi = {
-  list: (params?: ProjectTemplateListParams) => {
+  list: (params?: ProjectTemplateListParams, init?: RequestInit) => {
     const q = new URLSearchParams();
     if (params?.scope) q.set("scope", params.scope);
     if (params?.search) q.set("search", params.search);
@@ -97,7 +97,10 @@ export const projectTemplatesApi = {
       params.type_key.forEach((tk) => q.append("type_key", tk));
     }
     const qs = q.toString();
-    return apiClient.get<ProjectTemplateOut[]>(`/project-templates${qs ? `?${qs}` : ""}`);
+    const path = `/project-templates${qs ? `?${qs}` : ""}`;
+    return init
+      ? apiClient.get<ProjectTemplateOut[]>(path, init)
+      : apiClient.get<ProjectTemplateOut[]>(path);
   },
 
   get: (id: string) => apiClient.get<ProjectTemplateOut>(`/project-templates/${id}`),

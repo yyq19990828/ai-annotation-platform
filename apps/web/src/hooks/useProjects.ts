@@ -9,7 +9,7 @@ import {
 export function useProjects(params?: ProjectListParams) {
   return useQuery({
     queryKey: ["projects", params],
-    queryFn: () => projectsApi.list(params),
+    queryFn: ({ signal }) => projectsApi.list(params, { signal }),
   });
 }
 

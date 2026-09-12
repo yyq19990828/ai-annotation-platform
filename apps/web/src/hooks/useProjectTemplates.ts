@@ -14,7 +14,7 @@ const KEY = "project-templates";
 export function useProjectTemplates(params?: ProjectTemplateListParams) {
   return useQuery({
     queryKey: [KEY, params],
-    queryFn: () => projectTemplatesApi.list(params),
+    queryFn: ({ signal }) => projectTemplatesApi.list(params, { signal }),
   });
 }
 

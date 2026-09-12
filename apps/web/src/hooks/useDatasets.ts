@@ -12,7 +12,7 @@ export function useDatasets(params?: {
 }) {
   return useQuery({
     queryKey: ["datasets", params],
-    queryFn: () => datasetsApi.list(params),
+    queryFn: ({ signal }) => datasetsApi.list(params, { signal }),
   });
 }
 
