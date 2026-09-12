@@ -4,8 +4,8 @@
  *       抽屉加载态 / 抽屉关闭
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { Link, MemoryRouter, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -97,11 +97,22 @@ const baseDetail = {
   first_pass_yield: null,
 };
 
+function LocationProbe() {
+  const { search } = useLocation();
+  return (
+    <>
+      <output data-testid="location-search">{search}</output>
+      <Link to="/admin/people?q=restored&role=reviewer&period=1m&keep=yes">恢复筛选链接</Link>
+    </>
+  );
+}
+
 function renderUI(initialPath = "/admin/people") {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={[initialPath]}>
+        <LocationProbe />
         <AdminPeoplePage />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -130,6 +141,37 @@ describe("AdminPeoplePage", () => {
     mockUsePermissions.mockReturnValue({ role: "super_admin" });
     mockListByProject.mockReset();
     mockListByProject.mockResolvedValue({ items: [], total: 0, limit: 20, offset: 0 });
+  });
+
+  it("resumes search during navigation rehydration without a stale facet write", async () => {
+    vi.useFakeTimers();
+    const view = renderUI("/admin/people?q=old&role=reviewer&period=1m&keep=yes");
+    const params = () =>
+      new URLSearchParams(screen.getByTestId("location-search").textContent ?? "");
+    try {
+      fireEvent.click(screen.getByRole("link", { name: "恢复筛选链接" }));
+      const input = screen.getByPlaceholderText("姓名 / 邮箱");
+      expect(input).toHaveValue("restored");
+      await act(async () => vi.advanceTimersByTime(100));
+      fireEvent.change(input, { target: { value: "Alice" } });
+      fireEvent.click(screen.getByRole("button", { name: "标注员" }));
+      await act(async () => vi.advanceTimersByTime(249));
+      expect(params().get("q")).toBe("restored");
+      await act(async () => vi.advanceTimersByTime(1));
+      expect(params().get("q")).toBe("Alice");
+      expect(mockUseAdminPeople).toHaveBeenLastCalledWith(
+        expect.objectContaining({ q: "Alice", role: "annotator", period: "1m" }),
+      );
+      expect(params().get("keep")).toBe("yes");
+      fireEvent.change(input, { target: { value: "Alice updated" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+      expect(params().get("q")).toBe("Alice updated");
+      await act(async () => vi.advanceTimersByTime(500));
+      expect(params().get("q")).toBe("Alice updated");
+    } finally {
+      view.unmount();
+      vi.useRealTimers();
+    }
   });
 
   it("isLoading=true → 显示加载中", () => {

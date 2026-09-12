@@ -63,7 +63,7 @@ export function AuditPage() {
   const [actorQuery, setActorQuery] = useState("");
   const [detailKeyDraft, setDetailKeyDraft] = useState(filters.detailKey);
   const [detailValueDraft, setDetailValueDraft] = useState(filters.detailValue);
-  const syncingTextDrafts = useRef(false);
+  const syncingTextDrafts = useRef({ targetId: false, detailKey: false, detailValue: false });
   const lastUrlText = useRef({
     targetId: filters.targetId,
     detailKey: filters.detailKey,
@@ -107,10 +107,19 @@ export function AuditPage() {
       previous.detailKey !== filters.detailKey && detailKeyDraft !== filters.detailKey;
     const syncDetailValue =
       previous.detailValue !== filters.detailValue && detailValueDraft !== filters.detailValue;
-    syncingTextDrafts.current = syncTargetId || syncDetailKey || syncDetailValue;
-    if (syncTargetId) setTargetIdDraft(filters.targetId);
-    if (syncDetailKey) setDetailKeyDraft(filters.detailKey);
-    if (syncDetailValue) setDetailValueDraft(filters.detailValue);
+    // Rehydrating one field must not suspend a pending edit in another field.
+    if (previous.targetId !== filters.targetId) {
+      syncingTextDrafts.current.targetId = syncTargetId;
+      if (syncTargetId) setTargetIdDraft(filters.targetId);
+    }
+    if (previous.detailKey !== filters.detailKey) {
+      syncingTextDrafts.current.detailKey = syncDetailKey;
+      if (syncDetailKey) setDetailKeyDraft(filters.detailKey);
+    }
+    if (previous.detailValue !== filters.detailValue) {
+      syncingTextDrafts.current.detailValue = syncDetailValue;
+      if (syncDetailValue) setDetailValueDraft(filters.detailValue);
+    }
   }, [
     detailKeyDraft,
     detailValueDraft,
@@ -121,41 +130,39 @@ export function AuditPage() {
   ]);
 
   useEffect(() => {
-    if (syncingTextDrafts.current) {
-      if (
-        debouncedTargetId === filters.targetId &&
-        debouncedDetailKey === filters.detailKey &&
-        debouncedDetailValue === filters.detailValue
-      ) {
-        syncingTextDrafts.current = false;
+    if (syncingTextDrafts.current.targetId) {
+      if (debouncedTargetId === filters.targetId) {
+        syncingTextDrafts.current.targetId = false;
       }
       return;
     }
     const nextTargetId = debouncedTargetId.trim();
+    if (nextTargetId !== targetIdDraft.trim()) return;
     if (nextTargetId === filters.targetId) return;
     patch({ targetId: nextTargetId, page: 1 }, { replace: true });
-  }, [
-    debouncedDetailKey,
-    debouncedDetailValue,
-    debouncedTargetId,
-    filters.detailKey,
-    filters.detailValue,
-    filters.targetId,
-    patch,
-  ]);
+  }, [debouncedTargetId, filters.targetId, patch, targetIdDraft]);
 
   useEffect(() => {
-    if (syncingTextDrafts.current) return;
+    if (syncingTextDrafts.current.detailKey) {
+      if (debouncedDetailKey === filters.detailKey) syncingTextDrafts.current.detailKey = false;
+      return;
+    }
     const nextDetailKey = debouncedDetailKey.trim();
+    if (nextDetailKey !== detailKeyDraft.trim()) return;
     if (nextDetailKey === filters.detailKey) return;
     patch({ detailKey: nextDetailKey, page: 1 }, { replace: true });
-  }, [debouncedDetailKey, filters.detailKey, patch]);
+  }, [debouncedDetailKey, detailKeyDraft, filters.detailKey, patch]);
 
   useEffect(() => {
-    if (syncingTextDrafts.current) return;
+    if (syncingTextDrafts.current.detailValue) {
+      if (debouncedDetailValue === filters.detailValue)
+        syncingTextDrafts.current.detailValue = false;
+      return;
+    }
+    if (debouncedDetailValue !== detailValueDraft) return;
     if (debouncedDetailValue === filters.detailValue) return;
     patch({ detailValue: debouncedDetailValue, page: 1 }, { replace: true });
-  }, [debouncedDetailValue, filters.detailValue, patch]);
+  }, [debouncedDetailValue, detailValueDraft, filters.detailValue, patch]);
 
   const focused = !!actorId || !!targetId || !!targetType || !!actionFilter || !!detailKey;
   const focusedActor = actorId ? usersData.find((u) => u.id === actorId) : null;
@@ -461,6 +468,7 @@ export function AuditPage() {
                   value={targetIdDraft}
                   placeholder="对象 ID（精确匹配）"
                   onChange={(e) => {
+                    syncingTextDrafts.current.targetId = false;
                     setTargetIdDraft(e.target.value);
                   }}
                   className="h-8"
@@ -474,6 +482,7 @@ export function AuditPage() {
                   placeholder="detail 键名（如 role）"
                   title="A.3：detail_json 字段级 GIN 过滤——键名"
                   onChange={(e) => {
+                    syncingTextDrafts.current.detailKey = false;
                     setDetailKeyDraft(e.target.value);
                   }}
                   className="h-8"
@@ -487,6 +496,7 @@ export function AuditPage() {
                   placeholder="detail 键值（如 super_admin）"
                   title="A.3：detail_json 字段级 GIN 过滤——键值（与键名共同生效）"
                   onChange={(e) => {
+                    syncingTextDrafts.current.detailValue = false;
                     setDetailValueDraft(e.target.value);
                   }}
                   disabled={!detailKey}

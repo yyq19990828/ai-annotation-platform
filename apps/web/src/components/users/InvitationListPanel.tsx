@@ -76,9 +76,10 @@ export function InvitationListPanel() {
       return;
     }
     const nextSearch = debouncedSearch.trim();
+    if (nextSearch !== searchDraft.trim()) return;
     if (nextSearch === filters.q) return;
     patch({ q: nextSearch, page: 1 }, { replace: true });
-  }, [debouncedSearch, filters.q, patch]);
+  }, [debouncedSearch, filters.q, patch, searchDraft]);
 
   useEffect(() => {
     if (role === "super_admin" || filters.scope === "me") return;
@@ -272,6 +273,7 @@ export function InvitationListPanel() {
         <input
           value={searchDraft}
           onChange={(event) => {
+            syncingSearchDraft.current = false;
             setSearchDraft(event.target.value);
           }}
           placeholder="搜索邮箱或邀请人"

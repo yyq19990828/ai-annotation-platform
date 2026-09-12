@@ -2,7 +2,7 @@
  * UsersPage 单测 — 成员列表 / tab 切换 / 导出 / 删除确认弹窗 主路径.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 
 const mockPushToast = vi.fn();
@@ -228,6 +228,45 @@ describe("UsersPage", () => {
     mockUseUsers.mockReturnValue({ data: [], isLoading: true });
     renderUI();
     expect(screen.getByText("加载中...")).toBeInTheDocument();
+  });
+
+  it("resumes search while a browser-navigation draft is still debouncing", async () => {
+    vi.useFakeTimers();
+    mockUseUsers.mockReturnValue({ data: SAMPLE_USERS, total: 1000, pages: 40, isLoading: false });
+    const view = renderUI([
+      "/users?q=restored&page=3&status=all&role=annotator&keep=yes",
+      "/users?q=old&status=all&role=annotator&keep=yes",
+    ]);
+    const params = () =>
+      new URLSearchParams(screen.getByTestId("location-search").textContent ?? "");
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "浏览器后退" }));
+      const input = screen.getByPlaceholderText(/搜索姓名或邮箱/);
+      expect(input).toHaveValue("restored");
+      await act(async () => vi.advanceTimersByTime(100));
+      fireEvent.change(input, { target: { value: "Alice" } });
+      fireEvent.change(screen.getByLabelText("账号状态"), { target: { value: "inactive" } });
+      await act(async () => vi.advanceTimersByTime(249));
+      expect(params().get("q")).toBe("restored");
+      await act(async () => vi.advanceTimersByTime(1));
+      expect(params().get("q")).toBe("Alice");
+      expect(params().get("page")).toBeNull();
+      expect(params().get("status")).toBe("inactive");
+      expect(params().get("role")).toBe("annotator");
+      expect(params().get("keep")).toBe("yes");
+      expect(mockUseUsers).toHaveBeenLastCalledWith(
+        expect.objectContaining({ search: "Alice", page: 1 }),
+      );
+      fireEvent.change(input, { target: { value: "Alice updated" } });
+      await act(async () => vi.advanceTimersByTime(250));
+      expect(params().get("q")).toBe("Alice updated");
+      expect(mockUseUsersStats).toHaveBeenLastCalledWith(
+        expect.objectContaining({ search: "Alice updated" }),
+      );
+    } finally {
+      view.unmount();
+      vi.useRealTimers();
+    }
   });
 
   it("搜索框过滤：输入 'Alice' 后只显示 Alice", async () => {

@@ -107,9 +107,10 @@ export function AdminPeoplePage() {
       return;
     }
     const nextQuery = debouncedQuery.trim();
+    if (nextQuery !== queryDraft.trim()) return;
     if (nextQuery === filters.q) return;
     patch({ q: nextQuery }, { replace: true });
-  }, [debouncedQuery, filters.q, patch]);
+  }, [debouncedQuery, filters.q, patch, queryDraft]);
 
   // project_admin 未选项目时自动选第一个(后端对其强制项目范围,不选会 403)。
   useEffect(() => {
@@ -237,7 +238,10 @@ export function AdminPeoplePage() {
               type="search"
               placeholder="姓名 / 邮箱"
               value={queryDraft}
-              onChange={(e) => setQueryDraft(e.target.value)}
+              onChange={(e) => {
+                syncingQueryDraft.current = false;
+                setQueryDraft(e.target.value);
+              }}
               onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => {
                 if (e.key === "Enter")
                   patch({ q: e.currentTarget.value.trim() }, { replace: true });

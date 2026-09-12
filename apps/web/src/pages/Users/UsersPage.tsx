@@ -199,10 +199,11 @@ function UsersPageContent() {
       return;
     }
     const nextQuery = debouncedQuery.trim();
+    if (nextQuery !== queryDraft.trim()) return;
     if (nextQuery === filters.q) return;
     clearSelection();
     patch({ q: nextQuery, page: 1 }, { replace: true });
-  }, [clearSelection, debouncedQuery, filters.q, patch]);
+  }, [clearSelection, debouncedQuery, filters.q, patch, queryDraft]);
 
   const memberParams = useMemo(
     () => ({
@@ -388,6 +389,7 @@ function UsersPageContent() {
                 placeholder="搜索姓名或邮箱..."
                 value={queryDraft}
                 onChange={(value) => {
+                  syncingQueryDraft.current = false;
                   setQueryDraft(value);
                 }}
                 width={240}

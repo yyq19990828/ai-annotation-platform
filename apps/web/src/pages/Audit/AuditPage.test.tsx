@@ -2,8 +2,8 @@
  * v0.9.14 · AuditPage 单测 — 多维筛选 + 分页 + 导出 + 追溯清除主路径.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 
 const mockUseAuditLogs = vi.fn();
 const mockUseAuditMonthlySummary = vi.fn();
@@ -35,9 +35,21 @@ vi.mock("@/components/ui/Toast", async () => {
 
 import { AuditPage } from "./AuditPage";
 
-function renderUI(initialPath = "/audit") {
+function LocationProbe() {
+  const { search } = useLocation();
+  const navigate = useNavigate();
+  return (
+    <>
+      <output data-testid="location-search">{search}</output>
+      <button onClick={() => navigate(-1)}>浏览器后退</button>
+    </>
+  );
+}
+
+function renderUI(initialPath: string | string[] = "/audit") {
   return render(
-    <MemoryRouter initialEntries={[initialPath]}>
+    <MemoryRouter initialEntries={Array.isArray(initialPath) ? initialPath : [initialPath]}>
+      <LocationProbe />
       <AuditPage />
     </MemoryRouter>,
   );
@@ -71,6 +83,135 @@ describe("AuditPage", () => {
       isError: false,
       refetch: mockSummaryRefetch,
     });
+  });
+
+  it.each([
+    ["对象 ID（精确匹配）", "target_id", "edited-target", "later-target"],
+    ["detail 键名", "detail_key", "edited.key", "later.key"],
+    ["detail 键值", "detail_value", "   ", ""],
+  ])(
+    "resumes audit %s during URL rehydration without replacing sibling fields",
+    async (label, key, value, later) => {
+      vi.useFakeTimers();
+      const restored = {
+        target_id: "restored-target",
+        detail_key: "restored.key",
+        detail_value: "restored value",
+      };
+      const view = renderUI([
+        "/audit?" +
+          new URLSearchParams({ ...restored, scope: "all", target_type: "task", keep: "yes" }),
+        "/audit?target_id=old-target&detail_key=old.key&detail_value=old&scope=all&target_type=task&keep=yes",
+      ]);
+      const params = () =>
+        new URLSearchParams(screen.getByTestId("location-search").textContent ?? "");
+      try {
+        fireEvent.click(screen.getByRole("button", { name: "浏览器后退" }));
+        fireEvent.click(screen.getByRole("button", { name: "筛选" }));
+        const input = screen.getByLabelText(label);
+        expect(input).toHaveValue(restored[key as keyof typeof restored]);
+        await act(async () => vi.advanceTimersByTime(100));
+        fireEvent.change(input, { target: { value } });
+        fireEvent.change(screen.getByLabelText("审计事件范围"), { target: { value: "business" } });
+        await act(async () => vi.advanceTimersByTime(249));
+        for (const [field, expected] of Object.entries(restored))
+          expect(params().get(field)).toBe(expected);
+        await act(async () => vi.advanceTimersByTime(1));
+        const expected = { ...restored, [key]: value };
+        for (const [field, expectedValue] of Object.entries(expected))
+          expect(params().get(field)).toBe(expectedValue);
+        expect(params().get("keep")).toBe("yes");
+        expect(mockUseAuditLogs).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            ...expected,
+            business_only: true,
+            target_type: "task",
+            page: 1,
+          }),
+          expect.anything(),
+        );
+        fireEvent.change(input, { target: { value: later } });
+        await act(async () => vi.advanceTimersByTime(250));
+        expect(params().get(key)).toBe(later);
+        expect(mockUseAuditLogs).toHaveBeenLastCalledWith(
+          expect.objectContaining({ ...restored, [key]: later }),
+          expect.anything(),
+        );
+      } finally {
+        view.unmount();
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it.each([
+    ["对象 ID（精确匹配）", "target_id", "detail_key"],
+    ["detail 键名", "detail_key", "target_id"],
+    ["detail 键值", "detail_value", "target_id"],
+  ])("keeps pending %s independent of sibling URL rehydration", async (label, key, sibling) => {
+    vi.useFakeTimers();
+    const initial = { target_id: "old-target", detail_key: "old.key", detail_value: "old value" };
+    const restored = { ...initial, [sibling]: "restored-sibling" };
+    const view = renderUI([
+      "/audit?" + new URLSearchParams(restored),
+      "/audit?" + new URLSearchParams(initial),
+    ]);
+    const params = () =>
+      new URLSearchParams(screen.getByTestId("location-search").textContent ?? "");
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "筛选" }));
+      const input = screen.getByLabelText(label);
+      fireEvent.change(input, { target: { value: "pending-edit" } });
+      await act(async () => vi.advanceTimersByTime(100));
+      fireEvent.click(screen.getByRole("button", { name: "浏览器后退" }));
+      expect(input).toHaveValue("pending-edit");
+      await act(async () => vi.advanceTimersByTime(149));
+      expect(params().get(key)).toBe(initial[key as keyof typeof initial]);
+      await act(async () => vi.advanceTimersByTime(1));
+      expect(params().get(key)).toBe("pending-edit");
+      expect(params().get(sibling)).toBe("restored-sibling");
+      await act(async () => vi.advanceTimersByTime(100));
+      expect(mockUseAuditLogs).toHaveBeenLastCalledWith(
+        expect.objectContaining({ ...restored, [key]: "pending-edit" }),
+        expect.anything(),
+      );
+    } finally {
+      view.unmount();
+      vi.useRealTimers();
+    }
+  });
+
+  it("commits simultaneously settled audit drafts without losing sibling changes", async () => {
+    vi.useFakeTimers();
+    const view = renderUI(
+      "/audit?target_id=old-target&detail_key=old.key&detail_value=old&scope=all&keep=yes",
+    );
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "筛选" }));
+      fireEvent.change(screen.getByLabelText("对象 ID（精确匹配）"), {
+        target: { value: "new-target" },
+      });
+      fireEvent.change(screen.getByLabelText("detail 键名"), { target: { value: "new.key" } });
+      fireEvent.change(screen.getByLabelText("detail 键值"), { target: { value: "" } });
+      await act(async () => vi.advanceTimersByTime(250));
+      const params = new URLSearchParams(screen.getByTestId("location-search").textContent ?? "");
+      expect(params.get("target_id")).toBe("new-target");
+      expect(params.get("detail_key")).toBe("new.key");
+      expect(params.get("detail_value")).toBe("");
+      expect(params.get("scope")).toBe("all");
+      expect(params.get("keep")).toBe("yes");
+      expect(mockUseAuditLogs).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          target_id: "new-target",
+          detail_key: "new.key",
+          detail_value: "",
+        }),
+        expect.anything(),
+      );
+    } finally {
+      view.unmount();
+      vi.useRealTimers();
+    }
   });
 
   it("空数据 → 显示总数 0 + 第 1/1 页", () => {
