@@ -94,8 +94,9 @@ class Settings(BaseSettings):
     e2e_seed_enabled: bool = False
 
     database_url: str = "postgresql+asyncpg://user:pass@localhost:5432/annotation"
-    # Alembic may use a schema-owner connection while API/Celery keep a least-privilege
-    # runtime role. Empty/unset preserves the historical single-connection behavior.
+    # Alembic uses this owner connection; launchers also bind it as DATABASE_URL
+    # for the dedicated maintenance worker. API/ordinary workers keep the runtime role.
+    # Empty/unset preserves the historical single-connection behavior.
     migration_database_url: str | None = None
     redis_url: str = "redis://localhost:6379/0"
 

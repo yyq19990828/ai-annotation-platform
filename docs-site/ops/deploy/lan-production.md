@@ -20,7 +20,7 @@ last_reviewed: 2026-09-09
 | PostgreSQL | 复用实例，新库 `annotation_production`；不复制旧业务表内容                |
 | MinIO      | 复用实例，七个独立 `prod-` 桶与受限访问凭据                               |
 | Redis      | 独立 `redis-production` 容器与 AOF 卷；无宿主端口                         |
-| 异步任务   | 六类 Worker 与一个 Beat，全部连接生产库和生产 Redis                       |
+| 异步任务   | 七类 Worker 与一个 Beat，全部连接生产库和生产 Redis                       |
 | 模型       | 复用运行中的实例及权重，在新库重新注册和探测能力                          |
 | DuckDB     | 生产独立卷，通用 Worker 写，API 只读                                      |
 
@@ -114,6 +114,8 @@ docker compose --env-file .env.production -f docker-compose.lan-prod.yml run --r
 ```
 
 每次迁移后都重新执行该授权脚本。它检查当前数据库和角色方向，授予业务 DML，禁止运行角色修改迁移版本或删除 GPU membership/fence 真值；同时把审计、预测父表及全部子分区、两个统计物化视图交给运行角色维护。
+
+`celery-worker-maintenance` 专门消费 `maintenance` 队列，沿用下面限定维护对象的运行角色权限，不挂载迁移账号 secret。
 
 **运行角色并非纯 DML 账号**：现有月分区任务需要 CREATE/DROP 子分区，PostgreSQL 的统计刷新需要视图所有权和数据库 TEMPORARY 权限。因此它拥有上述限定维护对象及 `public` schema CREATE 权限；其余业务对象仍由迁移角色所有。迁移角色单向继承运行角色，运行角色不能反过来成为迁移角色，也没有集群管理权限。
 

@@ -76,7 +76,7 @@ Vite 跑在 `:3000`，把 `/api` `/ws` 反代到 `127.0.0.1:8000`（`apps/web/vi
 
 本地若未在系统设置中覆盖 `frontend_base_url`，还要把 `FRONTEND_BASE_URL` 设为 `http://localhost:3000`，否则邀请、验证和重置密码链接会指向配置中的旧默认地址。
 
-> 多 worktree 并行（各分支后端跑不同端口）时，用 `API_PROXY_TARGET=http://127.0.0.1:8010 pnpm dev:web` 覆盖代理目标。
+> 多 worktree 并行开发优先使用 `pnpm dev:worktree`，隔离数据库、Redis、bucket 与服务端口；需要后台任务时加 `--with-worker`。仅覆盖 `API_PROXY_TARGET` 不会隔离数据库和队列。详见[独立工作树开发环境](/dev/how-to/worktree-environments)。
 
 ### 2.5 首个 super_admin
 

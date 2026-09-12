@@ -43,7 +43,8 @@ docker compose up -d       # postgres / redis / minio / mailpit / workers / beat
 
 - `.env` 软链接到主目录；主目录缺少该文件时创建只含说明的空配置，保留应用默认值。
   主目录已有 `.env.local` 时也会链接。修改共享文件会影响所有链接它的工作树。
-- pnpm 锁文件、工作区清单和三个 `package.json` 一致且主目录依赖齐全时，
+- pnpm 锁文件、工作区清单和三个 `package.json` 一致，主目录依赖存在，
+  且已安装的 `node_modules/.pnpm/lock.yaml` 与主目录锁文件一致时，
   `node_modules`、`apps/web/node_modules`、`docs-site/node_modules` 使用软链接。
   不满足条件时在工作树内运行 `pnpm install --frozen-lockfile`。
 - `apps/api/.venv` 由 `uv sync --project apps/api --locked --extra test` 单独建立：
@@ -54,9 +55,11 @@ docker compose up -d       # postgres / redis / minio / mailpit / workers / beat
 软链接，再执行 `pnpm install --frozen-lockfile`；不要通过共享链接安装或更新依赖。
 无需另外配置 Orca 的 Worktree Shared Paths 或 `.worktreeinclude`。
 
-setup 只准备开发环境。基础设施沿用主目录已有服务，不自动运行 Docker、数据库迁移或
-开发服务器；并行启动服务时通过终端环境变量覆盖端口，例如
-`PORT=3002 API_PROXY_TARGET=http://127.0.0.1:8002 pnpm dev:web`。
+setup 只准备依赖和生成文件，不自动运行 Docker、数据库迁移或开发服务器。
+主目录已有本机 PostgreSQL/MinIO 后，在每个工作树运行 `pnpm dev:worktree`：
+启动器会创建独立数据库、Redis、bucket 和本地状态，再迁移并启动 API/Web。
+后台任务使用 `pnpm dev:worktree -- up --with-worker`，不复用主目录 worker。
+测试、诊断和重建流程见[独立工作树开发环境](../how-to/worktree-environments)。
 
 ```bash
 # 显式运行仓库 setup，创建后再启动 Agent
