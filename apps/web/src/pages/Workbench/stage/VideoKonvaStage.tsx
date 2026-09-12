@@ -83,7 +83,7 @@ import {
 import { VideoQcWarnings } from "./VideoQcWarnings";
 import { useVideoKonvaInteraction, isSamProbeTool } from "./videoKonvaInteraction";
 import { videoIntrinsicSize, clientToVideoNorm, videoNormToClient } from "./videoKonvaCoordinates";
-import { deriveVideoFrameViews, type VideoLabelView } from "./videoFrameViews";
+import { deriveVideoFrameViews, visibleInReviewMode, type VideoLabelView } from "./videoFrameViews";
 import { useVideoReferenceConfig } from "./videoReferencePredict";
 import { classColor, colorToHex, getTrackColor, hexToRgb, hexToRgba } from "./colors";
 import { useVideoPolygonDraft } from "./useVideoPolygonDraft";
@@ -187,7 +187,7 @@ interface VideoKonvaStageProps {
   performanceTier?: WorkbenchCommonPreferences["performanceTier"];
   onFrameIndexChange?: (frameIndex: number) => void;
   annotations?: AnnotationResponse[];
-  /** v0.21.4 · AI 候选框(全部帧); 舞台内按当前帧过滤 video_bbox 渲染 + 采纳/驳回。 */
+  /** v0.21.4 · AI 候选(全部帧); 舞台内按当前帧过滤视频几何渲染 + 采纳/驳回。 */
   aiBoxes?: AiBox[];
   selectedId?: string | null;
   hiddenTrackIds?: Set<string>;
@@ -803,13 +803,19 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
     const visibleMaskAnnotations = useMemo(
       () =>
         annotations.filter((annotation) => {
+          if (annotation.is_hidden) return false;
           if (annotation.geometry.type === "video_mask") {
-            return annotation.geometry.frame_index === frameIndex;
+            return (
+              annotation.geometry.frame_index === frameIndex &&
+              visibleInReviewMode("legacy", reviewDisplayMode)
+            );
           }
           if (annotation.geometry.type !== "video_track_mask") return false;
-          return !hiddenTrackIds?.has(annotation.geometry.track_id);
+          if (hiddenTrackIds?.has(annotation.geometry.track_id)) return false;
+          const resolved = resolveVideoMaskTrackAtFrame(annotation.geometry, frameIndex);
+          return resolved !== null && visibleInReviewMode(resolved.source, reviewDisplayMode);
         }),
-      [annotations, frameIndex, hiddenTrackIds],
+      [annotations, frameIndex, hiddenTrackIds, reviewDisplayMode],
     );
     const maskColorForAnnotation = useCallback(
       (annotation: AnnotationResponse) => {
@@ -945,7 +951,7 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       ? samMaskRecords
       : [];
 
-    // v0.21.4 · AI 候选按当前帧过滤(镜像 deriveVideoFrameViews 对 video_bbox 的帧过滤)。
+    // v0.21.4 · AI 候选按当前帧过滤(镜像 deriveVideoFrameViews 的视频几何帧过滤)。
     // v0.21.9 WS2 · 检测式轨迹候选(video_track_bbox)也纳入: 用 resolveTrackAtFrame 解出当前帧框,
     //   与逐帧 video_bbox 候选同层渲染(此前只在侧栏可见、画布不画)。
     const frameAiBoxes = useMemo(() => {

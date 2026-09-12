@@ -17,6 +17,7 @@ import {
 } from "./videoStageGeometry";
 import { addOutsideRange, isFrameOutside } from "./videoTrackOutside";
 import { useVideoReferenceConfig } from "./videoReferencePredict";
+import { visibleInReviewMode } from "./videoFrameViews";
 import type { AttributeSchema } from "@/api/projects";
 import { VideoTrackPanel, type TrackFilter } from "./VideoTrackPanel";
 import { VideoTrackCardContent } from "../shell/selectionCard/VideoTrackCardContent";
@@ -188,14 +189,12 @@ export function VideoTrackSidebar({
   const videoTracks = useMemo(() => annotations.filter(isVideoTrack), [annotations]);
   const maskTracks = useMemo(
     () =>
-      annotations
-        .filter(isVideoMaskTrack)
-        .filter(
-          (annotation) =>
-            trackFilter === "all" ||
-            resolveVideoMaskTrackAtFrame(annotation.geometry, frameIndex) !== null,
-        ),
-    [annotations, frameIndex, trackFilter],
+      annotations.filter(isVideoMaskTrack).filter((annotation) => {
+        if (trackFilter === "all") return true;
+        const resolved = resolveVideoMaskTrackAtFrame(annotation.geometry, frameIndex);
+        return resolved !== null && visibleInReviewMode(resolved.source, reviewDisplayMode);
+      }),
+    [annotations, frameIndex, reviewDisplayMode, trackFilter],
   );
   const selectedBboxes = useMemo(
     () => annotations.filter((ann) => isVideoBbox(ann) && selectedIds.includes(ann.id)),
@@ -263,7 +262,12 @@ export function VideoTrackSidebar({
   const currentFrameEntries = useMemo(() => {
     const out: VideoFrameEntry[] = [];
     for (const ann of annotations) {
-      if (isVideoBbox(ann) && ann.geometry.frame_index === frameIndex) {
+      if (ann.is_hidden) continue;
+      if (
+        isVideoBbox(ann) &&
+        ann.geometry.frame_index === frameIndex &&
+        visibleInReviewMode("legacy", reviewDisplayMode)
+      ) {
         out.push({
           id: ann.id,
           ann,
@@ -273,7 +277,7 @@ export function VideoTrackSidebar({
         });
       } else if (isVideoTrack(ann) && !hiddenTrackIds.has(ann.geometry.track_id)) {
         const resolved = resolveTrackAtFrame(ann.geometry, frameIndex);
-        if (resolved) {
+        if (resolved && visibleInReviewMode(resolved.source, reviewDisplayMode)) {
           out.push({
             id: ann.id,
             ann,
@@ -287,11 +291,17 @@ export function VideoTrackSidebar({
       }
     }
     return out;
-  }, [annotations, frameIndex, hiddenTrackIds]);
+  }, [annotations, frameIndex, hiddenTrackIds, reviewDisplayMode]);
 
   const referenceConfig = useVideoReferenceConfig();
   const selectedTrackGhost = useMemo<VideoTrackGhost | null>(() => {
-    if (!selectedTrack || hiddenTrackIds.has(selectedTrack.geometry.track_id)) return null;
+    if (
+      !selectedTrack ||
+      selectedTrack.is_hidden ||
+      hiddenTrackIds.has(selectedTrack.geometry.track_id) ||
+      !visibleInReviewMode("manual", reviewDisplayMode)
+    )
+      return null;
     // 锁定轨迹视为已确认,不再提示参考框(与画布 ghost 一致)。
     if (lockedTrackIds.has(selectedTrack.geometry.track_id)) return null;
     if (currentFrameEntries.some((entry) => entry.ann.id === selectedTrack.id)) return null;
@@ -317,6 +327,7 @@ export function VideoTrackSidebar({
     hiddenTrackIds,
     lockedTrackIds,
     referenceConfig,
+    reviewDisplayMode,
     selectedTrack,
   ]);
 

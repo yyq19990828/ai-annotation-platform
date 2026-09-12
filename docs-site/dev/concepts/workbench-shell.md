@@ -8,6 +8,8 @@ last_reviewed: 2026-09-05
 
 # 工作台 Shell 架构
 
+视频的帧范围由 `annotationFrameScope` 和 `aiBoxFrames` 识别单帧与轨迹几何，画布和轨迹清单共用 `videoFrameViews.visibleInReviewMode` 的复审来源规则。标注持久化的 `is_hidden` 与会话内的隐藏轨迹集合共同约束渲染、预览和参考虚影；隐藏不删除列表条目，也不改变对象身份。图片原生 Mask 和点云邻帧参考输入同样排除隐藏标注。
+
 Workbench 是图片标注、视频追踪、审核流共用的页面壳。它的边界不是按角色复制页面，而是把「模式」和「Stage」拆成两条正交轴：
 
 ```

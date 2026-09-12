@@ -26,6 +26,8 @@ export function boxIsOnFrame(box: Annotation | AiBox, frameIndex: number): boole
     geometry.type === "video_bbox" ||
     geometry.type === "video_polygon" ||
     geometry.type === "video_polyline" ||
+    geometry.type === "video_rotated_bbox" ||
+    geometry.type === "video_keypoint" ||
     geometry.type === "video_mask"
   ) {
     return geometry.frame_index === frameIndex;
@@ -50,6 +52,8 @@ export function firstTrackFrame(box: Annotation | AiBox): number | null {
     geometry.type === "video_bbox" ||
     geometry.type === "video_polygon" ||
     geometry.type === "video_polyline" ||
+    geometry.type === "video_rotated_bbox" ||
+    geometry.type === "video_keypoint" ||
     geometry.type === "video_mask"
   ) {
     return geometry.frame_index;

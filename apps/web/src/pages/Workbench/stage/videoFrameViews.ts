@@ -142,8 +142,9 @@ export interface DeriveVideoFrameViewsInput {
 const EMPTY_SET = new Set<string>();
 
 /** 复审显示模式过滤(与 VideoStage.visibleInReviewMode 逐位一致)。 */
-function visibleInReviewMode(source: string, mode?: DiffMode): boolean {
+export function visibleInReviewMode(source: string | null, mode?: DiffMode): boolean {
   if (!mode || mode === "diff") return true;
+  if (!source) return false;
   if (mode === "raw") return source === "prediction" || source === "interpolated";
   return source === "manual" || source === "legacy";
 }
@@ -184,6 +185,7 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
   const entries: VideoEntryView[] = [];
   const currentFrameTrackIds = new Set<string>();
   for (const ann of annotations) {
+    if (ann.is_hidden) continue;
     if (isVideoBbox(ann) && ann.geometry.frame_index === frameIndex) {
       if (!visibleInReviewMode("legacy", reviewDisplayMode)) continue;
       entries.push(
@@ -318,6 +320,7 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
   const previews: VideoTrackPreviewView[] = videoTracks
     .filter(
       (ann) =>
+        !ann.is_hidden &&
         !hiddenTrackIds.has(ann.geometry.track_id) &&
         currentFrameTrackIds.has(ann.geometry.track_id),
     )
@@ -352,6 +355,7 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
   const selectedTrack = videoTracks.find((ann) => ann.id === selectedId) ?? null;
   if (
     selectedTrack &&
+    !selectedTrack.is_hidden &&
     !hiddenTrackIds.has(selectedTrack.geometry.track_id) &&
     !lockedTrackIds.has(selectedTrack.geometry.track_id) &&
     visibleInReviewMode("manual", reviewDisplayMode) &&
@@ -391,6 +395,7 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
       null;
     if (
       selectedPointsTrack &&
+      !selectedPointsTrack.is_hidden &&
       !hiddenTrackIds.has(selectedPointsTrack.geometry.track_id) &&
       !lockedTrackIds.has(selectedPointsTrack.geometry.track_id) &&
       visibleInReviewMode("manual", reviewDisplayMode) &&
@@ -422,7 +427,7 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
   const prevGridFrame = gridPrev(frameIndex, samplingStep, frameIndex);
   if (prevGridFrame < frameIndex && visibleInReviewMode("manual", reviewDisplayMode)) {
     for (const ann of videoTracks) {
-      if (ann.id === selectedId) continue;
+      if (ann.is_hidden || ann.id === selectedId) continue;
       const tid = ann.geometry.track_id;
       if (hiddenTrackIds.has(tid) || lockedTrackIds.has(tid)) continue;
       const keyframes = ann.geometry.keyframes;
@@ -447,7 +452,7 @@ export function deriveVideoFrameViews(input: DeriveVideoFrameViewsInput): VideoF
     // 点集轨迹(polygon/polyline)的跨网格帧续写虚影: 同 bbox 判据, 但参考顶点走
     //   nearestPointsTrackKeyframe, 渲染层据 points 画轮廓/折线, 使 Tab 续写流对点集轨迹也生效。
     for (const ann of [...polygonTracks, ...polylineTracks]) {
-      if (ann.id === selectedId) continue;
+      if (ann.is_hidden || ann.id === selectedId) continue;
       const tid = ann.geometry.track_id;
       if (hiddenTrackIds.has(tid) || lockedTrackIds.has(tid)) continue;
       const keyframes = ann.geometry.keyframes;
