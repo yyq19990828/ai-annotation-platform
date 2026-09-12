@@ -478,7 +478,7 @@ async function expectPin(page: Page, fixture: IssueCase, issue: Issue) {
     )
     .toBe(true);
   fixture.evidence.push({ pin: issue.id, point, overlayPixels: await pinPixels(page, point) });
-  await page.getByRole("tab", { name: "评论", exact: true }).click();
+  await page.getByRole("tab", { name: /^评论/ }).click();
   await expect(page.getByRole("tab", { name: /^问题/ })).toHaveAttribute("aria-selected", "false");
   await clickPoint(page, point);
   await expect(page.getByRole("tab", { name: /^问题/ })).toHaveAttribute("aria-selected", "true");

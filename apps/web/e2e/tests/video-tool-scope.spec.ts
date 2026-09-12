@@ -405,7 +405,7 @@ async function accessibleTools(page: Page) {
 }
 
 async function shortenCanvas(page: Page) {
-  await panelCommand(page, "讨论 / Issue", "停靠到底部");
+  await panelCommand(page, "讨论", "停靠到底部");
   const canvas = (await page.locator('[data-workbench-panel="canvas"]').boundingBox())!;
   const sashes = await page
     .locator(".dv-sash:not(.dv-disabled)")

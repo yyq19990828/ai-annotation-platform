@@ -349,7 +349,7 @@ for (const reorders of [10, 50]) {
               // Leave a tab group and a floating group in the final saved tree.
               await panelCommand(
                 page,
-                operation === reorders - 1 ? "类别面板" : "讨论 / Issue",
+                operation === reorders - 1 ? "类别面板" : "讨论",
                 commands[operation % commands.length],
               );
               await sameCanvas();
@@ -383,7 +383,7 @@ for (const reorders of [10, 50]) {
           await expect(workspace(page)).toHaveAttribute("data-compact", "true");
           await layoutCommand(page, "任务队列");
           await sameCanvas();
-          await layoutCommand(page, "讨论 / Issue");
+          await layoutCommand(page, "讨论");
           await sameCanvas();
           await page.setViewportSize(finalViewport);
           await expect(workspace(page)).toHaveAttribute("data-compact", "false");

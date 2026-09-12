@@ -78,7 +78,7 @@ async function openTask(page: Page, projectId: string, taskId: string) {
     timeout: 20_000,
   });
   await layoutCommand(page, "标准标注布局");
-  await discussion(page).getByRole("tab", { name: "评论", exact: true }).click();
+  await discussion(page).getByRole("tab", { name: /^评论/ }).click();
   await expect(editor(page)).toBeVisible();
 }
 
@@ -174,7 +174,7 @@ test("讨论通知通过实时推送打开五十条之后的旧回复，并刷�
   }
 });
 
-test("标注提及通知定位原评论，保持任务草稿目标，支持静音和删除后的不可用提示", async ({
+test("标注提及通知定位原评论，发送目标跟随标注，支持静音和删除后的不可用提示", async ({
   page,
   seed,
 }) => {
@@ -231,7 +231,12 @@ test("标注提及通知定位原评论，保持任务草稿目标，支持静�
       "annotation",
     );
     await expect(discussion(page).getByRole("combobox", { name: "发送目标" })).toHaveValue(
-      discussionTargetKey({ projectId: data.project_id, taskId: data.task_ids[0], kind: "task" }),
+      discussionTargetKey({
+        projectId: data.project_id,
+        taskId: data.task_ids[0],
+        kind: "annotation",
+        annotationId: annotation.id,
+      }),
     );
     await json(
       await page.request.put(`${API_BASE}/api/v1/notification-preferences`, {
@@ -387,7 +392,7 @@ test("未选标注可发送任务留言，失败保留正文，读回原生任�
     await expect(discussion(page).getByRole("combobox", { name: "评论阅读范围" })).toHaveValue(
       "all",
     );
-    await expect(discussion(page).getByRole("button", { name: "在题图上绘制" })).toHaveCount(0);
+    await expect(discussion(page).getByRole("button", { name: "在题图上绘制" })).toBeEnabled();
     let attempts = 0;
     await page.route("**/api/v1/feedbacks", async (route) => {
       if (route.request().method() === "POST" && attempts++ === 0) {
@@ -510,8 +515,11 @@ test("混合讨论可加载旧标注评论，阅读范围与各发送目标的�
     await oldRow.getByTestId("comment-annotation-chip").click();
     const scope = panel.getByRole("combobox", { name: "评论阅读范围" });
     await expect(scope).toHaveValue("all");
-    await editor(page).fill("任务草稿保留");
     const destination = panel.getByRole("combobox", { name: "发送目标" });
+    await destination.selectOption(
+      discussionTargetKey({ projectId: data.project_id, taskId, kind: "task" }),
+    );
+    await editor(page).fill("任务草稿保留");
     await destination.selectOption(
       discussionTargetKey({
         projectId: data.project_id,
@@ -610,17 +618,17 @@ test("弹窗未保存笔触跨页签和工作台路由恢复，并提交到原�
     });
     await openTask(page, data.project_id, taskId);
     await page.getByTestId(`box-list-item-${annotation.id}`).click();
-    await discussion(page)
-      .getByRole("combobox", { name: "发送目标" })
-      .selectOption(
-        discussionTargetKey({
-          projectId: data.project_id,
-          taskId,
-          kind: "annotation",
-          annotationId: annotation.id,
-        }),
-      );
-    const popupButton = discussion(page).getByTitle("弹窗内绘制（与原图比例对齐）");
+    const destination = discussion(page).getByRole("combobox", { name: "发送目标" });
+    const annotationTarget = discussionTargetKey({
+      projectId: data.project_id,
+      taskId,
+      kind: "annotation",
+      annotationId: annotation.id,
+    });
+    await destination.selectOption(annotationTarget);
+    const popupButton = discussion(page).getByRole("button", {
+      name: /^(弹窗批注|批注 · \d+ 条)$/,
+    });
     await popupButton.click();
     const popup = page.getByRole("dialog", { name: "画布批注", exact: true });
     await expect(popup).toBeVisible();
@@ -639,7 +647,7 @@ test("弹窗未保存笔触跨页签和工作台路由恢复，并提交到原�
     await page.keyboard.press("Escape");
     await expect(popup).toHaveCount(0);
     await discussion(page).getByRole("tab", { name: "历史", exact: true }).click();
-    await discussion(page).getByRole("tab", { name: "评论", exact: true }).click();
+    await discussion(page).getByRole("tab", { name: /^评论/ }).click();
     await expect(popupButton).toContainText("1 条");
     await page
       .getByTestId("workbench-topbar")
@@ -647,6 +655,8 @@ test("弹窗未保存笔触跨页签和工作台路由恢复，并提交到原�
       .click();
     await expect(page.getByTestId("workbench-topbar")).toHaveCount(0);
     await page.goBack();
+    // Returning without a canvas selection shows the task draft; reopen the original target.
+    await destination.selectOption(annotationTarget);
     await expect(popupButton).toContainText("1 条");
     await popupButton.click();
     await expect(drawing.locator("polyline")).toHaveCount(1);

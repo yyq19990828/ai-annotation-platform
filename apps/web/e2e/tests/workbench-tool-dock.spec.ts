@@ -252,7 +252,7 @@ for (const video of [false, true]) {
       );
       expect((await dock.boundingBox())!.y).toBeCloseTo(beforeTimeline.y);
     }
-    await panelCommand(page, "讨论 / Issue", "停靠到底部");
+    await panelCommand(page, "讨论", "停靠到底部");
     await expect(page.getByText("布局恢复失败", { exact: false })).toHaveCount(0);
     expect(
       await page

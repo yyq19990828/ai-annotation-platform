@@ -1,4 +1,5 @@
 import { isVideoLifecycleCancellation } from "../helpers/video-request-errors";
+import { layoutCommand } from "../helpers/workbench-layout";
 import type { APIRequestContext, APIResponse, Browser, Page, Route } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 
@@ -882,8 +883,7 @@ test.describe("video Issue persisted context", () => {
         "data-issue-id",
         issue.id,
       );
-      await page.getByRole("button", { name: "布局", exact: true }).click();
-      await page.getByRole("menuitem", { name: "标准标注布局", exact: true }).click();
+      await layoutCommand(page, "标准标注布局");
       fixture.navigatedTaskIds.push(fixture.taskId, other.task_id);
       await page
         .getByRole("tabpanel", { name: "任务队列", exact: true })
@@ -928,7 +928,7 @@ test.describe("video Issue persisted context", () => {
     await createPolygonDraft(page);
     await clickPoint(page, [0.53, 0.56]);
     await expect(stage(page)).toHaveAttribute("data-video-draft-point-count", "3");
-    await page.getByRole("tab", { name: "评论", exact: true }).click();
+    await page.getByRole("tab", { name: /^评论/ }).click();
     const input = page.getByRole("textbox", { name: "留言", exact: true });
     await input.fill("先确认问题，保留正在绘制的多边形");
     const sent = page.waitForResponse(

@@ -211,7 +211,7 @@ test("图片布局预设、面板隐藏和浮动保留画布及未发送讨论�
 
   const discussion = panel(page, "discussion");
   await page.getByRole("button", { name: "收起浮窗", exact: true }).click();
-  await discussion.getByRole("tab", { name: "评论", exact: true }).click();
+  await discussion.getByRole("tab", { name: /^评论/ }).click();
   const editor = discussion.locator('[contenteditable="true"]');
   await expect(editor).toBeVisible();
   const originalEditor = await editor.elementHandle();
