@@ -318,10 +318,11 @@ async function clickPoint(page: Page, point: Point) {
     (receipt!.x - bounds.x) / bounds.width,
     (receipt!.y - bounds.y) / bounds.height,
   ];
-  // Browser mouse coordinates are quantized to screen pixels; the form keeps three decimals.
+  // The location summary rounds only its display; persistence retains the
+  // actual clicked point after browser screen-pixel quantization.
   expect(Math.abs(normalized[0] - point[0])).toBeLessThanOrEqual(1.1 / bounds.width);
   expect(Math.abs(normalized[1] - point[1])).toBeLessThanOrEqual(1.1 / bounds.height);
-  return { x: Number(normalized[0].toFixed(3)), y: Number(normalized[1].toFixed(3)) };
+  return { x: normalized[0], y: normalized[1] };
 }
 
 async function videoMediaBounds(page: Page) {
@@ -442,10 +443,7 @@ async function createIssue(
 async function openIssues(page: Page) {
   await revealFab(page);
   await page.getByTestId("issue-fab").click();
-  await expect(page.getByRole("tab", { name: "Issue", exact: true })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
+  await expect(page.getByRole("tab", { name: /^问题/ })).toHaveAttribute("aria-selected", "true");
 }
 
 async function pinPixels(page: Page, point: Point) {
@@ -461,8 +459,8 @@ async function pinPixels(page: Page, point: Point) {
       .map((canvas) => {
         const scaleX = canvas.width / canvas.clientWidth;
         const scaleY = canvas.height / canvas.clientHeight;
-        // Sample inside the circle, away from the white central "i" glyph and outer ring.
-        const px = Math.round((media.x + media.w * (x + 0.0072)) * scaleX);
+        // The pin has a fixed 8px screen radius; sample clear of its glyph and stroke at any zoom.
+        const px = Math.round((media.x + media.w * x + 4) * scaleX);
         const py = Math.round((media.y + media.h * y) * scaleY);
         const rgba = [...canvas.getContext("2d")!.getImageData(px, py, 1, 1).data];
         return rgba;
@@ -480,17 +478,14 @@ async function expectPin(page: Page, fixture: IssueCase, issue: Issue) {
     )
     .toBe(true);
   fixture.evidence.push({ pin: issue.id, point, overlayPixels: await pinPixels(page, point) });
-  await page.getByRole("tab", { name: "评论", exact: true }).click();
-  await expect(page.getByRole("tab", { name: "Issue", exact: true })).toHaveAttribute(
-    "aria-selected",
-    "false",
-  );
+  await page.getByRole("tab", { name: /^评论/ }).click();
+  await expect(page.getByRole("tab", { name: /^问题/ })).toHaveAttribute("aria-selected", "false");
   await clickPoint(page, point);
-  await expect(page.getByRole("tab", { name: "Issue", exact: true })).toHaveAttribute(
-    "aria-selected",
-    "true",
+  await expect(page.getByRole("tab", { name: /^问题/ })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("discussion-issue-detail")).toHaveAttribute(
+    "data-issue-id",
+    issue.id,
   );
-  await expect(page.getByTestId(`discussion-issue-card-${issue.id}`)).toHaveClass(/shadow-/);
 }
 
 async function holdMedia(page: Page, fixture: IssueCase) {
@@ -602,7 +597,9 @@ test.describe("video Issue source-frame ownership", () => {
     await seek(page, 17);
     const anchor = await dropReady(page, fixture, 17, [0.375, 0.625]);
     const issue = await saveIssue(page, fixture);
-    expect(issue.anchor_position).toMatchObject({ ...anchor, frame: 17 });
+    expect(issue.anchor_position).toMatchObject({ frame: 17 });
+    expect(issue.anchor_position!.x).toBeCloseTo(anchor.x, 12);
+    expect(issue.anchor_position!.y).toBeCloseTo(anchor.y, 12);
     expect((await listIssues(request, fixture)).find((item) => item.id === issue.id)).toEqual(
       issue,
     );
@@ -618,7 +615,13 @@ test.describe("video Issue source-frame ownership", () => {
     await expect(stage(page)).toBeVisible({ timeout: 25_000 });
     await seek(page, 3);
     await openIssues(page);
-    await page.getByTestId(`discussion-issue-card-${issue.id}`).click();
+    await page.getByTestId(`discussion-issue-open-${issue.id}`).click();
+    await expect(page.getByTestId("discussion-issue-detail")).toHaveAttribute(
+      "data-issue-id",
+      issue.id,
+    );
+    await expect(stage(page)).toHaveAttribute("data-video-frame-index", "3");
+    await page.getByTestId(`discussion-issue-locate-${issue.id}`).click();
     await expectReady(page, fixture, 17);
     await expectPin(page, fixture, issue);
     await test.info().attach("persisted-F17-Issue-pin", {
@@ -634,24 +637,38 @@ test.describe("video Issue source-frame ownership", () => {
     );
   });
 
-  test("G1-3 清空两个坐标仍创建任务级Issue，刷新后没有伪造帧锚点", async ({
+  test("G1-3 显式任务问题不提供坐标，刷新后没有伪造帧锚点", async ({
     page,
     request,
     issueCase: fixture,
   }) => {
+    const layoutSaved = page.waitForResponse(
+      (response) =>
+        pathOf(response.url()) === "/api/v1/auth/me/preferences" &&
+        response.request().method() === "PATCH",
+    );
     await open(page, fixture);
     await seek(page, 3);
-    await dropReady(page, fixture, 3);
-    await modal(page).getByPlaceholder("x (0-1)").fill("");
-    await modal(page).getByPlaceholder("y (0-1)").fill("");
+    await openIssues(page);
+    await page.getByTestId("issue-create-task").click();
+    await expect(modal(page)).toBeVisible();
+    await expect(modal(page).getByPlaceholder("x (0-1)")).toHaveCount(0);
+    await expect(modal(page).getByPlaceholder("y (0-1)")).toHaveCount(0);
     await expect(page.getByTestId("issue-create-frame")).toBeHidden();
     const issue = await saveIssue(page, fixture);
     expect(issue).toMatchObject({ anchor_type: "task", anchor_position: null });
+    // Direct task creation can finish before the debounced layout write; preserve it on reload.
+    expect((await layoutSaved).ok()).toBe(true);
     await page.reload();
     await expect(stage(page)).toBeVisible({ timeout: 25_000 });
     await seek(page, 8);
     await openIssues(page);
-    await page.getByTestId(`discussion-issue-card-${issue.id}`).click();
+    await page.getByTestId(`discussion-issue-open-${issue.id}`).click();
+    await expect(page.getByTestId("discussion-issue-detail")).toHaveAttribute(
+      "data-issue-id",
+      issue.id,
+    );
+    await expect(page.getByTestId(`discussion-issue-locate-${issue.id}`)).toHaveCount(0);
     await expect(stage(page)).toHaveAttribute("data-video-frame-index", "8");
     await expect(navigation(page)).toBeHidden();
     await expect(page.getByTestId("video-issue-marker")).toHaveCount(0);
@@ -683,7 +700,7 @@ test.describe("video Issue source-frame ownership", () => {
     await expect(page.getByTestId("issue-pin-fab")).toHaveAttribute("data-armed", "false");
     await expect(modal(page).getByPlaceholder("x (0-1)")).toHaveCount(0);
     await expect(modal(page).getByPlaceholder("y (0-1)")).toHaveCount(0);
-    await expect(modal(page)).toContainText("任务级问题不绑定画面位置");
+    await expect(modal(page)).toContainText("任务问题不绑定画布位置");
     await expect(page.getByTestId("issue-create-frame")).toBeHidden();
     // No held source response has been delivered: task-level feedback is independent of media.
     const issue = await saveIssue(page, fixture);
@@ -863,7 +880,9 @@ test.describe("video Issue source-frame ownership", () => {
     await expectReady(page, fixture, 3);
     await expect(page.getByTestId("issue-create-frame")).toHaveText("源帧 F 3");
     const issue = await saveIssue(page, fixture);
-    expect(issue.anchor_position).toMatchObject({ ...anchor, frame: 3 });
+    expect(issue.anchor_position).toMatchObject({ frame: 3 });
+    expect(issue.anchor_position!.x).toBeCloseTo(anchor.x, 12);
+    expect(issue.anchor_position!.y).toBeCloseTo(anchor.y, 12);
     expect((await listIssues(request, fixture)).find((item) => item.id === issue.id)).toEqual(
       issue,
     );
@@ -894,8 +913,9 @@ test.describe("video Issue source-frame ownership", () => {
     await page.getByTestId("issue-frame-retry").click();
     await expectReady(page, fixture, 3);
     await expect(modal(page)).toBeVisible();
-    await expect(modal(page).getByPlaceholder("x (0-1)")).toHaveValue(anchor.x.toFixed(3));
-    await expect(modal(page).getByPlaceholder("y (0-1)")).toHaveValue(anchor.y.toFixed(3));
+    await expect(modal(page)).toContainText(
+      `画布位置 x ${anchor.x.toFixed(3)} · y ${anchor.y.toFixed(3)}`,
+    );
     await expect(page.getByTestId("issue-create-frame")).toHaveText("源帧 F 3");
   });
 
@@ -923,9 +943,9 @@ test.describe("video Issue source-frame ownership", () => {
     await held.fetched();
     await openIssues(page);
     await observeNavigation(page);
-    await page.getByTestId(`discussion-issue-card-${first.id}`).click();
+    await page.getByTestId(`discussion-issue-locate-${first.id}`).click();
     await expect(navigation(page)).toHaveAttribute("data-status", "preparing");
-    await page.getByTestId(`discussion-issue-card-${last.id}`).click();
+    await page.getByTestId(`discussion-issue-locate-${last.id}`).click();
     await expect(navigation(page)).toHaveAttribute("data-frame-index", "17");
     await held.finish();
     await expectReady(page, fixture, 17);
@@ -942,7 +962,7 @@ test.describe("video Issue source-frame ownership", () => {
     await secondGate.fetched();
     await openIssues(page);
     await observeNavigation(page);
-    await page.getByTestId(`discussion-issue-card-${first.id}`).click();
+    await page.getByTestId(`discussion-issue-locate-${first.id}`).click();
     await expect(navigation(page)).toHaveAttribute("data-status", "preparing");
     await page
       .getByRole("tabpanel", { name: "任务队列", exact: true })
@@ -971,7 +991,7 @@ test.describe("video Issue source-frame ownership", () => {
       returnedSourceFrame: returnedFrame,
     });
     await openIssues(page);
-    await page.getByTestId(`discussion-issue-card-${last.id}`).click();
+    await page.getByTestId(`discussion-issue-locate-${last.id}`).click();
     await expectReady(page, fixture, 17);
     expect(fixture.writes).toEqual([]);
     expect((await listIssues(request, fixture)).map((issue) => issue.id).sort()).toEqual(
@@ -992,7 +1012,7 @@ test.describe("video Issue explicit decoder and native-media faults", () => {
     const issue = await createIssue(request, fixture, 3);
     await open(page, fixture);
     await openIssues(page);
-    await page.getByTestId(`discussion-issue-card-${issue.id}`).click();
+    await page.getByTestId(`discussion-issue-locate-${issue.id}`).click();
     await expectReady(page, fixture, 3);
     await expect(stage(page)).toHaveAttribute("data-video-frame-source", /^(video|native-bitmap)$/);
     fixture.evidence.push({
@@ -1042,7 +1062,7 @@ test.describe("video Issue explicit decoder and native-media faults", () => {
     const issue = await createIssue(request, fixture, 3);
     await open(page, fixture);
     await openIssues(page);
-    await page.getByTestId(`discussion-issue-card-${issue.id}`).click();
+    await page.getByTestId(`discussion-issue-locate-${issue.id}`).click();
     await expect(navigation(page)).toHaveAttribute("data-status", /^(timeout|unavailable)$/, {
       timeout: 12_000,
     });

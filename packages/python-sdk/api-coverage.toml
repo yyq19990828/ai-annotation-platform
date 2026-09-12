@@ -3,6 +3,7 @@ watched_tags = ["projects", "datasets", "batches", "tasks", "annotations", "anno
 
 [operations]
 "GET /api/v1/feedbacks" = { status = "covered" }
+"GET /api/v1/feedbacks/{root_feedback_id}/thread" = { status = "excluded", reason = "workbench-internal" }
 "POST /api/v1/feedbacks" = { status = "covered" }
 "PATCH /api/v1/feedbacks/{feedback_id}" = { status = "excluded", reason = "no-external-demand" }
 "DELETE /api/v1/feedbacks/{feedback_id}" = { status = "excluded", reason = "no-external-demand" }

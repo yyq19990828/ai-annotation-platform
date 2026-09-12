@@ -206,6 +206,8 @@ class WorkbenchCommonPreferences(BaseModel):
     # v0.21.11 · 采纳/拒绝 AI 候选后自动前进到下一个待决（仅移动选中，不缩放视口）。
     # 视频 + 图片 2D 通用；默认开（审阅流水线手感）。历史偏好缺该字段时默认开启。
     autoAdvanceOnDecide: bool = True
+    # Image-canvas comment badges; missing historic values default to enabled.
+    showAnnotationComments: bool = True
 
     @field_validator("labelContent", mode="before")
     @classmethod

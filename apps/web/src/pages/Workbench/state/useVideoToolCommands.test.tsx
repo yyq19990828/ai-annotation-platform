@@ -59,6 +59,59 @@ function deferred() {
 }
 
 describe("explicit video tool commands", () => {
+  it("awaits checked selection without seeking or activating an editing tool", async () => {
+    const { result } = setup();
+    act(() => result.current.state.setVideoTool("polygon"));
+    let accepted;
+    await act(async () => {
+      accepted = await result.current.commands.requestSelectionReady(
+        "video_track_bbox",
+        () => true,
+      );
+    });
+    expect(accepted).toBe(true);
+    expect(result.current.state.selectedId).toBe("video_track_bbox");
+    expect(result.current.state.videoTool).toBe("polygon");
+    expect(result.current.state.videoFrameIndex).toBe(0);
+  });
+
+  it("does not apply a checked selection when navigation retires during a mask save", async () => {
+    const save = deferred();
+    let relevant = true;
+    const { result } = setup({ needsMaskGuard: true, guardMask: () => save.promise });
+    act(() => result.current.state.setSelectedId("original"));
+    let accepted!: Promise<boolean>;
+    act(() => {
+      accepted = result.current.commands.requestSelectionReady("video_track_bbox", () => relevant);
+    });
+    relevant = false;
+    await act(async () => save.resolve(true));
+    expect(await accepted).toBe(false);
+    expect(result.current.state.selectedId).toBe("original");
+  });
+
+  it("reports a refused checked selection and preserves the live drawing", async () => {
+    const discardDrawingDraft = vi.fn();
+    const { result } = setup({
+      controlsRef: {
+        current: {
+          getDrawingDraft: () => ({ kind: "points", tool: "polygon", frameIndex: 0 }),
+          discardDrawingDraft,
+        } as unknown as VideoStageControls,
+      },
+    });
+    act(() => result.current.state.setSelectedId("original"));
+    let accepted!: Promise<boolean>;
+    act(() => {
+      accepted = result.current.commands.requestSelectionReady("video_track_bbox", () => true);
+    });
+    expect(result.current.commands.confirmationOpen).toBe(true);
+    await act(async () => result.current.commands.settleConfirmation(false));
+    expect(await accepted).toBe(false);
+    expect(discardDrawingDraft).not.toHaveBeenCalled();
+    expect(result.current.state.selectedId).toBe("original");
+  });
+
   it("clears a task reset without retiring navigation, while a blank user selection interrupts it", () => {
     const onUserIntent = vi.fn();
     const { result } = setup({ onUserIntent });

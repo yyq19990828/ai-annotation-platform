@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { clsx } from "clsx";
 import { Icon } from "@/components/ui/Icon";
@@ -22,6 +22,10 @@ import { tasksApi } from "@/api/tasks";
 import { batchesApi } from "@/api/batches";
 import { ShellPopover, SHELL_POPOVER_HEADER_CLASS } from "./ShellPopover";
 import {
+  DiscussionNotificationError,
+  resolveDiscussionNotification,
+} from "./NotificationsPopover.navigation";
+import {
   buildReviewWorkbenchUrl,
   buildWorkbenchUrl,
   currentWorkbenchReturnTo,
@@ -36,6 +40,11 @@ import {
 } from "./NotificationsPopover.helpers";
 
 type NotificationTone = "default" | "danger" | "success" | "ai" | "accent";
+
+type NotificationTargetState = {
+  item: NotificationItem;
+  error: string | null;
+};
 
 const TONE_CLASS: Record<NotificationTone, string> = {
   default: "bg-muted text-muted-foreground",
@@ -57,6 +66,10 @@ const TYPE_LABEL: Record<string, string> = {
   "bug_report.commented": "评论了反馈",
   "bug_report.status_changed": "更新了反馈状态",
   "bug_report.reopened": "重新打开了反馈",
+  "feedback.reply_created": "回复了问题",
+  "feedback.status_changed": "更新了问题状态",
+  "feedback.comment_mentioned": "在任务留言中提到了你",
+  "annotation.comment_mentioned": "在标注评论中提到了你",
   "batch.rejected": "驳回了批次",
   "batch.review_reopened": "重新打开了批次审核",
   "batch.admin_locked": "锁定了批次",
@@ -186,6 +199,9 @@ function notificationVisual(item: NotificationItem): {
   if (item.type.startsWith("bug_report.")) {
     return { icon: "messageCircle", tone: "accent" };
   }
+  if (item.type.startsWith("feedback.") || item.target_type === "annotation_comment") {
+    return { icon: "messageCircle", tone: "accent" };
+  }
   if (item.type.startsWith("batch.")) {
     return { icon: "layers", tone: "default" };
   }
@@ -243,8 +259,10 @@ function NotifRow({ item, onClick, onDelete, deletePending }: NotifRowProps) {
     jobVerb(item) ??
     (reopen
       ? "重新打开了反馈"
-      : item.type === "bug_report.status_changed"
-        ? `状态 ${fromStatus ?? ""} → ${toStatus ?? ""}`
+      : item.type === "bug_report.status_changed" || item.type === "feedback.status_changed"
+        ? fromStatus || toStatus
+          ? `状态 ${fromStatus ?? ""} → ${toStatus ?? ""}`
+          : TYPE_LABEL[item.type] || item.type
         : TYPE_LABEL[item.type] || item.type);
 
   return (
@@ -327,34 +345,55 @@ export function NotificationsPopover() {
   const unread = unreadData?.unread ?? 0;
   const [open, setOpen] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
-  const [target, setTarget] = useState<{ item: NotificationItem; error: string | null } | null>(
-    null,
-  );
+  const [target, setTarget] = useState<NotificationTargetState | null>(null);
   const navigationRequest = useRef(0);
+  const navigationAbort = useRef<AbortController | null>(null);
   const userId = useAuthStore((state) => state.user?.id);
-  useEffect(() => {
+
+  const cancelNavigation = useCallback(() => {
     navigationRequest.current += 1;
+    navigationAbort.current?.abort();
+    navigationAbort.current = null;
+  }, []);
+
+  useEffect(() => {
+    cancelNavigation();
     setOpen(false);
     setTarget(null);
     setSelectedJobId(null);
     return () => {
-      navigationRequest.current += 1;
+      cancelNavigation();
     };
-  }, [userId]);
+  }, [cancelNavigation, userId]);
 
-  const openTaskTarget = async (item: NotificationItem) => {
+  const openNotificationTarget = async (item: NotificationItem) => {
     const request = ++navigationRequest.current;
+    navigationAbort.current?.abort();
+    const controller = new AbortController();
+    navigationAbort.current = controller;
     const owner = useAuthStore.getState().user?.id;
     const current = () =>
-      request === navigationRequest.current && !!owner && isCurrentAuthOwner(owner);
+      request === navigationRequest.current &&
+      !controller.signal.aborted &&
+      !!owner &&
+      isCurrentAuthOwner(owner);
     setTarget({ item, error: null });
     try {
       const buildUrl = role === "reviewer" ? buildReviewWorkbenchUrl : buildWorkbenchUrl;
       const returnTo = currentWorkbenchReturnTo(location);
       let url: string;
-      if (item.target_type === "task") {
+      if (item.target_type === "feedback" || item.target_type === "annotation_comment") {
+        const resolved = await resolveDiscussionNotification(item, controller.signal);
+        if (!current()) return;
+        url = buildUrl(resolved.projectId, {
+          taskId: resolved.task.id,
+          batchId: resolved.task.batch_id,
+          returnTo,
+          discussion: resolved.target,
+        });
+      } else if (item.target_type === "task") {
         // Read the current target: notification payloads may precede a transfer or another review.
-        const task = await tasksApi.get(item.target_id);
+        const task = await tasksApi.get(item.target_id, { signal: controller.signal });
         url = buildUrl(task.project_id, { taskId: task.id, batchId: task.batch_id, returnTo });
       } else {
         const projectId = stringValue(item.payload?.project_id);
@@ -366,16 +405,26 @@ export function NotificationsPopover() {
       setTarget(null);
       navigate(url);
     } catch (error) {
-      if (!current()) return;
+      if (
+        !current() ||
+        controller.signal.aborted ||
+        (error instanceof Error && error.name === "AbortError")
+      ) {
+        return;
+      }
       const message =
-        error instanceof ApiError && [403, 404].includes(error.status)
-          ? "任务已被删除、转派或访问权限已变更，请从当前任务列表查找或联系项目负责人。"
-          : error instanceof ApiError
-            ? "暂时无法打开该任务，请检查网络后重试。"
-            : error instanceof Error
-              ? error.message
-              : "暂时无法打开该任务，请稍后重试。";
+        error instanceof DiscussionNotificationError
+          ? error.message
+          : error instanceof ApiError && [403, 404].includes(error.status)
+            ? "任务已被删除、转派或访问权限已变更，请从当前任务列表查找或联系项目负责人。"
+            : error instanceof ApiError
+              ? "暂时无法打开该任务，请检查网络后重试。"
+              : error instanceof Error
+                ? error.message
+                : "暂时无法打开该任务，请稍后重试。";
       setTarget({ item, error: message });
+    } finally {
+      if (navigationAbort.current === controller) navigationAbort.current = null;
     }
   };
 
@@ -412,7 +461,12 @@ export function NotificationsPopover() {
                   openBugDrawer(item.target_id);
                 }
               } else if (item.target_type === "task" || item.target_type === "batch") {
-                void openTaskTarget(item);
+                void openNotificationTarget(item);
+              } else if (
+                item.target_type === "feedback" ||
+                item.target_type === "annotation_comment"
+              ) {
+                void openNotificationTarget(item);
               } else if (item.target_type === "export" || item.target_type === "async_job") {
                 setSelectedJobId(item.target_id);
               }
@@ -433,7 +487,7 @@ export function NotificationsPopover() {
           open
           title="打开通知目标"
           onClose={() => {
-            navigationRequest.current += 1;
+            cancelNavigation();
             setTarget(null);
           }}
         >
@@ -441,10 +495,10 @@ export function NotificationsPopover() {
             <div className="space-y-3 text-sm">
               <p role="alert">{target.error}</p>
               <div className="flex gap-2">
-                <Button onClick={() => void openTaskTarget(target.item)}>重新打开</Button>
+                <Button onClick={() => void openNotificationTarget(target.item)}>重新打开</Button>
                 <Button
                   onClick={() => {
-                    navigationRequest.current += 1;
+                    cancelNavigation();
                     setTarget(null);
                     navigate(role === "reviewer" ? "/review" : "/annotate");
                   }}

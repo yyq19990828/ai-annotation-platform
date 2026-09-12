@@ -1,6 +1,14 @@
 import type { NotificationItem } from "@/api/notifications";
 
-export type NotificationFilter = "all" | "task" | "batch" | "bug_report" | "async_job" | "export";
+export type NotificationFilter =
+  | "all"
+  | "task"
+  | "batch"
+  | "bug_report"
+  | "feedback"
+  | "annotation_comment"
+  | "async_job"
+  | "export";
 
 export type NotificationGroupKey = "today" | "week" | "earlier";
 
@@ -9,6 +17,8 @@ export const FILTERS: Array<{ key: NotificationFilter; label: string }> = [
   { key: "task", label: "任务" },
   { key: "batch", label: "批次" },
   { key: "bug_report", label: "反馈" },
+  { key: "feedback", label: "问题" },
+  { key: "annotation_comment", label: "标注评论" },
   { key: "async_job", label: "后台任务" },
   { key: "export", label: "导出" },
 ];

@@ -8,6 +8,7 @@ it.each([
   "workbenchTrackContext",
   "workbenchTrackerReview",
   "workbenchIssueNavigation",
+  "workbenchDiscussion",
 ])("%s controls keep their input while canvas shortcuts remain available", (marker) => {
   const toolbar = document.createElement("div");
   toolbar.dataset[marker] = "";
@@ -22,6 +23,31 @@ it.each([
   button.addEventListener("keydown", check);
   button.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
   expect(check).toHaveBeenCalledOnce();
+});
+
+it("discussion editors protect Enter before a capture-phase canvas listener runs", () => {
+  const discussion = document.createElement("div");
+  discussion.dataset.workbenchDiscussion = "";
+  const editor = document.createElement("div");
+  editor.contentEditable = "true";
+  discussion.append(editor);
+  document.body.append(discussion);
+  const canvasCommit = vi.fn();
+  const sendComment = vi.fn();
+  const capture = (event: KeyboardEvent) => {
+    if (!isWorkbenchInteractionBlocked(event) && event.key === "Enter") canvasCommit();
+  };
+  window.addEventListener("keydown", capture, true);
+  editor.addEventListener("keydown", sendComment);
+  try {
+    editor.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    expect(sendComment).toHaveBeenCalledOnce();
+    expect(canvasCommit).not.toHaveBeenCalled();
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    expect(canvasCommit).toHaveBeenCalledOnce();
+  } finally {
+    window.removeEventListener("keydown", capture, true);
+  }
 });
 
 it.each([
@@ -49,6 +75,7 @@ describe.each([
   "workbenchToolMenu",
   "workbenchVideoToolConfirm",
   "workbenchIssueCreate",
+  "workbenchDiscussion",
 ])("workbench %s interaction boundary", (marker) => {
   it("blocks background events only while the marker is open", () => {
     const settings = document.createElement("div");

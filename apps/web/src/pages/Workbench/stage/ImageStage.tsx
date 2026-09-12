@@ -105,6 +105,7 @@ import { wheelZoomFactor } from "./imageStageSettings";
 import { fitAwareScaleRange, zoomAtPoint } from "./shared/viewport/zoom";
 import { supportsSingleRingPolygonEdit } from "./shared/geometry/geometryEditPolicy";
 import { IssueLayer } from "./image/IssueLayer";
+import { ImageStageCommentBadges } from "./ImageStageCommentBadges";
 import { useWorkbenchConfig } from "../state/useWorkbenchConfig";
 import { useWorkbenchPerf } from "./shared/useWorkbenchPerf";
 import { useRafThrottle } from "./shared/useRafThrottle";
@@ -412,6 +413,10 @@ interface ImageStageProps {
   /** v0.10.20 · drop-arm 模式: 渲染 catcher 拦截单击, 派发归一化坐标 → Shell 打开 IssueCreateModal. */
   issuePinDropArmed?: boolean;
   onIssuePinDrop?: (x: number, y: number) => void;
+  /** Per-annotation saved comment totals for the image canvas. */
+  annotationCommentCounts?: Record<string, number>;
+  /** Open an annotation's comment list through the guarded Workbench shell. */
+  onOpenAnnotationComments?: (annotationId: string) => void;
 }
 
 // v0.18.19 · SAM 候选「待确认」紫虚线 overlay。抽成独立组件: 内部 rAF 驱动 dashOffset 做
@@ -612,6 +617,8 @@ export function ImageStage({
   onIssuePinClick,
   issuePinDropArmed,
   onIssuePinDrop,
+  annotationCommentCounts,
+  onOpenAnnotationComments,
 }: ImageStageProps) {
   // selSet 引用稳定化（I3）：以排序后的 id 串作为签名，签名不变则返回上次同一 Set 实例，
   // 让下游 KonvaBox / KonvaPolygon 的 selected prop 维持引用稳定，避免误触发 memo 失效。
@@ -1809,6 +1816,41 @@ export function ImageStage({
     if (pg && pg.type === "rotated_bbox") return pg;
     return null;
   };
+
+  // The DOM badge is positioned outside Konva, so pass the same live geometry
+  // that the shape renderers consume. Derive this only for visible positive
+  // counts; moving every vertex while badges are disabled would be wasted work.
+  const commentBadgeAnnotations =
+    fitted && workbenchConfig.common.showAnnotationComments && annotationCommentCounts
+      ? visibleSortedUserBoxes.flatMap((annotation) => {
+          const rawCount = annotationCommentCounts[annotation.id];
+          if (!Number.isFinite(rawCount) || Math.trunc(rawCount) <= 0) return [];
+          let geometry = annotation.geometry;
+          const boxOverride = overrideGeom(annotation.id);
+          if (boxOverride && (!geometry || geometry.type === "bbox")) {
+            geometry = { type: "bbox", ...boxOverride };
+          } else if (geometry?.type === "polygon" || geometry?.type === "polyline") {
+            const points = polyOverridePoints(annotation.id);
+            if (points) geometry = { ...geometry, points };
+          } else if (geometry?.type === "keypoint") {
+            const points = kpOverridePoints(annotation.id);
+            if (points) geometry = { ...geometry, points };
+          } else if (geometry?.type === "rotated_bbox") {
+            let liveGeometry = rotatedOverride(annotation.id) ?? geometry;
+            if (
+              drag &&
+              (drag.kind === "moveRotatedBox" || drag.kind === "resizeRotatedBox") &&
+              drag.id === annotation.id
+            ) {
+              liveGeometry = drag.cur;
+            } else if (drag?.kind === "rotateBox" && drag.id === annotation.id) {
+              liveGeometry = { ...liveGeometry, angle: drag.cur };
+            }
+            geometry = liveGeometry;
+          }
+          return [{ ...annotation, geometry }];
+        })
+      : [];
 
   const handleUserShapeClick = useCallback(
     (id: string, evt?: Konva.KonvaEventObject<MouseEvent>) => {
@@ -3202,6 +3244,28 @@ export function ImageStage({
           </div>
         )}
       </div>
+
+      {commentBadgeAnnotations.length > 0 && (
+        <ImageStageCommentBadges
+          annotations={commentBadgeAnnotations}
+          rasterMaskRecords={displayedRasterMaskRecords}
+          counts={annotationCommentCounts}
+          imgW={imgW}
+          imgH={imgH}
+          vp={vp}
+          viewportSize={vpSize}
+          selectedIds={selSet}
+          onOpenAnnotationComments={onOpenAnnotationComments}
+          interactive={
+            selectActive &&
+            !pendingDrawing &&
+            !polygonSlice.session &&
+            !boundaryTrace.trace &&
+            !issuePinDropArmed &&
+            !drag
+          }
+        />
+      )}
 
       {/* v0.10.9 · SAM 候选精修浮按钮：active polygonlabels 候选 + 未 Enter 时显示。
           位置贴在候选 polygon 顶点 bbox 右上角；点击/按 R 都触发 onRefineSamCandidate。

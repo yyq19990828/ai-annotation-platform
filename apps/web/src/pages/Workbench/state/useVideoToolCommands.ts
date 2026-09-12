@@ -60,7 +60,11 @@ type Command =
       onAdmitted: (previous: VideoToolSelection) => void;
       isRelevant: () => boolean;
     }
-  | ({ kind: "selection"; id: string | null } & VideoSelectionCommandOptions);
+  | ({
+      kind: "selection";
+      id: string | null;
+      isRelevant?: () => boolean;
+    } & VideoSelectionCommandOptions);
 
 function pendingBelongsToDraft(pending: PendingDrawing, draft: VideoDrawingDraft) {
   if (!pending || !("frameIndex" in pending) || pending.frameIndex !== draft.frameIndex)
@@ -200,6 +204,7 @@ export function useVideoToolCommands(options: Options) {
         serial.current === requestId &&
         latest.current.enabled &&
         latest.current.ownerKey === initial.ownerKey &&
+        (command.kind !== "selection" || command.isRelevant?.() !== false) &&
         ((command.kind !== "temporary" && command.kind !== "frame" && command.kind !== "leave") ||
           command.isRelevant());
       if (!isCurrent()) return false;
@@ -303,6 +308,13 @@ export function useVideoToolCommands(options: Options) {
     [request],
   );
 
+  /** Await admission for an owner-bound navigation without creating another guard. */
+  const requestSelectionReady = useCallback(
+    (id: string, isRelevant: () => boolean) =>
+      request({ kind: "selection", id, activateTrackTool: false, isRelevant }),
+    [request],
+  );
+
   const requestFrame = useCallback(
     (frameIndex: number, isRelevant: () => boolean) => {
       latest.current.onUserIntent?.();
@@ -357,6 +369,7 @@ export function useVideoToolCommands(options: Options) {
     requestTool,
     requestScope,
     requestSelection,
+    requestSelectionReady,
     requestFrame,
     requestFrameReady,
     requestTemporaryTool,

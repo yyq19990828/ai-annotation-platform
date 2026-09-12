@@ -16,6 +16,7 @@
 ## Project boundaries
 
 - `apps/web` is a React/Vite SPA; `docs-site` is Vue/VitePress. Preserve each surface's framework and theme system.
+- For browser automation and live UI validation, when `command -v agent-browser` succeeds, load and prefer the project [agent-browser skill](.agents/skills/agent-browser/SKILL.md). Use `agent-browser skills get core` for guidance matching the installed CLI version; explicit user choices of browser or session take precedence.
 - In `apps/web`, use semantic Tailwind classes backed by `apps/web/src/styles/shadcn.css` and `@theme inline`. CSS modules read `--sc-*`, never legacy `--color-*`. Do not add bare/arbitrary colors to `className`; canvas/data colors and shadow/overlay rgba are narrow exceptions.
 - Use semantic status utilities such as `text-status-danger bg-status-danger-soft`, not paired hue classes. App dark mode uses `data-theme` and Tailwind `dark:`; do not introduce `.dark` there. The docs site intentionally uses `html.dark` and its own `--docs-*` / `--home-*` tokens. See [design system](docs-site/dev/reference/design-system.md).
 - After app styling changes, run `pnpm --filter @anno/web lint:css-tokens` (also included in web lint). Prefer existing compact text sizes, semantic overlay layers, Lucide icons, and local UI adapters.
