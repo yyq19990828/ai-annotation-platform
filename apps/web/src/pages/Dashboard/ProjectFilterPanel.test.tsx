@@ -3,7 +3,8 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ProjectFilterPanel, ProjectFilterSummary } from "./ProjectFilterPanel";
+import { ProjectFilterPanel } from "./ProjectFilterPanel";
+import { ProjectFilterSummary } from "./ProjectFilterSummary";
 import { EMPTY_FILTERS, type DashboardFilters } from "./dashboardUrlState";
 
 const users = vi.hoisted(() => ({

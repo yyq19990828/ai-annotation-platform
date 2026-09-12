@@ -1,6 +1,7 @@
-import type { APIRequestContext, Locator } from "@playwright/test";
+import type { APIRequestContext } from "@playwright/test";
 import { expect, test as base, type FilteringSeedManifest, type SeedAPI } from "../fixtures/seed";
 import { resetFiltering } from "../fixtures/filtering";
+import { annotationPaintedPixels } from "../fixtures/annotation-canvas-pixels";
 
 const API_BASE = process.env.PLAYWRIGHT_API_BASE ?? "http://127.0.0.1:18110";
 const test = base.extend<{ filtering: FilteringSeedManifest }>({
@@ -9,21 +10,6 @@ const test = base.extend<{ filtering: FilteringSeedManifest }>({
   },
 });
 test.setTimeout(120_000);
-
-function canvasPaintedPixels(stage: Locator) {
-  return stage.locator("canvas").evaluateAll((canvases) => {
-    let painted = 0;
-    for (const node of canvases) {
-      const canvas = node as HTMLCanvasElement;
-      if (!canvas.width || !canvas.height) continue;
-      const context = canvas.getContext("2d");
-      if (!context) continue;
-      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
-      for (let index = 3; index < pixels.length; index += 4) if (pixels[index] > 0) painted += 1;
-    }
-    return painted;
-  });
-}
 
 async function importCandidates(
   request: APIRequestContext,
@@ -213,9 +199,10 @@ test("persisted image hide remains restorable and does not change geometry", asy
   await expect(stage).toHaveAttribute("data-image-ready", "true");
   await expect(stage).toHaveAttribute("data-user-box-count", "1");
   await page.mouse.move(5, 5);
-  const paintedPixels = () => canvasPaintedPixels(stage);
+  const paintedPixels = () => annotationPaintedPixels(stage);
   await stage.screenshot({ path: test.info().outputPath("visible.png"), animations: "disabled" });
   const visiblePixels = await paintedPixels();
+  expect(visiblePixels).toBeGreaterThan(0);
   const row = page.getByTestId("box-list-item-" + annotationId);
   await row.getByRole("button", { name: "更多操作", exact: true }).hover();
   const hide = page.waitForResponse(
@@ -232,6 +219,7 @@ test("persisted image hide remains restorable and does not change geometry", asy
   await page.reload();
   await expect(stage).toBeVisible();
   await expect(stage).toHaveAttribute("data-image-ready", "true");
+  await expect.poll(paintedPixels).toBeLessThan(visiblePixels);
   await row.getByRole("button", { name: "更多操作", exact: true }).hover();
   const show = page.waitForResponse(
     (response) =>
@@ -286,7 +274,8 @@ test("persisted video hide survives reload and restores the current-frame canvas
     await expect(row).toBeVisible();
     await page.mouse.move(5, 5);
     await stage.screenshot({ path: test.info().outputPath("video-visible.png") });
-    const before = await canvasPaintedPixels(stage);
+    const before = await annotationPaintedPixels(stage);
+    expect(before).toBeGreaterThan(0);
     await row.getByRole("button", { name: "更多操作", exact: true }).hover();
     const hide = page.waitForResponse(
       (response) =>
@@ -295,9 +284,10 @@ test("persisted video hide survives reload and restores the current-frame canvas
     );
     await row.getByRole("button", { name: "隐藏", exact: true }).click();
     expect((await hide).ok()).toBe(true);
-    await expect.poll(() => canvasPaintedPixels(stage)).toBeLessThan(before);
+    await expect.poll(() => annotationPaintedPixels(stage)).toBeLessThan(before);
     await page.reload();
     await expect(stage).toHaveAttribute("data-video-view-ready", "true");
+    await expect.poll(() => annotationPaintedPixels(stage)).toBeLessThan(before);
     await row.getByRole("button", { name: "更多操作", exact: true }).hover();
     await expect(row.getByRole("button", { name: "显示", exact: true })).toHaveAttribute(
       "aria-pressed",
@@ -317,7 +307,7 @@ test("persisted video hide survives reload and restores the current-frame canvas
     );
     await page.mouse.move(5, 5);
     await expect
-      .poll(async () => Math.abs((await canvasPaintedPixels(stage)) - before))
+      .poll(async () => Math.abs((await annotationPaintedPixels(stage)) - before))
       .toBeLessThan(Math.max(10, before * 0.001));
     await stage.screenshot({ path: test.info().outputPath("video-restored.png") });
     const token = await seed.accessToken(filtering.user_emails.admin);

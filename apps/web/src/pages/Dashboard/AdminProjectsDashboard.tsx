@@ -16,7 +16,8 @@ import { CreateProjectWizard } from "@/components/projects/CreateProjectWizard";
 import { ImportDatasetWizard } from "@/components/datasets/ImportDatasetWizard";
 import { ProjectActionsMenu } from "./ProjectActionsMenu";
 import { ProjectGrid } from "./ProjectGrid";
-import { ProjectFilterPanel, ProjectFilterSummary } from "./ProjectFilterPanel";
+import { ProjectFilterControl } from "./ProjectFilterControl";
+import { ProjectFilterSummary } from "./ProjectFilterSummary";
 import type { DashboardFilters } from "./dashboardUrlState";
 import {
   DASHBOARD_FILTER_KEYS,
@@ -417,7 +418,7 @@ export function AdminProjectsDashboard() {
               onChange={updateQuery}
               width={220}
             />
-            <ProjectFilterPanel
+            <ProjectFilterControl
               open={filterOpen}
               onOpenChange={setFilterOpen}
               initial={advanced}

@@ -23,17 +23,8 @@ vi.mock("@/components/datasets/ImportDatasetWizard", () => ({
     open ? <div data-testid="id-wizard" /> : null,
 }));
 
-vi.mock("./ProjectFilterPanel", () => ({
-  ProjectFilterPanel: () => null,
-  ProjectFilterSummary: () => null,
-  EMPTY_FILTERS: {
-    data_type: [],
-    member_id: undefined,
-    created_from: undefined,
-    created_to: undefined,
-    status: undefined,
-  },
-}));
+vi.mock("./ProjectFilterControl", () => ({ ProjectFilterControl: () => null }));
+vi.mock("./ProjectFilterSummary", () => ({ ProjectFilterSummary: () => null }));
 
 vi.mock("./ExportModal", () => ({
   ExportModal: () => null,

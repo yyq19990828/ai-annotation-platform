@@ -18,7 +18,8 @@ import { ImportDatasetWizard } from "@/components/datasets/ImportDatasetWizard";
 import { useAuthStore } from "@/stores/authStore";
 import { useAuditLogs } from "@/hooks/useAudit";
 import { auditActionLabel } from "@/utils/auditLabels";
-import { ProjectFilterPanel, ProjectFilterSummary } from "./ProjectFilterPanel";
+import { ProjectFilterControl } from "./ProjectFilterControl";
+import { ProjectFilterSummary } from "./ProjectFilterSummary";
 import type { DashboardFilters } from "./dashboardUrlState";
 import {
   DASHBOARD_FILTER_KEYS,
@@ -446,7 +447,7 @@ export function DashboardPage() {
               onChange={updateQuery}
               width={220}
             />
-            <ProjectFilterPanel
+            <ProjectFilterControl
               open={filterOpen}
               onOpenChange={setFilterOpen}
               initial={advanced}

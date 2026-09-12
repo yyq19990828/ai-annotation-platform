@@ -171,6 +171,8 @@ Playwright 会自动准备专用逻辑库 `annotation_e2e`、执行迁移，并�
 
 核心绘制流程必须验证实际提交请求、落库内容与刷新恢复。测试接口只能造前置状态，不能在 UI 保存失败后补写状态来使测试通过。Canvas 坐标按实际媒体尺寸计算并验证命中；组件细节、纯状态组合优先使用 Vitest。
 
+图片与视频 Konva 的隐藏/恢复验收使用 `e2e/fixtures/annotation-canvas-pixels.ts`，只统计媒体背景之后的标注图层，不把跨域背景画布读成标注证据。必须先确认有真实绘制像素，再验证隐藏减少、刷新后仍隐藏、恢复后像素与几何一致；图层未就绪或标注层不可读应失败，不能吞掉异常返回零。跨域画布安全限制需要真实浏览器回归，不能靠关闭浏览器安全策略或仅断言 DOM 数量代替。
+
 修改分类后通过 `--list --reporter=line` 核对选集；修改调度后运行根目录的 `node --test scripts/plan-e2e-suites.test.mjs`。本地结束后清理当前验证生成的报告、临时数据和自有服务；详见 `apps/web/e2e/README.md`。
 
 ### `_test_seed` router + E2E fixture
