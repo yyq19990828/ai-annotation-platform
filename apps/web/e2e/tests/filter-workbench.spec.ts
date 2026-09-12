@@ -1,4 +1,4 @@
-import type { APIRequestContext } from "@playwright/test";
+import type { APIRequestContext, Locator } from "@playwright/test";
 import { expect, test as base, type FilteringSeedManifest, type SeedAPI } from "../fixtures/seed";
 import { resetFiltering } from "../fixtures/filtering";
 
@@ -9,6 +9,21 @@ const test = base.extend<{ filtering: FilteringSeedManifest }>({
   },
 });
 test.setTimeout(120_000);
+
+function canvasPaintedPixels(stage: Locator) {
+  return stage.locator("canvas").evaluateAll((canvases) => {
+    let painted = 0;
+    for (const node of canvases) {
+      const canvas = node as HTMLCanvasElement;
+      if (!canvas.width || !canvas.height) continue;
+      const context = canvas.getContext("2d");
+      if (!context) continue;
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+      for (let index = 3; index < pixels.length; index += 4) if (pixels[index] > 0) painted += 1;
+    }
+    return painted;
+  });
+}
 
 async function importCandidates(
   request: APIRequestContext,
@@ -198,19 +213,7 @@ test("persisted image hide remains restorable and does not change geometry", asy
   await expect(stage).toHaveAttribute("data-image-ready", "true");
   await expect(stage).toHaveAttribute("data-user-box-count", "1");
   await page.mouse.move(5, 5);
-  const paintedPixels = () =>
-    stage.locator("canvas").evaluateAll((canvases) => {
-      let painted = 0;
-      for (const node of canvases) {
-        const canvas = node as HTMLCanvasElement;
-        if (!canvas.width || !canvas.height) continue;
-        const context = canvas.getContext("2d");
-        if (!context) continue;
-        const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
-        for (let index = 3; index < pixels.length; index += 4) if (pixels[index] > 0) painted += 1;
-      }
-      return painted;
-    });
+  const paintedPixels = () => canvasPaintedPixels(stage);
   await stage.screenshot({ path: test.info().outputPath("visible.png"), animations: "disabled" });
   const visiblePixels = await paintedPixels();
   const row = page.getByTestId("box-list-item-" + annotationId);
@@ -257,4 +260,77 @@ test("persisted image hide remains restorable and does not change geometry", asy
   await expect
     .poll(async () => Math.abs((await paintedPixels()) - visiblePixels))
     .toBeLessThan(Math.max(10, visiblePixels * 0.001));
+});
+
+test("persisted video hide survives reload and restores the current-frame canvas", async ({
+  page,
+  request,
+  seed,
+  filtering,
+}) => {
+  const taskId = filtering.video.task_ids.neither;
+  const geometry = { type: "video_bbox", frame_index: 0, x: 0.65, y: 0.65, w: 0.2, h: 0.2 };
+  const annotation = await seed.createTaskAnnotation(taskId, filtering.user_emails.admin, {
+    annotation_type: "video_bbox",
+    tool_unit_id: "bbox",
+    class_name: "car",
+    geometry,
+  });
+  try {
+    await seed.injectToken(page, filtering.user_emails.admin);
+    await page.goto(`/projects/${filtering.video.project_id}/annotate?task=${taskId}&frame=0`);
+    const stage = page.getByTestId("video-konva-stage");
+    await expect(stage).toBeVisible({ timeout: 30_000 });
+    await expect(stage).toHaveAttribute("data-video-view-ready", "true");
+    const row = page.getByTestId(`box-list-item-${annotation.id}`);
+    await expect(row).toBeVisible();
+    await page.mouse.move(5, 5);
+    await stage.screenshot({ path: test.info().outputPath("video-visible.png") });
+    const before = await canvasPaintedPixels(stage);
+    await row.getByRole("button", { name: "更多操作", exact: true }).hover();
+    const hide = page.waitForResponse(
+      (response) =>
+        response.request().method() === "PATCH" &&
+        response.url().endsWith(`/annotations/${annotation.id}`),
+    );
+    await row.getByRole("button", { name: "隐藏", exact: true }).click();
+    expect((await hide).ok()).toBe(true);
+    await expect.poll(() => canvasPaintedPixels(stage)).toBeLessThan(before);
+    await page.reload();
+    await expect(stage).toHaveAttribute("data-video-view-ready", "true");
+    await row.getByRole("button", { name: "更多操作", exact: true }).hover();
+    await expect(row.getByRole("button", { name: "显示", exact: true })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await stage.screenshot({ path: test.info().outputPath("video-hidden.png") });
+    const show = page.waitForResponse(
+      (response) =>
+        response.request().method() === "PATCH" &&
+        response.url().endsWith(`/annotations/${annotation.id}`),
+    );
+    await row.getByRole("button", { name: "显示", exact: true }).click();
+    expect((await show).ok()).toBe(true);
+    await expect(row.getByRole("button", { name: "隐藏", exact: true })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    await page.mouse.move(5, 5);
+    await expect
+      .poll(async () => Math.abs((await canvasPaintedPixels(stage)) - before))
+      .toBeLessThan(Math.max(10, before * 0.001));
+    await stage.screenshot({ path: test.info().outputPath("video-restored.png") });
+    const token = await seed.accessToken(filtering.user_emails.admin);
+    const response = await request.get(API_BASE + `/api/v1/tasks/${taskId}/annotations`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(response.ok()).toBe(true);
+    const restored = (await response.json()).find(
+      (item: { id: string }) => item.id === annotation.id,
+    );
+    expect(restored.is_hidden).toBe(false);
+    expect(restored.geometry).toEqual(geometry);
+  } finally {
+    await seed.deleteTaskAnnotation(taskId, annotation.id, filtering.user_emails.admin);
+  }
 });
