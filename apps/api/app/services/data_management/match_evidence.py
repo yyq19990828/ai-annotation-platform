@@ -168,6 +168,11 @@ def _collect_true_sources(
                 predicates.append(predicate)
             context = context or child_context
             entity = entity or child_entity
+        # The task compiler compiles an empty group to literal true for either op,
+        # so an empty OR explains its match with task context exactly like an empty
+        # AND does, instead of serializing an empty witness set.
+        if not children and not suppress_context:
+            context = True
         return _merge_annotation_conditions(predicates), context, entity
 
     # Resolve this from the actual true branches before visiting children.  A false

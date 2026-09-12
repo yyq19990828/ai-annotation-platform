@@ -766,6 +766,142 @@ async def test_match_evidence_preserves_nested_witnesses_and_true_or_branches(
     assert low_matches["items"][0]["shape_index"] == 1
 
 
+async def test_match_evidence_treats_empty_groups_as_compiled_true(
+    httpx_client: httpx.AsyncClient,
+    project_admin,
+    db_session: AsyncSession,
+):
+    owner, token = project_admin
+    project = await create_project(db_session, owner_id=owner.id, type_key="image-det")
+    task = await create_task(
+        db_session, project_id=project.id, display_id="T-DM-EMPTY-GROUP"
+    )
+    car = Annotation(
+        task_id=task.id,
+        project_id=project.id,
+        user_id=owner.id,
+        source="manual",
+        annotation_type="bbox",
+        tool_unit_id="bbox",
+        class_name="car",
+        geometry={"type": "bbox", "frame_index": 1},
+    )
+    person = Annotation(
+        task_id=task.id,
+        project_id=project.id,
+        user_id=owner.id,
+        source="prediction_based",
+        annotation_type="bbox",
+        tool_unit_id="bbox",
+        class_name="person",
+        geometry={"type": "bbox", "frame_index": 2},
+    )
+    db_session.add_all([car, person])
+    await db_session.flush()
+    annotation_ids = {str(car.id), str(person.id)}
+
+    # The task compiler compiles an empty group to literal true for either op.
+    # The drawer must explain that match with task-context objects instead of
+    # serializing an empty witness set.
+    empty_group_cases = [
+        ("empty-or", {"op": "or", "rules": []}),
+        ("nested-empty-or", {"op": "and", "rules": [{"op": "or", "rules": []}]}),
+        (
+            "empty-or-beside-false-branch",
+            {
+                "op": "or",
+                "rules": [
+                    {"op": "or", "rules": []},
+                    {"field": "annotation.class_name", "op": "eq", "value": "missing"},
+                ],
+            },
+        ),
+        ("empty-and", {"op": "and", "rules": []}),
+    ]
+    failures = []
+    for label, filter_json in empty_group_cases:
+        response = await httpx_client.post(
+            f"/api/v1/projects/{project.id}/tasks/{task.id}/data-manager/matches",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"filter_json": filter_json},
+        )
+        assert response.status_code == 200, (label, response.text)
+        body = response.json()
+        item_ids = {item["id"] for item in body["items"]}
+        if body["total"] != 2 or item_ids != annotation_ids:
+            failures.append((label, body["total"]))
+    assert not failures, failures
+
+
+async def test_match_evidence_empty_group_keeps_entity_witness_scope(
+    httpx_client: httpx.AsyncClient,
+    project_admin,
+    db_session: AsyncSession,
+):
+    owner, token = project_admin
+    project = await create_project(db_session, owner_id=owner.id, type_key="image-det")
+    task = await create_task(
+        db_session, project_id=project.id, display_id="T-DM-EMPTY-GROUP-WITNESS"
+    )
+    car = Annotation(
+        task_id=task.id,
+        project_id=project.id,
+        user_id=owner.id,
+        source="manual",
+        annotation_type="bbox",
+        tool_unit_id="bbox",
+        class_name="car",
+        geometry={"type": "bbox", "frame_index": 1},
+    )
+    person = Annotation(
+        task_id=task.id,
+        project_id=project.id,
+        user_id=owner.id,
+        source="prediction_based",
+        annotation_type="bbox",
+        tool_unit_id="bbox",
+        class_name="person",
+        geometry={"type": "bbox", "frame_index": 2},
+    )
+    db_session.add_all([car, person])
+    await db_session.flush()
+
+    # An empty group inside an entity-explained AND is task context, so it must
+    # not widen the witness object beyond the true entity branches.
+    witness_cases = [
+        (
+            "empty-or-and-entity",
+            {
+                "op": "and",
+                "rules": [
+                    {"op": "or", "rules": []},
+                    {"field": "annotation.class_name", "op": "eq", "value": "car"},
+                ],
+            },
+        ),
+        (
+            "nested-empty-or-and-entity",
+            {
+                "op": "and",
+                "rules": [
+                    {"field": "annotation.class_name", "op": "eq", "value": "car"},
+                    {"op": "and", "rules": [{"op": "or", "rules": []}]},
+                ],
+            },
+        ),
+    ]
+    for label, filter_json in witness_cases:
+        response = await httpx_client.post(
+            f"/api/v1/projects/{project.id}/tasks/{task.id}/data-manager/matches",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"filter_json": filter_json},
+        )
+        assert response.status_code == 200, (label, response.text)
+        body = response.json()
+        assert body["total"] == 1, (label, body)
+        assert [item["id"] for item in body["items"]] == [str(car.id)], label
+
+
 async def test_match_evidence_zero_count_has_no_annotation_context(
     httpx_client: httpx.AsyncClient,
     project_admin,
