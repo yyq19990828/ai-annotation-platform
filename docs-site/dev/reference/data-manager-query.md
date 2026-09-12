@@ -87,6 +87,8 @@ task-centric summary 聚合的是“匹配任务中的全部对象”。object /
 
 前端 URL 保存 `lens/view/q/filter/sort/columns/selected`。filter、sort 与 columns 使用带版本号的 JSON envelope；解析失败时回退当前视图，不执行未校验输入。切换 grain 时清空不兼容状态，存在未保存修改时先要求确认。
 
+三个 grain 共享值编辑控件和保留结构的表达式操作。分组不能展平：即使普通布尔代数等价，也可能改变同对象约束。关键词只从独立 `contains` 规则或直接 AND 中的无歧义规则提取；OR 内关键词保留在树中。外部 q 作为额外 AND 条件，数字和范围草稿不进入查询。页面读取实时 URL，首次请求等待视图和字段恢复；后续条件变化使过期页码和实体 cursor 失效。
+
 前端壳层使用单视口布局，只有结果表和右侧抽屉承担纵向滚动。grain tabs 是唯一的一级页签；桌面端保存视图使用侧栏，窄屏使用下拉。任务、对象与轨迹共用可搜索字段选择器和条件芯片，字段分组及编辑控件完全由各自 `schema.filter_fields` 驱动。这些布局差异不改变 Filter DSL、URL envelope 或保存视图契约。
 
 ## AI 待审

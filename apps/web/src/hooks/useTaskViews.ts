@@ -20,7 +20,7 @@ export function useTaskViews(
 ) {
   return useQuery({
     queryKey: ["task-views", projectId, entityScope],
-    queryFn: () => taskViewsApi.list(projectId!, entityScope),
+    queryFn: ({ signal }) => taskViewsApi.list(projectId!, entityScope, { signal }),
     enabled: !!projectId,
   });
 }
@@ -32,7 +32,7 @@ export function useProjectTaskQuery(
 ) {
   return useQuery({
     queryKey: ["project-task-query", projectId, payload],
-    queryFn: () => taskViewsApi.query(projectId!, payload),
+    queryFn: ({ signal }) => taskViewsApi.query(projectId!, payload, { signal }),
     enabled: !!projectId && enabled,
     placeholderData: keepPreviousData,
   });
@@ -44,7 +44,7 @@ export function useDataManagerSchema(
 ) {
   return useQuery({
     queryKey: ["data-manager-schema", projectId, entityScope],
-    queryFn: () => taskViewsApi.schema(projectId!, entityScope),
+    queryFn: ({ signal }) => taskViewsApi.schema(projectId!, entityScope, { signal }),
     enabled: !!projectId,
     staleTime: 60_000,
   });
@@ -57,8 +57,8 @@ export function useDataManagerObjects(
 ) {
   return useInfiniteQuery({
     queryKey: ["data-manager-objects", projectId, payload],
-    queryFn: ({ pageParam }) =>
-      taskViewsApi.queryObjects(projectId!, { ...payload, cursor: pageParam }),
+    queryFn: ({ pageParam, signal }) =>
+      taskViewsApi.queryObjects(projectId!, { ...payload, cursor: pageParam }, { signal }),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     enabled: !!projectId && enabled,
@@ -72,8 +72,8 @@ export function useDataManagerTracks(
 ) {
   return useInfiniteQuery({
     queryKey: ["data-manager-tracks", projectId, payload],
-    queryFn: ({ pageParam }) =>
-      taskViewsApi.queryTracks(projectId!, { ...payload, cursor: pageParam }),
+    queryFn: ({ pageParam, signal }) =>
+      taskViewsApi.queryTracks(projectId!, { ...payload, cursor: pageParam }, { signal }),
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
     enabled: !!projectId && enabled,
@@ -86,7 +86,7 @@ export function useDataManagerObjectDetail(
 ) {
   return useQuery({
     queryKey: ["data-manager-object-detail", projectId, annotationId],
-    queryFn: () => taskViewsApi.objectDetail(projectId!, annotationId!),
+    queryFn: ({ signal }) => taskViewsApi.objectDetail(projectId!, annotationId!, { signal }),
     enabled: !!projectId && !!annotationId,
   });
 }
@@ -94,7 +94,7 @@ export function useDataManagerObjectDetail(
 export function useDataManagerTrackDetail(projectId: string | undefined, trackRef: string | null) {
   return useQuery({
     queryKey: ["data-manager-track-detail", projectId, trackRef],
-    queryFn: () => taskViewsApi.trackDetail(projectId!, trackRef!),
+    queryFn: ({ signal }) => taskViewsApi.trackDetail(projectId!, trackRef!, { signal }),
     enabled: !!projectId && !!trackRef,
   });
 }
@@ -106,7 +106,7 @@ export function useDataManagerSummary(
 ) {
   return useQuery({
     queryKey: ["data-manager-summary", projectId, filterJson],
-    queryFn: () => taskViewsApi.summary(projectId!, filterJson),
+    queryFn: ({ signal }) => taskViewsApi.summary(projectId!, filterJson, { signal }),
     enabled: !!projectId && enabled,
     placeholderData: keepPreviousData,
   });
@@ -120,7 +120,7 @@ export function useDataManagerMatches(
 ) {
   return useQuery({
     queryKey: ["data-manager-matches", projectId, taskId, filterJson],
-    queryFn: () => taskViewsApi.matches(projectId!, taskId!, filterJson),
+    queryFn: ({ signal }) => taskViewsApi.matches(projectId!, taskId!, filterJson, { signal }),
     enabled: !!projectId && !!taskId && enabled,
   });
 }
