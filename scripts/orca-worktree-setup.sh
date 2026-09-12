@@ -33,6 +33,11 @@ for path in pnpm-lock.yaml pnpm-workspace.yaml package.json apps/web/package.jso
     share_dependencies=false
   fi
 done
+# A branch may have updated manifests without reinstalling its dependencies.
+# pnpm's installed lockfile must describe the same graph before sharing links.
+if ! cmp -s "$root/pnpm-lock.yaml" "$root/node_modules/.pnpm/lock.yaml"; then
+  share_dependencies=false
+fi
 for path in node_modules apps/web/node_modules docs-site/node_modules; do
   if [ ! -d "$root/$path" ]; then
     share_dependencies=false

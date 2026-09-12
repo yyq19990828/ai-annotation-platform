@@ -49,6 +49,9 @@ def test_setup(launcher):
             (directory / "apps/api").mkdir()
         for name in dependencies:
             (root / name).mkdir(exist_ok=True)
+        (root / "node_modules/.pnpm").mkdir()
+        installed_lock = root / "node_modules/.pnpm/lock.yaml"
+        installed_lock.write_text("same\n")
         (root / "apps/api/.venv").mkdir()
         (worktree / ".env.example").write_text("EXAMPLE=preserve\n")
         (worktree / "scripts").mkdir()
@@ -101,6 +104,21 @@ def test_setup(launcher):
         (worktree / ".env").write_text("WORKTREE_VALUE=preserve\n")
         assert run().returncode == 0
         assert (worktree / ".env").read_text() == "WORKTREE_VALUE=preserve\n"
+
+        # Matching source manifests do not prove the primary installation is current.
+        installed_lock.write_text("stale installation\n")
+        previous_calls = calls.read_text()
+        assert run().returncode != 0, (
+            "Do not share an installation from a different lockfile"
+        )
+        assert calls.read_text() == previous_calls
+        for name in dependencies:
+            (worktree / name).unlink()
+        assert run().returncode == 0
+        assert "pnpm install --frozen-lockfile" in calls.read_text()
+        assert all(not (worktree / name).is_symlink() for name in dependencies)
+        installed_lock.write_text("same\n")
+        assert run().returncode == 0
 
         # A dependency change must never install through shared node_modules.
         (worktree / "pnpm-lock.yaml").write_text("different\n")

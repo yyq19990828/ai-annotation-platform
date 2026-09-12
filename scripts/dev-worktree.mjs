@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 
 import { spawn } from "node:child_process";
-import { link, mkdir, readFile, rmdir, unlink, writeFile } from "node:fs/promises";
-import { existsSync, readFileSync, unlinkSync } from "node:fs";
+import { link, mkdir, readFile, rename, rmdir, unlink, writeFile } from "node:fs/promises";
+import { existsSync, readFileSync, realpathSync, unlinkSync } from "node:fs";
 import { createServer, connect } from "node:net";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
-const scriptPath = fileURLToPath(import.meta.url);
-const repositoryRoot = resolve(dirname(scriptPath), "..");
+const scriptPath = realpathSync(fileURLToPath(import.meta.url));
+const repositoryRoot = realpathSync(resolve(dirname(scriptPath), ".."));
 const host = "127.0.0.1";
 const defaultApiPort = 8100;
 const defaultWebPort = 3100;
@@ -273,7 +273,28 @@ async function waitForListening(managed, port, timeoutMilliseconds = 60_000) {
   throw new Error(`${managed.label} 未在 60 秒内监听 ${host}:${port}`);
 }
 
-export async function runDevWorktree(argv = process.argv.slice(2)) {
+async function waitForHttp(managed, url) {
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    if (managed.done) throw new Error(`${managed.label} 在 HTTP 就绪前退出`);
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(1_000) });
+      await response.body?.cancel();
+      if (response.ok) return;
+    } catch {
+      // A listening socket is not yet an initialized API/Vite server.
+    }
+    await delay(100);
+  }
+  throw new Error(`${managed.label} 未在 60 秒内通过 HTTP 就绪检查`);
+}
+
+export async function runDevWorktree(
+  argv = process.argv.slice(2),
+  { statePath, apiEnvironment } = {},
+) {
+  if (!statePath || !apiEnvironment)
+    throw new Error("Service supervisor requires worktree runtime preparation");
   const options = parseArguments(argv);
   if (options.help) {
     printHelp();
@@ -302,25 +323,7 @@ export async function runDevWorktree(argv = process.argv.slice(2)) {
   process.once("exit", releaseLocksOnExit);
 
   try {
-    if (!options.skipMigrations) {
-      console.log("[dev:worktree] 正在执行数据库迁移…");
-      const migration = spawnManaged(
-        children,
-        "数据库迁移",
-        "uv",
-        ["run", "alembic", "upgrade", "head"],
-        {
-          cwd: join(repositoryRoot, "apps/api"),
-          env: process.env,
-        },
-      );
-      const result = await migration.completion;
-      if (shutdownRequested) return;
-      if (result.error || result.code !== 0) {
-        throw result.error ?? new Error(`数据库迁移失败，退出码 ${result.code}`);
-      }
-    }
-
+    // The Python runtime owns database preflight/migration and the environment lock.
     const apiReservation = await reserveAvailablePort({
       startPort: options.apiPort,
       worktree: repositoryRoot,
@@ -341,9 +344,9 @@ export async function runDevWorktree(argv = process.argv.slice(2)) {
     const api = spawnManaged(
       children,
       "API",
-      "uv",
+      join(repositoryRoot, "apps/api/.venv/bin/python"),
       [
-        "run",
+        "-m",
         "uvicorn",
         "app.main:app",
         "--reload",
@@ -356,10 +359,15 @@ export async function runDevWorktree(argv = process.argv.slice(2)) {
       ],
       {
         cwd: join(repositoryRoot, "apps/api"),
-        env: { ...process.env, MIGRATION_DATABASE_URL: "" },
+        env: {
+          ...apiEnvironment,
+          MIGRATION_DATABASE_URL: "",
+          FRONTEND_BASE_URL: `http://${host}:${webPort}`,
+        },
       },
     );
     await waitForListening(api, apiPort);
+    await waitForHttp(api, `${apiTarget}/health/db`);
     if (shutdownRequested) return;
 
     const web = spawnManaged(
@@ -377,7 +385,19 @@ export async function runDevWorktree(argv = process.argv.slice(2)) {
       },
     );
     await waitForListening(web, webPort);
+    await waitForHttp(web, `http://${host}:${webPort}`);
     if (shutdownRequested) return;
+
+    const temporary = `${statePath}.${process.pid}.tmp`;
+    try {
+      await writeFile(temporary, JSON.stringify({ supervisorPid: process.pid, apiPort, webPort }), {
+        mode: 0o600,
+        flag: "wx",
+      });
+      await rename(temporary, statePath);
+    } finally {
+      await unlink(temporary).catch(() => {});
+    }
 
     console.log(`\n[dev:worktree] 已就绪
   Web:      http://${host}:${webPort}
@@ -403,9 +423,78 @@ export async function runDevWorktree(argv = process.argv.slice(2)) {
     process.removeListener("SIGTERM", onTerminate);
     process.removeListener("exit", releaseLocksOnExit);
     await Promise.all(reservations.map(({ release }) => release()));
+    await unlink(statePath).catch(() => {});
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === scriptPath) {
-  await runDevWorktree();
+export async function runIsolatedCommand(
+  command,
+  { apiPort = defaultApiPort, webPort = defaultWebPort } = {},
+) {
+  const children = new Set();
+  const reservations = [];
+  const stop = () => void stopChildren(children);
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
+  try {
+    reservations.push(await reserveAvailablePort({ startPort: apiPort }));
+    reservations.push(await reserveAvailablePort({ startPort: webPort }));
+    const child = spawnManaged(children, "隔离命令", command[0], command.slice(1), {
+      cwd: repositoryRoot,
+      env: {
+        ...process.env,
+        PLAYWRIGHT_ISOLATED_API_PORT: String(reservations[0].port),
+        PLAYWRIGHT_ISOLATED_WEB_PORT: String(reservations[1].port),
+      },
+    });
+    const result = await child.completion;
+    if (result.error) throw result.error;
+    return result.code ?? 1;
+  } finally {
+    process.removeListener("SIGINT", stop);
+    process.removeListener("SIGTERM", stop);
+    await stopChildren(children);
+    await Promise.all(reservations.map(({ release }) => release()));
+  }
+}
+
+export async function runRuntime(argv = process.argv.slice(2)) {
+  const environment = join(repositoryRoot, "apps/api/.venv");
+  const localEnvironment = existsSync(environment) && realpathSync(environment) === environment;
+  if (!localEnvironment && !argv.some((argument) => argument === "--help" || argument === "-h")) {
+    throw new Error("需要当前 checkout 独立的 apps/api/.venv；请先执行 Orca worktree setup");
+  }
+  const children = new Set();
+  const runtime = spawnManaged(
+    children,
+    "环境管理",
+    localEnvironment ? join(environment, "bin/python") : "python3",
+    [join(repositoryRoot, "scripts/worktree_runtime.py"), ...argv],
+    { cwd: repositoryRoot },
+  );
+  const interrupt = () => signalManaged(runtime, "SIGINT");
+  const terminate = () => signalManaged(runtime, "SIGTERM");
+  process.once("SIGINT", interrupt);
+  process.once("SIGTERM", terminate);
+  try {
+    const result = await runtime.completion;
+    if (result.error) throw result.error;
+    process.exitCode = result.code ?? 1;
+  } finally {
+    process.removeListener("SIGINT", interrupt);
+    process.removeListener("SIGTERM", terminate);
+  }
+}
+
+if (
+  process.argv[1] &&
+  existsSync(process.argv[1]) &&
+  realpathSync(process.argv[1]) === scriptPath
+) {
+  try {
+    await runRuntime();
+  } catch (error) {
+    console.error(`[dev:worktree] ${error.message}`);
+    process.exitCode = 1;
+  }
 }

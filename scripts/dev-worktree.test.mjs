@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { parseArguments, reserveAvailablePort } from "./dev-worktree.mjs";
+import * as launcher from "./dev-worktree.mjs";
 
 function listen(server, port = 0) {
   return new Promise((resolveListen, rejectListen) => {
@@ -111,5 +114,65 @@ test("reclaims a lock left by a terminated launcher", async () => {
   } finally {
     await reservation?.release();
     await rm(lockRoot, { recursive: true, force: true });
+  }
+});
+
+test("isolated exec reserves distinct Playwright ports and preserves exit status", async () => {
+  assert.equal(typeof launcher.runIsolatedCommand, "function");
+  const directory = await mkdtemp(join(tmpdir(), "aap-command-test-"));
+  const output = join(directory, "child.json");
+  try {
+    const code = await launcher.runIsolatedCommand([
+      process.execPath,
+      "-e",
+      `require('node:fs').writeFileSync(${JSON.stringify(output)}, JSON.stringify({
+        api: process.env.PLAYWRIGHT_ISOLATED_API_PORT,
+        web: process.env.PLAYWRIGHT_ISOLATED_WEB_PORT
+      })); process.exitCode = 4;`,
+    ]);
+    assert.equal(code, 4);
+    const child = JSON.parse(await readFile(output, "utf8"));
+    assert.notEqual(child.api, child.web);
+    assert.ok(Number(child.api) > 0);
+    assert.ok(Number(child.web) > 0);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("service supervisor cannot bypass runtime preparation", async () => {
+  assert.equal(typeof launcher.runRuntime, "function");
+  await assert.rejects(launcher.runDevWorktree([], {}), /runtime/);
+});
+
+test("CLI help works before dependency setup without touching services", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "aap-cli-bootstrap-"));
+  try {
+    await mkdir(join(directory, "scripts"));
+    for (const file of ["dev-worktree.mjs", "worktree_runtime.py", "worktree_env.py"]) {
+      await copyFile(new URL(file, import.meta.url), join(directory, "scripts", file));
+    }
+    const result = spawnSync(
+      process.execPath,
+      [join(directory, "scripts/dev-worktree.mjs"), "--help"],
+      { encoding: "utf8" },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /doctor/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("CLI follows a symlinked invocation path instead of silently doing nothing", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "aap-cli-alias-"));
+  try {
+    const alias = join(directory, "launcher.mjs");
+    await symlink(fileURLToPath(new URL("./dev-worktree.mjs", import.meta.url)), alias);
+    const result = spawnSync(process.execPath, [alias, "--help"], { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /doctor/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
   }
 });

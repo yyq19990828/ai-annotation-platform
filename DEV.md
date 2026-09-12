@@ -79,7 +79,8 @@ Codex 的 `.codex/environments/environment.toml` 将源目录和 worktree 路径
 `scripts/orca-worktree-setup.sh`，与 Orca 共用初始化逻辑。需要提前安装 Node.js、
 pnpm 和 uv；Codex 在找不到 pnpm 时会尝试 `corepack enable`。
 
-只有依赖清单和锁文件一致、源目录的三个 Node 依赖目录都存在时，才共享这些目录；
+只有依赖清单和锁文件一致、源目录的三个 Node 依赖目录都存在，且已安装的
+`node_modules/.pnpm/lock.yaml` 与源目录锁文件一致时，才共享这些目录；
 否则安装当前 worktree 的锁定依赖。Python 虚拟环境保持独立，通过
 `uv sync --locked --extra test` 同步，随后运行 `pnpm codegen` 生成当前 checkout 的 API 类型。
 若已有共享依赖链接与新依赖不匹配，或 `.venv` / API 生成目录是符号链接，初始化会报错；
@@ -102,17 +103,23 @@ apps/api/.venv/bin/python scripts/test-orca-worktree-setup.py
 
 ### 多 Worktree 并行启动
 
-同时验证多个 worktree 时，在每个 checkout 根目录分别运行：
+先在主目录确认本机 PostgreSQL/MinIO 可用（只需 `docker compose up -d postgres minio`）。
+在每个已完成 setup 的 checkout 根目录分别运行：
 
 ```bash
 pnpm dev:worktree
+# 需要后台任务时，使用当前 checkout 的本机 worker
+pnpm dev:worktree -- up --with-worker
 ```
 
-启动器先执行 `alembic upgrade head`，然后默认从 API `8100` 和 Web `3100`
-开始向上扫描空闲端口。端口锁在启动器存活期间保留，避免两个 worktree
-同时启动时选中同一端口。Web 进程会自动获得当次 API 的
-`API_PROXY_TARGET`，`/api` 和 `/ws` 因此不会误连到主 checkout 的 `8000`。
-终端会打印实际分配的 Web 和 API 地址；按 `Ctrl+C` 会统一停止两个子进程。
+启动器给工作树分配稳定身份，创建专属数据库、带归属标签的 Redis 容器和七个
+MinIO bucket，并隔离 DuckDB/临时文件。共享 `.env` 只作为基础配置；迁移、API、
+测试和可选 worker 的目标通过子进程环境统一覆盖，不改共享库。
+
+迁移前检查 revision 唯一性、单 head 和数据库版本可达性；通过后才运行 Alembic。
+API 默认从 `8100`、Web 从 `3100` 扫描空闲端口，并验证 HTTP 就绪。
+端口锁保留到进程退出，Web 的 API/WebSocket 代理指向当次 API。
+`Ctrl+C` 停止本次 API/Web 和 worker，保留资源。
 
 可指定自定义的扫描起点，已被占用时仍会继续向上寻找：
 
@@ -120,8 +127,23 @@ pnpm dev:worktree
 pnpm dev:worktree -- --api-port 8200 --web-port 3200
 ```
 
-数据库已由其他流程完成迁移时，可使用 `--skip-migrations`。此命令只隔离两个 HTTP
-监听端口；Worktree 默认共享 `.env`，因此数据库、Redis、MinIO 与其他配置仍然可能共用。
+```bash
+pnpm dev:worktree -- doctor
+pnpm dev:worktree -- init --mode test
+pnpm dev:worktree -- exec --mode test -- sh -c 'cd apps/api && .venv/bin/python -m pytest tests/test_alembic_drift.py'
+pnpm dev:worktree -- exec --mode e2e -- pnpm test:e2e
+pnpm dev:worktree -- stop --mode test
+```
+
+`dev/test/e2e` 各有独立资源；同一模式不能同时运行两个管理/测试会话。`exec` 默认
+为 `test`，其他命令默认为 `dev`。`stop` 还停止该模式的 Redis，保留数据及 AOF。
+`reset/destroy` 必须提供 `doctor` 显示的精确 `--confirm '<id>:<mode>'`，
+并拒绝有连接或归属不符的资源。不要删除或复制 `.worktree/` 身份目录。
+
+`--skip-migrations` 只接受已在当前 checkout head 的数据库，不再作为未知 revision
+的逃生开关。直接执行原来的 `dev:api`、pytest 或默认 Compose 不经过这个隔离入口。
+支持范围为 macOS/Linux 的本机开发基础设施；不会自动注册共享 ML 后端或启动 GPU/beat。
+完整的首次数据、权限要求、重建与清理说明见[独立工作树开发环境](docs-site/dev/how-to/worktree-environments.md)。
 
 ## Codex 会话启动硬件上下文
 

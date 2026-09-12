@@ -11,13 +11,15 @@ Determine which checkout, Compose project, process, and database serve the repor
 
 Use `orca.yaml` and `scripts/orca-worktree-setup.sh`, not a second bootstrap recipe. Orca supplies `ORCA_ROOT_PATH` and `ORCA_WORKTREE_PATH`; the script refuses the primary checkout. Use the available Orca CLI guide when changing managed worktree state.
 
-The script shares `.env` and optional `.env.local`. It shares the three Node dependency directories only when manifests/lockfiles match the primary checkout. Before dependency changes, inspect and detach only the intended dependency symlinks; never install through a shared link into another checkout. Preserve existing files and dangling links.
+The script shares `.env` and optional `.env.local`. It shares the three Node dependency directories only when manifests/lockfiles match the primary checkout and its installed `node_modules/.pnpm/lock.yaml` matches that lockfile. Source manifests alone do not prove the installed graph is current. Before dependency changes, inspect and detach only the intended dependency symlinks; never install through a shared link into another checkout. Preserve existing files and dangling links.
 
 `apps/api/.venv` and `apps/web/src/api/generated` must remain local. Setup runs locked API test-dependency sync and `pnpm codegen`. Missing generated types after a branch switch can be stale ignored output: check the snapshot and regenerate before changing consumers.
 
 A setup fix must exist in the base commit used for future worktrees. Recheck that base's manifests and lockfile; a successful install in one feature branch does not fix the primary branch. For setup-script changes, use `scripts/test-orca-worktree-setup.py`.
 
 ## Runtime refresh
+
+For concurrent local checkouts, use `pnpm dev:worktree`, not raw `dev:api` or a second default Compose stack. Read [worktree isolation](references/worktree-isolation.md) before provisioning, testing, stopping, or rebuilding a managed environment. The launcher owns databases, Redis containers, buckets and files; setup still only prepares dependencies and generated types.
 
 | Changed input                                      | Development action                                                    |
 | -------------------------------------------------- | --------------------------------------------------------------------- |

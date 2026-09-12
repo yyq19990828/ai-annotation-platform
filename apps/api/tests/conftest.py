@@ -30,6 +30,11 @@ import httpx
 import pytest
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 
+if os.environ.get("AAP_WORKTREE_MODE") == "dev":
+    raise pytest.UsageError(
+        "开发模式不能运行数据库测试；请使用 pnpm dev:worktree -- exec --mode test -- <command>"
+    )
+
 
 # 必须在首次 import app 前开启；否则 app.api.v1.router 不会挂载测试 Seed router。
 # 数据库名仍由下方 fixture 固定到 annotation_test，router 自身会再做后缀校验。

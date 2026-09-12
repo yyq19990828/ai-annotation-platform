@@ -2,13 +2,22 @@ import { defineConfig, devices } from "@playwright/test";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+const worktreeMode = process.env.AAP_WORKTREE_MODE;
+if (worktreeMode === "dev") {
+  throw new Error(
+    "开发模式不能运行 E2E；请使用 pnpm dev:worktree -- exec --mode e2e -- pnpm test:e2e",
+  );
+}
+if (worktreeMode && !process.env.PLAYWRIGHT_E2E_DATABASE_URL) {
+  throw new Error("独立工作树缺少测试数据库配置；请通过 dev:worktree exec 启动");
+}
 const rasterMaskMatrix = process.env.PLAYWRIGHT_RASTER_MASK_MATRIX;
 const rasterMaskCreateEnabled = rasterMaskMatrix === "native";
 const chromiumChannel = process.env.PLAYWRIGHT_CHROMIUM_CHANNEL;
 const pointcloudWebGpuQualification = process.env.PLAYWRIGHT_POINTCLOUD_WEBGPU === "1";
 const configDir = dirname(fileURLToPath(import.meta.url));
 const isCI = Boolean(process.env.CI);
-const useIsolatedServers = !isCI || Boolean(rasterMaskMatrix);
+const useIsolatedServers = Boolean(worktreeMode) || !isCI || Boolean(rasterMaskMatrix);
 const isolatedApiPort = process.env.PLAYWRIGHT_ISOLATED_API_PORT ?? "8010";
 const isolatedWebPort = process.env.PLAYWRIGHT_ISOLATED_WEB_PORT ?? "3001";
 // SSH ForwardX11 会注入 localhost DISPLAY；无头 SwANGLE 会因此误走 XCB，导致 WebGL2 初始化失败。
@@ -32,10 +41,12 @@ const defaultBaseURL = useIsolatedServers
   ? `http://127.0.0.1:${isolatedWebPort}`
   : "http://127.0.0.1:3000";
 process.env.PLAYWRIGHT_BASE_URL ??= defaultBaseURL;
-const e2eDatabaseURL = isCI
-  ? (process.env.DATABASE_URL ?? "postgresql+asyncpg://user:pass@127.0.0.1:5432/annotation_test")
-  : (process.env.PLAYWRIGHT_E2E_DATABASE_URL ??
-    "postgresql+asyncpg://user:pass@127.0.0.1:5432/annotation_e2e");
+const e2eDatabaseURL = worktreeMode
+  ? process.env.PLAYWRIGHT_E2E_DATABASE_URL!
+  : isCI
+    ? (process.env.DATABASE_URL ?? "postgresql+asyncpg://user:pass@127.0.0.1:5432/annotation_test")
+    : (process.env.PLAYWRIGHT_E2E_DATABASE_URL ??
+      "postgresql+asyncpg://user:pass@127.0.0.1:5432/annotation_e2e");
 // Python ledger fixtures run as child processes and need the same disposable
 // database URL as the API, including in CI where the URL is derived from DATABASE_URL.
 process.env.PLAYWRIGHT_E2E_DATABASE_URL ??= e2eDatabaseURL;

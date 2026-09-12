@@ -77,6 +77,20 @@ environment: Literal["development", "staging", "production"] = "development"
 - `infra/docker/Dockerfile.api`：按 `uv.lock` 安装依赖到 `/opt/venv`（不在 `/app` 下），容器 `PATH` 默认使用这个环境。所以开发态把 `./apps/api` 挂到 `/app` 不会覆盖依赖；匿名卷 `/app/.venv` 屏蔽宿主机 venv。Celery 无 `--reload`，改业务码后仍需 `docker restart`。
 - `infra/docker/Dockerfile.web`：多阶段构建，`pnpm build` 产物交给 nginx 托管。前端 API base 硬编码同源相对路径 `/api/v1`（`apps/web/src/api/client.ts`），dev 由 vite proxy、生产由容器内 `nginx.conf` 反代 `/api/` `/ws/` 到 `api:8000`，**无需 build arg / API 地址变量**。
 
+## 多工作树的本机隔离开发
+
+`pnpm dev:worktree` 在现有开发形态上增加工作树级资源归属，不复用主目录的业务数据库
+或后台任务消费者。PostgreSQL/MinIO 进程可以共享，但每个工作树、每种模式拥有独立的
+database、七个 bucket、Redis 容器和本地数据目录；API/Web 与可选 worker 都运行当前 checkout。
+
+运行时身份绑定工作树路径，配置通过子进程环境覆盖，不修改共享 `.env`。启动前检查迁移图
+和数据库 revision；停止保留数据，重建需要精确确认和资源归属检查。不同 Redis DB 编号
+不能隔离 Pub/Sub，因此这里使用独立 Redis 容器，并把 AOF 保存在工作树目录。
+
+此模式不启动 GPU 控制面、beat 或生产服务，也不提供数据库账号级安全沙箱。首次环境为空，
+不会复制其他分支的账号、项目和媒体。使用方法、测试模式和销毁边界见
+[独立工作树开发环境](../how-to/worktree-environments)。
+
 ## 相关
 
 - [部署拓扑](./deployment-topology) —— 物理形态（单机 / 分离 GPU / 多 backend）
