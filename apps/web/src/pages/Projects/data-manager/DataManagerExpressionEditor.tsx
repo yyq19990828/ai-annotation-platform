@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 
 import type {
   DataManagerFilterField,
@@ -6,7 +6,11 @@ import type {
   TaskFilterOp,
   TaskFilterRule,
 } from "@/api/taskViews";
-import { FilterValueEditor } from "@/components/filters/FilterValueEditor";
+import {
+  FilterValueEditor,
+  type FilterDraftValidityChange,
+} from "@/components/filters/FilterValueEditor";
+import { useFilterDraftValidity } from "@/components/filters/useFilterDraftValidity";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { cn } from "@/lib/utils";
@@ -45,11 +49,15 @@ function GroupEditor({
   path,
   fields,
   onChange,
+  editorId,
+  onDraftValidityChange,
 }: {
   expression: DataManagerFilterExpression;
   path: FilterPath;
   fields: DataManagerFilterField[];
   onChange: (expression: DataManagerFilterExpression) => void;
+  editorId: string;
+  onDraftValidityChange: FilterDraftValidityChange;
 }) {
   const group = path.length
     ? (() => {
@@ -134,6 +142,8 @@ function GroupEditor({
               path={childPath}
               fields={fields}
               onChange={onChange}
+              editorId={editorId}
+              onDraftValidityChange={onDraftValidityChange}
             />
           );
         }
@@ -207,7 +217,8 @@ function GroupEditor({
                   field={field}
                   operator={node.op}
                   appliedValue={node.value}
-                  editorId={childPath.join(".")}
+                  editorId={`${editorId}:field:${childPath.join(".")}`}
+                  onDraftValidityChange={onDraftValidityChange}
                   onCommit={(value) =>
                     onChange(
                       updateRuleAtPath(expression, childPath, (rule) => ({ ...rule, value })),
@@ -241,7 +252,8 @@ export interface DataManagerExpressionEditorProps {
   expression: DataManagerFilterExpression;
   fields: DataManagerFilterField[];
   onChange: (expression: DataManagerFilterExpression) => void;
-  onValidityChange?: (valid: boolean) => void;
+  editorId?: string;
+  onValidityChange?: FilterDraftValidityChange;
   className?: string;
 }
 
@@ -249,16 +261,26 @@ export function DataManagerExpressionEditor({
   expression,
   fields,
   onChange,
+  editorId,
   onValidityChange,
   className,
 }: DataManagerExpressionEditorProps) {
-  const [valid, setValid] = useState(() => isExpressionValid(expression, fields));
   const structureIssue = validateFilterStructure(expression);
+  const expressionValid = useMemo(
+    () => isExpressionValid(expression, fields),
+    [expression, fields],
+  );
+  const resolvedEditorId = editorId ?? "expression";
+  const { hasInvalidDraft: hasInvalidChildDraft, onDraftValidityChange } =
+    useFilterDraftValidity(resolvedEditorId);
+  const valid = expressionValid && !hasInvalidChildDraft;
   useEffect(() => {
-    const next = isExpressionValid(expression, fields);
-    setValid(next);
-    onValidityChange?.(next);
-  }, [expression, fields, onValidityChange]);
+    onValidityChange?.(valid, resolvedEditorId);
+  }, [onValidityChange, resolvedEditorId, valid]);
+  useEffect(
+    () => () => onValidityChange?.(true, resolvedEditorId),
+    [onValidityChange, resolvedEditorId],
+  );
 
   const summary = useMemo(() => {
     if (isEmptyFilter(expression)) return "全部条件";
@@ -306,7 +328,14 @@ export function DataManagerExpressionEditor({
           {structureIssue}。请移除或重新创建该筛选条件。
         </div>
       ) : isFilterGroup(expression) ? (
-        <GroupEditor expression={expression} path={[]} fields={fields} onChange={onChange} />
+        <GroupEditor
+          expression={expression}
+          path={[]}
+          fields={fields}
+          onChange={onChange}
+          editorId={resolvedEditorId}
+          onDraftValidityChange={onDraftValidityChange}
+        />
       ) : isFilterRule(expression) ? (
         <GroupEditor
           expression={{ op: "and", rules: [expression] } as TaskFilterGroup}
@@ -317,6 +346,8 @@ export function DataManagerExpressionEditor({
               onChange(next.rules[0] as TaskFilterRule);
             else onChange(next);
           }}
+          editorId={resolvedEditorId}
+          onDraftValidityChange={onDraftValidityChange}
         />
       ) : (
         <div className="rounded-md border border-dashed border-border p-3 text-xs text-muted-foreground">

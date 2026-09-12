@@ -35,17 +35,20 @@ import {
   type DataManagerQuickFilter,
 } from "./data-manager/DataManagerFilterBar";
 import { FilterValueEditor } from "@/components/filters/FilterValueEditor";
+import { useFilterDraftValidity } from "@/components/filters/useFilterDraftValidity";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useUrlFilterState } from "@/hooks/useUrlFilterState";
 import { formatFilterDraft, parseFilterValue } from "@/lib/filters/filterValues";
 import { filterOperatorLabel } from "@/lib/filters/types";
 import {
   combineKeyword,
+  collapseEmptyGroups,
   hasNestedGroups,
   isExpressionValid,
   isEmptyFilter,
   isFilterGroup,
   isFilterRule,
+  validateFilterStructure,
   appendRule,
   removeAtPath,
   splitKeyword,
@@ -294,6 +297,8 @@ function TaskDataManagerPage({
   const [selectedKey, setSelectedKey] = useState<string>(
     currentUrl.lens === "tasks" && currentUrl.view ? currentUrl.view : "builtin:all",
   );
+  const draftOwner = `tasks:${id}:${user?.id ?? "anonymous"}:${selectedKey}`;
+  const { hasInvalidDraft, onDraftValidityChange } = useFilterDraftValidity(draftOwner);
   const [filterExpression, setFilterExpression] = useState<DataManagerFilterExpression>({});
   const [appliedFilterExpression, setAppliedFilterExpression] =
     useState<DataManagerFilterExpression>({});
@@ -401,8 +406,13 @@ function TaskDataManagerPage({
       urlHydratedRef.current = true;
       return;
     }
-    const source = useUrl && url.filter ? url.filter : selectedView.filter_json;
-    const split = splitKeyword(source as DataManagerFilterExpression);
+    const source = (useUrl && url.filter ? url.filter : selectedView.filter_json) as
+      | DataManagerFilterExpression
+      | Record<string, unknown>;
+    const structureIssue = validateFilterStructure(source);
+    const split = structureIssue
+      ? { query: "", filter: source }
+      : splitKeyword(collapseEmptyGroups(source));
     const nextKeyword = useUrl ? url.query : split.query;
     setKeyword(nextKeyword);
     setKeywordFlushKey((value) => value + 1);
@@ -421,11 +431,13 @@ function TaskDataManagerPage({
     setColumns(nextColumns);
     setSort(nextSort);
     setBaselineSignature(
-      JSON.stringify({
-        filter_json: combineKeyword(nextKeyword, split.filter),
-        sort_json: nextSort,
-        columns_json: nextColumns,
-      }),
+      structureIssue
+        ? ""
+        : JSON.stringify({
+            filter_json: combineKeyword(nextKeyword, split.filter),
+            sort_json: nextSort,
+            columns_json: nextColumns,
+          }),
     );
     urlHydratedRef.current = true;
     skipUrlSyncRef.current = true;
@@ -460,10 +472,18 @@ function TaskDataManagerPage({
     () => isExpressionValid(filterExpression, filterFields),
     [filterExpression, filterFields],
   );
+  const filterStructureIssue = useMemo(
+    () => validateFilterStructure(filterExpression),
+    [filterExpression],
+  );
+  const filterReady = expressionValid && !hasInvalidDraft;
   useEffect(() => {
     if (expressionValid) setAppliedFilterExpression(filterExpression);
   }, [expressionValid, filterExpression]);
-  const queryExpression = expressionValid ? filterExpression : appliedFilterExpression;
+  const queryExpression = useMemo(
+    () => (filterReady ? filterExpression : filterStructureIssue ? {} : appliedFilterExpression),
+    [appliedFilterExpression, filterExpression, filterReady, filterStructureIssue],
+  );
   const filterJson = useMemo(
     () => combineKeyword(debouncedKeyword, queryExpression),
     [debouncedKeyword, queryExpression],
@@ -499,7 +519,7 @@ function TaskDataManagerPage({
     [columns, filterJson, sort],
   );
   const isDirty = Boolean(
-    baselineSignature && (!expressionValid || baselineSignature !== currentSignature),
+    baselineSignature && (!filterReady || baselineSignature !== currentSignature),
   );
   const total = tasksQ.data?.total ?? 0;
   const visibleTotal =
@@ -530,7 +550,7 @@ function TaskDataManagerPage({
   }, [currentSignature]);
 
   useEffect(() => {
-    if (!urlHydratedRef.current || skipUrlSyncRef.current) {
+    if (!urlHydratedRef.current || skipUrlSyncRef.current || !filterReady) {
       skipUrlSyncRef.current = false;
       return;
     }
@@ -556,6 +576,7 @@ function TaskDataManagerPage({
     selectedTask?.id,
     setSearchParams,
     sort,
+    filterReady,
   ]);
 
   useEffect(() => {
@@ -578,7 +599,7 @@ function TaskDataManagerPage({
     );
 
   const saveCurrent = async () => {
-    if (!expressionValid) {
+    if (!filterReady) {
       pushToast({ msg: "请先完成筛选条件", kind: "warning" });
       return;
     }
@@ -606,7 +627,7 @@ function TaskDataManagerPage({
 
   const createSavedView = async () => {
     const name = saveName.trim();
-    if (!name) return;
+    if (!name || !filterReady) return;
     try {
       const created = await createView.mutateAsync({
         name,
@@ -753,7 +774,8 @@ function TaskDataManagerPage({
               field={field}
               operator={rule.op}
               appliedValue={rule.value}
-              editorId={path.join(".")}
+              editorId={`${draftOwner}:chip:${path.join(".") || "root"}`}
+              onDraftValidityChange={onDraftValidityChange}
               onCommit={(value) =>
                 setFilterExpression(
                   updateRuleAtPath(filterExpression, path, (item) => ({ ...item, value })),
@@ -822,11 +844,12 @@ function TaskDataManagerPage({
               </Button>
               <Button
                 onClick={() => {
+                  if (!queryReady || !filterReady) return;
                   tasksQ.refetch();
                   summaryQ.refetch();
                   viewsQ.refetch();
                 }}
-                disabled={tasksQ.isFetching || summaryQ.isFetching}
+                disabled={!queryReady || !filterReady || tasksQ.isFetching || summaryQ.isFetching}
               >
                 <Icon name="refresh" size={12} />
                 刷新
@@ -834,7 +857,7 @@ function TaskDataManagerPage({
               <Button
                 variant="primary"
                 onClick={saveCurrent}
-                disabled={createView.isPending || updateView.isPending}
+                disabled={!filterReady || createView.isPending || updateView.isPending}
               >
                 <Icon name="save" size={12} />
                 保存视图
@@ -1056,9 +1079,11 @@ function TaskDataManagerPage({
                       expression={filterExpression}
                       fields={filterFields}
                       onChange={setFilterExpression}
+                      editorId={`${draftOwner}:group`}
+                      onValidityChange={onDraftValidityChange}
                     />
                   )}
-                {!expressionValid && (
+                {!filterReady && (
                   <div role="alert" className="text-xs text-destructive">
                     当前筛选包含未完成或 schema 中不存在的条件，完成编辑后才会查询。
                   </div>
@@ -1199,7 +1224,7 @@ function TaskDataManagerPage({
               <Button
                 variant="primary"
                 onClick={createSavedView}
-                disabled={!saveName.trim() || createView.isPending}
+                disabled={!saveName.trim() || !filterReady || createView.isPending}
               >
                 保存
               </Button>

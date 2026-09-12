@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
@@ -32,7 +32,7 @@ vi.mock("@/hooks/useTaskViews", () => {
     name: "全部对象",
     visibility: "project",
     entity_scope: "objects",
-    filter_json: {},
+    filter_json: { field: "annotation.annotation_count", op: "eq", value: 1 },
     sort_json: [{ field: "annotation.updated_at", direction: "desc" }],
     columns_json: ["class_name"],
     builtin: true,
@@ -170,12 +170,17 @@ describe("EntityDataManagerLens", () => {
         />
       </MemoryRouter>,
     );
-    await user.click(screen.getByRole("button", { name: "筛选" }));
-    await user.click(screen.getByRole("button", { name: /标注数 annotation\.annotation_count/ }));
     await user.click(screen.getByRole("button", { name: /标注数/ }));
     const input = screen.getByRole("textbox", { name: "条件值" });
     await user.type(input, "-");
     await user.tab();
     expect(screen.getByText("请输入完整数字")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "保存视图" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "刷新" })).toBeDisabled();
+    await user.clear(input);
+    await user.type(input, "2");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "保存视图" })).not.toBeDisabled(),
+    );
   });
 });

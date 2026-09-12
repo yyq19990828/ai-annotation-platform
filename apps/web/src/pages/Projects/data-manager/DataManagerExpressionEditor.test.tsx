@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -18,6 +18,18 @@ const fields: DataManagerFilterField[] = [
     attribute_key: null,
   },
 ];
+
+const numberField: DataManagerFilterField = {
+  key: "count",
+  label: "数量",
+  group: "任务",
+  value_type: "number",
+  operators: ["eq"],
+  options: [],
+  expensive: false,
+  tool_unit_id: null,
+  attribute_key: null,
+};
 
 describe("DataManagerExpressionEditor", () => {
   it("edits nested OR groups by path and keeps group controls visible", async () => {
@@ -46,5 +58,58 @@ describe("DataManagerExpressionEditor", () => {
       op: "and",
       rules: [{ op: "and", rules: [{ field: "status", op: "eq", value: "pending" }] }],
     });
+  });
+
+  it("reports an invalid grouped draft and clears it after correction or unmount", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const onValidityChange = vi.fn();
+    const view = render(
+      <DataManagerExpressionEditor
+        expression={{ op: "and", rules: [{ field: "count", op: "eq", value: 1 }] }}
+        fields={[numberField]}
+        onChange={onChange}
+        editorId="group:count"
+        onValidityChange={onValidityChange}
+      />,
+    );
+    await waitFor(() => expect(onValidityChange).toHaveBeenLastCalledWith(true, "group:count"));
+    const input = screen.getByRole("textbox", { name: "条件值" });
+    await user.clear(input);
+    await user.type(input, "-");
+    await waitFor(() => expect(onValidityChange).toHaveBeenLastCalledWith(false, "group:count"));
+    await user.clear(input);
+    await user.type(input, "2");
+    await waitFor(() => expect(onValidityChange).toHaveBeenLastCalledWith(true, "group:count"));
+    view.unmount();
+    expect(onValidityChange).toHaveBeenLastCalledWith(true, "group:count");
+  });
+
+  it("keeps a new owner's invalid restored value blocked", async () => {
+    const onValidityChange = vi.fn();
+    const expression = (value: unknown) => ({
+      op: "and" as const,
+      rules: [{ field: "count", op: "eq" as const, value }],
+    });
+    const { rerender } = render(
+      <DataManagerExpressionEditor
+        expression={expression("")}
+        fields={[numberField]}
+        onChange={vi.fn()}
+        editorId="group:first"
+        onValidityChange={onValidityChange}
+      />,
+    );
+    await waitFor(() => expect(onValidityChange).toHaveBeenLastCalledWith(false, "group:first"));
+    rerender(
+      <DataManagerExpressionEditor
+        expression={expression("")}
+        fields={[numberField]}
+        onChange={vi.fn()}
+        editorId="group:second"
+        onValidityChange={onValidityChange}
+      />,
+    );
+    await waitFor(() => expect(onValidityChange).toHaveBeenLastCalledWith(false, "group:second"));
   });
 });

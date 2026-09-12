@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
@@ -50,6 +51,17 @@ vi.mock("@/hooks/useTaskViews", () => {
         group: "任务",
         value_type: "select",
         operators: ["eq", "in"],
+        options: [],
+        expensive: false,
+        tool_unit_id: null,
+        attribute_key: null,
+      },
+      {
+        key: "task.assignee",
+        label: "标注员",
+        group: "人员",
+        value_type: "text",
+        operators: ["eq"],
         options: [],
         expensive: false,
         tool_unit_id: null,
@@ -217,5 +229,53 @@ describe("ProjectDataManagerPage filter hydration", () => {
       </MemoryRouter>,
     );
     await waitFor(() => expect(state.calls.some((call) => call.enabled)).toBe(true));
+  });
+
+  it("does not query after adding a new text condition without a value", async () => {
+    state.calls.length = 0;
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={["/projects/p1/data-manager?lens=tasks"]}>
+        <ProjectDataManagerPage />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(state.calls.some((call) => call.enabled)).toBe(true));
+    const enabledBefore = state.calls.filter((call) => call.enabled).length;
+    await user.click(screen.getByRole("button", { name: "筛选" }));
+    await user.click(screen.getByRole("button", { name: /标注员 task\.assignee/ }));
+    expect(
+      screen.getByText("当前筛选包含未完成或 schema 中不存在的条件，完成编辑后才会查询。"),
+    ).toBeInTheDocument();
+    expect(state.calls.filter((call) => call.enabled).length).toBe(enabledBefore);
+    expect(screen.getByRole("button", { name: "刷新" })).toBeDisabled();
+  });
+
+  it("bounds a deeply nested URL filter before rendering the editor", async () => {
+    state.calls.length = 0;
+    let filter: Record<string, unknown> = {
+      field: "task.status",
+      op: "eq",
+      value: "pending",
+    };
+    for (let index = 0; index < 1000; index += 1) {
+      filter = { op: "and", rules: [filter] };
+    }
+    const search = updateDataManagerUrl("", {
+      lens: "tasks",
+      view: "builtin:all",
+      query: "",
+      filter,
+      sort: [{ field: "task.created_at", direction: "asc" }],
+      columns: ["display_id"],
+      selected: null,
+    }).toString();
+    render(
+      <MemoryRouter initialEntries={[`/projects/p1/data-manager?${search}`]}>
+        <ProjectDataManagerPage />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.getByText(/筛选条件嵌套超过/)).toBeInTheDocument());
+    expect(state.calls.some((call) => call.enabled)).toBe(false);
+    expect(screen.getByRole("button", { name: "刷新" })).toBeDisabled();
   });
 });

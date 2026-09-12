@@ -35,6 +35,7 @@ import {
 } from "@/components/shadcn/ui/dialog";
 import { Input } from "@/components/shadcn/ui/input";
 import { FilterValueEditor } from "@/components/filters/FilterValueEditor";
+import { useFilterDraftValidity } from "@/components/filters/useFilterDraftValidity";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/shadcn/ui/popover";
 import {
   Select,
@@ -61,6 +62,7 @@ import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { filterOperatorLabel } from "@/lib/filters/types";
 import {
   combineKeyword,
+  collapseEmptyGroups,
   hasNestedGroups,
   isExpressionValid,
   isEmptyFilter,
@@ -69,6 +71,7 @@ import {
   removeAtPath,
   splitKeyword,
   updateRuleAtPath,
+  validateFilterStructure,
   type DataManagerFilterExpression,
 } from "./dataManagerFilterExpression";
 import { DataManagerExpressionEditor } from "./DataManagerExpressionEditor";
@@ -265,6 +268,8 @@ export function EntityDataManagerLens({
   const [selectedKey, setSelectedKey] = useState(
     currentUrl.lens === scope && currentUrl.view ? currentUrl.view : "builtin:all",
   );
+  const draftOwner = `${projectId}:${user?.id ?? "anonymous"}:${scope}:${selectedKey}`;
+  const { hasInvalidDraft, onDraftValidityChange } = useFilterDraftValidity(draftOwner);
   const [keyword, setKeyword] = useState("");
   const [keywordFlushKey, setKeywordFlushKey] = useState(0);
   const debouncedKeyword = useDebouncedValue(keyword, 250, keywordFlushKey);
@@ -361,8 +366,13 @@ export function EntityDataManagerLens({
     }
     const hydrationKey = `${scope}:${selectedKey}:${selectedView.updated_at ?? "builtin"}:${useUrl ? searchParams.toString() : "view"}`;
     if (hydrationRef.current === hydrationKey) return;
-    const split = splitKeyword(selectedView.filter_json);
-    const nextFilter = useUrl && url.filter ? url.filter : split.filter;
+    const source = (useUrl && url.filter ? url.filter : selectedView.filter_json) as
+      | DataManagerFilterExpression
+      | Record<string, unknown>;
+    const structureIssue = validateFilterStructure(source);
+    const restored = structureIssue ? source : collapseEmptyGroups(source);
+    const split = structureIssue ? { query: "", filter: restored } : splitKeyword(restored);
+    const nextFilter = split.filter;
     const nextKeyword = useUrl ? url.query : split.query;
     const allowedColumns = new Set(schemaQ.data.columns.map((column) => column.key));
     const restoredColumns = (
@@ -385,16 +395,25 @@ export function EntityDataManagerLens({
     setKeywordFlushKey((value) => value + 1);
     setColumns(nextColumns);
     setSort(nextSort);
-    setBaseline(signature(combineKeyword(nextKeyword, nextFilter), nextSort, nextColumns));
+    setBaseline(
+      structureIssue
+        ? ""
+        : signature(combineKeyword(nextKeyword, nextFilter), nextSort, nextColumns),
+    );
     hydrationRef.current = hydrationKey;
     skipUrlSyncRef.current = true;
   }, [currentUrl, defaultColumns, schemaQ.data, scope, searchParams, selectedKey, selectedView]);
 
   const expressionValid = useMemo(() => isExpressionValid(filter, fields), [fields, filter]);
+  const filterStructureIssue = useMemo(() => validateFilterStructure(filter), [filter]);
+  const filterReady = expressionValid && !hasInvalidDraft;
   useEffect(() => {
     if (expressionValid) setAppliedFilter(filter);
   }, [expressionValid, filter]);
-  const queryFilter = expressionValid ? filter : appliedFilter;
+  const queryFilter = useMemo(
+    () => (filterReady ? filter : filterStructureIssue ? {} : appliedFilter),
+    [appliedFilter, filter, filterReady, filterStructureIssue],
+  );
   const filterJson = useMemo(
     () => combineKeyword(debouncedKeyword, queryFilter),
     [debouncedKeyword, queryFilter],
@@ -403,7 +422,7 @@ export function EntityDataManagerLens({
     () => signature(filterJson, sort, columns),
     [columns, filterJson, sort],
   );
-  const isDirty = Boolean(baseline && (!expressionValid || baseline !== currentSignature));
+  const isDirty = Boolean(baseline && (!filterReady || baseline !== currentSignature));
   const selectionFilterSignatureRef = useRef<string | null>(null);
   useEffect(() => {
     if (!hydrationRef.current) return;
@@ -474,7 +493,7 @@ export function EntityDataManagerLens({
   }, [filterJson, sort, columns]);
 
   useEffect(() => {
-    if (!hydrationRef.current || skipUrlSyncRef.current) {
+    if (!hydrationRef.current || skipUrlSyncRef.current || !filterReady) {
       skipUrlSyncRef.current = false;
       return;
     }
@@ -501,6 +520,7 @@ export function EntityDataManagerLens({
     selectedKey,
     setSearchParams,
     sort,
+    filterReady,
   ]);
 
   const canManageProject = role === "super_admin" || user?.id === projectOwnerId;
@@ -529,7 +549,7 @@ export function EntityDataManagerLens({
   };
 
   const saveCurrent = async () => {
-    if (!expressionValid) {
+    if (!filterReady) {
       pushToast({ msg: "请先完成筛选条件", kind: "warning" });
       return;
     }
@@ -556,7 +576,7 @@ export function EntityDataManagerLens({
   };
 
   const createSavedView = async () => {
-    if (!saveName.trim()) return;
+    if (!saveName.trim() || !filterReady) return;
     try {
       const created = await createView.mutateAsync({
         name: saveName.trim(),
@@ -653,7 +673,8 @@ export function EntityDataManagerLens({
               field={field}
               operator={rule.op}
               appliedValue={rule.value}
-              editorId={path.join(".")}
+              editorId={`${draftOwner}:chip:${path.join(".") || "root"}`}
+              onDraftValidityChange={onDraftValidityChange}
               onCommit={(value) =>
                 setFilter(updateRuleAtPath(filter, path, (item) => ({ ...item, value })))
               }
@@ -712,14 +733,20 @@ export function EntityDataManagerLens({
                 <Icon name="activity" size={12} />
                 统计
               </Button>
-              <Button onClick={() => activeQ.refetch()} disabled={activeQ.isFetching}>
+              <Button
+                onClick={() => {
+                  if (!queryReady || !filterReady) return;
+                  activeQ.refetch();
+                }}
+                disabled={!queryReady || !filterReady || activeQ.isFetching}
+              >
                 <Icon name="refresh" size={12} />
                 刷新
               </Button>
               <Button
                 variant="primary"
                 onClick={saveCurrent}
-                disabled={createView.isPending || updateView.isPending}
+                disabled={!filterReady || createView.isPending || updateView.isPending}
               >
                 <Icon name="save" size={12} />
                 保存视图
@@ -899,7 +926,6 @@ export function EntityDataManagerLens({
                     const nextRule = {
                       field: field.key,
                       op: field.operators[0] ?? "eq",
-                      value: "",
                     };
                     setFilter(
                       isEmptyFilter(filter) ? nextRule : { op: "and", rules: [filter, nextRule] },
@@ -913,9 +939,11 @@ export function EntityDataManagerLens({
                       expression={filter}
                       fields={fields}
                       onChange={setFilter}
+                      editorId={`${draftOwner}:group`}
+                      onValidityChange={onDraftValidityChange}
                     />
                   )}
-                {!expressionValid && (
+                {!filterReady && (
                   <div role="alert" className="text-xs text-destructive">
                     当前筛选包含未完成或 schema 中不存在的条件，完成编辑后才会查询。
                   </div>
@@ -1104,7 +1132,7 @@ export function EntityDataManagerLens({
             <Button
               variant="primary"
               onClick={createSavedView}
-              disabled={!saveName.trim() || createView.isPending}
+              disabled={!saveName.trim() || !filterReady || createView.isPending}
             >
               保存
             </Button>

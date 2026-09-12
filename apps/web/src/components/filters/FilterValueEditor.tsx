@@ -7,6 +7,8 @@ import { formatFilterDraft, parseFilterValue, splitFilterValues } from "@/lib/fi
 import type { FilterFieldDefinition } from "@/lib/filters/types";
 import type { TaskFilterOp } from "@/api/taskViews";
 
+export type FilterDraftValidityChange = (valid: boolean, editorId?: string) => void;
+
 const FIELD_CLASS =
   "h-8 w-full appearance-none rounded-sm border border-border bg-background px-2 py-1.5 text-foreground disabled:bg-muted disabled:text-muted-foreground";
 
@@ -16,7 +18,7 @@ export interface FilterValueEditorProps {
   appliedValue?: unknown;
   editorId?: string;
   onCommit: (value: unknown) => void;
-  onDraftValidityChange?: (valid: boolean) => void;
+  onDraftValidityChange?: FilterDraftValidityChange;
   autoFocus?: boolean;
   className?: string;
 }
@@ -61,8 +63,9 @@ export function FilterValueEditor({
   }, [appliedValue, editorId, field, operator]);
 
   useEffect(() => {
-    onDraftValidityChange?.(retainedNull || parsed.ok);
-  }, [onDraftValidityChange, parsed.ok, retainedNull]);
+    onDraftValidityChange?.(retainedNull || parsed.ok, editorId);
+    return () => onDraftValidityChange?.(true, editorId);
+  }, [editorId, onDraftValidityChange, parsed.ok, retainedNull]);
 
   const commit = () => {
     if (parsed.ok) onCommit(parsed.value);

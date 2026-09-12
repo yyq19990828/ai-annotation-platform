@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import type { DataManagerFilterField, TaskFilterRule } from "@/api/taskViews";
 import {
+  appendRule,
   combineKeyword,
+  collapseEmptyGroups,
   expressionRules,
   removeAtPath,
   splitKeyword,
@@ -26,6 +28,22 @@ const fields: DataManagerFilterField[] = [
     attribute_key: null,
   },
 ];
+
+const numberField: DataManagerFilterField = {
+  ...fields[0],
+  key: "annotation.annotation_count",
+  label: "标注数",
+  value_type: "number",
+  operators: ["eq", "in", "between", "gt", "exists"],
+};
+
+const booleanField: DataManagerFilterField = {
+  ...fields[0],
+  key: "annotation.imported",
+  label: "导入标注",
+  value_type: "boolean",
+  operators: ["eq"],
+};
 
 describe("Data Manager filter expressions", () => {
   it("keeps nested OR groups and same-object grouping when adding a keyword", () => {
@@ -116,6 +134,82 @@ describe("Data Manager filter expressions", () => {
 
   it("retains an explicit nullable eq/ne null value from a saved view", () => {
     expect(isExpressionValid({ field: fields[0].key, op: "eq", value: null }, fields)).toBe(true);
+  });
+
+  it("validates restored scalar and array types without coercing JSON strings", () => {
+    expect(isExpressionValid({ field: numberField.key, op: "eq", value: "0" }, [numberField])).toBe(
+      false,
+    );
+    expect(isExpressionValid({ field: numberField.key, op: "eq", value: 0 }, [numberField])).toBe(
+      true,
+    );
+    expect(
+      isExpressionValid({ field: booleanField.key, op: "eq", value: "false" }, [booleanField]),
+    ).toBe(false);
+    expect(
+      isExpressionValid({ field: booleanField.key, op: "eq", value: false }, [booleanField]),
+    ).toBe(true);
+    expect(
+      isExpressionValid({ field: numberField.key, op: "in", value: ["0"] }, [numberField]),
+    ).toBe(false);
+    expect(isExpressionValid({ field: numberField.key, op: "in", value: [0] }, [numberField])).toBe(
+      true,
+    );
+  });
+
+  it("keeps a new text rule incomplete while retaining a saved empty string", () => {
+    const textField: DataManagerFilterField = {
+      ...fields[0],
+      key: "task.assignee",
+      label: "标注员",
+      value_type: "text",
+      operators: ["eq"],
+    };
+    const newRule = appendRule({}, textField);
+    expect(newRule).toEqual({ field: textField.key, op: "eq" });
+    expect(isExpressionValid(newRule, [textField])).toBe(false);
+    expect(isExpressionValid({ field: textField.key, op: "eq", value: "" }, [textField])).toBe(
+      true,
+    );
+  });
+
+  it("rejects operators missing from schema metadata while preserving nullable values", () => {
+    const restrictedNumberField: DataManagerFilterField = { ...numberField, operators: ["eq"] };
+    const legacyNumberField: DataManagerFilterField = {
+      ...restrictedNumberField,
+      operators: ["eq", "gt"],
+    };
+    expect(
+      isExpressionValid({ field: restrictedNumberField.key, op: "gt", value: 0 }, [
+        restrictedNumberField,
+      ]),
+    ).toBe(false);
+    expect(
+      isExpressionValid({ field: restrictedNumberField.key, op: "between", value: [0, 1] }, [
+        restrictedNumberField,
+      ]),
+    ).toBe(false);
+    expect(
+      isExpressionValid({ field: restrictedNumberField.key, op: "gt", value: 0 }, [
+        legacyNumberField,
+      ]),
+    ).toBe(true);
+    expect(
+      isExpressionValid({ field: restrictedNumberField.key, op: "eq", value: null }, [
+        restrictedNumberField,
+      ]),
+    ).toBe(true);
+    expect(isExpressionValid({ field: numberField.key, op: "exists" }, [numberField])).toBe(true);
+  });
+
+  it("preserves empty-group truth when restoring or removing nested groups", () => {
+    const condition = { field: fields[0].key, op: "eq" as const, value: "pending" };
+    expect(collapseEmptyGroups({ op: "and", rules: [{ op: "or", rules: [] }, condition] })).toEqual(
+      { op: "and", rules: [condition] },
+    );
+    expect(collapseEmptyGroups({ op: "or", rules: [{ op: "and", rules: [] }, condition] })).toEqual(
+      {},
+    );
   });
 
   it("rejects structural depth and node budgets before recursive validation", () => {

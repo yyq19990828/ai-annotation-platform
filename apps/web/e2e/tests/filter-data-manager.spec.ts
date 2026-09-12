@@ -187,3 +187,57 @@ test("restricted actor cannot discover the hidden batch through rows or totals",
     expect(JSON.stringify(result)).not.toContain(hiddenId);
   }
 });
+
+test("incomplete numeric draft blocks save and retains the last applied query", async ({
+  page,
+  filtering,
+}) => {
+  const expression = { field: "annotation.annotation_count", op: "gte", value: 0 };
+  const initial = queryResponse(page, filtering.image.project_id, "tasks");
+  await page.goto(
+    url(filtering.image.project_id, { filter: envelope(expression), keep: "filter-test" }),
+  );
+  await checked(await initial);
+  const requests: unknown[] = [];
+  page.on("request", (request) => {
+    if (request.url().endsWith("/tasks/query") && request.method() === "POST")
+      requests.push(request.postDataJSON());
+  });
+  await page.getByRole("button", { name: /标注数.*0/ }).click();
+  const value = page.getByRole("textbox", { name: "条件值", exact: true });
+  await value.fill("1.");
+  await expect(value).toHaveAttribute("aria-invalid", "true");
+  await expect(page.getByRole("button", { name: "保存视图", exact: true })).toBeDisabled();
+  expect(JSON.parse(new URL(page.url()).searchParams.get("filter")!).value).toEqual(expression);
+  expect(requests).toHaveLength(0);
+  await value.fill("2");
+  const applied = queryResponse(page, filtering.image.project_id, "tasks");
+  await value.press("Enter");
+  const response = await applied;
+  expect(response.request().postDataJSON().filter_json).toEqual({ ...expression, value: 2 });
+  await checked(response);
+  await expect
+    .poll(() => JSON.parse(new URL(page.url()).searchParams.get("filter")!).value.value)
+    .toBe(2);
+});
+
+test("deep restored expression stays visible as an error and never becomes an unfiltered query", async ({
+  page,
+  filtering,
+}) => {
+  let expression: unknown = { field: "task.status", op: "eq", value: "pending" };
+  for (let depth = 0; depth < 40; depth += 1) expression = { op: "and", rules: [expression] };
+  const raw = envelope(expression);
+  const requests: string[] = [];
+  const errors: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().endsWith("/tasks/query") && request.method() === "POST")
+      requests.push(request.url());
+  });
+  page.on("pageerror", (error) => errors.push(error.message));
+  await page.goto(url(filtering.image.project_id, { filter: raw, keep: "filter-test" }));
+  await expect(page.getByRole("alert").filter({ hasText: "筛选条件嵌套超过 32 层" })).toBeVisible();
+  expect(new URL(page.url()).searchParams.get("filter")).toBe(raw);
+  expect(requests).toEqual([]);
+  expect(errors).toEqual([]);
+});

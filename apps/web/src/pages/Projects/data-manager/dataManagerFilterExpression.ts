@@ -88,8 +88,8 @@ export function cloneFilter<T extends DataManagerFilterExpression>(expression: T
   return structuredClone(expression);
 }
 
-function makeRule(field: FilterFieldDefinition): EditableDataManagerRule {
-  return { field: field.key, op: field.operators[0] ?? "eq", value: "" };
+function makeRule(field: FilterFieldDefinition): TaskFilterRule {
+  return { field: field.key, op: field.operators[0] ?? "eq" };
 }
 
 export function ruleToDraft(
@@ -119,6 +119,7 @@ export function splitKeyword(expression: DataManagerFilterExpression): {
   query: string;
   filter: DataManagerFilterExpression;
 } {
+  if (validateFilterStructure(expression)) return { query: "", filter: expression };
   if (isFilterRule(expression) && expression.field === "task.keyword") {
     return expression.op === "contains" && typeof expression.value === "string"
       ? { query: String(expression.value ?? ""), filter: {} }
@@ -158,7 +159,11 @@ export function combineKeyword(
   expression: DataManagerFilterExpression,
 ): DataManagerFilterExpression {
   const trimmed = query.trim();
-  const filter = isEmptyFilter(expression) ? null : cloneFilter(expression);
+  const filter = isEmptyFilter(expression)
+    ? null
+    : validateFilterStructure(expression)
+      ? expression
+      : cloneFilter(expression);
   if (!trimmed) return filter ?? {};
   const keyword: TaskFilterRule = { field: "task.keyword", op: "contains", value: trimmed };
   return filter ? { op: "and", rules: [keyword, filter] } : keyword;
@@ -270,17 +275,26 @@ export function addToGroup(
   return next;
 }
 
-export function collapseEmptyGroups(
+function collapseEmptyGroupsInternal(
   expression: DataManagerFilterExpression,
 ): DataManagerFilterExpression {
   if (isEmptyFilter(expression) || isFilterRule(expression)) return expression;
   if (!isFilterGroup(expression)) return expression;
-  const children = expression.rules.map(collapseEmptyGroups).filter((node) => !isEmptyFilter(node));
-  if (!children.length) return {};
+  const children = expression.rules.map(collapseEmptyGroupsInternal);
+  if (expression.op === "or" && children.some(isEmptyFilter)) return {};
+  const remaining = children.filter((node) => !isEmptyFilter(node));
+  if (!remaining.length) return {};
   return {
     op: expression.op,
-    rules: children.filter((node): node is FilterExpression => !isEmptyFilter(node)),
+    rules: remaining.filter((node): node is FilterExpression => !isEmptyFilter(node)),
   };
+}
+
+export function collapseEmptyGroups(
+  expression: DataManagerFilterExpression,
+): DataManagerFilterExpression {
+  if (validateFilterStructure(expression)) return expression;
+  return collapseEmptyGroupsInternal(expression);
 }
 
 export function hasNestedGroups(expression: DataManagerFilterExpression) {
@@ -288,7 +302,41 @@ export function hasNestedGroups(expression: DataManagerFilterExpression) {
 }
 
 export function expressionSignature(expression: DataManagerFilterExpression) {
+  if (validateFilterStructure(expression)) return "";
   return JSON.stringify(expression);
+}
+
+function isStoredScalarValid(field: FilterFieldDefinition, value: unknown): boolean {
+  if (field.value_type === "number") {
+    return typeof value === "number" && Number.isFinite(value);
+  }
+  if (field.value_type === "boolean") return typeof value === "boolean";
+  if (field.value_type === "datetime") {
+    return typeof value === "string" && Number.isFinite(Date.parse(value));
+  }
+  return typeof value === "string";
+}
+
+function isStoredFilterValueValid(
+  field: FilterFieldDefinition,
+  operator: TaskFilterOp,
+  value: unknown,
+): boolean {
+  if (operator === "exists" || operator === "missing") return true;
+  if (ARRAY_FILTER_OPERATORS.has(operator)) {
+    if (!Array.isArray(value) || !value.length) return false;
+    if (operator === "between" && value.length !== 2) return false;
+    if (field.value_type === "boolean") return false;
+    if (!value.every((item) => isStoredScalarValid(field, item))) return false;
+    if (operator === "between" && field.value_type === "number") {
+      return (value[0] as number) <= (value[1] as number);
+    }
+    if (operator === "between" && field.value_type === "datetime") {
+      return Date.parse(value[0] as string) <= Date.parse(value[1] as string);
+    }
+    return true;
+  }
+  return isStoredScalarValid(field, value);
 }
 
 export function isExpressionValid(
@@ -299,18 +347,19 @@ export function isExpressionValid(
   if (isEmptyFilter(expression)) return true;
   if (isFilterRule(expression)) {
     const field = fields.find((item) => item.key === expression.field);
-    if (ARRAY_FILTER_OPERATORS.has(expression.op) && !Array.isArray(expression.value)) return false;
+    if (
+      !field ||
+      !TASK_FILTER_OPERATORS.includes(expression.op) ||
+      !field.operators.includes(expression.op)
+    )
+      return false;
+    if (expression.op !== "exists" && expression.op !== "missing") {
+      if (!Object.prototype.hasOwnProperty.call(expression, "value")) return false;
+      if (expression.value === undefined) return false;
+    }
     if (expression.value === null && (expression.op === "eq" || expression.op === "ne"))
-      return Boolean(field);
-    return Boolean(
-      field &&
-      TASK_FILTER_OPERATORS.includes(expression.op) &&
-      parseFilterValue(
-        field,
-        expression.op,
-        formatFilterDraft(expression.value, field, expression.op),
-      ).ok,
-    );
+      return true;
+    return isStoredFilterValueValid(field, expression.op, expression.value);
   }
   return (
     isFilterGroup(expression) &&

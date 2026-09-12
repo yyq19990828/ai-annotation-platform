@@ -60,6 +60,31 @@ describe("FilterValueEditor", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("完整数字");
   });
 
+  it("reports draft validity and clears it when the editor unmounts", async () => {
+    const user = userEvent.setup();
+    const validity = vi.fn();
+    const view = render(
+      <FilterValueEditor
+        field={numberField}
+        operator="eq"
+        appliedValue={1}
+        editorId="filter:count"
+        onCommit={vi.fn()}
+        onDraftValidityChange={validity}
+      />,
+    );
+    expect(validity).toHaveBeenLastCalledWith(true, "filter:count");
+    const input = screen.getByRole("textbox", { name: "条件值" });
+    await user.clear(input);
+    await user.type(input, "-");
+    expect(validity).toHaveBeenLastCalledWith(false, "filter:count");
+    await user.clear(input);
+    await user.type(input, "2");
+    expect(validity).toHaveBeenLastCalledWith(true, "filter:count");
+    view.unmount();
+    expect(validity).toHaveBeenLastCalledWith(true, "filter:count");
+  });
+
   it("renders enum IN as multi-select and commits selected values", async () => {
     const user = userEvent.setup();
     const onCommit = vi.fn();
