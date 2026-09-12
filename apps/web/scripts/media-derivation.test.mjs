@@ -241,6 +241,9 @@ test("legacy schema-4 masters retain their quality gate and derive through the s
       result.entries["docs-site/public/media/master.mp4"].source_asset.quality,
       "marketing",
     );
+    manifest.entries["bbox-draw"].capture.driver = "screencapturekit";
+    fs.writeFileSync(path.join(run, "manifest.json"), JSON.stringify(manifest));
+    deriveMedia(options);
     manifest.entries["bbox-draw"].capture.cadence.unique_frame_ratio = 0.1;
     fs.writeFileSync(path.join(run, "manifest.json"), JSON.stringify(manifest));
     assert.throws(() => deriveMedia(options), /qualified 4K60/);

@@ -4,7 +4,7 @@ description: 如何新增场景、更新现有截图、维护视觉回归基线
 audience: [developer]
 type: how-to
 status: stable
-last_reviewed: 2026-07-23
+last_reviewed: 2026-09-13
 ---
 
 # 更新文档截图
@@ -33,7 +33,7 @@ pnpm --filter @anno/web screenshots:record -- --flow bbox-draw
 pnpm --filter @anno/web screenshots:record -- --flow ocr-inference
 pnpm --filter @anno/web screenshots:record -- --flow sam-tool-smart-point
 
-# Linux X11/NVIDIA：保留原有母版质量检查
+# 高清母版：Mac 自动选择原生驱动；Linux 沿用 X11/NVIDIA
 pnpm --filter @anno/web screenshots:record -- --flow bbox-draw --profile marketing
 ```
 
@@ -42,6 +42,17 @@ pnpm --filter @anno/web screenshots:record -- --flow bbox-draw --profile marketi
 它是**未裁剪的标准源素材**，不承诺真实 60fps；录制本身不会替换已发布视频、公开清单或人工审核记录。
 清单逐项保留资产 ID、哈希、实际媒体参数、来源提交、脏工作树状态、浏览器和后端证据。
 `docs:media:derive` 现在同时接受标准源与营销母版清单，必须显式选择标准源等级，不能自动降级替换高清来源。
+
+Mac 的 `marketing` 规格仅接受**不依赖 ML 能力且不执行推理**的已注册流程；即使后端能力范围为空，
+执行真实推理的 `ai-preannotate`、`pipeline-apply-project` 也会被拒绝。`--plan` 会显示选中的
+`captureDriver: screencapturekit`，并在连接服务、造数前检查流程范围。
+
+Mac 需要 **macOS 14 或更新系统**、Xcode Command Line Tools（`xcrun swiftc`）、
+带 `libx264` 的 ffmpeg 和 ffprobe，以及能够提供 2880×1620 内容区的 Retina 窗口。
+为运行命令的终端或 Agent 在「系统设置 → 隐私与安全性 → 屏幕录制」授权，按系统提示重启相应应用。
+首次启动会编译原生 helper 并缓存在被 Git 忽略的 `.artifacts/marketing/.native/`，之后按源码和工具链复用。
+录制时保持目标 Chromium 窗口在前台，不切入台前调度缩略状态；原生窗口须通过进程、标题和校准色块核对。
+不依赖 ML 的 Mac 录制校验隔离 API / 数据库，不要求额外启动 ML worker。
 
 入口必须设置 `SCREENSHOT_DATABASE_URL`，以及完全相同、显式选择非零 Redis DB 的
 `REDIS_URL` 和 `CELERY_BROKER_URL`。同时核对 API、Worker 的实际目标；入口只固定自己子进程的
@@ -54,7 +65,7 @@ pnpm --filter @anno/web screenshots:record -- --flow bbox-draw --profile marketi
 
 视频范围刷选、跨帧多正点、正负点、框种子和文本发现录制使用 `video_tracker` 能力组，分别对应 `video-tracker-range`、`video-tracker-cross-frame-points`、`video-tracker-positive-negative`、`video-tracker-box-seed`、`video-tracker-text-discovery`。这些流程运行真实追踪作业，并保存请求、候选、采纳及重载验证证据；文本发现按返回几何匹配目标，不依赖固定实例编号。失败时也会按已登记 ID 清理作业和新建标注。
 
-Mac 可连接已注册的远程 Linux 模型服务：API / Worker 必须能访问模型，模型也必须能访问截图存储的签名媒体 URL。
+使用 `docs` 标准规格的 Mac 可连接已注册的远程 Linux 模型服务：API / Worker 必须能访问模型，模型也必须能访问截图存储的签名媒体 URL。
 `--ml-backend-url` 是 stub 配置，不是远程 live 后端地址。仅改 API URL 不会把本地 seed / 清理脚本搬到远端。
 
 本次拆分的是 **AI 后端依赖**，完整截图素材缓存、MinIO、固定项目及 nuScenes 数据仍须准备；入口使用 offline seed。
@@ -137,7 +148,7 @@ pnpm screenshots                  # desktop-light 全量（最常用）
 pnpm screenshots:dark             # desktop-dark 变体
 pnpm screenshots:matrix           # desktop-light / dark / mobile
 pnpm screenshots:flows            # 流程录制 → 标准源录像及 GIF 配置归档（需 ffmpeg）
-pnpm screenshots:marketing        # 4K60 MKV 采集源 + MP4/H.264 通用母版（需 X11/NVIDIA/ffmpeg）
+pnpm screenshots:marketing        # Linux 原有全量母版入口；Mac 使用 screenshots:record 选择流程
 pnpm screenshots:regression       # 比较高价值视觉回归基线
 pnpm screenshots:regression:update # 有意改变 UI 后更新基线
 pnpm screenshots:lint             # 快速检查静态引用与 manifest
@@ -160,16 +171,18 @@ stub 模式可以验证并更新普通截图与 GIF，但不得用于替换首�
 
 ### 录制高清营销母版
 
-`screenshots:marketing` 复用同一组 flow 和隔离数据库，但使用独立的
-`marketing-master` project。工作台保持 1440×810 的逻辑 viewport，再以 1.8 设备像素倍率渲染为
-2592×1458；控件、文字和画布内容因此保持文档工作台的视觉比例。这个采集尺寸能在无物理显示器的
-远程 X11 会话中稳定保留真实 60Hz 动作，随后使用 Lanczos 统一生成 3840×2160 交付母版。
-录制器先用校准色块从 X11 画面测出 Chromium 内容区的实际边界，不依赖窗口装饰高度或底部对齐裁切；
-只有测得区域恰好为 2592×1458 时才会启动正式流程。成功的单目标流程会让
-X11 按 60Hz 主动采样 Chromium 窗口，再由 `h264_nvenc` 硬件编码，
-精确裁出内容区并将按核心动作窗口裁切后的 4K MKV/H.264 作为不可变采集源，同时转码一份
-MP4/H.264 通用母版，两者都存到仓库根目录的
-`.artifacts/marketing/`，不直接生成或覆盖文档 GIF、首页视频和海报；站点成品统一由后续派生命令生成。
+`screenshots:record -- --flow <id> --profile marketing` 复用现有 flow 和隔离数据库，并使用
+`marketing-master` project。两种平台保持相同的 1440×810 逻辑 viewport：Linux 使用 1.8 设备像素倍率，
+内容区为 2592×1458；Mac 使用 2 倍率，内容区为 2880×1620。两者均以 Lanczos 生成
+3840×2160 / 60fps 交付母版，保留真实源尺寸及重采样记录，不把交付尺寸称作原生 4K 采集。
+
+录制前用校准色块测量 Chromium 内容区，不依赖固定的窗口装饰高度。Linux 使用 X11 / NVIDIA；
+Mac 使用 ScreenCaptureKit 捕获已核对的单个窗口并写入 H.264，首帧时间取自原生帧时间戳，
+不使用进程启动或回调到达时间估算。原生进程在正常停止、管道关闭和中断时结束编码；
+调用端在正常结束或流程失败后清理自己的临时文件。录制期间窗口尺寸改变会中止采集。
+
+按核心动作窗口裁切后的 4K MKV/H.264 采集源和 MP4/H.264 通用母版都归档到
+`.artifacts/marketing/`，录制不直接覆盖已发布媒体；站点视频和海报继续通过现有派生命令生成。
 
 每个营销目标必须在[高清营销资产目录](../reference/marketing-asset-catalog.md)
 登记后才能归档。一个 `asset_id` 对应一个独立测试和一个明确主题；不要把无关功能混在
@@ -180,15 +193,15 @@ MP4/H.264 通用母版，两者都存到仓库根目录的
 不得向前回填登录或加载画面，也不得通过慢放、故意放慢操作或无意义重复动作满足时长门禁；应补齐与主题相关的必要镜头，
 或修正该资产的最短时长。
 
-营销录制必须运行在本机 X11 显示上，并要求 Chromium 硬件合成、ffmpeg 的 X11 采集与 `h264_nvenc`。启动器会在录制前
+两种平台都要求 Chromium 硬件合成；Linux 额外需要本机 X11 显示、ffmpeg 的 X11 采集与 `h264_nvenc`。录制器会在正式流程前
 测量 120 个 `requestAnimationFrame`，并录制 1.1 秒 GPU 合成层校准动画后解码检查有效帧节奏：软件渲染、
 GPU 合成未启用、p95 帧间隔超过 20ms、校准段少于 58 个采样帧、有效独立画面低于 55fps，
 或独立帧占比低于 90% 都会直接失败。拖拽路径逐帧使用受信任的 Playwright 鼠标事件按 60Hz
 节拍发送，避免浏览器指针状态与 Konva 拖拽状态脱节而在松手时跳到终点。
-桌面至少需要 2700×1750，以容纳 2592×1458 内容区和浏览器边框；
-`--resize-display` 会临时调整 X11 framebuffer，并在成功、失败或中断后恢复原尺寸。
+Linux 桌面至少需要 2700×1750，以容纳 2592×1458 内容区和浏览器边框；
+`--resize-display` 会临时调整 X11 framebuffer，并在成功、失败或中断后恢复原尺寸；Mac 不使用该选项。
 
-全量录制前建议先定向跑一个流程：
+Linux 原有全量入口仍可定向选择测试；Mac 使用前述 `screenshots:record -- --flow ... --profile marketing`：
 
 ```bash
 cd apps/web

@@ -1,5 +1,6 @@
 ---
 pageClass: docs-hub-page
+aside: false
 audience: [annotator, reviewer, project_admin, super_admin]
 type: explanation
 status: stable
@@ -8,62 +9,44 @@ last_reviewed: 2026-07-12
 
 # 用户手册
 
-面向标注员、审核员、项目管理员、超级管理员、观察者的使用文档。先按角色定位，再按任务进入。
-
-## 按角色定位
-
-不确定从哪里开始？选择你的角色：
-
-<div class="doc-card-grid cols-3">
-  <DocLinkCard icon="🖊️" title="标注员" desc="接收任务、在工作台完成标注并提交" href="/user-guide/getting-started" />
-  <DocLinkCard icon="📋" title="项目管理员" desc="创建项目、上传数据、分配任务、跟进进度" href="/user-guide/projects/" />
-  <DocLinkCard icon="✅" title="审核员 / 质检员" desc="检查标注质量，通过或回退给标注员修正" href="/user-guide/review/" />
-  <DocLinkCard icon="🛡️" title="超级管理员" desc="管理用户、注册 ML Backend、查看系统状态" href="/user-guide/superadmin/" />
-  <DocLinkCard icon="👁️" title="观察者 Viewer" desc="仅可查看平台公开内容，需升级权限后参与标注" href="/user-guide/concepts" />
-</div>
-
-![角色 Dashboard 概览](./images/getting-started/role-dashboard-overview.png)
+面向标注员、审核员、项目管理员、超级管理员和观察者。先按要完成的任务选择入口，再按角色补充权限和管理说明。
 
 ## 按任务进入
 
-![平台导航概览](./images/getting-started/platform-nav-overview.png)
+从下面六个常见任务开始：
 
-### 开始
+<span id="开始" aria-hidden="true"></span>
+<span id="数据与项目" aria-hidden="true"></span>
+<span id="标注" aria-hidden="true"></span>
+<span id="审核与导出" aria-hidden="true"></span>
 
-| 我想做的事                             | 去哪里                              |
-| -------------------------------------- | ----------------------------------- |
-| 第一次进入平台                         | [快速开始](./getting-started)       |
-| 理解「任务 / 批次 / 标注」这些词的含义 | [平台概念与术语](./concepts)        |
-| 看快捷键列表                           | [工作台概览 → 快捷键](./workbench/) |
+<div class="doc-card-grid cols-3">
+  <DocLinkCard title="领取并完成任务" desc="登录、打开已分派任务、完成首条标注并提交" href="/user-guide/getting-started" />
+  <DocLinkCard title="导入数据" desc="上传图像数据集，确认导入结果并创建任务" href="/user-guide/datasets/import-images" />
+  <DocLinkCard title="创建与分配项目" desc="创建项目、准备数据并把批次分配给标注员" href="/user-guide/workflows/new-project-end-to-end" />
+  <DocLinkCard title="使用 AI 辅助" desc="选择 AI 能力、接管候选并处理异步任务" href="/user-guide/ai/" />
+  <DocLinkCard title="审核标注" desc="检查质量、通过任务或退回修改" href="/user-guide/review/" />
+  <DocLinkCard title="导出结果" desc="按目标格式导出已完成的标注数据" href="/user-guide/reference/export-formats" />
+</div>
 
-### 数据与项目
+## 按角色定位
 
-| 我想做的事           | 去哪里                                                                 |
-| -------------------- | ---------------------------------------------------------------------- |
-| 导入数据             | [导入图像数据集](./datasets/import-images) · [数据集总览](./datasets/) |
-| 配置存储连接器       | [存储连接器导入](./datasets/storage-connections)                       |
-| 端到端创建项目       | [新项目端到端流程](./workflows/new-project-end-to-end)                 |
-| 切批次、分配给标注员 | [批次与分配](./projects/batch)                                         |
+需要确认权限范围时，选择与你的工作身份对应的入口：
 
-### 标注
-
-| 我想做的事                     | 去哪里                                                                                     |
-| ------------------------------ | ------------------------------------------------------------------------------------------ |
-| 图片标注                       | [Bbox](./workbench/bbox) · [Polygon](./workbench/polygon) · [关键点](./workbench/keypoint) |
-| 视频 / 点云标注                | [视频追踪标注](./workbench/video-track) · [3D 点云标注](./workbench/pointcloud-view)       |
-| 使用 AI 辅助标注或管理 AI 任务 | [AI 辅助标注](./ai/)                                                                       |
-
-### 审核与导出
-
-| 我想做的事   | 去哪里                                     |
-| ------------ | ------------------------------------------ |
-| 审核标注质量 | [审核流程](./review/)                      |
-| 导出标注数据 | [数据导出格式](./reference/export-formats) |
+<div class="doc-card-grid cols-3">
+  <DocLinkCard title="标注员" desc="接收任务、在工作台完成标注并提交" href="/user-guide/getting-started" />
+  <DocLinkCard title="项目管理员" desc="创建项目、上传数据、分配任务并跟进进度" href="/user-guide/projects/" />
+  <DocLinkCard title="审核员 / 质检员" desc="检查标注质量，通过或退回给标注员修正" href="/user-guide/review/" />
+  <DocLinkCard title="超级管理员" desc="管理用户、注册 ML Backend 并查看系统状态" href="/user-guide/superadmin/" />
+  <DocLinkCard title="观察者 Viewer" desc="查看平台公开内容，需要升级权限后参与标注" href="/user-guide/concepts" />
+</div>
 
 ### 设置与支持
 
-| 我想做的事                     | 去哪里                               |
-| ------------------------------ | ------------------------------------ |
-| 修改密码 / 通知偏好 / 标注偏好 | [设置页](./reference/settings)       |
-| 提交 BUG 或问题                | 工作台顶栏／其他页面右下角的反馈按钮 |
-| 常见问题                       | [FAQ](./faq)                         |
+需要查概念、快捷键或账号设置时：
+
+- [平台概念与术语](./concepts) — 了解任务、批次和标注的关系。
+- [工作台概览与快捷键](./workbench/) — 查看界面分区和完整快捷键。
+- [设置页](./reference/settings) — 修改密码、通知偏好和标注偏好。
+- 提交 BUG 或问题 — 使用工作台顶栏或其他页面右下角的反馈按钮。
+- [常见问题 FAQ](./faq) — 查找常见使用问题。

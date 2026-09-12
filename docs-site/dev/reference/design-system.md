@@ -146,3 +146,21 @@ The documentation site (`docs-site`) runs VitePress with the default theme and d
 **Fonts are local-only.** `--docs-font-sans` / `--docs-font-mono` / `--docs-font-serif` are pure system/local stacks. The docs site must not inject runtime web fonts (e.g. Google Fonts).
 
 **Sync principle.** When the brand hue changes, update `--home-blue` in `docs-home.css` and `--docs-royal` (light) plus its dark lift in `docs-theme.css` together. When adding a body-reading token, add it under `--docs-*` in `docs-theme.css` rather than inline in a component.
+
+### Documentation reading layout
+
+`DocsLayout.vue` extends the default theme through its public slots. It adds a domain link and, when available, the existing document type above an article; the sidebar carries the same domain label. The page H1 and introduction remain in Markdown. Unknown or missing metadata omits the corresponding label. The wrapper applies `docs-reading-page` only to documentation layouts, keeping the marketing composition separate.
+
+| Element      | Reading treatment                                                                                                  |
+| ------------ | ------------------------------------------------------------------------------------------------------------------ |
+| Sidebar      | 256 px desktop rail; task groups, native active-branch expansion, blue text and a subtle active background         |
+| Article      | `--docs-reading-width: 760px`; one continuous column, with local overflow for wide tables/code                     |
+| Outline      | `--docs-outline-width: 200px`; H2/H3 hierarchy, wrapped labels, native active-section marker                       |
+| Domain hub   | `pageClass: docs-hub-page` and `aside: false`; `--docs-hub-width: 1040px`, task links before supporting references |
+| Display type | Local serif H1, 40 px desktop / 32 px mobile; serif hub section headings                                           |
+| Reading type | Sans-serif H2/H3 at 26/20 px, body at 16 px with 1.8 line height; navigation/captions at 13–14 px                  |
+| Surfaces     | Flat reading canvas; `--docs-radius-sm: 4px` for selection and `--docs-radius: 8px` for cards/media/code           |
+
+The header menu and desktop sidebar start at 960 px; the desktop outline starts at 1280 px. The header uses the native menu below 960 px on both the reading pages and marketing homepage so Chinese labels fit. Smaller screens retain VitePress's native drawer and local outline control. Domain hubs use the existing `DocLinkCard` and `doc-card-grid`; reading pages keep normal Markdown headings, lists, containers, details, and code groups. Links acknowledge hover/press through color, without decorative motion. See [Writing documentation](../how-to/write-documentation) for content structures and anchor preservation.
+
+Check the actual computed article width when changing CSS: default-theme scoped rules can override a less specific custom max-width. Keep global layout changes under `docs-reading-page`; homepage CTA rules belong to `docs-home.css`. Capture and verify old article anchors with `docs-site/scripts/check-reading-layout.mjs`, then inspect both themes and the 390/768/1024/1280/1440 px breakpoints in a real browser. The checker accepts `capture|verify`, a preview URL, and a baseline JSON path; capture refuses to overwrite an existing baseline.

@@ -253,15 +253,6 @@ export async function waitForRecordingWorkbenchLayout(
   );
 }
 
-export function isAiPanelSafelyDockedRight(
-  viewportWidth: number,
-  panelRight: number,
-  maximumGap = 32,
-): boolean {
-  const gap = viewportWidth - panelRight;
-  return gap >= 0 && gap <= maximumGap;
-}
-
 /**
  * 把可拖动的当前题 AI 面板停到视口右侧安全边距内，避免录制时遮住中央主图。
  * 走真实 pointer drag，只影响隔离的 Playwright context，不改产品默认定位。

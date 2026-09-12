@@ -211,7 +211,9 @@ export function deriveMedia({
             media.width !== 3840 ||
             media.height !== 2160 ||
             Math.abs(media.fps - 60) > 0.05 ||
-            !["x11grab", "gpu-screen-recorder"].includes(item.entry.capture?.driver) ||
+            !["x11grab", "gpu-screen-recorder", "screencapturekit"].includes(
+              item.entry.capture?.driver,
+            ) ||
             !(cadence?.effective_unique_fps >= 55) ||
             !(cadence?.unique_frame_ratio >= 0.9)
           ) {

@@ -12,11 +12,15 @@ last_reviewed: 2026-08-16
 
 项目管理员从左侧 **项目总览** 进入项目管理页；超级管理员从左侧 **项目管理** 进入同一类项目管理页。这里可以查看全部项目、按状态筛选、进入项目设置，也可以从右上角创建新项目。
 
+<div class="doc-theme-images">
+
 ![创建项目入口](../images/projects/create-entry.png)
 
-<!-- TODO(0.8.1) IMAGE_CHECKLIST: ProjectsPage「新建项目」按钮高亮。 -->
-
 ![创建项目入口（深色主题）](../images/projects/create-entry.dark.png)
+
+</div>
+
+<!-- TODO(0.8.1) IMAGE_CHECKLIST: ProjectsPage「新建项目」按钮高亮。 -->
 
 当当前筛选条件下没有项目时，列表会显示空状态。先确认筛选条件，再通过 **新建项目** 创建第一个项目，或先导入数据集后在向导中关联。
 

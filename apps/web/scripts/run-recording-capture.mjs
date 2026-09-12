@@ -7,6 +7,7 @@ import {
   MARKETING_ONLY_FLOWS,
   recordingInference,
   recordingPlan,
+  marketingCaptureDriver,
 } from "../e2e/screenshots/recording-plan.mjs";
 
 const { values } = parseArgs({
@@ -33,9 +34,16 @@ if (values.list) {
   process.exit(0);
 }
 const plan = recordingPlan(values.flow ?? [], values.profile);
-console.log(JSON.stringify(plan, null, 2));
+const captureDriver =
+  plan.profile === "marketing"
+    ? marketingCaptureDriver(process.platform, process.env.MARKETING_CAPTURE_DRIVER, plan.flows)
+    : undefined;
+console.log(JSON.stringify({ ...plan, ...(captureDriver ? { captureDriver } : {}) }, null, 2));
 if (values["resize-display"] && values.profile !== "marketing") {
   throw new Error("--resize-display only applies to the marketing profile.");
+}
+if (values["resize-display"] && captureDriver === "screencapturekit") {
+  throw new Error("--resize-display applies only to Linux X11 capture.");
 }
 if (values.plan) process.exit(0);
 
@@ -58,12 +66,6 @@ if (!/^\/[1-9]\d*$/.test(redis.pathname) || redis.href !== broker.href) {
     "Capture requires the same explicit nonzero Redis DB for REDIS_URL and CELERY_BROKER_URL.",
   );
 }
-if (values.profile === "marketing" && process.platform !== "linux") {
-  throw new Error("Marketing masters require Linux X11/NVIDIA; use --profile docs on macOS.");
-}
-if (values["resize-display"] && values.profile !== "marketing") {
-  throw new Error("--resize-display only applies to the marketing profile.");
-}
 const env = {
   ...process.env,
   DATABASE_URL: databaseUrl,
@@ -74,6 +76,7 @@ const env = {
   SCREENSHOT_RECORDING_PROFILE: plan.profile,
   SCREENSHOT_RECORDING_RUN: `${new Date().toISOString().replace(/[:.]/g, "-")}-${process.pid}`,
   SCREENSHOT_VALIDATE_ONLY: values["validate-only"] ? "1" : "0",
+  ...(captureDriver ? { MARKETING_CAPTURE_DRIVER: captureDriver } : {}),
 };
 const requiresLiveInference = plan.flows.some((id) => recordingInference(id) === "live");
 if (plan.backendRequirements !== "none" || requiresLiveInference) {
