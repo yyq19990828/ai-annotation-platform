@@ -3,6 +3,20 @@
   "default_max_age_days": 30,
   "review_profile": "visual-content-v1",
   "entries": {
+    "docs-site/.vitepress/theme/assets/home/hero/data-manager.webp": {
+      "last_verified_commit": "fd1ae10d6bde4b3c0c4f78ae35b45e11796afe35",
+      "verified_at": "2026-09-12T08:26:32.327Z",
+      "reviewer": "codex",
+      "review_profile": "visual-content-v1",
+      "sha256": "7dbc9735fe2c9d68453f699049be80233ef1cd985274cf833028c7b1da407b89",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/scenes/projects.ts",
+        "docs-site/.vitepress/theme/assets/home/hero/data-manager.webp",
+        "docs-site/.vitepress/theme/components/home/DataAtlasHero.vue",
+        "docs-site/scripts/generate-home-hero-media.mjs",
+        "docs-site/user-guide/images/projects/data-manager-overview.png"
+      ]
+    },
     "docs-site/.vitepress/theme/assets/home/hero/pointcloud.webp": {
       "last_verified_commit": "ea71c3e4785985de31773e4396b8ed488c8fe4f7",
       "verified_at": "2026-09-07T10:33:54.559Z",
@@ -3177,11 +3191,11 @@
       ]
     },
     "docs-site/user-guide/images/projects/data-manager-filter-rules.png": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
-      "reviewer": "yyq19990828",
+      "last_verified_commit": "fd1ae10d6bde4b3c0c4f78ae35b45e11796afe35",
+      "verified_at": "2026-09-12T08:26:32.327Z",
+      "reviewer": "codex",
       "review_profile": "visual-content-v1",
-      "sha256": "5ee1ea224ad801377c24e89edba7e7d2ee532dcbda6c577ffaae4e4c815f1412",
+      "sha256": "16d11dc1aa76d1a8146138b0adcebe6dc17f9a0db00aad6da0be2dd1d1b662b7",
       "watch_paths": [
         "apps/web/e2e/screenshots/scenes/projects.ts",
         "docs-site/user-guide/images/projects/data-manager-filter-rules.png",
@@ -3189,11 +3203,11 @@
       ]
     },
     "docs-site/user-guide/images/projects/data-manager-overview.png": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
-      "reviewer": "yyq19990828",
+      "last_verified_commit": "fd1ae10d6bde4b3c0c4f78ae35b45e11796afe35",
+      "verified_at": "2026-09-12T08:26:32.327Z",
+      "reviewer": "codex",
       "review_profile": "visual-content-v1",
-      "sha256": "972e4dd36710cc89f8cc7ce128cc44365cf2c0f01c996797eadb5d0fb3665258",
+      "sha256": "ff723a42341d7e5646e71905516d30ecac42a2dcd84ae36d37c833f153fce128",
       "watch_paths": [
         "apps/web/e2e/screenshots/scenes/projects.ts",
         "docs-site/user-guide/images/projects/data-manager-overview.png",

@@ -240,7 +240,7 @@ export interface ProjectListParams {
 }
 
 export const projectsApi = {
-  list: (params?: ProjectListParams) => {
+  list: (params?: ProjectListParams, init?: RequestInit) => {
     const q = new URLSearchParams();
     Object.entries(params ?? {}).forEach(([k, v]) => {
       if (v === undefined || v === null) return;
@@ -251,7 +251,10 @@ export const projectsApi = {
       }
     });
     const qs = q.toString();
-    return apiClient.get<ProjectResponse[]>(`/projects${qs ? `?${qs}` : ""}`);
+    const path = `/projects${qs ? `?${qs}` : ""}`;
+    return init
+      ? apiClient.get<ProjectResponse[]>(path, init)
+      : apiClient.get<ProjectResponse[]>(path);
   },
 
   stats: () => apiClient.get<ProjectStatsResponse>("/projects/stats"),

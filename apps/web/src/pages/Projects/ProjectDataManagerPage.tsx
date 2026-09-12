@@ -34,11 +34,39 @@ import {
   type DataManagerFilterChip,
   type DataManagerQuickFilter,
 } from "./data-manager/DataManagerFilterBar";
+import { FilterValueEditor } from "@/components/filters/FilterValueEditor";
+import { useFilterDraftValidity } from "@/components/filters/useFilterDraftValidity";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { useUrlFilterState } from "@/hooks/useUrlFilterState";
+import { formatFilterDraft, parseFilterValue } from "@/lib/filters/filterValues";
+import { filterOperatorLabel } from "@/lib/filters/types";
+import {
+  combineKeyword,
+  collapseEmptyGroups,
+  hasNestedGroups,
+  isExpressionValid,
+  isEmptyFilter,
+  isFilterGroup,
+  isFilterRule,
+  validateFilterStructure,
+  appendRule,
+  removeAtPath,
+  splitKeyword,
+  updateRuleAtPath,
+  type DataManagerFilterExpression,
+} from "./data-manager/dataManagerFilterExpression";
+import { DataManagerExpressionEditor } from "./data-manager/DataManagerExpressionEditor";
 import { DataManagerSummaryStrip } from "./data-manager/DataManagerOverview";
 import { DataManagerLensTabs } from "./data-manager/DataManagerLensTabs";
 import { EntityDataManagerLens } from "./data-manager/EntityDataManagerLens";
 import { TaskMatchesSheet } from "./data-manager/TaskMatchesSheet";
-import { parseDataManagerUrl, updateDataManagerUrl } from "./data-manager/dataManagerUrlState";
+import {
+  DATA_MANAGER_FILTER_KEYS,
+  dataManagerUrlCodec,
+  hasFilterUrlOverrides,
+  parseDataManagerUrl,
+  updateDataManagerUrl,
+} from "./data-manager/dataManagerUrlState";
 import {
   Dialog,
   DialogContent,
@@ -68,6 +96,16 @@ import {
 } from "@/components/shadcn/ui/alert-dialog";
 
 const PAGE_SIZE = 50;
+
+const EMPTY_DATA_MANAGER_URL_STATE = {
+  lens: "tasks" as const,
+  view: null,
+  query: "",
+  filter: null,
+  sort: null,
+  columns: null,
+  selected: null,
+};
 
 // UA-safe 表单基线(无全局 preflight 期间,原生 select/input 需消浏览器默认样式)
 const FIELD_CLASS =
@@ -126,70 +164,10 @@ const COLUMN_OPTIONS = [
 ] as const;
 
 const DEFAULT_COLUMNS = COLUMN_OPTIONS.slice(0, 11).map((item) => item.key);
-interface EditableRule {
+interface RuleChipDraft {
   field: string;
   op: TaskFilterOp;
   value: string;
-}
-
-function isFilterRule(value: unknown): value is TaskFilterRule {
-  return Boolean(value && typeof value === "object" && "field" in value && "op" in value);
-}
-
-function editableRulesFromFilter(raw: Record<string, unknown> | null | undefined): EditableRule[] {
-  if (!raw || !("rules" in raw) || !Array.isArray(raw.rules)) return [];
-  const rules = raw.rules.filter(isFilterRule).map((rule) => ({
-    field: rule.field,
-    op: rule.op,
-    value: Array.isArray(rule.value) ? rule.value.join(", ") : String(rule.value ?? ""),
-  }));
-  return rules;
-}
-
-export function editableRulesFromView(view: ProjectTaskView | null): EditableRule[] {
-  return editableRulesFromFilter(view?.filter_json);
-}
-
-function normalizeRuleValue(rule: EditableRule, fields: DataManagerFilterField[]): unknown {
-  const field = fields.find((item) => item.key === rule.field);
-  if (rule.op === "exists" || rule.op === "missing") return true;
-  if (["in", "contains_any", "contains_all", "between"].includes(rule.op)) {
-    const values = rule.value
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean);
-    return field?.value_type === "number"
-      ? values.map((item) => Number(item)).filter(Number.isFinite)
-      : values;
-  }
-  if (field?.value_type === "number") {
-    const n = Number(rule.value);
-    return Number.isFinite(n) ? n : rule.value;
-  }
-  if (field?.value_type === "boolean") return rule.value === "true";
-  return rule.value.trim();
-}
-
-export function buildFilterJson(
-  rules: EditableRule[],
-  fields: DataManagerFilterField[],
-  keyword: string,
-): Record<string, unknown> {
-  const clean = rules
-    .filter(
-      (rule) =>
-        rule.field && rule.op && (["exists", "missing"].includes(rule.op) || rule.value.trim()),
-    )
-    .map((rule) => ({
-      field: rule.field,
-      op: rule.op,
-      value: normalizeRuleValue(rule, fields),
-    }));
-  if (keyword.trim()) {
-    clean.unshift({ field: "task.keyword", op: "contains", value: keyword.trim() });
-  }
-  if (!clean.length) return {};
-  return { op: "and", rules: clean };
 }
 
 function defaultSortForView(view: ProjectTaskView | null): TaskSortItem[] {
@@ -224,90 +202,13 @@ function statusLabel(status: string) {
   }
 }
 
-function operatorLabel(operator: TaskFilterOp) {
-  const labels: Partial<Record<TaskFilterOp, string>> = {
-    eq: "=",
-    ne: "!=",
-    in: "属于",
-    gt: ">",
-    gte: ">=",
-    lt: "<",
-    lte: "<=",
-    exists: "已填写",
-    missing: "缺失",
-    contains: "包含",
-    between: "区间",
-    contains_any: "包含任一",
-    contains_all: "包含全部",
-  };
-  return labels[operator] ?? operator;
-}
-
-function ruleValueLabel(rule: EditableRule, fields: DataManagerFilterField[]) {
-  if (rule.op === "exists" || rule.op === "missing") return operatorLabel(rule.op);
+function ruleValueLabel(rule: RuleChipDraft, fields: DataManagerFilterField[]) {
+  if (rule.op === "exists" || rule.op === "missing") return filterOperatorLabel(rule.op);
+  if (rule.value === "null") return `${filterOperatorLabel(rule.op)} 空值`;
   const field = fields.find((item) => item.key === rule.field);
   const option = field?.options.find((item) => item.value === rule.value);
   const value = option?.label ?? rule.value.trim();
-  return `${operatorLabel(rule.op)} ${value || "未填写"}`;
-}
-
-function renderRuleValueControl(
-  rule: EditableRule,
-  index: number,
-  rules: EditableRule[],
-  setRules: (rules: EditableRule[]) => void,
-  fields: DataManagerFilterField[],
-) {
-  const field = fields.find((item) => item.key === rule.field);
-  const update = (value: string) => {
-    const next = [...rules];
-    next[index] = { ...rule, value };
-    setRules(next);
-  };
-  if (rule.op === "exists" || rule.op === "missing") {
-    return <input className={FIELD_CLASS} value="无需填写" disabled readOnly />;
-  }
-  if (field?.value_type === "boolean") {
-    return (
-      <select
-        className={FIELD_CLASS}
-        value={rule.value || "true"}
-        onChange={(event) => update(event.target.value)}
-      >
-        <option value="true">是</option>
-        <option value="false">否</option>
-      </select>
-    );
-  }
-  if (field?.options.length && rule.op === "eq") {
-    return (
-      <select
-        className={FIELD_CLASS}
-        value={rule.value}
-        onChange={(event) => update(event.target.value)}
-      >
-        <option value="">请选择</option>
-        {field.options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-    );
-  }
-  return (
-    <input
-      className={FIELD_CLASS}
-      value={rule.value}
-      inputMode={field?.value_type === "number" ? "decimal" : undefined}
-      placeholder={
-        ["in", "between", "contains_any", "contains_all"].includes(rule.op)
-          ? "多个值用逗号分隔"
-          : undefined
-      }
-      onChange={(event) => update(event.target.value)}
-    />
-  );
+  return `${filterOperatorLabel(rule.op)} ${value || "未填写"}`;
 }
 
 export function ProjectDataManagerPage() {
@@ -377,7 +278,12 @@ function TaskDataManagerPage({
 }) {
   const { id = "" } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [initialUrl] = useState(() => parseDataManagerUrl(searchParams));
+  const urlState = useUrlFilterState({
+    codec: dataManagerUrlCodec,
+    defaults: EMPTY_DATA_MANAGER_URL_STATE,
+    ownedKeys: DATA_MANAGER_FILTER_KEYS,
+  });
+  const currentUrl = urlState.state;
   const navigate = useNavigate();
   const { role } = usePermissions();
   const user = useAuthStore((s) => s.user);
@@ -389,11 +295,18 @@ function TaskDataManagerPage({
   const updateView = useUpdateTaskView(id);
   const deleteView = useDeleteTaskView(id);
   const [selectedKey, setSelectedKey] = useState<string>(
-    initialUrl.lens === "tasks" && initialUrl.view ? initialUrl.view : "builtin:all",
+    currentUrl.lens === "tasks" && currentUrl.view ? currentUrl.view : "builtin:all",
   );
-  const [rules, setRules] = useState<EditableRule[]>([]);
+  const draftOwner = `tasks:${id}:${user?.id ?? "anonymous"}:${selectedKey}`;
+  const mutationOwnerRef = useRef(draftOwner);
+  mutationOwnerRef.current = draftOwner;
+  const { hasInvalidDraft, onDraftValidityChange } = useFilterDraftValidity(draftOwner);
+  const [filterExpression, setFilterExpression] = useState<DataManagerFilterExpression>({});
+  const [appliedFilterExpression, setAppliedFilterExpression] =
+    useState<DataManagerFilterExpression>({});
   const [keyword, setKeyword] = useState("");
-  const [debouncedKeyword, setDebouncedKeyword] = useState("");
+  const [keywordFlushKey, setKeywordFlushKey] = useState(0);
+  const debouncedKeyword = useDebouncedValue(keyword, 250, keywordFlushKey);
   const [columns, setColumns] = useState<string[]>(DEFAULT_COLUMNS);
   const [sort, setSort] = useState<TaskSortItem[]>([
     { field: "task.created_at", direction: "asc" },
@@ -411,6 +324,17 @@ function TaskDataManagerPage({
     () => typeof window !== "undefined" && localStorage.getItem("dm-analytics-open") === "1",
   );
   const urlHydratedRef = useRef(false);
+  const lastWrittenUrlRef = useRef<string | null>(null);
+  const pendingViewKeyRef = useRef<string | null>(null);
+  const mountedRef = useRef(false);
+  const skipUrlSyncRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const views = useMemo(() => viewsQ.data?.items ?? [], [viewsQ.data?.items]);
   const filterFields = useMemo(
@@ -450,83 +374,169 @@ function TaskDataManagerPage({
   }, [selectedKey, views]);
 
   useEffect(() => {
+    if (lastWrittenUrlRef.current === searchParams.toString()) return;
+    if (pendingViewKeyRef.current === selectedKey) return;
+    const requestedKey =
+      currentUrl.lens === "tasks" && currentUrl.view ? currentUrl.view : "builtin:all";
+    if (requestedKey !== selectedKey) {
+      urlHydratedRef.current = false;
+      setSelectedKey(requestedKey);
+    }
+  }, [currentUrl.lens, currentUrl.view, searchParams, selectedKey]);
+
+  useEffect(() => {
     if (!views.length) return;
     if (!selectedView) {
       const first = views[0];
-      setSelectedKey(first.id ? `saved:${first.id}` : `builtin:${first.key}`);
+      const firstKey = first.id ? `saved:${first.id}` : `builtin:${first.key}`;
+      urlHydratedRef.current = false;
+      setSelectedKey(firstKey);
+      setSearchParams(
+        updateDataManagerUrl(searchParams, {
+          lens: "tasks",
+          view: firstKey,
+          query: currentUrl.query,
+          filter: currentUrl.filter,
+          sort: currentUrl.sort,
+          columns: currentUrl.columns,
+          selected: currentUrl.selected,
+        }),
+        { replace: true },
+      );
     }
-  }, [selectedView, views]);
+  }, [currentUrl, searchParams, selectedView, setSearchParams, views]);
 
   useEffect(() => {
     if (!selectedView) return;
+    const url = currentUrl;
     const useUrl =
-      !urlHydratedRef.current &&
-      initialUrl.lens === "tasks" &&
-      (!initialUrl.view || initialUrl.view === selectedKey);
-    const hydrated = editableRulesFromFilter(
-      useUrl && initialUrl.filter ? initialUrl.filter : selectedView.filter_json,
-    );
-    const keywordRule = hydrated.find((rule) => rule.field === "task.keyword");
-    const nextKeyword = useUrl ? initialUrl.query : (keywordRule?.value ?? "");
+      url.lens === "tasks" &&
+      (!url.view || url.view === selectedKey) &&
+      hasFilterUrlOverrides(searchParams);
+    if (lastWrittenUrlRef.current === searchParams.toString()) {
+      lastWrittenUrlRef.current = null;
+      if (pendingViewKeyRef.current !== selectedKey) {
+        urlHydratedRef.current = true;
+        return;
+      }
+      pendingViewKeyRef.current = null;
+    }
+    const source = (useUrl && url.filter ? url.filter : selectedView.filter_json) as
+      | DataManagerFilterExpression
+      | Record<string, unknown>;
+    const structureIssue = validateFilterStructure(source);
+    const split = structureIssue
+      ? { query: "", filter: source }
+      : splitKeyword(collapseEmptyGroups(source));
+    const nextKeyword = useUrl ? url.query : split.query;
     setKeyword(nextKeyword);
-    setDebouncedKeyword(nextKeyword);
-    setRules(hydrated.filter((rule) => rule.field !== "task.keyword"));
+    setKeywordFlushKey((value) => value + 1);
+    setFilterExpression(split.filter);
+    setAppliedFilterExpression(split.filter);
     const allowedColumns = new Set(columnOptions.map((column) => column.key));
     const restoredColumns = (
-      useUrl && initialUrl.columns?.length
-        ? initialUrl.columns
+      useUrl && url.columns?.length
+        ? url.columns
         : selectedView.columns_json?.length
           ? selectedView.columns_json
           : defaultColumns
     ).filter((column) => allowedColumns.has(column));
     const nextColumns = restoredColumns.length ? restoredColumns : defaultColumns;
-    const nextSort =
-      useUrl && initialUrl.sort?.length ? initialUrl.sort : defaultSortForView(selectedView);
+    const nextSort = useUrl && url.sort?.length ? url.sort : defaultSortForView(selectedView);
     setColumns(nextColumns);
     setSort(nextSort);
     setBaselineSignature(
-      JSON.stringify({
-        filter_json: buildFilterJson(
-          hydrated.filter((rule) => rule.field !== "task.keyword"),
-          filterFields,
-          nextKeyword,
-        ),
-        sort_json: nextSort,
-        columns_json: nextColumns,
-      }),
+      structureIssue
+        ? ""
+        : JSON.stringify({
+            filter_json: combineKeyword(nextKeyword, split.filter),
+            sort_json: nextSort,
+            columns_json: nextColumns,
+          }),
     );
     urlHydratedRef.current = true;
+    skipUrlSyncRef.current = true;
     setPage(0);
-  }, [columnOptions, defaultColumns, filterFields, initialUrl, selectedKey, selectedView]);
+  }, [
+    columnOptions,
+    currentUrl,
+    defaultColumns,
+    filterFields,
+    searchParams,
+    selectedKey,
+    selectedView,
+  ]);
 
-  useEffect(() => {
-    const timer = window.setTimeout(() => setDebouncedKeyword(keyword), 250);
-    return () => window.clearTimeout(timer);
-  }, [keyword]);
+  const switchView = (key: string) => {
+    const next = updateDataManagerUrl(searchParams, {
+      lens: "tasks",
+      view: key,
+      query: "",
+      filter: null,
+      sort: null,
+      columns: null,
+      selected: null,
+    });
+    urlHydratedRef.current = false;
+    pendingViewKeyRef.current = key;
+    lastWrittenUrlRef.current = next.toString();
+    setSelectedKey(key);
+    setSearchParams(next);
+  };
 
-  const filterJson = useMemo(
-    () => buildFilterJson(rules, filterFields, debouncedKeyword),
-    [debouncedKeyword, filterFields, rules],
+  const expressionValid = useMemo(
+    () => isExpressionValid(filterExpression, filterFields),
+    [filterExpression, filterFields],
   );
-  useEffect(() => setPage(0), [filterJson]);
+  const filterStructureIssue = useMemo(
+    () => validateFilterStructure(filterExpression),
+    [filterExpression],
+  );
+  const filterReady = expressionValid && !hasInvalidDraft;
+  useEffect(() => {
+    if (expressionValid) setAppliedFilterExpression(filterExpression);
+  }, [expressionValid, filterExpression]);
+  const queryExpression = useMemo(
+    () => (filterReady ? filterExpression : filterStructureIssue ? {} : appliedFilterExpression),
+    [appliedFilterExpression, filterExpression, filterReady, filterStructureIssue],
+  );
+  const filterJson = useMemo(
+    () => combineKeyword(debouncedKeyword, queryExpression),
+    [debouncedKeyword, queryExpression],
+  );
+  const queryStateSignature = useMemo(
+    () => JSON.stringify({ filter_json: filterJson, sort_json: sort }),
+    [filterJson, sort],
+  );
+  const pageSignatureRef = useRef("");
+  const pageForQuery = pageSignatureRef.current === queryStateSignature ? page : 0;
+  useEffect(() => {
+    if (pageSignatureRef.current === queryStateSignature) return;
+    pageSignatureRef.current = queryStateSignature;
+    setPage(0);
+  }, [queryStateSignature]);
   const queryPayload = useMemo(
     () => ({
-      filter_json: filterJson,
+      filter_json: filterJson as Record<string, unknown>,
       sort_json: sort,
       columns_json: columns,
       limit: PAGE_SIZE,
-      offset: page * PAGE_SIZE,
+      offset: pageForQuery * PAGE_SIZE,
     }),
-    [columns, filterJson, page, sort],
+    [columns, filterJson, pageForQuery, sort],
   );
-  const queryReady = Boolean(selectedView && schemaQ.data);
+  const queryReady = Boolean(
+    selectedView && schemaQ.data && urlHydratedRef.current && expressionValid,
+  );
   const tasksQ = useProjectTaskQuery(id, queryPayload, queryReady);
-  const summaryQ = useDataManagerSummary(id, filterJson, queryReady);
+  const summaryQ = useDataManagerSummary(id, filterJson as Record<string, unknown>, queryReady);
   const currentSignature = useMemo(
     () => JSON.stringify({ filter_json: filterJson, sort_json: sort, columns_json: columns }),
     [columns, filterJson, sort],
   );
-  const isDirty = Boolean(baselineSignature && baselineSignature !== currentSignature);
+  const isDirty = Boolean(
+    baselineSignature && (!filterReady || baselineSignature !== currentSignature),
+  );
   const total = tasksQ.data?.total ?? 0;
   const visibleTotal =
     summaryQ.data?.scope.visible_task_total ??
@@ -542,61 +552,89 @@ function TaskDataManagerPage({
       : canManageProject),
   );
 
+  const selectionFilterSignatureRef = useRef<string | null>(null);
   useEffect(() => {
     if (!urlHydratedRef.current) return;
+    if (selectionFilterSignatureRef.current === null) {
+      selectionFilterSignatureRef.current = currentSignature;
+      return;
+    }
+    if (selectionFilterSignatureRef.current !== currentSignature) {
+      selectionFilterSignatureRef.current = currentSignature;
+      setSelectedTask(null);
+    }
+  }, [currentSignature]);
+
+  useEffect(() => {
+    if (!urlHydratedRef.current || skipUrlSyncRef.current || !filterReady) {
+      skipUrlSyncRef.current = false;
+      return;
+    }
     const next = updateDataManagerUrl(searchParams, {
       lens: "tasks",
       view: selectedKey,
       query: keyword,
-      filter: buildFilterJson(rules, filterFields, ""),
+      filter: isEmptyFilter(queryExpression) ? {} : (queryExpression as Record<string, unknown>),
       sort,
       columns,
       selected: selectedTask?.id ?? null,
     });
     if (next.toString() !== searchParams.toString()) {
+      lastWrittenUrlRef.current = next.toString();
       setSearchParams(next, { replace: true });
     }
   }, [
     columns,
-    filterFields,
+    queryExpression,
     keyword,
-    rules,
     searchParams,
     selectedKey,
     selectedTask?.id,
     setSearchParams,
     sort,
+    filterReady,
   ]);
 
-  const selectedHydratedRef = useRef(false);
   useEffect(() => {
-    // 仅在结果首次加载后，从 URL 的 selected 恢复一次匹配抽屉；恢复后不再干预。
-    // 若继续依赖 selectedTask，用户点关闭令其变 null 会被这里立即恢复，导致抽屉关不掉。
-    if (selectedHydratedRef.current || !tasksQ.data?.items.length) return;
-    selectedHydratedRef.current = true;
-    if (!initialUrl.selected) return;
-    const restored = tasksQ.data.items.find((task) => task.id === initialUrl.selected);
+    if (!currentUrl.selected) {
+      setSelectedTask(null);
+      return;
+    }
+    const restored = tasksQ.data?.items.find((task) => task.id === currentUrl.selected);
     if (restored) setSelectedTask(restored);
-  }, [initialUrl.selected, tasksQ.data?.items]);
+  }, [currentUrl.selected, tasksQ.data?.items]);
 
   if (projectLoading)
     return <div className="p-15 text-center text-muted-foreground">加载中...</div>;
   if (error || !project) return <Navigate to="/unauthorized" replace />;
+  if (schemaQ.isError)
+    return (
+      <div role="alert" className="p-6 text-center text-sm text-destructive">
+        无法加载 Data Manager 筛选字段，请刷新重试。
+      </div>
+    );
 
   const saveCurrent = async () => {
+    if (!filterReady) {
+      pushToast({ msg: "请先完成筛选条件", kind: "warning" });
+      return;
+    }
+    const ownerAtStart = draftOwner;
     const payload = {
       name: selectedView?.name ?? "任务视图",
       visibility: selectedView?.visibility ?? "private",
-      filter_json: filterJson,
+      filter_json: filterJson as Record<string, unknown>,
       sort_json: sort,
       columns_json: columns,
     };
     if (canEditSelected && selectedView?.id) {
       try {
         await updateView.mutateAsync({ viewId: selectedView.id, payload });
+        if (!mountedRef.current || mutationOwnerRef.current !== ownerAtStart) return;
         setBaselineSignature(currentSignature);
         pushToast({ msg: "视图已保存", kind: "success" });
       } catch {
+        if (!mountedRef.current || mutationOwnerRef.current !== ownerAtStart) return;
         pushToast({ msg: "无法保存视图", sub: "请检查网络后重试", kind: "error" });
       }
       return;
@@ -608,21 +646,25 @@ function TaskDataManagerPage({
 
   const createSavedView = async () => {
     const name = saveName.trim();
-    if (!name) return;
+    if (!name || !filterReady) return;
+    const ownerAtStart = draftOwner;
     try {
       const created = await createView.mutateAsync({
         name,
         visibility: saveVisibility,
         entity_scope: "tasks",
-        filter_json: filterJson,
+        filter_json: filterJson as Record<string, unknown>,
         sort_json: sort,
         columns_json: columns,
       });
+      if (!mountedRef.current || mutationOwnerRef.current !== ownerAtStart) return;
       await viewsQ.refetch();
-      setSelectedKey(`saved:${created.id}`);
+      if (!mountedRef.current || mutationOwnerRef.current !== ownerAtStart) return;
+      switchView(`saved:${created.id}`);
       setSaveDialogOpen(false);
       pushToast({ msg: "视图已创建", kind: "success" });
     } catch {
+      if (!mountedRef.current || mutationOwnerRef.current !== ownerAtStart) return;
       pushToast({ msg: "无法创建视图", sub: "名称可能已存在", kind: "error" });
     }
   };
@@ -631,7 +673,7 @@ function TaskDataManagerPage({
     if (!selectedView?.id || !canEditSelected) return;
     try {
       await deleteView.mutateAsync(selectedView.id);
-      setSelectedKey("builtin:all");
+      switchView("builtin:all");
       pushToast({ msg: "视图已删除", kind: "success" });
     } catch {
       pushToast({ msg: "无法删除视图", kind: "error" });
@@ -639,11 +681,40 @@ function TaskDataManagerPage({
   };
 
   const visibleColumnSet = new Set(columns);
-  const toggleQuickRule = (rule: EditableRule) => {
-    const index = rules.findIndex(
-      (item) => item.field === rule.field && item.op === rule.op && item.value === rule.value,
+  const expressionRuleEntries = isFilterGroup(filterExpression)
+    ? (filterExpression.rules
+        .map((rule, index) => ({ rule, path: [index] }))
+        .filter(({ rule }) => isFilterRule(rule)) as Array<{
+        rule: TaskFilterRule;
+        path: number[];
+      }>)
+    : isFilterRule(filterExpression)
+      ? [{ rule: filterExpression, path: [] }]
+      : [];
+  const conjunctEntries =
+    isFilterGroup(filterExpression) && filterExpression.op === "or" ? [] : expressionRuleEntries;
+  const toggleQuickRule = (rule: RuleChipDraft) => {
+    const existing = conjunctEntries.find(
+      ({ rule: item }) =>
+        item.field === rule.field && item.op === rule.op && String(item.value ?? "") === rule.value,
     );
-    setRules(index >= 0 ? rules.filter((_, itemIndex) => itemIndex !== index) : [...rules, rule]);
+    if (existing) {
+      setFilterExpression(removeAtPath(filterExpression, existing.path));
+      return;
+    }
+    const field = filterFields.find((item) => item.key === rule.field);
+    if (!field) return;
+    const parsed = parseFilterValue(field, rule.op, rule.value);
+    if (!parsed.ok) return;
+    setFilterExpression((previous) => {
+      const next = appendRule(previous, field);
+      const addedPath = isFilterGroup(next) ? [next.rules.length - 1] : [];
+      return updateRuleAtPath(next, addedPath, (item) => ({
+        ...item,
+        op: rule.op,
+        value: parsed.value,
+      }));
+    });
   };
   const toggleAnalytics = () => {
     setAnalyticsOpen((value) => {
@@ -656,11 +727,11 @@ function TaskDataManagerPage({
     {
       key: "low-confidence",
       label: "低置信",
-      active: rules.some(
-        (rule) =>
+      active: conjunctEntries.some(
+        ({ rule }) =>
           rule.field === "ai.low_confidence_prediction_shape_count" &&
           rule.op === "gt" &&
-          rule.value === "0",
+          String(rule.value) === "0",
       ),
       onClick: () =>
         toggleQuickRule({
@@ -672,56 +743,86 @@ function TaskDataManagerPage({
     {
       key: "feedback",
       label: "有反馈",
-      active: rules.some(
-        (rule) =>
-          rule.field === "feedback.unresolved_count" && rule.op === "gt" && rule.value === "0",
+      active: conjunctEntries.some(
+        ({ rule }) =>
+          rule.field === "feedback.unresolved_count" &&
+          rule.op === "gt" &&
+          String(rule.value) === "0",
       ),
       onClick: () => toggleQuickRule({ field: "feedback.unresolved_count", op: "gt", value: "0" }),
     },
     {
       key: "manual",
       label: "人工标注",
-      active: rules.some(
-        (rule) => rule.field === "annotation.source" && rule.op === "eq" && rule.value === "manual",
+      active: conjunctEntries.some(
+        ({ rule }) =>
+          rule.field === "annotation.source" && rule.op === "eq" && String(rule.value) === "manual",
       ),
       onClick: () => toggleQuickRule({ field: "annotation.source", op: "eq", value: "manual" }),
     },
   ];
-  const filterChips: DataManagerFilterChip[] = rules.map((rule, index) => ({
-    id: `${index}:${rule.field}`,
-    label: fieldLabel.get(rule.field) ?? rule.field,
-    value: ruleValueLabel(rule, filterFields),
-    editor: (
-      <div className="flex flex-col gap-2">
-        <select
-          className={FIELD_CLASS}
-          value={rule.op}
-          onChange={(event) => {
-            const next = [...rules];
-            next[index] = { ...rule, op: event.target.value as TaskFilterOp };
-            setRules(next);
-          }}
-        >
-          {(filterFields.find((field) => field.key === rule.field)?.operators ?? [rule.op]).map(
-            (operator) => (
+  const topRuleEntries = expressionRuleEntries;
+  const filterChips: DataManagerFilterChip[] = topRuleEntries.map(({ rule, path }) => {
+    const field = filterFields.find((item) => item.key === rule.field);
+    const draft = formatFilterDraft(rule.value, field, rule.op);
+    return {
+      id: `${path.join(".")}:${rule.field}`,
+      onRemove: () => setFilterExpression(removeAtPath(filterExpression, path)),
+      label: fieldLabel.get(rule.field) ?? rule.field,
+      value: ruleValueLabel(
+        { field: rule.field, op: rule.op, value: rule.value === null ? "null" : draft },
+        filterFields,
+      ),
+      editor: (
+        <div className="flex flex-col gap-2">
+          <select
+            className={FIELD_CLASS}
+            value={rule.op}
+            onChange={(event) => {
+              setFilterExpression(
+                updateRuleAtPath(filterExpression, path, (item) => ({
+                  ...item,
+                  op: event.target.value as TaskFilterOp,
+                })),
+              );
+            }}
+          >
+            {(field?.operators ?? [rule.op]).map((operator) => (
               <option key={operator} value={operator}>
-                {operatorLabel(operator)}
+                {filterOperatorLabel(operator)}
               </option>
-            ),
+            ))}
+          </select>
+          {field ? (
+            <FilterValueEditor
+              field={field}
+              operator={rule.op}
+              appliedValue={rule.value}
+              editorId={`${draftOwner}:chip:${path.join(".") || "root"}`}
+              onDraftValidityChange={onDraftValidityChange}
+              onCommit={(value) =>
+                setFilterExpression(
+                  updateRuleAtPath(filterExpression, path, (item) => ({ ...item, value })),
+                )
+              }
+            />
+          ) : (
+            <div role="alert" className="text-xs text-destructive">
+              当前字段不在 schema 中，无法执行条件
+            </div>
           )}
-        </select>
-        {renderRuleValueControl(rule, index, rules, setRules, filterFields)}
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setRules(rules.filter((_, itemIndex) => itemIndex !== index))}
-        >
-          <Icon name="trash" size={12} />
-          移除条件
-        </Button>
-      </div>
-    ),
-  }));
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setFilterExpression(removeAtPath(filterExpression, path))}
+          >
+            <Icon name="trash" size={12} />
+            移除条件
+          </Button>
+        </div>
+      ),
+    };
+  });
 
   return (
     <div className="mx-auto h-full min-h-0 max-w-[1800px] overflow-hidden px-4 pt-2 pb-3 text-foreground md:px-6">
@@ -748,6 +849,11 @@ function TaskDataManagerPage({
               <h1 className="truncate text-lg font-semibold tracking-tight">
                 {project.name} · Data Manager
               </h1>
+              {!!urlState.issues.length && (
+                <div role="alert" className="mt-1 text-xs text-status-caution">
+                  URL 筛选状态无法完整恢复，已使用安全默认值。
+                </div>
+              )}
               <div className="flex items-center gap-2.5 text-xs text-muted-foreground">
                 <span className="mono">{project.display_id}</span>
                 <span>{visibleTotal.toLocaleString()} 可见任务</span>
@@ -762,11 +868,12 @@ function TaskDataManagerPage({
               </Button>
               <Button
                 onClick={() => {
+                  if (!queryReady || !filterReady) return;
                   tasksQ.refetch();
                   summaryQ.refetch();
                   viewsQ.refetch();
                 }}
-                disabled={tasksQ.isFetching || summaryQ.isFetching}
+                disabled={!queryReady || !filterReady || tasksQ.isFetching || summaryQ.isFetching}
               >
                 <Icon name="refresh" size={12} />
                 刷新
@@ -774,7 +881,7 @@ function TaskDataManagerPage({
               <Button
                 variant="primary"
                 onClick={saveCurrent}
-                disabled={createView.isPending || updateView.isPending}
+                disabled={!filterReady || createView.isPending || updateView.isPending}
               >
                 <Icon name="save" size={12} />
                 保存视图
@@ -826,7 +933,7 @@ function TaskDataManagerPage({
                       onClick={() => {
                         if (key === selectedKey) return;
                         if (isDirty) setPendingViewKey(key);
-                        else setSelectedKey(key);
+                        else switchView(key);
                       }}
                     >
                       <span>{view.name}</span>
@@ -882,7 +989,7 @@ function TaskDataManagerPage({
                     onValueChange={(key) => {
                       if (key === selectedKey) return;
                       if (isDirty) setPendingViewKey(key);
-                      else setSelectedKey(key);
+                      else switchView(key);
                     }}
                   >
                     <SelectTrigger className="hidden w-44 max-lg:flex">
@@ -984,14 +1091,27 @@ function TaskDataManagerPage({
                   fields={filterFields}
                   chips={filterChips}
                   quickFilters={quickFilters}
-                  onAdd={(field) =>
-                    setRules([
-                      ...rules,
-                      { field: field.key, op: field.operators[0] ?? "eq", value: "" },
-                    ])
-                  }
-                  onClear={() => setRules([])}
+                  hasConditions={!isEmptyFilter(filterExpression)}
+                  onAdd={(field) => setFilterExpression((previous) => appendRule(previous, field))}
+                  onClear={() => setFilterExpression({})}
                 />
+                {isFilterGroup(filterExpression) &&
+                  (!expressionValid ||
+                    filterExpression.op === "or" ||
+                    hasNestedGroups(filterExpression)) && (
+                    <DataManagerExpressionEditor
+                      expression={filterExpression}
+                      fields={filterFields}
+                      onChange={setFilterExpression}
+                      editorId={`${draftOwner}:group`}
+                      onValidityChange={onDraftValidityChange}
+                    />
+                  )}
+                {!filterReady && (
+                  <div role="alert" className="text-xs text-destructive">
+                    当前筛选包含未完成或 schema 中不存在的条件，完成编辑后才会查询。
+                  </div>
+                )}
               </section>
 
               <div className="min-h-0 flex-1 overflow-auto rounded-md border border-border bg-card shadow-sm">
@@ -1062,13 +1182,14 @@ function TaskDataManagerPage({
                 <div>
                   {[
                     ...(debouncedKeyword ? [`关键词 “${debouncedKeyword}”`] : []),
-                    ...rules
+                    ...expressionRuleEntries
                       .filter(
-                        (rule) => rule.value.trim() || ["exists", "missing"].includes(rule.op),
+                        ({ rule }) =>
+                          rule.value !== undefined || ["exists", "missing"].includes(rule.op),
                       )
                       .map(
-                        (rule) =>
-                          `${fieldLabel.get(rule.field) ?? rule.field} ${operatorLabel(rule.op)}`,
+                        ({ rule }) =>
+                          `${fieldLabel.get(rule.field) ?? rule.field} ${filterOperatorLabel(rule.op)}`,
                       ),
                   ].join(" / ") || "全部任务"}
                 </div>
@@ -1127,7 +1248,7 @@ function TaskDataManagerPage({
               <Button
                 variant="primary"
                 onClick={createSavedView}
-                disabled={!saveName.trim() || createView.isPending}
+                disabled={!saveName.trim() || !filterReady || createView.isPending}
               >
                 保存
               </Button>
@@ -1137,7 +1258,7 @@ function TaskDataManagerPage({
         <TaskMatchesSheet
           projectId={id}
           task={selectedTask}
-          filterJson={filterJson}
+          filterJson={filterJson as Record<string, unknown>}
           open={Boolean(selectedTask)}
           onOpenChange={(open) => !open && setSelectedTask(null)}
         />
@@ -1161,7 +1282,7 @@ function TaskDataManagerPage({
               <AlertDialogCancel>继续编辑</AlertDialogCancel>
               <AlertDialogAction
                 onClick={() => {
-                  if (pendingViewKey) setSelectedKey(pendingViewKey);
+                  if (pendingViewKey) switchView(pendingViewKey);
                   if (pendingScope) onScopeChange(pendingScope);
                   setPendingViewKey(null);
                   setPendingScope(null);

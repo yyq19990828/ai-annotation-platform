@@ -3,9 +3,11 @@
  * 覆盖: 渲染 / 加载态 / 空态 / 有数据 / tab 切换
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import type { MeResponse } from "@/api/auth";
+import { useAuthStore } from "@/stores/authStore";
 
 // ── mock asyncJobsApi ────────────────────────────────────────────────────────
 const mockAsyncJobsList = vi.fn();
@@ -72,14 +74,36 @@ function renderUI(initialPath = "/ai-pre/jobs") {
   return render(
     <QueryClientProvider client={qc}>
       <MemoryRouter initialEntries={[initialPath]}>
+        <LocationProbe />
         <AIPreAnnotateJobsPage />
       </MemoryRouter>
     </QueryClientProvider>,
   );
 }
 
+function LocationProbe() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  return (
+    <>
+      <output data-testid="location-search">{location.search}</output>
+      <button
+        type="button"
+        onClick={() =>
+          navigate("/ai-pre/jobs?tab=image&project_id=p8&status=pending&q=server&page=1")
+        }
+      >
+        外部导航
+      </button>
+    </>
+  );
+}
+
 describe("AIPreAnnotateJobsPage", () => {
   beforeEach(() => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("auth-storage");
+    useAuthStore.setState({ token: null, user: null });
     mockAsyncJobsList.mockReset();
     mockAsyncJobsCancel.mockReset();
     mockAsyncJobsGet.mockReset();
@@ -127,6 +151,7 @@ describe("AIPreAnnotateJobsPage", () => {
     expect(screen.getAllByText("已完成").length).toBeGreaterThan(0);
     expect(mockAsyncJobsList).toHaveBeenCalledWith(
       expect.objectContaining({ kind: ["batch_predict", "prediction_retry"] }),
+      { signal: expect.any(AbortSignal) },
     );
   });
 
@@ -192,7 +217,187 @@ describe("AIPreAnnotateJobsPage", () => {
     const select = screen.getByRole("combobox") as HTMLSelectElement;
     fireEvent.change(select, { target: { value: "failed" } });
     // 变更后重新调用 list
-    expect(mockAsyncJobsList).toHaveBeenCalledWith(expect.objectContaining({ status: "failed" }));
+    expect(mockAsyncJobsList).toHaveBeenCalledWith(expect.objectContaining({ status: "failed" }), {
+      signal: expect.any(AbortSignal),
+    });
+  });
+
+  it("从 URL 恢复图像项目、状态、q 和 one-based page", async () => {
+    mockAsyncJobsList.mockResolvedValue({ items: [], total: 41 });
+    renderUI("/ai-pre/jobs?tab=image&project_id=p9&status=failed&q=%20car%20&page=2");
+
+    await screen.findByText("暂无 prediction job 历史");
+    expect(screen.getByDisplayValue("car")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId("location-search")).toHaveTextContent("q=car"));
+    expect(mockAsyncJobsList).toHaveBeenCalledWith(
+      expect.objectContaining({
+        project_id: "p9",
+        status: "failed",
+        search: "car",
+        offset: 20,
+      }),
+      { signal: expect.any(AbortSignal) },
+    );
+  });
+
+  it("图像关键字与第一页在防抖后原子写回可恢复 URL", async () => {
+    renderUI("/ai-pre/jobs?tab=image&q=old&page=3");
+    await screen.findByText("暂无 prediction job 历史");
+
+    fireEvent.change(screen.getByPlaceholderText("搜索 prompt..."), {
+      target: { value: "  bus  " },
+    });
+    expect(screen.getByTestId("location-search")).toHaveTextContent("q=old");
+    expect(screen.getByTestId("location-search")).toHaveTextContent("page=3");
+    await waitFor(() => expect(screen.getByTestId("location-search")).toHaveTextContent("q=bus"));
+    await waitFor(() =>
+      expect(screen.getByTestId("location-search")).not.toHaveTextContent("page="),
+    );
+
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "failed" } });
+    expect(screen.getByTestId("location-search")).toHaveTextContent("status=failed");
+  });
+
+  it("图像关键字从第二页防抖后与页码原子切换", async () => {
+    mockAsyncJobsList.mockResolvedValue({ items: [], total: 41 });
+    renderUI("/ai-pre/jobs?tab=image&page=2");
+    await screen.findByText("暂无 prediction job 历史");
+    mockAsyncJobsList.mockClear();
+
+    fireEvent.change(screen.getByPlaceholderText("搜索 prompt..."), {
+      target: { value: "bus" },
+    });
+    expect(screen.getByTestId("location-search")).not.toHaveTextContent("q=bus");
+    expect(screen.getByTestId("location-search")).toHaveTextContent("page=2");
+    expect(mockAsyncJobsList).not.toHaveBeenCalled();
+
+    await waitFor(() =>
+      expect(mockAsyncJobsList).toHaveBeenCalledWith(
+        expect.objectContaining({ search: "bus", offset: 0 }),
+        { signal: expect.any(AbortSignal) },
+      ),
+    );
+    expect(
+      mockAsyncJobsList.mock.calls.some(
+        ([params]) => (params as { offset?: number }).offset === 20,
+      ),
+    ).toBe(false);
+    await waitFor(() =>
+      expect(screen.getByTestId("location-search")).not.toHaveTextContent("page="),
+    );
+  });
+
+  it("图像未应用草稿在重新加载时仍恢复已应用页码和关键字", async () => {
+    const rendered = renderUI("/ai-pre/jobs?tab=image&q=old&page=3");
+    await screen.findByText("暂无 prediction job 历史");
+    mockAsyncJobsList.mockClear();
+
+    fireEvent.change(screen.getByPlaceholderText("搜索 prompt..."), {
+      target: { value: "bus" },
+    });
+    const reloadSearch = screen.getByTestId("location-search").textContent ?? "";
+    expect(reloadSearch).toContain("q=old");
+    expect(reloadSearch).toContain("page=3");
+
+    rendered.unmount();
+    mockAsyncJobsList.mockClear();
+    renderUI(`/ai-pre/jobs${reloadSearch}`);
+    await screen.findByText("暂无 prediction job 历史");
+    expect(screen.getByDisplayValue("old")).toBeInTheDocument();
+    expect(mockAsyncJobsList).toHaveBeenCalledWith(
+      expect.objectContaining({ search: "old", offset: 40 }),
+      { signal: expect.any(AbortSignal) },
+    );
+  });
+
+  it("外部 URL 导航以新图像筛选原子替换草稿", async () => {
+    renderUI("/ai-pre/jobs?tab=image&project_id=p1&status=failed&q=old&page=2");
+    await screen.findByText("暂无 prediction job 历史");
+    mockAsyncJobsList.mockClear();
+
+    fireEvent.change(screen.getByPlaceholderText("搜索 prompt..."), {
+      target: { value: "draft" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "外部导航" }));
+
+    await waitFor(() => expect(screen.getByDisplayValue("server")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(mockAsyncJobsList).toHaveBeenCalledWith(
+        expect.objectContaining({
+          project_id: "p8",
+          status: "pending",
+          search: "server",
+          offset: 0,
+        }),
+        { signal: expect.any(AbortSignal) },
+      ),
+    );
+    expect(
+      mockAsyncJobsList.mock.calls.some(
+        ([params]) => (params as { search?: string }).search === "draft",
+      ),
+    ).toBe(false);
+  });
+
+  it("外部图像 URL 恢复期间再次输入仍能完成新的防抖提交", async () => {
+    renderUI("/ai-pre/jobs?tab=image&q=old");
+    await screen.findByText("暂无 prediction job 历史");
+    mockAsyncJobsList.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "外部导航" }));
+    await waitFor(() => expect(screen.getByDisplayValue("server")).toBeInTheDocument());
+    fireEvent.change(screen.getByPlaceholderText("搜索 prompt..."), {
+      target: { value: "server-next" },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("location-search")).toHaveTextContent("q=server-next"),
+    );
+    await waitFor(() =>
+      expect(mockAsyncJobsList).toHaveBeenCalledWith(
+        expect.objectContaining({ project_id: "p8", status: "pending", search: "server-next" }),
+        { signal: expect.any(AbortSignal) },
+      ),
+    );
+  });
+
+  it("图像任务查询按同一账号的 token epoch 分隔缓存", async () => {
+    const user = { id: "image-u1", role: "annotator" } as MeResponse;
+    useAuthStore.getState().setAuth("image-token-1", user);
+    renderUI();
+    await screen.findByText("暂无 prediction job 历史");
+    mockAsyncJobsList.mockClear();
+
+    act(() => useAuthStore.getState().setAuth("image-token-2", user));
+    await waitFor(() => expect(mockAsyncJobsList).toHaveBeenCalledTimes(1));
+    expect(mockAsyncJobsList).toHaveBeenCalledWith(expect.objectContaining({ offset: 0 }), {
+      signal: expect.any(AbortSignal),
+    });
+  });
+
+  it("关键字防抖期间切换状态先使用已应用关键字", async () => {
+    mockAsyncJobsList.mockResolvedValue({ items: [], total: 0 });
+    renderUI("/ai-pre/jobs?tab=image&page=3&q=old");
+    await screen.findByText("暂无 prediction job 历史");
+    mockAsyncJobsList.mockClear();
+
+    fireEvent.change(screen.getByPlaceholderText("搜索 prompt..."), {
+      target: { value: "new" },
+    });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "failed" } });
+
+    await waitFor(() =>
+      expect(mockAsyncJobsList).toHaveBeenCalledWith(
+        expect.objectContaining({ search: "old", status: "failed", offset: 0 }),
+        { signal: expect.any(AbortSignal) },
+      ),
+    );
+    await waitFor(() =>
+      expect(mockAsyncJobsList).toHaveBeenCalledWith(
+        expect.objectContaining({ search: "new", status: "failed", offset: 0 }),
+        { signal: expect.any(AbortSignal) },
+      ),
+    );
   });
 
   it("job 有 failed_count > 0 时展示 danger badge", async () => {

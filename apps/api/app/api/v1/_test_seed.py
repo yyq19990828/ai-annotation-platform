@@ -32,6 +32,7 @@ from app.config import settings
 from app.core.security import create_access_token
 from app.deps import get_db
 from app.schemas.user import UserOut
+from app.api.v1._test_seed_filters import FilteringSeedManifest, build_filtering_seed
 
 
 async def _require_e2e_seed_database(db: AsyncSession = Depends(get_db)) -> None:
@@ -118,6 +119,16 @@ def _delete_comment_attachment_seed_objects(storage: Any, annotation_ids: list) 
         )
 
 
+def _delete_filtering_seed_objects(storage: Any) -> None:
+    """Delete only the deterministic objects owned by the filtering fixture."""
+    _delete_seed_object_prefix(
+        storage,
+        bucket=storage.datasets_bucket,
+        prefix="e2e/filtering/",
+        label="filtering",
+    )
+
+
 async def _cleanup_e2e_fixtures(db: AsyncSession) -> None:
     """定向删除 E2E fixture，并在当前事务内确认关键残留已清零。"""
     import logging
@@ -191,6 +202,35 @@ async def _cleanup_e2e_fixtures(db: AsyncSession) -> None:
             except Exception as exc:
                 log.warning("seed_cleanup · child id lookup failed: %s", exc)
                 await sp.rollback()
+
+        # The filtering fixture owns these rows outside the ordinary task cascade.
+        # Delete them before tasks/projects so their restrictive foreign keys cannot
+        # block reset, while leaving every non-E2E row untouched.
+        await _try_delete(
+            "DELETE FROM bug_comments WHERE bug_report_id IN ("
+            " SELECT id FROM bug_reports WHERE project_id = ANY(:pids) "
+            " OR task_id = ANY(:tids) OR display_id LIKE 'BUG-E2E-FILTER-%')",
+            {
+                "pids": fixture_project_ids,
+                "tids": fixture_task_ids,
+            },
+        )
+        await _try_delete(
+            "DELETE FROM bug_reports WHERE project_id = ANY(:pids) "
+            " OR task_id = ANY(:tids) OR display_id LIKE 'BUG-E2E-FILTER-%'",
+            {
+                "pids": fixture_project_ids,
+                "tids": fixture_task_ids,
+            },
+        )
+        await _try_delete(
+            "DELETE FROM async_jobs WHERE project_id = ANY(:pids)",
+            {"pids": fixture_project_ids},
+        )
+        await _try_delete(
+            "DELETE FROM project_task_views WHERE project_id = ANY(:pids)",
+            {"pids": fixture_project_ids},
+        )
 
         # 2b) 删 annotation_feedbacks (FK → tasks/annotations/projects 均无 ondelete,
         #     必须早于 annotations/tasks/project 删除; review-feedback-loop spec 会造此行,
@@ -267,6 +307,19 @@ async def _cleanup_e2e_fixtures(db: AsyncSession) -> None:
     # 必须在删 E2E 用户前显式清理，避免 datasets.created_by 拦住用户删除。
     await _try_delete("DELETE FROM datasets WHERE display_id LIKE 'DS-E2E-%'")
 
+    # Project templates are user-owned assets and do not cascade from projects.
+    await _try_delete(
+        "DELETE FROM project_templates WHERE display_id LIKE 'TPL-E2E-FILTER-%'",
+    )
+
+    # Direct fixture audit rows must disappear before the actor users.  The
+    # production audit trigger still protects ordinary writes; this is only a
+    # fixture-scoped cleanup predicate.
+    await _try_delete(
+        "DELETE FROM audit_logs WHERE detail_json ->> 'fixture' = 'filtering' "
+        "AND path = '/api/v1/__test/seed/filtering'",
+    )
+
     if fixture_user_ids:
         # 删用户的反向引用，再删用户。表名 / 列名见 v0.8.7+ DB schema：
         # bug_reports.reporter_id（不是 submitter_id）；annotation_comments.author_id；
@@ -317,6 +370,7 @@ async def _cleanup_e2e_fixtures(db: AsyncSession) -> None:
     from app.services.storage import storage_service
 
     _delete_webcodecs_seed_objects(storage_service)
+    _delete_filtering_seed_objects(storage_service)
     _delete_comment_attachment_seed_objects(storage_service, fixture_annotation_ids)
 
     residual_row = (
@@ -568,6 +622,18 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
         task_ids=[str(t.id) for t in tasks],
         ml_backend_id=str(mock_backend.id),
     )
+
+
+@router.post(
+    "/seed/filtering",
+    response_model=FilteringSeedManifest,
+    status_code=200,
+    include_in_schema=False,
+)
+async def seed_filtering(db: AsyncSession = Depends(get_db)) -> FilteringSeedManifest:
+    """Reset and build the deterministic filtering acceptance fixture."""
+    await seed_reset(db)
+    return await build_filtering_seed(db)
 
 
 class SeedLidar(BaseModel):

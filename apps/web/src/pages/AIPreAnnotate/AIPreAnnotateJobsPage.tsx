@@ -1,8 +1,9 @@
+import { FilterGroup, FilterSelect } from "@/components/filters/FilterControls";
 /**
  * v0.10.45 · /ai-pre/jobs — 统一 async_jobs AI 任务历史页.
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -17,6 +18,8 @@ import { asyncJobsApi, type AsyncJob, type AsyncJobStatus } from "@/api/asyncJob
 import { VideoTrackerJobsPanel } from "@/pages/ModelMarket/VideoTrackerJobsPage";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import { useToastStore } from "@/components/ui/Toast";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { useAuthStore } from "@/stores/authStore";
 import styles from "./AIPreAnnotateJobsPage.module.css";
 
 type StatusFilter = "" | AsyncJobStatus;
@@ -33,6 +36,11 @@ const STATUS_LABEL: Record<AsyncJobStatus, string> = {
   failed: "失败",
   cancelled: "已取消",
 };
+
+function parsePage(raw: string | null): number {
+  const value = Number(raw);
+  return Number.isInteger(value) && value >= 1 ? value : 1;
+}
 
 /**
  * v0.10.38 · /ai-pre/jobs 统一 AI 任务历史 (epic 阶段 3): 「图像」 /
@@ -76,30 +84,118 @@ function ImageJobsPanel({ projectId }: { projectId?: string }) {
   const location = useLocation();
   const queryClient = useQueryClient();
   const pushToast = useToastStore((s) => s.push);
-  const [searchParams] = useSearchParams();
-  // v0.9.12 · ModelMarket failed tab redirect 来源支持 ?status=failed 直接落到失败筛选.
-  const initialStatus = (() => {
-    const s = searchParams.get("status") as AsyncJobStatus | null;
-    return s && STATUS_ORDER.includes(s) ? s : "";
-  })() as StatusFilter;
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>(initialStatus);
-  const [page, setPage] = useState(0);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const userId = useAuthStore((state) => state.user?.id ?? null);
+  const token = useAuthStore((state) => state.token);
+  const authOwnerKey = `${userId ?? "anonymous"}:${token ?? "none"}`;
+  // URL is the applied state. Keep the legacy ?status=failed deep link while
+  // namespacing video filters separately in VideoTrackerJobsPanel.
+  const rawStatus = searchParams.get("status");
+  const statusFilter = STATUS_ORDER.includes(rawStatus as AsyncJobStatus)
+    ? (rawStatus as AsyncJobStatus)
+    : ("" as StatusFilter);
+  const rawSearch = searchParams.get("q");
+  const search = (rawSearch ?? "").trim();
+  const rawPage = searchParams.get("page");
+  const page = parsePage(rawPage);
+  const [searchDraft, setSearchDraft] = useState(search);
+  const lastUrlSearch = useRef(search);
+  const syncingSearchDraft = useRef(false);
+  const debouncedSearch = useDebouncedValue(searchDraft, 250);
   const [cancelingId, setCancelingId] = useState<string | null>(null);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
-  const offset = page * PAGE_SIZE;
+
+  // The URL is the applied request state. Keep a raw local draft for spaces and
+  // rehydrate it when another navigation changes q.
+  useEffect(() => {
+    if (lastUrlSearch.current === search) return;
+    lastUrlSearch.current = search;
+    if (debouncedSearch.trim() !== search) syncingSearchDraft.current = true;
+    if (searchDraft !== search) {
+      setSearchDraft(search);
+    }
+  }, [debouncedSearch, search, searchDraft]);
+
+  useEffect(() => {
+    if (syncingSearchDraft.current) {
+      if (debouncedSearch.trim() === search && debouncedSearch.trim() === searchDraft.trim()) {
+        syncingSearchDraft.current = false;
+      }
+      return;
+    }
+    const nextSearch = debouncedSearch.trim();
+    if (nextSearch !== searchDraft.trim()) return;
+    if (nextSearch === search) return;
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        if (nextSearch) next.set("q", nextSearch);
+        else next.delete("q");
+        if (page > 1) next.delete("page");
+        return next;
+      },
+      { replace: true },
+    );
+  }, [debouncedSearch, page, search, searchDraft, setSearchParams]);
+
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    let changed = false;
+    if (rawSearch !== null && rawSearch !== search) {
+      if (search) next.set("q", search);
+      else next.delete("q");
+      changed = true;
+    }
+    const normalizedStatus = statusFilter || null;
+    if (rawStatus !== null && rawStatus !== normalizedStatus) {
+      if (normalizedStatus) next.set("status", normalizedStatus);
+      else next.delete("status");
+      changed = true;
+    }
+    const normalizedPage = page > 1 ? String(page) : null;
+    if (rawPage !== null && rawPage !== normalizedPage) {
+      if (normalizedPage) next.set("page", normalizedPage);
+      else next.delete("page");
+      changed = true;
+    }
+    if (changed) setSearchParams(next, { replace: true });
+  }, [page, rawPage, rawSearch, rawStatus, search, searchParams, setSearchParams, statusFilter]);
+
+  const updateImageUrl = (
+    patch: { status?: StatusFilter; page?: number },
+    options: { replace?: boolean } = {},
+  ) => {
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        if (patch.status !== undefined) {
+          if (patch.status) next.set("status", patch.status);
+          else next.delete("status");
+        }
+        if (patch.page !== undefined) {
+          if (patch.page > 1) next.set("page", String(patch.page));
+          else next.delete("page");
+        }
+        return next;
+      },
+      { replace: options.replace ?? true },
+    );
+  };
 
   const jobsQ = useQuery({
-    queryKey: ["async-jobs", "image", projectId, search, statusFilter, page],
-    queryFn: () =>
-      asyncJobsApi.list({
-        kind: IMAGE_JOB_KINDS,
-        project_id: projectId || undefined,
-        search: search.trim() || undefined,
-        status: statusFilter || undefined,
-        limit: PAGE_SIZE,
-        offset,
-      }),
+    queryKey: ["async-jobs", "image", authOwnerKey, projectId, search, statusFilter, page],
+    queryFn: ({ signal }) =>
+      asyncJobsApi.list(
+        {
+          kind: IMAGE_JOB_KINDS,
+          project_id: projectId || undefined,
+          search: search || undefined,
+          status: statusFilter || undefined,
+          limit: PAGE_SIZE,
+          offset: (page - 1) * PAGE_SIZE,
+        },
+        { signal },
+      ),
     staleTime: 1000 * 30,
   });
   const cancelMut = useMutation({
@@ -112,20 +208,24 @@ function ImageJobsPanel({ projectId }: { projectId?: string }) {
 
   const items = jobsQ.data?.items ?? [];
   const total = jobsQ.data?.total ?? 0;
+  const offset = (page - 1) * PAGE_SIZE;
   const hasNext = offset + PAGE_SIZE < total;
 
   return (
     <Card>
       <div className={styles.cardHeader}>
         <span>历史 job ({total})</span>
-        <div className={styles.filterGroup}>
-          <select
+        <FilterGroup compact label="筛选" className="flex-wrap">
+          <FilterSelect
+            compact
+            aria-label="预标任务状态"
             value={statusFilter}
             onChange={(e) => {
-              setStatusFilter(e.target.value as StatusFilter);
-              setPage(0);
+              updateImageUrl(
+                { status: e.target.value as StatusFilter, page: 1 },
+                { replace: false },
+              );
             }}
-            className={styles.selectControl}
           >
             <option value="">全部状态</option>
             {STATUS_ORDER.map((s) => (
@@ -133,18 +233,18 @@ function ImageJobsPanel({ projectId }: { projectId?: string }) {
                 {STATUS_LABEL[s]}
               </option>
             ))}
-          </select>
+          </FilterSelect>
           <input
             type="text"
-            value={search}
+            value={searchDraft}
             onChange={(e) => {
-              setSearch(e.target.value);
-              setPage(0);
+              syncingSearchDraft.current = false;
+              setSearchDraft(e.target.value);
             }}
             placeholder="搜索 prompt..."
             className={styles.searchInput}
           />
-        </div>
+        </FilterGroup>
       </div>
       <div className={styles.cardBody}>
         {jobsQ.isLoading ? (
@@ -190,17 +290,17 @@ function ImageJobsPanel({ projectId }: { projectId?: string }) {
           </div>
         )}
 
-        {(page > 0 || hasNext) && (
+        {(page > 1 || hasNext) && (
           <div className={styles.pagination}>
             <span className={styles.helperInline}>
-              第 {page + 1} 页 / 共 {total} 条
+              第 {page} 页 / 共 {total} 条
             </span>
             <div className={styles.inlineActions}>
               <Button
                 size="sm"
                 variant="ghost"
-                disabled={page === 0}
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
+                disabled={page === 1}
+                onClick={() => updateImageUrl({ page: page - 1 }, { replace: false })}
               >
                 <Icon name="chevLeft" size={11} /> 上一页
               </Button>
@@ -208,7 +308,7 @@ function ImageJobsPanel({ projectId }: { projectId?: string }) {
                 size="sm"
                 variant="ghost"
                 disabled={!hasNext}
-                onClick={() => setPage((p) => p + 1)}
+                onClick={() => updateImageUrl({ page: page + 1 }, { replace: false })}
               >
                 下一页 <Icon name="chevRight" size={11} />
               </Button>

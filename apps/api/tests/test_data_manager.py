@@ -559,6 +559,412 @@ async def test_annotation_conditions_in_same_and_group_match_one_object(
     assert [item["id"] for item in response.json()["items"]] == [str(same_object.id)]
 
 
+async def test_match_evidence_preserves_nested_witnesses_and_true_or_branches(
+    httpx_client: httpx.AsyncClient,
+    project_admin,
+    db_session: AsyncSession,
+):
+    owner, token = project_admin
+    project = await create_project(db_session, owner_id=owner.id, type_key="image-det")
+    task = await create_task(
+        db_session, project_id=project.id, display_id="T-DM-MATCH-EVIDENCE"
+    )
+    car = Annotation(
+        task_id=task.id,
+        project_id=project.id,
+        user_id=owner.id,
+        source="manual",
+        annotation_type="bbox",
+        tool_unit_id="bbox",
+        class_name="car",
+        geometry={"type": "bbox", "frame_index": 1},
+    )
+    person = Annotation(
+        task_id=task.id,
+        project_id=project.id,
+        user_id=owner.id,
+        source="prediction_based",
+        annotation_type="bbox",
+        tool_unit_id="bbox",
+        class_name="person",
+        geometry={"type": "bbox", "frame_index": 2},
+    )
+    prediction = Prediction(
+        task_id=task.id,
+        project_id=project.id,
+        model_version="detector-v1",
+        result=[
+            {
+                "type": "rectanglelabels",
+                "value": {
+                    "rectanglelabels": ["car"],
+                    "x": 1,
+                    "y": 2,
+                    "width": 3,
+                    "height": 4,
+                },
+                "score": 0.9,
+            },
+            {
+                "type": "rectanglelabels",
+                "value": {
+                    "rectanglelabels": ["person"],
+                    "x": 5,
+                    "y": 6,
+                    "width": 7,
+                    "height": 8,
+                },
+                "score": 0.2,
+            },
+        ],
+    )
+    db_session.add_all([car, person, prediction])
+    await db_session.flush()
+
+    nested_filter = {
+        "op": "and",
+        "rules": [
+            {
+                "op": "and",
+                "rules": [
+                    {"field": "annotation.class_name", "op": "eq", "value": "car"}
+                ],
+            },
+            {
+                "op": "and",
+                "rules": [
+                    {
+                        "field": "annotation.source",
+                        "op": "eq",
+                        "value": "prediction_based",
+                    }
+                ],
+            },
+        ],
+    }
+    nested_response = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/tasks/{task.id}/data-manager/matches",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"filter_json": nested_filter},
+    )
+    assert nested_response.status_code == 200, nested_response.text
+    assert nested_response.json()["total"] == 2
+    assert {item["id"] for item in nested_response.json()["items"]} == {
+        str(car.id),
+        str(person.id),
+    }
+
+    same_object_response = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/tasks/{task.id}/data-manager/matches",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "filter_json": {
+                "op": "and",
+                "rules": [
+                    {"field": "annotation.class_name", "op": "eq", "value": "car"},
+                    {
+                        "field": "annotation.source",
+                        "op": "eq",
+                        "value": "prediction_based",
+                    },
+                ],
+            }
+        },
+    )
+    assert same_object_response.status_code == 200, same_object_response.text
+    assert same_object_response.json()["total"] == 0
+
+    mixed_or_response = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/tasks/{task.id}/data-manager/matches",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "filter_json": {
+                "op": "or",
+                "rules": [
+                    {"field": "task.status", "op": "eq", "value": "pending"},
+                    {
+                        "field": "annotation.class_name",
+                        "op": "eq",
+                        "value": "missing",
+                    },
+                ],
+            }
+        },
+    )
+    assert mixed_or_response.status_code == 200, mixed_or_response.text
+    assert mixed_or_response.json()["total"] == 2
+    assert {item["id"] for item in mixed_or_response.json()["items"]} == {
+        str(car.id),
+        str(person.id),
+    }
+
+    nested_task_or_response = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/tasks/{task.id}/data-manager/matches",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "filter_json": {
+                "op": "and",
+                "rules": [
+                    {"field": "task.status", "op": "eq", "value": "pending"},
+                    {
+                        "op": "or",
+                        "rules": [
+                            {
+                                "field": "task.keyword",
+                                "op": "contains",
+                                "value": "DM-MATCH-EVIDENCE",
+                            },
+                            {
+                                "field": "annotation.class_name",
+                                "op": "eq",
+                                "value": "missing",
+                            },
+                        ],
+                    },
+                ],
+            }
+        },
+    )
+    assert nested_task_or_response.status_code == 200, nested_task_or_response.text
+    assert nested_task_or_response.json()["total"] == 2
+
+    all_sources_filter = {
+        "op": "or",
+        "rules": [
+            {"field": "annotation.class_name", "op": "eq", "value": "car"},
+            {"field": "ai.pending_prediction_shape_count", "op": "gt", "value": 0},
+        ],
+    }
+    pages = []
+    for offset in range(3):
+        page_response = await httpx_client.post(
+            f"/api/v1/projects/{project.id}/tasks/{task.id}/data-manager/matches",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"filter_json": all_sources_filter, "limit": 1, "offset": offset},
+        )
+        assert page_response.status_code == 200, page_response.text
+        page = page_response.json()
+        assert page["total"] == 3
+        pages.append(page["items"][0]["entity_kind"])
+    assert pages == ["annotation", "prediction_shape", "prediction_shape"]
+
+    low_response = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/tasks/{task.id}/data-manager/matches",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "filter_json": {
+                "field": "ai.low_confidence_prediction_shape_count",
+                "op": "gt",
+                "value": 0,
+            }
+        },
+    )
+    assert low_response.status_code == 200, low_response.text
+    low_matches = low_response.json()
+    assert low_matches["total"] == 1
+    assert low_matches["items"][0]["entity_kind"] == "prediction_shape"
+    assert low_matches["items"][0]["shape_index"] == 1
+
+
+async def test_match_evidence_treats_empty_groups_as_compiled_true(
+    httpx_client: httpx.AsyncClient,
+    project_admin,
+    db_session: AsyncSession,
+):
+    owner, token = project_admin
+    project = await create_project(db_session, owner_id=owner.id, type_key="image-det")
+    task = await create_task(
+        db_session, project_id=project.id, display_id="T-DM-EMPTY-GROUP"
+    )
+    car = Annotation(
+        task_id=task.id,
+        project_id=project.id,
+        user_id=owner.id,
+        source="manual",
+        annotation_type="bbox",
+        tool_unit_id="bbox",
+        class_name="car",
+        geometry={"type": "bbox", "frame_index": 1},
+    )
+    person = Annotation(
+        task_id=task.id,
+        project_id=project.id,
+        user_id=owner.id,
+        source="prediction_based",
+        annotation_type="bbox",
+        tool_unit_id="bbox",
+        class_name="person",
+        geometry={"type": "bbox", "frame_index": 2},
+    )
+    db_session.add_all([car, person])
+    await db_session.flush()
+    annotation_ids = {str(car.id), str(person.id)}
+
+    # The task compiler compiles an empty group to literal true for either op.
+    # The drawer must explain that match with task-context objects instead of
+    # serializing an empty witness set.
+    empty_group_cases = [
+        ("empty-or", {"op": "or", "rules": []}),
+        ("nested-empty-or", {"op": "and", "rules": [{"op": "or", "rules": []}]}),
+        (
+            "empty-or-beside-false-branch",
+            {
+                "op": "or",
+                "rules": [
+                    {"op": "or", "rules": []},
+                    {"field": "annotation.class_name", "op": "eq", "value": "missing"},
+                ],
+            },
+        ),
+        ("empty-and", {"op": "and", "rules": []}),
+    ]
+    failures = []
+    for label, filter_json in empty_group_cases:
+        response = await httpx_client.post(
+            f"/api/v1/projects/{project.id}/tasks/{task.id}/data-manager/matches",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"filter_json": filter_json},
+        )
+        assert response.status_code == 200, (label, response.text)
+        body = response.json()
+        item_ids = {item["id"] for item in body["items"]}
+        if body["total"] != 2 or item_ids != annotation_ids:
+            failures.append((label, body["total"]))
+    assert not failures, failures
+
+
+async def test_match_evidence_empty_group_keeps_entity_witness_scope(
+    httpx_client: httpx.AsyncClient,
+    project_admin,
+    db_session: AsyncSession,
+):
+    owner, token = project_admin
+    project = await create_project(db_session, owner_id=owner.id, type_key="image-det")
+    task = await create_task(
+        db_session, project_id=project.id, display_id="T-DM-EMPTY-GROUP-WITNESS"
+    )
+    car = Annotation(
+        task_id=task.id,
+        project_id=project.id,
+        user_id=owner.id,
+        source="manual",
+        annotation_type="bbox",
+        tool_unit_id="bbox",
+        class_name="car",
+        geometry={"type": "bbox", "frame_index": 1},
+    )
+    person = Annotation(
+        task_id=task.id,
+        project_id=project.id,
+        user_id=owner.id,
+        source="prediction_based",
+        annotation_type="bbox",
+        tool_unit_id="bbox",
+        class_name="person",
+        geometry={"type": "bbox", "frame_index": 2},
+    )
+    db_session.add_all([car, person])
+    await db_session.flush()
+
+    # An empty group inside an entity-explained AND is task context, so it must
+    # not widen the witness object beyond the true entity branches.
+    witness_cases = [
+        (
+            "empty-or-and-entity",
+            {
+                "op": "and",
+                "rules": [
+                    {"op": "or", "rules": []},
+                    {"field": "annotation.class_name", "op": "eq", "value": "car"},
+                ],
+            },
+        ),
+        (
+            "nested-empty-or-and-entity",
+            {
+                "op": "and",
+                "rules": [
+                    {"field": "annotation.class_name", "op": "eq", "value": "car"},
+                    {"op": "and", "rules": [{"op": "or", "rules": []}]},
+                ],
+            },
+        ),
+    ]
+    for label, filter_json in witness_cases:
+        response = await httpx_client.post(
+            f"/api/v1/projects/{project.id}/tasks/{task.id}/data-manager/matches",
+            headers={"Authorization": f"Bearer {token}"},
+            json={"filter_json": filter_json},
+        )
+        assert response.status_code == 200, (label, response.text)
+        body = response.json()
+        assert body["total"] == 1, (label, body)
+        assert [item["id"] for item in body["items"]] == [str(car.id)], label
+
+
+async def test_match_evidence_zero_count_has_no_annotation_context(
+    httpx_client: httpx.AsyncClient,
+    project_admin,
+    db_session: AsyncSession,
+):
+    owner, token = project_admin
+    project = await create_project(db_session, owner_id=owner.id, type_key="image-det")
+    task = await create_task(db_session, project_id=project.id)
+    annotation = Annotation(
+        task_id=task.id,
+        project_id=project.id,
+        user_id=owner.id,
+        source="manual",
+        annotation_type="bbox",
+        tool_unit_id="bbox",
+        class_name="car",
+        geometry={"type": "bbox"},
+    )
+    db_session.add(annotation)
+    await db_session.flush()
+
+    response = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/tasks/{task.id}/data-manager/matches",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "filter_json": {
+                "field": "ai.pending_prediction_shape_count",
+                "op": "eq",
+                "value": 0,
+            }
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["total"] == 0
+    assert response.json()["items"] == []
+
+
+async def test_match_evidence_accepts_a_wide_valid_tree(
+    httpx_client: httpx.AsyncClient,
+    project_admin,
+    db_session: AsyncSession,
+):
+    owner, token = project_admin
+    project = await create_project(db_session, owner_id=owner.id, type_key="image-det")
+    task = await create_task(db_session, project_id=project.id)
+    wide_filter = {
+        "op": "or",
+        "rules": [
+            {"field": "task.status", "op": "eq", "value": "pending"}
+            for _ in range(1700)
+        ],
+    }
+
+    response = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/tasks/{task.id}/data-manager/matches",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"filter_json": wide_filter},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["total"] == 0
+    assert response.json()["items"] == []
+
+
 async def test_saved_view_with_removed_attribute_is_listed_as_invalid_and_repairable(
     httpx_client: httpx.AsyncClient,
     project_admin,

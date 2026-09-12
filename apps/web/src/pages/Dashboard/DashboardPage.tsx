@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import { FilterGroup, FilterToggle } from "@/components/filters/FilterControls";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
@@ -7,7 +8,6 @@ import { Card } from "@/components/ui/Card";
 import { Avatar } from "@/components/ui/Avatar";
 import { StatCard } from "@/components/ui/StatCard";
 import { SearchInput } from "@/components/ui/SearchInput";
-import { TabRow } from "@/components/ui/TabRow";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useToastStore } from "@/components/ui/Toast";
 import { Can } from "@/components/guards/Can";
@@ -18,13 +18,23 @@ import { ImportDatasetWizard } from "@/components/datasets/ImportDatasetWizard";
 import { useAuthStore } from "@/stores/authStore";
 import { useAuditLogs } from "@/hooks/useAudit";
 import { auditActionLabel } from "@/utils/auditLabels";
-import { FilterDrawer, EMPTY_FILTERS, type DashboardFilters } from "./FilterDrawer";
+import { ProjectFilterControl } from "./ProjectFilterControl";
+import { ProjectFilterSummary } from "./ProjectFilterSummary";
+import type { DashboardFilters } from "./dashboardUrlState";
+import {
+  DASHBOARD_FILTER_KEYS,
+  dashboardUrlCodec,
+  EMPTY_DASHBOARD_URL_STATE,
+  type DashboardStatus,
+} from "./dashboardUrlState";
 import { ProjectGrid } from "./ProjectGrid";
 import { ProjectActionsMenu } from "./ProjectActionsMenu";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import { projectDisplayType } from "@/utils/projectDisplay";
 import { statSeriesHint, statSparkValues, statTrendFromSeries } from "@/utils/projectStatsSeries";
 import { PageContainer } from "@/components/layout/PageContainer";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { useUrlFilterState } from "@/hooks/useUrlFilterState";
 
 // v0.10.28 · 列表图标改读媒体维度 data_type (image / video / lidar).
 const DATA_TYPE_ICONS: Record<string, IconName> = {
@@ -195,7 +205,7 @@ function ProjectRow({
 }
 
 const FILTERS = ["全部", "进行中", "待审核", "已完成"] as const;
-const FILTER_STATUS_MAP: Record<string, string | undefined> = {
+const FILTER_STATUS_MAP: Record<string, DashboardStatus | undefined> = {
   全部: undefined,
   进行中: "in_progress",
   待审核: "pending_review",
@@ -203,15 +213,57 @@ const FILTER_STATUS_MAP: Record<string, string | undefined> = {
 };
 
 export function DashboardPage() {
-  const [filter, setFilter] = useState<string>("全部");
-  const [query, setQuery] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
-  // v0.7.2 · 高级筛选状态（不写 URL，避免 search 参数过长；TabRow 状态切换仍同步到此处）
-  const [advanced, setAdvanced] = useState<DashboardFilters>(EMPTY_FILTERS);
   const pushToast = useToastStore((s) => s.push);
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
+  const urlState = useUrlFilterState({
+    codec: dashboardUrlCodec,
+    defaults: EMPTY_DASHBOARD_URL_STATE,
+    ownedKeys: DASHBOARD_FILTER_KEYS,
+  });
+  const currentUrl = urlState.state;
+  const [query, setQuery] = useState(currentUrl.query);
+  const [queryFlushKey, setQueryFlushKey] = useState(0);
+  const localQueryWriteRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (localQueryWriteRef.current === currentUrl.query) {
+      localQueryWriteRef.current = null;
+      return;
+    }
+    setQuery(currentUrl.query);
+    setQueryFlushKey((value) => value + 1);
+  }, [currentUrl.query]);
+  const debouncedQuery = useDebouncedValue(query, 250, queryFlushKey);
+  const queryForRequest =
+    localQueryWriteRef.current === null && query.trim() !== currentUrl.query
+      ? currentUrl.query
+      : debouncedQuery;
+  const filter =
+    currentUrl.status === "in_progress"
+      ? "进行中"
+      : currentUrl.status === "pending_review"
+        ? "待审核"
+        : currentUrl.status === "completed"
+          ? "已完成"
+          : "全部";
+  const advanced = useMemo<DashboardFilters>(
+    () => ({
+      status: currentUrl.status,
+      data_type: currentUrl.data_type,
+      member_id: currentUrl.member_id,
+      created_from: currentUrl.created_from,
+      created_to: currentUrl.created_to,
+    }),
+    [
+      currentUrl.created_from,
+      currentUrl.created_to,
+      currentUrl.data_type,
+      currentUrl.member_id,
+      currentUrl.status,
+    ],
+  );
   const wizardOpen = searchParams.get("new") === "1";
   // v0.10.11 · 从 ProjectGrid "复制项目" 跳来时携带 ?from=<id>; Wizard 据此预填.
   const wizardSourceProjectId = searchParams.get("from") || undefined;
@@ -258,15 +310,13 @@ export function DashboardPage() {
     setSearchParams(next, { replace: true });
   };
 
-  // 合并 TabRow 状态（filter）+ FilterDrawer 状态（advanced）；TabRow 优先（advanced.status 仅在 drawer 内调整时取代 TabRow）
-  const effectiveStatus = advanced.status ?? FILTER_STATUS_MAP[filter];
   const { data: projects = [], isLoading } = useProjects({
-    status: effectiveStatus,
-    search: query || undefined,
-    data_type: advanced.data_type.length > 0 ? advanced.data_type : undefined,
-    member_id: advanced.member_id,
-    created_from: advanced.created_from,
-    created_to: advanced.created_to,
+    status: currentUrl.status,
+    search: queryForRequest.trim() || undefined,
+    data_type: currentUrl.data_type.length > 0 ? currentUrl.data_type : undefined,
+    member_id: currentUrl.member_id,
+    created_from: currentUrl.created_from,
+    created_to: currentUrl.created_to,
   });
 
   const advancedActiveCount = useMemo(() => {
@@ -274,9 +324,29 @@ export function DashboardPage() {
     if (advanced.data_type.length) n += 1;
     if (advanced.member_id) n += 1;
     if (advanced.created_from || advanced.created_to) n += 1;
-    if (advanced.status && advanced.status !== FILTER_STATUS_MAP[filter]) n += 1;
     return n;
-  }, [advanced, filter]);
+  }, [advanced]);
+
+  const applyFilters = (next: DashboardFilters) => {
+    urlState.patch(
+      {
+        status: next.status,
+        data_type: next.data_type,
+        member_id: next.member_id,
+        created_from: next.created_from,
+        created_to: next.created_to,
+      },
+      { replace: false },
+    );
+  };
+  const updateQuery = (next: string) => {
+    setQuery(next);
+    localQueryWriteRef.current = next.trim();
+    urlState.patch({ query: next });
+  };
+  const updateFilterTab = (next: string) => {
+    urlState.patch({ status: FILTER_STATUS_MAP[next] }, { replace: false });
+  };
 
   const { data: stats } = useProjectStats();
   const { data: audit } = useAuditLogs({ page: 1, page_size: 8, business_only: true });
@@ -358,19 +428,32 @@ export function DashboardPage() {
         <div className="flex items-center justify-between border-b border-border px-4 py-3.5 max-[900px]:flex-col max-[900px]:items-start">
           <div className="flex items-center gap-3 max-[900px]:flex-wrap">
             <h3 className="text-sm font-semibold">我的项目</h3>
-            <TabRow tabs={[...FILTERS]} active={filter} onChange={setFilter} />
+            <FilterGroup label="状态">
+              {FILTERS.map((option) => (
+                <FilterToggle
+                  key={option}
+                  active={filter === option}
+                  onClick={() => updateFilterTab(option)}
+                >
+                  {option}
+                </FilterToggle>
+              ))}
+            </FilterGroup>
           </div>
           <div className="flex gap-2 max-[900px]:flex-wrap">
-            <SearchInput placeholder="搜索项目..." value={query} onChange={setQuery} width={220} />
-            <Button onClick={() => setFilterOpen(true)}>
-              <Icon name="filter" size={13} />
-              筛选
-              {advancedActiveCount > 0 && (
-                <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-brand/30 bg-brand/10 px-1.5 text-2xs leading-none text-brand">
-                  {advancedActiveCount}
-                </span>
-              )}
-            </Button>
+            <SearchInput
+              placeholder="搜索项目..."
+              value={query}
+              onChange={updateQuery}
+              width={220}
+            />
+            <ProjectFilterControl
+              open={filterOpen}
+              onOpenChange={setFilterOpen}
+              initial={advanced}
+              onApply={applyFilters}
+              count={advancedActiveCount}
+            />
             <Button
               onClick={() => setViewMode(viewMode === "grid" ? "list" : "grid")}
               title={viewMode === "grid" ? "切换到列表视图" : "切换到网格视图"}
@@ -380,6 +463,11 @@ export function DashboardPage() {
             </Button>
           </div>
         </div>
+        <ProjectFilterSummary
+          filters={advanced}
+          onChange={applyFilters}
+          onEdit={() => setFilterOpen(true)}
+        />
         {viewMode === "grid" ? (
           isLoading ? (
             <div className="p-10 text-center text-muted-foreground">加载中...</div>
@@ -433,13 +521,6 @@ export function DashboardPage() {
           </div>
         )}
       </Card>
-
-      <FilterDrawer
-        open={filterOpen}
-        onClose={() => setFilterOpen(false)}
-        initial={advanced}
-        onApply={setAdvanced}
-      />
 
       <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(320px,1fr))] gap-3 max-[900px]:grid-cols-1">
         <Card>

@@ -9,14 +9,19 @@ module, so direct schema calls do not depend on this module being imported first
 
 from __future__ import annotations
 
-from app.services.data_management.schema import builtin_view_keys  # noqa: F401
+from app.services.data_management.schema import (
+    _track_capable,
+    builtin_view_keys,  # noqa: F401
+)
+from app.services.data_management.filter_tree import (
+    iter_filter_rules,
+    validate_filter_tree,
+)
 from app.services.data_management.task_filters import (  # noqa: F401
     _STRING_OPS,
     _NUMERIC_OPS,
     _TASK_FIELD_MAP,
     compile_filter,
-    _is_annotation_object_rule,
-    _compile_annotation_object_condition,
     _track_id_expr,
     _compare_scalar,
     _scene_id_sq,
@@ -43,10 +48,8 @@ from typing import Any
 from fastapi import HTTPException
 from sqlalchemy import (
     Select,
-    and_,
     case,
     func,
-    literal,
     not_,
     or_,
     select,
@@ -167,6 +170,27 @@ def builtin_views(
     }:
         columns.extend(["camera_count", "calibration_issue_count"])
     views = [*DEFAULT_VIEWS]
+    if project is not None and project.data_type != "video":
+        views = [
+            {
+                **item,
+                "filter_json": (
+                    {
+                        "op": "and",
+                        "rules": [
+                            {
+                                "field": "ai.pending_prediction_shape_count",
+                                "op": "gt",
+                                "value": 0,
+                            }
+                        ],
+                    }
+                    if item["key"] == "ai-review"
+                    else item["filter_json"]
+                ),
+            }
+            for item in views
+        ]
     if project is not None:
         required_rules: list[dict[str, Any]] = []
         for unit, binding in (project.tool_bindings or {}).items():
@@ -218,26 +242,26 @@ def builtin_views(
                 }
             )
         if project.data_type == "video":
-            views.extend(
-                [
-                    {
-                        "key": "tracker-review",
-                        "name": "追踪候选待审",
-                        "filter_json": {
-                            "op": "and",
-                            "rules": [
-                                {
-                                    "field": "ai.pending_tracker_job_count",
-                                    "op": "gt",
-                                    "value": 0,
-                                }
-                            ],
-                        },
-                        "sort_json": [
-                            {"field": "last_activity_at", "direction": "desc"}
+            views.append(
+                {
+                    "key": "tracker-review",
+                    "name": "追踪候选待审",
+                    "filter_json": {
+                        "op": "and",
+                        "rules": [
+                            {
+                                "field": "ai.pending_tracker_job_count",
+                                "op": "gt",
+                                "value": 0,
+                            }
                         ],
-                        "columns_json": DEFAULT_COLUMNS,
                     },
+                    "sort_json": [{"field": "last_activity_at", "direction": "desc"}],
+                    "columns_json": DEFAULT_COLUMNS,
+                }
+            )
+            if _track_capable(project):
+                views.append(
                     {
                         "key": "with-tracks",
                         "name": "含轨迹",
@@ -255,9 +279,8 @@ def builtin_views(
                             {"field": "last_activity_at", "direction": "desc"}
                         ],
                         "columns_json": DEFAULT_COLUMNS,
-                    },
-                ]
-            )
+                    }
+                )
         if project.scene_mode:
             views.append(
                 {
@@ -298,7 +321,9 @@ def validate_filter(
     project: Project | None = None,
     user: User | None = None,
 ) -> None:
-    compile_filter(filter_json or {}, project=project, user=user)
+    tree = {} if filter_json is None else filter_json
+    validate_filter_tree(tree)
+    compile_filter(tree, project=project, user=user)
 
 
 def validate_sort(sort_json: list[dict[str, Any]] | None) -> None:
@@ -350,57 +375,19 @@ def validate_columns(columns_json: list[str] | None) -> None:
 
 
 def invalid_filter_fields(filter_json: dict[str, Any], project: Project) -> list[str]:
-    invalid: list[str] = []
+    try:
+        validate_filter_tree(filter_json)
+    except HTTPException:
+        return ["__filter__"]
 
-    def visit(node: dict[str, Any]) -> None:
-        if not node:
-            return
-        if "rules" in node:
-            for child in node.get("rules") or []:
-                if isinstance(child, dict):
-                    visit(child)
-            return
+    invalid: list[str] = []
+    for node in iter_filter_rules(filter_json):
         field = node.get("field")
-        if not isinstance(field, str):
-            invalid.append("__filter__")
-            return
         try:
             compile_filter(node, project=project)
         except HTTPException:
-            invalid.append(field)
-
-    visit(filter_json or {})
+            invalid.append(str(field or "__filter__"))
     return list(dict.fromkeys(invalid))
-
-
-def compile_annotation_match_filter(
-    filter_json: dict[str, Any],
-    annotation,
-    project: Project,
-) -> ColumnElement[bool]:
-    """Compile only object-level rules for the task match explanation drawer."""
-    if not filter_json:
-        return literal(True)
-    if "rules" in filter_json:
-        op = filter_json.get("op", "and")
-        children = [
-            compile_annotation_match_filter(child, annotation, project)
-            for child in filter_json.get("rules") or []
-            if isinstance(child, dict)
-            and ("rules" in child or _is_annotation_object_rule(child))
-        ]
-        if not children:
-            return literal(True)
-        return and_(*children) if op == "and" else or_(*children)
-    if not _is_annotation_object_rule(filter_json):
-        return literal(True)
-    return _compile_annotation_object_condition(
-        annotation,
-        str(filter_json["field"]),
-        str(filter_json["op"]),
-        filter_json.get("value"),
-        project,
-    )
 
 
 def _model_versions_sq() -> ColumnElement[list[str]]:

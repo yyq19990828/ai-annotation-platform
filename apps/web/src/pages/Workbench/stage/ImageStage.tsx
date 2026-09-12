@@ -846,14 +846,16 @@ export function ImageStage({
   const displayedRasterMaskRecords = useMemo(
     () =>
       maskCompareStore?.display
-        ? rasterMaskRecords.filter((record) =>
-            maskCompareCompanionVisible(maskCompareStore.display, {
-              source: "annotation",
-              id: record.id,
-            }),
+        ? rasterMaskRecords.filter(
+            (record) =>
+              visibleUserBoxById.has(record.id) &&
+              maskCompareCompanionVisible(maskCompareStore.display, {
+                source: "annotation",
+                id: record.id,
+              }),
           )
-        : rasterMaskRecords,
-    [maskCompareStore, rasterMaskRecords],
+        : rasterMaskRecords.filter((record) => visibleUserBoxById.has(record.id)),
+    [maskCompareStore, rasterMaskRecords, visibleUserBoxById],
   );
   const displayedSamMaskRecords = maskCompareCompanionVisible(maskCompareStore?.display, {
     source: "ai",

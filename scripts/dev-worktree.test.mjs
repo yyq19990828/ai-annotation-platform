@@ -264,6 +264,22 @@ test("service supervisor cannot bypass runtime preparation", async () => {
   await assert.rejects(launcher.runDevWorktree([], {}), /runtime/);
 });
 
+test("acceptance instructions use the actual reserved URL and keep credentials scoped to fixtures", () => {
+  const output = launcher.formatAcceptanceGuide(
+    {
+      accounts: [{ role: "管理员", email: "admin@e2e.test", password: "Test1234" }],
+      scenarios: [
+        { title: "分页", path: "/projects/fixture/data-manager?lens=objects", expected: "101" },
+      ],
+    },
+    "http://127.0.0.1:3199",
+  );
+  assert.match(output, /http:\/\/127\.0\.0\.1:3199\/login/);
+  assert.match(output, /http:\/\/127\.0\.0\.1:3199\/projects\/fixture\/data-manager\?lens=objects/);
+  assert.match(output, /admin@e2e.test \/ Test1234/);
+  assert.match(output, /数据保留/);
+});
+
 test("CLI help works before dependency setup without touching services", async () => {
   const directory = await mkdtemp(join(tmpdir(), "aap-cli-bootstrap-"));
   try {

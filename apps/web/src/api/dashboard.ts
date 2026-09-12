@@ -1,5 +1,6 @@
 import { apiClient } from "./client";
 import type { UserBrief } from "@/types";
+import { isCurrentAuthOwner, useAuthStore } from "@/stores/authStore";
 
 export interface RegistrationDayPoint {
   date: string;
@@ -267,6 +268,7 @@ export const dashboardApi = {
       sort?: string;
       q?: string;
     } = {},
+    signal?: AbortSignal,
   ) => {
     const sp = new URLSearchParams();
     if (params.role) sp.set("role", params.role);
@@ -275,16 +277,27 @@ export const dashboardApi = {
     if (params.sort) sp.set("sort", params.sort);
     if (params.q) sp.set("q", params.q);
     const qs = sp.toString();
-    return apiClient.get<AdminPeopleList>(`/dashboard/admin/people${qs ? `?${qs}` : ""}`);
+    const path = `/dashboard/admin/people${qs ? `?${qs}` : ""}`;
+    return signal
+      ? apiClient.get<AdminPeopleList>(path, { signal })
+      : apiClient.get<AdminPeopleList>(path);
   },
-  getAdminPersonDetail: (userId: string, period: string = "4w", project?: string) =>
-    apiClient.get<AdminPersonDetail>(
-      `/dashboard/admin/people/${userId}?period=${period}${project ? `&project=${project}` : ""}`,
-    ),
+  getAdminPersonDetail: (
+    userId: string,
+    period: string = "4w",
+    project?: string,
+    signal?: AbortSignal,
+  ) => {
+    const path = `/dashboard/admin/people/${userId}?period=${period}${project ? `&project=${project}` : ""}`;
+    return signal
+      ? apiClient.get<AdminPersonDetail>(path, { signal })
+      : apiClient.get<AdminPersonDetail>(path);
+  },
   // v0.12.5 · 成员绩效 CSV 导出（A2）。带 Bearer 拉 blob 触发下载，镜像 usersApi.exportUsers。
   exportPeople: async (
     params: { role?: string; project?: string; period?: string; sort?: string; q?: string } = {},
   ): Promise<void> => {
+    const ownerId = useAuthStore.getState().user?.id;
     const sp = new URLSearchParams();
     if (params.role) sp.set("role", params.role);
     if (params.project) sp.set("project", params.project);
@@ -301,6 +314,15 @@ export const dashboardApi = {
       throw new Error((body as { detail?: string }).detail || `导出失败 (HTTP ${res.status})`);
     }
     const blob = await res.blob();
+    if (
+      !ownerId ||
+      !token ||
+      token !== useAuthStore.getState().token ||
+      token !== localStorage.getItem("token") ||
+      !isCurrentAuthOwner(ownerId)
+    ) {
+      throw new Error("当前登录状态已改变，请重新导出");
+    }
     const dispo = res.headers.get("Content-Disposition") || "";
     const match = /filename="?([^"]+)"?/.exec(dispo);
     const filename = match ? match[1] : "people_performance.csv";

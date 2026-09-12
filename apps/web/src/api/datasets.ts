@@ -72,13 +72,16 @@ export interface SniffAxisConventionResponse {
 }
 
 export const datasetsApi = {
-  list: (params?: {
-    search?: string;
-    data_type?: string;
-    has_scenes?: boolean;
-    limit?: number;
-    offset?: number;
-  }) => {
+  list: (
+    params?: {
+      search?: string;
+      data_type?: string;
+      has_scenes?: boolean;
+      limit?: number;
+      offset?: number;
+    },
+    init?: RequestInit,
+  ) => {
     const q = new URLSearchParams();
     if (params?.search) q.set("search", params.search);
     if (params?.data_type) q.set("data_type", params.data_type);
@@ -88,7 +91,10 @@ export const datasetsApi = {
     if (params?.limit) q.set("limit", String(params.limit));
     if (params?.offset) q.set("offset", String(params.offset));
     const qs = q.toString();
-    return apiClient.get<DatasetListResponse>(`/datasets${qs ? `?${qs}` : ""}`);
+    const path = `/datasets${qs ? `?${qs}` : ""}`;
+    return init
+      ? apiClient.get<DatasetListResponse>(path, init)
+      : apiClient.get<DatasetListResponse>(path);
   },
 
   get: (id: string) => apiClient.get<DatasetResponse>(`/datasets/${id}`),

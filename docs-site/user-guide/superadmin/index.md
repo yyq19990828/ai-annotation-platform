@@ -22,6 +22,8 @@ last_reviewed: 2026-08-16
 
 统计刷新失败时，页面保留上次成功加载的数据，并显示提示和「重新加载」按钮；已打开的项目或导入向导保持可用。首次加载失败且没有可用统计时，页面显示加载失败提示，可点击「重新加载」重试。
 
+成员绩效页（`/admin/people`）按角色、项目、周期、排序和搜索组合查看，默认周期为 7 天。条件随地址保存，刷新和前进后退可恢复；搜索停止输入 250ms 后应用，导出使用当前已应用条件。
+
 <DocsVideo
   src="/media/superadmin/platform-overview.mp4"
   poster="/media/superadmin/platform-overview-poster.webp"

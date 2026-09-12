@@ -51,3 +51,38 @@ it("adopts another tab's complete identity and clears the previous account cache
   client.clear();
   useAuthStore.getState().logout();
 });
+
+it("clears and cancels private queries when the same account rotates its token", async () => {
+  const client = new QueryClient();
+  useAuthStore.getState().setAuth("alice-token-a", { id: "alice" } as MeResponse);
+  const unbind = bindAuthQueryCache(client);
+  let resolve!: (value: string) => void;
+  let signal!: AbortSignal;
+  const pending = client
+    .fetchQuery({
+      queryKey: ["projects", { search: "car" }, "alice", "alice-token-a"],
+      queryFn: ({ signal: requestSignal }) => {
+        signal = requestSignal;
+        return new Promise<string>((done) => {
+          resolve = done;
+        });
+      },
+    })
+    .catch(() => undefined);
+  client.setQueryData(["projects", { search: "old" }, "alice", "alice-token-a"], ["old"]);
+
+  useAuthStore.getState().setToken("alice-token-b");
+
+  expect(signal.aborted).toBe(true);
+  expect(client.getQueryData(["projects", { search: "old" }, "alice", "alice-token-a"])).toBe(
+    undefined,
+  );
+  resolve("late-alice-token-a");
+  await pending;
+  expect(client.getQueryData(["projects", { search: "car" }, "alice", "alice-token-a"])).toBe(
+    undefined,
+  );
+  unbind();
+  client.clear();
+  useAuthStore.getState().logout();
+});

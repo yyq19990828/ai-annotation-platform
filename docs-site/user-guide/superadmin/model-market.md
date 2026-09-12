@@ -29,6 +29,8 @@ last_reviewed: 2026-08-16
 
 ### 1. 能力目录
 
+任务和模态保留一键切换，模型族与推理框架在漏斗 **更多筛选** 中选择，修改后即时生效。收起后可通过摘要标签继续编辑或单独移除；搜索和分组不属于清除条件的范围。注册管理的问题中心也使用附着式筛选面板，服务池、实例、GPU 和 code 保留独立条件，详见 [使用筛选](../reference/filtering.md)。
+
 > 「能力目录」与 backend 注册解耦：默认按**协议能力 (task)** 分组渲染协议卡，无 backend 注册时仍完整展示协议层支持的全部能力 + 推荐 backend；详见 [ADR-0037](../../dev/adr/archive/0037-protocol-capability-catalog-decoupling)。
 
 <!-- TODO IMAGE_CHECKLIST: images/superadmin/model-market/protocol-card-details.png — 能力目录协议卡 + ModelCard 详情态。 -->
@@ -56,6 +58,8 @@ last_reviewed: 2026-08-16
 - 卡片 / 列表切换；协议能力分组下列表按协议能力逐行展示，backend / infra / 不分组下列表按 model 条目展开。
 - 搜索模型名、model id、模型族、task 中文标签和来源 backend；协议能力分组下，搜索同时过滤协议卡（命中 task label / summary / typical_models 的卡保留）。
 - 与 task / model_family / infra / modality chips 过滤叠加。
+
+同一维度内选择多项表示满足任一项，不同维度之间需要同时满足。模型族筛选也作用于协议分组；基础设施和模态按模型实际展示的能力匹配，切换分组不改变筛选含义。
 
 ### 2. 运行时观测
 

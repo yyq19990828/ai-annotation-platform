@@ -3,7 +3,7 @@
  * v0.9.12 · BUG B-16 加 checkbox 多选 + 底部浮窗 + 批量重激活/删除 prediction.
  */
 
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -66,6 +66,9 @@ export function HistoryTable({ items, isLoading }: Props) {
   }, [filtered, sortKey, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / HISTORY_PAGE_SIZE));
+  useEffect(() => {
+    setPage((current) => Math.min(current, totalPages - 1));
+  }, [totalPages]);
   const safePage = Math.min(page, totalPages - 1);
   const pageStart = safePage * HISTORY_PAGE_SIZE;
   const pageItems = sorted.slice(pageStart, pageStart + HISTORY_PAGE_SIZE);
@@ -100,6 +103,7 @@ export function HistoryTable({ items, isLoading }: Props) {
   };
 
   const onSort = (key: SortKey) => {
+    setPage(0);
     if (sortKey === key) {
       setSortDir((d) => (d === "asc" ? "desc" : "asc"));
     } else {

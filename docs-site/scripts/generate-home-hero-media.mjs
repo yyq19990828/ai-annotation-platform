@@ -67,7 +67,7 @@ for (const [inputRelative, outputName] of media) {
   const dimensions = readImageDimensions(input);
   const output = resolve(outputRoot, outputName);
   const temporary = `${output}.${process.pid}.tmp.webp`;
-  const result = spawnSync(
+  let result = spawnSync(
     ffmpeg,
     [
       "-v",
@@ -87,6 +87,11 @@ for (const [inputRelative, outputName] of media) {
     ],
     { encoding: "utf8" },
   );
+  if (result.status !== 0 && result.stderr?.includes("Unknown encoder 'libwebp'")) {
+    result = spawnSync("cwebp", ["-q", "85", "-m", "4", input, "-o", temporary], {
+      encoding: "utf8",
+    });
+  }
   if (result.status !== 0) {
     fs.rmSync(temporary, { force: true });
     throw new Error(`首页 Hero WebP 生成失败：${inputRelative}\n${result.stderr}`);

@@ -35,6 +35,9 @@ _NUMBER_OPS = ["eq", "ne", "gt", "gte", "lt", "lte", "in"]
 _EXISTS_OPS = ["exists", "eq", "in"]
 
 
+_ANNOTATION_OPS = ["exists", "eq", "ne", "in"]
+
+
 _BASE_TASK_VIEW_KEYS = ["all", "pending", "review", "feedback-open", "ai-review"]
 
 
@@ -119,7 +122,9 @@ def builtin_view_keys(project: Project) -> list[str]:
     if has_required_attributes:
         keys.append("missing-required-attributes")
     if project.data_type == "video":
-        keys.extend(["tracker-review", "with-tracks"])
+        keys.append("tracker-review")
+        if _track_capable(project):
+            keys.append("with-tracks")
     if project.scene_mode:
         keys.append("interpolated")
     return keys
@@ -190,7 +195,7 @@ def build_data_manager_schema(
             label="标注来源",
             group="标注",
             value_type="select",
-            operators=_EXISTS_OPS,
+            operators=_ANNOTATION_OPS,
             options=[
                 _option("manual", "人工"),
                 _option("prediction_based", "接受 AI"),
@@ -210,7 +215,7 @@ def build_data_manager_schema(
             label="工具单位",
             group="标注",
             value_type="select",
-            operators=_EXISTS_OPS,
+            operators=_ANNOTATION_OPS,
             options=unit_values,
         ),
         DataManagerFilterFieldOut(
@@ -218,7 +223,7 @@ def build_data_manager_schema(
             label="几何类型",
             group="标注",
             value_type="text",
-            operators=_EXISTS_OPS,
+            operators=_ANNOTATION_OPS,
         ),
         DataManagerFilterFieldOut(
             key="annotation.class_name",
@@ -341,7 +346,18 @@ def build_data_manager_schema(
         attr_type = str(field.get("type") or "text")
         if attr_type in {"number", "range"}:
             value_type = "number"
-            operators = ["eq", "gt", "gte", "lt", "lte", "between", "exists", "missing"]
+            operators = [
+                "eq",
+                "ne",
+                "gt",
+                "gte",
+                "lt",
+                "lte",
+                "in",
+                "between",
+                "exists",
+                "missing",
+            ]
         elif attr_type == "boolean":
             value_type = "boolean"
             operators = ["eq", "exists", "missing"]
@@ -500,6 +516,12 @@ def build_data_manager_schema(
     builtin_views = builtin_view_keys(project)
 
     if entity_scope in {"objects", "tracks"}:
+        fields = [
+            field.model_copy(update={"operators": _ANNOTATION_OPS})
+            if field.key == "annotation.class_name"
+            else field
+            for field in fields
+        ]
         excluded = {
             "annotation.annotation_count",
             "ai.pending_prediction_shape_count",

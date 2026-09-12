@@ -490,6 +490,55 @@ describe("CapabilityCatalogPanel · 协议双层视图", () => {
     await screen.findByText("⚠ 协议 1");
   });
 
+  it("模型族筛选同时作用于协议卡视图", async () => {
+    mockGetInstances.mockResolvedValue({
+      instances: [
+        {
+          backend_id: "sam-registry-id",
+          state: "connected",
+          source: "env",
+          name: "sam-backend",
+          infra: "pytorch",
+          models: [
+            {
+              id: "sam-detect",
+              display_name: "SAM 检测",
+              task: "detection",
+              model_family: "sam",
+              infra: "pytorch",
+              is_interactive: false,
+              supported_prompts: [],
+              supported_geometric_outputs: ["bbox"],
+              supported_trackers: [],
+              modality: "image",
+            },
+            {
+              id: "yolo-detect",
+              display_name: "YOLO 检测",
+              task: "detection",
+              model_family: "yolo",
+              infra: "pytorch",
+              is_interactive: false,
+              supported_prompts: [],
+              supported_geometric_outputs: ["bbox"],
+              supported_trackers: [],
+              modality: "image",
+            },
+          ],
+        },
+      ],
+    });
+    renderUI();
+    expect(await screen.findByText("SAM 检测")).toBeInTheDocument();
+    expect(screen.getByText("YOLO 检测")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "更多筛选" }));
+    fireEvent.click(screen.getByRole("button", { name: "sam" }));
+    expect(screen.getByRole("button", { name: "sam" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("SAM 检测")).toBeInTheDocument();
+    expect(screen.queryByText("YOLO 检测")).not.toBeInTheDocument();
+  });
+
   it("搜索 'ocr' → 仅 OCR 协议卡可见", async () => {
     renderUI();
     await screen.findByText(/支持 9 类 AI 标注能力/);

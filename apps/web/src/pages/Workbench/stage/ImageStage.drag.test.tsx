@@ -57,6 +57,7 @@ vi.mock("./useAbortableImage", () => ({
 }));
 
 import { ImageStage } from "./ImageStage";
+import type { RasterMaskRenderRecord } from "./shared/rasterMaskRender";
 
 const commit = vi.fn();
 const emptyBoxes: [] = [];
@@ -146,6 +147,55 @@ describe("ImageStage drag scheduling", () => {
       for (const callback of pending) callback(16);
     });
   };
+
+  it("does not render a persisted hidden raster mask while retaining its row data", () => {
+    const annotation = {
+      id: "hidden-mask",
+      cls: "car",
+      source: "manual" as const,
+      conf: 1,
+      is_hidden: true,
+      geometry: {
+        type: "raster_mask" as const,
+        mask: {
+          encoding: "coco_rle_ref" as const,
+          size: [2, 2] as [number, number],
+          object_key: "mask.json",
+          sha256: "a".repeat(64),
+          runs: 2,
+          bytes: 4,
+        },
+      },
+    };
+    const record = {
+      id: annotation.id,
+      source: "annotation" as const,
+      image: document.createElement("canvas"),
+      bounds: { x: 0.1, y: 0.2, w: 0.3, h: 0.4 },
+      area: 1,
+      componentCount: 1,
+      holeCount: 0,
+      boundaryPixelCount: 1,
+      sourceWidth: 2,
+      sourceHeight: 2,
+      crop: { x: 0, y: 0, width: 2, height: 2, alpha: new Uint8Array([255, 0, 0, 0]) },
+      zOrder: 0,
+      selected: false,
+      cacheKey: "hidden-mask-cache",
+      preview: false,
+    } satisfies RasterMaskRenderRecord<"annotation">;
+
+    render(
+      <ImageStage
+        {...defaults}
+        tool="select"
+        userBoxes={[annotation] as never}
+        rasterMaskRecords={[record]}
+      />,
+    );
+
+    expect(screen.queryByTestId("raster-mask-annotation")).toBeNull();
+  });
 
   it("keeps the pending drag update when cursor feedback rebuilds parent callbacks", () => {
     render(<CursorOwner />);

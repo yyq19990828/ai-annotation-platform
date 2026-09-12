@@ -37,6 +37,9 @@ describe("DataManagerFilterBar", () => {
 
     render(<DataManagerFilterBar fields={fields} chips={[]} onAdd={onAdd} onClear={vi.fn()} />);
 
+    expect(screen.getByRole("button", { name: "筛选" }).querySelector("svg")).toHaveClass(
+      "lucide-funnel",
+    );
     await user.click(screen.getByRole("button", { name: "筛选" }));
     await user.type(screen.getByRole("textbox", { name: "搜索筛选字段" }), "模型");
 
@@ -74,7 +77,25 @@ describe("DataManagerFilterBar", () => {
 
     await user.click(screen.getByRole("button", { name: "标注来源 = 人工" }));
     expect(screen.getByText("条件编辑器")).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "清除全部" }));
+    await user.click(screen.getByRole("button", { name: "清除条件" }));
+    expect(onClear).toHaveBeenCalledOnce();
+  });
+
+  it("shows clear for a grouped condition without flat chips", async () => {
+    const user = userEvent.setup();
+    const onClear = vi.fn();
+
+    render(
+      <DataManagerFilterBar
+        fields={fields}
+        chips={[]}
+        hasConditions
+        onAdd={vi.fn()}
+        onClear={onClear}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "清除条件" }));
     expect(onClear).toHaveBeenCalledOnce();
   });
 });

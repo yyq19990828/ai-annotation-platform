@@ -40,6 +40,23 @@ describe("boxIsOnFrame / firstTrackFrame · 视频几何", () => {
         bytes: 64,
       },
     },
+    {
+      type: "video_rotated_bbox",
+      frame_index: 7,
+      cx: 0.5,
+      cy: 0.5,
+      w: 0.2,
+      h: 0.1,
+      angle: 30,
+    },
+    {
+      type: "video_keypoint",
+      frame_index: 7,
+      points: [
+        { x: 0.2, y: 0.3, v: 2 },
+        { x: 0.4, y: 0.5, v: 1 },
+      ],
+    },
   ];
 
   it.each(SINGLE)("单帧几何 $type: 只在所属帧显示, 跳转到该帧", (geometry) => {

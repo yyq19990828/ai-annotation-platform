@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import httpx
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -161,6 +163,126 @@ async def test_tasks_query_rejects_oversized_in_list(
     )
     assert r.status_code == 422
     assert "in value too long" in r.text
+
+
+async def test_tasks_query_accepts_typed_datetime_uuid_and_nullable_filters(
+    httpx_client: httpx.AsyncClient,
+    project_admin,
+    db_session: AsyncSession,
+):
+    owner, token = project_admin
+    project, task_a, task_b = await _seed_project(db_session, owner.id)
+    task_a.created_at = datetime(2026, 9, 2, tzinfo=timezone.utc)
+    task_b.created_at = datetime(2026, 8, 2, tzinfo=timezone.utc)
+    task_a.assignee_id = owner.id
+    await db_session.flush()
+    headers = {"Authorization": f"Bearer {token}"}
+
+    date_response = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/tasks/query",
+        headers=headers,
+        json={
+            "filter_json": {
+                "field": "task.created_at",
+                "op": "gte",
+                "value": "2026-09-01T00:00:00Z",
+            },
+            "columns_json": ["display_id"],
+        },
+    )
+    assert date_response.status_code == 200, date_response.text
+    assert [item["id"] for item in date_response.json()["items"]] == [str(task_a.id)]
+
+    uuid_response = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/tasks/query",
+        headers=headers,
+        json={
+            "filter_json": {
+                "field": "task.assignee",
+                "op": "in",
+                "value": [str(owner.id)],
+            },
+            "columns_json": ["display_id"],
+        },
+    )
+    assert uuid_response.status_code == 200, uuid_response.text
+    assert [item["id"] for item in uuid_response.json()["items"]] == [str(task_a.id)]
+
+    null_response = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/tasks/query",
+        headers=headers,
+        json={
+            "filter_json": {
+                "field": "task.assignee",
+                "op": "eq",
+                "value": None,
+            },
+            "columns_json": ["display_id"],
+        },
+    )
+    assert null_response.status_code == 200, null_response.text
+    assert [item["id"] for item in null_response.json()["items"]] == [str(task_b.id)]
+
+    not_null_response = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/tasks/query",
+        headers=headers,
+        json={
+            "filter_json": {
+                "field": "task.assignee",
+                "op": "ne",
+                "value": None,
+            },
+            "columns_json": ["display_id"],
+        },
+    )
+    assert not_null_response.status_code == 200, not_null_response.text
+    assert [item["id"] for item in not_null_response.json()["items"]] == [
+        str(task_a.id)
+    ]
+
+
+@pytest.mark.parametrize(
+    "filter_json",
+    [
+        {"field": "task.created_at", "op": "gte", "value": "bad-date"},
+        {"field": "task.created_at", "op": "gte", "value": ["2026-09-01"]},
+        {"field": "task.assignee", "op": "eq", "value": "not-a-uuid"},
+        {"field": "task.assignee", "op": "in", "value": ["not-a-uuid"]},
+    ],
+)
+async def test_tasks_query_rejects_invalid_typed_filter_values(
+    httpx_client: httpx.AsyncClient,
+    project_admin,
+    db_session: AsyncSession,
+    filter_json,
+):
+    owner, token = project_admin
+    project, _, _ = await _seed_project(db_session, owner.id)
+
+    response = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/tasks/query",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"filter_json": filter_json},
+    )
+    assert response.status_code == 422, response.text
+
+
+async def test_tasks_query_rejects_nonfinite_numeric_filter_value(
+    httpx_client: httpx.AsyncClient,
+    project_admin,
+    db_session: AsyncSession,
+):
+    owner, token = project_admin
+    project, _, _ = await _seed_project(db_session, owner.id)
+    response = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/tasks/query",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+        content=b'{"filter_json":{"field":"annotation.annotation_count","op":"gt","value":Infinity}}',
+    )
+    assert response.status_code == 422, response.text
 
 
 async def test_task_views_list_reports_counts(

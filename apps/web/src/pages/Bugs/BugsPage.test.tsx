@@ -1,12 +1,16 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
+import { useAuthStore } from "@/stores/authStore";
 import { BugsPage } from "./BugsPage";
 
 const mocks = vi.hoisted(() => ({
   pushToast: vi.fn(),
   list: vi.fn(),
   get: vi.fn(),
+  update: vi.fn(),
   addComment: vi.fn(),
+  useBugReports: vi.fn(),
 }));
 
 vi.mock("@/components/ui/Toast", () => ({
@@ -60,10 +64,14 @@ vi.mock("@/api/bug-reports", () => ({
   bugReportsApi: {
     list: mocks.list,
     get: mocks.get,
-    update: vi.fn(),
+    update: mocks.update,
     addComment: mocks.addComment,
     attachmentDownloadUrl: (_id: string, key: string) => `/download?key=${encodeURIComponent(key)}`,
   },
+}));
+
+vi.mock("@/hooks/useBugReports", () => ({
+  useBugReports: (...args: unknown[]) => mocks.useBugReports(...args),
 }));
 
 const item = {
@@ -104,8 +112,18 @@ const item = {
 
 describe("BugsPage", () => {
   beforeEach(() => {
+    useAuthStore.getState().setAuth("bugs-test-token", {
+      id: "bugs-owner",
+      name: "Bugs owner",
+      email: "bugs@test.local",
+      role: "super_admin",
+      group_name: null,
+      status: "active",
+      created_at: "2026-01-01T00:00:00Z",
+    });
     mocks.pushToast.mockReset();
     mocks.list.mockResolvedValue({ items: [item], total: 1 });
+    mocks.update.mockReset().mockResolvedValue({});
     mocks.addComment.mockReset().mockResolvedValue({});
     mocks.get.mockResolvedValue({
       ...item,
@@ -121,10 +139,20 @@ describe("BugsPage", () => {
         },
       ],
     });
+    mocks.useBugReports.mockReturnValue({
+      data: { items: [item], total: 1 },
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
   });
 
   it("renders markdown descriptions, markdown comments, and attachment links", async () => {
-    render(<BugsPage />);
+    render(
+      <MemoryRouter>
+        <BugsPage />
+      </MemoryRouter>,
+    );
 
     fireEvent.click(await screen.findByText("Markdown detail"));
 
@@ -143,7 +171,11 @@ describe("BugsPage", () => {
   });
 
   it("keeps comment drafts on the Unicode length boundary and supports Ctrl+Enter", async () => {
-    render(<BugsPage />);
+    render(
+      <MemoryRouter>
+        <BugsPage />
+      </MemoryRouter>,
+    );
     fireEvent.click(await screen.findByText("Markdown detail"));
 
     const editor = await screen.findByPlaceholderText("添加评论，支持 Markdown...");
@@ -176,8 +208,18 @@ describe("BugsPage", () => {
         resolveComment = resolve;
       }),
     );
+    mocks.useBugReports.mockReturnValue({
+      data: { items: [item, secondItem], total: 2 },
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
 
-    render(<BugsPage />);
+    render(
+      <MemoryRouter>
+        <BugsPage />
+      </MemoryRouter>,
+    );
     fireEvent.click(await screen.findByText("Markdown detail"));
     const firstEditor = await screen.findByPlaceholderText("添加评论，支持 Markdown...");
     fireEvent.change(firstEditor, { target: { value: "A 的待发送评论" } });
@@ -191,5 +233,79 @@ describe("BugsPage", () => {
 
     await waitFor(() => expect(secondEditor).toHaveValue("B 的新草稿"));
     expect(mocks.get).toHaveBeenCalledWith("bug-2");
+  });
+
+  it("drops a detail result when the auth owner changes while it is pending", async () => {
+    let resolveDetail: (value: unknown) => void = () => undefined;
+    mocks.get.mockReturnValue(
+      new Promise((resolve) => {
+        resolveDetail = resolve;
+      }),
+    );
+
+    render(
+      <MemoryRouter>
+        <BugsPage />
+      </MemoryRouter>,
+    );
+    fireEvent.click(await screen.findByText("Markdown detail"));
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledWith("bug-1"));
+
+    await act(async () => {
+      useAuthStore.getState().setAuth("replacement-token", {
+        id: "replacement-owner",
+        name: "Replacement",
+        email: "replacement@test.local",
+        role: "super_admin",
+        group_name: null,
+        status: "active",
+        created_at: "2026-01-01T00:00:00Z",
+      });
+      resolveDetail({ ...item, comments: [] });
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(screen.queryByText("B-1: Markdown detail")).not.toBeInTheDocument());
+    expect(mocks.pushToast).not.toHaveBeenCalledWith(
+      expect.objectContaining({ msg: "加载详情失败" }),
+    );
+  });
+
+  it("does not publish a stale status mutation after the auth owner changes", async () => {
+    let resolveUpdate: (value: unknown) => void = () => undefined;
+    mocks.update.mockReturnValue(
+      new Promise((resolve) => {
+        resolveUpdate = resolve;
+      }),
+    );
+
+    render(
+      <MemoryRouter>
+        <BugsPage />
+      </MemoryRouter>,
+    );
+    fireEvent.click(await screen.findByText("Markdown detail"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "处理中" })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "处理中" }));
+    await waitFor(() =>
+      expect(mocks.update).toHaveBeenCalledWith("bug-1", { status: "in_progress" }),
+    );
+
+    await act(async () => {
+      useAuthStore.getState().setAuth("replacement-token", {
+        id: "replacement-owner",
+        name: "Replacement",
+        email: "replacement@test.local",
+        role: "super_admin",
+        group_name: null,
+        status: "active",
+        created_at: "2026-01-01T00:00:00Z",
+      });
+      resolveUpdate({});
+      await Promise.resolve();
+    });
+    expect(mocks.pushToast).not.toHaveBeenCalledWith(
+      expect.objectContaining({ msg: "状态已更新" }),
+    );
   });
 });

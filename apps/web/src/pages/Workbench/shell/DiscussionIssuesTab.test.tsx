@@ -142,11 +142,25 @@ describe("DiscussionIssuesTab", () => {
       }),
     );
     expect(screen.getByTestId("issue-open-count")).toHaveTextContent("待处理 7");
+    expect(screen.getByLabelText("当前任务已加载问题数量")).toHaveTextContent("已加载 1");
     fireEvent.click(screen.getByTestId("issue-status-resolved"));
     expect(screen.getByTestId("issue-status-resolved")).toHaveAttribute("aria-pressed", "true");
     expect(mocks.useInfiniteFeedbacks).toHaveBeenLastCalledWith(
       expect.objectContaining({ status: "resolved", root_only: true }),
     );
+  });
+
+  it("keeps loaded rows separate from exact counts when switching project and status filters", () => {
+    setup({ allowProjectScope: true });
+    fireEvent.change(screen.getByRole("combobox", { name: "问题列表范围" }), {
+      target: { value: "project" },
+    });
+    fireEvent.click(screen.getByTestId("issue-status-all"));
+    expect(mocks.useInfiniteFeedbacks).toHaveBeenLastCalledWith(
+      expect.objectContaining({ task_id: undefined, status: undefined, include_counts: true }),
+    );
+    expect(screen.getByLabelText("整个项目已加载问题数量")).toHaveTextContent("已加载 1");
+    expect(screen.getByTestId("issue-open-count")).toHaveTextContent("待处理 7");
   });
 
   it("keeps unknown instead of deriving a count from loaded rows", () => {

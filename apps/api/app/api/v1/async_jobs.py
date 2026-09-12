@@ -51,6 +51,42 @@ RETRY_FAILED_KINDS = {"batch_predict"}
 AsyncJobStatusParam = Literal["pending", "running", "completed", "failed", "cancelled"]
 
 
+def _build_async_job_query(
+    *,
+    current_user: User,
+    status: list[AsyncJobStatusParam] | None,
+    kind: list[str] | None,
+    project_id: uuid.UUID | None,
+    search: str | None,
+):
+    """Build the one scoped async-job relation used by page and count queries."""
+    query = select(AsyncJob)
+
+    if current_user.role != UserRole.SUPER_ADMIN.value:
+        query = query.where(AsyncJob.user_id == current_user.id)
+    if status:
+        query = query.where(AsyncJob.status.in_(status))
+    if kind:
+        query = query.where(AsyncJob.kind.in_(kind))
+    if project_id:
+        query = query.where(AsyncJob.project_id == project_id)
+
+    search_text = search.strip() if search else ""
+    if search_text:
+        pattern = f"%{search_text}%"
+        query = query.where(
+            or_(
+                AsyncJob.payload["prompt"].astext.ilike(pattern),
+                AsyncJob.payload["batch_display_id"].astext.ilike(pattern),
+                AsyncJob.payload["task_display_id"].astext.ilike(pattern),
+                AsyncJob.payload["model_key"].astext.ilike(pattern),
+                AsyncJob.payload["ml_backend_name"].astext.ilike(pattern),
+                AsyncJob.payload["error_type"].astext.ilike(pattern),
+            )
+        )
+    return query
+
+
 async def _can_access_job(db: AsyncSession, *, job: AsyncJob, user: User) -> bool:
     if user.role == UserRole.SUPER_ADMIN.value or job.user_id == user.id:
         return True
@@ -122,35 +158,14 @@ async def list_async_jobs(
 
     顺序：created_at DESC。前端铃铛走 polling，默认拉最近 50 行。
     """
-    stmt = select(AsyncJob)
-    count_stmt = select(func.count()).select_from(AsyncJob)
-
-    if current_user.role != UserRole.SUPER_ADMIN.value:
-        stmt = stmt.where(AsyncJob.user_id == current_user.id)
-        count_stmt = count_stmt.where(AsyncJob.user_id == current_user.id)
-
-    if status:
-        stmt = stmt.where(AsyncJob.status.in_(status))
-        count_stmt = count_stmt.where(AsyncJob.status.in_(status))
-    if kind:
-        stmt = stmt.where(AsyncJob.kind.in_(kind))
-        count_stmt = count_stmt.where(AsyncJob.kind.in_(kind))
-    if project_id:
-        stmt = stmt.where(AsyncJob.project_id == project_id)
-        count_stmt = count_stmt.where(AsyncJob.project_id == project_id)
-    search_text = search.strip() if search else ""
-    if search_text:
-        pattern = f"%{search_text}%"
-        search_filter = or_(
-            AsyncJob.payload["prompt"].astext.ilike(pattern),
-            AsyncJob.payload["batch_display_id"].astext.ilike(pattern),
-            AsyncJob.payload["task_display_id"].astext.ilike(pattern),
-            AsyncJob.payload["model_key"].astext.ilike(pattern),
-            AsyncJob.payload["ml_backend_name"].astext.ilike(pattern),
-            AsyncJob.payload["error_type"].astext.ilike(pattern),
-        )
-        stmt = stmt.where(search_filter)
-        count_stmt = count_stmt.where(search_filter)
+    stmt = _build_async_job_query(
+        current_user=current_user,
+        status=status,
+        kind=kind,
+        project_id=project_id,
+        search=search,
+    )
+    count_stmt = select(func.count()).select_from(stmt.order_by(None).subquery())
 
     stmt = (
         stmt.order_by(AsyncJob.created_at.desc(), AsyncJob.id.desc())

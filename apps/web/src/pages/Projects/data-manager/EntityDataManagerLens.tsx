@@ -8,6 +8,7 @@ import type {
   DataManagerObject,
   DataManagerTrack,
   TaskFilterOp,
+  TaskFilterRule,
   TaskSortItem,
 } from "@/api/taskViews";
 import { Badge } from "@/components/ui/Badge";
@@ -33,6 +34,8 @@ import {
   DialogTitle,
 } from "@/components/shadcn/ui/dialog";
 import { Input } from "@/components/shadcn/ui/input";
+import { FilterValueEditor } from "@/components/filters/FilterValueEditor";
+import { useFilterDraftValidity } from "@/components/filters/useFilterDraftValidity";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/shadcn/ui/popover";
 import {
   Select,
@@ -55,128 +58,58 @@ import {
   useUpdateTaskView,
 } from "@/hooks/useTaskViews";
 import { cn } from "@/lib/utils";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { filterOperatorLabel } from "@/lib/filters/types";
+import {
+  combineKeyword,
+  collapseEmptyGroups,
+  hasNestedGroups,
+  isExpressionValid,
+  isEmptyFilter,
+  isFilterGroup,
+  isFilterRule,
+  removeAtPath,
+  splitKeyword,
+  updateRuleAtPath,
+  validateFilterStructure,
+  type DataManagerFilterExpression,
+} from "./dataManagerFilterExpression";
+import { DataManagerExpressionEditor } from "./DataManagerExpressionEditor";
 import { DataManagerAnalyticsPanel } from "./DataManagerAnalyticsPanel";
 import { DataManagerFilterBar, type DataManagerFilterChip } from "./DataManagerFilterBar";
 import { DataManagerLensTabs } from "./DataManagerLensTabs";
 import { EntityDetailSheet } from "./EntityDetailSheet";
 import styles from "./EntityDataManagerLens.module.css";
 import {
-  parseDataManagerUrl,
+  DATA_MANAGER_FILTER_KEYS,
+  dataManagerUrlCodec,
+  hasFilterUrlOverrides,
   resolveDataManagerSort,
   updateDataManagerUrl,
 } from "./dataManagerUrlState";
+import { useUrlFilterState } from "@/hooks/useUrlFilterState";
 
 const PAGE_SIZE = 100;
 const FIELD_CLASS =
   "h-8 w-full appearance-none rounded-sm border border-border bg-background px-2 py-1.5 text-foreground disabled:bg-muted disabled:text-muted-foreground";
 
 type EntityScope = Exclude<DataManagerEntityScope, "tasks">;
-type FilterNode = Record<string, unknown>;
+type FilterNode = DataManagerFilterExpression;
 type EntityRow = DataManagerObject | DataManagerTrack;
-
-function isRule(node: unknown): node is FilterNode & { field: string; op: TaskFilterOp } {
-  return Boolean(
-    node &&
-    typeof node === "object" &&
-    "field" in node &&
-    typeof (node as { field?: unknown }).field === "string" &&
-    "op" in node,
-  );
-}
-
-function splitKeyword(filter: FilterNode): { query: string; filter: FilterNode } {
-  if (!filter || !Object.keys(filter).length) return { query: "", filter: {} };
-  if (isRule(filter) && filter.field === "task.keyword") {
-    return { query: String(filter.value ?? ""), filter: {} };
-  }
-  if (filter.op === "and" && Array.isArray(filter.rules)) {
-    const rules = filter.rules.filter((node) => node && typeof node === "object") as FilterNode[];
-    const keyword = rules.find((node) => isRule(node) && node.field === "task.keyword");
-    const rest = rules.filter((node) => node !== keyword);
-    return {
-      query: keyword ? String(keyword.value ?? "") : "",
-      filter: rest.length ? { op: "and", rules: rest } : {},
-    };
-  }
-  return { query: "", filter };
-}
-
-function combineFilter(query: string, filter: FilterNode): FilterNode {
-  const rules: FilterNode[] = [];
-  if (query.trim()) {
-    rules.push({ field: "task.keyword", op: "contains", value: query.trim() });
-  }
-  if (filter && Object.keys(filter).length) {
-    if (filter.op === "and" && Array.isArray(filter.rules)) {
-      rules.push(...(filter.rules as FilterNode[]));
-    } else {
-      rules.push(filter);
-    }
-  }
-  if (!rules.length) return {};
-  return { op: "and", rules };
-}
-
-function topLevelRules(filter: FilterNode) {
-  if (isRule(filter)) return [{ index: 0, rule: filter }];
-  if (!Array.isArray(filter.rules)) return [];
-  return (filter.rules as FilterNode[])
-    .map((rule, index) => ({ index, rule }))
-    .filter((entry) => isRule(entry.rule)) as Array<{
-    index: number;
-    rule: FilterNode & { field: string; op: TaskFilterOp };
-  }>;
-}
-
-function normalizeValue(
-  value: string,
-  op: TaskFilterOp,
-  field: DataManagerFilterField | undefined,
-) {
-  if (op === "exists" || op === "missing") return true;
-  if (["in", "between", "contains_any", "contains_all"].includes(op)) {
-    const values = value
-      .split(",")
-      .map((item) => item.trim())
-      .filter(Boolean);
-    return field?.value_type === "number" ? values.map(Number).filter(Number.isFinite) : values;
-  }
-  if (field?.value_type === "number") {
-    const number = Number(value);
-    return Number.isFinite(number) ? number : value;
-  }
-  if (field?.value_type === "boolean") return value === "true";
-  return value.trim();
-}
 
 function displayValue(value: unknown) {
   return Array.isArray(value) ? value.join(", ") : String(value ?? "");
 }
 
-const OPERATOR_LABELS: Partial<Record<TaskFilterOp, string>> = {
-  eq: "=",
-  ne: "!=",
-  in: "属于",
-  gt: ">",
-  gte: ">=",
-  lt: "<",
-  lte: "<=",
-  exists: "已填写",
-  missing: "缺失",
-  contains: "包含",
-  between: "区间",
-  contains_any: "包含任一",
-  contains_all: "包含全部",
-};
-
 function entityRuleSummary(
   rule: FilterNode & { field: string; op: TaskFilterOp },
   field: DataManagerFilterField | undefined,
 ) {
-  if (rule.op === "exists" || rule.op === "missing") return OPERATOR_LABELS[rule.op] ?? rule.op;
+  if (rule.op === "exists" || rule.op === "missing") return filterOperatorLabel(rule.op);
+  if (rule.value === null) return `${filterOperatorLabel(rule.op)} 空值`;
   const raw = displayValue(rule.value);
   const option = field?.options.find((item) => item.value === raw);
-  return `${OPERATOR_LABELS[rule.op] ?? rule.op} ${(option?.label ?? raw) || "未填写"}`;
+  return `${filterOperatorLabel(rule.op)} ${(option?.label ?? raw) || "未填写"}`;
 }
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -310,7 +243,20 @@ export function EntityDataManagerLens({
   onScopeChange: (scope: DataManagerEntityScope) => void;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [initialUrl] = useState(() => parseDataManagerUrl(searchParams));
+  const urlState = useUrlFilterState({
+    codec: dataManagerUrlCodec,
+    ownedKeys: DATA_MANAGER_FILTER_KEYS,
+    defaults: {
+      lens: scope,
+      view: null,
+      query: "",
+      filter: null,
+      sort: null,
+      columns: null,
+      selected: null,
+    },
+  });
+  const currentUrl = urlState.state;
   const { role } = usePermissions();
   const user = useAuthStore((state) => state.user);
   const pushToast = useToastStore((state) => state.push);
@@ -320,15 +266,21 @@ export function EntityDataManagerLens({
   const updateView = useUpdateTaskView(projectId);
   const deleteView = useDeleteTaskView(projectId);
   const [selectedKey, setSelectedKey] = useState(
-    initialUrl.lens === scope && initialUrl.view ? initialUrl.view : "builtin:all",
+    currentUrl.lens === scope && currentUrl.view ? currentUrl.view : "builtin:all",
   );
+  const draftOwner = `${projectId}:${user?.id ?? "anonymous"}:${scope}:${selectedKey}`;
+  const mutationOwnerRef = useRef(draftOwner);
+  mutationOwnerRef.current = draftOwner;
+  const { hasInvalidDraft, onDraftValidityChange } = useFilterDraftValidity(draftOwner);
   const [keyword, setKeyword] = useState("");
-  const [debouncedKeyword, setDebouncedKeyword] = useState("");
+  const [keywordFlushKey, setKeywordFlushKey] = useState(0);
+  const debouncedKeyword = useDebouncedValue(keyword, 250, keywordFlushKey);
   const [filter, setFilter] = useState<FilterNode>({});
+  const [appliedFilter, setAppliedFilter] = useState<FilterNode>({});
   const [sort, setSort] = useState<TaskSortItem[]>([]);
   const [columns, setColumns] = useState<string[]>([]);
   const [baseline, setBaseline] = useState("");
-  const [selected, setSelected] = useState(initialUrl.lens === scope ? initialUrl.selected : null);
+  const [selected, setSelected] = useState(currentUrl.lens === scope ? currentUrl.selected : null);
   const [pendingViewKey, setPendingViewKey] = useState<string | null>(null);
   const [pendingScope, setPendingScope] = useState<DataManagerEntityScope | null>(null);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
@@ -339,7 +291,19 @@ export function EntityDataManagerLens({
     () => typeof window !== "undefined" && localStorage.getItem("dm-analytics-open") === "1",
   );
   const hydrationRef = useRef<string | null>(null);
+  const lastWrittenUrlRef = useRef<string | null>(null);
+  const pendingViewKeyRef = useRef<string | null>(null);
+  const mountedRef = useRef(false);
+  const skipUrlSyncRef = useRef(false);
+  const previousUrlRef = useRef(searchParams.toString());
   const tableRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const views = useMemo(() => viewsQ.data?.items ?? [], [viewsQ.data?.items]);
   const selectedView = useMemo(
@@ -360,22 +324,69 @@ export function EntityDataManagerLens({
   );
 
   useEffect(() => {
+    if (lastWrittenUrlRef.current === searchParams.toString()) return;
+    if (pendingViewKeyRef.current === selectedKey) return;
+    const requestedKey =
+      currentUrl.lens === scope && currentUrl.view ? currentUrl.view : "builtin:all";
+    if (requestedKey !== selectedKey) {
+      hydrationRef.current = null;
+      setSelectedKey(requestedKey);
+    }
+  }, [currentUrl.lens, currentUrl.view, scope, searchParams, selectedKey]);
+
+  useEffect(() => {
+    const urlString = searchParams.toString();
+    if (previousUrlRef.current === urlString) return;
+    previousUrlRef.current = urlString;
+    if (lastWrittenUrlRef.current === urlString) return;
+    const nextSelected = currentUrl.lens === scope ? currentUrl.selected : null;
+    if (nextSelected !== selected) setSelected(nextSelected);
+  }, [currentUrl.lens, currentUrl.selected, scope, searchParams, selected]);
+
+  useEffect(() => {
     if (!views.length) return;
     if (!selectedView) {
       const first = views[0];
-      setSelectedKey(first.id ? `saved:${first.id}` : `builtin:${first.key}`);
+      const firstKey = first.id ? `saved:${first.id}` : `builtin:${first.key}`;
+      hydrationRef.current = null;
+      setSelectedKey(firstKey);
+      setSearchParams(
+        updateDataManagerUrl(searchParams, {
+          lens: scope,
+          view: firstKey,
+          query: currentUrl.query,
+          filter: currentUrl.filter,
+          sort: currentUrl.sort,
+          columns: currentUrl.columns,
+          selected: currentUrl.selected,
+        }),
+        { replace: true },
+      );
     }
-  }, [selectedView, views]);
+  }, [currentUrl, searchParams, scope, selectedView, setSearchParams, views]);
 
   useEffect(() => {
     if (!selectedView || !schemaQ.data) return;
-    const hydrationKey = `${scope}:${selectedKey}:${selectedView.updated_at ?? "builtin"}`;
+    const url = currentUrl;
+    const useUrl =
+      url.lens === scope &&
+      (!url.view || url.view === selectedKey) &&
+      hasFilterUrlOverrides(searchParams);
+    if (lastWrittenUrlRef.current === searchParams.toString()) {
+      lastWrittenUrlRef.current = null;
+      if (pendingViewKeyRef.current !== selectedKey) return;
+      pendingViewKeyRef.current = null;
+    }
+    const hydrationKey = `${scope}:${selectedKey}:${selectedView.updated_at ?? "builtin"}:${useUrl ? searchParams.toString() : "view"}`;
     if (hydrationRef.current === hydrationKey) return;
-    const split = splitKeyword(selectedView.filter_json);
-    const url = parseDataManagerUrl(searchParams);
-    const useUrl = url.lens === scope && (!url.view || url.view === selectedKey);
-    const nextFilter = useUrl && url.filter ? url.filter : split.filter;
-    const nextKeyword = useUrl && url.query ? url.query : split.query;
+    const source = (useUrl && url.filter ? url.filter : selectedView.filter_json) as
+      | DataManagerFilterExpression
+      | Record<string, unknown>;
+    const structureIssue = validateFilterStructure(source);
+    const restored = structureIssue ? source : collapseEmptyGroups(source);
+    const split = structureIssue ? { query: "", filter: restored } : splitKeyword(restored);
+    const nextFilter = split.filter;
+    const nextKeyword = useUrl ? url.query : split.query;
     const allowedColumns = new Set(schemaQ.data.columns.map((column) => column.key));
     const restoredColumns = (
       useUrl && url.columns?.length
@@ -392,31 +403,54 @@ export function EntityDataManagerLens({
       schemaQ.data.sort_fields[0]?.value ?? "track.track_id",
     );
     setFilter(nextFilter);
+    setAppliedFilter(nextFilter);
     setKeyword(nextKeyword);
-    setDebouncedKeyword(nextKeyword);
+    setKeywordFlushKey((value) => value + 1);
     setColumns(nextColumns);
     setSort(nextSort);
-    setBaseline(signature(combineFilter(nextKeyword, nextFilter), nextSort, nextColumns));
+    setBaseline(
+      structureIssue
+        ? ""
+        : signature(combineKeyword(nextKeyword, nextFilter), nextSort, nextColumns),
+    );
     hydrationRef.current = hydrationKey;
-  }, [defaultColumns, schemaQ.data, scope, searchParams, selectedKey, selectedView]);
+    skipUrlSyncRef.current = true;
+  }, [currentUrl, defaultColumns, schemaQ.data, scope, searchParams, selectedKey, selectedView]);
 
+  const expressionValid = useMemo(() => isExpressionValid(filter, fields), [fields, filter]);
+  const filterStructureIssue = useMemo(() => validateFilterStructure(filter), [filter]);
+  const filterReady = expressionValid && !hasInvalidDraft;
   useEffect(() => {
-    const timer = window.setTimeout(() => setDebouncedKeyword(keyword), 250);
-    return () => window.clearTimeout(timer);
-  }, [keyword]);
-
+    if (expressionValid) setAppliedFilter(filter);
+  }, [expressionValid, filter]);
+  const queryFilter = useMemo(
+    () => (filterReady ? filter : filterStructureIssue ? {} : appliedFilter),
+    [appliedFilter, filter, filterReady, filterStructureIssue],
+  );
   const filterJson = useMemo(
-    () => combineFilter(debouncedKeyword, filter),
-    [debouncedKeyword, filter],
+    () => combineKeyword(debouncedKeyword, queryFilter),
+    [debouncedKeyword, queryFilter],
   );
   const currentSignature = useMemo(
     () => signature(filterJson, sort, columns),
     [columns, filterJson, sort],
   );
-  const isDirty = Boolean(baseline && baseline !== currentSignature);
+  const isDirty = Boolean(baseline && (!filterReady || baseline !== currentSignature));
+  const selectionFilterSignatureRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!hydrationRef.current) return;
+    if (selectionFilterSignatureRef.current === null) {
+      selectionFilterSignatureRef.current = currentSignature;
+      return;
+    }
+    if (selectionFilterSignatureRef.current !== currentSignature) {
+      selectionFilterSignatureRef.current = currentSignature;
+      setSelected(null);
+    }
+  }, [currentSignature]);
   const queryPayload = useMemo(
     () => ({
-      filter_json: filterJson,
+      filter_json: filterJson as Record<string, unknown>,
       sort_json: sort,
       columns_json: columns,
       limit: PAGE_SIZE,
@@ -426,6 +460,8 @@ export function EntityDataManagerLens({
   const queryReady = Boolean(
     selectedView &&
     schemaQ.data &&
+    hydrationRef.current &&
+    expressionValid &&
     sort.length &&
     sort.every((item) => schemaQ.data?.sort_fields.some((field) => field.value === item.field)) &&
     columns.length,
@@ -465,24 +501,40 @@ export function EntityDataManagerLens({
     }
   }, [fetchNextPage, hasNextPage, isFetchingNextPage, lastVirtualIndex, rows.length]);
   useEffect(() => {
-    tableRef.current?.scrollTo({ top: 0 });
+    const table = tableRef.current;
+    if (table && typeof table.scrollTo === "function") table.scrollTo({ top: 0 });
   }, [filterJson, sort, columns]);
 
   useEffect(() => {
-    if (!hydrationRef.current) return;
+    if (!hydrationRef.current || skipUrlSyncRef.current || !filterReady) {
+      skipUrlSyncRef.current = false;
+      return;
+    }
     const next = updateDataManagerUrl(searchParams, {
       lens: scope,
       view: selectedKey,
       query: keyword,
-      filter,
+      filter: queryFilter as Record<string, unknown>,
       sort,
       columns,
       selected,
     });
     if (next.toString() !== searchParams.toString()) {
+      lastWrittenUrlRef.current = next.toString();
       setSearchParams(next, { replace: true });
     }
-  }, [columns, filter, keyword, scope, searchParams, selected, selectedKey, setSearchParams, sort]);
+  }, [
+    columns,
+    keyword,
+    queryFilter,
+    scope,
+    searchParams,
+    selected,
+    selectedKey,
+    setSearchParams,
+    sort,
+    filterReady,
+  ]);
 
   const canManageProject = role === "super_admin" || user?.id === projectOwnerId;
   const canEditSelected = Boolean(
@@ -492,20 +544,45 @@ export function EntityDataManagerLens({
       : canManageProject),
   );
 
+  const switchView = (key: string) => {
+    const next = updateDataManagerUrl(searchParams, {
+      lens: scope,
+      view: key,
+      query: "",
+      filter: null,
+      sort: null,
+      columns: null,
+      selected: null,
+    });
+    hydrationRef.current = null;
+    skipUrlSyncRef.current = false;
+    pendingViewKeyRef.current = key;
+    lastWrittenUrlRef.current = next.toString();
+    setSelectedKey(key);
+    setSearchParams(next);
+  };
+
   const saveCurrent = async () => {
+    if (!filterReady) {
+      pushToast({ msg: "请先完成筛选条件", kind: "warning" });
+      return;
+    }
+    const ownerAtStart = draftOwner;
     const payload = {
       name: selectedView?.name ?? (scope === "objects" ? "对象视图" : "轨迹视图"),
       visibility: selectedView?.visibility ?? ("private" as const),
-      filter_json: filterJson,
+      filter_json: filterJson as Record<string, unknown>,
       sort_json: sort,
       columns_json: columns,
     };
     if (canEditSelected && selectedView?.id) {
       try {
         await updateView.mutateAsync({ viewId: selectedView.id, payload });
+        if (!mountedRef.current || mutationOwnerRef.current !== ownerAtStart) return;
         setBaseline(currentSignature);
         pushToast({ msg: "视图已保存", kind: "success" });
       } catch {
+        if (!mountedRef.current || mutationOwnerRef.current !== ownerAtStart) return;
         pushToast({ msg: "无法保存视图", kind: "error" });
       }
       return;
@@ -516,21 +593,25 @@ export function EntityDataManagerLens({
   };
 
   const createSavedView = async () => {
-    if (!saveName.trim()) return;
+    if (!saveName.trim() || !filterReady) return;
+    const ownerAtStart = draftOwner;
     try {
       const created = await createView.mutateAsync({
         name: saveName.trim(),
         visibility: saveVisibility,
         entity_scope: scope,
-        filter_json: filterJson,
+        filter_json: filterJson as Record<string, unknown>,
         sort_json: sort,
         columns_json: columns,
       });
+      if (!mountedRef.current || mutationOwnerRef.current !== ownerAtStart) return;
       await viewsQ.refetch();
-      setSelectedKey(`saved:${created.id}`);
+      if (!mountedRef.current || mutationOwnerRef.current !== ownerAtStart) return;
+      switchView(`saved:${created.id}`);
       setSaveDialogOpen(false);
       pushToast({ msg: "视图已创建", kind: "success" });
     } catch {
+      if (!mountedRef.current || mutationOwnerRef.current !== ownerAtStart) return;
       pushToast({ msg: "无法创建视图", sub: "名称可能已存在", kind: "error" });
     }
   };
@@ -539,7 +620,7 @@ export function EntityDataManagerLens({
     if (!selectedView?.id || !canEditSelected) return;
     try {
       await deleteView.mutateAsync(selectedView.id);
-      setSelectedKey("builtin:all");
+      switchView("builtin:all");
       setDeleteDialogOpen(false);
       pushToast({ msg: "视图已删除", kind: "success" });
     } catch {
@@ -548,38 +629,32 @@ export function EntityDataManagerLens({
   };
 
   const gridTemplate = columns.map((column) => `${COLUMN_WIDTHS[column] ?? 150}px`).join(" ");
-  const topRules = topLevelRules(filter);
-  const hasNestedRules = Boolean(
-    Array.isArray(filter.rules) && (filter.rules as FilterNode[]).some((node) => !isRule(node)),
-  );
-
-  const updateRule = (index: number, patch: FilterNode) => {
-    const rules = Array.isArray(filter.rules) ? [...(filter.rules as FilterNode[])] : [filter];
-    rules[index] = { ...rules[index], ...patch };
-    setFilter({ op: "and", rules });
-  };
-  const removeRule = (index: number) => {
-    const rules = Array.isArray(filter.rules) ? [...(filter.rules as FilterNode[])] : [];
-    rules.splice(index, 1);
-    setFilter(rules.length ? { op: "and", rules } : {});
-  };
+  const expressionRuleEntries = isFilterGroup(filter)
+    ? (filter.rules
+        .map((rule, index) => ({ rule, path: [index] }))
+        .filter(({ rule }) => isFilterRule(rule)) as Array<{
+        rule: FilterNode & { field: string; op: TaskFilterOp };
+        path: number[];
+      }>)
+    : isFilterRule(filter)
+      ? [{ rule: filter, path: [] }]
+      : [];
+  const topRuleEntries = expressionRuleEntries;
   // 图表交叉筛选：点柱子 → 切换一条 `field eq value`（已存在则移除，实现 toggle）。
   const toggleFacetRule = (field: string, value: string) => {
     if (!fields.some((item) => item.key === field)) return;
-    const existing = topRules.find(
-      ({ rule }) => rule.field === field && rule.op === "eq" && String(rule.value) === value,
-    );
+    const existing =
+      !isFilterGroup(filter) || filter.op === "and"
+        ? expressionRuleEntries.find(
+            ({ rule }) => rule.field === field && rule.op === "eq" && String(rule.value) === value,
+          )
+        : undefined;
     if (existing) {
-      removeRule(existing.index);
+      setFilter(removeAtPath(filter, existing.path));
       return;
     }
-    const nextRule = { field, op: "eq", value };
-    const rules = Array.isArray(filter.rules)
-      ? [...(filter.rules as FilterNode[]), nextRule]
-      : Object.keys(filter).length
-        ? [filter, nextRule]
-        : [nextRule];
-    setFilter({ op: "and", rules });
+    const nextRule: TaskFilterRule = { field, op: "eq", value };
+    setFilter(isEmptyFilter(filter) ? nextRule : { op: "and", rules: [filter, nextRule] });
   };
   const toggleAnalytics = () => {
     setAnalyticsOpen((value) => {
@@ -588,11 +663,11 @@ export function EntityDataManagerLens({
       return next;
     });
   };
-  const filterChips: DataManagerFilterChip[] = topRules.map(({ index, rule }) => {
+  const filterChips: DataManagerFilterChip[] = topRuleEntries.map(({ rule, path }) => {
     const field = fields.find((item) => item.key === rule.field);
-    const rawValue = displayValue(rule.value);
     return {
-      id: `${index}:${rule.field}`,
+      id: `${path.join(".")}:${rule.field}`,
+      onRemove: () => setFilter(removeAtPath(filter, path)),
       label: field?.label ?? rule.field,
       value: entityRuleSummary(rule, field),
       editor: (
@@ -600,53 +675,38 @@ export function EntityDataManagerLens({
           <select
             className={FIELD_CLASS}
             value={rule.op}
-            onChange={(event) => updateRule(index, { op: event.target.value })}
+            onChange={(event) =>
+              setFilter(
+                updateRuleAtPath(filter, path, (item) => ({
+                  ...item,
+                  op: event.target.value as TaskFilterOp,
+                })),
+              )
+            }
           >
             {(field?.operators ?? [rule.op]).map((op) => (
               <option key={op} value={op}>
-                {OPERATOR_LABELS[op] ?? op}
+                {filterOperatorLabel(op)}
               </option>
             ))}
           </select>
-          {rule.op === "exists" || rule.op === "missing" ? (
-            <input className={FIELD_CLASS} value="无需填写" readOnly disabled />
-          ) : field?.value_type === "boolean" ? (
-            <select
-              className={FIELD_CLASS}
-              value={rawValue || "true"}
-              onChange={(event) => updateRule(index, { value: event.target.value === "true" })}
-            >
-              <option value="true">是</option>
-              <option value="false">否</option>
-            </select>
-          ) : field?.options.length && rule.op === "eq" ? (
-            <select
-              className={FIELD_CLASS}
-              value={rawValue}
-              onChange={(event) => updateRule(index, { value: event.target.value })}
-            >
-              <option value="">请选择</option>
-              {field.options.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <input
-              className={FIELD_CLASS}
-              value={rawValue}
-              onChange={(event) =>
-                updateRule(index, { value: normalizeValue(event.target.value, rule.op, field) })
-              }
-              placeholder={
-                ["in", "between", "contains_any", "contains_all"].includes(rule.op)
-                  ? "多个值用逗号分隔"
-                  : undefined
+          {field ? (
+            <FilterValueEditor
+              field={field}
+              operator={rule.op}
+              appliedValue={rule.value}
+              editorId={`${draftOwner}:chip:${path.join(".") || "root"}`}
+              onDraftValidityChange={onDraftValidityChange}
+              onCommit={(value) =>
+                setFilter(updateRuleAtPath(filter, path, (item) => ({ ...item, value })))
               }
             />
+          ) : (
+            <div role="alert" className="text-xs text-destructive">
+              当前字段不在 schema 中，无法执行条件
+            </div>
           )}
-          <Button variant="ghost" size="sm" onClick={() => removeRule(index)}>
+          <Button variant="ghost" size="sm" onClick={() => setFilter(removeAtPath(filter, path))}>
             <Icon name="trash" size={12} />
             移除条件
           </Button>
@@ -654,6 +714,14 @@ export function EntityDataManagerLens({
       ),
     };
   });
+
+  if (schemaQ.isError) {
+    return (
+      <div role="alert" className="p-6 text-center text-sm text-destructive">
+        无法加载 Data Manager 筛选字段，请刷新重试。
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto h-full min-h-0 max-w-[1800px] overflow-hidden px-4 pt-2 pb-3 text-foreground md:px-6">
@@ -672,6 +740,11 @@ export function EntityDataManagerLens({
               <h1 className="truncate text-lg font-semibold tracking-tight">
                 {projectName} · Data Manager
               </h1>
+              {!!urlState.issues.length && (
+                <div role="alert" className="mt-1 text-xs text-status-caution">
+                  URL 筛选状态无法完整恢复，已使用安全默认值。
+                </div>
+              )}
               <p className="mt-1 text-xs text-muted-foreground">
                 <span className="font-mono">{projectDisplayId}</span>
                 {` / ${facets?.task_total ?? 0} 个可见任务 / ${total} 条${scope === "objects" ? "对象" : "轨迹"}`}
@@ -682,14 +755,20 @@ export function EntityDataManagerLens({
                 <Icon name="activity" size={12} />
                 统计
               </Button>
-              <Button onClick={() => activeQ.refetch()} disabled={activeQ.isFetching}>
+              <Button
+                onClick={() => {
+                  if (!queryReady || !filterReady) return;
+                  activeQ.refetch();
+                }}
+                disabled={!queryReady || !filterReady || activeQ.isFetching}
+              >
                 <Icon name="refresh" size={12} />
                 刷新
               </Button>
               <Button
                 variant="primary"
                 onClick={saveCurrent}
-                disabled={createView.isPending || updateView.isPending}
+                disabled={!filterReady || createView.isPending || updateView.isPending}
               >
                 <Icon name="save" size={12} />
                 保存视图
@@ -725,7 +804,7 @@ export function EntityDataManagerLens({
                       onClick={() => {
                         if (key === selectedKey) return;
                         if (isDirty) setPendingViewKey(key);
-                        else setSelectedKey(key);
+                        else switchView(key);
                       }}
                     >
                       <span className="truncate">{view.name}</span>
@@ -767,7 +846,7 @@ export function EntityDataManagerLens({
                     onValueChange={(key) => {
                       if (key === selectedKey) return;
                       if (isDirty) setPendingViewKey(key);
-                      else setSelectedKey(key);
+                      else switchView(key);
                     }}
                   >
                     <SelectTrigger className="hidden w-44 max-lg:flex">
@@ -801,7 +880,7 @@ export function EntityDataManagerLens({
                     />
                   </div>
                   <Select
-                    value={sort[0]?.field}
+                    value={sort[0]?.field ?? ""}
                     onValueChange={(field) =>
                       setSort([{ field, direction: sort[0]?.direction ?? "asc" }])
                     }
@@ -861,29 +940,36 @@ export function EntityDataManagerLens({
                     </PopoverContent>
                   </Popover>
                 </div>
-                {hasNestedRules && (
-                  <div className="text-xs text-muted-foreground">
-                    当前视图包含高级组合条件。系统会原样保留，未在这里静默改写。
-                  </div>
-                )}
                 <DataManagerFilterBar
                   fields={fields}
                   chips={filterChips}
+                  hasConditions={!isEmptyFilter(filter)}
                   onAdd={(field) => {
                     const nextRule = {
                       field: field.key,
                       op: field.operators[0] ?? "eq",
-                      value: "",
                     };
-                    const rules = Array.isArray(filter.rules)
-                      ? [...(filter.rules as FilterNode[]), nextRule]
-                      : Object.keys(filter).length
-                        ? [filter, nextRule]
-                        : [nextRule];
-                    setFilter({ op: "and", rules });
+                    setFilter(
+                      isEmptyFilter(filter) ? nextRule : { op: "and", rules: [filter, nextRule] },
+                    );
                   }}
                   onClear={() => setFilter({})}
                 />
+                {isFilterGroup(filter) &&
+                  (!expressionValid || filter.op === "or" || hasNestedGroups(filter)) && (
+                    <DataManagerExpressionEditor
+                      expression={filter}
+                      fields={fields}
+                      onChange={setFilter}
+                      editorId={`${draftOwner}:group`}
+                      onValidityChange={onDraftValidityChange}
+                    />
+                  )}
+                {!filterReady && (
+                  <div role="alert" className="text-xs text-destructive">
+                    当前筛选包含未完成或 schema 中不存在的条件，完成编辑后才会查询。
+                  </div>
+                )}
               </section>
 
               <div
@@ -1068,7 +1154,7 @@ export function EntityDataManagerLens({
             <Button
               variant="primary"
               onClick={createSavedView}
-              disabled={!saveName.trim() || createView.isPending}
+              disabled={!saveName.trim() || !filterReady || createView.isPending}
             >
               保存
             </Button>
@@ -1096,7 +1182,7 @@ export function EntityDataManagerLens({
             <AlertDialogCancel>继续编辑</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
-                if (pendingViewKey) setSelectedKey(pendingViewKey);
+                if (pendingViewKey) switchView(pendingViewKey);
                 if (pendingScope) onScopeChange(pendingScope);
                 setPendingViewKey(null);
                 setPendingScope(null);

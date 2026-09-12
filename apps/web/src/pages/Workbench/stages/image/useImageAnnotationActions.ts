@@ -348,6 +348,10 @@ export function useImageAnnotationActions({
     setDismissedShapeKeys(new Set());
   }, [taskId]);
 
+  useEffect(() => {
+    setPredictionSourceVisibility(defaultPredictionSourceVisibility());
+  }, [meUserId, projectId, taskId]);
+
   const setMaskPendingDrawing = s.setPendingDrawing;
   useEffect(
     () => () => {
@@ -454,12 +458,14 @@ export function useImageAnnotationActions({
       visibility: predictionSourceVisibility,
       counts: predictionSourceCounts,
       totalCount: reviewableAiBoxes.length,
+      visibleCount: aiBoxes.length,
       onToggle: handleTogglePredictionSource,
     }),
     [
       handleTogglePredictionSource,
       predictionSourceCounts,
       predictionSourceVisibility,
+      aiBoxes.length,
       reviewableAiBoxes.length,
     ],
   );
@@ -478,6 +484,10 @@ export function useImageAnnotationActions({
     }
     return out;
   }, [userBoxes, aiBoxes, userIoUIndex, iouDedupThreshold]);
+  const batchEligibleAiBoxes = useMemo(
+    () => aiBoxes.filter((box) => !dimmedAiIds.has(box.id)),
+    [aiBoxes, dimmedAiIds],
+  );
 
   const batchChangeTarget = useMemo(() => {
     const base = getBatchChangeTarget(s.selectedIds, userBoxes);
@@ -1012,7 +1022,9 @@ export function useImageAnnotationActions({
   }, []);
   const predictionDecisions = usePredictionDecisions({
     taskId,
+    projectId,
     videoSegmentId,
+    meUserId,
     s,
     aiBoxes,
     acceptedShapeKeys,
@@ -1549,14 +1561,14 @@ export function useImageAnnotationActions({
   }, [maskEditor, s]);
 
   const handleAcceptAll = useCallback(async () => {
-    if (aiBoxes.length === 0) return;
-    // 跳过被同类人工框覆盖 (IoU 高于去重阈值) 而淡化的 AI 框，避免采纳出重复标注。
-    const target = aiBoxes.filter((box) => !dimmedAiIds.has(box.id));
-    const skipped = aiBoxes.length - target.length;
-    if (target.length === 0) {
-      pushToast({ msg: "无可采纳的 AI 框", sub: `${skipped} 个与人工框重复已跳过` });
+    if (batchEligibleAiBoxes.length === 0) {
+      if (aiBoxes.length > 0)
+        pushToast({ msg: "无可采纳的 AI 框", sub: `${aiBoxes.length} 个与人工框重复已跳过` });
       return;
     }
+    // 跳过被同类人工框覆盖 (IoU 高于去重阈值) 而淡化的 AI 框，避免采纳出重复标注。
+    const target = batchEligibleAiBoxes;
+    const skipped = aiBoxes.length - target.length;
     const results = await predictionDecisions.acceptAll(target);
     if (!results) return;
     const succeeded = results.filter((result) => result.status === "success").length;
@@ -1568,11 +1580,11 @@ export function useImageAnnotationActions({
       skipped ? `${skipped} 个重复已跳过` : null,
     ].filter(Boolean);
     pushToast({
-      msg: `采纳 ${succeeded}/${target.length} 个 AI 框`,
+      msg: `采纳 ${succeeded}/${target.length} 个已加载候选`,
       sub: parts.length ? parts.join("，") : undefined,
       kind: failed ? "error" : "success",
     });
-  }, [aiBoxes, dimmedAiIds, predictionDecisions, pushToast]);
+  }, [aiBoxes, batchEligibleAiBoxes, predictionDecisions, pushToast]);
 
   const handleCommitDrawing = useCallback(
     (geo: Geom) => {
@@ -1727,6 +1739,8 @@ export function useImageAnnotationActions({
   return {
     ...annotationActions,
     aiBoxes,
+    batchEligibleAiBoxes,
+    batchEligibleCount: batchEligibleAiBoxes.length,
     predictionSourceFilter,
     aiTakeoverRate,
     dimmedAiIds,

@@ -151,6 +151,7 @@ describe("通知直达当前目标", () => {
   it("一次点击按服务端当前任务项目导航，包含具体任务、批次与返回入口", async () => {
     renderUI();
     fireEvent.click(screen.getByTitle("通知"));
+    expect(await screen.findByText("仅显示已加载通知")).toBeInTheDocument();
     expect(await screen.findByText('"请修正边框"')).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "打开通知：退回了任务 T-1" }));
     await waitFor(() =>

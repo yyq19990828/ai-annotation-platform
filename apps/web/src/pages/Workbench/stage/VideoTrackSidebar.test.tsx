@@ -1,4 +1,4 @@
-import { act, fireEvent, render } from "@testing-library/react";
+import { act, fireEvent, render, within } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { AnnotationResponse, VideoTrackGeometry, VideoTrackOutsideRange } from "@/types";
@@ -275,6 +275,21 @@ describe("VideoTrackSidebar admitted video selection", () => {
     expect(onSelectVideoObject).toHaveBeenCalledWith("mask", { shift: true });
     expect(view.onSelect).not.toHaveBeenCalled();
     expect(view.onSeekFrame).not.toHaveBeenCalled();
+  });
+
+  it("keeps a locally hidden track row available for restoration", () => {
+    const onToggleHiddenTrack = vi.fn();
+    const annotation = track("hidden", "Hidden", [0, 4]);
+    const view = setup({
+      annotations: [annotation],
+      selectedId: null,
+      hiddenTrackIds: new Set([annotation.geometry.track_id]),
+      onToggleHiddenTrack,
+    });
+    const row = view.getByText("Hidden").closest<HTMLElement>('[data-testid="video-track-row"]');
+    expect(row).not.toBeNull();
+    fireEvent.click(within(row!).getByRole("button", { name: "显示轨迹" }));
+    expect(onToggleHiddenTrack).toHaveBeenCalledWith(annotation.geometry.track_id);
   });
 
   it("retains legacy seek-before-select, immediate toggle, and unmarked controls", () => {

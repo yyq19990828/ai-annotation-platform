@@ -42,6 +42,12 @@ describe("datasetsApi · endpoint 契约", () => {
     expect(get).toHaveBeenCalledWith("/datasets");
   });
 
+  it("list forwards AbortSignal without changing the query path", () => {
+    const signal = new AbortController().signal;
+    datasetsApi.list({ search: "car" }, { signal });
+    expect(get).toHaveBeenCalledWith("/datasets?search=car", { signal });
+  });
+
   it("get / create / update", () => {
     datasetsApi.get("d1");
     expect(get).toHaveBeenCalledWith("/datasets/d1");

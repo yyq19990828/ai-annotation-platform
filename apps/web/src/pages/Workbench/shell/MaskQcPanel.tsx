@@ -1,3 +1,4 @@
+import { FilterGroup, FilterSelect, FilterToggle } from "@/components/filters/FilterControls";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -192,11 +193,7 @@ export function MaskQcPanel({
               anchorBbox[3] === bbox.y1
           : bbox == null && anchorBbox == null;
       }) ?? [];
-  const counts = summary.data?.counts ?? {};
-  const total = (["open", "resolved", "wont_fix", "stale"] as const).reduce(
-    (sum, key) => sum + (counts[key] ?? 0),
-    0,
-  );
+  const issueScopeLabel = scope === "task" ? "当前任务" : "整个项目";
   const busy = phase !== "idle" && phase !== "ready" && phase !== "error";
   const stale = activeIssue?.effective_status === "stale";
   const iou =
@@ -269,6 +266,15 @@ export function MaskQcPanel({
         : next;
     });
   }, [issues]);
+
+  useEffect(() => {
+    if (selectedRepairIssueIds.size === 0) setRepairOpen(false);
+  }, [selectedRepairIssueIds.size]);
+
+  useEffect(() => {
+    setSelectedRepairIssueIds(new Set());
+    setRepairOpen(false);
+  }, [projectId, taskId, scope]);
 
   const finishRepair = useCallback(() => {
     setSelectedRepairIssueIds(new Set());
@@ -356,7 +362,8 @@ export function MaskQcPanel({
             "正在读取质检状态…"
           ) : (
             <>
-              <span className="font-semibold text-foreground">{total}</span> 个问题 ·{" "}
+              <span className="font-semibold text-foreground">{issueScopeLabel}</span> · 已加载{" "}
+              <span className="font-semibold text-foreground">{issues.length}</span> 个问题 ·{" "}
               {summary.data?.status ?? "未知"}
             </>
           )}
@@ -385,37 +392,33 @@ export function MaskQcPanel({
         </div>
       )}
 
-      <div className="flex gap-1" aria-label="问题范围">
+      <FilterGroup label="范围" compact className="gap-1" aria-label="问题范围">
         {(["task", "project"] as const).map((value) => (
-          <button
+          <FilterToggle
+            compact
+            active={scope === value}
             key={value}
             type="button"
             onClick={() => setScope(value)}
-            className={cx(
-              "cursor-pointer rounded-[10px] border border-border bg-transparent px-2 py-0.5 text-2xs text-muted-foreground",
-              scope === value && "border-brand text-foreground",
-            )}
           >
             {value === "task" ? "当前任务" : "整个项目"}
-          </button>
+          </FilterToggle>
         ))}
         {scope === "project" && (
           <span className="ml-auto self-center text-2xs text-muted-foreground">
             已加载 {issues.length} 条
           </span>
         )}
-      </div>
+      </FilterGroup>
 
-      <div className="flex flex-wrap gap-1">
+      <FilterGroup label="状态" compact className="gap-1">
         {(["all", "open", "resolved", "wont_fix", "stale"] as const).map((value) => (
-          <button
+          <FilterToggle
+            compact
+            active={status === value}
             key={value}
             type="button"
             onClick={() => setStatus(value)}
-            className={cx(
-              "cursor-pointer rounded-[10px] border border-border bg-transparent px-2 py-0.5 text-2xs text-muted-foreground",
-              status === value && "border-brand text-foreground",
-            )}
           >
             {value === "all"
               ? "全部"
@@ -426,27 +429,27 @@ export function MaskQcPanel({
                   : value === "wont_fix"
                     ? "搁置"
                     : "已过期"}
-          </button>
+          </FilterToggle>
         ))}
-      </div>
+      </FilterGroup>
 
       <div className="grid grid-cols-2 gap-1">
-        <select
+        <FilterSelect
+          compact
           aria-label="严重级别"
           value={severity}
           onChange={(event) => setSeverity(event.target.value as MaskQcSeverity | "all")}
-          className="rounded border border-border bg-background px-2 py-1 text-xs text-foreground"
         >
           <option value="all">全部严重级别</option>
           <option value="blocker">阻断</option>
           <option value="warning">警告</option>
           <option value="info">提示</option>
-        </select>
-        <select
+        </FilterSelect>
+        <FilterSelect
+          compact
           aria-label="问题规则"
           value={code}
           onChange={(event) => setCode(event.target.value)}
-          className="rounded border border-border bg-background px-2 py-1 text-xs text-foreground"
         >
           <option value="all">全部规则</option>
           {Object.entries(RULE_LABELS).map(([value, label]) => (
@@ -454,7 +457,7 @@ export function MaskQcPanel({
               {label}
             </option>
           ))}
-        </select>
+        </FilterSelect>
       </div>
 
       {query.isLoading && <div className="py-2 text-xs text-muted-foreground">加载问题列表…</div>}
@@ -852,6 +855,7 @@ export function MaskQcPanel({
         open={repairOpen}
         projectId={projectId}
         actions={repairActions}
+        ownerKey={`${projectId}\u001f${taskId}\u001f${scope}`}
         onOpenChange={setRepairOpen}
         onFinished={finishRepair}
       />

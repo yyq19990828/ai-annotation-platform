@@ -3349,6 +3349,7 @@ export function useWorkbenchShellModel({
   };
   const {
     aiBoxes,
+    batchEligibleCount,
     predictionSourceFilter,
     aiTakeoverRate,
     dimmedAiIds,
@@ -7407,6 +7408,7 @@ export function useWorkbenchShellModel({
       : isVideoTask
         ? aiBoxes.filter((b) => aiBoxOnFrame(b, s.videoFrameIndex)).length
         : aiBoxes.length;
+  const aiPopoverBatchEligibleCount = modeState.diffMode === "final" ? 0 : batchEligibleCount;
 
   const selectedMaskJoinCandidates = [
     ...new Set([...(s.selectedId ? [s.selectedId] : []), ...s.selectedIds]),
@@ -8263,6 +8265,7 @@ export function useWorkbenchShellModel({
       widthMin: sidebarMinPx,
       widthMax: sidebarMaxPx,
       widthResetTo: sidebarResetPx,
+      taskId: taskId ?? null,
       capabilityWarnings,
       onFillAttribute: handleFillAttribute,
       aiBoxes: modeState.diffMode !== "final" ? aiBoxes : [],
@@ -8375,6 +8378,7 @@ export function useWorkbenchShellModel({
       pipelineMissingBackendCount: pipelineMissingBackends.length,
       onRunPipeline: handleRunAiPipeline,
       onAcceptAll: handleAcceptAll,
+      batchEligibleCount: aiPopoverBatchEligibleCount,
       onSetConfThreshold: s.setConfThreshold,
       taskAiCost: taskAiMeta.totalCost,
       taskAiAvgMs: taskAiMeta.avgMs,

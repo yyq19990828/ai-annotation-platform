@@ -118,7 +118,8 @@ export function readProvenance() {
     entries.set(key, {
       kind: entry.auto ? "static-auto" : "static-manual",
       captured_commit: entry.source_commit ?? screenshot.metadata.source_commit ?? null,
-      source_worktree_dirty: screenshot.metadata.source_worktree_dirty ?? false,
+      source_worktree_dirty:
+        entry.source_worktree_dirty ?? screenshot.metadata.source_worktree_dirty ?? false,
       seed_revision: entry.seed_revision ?? screenshot.metadata.seed_revision ?? null,
       source: entry.source ?? null,
       watch_paths: [entry.source].filter(Boolean),
