@@ -921,7 +921,7 @@ async def _seed_paging(
     )
     base = _now()
     rows = []
-    for index in range(51):
+    for index in range(101):
         row = _bbox_annotation(
             task_id=task.id,
             project_id=project.id,
@@ -929,12 +929,12 @@ async def _seed_paging(
             class_name="car",
             attributes={"ordinal": index},
         )
-        row.created_at = base + timedelta(microseconds=51 - index)
-        row.updated_at = base + timedelta(microseconds=51 - index)
+        row.created_at = base + timedelta(microseconds=101 - index)
+        row.updated_at = base + timedelta(microseconds=101 - index)
         rows.append(row)
     db.add_all(rows)
     await db.flush()
-    task.total_annotations = 51
+    task.total_annotations = 101
     task.is_labeled = True
     batch.total_tasks = 1
     await db.flush()
@@ -943,8 +943,8 @@ async def _seed_paging(
         project_id=str(project.id),
         task_id=str(task.id),
         object_ids=ids,
-        expected_page_one_object_ids=ids[:50],
-        expected_page_two_object_ids=ids[50:],
+        expected_page_one_object_ids=ids[:100],
+        expected_page_two_object_ids=ids[100:],
     )
 
 
@@ -1111,7 +1111,7 @@ async def _seed_lidar(
             )
         )
     await db.flush()
-    track_refs = [f"filter-track-{index + 1:03d}" for index in range(51)]
+    track_refs = [f"filter-track-{index + 1:03d}" for index in range(101)]
     for track_ref in track_refs:
         track = await ensure_scene_track(
             db,

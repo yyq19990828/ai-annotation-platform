@@ -130,12 +130,12 @@ async def test_filtering_seed_real_queries_match_literal_memberships(httpx_clien
             "filter_json": {},
             "sort_json": [{"field": "annotation.updated_at", "direction": "desc"}],
             "columns_json": [],
-            "limit": 50,
+            "limit": 100,
         },
     )
     assert page_one.status_code == 200, page_one.text
     page_one_body = page_one.json()
-    assert page_one_body["total"] == 51
+    assert page_one_body["total"] == 101
     assert [item["annotation_id"] for item in page_one_body["items"]] == paging[
         "expected_page_one_object_ids"
     ]
@@ -146,7 +146,7 @@ async def test_filtering_seed_real_queries_match_literal_memberships(httpx_clien
             "filter_json": {},
             "sort_json": [{"field": "annotation.updated_at", "direction": "desc"}],
             "columns_json": [],
-            "limit": 50,
+            "limit": 100,
             "cursor": page_one_body["next_cursor"],
         },
     )
@@ -163,7 +163,7 @@ async def test_filtering_seed_real_queries_match_literal_memberships(httpx_clien
     )
     assert tracks.status_code == 200, tracks.text
     track_body = tracks.json()
-    assert track_body["total"] == 51
+    assert track_body["total"] == 101
     assert {item["track_id"] for item in track_body["items"]} == set(
         lidar["expected_visible_track_refs"]
     )
@@ -261,9 +261,9 @@ async def test_filtering_seed_manifest_matches_constructed_memberships(
     assert video["expected"]["ai_review_and_task_ids"] == [video["task_ids"]["both"]]
 
     paging_project_id = UUID(paging["project_id"])
-    assert len(paging["object_ids"]) == 51
-    assert paging["expected_page_one_object_ids"] == paging["object_ids"][:50]
-    assert paging["expected_page_two_object_ids"] == paging["object_ids"][50:]
+    assert len(paging["object_ids"]) == 101
+    assert paging["expected_page_one_object_ids"] == paging["object_ids"][:100]
+    assert paging["expected_page_two_object_ids"] == paging["object_ids"][100:]
     assert (
         await db_session.scalar(
             select(func.count())
@@ -274,12 +274,12 @@ async def test_filtering_seed_manifest_matches_constructed_memberships(
                 Annotation.was_cancelled.is_(False),
             )
         )
-        == 51
+        == 101
     )
 
     lidar_project_id = UUID(lidar["project_id"])
-    assert len(lidar["track_refs"]) == 51
-    assert len(set(lidar["track_refs"])) == 51
+    assert len(lidar["track_refs"]) == 101
+    assert len(set(lidar["track_refs"])) == 101
     assert lidar["hidden_track_ref"] not in lidar["expected_visible_track_refs"]
     assert set(lidar["saved_view_ids"]) == {"track_filter"}
     assert (
@@ -288,7 +288,7 @@ async def test_filtering_seed_manifest_matches_constructed_memberships(
             .select_from(SceneTrack)
             .where(SceneTrack.project_id == lidar_project_id)
         )
-        == 52
+        == 102
     )
     assert (
         await db_session.scalar(
@@ -296,7 +296,7 @@ async def test_filtering_seed_manifest_matches_constructed_memberships(
             .select_from(Annotation)
             .where(Annotation.project_id == lidar_project_id)
         )
-        == 103
+        == 203
     )
     lidar_scene = await db_session.get(Scene, UUID(lidar["scene_id"]))
     assert lidar_scene is not None
