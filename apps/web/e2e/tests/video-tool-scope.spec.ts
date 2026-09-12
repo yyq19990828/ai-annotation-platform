@@ -1,4 +1,4 @@
-import { panelCommand } from "../fixtures/workbench-panel-actions";
+import { canvasBottomDivider, panelCommand } from "../fixtures/workbench-panel-actions";
 import type { APIRequestContext, APIResponse, Dialog, Locator, Page } from "@playwright/test";
 import { writeFile } from "node:fs/promises";
 
@@ -231,6 +231,7 @@ async function chooseTool(page: Page, id: string) {
   else {
     await page.getByTestId("tool-dock-more").click();
     await page.getByTestId(`tool-overflow-item-${id}`).click();
+    await expect(page.getByTestId("tool-dock-menu")).toBeHidden();
   }
   await expect(button).toHaveAttribute("aria-pressed", "true");
   await expect(button).toBeInViewport();
@@ -398,6 +399,7 @@ async function accessibleTools(page: Page) {
         )),
     );
     await page.keyboard.press("Escape");
+    await expect(menu).toBeHidden();
     await expect(page.getByTestId("tool-dock-more")).toBeFocused();
   }
   expect(new Set(ids).size).toBe(ids.length);
@@ -406,20 +408,14 @@ async function accessibleTools(page: Page) {
 
 async function shortenCanvas(page: Page) {
   await panelCommand(page, "讨论", "停靠到底部");
-  const canvas = (await page.locator('[data-workbench-panel="canvas"]').boundingBox())!;
-  const sashes = await page
-    .locator(".dv-sash:not(.dv-disabled)")
-    .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().toJSON()));
-  const sash = sashes.find(
-    (rect) =>
-      rect.width > 40 && rect.height <= 5 && Math.abs(rect.y - (canvas.y + canvas.height)) < 6,
-  );
-  if (!sash) throw new Error("Canvas/discussion divider not found");
-  const x = canvas.x + canvas.width / 2;
-  await page.mouse.move(x, sash.y + sash.height / 2);
+  const divider = await canvasBottomDivider(page);
+  await page.mouse.move(divider.x, divider.y);
   await page.mouse.down();
-  await page.mouse.move(x, canvas.y + 210, { steps: 10 });
+  await page.mouse.move(divider.x, divider.top + 210, { steps: 10 });
   await page.mouse.up();
+  await expect
+    .poll(async () => (await page.locator('[data-workbench-panel="canvas"]').boundingBox())!.height)
+    .toBeLessThan(divider.height);
 }
 
 test.describe("视频工具作用范围：真实输入与持久化", () => {
@@ -1222,6 +1218,7 @@ test.describe("视频工具作用范围：真实输入与持久化", () => {
           await page.keyboard.press("Home");
           await page.keyboard.press("b");
           await page.keyboard.press("Escape");
+          await expect(page.getByTestId("tool-dock-menu")).toBeHidden();
           await expect(more).toBeFocused();
           await expectScope(page, scope);
           await expect(page.getByTestId(`video-tool-btn-${id}`)).toHaveAttribute(

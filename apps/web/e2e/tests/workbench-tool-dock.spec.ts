@@ -1,4 +1,4 @@
-import { panelCommand } from "../fixtures/workbench-panel-actions";
+import { canvasBottomDivider, panelCommand } from "../fixtures/workbench-panel-actions";
 import type { APIRequestContext, Page } from "@playwright/test";
 import { expect, test, type SeedAPI } from "../fixtures/seed";
 import { launchNativeBrowserZoom } from "../fixtures/native-browser-zoom";
@@ -261,23 +261,11 @@ for (const video of [false, true]) {
           (nodes) => nodes.filter((node) => node.scrollLeft !== 0 || node.scrollTop !== 0).length,
         ),
     ).toBe(0);
-    const canvasPanel = page.locator('[data-workbench-panel="canvas"]');
-    const canvasBounds = (await canvasPanel.boundingBox())!;
-    const sashes = await page
-      .locator(".dv-sash:not(.dv-disabled)")
-      .evaluateAll((nodes) => nodes.map((node) => node.getBoundingClientRect().toJSON()));
-    const sash = sashes.find(
-      (rect) =>
-        rect.width > 40 &&
-        rect.height <= 5 &&
-        Math.abs(rect.y - (canvasBounds.y + canvasBounds.height)) < 6,
-    );
-    if (!sash) throw new Error("Canvas/discussion divider not found");
+    const divider = await canvasBottomDivider(page);
     const beforeDrag = (await dock.boundingBox())!.height;
-    const sashX = canvasBounds.x + canvasBounds.width / 2;
-    await page.mouse.move(sashX, sash.y + sash.height / 2);
+    await page.mouse.move(divider.x, divider.y);
     await page.mouse.down();
-    await page.mouse.move(sashX, sash.y - (video ? 150 : 65), { steps: 8 });
+    await page.mouse.move(divider.x, divider.y - (video ? 150 : 65), { steps: 8 });
     await page.mouse.up();
     // Native docking splits the canvas in half; its minimum height can leave
     // less than 40px to shrink. Verify resizing and the resulting overflow below.
