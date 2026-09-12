@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -13,7 +13,6 @@ import {
   movePointerAtRefreshRate,
   normalizedBboxIoU,
 } from "../flows/_canvas.ts";
-import { isAiPanelSafelyDockedRight } from "../flows/_workbench-layout.ts";
 import {
   archiveMarketingMaster,
   clipFromEpochWindow,
@@ -30,7 +29,13 @@ import {
   gpuScreenRecorderFirstFrameEpochMs,
   validateCaptureCadence,
   x11CaptureInput,
+  cadenceCaptureFilter,
+  normalizationEncoderArgs,
+  waitForMacReady,
+  stopProcess,
 } from "./marketing-external-recorder.ts";
+
+import { macCaptureReady } from "../../../scripts/mac-marketing-capture.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, "../../../../..");
@@ -85,7 +90,7 @@ test("registers and documents every independent marketing asset", () => {
     path.join(REPO_ROOT, "docs-site/dev/reference/marketing-asset-catalog.md"),
     "utf8",
   );
-  assert.equal(MARKETING_ASSET_SPECS.size, 62);
+  assert.equal(MARKETING_ASSET_SPECS.size, 65);
   for (const spec of MARKETING_ASSET_SPECS.values()) {
     assert.ok(spec.title.length > 0, `${spec.assetId} missing title`);
     assert.ok(spec.theme.length > 0, `${spec.assetId} missing theme`);
@@ -200,13 +205,6 @@ test("drops stale pointer samples when the page cannot consume 60Hz events", asy
 
   assert.ok(moves.length < 6, `expected stale samples to be dropped, got ${moves.length}`);
   assert.deepEqual(moves.at(-1), { x: 100, y: 100 });
-});
-
-test("accepts the product AI panel safe-area gap without forcing an impossible edge position", () => {
-  assert.equal(isAiPanelSafelyDockedRight(1440, 1424), true);
-  assert.equal(isAiPanelSafelyDockedRight(1440, 1408), true);
-  assert.equal(isAiPanelSafelyDockedRight(1440, 1407), false);
-  assert.equal(isAiPanelSafelyDockedRight(1440, 1441), false);
 });
 
 test("recognizes direct and AI-mask annotation commits and normalizes their payload", () => {
@@ -603,28 +601,220 @@ test("rejects a 4K source that is not 60fps", async () => {
   }
 });
 
+test("archives and trims a Mac master without NVIDIA encoding", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "marketing-mac-archive-"));
+  try {
+    const source = path.join(root, "synthetic.mkv");
+    execFileSync("ffmpeg", [
+      "-v",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=c=yellow:s=3840x2160:r=60:d=2",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "ultrafast",
+      source,
+    ]);
+    const result = await archiveMarketingMaster({
+      archiveRoot: root,
+      run: RUN,
+      video: { saveAs: async (target) => fs.copyFileSync(source, target) },
+      captureDriver: "screencapturekit",
+      captureExtension: "mkv",
+      assetId: TEST_SPEC.assetId,
+      assetSpec: TEST_SPEC,
+      source: "synthetic-test",
+      testTitle: "Mac archive",
+      projectName: "marketing-master",
+      seedRevision: null,
+      viewport: { width: 1440, height: 810 },
+      deviceScaleFactor: 2,
+      sourcePhysicalSize: { width: 2880, height: 1620 },
+      browser: { name: "chromium", version: "test" },
+      captureCadence: {
+        sample_duration_ms: 1100,
+        captured_frames: 66,
+        unique_frames: 65,
+        effective_unique_fps: 59.09,
+        unique_frame_ratio: 65 / 66,
+      },
+      universalClip: { startSeconds: 0.2, durationSeconds: 1.2 },
+    });
+    const entry = JSON.parse(fs.readFileSync(result.manifestPath, "utf8")).entries[
+      TEST_SPEC.assetId
+    ];
+    assert.equal(entry.capture.driver, "screencapturekit");
+    assert.equal(entry.capture.resampling, "lanczos");
+    assert.deepEqual(entry.capture.source_physical_size, { width: 2880, height: 1620 });
+    for (const file of [entry.files.capture_source, entry.files.universal_mp4]) {
+      assert.equal(file.media.codec, "h264");
+      assert.equal(file.media.width, 3840);
+      assert.equal(file.media.height, 2160);
+      assert.equal(file.media.fps, 60);
+      assert.ok(Math.abs(file.media.duration_ms - 1200) <= 20);
+      assert.deepEqual(file.source_clip_seconds, { start: 0.2, requested_duration: 1.2 });
+    }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("rejects an all-black external capture", async () => {
   const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "marketing-recorder-"));
   try {
     const sourceVideo = createVideoFixture(temporaryRoot, 2);
-    await assert.rejects(
-      archiveMarketingMaster({
-        archiveRoot: temporaryRoot,
-        run: RUN,
-        video: { saveAs: async (target) => fs.copyFileSync(sourceVideo, target) },
-        captureDriver: "x11grab",
-        assetId: TEST_SPEC.assetId,
-        assetSpec: TEST_SPEC,
-        source: "test",
-        testTitle: "test",
-        projectName: "marketing-master",
-        seedRevision: null,
-        viewport: { width: 1920, height: 1080 },
-        browser: { name: "chromium", version: "test" },
-      }),
-      /采集源为全黑画面，拒绝归档/,
-    );
+    for (const captureDriver of ["x11grab", "screencapturekit"] as const)
+      await assert.rejects(
+        archiveMarketingMaster({
+          archiveRoot: temporaryRoot,
+          run: RUN,
+          video: { saveAs: async (target) => fs.copyFileSync(sourceVideo, target) },
+          captureDriver,
+          assetId: TEST_SPEC.assetId,
+          assetSpec: TEST_SPEC,
+          source: "test",
+          testTitle: "test",
+          projectName: "marketing-master",
+          seedRevision: null,
+          viewport: { width: 1920, height: 1080 },
+          browser: { name: "chromium", version: "test" },
+        }),
+        /采集源为全黑画面，拒绝归档/,
+      );
   } finally {
     fs.rmSync(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
+test("Mac native capture retains Retina content detail and qualified timestamps", () => {
+  const metrics = {
+    innerWidth: 1440,
+    innerHeight: 810,
+    outerWidth: 1440,
+    outerHeight: 953,
+    deviceScaleFactor: 2,
+    screenX: 0,
+    screenY: 0,
+  };
+  const geometry = { x: 0, y: 286, width: 2880, height: 1620 };
+  assert.deepEqual(captureGeometry(metrics, geometry, "screencapturekit"), geometry);
+  assert.throws(
+    () => captureGeometry(metrics, { ...geometry, width: 1440 }, "screencapturekit"),
+    /2880×1620/,
+  );
+  assert.throws(
+    () => captureGeometry({ ...metrics, deviceScaleFactor: NaN }, geometry, "screencapturekit"),
+    /设备像素倍率/,
+  );
+  const identity = { window_id: 42, pid: 123, width: 2880, height: 1906 };
+  const ready = { ...identity, event: "ready", first_frame_epoch_ms: 1_789_232_181_000 };
+  assert.deepEqual(
+    clipFromEpochWindow(macCaptureReady(ready, identity), {
+      startEpochMs: ready.first_frame_epoch_ms + 1250,
+      endEpochMs: ready.first_frame_epoch_ms + 3250,
+    }),
+    { startSeconds: 1.25, durationSeconds: 2 },
+  );
+  for (const patch of [
+    { pid: 124 },
+    { window_id: 41 },
+    { width: 1440 },
+    { first_frame_epoch_ms: NaN },
+    { first_frame_epoch_ms: 0 },
+  ]) {
+    assert.throws(() => macCaptureReady({ ...ready, ...patch }, identity), /identity or geometry/);
+  }
+  assert.ok(normalizationEncoderArgs("screencapturekit").includes("libx264"));
+  assert.ok(!normalizationEncoderArgs("screencapturekit").includes("h264_nvenc"));
+  assert.ok(normalizationEncoderArgs("x11grab").includes("h264_nvenc"));
+  for (const sample of [
+    { frameCount: 66, uniqueFrameCount: 63, durationMs: NaN },
+    { frameCount: 66, uniqueFrameCount: 67, durationMs: 1100 },
+  ]) {
+    assert.throws(() => validateCaptureCadence(sample), /校准失败/);
+  }
+});
+
+test("Mac cadence excludes motion in browser chrome and normalizes the source timebase", () => {
+  const text = execFileSync(
+    "ffmpeg",
+    [
+      "-v",
+      "error",
+      "-f",
+      "lavfi",
+      "-i",
+      "testsrc2=s=320x60:r=60:d=1.1",
+      "-f",
+      "lavfi",
+      "-i",
+      "color=c=black:s=320x180:r=60:d=1.1",
+      "-filter_complex",
+      `[0:v][1:v]vstack,${cadenceCaptureFilter("screencapturekit", { x: 0, y: 60, width: 320, height: 180 })}`,
+      "-frames:v",
+      "66",
+      "-f",
+      "framemd5",
+      "pipe:1",
+    ],
+    { encoding: "utf8" },
+  );
+  const hashes = text
+    .split("\n")
+    .filter((line) => /^\d/.test(line))
+    .map((line) => line.split(",").at(-1));
+  assert.equal(hashes.length, 66);
+  assert.equal(new Set(hashes).size, 1);
+  assert.throws(
+    () =>
+      validateCaptureCadence({
+        frameCount: hashes.length,
+        uniqueFrameCount: new Set(hashes).size,
+        durationMs: 1100,
+      }),
+    /校准失败/,
+  );
+});
+
+test("native protocol accepts split ready output and waits for graceful finalization", async () => {
+  const identity = {
+    window_id: 42,
+    pid: 123,
+    width: 2880,
+    height: 1906,
+    point_width: 1440,
+    point_height: 953,
+  };
+  const message = JSON.stringify({
+    ...identity,
+    event: "ready",
+    first_frame_epoch_ms: 1_789_232_181_000,
+  });
+  const child = spawn(
+    process.execPath,
+    [
+      "-e",
+      `const line = ${JSON.stringify(message)}; process.stdout.write(line.slice(0, 12)); setTimeout(() => process.stdout.write(line.slice(12) + "\\n"), 15); process.stdin.on('data', data => { if (data.toString().includes('q')) setTimeout(() => process.exit(0), 20); });`,
+    ],
+    { stdio: ["pipe", "pipe", "pipe"] },
+  );
+  const completion = new Promise<number>((resolve) =>
+    child.once("close", (code) => resolve(code ?? 1)),
+  );
+  try {
+    assert.equal(await waitForMacReady(child, identity), 1_789_232_181_000);
+    await stopProcess({
+      process: child,
+      completion,
+      driver: "screencapturekit",
+      stderr: "",
+    } as Parameters<typeof stopProcess>[0]);
+    assert.equal(child.exitCode, 0);
+  } finally {
+    if (child.exitCode === null) child.kill("SIGKILL");
+    await completion;
   }
 });

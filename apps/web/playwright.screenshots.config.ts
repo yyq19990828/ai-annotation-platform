@@ -16,8 +16,9 @@
  */
 import { defineConfig, devices } from "@playwright/test";
 import { MARKETING_PROJECT_NAME } from "./e2e/screenshots/_helpers/marketing-recorder";
-import { recordingPlan } from "./e2e/screenshots/recording-plan.mjs";
+import { recordingPlan, marketingCaptureDriver } from "./e2e/screenshots/recording-plan.mjs";
 
+const MAC_CAPTURE = process.platform === "darwin";
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3001";
 const VALIDATE_ONLY = process.env.SCREENSHOT_VALIDATE_ONLY === "1";
 // One source archive identity must survive Playwright worker restarts.
@@ -112,7 +113,7 @@ const config = defineConfig({
         trace: "on",
       },
     },
-    // ── 营销母版（1440×810 逻辑构图 × 1.8 DPR = 2.6K60 → 4K60）──────
+    // ── 营销母版（1440×810；Linux 1.8 DPR / Mac 2 DPR → 4K60）──────
     {
       name: MARKETING_PROJECT_NAME,
       testMatch: ["**/flows/flows.spec.ts"],
@@ -128,14 +129,18 @@ const config = defineConfig({
           args: [
             "--window-position=0,0",
             "--window-size=1440,900",
-            "--force-device-scale-factor=1.8",
+            `--force-device-scale-factor=${MAC_CAPTURE ? 2 : 1.8}`,
             "--hide-scrollbars",
-            "--use-gl=angle",
-            "--use-angle=gl",
-            "--ignore-gpu-blocklist",
-            "--enable-gpu-rasterization",
-            "--disable-frame-rate-limit",
-            "--disable-gpu-vsync",
+            ...(MAC_CAPTURE
+              ? []
+              : [
+                  "--use-gl=angle",
+                  "--use-angle=gl",
+                  "--ignore-gpu-blocklist",
+                  "--enable-gpu-rasterization",
+                  "--disable-frame-rate-limit",
+                  "--disable-gpu-vsync",
+                ]),
             "--disable-background-timer-throttling",
             "--disable-renderer-backgrounding",
             "--disable-backgrounding-occluded-windows",
@@ -168,6 +173,9 @@ if (process.env.SCREENSHOT_BACKEND_REQUIREMENTS !== undefined) {
   );
   if (plan.backendRequirements !== process.env.SCREENSHOT_BACKEND_REQUIREMENTS) {
     throw new Error("Recording flow selection does not match backend requirements");
+  }
+  if (plan.profile === "marketing") {
+    marketingCaptureDriver(process.platform, process.env.MARKETING_CAPTURE_DRIVER, plan.flows);
   }
   const projectName = plan.profile === "docs" ? "flows" : MARKETING_PROJECT_NAME;
   config.projects = config.projects?.filter((project) => project.name === projectName);

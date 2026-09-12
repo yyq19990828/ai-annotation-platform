@@ -7,6 +7,7 @@ import {
   RECORDING_FLOWS,
   recordingInference,
   recordingPlan,
+  marketingCaptureDriver,
   screenshotCatalogPath,
 } from "./recording-plan.mjs";
 
@@ -158,5 +159,41 @@ test("video tracking recordings require a live tracker without widening to other
   assert.equal(
     recordingPlan(["video-tracker-combo-discovery"]).backendRequirements,
     "video_tracker",
+  );
+});
+
+test("Mac marketing selects only registered non-ML operations before runtime setup", () => {
+  assert.equal(
+    marketingCaptureDriver("darwin", undefined, ["bbox-draw", "hotkey-cheatsheet"]),
+    "screencapturekit",
+  );
+  assert.equal(
+    marketingCaptureDriver("darwin", "screencapturekit", ["pointcloud-panel-layout"]),
+    "screencapturekit",
+  );
+  for (const flows of [
+    ["ocr-inference"],
+    ["ai-tracker-panel"],
+    ["project-ml-routing"],
+    ["ai-preannotate"],
+    ["pipeline-apply-project", "bbox-draw"],
+  ]) {
+    assert.throws(
+      () => marketingCaptureDriver("darwin", undefined, flows),
+      /no ML capabilities or inference/,
+    );
+  }
+  assert.throws(() => marketingCaptureDriver("darwin", undefined, []), /Select/);
+  assert.throws(() => marketingCaptureDriver("darwin", undefined, ["unknown"]), /Unregistered/);
+  assert.throws(() => marketingCaptureDriver("darwin", "x11grab", ["bbox-draw"]), /Unsupported/);
+  assert.throws(
+    () => marketingCaptureDriver("linux", "screencapturekit", ["bbox-draw"]),
+    /Unsupported/,
+  );
+  assert.throws(() => marketingCaptureDriver("win32", undefined, ["bbox-draw"]), /Unsupported/);
+  assert.equal(marketingCaptureDriver("linux", undefined), "x11grab");
+  assert.equal(
+    marketingCaptureDriver("linux", "gpu-screen-recorder", ["ocr-inference"]),
+    "gpu-screen-recorder",
   );
 });
