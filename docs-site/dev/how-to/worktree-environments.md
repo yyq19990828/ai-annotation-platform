@@ -30,14 +30,14 @@ pnpm dev:worktree -- up --with-worker
 
 首次启动会创建独立数据库、Redis 容器和七个 bucket，再运行本 checkout 的迁移。已有且归属正确的资源会复用；已有但未标记或属于别处的资源不会被自动接管。
 
-| 资源            | 隔离方式                                                            |
-| --------------- | ------------------------------------------------------------------- |
-| PostgreSQL      | 共享实例，库名为 `aap_wt_<id>_<mode>`；数据库 comment 记录归属      |
-| Redis           | 独立、带归属标签的容器；端口仅绑定本机，AOF 存放在工作树目录        |
-| MinIO           | 共享实例，七个 bucket 分别使用环境前缀并记录归属标签                |
-| API/Web         | 当前 checkout 的进程，自动分配空闲端口并设置 API/WebSocket 代理     |
-| Celery          | 可选的本机单并发 worker，读取同一环境的数据库、Redis 和 bucket 配置 |
-| DuckDB/临时文件 | 当前工作树、当前模式的独立目录                                      |
+| 资源            | 隔离方式                                                          |
+| --------------- | ----------------------------------------------------------------- |
+| PostgreSQL      | 共享实例，库名为 `aap_wt_<id>_<mode>`；数据库 comment 记录归属    |
+| Redis           | 独立、带归属标签的容器；端口仅绑定本机，AOF 存放在工作树目录      |
+| MinIO           | 共享实例，七个 bucket 分别使用环境前缀并记录归属标签              |
+| API/Web         | 当前 checkout 的进程，自动分配空闲端口并设置 API/WebSocket 代理   |
+| Celery          | 可选的普通及维护 worker，各自单并发，共用本环境的 Redis 和 bucket |
+| DuckDB/临时文件 | 当前工作树、当前模式的独立目录                                    |
 
 `.worktree/identity.json` 保存稳定 ID 和 checkout 路径；提交代码不会改变 ID。各模式下的资源清单和进程记录也保存在 `.worktree/`，不包含数据库密码或完整连接串。该目录已被 Git 忽略，**不要复制、软链接或随手删除它**；丢失归属记录后不能靠资源名自动接管旧数据。移动工作树前，应先停止并按需销毁旧环境。
 
@@ -45,7 +45,7 @@ pnpm dev:worktree -- up --with-worker
 
 媒体上传下载地址统一使用同源 `/minio`，Vite 转发到已验证的本机 MinIO endpoint；远程浏览器只需能访问 Web 端口。应用临时文件按模式隔离，端口预留锁则统一保存在用户目录的 `.cache/aap-dev-ports`，供所有工作树和模式协调使用。
 
-前端进程只接收系统和公开配置，不继承数据库或对象存储凭据。API 配置通过匿名管道交给监督进程后传给 API 子进程，不写入磁盘或命令行；API/worker 不继承迁移账号连接。进程身份同时核对启动时间、工作树范围和命令摘要，支持软链接入口和相对路径调用。
+前端进程只接收系统和公开配置，不继承数据库或对象存储凭据。API 配置通过匿名管道交给监督进程后传给 API 子进程，不写入磁盘或命令行；API/普通 worker 不继承迁移账号连接。专用维护 worker 将同库的 owner 连接作为 `DATABASE_URL`，同时清空迁移和测试连接变量。进程身份同时核对启动时间、工作树范围和命令摘要，支持软链接入口和相对路径调用。
 
 新库只有迁移创建的结构及必要数据，没有原来的账号、项目或媒体。需要管理员时，在下面的隔离 `exec --mode dev` 中运行现有的 `scripts.bootstrap_admin` 流程；凭据按[开发部署说明](/ops/deploy/development#_2-5-首个-super-admin)配置，不放进工作树身份清单。
 
@@ -75,7 +75,9 @@ pnpm dev:worktree -- exec --mode e2e --with-worker -- pnpm test:e2e
 
 Playwright 的迁移和数据库夹具使用隔离库的所有者连接；其 API 使用同库的运行账号，并在启动前清空迁移及夹具连接变量。
 
-本机 worker 使用当前 checkout 的 Python 依赖，消费 `default,media,cleanup,audit,export,image-pyramid,ml.cpu`。不会消费 GPU 队列，也不会复用主目录的 Docker worker。媒体任务需要的系统依赖仍须在本机安装。修改 worker Python 代码后应停止并重启当前环境，Celery 不会热重载。
+`--with-worker` 使用当前 checkout 的 Python 依赖，同时启动普通和维护 worker。普通 worker 消费 `default,media,cleanup,audit,export,image-pyramid,ml.cpu`；维护 worker 只消费 `maintenance`，负责审计与预测月分区、旧审计分区归档，以及人员效率和审计统计物化视图刷新。两者均需通过任务注册与队列订阅检查，`doctor` 分别显示 `worker` 和 `maintenance_worker`；任一个退出都会停止同次启动的服务。
+
+这两类 worker 不消费 GPU 队列，也不复用主目录的 Docker worker。媒体任务需要的系统依赖仍须在本机安装。修改 worker Python 代码后应停止并重启当前环境，Celery 不会热重载。
 
 ## 诊断、停止与重建
 
@@ -119,6 +121,9 @@ apps/api/.venv/bin/python scripts/test-orca-worktree-setup.py
 
 # 真实基础设施验收：创建随机、带归属标记的临时资源并在结束时删除
 apps/api/.venv/bin/python scripts/verify_worktree_isolation.py -v
+
+# 分离账号验收：临时 PostgreSQL、专属 Redis/bucket，实际派发五项维护任务
+apps/api/.venv/bin/python scripts/verify_worktree_maintenance.py
 ```
 
-最后一条命令会实际执行数据库迁移、Redis 键与 Pub/Sub 隔离、Redis 停止恢复、对象隔离和重建验证；它不是无副作用的单元测试。只在已核对的本机开发基础设施上运行。
+两条 `verify_worktree_*` 命令会创建和删除临时资源，不是无副作用的单元测试。隔离验收覆盖迁移、Redis 键与 Pub/Sub、停止恢复、对象隔离和重建；维护验收额外使用临时 PostgreSQL 容器创建分离账号，验证普通账号不能执行维护 SQL、五项维护任务成功、两个 worker 退出后无遗留连接。只在已核对的本机开发基础设施上运行。

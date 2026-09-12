@@ -20,7 +20,7 @@
 # worker/beat 共用：覆盖基础文件硬编码的 dev infra 凭据，全部从 .env.production 取（缺失即报错）。
 x-prod-infra-env: &prod-infra-env
   DATABASE_URL: ${DATABASE_URL:?.env.production 必须设置 DATABASE_URL}
-  MIGRATION_DATABASE_URL: ${MIGRATION_DATABASE_URL:-}
+  MIGRATION_DATABASE_URL: ""
   ALEMBIC_AUTO_UPGRADE: "false"
   REDIS_URL: ${REDIS_URL:?.env.production 必须设置 REDIS_URL}
   MINIO_ENDPOINT: ${MINIO_ENDPOINT:?.env.production 必须设置 MINIO_ENDPOINT}
@@ -105,6 +105,16 @@ services:
   # v0.19.5 起 celery-worker-gpu / celery-worker-cpu 是设备感知预标路由的两条独立 worker
   # (ml = GPU, ml.cpu = CPU), 必须与 celery-worker 同等注入生产 env, 否则用 dev 凭据连不上 DB/MinIO
   # 且 ENVIRONMENT/SECRET_KEY 缺失会触发生产断言失败拒启 → ml.cpu 队列永远无消费者。
+  celery-worker-maintenance:
+    env_file:
+      - .env.production
+    environment:
+      <<: *prod-infra-env
+      DATABASE_URL: ${MIGRATION_DATABASE_URL:-${DATABASE_URL:?.env.production 必须设置 DATABASE_URL}}
+    depends_on:
+      api:
+        condition: service_healthy
+
   celery-worker:
     env_file:
       - .env.production

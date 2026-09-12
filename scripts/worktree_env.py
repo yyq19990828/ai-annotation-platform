@@ -225,7 +225,7 @@ def frontend_environment(environment: dict) -> dict:
 
 
 def application_environment(environment: dict) -> dict:
-    """API/worker must not inherit a schema-owner/test connection they do not use."""
+    """Remove migration/test credentials before launching application processes."""
     return {
         **environment,
         "MIGRATION_DATABASE_URL": "",

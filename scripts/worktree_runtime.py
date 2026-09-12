@@ -115,7 +115,7 @@ def parse_arguments(argv: list[str]):
     parser.add_argument(
         "--with-worker",
         action="store_true",
-        help="启动当前 checkout 的本机 CPU/通用 worker，不启动 GPU 或 beat",
+        help="启动当前 checkout 的普通及数据库维护 worker，不启动 GPU 或 beat",
     )
     parser.add_argument(
         "--skip-migrations",
@@ -279,6 +279,7 @@ def diagnose(backend) -> dict:
     report["running"] = bool(record and process_matches(record, script))
     report["state"] = "stopped"
     report["worker"] = "not requested"
+    report["maintenance_worker"] = "not requested"
     if report["running"]:
         report["state"] = "running"
         report["processes"] = [
@@ -286,6 +287,7 @@ def diagnose(backend) -> dict:
             for child in record.get("children", [])
         ]
         report["worker"] = record.get("worker", "not requested")
+        report["maintenance_worker"] = record.get("maintenance_worker", "not requested")
         service_path = state_path(
             Path(resources["root"]), resources["mode"], "services.json"
         )
@@ -303,10 +305,11 @@ def diagnose(backend) -> dict:
         if record.get("command") == "up" and "services" not in report:
             report["state"] = "starting"
             report["errors"].append("API/Web 尚未就绪")
-        if record.get("worker_requested") and not record.get("worker"):
-            report["worker"] = "starting"
-            report["state"] = "starting"
-            report["errors"].append("worker 尚未确认注册")
+        for role in ("worker", "maintenance_worker"):
+            if record.get("worker_requested") and not record.get(role):
+                report[role] = "starting"
+                report["state"] = "starting"
+                report["errors"].append(f"{role} 尚未确认注册")
         if any(not child["alive"] for child in report["processes"]):
             report["errors"].append("部分子进程已经退出")
     graph = checks.get("migration_graph")
@@ -427,61 +430,80 @@ def run_processes(backend, options) -> int:
         if options.with_worker:
             from celery import Celery
 
-            worker_name = f"worktree-{resources['id']}-{resources['mode']}@local"
-            worker = launch(
-                [
-                    sys.executable,
-                    "-m",
-                    "celery",
-                    "-A",
-                    "app.workers.celery_app",
-                    "worker",
-                    "--pool=solo",
-                    "--concurrency=1",
-                    "--loglevel=WARNING",
-                    f"--hostname={worker_name}",
-                    "--queues=default,media,cleanup,audit,export,image-pyramid,ml.cpu",
-                ],
-                "worker",
-                root / "apps/api",
-                child_environment=application_environment(environment),
-            )
             client = Celery(
                 "worktree_readiness", broker=environment["CELERY_BROKER_URL"]
             )
             try:
-                deadline = time.monotonic() + 60
-                ready = False
-                while (
-                    worker.poll() is None
-                    and not stopping
-                    and time.monotonic() < deadline
+                for role, suffix, queues, database_url, required_task in (
+                    (
+                        "worker",
+                        "",
+                        "default,media,cleanup,audit,export,image-pyramid,ml.cpu",
+                        environment["DATABASE_URL"],
+                        "app.workers.audit.persist_audit_entry",
+                    ),
+                    (
+                        "maintenance_worker",
+                        "-maintenance",
+                        "maintenance",
+                        environment["MIGRATION_DATABASE_URL"],
+                        "app.workers.audit_partition.ensure_future_audit_partitions",
+                    ),
                 ):
-                    registered = (
-                        client.control.inspect(
-                            destination=[worker_name], timeout=1
-                        ).registered()
-                        or {}
+                    worker_name = (
+                        f"worktree-{resources['id']}-{resources['mode']}{suffix}@local"
                     )
-                    if (
-                        "app.workers.audit_partition.ensure_future_audit_partitions"
-                        in registered.get(worker_name, [])
+                    worker = launch(
+                        [
+                            sys.executable,
+                            "-m",
+                            "celery",
+                            "-A",
+                            "app.workers.celery_app",
+                            "worker",
+                            "--pool=solo",
+                            "--concurrency=1",
+                            "--loglevel=WARNING",
+                            f"--hostname={worker_name}",
+                            f"--queues={queues}",
+                        ],
+                        role,
+                        root / "apps/api",
+                        child_environment={
+                            **application_environment(environment),
+                            "DATABASE_URL": database_url,
+                        },
+                    )
+                    deadline = time.monotonic() + 60
+                    ready = False
+                    while (
+                        worker.poll() is None
+                        and not stopping
+                        and time.monotonic() < deadline
                     ):
-                        ready = True
-                        break
-                if not ready:
-                    raise WorktreeError(
-                        "本工作树 worker 未就绪；请检查本机 worker 依赖，不会复用共享 worker"
-                    )
+                        inspector = client.control.inspect(
+                            destination=[worker_name], timeout=1
+                        )
+                        registered = inspector.registered() or {}
+                        active = inspector.active_queues() or {}
+                        if required_task in registered.get(worker_name, []) and {
+                            queue["name"] for queue in active.get(worker_name, [])
+                        } == set(queues.split(",")):
+                            ready = True
+                            break
+                    if not ready:
+                        raise WorktreeError(
+                            f"本工作树 {role} 未就绪；请检查注册任务与队列，不会复用共享 worker"
+                        )
+                    record[role] = worker_name
+                    handle = process_handle(worker.pid, str(root))
+                    if not handle:
+                        raise WorktreeError(f"{role} 在注册后退出")
+                    register_child(record, handle, role)
+                    atomic_json(record_path, record)
+                    print(f"[dev:worktree] {role} 已注册：{worker_name}", flush=True)
             finally:
                 client.close()
-            record["worker"] = worker_name
-            handle = process_handle(worker.pid, str(root))
-            if not handle:
-                raise WorktreeError("worker 在注册后退出")
-            register_child(record, handle, "worker")
-            atomic_json(record_path, record)
-            print(f"[dev:worktree] worker 已注册：{worker_name}", flush=True)
         if stopping:
             return 0
         module = (root / "scripts/dev-worktree.mjs").as_uri()

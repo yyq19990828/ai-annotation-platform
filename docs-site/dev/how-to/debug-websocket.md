@@ -118,7 +118,7 @@ docker compose --env-file .env.production \
   -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 ```
 
-**开发路径**：本地 uvicorn `--reload` 跑 API，compose 跑基础设施与四类 worker。改默认 / media / cleanup / audit worker 代码重启 `celery-worker`；改 GPU 预标或视频 tracker 代码重启 `celery-worker-gpu`；CPU 预标和导出分别重启 `celery-worker-cpu`、`celery-worker-export`。
+**开发路径**：本地 uvicorn `--reload` 跑 API，compose 跑基础设施与各类 worker。改默认 / media / cleanup / audit worker 代码重启 `celery-worker`；改分区维护或统计刷新代码重启 `celery-worker-maintenance`；改 GPU 预标或视频 tracker 代码重启 `celery-worker-gpu`；CPU 预标和导出分别重启 `celery-worker-cpu`、`celery-worker-export`。
 
 详见 CLAUDE.md §7 Docker rebuild vs restart。
 
@@ -135,7 +135,7 @@ docker compose --env-file .env.production \
 task_default_queue="default",   # 不再是 Celery 内置的 "celery"
 ```
 
-只有需要专用队列（`ml` / `media` / `gpu` / `cleanup` / `audit`）的 task 才在 `task_routes` 显式路由；其余兜底任务无需逐个补 route。排查时 `redis-cli llen celery` 看死队列是否堆积。队列与订阅模型详见 [backend-infrastructure 的「队列与订阅模型」一节](../concepts/backend-infrastructure)。
+只有需要专用队列（`ml` / `media` / `gpu` / `cleanup` / `audit` / `maintenance`）的 task 才在 `task_routes` 显式路由；其余兜底任务无需逐个补 route。排查时 `redis-cli llen celery` 看死队列是否堆积。队列与订阅模型详见 [backend-infrastructure 的「队列与订阅模型」一节](../concepts/backend-infrastructure)。
 
 ### 6. asyncpg `cannot perform operation: another operation is in progress`
 

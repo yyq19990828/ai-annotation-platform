@@ -163,9 +163,9 @@ async def test_monthly_summary_is_super_admin_only(httpx_client, project_admin):
     assert response.status_code == 403
 
 
-def test_audit_bi_refresh_is_scheduled_on_cleanup_queue():
+def test_audit_bi_refresh_is_scheduled_on_maintenance_queue():
     from app.workers.celery_app import celery_app
 
     task = "app.workers.cleanup.refresh_audit_bi_mv"
-    assert celery_app.conf.task_routes[task] == {"queue": "cleanup"}
+    assert celery_app.conf.task_routes[task] == {"queue": "maintenance"}
     assert celery_app.conf.beat_schedule["refresh-audit-bi-mv"]["task"] == task

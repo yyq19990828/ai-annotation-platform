@@ -45,13 +45,14 @@ last_reviewed: 2026-08-14
 | 变量                                                  | 默认                           | 说明                                                                                                                                                                             |
 | ----------------------------------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `DATABASE_URL` **必填**                               | dev 连本机                     | API/Celery 运行连接。格式为 `postgresql+asyncpg://用户名:密码@主机:端口/库`；托管库走 SSL 用 `?ssl=require`。密码含特殊字符要 URL 编码。可使用无 schema DDL 权限的普通应用角色。 |
-| `MIGRATION_DATABASE_URL`                              | 空 → `DATABASE_URL`            | Alembic 专用 schema-owner 连接。运行角色没有 `public` schema CREATE 权限时必须配置；API/Celery 业务连接不会读取它。                                                              |
+| `MIGRATION_DATABASE_URL`                              | 空 → `DATABASE_URL`            | Alembic 与专用维护 worker 的 owner 连接；API/普通 worker 使用运行账号。维护 worker 在启动时将此连接绑定为自己的 `DATABASE_URL`。                                                 |
 | `DATABASE_URL_DOCKER`                                 | dev 连 `postgres` service      | 仅供开发态 Compose 内的 Celery worker 使用；可独立切换到非 owner、非超级用户的普通应用角色。生产叠加文件继续统一读取 `DATABASE_URL`。                                            |
-| `MIGRATION_DATABASE_URL_DOCKER`                       | 空 → Worker 运行连接           | 仅供开发态 Compose 的指定迁移入口使用，地址通常为 `postgres:5432`。其他 Worker 设置 `ALEMBIC_AUTO_UPGRADE=false`，不接收 DDL 凭据。                                              |
+| `MIGRATION_DATABASE_URL_DOCKER`                       | 空 → Worker 运行连接           | 开发态 `celery-worker-maintenance` 使用此连接执行启动迁移及维护任务，地址通常为 `postgres:5432`；普通 worker 不自动迁移、不接收 DDL 凭据。                                       |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `user` / `pass` / `annotation` | 仅 `docker-compose.yml` 的 postgres 容器初始化用。分离角色时对应 schema owner / `MIGRATION_DATABASE_URL`，不要求与普通运行连接同角色；用托管 RDS/Cloud SQL 时忽略。              |
 
 容器化生产由 api 镜像 entrypoint（`apps/api/scripts/entrypoint.sh`）使用迁移连接自动执行
 `alembic upgrade head`，随后清除 owner 连接再启动应用；生产 Worker 禁止重复自动迁移。
+开发态 Compose 的启动迁移由 `celery-worker-maintenance` 执行，普通 worker 等待其健康后启动。标准生产部署中维护 worker 等待 API 完成迁移，使用 owner 连接消费 `maintenance`，不重复迁移。局域网生产保持其限定维护对象的授权方式，见[局域网生产部署](./lan-production)。
 进程式部署需在启动 API 前执行同一命令（见 §4.5）。
 
 ### 2.2 缓存 / 消息队列 (Redis)
@@ -286,7 +287,7 @@ Raster Mask WebGPU 使用访问网页的客户端 GPU，不使用 Compose 主机
 `fallbackReason`、`failureStage`、`webGpuCircuitState`、CPU/GPU budgets 与 transient/capacity bytes；
 需要整体停止 adapter 请求时，将 build arg 设为 `false` 后重新构建 web 镜像。
 
-跑完后栈内共 12 个容器：postgres / redis / minio / mailpit / api / web / celery-worker / celery-worker-gpu-control / celery-worker-gpu / celery-worker-cpu / celery-worker-export / celery-beat。五个 ML backend 分别使用 `gpu`、`gpu-sam3`、`gpu-yolo`、`gpu-onnxtools`、`gpu-rapidocr` profile，监控使用 `monitoring` profile，均按需启用；mailpit 是 dev SMTP 收件箱，**生产应禁用并改真实 SMTP**（见 §2.10）。
+栈内服务包括：postgres / redis / minio / mailpit / api / web / celery-worker / celery-worker-maintenance / celery-worker-gpu-control / celery-worker-gpu / celery-worker-cpu / celery-worker-export / celery-beat。五个 ML backend 分别使用 `gpu`、`gpu-sam3`、`gpu-yolo`、`gpu-onnxtools`、`gpu-rapidocr` profile，监控使用 `monitoring` profile，均按需启用；mailpit 是 dev SMTP 收件箱，**生产应禁用并改真实 SMTP**（见 §2.10）。
 
 > 宿主端口 `8080`（api）/ `8088`（web）只供外层反代转发，**绝不直接暴露公网**。prod 叠加文件默认把它们绑在宿主回环 `127.0.0.1`（`${PROXY_BIND_HOST:-127.0.0.1}`）——外层反代同机时开箱即安全；反代在**别的机器**时于 `.env.production` 设 `PROXY_BIND_HOST=<内网IP>`（勿用 `0.0.0.0`）。详见[端口暴露与网络安全](/ops/deploy/network-security)。
 
@@ -294,13 +295,16 @@ Raster Mask WebGPU 使用访问网页的客户端 GPU，不使用 Compose 主机
 
 worker/beat 容器已在 `docker-compose.yml` 定义、由 §4.1 一并拉起，下面是排障时需要的背景。
 
+更新维护队列路由时，同步部署 API、beat、普通 worker 和维护 worker；旧发布进程不会自动采用新路由。已进入旧队列的维护任务不会自动转移，需核对其执行结果后按需重试，不要清空整个业务队列。
+
 预标任务按模型自报的 `resource_profile.device` 做**设备感知队列路由**，worker 按设备分组消费（少订阅一个队列 → 该队列任务静默堆积）：
 
 - **主 worker（`celery-worker`）** 订阅通用队列：
-  - `default` — 兜底队列（`task_default_queue`）、PerfHud 推送、心跳、在线状态、分区维护等
+  - `default` — 兜底队列（`task_default_queue`）、PerfHud 推送、心跳、在线状态等
   - `media` — 图像/视频转码、缩略图、视频帧
-  - `cleanup` — 软删清理、效率看板物化视图刷新、DuckDB 同步
+  - `cleanup` — 软删清理、DuckDB 同步
   - `audit` — 审计日志 / task event 批量入库
+- **维护 worker（`celery-worker-maintenance`）** 单并发订阅 `maintenance`，执行审计/预测分区创建、旧审计分区归档、人员效率与审计统计刷新；分离账号时使用 owner 连接。
 - **GPU 控制 worker（`celery-worker-gpu-control`）** 单并发订阅 `gpu.control`，负责显存 repair、tombstone GC 与 collector 账本；它是唯一持有 collector 数据库凭据的应用进程，不与普通 GPU worker 合并。
 - **GPU worker（`celery-worker-gpu`）** 订阅 `ml`（自动预标注 / 模型调用，整条 pipeline 任一阶段 device=gpu 或未自报即落此）+ `gpu`（视频目标追踪）；并发默认 `CELERY_GPU_CONCURRENCY=2`，**低并发护显存**。
 - **CPU worker（`celery-worker-cpu`）** 订阅 `ml.cpu`（整条 pipeline 全部 device=cpu 的预标任务）；并发默认 `CELERY_CPU_CONCURRENCY=4`，可较高。
@@ -350,8 +354,10 @@ uv sync
 uv run alembic upgrade head
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers $(($(nproc) * 2 + 1))
 
-# Celery（主 / GPU 控制 / GPU / CPU / 导出 worker + beat，beat 务必单实例）
-uv run celery -A app.workers.celery_app worker -l info -Q default,media,cleanup,audit --concurrency=4
+# Celery（主 / 维护 / GPU 控制 / GPU / CPU / 导出 worker + beat，beat 务必单实例）
+MIGRATION_DATABASE_URL= uv run celery -A app.workers.celery_app worker -l info -Q default,media,cleanup,audit --concurrency=4
+# 维护进程的环境需提供同库的 owner 连接；单角色部署可使用同一 DATABASE_URL。
+DATABASE_URL="${MIGRATION_DATABASE_URL:-$DATABASE_URL}" MIGRATION_DATABASE_URL= uv run celery -A app.workers.celery_app worker -l info -Q maintenance --concurrency=1 --prefetch-multiplier=1
 uv run celery -A app.workers.celery_app worker -l info -Q gpu.control --concurrency=1 --prefetch-multiplier=1
 uv run celery -A app.workers.celery_app worker -l info -Q ml,gpu --concurrency=2
 uv run celery -A app.workers.celery_app worker -l info -Q ml.cpu --concurrency=4

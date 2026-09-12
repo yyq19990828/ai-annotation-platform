@@ -135,6 +135,7 @@ class CommandTests(unittest.TestCase):
                         "command": "up",
                         "children": [],
                         "worker_requested": True,
+                        "worker": "ordinary@local",
                     },
                 ),
                 patch.object(runtime, "process_matches", return_value=True),
@@ -143,6 +144,8 @@ class CommandTests(unittest.TestCase):
                 report = runtime.diagnose(backend)
                 self.assertFalse(report["healthy"])
                 self.assertEqual(report["state"], "starting")
+                self.assertEqual(report["worker"], "ordinary@local")
+                self.assertEqual(report["maintenance_worker"], "starting")
 
     def test_cli_help_exposes_lifecycle_commands_without_connecting(self):
         import subprocess

@@ -116,6 +116,10 @@ pnpm dev:worktree -- up --with-worker
 MinIO bucket，并隔离 DuckDB/临时文件。共享 `.env` 只作为基础配置；迁移、API、
 测试和可选 worker 的目标通过子进程环境统一覆盖，不改共享库。
 
+`--with-worker` 同时启动普通 worker 和单并发维护 worker。普通 worker 使用运行账号；
+维护 worker 只消费 `maintenance`，使用同库的 owner 连接处理分区维护和统计刷新。
+`doctor` 分别显示两者状态；任一个退出都会停止同次启动的服务。
+
 迁移前检查 revision 唯一性、单 head 和数据库版本可达性；通过后才运行 Alembic。
 API 默认从 `8100`、Web 从 `3100` 扫描空闲端口，并验证 HTTP 就绪。
 端口锁保留到进程退出，Web 的 API/WebSocket 代理指向当次 API。

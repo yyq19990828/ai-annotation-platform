@@ -133,6 +133,12 @@ services:
         bind:
           create_host_path: false
 
+  # LAN's existing runtime role owns the selected maintenance objects. Keep the
+  # migration login restricted to the one-shot migrate service.
+  celery-worker-maintenance:
+    <<: *worker
+    command: celery -A app.workers.celery_app worker -l info -Q maintenance --concurrency=1 --prefetch-multiplier=1
+
   celery-worker-gpu:
     <<: *worker
     command: celery -A app.workers.celery_app worker -l info -Q ml,gpu --concurrency=1

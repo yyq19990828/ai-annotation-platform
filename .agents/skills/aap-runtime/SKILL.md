@@ -30,7 +30,7 @@ For concurrent local checkouts, use `pnpm dev:worktree`, not raw `dev:api` or a 
 | Migration                                          | Apply Alembic in the intended database environment                    |
 | Dependencies, image build inputs, or copied source | Rebuild and recreate affected services                                |
 
-Check `docker-compose.yml` and `apps/api/app/workers/celery_app.py` for queue routing. Worker variants include default, GPU, CPU, export, image-pyramid, and GPU-control. Shared task code may affect multiple consumers. Mounted `/app` source has an anonymous `/app/.venv` volume masking the host environment.
+Check `docker-compose.yml` and `apps/api/app/workers/celery_app.py` for queue routing. Worker variants include default, maintenance, GPU, CPU, export, image-pyramid, and GPU-control. The maintenance consumer needs privileges for partition DDL and materialized-view refresh; keep ordinary workers on the runtime connection. Shared task code may affect multiple consumers. Mounted `/app` source has an anonymous `/app/.venv` volume masking the host environment.
 
 For a changed task signature, verify the callable inside each affected running container and exercise the relevant dispatch. An unexpected-keyword `TypeError` can mean stale worker code. A healthy API alone does not establish worker readiness.
 

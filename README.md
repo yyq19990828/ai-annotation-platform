@@ -193,7 +193,7 @@ PYTHONPATH=. uv run python scripts/seed.py
 
 ```bash
 # Celery 后台任务：通用队列、GPU / CPU 预标、导出、视频帧、通知等
-docker compose up -d celery-worker celery-worker-gpu celery-worker-cpu celery-worker-export celery-beat
+docker compose up -d celery-worker celery-worker-maintenance celery-worker-gpu celery-worker-cpu celery-worker-export celery-beat
 
 # GPU ML Backend 在叠加文件 docker-compose.ml.yml，按显存预算选择独立 profile
 # Grounded-SAM-2：适合图片 SAM / DINO 与视频 tracker

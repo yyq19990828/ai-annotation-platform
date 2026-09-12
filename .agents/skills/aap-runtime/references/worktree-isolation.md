@@ -10,7 +10,7 @@ The local launcher shares only the PostgreSQL/MinIO servers. It requires local d
 
 ## Start and verify
 
-Use `pnpm dev:worktree` for API/Web and add `up --with-worker` for current-checkout host workers. The worker consumes general/CPU queues only; GPU and beat are not started. Do not restart the primary Compose workers to refresh this environment. Check the current worker's registration and exercise a relevant task after worker changes.
+Use `pnpm dev:worktree` for API/Web and add `up --with-worker` for two current-checkout host workers: ordinary general/CPU queues and the owner-capable `maintenance` queue. GPU and beat are not started. Both workers must register their tasks and exact queue subscriptions before startup succeeds; doctor reports both, and either worker exiting stops the environment. Do not restart the primary Compose workers to refresh this environment. Check registrations and exercise a relevant task after worker changes.
 
 The Node supervisor reserves API/Web ports and verifies HTTP readiness. The Python owner validates resource ownership and migration history before the supervisor runs. Unknown revisions, duplicate IDs or multiple heads are blockers, not reasons to stamp or downgrade a shared database. `--skip-migrations` requires the database already to be at this checkout's head.
 
@@ -20,7 +20,7 @@ Source manifests matching the primary checkout are insufficient to share Node de
 
 Use `pnpm dev:worktree -- exec --mode test -- sh -c 'cd apps/api && .venv/bin/python -m pytest <tests>'`. API pytest otherwise defaults to `annotation_test`, even when the development database name is isolated. For Playwright use `exec --mode e2e -- pnpm test:e2e`; the wrapper pins its database override and reserves separate service ports.
 
-Keep the generated `AAP_WORKTREE_MODE` marker intact. Test entry points reject `dev` before database preparation, and dev processes intentionally receive unusable test DSNs rather than aliases into another mode. API/worker connections exclude the migration/test owner credentials; frontend processes receive only public/system configuration.
+Keep the generated `AAP_WORKTREE_MODE` marker intact. Test entry points reject `dev` before database preparation, and dev processes intentionally receive unusable test DSNs rather than aliases into another mode. API/ordinary workers exclude the migration/test owner credentials. The maintenance worker receives the same database's owner connection as `DATABASE_URL`, with migration/test DSN variables cleared; frontend processes receive only public/system configuration.
 
 Redis logical databases do not isolate Pub/Sub. Keep the dedicated Redis instance and all Celery broker/read/write/result overrides together. Redis AOF and DuckDB/temp files belong to the selected mode. Override all seven storage buckets, because cleanup and lifecycle settings are bucket-scoped.
 
@@ -36,5 +36,6 @@ After successful destruction, the mode's infrastructure manifest is removed but 
 - `apps/api/.venv/bin/python -m unittest discover -s scripts -p 'test_worktree*.py' -v`
 - `apps/api/.venv/bin/python scripts/test-orca-worktree-setup.py`
 - `apps/api/.venv/bin/python scripts/verify_worktree_isolation.py -v` creates/deletes random owned resources on validated local infrastructure. This is a live, state-changing acceptance test, not a read-only probe.
+- `apps/api/.venv/bin/python scripts/verify_worktree_maintenance.py` uses disposable PostgreSQL with separate roles plus owned Redis/buckets to exercise all five maintenance tasks and worker shutdown. It does not alter the shared PostgreSQL roles or data.
 
 The user-facing source is `docs-site/dev/how-to/worktree-environments.md`. Keep that page and `DEV.md` aligned with the actual CLI, and distinguish local acceptance results from remote CI.
