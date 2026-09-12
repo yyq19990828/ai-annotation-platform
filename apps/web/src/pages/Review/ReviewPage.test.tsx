@@ -2,8 +2,8 @@
  * ReviewPage 单测 — 加载态 / 空态 / 正常渲染 / 批次选择 / 全选交互.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { MemoryRouter, useNavigate } from "react-router-dom";
 import { ApiError } from "@/api/client";
 
 const mockUseReviewerStats = vi.fn();
@@ -13,6 +13,10 @@ const mockUseApproveTask = vi.fn();
 const mockUseRejectTask = vi.fn();
 const mockUseRejectBatch = vi.fn();
 const mockPushToast = vi.fn();
+const mockAuthState = vi.hoisted(() => ({
+  token: "token-a" as string | null,
+  user: { id: "user-a" } as { id: string } | null,
+}));
 
 vi.mock("@/hooks/useDashboard", () => ({
   useReviewerStats: () => mockUseReviewerStats(),
@@ -41,6 +45,10 @@ vi.mock("@/hooks/useBatches", () => ({
   useRejectBatch: () => mockUseRejectBatch(),
 }));
 
+vi.mock("@/stores/authStore", () => ({
+  useAuthStore: (selector: (state: typeof mockAuthState) => unknown) => selector(mockAuthState),
+}));
+
 vi.mock("./ReviewSidebar", () => ({
   ReviewSidebar: ({ batches, selectedBatchId, onSelect }: any) => (
     <div data-testid="review-sidebar">
@@ -59,7 +67,17 @@ vi.mock("./ReviewSidebar", () => ({
 }));
 
 vi.mock("./RejectReasonModal", () => ({
-  RejectReasonModal: ({ open }: any) => (open ? <div data-testid="reject-modal" /> : null),
+  RejectReasonModal: ({ open, onConfirm, onClose }: any) =>
+    open ? (
+      <div data-testid="reject-modal">
+        <button type="button" onClick={() => onConfirm({ reason_type: "missing" })}>
+          确认退回
+        </button>
+        <button type="button" onClick={onClose}>
+          取消退回
+        </button>
+      </div>
+    ) : null,
 }));
 
 vi.mock("@/components/Thumbnail", () => ({
@@ -103,9 +121,20 @@ function renderUI(initialPath = "/review") {
   );
 }
 
+function NavigateTo({ path }: { path: string }) {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => navigate(path)}>
+      导航
+    </button>
+  );
+}
+
 describe("ReviewPage", () => {
   beforeEach(() => {
     mockPushToast.mockReset();
+    mockAuthState.token = "token-a";
+    mockAuthState.user = { id: "user-a" };
     mockUseApproveTask.mockReturnValue(idleMutation);
     mockUseRejectTask.mockReturnValue(idleMutation);
     mockUseRejectBatch.mockReturnValue(idleMutation);
@@ -278,6 +307,214 @@ describe("ReviewPage", () => {
     expect(screen.getByTestId("reject-modal")).toBeInTheDocument();
   });
 
+  it("切换 URL 批次会关闭退回草稿，迟到的旧结果不会清空新选择", async () => {
+    let settled: (() => void) | undefined;
+    const rejectMutate = vi.fn((_variables: unknown, options: { onSettled: () => void }) => {
+      settled = options.onSettled;
+    });
+    mockUseRejectTask.mockReturnValue({ mutate: rejectMutate, isPending: false });
+    mockUseReviewerStats.mockReturnValue({
+      data: {
+        reviewing_batches: [
+          {
+            batch_id: "b1",
+            batch_name: "批次A",
+            batch_display_id: "B-1",
+            project_id: "p1",
+            project_name: "项目X",
+            total_tasks: 1,
+            review_tasks: 1,
+            completed_tasks: 0,
+          },
+          {
+            batch_id: "b2",
+            batch_name: "批次B",
+            batch_display_id: "B-2",
+            project_id: "p2",
+            project_name: "项目Y",
+            total_tasks: 1,
+            review_tasks: 1,
+            completed_tasks: 0,
+          },
+        ],
+      },
+    });
+    mockUseTaskList.mockReturnValue({
+      data: { pages: [{ items: [sampleTask] }] },
+      isLoading: false,
+    });
+    render(
+      <MemoryRouter initialEntries={["/review?project=p1&batch=b1"]}>
+        <NavigateTo path="/review?project=p2&batch=b2" />
+        <ReviewPage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getAllByRole("checkbox")[0]);
+    fireEvent.click(screen.getByRole("button", { name: /批量退回/ }));
+    fireEvent.click(screen.getByRole("button", { name: "确认退回" }));
+    expect(rejectMutate).toHaveBeenCalledOnce();
+
+    fireEvent.click(screen.getByRole("button", { name: "导航" }));
+    await waitFor(() => expect(screen.queryByTestId("reject-modal")).not.toBeInTheDocument());
+    fireEvent.click(screen.getAllByRole("checkbox")[0]);
+    expect(screen.getByText("已选 1/1")).toBeInTheDocument();
+
+    await act(async () => settled?.());
+    expect(screen.getByText("已选 1/1")).toBeInTheDocument();
+  });
+
+  it("切换 URL 批次后，迟到的旧通过结果不会清空新选择", async () => {
+    let settled: (() => void) | undefined;
+    const approveMutate = vi.fn((_taskId: unknown, options: { onSettled: () => void }) => {
+      settled = options.onSettled;
+    });
+    mockUseApproveTask.mockReturnValue({ mutate: approveMutate, isPending: false });
+    mockUseReviewerStats.mockReturnValue({
+      data: {
+        reviewing_batches: [
+          {
+            batch_id: "b1",
+            batch_name: "批次A",
+            batch_display_id: "B-1",
+            project_id: "p1",
+            project_name: "项目X",
+            total_tasks: 1,
+            review_tasks: 1,
+            completed_tasks: 0,
+          },
+          {
+            batch_id: "b2",
+            batch_name: "批次B",
+            batch_display_id: "B-2",
+            project_id: "p2",
+            project_name: "项目Y",
+            total_tasks: 1,
+            review_tasks: 1,
+            completed_tasks: 0,
+          },
+        ],
+      },
+    });
+    mockUseTaskList.mockReturnValue({
+      data: { pages: [{ items: [sampleTask] }] },
+      isLoading: false,
+    });
+    render(
+      <MemoryRouter initialEntries={["/review?project=p1&batch=b1"]}>
+        <NavigateTo path="/review?project=p2&batch=b2" />
+        <ReviewPage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getAllByRole("checkbox")[0]);
+    fireEvent.click(screen.getByRole("button", { name: /批量通过/ }));
+    expect(approveMutate).toHaveBeenCalledOnce();
+
+    fireEvent.click(screen.getByRole("button", { name: "导航" }));
+    await waitFor(() => expect(screen.getByRole("heading", { name: "批次B" })).toBeInTheDocument());
+    fireEvent.click(screen.getAllByRole("checkbox")[0]);
+    expect(screen.getByText("已选 1/1")).toBeInTheDocument();
+
+    await act(async () => settled?.());
+    expect(screen.getByText("已选 1/1")).toBeInTheDocument();
+  });
+
+  it("同一批次内选择集合变化后，迟到的旧通过结果不会清空新选择", async () => {
+    let settled: (() => void) | undefined;
+    const approveMutate = vi.fn((_taskId: unknown, options: { onSettled: () => void }) => {
+      settled = options.onSettled;
+    });
+    mockUseApproveTask.mockReturnValue({ mutate: approveMutate, isPending: false });
+    mockUseReviewerStats.mockReturnValue({
+      data: {
+        reviewing_batches: [
+          {
+            batch_id: "b1",
+            batch_name: "批次A",
+            batch_display_id: "B-1",
+            project_id: "p1",
+            project_name: "项目X",
+            total_tasks: 2,
+            review_tasks: 2,
+            completed_tasks: 0,
+          },
+        ],
+      },
+    });
+    mockUseTaskList.mockReturnValue({
+      data: {
+        pages: [
+          {
+            items: [
+              sampleTask,
+              { ...sampleTask, id: "t2", display_id: "T-2", file_name: "dog.jpg" },
+            ],
+          },
+        ],
+      },
+      isLoading: false,
+    });
+    renderUI("/review?project=p1&batch=b1");
+
+    let checkboxes = screen.getAllByRole("checkbox");
+    fireEvent.click(checkboxes[1]);
+    fireEvent.click(screen.getByRole("button", { name: /批量通过/ }));
+    checkboxes = screen.getAllByRole("checkbox");
+    fireEvent.click(checkboxes[2]);
+    expect(screen.getByText("已选 2/2")).toBeInTheDocument();
+
+    await act(async () => settled?.());
+    expect(screen.getByText("已选 2/2")).toBeInTheDocument();
+  });
+
+  it("同一路由切换认证 owner 后，迟到的旧通过结果不会清空新选择", async () => {
+    let settled: (() => void) | undefined;
+    const approveMutate = vi.fn((_taskId: unknown, options: { onSettled: () => void }) => {
+      settled = options.onSettled;
+    });
+    mockUseApproveTask.mockReturnValue({ mutate: approveMutate, isPending: false });
+    mockUseReviewerStats.mockReturnValue({
+      data: {
+        reviewing_batches: [
+          {
+            batch_id: "b1",
+            batch_name: "批次A",
+            batch_display_id: "B-1",
+            project_id: "p1",
+            project_name: "项目X",
+            total_tasks: 1,
+            review_tasks: 1,
+            completed_tasks: 0,
+          },
+        ],
+      },
+    });
+    mockUseTaskList.mockReturnValue({
+      data: { pages: [{ items: [sampleTask] }] },
+      isLoading: false,
+    });
+    const view = renderUI("/review?project=p1&batch=b1");
+
+    fireEvent.click(screen.getAllByRole("checkbox")[0]);
+    fireEvent.click(screen.getByRole("button", { name: /批量通过/ }));
+    expect(approveMutate).toHaveBeenCalledOnce();
+
+    mockAuthState.user = { id: "user-b" };
+    mockAuthState.token = "token-b";
+    view.rerender(
+      <MemoryRouter initialEntries={["/review?project=p1&batch=b1"]}>
+        <ReviewPage />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(screen.queryByText("已选 1/1")).not.toBeInTheDocument());
+    fireEvent.click(screen.getAllByRole("checkbox")[0]);
+    expect(screen.getByText("已选 1/1")).toBeInTheDocument();
+
+    await act(async () => settled?.());
+    expect(screen.getByText("已选 1/1")).toBeInTheDocument();
+  });
+
   it("任务首页请求失败 → 显示错误态而不是空队列，并可重试", () => {
     const refetch = vi.fn();
     mockUseReviewerStats.mockReturnValue({
@@ -438,5 +675,54 @@ describe("ReviewPage", () => {
     expect(screen.getByText("共 3 个待审核任务（已加载 2）")).toBeInTheDocument();
     expect(screen.getAllByText("T-1")).toHaveLength(1);
     expect(screen.getByText("T-2")).toBeInTheDocument();
+  });
+
+  it("从浏览器 URL 导航恢复项目和批次筛选", async () => {
+    mockUseReviewerStats.mockReturnValue({
+      data: {
+        reviewing_batches: [
+          {
+            batch_id: "b1",
+            batch_name: "批次A",
+            batch_display_id: "B-1",
+            project_id: "p1",
+            project_name: "项目X",
+            total_tasks: 1,
+            review_tasks: 1,
+            completed_tasks: 0,
+          },
+          {
+            batch_id: "b2",
+            batch_name: "批次B",
+            batch_display_id: "B-2",
+            project_id: "p2",
+            project_name: "项目Y",
+            total_tasks: 1,
+            review_tasks: 1,
+            completed_tasks: 0,
+          },
+        ],
+      },
+    });
+    mockUseTaskList.mockReturnValue({
+      data: { pages: [{ items: [sampleTask], total: 1 }] },
+      isLoading: false,
+      hasNextPage: false,
+    });
+    render(
+      <MemoryRouter initialEntries={["/review?project=p1&batch=b1"]}>
+        <NavigateTo path="/review?project=p2&batch=b2" />
+        <ReviewPage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "导航" }));
+    await waitFor(() => {
+      expect(mockUseTaskList).toHaveBeenLastCalledWith("p2", {
+        status: "review",
+        batch_id: "b2",
+      });
+    });
+    expect(screen.getByRole("heading", { name: "批次B" })).toBeInTheDocument();
   });
 });

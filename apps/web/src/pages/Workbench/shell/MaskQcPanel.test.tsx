@@ -30,7 +30,13 @@ vi.mock("@/hooks/useFeedbacks", () => ({
 }));
 
 vi.mock("./MaskRepairSheet", () => ({
-  MaskRepairSheet: () => null,
+  MaskRepairSheet: ({ open, actions }: { open: boolean; actions: Array<{ issue_id: string }> }) => (
+    <div
+      data-testid="mask-repair-sheet"
+      data-open={open ? "true" : "false"}
+      data-actions={actions.map((action) => action.issue_id).join(",")}
+    />
+  ),
 }));
 
 import { MaskQcPanel, type MaskQcPanelProps } from "./MaskQcPanel";
@@ -162,6 +168,56 @@ describe("MaskQcPanel", () => {
     expect(preview).toBeDisabled();
     fireEvent.click(checkbox);
     expect(preview).toBeEnabled();
+  });
+
+  it("filters selected repair ids when a loaded issue becomes ineligible", async () => {
+    const view = render(<MaskQcPanel {...props()} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: "选择修复 小孤岛" }));
+    expect(screen.getByRole("button", { name: "预览批量修复" })).toBeEnabled();
+
+    mocks.useIssues.mockReturnValue({
+      data: {
+        pages: [
+          {
+            items: [issue({ effective_status: "stale" }), issue({ id: "issue-2" })],
+            next_cursor: null,
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch: vi.fn(),
+    });
+    view.rerender(<MaskQcPanel {...props()} />);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "预览批量修复" })).toBeDisabled(),
+    );
+    expect(screen.getAllByRole("checkbox", { name: "选择修复 小孤岛" })[0]).toBeDisabled();
+  });
+
+  it("closes the repair preview when its selected issue leaves the active query", async () => {
+    const view = render(<MaskQcPanel {...props()} />);
+    fireEvent.click(screen.getByRole("checkbox", { name: "选择修复 小孤岛" }));
+    fireEvent.click(screen.getByRole("button", { name: "预览批量修复" }));
+    expect(screen.getByTestId("mask-repair-sheet")).toHaveAttribute("data-open", "true");
+
+    mocks.useIssues.mockReturnValue({
+      data: { pages: [{ items: [issue({ id: "issue-2" })], next_cursor: null }] },
+      isLoading: false,
+      isError: false,
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch: vi.fn(),
+    });
+    view.rerender(<MaskQcPanel {...props()} />);
+    await waitFor(() =>
+      expect(screen.getByTestId("mask-repair-sheet")).toHaveAttribute("data-open", "false"),
+    );
+    expect(screen.getByTestId("mask-repair-sheet")).toHaveAttribute("data-actions", "");
   });
 
   it("可切到项目范围并保留 cursor 列表入口", () => {

@@ -250,6 +250,7 @@ export function useIssuePins(params: {
     [projectId, taskId],
   );
   const issuesQuery = useFeedbacks(issueListParams, !!projectId && !!taskId);
+  // The compact FAB uses the first page only; the issues panel owns pagination.
   const openIssueCount = (issuesQuery.data?.items ?? []).filter((i) => i.status === "open").length;
   const activeIssueHighlightId = useActiveIssueStore((st) => st.highlightId);
   const highlightIssueFromPin = useActiveIssueStore((st) => st.highlightFromPin);

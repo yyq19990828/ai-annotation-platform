@@ -94,8 +94,8 @@ export function WorkbenchShell({ mode = "annotate" }: { mode?: "annotate" | "rev
             <>
               <button
                 type="button"
-                aria-label={`查看讨论面板 Issue (${model.issueSection.openIssueCount} 待处理)`}
-                title={`Issue: ${model.issueSection.openIssueCount} 个待处理`}
+                aria-label={`查看讨论面板 Issue（已加载 ${model.issueSection.openIssueCount} 个待处理）`}
+                title={`Issue：已加载 ${model.issueSection.openIssueCount} 个待处理`}
                 onClick={model.issueSection.onOpenList}
                 className={cn(ISSUE_FAB_CLASS, "bottom-20", hiddenCls)}
                 data-testid="issue-fab"

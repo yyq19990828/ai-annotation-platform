@@ -106,7 +106,9 @@ export function OfflineQueueDrawer({
   // 应用筛选
   const filtered = useMemo(() => {
     return items.filter((op) => {
-      if (taskFilter === "current" && currentTaskId && op.taskId !== currentTaskId) return false;
+      // A current-task filter with no current task must remain empty. Treating
+      // that state as "all" could retry or discard another task's work.
+      if (taskFilter === "current" && (!currentTaskId || op.taskId !== currentTaskId)) return false;
       if (retryFilter === "failed" && (op.retry_count ?? 0) < 3) return false;
       return true;
     });

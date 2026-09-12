@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Check, Crosshair, MessageSquareText, RefreshCw, X } from "lucide-react";
 
 import type {
   PointCloudQualityConfig,
   PointCloudQualityIssue,
   PointCloudQualityReviewVerdict,
+  PointCloudQualitySeverity,
 } from "@/api/pointCloudQuality";
 import { Button } from "@/components/ui/Button";
 import { useCreateFeedback } from "@/hooks/useFeedbacks";
@@ -26,6 +27,7 @@ const CODE_LABEL: Record<string, string> = {
   track_gap: "轨迹存在区间缺帧",
   track_identity_drift: "轨迹身份漂移",
   duplicate_track_member: "同帧重复轨迹成员",
+  projection_residual: "投影残差",
 };
 
 const SEVERITY_LABEL = { blocker: "阻断", warning: "警告", info: "提示" } as const;
@@ -73,7 +75,9 @@ export function PointCloudQualityPanel({
   onLocate,
 }: PointCloudQualityPanelProps) {
   const [tab, setTab] = useState<"issues" | "governance">("issues");
-  const [filter, setFilter] = useState<"open" | "stale" | "all">("open");
+  const [filter, setFilter] = useState<"open" | "resolved" | "wont_fix" | "stale" | "all">("open");
+  const [severity, setSeverity] = useState<PointCloudQualitySeverity | "all">("all");
+  const [code, setCode] = useState("all");
   const [runId, setRunId] = useState<string | null>(null);
   const [dispositionId, setDispositionId] = useState<string | null>(null);
   const [verdict, setVerdict] =
@@ -81,10 +85,18 @@ export function PointCloudQualityPanel({
   const [reason, setReason] = useState("");
   const [commentIssueId, setCommentIssueId] = useState<string | null>(null);
   const [comment, setComment] = useState("");
+  const ownerKey = `${projectId}\u001f${sceneId}\u001f${taskId}\u001f${canScanScene ? "scene" : "task"}`;
+  const ownerKeyRef = useRef(ownerKey);
+  const runIdOwnerRef = useRef(ownerKey);
+  const ownerChanged = runIdOwnerRef.current !== ownerKey;
+  ownerKeyRef.current = ownerKey;
+  const runQueryId = ownerChanged ? null : runId;
   const issuesQuery = usePointCloudQualityIssues({
     projectId,
-    sceneId,
+    ...(sceneId ? { sceneId } : { taskId }),
     ...(filter === "all" ? {} : { status: filter }),
+    ...(severity === "all" ? {} : { severity }),
+    ...(code === "all" ? {} : { code }),
   });
   const runMutation = useRunPointCloudQuality(
     projectId,
@@ -92,7 +104,7 @@ export function PointCloudQualityPanel({
       ? { scope: "scene_ids", scene_ids: [sceneId] }
       : { scope: "task_ids", task_ids: [taskId] },
   );
-  const runQuery = usePointCloudQualityRun(projectId, runId);
+  const runQuery = usePointCloudQualityRun(projectId, runQueryId);
   const patchIssue = usePatchPointCloudQualityIssue(projectId);
   const createFeedback = useCreateFeedback({ project_id: projectId });
   const issues = useMemo(() => issuesQuery.data?.items ?? [], [issuesQuery.data?.items]);
@@ -106,12 +118,25 @@ export function PointCloudQualityPanel({
     [issues],
   );
   const activeRun = runQuery.data;
+  const issueScopeLabel = sceneId ? "当前 Scene" : "当前任务";
   const scanning =
     runMutation.isPending || activeRun?.status === "pending" || activeRun?.status === "running";
+
+  useEffect(() => {
+    if (runIdOwnerRef.current === ownerKey) return;
+    runIdOwnerRef.current = ownerKey;
+    setRunId(null);
+    setDispositionId(null);
+    setReason("");
+    setCommentIssueId(null);
+    setComment("");
+  }, [ownerKey]);
 
   const startScan = () => {
     runMutation.mutate(undefined, {
       onSuccess: (run) => {
+        if (ownerKeyRef.current !== ownerKey) return;
+        runIdOwnerRef.current = ownerKey;
         setRunId(run.id);
         if (run.status === "completed") void issuesQuery.refetch();
       },
@@ -184,7 +209,7 @@ export function PointCloudQualityPanel({
       </div>
 
       {tab === "issues" && (
-        <div className="flex items-center gap-2 border-b border-border p-3">
+        <div className="flex flex-wrap items-center gap-2 border-b border-border p-3">
           <Button size="sm" variant="primary" disabled={scanning} onClick={startScan}>
             <RefreshCw className={cn("size-3.5", scanning && "animate-spin")} />
             {scanning
@@ -200,18 +225,48 @@ export function PointCloudQualityPanel({
             onChange={(event) => setFilter(event.target.value as typeof filter)}
           >
             <option value="open">待处理</option>
+            <option value="resolved">已解决</option>
+            <option value="wont_fix">搁置</option>
             <option value="stale">已过期</option>
             <option value="all">全部</option>
+          </select>
+          <select
+            aria-label="质量问题严重级别"
+            className="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground"
+            value={severity}
+            onChange={(event) =>
+              setSeverity(event.target.value as PointCloudQualitySeverity | "all")
+            }
+          >
+            <option value="all">全部严重级别</option>
+            <option value="blocker">阻断</option>
+            <option value="warning">警告</option>
+            <option value="info">提示</option>
+          </select>
+          <select
+            aria-label="质量问题规则"
+            className="h-8 max-w-40 rounded-md border border-border bg-background px-2 text-xs text-foreground"
+            value={code}
+            onChange={(event) => setCode(event.target.value)}
+          >
+            <option value="all">全部规则</option>
+            {Object.entries(CODE_LABEL).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
           </select>
         </div>
       )}
 
       {tab === "issues" && (
         <div className="flex gap-2 border-b border-border px-3 py-2 text-xs text-muted-foreground">
-          <span className="text-status-danger">阻断 {counts.blocker}</span>
-          <span className="text-status-caution">警告 {counts.warning}</span>
-          <span>提示 {counts.info}</span>
-          <span className="ml-auto">共 {issuesQuery.data?.total ?? 0}</span>
+          <span className="text-status-danger">已加载阻断 {counts.blocker}</span>
+          <span className="text-status-caution">已加载警告 {counts.warning}</span>
+          <span>已加载提示 {counts.info}</span>
+          <span className="ml-auto">
+            {issueScopeLabel} · 共 {issuesQuery.data?.total ?? 0}
+          </span>
         </div>
       )}
 

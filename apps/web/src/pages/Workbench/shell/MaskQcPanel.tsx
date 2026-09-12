@@ -192,11 +192,7 @@ export function MaskQcPanel({
               anchorBbox[3] === bbox.y1
           : bbox == null && anchorBbox == null;
       }) ?? [];
-  const counts = summary.data?.counts ?? {};
-  const total = (["open", "resolved", "wont_fix", "stale"] as const).reduce(
-    (sum, key) => sum + (counts[key] ?? 0),
-    0,
-  );
+  const issueScopeLabel = scope === "task" ? "当前任务" : "整个项目";
   const busy = phase !== "idle" && phase !== "ready" && phase !== "error";
   const stale = activeIssue?.effective_status === "stale";
   const iou =
@@ -269,6 +265,15 @@ export function MaskQcPanel({
         : next;
     });
   }, [issues]);
+
+  useEffect(() => {
+    if (selectedRepairIssueIds.size === 0) setRepairOpen(false);
+  }, [selectedRepairIssueIds.size]);
+
+  useEffect(() => {
+    setSelectedRepairIssueIds(new Set());
+    setRepairOpen(false);
+  }, [projectId, taskId, scope]);
 
   const finishRepair = useCallback(() => {
     setSelectedRepairIssueIds(new Set());
@@ -356,7 +361,8 @@ export function MaskQcPanel({
             "正在读取质检状态…"
           ) : (
             <>
-              <span className="font-semibold text-foreground">{total}</span> 个问题 ·{" "}
+              <span className="font-semibold text-foreground">{issueScopeLabel}</span> · 已加载{" "}
+              <span className="font-semibold text-foreground">{issues.length}</span> 个问题 ·{" "}
               {summary.data?.status ?? "未知"}
             </>
           )}
@@ -852,6 +858,7 @@ export function MaskQcPanel({
         open={repairOpen}
         projectId={projectId}
         actions={repairActions}
+        ownerKey={`${projectId}\u001f${taskId}\u001f${scope}`}
         onOpenChange={setRepairOpen}
         onFinished={finishRepair}
       />

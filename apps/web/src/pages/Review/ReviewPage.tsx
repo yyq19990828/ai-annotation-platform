@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
@@ -19,6 +19,7 @@ import { ApiError } from "@/api/client";
 import type { TaskResponse } from "@/types";
 import type { ReviewingBatchItem } from "@/api/dashboard";
 import { buildReviewWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
+import { useAuthStore } from "@/stores/authStore";
 import { RejectReasonModal } from "./RejectReasonModal";
 import { ReviewSidebar } from "./ReviewSidebar";
 import { ReviewBatchCardGrid } from "./ReviewBatchCardGrid";
@@ -183,12 +184,11 @@ export function ReviewPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [selectedProjectId, setSelectedProjectId] = useState<string>(
-    () => searchParams.get("project") ?? "",
-  );
-  const [selectedBatchId, setSelectedBatchId] = useState<string>(
-    () => searchParams.get("batch") ?? "",
-  );
+  // Queue selection is URL-owned so a browser navigation updates the request
+  // scope before the next render. Local selection state could briefly combine
+  // a new assignee with a retired batch while React effects caught up.
+  const selectedProjectId = searchParams.get("project") ?? "";
+  const selectedBatchId = searchParams.get("batch") ?? "";
 
   // v0.7.1 B-18：批次树数据来自 reviewer dashboard 聚合（已扩展为「reviewing 或 review_tasks>0」）。
   const reviewerStatsQuery = useReviewerStats();
@@ -239,9 +239,54 @@ export function ReviewPage() {
 
   const approveMut = useApproveTask();
   const rejectMut = useRejectTask();
+  const authOwnerKey = useAuthStore(
+    (state) => `${state.user?.id ?? "anonymous"}:${state.token ?? "none"}`,
+  );
 
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [rejectingIds, setRejectingIds] = useState<string[] | null>(null);
+  const queueUrlRef = useRef({
+    project: searchParams.get("project") ?? "",
+    batch: searchParams.get("batch") ?? "",
+    assignee: searchParams.get("assignee") ?? "",
+    authOwnerKey,
+  });
+  const queueScopeKey = [
+    authOwnerKey,
+    searchParams.get("project") ?? "",
+    searchParams.get("batch") ?? "",
+    searchParams.get("assignee") ?? "",
+  ].join("\u001f");
+  const queueScopeKeyRef = useRef(queueScopeKey);
+  queueScopeKeyRef.current = queueScopeKey;
+  const checkedIdsKey = JSON.stringify([...checkedIds].sort());
+  const checkedIdsKeyRef = useRef(checkedIdsKey);
+  checkedIdsKeyRef.current = checkedIdsKey;
+  const rejectingActionRef = useRef<{ scopeKey: string; selectionKey: string } | null>(null);
+  const queueSearch = searchParams.toString();
+
+  // Clear cross-page selections when a URL-owned queue scope changes.
+  useEffect(() => {
+    const params = new URLSearchParams(queueSearch);
+    const next = {
+      project: params.get("project") ?? "",
+      batch: params.get("batch") ?? "",
+      assignee: params.get("assignee") ?? "",
+      authOwnerKey,
+    };
+    const previous = queueUrlRef.current;
+    queueUrlRef.current = next;
+    if (
+      previous.project !== next.project ||
+      previous.batch !== next.batch ||
+      previous.assignee !== next.assignee ||
+      previous.authOwnerKey !== next.authOwnerKey
+    ) {
+      setCheckedIds(new Set());
+      setRejectingIds(null);
+      rejectingActionRef.current = null;
+    }
+  }, [authOwnerKey, queueSearch]);
 
   useEffect(() => {
     const taskIds = new Set(tasks.map((task) => task.id));
@@ -257,35 +302,35 @@ export function ReviewPage() {
     const next = new URLSearchParams(searchParams);
     next.delete("project");
     next.delete("batch");
-    if (!b) {
-      setSelectedBatchId("");
-      setSelectedProjectId("");
-    } else {
-      setSelectedBatchId(b.batch_id);
-      setSelectedProjectId(b.project_id);
+    if (b) {
       next.set("project", b.project_id);
       next.set("batch", b.batch_id);
     }
     setSearchParams(next);
     setCheckedIds(new Set());
+    setRejectingIds(null);
+    rejectingActionRef.current = null;
   };
 
   const clearAssigneeFilter = () => {
     const next = new URLSearchParams(searchParams);
     next.delete("assignee");
     setSearchParams(next);
+    setCheckedIds(new Set());
+    setRejectingIds(null);
+    rejectingActionRef.current = null;
   };
 
   // 返回卡片网格概览：清掉 batch / project / assignee 三类选择。
   const backToOverview = () => {
-    setSelectedBatchId("");
-    setSelectedProjectId("");
     const next = new URLSearchParams(searchParams);
     next.delete("project");
     next.delete("batch");
     next.delete("assignee");
     setSearchParams(next);
     setCheckedIds(new Set());
+    setRejectingIds(null);
+    rejectingActionRef.current = null;
   };
 
   const openTaskId = searchParams.get("taskId");
@@ -293,7 +338,13 @@ export function ReviewPage() {
   useEffect(() => {
     if (!openTaskId) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setSearchParams({});
+      if (e.key === "Escape") {
+        setSearchParams((previous) => {
+          const next = new URLSearchParams(previous);
+          next.delete("taskId");
+          return next;
+        });
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -322,7 +373,11 @@ export function ReviewPage() {
         }),
       );
     } else {
-      setSearchParams({ taskId: id });
+      setSearchParams((previous) => {
+        const next = new URLSearchParams(previous);
+        next.set("taskId", id);
+        return next;
+      });
     }
   };
   const runBatchReject = (
@@ -331,6 +386,8 @@ export function ReviewPage() {
       reason_type: "missing" | "extra" | "wrong_label" | "wrong_geometry";
       reason?: string;
     },
+    actionScopeKey: string,
+    actionSelectionKey: string,
   ) => {
     let succeeded = 0;
     let failed = 0;
@@ -347,7 +404,11 @@ export function ReviewPage() {
           },
           onSettled: () => {
             pending--;
-            if (pending === 0) {
+            if (
+              pending === 0 &&
+              queueScopeKeyRef.current === actionScopeKey &&
+              checkedIdsKeyRef.current === actionSelectionKey
+            ) {
               pushToast({
                 msg: `已退回 ${succeeded}/${ids.length} 个任务`,
                 sub: failed
@@ -357,6 +418,7 @@ export function ReviewPage() {
               });
               setCheckedIds(new Set());
               setRejectingIds(null);
+              rejectingActionRef.current = null;
             }
           },
         },
@@ -364,7 +426,7 @@ export function ReviewPage() {
     });
   };
 
-  const runBatchApprove = () => {
+  const runBatchApprove = (actionScopeKey: string, actionSelectionKey: string) => {
     const ids = [...checkedIds];
     let succeeded = 0;
     let failed = 0;
@@ -379,7 +441,11 @@ export function ReviewPage() {
         },
         onSettled: () => {
           pending--;
-          if (pending === 0) {
+          if (
+            pending === 0 &&
+            queueScopeKeyRef.current === actionScopeKey &&
+            checkedIdsKeyRef.current === actionSelectionKey
+          ) {
             pushToast({
               msg: `已通过 ${succeeded}/${ids.length} 个任务`,
               sub: failed ? `${failed} 项失败` : undefined,
@@ -617,14 +683,26 @@ export function ReviewPage() {
               </label>
               {checkedIds.size > 0 && (
                 <div className="flex gap-1.5">
-                  <Button variant="primary" size="sm" onClick={runBatchApprove}>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() =>
+                      runBatchApprove(queueScopeKeyRef.current, checkedIdsKeyRef.current)
+                    }
+                  >
                     <Icon name="check" size={11} />
                     批量通过 ({checkedIds.size})
                   </Button>
                   <Button
                     variant="danger"
                     size="sm"
-                    onClick={() => setRejectingIds([...checkedIds])}
+                    onClick={() => {
+                      rejectingActionRef.current = {
+                        scopeKey: queueScopeKeyRef.current,
+                        selectionKey: checkedIdsKeyRef.current,
+                      };
+                      setRejectingIds([...checkedIds]);
+                    }}
                   >
                     <Icon name="x" size={11} />
                     批量退回 ({checkedIds.size})
@@ -666,9 +744,23 @@ export function ReviewPage() {
       <RejectReasonModal
         open={!!rejectingIds}
         count={rejectingIds?.length ?? 0}
-        onClose={() => setRejectingIds(null)}
+        onClose={() => {
+          setRejectingIds(null);
+          rejectingActionRef.current = null;
+        }}
         onConfirm={(payload) => {
-          if (rejectingIds) runBatchReject(rejectingIds, payload);
+          if (!rejectingIds) return;
+          const action = rejectingActionRef.current;
+          if (
+            !action ||
+            action.scopeKey !== queueScopeKeyRef.current ||
+            action.selectionKey !== checkedIdsKeyRef.current
+          ) {
+            setRejectingIds(null);
+            rejectingActionRef.current = null;
+            return;
+          }
+          runBatchReject(rejectingIds, payload, action.scopeKey, action.selectionKey);
         }}
         // v0.8.8 · 单任务退回且该任务被跳过时透传 skip_reason 到 modal
         skipReasonHint={

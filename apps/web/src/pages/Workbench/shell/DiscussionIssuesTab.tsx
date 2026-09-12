@@ -72,8 +72,9 @@ export function DiscussionIssuesTab({
       project_id: projectId,
       task_id: !allowProjectScope || scope === "task" ? taskId : undefined,
       kind: "issue",
+      status: statusFilter === "all" ? undefined : statusFilter,
     }),
-    [projectId, taskId, scope, allowProjectScope],
+    [projectId, taskId, scope, allowProjectScope, statusFilter],
   );
   const { data, isLoading, isError, hasNextPage, isFetchingNextPage, fetchNextPage } =
     useInfiniteFeedbacks(params);
@@ -83,6 +84,8 @@ export function DiscussionIssuesTab({
   const focusIssue = useActiveIssueStore((s) => s.focusIssue);
 
   const items = data?.pages.flatMap((page) => page.items) ?? [];
+  // The API applies status before cursor pagination. Keep the local guard for
+  // older servers during the rollout without treating loaded rows as totals.
   const filtered = statusFilter === "all" ? items : items.filter((i) => i.status === statusFilter);
 
   const setStatus = (id: string, next: FeedbackStatus) => {
@@ -128,6 +131,12 @@ export function DiscussionIssuesTab({
             <Icon name="plus" size={12} /> 记录任务级问题
           </Button>
         )}
+        <span
+          className="ml-auto self-center text-2xs text-muted-foreground"
+          aria-label={`${scope === "task" ? "当前任务" : "整个项目"}已加载问题数量`}
+        >
+          {scope === "task" ? "当前任务" : "整个项目"} · 已加载 {filtered.length}
+        </span>
       </div>
 
       {isLoading && <div className="px-1 py-2 text-xs text-muted-foreground">加载中…</div>}
