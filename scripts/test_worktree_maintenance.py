@@ -28,7 +28,21 @@ class MaintenanceTests(unittest.TestCase):
     @unittest.skipUnless(shutil.which("docker"), "Docker Compose CLI is required")
     def test_compose_deployments_have_a_maintenance_consumer(self):
         with tempfile.TemporaryDirectory() as temporary:
-            env_file = Path(temporary) / "compose.env"
+            root = Path(temporary)
+            env_file = root / "compose.env"
+            # Run inside a sandbox copy of the compose files: Compose v2 (the
+            # version CI runners ship) resolves `env_file:` against the project
+            # directory and fails the whole `config` command when the file is
+            # missing, while newer versions only warn. The production overlays
+            # reference .env.production, which is gitignored and never present
+            # in a fresh checkout, so stage an empty fixture beside the copies.
+            for name in (
+                "docker-compose.yml",
+                "docker-compose.prod.yml",
+                "docker-compose.lan-prod.yml",
+            ):
+                shutil.copy(ROOT / name, root / name)
+            (root / ".env.production").write_text("")
             values = {
                 "DATABASE_URL_DOCKER": "postgresql+asyncpg://runtime:fixture@postgres/dev",
                 "MIGRATION_DATABASE_URL_DOCKER": "postgresql+asyncpg://owner:fixture@postgres/dev",
@@ -57,7 +71,7 @@ class MaintenanceTests(unittest.TestCase):
                 with self.subTest(files=files):
                     command = ["docker", "compose", "--env-file", str(env_file)]
                     for file in files:
-                        command.extend(["-f", str(ROOT / file)])
+                        command.extend(["-f", str(root / file)])
                     result = subprocess.run(
                         [*command, "config", "--no-env-resolution", "--format", "json"],
                         env={
