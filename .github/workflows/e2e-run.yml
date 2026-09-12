@@ -73,13 +73,14 @@ jobs:
       # services 没法给 minio/minio 镜像传 server 子命令；bitnami/minio:latest 已被下架。
       # 直接 docker run 启容器最稳，并等到 health endpoint 通后再继续，避免后续 FastAPI
       # startup 阶段反复重试拉满 health-check 窗口。
+      # Keep the image from the last passing main run, using MinIO's Quay registry.
       - name: Start MinIO
         run: |
           docker run -d --name minio \
             -p 9000:9000 \
             -e MINIO_ROOT_USER=minioadmin \
             -e MINIO_ROOT_PASSWORD=minioadmin \
-            minio/minio:latest server /data
+            quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e server /data
           for i in {1..30}; do
             if curl -fsS http://127.0.0.1:9000/minio/health/live; then exit 0; fi
             sleep 1
