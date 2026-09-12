@@ -368,6 +368,21 @@ describe("AIPredictionPopover phases", () => {
     expect(screen.getByTestId("ai-prediction-bulk-scope")).toHaveTextContent("其他帧");
   });
 
+  it("labels and gates batch acceptance with the loaded eligible count", () => {
+    const props = popoverProps({ aiBoxCount: 1, batchEligibleCount: 3 });
+    render(<AIPredictionPopover {...props} />);
+    fireEvent.click(screen.getByTestId("ai-prediction-advanced-toggle"));
+
+    expect(screen.getByTestId("ai-prediction-bulk-scope")).toHaveTextContent("3 个");
+    expect(screen.getByTestId("ai-prediction-accept-all")).toHaveTextContent("3");
+    expect(screen.getByTestId("ai-prediction-accept-all")).toHaveAttribute(
+      "title",
+      "采纳当前题已加载的 3 个候选",
+    );
+    fireEvent.click(screen.getByTestId("ai-prediction-accept-all"));
+    expect(props.onAcceptAll).toHaveBeenCalledTimes(1);
+  });
+
   it("gates incomplete inputs and unsupported recovery while retaining configuration access", () => {
     const props = popoverProps({ cfg: config({ configReady: false }) });
     const { rerender } = render(<AIPredictionPopover {...props} />);

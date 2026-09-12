@@ -1,4 +1,4 @@
-import { fireEvent, render } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import type { ComponentProps, MouseEvent } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { Annotation } from "@/types";
@@ -149,6 +149,50 @@ describe("AIInspectorPanel video selection commands", () => {
       frameIndex: undefined,
     });
     expect(view.onSeekFrame).not.toHaveBeenCalled();
+  });
+
+  it("resets the frame filter to current when the task changes", () => {
+    const makeAi = (id: string, frameIndex: number): AiBox => ({
+      ...annotation({
+        type: "video_bbox",
+        frame_index: frameIndex,
+        x: 0.1,
+        y: 0.1,
+        w: 0.2,
+        h: 0.2,
+      }),
+      id,
+      source: "prediction_based",
+      predictionId: `prediction-${id}`,
+      shapeIndex: 0,
+      predictionSource: "ml_backend",
+    });
+    const props: ComponentProps<typeof AIInspectorPanel> = {
+      open: true,
+      width: 300,
+      onResize: vi.fn(),
+      taskId: "task-a",
+      aiBoxes: [makeAi("frame-0", 0), makeAi("frame-1", 1)],
+      userBoxes: [],
+      selectedId: null,
+      imageWidth: 800,
+      imageHeight: 600,
+      currentFrameIndex: 0,
+      onSelect: vi.fn(),
+      onAcceptPrediction: vi.fn(),
+      onClearSelection: vi.fn(),
+      onDeleteUserBox: vi.fn(),
+    };
+    const { rerender } = render(<AIInspectorPanel {...props} />);
+    expect(screen.getByTestId("select-frame-0")).toBeInTheDocument();
+    expect(screen.queryByTestId("select-frame-1")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "全部" }));
+    expect(screen.getByTestId("select-frame-1")).toBeInTheDocument();
+
+    rerender(<AIInspectorPanel {...props} taskId="task-b" />);
+    expect(screen.getByTestId("select-frame-0")).toBeInTheDocument();
+    expect(screen.queryByTestId("select-frame-1")).toBeNull();
   });
 
   it("sends multi-selection clearing through admission and marks only video commands", () => {

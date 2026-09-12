@@ -56,6 +56,7 @@ interface AIInspectorPanelProps {
   widthMin?: number;
   widthMax?: number;
   widthResetTo?: number;
+  taskId?: string | null;
   aiBoxes: AiBox[];
   predictionSourceFilter?: PredictionSourceFilterState;
   userBoxes: Annotation[];
@@ -122,6 +123,8 @@ interface PredictionSourceFilterState {
   visibility: PredictionSourceVisibility;
   counts: PredictionSourceCounts;
   totalCount: number;
+  /** Candidates remaining after source visibility, before the optional frame view. */
+  visibleCount?: number;
   onToggle: (source: PredictionSourceFilter, visible: boolean) => void;
 }
 
@@ -129,6 +132,7 @@ export function AIInspectorPanel({
   // v0.11.5+ · width/onResize 仍在 props 接口里，但列宽拖拽 handle 已上移到
   // WorkbenchLayout 的 .rightSplit（全高），故此处不再渲染/解构它们。
   open,
+  taskId,
   aiBoxes,
   predictionSourceFilter,
   userBoxes,
@@ -345,6 +349,7 @@ export function AIInspectorPanel({
         hasMore={hasMorePredictions}
         isFetchingMore={isFetchingMorePredictions}
         onFetchMore={onFetchMorePredictions}
+        taskId={taskId}
         currentFrameIndex={currentFrameIndex}
         onSeekFrame={onSeekFrame}
         onSelect={onSelect}
@@ -518,6 +523,8 @@ interface AIPredictionPopoverProps {
   pipelineMissingBackendCount?: number;
   onRunPipeline?: () => void;
   onAcceptAll: () => void;
+  /** Count of loaded candidates that remain eligible for the current-task batch action. */
+  batchEligibleCount?: number;
   onSetConfThreshold: (v: number) => void;
   // v0.10.23 · 设计 B · 文本输入段下沉到 InteractiveToolBar; popover 不再承载 SAM 文本提示控件.
   taskAiCost?: number;
@@ -601,6 +608,7 @@ export function AIPredictionPopover({
   pipelineMissingBackendCount = 0,
   onRunPipeline,
   onAcceptAll,
+  batchEligibleCount: batchEligibleCountProp,
   onSetConfThreshold,
   taskAiCost,
   taskAiAvgMs,
@@ -615,11 +623,12 @@ export function AIPredictionPopover({
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const advancedId = useId();
   const running = request ? request.status === "running" : aiRunning;
+  const batchEligibleCount = batchEligibleCountProp ?? aiBoxCount;
   const phase = running
     ? "running"
     : request?.status === "error"
       ? "error"
-      : aiBoxCount > 0
+      : aiBoxCount > 0 || batchEligibleCount > 0
         ? "review"
         : "idle";
   const phaseLabels = {
@@ -817,6 +826,11 @@ export function AIPredictionPopover({
               {phase === "review" && (
                 <p className="mb-2 text-xs text-foreground">
                   <span className="font-semibold tabular-nums">{aiBoxCount}</span> 个候选待审阅
+                  {batchEligibleCount !== aiBoxCount && (
+                    <span className="text-muted-foreground">
+                      ，{batchEligibleCount} 个已加载候选可批量采纳
+                    </span>
+                  )}
                 </p>
               )}
             </>
@@ -977,7 +991,8 @@ export function AIPredictionPopover({
               data-testid="ai-prediction-bulk-scope"
               className="mb-2 text-2xs leading-normal text-muted-foreground"
             >
-              批量采纳沿用当前题已加载、符合筛选的候选范围，跳过与人工标注重复的候选。
+              批量采纳沿用当前题已加载、符合筛选的候选范围（{batchEligibleCount}{" "}
+              个），跳过与人工标注重复的候选。
               {isVideoTask && "视频范围可能包括其他帧。"}
             </p>
             <Button
@@ -985,12 +1000,12 @@ export function AIPredictionPopover({
               size="sm"
               data-testid="ai-prediction-accept-all"
               onClick={onAcceptAll}
-              disabled={aiBoxCount === 0}
+              disabled={batchEligibleCount === 0}
               className="w-full"
-              title="采纳当前题可见候选"
+              title={`采纳当前题已加载的 ${batchEligibleCount} 个候选`}
             >
               <Icon name="check" size={12} />
-              采纳当前候选
+              采纳已加载候选（{batchEligibleCount}）
             </Button>
           </div>
 
@@ -1161,6 +1176,7 @@ interface BoxesListProps {
   hasMore?: boolean;
   isFetchingMore?: boolean;
   onFetchMore?: () => void;
+  taskId?: string | null;
   currentFrameIndex?: number;
   onSelect: (id: string, opts?: { shift?: boolean }) => void;
   onSelectVideoObject?: VideoSelectionCommand;
@@ -1200,6 +1216,7 @@ function BoxesList({
   hasMore,
   isFetchingMore,
   onFetchMore,
+  taskId,
   currentFrameIndex,
   onSeekFrame,
   onSelect,
@@ -1223,6 +1240,9 @@ function BoxesList({
   // 视频默认聚焦「当前帧」,避免一上来在「全部」视图里跨帧误操作;图片端 frameFilter 不显示
   // 且 filterBoxesByFrame 在 currentFrameIndex 为 undefined 时回落全部,故对图片无影响。
   const [frameFilter, setFrameFilter] = useState<FrameFilter>("current");
+  useEffect(() => {
+    setFrameFilter("current");
+  }, [taskId]);
   const showFrameFilter = typeof currentFrameIndex === "number";
   const resolvedVideoTrackPanel = useMemo(
     () => (typeof videoTrackPanel === "function" ? videoTrackPanel(frameFilter) : videoTrackPanel),
@@ -1240,8 +1260,12 @@ function BoxesList({
 
   const rows = useMemo<Row[]>(() => {
     const out: Row[] = [];
-    const aiTotalCount = predictionSourceFilter?.totalCount ?? aiBoxes.length;
-    if (showFrameFilter && (aiTotalCount > 0 || userBoxes.length > 0 || resolvedVideoTrackPanel)) {
+    const aiReviewableCount = predictionSourceFilter?.totalCount ?? aiBoxes.length;
+    const aiVisibleCount = predictionSourceFilter?.visibleCount ?? aiBoxes.length;
+    if (
+      showFrameFilter &&
+      (aiReviewableCount > 0 || userBoxes.length > 0 || resolvedVideoTrackPanel)
+    ) {
       out.push({
         kind: "frameFilter",
         key: "frame-filter",
@@ -1256,14 +1280,14 @@ function BoxesList({
       kind: "header",
       label: "AI 待审",
       count: filteredAiBoxes.length,
-      totalCount: aiTotalCount,
+      totalCount: aiVisibleCount,
       key: "ai-header",
       sectionKey: "ai",
       collapsed: aiSectionCollapsed,
       onToggle: onToggleAiSection,
     });
     // 分组标题常驻；空分组仍显示 0，成员行与来源筛选只在有数据且展开时渲染。
-    if (!aiSectionCollapsed && aiTotalCount > 0) {
+    if (!aiSectionCollapsed && aiReviewableCount > 0) {
       if (predictionSourceFilter && hasKnownPredictionSources) {
         out.push({
           kind: "sourceFilter",
