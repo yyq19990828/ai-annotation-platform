@@ -314,6 +314,17 @@
   border: 1px solid var(--docs-border);
   border-radius: var(--docs-radius);
 }
+/* A theme pair contains two Markdown images: light first, dark second. */
+.doc-theme-images {
+  margin: 24px 0;
+}
+.doc-theme-images > p {
+  margin: 0;
+}
+html:not(.dark) .doc-theme-images > p:last-child,
+html.dark .doc-theme-images > p:first-child {
+  display: none;
+}
 .docs-reading-page .VPDocAsideOutline .outline-title {
   color: var(--docs-text-1);
   font-size: 13px;

@@ -146,6 +146,28 @@ try {
       "Missing type must not render an empty label",
     );
     console.log("Passed intermediate breakpoints and missing metadata.");
+    for (const route of ["user-guide/getting-started", "user-guide/projects/"]) {
+      browser("open", new URL(route, base).href);
+      browser("wait", "--fn", "!!document.querySelector('.doc-theme-images')");
+      for (const dark of [false, true]) {
+        browser("eval", `document.documentElement.classList.toggle('dark', ${dark})`);
+        const pair = browser(
+          "eval",
+          `(() => {
+          const images = [...document.querySelectorAll('.doc-theme-images img')];
+          return { count: images.length, visible: images.filter(img => img.getBoundingClientRect().width > 0).map(img => img.src) };
+        })()`,
+        ).result;
+        assert.equal(pair.count, 2, `${route}: expected a light/dark image pair`);
+        assert.equal(pair.visible.length, 1, `${route}: show exactly one theme image`);
+        assert.equal(
+          pair.visible[0].includes(".dark."),
+          dark,
+          `${route}: image must follow the document theme`,
+        );
+      }
+    }
+    console.log("Passed single-image light/dark screenshot pairs.");
     browser("open", base.href);
     browser(
       "wait",

@@ -16,16 +16,20 @@ last_reviewed: 2026-08-11
 
 > 若平台开启了「开放注册」，登录页会有注册入口可自助注册（默认 viewer 角色）。开放注册在生产环境默认要求邮箱验证：注册后需点验证邮件里的链接才能登录，未收到可在验证页重发。通过邀请链接注册则无需验证，按邀请角色直接加入项目。
 
+<div class="doc-theme-images">
+
 ![登录页](./images/getting-started/login.png)
+
+![登录页（深色主题）](./images/getting-started/login.dark.png)
+
+</div>
 
 <!-- TODO(0.8.1) IMAGE_CHECKLIST: 登录页全屏；标注红框：邮箱输入、密码输入、登录按钮、「忘记密码」链接。1920×1080，浏览器框架可保留。 -->
 
-登录入口在浅色、深色和窄屏视图中相同。需要对照其他界面时，展开下面的可选示例：
+窄屏布局和密码恢复示例可按需展开：
 
 <details>
-<summary>查看深色、窄屏和密码恢复示例</summary>
-
-![登录页（深色主题）](./images/getting-started/login.dark.png)
+<summary>查看窄屏和密码恢复示例</summary>
 
 ![登录页（窄屏）](./images/getting-started/login.mobile.png)
 

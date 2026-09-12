@@ -71,6 +71,20 @@ Prefer relative links within the same domain, such as `../how-to/add-page`. Use 
 
 Use the existing image, video, diagram, and lightbox components. Put media immediately after the operation or decision it explains, and write alt text or a caption that tells the reader what to inspect. Keep required limitations in normal prose.
 
+Do not show light and dark screenshots of the same operation consecutively. When both variants exist, place exactly two Markdown images in `doc-theme-images`, light first and dark second. The existing `html.dark` theme then shows only the matching image, including in image zoom:
+
+```md
+<div class="doc-theme-images">
+
+![Login](./images/login.png)
+
+![Login in dark mode](./images/login.dark.png)
+
+</div>
+```
+
+Use one representative screenshot when no theme pair is needed. Device layouts and different loading, empty, or error states should remain separate only when they explain a useful difference.
+
 Use `<details>` for optional variants that would interrupt the main path, such as dark-theme, mobile, password-recovery, or long troubleshooting examples:
 
 ```md
