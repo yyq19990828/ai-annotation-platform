@@ -37,6 +37,9 @@ describe("DataManagerFilterBar", () => {
 
     render(<DataManagerFilterBar fields={fields} chips={[]} onAdd={onAdd} onClear={vi.fn()} />);
 
+    expect(screen.getByRole("button", { name: "筛选" }).querySelector("svg")).toHaveClass(
+      "lucide-funnel",
+    );
     await user.click(screen.getByRole("button", { name: "筛选" }));
     await user.type(screen.getByRole("textbox", { name: "搜索筛选字段" }), "模型");
 

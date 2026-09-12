@@ -532,7 +532,9 @@ describe("CapabilityCatalogPanel · 协议双层视图", () => {
     expect(await screen.findByText("SAM 检测")).toBeInTheDocument();
     expect(screen.getByText("YOLO 检测")).toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: "更多筛选" }));
     fireEvent.click(screen.getByRole("button", { name: "sam" }));
+    expect(screen.getByRole("button", { name: "sam" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("SAM 检测")).toBeInTheDocument();
     expect(screen.queryByText("YOLO 检测")).not.toBeInTheDocument();
   });

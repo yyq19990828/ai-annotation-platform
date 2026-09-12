@@ -45,6 +45,7 @@ it("paginates 1000 invitations and shares selected filters with stats and export
     expect.objectContaining({ page: 2, page_size: 25 }),
     expect.any(AbortSignal),
   );
+  fireEvent.click(screen.getByRole("button", { name: "筛选" }));
   fireEvent.change(screen.getByLabelText("邀请项目筛选"), { target: { value: "p1" } });
   fireEvent.change(screen.getByLabelText("邀请角色筛选"), { target: { value: "reviewer" } });
   fireEvent.click(screen.getByRole("button", { name: "待接受" }));

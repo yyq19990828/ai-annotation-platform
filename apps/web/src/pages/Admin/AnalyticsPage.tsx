@@ -1,3 +1,4 @@
+import { FilterGroup, FilterSelect } from "@/components/filters/FilterControls";
 /**
  * v0.10.16 · DuckDB 离线分析面板（ROADMAP §1.6）。
  *
@@ -120,10 +121,10 @@ export function AnalyticsPage() {
             数据由 Celery beat 每日 02:30 UTC 增量同步；面板查询为固定 SQL，禁用任意 SQL 输入。
           </p>
         </div>
-        <div className="inline-flex items-center gap-1.5">
-          <span className="text-xs text-muted-foreground">时间范围：</span>
-          <select
-            className="rounded-md border border-border bg-card px-2 py-1 text-xs text-foreground"
+        <FilterGroup label="时间范围" compact>
+          <FilterSelect
+            aria-label="时间范围"
+            compact
             value={days}
             onChange={(e) => setDays(Number(e.target.value))}
             data-testid="analytics-range-select"
@@ -133,8 +134,8 @@ export function AnalyticsPage() {
                 {o.label}
               </option>
             ))}
-          </select>
-        </div>
+          </FilterSelect>
+        </FilterGroup>
       </div>
 
       <div className="grid grid-cols-[repeat(auto-fit,minmax(320px,1fr))] gap-4">

@@ -1,3 +1,7 @@
+import { FilterGroup, FilterSelect, FilterToggle } from "@/components/filters/FilterControls";
+import { FilterPanel } from "@/components/filters/FilterPanel";
+import { FilterTrigger } from "@/components/filters/FilterTrigger";
+import { ActiveFilterChip } from "@/components/filters/ActiveFilterChip";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -48,6 +52,7 @@ export function InvitationListPanel() {
   });
   const { state: filters, issues, patch } = urlState;
   const [searchDraft, setSearchDraft] = useState(filters.q);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const syncingSearchDraft = useRef(false);
   const lastUrlQuery = useRef(filters.q);
   const debouncedSearch = useDebouncedValue(searchDraft, 250);
@@ -159,63 +164,111 @@ export function InvitationListPanel() {
   return (
     <div className={styles.root}>
       <div className={`${styles.toolbar} flex-wrap gap-2`}>
-        <div className={`${styles.filters} flex-wrap`}>
+        <FilterGroup label="邀请状态" compact>
           {(["all", "pending", "accepted", "expired", "revoked"] as const).map((value) => (
-            <button
+            <FilterToggle
+              compact
+              active={filters.status === value}
               type="button"
               key={value}
               onClick={() => {
                 patch({ status: value, page: 1 }, { replace: false });
               }}
-              className={`${styles.filterButton} ${filters.status === value ? styles.filterButtonActive : ""}`}
             >
               {value === "all" ? "全部" : STATUS_LABEL[value]}
-            </button>
+            </FilterToggle>
           ))}
-        </div>
-        {role === "super_admin" && (
-          <select
-            aria-label="邀请范围"
-            value={scope}
-            onChange={(event) => {
-              patch({ scope: event.target.value as "me" | "all", page: 1 }, { replace: false });
-            }}
-            className={styles.select}
-          >
-            <option value="me">我邀请的</option>
-            <option value="all">全部邀请</option>
-          </select>
-        )}
-        <select
-          aria-label="邀请项目筛选"
-          value={filters.projectId}
-          onChange={(event) => {
-            patch({ projectId: event.target.value, page: 1 }, { replace: false });
-          }}
-          className={styles.select}
+        </FilterGroup>
+        <FilterPanel
+          open={filtersOpen}
+          onOpenChange={setFiltersOpen}
+          trigger={
+            <FilterTrigger
+              count={
+                Number(scope !== "me") +
+                Number(Boolean(filters.projectId)) +
+                Number(Boolean(filters.role))
+              }
+            />
+          }
+          title="邀请筛选"
+          description="即时生效 · 保留邀请状态与搜索。"
+          align="start"
+          footer={
+            <div className="flex justify-between gap-2">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() =>
+                  patch({ scope: "me", projectId: "", role: "", page: 1 }, { replace: false })
+                }
+              >
+                恢复默认范围
+              </Button>
+              <Button size="sm" onClick={() => setFiltersOpen(false)}>
+                完成
+              </Button>
+            </div>
+          }
         >
-          <option value="">全部项目</option>
-          {projects.map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.name}
-            </option>
-          ))}
-        </select>
-        <select
-          aria-label="邀请角色筛选"
-          value={filters.role}
-          onChange={(event) => {
-            patch({ role: event.target.value, page: 1 }, { replace: false });
-          }}
-          className={styles.select}
-        >
-          <option value="">全部角色</option>
-          {Object.entries(ROLE_LABELS).map(([key, label]) => (
-            <option key={key} value={key}>
-              {label}
-            </option>
-          ))}
-        </select>
+          <div className="grid gap-3">
+            {role === "super_admin" && (
+              <label className="flex flex-col gap-1.5 text-xs text-muted-foreground">
+                范围
+                <FilterSelect
+                  aria-label="邀请范围"
+                  value={scope}
+                  onChange={(event) => {
+                    patch(
+                      { scope: event.target.value as "me" | "all", page: 1 },
+                      { replace: false },
+                    );
+                  }}
+                  className="w-full"
+                >
+                  <option value="me">我邀请的</option>
+                  <option value="all">全部邀请</option>
+                </FilterSelect>
+              </label>
+            )}
+            <label className="flex flex-col gap-1.5 text-xs text-muted-foreground">
+              项目
+              <FilterSelect
+                aria-label="邀请项目筛选"
+                value={filters.projectId}
+                onChange={(event) => {
+                  patch({ projectId: event.target.value, page: 1 }, { replace: false });
+                }}
+                className="w-full"
+              >
+                <option value="">全部项目</option>
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </FilterSelect>
+            </label>
+            <label className="flex flex-col gap-1.5 text-xs text-muted-foreground">
+              角色
+              <FilterSelect
+                aria-label="邀请角色筛选"
+                value={filters.role}
+                onChange={(event) => {
+                  patch({ role: event.target.value, page: 1 }, { replace: false });
+                }}
+                className="w-full"
+              >
+                <option value="">全部角色</option>
+                {Object.entries(ROLE_LABELS).map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </FilterSelect>
+            </label>
+          </div>
+        </FilterPanel>
         <input
           value={searchDraft}
           onChange={(event) => {
@@ -229,6 +282,40 @@ export function InvitationListPanel() {
           {exporting ? "导出中…" : "导出筛选结果"}
         </Button>
       </div>
+      {(scope !== "me" || filters.projectId || filters.role) && (
+        <div
+          className="flex flex-wrap gap-1.5 px-4 pb-2"
+          role="group"
+          aria-label="已应用的邀请筛选"
+        >
+          {scope !== "me" && (
+            <ActiveFilterChip
+              label="范围"
+              value="全部邀请"
+              onClick={() => setFiltersOpen(true)}
+              onRemove={() => patch({ scope: "me", page: 1 }, { replace: false })}
+            />
+          )}
+          {filters.projectId && (
+            <ActiveFilterChip
+              label="项目"
+              value={
+                projects.find((project) => project.id === filters.projectId)?.name ?? "指定项目"
+              }
+              onClick={() => setFiltersOpen(true)}
+              onRemove={() => patch({ projectId: "", page: 1 }, { replace: false })}
+            />
+          )}
+          {filters.role && (
+            <ActiveFilterChip
+              label="角色"
+              value={ROLE_LABELS[filters.role as UserRole] ?? filters.role}
+              onClick={() => setFiltersOpen(true)}
+              onRemove={() => patch({ role: "", page: 1 }, { replace: false })}
+            />
+          )}
+        </div>
+      )}
       {!!issues.length && (
         <div role="alert" className="px-4 pb-2 text-xs text-status-caution">
           URL 邀请筛选无法完整恢复，已使用安全默认值。

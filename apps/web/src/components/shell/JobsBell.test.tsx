@@ -246,9 +246,7 @@ describe("JobsBell", () => {
     first.unmount();
     renderBell();
     fireEvent.click(await screen.findByTestId("jobs-bell-trigger"));
-    expect(screen.getByTestId("jobs-bell-filter-active").getAttribute("aria-selected")).toBe(
-      "true",
-    );
+    expect(screen.getByTestId("jobs-bell-filter-active").getAttribute("aria-pressed")).toBe("true");
     // 切回「全部」仍隐藏已 dismiss 的 done1
     fireEvent.click(screen.getByTestId("jobs-bell-filter-all"));
     expect(await screen.findByTestId("job-row-fail1")).toBeInTheDocument();

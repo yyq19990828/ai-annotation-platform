@@ -1,3 +1,4 @@
+import { FilterGroup, FilterToggle, FilterSelect } from "@/components/filters/FilterControls";
 import {
   useEffect,
   useMemo,
@@ -188,29 +189,38 @@ export function AdminPeoplePage() {
       <div className="sticky top-16 z-local-5 mb-4">
         <Card>
           <div className="flex flex-wrap items-center gap-2 p-3">
-            <FilterGroup
-              label="角色"
-              opts={ROLE_OPTS}
-              value={role}
-              onChange={(v: string) => patch({ role: v }, { replace: false })}
-            />
-            <FilterGroup
-              label="时间"
-              opts={PERIOD_OPTS}
-              value={period}
-              onChange={(v: string) => patch({ period: v as PeoplePeriod }, { replace: false })}
-            />
-            <FilterGroup
+            <FilterGroup label="角色" compact>
+              {ROLE_OPTS.map((option) => (
+                <FilterToggle
+                  key={option.v}
+                  active={role === option.v}
+                  onClick={() => patch({ role: option.v }, { replace: false })}
+                >
+                  {option.label}
+                </FilterToggle>
+              ))}
+            </FilterGroup>
+            <FilterGroup label="时间" compact>
+              {PERIOD_OPTS.map((option) => (
+                <FilterToggle
+                  key={option.v}
+                  active={period === option.v}
+                  onClick={() => patch({ period: option.v as PeoplePeriod }, { replace: false })}
+                >
+                  {option.label}
+                </FilterToggle>
+              ))}
+            </FilterGroup>
+            <SortOptions
               label="排序"
               opts={SORT_OPTS}
               value={sort}
               onChange={(v: string) => patch({ sort: v as PeopleSort }, { replace: false })}
             />
             {/* v0.12.6 (A3) · 项目级范围下拉 */}
-            <div className="flex items-center gap-1.5">
-              <span className="text-xs text-muted-foreground">项目</span>
-              <select
-                className={`${FIELD_CLASS} max-w-[200px]`}
+            <FilterGroup label="项目" compact>
+              <FilterSelect
+                className="max-w-[200px]"
                 value={project}
                 onChange={(e) => patch({ project: e.target.value }, { replace: false })}
                 aria-label="项目范围"
@@ -221,8 +231,8 @@ export function AdminPeoplePage() {
                     {p.name}
                   </option>
                 ))}
-              </select>
-            </div>
+              </FilterSelect>
+            </FilterGroup>
             <input
               type="search"
               placeholder="姓名 / 邮箱"
@@ -267,7 +277,7 @@ export function AdminPeoplePage() {
   );
 }
 
-function FilterGroup({
+function SortOptions({
   label,
   opts,
   value,

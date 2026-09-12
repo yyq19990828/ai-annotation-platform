@@ -1,3 +1,4 @@
+import { FilterGroup, FilterToggle } from "@/components/filters/FilterControls";
 // v0.10.14 · E2 · 模板库列表页. 三个 tab (我的 / 组织 / 公共), 搜索 + type
 // filter, 卡片列表. 操作: 应用 (跳 Wizard with template_id) / 克隆 / 编辑 / 删除.
 // 新建入口: + 新建模板 (空白) / 从已有项目导出.
@@ -7,7 +8,6 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { SearchInput } from "@/components/ui/SearchInput";
-import { TabRow } from "@/components/ui/TabRow";
 import { useToastStore } from "@/components/ui/Toast";
 import { useAuthStore } from "@/stores/authStore";
 import {
@@ -173,7 +173,17 @@ export function ProjectTemplatesPage() {
       </div>
 
       <div className={styles.toolbar}>
-        <TabRow tabs={[...TABS]} active={activeTab} onChange={updateTab} />
+        <FilterGroup label="范围">
+          {TABS.map((option) => (
+            <FilterToggle
+              key={option}
+              active={activeTab === option}
+              onClick={() => updateTab(option)}
+            >
+              {option}
+            </FilterToggle>
+          ))}
+        </FilterGroup>
         <div className={styles.grow} />
         <SearchInput
           value={search}

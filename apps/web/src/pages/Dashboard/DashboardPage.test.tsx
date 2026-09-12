@@ -45,8 +45,9 @@ vi.mock("@/components/datasets/ImportDatasetWizard", () => ({
     open ? <div data-testid="id-wizard" /> : null,
 }));
 
-vi.mock("./FilterDrawer", () => ({
-  FilterDrawer: () => null,
+vi.mock("./ProjectFilterPanel", () => ({
+  ProjectFilterPanel: () => null,
+  ProjectFilterSummary: () => null,
   EMPTY_FILTERS: {
     data_type: [],
     member_id: undefined,

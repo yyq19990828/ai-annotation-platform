@@ -1,3 +1,4 @@
+import { FilterGroup, FilterSelect } from "@/components/filters/FilterControls";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, Check, Crosshair, MessageSquareText, RefreshCw, X } from "lucide-react";
 
@@ -218,44 +219,44 @@ export function PointCloudQualityPanel({
                 ? "扫描当前 Scene"
                 : "扫描当前任务"}
           </Button>
-          <select
-            aria-label="质量问题状态"
-            className="ml-auto h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground"
-            value={filter}
-            onChange={(event) => setFilter(event.target.value as typeof filter)}
-          >
-            <option value="open">待处理</option>
-            <option value="resolved">已解决</option>
-            <option value="wont_fix">搁置</option>
-            <option value="stale">已过期</option>
-            <option value="all">全部</option>
-          </select>
-          <select
-            aria-label="质量问题严重级别"
-            className="h-8 rounded-md border border-border bg-background px-2 text-xs text-foreground"
-            value={severity}
-            onChange={(event) =>
-              setSeverity(event.target.value as PointCloudQualitySeverity | "all")
-            }
-          >
-            <option value="all">全部严重级别</option>
-            <option value="blocker">阻断</option>
-            <option value="warning">警告</option>
-            <option value="info">提示</option>
-          </select>
-          <select
-            aria-label="质量问题规则"
-            className="h-8 max-w-40 rounded-md border border-border bg-background px-2 text-xs text-foreground"
-            value={code}
-            onChange={(event) => setCode(event.target.value)}
-          >
-            <option value="all">全部规则</option>
-            {Object.entries(CODE_LABEL).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
+          <FilterGroup label="问题筛选" compact className="ml-auto">
+            <FilterSelect
+              aria-label="质量问题状态"
+              value={filter}
+              onChange={(event) => setFilter(event.target.value as typeof filter)}
+            >
+              <option value="open">待处理</option>
+              <option value="resolved">已解决</option>
+              <option value="wont_fix">搁置</option>
+              <option value="stale">已过期</option>
+              <option value="all">全部</option>
+            </FilterSelect>
+            <FilterSelect
+              aria-label="质量问题严重级别"
+              value={severity}
+              onChange={(event) =>
+                setSeverity(event.target.value as PointCloudQualitySeverity | "all")
+              }
+            >
+              <option value="all">全部严重级别</option>
+              <option value="blocker">阻断</option>
+              <option value="warning">警告</option>
+              <option value="info">提示</option>
+            </FilterSelect>
+            <FilterSelect
+              aria-label="质量问题规则"
+              className="max-w-40"
+              value={code}
+              onChange={(event) => setCode(event.target.value)}
+            >
+              <option value="all">全部规则</option>
+              {Object.entries(CODE_LABEL).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </FilterSelect>
+          </FilterGroup>
         </div>
       )}
 

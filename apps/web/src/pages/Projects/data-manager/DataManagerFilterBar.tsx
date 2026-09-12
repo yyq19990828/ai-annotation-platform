@@ -10,6 +10,7 @@ export interface DataManagerFilterChip {
   value: FilterChip["value"];
   invalid?: boolean;
   editor: ReactNode;
+  onRemove?: () => void;
 }
 
 export type DataManagerQuickFilter = QuickFilter;

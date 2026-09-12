@@ -185,7 +185,7 @@ describe("EntityDataManagerLens", () => {
         />
       </MemoryRouter>,
     );
-    await user.click(screen.getByRole("button", { name: /标注数/ }));
+    await user.click(screen.getByRole("button", { name: /^标注数/ }));
     const input = screen.getByRole("textbox", { name: "条件值" });
     await user.type(input, "-");
     await user.tab();

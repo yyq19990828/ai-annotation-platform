@@ -338,6 +338,7 @@ describe("UsersPage", () => {
     expect(mockUseUsers).toHaveBeenLastCalledWith(
       expect.objectContaining({ page: 2, page_size: 25 }),
     );
+    fireEvent.click(screen.getByRole("button", { name: "筛选" }));
     fireEvent.change(screen.getByLabelText("项目筛选"), { target: { value: "project-1" } });
     fireEvent.change(screen.getByLabelText("角色筛选"), { target: { value: "annotator" } });
     expect(mockUseUsers).toHaveBeenLastCalledWith(
@@ -362,6 +363,7 @@ describe("UsersPage", () => {
     fireEvent.click(screen.getByLabelText("选择 Alice"));
     expect(screen.getByText(/已选择 1 名成员/)).toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: "筛选" }));
     fireEvent.change(screen.getByLabelText("角色筛选"), { target: { value: "annotator" } });
     await waitFor(() =>
       expect(screen.getByTestId("location-search")).toHaveTextContent("?role=annotator"),
@@ -383,6 +385,7 @@ describe("UsersPage", () => {
   it("rehydrates filter state on browser back and forward", async () => {
     mockUseUsers.mockReturnValue({ data: SAMPLE_USERS, total: 1000, pages: 40, isLoading: false });
     renderUI(["/users", "/users?status=inactive&page=2&q=Alice&project_id=project-1"], 1);
+    fireEvent.click(screen.getByRole("button", { name: "筛选" }));
     expect(screen.getByLabelText("账号状态")).toHaveValue("inactive");
     expect(screen.getByPlaceholderText(/搜索姓名或邮箱/)).toHaveValue("Alice");
     expect(screen.getByLabelText("项目筛选")).toHaveValue("project-1");

@@ -1,3 +1,5 @@
+import { ActiveFilterChip } from "@/components/filters/ActiveFilterChip";
+import { FilterGroup } from "@/components/filters/FilterControls";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
@@ -533,15 +535,9 @@ export function ReviewPage() {
               )}
             </p>
             {assigneeFilter && (
-              <button
-                type="button"
-                className="mt-2 inline-flex cursor-pointer appearance-none items-center gap-1 rounded-full border border-brand/30 bg-brand/10 px-2.5 py-1 text-xs text-brand hover:bg-brand/20"
-                onClick={clearAssigneeFilter}
-                title="清除指派标注员过滤"
-              >
-                <Icon name="filter" size={11} />
-                仅看指派标注员 · 清除
-              </button>
+              <FilterGroup compact label="指派范围" className="mt-2">
+                <ActiveFilterChip label="仅看指派标注员" onRemove={clearAssigneeFilter} />
+              </FilterGroup>
             )}
           </div>
           {selectedBatchId && (

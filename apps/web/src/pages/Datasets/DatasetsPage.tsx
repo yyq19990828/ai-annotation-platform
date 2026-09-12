@@ -1,3 +1,4 @@
+import { FilterGroup, FilterToggle } from "@/components/filters/FilterControls";
 import { useState, Fragment, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
@@ -813,7 +814,17 @@ export function DatasetsPage() {
             <div className="flex items-center justify-between border-b border-border px-4 py-3.5">
               <div className="flex items-center gap-3">
                 <h3 className="m-0 text-sm font-semibold">全部数据集</h3>
-                <TabRow tabs={[...TYPE_FILTERS]} active={filter} onChange={updateFilter} />
+                <FilterGroup label="数据类型">
+                  {TYPE_FILTERS.map((option) => (
+                    <FilterToggle
+                      key={option}
+                      active={filter === option}
+                      onClick={() => updateFilter(option)}
+                    >
+                      {option}
+                    </FilterToggle>
+                  ))}
+                </FilterGroup>
               </div>
               <SearchInput
                 placeholder="搜索数据集..."

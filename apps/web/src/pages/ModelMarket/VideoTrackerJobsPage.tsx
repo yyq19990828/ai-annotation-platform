@@ -1,3 +1,4 @@
+import { FilterGroup, FilterSelect } from "@/components/filters/FilterControls";
 import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
@@ -237,8 +238,8 @@ export function VideoTrackerJobsPanel({ projectId }: { projectId?: string }) {
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
-          <div className="inline-flex flex-wrap gap-2">
-            <select
+          <FilterGroup label="筛选" compact>
+            <FilterSelect
               aria-label="筛选视频项目"
               value={selectedProjectId}
               onChange={(event) => {
@@ -247,7 +248,7 @@ export function VideoTrackerJobsPanel({ projectId }: { projectId?: string }) {
                   { replace: false, resetPagination: true },
                 );
               }}
-              className={`${FIELD_CLASS} max-w-[240px]`}
+              className="max-w-[240px]"
             >
               <option value="">全部视频项目</option>
               {(projectsQ.data ?? []).map((project) => (
@@ -256,8 +257,8 @@ export function VideoTrackerJobsPanel({ projectId }: { projectId?: string }) {
                   {project.display_id ? ` (${project.display_id})` : ""}
                 </option>
               ))}
-            </select>
-            <select
+            </FilterSelect>
+            <FilterSelect
               aria-label="筛选视频任务状态"
               value={statusFilter}
               onChange={(event) => {
@@ -268,7 +269,6 @@ export function VideoTrackerJobsPanel({ projectId }: { projectId?: string }) {
                   { replace: false, resetPagination: true },
                 );
               }}
-              className={FIELD_CLASS}
             >
               <option value="">全部状态</option>
               {STATUS_ORDER.map((status) => (
@@ -276,7 +276,7 @@ export function VideoTrackerJobsPanel({ projectId }: { projectId?: string }) {
                   {STATUS_LABEL[status]}
                 </option>
               ))}
-            </select>
+            </FilterSelect>
             <input
               aria-label="筛选追踪模型"
               type="text"
@@ -288,7 +288,7 @@ export function VideoTrackerJobsPanel({ projectId }: { projectId?: string }) {
               placeholder="按 model_key 精确过滤..."
               className={`${FIELD_CLASS} w-[210px]`}
             />
-          </div>
+          </FilterGroup>
           {(selectedProjectId || statusFilter || modelKey) && (
             <Button
               size="xs"

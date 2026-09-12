@@ -95,6 +95,16 @@ Use semantic z utilities instead of raw numeric z-index classes:
 - Use shadcn/ui primitives from `apps/web/src/components/shadcn/ui/` for low-level behavior where possible.
 - Keep existing `@/components/ui/*` adapters only when they preserve the current app API; they should delegate to shadcn/Radix behavior or Tailwind classes internally.
 
+## Filter presentation
+
+Filtering entry points use the existing `Icon name="filter"` funnel, not a plus or settings icon. Use `components/filters/FilterTrigger` for an expandable filter and `FilterGroup` for inline scopes. Set explicit SVG size classes (`size-4` for ordinary controls, `size-3` for dense panels) because Button CSS can override numeric SVG dimensions. Keep the Icon adapter's stroke and semantic theme colors.
+
+`FilterPanel` is a controlled, non-modal, trigger-attached Popover on desktop and a bottom Sheet on narrow screens. Its desktop geometry uses an 8px trigger gap and 12px viewport clearance; only the body scrolls. The owner retains drafts across the responsive branch. Give every panel an accessible title and distinguish explicit Apply/Cancel forms from immediate filters. Do not change global Modal positioning to restyle a filter.
+
+Reuse `FilterToggle`, `FilterSelect`, `FilterSection` and `ActiveFilterChip` for compact options, labeled fields and applied summaries. Chip removal is a sibling action, never a nested button; invalid conditions need visible text as well as color. Keep native checkbox/select/range semantics when Workbench keyboard isolation relies on them. Preserve source/status color meanings and virtualized row measurements.
+
+Keep high-frequency choices inline and complex Data Manager expressions below the toolbar. Search, sort, display columns, true navigation tabs and mutation scope controls remain distinct. The [state and result-scope contract](./filtering.md) still owns reset, history, pagination and action-scope rules.
+
 ## Icon semantics
 
 The app keeps Lucide as its primary icon library. `components/ui/Icon.tsx` renders

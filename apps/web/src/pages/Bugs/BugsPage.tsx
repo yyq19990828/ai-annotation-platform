@@ -1,3 +1,4 @@
+import { FilterGroup, FilterSelect } from "@/components/filters/FilterControls";
 import { lazy, Suspense, useState, useEffect, useMemo, useRef } from "react";
 import { bugReportsApi, type BugReportDetail } from "@/api/bug-reports";
 import { useToastStore } from "@/components/ui/Toast";
@@ -226,11 +227,11 @@ export function BugsPage() {
       <h1 className={styles.title}>Bug 反馈管理</h1>
 
       {/* Filters */}
-      <div className={styles.filters}>
-        <select
+      <FilterGroup label="筛选" className={styles.filters}>
+        <FilterSelect
+          aria-label="问题状态"
           value={filters.status}
           onChange={(e) => patch({ status: e.target.value }, { replace: false })}
-          className={styles.select}
         >
           <option value="">全部状态</option>
           {STATUS_OPTIONS.map((s) => (
@@ -238,11 +239,11 @@ export function BugsPage() {
               {statusLabel[s]}
             </option>
           ))}
-        </select>
-        <select
+        </FilterSelect>
+        <FilterSelect
+          aria-label="严重度"
           value={filters.severity}
           onChange={(e) => patch({ severity: e.target.value }, { replace: false })}
-          className={styles.select}
         >
           <option value="">全部严重度</option>
           {SEVERITY_OPTIONS.map((s) => (
@@ -250,9 +251,9 @@ export function BugsPage() {
               {s}
             </option>
           ))}
-        </select>
+        </FilterSelect>
         <span className={styles.totalText}>共 {total} 条</span>
-      </div>
+      </FilterGroup>
       {!!issues.length && (
         <div role="alert" className="mb-3 text-xs text-status-caution">
           URL BUG 筛选无法完整恢复，已使用安全默认值。

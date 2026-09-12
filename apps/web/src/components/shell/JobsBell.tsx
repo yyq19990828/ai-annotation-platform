@@ -1,3 +1,4 @@
+import { FilterGroup, FilterToggle } from "@/components/filters/FilterControls";
 /**
  * v0.10.16 · Topbar 异步任务铃铛（ROADMAP §1.7）。
  *
@@ -467,40 +468,31 @@ export function JobsBell() {
             <span>后台任务 {runningCount > 0 ? `(${runningCount} 进行中)` : ""}</span>
           </div>
           <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2">
-            <div
-              role="tablist"
+            <FilterGroup
+              label="状态"
+              compact
               aria-label="任务筛选"
-              className="inline-flex rounded-sm bg-muted p-0.5"
+              className="inline-flex rounded-md bg-muted/40 p-0.5"
             >
-              <button
-                type="button"
-                role="tab"
-                aria-selected={filter === "all"}
+              <FilterToggle
+                compact
+                active={filter === "all"}
                 onClick={() => changeFilter("all")}
-                className={`cursor-pointer appearance-none rounded-sm border-0 bg-transparent px-2.5 py-1 text-xs font-semibold transition-colors duration-100 ${
-                  filter === "all"
-                    ? "bg-popover text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
+                className="px-2.5 py-1 text-xs"
                 data-testid="jobs-bell-filter-all"
               >
                 全部
-              </button>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={filter === "active"}
+              </FilterToggle>
+              <FilterToggle
+                compact
+                active={filter === "active"}
                 onClick={() => changeFilter("active")}
-                className={`cursor-pointer appearance-none rounded-sm border-0 bg-transparent px-2.5 py-1 text-xs font-semibold transition-colors duration-100 ${
-                  filter === "active"
-                    ? "bg-popover text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
+                className="px-2.5 py-1 text-xs"
                 data-testid="jobs-bell-filter-active"
               >
                 进行中
-              </button>
-            </div>
+              </FilterToggle>
+            </FilterGroup>
             {visibleTerminalIds.length > 0 && (
               <button
                 type="button"

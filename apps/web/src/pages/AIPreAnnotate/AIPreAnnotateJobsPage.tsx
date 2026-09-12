@@ -1,3 +1,4 @@
+import { FilterGroup, FilterSelect } from "@/components/filters/FilterControls";
 /**
  * v0.10.45 · /ai-pre/jobs — 统一 async_jobs AI 任务历史页.
  */
@@ -214,8 +215,10 @@ function ImageJobsPanel({ projectId }: { projectId?: string }) {
     <Card>
       <div className={styles.cardHeader}>
         <span>历史 job ({total})</span>
-        <div className={styles.filterGroup}>
-          <select
+        <FilterGroup compact label="筛选" className="flex-wrap">
+          <FilterSelect
+            compact
+            aria-label="预标任务状态"
             value={statusFilter}
             onChange={(e) => {
               updateImageUrl(
@@ -223,7 +226,6 @@ function ImageJobsPanel({ projectId }: { projectId?: string }) {
                 { replace: false },
               );
             }}
-            className={styles.selectControl}
           >
             <option value="">全部状态</option>
             {STATUS_ORDER.map((s) => (
@@ -231,7 +233,7 @@ function ImageJobsPanel({ projectId }: { projectId?: string }) {
                 {STATUS_LABEL[s]}
               </option>
             ))}
-          </select>
+          </FilterSelect>
           <input
             type="text"
             value={searchDraft}
@@ -242,7 +244,7 @@ function ImageJobsPanel({ projectId }: { projectId?: string }) {
             placeholder="搜索 prompt..."
             className={styles.searchInput}
           />
-        </div>
+        </FilterGroup>
       </div>
       <div className={styles.cardBody}>
         {jobsQ.isLoading ? (

@@ -176,6 +176,7 @@ describe("AuditPage", () => {
 
   it("detail 键值输入框在键名为空时 disabled", async () => {
     renderUI();
+    fireEvent.click(screen.getByRole("button", { name: "筛选" }));
     const valueInput = screen.getByPlaceholderText(/detail 键值/) as HTMLInputElement;
     expect(valueInput.disabled).toBe(true);
     const keyInput = screen.getByPlaceholderText(/detail 键名/);
@@ -205,10 +206,12 @@ describe("AuditPage", () => {
     });
     renderUI("/audit?actor_id=u-actor");
     expect(screen.getByText(/追溯模式/)).toBeInTheDocument();
-    // badge 文本 "操作人 Alice · a@x.com"; select option 同样含 "Alice", 用更精确匹配
-    expect(
-      screen.getByText((_, node) => Boolean(node?.textContent?.match(/^操作人 Alice/))),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "操作人：Alice · a@x.com" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "移除操作人筛选" }));
+    expect(mockUseAuditLogs).toHaveBeenLastCalledWith(
+      expect.objectContaining({ actor_id: undefined }),
+      expect.anything(),
+    );
   });
 
   it("点刷新按钮 → 调用 refetch", () => {

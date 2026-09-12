@@ -4,11 +4,14 @@ import { expect, test as base, type FilteringSeedManifest } from "../fixtures/se
 import { resetFiltering } from "../fixtures/filtering";
 
 const test = base.extend<{ filtering: FilteringSeedManifest }>({
-  filtering: async ({ seed, page }, provideFixture) => {
-    const data = await resetFiltering(seed);
-    await seed.injectToken(page, data.user_emails.admin);
-    await provideFixture(data);
-  },
+  filtering: [
+    async ({ seed, page }, provideFixture) => {
+      const data = await resetFiltering(seed);
+      await seed.injectToken(page, data.user_emails.admin);
+      await provideFixture(data);
+    },
+    { auto: true },
+  ],
 });
 test.setTimeout(90_000);
 
@@ -28,7 +31,7 @@ async function checked(response: Response) {
   return response.json();
 }
 
-test("project drawer and status tabs share one applied state and cancel keeps it", async ({
+test("project popover and status controls share one applied state and cancel keeps it", async ({
   page,
   filtering,
 }) => {
@@ -42,12 +45,14 @@ test("project drawer and status tabs share one applied state and cancel keeps it
   const drawer = page.getByRole("dialog", { name: "高级筛选" });
   await drawer.getByRole("button", { name: "已完成", exact: true }).click();
   await drawer.getByRole("button", { name: "取消", exact: true }).click();
+  await expect(drawer).not.toBeVisible();
   expect(new URL(page.url()).searchParams.has("status")).toBe(false);
 
   await page.getByRole("button", { name: "筛选", exact: true }).click();
   await drawer.getByRole("button", { name: "已完成", exact: true }).click();
   const completed = getResponse(page, "/projects", { status: "completed" });
   await drawer.getByRole("button", { name: "应用", exact: true }).click();
+  await expect(drawer).not.toBeVisible();
   await checked(await completed);
   await expect.poll(() => new URL(page.url()).searchParams.get("status")).toBe("completed");
   const inProgress = getResponse(page, "/projects", { status: "in_progress" });
@@ -59,6 +64,7 @@ test("project drawer and status tabs share one applied state and cancel keeps it
     "true",
   );
   await drawer.getByRole("button", { name: "取消", exact: true }).click();
+  await expect(drawer).not.toBeVisible();
   await page.reload();
   await expect(page.getByPlaceholder("搜索项目...")).toHaveValue("Filter Ops");
   expect(new URL(page.url()).searchParams.get("keep")).toBe("filter-test");
@@ -185,11 +191,13 @@ test("audit detail edits preserve an explicit empty value through reload", async
   await page.goto("/audit?detail_key=scope&detail_value=alpha&scope=all&keep=filter-test");
   const initial = await checked(await rows);
   expect(JSON.stringify(initial)).toContain(filtering.operations.project_ids[0]);
+  await page.getByRole("button", { name: "筛选", exact: true }).click();
   const empty = getResponse(page, "/audit-logs", { detail_key: "scope", detail_value: "" });
   await page.getByPlaceholder("detail 键值（如 super_admin）").fill("");
   await checked(await empty);
   await expect.poll(() => new URL(page.url()).searchParams.get("detail_value")).toBe("");
   await page.reload();
+  await page.getByRole("button", { name: "筛选", exact: true }).click();
   await expect(page.getByPlaceholder("detail 键名（如 role）")).toHaveValue("scope");
   await expect(page.getByPlaceholder("detail 键值（如 super_admin）")).toHaveValue("");
   expect(new URL(page.url()).searchParams.get("keep")).toBe("filter-test");
@@ -257,4 +265,85 @@ test("image job search keeps spaces and applies its page reset with the debounce
   await page.reload();
   await expect(search).toHaveValue("alpha complete");
   expect(new URL(page.url()).searchParams.get("keep")).toBe("filter-test");
+});
+
+test("project filter stays attached, keeps its draft on resize, and cancels without a query", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const initial = getResponse(page, "/projects", { search: "Filter Ops" });
+  await page.goto("/dashboard?q=Filter+Ops&keep=filter-geometry");
+  await checked(await initial);
+  const trigger = page.getByRole("button", { name: "筛选", exact: true });
+  const dialog = page.getByRole("dialog", { name: "高级筛选" });
+  const queries: string[] = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/v1/projects") queries.push(request.url());
+  });
+  await trigger.click();
+  await expect(dialog).toHaveAttribute("data-filter-panel", "popover");
+  await expect(
+    page.locator('[data-testid="modal-overlay"], [data-slot="sheet-overlay"]'),
+  ).toHaveCount(0);
+  await expect.poll(async () => Math.round((await dialog.boundingBox())!.width)).toBe(448);
+  const anchor = (await trigger.boundingBox())!;
+  const panel = (await dialog.boundingBox())!;
+  expect(Math.abs(panel.x + panel.width - anchor.x - anchor.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(panel.y - anchor.y - anchor.height - 8)).toBeLessThanOrEqual(1);
+  await dialog.getByRole("checkbox", { name: "图片", exact: true }).check();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(dialog).toHaveAttribute("data-filter-panel", "sheet");
+  await expect(dialog.getByRole("checkbox", { name: "图片", exact: true })).toBeChecked();
+  await expect.poll(async () => Math.round((await dialog.boundingBox())!.width)).toBe(390);
+  await expect(dialog.getByRole("button", { name: "应用", exact: true })).toBeInViewport();
+  await page.evaluate(() => document.documentElement.setAttribute("data-theme", "dark"));
+  await page.setViewportSize({ width: 1280, height: 480 });
+  await expect(dialog).toHaveAttribute("data-filter-panel", "popover");
+  await expect(dialog.getByRole("checkbox", { name: "图片", exact: true })).toBeChecked();
+  await expect
+    .poll(async () => {
+      const box = (await dialog.boundingBox())!;
+      return box.y >= 11 && box.y + box.height <= 469;
+    })
+    .toBe(true);
+  await expect(dialog.getByRole("button", { name: "应用", exact: true })).toBeInViewport();
+  await page.keyboard.press("Escape");
+  await expect(dialog).not.toBeVisible();
+  await expect(trigger).toBeFocused();
+  expect(new URL(page.url()).searchParams.has("data_type")).toBe(false);
+  expect(queries).toHaveLength(0);
+  await trigger.click();
+  await expect(dialog.getByRole("checkbox", { name: "图片", exact: true })).not.toBeChecked();
+});
+
+test("member filter summaries remove one condition without clearing search or account scope", async ({
+  page,
+}) => {
+  const initial = getResponse(page, "/users/query", { search: "Filter", status: "active" });
+  await page.goto("/users?q=Filter&keep=filter-summary");
+  await checked(await initial);
+  await page.getByRole("button", { name: "筛选", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "成员筛选" });
+  const filtered = getResponse(page, "/users/query", {
+    search: "Filter",
+    status: "active",
+    role: "annotator",
+  });
+  await dialog.getByRole("combobox", { name: "角色筛选" }).selectOption("annotator");
+  await checked(await filtered);
+  await dialog.getByRole("button", { name: "完成", exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page.getByRole("button", { name: "角色：标注员", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "移除角色筛选" }).click();
+  await expect(page.getByRole("button", { name: "移除角色筛选" })).toHaveCount(0);
+  // The initial query is still fresh in the 30-second cache. Reload verifies
+  // restored request scope without requiring a redundant request on removal.
+  const removed = getResponse(page, "/users/query", { search: "Filter", status: "active" });
+  await page.reload();
+  const response = await removed;
+  expect(new URL(response.url()).searchParams.has("role")).toBe(false);
+  await checked(response);
+  expect(new URL(page.url()).searchParams.get("q")).toBe("Filter");
+  expect(new URL(page.url()).searchParams.get("keep")).toBe("filter-summary");
+  await expect(page.getByRole("combobox", { name: "账号状态" })).toHaveValue("active");
 });

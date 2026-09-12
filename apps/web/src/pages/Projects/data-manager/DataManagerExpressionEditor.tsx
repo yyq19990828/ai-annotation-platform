@@ -1,3 +1,4 @@
+import { FilterSelect } from "@/components/filters/FilterControls";
 import { useEffect, useMemo } from "react";
 
 import type {
@@ -79,7 +80,7 @@ function GroupEditor({
       <div className="flex items-center gap-2">
         <span className="text-xs font-medium text-muted-foreground">组合条件</span>
         <span className="text-2xs text-muted-foreground">{nodeLabel(group, fields)}</span>
-        <select
+        <FilterSelect
           className={cn(FIELD_CLASS, "w-28")}
           value={group.op}
           aria-label={`${path.join(".") || "root"} 逻辑关系`}
@@ -89,7 +90,7 @@ function GroupEditor({
         >
           <option value="and">全部满足（AND）</option>
           <option value="or">任一满足（OR）</option>
-        </select>
+        </FilterSelect>
         <Button
           type="button"
           size="sm"
@@ -163,7 +164,7 @@ function GroupEditor({
           >
             <div className="flex min-w-0 flex-col gap-1">
               <span className="text-2xs text-muted-foreground">字段</span>
-              <select
+              <FilterSelect
                 className={FIELD_CLASS}
                 value={node.field}
                 aria-label="筛选字段"
@@ -186,11 +187,11 @@ function GroupEditor({
                     {item.label}
                   </option>
                 ))}
-              </select>
+              </FilterSelect>
             </div>
             <div className="flex min-w-0 flex-col gap-1">
               <span className="text-2xs text-muted-foreground">操作符</span>
-              <select
+              <FilterSelect
                 className={FIELD_CLASS}
                 value={node.op}
                 aria-label="筛选操作符"
@@ -208,7 +209,7 @@ function GroupEditor({
                     {filterOperatorLabel(operator)}
                   </option>
                 ))}
-              </select>
+              </FilterSelect>
             </div>
             <div className="flex min-w-0 flex-col gap-1">
               <span className="text-2xs text-muted-foreground">值</span>

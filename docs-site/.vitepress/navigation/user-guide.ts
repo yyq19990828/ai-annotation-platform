@@ -8,6 +8,7 @@ export const userGuideSidebar: DefaultTheme.SidebarItem[] = [
       { text: "概述", link: "/user-guide/" },
       { text: "平台概念与术语", link: "/user-guide/concepts" },
       { text: "快速开始", link: "/user-guide/getting-started" },
+      { text: "使用筛选", link: "/user-guide/reference/filtering" },
       { text: "常见问题 FAQ", link: "/user-guide/faq" },
     ],
   },

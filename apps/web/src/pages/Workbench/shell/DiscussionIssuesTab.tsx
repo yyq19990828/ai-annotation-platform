@@ -1,3 +1,4 @@
+import { FilterGroup, FilterSelect, FilterToggle } from "@/components/filters/FilterControls";
 /**
  * DiscussionPanel 的 Issue 列表。
  *
@@ -315,33 +316,31 @@ export function DiscussionIssuesTab({
             if (listScrollRef.current) listScrollTopRef.current = listScrollRef.current.scrollTop;
           }}
         >
-          <div className="flex flex-wrap items-center gap-1">
+          <FilterGroup compact label="问题筛选" className="gap-1">
             {allowProjectScope && (
-              <select
+              <FilterSelect
+                compact
                 aria-label="问题列表范围"
                 data-testid="issue-list-scope"
                 value={scope}
                 onChange={(event) => setScope(event.target.value as "task" | "project")}
-                className="rounded border border-border bg-muted px-1 py-0.5 text-xs text-foreground"
               >
                 <option value="task">当前任务</option>
                 <option value="project">整个项目</option>
-              </select>
+              </FilterSelect>
             )}
             {STATUS_FILTERS.map((f) => (
-              <button
+              <FilterToggle
+                compact
+                active={statusFilter === f.key}
                 key={f.key}
                 type="button"
                 onClick={() => setStatusFilter(f.key)}
                 aria-pressed={statusFilter === f.key}
-                className={cn(
-                  "cursor-pointer appearance-none rounded-[10px] border border-border bg-transparent px-2 py-0.5 text-2xs text-muted-foreground [font:inherit]",
-                  statusFilter === f.key && "border-brand text-foreground",
-                )}
                 data-testid={`issue-status-${f.key}`}
               >
                 {f.label}
-              </button>
+              </FilterToggle>
             ))}
             <span
               className="ml-auto text-2xs text-muted-foreground"
@@ -360,7 +359,7 @@ export function DiscussionIssuesTab({
                   ? "待处理 …"
                   : "待处理 —"}
             </span>
-          </div>
+          </FilterGroup>
 
           <div className="flex flex-wrap gap-1">
             {onCreateTaskIssue && (

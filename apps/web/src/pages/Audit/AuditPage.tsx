@@ -1,3 +1,8 @@
+import { FilterGroup, FilterSelect } from "@/components/filters/FilterControls";
+import { FilterPanel } from "@/components/filters/FilterPanel";
+import { FilterTrigger } from "@/components/filters/FilterTrigger";
+import { ActiveFilterChip } from "@/components/filters/ActiveFilterChip";
+import { Input } from "@/components/shadcn/ui/input";
 import {
   useCallback,
   useEffect,
@@ -54,6 +59,8 @@ export function AuditPage() {
   });
   const { state: filters, issues, patch } = urlState;
   const [targetIdDraft, setTargetIdDraft] = useState(filters.targetId);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [actorQuery, setActorQuery] = useState("");
   const [detailKeyDraft, setDetailKeyDraft] = useState(filters.detailKey);
   const [detailValueDraft, setDetailValueDraft] = useState(filters.detailValue);
   const syncingTextDrafts = useRef(false);
@@ -337,85 +344,157 @@ export function AuditPage() {
 
       <Card>
         <div className={styles.filters}>
-          <select
-            value={scope}
-            onChange={(e) => {
-              patch({ scope: e.target.value as "business" | "all", page: 1 }, { replace: false });
-            }}
-            className={styles.control}
+          <FilterGroup label="事件范围" compact>
+            <FilterSelect
+              aria-label="审计事件范围"
+              value={scope}
+              onChange={(e) => {
+                patch({ scope: e.target.value as "business" | "all", page: 1 }, { replace: false });
+              }}
+              className="w-full"
+            >
+              <option value="business">仅业务事件</option>
+              <option value="all">全部（含 HTTP 元数据）</option>
+            </FilterSelect>
+          </FilterGroup>
+          <FilterPanel
+            open={filtersOpen}
+            onOpenChange={setFiltersOpen}
+            trigger={
+              <FilterTrigger
+                count={
+                  [actionFilter, targetType, actorId, targetId, detailKey].filter(Boolean).length
+                }
+              />
+            }
+            title="审计筛选"
+            description="即时生效 · 详情键值允许为空字符串。"
+            align="start"
+            footer={
+              <div className="flex justify-between gap-2">
+                <Button size="sm" variant="ghost" onClick={clearFocus}>
+                  清除追溯
+                </Button>
+                <Button size="sm" onClick={() => setFiltersOpen(false)}>
+                  完成
+                </Button>
+              </div>
+            }
           >
-            <option value="business">仅业务事件</option>
-            <option value="all">全部（含 HTTP 元数据）</option>
-          </select>
-          <select
-            value={actionFilter}
-            onChange={(e) => {
-              patch({ action: e.target.value, page: 1 }, { replace: false });
-            }}
-            className={styles.control}
-          >
-            <option value="">全部动作</option>
-            {AUDIT_BUSINESS_ACTIONS.map((a) => (
-              <option key={a} value={a}>
-                {auditActionLabel(a)}
-              </option>
-            ))}
-          </select>
-          <select
-            value={targetType}
-            onChange={(e) => {
-              patch({ targetType: e.target.value, page: 1 }, { replace: false });
-            }}
-            className={styles.control}
-          >
-            <option value="">全部对象</option>
-            {AUDIT_TARGET_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-          <select
-            value={actorId}
-            onChange={(e) => {
-              patch({ actorId: e.target.value, page: 1 }, { replace: false });
-            }}
-            className={`${styles.control} ${styles.actorControl}`}
-          >
-            <option value="">全部用户</option>
-            {usersData.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name} · {u.email}
-              </option>
-            ))}
-          </select>
-          <input
-            value={targetIdDraft}
-            placeholder="对象 ID（精确匹配）"
-            onChange={(e) => {
-              setTargetIdDraft(e.target.value);
-            }}
-            className={`${styles.control} ${styles.targetInput}`}
-          />
-          <input
-            value={detailKeyDraft}
-            placeholder="detail 键名（如 role）"
-            title="A.3：detail_json 字段级 GIN 过滤——键名"
-            onChange={(e) => {
-              setDetailKeyDraft(e.target.value);
-            }}
-            className={`${styles.control} ${styles.detailKeyInput}`}
-          />
-          <input
-            value={detailValueDraft}
-            placeholder="detail 键值（如 super_admin）"
-            title="A.3：detail_json 字段级 GIN 过滤——键值（与键名共同生效）"
-            onChange={(e) => {
-              setDetailValueDraft(e.target.value);
-            }}
-            disabled={!detailKey}
-            className={`${styles.control} ${styles.detailValueInput} ${detailKey ? "" : styles.controlDisabled}`}
-          />
+            <div className="grid gap-3">
+              <label className="flex min-w-0 flex-col gap-1.5 text-xs text-muted-foreground">
+                动作
+                <FilterSelect
+                  aria-label="审计动作"
+                  value={actionFilter}
+                  onChange={(e) => {
+                    patch({ action: e.target.value, page: 1 }, { replace: false });
+                  }}
+                  className="w-full"
+                >
+                  <option value="">全部动作</option>
+                  {AUDIT_BUSINESS_ACTIONS.map((a) => (
+                    <option key={a} value={a}>
+                      {auditActionLabel(a)}
+                    </option>
+                  ))}
+                </FilterSelect>
+              </label>
+              <label className="flex min-w-0 flex-col gap-1.5 text-xs text-muted-foreground">
+                对象类型
+                <FilterSelect
+                  aria-label="审计对象类型"
+                  value={targetType}
+                  onChange={(e) => {
+                    patch({ targetType: e.target.value, page: 1 }, { replace: false });
+                  }}
+                  className="w-full"
+                >
+                  <option value="">全部对象</option>
+                  {AUDIT_TARGET_TYPES.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </FilterSelect>
+              </label>
+              <div className="space-y-2">
+                <span className="text-xs font-medium text-muted-foreground">操作人</span>
+                <Input
+                  aria-label="搜索审计操作人"
+                  placeholder="搜索姓名或邮箱"
+                  value={actorQuery}
+                  onChange={(event) => setActorQuery(event.target.value)}
+                  className="h-8"
+                />
+                <FilterSelect
+                  aria-label="审计操作人"
+                  value={actorId}
+                  onChange={(e) => {
+                    patch({ actorId: e.target.value, page: 1 }, { replace: false });
+                  }}
+                  className="w-full"
+                >
+                  <option value="">全部用户</option>
+                  {actorId && !usersData.some((user) => user.id === actorId) && (
+                    <option value={actorId}>当前指定用户</option>
+                  )}
+                  {usersData
+                    .filter(
+                      (user) =>
+                        user.id === actorId ||
+                        `${user.name} ${user.email}`
+                          .toLocaleLowerCase()
+                          .includes(actorQuery.trim().toLocaleLowerCase()),
+                    )
+                    .map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name} · {u.email}
+                      </option>
+                    ))}
+                </FilterSelect>
+              </div>
+              <label className="flex min-w-0 flex-col gap-1.5 text-xs text-muted-foreground">
+                对象 ID
+                <Input
+                  aria-label="对象 ID（精确匹配）"
+                  value={targetIdDraft}
+                  placeholder="对象 ID（精确匹配）"
+                  onChange={(e) => {
+                    setTargetIdDraft(e.target.value);
+                  }}
+                  className="h-8"
+                />
+              </label>
+              <label className="flex min-w-0 flex-col gap-1.5 text-xs text-muted-foreground">
+                详情键名
+                <Input
+                  aria-label="detail 键名"
+                  value={detailKeyDraft}
+                  placeholder="detail 键名（如 role）"
+                  title="A.3：detail_json 字段级 GIN 过滤——键名"
+                  onChange={(e) => {
+                    setDetailKeyDraft(e.target.value);
+                  }}
+                  className="h-8"
+                />
+              </label>
+              <label className="flex min-w-0 flex-col gap-1.5 text-xs text-muted-foreground">
+                详情键值
+                <Input
+                  aria-label="detail 键值"
+                  value={detailValueDraft}
+                  placeholder="detail 键值（如 super_admin）"
+                  title="A.3：detail_json 字段级 GIN 过滤——键值（与键名共同生效）"
+                  onChange={(e) => {
+                    setDetailValueDraft(e.target.value);
+                  }}
+                  disabled={!detailKey}
+                  className="h-8"
+                />
+              </label>
+            </div>
+          </FilterPanel>
           <span className={styles.totalText}>
             共 {total} 条 · 第 {page} / {pageCount} 页
           </span>
@@ -428,36 +507,50 @@ export function AuditPage() {
 
         {focused && (
           <div className={styles.focusBar}>
-            <div className={styles.focusTags}>
-              <Icon name="target" size={13} className={styles.accentIcon} />
-              <span className={styles.mutedText}>追溯模式：</span>
-              {focusedActor && (
-                <SmallBadge>
-                  操作人 {focusedActor.name} · {focusedActor.email}
-                </SmallBadge>
+            <FilterGroup label="追溯模式" compact className={styles.focusTags}>
+              {actorId && (
+                <ActiveFilterChip
+                  label="操作人"
+                  value={focusedActor ? `${focusedActor.name} · ${focusedActor.email}` : actorId}
+                  onClick={() => setFiltersOpen(true)}
+                  onRemove={() => patch({ actorId: "", page: 1 }, { replace: false })}
+                />
               )}
-              {!focusedActor && actorId && (
-                <SmallBadge>
-                  actor_id = <span className="mono">{actorId.slice(0, 8)}…</span>
-                </SmallBadge>
+              {targetType && (
+                <ActiveFilterChip
+                  label="对象类型"
+                  value={targetType}
+                  onClick={() => setFiltersOpen(true)}
+                  onRemove={() => patch({ targetType: "", page: 1 }, { replace: false })}
+                />
               )}
-              {targetType && <SmallBadge>对象类型 {targetType}</SmallBadge>}
               {targetId && (
-                <SmallBadge>
-                  对象 ID{" "}
-                  <span className="mono">
-                    {targetId.length > 24 ? targetId.slice(0, 8) + "…" : targetId}
-                  </span>
-                </SmallBadge>
+                <ActiveFilterChip
+                  label="对象 ID"
+                  value={targetId}
+                  onClick={() => setFiltersOpen(true)}
+                  onRemove={() => patch({ targetId: "", page: 1 }, { replace: false })}
+                />
               )}
-              {actionFilter && <SmallBadge>动作 {actionFilter}</SmallBadge>}
+              {actionFilter && (
+                <ActiveFilterChip
+                  label="动作"
+                  value={actionFilter}
+                  onClick={() => setFiltersOpen(true)}
+                  onRemove={() => patch({ action: "", page: 1 }, { replace: false })}
+                />
+              )}
               {detailKey && (
-                <SmallBadge>
-                  detail.{detailKey}
-                  {detailValue ? ` = ${detailValue}` : ""}
-                </SmallBadge>
+                <ActiveFilterChip
+                  label={`detail.${detailKey}`}
+                  value={detailValue === "" ? "（空字符串）" : detailValue}
+                  onClick={() => setFiltersOpen(true)}
+                  onRemove={() =>
+                    patch({ detailKey: "", detailValue: "", page: 1 }, { replace: false })
+                  }
+                />
               )}
-            </div>
+            </FilterGroup>
             <Button size="sm" variant="ghost" onClick={clearFocus}>
               <Icon name="x" size={11} />
               清除追溯

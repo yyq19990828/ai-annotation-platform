@@ -1,3 +1,4 @@
+import { FilterGroup, FilterToggle } from "@/components/filters/FilterControls";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { clsx } from "clsx";
@@ -582,29 +583,27 @@ function NotificationsPanel({
         </div>
       </div>
 
-      <div
-        className="grid shrink-0 grid-cols-3 gap-1.5 border-b border-border px-3.5 py-2.5 sm:grid-cols-6"
-        role="tablist"
+      <FilterGroup
+        label="通知筛选"
+        compact
         aria-label="通知类型筛选"
+        className="shrink-0 border-b border-border px-3.5 py-2.5"
       >
-        {FILTERS.map((filter) => (
-          <button
-            key={filter.key}
-            type="button"
-            role="tab"
-            aria-selected={activeFilter === filter.key}
-            className={clsx(
-              "min-h-[30px] cursor-pointer appearance-none whitespace-nowrap rounded-sm border px-1 py-1.5 text-center text-xs leading-[1.2]",
-              activeFilter === filter.key
-                ? "border-brand bg-brand/10 text-brand"
-                : "border-transparent bg-transparent text-muted-foreground hover:bg-muted hover:text-foreground",
-            )}
-            onClick={() => setActiveFilter(filter.key)}
-          >
-            {filter.label}
-          </button>
-        ))}
-      </div>
+        <div className="grid min-w-0 flex-1 grid-cols-3 gap-1.5 sm:grid-cols-6">
+          {FILTERS.map((filter) => (
+            <FilterToggle
+              key={filter.key}
+              compact
+              active={activeFilter === filter.key}
+              onClick={() => setActiveFilter(filter.key)}
+              className="min-h-[30px] px-1 text-xs"
+              data-testid={`notification-filter-${filter.key}`}
+            >
+              {filter.label}
+            </FilterToggle>
+          ))}
+        </div>
+      </FilterGroup>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {isEmpty || isFilteredEmpty ? (

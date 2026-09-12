@@ -767,6 +767,7 @@ function TaskDataManagerPage({
     const draft = formatFilterDraft(rule.value, field, rule.op);
     return {
       id: `${path.join(".")}:${rule.field}`,
+      onRemove: () => setFilterExpression(removeAtPath(filterExpression, path)),
       label: fieldLabel.get(rule.field) ?? rule.field,
       value: ruleValueLabel(
         { field: rule.field, op: rule.op, value: rule.value === null ? "null" : draft },

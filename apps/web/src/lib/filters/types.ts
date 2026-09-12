@@ -52,6 +52,7 @@ export interface FilterChip {
   value: string;
   invalid?: boolean;
   editor?: ReactNode;
+  onRemove?: () => void;
 }
 
 export interface QuickFilter {

@@ -1,12 +1,12 @@
+import { useState } from "react";
+import { FilterGroup, FilterToggle } from "@/components/filters/FilterControls";
+import { FilterPanel } from "@/components/filters/FilterPanel";
+import { FilterTrigger } from "@/components/filters/FilterTrigger";
+import { ActiveFilterChip } from "@/components/filters/ActiveFilterChip";
+import { Button } from "@/components/ui/Button";
 // 能力目录过滤工具栏(从 CapabilityCatalogPanel.tsx 拆出,行为零变化)。
 
-import { Icon } from "@/components/ui/Icon";
 import { infraLabel, modalityLabel, taskLabel } from "./labels";
-
-const CHIP_BASE =
-  "cursor-pointer appearance-none rounded-full border px-2.5 py-1 text-xs leading-[1.4]";
-const CHIP_OFF = `${CHIP_BASE} border-border bg-muted text-muted-foreground hover:bg-muted`;
-const CHIP_ON = `${CHIP_BASE} border-brand/30 bg-brand/10 text-brand`;
 
 interface FilterToolbarProps {
   facets: { tasks: string[]; families: string[]; infras: string[]; modalities: string[] };
@@ -23,6 +23,7 @@ interface FilterToolbarProps {
 }
 
 export function FilterToolbar(p: FilterToolbarProps) {
+  const [open, setOpen] = useState(false);
   const groups: {
     label: string;
     values: string[];
@@ -60,46 +61,79 @@ export function FilterToolbar(p: FilterToolbarProps) {
     },
   ];
 
-  const anyFacet = groups.some((g) => g.values.length > 0);
+  const anyFacet = groups.some((group) => group.values.length > 0);
   if (!anyFacet) return null;
-
+  const renderGroup = (group: (typeof groups)[number]) => (
+    <div key={group.label} className="flex min-w-0 flex-wrap items-center gap-2">
+      <span className="shrink-0 text-xs font-medium text-muted-foreground">{group.label}</span>
+      <div className="flex flex-wrap gap-1">
+        {group.values.map((value) => (
+          <FilterToggle
+            key={value}
+            active={group.active.has(value)}
+            onClick={() => group.toggle(value)}
+          >
+            {group.render(value)}
+          </FilterToggle>
+        ))}
+      </div>
+    </div>
+  );
   return (
-    <div className="flex flex-wrap items-center gap-3.5 border-b border-border px-4 py-3">
-      {groups.map(
-        (g) =>
-          g.values.length > 0 && (
-            <div key={g.label} className="flex min-w-0 items-center gap-2">
-              <span className="shrink-0 text-2xs font-semibold text-muted-foreground">
-                {g.label}
-              </span>
-              <div className="flex flex-wrap gap-1.5">
-                {g.values.map((v) => {
-                  const on = g.active.has(v);
-                  return (
-                    <button
-                      key={v}
-                      type="button"
-                      className={on ? CHIP_ON : CHIP_OFF}
-                      onClick={() => g.toggle(v)}
-                      aria-pressed={on}
-                    >
-                      {g.render(v)}
-                    </button>
-                  );
-                })}
-              </div>
+    <div className="space-y-2 border-b border-border px-4 py-3">
+      <FilterGroup label="筛选">
+        {groups
+          .filter((group) => group.label === "任务" || group.label === "模态")
+          .filter((group) => group.values.length > 0)
+          .map(renderGroup)}
+        <FilterPanel
+          open={open}
+          onOpenChange={setOpen}
+          trigger={
+            <FilterTrigger count={Number(p.familyFilter.size > 0) + Number(p.infraFilter.size > 0)}>
+              更多筛选
+            </FilterTrigger>
+          }
+          title="模型筛选"
+          description="即时生效 · 按模型族和推理框架进一步筛选。"
+          align="start"
+          footer={
+            <div className="flex justify-end">
+              <Button size="sm" onClick={() => setOpen(false)}>
+                完成
+              </Button>
             </div>
-          ),
-      )}
-      {p.hasActiveFilter && (
-        <button
-          type="button"
-          className="ml-auto inline-flex cursor-pointer appearance-none items-center gap-1 rounded-full border border-border bg-card px-2.5 py-1 text-xs text-muted-foreground hover:bg-muted"
-          onClick={p.onClear}
+          }
         >
-          <Icon name="x" size={11} />
-          清除
-        </button>
+          <div className="space-y-4">
+            {groups
+              .filter((group) => group.label === "模型族" || group.label === "推理框架")
+              .filter((group) => group.values.length > 0)
+              .map(renderGroup)}
+          </div>
+        </FilterPanel>
+        {p.hasActiveFilter && (
+          <Button size="sm" variant="ghost" onClick={p.onClear}>
+            清除条件
+          </Button>
+        )}
+      </FilterGroup>
+      {(p.familyFilter.size > 0 || p.infraFilter.size > 0) && (
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="已应用的模型筛选">
+          {groups
+            .filter((group) => group.label === "模型族" || group.label === "推理框架")
+            .flatMap((group) =>
+              [...group.active].map((value) => (
+                <ActiveFilterChip
+                  key={`${group.label}:${value}`}
+                  label={group.label}
+                  value={group.render(value)}
+                  onClick={() => setOpen(true)}
+                  onRemove={() => group.toggle(value)}
+                />
+              )),
+            )}
+        </div>
       )}
     </div>
   );

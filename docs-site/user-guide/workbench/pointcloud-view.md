@@ -8,6 +8,8 @@ last_reviewed: 2026-09-05
 
 # 点云视图与上色
 
+质量面板的问题状态、严重级别和规则使用统一的原位筛选组；筛选与扫描、规则治理分别操作。 [筛选操作说明](/user-guide/reference/filtering)。
+
 3D 点云项目（`data_type=lidar`）进入 Three.js 3D 舞台后，主 3D 视图显示点云，相机可按物理朝向悬浮在四周，也可整组收进一个停靠图库。本页讲**怎么看点云**——视角导航、相机面板与上色 / 深度；绘制和编辑 3D 框见 [3D 立体框标注](./3d-box)。
 
 ![nuScenes 激光雷达与六相机环视任务工作台](../images/workbench/pointcloud-real-scene.png)

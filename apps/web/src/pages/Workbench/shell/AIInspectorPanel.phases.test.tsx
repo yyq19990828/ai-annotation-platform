@@ -353,6 +353,7 @@ describe("AIPredictionPopover phases", () => {
     fireEvent.click(screen.getByTestId("ai-prediction-advanced-toggle"));
     fireEvent.click(screen.getByTestId("ai-prediction-run-pipeline"));
     expect(props.onRunPipeline).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("heading", { name: "候选筛选与批量采纳" })).toBeVisible();
     fireEvent.change(screen.getByRole("slider", { name: "置信度阈值" }), {
       target: { value: "0.63" },
     });

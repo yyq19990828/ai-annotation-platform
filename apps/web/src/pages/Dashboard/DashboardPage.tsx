@@ -1,3 +1,4 @@
+import { FilterGroup, FilterToggle } from "@/components/filters/FilterControls";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Icon, type IconName } from "@/components/ui/Icon";
@@ -7,7 +8,6 @@ import { Card } from "@/components/ui/Card";
 import { Avatar } from "@/components/ui/Avatar";
 import { StatCard } from "@/components/ui/StatCard";
 import { SearchInput } from "@/components/ui/SearchInput";
-import { TabRow } from "@/components/ui/TabRow";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useToastStore } from "@/components/ui/Toast";
 import { Can } from "@/components/guards/Can";
@@ -18,7 +18,8 @@ import { ImportDatasetWizard } from "@/components/datasets/ImportDatasetWizard";
 import { useAuthStore } from "@/stores/authStore";
 import { useAuditLogs } from "@/hooks/useAudit";
 import { auditActionLabel } from "@/utils/auditLabels";
-import { FilterDrawer, type DashboardFilters } from "./FilterDrawer";
+import { ProjectFilterPanel, ProjectFilterSummary } from "./ProjectFilterPanel";
+import type { DashboardFilters } from "./dashboardUrlState";
 import {
   DASHBOARD_FILTER_KEYS,
   dashboardUrlCodec,
@@ -426,7 +427,17 @@ export function DashboardPage() {
         <div className="flex items-center justify-between border-b border-border px-4 py-3.5 max-[900px]:flex-col max-[900px]:items-start">
           <div className="flex items-center gap-3 max-[900px]:flex-wrap">
             <h3 className="text-sm font-semibold">我的项目</h3>
-            <TabRow tabs={[...FILTERS]} active={filter} onChange={updateFilterTab} />
+            <FilterGroup label="状态">
+              {FILTERS.map((option) => (
+                <FilterToggle
+                  key={option}
+                  active={filter === option}
+                  onClick={() => updateFilterTab(option)}
+                >
+                  {option}
+                </FilterToggle>
+              ))}
+            </FilterGroup>
           </div>
           <div className="flex gap-2 max-[900px]:flex-wrap">
             <SearchInput
@@ -435,15 +446,13 @@ export function DashboardPage() {
               onChange={updateQuery}
               width={220}
             />
-            <Button onClick={() => setFilterOpen(true)}>
-              <Icon name="filter" size={13} />
-              筛选
-              {advancedActiveCount > 0 && (
-                <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full border border-brand/30 bg-brand/10 px-1.5 text-2xs leading-none text-brand">
-                  {advancedActiveCount}
-                </span>
-              )}
-            </Button>
+            <ProjectFilterPanel
+              open={filterOpen}
+              onOpenChange={setFilterOpen}
+              initial={advanced}
+              onApply={applyFilters}
+              count={advancedActiveCount}
+            />
             <Button
               onClick={() => setViewMode(viewMode === "grid" ? "list" : "grid")}
               title={viewMode === "grid" ? "切换到列表视图" : "切换到网格视图"}
@@ -453,6 +462,11 @@ export function DashboardPage() {
             </Button>
           </div>
         </div>
+        <ProjectFilterSummary
+          filters={advanced}
+          onChange={applyFilters}
+          onEdit={() => setFilterOpen(true)}
+        />
         {viewMode === "grid" ? (
           isLoading ? (
             <div className="p-10 text-center text-muted-foreground">加载中...</div>
@@ -506,13 +520,6 @@ export function DashboardPage() {
           </div>
         )}
       </Card>
-
-      <FilterDrawer
-        open={filterOpen}
-        onClose={() => setFilterOpen(false)}
-        initial={advanced}
-        onApply={applyFilters}
-      />
 
       <div className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(320px,1fr))] gap-3 max-[900px]:grid-cols-1">
         <Card>

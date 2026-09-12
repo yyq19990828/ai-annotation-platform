@@ -667,6 +667,7 @@ export function EntityDataManagerLens({
     const field = fields.find((item) => item.key === rule.field);
     return {
       id: `${path.join(".")}:${rule.field}`,
+      onRemove: () => setFilter(removeAtPath(filter, path)),
       label: field?.label ?? rule.field,
       value: entityRuleSummary(rule, field),
       editor: (

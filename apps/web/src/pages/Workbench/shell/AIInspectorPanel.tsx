@@ -1,3 +1,4 @@
+import { FilterGroup, FilterToggle } from "@/components/filters/FilterControls";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Badge } from "@/components/ui/Badge";
@@ -954,7 +955,13 @@ export function AIPredictionPopover({
           </div>
 
           <div className={AI_PANEL_SECTION_CLASS}>
-            <div className="mb-1.5 text-xs font-semibold text-foreground">候选筛选与批量采纳</div>
+            <FilterGroup
+              label="候选筛选与批量采纳"
+              role="heading"
+              aria-level={3}
+              compact
+              className="mb-1.5"
+            />
             <div className="mb-1 flex items-baseline justify-between text-xs">
               <span className="text-muted-foreground">置信度阈值</span>
               <span className="rounded-sm bg-status-info-soft px-1.5 text-xs font-semibold tabular-nums text-status-info">
@@ -1099,18 +1106,15 @@ function FrameFilterTabs({
       {options.map((option) => {
         const active = option.value === value;
         return (
-          <button
+          <FilterToggle
             key={option.value}
-            type="button"
+            compact
+            active={active}
             onClick={() => onChange(option.value)}
-            className={cn(
-              "h-6 cursor-pointer appearance-none border-0 bg-transparent text-xs font-medium text-muted-foreground",
-              option.value === "current" && "border-l border-border",
-              active && "bg-brand/10 font-semibold text-brand",
-            )}
+            className="h-6 rounded-none border-0 py-0 text-xs"
           >
             {option.label}
-          </button>
+          </FilterToggle>
         );
       })}
     </div>
@@ -1119,14 +1123,12 @@ function FrameFilterTabs({
 
 function PredictionSourceFilterCard({ filter }: { filter: PredictionSourceFilterState }) {
   return (
-    <div
+    <FilterGroup
+      label="来源"
+      compact
       className="mb-1.5 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5"
       aria-label="预测来源筛选"
     >
-      <span className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
-        <Icon name="filter" size={12} />
-        来源
-      </span>
       <div className="flex min-w-0 items-center justify-end gap-1.5">
         {PREDICTION_SOURCE_FILTERS.map((source) => {
           const checked = filter.visibility[source];
@@ -1138,10 +1140,12 @@ function PredictionSourceFilterCard({ filter }: { filter: PredictionSourceFilter
               key={source}
               className={cn(
                 "flex min-w-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded-md border border-border bg-muted px-2 py-1 text-xs text-muted-foreground",
-                checked && !isImport && "border-violet-500/45 bg-status-info-soft text-status-info",
+                checked &&
+                  !isImport &&
+                  "border-status-info/40 bg-status-info-soft text-status-info",
                 checked &&
                   isImport &&
-                  "border-amber-500/45 bg-status-caution-soft text-status-caution",
+                  "border-status-caution/40 bg-status-caution-soft text-status-caution",
               )}
             >
               <input
@@ -1158,7 +1162,7 @@ function PredictionSourceFilterCard({ filter }: { filter: PredictionSourceFilter
           );
         })}
       </div>
-    </div>
+    </FilterGroup>
   );
 }
 
@@ -1469,10 +1473,13 @@ function BoxesList({
                   </div>
                 ))}
               {r.kind === "frameFilter" && (
-                <div className="mb-1.5 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5">
-                  <span className="text-xs font-semibold text-muted-foreground">显示范围</span>
+                <FilterGroup
+                  label="显示范围"
+                  compact
+                  className="mb-1.5 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5"
+                >
                   <FrameFilterTabs value={r.filter} onChange={r.onFilterChange} />
-                </div>
+                </FilterGroup>
               )}
               {r.kind === "sourceFilter" && <PredictionSourceFilterCard filter={r.filter} />}
               {r.kind === "videoTracks" && (
