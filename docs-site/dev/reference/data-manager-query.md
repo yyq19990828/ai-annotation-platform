@@ -81,6 +81,10 @@ summary 同时返回：
 
 task-centric summary 聚合的是“匹配任务中的全部对象”。object / track query 的 `facets` 则只聚合该 grain 的完整匹配集合，并为可视化图表提供 class、source、tool/type 与 track quality 分布；不能用当前页 rows 在浏览器抽样。
 
+任务的“匹配对象”抽屉先确认完整筛选和任务权限，再按真实命中分支收集解释：OR 只贡献成立的分支；一个 AND 内的直接 annotation 条件共享同一对象，不同嵌套组保留独立见证对象。单纯任务条件保留 active、非取消对象作为上下文；它在已经由实体解释的 AND 中不会扩大对象范围。历史模型条件属于任务追溯，不会冒充当前待审候选。
+
+命中项固定按 annotation、prediction shape、tracker job 排列，三个来源共用一个 offset/limit 窗口。总数和候选页都从 SQL 的完整匹配范围派生，仅转换当前页的预测几何；低置信条件使用与指标相同的剩余 shape 和 `< 0.5` 阈值。零候选计数可以命中任务而没有候选明细。OR 分支真值用单个布尔数组列返回，宽条件树不会因逐节点增加结果列而触发 PostgreSQL 列数上限。
+
 ## Saved view 与 URL
 
 `project_task_views.entity_scope` 为 `tasks | objects | tracks`，旧记录迁移为 `tasks`。私有名称唯一键与项目共享名称唯一键都包含 scope，因此三个粒度可以使用同名视图。创建和更新必须使用对应 schema 的 filter/sort/column 白名单；不兼容字段在列表中以 `invalid_fields` 返回，不静默改写。

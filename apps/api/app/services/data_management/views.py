@@ -22,8 +22,6 @@ from app.services.data_management.task_filters import (  # noqa: F401
     _NUMERIC_OPS,
     _TASK_FIELD_MAP,
     compile_filter,
-    _is_annotation_object_rule,
-    _compile_annotation_object_condition,
     _track_id_expr,
     _compare_scalar,
     _scene_id_sq,
@@ -50,10 +48,8 @@ from typing import Any
 from fastapi import HTTPException
 from sqlalchemy import (
     Select,
-    and_,
     case,
     func,
-    literal,
     not_,
     or_,
     select,
@@ -392,44 +388,6 @@ def invalid_filter_fields(filter_json: dict[str, Any], project: Project) -> list
         except HTTPException:
             invalid.append(str(field or "__filter__"))
     return list(dict.fromkeys(invalid))
-
-
-def compile_annotation_match_filter(
-    filter_json: dict[str, Any],
-    annotation,
-    project: Project,
-) -> ColumnElement[bool]:
-    validate_filter_tree(filter_json)
-    return _compile_annotation_match_filter(filter_json, annotation, project)
-
-
-def _compile_annotation_match_filter(
-    filter_json: dict[str, Any],
-    annotation,
-    project: Project,
-) -> ColumnElement[bool]:
-    """Compile only object-level rules for the task match explanation drawer."""
-    if not filter_json:
-        return literal(True)
-    if "rules" in filter_json:
-        op = filter_json.get("op", "and")
-        children = [
-            _compile_annotation_match_filter(child, annotation, project)
-            for child in filter_json.get("rules") or []
-            if "rules" in child or _is_annotation_object_rule(child)
-        ]
-        if not children:
-            return literal(True)
-        return and_(*children) if op == "and" else or_(*children)
-    if not _is_annotation_object_rule(filter_json):
-        return literal(True)
-    return _compile_annotation_object_condition(
-        annotation,
-        str(filter_json["field"]),
-        str(filter_json["op"]),
-        filter_json.get("value"),
-        project,
-    )
 
 
 def _model_versions_sq() -> ColumnElement[list[str]]:

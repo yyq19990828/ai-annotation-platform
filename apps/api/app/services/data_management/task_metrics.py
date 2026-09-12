@@ -39,53 +39,13 @@ LOW_CONFIDENCE_THRESHOLD = 0.5
 
 
 def pending_prediction_shapes_expr():
-    prediction = aliased(Prediction)
-    result_count = case(
-        (
-            func.jsonb_typeof(prediction.result) == "array",
-            func.jsonb_array_length(prediction.result),
-        ),
-        else_=0,
-    )
-    rejected_count = case(
-        (
-            func.jsonb_typeof(prediction.rejected_shape_indexes) == "array",
-            func.jsonb_array_length(prediction.rejected_shape_indexes),
-        ),
-        else_=0,
-    )
-    shape_index = cast(Annotation.attributes["_shape_index"].astext, Integer)
-    accepted_not_rejected = (
-        select(func.count(func.distinct(shape_index)))
-        .where(
-            Annotation.parent_prediction_id == prediction.id,
-            Annotation.is_active.is_(True),
-            Annotation.was_cancelled.is_(False),
-            Annotation.attributes.has_key("_shape_index"),  # noqa: W601
-            not_(
-                prediction.rejected_shape_indexes.op("@>")(
-                    func.jsonb_build_array(shape_index)
-                )
-            ),
-        )
-        .correlate(prediction)
-        .scalar_subquery()
-    )
+    pending = _pending_prediction_shape_rows(
+        lambda prediction: prediction.task_id == Task.id,
+        alias_name="dm_task_pending_count",
+    ).correlate(Task)
     return (
-        select(
-            func.coalesce(
-                func.sum(
-                    func.greatest(
-                        result_count - rejected_count - accepted_not_rejected, 0
-                    )
-                ),
-                0,
-            )
-        )
-        .where(
-            prediction.task_id == Task.id,
-            prediction.source != INTERACTIVE_ACCEPT_PREDICTION_SOURCE,
-        )
+        select(func.count())
+        .select_from(pending.subquery("dm_task_pending_count_rows"))
         .correlate(Task)
         .scalar_subquery()
     )
@@ -142,9 +102,13 @@ def _pending_prediction_shape_rows(
     return (
         select(
             prediction.task_id.label("task_id"),
+            prediction.id.label("prediction_id"),
+            prediction.created_at.label("prediction_created_at"),
             prediction.model_version.label("model_version"),
+            prediction.tool_unit_id.label("tool_unit_id"),
             shape_index.label("shape_index"),
             confidence.label("confidence"),
+            shape_value.label("shape_value"),
         )
         .select_from(prediction)
         .join(shape, true())
