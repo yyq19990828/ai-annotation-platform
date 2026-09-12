@@ -8,7 +8,7 @@ if (worktreeMode === "dev") {
     "开发模式不能运行 E2E；请使用 pnpm dev:worktree -- exec --mode e2e -- pnpm test:e2e",
   );
 }
-if (worktreeMode && !process.env.PLAYWRIGHT_E2E_DATABASE_URL) {
+if (worktreeMode && (!process.env.PLAYWRIGHT_E2E_DATABASE_URL || !process.env.DATABASE_URL)) {
   throw new Error("独立工作树缺少测试数据库配置；请通过 dev:worktree exec 启动");
 }
 const rasterMaskMatrix = process.env.PLAYWRIGHT_RASTER_MASK_MATRIX;
@@ -50,11 +50,14 @@ const e2eDatabaseURL = worktreeMode
 // Python ledger fixtures run as child processes and need the same disposable
 // database URL as the API, including in CI where the URL is derived from DATABASE_URL.
 process.env.PLAYWRIGHT_E2E_DATABASE_URL ??= e2eDatabaseURL;
+const e2eRuntimeDatabaseURL = worktreeMode ? process.env.DATABASE_URL! : e2eDatabaseURL;
 
 const isolatedApiCommand = [
-  ...(isCI ? [] : ["uv run python scripts/prepare_e2e_db.py"]),
+  ...(isCI
+    ? []
+    : ['DATABASE_URL="$MIGRATION_DATABASE_URL" uv run python scripts/prepare_e2e_db.py']),
   "uv run alembic upgrade head",
-  `uv run uvicorn app.main:app --host 127.0.0.1 --port ${isolatedApiPort}`,
+  `MIGRATION_DATABASE_URL= TEST_DATABASE_URL= PLAYWRIGHT_E2E_DATABASE_URL= uv run uvicorn app.main:app --host 127.0.0.1 --port ${isolatedApiPort}`,
 ].join(" && ");
 
 /**
@@ -140,7 +143,7 @@ export default defineConfig({
           command: isolatedApiCommand,
           cwd: resolve(configDir, "../api"),
           env: {
-            DATABASE_URL: e2eDatabaseURL,
+            DATABASE_URL: e2eRuntimeDatabaseURL,
             MIGRATION_DATABASE_URL: e2eDatabaseURL,
             ENVIRONMENT: "development",
             E2E_SEED_ENABLED: "true",

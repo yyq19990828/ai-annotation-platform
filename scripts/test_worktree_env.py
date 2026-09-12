@@ -93,6 +93,8 @@ class EnvironmentTests(unittest.TestCase):
                 "CELERY_BROKER_URL": "redis://shared:6379/0",
                 "MINIO_BUCKET": "annotations",
                 "DUCKDB_PATH": "/shared/analytics.duckdb",
+                "MINIO_PUBLIC_URL": "http://localhost:9000",
+                "MINIO_PROXY_TARGET": "http://shared:9000",
                 "PATH": "/bin",
             }
             env = isolated_environment(
@@ -124,6 +126,8 @@ class EnvironmentTests(unittest.TestCase):
             )
             self.assertEqual(env["ML_BACKEND_ROUTER_MODE"], "off")
             self.assertEqual(env["VITE_WS_HOST"], "")
+            self.assertEqual(env["MINIO_PUBLIC_URL"], "/minio")
+            self.assertEqual(env["MINIO_PROXY_TARGET"], "http://localhost:9000")
 
     def test_refuses_remote_or_mismatched_infrastructure_before_provisioning(self):
         import worktree_env

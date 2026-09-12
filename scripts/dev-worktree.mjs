@@ -4,7 +4,7 @@ import { spawn } from "node:child_process";
 import { link, mkdir, readFile, rename, rmdir, unlink, writeFile } from "node:fs/promises";
 import { existsSync, readFileSync, realpathSync, unlinkSync } from "node:fs";
 import { createServer, connect } from "node:net";
-import { tmpdir } from "node:os";
+import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -15,10 +15,7 @@ const host = "127.0.0.1";
 const defaultApiPort = 8100;
 const defaultWebPort = 3100;
 const defaultScanLimit = 512;
-const userScope = String(
-  typeof process.getuid === "function" ? process.getuid() : (process.env.USERNAME ?? "user"),
-).replaceAll(/[^a-zA-Z0-9_.-]/g, "_");
-const defaultLockRoot = join(tmpdir(), `aap-dev-ports-${userScope}`);
+const defaultLockRoot = join(homedir(), ".cache", "aap-dev-ports");
 
 const delay = (milliseconds) =>
   new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));

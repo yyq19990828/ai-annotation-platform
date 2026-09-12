@@ -7,6 +7,7 @@ import asyncio
 import json
 import os
 from pathlib import Path
+import secrets
 import shutil
 import subprocess
 import sys
@@ -132,6 +133,7 @@ class LocalResources:
             database_url=self.settings.database_url,
             migration_database_url=self.settings.effective_migration_database_url,
             minio_endpoint=self.settings.minio_endpoint,
+            minio_use_ssl=self.settings.minio_use_ssl,
             redis_port=port,
             inherited=os.environ,
         )
@@ -156,6 +158,7 @@ class LocalResources:
         name = self.resources["database"]
         try:
             async with engine.connect() as connection:
+                await self.verify_database_server(connection)
                 if action != "inspect":
                     await connection.execute(
                         text("SELECT pg_advisory_lock(hashtext(:name))"), {"name": name}
@@ -212,6 +215,27 @@ class LocalResources:
                         )
         finally:
             await engine.dispose()
+
+    async def verify_database_server(self, owner_connection) -> None:
+        """Prove both logins share one server before inspecting or changing resources."""
+        runtime = make_url(self.settings.database_url).set(database="postgres")
+        engine = create_async_engine(
+            runtime,
+            poolclass=NullPool,
+            hide_parameters=True,
+            connect_args={"timeout": 5, "command_timeout": 10},
+        )
+        key = {"key": secrets.randbits(63)}
+        await owner_connection.execute(text("SELECT pg_advisory_lock(:key)"), key)
+        try:
+            async with engine.connect() as connection:
+                if await connection.scalar(
+                    text("SELECT pg_try_advisory_lock(:key)"), key
+                ):
+                    raise WorktreeError("API 与迁移必须连接同一个本机 PostgreSQL 实例")
+        finally:
+            await engine.dispose()
+            await owner_connection.execute(text("SELECT pg_advisory_unlock(:key)"), key)
 
     def bucket_info(self, name: str) -> dict | None:
         try:

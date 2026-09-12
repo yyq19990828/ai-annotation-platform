@@ -93,6 +93,125 @@ test("serializes concurrent worktree reservations and releases the lock", async 
   }
 });
 
+test("default port locks coordinate processes with different application temp directories", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "aap-port-scope-"));
+  const probe = createServer();
+  const startPort = await listen(probe);
+  await close(probe);
+  const first = await reserveAvailablePort({ startPort });
+  try {
+    const module = new URL("./dev-worktree.mjs", import.meta.url).href;
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `
+      import { reserveAvailablePort } from ${JSON.stringify(module)};
+      const reservation = await reserveAvailablePort({ startPort: ${first.port} });
+      console.log(reservation.port);
+      await reservation.release();
+    `,
+      ],
+      {
+        encoding: "utf8",
+        env: { ...process.env, TMPDIR: directory, TMP: directory, TEMP: directory },
+      },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.notEqual(Number(result.stdout.trim()), first.port);
+  } finally {
+    await first.release();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("Playwright keeps owner credentials in setup and runtime credentials in the API", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "aap-playwright-roles-"));
+  try {
+    const module = new URL("../apps/web/playwright.config.ts", import.meta.url).href;
+    const typescript = new URL(
+      "../apps/web/node_modules/typescript/lib/typescript.js",
+      import.meta.url,
+    ).href;
+    const compiled = join(directory, "playwright.config.mjs");
+    await symlink(
+      fileURLToPath(new URL("../apps/web/node_modules", import.meta.url)),
+      join(directory, "node_modules"),
+    );
+    const owner = "postgresql+asyncpg://owner:fixture@localhost/aap_fixture_e2e";
+    const runtime = owner.replace("owner:", "runtime:");
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `
+      import ts from ${JSON.stringify(typescript)};
+      import { readFileSync, writeFileSync } from "node:fs";
+      const source = readFileSync(new URL(${JSON.stringify(module)}), "utf8");
+      writeFileSync(${JSON.stringify(compiled)}, ts.transpileModule(source, {
+        compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+      }).outputText);
+      const { default: config } = await import(${JSON.stringify(compiled)});
+      console.log(JSON.stringify(config.webServer[0]));
+    `,
+      ],
+      {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          CI: "",
+          AAP_WORKTREE_MODE: "e2e",
+          DATABASE_URL: runtime,
+          PLAYWRIGHT_E2E_DATABASE_URL: owner,
+        },
+      },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    const api = JSON.parse(result.stdout);
+    const log = join(directory, "commands.jsonl");
+    await writeFile(
+      join(directory, "uv"),
+      `#!${process.execPath}
+      const { appendFileSync } = require("node:fs");
+      appendFileSync(${JSON.stringify(log)}, JSON.stringify({
+        args: process.argv.slice(2),
+        database: process.env.DATABASE_URL,
+        migration: process.env.MIGRATION_DATABASE_URL,
+        test: process.env.TEST_DATABASE_URL,
+        fixture: process.env.PLAYWRIGHT_E2E_DATABASE_URL,
+      }) + "\\n");
+    `,
+      { mode: 0o700 },
+    );
+    const launched = spawnSync("sh", ["-c", api.command], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        ...api.env,
+        PATH: `${directory}:${process.env.PATH}`,
+        TEST_DATABASE_URL: owner,
+        PLAYWRIGHT_E2E_DATABASE_URL: owner,
+      },
+    });
+    assert.equal(launched.status, 0, launched.stderr);
+    const [prepare, migrate, server] = (await readFile(log, "utf8"))
+      .trim()
+      .split("\n")
+      .map(JSON.parse);
+    assert.equal(prepare.database, owner);
+    assert.equal(migrate.migration, owner);
+    assert.equal(server.database, runtime);
+    assert.equal(server.migration, "");
+    assert.equal(server.test, "");
+    assert.equal(server.fixture, "");
+    assert.equal(api.env.MIGRATION_DATABASE_URL, owner);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test("reclaims a lock left by a terminated launcher", async () => {
   const lockRoot = await mkdtemp(join(tmpdir(), "aap-dev-port-test-"));
   const probe = createServer();

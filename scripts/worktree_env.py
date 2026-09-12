@@ -118,6 +118,7 @@ def isolated_environment(
     minio_endpoint: str,
     redis_port: int,
     inherited: dict,
+    minio_use_ssl: bool = False,
 ) -> dict:
     """Return child-only overrides; never persist or print the connection strings."""
     from sqlalchemy.engine import make_url
@@ -159,7 +160,8 @@ def isolated_environment(
         "CELERY_RESULT_BACKEND": redis_url,
         **resources["buckets"],
         "MINIO_ENDPOINT": minio_endpoint,
-        "MINIO_PUBLIC_URL": "",  # Sign directly against the validated local endpoint.
+        "MINIO_PUBLIC_URL": "/minio",
+        "MINIO_PROXY_TARGET": f"{'https' if minio_use_ssl else 'http'}://{minio_endpoint}",
         "VITE_WS_HOST": "",  # Same-origin Vite proxy, never a shared checkout's API.
         "DUCKDB_PATH": str(directory / "data" / "analytics.duckdb"),
         "TMPDIR": str(directory / "tmp"),

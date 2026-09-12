@@ -13,7 +13,7 @@ last_reviewed: 2026-09-12
 
 - macOS 或 Linux、Node.js、pnpm，以及当前 checkout 独立的 `apps/api/.venv`。先完成 [Orca 工作树初始化](../tutorials/local-dev#orca-工作树初始化)。
 - 本机 Docker 可用；共享 PostgreSQL、MinIO 已经启动。建议在主目录只执行 `docker compose up -d postgres minio`，不要为每个工作树重复启动默认 Compose 栈。
-- PostgreSQL 配置使用本机 `postgresql+asyncpg` URL，不带 query 参数；运行连接与迁移连接必须指向同一个本机实例。迁移账号需要创建数据库及管理新库的权限。MinIO endpoint 也必须位于本机，账号需要创建、标记和管理专属 bucket 的权限。
+- PostgreSQL 配置使用本机 `postgresql+asyncpg` URL，不带 query 参数；运行连接与迁移连接必须指向同一个本机实例。两个账号都需要连接 `postgres` 库，启动器通过会话锁核对实例，不能仅凭 loopback 地址和相同端口判断。迁移账号需要创建数据库及管理新库的权限。MinIO endpoint 也必须位于本机，账号需要创建、标记和管理专属 bucket 的权限。
 - 默认工作树模式关闭外发 SMTP、Sentry、共享 ML 后端自动注册和 GPU 控制配置，不会启动 GPU worker 或 beat。真实 GPU 调度验证应使用专用验收环境，不能让多个独立控制面管理同一块卡。
 
 这不是生产环境隔离或权限沙箱：基础设施进程和账号可能共享。启动器拒绝 staging/production 配置，也不会自动启动、停止或重建共享 PostgreSQL/MinIO 服务。
@@ -43,6 +43,8 @@ pnpm dev:worktree -- up --with-worker
 
 `.env` 仍可链接主目录作为基础配置，运行时仅向子进程注入独立目标，不修改共享文件。直接运行 `pnpm dev:api`、`uv run pytest` 或默认 Compose 不经过这个隔离入口，仍按原来的配置工作。
 
+媒体上传下载地址统一使用同源 `/minio`，Vite 转发到已验证的本机 MinIO endpoint；远程浏览器只需能访问 Web 端口。应用临时文件按模式隔离，端口预留锁则统一保存在用户目录的 `.cache/aap-dev-ports`，供所有工作树和模式协调使用。
+
 前端进程只接收系统和公开配置，不继承数据库或对象存储凭据。API 配置通过匿名管道交给监督进程后传给 API 子进程，不写入磁盘或命令行；API/worker 不继承迁移账号连接。进程身份同时核对启动时间、工作树范围和命令摘要，支持软链接入口和相对路径调用。
 
 新库只有迁移创建的结构及必要数据，没有原来的账号、项目或媒体。需要管理员时，在下面的隔离 `exec --mode dev` 中运行现有的 `scripts.bootstrap_admin` 流程；凭据按[开发部署说明](/ops/deploy/development#_2-5-首个-super-admin)配置，不放进工作树身份清单。
@@ -70,6 +72,8 @@ pnpm dev:worktree -- exec --mode e2e --with-worker -- pnpm test:e2e
 ```
 
 `exec` 的命令从工作树根目录执行，`--` 后面的参数原样传给子进程。`TEST_DATABASE_URL` 和 `PLAYWRIGHT_E2E_DATABASE_URL` 由入口统一覆盖。入口自动注入 `AAP_WORKTREE_MODE`；在 `dev` 模式中，pytest 和 Playwright 会在准备测试数据库前明确拒绝运行，且不导出其他模式的可用测试连接。需要同类测试并行时使用不同工作树，不要绕过模式锁或手工改写这个内部标识。
+
+Playwright 的迁移和数据库夹具使用隔离库的所有者连接；其 API 使用同库的运行账号，并在启动前清空迁移及夹具连接变量。
 
 本机 worker 使用当前 checkout 的 Python 依赖，消费 `default,media,cleanup,audit,export,image-pyramid,ml.cpu`。不会消费 GPU 队列，也不会复用主目录的 Docker worker。媒体任务需要的系统依赖仍须在本机安装。修改 worker Python 代码后应停止并重启当前环境，Celery 不会热重载。
 

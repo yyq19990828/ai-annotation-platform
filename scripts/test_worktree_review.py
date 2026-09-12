@@ -1,5 +1,6 @@
 """Regression tests for independent review findings; no live services."""
 
+import asyncio
 import json
 import os
 from pathlib import Path
@@ -7,7 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from worktree_env import (
     WorktreeError,
@@ -23,6 +24,55 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ReviewRegressions(unittest.TestCase):
+    def test_database_identity_challenge_uses_both_servers_and_releases_locks(self):
+        from sqlalchemy.engine import make_url
+        from worktree_resources import LocalResources
+
+        backend = object.__new__(LocalResources)
+        backend.settings = Mock(
+            database_url="postgresql+asyncpg://runtime:fixture@127.0.0.1/db"
+        )
+        backend.url = make_url("postgresql+asyncpg://owner:fixture@[::1]/db")
+        backend.resources = {"database": "aap_wt_fixture_test"}
+        for acquired in (True, False):
+            with self.subTest(different_server=acquired):
+                owner, runtime_connection = AsyncMock(), AsyncMock()
+                # An existing owned database needs no DDL, but still requires identity proof.
+                rows = Mock()
+                rows.mappings.return_value.first.return_value = {
+                    "owner": "fixture",
+                    "sessions": 0,
+                }
+                owner.execute.return_value = rows
+                runtime_connection.scalar.return_value = acquired
+                engines = [MagicMock(), MagicMock()]
+                for engine, connection in zip(engines, (owner, runtime_connection)):
+                    engine.connect.return_value.__aenter__.return_value = connection
+                    engine.dispose = AsyncMock()
+                with patch(
+                    "worktree_resources.create_async_engine", side_effect=engines
+                ) as create:
+                    if acquired:
+                        with self.assertRaisesRegex(WorktreeError, "同一个"):
+                            asyncio.run(backend.database())
+                    else:
+                        self.assertIsNotNone(asyncio.run(backend.database()))
+                urls = [call.args[0] for call in create.call_args_list]
+                self.assertEqual([url.host for url in urls], ["::1", "127.0.0.1"])
+                self.assertEqual(
+                    [url.database for url in urls], ["postgres", "postgres"]
+                )
+                calls = owner.execute.call_args_list
+                self.assertIn("pg_advisory_lock", str(calls[0].args[0]))
+                self.assertIn("pg_advisory_unlock", str(calls[1].args[0]))
+                self.assertEqual(
+                    calls[0].args[1], runtime_connection.scalar.call_args.args[1]
+                )
+                self.assertEqual(len(calls), 2 if acquired else 3)
+                for engine in engines:
+                    engine.dispose.assert_awaited_once()
+                owner.exec_driver_sql.assert_not_called()
+
     def test_worker_handle_refresh_inserts_missing_records_and_replaces_existing(self):
         self.assertTrue(hasattr(runtime, "register_child"))
         record = {"children": []}
