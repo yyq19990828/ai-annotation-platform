@@ -260,21 +260,21 @@ SAM3 示例召回支持成对返回矩形框与原生 Mask，图片和视频当�
 
 ## 文档地图
 
-| 角色 / 任务                | 入口                                                                                                   |
-| -------------------------- | ------------------------------------------------------------------------------------------------------ |
-| 标注员、审核员、项目管理员 | [docs-site/user-guide/](./docs-site/user-guide/)                                                       |
-| 本地开发                   | [docs-site/dev/tutorials/local-dev.md](./docs-site/dev/tutorials/local-dev.md)                         |
-| 测试策略                   | [docs-site/dev/testing.md](./docs-site/dev/testing.md)                                                 |
-| API 文档                   | [docs-site/api/](./docs-site/api/)                                                                     |
-| Python SDK / CLI           | [docs-site/dev/sdk/quickstart.md](./docs-site/dev/sdk/quickstart.md)                                   |
-| ML Backend 协议            | [docs-site/dev/reference/ml-backend-protocol.md](./docs-site/dev/reference/ml-backend-protocol.md)     |
-| Data Manager               | [docs-site/user-guide/projects/data-manager.md](./docs-site/user-guide/projects/data-manager.md)       |
-| 视频帧服务                 | [docs-site/dev/reference/video-frame-service.md](./docs-site/dev/reference/video-frame-service.md)     |
-| 导出格式                   | [docs-site/user-guide/reference/export-formats.md](./docs-site/user-guide/reference/export-formats.md) |
-| 部署与运维                 | [docs-site/ops/](./docs-site/ops/)                                                                     |
-| 架构概念                   | [docs-site/dev/concepts/](./docs-site/dev/concepts/)                                                   |
-| ADR                        | [docs/adr/](./docs/adr/)                                                                               |
-| 变更记录                   | [CHANGELOG.md](./CHANGELOG.md)                                                                         |
+| 角色 / 任务                | 入口                                                                                                                            |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| 标注员、审核员、项目管理员 | [docs-site/user-guide/](./docs-site/user-guide/)                                                                                |
+| 本地开发                   | [docs-site/dev/tutorials/local-dev.md](./docs-site/dev/tutorials/local-dev.md)                                                  |
+| 测试策略                   | [docs-site/dev/testing.md](./docs-site/dev/testing.md)                                                                          |
+| API 文档                   | [docs-site/api/](./docs-site/api/)                                                                                              |
+| Python SDK / CLI           | [docs-site/dev/sdk/quickstart.md](./docs-site/dev/sdk/quickstart.md)                                                            |
+| ML Backend 协议            | [docs-site/dev/reference/ml-backend-protocol.md](./docs-site/dev/reference/ml-backend-protocol.md)                              |
+| Data Manager               | [用户指南](./docs-site/user-guide/projects/data-manager.md) · [查询与校验契约](./docs-site/dev/reference/data-manager-query.md) |
+| 视频帧服务                 | [docs-site/dev/reference/video-frame-service.md](./docs-site/dev/reference/video-frame-service.md)                              |
+| 导出格式                   | [docs-site/user-guide/reference/export-formats.md](./docs-site/user-guide/reference/export-formats.md)                          |
+| 部署与运维                 | [docs-site/ops/](./docs-site/ops/)                                                                                              |
+| 架构概念                   | [docs-site/dev/concepts/](./docs-site/dev/concepts/)                                                                            |
+| ADR                        | [docs/adr/](./docs/adr/)                                                                                                        |
+| 变更记录                   | [CHANGELOG.md](./CHANGELOG.md)                                                                                                  |
 
 部署版文档站：[https://yyq19990828.github.io/ai-annotation-platform/](https://yyq19990828.github.io/ai-annotation-platform/)
 

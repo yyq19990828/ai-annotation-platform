@@ -52,6 +52,8 @@ attribute key 可以包含点号；解析时只分离 tool unit，剩余字符�
 
 task grain 中，同一 AND group 的 annotation rule 编译为一个 correlated `EXISTS`，确保类别、来源、轨迹和属性由同一个 active、非 cancelled annotation 满足；不能为每个 rule 分别生成 `EXISTS`，否则会产生跨对象误命中。object / track grain 则把条件直接绑定到当前 annotation/member；不能先分页 tasks 再展开实体。
 
+结构校验在 SQL 编译前执行：根节点计为第 1 层和第 1 个节点，最多 32 层、4096 个节点；`in` 最多 200 项。非对象子节点、错误的值类型、无效日期或 UUID、非有限数字统一返回 422。日期按 ISO 格式解析，无时区值按 UTC 处理；可空任务字段的 `eq: null` / `ne: null` 保留 `IS NULL` / `IS NOT NULL` 语义。已有视图超出结构限制时保留记录，并以 `invalid_fields: ["__filter__"]` 标记，不能静默删除条件。
+
 ## 三种 grain 与分页
 
 - **task**：一行一个任务，使用 offset 分页；summary 表示“匹配任务中的全部对象”。
