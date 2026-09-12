@@ -200,6 +200,7 @@ class CommandTests(unittest.TestCase):
             self.assertFalse(
                 runtime.process_matches(record, "/ours/worktree_runtime.py")
             )
+
         with patch.object(
             runtime,
             "process_identity",
@@ -211,6 +212,22 @@ class CommandTests(unittest.TestCase):
             self.assertFalse(
                 runtime.process_matches(record, "/ours/worktree_runtime.py")
             )
+
+    def test_manual_scenario_is_limited_to_e2e_up(self):
+        import worktree_runtime as runtime
+
+        options = runtime.parse_arguments(
+            ["up", "--mode", "e2e", "--scenario", "filtering"]
+        )
+        self.assertEqual(options.scenario, "filtering")
+        for args in (
+            ["--scenario", "filtering"],
+            ["up", "--mode", "test", "--scenario", "filtering"],
+            ["reset", "--mode", "e2e", "--scenario", "filtering"],
+            ["exec", "--mode", "e2e", "--scenario", "filtering", "--", "true"],
+        ):
+            with self.subTest(args=args), self.assertRaises(SystemExit):
+                runtime.parse_arguments(args)
 
 
 if __name__ == "__main__":
