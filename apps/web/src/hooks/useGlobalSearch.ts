@@ -17,7 +17,7 @@ export function useGlobalSearch(input: string, limit = 5) {
 
   const query = useQuery({
     queryKey: ["global-search", debounced, limit],
-    queryFn: () => searchApi.query(debounced, limit),
+    queryFn: ({ signal }) => searchApi.query(debounced, limit, { signal }),
     enabled: debounced.length > 0,
     staleTime: 30 * 1000,
   });

@@ -153,6 +153,8 @@ OCR 识别原子（`task=ocr`、`composition=atom`、吃 `crop` 输入,如 rapid
 
 ![预标注历史搜索](../images/projects/ai-pre-history-search.png)
 
+历史队列的搜索或排序变化会回到首页，结果缩减后页码会自动落回有效范围。已明确勾选的条目跨搜索和翻页保留，批量操作前可核对显示的已选数量。
+
 ## 人工接管
 
 批量预标完成后，批次会进入 `pre_annotated` 状态。项目管理员或标注员可以点击「打开标注工作台」进入对应批次。

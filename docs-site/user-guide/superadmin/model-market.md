@@ -57,6 +57,8 @@ last_reviewed: 2026-08-16
 - 搜索模型名、model id、模型族、task 中文标签和来源 backend；协议能力分组下，搜索同时过滤协议卡（命中 task label / summary / typical_models 的卡保留）。
 - 与 task / model_family / infra / modality chips 过滤叠加。
 
+同一维度内选择多项表示满足任一项，不同维度之间需要同时满足。模型族筛选也作用于协议分组；基础设施和模态按模型实际展示的能力匹配，切换分组不改变筛选含义。
+
 ### 2. 运行时观测
 
 运行时观测是 runtime-centric 视图（**仅超管可见**）。它以**服务池**为默认比较层，先用摘要带汇总路由模式、可路由实例、异常池和数据新鲜度，再按服务池摘要卡 → 实例面板 → 详情 Sheet 逐级下钻。宽屏下服务池以两列排布，展开的卡片自动跨列；窄屏回落为单列。数据来自 `topology` + `runtime-snapshot` 两个权威读模型，按稳定 ID 关联（不再按 URL join）。

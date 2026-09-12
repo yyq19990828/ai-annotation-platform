@@ -20,7 +20,7 @@ vi.mock("@/api/asyncJobs", () => ({
     "mask_format_import",
   ]),
   asyncJobsApi: {
-    list: (params: unknown) => mockList(params),
+    list: (params: unknown, init?: RequestInit) => mockList(params, init),
     cancel: (id: string) => mockCancel(id),
     get: (id: string) => mockGet(id),
   },
@@ -130,7 +130,9 @@ describe("JobsBell", () => {
     fireEvent.click(screen.getByRole("button", { name: "查看数据集导入详情" }));
     expect(await screen.findByText("导入 6 / 跳过 0")).toBeInTheDocument();
     expect(mockGet).toHaveBeenCalledWith("older");
-    expect(mockList).toHaveBeenCalledWith({ limit: 20, offset: 1 });
+    expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ limit: 20, offset: 1 }), {
+      signal: expect.any(AbortSignal),
+    });
   });
 
   it("查询失败显示重试，不误报没有后台任务", async () => {
@@ -279,7 +281,11 @@ describe("JobsBell", () => {
       )
       .mockResolvedValueOnce({ items: [], total: 0 });
     renderBell();
-    await waitFor(() => expect(mockList).toHaveBeenCalledWith({ limit: 20, offset: 0 }));
+    await waitFor(() =>
+      expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ limit: 20, offset: 0 }), {
+        signal: expect.any(AbortSignal),
+      }),
+    );
 
     act(() =>
       useAuthStore
@@ -289,6 +295,35 @@ describe("JobsBell", () => {
     await waitFor(() => expect(mockList).toHaveBeenCalledTimes(2));
     await act(async () => resolveFirst({ items: [{ ...baseRow, id: "alice-job" }], total: 1 }));
     expect(screen.queryByTestId("job-row-alice-job")).not.toBeInTheDocument();
+  });
+
+  it("同一账号切换 token epoch 时旧列表迟到响应不会泄露", async () => {
+    let resolveFirst!: (value: unknown) => void;
+    let firstSignal!: AbortSignal;
+    mockList
+      .mockImplementationOnce((_params: unknown, init?: RequestInit) => {
+        firstSignal = init?.signal as AbortSignal;
+        return new Promise((resolve) => {
+          resolveFirst = resolve;
+        });
+      })
+      .mockResolvedValueOnce({ items: [], total: 0 });
+    renderBell();
+    await waitFor(() =>
+      expect(mockList).toHaveBeenCalledWith(expect.objectContaining({ limit: 20, offset: 0 }), {
+        signal: expect.any(AbortSignal),
+      }),
+    );
+
+    act(() =>
+      useAuthStore
+        .getState()
+        .setAuth("jobs-u1-token-2", { id: "u1", role: "annotator" } as MeResponse),
+    );
+    await waitFor(() => expect(mockList).toHaveBeenCalledTimes(2));
+    expect(firstSignal.aborted).toBe(true);
+    await act(async () => resolveFirst({ items: [{ ...baseRow, id: "old-token-job" }], total: 1 }));
+    expect(screen.queryByTestId("job-row-old-token-job")).not.toBeInTheDocument();
   });
 
   it("切换账号时已选详情立即关闭，不保留旧账号作业", async () => {

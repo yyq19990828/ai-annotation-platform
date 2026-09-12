@@ -498,7 +498,12 @@ function NotificationsPanel({
   return (
     <div className="flex h-full min-h-0 w-full flex-col overflow-hidden">
       <div className={`${SHELL_POPOVER_HEADER_CLASS} justify-between`}>
-        <span className="font-semibold">通知{unread > 0 ? ` · ${unread} 未读` : ""}</span>
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="font-semibold">通知{unread > 0 ? ` · ${unread} 未读` : ""}</span>
+          <span className="truncate text-2xs font-normal text-muted-foreground">
+            仅显示已加载通知
+          </span>
+        </div>
         <div className="flex items-center gap-2.5 whitespace-nowrap">
           {hasRead && (
             <button

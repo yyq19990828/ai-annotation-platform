@@ -29,7 +29,7 @@ function makeItem(overrides: Partial<PreannotateQueueItem> = {}): PreannotateQue
     total_tasks: 10,
     prediction_count: 8,
     failed_count: 0,
-    last_run_at: new Date().toISOString(),
+    last_run_at: "2026-01-01T00:00:00Z",
     can_retry: false,
     ...overrides,
   };
@@ -126,5 +126,31 @@ describe("HistoryTable v0.9.12 多选", () => {
     const resultView = await screen.findByTestId("bulk-result", {}, { timeout: 2000 });
     expect(resultView).toBeInTheDocument();
     expect(resultView.textContent ?? "").toContain("RuntimeError: boom");
+  });
+
+  it("数据缩小时回到有效页，同时保留累计选择并显示明确计数", async () => {
+    const items = Array.from({ length: 41 }, (_, index) =>
+      makeItem({ batch_id: `b${index}`, batch_name: `B${index}` }),
+    );
+    const view = renderUI(items);
+    fireEvent.click(screen.getByRole("checkbox", { name: "选择 B0" }));
+    fireEvent.click(screen.getByRole("button", { name: /下一页/ }));
+    fireEvent.click(screen.getByRole("button", { name: /下一页/ }));
+    expect(screen.getByText(/第 3\/3 页/)).toBeInTheDocument();
+
+    view.rerender(
+      <QueryClientProvider client={new QueryClient()}>
+        <MemoryRouter>
+          <HistoryTable items={[items[0]]} isLoading={false} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(screen.queryByText(/第 3\/3 页/)).toBeNull());
+    expect(screen.getByText("B0")).toBeInTheDocument();
+    expect(screen.getByText("已选 1 项")).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("搜索批次/项目..."), {
+      target: { value: "missing" },
+    });
+    expect(screen.getByText("已选 1 项")).toBeInTheDocument();
   });
 });

@@ -318,8 +318,9 @@ export function JobsBell() {
   const pushToast = useToastStore((state) => state.push);
 
   const jobsQuery = useInfiniteQuery({
-    queryKey: ["async-jobs", "recent", userId],
-    queryFn: ({ pageParam }) => asyncJobsApi.list({ limit: 20, offset: pageParam }),
+    queryKey: ["async-jobs", "recent", ownerKey],
+    queryFn: ({ pageParam, signal }) =>
+      asyncJobsApi.list({ limit: 20, offset: pageParam }, { signal }),
     initialPageParam: 0,
     getNextPageParam: (lastPage, _pages, lastOffset) =>
       lastPage.items.length > 0 && lastOffset + lastPage.items.length < lastPage.total
