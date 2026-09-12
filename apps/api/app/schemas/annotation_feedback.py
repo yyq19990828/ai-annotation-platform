@@ -8,7 +8,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.schemas._jsonb_types import CanvasDrawing
+from app.schemas._jsonb_types import CanvasDrawing, Mention
 from app.schemas.discussion_actions import DiscussionActions
 
 FeedbackKind = Literal["issue", "comment", "reject", "bug"]
@@ -151,6 +151,7 @@ class AnnotationFeedbackCreate(BaseModel):
     title: str | None = Field(default=None, max_length=500)
     body: str
     attachments: list[dict[str, Any]] = Field(default_factory=list)
+    mentions: list[Mention] = Field(default_factory=list)
     canvas_drawing: CanvasDrawing | None = None
     thread_parent_id: UUID | None = None
 
@@ -229,6 +230,12 @@ class AnnotationFeedbackCreate(BaseModel):
             raise ValueError(
                 "task comments must contain text, an attachment, or a drawing"
             )
+        if self.mentions and not (
+            self.kind == "comment"
+            and self.anchor_type == "task"
+            and self.thread_parent_id is None
+        ):
+            raise ValueError("mentions require a native root task comment")
         return self
 
 
@@ -237,17 +244,21 @@ class AnnotationFeedbackPatch(BaseModel):
     severity: FeedbackSeverity | None = None
     title: str | None = Field(default=None, max_length=500)
     body: str | None = None
+    mentions: list[Mention] | None = None
 
 
 class AnnotationFeedbackReply(BaseModel):
     body: str
     attachments: list[dict[str, Any]] = Field(default_factory=list)
+    mentions: list[Mention] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod
     def _reject_canvas_drawing(cls, value):
         if isinstance(value, dict) and value.get("canvas_drawing") is not None:
             raise ValueError("canvas_drawing is not supported for feedback replies")
+        if isinstance(value, dict) and value.get("mentions"):
+            raise ValueError("mentions are not supported for feedback replies")
         return value
 
 
@@ -266,6 +277,7 @@ class AnnotationFeedbackOut(BaseModel):
     author_id: UUID
     author_name: str | None = None
     attachments: list[dict[str, Any]] = []
+    mentions: list[Mention] = []
     canvas_drawing: CanvasDrawing | None = None
     thread_parent_id: UUID | None = None
     is_active: bool

@@ -366,6 +366,12 @@ export function CommentsPanel({
 
   useEffect(() => {
     if (!commentFocus || focusedRequestRef.current === commentFocus.requestId) return;
+    if (commentFocus.source === "feedback") {
+      setReadScope("task");
+      setReadAnnotationOverride(null);
+      setScopeNotice(null);
+      return;
+    }
     setReadScope("annotation");
     setReadAnnotationOverride({
       owner: taskScopeKey,
@@ -426,22 +432,28 @@ export function CommentsPanel({
 
   const activeQuery = taskContext ? taskDiscussionQuery : legacyAnnotationQuery;
   useLayoutEffect(() => {
+    const taskCommentFocus = commentFocus?.source === "feedback";
     if (
       !commentFocus ||
       focusedRequestRef.current === commentFocus.requestId ||
-      effectiveScope !== "annotation" ||
-      readAnnotationId !== commentFocus.annotationId ||
+      (taskCommentFocus
+        ? effectiveScope !== "task"
+        : effectiveScope !== "annotation" ||
+          readAnnotationId !==
+            ("annotationId" in commentFocus ? commentFocus.annotationId : null)) ||
       activeQuery.isPending ||
       activeQuery.isError
     )
       return;
     const container = contentRef.current;
     const row = container?.querySelector<HTMLElement>(
-      `[data-comment-key="annotation_comment:${commentFocus.commentId}"]`,
+      `[data-comment-key="${taskCommentFocus ? "feedback" : "annotation_comment"}:${commentFocus.commentId}"]`,
     );
     if (!container || !row) return;
     focusedRequestRef.current = commentFocus.requestId;
-    setHighlightedComment(`annotation_comment:${commentFocus.commentId}`);
+    setHighlightedComment(
+      `${taskCommentFocus ? "feedback" : "annotation_comment"}:${commentFocus.commentId}`,
+    );
     container.scrollTop += row.getBoundingClientRect().top - container.getBoundingClientRect().top;
     row.focus({ preventScroll: true });
     onCommentFocusHandled?.(commentFocus.requestId);
@@ -678,11 +690,10 @@ export function CommentsPanel({
           throw error;
         });
       }
-      // F1 rejects unsupported fields before this callback; keep a second guard
-      // at the write owner so a legacy adapter cannot silently drop structured
-      // payload data. Image task comments may carry only their drawing.
+      // Keep a second guard at the write owner so a legacy adapter cannot
+      // silently drop structured payload data. Image task comments may carry
+      // mentions and, when enabled, their drawing.
       if (
-        payload.mentions.length > 0 ||
         payload.attachments.length > 0 ||
         (payload.canvas_drawing &&
           (submissionTarget.kind !== "task" || !enableTaskCanvasDrawing || !enableCanvasDrawing)) ||
@@ -697,6 +708,7 @@ export function CommentsPanel({
         project_id: submissionTarget.projectId,
         task_id: submissionTarget.taskId,
         body: payload.body,
+        mentions: payload.mentions,
         canvas_drawing: payload.canvas_drawing,
       });
     },
@@ -1162,7 +1174,7 @@ export function CommentsPanel({
                   <div className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">
                     {renderCommentBody(
                       data.body,
-                      annotationData ? ((annotationData.mentions ?? []) as CommentMention[]) : [],
+                      (data.mentions ?? []) as CommentMention[],
                       (userId) => navigate(`/audit?actor=${userId}`),
                     )}
                   </div>

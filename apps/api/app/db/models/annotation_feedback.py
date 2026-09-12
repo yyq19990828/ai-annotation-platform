@@ -57,6 +57,9 @@ class AnnotationFeedback(Base):
     attachments: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB, server_default=text("'[]'::jsonb"), default=list, nullable=False
     )
+    mentions: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, server_default=text("'[]'::jsonb"), default=list, nullable=False
+    )
     canvas_drawing: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     thread_parent_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("annotation_feedbacks.id"), nullable=True

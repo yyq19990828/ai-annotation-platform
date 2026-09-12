@@ -116,6 +116,7 @@ vi.mock("@/api/notifications", () => ({
         { type: "bug_report.status_changed", in_app: false },
         { type: "feedback.reply_created", in_app: true },
         { type: "feedback.status_changed", in_app: true },
+        { type: "feedback.comment_mentioned", in_app: true },
         { type: "annotation.comment_mentioned", in_app: true },
         { type: "job.completed", in_app: true },
       ],
@@ -277,6 +278,7 @@ describe("SettingsPage", () => {
     await waitFor(() => expect(screen.getByText("batch.rejected")).toBeInTheDocument());
     expect(screen.getByText("问题收到新回复")).toBeInTheDocument();
     expect(screen.getByText("问题状态变更")).toBeInTheDocument();
+    expect(screen.getByText("任务留言提到了你")).toBeInTheDocument();
     expect(screen.getByText("标注评论提到了你")).toBeInTheDocument();
     expect(screen.getByText("后台任务完成")).toBeInTheDocument();
   });

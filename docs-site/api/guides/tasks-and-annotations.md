@@ -73,7 +73,11 @@ GET /api/v1/feedbacks/:root_id/thread?limit=50
 
 汇总不读取评论镜像或统一反馈视图，也不混入问题回复、BUG 和退回记录。结果按 `(created_at, source, id)` 降序排列；游标绑定任务、阅读范围和标注，不能用于其他查询。游标格式错误、超过 2048 字符或与查询不匹配时返回 `400`。旧标注评论接口继续保留。
 
-图片任务的原生留言可在 `POST /feedbacks` 携带可空的 `canvas_drawing`，沿用标注评论的 `CanvasDrawing` 结构（归一化坐标和非空笔触）。只允许 `kind=comment`、`anchor_type=task`、无父记录且属于可访问图片任务的目标；视频、点云、问题和回复不接受绘图。正文、已有兼容附件或非空绘图至少一项有内容，因此允许仅绘图的任务留言。读取反馈和讨论分页都会返回该字段；已有绘图的留言可将正文修改为空。此字段不扩展任务附件上传或提及能力。
+图片任务的原生留言可在 `POST /feedbacks` 携带可空的 `canvas_drawing`，沿用标注评论的 `CanvasDrawing` 结构（归一化坐标和非空笔触）。只允许 `kind=comment`、`anchor_type=task`、无父记录且属于可访问图片任务的目标；视频、点云、问题和回复不接受绘图。正文、已有兼容附件或非空绘图至少一项有内容，因此允许仅绘图的任务留言。读取反馈和讨论分页都会返回该字段；已有绘图的留言可将正文修改为空。此字段不扩展任务附件上传能力。
+
+所有媒体类型的原生任务留言均支持 `mentions`，沿用标注评论的结构：`userId`、`displayName`、`offset`、`length`。历史记录和省略字段时使用空列表，反馈读取与讨论分页保留提及。非空提及只接受在 `kind=comment`、`anchor_type=task` 且没有父记录的原生任务留言中；问题、回复和其他反馈目标会明确拒绝。创建时校验项目成员身份，通知前再检查接收人的账号状态和任务可见性。
+
+编辑原生任务留言时，可在 `PATCH /feedbacks/:id` 同时提交正文和更新后的 `mentions`。只修改正文且没有提供提及列表时，会清除旧位置信息；正文完全不变时保留原提及。显式提交空列表会清除提及。提及修改仍检查成员和编辑权限，编辑不会再次发送提及通知。
 
 `discussion/annotation-counts` 返回 `{ "counts": { "annotation-uuid": 3 } }`，一次统计当前任务可用标注的全部有效原评论，包含已解决评论。按标注 ID 分组，只返回正数，不受分页影响，不计反馈镜像；已删除评论或不可用标注不计入。接口沿用任务讨论可见性检查，数量不代表每用户未读数。
 
@@ -83,18 +87,21 @@ GET /api/v1/feedbacks/:root_id/thread?limit=50
 
 线程接口返回根记录 `root`、回复 `items`、`next_cursor` 和回复总数 `total`。回复按时间和 ID 降序分页，历史多层回复会展开为同一会话；已删除的中间回复不展示，其仍有效的后代可以读取。根记录删除、祖先链循环或跨项目、任务、标注锚点时，相关子树不可访问。标注评论镜像不能用作问题线程。
 
-新回复通过 `POST /feedbacks/:root_id/replies` 提交，工作台回复仅提供纯文本，不能为空白。已有回复 API 的附件字段保持兼容；任务或问题的附件上传下载、提及和富文本编辑不在工作台讨论功能范围内。
+新回复通过 `POST /feedbacks/:root_id/replies` 提交，工作台回复仅提供纯文本，不能为空白。已有回复 API 的附件字段保持兼容；工作台任务留言和问题回复不提供附件上传下载，问题回复不支持提及或富文本编辑。
+
+图片和视频的像素问题可以同时携带 `annotation_id` 与 `anchor_position`。对象必须属于同一项目和任务；取消对象关联时保留像素坐标，视频同时移除关联对象的轨迹和版本信息。旧问题没有对象关联时仍然有效。`severity=blocker` 是普通问题的严重度，不改变任务提交和审核规则。
 
 列表、线程和写接口都会检查项目与任务权限。`actions` 包含 `edit`、`change_status`、`delete`、`reply`，仅作客户端能力提示，服务端仍独立校验每次操作。作者和管理员可编辑、删除；非作者审核员仅可修改问题状态，混入正文、标题或严重度的请求整体返回 `403`。删除采用软删除，不会把子回复转成任务留言。
 
 ### 讨论通知
 
-创建问题回复、修改根问题状态和创建含有效提及的原标注评论，会使用现有通知接口：`GET /notifications`、`POST /notifications/:id/read` 和 `/notification-preferences`。通知与业务数据同事务提交，成功后再尽力推送 WebSocket；Redis 故障不撤销已保存的回复或评论。
+创建问题回复、修改根问题状态和创建含有效提及的任务留言或原标注评论，会使用现有通知接口：`GET /notifications`、`POST /notifications/:id/read` 和 `/notification-preferences`。通知与业务数据同事务提交，成功后再尽力推送 WebSocket；Redis 故障不撤销已保存的回复或评论。
 
 | 事件                           | 目标                                        | 载荷中的额外身份           |
 | ------------------------------ | ------------------------------------------- | -------------------------- |
 | `feedback.reply_created`       | `target_type=feedback`，根问题 ID           | `reply_id`                 |
 | `feedback.status_changed`      | `target_type=feedback`，根问题 ID           | `from_status`、`to_status` |
+| `feedback.comment_mentioned`   | `target_type=feedback`，原生任务留言 ID     | 任务与项目身份             |
 | `annotation.comment_mentioned` | `target_type=annotation_comment`，原评论 ID | `annotation_id`            |
 
 载荷共同包含 `project_id`、`task_id`、`source`、`actor_name`，不复制正文。收件人按当前访问权限、账号状态和偏好过滤，并排除操作人、去重；无实际状态变化不发通知。收到载荷不代表继续拥有目标权限，客户端打开时仍需通过任务、根线程或原标注评论接口重新校验。通知已读不代表整个线程已读，也不新增任务留言或问题回复的提及、附件能力。

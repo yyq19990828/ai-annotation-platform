@@ -50,6 +50,7 @@ KNOWN_NOTIFICATION_TYPES = [
     "user.deactivation_completed",
     "feedback.reply_created",
     "feedback.status_changed",
+    "feedback.comment_mentioned",
     "annotation.comment_mentioned",
 ]
 

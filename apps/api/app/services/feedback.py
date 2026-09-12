@@ -47,6 +47,7 @@ class FeedbackService:
         attachments: list[dict],
         thread_parent_id: uuid.UUID | None,
         canvas_drawing: dict | None = None,
+        mentions: list[dict] | None = None,
     ) -> AnnotationFeedback:
         if anchor_position and anchor_position.get("video_context") is not None:
             # A reply copies a persisted anchor, including future versions or a
@@ -84,6 +85,7 @@ class FeedbackService:
             title=title,
             body=body,
             attachments=attachments,
+            mentions=mentions or [],
             canvas_drawing=canvas_drawing,
             thread_parent_id=thread_parent_id,
             author_id=author_id,
@@ -193,6 +195,7 @@ class FeedbackService:
         severity: str | None = None,
         title: str | None = None,
         body: str | None = None,
+        mentions: list[dict] | None = None,
     ) -> AnnotationFeedback:
         entry = await self.db.get(AnnotationFeedback, feedback_id)
         if entry is None or not entry.is_active:
@@ -210,7 +213,16 @@ class FeedbackService:
         if title is not None:
             entry.title = title
         if body is not None:
+            body_changed = body != entry.body
             entry.body = body
+            if mentions is not None:
+                entry.mentions = mentions
+            elif body_changed:
+                # Body edits without an editor mention map cannot preserve offsets
+                # safely; clear them rather than leaving stale chips.
+                entry.mentions = []
+        elif mentions is not None:
+            entry.mentions = mentions
         await self.db.flush()
         return entry
 
@@ -246,6 +258,7 @@ class FeedbackService:
             title=bug_report.title,
             body=bug_report.description,
             attachments=[],
+            mentions=[],
             thread_parent_id=None,
             author_id=bug_report.reporter_id,
             is_active=True,
@@ -279,6 +292,7 @@ class FeedbackService:
             title=None,
             body=comment.body,
             attachments=comment.attachments or [],
+            mentions=comment.mentions or [],
             thread_parent_id=None,
             author_id=comment.author_id,
             is_active=True,
@@ -314,6 +328,7 @@ class FeedbackService:
             title=None,
             body=task.reject_reason or "",
             attachments=[],
+            mentions=[],
             thread_parent_id=None,
             author_id=reviewer_id,
             is_active=True,

@@ -706,6 +706,7 @@ const NOTIF_TYPE_LABELS: Record<string, string> = {
   "bug_report.status_changed": "BUG 反馈：状态变更",
   "feedback.reply_created": "问题收到新回复",
   "feedback.status_changed": "问题状态变更",
+  "feedback.comment_mentioned": "任务留言提到了你",
   "annotation.comment_mentioned": "标注评论提到了你",
   "batch.rejected": "批次被驳回",
   "batch.review_reopened": "批次重新进入审核",

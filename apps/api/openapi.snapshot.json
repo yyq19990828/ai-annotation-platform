@@ -1994,6 +1994,13 @@
             "title": "Kind",
             "type": "string"
           },
+          "mentions": {
+            "items": {
+              "$ref": "#/components/schemas/Mention"
+            },
+            "title": "Mentions",
+            "type": "array"
+          },
           "project_id": {
             "format": "uuid",
             "title": "Project Id",
@@ -2216,6 +2223,14 @@
             "title": "Kind",
             "type": "string"
           },
+          "mentions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/Mention"
+            },
+            "title": "Mentions",
+            "type": "array"
+          },
           "project_id": {
             "format": "uuid",
             "title": "Project Id",
@@ -2345,6 +2360,20 @@
             ],
             "title": "Body"
           },
+          "mentions": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Mention"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mentions"
+          },
           "severity": {
             "anyOf": [
               {
@@ -2406,6 +2435,13 @@
           "body": {
             "title": "Body",
             "type": "string"
+          },
+          "mentions": {
+            "items": {
+              "$ref": "#/components/schemas/Mention"
+            },
+            "title": "Mentions",
+            "type": "array"
           }
         },
         "required": [

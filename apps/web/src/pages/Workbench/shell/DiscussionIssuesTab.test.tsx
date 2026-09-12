@@ -202,6 +202,18 @@ describe("DiscussionIssuesTab", () => {
     );
   });
 
+  it("exposes the saved associated object on the issue card", () => {
+    const target = issue({
+      id: "object-issue",
+      annotation_id: "annotation-123456",
+    });
+    mocks.query = query({ data: { pages: [{ items: [target], next_cursor: null }] } });
+    setup();
+    expect(screen.getByTestId("discussion-issue-object-object-issue")).toHaveTextContent(
+      "对象 · anno…3456",
+    );
+  });
+
   it("opens a filtered-out pin snapshot directly and preserves the selected list filter", () => {
     const view = setup({ allowProjectScope: true });
     fireEvent.click(screen.getByTestId("issue-status-resolved"));

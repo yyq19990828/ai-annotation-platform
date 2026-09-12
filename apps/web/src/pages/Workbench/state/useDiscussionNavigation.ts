@@ -56,13 +56,20 @@ export interface DiscussionReplyFocus {
   replyId: string;
 }
 
-export interface DiscussionCommentFocus {
-  requestId: string;
-  annotationId: string;
-  commentId: string;
-  annotationLabel: string;
-  canvasAvailable: boolean;
-}
+export type DiscussionCommentFocus =
+  | {
+      requestId: string;
+      annotationId: string;
+      commentId: string;
+      annotationLabel: string;
+      canvasAvailable: boolean;
+      source?: "annotation_comment";
+    }
+  | {
+      requestId: string;
+      commentId: string;
+      source: "feedback";
+    };
 
 class UnavailableTarget extends Error {}
 
@@ -111,7 +118,7 @@ export function useDiscussionNavigation(options: Options): DiscussionNavigation 
   });
   const comments = useTaskDiscussion(
     taskId,
-    "annotation",
+    target?.kind === "task_comment" ? "task" : "annotation",
     target?.kind === "comment" ? target.annotationId : null,
     false,
     projectId,
@@ -212,6 +219,48 @@ export function useDiscussionNavigation(options: Options): DiscussionNavigation 
             // A shared background refresh may be joined without advancing.
             // Only a cursor present in the returned page parameters was used.
             if (result.data?.pageParams.includes(cursor)) cursors.add(cursor);
+          }
+          return;
+        }
+
+        if (request.target.kind === "task_comment") {
+          const { commentId } = request.target;
+          progress("正在查找任务留言");
+          const feedCursors = new Set<string>();
+          const joinedFeedFetch = readers.current.comments.isFetching;
+          let result = await commentReader.refetch({ cancelRefetch: false });
+          if (!isCurrent()) return;
+          if (joinedFeedFetch) result = await commentReader.refetch({ cancelRefetch: false });
+          while (isCurrent()) {
+            if (result.isError) throw result.error;
+            const items = flattenTaskDiscussion(result.data);
+            const matching = items.find(
+              (item) => item.source === "feedback" && item.data.id === commentId,
+            );
+            if (matching) {
+              if (
+                matching.source !== "feedback" ||
+                matching.data.kind !== "comment" ||
+                matching.data.anchor_type !== "task" ||
+                matching.data.thread_parent_id !== null ||
+                !matching.data.is_active ||
+                matching.data.project_id !== projectId ||
+                matching.data.task_id !== task.id
+              ) {
+                throw new UnavailableTarget("任务留言已删除或不属于当前任务");
+              }
+              update({ status: "ready", requestId, target: request.target });
+              return;
+            }
+            const pages = result.data?.pages ?? [];
+            const nextCursor = pages[pages.length - 1]?.next_cursor;
+            if (!nextCursor) throw new UnavailableTarget("任务留言已删除或不可访问");
+            if (feedCursors.has(nextCursor)) throw new Error("Repeated discussion cursor");
+            progress("正在查找任务留言", items.length);
+            const nextResult = await commentReader.fetchNextPage({ cancelRefetch: false });
+            if (!isCurrent()) return;
+            if (nextResult.data?.pageParams.includes(nextCursor)) feedCursors.add(nextCursor);
+            result = nextResult;
           }
           return;
         }

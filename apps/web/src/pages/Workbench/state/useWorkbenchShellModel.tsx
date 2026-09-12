@@ -1855,6 +1855,52 @@ export function useWorkbenchShellModel({
         },
       };
     },
+    captureImageContext: () => {
+      if (
+        stageKind !== "image" ||
+        !projectId ||
+        !taskId ||
+        !meUserId ||
+        !isCurrentAuthOwner(meUserId) ||
+        s.selectedIds.length !== 1
+      )
+        return null;
+      const object = annotationsRef.current.find(
+        (annotation) =>
+          annotation.id === s.selectedId &&
+          annotation.task_id === taskId &&
+          annotation.is_active &&
+          !annotation.is_hidden,
+      );
+      return object ? { annotationId: object.id, annotationLabel: object.class_name } : null;
+    },
+    selectImageAnnotation: async (annotationId, isCurrent) => {
+      if (
+        stageKind !== "image" ||
+        !projectId ||
+        !taskId ||
+        !meUserId ||
+        !isCurrentAuthOwner(meUserId) ||
+        !isCurrent()
+      )
+        return false;
+      if (!(await maskNavigationGuardRef.current())) return false;
+      if (!isCurrent() || !isCurrentAuthOwner(meUserId) || currentTaskIdRef.current !== taskId)
+        return false;
+      // A deleted/hidden annotation still permits pixel-only issue navigation.
+      if (
+        !annotationsRef.current.some(
+          (item) =>
+            item.id === annotationId &&
+            item.task_id === taskId &&
+            item.is_active &&
+            !item.is_hidden,
+        )
+      )
+        return true;
+      s.setSelectedId(annotationId);
+      return true;
+    },
   });
   const issueNavigation =
     videoIssueNavigation.navigation.status !== "idle"
@@ -6288,7 +6334,8 @@ export function useWorkbenchShellModel({
   const annotationCommentCountsQuery = useAnnotationCommentCounts(
     taskId,
     projectId,
-    stageKind === "image" && s.workbenchConfig.common.showAnnotationComments,
+    (stageKind === "image" || stageKind === "video") &&
+      s.workbenchConfig.common.showAnnotationComments,
   );
   const annotationCommentCounts = annotationCommentCountsQuery.data?.counts;
   useCanvasDraftPersistence({
@@ -7061,7 +7108,7 @@ export function useWorkbenchShellModel({
   const openAnnotationComments = useCallback(
     async (annotationId: string) => {
       if (
-        stageKind !== "image" ||
+        (stageKind !== "image" && stageKind !== "video") ||
         !projectId ||
         !taskId ||
         !meUserId ||
@@ -7069,7 +7116,8 @@ export function useWorkbenchShellModel({
       )
         return;
       const annotation = annotationsRef.current.find(
-        (item) => item.id === annotationId && item.task_id === taskId && !item.is_hidden,
+        (item) =>
+          item.id === annotationId && item.task_id === taskId && item.is_active && !item.is_hidden,
       );
       if (!annotation) return;
       if (!(await maskNavigationGuardRef.current())) return;
@@ -7079,11 +7127,39 @@ export function useWorkbenchShellModel({
         discussionCanvasContextRef.current.taskId !== taskId ||
         currentTaskIdRef.current !== taskId ||
         !annotationsRef.current.some(
-          (item) => item.id === annotationId && item.task_id === taskId && !item.is_hidden,
+          (item) =>
+            item.id === annotationId &&
+            item.task_id === taskId &&
+            item.is_active &&
+            !item.is_hidden,
         )
       )
         return;
-      handleSelectBox(annotationId);
+      if (isVideoTask) {
+        const selected = await requestVideoSelectionReady(
+          annotationId,
+          () =>
+            isCurrentAuthOwner(meUserId) &&
+            currentTaskIdRef.current === taskId &&
+            annotationsRef.current.some(
+              (item) =>
+                item.id === annotationId &&
+                item.task_id === taskId &&
+                item.is_active &&
+                !item.is_hidden,
+            ),
+        );
+        if (
+          !selected ||
+          !isCurrentAuthOwner(meUserId) ||
+          currentTaskIdRef.current !== taskId ||
+          discussionCanvasContextRef.current.projectId !== projectId ||
+          discussionCanvasContextRef.current.taskId !== taskId
+        )
+          return;
+      } else {
+        handleSelectBox(annotationId);
+      }
       setAnnotationDiscussionRequest({
         requestId: `annotation-discussion-${randomId()}`,
         projectId,
@@ -7092,7 +7168,15 @@ export function useWorkbenchShellModel({
       });
       workspaceCommands.current?.show("discussion");
     },
-    [handleSelectBox, meUserId, projectId, stageKind, taskId],
+    [
+      handleSelectBox,
+      isVideoTask,
+      meUserId,
+      projectId,
+      requestVideoSelectionReady,
+      stageKind,
+      taskId,
+    ],
   );
   const discussionNavigationOwner = useDiscussionNavigation({
     navigationKey: discussionNavigationKey,
@@ -8084,7 +8168,7 @@ export function useWorkbenchShellModel({
       editors: {
         annotationCommentCounts,
         onOpenAnnotationComments:
-          stageKind === "image"
+          stageKind === "image" || stageKind === "video"
             ? (annotationId: string) => void openAnnotationComments(annotationId)
             : undefined,
         polygonDraft:

@@ -79,11 +79,15 @@ export function useIssuePins(params: {
   seekVideoFrameReady: (frame: number, isRelevant: () => boolean) => Promise<VideoFrameSeekResult>;
   pauseVideoPlayback: () => void;
   isVideoTask: boolean;
+  /** Snapshot one saved image selection at the drop event; null means no association. */
+  captureImageContext?: () => Pick<IssuePinAnchor, "annotationId" | "annotationLabel"> | null;
+  /** Resolve explicit image locate; false retires the request before viewport restoration. */
+  selectImageAnnotation?: (annotationId: string, isCurrent: () => boolean) => Promise<boolean>;
   captureVideoContext?: (frame: number) => Partial<IssuePinAnchor> | null;
   navigateVideoIssue?: (issue: AnnotationFeedback) => Promise<void>;
   onCreateIntent?: () => void;
 }) {
-  const { projectId, taskId, stageGeom, setVp, isVideoTask } = params;
+  const { projectId, taskId, setVp, isVideoTask } = params;
   const owner = useMemo(
     () => ({ projectId, taskId, isVideoTask }),
     [projectId, taskId, isVideoTask],
@@ -209,9 +213,10 @@ export function useIssuePins(params: {
       }
       clearRequest();
       if (!isVideoTask) {
+        const object = paramsRef.current.captureImageContext?.();
         updateUi({
           issuePinDropArmed: false,
-          issuePinPrefill: { x, y },
+          issuePinPrefill: object ? { x, y, ...object } : { x, y },
           issueCreateOpen: true,
           issueAnchorMode: "pixel",
         });
@@ -360,6 +365,10 @@ export function useIssuePins(params: {
   const requestIssuesTab = useActiveIssueStore((st) => st.requestIssuesTab);
   const issueFocusTick = useActiveIssueStore((st) => st.focusTick);
   const focusTarget = useActiveIssueStore((st) => st.focusTarget);
+  const activeIssueHighlightRef = useRef(activeIssueHighlightId);
+  activeIssueHighlightRef.current = activeIssueHighlightId;
+  const latestFocusRef = useRef({ owner, tick: issueFocusTick });
+  latestFocusRef.current = { owner, tick: issueFocusTick };
   const lastIssueFocusRef = useRef({ owner, tick: issueFocusTick });
 
   useEffect(() => {
@@ -385,15 +394,38 @@ export function useIssuePins(params: {
     // Image/3D canvas navigation is task-local. A global highlight can arrive
     // after a task switch; never apply its coordinates to the new task.
     if (target.project_id !== projectId || target.task_id !== taskId) return;
-    const { imgW, imgH, vpSize } = stageGeom;
-    if (!imgW || !imgH || !vpSize.w || !vpSize.h || !hasPixelAnchor(target)) return;
-    setVp((cur) => resolvePinViewport(cur, target.anchor_position, imgW, imgH, vpSize));
+    if (!hasPixelAnchor(target)) return;
+    const request = { owner, tick: issueFocusTick, id: target.id };
+    const isCurrent = () =>
+      mountedRef.current &&
+      ownerRef.current === request.owner &&
+      latestFocusRef.current.owner === request.owner &&
+      latestFocusRef.current.tick === request.tick &&
+      activeIssueHighlightRef.current === request.id;
+    const restorePixelViewport = () => {
+      if (!isCurrent()) return;
+      const { imgW, imgH, vpSize } = paramsRef.current.stageGeom;
+      if (!imgW || !imgH || !vpSize.w || !vpSize.h) return;
+      setVp((cur) => resolvePinViewport(cur, target.anchor_position, imgW, imgH, vpSize));
+    };
+    // The bridge returns false only for a retired request. It returns true for
+    // a selected object and for a current but unavailable object so the durable
+    // pixel can still be located without conflating those outcomes.
+    if (target.annotation_id && paramsRef.current.selectImageAnnotation) {
+      void paramsRef.current
+        .selectImageAnnotation(target.annotation_id, isCurrent)
+        .then((allowed) => {
+          if (allowed) restorePixelViewport();
+        })
+        .catch(() => {});
+      return;
+    }
+    restorePixelViewport();
   }, [
     owner,
     issueFocusTick,
     activeIssueHighlightId,
     issuesQuery.data,
-    stageGeom,
     setVp,
     isVideoTask,
     onSeekIssueFrame,

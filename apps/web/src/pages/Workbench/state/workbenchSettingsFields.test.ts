@@ -38,6 +38,13 @@ describe("workbenchSettingsFields 注册表", () => {
     ).toBeUndefined();
   });
 
+  it("评论提示说明覆盖图片和视频画布", () => {
+    expect(
+      WORKBENCH_SETTING_FIELDS.find((field) => field.key === "common.showAnnotationComments")
+        ?.description,
+    ).toContain("图片和视频画布");
+  });
+
   it("注册表默认值与现状一致", () => {
     expect(WORKBENCH_SETTING_FIELDS).toHaveLength(49);
     const byKey = Object.fromEntries(

@@ -12,12 +12,14 @@ import {
 const mocks = vi.hoisted(() => ({
   task: vi.fn(),
   thread: vi.fn(),
+  discussion: vi.fn(),
   annotation: vi.fn(),
   comments: vi.fn(),
 }));
 
 vi.mock("@/api/tasks", () => ({ tasksApi: { get: mocks.task } }));
 vi.mock("@/api/feedbacks", () => ({ feedbacksApi: { thread: mocks.thread } }));
+vi.mock("@/api/discussion", () => ({ discussionApi: { listTaskDiscussion: mocks.discussion } }));
 vi.mock("@/api/discussionTargets", () => ({
   resolveActiveDiscussionAnnotation: mocks.annotation,
 }));
@@ -111,6 +113,19 @@ function commentNotification(): NotificationItem {
   });
 }
 
+function taskCommentNotification(): NotificationItem {
+  return notification({
+    type: "feedback.comment_mentioned",
+    target_type: "feedback",
+    target_id: ids.comment,
+    payload: {
+      project_id: ids.project,
+      task_id: ids.task,
+      source: "feedback",
+    },
+  });
+}
+
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.task.mockResolvedValue(task);
@@ -187,6 +202,38 @@ describe("notification discussion target resolution", () => {
       target: { kind: "issue", issueId: ids.issue },
     });
     expect(mocks.thread).toHaveBeenCalledTimes(1);
+  });
+
+  it("resolves a mentioned native task comment through the task feed", async () => {
+    const item = taskCommentNotification();
+    const signal = new AbortController().signal;
+    mocks.discussion.mockResolvedValue({
+      items: [
+        {
+          source: "feedback",
+          data: {
+            id: ids.comment,
+            kind: "comment",
+            anchor_type: "task",
+            project_id: ids.project,
+            task_id: ids.task,
+            thread_parent_id: null,
+            is_active: true,
+          },
+        },
+      ],
+      next_cursor: null,
+      total: 1,
+    });
+
+    await expect(resolveDiscussionNotification(item, signal)).resolves.toEqual({
+      projectId: ids.project,
+      task,
+      kind: "feedback",
+      target: { kind: "task_comment", commentId: ids.comment },
+    });
+    expect(mocks.discussion).toHaveBeenCalledWith(ids.task, { scope: "task", limit: 50 }, signal);
+    expect(mocks.thread).not.toHaveBeenCalled();
   });
 
   it("finds a mentioned comment on a later keyset page only after active annotation validation", async () => {

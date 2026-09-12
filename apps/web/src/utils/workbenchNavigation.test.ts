@@ -142,6 +142,7 @@ describe("discussion navigation contract", () => {
         { kind: "issue" as const, issueId },
         { kind: "issue" as const, issueId, replyId },
         { kind: "comment" as const, annotationId, commentId },
+        { kind: "task_comment" as const, commentId },
       ]) {
         const url = new URL(
           build("project", { taskId, discussion: target, returnTo: "/dashboard" }),
@@ -224,6 +225,7 @@ describe("discussion navigation contract", () => {
     for (const discussion of [
       { kind: "issue" as const, issueId, replyId },
       { kind: "comment" as const, annotationId, commentId },
+      { kind: "task_comment" as const, commentId },
     ]) {
       const before = new URL(
         buildWorkbenchUrl("project", { taskId, discussion, returnTo: "/dashboard" }),
@@ -268,5 +270,24 @@ describe("discussion navigation contract", () => {
     );
     expect(consumed.searchParams.has("focus")).toBe(false);
     expect(parseWorkbenchDiscussionRequest(consumed.search)).toEqual({ status: "none" });
+  });
+
+  it("encodes native task-comment destinations separately from annotation comments", () => {
+    const url = new URL(
+      buildWorkbenchUrl("project", {
+        taskId,
+        discussion: { kind: "task_comment", commentId },
+      }),
+      "http://app.local",
+    );
+    expect(url.searchParams.get("discussion")).toBe("comments");
+    expect(url.searchParams.get("task_comment")).toBe(commentId);
+    expect(url.searchParams.has("focus")).toBe(false);
+    expect(url.searchParams.has("comment")).toBe(false);
+    expect(parseWorkbenchDiscussionRequest(url.search)).toEqual({
+      status: "valid",
+      taskId,
+      target: { kind: "task_comment", commentId },
+    });
   });
 });

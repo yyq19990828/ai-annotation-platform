@@ -80,24 +80,25 @@ describe("createDiscussionDraftStore", () => {
     expect(store.getDraft(task)?.target).toEqual(task);
   });
 
-  it("does not silently discard unsupported rich fields on text-only targets", () => {
+  it("allows task mentions while rejecting unsupported attachments", () => {
     const store = makeStore();
+    const mention = { userId: "u", displayName: "U", offset: 0, length: 2 };
 
-    expect(() =>
-      store.patchDraft(task, {
-        mentions: [{ userId: "u", displayName: "U", offset: 0, length: 2 }],
-      }),
-    ).toThrow(UnsupportedDiscussionFieldError);
+    expect(() => store.patchDraft(task, { mentions: [mention] })).not.toThrow();
+    expect(store.getDraft(task)?.mentions).toEqual([mention]);
     expect(() =>
       store.beginSubmission(task, {
         body: "task",
-        mentions: [{ userId: "u", displayName: "U", offset: 0, length: 2 }],
+        mentions: [mention],
         attachments: [],
         canvas_drawing: null,
       }),
+    ).not.toThrow();
+    expect(() =>
+      store.patchDraft(task, {
+        attachments: [{ storageKey: "k", fileName: "f", mimeType: "text/plain", size: 1 }],
+      }),
     ).toThrow(UnsupportedDiscussionFieldError);
-    expect(store.getDraft(task)).toBeDefined();
-    expect(store.getDraft(task)?.body).toBe("");
   });
 
   it("keeps task drawings in the task draft and immutable submission snapshot", () => {

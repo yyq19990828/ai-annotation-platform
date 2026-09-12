@@ -10,7 +10,7 @@
 import { act, fireEvent, render, waitFor } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { afterEach, describe, it, expect, vi } from "vitest";
-import { serialize } from "../CommentInput";
+import { renderCommentBody, serialize } from "../CommentInput";
 import { CommentInput } from "../CommentInput";
 import { commentsApi, type CommentCanvasDrawing } from "@/api/comments";
 import {
@@ -118,6 +118,28 @@ describe("CommentInput.serialize", () => {
     expect(mentions[0].displayName).toBe("@fallback");
     expect(body.startsWith("@@fallback")).toBe(true);
   });
+
+  it("keeps mention offsets aligned after trimming whitespace before emoji text", () => {
+    const root = makeRoot(
+      ' \t🙂 <span data-mention-uid="u1" data-mention-name="alice">@alice</span> ',
+    );
+    expect(serialize(root)).toEqual({
+      body: "🙂 @alice",
+      mentions: [{ userId: "u1", displayName: "alice", offset: 3, length: 6 }],
+    });
+  });
+
+  it("renders stored mentions as chips in task comment history", () => {
+    const view = render(
+      <div>
+        {renderCommentBody("@alice please check", [
+          { userId: "u1", displayName: "alice", offset: 0, length: 6 },
+        ])}
+      </div>,
+    );
+    expect(view.getByText("@alice")).toBeInTheDocument();
+    expect(view.getByText("@alice")).toHaveClass("text-brand");
+  });
 });
 
 const annotationA: DiscussionTarget = {
@@ -218,13 +240,13 @@ describe("CommentInput session composer", () => {
     expect(editor(view.container).textContent).toBe("");
   });
 
-  it("keeps task comments text-only when its target has no drawing capability", () => {
+  it("allows task mentions while keeping attachments and drawing disabled", () => {
     const onSubmit = vi.fn();
     const view = renderComposer(textTask, onSubmit);
     const input = editor(view.container);
     expect(view.container.querySelector('input[type="file"]')).toBeNull();
     expect(view.container.querySelector('button[title*="题图"]')).toBeNull();
-    expect(input).toHaveAttribute("data-placeholder", "输入任务留言…");
+    expect(input).toHaveAttribute("data-placeholder", "留言（@ 提及成员）...");
     input.textContent = "task note";
     fireEvent.input(input);
     fireEvent.click(view.getByRole("button", { name: /发送/ }));

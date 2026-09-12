@@ -252,3 +252,44 @@ async def prepare_annotation_comment_mention_notifications(
         },
         defer_publish=True,
     )
+
+
+async def prepare_feedback_comment_mention_notifications(
+    db: AsyncSession,
+    *,
+    comment: AnnotationFeedback,
+    task: Task,
+    actor: User,
+    mentioned_user_ids: list[uuid.UUID],
+) -> list[Notification]:
+    """Persist deferred notifications for a native task-comment mention."""
+
+    if (
+        comment.kind != "comment"
+        or comment.anchor_type != "task"
+        or comment.thread_parent_id is not None
+        or comment.project_id != task.project_id
+        or comment.task_id != task.id
+    ):
+        return []
+    recipient_ids = await _accessible_active_user_ids(
+        db,
+        _ordered_unique(mentioned_user_ids, exclude=actor.id),
+        project_id=task.project_id,
+        task_id=task.id,
+    )
+    if not recipient_ids:
+        return []
+    return await NotificationService(db).notify_many(
+        user_ids=recipient_ids,
+        type="feedback.comment_mentioned",
+        target_type="feedback",
+        target_id=comment.id,
+        payload={
+            "project_id": str(task.project_id),
+            "task_id": str(task.id),
+            "source": "feedback",
+            "actor_name": actor.name,
+        },
+        defer_publish=True,
+    )

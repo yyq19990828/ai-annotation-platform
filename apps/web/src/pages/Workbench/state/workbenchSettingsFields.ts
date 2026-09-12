@@ -223,7 +223,7 @@ export const WORKBENCH_SETTING_FIELDS: WorkbenchSettingField[] = [
     section: "appearance",
     category: "common",
     label: "标注评论提示",
-    description: "在图片画布的已保存标注旁显示评论数量，点击可打开对应的评论列表",
+    description: "在图片和视频画布的已保存标注旁显示评论数量，点击可打开对应的评论列表",
     control: { type: "toggle", onText: "已开启", offText: "已关闭" },
   },
   {

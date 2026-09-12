@@ -149,7 +149,15 @@ export function serialize(root: HTMLElement): { body: string; mentions: CommentM
     }
   };
   root.childNodes.forEach(walk);
-  return { body: body.trim(), mentions };
+  const trimmedBody = body.trim();
+  const leadingTrim = body.length - body.trimStart().length;
+  return {
+    body: trimmedBody,
+    mentions: mentions.map((mention) => ({
+      ...mention,
+      offset: mention.offset - leadingTrim,
+    })),
+  };
 }
 
 /** 把 @+name 注入到当前光标位置：插入 chip span，替换之前的 `@query` 文本。 */
@@ -1069,7 +1077,9 @@ export function CommentInput({
         }}
         data-placeholder={
           targetCapabilities.mentions
-            ? "留言（@ 提及成员，可附图）..."
+            ? effectiveTarget?.kind === "task"
+              ? "留言（@ 提及成员）..."
+              : "留言（@ 提及成员，可附图）..."
             : effectiveTarget?.kind === "issue"
               ? "输入问题回复…"
               : "输入任务留言…"

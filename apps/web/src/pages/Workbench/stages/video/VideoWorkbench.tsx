@@ -142,6 +142,8 @@ export interface VideoWorkbenchProps {
   // v0.11.7 · pixel-anchored issue 图钉 (按当前帧显隐 + 时间轴标记)。
   issuePixelFeedbacks?: AnnotationFeedback[];
   issueHighlightId?: string | null;
+  annotationCommentCounts?: Record<string, number>;
+  onOpenAnnotationComments?: (annotationId: string) => void;
   onIssuePinClick?: (id: string) => void;
   issuePinDropArmed?: boolean;
   issueNavigationPending?: boolean;
@@ -217,6 +219,8 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
       onCursorMove,
       issuePixelFeedbacks,
       issueHighlightId,
+      annotationCommentCounts,
+      onOpenAnnotationComments,
       onIssuePinClick,
       issuePinDropArmed,
       issueNavigationPending,
@@ -259,6 +263,10 @@ export const VideoWorkbench = forwardRef<VideoStageControls, VideoWorkbenchProps
         pendingDrawing={pendingDrawing}
         issuePixelFeedbacks={issuePixelFeedbacks}
         issueHighlightId={issueHighlightId}
+        annotationCommentCounts={
+          workbenchConfig.common.showAnnotationComments ? annotationCommentCounts : undefined
+        }
+        onOpenAnnotationComments={onOpenAnnotationComments}
         onIssuePinClick={onIssuePinClick}
         issuePinDropArmed={issuePinDropArmed}
         issueNavigationPending={issueNavigationPending}

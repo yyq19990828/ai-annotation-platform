@@ -262,6 +262,11 @@ export function DiscussionPanel({
         annotationLabel: navigationState.annotation?.class_name ?? "标注",
         canvasAvailable: navigationState.canvasAvailable === true,
       });
+    } else if (target.kind === "task_comment") {
+      setReplyFocus(null);
+      setAnnotationReadRequest(null);
+      setTab("comments");
+      setCommentFocus({ requestId, commentId: target.commentId, source: "feedback" });
     }
     navigation?.consume(requestId);
     // Activation is keyed by the owner-produced state, not by callback or

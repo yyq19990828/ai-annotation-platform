@@ -55,6 +55,7 @@ const discussionIds = {
   reply: "44444444-4444-4444-8444-444444444444",
   annotation: "55555555-5555-4555-8555-555555555555",
   comment: "66666666-6666-4666-8666-666666666666",
+  taskComment: "77777777-7777-4777-8777-777777777777",
 };
 const discussionTask = {
   id: discussionIds.task,
@@ -89,6 +90,20 @@ const commentNotification: NotificationItem = {
     source: "annotation_comment",
     actor_name: "Carol",
     annotation_id: discussionIds.annotation,
+  },
+};
+const taskCommentNotification: NotificationItem = {
+  id: "n-task-comment",
+  type: "feedback.comment_mentioned",
+  target_type: "feedback",
+  target_id: discussionIds.taskComment,
+  read_at: null,
+  created_at: "2026-09-09T00:00:00Z",
+  payload: {
+    project_id: discussionIds.project,
+    task_id: discussionIds.task,
+    source: "feedback",
+    actor_name: "Dana",
   },
 };
 function Location() {
@@ -275,6 +290,25 @@ describe("通知直达当前目标", () => {
         `/projects/${discussionIds.project}/review?batch=batch-discussion&task=${discussionIds.task}&returnTo=%2Fdashboard&discussion=comments&focus=${discussionIds.annotation}&comment=${discussionIds.comment}`,
       ),
     );
+  });
+
+  it("任务留言提及通知生成任务留言定位链接而不打开 Issue", async () => {
+    mocks.notifications = [taskCommentNotification];
+    mocks.resolveDiscussion.mockResolvedValue({
+      projectId: discussionIds.project,
+      task: discussionTask,
+      kind: "feedback",
+      target: { kind: "task_comment", commentId: discussionIds.taskComment },
+    });
+    renderUI();
+    fireEvent.click(screen.getByTitle("通知"));
+    fireEvent.click(await screen.findByRole("button", { name: "打开通知：在任务留言中提到了你" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent(
+        `/projects/${discussionIds.project}/annotate?batch=batch-discussion&task=${discussionIds.task}&returnTo=%2Fdashboard&discussion=comments&task_comment=${discussionIds.taskComment}`,
+      ),
+    );
+    expect(mocks.read).toHaveBeenCalledWith(taskCommentNotification.id);
   });
 
   it("新的讨论通知点击会中止较早的查找请求", async () => {

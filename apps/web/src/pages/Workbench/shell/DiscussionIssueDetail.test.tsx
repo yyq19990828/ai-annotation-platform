@@ -327,6 +327,15 @@ describe("DiscussionIssueDetail", () => {
     );
   });
 
+  it("exposes the saved associated object in detail", () => {
+    const target = issue({ annotation_id: "annotation-123456" });
+    mocks.thread = readyThread({ root: target });
+    setup();
+    expect(screen.getByTestId("discussion-issue-object-root-1")).toHaveTextContent(
+      "关联对象：对象 · anno…3456",
+    );
+  });
+
   it("keeps project-scope navigation available across tasks", () => {
     mocks.thread = readyThread({ root: issue({ task_id: "T2" }) });
     setup({ allowProjectScope: true, listScope: "project" });

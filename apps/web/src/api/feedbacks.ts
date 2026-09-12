@@ -5,7 +5,7 @@
  * pixel anchor 携带相对 0-1 坐标，并可选携带 Mask 质检区域与边界摘要。
  */
 import { apiClient } from "./client";
-import type { CommentCanvasDrawing } from "./comments";
+import type { CommentCanvasDrawing, CommentMention } from "./comments";
 import type { DiscussionActions } from "@/pages/Workbench/state/discussionTypes";
 
 export type FeedbackKind = "issue" | "comment" | "reject" | "bug";
@@ -82,6 +82,8 @@ export interface AnnotationFeedback {
   author_id: string;
   author_name: string | null;
   attachments: Array<Record<string, unknown>>;
+  /** Optional for old API payloads; native task comments from current servers include it. */
+  mentions?: CommentMention[];
   canvas_drawing?: CommentCanvasDrawing | null;
   thread_parent_id: string | null;
   is_active: boolean;
@@ -133,6 +135,7 @@ export interface CreateFeedbackPayload {
   title?: string | null;
   body: string;
   attachments?: Array<Record<string, unknown>>;
+  mentions?: CommentMention[];
   canvas_drawing?: CommentCanvasDrawing | null;
   thread_parent_id?: string | null;
 }
@@ -142,6 +145,7 @@ export interface PatchFeedbackPayload {
   severity?: FeedbackSeverity;
   title?: string;
   body?: string;
+  mentions?: CommentMention[];
 }
 
 export interface ListFeedbacksParams {

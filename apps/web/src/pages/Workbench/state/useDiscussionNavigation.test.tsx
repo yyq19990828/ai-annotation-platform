@@ -82,6 +82,25 @@ const commentRequest: WorkbenchDiscussionRequest = {
   taskId: "task",
   target: { kind: "comment", annotationId: "annotation", commentId: "old" },
 };
+const taskCommentRequest: WorkbenchDiscussionRequest = {
+  status: "valid",
+  taskId: "task",
+  target: { kind: "task_comment", commentId: "native-comment" },
+};
+
+const taskComment = (id: string): TaskDiscussionItem => ({
+  source: "feedback",
+  data: {
+    id,
+    project_id: "project",
+    task_id: "task",
+    kind: "comment",
+    anchor_type: "task",
+    thread_parent_id: null,
+    is_active: true,
+  } as never,
+  actions: { edit: false, change_status: false, delete: false, reply: false },
+});
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -432,6 +451,30 @@ describe("Workbench discussion URL navigation", () => {
     ]);
     expect(env.options.selectAnnotation).toHaveBeenCalledTimes(1);
     expect(mocks.thread).not.toHaveBeenCalled();
+    view.unmount();
+    env.client.clear();
+  });
+
+  it("finds a native task comment through task scope pagination without opening Issue detail", async () => {
+    const env = setup(taskCommentRequest);
+    mocks.feed
+      .mockResolvedValueOnce({ items: [taskComment("first")], next_cursor: "older", total: 2 })
+      .mockResolvedValueOnce({
+        items: [taskComment("native-comment")],
+        next_cursor: null,
+        total: 2,
+      });
+    const view = renderHook(() => useDiscussionNavigation(env.options), { wrapper: env.wrapper });
+    await waitFor(() => expect(view.result.current.state.status).toBe("ready"));
+    expect(view.result.current.state).toMatchObject({
+      target: { kind: "task_comment", commentId: "native-comment" },
+    });
+    expect(mocks.feed.mock.calls.map((call) => call[1])).toEqual([
+      { scope: "task", annotation_id: null, limit: 50, cursor: undefined },
+      { scope: "task", annotation_id: null, limit: 50, cursor: "older" },
+    ]);
+    expect(mocks.thread).not.toHaveBeenCalled();
+    expect(env.options.selectAnnotation).not.toHaveBeenCalled();
     view.unmount();
     env.client.clear();
   });

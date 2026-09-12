@@ -325,4 +325,39 @@ describe("VideoKonvaIssueLayer", () => {
     );
     expect(document.querySelector('[data-konva="Layer"]')).toBeNull();
   });
+
+  it("keeps pin radius and symbol screen-constant across zoom", () => {
+    const view = render(
+      <VideoKonvaIssueLayer
+        pixelIssues={[{ ...issue("info", 0), severity: "info" }]}
+        frameIndex={0}
+        size={size}
+        scale={1}
+        highlightId="info"
+      />,
+    );
+    expect(document.querySelector('[data-testid="video-issue-pin-info"]')).toHaveAttribute(
+      "data-radius",
+      "8",
+    );
+    expect(document.querySelector('[data-testid="video-issue-pin-ring-info"]')).toHaveAttribute(
+      "data-radius",
+      "11",
+    );
+    expect(document.querySelector('[data-konva="Text"]')).toHaveAttribute("data-text", "i");
+    view.rerender(
+      <VideoKonvaIssueLayer
+        pixelIssues={[{ ...issue("info", 0), severity: "info" }]}
+        frameIndex={0}
+        size={size}
+        scale={2}
+        highlightId="info"
+      />,
+    );
+    expect(document.querySelector('[data-testid="video-issue-pin-info"]')).toHaveAttribute(
+      "data-radius",
+      "4",
+    );
+    expect(document.querySelector('[data-konva="Text"]')).toHaveAttribute("data-fontsize", "5");
+  });
 });

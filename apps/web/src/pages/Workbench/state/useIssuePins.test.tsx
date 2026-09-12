@@ -396,6 +396,73 @@ describe("useIssuePins", () => {
     expect(view.seekVideoFrameReady).not.toHaveBeenCalled();
   });
 
+  it("selects an available associated image object before centering", async () => {
+    const target = {
+      id: "issue",
+      project_id: "P1",
+      task_id: "T1",
+      annotation_id: "annotation-1",
+      anchor_type: "pixel",
+      anchor_position: { x: 0.5, y: 0.5 },
+    };
+    feedbackItems = [target];
+    storeState.highlightId = target.id;
+    const selectImageAnnotation = vi.fn(async (id: string, isCurrent: () => boolean) => {
+      expect(id).toBe("annotation-1");
+      expect(isCurrent()).toBe(true);
+      return true;
+    });
+    const view = setup({ selectImageAnnotation });
+    storeState.focusTick++;
+    view.rerender(view.params);
+    await waitFor(() => expect(selectImageAnnotation).toHaveBeenCalledOnce());
+    expect(view.setVp).toHaveBeenCalledOnce();
+  });
+
+  it("does not center when image selection reports a cancelled request", async () => {
+    const target = {
+      id: "issue",
+      project_id: "P1",
+      task_id: "T1",
+      annotation_id: "annotation-1",
+      anchor_type: "pixel",
+      anchor_position: { x: 0.5, y: 0.5 },
+    };
+    feedbackItems = [target];
+    storeState.highlightId = target.id;
+    const selectImageAnnotation = vi.fn(async () => false);
+    const view = setup({ selectImageAnnotation });
+    storeState.focusTick++;
+    view.rerender(view.params);
+    await waitFor(() => expect(selectImageAnnotation).toHaveBeenCalledOnce());
+    expect(view.setVp).not.toHaveBeenCalled();
+  });
+
+  it("does not restore an image viewport after the owner changes during selection", async () => {
+    const target = {
+      id: "issue",
+      project_id: "P1",
+      task_id: "T1",
+      annotation_id: "annotation-1",
+      anchor_type: "pixel",
+      anchor_position: { x: 0.5, y: 0.5 },
+    };
+    feedbackItems = [target];
+    storeState.highlightId = target.id;
+    const selection = deferred<boolean>();
+    const selectImageAnnotation = vi.fn(() => selection.promise);
+    const view = setup({ selectImageAnnotation });
+    storeState.focusTick++;
+    view.rerender(view.params);
+    await waitFor(() => expect(selectImageAnnotation).toHaveBeenCalledOnce());
+    view.rerender({ ...view.params, taskId: "T2" });
+    await act(async () => {
+      selection.resolve(true);
+      await selection.promise;
+    });
+    expect(view.setVp).not.toHaveBeenCalled();
+  });
+
   it.each([
     { anchor_type: "point_cloud", anchor_position: { frame: 0 } },
     { anchor_position: null },
@@ -429,6 +496,25 @@ describe("useIssuePins", () => {
     expect(view.result.current.issuePinPrefill).toEqual({ x: 0.25, y: 0.75 });
     expect(view.pauseVideoPlayback).not.toHaveBeenCalled();
     expect(view.seekVideoFrameReady).not.toHaveBeenCalled();
+  });
+
+  it("captures the current saved image object together with the pixel", async () => {
+    const captureImageContext = vi.fn(() => ({
+      annotationId: "annotation-123456",
+      annotationLabel: "车辆",
+    }));
+    const view = setup({ captureImageContext });
+    await act(async () => {
+      view.result.current.onToggleIssuePinDrop();
+      await view.result.current.onIssuePinDrop(0.25, 0.75);
+    });
+    expect(captureImageContext).toHaveBeenCalledOnce();
+    expect(view.result.current.issuePinPrefill).toEqual({
+      x: 0.25,
+      y: 0.75,
+      annotationId: "annotation-123456",
+      annotationLabel: "车辆",
+    });
   });
 
   it("opens video F0 only after exact readiness and consumes the drop once", async () => {

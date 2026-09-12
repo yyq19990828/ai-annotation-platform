@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.tasks._shared import _assert_task_visible, _visible_task_ids
+from app.api.v1.annotation_comments import _validate_project_members
 from app.db.enums import UserRole
 from app.db.models.annotation import Annotation
 from app.db.models.annotation_feedback import AnnotationFeedback
@@ -42,6 +43,7 @@ from app.schemas.annotation_feedback import (
 from app.schemas.user import UserBrief
 from app.services.audit import AuditAction, AuditService
 from app.services.discussion_notifications import (
+    prepare_feedback_comment_mention_notifications,
     prepare_feedback_reply_notifications,
     prepare_feedback_status_notifications,
 )
@@ -100,6 +102,7 @@ async def _to_out(
         author_id=entry.author_id,
         author_name=brief.name if brief else None,
         attachments=entry.attachments or [],
+        mentions=entry.mentions or [],
         canvas_drawing=entry.canvas_drawing,
         thread_parent_id=entry.thread_parent_id,
         is_active=entry.is_active,
@@ -186,6 +189,17 @@ async def _assert_create_scope(
             raise HTTPException(
                 status_code=422,
                 detail="Feedback annotation does not belong to task",
+            )
+        if (
+            payload.kind == "issue"
+            and payload.thread_parent_id is None
+            and task is not None
+            and task.file_type == "image"
+            and (not annotation.is_active or bool(annotation.was_cancelled))
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail={"reason": "feedback_annotation_unavailable"},
             )
     return task
 
@@ -390,6 +404,7 @@ async def list_feedbacks(
                 author_id=r.author_id,
                 author_name=brief.name if brief else None,
                 attachments=r.attachments or [],
+                mentions=r.mentions or [],
                 canvas_drawing=r.canvas_drawing,
                 thread_parent_id=r.thread_parent_id,
                 is_active=r.is_active,
@@ -482,6 +497,10 @@ async def create_feedback(
 ):
     task = await _assert_create_scope(db, payload, user)
     _assert_canvas_drawing_scope(payload, task)
+    if payload.mentions:
+        await _validate_project_members(
+            db, payload.project_id, [mention.user_id for mention in payload.mentions]
+        )
     svc = FeedbackService(db)
     root: AnnotationFeedback | None = None
     if payload.thread_parent_id is not None:
@@ -591,6 +610,10 @@ async def create_feedback(
         title=payload.title,
         body=payload.body,
         attachments=payload.attachments,
+        mentions=[
+            mention.model_dump(by_alias=True, mode="json")
+            for mention in payload.mentions
+        ],
         thread_parent_id=payload.thread_parent_id,
         canvas_drawing=(
             payload.canvas_drawing.model_dump(mode="json")
@@ -614,15 +637,26 @@ async def create_feedback(
             "annotation_id": (
                 str(entry.annotation_id) if entry.annotation_id else None
             ),
+            "mention_count": len(payload.mentions),
         },
     )
     pending_notifications = []
-    if root is not None:
-        pending_notifications = await prepare_feedback_reply_notifications(
+    if task is not None:
+        pending_notifications = await prepare_feedback_comment_mention_notifications(
             db,
-            root=root,
-            reply=entry,
+            comment=entry,
+            task=task,
             actor=user,
+            mentioned_user_ids=[mention.user_id for mention in payload.mentions],
+        )
+    if root is not None:
+        pending_notifications.extend(
+            await prepare_feedback_reply_notifications(
+                db,
+                root=root,
+                reply=entry,
+                actor=user,
+            )
         )
     await db.commit()
     await NotificationService(db).publish_committed(pending_notifications)
@@ -656,7 +690,7 @@ async def patch_feedback(
     is_admin = user.role in _ADMIN_ROLES
     is_reviewer = user.role == UserRole.REVIEWER
     fields = payload.model_fields_set
-    forbidden_reviewer_fields = fields & {"severity", "title", "body"}
+    forbidden_reviewer_fields = fields & {"severity", "title", "body", "mentions"}
     reviewer_status_only = is_reviewer and not (is_author or is_admin)
     if reviewer_status_only and forbidden_reviewer_fields:
         raise HTTPException(
@@ -673,7 +707,7 @@ async def patch_feedback(
         can_reply=False,
     )
     wants_status = "status" in fields and payload.status is not None
-    wants_content = bool(fields & {"severity", "title", "body"})
+    wants_content = bool(fields & {"severity", "title", "body", "mentions"})
     if reviewer_status_only and not wants_status:
         raise HTTPException(
             status_code=403,
@@ -683,6 +717,19 @@ async def patch_feedback(
         wants_content and not capabilities.edit
     ):
         raise HTTPException(status_code=403, detail="not allowed")
+    if payload.mentions is not None:
+        if not (
+            entry.kind == "comment"
+            and entry.anchor_type == "task"
+            and entry.thread_parent_id is None
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="mentions require a native root task comment",
+            )
+        await _validate_project_members(
+            db, root.project_id, [mention.user_id for mention in payload.mentions]
+        )
     if (
         payload.body is not None
         and not entry.attachments
@@ -704,6 +751,14 @@ async def patch_feedback(
         severity=payload.severity,
         title=payload.title,
         body=payload.body,
+        mentions=(
+            [
+                mention.model_dump(by_alias=True, mode="json")
+                for mention in payload.mentions
+            ]
+            if payload.mentions is not None
+            else None
+        ),
     )
     if payload.status is not None and payload.status != old_status:
         await AuditService.log(

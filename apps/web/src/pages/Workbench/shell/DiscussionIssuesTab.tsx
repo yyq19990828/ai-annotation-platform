@@ -21,6 +21,7 @@ import { DiscussionIssueDetail } from "./DiscussionIssueDetail";
 import { readVideoIssueContext } from "../state/videoIssueContext";
 import { useAuthStore } from "@/stores/authStore";
 import type { DiscussionReplyFocus } from "../state/useDiscussionNavigation";
+import { issueObjectLabel } from "../stage/issuePinVisuals";
 
 interface Props {
   replyFocus?: DiscussionReplyFocus | null;
@@ -414,6 +415,7 @@ export function DiscussionIssuesTab({
             const hasPin = pixelAnchor !== null;
             const videoContext = readVideoIssueContext(it);
             const actions = feedbackActions(it);
+            const severity = it.severity ?? "warn";
             const pending = pendingMutation !== null;
             const isDeleteCandidate = deleteCandidate === it.id;
             const openLabel = `打开问题：${it.title?.trim() || it.body}`;
@@ -437,23 +439,19 @@ export function DiscussionIssuesTab({
                       "rounded-[10px] border px-2 py-px text-2xs",
                       STATUS_CHIP[it.status],
                     )}
+                    aria-label={`问题状态：${it.status === "open" ? "未解决" : it.status === "resolved" ? "已解决" : "搁置"}`}
                   >
                     {it.status === "open" ? "未解决" : it.status === "resolved" ? "已解决" : "搁置"}
                   </span>
-                  {it.severity && (
-                    <span
-                      className={cn(
-                        "rounded-[10px] border border-border px-2 py-px text-2xs",
-                        SEVERITY_CHIP[it.severity],
-                      )}
-                    >
-                      {it.severity === "blocker"
-                        ? "阻断"
-                        : it.severity === "warn"
-                          ? "警告"
-                          : "提示"}
-                    </span>
-                  )}
+                  <span
+                    className={cn(
+                      "rounded-[10px] border border-border px-2 py-px text-2xs",
+                      SEVERITY_CHIP[severity],
+                    )}
+                    aria-label={`问题严重度：${severity === "blocker" ? "阻断" : severity === "warn" ? "警告" : "提示"}`}
+                  >
+                    {severity === "blocker" ? "阻断" : severity === "warn" ? "警告" : "提示"}
+                  </span>
                   {hasPin && (
                     <span className="text-2xs text-muted-foreground" title="像素锚点">
                       <Icon name="crosshair" size={11} /> ({pixelAnchor.x.toFixed(2)},{" "}
@@ -465,6 +463,16 @@ export function DiscussionIssuesTab({
                       {videoContext?.frame_range
                         ? `F${videoContext.frame_range.from_frame}–F${videoContext.frame_range.to_frame}`
                         : `F${pixelAnchor.frame}`}
+                    </span>
+                  )}
+                  {it.annotation_id && (
+                    <span
+                      className="text-2xs text-muted-foreground"
+                      title={it.annotation_id}
+                      aria-label={`关联对象：${issueObjectLabel(it.annotation_id)}`}
+                      data-testid={`discussion-issue-object-${it.id}`}
+                    >
+                      <Icon name="target" size={11} /> {issueObjectLabel(it.annotation_id)}
                     </span>
                   )}
                   {scope === "project" && it.task_id && it.task_id !== taskId && (

@@ -13,6 +13,21 @@ export interface AnnotationCommentBadgeModel {
   priority: number;
 }
 
+export interface AnnotationCommentBadgeAnchor {
+  id: string;
+  count: number;
+  bounds: RasterMaskNormalizedBounds;
+}
+
+export interface BuildAnnotationCommentBadgeModelsOptions {
+  anchors: readonly AnnotationCommentBadgeAnchor[];
+  imgW: number;
+  imgH: number;
+  vp: Pick<Viewport, "scale" | "tx" | "ty">;
+  viewportSize?: { w: number; h: number };
+  selectedIds?: ReadonlySet<string>;
+}
+
 type RasterMaskBoundsRecord = {
   id: string;
   bounds?: RasterMaskNormalizedBounds | null;
@@ -147,7 +162,7 @@ export function buildAnnotationCommentBadges({
     rasterMaskRecords.map((record) => [record.id, record.bounds] as const),
   );
 
-  return annotations.flatMap((annotation) => {
+  const anchors = annotations.flatMap((annotation) => {
     if (annotation.is_hidden) return [];
     const rawCount = counts[annotation.id];
     if (!Number.isFinite(rawCount) || Math.trunc(rawCount) <= 0) return [];
@@ -155,17 +170,41 @@ export function buildAnnotationCommentBadges({
     if (!bounds) return [];
     const count = Math.trunc(rawCount);
     if (count <= 0) return [];
+    return [{ id: annotation.id, count, bounds }];
+  });
+  return buildAnnotationCommentBadgeModels({
+    anchors,
+    imgW,
+    imgH,
+    vp,
+    viewportSize,
+    selectedIds,
+  });
+}
+
+export function buildAnnotationCommentBadgeModels({
+  anchors,
+  imgW,
+  imgH,
+  vp,
+  viewportSize,
+  selectedIds,
+}: BuildAnnotationCommentBadgeModelsOptions): AnnotationCommentBadgeModel[] {
+  if (vp.scale <= 0 || !Number.isFinite(imgW) || !Number.isFinite(imgH)) return [];
+  return anchors.flatMap(({ id, count, bounds }) => {
+    if (!Number.isFinite(count) || Math.trunc(count) <= 0 || !validBounds(bounds)) return [];
+    const safeCount = Math.trunc(count);
     const right = vp.tx + (bounds.x + bounds.w) * imgW * vp.scale;
     const topEdge = vp.ty + bounds.y * imgH * vp.scale;
     const { left, top } = placeAnnotationCommentBadge(right, topEdge, viewportSize);
     return [
       {
-        id: annotation.id,
-        count,
-        label: count > 9 ? "9+" : String(count),
+        id,
+        count: safeCount,
+        label: safeCount > 9 ? "9+" : String(safeCount),
         left,
         top,
-        priority: selectedIds?.has(annotation.id) ? 2 : 1,
+        priority: selectedIds?.has(id) ? 2 : 1,
       },
     ];
   });
@@ -214,29 +253,18 @@ export interface ImageStageCommentBadgesProps extends BuildAnnotationCommentBadg
   interactive?: boolean;
 }
 
-/** Screen-space, keyboard-accessible comment targets above the Konva canvas. */
-export function ImageStageCommentBadges({
-  annotations,
-  rasterMaskRecords,
-  counts,
-  imgW,
-  imgH,
-  vp,
-  viewportSize,
-  selectedIds,
+export interface AnnotationCommentBadgeTargetsProps {
+  badges: readonly AnnotationCommentBadgeModel[];
+  onOpenAnnotationComments?: (annotationId: string) => void;
+  interactive?: boolean;
+}
+
+/** Shared screen-space, keyboard-accessible comment targets for image and video stages. */
+export function AnnotationCommentBadgeTargets({
+  badges,
   onOpenAnnotationComments,
   interactive = true,
-}: ImageStageCommentBadgesProps) {
-  const badges = buildAnnotationCommentBadges({
-    annotations,
-    rasterMaskRecords,
-    counts,
-    imgW,
-    imgH,
-    vp,
-    viewportSize,
-    selectedIds,
-  });
+}: AnnotationCommentBadgeTargetsProps) {
   if (badges.length === 0) return null;
 
   return (
@@ -286,5 +314,37 @@ export function ImageStageCommentBadges({
         );
       })}
     </div>
+  );
+}
+
+/** Screen-space, keyboard-accessible comment targets above the Konva canvas. */
+export function ImageStageCommentBadges({
+  annotations,
+  rasterMaskRecords,
+  counts,
+  imgW,
+  imgH,
+  vp,
+  viewportSize,
+  selectedIds,
+  onOpenAnnotationComments,
+  interactive = true,
+}: ImageStageCommentBadgesProps) {
+  const badges = buildAnnotationCommentBadges({
+    annotations,
+    rasterMaskRecords,
+    counts,
+    imgW,
+    imgH,
+    vp,
+    viewportSize,
+    selectedIds,
+  });
+  return (
+    <AnnotationCommentBadgeTargets
+      badges={badges}
+      onOpenAnnotationComments={onOpenAnnotationComments}
+      interactive={interactive}
+    />
   );
 }

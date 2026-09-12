@@ -183,6 +183,10 @@ describe("WorkbenchStageHost", () => {
 
   it("stageKind=video: forwards overlays to the video viewport", () => {
     const props = propsFor("video");
+    const annotationCommentCounts = { track: 3 };
+    const onOpenAnnotationComments = vi.fn();
+    props.editors!.annotationCommentCounts = annotationCommentCounts;
+    props.editors!.onOpenAnnotationComments = onOpenAnnotationComments;
     props.editors!.issuePinDropArmed = true;
     props.editors!.issueNavigationPending = true;
     props.editors!.onIssuePinDrop = vi.fn();
@@ -207,6 +211,8 @@ describe("WorkbenchStageHost", () => {
         issueNavigationPending: true,
         onIssuePinDrop: props.editors!.onIssuePinDrop,
         onSeekIssueFrame: props.editors!.onSeekIssueFrame,
+        annotationCommentCounts,
+        onOpenAnnotationComments,
       }),
     );
   });

@@ -346,7 +346,7 @@ interface WorkbenchStageHostEditorProps {
   issueNavigationPending?: boolean;
   onIssuePinDrop?: (x: number, y: number, frame?: number) => void;
   onSeekIssueFrame?: (frame: number) => void;
-  /** Per-annotation saved comment totals for the image canvas. */
+  /** Per-annotation saved comment totals for the image and video canvases. */
   annotationCommentCounts?: Record<string, number>;
   /** Open an annotation's comment list through the guarded Workbench shell. */
   onOpenAnnotationComments?: (annotationId: string) => void;
@@ -671,6 +671,8 @@ export const WorkbenchStageHost = forwardRef<VideoStageControls, WorkbenchStageH
             onToggleLockedTrack={onToggleLockedVideoTrack}
             onPropagateTrack={onPropagateVideoTrack}
             onCursorMove={onCursorMove}
+            annotationCommentCounts={annotationCommentCounts}
+            onOpenAnnotationComments={onOpenAnnotationComments}
             issuePixelFeedbacks={issuePixelFeedbacks}
             issueHighlightId={highlightIssueId}
             onIssuePinClick={onIssuePinClick}

@@ -6,7 +6,8 @@ type RememberedTaskValue = string | { taskId: string; lastOpenedAt: number };
 /** A discussion destination is data, never an arbitrary redirect URL. */
 export type WorkbenchDiscussionTarget =
   | { kind: "issue"; issueId: string; replyId?: string | null }
-  | { kind: "comment"; annotationId: string; commentId: string };
+  | { kind: "comment"; annotationId: string; commentId: string }
+  | { kind: "task_comment"; commentId: string };
 
 export type WorkbenchDiscussionRequest =
   | { status: "none" }
@@ -14,7 +15,7 @@ export type WorkbenchDiscussionRequest =
   | { status: "valid"; taskId: string; target: WorkbenchDiscussionTarget };
 
 const DISCUSSION_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const DISCUSSION_PARAMETERS = ["discussion", "issue", "reply", "comment"] as const;
+const DISCUSSION_PARAMETERS = ["discussion", "issue", "reply", "comment", "task_comment"] as const;
 
 /** URL identities remain hints; callers must recheck task and record access. */
 export function parseWorkbenchDiscussionRequest(
@@ -38,6 +39,7 @@ export function parseWorkbenchDiscussionRequest(
       !DISCUSSION_UUID.test(issueId) ||
       (replyId !== null && !DISCUSSION_UUID.test(replyId)) ||
       q.has("comment") ||
+      q.has("task_comment") ||
       q.has("focus") ||
       q.has("track") ||
       q.has("frame")
@@ -50,6 +52,24 @@ export function parseWorkbenchDiscussionRequest(
     };
   }
   if (q.get("discussion") === "comments") {
+    const taskCommentId = q.get("task_comment");
+    if (taskCommentId !== null) {
+      if (
+        !DISCUSSION_UUID.test(taskCommentId) ||
+        q.has("focus") ||
+        q.has("comment") ||
+        q.has("issue") ||
+        q.has("reply") ||
+        q.has("track") ||
+        q.has("frame")
+      )
+        return invalid();
+      return {
+        status: "valid",
+        taskId,
+        target: { kind: "task_comment", commentId: taskCommentId },
+      };
+    }
     const annotationId = q.get("focus") ?? "";
     const commentId = q.get("comment") ?? "";
     if (
@@ -57,6 +77,7 @@ export function parseWorkbenchDiscussionRequest(
       !DISCUSSION_UUID.test(commentId) ||
       q.has("issue") ||
       q.has("reply") ||
+      q.has("task_comment") ||
       q.has("track") ||
       q.has("frame")
     )
@@ -81,10 +102,13 @@ function setDiscussionTarget(q: URLSearchParams, target: WorkbenchDiscussionTarg
     q.set("discussion", "issues");
     q.set("issue", target.issueId);
     if (target.replyId !== null && target.replyId !== undefined) q.set("reply", target.replyId);
-  } else {
+  } else if (target.kind === "comment") {
     q.set("discussion", "comments");
     q.set("focus", target.annotationId);
     q.set("comment", target.commentId);
+  } else {
+    q.set("discussion", "comments");
+    q.set("task_comment", target.commentId);
   }
   if (parseWorkbenchDiscussionRequest(q).status !== "valid") {
     throw new TypeError("Invalid Workbench discussion destination");

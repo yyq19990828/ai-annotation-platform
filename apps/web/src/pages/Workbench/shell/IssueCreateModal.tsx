@@ -5,6 +5,7 @@ import { useCreateFeedback } from "@/hooks/useFeedbacks";
 import type { FeedbackSeverity, ListFeedbacksParams } from "@/api/feedbacks";
 import type { IssuePinAnchor } from "../state/useIssuePins";
 import { validIssueFrameRange } from "../state/videoIssueContext";
+import { issueObjectLabel } from "../stage/issuePinVisuals";
 
 // UA-safe 文本输入基线(无全局 preflight 期间)。
 const FIELD_BASE =
@@ -43,9 +44,22 @@ function locationSummary(anchor: IssuePinAnchor): string {
   const position = `画布位置 x ${anchor.x.toFixed(3)} · y ${anchor.y.toFixed(3)}`;
   const frame = typeof anchor.frame === "number" ? ` · 源帧 F ${anchor.frame}` : "";
   const object = anchor.annotationId
-    ? ` · 对象 ${anchor.annotationLabel ?? anchor.annotationId}`
+    ? ` · 对象 ${issueObjectLabel(anchor.annotationId, anchor.annotationLabel)}`
     : "";
   return `${position}${frame}${object}`;
+}
+
+function clearObjectAssociation(anchor: IssuePinAnchor): IssuePinAnchor {
+  const cleared = { ...anchor };
+  delete cleared.annotationId;
+  delete cleared.annotationLabel;
+  if (cleared.videoContext) {
+    const context = { ...cleared.videoContext };
+    delete context.track_id;
+    delete context.annotation_version;
+    cleared.videoContext = context;
+  }
+  return cleared;
 }
 
 function IssueCreateSession({
@@ -69,6 +83,7 @@ function IssueCreateSession({
       anchorMode: mode,
     } as const;
   });
+  const [objectCleared, setObjectCleared] = useState(false);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [severity, setSeverity] = useState<FeedbackSeverity>("warn");
@@ -91,7 +106,8 @@ function IssueCreateSession({
   }, []);
 
   const pixelMode = snapshot.anchorMode === "pixel";
-  const anchor = snapshot.anchor;
+  const anchor =
+    snapshot.anchor && objectCleared ? clearObjectAssociation(snapshot.anchor) : snapshot.anchor;
   const hasValidPixel =
     !!anchor &&
     Number.isFinite(anchor.x) &&
@@ -257,12 +273,25 @@ function IssueCreateSession({
           <div className="flex flex-col gap-1.5" data-testid="issue-create-pixel-scope">
             <span className="text-xs text-muted-foreground">已确认的画布位置（不可编辑）</span>
             {anchor ? (
-              <span
-                className="rounded border border-border bg-muted px-2 py-1.5 text-xs text-foreground"
-                data-testid="issue-create-location-summary"
-              >
-                {locationSummary(anchor)}
-              </span>
+              <>
+                <span
+                  className="rounded border border-border bg-muted px-2 py-1.5 text-xs text-foreground"
+                  data-testid="issue-create-location-summary"
+                >
+                  {locationSummary(anchor)}
+                </span>
+                {anchor.annotationId && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setObjectCleared(true)}
+                    data-testid="issue-clear-object"
+                    aria-label="清除对象关联"
+                  >
+                    清除对象关联
+                  </Button>
+                )}
+              </>
             ) : (
               <span className="text-xs text-status-danger" role="alert">
                 尚未确认画布点，请关闭后使用「在画布选点」。
@@ -289,7 +318,7 @@ function IssueCreateSession({
           <div className="flex flex-col gap-2 rounded border border-border bg-muted p-2 text-xs">
             <span data-testid="issue-context-object" className="text-muted-foreground">
               {anchor?.annotationId
-                ? `对象：${anchor.annotationLabel ?? anchor.annotationId}${videoContext.annotation_version ? ` · 版本 ${videoContext.annotation_version}` : ""}`
+                ? `对象：${issueObjectLabel(anchor.annotationId, anchor.annotationLabel)}${videoContext.annotation_version ? ` · 版本 ${videoContext.annotation_version}` : ""}`
                 : "未关联对象"}{" "}
               · 已记录画布视图和时间窗
             </span>

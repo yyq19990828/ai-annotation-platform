@@ -315,6 +315,61 @@ describe("IssueCreateModal", () => {
     });
   });
 
+  it("shows a short object identity and clears only the association", () => {
+    setup({
+      prefilledAnchor: {
+        x: 0.2,
+        y: 0.4,
+        annotationId: "annotation-123456",
+        annotationLabel: "车辆",
+      },
+    });
+    expect(screen.getByTestId("issue-create-location-summary")).toHaveTextContent(
+      "对象 车辆 · anno…3456",
+    );
+    fireEvent.click(screen.getByTestId("issue-clear-object"));
+    expect(screen.getByTestId("issue-create-location-summary")).toHaveTextContent(
+      "画布位置 x 0.200 · y 0.400",
+    );
+    expect(screen.queryByTestId("issue-clear-object")).toBeNull();
+    fillBody();
+    submit();
+    expect(requests[0].payload.annotation_id).toBeUndefined();
+    expect(requests[0].payload.anchor_position).toEqual({ x: 0.2, y: 0.4 });
+  });
+
+  it("clears video object metadata while preserving the source frame and view", () => {
+    setup({
+      prefilledAnchor: {
+        x: 0.3,
+        y: 0.4,
+        frame: 7,
+        annotationId: "annotation-123456",
+        annotationLabel: "车辆",
+        videoContext: {
+          schema_version: 1,
+          track_id: "track-1",
+          annotation_version: 3,
+          viewport: { center_x: 0.4, center_y: 0.5, zoom: 2 },
+        },
+      },
+    });
+    fireEvent.click(screen.getByTestId("issue-clear-object"));
+    expect(screen.getByTestId("issue-context-object")).toHaveTextContent("未关联对象");
+    fillBody();
+    submit();
+    expect(requests[0].payload.annotation_id).toBeUndefined();
+    expect(requests[0].payload.anchor_position).toEqual({
+      x: 0.3,
+      y: 0.4,
+      frame: 7,
+      video_context: {
+        schema_version: 1,
+        viewport: { center_x: 0.4, center_y: 0.5, zoom: 2 },
+      },
+    });
+  });
+
   it.each([
     ["131", "160"],
     ["120", "129"],

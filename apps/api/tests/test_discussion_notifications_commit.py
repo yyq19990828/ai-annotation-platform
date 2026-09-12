@@ -208,8 +208,39 @@ async def _post_reply(
     )
 
 
+async def _post_task_comment(
+    client: httpx.AsyncClient,
+    fixture: _ReplyFixture,
+    body: str,
+    mentioned_user_id: uuid.UUID,
+) -> httpx.Response:
+    display_name = "N1 author"
+    return await client.post(
+        "/api/v1/feedbacks",
+        json={
+            "kind": "comment",
+            "anchor_type": "task",
+            "project_id": str(fixture.project_id),
+            "task_id": str(fixture.task_id),
+            "body": f"@{display_name} {body}",
+            "mentions": [
+                {
+                    "userId": str(mentioned_user_id),
+                    "displayName": display_name,
+                    "offset": 0,
+                    "length": len(display_name) + 1,
+                }
+            ],
+        },
+        headers={"Authorization": f"Bearer {fixture.actor_token}"},
+    )
+
+
 async def _cleanup_fixture(
-    session_factory: async_sessionmaker[AsyncSession], fixture: _ReplyFixture
+    session_factory: async_sessionmaker[AsyncSession],
+    fixture: _ReplyFixture,
+    *,
+    extra_feedback_ids: tuple[uuid.UUID, ...] = (),
 ) -> None:
     """Delete only rows owned by this test's explicit IDs."""
 
@@ -220,6 +251,17 @@ async def _cleanup_fixture(
         await db.execute(
             delete(Notification).where(Notification.target_id == fixture.root_id)
         )
+        if extra_feedback_ids:
+            await db.execute(
+                delete(Notification).where(
+                    Notification.target_id.in_(extra_feedback_ids)
+                )
+            )
+            await db.execute(
+                delete(AnnotationFeedback).where(
+                    AnnotationFeedback.id.in_(extra_feedback_ids)
+                )
+            )
         await db.execute(
             delete(AuditLog).where(
                 AuditLog.actor_id.in_(fixture.user_ids),
@@ -355,6 +397,171 @@ async def test_real_commit_http_reply_routes_publish_after_commit_and_survive_re
             )
             assert len(notifications) == 2
             assert {row.user_id for row in notifications} == {fixture.root_author_id}
+    finally:
+        await _cleanup_fixture(session_factory, fixture)
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_real_commit_http_task_comment_mentions_publish_after_commit_and_survive_redis_failure(
+    test_db_url, monkeypatch
+):
+    """Task-comment mentions are visible on a second connection during publish."""
+
+    url = _real_commit_test_url(test_db_url)
+    await _verify_database_identity(url)
+    await _upgrade(url)
+    engine = create_async_engine(url, echo=False)
+    session_factory = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+    fixture = await _seed_committed_fixture(session_factory)
+    request_flags: dict[str, bool] = {}
+    publish_calls: list[dict] = []
+    visibility_at_publish: list[tuple[bool, bool]] = []
+    comment_ids: list[uuid.UUID] = []
+    fail_redis = False
+
+    async def fake_publish(*, user_id, message):
+        nonlocal fail_redis
+        publish_calls.append(message)
+        comment_id = uuid.UUID(message["target_id"])
+        async with session_factory() as reader:
+            notification = await reader.get(Notification, uuid.UUID(message["id"]))
+            comment = await reader.get(AnnotationFeedback, comment_id)
+            visibility_at_publish.append(
+                (notification is not None, comment is not None)
+            )
+        if fail_redis:
+            raise RuntimeError("redis unavailable after commit")
+
+    monkeypatch.setattr("app.services.notification._publish", fake_publish)
+    try:
+        async with _http_client(session_factory, request_flags) as client:
+            first = await _post_task_comment(
+                client, fixture, "first committed task comment", fixture.root_author_id
+            )
+            assert first.status_code == 200, first.text
+            first_id = uuid.UUID(first.json()["id"])
+            comment_ids.append(first_id)
+            assert first.json()["mentions"][0]["userId"] == str(fixture.root_author_id)
+            assert len(publish_calls) == 1
+            assert visibility_at_publish == [(True, True)]
+
+            fail_redis = True
+            second = await _post_task_comment(
+                client,
+                fixture,
+                "task comment durable despite redis failure",
+                fixture.root_author_id,
+            )
+            assert second.status_code == 200, second.text
+            second_id = uuid.UUID(second.json()["id"])
+            comment_ids.append(second_id)
+            assert len(publish_calls) == 2
+            assert visibility_at_publish == [(True, True), (True, True)]
+
+        async with session_factory() as reader:
+            comments = list(
+                (
+                    await reader.execute(
+                        select(AnnotationFeedback).where(
+                            AnnotationFeedback.id.in_(comment_ids)
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert {comment.id for comment in comments} == set(comment_ids)
+            notifications = list(
+                (
+                    await reader.execute(
+                        select(Notification).where(
+                            Notification.target_id.in_(comment_ids),
+                            Notification.type == "feedback.comment_mentioned",
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert len(notifications) == 2
+            assert {row.user_id for row in notifications} == {fixture.root_author_id}
+    finally:
+        await _cleanup_fixture(
+            session_factory, fixture, extra_feedback_ids=tuple(comment_ids)
+        )
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_real_commit_http_task_comment_mention_rolls_back_without_publish(
+    test_db_url, monkeypatch
+):
+    """A failed task-comment commit leaves neither feedback nor mention event."""
+
+    url = _real_commit_test_url(test_db_url)
+    await _verify_database_identity(url)
+    await _upgrade(url)
+    engine = create_async_engine(url, echo=False)
+    session_factory = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+    fixture = await _seed_committed_fixture(session_factory)
+    request_flags = {"fail_commit": True}
+    publish_calls: list[dict] = []
+
+    original_commit = AsyncSession.commit
+
+    async def forced_commit_failure(self):
+        if self.info.get(_FORCE_COMMIT_FAILURE):
+            await self.rollback()
+            raise RuntimeError("forced business commit failure")
+        await original_commit(self)
+
+    async def fake_publish(*, user_id, message):
+        publish_calls.append(message)
+
+    monkeypatch.setattr(AsyncSession, "commit", forced_commit_failure)
+    monkeypatch.setattr("app.services.notification._publish", fake_publish)
+    try:
+        async with _http_client(session_factory, request_flags) as client:
+            failed = await _post_task_comment(
+                client, fixture, "task mention must roll back", fixture.root_author_id
+            )
+            assert failed.status_code == 500
+
+        async with session_factory() as reader:
+            comments = list(
+                (
+                    await reader.execute(
+                        select(AnnotationFeedback).where(
+                            AnnotationFeedback.task_id == fixture.task_id,
+                            AnnotationFeedback.body
+                            == "@N1 author task mention must roll back",
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert comments == []
+            notifications = list(
+                (
+                    await reader.execute(
+                        select(Notification).where(
+                            Notification.type == "feedback.comment_mentioned",
+                            Notification.payload["task_id"].astext
+                            == str(fixture.task_id),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert notifications == []
+        assert publish_calls == []
     finally:
         await _cleanup_fixture(session_factory, fixture)
         await engine.dispose()

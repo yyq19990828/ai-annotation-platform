@@ -140,7 +140,7 @@ export function discussionTargetCapabilities(
   const task = target.kind === "task";
   return {
     text: true,
-    mentions: annotation,
+    mentions: annotation || task,
     attachments: annotation,
     canvasDrawing: annotation || task,
     anchor: annotation,

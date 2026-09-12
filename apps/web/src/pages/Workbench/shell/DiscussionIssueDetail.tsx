@@ -16,6 +16,7 @@ import type { DiscussionPayload } from "../state/discussionTypes";
 import { useDiscussionDraftStore } from "../state/DiscussionDraftProvider";
 import { useIssueSequence } from "../state/useIssueSequence";
 import type { DiscussionReplyFocus } from "../state/useDiscussionNavigation";
+import { issueObjectLabel } from "../stage/issuePinVisuals";
 
 export interface DiscussionIssueDetailProps {
   replyFocus?: DiscussionReplyFocus | null;
@@ -425,14 +426,23 @@ export function DiscussionIssueDetail({
                     "rounded-[10px] border px-2 py-px text-2xs",
                     STATUS_CHIP[root.status],
                   )}
+                  aria-label={`问题状态：${STATUS_TEXT[root.status]}`}
                 >
                   {STATUS_TEXT[root.status]}
                 </span>
-                {root.severity && (
-                  <span className="rounded-[10px] border border-border px-2 py-px text-2xs text-muted-foreground">
-                    {SEVERITY_TEXT[root.severity]}
-                  </span>
-                )}
+                <span
+                  className={cn(
+                    "rounded-[10px] border border-border px-2 py-px text-2xs",
+                    root.severity === "blocker"
+                      ? "text-status-danger"
+                      : root.severity === "info"
+                        ? "text-status-info-alt"
+                        : "text-status-caution",
+                  )}
+                  aria-label={`问题严重度：${root.severity ? SEVERITY_TEXT[root.severity] : "警告"}`}
+                >
+                  {root.severity ? SEVERITY_TEXT[root.severity] : "警告"}
+                </span>
                 <span className="ml-auto text-2xs text-muted-foreground">
                   {root.author_name ?? "—"} · {new Date(root.created_at).toLocaleString()}
                 </span>
@@ -452,6 +462,16 @@ export function DiscussionIssueDetail({
                   {typeof root.anchor_position.frame === "number" && (
                     <span>源帧 F{root.anchor_position.frame}</span>
                   )}
+                </div>
+              )}
+              {root.annotation_id && (
+                <div
+                  className="flex items-center gap-1 text-2xs text-muted-foreground"
+                  title={root.annotation_id}
+                  aria-label={`关联对象：${issueObjectLabel(root.annotation_id)}`}
+                  data-testid={`discussion-issue-object-${root.id}`}
+                >
+                  <Icon name="target" size={11} /> 关联对象：{issueObjectLabel(root.annotation_id)}
                 </div>
               )}
               <div className="flex flex-wrap items-center gap-1">

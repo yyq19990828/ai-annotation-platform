@@ -6,6 +6,7 @@ import {
   type AnnotationFeedbackThreadPage,
 } from "@/api/feedbacks";
 import { resolveActiveDiscussionAnnotation } from "@/api/discussionTargets";
+import { discussionApi, type TaskDiscussionItem } from "@/api/discussion";
 import { tasksApi } from "@/api/tasks";
 import type { TaskResponse } from "@/types";
 import type { NotificationItem } from "@/api/notifications";
@@ -284,6 +285,111 @@ function validateComment(
   );
 }
 
+function validateTaskComment(
+  value: TaskDiscussionItem | undefined,
+  commentId: string,
+  projectId: string,
+  taskId: string,
+): boolean {
+  return Boolean(
+    value &&
+    value.source === "feedback" &&
+    value.data.id === commentId &&
+    value.data.kind === "comment" &&
+    value.data.anchor_type === "task" &&
+    value.data.thread_parent_id === null &&
+    value.data.is_active === true &&
+    value.data.project_id === projectId &&
+    value.data.task_id === taskId,
+  );
+}
+
+async function resolveTaskCommentNotification(
+  item: NotificationItem,
+  signal: AbortSignal,
+): Promise<ResolvedDiscussionNotification> {
+  const commentId = requiredUuid(item.target_id, "通知中的任务留言 ID 格式无效。");
+  const projectHint = requiredPayloadUuid(
+    item,
+    "project_id",
+    "通知中的任务留言所属项目 ID 格式无效。",
+  );
+  const taskHint = requiredPayloadUuid(item, "task_id", "通知中的任务留言所属任务 ID 格式无效。");
+  requirePayloadValue(item, "source", "feedback", "通知中的任务留言来源无效。");
+
+  let task: TaskResponse;
+  try {
+    task = validateTask(await tasksApi.get(taskHint, { signal }), taskHint, projectHint);
+  } catch (error) {
+    wrapLookupError(
+      error,
+      "任务留言所属任务已删除、转派或当前账号不可见。",
+      "暂时无法核对任务留言所属任务，请检查网络后重试。",
+    );
+  }
+
+  let cursor: string | undefined;
+  const seenCursors = new Set<string>();
+  let foundComment = false;
+  while (true) {
+    assertNotAborted(signal);
+    let page: Awaited<ReturnType<typeof discussionApi.listTaskDiscussion>>;
+    try {
+      page = await discussionApi.listTaskDiscussion(
+        task.id,
+        { scope: "task", limit: PAGE_LIMIT, ...(cursor ? { cursor } : {}) },
+        signal,
+      );
+    } catch (error) {
+      wrapLookupError(
+        error,
+        "该任务留言已删除或当前账号不可见。",
+        "暂时无法读取任务留言，请检查网络后重试。",
+      );
+    }
+    assertNotAborted(signal);
+    if (
+      !page ||
+      typeof page !== "object" ||
+      !Array.isArray(page.items) ||
+      (page.next_cursor !== null &&
+        page.next_cursor !== undefined &&
+        (typeof page.next_cursor !== "string" || page.next_cursor.length === 0))
+    ) {
+      throw new DiscussionNotificationError("通知返回的任务留言列表格式无效。", "invalid");
+    }
+    const matching = page.items.find(
+      (value) => value && typeof value === "object" && value.data?.id === commentId,
+    );
+    if (matching) {
+      if (!validateTaskComment(matching, commentId, task.project_id, task.id)) {
+        throw new DiscussionNotificationError(
+          "该任务留言已删除、移出任务或当前账号不可见。",
+          "unavailable",
+        );
+      }
+      foundComment = true;
+      break;
+    }
+    const nextCursor = page.next_cursor;
+    if (!nextCursor) break;
+    if (seenCursors.has(nextCursor)) {
+      throw new DiscussionNotificationError("通知返回的任务留言游标无效。", "invalid");
+    }
+    seenCursors.add(nextCursor);
+    cursor = nextCursor;
+  }
+  if (!foundComment) {
+    throw new DiscussionNotificationError("该任务留言已删除或当前账号不可见。", "unavailable");
+  }
+  return {
+    projectId: task.project_id,
+    task,
+    kind: "feedback",
+    target: { kind: "task_comment", commentId },
+  };
+}
+
 async function resolveAnnotationCommentNotification(
   item: NotificationItem,
   signal: AbortSignal,
@@ -387,6 +493,9 @@ export async function resolveDiscussionNotification(
   signal: AbortSignal,
 ): Promise<ResolvedDiscussionNotification> {
   if (item.target_type === "feedback") {
+    if (item.type === "feedback.comment_mentioned") {
+      return resolveTaskCommentNotification(item, signal);
+    }
     if (item.type !== "feedback.reply_created" && item.type !== "feedback.status_changed") {
       throw new DiscussionNotificationError("通知中的问题事件类型无效。", "invalid");
     }

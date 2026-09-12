@@ -14,15 +14,19 @@ vi.mock("./CommentsPanel", () => ({
     forceTab,
     annotationDiscussionRequest,
     onAnnotationDiscussionRequestConsumed,
+    commentFocus,
   }: {
     forceTab: string;
     annotationDiscussionRequest?: { requestId: string } | null;
     onAnnotationDiscussionRequestConsumed?: (requestId: string) => void;
+    commentFocus?: { requestId: string; commentId: string; source?: string } | null;
   }) => (
     <>
       <div
         data-testid={`comments-${forceTab}`}
         data-annotation-request={annotationDiscussionRequest?.requestId ?? ""}
+        data-comment-focus={commentFocus?.commentId ?? ""}
+        data-comment-source={commentFocus?.source ?? ""}
       />
       {annotationDiscussionRequest && (
         <button
@@ -116,6 +120,32 @@ describe("DiscussionPanel Mask 质检", () => {
     expect(screen.getByRole("tab", { name: "历史" })).toHaveAttribute("aria-selected", "true");
     expect(useActiveIssueStore.getState().detailRequestTick).toBe(tick);
     expect(navigation.consume).toHaveBeenCalledTimes(1);
+  });
+
+  it("activates a task-comment notification in the comments tab without opening Issue detail", () => {
+    const navigation: DiscussionNavigation = {
+      state: {
+        status: "ready",
+        requestId: "task-comment-request",
+        target: { kind: "task_comment", commentId: "comment-a" },
+      },
+      cancel: vi.fn(),
+      retry: vi.fn(),
+      dismiss: vi.fn(),
+      consume: vi.fn(),
+    };
+    render(<DiscussionPanel {...baseProps} navigation={navigation} />);
+    expect(screen.getByRole("tab", { name: "评论" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("comments-comments")).toHaveAttribute(
+      "data-comment-focus",
+      "comment-a",
+    );
+    expect(screen.getByTestId("comments-comments")).toHaveAttribute(
+      "data-comment-source",
+      "feedback",
+    );
+    expect(useActiveIssueStore.getState().detailTargetId).toBeNull();
+    expect(navigation.consume).toHaveBeenCalledWith("task-comment-request");
   });
 
   it("exposes navigation progress cancellation and recoverable failure controls", () => {
