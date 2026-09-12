@@ -8,87 +8,9 @@ last_reviewed: 2026-07-22
 
 # ML Backend 协议契约
 
-> 适用读者：要把自家推理服务接入到本平台的工程师；项目管理员配置 ML Backend 时遇到调试问题。
->
-> 平台侧实现：
->
-> - 服务: `apps/api/app/services/ml_backend.py` · `ml_client.py`
-> - HTTP 接入点: `apps/api/app/api/v1/ml_backends.py`
-> - 数据模型: `apps/api/app/db/models/{ml_backend,prediction}.py`
+本页供推理服务接入者查阅健康检查、预测、能力声明和错误响应合同。项目如何启用服务见[全局注册表与项目启用](#全局注册表与项目启用)。
 
-平台不内置任何具体模型。它把可挂接的「推理服务」抽象成 `MLBackend` 行——一个 URL + 鉴权信息 + 几个布尔位（`is_interactive` / `state`）。本文规定接入方需要实现的 4 个 HTTP 端点与请求/响应 schema。只要遵循，就能在「模型市场 → 注册管理」里注册、在「项目设置 → ML 模型」里启用。
-
----
-
-## 全局注册表与项目启用
-
-ML Backend 走全局注册表模型（ADR-0044）：一个物理 backend = 全局 `ml_backend_registry` 一行 = 一份能力快照和一份 `max_concurrency` 配置；项目侧只做「启用」。本地 semaphore 在所有模式下提供单进程背压；当 `ML_BACKEND_ROUTER_MODE=enforce` 时，路由 ledger 使用同一上限发放 Redis route lease，把 API 与多个 Celery worker 收口到跨进程实例上限。GPU 仲裁的 effective mode、request lease、release latch 与逐资源 rollout 另行负责显存准入和驱逐（[ADR-0049](/dev/adr/archive/0049-cross-backend-gpu-memory-arbitration)），不能与请求路由模式互相替代。两层职责：
-
-- **全局层（超管）**：`ml_backend_registry`。URL / 鉴权 / `auth_method` / `auth_token` / `extra_params`（含 `max_concurrency`）/ `is_interactive` / `state` 等端点固有属性写在这里，所有启用该 backend 的项目共享。env 配置的 backend 启动时自动 upsert 为 `source=env` 注册项；env 删项时对应行置 `disconnected` 而非删除，保留历史 prediction 溯源。
-- **项目层（项目管理员）**：`project_ml_backend_pool` 关联表，仅记「启用 / 停用」+ 项目级变体覆盖（`default_variants`，pool 级）。多阶段编排里选不同 backend 跑不同阶段时，先在「管理 backend」面板里勾选启用，再到编排卡里选用即可。
-
-### 服务池与请求路由（ADR-0050）
-
-在全局注册表之上叠加一层**逻辑服务池**（`ml_backend_service_pools` + `ml_backend_pool_members`），把「项目请求一个逻辑能力」与「平台选择一个物理实例」拆成两个步骤。pool id 是逻辑请求身份，registry id 是物理执行身份，二者永不互换。
-
-- **一个 registry 实例同时最多属于一个服务池**。每个现有 registry 经迁移自动得到一个 singleton 服务池（`legacy_instance_id` 指向该 registry，off mode 下解析回原实例，行为与之前完全一致）。
-- **身份边界**：项目启用、项目主绑定和请求 lineage 使用 pool id；`preannotate_pipeline` 、`projects.default_variants` 以及 `users.preferences.ai` 中按 backend 分桶的公共配置仍使用 registry id，与当前 API schema 和前端注册表索引一致。派发时由 registry 的唯一成员关系解析所属 pool，不会在这两种 UUID 之间猜测或混用。
-- **能力等价合同**：指纹以 `/setup` 派生的真实 `models[]` 目录为主，包含协议/模型/权重版本、task、modality、请求合法性参数、variant 轴与组合、tracker 及 batchable 等稳定合同字段，列表按确定规则排序后计算 SHA-256。URL、展示名、GPU / VRAM / residency、动态类别等实例态字段不参与。singleton 在首次有效探活时建立指纹；后续漂移的成员自动 disabled。
-- **跨进程原子路由 ledger**（Redis namespace `ml-router:v1`，独立于 GPU 仲裁 `gpu-arbiter:v1`）：平滑加权轮询（SWRR）+ per-instance 并发上限 + 被动熔断（仅 transport failure 触发）+ route lease acquire/heartbeat/finish/cancel。
-- **双 ID 溯源**：`Prediction` / `FailedPrediction` 同时记录 `ml_backend_id`（实际执行的 selected instance）和 `ml_backend_pool_id`（requested pool）。多阶段聚合的 stage-level lineage 存 `PredictionMeta.extra.pipeline`。
-- **灰度**：`ML_BACKEND_ROUTER_MODE=off|observe|enforce`。off/observe 保持 legacy 实例派发（observe 额外记录 would-select 诊断，不门控）；enforce 用 router 选中实例并在 Redis / topology 不确定时 fail-closed。
-- **管理 API**：项目池绑定 `GET /projects/:id/ml-backends/pools/available` + `PUT /pools/:pool_id/enablement`；超管 pool/member CRUD + drain/resume `/admin/ml-integrations/service-pools/*`；读模型 `GET /admin/ml-integrations/{topology,runtime-snapshot}`。详见 [ADR-0050](/dev/adr/0050-ml-backend-service-pools-and-request-routing)。
-- **破坏性操作门禁**：纳管实例只有在 `router_mode=enforce`、成员精确为 `draining`、Redis 路由账本可用且清理过期 lease 后的 exact `route_inflight=0` 时，才允许卸载、移除成员或物理删除 registry。缺失、过期或不可读值都是未知，不能当作零。
-
-**没有项目级数量上限**。旧的 `max_ml_backends_per_project` 与多阶段 DAG 需 ≥2 backend 直接冲突，已退役；全局行的 `max_concurrency` 同时作为本地 semaphore 配置与 `ML_BACKEND_ROUTER_MODE=enforce` 的 Redis route lease 上限。路由模式为 off/observe 时 API 与多个 Celery worker 的并发仍会叠加；路由 enforce 时才由 route ledger 收口为真正的跨进程实例上限。新建项目不再有「复用 backend = 克隆一行」语义，统一走「在新项目里勾选启用某个已注册 backend」。
-
-平台 API 与 worker 直接消费共享 `aap-protocol-v2` lifecycle wire。`MLBackendClient` 已把 predict、交互预测、warmup、reload 与 unload 收口到同一个派发 context：预测先取得当前 event loop 的本地 semaphore，再进入 context，context 退出后才释放本地许可；health/setup 保持只读，不进入该边界。
-
-GPU `observe` 模式仍只在真实 HTTP 派发前计算非权威 `would-*` 快照。legacy unload
-另记只读事件，不能作为显存释放或预算减账证据。effective `off/observe` 不进入权威
-authority，也不添加 generation / admission token，因此可能加载的请求在 backend 侧仍按 legacy
-路径处理；非空 residency 保持 `generation=null, evictable=false`，不会被影子策略当成可驱逐真值。
-当前 context 已建立受管 header/scope 与结构化拒绝接缝：非法 grant 在 HTTP 前 fail-closed，
-authority context 也不能抑制 backend 错误或调用取消。五个受管业务入口会在完整 HTTP 响应
-返回后、状态或 JSON 解析前同步回报 `response_received`；未收到完整响应的传输超时、断连、
-取消或缺失回报则收敛为 `uncertain`。该 outcome 只表达传输边界，不声明 GPU residency，
-不能单独提交 allocation 终态。
-
-平台 signer、membership promotion、Redis admission lease、业务 token、Resident 快路、cold admission 与空闲
-victim 驱逐均已接入惰性 authority。cold 请求收到完整响应后会用新 challenge 探测，并在
-逐资源持久锁内把 Loading 分类为 Resident、CPU fallback、Unloaded 或保守 Unknown；无完整
-响应时不发探测，只收口 Unknown。cold 快照容量不足时，authority 只从同一完整
-`gpu_resource_id` 选择 exact Resident、可驱逐且零 lease 的空闲 victim，保护严格更高优先级，
-并按优先级、LRU 与 backend id 稳定排序。一个或多个 victim 依次完成受签 `/drain`、
-严格 ACK + 新鲜空闲证明、受签 `/unload` 与全空驻留证明后，才释放预算并以新
-challenge 重读 target cold subject。任一 phase 不确定即保守收口 Unknown 并停止继续驱逐；
-同路由响应丢失只做 exact owner/generation/phase/token 重放。FIFO 已接入；新 residency 只在首次可信
-Loading→Resident CAS 中按 Redis `TIME` 写入 `not_evict_before_ms`；proof reset 重建 Resident 时以固定
-`prepared_at_ms + cooldown` 保守恢复窗口。Python 快照选择与 Lua 原子选择都会排除未到期 victim，
-以上精确重放和 Resident 快路均不续期。cold authority 会继续持有 exact card ticket，
-按 Redis 快照给出的累计最早时刻在 admission deadline 与固定 ticket TTL 内有界等待；等待不续期，
-超时或取消会精确清票，只有 victim 已可驱逐时才为终态清理预留独立窗口。忙碌 victim 的
-Redis 原子地基已能在保留旧 lease 时关闭新 admission、进入 Draining，并支持零 lease 后 Unloading、
-更新 generation 的 Resident cancel CAS 与携带 lease 的保守 Unknown。authority 仅在空闲候选累计预算不足时
-选择 busy victim；严格 drain ACK 后，每轮分别读取新鲜 Redis lease 快照与新 challenge backend health，
-只有两域同时归零才进入 Unloading。busy-capable victim proof 严格绑定 fresh challenge、capability、membership、boot、
-generation、control/runtime epoch、resource identity 与稳定 pool-id 集合，同时允许旧
-workload 仍在 active/borrow。drain 后的 fresh health 仅使用单次 MVCC 快照只读区分
-`draining_busy`、`ready_to_unload` 与 `uncertain`；它不写 PostgreSQL/Redis，也不代替
-Redis lease-zero 门禁。
-
-Draining→Unloading 与 cancel 分别在同一逐资源 Redis transition owner 上原子冻结持久 `unload` / `cancel`
-分支；只有一个分支能成功，unload 已获胜时平台绝不发送 RESUME。工作超时、异常或调用方取消时，平台先以
-完全相同参数持久写入或重放 cancel intent，稳定签名后 arm cancel，再调用真实 `/drain/cancel`，最后用 strict
-ACK + fresh health 提交 Resident 或保守 Unknown。冻结 marker 不随 owner TTL 消失，只能由 exact 分支终态
-释放或 challenge-bound proof reset 清理；缺 key、mirror/branch/deadline 损坏均 fail-closed。DRAIN、双域等待
-与 UNLOAD 受工作 deadline 限制，owner 另保留 30 秒取消收尾窗口。以上状态与等待按完整
-`gpu_resource_id` 分片，单卡、多卡共用同一路径。参考环境的实物单卡、多卡与跨宿主门禁均已通过；
-各部署仍须用自身 Backend、模型制品与 GPU 拓扑完成验收，并由运维逐资源启用默认关闭的 release latch。
-五个受管 backend 在启动时同时检查 NVIDIA/CUDA/ROCm 可见设备配置；单索引、单 GPU/MIG UUID
-或显式无设备值可用，逗号多值与已暴露 GPU runtime 的无界 `all` 集合会直接使服务启动失败。
-
-派发只认逐卡 effective mode，不能被全局 desired mode 提前短路：demotion 握手完成前，即使 desired 已回到 off/observe，旧 effective=enforce 的卡仍发送受管请求。多卡部分灰度时，已知卡 B 的 off/observe 不受卡 A enforce 影响；但缺失或未知 resource 的注册项无法安全归属，只要任一卡真正 effective enforce 就在 backend HTTP 前返回 `gpu_config_invalid`。仅带新鲜 connected health 且明确 `configured_device=cpu`、没有任何 GPU 正证据的 null-claim backend 可豁免。未注册 URL 的 smoke-test 始终可做只读 health；任一卡进入 effective enforce 后，raw reload 同样在 backend HTTP 前拒绝。
+平台不内置任何具体模型。它把可挂接的「推理服务」抽象成 `MLBackend` 行——一个 URL + 鉴权信息 + 几个布尔位（`is_interactive` / `state`）。本文规定接入方需要实现的 HTTP 端点与请求/响应 schema。只要遵循，就能在「模型市场 → 注册管理」里注册、在「项目设置 → ML 模型」里启用。
 
 ---
 
@@ -426,7 +348,9 @@ backend lifecycle 错误保持 FastAPI envelope `{"detail":{"error_code":"..."}}
 
 **超时**：服务端配置 `ml_predict_timeout`（默认 100s，`config.py:54`）。超时由 worker 捕获，写一行 `failed_predictions` 并继续下一 batch（不阻断）。
 
-### 2.1.1 几何 prompt 批量（下游编排 stage） <!-- since 协议 v2.2 -->
+<!-- since 协议 v2.2 -->
+
+### 2.1.1 几何 prompt 批量（下游编排 stage）
 
 适用：多阶段预标注的**下游 stage** —— 上游检测器（YOLO / onnxtools-detect / grounded-sam2-detection）已产出 bbox，下游一个**非交互、批量**的 model（如 grounded-sam2 `box-seg`）消费这些框、对每框出 mask/polygon。
 
@@ -877,7 +801,7 @@ span 边界继续使用上一窗末帧 geometry 续种。
 
 ---
 
-## 4.1 能力声明协议 v2（多模型目录 + infra）
+### 4.1 能力声明协议 v2（多模型目录 + infra）
 
 > 协议背后的架构决策：[ADR-0036 — ML Backend 能力声明协议 v2（多模型目录 + infra）](../adr/archive/0036-ml-backend-capability-protocol-v2-multi-model.md)。
 
@@ -885,7 +809,7 @@ span 边界继续使用上一窗末帧 geometry 续种。
 
 `/setup` 仍是能力的唯一真相源（SoT），目录是其派生缓存 + UI 视图。`infra` / `models[]` 只影响能力声明与目录展示，**不改 `/predict` 请求/响应 schema**。
 
-### 4.1.1 `/setup` 顶层结构（v2）
+#### 4.1.1 `/setup` 顶层结构（v2）
 
 ```jsonc
 {
@@ -917,7 +841,7 @@ span 边界继续使用上一窗末帧 geometry 续种。
 - `models[]` 存在 ⇒ 平台按多模型目录解析，**忽略顶层能力字段**（顶层仅留 name/version/protocol_version/infra/warmup_endpoint 等 backend 级元数据）。
 - `models[]` 缺省 ⇒ 平台用顶层字段合成一个隐式 model（老 backend 路径，§4.1.5）。
 
-### 4.1.2 model 条目结构
+#### 4.1.2 model 条目结构
 
 ```jsonc
 {
@@ -956,7 +880,7 @@ span 边界继续使用上一窗末帧 geometry 续种。
 }
 ```
 
-### 4.1.3 受控词表（capability vocabulary）
+#### 4.1.3 受控词表（capability vocabulary）
 
 能力声明的关键是**一套受控枚举**，且与平台内部类型锚点对齐（`TOOL_UNIT_IDS` / LabelStudio result type / `data_type`）。
 
@@ -1002,7 +926,7 @@ span 边界继续使用上一窗末帧 geometry 续种。
 - **缺省**：`atom`（绝大多数 model 是单次推理；老 backend 不报字段即按原子）。平台 `extract_capabilities` 透传，缺省回落 `atom`。
 - **边界**：不改 `/predict` 协议、不参与兼容性校验。消费方：模型市场据此给卡片打「原子 / 内置流程」徽标；编排下游选择器 + 属性导入源据此过滤（只取 `atom`）。
 
-### 4.1.4 平台派生形态（health_meta）
+#### 4.1.4 平台派生形态（health_meta）
 
 `extract_capabilities(setup)`（`services/ml_capabilities.py`）遍历 `models[]` 派生 model 列表，落进 `ml_backend_registry.health_meta["capabilities"]`：
 
@@ -1045,7 +969,7 @@ span 边界继续使用上一窗末帧 geometry 续种。
 
 `warnings` 是非阻断诊断列表，由平台校验规范化后的 `task` / `infra` / `supported_prompts` / `supported_geometric_outputs` 是否落在受控词表内后生成。每条包含 `{level, model_id, field, value, message}`。模型市场用它显示 `⚠ 协议 N`，帮助接入方发现字段拼写或枚举漂移；平台不会因此丢弃该 model。
 
-### 4.1.5 向后兼容规则
+#### 4.1.5 向后兼容规则
 
 | backend 形态                  | 平台解析                                                                                                                                                                                                                                               |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -1055,7 +979,7 @@ span 边界继续使用上一窗末帧 geometry 续种。
 
 老 backend（grounded-sam2 / sam3 / echo）**不需要任何改动**即可继续工作 —— 它们落到「隐式单 model」路径。
 
-### 4.1.6 范例：YOLO 官仓 backend（按任务分条目 + series/size 多轴）
+#### 4.1.6 范例：YOLO 官仓 backend（按任务分条目 + series/size 多轴）
 
 > **真实参考实现**：[`apps/yolo-backend/`](https://github.com/yyq19990828/ai-annotation-platform/tree/main/apps/yolo-backend)（v0.14.12 起）。
 > 实仓覆盖 4 task × 7 series × 9 size 的 80 个有效组合，与下方 jsonc 示例完全对齐；本节 jsonc 是缩写说明，实仓 `/setup` 输出是 canonical。
@@ -1176,7 +1100,7 @@ span 边界继续使用上一窗末帧 geometry 续种。
 
 > **关键红利**：det/seg/pose/obb 的输出几何恰好命中现有 4 种 result type（`rectanglelabels` / `polygonlabels` / `keypointlabels` / `rectanglelabels+rotation`），所以 **YOLO backend 的 `/predict` 输出零 adapter**，直接落现有渲染链路（§3）。只有 `classify` 的 class 需走 `attributes.class`。
 
-#### `variant_combinations`（可选，v0.14.12 起）
+##### `variant_combinations`（可选，v0.14.12 起）
 
 `supported_variants` 暴露多轴时，前端默认按 axes 笛卡尔积渲染目录。但**多轴非真笛卡尔积**的 backend（如 yolo 的 `rtdetr` 只有 `l/x`、`yolov9 detect` 只有 `t/s/m/c/e`、`yolov10` 不支持 seg/pose/obb）需要显式列举合法组合，否则会列出虚假权重（如 yolov10-keypoint 这种实际不存在的 .pt）。
 
@@ -1219,7 +1143,7 @@ span 边界继续使用上一窗末帧 geometry 续种。
 - 字段缺省 ⇒ 前端按 axes 笛卡尔积处理（适用于 SAM2 × DINO 等真笛卡尔积场景）。
 - 前端目录展示时严格按 `variant_combinations` 过滤；`/predict` 服务端仍独立做 `variant_not_supported` 422 兜底。
 
-#### `variants_shared_across_tasks`（可选，v0.14.12 起）
+##### `variants_shared_across_tasks`（可选，v0.14.12 起）
 
 布尔字段，缺省 `false`。决定前端列表视图如何对待"同 variant 跨多 task"的情形：
 
@@ -1228,7 +1152,7 @@ span 边界继续使用上一窗末帧 geometry 续种。
 
 **结合 `supported_variants` 按 task 暴露**：当 `variants_shared_across_tasks=true` 时，每个 model 只声明该 task **真正用到的 axes**（如 grounded-sam2 的 `detection` 只声明 `dino_variant` 轴而非两轴），让前端目录的 task 列准确反映哪些 task 用 SAM、哪些 task 用 DINO。
 
-#### `default_variants`（可选，v0.14.13 起）
+##### `default_variants`（可选，v0.14.13 起）
 
 每个 model 自报该 task 的默认 variant 组合，前端 `VariantSelector` 在用户未显式选择时用这组值作初值。**优先级**：项目级 `projects.default_variants[backend_id]`（v0.14.13 新增字段）> backend `default_variants` > backend 启动时 env 默认。
 
@@ -1252,7 +1176,7 @@ span 边界继续使用上一窗末帧 geometry 续种。
 - **不与 `params.*_variant.default` 重复**：老协议 v1 时 `params` 里也带过 `default`（如 `params.properties.sam_variant.default`），新前端优先读 `default_variants`，老前端继续读 `params.*.default` 兼容。
 - **校验**：backend 不强制运行时校验 default_variants 是否落在 supported_variants/variant_combinations 内（信任 backend 自报），前端 / API 也不校验；非法值只会让前端初值显示成不存在的选项（用户切换后即修复）。
 
-### 4.1.7 范例：ONNX 聚合 backend（一个 backend，多家族多任务，统一 infra）
+#### 4.1.7 范例：ONNX 聚合 backend（一个 backend，多家族多任务，统一 infra）
 
 ```jsonc
 {
@@ -1293,7 +1217,7 @@ span 边界继续使用上一窗末帧 geometry 续种。
 
 > 这里 model 都继承 `infra="onnx"`，但 `model_family` / `task` 各异 —— 正是「聚合模型带不同能力」。若某 PaddleOCR 条目用 paddle 运行时，在该条目写 `"infra": "paddle"` 覆盖即可。
 
-### 4.1.8 OCR / Doc Layout 输出约定（v2 首发模型族）
+#### 4.1.8 OCR / Doc Layout 输出约定（v2 首发模型族）
 
 **OCR**（`task: "ocr"`）：
 
@@ -1317,7 +1241,7 @@ span 边界继续使用上一窗末帧 geometry 续种。
 
 result 映射（统一 adapter，不新增 prediction 表）：`ocr_text` → `attributes.text`；`layout_type` → `class_name`；`orientation` → `attributes.orientation`。
 
-### 4.1.9 平台能力目录端点（派生视图）
+#### 4.1.9 平台能力目录端点（派生视图）
 
 能力目录是 `health_meta` 的派生视图，复用现有 `POST …/{bid}/setup`（30s TTL 缓存）的探测链路：
 
@@ -1332,7 +1256,7 @@ POST /projects/{pid}/ml-backends/{bid}/capabilities/refresh  # 强制重探 /set
 
 > 若后续需要持久化跨 backend 模型检索，再考虑独立表 `ml_model_capabilities` 与全局聚合端点 `GET /ml-backends/capabilities`。
 
-### 4.1.10 可跑参考实现
+#### 4.1.10 可跑参考实现
 
 **真实推理参考实现（v0.14.12 起）**：[`apps/yolo-backend/`](https://github.com/yyq19990828/ai-annotation-platform/tree/main/apps/yolo-backend) —— ultralytics 多任务多系列 backend，覆盖 detection / segmentation(instance) / keypoint / obb 四 task × v8/v9/v10/v11/v12/v26/rt-detr 七系列，共 80 个有效预训练组合。`/setup.models[]` 按 task 拆 4 条目，`supported_variants` 走 series × size 两轴，按预训练矩阵严格过滤。`/predict` 零 adapter 命中 4 种 result type，结果直落平台 `apps/api/app/services/prediction.py::to_internal_shape` → internal Geometry。可作为新接入 backend 的首选骨架参考。
 
@@ -1342,7 +1266,7 @@ POST /projects/{pid}/ml-backends/{bid}/capabilities/refresh  # 强制重探 /set
 
 **最小 v1 参考实现**：见下文 echo-ml-backend。
 
-### 4.1.11 协议能力目录端点（v0.14.11）
+#### 4.1.11 协议能力目录端点（v0.14.11）
 
 > 决策见 [ADR-0037 — 协议能力目录与 backend 注册解耦](../adr/archive/0037-protocol-capability-catalog-decoupling.md)。
 
@@ -1423,7 +1347,7 @@ cd ../.. && pnpm codegen
 | `GET /v1/ml-capabilities/instances`                  | 注册实例探测 + `ml_backend_registry.health_meta` 合并 | docker-compose 启动或手动注册任一即可 | 实例层「现在跑着哪些 model 可用」         | 登录用户 |
 | `GET /projects/{pid}/ml-backends/{bid}/capabilities` | `ml_backend_registry.health_meta["capabilities"]`     | backend 注册并 health 探测后          | 实例层「该项目启用的 backend 暴露了什么」 | 项目成员 |
 
-### 4.1.12 实例能力清单端点（v0.14.11）
+#### 4.1.12 实例能力清单端点（v0.14.11）
 
 `GET /api/v1/ml-capabilities/instances` 从全局 `ml_backend_registry` 返回 connected backend 的 model 清单。env 配置的 backend 在启动 / 初始化时自动 upsert 为 `source="env"` 的一等注册项；超管手动注册的是 `source="manual"`。因此实例能力不再维护“env-only 临时探测 + 项目内重复注册”两套来源。
 
@@ -1479,7 +1403,7 @@ cd ../.. && pnpm codegen
 
 ---
 
-## 4.2 PredictionResult 运行时观测字段（v0.14.14）
+### 4.2 PredictionResult 运行时观测字段（v0.14.14）
 
 为了让前端把"猜测冷启动"换成"真信号"，`PredictionResult` 新增三个**可选**字段。语义只与本次请求挂钩，不影响存储与协议主路径。
 
@@ -1497,7 +1421,7 @@ cd ../.. && pnpm codegen
 
 ---
 
-## 4.3 `/health.pool` 统一 PoolStatus（v0.14.14）
+### 4.3 `/health.pool` 统一 PoolStatus（v0.14.14）
 
 v0.14.12 时三家 backend 的 `/health.pool` 字段各不相同（yolo 用 `pool.loaded[]`、gsam2 用 `pool.loaded_variants[]` + `per_variant_lru_ts`、sam3 用 `loaded: bool`）。v0.14.14 起统一为 `PoolStatus` 结构：
 
@@ -1538,7 +1462,7 @@ v0.14.12 时三家 backend 的 `/health.pool` 字段各不相同（yolo 用 `poo
 
 ---
 
-## 4.4 `POST /warmup`（可选，v0.14.14）
+### 4.4 `POST /warmup`（可选，v0.14.14）
 
 **用途**：把指定 variant 的权重显式加载到 pool，不消耗推理算力。模型市场"⚡ 预热"按钮、自动化预热脚本、CI 烟测时手动控制 pool warm 状态都走这个端点。
 
@@ -1807,8 +1731,88 @@ v0.14.15 是 protocol v2.1 minor bump，不是 v3。平台与内置 backend 保�
 
 ## 11. 参考实现
 
+> 适用读者：要把自家推理服务接入到本平台的工程师；项目管理员配置 ML Backend 时遇到调试问题。
+>
+> 平台侧实现：
+>
+> - 服务: `apps/api/app/services/ml_backend.py` · `ml_client.py`
+> - HTTP 接入点: `apps/api/app/api/v1/ml_backends.py`
+> - 数据模型: `apps/api/app/db/models/{ml_backend,prediction}.py`
+
 社区已有几种现成接入：
 
 - **Label Studio ML Backends 模板**（兼容平台 schema）：https://github.com/HumanSignal/label-studio-ml-backend
 - **GroundingDINO + SAM**：调研报告 [`docs/research/06-ai-patterns.md`](https://github.com/yyq19990828/ai-annotation-platform/blob/main/docs/research/06-ai-patterns.md) §模式 B
 - **X-AnyLabeling SAM 工厂**：调研报告 [`docs/research/04-x-anylabeling.md`](https://github.com/yyq19990828/ai-annotation-platform/blob/main/docs/research/04-x-anylabeling.md)
+
+## 全局注册表与项目启用
+
+ML Backend 走全局注册表模型（ADR-0044）：一个物理 backend = 全局 `ml_backend_registry` 一行 = 一份能力快照和一份 `max_concurrency` 配置；项目侧只做「启用」。本地 semaphore 在所有模式下提供单进程背压；当 `ML_BACKEND_ROUTER_MODE=enforce` 时，路由 ledger 使用同一上限发放 Redis route lease，把 API 与多个 Celery worker 收口到跨进程实例上限。GPU 仲裁的 effective mode、request lease、release latch 与逐资源 rollout 另行负责显存准入和驱逐（[ADR-0049](/dev/adr/archive/0049-cross-backend-gpu-memory-arbitration)），不能与请求路由模式互相替代。两层职责：
+
+- **全局层（超管）**：`ml_backend_registry`。URL / 鉴权 / `auth_method` / `auth_token` / `extra_params`（含 `max_concurrency`）/ `is_interactive` / `state` 等端点固有属性写在这里，所有启用该 backend 的项目共享。env 配置的 backend 启动时自动 upsert 为 `source=env` 注册项；env 删项时对应行置 `disconnected` 而非删除，保留历史 prediction 溯源。
+- **项目层（项目管理员）**：`project_ml_backend_pool` 关联表，仅记「启用 / 停用」+ 项目级变体覆盖（`default_variants`，pool 级）。多阶段编排里选不同 backend 跑不同阶段时，先在「管理 backend」面板里勾选启用，再到编排卡里选用即可。
+
+### 服务池与请求路由（ADR-0050）
+
+在全局注册表之上叠加一层**逻辑服务池**（`ml_backend_service_pools` + `ml_backend_pool_members`），把「项目请求一个逻辑能力」与「平台选择一个物理实例」拆成两个步骤。pool id 是逻辑请求身份，registry id 是物理执行身份，二者永不互换。
+
+- **一个 registry 实例同时最多属于一个服务池**。每个现有 registry 经迁移自动得到一个 singleton 服务池（`legacy_instance_id` 指向该 registry，off mode 下解析回原实例，行为与之前完全一致）。
+- **身份边界**：项目启用、项目主绑定和请求 lineage 使用 pool id；`preannotate_pipeline` 、`projects.default_variants` 以及 `users.preferences.ai` 中按 backend 分桶的公共配置仍使用 registry id，与当前 API schema 和前端注册表索引一致。派发时由 registry 的唯一成员关系解析所属 pool，不会在这两种 UUID 之间猜测或混用。
+- **能力等价合同**：指纹以 `/setup` 派生的真实 `models[]` 目录为主，包含协议/模型/权重版本、task、modality、请求合法性参数、variant 轴与组合、tracker 及 batchable 等稳定合同字段，列表按确定规则排序后计算 SHA-256。URL、展示名、GPU / VRAM / residency、动态类别等实例态字段不参与。singleton 在首次有效探活时建立指纹；后续漂移的成员自动 disabled。
+- **跨进程原子路由 ledger**（Redis namespace `ml-router:v1`，独立于 GPU 仲裁 `gpu-arbiter:v1`）：平滑加权轮询（SWRR）+ per-instance 并发上限 + 被动熔断（仅 transport failure 触发）+ route lease acquire/heartbeat/finish/cancel。
+- **双 ID 溯源**：`Prediction` / `FailedPrediction` 同时记录 `ml_backend_id`（实际执行的 selected instance）和 `ml_backend_pool_id`（requested pool）。多阶段聚合的 stage-level lineage 存 `PredictionMeta.extra.pipeline`。
+- **灰度**：`ML_BACKEND_ROUTER_MODE=off|observe|enforce`。off/observe 保持 legacy 实例派发（observe 额外记录 would-select 诊断，不门控）；enforce 用 router 选中实例并在 Redis / topology 不确定时 fail-closed。
+- **管理 API**：项目池绑定 `GET /projects/:id/ml-backends/pools/available` + `PUT /pools/:pool_id/enablement`；超管 pool/member CRUD + drain/resume `/admin/ml-integrations/service-pools/*`；读模型 `GET /admin/ml-integrations/{topology,runtime-snapshot}`。详见 [ADR-0050](/dev/adr/0050-ml-backend-service-pools-and-request-routing)。
+- **破坏性操作门禁**：纳管实例只有在 `router_mode=enforce`、成员精确为 `draining`、Redis 路由账本可用且清理过期 lease 后的 exact `route_inflight=0` 时，才允许卸载、移除成员或物理删除 registry。缺失、过期或不可读值都是未知，不能当作零。
+
+**没有项目级数量上限**。旧的 `max_ml_backends_per_project` 与多阶段 DAG 需 ≥2 backend 直接冲突，已退役；全局行的 `max_concurrency` 同时作为本地 semaphore 配置与 `ML_BACKEND_ROUTER_MODE=enforce` 的 Redis route lease 上限。路由模式为 off/observe 时 API 与多个 Celery worker 的并发仍会叠加；路由 enforce 时才由 route ledger 收口为真正的跨进程实例上限。新建项目不再有「复用 backend = 克隆一行」语义，统一走「在新项目里勾选启用某个已注册 backend」。
+
+平台 API 与 worker 直接消费共享 `aap-protocol-v2` lifecycle wire。`MLBackendClient` 已把 predict、交互预测、warmup、reload 与 unload 收口到同一个派发 context：预测先取得当前 event loop 的本地 semaphore，再进入 context，context 退出后才释放本地许可；health/setup 保持只读，不进入该边界。
+
+GPU `observe` 模式仍只在真实 HTTP 派发前计算非权威 `would-*` 快照。legacy unload
+另记只读事件，不能作为显存释放或预算减账证据。effective `off/observe` 不进入权威
+authority，也不添加 generation / admission token，因此可能加载的请求在 backend 侧仍按 legacy
+路径处理；非空 residency 保持 `generation=null, evictable=false`，不会被影子策略当成可驱逐真值。
+当前 context 已建立受管 header/scope 与结构化拒绝接缝：非法 grant 在 HTTP 前 fail-closed，
+authority context 也不能抑制 backend 错误或调用取消。五个受管业务入口会在完整 HTTP 响应
+返回后、状态或 JSON 解析前同步回报 `response_received`；未收到完整响应的传输超时、断连、
+取消或缺失回报则收敛为 `uncertain`。该 outcome 只表达传输边界，不声明 GPU residency，
+不能单独提交 allocation 终态。
+
+平台 signer、membership promotion、Redis admission lease、业务 token、Resident 快路、cold admission 与空闲
+victim 驱逐均已接入惰性 authority。cold 请求收到完整响应后会用新 challenge 探测，并在
+逐资源持久锁内把 Loading 分类为 Resident、CPU fallback、Unloaded 或保守 Unknown；无完整
+响应时不发探测，只收口 Unknown。cold 快照容量不足时，authority 只从同一完整
+`gpu_resource_id` 选择 exact Resident、可驱逐且零 lease 的空闲 victim，保护严格更高优先级，
+并按优先级、LRU 与 backend id 稳定排序。一个或多个 victim 依次完成受签 `/drain`、
+严格 ACK + 新鲜空闲证明、受签 `/unload` 与全空驻留证明后，才释放预算并以新
+challenge 重读 target cold subject。任一 phase 不确定即保守收口 Unknown 并停止继续驱逐；
+同路由响应丢失只做 exact owner/generation/phase/token 重放。FIFO 已接入；新 residency 只在首次可信
+Loading→Resident CAS 中按 Redis `TIME` 写入 `not_evict_before_ms`；proof reset 重建 Resident 时以固定
+`prepared_at_ms + cooldown` 保守恢复窗口。Python 快照选择与 Lua 原子选择都会排除未到期 victim，
+以上精确重放和 Resident 快路均不续期。cold authority 会继续持有 exact card ticket，
+按 Redis 快照给出的累计最早时刻在 admission deadline 与固定 ticket TTL 内有界等待；等待不续期，
+超时或取消会精确清票，只有 victim 已可驱逐时才为终态清理预留独立窗口。忙碌 victim 的
+Redis 原子地基已能在保留旧 lease 时关闭新 admission、进入 Draining，并支持零 lease 后 Unloading、
+更新 generation 的 Resident cancel CAS 与携带 lease 的保守 Unknown。authority 仅在空闲候选累计预算不足时
+选择 busy victim；严格 drain ACK 后，每轮分别读取新鲜 Redis lease 快照与新 challenge backend health，
+只有两域同时归零才进入 Unloading。busy-capable victim proof 严格绑定 fresh challenge、capability、membership、boot、
+generation、control/runtime epoch、resource identity 与稳定 pool-id 集合，同时允许旧
+workload 仍在 active/borrow。drain 后的 fresh health 仅使用单次 MVCC 快照只读区分
+`draining_busy`、`ready_to_unload` 与 `uncertain`；它不写 PostgreSQL/Redis，也不代替
+Redis lease-zero 门禁。
+
+Draining→Unloading 与 cancel 分别在同一逐资源 Redis transition owner 上原子冻结持久 `unload` / `cancel`
+分支；只有一个分支能成功，unload 已获胜时平台绝不发送 RESUME。工作超时、异常或调用方取消时，平台先以
+完全相同参数持久写入或重放 cancel intent，稳定签名后 arm cancel，再调用真实 `/drain/cancel`，最后用 strict
+ACK + fresh health 提交 Resident 或保守 Unknown。冻结 marker 不随 owner TTL 消失，只能由 exact 分支终态
+释放或 challenge-bound proof reset 清理；缺 key、mirror/branch/deadline 损坏均 fail-closed。DRAIN、双域等待
+与 UNLOAD 受工作 deadline 限制，owner 另保留 30 秒取消收尾窗口。以上状态与等待按完整
+`gpu_resource_id` 分片，单卡、多卡共用同一路径。参考环境的实物单卡、多卡与跨宿主门禁均已通过；
+各部署仍须用自身 Backend、模型制品与 GPU 拓扑完成验收，并由运维逐资源启用默认关闭的 release latch。
+五个受管 backend 在启动时同时检查 NVIDIA/CUDA/ROCm 可见设备配置；单索引、单 GPU/MIG UUID
+或显式无设备值可用，逗号多值与已暴露 GPU runtime 的无界 `all` 集合会直接使服务启动失败。
+
+派发只认逐卡 effective mode，不能被全局 desired mode 提前短路：demotion 握手完成前，即使 desired 已回到 off/observe，旧 effective=enforce 的卡仍发送受管请求。多卡部分灰度时，已知卡 B 的 off/observe 不受卡 A enforce 影响；但缺失或未知 resource 的注册项无法安全归属，只要任一卡真正 effective enforce 就在 backend HTTP 前返回 `gpu_config_invalid`。仅带新鲜 connected health 且明确 `configured_device=cpu`、没有任何 GPU 正证据的 null-claim backend 可豁免。未注册 URL 的 smoke-test 始终可做只读 health；任一卡进入 effective enforce 后，raw reload 同样在 backend HTTP 前拒绝。
+
+---

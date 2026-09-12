@@ -6,9 +6,11 @@ status: stable
 last_reviewed: 2026-07-29
 ---
 
-# 系统全景
+# 系统全景 {#系统全景}
 
-## 物理架构
+本页解释平台的主要运行关系：浏览器如何进入 API，API 何时把工作交给 Celery Worker，以及 PostgreSQL、Redis、对象存储和 ML 推理服务分别承担什么职责。先看物理边界，再沿一条请求路径阅读逻辑分层。
+
+## 物理架构 {#物理架构}
 
 <ExcalidrawDiagram
   src="/diagrams/dev/concepts/system-overview.svg"
@@ -16,9 +18,26 @@ last_reviewed: 2026-07-29
   caption="平台物理架构与主要通信边界"
 />
 
-## 逻辑分层
+## 关键数据流 {#关键数据流}
 
-### 后端（apps/api）
+一条典型操作沿着“浏览器 → API → Worker → 数据与外部服务”流动：
+
+1. 浏览器通过 Nginx 访问 FastAPI API，并携带 JWT；需要长时间处理的工作由 API 入队，不在浏览器请求中等待完成。
+2. API 负责权限、参数校验和事务边界，将同步写入落到 PostgreSQL，将异步工作交给对应的 Celery Worker。
+3. Worker 从 Redis 消费任务，调用对象存储或 ML 推理服务，完成后把结果写回 PostgreSQL，并通过通知让前端刷新状态。
+
+平台内的主要路径如下：
+
+- 用户登录 → JWT → 前端存内存 + refresh token cookie
+- 标注提交 → API 写 `annotations` 表 → 触发 Celery 异步任务（IoU 计算 / 通知）
+- AI 预标注 → API 入队 Celery → Worker 调外部 ML 服务 → 写回 `annotations`（source=ai）
+- 数据导出 → API 入队 Celery → Worker 拼装 → 写 MinIO → 通知前端下载链接
+
+详见 [数据流](./data-flow)。
+
+## 逻辑分层 {#逻辑分层}
+
+### 后端（apps/api） {#后端-apps-api}
 
 ```
 app/
@@ -43,7 +62,7 @@ app/
 
 详见 [后端分层](./backend-layers)。
 
-### 前端（apps/web）
+### 前端（apps/web） {#前端-apps-web}
 
 ```
 src/
@@ -66,17 +85,15 @@ src/
 
 详见 [前端分层](./frontend-layers) 与 [工作台 Shell 架构](./workbench-shell)。
 
-## 关键数据流
-
-- 用户登录 → JWT → 前端存内存 + refresh token cookie
-- 标注提交 → API 写 `annotations` 表 → 触发 Celery 异步任务（IoU 计算 / 通知）
-- AI 预标注 → API 入队 Celery → Worker 调外部 ML 服务 → 写回 `annotations`（source=ai）
-- 数据导出 → API 入队 Celery → Worker 拼装 → 写 MinIO → 通知前端下载链接
-
-详见 [数据流](./data-flow)。
-
-## 不在主流程中的组件
+## 不在主流程中的组件 {#不在主流程中的组件}
 
 - **Sentry** — 前后端错误监控
 - **Prometheus** — API 指标 `/metrics`
 - **结构化日志** — `structlog`，输出 JSON 给 ELK
+
+这些组件提供观测和排障能力，不改变浏览器、API、Worker 与数据服务之间的主流程。需要继续追踪某一层时，可从以下页面进入：
+
+- [后端分层](./backend-layers)：API、服务、数据库和 Worker 的职责边界
+- [前端分层](./frontend-layers)：页面、组件、API wrapper 与状态管理
+- [工作台 Shell 架构](./workbench-shell)：工作台外壳与模式切换
+- [部署拓扑](./deployment-topology)：进程、容器和外部依赖的部署关系

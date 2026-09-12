@@ -63,6 +63,17 @@
   --vp-c-text-1: var(--home-paper);
   --vp-c-text-2: rgba(244, 241, 232, 0.72);
 }
+/* The expanded menu uses a reading surface, independent of the hero header. */
+.docs-home-page .VPNavScreen {
+  --vp-c-text-1: var(--docs-text-1);
+  --vp-c-text-2: var(--docs-text-2);
+  --vp-c-text-3: var(--docs-text-3);
+}
+.docs-home-page .VPNavScreen .container {
+  margin: 0 auto !important;
+  max-width: 288px !important;
+  padding: 24px 0 96px !important;
+}
 .docs-home-page .VPNavBar {
   /* 默认实心墨黑半透底：no-JS / reduced-motion / 已滚动到 paper 章节时都可读。
      （不用 backdrop-filter：sticky 元素上的实时模糊每帧重算，拖累低端设备。）
@@ -80,6 +91,14 @@
 /* 首页「快速开始」CTA 改纸张白底 + 皇家蓝字：皇家蓝 Hero 上的蓝药丸会融进背景，
    纸张药丸与 Hero 主 CTA「打开使用文档」同款，在透明/墨黑两种 nav 态下都醒目。 */
 .docs-home-page .VPNavBarMenu > .VPNavBarMenuLink:last-child {
+  display: flex;
+  align-items: center;
+  height: 30px;
+  margin: auto 0 auto 10px;
+  padding: 0 15px;
+  border-radius: 999px;
+  font-weight: 600;
+  transition: background-color 0.2s ease;
   background: var(--home-paper);
   color: var(--home-blue) !important;
 }

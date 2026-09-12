@@ -5,27 +5,40 @@ export function createDevSidebar(
 ): DefaultTheme.SidebarItem[] {
   return [
     {
-      text: "起步",
+      text: "开始开发",
       items: [
         { text: "概览", link: "/dev/" },
-        { text: "测试指南", link: "/dev/testing" },
-        { text: "发布流程", link: "/dev/release" },
-      ],
-    },
-    {
-      text: "教程",
-      collapsed: true,
-      items: [
         { text: "本地开发", link: "/dev/tutorials/local-dev" },
         { text: "第一个贡献", link: "/dev/tutorials/first-contribution" },
+        { text: "ML Backend 接入教程", link: "/dev/ml-backend/starter" },
       ],
     },
     {
-      text: "概念（架构）",
+      text: "操作指南",
+      collapsed: true,
+      items: [
+        { text: "编写文档", link: "/dev/how-to/write-documentation" },
+        { text: "新增 API 端点", link: "/dev/how-to/add-api-endpoint" },
+        { text: "新增前端页面", link: "/dev/how-to/add-page" },
+        { text: "Alembic 迁移", link: "/dev/how-to/add-migration" },
+        { text: "调试 Celery", link: "/dev/how-to/debug-celery" },
+        { text: "调试 WebSocket", link: "/dev/how-to/debug-websocket" },
+        { text: "更新截图", link: "/dev/how-to/update-screenshots" },
+        { text: "更新 Excalidraw 图表", link: "/dev/how-to/update-excalidraw-diagrams" },
+        {
+          text: "迁移内联样式到 CSS Modules",
+          link: "/dev/how-to/migrate-inline-style-to-css-modules",
+        },
+        { text: "视频工作台性能回归", link: "/dev/how-to/video-workbench-performance-regression" },
+      ],
+    },
+    {
+      text: "系统架构",
       collapsed: true,
       items: [
         {
           text: "总览",
+          collapsed: true,
           items: [
             { text: "架构地图", link: "/dev/concepts/" },
             { text: "系统全景", link: "/dev/concepts/overview" },
@@ -33,6 +46,7 @@ export function createDevSidebar(
         },
         {
           text: "业务域模型",
+          collapsed: true,
           items: [
             { text: "项目模块", link: "/dev/concepts/project-module" },
             { text: "批次模块", link: "/dev/concepts/batch-module" },
@@ -45,6 +59,7 @@ export function createDevSidebar(
         },
         {
           text: "工作流与协作机制",
+          collapsed: true,
           items: [
             { text: "状态机总览", link: "/dev/concepts/state-machines" },
             { text: "Scheduler 与派题", link: "/dev/concepts/scheduler-and-task-dispatch" },
@@ -57,6 +72,7 @@ export function createDevSidebar(
         },
         {
           text: "端到端业务流程",
+          collapsed: true,
           items: [
             { text: "批次生命周期（端到端）", link: "/dev/concepts/batch-lifecycle-end-to-end" },
             { text: "AI 预标注接管", link: "/dev/concepts/ai-preannotate-handoff" },
@@ -67,6 +83,7 @@ export function createDevSidebar(
         },
         {
           text: "AI 与推理子系统",
+          collapsed: true,
           items: [
             { text: "预标注流水线", link: "/dev/concepts/prediction-pipeline" },
             { text: "视频 AI 追踪", link: "/dev/concepts/video-ai-tracking" },
@@ -75,6 +92,7 @@ export function createDevSidebar(
         },
         {
           text: "平台实现架构",
+          collapsed: true,
           items: [
             { text: "后端分层", link: "/dev/concepts/backend-layers" },
             { text: "前端分层", link: "/dev/concepts/frontend-layers" },
@@ -94,23 +112,6 @@ export function createDevSidebar(
       ],
     },
     {
-      text: "How-to",
-      items: [
-        { text: "新增 API 端点", link: "/dev/how-to/add-api-endpoint" },
-        { text: "新增前端页面", link: "/dev/how-to/add-page" },
-        { text: "Alembic 迁移", link: "/dev/how-to/add-migration" },
-        { text: "调试 Celery", link: "/dev/how-to/debug-celery" },
-        { text: "调试 WebSocket", link: "/dev/how-to/debug-websocket" },
-        { text: "更新截图", link: "/dev/how-to/update-screenshots" },
-        { text: "更新 Excalidraw 图表", link: "/dev/how-to/update-excalidraw-diagrams" },
-        {
-          text: "迁移内联样式到 CSS Modules",
-          link: "/dev/how-to/migrate-inline-style-to-css-modules",
-        },
-        { text: "视频工作台性能回归", link: "/dev/how-to/video-workbench-performance-regression" },
-      ],
-    },
-    {
       text: "SDK 与 CLI",
       collapsed: true,
       items: [
@@ -126,7 +127,6 @@ export function createDevSidebar(
       collapsed: true,
       items: [
         { text: "ML Backend 协议", link: "/dev/reference/ml-backend-protocol" },
-        { text: "ML Backend 接入教程", link: "/dev/ml-backend/starter" },
         { text: "YOLO 导入适配", link: "/dev/reference/yolo-import" },
         { text: "WebSocket 协议", link: "/dev/reference/ws-protocol" },
         { text: "视频帧服务", link: "/dev/reference/video-frame-service" },
@@ -142,6 +142,14 @@ export function createDevSidebar(
         { text: "内部 API 端点", link: "/dev/reference/internal-api-endpoints" },
         { text: "生成物归属", link: "/dev/reference/generated-artifacts" },
         { text: "高清营销资产", link: "/dev/reference/marketing-asset-catalog" },
+      ],
+    },
+    {
+      text: "测试与发布",
+      collapsed: true,
+      items: [
+        { text: "测试指南", link: "/dev/testing" },
+        { text: "发布流程", link: "/dev/release" },
       ],
     },
     {
@@ -162,7 +170,7 @@ export function createDevSidebar(
       ],
     },
     {
-      text: "ADR（架构决策）",
+      text: "架构决策",
       collapsed: true,
       items: adrSidebarItems,
     },

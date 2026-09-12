@@ -37,23 +37,21 @@ const resolved = computed(() => (external.value ? props.href : withBase(props.hr
 .doc-link-card {
   display: flex;
   align-items: flex-start;
-  gap: 14px;
+  gap: 12px;
   height: 100%;
-  padding: 18px 18px 18px 20px;
+  padding: 20px;
   border: 1px solid var(--vp-c-border);
-  border-radius: 12px;
-  background: var(--vp-c-bg-soft);
+  border-radius: var(--docs-radius, 8px);
+  background: var(--vp-c-bg-elv);
   text-decoration: none !important;
   color: var(--vp-c-text-1);
   transition:
     border-color 0.22s ease,
-    transform 0.22s ease,
     background-color 0.22s ease;
 }
 .doc-link-card:hover {
   border-color: var(--vp-c-brand-1);
-  background: var(--vp-c-bg);
-  transform: translateY(-3px);
+  background: var(--vp-c-brand-soft);
 }
 .dlc-icon {
   font-size: 22px;
@@ -71,6 +69,7 @@ const resolved = computed(() => (external.value ? props.href : withBase(props.hr
   font-size: 15px;
   color: var(--vp-c-text-1);
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
@@ -83,7 +82,7 @@ const resolved = computed(() => (external.value ? props.href : withBase(props.hr
   color: var(--vp-c-brand-1);
 }
 .dlc-desc {
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
   color: var(--vp-c-text-2);
 }
@@ -91,12 +90,9 @@ const resolved = computed(() => (external.value ? props.href : withBase(props.hr
   margin-left: auto;
   align-self: center;
   color: var(--vp-c-text-3);
-  transition:
-    transform 0.22s ease,
-    color 0.22s ease;
+  transition: color 0.22s ease;
 }
 .doc-link-card:hover .dlc-arrow {
   color: var(--vp-c-brand-1);
-  transform: translateX(3px);
 }
 </style>
