@@ -459,8 +459,8 @@ async function pinPixels(page: Page, point: Point) {
       .map((canvas) => {
         const scaleX = canvas.width / canvas.clientWidth;
         const scaleY = canvas.height / canvas.clientHeight;
-        // Sample inside the circle, away from the white central "i" glyph and outer ring.
-        const px = Math.round((media.x + media.w * (x + 0.0072)) * scaleX);
+        // The pin has a fixed 8px screen radius; sample clear of its glyph and stroke at any zoom.
+        const px = Math.round((media.x + media.w * x + 4) * scaleX);
         const py = Math.round((media.y + media.h * y) * scaleY);
         const rgba = [...canvas.getContext("2d")!.getImageData(px, py, 1, 1).data];
         return rgba;
@@ -642,6 +642,11 @@ test.describe("video Issue source-frame ownership", () => {
     request,
     issueCase: fixture,
   }) => {
+    const layoutSaved = page.waitForResponse(
+      (response) =>
+        pathOf(response.url()) === "/api/v1/auth/me/preferences" &&
+        response.request().method() === "PATCH",
+    );
     await open(page, fixture);
     await seek(page, 3);
     await openIssues(page);
@@ -652,6 +657,8 @@ test.describe("video Issue source-frame ownership", () => {
     await expect(page.getByTestId("issue-create-frame")).toBeHidden();
     const issue = await saveIssue(page, fixture);
     expect(issue).toMatchObject({ anchor_type: "task", anchor_position: null });
+    // Direct task creation can finish before the debounced layout write; preserve it on reload.
+    expect((await layoutSaved).ok()).toBe(true);
     await page.reload();
     await expect(stage(page)).toBeVisible({ timeout: 25_000 });
     await seek(page, 8);
