@@ -1,7 +1,7 @@
 /**
  * v0.8.8 · AnnotationHistoryTimeline 单测：loading / empty / audit / comment / 多种 detail 格式。
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { AnnotationHistoryTimeline } from "../AnnotationHistoryTimeline";
 import type { HistoryEntry } from "@/api/annotationHistory";
@@ -117,5 +117,33 @@ describe("AnnotationHistoryTimeline", () => {
   it("未识别的 action 退化为原始 action 字符串", () => {
     render(<AnnotationHistoryTimeline entries={[audit("unknown.action")]} />);
     expect(screen.getByText("unknown.action")).toBeInTheDocument();
+  });
+
+  it("显示明确的历史范围并支持填充展示", () => {
+    const { container } = render(
+      <AnnotationHistoryTimeline
+        entries={[audit("task.submit")]}
+        presentation="fill"
+        scopeLabel="本任务历史"
+      />,
+    );
+    expect(screen.getByText("本任务历史")).toBeInTheDocument();
+    expect(container.querySelector('[data-presentation="fill"]')).toBeInTheDocument();
+  });
+
+  it("错误状态不是空状态，并提供重试", () => {
+    const onRetry = vi.fn();
+    render(
+      <AnnotationHistoryTimeline
+        entries={[]}
+        error={new Error("network")}
+        onRetry={onRetry}
+        scopeLabel="当前标注历史"
+      />,
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("无法加载历史记录");
+    screen.getByRole("button", { name: "重试" }).click();
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("暂无历史记录")).not.toBeInTheDocument();
   });
 });

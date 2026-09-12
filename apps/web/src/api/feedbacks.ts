@@ -5,6 +5,8 @@
  * pixel anchor 携带相对 0-1 坐标，并可选携带 Mask 质检区域与边界摘要。
  */
 import { apiClient } from "./client";
+import type { CommentCanvasDrawing, CommentMention } from "./comments";
+import type { DiscussionActions } from "@/pages/Workbench/state/discussionTypes";
 
 export type FeedbackKind = "issue" | "comment" | "reject" | "bug";
 export type FeedbackAnchorType = "project" | "task" | "annotation" | "pixel" | "point_cloud";
@@ -80,12 +82,17 @@ export interface AnnotationFeedback {
   author_id: string;
   author_name: string | null;
   attachments: Array<Record<string, unknown>>;
+  /** Optional for old API payloads; native task comments from current servers include it. */
+  mentions?: CommentMention[];
+  canvas_drawing?: CommentCanvasDrawing | null;
   thread_parent_id: string | null;
   is_active: boolean;
   resolved_at: string | null;
   resolved_by_id: string | null;
   created_at: string;
   updated_at: string | null;
+  /** Server-computed capabilities; absent only for legacy mocked/old payloads. */
+  actions?: DiscussionActions;
 }
 
 export type PixelAnchoredFeedback = AnnotationFeedback & {
@@ -104,6 +111,17 @@ export function hasPixelAnchor(feedback: AnnotationFeedback): feedback is PixelA
 export interface AnnotationFeedbackListPage {
   items: AnnotationFeedback[];
   next_cursor: string | null;
+  /** Exact count for this request when include_counts=true. */
+  total?: number | null;
+  /** Exact status counts for this request, independent of status filtering. */
+  status_counts?: Partial<Record<FeedbackStatus, number>> | null;
+}
+
+export interface AnnotationFeedbackThreadPage {
+  root: AnnotationFeedback;
+  items: AnnotationFeedback[];
+  next_cursor: string | null;
+  total: number;
 }
 
 export interface CreateFeedbackPayload {
@@ -117,6 +135,8 @@ export interface CreateFeedbackPayload {
   title?: string | null;
   body: string;
   attachments?: Array<Record<string, unknown>>;
+  mentions?: CommentMention[];
+  canvas_drawing?: CommentCanvasDrawing | null;
   thread_parent_id?: string | null;
 }
 
@@ -125,6 +145,7 @@ export interface PatchFeedbackPayload {
   severity?: FeedbackSeverity;
   title?: string;
   body?: string;
+  mentions?: CommentMention[];
 }
 
 export interface ListFeedbacksParams {
@@ -136,9 +157,18 @@ export interface ListFeedbacksParams {
   status?: FeedbackStatus;
   limit?: number;
   cursor?: string;
+  /** Return only root feedbacks (the Workbench Issue list sets this explicitly). */
+  root_only?: boolean;
+  /** Include exact total and status_counts in the page response. */
+  include_counts?: boolean;
 }
 
-function buildQuery(params: ListFeedbacksParams): string {
+export interface ListFeedbackThreadParams {
+  limit?: number;
+  cursor?: string;
+}
+
+function buildQuery(params: ListFeedbacksParams | ListFeedbackThreadParams): string {
   const sp = new URLSearchParams();
   const entries = Object.entries(params) as Array<[string, unknown]>;
   for (const [k, v] of entries) {
@@ -162,4 +192,11 @@ export const feedbacksApi = {
 
   reply: (id: string, payload: { body: string; attachments?: Array<Record<string, unknown>> }) =>
     apiClient.post<AnnotationFeedback>(`/feedbacks/${id}/replies`, payload),
+
+  /** Read an active root Issue and its flat, paged descendant conversation. */
+  thread: (rootFeedbackId: string, params: ListFeedbackThreadParams = {}, signal?: AbortSignal) =>
+    apiClient.get<AnnotationFeedbackThreadPage>(
+      `/feedbacks/${rootFeedbackId}/thread${buildQuery(params)}`,
+      { signal },
+    ),
 };

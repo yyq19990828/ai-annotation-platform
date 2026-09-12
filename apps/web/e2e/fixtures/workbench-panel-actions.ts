@@ -1,5 +1,37 @@
 import { expect, type Page } from "@playwright/test";
 
+export async function canvasBottomDivider(
+  page: Page,
+): Promise<{ x: number; y: number; top: number; height: number }> {
+  let divider: { x: number; y: number; top: number; height: number } | null = null;
+  await expect
+    .poll(async () => {
+      divider = await page.evaluate(() => {
+        const canvas = document
+          .querySelector('[data-workbench-panel="canvas"]')
+          ?.getBoundingClientRect();
+        if (!canvas) return null;
+        const x = canvas.x + canvas.width / 2;
+        const sash = Array.from(document.querySelectorAll(".dv-sash:not(.dv-disabled)"))
+          .map((node) => node.getBoundingClientRect())
+          .find(
+            (rect) =>
+              rect.width > 40 &&
+              rect.height <= 5 &&
+              rect.left < x &&
+              rect.right > x &&
+              Math.abs(rect.y - canvas.bottom) < 6,
+          );
+        return sash
+          ? { x, y: sash.y + sash.height / 2, top: canvas.y, height: canvas.height }
+          : null;
+      });
+      return divider !== null;
+    }, "canvas bottom divider is ready")
+    .toBe(true);
+  return divider!;
+}
+
 /** Exercise the same close and drag controls as the workbench user. */
 export async function panelCommand(page: Page, title: string, name: string): Promise<void> {
   const tab = page.getByRole("tab", { name: title, exact: true });

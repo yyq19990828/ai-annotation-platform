@@ -168,6 +168,58 @@ describe("VideoKonvaStage · konva mock", () => {
     );
   });
 
+  it("renders a current-frame annotation comment badge and removes it when counts are gated off", () => {
+    const annotation: AnnotationResponse = {
+      id: "video-ann-1",
+      task_id: "task-1",
+      project_id: "project-1",
+      user_id: "user-1",
+      source: "manual",
+      annotation_type: "video_bbox",
+      class_name: "car",
+      geometry: {
+        type: "video_bbox",
+        frame_index: 0,
+        x: 0.1,
+        y: 0.2,
+        w: 0.3,
+        h: 0.2,
+      },
+      confidence: null,
+      parent_prediction_id: null,
+      parent_annotation_id: null,
+      lead_time: null,
+      is_active: true,
+      ground_truth: false,
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: null,
+    };
+    const view = render(
+      <VideoKonvaStage
+        manifest={manifest}
+        annotations={[annotation]}
+        annotationCommentCounts={{ [annotation.id]: 1 }}
+      />,
+    );
+    expect(screen.getByRole("button", { name: `标注 ${annotation.id} 有 1 条评论` })).toBeVisible();
+    view.rerender(
+      <VideoKonvaStage
+        manifest={manifest}
+        annotations={[annotation]}
+        annotationCommentCounts={undefined}
+      />,
+    );
+    expect(screen.queryByTestId("annotation-comment-badges")).toBeNull();
+    view.rerender(
+      <VideoKonvaStage
+        manifest={manifest}
+        annotations={[annotation]}
+        annotationCommentCounts={{ [annotation.id]: 1 }}
+      />,
+    );
+    expect(screen.getByRole("button", { name: `标注 ${annotation.id} 有 1 条评论` })).toBeVisible();
+  });
+
   it("loading 态显示占位,不渲染 Stage", () => {
     render(<VideoKonvaStage manifest={undefined} isLoading />);
     expect(document.querySelector('[data-testid="video-konva-stage"]')).toBeNull();

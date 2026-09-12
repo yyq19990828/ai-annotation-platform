@@ -11,6 +11,8 @@ interface Props {
   open: boolean;
   onClose: () => void;
   onSave: (drawing: CommentCanvasDrawing | null) => void;
+  /** Report the composed drawing immediately, including an in-progress pointer. */
+  onDraftChange?: (drawing: CommentCanvasDrawing | null) => void;
   initial?: CommentCanvasDrawing | null;
   /** 背景图（可选）：reviewer 在原图缩略上绘制更直观；未提供则白底。 */
   backgroundUrl?: string | null;
@@ -42,10 +44,15 @@ function aspectRatioPercent(w: number | null | undefined, h: number | null | und
  *  Annotator 端用 CanvasDrawingPreview 只读渲染。 */
 type Shape = NonNullable<CommentCanvasDrawing["shapes"]>[number];
 
+function cloneShapes(shapes: readonly Shape[]): Shape[] {
+  return shapes.map((shape) => ({ ...shape, points: [...shape.points] }));
+}
+
 export function CanvasDrawingEditor({
   open,
   onClose,
   onSave,
+  onDraftChange,
   initial,
   backgroundUrl,
   imageWidth,
@@ -54,6 +61,11 @@ export function CanvasDrawingEditor({
   const [shapes, setShapes] = useState<Shape[]>(initial?.shapes ?? []);
   const [stroke, setStroke] = useState<string>("#ef4444");
   const [drawing, setDrawing] = useState<number[] | null>(null); // 当前正在画的折线点 [x1, y1, x2, y2, ...]
+  const shapesRef = useRef<Shape[]>(initial?.shapes ?? []);
+  const drawingRef = useRef<number[] | null>(null);
+  const strokeRef = useRef(stroke);
+  const drawingIdRef = useRef<string | null>(null);
+  const wasOpenRef = useRef(false);
   // 同步标记是否正在绘制：pointerdown 里同步置位，不受 React 渲染时机影响。
   // 不能用闭包里的 `drawing` 做 move 守卫——pointerdown 的 setDrawing 尚未 flush 时，
   // 紧跟的快速 pointermove 会命中旧闭包 (drawing===null) 被丢弃，导致笔画开头缺失/跟不上手。
@@ -73,10 +85,46 @@ export function CanvasDrawingEditor({
     ),
   );
 
-  // 重置 shapes（每次打开同步 initial）
+  // Open is a hydration boundary. While the modal is open, autosave updates
+  // `initial` on every pointer event, but must not replace local state and
+  // steal the in-progress stroke or move the pointer between renders.
   useEffect(() => {
-    if (open) setShapes(initial?.shapes ?? []);
+    if (open && !wasOpenRef.current) {
+      const nextShapes = cloneShapes(initial?.shapes ?? []);
+      shapesRef.current = nextShapes;
+      drawingRef.current = null;
+      drawingIdRef.current = null;
+      setShapes(nextShapes);
+      setDrawing(null);
+      drawingActiveRef.current = false;
+    }
+    wasOpenRef.current = open;
   }, [open, initial]);
+
+  const composeDrawing = useCallback(
+    (nextShapes = shapesRef.current, nextDrawing = drawingRef.current) => {
+      const composed = [...nextShapes];
+      if (nextDrawing && nextDrawing.length >= 2) {
+        composed.push({
+          type: "line",
+          points: [...nextDrawing],
+          stroke: strokeRef.current,
+          id: drawingIdRef.current,
+          started_at: strokeStartedAtRef.current,
+          ended_at: null,
+        });
+      }
+      return composed.length > 0 ? { shapes: cloneShapes(composed) } : null;
+    },
+    [],
+  );
+
+  const reportDraft = useCallback(
+    (nextShapes = shapesRef.current, nextDrawing = drawingRef.current) => {
+      onDraftChange?.(composeDrawing(nextShapes, nextDrawing));
+    },
+    [composeDrawing, onDraftChange],
+  );
 
   const toNormalized = useCallback((e: React.PointerEvent<SVGSVGElement>): [number, number] => {
     const svg = svgRef.current;
@@ -92,61 +140,103 @@ export function CanvasDrawingEditor({
     (e.target as Element).setPointerCapture?.(e.pointerId);
     const [x, y] = toNormalized(e);
     drawingActiveRef.current = true;
-    setDrawing([x, y]);
+    const nextDrawing = [x, y];
+    drawingRef.current = nextDrawing;
+    drawingIdRef.current = randomId();
+    setDrawing(nextDrawing);
     strokeStartedAtRef.current = Date.now();
+    reportDraft(shapesRef.current, nextDrawing);
   };
 
   const handleMove = (e: React.PointerEvent<SVGSVGElement>) => {
     if (!drawingActiveRef.current) return;
     const [x, y] = toNormalized(e);
-    setDrawing((d) => (d ? [...d, x, y] : d));
+    const current = drawingRef.current;
+    if (!current) return;
+    const nextDrawing = [...current, x, y];
+    drawingRef.current = nextDrawing;
+    setDrawing(nextDrawing);
+    reportDraft(shapesRef.current, nextDrawing);
   };
 
   const handleUp = () => {
     drawingActiveRef.current = false;
-    if (drawing && drawing.length >= 4) {
+    const currentDrawing = drawingRef.current;
+    let nextShapes = shapesRef.current;
+    if (currentDrawing && currentDrawing.length >= 4) {
       const startedAt = strokeStartedAtRef.current ?? Date.now();
       const endedAt = Date.now();
-      setShapes((prev) => [
-        ...prev,
+      nextShapes = [
+        ...shapesRef.current,
         {
           type: "line",
-          points: drawing,
-          stroke,
-          id: randomId(),
+          points: [...currentDrawing],
+          stroke: strokeRef.current,
+          id: drawingIdRef.current ?? randomId(),
           started_at: startedAt,
           ended_at: endedAt,
         },
-      ]);
+      ];
+      shapesRef.current = nextShapes;
+      setShapes(nextShapes);
     }
     strokeStartedAtRef.current = null;
+    drawingRef.current = null;
+    drawingIdRef.current = null;
     setDrawing(null);
+    reportDraft(nextShapes, null);
   };
 
   const handleClear = () => {
-    setShapes([]);
+    const nextShapes: Shape[] = [];
+    shapesRef.current = nextShapes;
+    drawingRef.current = null;
+    drawingIdRef.current = null;
+    drawingActiveRef.current = false;
+    strokeStartedAtRef.current = null;
+    setShapes(nextShapes);
     setDrawing(null);
+    reportDraft(nextShapes, null);
   };
 
   const handleUndo = () => {
-    setShapes((prev) => prev.slice(0, -1));
+    const nextShapes = shapesRef.current.slice(0, -1);
+    shapesRef.current = nextShapes;
+    setShapes(nextShapes);
+    reportDraft(nextShapes);
   };
 
   const handleSave = () => {
-    onSave(shapes.length > 0 ? { shapes } : null);
+    const nextDrawing = composeDrawing();
+    onDraftChange?.(nextDrawing);
+    onSave(nextDrawing);
+    onClose();
+  };
+
+  const handleClose = () => {
+    // Radix unmounts the modal body on Escape/close. The synchronous draft
+    // channel is the last chance to retain a pointer that has not completed.
+    reportDraft();
     onClose();
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="画布批注" width={680}>
-      <div className={styles.editor}>
+    <Modal open={open} onClose={handleClose} title="画布批注" width={680} stopEscapePropagation>
+      <div
+        className={styles.editor}
+        data-workbench-discussion
+        data-state={open ? "open" : "closed"}
+      >
         <div className={styles.toolbar}>
           <span className={styles.muted}>颜色：</span>
           {STROKE_COLORS.map((c) => (
             <button
               key={c.value}
               type="button"
-              onClick={() => setStroke(c.value)}
+              onClick={() => {
+                strokeRef.current = c.value;
+                setStroke(c.value);
+              }}
               aria-label={c.label}
               className={stroke === c.value ? styles.swatchActive : styles.swatch}
               data-color={c.value}
@@ -160,6 +250,7 @@ export function CanvasDrawingEditor({
             viewBox="0 0 1 1"
             preserveAspectRatio="none"
             className={styles.drawingSvg}
+            data-testid="canvas-drawing-editor"
             onPointerDown={handleDown}
             onPointerMove={handleMove}
             onPointerUp={handleUp}

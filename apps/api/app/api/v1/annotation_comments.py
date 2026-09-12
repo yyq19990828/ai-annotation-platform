@@ -9,15 +9,16 @@
 """
 
 import base64
+import binascii
 import uuid
 from datetime import datetime
+from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import RedirectResponse
-from sqlalchemy import and_, or_, select
+from fastapi.responses import JSONResponse, RedirectResponse
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import (
-    assert_project_visible,
     get_db,
     require_roles,
     require_active_task_actor,
@@ -30,14 +31,26 @@ from app.db.models.user import User
 from app.schemas.annotation_comment import (
     ATTACHMENT_KEY_PREFIX,
     AnnotationCommentCreate,
+    AnnotationCommentCountsOut,
     AnnotationCommentListPage,
     AnnotationCommentOut,
     AnnotationCommentUpdate,
     CommentAttachmentUploadInitRequest,
     CommentAttachmentUploadInitResponse,
+    TaskDiscussionPage,
 )
 from app.services.audit import AuditAction, AuditService
+from app.services.discussion_notifications import (
+    prepare_annotation_comment_mention_notifications,
+)
+from app.services.discussion_actions import discussion_actions
+from app.services.notification import NotificationService
 from app.services.storage import storage_service
+from app.services.task_discussion import (
+    list_task_discussion,
+    require_visible_annotation,
+    require_visible_task,
+)
 
 router = APIRouter(dependencies=[Depends(require_active_task_actor)])
 
@@ -117,6 +130,7 @@ async def list_comments(
     current_user: User = Depends(require_roles(*_ALL_ANNOTATORS)),
 ):
     """v0.8.8 · 旧端点保留作向后兼容；新调用方走 ``/comments/page`` keyset 分页。"""
+    await require_visible_annotation(db, annotation_id, current_user)
     rows = (
         await db.execute(
             select(AnnotationComment, User.name)
@@ -142,8 +156,89 @@ def _decode_comment_cursor(raw: str) -> tuple[datetime, uuid.UUID]:
         decoded = base64.urlsafe_b64decode(raw.encode()).decode()
         ts_part, id_hex = decoded.split("|", 1)
         return datetime.fromisoformat(ts_part), uuid.UUID(id_hex)
-    except (ValueError, IndexError) as exc:
+    except (ValueError, IndexError, UnicodeError, binascii.Error) as exc:
         raise HTTPException(status_code=400, detail="invalid_cursor") from exc
+
+
+@router.get(
+    "/tasks/{task_id}/discussion/page",
+    response_model=TaskDiscussionPage,
+)
+async def list_task_discussion_page(
+    task_id: uuid.UUID,
+    scope: Literal["all", "task", "annotation"] = Query("all"),
+    annotation_id: uuid.UUID | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    cursor: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ALL_ANNOTATORS)),
+):
+    """Read the authoritative, mixed comments feed for one visible task."""
+
+    if scope not in {"all", "task", "annotation"}:
+        raise HTTPException(status_code=422, detail="invalid discussion scope")
+    if scope == "annotation" and annotation_id is None:
+        raise HTTPException(
+            status_code=422,
+            detail="annotation_id is required for annotation scope",
+        )
+    if scope != "annotation" and annotation_id is not None:
+        raise HTTPException(
+            status_code=422,
+            detail="annotation_id is only valid for annotation scope",
+        )
+
+    task = await require_visible_task(db, task_id, current_user)
+    if scope == "annotation":
+        # Resolve the persisted annotation against the requested task.  This also
+        # intentionally permits soft-deleted annotations for historical comments.
+        await require_visible_annotation(
+            db,
+            annotation_id,
+            current_user,
+            task_id=task_id,
+        )
+
+    return await list_task_discussion(
+        db,
+        task=task,
+        user=current_user,
+        scope=scope,
+        annotation_id=annotation_id,
+        limit=limit,
+        cursor=cursor,
+    )
+
+
+@router.get(
+    "/tasks/{task_id}/discussion/annotation-counts",
+    response_model=AnnotationCommentCountsOut,
+)
+async def list_annotation_comment_counts(
+    task_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_ALL_ANNOTATORS)),
+):
+    """Return sparse counts for active comments on available saved annotations."""
+
+    task = await require_visible_task(db, task_id, current_user)
+    rows = (
+        await db.execute(
+            select(AnnotationComment.annotation_id, func.count(AnnotationComment.id))
+            .join(Annotation, Annotation.id == AnnotationComment.annotation_id)
+            .where(
+                Annotation.task_id == task_id,
+                Annotation.project_id == task.project_id,
+                Annotation.is_active.is_(True),
+                Annotation.was_cancelled.is_(False),
+                AnnotationComment.is_active.is_(True),
+            )
+            .group_by(AnnotationComment.annotation_id)
+        )
+    ).all()
+    return AnnotationCommentCountsOut(
+        counts={str(annotation_id): int(count) for annotation_id, count in rows}
+    )
 
 
 @router.get(
@@ -161,11 +256,7 @@ async def list_task_comments_paged(
 
     聚合该 task 下所有 annotation 的 active 评论, DESC(created_at, id) keyset 分页.
     """
-    from app.db.models.task import Task as TaskModel
-
-    task = await db.get(TaskModel, task_id)
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+    await require_visible_task(db, task_id, current_user)
     q = (
         select(AnnotationComment, User.name)
         .join(User, User.id == AnnotationComment.author_id)
@@ -214,6 +305,7 @@ async def list_comments_paged(
     单条标注 100+ 评论时初始化卡顿明显（CommentsPanel 全量拉），改为「最新 50
     + 加载更早」按需拉取。返回 ``next_cursor=None`` 即末尾。
     """
+    await require_visible_annotation(db, annotation_id, current_user)
     q = (
         select(AnnotationComment, User.name)
         .join(User, User.id == AnnotationComment.author_id)
@@ -258,20 +350,23 @@ async def create_comment(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ALL_ANNOTATORS)),
 ):
-    ann = await db.get(Annotation, annotation_id)
-    if not ann or not ann.is_active:
-        raise HTTPException(status_code=404, detail="Annotation not found")
+    _ann, task = await require_visible_annotation(
+        db,
+        annotation_id,
+        current_user,
+        require_active=True,
+    )
 
     # mentions 必须是项目成员
-    if data.mentions and ann.project_id is not None:
+    if data.mentions:
         await _validate_project_members(
-            db, ann.project_id, [m.user_id for m in data.mentions]
+            db, task.project_id, [m.user_id for m in data.mentions]
         )
 
     comment = AnnotationComment(
         id=uuid.uuid4(),
         annotation_id=annotation_id,
-        project_id=ann.project_id,
+        project_id=task.project_id,
         author_id=current_user.id,
         body=data.body,
         mentions=[m.model_dump(by_alias=True, mode="json") for m in data.mentions],
@@ -288,12 +383,10 @@ async def create_comment(
     db.add(comment)
     await db.flush()
     # ADR-0027 第二段 · 双写到 annotation_feedbacks (kind=comment, anchor=annotation)
-    if ann.project_id is not None and ann.task_id is not None:
+    if task.project_id is not None:
         from app.services.feedback import FeedbackService
 
-        await FeedbackService(db).mirror_annotation_comment(
-            comment, task_id=ann.task_id
-        )
+        await FeedbackService(db).mirror_annotation_comment(comment, task_id=task.id)
     await AuditService.log(
         db,
         actor=current_user,
@@ -303,7 +396,7 @@ async def create_comment(
         request=request,
         status_code=201,
         detail={
-            "project_id": str(ann.project_id) if ann.project_id else None,
+            "project_id": str(task.project_id),
             "comment_id": str(comment.id),
             "preview": data.body[:120],
             "mention_count": len(data.mentions),
@@ -312,7 +405,15 @@ async def create_comment(
             "has_anchor": data.anchor is not None,
         },
     )
+    pending_notifications = await prepare_annotation_comment_mention_notifications(
+        db,
+        comment=comment,
+        task=task,
+        actor=current_user,
+        mentioned_user_ids=[mention.user_id for mention in data.mentions],
+    )
     await db.commit()
+    await NotificationService(db).publish_committed(pending_notifications)
     await db.refresh(comment)
     return _to_out(comment, current_user.name)
 
@@ -327,11 +428,17 @@ async def patch_comment(
     c = await db.get(AnnotationComment, comment_id)
     if not c or not c.is_active:
         raise HTTPException(status_code=404, detail="Comment not found")
-    # 仅作者或管理员可改
-    if c.author_id != current_user.id and current_user.role not in {
-        UserRole.SUPER_ADMIN,
-        UserRole.PROJECT_ADMIN,
-    }:
+    await require_visible_annotation(db, c.annotation_id, current_user)
+    actions = discussion_actions(
+        "annotation_comment",
+        "comment",
+        is_author=c.author_id == current_user.id,
+        is_admin=current_user.role in {UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN},
+        is_reviewer=current_user.role == UserRole.REVIEWER,
+        is_accessible=True,
+        can_reply=False,
+    )
+    if not actions.edit:
         raise HTTPException(
             status_code=403, detail="Only the author can edit this comment"
         )
@@ -364,10 +471,17 @@ async def delete_comment(
     c = await db.get(AnnotationComment, comment_id)
     if not c or not c.is_active:
         raise HTTPException(status_code=404, detail="Comment not found")
-    if c.author_id != current_user.id and current_user.role not in {
-        UserRole.SUPER_ADMIN,
-        UserRole.PROJECT_ADMIN,
-    }:
+    await require_visible_annotation(db, c.annotation_id, current_user)
+    actions = discussion_actions(
+        "annotation_comment",
+        "comment",
+        is_author=c.author_id == current_user.id,
+        is_admin=current_user.role in {UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN},
+        is_reviewer=current_user.role == UserRole.REVIEWER,
+        is_accessible=True,
+        can_reply=False,
+    )
+    if not actions.delete:
         raise HTTPException(
             status_code=403, detail="Only the author can delete this comment"
         )
@@ -401,9 +515,12 @@ async def comment_attachment_upload_init(
 
     storage_key 形如 `comment-attachments/{aid}/{uuid}-{filename}`，固定前缀使得后端可
     校验 attachments[].storageKey；同时让 MinIO 桶层级清晰。"""
-    ann = await db.get(Annotation, annotation_id)
-    if not ann or not ann.is_active:
-        raise HTTPException(status_code=404, detail="Annotation not found")
+    _ann, _task = await require_visible_annotation(
+        db,
+        annotation_id,
+        current_user,
+        require_active=True,
+    )
     safe_name = data.file_name.replace("/", "_").replace("\\", "_")
     storage_key = f"{ATTACHMENT_KEY_PREFIX}{annotation_id}/{uuid.uuid4()}-{safe_name}"
     upload_url = storage_service.generate_upload_url(storage_key, data.content_type)
@@ -418,18 +535,24 @@ async def comment_attachment_upload_init(
 async def comment_attachment_download(
     annotation_id: uuid.UUID,
     key: str,
+    as_json: bool = False,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ALL_ANNOTATORS)),
 ):
-    """v0.6.3 P0：评论附件下载。校验 key 前缀防越权 + 项目可见性，302 跳转预签名 URL。"""
+    """Authorize the original annotation before issuing a short-lived download URL.
+
+    Legacy clients retain the redirect. Bearer-authenticated browser callers
+    request JSON first so a normal link does not omit the authorization header
+    or forward it to the object-storage redirect target.
+    """
     expected_prefix = f"{ATTACHMENT_KEY_PREFIX}{annotation_id}/"
     if not key.startswith(expected_prefix):
         raise HTTPException(status_code=400, detail="invalid attachment key")
-    ann = await db.get(Annotation, annotation_id)
-    if not ann or not ann.is_active:
-        raise HTTPException(status_code=404, detail="Annotation not found")
-    if ann.project_id is not None:
-        await assert_project_visible(ann.project_id, db, current_user)
+    # Resolve the annotation's actual task/project.  The path parameter is only an
+    # identifier; access must not be granted from a stale denormalized project_id.
+    await require_visible_annotation(db, annotation_id, current_user)
     # 评论附件私链要求严格 5 分钟有效期, 不走缓存对齐 (否则可能被拉长到 ~15 分钟)。
     url = storage_service.generate_download_url(key, expires_in=300, align=False)
+    if as_json:
+        return JSONResponse({"download_url": url})
     return RedirectResponse(url, status_code=302)

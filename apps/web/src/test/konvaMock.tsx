@@ -63,6 +63,8 @@ const PASSTHROUGH_PROPS = [
   "dash",
   "closed",
   "text",
+  "align",
+  "verticalAlign",
   "fontSize",
   "fontFamily",
   "padding",

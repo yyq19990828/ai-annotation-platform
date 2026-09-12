@@ -89,8 +89,8 @@ export function ReviewWorkbench({
   }, [taskId, task?.status]);
 
   const selectedAnnotation = useMemo(
-    () => (annotationsData ?? []).find((a) => a.id === selectedId) ?? null,
-    [annotationsData, selectedId],
+    () => (annotationsData ?? []).find((a) => a.id === selectedId && a.task_id === taskId) ?? null,
+    [annotationsData, selectedId, taskId],
   );
 
   // v0.11.27 · 遮挡样式 key 并集（跨工具单位），复核界面与工作台保持一致的遮挡视觉。
@@ -261,9 +261,12 @@ export function ReviewWorkbench({
         <aside className="w-80 overflow-y-auto border-l border-border bg-card">
           <CommentsPanel
             annotationId={selectedAnnotation.id}
+            annotationTaskId={selectedAnnotation.task_id}
             projectId={selectedAnnotation.project_id}
             currentUserId={meUserId}
             backgroundUrl={imagePreviewUrl}
+            imageWidth={task?.image_width}
+            imageHeight={task?.image_height}
             enableCanvasDrawing
             annotationClassById={annotationClassById}
             onSelectAnnotation={setSelectedId}

@@ -8,6 +8,9 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.schemas._jsonb_types import CanvasDrawing, Mention
+from app.schemas.discussion_actions import DiscussionActions
+
 FeedbackKind = Literal["issue", "comment", "reject", "bug"]
 FeedbackAnchorType = Literal["project", "task", "annotation", "pixel", "point_cloud"]
 FeedbackStatus = Literal["open", "resolved", "wont_fix"]
@@ -147,7 +150,9 @@ class AnnotationFeedbackCreate(BaseModel):
     severity: FeedbackSeverity | None = None
     title: str | None = Field(default=None, max_length=500)
     body: str
-    attachments: list[dict[str, Any]] = []
+    attachments: list[dict[str, Any]] = Field(default_factory=list)
+    mentions: list[Mention] = Field(default_factory=list)
+    canvas_drawing: CanvasDrawing | None = None
     thread_parent_id: UUID | None = None
 
     @model_validator(mode="after")
@@ -199,6 +204,38 @@ class AnnotationFeedbackCreate(BaseModel):
                 raise ValueError(
                     "point_cloud anchor requires point_cloud_quality_issue_id"
                 )
+        has_drawing = (
+            self.canvas_drawing is not None and len(self.canvas_drawing.shapes) > 0
+        )
+        if self.canvas_drawing is not None:
+            if not has_drawing:
+                raise ValueError("canvas_drawing must contain at least one shape")
+            if not (
+                self.kind == "comment"
+                and self.anchor_type == "task"
+                and self.thread_parent_id is None
+            ):
+                raise ValueError("canvas_drawing requires a native root task comment")
+        # Native task comments are the only task discussion source that does not
+        # carry an annotation target.
+        # Rich annotation/pixel/point-cloud callers historically support an
+        # attachment-only body, so do not impose this rule on those records.
+        if (
+            self.kind == "comment"
+            and self.anchor_type == "task"
+            and not self.attachments
+            and not self.body.strip()
+            and not has_drawing
+        ):
+            raise ValueError(
+                "task comments must contain text, an attachment, or a drawing"
+            )
+        if self.mentions and not (
+            self.kind == "comment"
+            and self.anchor_type == "task"
+            and self.thread_parent_id is None
+        ):
+            raise ValueError("mentions require a native root task comment")
         return self
 
 
@@ -207,11 +244,22 @@ class AnnotationFeedbackPatch(BaseModel):
     severity: FeedbackSeverity | None = None
     title: str | None = Field(default=None, max_length=500)
     body: str | None = None
+    mentions: list[Mention] | None = None
 
 
 class AnnotationFeedbackReply(BaseModel):
     body: str
-    attachments: list[dict[str, Any]] = []
+    attachments: list[dict[str, Any]] = Field(default_factory=list)
+    mentions: list[Mention] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_canvas_drawing(cls, value):
+        if isinstance(value, dict) and value.get("canvas_drawing") is not None:
+            raise ValueError("canvas_drawing is not supported for feedback replies")
+        if isinstance(value, dict) and value.get("mentions"):
+            raise ValueError("mentions are not supported for feedback replies")
+        return value
 
 
 class AnnotationFeedbackOut(BaseModel):
@@ -229,12 +277,15 @@ class AnnotationFeedbackOut(BaseModel):
     author_id: UUID
     author_name: str | None = None
     attachments: list[dict[str, Any]] = []
+    mentions: list[Mention] = []
+    canvas_drawing: CanvasDrawing | None = None
     thread_parent_id: UUID | None = None
     is_active: bool
     resolved_at: datetime | None = None
     resolved_by_id: UUID | None = None
     created_at: datetime
     updated_at: datetime | None = None
+    actions: DiscussionActions = Field(default_factory=DiscussionActions)
 
     @field_validator("anchor_position", mode="before")
     @classmethod
@@ -248,3 +299,12 @@ class AnnotationFeedbackOut(BaseModel):
 class AnnotationFeedbackListPage(BaseModel):
     items: list[AnnotationFeedbackOut]
     next_cursor: str | None = None
+    total: int | None = None
+    status_counts: dict[str, int] | None = None
+
+
+class AnnotationFeedbackThreadPage(BaseModel):
+    root: AnnotationFeedbackOut
+    items: list[AnnotationFeedbackOut]
+    next_cursor: str | None = None
+    total: int

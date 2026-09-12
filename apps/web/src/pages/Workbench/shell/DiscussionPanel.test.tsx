@@ -1,9 +1,44 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { StrictMode } from "react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const commentCounts = vi.hoisted(() => ({
+  data: { pages: [{ total: 0 }] } as { pages: { total: number }[] } | undefined,
+  isPending: false,
+  isError: false,
+}));
+vi.mock("@/hooks/useTaskDiscussion", () => ({ useTaskDiscussion: () => commentCounts }));
 
 vi.mock("./CommentsPanel", () => ({
-  CommentsPanel: ({ forceTab }: { forceTab: string }) => (
-    <div data-testid={`comments-${forceTab}`} />
+  CommentsPanel: ({
+    forceTab,
+    annotationDiscussionRequest,
+    onAnnotationDiscussionRequestConsumed,
+    commentFocus,
+  }: {
+    forceTab: string;
+    annotationDiscussionRequest?: { requestId: string } | null;
+    onAnnotationDiscussionRequestConsumed?: (requestId: string) => void;
+    commentFocus?: { requestId: string; commentId: string; source?: string } | null;
+  }) => (
+    <>
+      <div
+        data-testid={`comments-${forceTab}`}
+        data-annotation-request={annotationDiscussionRequest?.requestId ?? ""}
+        data-comment-focus={commentFocus?.commentId ?? ""}
+        data-comment-source={commentFocus?.source ?? ""}
+      />
+      {annotationDiscussionRequest && (
+        <button
+          type="button"
+          onClick={() =>
+            onAnnotationDiscussionRequestConsumed?.(annotationDiscussionRequest.requestId)
+          }
+        >
+          consume annotation request
+        </button>
+      )}
+    </>
   ),
 }));
 vi.mock("./DiscussionIssuesTab", () => ({
@@ -14,6 +49,8 @@ vi.mock("./MaskQcPanel", () => ({
 }));
 
 import { DiscussionPanel } from "./DiscussionPanel";
+import { useActiveIssueStore } from "../state/useActiveIssueStore";
+import type { DiscussionNavigation } from "../state/useDiscussionNavigation";
 
 const baseProps = {
   annotationId: null,
@@ -22,7 +59,220 @@ const baseProps = {
   currentUserId: "user-1",
 };
 
+beforeEach(() => {
+  useActiveIssueStore.getState().closeIssueDetail();
+  commentCounts.data = { pages: [{ total: 0 }] };
+  commentCounts.isPending = false;
+  commentCounts.isError = false;
+});
+
 describe("DiscussionPanel Mask 质检", () => {
+  it("passes a guarded annotation discussion request and clears it after consumption", () => {
+    const onConsumed = vi.fn();
+    const request = {
+      requestId: "annotation-request",
+      projectId: baseProps.projectId,
+      taskId: baseProps.taskId,
+      annotationId: "annotation-1",
+    };
+    render(
+      <DiscussionPanel
+        {...baseProps}
+        annotationId="annotation-1"
+        annotationDiscussionRequest={request}
+        onAnnotationDiscussionRequestConsumed={onConsumed}
+      />,
+    );
+    expect(screen.getByTestId("comments-comments")).toHaveAttribute(
+      "data-annotation-request",
+      request.requestId,
+    );
+    expect(onConsumed).toHaveBeenCalledWith(request.requestId);
+    fireEvent.click(screen.getByRole("button", { name: "consume annotation request" }));
+    expect(screen.getByTestId("comments-comments")).toHaveAttribute("data-annotation-request", "");
+  });
+
+  it("activates a validated notification once without replay on tab changes", () => {
+    const navigation: DiscussionNavigation = {
+      state: {
+        status: "ready",
+        requestId: "request",
+        target: { kind: "issue", issueId: "root-a", replyId: "reply-a" },
+      },
+      cancel: vi.fn(),
+      retry: vi.fn(),
+      dismiss: vi.fn(),
+      consume: vi.fn(),
+    };
+    const view = render(<DiscussionPanel {...baseProps} navigation={navigation} />);
+    expect(screen.getByRole("tab", { name: "问题" })).toHaveAttribute("aria-selected", "true");
+    expect(useActiveIssueStore.getState().detailTargetId).toBe("root-a");
+    expect(navigation.consume).toHaveBeenCalledOnce();
+    expect(navigation.consume).toHaveBeenCalledWith("request");
+    const tick = useActiveIssueStore.getState().detailRequestTick;
+    fireEvent.click(screen.getByRole("tab", { name: "历史" }));
+    view.rerender(
+      <DiscussionPanel
+        {...baseProps}
+        navigation={{ ...navigation, state: { status: "complete", requestId: "request" } }}
+      />,
+    );
+    expect(screen.getByRole("tab", { name: "历史" })).toHaveAttribute("aria-selected", "true");
+    expect(useActiveIssueStore.getState().detailRequestTick).toBe(tick);
+    expect(navigation.consume).toHaveBeenCalledTimes(1);
+  });
+
+  it("activates a task-comment notification in the comments tab without opening Issue detail", () => {
+    const navigation: DiscussionNavigation = {
+      state: {
+        status: "ready",
+        requestId: "task-comment-request",
+        target: { kind: "task_comment", commentId: "comment-a" },
+      },
+      cancel: vi.fn(),
+      retry: vi.fn(),
+      dismiss: vi.fn(),
+      consume: vi.fn(),
+    };
+    render(<DiscussionPanel {...baseProps} navigation={navigation} />);
+    expect(screen.getByRole("tab", { name: "评论" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("comments-comments")).toHaveAttribute(
+      "data-comment-focus",
+      "comment-a",
+    );
+    expect(screen.getByTestId("comments-comments")).toHaveAttribute(
+      "data-comment-source",
+      "feedback",
+    );
+    expect(useActiveIssueStore.getState().detailTargetId).toBeNull();
+    expect(navigation.consume).toHaveBeenCalledWith("task-comment-request");
+  });
+
+  it("exposes navigation progress cancellation and recoverable failure controls", () => {
+    const navigation: DiscussionNavigation = {
+      state: {
+        status: "loading",
+        requestId: "request",
+        message: "正在查找通知中的回复",
+        checked: 50,
+      },
+      cancel: vi.fn(),
+      retry: vi.fn(),
+      dismiss: vi.fn(),
+      consume: vi.fn(),
+    };
+    const view = render(<DiscussionPanel {...baseProps} navigation={navigation} />);
+    expect(screen.getByRole("status")).toHaveTextContent("已检查 50 条");
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(navigation.cancel).toHaveBeenCalledOnce();
+    view.rerender(
+      <DiscussionPanel
+        {...baseProps}
+        navigation={{
+          ...navigation,
+          state: { status: "error", requestId: "request", message: "讨论加载失败，请重试" },
+        }}
+      />,
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("讨论加载失败");
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    expect(navigation.retry).toHaveBeenCalledOnce();
+    expect(navigation.dismiss).toHaveBeenCalledOnce();
+    expect(useActiveIssueStore.getState().detailTargetId).toBeNull();
+  });
+
+  it("retires the old task activation even while the Issues tab is unmounted", () => {
+    const view = render(<DiscussionPanel {...baseProps} allowProjectIssueScope />);
+    act(() =>
+      useActiveIssueStore.getState().openIssueDetail("root-a", {
+        projectId: baseProps.projectId,
+        taskId: baseProps.taskId,
+      }),
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "问题" }));
+    fireEvent.click(screen.getByRole("tab", { name: "历史" }));
+    expect(useActiveIssueStore.getState().detailTargetId).toBe("root-a");
+    view.rerender(<DiscussionPanel {...baseProps} taskId="task-2" allowProjectIssueScope />);
+    fireEvent.click(screen.getByRole("tab", { name: "问题" }));
+    expect(useActiveIssueStore.getState().detailTargetId).toBeNull();
+  });
+
+  it("keeps an explicit project-scope request across tabs but retires it on route unmount", async () => {
+    const view = render(<DiscussionPanel {...baseProps} allowProjectIssueScope />);
+    act(() =>
+      useActiveIssueStore.getState().openIssueDetail("root-b", {
+        projectId: baseProps.projectId,
+        taskId: "another-task",
+      }),
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "历史" }));
+    fireEvent.click(screen.getByRole("tab", { name: "问题" }));
+    expect(useActiveIssueStore.getState().detailTargetId).toBe("root-b");
+    view.unmount();
+    await waitFor(() => expect(useActiveIssueStore.getState().detailTargetId).toBeNull());
+  });
+
+  it("preserves a current request through StrictMode replay and does not clear a replacement request", async () => {
+    useActiveIssueStore.getState().openIssueDetail("root-before-mount", {
+      projectId: baseProps.projectId,
+      taskId: baseProps.taskId,
+    });
+    const view = render(
+      <StrictMode>
+        <DiscussionPanel {...baseProps} />
+      </StrictMode>,
+    );
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(useActiveIssueStore.getState().detailTargetId).toBe("root-before-mount");
+    view.unmount();
+    useActiveIssueStore.getState().openIssueDetail("new-route-request", {
+      projectId: baseProps.projectId,
+      taskId: "task-2",
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(useActiveIssueStore.getState().detailTargetId).toBe("new-route-request");
+  });
+
+  it("distinguishes an exact zero from pending and failed Issue counts", () => {
+    const view = render(<DiscussionPanel {...baseProps} openIssueCount={0} />);
+    expect(screen.getByRole("tab", { name: "问题" })).toHaveTextContent(/^问题$/);
+    view.rerender(<DiscussionPanel {...baseProps} openIssueCount={null} openIssueCountLoading />);
+    expect(screen.getByRole("tab", { name: "问题 正在加载未解决数量" })).toHaveTextContent("…");
+    view.rerender(<DiscussionPanel {...baseProps} openIssueCount={null} openIssueCountError />);
+    expect(screen.getByRole("tab", { name: "问题 未解决数量暂不可用" })).toHaveTextContent("?");
+  });
+
+  it("shows neutral comment and red issue superscript counts, capped at 9+ with exact accessible totals", () => {
+    commentCounts.data = { pages: [{ total: 12 }] };
+    const view = render(<DiscussionPanel {...baseProps} openIssueCount={25} />);
+    const comments = screen.getByRole("tab", { name: "评论 12 条评论" });
+    const issues = screen.getByRole("tab", { name: "问题 25 个未解决" });
+    expect(within(comments).getByTitle("12 条评论")).toHaveTextContent("9+");
+    expect(within(comments).getByTitle("12 条评论")).toHaveClass("text-foreground", "-top-1");
+    expect(within(issues).getByTitle("25 个未解决")).toHaveTextContent("9+");
+    expect(within(issues).getByTitle("25 个未解决")).toHaveClass("text-status-danger", "-top-1");
+    fireEvent.click(issues);
+    expect(comments).toHaveTextContent("9+");
+    commentCounts.data = { pages: [{ total: 9 }] };
+    view.rerender(<DiscussionPanel {...baseProps} openIssueCount={1} />);
+    expect(screen.getByTitle("9 条评论")).toHaveTextContent(/^9$/);
+    expect(screen.getByTitle("1 个未解决")).toHaveTextContent(/^1$/);
+    commentCounts.data = undefined;
+    commentCounts.isPending = true;
+    view.rerender(<DiscussionPanel {...baseProps} taskId="task-2" openIssueCount={0} />);
+    expect(screen.queryByTitle("9 条评论")).not.toBeInTheDocument();
+    expect(screen.getByTitle("正在加载评论数量")).toHaveTextContent("…");
+    commentCounts.isPending = false;
+    commentCounts.isError = true;
+    view.rerender(<DiscussionPanel {...baseProps} taskId="task-2" openIssueCount={0} />);
+    expect(screen.getByTitle("评论数量暂不可用")).toHaveTextContent("?");
+  });
+
   it("把 Mask 质检与人工 Issue 作为独立页签", () => {
     render(<DiscussionPanel {...baseProps} maskQc={{} as never} />);
 
@@ -30,7 +280,7 @@ describe("DiscussionPanel Mask 质检", () => {
     expect(screen.getByTestId("mask-qc-panel")).toBeTruthy();
     expect(screen.queryByTestId("human-issues")).toBeNull();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Issue" }));
+    fireEvent.click(screen.getByRole("tab", { name: "问题" }));
     expect(screen.getByTestId("human-issues")).toBeTruthy();
     expect(screen.queryByTestId("mask-qc-panel")).toBeNull();
   });
@@ -51,5 +301,39 @@ describe("DiscussionPanel Mask 质检", () => {
     render(<DiscussionPanel {...baseProps} maskQc={{ activeIssue: { id: "issue-1" } } as never} />);
     expect(screen.getByRole("tab", { name: "Mask 质检" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByTestId("mask-qc-panel")).toBeTruthy();
+  });
+
+  it("关联页签和面板，并支持方向键与 Home/End 导航", () => {
+    render(<DiscussionPanel {...baseProps} />);
+    expect(screen.getAllByRole("tab").map((element) => element.textContent)).toEqual([
+      "评论",
+      "问题",
+      "历史",
+    ]);
+    const comments = screen.getByRole("tab", { name: "评论" });
+    expect(screen.getByRole("tabpanel")).toHaveAttribute("aria-labelledby", comments.id);
+    expect(comments).toHaveAttribute("aria-controls", screen.getByRole("tabpanel").id);
+    comments.focus();
+    fireEvent.keyDown(comments, { key: "ArrowRight" });
+    const issues = screen.getByRole("tab", { name: "问题" });
+    expect(issues).toHaveFocus();
+    expect(issues).toHaveAttribute("aria-selected", "true");
+    expect(comments).toHaveAttribute("tabindex", "-1");
+    fireEvent.keyDown(issues, { key: "End" });
+    const history = screen.getByRole("tab", { name: "历史" });
+    expect(history).toHaveFocus();
+    fireEvent.keyDown(history, { key: "Home" });
+    expect(comments).toHaveFocus();
+  });
+
+  it("将收起按钮放在页签列表外，并可通过键盘切换展开", () => {
+    render(<DiscussionPanel {...baseProps} />);
+    const collapse = screen.getByTestId("discussion-toggle-collapsed");
+    expect(collapse.closest('[role="tablist"]')).toBeNull();
+    fireEvent.click(collapse);
+    expect(screen.queryByRole("tabpanel")).toBeNull();
+    fireEvent.keyDown(screen.getByRole("tab", { name: "评论" }), { key: "ArrowRight" });
+    expect(screen.getByRole("tabpanel")).toBeTruthy();
+    expect(screen.getByTestId("human-issues")).toBeTruthy();
   });
 });

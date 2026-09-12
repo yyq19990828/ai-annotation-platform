@@ -77,18 +77,17 @@ describe("IssueCreateModal", () => {
     });
   });
 
-  it("freezes the opening anchor while allowing coordinate edits", () => {
+  it("freezes the opening anchor and does not expose editable coordinates", () => {
     const view = setup();
     view.rerender(
       <IssueCreateModal {...view.props} prefilledAnchor={{ x: 0.8, y: 0.9, frame: 17 }} />,
     );
-    expect((screen.getByPlaceholderText("x (0-1)") as HTMLInputElement).value).toBe("0.200");
-    expect((screen.getByPlaceholderText("y (0-1)") as HTMLInputElement).value).toBe("0.400");
+    expect(screen.queryByPlaceholderText("x (0-1)")).toBeNull();
+    expect(screen.queryByPlaceholderText("y (0-1)")).toBeNull();
     expect(screen.getByTestId("issue-create-frame").textContent).toBe("源帧 F 3");
-    fireEvent.change(screen.getByPlaceholderText("x (0-1)"), { target: { value: "0.6" } });
     fillBody();
     submit();
-    expect(requests[0].payload.anchor_position).toEqual({ x: 0.6, y: 0.4, frame: 3 });
+    expect(requests[0].payload.anchor_position).toEqual({ x: 0.2, y: 0.4, frame: 3 });
   });
 
   it("copies the input anchor instead of retaining a mutable parent object", () => {
@@ -110,10 +109,10 @@ describe("IssueCreateModal", () => {
     expect(requests[0].payload.anchor_position).toEqual({ x: 0.2, y: 0.4 });
   });
 
-  it("clearing both coordinates creates a task issue with a null anchor", () => {
-    setup();
-    fireEvent.change(screen.getByPlaceholderText("x (0-1)"), { target: { value: "" } });
-    fireEvent.change(screen.getByPlaceholderText("y (0-1)"), { target: { value: "" } });
+  it("uses an explicit task intent with a null anchor", () => {
+    setup({ anchorMode: "task", prefilledAnchor: null });
+    expect(screen.queryByPlaceholderText("x (0-1)")).toBeNull();
+    expect(screen.queryByPlaceholderText("y (0-1)")).toBeNull();
     expect(screen.queryByTestId("issue-create-frame")).toBeNull();
     fillBody();
     submit();
@@ -134,37 +133,21 @@ describe("IssueCreateModal", () => {
     expect(requests[0].payload).toMatchObject({ anchor_type: "task", anchor_position: null });
   });
 
-  it("keeps manual image pixel coordinates available without a prefilled anchor", () => {
-    setup({ prefilledAnchor: null });
-    fireEvent.change(screen.getByPlaceholderText("x (0-1)"), { target: { value: "0.5" } });
-    fireEvent.change(screen.getByPlaceholderText("y (0-1)"), { target: { value: "0.6" } });
+  it("requires a confirmed point for pixel intent", () => {
+    setup({ anchorMode: "pixel", prefilledAnchor: null });
+    expect(screen.queryByPlaceholderText("x (0-1)")).toBeNull();
+    expect(screen.queryByPlaceholderText("y (0-1)")).toBeNull();
+    expect(screen.getByText("尚未确认画布点，请关闭后使用「在画布选点」。")).toBeTruthy();
     fillBody();
     submit();
-    expect(requests[0].payload).toMatchObject({
-      anchor_type: "pixel",
-      anchor_position: { x: 0.5, y: 0.6 },
-    });
+    expect(requests).toHaveLength(0);
   });
 
-  it("restores the frozen source frame when coordinates are reentered", () => {
+  it("retains the frozen source frame and point in the submission snapshot", () => {
     setup();
-    for (const axis of ["x", "y"]) {
-      fireEvent.change(screen.getByPlaceholderText(`${axis} (0-1)`), { target: { value: "" } });
-    }
-    fireEvent.change(screen.getByPlaceholderText("x (0-1)"), { target: { value: "0.7" } });
-    fireEvent.change(screen.getByPlaceholderText("y (0-1)"), { target: { value: "0.9" } });
     fillBody();
     submit();
-    expect(requests[0].payload.anchor_position).toEqual({ x: 0.7, y: 0.9, frame: 3 });
-  });
-
-  it("rejects a partial pixel anchor instead of silently changing it to task scope", () => {
-    setup();
-    fireEvent.change(screen.getByPlaceholderText("y (0-1)"), { target: { value: "" } });
-    fillBody();
-    submit();
-    expect(mutate).not.toHaveBeenCalled();
-    expect(screen.getByText("x/y 必须在 0-1 范围;留空则按任务级 issue 创建")).toBeTruthy();
+    expect(requests[0].payload.anchor_position).toEqual({ x: 0.2, y: 0.4, frame: 3 });
   });
 
   it("preserves form input and the same source frame after a failed mutation", () => {
@@ -332,6 +315,61 @@ describe("IssueCreateModal", () => {
     });
   });
 
+  it("shows a short object identity and clears only the association", () => {
+    setup({
+      prefilledAnchor: {
+        x: 0.2,
+        y: 0.4,
+        annotationId: "annotation-123456",
+        annotationLabel: "车辆",
+      },
+    });
+    expect(screen.getByTestId("issue-create-location-summary")).toHaveTextContent(
+      "对象 车辆 · anno…3456",
+    );
+    fireEvent.click(screen.getByTestId("issue-clear-object"));
+    expect(screen.getByTestId("issue-create-location-summary")).toHaveTextContent(
+      "画布位置 x 0.200 · y 0.400",
+    );
+    expect(screen.queryByTestId("issue-clear-object")).toBeNull();
+    fillBody();
+    submit();
+    expect(requests[0].payload.annotation_id).toBeUndefined();
+    expect(requests[0].payload.anchor_position).toEqual({ x: 0.2, y: 0.4 });
+  });
+
+  it("clears video object metadata while preserving the source frame and view", () => {
+    setup({
+      prefilledAnchor: {
+        x: 0.3,
+        y: 0.4,
+        frame: 7,
+        annotationId: "annotation-123456",
+        annotationLabel: "车辆",
+        videoContext: {
+          schema_version: 1,
+          track_id: "track-1",
+          annotation_version: 3,
+          viewport: { center_x: 0.4, center_y: 0.5, zoom: 2 },
+        },
+      },
+    });
+    fireEvent.click(screen.getByTestId("issue-clear-object"));
+    expect(screen.getByTestId("issue-context-object")).toHaveTextContent("未关联对象");
+    fillBody();
+    submit();
+    expect(requests[0].payload.annotation_id).toBeUndefined();
+    expect(requests[0].payload.anchor_position).toEqual({
+      x: 0.3,
+      y: 0.4,
+      frame: 7,
+      video_context: {
+        schema_version: 1,
+        viewport: { center_x: 0.4, center_y: 0.5, zoom: 2 },
+      },
+    });
+  });
+
   it.each([
     ["131", "160"],
     ["120", "129"],
@@ -357,8 +395,9 @@ describe("IssueCreateModal", () => {
     expect(screen.getByRole("alert").textContent).toContain("包含 F 130");
   });
 
-  it("omits object and context when clearing the pixel anchor to create a task-only issue", () => {
+  it("omits object and context for an explicit task-only issue", () => {
     setup({
+      anchorMode: "task",
       prefilledAnchor: {
         x: 0.3,
         y: 0.4,
@@ -367,8 +406,7 @@ describe("IssueCreateModal", () => {
         videoContext: { schema_version: 1, annotation_version: 3 },
       },
     });
-    fireEvent.change(screen.getByPlaceholderText("x (0-1)"), { target: { value: "" } });
-    fireEvent.change(screen.getByPlaceholderText("y (0-1)"), { target: { value: "" } });
+    expect(screen.queryByTestId("issue-create-location-summary")).toBeNull();
     fillBody();
     submit();
     expect(requests[0].payload.annotation_id).toBeUndefined();

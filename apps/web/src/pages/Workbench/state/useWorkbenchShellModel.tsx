@@ -110,6 +110,7 @@ import { useSessionStats } from "./useSessionStats";
 import { useWorkbenchHotkeys } from "./useWorkbenchHotkeys";
 import { isSamCandidateHotkeyBlocked } from "./hotkeys";
 import { useCanvasDraftPersistence } from "./useCanvasDraftPersistence";
+import { useDiscussionDraftStore } from "./DiscussionDraftProvider";
 import { resolveSubmitBlockedReason, useWorkbenchTaskFlow } from "./useWorkbenchTaskFlow";
 import {
   useInteractiveAI,
@@ -232,7 +233,10 @@ import {
   rememberWorkbenchTask,
   resolveWorkbenchReturnTo,
   updateWorkbenchUrlSearch,
+  parseWorkbenchDiscussionRequest,
 } from "@/utils/workbenchNavigation";
+import { useDiscussionNavigation } from "./useDiscussionNavigation";
+import { useAnnotationCommentCounts } from "@/hooks/useAnnotationCommentCounts";
 import {
   ensurePointCloudNavigationGeneration,
   pointCloudNavigationGenerationForTask,
@@ -377,7 +381,14 @@ export interface UseWorkbenchShellModelParams {
 }
 
 interface WorkbenchShellIssueSection {
-  openIssueCount: number;
+  openIssueCount: number | null;
+  openIssueCountLoading: boolean;
+  openIssueCountError: boolean;
+  issuePinsComplete: boolean;
+  issuePinsLoading: boolean;
+  issuePinsError: boolean;
+  issuePinsLoadedCount: number;
+  onRetryIssuePins: () => Promise<void>;
   stageKind: StageKind;
   issuePinDropArmed: boolean;
   onOpenList: () => void;
@@ -458,9 +469,16 @@ export function useWorkbenchShellModel({
   const returnTo = searchParams.get("returnTo");
   const requestedBatchId = searchParams.get("batch");
   const requestedTaskId = searchParams.get("task");
-  const requestedFocusId = searchParams.get("focus");
+  const discussionRequest = useMemo(
+    () => parseWorkbenchDiscussionRequest(location.search),
+    [location.search],
+  );
+  // Discussion focus is applied only after the original comment and active
+  // annotation are validated. The generic Data Manager path must not race it.
+  const requestedFocusId = discussionRequest.status === "none" ? searchParams.get("focus") : null;
   const requestedTrackId = searchParams.get("track");
   const requestedFrameIndex = (() => {
+    if (discussionRequest.status !== "none") return null;
     const raw = searchParams.get("frame");
     if (raw === null) return null;
     const value = Number(raw);
@@ -566,10 +584,19 @@ export function useWorkbenchShellModel({
 
   const meUserId = useAuthStore((s) => s.user?.id);
   const { hasPermission } = usePermissions();
+  const s = useWorkbenchState();
+  const pendingDiscussionTaskSwitch = Boolean(
+    s.currentTaskId &&
+    (discussionRequest.status === "invalid" ||
+      (discussionRequest.status === "valid" && s.currentTaskId !== discussionRequest.taskId)),
+  );
   const [selectedBatchId, setSelectedBatchId] = useState<string | null>(requestedBatchId);
   useEffect(() => {
+    // A history URL is an intent, not permission to replace the live task's
+    // query/layout owner. Apply its batch only after guarded task admission.
+    if (pendingDiscussionTaskSwitch) return;
     setSelectedBatchId((prev) => (prev === requestedBatchId ? prev : requestedBatchId));
-  }, [requestedBatchId]);
+  }, [requestedBatchId, pendingDiscussionTaskSwitch]);
   const { data: batchList } = useBatches(projectId ?? "", undefined);
   useBatchEventsSocket(projectId);
   const isOwner = useIsProjectOwner(currentProject ?? null);
@@ -609,10 +636,12 @@ export function useWorkbenchShellModel({
   const requestedTaskLoaded = Boolean(
     requestedTaskId && tasks.some((t) => t.id === requestedTaskId),
   );
-  const shouldLoadDirectTask = Boolean(requestedTaskId && !requestedTaskLoaded);
+  const shouldLoadDirectTask = Boolean(
+    requestedTaskId && !requestedTaskLoaded && discussionRequest.status !== "invalid",
+  );
   const directTaskQuery = useTask(shouldLoadDirectTask ? requestedTaskId! : "");
 
-  const s = useWorkbenchState();
+  const discussionDraftStore = useDiscussionDraftStore();
   // v0.13.x · 点云 3D 项目无对应 2D 工具,按当前 3D 工具显式选择工具单位。
   const is3DProject = currentProject?.type_key === "lidar";
   const setExemplarOutputMode = s.setExemplarOutputMode;
@@ -716,16 +745,33 @@ export function useWorkbenchShellModel({
   const task: TaskResponse | undefined = useMemo(() => {
     const loaded = tasks.find((t) => t.id === currentTaskId);
     if (loaded) return loaded;
+    if (pendingDiscussionTaskSwitch && currentTaskId) {
+      // A review/deep-linked task need not be in the queue. Keep its existing
+      // authoritative query while another task's access lookup is pending.
+      const admitted = queryClient.getQueryData<TaskResponse>(["task", currentTaskId]);
+      return admitted?.project_id === projectId ? admitted : undefined;
+    }
     const directTask = shouldLoadDirectTask ? directTaskQuery.data : undefined;
     if (
       directTask &&
+      (discussionRequest.status === "none" || directTask.project_id === projectId) &&
       (directTask.id === requestedTaskId || !currentTaskId || directTask.id === currentTaskId)
     ) {
       return directTask;
     }
     if (requestedTaskId) return undefined;
     return tasks[0];
-  }, [tasks, currentTaskId, requestedTaskId, shouldLoadDirectTask, directTaskQuery.data]);
+  }, [
+    tasks,
+    currentTaskId,
+    requestedTaskId,
+    shouldLoadDirectTask,
+    directTaskQuery.data,
+    pendingDiscussionTaskSwitch,
+    discussionRequest.status,
+    queryClient,
+    projectId,
+  ]);
   const taskId = task?.id;
   const currentTaskIdRef = useRef(taskId);
   currentTaskIdRef.current = taskId;
@@ -762,6 +808,8 @@ export function useWorkbenchShellModel({
         signal?: AbortSignal;
         scenePreview?: boolean;
         issueRestore?: boolean;
+        /** The requested URL is already visible; preserve its validated target. */
+        fromUrl?: boolean;
       } = {},
     ): Promise<boolean> => {
       if (!opts.issueRestore) cancelVideoIssueNavigationRef.current();
@@ -805,12 +853,13 @@ export function useWorkbenchShellModel({
             pendingLocalTaskIdRef.current = current.requestedTaskId === id ? null : id;
             setCurrentTaskId(id);
             setSelectedId(null);
-            updateUrl({
-              batchId: selectedBatchId,
-              taskId: id,
-              replace: opts.replace,
-              maskGuardApproved: true,
-            });
+            if (!opts.fromUrl)
+              updateUrl({
+                batchId: selectedBatchId,
+                taskId: id,
+                replace: opts.replace,
+                maskGuardApproved: true,
+              });
           },
         );
         publishPointCloudNavigationTrace({
@@ -1275,7 +1324,76 @@ export function useWorkbenchShellModel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [closePropagateDialog, taskId, resetVideoStageUi]);
 
+  const discussionTaskAvailable =
+    discussionRequest.status === "valid" &&
+    (tasks.some((item) => item.id === discussionRequest.taskId) ||
+      (directTaskQuery.data?.id === discussionRequest.taskId &&
+        directTaskQuery.data.project_id === projectId));
+  const discussionTaskError =
+    discussionRequest.status !== "valid" || !shouldLoadDirectTask || !projectId
+      ? null
+      : directTaskQuery.data && directTaskQuery.data.project_id !== projectId
+        ? "讨论目标不属于当前项目"
+        : directTaskQuery.isError
+          ? "讨论所在任务已删除、不可访问或暂时无法读取"
+          : null;
   useEffect(() => {
+    if (
+      discussionRequest.status !== "valid" ||
+      !discussionTaskAvailable ||
+      currentTaskId === discussionRequest.taskId ||
+      !meUserId
+    )
+      return;
+    const controller = new AbortController();
+    const previousTaskId = currentTaskId;
+    const previousBatchId = selectedBatchId;
+    // A URL can change through browser history while this Workbench remains
+    // mounted. Admit that switch through the same video/Mask transaction owner.
+    void Promise.resolve()
+      .then(async () => {
+        if (controller.signal.aborted || !isCurrentAuthOwner(meUserId)) return;
+        const allowed = await selectTask(discussionRequest.taskId, {
+          signal: controller.signal,
+          fromUrl: true,
+        });
+        if (allowed || controller.signal.aborted || !isCurrentAuthOwner(meUserId)) return;
+        if (previousTaskId) {
+          navigate(
+            updateWorkbenchUrlSearch(location, {
+              taskId: previousTaskId,
+              batchId: previousBatchId,
+            }),
+            { replace: true },
+          );
+        }
+        pushToast({ msg: "已取消切换到讨论所在任务", kind: "warning" });
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted && isCurrentAuthOwner(meUserId))
+          pushToast({
+            msg: "无法切换到讨论所在任务",
+            sub: error instanceof Error ? error.message : undefined,
+            kind: "error",
+          });
+      });
+    return () => controller.abort();
+  }, [
+    discussionRequest,
+    discussionTaskAvailable,
+    currentTaskId,
+    meUserId,
+    selectTask,
+    navigate,
+    location,
+    pushToast,
+    selectedBatchId,
+  ]);
+
+  useEffect(() => {
+    // Discussion URLs have their own one-shot admission above. In particular,
+    // malformed links must not enter the generic unguarded task hydration path.
+    if (discussionRequest.status !== "none") return;
     if (tasks.length === 0 && !directTaskQuery.data) return;
     const localUrlSync = resolveLocalTaskUrlSync(requestedTaskId, pendingLocalTaskIdRef.current);
     if (localUrlSync.clearPendingTarget) {
@@ -1329,6 +1447,7 @@ export function useWorkbenchShellModel({
         : tasks[0].id;
     selectTask(nextTaskId, { replace: true });
   }, [
+    discussionRequest.status,
     tasks,
     currentTaskId,
     requestedTaskId,
@@ -1530,6 +1649,7 @@ export function useWorkbenchShellModel({
   const urlFocusHydratedRef = useRef(false);
 
   useEffect(() => {
+    if (discussionRequest.status !== "none") return;
     if (urlFocusHydratedRef.current) return;
     if (!taskId || (requestedTaskId && taskId !== requestedTaskId)) return;
     if (isVideoTask && requestedFrameIndex !== null) {
@@ -1550,6 +1670,7 @@ export function useWorkbenchShellModel({
       urlFocusHydratedRef.current = true;
     }
   }, [
+    discussionRequest.status,
     annotationsData,
     isVideoTask,
     requestedFocusId,
@@ -1683,6 +1804,7 @@ export function useWorkbenchShellModel({
   cancelVideoIssueNavigationRef.current = videoIssueNavigation.cancel;
   const {
     issueCreateOpen,
+    issueAnchorMode,
     issuePinDropArmed,
     issuePinPrefill,
     onToggleIssuePinDrop,
@@ -1695,6 +1817,13 @@ export function useWorkbenchShellModel({
     issueListParams,
     issuesQuery,
     openIssueCount,
+    openIssueCountLoading,
+    openIssueCountError,
+    issuePixelFeedbacks,
+    issuePinsComplete,
+    issuePinsLoading,
+    issuePinsError,
+    retryIssuePins,
     activeIssueHighlightId,
     highlightIssueFromPin,
     requestIssuesTab,
@@ -1725,6 +1854,52 @@ export function useWorkbenchShellModel({
           ...(object?.version ? { annotation_version: object.version } : {}),
         },
       };
+    },
+    captureImageContext: () => {
+      if (
+        stageKind !== "image" ||
+        !projectId ||
+        !taskId ||
+        !meUserId ||
+        !isCurrentAuthOwner(meUserId) ||
+        s.selectedIds.length !== 1
+      )
+        return null;
+      const object = annotationsRef.current.find(
+        (annotation) =>
+          annotation.id === s.selectedId &&
+          annotation.task_id === taskId &&
+          annotation.is_active &&
+          !annotation.is_hidden,
+      );
+      return object ? { annotationId: object.id, annotationLabel: object.class_name } : null;
+    },
+    selectImageAnnotation: async (annotationId, isCurrent) => {
+      if (
+        stageKind !== "image" ||
+        !projectId ||
+        !taskId ||
+        !meUserId ||
+        !isCurrentAuthOwner(meUserId) ||
+        !isCurrent()
+      )
+        return false;
+      if (!(await maskNavigationGuardRef.current())) return false;
+      if (!isCurrent() || !isCurrentAuthOwner(meUserId) || currentTaskIdRef.current !== taskId)
+        return false;
+      // A deleted/hidden annotation still permits pixel-only issue navigation.
+      if (
+        !annotationsRef.current.some(
+          (item) =>
+            item.id === annotationId &&
+            item.task_id === taskId &&
+            item.is_active &&
+            !item.is_hidden,
+        )
+      )
+        return true;
+      s.setSelectedId(annotationId);
+      return true;
     },
   });
   const issueNavigation =
@@ -2950,6 +3125,7 @@ export function useWorkbenchShellModel({
     requestTool: requestVideoTool,
     requestScope: requestVideoToolScope,
     requestSelection: requestVideoSelection,
+    requestSelectionReady: requestVideoSelectionReady,
     requestFrame: requestVideoReviewFrame,
     requestFrameReady: requestVideoIssueFrame,
     requestLeave: requestVideoLeave,
@@ -6144,11 +6320,55 @@ export function useWorkbenchShellModel({
     handleUpdateAttributes,
   ]);
 
+  const discussionAnnotationClassById = useMemo(
+    () =>
+      annotationsReady
+        ? Object.fromEntries((annotationsData ?? []).map((ann) => [ann.id, ann.class_name]))
+        : undefined,
+    [annotationsData, annotationsReady],
+  );
+  const discussionAnnotationIds = useMemo(
+    () => (annotationsReady ? (annotationsData ?? []).map((ann) => ann.id) : undefined),
+    [annotationsData, annotationsReady],
+  );
+  const annotationCommentCountsQuery = useAnnotationCommentCounts(
+    taskId,
+    projectId,
+    (stageKind === "image" || stageKind === "video") &&
+      s.workbenchConfig.common.showAnnotationComments,
+  );
+  const annotationCommentCounts = annotationCommentCountsQuery.data?.counts;
   useCanvasDraftPersistence({
     taskId,
+    projectId,
+    store: discussionDraftStore,
+    annotationIds: discussionAnnotationIds,
     canvasDraft: s.canvasDraft,
     beginCanvasDraft: s.beginCanvasDraft,
+    releaseCanvasDraft: s.releaseCanvasDraft,
+    consumeCanvasResult: s.consumeCanvasResult,
   });
+
+  // Pointer completions can outlive the rendered task or canvas transaction.
+  const discussionCanvasContextRef = useRef({ projectId, taskId, draft: s.canvasDraft });
+  discussionCanvasContextRef.current = { projectId, taskId, draft: s.canvasDraft };
+  const discussionCanvasOrigin = s.canvasDraft.origin;
+  const canEditDiscussionCanvas = () => {
+    const current = discussionCanvasContextRef.current;
+    const target = discussionCanvasOrigin?.target;
+    return Boolean(
+      discussionCanvasOrigin &&
+      discussionDraftStore?.isOwned(discussionCanvasOrigin) &&
+      current.draft.active &&
+      current.draft.origin?.requestId === discussionCanvasOrigin.requestId &&
+      target?.projectId === current.projectId &&
+      target?.taskId === current.taskId &&
+      (target?.kind === "task" ||
+        (target?.kind === "annotation" &&
+          annotationsRef.current.some((ann) => ann.id === target.annotationId))),
+    );
+  };
+  const discussionCanvasEditable = canEditDiscussionCanvas();
 
   // v0.13.4 · 3D 工作台自管这些字母键(V/B 选/放、W/E/R gizmo 模式),交给它的本地
   // keydown 处理;否则全局 2D 热键会抢 —— 尤其 E=「提交质检」(dispatchKey → submit)会被
@@ -6856,10 +7076,160 @@ export function useWorkbenchShellModel({
     secondaryEligible ? projectId : undefined,
   );
 
+  const discussionNavigationKey = JSON.stringify([
+    location.key,
+    location.pathname,
+    location.search,
+  ]);
+  const discussionRetryOwner = JSON.stringify([meUserId, discussionNavigationKey]);
+  const discussionRetryOwnerRef = useRef(discussionRetryOwner);
+  discussionRetryOwnerRef.current = discussionRetryOwner;
+  const [annotationDiscussionRequest, setAnnotationDiscussionRequest] = useState<{
+    requestId: string;
+    projectId: string;
+    taskId: string;
+    annotationId: string;
+  } | null>(null);
+  const annotationDiscussionRequestOwnerRef = useRef<string | null>(meUserId ?? null);
+  useEffect(() => {
+    // A pending badge request belongs to the account that emitted it. Retire
+    // it before a retained shell can expose the request to a replacement user.
+    const ownerId = meUserId ?? null;
+    if (annotationDiscussionRequestOwnerRef.current !== ownerId) {
+      annotationDiscussionRequestOwnerRef.current = ownerId;
+      setAnnotationDiscussionRequest(null);
+    }
+  }, [meUserId]);
+  useEffect(() => {
+    setAnnotationDiscussionRequest((current) =>
+      current && (current.projectId !== projectId || current.taskId !== taskId) ? null : current,
+    );
+  }, [projectId, taskId]);
+  const openAnnotationComments = useCallback(
+    async (annotationId: string) => {
+      if (
+        (stageKind !== "image" && stageKind !== "video") ||
+        !projectId ||
+        !taskId ||
+        !meUserId ||
+        !isCurrentAuthOwner(meUserId)
+      )
+        return;
+      const annotation = annotationsRef.current.find(
+        (item) =>
+          item.id === annotationId && item.task_id === taskId && item.is_active && !item.is_hidden,
+      );
+      if (!annotation) return;
+      if (!(await maskNavigationGuardRef.current())) return;
+      if (
+        !isCurrentAuthOwner(meUserId) ||
+        discussionCanvasContextRef.current.projectId !== projectId ||
+        discussionCanvasContextRef.current.taskId !== taskId ||
+        currentTaskIdRef.current !== taskId ||
+        !annotationsRef.current.some(
+          (item) =>
+            item.id === annotationId &&
+            item.task_id === taskId &&
+            item.is_active &&
+            !item.is_hidden,
+        )
+      )
+        return;
+      if (isVideoTask) {
+        const selected = await requestVideoSelectionReady(
+          annotationId,
+          () =>
+            isCurrentAuthOwner(meUserId) &&
+            currentTaskIdRef.current === taskId &&
+            annotationsRef.current.some(
+              (item) =>
+                item.id === annotationId &&
+                item.task_id === taskId &&
+                item.is_active &&
+                !item.is_hidden,
+            ),
+        );
+        if (
+          !selected ||
+          !isCurrentAuthOwner(meUserId) ||
+          currentTaskIdRef.current !== taskId ||
+          discussionCanvasContextRef.current.projectId !== projectId ||
+          discussionCanvasContextRef.current.taskId !== taskId
+        )
+          return;
+      } else {
+        handleSelectBox(annotationId);
+      }
+      setAnnotationDiscussionRequest({
+        requestId: `annotation-discussion-${randomId()}`,
+        projectId,
+        taskId,
+        annotationId,
+      });
+      workspaceCommands.current?.show("discussion");
+    },
+    [
+      handleSelectBox,
+      isVideoTask,
+      meUserId,
+      projectId,
+      requestVideoSelectionReady,
+      stageKind,
+      taskId,
+    ],
+  );
+  const discussionNavigationOwner = useDiscussionNavigation({
+    navigationKey: discussionNavigationKey,
+    request: discussionTaskError
+      ? { status: "invalid", message: discussionTaskError }
+      : discussionRequest,
+    projectId,
+    taskId:
+      isProjectLoading || isTaskListLoading || (shouldLoadDirectTask && directTaskQuery.isLoading)
+        ? null
+        : taskId,
+    reveal: () => workspaceCommands.current?.show("discussion"),
+    selectAnnotation: async (annotation, isCurrent) => {
+      if (!isCurrent()) return false;
+      // Reading a notification never claims another annotator's segment or
+      // changes its lease. The annotation-scoped conversation is still readable.
+      if (videoCollaborationEnabled && annotation.video_segment_id !== activeVideoSegmentId)
+        return "unloaded";
+      if (s.selectedId === annotation.id) return true;
+      const result = await refetchAnnotations({ cancelRefetch: false });
+      if (!isCurrent()) return false;
+      if (result.isError) throw result.error;
+      if (!result.data?.some((item) => item.id === annotation.id && item.task_id === taskId))
+        throw new Error("评论所属标注已不可访问");
+      if (isVideoTask) {
+        videoIssueNavigation.cancel();
+        return requestVideoSelectionReady(annotation.id, isCurrent);
+      }
+      if (!(await maskNavigationGuardRef.current()) || !isCurrent()) return false;
+      handleSelectBox(annotation.id);
+      return true;
+    },
+  });
+  const discussionNavigation = {
+    ...discussionNavigationOwner,
+    retry: () => {
+      if (discussionTaskError) {
+        void directTaskQuery.refetch().then(() => {
+          if (
+            discussionRetryOwnerRef.current === discussionRetryOwner &&
+            meUserId &&
+            isCurrentAuthOwner(meUserId)
+          )
+            discussionNavigationOwner.retry();
+        });
+      } else discussionNavigationOwner.retry();
+    },
+  };
+
   if (
     isProjectLoading ||
     isTaskListLoading ||
-    (shouldLoadDirectTask && directTaskQuery.isLoading)
+    (shouldLoadDirectTask && directTaskQuery.isLoading && !pendingDiscussionTaskSwitch)
   ) {
     return { kind: "loading" };
   }
@@ -6870,6 +7240,19 @@ export function useWorkbenchShellModel({
       emptyState: {
         icon: "warning",
         message: "项目不存在或无访问权限",
+        onBack,
+      },
+    };
+  }
+
+  if (!task && (discussionRequest.status === "invalid" || discussionTaskError)) {
+    return {
+      kind: "empty",
+      emptyState: {
+        icon: "warning",
+        message:
+          discussionTaskError ??
+          (discussionRequest.status === "invalid" ? discussionRequest.message : "讨论目标不可访问"),
         onBack,
       },
     };
@@ -7783,36 +8166,53 @@ export function useWorkbenchShellModel({
         onRefineSamCandidate: handleRefineSamCandidate,
       },
       editors: {
+        annotationCommentCounts,
+        onOpenAnnotationComments:
+          stageKind === "image" || stageKind === "video"
+            ? (annotationId: string) => void openAnnotationComments(annotationId)
+            : undefined,
         polygonDraft:
           s.tool === "polygon" ? polygonHandle : s.tool === "polyline" ? polylineHandle : undefined,
         keypointDraft: s.tool === "keypoint" ? keypointHandle : undefined,
         keypointSchema: toolView.keypointSchema,
-        canvasShapes: s.canvasDraft.shapes,
-        canvasEditable: s.canvasDraft.active,
+        canvasShapes: discussionCanvasEditable ? s.canvasDraft.shapes : [],
+        canvasEditable: discussionCanvasEditable,
         canvasStroke: s.canvasDraft.stroke,
-        onCanvasStrokeCommit: (points, stroke) =>
-          s.appendCanvasShape({ type: "line", points, stroke }),
+        onCanvasStrokeCommit: (points, stroke) => {
+          if (canEditDiscussionCanvas()) s.appendCanvasShape({ type: "line", points, stroke });
+        },
         historicalShapes: hoveredCommentShapes ?? undefined,
         canUndo: history.canUndo,
         canRedo: history.canRedo,
         onUndo: history.undo,
         onRedo: history.redo,
-        onSetCanvasStroke: s.setCanvasStroke,
-        canvasShapeCount: s.canvasDraft.shapes.length,
-        onUndoCanvasShape: s.undoCanvasShape,
-        onClearCanvasShapes: s.clearCanvasShapes,
-        onCancelCanvasDraft: s.cancelCanvasDraft,
-        onDoneCanvasDraft: s.endCanvasDraft,
+        onSetCanvasStroke: (stroke) => {
+          if (canEditDiscussionCanvas()) s.setCanvasStroke(stroke);
+        },
+        canvasShapeCount: discussionCanvasEditable ? s.canvasDraft.shapes.length : 0,
+        onUndoCanvasShape: () => {
+          if (canEditDiscussionCanvas()) s.undoCanvasShape();
+        },
+        onClearCanvasShapes: () => {
+          if (canEditDiscussionCanvas()) s.clearCanvasShapes();
+        },
+        onCancelCanvasDraft: () => {
+          if (canEditDiscussionCanvas()) s.cancelCanvasDraft();
+        },
+        onDoneCanvasDraft: () => {
+          if (canEditDiscussionCanvas()) s.endCanvasDraft();
+        },
         stageGeom,
         maskEditor: stageMaskEditor,
         projectRenderingConfig: currentProject?.rendering_config ?? null,
-        issuePixelFeedbacks: issuesQuery.data?.items ?? [],
+        issuePixelFeedbacks,
         // v0.11.5 · 图钉高亮跟 DiscussionPanel issues tab 共享 store (旧浮层路径已删)。
         highlightIssueId: activeIssueHighlightId,
         // 单击图钉 → 高亮 + 请求 DiscussionPanel 切到 issues tab + 高亮对应列表行。
         onIssuePinClick: (id) => {
-          highlightIssueFromPin(id);
           const issue = issuesQuery.data?.items.find((item) => item.id === id);
+          if (!issue || issue.project_id !== projectId || issue.task_id !== taskId) return;
+          highlightIssueFromPin(issue);
           if (isVideoTask && issue) useActiveIssueStore.getState().focusIssue(issue);
         },
         issuePinDropArmed: issuePinDropArmed,
@@ -8051,7 +8451,17 @@ export function useWorkbenchShellModel({
         : undefined,
     // v0.11.5 · B 组 · DiscussionPanel 转正 → 右栏固定两段布局 (上 AIInspectorPanel + 下 DiscussionPanel)。
     discussionPanel: {
+      navigation: discussionNavigation,
       onCreateTaskIssue: openTaskIssue,
+      onCreatePixelIssue:
+        stageKind === "image" || stageKind === "video"
+          ? () => {
+              if (!issuePinDropArmed) onToggleIssuePinDrop();
+            }
+          : undefined,
+      openIssueCount,
+      openIssueCountLoading,
+      openIssueCountError,
       allowProjectIssueScope: isVideoTask,
       maskQc:
         mode === "review" && projectId && taskId
@@ -8097,18 +8507,60 @@ export function useWorkbenchShellModel({
       taskId: taskId ?? null,
       projectId: projectId ?? null,
       currentUserId: meUserId ?? null,
+      annotationDiscussionRequest:
+        annotationDiscussionRequestOwnerRef.current === (meUserId ?? null)
+          ? annotationDiscussionRequest
+          : null,
+      onAnnotationDiscussionRequestConsumed: (requestId) => {
+        setAnnotationDiscussionRequest((current) =>
+          current?.requestId === requestId ? null : current,
+        );
+      },
+      annotationClassById: discussionAnnotationClassById,
+      onSelectAnnotation: (annotationId) => {
+        if (annotationsRef.current.some((ann) => ann.id === annotationId))
+          handleSelectBox(annotationId);
+      },
       // v0.11.5+ · 评论内画布批注 (live 绘图) + 视频帧锚点 + 点评论跳帧的桥接，
       // 恢复 B1 去 flag 时随 AIInspectorPanel 内嵌一起删掉的接线。
       backgroundUrl: workbenchImagePreview,
       imageWidth,
       imageHeight,
-      enableCanvasDrawing: true,
-      liveCanvas: {
-        active: s.canvasDraft.active,
-        result: s.canvasDraft.pendingResult,
-        onStart: (initial) => s.beginCanvasDraft(selectedAnnotationForPanel?.id ?? null, initial),
-        onConsume: s.consumeCanvasResult,
-      },
+      enableCanvasDrawing: stageKind !== "3d",
+      enableTaskCanvasDrawing: stageKind === "image",
+      // Only ImageWorkbench consumes the live drawing layer and toolbar.
+      // Video keeps its existing popup/anchor path; exposing live mode there
+      // would create an active draft with no way to finish it.
+      liveCanvas:
+        stageKind === "image"
+          ? {
+              active: discussionCanvasEditable,
+              result: s.canvasDraft.pendingResult,
+              resultId: s.canvasDraft.resultId,
+              origin: s.canvasDraft.origin,
+              onStart: (initial, origin) => {
+                const current = discussionCanvasContextRef.current;
+                const target = origin?.target;
+                if (
+                  !origin ||
+                  !target ||
+                  !discussionDraftStore?.isOwned(origin) ||
+                  target.projectId !== current.projectId ||
+                  target.taskId !== current.taskId ||
+                  (target.kind === "annotation" &&
+                    !annotationsRef.current.some((ann) => ann.id === target.annotationId)) ||
+                  target.kind === "issue"
+                )
+                  return;
+                s.beginCanvasDraft(
+                  target.kind === "annotation" ? target.annotationId : null,
+                  initial,
+                  origin,
+                );
+              },
+              onConsume: (resultId) => s.consumeCanvasResult(resultId ?? undefined),
+            }
+          : undefined,
       commentAnchor: videoCommentAnchor,
       onSeekFrame: isVideoTask ? s.setVideoFrameIndex : undefined,
       // v0.20.22 · 讨论区完全收起 (同一 workbench.layout 管道跨设备持久)。
@@ -8235,6 +8687,13 @@ export function useWorkbenchShellModel({
     projectId && taskId
       ? ({
           openIssueCount,
+          openIssueCountLoading,
+          openIssueCountError,
+          issuePinsComplete,
+          issuePinsLoading,
+          issuePinsError,
+          issuePinsLoadedCount: issuePixelFeedbacks.length,
+          onRetryIssuePins: retryIssuePins,
           stageKind,
           issuePinDropArmed,
           // v0.11.5 · issue FAB → 切到 DiscussionPanel issues tab (旧浮层 IssueListPanel 已删)。
@@ -8252,7 +8711,7 @@ export function useWorkbenchShellModel({
             taskId,
             listParams: issueListParams,
             prefilledAnchor: issuePinPrefill,
-            anchorMode: isVideoTask && issuePinPrefill?.frame === undefined ? "task" : "pixel",
+            anchorMode: issueAnchorMode,
             onClose: closeIssueCreate,
           },
         } satisfies WorkbenchShellIssueSection)

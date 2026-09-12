@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-09-09
+last_reviewed: 2026-09-12
 ---
 
 # 认证
@@ -36,6 +36,8 @@ Authorization: Bearer <access_token>
 ```
 
 ## 账号偏好与命名布局预设
+
+`workbench.common.showAnnotationComments` 控制图片和视频画布的标注评论提示，默认 `true`。通过下面的账号偏好接口提交 `{ "workbench": { "common": { "showAnnotationComments": false } } }` 可关闭；显式 `false` 会保留，历史偏好缺少字段时按开启处理。该设置不影响评论读取、写入或通知。
 
 `GET /api/v1/auth/me/preferences` 读取当前账号偏好，`PATCH /api/v1/auth/me/preferences` 只提交要修改的子树。工作台布局位于 `workbench.layout.workspace`：`contexts` 是可选 map，每个 key 是 `annotate|review × image|video|3d` 中的一项，只提交某个 context 时会原子替换该快照，不会删除其他 context。写入 `contexts` 必须同时携带当前 `engine`；只有下述预设专用 PATCH 可以省略它。
 

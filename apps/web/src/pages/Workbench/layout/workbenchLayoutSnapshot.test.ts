@@ -44,6 +44,14 @@ function canvasNode(node: WorkspaceNode): WorkspaceNode {
 }
 
 describe("workspace snapshot boundary", () => {
+  it("refreshes the discussion display title without changing saved layout identity", () => {
+    const snapshot = createWorkspacePreset("standard");
+    snapshot.layout.panels.discussion.title = "讨论 / Issue";
+    const clean = sanitizeWorkspaceSnapshot(snapshot);
+    expect(clean.layout.panels.discussion).toMatchObject({ id: "discussion", title: "讨论" });
+    expect(clean.layout.grid).toEqual(snapshot.layout.grid);
+    expect(clean.returns).toEqual(snapshot.returns);
+  });
   it("requires schema 5 presentation metadata and forbids native floating camera groups", () => {
     const snapshot = createWorkspacePreset("standard");
     expect(readWorkspaceEnvelope({ schemaVersion: 5, snapshot }).snapshot).toEqual(snapshot);

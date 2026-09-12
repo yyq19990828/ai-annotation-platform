@@ -82,7 +82,28 @@ describe("useWorkbenchConfig · v0.10.10 项目级覆盖", () => {
     // 未提供的字段走默认
     expect(result.current.config.image.controlPointsSize).toBe(6);
     expect(result.current.config.common.longTaskSampleRate).toBe(0.05);
+    expect(result.current.config.common.showAnnotationComments).toBe(true);
     expect(result.current.lockedFields).toEqual([]);
+  });
+
+  it("保留账号明确关闭的标注评论提示，并按 false 写回", async () => {
+    mockGetPreferences.mockResolvedValue({
+      workbench: { common: { showAnnotationComments: false } },
+    });
+    mockUpdatePreferences.mockImplementation(async (payload) => payload);
+    const { result } = renderHook(() => useWorkbenchConfig(), { wrapper });
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    expect(result.current.config.common.showAnnotationComments).toBe(false);
+
+    vi.useFakeTimers();
+    act(() => result.current.setFields({ common: { showAnnotationComments: false } }));
+    await act(async () => vi.advanceTimersByTimeAsync(300));
+    expect(mockUpdatePreferences).toHaveBeenCalledWith({
+      workbench: expect.objectContaining({
+        common: expect.objectContaining({ showAnnotationComments: false }),
+      }),
+    });
+    vi.useRealTimers();
   });
 
   it("项目级 rendering_config(平铺)覆盖用户级 image.* 子树；lockedFields 列出被覆盖字段", async () => {

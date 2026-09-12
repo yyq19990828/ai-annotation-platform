@@ -1,4 +1,5 @@
 import { isVideoLifecycleCancellation } from "../helpers/video-request-errors";
+import { layoutCommand } from "../helpers/workbench-layout";
 import type { APIRequestContext, APIResponse, Browser, Page, Route } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 
@@ -429,10 +430,11 @@ async function clickPoint(page: Page, point: Point) {
     (receipt!.x - bounds.x) / bounds.width,
     (receipt!.y - bounds.y) / bounds.height,
   ];
-  // Browser mouse coordinates are quantized to screen pixels; the form keeps three decimals.
+  // Browser input is quantized to screen pixels; preserve the actual clicked
+  // point. The read-only location summary rounds only its display.
   expect(Math.abs(normalized[0] - point[0])).toBeLessThanOrEqual(1.1 / bounds.width);
   expect(Math.abs(normalized[1] - point[1])).toBeLessThanOrEqual(1.1 / bounds.height);
-  return { x: Number(normalized[0].toFixed(3)), y: Number(normalized[1].toFixed(3)) };
+  return { x: normalized[0], y: normalized[1] };
 }
 
 async function videoMediaBounds(page: Page) {
@@ -560,10 +562,7 @@ async function createIssue(
 async function openIssues(page: Page) {
   await revealFab(page);
   await page.getByTestId("issue-fab").click();
-  await expect(page.getByRole("tab", { name: "Issue", exact: true })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
+  await expect(page.getByRole("tab", { name: /^问题/ })).toHaveAttribute("aria-selected", "true");
 }
 
 async function holdMedia(page: Page, fixture: IssueCase) {
@@ -798,7 +797,9 @@ async function createContextIssue(
     context.frame_range = { from_frame: range[0], to_frame: range[1] };
   }
   const issue = await saveIssue(page, fixture);
-  expect(issue.anchor_position).toMatchObject({ ...point, frame, video_context: context });
+  expect(issue.anchor_position).toMatchObject({ frame, video_context: context });
+  expect(issue.anchor_position!.x).toBeCloseTo(point.x, 12);
+  expect(issue.anchor_position!.y).toBeCloseTo(point.y, 12);
   return issue;
 }
 
@@ -821,7 +822,7 @@ async function locate(page: Page, fixture: IssueCase, issue: Issue, objectChange
   await collapseObjectCard(page);
   const before = await readViewport(page);
   await openIssues(page);
-  await page.getByTestId(`discussion-issue-card-${issue.id}`).click();
+  await page.getByTestId(`discussion-issue-locate-${issue.id}`).click();
   await expect(page).toHaveURL(new RegExp(`task=${issue.task_id}(?:&|$)`));
   await expectReady(page, fixture, issue.anchor_position!.frame!);
   const context = issue.anchor_position!.video_context;
@@ -859,6 +860,148 @@ async function createPolygonDraft(page: Page) {
 test.describe("video Issue persisted context", () => {
   test.setTimeout(180_000);
   test.use({ actionTimeout: 10_000 });
+
+  for (const allowSwitch of [false, true])
+    test(`浏览器返回讨论链接前确认视频草稿：${allowSwitch ? "允许后打开目标" : "拒绝后原任务帧和笔触保持不变"}`, async ({
+      page,
+      request,
+      seed,
+      issueCase: fixture,
+    }) => {
+      const issue = await createIssue(request, fixture, 33, [0.4, 0.5]);
+      const other = await seed.videoWebCodecs(fixture.data.project_id, { fixture: MAIN_FIXTURE });
+      const otherTask = await json<{ display_id: string }>(
+        await request.get(`${API_BASE}/api/v1/tasks/${other.task_id}`, {
+          headers: auth(fixture.token),
+        }),
+      );
+      await page.goto(
+        `/projects/${fixture.data.project_id}/annotate?task=${fixture.taskId}&discussion=issues&issue=${issue.id}`,
+      );
+      await expect(stage(page)).toBeVisible({ timeout: 25_000 });
+      await expect(page.getByTestId("discussion-issue-detail")).toHaveAttribute(
+        "data-issue-id",
+        issue.id,
+      );
+      await layoutCommand(page, "标准标注布局");
+      fixture.navigatedTaskIds.push(fixture.taskId, other.task_id);
+      await page
+        .getByRole("tabpanel", { name: "任务队列", exact: true })
+        .getByText(otherTask.display_id, { exact: true })
+        .click();
+      await expect(page).toHaveURL(new RegExp(`task=${other.task_id}(?:&|$)`));
+      expect(new URL(page.url()).searchParams.has("discussion")).toBe(false);
+      const previousUrl = page.url();
+      await seek(page, 3);
+      await createPolygonDraft(page);
+      await page.goBack();
+      const dialog = page.getByRole("alertdialog").filter({ hasText: "继续绘制" });
+      await expect(dialog).toBeVisible();
+      await expect(stage(page)).toHaveAttribute("data-video-frame-index", "3");
+      await expect(stage(page)).toHaveAttribute("data-video-draft-point-count", "2");
+      if (allowSwitch) {
+        await dialog.getByRole("button", { name: "丢弃并切换", exact: true }).click();
+        await expect(page).toHaveURL(new RegExp(`task=${fixture.taskId}(?:&|$)`));
+        await expect(page.getByTestId("discussion-issue-detail")).toHaveAttribute(
+          "data-issue-id",
+          issue.id,
+        );
+        await expect(stage(page)).toHaveAttribute("data-video-draft-point-count", "0");
+        expect(await annotations(request, fixture)).toEqual([]);
+        return;
+      }
+      await dialog.getByRole("button", { name: "继续绘制", exact: true }).click();
+      await expect(page).toHaveURL(previousUrl);
+      await expect(stage(page)).toHaveAttribute("data-video-frame-index", "3");
+      await expect(stage(page)).toHaveAttribute("data-video-draft-point-count", "2");
+      await expect(page.getByTestId("discussion-issue-detail")).toHaveCount(0);
+      expect(await annotations(request, fixture)).toEqual([]);
+    });
+
+  test("讨论输入区 Enter 发送留言但保留视频多边形草稿", async ({
+    page,
+    request,
+    issueCase: fixture,
+  }) => {
+    await open(page, fixture);
+    await seek(page, 33);
+    await createPolygonDraft(page);
+    await clickPoint(page, [0.53, 0.56]);
+    await expect(stage(page)).toHaveAttribute("data-video-draft-point-count", "3");
+    await page.getByRole("tab", { name: /^评论/ }).click();
+    const input = page.getByRole("textbox", { name: "留言", exact: true });
+    await input.fill("先确认问题，保留正在绘制的多边形");
+    const sent = page.waitForResponse(
+      (response) =>
+        pathOf(response.url()) === "/api/v1/feedbacks" && response.request().method() === "POST",
+    );
+    await input.press("Enter");
+    const response = await sent;
+    expect(response.ok(), await response.text()).toBe(true);
+    expect(await response.json()).toMatchObject({
+      kind: "comment",
+      task_id: fixture.taskId,
+      body: "先确认问题，保留正在绘制的多边形",
+    });
+    await expect(input).toBeEmpty();
+    await expect(page.getByTestId("class-picker-popover")).toHaveCount(0);
+    await expect(stage(page)).toHaveAttribute("data-video-draft-point-count", "3");
+    await expect(stage(page)).toHaveAttribute("data-video-frame-index", "33");
+    expect(await annotations(request, fixture)).toEqual([]);
+  });
+
+  test("切换视频任务再重开问题页签，不恢复上一任务的旧详情", async ({
+    page,
+    request,
+    seed,
+    issueCase: fixture,
+  }) => {
+    const originalIssue = await createIssue(request, fixture, 33, [0.4, 0.5]);
+    const other = await seed.videoWebCodecs(fixture.data.project_id, { fixture: MAIN_FIXTURE });
+    const otherTask = await json<{ display_id: string }>(
+      await request.get(`${API_BASE}/api/v1/tasks/${other.task_id}`, {
+        headers: auth(fixture.token),
+      }),
+    );
+    await open(page, fixture);
+    await seek(page, 3);
+    await openIssues(page);
+    await page.getByTestId(`discussion-issue-open-${originalIssue.id}`).click();
+    await expect(page.getByTestId("discussion-issue-detail")).toHaveAttribute(
+      "data-issue-id",
+      originalIssue.id,
+    );
+    await expect(stage(page)).toHaveAttribute("data-video-frame-index", "3");
+    fixture.navigatedTaskIds.push(fixture.taskId, other.task_id);
+    await page
+      .getByRole("tabpanel", { name: "任务队列", exact: true })
+      .getByText(otherTask.display_id, { exact: true })
+      .click();
+    await expect(page).toHaveURL(new RegExp(`task=${other.task_id}(?:&|$)`));
+    await expect(page.getByTestId("issue-open-count")).toHaveText("待处理 0");
+    await page.getByRole("tab", { name: "历史", exact: true }).click();
+    // Use the tab itself: the FAB intentionally starts a fresh list request
+    // and would clear the stale activation, masking this remount regression.
+    await page.getByRole("tab", { name: /^问题/ }).click();
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    await expect(page.getByTestId("issue-open-count")).toHaveText("待处理 0");
+    await expect(page.getByTestId("discussion-issue-detail")).toHaveCount(0);
+
+    // An explicit project-scope activation remains available in the new task,
+    // and opening it still does not move the canvas or switch the task.
+    await page.getByTestId("issue-list-scope").selectOption("project");
+    await page.getByTestId(`discussion-issue-open-${originalIssue.id}`).click();
+    await expect(page.getByTestId("discussion-issue-detail")).toHaveAttribute(
+      "data-issue-id",
+      originalIssue.id,
+    );
+    await expect(page).toHaveURL(new RegExp(`task=${other.task_id}(?:&|$)`));
+  });
 
   test("G2-1 十个单帧/范围Issue通过真实表单持久化，F120–F160保持单条记录，刷新逐项恢复", async ({
     page,
@@ -1089,7 +1232,7 @@ test.describe("video Issue persisted context", () => {
     await page.getByTestId("issue-list-scope").selectOption("project");
     await createPolygonDraft(page);
     const originFrame = Number(await stage(page).getAttribute("data-video-frame-index"));
-    await page.getByTestId(`discussion-issue-card-${target.id}`).click();
+    await page.getByTestId(`discussion-issue-locate-${target.id}`).click();
     const dialog = page.getByRole("alertdialog").filter({ hasText: "继续绘制" });
     await expect(dialog).toBeVisible();
     await dialog.getByRole("button", { name: "继续绘制", exact: true }).click();
@@ -1160,10 +1303,10 @@ test.describe("video Issue persisted context", () => {
     await openIssues(page);
     await page.getByTestId("issue-list-scope").selectOption("project");
     await observeNavigation(page);
-    await page.getByTestId(`discussion-issue-card-${issueB.id}`).click();
+    await page.getByTestId(`discussion-issue-locate-${issueB.id}`).click();
     await expect(page).toHaveURL(new RegExp(`task=${other.task_id}(?:&|$)`));
     await expect(navigation(page)).toHaveAttribute("data-status", "preparing");
-    await page.getByTestId(`discussion-issue-card-${issueA.id}`).click();
+    await page.getByTestId(`discussion-issue-locate-${issueA.id}`).click();
     await expect(page).toHaveURL(new RegExp(`task=${fixture.taskId}(?:&|$)`));
     await expect(navigation(page)).toHaveAttribute("data-status", "preparing");
     await expect(navigation(page)).toHaveAttribute("data-frame-index", "33");
@@ -1182,7 +1325,7 @@ test.describe("video Issue persisted context", () => {
     await timeoutMedia.fetched();
     await openIssues(page);
     await page.getByTestId("issue-list-scope").selectOption("project");
-    await page.getByTestId(`discussion-issue-card-${issueB.id}`).click();
+    await page.getByTestId(`discussion-issue-locate-${issueB.id}`).click();
     await expect(page).toHaveURL(new RegExp(`task=${other.task_id}(?:&|$)`));
     await expect(navigation(page)).toHaveAttribute("data-status", "timeout", { timeout: 12_000 });
     await expect(navigation(page)).toHaveAttribute("data-frame-index", "143");
@@ -1279,7 +1422,7 @@ test.describe("video Issue persisted context", () => {
       status: 404,
       bodyIncludes: "Task not found",
     });
-    await card.click();
+    await page.getByTestId(`discussion-issue-locate-${issue.id}`).click();
     await expect(navigation(page)).toContainText("无法访问问题所在任务");
     await expect(page).toHaveURL(new RegExp(`task=${fixture.taskId}(?:&|$)`));
     await expect(stage(page)).toHaveAttribute("data-video-frame-index", String(originFrame));
