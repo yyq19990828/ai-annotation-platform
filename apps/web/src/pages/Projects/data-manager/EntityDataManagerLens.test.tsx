@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
 import { EntityDataManagerLens } from "./EntityDataManagerLens";
@@ -23,6 +23,11 @@ vi.mock("./EntityDetailSheet", () => ({
   EntityDetailSheet: () => null,
 }));
 
+function LocationProbe() {
+  const location = useLocation();
+  return <output data-testid="location">{location.search}</output>;
+}
+
 vi.mock("@/hooks/useTaskViews", () => {
   const view = {
     id: null,
@@ -41,6 +46,16 @@ vi.mock("@/hooks/useTaskViews", () => {
     created_at: null,
     updated_at: null,
     invalid_fields: [],
+  };
+  const secondView = {
+    ...view,
+    id: "v2",
+    key: null,
+    name: "第二对象视图",
+    filter_json: { field: "annotation.annotation_count", op: "eq", value: 2 },
+    builtin: false,
+    owner_id: "u1",
+    visibility: "private",
   };
   const schema = {
     entity_scope: "objects",
@@ -142,7 +157,7 @@ vi.mock("@/hooks/useTaskViews", () => {
     refetch: vi.fn(),
   });
   return {
-    useTaskViews: () => ({ data: { items: [view] }, isLoading: false }),
+    useTaskViews: () => ({ data: { items: [view, secondView] }, isLoading: false }),
     useDataManagerSchema: () => ({ data: schema, isLoading: false }),
     useDataManagerObjects: query,
     useDataManagerTracks: query,
@@ -182,5 +197,56 @@ describe("EntityDataManagerLens", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "保存视图" })).not.toBeDisabled(),
     );
+  });
+
+  it("writes the URL and hydrates the selected entity view", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={["/projects/p1?lens=objects"]}>
+        <EntityDataManagerLens
+          projectId="p1"
+          projectName="Project"
+          projectDisplayId="P-1"
+          projectOwnerId="u1"
+          scope="objects"
+          availableScopes={["tasks", "objects"]}
+          onScopeChange={vi.fn()}
+        />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+    await user.click(screen.getByRole("button", { name: /^第二对象视图/ }));
+    await waitFor(() => {
+      const search = new URL("http://localhost" + screen.getByTestId("location").textContent)
+        .searchParams;
+      expect(search.get("view")).toBe("saved:v2");
+    });
+    expect(screen.getAllByText("第二对象视图", { exact: true }).length).toBeGreaterThan(0);
+  });
+
+  it("keeps the dirty-discard navigation in the URL", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={["/projects/p1?lens=objects"]}>
+        <EntityDataManagerLens
+          projectId="p1"
+          projectName="Project"
+          projectDisplayId="P-1"
+          projectOwnerId="u1"
+          scope="objects"
+          availableScopes={["tasks", "objects"]}
+          onScopeChange={vi.fn()}
+        />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+    await user.click(screen.getByRole("button", { name: "降序" }));
+    await user.click(screen.getByRole("button", { name: /^第二对象视图/ }));
+    await user.click(screen.getByRole("button", { name: "放弃并切换" }));
+    await waitFor(() => {
+      const search = new URL("http://localhost" + screen.getByTestId("location").textContent)
+        .searchParams;
+      expect(search.get("view")).toBe("saved:v2");
+    });
   });
 });

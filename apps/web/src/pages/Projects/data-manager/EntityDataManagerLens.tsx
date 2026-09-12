@@ -269,6 +269,8 @@ export function EntityDataManagerLens({
     currentUrl.lens === scope && currentUrl.view ? currentUrl.view : "builtin:all",
   );
   const draftOwner = `${projectId}:${user?.id ?? "anonymous"}:${scope}:${selectedKey}`;
+  const mutationOwnerRef = useRef(draftOwner);
+  mutationOwnerRef.current = draftOwner;
   const { hasInvalidDraft, onDraftValidityChange } = useFilterDraftValidity(draftOwner);
   const [keyword, setKeyword] = useState("");
   const [keywordFlushKey, setKeywordFlushKey] = useState(0);
@@ -290,9 +292,18 @@ export function EntityDataManagerLens({
   );
   const hydrationRef = useRef<string | null>(null);
   const lastWrittenUrlRef = useRef<string | null>(null);
+  const pendingViewKeyRef = useRef<string | null>(null);
+  const mountedRef = useRef(false);
   const skipUrlSyncRef = useRef(false);
   const previousUrlRef = useRef(searchParams.toString());
   const tableRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const views = useMemo(() => viewsQ.data?.items ?? [], [viewsQ.data?.items]);
   const selectedView = useMemo(
@@ -314,6 +325,7 @@ export function EntityDataManagerLens({
 
   useEffect(() => {
     if (lastWrittenUrlRef.current === searchParams.toString()) return;
+    if (pendingViewKeyRef.current === selectedKey) return;
     const requestedKey =
       currentUrl.lens === scope && currentUrl.view ? currentUrl.view : "builtin:all";
     if (requestedKey !== selectedKey) {
@@ -362,7 +374,8 @@ export function EntityDataManagerLens({
       hasFilterUrlOverrides(searchParams);
     if (lastWrittenUrlRef.current === searchParams.toString()) {
       lastWrittenUrlRef.current = null;
-      return;
+      if (pendingViewKeyRef.current !== selectedKey) return;
+      pendingViewKeyRef.current = null;
     }
     const hydrationKey = `${scope}:${selectedKey}:${selectedView.updated_at ?? "builtin"}:${useUrl ? searchParams.toString() : "view"}`;
     if (hydrationRef.current === hydrationKey) return;
@@ -532,10 +545,6 @@ export function EntityDataManagerLens({
   );
 
   const switchView = (key: string) => {
-    hydrationRef.current = null;
-    skipUrlSyncRef.current = false;
-    lastWrittenUrlRef.current = null;
-    setSelectedKey(key);
     const next = updateDataManagerUrl(searchParams, {
       lens: scope,
       view: key,
@@ -545,6 +554,11 @@ export function EntityDataManagerLens({
       columns: null,
       selected: null,
     });
+    hydrationRef.current = null;
+    skipUrlSyncRef.current = false;
+    pendingViewKeyRef.current = key;
+    lastWrittenUrlRef.current = next.toString();
+    setSelectedKey(key);
     setSearchParams(next);
   };
 
@@ -553,6 +567,7 @@ export function EntityDataManagerLens({
       pushToast({ msg: "请先完成筛选条件", kind: "warning" });
       return;
     }
+    const ownerAtStart = draftOwner;
     const payload = {
       name: selectedView?.name ?? (scope === "objects" ? "对象视图" : "轨迹视图"),
       visibility: selectedView?.visibility ?? ("private" as const),
@@ -563,9 +578,11 @@ export function EntityDataManagerLens({
     if (canEditSelected && selectedView?.id) {
       try {
         await updateView.mutateAsync({ viewId: selectedView.id, payload });
+        if (!mountedRef.current || mutationOwnerRef.current !== ownerAtStart) return;
         setBaseline(currentSignature);
         pushToast({ msg: "视图已保存", kind: "success" });
       } catch {
+        if (!mountedRef.current || mutationOwnerRef.current !== ownerAtStart) return;
         pushToast({ msg: "无法保存视图", kind: "error" });
       }
       return;
@@ -577,6 +594,7 @@ export function EntityDataManagerLens({
 
   const createSavedView = async () => {
     if (!saveName.trim() || !filterReady) return;
+    const ownerAtStart = draftOwner;
     try {
       const created = await createView.mutateAsync({
         name: saveName.trim(),
@@ -586,11 +604,14 @@ export function EntityDataManagerLens({
         sort_json: sort,
         columns_json: columns,
       });
+      if (!mountedRef.current || mutationOwnerRef.current !== ownerAtStart) return;
       await viewsQ.refetch();
+      if (!mountedRef.current || mutationOwnerRef.current !== ownerAtStart) return;
       switchView(`saved:${created.id}`);
       setSaveDialogOpen(false);
       pushToast({ msg: "视图已创建", kind: "success" });
     } catch {
+      if (!mountedRef.current || mutationOwnerRef.current !== ownerAtStart) return;
       pushToast({ msg: "无法创建视图", sub: "名称可能已存在", kind: "error" });
     }
   };
@@ -782,7 +803,7 @@ export function EntityDataManagerLens({
                       onClick={() => {
                         if (key === selectedKey) return;
                         if (isDirty) setPendingViewKey(key);
-                        else setSelectedKey(key);
+                        else switchView(key);
                       }}
                     >
                       <span className="truncate">{view.name}</span>
@@ -824,7 +845,7 @@ export function EntityDataManagerLens({
                     onValueChange={(key) => {
                       if (key === selectedKey) return;
                       if (isDirty) setPendingViewKey(key);
-                      else setSelectedKey(key);
+                      else switchView(key);
                     }}
                   >
                     <SelectTrigger className="hidden w-44 max-lg:flex">
@@ -1160,7 +1181,7 @@ export function EntityDataManagerLens({
             <AlertDialogCancel>继续编辑</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
-                if (pendingViewKey) setSelectedKey(pendingViewKey);
+                if (pendingViewKey) switchView(pendingViewKey);
                 if (pendingScope) onScopeChange(pendingScope);
                 setPendingViewKey(null);
                 setPendingScope(null);

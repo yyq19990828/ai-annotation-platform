@@ -1,12 +1,56 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { updateDataManagerUrl } from "./data-manager/dataManagerUrlState";
 import { ProjectDataManagerPage } from "./ProjectDataManagerPage";
 
-const state = vi.hoisted(() => ({ calls: [] as Array<{ enabled: boolean; payload: unknown }> }));
+const state = vi.hoisted(() => ({
+  calls: [] as Array<{ enabled: boolean; payload: unknown }>,
+  extraViews: [] as Array<Record<string, unknown>>,
+  viewsRefetch: vi.fn(),
+  createView: vi.fn(),
+  updateView: vi.fn(),
+}));
+
+function LocationProbe() {
+  const location = useLocation();
+  return <output data-testid="location">{location.search}</output>;
+}
+
+function HistoryProbe() {
+  const navigate = useNavigate();
+  return (
+    <>
+      <button type="button" onClick={() => navigate(-1)}>
+        back
+      </button>
+      <button type="button" onClick={() => navigate(1)}>
+        forward
+      </button>
+    </>
+  );
+}
+
+function ExternalViewProbe() {
+  const navigate = useNavigate();
+  return (
+    <button
+      type="button"
+      data-testid="external-view"
+      onClick={() => navigate("/projects/p1/data-manager?lens=tasks&view=saved:v1")}
+    >
+      external
+    </button>
+  );
+}
+
+function currentView() {
+  return new URL(
+    "http://localhost" + document.querySelector('[data-testid="location"]')?.textContent,
+  ).searchParams.get("view");
+}
 
 vi.mock("@/hooks/useProjects", () => ({
   useProject: () => ({
@@ -121,6 +165,24 @@ vi.mock("@/hooks/useTaskViews", () => {
       updated_at: null,
       invalid_fields: [],
     },
+    {
+      id: "v2",
+      key: null,
+      project_id: "p1",
+      owner_id: "u1",
+      name: "第二视图",
+      visibility: "private",
+      entity_scope: "tasks",
+      filter_json: { field: "task.status", op: "eq", value: "pending" },
+      sort_json: [{ field: "task.created_at", direction: "asc" }],
+      columns_json: ["display_id"],
+      builtin: false,
+      task_count: 1,
+      result_count: 1,
+      created_at: null,
+      updated_at: null,
+      invalid_fields: [],
+    },
   ];
   const taskQuery = (projectId: string, payload: unknown, enabled: boolean) => {
     state.calls.push({ enabled, payload });
@@ -133,17 +195,29 @@ vi.mock("@/hooks/useTaskViews", () => {
     };
   };
   return {
-    useTaskViews: () => ({ data: { items: views }, isLoading: false, refetch: vi.fn() }),
+    useTaskViews: () => ({
+      data: { items: [...views, ...state.extraViews] },
+      isLoading: false,
+      refetch: state.viewsRefetch,
+    }),
     useDataManagerSchema: () => ({ data: schema, isLoading: false, isError: false }),
     useProjectTaskQuery: taskQuery,
     useDataManagerSummary: () => ({ data: undefined, isLoading: false, isFetching: false }),
-    useCreateTaskView: () => ({ mutateAsync: vi.fn(), isPending: false }),
-    useUpdateTaskView: () => ({ mutateAsync: vi.fn(), isPending: false }),
+    useCreateTaskView: () => ({ mutateAsync: state.createView, isPending: false }),
+    useUpdateTaskView: () => ({ mutateAsync: state.updateView, isPending: false }),
     useDeleteTaskView: () => ({ mutateAsync: vi.fn(), isPending: false }),
     useDataManagerMatches: () => ({ data: undefined, isLoading: false, isError: false }),
     useDataManagerObjectDetail: () => ({ data: undefined, isLoading: false, isError: false }),
     useDataManagerTrackDetail: () => ({ data: undefined, isLoading: false, isError: false }),
   };
+});
+
+beforeEach(() => {
+  state.calls.length = 0;
+  state.extraViews = [];
+  state.viewsRefetch.mockReset().mockResolvedValue(undefined);
+  state.createView.mockReset();
+  state.updateView.mockReset();
 });
 
 describe("ProjectDataManagerPage filter hydration", () => {
@@ -277,5 +351,136 @@ describe("ProjectDataManagerPage filter hydration", () => {
     await waitFor(() => expect(screen.getByText(/筛选条件嵌套超过/)).toBeInTheDocument());
     expect(state.calls.some((call) => call.enabled)).toBe(false);
     expect(screen.getByRole("button", { name: "刷新" })).toBeDisabled();
+  });
+
+  it("keeps a newly created view selected after refetch", async () => {
+    const user = userEvent.setup();
+    const filter = {
+      op: "or",
+      rules: [
+        { field: "task.status", op: "eq", value: "pending" },
+        { field: "ai.low_confidence_prediction_shape_count", op: "gt", value: 0 },
+      ],
+    };
+    const createdView = {
+      id: "v-created",
+      key: null,
+      project_id: "p1",
+      owner_id: "u1",
+      name: "新视图",
+      visibility: "private",
+      entity_scope: "tasks",
+      filter_json: filter,
+      sort_json: [{ field: "task.created_at", direction: "asc" }],
+      columns_json: ["display_id"],
+      builtin: false,
+      task_count: 1,
+      result_count: 1,
+      created_at: null,
+      updated_at: null,
+      invalid_fields: [],
+    };
+    state.createView.mockResolvedValue({ id: createdView.id });
+    state.viewsRefetch.mockImplementation(async () => {
+      state.extraViews = [createdView];
+    });
+    const search = updateDataManagerUrl("", {
+      lens: "tasks",
+      view: "builtin:all",
+      query: "",
+      filter,
+      sort: null,
+      columns: null,
+      selected: null,
+    });
+    render(
+      <MemoryRouter initialEntries={[`/projects/p1/data-manager?${search}`]}>
+        <ProjectDataManagerPage />
+        <LocationProbe />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(state.calls.some((call) => call.enabled)).toBe(true));
+    await user.click(screen.getByRole("button", { name: "保存视图" }));
+    const nameInput = screen.getByRole("textbox");
+    await user.clear(nameInput);
+    await user.type(nameInput, createdView.name);
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(currentView()).toBe("saved:v-created"));
+    expect(screen.getAllByText(createdView.name, { exact: true }).length).toBeGreaterThan(0);
+    expect(state.createView).toHaveBeenCalledWith(
+      expect.objectContaining({ entity_scope: "tasks", filter_json: filter }),
+    );
+  });
+
+  it("hydrates the selected view after navigation and browser history", async () => {
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={["/projects/p1/data-manager?lens=tasks&view=saved:v1"]}>
+        <ProjectDataManagerPage />
+        <LocationProbe />
+        <HistoryProbe />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(state.calls.some((call) => call.enabled)).toBe(true));
+    await user.click(screen.getByRole("button", { name: /^第二视图/ }));
+    await waitFor(() => expect(currentView()).toBe("saved:v2"));
+    await waitFor(() => {
+      const enabled = state.calls.filter((call) => call.enabled);
+      expect(
+        (enabled[enabled.length - 1]?.payload as { filter_json: unknown }).filter_json,
+      ).toEqual({
+        field: "task.status",
+        op: "eq",
+        value: "pending",
+      });
+    });
+    await user.click(screen.getByRole("button", { name: "back" }));
+    await waitFor(() => expect(currentView()).toBe("saved:v1"));
+    await waitFor(() => {
+      const enabled = state.calls.filter((call) => call.enabled);
+      expect(
+        (enabled[enabled.length - 1]?.payload as { filter_json: unknown }).filter_json,
+      ).toEqual({});
+    });
+    await user.click(screen.getByRole("button", { name: "forward" }));
+    await waitFor(() => expect(currentView()).toBe("saved:v2"));
+    await waitFor(() => {
+      const enabled = state.calls.filter((call) => call.enabled);
+      expect(
+        (enabled[enabled.length - 1]?.payload as { filter_json: unknown }).filter_json,
+      ).toEqual({
+        field: "task.status",
+        op: "eq",
+        value: "pending",
+      });
+    });
+  });
+
+  it("does not let a completed create navigate after the owner changed", async () => {
+    const user = userEvent.setup();
+    let resolveCreate!: (value: { id: string }) => void;
+    state.createView.mockImplementation(
+      () => new Promise<{ id: string }>((resolve) => (resolveCreate = resolve)),
+    );
+    render(
+      <MemoryRouter initialEntries={["/projects/p1/data-manager?lens=tasks"]}>
+        <ProjectDataManagerPage />
+        <LocationProbe />
+        <ExternalViewProbe />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(state.calls.some((call) => call.enabled)).toBe(true));
+    await user.click(screen.getByRole("button", { name: "保存视图" }));
+    const nameInput = screen.getByRole("textbox");
+    await user.clear(nameInput);
+    await user.type(nameInput, "异步视图");
+    await user.click(screen.getByRole("button", { name: "保存" }));
+    fireEvent.click(screen.getByTestId("external-view"));
+    await waitFor(() => expect(currentView()).toBe("saved:v1"));
+    await act(async () => {
+      resolveCreate({ id: "v-created" });
+      await Promise.resolve();
+    });
+    expect(currentView()).toBe("saved:v1");
   });
 });

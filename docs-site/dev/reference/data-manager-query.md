@@ -9,6 +9,8 @@ last_reviewed: 2026-07-22
 
 Data Manager 是项目范围内的只读探索 read model，提供 task、object 和 logical track 三种 grain。查询、保存视图计数、facet、详情与定位必须从同一个 visible-task scope 派生：项目负责人和超级管理员可见整个项目；其他成员只可见其批次权限允许的任务。它不改变 annotation、prediction 或 tracker candidate 的权威写模型。
 
+前端字段编辑、URL 状态、草稿校验及数量口径见[筛选状态与结果范围](./filtering.md)。
+
 ## 端点
 
 | 端点                                                               | 用途                                                                             |

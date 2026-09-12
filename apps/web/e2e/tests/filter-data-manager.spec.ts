@@ -241,3 +241,80 @@ test("deep restored expression stays visible as an error and never becomes an un
   expect(requests).toEqual([]);
   expect(errors).toEqual([]);
 });
+
+test("grouped saved views persist creation and edits, cancel navigation, and copy independently", async ({
+  page,
+  request,
+  seed,
+  filtering,
+}) => {
+  const projectId = filtering.image.project_id;
+  const expression = {
+    op: "or",
+    rules: [
+      { field: "task.status", op: "eq", value: "pending" },
+      { field: "annotation.annotation_count", op: "gte", value: 0 },
+    ],
+  };
+  const initial = queryResponse(page, projectId, "tasks");
+  await page.goto(url(projectId, { filter: envelope(expression) }));
+  await checked(await initial);
+  await expect(page.getByLabel("root 逻辑关系")).toHaveValue("or");
+  await page.getByRole("button", { name: "保存视图", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "保存任务视图" });
+  await dialog.getByRole("textbox", { name: "视图名称" }).fill("Filter lifecycle");
+  const savedResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname === `/api/v1/projects/${projectId}/task-views`,
+  );
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  const saved = await checked(await savedResponse);
+  expect(saved.filter_json).toEqual(expression);
+  await expect(dialog).toHaveCount(0);
+  await expect.poll(() => new URL(page.url()).searchParams.get("view")).toBe("saved:" + saved.id);
+
+  await page.getByLabel("root 逻辑关系").selectOption("and");
+  await expect(page.getByText("未保存", { exact: true })).toBeVisible();
+  const updatedResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === "PATCH" &&
+      new URL(response.url()).pathname.endsWith(`/task-views/${saved.id}`),
+  );
+  await page.getByRole("button", { name: "保存视图", exact: true }).click();
+  const updated = await checked(await updatedResponse);
+  expect(updated.filter_json).toEqual({ ...expression, op: "and" });
+  const reload = queryResponse(page, projectId, "tasks");
+  await page.reload();
+  const reloaded = await reload;
+  expect(reloaded.request().postDataJSON().filter_json).toEqual(updated.filter_json);
+  await checked(reloaded);
+
+  const changed = queryResponse(page, projectId, "tasks");
+  await page.getByRole("textbox", { name: "搜索任务编号或文件名" }).fill("unsaved draft");
+  await checked(await changed);
+  await page.getByRole("button", { name: /^全部任务/ }).click();
+  const discard = page.getByRole("alertdialog");
+  await expect(discard).toContainText("放弃未保存的视图修改");
+  await discard.getByRole("button", { name: "继续编辑", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "搜索任务编号或文件名" })).toHaveValue(
+    "unsaved draft",
+  );
+  expect(new URL(page.url()).searchParams.get("view")).toBe("saved:" + saved.id);
+
+  const token = await seed.accessToken(filtering.user_emails.admin);
+  const copiedResponse = await request.post(
+    `${API_BASE}/api/v1/projects/${projectId}/task-views/${saved.id}/copy`,
+    { headers: { Authorization: "Bearer " + token }, data: { name: "Filter lifecycle copy" } },
+  );
+  expect(copiedResponse.ok(), await copiedResponse.text()).toBe(true);
+  const copied = await copiedResponse.json();
+  expect(copied.id).not.toBe(saved.id);
+  expect(copied.filter_json).toEqual(updated.filter_json);
+  const copyQuery = queryResponse(page, projectId, "tasks");
+  await page.goto(url(projectId, { view: "saved:" + copied.id }));
+  const copyResponse = await copyQuery;
+  expect(copyResponse.request().postDataJSON().filter_json).toEqual(updated.filter_json);
+  await checked(copyResponse);
+  await expect(page.getByRole("textbox", { name: "搜索任务编号或文件名" })).toHaveValue("");
+});

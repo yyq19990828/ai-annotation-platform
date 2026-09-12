@@ -12,6 +12,8 @@ This page covers two related but separate systems: the **web app** (`apps/web`, 
 
 The web app uses Tailwind CSS with shadcn/ui primitives. Runtime theme values live in `apps/web/src/styles/shadcn.css`; component styling should consume Tailwind semantic classes or `--sc-*` CSS variables.
 
+Shared filter controls, applied URL state, and query/action scopes are described in [Filtering state and result scopes](./filtering.md).
+
 ## Theme Tokens
 
 `shadcn.css` is the single source of truth for neutral surfaces, text, borders, radii, focus rings, and canvas-only theme values.

@@ -298,6 +298,8 @@ function TaskDataManagerPage({
     currentUrl.lens === "tasks" && currentUrl.view ? currentUrl.view : "builtin:all",
   );
   const draftOwner = `tasks:${id}:${user?.id ?? "anonymous"}:${selectedKey}`;
+  const mutationOwnerRef = useRef(draftOwner);
+  mutationOwnerRef.current = draftOwner;
   const { hasInvalidDraft, onDraftValidityChange } = useFilterDraftValidity(draftOwner);
   const [filterExpression, setFilterExpression] = useState<DataManagerFilterExpression>({});
   const [appliedFilterExpression, setAppliedFilterExpression] =
@@ -323,7 +325,16 @@ function TaskDataManagerPage({
   );
   const urlHydratedRef = useRef(false);
   const lastWrittenUrlRef = useRef<string | null>(null);
+  const pendingViewKeyRef = useRef<string | null>(null);
+  const mountedRef = useRef(false);
   const skipUrlSyncRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   const views = useMemo(() => viewsQ.data?.items ?? [], [viewsQ.data?.items]);
   const filterFields = useMemo(
@@ -364,6 +375,7 @@ function TaskDataManagerPage({
 
   useEffect(() => {
     if (lastWrittenUrlRef.current === searchParams.toString()) return;
+    if (pendingViewKeyRef.current === selectedKey) return;
     const requestedKey =
       currentUrl.lens === "tasks" && currentUrl.view ? currentUrl.view : "builtin:all";
     if (requestedKey !== selectedKey) {
@@ -403,8 +415,11 @@ function TaskDataManagerPage({
       hasFilterUrlOverrides(searchParams);
     if (lastWrittenUrlRef.current === searchParams.toString()) {
       lastWrittenUrlRef.current = null;
-      urlHydratedRef.current = true;
-      return;
+      if (pendingViewKeyRef.current !== selectedKey) {
+        urlHydratedRef.current = true;
+        return;
+      }
+      pendingViewKeyRef.current = null;
     }
     const source = (useUrl && url.filter ? url.filter : selectedView.filter_json) as
       | DataManagerFilterExpression
@@ -453,9 +468,6 @@ function TaskDataManagerPage({
   ]);
 
   const switchView = (key: string) => {
-    urlHydratedRef.current = false;
-    lastWrittenUrlRef.current = null;
-    setSelectedKey(key);
     const next = updateDataManagerUrl(searchParams, {
       lens: "tasks",
       view: key,
@@ -465,6 +477,10 @@ function TaskDataManagerPage({
       columns: null,
       selected: null,
     });
+    urlHydratedRef.current = false;
+    pendingViewKeyRef.current = key;
+    lastWrittenUrlRef.current = next.toString();
+    setSelectedKey(key);
     setSearchParams(next);
   };
 
@@ -603,6 +619,7 @@ function TaskDataManagerPage({
       pushToast({ msg: "请先完成筛选条件", kind: "warning" });
       return;
     }
+    const ownerAtStart = draftOwner;
     const payload = {
       name: selectedView?.name ?? "任务视图",
       visibility: selectedView?.visibility ?? "private",
@@ -613,9 +630,11 @@ function TaskDataManagerPage({
     if (canEditSelected && selectedView?.id) {
       try {
         await updateView.mutateAsync({ viewId: selectedView.id, payload });
+        if (!mountedRef.current || mutationOwnerRef.current !== ownerAtStart) return;
         setBaselineSignature(currentSignature);
         pushToast({ msg: "视图已保存", kind: "success" });
       } catch {
+        if (!mountedRef.current || mutationOwnerRef.current !== ownerAtStart) return;
         pushToast({ msg: "无法保存视图", sub: "请检查网络后重试", kind: "error" });
       }
       return;
@@ -628,6 +647,7 @@ function TaskDataManagerPage({
   const createSavedView = async () => {
     const name = saveName.trim();
     if (!name || !filterReady) return;
+    const ownerAtStart = draftOwner;
     try {
       const created = await createView.mutateAsync({
         name,
@@ -637,11 +657,14 @@ function TaskDataManagerPage({
         sort_json: sort,
         columns_json: columns,
       });
+      if (!mountedRef.current || mutationOwnerRef.current !== ownerAtStart) return;
       await viewsQ.refetch();
+      if (!mountedRef.current || mutationOwnerRef.current !== ownerAtStart) return;
       switchView(`saved:${created.id}`);
       setSaveDialogOpen(false);
       pushToast({ msg: "视图已创建", kind: "success" });
     } catch {
+      if (!mountedRef.current || mutationOwnerRef.current !== ownerAtStart) return;
       pushToast({ msg: "无法创建视图", sub: "名称可能已存在", kind: "error" });
     }
   };
