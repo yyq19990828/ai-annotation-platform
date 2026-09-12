@@ -2,6 +2,7 @@
 audience: [dev]
 type: how-to
 status: stable
+last_reviewed: 2026-09-12
 ---
 
 # 独立工作树开发环境

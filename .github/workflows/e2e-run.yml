@@ -70,7 +70,8 @@ jobs:
       - name: Sync API deps
         working-directory: apps/api
         run: uv sync --extra test
-      # services 没法给 minio/minio 镜像传 server 子命令；bitnami/minio:latest 已被下架。
+      # services 没法给 MinIO 镜像传 server 子命令；bitnami/minio 与 Docker Hub 的
+      # minio/minio 均已下架，quay.io 是当前官方社区镜像源。
       # 直接 docker run 启容器最稳，并等到 health endpoint 通后再继续，避免后续 FastAPI
       # startup 阶段反复重试拉满 health-check 窗口。
       - name: Start MinIO
@@ -79,7 +80,7 @@ jobs:
             -p 9000:9000 \
             -e MINIO_ROOT_USER=minioadmin \
             -e MINIO_ROOT_PASSWORD=minioadmin \
-            minio/minio:latest server /data
+            quay.io/minio/minio:latest server /data
           for i in {1..30}; do
             if curl -fsS http://127.0.0.1:9000/minio/health/live; then exit 0; fi
             sleep 1
