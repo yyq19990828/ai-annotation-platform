@@ -1,5 +1,6 @@
 ---
 pageClass: docs-hub-page
+aside: false
 audience: [dev]
 type: explanation
 status: stable
@@ -8,9 +9,13 @@ last_reviewed: 2026-07-12
 
 # API 文档
 
-后端基于 FastAPI，自动遵循 OpenAPI 3.1。下面是完整可交互的 OpenAPI 文档，或按分区进入任务指南。
+后端基于 FastAPI，遵循 OpenAPI 3.1。先确认 URL、认证和错误格式，再按任务进入指南；需要逐个查看所有路由时，使用下面的交互式参考。
 
-<ApiReferenceFrame />
+<div class="doc-card-grid cols-3">
+  <DocLinkCard title="认证与第一条请求" desc="获取 Token，配置认证头并开始调用 API" href="/api/guides/auth" />
+  <DocLinkCard title="操作任务与标注" desc="读取任务，写入标注并处理候选结果" href="/api/guides/tasks-and-annotations" />
+  <DocLinkCard title="查询异步任务" desc="发起、查询、取消和重试后台作业" href="/api/guides/async-jobs" />
+</div>
 
 ## 概览
 
@@ -19,6 +24,14 @@ last_reviewed: 2026-07-12
 - **认证**：JWT Bearer Token（`POST /api/v1/auth/login`）
 - **错误格式**：`{"detail": "<message>"}` 或 Pydantic 校验数组
 - **限流**：用户级，超出返回 `429 Too Many Requests`
+
+### 第一次接入
+
+1. 调用 `POST /api/v1/auth/login` 获取 JWT Bearer Token。
+2. 在后续请求的 `Authorization` 头中携带 `Bearer <token>`。
+3. 从[项目](./guides/projects)、[任务与标注](./guides/tasks-and-annotations)开始读写资源，再按需接入异步任务或 AI 能力。
+
+> API 指南说明稳定的调用顺序和业务约束；字段、状态码和完整路由以仓库中的 OpenAPI snapshot 与下方参考为准。
 
 ## 按分区进入
 
@@ -60,7 +73,9 @@ apps/api/openapi.snapshot.json
 
 每次后端路由 / Pydantic schema 变化都会刷新这份 snapshot；CI 校验运行时与 snapshot 一致，前端 `pnpm codegen` 也读它。
 
-下载：[openapi.json](../openapi.json)
+下载：[openapi.json](../openapi.json)；也可以[全屏打开 OpenAPI Reference](/api-reference.html)查看交互式路由说明。
+
+<ApiReferenceFrame />
 
 ## 本地实时文档
 

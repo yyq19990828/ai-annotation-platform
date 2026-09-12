@@ -9,7 +9,6 @@ export const userGuideSidebar: DefaultTheme.SidebarItem[] = [
       { text: "平台概念与术语", link: "/user-guide/concepts" },
       { text: "快速开始", link: "/user-guide/getting-started" },
       { text: "使用筛选", link: "/user-guide/reference/filtering" },
-      { text: "常见问题 FAQ", link: "/user-guide/faq" },
     ],
   },
   {
@@ -22,7 +21,6 @@ export const userGuideSidebar: DefaultTheme.SidebarItem[] = [
       { text: "存储连接器导入", link: "/user-guide/datasets/storage-connections" },
       { text: "点云坐标系约定", link: "/user-guide/datasets/lidar-axis-convention" },
       { text: "导入 / 导出外部预测", link: "/user-guide/datasets/prediction-import-export" },
-      { text: "数据导出格式", link: "/user-guide/reference/export-formats" },
     ],
   },
   {
@@ -41,6 +39,7 @@ export const userGuideSidebar: DefaultTheme.SidebarItem[] = [
   },
   {
     text: "标注工作台",
+    collapsed: true,
     items: [
       { text: "工作台概览与快捷键", link: "/user-guide/workbench/" },
       { text: "工作台设置", link: "/user-guide/workbench/settings" },
@@ -97,11 +96,15 @@ export const userGuideSidebar: DefaultTheme.SidebarItem[] = [
     ],
   },
   {
-    text: "审核与质量",
-    items: [{ text: "审核流程", link: "/user-guide/review/" }],
+    text: "审核与交付",
+    collapsed: true,
+    items: [
+      { text: "审核流程", link: "/user-guide/review/" },
+      { text: "数据导出格式", link: "/user-guide/reference/export-formats" },
+    ],
   },
   {
-    text: "管理与设置",
+    text: "平台管理",
     collapsed: true,
     items: [
       { text: "平台管理概览", link: "/user-guide/superadmin/" },
@@ -115,14 +118,15 @@ export const userGuideSidebar: DefaultTheme.SidebarItem[] = [
       { text: "BUG 反馈管理", link: "/user-guide/superadmin/bug-management" },
       { text: "离线分析", link: "/user-guide/superadmin/analytics" },
       { text: "公共模板治理", link: "/user-guide/superadmin/public-templates" },
-      { text: "通知中心", link: "/user-guide/reference/notifications" },
-      { text: "设置页", link: "/user-guide/reference/settings" },
     ],
   },
   {
-    text: "场景方案",
+    text: "场景方案与支持",
     collapsed: true,
     items: [
+      { text: "常见问题", link: "/user-guide/faq" },
+      { text: "通知中心", link: "/user-guide/reference/notifications" },
+      { text: "账号与偏好设置", link: "/user-guide/reference/settings" },
       { text: "新项目端到端", link: "/user-guide/workflows/new-project-end-to-end" },
       { text: "AI 预标注流水线", link: "/user-guide/workflows/ai-preannotate-pipeline" },
       { text: "失败预测恢复", link: "/user-guide/workflows/failed-prediction-recovery" },

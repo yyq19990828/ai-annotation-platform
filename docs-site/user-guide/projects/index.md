@@ -14,11 +14,15 @@ last_reviewed: 2026-08-16
 
 关键词、状态、数据类型、成员和创建日期会保存在地址栏，刷新、分享链接和浏览器前进后退均可恢复。搜索停止输入后自动查询。高级筛选中的状态与页面状态标签同步；点击漏斗 **筛选** 会在按钮旁展开面板；点击 **应用** 才提交草稿，**取消**、关闭或 Esc 保留原条件，开始日期不能晚于结束日期。调整筛选保留当前列表/卡片布局和创建向导入口。
 
+<div class="doc-theme-images">
+
 ![创建项目入口](../images/projects/create-entry.png)
 
-<!-- TODO(0.8.1) IMAGE_CHECKLIST: ProjectsPage「新建项目」按钮高亮。 -->
-
 ![创建项目入口（深色主题）](../images/projects/create-entry.dark.png)
+
+</div>
+
+<!-- TODO(0.8.1) IMAGE_CHECKLIST: ProjectsPage「新建项目」按钮高亮。 -->
 
 当当前筛选条件下没有项目时，列表会显示空状态。先确认筛选条件，再通过 **新建项目** 创建第一个项目，或先导入数据集后在向导中关联。
 

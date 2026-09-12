@@ -1,6 +1,9 @@
 import { spawn, spawnSync } from "node:child_process";
 import path from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
+import { marketingCaptureDriver } from "../e2e/screenshots/recording-plan.mjs";
+import { ensureMacCaptureHelper } from "./mac-marketing-capture.mjs";
 
 // Chromium 的 2592×1458 内容区之外还需容纳左右边框与顶部工具栏。
 const TARGET = { width: 2700, height: 1750 };
@@ -9,10 +12,25 @@ const playwrightArgs = process.argv
   .slice(2)
   .filter((arg) => arg !== "--" && arg !== "--resize-display");
 const display = process.env.MARKETING_CAPTURE_DISPLAY;
-const captureDriver = process.env.MARKETING_CAPTURE_DRIVER ?? "x11grab";
+const captureDriver = marketingCaptureDriver(
+  process.platform,
+  process.env.MARKETING_CAPTURE_DRIVER,
+  (process.env.SCREENSHOT_RECORDING_FLOWS ?? "").split(",").filter(Boolean),
+);
+const isMac = captureDriver === "screencapturekit";
+if (
+  isMac &&
+  (process.env.SCREENSHOT_BACKEND_REQUIREMENTS !== "none" ||
+    process.env.SCREENSHOT_RECORDING_PROFILE !== "marketing")
+) {
+  throw new Error(
+    "Use screenshots:record -- --flow <id> --profile marketing for scoped Mac capture.",
+  );
+}
+if (isMac && resizeDisplay) throw new Error("--resize-display applies only to Linux X11 capture.");
 const gpuScreenRecorder = process.env.MARKETING_GPU_SCREEN_RECORDER ?? "gpu-screen-recorder";
 
-if (!display) {
+if (!isMac && !display) {
   throw new Error(
     "[marketing] 缺少 MARKETING_CAPTURE_DISPLAY；请显式指定用于录制的本机 X11 display（例如 :0）",
   );
@@ -42,8 +60,7 @@ const captureRunId =
 
 const recorderEnv = {
   ...process.env,
-  DISPLAY: display,
-  MARKETING_CAPTURE_DISPLAY: display,
+  ...(!isMac ? { DISPLAY: display, MARKETING_CAPTURE_DISPLAY: display } : {}),
   MARKETING_CAPTURE_DRIVER: captureDriver,
   MARKETING_GPU_SCREEN_RECORDER: gpuScreenRecorder,
   MARKETING_RUN_ID: captureRunId,
@@ -72,35 +89,39 @@ function currentScreenSize() {
 }
 
 async function preflight() {
-  if (captureDriver !== "gpu-screen-recorder" && captureDriver !== "x11grab") {
-    throw new Error(`[marketing] 不支持的 MARKETING_CAPTURE_DRIVER：${captureDriver}`);
-  }
-  checked("xwininfo", ["-display", display, "-root"]);
-  const devices = checked("ffmpeg", ["-hide_banner", "-devices"]);
-  if (!/\bD\s+x11grab\b/.test(devices)) {
-    throw new Error("[marketing] 当前 ffmpeg 不支持 x11grab");
-  }
   const encoders = checked("ffmpeg", ["-hide_banner", "-encoders"]);
-  if (!/\bV\S*\s+h264_nvenc\b/.test(encoders)) {
-    throw new Error("[marketing] 当前 ffmpeg 不支持 h264_nvenc");
-  }
-  if (captureDriver === "gpu-screen-recorder") {
-    checked(gpuScreenRecorder, ["--version"]);
-    const captureOptions = checked(gpuScreenRecorder, ["--list-capture-options"]);
-    if (!captureOptions.split("\n").includes("window")) {
-      throw new Error("[marketing] GPU Screen Recorder 当前不支持 X11 窗口采集");
+  checked("ffprobe", ["-version"]);
+  if (!/\blibx264\b/.test(encoders))
+    throw new Error("[marketing] ffmpeg requires libx264 for master encoding");
+  if (isMac) {
+    const helper = ensureMacCaptureHelper(fileURLToPath(new URL("../../../", import.meta.url)));
+    checked(helper, ["check"]);
+  } else {
+    checked("xwininfo", ["-display", display, "-root"]);
+    const devices = checked("ffmpeg", ["-hide_banner", "-devices"]);
+    if (!/\bD\s+x11grab\b/.test(devices)) throw new Error("[marketing] 当前 ffmpeg 不支持 x11grab");
+    if (!/\bV\S*\s+h264_nvenc\b/.test(encoders))
+      throw new Error("[marketing] 当前 ffmpeg 不支持 h264_nvenc");
+    if (captureDriver === "gpu-screen-recorder") {
+      checked(gpuScreenRecorder, ["--version"]);
+      const captureOptions = checked(gpuScreenRecorder, ["--list-capture-options"]);
+      if (!captureOptions.split("\n").includes("window"))
+        throw new Error("[marketing] GPU Screen Recorder 当前不支持 X11 窗口采集");
     }
   }
 
   const apiBase = process.env.PLAYWRIGHT_API_BASE ?? "http://127.0.0.1:8010";
   let health;
   try {
-    const response = await fetch(new URL("/health", apiBase));
+    const response = await fetch(new URL(isMac ? "/health/db" : "/health", apiBase));
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     health = await response.json();
   } catch (error) {
     throw new Error(`[marketing] 无法检查截图 API 健康状态：${error.message}`);
   }
+  // Like portable manual capture, the explicitly non-ML Mac scope needs the
+  // isolated API/database but does not require an otherwise unused ML worker.
+  if (isMac) return;
   const workers = health?.checks?.celery?.workers ?? [];
   if (!workers.some((worker) => worker.name?.startsWith("screenshots@"))) {
     throw new Error(
@@ -142,7 +163,7 @@ async function runPlaywright() {
 }
 
 await preflight();
-const original = currentScreenSize();
+const original = isMac ? TARGET : currentScreenSize();
 const needsResize = original.width < TARGET.width || original.height < TARGET.height;
 if (needsResize && !resizeDisplay) {
   throw new Error(

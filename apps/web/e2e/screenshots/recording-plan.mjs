@@ -110,6 +110,22 @@ export function recordingPlan(flows, profile = "docs") {
   };
 }
 
+export function marketingCaptureDriver(platform, requestedDriver, flows = []) {
+  const driver = requestedDriver ?? (platform === "darwin" ? "screencapturekit" : "x11grab");
+  if (platform === "darwin" && driver === "screencapturekit") {
+    const plan = recordingPlan(flows, "marketing");
+    if (
+      plan.backendRequirements !== "none" ||
+      plan.flows.some((id) => recordingInference(id) !== "none")
+    ) {
+      throw new Error("Mac marketing capture requires flows with no ML capabilities or inference.");
+    }
+    return driver;
+  }
+  if (platform === "linux" && ["x11grab", "gpu-screen-recorder"].includes(driver)) return driver;
+  throw new Error(`Unsupported marketing capture platform/driver: ${platform}/${driver}`);
+}
+
 export function screenshotCatalogPath(scope = process.env.SCREENSHOT_BACKEND_REQUIREMENTS) {
   return (
     "/api/v1/__test/seed/catalog?profile=screenshots" +

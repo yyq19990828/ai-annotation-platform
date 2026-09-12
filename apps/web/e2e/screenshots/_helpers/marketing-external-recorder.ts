@@ -1,9 +1,16 @@
-import { execFileSync, spawn, type ChildProcess } from "node:child_process";
+import { execFile, execFileSync, spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import type { Page } from "@playwright/test";
+import {
+  ensureMacCaptureHelper,
+  macCaptureReady,
+} from "../../../scripts/mac-marketing-capture.mjs";
+import { marketingCaptureDriver } from "../recording-plan.mjs";
 import {
   MARKETING_CAPTURE_FPS,
   MARKETING_CAPTURE_SIZE,
@@ -13,6 +20,8 @@ import {
 export const MARKETING_LOGICAL_VIEWPORT = { width: 1440, height: 810 } as const;
 export const MARKETING_SOURCE_SIZE = { width: 2592, height: 1458 } as const;
 export const MARKETING_DEVICE_SCALE_FACTOR = 1.8;
+export const MARKETING_MAC_DEVICE_SCALE_FACTOR = 2;
+const MAC_SOURCE_SIZE = { width: 2880, height: 1620 };
 
 export interface BrowserMetrics {
   innerWidth: number;
@@ -66,7 +75,16 @@ export interface ExternalMarketingCapture {
   cleanup(): void;
 }
 
-export type ExternalCaptureDriver = "x11grab" | "gpu-screen-recorder";
+export type ExternalCaptureDriver = "x11grab" | "gpu-screen-recorder" | "screencapturekit";
+
+interface MacWindow {
+  window_id: number;
+  pid: number;
+  width: number;
+  height: number;
+  point_width: number;
+  point_height: number;
+}
 
 interface RunningRecorder {
   process: ChildProcess;
@@ -78,6 +96,7 @@ interface RunningRecorder {
   driver: ExternalCaptureDriver;
   geometry: CaptureGeometry;
   cadence: MarketingCaptureCadence;
+  completion: Promise<number>;
 }
 
 const runningRecorders = new WeakMap<Page, RunningRecorder>();
@@ -200,7 +219,13 @@ export function gpuScreenRecorderFirstFrameEpochMs(timestamp: string): number {
 export function captureGeometry(
   metrics: BrowserMetrics,
   measured: CaptureGeometry,
+  driver: ExternalCaptureDriver = "x11grab",
 ): CaptureGeometry {
+  const dpr =
+    driver === "screencapturekit"
+      ? MARKETING_MAC_DEVICE_SCALE_FACTOR
+      : MARKETING_DEVICE_SCALE_FACTOR;
+  const size = driver === "screencapturekit" ? MAC_SOURCE_SIZE : MARKETING_SOURCE_SIZE;
   if (
     metrics.innerWidth !== MARKETING_LOGICAL_VIEWPORT.width ||
     metrics.innerHeight !== MARKETING_LOGICAL_VIEWPORT.height
@@ -210,18 +235,24 @@ export function captureGeometry(
         `实际为 ${metrics.innerWidth}×${metrics.innerHeight}`,
     );
   }
-  if (Math.abs(metrics.deviceScaleFactor - MARKETING_DEVICE_SCALE_FACTOR) > 0.001) {
+  if (
+    !Number.isFinite(metrics.deviceScaleFactor) ||
+    Math.abs(metrics.deviceScaleFactor - dpr) > 0.001
+  ) {
     throw new Error(
-      `[marketing] 设备像素倍率必须为 ${MARKETING_DEVICE_SCALE_FACTOR}，` +
-        `实际为 ${metrics.deviceScaleFactor}`,
+      `[marketing] 设备像素倍率必须为 ${dpr}，` + `实际为 ${metrics.deviceScaleFactor}`,
     );
   }
   if (
-    measured.width !== MARKETING_SOURCE_SIZE.width ||
-    measured.height !== MARKETING_SOURCE_SIZE.height
+    measured.width !== size.width ||
+    measured.height !== size.height ||
+    !Number.isInteger(measured.x) ||
+    !Number.isInteger(measured.y) ||
+    measured.x < 0 ||
+    measured.y < 0
   ) {
     throw new Error(
-      `[marketing] 校准内容区必须为 ${MARKETING_SOURCE_SIZE.width}×${MARKETING_SOURCE_SIZE.height}，` +
+      `[marketing] 校准内容区必须为 ${size.width}×${size.height}，` +
         `实际为 ${measured.width}×${measured.height}`,
     );
   }
@@ -259,7 +290,7 @@ export function calibrationBoundsFromRgb(
     }
   }
   if (maxX < minX || maxY < minY) {
-    throw new Error("[marketing] 未在 X11 窗口中找到内容区校准色");
+    throw new Error("[marketing] 未在采集窗口中找到内容区校准色");
   }
   return {
     x: minX,
@@ -276,7 +307,16 @@ export function validateCaptureCadence(sample: {
 }): void {
   const effectiveUniqueFps = sample.uniqueFrameCount / (sample.durationMs / 1000);
   const uniqueFrameRatio = sample.uniqueFrameCount / sample.frameCount;
-  if (sample.frameCount < 58 || effectiveUniqueFps < 55 || uniqueFrameRatio < 0.9) {
+  if (
+    !Number.isFinite(sample.durationMs) ||
+    sample.durationMs <= 0 ||
+    !Number.isInteger(sample.frameCount) ||
+    !Number.isInteger(sample.uniqueFrameCount) ||
+    sample.uniqueFrameCount > sample.frameCount ||
+    sample.frameCount < 58 ||
+    effectiveUniqueFps < 55 ||
+    uniqueFrameRatio < 0.9
+  ) {
     throw new Error(
       `[marketing] 60Hz 校准失败：${sample.durationMs}ms 采集 ${sample.frameCount} 帧，` +
         `独立画面 ${sample.uniqueFrameCount} 帧（有效 ${effectiveUniqueFps.toFixed(2)}fps，` +
@@ -460,6 +500,94 @@ async function measureBrowserContentGeometry(
   return captureGeometry(await pageMetrics(page), measured);
 }
 
+async function measureMacWindow(
+  page: Page,
+  helper: string,
+  temporaryRoot: string,
+): Promise<{ window: MacWindow; geometry: CaptureGeometry }> {
+  const browser = page.context().browser();
+  if (!browser) throw new Error("[marketing] Chromium 已退出");
+  const session = await browser.newBrowserCDPSession();
+  let pid: number;
+  try {
+    const result = await session.send("SystemInfo.getProcessInfo");
+    pid = Number(result.processInfo.find((item) => item.type === "browser")?.id);
+  } finally {
+    await session.detach();
+  }
+  if (!Number.isInteger(pid) || pid <= 0) throw new Error("[marketing] 无法核对 Chromium 进程身份");
+  const title = `marketing-capture-${randomUUID()}`;
+  const color = [22, 199, 132] as const;
+  await page.setContent(
+    `<title>${title}</title><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:rgb(${color.join(",")})}</style>`,
+  );
+  await page.bringToFront();
+  const metrics = await pageMetrics(page);
+  const snapshot = path.join(temporaryRoot, "calibration.png");
+  const { stdout } = await promisify(execFile)(
+    helper,
+    [
+      "snapshot",
+      String(pid),
+      title,
+      String(metrics.outerWidth),
+      String(metrics.outerHeight),
+      snapshot,
+    ],
+    { encoding: "utf8", timeout: 20_000 },
+  );
+  const window = JSON.parse(stdout) as MacWindow;
+  if (
+    window.pid !== pid ||
+    !Number.isInteger(window.window_id) ||
+    window.window_id <= 0 ||
+    ![window.width, window.height, window.point_width, window.point_height].every(
+      (value) => Number.isFinite(value) && value > 0 && value <= 8192,
+    )
+  ) {
+    throw new Error("[marketing] 原生窗口身份或尺寸无效");
+  }
+  const frame = parsePpm(
+    execFileSync(
+      "ffmpeg",
+      [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-i",
+        snapshot,
+        "-frames:v",
+        "1",
+        "-f",
+        "image2pipe",
+        "-vcodec",
+        "ppm",
+        "pipe:1",
+      ],
+      { maxBuffer: 64 * 1024 * 1024 },
+    ),
+  );
+  if (frame.width !== window.width || frame.height !== window.height)
+    throw new Error("[marketing] 原生校准帧尺寸不匹配");
+  const geometry = captureGeometry(
+    metrics,
+    calibrationBoundsFromRgb(frame.rgb, frame.width, frame.height, color),
+    "screencapturekit",
+  );
+  return { window, geometry };
+}
+
+export function cadenceCaptureFilter(
+  driver: ExternalCaptureDriver,
+  geometry: CaptureGeometry,
+): string {
+  return (
+    (driver === "screencapturekit"
+      ? `crop=${geometry.width}:${geometry.height}:${geometry.x}:${geometry.y},fps=${MARKETING_CAPTURE_FPS},`
+      : "") + "scale=320:180:flags=area"
+  );
+}
+
 async function recordCadenceCalibration(
   page: Page,
 ): Promise<{ startEpochMs: number; endEpochMs: number }> {
@@ -554,7 +682,7 @@ function captureCadenceSample(recorder: RunningRecorder): {
       "-t",
       durationSeconds.toFixed(3),
       "-vf",
-      "scale=320:180:flags=area",
+      cadenceCaptureFilter(recorder.driver, recorder.geometry),
       "-f",
       "framemd5",
       "pipe:1",
@@ -609,105 +737,211 @@ async function validateGpuAndRefresh(page: Page): Promise<void> {
 }
 
 async function waitForRecorderStartup(recorder: RunningRecorder): Promise<void> {
-  await new Promise((resolve) => setTimeout(resolve, 600));
-  if (recorder.process.exitCode !== null) {
-    throw new Error(
-      `[marketing] 4K60 录制器启动失败（exit ${recorder.process.exitCode}）：` +
-        recorder.stderr.trim(),
+  const result = await Promise.race([
+    recorder.completion.then((code) => ({ code })),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), 600)),
+  ]);
+  if (result !== null)
+    throw new Error(`[marketing] 录制器启动失败（exit ${result.code}）：${recorder.stderr.trim()}`);
+}
+
+export function waitForMacReady(child: ChildProcess, window: MacWindow): Promise<number> {
+  return new Promise((resolve, reject) => {
+    let buffer = "";
+    const finish = (error?: Error, timestamp?: number) => {
+      clearTimeout(timer);
+      child.stdout?.off("data", onData);
+      child.off("error", onError);
+      child.off("close", onClose);
+      if (error) reject(error);
+      else resolve(timestamp!);
+    };
+    const onError = (error: Error) => finish(error);
+    const onClose = () => finish(new Error("[marketing] 原生录制器在首帧就绪前退出"));
+    const onData = (chunk: Buffer) => {
+      buffer += chunk.toString();
+      if (buffer.length > 32_768) {
+        finish(new Error("[marketing] 原生录制器响应过长"));
+        return;
+      }
+      let newline: number;
+      while ((newline = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, newline);
+        buffer = buffer.slice(newline + 1);
+        try {
+          const message = JSON.parse(line);
+          if (message.event === "ready") {
+            finish(undefined, macCaptureReady(message, window));
+            return;
+          }
+        } catch (error) {
+          finish(error instanceof Error ? error : new Error(String(error)));
+          return;
+        }
+      }
+    };
+    const timer = setTimeout(
+      () => finish(new Error("[marketing] 原生窗口未在 20 秒内提供有效首帧")),
+      20_000,
     );
-  }
+    child.stdout?.on("data", onData);
+    child.once("error", onError);
+    child.once("close", onClose);
+  });
 }
 
 export async function startExternalMarketingRecording(page: Page): Promise<void> {
-  const driver = process.env.MARKETING_CAPTURE_DRIVER;
-  if (driver !== "x11grab" && driver !== "gpu-screen-recorder") {
-    throw new Error("[marketing] 必须通过 screenshots:marketing 启动 4K60 外部录制器");
-  }
+  const requested = process.env.MARKETING_CAPTURE_DRIVER;
+  if (!requested)
+    throw new Error("[marketing] 必须通过 screenshots:record --profile marketing 启动外部录制器");
+  const driver = marketingCaptureDriver(
+    process.platform,
+    requested,
+    (process.env.SCREENSHOT_RECORDING_FLOWS ?? "").split(",").filter(Boolean),
+  ) as ExternalCaptureDriver;
   if (runningRecorders.has(page)) throw new Error("[marketing] 当前页面已经开始录制");
-
   await page.addInitScript(installMarketingCursor);
   await configureNativeCaptureWindow(page);
-  const display = process.env.MARKETING_CAPTURE_DISPLAY ?? process.env.DISPLAY;
-  if (!display) throw new Error("[marketing] 缺少 MARKETING_CAPTURE_DISPLAY");
-
-  const windowId = await captureWindowId(page, display);
-  const geometry = await measureBrowserContentGeometry(page, display, windowId);
-  await validateGpuAndRefresh(page);
   const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "marketing-4k60-"));
-  const sourcePath = path.join(temporaryRoot, "capture.mkv");
-  const input = x11CaptureInput(display);
-  const startedAtEpochMs = Date.now();
-  const command =
-    driver === "gpu-screen-recorder"
-      ? (process.env.MARKETING_GPU_SCREEN_RECORDER ?? "gpu-screen-recorder")
-      : "ffmpeg";
-  const args =
-    driver === "gpu-screen-recorder"
-      ? gpuScreenRecorderArgs(windowId, sourcePath)
-      : externalCaptureFfmpegArgs(input, windowId, sourcePath, geometry);
-  const child = spawn(command, args, {
-    env: { ...process.env, DISPLAY: display },
-    stdio: ["pipe", "ignore", "pipe"],
-  });
-  const recorder: RunningRecorder = {
-    process: child,
-    sourcePath,
-    temporaryRoot,
-    stderr: "",
-    startedAtEpochMs,
-    cadenceWindow: { startEpochMs: startedAtEpochMs, endEpochMs: startedAtEpochMs },
-    driver,
-    geometry,
-    cadence: {
-      sample_duration_ms: 0,
-      captured_frames: 0,
-      unique_frames: 0,
-      effective_unique_fps: 0,
-      unique_frame_ratio: 0,
-    },
-  };
-  child.stderr?.on("data", (chunk) => {
-    recorder.stderr = `${recorder.stderr}${String(chunk)}`.slice(-8_000);
-  });
-  runningRecorders.set(page, recorder);
+  let recorder: RunningRecorder | undefined;
   try {
-    await waitForRecorderStartup(recorder);
+    let geometry: CaptureGeometry;
+    let command: string;
+    let args: string[];
+    let window: MacWindow | undefined;
+    const sourcePath = path.join(
+      temporaryRoot,
+      driver === "screencapturekit" ? "capture.mp4" : "capture.mkv",
+    );
+    if (driver === "screencapturekit") {
+      const helper = ensureMacCaptureHelper(
+        fileURLToPath(new URL("../../../../../", import.meta.url)),
+      );
+      ({ window, geometry } = await measureMacWindow(page, helper, temporaryRoot));
+      command = helper;
+      args = [
+        "record",
+        String(window.pid),
+        String(window.window_id),
+        String(window.width),
+        String(window.height),
+        String(Math.round(window.point_width)),
+        String(Math.round(window.point_height)),
+        sourcePath,
+      ];
+    } else {
+      const display = process.env.MARKETING_CAPTURE_DISPLAY ?? process.env.DISPLAY;
+      if (!display) throw new Error("[marketing] 缺少 MARKETING_CAPTURE_DISPLAY");
+      const windowId = await captureWindowId(page, display);
+      geometry = await measureBrowserContentGeometry(page, display, windowId);
+      command =
+        driver === "gpu-screen-recorder"
+          ? (process.env.MARKETING_GPU_SCREEN_RECORDER ?? "gpu-screen-recorder")
+          : "ffmpeg";
+      args =
+        driver === "gpu-screen-recorder"
+          ? gpuScreenRecorderArgs(windowId, sourcePath)
+          : externalCaptureFfmpegArgs(x11CaptureInput(display), windowId, sourcePath, geometry);
+    }
+    await validateGpuAndRefresh(page);
+    const child = spawn(command, args, {
+      env: {
+        ...process.env,
+        ...(driver === "screencapturekit"
+          ? {}
+          : { DISPLAY: process.env.MARKETING_CAPTURE_DISPLAY ?? process.env.DISPLAY }),
+      },
+      stdio: ["pipe", driver === "screencapturekit" ? "pipe" : "ignore", "pipe"],
+    });
+    const startedAtEpochMs = Date.now();
+    const completion = new Promise<number>((resolve) => {
+      child.once("error", (error) => {
+        if (recorder) recorder.stderr += error.message;
+        resolve(1);
+      });
+      child.once("close", (code) => resolve(code ?? 1));
+    });
+    recorder = {
+      process: child,
+      sourcePath,
+      temporaryRoot,
+      stderr: "",
+      startedAtEpochMs,
+      cadenceWindow: { startEpochMs: startedAtEpochMs, endEpochMs: startedAtEpochMs },
+      driver,
+      geometry,
+      completion,
+      cadence: {
+        sample_duration_ms: 0,
+        captured_frames: 0,
+        unique_frames: 0,
+        effective_unique_fps: 0,
+        unique_frame_ratio: 0,
+      },
+    };
+    child.stderr?.on("data", (chunk) => {
+      recorder!.stderr = `${recorder!.stderr}${String(chunk)}`.slice(-8_000);
+    });
+    // A process that exits while stopping is reported by completion, not an unhandled EPIPE.
+    child.stdin?.on("error", () => {});
+    runningRecorders.set(page, recorder);
+    if (window) {
+      recorder.startedAtEpochMs = await waitForMacReady(child, window);
+      await page.bringToFront();
+      await page.waitForTimeout(200); // Drain preroll buffers before the shared cadence calibration.
+    } else await waitForRecorderStartup(recorder);
     recorder.cadenceWindow = await recordCadenceCalibration(page);
     await page.goto("about:blank");
   } catch (error) {
     runningRecorders.delete(page);
-    child.kill("SIGINT");
+    if (recorder) await stopProcess(recorder).catch(() => {}); // Preserve the startup failure after terminating its child.
     fs.rmSync(temporaryRoot, { recursive: true, force: true });
-    throw error;
+    const detail = recorder?.stderr.trim();
+    throw new Error(
+      `${error instanceof Error ? error.message : error}${detail ? `\n${detail}` : ""}`,
+    );
   }
 }
 
-async function stopProcess(recorder: RunningRecorder): Promise<void> {
-  if (recorder.process.exitCode !== null) {
-    if (recorder.process.exitCode !== 0) {
-      throw new Error(
-        `[marketing] 4K60 录制异常退出（exit ${recorder.process.exitCode}）：` +
-          recorder.stderr.trim(),
-      );
-    }
-    return;
+export async function stopProcess(recorder: RunningRecorder): Promise<void> {
+  if (recorder.process.exitCode === null && recorder.process.signalCode === null) {
+    if (recorder.driver === "gpu-screen-recorder") recorder.process.kill("SIGINT");
+    else recorder.process.stdin?.write("q\n");
   }
-  const closed = new Promise<number | null>((resolve) =>
-    recorder.process.once("close", (code) => resolve(code)),
-  );
-  if (recorder.driver === "gpu-screen-recorder") recorder.process.kill("SIGINT");
-  else recorder.process.stdin?.write("q\n");
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const result = await Promise.race([
-    closed,
-    new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 10_000)),
+    recorder.completion,
+    new Promise<"timeout">((resolve) => {
+      timer = setTimeout(() => resolve("timeout"), 10_000);
+    }),
   ]);
+  clearTimeout(timer);
   if (result === "timeout") {
-    recorder.process.kill("SIGINT");
-    throw new Error("[marketing] 4K60 录制器未能在 10 秒内停止");
+    recorder.process.kill("SIGKILL");
+    await recorder.completion;
+    throw new Error("[marketing] 录制器未能在 10 秒内停止，已终止采集进程");
   }
-  if (result !== 0) {
-    throw new Error(`[marketing] 4K60 录制失败（exit ${result}）：${recorder.stderr.trim()}`);
-  }
+  if (result !== 0)
+    throw new Error(`[marketing] 录制失败（exit ${result}）：${recorder.stderr.trim()}`);
+}
+
+export function normalizationEncoderArgs(driver: ExternalCaptureDriver): string[] {
+  return driver === "screencapturekit"
+    ? ["-c:v", "libx264", "-preset", "medium", "-crf", "12"]
+    : [
+        "-c:v",
+        "h264_nvenc",
+        "-preset",
+        "p1",
+        "-tune",
+        "ll",
+        "-rc",
+        "constqp",
+        "-qp",
+        "12",
+        "-bf",
+        "0",
+      ];
 }
 
 function normalizeExternalCapture(recorder: RunningRecorder): string {
@@ -758,18 +992,7 @@ function normalizeExternalCapture(recorder: RunningRecorder): string {
         : `crop=${geometry.width}:${geometry.height}:${geometry.x}:${geometry.y},`) +
         `scale=${MARKETING_CAPTURE_SIZE.width}:${MARKETING_CAPTURE_SIZE.height}:flags=lanczos,` +
         `fps=${MARKETING_CAPTURE_FPS}`,
-      "-c:v",
-      "h264_nvenc",
-      "-preset",
-      "p1",
-      "-tune",
-      "ll",
-      "-rc",
-      "constqp",
-      "-qp",
-      "12",
-      "-bf",
-      "0",
+      ...normalizationEncoderArgs(recorder.driver),
       "-pix_fmt",
       "yuv420p",
       "-g",
@@ -823,10 +1046,13 @@ export async function stopExternalMarketingRecording(
   return {
     extension: "mkv",
     logicalViewport: { ...MARKETING_LOGICAL_VIEWPORT },
-    deviceScaleFactor: MARKETING_DEVICE_SCALE_FACTOR,
+    deviceScaleFactor:
+      recorder.driver === "screencapturekit"
+        ? MARKETING_MAC_DEVICE_SCALE_FACTOR
+        : MARKETING_DEVICE_SCALE_FACTOR,
     driver: recorder.driver,
     startedAtEpochMs: recorder.startedAtEpochMs,
-    sourcePhysicalSize: { ...MARKETING_SOURCE_SIZE },
+    sourcePhysicalSize: { width: recorder.geometry.width, height: recorder.geometry.height },
     cadence: recorder.cadence,
     saveAs: async (target) => fs.promises.copyFile(sourcePath, target),
     cleanup: () => fs.rmSync(recorder.temporaryRoot, { recursive: true, force: true }),

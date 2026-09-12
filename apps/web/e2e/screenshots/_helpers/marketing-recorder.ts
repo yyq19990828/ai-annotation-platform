@@ -40,7 +40,7 @@ interface MarketingArchiveOptions extends MarketingCaptureMetadata {
   run: MarketingRunContext;
   video: Pick<Video, "saveAs">;
   captureExtension?: "webm" | "mkv";
-  captureDriver?: "playwright" | "x11grab" | "gpu-screen-recorder";
+  captureDriver?: "playwright" | "x11grab" | "gpu-screen-recorder" | "screencapturekit";
   deviceScaleFactor?: number;
   sourcePhysicalSize?: { width: number; height: number };
   captureCadence?: MarketingCaptureCadence;
@@ -93,7 +93,7 @@ interface MarketingManifestEntry {
     universal_mp4: MarketingManifestFile;
   };
   capture: {
-    driver: "playwright" | "x11grab" | "gpu-screen-recorder";
+    driver: "playwright" | "x11grab" | "gpu-screen-recorder" | "screencapturekit";
     fps: number;
     physical_size: { width: number; height: number };
     logical_viewport: { width: number; height: number } | null;
@@ -538,7 +538,9 @@ export async function archiveMarketingMaster(options: MarketingArchiveOptions): 
     const originalMedia = probeVideo(incomingOriginalPath);
     validateCaptureSource(originalMedia, options.assetSpec);
     const isExternalCapture =
-      options.captureDriver === "x11grab" || options.captureDriver === "gpu-screen-recorder";
+      options.captureDriver === "x11grab" ||
+      options.captureDriver === "gpu-screen-recorder" ||
+      options.captureDriver === "screencapturekit";
     if (isExternalCapture) {
       validateExternalCaptureSignal(incomingOriginalPath, options.assetSpec);
     }
@@ -551,7 +553,7 @@ export async function archiveMarketingMaster(options: MarketingArchiveOptions): 
         incomingOriginalPath,
         incomingCapturePath,
         universalClip,
-        isExternalCapture,
+        options.captureDriver === "x11grab" || options.captureDriver === "gpu-screen-recorder",
       );
     } else {
       fs.renameSync(incomingOriginalPath, incomingCapturePath);

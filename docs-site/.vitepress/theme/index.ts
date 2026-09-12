@@ -3,6 +3,7 @@
  * 继承默认主题，注册全局组件，加载文档站视觉基线。
  */
 import DefaultTheme from "vitepress/theme";
+import DocsLayout from "./DocsLayout.vue";
 import AutoImage from "./components/AutoImage.vue";
 import ExcalidrawDiagram from "./components/ExcalidrawDiagram.vue";
 import DocsHome from "./components/DocsHome.vue";
@@ -19,6 +20,7 @@ import type { Theme } from "vitepress";
 
 export default {
   extends: DefaultTheme,
+  Layout: DocsLayout,
   enhanceApp({ app }) {
     app.component("AutoImage", AutoImage);
     app.component("ExcalidrawDiagram", ExcalidrawDiagram);
