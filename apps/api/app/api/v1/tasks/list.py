@@ -1,6 +1,6 @@
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func, or_, and_
+from sqlalchemy import select, func, or_, and_, exists
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import (
@@ -42,6 +42,50 @@ from app.api.v1.tasks._shared import (
 router = APIRouter()
 
 
+def _build_task_query(
+    *,
+    project_id: uuid.UUID,
+    project,
+    user: User,
+    status: str | None,
+    assignee_id: uuid.UUID | None,
+    batch_id: uuid.UUID | None,
+    unbatched: bool,
+    reject_reason_type: str | None,
+    class_name: str | None,
+):
+    """Build the one authorized task relation used by page and count queries."""
+    query = select(Task).where(Task.project_id == project_id)
+
+    # B-16: retain the scheduler's exact non-privileged batch visibility policy.
+    if not is_privileged_for_project(user, project):
+        query = query.join(TaskBatch, Task.batch_id == TaskBatch.id).where(
+            task_visibility_clause(user)
+        )
+
+    if status:
+        query = query.where(Task.status == status)
+    if assignee_id:
+        query = query.where(Task.assignee_id == assignee_id)
+    if reject_reason_type:
+        query = query.where(Task.reject_reason_type == reject_reason_type)
+    if class_name:
+        query = query.where(
+            exists().where(
+                Annotation.task_id == Task.id,
+                Annotation.class_name == class_name,
+                Annotation.is_active.is_(True),
+            )
+        )
+
+    # Unbatched keeps precedence over an explicitly supplied batch_id.
+    if unbatched:
+        query = query.where(Task.batch_id.is_(None))
+    elif batch_id:
+        query = query.where(Task.batch_id == batch_id)
+    return query
+
+
 @router.get("", response_model=TaskListResponse)
 async def list_tasks(
     project_id: uuid.UUID = Query(...),
@@ -58,55 +102,25 @@ async def list_tasks(
     user: User = Depends(get_current_user),
 ):
     project = await assert_project_visible(project_id, db, user)
-    q = select(Task).where(Task.project_id == project_id)
-    count_q = (
-        select(func.count()).select_from(Task).where(Task.project_id == project_id)
+    filtered = _build_task_query(
+        project_id=project_id,
+        project=project,
+        user=user,
+        status=status,
+        assignee_id=assignee_id,
+        batch_id=batch_id,
+        unbatched=unbatched,
+        reject_reason_type=reject_reason_type,
+        class_name=class_name,
     )
-
-    # B-16: 非特权用户在工作台列出任务时只能看见 batch 处于 active / annotating
-    # 且自己在 assigned_user_ids 中（或批次未分派）。无 batch 的孤儿对非特权不可见。
-    if not is_privileged_for_project(user, project):
-        q = q.join(TaskBatch, Task.batch_id == TaskBatch.id).where(
-            task_visibility_clause(user)
-        )
-        count_q = count_q.join(TaskBatch, Task.batch_id == TaskBatch.id).where(
-            task_visibility_clause(user)
-        )
-
-    if status:
-        q = q.where(Task.status == status)
-        count_q = count_q.where(Task.status == status)
-    if assignee_id:
-        q = q.where(Task.assignee_id == assignee_id)
-        count_q = count_q.where(Task.assignee_id == assignee_id)
-    # v0.12.6 (A3) · 绩效页 reject/类别维度下钻过滤。
-    if reject_reason_type:
-        q = q.where(Task.reject_reason_type == reject_reason_type)
-        count_q = count_q.where(Task.reject_reason_type == reject_reason_type)
-    if class_name:
-        from sqlalchemy import exists
-
-        ann_clause = exists().where(
-            Annotation.task_id == Task.id,
-            Annotation.class_name == class_name,
-            Annotation.is_active.is_(True),
-        )
-        q = q.where(ann_clause)
-        count_q = count_q.where(ann_clause)
-    # v0.12.0 B5 · 未归类池(batch_id IS NULL)浏览；unbatched 优先, 忽略 batch_id 参数。
-    # 非特权用户因上方 JOIN TaskBatch 天然排除 NULL → 返回空(未归类池是管理者功能)。
-    if unbatched:
-        q = q.where(Task.batch_id.is_(None))
-        count_q = count_q.where(Task.batch_id.is_(None))
-    elif batch_id:
-        q = q.where(Task.batch_id == batch_id)
-        count_q = count_q.where(Task.batch_id == batch_id)
+    count_q = select(func.count()).select_from(filtered.order_by(None).subquery())
 
     # v0.6.8 B-15：首屏与游标分支统一排序，并都产出 next_cursor，修前端 useInfiniteQuery
     # 因首屏拿不到 next_cursor 而判定 hasNextPage=false 卡在 100 条的 BUG。
     # 排序主键改为 sequence_order(点云 scene 按帧时序分包时,同 scene 的 task 是同一刻批量
     # 创建的、created_at 全相同,旧的 (created_at, id) 排序退化为按随机 UUID id 乱序)。
     # 非序列任务 sequence_order 为 NULL → coalesce 到哨兵,排序退回 (created_at, id),行为不变。
+    q = filtered
     seq_key = func.coalesce(Task.sequence_order, _SEQ_NULL_SENTINEL)
     if cursor:
         last_seq, last_ts, last_id = _decode_task_cursor(cursor)
