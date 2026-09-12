@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { useQueryClient, useIsFetching } from "@tanstack/react-query";
 import { clsx } from "clsx";
 import { Icon } from "@/components/ui/Icon";
@@ -18,11 +18,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/shadcn/ui/alert-dialog";
-import { NotificationsPopover } from "./NotificationsPopover";
 import { PreannotateJobsBadge } from "./PreannotateJobsBadge";
 import { JobsBell } from "./JobsBell";
 import { CommandPalette } from "@/components/CommandPalette";
 import { usePerfHudStore } from "@/components/PerfHud";
+
+const NotificationsPopover = lazy(() =>
+  import("./NotificationsPopover").then((module) => ({ default: module.NotificationsPopover })),
+);
 
 const ICON_BTN_CLASS =
   "inline-flex size-[30px] cursor-pointer appearance-none items-center justify-center rounded-md border border-transparent bg-transparent text-muted-foreground transition-[background-color,border-color,color,transform] duration-200 hover:-translate-y-px hover:bg-accent hover:text-foreground active:translate-y-0 active:scale-[0.96] focus-visible:ring-[3px] focus-visible:ring-ring/20";
@@ -166,7 +169,15 @@ export function TopBar({
           <JobsBell />
 
           {/* 通知按钮（v0.7.6：组件自包含 trigger + popover，TopBar 不再管 open state） */}
-          <NotificationsPopover />
+          <Suspense
+            fallback={
+              <button type="button" aria-label="通知加载中" disabled className={ICON_BTN_CLASS}>
+                <Icon name="bell" size={15} />
+              </button>
+            }
+          >
+            <NotificationsPopover />
+          </Suspense>
 
           <div className="flex cursor-pointer items-center gap-2 rounded-lg py-1 pl-1 pr-2.5 transition-[background-color,transform] duration-200 hover:-translate-y-px hover:bg-accent active:translate-y-0 active:scale-[0.98]">
             <Avatar initial={user?.name?.[0] ?? "?"} size="sm" />

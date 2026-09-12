@@ -39,7 +39,7 @@ vi.mock("@/api/auth", async (importOriginal) => ({
 vi.mock("@/stores/authStore", () => ({
   useAuthStore: Object.assign(
     (selector: (value: { user: { id: string } }) => unknown) => selector({ user: { id: "u1" } }),
-    { getState: () => ({ user: { id: "u1" } }) },
+    { getState: () => ({ user: { id: "u1" } }), subscribe: vi.fn(() => () => {}) },
   ),
 }));
 vi.mock("dockview-react", async (importOriginal) => {
@@ -350,7 +350,7 @@ describe("stable Dockview React workspace", () => {
         .api.moveTo({ group: state.api!.getPanel("inspector")!.group, position: "center" });
       state.api!.getPanel("inspector")!.api.setActive();
     });
-    const close = await screen.findByRole("button", { name: "隐藏讨论 / Issue" });
+    const close = await screen.findByRole("button", { name: "隐藏讨论" });
     expect(screen.queryByRole("button", { name: /菜单$/ })).toBeNull();
     fireEvent.contextMenu(close.closest('[role="tab"]')!);
     expect(screen.queryByRole("menu")).toBeNull();
@@ -365,7 +365,7 @@ describe("stable Dockview React workspace", () => {
     await waitFor(() => expect(screen.getByLabelText("讨论草稿")).toHaveValue("保留编辑"));
     act(() => state.api!.addFloatingGroup(state.api!.getPanel("discussion")!));
     await waitFor(() => {
-      expect(screen.getAllByRole("button", { name: "隐藏讨论 / Issue" })).toHaveLength(1);
+      expect(screen.getAllByRole("button", { name: "隐藏讨论" })).toHaveLength(1);
       expect(screen.getByRole("button", { name: "隐藏标注详情" })).toBeVisible();
     });
     expect(mounts).toBe(1);

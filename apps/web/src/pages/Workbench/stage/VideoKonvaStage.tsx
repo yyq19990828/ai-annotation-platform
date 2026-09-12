@@ -153,6 +153,7 @@ import { SelectionOverlay } from "./SelectionOverlay";
 import { keypointColorByIndex } from "./ImageStageShapes";
 import { pickTopRasterMaskAt, type RasterMaskRenderRecord } from "./shared/rasterMaskRender";
 import { VideoTrackContextBar, type VideoTrackContextBarProps } from "./VideoTrackContextBar";
+import { VideoStageCommentBadges } from "./VideoStageCommentBadges";
 import type { AiBox } from "../state/transforms";
 import styles from "./VideoKonvaStage.module.css";
 
@@ -198,6 +199,8 @@ interface VideoKonvaStageProps {
   pendingDrawing?: PendingDrawing;
   issuePixelFeedbacks?: AnnotationFeedback[];
   issueHighlightId?: string | null;
+  annotationCommentCounts?: Record<string, number>;
+  onOpenAnnotationComments?: (annotationId: string) => void;
   /** 单击 issue 图钉(Shell 据此高亮 + 切到讨论面板 issues tab)。 */
   onIssuePinClick?: (id: string) => void;
   issuePinDropArmed?: boolean;
@@ -338,6 +341,8 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       pendingDrawing = null,
       issuePixelFeedbacks,
       issueHighlightId,
+      annotationCommentCounts,
+      onOpenAnnotationComments,
       onIssuePinClick,
       issuePinDropArmed,
       issueNavigationPending,
@@ -2374,6 +2379,18 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
       );
     }
 
+    const annotationCommentBadgesInteractive =
+      videoTool === "select" &&
+      !pendingDrawing &&
+      !isPlaybackActive &&
+      !drag &&
+      !pointsDraft.draft &&
+      keypointDraft.length === 0 &&
+      !maskToolActive &&
+      !maskCompareActive &&
+      !issuePinDropArmed &&
+      !issueNavigationPending;
+
     const canvas = (
       <div
         ref={setContainerNode}
@@ -2833,6 +2850,19 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
                 "--frame-h": `${size.h * vp.scale}px`,
               } as CSSProperties
             }
+          />
+          <VideoStageCommentBadges
+            entries={frameViews.entries}
+            maskRecords={displayedMaskRecords.filter((record) => record.source === "annotation")}
+            annotations={annotations}
+            counts={drag ? undefined : annotationCommentCounts}
+            imgW={size.w}
+            imgH={size.h}
+            vp={vp}
+            viewportSize={viewportSize}
+            selectedIds={new Set(selectedIds)}
+            onOpenAnnotationComments={onOpenAnnotationComments}
+            interactive={annotationCommentBadgesInteractive}
           />
           {/* v0.21.4 · AI 候选贴框快捷条(采纳 / 忽略), 复用图片工作台 SelectionOverlay。 */}
           {selectedAiBox && !readOnly && videoTool === "select" && (

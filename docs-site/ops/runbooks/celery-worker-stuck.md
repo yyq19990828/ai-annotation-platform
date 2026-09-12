@@ -36,10 +36,10 @@ docker exec ai-annotation-platform-redis-1 redis-cli llen gpu
 ### 情况 A：容器已退出
 
 ```bash
-docker compose up -d celery-worker celery-worker-gpu celery-worker-cpu celery-worker-export
+docker compose up -d celery-worker celery-worker-maintenance celery-worker-gpu celery-worker-cpu celery-worker-export
 ```
 
-只启动实际消费该队列的 worker：默认队列组为 `celery-worker`（`default,media,cleanup,audit`），GPU 预标和视频追踪为 `celery-worker-gpu`（`ml,gpu`），CPU 预标为 `celery-worker-cpu`（`ml.cpu`），导出为 `celery-worker-export`（`export`）。重启后对应 worker 会自动认领 pending 任务。
+只启动实际消费该队列的 worker：默认队列组为 `celery-worker`（`default,media,cleanup,audit`），分区维护和统计刷新为 `celery-worker-maintenance`（`maintenance`），GPU 预标和视频追踪为 `celery-worker-gpu`（`ml,gpu`），CPU 预标为 `celery-worker-cpu`（`ml.cpu`），导出为 `celery-worker-export`（`export`）。重启后对应 worker 会自动认领 pending 任务。
 
 ### 情况 B：容器运行但无进展（Worker 卡死）
 

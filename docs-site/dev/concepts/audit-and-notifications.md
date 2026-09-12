@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-07-29
+last_reviewed: 2026-09-12
 ---
 
 # 审计与通知
@@ -28,22 +28,23 @@ last_reviewed: 2026-07-29
   caption="审计与通知的写入、持久化和在线分发边界"
 />
 
-通知创建不是事务型 outbox：服务会先 `flush` 通知行、再尽力发布 Redis，调用方稍后才提交事务。Redis 失败不会删除持久化行；反过来，调用方最终回滚时，在线端也可能已经收到尚未持久化的消息。
+通知创建不是事务型 outbox。默认调用仍先 `flush` 通知行、再尽力发布 Redis，由调用方稍后提交；调用方最终回滚时，在线端可能已经收到消息。讨论事件使用显式延迟发布：业务与通知同事务提交成功后才推送，Redis 失败不改变已提交结果，也没有后台重试或恰好一次推送保证。
 
 ## 代码入口
 
-| 位置                                        | 作用                                              |
-| ------------------------------------------- | ------------------------------------------------- |
-| `apps/api/app/services/audit.py`            | `AuditAction`、`AuditService.log()`、`log_many()` |
-| `apps/api/app/middleware/audit.py`          | HTTP 写请求响应后的 `http.*` 元数据审计           |
-| `apps/api/app/workers/audit.py`             | 异步持久化 HTTP 审计；投递失败时中间件同步回退    |
-| `apps/api/app/db/models/audit_log.py`       | `AuditLog` 数据模型                               |
-| `apps/api/app/api/v1/audit_logs.py`         | audit 查询与导出                                  |
-| `apps/api/app/services/notification.py`     | 通知写表与 Redis PubSub                           |
-| `apps/api/app/services/async_job_notify.py` | `async_jobs` 终态 → 通用 `job.*` 通知 helper      |
-| `apps/api/app/db/models/notification.py`    | `Notification` 模型                               |
-| `apps/api/app/api/v1/notifications.py`      | 通知列表、已读、偏好设置                          |
-| `apps/api/app/api/v1/ws.py`                 | `/ws/notifications` 在线推送                      |
+| 位置                                                | 作用                                              |
+| --------------------------------------------------- | ------------------------------------------------- |
+| `apps/api/app/services/audit.py`                    | `AuditAction`、`AuditService.log()`、`log_many()` |
+| `apps/api/app/middleware/audit.py`                  | HTTP 写请求响应后的 `http.*` 元数据审计           |
+| `apps/api/app/workers/audit.py`                     | 异步持久化 HTTP 审计；投递失败时中间件同步回退    |
+| `apps/api/app/db/models/audit_log.py`               | `AuditLog` 数据模型                               |
+| `apps/api/app/api/v1/audit_logs.py`                 | audit 查询与导出                                  |
+| `apps/api/app/services/notification.py`             | 通知写表与 Redis PubSub                           |
+| `apps/api/app/services/discussion_notifications.py` | 讨论事件收件人、原始目标身份与延迟发布记录        |
+| `apps/api/app/services/async_job_notify.py`         | `async_jobs` 终态 → 通用 `job.*` 通知 helper      |
+| `apps/api/app/db/models/notification.py`            | `Notification` 模型                               |
+| `apps/api/app/api/v1/notifications.py`              | 通知列表、已读、偏好设置                          |
+| `apps/api/app/api/v1/ws.py`                         | `/ws/notifications` 在线推送                      |
 
 ## Audit：记录发生了什么
 
@@ -190,6 +191,16 @@ last_reviewed: 2026-07-29
 
 `notify_many()` 会自动去重 `user_ids`，避免重复通知同一收件人。
 
+### 讨论事件的提交与导航
+
+回复创建和问题根记录的实际状态变化，以及任务留言或原标注评论创建时的已验证提及，会调用 `discussion_notifications.py`。收件人按当前项目、任务、批次归属与账号状态重新检查；状态事件通过根线程的递归查询收集全部有效后代作者，穿过已删除的中间回复，不受列表分页限制。排除操作人和重复收件人后，再应用通知偏好。
+
+这些路由调用 `notify` 或 `notify_many` 时显式传入 `defer_publish=True`，只收集本请求实际插入的通知行。业务 `commit` 成功后调用 `publish_committed(rows)`，失败则不推送；没有跨请求的待发布列表。其他通知调用方保留默认发布时序。
+
+问题事件以根问题 ID 为 `target_id`，来源为 `feedback`；`feedback.comment_mentioned` 以原生任务留言 ID 为目标、来源为 `feedback`，导航到任务评论而非问题线程；`annotation.comment_mentioned` 以原标注评论 ID 为目标、来源为 `annotation_comment`，不引用反馈镜像。载荷保留项目、任务、操作人名称，以及需要的回复、标注或状态字段，不复制正文。
+
+通知入口和工作台都重新读取目标。工作台以路由导航身份消费一次激活请求，与面板的显示、折叠和重新挂载分开；旧回复按根游标继续读取，原评论使用标注评论接口查找，再通过既有讨论查询显示服务端操作权限。共享读取不会被单个导航的取消信号终止；分页等待同一缓存的后台刷新时，只有真正返回的分页参数才计入游标循环检查，未推进的刷新结果不会中断查找。已退休任务或账号的结果不能激活当前面板。视频选择与切任务继续使用已有绘制和 Mask 守卫，读取其他视频分段的评论不申请编辑租约。
+
 ### 偏好静音
 
 `NotificationService` 在写通知前会先查：
@@ -229,6 +240,10 @@ last_reviewed: 2026-07-29
 - `job.cancelled`
 - `user.deactivation_requested`
 - `user.deactivation_completed`
+- `feedback.reply_created`
+- `feedback.status_changed`
+- `feedback.comment_mentioned`
+- `annotation.comment_mentioned`
 
 **特殊类型（不在 `KNOWN_NOTIFICATION_TYPES`，因此用户不能静音）：**
 
@@ -366,6 +381,26 @@ WS 握手时会校验 JWT，然后订阅：
 **自动对账**：上述手工对账已自动化为每日 03:00 UTC 的 celery beat 任务 `reconcile_annotation_feedback`。它逐源比对旧表「应 mirror 行数」与统一表「实际镜像行数」，发现缺失时写 `FEEDBACK_RECONCILE_DRIFT` 审计并通知全部 superadmin（`feedback.reconcile_drift`）。drift 长期为 0 是切单源的前置条件。机制详见 [反馈收敛与双写对账](./feedback-convergence)。
 
 <!-- history: feedback convergence was introduced across v0.10 and v0.11 slices; the visible table now describes current phases instead of release numbers. -->
+
+### 讨论读取与草稿归属
+
+工作台的 `GET /tasks/{task_id}/discussion/page` 是只读聚合接口，不改变写入归属。标注评论以 `annotation_comments` 为准；任务留言（支持成员提及，图片可附绘图）以原生 `annotation_feedbacks` 任务评论根记录为准。聚合结果携带 `source` 和原记录，客户端以 `(source, id)` 标识条目并路由修改、删除及附件下载。标注评论的旧镜像可能未同步后续编辑或删除，因此不能替代原记录；Issue 回复、BUG 和退回镜像不进入评论列表。
+
+图片任务绘图复用 `CanvasDrawing`，存入原生任务留言的可空 `annotation_feedbacks.canvas_drawing`，不改写标注评论或其镜像。画布气泡通过 `discussion/annotation-counts` 对可用标注的有效原评论做任务级分组计数，查询键归入 `task-discussion` 家族以复用评论变更失效；关闭账号偏好 `workbench.common.showAnnotationComments` 时停用气泡及其查询。此统计没有每用户阅读位置，也不新增讨论广播。
+
+任务留言提及沿用 `Mention` 结构，存入 `annotation_feedbacks.mentions`；旧记录按空列表读取，创建和聚合序列化保留原始提及。提及能力独立于媒体类型和绘图能力，前端草稿、提交守卫、服务端校验及渲染需一起接入。问题回复仍不接收提及，不能复用带提及的任务输入载荷并静默丢弃字段。
+
+视频评论气泡使用现有当前帧解析结果，单帧标注只显示在其源帧，轨迹按当前可见几何定位；隐藏、离场或未加载分段的对象不参与展示。计数仍按持久化 annotation UUID 聚合全部评论，不能把轨迹号、帧号或类别作为评论身份。气泡沿用现有守卫与讨论激活请求，不成为新的选择或导航状态源。
+
+图片和视频像素问题共用严重度与状态的视觉规则，尺寸按屏幕像素保持恒定。位置和关联对象在创建时冻结，取消关联不改变位置；视频关联的轨迹和标注版本应同步移除。打开详情与显式定位维持分离，图像对象选择需经过编辑守卫并重新校验当前任务，已删除对象允许保留像素定位与讨论。普通问题的 blocker 严重度不参与 Mask 质检的审核阻断计算。
+
+聚合查询先在数据库中合并排序键，再分批读取完整记录；游标绑定任务、范围和标注。Issue 列表使用根记录与服务端状态筛选；数量独立于已加载页，图钉只有在当前任务全部页读取完毕后才视为完整。线程读取独立于列表，通过验证过项目、任务和锚点归属的父链读取后代；删除的中间回复不遮挡仍有效的子回复，但不可见或已删除根记录下的线程不可操作。
+
+接口返回的 `actions` 用于展示可用操作，不能代替写入时的权限校验。每次写入重新校验项目、任务及线程；审核员的状态权限不允许在同一 PATCH 中夹带他人正文、标题或严重程度修改。
+
+前端 `DiscussionDraftProvider` 位于路由展示层之上，按认证会话和用户隔离，再以项目、任务、目标类型及目标 ID 区分草稿。提交先捕获不可变的 owner、目标、revision 和 request ID；成功只清除仍对应同一 revision 的草稿。上传和画布完成结果也携带原 owner，注销后的结果失效，不会附加到新账号或当前选中目标。
+
+文字与结构化草稿只保存在当前登录会话内存中，不进入布局偏好或标注离线队列。弹窗绘图冻结打开时的目标、背景、尺寸和视频锚点，逐次将已完成及正在绘制的笔触同步写入原目标草稿；弹窗与题图直接绘制互斥。题图上的活动画布笔触另用带用户、项目、任务及任务／标注目标命名空间的五分钟 `sessionStorage` 恢复记录；任务切换和路由卸载前先同步保存原 owner，再释放画布。恢复优先读会话草稿，只有内存中不存在该草稿时才读有效恢复记录；注销清除原用户记录，不导入无法确定归属的旧记录。
 
 ## 常见修改落点
 

@@ -106,9 +106,18 @@ celery_app.conf.update(
         "app.workers.audit.persist_audit_entry": {"queue": "audit"},
         # v0.8.4 · task_events 批量 INSERT 走独立队列
         "app.workers.task_events.persist_task_events_batch": {"queue": "audit"},
-        # v0.8.4 · 物化视图 hourly refresh
-        "app.workers.cleanup.refresh_user_perf_mv": {"queue": "cleanup"},
-        "app.workers.cleanup.refresh_audit_bi_mv": {"queue": "cleanup"},
+        # Owner-required tasks have a dedicated queue, separate from ordinary workers.
+        "app.workers.cleanup.refresh_user_perf_mv": {"queue": "maintenance"},
+        "app.workers.cleanup.refresh_audit_bi_mv": {"queue": "maintenance"},
+        "app.workers.audit_partition.ensure_future_audit_partitions": {
+            "queue": "maintenance"
+        },
+        "app.workers.audit_partition.archive_old_audit_partitions": {
+            "queue": "maintenance"
+        },
+        "app.workers.prediction_partition.ensure_future_prediction_partitions": {
+            "queue": "maintenance"
+        },
         # v0.9.11 PerfHud · 1s 推送任务走 default queue (worker 默认订阅 default,ml,media)
         "app.workers.ml_health.publish_ml_backend_stats": {"queue": "default"},
         # v0.8.6 · check_ml_backends_health 历史也漏在路由表外, 同步补上避免 stale celery 队列堆积

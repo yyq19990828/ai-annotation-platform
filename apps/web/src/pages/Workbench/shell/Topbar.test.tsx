@@ -1,7 +1,33 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { Topbar } from "./Topbar";
+import { useBugDrawerStore } from "@/stores/bugDrawerStore";
+
+it("opens the shared bug drawer from the workbench header", () => {
+  act(() => useBugDrawerStore.getState().close());
+  render(
+    <Topbar
+      projectName="测试"
+      projectDisplayId="P-1"
+      task={undefined}
+      taskIdx={0}
+      taskTotal={1}
+      aiRunning={false}
+      isSubmitting={false}
+      onShowHotkeys={vi.fn()}
+      onPrev={vi.fn()}
+      onNext={vi.fn()}
+      onSubmit={vi.fn()}
+    />,
+  );
+
+  const report = screen.getByRole("button", { name: "报告 Bug / 提交反馈" });
+  expect(report).toHaveAttribute("title", "报告 Bug / 提交反馈");
+  fireEvent.click(report);
+  expect(useBugDrawerStore.getState().open).toBe(true);
+  act(() => useBugDrawerStore.getState().close());
+});
 
 it("preserves native segment selector keys without activating overflow menu actions", () => {
   const onSmartNextOpen = vi.fn();

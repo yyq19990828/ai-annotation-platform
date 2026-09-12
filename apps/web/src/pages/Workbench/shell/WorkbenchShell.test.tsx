@@ -76,6 +76,7 @@ describe("WorkbenchShell", () => {
       propagateDialog: {} as never,
       issueSection: {
         openIssueCount: 2,
+        issuePinsComplete: true,
         stageKind: "image",
         issuePinDropArmed: true,
         onOpenList,
@@ -89,9 +90,7 @@ describe("WorkbenchShell", () => {
     expect(screen.getByTestId("layout")).toBeTruthy();
     expect(screen.getByTestId("propagate-dialog")).toBeTruthy();
     expect(screen.getByTestId("issue-create-modal")).toBeTruthy();
-    expect(screen.getByTestId("issue-fab")).toHaveAccessibleName(
-      "查看讨论面板 Issue（已加载 2 个待处理）",
-    );
+    expect(screen.getByTestId("issue-fab")).toHaveAccessibleName("查看问题（2 个未解决）");
 
     fireEvent.click(screen.getByTestId("issue-fab"));
     fireEvent.click(screen.getByTestId("issue-pin-fab"));
@@ -109,6 +108,7 @@ describe("WorkbenchShell", () => {
         layout: {},
         issueSection: {
           openIssueCount: 0,
+          issuePinsComplete: true,
           stageKind: "video",
           issuePinDropArmed: false,
           onOpenList: vi.fn(),
@@ -135,4 +135,38 @@ describe("WorkbenchShell", () => {
       }
     },
   );
+
+  it("shows unknown counts and incomplete pins with a scoped retry", () => {
+    const onRetryIssuePins = vi.fn(async () => {});
+    const issueSection = {
+      openIssueCount: null,
+      openIssueCountLoading: true,
+      openIssueCountError: false,
+      issuePinsComplete: false,
+      issuePinsLoadedCount: 200,
+      issuePinsError: false,
+      stageKind: "image",
+      onRetryIssuePins,
+      createModal: {},
+    };
+    mockUseWorkbenchShellModel.mockReturnValue({ kind: "ready", layout: {}, issueSection });
+    const view = render(<WorkbenchShell />);
+    expect(screen.getByTestId("issue-fab")).toHaveAccessibleName("查看问题（数量加载中）");
+    expect(screen.getByTestId("issue-pin-coverage")).toHaveTextContent("已显示 200 个");
+    mockUseWorkbenchShellModel.mockReturnValue({
+      kind: "ready",
+      layout: {},
+      issueSection: {
+        ...issueSection,
+        openIssueCountLoading: false,
+        openIssueCountError: true,
+        issuePinsError: true,
+      },
+    });
+    view.rerender(<WorkbenchShell />);
+    expect(screen.getByTestId("issue-fab")).toHaveAccessibleName("查看问题（数量暂不可用）");
+    expect(screen.getByTestId("issue-pin-coverage")).toHaveAttribute("data-status", "error");
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    expect(onRetryIssuePins).toHaveBeenCalledOnce();
+  });
 });

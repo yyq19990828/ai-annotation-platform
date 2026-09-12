@@ -26,7 +26,9 @@ vi.mock("@/pages/Workbench/state/offlineQueue", () => ({
 vi.mock("@/hooks/useTheme", () => ({
   useTheme: () => ({ resolved: "light", setTheme: vi.fn() }),
 }));
-vi.mock("./NotificationsPopover", () => ({ NotificationsPopover: () => null }));
+vi.mock("./NotificationsPopover", () => ({
+  NotificationsPopover: () => <button type="button">通知</button>,
+}));
 vi.mock("./PreannotateJobsBadge", () => ({ PreannotateJobsBadge: () => null }));
 vi.mock("./JobsBell", () => ({ JobsBell: () => null }));
 vi.mock("@/components/CommandPalette", () => ({ CommandPalette: () => null }));
@@ -69,6 +71,15 @@ describe("TopBar logout queue prompt", () => {
     mockOfflineQueue.count.mockResolvedValue(0);
     mockOfflineQueue.drain.mockResolvedValue({ ok: 0, failed: 0 });
     mockOfflineQueue.replaceAnnotationId.mockResolvedValue(undefined);
+  });
+
+  it("keeps the shell available while notifications load", async () => {
+    renderTopBar();
+
+    expect(screen.getByRole("button", { name: "通知加载中" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "刷新" })).toBeEnabled();
+    expect(await screen.findByRole("button", { name: "通知" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "通知加载中" })).not.toBeInTheDocument();
   });
 
   it("有离线操作时先展示同步或保留记录的明确选择", async () => {

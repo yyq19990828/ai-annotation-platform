@@ -55,14 +55,15 @@ async def _require_e2e_seed_database(db: AsyncSession = Depends(get_db)) -> None
 router = APIRouter(dependencies=[Depends(_require_e2e_seed_database)])
 
 
-def _delete_webcodecs_seed_objects(storage: Any) -> None:
-    """分页删除 WebCodecs E2E 对象并复查；任何存储错误都必须传播给 teardown。"""
-    prefix = "e2e/video/webcodecs/"
+def _delete_seed_object_prefix(
+    storage: Any, *, bucket: str, prefix: str, label: str
+) -> None:
+    """Delete an already resolved fixture prefix and verify complete removal."""
     continuation_token: str | None = None
     keys: list[str] = []
     while True:
         list_kwargs = {
-            "Bucket": storage.datasets_bucket,
+            "Bucket": bucket,
             "Prefix": prefix,
         }
         if continuation_token:
@@ -73,10 +74,10 @@ def _delete_webcodecs_seed_objects(storage: Any) -> None:
             break
         continuation_token = response.get("NextContinuationToken")
         if not continuation_token:
-            raise RuntimeError("webcodecs cleanup missing MinIO continuation token")
+            raise RuntimeError(f"{label} cleanup missing MinIO continuation token")
     for offset in range(0, len(keys), 1000):
         delete_response = storage.client.delete_objects(
-            Bucket=storage.datasets_bucket,
+            Bucket=bucket,
             Delete={
                 "Objects": [{"Key": key} for key in keys[offset : offset + 1000]],
                 "Quiet": True,
@@ -85,44 +86,47 @@ def _delete_webcodecs_seed_objects(storage: Any) -> None:
         errors = delete_response.get("Errors", [])
         if errors:
             raise RuntimeError(
-                f"webcodecs cleanup MinIO delete failed for {len(errors)} object(s)"
+                f"{label} cleanup MinIO delete failed for {len(errors)} object(s)"
             )
     remaining = storage.client.list_objects_v2(
-        Bucket=storage.datasets_bucket,
+        Bucket=bucket,
         Prefix=prefix,
         MaxKeys=1,
     ).get("Contents", [])
     if remaining:
-        raise RuntimeError("webcodecs cleanup left MinIO objects")
+        raise RuntimeError(f"{label} cleanup left MinIO objects")
+
+
+def _delete_webcodecs_seed_objects(storage: Any) -> None:
+    _delete_seed_object_prefix(
+        storage,
+        bucket=storage.datasets_bucket,
+        prefix="e2e/video/webcodecs/",
+        label="webcodecs",
+    )
+
+
+def _delete_comment_attachment_seed_objects(storage: Any, annotation_ids: list) -> None:
+    # These IDs are resolved from fixture projects before their database rows
+    # are deleted. Include unfinished uploads, not only attachments in comments.
+    for annotation_id in annotation_ids:
+        identifier = UUID(str(annotation_id))
+        _delete_seed_object_prefix(
+            storage,
+            bucket=storage.bucket,
+            prefix=f"comment-attachments/{identifier}/",
+            label="comment-attachment",
+        )
 
 
 def _delete_filtering_seed_objects(storage: Any) -> None:
     """Delete only the deterministic objects owned by the filtering fixture."""
-    prefix = "e2e/filtering/"
-    keys = [
-        obj["Key"]
-        for obj in storage.client.list_objects_v2(
-            Bucket=storage.datasets_bucket,
-            Prefix=prefix,
-        ).get("Contents", [])
-    ]
-    if keys:
-        response = storage.client.delete_objects(
-            Bucket=storage.datasets_bucket,
-            Delete={"Objects": [{"Key": key} for key in keys], "Quiet": True},
-        )
-        errors = response.get("Errors", [])
-        if errors:
-            raise RuntimeError(
-                f"filtering cleanup MinIO delete failed for {len(errors)} object(s)"
-            )
-    remaining = storage.client.list_objects_v2(
-        Bucket=storage.datasets_bucket,
-        Prefix=prefix,
-        MaxKeys=1,
-    ).get("Contents", [])
-    if remaining:
-        raise RuntimeError("filtering cleanup left MinIO objects")
+    _delete_seed_object_prefix(
+        storage,
+        bucket=storage.datasets_bucket,
+        prefix="e2e/filtering/",
+        label="filtering",
+    )
 
 
 async def _cleanup_e2e_fixtures(db: AsyncSession) -> None:
@@ -169,10 +173,10 @@ async def _cleanup_e2e_fixtures(db: AsyncSession) -> None:
         except Exception as exc:
             log.warning("seed_cleanup skip · %s · %s", sql.split()[2], exc)
 
+    fixture_annotation_ids: list = []
     if fixture_project_ids:
         # 2a) 找 fixture 项目下所有 task/annotation 的 id（在 SAVEPOINT 里）
         fixture_task_ids: list = []
-        fixture_annotation_ids: list = []
         async with db.begin_nested() as sp:
             try:
                 fixture_task_ids = [
@@ -367,6 +371,7 @@ async def _cleanup_e2e_fixtures(db: AsyncSession) -> None:
 
     _delete_webcodecs_seed_objects(storage_service)
     _delete_filtering_seed_objects(storage_service)
+    _delete_comment_attachment_seed_objects(storage_service, fixture_annotation_ids)
 
     residual_row = (
         (

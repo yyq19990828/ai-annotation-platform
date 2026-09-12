@@ -8,7 +8,7 @@ last_reviewed: 2026-06-10
 
 # BUG 反馈管理
 
-平台右下角浮动的「BUG 反馈」按钮收集到的反馈会落在 `bug_reports` 表中。
+工作台顶栏及其他页面右下角的反馈入口收集到的反馈会落在 `bug_reports` 表中。
 `super_admin` 和 `project_admin` 均可通过 `GET /api/v1/bug_reports` API 访问工单列表；侧边栏 **管理 → BUG 反馈**（`/bugs`）入口仅对 `super_admin` 前端可见。
 
 > 非管理员用户提交反馈后只能在「设置 → 我的反馈」里查看自己提交的工单。
@@ -102,5 +102,5 @@ last_reviewed: 2026-06-10
 详见 [API 文档](../../api/) 的 `/api/v1/bug-reports/*` 端点；服务实现位于 `apps/api/app/services/bug_report.py`。
 
 ::: tip 提交者排查路径
-当用户报告问题时，可让其点击右下角「BUG 反馈」按钮提交：系统会**自动附带**最近 10 条 API 调用日志与 console error 日志，大幅减少复现成本。无需手工抓 HAR / DevTools。
+当用户报告问题时，可让其点击工作台顶栏或其他页面右下角的反馈按钮提交：系统会**自动附带**最近 10 条 API 调用日志与 console error 日志，大幅减少复现成本。无需手工抓 HAR / DevTools。
 :::

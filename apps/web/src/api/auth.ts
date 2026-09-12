@@ -56,6 +56,8 @@ export interface WorkbenchCommonPreferences {
    * 不缩放视口;视口聚焦另由 focusSelectionEnabled 控制)。视频 + 图片 2D 共享。默认开(流水线手感)。
    */
   autoAdvanceOnDecide: boolean;
+  /** Show per-annotation comment counts on the image canvas. */
+  showAnnotationComments: boolean;
 }
 
 /** v0.16.7 · 标签字段 token 全集;class 三段恒显,不入表。 */
@@ -378,6 +380,7 @@ export const DEFAULT_WORKBENCH_PREFERENCES: WorkbenchPreferences = {
     petEnabled: true,
     focusSelectionEnabled: false,
     autoAdvanceOnDecide: true,
+    showAnnotationComments: true,
   },
   image: {
     smoothImage: true,

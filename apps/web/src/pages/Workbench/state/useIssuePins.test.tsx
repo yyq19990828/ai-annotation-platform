@@ -1,4 +1,4 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { VideoFrameSeekResult } from "../stage/videoStageControls";
 import { useIssuePins } from "./useIssuePins";
@@ -10,12 +10,35 @@ const storeState = {
   focusTick: 0,
 };
 let feedbackItems: Array<Record<string, unknown>> = [];
+let issueQueryOverrides: Record<string, unknown> = {};
 
 vi.mock("./useActiveIssueStore", () => ({
   useActiveIssueStore: (sel: (s: typeof storeState) => unknown) => sel(storeState),
 }));
 vi.mock("@/hooks/useFeedbacks", () => ({
-  useFeedbacks: () => ({ data: { items: feedbackItems } }),
+  useInfiniteFeedbacks: () => ({
+    data: {
+      pages: [
+        {
+          items: feedbackItems,
+          next_cursor: null,
+          status_counts: {
+            open: feedbackItems.filter((item) => item.status === "open").length,
+          },
+        },
+      ],
+      pageParams: [null],
+    },
+    isLoading: false,
+    isFetching: false,
+    isFetchingNextPage: false,
+    isError: false,
+    error: null,
+    hasNextPage: false,
+    fetchNextPage: vi.fn(),
+    refetch: vi.fn(),
+    ...issueQueryOverrides,
+  }),
 }));
 
 const stageGeom = { imgW: 1000, imgH: 800, vpSize: { w: 600, h: 400 } };
@@ -74,6 +97,7 @@ describe("useIssuePins", () => {
     storeState.highlightId = "";
     storeState.focusTick = 0;
     feedbackItems = [];
+    issueQueryOverrides = {};
     vi.clearAllMocks();
   });
 
@@ -84,6 +108,246 @@ describe("useIssuePins", () => {
       { id: "c", status: "open" },
     ];
     expect(setup().result.current.openIssueCount).toBe(2);
+  });
+
+  it("keeps an exact count separate from pin completeness and exposes unknown while absent", () => {
+    const pageItems = [
+      { id: "a", status: "open", anchor_type: "pixel", anchor_position: { x: 0.1, y: 0.2 } },
+    ];
+    issueQueryOverrides = {
+      data: { pages: [{ items: pageItems, next_cursor: "more" }], pageParams: [null] },
+      hasNextPage: true,
+    };
+    const view = setup();
+    expect(view.result.current.openIssueCount).toBeNull();
+    expect(view.result.current.issuePinsComplete).toBe(false);
+    expect(view.result.current.issuePinsError).toBe(false);
+  });
+
+  it("marks a stale cached count unknown when refreshing the first page fails", () => {
+    issueQueryOverrides = {
+      data: {
+        pages: [
+          {
+            items: [
+              {
+                id: "cached",
+                status: "open",
+                anchor_type: "pixel",
+                anchor_position: { x: 0.1, y: 0.2 },
+              },
+            ],
+            next_cursor: null,
+            status_counts: { open: 9 },
+          },
+        ],
+        pageParams: [null],
+      },
+      isError: true,
+      error: new Error("刷新失败"),
+    };
+    const view = setup();
+    expect(view.result.current.openIssueCount).toBeNull();
+    expect(view.result.current.openIssueCountError).toBe(true);
+    expect(view.result.current.issuePixelFeedbacks).toHaveLength(1);
+  });
+
+  it("retains every loaded current-task pin beyond the first 200-row page", () => {
+    const first = Array.from({ length: 200 }, (_, index) => ({
+      id: `first-${index}`,
+      status: "open",
+      anchor_type: "pixel",
+      anchor_position: { x: 0.1, y: 0.2 },
+    }));
+    const second = [
+      { id: "second-1", status: "open", anchor_type: "pixel", anchor_position: { x: 0.3, y: 0.4 } },
+      {
+        id: "second-2",
+        status: "resolved",
+        anchor_type: "pixel",
+        anchor_position: { x: 0.5, y: 0.6 },
+      },
+    ];
+    issueQueryOverrides = {
+      data: {
+        pages: [
+          { items: first, next_cursor: "next", status_counts: { open: 201 } },
+          { items: second, next_cursor: null },
+        ],
+        pageParams: [null, "next"],
+      },
+    };
+    const view = setup();
+    expect(view.result.current.issuePixelFeedbacks).toHaveLength(202);
+    expect(view.result.current.issuePixelFeedbacks.map((item) => item.id)).toContain("second-2");
+    expect(view.result.current.issuePinsComplete).toBe(true);
+    expect(view.result.current.openIssueCount).toBe(201);
+  });
+
+  it("continues automatic pin paging through a third page after each cursor resolves", async () => {
+    const first = deferred<unknown>();
+    const second = deferred<unknown>();
+    const fetchNextPage = vi
+      .fn()
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    issueQueryOverrides = {
+      data: {
+        pages: [
+          {
+            items: [
+              {
+                id: "p1",
+                status: "open",
+                anchor_type: "pixel",
+                anchor_position: { x: 0.1, y: 0.1 },
+              },
+            ],
+            next_cursor: "cursor-2",
+            status_counts: { open: 3 },
+          },
+        ],
+        pageParams: [null],
+      },
+      hasNextPage: true,
+      fetchNextPage,
+    };
+    const view = setup();
+    await waitFor(() => expect(fetchNextPage).toHaveBeenCalledTimes(1));
+
+    first.resolve({});
+    await act(async () => {
+      await first.promise;
+    });
+    issueQueryOverrides = {
+      data: {
+        pages: [
+          {
+            items: [
+              {
+                id: "p1",
+                status: "open",
+                anchor_type: "pixel",
+                anchor_position: { x: 0.1, y: 0.1 },
+              },
+            ],
+            next_cursor: "cursor-2",
+            status_counts: { open: 3 },
+          },
+          {
+            items: [
+              {
+                id: "p2",
+                status: "resolved",
+                anchor_type: "pixel",
+                anchor_position: { x: 0.2, y: 0.2 },
+              },
+            ],
+            next_cursor: "cursor-3",
+          },
+        ],
+        pageParams: [null, "cursor-2"],
+      },
+      hasNextPage: true,
+      fetchNextPage,
+    };
+    view.rerender(view.params);
+    await waitFor(() => expect(fetchNextPage).toHaveBeenCalledTimes(2));
+
+    second.resolve({});
+    await act(async () => {
+      await second.promise;
+    });
+    issueQueryOverrides = {
+      data: {
+        pages: [
+          {
+            items: [
+              {
+                id: "p1",
+                status: "open",
+                anchor_type: "pixel",
+                anchor_position: { x: 0.1, y: 0.1 },
+              },
+            ],
+            next_cursor: "cursor-2",
+            status_counts: { open: 3 },
+          },
+          {
+            items: [
+              {
+                id: "p2",
+                status: "resolved",
+                anchor_type: "pixel",
+                anchor_position: { x: 0.2, y: 0.2 },
+              },
+            ],
+            next_cursor: "cursor-3",
+          },
+          {
+            items: [
+              {
+                id: "p3",
+                status: "open",
+                anchor_type: "pixel",
+                anchor_position: { x: 0.3, y: 0.3 },
+              },
+            ],
+            next_cursor: null,
+          },
+        ],
+        pageParams: [null, "cursor-2", "cursor-3"],
+      },
+      hasNextPage: false,
+    };
+    view.rerender(view.params);
+    expect(view.result.current.issuePixelFeedbacks.map((item) => item.id)).toEqual([
+      "p1",
+      "p2",
+      "p3",
+    ]);
+    expect(view.result.current.issuePinsComplete).toBe(true);
+  });
+
+  it("does not let a late page request from task A clear task B's pins", async () => {
+    const pending = deferred<unknown>();
+    const fetchNextPage = vi.fn(() => pending.promise);
+    issueQueryOverrides = {
+      data: {
+        pages: [{ items: [{ id: "a", status: "open" }], next_cursor: "more" }],
+        pageParams: [null],
+      },
+      hasNextPage: true,
+      fetchNextPage,
+    };
+    const view = setup();
+    await waitFor(() => expect(fetchNextPage).toHaveBeenCalledTimes(1));
+    issueQueryOverrides = {
+      data: {
+        pages: [
+          {
+            items: [
+              {
+                id: "b",
+                status: "open",
+                anchor_type: "pixel",
+                anchor_position: { x: 0.7, y: 0.8 },
+              },
+            ],
+            next_cursor: null,
+            status_counts: { open: 1 },
+          },
+        ],
+        pageParams: [null],
+      },
+      hasNextPage: false,
+    };
+    view.rerender({ ...view.params, taskId: "T2" });
+    await act(async () => {
+      pending.resolve({});
+      await pending.promise;
+    });
+    expect(view.result.current.issuePixelFeedbacks.map((item) => item.id)).toEqual(["b"]);
   });
 
   it("opens a task-level video Issue without any frame readiness dependency", () => {
@@ -114,7 +378,15 @@ describe("useIssuePins", () => {
   });
 
   it("centers an image pixel anchor only after a list focus request", () => {
-    feedbackItems = [{ id: "issue", anchor_type: "pixel", anchor_position: { x: 0.5, y: 0.5 } }];
+    feedbackItems = [
+      {
+        id: "issue",
+        project_id: "P1",
+        task_id: "T1",
+        anchor_type: "pixel",
+        anchor_position: { x: 0.5, y: 0.5 },
+      },
+    ];
     storeState.highlightId = "issue";
     const view = setup();
     expect(view.setVp).not.toHaveBeenCalled();
@@ -124,11 +396,78 @@ describe("useIssuePins", () => {
     expect(view.seekVideoFrameReady).not.toHaveBeenCalled();
   });
 
+  it("selects an available associated image object before centering", async () => {
+    const target = {
+      id: "issue",
+      project_id: "P1",
+      task_id: "T1",
+      annotation_id: "annotation-1",
+      anchor_type: "pixel",
+      anchor_position: { x: 0.5, y: 0.5 },
+    };
+    feedbackItems = [target];
+    storeState.highlightId = target.id;
+    const selectImageAnnotation = vi.fn(async (id: string, isCurrent: () => boolean) => {
+      expect(id).toBe("annotation-1");
+      expect(isCurrent()).toBe(true);
+      return true;
+    });
+    const view = setup({ selectImageAnnotation });
+    storeState.focusTick++;
+    view.rerender(view.params);
+    await waitFor(() => expect(selectImageAnnotation).toHaveBeenCalledOnce());
+    expect(view.setVp).toHaveBeenCalledOnce();
+  });
+
+  it("does not center when image selection reports a cancelled request", async () => {
+    const target = {
+      id: "issue",
+      project_id: "P1",
+      task_id: "T1",
+      annotation_id: "annotation-1",
+      anchor_type: "pixel",
+      anchor_position: { x: 0.5, y: 0.5 },
+    };
+    feedbackItems = [target];
+    storeState.highlightId = target.id;
+    const selectImageAnnotation = vi.fn(async () => false);
+    const view = setup({ selectImageAnnotation });
+    storeState.focusTick++;
+    view.rerender(view.params);
+    await waitFor(() => expect(selectImageAnnotation).toHaveBeenCalledOnce());
+    expect(view.setVp).not.toHaveBeenCalled();
+  });
+
+  it("does not restore an image viewport after the owner changes during selection", async () => {
+    const target = {
+      id: "issue",
+      project_id: "P1",
+      task_id: "T1",
+      annotation_id: "annotation-1",
+      anchor_type: "pixel",
+      anchor_position: { x: 0.5, y: 0.5 },
+    };
+    feedbackItems = [target];
+    storeState.highlightId = target.id;
+    const selection = deferred<boolean>();
+    const selectImageAnnotation = vi.fn(() => selection.promise);
+    const view = setup({ selectImageAnnotation });
+    storeState.focusTick++;
+    view.rerender(view.params);
+    await waitFor(() => expect(selectImageAnnotation).toHaveBeenCalledOnce());
+    view.rerender({ ...view.params, taskId: "T2" });
+    await act(async () => {
+      selection.resolve(true);
+      await selection.promise;
+    });
+    expect(view.setVp).not.toHaveBeenCalled();
+  });
+
   it.each([
     { anchor_type: "point_cloud", anchor_position: { frame: 0 } },
     { anchor_position: null },
   ])("does not center an image issue without pixel coordinates: %j", (anchor) => {
-    feedbackItems = [{ id: "issue", ...anchor }];
+    feedbackItems = [{ id: "issue", project_id: "P1", task_id: "T1", ...anchor }];
     storeState.highlightId = "issue";
     const view = setup();
     storeState.focusTick++;
@@ -157,6 +496,25 @@ describe("useIssuePins", () => {
     expect(view.result.current.issuePinPrefill).toEqual({ x: 0.25, y: 0.75 });
     expect(view.pauseVideoPlayback).not.toHaveBeenCalled();
     expect(view.seekVideoFrameReady).not.toHaveBeenCalled();
+  });
+
+  it("captures the current saved image object together with the pixel", async () => {
+    const captureImageContext = vi.fn(() => ({
+      annotationId: "annotation-123456",
+      annotationLabel: "车辆",
+    }));
+    const view = setup({ captureImageContext });
+    await act(async () => {
+      view.result.current.onToggleIssuePinDrop();
+      await view.result.current.onIssuePinDrop(0.25, 0.75);
+    });
+    expect(captureImageContext).toHaveBeenCalledOnce();
+    expect(view.result.current.issuePinPrefill).toEqual({
+      x: 0.25,
+      y: 0.75,
+      annotationId: "annotation-123456",
+      annotationLabel: "车辆",
+    });
   });
 
   it("opens video F0 only after exact readiness and consumes the drop once", async () => {
@@ -248,7 +606,13 @@ describe("useIssuePins", () => {
 
   it("list focus and retry retain the original durable frame after query changes", async () => {
     feedbackItems = [
-      { id: "issue", anchor_type: "pixel", anchor_position: { x: 0.2, y: 0.4, frame: 3 } },
+      {
+        id: "issue",
+        project_id: "P1",
+        task_id: "T1",
+        anchor_type: "pixel",
+        anchor_position: { x: 0.2, y: 0.4, frame: 3 },
+      },
     ];
     storeState.highlightId = "issue";
     const view = setup({ isVideoTask: true });
@@ -261,7 +625,13 @@ describe("useIssuePins", () => {
     await act(async () => view.rerender(view.params));
     expect(view.result.current.issueNavigation).toEqual({ status: "timeout", frameIndex: 3 });
     feedbackItems = [
-      { id: "issue", anchor_type: "pixel", anchor_position: { x: 0.2, y: 0.4, frame: 17 } },
+      {
+        id: "issue",
+        project_id: "P1",
+        task_id: "T1",
+        anchor_type: "pixel",
+        anchor_position: { x: 0.2, y: 0.4, frame: 17 },
+      },
     ];
     view.rerender(view.params);
     expect(view.seekVideoFrameReady).toHaveBeenCalledTimes(1);

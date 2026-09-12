@@ -156,6 +156,10 @@ export interface ImageWorkbenchProps {
   onIssuePinClick?: (id: string) => void;
   issuePinDropArmed?: boolean;
   onIssuePinDrop?: (x: number, y: number) => void;
+  /** Per-annotation saved comment totals for the image canvas. */
+  annotationCommentCounts?: Record<string, number>;
+  /** Open an annotation's comment list through the guarded Workbench shell. */
+  onOpenAnnotationComments?: (annotationId: string) => void;
 }
 
 export function ImageWorkbench({
@@ -251,6 +255,8 @@ export function ImageWorkbench({
   onIssuePinClick,
   issuePinDropArmed,
   onIssuePinDrop,
+  annotationCommentCounts,
+  onOpenAnnotationComments,
 }: ImageWorkbenchProps) {
   const imageScaleRange = useMemo(
     () =>
@@ -412,6 +418,8 @@ export function ImageWorkbench({
       onIssuePinClick={onIssuePinClick}
       issuePinDropArmed={issuePinDropArmed}
       onIssuePinDrop={onIssuePinDrop}
+      annotationCommentCounts={annotationCommentCounts}
+      onOpenAnnotationComments={onOpenAnnotationComments}
       overlay={
         <>
           <FloatingDock

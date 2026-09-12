@@ -41,6 +41,43 @@ test("annotation and Issue writes never become expected cancellations", () => {
       );
 });
 
+test("comment count cancellation permits only its exact GET read", () => {
+  const request = { ...abort, method: "GET", path: `${task}/discussion/annotation-counts` };
+  assert.equal(isVideoLifecycleCancellation(request), true);
+  for (const method of ["POST", "PATCH", "DELETE"])
+    assert.equal(isVideoLifecycleCancellation({ ...request, method }), false);
+  assert.equal(isVideoLifecycleCancellation({ ...request, kind: "http" }), false);
+  assert.equal(
+    isVideoLifecycleCancellation({ ...request, message: "net::ERR_CONNECTION_RESET" }),
+    false,
+  );
+  assert.equal(isVideoLifecycleCancellation({ ...request, path: `${request.path}/export` }), false);
+  assert.equal(
+    isVideoLifecycleCancellation({
+      ...abort,
+      method: "PATCH",
+      path: "/api/v1/auth/me/preferences",
+    }),
+    false,
+  );
+});
+
+test("discussion tab cancellation permits only its exact GET read", () => {
+  const request = { ...abort, method: "GET", path: `${task}/discussion/page` };
+  assert.equal(isVideoLifecycleCancellation(request), true);
+  for (const method of ["POST", "PATCH", "DELETE"])
+    assert.equal(isVideoLifecycleCancellation({ ...request, method }), false);
+  assert.equal(isVideoLifecycleCancellation({ ...request, kind: "http" }), false);
+  assert.equal(
+    isVideoLifecycleCancellation({ ...request, message: "net::ERR_CONNECTION_RESET" }),
+    false,
+  );
+  assert.equal(
+    isVideoLifecycleCancellation({ ...request, path: `${task}/discussion/page/export` }),
+    false,
+  );
+});
+
 test("HTTP failures, other network failures and unrelated endpoints remain errors", () => {
   const known = { ...abort, method: "GET", path: `${video}/chunks/0/samples` };
   assert.equal(isVideoLifecycleCancellation(known), true);
@@ -52,4 +89,19 @@ test("HTTP failures, other network failures and unrelated endpoints remain error
   assert.equal(isVideoLifecycleCancellation({ ...known, method: "POST" }), false);
   for (const path of [`${video}/chunks/0/samples/retry`, `${task}/lock`, "/api/v1/projects"])
     assert.equal(isVideoLifecycleCancellation({ ...known, path }), false, path);
+});
+
+test("replacing an Issue detail permits only its exact aborted GET thread read", () => {
+  const root = "/api/v1/feedbacks/00000000-0000-0000-0000-000000000000";
+  const request = { ...abort, method: "GET", path: `${root}/thread` };
+  assert.equal(isVideoLifecycleCancellation(request), true);
+  for (const method of ["POST", "PATCH", "DELETE"])
+    assert.equal(isVideoLifecycleCancellation({ ...request, method }), false);
+  assert.equal(isVideoLifecycleCancellation({ ...request, kind: "http" }), false);
+  assert.equal(
+    isVideoLifecycleCancellation({ ...request, message: "net::ERR_CONNECTION_RESET" }),
+    false,
+  );
+  for (const path of [`${root}/replies`, `${root}/thread/export`, root])
+    assert.equal(isVideoLifecycleCancellation({ ...request, path }), false);
 });

@@ -158,12 +158,14 @@ pnpm dev:api        # http://localhost:8000
 pnpm dev:web        # http://localhost:3000
 
 # 多 worktree 并行时可用一条命令启动当前 checkout 的前后端
-pnpm dev:worktree   # 自动选择空闲端口并配置前端代理
+pnpm dev:worktree   # 独立数据库/Redis/bucket，自动选择端口并配置代理
 ```
 
-`dev:worktree` 默认从 API `8100` 和 Web `3100` 开始向上寻找空闲端口，
-按 `Ctrl+C` 会同时停止两个服务。端口隔离不会隔离 `.env` 中的数据库、Redis
-和对象存储。
+`dev:worktree` 为每个工作树的 `dev/test/e2e` 模式管理独立数据库、Redis、七个 bucket
+及本地文件；共享本机 PostgreSQL/MinIO 实例，不修改共享数据库。默认从 API `8100`
+和 Web `3100` 寻找空闲端口，可用 `--with-worker` 启动本工作树的后台任务消费者。
+`doctor` 诊断、`stop` 停止、带精确确认值的 `reset/destroy` 重建或清理环境。
+首次启动不复制已有账号和项目。详见[独立工作树开发环境](docs-site/dev/how-to/worktree-environments.md)。
 
 需要演示数据时：
 
@@ -191,7 +193,7 @@ PYTHONPATH=. uv run python scripts/seed.py
 
 ```bash
 # Celery 后台任务：通用队列、GPU / CPU 预标、导出、视频帧、通知等
-docker compose up -d celery-worker celery-worker-gpu celery-worker-cpu celery-worker-export celery-beat
+docker compose up -d celery-worker celery-worker-maintenance celery-worker-gpu celery-worker-cpu celery-worker-export celery-beat
 
 # GPU ML Backend 在叠加文件 docker-compose.ml.yml，按显存预算选择独立 profile
 # Grounded-SAM-2：适合图片 SAM / DINO 与视频 tracker
@@ -251,6 +253,10 @@ API 变更后同步跑 `pnpm openapi:export` 和 `pnpm codegen`；环境变量�
 内部账号支持邮件恢复、按状态查询、逐项目职责交接、紧急停用与恢复。管理员确认交接时会重新核对接收资格及预览状态；恢复不会拿回已交接工作或恢复已撤销的凭据。接口与兼容字段见[认证与账号生命周期](./docs-site/api/guides/auth.md)。
 
 工作台显示保存和本机待同步状态，并按账号保留离线操作；普通标注创建支持持久幂等键，避免重试生成重复对象。详见[任务与标注 API](./docs-site/api/guides/tasks-and-annotations.md#保存标注与提交任务)。
+
+任务讨论 API 汇总原标注评论和原生任务留言，任务留言支持项目成员提及，图片任务留言还可附绘图；提供按标注 ID 批量统计评论数，图片和视频画布提示可通过默认开启的账号偏好关闭。聚合记录保留来源、附件与视频锚点；问题 API 提供根记录筛选、准确状态数量和历史回复分页，图片和视频像素问题均可关联对象，读写都检查项目与任务权限。详见[任务讨论与问题线程](./docs-site/api/guides/tasks-and-annotations.md#任务讨论与问题线程)。
+
+问题回复、状态变化、任务留言和标注评论提及复用站内通知与类型静音，点击时重新核对权限并定位原对话。讨论通知在业务提交成功后推送，网络推送失败不影响已保存内容，详见[讨论通知](./docs-site/api/guides/tasks-and-annotations.md#讨论通知)。
 
 命名布局预设通过账号偏好 API 跨设备保存；`namedPresets` 采用带 revision 的整份 map 替换与省略删除语义，陈旧设备写入返回冲突，而 `contexts` 可在预设专用 PATCH 中缺席。安全更新方式与兼容规则见[账号偏好与命名布局预设](./docs-site/api/guides/auth.md#账号偏好与命名布局预设)。
 

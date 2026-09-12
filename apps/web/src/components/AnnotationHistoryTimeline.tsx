@@ -6,6 +6,11 @@ import styles from "./AnnotationHistoryTimeline.module.css";
 interface Props {
   entries: HistoryEntry[];
   loading?: boolean;
+  error?: unknown;
+  onRetry?: () => void;
+  /** Docked Workbench fills the available content area; ReviewWorkbench stays bounded. */
+  presentation?: "fill" | "bounded";
+  scopeLabel?: string;
 }
 
 const ACTION_LABEL: Record<
@@ -61,16 +66,47 @@ function summarizeDetail(action: string | null, detail: Record<string, unknown> 
   return "";
 }
 
-export function AnnotationHistoryTimeline({ entries, loading }: Props) {
+export function AnnotationHistoryTimeline({
+  entries,
+  loading,
+  error,
+  onRetry,
+  presentation = "bounded",
+  scopeLabel,
+}: Props) {
   if (loading) {
-    return <div className={styles.emptyState}>加载历史…</div>;
+    return (
+      <div className={styles.emptyState} role="status" aria-live="polite">
+        {scopeLabel && <div className={styles.scope}>{scopeLabel}</div>}
+        <span>加载历史…</span>
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <div className={styles.emptyState} role="alert">
+        {scopeLabel && <div className={styles.scope}>{scopeLabel}</div>}
+        <div>无法加载历史记录。</div>
+        {onRetry && (
+          <button type="button" className={styles.retry} onClick={onRetry}>
+            重试
+          </button>
+        )}
+      </div>
+    );
   }
   if (entries.length === 0) {
-    return <div className={styles.emptyState}>暂无历史记录</div>;
+    return (
+      <div className={styles.emptyState}>
+        {scopeLabel && <div className={styles.scope}>{scopeLabel}</div>}
+        <span>暂无历史记录</span>
+      </div>
+    );
   }
 
   return (
-    <div className={styles.root}>
+    <div className={`${styles.root} ${styles[presentation]}`} data-presentation={presentation}>
+      {scopeLabel && <div className={styles.scope}>{scopeLabel}</div>}
       {entries.map((e, i) => {
         const meta = e.action ? ACTION_LABEL[e.action] : undefined;
         const summary =

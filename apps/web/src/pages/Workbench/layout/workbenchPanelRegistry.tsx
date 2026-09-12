@@ -89,7 +89,7 @@ export const WORKBENCH_PANEL_REGISTRY = {
     ...PANEL_SCOPE,
     capabilities: SIDE_CAPABILITIES,
     id: "discussion",
-    title: "讨论 / Issue",
+    title: "讨论",
     renderer: "always",
     defaultPosition: "below",
     minWidth: 220,

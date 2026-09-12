@@ -1,4 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
@@ -11,13 +21,40 @@ import {
   type CommentCanvasDrawing,
   type CommentMention,
 } from "@/api/comments";
+import { isCurrentAuthOwner } from "@/stores/authStore";
+import { randomId } from "@/utils/id";
+import {
+  discussionTargetCapabilities,
+  type DiscussionDraft,
+  type DiscussionDraftPatch,
+  type DiscussionDraftStore,
+  type DiscussionSubmissionSnapshot,
+} from "../state/useDiscussionDraftStore";
+import { useDiscussionDraftStore } from "../state/DiscussionDraftProvider";
+import {
+  discussionTargetKey,
+  type DiscussionOrigin,
+  type DiscussionPayload,
+  type DiscussionTarget,
+} from "../state/discussionTypes";
 
 // mention chip(@提及):brand 语义色 + 柔底,亮暗主题统一走 token。
 // 经 raw DOM(insertMentionChip)与 React(renderCommentBody)两条路径共用,故抽成静态串。
 const MENTION_CHIP = "mx-px rounded-[3px] bg-brand/15 px-1.5 py-px font-medium text-brand";
 
-interface CommentInputProps {
-  annotationId: string;
+export interface CommentInputProps {
+  /** Legacy annotation-only adapter. New callers should pass `target`. */
+  annotationId?: string | null;
+  projectId?: string | null;
+  taskId?: string | null;
+  /** Explicit task/annotation/Issue target for the session-backed composer. */
+  target?: DiscussionTarget | null;
+  /** Alias retained for callers that name the prop after the contract. */
+  discussionTarget?: DiscussionTarget | null;
+  /** Optional host-controlled draft; the provider store is used by default. */
+  draft?: DiscussionDraft | null;
+  draftStore?: DiscussionDraftStore | null;
+  onDraftChange?: (draft: DiscussionDraft) => void;
   /** 项目成员候选；触发 @ 时作为 UserPicker 的源。 */
   members: UserPickerOption[];
   busy?: boolean;
@@ -34,19 +71,23 @@ interface CommentInputProps {
   liveCanvas?: {
     active: boolean;
     result: CommentCanvasDrawing | null;
-    onStart: (initial?: CommentCanvasDrawing | null) => void;
-    onConsume: () => void;
+    /** Result identity is optional for the old ReviewWorkbench adapter. */
+    resultId?: string | null;
+    origin?: DiscussionOrigin | null;
+    onStart: (initial?: CommentCanvasDrawing | null, origin?: DiscussionOrigin | null) => void;
+    onConsume: (resultId?: string | null) => void;
   };
   anchor?: AnnotationCommentAnchor | null;
   /** v0.11.12 · 上报当前 pending 批注，让画布把「正在编辑的评论」的批注预览出来。 */
   onPendingDrawingChange?: (drawing: CommentCanvasDrawing | null) => void;
-  onSubmit: (payload: {
-    body: string;
-    mentions: CommentMention[];
-    attachments: CommentAttachment[];
-    canvas_drawing: CommentCanvasDrawing | null;
-    anchor?: AnnotationCommentAnchor | null;
-  }) => void | Promise<unknown>;
+  /** Unavailable targets stay recoverable but cannot be silently retargeted. */
+  targetAvailable?: boolean;
+  targetUnavailableReason?: string | null;
+  onReturnToTask?: () => void;
+  onSubmit: (
+    payload: DiscussionPayload,
+    snapshot?: DiscussionSubmissionSnapshot,
+  ) => void | Promise<unknown>;
 }
 
 interface PickerState {
@@ -108,7 +149,15 @@ export function serialize(root: HTMLElement): { body: string; mentions: CommentM
     }
   };
   root.childNodes.forEach(walk);
-  return { body: body.trim(), mentions };
+  const trimmedBody = body.trim();
+  const leadingTrim = body.length - body.trimStart().length;
+  return {
+    body: trimmedBody,
+    mentions: mentions.map((mention) => ({
+      ...mention,
+      offset: mention.offset - leadingTrim,
+    })),
+  };
 }
 
 /** 把 @+name 注入到当前光标位置：插入 chip span，替换之前的 `@query` 文本。 */
@@ -146,8 +195,92 @@ function insertMentionChip(triggerRange: { node: Node; offset: number }, opt: Us
   sel.addRange(newRange);
 }
 
+function blankPicker(): PickerState {
+  return { open: false, anchor: { left: 0, top: 0 }, query: "", triggerRange: null };
+}
+
+function cloneAnchor(
+  anchor: AnnotationCommentAnchor | null | undefined,
+): AnnotationCommentAnchor | null {
+  return anchor ? { ...anchor } : null;
+}
+
+function cloneDrawing(
+  drawing: CommentCanvasDrawing | null | undefined,
+): CommentCanvasDrawing | null {
+  if (!drawing) return null;
+  return {
+    shapes: (drawing.shapes ?? []).map((shape) => ({
+      ...shape,
+      points: [...shape.points],
+    })),
+  };
+}
+
+interface PopupCanvasSession {
+  identity: string;
+  targetKey: string | null;
+  target: DiscussionTarget | null;
+  origin: DiscussionOrigin | null;
+  initial: CommentCanvasDrawing | null;
+  backgroundUrl: string | null;
+  imageWidth: number | null;
+  imageHeight: number | null;
+  anchor: AnnotationCommentAnchor | null;
+}
+
+type CanvasMode =
+  | { kind: "popup"; identity: string; session: PopupCanvasSession }
+  | { kind: "live"; identity: string; origin: DiscussionOrigin | null };
+
+/** Hydrate only when a target changes or the editor DOM is newly mounted. */
+function hydrateEditor(root: HTMLElement, body: string, mentions: CommentMention[]) {
+  const sorted = [...mentions]
+    .filter((mention) => mention.offset >= 0 && mention.length > 0)
+    .sort((a, b) => a.offset - b.offset);
+  root.replaceChildren();
+  let cursor = 0;
+  for (const mention of sorted) {
+    if (mention.offset < cursor || mention.offset > body.length) continue;
+    const end = mention.offset + mention.length;
+    if (end > body.length) continue;
+    if (mention.offset > cursor)
+      root.append(document.createTextNode(body.slice(cursor, mention.offset)));
+    const chip = document.createElement("span");
+    chip.contentEditable = "false";
+    chip.setAttribute("data-mention-uid", mention.userId);
+    chip.setAttribute("data-mention-name", mention.displayName);
+    chip.className = MENTION_CHIP;
+    chip.textContent = `@${mention.displayName}`;
+    root.append(chip);
+    cursor = end;
+  }
+  if (cursor < body.length) root.append(document.createTextNode(body.slice(cursor)));
+}
+
+function readDraftPayload(
+  editor: HTMLElement,
+  fallbackAnchor: AnnotationCommentAnchor | null,
+): DiscussionPayload {
+  const { body, mentions } = serialize(editor);
+  return {
+    body,
+    mentions,
+    attachments: [],
+    canvas_drawing: null,
+    anchor: fallbackAnchor,
+  };
+}
+
 export function CommentInput({
   annotationId,
+  projectId,
+  taskId,
+  target: targetProp,
+  discussionTarget,
+  draft: draftProp,
+  draftStore: draftStoreProp,
+  onDraftChange,
   members,
   busy,
   backgroundUrl,
@@ -157,57 +290,273 @@ export function CommentInput({
   liveCanvas,
   anchor,
   onPendingDrawingChange,
+  targetAvailable,
+  targetUnavailableReason,
+  onReturnToTask,
   onSubmit,
 }: CommentInputProps) {
   const editorRef = useRef<HTMLDivElement | null>(null);
-  const [picker, setPicker] = useState<PickerState>({
-    open: false,
-    anchor: { left: 0, top: 0 },
-    query: "",
-    triggerRange: null,
-  });
+  const [picker, setPicker] = useState<PickerState>(blankPicker);
   const [attachments, setAttachments] = useState<CommentAttachment[]>([]);
   const [canvasDrawing, setCanvasDrawing] = useState<CommentCanvasDrawing | null>(null);
   const [canvasOpen, setCanvasOpen] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [canvasSession, setCanvasSession] = useState<PopupCanvasSession | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [localTargetAvailable, setLocalTargetAvailable] = useState(true);
+  const composingRef = useRef(false);
+  const activeUploadRequestsRef = useRef(new Map<string, string>());
+  const activeSubmissionRequestsRef = useRef(new Map<string, string>());
+  const mountedRef = useRef(true);
+  const [, forceRequestStateRender] = useReducer((version: number) => version + 1, 0);
+  const hydratedElementRef = useRef<HTMLDivElement | null>(null);
+  const hydratedTargetKeyRef = useRef<string | null>(null);
+  const legacyIdentityRef = useRef<string | null>(null);
+  const visibleIdentityRef = useRef<string | null>(null);
+  const capturedAnchorRef = useRef<AnnotationCommentAnchor | null>(null);
+  const canvasSessionRef = useRef<PopupCanvasSession | null>(null);
+  const canvasOpenRef = useRef(false);
+  const canvasModeRef = useRef<CanvasMode | null>(null);
+  const liveResultIdRef = useRef<string | null>(null);
+  const liveResultRef = useRef<CommentCanvasDrawing | null>(null);
   const pushToast = useToastStore((s) => s.push);
 
-  // v0.6.4：消费来自 ImageStage 的 live canvas 结果
   useEffect(() => {
-    if (liveCanvas?.result) {
-      setCanvasDrawing(
-        liveCanvas.result.shapes && liveCanvas.result.shapes.length > 0 ? liveCanvas.result : null,
-      );
-      liveCanvas.onConsume();
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  const bumpRequestState = useCallback(() => {
+    if (mountedRef.current) forceRequestStateRender();
+  }, []);
+  const contextStore = useDiscussionDraftStore();
+  const store = draftStoreProp ?? contextStore;
+  const effectiveTarget = useMemo(
+    () =>
+      discussionTarget ??
+      targetProp ??
+      (projectId && taskId && annotationId
+        ? { projectId, taskId, kind: "annotation" as const, annotationId }
+        : null),
+    [annotationId, discussionTarget, projectId, targetProp, taskId],
+  );
+  const targetKey = effectiveTarget ? discussionTargetKey(effectiveTarget) : null;
+  const ownerKey = store
+    ? (() => {
+        const owner = store.getOwner();
+        return JSON.stringify([owner.sessionId, owner.userId]);
+      })()
+    : "legacy";
+  // The target alone is not an editor identity: a replacement auth lease can
+  // render the same task/annotation while owning a different draft. Legacy
+  // adapters also need the annotation fallback because targetKey can be null.
+  const targetIdentity = `${ownerKey}:${targetKey ?? `legacy:${annotationId ?? "none"}`}`;
+  visibleIdentityRef.current = targetIdentity;
+  const storeSubscribe = useCallback(
+    (listener: () => void) => store?.subscribe(listener) ?? (() => undefined),
+    [store],
+  );
+  const storeGetDraft = useCallback(
+    () => (store && effectiveTarget ? store.getDraft(effectiveTarget) : undefined),
+    [effectiveTarget, store],
+  );
+  const storeDraft = useSyncExternalStore(storeSubscribe, storeGetDraft, storeGetDraft);
+  const draft = draftProp ?? storeDraft;
+  // Refs provide synchronous duplicate guards; the version state makes their
+  // changes visible to the current editor without sharing state with another
+  // target rendered by this component instance.
+  const uploadingCurrent = activeUploadRequestsRef.current.has(targetIdentity);
+  const draftSubmitting = draft?.status === "submitting" || Boolean(draft?.inFlightRequestId);
+  const submittingCurrent =
+    activeSubmissionRequestsRef.current.has(targetIdentity) || draftSubmitting;
+  const targetCapabilities = effectiveTarget
+    ? discussionTargetCapabilities(effectiveTarget)
+    : { text: true, mentions: true, attachments: true, canvasDrawing: true, anchor: true };
+  const attachmentsEnabled = targetCapabilities.attachments;
+  const canvasDrawingEnabled = Boolean(enableCanvasDrawing && targetCapabilities.canvasDrawing);
+  const sessionTarget = Boolean(store && effectiveTarget);
+  const storedCanvasDraft = store && effectiveTarget ? store.getDraft(effectiveTarget) : undefined;
+  const canvasDraftActive = Boolean(draft?.canvasActive || storedCanvasDraft?.canvasActive);
+  const activeLiveMode = canvasModeRef.current;
+  const activeLiveModeDraft =
+    activeLiveMode?.kind === "live" && activeLiveMode.origin && store
+      ? Boolean(store.getDraft(activeLiveMode.origin.target)?.canvasActive)
+      : false;
+  const effectiveAttachments = useMemo(
+    () => draft?.attachments ?? (sessionTarget ? [] : attachments),
+    [attachments, draft?.attachments, sessionTarget],
+  );
+  const effectiveCanvasDrawing = useMemo(
+    () => draft?.canvas_drawing ?? (sessionTarget ? null : canvasDrawing),
+    [canvasDrawing, draft?.canvas_drawing, sessionTarget],
+  );
+  const effectiveAnchor = useMemo(
+    () =>
+      draft
+        ? (draft.anchor ?? anchor ?? null)
+        : sessionTarget
+          ? (anchor ?? null)
+          : (capturedAnchorRef.current ?? anchor ?? null),
+    [anchor, draft, sessionTarget],
+  );
+  const isAvailable = targetAvailable !== false && (draft?.targetAvailable ?? localTargetAvailable);
+
+  useEffect(() => {
+    if (store && effectiveTarget && !store.getDraft(effectiveTarget)) {
+      try {
+        store.ensureDraft(effectiveTarget);
+      } catch {
+        // The host auth lease may have changed between render and this
+        // effect; the replacement provider owns the new draft scope.
+      }
     }
-  }, [liveCanvas]);
+  }, [effectiveTarget, store, targetKey]);
 
-  // v0.11.12：把当前 pending 批注上报给画布预览通道；卸载时清空。
   useEffect(() => {
-    onPendingDrawingChange?.(canvasDrawing);
-    return () => onPendingDrawingChange?.(null);
-  }, [canvasDrawing, onPendingDrawingChange]);
+    if (!store || !effectiveTarget || targetAvailable === undefined) return;
+    const current = store.getDraft(effectiveTarget);
+    if (current?.targetAvailable !== targetAvailable) {
+      try {
+        store.setTargetAvailability(effectiveTarget, targetAvailable, targetUnavailableReason);
+      } catch {
+        // See the owner-lease guard above.
+      }
+    }
+  }, [effectiveTarget, store, targetAvailable, targetUnavailableReason, targetKey]);
 
-  const reset = useCallback(() => {
-    if (editorRef.current) editorRef.current.innerHTML = "";
+  // Hydration is keyed by owner + target identity. Draft revisions update the
+  // store but never rewrite this DOM node, so typing cannot move the caret.
+  useLayoutEffect(() => {
+    const editor = editorRef.current;
+    if (!editor || hydratedElementRef.current !== editor) {
+      if (!editor) return;
+      hydratedElementRef.current = editor;
+      hydratedTargetKeyRef.current = null;
+    }
+    if (hydratedTargetKeyRef.current === targetIdentity) return;
+    hydrateEditor(editor, draft?.body ?? "", draft?.mentions ?? []);
+    hydratedTargetKeyRef.current = targetIdentity;
+    setPicker(blankPicker());
+  }, [draft, targetIdentity]);
+
+  useEffect(() => {
+    const identity = targetIdentity;
+    if (legacyIdentityRef.current === null) {
+      legacyIdentityRef.current = identity;
+      return;
+    }
+    if (legacyIdentityRef.current === identity) return;
+    legacyIdentityRef.current = identity;
+    capturedAnchorRef.current = null;
     setAttachments([]);
     setCanvasDrawing(null);
-    setPicker({ open: false, anchor: { left: 0, top: 0 }, query: "", triggerRange: null });
-  }, []);
+    // Close a modal opened for the previous target. Keep its frozen identity
+    // and origin so a queued onSave cannot fall back to the newly visible one.
+    if (canvasModeRef.current?.kind === "popup") {
+      canvasModeRef.current = null;
+      bumpRequestState();
+    }
+    const liveMode = canvasModeRef.current;
+    if (liveMode?.kind === "live" && liveMode.identity !== identity && !liveCanvas?.active) {
+      canvasModeRef.current = null;
+      bumpRequestState();
+    }
+    canvasOpenRef.current = false;
+    setCanvasOpen(false);
+    setLocalError(null);
+    setLocalTargetAvailable(true);
+    setPicker(blankPicker());
+  }, [
+    annotationId,
+    bumpRequestState,
+    liveCanvas?.active,
+    store,
+    activeLiveModeDraft,
+    targetIdentity,
+  ]);
+
+  const patchDraft = useCallback(
+    (patch: DiscussionDraftPatch): boolean => {
+      if (store && effectiveTarget) {
+        try {
+          store.patchDraft(effectiveTarget, patch);
+          return true;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          setLocalError(message);
+          pushToast({ msg: "此发送目标不支持该内容", sub: message, kind: "warning" });
+          return false;
+        }
+      }
+      if (draftProp && onDraftChange) {
+        const next = {
+          ...draftProp,
+          ...(patch.body === undefined && patch.text === undefined
+            ? {}
+            : {
+                body: patch.body ?? patch.text ?? draftProp.body,
+                text: patch.body ?? patch.text ?? draftProp.text,
+              }),
+          ...(patch.mentions === undefined ? {} : { mentions: patch.mentions }),
+          ...(patch.attachments === undefined ? {} : { attachments: patch.attachments }),
+          ...(patch.canvas_drawing === undefined ? {} : { canvas_drawing: patch.canvas_drawing }),
+          ...(patch.anchor === undefined ? {} : { anchor: patch.anchor }),
+        } as DiscussionDraft;
+        onDraftChange(next);
+        return true;
+      }
+      if (patch.attachments !== undefined) setAttachments(patch.attachments);
+      if (patch.canvas_drawing !== undefined) setCanvasDrawing(patch.canvas_drawing);
+      return true;
+    },
+    [draftProp, effectiveTarget, onDraftChange, pushToast, store],
+  );
+
+  const maybeCaptureAnchor = useCallback(() => {
+    if (!anchor) return;
+    if (store && effectiveTarget) {
+      const current = store.getDraft(effectiveTarget);
+      if (!current?.anchor) store.captureAnchor(effectiveTarget, anchor);
+      return;
+    }
+    if (!capturedAnchorRef.current) capturedAnchorRef.current = cloneAnchor(anchor);
+  }, [anchor, effectiveTarget, store]);
+
+  const captureDrawingAnchor = useCallback(
+    (target: DiscussionTarget | null, frozenAnchor: AnnotationCommentAnchor | null) => {
+      if (!frozenAnchor) return;
+      if (store && target) {
+        const current = store.getDraft(target);
+        if (!current?.anchor) store.captureAnchor(target, frozenAnchor);
+        return;
+      }
+      if (!capturedAnchorRef.current) capturedAnchorRef.current = cloneAnchor(frozenAnchor);
+    },
+    [store],
+  );
+
+  const syncEditorDraft = useCallback(() => {
+    const editor = editorRef.current;
+    if (!editor) return false;
+    const payload = readDraftPayload(editor, effectiveAnchor);
+    maybeCaptureAnchor();
+    return patchDraft({ body: payload.body, mentions: payload.mentions });
+  }, [effectiveAnchor, maybeCaptureAnchor, patchDraft]);
 
   /** 监听 input：检测 @ 触发；维护光标处的 query 用于 picker 过滤。 */
   const handleInput = useCallback(() => {
+    if (syncEditorDraft() === false) return;
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0) return;
     const range = sel.getRangeAt(0);
     const node = range.startContainer;
     const offset = range.startOffset;
-    if (node.nodeType !== Node.TEXT_NODE) {
-      setPicker((p) => (p.open ? { ...p, open: false } : p));
+    if (node.nodeType !== Node.TEXT_NODE || !targetCapabilities.mentions) {
+      setPicker((p) => (p.open ? blankPicker() : p));
       return;
     }
     const text = node.textContent ?? "";
-    // 反向查找最近的 @；要求 @ 前是空白 / 文首
     let at = -1;
     for (let i = offset - 1; i >= 0; i--) {
       const ch = text[i];
@@ -218,11 +567,10 @@ export function CommentInput({
       if (/[\s\u00A0]/.test(ch)) break;
     }
     if (at < 0) {
-      setPicker((p) => (p.open ? { ...p, open: false } : p));
+      setPicker((p) => (p.open ? blankPicker() : p));
       return;
     }
     const query = text.slice(at + 1, offset);
-    // 锚点：当前光标 caret 的 ClientRect
     const tmpRange = document.createRange();
     tmpRange.setStart(node, at);
     tmpRange.setEnd(node, offset);
@@ -233,104 +581,527 @@ export function CommentInput({
       query,
       triggerRange: { node, offset: at },
     });
-  }, []);
+  }, [syncEditorDraft, targetCapabilities.mentions]);
 
   const handlePick = useCallback(
     (opt: UserPickerOption) => {
       if (!picker.triggerRange) return;
       insertMentionChip(picker.triggerRange, opt);
-      setPicker({ open: false, anchor: { left: 0, top: 0 }, query: "", triggerRange: null });
+      setPicker(blankPicker());
       editorRef.current?.focus();
+      syncEditorDraft();
     },
-    [picker.triggerRange],
+    [picker.triggerRange, syncEditorDraft],
   );
+
+  const handleCanvasDraftChange = useCallback(
+    (drawing: CommentCanvasDrawing | null) => {
+      const session = canvasSession;
+      if (!session || canvasSessionRef.current !== session) return;
+      // The callback is bound to the popup's opening identity. A late callback
+      // after task/annotation/account replacement may never retarget itself.
+      if (visibleIdentityRef.current !== session.identity) return;
+      const normalized = cloneDrawing(drawing);
+      if (session.origin && store) {
+        if (!store.isOwned(session.origin)) return;
+        if (!store.saveDrawing(session.origin, normalized, { active: false })) return;
+      } else {
+        setCanvasDrawing(normalized);
+      }
+      if (normalized?.shapes?.length) captureDrawingAnchor(session.target, session.anchor);
+    },
+    [canvasSession, captureDrawingAnchor, store],
+  );
+
+  const handleCanvasSave = useCallback(
+    (drawing: CommentCanvasDrawing | null) => {
+      const session = canvasSession;
+      if (!session || canvasSessionRef.current !== session) return;
+      // Check the live identity as well as the callback's captured identity:
+      // React can deliver an already queued callback after a target switch.
+      if (visibleIdentityRef.current !== session.identity) return;
+      const normalized = cloneDrawing(drawing);
+      if (session.origin && store) {
+        if (
+          !store.isOwned(session.origin) ||
+          discussionTargetKey(session.origin.target) !== session.targetKey ||
+          !store.acceptDrawing(session.origin, normalized)
+        )
+          return;
+      } else {
+        setCanvasDrawing(normalized);
+      }
+      if (normalized?.shapes?.length) captureDrawingAnchor(session.target, session.anchor);
+      canvasOpenRef.current = false;
+      if (canvasModeRef.current?.kind === "popup" && canvasModeRef.current.session === session) {
+        canvasModeRef.current = null;
+      }
+      setCanvasOpen(false);
+    },
+    [canvasSession, captureDrawingAnchor, store],
+  );
+
+  const handleCanvasClose = useCallback(() => {
+    const session = canvasSession;
+    if (!session || canvasSessionRef.current !== session) return;
+    if (visibleIdentityRef.current !== session.identity) return;
+    canvasOpenRef.current = false;
+    if (canvasModeRef.current?.kind === "popup" && canvasModeRef.current.session === session) {
+      canvasModeRef.current = null;
+    }
+    setCanvasOpen(false);
+  }, [canvasSession]);
+
+  // v0.6.4：消费来自 ImageStage 的 live canvas 结果. A result with an
+  // origin is never attached to the currently visible target by inference.
+  useEffect(() => {
+    const result = liveCanvas?.result;
+    if (!result) {
+      // A cancelled live session has no result to consume. Release the local
+      // duplicate-click guard once the owning stage reports it inactive.
+      const mode = canvasModeRef.current;
+      const modeDraftActive = activeLiveModeDraft;
+      if (
+        mode?.kind === "live" &&
+        !liveCanvas?.active &&
+        (mode.identity !== targetIdentity || !modeDraftActive)
+      ) {
+        canvasModeRef.current = null;
+        bumpRequestState();
+      }
+      return;
+    }
+    const resultId = liveCanvas.resultId ?? null;
+    if (resultId && liveResultIdRef.current === resultId) return;
+    if (!resultId && liveResultRef.current === result) return;
+    if (resultId) liveResultIdRef.current = resultId;
+    liveResultRef.current = result;
+    const origin = liveCanvas.origin;
+    if (store && effectiveTarget) {
+      if (origin && store.isOwned(origin) && store.acceptDrawing(origin, result)) {
+        // A late result may update an inactive target's memory draft, but it
+        // must never capture the currently playing frame into that target.
+        if (
+          origin.target.kind === "annotation" &&
+          effectiveTarget &&
+          discussionTargetKey(origin.target) === discussionTargetKey(effectiveTarget)
+        ) {
+          maybeCaptureAnchor();
+        }
+      }
+      // Consume is always keyed. The root bridge decides whether a stale
+      // result ID can be discarded; it cannot clear a newer result.
+      liveCanvas.onConsume(resultId);
+    } else {
+      // An origin-bearing result requires a session store to validate its
+      // owner/target. The legacy adapter has no origin and remains compatible.
+      if (!origin) setCanvasDrawing(result.shapes?.length ? result : null);
+      liveCanvas.onConsume(resultId);
+    }
+    const mode = canvasModeRef.current;
+    if (mode?.kind === "live" && (mode.origin?.requestId ?? null) === (origin?.requestId ?? null)) {
+      canvasModeRef.current = null;
+      bumpRequestState();
+    }
+  }, [
+    bumpRequestState,
+    activeLiveModeDraft,
+    canvasDraftActive,
+    effectiveTarget,
+    liveCanvas,
+    maybeCaptureAnchor,
+    store,
+    targetIdentity,
+  ]);
+
+  // v0.11.12：把当前 pending 批注上报给画布预览通道；卸载时清空。
+  useEffect(() => {
+    onPendingDrawingChange?.(effectiveCanvasDrawing);
+    return () => onPendingDrawingChange?.(null);
+  }, [effectiveCanvasDrawing, onPendingDrawingChange]);
+
+  const reset = useCallback(() => {
+    editorRef.current?.replaceChildren();
+    setAttachments([]);
+    setCanvasDrawing(null);
+    setPicker(blankPicker());
+    setLocalError(null);
+    capturedAnchorRef.current = null;
+  }, []);
 
   const handleFileUpload = useCallback(
     async (files: FileList | null) => {
-      if (!files || files.length === 0) return;
-      setUploading(true);
-      const added: CommentAttachment[] = [];
+      if (
+        !files ||
+        files.length === 0 ||
+        activeUploadRequestsRef.current.has(targetIdentity) ||
+        busy ||
+        !attachmentsEnabled
+      )
+        return;
+      const uploadTarget = effectiveTarget;
+      const uploadAnnotationId =
+        uploadTarget?.kind === "annotation" ? uploadTarget.annotationId : annotationId;
+      if (!uploadAnnotationId) return;
+      const uploadIdentity = targetIdentity;
+      const uploadRequestId = `upload-${randomId()}`;
+      const uploadOrigin: DiscussionOrigin | null =
+        store && uploadTarget
+          ? {
+              owner: store.getOwner(),
+              target: { ...uploadTarget },
+              requestId: uploadRequestId,
+            }
+          : null;
+      activeUploadRequestsRef.current.set(uploadIdentity, uploadRequestId);
+      bumpRequestState();
       try {
         for (const f of Array.from(files)) {
+          const uploadStillCurrent = () =>
+            activeUploadRequestsRef.current.get(uploadIdentity) === uploadRequestId &&
+            (store && uploadOrigin
+              ? store.isOwned(uploadOrigin)
+              : visibleIdentityRef.current === uploadIdentity &&
+                legacyIdentityRef.current === uploadIdentity);
+          // Do not start another init after logout/account or target change.
+          if (!uploadStillCurrent()) return;
           if (f.size > MAX_ATTACH_BYTES) {
             pushToast({ msg: `${f.name} 超过 20MB，已跳过`, kind: "warning" });
             continue;
           }
-          const init = await commentsApi.attachmentUploadInit(annotationId, {
+          const init = await commentsApi.attachmentUploadInit(uploadAnnotationId, {
             file_name: f.name,
             content_type: f.type || "application/octet-stream",
           });
+          // The init response is tied to the owner and annotation captured
+          // above. A lease change must stop before using its signed URL.
+          if (!uploadStillCurrent()) return;
           const putRes = await fetch(init.upload_url, {
             method: "PUT",
             body: f,
             headers: { "Content-Type": f.type || "application/octet-stream" },
           });
           if (!putRes.ok) throw new Error(`上传失败 (HTTP ${putRes.status})`);
-          added.push({
+          if (!uploadStillCurrent()) return;
+          const attachment: CommentAttachment = {
             storageKey: init.storage_key,
             fileName: f.name,
             mimeType: f.type || "application/octet-stream",
             size: f.size,
-          });
-        }
-        if (added.length > 0) {
-          setAttachments((prev) => [...prev, ...added]);
+          };
+          if (store && uploadOrigin) {
+            store.acceptUpload(uploadOrigin, attachment);
+          } else if (uploadStillCurrent()) {
+            setAttachments((prev) => [...prev, attachment]);
+          }
         }
       } catch (err) {
         pushToast({ msg: "附件上传失败", sub: String(err), kind: "error" });
       } finally {
-        setUploading(false);
+        if (activeUploadRequestsRef.current.get(uploadIdentity) === uploadRequestId) {
+          activeUploadRequestsRef.current.delete(uploadIdentity);
+          bumpRequestState();
+        }
       }
     },
-    [annotationId, pushToast],
+    [
+      annotationId,
+      busy,
+      effectiveTarget,
+      attachmentsEnabled,
+      bumpRequestState,
+      pushToast,
+      store,
+      targetIdentity,
+    ],
   );
 
-  const handleSubmit = useCallback(async () => {
-    if (!editorRef.current) return;
-    const { body, mentions } = serialize(editorRef.current);
-    if (!body && attachments.length === 0 && !canvasDrawing) return;
+  const authOwnerIsUsable = useCallback(() => {
+    if (!store || draftStoreProp) return true;
     try {
-      // 成功后才 reset：提交失败（如后端校验 / 网络）时保留草稿与画布批注，不静默丢失。
-      await onSubmit({ body, mentions, attachments, canvas_drawing: canvasDrawing, anchor });
-      reset();
+      // A provider-backed store represents a real authenticated route. Fail
+      // closed when auth is missing/expired; explicit draftStore adapters are
+      // the supported path for standalone tests and ReviewWorkbench callers.
+      return isCurrentAuthOwner(store.getOwner().userId);
     } catch {
-      // 失败提示由 mutation 的 onError 负责；此处仅阻止 reset。
+      return false;
     }
-  }, [anchor, attachments, canvasDrawing, onSubmit, reset]);
+  }, [draftStoreProp, store]);
 
-  const submitDisabled = busy || uploading;
+  const handleSubmit = useCallback(async () => {
+    if (
+      !editorRef.current ||
+      busy ||
+      activeUploadRequestsRef.current.has(targetIdentity) ||
+      activeSubmissionRequestsRef.current.has(targetIdentity) ||
+      draftSubmitting ||
+      !isAvailable ||
+      (liveCanvas?.active ?? false) ||
+      canvasOpenRef.current ||
+      Boolean(canvasModeRef.current) ||
+      canvasDraftActive
+    ) {
+      return;
+    }
+    const { body, mentions } = serialize(editorRef.current);
+    const payload: DiscussionPayload = {
+      body,
+      mentions,
+      attachments: [...effectiveAttachments],
+      canvas_drawing: effectiveCanvasDrawing,
+      anchor: effectiveAnchor,
+    };
+    if (
+      !body.trim() &&
+      payload.attachments.length === 0 &&
+      (payload.canvas_drawing?.shapes?.length ?? 0) === 0
+    )
+      return;
+    if (!authOwnerIsUsable()) {
+      setLocalError("登录状态已变化，请重新打开评论后再试");
+      return;
+    }
+    let submission: DiscussionSubmissionSnapshot | null = null;
+    const submittedEditor = editorRef.current;
+    const submittedIdentity = targetIdentity;
+    let requestId: string | null = null;
+    try {
+      if (store && effectiveTarget) {
+        // Ensure the final editor state is represented in the structured draft
+        // before taking the immutable request snapshot.
+        if (!patchDraft({ body, mentions })) return;
+        submission = store.beginSubmission(effectiveTarget, payload);
+        if (!submission) return;
+      }
+      requestId = submission?.requestId ?? `comment-${randomId()}`;
+      // Store-backed submissions are already serialized by draft.inFlight;
+      // this map also covers legacy adapters and closes the rapid-click gap
+      // before React can publish the next render.
+      if (activeSubmissionRequestsRef.current.has(submittedIdentity)) return;
+      activeSubmissionRequestsRef.current.set(submittedIdentity, requestId);
+      bumpRequestState();
+      await onSubmit(payload, submission ?? undefined);
+      if (store && submission) {
+        // Only clear the editor when the store confirms the snapshot was
+        // unchanged. A newer edit must remain visible and recoverable.
+        const cleared = store.resolveSubmission(submission);
+        if (
+          cleared &&
+          editorRef.current === submittedEditor &&
+          visibleIdentityRef.current === submittedIdentity
+        ) {
+          reset();
+        }
+      } else if (
+        editorRef.current === submittedEditor &&
+        visibleIdentityRef.current === submittedIdentity
+      ) {
+        reset();
+      }
+      if (visibleIdentityRef.current === submittedIdentity) setLocalError(null);
+    } catch (error) {
+      if (store && submission) store.rejectSubmission(submission, error);
+      else if (visibleIdentityRef.current === submittedIdentity)
+        setLocalError(error instanceof Error ? error.message : String(error));
+    } finally {
+      if (requestId && activeSubmissionRequestsRef.current.get(submittedIdentity) === requestId) {
+        activeSubmissionRequestsRef.current.delete(submittedIdentity);
+        bumpRequestState();
+      }
+    }
+  }, [
+    authOwnerIsUsable,
+    busy,
+    canvasDraftActive,
+    effectiveAnchor,
+    effectiveAttachments,
+    effectiveCanvasDrawing,
+    effectiveTarget,
+    bumpRequestState,
+    draftSubmitting,
+    isAvailable,
+    liveCanvas?.active,
+    onSubmit,
+    patchDraft,
+    reset,
+    store,
+    targetIdentity,
+  ]);
+
+  const startLiveCanvas = useCallback(() => {
+    if (
+      !liveCanvas ||
+      liveCanvas.active ||
+      canvasOpenRef.current ||
+      canvasModeRef.current ||
+      canvasDraftActive ||
+      !isAvailable ||
+      busy ||
+      uploadingCurrent ||
+      submittingCurrent ||
+      !canvasDrawingEnabled
+    )
+      return;
+    const origin = store && effectiveTarget ? store.makeOrigin(effectiveTarget) : null;
+    if (origin && store) {
+      if (!store.startCanvasSession(origin, effectiveCanvasDrawing)) return;
+    }
+    // Set this before invoking the host callback. The host may update its
+    // active prop asynchronously, and two same-tick clicks must still share
+    // one canvas owner.
+    canvasModeRef.current = { kind: "live", identity: targetIdentity, origin };
+    bumpRequestState();
+    liveCanvas.onStart(effectiveCanvasDrawing, origin);
+  }, [
+    busy,
+    bumpRequestState,
+    canvasDraftActive,
+    effectiveCanvasDrawing,
+    effectiveTarget,
+    isAvailable,
+    canvasDrawingEnabled,
+    liveCanvas,
+    submittingCurrent,
+    store,
+    targetIdentity,
+    uploadingCurrent,
+  ]);
+
+  const openCanvasEditor = useCallback(() => {
+    if (
+      canvasOpenRef.current ||
+      canvasModeRef.current ||
+      liveCanvas?.active ||
+      canvasDraftActive ||
+      !isAvailable ||
+      !backgroundUrl ||
+      busy ||
+      uploadingCurrent ||
+      submittingCurrent ||
+      !canvasDrawingEnabled
+    )
+      return;
+    const origin = store && effectiveTarget ? store.makeOrigin(effectiveTarget) : null;
+    if (store && effectiveTarget && !origin) return;
+    const session: PopupCanvasSession = {
+      identity: targetIdentity,
+      targetKey,
+      target: effectiveTarget ? { ...effectiveTarget } : null,
+      origin,
+      initial: cloneDrawing(effectiveCanvasDrawing),
+      backgroundUrl,
+      imageWidth: imageWidth ?? null,
+      imageHeight: imageHeight ?? null,
+      anchor: cloneAnchor(effectiveAnchor),
+    };
+    canvasSessionRef.current = session;
+    canvasModeRef.current = { kind: "popup", identity: targetIdentity, session };
+    canvasOpenRef.current = true;
+    setCanvasSession(session);
+    setCanvasOpen(true);
+  }, [
+    backgroundUrl,
+    busy,
+    canvasDraftActive,
+    effectiveAnchor,
+    effectiveCanvasDrawing,
+    effectiveTarget,
+    imageHeight,
+    imageWidth,
+    isAvailable,
+    canvasDrawingEnabled,
+    liveCanvas?.active,
+    submittingCurrent,
+    store,
+    targetIdentity,
+    targetKey,
+    uploadingCurrent,
+  ]);
+
+  const submitDisabled =
+    busy ||
+    uploadingCurrent ||
+    submittingCurrent ||
+    !isAvailable ||
+    (liveCanvas?.active ?? false) ||
+    canvasOpenRef.current ||
+    Boolean(canvasModeRef.current) ||
+    canvasDraftActive;
+  const displayError = draft?.error ?? localError;
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-1.5" data-workbench-discussion>
+      {!isAvailable && (
+        <div className="flex items-center justify-between gap-2 rounded border border-status-danger/40 bg-status-danger-soft px-2 py-1.5 text-xs text-status-danger">
+          <span>
+            {draft?.unavailableReason ?? targetUnavailableReason ?? "此讨论目标已不可访问"}
+          </span>
+          {onReturnToTask && (
+            <button
+              type="button"
+              className="cursor-pointer appearance-none border-0 bg-transparent p-0 text-xs text-brand underline"
+              onClick={onReturnToTask}
+            >
+              返回任务留言
+            </button>
+          )}
+        </div>
+      )}
       <div
         ref={editorRef}
-        contentEditable={!busy}
+        contentEditable={!busy && isAvailable}
         suppressContentEditableWarning
+        role="textbox"
+        aria-label="留言"
+        aria-multiline="true"
         onInput={handleInput}
+        onCompositionStart={() => {
+          composingRef.current = true;
+        }}
+        onCompositionEnd={() => {
+          composingRef.current = false;
+        }}
         onKeyDown={(e) => {
           // Enter 提交（Shift+Enter 换行）
-          if (e.key === "Enter" && !e.shiftKey && !picker.open) {
+          if (
+            e.key === "Enter" &&
+            !e.shiftKey &&
+            !picker.open &&
+            !composingRef.current &&
+            !e.nativeEvent.isComposing &&
+            e.nativeEvent.keyCode !== 229
+          ) {
             e.preventDefault();
-            handleSubmit();
+            void handleSubmit();
           }
         }}
-        data-placeholder="留言（@ 提及成员，可附图）..."
+        data-placeholder={
+          targetCapabilities.mentions
+            ? effectiveTarget?.kind === "task"
+              ? "留言（@ 提及成员）..."
+              : "留言（@ 提及成员，可附图）..."
+            : effectiveTarget?.kind === "issue"
+              ? "输入问题回复…"
+              : "输入任务留言…"
+        }
         className="max-h-40 min-h-[56px] overflow-y-auto whitespace-pre-wrap rounded border border-border bg-card px-2 py-1.5 text-xs text-foreground outline-none [font:inherit] empty:before:text-muted-foreground empty:before:content-[attr(data-placeholder)]"
       />
-      {anchor?.kind === "video_frame" && (
+      {effectiveAnchor?.kind === "video_frame" && (
         <div
           data-testid="comment-anchor-preview"
           className="inline-flex select-none items-center gap-1.5 self-start rounded border border-border bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
         >
           <Icon name="film" size={12} />
-          <span className="mono">F{anchor.frameIndex}</span>
-          {anchor.trackId && <span className="mono">{anchor.trackId.slice(0, 8)}</span>}
-          {anchor.source && <span>{sourceLabel(anchor.source)}</span>}
+          <span className="mono">F{effectiveAnchor.frameIndex}</span>
+          {effectiveAnchor.trackId && (
+            <span className="mono">{effectiveAnchor.trackId.slice(0, 8)}</span>
+          )}
+          {effectiveAnchor.source && <span>{sourceLabel(effectiveAnchor.source)}</span>}
         </div>
       )}
-      {attachments.length > 0 && (
+      {effectiveAttachments.length > 0 && (
         <div className="flex flex-wrap gap-1">
-          {attachments.map((a, i) => (
+          {effectiveAttachments.map((a, i) => (
             <div
               key={a.storageKey}
               className="inline-flex items-center gap-1 rounded-[3px] border border-border bg-muted px-1.5 py-0.5 text-xs text-foreground"
@@ -342,7 +1113,9 @@ export function CommentInput({
               </span>
               <button
                 type="button"
-                onClick={() => setAttachments((prev) => prev.filter((_, j) => j !== i))}
+                onClick={() =>
+                  patchDraft({ attachments: effectiveAttachments.filter((_, j) => j !== i) })
+                }
                 className="inline-flex cursor-pointer appearance-none items-center border-0 bg-transparent p-0 text-muted-foreground"
                 aria-label="移除附件"
               >
@@ -354,50 +1127,78 @@ export function CommentInput({
       )}
       <div className="flex items-center justify-between gap-1.5">
         <div className="flex items-center gap-2">
-          <label
-            className={cn(
-              "inline-flex items-center gap-1 text-xs text-muted-foreground",
-              uploading ? "cursor-wait" : "cursor-pointer",
-            )}
-          >
-            <Icon name="upload" size={12} />
-            {uploading ? "上传中…" : "附件"}
-            <input
-              type="file"
-              multiple
-              disabled={uploading || busy}
-              onChange={(e) => handleFileUpload(e.target.files)}
-              className="hidden"
-            />
-          </label>
-          {enableCanvasDrawing && (
+          {attachmentsEnabled && (
+            <label
+              className={cn(
+                "inline-flex items-center gap-1 text-xs text-muted-foreground",
+                uploadingCurrent ? "cursor-wait" : "cursor-pointer",
+              )}
+            >
+              <Icon name="upload" size={12} />
+              {uploadingCurrent ? "上传中…" : "附件"}
+              <input
+                type="file"
+                multiple
+                disabled={uploadingCurrent || busy || !isAvailable}
+                onChange={(e) => {
+                  void handleFileUpload(e.target.files);
+                  e.currentTarget.value = "";
+                }}
+                className="hidden"
+              />
+            </label>
+          )}
+          {canvasDrawingEnabled && (
             <button
               type="button"
-              onClick={() => setCanvasOpen(true)}
-              disabled={!backgroundUrl}
+              onClick={openCanvasEditor}
+              disabled={
+                !backgroundUrl ||
+                !isAvailable ||
+                submittingCurrent ||
+                busy ||
+                uploadingCurrent ||
+                canvasOpenRef.current ||
+                Boolean(liveCanvas?.active) ||
+                canvasDraftActive ||
+                Boolean(canvasModeRef.current)
+              }
               className={cn(
                 "inline-flex cursor-pointer appearance-none items-center gap-1 border-0 bg-transparent p-0 text-xs font-normal text-muted-foreground",
-                canvasDrawing && "font-semibold text-brand",
+                effectiveCanvasDrawing && "font-semibold text-brand",
                 !backgroundUrl && "cursor-default text-muted-foreground/60",
               )}
               title={
-                backgroundUrl ? "弹窗内绘制（与原图比例对齐）" : "题图未加载，无法在空白画布上批注"
+                backgroundUrl
+                  ? "在弹窗中圈点说明，随评论发送，不修改标注"
+                  : "题图未加载，无法在空白画布上批注"
               }
             >
               <Icon name="edit" size={12} />
-              {canvasDrawing ? `批注 · ${(canvasDrawing.shapes ?? []).length} 条` : "弹窗批注"}
+              {effectiveCanvasDrawing
+                ? `批注 · ${(effectiveCanvasDrawing.shapes ?? []).length} 条`
+                : "弹窗批注"}
             </button>
           )}
-          {liveCanvas && (
+          {liveCanvas && canvasDrawingEnabled && (
             <button
               type="button"
-              onClick={() => liveCanvas.onStart(canvasDrawing)}
-              disabled={liveCanvas.active}
+              onClick={startLiveCanvas}
+              disabled={
+                liveCanvas.active ||
+                !isAvailable ||
+                submittingCurrent ||
+                busy ||
+                uploadingCurrent ||
+                canvasOpenRef.current ||
+                canvasDraftActive ||
+                Boolean(canvasModeRef.current)
+              }
               className={cn(
                 "inline-flex cursor-pointer appearance-none items-center gap-1 border-0 bg-transparent p-0 text-xs font-normal text-brand",
                 liveCanvas.active && "cursor-default text-muted-foreground/60",
               )}
-              title="直接在题图上绘制 — 缩放/平移自动跟随"
+              title="在题图上圈点说明，随评论发送，不修改标注；缩放和平移自动跟随"
             >
               <Icon name="target" size={12} />
               {liveCanvas.active ? "正在绘制…" : "在题图上绘制"}
@@ -405,18 +1206,38 @@ export function CommentInput({
           )}
         </div>
         <Button size="sm" variant="primary" disabled={submitDisabled} onClick={handleSubmit}>
-          {busy ? "发送中..." : "发送"}
+          {busy || submittingCurrent ? "发送中..." : "发送"}
         </Button>
       </div>
-      {enableCanvasDrawing && (
+      {displayError && (
+        <div
+          className="flex items-center justify-between gap-2 text-xs text-status-danger"
+          role="alert"
+        >
+          <span>{displayError}</span>
+          {draft?.status === "error" && (
+            <button
+              type="button"
+              className="cursor-pointer appearance-none border-0 bg-transparent p-0 text-xs text-brand underline"
+              onClick={() => void handleSubmit()}
+              disabled={submitDisabled}
+            >
+              重试
+            </button>
+          )}
+        </div>
+      )}
+      {canvasDrawingEnabled && (
         <CanvasDrawingEditor
-          open={canvasOpen}
-          onClose={() => setCanvasOpen(false)}
-          onSave={setCanvasDrawing}
-          initial={canvasDrawing}
-          backgroundUrl={backgroundUrl}
-          imageWidth={imageWidth}
-          imageHeight={imageHeight}
+          key={targetIdentity}
+          open={canvasOpen && canvasSession?.identity === targetIdentity}
+          onClose={handleCanvasClose}
+          onSave={handleCanvasSave}
+          onDraftChange={handleCanvasDraftChange}
+          initial={canvasSession?.initial}
+          backgroundUrl={canvasSession?.backgroundUrl}
+          imageWidth={canvasSession?.imageWidth}
+          imageHeight={canvasSession?.imageHeight}
         />
       )}
       {picker.open && (
@@ -441,7 +1262,7 @@ export function renderCommentBody(
 ) {
   if (mentions.length === 0) return body;
   const sorted = [...mentions].sort((a, b) => a.offset - b.offset);
-  const parts: React.ReactNode[] = [];
+  const parts: ReactNode[] = [];
   let cursor = 0;
   sorted.forEach((m, i) => {
     if (m.offset > cursor) parts.push(body.slice(cursor, m.offset));

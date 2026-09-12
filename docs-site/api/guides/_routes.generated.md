@@ -60,6 +60,8 @@
 | Method | Path |
 |---|---|
 | GET | `/annotations/{annotation_id}/comments` |
+| GET | `/tasks/{task_id}/discussion/page` |
+| GET | `/tasks/{task_id}/discussion/annotation-counts` |
 | GET | `/tasks/{task_id}/comments/page` |
 | GET | `/annotations/{annotation_id}/comments/page` |
 | POST | `/annotations/{annotation_id}/comments` |
@@ -73,6 +75,7 @@
 | Method | Path |
 |---|---|
 | GET | `/feedbacks` |
+| GET | `/feedbacks/{root_feedback_id}/thread` |
 | POST | `/feedbacks` |
 | PATCH | `/feedbacks/{feedback_id}` |
 | DELETE | `/feedbacks/{feedback_id}` |
@@ -719,4 +722,4 @@
 
 ---
 
-_共 66 模块 / 412 路由_
+_共 66 模块 / 415 路由_

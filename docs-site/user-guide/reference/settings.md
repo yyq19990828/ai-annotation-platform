@@ -83,7 +83,7 @@ key 的权限在路由层经 `require_scopes` 校验，缺少所需 scope 的请
 
 ![我的反馈](../images/settings/my-feedback.png)
 
-罗列当前用户通过右下角浮动按钮提交过的 BUG 工单，按时间倒序。每条显示 `display_id` + 标题 + 严重度 + 状态。
+罗列当前用户通过工作台顶栏或其他页面右下角反馈入口提交过的 BUG 工单，按时间倒序。每条显示 `display_id` + 标题 + 严重度 + 状态。
 
 点击展开查看：
 
@@ -98,6 +98,8 @@ key 的权限在路由层经 `require_scopes` 校验，缺少所需 scope 的请
 ![通知偏好](../images/settings/notification-prefs.png)
 
 逐 type 切换 **站内通知（in-app）** 开关。关闭后，新事件不进入站内通知中心；已存档通知不受影响。邮件 digest 当前尚未开放配置。所有已知 type 见 [通知中心](./notifications)。
+
+讨论通知可分别设置「问题收到新回复」「问题状态变更」「任务留言提到了你」「标注评论提到了你」。关闭某一项不影响其他类型，也不会删除问题、评论或已有通知。
 
 ::: tip 静音 = 全链路屏蔽
 静音不只是关闭 WS 推送，而是 `NotificationService` 在写表前先查偏好，被静音的 type 不写表、不发 PubSub。

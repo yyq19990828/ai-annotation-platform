@@ -1051,6 +1051,21 @@
         "title": "AnnotationBulkUpdateResponse",
         "type": "object"
       },
+      "AnnotationCommentCountsOut": {
+        "description": "Exact active annotation-comment counts for a visible task.",
+        "properties": {
+          "counts": {
+            "additionalProperties": {
+              "exclusiveMinimum": 0.0,
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          }
+        },
+        "title": "AnnotationCommentCountsOut",
+        "type": "object"
+      },
       "AnnotationCommentCreate": {
         "properties": {
           "anchor": {
@@ -1948,7 +1963,6 @@
             "title": "Annotation Id"
           },
           "attachments": {
-            "default": [],
             "items": {
               "additionalProperties": true,
               "type": "object"
@@ -1960,6 +1974,16 @@
             "title": "Body",
             "type": "string"
           },
+          "canvas_drawing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CanvasDrawing"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "kind": {
             "enum": [
               "issue",
@@ -1969,6 +1993,13 @@
             ],
             "title": "Kind",
             "type": "string"
+          },
+          "mentions": {
+            "items": {
+              "$ref": "#/components/schemas/Mention"
+            },
+            "title": "Mentions",
+            "type": "array"
           },
           "project_id": {
             "format": "uuid",
@@ -2056,6 +2087,31 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "status_counts": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "integer"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Counts"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
           }
         },
         "required": [
@@ -2066,6 +2122,9 @@
       },
       "AnnotationFeedbackOut": {
         "properties": {
+          "actions": {
+            "$ref": "#/components/schemas/DiscussionActions"
+          },
           "anchor_position": {
             "anyOf": [
               {
@@ -2130,6 +2189,16 @@
             "title": "Body",
             "type": "string"
           },
+          "canvas_drawing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CanvasDrawing"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -2153,6 +2222,14 @@
             ],
             "title": "Kind",
             "type": "string"
+          },
+          "mentions": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/Mention"
+            },
+            "title": "Mentions",
+            "type": "array"
           },
           "project_id": {
             "format": "uuid",
@@ -2283,6 +2360,20 @@
             ],
             "title": "Body"
           },
+          "mentions": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/Mention"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mentions"
+          },
           "severity": {
             "anyOf": [
               {
@@ -2334,7 +2425,6 @@
       "AnnotationFeedbackReply": {
         "properties": {
           "attachments": {
-            "default": [],
             "items": {
               "additionalProperties": true,
               "type": "object"
@@ -2345,12 +2435,55 @@
           "body": {
             "title": "Body",
             "type": "string"
+          },
+          "mentions": {
+            "items": {
+              "$ref": "#/components/schemas/Mention"
+            },
+            "title": "Mentions",
+            "type": "array"
           }
         },
         "required": [
           "body"
         ],
         "title": "AnnotationFeedbackReply",
+        "type": "object"
+      },
+      "AnnotationFeedbackThreadPage": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AnnotationFeedbackOut"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "root": {
+            "$ref": "#/components/schemas/AnnotationFeedbackOut"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "root",
+          "items",
+          "total"
+        ],
+        "title": "AnnotationFeedbackThreadPage",
         "type": "object"
       },
       "AnnotationHistoryResponse": {
@@ -11198,6 +11331,32 @@
           }
         },
         "title": "DeleteUserPayload",
+        "type": "object"
+      },
+      "DiscussionActions": {
+        "properties": {
+          "change_status": {
+            "default": false,
+            "title": "Change Status",
+            "type": "boolean"
+          },
+          "delete": {
+            "default": false,
+            "title": "Delete",
+            "type": "boolean"
+          },
+          "edit": {
+            "default": false,
+            "title": "Edit",
+            "type": "boolean"
+          },
+          "reply": {
+            "default": false,
+            "title": "Reply",
+            "type": "boolean"
+          }
+        },
+        "title": "DiscussionActions",
         "type": "object"
       },
       "DismissResponse": {
@@ -31074,6 +31233,74 @@
         "title": "SystemSettingsUpdate",
         "type": "object"
       },
+      "TaskDiscussionItem": {
+        "description": "One row in the authoritative, mixed task discussion feed.\n\n``data`` deliberately retains the source endpoint's complete response shape.  The\nsource discriminator lives beside it because annotation comments and feedbacks can\nhave the same UUID; consumers must use ``(source, data.id)`` as the identity.",
+        "properties": {
+          "actions": {
+            "$ref": "#/components/schemas/DiscussionActions"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AnnotationCommentOut"
+              },
+              {
+                "$ref": "#/components/schemas/AnnotationFeedbackOut"
+              }
+            ],
+            "title": "Data"
+          },
+          "source": {
+            "enum": [
+              "annotation_comment",
+              "feedback"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "data",
+          "actions"
+        ],
+        "title": "TaskDiscussionItem",
+        "type": "object"
+      },
+      "TaskDiscussionPage": {
+        "description": "Keyset-paged task discussion read model.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TaskDiscussionItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "total": {
+            "minimum": 0.0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "TaskDiscussionPage",
+        "type": "object"
+      },
       "TaskEventBatchIn": {
         "properties": {
           "events": {
@@ -37491,6 +37718,11 @@
             "title": "Rightwidthpct",
             "type": "number"
           },
+          "showAnnotationComments": {
+            "default": true,
+            "title": "Showannotationcomments",
+            "type": "boolean"
+          },
           "strokeWidth": {
             "default": 1.5,
             "maximum": 5.0,
@@ -40293,7 +40525,7 @@
     },
     "/api/v1/annotations/{annotation_id}/comment-attachments/download": {
       "get": {
-        "description": "v0.6.3 P0：评论附件下载。校验 key 前缀防越权 + 项目可见性，302 跳转预签名 URL。",
+        "description": "Authorize the original annotation before issuing a short-lived download URL.\n\nLegacy clients retain the redirect. Bearer-authenticated browser callers\nrequest JSON first so a normal link does not omit the authorization header\nor forward it to the object-storage redirect target.",
         "operationId": "comment_attachment_download_api_v1_annotations__annotation_id__comment_attachments_download_get",
         "parameters": [
           {
@@ -40313,6 +40545,16 @@
             "schema": {
               "title": "Key",
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "as_json",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "As Json",
+              "type": "boolean"
             }
           }
         ],
@@ -45211,6 +45453,26 @@
               "title": "Limit",
               "type": "integer"
             }
+          },
+          {
+            "in": "query",
+            "name": "root_only",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Root Only",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_counts",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Counts",
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -45440,6 +45702,82 @@
           }
         ],
         "summary": "Reply Feedback",
+        "tags": [
+          "annotation-feedbacks"
+        ]
+      }
+    },
+    "/api/v1/feedbacks/{root_feedback_id}/thread": {
+      "get": {
+        "operationId": "get_feedback_thread_api_v1_feedbacks__root_feedback_id__thread_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "root_feedback_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Root Feedback Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationFeedbackThreadPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Feedback Thread",
         "tags": [
           "annotation-feedbacks"
         ]
@@ -57910,6 +58248,164 @@
         "summary": "Retry Cross Frame Job",
         "tags": [
           "tasks"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/discussion/annotation-counts": {
+      "get": {
+        "description": "Return sparse counts for active comments on available saved annotations.",
+        "operationId": "list_annotation_comment_counts_api_v1_tasks__task_id__discussion_annotation_counts_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnnotationCommentCountsOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Annotation Comment Counts",
+        "tags": [
+          "annotation-comments"
+        ]
+      }
+    },
+    "/api/v1/tasks/{task_id}/discussion/page": {
+      "get": {
+        "description": "Read the authoritative, mixed comments feed for one visible task.",
+        "operationId": "list_task_discussion_page_api_v1_tasks__task_id__discussion_page_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "task_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Task Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "all",
+                "task",
+                "annotation"
+              ],
+              "title": "Scope",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "annotation_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Annotation Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskDiscussionPage"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Task Discussion Page",
+        "tags": [
+          "annotation-comments"
         ]
       }
     },

@@ -21,11 +21,17 @@ describe("NotificationsPopover helpers", () => {
     const items = [
       makeNotification({ id: "task", target_type: "task" }),
       makeNotification({ id: "batch", target_type: "batch" }),
+      makeNotification({ id: "feedback", target_type: "feedback" }),
+      makeNotification({ id: "comment", target_type: "annotation_comment" }),
       makeNotification({ id: "job", target_type: "async_job" }),
     ];
 
-    expect(filterNotificationItems(items, "all")).toHaveLength(3);
+    expect(filterNotificationItems(items, "all")).toHaveLength(5);
     expect(filterNotificationItems(items, "batch").map((item) => item.id)).toEqual(["batch"]);
+    expect(filterNotificationItems(items, "feedback").map((item) => item.id)).toEqual(["feedback"]);
+    expect(filterNotificationItems(items, "annotation_comment").map((item) => item.id)).toEqual([
+      "comment",
+    ]);
     expect(filterNotificationItems(items, "async_job").map((item) => item.id)).toEqual(["job"]);
   });
 

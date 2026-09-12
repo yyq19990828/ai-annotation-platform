@@ -20,7 +20,7 @@ export const PANEL_TITLES: Record<PanelId, string> = {
   "task-queue": "任务队列",
   "class-palette": "类别面板",
   inspector: "标注详情",
-  discussion: "讨论 / Issue",
+  discussion: "讨论",
   "ai-task": "当前题 AI",
   "video-tracker": "视频追踪",
   "tri-view": "三视图精修",

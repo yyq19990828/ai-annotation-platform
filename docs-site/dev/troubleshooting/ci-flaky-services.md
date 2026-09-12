@@ -22,7 +22,7 @@ Bitnami 撤了该镜像的 manifest，CI 里 `services:` 块再也拉不到。
 
 ### 修复
 
-GitHub Actions 的 `services:` 块**不接受 image 的 args**（没法给 `minio/minio` 传 `server` 子命令）。直接在 step 里 `docker run` 最干净：
+GitHub Actions 的 `services:` 块**不接受 image 的 args**（没法给 MinIO 镜像传 `server` 子命令）。直接在 step 里 `docker run` 最干净：
 
 ```yaml
 - name: Start MinIO
@@ -31,7 +31,7 @@ GitHub Actions 的 `services:` 块**不接受 image 的 args**（没法给 `mini
       -p 9000:9000 \
       -e MINIO_ROOT_USER=minioadmin \
       -e MINIO_ROOT_PASSWORD=minioadmin \
-      minio/minio:latest server /data
+      quay.io/minio/minio:latest server /data
 
     # 轮询 health 端点直到就绪
     for i in $(seq 1 30); do

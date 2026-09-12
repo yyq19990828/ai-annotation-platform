@@ -62,13 +62,19 @@ jobs:
       - name: Sync deps
         working-directory: apps/api
         run: uv sync --extra test
+      - name: Worktree runtime and setup tests
+        working-directory: apps/api
+        run: |
+          uv run python -m unittest discover -s ../../scripts -p 'test_worktree*.py' -v
+          uv run python ../../scripts/test-orca-worktree-setup.py
+      # Keep the image from the last passing main run, using MinIO's Quay registry.
       - name: Start MinIO
         run: |
           docker run -d --name minio \
             -p 9000:9000 \
             -e MINIO_ROOT_USER=minioadmin \
             -e MINIO_ROOT_PASSWORD=minioadmin \
-            minio/minio:latest server /data
+            quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e server /data
           for i in {1..30}; do
             if curl -fsS http://127.0.0.1:9000/minio/health/live; then
               exit 0
@@ -80,6 +86,9 @@ jobs:
       - name: Initialize MinIO buckets
         working-directory: apps/api
         run: uv run python -c "from app.services.storage import storage_service; storage_service.ensure_all_buckets()"
+      - name: Worktree resource isolation acceptance
+        working-directory: apps/api
+        run: uv run python ../../scripts/verify_worktree_isolation.py -v
       - name: alembic upgrade head
         working-directory: apps/api
         run: uv run alembic upgrade head

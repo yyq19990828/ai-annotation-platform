@@ -11,13 +11,15 @@ Determine which checkout, Compose project, process, and database serve the repor
 
 Use `orca.yaml` and `scripts/orca-worktree-setup.sh`, not a second bootstrap recipe. Orca supplies `ORCA_ROOT_PATH` and `ORCA_WORKTREE_PATH`; the script refuses the primary checkout. Use the available Orca CLI guide when changing managed worktree state.
 
-The script shares `.env` and optional `.env.local`. It shares the three Node dependency directories only when manifests/lockfiles match the primary checkout. Before dependency changes, inspect and detach only the intended dependency symlinks; never install through a shared link into another checkout. Preserve existing files and dangling links.
+The script shares `.env` and optional `.env.local`. It shares the three Node dependency directories only when manifests/lockfiles match the primary checkout and its installed `node_modules/.pnpm/lock.yaml` matches that lockfile. Source manifests alone do not prove the installed graph is current. Before dependency changes, inspect and detach only the intended dependency symlinks; never install through a shared link into another checkout. Preserve existing files and dangling links.
 
 `apps/api/.venv` and `apps/web/src/api/generated` must remain local. Setup runs locked API test-dependency sync and `pnpm codegen`. Missing generated types after a branch switch can be stale ignored output: check the snapshot and regenerate before changing consumers.
 
 A setup fix must exist in the base commit used for future worktrees. Recheck that base's manifests and lockfile; a successful install in one feature branch does not fix the primary branch. For setup-script changes, use `scripts/test-orca-worktree-setup.py`.
 
 ## Runtime refresh
+
+For concurrent local checkouts, use `pnpm dev:worktree`, not raw `dev:api` or a second default Compose stack. Read [worktree isolation](references/worktree-isolation.md) before provisioning, testing, stopping, or rebuilding a managed environment. The launcher owns databases, Redis containers, buckets and files; setup still only prepares dependencies and generated types.
 
 | Changed input                                      | Development action                                                    |
 | -------------------------------------------------- | --------------------------------------------------------------------- |
@@ -28,7 +30,7 @@ A setup fix must exist in the base commit used for future worktrees. Recheck tha
 | Migration                                          | Apply Alembic in the intended database environment                    |
 | Dependencies, image build inputs, or copied source | Rebuild and recreate affected services                                |
 
-Check `docker-compose.yml` and `apps/api/app/workers/celery_app.py` for queue routing. Worker variants include default, GPU, CPU, export, image-pyramid, and GPU-control. Shared task code may affect multiple consumers. Mounted `/app` source has an anonymous `/app/.venv` volume masking the host environment.
+Check `docker-compose.yml` and `apps/api/app/workers/celery_app.py` for queue routing. Worker variants include default, maintenance, GPU, CPU, export, image-pyramid, and GPU-control. The maintenance consumer needs privileges for partition DDL and materialized-view refresh; keep ordinary workers on the runtime connection. Shared task code may affect multiple consumers. Mounted `/app` source has an anonymous `/app/.venv` volume masking the host environment.
 
 For a changed task signature, verify the callable inside each affected running container and exercise the relevant dispatch. An unexpected-keyword `TypeError` can mean stale worker code. A healthy API alone does not establish worker readiness.
 

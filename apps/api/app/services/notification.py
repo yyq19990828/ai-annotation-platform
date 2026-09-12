@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
+from collections.abc import Iterable
 from datetime import datetime, timezone
 
 import redis.asyncio as aioredis
@@ -56,8 +57,15 @@ class NotificationService:
         target_type: str,
         target_id: uuid.UUID,
         payload: dict | None = None,
+        defer_publish: bool = False,
     ) -> Notification | None:
-        """v0.7.0：偏好静音的 type 直接跳过（不写表、不发 pubsub）。"""
+        """Write one notification and optionally publish it immediately.
+
+        ``defer_publish`` is intentionally opt-in.  Existing callers retain the
+        historical write+best-effort-publish behavior, while request handlers that
+        must not publish before their business transaction commits can collect the
+        returned rows and call :meth:`publish_committed` after ``db.commit()``.
+        """
         if await self._is_in_app_muted(user_id, type):
             return None
 
@@ -72,24 +80,8 @@ class NotificationService:
         self.db.add(row)
         await self.db.flush()
 
-        try:
-            await _publish(
-                user_id=user_id,
-                message={
-                    "id": str(row.id),
-                    "type": row.type,
-                    "target_type": row.target_type,
-                    "target_id": str(row.target_id),
-                    "payload": row.payload,
-                    "created_at": (
-                        row.created_at or datetime.now(timezone.utc)
-                    ).isoformat(),
-                },
-            )
-        except Exception as e:
-            log.warning(
-                "notification publish failed user=%s type=%s err=%s", user_id, type, e
-            )
+        if not defer_publish:
+            await self.publish_committed([row])
 
         return row
 
@@ -101,7 +93,9 @@ class NotificationService:
         target_type: str,
         target_id: uuid.UUID,
         payload: dict | None = None,
+        defer_publish: bool = False,
     ) -> list[Notification]:
+        """Write a de-duplicated fan-out, optionally deferring all publishes."""
         out: list[Notification] = []
         seen: set[uuid.UUID] = set()
         for uid in user_ids:
@@ -114,10 +108,42 @@ class NotificationService:
                 target_type=target_type,
                 target_id=target_id,
                 payload=payload,
+                defer_publish=defer_publish,
             )
             if row is not None:
                 out.append(row)
         return out
+
+    async def publish_committed(self, notifications: Iterable[Notification]) -> None:
+        """Best-effort publish for rows whose enclosing transaction committed.
+
+        This method deliberately does not commit, enqueue, or retain state.  The
+        caller owns the request-local collection and invokes it only after a
+        successful business ``commit``.  A Redis failure is logged per row and can
+        never turn an already committed write into a failed request.
+        """
+        for row in notifications:
+            try:
+                await _publish(
+                    user_id=row.user_id,
+                    message={
+                        "id": str(row.id),
+                        "type": row.type,
+                        "target_type": row.target_type,
+                        "target_id": str(row.target_id),
+                        "payload": row.payload,
+                        "created_at": (
+                            row.created_at or datetime.now(timezone.utc)
+                        ).isoformat(),
+                    },
+                )
+            except Exception as e:
+                log.warning(
+                    "notification publish failed user=%s type=%s err=%s",
+                    row.user_id,
+                    row.type,
+                    e,
+                )
 
     async def _publish_sync(self, user_id: uuid.UUID, *, reason: str) -> None:
         try:
