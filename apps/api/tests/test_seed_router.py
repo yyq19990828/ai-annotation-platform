@@ -117,6 +117,20 @@ async def test_seed_reset_returns_fixture_payload(httpx_client):
     assert len(body["task_ids"]) == 5
 
 
+async def test_filtering_seed_route_is_guarded_and_hidden_from_openapi(
+    httpx_client, app_module
+):
+    response = await httpx_client.post("/api/v1/__test/seed/filtering")
+    assert response.status_code == 200, response.text
+    route = next(
+        route
+        for route in app_module.routes
+        if getattr(route, "path", None) == "/api/v1/__test/seed/filtering"
+    )
+    assert route.include_in_schema is False
+    assert "/api/v1/__test/seed/filtering" not in app_module.openapi()["paths"]
+
+
 async def test_seed_reset_is_idempotent_with_singleton_pool(httpx_client, db_session):
     from sqlalchemy import select
 

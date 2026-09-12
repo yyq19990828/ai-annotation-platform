@@ -201,6 +201,10 @@ seed/login/cleanup 请求。production 即使设置开关也不挂载路由。
 
 **fixture 用法**：`reset()` 返回固定结构（admin/annotator/reviewer 三个邮箱 + 项目 id + 5 个任务 id）；密码统一 `Test1234`。新增数据用 `apps/api/tests/factory.py` 的 `create_user / create_project / create_task / create_batch`。
 
+筛选验收使用 `seed.filtering()`，它先重置基础 fixture，再返回类型化 manifest：同对象/跨对象属性、必填条件嵌套组、检测与追踪候选组合、51 项分页、Scene 逻辑轨迹和管理列表数据。`e2e/fixtures/filtering.ts` 提供同一入口。视频预测中的最小 shape 只验证指标；工作台几何交互通过产品预测导入 API 添加有效的带帧候选。点云 fixture 包含真实 PCD 字节和可解析的相机内外参。
+
+同一测试库一次只运行一个 seed/reset 流程。并行测试还需给各进程配置独立 MinIO buckets：基础清理使用固定媒体前缀，仅隔离数据库无法保护另一套测试的媒体。新增清理条件应使用 fixture 的项目、任务或显式标记；数据保留断言必须重新查询数据库，不能依赖未过期的 ORM identity map。
+
 Playwright 正常结束时由 `globalTeardown` 调用 `/seed/cleanup`。它只是兜底：
 强制中断可能跳过 teardown，因此必须始终依赖 `annotation_e2e` 的数据库隔离，
 不能把 cleanup 当成可在开发库运行 E2E 的理由。
