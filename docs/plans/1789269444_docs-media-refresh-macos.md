@@ -1,6 +1,6 @@
 # Documentation media refresh — macOS-capturable scope
 
-> Status: S1 (static matrix) and S2 (workflow recordings) executed and approved; S3 pointcloud canary and the deferred flows remain. See `## Outcome` and `## Remaining work` at the end of this file.
+> Status: static matrix and all Mac-recordable workflow recordings executed and approved (sixteen of seventeen flows); S3 pointcloud canary and the Linux/GPU batch remain. See `## Outcome` and `## Remaining work` at the end of this file.
 > Maintainer decisions (2026-09-13): refresh the existing library only; re-record only what this Apple Silicon Mac can record; agent-delegated visual review is authorized and must be recorded honestly.
 > The twelve proposed marketing masters remain in [new capability marketing masters](1789230200_new-capability-marketing-masters.md) and are not enrolled here.
 
@@ -121,18 +121,16 @@ This campaign therefore reduces the audit debt to the deferred set but cannot ma
 
 ## Outcome (static and workflow recordings)
 
-- Landed commits: `6b5a7a5b` (evidence dir ignored), `1c6355af` (workbench UI drift: mask capsule, discussion title, audit fixture note), `6ea7f396` (failed-jobs API contract, SMTP scroll, exemplar padding), `df2752a1` (63 static images + 2 new scenes + hero WebPs + embeds + changelog), `8adc14a8` (static review records), `9350a29b` (video track scope fixes), `19bf3450` (11 workflow recordings + changelog), `ee6300fa` (recording review records), `6b9f93ee` (review-only records).
+- Landed commits: `6b5a7a5b` (evidence dir ignored), `1c6355af` (workbench UI drift: mask capsule, discussion title, audit fixture note), `6ea7f396` (failed-jobs API contract, SMTP scroll, exemplar padding), `df2752a1` (63 static images + 2 new scenes + hero WebPs + embeds + changelog), `8adc14a8` (static review records), then the recording series `9350a29b`, `4209f57f`, `e21d60ff`, `415c9b17`, `5528aed3`, `1d4a6ea8`, `1cd34dda`, `3207fc2f`, `1dca194e`, `e4a2824f` (video scopes, selection-card occlusion, mask ContextToolbar/shortcut, copy drift) and their media/review commits (`19bf3450`, `ee6300fa`, `6b9f93ee`, `24a3a03b`, `a1766b48`, `8c331369`, `8d4889d6`).
 - Static matrix: all 63 user-guide images and the four hero WebPs were recaptured on a clean tree at seed `screenshots-2026-08-g`; the two registered scenes that had never produced output are now embedded (`docs-site/user-guide/ai/current-task-inference.md`, `docs-site/user-guide/workbench/video-propagate.md`).
-- Workflow recordings: eleven flows re-recorded and derived with reviewed clip windows — `bbox-draw`, `rotated-bbox`, `polyline-draw`, `polygon-draw`, `mask-draw`, `batch-bulk-actions`, `video-chapter`, `large-image-progressive`, `large-image-pyramid-recovery`, `large-image-mask-limit`, `hotkey-cheatsheet`.
+- Workflow recordings: sixteen flows re-recorded and derived with reviewed clip windows — the eleven drawing/batch/video/large-image/hotkey flows plus `video-track`, `video-timeline-zoom`, `video-track-carryover`, `video-draw`, and `video-mask-track-edit`. Every published video and poster carries clean provenance and a delegated review record.
 - Review-only approvals for the clean assets `ai-prediction-import`, `video-tracker-job-states`, `review-reject`, `workspace-layout-persistence`, and `e2e-quickstart` after frame inspection.
-- Audit progression: baseline `0 broken / 202 stale / 9 current`, 160 provenance warnings → after this round `0 broken / 115 stale / 98 current`, 76 provenance warnings. Every remaining finding belongs to the deferred set below.
+- Audit progression: baseline `0 broken / 202 stale / 9 current`, 160 provenance warnings → final `0 broken / 105 stale / 108 current`, 66 provenance warnings. Every remaining partial or stale asset belongs to the deferred set below.
 - Environment evidence and warm-up scripts are in the git-ignored `.artifacts/media-refresh/` (audit partitions, business audit event, DuckDB analytics sync, task-event activity, large-image fixtures). macOS specifics: `libvips` via Homebrew plus `DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib`, and `IMAGE_PYRAMID_SRGB_PROFILE=/System/Library/ColorSync/Profiles/sRGB Profile.icc` for pyramid generation.
 - Checks: `check-image-manifest --strict`, `check-orphan-images --strict`, media policy tests, `pnpm docs:build`, and `git diff --check` all pass.
 
 ## Remaining work
 
 - S3 pointcloud canary (`pointcloud-camera-seed-3d-box` marketing master) and the review of the remaining pointcloud assets were not started.
-- Six Mac-recordable flows are deferred because the recorder tests fail against the current application; their published media stays stale until the interactions or flows are fixed:
-  - `workspace-layout-basics`: dragging either `.dv-sash` divider does not resize panels in the current build. Verified with the recorder run, plain Playwright mouse drags, and real CDP drags through agent-browser. Worth an application-level investigation.
-  - `video-track`, `video-timeline-zoom`, `video-track-carryover`, `video-draw`: need updates for the new track scopes and tracker-seed interaction; `video-mask-track-edit` additionally needs the ContextToolbar "更多设置" step before the tool is usable while drawing.
-- The ML and legacy Linux-suite assets (91 referenced files) still require the Linux/GPU batch; their seed revisions (`-e`/`-f`) and dirty-capture provenance remain untouched.
+- `workspace-layout-basics` is the only Mac-recordable flow still deferred. The maintainer confirmed that dragging a panel divider works manually, but no automated drag reproduced it: the recorder run, plain Playwright mouse drags, and real CDP drags through agent-browser all left the panel sizes unchanged. The next attempt should start from the exact manual drag position, or the project should investigate dockview sash input handling under automation.
+- The ML and legacy Linux-suite assets (91 referenced files) still require the Linux/GPU batch; their seed revisions (`-e`/`-f`) and dirty-capture provenance remain untouched. `video-mask-correction-propagate` received the same scope/ContextToolbar/Enter fixes so the future Linux recording can use them.
