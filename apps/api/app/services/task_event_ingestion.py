@@ -28,6 +28,7 @@ from app.schemas.task_event import TaskEventIn
 MAX_EVENT_DURATION_MS = 4 * 60 * 60 * 1000
 MAX_ANNOTATION_COUNT = 1_000_000
 MAX_TIMESTAMP_SKEW_MS = 1
+FINAL_CLOSE_GRACE_MS = 5 * 60 * 1000
 SESSION_COLLECTOR_VERSION = "session-v2"
 
 _ANNOTATE_ROLES = {
@@ -76,18 +77,35 @@ def validate_interval(
     return started, ended
 
 
+def _within_final_close_grace(
+    *, ended_at: datetime | None, transition_at: datetime | None
+) -> bool:
+    """Keep the terminal-state exception tied to the actual transition."""
+
+    if ended_at is None or transition_at is None:
+        return False
+    try:
+        ended = _utc(ended_at)
+        transition = _utc(transition_at)
+    except HTTPException:
+        return False
+    return abs((ended - transition).total_seconds() * 1000) <= FINAL_CLOSE_GRACE_MS
+
+
 async def assert_task_event_access(
     db: AsyncSession,
     *,
     task: Task,
     user: User,
     kind: str,
+    ended_at: datetime | None = None,
 ) -> None:
     """Apply the normal project/task visibility policy with final-close grace.
 
     A task can transition to review/completed between the last visible render
-    and the next task switch.  The task's own actor binding is enough to close
-    that actor's interval, while a foreign task still fails the normal policy.
+    and the next task switch. The task's own actor binding is enough to close
+    that actor's interval when its end is within the five-minute transition
+    window, while a foreign or stale task still fails the normal policy.
     """
 
     allowed_roles = _REVIEW_ROLES if kind == "review" else _ANNOTATE_ROLES
@@ -115,12 +133,18 @@ async def assert_task_event_access(
             and task.assignee_id == user.id
             and task.submitted_at is not None
             and task.status in {"review", "rejected", "completed"}
+            and _within_final_close_grace(
+                ended_at=ended_at, transition_at=task.submitted_at
+            )
         )
         can_close_reviewed = (
             kind == "review"
             and task.reviewer_id == user.id
             and task.reviewed_at is not None
             and task.status in {"rejected", "completed"}
+            and _within_final_close_grace(
+                ended_at=ended_at, transition_at=task.reviewed_at
+            )
         )
         if exc.status_code != 404 or not (can_close_submitted or can_close_reviewed):
             raise
@@ -177,7 +201,9 @@ async def validate_api_events(
             duration_ms=event.duration_ms,
             now=now,
         )
-        await assert_task_event_access(db, task=task, user=user, kind=event.kind)
+        await assert_task_event_access(
+            db, task=task, user=user, kind=event.kind, ended_at=ended
+        )
 
         event_id = event.client_id or uuid4()
         row = {
@@ -302,7 +328,9 @@ async def validate_worker_event(
     if task.project_id != client_project_id:
         return None
     try:
-        await assert_task_event_access(db, task=task, user=user, kind=kind)
+        await assert_task_event_access(
+            db, task=task, user=user, kind=kind, ended_at=ended
+        )
     except HTTPException:
         return None
 

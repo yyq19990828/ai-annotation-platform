@@ -122,6 +122,21 @@ describe("useSessionStats", () => {
     expect(result.current.samplesCount).toBe(0);
   });
 
+  it("任务暂时为空后切换项目时仍重置 ETA 样本", () => {
+    type Props = { id: string | null; project: string; kind: "annotate" | "review" };
+    const { result, rerender } = renderHook(
+      ({ id, project, kind }: Props) => useSessionStats(id, project, kind, "user-1"),
+      {
+        initialProps: { id: "t1", project: "p1", kind: "annotate" } as Props,
+      },
+    );
+    advance(2_000);
+    rerender({ id: null, project: "p1", kind: "annotate" });
+    expect(result.current.samplesCount).toBe(1);
+    rerender({ id: "t2", project: "p2", kind: "annotate" });
+    expect(result.current.samplesCount).toBe(0);
+  });
+
   it("act 包装：相同 id 重复 rerender 不增样本", () => {
     const { result, rerender } = renderHook(
       ({ id }: { id: string | null }) => useSessionStats(id),
@@ -299,6 +314,43 @@ describe("useSessionStats", () => {
       await Promise.resolve();
     });
     expect(submitTaskEvents).toHaveBeenCalledTimes(3);
+    unmount();
+  });
+
+  it("账号切换后旧请求失败不会清空新账号队列", async () => {
+    let rejectOld!: (reason?: unknown) => void;
+    submitTaskEvents
+      .mockImplementationOnce(() => new Promise((_resolve, reject) => (rejectOld = reject)))
+      .mockResolvedValue({ accepted: 1 });
+    const { rerender, unmount } = renderHook(
+      ({ id, account }: { id: string | null; account: string }) =>
+        useSessionStats(id, "project-1", "annotate", account),
+      {
+        initialProps: { id: "t1", account: "user-1" } as {
+          id: string | null;
+          account: string;
+        },
+      },
+    );
+    advance(2_000);
+    act(() => window.dispatchEvent(new Event("pagehide")));
+    expect(submitTaskEvents).toHaveBeenCalledTimes(1);
+
+    rerender({ id: null, account: "user-2" });
+    rerender({ id: "t2", account: "user-2" });
+    advance(2_000);
+    act(() => window.dispatchEvent(new Event("pagehide")));
+    expect(submitTaskEvents).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      rejectOld(new Error("expired account request"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(submitTaskEvents).toHaveBeenCalledTimes(2);
+    expect((submitTaskEvents.mock.calls[1]?.[0] as Array<{ task_id: string }>)[0]).toEqual(
+      expect.objectContaining({ task_id: "t2" }),
+    );
     unmount();
   });
 });

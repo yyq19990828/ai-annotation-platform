@@ -26,6 +26,8 @@ type SessionContext = {
   qualifiedMs: number;
 };
 
+type SessionOwner = Pick<SessionContext, "projectId" | "kind" | "accountId">;
+
 function clientEventId(): string {
   if (typeof globalThis.crypto?.randomUUID === "function") {
     return globalThis.crypto.randomUUID();
@@ -55,6 +57,14 @@ function sameContext(left: SessionContext, right: SessionContext): boolean {
   );
 }
 
+function sameOwner(left: SessionOwner, right: SessionOwner): boolean {
+  return (
+    left.projectId === right.projectId &&
+    left.kind === right.kind &&
+    left.accountId === right.accountId
+  );
+}
+
 /**
  * Record bounded, visible Workbench intervals for ETA and the project
  * performance source. The active interval is always owned by its captured
@@ -70,6 +80,8 @@ export function useSessionStats(
   const activeRef = useRef<SessionContext | null>(null);
   const pendingRef = useRef<TaskEventIn[]>([]);
   const pendingAccountRef = useRef<string | null>(null);
+  const ownerRef = useRef<SessionOwner | null>(null);
+  const queueGenerationRef = useRef(0);
   const accountRef = useRef<string | null>(accountId ?? null);
   accountRef.current = accountId ?? null;
   const mountedRef = useRef(true);
@@ -82,8 +94,13 @@ export function useSessionStats(
   const [samples, setSamples] = useState<number[]>([]);
 
   const clearPending = useCallback(() => {
+    // In-flight requests cannot be cancelled. Advancing the generation makes
+    // their eventual success/failure a no-op instead of touching a new
+    // account's queue.
+    queueGenerationRef.current += 1;
     pendingRef.current = [];
     pendingAccountRef.current = null;
+    flushInFlightRef.current = null;
     retryAttemptRef.current = 0;
     if (retryTimerRef.current !== null) {
       window.clearTimeout(retryTimerRef.current);
@@ -91,7 +108,8 @@ export function useSessionStats(
     }
   }, []);
 
-  const scheduleRetry = useCallback(() => {
+  const scheduleRetry = useCallback((generation: number) => {
+    if (queueGenerationRef.current !== generation) return;
     if (!mountedRef.current || retryTimerRef.current !== null) return;
     const attempt = retryAttemptRef.current;
     if (attempt >= MAX_FLUSH_RETRIES) return;
@@ -99,6 +117,7 @@ export function useSessionStats(
     retryTimerRef.current = window.setTimeout(
       () => {
         retryTimerRef.current = null;
+        if (queueGenerationRef.current !== generation) return;
         void flushPendingRef.current();
       },
       RETRY_DELAYS_MS[attempt] ?? RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1],
@@ -108,6 +127,7 @@ export function useSessionStats(
   const flushPending = useCallback(
     async (keepalive = false) => {
       if (flushInFlightRef.current) return flushInFlightRef.current;
+      const generation = queueGenerationRef.current;
       const batch = pendingRef.current.slice(0, MAX_FLUSH_BATCH_SIZE);
       const batchAccount = pendingAccountRef.current;
       if (batch.length === 0 || !batchAccount || accountRef.current !== batchAccount) {
@@ -118,6 +138,7 @@ export function useSessionStats(
         let hasMore = false;
         try {
           await meApi.submitTaskEvents(batch, keepalive ? { keepalive: true } : undefined);
+          if (queueGenerationRef.current !== generation) return;
           const ids = new Set(batch.map((event) => event.client_id));
           pendingRef.current = pendingRef.current.filter(
             (event) => !event.client_id || !ids.has(event.client_id),
@@ -128,20 +149,18 @@ export function useSessionStats(
         } catch {
           // Keep the batch for a bounded retry. A later account switch clears it
           // so one account can never be submitted using another account's token.
-          if (accountRef.current !== batchAccount) {
-            clearPending();
-          } else {
-            scheduleRetry();
-          }
+          if (queueGenerationRef.current === generation) scheduleRetry(generation);
         } finally {
-          flushInFlightRef.current = null;
-          if (hasMore) void flushPendingRef.current(keepalive);
+          if (queueGenerationRef.current === generation) {
+            flushInFlightRef.current = null;
+            if (hasMore) void flushPendingRef.current(keepalive);
+          }
         }
       })();
       flushInFlightRef.current = request;
       return request;
     },
-    [clearPending, scheduleRetry],
+    [scheduleRetry],
   );
   flushPendingRef.current = flushPending;
 
@@ -210,6 +229,13 @@ export function useSessionStats(
 
   useEffect(() => {
     const startedAt = visibleDocument() ? Date.now() : null;
+    const nextOwner: SessionOwner = {
+      projectId: projectId ?? null,
+      kind,
+      accountId: accountId ?? null,
+    };
+    const previousOwner = ownerRef.current;
+    const ownerChanged = previousOwner !== null && !sameOwner(previousOwner, nextOwner);
     const next = currentTaskId
       ? {
           taskId: currentTaskId,
@@ -223,16 +249,13 @@ export function useSessionStats(
       : null;
     const previous = activeRef.current;
     if (previous && (!next || !sameContext(previous, next))) {
-      const ownerChanged =
-        previous &&
-        next &&
-        (previous.projectId !== next.projectId ||
-          previous.kind !== next.kind ||
-          previous.accountId !== next.accountId);
       closeActive(Date.now(), null, !ownerChanged);
-      if (ownerChanged) setSamples([]);
-      if (next && previous.accountId !== next.accountId) clearPending();
     }
+    if (ownerChanged) {
+      setSamples([]);
+      if (previousOwner?.accountId !== nextOwner.accountId) clearPending();
+    }
+    ownerRef.current = nextOwner;
     activeRef.current = next;
   }, [accountId, clearPending, closeActive, currentTaskId, kind, projectId]);
 

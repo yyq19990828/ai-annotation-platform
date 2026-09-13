@@ -206,6 +206,15 @@ async def test_final_close_requires_current_project_access(
     )
     assert response.status_code == 404
 
+    task.submitted_at = datetime.now(timezone.utc) - timedelta(minutes=6)
+    await db_session.flush()
+    stale = await httpx_client.post(
+        "/api/v1/auth/me/task-events:batch",
+        json={"events": [_event(task.id, project.id, uuid.uuid4())]},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert stale.status_code == 404
+
 
 @pytest.mark.asyncio
 async def test_worker_revalidates_payload_and_deduplicates(
