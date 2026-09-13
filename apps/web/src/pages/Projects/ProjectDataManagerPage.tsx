@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Navigate, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Navigate, useParams, useSearchParams } from "react-router-dom";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
+import { Thumbnail } from "@/components/Thumbnail";
 import { useProject } from "@/hooks/useProjects";
+import type { ProjectResponse } from "@/api/projects";
 import {
   useCreateTaskView,
   useDataManagerSchema,
@@ -56,7 +58,11 @@ import {
   type DataManagerFilterExpression,
 } from "./data-manager/dataManagerFilterExpression";
 import { DataManagerExpressionEditor } from "./data-manager/DataManagerExpressionEditor";
-import { DataManagerSummaryStrip } from "./data-manager/DataManagerOverview";
+import {
+  DataManagerProjectOverview,
+  DataManagerSummaryStrip,
+} from "./data-manager/DataManagerOverview";
+import { DataManagerFrame } from "./data-manager/DataManagerFrame";
 import { DataManagerLensTabs } from "./data-manager/DataManagerLensTabs";
 import { EntityDataManagerLens } from "./data-manager/EntityDataManagerLens";
 import { TaskMatchesSheet } from "./data-manager/TaskMatchesSheet";
@@ -65,6 +71,8 @@ import {
   dataManagerUrlCodec,
   hasFilterUrlOverrides,
   parseDataManagerUrl,
+  type DataManagerLayout,
+  type DataManagerSection,
   updateDataManagerUrl,
 } from "./data-manager/dataManagerUrlState";
 import {
@@ -96,8 +104,10 @@ import {
 } from "@/components/shadcn/ui/alert-dialog";
 
 const PAGE_SIZE = 50;
+const MAX_SELECTED_TASKS = 200;
 
 const EMPTY_DATA_MANAGER_URL_STATE = {
+  section: "data" as const,
   lens: "tasks" as const,
   view: null,
   query: "",
@@ -105,6 +115,8 @@ const EMPTY_DATA_MANAGER_URL_STATE = {
   sort: null,
   columns: null,
   selected: null,
+  selectedTasks: null,
+  layout: "list" as const,
 };
 
 // UA-safe 表单基线(无全局 preflight 期间,原生 select/input 需消浏览器默认样式)
@@ -211,14 +223,27 @@ function ruleValueLabel(rule: RuleChipDraft, fields: DataManagerFilterField[]) {
   return `${filterOperatorLabel(rule.op)} ${value || "未填写"}`;
 }
 
+function normalizeTaskSelection(values: string[] | null | undefined) {
+  return [...new Set((values ?? []).filter(Boolean))].slice(0, MAX_SELECTED_TASKS);
+}
+
 export function ProjectDataManagerPage() {
   const { id = "" } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const { data: project, isLoading, error } = useProject(id);
   const schemaQ = useDataManagerSchema(id, "tasks");
-  const requestedScope = parseDataManagerUrl(searchParams).lens;
+  const { role } = usePermissions();
+  const user = useAuthStore((state) => state.user);
+  const [dataDirty, setDataDirty] = useState(false);
+  const [pendingSection, setPendingSection] = useState<DataManagerSection | null>(null);
+  const urlState = parseDataManagerUrl(searchParams);
+  const requestedScope = urlState.lens;
   const availableScopes = schemaQ.data?.available_entity_scopes ?? ["tasks"];
   const scope = availableScopes.includes(requestedScope) ? requestedScope : "tasks";
+  const canViewMembers = role === "super_admin" || user?.id === project?.owner_id;
+  const requestedSection: DataManagerSection = urlState.section ?? "data";
+  const section: DataManagerSection =
+    requestedSection === "members" && !canViewMembers ? "data" : requestedSection;
 
   useEffect(() => {
     if (!schemaQ.data || requestedScope === scope) return;
@@ -234,13 +259,52 @@ export function ProjectDataManagerPage() {
     setSearchParams(next, { replace: true });
   }, [requestedScope, schemaQ.data, scope, searchParams, setSearchParams]);
 
+  useEffect(() => {
+    if (!project || requestedSection !== "members" || canViewMembers) return;
+    setSearchParams(
+      updateDataManagerUrl(searchParams, {
+        ...urlState,
+        section: "data",
+        selected: null,
+        selectedTasks: null,
+      }),
+      { replace: true },
+    );
+  }, [canViewMembers, project, requestedSection, searchParams, setSearchParams, urlState]);
+
+  useEffect(() => {
+    if (section !== "data" && dataDirty) setDataDirty(false);
+  }, [dataDirty, section]);
+
   if (isLoading || schemaQ.isLoading) {
     return <div className="p-15 text-center text-muted-foreground">加载中...</div>;
   }
   if (error || !project) return <Navigate to="/unauthorized" replace />;
 
+  const changeSection = (nextSection: DataManagerSection) => {
+    if (nextSection === "members" && !canViewMembers) return;
+    if (section === "data" && nextSection !== "data" && dataDirty) {
+      setPendingSection(nextSection);
+      return;
+    }
+    const next = updateDataManagerUrl(searchParams, {
+      section: nextSection,
+      lens: scope,
+      view: urlState.view,
+      query: urlState.query,
+      filter: urlState.filter,
+      sort: urlState.sort,
+      columns: urlState.columns,
+      selected: urlState.selected,
+      layout: urlState.layout,
+      selectedTasks: nextSection === "data" ? urlState.selectedTasks : null,
+    });
+    setSearchParams(next);
+  };
+
   const changeScope = (nextScope: DataManagerEntityScope) => {
     const next = updateDataManagerUrl(searchParams, {
+      section: "data",
       lens: nextScope,
       view: null,
       query: "",
@@ -248,12 +312,35 @@ export function ProjectDataManagerPage() {
       sort: null,
       columns: null,
       selected: null,
+      selectedTasks: null,
     });
     setSearchParams(next);
   };
 
-  if (scope === "objects" || scope === "tracks") {
-    return (
+  // Parent integration seam: render ProjectMembersPerformance({ projectId: id }) for members.
+  // The sibling module is intentionally not imported here until it is available in this worktree.
+  const content =
+    section === "overview" ? (
+      <DataManagerProjectOverview
+        projectId={id}
+        summaryFilter={{}}
+        onDrill={(rule) => {
+          const next = updateDataManagerUrl(searchParams, {
+            section: "data",
+            lens: "tasks",
+            view: "builtin:all",
+            query: "",
+            filter: rule,
+            sort: null,
+            columns: null,
+            selected: null,
+            selectedTasks: null,
+            layout: "list",
+          });
+          setSearchParams(next);
+        }}
+      />
+    ) : scope === "objects" || scope === "tracks" ? (
       <EntityDataManagerLens
         projectId={id}
         projectName={project.name}
@@ -262,19 +349,73 @@ export function ProjectDataManagerPage() {
         scope={scope}
         availableScopes={availableScopes}
         onScopeChange={changeScope}
+        onDirtyChange={setDataDirty}
+      />
+    ) : (
+      <TaskDataManagerPage
+        project={project}
+        availableScopes={availableScopes}
+        onScopeChange={changeScope}
+        onDirtyChange={setDataDirty}
       />
     );
-  }
 
-  return <TaskDataManagerPage availableScopes={availableScopes} onScopeChange={changeScope} />;
+  return (
+    <DataManagerFrame
+      projectId={id}
+      projectName={project.name}
+      projectDisplayId={project.display_id}
+      section={section}
+      onSectionChange={changeSection}
+      canViewMembers={canViewMembers}
+    >
+      {content}
+      <AlertDialog
+        open={Boolean(pendingSection)}
+        onOpenChange={(open) => !open && setPendingSection(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>放弃未保存的视图修改？</AlertDialogTitle>
+            <AlertDialogDescription>
+              当前搜索、筛选、排序或显示列尚未保存。离开数据浏览会丢弃这些修改。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>继续编辑</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (!pendingSection) return;
+                const next = updateDataManagerUrl(searchParams, {
+                  ...urlState,
+                  section: pendingSection,
+                  selected: null,
+                  selectedTasks: null,
+                });
+                setPendingSection(null);
+                setDataDirty(false);
+                setSearchParams(next);
+              }}
+            >
+              放弃并切换
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </DataManagerFrame>
+  );
 }
 
 function TaskDataManagerPage({
+  project,
   availableScopes,
   onScopeChange,
+  onDirtyChange,
 }: {
+  project: ProjectResponse;
   availableScopes: DataManagerEntityScope[];
   onScopeChange: (scope: DataManagerEntityScope) => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const { id = "" } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -284,11 +425,9 @@ function TaskDataManagerPage({
     ownedKeys: DATA_MANAGER_FILTER_KEYS,
   });
   const currentUrl = urlState.state;
-  const navigate = useNavigate();
   const { role } = usePermissions();
   const user = useAuthStore((s) => s.user);
   const pushToast = useToastStore((state) => state.push);
-  const { data: project, isLoading: projectLoading, error } = useProject(id);
   const viewsQ = useTaskViews(id);
   const schemaQ = useDataManagerSchema(id);
   const createView = useCreateTaskView(id);
@@ -311,6 +450,10 @@ function TaskDataManagerPage({
   const [sort, setSort] = useState<TaskSortItem[]>([
     { field: "task.created_at", direction: "asc" },
   ]);
+  const [layout, setLayout] = useState<DataManagerLayout>(currentUrl.layout ?? "list");
+  const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>(() =>
+    normalizeTaskSelection(currentUrl.selectedTasks),
+  );
   const [page, setPage] = useState(0);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [saveName, setSaveName] = useState("任务视图");
@@ -323,11 +466,14 @@ function TaskDataManagerPage({
   const [analyticsOpen, setAnalyticsOpen] = useState(
     () => typeof window !== "undefined" && localStorage.getItem("dm-analytics-open") === "1",
   );
+  const [viewsRailOpen, setViewsRailOpen] = useState(true);
   const urlHydratedRef = useRef(false);
   const lastWrittenUrlRef = useRef<string | null>(null);
   const pendingViewKeyRef = useRef<string | null>(null);
   const mountedRef = useRef(false);
   const skipUrlSyncRef = useRef(false);
+  const projectAccountRef = useRef(`${id}:${user?.id ?? ""}`);
+  const taskSelectionSignatureRef = useRef<string | null>(null);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -335,6 +481,22 @@ function TaskDataManagerPage({
       mountedRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    const nextOwner = `${id}:${user?.id ?? ""}`;
+    if (projectAccountRef.current === nextOwner) return;
+    projectAccountRef.current = nextOwner;
+    setSelectedTaskIds([]);
+    setSelectedTask(null);
+    setSearchParams(
+      updateDataManagerUrl(searchParams, {
+        ...currentUrl,
+        selected: null,
+        selectedTasks: null,
+      }),
+      { replace: true },
+    );
+  }, [currentUrl, id, searchParams, setSearchParams, user?.id]);
 
   const views = useMemo(() => viewsQ.data?.items ?? [], [viewsQ.data?.items]);
   const filterFields = useMemo(
@@ -445,6 +607,13 @@ function TaskDataManagerPage({
     const nextSort = useUrl && url.sort?.length ? url.sort : defaultSortForView(selectedView);
     setColumns(nextColumns);
     setSort(nextSort);
+    setLayout(useUrl ? (url.layout ?? "list") : "list");
+    const restoredTaskIds = useUrl ? normalizeTaskSelection(url.selectedTasks) : [];
+    setSelectedTaskIds(restoredTaskIds);
+    taskSelectionSignatureRef.current = JSON.stringify({
+      view: selectedKey,
+      filter_json: combineKeyword(nextKeyword, split.filter),
+    });
     setBaselineSignature(
       structureIssue
         ? ""
@@ -469,6 +638,7 @@ function TaskDataManagerPage({
 
   const switchView = (key: string) => {
     const next = updateDataManagerUrl(searchParams, {
+      section: "data",
       lens: "tasks",
       view: key,
       query: "",
@@ -476,10 +646,12 @@ function TaskDataManagerPage({
       sort: null,
       columns: null,
       selected: null,
+      selectedTasks: null,
     });
     urlHydratedRef.current = false;
     pendingViewKeyRef.current = key;
     lastWrittenUrlRef.current = next.toString();
+    setSelectedTaskIds([]);
     setSelectedKey(key);
     setSearchParams(next);
   };
@@ -537,6 +709,9 @@ function TaskDataManagerPage({
   const isDirty = Boolean(
     baselineSignature && (!filterReady || baselineSignature !== currentSignature),
   );
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
   const total = tasksQ.data?.total ?? 0;
   const visibleTotal =
     summaryQ.data?.scope.visible_task_total ??
@@ -565,12 +740,34 @@ function TaskDataManagerPage({
     }
   }, [currentSignature]);
 
+  const taskSelectionSignature = useMemo(
+    () => JSON.stringify({ view: selectedKey, filter_json: filterJson }),
+    [filterJson, selectedKey],
+  );
+  useEffect(() => {
+    if (!urlHydratedRef.current) return;
+    if (taskSelectionSignatureRef.current === null) {
+      taskSelectionSignatureRef.current = taskSelectionSignature;
+      return;
+    }
+    if (taskSelectionSignatureRef.current !== taskSelectionSignature) {
+      taskSelectionSignatureRef.current = taskSelectionSignature;
+      setSelectedTaskIds([]);
+    }
+  }, [taskSelectionSignature]);
+
+  const effectiveSelectedTaskIds = useMemo(
+    () => (taskSelectionSignatureRef.current === taskSelectionSignature ? selectedTaskIds : []),
+    [selectedTaskIds, taskSelectionSignature],
+  );
+
   useEffect(() => {
     if (!urlHydratedRef.current || skipUrlSyncRef.current || !filterReady) {
       skipUrlSyncRef.current = false;
       return;
     }
     const next = updateDataManagerUrl(searchParams, {
+      section: "data",
       lens: "tasks",
       view: selectedKey,
       query: keyword,
@@ -578,6 +775,8 @@ function TaskDataManagerPage({
       sort,
       columns,
       selected: selectedTask?.id ?? null,
+      selectedTasks: effectiveSelectedTaskIds,
+      layout,
     });
     if (next.toString() !== searchParams.toString()) {
       lastWrittenUrlRef.current = next.toString();
@@ -590,9 +789,11 @@ function TaskDataManagerPage({
     searchParams,
     selectedKey,
     selectedTask?.id,
+    effectiveSelectedTaskIds,
     setSearchParams,
     sort,
     filterReady,
+    layout,
   ]);
 
   useEffect(() => {
@@ -604,9 +805,6 @@ function TaskDataManagerPage({
     if (restored) setSelectedTask(restored);
   }, [currentUrl.selected, tasksQ.data?.items]);
 
-  if (projectLoading)
-    return <div className="p-15 text-center text-muted-foreground">加载中...</div>;
-  if (error || !project) return <Navigate to="/unauthorized" replace />;
   if (schemaQ.isError)
     return (
       <div role="alert" className="p-6 text-center text-sm text-destructive">
@@ -824,8 +1022,52 @@ function TaskDataManagerPage({
     };
   });
 
+  const tasks = tasksQ.data?.items ?? [];
+  const pageTaskIds = tasks.map((task) => task.id);
+  const pageSelectionComplete = Boolean(
+    pageTaskIds.length && pageTaskIds.every((taskId) => effectiveSelectedTaskIds.includes(taskId)),
+  );
+  const toggleTaskSelection = (taskId: string, checked: boolean) => {
+    setSelectedTaskIds((current) => {
+      if (checked) {
+        if (current.includes(taskId)) return current;
+        if (current.length >= MAX_SELECTED_TASKS) {
+          pushToast({ msg: `最多选择 ${MAX_SELECTED_TASKS} 个任务`, kind: "warning" });
+          return current;
+        }
+        return [...current, taskId];
+      }
+      return current.filter((id) => id !== taskId);
+    });
+  };
+  const toggleCurrentPageSelection = (checked: boolean) => {
+    if (!checked) {
+      setSelectedTaskIds((current) => current.filter((id) => !pageTaskIds.includes(id)));
+      return;
+    }
+    const additions = pageTaskIds.filter((id) => !effectiveSelectedTaskIds.includes(id));
+    if (effectiveSelectedTaskIds.length + additions.length > MAX_SELECTED_TASKS) {
+      pushToast({ msg: `最多选择 ${MAX_SELECTED_TASKS} 个任务`, kind: "warning" });
+      return;
+    }
+    setSelectedTaskIds((current) => normalizeTaskSelection([...current, ...additions]));
+  };
+  const viewGroups = [
+    { key: "builtin", label: "内置视图", items: views.filter((view) => view.builtin) },
+    {
+      key: "project",
+      label: "项目共享",
+      items: views.filter((view) => !view.builtin && view.visibility === "project"),
+    },
+    {
+      key: "private",
+      label: "我的视图",
+      items: views.filter((view) => !view.builtin && view.visibility !== "project"),
+    },
+  ].filter((group) => group.items.length);
+
   return (
-    <div className="mx-auto h-full min-h-0 max-w-[1800px] overflow-hidden px-4 pt-2 pb-3 text-foreground md:px-6">
+    <div className="h-full min-h-0 overflow-hidden text-foreground">
       <DataManagerLensTabs
         scope="tasks"
         availableScopes={availableScopes}
@@ -836,32 +1078,20 @@ function TaskDataManagerPage({
         }}
       >
         <div className="flex h-full min-h-0 flex-col gap-2">
-          <header className="flex shrink-0 items-center justify-between gap-4 max-md:flex-col max-md:items-start">
-            <div className="min-w-0">
-              <button
-                type="button"
-                className="mb-1 inline-flex cursor-pointer appearance-none items-center gap-1 border-0 bg-transparent p-0 text-xs text-muted-foreground"
-                onClick={() => navigate(`/projects/${id}/settings`)}
-              >
-                <Icon name="chevLeft" size={12} />
-                返回项目设置
-              </button>
-              <h1 className="truncate text-lg font-semibold tracking-tight">
-                {project.name} · Data Manager
-              </h1>
+          <header className="flex shrink-0 items-center justify-end gap-4 max-md:flex-col max-md:items-stretch">
+            <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground max-sm:flex-wrap">
               {!!urlState.issues.length && (
                 <div role="alert" className="mt-1 text-xs text-status-caution">
-                  URL 筛选状态无法完整恢复，已使用安全默认值。
+                  URL 状态无法完整恢复，已使用安全默认值。
                 </div>
               )}
-              <div className="flex items-center gap-2.5 text-xs text-muted-foreground">
-                <span className="mono">{project.display_id}</span>
-                <span>{visibleTotal.toLocaleString()} 可见任务</span>
-                <span>{total.toLocaleString()} 当前匹配</span>
-                <span>{views.length.toLocaleString()} 视图</span>
-              </div>
+              <span>{visibleTotal.toLocaleString()} 可见任务</span>
+              <span aria-hidden="true">·</span>
+              <span>{total.toLocaleString()} 当前匹配</span>
+              <span aria-hidden="true">·</span>
+              <span>{views.length.toLocaleString()} 个视图</span>
             </div>
-            <div className="flex shrink-0 items-center gap-2">
+            <div className="flex shrink-0 items-center justify-end gap-2">
               <Button variant={analyticsOpen ? "primary" : undefined} onClick={toggleAnalytics}>
                 <Icon name="activity" size={12} />
                 统计
@@ -915,56 +1145,95 @@ function TaskDataManagerPage({
             />
           )}
 
-          <div className="grid min-h-0 flex-1 grid-cols-[210px_minmax(0,1fr)] gap-3 max-lg:grid-cols-1">
-            <aside className="min-h-0 overflow-y-auto rounded-md border border-border bg-card p-2 max-lg:hidden">
-              <div className="px-1 pb-2 text-xs font-semibold text-muted-foreground">视图</div>
-              <div className="mb-2 flex flex-col gap-0.5 max-md:grid max-md:grid-cols-2 max-sm:grid-cols-1">
-                {views.map((view) => {
-                  const key = view.id ? `saved:${view.id}` : `builtin:${view.key}`;
-                  const active = key === selectedKey;
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      className={cn(
-                        "flex min-h-[34px] w-full cursor-pointer appearance-none items-center justify-between gap-2 rounded-sm border border-transparent bg-transparent px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground [&>span:first-child]:min-w-0 [&>span:first-child]:overflow-hidden [&>span:first-child]:text-ellipsis [&>span:first-child]:whitespace-nowrap",
-                        active && "border-border bg-muted text-foreground",
-                      )}
-                      onClick={() => {
-                        if (key === selectedKey) return;
-                        if (isDirty) setPendingViewKey(key);
-                        else switchView(key);
-                      }}
-                    >
-                      <span>{view.name}</span>
-                      <Badge
-                        variant={
-                          view.builtin
-                            ? "outline"
-                            : view.visibility === "project"
-                              ? "accent"
-                              : "default"
-                        }
-                      >
-                        {view.invalid_fields.length ? "失效" : (view.task_count ?? "—")}
-                      </Badge>
-                    </button>
-                  );
-                })}
+          <div className="grid min-h-0 flex-1 grid-cols-[auto_minmax(0,1fr)] gap-3 max-lg:grid-cols-1">
+            <aside
+              className={cn(
+                "min-h-0 w-[210px] overflow-y-auto rounded-md border border-border bg-card p-2 max-lg:hidden",
+                !viewsRailOpen && "w-12",
+              )}
+              aria-label="已保存的数据视图"
+            >
+              <div
+                className={cn(
+                  "flex items-center gap-1 px-1 pb-2",
+                  !viewsRailOpen && "justify-center",
+                )}
+              >
+                <button
+                  type="button"
+                  aria-label={viewsRailOpen ? "折叠视图栏" : "展开视图栏"}
+                  aria-expanded={viewsRailOpen}
+                  className="inline-flex size-7 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => setViewsRailOpen((open) => !open)}
+                >
+                  <Icon name="panelLeft" size={14} />
+                </button>
+                {viewsRailOpen && (
+                  <span className="text-xs font-semibold text-muted-foreground">视图</span>
+                )}
               </div>
+              {viewsRailOpen && (
+                <div className="mb-2 flex flex-col gap-2">
+                  {viewGroups.map((group) => (
+                    <details key={group.key} open className="group">
+                      <summary className="cursor-pointer px-1 py-1 text-2xs font-semibold text-muted-foreground marker:text-muted-foreground">
+                        {group.label}
+                      </summary>
+                      <div className="mt-0.5 flex flex-col gap-0.5">
+                        {group.items.map((view) => {
+                          const key = view.id ? `saved:${view.id}` : `builtin:${view.key}`;
+                          const active = key === selectedKey;
+                          return (
+                            <button
+                              key={key}
+                              type="button"
+                              className={cn(
+                                "flex min-h-[34px] w-full cursor-pointer appearance-none items-center justify-between gap-2 rounded-sm border border-transparent bg-transparent px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground [&>span:first-child]:min-w-0 [&>span:first-child]:overflow-hidden [&>span:first-child]:text-ellipsis [&>span:first-child]:whitespace-nowrap",
+                                active && "border-border bg-muted text-foreground",
+                              )}
+                              onClick={() => {
+                                if (key === selectedKey) return;
+                                if (isDirty) setPendingViewKey(key);
+                                else switchView(key);
+                              }}
+                            >
+                              <span>{view.name}</span>
+                              <Badge
+                                variant={
+                                  view.builtin
+                                    ? "outline"
+                                    : view.visibility === "project"
+                                      ? "accent"
+                                      : "default"
+                                }
+                              >
+                                {view.invalid_fields.length ? "失效" : (view.task_count ?? "—")}
+                              </Badge>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </details>
+                  ))}
+                </div>
+              )}
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => setDeleteConfirmOpen(true)}
                 disabled={!canEditSelected || deleteView.isPending}
-                className="w-full justify-start text-muted-foreground"
+                className={cn(
+                  "w-full justify-start text-muted-foreground",
+                  !viewsRailOpen && "px-0",
+                )}
+                aria-label="删除当前视图"
               >
                 <Icon name="trash" size={12} />
-                删除
+                {viewsRailOpen && "删除"}
               </Button>
             </aside>
 
-            <main className="flex min-h-0 min-w-0 flex-col gap-2">
+            <div className="flex min-h-0 min-w-0 flex-col gap-2">
               <section className="flex shrink-0 flex-col gap-2 rounded-md border border-border bg-card p-2.5">
                 <div className="flex items-center justify-between gap-3 px-0.5 pb-0.5">
                   <div>
@@ -1056,6 +1325,36 @@ function TaskDataManagerPage({
                   >
                     {sort[0]?.direction === "desc" ? "降序" : "升序"}
                   </Button>
+                  <div
+                    role="group"
+                    aria-label="结果布局"
+                    className="flex shrink-0 rounded-sm border border-border"
+                  >
+                    <button
+                      type="button"
+                      aria-label="列表视图"
+                      aria-pressed={layout === "list"}
+                      className={cn(
+                        "inline-flex size-9 items-center justify-center rounded-l-sm text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:z-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        layout === "list" && "bg-muted text-foreground",
+                      )}
+                      onClick={() => setLayout("list")}
+                    >
+                      <Icon name="list" size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="画廊视图"
+                      aria-pressed={layout === "gallery"}
+                      className={cn(
+                        "inline-flex size-9 items-center justify-center rounded-r-sm text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:z-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                        layout === "gallery" && "bg-muted text-foreground",
+                      )}
+                      onClick={() => setLayout("gallery")}
+                    >
+                      <Icon name="grid" size={14} />
+                    </button>
+                  </div>
                   <Popover>
                     <PopoverTrigger asChild>
                       <Button>列设置</Button>
@@ -1112,70 +1411,252 @@ function TaskDataManagerPage({
                     当前筛选包含未完成或 schema 中不存在的条件，完成编辑后才会查询。
                   </div>
                 )}
+                <div
+                  data-dm-task-actions
+                  data-dm-task-actions-disabled={!filterReady ? "true" : "false"}
+                  className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-2 text-xs"
+                >
+                  <span className="text-muted-foreground">
+                    {effectiveSelectedTaskIds.length
+                      ? `已选择 ${effectiveSelectedTaskIds.length} / ${MAX_SELECTED_TASKS} 个任务`
+                      : "可勾选任务进行批量操作"}
+                  </span>
+                  {effectiveSelectedTaskIds.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setSelectedTaskIds([])}
+                      aria-label="清除任务选择"
+                    >
+                      清除选择
+                    </Button>
+                  )}
+                  {!filterReady && (
+                    <span className="text-status-danger">完成筛选条件后才能执行批量操作</span>
+                  )}
+                  {/* Parent integration seam: render DataManagerTaskActions here with projectId, taskIds and onCompleted. */}
+                </div>
               </section>
 
               <div className="min-h-0 flex-1 overflow-auto rounded-md border border-border bg-card shadow-sm">
-                <table className="w-full min-w-[980px] table-fixed border-collapse [&_td]:overflow-hidden [&_td]:border-b [&_td]:border-border [&_td]:px-3 [&_td]:py-2.5 [&_td]:text-left [&_td]:align-middle [&_td]:text-ellipsis [&_td]:whitespace-nowrap [&_th]:overflow-hidden [&_th]:border-b [&_th]:border-border [&_th]:bg-muted [&_th]:px-3 [&_th]:py-2.5 [&_th]:text-left [&_th]:align-middle [&_th]:text-xs [&_th]:font-semibold [&_th]:text-ellipsis [&_th]:whitespace-nowrap [&_th]:text-muted-foreground [&_td:first-child]:w-[140px] [&_th:first-child]:w-[140px] [&_tbody_tr:hover]:bg-muted [&_tr:last-child_td]:border-b-0">
-                  <thead className="sticky top-0 z-base">
-                    <tr>
-                      {columns.map((column) => (
-                        <th key={column}>
-                          {columnOptions.find((item) => item.key === column)?.label ?? column}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {tasksQ.data?.items.map((task) => (
-                      <tr
-                        key={task.id}
-                        tabIndex={0}
-                        className="cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        onClick={() => setSelectedTask(task)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " ") {
-                            event.preventDefault();
-                            setSelectedTask(task);
-                          }
-                        }}
-                      >
-                        {columns.map((column) => (
-                          <td key={`${task.id}-${column}`}>{renderCell(task, column)}</td>
-                        ))}
-                      </tr>
-                    ))}
+                {layout === "gallery" ? (
+                  <div
+                    aria-label="任务画廊"
+                    className="grid gap-3 p-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
+                  >
                     {tasksQ.isLoading &&
-                      Array.from({ length: 6 }, (_, rowIndex) => (
-                        <tr key={`loading-${rowIndex}`}>
-                          {columns.map((column) => (
-                            <td key={`loading-${rowIndex}-${column}`}>
-                              <Skeleton className="h-4 w-full" />
-                            </td>
-                          ))}
-                        </tr>
+                      Array.from({ length: 8 }, (_, index) => (
+                        <Skeleton key={index} className="h-48 rounded-md" />
                       ))}
                     {tasksQ.isError && (
-                      <tr>
-                        <td
-                          colSpan={Math.max(1, columns.length)}
-                          className="text-center text-destructive"
-                        >
-                          无法加载任务，请刷新重试
-                        </td>
-                      </tr>
+                      <div
+                        role="alert"
+                        className="col-span-full p-8 text-center text-sm text-destructive"
+                      >
+                        无法加载任务，请刷新重试
+                      </div>
                     )}
-                    {!tasksQ.isLoading && !tasksQ.isError && !tasksQ.data?.items.length && (
-                      <tr>
-                        <td
-                          colSpan={Math.max(1, columns.length)}
-                          className="text-center text-muted-foreground"
-                        >
-                          无匹配任务
-                        </td>
-                      </tr>
+                    {!tasksQ.isLoading && !tasksQ.isError && !tasks.length && (
+                      <div className="col-span-full p-8 text-center text-sm text-muted-foreground">
+                        无匹配任务
+                      </div>
                     )}
-                  </tbody>
-                </table>
+                    {tasks.map((task) => {
+                      const taskSelected = effectiveSelectedTaskIds.includes(task.id);
+                      return (
+                        <article
+                          key={task.id}
+                          tabIndex={0}
+                          aria-selected={taskSelected}
+                          className={cn(
+                            "group cursor-pointer overflow-hidden rounded-md border border-border bg-card transition-colors hover:border-ring hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            taskSelected && "border-primary bg-muted",
+                          )}
+                          onClick={() => setSelectedTask(task)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter" || event.key === " ") {
+                              event.preventDefault();
+                              setSelectedTask(task);
+                            }
+                          }}
+                        >
+                          <div className="relative flex h-32 items-center justify-center overflow-hidden bg-muted">
+                            <Thumbnail
+                              src={task.thumbnail_url}
+                              blurhash={task.blurhash}
+                              alt={task.file_name}
+                              width={160}
+                              height={128}
+                            />
+                            <label className="absolute top-2 left-2 rounded-sm bg-background/85 p-1.5 shadow-sm">
+                              <input
+                                type="checkbox"
+                                checked={taskSelected}
+                                disabled={!filterReady}
+                                aria-label={`选择任务 ${task.display_id}`}
+                                onClick={(event) => event.stopPropagation()}
+                                onChange={(event) =>
+                                  toggleTaskSelection(task.id, event.target.checked)
+                                }
+                              />
+                            </label>
+                          </div>
+                          <div className="flex items-start justify-between gap-2 p-3">
+                            <div className="min-w-0">
+                              <div
+                                className="truncate font-mono text-sm font-medium"
+                                title={task.display_id}
+                              >
+                                {task.display_id}
+                              </div>
+                              <div
+                                className="mt-1 truncate text-xs text-muted-foreground"
+                                title={task.file_name}
+                              >
+                                {task.file_name || "未命名文件"}
+                              </div>
+                            </div>
+                            <Badge
+                              variant={
+                                task.status === "completed"
+                                  ? "success"
+                                  : task.status === "review"
+                                    ? "warning"
+                                    : "default"
+                              }
+                            >
+                              {statusLabel(task.status)}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center gap-3 border-t border-border px-3 py-2 text-2xs text-muted-foreground">
+                            <span>{task.annotation_count.toLocaleString()} 标注</span>
+                            <span>{task.unresolved_feedback_count.toLocaleString()} 反馈</span>
+                            {task.assignee?.name && (
+                              <span className="truncate">{task.assignee.name}</span>
+                            )}
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <table className="w-full min-w-[1040px] table-fixed border-collapse [&_td]:overflow-hidden [&_td]:border-b [&_td]:border-border [&_td]:px-3 [&_td]:py-2.5 [&_td]:text-left [&_td]:align-middle [&_td]:text-ellipsis [&_td]:whitespace-nowrap [&_th]:overflow-hidden [&_th]:border-b [&_th]:border-border [&_th]:bg-muted [&_th]:px-3 [&_th]:py-2.5 [&_th]:text-left [&_th]:align-middle [&_th]:text-xs [&_th]:font-semibold [&_th]:text-ellipsis [&_th]:whitespace-nowrap [&_th]:text-muted-foreground [&_th:first-child]:w-[58px] [&_td:first-child]:w-[58px] [&_tbody_tr:hover]:bg-muted [&_tr:last-child_td]:border-b-0">
+                    <thead className="sticky top-0 z-base">
+                      <tr>
+                        <th>
+                          <input
+                            type="checkbox"
+                            checked={pageSelectionComplete}
+                            disabled={!pageTaskIds.length || !filterReady}
+                            aria-label="选择当前页任务"
+                            onChange={(event) => toggleCurrentPageSelection(event.target.checked)}
+                          />
+                        </th>
+                        <th aria-label="任务预览" className="w-[68px]">
+                          预览
+                        </th>
+                        {columns.map((column) => (
+                          <th
+                            key={column}
+                            className={cn(
+                              column === "display_id" && "w-[130px]",
+                              column === "file_name" && "min-w-[240px]",
+                            )}
+                          >
+                            {columnOptions.find((item) => item.key === column)?.label ?? column}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {tasks.map((task) => {
+                        const taskSelected = effectiveSelectedTaskIds.includes(task.id);
+                        return (
+                          <tr
+                            key={task.id}
+                            tabIndex={0}
+                            aria-selected={taskSelected}
+                            className={cn(
+                              "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                              taskSelected && "bg-muted",
+                            )}
+                            onClick={() => setSelectedTask(task)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                setSelectedTask(task);
+                              }
+                            }}
+                          >
+                            <td className="w-[68px]">
+                              <input
+                                type="checkbox"
+                                checked={taskSelected}
+                                disabled={!filterReady}
+                                aria-label={`选择任务 ${task.display_id}`}
+                                onClick={(event) => event.stopPropagation()}
+                                onChange={(event) =>
+                                  toggleTaskSelection(task.id, event.target.checked)
+                                }
+                              />
+                            </td>
+                            <td>
+                              <Thumbnail
+                                src={task.thumbnail_url}
+                                blurhash={task.blurhash}
+                                alt={task.file_name}
+                                width={44}
+                                height={36}
+                              />
+                            </td>
+                            {columns.map((column) => (
+                              <td
+                                key={`${task.id}-${column}`}
+                                title={column === "file_name" ? task.file_name : undefined}
+                              >
+                                {renderCell(task, column)}
+                              </td>
+                            ))}
+                          </tr>
+                        );
+                      })}
+                      {tasksQ.isLoading &&
+                        Array.from({ length: 6 }, (_, rowIndex) => (
+                          <tr key={`loading-${rowIndex}`}>
+                            <td />
+                            <td>
+                              <Skeleton className="h-9 w-11" />
+                            </td>
+                            {columns.map((column) => (
+                              <td key={`loading-${rowIndex}-${column}`}>
+                                <Skeleton className="h-4 w-full" />
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      {tasksQ.isError && (
+                        <tr>
+                          <td
+                            colSpan={Math.max(2, columns.length + 2)}
+                            className="text-center text-destructive"
+                          >
+                            无法加载任务，请刷新重试
+                          </td>
+                        </tr>
+                      )}
+                      {!tasksQ.isLoading && !tasksQ.isError && !tasks.length && (
+                        <tr>
+                          <td
+                            colSpan={Math.max(2, columns.length + 2)}
+                            className="text-center text-muted-foreground"
+                          >
+                            无匹配任务
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                )}
               </div>
 
               <footer className="flex shrink-0 items-center justify-between gap-3 px-0.5 text-xs text-muted-foreground max-sm:flex-col max-sm:items-start">
@@ -1211,7 +1692,7 @@ function TaskDataManagerPage({
                   </Button>
                 </div>
               </footer>
-            </main>
+            </div>
           </div>
         </div>
         <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>

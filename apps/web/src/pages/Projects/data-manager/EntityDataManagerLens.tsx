@@ -233,6 +233,7 @@ export function EntityDataManagerLens({
   scope,
   availableScopes,
   onScopeChange,
+  onDirtyChange,
 }: {
   projectId: string;
   projectName: string;
@@ -241,6 +242,7 @@ export function EntityDataManagerLens({
   scope: EntityScope;
   availableScopes: DataManagerEntityScope[];
   onScopeChange: (scope: DataManagerEntityScope) => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const urlState = useUrlFilterState({
@@ -290,6 +292,7 @@ export function EntityDataManagerLens({
   const [analyticsOpen, setAnalyticsOpen] = useState(
     () => typeof window !== "undefined" && localStorage.getItem("dm-analytics-open") === "1",
   );
+  const [viewsRailOpen, setViewsRailOpen] = useState(true);
   const hydrationRef = useRef<string | null>(null);
   const lastWrittenUrlRef = useRef<string | null>(null);
   const pendingViewKeyRef = useRef<string | null>(null);
@@ -436,6 +439,9 @@ export function EntityDataManagerLens({
     [columns, filterJson, sort],
   );
   const isDirty = Boolean(baseline && (!filterReady || baseline !== currentSignature));
+  useEffect(() => {
+    onDirtyChange?.(isDirty);
+  }, [isDirty, onDirtyChange]);
   const selectionFilterSignatureRef = useRef<string | null>(null);
   useEffect(() => {
     if (!hydrationRef.current) return;
@@ -714,6 +720,19 @@ export function EntityDataManagerLens({
       ),
     };
   });
+  const viewGroups = [
+    { key: "builtin", label: "内置视图", items: views.filter((view) => view.builtin) },
+    {
+      key: "project",
+      label: "项目共享",
+      items: views.filter((view) => !view.builtin && view.visibility === "project"),
+    },
+    {
+      key: "private",
+      label: "我的视图",
+      items: views.filter((view) => !view.builtin && view.visibility !== "project"),
+    },
+  ].filter((group) => group.items.length);
 
   if (schemaQ.isError) {
     return (
@@ -724,7 +743,7 @@ export function EntityDataManagerLens({
   }
 
   return (
-    <div className="mx-auto h-full min-h-0 max-w-[1800px] overflow-hidden px-4 pt-2 pb-3 text-foreground md:px-6">
+    <div className="h-full min-h-0 overflow-hidden text-foreground">
       <DataManagerLensTabs
         scope={scope}
         availableScopes={availableScopes}
@@ -735,22 +754,23 @@ export function EntityDataManagerLens({
         }}
       >
         <div className="flex h-full min-h-0 flex-col gap-2">
-          <header className="flex shrink-0 items-center justify-between gap-4 max-md:flex-col max-md:items-start">
-            <div className="min-w-0">
-              <h1 className="truncate text-lg font-semibold tracking-tight">
-                {projectName} · Data Manager
-              </h1>
+          <header className="flex shrink-0 items-center justify-end gap-4 max-md:flex-col max-md:items-stretch">
+            <div
+              className="flex items-center justify-between gap-3 text-xs text-muted-foreground max-sm:flex-wrap"
+              aria-label={`${projectName} ${projectDisplayId} 数据浏览`}
+            >
               {!!urlState.issues.length && (
                 <div role="alert" className="mt-1 text-xs text-status-caution">
-                  URL 筛选状态无法完整恢复，已使用安全默认值。
+                  URL 状态无法完整恢复，已使用安全默认值。
                 </div>
               )}
-              <p className="mt-1 text-xs text-muted-foreground">
-                <span className="font-mono">{projectDisplayId}</span>
-                {` / ${facets?.task_total ?? 0} 个可见任务 / ${total} 条${scope === "objects" ? "对象" : "轨迹"}`}
-              </p>
+              <span>{facets?.task_total ?? 0} 个可见任务</span>
+              <span aria-hidden="true">·</span>
+              <span>
+                {total} 条{scope === "objects" ? "对象" : "轨迹"}
+              </span>
             </div>
-            <div className="flex shrink-0 gap-2">
+            <div className="flex shrink-0 justify-end gap-2">
               <Button variant={analyticsOpen ? "primary" : undefined} onClick={toggleAnalytics}>
                 <Icon name="activity" size={12} />
                 统计
@@ -785,49 +805,85 @@ export function EntityDataManagerLens({
             />
           )}
 
-          <div className="grid min-h-0 flex-1 grid-cols-[210px_minmax(0,1fr)] gap-3 max-lg:grid-cols-1">
-            <aside className="min-h-0 overflow-y-auto rounded-md border border-border bg-card p-2 max-lg:hidden">
-              <div className="px-1 pb-2 text-xs font-semibold text-muted-foreground">
-                {scope === "objects" ? "对象视图" : "轨迹视图"}
+          <div className="grid min-h-0 flex-1 grid-cols-[auto_minmax(0,1fr)] gap-3 max-lg:grid-cols-1">
+            <aside
+              className={cn(
+                "min-h-0 w-[210px] overflow-y-auto rounded-md border border-border bg-card p-2 max-lg:hidden",
+                !viewsRailOpen && "w-12",
+              )}
+              aria-label="已保存的数据视图"
+            >
+              <div
+                className={cn(
+                  "flex items-center gap-1 px-1 pb-2",
+                  !viewsRailOpen && "justify-center",
+                )}
+              >
+                <button
+                  type="button"
+                  aria-label={viewsRailOpen ? "折叠视图栏" : "展开视图栏"}
+                  aria-expanded={viewsRailOpen}
+                  className="inline-flex size-7 items-center justify-center rounded-sm text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => setViewsRailOpen((open) => !open)}
+                >
+                  <Icon name="panelLeft" size={14} />
+                </button>
+                {viewsRailOpen && (
+                  <span className="text-xs font-semibold text-muted-foreground">
+                    {scope === "objects" ? "对象视图" : "轨迹视图"}
+                  </span>
+                )}
               </div>
-              <div className="flex flex-col gap-0.5 max-lg:grid max-lg:grid-cols-2 max-sm:grid-cols-1">
-                {views.map((view) => {
-                  const key = view.id ? `saved:${view.id}` : `builtin:${view.key}`;
-                  return (
-                    <button
-                      key={`${scope}:${key}`}
-                      type="button"
-                      className={cn(
-                        "flex min-h-9 items-center justify-between gap-2 rounded-sm px-2 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground",
-                        key === selectedKey && "bg-muted text-foreground",
-                      )}
-                      onClick={() => {
-                        if (key === selectedKey) return;
-                        if (isDirty) setPendingViewKey(key);
-                        else switchView(key);
-                      }}
-                    >
-                      <span className="truncate">{view.name}</span>
-                      <Badge variant={view.invalid_fields.length ? "warning" : "outline"}>
-                        {view.invalid_fields.length ? "失效" : (view.result_count ?? "无")}
-                      </Badge>
-                    </button>
-                  );
-                })}
-              </div>
+              {viewsRailOpen && (
+                <div className="mb-2 flex flex-col gap-2">
+                  {viewGroups.map((group) => (
+                    <details key={group.key} open className="group">
+                      <summary className="cursor-pointer px-1 py-1 text-2xs font-semibold text-muted-foreground marker:text-muted-foreground">
+                        {group.label}
+                      </summary>
+                      <div className="mt-0.5 flex flex-col gap-0.5">
+                        {group.items.map((view) => {
+                          const key = view.id ? `saved:${view.id}` : `builtin:${view.key}`;
+                          return (
+                            <button
+                              key={`${scope}:${key}`}
+                              type="button"
+                              className={cn(
+                                "flex min-h-9 items-center justify-between gap-2 rounded-sm px-2 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground",
+                                key === selectedKey && "bg-muted text-foreground",
+                              )}
+                              onClick={() => {
+                                if (key === selectedKey) return;
+                                if (isDirty) setPendingViewKey(key);
+                                else switchView(key);
+                              }}
+                            >
+                              <span className="truncate">{view.name}</span>
+                              <Badge variant={view.invalid_fields.length ? "warning" : "outline"}>
+                                {view.invalid_fields.length ? "失效" : (view.result_count ?? "无")}
+                              </Badge>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </details>
+                  ))}
+                </div>
+              )}
               <Button
                 variant="ghost"
                 size="sm"
-                className="mt-2 w-full justify-start"
+                className={cn("mt-2 w-full justify-start", !viewsRailOpen && "px-0")}
                 disabled={!canEditSelected || deleteView.isPending}
                 onClick={() => setDeleteDialogOpen(true)}
+                aria-label="删除当前视图"
               >
                 <Icon name="trash" size={12} />
-                删除视图
+                {viewsRailOpen && "删除视图"}
               </Button>
             </aside>
 
-            <main className="flex min-h-0 min-w-0 flex-col gap-2">
+            <div className="flex min-h-0 min-w-0 flex-col gap-2">
               <section className="flex shrink-0 flex-col gap-2 rounded-md border border-border bg-card p-2.5">
                 <div className="flex items-center justify-between gap-3">
                   <div>
@@ -1110,7 +1166,7 @@ export function EntityDataManagerLens({
                   </div>
                 )}
               </div>
-            </main>
+            </div>
           </div>
         </div>
       </DataManagerLensTabs>
