@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-13T15:48:47.832Z",
+  "updated_at": "2026-09-13T16:32:42.747Z",
   "entries": {
     "docs-site/.vitepress/theme/assets/home/hero/data-manager.webp": {
       "asset_id": "home-hero/data-manager",
@@ -5682,9 +5682,9 @@
     "docs-site/public/media/video/video-draw-poster.webp": {
       "asset_id": "video-draw",
       "role": "poster",
-      "generated_at": "2026-09-07T16:25:40.808Z",
-      "captured_commit": "7c13fb7ab678404e0d9037481b495e17d925076b",
-      "source_worktree_dirty": true,
+      "generated_at": "2026-09-13T16:32:42.747Z",
+      "captured_commit": "e21d60ff2191912479a246ae64111d9b3347e1ce",
+      "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-g",
       "source": "apps/web/scripts/media-derivation.mjs",
       "test_title": "derive webp › video-draw",
@@ -5704,8 +5704,8 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "f9f66dde2319634045e0a6e1fd5ec522cb9746e717c1269c6391cf325e614302",
-      "bytes": 60058,
+      "sha256": "6a630872c31a97b9a1def68b102cb8a7fbe40bf0b29c916f01c961a19c325cb6",
+      "bytes": 97258,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -5719,22 +5719,22 @@
         "source_inference": "none"
       },
       "source_asset": {
-        "runId": "2026-09-07T16-13-03-694Z-3128330",
+        "runId": "2026-09-13T16-23-27-217Z-47655",
         "assetId": "video-draw",
-        "sha256": "6e2e3d4bf608a2ba708d536d5becfbde2dd054b3e1ed5edeb943eb7872522816",
+        "sha256": "065a4741c0ecaff771f45bdae0c6d3665c2461d736443bf3748565c38510155d",
         "quality": "standard",
         "clip": {
-          "start": 70,
-          "duration": 17.6
+          "start": 13.5,
+          "duration": 19.3
         }
       }
     },
     "docs-site/public/media/video/video-draw.mp4": {
       "asset_id": "video-draw",
       "role": "docs-video",
-      "generated_at": "2026-09-07T16:25:40.726Z",
-      "captured_commit": "7c13fb7ab678404e0d9037481b495e17d925076b",
-      "source_worktree_dirty": true,
+      "generated_at": "2026-09-13T16:32:42.701Z",
+      "captured_commit": "e21d60ff2191912479a246ae64111d9b3347e1ce",
+      "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-g",
       "source": "apps/web/scripts/media-derivation.mjs",
       "test_title": "derive mp4 › video-draw",
@@ -5754,37 +5754,37 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "81f86688f7b680829326b14561103cd07eaea9e9069e3ea04b3853f511789009",
-      "bytes": 772197,
+      "sha256": "e3d26525cf8311438e28567f8eed4297f28fd1b19be6deee207cebdeb5e26bda",
+      "bytes": 1161856,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "25/1",
-        "duration_seconds": 17.6
+        "duration_seconds": 19.32
       },
       "capture": {
         "source_quality": "standard",
         "source_inference": "none"
       },
       "source_asset": {
-        "runId": "2026-09-07T16-13-03-694Z-3128330",
+        "runId": "2026-09-13T16-23-27-217Z-47655",
         "assetId": "video-draw",
-        "sha256": "6e2e3d4bf608a2ba708d536d5becfbde2dd054b3e1ed5edeb943eb7872522816",
+        "sha256": "065a4741c0ecaff771f45bdae0c6d3665c2461d736443bf3748565c38510155d",
         "quality": "standard",
         "clip": {
-          "start": 70,
-          "duration": 17.6
+          "start": 13.5,
+          "duration": 19.3
         }
       }
     },
     "docs-site/public/media/video/video-timeline-zoom-poster.webp": {
       "asset_id": "video-timeline-zoom",
       "role": "poster",
-      "generated_at": "2026-09-07T16:08:19.885Z",
-      "captured_commit": "0372bf9c13c1107d2ef1de96c3d557ac04e00e43",
-      "source_worktree_dirty": true,
+      "generated_at": "2026-09-13T16:32:36.184Z",
+      "captured_commit": "4209f57f1b2f6aa877c7a807b3ea92be46925d60",
+      "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-g",
       "source": "apps/web/scripts/media-derivation.mjs",
       "test_title": "derive webp › video-timeline-zoom",
@@ -5803,8 +5803,8 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "fd209778a1e354b45344988b6e218d7e1b7fa7ff19036704aeda0033b5ffc8d3",
-      "bytes": 58336,
+      "sha256": "852b35487d275c57eabe1dd06dbd3f9faa07d9f84d2fad51a590f2d112dbb9b0",
+      "bytes": 94916,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -5818,22 +5818,22 @@
         "source_inference": "none"
       },
       "source_asset": {
-        "runId": "2026-09-07T15-54-13-477Z-3049078",
+        "runId": "2026-09-13T16-21-38-720Z-43029",
         "assetId": "video-timeline-zoom",
-        "sha256": "f24bee82df07c73c1bc0526aab8f421c887563770bc5d5bf4426625c3ec15f37",
+        "sha256": "b1d30698a380fd35316759af7b9843c6d93703d38ece36e6ee744def8ed7cfef",
         "quality": "standard",
         "clip": {
-          "start": 69.4,
-          "duration": 10.2
+          "start": 13,
+          "duration": 13.6
         }
       }
     },
     "docs-site/public/media/video/video-timeline-zoom.mp4": {
       "asset_id": "video-timeline-zoom",
       "role": "docs-video",
-      "generated_at": "2026-09-07T16:08:19.807Z",
-      "captured_commit": "0372bf9c13c1107d2ef1de96c3d557ac04e00e43",
-      "source_worktree_dirty": true,
+      "generated_at": "2026-09-13T16:32:36.137Z",
+      "captured_commit": "4209f57f1b2f6aa877c7a807b3ea92be46925d60",
+      "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-g",
       "source": "apps/web/scripts/media-derivation.mjs",
       "test_title": "derive mp4 › video-timeline-zoom",
@@ -5852,37 +5852,37 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "c8a83cacaa537df72760e8741fb359997ecc6c81037b76e26e47a4a6d990098d",
-      "bytes": 278302,
+      "sha256": "bc7960b553d77ca856cee88baa6d7ec493405781bd673a6eb965108251aa363c",
+      "bytes": 506554,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "25/1",
-        "duration_seconds": 10.2
+        "duration_seconds": 13.6
       },
       "capture": {
         "source_quality": "standard",
         "source_inference": "none"
       },
       "source_asset": {
-        "runId": "2026-09-07T15-54-13-477Z-3049078",
+        "runId": "2026-09-13T16-21-38-720Z-43029",
         "assetId": "video-timeline-zoom",
-        "sha256": "f24bee82df07c73c1bc0526aab8f421c887563770bc5d5bf4426625c3ec15f37",
+        "sha256": "b1d30698a380fd35316759af7b9843c6d93703d38ece36e6ee744def8ed7cfef",
         "quality": "standard",
         "clip": {
-          "start": 69.4,
-          "duration": 10.2
+          "start": 13,
+          "duration": 13.6
         }
       }
     },
     "docs-site/public/media/video/video-track-carryover-poster.webp": {
       "asset_id": "video-track-carryover",
       "role": "poster",
-      "generated_at": "2026-09-07T16:46:31.220Z",
-      "captured_commit": "7c13fb7ab678404e0d9037481b495e17d925076b",
-      "source_worktree_dirty": true,
+      "generated_at": "2026-09-13T16:32:39.504Z",
+      "captured_commit": "4209f57f1b2f6aa877c7a807b3ea92be46925d60",
+      "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-g",
       "source": "apps/web/scripts/media-derivation.mjs",
       "test_title": "derive webp › video-track-carryover",
@@ -5902,8 +5902,8 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "dded2a6a0d98b8221cb7b3b0a399e2a8df8509d38737469af1ba7179ca5437ea",
-      "bytes": 60648,
+      "sha256": "5bbd981342de891233da27ab61d503e74b6fb22e5c9c709fb73a604bac4b0a5d",
+      "bytes": 97138,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -5917,22 +5917,22 @@
         "source_inference": "none"
       },
       "source_asset": {
-        "runId": "2026-09-07T16-27-01-025Z-3168703",
+        "runId": "2026-09-13T16-22-26-148Z-45045",
         "assetId": "video-track-carryover",
-        "sha256": "6abd7bea9c763d8893499670b0fe4d73b08e215fc603ddc032e924afcad01497",
+        "sha256": "8d743b137d78c20ef2afd56a2346d65d291037fc2754ad3d8c42693a68639933",
         "quality": "standard",
         "clip": {
-          "start": 74.8,
-          "duration": 10.9
+          "start": 13.5,
+          "duration": 12.7
         }
       }
     },
     "docs-site/public/media/video/video-track-carryover.mp4": {
       "asset_id": "video-track-carryover",
       "role": "docs-video",
-      "generated_at": "2026-09-07T16:46:31.137Z",
-      "captured_commit": "7c13fb7ab678404e0d9037481b495e17d925076b",
-      "source_worktree_dirty": true,
+      "generated_at": "2026-09-13T16:32:39.456Z",
+      "captured_commit": "4209f57f1b2f6aa877c7a807b3ea92be46925d60",
+      "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-g",
       "source": "apps/web/scripts/media-derivation.mjs",
       "test_title": "derive mp4 › video-track-carryover",
@@ -5952,37 +5952,37 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "46fd0a96e1a808a8dbe923077a59908e25b95d7bc4335115e0bebff9b8f983df",
-      "bytes": 426756,
+      "sha256": "59a4c480dbdd9e444c077bd358859d51f82a855c4587db2311d51df42b56fe5d",
+      "bytes": 694446,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "25/1",
-        "duration_seconds": 10.92
+        "duration_seconds": 12.72
       },
       "capture": {
         "source_quality": "standard",
         "source_inference": "none"
       },
       "source_asset": {
-        "runId": "2026-09-07T16-27-01-025Z-3168703",
+        "runId": "2026-09-13T16-22-26-148Z-45045",
         "assetId": "video-track-carryover",
-        "sha256": "6abd7bea9c763d8893499670b0fe4d73b08e215fc603ddc032e924afcad01497",
+        "sha256": "8d743b137d78c20ef2afd56a2346d65d291037fc2754ad3d8c42693a68639933",
         "quality": "standard",
         "clip": {
-          "start": 74.8,
-          "duration": 10.9
+          "start": 13.5,
+          "duration": 12.7
         }
       }
     },
     "docs-site/public/media/video/workbench-overview-poster.webp": {
       "asset_id": "video-track",
       "role": "poster",
-      "generated_at": "2026-09-07T10:19:25.345Z",
-      "captured_commit": "a6044bbf4fef17967a90e4c0600ff0145f15e12a",
-      "source_worktree_dirty": true,
+      "generated_at": "2026-09-13T16:32:33.583Z",
+      "captured_commit": "4209f57f1b2f6aa877c7a807b3ea92be46925d60",
+      "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-g",
       "source": "apps/web/scripts/media-derivation.mjs",
       "test_title": "derive webp › video-track",
@@ -5991,6 +5991,7 @@
         "apps/api/app/services/screenshot_seed_spec.py",
         "apps/web/e2e/fixtures/seed.ts",
         "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
         "apps/web/e2e/screenshots/flows/_canvas.ts",
         "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
@@ -5999,8 +6000,8 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "5ba13d9db19a22163888e7f96483ef3070e8ed3b3d5de4c6a5459fa26834459c",
-      "bytes": 61212,
+      "sha256": "cd4bfb130aab5434993d3b5669034096281706a2c0910be4b5c2a44db7cad697",
+      "bytes": 93024,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -6014,22 +6015,22 @@
         "source_inference": "none"
       },
       "source_asset": {
-        "runId": "2026-09-07T09-59-57-917Z-2050993",
+        "runId": "2026-09-13T16-20-37-982Z-40323",
         "assetId": "video-track",
-        "sha256": "8a43c6e6463a12fbfb56315ded7ad24e803a33e43f5506bd8c71c9635a56fa1d",
+        "sha256": "5dfcacff1c6b65ac9120705eb186860b5a4e4d1fdebdc0e7161b70cb6080f4bb",
         "quality": "standard",
         "clip": {
-          "start": 111.2,
-          "duration": 21.2
+          "start": 14,
+          "duration": 24.7
         }
       }
     },
     "docs-site/public/media/video/workbench-overview.mp4": {
       "asset_id": "video-track",
       "role": "docs-video",
-      "generated_at": "2026-09-07T10:19:25.260Z",
-      "captured_commit": "a6044bbf4fef17967a90e4c0600ff0145f15e12a",
-      "source_worktree_dirty": true,
+      "generated_at": "2026-09-13T16:32:33.527Z",
+      "captured_commit": "4209f57f1b2f6aa877c7a807b3ea92be46925d60",
+      "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-g",
       "source": "apps/web/scripts/media-derivation.mjs",
       "test_title": "derive mp4 › video-track",
@@ -6038,6 +6039,7 @@
         "apps/api/app/services/screenshot_seed_spec.py",
         "apps/web/e2e/fixtures/seed.ts",
         "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
         "apps/web/e2e/screenshots/flows/_canvas.ts",
         "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
@@ -6046,28 +6048,28 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "366f3ee2c1563980403486bf95b4562771d7ea1c4096fc5ee57b52bfd0b9a50c",
-      "bytes": 982427,
+      "sha256": "f3a1502329ecba8df3bfc9fa5f40f8a0b43617efc9839028e50c35a01e9bdb6d",
+      "bytes": 1675425,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "25/1",
-        "duration_seconds": 21.2
+        "duration_seconds": 24.72
       },
       "capture": {
         "source_quality": "standard",
         "source_inference": "none"
       },
       "source_asset": {
-        "runId": "2026-09-07T09-59-57-917Z-2050993",
+        "runId": "2026-09-13T16-20-37-982Z-40323",
         "assetId": "video-track",
-        "sha256": "8a43c6e6463a12fbfb56315ded7ad24e803a33e43f5506bd8c71c9635a56fa1d",
+        "sha256": "5dfcacff1c6b65ac9120705eb186860b5a4e4d1fdebdc0e7161b70cb6080f4bb",
         "quality": "standard",
         "clip": {
-          "start": 111.2,
-          "duration": 21.2
+          "start": 14,
+          "duration": 24.7
         }
       }
     },
