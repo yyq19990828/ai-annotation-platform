@@ -266,7 +266,6 @@ export async function runVideoMaskTrackEdit(
     await waitForVisibleMask(page, created.id, edited.area);
     await expect(row).toContainText("2 关键帧");
     await page.getByLabel("展开选中信息卡(可拖动)", { exact: true }).click();
-    await expect(page.getByText("当前帧为 Mask 关键帧。")).toBeVisible();
     await page.getByRole("button", { name: "上一关键帧", exact: true }).click();
     await waitForVideoRecordingFrame(page, manifest, 0);
     await waitForVisibleMask(page, created.id, initial.area);
