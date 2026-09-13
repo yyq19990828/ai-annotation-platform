@@ -25,14 +25,14 @@ Regenerate these numbers with `pnpm docs:media:audit -- --json --output <path>`;
 
 Verified on this Mac with `screenshots:record -- --list/--plan` and `--plan --profile marketing`:
 
-| Class                                                     | Referenced assets | This Mac                                                | Action in this plan                            |
-| --------------------------------------------------------- | ----------------: | ------------------------------------------------------- | ---------------------------------------------- |
-| Static screenshots (all referenced docs images)           |                61 | Yes; AI scenes use the running `screenshot-ml-stub`     | Full matrix re-capture                         |
-| Home hero images derived from statics                     |                 4 | Yes                                                     | Regenerate after statics                       |
-| Docs-profile non-ML flows — dirty or old seed             |                34 | Yes                                                     | Re-record (17 flows × 2)                       |
-| Docs-profile non-ML flows — clean provenance              |                 9 | Yes                                                     | Visual review only                             |
-| Pointcloud flows (marketing-only, no ML)                  |                12 | Yes, subject to 4K60 / independent-frame gates          | Canary re-record 2; review 10; defer if gated  |
-| ML flows and legacy Linux marketing suite                 |                91 | No (`image_interactive` / `ocr` / `video_tracker` / live inference; legacy orchestration) | Explicit Linux/GPU follow-up |
+| Class                                           | Referenced assets | This Mac                                                                                  | Action in this plan                           |
+| ----------------------------------------------- | ----------------: | ----------------------------------------------------------------------------------------- | --------------------------------------------- |
+| Static screenshots (all referenced docs images) |                61 | Yes; AI scenes use the running `screenshot-ml-stub`                                       | Full matrix re-capture                        |
+| Home hero images derived from statics           |                 4 | Yes                                                                                       | Regenerate after statics                      |
+| Docs-profile non-ML flows — dirty or old seed   |                34 | Yes                                                                                       | Re-record (17 flows × 2)                      |
+| Docs-profile non-ML flows — clean provenance    |                 9 | Yes                                                                                       | Visual review only                            |
+| Pointcloud flows (marketing-only, no ML)        |                12 | Yes, subject to 4K60 / independent-frame gates                                            | Canary re-record 2; review 10; defer if gated |
+| ML flows and legacy Linux marketing suite       |                91 | No (`image_interactive` / `ocr` / `video_tracker` / live inference; legacy orchestration) | Explicit Linux/GPU follow-up                  |
 
 Re-record reasons: dirty capture tree, stale seed, or content replaced after review. Review-only means re-inspection and approval without new capture when content matches the current product.
 
