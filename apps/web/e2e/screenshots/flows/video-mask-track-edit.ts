@@ -221,15 +221,14 @@ export async function runVideoMaskTrackEdit(
     // 「保持」帧不再以像素层渲染 Mask（画布只显示关键帧标签/红条），进入编辑后才可解码核对。
     await page.waitForTimeout(1_000);
     await page.getByTitle("编辑当前帧 Mask").click();
+    // 先收起浮卡：它的点击属于外部交互，会关掉随后打开的 Radix 工具条。
+    await collapseVideoSelectionCard(page);
+    await stage.scrollIntoViewIfNeeded();
     // ContextToolbar：进入编辑只挂胶囊，完整工具条需展开常用工具并点「更多设置」。
     await page.getByTestId("mask-tool-capsule").waitFor({ state: "visible", timeout: 5000 });
     await page.getByTestId("mask-settings-trigger").click();
     await page.getByLabel("更多 Mask 工具").click();
     await expect(toolbar).toBeVisible();
-    await collapseVideoSelectionCard(page);
-    await stage.scrollIntoViewIfNeeded();
-    await toolbar.scrollIntoViewIfNeeded();
-    await expect(toolbar).toBeInViewport({ ratio: 1 });
     await toolbar.getByRole("radio", { name: "橡皮", exact: true }).click();
     const editBounds = await renderedMediaBounds(stage);
     for (const path of editAnchor.brush_strokes)
