@@ -169,6 +169,10 @@ export async function runVideoMaskTrackEdit(
     const toolbar = page.getByTestId("mask-toolbar");
     await page.getByRole("button", { name: "轨迹范围", exact: true }).click();
     await page.getByTestId("video-tool-btn-mask-track").click();
+    // ContextToolbar：Mask 工具先挂胶囊，需展开常用工具并点「更多设置」才挂载完整工具条。
+    await page.getByTestId("mask-tool-capsule").waitFor({ state: "visible", timeout: 5000 });
+    await page.getByTestId("mask-settings-trigger").click();
+    await page.getByLabel("更多 Mask 工具").click();
     await expect(toolbar).toBeVisible();
     const drawStartMs = Date.now();
     await page.waitForTimeout(1_200);
