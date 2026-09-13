@@ -218,7 +218,7 @@ export async function runVideoMaskTrackEdit(
     }
     await page.getByLabel("展开选中信息卡(可拖动)", { exact: true }).click();
     await expect(page.getByText(/编辑并保存当前帧 Mask/)).toBeVisible();
-    await waitForVisibleMask(page, created.id, initial.area);
+    // 「保持」帧不再以像素层渲染 Mask（画布只显示关键帧标签/红条），进入编辑后才可解码核对。
     await page.waitForTimeout(1_000);
     await page.getByTitle("编辑当前帧 Mask").click();
     await expect(toolbar).toBeVisible();
