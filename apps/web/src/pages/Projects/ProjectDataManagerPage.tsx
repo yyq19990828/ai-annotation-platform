@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { Thumbnail } from "@/components/Thumbnail";
 import { useProject } from "@/hooks/useProjects";
+import { useTask } from "@/hooks/useTasks";
 import type { ProjectResponse } from "@/api/projects";
 import {
   useCreateTaskView,
@@ -19,7 +20,6 @@ import type {
   DataManagerFilterField,
   DataManagerEntityScope,
   DataManagerTask,
-  ProjectTaskView,
   TaskFilterOp,
   TaskFilterRule,
   TaskSortItem,
@@ -76,6 +76,7 @@ import {
   dataManagerUrlCodec,
   hasFilterUrlOverrides,
   parseDataManagerUrl,
+  resolveDataManagerSort,
   type DataManagerLayout,
   type DataManagerSection,
   updateDataManagerUrl,
@@ -181,15 +182,12 @@ const COLUMN_OPTIONS = [
 ] as const;
 
 const DEFAULT_COLUMNS = COLUMN_OPTIONS.slice(0, 11).map((item) => item.key);
+type SelectedTask = Pick<DataManagerTask, "id" | "project_id" | "display_id" | "file_name">;
+
 interface RuleChipDraft {
   field: string;
   op: TaskFilterOp;
   value: string;
-}
-
-function defaultSortForView(view: ProjectTaskView | null): TaskSortItem[] {
-  if (view?.sort_json?.length) return view.sort_json;
-  return [{ field: "task.created_at", direction: "asc" }];
 }
 
 function formatDate(value: string | null) {
@@ -362,6 +360,7 @@ export function ProjectDataManagerPage() {
       </DataManagerProjectOverview>
     ) : scope === "objects" || scope === "tracks" ? (
       <EntityDataManagerLens
+        key={`${id}:${user?.id ?? "anonymous"}:${scope}`}
         projectId={id}
         projectName={project.name}
         projectDisplayId={project.display_id}
@@ -478,7 +477,9 @@ function TaskDataManagerPage({
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [saveName, setSaveName] = useState("任务视图");
   const [saveVisibility, setSaveVisibility] = useState<"private" | "project">("private");
-  const [selectedTask, setSelectedTask] = useState<DataManagerTask | null>(null);
+  const [selectedTask, setSelectedTask] = useState<SelectedTask | null>(null);
+  const selectedTaskRef = useRef<SelectedTask | null>(null);
+  selectedTaskRef.current = selectedTask;
   const [baselineSignature, setBaselineSignature] = useState("");
   const [pendingViewKey, setPendingViewKey] = useState<string | null>(null);
   const [pendingScope, setPendingScope] = useState<DataManagerEntityScope | null>(null);
@@ -610,7 +611,7 @@ function TaskDataManagerPage({
     const split = structureIssue
       ? { query: "", filter: source }
       : splitKeyword(collapseEmptyGroups(source));
-    const nextKeyword = useUrl ? url.query : split.query;
+    const nextKeyword = useUrl && searchParams.has("q") ? url.query : split.query;
     setKeyword(nextKeyword);
     setKeywordFlushKey((value) => value + 1);
     setFilterExpression(split.filter);
@@ -624,7 +625,12 @@ function TaskDataManagerPage({
           : defaultColumns
     ).filter((column) => allowedColumns.has(column));
     const nextColumns = restoredColumns.length ? restoredColumns : defaultColumns;
-    const nextSort = useUrl && url.sort?.length ? url.sort : defaultSortForView(selectedView);
+    const nextSort = resolveDataManagerSort(
+      useUrl ? url.sort : null,
+      selectedView.sort_json,
+      schemaQ.data?.sort_fields.map((field) => field.value) ?? [],
+      schemaQ.data?.sort_fields[0]?.value ?? "task.created_at",
+    );
     setColumns(nextColumns);
     setSort(nextSort);
     setLayout(useUrl ? (url.layout ?? "list") : "list");
@@ -652,6 +658,7 @@ function TaskDataManagerPage({
     defaultColumns,
     filterFields,
     searchParams,
+    schemaQ.data?.sort_fields,
     selectedKey,
     selectedView,
   ]);
@@ -718,10 +725,27 @@ function TaskDataManagerPage({
     [columns, filterJson, pageForQuery, sort],
   );
   const queryReady = Boolean(
-    selectedView && schemaQ.data && urlHydratedRef.current && expressionValid,
+    selectedView &&
+    schemaQ.data &&
+    urlHydratedRef.current &&
+    expressionValid &&
+    sort.length &&
+    sort.every((item) => schemaQ.data.sort_fields.some((field) => field.value === item.field)),
   );
   const tasksQ = useProjectTaskQuery(id, queryPayload, queryReady);
   const summaryQ = useDataManagerSummary(id, filterJson as Record<string, unknown>, queryReady);
+  const selectedTaskOnPage = tasksQ.data?.items.find((task) => task.id === currentUrl.selected);
+  const selectedTaskLookupQ = useTask(
+    currentUrl.selected && !selectedTaskOnPage ? currentUrl.selected : "",
+  );
+  const selectedTaskIdForUrl =
+    selectedTask?.id ??
+    selectedTaskOnPage?.id ??
+    (currentUrl.selected &&
+    !selectedTaskOnPage &&
+    (selectedTaskLookupQ.isLoading || selectedTaskLookupQ.data?.id === currentUrl.selected)
+      ? currentUrl.selected
+      : null);
   const currentSignature = useMemo(
     () => JSON.stringify({ filter_json: filterJson, sort_json: sort, columns_json: columns }),
     [columns, filterJson, sort],
@@ -794,7 +818,7 @@ function TaskDataManagerPage({
       filter: isEmptyFilter(queryExpression) ? {} : (queryExpression as Record<string, unknown>),
       sort,
       columns,
-      selected: selectedTask?.id ?? null,
+      selected: selectedTaskIdForUrl,
       selectedTasks: effectiveSelectedTaskIds,
       layout,
     });
@@ -808,7 +832,7 @@ function TaskDataManagerPage({
     keyword,
     searchParams,
     selectedKey,
-    selectedTask?.id,
+    selectedTaskIdForUrl,
     effectiveSelectedTaskIds,
     setSearchParams,
     sort,
@@ -821,14 +845,42 @@ function TaskDataManagerPage({
       setSelectedTask(null);
       return;
     }
-    const restored = tasksQ.data?.items.find((task) => task.id === currentUrl.selected);
-    if (restored) setSelectedTask(restored);
-  }, [currentUrl.selected, tasksQ.data?.items]);
+    const restored = selectedTaskOnPage;
+    if (restored) {
+      setSelectedTask(restored);
+      return;
+    }
+    const fetched = selectedTaskLookupQ.data;
+    if (fetched?.id === currentUrl.selected && fetched.project_id === project.id) {
+      setSelectedTask(fetched);
+      return;
+    }
+    if (
+      selectedTaskRef.current?.id !== currentUrl.selected ||
+      selectedTaskRef.current.project_id !== project.id
+    ) {
+      setSelectedTask(null);
+    }
+  }, [currentUrl.selected, project.id, selectedTaskLookupQ.data, selectedTaskOnPage]);
+
+  const selectedTaskDetails =
+    selectedTask &&
+    selectedTask.project_id === project.id &&
+    (!currentUrl.selected || selectedTask.id === currentUrl.selected)
+      ? selectedTask
+      : selectedTaskLookupQ.data?.id === currentUrl.selected &&
+          selectedTaskLookupQ.data.project_id === project.id
+        ? selectedTaskLookupQ.data
+        : null;
 
   if (schemaQ.isError)
     return (
       <div role="alert" className="p-6 text-center text-sm text-destructive">
-        无法加载 Data Manager 筛选字段，请刷新重试。
+        <p>无法加载 Data Manager 筛选字段。</p>
+        <Button size="sm" variant="ghost" className="mt-3" onClick={() => void schemaQ.refetch()}>
+          <Icon name="refresh" size={12} />
+          重试
+        </Button>
       </div>
     );
 
@@ -1097,7 +1149,7 @@ function TaskDataManagerPage({
           else onScopeChange(nextScope);
         }}
       >
-        <div className="flex h-full min-h-0 flex-col gap-2">
+        <div className="flex h-full min-h-0 flex-col gap-2 max-sm:overflow-y-auto max-sm:pb-2">
           <header className="flex shrink-0 items-center justify-end gap-4 max-md:flex-col max-md:items-stretch">
             <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground max-sm:flex-wrap">
               {!!urlState.issues.length && (
@@ -1165,7 +1217,7 @@ function TaskDataManagerPage({
             />
           )}
 
-          <div className="grid min-h-0 flex-1 grid-cols-[auto_minmax(0,1fr)] gap-3 max-lg:grid-cols-1">
+          <div className="grid min-h-0 flex-1 grid-cols-[auto_minmax(0,1fr)] gap-3 max-lg:grid-cols-1 max-sm:min-h-[280px]">
             <aside
               className={cn(
                 "min-h-0 w-[210px] overflow-y-auto rounded-md border border-border bg-card p-2 max-lg:hidden",
@@ -1472,7 +1524,7 @@ function TaskDataManagerPage({
                 </div>
               </section>
 
-              <div className="min-h-0 flex-1 overflow-auto rounded-md border border-border bg-card shadow-sm">
+              <div className="min-h-0 flex-1 overflow-auto rounded-md border border-border bg-card shadow-sm max-sm:min-h-[280px]">
                 {layout === "gallery" ? (
                   <div
                     aria-label="任务画廊"
@@ -1522,7 +1574,10 @@ function TaskDataManagerPage({
                               width={160}
                               height={128}
                             />
-                            <label className="absolute top-2 left-2 rounded-sm bg-background/85 p-1.5 shadow-sm">
+                            <label
+                              className="absolute top-2 left-2 rounded-sm bg-background/85 p-1.5 shadow-sm"
+                              onClick={(event) => event.stopPropagation()}
+                            >
                               <input
                                 type="checkbox"
                                 checked={taskSelected}
@@ -1772,9 +1827,9 @@ function TaskDataManagerPage({
         </Dialog>
         <TaskMatchesSheet
           projectId={id}
-          task={selectedTask}
+          task={selectedTaskDetails}
           filterJson={filterJson as Record<string, unknown>}
-          open={Boolean(selectedTask)}
+          open={Boolean(selectedTaskDetails)}
           onOpenChange={(open) => !open && setSelectedTask(null)}
         />
         <AlertDialog

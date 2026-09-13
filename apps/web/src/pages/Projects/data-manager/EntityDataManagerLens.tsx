@@ -84,6 +84,7 @@ import {
   DATA_MANAGER_FILTER_KEYS,
   dataManagerUrlCodec,
   hasFilterUrlOverrides,
+  parseDataManagerUrl,
   resolveDataManagerSort,
   updateDataManagerUrl,
 } from "./dataManagerUrlState";
@@ -300,6 +301,7 @@ export function EntityDataManagerLens({
   const skipUrlSyncRef = useRef(false);
   const previousUrlRef = useRef(searchParams.toString());
   const tableRef = useRef<HTMLDivElement>(null);
+  const identityRef = useRef(`${projectId}:${user?.id ?? "anonymous"}:${scope}`);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -307,6 +309,22 @@ export function EntityDataManagerLens({
       mountedRef.current = false;
     };
   }, []);
+
+  useEffect(() => {
+    const nextIdentity = `${projectId}:${user?.id ?? "anonymous"}:${scope}`;
+    if (identityRef.current === nextIdentity) return;
+    identityRef.current = nextIdentity;
+    setSelected(null);
+    setSearchParams(
+      (current) =>
+        updateDataManagerUrl(current, {
+          ...parseDataManagerUrl(current),
+          lens: scope,
+          selected: null,
+        }),
+      { replace: true },
+    );
+  }, [projectId, scope, setSearchParams, user?.id]);
 
   const views = useMemo(() => viewsQ.data?.items ?? [], [viewsQ.data?.items]);
   const selectedView = useMemo(
@@ -389,7 +407,7 @@ export function EntityDataManagerLens({
     const restored = structureIssue ? source : collapseEmptyGroups(source);
     const split = structureIssue ? { query: "", filter: restored } : splitKeyword(restored);
     const nextFilter = split.filter;
-    const nextKeyword = useUrl ? url.query : split.query;
+    const nextKeyword = useUrl && searchParams.has("q") ? url.query : split.query;
     const allowedColumns = new Set(schemaQ.data.columns.map((column) => column.key));
     const restoredColumns = (
       useUrl && url.columns?.length
@@ -449,11 +467,15 @@ export function EntityDataManagerLens({
       selectionFilterSignatureRef.current = currentSignature;
       return;
     }
+    if (baseline && currentSignature === baseline) {
+      selectionFilterSignatureRef.current = currentSignature;
+      return;
+    }
     if (selectionFilterSignatureRef.current !== currentSignature) {
       selectionFilterSignatureRef.current = currentSignature;
       setSelected(null);
     }
-  }, [currentSignature]);
+  }, [baseline, currentSignature]);
   const queryPayload = useMemo(
     () => ({
       filter_json: filterJson as Record<string, unknown>,
@@ -737,7 +759,11 @@ export function EntityDataManagerLens({
   if (schemaQ.isError) {
     return (
       <div role="alert" className="p-6 text-center text-sm text-destructive">
-        无法加载 Data Manager 筛选字段，请刷新重试。
+        <p>无法加载 Data Manager 筛选字段。</p>
+        <Button size="sm" variant="ghost" className="mt-3" onClick={() => void schemaQ.refetch()}>
+          <Icon name="refresh" size={12} />
+          重试
+        </Button>
       </div>
     );
   }

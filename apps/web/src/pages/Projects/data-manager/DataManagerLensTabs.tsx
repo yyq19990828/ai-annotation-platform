@@ -24,7 +24,7 @@ export function DataManagerLensTabs({
     <Tabs
       value={scope}
       onValueChange={(value) => onScopeChange(value as DataManagerEntityScope)}
-      className="h-full min-h-0"
+      className="flex h-full min-h-0 flex-col"
     >
       <TabsList variant="line" aria-label="Data Manager 数据粒度" className="shrink-0">
         {availableScopes.map((item) => (
