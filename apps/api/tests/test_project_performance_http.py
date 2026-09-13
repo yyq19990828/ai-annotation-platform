@@ -381,14 +381,29 @@ async def test_members_http_is_owner_or_super_admin_only(
 async def test_members_http_qualified_time_clips_and_unions_sessions(
     httpx_client, db_session, project_admin, annotator
 ):
+    from tests.conftest import _create_user
+
     owner, token = project_admin
     worker, _ = annotator
+    foreign_actor, _ = await _create_user(
+        db_session,
+        "annotator",
+        f"foreign-{uuid.uuid4().hex[:8]}@test.local",
+        "Foreign legacy actor",
+    )
     project = _project(owner.id)
     db_session.add(project)
     await db_session.flush()
     await _member(db_session, project.id, worker, "annotator", owner.id)
     task = _task(project.id, status="in_progress", assignee_id=worker.id)
     db_session.add(task)
+    foreign_project = _project(owner.id)
+    db_session.add(foreign_project)
+    await db_session.flush()
+    foreign_task = _task(
+        foreign_project.id, status="in_progress", assignee_id=worker.id
+    )
+    db_session.add(foreign_task)
     await db_session.flush()
     start = datetime(2026, 9, 10, tzinfo=timezone.utc)
     end = start + timedelta(hours=1)
@@ -449,6 +464,34 @@ async def test_members_http_qualified_time_clips_and_unions_sessions(
                 collection_source="legacy",
                 collection_coverage="unverified_collection",
             ),
+            # A pre-provenance client could claim this foreign task belonged to
+            # the requested project.  The performance query must reject it by
+            # checking both sides of the relationship.
+            TaskEvent(
+                task_id=foreign_task.id,
+                user_id=worker.id,
+                project_id=project.id,
+                kind="annotate",
+                started_at=start + timedelta(minutes=5),
+                ended_at=start + timedelta(minutes=25),
+                duration_ms=1_200_000,
+                collection_source="session",
+                collection_coverage="qualified",
+            ),
+            TaskEvent(
+                task_id=task.id,
+                user_id=foreign_actor.id,
+                project_id=project.id,
+                kind="annotate",
+                started_at=start + timedelta(minutes=5),
+                ended_at=start + timedelta(minutes=25),
+                duration_ms=1_200_000,
+                collection_source="legacy",
+                # A legacy row remains untrusted even if a malformed client
+                # marked its coverage qualified.  It must not create a roster
+                # identity or evidence row.
+                collection_coverage="qualified",
+            ),
         ]
     )
     await db_session.flush()
@@ -460,7 +503,7 @@ async def test_members_http_qualified_time_clips_and_unions_sessions(
             "timezone": "UTC",
             "work_type": "annotation",
             "account_status": "all",
-            "include_historical": "false",
+            "include_historical": "true",
         },
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -483,6 +526,25 @@ async def test_members_http_qualified_time_clips_and_unions_sessions(
     assert owner_item["metrics"]["recorded_review_minutes"]["value"] is None
     assert owner_item["metrics"]["recorded_review_minutes"]["coverage"] == "unknown"
     assert response.json()["project_totals"]["recorded_time_minutes"]["value"] == 30.0
+    assert str(foreign_actor.id) not in {
+        item["user_id"] for item in response.json()["items"]
+    }
+    events = await httpx_client.get(
+        f"/api/v1/projects/{project.id}/performance/members/{worker.id}/events",
+        params={
+            "from": start.isoformat(),
+            "to": end.isoformat(),
+            "timezone": "UTC",
+            "work_type": "annotation",
+            "account_status": "all",
+            "include_historical": "false",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert events.status_code == 200, events.text
+    assert all(
+        event["task_id"] != str(foreign_task.id) for event in events.json()["items"]
+    )
 
 
 @pytest.mark.asyncio
@@ -495,10 +557,26 @@ async def test_members_http_volume_uses_bounded_grouped_queries(
     db_session.add(project)
     await db_session.flush()
     await _member(db_session, project.id, worker, "annotator", owner.id)
+    tasks = [
+        _task(project.id, status="pending", assignee_id=worker.id) for _ in range(2_000)
+    ]
+    db_session.add_all(tasks)
+    await db_session.flush()
+    event_start = datetime(2026, 9, 10, tzinfo=timezone.utc)
     db_session.add_all(
         [
-            _task(project.id, status="pending", assignee_id=worker.id)
-            for _ in range(2_000)
+            TaskEvent(
+                task_id=tasks[0].id,
+                user_id=worker.id,
+                project_id=project.id,
+                kind="annotate",
+                started_at=event_start + timedelta(seconds=index * 2),
+                ended_at=event_start + timedelta(seconds=index * 2 + 1),
+                duration_ms=1_000,
+                collection_source="session",
+                collection_coverage="qualified",
+            )
+            for index in range(20_000)
         ]
     )
     await db_session.flush()
@@ -538,6 +616,7 @@ async def test_members_http_volume_uses_bounded_grouped_queries(
     )
     assert response.status_code == 200, response.text
     assert response.json()["project_totals"]["current_backlog"]["value"] == 2_000
+    assert response.json()["project_totals"]["recorded_time_minutes"]["value"] == 333.3
     assert elapsed < 5.0
     task_selects = [
         statement.lower()
@@ -547,4 +626,71 @@ async def test_members_http_volume_uses_bounded_grouped_queries(
     assert len(task_selects) <= 3
     assert not any(
         "select tasks.id, tasks.status" in statement for statement in task_selects
+    )
+    assert not any(
+        "select task_events.id" in statement.lower() for statement in statements
+    )
+
+    evidence_statements: list[str] = []
+
+    def before_evidence_cursor_execute(
+        conn, cursor, statement, parameters, context, executemany
+    ):
+        evidence_statements.append(statement)
+
+    event.listen(
+        test_engine.sync_engine,
+        "before_cursor_execute",
+        before_evidence_cursor_execute,
+    )
+    try:
+        first_page = await httpx_client.get(
+            f"/api/v1/projects/{project.id}/performance/members/{worker.id}/events",
+            params={
+                "from": "2026-09-10T00:00:00Z",
+                "to": "2026-09-11T00:00:00Z",
+                "timezone": "UTC",
+                "work_type": "annotation",
+                "account_status": "all",
+                "include_historical": "false",
+                "limit": "5",
+            },
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    finally:
+        event.remove(
+            test_engine.sync_engine,
+            "before_cursor_execute",
+            before_evidence_cursor_execute,
+        )
+    assert first_page.status_code == 200, first_page.text
+    first_body = first_page.json()
+    assert len(first_body["items"]) == 5
+    assert first_body["next_cursor"]
+    assert any(
+        "limit" in statement.lower() and "offset" in statement.lower()
+        for statement in evidence_statements
+    )
+    print(
+        f"project performance evidence page: {len(evidence_statements)} SQL statements, "
+        "5 rows returned from 20,000 intervals"
+    )
+
+    second_page = await httpx_client.get(
+        f"/api/v1/projects/{project.id}/performance/members/{worker.id}/events",
+        params={
+            "from": "2026-09-10T00:00:00Z",
+            "to": "2026-09-11T00:00:00Z",
+            "timezone": "UTC",
+            "work_type": "annotation",
+            "account_status": "all",
+            "include_historical": "false",
+            "limit": "5",
+            "cursor": first_body["next_cursor"],
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert second_page.status_code == 200, second_page.text
+    assert {item["id"] for item in first_body["items"]}.isdisjoint(
+        {item["id"] for item in second_page.json()["items"]}
     )

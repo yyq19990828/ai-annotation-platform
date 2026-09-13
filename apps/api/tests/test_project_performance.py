@@ -158,6 +158,7 @@ def test_first_review_fact_is_write_once_and_legacy_rows_stay_unknown():
 
 def test_qualified_time_clips_crossing_sessions_and_unions_overlaps():
     user_id = uuid4()
+    legacy_user_id = uuid4()
     scope = ResolvedScope(
         start=datetime(2026, 9, 13, 0, tzinfo=timezone.utc),
         end=datetime(2026, 9, 13, 1, tzinfo=timezone.utc),
@@ -170,13 +171,23 @@ def test_qualified_time_clips_crossing_sessions_and_unions_overlaps():
             kind="annotate",
             started_at=datetime(2026, 9, 12, 23, 50, tzinfo=timezone.utc),
             ended_at=datetime(2026, 9, 13, 0, 20, tzinfo=timezone.utc),
+            collection_source="session",
             collection_coverage="qualified",
+        ),
+        SimpleNamespace(
+            user_id=legacy_user_id,
+            kind="annotate",
+            started_at=datetime(2026, 9, 13, 0, tzinfo=timezone.utc),
+            ended_at=datetime(2026, 9, 13, 0, 10, tzinfo=timezone.utc),
+            collection_source="legacy",
+            collection_coverage="unverified_collection",
         ),
         SimpleNamespace(
             user_id=user_id,
             kind="annotate",
             started_at=datetime(2026, 9, 13, 0, 10, tzinfo=timezone.utc),
             ended_at=datetime(2026, 9, 13, 0, 30, tzinfo=timezone.utc),
+            collection_source="session",
             collection_coverage="qualified",
         ),
     ]
@@ -186,6 +197,8 @@ def test_qualified_time_clips_crossing_sessions_and_unions_overlaps():
     assert result.minutes[user_id]["annotate"] == 30.0
     assert result.coverage[user_id]["annotate"] == "complete"
     assert result.total_minutes["annotate"] == 30.0
+    assert result.coverage[legacy_user_id]["annotate"] == "unknown"
+    assert result.total_coverage["annotate"] == "partial"
 
 
 def test_scope_serializes_the_frozen_api_keys():

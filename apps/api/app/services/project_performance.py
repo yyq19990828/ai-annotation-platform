@@ -19,7 +19,17 @@ from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import (
+    String,
+    and_,
+    cast,
+    func,
+    literal,
+    or_,
+    select,
+    text,
+    union_all,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.enums import UserRole
@@ -240,6 +250,8 @@ async def _load_workflow(
     end: datetime,
     task_ids: set[str] | None = None,
     actions: tuple[str, ...] = _WORKFLOW_ACTIONS,
+    member_id: UUID | None = None,
+    work_type: str | None = None,
 ) -> list[AuditLog]:
     stmt = (
         select(AuditLog)
@@ -254,6 +266,21 @@ async def _load_workflow(
     )
     if task_ids:
         stmt = stmt.where(AuditLog.target_id.in_(task_ids))
+    if member_id is not None:
+        if work_type == "review":
+            stmt = stmt.where(AuditLog.actor_id == member_id)
+        else:
+            stmt = stmt.where(
+                or_(
+                    AuditLog.actor_id == member_id,
+                    and_(
+                        AuditLog.action.in_(_DECISION_ACTIONS),
+                        AuditLog.detail_json.contains(
+                            {"contributor_ids": [str(member_id)]}
+                        ),
+                    ),
+                )
+            )
     return list((await db.execute(stmt)).scalars().all())
 
 
@@ -276,29 +303,157 @@ async def _load_submission_history(
     )
 
 
-async def _load_time_events(
-    db: AsyncSession,
-    project_id: UUID,
-    scope: ResolvedScope,
-    user_ids: set[UUID] | None = None,
-) -> list[TaskEvent]:
-    """Load sessions crossing the interval; callers clip them before summing."""
-    stmt = select(TaskEvent).where(
-        TaskEvent.project_id == project_id,
-        TaskEvent.started_at < scope.end,
-        TaskEvent.ended_at > scope.start,
-    )
-    if user_ids:
-        stmt = stmt.where(TaskEvent.user_id.in_(user_ids))
-    return list((await db.execute(stmt)).scalars().all())
-
-
 @dataclass(frozen=True)
 class QualifiedTime:
     minutes: dict[UUID, dict[str, float]]
     coverage: dict[UUID, dict[str, str]]
     total_minutes: dict[str, float]
     total_coverage: dict[str, str]
+
+
+async def _load_qualified_time(
+    db: AsyncSession,
+    project_id: UUID,
+    scope: ResolvedScope,
+    user_ids: set[UUID] | None = None,
+) -> QualifiedTime:
+    """Union qualified ranges in PostgreSQL before rows reach Python."""
+    user_clause = ""
+    params: dict[str, Any] = {
+        "project_id": project_id,
+        "start_at": scope.start,
+        "end_at": scope.end,
+    }
+    if user_ids:
+        if len(user_ids) == 1:
+            user_clause = " AND te.user_id = :user_id"
+            params["user_id"] = next(iter(user_ids))
+        else:
+            # The list is the filtered roster, never an unbounded event list.
+            user_clause = " AND te.user_id = ANY(:user_ids)"
+            params["user_ids"] = list(user_ids)
+
+    coverage_rows = await db.execute(
+        text(
+            f"""
+            SELECT te.user_id, te.kind,
+                   count(*) AS total_count,
+                   count(*) FILTER (
+                       WHERE te.collection_source = 'session'
+                         AND te.collection_coverage = 'qualified'
+                   )
+                       AS qualified_count
+            FROM task_events AS te
+            JOIN tasks AS t ON t.id = te.task_id
+            WHERE t.project_id = :project_id
+              AND te.project_id = :project_id
+              AND te.started_at < :end_at
+              AND te.ended_at > :start_at
+              {user_clause}
+            GROUP BY te.user_id, te.kind
+            """
+        ),
+        params,
+    )
+    coverage_map = {
+        (row.user_id, row.kind): (int(row.total_count), int(row.qualified_count))
+        for row in coverage_rows
+    }
+    duration_rows = await db.execute(
+        text(
+            f"""
+            WITH clipped AS (
+                SELECT te.user_id, te.kind,
+                       GREATEST(te.started_at, :start_at) AS interval_start,
+                       LEAST(te.ended_at, :end_at) AS interval_end
+                FROM task_events AS te
+                JOIN tasks AS t ON t.id = te.task_id
+                WHERE t.project_id = :project_id
+                  AND te.project_id = :project_id
+                  AND te.started_at < :end_at
+                  AND te.ended_at > :start_at
+                  AND te.collection_source = 'session'
+                  AND te.collection_coverage = 'qualified'
+                  {user_clause}
+            ), ordered AS (
+                SELECT *,
+                       max(interval_end) OVER (
+                           PARTITION BY user_id, kind
+                           ORDER BY interval_start, interval_end
+                           ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                       ) AS previous_end
+                FROM clipped
+            ), marked AS (
+                SELECT *,
+                       sum(
+                           CASE
+                               WHEN previous_end IS NULL
+                                    OR interval_start > previous_end THEN 1
+                               ELSE 0
+                           END
+                       ) OVER (
+                           PARTITION BY user_id, kind
+                           ORDER BY interval_start, interval_end
+                           ROWS UNBOUNDED PRECEDING
+                       ) AS interval_group
+                FROM ordered
+            ), merged AS (
+                SELECT user_id, kind, interval_group,
+                       min(interval_start) AS interval_start,
+                       max(interval_end) AS interval_end
+                FROM marked
+                GROUP BY user_id, kind, interval_group
+            )
+            SELECT user_id, kind,
+                   sum(EXTRACT(EPOCH FROM (interval_end - interval_start))) / 60.0
+                       AS minutes
+            FROM merged
+            GROUP BY user_id, kind
+            """
+        ),
+        params,
+    )
+    minutes: dict[UUID, dict[str, float]] = defaultdict(dict)
+    coverage: dict[UUID, dict[str, str]] = defaultdict(dict)
+    total_minutes: dict[str, float] = {}
+    total_coverage: dict[str, str] = {}
+    for row in duration_rows:
+        minutes[row.user_id][row.kind] = round(float(row.minutes or 0), 1)
+    for (user_id, kind), (total_count, qualified_count) in coverage_map.items():
+        if qualified_count:
+            coverage[user_id][kind] = (
+                "partial" if qualified_count < total_count else "complete"
+            )
+        else:
+            coverage[user_id][kind] = "unknown"
+    for kind in {"annotate", "review"}:
+        members = [
+            (user_id, stats.get(kind, 0.0))
+            for user_id, stats in minutes.items()
+            if kind in stats
+        ]
+        if members:
+            total_minutes[kind] = round(sum(value for _, value in members), 1)
+            total_coverage[kind] = (
+                "partial"
+                if any(
+                    total_count > qualified_count
+                    for (user_id, event_kind), (
+                        total_count,
+                        qualified_count,
+                    ) in coverage_map.items()
+                    if event_kind == kind
+                )
+                else "complete"
+            )
+        else:
+            total_coverage[kind] = "unknown"
+    return QualifiedTime(
+        minutes=dict(minutes),
+        coverage=dict(coverage),
+        total_minutes=total_minutes,
+        total_coverage=total_coverage,
+    )
 
 
 def _union_minutes(intervals: list[tuple[datetime, datetime]]) -> float:
@@ -336,7 +491,10 @@ def _qualified_time(events: list[TaskEvent], scope: ResolvedScope) -> QualifiedT
         key = (event.user_id, event.kind)
         all_intervals[key].append((start, end))
         users_by_kind[event.kind].add(event.user_id)
-        if event.collection_coverage == "qualified":
+        if (
+            event.collection_source == "session"
+            and event.collection_coverage == "qualified"
+        ):
             qualified_intervals[key].append((start, end))
 
     minutes: dict[UUID, dict[str, float]] = defaultdict(dict)
@@ -350,13 +508,18 @@ def _qualified_time(events: list[TaskEvent], scope: ResolvedScope) -> QualifiedT
         for user_id in users_by_kind[kind]:
             key = (user_id, kind)
             qualified = qualified_intervals.get(key, [])
+            kind_has_unverified = kind_has_unverified or (
+                len(all_intervals[key]) != len(qualified)
+            )
             if qualified:
                 kind_has_qualified = True
                 value = _union_minutes(qualified)
                 minutes[user_id][kind] = round(value, 1)
-                has_unverified = len(all_intervals[key]) != len(qualified)
-                kind_has_unverified = kind_has_unverified or has_unverified
-                coverage[user_id][kind] = "partial" if has_unverified else "complete"
+                coverage[user_id][kind] = (
+                    "partial"
+                    if len(all_intervals[key]) != len(qualified)
+                    else "complete"
+                )
                 kind_total += value
             else:
                 coverage[user_id][kind] = "unknown"
@@ -434,8 +597,12 @@ async def _build_roster(
         historical_ids.update(value for (value,) in annotation_ids if value is not None)
         event_ids = await db.execute(
             select(TaskEvent.user_id)
+            .join(Task, Task.id == TaskEvent.task_id)
             .where(
+                Task.project_id == project.id,
                 TaskEvent.project_id == project.id,
+                TaskEvent.collection_source == "session",
+                TaskEvent.collection_coverage == "qualified",
                 TaskEvent.started_at < scope.end,
                 TaskEvent.ended_at > scope.start,
             )
@@ -859,9 +1026,7 @@ class AggregatedPerformance:
     geometries: dict[UUID, Counter[str]]
     snapshots: dict[tuple[str, str], set[UUID]]
     workflow: list[AuditLog]
-    sessions: list[TaskEvent]
     users: dict[UUID, User]
-    task_display_ids: dict[UUID, str]
 
 
 async def _aggregate(
@@ -871,7 +1036,7 @@ async def _aggregate(
     scope: ResolvedScope,
     *,
     work_type: str = "annotation",
-    load_sessions: bool = False,
+    time_user_ids: set[UUID] | None = None,
     history: list[AuditLog] | None = None,
 ) -> AggregatedPerformance:
     if history is None:
@@ -1054,8 +1219,9 @@ async def _aggregate(
     for user_id, (retained_objects, contributed_tasks) in annotation_counts.items():
         accumulators[user_id].retained_objects = retained_objects
         accumulators[user_id].contributed_tasks = contributed_tasks
-    all_sessions = await _load_time_events(db, project.id, scope)
-    qualified_time = _qualified_time(all_sessions, scope)
+    qualified_time = await _load_qualified_time(
+        db, project.id, scope, user_ids=time_user_ids
+    )
     for user_id, acc in accumulators.items():
         acc.recorded_time_minutes = qualified_time.minutes.get(user_id, {}).get(
             "annotate"
@@ -1069,19 +1235,7 @@ async def _aggregate(
         acc.recorded_review_coverage = qualified_time.coverage.get(user_id, {}).get(
             "review", "unknown"
         )
-    sessions = all_sessions if load_sessions else []
     users = {entry.user.id: entry.user for entry in entries}
-    task_display_ids: dict[UUID, str] = {}
-    if load_sessions:
-        evidence_task_ids = {
-            value
-            for value in (_as_uuid(log.target_id) for log in interval)
-            if value is not None
-        }
-        evidence_task_ids.update(event.task_id for event in sessions)
-        task_display_ids = await _load_task_display_ids(
-            db, project.id, evidence_task_ids
-        )
     time_kind = "annotate" if work_type == "annotation" else "review"
     time_coverage = qualified_time.total_coverage.get(time_kind, "unknown")
     coverage_state = (
@@ -1133,9 +1287,7 @@ async def _aggregate(
         geometries=geometries,
         snapshots=snapshots,
         workflow=interval,
-        sessions=sessions,
         users=users,
-        task_display_ids=task_display_ids,
     )
 
 
@@ -1233,73 +1385,118 @@ def _geometry_breakdowns(
     ]
 
 
-def _audit_evidence(
-    aggregate: AggregatedPerformance,
-    user_id: UUID,
+async def _load_evidence_page(
+    db: AsyncSession,
+    project_id: UUID,
+    member_id: UUID,
+    member_name: str,
+    scope: ResolvedScope,
     work_type: str,
-) -> list[PerformanceEvidenceItem]:
-    rows: list[PerformanceEvidenceItem] = []
-    for log in aggregate.workflow:
-        contributors = _decision_snapshot(log, aggregate.snapshots)
-        if work_type == "review":
-            include = log.action in _DECISION_ACTIONS and log.actor_id == user_id
-        elif log.action in _SUBMISSION_ACTIONS:
-            include = log.actor_id == user_id
-        elif log.action in _DECISION_ACTIONS:
-            include = user_id in contributors
-        else:
-            include = log.actor_id == user_id and log.action in _ANNOTATION_ACTIONS
-        if not include:
-            continue
-        detail = _detail(log)
-        target = _as_uuid(log.target_id)
-        result = (
-            detail.get("reason") or detail.get("result") or detail.get("reason_type")
-        )
-        contributor_name = None
-        if contributors:
-            contributor_name = aggregate.users.get(sorted(contributors)[0], None)
-            contributor_name = contributor_name.name if contributor_name else None
-        rows.append(
-            PerformanceEvidenceItem(
-                id=f"audit-{log.id}",
-                at=log.created_at,
-                action=log.action,
-                task_id=target,
-                task_display_id=aggregate.task_display_ids.get(target)
-                if target
-                else None,
-                detail=str(result) if result is not None else None,
-                contributor_name=contributor_name,
-            )
-        )
-    for event in aggregate.sessions:
-        if event.user_id != user_id:
-            continue
-        rows.append(
-            PerformanceEvidenceItem(
-                id=f"session-{event.id}",
-                at=event.started_at,
-                action=f"session.{event.kind}",
-                task_id=event.task_id,
-                task_display_id=aggregate.task_display_ids.get(event.task_id),
-                detail=f"{event.duration_ms} ms",
-                contributor_name=aggregate.users.get(user_id).name
-                if aggregate.users.get(user_id)
-                else None,
-            )
-        )
-    rows.sort(key=lambda item: (item.at, item.id), reverse=True)
-    return rows
-
-
-def _page_evidence(
-    rows: list[PerformanceEvidenceItem], cursor: str | None, limit: int
+    cursor: str | None,
+    limit: int,
 ) -> tuple[list[PerformanceEvidenceItem], str | None]:
+    """Fetch one bounded, SQL-paginated page of audit and session evidence."""
+    audit_detail = func.coalesce(
+        AuditLog.detail_json["reason"].astext,
+        AuditLog.detail_json["result"].astext,
+        AuditLog.detail_json["reason_type"].astext,
+    )
+    audit_stmt = select(
+        literal("audit").label("source_kind"),
+        cast(AuditLog.id, String).label("source_id"),
+        AuditLog.created_at.label("at"),
+        AuditLog.action.label("action"),
+        AuditLog.target_id.label("task_id"),
+        audit_detail.label("detail"),
+    ).where(
+        AuditLog.status_code == 200,
+        _project_audit_filter(project_id),
+        AuditLog.created_at >= scope.start,
+        AuditLog.created_at < scope.end,
+    )
+    if work_type == "review":
+        audit_stmt = audit_stmt.where(
+            AuditLog.actor_id == member_id,
+            AuditLog.action.in_(_DECISION_ACTIONS),
+        )
+    else:
+        audit_stmt = audit_stmt.where(
+            or_(
+                and_(
+                    AuditLog.actor_id == member_id,
+                    AuditLog.action.in_(_ANNOTATION_ACTIONS),
+                ),
+                and_(
+                    AuditLog.action.in_(_DECISION_ACTIONS),
+                    AuditLog.detail_json.contains(
+                        {"contributor_ids": [str(member_id)]}
+                    ),
+                ),
+            )
+        )
+
+    event_kind = "review" if work_type == "review" else "annotate"
+    session_stmt = (
+        select(
+            literal("session").label("source_kind"),
+            cast(TaskEvent.id, String).label("source_id"),
+            TaskEvent.started_at.label("at"),
+            (literal("session.") + TaskEvent.kind).label("action"),
+            cast(TaskEvent.task_id, String).label("task_id"),
+            cast(TaskEvent.duration_ms, String).label("detail"),
+        )
+        .join(Task, Task.id == TaskEvent.task_id)
+        .where(
+            Task.project_id == project_id,
+            TaskEvent.project_id == project_id,
+            TaskEvent.user_id == member_id,
+            TaskEvent.kind == event_kind,
+            TaskEvent.collection_source == "session",
+            TaskEvent.collection_coverage == "qualified",
+            TaskEvent.started_at < scope.end,
+            TaskEvent.ended_at > scope.start,
+        )
+    )
+    combined = union_all(audit_stmt, session_stmt).subquery()
     offset = _decode_offset(cursor)
-    page = rows[offset : offset + limit]
-    next_cursor = _encode_offset(offset + limit) if offset + limit < len(rows) else None
-    return page, next_cursor
+    rows = (
+        await db.execute(
+            select(
+                combined.c.source_kind,
+                combined.c.source_id,
+                combined.c.at,
+                combined.c.action,
+                combined.c.task_id,
+                combined.c.detail,
+            )
+            .order_by(combined.c.at.desc(), combined.c.source_id.desc())
+            .offset(offset)
+            .limit(limit + 1)
+        )
+    ).all()
+    task_ids = {
+        value for value in (_as_uuid(row.task_id) for row in rows) if value is not None
+    }
+    display_ids = await _load_task_display_ids(db, project_id, task_ids)
+    items = []
+    for row in rows[:limit]:
+        task_id = _as_uuid(row.task_id)
+        detail = str(row.detail) if row.detail is not None else None
+        if row.source_kind == "session" and detail is not None:
+            detail = f"{detail} ms"
+        items.append(
+            PerformanceEvidenceItem(
+                id=f"{row.source_kind}-{row.source_id}",
+                at=row.at,
+                action=row.action,
+                task_id=task_id,
+                task_display_id=display_ids.get(task_id) if task_id else None,
+                detail=detail,
+                contributor_name=member_name,
+            )
+        )
+    next_cursor = _encode_offset(offset + limit) if len(rows) > limit else None
+    return items, next_cursor
 
 
 async def _prepare_aggregate(
@@ -1313,10 +1510,16 @@ async def _prepare_aggregate(
     include_historical: bool,
     account_status: str,
     query: str | None,
-    load_sessions: bool,
 ) -> AggregatedPerformance:
     project = await resolve_performance_access(db, project_id, user)
-    workflow = await _load_workflow(db, project_id, start=scope.start, end=scope.end)
+    workflow = await _load_workflow(
+        db,
+        project_id,
+        start=scope.start,
+        end=scope.end,
+        member_id=target_user_id,
+        work_type=work_type,
+    )
     task_ids = {str(log.target_id) for log in workflow if log.target_id is not None}
     submission_history = await _load_submission_history(
         db, project_id, end=scope.end, task_ids=task_ids
@@ -1342,7 +1545,7 @@ async def _prepare_aggregate(
         entries,
         scope,
         work_type=work_type,
-        load_sessions=load_sessions,
+        time_user_ids={target_user_id} if target_user_id is not None else None,
         history=history,
     )
     return aggregate
@@ -1376,7 +1579,6 @@ async def list_members_performance(
         include_historical=include_historical,
         account_status=account_status,
         query=query,
-        load_sessions=False,
     )
     items = _sort_items(aggregate.items, sort)
     if all_items:
@@ -1424,11 +1626,18 @@ async def member_performance_detail(
         include_historical=include_historical,
         account_status=account_status,
         query=query,
-        load_sessions=True,
     )
     member = aggregate.items[0]
-    evidence = _audit_evidence(aggregate, member_id, work_type)
-    evidence_page, evidence_next = _page_evidence(evidence, evidence_cursor, limit)
+    evidence_page, evidence_next = await _load_evidence_page(
+        db,
+        project_id,
+        member_id,
+        aggregate.items[0].name,
+        scope,
+        work_type,
+        evidence_cursor,
+        limit,
+    )
     return PerformanceMemberDetailResponse(
         scope=scope.output(),
         coverage=aggregate.coverage,
@@ -1478,10 +1687,17 @@ async def member_performance_events(
         include_historical=include_historical,
         account_status=account_status,
         query=query,
-        load_sessions=True,
     )
-    rows = _audit_evidence(aggregate, member_id, work_type)
-    page, next_cursor = _page_evidence(rows, cursor, limit)
+    page, next_cursor = await _load_evidence_page(
+        db,
+        project_id,
+        member_id,
+        aggregate.items[0].name,
+        scope,
+        work_type,
+        cursor,
+        limit,
+    )
     return PerformanceEventsResponse(
         scope=scope.output(), items=page, next_cursor=next_cursor
     )
