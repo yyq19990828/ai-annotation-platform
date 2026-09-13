@@ -1,6 +1,7 @@
 import base64
 import logging
 import uuid
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from fastapi import HTTPException
 from sqlalchemy import func, select
@@ -9,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.enums import UserRole
 from app.db.models.user import User
 from app.db.models.task import Task
+from app.db.models.annotation import Annotation
+from app.db.models.audit_log import AuditLog
 from app.db.models.dataset import DatasetItem
 from app.schemas.task import (
     TaskOut,
@@ -35,6 +38,97 @@ _ANNOTATORS = (
 )
 _REVIEWERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.REVIEWER)
 _LOCKED_STATUSES = {"review", "completed"}
+
+
+def _start_review_round(task: Task) -> uuid.UUID:
+    """Create the stable identifier shared by one submit and its review."""
+    task.review_round_id = uuid.uuid4()
+    return task.review_round_id
+
+
+def _ensure_review_round(task: Task) -> uuid.UUID:
+    """Return a round id, assigning one for legacy tasks when needed."""
+    if task.review_round_id is None:
+        task.review_round_id = uuid.uuid4()
+    return task.review_round_id
+
+
+async def _task_contributor_snapshot(
+    db: AsyncSession,
+    task: Task,
+    extra_user_ids: Iterable[uuid.UUID | None] = (),
+) -> list[str]:
+    """Return stable annotator contributors for workflow audit evidence.
+
+    The task assignee is retained even when no annotation remains.  Active
+    annotation authors cover collaborative video/scene tasks and imported
+    histories where the task's mutable assignee is no longer sufficient.
+    """
+    ids = {value for value in extra_user_ids if value is not None}
+    if task.assignee_id is not None:
+        ids.add(task.assignee_id)
+    rows = await db.execute(
+        select(Annotation.user_id)
+        .where(
+            Annotation.task_id == task.id,
+            Annotation.user_id.is_not(None),
+            Annotation.is_active.is_(True),
+            Annotation.was_cancelled.is_(False),
+        )
+        .distinct()
+    )
+    ids.update(value for (value,) in rows if value is not None)
+    return sorted(str(value) for value in ids)
+
+
+async def _review_round_contributor_snapshot(db: AsyncSession, task: Task) -> list[str]:
+    """Load the contributor snapshot captured by this task's submit audit.
+
+    Approval happens in a later request, after annotations or assignment may
+    have changed.  Re-reading those mutable rows would credit the wrong
+    people, so a round without a matching submit snapshot stays unknown.
+    """
+    if task.review_round_id is None:
+        return []
+    row = (
+        await db.execute(
+            select(AuditLog.detail_json)
+            .where(
+                AuditLog.action.in_(("task.submit", "task.skip")),
+                AuditLog.target_id == str(task.id),
+                AuditLog.status_code == 200,
+                AuditLog.detail_json["project_id"].astext == str(task.project_id),
+                AuditLog.detail_json["review_round_id"].astext
+                == str(task.review_round_id),
+            )
+            .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if not isinstance(row, dict):
+        return []
+    values = row.get("contributor_ids")
+    if not isinstance(values, list):
+        return []
+    return sorted({str(value) for value in values if value})
+
+
+def _record_first_review_fact(
+    task: Task,
+    *,
+    reviewed_at: datetime,
+    result: str,
+    contributor_ids: Iterable[str],
+) -> bool:
+    """Write the first completed review fact once for eligible new tasks."""
+    if task.first_review_eligible is not True or task.first_reviewed_at is not None:
+        return False
+    task.first_reviewed_at = reviewed_at
+    task.first_review_result = result
+    task.first_review_contributor_ids = sorted(
+        {str(value) for value in contributor_ids if value}
+    )
+    return True
 
 
 def _assert_task_editable(task: Task, user: User | None = None) -> None:

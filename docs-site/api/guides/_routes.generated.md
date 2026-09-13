@@ -408,6 +408,15 @@
 | POST | `/projects/{project_id}/predictions/import` |
 | POST | `/projects/{project_id}/predictions/purge` |
 
+## `project_performance.py`
+
+| Method | Path |
+|---|---|
+| GET | `/projects/{project_id}/performance/members` |
+| GET | `/projects/{project_id}/performance/members/{member_id}/events` |
+| GET | `/projects/{project_id}/performance/members/{member_id}` |
+| GET | `/projects/{project_id}/performance/export` |
+
 ## `project_pipelines.py`
 
 | Method | Path |
@@ -722,4 +731,4 @@
 
 ---
 
-_共 66 模块 / 415 路由_
+_共 67 模块 / 419 路由_

@@ -21,6 +21,10 @@ from app.services.audit import AuditAction, AuditService
 from app.api.v1.tasks._shared import (
     _REVIEWERS,
     _assert_task_visible,
+    _ensure_review_round,
+    _record_first_review_fact,
+    _review_round_contributor_snapshot,
+    _task_contributor_snapshot,
 )
 from app.services.scheduler import is_privileged_for_project
 
@@ -103,7 +107,12 @@ async def claim_review(
             target_id=str(task_id),
             request=request,
             status_code=200,
-            detail={"project_id": str(task.project_id)},
+            detail={
+                "project_id": str(task.project_id),
+                "review_round_id": str(_ensure_review_round(task)),
+                "assignee_id": str(task.assignee_id) if task.assignee_id else None,
+                "contributor_ids": await _task_contributor_snapshot(db, task),
+            },
         )
         await db.commit()
 
@@ -207,6 +216,15 @@ async def approve_task(
     if task.reviewer_claimed_at is None:
         task.reviewer_claimed_at = now
 
+    review_round_id = _ensure_review_round(task)
+    contributor_ids = await _review_round_contributor_snapshot(db, task)
+    _record_first_review_fact(
+        task,
+        reviewed_at=now,
+        result="approved",
+        contributor_ids=contributor_ids,
+    )
+
     project.completed_tasks = (project.completed_tasks or 0) + 1
     project.review_tasks = max((project.review_tasks or 0) - 1, 0)
 
@@ -228,6 +246,9 @@ async def approve_task(
         detail={
             "project_id": str(task.project_id),
             "assignee_id": str(task.assignee_id) if task.assignee_id else None,
+            "contributor_ids": contributor_ids,
+            "review_round_id": str(review_round_id),
+            "result": "approved",
             "mask_qc_digest": qc_digest,
             "mask_qc_warning_issue_ids": sorted(str(value) for value in warning_ids),
             "mask_qc_note": (body.note.strip() if body and body.note else None),
@@ -288,6 +309,14 @@ async def reject_task(
         task.reviewer_id = current_user.id
     if task.reviewer_claimed_at is None:
         task.reviewer_claimed_at = now
+    review_round_id = _ensure_review_round(task)
+    contributor_ids = await _review_round_contributor_snapshot(db, task)
+    _record_first_review_fact(
+        task,
+        reviewed_at=now,
+        result="rejected",
+        contributor_ids=contributor_ids,
+    )
     await db.flush()
 
     # ADR-0027 第二段 · 双写到 annotation_feedbacks (kind=reject, anchor=task)
@@ -321,6 +350,9 @@ async def reject_task(
             "assignee_id": str(task.assignee_id) if task.assignee_id else None,
             "reason_type": task.reject_reason_type,
             "reason": task.reject_reason,
+            "contributor_ids": contributor_ids,
+            "review_round_id": str(review_round_id),
+            "result": "rejected",
         },
     )
 

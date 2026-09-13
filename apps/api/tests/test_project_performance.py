@@ -1,0 +1,124 @@
+from datetime import datetime, timezone
+from types import SimpleNamespace
+from uuid import uuid4
+
+from app.schemas.project_performance import PerformanceScope
+from app.services.project_performance import (
+    _annotation_source_label,
+    _decision_snapshot,
+    _first_rate_metric,
+    _round_snapshots,
+    resolve_scope,
+)
+from app.api.v1.tasks._shared import _record_first_review_fact
+
+
+def test_date_only_to_is_an_exclusive_local_midnight():
+    scope = resolve_scope(
+        "2026-09-13",
+        "2026-09-14",
+        "Asia/Shanghai",
+        now=datetime(2026, 9, 14, 3, tzinfo=timezone.utc),
+    )
+
+    assert scope.start == datetime(2026, 9, 12, 16, tzinfo=timezone.utc)
+    assert scope.end == datetime(2026, 9, 13, 16, tzinfo=timezone.utc)
+
+
+def test_decision_uses_the_matching_submit_round_snapshot():
+    task_id = uuid4()
+    contributor = uuid4()
+    other_contributor = uuid4()
+    submit = SimpleNamespace(
+        target_id=str(task_id),
+        detail_json={
+            "review_round_id": str(uuid4()),
+            "contributor_ids": [str(contributor)],
+        },
+    )
+    matching_decision = SimpleNamespace(
+        target_id=str(task_id),
+        detail_json={"review_round_id": submit.detail_json["review_round_id"]},
+    )
+    other_round = SimpleNamespace(
+        target_id=str(task_id),
+        detail_json={
+            "review_round_id": str(uuid4()),
+            "contributor_ids": [str(other_contributor)],
+        },
+    )
+    other_decision = SimpleNamespace(
+        target_id=str(task_id),
+        detail_json={"review_round_id": str(uuid4())},
+    )
+
+    snapshots = _round_snapshots([submit, other_round])
+
+    assert _decision_snapshot(matching_decision, snapshots) == {contributor}
+    assert _decision_snapshot(other_decision, snapshots) == set()
+
+
+def test_first_review_rate_is_percent_with_raw_cohort_counts():
+    metric = _first_rate_metric(1, 2)
+
+    assert metric.value == 50.0
+    assert metric.unit == "percent"
+    assert metric.numerator == 1
+    assert metric.denominator == 2
+
+
+def test_import_marker_keeps_imported_work_separate_from_manual_source():
+    assert _annotation_source_label("manual", "true") == "imported"
+    assert _annotation_source_label("manual", None) == "manual"
+
+
+def test_first_review_fact_is_write_once_and_legacy_rows_stay_unknown():
+    first_at = datetime(2026, 9, 13, tzinfo=timezone.utc)
+    task = SimpleNamespace(
+        first_review_eligible=True,
+        first_reviewed_at=None,
+        first_review_result=None,
+        first_review_contributor_ids=None,
+    )
+
+    assert _record_first_review_fact(
+        task,
+        reviewed_at=first_at,
+        result="rejected",
+        contributor_ids=["u1"],
+    )
+    assert not _record_first_review_fact(
+        task,
+        reviewed_at=first_at.replace(day=14),
+        result="approved",
+        contributor_ids=["u2"],
+    )
+    assert task.first_review_result == "rejected"
+    assert task.first_review_contributor_ids == ["u1"]
+
+    legacy = SimpleNamespace(
+        first_review_eligible=None,
+        first_reviewed_at=None,
+        first_review_result=None,
+        first_review_contributor_ids=None,
+    )
+    assert not _record_first_review_fact(
+        legacy,
+        reviewed_at=first_at,
+        result="approved",
+        contributor_ids=["u1"],
+    )
+    assert legacy.first_reviewed_at is None
+
+
+def test_scope_serializes_the_frozen_api_keys():
+    scope = resolve_scope(
+        "2026-09-13T00:00:00Z",
+        "2026-09-14T00:00:00Z",
+        "UTC",
+        now=datetime(2026, 9, 14, 1, tzinfo=timezone.utc),
+    )
+
+    payload = PerformanceScope.model_validate(scope.output()).model_dump(by_alias=True)
+
+    assert set(payload) == {"from", "to", "timezone", "as_of"}

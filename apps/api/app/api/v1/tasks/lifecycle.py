@@ -20,6 +20,9 @@ from app.api.v1.tasks._shared import (
     _ANNOTATORS,
     _assert_task_visible,
     _assert_task_editable,
+    _start_review_round,
+    _ensure_review_round,
+    _task_contributor_snapshot,
 )
 
 router = APIRouter()
@@ -60,6 +63,7 @@ async def submit_task(
         # v0.8.4：未预派任务由提交者兜底分派；assigned_at 同步写
         task.assigned_at = datetime.now(timezone.utc)
 
+    review_round_id = _start_review_round(task)
     task.status = "review"
     task.submitted_at = datetime.now(timezone.utc)
     # 清空上一轮 review 痕迹（reopen → 再次 submit 场景）
@@ -134,6 +138,9 @@ async def submit_task(
         detail={
             "project_id": str(task.project_id),
             "assignee_id": str(task.assignee_id) if task.assignee_id else None,
+            "contributor_ids": await _task_contributor_snapshot(db, task),
+            "review_round_id": str(review_round_id),
+            "result": "submitted",
             "mask_qc_run_id": str(mask_qc_run.id) if mask_qc_run else None,
             "mask_qc_status": mask_qc_status,
         },
@@ -219,6 +226,7 @@ async def skip_task(
         task.assignee_id = current_user.id
         task.assigned_at = now
 
+    review_round_id = _start_review_round(task)
     task.status = "review"
     task.skip_reason = body.reason
     task.skipped_at = now
@@ -252,6 +260,10 @@ async def skip_task(
             "project_id": str(task.project_id),
             "skip_reason": body.reason,
             "note": body.note,
+            "assignee_id": str(task.assignee_id) if task.assignee_id else None,
+            "contributor_ids": await _task_contributor_snapshot(db, task),
+            "review_round_id": str(review_round_id),
+            "result": "skipped",
         },
     )
     await db.commit()
@@ -386,6 +398,8 @@ async def reopen_task(
             "original_reviewer_id": str(original_reviewer_id)
             if original_reviewer_id
             else None,
+            "contributor_ids": await _task_contributor_snapshot(db, task),
+            "review_round_id": str(_ensure_review_round(task)),
             "reopened_count": task.reopened_count,
         },
     )
@@ -460,6 +474,8 @@ async def accept_rejection(
         detail={
             "project_id": str(task.project_id),
             "reject_reason": task.reject_reason,
+            "review_round_id": str(_ensure_review_round(task)),
+            "contributor_ids": await _task_contributor_snapshot(db, task),
         },
     )
 

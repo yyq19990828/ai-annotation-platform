@@ -98,6 +98,26 @@ class Task(Base):
     reviewer_claimed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Stable identifier for the current submission/review round.  It lets
+    # performance reporting join a review decision to the submission that
+    # created it even after the mutable reviewer fields are cleared.
+    review_round_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )
+    # First-review facts are written once for tasks created after the
+    # attribution rollout.  NULL eligibility keeps pre-rollout history
+    # explicitly unknown rather than allowing an audit-retention gap to look
+    # like a clean first pass.
+    first_review_eligible: Mapped[bool | None] = mapped_column(
+        Boolean, nullable=True, default=True, server_default="true"
+    )
+    first_reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    first_review_result: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    first_review_contributor_ids: Mapped[list | None] = mapped_column(
+        JSONB, nullable=True
+    )
     reviewed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )

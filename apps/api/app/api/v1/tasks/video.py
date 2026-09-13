@@ -99,6 +99,7 @@ from app.api.v1.tasks._shared import (
     _attach_dimensions,
     _ANNOTATORS,
     _REVIEWERS,
+    _task_contributor_snapshot,
     VIDEO_MANIFEST_URL_EXPIRES_IN,
     logger,
 )
@@ -636,12 +637,14 @@ def _raise_quality_error(exc: VideoTrackQualityError) -> None:
 async def submit_video_segment(
     task_id: uuid.UUID,
     segment_id: uuid.UUID,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
     task = await _load_task_or_404(db, task_id)
     await _assert_task_visible(db, task, current_user)
     ctx = await build_context_from_task(db, task)
+    was_in_review = task.status == "review"
     body = await submit_segment(
         db,
         ctx,
@@ -686,6 +689,39 @@ async def submit_video_segment(
         if created and job is not None:
             dispatches.append((run.id, job.id))
     if task.status == "review":
+        if not was_in_review:
+            segment_user_rows = await db.execute(
+                select(VideoSegment.assignee_id)
+                .where(
+                    VideoSegment.dataset_item_id == ctx.item.id,
+                    VideoSegment.status == "completed",
+                    VideoSegment.assignee_id.is_not(None),
+                )
+                .distinct()
+            )
+            segment_user_ids = [row[0] for row in segment_user_rows]
+            await AuditService.log(
+                db,
+                actor=current_user,
+                action=AuditAction.TASK_SUBMIT,
+                target_type="task",
+                target_id=str(task.id),
+                request=request,
+                status_code=200,
+                detail={
+                    "project_id": str(task.project_id),
+                    "assignee_id": str(task.assignee_id) if task.assignee_id else None,
+                    "contributor_ids": await _task_contributor_snapshot(
+                        db, task, extra_user_ids=segment_user_ids
+                    ),
+                    "review_round_id": str(task.review_round_id)
+                    if task.review_round_id
+                    else None,
+                    "result": "submitted",
+                    "submission_source": "video_segment",
+                    "segment_id": str(segment_id),
+                },
+            )
         from app.services.batch import BatchService
 
         batch_service = BatchService(db)
