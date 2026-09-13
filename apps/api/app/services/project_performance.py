@@ -19,7 +19,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import String, case, cast, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.enums import UserRole
@@ -231,46 +231,141 @@ async def _load_workflow(
     db: AsyncSession,
     project_id: UUID,
     *,
-    start: datetime | None,
+    start: datetime,
     end: datetime,
+    task_ids: set[str] | None = None,
+    actions: tuple[str, ...] = _WORKFLOW_ACTIONS,
 ) -> list[AuditLog]:
     stmt = (
         select(AuditLog)
         .where(
-            AuditLog.action.in_(_WORKFLOW_ACTIONS),
+            AuditLog.action.in_(actions),
             AuditLog.status_code == 200,
             _project_audit_filter(project_id),
             AuditLog.created_at < end,
+            AuditLog.created_at >= start,
         )
         .order_by(AuditLog.created_at.asc(), AuditLog.id.asc())
     )
-    if start is not None:
-        stmt = stmt.where(AuditLog.created_at >= start)
+    if task_ids:
+        stmt = stmt.where(AuditLog.target_id.in_(task_ids))
     return list((await db.execute(stmt)).scalars().all())
+
+
+async def _load_submission_history(
+    db: AsyncSession,
+    project_id: UUID,
+    *,
+    end: datetime,
+    task_ids: set[str],
+) -> list[AuditLog]:
+    if not task_ids:
+        return []
+    return await _load_workflow(
+        db,
+        project_id,
+        start=datetime.min.replace(tzinfo=timezone.utc),
+        end=end,
+        task_ids=task_ids,
+        actions=tuple(_SUBMISSION_ACTIONS),
+    )
 
 
 async def _load_time_events(
     db: AsyncSession,
     project_id: UUID,
     scope: ResolvedScope,
-    user_ids: set[UUID],
+    user_ids: set[UUID] | None = None,
 ) -> list[TaskEvent]:
-    """Return raw sessions for evidence only.
-
-    The qualified provenance columns are owned by the time-capture change.
-    Until that migration is present, this endpoint exposes sessions as
-    evidence but leaves duration metrics unknown instead of treating legacy
-    client telemetry as measured work.
-    """
-    if not user_ids:
-        return []
+    """Load sessions crossing the interval; callers clip them before summing."""
     stmt = select(TaskEvent).where(
         TaskEvent.project_id == project_id,
-        TaskEvent.user_id.in_(user_ids),
-        TaskEvent.started_at >= scope.start,
         TaskEvent.started_at < scope.end,
+        TaskEvent.ended_at > scope.start,
     )
+    if user_ids:
+        stmt = stmt.where(TaskEvent.user_id.in_(user_ids))
     return list((await db.execute(stmt)).scalars().all())
+
+
+@dataclass(frozen=True)
+class QualifiedTime:
+    minutes: dict[UUID, dict[str, float]]
+    coverage: dict[UUID, dict[str, str]]
+    total_minutes: dict[str, float]
+    total_coverage: dict[str, str]
+
+
+def _union_minutes(intervals: list[tuple[datetime, datetime]]) -> float:
+    if not intervals:
+        return 0.0
+    intervals.sort(key=lambda item: item[0])
+    merged_start, merged_end = intervals[0]
+    total_seconds = 0.0
+    for start, end in intervals[1:]:
+        if start <= merged_end:
+            merged_end = max(merged_end, end)
+            continue
+        total_seconds += (merged_end - merged_start).total_seconds()
+        merged_start, merged_end = start, end
+    total_seconds += (merged_end - merged_start).total_seconds()
+    return total_seconds / 60
+
+
+def _qualified_time(events: list[TaskEvent], scope: ResolvedScope) -> QualifiedTime:
+    """Clip and union qualified sessions independently per member and kind."""
+    all_intervals: dict[tuple[UUID, str], list[tuple[datetime, datetime]]] = (
+        defaultdict(list)
+    )
+    qualified_intervals: dict[tuple[UUID, str], list[tuple[datetime, datetime]]] = (
+        defaultdict(list)
+    )
+    users_by_kind: dict[str, set[UUID]] = defaultdict(set)
+    for event in events:
+        if event.kind not in {"annotate", "review"}:
+            continue
+        start = max(event.started_at, scope.start)
+        end = min(event.ended_at, scope.end)
+        if end <= start:
+            continue
+        key = (event.user_id, event.kind)
+        all_intervals[key].append((start, end))
+        users_by_kind[event.kind].add(event.user_id)
+        if event.collection_coverage == "qualified":
+            qualified_intervals[key].append((start, end))
+
+    minutes: dict[UUID, dict[str, float]] = defaultdict(dict)
+    coverage: dict[UUID, dict[str, str]] = defaultdict(dict)
+    total_minutes: dict[str, float] = {}
+    total_coverage: dict[str, str] = {}
+    for kind in {"annotate", "review"}:
+        kind_total = 0.0
+        kind_has_qualified = False
+        kind_has_unverified = False
+        for user_id in users_by_kind[kind]:
+            key = (user_id, kind)
+            qualified = qualified_intervals.get(key, [])
+            if qualified:
+                kind_has_qualified = True
+                value = _union_minutes(qualified)
+                minutes[user_id][kind] = round(value, 1)
+                has_unverified = len(all_intervals[key]) != len(qualified)
+                kind_has_unverified = kind_has_unverified or has_unverified
+                coverage[user_id][kind] = "partial" if has_unverified else "complete"
+                kind_total += value
+            else:
+                coverage[user_id][kind] = "unknown"
+        if kind_has_qualified:
+            total_minutes[kind] = round(kind_total, 1)
+            total_coverage[kind] = "partial" if kind_has_unverified else "complete"
+        else:
+            total_coverage[kind] = "unknown"
+    return QualifiedTime(
+        minutes=dict(minutes),
+        coverage=dict(coverage),
+        total_minutes=total_minutes,
+        total_coverage=total_coverage,
+    )
 
 
 async def _build_roster(
@@ -336,8 +431,8 @@ async def _build_roster(
             select(TaskEvent.user_id)
             .where(
                 TaskEvent.project_id == project.id,
-                TaskEvent.started_at >= scope.start,
                 TaskEvent.started_at < scope.end,
+                TaskEvent.ended_at > scope.start,
             )
             .distinct()
         )
@@ -394,10 +489,21 @@ async def _annotation_activity(
         Annotation.created_at >= scope.start,
         Annotation.created_at < scope.end,
     )
+    object_key = case(
+        (
+            Annotation.scene_track_id.is_not(None),
+            literal("scene:") + cast(Annotation.scene_track_id, String),
+        ),
+        (
+            Annotation.track_id.is_not(None),
+            literal("track:") + Annotation.track_id,
+        ),
+        else_=literal("annotation:") + cast(Annotation.id, String),
+    )
     totals = await db.execute(
         select(
             Annotation.user_id,
-            func.count(Annotation.id),
+            func.count(func.distinct(object_key)),
             func.count(func.distinct(Annotation.task_id)),
         )
         .where(*base)
@@ -440,37 +546,85 @@ async def _annotation_activity(
     return count_map, sources, geometries, classes
 
 
-async def _load_tasks(
-    db: AsyncSession, project_id: UUID
-) -> list[
-    tuple[
-        UUID,
-        str,
-        UUID | None,
-        UUID | None,
-        str,
-        datetime,
-        bool | None,
-        datetime | None,
-        str | None,
-        list[str] | None,
-    ]
-]:
+async def _load_backlog_counts(
+    db: AsyncSession,
+    project_id: UUID,
+    user_ids: set[UUID],
+) -> tuple[dict[UUID, tuple[int, int]], int, int]:
+    """Aggregate the live load in SQL without materializing every task."""
     rows = await db.execute(
         select(
-            Task.id,
             Task.status,
             Task.assignee_id,
             Task.reviewer_id,
-            Task.display_id,
-            Task.created_at,
-            Task.first_review_eligible,
-            Task.first_reviewed_at,
-            Task.first_review_result,
-            Task.first_review_contributor_ids,
-        ).where(Task.project_id == project_id)
+            func.count(Task.id),
+        )
+        .where(
+            Task.project_id == project_id,
+            Task.status.in_(_ANNOTATION_BACKLOG | {"review"}),
+        )
+        .group_by(Task.status, Task.assignee_id, Task.reviewer_id)
     )
-    return list(rows.all())
+    per_member: dict[UUID, list[int]] = defaultdict(lambda: [0, 0])
+    current_total = 0
+    review_total = 0
+    for status, assignee_id, reviewer_id, count in rows:
+        count = int(count or 0)
+        if status in _ANNOTATION_BACKLOG:
+            current_total += count
+            if assignee_id in user_ids:
+                per_member[assignee_id][0] += count
+        elif status == "review":
+            review_total += count
+            if reviewer_id in user_ids:
+                per_member[reviewer_id][1] += count
+    return (
+        {user_id: (values[0], values[1]) for user_id, values in per_member.items()},
+        current_total,
+        review_total,
+    )
+
+
+async def _load_first_review_facts(
+    db: AsyncSession,
+    project_id: UUID,
+    scope: ResolvedScope,
+    decision_task_ids: set[str],
+) -> list[tuple[UUID, bool | None, datetime | None, str | None, list[str] | None]]:
+    """Load only facts in the requested cohort plus legacy decision targets."""
+    first_in_scope = (
+        Task.first_reviewed_at >= scope.start,
+        Task.first_reviewed_at < scope.end,
+    )
+    stmt = select(
+        Task.id,
+        Task.first_review_eligible,
+        Task.first_reviewed_at,
+        Task.first_review_result,
+        Task.first_review_contributor_ids,
+    ).where(Task.project_id == project_id)
+    if decision_task_ids:
+        stmt = stmt.where(
+            (Task.id.in_(decision_task_ids))
+            | (Task.first_reviewed_at >= scope.start)
+            & (Task.first_reviewed_at < scope.end)
+        )
+    else:
+        stmt = stmt.where(*first_in_scope)
+    return list((await db.execute(stmt)).all())
+
+
+async def _load_task_display_ids(
+    db: AsyncSession, project_id: UUID, task_ids: set[UUID]
+) -> dict[UUID, str]:
+    if not task_ids:
+        return {}
+    rows = await db.execute(
+        select(Task.id, Task.display_id).where(
+            Task.project_id == project_id, Task.id.in_(task_ids)
+        )
+    )
+    return {task_id: display_id for task_id, display_id in rows}
 
 
 @dataclass
@@ -490,24 +644,33 @@ class MemberAccumulator:
     reviewed_tasks: set[str]
     current_backlog: int
     review_backlog: int
+    recorded_time_minutes: float | None
+    recorded_time_coverage: str
+    recorded_review_minutes: float | None
+    recorded_review_coverage: str
 
     @classmethod
     def new(cls) -> MemberAccumulator:
         return cls(
-            set(),
-            0,
-            0,
-            0,
-            set(),
-            0,
-            0,
-            False,
-            set(),
-            set(),
-            set(),
-            set(),
-            0,
-            0,
+            submitted=set(),
+            submit_attempts=0,
+            resubmissions=0,
+            contributed_tasks=0,
+            retained_objects=0,
+            approved_outcomes=set(),
+            first_review_passed=0,
+            first_review_total=0,
+            first_review_partial=False,
+            review_decisions=set(),
+            approvals=set(),
+            rejections=set(),
+            reviewed_tasks=set(),
+            current_backlog=0,
+            review_backlog=0,
+            recorded_time_minutes=None,
+            recorded_time_coverage="unknown",
+            recorded_review_minutes=None,
+            recorded_review_coverage="unknown",
         )
 
 
@@ -592,9 +755,13 @@ def _member_metrics(acc: MemberAccumulator) -> PerformanceMemberMetrics:
             denominator=acc.first_review_total,
             coverage="partial" if acc.first_review_partial else "complete",
         ),
-        # Legacy TaskEvent rows are intentionally not converted into minutes;
-        # time-capture adds a qualified collection provenance in its revision.
-        recorded_time_minutes=_metric(None, "minutes", coverage="unknown"),
+        # Only qualified TaskEvent rows contribute to duration.  Legacy rows
+        # remain evidence but are not silently treated as measured work.
+        recorded_time_minutes=_metric(
+            acc.recorded_time_minutes,
+            "minutes",
+            coverage=acc.recorded_time_coverage,
+        ),
         current_backlog=_metric(
             acc.current_backlog, "tasks", numerator=acc.current_backlog
         ),
@@ -612,7 +779,11 @@ def _member_metrics(acc: MemberAccumulator) -> PerformanceMemberMetrics:
         reviewed_tasks=_metric(
             len(acc.reviewed_tasks), "tasks", numerator=len(acc.reviewed_tasks)
         ),
-        recorded_review_minutes=_metric(None, "minutes", coverage="unknown"),
+        recorded_review_minutes=_metric(
+            acc.recorded_review_minutes,
+            "minutes",
+            coverage=acc.recorded_review_coverage,
+        ),
         review_backlog=_metric(
             acc.review_backlog, "tasks", numerator=acc.review_backlog
         ),
@@ -652,6 +823,8 @@ def _totals(
     first_passed: int,
     first_total: int,
     first_partial: bool,
+    recorded_time_minutes: float | None,
+    recorded_time_coverage: str,
     current_backlog: int,
     review_decisions: int,
     approvals: int,
@@ -664,7 +837,11 @@ def _totals(
         first_review_pass_rate=_first_rate_metric(
             first_passed, first_total, partial=first_partial
         ),
-        recorded_time_minutes=_metric(None, "minutes", coverage="unknown"),
+        recorded_time_minutes=_metric(
+            recorded_time_minutes,
+            "minutes",
+            coverage=recorded_time_coverage,
+        ),
         current_backlog=_metric(current_backlog, "tasks", numerator=current_backlog),
         review_decisions=_metric(
             review_decisions, "decisions", numerator=review_decisions
@@ -699,11 +876,12 @@ async def _aggregate(
     entries: list[RosterEntry],
     scope: ResolvedScope,
     *,
+    work_type: str = "annotation",
     load_sessions: bool = False,
     history: list[AuditLog] | None = None,
 ) -> AggregatedPerformance:
     if history is None:
-        history = await _load_workflow(db, project.id, start=None, end=scope.end)
+        history = await _load_workflow(db, project.id, start=scope.start, end=scope.end)
     interval = [log for log in history if log.created_at >= scope.start]
     submit_history = [log for log in history if log.action in _SUBMISSION_ACTIONS]
     snapshots = _round_snapshots(submit_history)
@@ -796,24 +974,26 @@ async def _aggregate(
                 reason = detail.get("reason_type") or "unknown"
                 reject_reasons[log.actor_id][str(reason)] += 1
 
+    decision_task_ids = {
+        str(log.target_id)
+        for log in interval
+        if log.action in _DECISION_ACTIONS and log.target_id is not None
+    }
+    first_facts = await _load_first_review_facts(
+        db, project.id, scope, decision_task_ids
+    )
     task_meta: dict[
         str, tuple[datetime, bool | None, datetime | None, str | None, list[str] | None]
     ] = {}
-    task_rows = await _load_tasks(db, project.id)
     for (
         task_id,
-        _,
-        _,
-        _,
-        _,
-        created_at,
         first_eligible,
         first_reviewed_at,
         first_result,
         first_contributor_ids,
-    ) in task_rows:
+    ) in first_facts:
         task_meta[str(task_id)] = (
-            created_at,
+            first_reviewed_at or scope.end,
             first_eligible,
             first_reviewed_at,
             first_result,
@@ -867,30 +1047,12 @@ async def _aggregate(
         if metadata is None or metadata[2] is None:
             first_partial = True
 
-    current_backlog = 0
-    review_backlog = 0
-    task_display_ids: dict[UUID, str] = {}
-    for (
-        task_id,
-        status,
-        assignee_id,
-        reviewer_id,
-        display_id,
-        _,
-        _,
-        _,
-        _,
-        _,
-    ) in task_rows:
-        task_display_ids[task_id] = display_id
-        if status in _ANNOTATION_BACKLOG:
-            current_backlog += 1
-            if assignee_id in accumulators:
-                accumulators[assignee_id].current_backlog += 1
-        if status == "review":
-            review_backlog += 1
-            if reviewer_id in accumulators:
-                accumulators[reviewer_id].review_backlog += 1
+    backlog_by_member, current_backlog, review_backlog = await _load_backlog_counts(
+        db, project.id, user_ids
+    )
+    for user_id, (member_current, member_review) in backlog_by_member.items():
+        accumulators[user_id].current_backlog = member_current
+        accumulators[user_id].review_backlog = member_review
 
     annotation_counts, sources, geometries, classes = await _annotation_activity(
         db, project.id, scope, user_ids
@@ -898,20 +1060,48 @@ async def _aggregate(
     for user_id, (retained_objects, contributed_tasks) in annotation_counts.items():
         accumulators[user_id].retained_objects = retained_objects
         accumulators[user_id].contributed_tasks = contributed_tasks
-    sessions = (
-        await _load_time_events(db, project.id, scope, user_ids)
-        if load_sessions
-        else []
-    )
+    all_sessions = await _load_time_events(db, project.id, scope)
+    qualified_time = _qualified_time(all_sessions, scope)
+    for user_id, acc in accumulators.items():
+        acc.recorded_time_minutes = qualified_time.minutes.get(user_id, {}).get(
+            "annotate"
+        )
+        acc.recorded_time_coverage = qualified_time.coverage.get(user_id, {}).get(
+            "annotate", "unknown"
+        )
+        acc.recorded_review_minutes = qualified_time.minutes.get(user_id, {}).get(
+            "review"
+        )
+        acc.recorded_review_coverage = qualified_time.coverage.get(user_id, {}).get(
+            "review", "unknown"
+        )
+    sessions = all_sessions if load_sessions else []
     users = {entry.user.id: entry.user for entry in entries}
-    # Workflow/load/annotation counters are complete for their recorded
-    # sources, while duration remains unavailable until qualified session
-    # provenance is integrated.  The aggregate therefore cannot claim full
-    # coverage even when the first-review cohort is complete.
-    coverage_state = "partial"
+    task_display_ids: dict[UUID, str] = {}
+    if load_sessions:
+        evidence_task_ids = {
+            value
+            for value in (_as_uuid(log.target_id) for log in interval)
+            if value is not None
+        }
+        evidence_task_ids.update(event.task_id for event in sessions)
+        task_display_ids = await _load_task_display_ids(
+            db, project.id, evidence_task_ids
+        )
+    time_kind = "annotate" if work_type == "annotation" else "review"
+    time_coverage = qualified_time.total_coverage.get(time_kind, "unknown")
+    coverage_state = (
+        "complete"
+        if time_coverage == "complete" and not first_partial
+        else "partial"
+        if time_coverage in {"complete", "partial"} or first_partial
+        else "unknown"
+    )
     coverage_detail = (
         "workflow audits are project scoped; legacy review rounds without a submit snapshot "
-        "are excluded from member attribution; session duration is unverified"
+        f"are excluded from member attribution; retained_objects uses logical track/scene "
+        f"identity where present; source_distribution counts retained annotation records; "
+        f"{work_type} session coverage is {time_coverage}"
     )
     coverage = PerformanceCoverage(
         state=coverage_state,
@@ -929,6 +1119,8 @@ async def _aggregate(
         first_passed=first_passed,
         first_total=first_total,
         first_partial=first_partial,
+        recorded_time_minutes=qualified_time.total_minutes.get(time_kind),
+        recorded_time_coverage=time_coverage,
         current_backlog=current_backlog,
         review_decisions=interval_decisions,
         approvals=interval_approvals,
@@ -1123,20 +1315,27 @@ async def _prepare_aggregate(
     scope: ResolvedScope,
     *,
     target_user_id: UUID | None,
+    work_type: str,
     include_historical: bool,
     account_status: str,
     query: str | None,
     load_sessions: bool,
 ) -> AggregatedPerformance:
     project = await resolve_performance_access(db, project_id, user)
-    history = await _load_workflow(db, project_id, start=None, end=scope.end)
+    workflow = await _load_workflow(db, project_id, start=scope.start, end=scope.end)
+    task_ids = {str(log.target_id) for log in workflow if log.target_id is not None}
+    submission_history = await _load_submission_history(
+        db, project_id, end=scope.end, task_ids=task_ids
+    )
+    history_by_id = {log.id: log for log in [*workflow, *submission_history]}
+    history = sorted(history_by_id.values(), key=lambda log: (log.created_at, log.id))
     entries = await _build_roster(
         db,
         project,
         include_historical=include_historical,
         account_status=account_status,
         query=query,
-        history=history,
+        history=workflow,
         scope=scope,
     )
     if target_user_id is not None:
@@ -1148,6 +1347,7 @@ async def _prepare_aggregate(
         project,
         entries,
         scope,
+        work_type=work_type,
         load_sessions=load_sessions,
         history=history,
     )
@@ -1178,6 +1378,7 @@ async def list_members_performance(
         user,
         scope,
         target_user_id=None,
+        work_type=work_type,
         include_historical=include_historical,
         account_status=account_status,
         query=query,
@@ -1225,6 +1426,7 @@ async def member_performance_detail(
         user,
         scope,
         target_user_id=member_id,
+        work_type=work_type,
         include_historical=include_historical,
         account_status=account_status,
         query=query,
@@ -1278,6 +1480,7 @@ async def member_performance_events(
         user,
         scope,
         target_user_id=member_id,
+        work_type=work_type,
         include_historical=include_historical,
         account_status=account_status,
         query=query,
@@ -1337,6 +1540,9 @@ async def export_members_csv(
             ]
         )
     output = io.StringIO(newline="")
+    output.write(f"# Scope from: {response.scope.from_.isoformat()}\n")
+    output.write(f"# Scope to: {response.scope.to.isoformat()}\n")
+    output.write(f"# Scope timezone: {response.scope.timezone}\n")
     writer = csv.writer(output, lineterminator="\n")
     writer.writerow(headers)
     for item in response.items:

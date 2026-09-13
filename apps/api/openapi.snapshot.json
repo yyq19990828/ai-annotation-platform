@@ -21118,6 +21118,695 @@
         "title": "PasswordChange",
         "type": "object"
       },
+      "PerformanceBreakdown": {
+        "properties": {
+          "class_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Class Name"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pct"
+          },
+          "reason_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason Type"
+          }
+        },
+        "required": [
+          "count"
+        ],
+        "title": "PerformanceBreakdown",
+        "type": "object"
+      },
+      "PerformanceCoverage": {
+        "properties": {
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "complete",
+              "partial",
+              "unknown"
+            ],
+            "title": "State",
+            "type": "string"
+          }
+        },
+        "required": [
+          "state",
+          "source"
+        ],
+        "title": "PerformanceCoverage",
+        "type": "object"
+      },
+      "PerformanceEventsResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PerformanceEvidenceItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/PerformanceScope"
+          }
+        },
+        "required": [
+          "scope",
+          "items"
+        ],
+        "title": "PerformanceEventsResponse",
+        "type": "object"
+      },
+      "PerformanceEvidenceItem": {
+        "properties": {
+          "action": {
+            "title": "Action",
+            "type": "string"
+          },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "contributor_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contributor Name"
+          },
+          "detail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detail"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "task_display_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Display Id"
+          },
+          "task_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Id"
+          }
+        },
+        "required": [
+          "id",
+          "at",
+          "action"
+        ],
+        "title": "PerformanceEvidenceItem",
+        "type": "object"
+      },
+      "PerformanceGeometryBreakdown": {
+        "properties": {
+          "annotation_type": {
+            "title": "Annotation Type",
+            "type": "string"
+          },
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pct"
+          }
+        },
+        "required": [
+          "annotation_type",
+          "count"
+        ],
+        "title": "PerformanceGeometryBreakdown",
+        "type": "object"
+      },
+      "PerformanceMember": {
+        "properties": {
+          "account_status": {
+            "enum": [
+              "active",
+              "inactive"
+            ],
+            "title": "Account Status",
+            "type": "string"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "is_current_member": {
+            "title": "Is Current Member",
+            "type": "boolean"
+          },
+          "is_owner": {
+            "title": "Is Owner",
+            "type": "boolean"
+          },
+          "member_since": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Member Since"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/PerformanceMemberMetrics"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "project_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Role"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "name",
+          "email",
+          "project_role",
+          "account_status",
+          "is_owner",
+          "is_current_member",
+          "member_since",
+          "metrics"
+        ],
+        "title": "PerformanceMember",
+        "type": "object"
+      },
+      "PerformanceMemberDetailResponse": {
+        "properties": {
+          "class_distribution": {
+            "items": {
+              "$ref": "#/components/schemas/PerformanceBreakdown"
+            },
+            "title": "Class Distribution",
+            "type": "array"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/PerformanceCoverage"
+          },
+          "evidence": {
+            "items": {
+              "$ref": "#/components/schemas/PerformanceEvidenceItem"
+            },
+            "title": "Evidence",
+            "type": "array"
+          },
+          "evidence_next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence Next Cursor"
+          },
+          "geometry_distribution": {
+            "items": {
+              "$ref": "#/components/schemas/PerformanceGeometryBreakdown"
+            },
+            "title": "Geometry Distribution",
+            "type": "array"
+          },
+          "member": {
+            "$ref": "#/components/schemas/PerformanceMember"
+          },
+          "reject_reasons": {
+            "items": {
+              "$ref": "#/components/schemas/PerformanceBreakdown"
+            },
+            "title": "Reject Reasons",
+            "type": "array"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/PerformanceScope"
+          },
+          "source_distribution": {
+            "items": {
+              "$ref": "#/components/schemas/PerformanceSourceBreakdown"
+            },
+            "title": "Source Distribution",
+            "type": "array"
+          },
+          "trend": {
+            "items": {
+              "$ref": "#/components/schemas/PerformanceTrendPoint"
+            },
+            "title": "Trend",
+            "type": "array"
+          }
+        },
+        "required": [
+          "scope",
+          "coverage",
+          "member",
+          "trend",
+          "reject_reasons",
+          "class_distribution",
+          "source_distribution",
+          "geometry_distribution",
+          "evidence"
+        ],
+        "title": "PerformanceMemberDetailResponse",
+        "type": "object"
+      },
+      "PerformanceMemberMetrics": {
+        "properties": {
+          "approvals": {
+            "$ref": "#/components/schemas/PerformanceMetric"
+          },
+          "approved_task_outcomes": {
+            "$ref": "#/components/schemas/PerformanceMetric"
+          },
+          "contributed_tasks": {
+            "$ref": "#/components/schemas/PerformanceMetric"
+          },
+          "current_backlog": {
+            "$ref": "#/components/schemas/PerformanceMetric"
+          },
+          "first_review_pass_rate": {
+            "$ref": "#/components/schemas/PerformanceMetric"
+          },
+          "recorded_review_minutes": {
+            "$ref": "#/components/schemas/PerformanceMetric"
+          },
+          "recorded_time_minutes": {
+            "$ref": "#/components/schemas/PerformanceMetric"
+          },
+          "rejections": {
+            "$ref": "#/components/schemas/PerformanceMetric"
+          },
+          "resubmissions": {
+            "$ref": "#/components/schemas/PerformanceMetric"
+          },
+          "retained_objects": {
+            "$ref": "#/components/schemas/PerformanceMetric"
+          },
+          "review_backlog": {
+            "$ref": "#/components/schemas/PerformanceMetric"
+          },
+          "review_decisions": {
+            "$ref": "#/components/schemas/PerformanceMetric"
+          },
+          "reviewed_tasks": {
+            "$ref": "#/components/schemas/PerformanceMetric"
+          },
+          "submitted_tasks": {
+            "$ref": "#/components/schemas/PerformanceMetric"
+          }
+        },
+        "required": [
+          "submitted_tasks",
+          "resubmissions",
+          "contributed_tasks",
+          "retained_objects",
+          "approved_task_outcomes",
+          "first_review_pass_rate",
+          "recorded_time_minutes",
+          "current_backlog",
+          "review_decisions",
+          "approvals",
+          "rejections",
+          "reviewed_tasks",
+          "recorded_review_minutes",
+          "review_backlog"
+        ],
+        "title": "PerformanceMemberMetrics",
+        "type": "object"
+      },
+      "PerformanceMembersResponse": {
+        "properties": {
+          "coverage": {
+            "$ref": "#/components/schemas/PerformanceCoverage"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PerformanceMember"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          },
+          "project_totals": {
+            "$ref": "#/components/schemas/PerformanceTotals"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/PerformanceScope"
+          }
+        },
+        "required": [
+          "scope",
+          "coverage",
+          "project_totals",
+          "items"
+        ],
+        "title": "PerformanceMembersResponse",
+        "type": "object"
+      },
+      "PerformanceMetric": {
+        "properties": {
+          "coverage": {
+            "anyOf": [
+              {
+                "enum": [
+                  "complete",
+                  "partial",
+                  "unknown"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage"
+          },
+          "denominator": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Denominator"
+          },
+          "numerator": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Numerator"
+          },
+          "unit": {
+            "enum": [
+              "tasks",
+              "objects",
+              "decisions",
+              "minutes",
+              "percent"
+            ],
+            "title": "Unit",
+            "type": "string"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          }
+        },
+        "required": [
+          "value",
+          "unit"
+        ],
+        "title": "PerformanceMetric",
+        "type": "object"
+      },
+      "PerformanceScope": {
+        "properties": {
+          "as_of": {
+            "format": "date-time",
+            "title": "As Of",
+            "type": "string"
+          },
+          "from": {
+            "format": "date-time",
+            "title": "From",
+            "type": "string"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          },
+          "to": {
+            "format": "date-time",
+            "title": "To",
+            "type": "string"
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "timezone",
+          "as_of"
+        ],
+        "title": "PerformanceScope",
+        "type": "object"
+      },
+      "PerformanceSourceBreakdown": {
+        "properties": {
+          "count": {
+            "title": "Count",
+            "type": "integer"
+          },
+          "pct": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pct"
+          },
+          "source": {
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "count"
+        ],
+        "title": "PerformanceSourceBreakdown",
+        "type": "object"
+      },
+      "PerformanceTotals": {
+        "properties": {
+          "approvals": {
+            "$ref": "#/components/schemas/PerformanceMetric"
+          },
+          "approved_task_outcomes": {
+            "$ref": "#/components/schemas/PerformanceMetric"
+          },
+          "current_backlog": {
+            "$ref": "#/components/schemas/PerformanceMetric"
+          },
+          "first_review_pass_rate": {
+            "$ref": "#/components/schemas/PerformanceMetric"
+          },
+          "recorded_time_minutes": {
+            "$ref": "#/components/schemas/PerformanceMetric"
+          },
+          "rejections": {
+            "$ref": "#/components/schemas/PerformanceMetric"
+          },
+          "review_backlog": {
+            "$ref": "#/components/schemas/PerformanceMetric"
+          },
+          "review_decisions": {
+            "$ref": "#/components/schemas/PerformanceMetric"
+          },
+          "submitted_tasks": {
+            "$ref": "#/components/schemas/PerformanceMetric"
+          }
+        },
+        "required": [
+          "submitted_tasks",
+          "approved_task_outcomes",
+          "first_review_pass_rate",
+          "recorded_time_minutes",
+          "current_backlog",
+          "review_decisions",
+          "approvals",
+          "rejections",
+          "review_backlog"
+        ],
+        "title": "PerformanceTotals",
+        "type": "object"
+      },
+      "PerformanceTrendPoint": {
+        "properties": {
+          "approved_task_outcomes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approved Task Outcomes"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "review_decisions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Decisions"
+          },
+          "submitted_tasks": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Submitted Tasks"
+          }
+        },
+        "required": [
+          "date",
+          "submitted_tasks",
+          "approved_task_outcomes",
+          "review_decisions"
+        ],
+        "title": "PerformanceTrendPoint",
+        "type": "object"
+      },
       "PipelineStage": {
         "additionalProperties": false,
         "description": "v0.18.1 · 多阶段预标注的单个阶段声明 (路径 B).\n\nstage 0 (parent_stage=None) 是源检测阶段, 吃整图产框; 下游阶段 (parent_stage 指向源阶段)\n平台按父框 bbox 裁 ROI crop 喂入, 把返回的 attributes 合并进父框 (write.target=attributes)。\nv0.18.2 (M2): 支持单层并行扇出 (多个下游共享同一 parent_stage)、按类别路由\n(parent_class_filter)、阶段级失败策略 (on_failure)。深度≥3 / new_shape 留 M3。",
@@ -54045,6 +54734,812 @@
         "summary": "Preview Orphan Tasks",
         "tags": [
           "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/performance/export": {
+      "get": {
+        "operationId": "export_project_members_performance_api_v1_projects__project_id__performance_export_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "timezone",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Timezone"
+            }
+          },
+          {
+            "in": "query",
+            "name": "work_type",
+            "required": false,
+            "schema": {
+              "default": "annotation",
+              "enum": [
+                "annotation",
+                "review"
+              ],
+              "title": "Work Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "account_status",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "all",
+                "active",
+                "inactive"
+              ],
+              "title": "Account Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_historical",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Historical",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "+name",
+              "title": "Sort"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Export Project Members Performance",
+        "tags": [
+          "project-performance"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/performance/members": {
+      "get": {
+        "operationId": "get_members_performance_api_v1_projects__project_id__performance_members_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "timezone",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Timezone"
+            }
+          },
+          {
+            "in": "query",
+            "name": "work_type",
+            "required": false,
+            "schema": {
+              "default": "annotation",
+              "enum": [
+                "annotation",
+                "review"
+              ],
+              "title": "Work Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "account_status",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "all",
+                "active",
+                "inactive"
+              ],
+              "title": "Account Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_historical",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Historical",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "+name",
+              "title": "Sort"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PerformanceMembersResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Members Performance",
+        "tags": [
+          "project-performance"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/performance/members/{member_id}": {
+      "get": {
+        "operationId": "get_member_performance_detail_api_v1_projects__project_id__performance_members__member_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Member Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "timezone",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Timezone"
+            }
+          },
+          {
+            "in": "query",
+            "name": "work_type",
+            "required": false,
+            "schema": {
+              "default": "annotation",
+              "enum": [
+                "annotation",
+                "review"
+              ],
+              "title": "Work Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "account_status",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "all",
+                "active",
+                "inactive"
+              ],
+              "title": "Account Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_historical",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Historical",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "+name",
+              "title": "Sort"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PerformanceMemberDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Member Performance Detail",
+        "tags": [
+          "project-performance"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/performance/members/{member_id}/events": {
+      "get": {
+        "operationId": "get_member_performance_events_api_v1_projects__project_id__performance_members__member_id__events_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Member Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "timezone",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Timezone"
+            }
+          },
+          {
+            "in": "query",
+            "name": "work_type",
+            "required": false,
+            "schema": {
+              "default": "annotation",
+              "enum": [
+                "annotation",
+                "review"
+              ],
+              "title": "Work Type",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "account_status",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "all",
+                "active",
+                "inactive"
+              ],
+              "title": "Account Status",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_historical",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Historical",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "+name",
+              "title": "Sort"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PerformanceEventsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Member Performance Events",
+        "tags": [
+          "project-performance"
         ]
       }
     },
