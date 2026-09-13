@@ -2594,106 +2594,165 @@
       ]
     },
     "docs-site/public/media/video/video-draw-poster.webp": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
-      "reviewer": "yyq19990828",
+      "last_verified_commit": "24a3a03b1a681ee7486cc42a560733fbbf267851",
+      "verified_at": "2026-09-13T16:33:05.894Z",
+      "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
-      "sha256": "ec573512649d3495342853631c5cde95cf2a4d79534bbeffeb12c17a6575488d",
-      "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
-        "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue",
-        "docs-site/public/media/video/video-draw-poster.webp",
-        "docs-site/user-guide/workbench/video-track.md"
-      ]
-    },
-    "docs-site/public/media/video/video-draw.mp4": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
-      "reviewer": "yyq19990828",
-      "review_profile": "visual-content-v1",
-      "sha256": "9eb73723c2bf39af62ff70aceaa1195dd33672997163e5abc77c0232e480d5bd",
-      "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
-        "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue",
-        "docs-site/public/media/video/video-draw.mp4",
-        "docs-site/user-guide/workbench/video-track.md"
-      ]
-    },
-    "docs-site/public/media/video/video-timeline-zoom-poster.webp": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
-      "reviewer": "yyq19990828",
-      "review_profile": "visual-content-v1",
-      "sha256": "19c44673b25fa040d85f48dd7e247e1cef0c633712c230675c8644b93205aa5a",
-      "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
-        "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue",
-        "docs-site/public/media/video/video-timeline-zoom-poster.webp",
-        "docs-site/user-guide/workbench/video-playback.md"
-      ]
-    },
-    "docs-site/public/media/video/video-timeline-zoom.mp4": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
-      "reviewer": "yyq19990828",
-      "review_profile": "visual-content-v1",
-      "sha256": "78b1f7006ce2fb502c176e77027a2f9cbd88b7fef9d8b587717fe849e5885e96",
-      "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
-        "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue",
-        "docs-site/public/media/video/video-timeline-zoom.mp4",
-        "docs-site/user-guide/workbench/video-playback.md"
-      ]
-    },
-    "docs-site/public/media/video/video-track-carryover-poster.webp": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
-      "reviewer": "yyq19990828",
-      "review_profile": "visual-content-v1",
-      "sha256": "4a1eb00cc1b18346babcd1ed4eba2f5f4934c72c2edaf2890af141e501edc1d7",
-      "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
-        "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue",
-        "docs-site/public/media/video/video-track-carryover-poster.webp",
-        "docs-site/user-guide/workbench/video-track.md"
-      ]
-    },
-    "docs-site/public/media/video/video-track-carryover.mp4": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
-      "reviewer": "yyq19990828",
-      "review_profile": "visual-content-v1",
-      "sha256": "1aa4bc3b8813a3fca6d86406ba1ca29681438e9327f693ef6122d7298a6483c9",
-      "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
-        "apps/web/e2e/screenshots/flows/flows.spec.ts",
-        "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue",
-        "docs-site/public/media/video/video-track-carryover.mp4",
-        "docs-site/user-guide/workbench/video-track.md"
-      ]
-    },
-    "docs-site/public/media/video/workbench-overview-poster.webp": {
-      "last_verified_commit": "ea71c3e4785985de31773e4396b8ed488c8fe4f7",
-      "verified_at": "2026-09-07T10:33:54.559Z",
-      "reviewer": "yyq08228",
-      "review_profile": "visual-content-v1",
-      "sha256": "5ba13d9db19a22163888e7f96483ef3070e8ed3b3d5de4c6a5459fa26834459c",
+      "sha256": "6a630872c31a97b9a1def68b102cb8a7fbe40bf0b29c916f01c961a19c325cb6",
       "watch_paths": [
         "apps/api/app/services/screenshot_seed_backends.py",
         "apps/api/app/services/screenshot_seed_spec.py",
         "apps/web/e2e/fixtures/seed.ts",
         "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_video-keyframe-evidence.ts",
+        "apps/web/e2e/screenshots/flows/_video-keyframe-recording.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/flows/video-draw.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "apps/web/scripts/media-derivation.mjs",
+        "docs-site/public/media/video/video-draw-poster.webp",
+        "docs-site/user-guide/workbench/video-track.md"
+      ]
+    },
+    "docs-site/public/media/video/video-draw.mp4": {
+      "last_verified_commit": "24a3a03b1a681ee7486cc42a560733fbbf267851",
+      "verified_at": "2026-09-13T16:33:05.894Z",
+      "reviewer": "Codex primary thread (user-delegated)",
+      "review_profile": "visual-content-v1",
+      "sha256": "e3d26525cf8311438e28567f8eed4297f28fd1b19be6deee207cebdeb5e26bda",
+      "watch_paths": [
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_video-keyframe-evidence.ts",
+        "apps/web/e2e/screenshots/flows/_video-keyframe-recording.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/flows/video-draw.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "apps/web/scripts/media-derivation.mjs",
+        "docs-site/public/media/video/video-draw.mp4",
+        "docs-site/user-guide/workbench/video-track.md"
+      ]
+    },
+    "docs-site/public/media/video/video-timeline-zoom-poster.webp": {
+      "last_verified_commit": "24a3a03b1a681ee7486cc42a560733fbbf267851",
+      "verified_at": "2026-09-13T16:33:05.894Z",
+      "reviewer": "Codex primary thread (user-delegated)",
+      "review_profile": "visual-content-v1",
+      "sha256": "852b35487d275c57eabe1dd06dbd3f9faa07d9f84d2fad51a590f2d112dbb9b0",
+      "watch_paths": [
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_video-timeline.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/flows/video-timeline-zoom.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "apps/web/scripts/media-derivation.mjs",
+        "docs-site/public/media/video/video-timeline-zoom-poster.webp",
+        "docs-site/user-guide/workbench/video-playback.md"
+      ]
+    },
+    "docs-site/public/media/video/video-timeline-zoom.mp4": {
+      "last_verified_commit": "24a3a03b1a681ee7486cc42a560733fbbf267851",
+      "verified_at": "2026-09-13T16:33:05.894Z",
+      "reviewer": "Codex primary thread (user-delegated)",
+      "review_profile": "visual-content-v1",
+      "sha256": "bc7960b553d77ca856cee88baa6d7ec493405781bd673a6eb965108251aa363c",
+      "watch_paths": [
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_video-timeline.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/flows/video-timeline-zoom.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "apps/web/scripts/media-derivation.mjs",
+        "docs-site/public/media/video/video-timeline-zoom.mp4",
+        "docs-site/user-guide/workbench/video-playback.md"
+      ]
+    },
+    "docs-site/public/media/video/video-track-carryover-poster.webp": {
+      "last_verified_commit": "24a3a03b1a681ee7486cc42a560733fbbf267851",
+      "verified_at": "2026-09-13T16:33:05.894Z",
+      "reviewer": "Codex primary thread (user-delegated)",
+      "review_profile": "visual-content-v1",
+      "sha256": "5bbd981342de891233da27ab61d503e74b6fb22e5c9c709fb73a604bac4b0a5d",
+      "watch_paths": [
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_video-keyframe-evidence.ts",
+        "apps/web/e2e/screenshots/flows/_video-keyframe-recording.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/flows/video-track-carryover.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "apps/web/scripts/media-derivation.mjs",
+        "docs-site/public/media/video/video-track-carryover-poster.webp",
+        "docs-site/user-guide/workbench/video-track.md"
+      ]
+    },
+    "docs-site/public/media/video/video-track-carryover.mp4": {
+      "last_verified_commit": "24a3a03b1a681ee7486cc42a560733fbbf267851",
+      "verified_at": "2026-09-13T16:33:05.894Z",
+      "reviewer": "Codex primary thread (user-delegated)",
+      "review_profile": "visual-content-v1",
+      "sha256": "59a4c480dbdd9e444c077bd358859d51f82a855c4587db2311d51df42b56fe5d",
+      "watch_paths": [
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_video-keyframe-evidence.ts",
+        "apps/web/e2e/screenshots/flows/_video-keyframe-recording.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/flows/video-track-carryover.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "apps/web/scripts/media-derivation.mjs",
+        "docs-site/public/media/video/video-track-carryover.mp4",
+        "docs-site/user-guide/workbench/video-track.md"
+      ]
+    },
+    "docs-site/public/media/video/workbench-overview-poster.webp": {
+      "last_verified_commit": "24a3a03b1a681ee7486cc42a560733fbbf267851",
+      "verified_at": "2026-09-13T16:33:05.894Z",
+      "reviewer": "Codex primary thread (user-delegated)",
+      "review_profile": "visual-content-v1",
+      "sha256": "cd4bfb130aab5434993d3b5669034096281706a2c0910be4b5c2a44db7cad697",
+      "watch_paths": [
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
         "apps/web/e2e/screenshots/flows/_canvas.ts",
         "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
@@ -2706,16 +2765,17 @@
       ]
     },
     "docs-site/public/media/video/workbench-overview.mp4": {
-      "last_verified_commit": "ea71c3e4785985de31773e4396b8ed488c8fe4f7",
-      "verified_at": "2026-09-07T10:33:54.559Z",
-      "reviewer": "yyq08228",
+      "last_verified_commit": "24a3a03b1a681ee7486cc42a560733fbbf267851",
+      "verified_at": "2026-09-13T16:33:05.894Z",
+      "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
-      "sha256": "366f3ee2c1563980403486bf95b4562771d7ea1c4096fc5ee57b52bfd0b9a50c",
+      "sha256": "f3a1502329ecba8df3bfc9fa5f40f8a0b43617efc9839028e50c35a01e9bdb6d",
       "watch_paths": [
         "apps/api/app/services/screenshot_seed_backends.py",
         "apps/api/app/services/screenshot_seed_spec.py",
         "apps/web/e2e/fixtures/seed.ts",
         "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
         "apps/web/e2e/screenshots/flows/_canvas.ts",
         "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
