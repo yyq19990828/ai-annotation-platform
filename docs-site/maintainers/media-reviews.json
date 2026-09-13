@@ -4,11 +4,11 @@
   "review_profile": "visual-content-v1",
   "entries": {
     "docs-site/.vitepress/theme/assets/home/hero/data-manager.webp": {
-      "last_verified_commit": "df2752a1644160120de9c99249a757b64cb32202",
-      "verified_at": "2026-09-13T07:02:56.721Z",
+      "last_verified_commit": "1b523dda2ea29fe602c8eb807df6ded88c180463",
+      "verified_at": "2026-09-13T18:36:37.388Z",
       "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
-      "sha256": "5e8a31d923d1daa37f13a2ad4784d6c9dedcea15d307bb0ede99a98a62765d09",
+      "sha256": "3f43252eeca41284408a427f527ec7a36beea973ba244426954bf8f1d6549689",
       "watch_paths": [
         "apps/web/e2e/screenshots/scenes/projects.ts",
         "docs-site/.vitepress/theme/assets/home/hero/data-manager.webp",
@@ -18,11 +18,11 @@
       ]
     },
     "docs-site/.vitepress/theme/assets/home/hero/pointcloud.webp": {
-      "last_verified_commit": "df2752a1644160120de9c99249a757b64cb32202",
-      "verified_at": "2026-09-13T07:02:56.721Z",
+      "last_verified_commit": "1b523dda2ea29fe602c8eb807df6ded88c180463",
+      "verified_at": "2026-09-13T18:36:37.388Z",
       "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
-      "sha256": "cff39138cb2cfd37df59938d3811672f7bd7da2be8c5bac08623c05f7d849589",
+      "sha256": "bd2357c112feb1dd718c4d16b6378a718e17eb48315463d13e081b2b86c0c6a4",
       "watch_paths": [
         "apps/web/e2e/screenshots/scenes/workbench-media.ts",
         "docs-site/.vitepress/theme/assets/home/hero/pointcloud.webp",
@@ -32,11 +32,11 @@
       ]
     },
     "docs-site/.vitepress/theme/assets/home/hero/review.webp": {
-      "last_verified_commit": "df2752a1644160120de9c99249a757b64cb32202",
-      "verified_at": "2026-09-13T07:02:56.721Z",
+      "last_verified_commit": "1b523dda2ea29fe602c8eb807df6ded88c180463",
+      "verified_at": "2026-09-13T18:36:37.388Z",
       "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
-      "sha256": "6c211670a161acc6c65d867e7df55dad7326430b558b6037489714328968b304",
+      "sha256": "6392f51d11c845e758bc4498e0fc22e536d39b2376bfa4b5daefb82f9f661c6c",
       "watch_paths": [
         "apps/web/e2e/screenshots/scenes/review.ts",
         "docs-site/.vitepress/theme/assets/home/hero/review.webp",
@@ -46,11 +46,11 @@
       ]
     },
     "docs-site/.vitepress/theme/assets/home/hero/video-track.webp": {
-      "last_verified_commit": "df2752a1644160120de9c99249a757b64cb32202",
-      "verified_at": "2026-09-13T07:02:56.721Z",
+      "last_verified_commit": "1b523dda2ea29fe602c8eb807df6ded88c180463",
+      "verified_at": "2026-09-13T18:36:37.388Z",
       "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
-      "sha256": "516b3ba10fa7c2b31dd27700b67964fc3912e174cdf015fdfd2edb0ebbbf380a",
+      "sha256": "55870fea2dfa91bcf3966e280228ad1f12b2214a53371bd08134912419516e94",
       "watch_paths": [
         "apps/web/e2e/screenshots/scenes/workbench-media.ts",
         "docs-site/.vitepress/theme/assets/home/hero/video-track.webp",
