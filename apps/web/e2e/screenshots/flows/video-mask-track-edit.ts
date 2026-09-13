@@ -183,7 +183,8 @@ export async function runVideoMaskTrackEdit(
     });
     await stroke(page, initialPath, 1_800);
     await page.waitForTimeout(650);
-    await toolbar.getByTestId("mask-primary-action").click();
+    // 画布绘制会让 Radix 工具条收起；Enter 是 Mask 的主动作快捷键（保存）。
+    await page.keyboard.press("Enter");
     await expect(page.getByTestId("class-picker-popover")).toBeVisible();
     await page.waitForTimeout(1_000);
     const created = maskTrack(
@@ -241,7 +242,7 @@ export async function runVideoMaskTrackEdit(
           `/api/v1/tasks/${task.id}/video/tracks/${created.id}/mask-keyframes/5`,
       { timeout: 30_000 },
     );
-    await toolbar.getByTestId("mask-primary-action").click();
+    await page.keyboard.press("Enter");
     const response = await updateResponse;
     expect(response.ok(), `Save F5 Mask: HTTP ${response.status()}`).toBeTruthy();
     expect(response.request().headers()["if-match"]).toBe(`W/"${created.version}"`);
