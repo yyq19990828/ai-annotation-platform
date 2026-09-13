@@ -76,7 +76,7 @@ _ANNOTATION_ACTIONS = {
     AuditAction.TASK_SKIP.value,
 }
 _ANNOTATION_BACKLOG = {"pending", "in_progress", "rejected"}
-_MAX_RANGE = timedelta(days=90)
+_MAX_CALENDAR_DAYS = 90
 
 
 @dataclass(frozen=True)
@@ -157,7 +157,12 @@ def resolve_scope(
         raise HTTPException(
             status_code=422, detail="performance interval must be non-empty"
         )
-    if end - start > _MAX_RANGE:
+    # Scope length is measured in complete local calendar days.  This keeps a
+    # 90-day date-only range stable across DST transitions and also accepts the
+    # equal-duration instant range used by the UI's previous-period query.
+    local_start = start.astimezone(zone).replace(tzinfo=None)
+    local_end = end.astimezone(zone).replace(tzinfo=None)
+    if (local_end - local_start).days > _MAX_CALENDAR_DAYS:
         raise HTTPException(
             status_code=422, detail="performance interval is limited to 90 days"
         )

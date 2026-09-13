@@ -1,6 +1,9 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from uuid import uuid4
+
+import pytest
+from fastapi import HTTPException
 
 from app.schemas.project_performance import PerformanceScope
 from app.services.project_performance import (
@@ -25,6 +28,39 @@ def test_date_only_to_is_an_exclusive_local_midnight():
 
     assert scope.start == datetime(2026, 9, 12, 16, tzinfo=timezone.utc)
     assert scope.end == datetime(2026, 9, 13, 16, tzinfo=timezone.utc)
+
+
+def test_ninety_calendar_days_accept_dst_fallback_and_previous_instant_scope():
+    now = datetime(2026, 11, 3, tzinfo=timezone.utc)
+    current = resolve_scope(
+        "2026-08-04",
+        "2026-11-02",
+        "America/New_York",
+        now=now,
+    )
+    previous_start = current.start - (current.end - current.start)
+    previous = resolve_scope(
+        previous_start.isoformat(),
+        current.start.isoformat(),
+        "America/New_York",
+        now=now,
+    )
+
+    assert current.end - current.start == timedelta(days=90, hours=1)
+    assert previous.end == current.start
+    assert previous.end - previous.start == current.end - current.start
+
+
+def test_scope_rejects_more_than_ninety_complete_local_days():
+    with pytest.raises(HTTPException) as exc_info:
+        resolve_scope(
+            "2026-08-03",
+            "2026-11-03",
+            "America/New_York",
+            now=datetime(2026, 11, 4, tzinfo=timezone.utc),
+        )
+
+    assert exc_info.value.status_code == 422
 
 
 def test_decision_uses_the_matching_submit_round_snapshot():
@@ -67,6 +103,13 @@ def test_first_review_rate_is_percent_with_raw_cohort_counts():
     assert metric.unit == "percent"
     assert metric.numerator == 1
     assert metric.denominator == 2
+
+
+def test_unknown_first_review_cohort_never_becomes_a_hundred_percent_pass():
+    metric = _first_rate_metric(0, 0, partial=True)
+
+    assert metric.value is None
+    assert metric.coverage == "partial"
 
 
 def test_import_marker_keeps_imported_work_separate_from_manual_source():
