@@ -682,8 +682,8 @@
       ]
     },
     "docs-site/public/media/ai/prediction-import-poster.webp": {
-      "last_verified_commit": "2345bbc44b5e0aab870cb8a3af7e4d8d68688fc9",
-      "verified_at": "2026-09-08T09:28:03.056Z",
+      "last_verified_commit": "ee6300fa828ec7e113541f8ca1043b77ca6fa18a",
+      "verified_at": "2026-09-13T15:50:46.859Z",
       "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
       "sha256": "79821a84d81f6645fbc245716353ccfcd70be3430814fd62fefd727677e5cf0a",
@@ -705,8 +705,8 @@
       ]
     },
     "docs-site/public/media/ai/prediction-import.mp4": {
-      "last_verified_commit": "2345bbc44b5e0aab870cb8a3af7e4d8d68688fc9",
-      "verified_at": "2026-09-08T09:28:03.056Z",
+      "last_verified_commit": "ee6300fa828ec7e113541f8ca1043b77ca6fa18a",
+      "verified_at": "2026-09-13T15:50:46.859Z",
       "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
       "sha256": "876520c6532873b833030861c1a6fbc775aa41aaa33cc371812d81cdf641bd62",
@@ -864,8 +864,8 @@
       ]
     },
     "docs-site/public/media/jobs/video-tracker-job-states-poster.webp": {
-      "last_verified_commit": "2345bbc44b5e0aab870cb8a3af7e4d8d68688fc9",
-      "verified_at": "2026-09-08T09:28:03.056Z",
+      "last_verified_commit": "ee6300fa828ec7e113541f8ca1043b77ca6fa18a",
+      "verified_at": "2026-09-13T15:50:46.859Z",
       "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
       "sha256": "f96dec974da655574b4e835e3450a9f20e6e70f61a0fcf89e74587e0f73f6755",
@@ -887,8 +887,8 @@
       ]
     },
     "docs-site/public/media/jobs/video-tracker-job-states.mp4": {
-      "last_verified_commit": "2345bbc44b5e0aab870cb8a3af7e4d8d68688fc9",
-      "verified_at": "2026-09-08T09:28:03.056Z",
+      "last_verified_commit": "ee6300fa828ec7e113541f8ca1043b77ca6fa18a",
+      "verified_at": "2026-09-13T15:50:46.859Z",
       "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
       "sha256": "07043d7af08f6e10a04fb0bbae6ba946310a397384295f139dac514b9351adc3",
@@ -1618,8 +1618,8 @@
       ]
     },
     "docs-site/public/media/review/reject-flow-poster.webp": {
-      "last_verified_commit": "2345bbc44b5e0aab870cb8a3af7e4d8d68688fc9",
-      "verified_at": "2026-09-08T09:28:03.056Z",
+      "last_verified_commit": "ee6300fa828ec7e113541f8ca1043b77ca6fa18a",
+      "verified_at": "2026-09-13T15:50:46.859Z",
       "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
       "sha256": "7cd44ec0f0a574f004eb20413ac9da867fb39ccd4ba4eae11454cfcc57c9ca5e",
@@ -1642,8 +1642,8 @@
       ]
     },
     "docs-site/public/media/review/reject-flow.mp4": {
-      "last_verified_commit": "2345bbc44b5e0aab870cb8a3af7e4d8d68688fc9",
-      "verified_at": "2026-09-08T09:28:03.056Z",
+      "last_verified_commit": "ee6300fa828ec7e113541f8ca1043b77ca6fa18a",
+      "verified_at": "2026-09-13T15:50:46.859Z",
       "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
       "sha256": "4ced4d7a98dcde878e2fd70bb704279aebe8fae9d8b9cf3f1e673990aabfde18",
@@ -2868,8 +2868,8 @@
       ]
     },
     "docs-site/public/media/workbench/layout-persistence-poster.webp": {
-      "last_verified_commit": "2345bbc44b5e0aab870cb8a3af7e4d8d68688fc9",
-      "verified_at": "2026-09-08T09:28:03.056Z",
+      "last_verified_commit": "ee6300fa828ec7e113541f8ca1043b77ca6fa18a",
+      "verified_at": "2026-09-13T15:50:46.859Z",
       "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
       "sha256": "6a290be20a42c0f1e68902be820add8d42f07050df75bdaa6c8cead2b07f399f",
@@ -2891,8 +2891,8 @@
       ]
     },
     "docs-site/public/media/workbench/layout-persistence.mp4": {
-      "last_verified_commit": "2345bbc44b5e0aab870cb8a3af7e4d8d68688fc9",
-      "verified_at": "2026-09-08T09:28:03.056Z",
+      "last_verified_commit": "ee6300fa828ec7e113541f8ca1043b77ca6fa18a",
+      "verified_at": "2026-09-13T15:50:46.859Z",
       "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
       "sha256": "52521de68fe34ffe3a7a4f2513ed6d25ac30bc1fbe76927b8973151e1f0f4ece",
@@ -3045,12 +3045,23 @@
       ]
     },
     "docs-site/user-guide/images/getting-started/e2e.gif": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
-      "reviewer": "yyq19990828",
+      "last_verified_commit": "ee6300fa828ec7e113541f8ca1043b77ca6fa18a",
+      "verified_at": "2026-09-13T15:50:46.859Z",
+      "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
-      "sha256": "edefbebc285c8b23e9320ad31e1a85b09c3b5d7ffc5597cd44204c8cb4eceaa3",
+      "sha256": "3d8fe6adfb9e41b9f6cdf24209752609268964d9b5d6f87d190052a0c3e8f943",
       "watch_paths": [
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
+        "apps/web/e2e/screenshots/flows/e2e-quickstart.ts",
+        "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
+        "apps/web/scripts/derive-doc-media.mjs",
+        "apps/web/scripts/media-derivation.mjs",
         "docs-site/user-guide/getting-started.md",
         "docs-site/user-guide/images/getting-started/e2e.gif"
       ]
