@@ -12,6 +12,7 @@ from app.deps import (
 )
 from app.db.models.user import User
 from app.db.models.project import Project
+from app.db.models.task_batch import TaskBatch
 from app.schemas.task import (
     ReviewClaimResponse,
 )
@@ -26,7 +27,10 @@ from app.api.v1.tasks._shared import (
     _review_round_contributor_snapshot,
     _task_contributor_snapshot,
 )
-from app.services.scheduler import is_privileged_for_project
+from app.services.scheduler import (
+    effective_task_reviewer_id,
+    is_privileged_for_project,
+)
 
 router = APIRouter()
 
@@ -67,12 +71,16 @@ async def _assert_review_owner(db: AsyncSession, *, task, user: User) -> Project
         raise HTTPException(status_code=404, detail="Project not found")
     if is_privileged_for_project(user, project):
         return project
-    if task.reviewer_id != user.id or task.reviewer_claimed_at is None:
+    batch = await db.get(TaskBatch, task.batch_id) if task.batch_id else None
+    effective_reviewer_id = effective_task_reviewer_id(task, batch)
+    if effective_reviewer_id != user.id or task.reviewer_claimed_at is None:
         raise HTTPException(
             status_code=409,
             detail={
                 "reason": "task_review_not_claimed_by_user",
-                "reviewer_id": str(task.reviewer_id) if task.reviewer_id else None,
+                "reviewer_id": (
+                    str(effective_reviewer_id) if effective_reviewer_id else None
+                ),
             },
         )
     return project
@@ -97,6 +105,23 @@ async def claim_review(
         )
 
     if task.reviewer_claimed_at is None:
+        project = await db.get(Project, task.project_id)
+        batch = await db.get(TaskBatch, task.batch_id) if task.batch_id else None
+        effective_reviewer_id = effective_task_reviewer_id(task, batch)
+        if (
+            effective_reviewer_id is not None
+            and effective_reviewer_id != current_user.id
+            and not (
+                project is not None and is_privileged_for_project(current_user, project)
+            )
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "reason": "task_review_assigned_to_other",
+                    "reviewer_id": str(effective_reviewer_id),
+                },
+            )
         task.reviewer_id = current_user.id
         task.reviewer_claimed_at = datetime.now(timezone.utc)
         await AuditService.log(

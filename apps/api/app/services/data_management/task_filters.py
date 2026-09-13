@@ -52,7 +52,7 @@ from app.services.data_management.task_metrics import (  # noqa: F401
     pending_tracker_jobs_expr,
 )
 from app.services.project_kind import project_kind
-from app.services.scheduler import batch_visibility_clause, is_privileged_for_project
+from app.services.scheduler import is_privileged_for_project, task_visibility_clause
 
 _STRING_OPS = {"eq", "ne", "in"}
 
@@ -1064,8 +1064,8 @@ def _unresolved_feedback_count_sq() -> ColumnElement[int]:
 def apply_task_visibility(stmt: Select, user: User, project: Project) -> Select:
     """Apply the canonical project task visibility scope to an arbitrary Task query."""
     if not is_privileged_for_project(user, project):
-        stmt = stmt.join(TaskBatch, Task.batch_id == TaskBatch.id).where(
-            batch_visibility_clause(user)
+        stmt = stmt.outerjoin(TaskBatch, Task.batch_id == TaskBatch.id).where(
+            task_visibility_clause(user)
         )
     return stmt
 

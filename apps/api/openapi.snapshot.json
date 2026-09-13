@@ -10096,6 +10096,54 @@
             ],
             "title": "Before Reviewer Id"
           },
+          "effective_after_annotator_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective After Annotator Id"
+          },
+          "effective_after_reviewer_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective After Reviewer Id"
+          },
+          "effective_before_annotator_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Before Annotator Id"
+          },
+          "effective_before_reviewer_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Before Reviewer Id"
+          },
           "reason": {
             "anyOf": [
               {

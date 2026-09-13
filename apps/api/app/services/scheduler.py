@@ -67,6 +67,70 @@ def batch_visibility_clause(user: User):
     )
 
 
+def _task_assigned_to_user(user: User):
+    """Match an explicit task assignee, falling back to its batch assignee.
+
+    ``Task.assignee_id`` is the task-level override used by Data Manager
+    actions.  Legacy/batch-created rows can still leave it NULL, in which
+    case the batch annotator remains the effective assignee.  The open-batch
+    case is intentionally kept separate because it must not make rejected or
+    reviewing work visible to every annotator.
+    """
+    return or_(
+        Task.assignee_id == user.id,
+        and_(
+            Task.assignee_id.is_(None),
+            Task.batch_id.is_not(None),
+            TaskBatch.annotator_id == user.id,
+        ),
+    )
+
+
+def effective_task_assignee_id(task: Task, batch: TaskBatch | None) -> uuid.UUID | None:
+    """Return the effective annotator for an ORM task row."""
+    return (
+        task.assignee_id
+        if task.assignee_id is not None
+        else (batch.annotator_id if batch is not None else None)
+    )
+
+
+def effective_task_reviewer_id(task: Task, batch: TaskBatch | None) -> uuid.UUID | None:
+    """Return the effective reviewer for an ORM task row."""
+    return (
+        task.reviewer_id
+        if task.reviewer_id is not None
+        else (batch.reviewer_id if batch is not None else None)
+    )
+
+
+def effective_task_assignee_expr():
+    """Return the SQL expression matching :func:`effective_task_assignee_id`.
+
+    Callers must outer-join ``TaskBatch`` when the query also includes
+    unbatched tasks.
+    """
+    return func.coalesce(Task.assignee_id, TaskBatch.annotator_id)
+
+
+def task_assignment_clause(user: User):
+    """Return the SQL scope for an annotator's effective task assignment.
+
+    Explicit task assignments take precedence over a batch assignment.  A
+    NULL task assignee preserves the existing open-batch pool semantics, but
+    an unbatched task is visible only when it has an explicit assignee.
+    Callers must join ``TaskBatch`` with an outer join.
+    """
+    return or_(
+        _task_assigned_to_user(user),
+        and_(
+            Task.batch_id.is_not(None),
+            Task.assignee_id.is_(None),
+            TaskBatch.annotator_id.is_(None),
+        ),
+    )
+
+
 def visible_batch_statuses_for(user: User) -> list[str]:
     """非 SQL 路径用：给定角色返回扁平的 status 白名单（用于点查 _assert_task_visible）。"""
     if user.role == UserRole.REVIEWER:
@@ -74,33 +138,62 @@ def visible_batch_statuses_for(user: User) -> list[str]:
     return list(ANNOTATOR_VISIBLE_BATCH_STATUSES)
 
 
-def annotator_can_rework_task(user: User, batch: TaskBatch, task_status: str) -> bool:
+def annotator_can_rework_task(
+    user: User,
+    batch: TaskBatch,
+    task_status: str,
+    task_assignee_id: uuid.UUID | None = None,
+) -> bool:
     """A single rejected task may be redone while its peers remain in review."""
     return (
         user.role == UserRole.ANNOTATOR
-        and batch.annotator_id == user.id
+        and (task_assignee_id or batch.annotator_id) == user.id
         and batch.status == "reviewing"
         and task_status in {"rejected", "in_progress"}
     )
 
 
 def task_visibility_clause(user: User):
-    """Task lists include assigned rework without reopening the whole batch."""
-    ordinary = batch_visibility_clause(user)
+    """Return the canonical visibility scope for a ``Task`` query.
+
+    This is deliberately separate from ``batch_visibility_clause``: the
+    latter is also used by reviewer dashboard queries that select only
+    ``TaskBatch``.  Task queries must let an explicit task assignment narrow a
+    batch without exposing the rest of that batch, and must use an outer join
+    so an explicitly assigned unbatched task remains reachable.
+    """
     if user.role != UserRole.ANNOTATOR:
-        return ordinary
+        return batch_visibility_clause(user)
+    assigned = _task_assigned_to_user(user)
     return or_(
-        ordinary,
+        # An explicitly assigned unbatched task has no batch status to gate it.
+        and_(Task.batch_id.is_(None), Task.assignee_id == user.id),
+        # Keep the existing active/annotating open-pool behavior, while an
+        # explicit task assignee narrows a normally batch-scoped task.
         and_(
-            TaskBatch.annotator_id == user.id,
+            Task.batch_id.is_not(None),
+            TaskBatch.status.in_(["active", "annotating"]),
+            task_assignment_clause(user),
+        ),
+        # Rejected work is visible only to its effective assignee.
+        and_(
+            Task.batch_id.is_not(None),
+            TaskBatch.status == "rejected",
+            assigned,
+        ),
+        # A rejected/in-progress task can be resumed during batch review by
+        # its task assignee (or the legacy batch assignee fallback).
+        and_(
+            Task.batch_id.is_not(None),
             TaskBatch.status == "reviewing",
             Task.status.in_(["rejected", "in_progress"]),
+            assigned,
         ),
     )
 
 
 # 兼容别名
-assigned_user_ids_clause = batch_visibility_clause
+assigned_user_ids_clause = task_visibility_clause
 
 
 async def _filter_assignable_task_ids(
@@ -135,15 +228,20 @@ async def _filter_assignable_task_ids(
     )
     q = (
         select(Task.id)
-        .join(TaskBatch, Task.batch_id == TaskBatch.id)
+        .outerjoin(TaskBatch, Task.batch_id == TaskBatch.id)
         .where(
             Task.id.in_(task_ids),
             Task.project_id == project.id,
             Task.is_labeled.is_(False),
             ~already_annotated,
             ~other_lock,
-            TaskBatch.status.in_(["active", "annotating"]),
-            TaskBatch.admin_locked.is_(False),
+            or_(
+                Task.batch_id.is_(None),
+                and_(
+                    TaskBatch.status.in_(["active", "annotating"]),
+                    TaskBatch.admin_locked.is_(False),
+                ),
+            ),
         )
     )
     if batch_id:
@@ -322,13 +420,18 @@ async def get_next_task(
 
     candidates = (
         select(Task)
-        .join(TaskBatch, Task.batch_id == TaskBatch.id)
+        .outerjoin(TaskBatch, Task.batch_id == TaskBatch.id)
         .where(
             Task.project_id == project_id,
             Task.is_labeled.is_(False),
             ~already_annotated,
-            TaskBatch.status.in_(["active", "annotating"]),
-            TaskBatch.admin_locked.is_(False),  # v0.9.15 · ADR-0008
+            or_(
+                Task.batch_id.is_(None),
+                and_(
+                    TaskBatch.status.in_(["active", "annotating"]),
+                    TaskBatch.admin_locked.is_(False),  # v0.9.15 · ADR-0008
+                ),
+            ),
         )
     )
 

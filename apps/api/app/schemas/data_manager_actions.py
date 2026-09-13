@@ -48,6 +48,12 @@ class DataManagerTaskAssignmentItem(BaseModel):
     after_annotator_id: UUID | None = None
     before_reviewer_id: UUID | None = None
     after_reviewer_id: UUID | None = None
+    # Raw task columns remain available for compatibility; these fields show
+    # the effective owner after a NULL task override falls back to its batch.
+    effective_before_annotator_id: UUID | None = None
+    effective_after_annotator_id: UUID | None = None
+    effective_before_reviewer_id: UUID | None = None
+    effective_after_reviewer_id: UUID | None = None
     will_change: bool = False
     reason: str | None = None
 

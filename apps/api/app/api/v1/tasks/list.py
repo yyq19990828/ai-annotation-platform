@@ -59,7 +59,7 @@ def _build_task_query(
 
     # B-16: retain the scheduler's exact non-privileged batch visibility policy.
     if not is_privileged_for_project(user, project):
-        query = query.join(TaskBatch, Task.batch_id == TaskBatch.id).where(
+        query = query.outerjoin(TaskBatch, Task.batch_id == TaskBatch.id).where(
             task_visibility_clause(user)
         )
 

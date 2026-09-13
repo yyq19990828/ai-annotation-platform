@@ -163,7 +163,8 @@ async def _assert_task_visible(db: AsyncSession, task: Task, user: User) -> None
     """B-16 + v0.7.0：服务端强制 batch 可见性，按角色分支。
     super_admin / 项目 owner 越权放行；reviewer 见 active/annotating/reviewing；
     annotator 见 active/annotating（assigned）+ rejected（assigned 特例）。
-    无 batch 的孤儿任务对非特权用户不可见。
+    无 batch 的任务仅对显式分派的标注员可见；批次任务优先使用 task
+    级 assignee_id，NULL 时回退到 batch.annotator_id。
     """
     from app.db.models.project import Project
 
@@ -186,6 +187,8 @@ async def _assert_task_visible(db: AsyncSession, task: Task, user: User) -> None
         if membership:
             return
     if task.batch_id is None:
+        if user.role == UserRole.ANNOTATOR and task.assignee_id == user.id:
+            return
         raise HTTPException(status_code=404, detail="Task not found")
     batch = await db.get(TaskBatch, task.batch_id)
     if batch is None:
@@ -193,7 +196,7 @@ async def _assert_task_visible(db: AsyncSession, task: Task, user: User) -> None
 
     visible_statuses = visible_batch_statuses_for(user)
     if batch.status not in visible_statuses and not annotator_can_rework_task(
-        user, batch, task.status
+        user, batch, task.status, task.assignee_id
     ):
         raise HTTPException(status_code=404, detail="Task not found")
 
@@ -201,10 +204,14 @@ async def _assert_task_visible(db: AsyncSession, task: Task, user: User) -> None
     if user.role == UserRole.REVIEWER:
         return
 
-    # v0.7.2：annotator 路径 — 一 batch 一标注员，按 batch.annotator_id 单值校验
-    is_assigned = batch.annotator_id is not None and batch.annotator_id == user.id
+    # Task-level assignment takes precedence over the legacy batch assignment.
+    is_task_assigned = task.assignee_id is not None and task.assignee_id == user.id
+    is_batch_assigned = task.assignee_id is None and batch.annotator_id == user.id
+    is_assigned = is_task_assigned or is_batch_assigned
     # rejected 状态特例：仅对被分派的标注员放行
     if batch.status == "rejected" and not is_assigned:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.assignee_id is not None and not is_task_assigned:
         raise HTTPException(status_code=404, detail="Task not found")
     if batch.annotator_id is not None and not is_assigned:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -231,10 +238,12 @@ async def _visible_task_ids(
 
     rows = (
         await db.execute(
-            select(Task.id, Task.batch_id, Task.status).where(Task.id.in_(task_ids))
+            select(Task.id, Task.batch_id, Task.status, Task.assignee_id).where(
+                Task.id.in_(task_ids)
+            )
         )
     ).all()
-    batch_ids = {bid for _, bid, _ in rows if bid is not None}
+    batch_ids = {bid for _, bid, _, _ in rows if bid is not None}
     batches: dict[uuid.UUID, TaskBatch] = {}
     if batch_ids:
         result = await db.execute(select(TaskBatch).where(TaskBatch.id.in_(batch_ids)))
@@ -243,20 +252,28 @@ async def _visible_task_ids(
     visible_statuses = visible_batch_statuses_for(user)
     is_reviewer = user.role == UserRole.REVIEWER
     visible: set[uuid.UUID] = set()
-    for tid, bid, task_status in rows:
+    for tid, bid, task_status, task_assignee_id in rows:
         if bid is None:
+            if user.role == UserRole.ANNOTATOR and task_assignee_id == user.id:
+                visible.add(tid)
             continue
         batch = batches.get(bid)
         if batch is None or (
             batch.status not in visible_statuses
-            and not annotator_can_rework_task(user, batch, task_status)
+            and not annotator_can_rework_task(
+                user, batch, task_status, task_assignee_id
+            )
         ):
             continue
         if is_reviewer:
             visible.add(tid)
             continue
-        is_assigned = batch.annotator_id is not None and batch.annotator_id == user.id
+        is_task_assigned = task_assignee_id is not None and task_assignee_id == user.id
+        is_batch_assigned = task_assignee_id is None and batch.annotator_id == user.id
+        is_assigned = is_task_assigned or is_batch_assigned
         if batch.status == "rejected" and not is_assigned:
+            continue
+        if task_assignee_id is not None and not is_task_assigned:
             continue
         if batch.annotator_id is not None and not is_assigned:
             continue

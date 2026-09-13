@@ -21,6 +21,10 @@ from app.schemas.data_manager_actions import (
     DataManagerTaskAssignmentResponse,
 )
 from app.services.batch import BatchService
+from app.services.scheduler import (
+    effective_task_assignee_id,
+    effective_task_reviewer_id,
+)
 from app.services.task_lock import TaskLockConflictError, TaskLockService
 
 
@@ -243,10 +247,30 @@ class DataManagerTaskActionService:
             task, batch = loaded_row
             before_annotator = task.assignee_id
             before_reviewer = task.reviewer_id
+            effective_before_annotator = effective_task_assignee_id(task, batch)
+            effective_before_reviewer = effective_task_reviewer_id(task, batch)
             after_annotator = (
                 payload.annotator_id if annotator_set else before_annotator
             )
             after_reviewer = payload.reviewer_id if reviewer_set else before_reviewer
+            effective_after_annotator = (
+                (
+                    payload.annotator_id
+                    if payload.annotator_id is not None
+                    else (batch.annotator_id if batch is not None else None)
+                )
+                if annotator_set
+                else effective_before_annotator
+            )
+            effective_after_reviewer = (
+                (
+                    payload.reviewer_id
+                    if payload.reviewer_id is not None
+                    else (batch.reviewer_id if batch is not None else None)
+                )
+                if reviewer_set
+                else effective_before_reviewer
+            )
             item = DataManagerTaskAssignmentItem(
                 task_id=task.id,
                 task_display_id=task.display_id,
@@ -257,11 +281,25 @@ class DataManagerTaskActionService:
                 after_annotator_id=after_annotator,
                 before_reviewer_id=before_reviewer,
                 after_reviewer_id=after_reviewer,
+                effective_before_annotator_id=effective_before_annotator,
+                effective_after_annotator_id=effective_after_annotator,
+                effective_before_reviewer_id=effective_before_reviewer,
+                effective_after_reviewer_id=effective_after_reviewer,
             )
             if batch is not None and batch.admin_locked:
                 item.reason = "batch_admin_locked"
             elif task.status not in _ASSIGNABLE_TASK_STATUSES:
                 item.reason = "task_status_not_assignable"
+            elif (
+                reviewer_set
+                and payload.reviewer_id is not None
+                and task.status != "review"
+            ):
+                # ``submit`` intentionally clears reviewer fields while
+                # starting a review round.  Accept reviewer assignment only
+                # once a task is in review so the bulk action has durable
+                # claim semantics instead of silently losing the assignment.
+                item.reason = "reviewer_assignment_requires_review"
             else:
                 active_lock = await lock_service.active_lock(task.id)
                 if active_lock is not None:
