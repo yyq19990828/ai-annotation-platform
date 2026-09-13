@@ -217,7 +217,7 @@ export async function runVideoMaskTrackEdit(
       await page.waitForTimeout(220);
     }
     await page.getByLabel("展开选中信息卡(可拖动)", { exact: true }).click();
-    await expect(page.getByText(/当前帧保持 F0 的 Mask；保存修改将仅在 F5 新建人工关键帧/)).toBeVisible();
+    await expect(page.getByText(/编辑并保存当前帧 Mask/)).toBeVisible();
     await waitForVisibleMask(page, created.id, initial.area);
     await page.waitForTimeout(1_000);
     await page.getByTitle("编辑当前帧 Mask").click();
