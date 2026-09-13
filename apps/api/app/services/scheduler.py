@@ -113,6 +113,11 @@ def effective_task_assignee_expr():
     return func.coalesce(Task.assignee_id, TaskBatch.annotator_id)
 
 
+def effective_task_reviewer_expr():
+    """Return the SQL expression matching the effective reviewer fallback."""
+    return func.coalesce(Task.reviewer_id, TaskBatch.reviewer_id)
+
+
 def task_assignment_clause(user: User):
     """Return the SQL scope for an annotator's effective task assignment.
 
@@ -163,6 +168,11 @@ def task_visibility_clause(user: User):
     so an explicitly assigned unbatched task remains reachable.
     """
     if user.role != UserRole.ANNOTATOR:
+        if user.role == UserRole.REVIEWER:
+            return or_(
+                and_(Task.batch_id.is_(None), Task.reviewer_id == user.id),
+                and_(Task.batch_id.is_not(None), batch_visibility_clause(user)),
+            )
         return batch_visibility_clause(user)
     assigned = _task_assigned_to_user(user)
     return or_(

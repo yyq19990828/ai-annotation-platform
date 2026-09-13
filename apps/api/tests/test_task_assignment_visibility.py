@@ -422,3 +422,91 @@ async def test_reviewer_assignment_reserves_review_claim_and_can_be_cleared(
         pending_preview.json()["items"][0]["reason"]
         == "reviewer_assignment_requires_review"
     )
+
+
+@pytest.mark.asyncio
+async def test_unbatched_reviewer_assignment_is_visible_and_claimable(
+    httpx_client_bound, db_session, super_admin, reviewer
+):
+    owner, owner_token = super_admin
+    other_reviewer, other_token = reviewer
+    assigned_reviewer = await create_user(
+        db_session,
+        "reviewer",
+        f"unbatched-reviewer-{uuid.uuid4().hex[:8]}@test.local",
+        "Unbatched Reviewer",
+    )
+    assigned_token = create_access_token(
+        subject=str(assigned_reviewer.id), role=assigned_reviewer.role
+    )
+    project = await create_project(db_session, owner_id=owner.id)
+    db_session.add_all(
+        [
+            ProjectMember(
+                project_id=project.id,
+                user_id=other_reviewer.id,
+                role="reviewer",
+                assigned_by=owner.id,
+            ),
+            ProjectMember(
+                project_id=project.id,
+                user_id=assigned_reviewer.id,
+                role="reviewer",
+                assigned_by=owner.id,
+            ),
+        ]
+    )
+    task = await _task(
+        db_session,
+        project_id=project.id,
+        display_id=f"T-UNBATCHED-REVIEW-{uuid.uuid4().hex[:8]}",
+    )
+    task.status = "review"
+    await db_session.commit()
+
+    assigned = await _apply_reviewer_assignment(
+        httpx_client_bound,
+        project_id=project.id,
+        owner_token=owner_token,
+        task_id=task.id,
+        reviewer_id=assigned_reviewer.id,
+    )
+    assert assigned["succeeded"] == [str(task.id)]
+
+    query = await httpx_client_bound.post(
+        f"/api/v1/projects/{project.id}/tasks/query",
+        headers=_bearer(assigned_token),
+        json={"filter_json": {}},
+    )
+    assert query.status_code == 200, query.text
+    assert [item["id"] for item in query.json()["items"]] == [str(task.id)]
+    assert (
+        await httpx_client_bound.get(
+            f"/api/v1/tasks/{task.id}", headers=_bearer(assigned_token)
+        )
+    ).status_code == 200
+
+    other_query = await httpx_client_bound.post(
+        f"/api/v1/projects/{project.id}/tasks/query",
+        headers=_bearer(other_token),
+        json={"filter_json": {}},
+    )
+    assert other_query.status_code == 200, other_query.text
+    assert other_query.json()["items"] == []
+    assert (
+        await httpx_client_bound.get(
+            f"/api/v1/tasks/{task.id}", headers=_bearer(other_token)
+        )
+    ).status_code == 404
+    other_claim = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/review/claim",
+        headers=_bearer(other_token),
+    )
+    assert other_claim.status_code == 404, other_claim.text
+
+    claim = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/review/claim",
+        headers=_bearer(assigned_token),
+    )
+    assert claim.status_code == 200, claim.text
+    assert claim.json()["reviewer_id"] == str(assigned_reviewer.id)

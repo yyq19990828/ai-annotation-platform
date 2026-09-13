@@ -187,7 +187,9 @@ async def _assert_task_visible(db: AsyncSession, task: Task, user: User) -> None
         if membership:
             return
     if task.batch_id is None:
-        if user.role == UserRole.ANNOTATOR and task.assignee_id == user.id:
+        if (user.role == UserRole.ANNOTATOR and task.assignee_id == user.id) or (
+            user.role == UserRole.REVIEWER and task.reviewer_id == user.id
+        ):
             return
         raise HTTPException(status_code=404, detail="Task not found")
     batch = await db.get(TaskBatch, task.batch_id)
@@ -238,12 +240,16 @@ async def _visible_task_ids(
 
     rows = (
         await db.execute(
-            select(Task.id, Task.batch_id, Task.status, Task.assignee_id).where(
-                Task.id.in_(task_ids)
-            )
+            select(
+                Task.id,
+                Task.batch_id,
+                Task.status,
+                Task.assignee_id,
+                Task.reviewer_id,
+            ).where(Task.id.in_(task_ids))
         )
     ).all()
-    batch_ids = {bid for _, bid, _, _ in rows if bid is not None}
+    batch_ids = {bid for _, bid, _, _, _ in rows if bid is not None}
     batches: dict[uuid.UUID, TaskBatch] = {}
     if batch_ids:
         result = await db.execute(select(TaskBatch).where(TaskBatch.id.in_(batch_ids)))
@@ -252,9 +258,11 @@ async def _visible_task_ids(
     visible_statuses = visible_batch_statuses_for(user)
     is_reviewer = user.role == UserRole.REVIEWER
     visible: set[uuid.UUID] = set()
-    for tid, bid, task_status, task_assignee_id in rows:
+    for tid, bid, task_status, task_assignee_id, task_reviewer_id in rows:
         if bid is None:
-            if user.role == UserRole.ANNOTATOR and task_assignee_id == user.id:
+            if (user.role == UserRole.ANNOTATOR and task_assignee_id == user.id) or (
+                user.role == UserRole.REVIEWER and task_reviewer_id == user.id
+            ):
                 visible.add(tid)
             continue
         batch = batches.get(bid)
