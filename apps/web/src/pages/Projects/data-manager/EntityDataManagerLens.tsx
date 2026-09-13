@@ -931,7 +931,7 @@ export function EntityDataManagerLens({
                       else switchView(key);
                     }}
                   >
-                    <SelectTrigger className="hidden w-44 max-lg:flex">
+                    <SelectTrigger aria-label="选择实体视图" className="hidden w-44 max-lg:flex">
                       <SelectValue placeholder="选择视图" />
                     </SelectTrigger>
                     <SelectContent>
@@ -967,7 +967,7 @@ export function EntityDataManagerLens({
                       setSort([{ field, direction: sort[0]?.direction ?? "asc" }])
                     }
                   >
-                    <SelectTrigger className="w-44">
+                    <SelectTrigger aria-label="实体排序字段" className="w-44">
                       <SelectValue placeholder="排序字段" />
                     </SelectTrigger>
                     <SelectContent>

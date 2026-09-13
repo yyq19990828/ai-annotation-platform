@@ -1333,7 +1333,7 @@ function TaskDataManagerPage({
                       else switchView(key);
                     }}
                   >
-                    <SelectTrigger className="hidden w-44 max-lg:flex">
+                    <SelectTrigger aria-label="选择任务视图" className="hidden w-44 max-lg:flex">
                       <SelectValue placeholder="选择视图" />
                     </SelectTrigger>
                     <SelectContent>
@@ -1370,7 +1370,7 @@ function TaskDataManagerPage({
                       setPage(0);
                     }}
                   >
-                    <SelectTrigger className="w-40">
+                    <SelectTrigger aria-label="任务排序字段" className="w-40">
                       <SelectValue placeholder="排序字段" />
                     </SelectTrigger>
                     <SelectContent>
