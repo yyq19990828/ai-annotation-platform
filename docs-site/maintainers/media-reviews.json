@@ -910,11 +910,11 @@
       ]
     },
     "docs-site/public/media/large-image/mask-limit-poster.webp": {
-      "last_verified_commit": "174cc739990f1991279eb48c8f56c03cc8aab891",
-      "verified_at": "2026-09-07T13:02:33.014Z",
-      "reviewer": "yyq08228",
+      "last_verified_commit": "19bf345050425b4c7416d130733e72c04b220505",
+      "verified_at": "2026-09-13T15:49:39.740Z",
+      "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
-      "sha256": "374720c2a5dbbbcc33f643cc3d176bc06a35f5ab8c9d9873ca9c877ad4b8dcb4",
+      "sha256": "bfae6878990df14b8e295000b8f50f883c2699b915d5e9dd56a48d410e541f51",
       "watch_paths": [
         "apps/api/app/services/screenshot_seed_backends.py",
         "apps/api/app/services/screenshot_seed_spec.py",
@@ -933,11 +933,11 @@
       ]
     },
     "docs-site/public/media/large-image/mask-limit.mp4": {
-      "last_verified_commit": "174cc739990f1991279eb48c8f56c03cc8aab891",
-      "verified_at": "2026-09-07T13:02:33.014Z",
-      "reviewer": "yyq08228",
+      "last_verified_commit": "19bf345050425b4c7416d130733e72c04b220505",
+      "verified_at": "2026-09-13T15:49:39.740Z",
+      "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
-      "sha256": "85db124c4dc6d11c71989478311aaa5b3166d5c450c0c3f31c51b136fb7d51e7",
+      "sha256": "3a57326389015827e6a8ce3b467f01a8274ba2f9ddeaa9110b1543f912428520",
       "watch_paths": [
         "apps/api/app/services/screenshot_seed_backends.py",
         "apps/api/app/services/screenshot_seed_spec.py",
@@ -956,11 +956,11 @@
       ]
     },
     "docs-site/public/media/large-image/progressive-poster.webp": {
-      "last_verified_commit": "174cc739990f1991279eb48c8f56c03cc8aab891",
-      "verified_at": "2026-09-07T13:02:33.014Z",
-      "reviewer": "yyq08228",
+      "last_verified_commit": "19bf345050425b4c7416d130733e72c04b220505",
+      "verified_at": "2026-09-13T15:49:39.740Z",
+      "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
-      "sha256": "d8a1db2e28c9885c98880d77698c9ac3aa127aff1ac5cdf4cfe347e4595f2e0b",
+      "sha256": "62ea85d60c3966f5731cf87a2aeedf79bde4cb517990f940db74c7a0cb54b352",
       "watch_paths": [
         "apps/api/app/services/screenshot_seed_backends.py",
         "apps/api/app/services/screenshot_seed_spec.py",
@@ -979,11 +979,11 @@
       ]
     },
     "docs-site/public/media/large-image/progressive.mp4": {
-      "last_verified_commit": "174cc739990f1991279eb48c8f56c03cc8aab891",
-      "verified_at": "2026-09-07T13:02:33.014Z",
-      "reviewer": "yyq08228",
+      "last_verified_commit": "19bf345050425b4c7416d130733e72c04b220505",
+      "verified_at": "2026-09-13T15:49:39.740Z",
+      "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
-      "sha256": "5288ceaf3e9e12041c8b54fde97cef551ca5e94418579fc3f43078798838092c",
+      "sha256": "80f68c94dfb73008b957d064eda86abb7d83fdda102a1ad854aae90a8f1f5fcb",
       "watch_paths": [
         "apps/api/app/services/screenshot_seed_backends.py",
         "apps/api/app/services/screenshot_seed_spec.py",
@@ -1002,11 +1002,11 @@
       ]
     },
     "docs-site/public/media/large-image/pyramid-recovery-poster.webp": {
-      "last_verified_commit": "174cc739990f1991279eb48c8f56c03cc8aab891",
-      "verified_at": "2026-09-07T13:02:33.014Z",
-      "reviewer": "yyq08228",
+      "last_verified_commit": "19bf345050425b4c7416d130733e72c04b220505",
+      "verified_at": "2026-09-13T15:49:39.740Z",
+      "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
-      "sha256": "7d5886217171fa9c0154e66e727e6e36af96c4498dfccf2cd1080e467e58e851",
+      "sha256": "8e4a6107d989edd3586d2452397af4a127b33b54cc7efb38dc683216ef06641b",
       "watch_paths": [
         "apps/api/app/services/screenshot_seed_backends.py",
         "apps/api/app/services/screenshot_seed_spec.py",
@@ -1025,11 +1025,11 @@
       ]
     },
     "docs-site/public/media/large-image/pyramid-recovery.mp4": {
-      "last_verified_commit": "174cc739990f1991279eb48c8f56c03cc8aab891",
-      "verified_at": "2026-09-07T13:02:33.014Z",
-      "reviewer": "yyq08228",
+      "last_verified_commit": "19bf345050425b4c7416d130733e72c04b220505",
+      "verified_at": "2026-09-13T15:49:39.740Z",
+      "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
-      "sha256": "52daceee678bc6d9fc5df7d81f94aceb0b2137b7d3a664bde9a0c745b2c2b912",
+      "sha256": "82271c669116ddbc614c087163cad41a24b7ebeac7e21260c34ff6ebd6ab7d18",
       "watch_paths": [
         "apps/api/app/services/screenshot_seed_backends.py",
         "apps/api/app/services/screenshot_seed_spec.py",
@@ -1048,11 +1048,11 @@
       ]
     },
     "docs-site/public/media/mask-brush/mask-draw-poster.webp": {
-      "last_verified_commit": "174cc739990f1991279eb48c8f56c03cc8aab891",
-      "verified_at": "2026-09-07T13:02:33.014Z",
-      "reviewer": "yyq08228",
+      "last_verified_commit": "19bf345050425b4c7416d130733e72c04b220505",
+      "verified_at": "2026-09-13T15:49:39.740Z",
+      "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
-      "sha256": "3c4796880730e40bbdc9f255e6cf7a92e65fcdf1929e6827afe46cb7dad56156",
+      "sha256": "15a8c787da4191b19197e40d5e43698529d6cf92e1f8ccb8fb09410642a78630",
       "watch_paths": [
         "apps/api/app/services/screenshot_seed_backends.py",
         "apps/api/app/services/screenshot_seed_spec.py",
@@ -1072,11 +1072,11 @@
       ]
     },
     "docs-site/public/media/mask-brush/mask-draw.mp4": {
-      "last_verified_commit": "174cc739990f1991279eb48c8f56c03cc8aab891",
-      "verified_at": "2026-09-07T13:02:33.014Z",
-      "reviewer": "yyq08228",
+      "last_verified_commit": "19bf345050425b4c7416d130733e72c04b220505",
+      "verified_at": "2026-09-13T15:49:39.740Z",
+      "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
-      "sha256": "73c04bcc3706ffb76e451a3ecf3b07c268ca80eab0906c4d5b5d243b59ddf275",
+      "sha256": "a8d6a279b0c5d832e492b3692189fe0c9eb1c768b25c152f0eece95deb5e1845",
       "watch_paths": [
         "apps/api/app/services/screenshot_seed_backends.py",
         "apps/api/app/services/screenshot_seed_spec.py",
@@ -1340,11 +1340,11 @@
       ]
     },
     "docs-site/public/media/polygon/draw-poster.webp": {
-      "last_verified_commit": "174cc739990f1991279eb48c8f56c03cc8aab891",
-      "verified_at": "2026-09-07T13:02:33.014Z",
-      "reviewer": "yyq08228",
+      "last_verified_commit": "19bf345050425b4c7416d130733e72c04b220505",
+      "verified_at": "2026-09-13T15:49:39.740Z",
+      "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
-      "sha256": "08d7ba0477a0790ca77eff3b078af8b09e4619808f2f824be75df8b8a3aceb80",
+      "sha256": "54091197d22a4d35d2bed23c88772f2266e048e5bbcf7bd30a30205b7174a24c",
       "watch_paths": [
         "apps/api/app/services/screenshot_seed_backends.py",
         "apps/api/app/services/screenshot_seed_spec.py",
@@ -1364,11 +1364,11 @@
       ]
     },
     "docs-site/public/media/polygon/draw.mp4": {
-      "last_verified_commit": "174cc739990f1991279eb48c8f56c03cc8aab891",
-      "verified_at": "2026-09-07T13:02:33.014Z",
-      "reviewer": "yyq08228",
+      "last_verified_commit": "19bf345050425b4c7416d130733e72c04b220505",
+      "verified_at": "2026-09-13T15:49:39.740Z",
+      "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
-      "sha256": "986bab45b6d904d2051c52e5ef3e31de9303a00927b9b8f7f97f4b18f09fd2bc",
+      "sha256": "bd93020ed38e037ff55e9c7e6be75f6bd8ac5a660bd7e227f231beefd9f98d79",
       "watch_paths": [
         "apps/api/app/services/screenshot_seed_backends.py",
         "apps/api/app/services/screenshot_seed_spec.py",
@@ -1388,11 +1388,11 @@
       ]
     },
     "docs-site/public/media/polyline/draw-poster.webp": {
-      "last_verified_commit": "174cc739990f1991279eb48c8f56c03cc8aab891",
-      "verified_at": "2026-09-07T13:02:33.014Z",
-      "reviewer": "yyq08228",
+      "last_verified_commit": "19bf345050425b4c7416d130733e72c04b220505",
+      "verified_at": "2026-09-13T15:49:39.740Z",
+      "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
-      "sha256": "2570b0d17b2b6157092b418cd39b4c7a6dfdeed20d2c98256e190721817e4d12",
+      "sha256": "a39e89889b5e38bdf5448a3f51dcfa3904f7cedca7e0ca4aa3202c7f5590446f",
       "watch_paths": [
         "apps/api/app/services/screenshot_seed_backends.py",
         "apps/api/app/services/screenshot_seed_spec.py",
@@ -1412,11 +1412,11 @@
       ]
     },
     "docs-site/public/media/polyline/draw.mp4": {
-      "last_verified_commit": "174cc739990f1991279eb48c8f56c03cc8aab891",
-      "verified_at": "2026-09-07T13:02:33.014Z",
-      "reviewer": "yyq08228",
+      "last_verified_commit": "19bf345050425b4c7416d130733e72c04b220505",
+      "verified_at": "2026-09-13T15:49:39.740Z",
+      "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
-      "sha256": "5149d280a96c76d7749a67f8f9f8bad2c23268c1313d3788b5f5382e2c6b378e",
+      "sha256": "515f06fa86c6ac599bc510cc46af897ae6748e5462d95843ffba81068c98aad8",
       "watch_paths": [
         "apps/api/app/services/screenshot_seed_backends.py",
         "apps/api/app/services/screenshot_seed_spec.py",
@@ -1466,31 +1466,47 @@
       ]
     },
     "docs-site/public/media/projects/batch-bulk-actions-poster.webp": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
-      "reviewer": "yyq19990828",
+      "last_verified_commit": "19bf345050425b4c7416d130733e72c04b220505",
+      "verified_at": "2026-09-13T15:49:39.740Z",
+      "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
-      "sha256": "2f19609166e5153faec62810c084761eee6fb99b82193ad0d3e69b91736e822d",
+      "sha256": "f00d3939841c28fb8287cb7afb47d9cbe47c94d5701ba11c0686d8b9d3547dad",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
+        "apps/web/e2e/screenshots/flows/batch-bulk-actions.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
         "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "apps/web/scripts/media-derivation.mjs",
         "docs-site/public/media/projects/batch-bulk-actions-poster.webp",
         "docs-site/user-guide/projects/batch.md"
       ]
     },
     "docs-site/public/media/projects/batch-bulk-actions.mp4": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
-      "reviewer": "yyq19990828",
+      "last_verified_commit": "19bf345050425b4c7416d130733e72c04b220505",
+      "verified_at": "2026-09-13T15:49:39.740Z",
+      "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
-      "sha256": "44d23ffe5fbb9b8cc61fa3f59663753527fcf4b399975b1445414b531802389b",
+      "sha256": "1cdfd50ff8bdd1f2cdde0301b6d6b8f3d5640c860da3bb4ba49276789cdd0652",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
+        "apps/web/e2e/screenshots/flows/batch-bulk-actions.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
         "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "apps/web/scripts/media-derivation.mjs",
         "docs-site/public/media/projects/batch-bulk-actions.mp4",
         "docs-site/user-guide/projects/batch.md"
       ]
@@ -2530,31 +2546,49 @@
       ]
     },
     "docs-site/public/media/video/video-chapter-poster.webp": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
-      "reviewer": "yyq19990828",
+      "last_verified_commit": "19bf345050425b4c7416d130733e72c04b220505",
+      "verified_at": "2026-09-13T15:49:39.740Z",
+      "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
-      "sha256": "d9aee5532ad33b44016c4565448dcf5b873a9777f6024c59b91c366c6934c036",
+      "sha256": "6aa6f273412447686965bbd71772e9750071bdf37ee2e1fc0044073f79b466e6",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_video-timeline.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/flows/video-chapter.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
         "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "apps/web/scripts/media-derivation.mjs",
         "docs-site/public/media/video/video-chapter-poster.webp",
         "docs-site/user-guide/workbench/video-playback.md"
       ]
     },
     "docs-site/public/media/video/video-chapter.mp4": {
-      "last_verified_commit": "a76ff65dfd12b6ce65debe974fdb7b099e462db1",
-      "verified_at": "2026-09-06T17:01:37.149Z",
-      "reviewer": "yyq19990828",
+      "last_verified_commit": "19bf345050425b4c7416d130733e72c04b220505",
+      "verified_at": "2026-09-13T15:49:39.740Z",
+      "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
-      "sha256": "6085c93e46bb3f48cad0ea08b8797e8a8c07b5b1bf981cfe28b1ce61a9fb82e5",
+      "sha256": "834039fadee3ddc07500834ac642b4e36bff0dd4fa2f5f8806cef7127cb87089",
       "watch_paths": [
-        "apps/web/e2e/screenshots/_helpers/marketing-assets.ts",
+        "apps/api/app/services/screenshot_seed_backends.py",
+        "apps/api/app/services/screenshot_seed_spec.py",
+        "apps/web/e2e/fixtures/seed.ts",
+        "apps/web/e2e/screenshots/_helpers/portable-recorder.ts",
+        "apps/web/e2e/screenshots/environment.ts",
+        "apps/web/e2e/screenshots/flows/_canvas.ts",
+        "apps/web/e2e/screenshots/flows/_video-timeline.ts",
+        "apps/web/e2e/screenshots/flows/_workbench-layout.ts",
         "apps/web/e2e/screenshots/flows/flows.spec.ts",
+        "apps/web/e2e/screenshots/flows/video-chapter.ts",
+        "apps/web/e2e/screenshots/recording-plan.mjs",
         "apps/web/scripts/derive-doc-media.mjs",
-        "docs-site/.vitepress/theme/components/DocsVideo.vue",
+        "apps/web/scripts/media-derivation.mjs",
         "docs-site/public/media/video/video-chapter.mp4",
         "docs-site/user-guide/workbench/video-playback.md"
       ]
@@ -2694,11 +2728,11 @@
       ]
     },
     "docs-site/public/media/workbench/bbox-draw-poster.webp": {
-      "last_verified_commit": "174cc739990f1991279eb48c8f56c03cc8aab891",
-      "verified_at": "2026-09-07T13:02:33.014Z",
-      "reviewer": "yyq08228",
+      "last_verified_commit": "19bf345050425b4c7416d130733e72c04b220505",
+      "verified_at": "2026-09-13T15:49:39.740Z",
+      "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
-      "sha256": "f9c24e21f69a87b9f73c519381137c51bff965c5cb49c91f8b1ea6ece7a66545",
+      "sha256": "df9fc09df68eb3e20e299aa85d4bdc079569ebaa06240c392593f6d28af75828",
       "watch_paths": [
         "apps/api/app/services/screenshot_seed_backends.py",
         "apps/api/app/services/screenshot_seed_spec.py",
@@ -2718,11 +2752,11 @@
       ]
     },
     "docs-site/public/media/workbench/bbox-draw.mp4": {
-      "last_verified_commit": "174cc739990f1991279eb48c8f56c03cc8aab891",
-      "verified_at": "2026-09-07T13:02:33.014Z",
-      "reviewer": "yyq08228",
+      "last_verified_commit": "19bf345050425b4c7416d130733e72c04b220505",
+      "verified_at": "2026-09-13T15:49:39.740Z",
+      "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
-      "sha256": "2c73e09e9af6c17fb8d79876c05e1745826be34284431c62a4cb86299f36090d",
+      "sha256": "804a3cddd20d46732d95c6166b6caac9efc7e264201b55d6ea75ace331698b4e",
       "watch_paths": [
         "apps/api/app/services/screenshot_seed_backends.py",
         "apps/api/app/services/screenshot_seed_spec.py",
@@ -2742,11 +2776,11 @@
       ]
     },
     "docs-site/public/media/workbench/hotkey-cheatsheet-poster.webp": {
-      "last_verified_commit": "174cc739990f1991279eb48c8f56c03cc8aab891",
-      "verified_at": "2026-09-07T13:02:33.014Z",
-      "reviewer": "yyq08228",
+      "last_verified_commit": "19bf345050425b4c7416d130733e72c04b220505",
+      "verified_at": "2026-09-13T15:49:39.740Z",
+      "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
-      "sha256": "f2a6a8528f4e728b1bd83ee1cb90e6ea8aa7af47f253a9ae5f806511bc55e91a",
+      "sha256": "09e58358f47212ed6b84d3b46c4e027865766901f2ac126eadcdc6cdec962237",
       "watch_paths": [
         "apps/api/app/services/screenshot_seed_backends.py",
         "apps/api/app/services/screenshot_seed_spec.py",
@@ -2765,11 +2799,11 @@
       ]
     },
     "docs-site/public/media/workbench/hotkey-cheatsheet.mp4": {
-      "last_verified_commit": "174cc739990f1991279eb48c8f56c03cc8aab891",
-      "verified_at": "2026-09-07T13:02:33.014Z",
-      "reviewer": "yyq08228",
+      "last_verified_commit": "19bf345050425b4c7416d130733e72c04b220505",
+      "verified_at": "2026-09-13T15:49:39.740Z",
+      "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
-      "sha256": "aaad60f4fb33337de82d475de24e07ee5d1ae1e3b8a17561c4342c8035b6502e",
+      "sha256": "fc5e76482ec0bee5cbce136c07f8e36af640afff2406e3dc84076d6cec474927",
       "watch_paths": [
         "apps/api/app/services/screenshot_seed_backends.py",
         "apps/api/app/services/screenshot_seed_spec.py",
@@ -2880,11 +2914,11 @@
       ]
     },
     "docs-site/public/media/workbench/rotated-bbox-poster.webp": {
-      "last_verified_commit": "174cc739990f1991279eb48c8f56c03cc8aab891",
-      "verified_at": "2026-09-07T13:02:33.014Z",
-      "reviewer": "yyq08228",
+      "last_verified_commit": "19bf345050425b4c7416d130733e72c04b220505",
+      "verified_at": "2026-09-13T15:49:39.740Z",
+      "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
-      "sha256": "60b238a3c31d0198452072b491c5d8e0c63e10694c1077cd15482db0a58690c7",
+      "sha256": "249472636f79e62dfd383fb668b95c7484fdc91aa1f9cacd955d555e20183dd0",
       "watch_paths": [
         "apps/api/app/services/screenshot_seed_backends.py",
         "apps/api/app/services/screenshot_seed_spec.py",
@@ -2904,11 +2938,11 @@
       ]
     },
     "docs-site/public/media/workbench/rotated-bbox.mp4": {
-      "last_verified_commit": "174cc739990f1991279eb48c8f56c03cc8aab891",
-      "verified_at": "2026-09-07T13:02:33.014Z",
-      "reviewer": "yyq08228",
+      "last_verified_commit": "19bf345050425b4c7416d130733e72c04b220505",
+      "verified_at": "2026-09-13T15:49:39.740Z",
+      "reviewer": "Codex primary thread (user-delegated)",
       "review_profile": "visual-content-v1",
-      "sha256": "2a1d6ba9ebd72768026829dd7c5bb904c74b2448d6d720bf9f6473470a8012f0",
+      "sha256": "bea4a1da66b733a219d8ae0091227abde879636b7a457e0d6f6bc335edd8cea7",
       "watch_paths": [
         "apps/api/app/services/screenshot_seed_backends.py",
         "apps/api/app/services/screenshot_seed_spec.py",
