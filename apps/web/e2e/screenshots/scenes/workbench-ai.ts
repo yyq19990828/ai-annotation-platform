@@ -159,7 +159,8 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
       await page.waitForSelector('[data-testid="exemplar-output-mode"]', { timeout: 3000 });
       await page.waitForTimeout(200);
     },
-    capture: { kind: "locator", selector: '[data-testid="interactive-toolbar"]', padding: 8 },
+    // padding 需容纳标注标签（绘制在框右上角外侧），否则「输出形态」在右缘被裁掉。
+    capture: { kind: "locator", selector: '[data-testid="interactive-toolbar"]', padding: 48 },
     annotate: [
       { selector: '[data-testid="exemplar-output-mode"]', style: "rect-red", label: "输出形态" },
     ],
