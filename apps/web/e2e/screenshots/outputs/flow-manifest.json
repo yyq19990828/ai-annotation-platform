@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-13T16:32:42.747Z",
+  "updated_at": "2026-09-13T17:07:58.070Z",
   "entries": {
     "docs-site/.vitepress/theme/assets/home/hero/data-manager.webp": {
       "asset_id": "home-hero/data-manager",
@@ -4620,9 +4620,9 @@
     "docs-site/public/media/video/mask-track-edit-poster.webp": {
       "asset_id": "video-mask-track-edit",
       "role": "poster",
-      "generated_at": "2026-09-07T16:43:18.479Z",
-      "captured_commit": "7c13fb7ab678404e0d9037481b495e17d925076b",
-      "source_worktree_dirty": true,
+      "generated_at": "2026-09-13T17:07:58.070Z",
+      "captured_commit": "e4a2824fac51491da52f821c80cb1471afb88ff6",
+      "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-g",
       "source": "apps/web/scripts/media-derivation.mjs",
       "test_title": "derive webp › video-mask-track-edit",
@@ -4642,8 +4642,8 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "a4c7870cdaa78988d92526dd12e5c85f416fdc98a18ead0d06b99d447d559824",
-      "bytes": 57070,
+      "sha256": "632bfdc547736214da4e977f0d41a24db87385eeb584b67a15e68ca44725e8a7",
+      "bytes": 92982,
       "media": {
         "container": "webp_pipe",
         "codec": "webp",
@@ -4657,22 +4657,22 @@
         "source_inference": "none"
       },
       "source_asset": {
-        "runId": "2026-09-07T16-38-03-493Z-3202218",
+        "runId": "2026-09-13T17-04-13-356Z-80917",
         "assetId": "video-mask-track-edit",
-        "sha256": "d9ccd787061eaa486ad56b4501b4b4462ba5fd335afbd4e7eec85908bfe9625e",
+        "sha256": "5338f81c62473c9c43a99e22b658daa7e18a09956e782d6b0f3fef33b82af08a",
         "quality": "standard",
         "clip": {
-          "start": 70.2,
-          "duration": 20
+          "start": 15,
+          "duration": 19.8
         }
       }
     },
     "docs-site/public/media/video/mask-track-edit.mp4": {
       "asset_id": "video-mask-track-edit",
       "role": "docs-video",
-      "generated_at": "2026-09-07T16:43:18.394Z",
-      "captured_commit": "7c13fb7ab678404e0d9037481b495e17d925076b",
-      "source_worktree_dirty": true,
+      "generated_at": "2026-09-13T17:07:58.021Z",
+      "captured_commit": "e4a2824fac51491da52f821c80cb1471afb88ff6",
+      "source_worktree_dirty": false,
       "seed_revision": "screenshots-2026-08-g",
       "source": "apps/web/scripts/media-derivation.mjs",
       "test_title": "derive mp4 › video-mask-track-edit",
@@ -4692,28 +4692,28 @@
         "apps/web/scripts/derive-doc-media.mjs",
         "apps/web/scripts/media-derivation.mjs"
       ],
-      "sha256": "c9f4738da87be0f524c2d7dc46e3ca351b65c14afd78866cc1eedf443c7611b0",
-      "bytes": 665544,
+      "sha256": "afc28b6f3cbbb1ae2e474ceb1b88d37af0cc5f9759de3df5ca578d5c9c2536ac",
+      "bytes": 876060,
       "media": {
         "container": "mov,mp4,m4a,3gp,3g2,mj2",
         "codec": "h264",
         "width": 1280,
         "height": 720,
         "fps": "25/1",
-        "duration_seconds": 20
+        "duration_seconds": 19.8
       },
       "capture": {
         "source_quality": "standard",
         "source_inference": "none"
       },
       "source_asset": {
-        "runId": "2026-09-07T16-38-03-493Z-3202218",
+        "runId": "2026-09-13T17-04-13-356Z-80917",
         "assetId": "video-mask-track-edit",
-        "sha256": "d9ccd787061eaa486ad56b4501b4b4462ba5fd335afbd4e7eec85908bfe9625e",
+        "sha256": "5338f81c62473c9c43a99e22b658daa7e18a09956e782d6b0f3fef33b82af08a",
         "quality": "standard",
         "clip": {
-          "start": 70.2,
-          "duration": 20
+          "start": 15,
+          "duration": 19.8
         }
       }
     },
