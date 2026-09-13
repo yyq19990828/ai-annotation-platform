@@ -1,6 +1,6 @@
 # Documentation media refresh — macOS-capturable scope
 
-> Status: planned; awaiting execution. Baseline: local `b1dd26a4`, clean tree, inspected 2026-09-13.
+> Status: S1 (static matrix) and S2 (workflow recordings) executed and approved; S3 pointcloud canary and the deferred flows remain. See `## Outcome` and `## Remaining work` at the end of this file.
 > Maintainer decisions (2026-09-13): refresh the existing library only; re-record only what this Apple Silicon Mac can record; agent-delegated visual review is authorized and must be recorded honestly.
 > The twelve proposed marketing masters remain in [new capability marketing masters](1789230200_new-capability-marketing-masters.md) and are not enrolled here.
 
@@ -118,3 +118,21 @@ This campaign therefore reduces the audit debt to the deferred set but cannot ma
 - AI static scenes under the protocol stub must not be used to refresh the homepage SAM masters; those masters are deferred with the ML flows by design.
 - Seed note: `c5938c6e` changed recording-anchor fixture content while keeping revision `screenshots-2026-08-g`. Re-recordings use current fixtures, so this does not block the plan; if maintainers want stricter revision semantics, bumping the revision later invalidates all `-g`-stamped media and must be planned separately.
 - Rewritten upstream of approval: any new documentation edit after approvals invalidates the watched paths and requires re-approval of the affected assets.
+
+## Outcome (static and workflow recordings)
+
+- Landed commits: `6b5a7a5b` (evidence dir ignored), `1c6355af` (workbench UI drift: mask capsule, discussion title, audit fixture note), `6ea7f396` (failed-jobs API contract, SMTP scroll, exemplar padding), `df2752a1` (63 static images + 2 new scenes + hero WebPs + embeds + changelog), `8adc14a8` (static review records), `9350a29b` (video track scope fixes), `19bf3450` (11 workflow recordings + changelog), `ee6300fa` (recording review records), `6b9f93ee` (review-only records).
+- Static matrix: all 63 user-guide images and the four hero WebPs were recaptured on a clean tree at seed `screenshots-2026-08-g`; the two registered scenes that had never produced output are now embedded (`docs-site/user-guide/ai/current-task-inference.md`, `docs-site/user-guide/workbench/video-propagate.md`).
+- Workflow recordings: eleven flows re-recorded and derived with reviewed clip windows — `bbox-draw`, `rotated-bbox`, `polyline-draw`, `polygon-draw`, `mask-draw`, `batch-bulk-actions`, `video-chapter`, `large-image-progressive`, `large-image-pyramid-recovery`, `large-image-mask-limit`, `hotkey-cheatsheet`.
+- Review-only approvals for the clean assets `ai-prediction-import`, `video-tracker-job-states`, `review-reject`, `workspace-layout-persistence`, and `e2e-quickstart` after frame inspection.
+- Audit progression: baseline `0 broken / 202 stale / 9 current`, 160 provenance warnings → after this round `0 broken / 115 stale / 98 current`, 76 provenance warnings. Every remaining finding belongs to the deferred set below.
+- Environment evidence and warm-up scripts are in the git-ignored `.artifacts/media-refresh/` (audit partitions, business audit event, DuckDB analytics sync, task-event activity, large-image fixtures). macOS specifics: `libvips` via Homebrew plus `DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib`, and `IMAGE_PYRAMID_SRGB_PROFILE=/System/Library/ColorSync/Profiles/sRGB Profile.icc` for pyramid generation.
+- Checks: `check-image-manifest --strict`, `check-orphan-images --strict`, media policy tests, `pnpm docs:build`, and `git diff --check` all pass.
+
+## Remaining work
+
+- S3 pointcloud canary (`pointcloud-camera-seed-3d-box` marketing master) and the review of the remaining pointcloud assets were not started.
+- Six Mac-recordable flows are deferred because the recorder tests fail against the current application; their published media stays stale until the interactions or flows are fixed:
+  - `workspace-layout-basics`: dragging either `.dv-sash` divider does not resize panels in the current build. Verified with the recorder run, plain Playwright mouse drags, and real CDP drags through agent-browser. Worth an application-level investigation.
+  - `video-track`, `video-timeline-zoom`, `video-track-carryover`, `video-draw`: need updates for the new track scopes and tracker-seed interaction; `video-mask-track-edit` additionally needs the ContextToolbar "更多设置" step before the tool is usable while drawing.
+- The ML and legacy Linux-suite assets (91 referenced files) still require the Linux/GPU batch; their seed revisions (`-e`/`-f`) and dirty-capture provenance remain untouched.
