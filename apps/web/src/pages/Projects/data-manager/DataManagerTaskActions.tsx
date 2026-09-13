@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 import type { ExportOptions, ExportTarget } from "@/api/projects";
 import type {
@@ -139,6 +140,74 @@ function jobStatusLabel(status: string | undefined) {
   return status ? (JOB_STATUS_LABEL[status] ?? status) : "等待状态";
 }
 
+function memberLabel(memberById: Map<string, string>, userId: string | null): string {
+  if (!userId) return "未分派";
+  return memberById.get(userId) ?? userId.slice(0, 8);
+}
+
+function assignmentChanges(
+  item: DataManagerTaskAssignmentResponse["items"][number],
+  memberById: Map<string, string>,
+): string[] {
+  const changes: string[] = [];
+  if (item.before_annotator_id !== item.after_annotator_id) {
+    changes.push(
+      `标注员：${memberLabel(memberById, item.before_annotator_id)} → ${memberLabel(
+        memberById,
+        item.after_annotator_id,
+      )}`,
+    );
+  }
+  if (item.before_reviewer_id !== item.after_reviewer_id) {
+    changes.push(
+      `审核员：${memberLabel(memberById, item.before_reviewer_id)} → ${memberLabel(
+        memberById,
+        item.after_reviewer_id,
+      )}`,
+    );
+  }
+  return changes;
+}
+
+function ActionJobStatus({
+  label,
+  jobId,
+  query,
+}: {
+  label: string;
+  jobId: string;
+  query: ReturnType<typeof useAsyncJob>;
+}) {
+  const status = query.data?.status ?? "pending";
+  const detail = query.data?.error_message;
+  return (
+    <span className={status === "failed" ? "text-status-danger" : undefined}>
+      {label} <span className="mono">{jobId}</span> · {jobStatusLabel(status)}
+      {query.data?.progress_pct !== undefined && ` · ${query.data.progress_pct}%`}
+      {detail && ` · ${detail}`}
+      {query.isError && (
+        <>
+          {` · 查询失败`}
+          <Button size="xs" className="ml-1" onClick={() => void query.refetch()}>
+            重试查询
+          </Button>
+        </>
+      )}
+    </span>
+  );
+}
+
+function ActionError({ message }: { message: string | null }) {
+  return message ? (
+    <div
+      role="alert"
+      className="rounded-md border border-status-danger/30 bg-status-danger-soft px-3 py-2 text-xs text-status-danger"
+    >
+      {message}
+    </div>
+  ) : null;
+}
+
 export function DataManagerTaskActions({
   projectId,
   taskIds,
@@ -148,6 +217,7 @@ export function DataManagerTaskActions({
 }: DataManagerTaskActionsProps) {
   const ids = useMemo(() => [...new Set(taskIds)], [taskIds]);
   const projectQ = useProject(projectId);
+  const queryClient = useQueryClient();
   const backendsQ = useMLBackends(projectId);
   const { data: members = [], isLoading: membersLoading } = useProjectMembers(projectId);
   const [selectedBackendId, setSelectedBackendId] = useState<string | null>(null);
@@ -159,12 +229,15 @@ export function DataManagerTaskActions({
   const [reviewerChoice, setReviewerChoice] = useState<AssignmentChoice>(KEEP);
   const [assignmentPreview, setAssignmentPreview] =
     useState<DataManagerTaskAssignmentResponse | null>(null);
+  const [assignmentResult, setAssignmentResult] =
+    useState<DataManagerTaskAssignmentResponse | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState<"preview" | "apply" | "export" | "preannotate" | null>(null);
   const [exportJobId, setExportJobId] = useState<string | null>(null);
   const [preannotateJobId, setPreannotateJobId] = useState<string | null>(null);
   const exportKeyRef = useRef<{ fingerprint: string; key: string } | null>(null);
   const preannotateKeyRef = useRef<{ fingerprint: string; key: string } | null>(null);
+  const scopeRef = useRef<string>(projectId);
 
   const dataType = projectQ.data?.data_type ?? "image";
   const availableExportTargets = useMemo(() => exportTargetsForDataType(dataType), [dataType]);
@@ -184,17 +257,68 @@ export function DataManagerTaskActions({
   });
   const exportJobQ = useAsyncJob(exportJobId, true);
   const preannotateJobQ = useAsyncJob(preannotateJobId, true);
+  const invalidatedJobIdsRef = useRef(new Set<string>());
+  useEffect(() => {
+    invalidatedJobIdsRef.current.clear();
+  }, [projectId]);
+  useEffect(() => {
+    const completedJobs = [
+      exportJobQ.data?.status === "completed" ? exportJobId : null,
+      preannotateJobQ.data?.status === "completed" ? preannotateJobId : null,
+    ].filter((jobId): jobId is string => !!jobId);
+    const newCompletedJobs = completedJobs.filter(
+      (jobId) => !invalidatedJobIdsRef.current.has(jobId),
+    );
+    if (!newCompletedJobs.length) return;
+    newCompletedJobs.forEach((jobId) => invalidatedJobIdsRef.current.add(jobId));
+    void Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["tasks", projectId] }),
+      queryClient.invalidateQueries({ queryKey: ["data-manager-summary", projectId] }),
+      queryClient.invalidateQueries({ queryKey: ["data-manager-objects", projectId] }),
+      queryClient.invalidateQueries({ queryKey: ["data-manager-tracks", projectId] }),
+      queryClient.invalidateQueries({ queryKey: ["task-views", projectId] }),
+      queryClient.invalidateQueries({
+        predicate: ({ queryKey }) =>
+          queryKey[0] === "project-performance" && queryKey.includes(projectId),
+      }),
+    ]);
+  }, [
+    exportJobId,
+    exportJobQ.data?.status,
+    preannotateJobId,
+    preannotateJobQ.data?.status,
+    projectId,
+    queryClient,
+  ]);
 
   const tooMany = ids.length > MAX_TASK_IDS;
   const hasSelection = ids.length > 0 && !tooMany;
   const hasAssignmentChange = annotatorChoice !== KEEP || reviewerChoice !== KEEP;
   const selectionFingerprint = ids.join(",");
+  const scopeToken = `${projectId}:${selectionFingerprint}`;
+  scopeRef.current = scopeToken;
+  useEffect(() => {
+    setAssignmentPreview(null);
+    if (selectionFingerprint) setAssignmentResult(null);
+    setActionError(null);
+    setBusy(null);
+  }, [projectId, selectionFingerprint]);
   useEffect(() => {
     setExportJobId(null);
     setPreannotateJobId(null);
     exportKeyRef.current = null;
     preannotateKeyRef.current = null;
-  }, [projectId, selectionFingerprint]);
+  }, [projectId]);
+  const memberById = useMemo(
+    () =>
+      new Map(
+        members.map((member) => [
+          member.user_id,
+          member.user_name || member.user_email || member.user_id,
+        ]),
+      ),
+    [members],
+  );
   const annotators = useMemo(
     () => members.filter((member) => member.role === "annotator"),
     [members],
@@ -224,6 +348,13 @@ export function DataManagerTaskActions({
     setActionError(null);
   };
 
+  const openAssignment = () => {
+    setAssignmentPreview(null);
+    setAssignmentResult(null);
+    setActionError(null);
+    setAssignmentOpen(true);
+  };
+
   const openExport = () => {
     const allowed = new Set(availableExportTargets.map((option) => option.id));
     const initial = exportOptions.targets.filter((target) => allowed.has(target));
@@ -235,6 +366,7 @@ export function DataManagerTaskActions({
   const runPreannotate = async (
     configured: Omit<TriggerPreannotationPayload, "task_ids" | "batch_id">,
   ) => {
+    const requestScope = scopeRef.current;
     const payload = {
       ...configured,
       task_ids: ids,
@@ -251,14 +383,16 @@ export function DataManagerTaskActions({
     };
     try {
       const result = await dataManagerTaskActionsApi.preannotate(projectId, payload, actionOptions);
+      if (scopeRef.current !== requestScope) return;
       preannotateKeyRef.current = null;
       setPreannotateJobId(result.job_id);
       setPreannotateOpen(false);
       onCompleted?.();
     } catch {
+      if (scopeRef.current !== requestScope) return;
       setActionError("无法创建预标注任务，请检查任务状态和模型能力");
     } finally {
-      setBusy(null);
+      if (scopeRef.current === requestScope) setBusy(null);
     }
   };
 
@@ -272,6 +406,7 @@ export function DataManagerTaskActions({
   };
 
   const previewAssignment = async () => {
+    const requestScope = scopeRef.current;
     setBusy("preview");
     setActionError(null);
     try {
@@ -279,16 +414,20 @@ export function DataManagerTaskActions({
         projectId,
         assignmentPayload,
       );
+      if (scopeRef.current !== requestScope) return;
       setAssignmentPreview(result);
+      setAssignmentResult(null);
     } catch {
+      if (scopeRef.current !== requestScope) return;
       setActionError("无法生成分派预览，请刷新任务后重试");
     } finally {
-      setBusy(null);
+      if (scopeRef.current === requestScope) setBusy(null);
     }
   };
 
   const applyAssignment = async () => {
     if (!assignmentPreview) return;
+    const requestScope = scopeRef.current;
     setBusy("apply");
     setActionError(null);
     try {
@@ -296,18 +435,23 @@ export function DataManagerTaskActions({
         ...assignmentPayload,
         preview_version: assignmentPreview.preview_version,
       });
-      setAssignmentPreview(result);
+      if (scopeRef.current !== requestScope) return;
+      setAssignmentResult(result);
+      setAssignmentPreview(null);
+      setAssignmentOpen(false);
       onCompleted?.();
     } catch {
+      if (scopeRef.current !== requestScope) return;
       setActionError("分派预览已过期或任务状态已变化，请重新预览");
       setAssignmentPreview(null);
     } finally {
-      setBusy(null);
+      if (scopeRef.current === requestScope) setBusy(null);
     }
   };
 
   const runExport = async () => {
     if (!selectedExportTargets.length) return;
+    const requestScope = scopeRef.current;
     setBusy("export");
     setActionError(null);
     const options: DataManagerTaskExportOptions = {
@@ -320,14 +464,16 @@ export function DataManagerTaskActions({
     };
     try {
       const result = await dataManagerTaskActionsApi.exportTasks(projectId, payload, actionOptions);
+      if (scopeRef.current !== requestScope) return;
       exportKeyRef.current = null;
       setExportJobId(result.job_id);
       setExportOpen(false);
       onCompleted?.();
     } catch {
+      if (scopeRef.current !== requestScope) return;
       setActionError("无法创建导出任务，请检查所选格式和任务范围");
     } finally {
-      setBusy(null);
+      if (scopeRef.current === requestScope) setBusy(null);
     }
   };
 
@@ -344,7 +490,7 @@ export function DataManagerTaskActions({
             data-testid="data-manager-assign"
             size="sm"
             disabled={!hasSelection || busy !== null}
-            onClick={() => setAssignmentOpen(true)}
+            onClick={openAssignment}
           >
             分派
           </Button>
@@ -366,7 +512,19 @@ export function DataManagerTaskActions({
             {busy === "preannotate" ? "创建预标…" : "运行预标"}
           </Button>
         </div>
-        {actionError && (
+        {assignmentResult && (
+          <div role="status" className="basis-full flex flex-wrap items-center gap-2 text-xs">
+            <Badge variant="success">已更新 {assignmentResult.succeeded.length} 个任务</Badge>
+            {assignmentResult.failed_count > 0 && (
+              <span className="text-status-danger">失败 {assignmentResult.failed_count}</span>
+            )}
+            {assignmentResult.skipped_count > 0 && (
+              <span className="text-muted-foreground">未变化 {assignmentResult.skipped_count}</span>
+            )}
+            <span className="text-muted-foreground">分派结果已保存</span>
+          </div>
+        )}
+        {actionError && !assignmentOpen && !exportOpen && !preannotateOpen && (
           <div role="alert" className="basis-full text-xs text-status-danger">
             {actionError}
           </div>
@@ -374,20 +532,10 @@ export function DataManagerTaskActions({
         {(exportJobId || preannotateJobId) && (
           <div className="basis-full flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
             {exportJobId && (
-              <span>
-                导出作业 <span className="mono">{exportJobId}</span> ·{" "}
-                {jobStatusLabel(exportJobQ.data?.status)}
-                {exportJobQ.data?.progress_pct !== undefined &&
-                  ` · ${exportJobQ.data.progress_pct}%`}
-              </span>
+              <ActionJobStatus label="导出作业" jobId={exportJobId} query={exportJobQ} />
             )}
             {preannotateJobId && (
-              <span>
-                预标作业 <span className="mono">{preannotateJobId}</span> ·{" "}
-                {jobStatusLabel(preannotateJobQ.data?.status ?? "pending")}
-                {preannotateJobQ.data?.progress_pct !== undefined &&
-                  ` · ${preannotateJobQ.data.progress_pct}%`}
-              </span>
+              <ActionJobStatus label="预标作业" jobId={preannotateJobId} query={preannotateJobQ} />
             )}
           </div>
         )}
@@ -398,78 +546,102 @@ export function DataManagerTaskActions({
         onClose={closeAssignment}
         title={`分派已选任务（${ids.length}）`}
       >
-        {!assignmentPreview ? (
-          <div className="flex flex-col gap-4">
-            <p className="text-sm text-muted-foreground">
-              只会更新这组任务；已完成、锁定或状态不适用的任务会在预览中标出。
-            </p>
-            <AssignmentSelect
-              label="标注员"
-              value={annotatorChoice}
-              members={annotators}
-              loading={membersLoading}
-              onChange={setAnnotatorChoice}
-            />
-            <AssignmentSelect
-              label="审核员"
-              value={reviewerChoice}
-              members={reviewers}
-              loading={membersLoading}
-              onChange={setReviewerChoice}
-            />
-            <div className="flex justify-end gap-2">
-              <Button onClick={closeAssignment}>取消</Button>
-              <Button
-                variant="primary"
-                disabled={!hasAssignmentChange || !hasSelection || busy !== null}
-                onClick={previewAssignment}
-              >
-                {busy === "preview" ? "预览中…" : "预览分派"}
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-wrap gap-2 text-sm">
-              <Badge variant="accent">可更新 {assignmentPreview.eligible_count}</Badge>
-              <Badge variant="outline">跳过 {assignmentPreview.skipped_count}</Badge>
-              <Badge variant={assignmentPreview.failed_count ? "warning" : "outline"}>
-                不可用 {assignmentPreview.failed_count}
-              </Badge>
-            </div>
-            <ul className="max-h-64 overflow-y-auto rounded-md border border-border bg-muted p-2 text-xs">
-              {assignmentPreview.items.map((item) => (
-                <li
-                  key={item.task_id}
-                  className="flex items-center justify-between gap-2 border-b border-border py-1.5 last:border-b-0"
+        <div className="flex flex-col gap-4">
+          <ActionError message={actionError} />
+          {!assignmentPreview ? (
+            <div className="flex flex-col gap-4">
+              <p className="text-sm text-muted-foreground">
+                只会更新这组任务；已完成、锁定或状态不适用的任务会在预览中标出。
+              </p>
+              <AssignmentSelect
+                label="标注员"
+                value={annotatorChoice}
+                members={annotators}
+                loading={membersLoading}
+                onChange={setAnnotatorChoice}
+              />
+              <AssignmentSelect
+                label="审核员"
+                value={reviewerChoice}
+                members={reviewers}
+                loading={membersLoading}
+                onChange={setReviewerChoice}
+              />
+              <div className="flex justify-end gap-2">
+                <Button onClick={closeAssignment}>取消</Button>
+                <Button
+                  variant="primary"
+                  disabled={!hasAssignmentChange || !hasSelection || busy !== null}
+                  onClick={previewAssignment}
                 >
-                  <span className="mono">{item.task_display_id ?? item.task_id.slice(0, 8)}</span>
-                  <span
-                    className={item.will_change ? "text-status-positive" : "text-muted-foreground"}
-                  >
-                    {item.will_change ? "将更新" : reasonLabel(item.reason)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <div className="flex justify-end gap-2">
-              <Button onClick={() => setAssignmentPreview(null)} disabled={busy !== null}>
-                返回修改
-              </Button>
-              <Button
-                variant="primary"
-                disabled={!assignmentPreview.eligible_count || busy !== null}
-                onClick={applyAssignment}
-              >
-                {busy === "apply" ? "应用中…" : `应用 ${assignmentPreview.eligible_count} 个任务`}
-              </Button>
+                  {busy === "preview" ? "预览中…" : "预览分派"}
+                </Button>
+              </div>
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-wrap gap-2 text-sm">
+                <Badge variant="accent">可更新 {assignmentPreview.eligible_count}</Badge>
+                <Badge variant="outline">未变化 {assignmentPreview.skipped_count}</Badge>
+                <Badge variant={assignmentPreview.failed_count ? "warning" : "outline"}>
+                  不可用 {assignmentPreview.failed_count}
+                </Badge>
+              </div>
+              <ul className="max-h-64 overflow-y-auto rounded-md border border-border bg-muted p-2 text-xs">
+                {assignmentPreview.items.map((item) => {
+                  const changes = assignmentChanges(item, memberById);
+                  return (
+                    <li
+                      key={item.task_id}
+                      className="flex items-start justify-between gap-3 border-b border-border py-2 last:border-b-0"
+                    >
+                      <span className="mono shrink-0">
+                        {item.task_display_id ?? item.task_id.slice(0, 8)}
+                      </span>
+                      <span className="flex flex-col items-end gap-0.5 text-right">
+                        <span
+                          className={
+                            item.will_change ? "text-status-positive" : "text-muted-foreground"
+                          }
+                        >
+                          {item.will_change ? "将更新" : reasonLabel(item.reason)}
+                        </span>
+                        {changes.map((change) => (
+                          <span key={change} className="text-muted-foreground">
+                            {change}
+                          </span>
+                        ))}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className="flex justify-end gap-2">
+                <Button
+                  onClick={() => {
+                    setAssignmentPreview(null);
+                    setActionError(null);
+                  }}
+                  disabled={busy !== null}
+                >
+                  返回修改
+                </Button>
+                <Button
+                  variant="primary"
+                  disabled={!assignmentPreview.eligible_count || busy !== null}
+                  onClick={applyAssignment}
+                >
+                  {busy === "apply" ? "应用中…" : `应用 ${assignmentPreview.eligible_count} 个任务`}
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
       </Modal>
 
       <Modal open={exportOpen} onClose={() => !busy && setExportOpen(false)} title="导出已选任务">
         <div className="flex flex-col gap-4">
+          <ActionError message={actionError} />
           <p className="text-sm text-muted-foreground">
             选择导出格式。导出作业只读取这 {ids.length} 个任务，完成后可在任务铃中下载。
           </p>
@@ -517,6 +689,7 @@ export function DataManagerTaskActions({
         width={680}
       >
         <div className="flex flex-col gap-4">
+          <ActionError message={actionError} />
           <p className="text-sm text-muted-foreground">
             使用项目当前启用的 ML Backend 和预标注配置；运行范围固定为当前选择。
           </p>
