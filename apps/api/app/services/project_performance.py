@@ -38,8 +38,13 @@ from app.db.models.audit_log import AuditLog
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
+from app.db.models.task_batch import TaskBatch
 from app.db.models.task_event import TaskEvent
 from app.db.models.user import User
+from app.services.scheduler import (
+    effective_task_assignee_expr,
+    effective_task_reviewer_expr,
+)
 from app.schemas.project_performance import (
     PerformanceBreakdown,
     PerformanceCoverage,
@@ -713,18 +718,21 @@ async def _load_backlog_counts(
     user_ids: set[UUID],
 ) -> tuple[dict[UUID, tuple[int, int]], int, int]:
     """Aggregate the live load in SQL without materializing every task."""
+    assignee = effective_task_assignee_expr()
+    reviewer = effective_task_reviewer_expr()
     rows = await db.execute(
         select(
             Task.status,
-            Task.assignee_id,
-            Task.reviewer_id,
+            assignee,
+            reviewer,
             func.count(Task.id),
         )
+        .outerjoin(TaskBatch, TaskBatch.id == Task.batch_id)
         .where(
             Task.project_id == project_id,
             Task.status.in_(_ANNOTATION_BACKLOG | {"review"}),
         )
-        .group_by(Task.status, Task.assignee_id, Task.reviewer_id)
+        .group_by(Task.status, assignee, reviewer)
     )
     per_member: dict[UUID, list[int]] = defaultdict(lambda: [0, 0])
     current_total = 0

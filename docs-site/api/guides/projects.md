@@ -129,7 +129,7 @@ POST /api/v1/projects/:id/data-manager/tasks/export
 POST /api/v1/projects/:id/preannotate
 ```
 
-分派和选定任务导出使用 `task_ids`（1–200 个 UUID），服务端去重并稳定排序。分派须项目负责人权限；`annotator_id`、`reviewer_id` 未传表示保留，null 表示清空，至少传其中一个。预览返回精确任务清单、前后指派、状态、可更新/跳过/失败数量及 `preview_version`；apply 必须携带此版本，状态或指派已变化返回 409。
+分派和选定任务导出使用 `task_ids`（1–200 个 UUID），服务端去重并稳定排序。分派须项目负责人权限；`annotator_id`、`reviewer_id` 未传表示保留，null 清除任务单独指派并恢复批次默认（未分批则为未分派），至少传其中一个。非空审核员仅可分派到 review 状态任务。预览返回原始前后字段与 `effective_before_*` / `effective_after_*` 实际生效字段、状态、可更新/跳过/失败数量及 `preview_version`；apply 必须携带此版本，状态或指派已变化返回 409。
 
 导出按调用人的可见任务范围校验，接受 `targets` 和已有导出选项，返回 202 与持久化 `job_id`。暂不支持 `voc`、`coco-multicamera`、`kitti`、`nuscenes`、`pointmask` 的局部任务范围，也不能混用视频局部范围参数。
 

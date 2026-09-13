@@ -120,6 +120,8 @@ function reasonLabel(reason: string | null) {
       return "任务正在被编辑";
     case "task_status_not_assignable":
       return "当前状态不可分派";
+    case "reviewer_assignment_requires_review":
+      return "仅待审核任务可指定审核员";
     case "task_not_found_or_outside_project":
       return "任务不可用";
     default:
@@ -150,19 +152,23 @@ function assignmentChanges(
   memberById: Map<string, string>,
 ): string[] {
   const changes: string[] = [];
-  if (item.before_annotator_id !== item.after_annotator_id) {
+  const beforeAnnotator = item.effective_before_annotator_id ?? item.before_annotator_id;
+  const afterAnnotator = item.effective_after_annotator_id ?? item.after_annotator_id;
+  const beforeReviewer = item.effective_before_reviewer_id ?? item.before_reviewer_id;
+  const afterReviewer = item.effective_after_reviewer_id ?? item.after_reviewer_id;
+  if (beforeAnnotator !== afterAnnotator) {
     changes.push(
-      `标注员：${memberLabel(memberById, item.before_annotator_id)} → ${memberLabel(
+      `标注员：${memberLabel(memberById, beforeAnnotator)} → ${memberLabel(
         memberById,
-        item.after_annotator_id,
+        afterAnnotator,
       )}`,
     );
   }
-  if (item.before_reviewer_id !== item.after_reviewer_id) {
+  if (beforeReviewer !== afterReviewer) {
     changes.push(
-      `审核员：${memberLabel(memberById, item.before_reviewer_id)} → ${memberLabel(
+      `审核员：${memberLabel(memberById, beforeReviewer)} → ${memberLabel(
         memberById,
-        item.after_reviewer_id,
+        afterReviewer,
       )}`,
     );
   }
@@ -772,7 +778,7 @@ function AssignmentSelect({
         onChange={(event) => onChange(event.target.value)}
       >
         <option value={KEEP}>保留不变</option>
-        <option value={CLEAR}>清空指派</option>
+        <option value={CLEAR}>恢复批次默认（未分批则清空）</option>
         {members.map((member) => (
           <option key={member.user_id} value={member.user_id}>
             {member.user_name} · {member.user_email}

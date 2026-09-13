@@ -12,6 +12,7 @@ from app.db.models.audit_log import AuditLog
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
+from app.db.models.task_batch import TaskBatch
 from app.db.models.task_event import TaskEvent
 
 
@@ -80,6 +81,53 @@ async def _member(db, project_id, user, role, owner_id):
             assigned_by=owner_id,
         )
     )
+
+
+@pytest.mark.asyncio
+async def test_member_backlog_uses_task_overrides_and_batch_defaults(
+    httpx_client, db_session, project_admin, annotator, reviewer
+):
+    owner, token = project_admin
+    worker, _ = annotator
+    checker, _ = reviewer
+    project = _project(owner.id)
+    db_session.add(project)
+    await db_session.flush()
+    await _member(db_session, project.id, worker, "annotator", owner.id)
+    await _member(db_session, project.id, checker, "reviewer", owner.id)
+    batch = TaskBatch(
+        project_id=project.id,
+        display_id=f"B-LOAD-{uuid.uuid4().hex[:8]}",
+        name="inherited load",
+        status="active",
+        annotator_id=worker.id,
+        reviewer_id=checker.id,
+    )
+    db_session.add(batch)
+    await db_session.flush()
+    tasks = [
+        _task(project.id, status="pending"),
+        _task(project.id, status="pending", assignee_id=owner.id),
+        _task(project.id, status="review"),
+        _task(project.id, status="review", reviewer_id=owner.id),
+    ]
+    for task in tasks:
+        task.batch_id = batch.id
+    db_session.add_all([*tasks, _task(project.id, status="pending")])
+    await db_session.commit()
+    response = await httpx_client.get(
+        f"/api/v1/projects/{project.id}/performance/members",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    rows = {row["user_id"]: row["metrics"] for row in body["items"]}
+    assert rows[str(worker.id)]["current_backlog"]["value"] == 1
+    assert rows[str(checker.id)]["review_backlog"]["value"] == 1
+    assert rows[str(owner.id)]["current_backlog"]["value"] == 1
+    assert rows[str(owner.id)]["review_backlog"]["value"] == 1
+    assert body["project_totals"]["current_backlog"]["value"] == 3
+    assert body["project_totals"]["review_backlog"]["value"] == 2
 
 
 @pytest.mark.asyncio

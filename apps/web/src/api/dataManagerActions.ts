@@ -23,6 +23,10 @@ export interface DataManagerTaskAssignmentItem {
   after_annotator_id: string | null;
   before_reviewer_id: string | null;
   after_reviewer_id: string | null;
+  effective_before_annotator_id?: string | null;
+  effective_after_annotator_id?: string | null;
+  effective_before_reviewer_id?: string | null;
+  effective_after_reviewer_id?: string | null;
   will_change: boolean;
   reason: string | null;
 }

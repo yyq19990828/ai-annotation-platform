@@ -17,6 +17,8 @@ Data Manager 成员区域由 `services/project_performance.py` 提供统一的�
 
 所有接口解析相同的 `from`、`to`、IANA `timezone`、`work_type`、账号状态和成员搜索范围。区间为 `from <= timestamp < to`，最多 90 天；日期字符串按指定时区午夜解析，带时区的时间戳按实际瞬间解析。响应回显 UTC 边界、时区和 `as_of`。对比期与当前区间等长；当前待处理量始终是查询时刻的存量。
 
+待处理量复用 scheduler 的 `effective_task_assignee_expr()` 和 `effective_task_reviewer_expr()`：任务非空指派覆盖批次默认，空值回退批次；未分批且未指派的任务只进入项目存量。时间上限按完整本地日计算，使 90 天自定义范围和等时长对比兼容夏令时切换。
+
 成员筛选和 Data Manager 的任务/对象 DSL 分开，不能只把任务筛选应用到成员名单而保留全项目指标。列表分页不改变项目总数；项目任务数按项目去重，不能把多人的贡献任务直接求和。
 
 ## 产出、归属与首审
@@ -40,9 +42,12 @@ API 和 Celery 持久化任务共用 `services/task_event_ingestion.py`：
 - 账号来自认证上下文，项目来自已授权任务；客户端项目冲突、不可见任务、错误工作类型和非法区间被拒绝。
 - 校验时间顺序、时区、未来时间、时长与区间长度的一致性。
 - 客户端事件 UUID 用于幂等入库；同 ID 的冲突内容不能改写原记录。
-- 新采集器使用 `collector_version=session-v2`，记录 `collection_source=session` 与 `collection_coverage=qualified`。旧事件保留 `legacy / unverified_collection`，不冒充可信新采集。
+- 新采集器使用 `collector_version=session-v2`，记录 `collection_source=session` 与 `collection_coverage=qualified`。qualified 表示通过当前协议的归属、时间区间和去重校验，不证明客户端真实运行了采集器或存在持续人工操作；不以此做考勤、防作弊或正式评分。
+- 旧事件保留 `legacy / unverified_collection`。旧接口允许客户端填写 task/project，不能用这些记录证明成员曾在项目内工作；新团队接口不从其生成成员身份或活动依据。任务与事件项目不一致的记录同样排除。
 
 聚合仅计算合格区间，与请求边界求交；同一成员、同一工作类型的重叠区间取并集，避免多个浏览器页重复累计。标注和审核分别计算；项目时长求成员并集时长之和。没有合格采集证据时返回 null 和未知覆盖，不从旧时长推导效率或每小时产量。
+
+区间并集在 PostgreSQL 分组计算；依据在数据库内按成员和游标分页，避免把全项目的时长记录拉到 Python 后再截取当前页。
 
 ## 接口与客户端状态
 
