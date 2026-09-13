@@ -31338,10 +31338,11 @@
         "type": "object"
       },
       "TaskEventIn": {
-        "description": "单条事件 payload。client_id 可选；若未传，后端用 uuid4 生成。",
+        "description": "A closed, client-deduplicated Workbench interval.\n\n``project_id`` stays in the wire contract for old clients, but the API and\nworker always derive the stored project from ``task_id``.",
         "properties": {
           "annotation_count": {
             "default": 0,
+            "maximum": 1000000.0,
             "minimum": 0.0,
             "title": "Annotation Count",
             "type": "integer"
@@ -31357,6 +31358,18 @@
               }
             ],
             "title": "Client Id"
+          },
+          "collector_version": {
+            "anyOf": [
+              {
+                "maxLength": 32,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Collector Version"
           },
           "duration_ms": {
             "maximum": 14400000.0,
@@ -42616,7 +42629,7 @@
     },
     "/api/v1/auth/me/task-events:batch": {
       "post": {
-        "description": "v0.8.4 · 工作台 useSessionStats 每 N 条 flush 此端点。\nuser_id 强制设为当前登录用户（即使前端误传也覆盖）。",
+        "description": "Accept only closed intervals for tasks the current account can access.\n\nThe task relation is authoritative for project attribution.  The validated\nrows are also rechecked by the worker after an async handoff.",
         "operationId": "submit_task_events_api_v1_auth_me_task_events_batch_post",
         "requestBody": {
           "content": {
