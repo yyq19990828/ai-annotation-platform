@@ -51,11 +51,13 @@ export const SETTINGS_SCENES: ScreenshotScene[] = [
     route: () => "/settings",
     prepare: async (page) => {
       await gotoSection(page, "系统设置");
-      // 系统设置按四组（成员/邮件/导入/视频）渲染，SMTP 在「邮件与访问地址」组；
-      // 滚到该组再截，保证图片匹配文档里的「系统 SMTP 设置」标题。
       const mailGroup = page.getByRole("heading", { name: "邮件与访问地址", exact: true });
       if (await mailGroup.count()) {
-        await mailGroup.scrollIntoViewIfNeeded();
+        // 系统设置按四组渲染，SMTP 在「邮件与访问地址」组；把整张分组卡片滚到视口顶部，
+        // 保证发件人、密码与「发送测试邮件」等全部字段入镜（卡片高约 810px，viewport 900）。
+        await mailGroup.evaluate((el) => {
+          el.closest("div.rounded-lg")?.scrollIntoView({ block: "start" });
+        });
         await page.waitForTimeout(300);
       }
     },
