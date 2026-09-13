@@ -35,6 +35,7 @@ from app.db.models.project import Project
 from app.db.models.scene_pose import SceneFramePose
 from app.db.models.task import Task
 from app.db.models.task_dataset_item_link import TaskDatasetItemLink
+from app.db.models.user import User
 from app.services import async_job as async_job_svc
 from app.services.exporting import cache as export_cache
 from app.services.exporting.packaging import (
@@ -46,6 +47,8 @@ from app.services.mask_formats import registry as mask_format_registry
 from app.services.mask_formats.contracts import canonical_digest
 from app.schemas.export import LidarExportOptions
 from app.services.notification import NotificationService
+from app.services.scheduler import is_privileged_for_project
+from app.services.data_management.task_filters import visible_tasks_stmt
 from app.services.storage import storage_service
 from app.workers.celery_app import celery_app
 
@@ -139,12 +142,14 @@ def run_export(
     targets: list[str],
     opts: dict | None,
     async_job_id: str,
+    task_ids: list[str] | None = None,
 ):
     try:
         asyncio.run(
             _run_export(
                 project_id=project_id,
                 batch_id=batch_id,
+                task_ids=task_ids,
                 targets=targets,
                 opts=opts or {},
                 async_job_id=async_job_id,
@@ -156,7 +161,10 @@ def run_export(
 
 
 async def _scope_fingerprint(
-    db: AsyncSession, project_id: uuid.UUID, batch_id: uuid.UUID | None
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    batch_id: uuid.UUID | None,
+    task_ids: list[uuid.UUID] | None = None,
 ) -> tuple[datetime | None, int]:
     """max(project/annotation updated_at) + active annotation count for cache invalidation."""
     q = select(func.max(Annotation.updated_at), func.count(Annotation.id)).where(
@@ -168,6 +176,15 @@ async def _scope_fingerprint(
         # Annotation 无 batch_id 列；与 _load_data 一致，按 task.batch_id 过滤。
         q = q.where(
             Annotation.task_id.in_(select(Task.id).where(Task.batch_id == batch_id))
+        )
+    if task_ids is not None:
+        q = q.where(
+            Annotation.task_id.in_(
+                select(Task.id).where(
+                    Task.project_id == project_id,
+                    Task.id.in_(task_ids),
+                )
+            )
         )
     row = (await db.execute(q)).one()
     project_updated_at = (
@@ -413,7 +430,10 @@ async def _multicamera_coco_scope_digest(
 
 
 async def _scope_naming(
-    db: AsyncSession, project_id: uuid.UUID, batch_id: uuid.UUID | None
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    batch_id: uuid.UUID | None,
+    task_ids: list[uuid.UUID] | None = None,
 ) -> tuple[str, str | None, str]:
     """返回 (media, dataset_name|None, project_display_id)。
 
@@ -436,6 +456,8 @@ async def _scope_naming(
     )
     if batch_id is not None:
         name_q = name_q.where(Task.batch_id == batch_id)
+    if task_ids is not None:
+        name_q = name_q.where(Task.id.in_(task_ids))
     names = [r[0] for r in (await db.execute(name_q.distinct())).all() if r[0]]
     dataset_name = names[0] if len(names) == 1 else None
     return media, dataset_name, display_id
@@ -454,10 +476,54 @@ def _friendly_zip_name(
     return f"{safe}.zip"
 
 
+async def _assert_export_task_scope(
+    db: AsyncSession,
+    *,
+    project_id: uuid.UUID,
+    task_ids: list[uuid.UUID],
+    job_uuid: uuid.UUID,
+) -> None:
+    """Recheck an explicit export scope after the async job starts."""
+
+    if not task_ids:
+        raise ValueError("export task scope must not be empty")
+    project = await db.get(Project, project_id)
+    job = await db.get(AsyncJob, job_uuid)
+    if project is None or job is None or job.project_id != project_id:
+        raise ValueError("export scope owner or project is unavailable")
+    actor = await db.get(User, job.user_id) if job.user_id is not None else None
+    if actor is None or not actor.is_active:
+        raise ValueError("export scope owner is unavailable")
+
+    stored_scope = ((job.payload or {}).get("scope") or {}).get("task_ids")
+    if stored_scope is None:
+        stored_scope = (job.payload or {}).get("task_ids")
+    try:
+        stored_task_ids = {uuid.UUID(str(task_id)) for task_id in (stored_scope or [])}
+    except (TypeError, ValueError) as exc:
+        raise ValueError("export job task scope is invalid") from exc
+    if stored_task_ids != set(task_ids):
+        raise ValueError("export job task scope does not match worker arguments")
+
+    if is_privileged_for_project(actor, project):
+        query = select(Task.id).where(
+            Task.project_id == project_id,
+            Task.id.in_(task_ids),
+        )
+    else:
+        query = visible_tasks_stmt(project_id, user=actor, project=project).where(
+            Task.id.in_(task_ids)
+        )
+    visible_ids = set((await db.execute(query)).scalars().all())
+    if visible_ids != set(task_ids):
+        raise ValueError("export task scope is no longer visible")
+
+
 async def _run_export(
     *,
     project_id: str,
     batch_id: str | None,
+    task_ids: list[str] | None = None,
     targets: list[str],
     opts: dict,
     async_job_id: str,
@@ -465,6 +531,11 @@ async def _run_export(
 ) -> None:
     proj_uuid = uuid.UUID(project_id)
     batch_uuid = uuid.UUID(batch_id) if batch_id else None
+    selected_task_ids = (
+        sorted({uuid.UUID(task_id) for task_id in task_ids}, key=str)
+        if task_ids is not None
+        else None
+    )
     job_uuid = uuid.UUID(async_job_id)
     include_attributes = bool(opts.get("include_attributes", True))
     video_frame_mode = str(opts.get("video_frame_mode", "keyframes"))
@@ -484,10 +555,46 @@ async def _run_export(
     try:
         async with SessionLocal() as db:
             try:
+                job_row = (
+                    await db.execute(
+                        select(AsyncJob)
+                        .where(AsyncJob.id == job_uuid)
+                        .with_for_update()
+                    )
+                ).scalar_one_or_none()
+                if job_row is None:
+                    raise ValueError("export async job not found")
+                if job_row.status in {"completed", "failed", "cancelled"}:
+                    return
+                if (
+                    job_row.status == "running"
+                    and job_row.celery_task_id
+                    and job_row.celery_task_id != celery_task_id
+                ):
+                    # A duplicate delivery for the same durable job must not
+                    # build or publish a second artifact.
+                    return
                 await async_job_svc.mark_running(
                     db, job_uuid, celery_task_id=celery_task_id
                 )
                 await db.commit()
+
+                if selected_task_ids is not None:
+                    await _assert_export_task_scope(
+                        db,
+                        project_id=proj_uuid,
+                        task_ids=selected_task_ids,
+                        job_uuid=job_uuid,
+                    )
+                    if {
+                        "coco-multicamera",
+                        "kitti",
+                        "nuscenes",
+                        "pointmask",
+                    } & set(targets):
+                        raise ValueError(
+                            "task-scoped export does not support scene-level lidar formats"
+                        )
 
                 if {"coco-multicamera", "kitti", "nuscenes"} & set(targets):
                     from app.services.exporting.lidar_preflight import (
@@ -510,10 +617,14 @@ async def _run_export(
 
                 scope_id = batch_uuid or proj_uuid
                 max_updated_at, active_count = await _scope_fingerprint(
-                    db, proj_uuid, batch_uuid
+                    db, proj_uuid, batch_uuid, selected_task_ids
                 )
                 options_payload: object = opts
                 scope_digests: dict[str, object] = {"request": opts}
+                if selected_task_ids is not None:
+                    scope_digests["task_ids"] = [
+                        str(task_id) for task_id in selected_task_ids
+                    ]
                 if {"kitti", "nuscenes"} & set(targets):
                     scope_digests[
                         "nuscenes_scope_digest"
@@ -537,7 +648,7 @@ async def _run_export(
                 )
                 # v0.10.43 · media 前缀 + 友好下载名（{display_id}_{dataset?}_{job[:8]}.zip）。
                 media, dataset_name, project_display_id = await _scope_naming(
-                    db, proj_uuid, batch_uuid
+                    db, proj_uuid, batch_uuid, selected_task_ids
                 )
                 download_name = _friendly_zip_name(
                     project_display_id, dataset_name, async_job_id
@@ -586,6 +697,7 @@ async def _run_export(
                     db,
                     proj_uuid,
                     batch_id=batch_uuid,
+                    task_ids=selected_task_ids,
                     targets=targets,
                     include_attributes=include_attributes,
                     video_frame_mode=video_frame_mode,
