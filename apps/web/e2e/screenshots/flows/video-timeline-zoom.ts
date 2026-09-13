@@ -39,6 +39,7 @@ export async function runVideoTimelineZoom(
   const stage = page.getByTestId("video-konva-stage");
   const rows = page.getByTestId("video-track-row");
   await expect(rows).toHaveCount(0);
+  await page.getByRole("button", { name: "轨迹范围", exact: true }).click();
   await page.getByTestId("video-tool-btn-track").click();
   const anchor = recordingAnchor(catalog, "video_demo", "tracking", "front_truck_f0", 0);
   await selectVideoRecordingClass(page, stage, anchor.label);

@@ -118,6 +118,7 @@ export async function runVideoTrack(
   await page.getByRole("button", { name: "回到首帧", exact: true }).click();
   await expect.poll(currentFrame).toBe(0);
   await page.getByRole("tab", { name: "标注详情", exact: true }).click();
+  await page.getByRole("button", { name: "轨迹范围", exact: true }).click();
   await page.getByTestId("video-tool-btn-track").click();
   const anchor = recordingAnchor(catalog, "video_demo", "tracking", "front_truck_f0", 0);
   await selectVideoRecordingClass(page, stage, anchor.label);
