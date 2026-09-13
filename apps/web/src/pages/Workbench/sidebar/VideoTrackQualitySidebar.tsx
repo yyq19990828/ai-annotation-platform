@@ -45,7 +45,11 @@ export function VideoTrackQualitySidebar({
         : false,
   });
   const [runId, setRunId] = useState<string | null>(null);
-  const selectedRunId = runId ?? runsQuery.data?.[0]?.id ?? null;
+  const taskRunIds = useMemo(
+    () => new Set((runsQuery.data ?? []).map((candidate) => candidate.id)),
+    [runsQuery.data],
+  );
+  const selectedRunId = runId && taskRunIds.has(runId) ? runId : (runsQuery.data?.[0]?.id ?? null);
   const detailQuery = useQuery({
     queryKey: ["video-track-quality", taskId, selectedRunId],
     queryFn: ({ signal }) => videoTrackerApi.trackQualityDetail(taskId, selectedRunId!, { signal }),
@@ -56,6 +60,13 @@ export function VideoTrackQualitySidebar({
   const [manualPairs, setManualPairs] = useState<VideoTrackQualityRun["pairs"]>([]);
   const [manualLeftId, setManualLeftId] = useState("");
   const [manualRightId, setManualRightId] = useState("");
+  useEffect(() => {
+    setRunId(null);
+    setDecisions({});
+    setManualPairs([]);
+    setManualLeftId("");
+    setManualRightId("");
+  }, [taskId]);
   useEffect(() => {
     if (!run) return;
     setDecisions(

@@ -77,6 +77,52 @@ function maskTrackBox(id: string): AiBox {
   } as unknown as AiBox;
 }
 
+const videoSingles = [
+  {
+    type: "video_polygon",
+    frame_index: 4,
+    points: [
+      [0.1, 0.1],
+      [0.4, 0.1],
+      [0.2, 0.4],
+    ],
+  },
+  {
+    type: "video_polyline",
+    frame_index: 4,
+    points: [
+      [0.1, 0.1],
+      [0.4, 0.4],
+    ],
+  },
+  {
+    type: "video_rotated_bbox",
+    frame_index: 4,
+    cx: 0.5,
+    cy: 0.5,
+    w: 0.2,
+    h: 0.1,
+    angle: 20,
+  },
+  {
+    type: "video_keypoint",
+    frame_index: 4,
+    points: [{ x: 0.2, y: 0.3, v: 2 }],
+  },
+  {
+    type: "video_mask",
+    frame_index: 4,
+    mask: {
+      encoding: "coco_rle_ref",
+      size: [2, 3],
+      object_key: "mask.json",
+      sha256: "a".repeat(64),
+      runs: 3,
+      bytes: 64,
+    },
+  },
+] as const;
+
 describe("aiBoxFrames", () => {
   it("collects predicted frames from video_bbox frame_index", () => {
     const frames = collectPredictedFrames([bboxBox("pred-1-0", 3), bboxBox("pred-2-0", 1)]);
@@ -107,6 +153,14 @@ describe("aiBoxFrames", () => {
     const box = bboxBox("pred-1-0", 4);
     expect(aiBoxOnFrame(box, 4)).toBe(true);
     expect(aiBoxOnFrame(box, 5)).toBe(false);
+  });
+
+  it.each(videoSingles)("matches $type by exact frame", (geometry) => {
+    const box = { id: `pred-${geometry.type}`, geometry } as unknown as AiBox;
+    expect(aiBoxOnFrame(box, 4)).toBe(true);
+    expect(aiBoxOnFrame(box, 5)).toBe(false);
+    expect(resolveAiBoxAtFrame(box, 4)).toBe(box);
+    expect(resolveAiBoxAtFrame(box, 5)).toBeNull();
   });
 
   it("aiBoxOnFrame matches video_track_bbox on interpolated frames", () => {

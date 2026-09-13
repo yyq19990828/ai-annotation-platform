@@ -125,6 +125,19 @@ API 默认从 `8100`、Web 从 `3100` 扫描空闲端口，并验证 HTTP 就绪
 端口锁保留到进程退出，Web 的 API/WebSocket 代理指向当次 API。
 `Ctrl+C` 停止本次 API/Web 和 worker，保留资源。
 
+手动体验筛选分支时，可直接启动带验收数据的独立环境：
+
+```bash
+pnpm dev:worktree -- up --mode e2e --scenario filtering
+```
+
+首次使用要求该模式没有业务数据；入口复用筛选测试夹具，输出账号、项目链接和预期结果。
+再次运行会保留你的修改。账号为 `admin@e2e.test`、`anno@e2e.test`、`rev@e2e.test`，
+初始密码均为 `Test1234`。验收记录位于 `.worktree/e2e/data/filtering.json`；存在该记录时，
+启动器拒绝同环境的 `exec`，防止自动化测试重置数据。恢复初始数据或切换自动化测试前，
+先停止并显式 `reset --mode e2e --confirm <确认值>`。详细场景与清理见
+[工作树手动验收](docs-site/dev/how-to/worktree-environments.md#手动验收筛选功能)。
+
 可指定自定义的扫描起点，已被占用时仍会继续向上寻找：
 
 ```bash

@@ -4,15 +4,19 @@ import {
   storageConnectionsApi,
   type DatasetImportFromConnectionPayload,
 } from "@/api/storageConnections";
+import { useAuthStore } from "@/stores/authStore";
 
 export function useDatasets(params?: {
   search?: string;
   data_type?: string;
   has_scenes?: boolean;
 }) {
+  const userId = useAuthStore((state) => state.user?.id ?? null);
+  const tokenEpoch = useAuthStore((state) => state.token);
   return useQuery({
-    queryKey: ["datasets", params],
-    queryFn: () => datasetsApi.list(params),
+    queryKey: ["datasets", params, userId, tokenEpoch],
+    queryFn: ({ signal }) => datasetsApi.list(params, { signal }),
+    enabled: Boolean(userId),
   });
 }
 

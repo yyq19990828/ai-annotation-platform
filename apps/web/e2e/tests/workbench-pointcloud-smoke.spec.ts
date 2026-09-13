@@ -1,4 +1,5 @@
 import { layoutCommand } from "../helpers/workbench-layout";
+import { writeFile } from "node:fs/promises";
 /**
  * v0.16.x · 点云工作台冒烟基线(P1)——拆 3D 整簇前的 Playwright 守护网地基。
  *
@@ -13,6 +14,152 @@ import { layoutCommand } from "../helpers/workbench-layout";
  * project 已 testIgnore 排除,避免无 GPU 跑挂。
  */
 import { test, expect } from "../fixtures/seed";
+
+test("point-mask visibility removes and restores painted points without changing indices", async ({
+  page,
+  request,
+  seed,
+}) => {
+  test.setTimeout(120_000);
+  await seed.reset();
+  const lidar = await seed.seedLidar();
+  const taskId = lidar.lidar_task_ids[0];
+  const pointIndices = Array.from({ length: lidar.lidar_point_count }, (_, index) => index);
+  const annotation = await seed.createTaskAnnotation(taskId, "admin@e2e.test", {
+    annotation_type: "point_mask_3d",
+    tool_unit_id: "point_mask_3d",
+    class_name: "ground",
+    geometry: {
+      type: "point_mask_3d",
+      point_indices: pointIndices,
+      decimate_stride: 1,
+      source_point_count: lidar.lidar_point_count,
+    },
+  });
+  try {
+    await seed.injectToken(page, "admin@e2e.test");
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`/projects/${lidar.lidar_project_id}/annotate?task=${taskId}`);
+    await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("pointcloud-renderer-backend")).toHaveAttribute(
+      "data-backend",
+      /webgl/,
+    );
+    const row = page.getByTestId(`box-list-item-${annotation.id}`);
+    await expect(row).toBeVisible();
+    await row.click({ position: { x: 20, y: 16 } });
+    await expect(row).toHaveClass(/!border-brand/);
+    const canvas = page.locator("[data-workbench-render-surface] > canvas");
+    await expect(canvas).toHaveCount(1);
+    const renderer = await canvas.evaluate((node) => {
+      const gl = (node as HTMLCanvasElement).getContext("webgl2");
+      const debug = gl?.getExtension("WEBGL_debug_renderer_info");
+      return {
+        renderer: gl?.getParameter(debug?.UNMASKED_RENDERER_WEBGL ?? gl.RENDERER),
+        dpr: devicePixelRatio,
+      };
+    });
+    const viewport = await page.getByTestId("pc-viewport").boundingBox();
+    if (!viewport) throw new Error("point-cloud viewport is missing");
+    // Compare only scene pixels, excluding changing list/count/selection controls.
+    const clip = {
+      x: viewport.x + viewport.width * 0.15,
+      y: viewport.y + viewport.height * 0.2,
+      width: viewport.width * 0.65,
+      height: viewport.height * 0.55,
+    };
+    const capture = (path?: string) => page.screenshot({ clip, path });
+    await page.mouse.move(5, 5);
+    const before = await capture(test.info().outputPath("pointmask-visible.png"));
+    const difference = async (other: Buffer) =>
+      page.evaluate(
+        async ([left, right]) => {
+          const decode = async (url: string) => {
+            const image = await createImageBitmap(await (await fetch(url)).blob());
+            const surface = new OffscreenCanvas(image.width, image.height);
+            const context = surface.getContext("2d")!;
+            context.drawImage(image, 0, 0);
+            const pixels = context.getImageData(0, 0, image.width, image.height).data;
+            image.close();
+            return pixels;
+          };
+          const [a, b] = await Promise.all([decode(left), decode(right)]);
+          if (a.length !== b.length) return 1;
+          let changed = 0;
+          for (let index = 0; index < a.length; index += 4) {
+            if (
+              Math.abs(a[index] - b[index]) +
+                Math.abs(a[index + 1] - b[index + 1]) +
+                Math.abs(a[index + 2] - b[index + 2]) >
+              30
+            )
+              changed += 1;
+          }
+          return changed / (a.length / 4);
+        },
+        [
+          "data:image/png;base64," + before.toString("base64"),
+          "data:image/png;base64," + other.toString("base64"),
+        ],
+      );
+    await row.getByRole("button", { name: "更多操作", exact: true }).hover();
+    const hide = page.waitForResponse(
+      (response) =>
+        response.request().method() === "PATCH" &&
+        response.url().endsWith(`/annotations/${annotation.id}`),
+    );
+    await row.getByRole("button", { name: "隐藏", exact: true }).click();
+    expect((await hide).ok()).toBe(true);
+    await expect(row.getByRole("button", { name: "显示", exact: true })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await page.mouse.move(5, 5);
+    await expect.poll(async () => difference(await capture())).toBeGreaterThan(0.0001);
+    await capture(test.info().outputPath("pointmask-hidden.png"));
+    await row.getByRole("button", { name: "更多操作", exact: true }).hover();
+    const show = page.waitForResponse(
+      (response) =>
+        response.request().method() === "PATCH" &&
+        response.url().endsWith(`/annotations/${annotation.id}`),
+    );
+    await row.getByRole("button", { name: "显示", exact: true }).click();
+    expect((await show).ok()).toBe(true);
+    await expect(row.getByRole("button", { name: "隐藏", exact: true })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    await page.mouse.move(5, 5);
+    await expect.poll(async () => difference(await capture())).toBeLessThan(0.005);
+    await capture(test.info().outputPath("pointmask-restored.png"));
+    const token = await seed.accessToken("admin@e2e.test");
+    const response = await request.get(
+      (process.env.PLAYWRIGHT_API_BASE ?? "http://127.0.0.1:8010") +
+        `/api/v1/tasks/${taskId}/annotations`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    expect(response.ok()).toBe(true);
+    const restored = (await response.json()).find(
+      (item: { id: string }) => item.id === annotation.id,
+    );
+    expect(restored.is_hidden).toBe(false);
+    expect(restored.geometry.point_indices).toEqual(pointIndices);
+    const rendererInfo = JSON.stringify({
+      backend: await page.getByTestId("pointcloud-renderer-backend").getAttribute("data-backend"),
+      mode: "behavioral validation",
+      sceneClip: clip,
+      ...renderer,
+      browser: page.context().browser()?.version(),
+      viewport: { width: 1440, height: 900 },
+      pointCount: lidar.lidar_point_count,
+    });
+    const rendererPath = test.info().outputPath("renderer.json");
+    await writeFile(rendererPath, rendererInfo);
+    await test.info().attach("renderer", { path: rendererPath, contentType: "application/json" });
+  } finally {
+    await seed.deleteTaskAnnotation(taskId, annotation.id, "admin@e2e.test");
+  }
+});
 
 test.describe("workbench pointcloud smoke (WebGL go/no-go)", () => {
   test("headless 加载并渲染 nuScenes 规模点云,四视图共享 renderer 且空闲停止提交", async ({

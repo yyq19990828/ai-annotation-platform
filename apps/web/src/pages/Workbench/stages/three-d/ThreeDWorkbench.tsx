@@ -878,7 +878,9 @@ export function ThreeDWorkbench({
     [annotations],
   );
   const selectedPointMask =
-    selectedAnn?.geometry?.type === "point_mask_3d" ? selectedAnn.geometry : null;
+    !selectedAnn?.is_hidden && selectedAnn?.geometry?.type === "point_mask_3d"
+      ? selectedAnn.geometry
+      : null;
   const conventionMismatches = useMemo(() => {
     const mismatches = [];
     for (const ann of annotations ?? []) {
@@ -2360,7 +2362,7 @@ export function ThreeDWorkbench({
   // overlay 按本集合高亮(为未来同链 2D 框成员预留;孤立框 track_id 为空时退化为仅选中本身)。
   // v0.21.2 · ADR-0045 · 跨帧链按 track_id 认同一对象 (原 group_id 高位段)。
   const [playbackTrackId, setPlaybackTrackId] = useState<string | null>(null);
-  const selectedTrackId = selectedAnn?.track_id ?? null;
+  const selectedTrackId = selectedAnn?.is_hidden ? null : (selectedAnn?.track_id ?? null);
   useEffect(() => {
     if (!playbackActive || !playbackTrackId || !annotationsQuery.isSuccess) return;
     const member = annotations?.find((annotation) => annotation.track_id === playbackTrackId);
@@ -2432,6 +2434,7 @@ export function ThreeDWorkbench({
     const out: ReferenceBox[] = [];
     for (const tid of neighborTaskIds) {
       for (const a of neighborAnnsByTask[tid] ?? []) {
+        if (a.is_hidden) continue;
         const g = a.geometry as {
           type?: string;
           center?: number[];
@@ -2505,6 +2508,7 @@ export function ThreeDWorkbench({
     const m = new Map<string, AlignPsr>();
     if (!alignActive) return m;
     for (const a of annotations ?? []) {
+      if (a.is_hidden) continue;
       if (a.track_id == null) continue;
       const g = a.geometry as {
         type?: string;
@@ -2528,6 +2532,7 @@ export function ThreeDWorkbench({
     for (const [tid, anns] of Object.entries(alignAnnsByTask)) {
       const list: AlignNeighborBox[] = [];
       for (const a of anns) {
+        if (a.is_hidden) continue;
         if (a.track_id == null) continue;
         const g = a.geometry as {
           type?: string;

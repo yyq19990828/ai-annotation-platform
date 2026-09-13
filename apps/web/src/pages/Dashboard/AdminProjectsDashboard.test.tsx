@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
+import { useEffect } from "react";
 
 const mockUseProjects = vi.fn();
 const mockUseProjectStats = vi.fn();
@@ -22,16 +23,8 @@ vi.mock("@/components/datasets/ImportDatasetWizard", () => ({
     open ? <div data-testid="id-wizard" /> : null,
 }));
 
-vi.mock("./FilterDrawer", () => ({
-  FilterDrawer: () => null,
-  EMPTY_FILTERS: {
-    data_type: [],
-    member_id: undefined,
-    created_from: undefined,
-    created_to: undefined,
-    status: undefined,
-  },
-}));
+vi.mock("./ProjectFilterControl", () => ({ ProjectFilterControl: () => null }));
+vi.mock("./ProjectFilterSummary", () => ({ ProjectFilterSummary: () => null }));
 
 vi.mock("./ExportModal", () => ({
   ExportModal: () => null,
@@ -54,12 +47,27 @@ vi.mock("@/components/ui/Toast", async () => {
 
 import { AdminProjectsDashboard } from "./AdminProjectsDashboard";
 
-function renderUI(initialPath = "/dashboard") {
+function renderUI(initialPath = "/dashboard", navigateTo?: string) {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
+      {navigateTo ? <NavigateOnMount to={navigateTo} /> : null}
+      <LocationProbe />
       <AdminProjectsDashboard />
     </MemoryRouter>,
   );
+}
+
+function NavigateOnMount({ to }: { to: string }) {
+  const navigate = useNavigate();
+  useEffect(() => {
+    navigate(to, { replace: true });
+  }, [navigate, to]);
+  return null;
+}
+
+function LocationProbe() {
+  const location = useLocation();
+  return <output data-testid="location-search">{location.search}</output>;
 }
 
 describe("AdminProjectsDashboard", () => {
@@ -127,5 +135,33 @@ describe("AdminProjectsDashboard", () => {
     expect(mockBuildWorkbenchUrl).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: /打开/ }));
     expect(mockBuildWorkbenchUrl).toHaveBeenCalledWith("p1");
+  });
+
+  it("restores status from the URL and tab changes the query", () => {
+    renderUI("/dashboard?status=pending_review&new=1&from=p1&layout=grid");
+    expect(mockUseProjects).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: "pending_review" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "已完成" }));
+    expect(screen.getByTestId("location-search").textContent).toContain("status=completed");
+    expect(screen.getByTestId("location-search").textContent).toContain("new=1");
+    expect(screen.getByTestId("location-search").textContent).toContain("from=p1");
+    expect(mockUseProjects).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: "completed" }),
+    );
+  });
+
+  it("applies q and status together after external URL navigation", async () => {
+    renderUI("/dashboard?q=old&status=in_progress", "/dashboard?q=new&status=pending_review");
+    await waitFor(() => {
+      expect(mockUseProjects).toHaveBeenLastCalledWith(
+        expect.objectContaining({ status: "pending_review", search: "new" }),
+      );
+    });
+    expect(
+      mockUseProjects.mock.calls.some(
+        ([params]) => params.status === "pending_review" && params.search === "old",
+      ),
+    ).toBe(false);
   });
 });

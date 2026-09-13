@@ -171,6 +171,8 @@ Playwright 会自动准备专用逻辑库 `annotation_e2e`、执行迁移，并�
 
 核心绘制流程必须验证实际提交请求、落库内容与刷新恢复。测试接口只能造前置状态，不能在 UI 保存失败后补写状态来使测试通过。Canvas 坐标按实际媒体尺寸计算并验证命中；组件细节、纯状态组合优先使用 Vitest。
 
+图片与视频 Konva 的隐藏/恢复验收使用 `e2e/fixtures/annotation-canvas-pixels.ts`，只统计媒体背景之后的标注图层，不把跨域背景画布读成标注证据。必须先确认有真实绘制像素，再验证隐藏减少、刷新后仍隐藏、恢复后像素与几何一致；图层未就绪或标注层不可读应失败，不能吞掉异常返回零。跨域画布安全限制需要真实浏览器回归，不能靠关闭浏览器安全策略或仅断言 DOM 数量代替。
+
 修改分类后通过 `--list --reporter=line` 核对选集；修改调度后运行根目录的 `node --test scripts/plan-e2e-suites.test.mjs`。本地结束后清理当前验证生成的报告、临时数据和自有服务；详见 `apps/web/e2e/README.md`。
 
 ### `_test_seed` router + E2E fixture
@@ -200,6 +202,12 @@ test("注入 token 跳 UI 登录", async ({ page, seed }) => {
 seed/login/cleanup 请求。production 即使设置开关也不挂载路由。
 
 **fixture 用法**：`reset()` 返回固定结构（admin/annotator/reviewer 三个邮箱 + 项目 id + 5 个任务 id）；密码统一 `Test1234`。新增数据用 `apps/api/tests/factory.py` 的 `create_user / create_project / create_task / create_batch`。
+
+筛选验收使用 `seed.filtering()`，它先重置基础 fixture，再返回类型化 manifest：同对象/跨对象属性、必填条件嵌套组、检测与追踪候选组合、101 项分页、Scene 逻辑轨迹和管理列表数据。`e2e/fixtures/filtering.ts` 提供同一入口。视频预测中的最小 shape 只验证指标；工作台几何交互通过产品预测导入 API 添加有效的带帧候选。点云 fixture 包含真实 PCD 字节和可解析的相机内外参。
+
+需要手动体验并保留数据时，使用 `pnpm dev:worktree -- up --mode e2e --scenario filtering`；见[手动验收筛选功能](./how-to/worktree-environments#手动验收筛选功能)。该入口与自动化测试复用基础夹具，重启不重置，结束后显式清理。
+
+同一测试库一次只运行一个 seed/reset 流程。并行测试还需给各进程配置独立 MinIO buckets：基础清理使用固定媒体前缀，仅隔离数据库无法保护另一套测试的媒体。新增清理条件应使用 fixture 的项目、任务或显式标记；数据保留断言必须重新查询数据库，不能依赖未过期的 ORM identity map。
 
 Playwright 正常结束时由 `globalTeardown` 调用 `/seed/cleanup`。它只是兜底：
 强制中断可能跳过 teardown，因此必须始终依赖 `annotation_e2e` 的数据库隔离，

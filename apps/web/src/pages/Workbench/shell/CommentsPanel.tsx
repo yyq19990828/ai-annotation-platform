@@ -1,3 +1,4 @@
+import { FilterGroup, FilterSelect } from "@/components/filters/FilterControls";
 import {
   useCallback,
   useEffect,
@@ -948,9 +949,9 @@ export function CommentsPanel({
       )}
 
       {tab === "comments" && taskContext && (
-        <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-          <span>范围</span>
-          <select
+        <FilterGroup compact label="阅读范围" className="shrink-0">
+          <FilterSelect
+            compact
             aria-label="评论阅读范围"
             value={effectiveScope}
             onChange={(event) => {
@@ -964,7 +965,7 @@ export function CommentsPanel({
               setScopeNotice(null);
               if (next !== "annotation") setReadAnnotationOverride(null);
             }}
-            className="min-h-7 max-w-full cursor-pointer rounded border border-border bg-background px-1.5 text-xs text-foreground [font:inherit] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-brand"
+            className="flex-1"
           >
             <option value="all">本任务全部讨论</option>
             <option value="task">仅任务留言</option>
@@ -975,8 +976,8 @@ export function CommentsPanel({
                   : "当前标注"}
               </option>
             )}
-          </select>
-        </label>
+          </FilterSelect>
+        </FilterGroup>
       )}
 
       {scopeNotice && tab === "comments" && (

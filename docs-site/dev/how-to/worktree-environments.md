@@ -49,6 +49,43 @@ pnpm dev:worktree -- up --with-worker
 
 新库只有迁移创建的结构及必要数据，没有原来的账号、项目或媒体。需要管理员时，在下面的隔离 `exec --mode dev` 中运行现有的 `scripts.bootstrap_admin` 流程；凭据按[开发部署说明](/ops/deploy/development#_2-5-首个-super-admin)配置，不放进工作树身份清单。
 
+## 手动验收筛选功能
+
+在工作树根目录执行一条命令：
+
+```bash
+pnpm dev:worktree -- up --mode e2e --scenario filtering
+```
+
+它准备该工作树的独立 `e2e` 环境、生成筛选数据并启动 API/Web，终端会显示实际端口、账号、各场景链接和预期结果。首次初始化要求该库没有用户、项目或数据集；有数据但没有验收记录时拒绝覆盖，需你先决定是否重建该模式。它不会把测试 seed 路由开放给 `dev` 库。
+
+账号为 `admin@e2e.test`（管理员）、`anno@e2e.test`（标注员）、`rev@e2e.test`（审核员），初始密码均为 `Test1234`；使用这里的账号，而非普通 demo seed 的 `admin / 123456`。
+
+| 场景               | 初始预期                                                                          |
+| ------------------ | --------------------------------------------------------------------------------- |
+| 图片任务权限       | 管理员 6 题，标注员 5 题，隐藏批次不进入标注员列表或统计                          |
+| 同对象属性         | 标注员查询 car AND blue 仅命中 SAME；CROSS 的红车与蓝色行人不会被拼成蓝车         |
+| 必填与保存视图     | 缺失必填属性命中 MISSING；可修改嵌套 AND/OR、创建视图并刷新验证                   |
+| 对象分页           | 总数 101，首次 100，继续加载后 101                                                |
+| Scene 轨迹         | 标注员可见 101 条，管理员还可见隐藏批次的一条；跨任务逻辑轨迹去重                 |
+| 视频 AI 待审       | OR 命中 V-1/V-2/V-3，已采纳或驳回的 V-4 不命中                                    |
+| 视频显示和批量范围 | V-3 的检测候选位于 F0/F10，置信度阈值调到 0 后体验当前帧与已加载候选的区别        |
+| 管理列表           | 使用 Filter 项目、数据集、模板及不同成员、邀请、审计、任务状态检查筛选与 URL 恢复 |
+
+这套数据来自 `seed.filtering()`；手动入口额外给视频检测候选补齐可渲染几何，保留原有置信度、数量与预期成员集合，不启动真实模型推理。素材复用仓库内的小文件，不运行 demo seed 的大型素材下载。默认只启动 API/Web；需要后台任务时追加 `--with-worker`。
+
+`Ctrl+C` 或 `stop --mode e2e` 保留数据；再次执行同一启动命令，会读取 `.worktree/e2e/data/filtering.json` 并复用原项目、视图和手动修改。表中预期指初始数据，手动修改后结果可能随之变化。项目或记录损坏时提示显式重建，不自动修复或清空。
+
+保留手动验收记录时，同一模式的 `exec` 会被拒绝，因为自动化测试中的 reset/cleanup 会删除这些数据。结束体验后先停止，使用 `doctor --mode e2e` 返回的 `resources.confirmation` 执行 `reset`（重建）或 `destroy`（删除）。重建后可重新启动手动场景，或运行自动化 E2E。
+
+```bash
+pnpm dev:worktree -- stop --mode e2e
+pnpm dev:worktree -- doctor --mode e2e
+pnpm dev:worktree -- destroy --mode e2e --confirm '<工作树ID>:e2e'
+```
+
+停止后 Redis 不运行，`doctor.healthy` 可能为 false；它表达运行就绪状态，不能用作提取删除确认值的条件。删除命令自身会重新校验归属、会话及数据库连接。保留 `.worktree` 身份和清单直到销毁完成，再删除工作树；共享下载缓存会保留。
+
 ## 三种模式与测试命令
 
 - `dev`：日常开发，`up/init/doctor/stop/reset/destroy` 默认使用它。

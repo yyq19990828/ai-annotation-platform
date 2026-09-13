@@ -39,6 +39,8 @@ export interface SearchResponse {
 }
 
 export const searchApi = {
-  query: (q: string, limit = 5) =>
-    apiClient.get<SearchResponse>(`/search?q=${encodeURIComponent(q)}&limit=${limit}`),
+  query: (q: string, limit = 5, init?: RequestInit) => {
+    const path = `/search?q=${encodeURIComponent(q)}&limit=${limit}`;
+    return init ? apiClient.get<SearchResponse>(path, init) : apiClient.get<SearchResponse>(path);
+  },
 };

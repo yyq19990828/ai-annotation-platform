@@ -27,6 +27,7 @@ from app.services.data_management.service import (
 )
 from app.services.data_management.entities import DataManagerObjectService
 from app.services.data_management.entity_filters import validate_entity_view
+from app.services.data_management.views import validate_filter
 from app.services.data_management.tracks import DataManagerTrackService
 
 
@@ -58,6 +59,7 @@ async def get_data_manager_summary(
     user: User = Depends(get_current_user),
 ):
     project = await assert_project_visible(project_id, db, user)
+    validate_filter(payload.filter_json, project=project, user=user)
     return await DataManagerService(db).summary(
         project_id=project_id,
         filter_json=payload.filter_json,
@@ -78,6 +80,7 @@ async def get_data_manager_matches(
     user: User = Depends(get_current_user),
 ):
     project = await assert_project_visible(project_id, db, user)
+    validate_filter(payload.filter_json, project=project, user=user)
     return await DataManagerService(db).matches(
         project_id=project_id,
         task_id=task_id,

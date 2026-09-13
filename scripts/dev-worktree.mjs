@@ -288,7 +288,7 @@ async function waitForHttp(managed, url) {
 
 export async function runDevWorktree(
   argv = process.argv.slice(2),
-  { statePath, apiEnvironment } = {},
+  { statePath, apiEnvironment, acceptancePath } = {},
 ) {
   if (!statePath || !apiEnvironment)
     throw new Error("Service supervisor requires worktree runtime preparation");
@@ -353,6 +353,7 @@ export async function runDevWorktree(
         String(apiPort),
         "--timeout-graceful-shutdown",
         "3",
+        ...(acceptancePath ? ["--log-level", "warning"] : []),
       ],
       {
         cwd: join(repositoryRoot, "apps/api"),
@@ -403,6 +404,11 @@ export async function runDevWorktree(
 
 按 Ctrl+C 同时停止两个服务。\n`);
 
+    if (acceptancePath) {
+      const { guide } = JSON.parse(await readFile(acceptancePath, "utf8"));
+      console.log(formatAcceptanceGuide(guide, `http://${host}:${webPort}`));
+    }
+
     const exited = await Promise.race([api.completion, web.completion]);
     if (!shutdownRequested) {
       const detail = exited.error?.message ?? exited.signal ?? exited.code;
@@ -422,6 +428,25 @@ export async function runDevWorktree(
     await Promise.all(reservations.map(({ release }) => release()));
     await unlink(statePath).catch(() => {});
   }
+}
+
+export function formatAcceptanceGuide(guide, webUrl) {
+  return [
+    "[dev:worktree] 筛选手动验收（数据保留到显式 reset/destroy）",
+    `  登录: ${webUrl}/login`,
+    ...guide.accounts.map((account) => `  ${account.role}: ${account.email} / ${account.password}`),
+    "",
+    ...guide.scenarios.flatMap((scenario) => [
+      `  ${scenario.title}`,
+      `    ${webUrl}${scenario.path}`,
+      `    ${scenario.expected}`,
+    ]),
+    "",
+    "  再次启动同一命令会复用数据；保留验收记录时禁止本环境 exec，切换自动化测试前请显式 reset。",
+    "  停止: pnpm dev:worktree -- stop --mode e2e",
+    "  重建: 停止后用 doctor 获取确认值，执行 reset --mode e2e --confirm <确认值>，再启动。",
+    "",
+  ].join("\n");
 }
 
 export async function runIsolatedCommand(

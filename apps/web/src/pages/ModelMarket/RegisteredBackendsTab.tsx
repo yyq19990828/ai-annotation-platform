@@ -1,3 +1,4 @@
+import { FilterGroup, FilterSelect } from "@/components/filters/FilterControls";
 /**
  * v0.23.4 P3 · 注册管理 tab — orchestrator shell.
  *
@@ -408,23 +409,21 @@ function RegistryHeader({
             className="h-8 w-56 pl-7 text-xs"
           />
         </div>
-        <label className="inline-flex items-center gap-1 text-2xs text-muted-foreground">
-          状态
-          <select
+        <FilterGroup label="状态" compact>
+          <FilterSelect
             aria-label="按状态筛选"
             value={filters.statusFilter}
             onChange={(e) =>
               onFiltersChange({ ...filters, statusFilter: e.target.value as StatusFilter })
             }
-            className="h-8 rounded-md border border-border bg-card px-2 text-xs text-foreground outline-none [font-family:inherit]"
           >
             <option value="all">全部</option>
             <option value="healthy">健康</option>
             <option value="degraded">降级</option>
             <option value="offline">离线</option>
             <option value="unknown">未知</option>
-          </select>
-        </label>
+          </FilterSelect>
+        </FilterGroup>
       </div>
 
       {/* Partial-failures row — each source keeps its own error so other data

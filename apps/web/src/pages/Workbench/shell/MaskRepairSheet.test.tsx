@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -10,12 +10,64 @@ const mocks = vi.hoisted(() => ({
   rollbackReset: vi.fn(),
   resumeMutate: vi.fn(),
   resumeReset: vi.fn(),
+  dryRunData: null as unknown,
   batchData: null as unknown,
+  batchIds: [] as Array<string | null>,
 }));
 
 vi.mock("@/hooks/useMaskQc", () => ({
   useDryRunMaskRepairs: () => ({
-    data: {
+    data: mocks.dryRunData,
+    mutate: mocks.dryRunMutate,
+    reset: mocks.dryRunReset,
+    isPending: false,
+    isError: false,
+    error: null,
+  }),
+  useExecuteMaskRepairs: () => ({
+    data: null,
+    mutate: mocks.executeMutate,
+    reset: mocks.executeReset,
+    isPending: false,
+    isError: false,
+    error: null,
+  }),
+  useMaskRepairBatch: (_projectId: string, repairId: string | null) => {
+    mocks.batchIds.push(repairId);
+    return {
+      data: mocks.batchData,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    };
+  },
+  useRollbackMaskRepairs: () => ({
+    data: null,
+    mutate: mocks.rollbackMutate,
+    reset: mocks.rollbackReset,
+    isPending: false,
+    isError: false,
+    isSuccess: false,
+    error: null,
+  }),
+  useResumeMaskRepairs: () => ({
+    data: null,
+    mutate: mocks.resumeMutate,
+    reset: mocks.resumeReset,
+    isPending: false,
+    isError: false,
+    error: null,
+  }),
+}));
+
+import { MaskRepairSheet } from "./MaskRepairSheet";
+
+describe("MaskRepairSheet", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.batchData = null;
+    mocks.batchIds = [];
+    mocks.dryRunData = {
       receipt: "mrp_receipt",
       plan_digest: "a".repeat(64),
       expires_at: "2026-07-23T01:00:00Z",
@@ -44,52 +96,12 @@ vi.mock("@/hooks/useMaskQc", () => ({
           skip_detail: null,
         },
       ],
-    },
-    mutate: mocks.dryRunMutate,
-    reset: mocks.dryRunReset,
-    isPending: false,
-    isError: false,
-    error: null,
-  }),
-  useExecuteMaskRepairs: () => ({
-    data: null,
-    mutate: mocks.executeMutate,
-    reset: mocks.executeReset,
-    isPending: false,
-    isError: false,
-    error: null,
-  }),
-  useMaskRepairBatch: () => ({
-    data: mocks.batchData,
-    isError: false,
-    error: null,
-    refetch: vi.fn(),
-  }),
-  useRollbackMaskRepairs: () => ({
-    data: null,
-    mutate: mocks.rollbackMutate,
-    reset: mocks.rollbackReset,
-    isPending: false,
-    isError: false,
-    isSuccess: false,
-    error: null,
-  }),
-  useResumeMaskRepairs: () => ({
-    data: null,
-    mutate: mocks.resumeMutate,
-    reset: mocks.resumeReset,
-    isPending: false,
-    isError: false,
-    error: null,
-  }),
-}));
-
-import { MaskRepairSheet } from "./MaskRepairSheet";
-
-describe("MaskRepairSheet", () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    mocks.batchData = null;
+    };
+    mocks.dryRunMutate.mockImplementation(
+      (_actions: unknown, options?: { onSuccess?: (value: unknown) => void }) => {
+        options?.onSuccess?.(mocks.dryRunData);
+      },
+    );
   });
 
   it("打开后先请求 dry-run，并用精确计数提交冻结收据", async () => {
@@ -104,9 +116,10 @@ describe("MaskRepairSheet", () => {
     );
 
     await waitFor(() => {
-      expect(mocks.dryRunMutate).toHaveBeenCalledWith([
-        { issue_id: "issue-1", kind: "delete_small_islands" },
-      ]);
+      expect(mocks.dryRunMutate).toHaveBeenCalledWith(
+        [{ issue_id: "issue-1", kind: "delete_small_islands" }],
+        expect.objectContaining({ onSuccess: expect.any(Function) }),
+      );
     });
     expect(screen.getByText("37")).toBeTruthy();
     expect(screen.getByText("原子分片")).toBeTruthy();
@@ -116,6 +129,98 @@ describe("MaskRepairSheet", () => {
       { receipt: "mrp_receipt", planDigest: "a".repeat(64) },
       expect.objectContaining({ onSuccess: expect.any(Function) }),
     );
+  });
+
+  it("owner 变化会废弃旧 dry-run，迟到结果不能恢复确认按钮", async () => {
+    const completions: Array<((value: unknown) => void) | undefined> = [];
+    mocks.dryRunMutate.mockImplementation(
+      (_actions: unknown, options?: { onSuccess?: (value: unknown) => void }) => {
+        completions.push(options?.onSuccess);
+      },
+    );
+    const view = render(
+      <MaskRepairSheet
+        open
+        ownerKey="owner-a"
+        projectId="project-1"
+        actions={[{ issue_id: "issue-1", kind: "delete_small_islands" }]}
+        onOpenChange={vi.fn()}
+        onFinished={vi.fn()}
+      />,
+    );
+    await waitFor(() => expect(mocks.dryRunMutate).toHaveBeenCalledOnce());
+
+    view.rerender(
+      <MaskRepairSheet
+        open
+        ownerKey="owner-b"
+        projectId="project-1"
+        actions={[{ issue_id: "issue-1", kind: "delete_small_islands" }]}
+        onOpenChange={vi.fn()}
+        onFinished={vi.fn()}
+      />,
+    );
+    await waitFor(() => expect(mocks.dryRunReset).toHaveBeenCalled());
+    expect(mocks.dryRunMutate).toHaveBeenCalledTimes(2);
+
+    await act(async () => completions[0]?.(mocks.dryRunData));
+    expect(screen.queryByRole("button", { name: "确认修复 (1)" })).toBeNull();
+    await act(async () => completions[1]?.(mocks.dryRunData));
+    expect(screen.getByRole("button", { name: "确认修复 (1)" })).toBeInTheDocument();
+  });
+
+  it("关闭后以相同 owner 重开时，旧 execute 结果不能创建 repair batch", async () => {
+    const executions: Array<((value: { id: string }) => void) | undefined> = [];
+    mocks.executeMutate.mockImplementation(
+      (_value: unknown, options?: { onSuccess?: (value: { id: string }) => void }) =>
+        executions.push(options?.onSuccess),
+    );
+    const onOpenChange = vi.fn();
+    const view = render(
+      <MaskRepairSheet
+        open
+        ownerKey="owner-a"
+        projectId="project-1"
+        actions={[{ issue_id: "issue-1", kind: "delete_small_islands" }]}
+        onOpenChange={onOpenChange}
+        onFinished={vi.fn()}
+      />,
+    );
+    await waitFor(() => expect(mocks.dryRunMutate).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole("button", { name: "确认修复 (1)" }));
+    expect(executions).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    const dryRunsAfterClose = mocks.dryRunMutate.mock.calls.length;
+    view.rerender(
+      <MaskRepairSheet
+        open={false}
+        ownerKey="owner-a"
+        projectId="project-1"
+        actions={[{ issue_id: "issue-1", kind: "delete_small_islands" }]}
+        onOpenChange={onOpenChange}
+        onFinished={vi.fn()}
+      />,
+    );
+    view.rerender(
+      <MaskRepairSheet
+        open
+        ownerKey="owner-a"
+        projectId="project-1"
+        actions={[{ issue_id: "issue-1", kind: "delete_small_islands" }]}
+        onOpenChange={onOpenChange}
+        onFinished={vi.fn()}
+      />,
+    );
+    await waitFor(() => expect(mocks.dryRunMutate).toHaveBeenCalledTimes(dryRunsAfterClose + 1));
+    fireEvent.click(screen.getByRole("button", { name: "确认修复 (1)" }));
+    expect(executions).toHaveLength(2);
+
+    await act(async () => executions[0]?.({ id: "repair-old" }));
+    expect(mocks.batchIds).not.toContain("repair-old");
+    await act(async () => executions[1]?.({ id: "repair-new" }));
+    expect(mocks.batchIds).toContain("repair-new");
   });
 
   it("部分失败时可以重试未完成分片", () => {

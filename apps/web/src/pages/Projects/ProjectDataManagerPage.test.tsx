@@ -1,77 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 
-import type { DataManagerFilterField, DataManagerSummary, ProjectTaskView } from "@/api/taskViews";
-import { buildFilterJson, editableRulesFromView } from "./ProjectDataManagerPage";
+import type { DataManagerSummary } from "@/api/taskViews";
 import { DataManagerOverview } from "./data-manager/DataManagerOverview";
-
-function view(filterJson: Record<string, unknown>): ProjectTaskView {
-  return {
-    id: null,
-    key: "all",
-    project_id: "project-id",
-    owner_id: null,
-    name: "全部任务",
-    visibility: "project",
-    entity_scope: "tasks",
-    filter_json: filterJson,
-    sort_json: [],
-    columns_json: [],
-    builtin: true,
-    task_count: 12,
-    result_count: 12,
-    created_at: null,
-    updated_at: null,
-    invalid_fields: [],
-  };
-}
-
-describe("editableRulesFromView", () => {
-  it("keeps the built-in all view unfiltered", () => {
-    expect(editableRulesFromView(view({}))).toEqual([]);
-  });
-
-  it("restores saved flat rules", () => {
-    expect(
-      editableRulesFromView(
-        view({
-          op: "and",
-          rules: [{ field: "task.status", op: "in", value: ["pending", "review"] }],
-        }),
-      ),
-    ).toEqual([{ field: "task.status", op: "in", value: "pending, review" }]);
-  });
-});
-
-describe("buildFilterJson", () => {
-  const numberField: DataManagerFilterField = {
-    key: "annotation.annotation_count",
-    label: "标注数",
-    group: "标注",
-    value_type: "number",
-    operators: ["in"],
-    options: [],
-    expensive: false,
-    tool_unit_id: null,
-    attribute_key: null,
-  };
-
-  it("keeps keyword and converts numeric list items", () => {
-    expect(
-      buildFilterJson(
-        [{ field: numberField.key, op: "in", value: "1, 2, bad" }],
-        [numberField],
-        "frame-42",
-      ),
-    ).toEqual({
-      op: "and",
-      rules: [
-        { field: "task.keyword", op: "contains", value: "frame-42" },
-        { field: numberField.key, op: "in", value: [1, 2] },
-      ],
-    });
-  });
-});
 
 describe("DataManagerOverview", () => {
   it("shows the matched scope and schema-driven attribute aggregation", () => {

@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
+import type { MeResponse } from "@/api/auth";
+import { useAuthStore } from "@/stores/authStore";
 
 import type {
   VideoTrackerJobCounts,
@@ -77,21 +79,45 @@ function response(items: VideoTrackerJobListItem[], nextCursor: string | null = 
   return { items, next_cursor: nextCursor, counts };
 }
 
-function renderPanel(projectId?: string) {
+function renderPanel(projectId?: string, initialPath = "/ai-pre/jobs?tab=video") {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={["/ai-pre/jobs?tab=video"]}>
+      <MemoryRouter initialEntries={[initialPath]}>
+        <LocationProbe />
         <VideoTrackerJobsPanel projectId={projectId} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
 }
 
+function LocationProbe() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  return (
+    <>
+      <output data-testid="location-search">{location.search}</output>
+      <button
+        type="button"
+        onClick={() =>
+          navigate(
+            "/ai-pre/jobs?tab=video&project_id=project-road&video_status=failed&video_model_key=new-model",
+          )
+        }
+      >
+        外部导航
+      </button>
+    </>
+  );
+}
+
 describe("VideoTrackerJobsPanel", () => {
   beforeEach(() => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("auth-storage");
+    useAuthStore.setState({ token: null, user: null });
     mockListVideoJobs.mockReset();
     mockListProjects.mockReset();
     mockBuildWorkbenchUrl.mockClear();
@@ -118,7 +144,9 @@ describe("VideoTrackerJobsPanel", () => {
     expect(screen.getAllByText(/待审阅/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/已采纳/).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/已丢弃/).length).toBeGreaterThan(0);
-    expect(mockListVideoJobs).toHaveBeenCalledWith(expect.objectContaining({ limit: 20 }));
+    expect(mockListVideoJobs).toHaveBeenCalledWith(expect.objectContaining({ limit: 20 }), {
+      signal: expect.any(AbortSignal),
+    });
   });
 
   it("项目和状态筛选传给视频追踪任务 API", async () => {
@@ -131,13 +159,19 @@ describe("VideoTrackerJobsPanel", () => {
     fireEvent.change(screen.getByLabelText("筛选视频任务状态"), {
       target: { value: "pending_review" },
     });
+    fireEvent.change(screen.getByLabelText("筛选追踪模型"), {
+      target: { value: "sam3_video" },
+    });
 
     await waitFor(() => {
       expect(mockListVideoJobs).toHaveBeenCalledWith(
         expect.objectContaining({
           project_id: "project-road",
           status: "pending_review",
+          model_key: "sam3_video",
+          cursor: undefined,
         }),
+        { signal: expect.any(AbortSignal) },
       );
     });
   });
@@ -148,7 +182,198 @@ describe("VideoTrackerJobsPanel", () => {
     await waitFor(() => {
       expect(mockListVideoJobs).toHaveBeenCalledWith(
         expect.objectContaining({ project_id: "project-video" }),
+        { signal: expect.any(AbortSignal) },
       );
+    });
+  });
+
+  it("从 URL 恢复视频命名空间筛选并忽略图像 status", async () => {
+    renderPanel(
+      undefined,
+      "/ai-pre/jobs?tab=video&project_id=project-video&status=failed&video_status=pending_review&video_model_key=sam3_video",
+    );
+
+    await screen.findByText("暂无视频追踪任务");
+    expect(mockListVideoJobs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        project_id: "project-video",
+        status: "pending_review",
+        model_key: "sam3_video",
+      }),
+      { signal: expect.any(AbortSignal) },
+    );
+    expect(screen.getByTestId("location-search")).toHaveTextContent("status=failed");
+  });
+
+  it("模型筛选保留输入空格并在防抖后应用", async () => {
+    renderPanel();
+    await screen.findByText("暂无视频追踪任务");
+    mockListVideoJobs.mockClear();
+
+    const input = screen.getByLabelText("筛选追踪模型") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "sam3 " } });
+    expect(input).toHaveValue("sam3 ");
+    expect(screen.getByTestId("location-search")).not.toHaveTextContent("video_model_key=sam3");
+    expect(mockListVideoJobs).not.toHaveBeenCalled();
+
+    await waitFor(() =>
+      expect(screen.getByTestId("location-search")).toHaveTextContent("video_model_key=sam3"),
+    );
+    await waitFor(() =>
+      expect(mockListVideoJobs).toHaveBeenCalledWith(
+        expect.objectContaining({ model_key: "sam3", cursor: undefined }),
+        { signal: expect.any(AbortSignal) },
+      ),
+    );
+  });
+
+  it("外部 URL 导航以新视频筛选原子替换草稿", async () => {
+    renderPanel(
+      undefined,
+      "/ai-pre/jobs?tab=video&project_id=project-video&video_status=running&video_model_key=old-model",
+    );
+    await screen.findByText("暂无视频追踪任务");
+    mockListVideoJobs.mockClear();
+
+    fireEvent.change(screen.getByLabelText("筛选追踪模型"), {
+      target: { value: "draft-model" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "外部导航" }));
+
+    await waitFor(() => expect(screen.getByDisplayValue("new-model")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(mockListVideoJobs).toHaveBeenCalledWith(
+        expect.objectContaining({
+          project_id: "project-road",
+          status: "failed",
+          model_key: "new-model",
+          cursor: undefined,
+        }),
+        { signal: expect.any(AbortSignal) },
+      ),
+    );
+    expect(
+      mockListVideoJobs.mock.calls.some(
+        ([params]) => (params as { model_key?: string }).model_key === "draft-model",
+      ),
+    ).toBe(false);
+  });
+
+  it("外部视频 URL 恢复期间再次输入仍能完成新的防抖提交", async () => {
+    renderPanel(
+      undefined,
+      "/ai-pre/jobs?tab=video&project_id=project-video&video_status=running&video_model_key=old-model",
+    );
+    await screen.findByText("暂无视频追踪任务");
+    mockListVideoJobs.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "外部导航" }));
+    await waitFor(() => expect(screen.getByDisplayValue("new-model")).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText("筛选追踪模型"), {
+      target: { value: "new-model-next" },
+    });
+
+    await waitFor(() =>
+      expect(screen.getByTestId("location-search")).toHaveTextContent(
+        "video_model_key=new-model-next",
+      ),
+    );
+    await waitFor(() =>
+      expect(mockListVideoJobs).toHaveBeenCalledWith(
+        expect.objectContaining({
+          project_id: "project-road",
+          status: "failed",
+          model_key: "new-model-next",
+        }),
+        { signal: expect.any(AbortSignal) },
+      ),
+    );
+  });
+
+  it("清除视频模型筛选不会被旧 debounce 恢复", async () => {
+    renderPanel(undefined, "/ai-pre/jobs?tab=video&video_model_key=old-model");
+    await screen.findByText("暂无视频追踪任务");
+    mockListVideoJobs.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "清除筛选" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("location-search")).not.toHaveTextContent("video_model_key="),
+    );
+    await waitFor(() => expect(mockListVideoJobs).toHaveBeenCalledTimes(1));
+    expect(mockListVideoJobs).toHaveBeenCalledWith(
+      expect.objectContaining({ model_key: undefined, cursor: undefined }),
+      { signal: expect.any(AbortSignal) },
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    });
+    expect(screen.getByTestId("location-search")).not.toHaveTextContent("video_model_key=");
+    expect(mockListVideoJobs).toHaveBeenCalledTimes(1);
+  });
+
+  it("视频任务查询按同一账号的 token epoch 分隔缓存", async () => {
+    const user = { id: "video-u1", role: "annotator" } as MeResponse;
+    useAuthStore.getState().setAuth("video-token-1", user);
+    renderPanel();
+    await screen.findByText("暂无视频追踪任务");
+    mockListVideoJobs.mockClear();
+
+    act(() => useAuthStore.getState().setAuth("video-token-2", user));
+    await waitFor(() => expect(mockListVideoJobs).toHaveBeenCalledTimes(1));
+    expect(mockListVideoJobs).toHaveBeenCalledWith(expect.objectContaining({ cursor: undefined }), {
+      signal: expect.any(AbortSignal),
+    });
+  });
+
+  it("视频筛选原子清空 cursor 历史并写回独立 URL 键", async () => {
+    mockListVideoJobs.mockResolvedValue(response([makeJob("running", 1)], "cursor-1"));
+    renderPanel();
+    await screen.findByText("视频追踪任务 (1)");
+
+    fireEvent.click(screen.getByRole("button", { name: /下一页/ }));
+    await waitFor(() =>
+      expect(mockListVideoJobs).toHaveBeenCalledWith(
+        expect.objectContaining({ cursor: "cursor-1" }),
+        { signal: expect.any(AbortSignal) },
+      ),
+    );
+    fireEvent.change(screen.getByLabelText("筛选视频任务状态"), {
+      target: { value: "pending_review" },
+    });
+    expect(screen.getByTestId("location-search")).toHaveTextContent("video_status=pending_review");
+    await waitFor(() =>
+      expect(mockListVideoJobs).toHaveBeenCalledWith(
+        expect.objectContaining({
+          status: "pending_review",
+          cursor: undefined,
+        }),
+        { signal: expect.any(AbortSignal) },
+      ),
+    );
+  });
+
+  it("切换同一账号 token epoch 时不会复用已有 cursor", async () => {
+    const user = { id: "video-u1", role: "annotator" } as MeResponse;
+    useAuthStore.getState().setAuth("video-token-1", user);
+    mockListVideoJobs
+      .mockResolvedValueOnce(response([makeJob("running", 1)], "cursor-1"))
+      .mockResolvedValue(response([]));
+    renderPanel();
+    await screen.findByText("视频追踪任务 (1)");
+
+    fireEvent.click(screen.getByRole("button", { name: /下一页/ }));
+    await waitFor(() =>
+      expect(mockListVideoJobs).toHaveBeenCalledWith(
+        expect.objectContaining({ cursor: "cursor-1" }),
+        { signal: expect.any(AbortSignal) },
+      ),
+    );
+    mockListVideoJobs.mockClear();
+
+    act(() => useAuthStore.getState().setAuth("video-token-2", user));
+    await waitFor(() => expect(mockListVideoJobs).toHaveBeenCalledTimes(1));
+    expect(mockListVideoJobs).toHaveBeenCalledWith(expect.objectContaining({ cursor: undefined }), {
+      signal: expect.any(AbortSignal),
     });
   });
 

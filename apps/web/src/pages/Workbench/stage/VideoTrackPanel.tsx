@@ -8,6 +8,7 @@ import { isFrameOutside } from "./videoTrackOutside";
 import { VideoTrackColorPicker } from "./VideoTrackColorPicker";
 import { VideoTrackComposeDialog, type VideoTrackGapMode } from "./VideoTrackComposeDialog";
 import type { VideoFrameEntry, VideoTrackAnnotation } from "./videoStageTypes";
+import { visibleInReviewMode } from "./videoFrameViews";
 import type { VideoTrackKeyframe } from "@/types";
 import type { VideoSelectionCommand } from "../state/videoSelectionCommand";
 import {
@@ -122,13 +123,6 @@ function KeyframeSourceStrip({ keyframes }: { keyframes: readonly VideoTrackKeyf
       ))}
     </div>
   );
-}
-
-function visibleInReviewMode(source: VideoFrameEntry["source"] | null, mode?: DiffMode): boolean {
-  if (!mode || mode === "diff") return true;
-  if (!source) return false;
-  if (mode === "raw") return source === "prediction" || source === "interpolated";
-  return source === "manual" || source === "legacy";
 }
 
 /**

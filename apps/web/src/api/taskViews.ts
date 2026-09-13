@@ -331,9 +331,10 @@ export interface DataManagerTrackDetail {
 }
 
 export const taskViewsApi = {
-  list: (projectId: string, entityScope: DataManagerEntityScope = "tasks") =>
+  list: (projectId: string, entityScope: DataManagerEntityScope = "tasks", init?: RequestInit) =>
     apiClient.get<{ items: ProjectTaskView[] }>(
       `/projects/${projectId}/task-views?entity_scope=${entityScope}`,
+      init,
     ),
 
   create: (projectId: string, payload: ProjectTaskViewPayload) =>
@@ -351,56 +352,79 @@ export const taskViewsApi = {
     payload: { name?: string; visibility?: TaskViewVisibility },
   ) => apiClient.post<ProjectTaskView>(`/projects/${projectId}/task-views/${viewId}/copy`, payload),
 
-  query: (projectId: string, payload: ProjectTaskQueryPayload) =>
-    apiClient.post<ProjectTaskQueryResponse>(`/projects/${projectId}/tasks/query`, payload),
+  query: (projectId: string, payload: ProjectTaskQueryPayload, init?: RequestInit) =>
+    apiClient.post<ProjectTaskQueryResponse>(`/projects/${projectId}/tasks/query`, payload, init),
 
-  schema: (projectId: string, entityScope: DataManagerEntityScope = "tasks") =>
+  schema: (projectId: string, entityScope: DataManagerEntityScope = "tasks", init?: RequestInit) =>
     apiClient.get<DataManagerSchema>(
       `/projects/${projectId}/data-manager/schema?entity_scope=${entityScope}`,
+      init,
     ),
 
-  summary: (projectId: string, filterJson: Record<string, unknown>) =>
-    apiClient.post<DataManagerSummary>(`/projects/${projectId}/data-manager/summary`, {
-      filter_json: filterJson,
-    }),
+  summary: (projectId: string, filterJson: Record<string, unknown>, init?: RequestInit) =>
+    apiClient.post<DataManagerSummary>(
+      `/projects/${projectId}/data-manager/summary`,
+      {
+        filter_json: filterJson,
+      },
+      init,
+    ),
 
-  matches: (projectId: string, taskId: string, filterJson: Record<string, unknown>) =>
+  matches: (
+    projectId: string,
+    taskId: string,
+    filterJson: Record<string, unknown>,
+    init?: RequestInit,
+  ) =>
     apiClient.post<DataManagerMatchesResponse>(
       `/projects/${projectId}/tasks/${taskId}/data-manager/matches`,
       { filter_json: filterJson, limit: 100, offset: 0 },
+      init,
     ),
 
-  queryObjects: (projectId: string, payload: DataManagerEntityQueryPayload) =>
+  queryObjects: (projectId: string, payload: DataManagerEntityQueryPayload, init?: RequestInit) =>
     apiClient.post<DataManagerObjectQueryResponse>(
       `/projects/${projectId}/data-manager/objects/query`,
       payload,
+      init,
     ),
 
-  objectDetail: (projectId: string, annotationId: string) =>
+  objectDetail: (projectId: string, annotationId: string, init?: RequestInit) =>
     apiClient.get<{ item: DataManagerObject }>(
       `/projects/${projectId}/data-manager/objects/${annotationId}/detail`,
+      init,
     ),
 
-  objectLocation: (projectId: string, annotationId: string) =>
+  objectLocation: (projectId: string, annotationId: string, init?: RequestInit) =>
     apiClient.get<DataManagerEntityLocation>(
       `/projects/${projectId}/data-manager/objects/${annotationId}/location`,
+      init,
     ),
 
-  queryTracks: (projectId: string, payload: DataManagerEntityQueryPayload) =>
+  queryTracks: (projectId: string, payload: DataManagerEntityQueryPayload, init?: RequestInit) =>
     apiClient.post<DataManagerTrackQueryResponse>(
       `/projects/${projectId}/data-manager/tracks/query`,
       payload,
+      init,
     ),
 
-  trackDetail: (projectId: string, trackRef: string) =>
+  trackDetail: (projectId: string, trackRef: string, init?: RequestInit) =>
     apiClient.get<DataManagerTrackDetail>(
       `/projects/${projectId}/data-manager/tracks/${encodeURIComponent(trackRef)}/detail`,
+      init,
     ),
 
-  queryView: (projectId: string, viewId: string, limit: number, offset: number) => {
+  queryView: (
+    projectId: string,
+    viewId: string,
+    limit: number,
+    offset: number,
+    init?: RequestInit,
+  ) => {
     const q = new URLSearchParams({ limit: String(limit), offset: String(offset) });
     return apiClient.get<ProjectTaskQueryResponse>(
       `/projects/${projectId}/task-views/${viewId}/tasks?${q}`,
+      init,
     );
   },
 };

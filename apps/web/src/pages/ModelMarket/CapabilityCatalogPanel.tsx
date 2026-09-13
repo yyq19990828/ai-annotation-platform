@@ -362,28 +362,36 @@ export function CapabilityCatalogPanel() {
     const needle = search.trim().toLocaleLowerCase();
     const byTask = new Map<string, FlatModel[]>();
     for (const inst of instancesData?.instances ?? []) {
-      const infraFallback = inst.infra && inst.infra !== "unknown" ? inst.infra : null;
       for (const m of inst.models) {
-        if (infraFilter.size > 0) {
-          const eff = m.infra ?? infraFallback;
-          if (!eff || !infraFilter.has(eff)) continue;
-        }
-        if (modalityFilter.size > 0) {
-          if (!m.modality || !modalityFilter.has(m.modality)) continue;
-        }
         const taskId = m.task ?? "unknown";
-        if (!byTask.has(taskId)) byTask.set(taskId, []);
         const source: FlatModel["source"] = registeredBackendIds.has(inst.backend_id)
           ? "registered"
           : "env_only";
         const enriched =
           flatByKey.get(`${inst.name}::${m.id}`) ?? instanceModelToFlat(inst, m, source);
+        if (
+          familyFilter.size > 0 &&
+          !(enriched.model.model_family && familyFilter.has(enriched.model.model_family))
+        ) {
+          continue;
+        }
+        if (infraFilter.size > 0) {
+          const eff = effectiveInfra(enriched.model, enriched.backendInfra);
+          if (!eff || !infraFilter.has(eff)) continue;
+        }
+        if (modalityFilter.size > 0) {
+          const mods = effectiveModalities(enriched.model, enriched.backendModalities);
+          if (!mods.some((modality) => modalityFilter.has(modality))) continue;
+        }
+        if (!byTask.has(taskId)) byTask.set(taskId, []);
         byTask.get(taskId)!.push(enriched);
       }
     }
+    const hasModelFilter = familyFilter.size > 0 || infraFilter.size > 0 || modalityFilter.size > 0;
     return protocol.tasks
       .filter((task) => {
         if (taskFilter.size > 0 && !taskFilter.has(task.id)) return false;
+        if (hasModelFilter && (byTask.get(task.id)?.length ?? 0) === 0) return false;
         if (needle) {
           const meta = [task.label, task.id, task.summary, ...task.typical_models]
             .join(" ")
@@ -401,6 +409,7 @@ export function CapabilityCatalogPanel() {
     flatByKey,
     registeredBackendIds,
     taskFilter,
+    familyFilter,
     infraFilter,
     modalityFilter,
     search,

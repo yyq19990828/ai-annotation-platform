@@ -1,9 +1,10 @@
 /**
  * DashboardPage 单测 — 加载态 / 空态 / 正常渲染 / 视图切换 / 活动日志过滤.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { act, render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
+import { useEffect } from "react";
 import type { ReactNode } from "react";
 
 type MockAuthState = {
@@ -44,16 +45,8 @@ vi.mock("@/components/datasets/ImportDatasetWizard", () => ({
     open ? <div data-testid="id-wizard" /> : null,
 }));
 
-vi.mock("./FilterDrawer", () => ({
-  FilterDrawer: () => null,
-  EMPTY_FILTERS: {
-    data_type: [],
-    member_id: undefined,
-    created_from: undefined,
-    created_to: undefined,
-    status: undefined,
-  },
-}));
+vi.mock("./ProjectFilterControl", () => ({ ProjectFilterControl: () => null }));
+vi.mock("./ProjectFilterSummary", () => ({ ProjectFilterSummary: () => null }));
 
 vi.mock("./ProjectGrid", () => ({
   ProjectGrid: () => <div data-testid="project-grid" />,
@@ -86,12 +79,27 @@ import { DashboardPage } from "./DashboardPage";
 
 const baseUser = { id: "u1", role: "super_admin", email: "admin@x.com" };
 
-function renderUI(initialPath = "/dashboard") {
+function renderUI(initialPath = "/dashboard", navigateTo?: string) {
   return render(
     <MemoryRouter initialEntries={[initialPath]}>
+      {navigateTo ? <NavigateOnMount to={navigateTo} /> : null}
+      <LocationProbe />
       <DashboardPage />
     </MemoryRouter>,
   );
+}
+
+function NavigateOnMount({ to }: { to: string }) {
+  const navigate = useNavigate();
+  useEffect(() => {
+    navigate(to, { replace: true });
+  }, [navigate, to]);
+  return null;
+}
+
+function LocationProbe() {
+  const location = useLocation();
+  return <output data-testid="location-search">{location.search}</output>;
 }
 
 describe("DashboardPage", () => {
@@ -102,6 +110,10 @@ describe("DashboardPage", () => {
     mockUseProjectStats.mockReturnValue({ data: undefined });
     mockUseAuditLogs.mockReturnValue({ data: { items: [] } });
     mockUseProjects.mockReturnValue({ data: [], isLoading: false });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it("isLoading=true → 显示加载中", () => {
@@ -267,5 +279,60 @@ describe("DashboardPage", () => {
   it("初始 ?new=1 → CreateProjectWizard 立即 open", () => {
     renderUI("/dashboard?new=1");
     expect(screen.getByTestId("cp-wizard")).toBeInTheDocument();
+  });
+
+  it("restores URL filters and a tab change owns the single status value", async () => {
+    renderUI(
+      "/dashboard?q=car&status=pending_review&data_type=video&data_type=image&member_id=u1&created_from=2026-01-01&created_to=2026-02-01&new=1&from=p1&layout=grid",
+    );
+    expect(screen.getByPlaceholderText("搜索项目...")).toHaveValue("car");
+    await waitFor(() => {
+      expect(mockUseProjects).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          status: "pending_review",
+          search: "car",
+          data_type: ["image", "video"],
+          member_id: "u1",
+        }),
+      );
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "进行中" }));
+    expect(screen.getByTestId("location-search").textContent).toContain("status=in_progress");
+    expect(screen.getByTestId("location-search").textContent).toContain("new=1");
+    expect(screen.getByTestId("location-search").textContent).toContain("layout=grid");
+    expect(mockUseProjects).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: "in_progress" }),
+    );
+  });
+
+  it("debounces project q requests while updating the URL immediately", async () => {
+    vi.useFakeTimers();
+    renderUI();
+    const input = screen.getByPlaceholderText("搜索项目...");
+    fireEvent.change(input, { target: { value: "car" } });
+    expect(mockUseProjects).toHaveBeenLastCalledWith(
+      expect.objectContaining({ search: undefined }),
+    );
+    expect(screen.getByTestId("location-search").textContent).toContain("q=car");
+
+    await act(async () => {
+      vi.advanceTimersByTime(250);
+    });
+    expect(mockUseProjects).toHaveBeenLastCalledWith(expect.objectContaining({ search: "car" }));
+  });
+
+  it("applies q and status together after external URL navigation", async () => {
+    renderUI("/dashboard?q=old&status=in_progress", "/dashboard?q=new&status=pending_review");
+    await waitFor(() => {
+      expect(mockUseProjects).toHaveBeenLastCalledWith(
+        expect.objectContaining({ status: "pending_review", search: "new" }),
+      );
+    });
+    expect(
+      mockUseProjects.mock.calls.some(
+        ([params]) => params.status === "pending_review" && params.search === "old",
+      ),
+    ).toBe(false);
   });
 });

@@ -90,6 +90,7 @@ describe("WorkbenchShell", () => {
     expect(screen.getByTestId("layout")).toBeTruthy();
     expect(screen.getByTestId("propagate-dialog")).toBeTruthy();
     expect(screen.getByTestId("issue-create-modal")).toBeTruthy();
+    expect(screen.getByTestId("issue-fab")).toHaveAccessibleName("查看问题（2 个未解决）");
 
     fireEvent.click(screen.getByTestId("issue-fab"));
     fireEvent.click(screen.getByTestId("issue-pin-fab"));

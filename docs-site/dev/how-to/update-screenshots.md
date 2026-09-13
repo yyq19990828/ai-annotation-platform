@@ -384,6 +384,8 @@ pnpm docs:media:audit -- --release
 场景，主图不被浮动面板遮挡，且移动端与 `prefers-reduced-motion` 下不自动播放。Hero 源图更新后还要
 重新生成派生 WebP。生成器先核对源图与截图清单的哈希，再把派生关系写入流程媒体清单；不传 `--asset` 时处理全部四张卡片。媒体审计也会读取主题组件中的静态图片导入，覆盖这些首页配图。源录像保留在 `.artifacts/recordings/` 或 `.artifacts/marketing/`；备份确认前不要删除。
 
+若本机 ffmpeg 缺少 `libwebp` 编码器，首页静态图生成器会尝试已安装的 `cwebp`，沿用相同质量和像素尺寸；两者都不可用时保留已有成品并报错。
+
 ## 生成来源与人工复核版本
 
 生成来源和人工复核是两个独立事实：

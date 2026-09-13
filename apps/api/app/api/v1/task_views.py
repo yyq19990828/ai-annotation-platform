@@ -38,6 +38,9 @@ from app.services.data_management.views import (
     TaskViewService,
     builtin_views,
     invalid_filter_fields,
+    validate_columns,
+    validate_filter,
+    validate_sort,
 )
 from app.services.user_brief import resolve_briefs
 
@@ -387,6 +390,9 @@ async def query_project_tasks(
     user: User = Depends(get_current_user),
 ):
     project = await assert_project_visible(project_id, db, user)
+    validate_filter(payload.filter_json, project=project, user=user)
+    validate_sort(_sort_to_json(payload.sort_json))
+    validate_columns(payload.columns_json)
     svc = TaskViewService(db)
     rows, total = await svc.query_tasks(
         project_id=project_id,

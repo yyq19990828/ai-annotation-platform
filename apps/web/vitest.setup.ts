@@ -9,6 +9,23 @@ import { server } from "./src/mocks/server";
 // 立即返回，只有真失败才吃满超时，不影响本地速度。
 configure({ asyncUtilTimeout: 5000 });
 
+if (!window.matchMedia) {
+  Object.defineProperty(window, "matchMedia", {
+    writable: true,
+    configurable: true,
+    value: (query: string): MediaQueryList => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    }),
+  });
+}
+
 // v0.16.0 · react-konva → DOM stand-in mock(画布栈统一地基)。
 // 把 Konva 组件渲染成带 data-konva / data-testid 的 <div>,使现有 RTL 风格
 // (fireEvent + getByTestId + 回调断言)能对 Konva 组件生效。

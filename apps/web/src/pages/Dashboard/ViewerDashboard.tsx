@@ -1,3 +1,4 @@
+import { FilterGroup, FilterToggle } from "@/components/filters/FilterControls";
 import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
@@ -5,7 +6,6 @@ import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { StatCard } from "@/components/ui/StatCard";
 import { SearchInput } from "@/components/ui/SearchInput";
-import { TabRow } from "@/components/ui/TabRow";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useToastStore } from "@/components/ui/Toast";
 import { useProjects, useProjectStats } from "@/hooks/useProjects";
@@ -83,7 +83,17 @@ export function ViewerDashboard() {
         <div className="flex items-center justify-between border-b border-border px-4 py-3.5">
           <div className="flex items-center gap-3">
             <h3 className="text-sm font-semibold">项目列表</h3>
-            <TabRow tabs={[...FILTERS]} active={filter} onChange={setFilter} />
+            <FilterGroup label="状态">
+              {FILTERS.map((option) => (
+                <FilterToggle
+                  key={option}
+                  active={filter === option}
+                  onClick={() => setFilter(option)}
+                >
+                  {option}
+                </FilterToggle>
+              ))}
+            </FilterGroup>
           </div>
           <SearchInput placeholder="搜索项目..." value={query} onChange={setQuery} width={220} />
         </div>

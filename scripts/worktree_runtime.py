@@ -113,6 +113,11 @@ def parse_arguments(argv: list[str]):
     )
     parser.add_argument("--mode", choices=("dev", "test", "e2e"))
     parser.add_argument(
+        "--scenario",
+        choices=("filtering",),
+        help="准备并保留手动验收数据，仅用于 up --mode e2e",
+    )
+    parser.add_argument(
         "--with-worker",
         action="store_true",
         help="启动当前 checkout 的普通及数据库维护 worker，不启动 GPU 或 beat",
@@ -137,6 +142,8 @@ def parse_arguments(argv: list[str]):
     if options.skip_migrations and options.command not in {"up", "init", "exec"}:
         parser.error("--skip-migrations 只用于 up/init/exec")
     options.mode = options.mode or ("test" if options.command == "exec" else "dev")
+    if options.scenario and (options.command != "up" or options.mode != "e2e"):
+        parser.error("--scenario 只用于 up --mode e2e，不写入日常开发或单元测试库")
     options.execute = execute
     return options
 
@@ -399,6 +406,14 @@ def run_processes(backend, options) -> int:
         if stopping:
             return 0
         environment = backend.environment()
+        if options.scenario:
+            # Keep the manual guide readable and avoid SQL/S3 debug credential logs.
+            environment = {
+                key: value
+                for key, value in environment.items()
+                if key.upper() != "DEBUG"
+            }
+            environment["DEBUG"] = "false"
 
         def launch(
             command, label, cwd, *, child_environment=None, private_environment=None
@@ -426,6 +441,30 @@ def run_processes(backend, options) -> int:
             elif child.poll() is None:
                 raise WorktreeError(f"{label} 的进程身份无法验证；停止该子进程")
             return child
+
+        acceptance_path = None
+        if options.scenario:
+            seed = launch(
+                [sys.executable, str(root / "scripts/worktree_filtering.py")],
+                "scenario",
+                root / "apps/api",
+                child_environment=application_environment(environment),
+            )
+            while seed.poll() is None and not stopping:
+                time.sleep(0.1)
+            if stopping:
+                return 0
+            if seed.returncode != 0:
+                raise WorktreeError(
+                    "筛选验收数据准备失败；未启动页面，请检查上面的原因"
+                )
+            children.remove(seed)
+            record["children"] = [
+                child for child in record["children"] if child["pid"] != seed.pid
+            ]
+            acceptance_path = str(state_path(root, "e2e", "data", "filtering.json"))
+            record["scenario"] = options.scenario
+            atomic_json(record_path, record)
 
         if options.with_worker:
             from celery import Celery
@@ -522,7 +561,7 @@ def run_processes(backend, options) -> int:
                 "--web-port",
                 str(options.web_port),
             ]
-            expression = f"import {{readFileSync}} from 'node:fs'; import {{runDevWorktree}} from {json.dumps(module)}; const apiEnvironment = JSON.parse(readFileSync(0, 'utf8')); await runDevWorktree({json.dumps(args)}, {{statePath: {json.dumps(state)}, apiEnvironment}});"
+            expression = f"import {{readFileSync}} from 'node:fs'; import {{runDevWorktree}} from {json.dumps(module)}; const apiEnvironment = JSON.parse(readFileSync(0, 'utf8')); await runDevWorktree({json.dumps(args)}, {{statePath: {json.dumps(state)}, acceptancePath: {json.dumps(acceptance_path)}, apiEnvironment}});"
             supervisor_environment = frontend_environment(environment)
             private_environment = application_environment(environment)
         supervisor = launch(
@@ -596,6 +635,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     with environment_lock(resources):
         reject_orphans(backend)
+        if (
+            options.command == "exec"
+            and state_path(root, options.mode, "data", "filtering.json").exists()
+        ):
+            raise WorktreeError(
+                "本环境保留了手动验收数据；先显式 reset，再运行 exec，避免自动化清理验收结果"
+            )
         if options.command in {"destroy", "reset"}:
             backend.destroy(options.confirm)
             if options.command == "destroy":

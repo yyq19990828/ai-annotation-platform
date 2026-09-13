@@ -117,6 +117,20 @@ async def test_seed_reset_returns_fixture_payload(httpx_client):
     assert len(body["task_ids"]) == 5
 
 
+async def test_filtering_seed_route_is_guarded_and_hidden_from_openapi(
+    httpx_client, app_module
+):
+    response = await httpx_client.post("/api/v1/__test/seed/filtering")
+    assert response.status_code == 200, response.text
+    route = next(
+        route
+        for route in app_module.routes
+        if getattr(route, "path", None) == "/api/v1/__test/seed/filtering"
+    )
+    assert route.include_in_schema is False
+    assert "/api/v1/__test/seed/filtering" not in app_module.openapi()["paths"]
+
+
 async def test_seed_reset_is_idempotent_with_singleton_pool(httpx_client, db_session):
     from sqlalchemy import select
 
@@ -622,12 +636,22 @@ async def test_video_issue_context_history_input_cannot_choose_arbitrary_fields(
         )
 
 
-async def test_webcodecs_object_cleanup_paginates_batches_and_verifies():
+@pytest.mark.parametrize("fixture", ["webcodecs", "filtering"])
+async def test_fixture_object_cleanup_paginates_batches_and_verifies(fixture):
     from types import SimpleNamespace
 
-    from app.api.v1._test_seed import _delete_webcodecs_seed_objects
+    from app.api.v1._test_seed import (
+        _delete_filtering_seed_objects,
+        _delete_webcodecs_seed_objects,
+    )
 
-    keys = [f"e2e/video/webcodecs/{index}.mp4" for index in range(1001)]
+    prefix = "e2e/video/webcodecs/" if fixture == "webcodecs" else "e2e/filtering/"
+    cleanup = (
+        _delete_webcodecs_seed_objects
+        if fixture == "webcodecs"
+        else _delete_filtering_seed_objects
+    )
+    keys = [f"{prefix}{index}.mp4" for index in range(1001)]
 
     class Client:
         def __init__(self):
@@ -635,6 +659,8 @@ async def test_webcodecs_object_cleanup_paginates_batches_and_verifies():
             self.deleted_batches: list[list[str]] = []
 
         def list_objects_v2(self, **kwargs):
+            assert kwargs["Bucket"] == "datasets"
+            assert kwargs["Prefix"] == prefix
             self.list_calls += 1
             if kwargs.get("MaxKeys") == 1:
                 return {"Contents": []}
@@ -653,9 +679,7 @@ async def test_webcodecs_object_cleanup_paginates_batches_and_verifies():
             return {}
 
     client = Client()
-    _delete_webcodecs_seed_objects(
-        SimpleNamespace(client=client, datasets_bucket="datasets")
-    )
+    cleanup(SimpleNamespace(client=client, datasets_bucket="datasets"))
     assert [len(batch) for batch in client.deleted_batches] == [1000, 1]
     assert client.list_calls == 3
 

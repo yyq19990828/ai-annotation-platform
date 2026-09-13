@@ -10,8 +10,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
+import { useEffect } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import type { ProjectTemplateOut } from "@/api/projectTemplates";
@@ -95,17 +96,32 @@ function makeTemplate(overrides: Partial<ProjectTemplateOut> = {}): ProjectTempl
   };
 }
 
-function renderUI() {
+function renderUI(initialPath = "/project-templates", navigateTo?: string) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
     <QueryClientProvider client={qc}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[initialPath]}>
+        {navigateTo ? <NavigateOnMount to={navigateTo} /> : null}
+        <LocationProbe />
         <ProjectTemplatesPage />
       </MemoryRouter>
     </QueryClientProvider>,
   );
+}
+
+function NavigateOnMount({ to }: { to: string }) {
+  const navigate = useNavigate();
+  useEffect(() => {
+    navigate(to, { replace: true });
+  }, [navigate, to]);
+  return null;
+}
+
+function LocationProbe() {
+  const location = useLocation();
+  return <output data-testid="location-search">{location.search}</output>;
 }
 
 describe("ProjectTemplatesPage", () => {
@@ -120,6 +136,7 @@ describe("ProjectTemplatesPage", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it("加载中 → 显示 loading 文案", () => {
@@ -177,5 +194,52 @@ describe("ProjectTemplatesPage", () => {
     });
     renderUI();
     expect(screen.queryByTestId("template-delete-t-x")).not.toBeInTheDocument();
+  });
+
+  it("restores the template scope and q from the URL", () => {
+    mockUseProjectTemplates.mockReturnValue({ data: [], isLoading: false });
+    renderUI("/project-templates?q=car&scope=all");
+    expect(screen.getByPlaceholderText("搜索模板名称…")).toHaveValue("car");
+    expect(mockUseProjectTemplates).toHaveBeenLastCalledWith({ search: "car" });
+    fireEvent.click(screen.getByRole("button", { name: "组织模板" }));
+    expect(screen.getByTestId("location-search").textContent).toContain("scope=organization");
+    expect(mockUseProjectTemplates).toHaveBeenLastCalledWith({
+      scope: "organization",
+      search: "car",
+    });
+  });
+
+  it("debounces template q requests while writing q immediately", async () => {
+    vi.useFakeTimers();
+    mockUseProjectTemplates.mockReturnValue({ data: [], isLoading: false });
+    renderUI();
+    fireEvent.change(screen.getByPlaceholderText("搜索模板名称…"), {
+      target: { value: "car" },
+    });
+    expect(screen.getByTestId("location-search").textContent).toContain("q=car");
+    expect(mockUseProjectTemplates).toHaveBeenLastCalledWith({
+      scope: "private",
+      search: undefined,
+    });
+    await act(async () => {
+      vi.advanceTimersByTime(250);
+    });
+    expect(mockUseProjectTemplates).toHaveBeenLastCalledWith({
+      scope: "private",
+      search: "car",
+    });
+  });
+
+  it("applies q and scope together after external URL navigation", async () => {
+    mockUseProjectTemplates.mockReturnValue({ data: [], isLoading: false });
+    renderUI("/project-templates?q=old&scope=private", "/project-templates?q=new&scope=all");
+    await waitFor(() => {
+      expect(mockUseProjectTemplates).toHaveBeenLastCalledWith({ search: "new" });
+    });
+    expect(
+      mockUseProjectTemplates.mock.calls.some(
+        ([params]) => params.scope === undefined && params.search === "old",
+      ),
+    ).toBe(false);
   });
 });

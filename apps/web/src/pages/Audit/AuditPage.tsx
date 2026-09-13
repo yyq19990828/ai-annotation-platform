@@ -1,3 +1,8 @@
+import { FilterGroup, FilterSelect } from "@/components/filters/FilterControls";
+import { FilterPanel } from "@/components/filters/FilterPanel";
+import { FilterTrigger } from "@/components/filters/FilterTrigger";
+import { ActiveFilterChip } from "@/components/filters/ActiveFilterChip";
+import { Input } from "@/components/shadcn/ui/input";
 import {
   useCallback,
   useEffect,
@@ -8,7 +13,6 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { useSearchParams } from "react-router-dom";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   Bar,
@@ -35,6 +39,9 @@ import { ROLE_LABELS } from "@/constants/roles";
 import type { AuditLogResponse, AuditSummaryBucket } from "@/api/audit";
 import type { UserRole } from "@/types";
 import { useElementStyle } from "@/components/ui/useElementStyle";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { useUrlFilterState } from "@/hooks/useUrlFilterState";
+import { AUDIT_URL_DEFAULTS, AUDIT_URL_KEYS, auditUrlCodec } from "./auditUrlState";
 import styles from "./AuditPage.module.css";
 
 const PAGE_SIZE = 20;
@@ -45,15 +52,34 @@ function cssVar(name: string): string {
 }
 
 export function AuditPage() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [page, setPage] = useState(1);
-  const [actionFilter, setActionFilter] = useState(searchParams.get("action") ?? "");
-  const [targetType, setTargetType] = useState(searchParams.get("target_type") ?? "");
-  const [targetId, setTargetId] = useState(searchParams.get("target_id") ?? "");
-  const [actorId, setActorId] = useState(searchParams.get("actor_id") ?? "");
-  const [detailKey, setDetailKey] = useState(searchParams.get("detail_key") ?? "");
-  const [detailValue, setDetailValue] = useState(searchParams.get("detail_value") ?? "");
-  const [scope, setScope] = useState<"business" | "all">("business");
+  const urlState = useUrlFilterState({
+    codec: auditUrlCodec,
+    defaults: AUDIT_URL_DEFAULTS,
+    ownedKeys: AUDIT_URL_KEYS,
+  });
+  const { state: filters, issues, patch } = urlState;
+  const [targetIdDraft, setTargetIdDraft] = useState(filters.targetId);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [actorQuery, setActorQuery] = useState("");
+  const [detailKeyDraft, setDetailKeyDraft] = useState(filters.detailKey);
+  const [detailValueDraft, setDetailValueDraft] = useState(filters.detailValue);
+  const syncingTextDrafts = useRef({ targetId: false, detailKey: false, detailValue: false });
+  const lastUrlText = useRef({
+    targetId: filters.targetId,
+    detailKey: filters.detailKey,
+    detailValue: filters.detailValue,
+  });
+  const debouncedTargetId = useDebouncedValue(targetIdDraft, 250);
+  const debouncedDetailKey = useDebouncedValue(detailKeyDraft, 250);
+  const debouncedDetailValue = useDebouncedValue(detailValueDraft, 250);
+  const page = filters.page;
+  const scope = filters.scope;
+  const actionFilter = filters.action;
+  const targetType = filters.targetType;
+  const targetId = filters.targetId;
+  const actorId = filters.actorId;
+  const detailKey = filters.detailKey;
+  const detailValue = filters.detailValue;
   const [detail, setDetail] = useState<AuditLogResponse | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -61,44 +87,107 @@ export function AuditPage() {
 
   const { data: usersData = [] } = useUsers();
 
-  // URL 参数变化（如从 UsersPage 跳过来）→ 更新筛选并回到第 1 页
   useEffect(() => {
-    setActionFilter(searchParams.get("action") ?? "");
-    setTargetType(searchParams.get("target_type") ?? "");
-    setTargetId(searchParams.get("target_id") ?? "");
-    setActorId(searchParams.get("actor_id") ?? "");
-    setDetailKey(searchParams.get("detail_key") ?? "");
-    setDetailValue(searchParams.get("detail_value") ?? "");
-    setPage(1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams.toString()]);
+    const previous = lastUrlText.current;
+    if (
+      previous.targetId === filters.targetId &&
+      previous.detailKey === filters.detailKey &&
+      previous.detailValue === filters.detailValue
+    ) {
+      return;
+    }
+    lastUrlText.current = {
+      targetId: filters.targetId,
+      detailKey: filters.detailKey,
+      detailValue: filters.detailValue,
+    };
+    const syncTargetId =
+      previous.targetId !== filters.targetId && targetIdDraft !== filters.targetId;
+    const syncDetailKey =
+      previous.detailKey !== filters.detailKey && detailKeyDraft !== filters.detailKey;
+    const syncDetailValue =
+      previous.detailValue !== filters.detailValue && detailValueDraft !== filters.detailValue;
+    // Rehydrating one field must not suspend a pending edit in another field.
+    if (previous.targetId !== filters.targetId) {
+      syncingTextDrafts.current.targetId = syncTargetId;
+      if (syncTargetId) setTargetIdDraft(filters.targetId);
+    }
+    if (previous.detailKey !== filters.detailKey) {
+      syncingTextDrafts.current.detailKey = syncDetailKey;
+      if (syncDetailKey) setDetailKeyDraft(filters.detailKey);
+    }
+    if (previous.detailValue !== filters.detailValue) {
+      syncingTextDrafts.current.detailValue = syncDetailValue;
+      if (syncDetailValue) setDetailValueDraft(filters.detailValue);
+    }
+  }, [
+    detailKeyDraft,
+    detailValueDraft,
+    filters.detailKey,
+    filters.detailValue,
+    filters.targetId,
+    targetIdDraft,
+  ]);
+
+  useEffect(() => {
+    if (syncingTextDrafts.current.targetId) {
+      if (debouncedTargetId === filters.targetId) {
+        syncingTextDrafts.current.targetId = false;
+      }
+      return;
+    }
+    const nextTargetId = debouncedTargetId.trim();
+    if (nextTargetId !== targetIdDraft.trim()) return;
+    if (nextTargetId === filters.targetId) return;
+    patch({ targetId: nextTargetId, page: 1 }, { replace: true });
+  }, [debouncedTargetId, filters.targetId, patch, targetIdDraft]);
+
+  useEffect(() => {
+    if (syncingTextDrafts.current.detailKey) {
+      if (debouncedDetailKey === filters.detailKey) syncingTextDrafts.current.detailKey = false;
+      return;
+    }
+    const nextDetailKey = debouncedDetailKey.trim();
+    if (nextDetailKey !== detailKeyDraft.trim()) return;
+    if (nextDetailKey === filters.detailKey) return;
+    patch({ detailKey: nextDetailKey, page: 1 }, { replace: true });
+  }, [debouncedDetailKey, detailKeyDraft, filters.detailKey, patch]);
+
+  useEffect(() => {
+    if (syncingTextDrafts.current.detailValue) {
+      if (debouncedDetailValue === filters.detailValue)
+        syncingTextDrafts.current.detailValue = false;
+      return;
+    }
+    if (debouncedDetailValue !== detailValueDraft) return;
+    if (debouncedDetailValue === filters.detailValue) return;
+    patch({ detailValue: debouncedDetailValue, page: 1 }, { replace: true });
+  }, [debouncedDetailValue, detailValueDraft, filters.detailValue, patch]);
 
   const focused = !!actorId || !!targetId || !!targetType || !!actionFilter || !!detailKey;
   const focusedActor = actorId ? usersData.find((u) => u.id === actorId) : null;
 
   const clearFocus = () => {
-    setSearchParams({}, { replace: true });
-    setActionFilter("");
-    setTargetType("");
-    setTargetId("");
-    setActorId("");
-    setDetailKey("");
-    setDetailValue("");
-    setPage(1);
+    patch(
+      {
+        action: "",
+        targetType: "",
+        targetId: "",
+        actorId: "",
+        detailKey: "",
+        detailValue: "",
+        page: 1,
+      },
+      { replace: false },
+    );
   };
 
   const drillDownAction = (action: string) => {
-    const next = new URLSearchParams(searchParams);
-    next.set("action", action);
-    setSearchParams(next, { replace: true });
-    setActionFilter(action);
-    setPage(1);
+    patch({ action, page: 1 }, { replace: false });
   };
 
-  const params = useMemo(
+  const appliedFilters = useMemo(
     () => ({
-      page,
-      page_size: PAGE_SIZE,
       action: actionFilter || undefined,
       target_type: targetType || undefined,
       target_id: targetId || undefined,
@@ -107,7 +196,11 @@ export function AuditPage() {
       detail_value: detailKey ? detailValue : undefined,
       business_only: scope === "business" ? true : undefined,
     }),
-    [page, actionFilter, targetType, targetId, actorId, detailKey, detailValue, scope],
+    [actionFilter, actorId, detailKey, detailValue, scope, targetId, targetType],
+  );
+  const params = useMemo(
+    () => ({ ...appliedFilters, page, page_size: PAGE_SIZE }),
+    [appliedFilters, page],
   );
   const { data, isLoading, refetch, isFetching } = useAuditLogs(params, {
     refetchInterval: autoRefresh ? 30_000 : false,
@@ -117,7 +210,7 @@ export function AuditPage() {
     if (exporting) return;
     setExporting(true);
     try {
-      await auditApi.export(params, format);
+      await auditApi.export(appliedFilters, format);
       pushToast({ msg: `已导出审计日志 ${format.toUpperCase()}`, kind: "success" });
     } catch (err) {
       pushToast({
@@ -225,6 +318,11 @@ export function AuditPage() {
           <p className={styles.description}>
             所有写操作（POST/PATCH/PUT/DELETE）由中间件捕获；关键业务事件携带结构化 detail。
           </p>
+          {!!issues.length && (
+            <div role="alert" className="mt-1 text-xs text-status-caution">
+              URL 审计筛选无法完整恢复，已使用安全默认值。
+            </div>
+          )}
         </div>
         <div className={styles.actions}>
           <label className={styles.autoRefresh}>
@@ -253,92 +351,160 @@ export function AuditPage() {
 
       <Card>
         <div className={styles.filters}>
-          <select
-            value={scope}
-            onChange={(e) => {
-              setScope(e.target.value as "business" | "all");
-              setPage(1);
-            }}
-            className={styles.control}
+          <FilterGroup label="事件范围" compact>
+            <FilterSelect
+              aria-label="审计事件范围"
+              value={scope}
+              onChange={(e) => {
+                patch({ scope: e.target.value as "business" | "all", page: 1 }, { replace: false });
+              }}
+              className="w-full"
+            >
+              <option value="business">仅业务事件</option>
+              <option value="all">全部（含 HTTP 元数据）</option>
+            </FilterSelect>
+          </FilterGroup>
+          <FilterPanel
+            open={filtersOpen}
+            onOpenChange={setFiltersOpen}
+            trigger={
+              <FilterTrigger
+                count={
+                  [actionFilter, targetType, actorId, targetId, detailKey].filter(Boolean).length
+                }
+              />
+            }
+            title="审计筛选"
+            description="即时生效 · 详情键值允许为空字符串。"
+            align="start"
+            footer={
+              <div className="flex justify-between gap-2">
+                <Button size="sm" variant="ghost" onClick={clearFocus}>
+                  清除追溯
+                </Button>
+                <Button size="sm" onClick={() => setFiltersOpen(false)}>
+                  完成
+                </Button>
+              </div>
+            }
           >
-            <option value="business">仅业务事件</option>
-            <option value="all">全部（含 HTTP 元数据）</option>
-          </select>
-          <select
-            value={actionFilter}
-            onChange={(e) => {
-              setActionFilter(e.target.value);
-              setPage(1);
-            }}
-            className={styles.control}
-          >
-            <option value="">全部动作</option>
-            {AUDIT_BUSINESS_ACTIONS.map((a) => (
-              <option key={a} value={a}>
-                {auditActionLabel(a)}
-              </option>
-            ))}
-          </select>
-          <select
-            value={targetType}
-            onChange={(e) => {
-              setTargetType(e.target.value);
-              setPage(1);
-            }}
-            className={styles.control}
-          >
-            <option value="">全部对象</option>
-            {AUDIT_TARGET_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-          <select
-            value={actorId}
-            onChange={(e) => {
-              setActorId(e.target.value);
-              setPage(1);
-            }}
-            className={`${styles.control} ${styles.actorControl}`}
-          >
-            <option value="">全部用户</option>
-            {usersData.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name} · {u.email}
-              </option>
-            ))}
-          </select>
-          <input
-            value={targetId}
-            placeholder="对象 ID（精确匹配）"
-            onChange={(e) => {
-              setTargetId(e.target.value);
-              setPage(1);
-            }}
-            className={`${styles.control} ${styles.targetInput}`}
-          />
-          <input
-            value={detailKey}
-            placeholder="detail 键名（如 role）"
-            title="A.3：detail_json 字段级 GIN 过滤——键名"
-            onChange={(e) => {
-              setDetailKey(e.target.value);
-              setPage(1);
-            }}
-            className={`${styles.control} ${styles.detailKeyInput}`}
-          />
-          <input
-            value={detailValue}
-            placeholder="detail 键值（如 super_admin）"
-            title="A.3：detail_json 字段级 GIN 过滤——键值（与键名共同生效）"
-            onChange={(e) => {
-              setDetailValue(e.target.value);
-              setPage(1);
-            }}
-            disabled={!detailKey}
-            className={`${styles.control} ${styles.detailValueInput} ${detailKey ? "" : styles.controlDisabled}`}
-          />
+            <div className="grid gap-3">
+              <label className="flex min-w-0 flex-col gap-1.5 text-xs text-muted-foreground">
+                动作
+                <FilterSelect
+                  aria-label="审计动作"
+                  value={actionFilter}
+                  onChange={(e) => {
+                    patch({ action: e.target.value, page: 1 }, { replace: false });
+                  }}
+                  className="w-full"
+                >
+                  <option value="">全部动作</option>
+                  {AUDIT_BUSINESS_ACTIONS.map((a) => (
+                    <option key={a} value={a}>
+                      {auditActionLabel(a)}
+                    </option>
+                  ))}
+                </FilterSelect>
+              </label>
+              <label className="flex min-w-0 flex-col gap-1.5 text-xs text-muted-foreground">
+                对象类型
+                <FilterSelect
+                  aria-label="审计对象类型"
+                  value={targetType}
+                  onChange={(e) => {
+                    patch({ targetType: e.target.value, page: 1 }, { replace: false });
+                  }}
+                  className="w-full"
+                >
+                  <option value="">全部对象</option>
+                  {AUDIT_TARGET_TYPES.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </FilterSelect>
+              </label>
+              <div className="space-y-2">
+                <span className="text-xs font-medium text-muted-foreground">操作人</span>
+                <Input
+                  aria-label="搜索审计操作人"
+                  placeholder="搜索姓名或邮箱"
+                  value={actorQuery}
+                  onChange={(event) => setActorQuery(event.target.value)}
+                  className="h-8"
+                />
+                <FilterSelect
+                  aria-label="审计操作人"
+                  value={actorId}
+                  onChange={(e) => {
+                    patch({ actorId: e.target.value, page: 1 }, { replace: false });
+                  }}
+                  className="w-full"
+                >
+                  <option value="">全部用户</option>
+                  {actorId && !usersData.some((user) => user.id === actorId) && (
+                    <option value={actorId}>当前指定用户</option>
+                  )}
+                  {usersData
+                    .filter(
+                      (user) =>
+                        user.id === actorId ||
+                        `${user.name} ${user.email}`
+                          .toLocaleLowerCase()
+                          .includes(actorQuery.trim().toLocaleLowerCase()),
+                    )
+                    .map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name} · {u.email}
+                      </option>
+                    ))}
+                </FilterSelect>
+              </div>
+              <label className="flex min-w-0 flex-col gap-1.5 text-xs text-muted-foreground">
+                对象 ID
+                <Input
+                  aria-label="对象 ID（精确匹配）"
+                  value={targetIdDraft}
+                  placeholder="对象 ID（精确匹配）"
+                  onChange={(e) => {
+                    syncingTextDrafts.current.targetId = false;
+                    setTargetIdDraft(e.target.value);
+                  }}
+                  className="h-8"
+                />
+              </label>
+              <label className="flex min-w-0 flex-col gap-1.5 text-xs text-muted-foreground">
+                详情键名
+                <Input
+                  aria-label="detail 键名"
+                  value={detailKeyDraft}
+                  placeholder="detail 键名（如 role）"
+                  title="A.3：detail_json 字段级 GIN 过滤——键名"
+                  onChange={(e) => {
+                    syncingTextDrafts.current.detailKey = false;
+                    setDetailKeyDraft(e.target.value);
+                  }}
+                  className="h-8"
+                />
+              </label>
+              <label className="flex min-w-0 flex-col gap-1.5 text-xs text-muted-foreground">
+                详情键值
+                <Input
+                  aria-label="detail 键值"
+                  value={detailValueDraft}
+                  placeholder="detail 键值（如 super_admin）"
+                  title="A.3：detail_json 字段级 GIN 过滤——键值（与键名共同生效）"
+                  onChange={(e) => {
+                    syncingTextDrafts.current.detailValue = false;
+                    setDetailValueDraft(e.target.value);
+                  }}
+                  disabled={!detailKey}
+                  className="h-8"
+                />
+              </label>
+            </div>
+          </FilterPanel>
           <span className={styles.totalText}>
             共 {total} 条 · 第 {page} / {pageCount} 页
           </span>
@@ -351,36 +517,50 @@ export function AuditPage() {
 
         {focused && (
           <div className={styles.focusBar}>
-            <div className={styles.focusTags}>
-              <Icon name="target" size={13} className={styles.accentIcon} />
-              <span className={styles.mutedText}>追溯模式：</span>
-              {focusedActor && (
-                <SmallBadge>
-                  操作人 {focusedActor.name} · {focusedActor.email}
-                </SmallBadge>
+            <FilterGroup label="追溯模式" compact className={styles.focusTags}>
+              {actorId && (
+                <ActiveFilterChip
+                  label="操作人"
+                  value={focusedActor ? `${focusedActor.name} · ${focusedActor.email}` : actorId}
+                  onClick={() => setFiltersOpen(true)}
+                  onRemove={() => patch({ actorId: "", page: 1 }, { replace: false })}
+                />
               )}
-              {!focusedActor && actorId && (
-                <SmallBadge>
-                  actor_id = <span className="mono">{actorId.slice(0, 8)}…</span>
-                </SmallBadge>
+              {targetType && (
+                <ActiveFilterChip
+                  label="对象类型"
+                  value={targetType}
+                  onClick={() => setFiltersOpen(true)}
+                  onRemove={() => patch({ targetType: "", page: 1 }, { replace: false })}
+                />
               )}
-              {targetType && <SmallBadge>对象类型 {targetType}</SmallBadge>}
               {targetId && (
-                <SmallBadge>
-                  对象 ID{" "}
-                  <span className="mono">
-                    {targetId.length > 24 ? targetId.slice(0, 8) + "…" : targetId}
-                  </span>
-                </SmallBadge>
+                <ActiveFilterChip
+                  label="对象 ID"
+                  value={targetId}
+                  onClick={() => setFiltersOpen(true)}
+                  onRemove={() => patch({ targetId: "", page: 1 }, { replace: false })}
+                />
               )}
-              {actionFilter && <SmallBadge>动作 {actionFilter}</SmallBadge>}
+              {actionFilter && (
+                <ActiveFilterChip
+                  label="动作"
+                  value={actionFilter}
+                  onClick={() => setFiltersOpen(true)}
+                  onRemove={() => patch({ action: "", page: 1 }, { replace: false })}
+                />
+              )}
               {detailKey && (
-                <SmallBadge>
-                  detail.{detailKey}
-                  {detailValue ? ` = ${detailValue}` : ""}
-                </SmallBadge>
+                <ActiveFilterChip
+                  label={`detail.${detailKey}`}
+                  value={detailValue === "" ? "（空字符串）" : detailValue}
+                  onClick={() => setFiltersOpen(true)}
+                  onRemove={() =>
+                    patch({ detailKey: "", detailValue: "", page: 1 }, { replace: false })
+                  }
+                />
               )}
-            </div>
+            </FilterGroup>
             <Button size="sm" variant="ghost" onClick={clearFocus}>
               <Icon name="x" size={11} />
               清除追溯
@@ -440,8 +620,7 @@ export function AuditPage() {
                           <button
                             type="button"
                             onClick={() => {
-                              setActorId(it.actor_id!);
-                              setPage(1);
+                              patch({ actorId: it.actor_id!, page: 1 }, { replace: false });
                             }}
                             title="按操作人追溯"
                             className={styles.focusButton}
@@ -473,9 +652,14 @@ export function AuditPage() {
                       <button
                         type="button"
                         onClick={() => {
-                          setTargetType(it.target_type!);
-                          setTargetId(it.target_id!);
-                          setPage(1);
+                          patch(
+                            {
+                              targetType: it.target_type!,
+                              targetId: it.target_id!,
+                              page: 1,
+                            },
+                            { replace: false },
+                          );
                         }}
                         title={`按对象 ${it.target_type}/${it.target_id} 追溯`}
                         className={styles.focusButton}
@@ -505,11 +689,19 @@ export function AuditPage() {
         </div>
 
         <div className={styles.pagination}>
-          <Button size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
+          <Button
+            size="sm"
+            disabled={page <= 1}
+            onClick={() => patch({ page: Math.max(1, page - 1) }, { replace: false })}
+          >
             <Icon name="chevLeft" size={11} />
             上一页
           </Button>
-          <Button size="sm" disabled={page >= pageCount} onClick={() => setPage((p) => p + 1)}>
+          <Button
+            size="sm"
+            disabled={page >= pageCount}
+            onClick={() => patch({ page: page + 1 }, { replace: false })}
+          >
             下一页
             <Icon name="chevRight" size={11} />
           </Button>
@@ -525,11 +717,16 @@ export function AuditPage() {
                   size="sm"
                   variant="ghost"
                   onClick={() => {
-                    setActorId(detail.actor_id!);
-                    setTargetType("");
-                    setTargetId("");
-                    setActionFilter("");
-                    setPage(1);
+                    patch(
+                      {
+                        actorId: detail.actor_id!,
+                        targetType: "",
+                        targetId: "",
+                        action: "",
+                        page: 1,
+                      },
+                      { replace: false },
+                    );
                     setDetail(null);
                   }}
                 >
@@ -541,11 +738,16 @@ export function AuditPage() {
                   size="sm"
                   variant="ghost"
                   onClick={() => {
-                    setTargetType(detail.target_type!);
-                    setTargetId(detail.target_id!);
-                    setActorId("");
-                    setActionFilter("");
-                    setPage(1);
+                    patch(
+                      {
+                        targetType: detail.target_type!,
+                        targetId: detail.target_id!,
+                        actorId: "",
+                        action: "",
+                        page: 1,
+                      },
+                      { replace: false },
+                    );
                     setDetail(null);
                   }}
                 >

@@ -33,6 +33,54 @@ export interface SeedData {
   ml_backend_id: string;
 }
 
+export interface FilteringSeedManifest {
+  users: Record<string, string>;
+  user_emails: Record<string, string>;
+  image: {
+    project_id: string;
+    task_ids: Record<string, string>;
+    object_ids: Record<string, string[]>;
+    batch_ids: Record<string, string>;
+    schema: Record<string, string>;
+    expected: Record<string, string[]>;
+    saved_view_ids: Record<string, string>;
+  };
+  video: {
+    project_id: string;
+    task_ids: Record<string, string>;
+    candidate_ids: Record<string, string>;
+    tracker_job_ids: Record<string, string>;
+    expected: Record<string, string[]>;
+  };
+  paging: {
+    project_id: string;
+    task_id: string;
+    object_ids: string[];
+    expected_page_one_object_ids: string[];
+    expected_page_two_object_ids: string[];
+  };
+  lidar: {
+    project_id: string;
+    scene_id: string;
+    task_ids: string[];
+    track_refs: string[];
+    hidden_track_ref: string;
+    expected_visible_track_refs: string[];
+    saved_view_ids: Record<string, string>;
+  };
+  operations: {
+    project_ids: string[];
+    dataset_ids: string[];
+    template_ids: string[];
+    user_ids: string[];
+    user_emails: string[];
+    invitation_ids: string[];
+    job_ids: string[];
+    bug_ids: string[];
+    audit_ids: string[];
+  };
+}
+
 export type ScreenshotUserKey = "admin" | "project_admin" | "annotator" | "reviewer";
 export type ScreenshotCoreProjectKey =
   | "image_demo"
@@ -377,6 +425,16 @@ export class SeedAPI {
       throw new Error(`seed/reset failed: ${res.status()} ${await res.text()}`);
     }
     return (await res.json()) as SeedData;
+  }
+
+  async filtering(): Promise<FilteringSeedManifest> {
+    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/filtering`, {
+      timeout: 120_000,
+    });
+    if (!res.ok()) {
+      throw new Error(`seed/filtering failed: ${res.status()} ${await res.text()}`);
+    }
+    return (await res.json()) as FilteringSeedManifest;
   }
 
   /** 截图专用只读 catalog：解析稳定逻辑键，服务端会对完整 profile fail-closed。 */

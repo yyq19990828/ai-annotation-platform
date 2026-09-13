@@ -126,17 +126,31 @@ export const invitationsApi = {
       token,
     }),
 
-  list: (params?: { status?: InvitationStatus | "all"; scope?: "me" | "all" }) => {
+  list: (
+    params?: { status?: InvitationStatus | "all"; scope?: "me" | "all" },
+    signal?: AbortSignal,
+  ) => {
     const q = new URLSearchParams();
     if (params?.status) q.set("status", params.status);
     if (params?.scope) q.set("scope", params.scope);
     const qs = q.toString();
-    return apiClient.get<InvitationResponse[]>(`/invitations${qs ? `?${qs}` : ""}`);
+    const path = `/invitations${qs ? `?${qs}` : ""}`;
+    return signal
+      ? apiClient.get<InvitationResponse[]>(path, { signal })
+      : apiClient.get<InvitationResponse[]>(path);
   },
-  page: (params: InvitationPageParams = {}) =>
-    apiClient.get<InvitationPageResponse>(`/invitations/query?${invitationQuery(params)}`),
-  stats: (params: Omit<InvitationPageParams, "page" | "page_size"> = {}) =>
-    apiClient.get<InvitationStats>(`/invitations/stats?${invitationQuery(params)}`),
+  page: (params: InvitationPageParams = {}, signal?: AbortSignal) => {
+    const path = `/invitations/query?${invitationQuery(params)}`;
+    return signal
+      ? apiClient.get<InvitationPageResponse>(path, { signal })
+      : apiClient.get<InvitationPageResponse>(path);
+  },
+  stats: (params: Omit<InvitationPageParams, "page" | "page_size"> = {}, signal?: AbortSignal) => {
+    const path = `/invitations/stats?${invitationQuery(params)}`;
+    return signal
+      ? apiClient.get<InvitationStats>(path, { signal })
+      : apiClient.get<InvitationStats>(path);
+  },
   exportInvitations: async (params: Omit<InvitationPageParams, "page" | "page_size"> = {}) => {
     const token = localStorage.getItem("token");
     const response = await fetch(

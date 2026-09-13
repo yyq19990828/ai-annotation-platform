@@ -466,6 +466,66 @@ describe("useImageAnnotationActions module", () => {
     expect(typeof useImageAnnotationActions).toBe("function");
   });
 
+  it("resets prediction source visibility when the project changes", () => {
+    const view = decisionHarness();
+    view.args.predictionsData = [
+      {
+        id: "p",
+        source: "ml_backend",
+        result: [
+          {
+            geometry: { type: "bbox", x: 0.1, y: 0.1, w: 0.2, h: 0.2 },
+            class_name: "Car",
+            confidence: 0.9,
+          },
+        ],
+      },
+    ] as never;
+    view.rerender();
+    act(() => view.result.current.predictionSourceFilter.onToggle("ml_backend", false));
+    expect(view.result.current.aiBoxes).toHaveLength(0);
+    predictionMutations.accept.mockReset();
+    act(() => {
+      void view.result.current.handleAcceptAll();
+    });
+    expect(predictionMutations.accept).not.toHaveBeenCalled();
+
+    view.args.projectId = "project-2";
+    view.rerender();
+    expect(view.result.current.predictionSourceFilter.visibility.ml_backend).toBe(true);
+    expect(view.result.current.aiBoxes).toHaveLength(1);
+  });
+
+  it("keeps batch acceptance on loaded source-visible candidates and excludes IoU duplicates", async () => {
+    const view = decisionHarness();
+    view.args.predictionsData = [
+      {
+        id: "p",
+        source: "ml_backend",
+        result: [0.1, 0.4, 0.7].map((x, shape_index) => ({
+          geometry: { type: "bbox", x, y: 0.1, w: 0.2, h: 0.2 },
+          class_name: "Car",
+          confidence: 0.9,
+          shape_index,
+        })),
+      },
+    ] as never;
+    view.args.userBoxes = [{ ...box("manual"), x: 0.1, y: 0.1, w: 0.2, h: 0.2 }] as never;
+    predictionMutations.accept.mockResolvedValue([]);
+    view.rerender();
+
+    expect(view.result.current.aiBoxes).toHaveLength(3);
+    expect(view.result.current.batchEligibleCount).toBe(2);
+    await act(async () => {
+      await view.result.current.handleAcceptAll();
+    });
+
+    expect(predictionMutations.accept).toHaveBeenCalledTimes(2);
+    expect(predictionMutations.accept).not.toHaveBeenCalledWith(
+      expect.objectContaining({ shapeIndex: 0 }),
+    );
+  });
+
   it("builds batch class-change target from current selection", () => {
     expect(getBatchChangeTarget(["b"], [box("a"), box("b", "Bike")])).toEqual({
       geom: { x: 0.1, y: 0.2, w: 0.3, h: 0.4 },

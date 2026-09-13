@@ -1,3 +1,4 @@
+import { FilterGroup, FilterToggle } from "@/components/filters/FilterControls";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
@@ -402,10 +403,9 @@ export function AnnotatePage() {
           </div>
         )}
 
-        <div role="group" aria-label="任务状态筛选" className="mb-3 flex flex-wrap gap-2">
-          <Button
-            size="sm"
-            variant={rejectedOnly ? "default" : "primary"}
+        <FilterGroup label="任务状态" aria-label="任务状态筛选" className="mb-3">
+          <FilterToggle
+            active={!rejectedOnly}
             onClick={() =>
               setSearchParams((previous) => {
                 const next = new URLSearchParams(previous);
@@ -415,10 +415,9 @@ export function AnnotatePage() {
             }
           >
             全部任务
-          </Button>
-          <Button
-            size="sm"
-            variant={rejectedOnly ? "primary" : "default"}
+          </FilterToggle>
+          <FilterToggle
+            active={rejectedOnly}
             onClick={() =>
               setSearchParams((previous) => {
                 const next = new URLSearchParams(previous);
@@ -428,8 +427,8 @@ export function AnnotatePage() {
             }
           >
             待重做
-          </Button>
-        </div>
+          </FilterToggle>
+        </FilterGroup>
         {batchesRefreshPaused && <QueryPausedNotice resource="分派批次" />}
 
         {batchesQuery.isError && hasBatchData && (

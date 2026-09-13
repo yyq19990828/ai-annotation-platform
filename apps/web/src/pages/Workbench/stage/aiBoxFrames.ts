@@ -19,14 +19,22 @@ import {
 
 /**
  * AI 候选在给定帧是否可见:
- *  - video_bbox: 比对 frame_index
- *  - video_track_bbox: 该帧能否从 keyframes 解出框 (resolveTrackAtFrame 非 null)
+ *  - 视频单帧几何: 比对 frame_index
+ *  - 视频轨迹: 该帧能否从 keyframes 解出形状 (resolve*AtFrame 非 null)
  *  - 其它 (图片候选): 不做帧过滤, 恒可见
  */
 export function aiBoxOnFrame(box: AiBox, frameIndex: number): boolean {
   const g = box.geometry;
   if (!g) return false;
-  if (g.type === "video_bbox") return g.frame_index === frameIndex;
+  if (
+    g.type === "video_bbox" ||
+    g.type === "video_polygon" ||
+    g.type === "video_polyline" ||
+    g.type === "video_rotated_bbox" ||
+    g.type === "video_keypoint" ||
+    g.type === "video_mask"
+  )
+    return g.frame_index === frameIndex;
   if (g.type === "video_track_bbox") {
     return resolveTrackAtFrame(g as VideoTrackGeometry, frameIndex) !== null;
   }
@@ -52,7 +60,15 @@ export function aiBoxOnFrame(box: AiBox, frameIndex: number): boolean {
 export function resolveAiBoxAtFrame(box: AiBox, frameIndex: number): AiBox | null {
   const g = box.geometry;
   if (!g) return null;
-  if (g.type === "video_bbox") return g.frame_index === frameIndex ? box : null;
+  if (
+    g.type === "video_bbox" ||
+    g.type === "video_polygon" ||
+    g.type === "video_polyline" ||
+    g.type === "video_rotated_bbox" ||
+    g.type === "video_keypoint" ||
+    g.type === "video_mask"
+  )
+    return g.frame_index === frameIndex ? box : null;
   if (g.type === "video_track_bbox") {
     const resolved = resolveTrackAtFrame(g as VideoTrackGeometry, frameIndex);
     if (!resolved) return null;
@@ -92,7 +108,7 @@ export function dedupeAiBoxesById(boxes: readonly AiBox[]): AiBox[] {
 }
 
 /**
- * 汇「有预测的帧集合」: video_bbox 取 frame_index; video_track_bbox 取其各关键帧帧号。
+ * 汇「有预测的帧集合」: 视频单帧几何取 frame_index; 视频轨迹取其各关键帧帧号。
  * 升序去重, 供时间轴预测密度轨 + 跳到下一/上一预测帧。
  */
 export function collectPredictedFrames(boxes: readonly AiBox[]): number[] {
@@ -100,7 +116,14 @@ export function collectPredictedFrames(boxes: readonly AiBox[]): number[] {
   for (const b of dedupeAiBoxesById(boxes)) {
     const g = b.geometry;
     if (!g) continue;
-    if (g.type === "video_bbox") {
+    if (
+      g.type === "video_bbox" ||
+      g.type === "video_polygon" ||
+      g.type === "video_polyline" ||
+      g.type === "video_rotated_bbox" ||
+      g.type === "video_keypoint" ||
+      g.type === "video_mask"
+    ) {
       frames.add(g.frame_index);
     } else if (
       g.type === "video_track_bbox" ||

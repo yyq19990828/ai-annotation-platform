@@ -1,3 +1,4 @@
+import { FilterGroup, FilterSelect } from "@/components/filters/FilterControls";
 import {
   useCallback,
   useEffect,
@@ -344,11 +345,17 @@ export function TaskQueuePanel({
       {showQueue && (
         <>
           {batches && batches.length > 0 && onSelectBatch && (
-            <div className="px-3.5 pt-1.5 pb-0">
-              <select
+            <FilterGroup
+              label="批次"
+              compact
+              className="grid grid-cols-[auto_minmax(0,1fr)] px-3.5 pt-1.5 pb-0"
+            >
+              <FilterSelect
+                compact
+                aria-label="任务批次筛选"
                 value={selectedBatchId ?? ""}
                 onChange={(e) => onSelectBatch(e.target.value || null)}
-                className="w-full px-2 py-1 appearance-none border border-border rounded-[var(--radius-sm)] bg-background text-foreground text-xs"
+                className="w-full"
               >
                 <option value="">全部批次（{batches.length}）</option>
                 {batches.map((b) => {
@@ -368,8 +375,8 @@ export function TaskQueuePanel({
                     </option>
                   );
                 })}
-              </select>
-            </div>
+              </FilterSelect>
+            </FilterGroup>
           )}
 
           {/* v0.6.8 B-15：owner 视角且无任何批次时给出明确入口，避免误以为「100 条就是全部」 */}

@@ -9,7 +9,10 @@ service.
 
 from __future__ import annotations
 
+import math
 import uuid
+from datetime import date, datetime, timezone
+from numbers import Real
 from typing import Any
 
 from fastapi import HTTPException
@@ -37,11 +40,18 @@ from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.db.models.task_dataset_item_link import TaskDatasetItemLink
 from app.db.models.user import User
+from app.services.data_management.filter_tree import (
+    _MAX_IN_VALUES,
+    validate_filter_tree,
+    validate_in_value,
+)
+from app.services.data_management.schema import _track_capable
 from app.services.data_management.task_metrics import (  # noqa: F401
     low_confidence_pending_prediction_shapes_expr,
     pending_prediction_shapes_expr,
     pending_tracker_jobs_expr,
 )
+from app.services.project_kind import project_kind
 from app.services.scheduler import batch_visibility_clause, is_privileged_for_project
 
 _STRING_OPS = {"eq", "ne", "in"}
@@ -56,9 +66,6 @@ _DATE_OPS = {"eq", "ne", "gt", "gte", "lt", "lte"}
 _EXISTS_OPS = {"exists", "eq", "in"}
 
 
-_MAX_IN_VALUES = 200
-
-
 _TASK_FIELD_MAP = {
     "task.status": Task.status,
     "task.assignee": Task.assignee_id,
@@ -69,11 +76,25 @@ _TASK_FIELD_MAP = {
 }
 
 
+_UUID_FILTER_FIELDS = {
+    "task.assignee",
+    "task.reviewer",
+    "task.batch_id",
+    "task.scene_id",
+    "scene.scene_id",
+    "dataset.dataset_id",
+}
+
+
+_DATETIME_FILTER_FIELDS = {"task.created_at", "task.updated_at"}
+
+
 def compile_filter(
     filter_json: dict[str, Any],
     project: Project | None = None,
     user: User | None = None,
 ) -> ColumnElement[bool]:
+    validate_filter_tree(filter_json)
     if not filter_json:
         return literal(True)
     return _compile_node(filter_json, project=project, user=user)
@@ -84,6 +105,10 @@ def _compile_node(
     project: Project | None = None,
     user: User | None = None,
 ) -> ColumnElement[bool]:
+    if not isinstance(node, dict):
+        raise HTTPException(
+            status_code=422, detail="Filter group children must be objects"
+        )
     if "rules" in node:
         op = node.get("op", "and")
         if op not in {"and", "or"}:
@@ -138,10 +163,7 @@ def _compile_node(
         raise HTTPException(status_code=422, detail="Filter rule needs field and op")
     # 防止单请求用超长 in 列表拖慢 DB（所有走 .in_() 的字段在此统一收口）。
     if op == "in" and isinstance(value, list) and len(value) > _MAX_IN_VALUES:
-        raise HTTPException(
-            status_code=422,
-            detail=f"in value too long (max {_MAX_IN_VALUES})",
-        )
+        validate_in_value(value, max_values=_MAX_IN_VALUES)
     return _compile_rule(field, op, value, project=project, user=user)
 
 
@@ -153,6 +175,12 @@ def _compile_rule(
     project: Project | None = None,
     user: User | None = None,
 ) -> ColumnElement[bool]:
+    if project is not None and not _is_project_filter_field_supported(field, project):
+        raise HTTPException(
+            status_code=422, detail=f"Unsupported filter field: {field}"
+        )
+    _validate_rule_value(field, op, value, project)
+    value = _coerce_filter_value(field, op, value)
     if field == "task.keyword":
         return _compare_task_keyword(op, value, project)
     if field in _TASK_FIELD_MAP:
@@ -238,6 +266,224 @@ def _is_annotation_object_rule(node: dict[str, Any]) -> bool:
     )
 
 
+def _is_project_filter_field_supported(field: str, project: Project) -> bool:
+    kind = project_kind(project)
+    if field.startswith("scene.") and not kind.scene_mode:
+        return False
+    if field == "ai.pending_tracker_job_count" and kind.data_type != "video":
+        return False
+    if field == "keyframe.source":
+        return kind.data_type == "video" and _track_capable(project)
+    if field in {"annotation.has_track", "annotation.track_id"}:
+        if kind.scene_mode:
+            return True
+        if kind.data_type != "video":
+            return False
+        return _track_capable(project)
+    return True
+
+
+def _invalid_filter_value(detail: str) -> None:
+    raise HTTPException(status_code=422, detail=detail)
+
+
+def _is_number(value: Any) -> bool:
+    if not isinstance(value, Real) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(value)
+    except (OverflowError, TypeError):
+        return False
+
+
+def _parse_datetime_value(field: str, value: Any) -> datetime:
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, date):
+        parsed = datetime.combine(value, datetime.min.time())
+    elif isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=422, detail=f"Invalid datetime value for {field}"
+            ) from exc
+    else:
+        _invalid_filter_value(f"Filter value for {field} must be datetime text")
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _validate_datetime_value(field: str, op: str, value: Any) -> None:
+    if op not in _DATE_OPS:
+        return
+    if op in {"eq", "ne"} and value is None:
+        return
+    if not isinstance(value, (str, datetime, date)):
+        _invalid_filter_value(f"Filter value for {field} must be datetime text")
+    _parse_datetime_value(field, value)
+
+
+def _validate_uuid_value(field: str, op: str, value: Any) -> None:
+    if op in {"eq", "ne"} and value is None:
+        return
+    if op == "in":
+        if not isinstance(value, list):
+            _invalid_filter_value("in value must be a list")
+        validate_in_value(value, max_values=_MAX_IN_VALUES)
+        values = value
+    elif op in {"eq", "ne"}:
+        values = [value]
+    else:
+        return
+    for item in values:
+        if item is None:
+            continue
+        if not isinstance(item, (str, uuid.UUID)):
+            _invalid_filter_value(f"Filter value for {field} must be a UUID")
+        try:
+            uuid.UUID(str(item))
+        except (AttributeError, ValueError) as exc:
+            raise HTTPException(
+                status_code=422, detail=f"Filter value for {field} must be a UUID"
+            ) from exc
+
+
+def _coerce_filter_value(field: str, op: str, value: Any) -> Any:
+    if field in _DATETIME_FILTER_FIELDS and op in _DATE_OPS:
+        return None if value is None else _parse_datetime_value(field, value)
+    if field in _UUID_FILTER_FIELDS:
+        if op in {"eq", "ne"}:
+            return None if value is None else uuid.UUID(str(value))
+        if op == "in":
+            return [None if item is None else uuid.UUID(str(item)) for item in value]
+    return value
+
+
+def _validate_text_value(field: str, op: str, value: Any) -> None:
+    if op == "in":
+        if not isinstance(value, list):
+            _invalid_filter_value("in value must be a list")
+        validate_in_value(value, max_values=_MAX_IN_VALUES)
+        if not all(isinstance(item, str) for item in value):
+            _invalid_filter_value(f"Filter value for {field} must contain text")
+        return
+    if op in {"eq", "ne"} and value is None:
+        return
+    if op in {"eq", "ne", "contains"} and not isinstance(value, str):
+        _invalid_filter_value(f"Filter value for {field} must be text")
+
+
+def _validate_numeric_value(field: str, op: str, value: Any) -> None:
+    if op == "in":
+        if not isinstance(value, list):
+            _invalid_filter_value("in value must be a list")
+        validate_in_value(value, max_values=_MAX_IN_VALUES)
+        if not all(_is_number(item) for item in value):
+            _invalid_filter_value(f"Filter value for {field} must contain numbers")
+        return
+    if op == "between":
+        if not isinstance(value, list) or len(value) != 2:
+            _invalid_filter_value("between value must have two items")
+        if not all(_is_number(item) for item in value):
+            _invalid_filter_value(f"Filter value for {field} must contain numbers")
+        if value[0] > value[1]:
+            _invalid_filter_value("between value must be ordered")
+        return
+    if op in {"eq", "ne"} and value is None:
+        return
+    if op in {"eq", "ne", "gt", "gte", "lt", "lte"} and not _is_number(value):
+        _invalid_filter_value(f"Filter value for {field} must be a number")
+
+
+def _validate_boolean_value(field: str, op: str, value: Any) -> None:
+    if op == "eq" and not isinstance(value, bool):
+        _invalid_filter_value(f"Filter value for {field} must be boolean")
+
+
+def _validate_rule_value(
+    field: str,
+    op: str,
+    value: Any,
+    project: Project | None,
+) -> None:
+    if op == "in" and isinstance(value, list):
+        validate_in_value(value, max_values=_MAX_IN_VALUES)
+
+    if field == "task.keyword":
+        _validate_text_value(field, op, value)
+        return
+    if field in _DATETIME_FILTER_FIELDS:
+        _validate_datetime_value(field, op, value)
+        return
+    if field in _UUID_FILTER_FIELDS:
+        _validate_uuid_value(field, op, value)
+        return
+    if field in _TASK_FIELD_MAP:
+        _validate_text_value(field, op, value)
+        return
+    if field in {
+        "task.scene_id",
+        "scene.scene_id",
+        "dataset.dataset_id",
+        "dataset.file_type",
+        "annotation.class_name",
+        "annotation.source",
+        "annotation.annotation_type",
+        "annotation.tool_unit_id",
+        "annotation.track_id",
+        "keyframe.source",
+        "prediction.model_version",
+        "prediction.source",
+        "feedback.kind",
+        "feedback.severity",
+        "feedback.status",
+        "scene.scene_name",
+    }:
+        _validate_text_value(field, op, value)
+        return
+    if field in {
+        "task.frame_index",
+        "scene.frame_index",
+        "annotation.annotation_count",
+        "prediction.prediction_count",
+        "prediction.avg_confidence",
+        "feedback.unresolved_count",
+        "ai.pending_prediction_shape_count",
+        "ai.low_confidence_prediction_shape_count",
+        "ai.pending_tracker_job_count",
+    }:
+        _validate_numeric_value(field, op, value)
+        return
+    if field in {"annotation.imported", "annotation.has_track"}:
+        _validate_boolean_value(field, op, value)
+        return
+    if field.startswith("annotation.attribute_origin."):
+        _resolve_attribute_field(field, "annotation.attribute_origin.", project)
+        _validate_text_value(field, op, value)
+        return
+    if field.startswith("annotation.attribute."):
+        _, _, schema_field = _resolve_attribute_field(
+            field, "annotation.attribute.", project
+        )
+        attr_type = schema_field.get("type", "text")
+        if op in {"exists", "missing"}:
+            return
+        if attr_type in {"number", "range"}:
+            _validate_numeric_value(field, op, value)
+        elif attr_type == "boolean":
+            _validate_boolean_value(field, op, value)
+        elif attr_type == "multiselect":
+            if op in {"contains_any", "contains_all"}:
+                if not isinstance(value, list):
+                    _invalid_filter_value(f"Filter value for {field} must be a list")
+                if not all(isinstance(item, str) for item in value):
+                    _invalid_filter_value(f"Filter value for {field} must contain text")
+        else:
+            _validate_text_value(field, op, value)
+
+
 def _compile_annotation_object_condition(
     annotation,
     field: str,
@@ -245,6 +491,13 @@ def _compile_annotation_object_condition(
     value: Any,
     project: Project | None,
 ) -> ColumnElement[bool]:
+    if project is not None and not _is_project_filter_field_supported(field, project):
+        raise HTTPException(
+            status_code=422, detail=f"Unsupported filter field: {field}"
+        )
+    _validate_rule_value(field, op, value, project)
+    if op == "in" and isinstance(value, list):
+        validate_in_value(value, max_values=_MAX_IN_VALUES)
     scalar_fields = {
         "annotation.class_name": annotation.class_name,
         "annotation.source": annotation.source,

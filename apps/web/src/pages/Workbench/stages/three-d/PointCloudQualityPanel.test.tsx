@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { PointCloudQualityIssue } from "@/api/pointCloudQuality";
@@ -100,17 +100,20 @@ describe("PointCloudQualityPanel", () => {
       />,
     );
 
-    expect(screen.getByText("穿地或悬浮")).toBeTruthy();
+    expect(screen.getByTestId("point-cloud-quality-issue-ground_clearance")).toHaveTextContent(
+      "穿地或悬浮",
+    );
     expect(screen.getByTestId("point-cloud-quality-issue-ground_clearance").textContent).toContain(
       "离地 0.72 m",
     );
+    expect(screen.getByText("已加载警告 1")).toBeInTheDocument();
     fireEvent.click(screen.getByText("扫描当前 Scene"));
     expect(runMutate).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByText("定位"));
     expect(locate).toHaveBeenCalledWith(issue);
   });
 
-  it("uses task scope for a reviewer who does not own the project", () => {
+  it("keeps scene read scope for a reviewer who cannot scan the scene", () => {
     render(
       <PointCloudQualityPanel
         projectId="project-1"
@@ -122,12 +125,82 @@ describe("PointCloudQualityPanel", () => {
       />,
     );
 
+    expect(issuesMock).toHaveBeenLastCalledWith({
+      projectId: "project-1",
+      sceneId: "scene-1",
+      status: "open",
+    });
     expect(runMock).toHaveBeenCalledWith("project-1", {
       scope: "task_ids",
       task_ids: ["task-1"],
     });
     fireEvent.click(screen.getByText("扫描当前任务"));
     expect(runMutate).toHaveBeenCalledOnce();
+  });
+
+  it("retires a previous quality run before querying a new task owner", () => {
+    let onSuccess: ((value: { id: string; status: string }) => void) | undefined;
+    runMutate.mockImplementation(
+      (
+        _value: unknown,
+        options?: { onSuccess?: (value: { id: string; status: string }) => void },
+      ) => {
+        onSuccess = options?.onSuccess;
+      },
+    );
+    const view = render(
+      <PointCloudQualityPanel
+        projectId="project-1"
+        sceneId="scene-1"
+        taskId="task-1"
+        canScanScene
+        onClose={vi.fn()}
+        onLocate={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText("扫描当前 Scene"));
+    act(() => onSuccess?.({ id: "run-1", status: "running" }));
+    expect(runQueryMock).toHaveBeenLastCalledWith("project-1", "run-1");
+
+    view.rerender(
+      <PointCloudQualityPanel
+        projectId="project-1"
+        sceneId="scene-2"
+        taskId="task-2"
+        canScanScene
+        onClose={vi.fn()}
+        onLocate={vi.fn()}
+      />,
+    );
+    expect(runQueryMock).toHaveBeenLastCalledWith("project-1", null);
+  });
+
+  it("sends severity and rule filters to the scoped issue query", () => {
+    render(
+      <PointCloudQualityPanel
+        projectId="project-1"
+        sceneId="scene-1"
+        taskId="task-1"
+        canScanScene
+        onClose={vi.fn()}
+        onLocate={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByRole("combobox", { name: "质量问题严重级别" }), {
+      target: { value: "blocker" },
+    });
+    fireEvent.change(screen.getByRole("combobox", { name: "质量问题规则" }), {
+      target: { value: "ground_clearance" },
+    });
+    expect(issuesMock).toHaveBeenLastCalledWith({
+      projectId: "project-1",
+      sceneId: "scene-1",
+      status: "open",
+      severity: "blocker",
+      code: "ground_clearance",
+    });
+    expect(screen.getByRole("option", { name: "投影残差" })).toBeInTheDocument();
   });
 
   it("records an explicit false-positive verdict and creates a point-cloud discussion anchor", () => {

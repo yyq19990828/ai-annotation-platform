@@ -70,6 +70,14 @@ export interface BugReportListResponse {
   total: number;
 }
 
+export interface BugReportListParams {
+  status?: string;
+  severity?: string;
+  route?: string;
+  limit?: number;
+  offset?: number;
+}
+
 export interface BugReportUpdatePayload {
   status?: string;
   severity?: string;
@@ -84,20 +92,16 @@ export interface BugReportUpdatePayload {
 export const bugReportsApi = {
   create: (payload: BugReportPayload) => apiClient.post<BugReportResponse>("/bug_reports", payload),
 
-  list: (params?: {
-    status?: string;
-    severity?: string;
-    route?: string;
-    limit?: number;
-    offset?: number;
-  }) => {
+  list: (params?: BugReportListParams, signal?: AbortSignal) => {
     const q = new URLSearchParams();
     if (params?.status) q.set("status", params.status);
     if (params?.severity) q.set("severity", params.severity);
     if (params?.route) q.set("route", params.route);
     if (params?.limit) q.set("limit", String(params.limit));
     if (params?.offset) q.set("offset", String(params.offset));
-    return apiClient.get<BugReportListResponse>(`/bug_reports?${q}`);
+    return signal
+      ? apiClient.get<BugReportListResponse>(`/bug_reports?${q}`, { signal })
+      : apiClient.get<BugReportListResponse>(`/bug_reports?${q}`);
   },
 
   listMine: (limit = 50, offset = 0) =>

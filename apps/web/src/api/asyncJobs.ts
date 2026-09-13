@@ -66,6 +66,8 @@ export interface AsyncJobListParams {
   search?: string;
   limit?: number;
   offset?: number;
+  /** React Query cancellation for filter/page changes. Not serialized. */
+  signal?: AbortSignal;
 }
 
 export interface CrossFrameJobCreate {
@@ -79,22 +81,37 @@ export interface CrossFrameJobCreate {
 }
 
 export const asyncJobsApi = {
-  list: (params: AsyncJobListParams = {}) => {
+  list: (params: AsyncJobListParams = {}, init?: RequestInit) => {
+    const { signal: paramsSignal, ...queryParams } = params;
+    const signal = init?.signal ?? paramsSignal;
     const q = new URLSearchParams();
-    const statuses = Array.isArray(params.status)
-      ? params.status
-      : params.status
-        ? [params.status]
+    const statuses = Array.isArray(queryParams.status)
+      ? queryParams.status
+      : queryParams.status
+        ? [queryParams.status]
         : [];
     statuses.forEach((status) => q.append("status", status));
-    const kinds = Array.isArray(params.kind) ? params.kind : params.kind ? [params.kind] : [];
+    const kinds = Array.isArray(queryParams.kind)
+      ? queryParams.kind
+      : queryParams.kind
+        ? [queryParams.kind]
+        : [];
     kinds.forEach((kind) => q.append("kind", kind));
-    if (params.project_id) q.set("project_id", params.project_id);
-    if (params.search) q.set("search", params.search);
-    if (params.limit !== undefined) q.set("limit", String(params.limit));
-    if (params.offset !== undefined) q.set("offset", String(params.offset));
+    if (queryParams.project_id) q.set("project_id", queryParams.project_id);
+    if (queryParams.search) q.set("search", queryParams.search);
+    if (queryParams.limit !== undefined) q.set("limit", String(queryParams.limit));
+    if (queryParams.offset !== undefined) q.set("offset", String(queryParams.offset));
     const qs = q.toString();
-    return apiClient.get<AsyncJobListResponse>(`/async-jobs${qs ? `?${qs}` : ""}`);
+    const path = `/async-jobs${qs ? `?${qs}` : ""}`;
+    if (init) {
+      return apiClient.get<AsyncJobListResponse>(
+        path,
+        init.signal === signal ? init : { ...init, signal },
+      );
+    }
+    return signal
+      ? apiClient.get<AsyncJobListResponse>(path, { signal })
+      : apiClient.get<AsyncJobListResponse>(path);
   },
   get: (id: string) => apiClient.get<AsyncJob>(`/async-jobs/${id}`),
   cancel: (id: string) =>

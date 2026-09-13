@@ -50,10 +50,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.annotation import Annotation
 from app.db.models.annotation_feedback import AnnotationFeedback
 from app.db.models.dataset import DatasetItem
-from app.db.models.prediction import (
-    INTERACTIVE_ACCEPT_PREDICTION_SOURCE,
-    Prediction,
-)
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.task_dataset_item_link import TaskDatasetItemLink
@@ -72,10 +68,10 @@ from app.services.project_kind import project_kind
 from app.services.prediction import to_internal_shape
 from app.services.scheduler import is_privileged_for_project
 from app.services.data_management.views import (
-    compile_annotation_match_filter,
     compile_filter,
     visible_tasks_stmt,
 )
+from app.services.data_management.match_evidence import collect_match_evidence
 
 
 def _json_scalar_text(value: Any) -> str:
@@ -521,35 +517,30 @@ class DataManagerService:
                 task_id=task_id, items=[], total=0, limit=limit, offset=offset
             )
 
-        includes_ai_candidates = _filter_has_field(
-            filter_json, "ai.pending_prediction_shape_count"
-        ) or _filter_has_field(filter_json, "ai.pending_tracker_job_count")
-        include_annotations = (
-            _filter_has_annotation_field(filter_json) or not includes_ai_candidates
+        evidence = await collect_match_evidence(
+            self.db,
+            task_id=task_id,
+            filter_json=filter_json,
+            project=project,
+            user=user,
         )
-        # Matches are drawn from up to three sources (annotations, then pending
-        # prediction shapes, then pending tracker jobs), concatenated in that
-        # fixed order. `remaining_offset`/`remaining_limit` track the slice of
-        # the *global* [offset, offset + limit) window that still needs to be
-        # filled once earlier sources have been accounted for, so each source
-        # can push its own limit/offset down to SQL (or, for prediction
-        # shapes, at least skip the expensive per-shape transform) instead of
-        # materializing the full result set in Python.
+
+        # Matches are drawn from the exact witness sets in fixed source order.  Each
+        # source receives the remaining slice of one global offset/limit window, so
+        # prediction geometry is converted only after SQL has selected its page.
         items: list[DataManagerMatchItem] = []
         total = 0
         remaining_offset = offset
         remaining_limit = limit
-        if include_annotations:
-            annotation_condition = compile_annotation_match_filter(
-                filter_json, Annotation, project
-            )
-            annotation_where = (
-                Annotation.task_id == task_id,
-                Annotation.is_active.is_(True),
-                Annotation.was_cancelled.is_(False),
-                annotation_condition,
-            )
-            annotation_total = (
+        annotation_where = (
+            Annotation.task_id == task_id,
+            Annotation.is_active.is_(True),
+            Annotation.was_cancelled.is_(False),
+        )
+        annotation_total = 0
+        if evidence.annotation_condition is not None:
+            annotation_where += (evidence.annotation_condition,)
+            annotation_total = int(
                 await self.db.scalar(
                     select(func.count())
                     .select_from(Annotation)
@@ -557,8 +548,6 @@ class DataManagerService:
                 )
                 or 0
             )
-            total += annotation_total
-
             if remaining_limit > 0 and remaining_offset < annotation_total:
                 annotation_rows = await self.db.execute(
                     select(
@@ -596,63 +585,59 @@ class DataManagerService:
                     )
                     for row in annotation_rows
                 )
-            remaining_offset = max(remaining_offset - annotation_total, 0)
-            remaining_limit = limit - len(items)
+        total += annotation_total
+        remaining_offset = max(remaining_offset - annotation_total, 0)
+        remaining_limit = limit - len(items)
 
-        if _filter_has_field(filter_json, "ai.pending_prediction_shape_count"):
-            accepted_rows = await self.db.execute(
-                select(Annotation.parent_prediction_id, Annotation.attributes).where(
-                    Annotation.task_id == task_id,
-                    Annotation.parent_prediction_id.is_not(None),
-                    Annotation.is_active.is_(True),
-                    Annotation.was_cancelled.is_(False),
+        prediction_total = 0
+        if evidence.prediction_scope is not None:
+            pending = _pending_prediction_shape_rows(
+                lambda prediction: prediction.task_id == task_id,
+                alias_name="dm_match_pending",
+            ).subquery("dm_match_pending_rows")
+            prediction_where = [pending.c.task_id == task_id]
+            if evidence.prediction_scope == "low":
+                prediction_where.append(pending.c.confidence < LOW_CONFIDENCE_THRESHOLD)
+            prediction_total = int(
+                await self.db.scalar(
+                    select(func.count()).select_from(pending).where(*prediction_where)
                 )
+                or 0
             )
-            accepted = {
-                (prediction_id, int(attributes["_shape_index"]))
-                for prediction_id, attributes in accepted_rows
-                if isinstance(attributes, dict) and "_shape_index" in attributes
-            }
-            prediction_rows = await self.db.execute(
-                select(Prediction)
-                .where(Prediction.task_id == task_id)
-                .order_by(Prediction.created_at, Prediction.id)
-            )
-            prediction_total = 0
-            window_start = remaining_offset
-            window_end = remaining_offset + max(remaining_limit, 0)
-            for prediction in prediction_rows.scalars().all():
-                if prediction.source == INTERACTIVE_ACCEPT_PREDICTION_SOURCE:
-                    continue
-                rejected = set(prediction.rejected_shape_indexes or [])
-                for shape_index, raw_shape in enumerate(prediction.result or []):
-                    if (
-                        shape_index in rejected
-                        or (prediction.id, shape_index) in accepted
-                    ):
-                        continue
-                    if window_start <= prediction_total < window_end:
-                        shape = to_internal_shape(raw_shape)
-                        geometry = shape.get("geometry") or {}
-                        items.append(
-                            DataManagerMatchItem(
-                                entity_kind="prediction_shape",
-                                id=prediction.id,
-                                shape_index=shape_index,
-                                class_name=shape.get("class_name"),
-                                tool_unit_id=prediction.tool_unit_id,
-                                annotation_type=shape.get("type"),
-                                source="prediction_candidate",
-                                attributes=shape.get("attributes") or {},
-                                frame_index=geometry.get("frame_index"),
-                            )
+            if remaining_limit > 0 and remaining_offset < prediction_total:
+                prediction_rows = await self.db.execute(
+                    select(pending)
+                    .where(*prediction_where)
+                    .order_by(
+                        pending.c.prediction_created_at,
+                        pending.c.prediction_id,
+                        pending.c.shape_index,
+                    )
+                    .offset(remaining_offset)
+                    .limit(remaining_limit)
+                )
+                for row in prediction_rows.mappings():
+                    shape = to_internal_shape(row["shape_value"])
+                    geometry = shape.get("geometry") or {}
+                    items.append(
+                        DataManagerMatchItem(
+                            entity_kind="prediction_shape",
+                            id=row["prediction_id"],
+                            shape_index=row["shape_index"],
+                            class_name=shape.get("class_name"),
+                            tool_unit_id=row["tool_unit_id"],
+                            annotation_type=shape.get("type"),
+                            source="prediction_candidate",
+                            attributes=shape.get("attributes") or {},
+                            frame_index=geometry.get("frame_index"),
                         )
-                    prediction_total += 1
-            total += prediction_total
-            remaining_offset = max(remaining_offset - prediction_total, 0)
-            remaining_limit = limit - len(items)
+                    )
+        total += prediction_total
+        remaining_offset = max(remaining_offset - prediction_total, 0)
+        remaining_limit = limit - len(items)
 
-        if _filter_has_field(filter_json, "ai.pending_tracker_job_count"):
+        tracker_total = 0
+        if evidence.tracker_jobs:
             tracker_results = VideoTrackerJob.staged_result["results"]
             tracker_clause = and_(
                 VideoTrackerJob.task_id == task_id,
@@ -677,7 +662,7 @@ class DataManagerService:
                 tracker_clause = and_(
                     tracker_clause, VideoTrackerJob.created_by == user.id
                 )
-            tracker_total = (
+            tracker_total = int(
                 await self.db.scalar(
                     select(func.count())
                     .select_from(VideoTrackerJob)
@@ -712,26 +697,3 @@ class DataManagerService:
             limit=limit,
             offset=offset,
         )
-
-
-def _filter_has_field(filter_json: dict[str, Any], field: str) -> bool:
-    if filter_json.get("field") == field:
-        return True
-    return any(
-        _filter_has_field(child, field)
-        for child in filter_json.get("rules") or []
-        if isinstance(child, dict)
-    )
-
-
-def _filter_has_annotation_field(filter_json: dict[str, Any]) -> bool:
-    field = filter_json.get("field")
-    if isinstance(field, str) and (
-        field.startswith("annotation.") or field == "keyframe.source"
-    ):
-        return field != "annotation.annotation_count"
-    return any(
-        _filter_has_annotation_field(child)
-        for child in filter_json.get("rules") or []
-        if isinstance(child, dict)
-    )

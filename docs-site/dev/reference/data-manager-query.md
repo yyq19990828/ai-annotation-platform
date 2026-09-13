@@ -9,6 +9,8 @@ last_reviewed: 2026-07-22
 
 Data Manager 是项目范围内的只读探索 read model，提供 task、object 和 logical track 三种 grain。查询、保存视图计数、facet、详情与定位必须从同一个 visible-task scope 派生：项目负责人和超级管理员可见整个项目；其他成员只可见其批次权限允许的任务。它不改变 annotation、prediction 或 tracker candidate 的权威写模型。
 
+前端字段编辑、URL 状态、草稿校验及数量口径见[筛选状态与结果范围](./filtering.md)。
+
 ## 端点
 
 | 端点                                                               | 用途                                                                             |
@@ -52,6 +54,8 @@ attribute key 可以包含点号；解析时只分离 tool unit，剩余字符�
 
 task grain 中，同一 AND group 的 annotation rule 编译为一个 correlated `EXISTS`，确保类别、来源、轨迹和属性由同一个 active、非 cancelled annotation 满足；不能为每个 rule 分别生成 `EXISTS`，否则会产生跨对象误命中。object / track grain 则把条件直接绑定到当前 annotation/member；不能先分页 tasks 再展开实体。
 
+结构校验在 SQL 编译前执行：根节点计为第 1 层和第 1 个节点，最多 32 层、4096 个节点；`in` 最多 200 项。非对象子节点、错误的值类型、无效日期或 UUID、非有限数字统一返回 422。日期按 ISO 格式解析，无时区值按 UTC 处理；可空任务字段的 `eq: null` / `ne: null` 保留 `IS NULL` / `IS NOT NULL` 语义。已有视图超出结构限制时保留记录，并以 `invalid_fields: ["__filter__"]` 标记，不能静默删除条件。
+
 ## 三种 grain 与分页
 
 - **task**：一行一个任务，使用 offset 分页；summary 表示“匹配任务中的全部对象”。
@@ -79,11 +83,17 @@ summary 同时返回：
 
 task-centric summary 聚合的是“匹配任务中的全部对象”。object / track query 的 `facets` 则只聚合该 grain 的完整匹配集合，并为可视化图表提供 class、source、tool/type 与 track quality 分布；不能用当前页 rows 在浏览器抽样。
 
+任务的“匹配对象”抽屉先确认完整筛选和任务权限，再按真实命中分支收集解释：OR 只贡献成立的分支；一个 AND 内的直接 annotation 条件共享同一对象，不同嵌套组保留独立见证对象。单纯任务条件保留 active、非取消对象作为上下文；它在已经由实体解释的 AND 中不会扩大对象范围。空分组（`rules: []`）无论 `op` 为 and 还是 or 都与编译器一致地编译为恒真：命中按任务上下文解释，返回全部 active、非取消对象而不是空见证集，位于已由实体解释的 AND 中时同样不扩大对象范围。历史模型条件属于任务追溯，不会冒充当前待审候选。
+
+命中项固定按 annotation、prediction shape、tracker job 排列，三个来源共用一个 offset/limit 窗口。总数和候选页都从 SQL 的完整匹配范围派生，仅转换当前页的预测几何；低置信条件使用与指标相同的剩余 shape 和 `< 0.5` 阈值。零候选计数可以命中任务而没有候选明细。OR 分支真值用单个布尔数组列返回，宽条件树不会因逐节点增加结果列而触发 PostgreSQL 列数上限。
+
 ## Saved view 与 URL
 
 `project_task_views.entity_scope` 为 `tasks | objects | tracks`，旧记录迁移为 `tasks`。私有名称唯一键与项目共享名称唯一键都包含 scope，因此三个粒度可以使用同名视图。创建和更新必须使用对应 schema 的 filter/sort/column 白名单；不兼容字段在列表中以 `invalid_fields` 返回，不静默改写。
 
 前端 URL 保存 `lens/view/q/filter/sort/columns/selected`。filter、sort 与 columns 使用带版本号的 JSON envelope；解析失败时回退当前视图，不执行未校验输入。切换 grain 时清空不兼容状态，存在未保存修改时先要求确认。
+
+三个 grain 共享值编辑控件和保留结构的表达式操作。分组不能展平：即使普通布尔代数等价，也可能改变同对象约束。关键词只从独立 `contains` 规则或直接 AND 中的无歧义规则提取；OR 内关键词保留在树中。外部 q 作为额外 AND 条件，数字和范围草稿不进入查询。页面读取实时 URL，首次请求等待视图和字段恢复；后续条件变化使过期页码和实体 cursor 失效。
 
 前端壳层使用单视口布局，只有结果表和右侧抽屉承担纵向滚动。grain tabs 是唯一的一级页签；桌面端保存视图使用侧栏，窄屏使用下拉。任务、对象与轨迹共用可搜索字段选择器和条件芯片，字段分组及编辑控件完全由各自 `schema.filter_fields` 驱动。这些布局差异不改变 Filter DSL、URL envelope 或保存视图契约。
 

@@ -5,6 +5,7 @@ import {
   type PointCloudQualityConfig,
   type PointCloudQualityReviewVerdict,
   type PointCloudQualityRunScope,
+  type PointCloudQualitySeverity,
   type PointCloudQualityStatus,
 } from "@/api/pointCloudQuality";
 
@@ -15,6 +16,8 @@ export function usePointCloudQualityIssues(params: {
   sceneId?: string;
   taskId?: string;
   status?: PointCloudQualityStatus;
+  severity?: PointCloudQualitySeverity;
+  code?: string;
 }) {
   return useQuery({
     queryKey: [
@@ -23,6 +26,8 @@ export function usePointCloudQualityIssues(params: {
       params.sceneId ?? null,
       params.taskId ?? null,
       params.status ?? null,
+      params.severity ?? null,
+      params.code ?? null,
     ],
     queryFn: ({ signal }) => pointCloudQualityApi.issues(params.projectId, params, signal),
     enabled: !!params.projectId && (!!params.sceneId || !!params.taskId),

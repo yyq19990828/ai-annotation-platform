@@ -49,17 +49,30 @@ export interface ListVideoTrackerJobsParams {
   model_key?: string;
   cursor?: string;
   limit?: number;
+  /** React Query cancellation for filter/cursor changes. Not serialized. */
+  signal?: AbortSignal;
 }
 
 export const videoTrackerJobsApi = {
-  list: (params: ListVideoTrackerJobsParams = {}) => {
+  list: (params: ListVideoTrackerJobsParams = {}, init?: RequestInit) => {
+    const { signal: paramsSignal, ...queryParams } = params;
+    const signal = init?.signal ?? paramsSignal;
     const qs = new URLSearchParams();
-    if (params.project_id) qs.set("project_id", params.project_id);
-    if (params.status) qs.set("status", params.status);
-    if (params.model_key) qs.set("model_key", params.model_key);
-    if (params.cursor) qs.set("cursor", params.cursor);
-    if (params.limit !== undefined) qs.set("limit", String(params.limit));
+    if (queryParams.project_id) qs.set("project_id", queryParams.project_id);
+    if (queryParams.status) qs.set("status", queryParams.status);
+    if (queryParams.model_key) qs.set("model_key", queryParams.model_key);
+    if (queryParams.cursor) qs.set("cursor", queryParams.cursor);
+    if (queryParams.limit !== undefined) qs.set("limit", String(queryParams.limit));
     const suffix = qs.toString() ? `?${qs.toString()}` : "";
-    return apiClient.get<VideoTrackerJobsResponse>(`/video-tracker-jobs${suffix}`);
+    const path = `/video-tracker-jobs${suffix}`;
+    if (init) {
+      return apiClient.get<VideoTrackerJobsResponse>(
+        path,
+        init.signal === signal ? init : { ...init, signal },
+      );
+    }
+    return signal
+      ? apiClient.get<VideoTrackerJobsResponse>(path, { signal })
+      : apiClient.get<VideoTrackerJobsResponse>(path);
   },
 };

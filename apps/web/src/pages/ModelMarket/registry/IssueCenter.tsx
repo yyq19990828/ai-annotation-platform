@@ -1,3 +1,8 @@
+import { FilterSelect } from "@/components/filters/FilterControls";
+import { FilterPanel } from "@/components/filters/FilterPanel";
+import { FilterTrigger } from "@/components/filters/FilterTrigger";
+import { ActiveFilterChip } from "@/components/filters/ActiveFilterChip";
+import { Button } from "@/components/ui/Button";
 /**
  * v0.23.4 P3 · registry "问题中心" tab (Super Admin only).
  *
@@ -27,6 +32,13 @@ export function IssueCenter({ scope }: { scope: RegistryScope }): ReactNode {
   const { diagnostics } = scope;
   const [filter, setFilter] = useState<DiagnosticFilter>({});
   const [codeQuery, setCodeQuery] = useState("");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const activeFilterCount = [
+    filter.pool_id,
+    filter.instance_id,
+    filter.gpu_resource_id,
+    filter.code,
+  ].filter(Boolean).length;
 
   const sorted = useMemo(() => sortDiagnostics(diagnostics), [diagnostics]);
   const filtered = useMemo(() => {
@@ -84,30 +96,48 @@ export function IssueCenter({ scope }: { scope: RegistryScope }): ReactNode {
           onChange={(e) => setCodeQuery(e.target.value)}
           className="h-8 w-56 text-xs"
         />
-        <FilterSelect
-          label="服务池"
-          value={filter.pool_id ?? ""}
-          options={poolIds}
-          onChange={(v) => setFilter((f) => ({ ...f, pool_id: v || undefined }))}
-        />
-        <FilterSelect
-          label="实例"
-          value={filter.instance_id ?? ""}
-          options={instanceIds}
-          onChange={(v) => setFilter((f) => ({ ...f, instance_id: v || undefined }))}
-        />
-        <FilterSelect
-          label="GPU"
-          value={filter.gpu_resource_id ?? ""}
-          options={gpuIds}
-          onChange={(v) => setFilter((f) => ({ ...f, gpu_resource_id: v || undefined }))}
-        />
-        <FilterSelect
-          label="code"
-          value={filter.code ?? ""}
-          options={codes}
-          onChange={(v) => setFilter((f) => ({ ...f, code: v || undefined }))}
-        />
+        <FilterPanel
+          open={filtersOpen}
+          onOpenChange={setFiltersOpen}
+          trigger={<FilterTrigger count={activeFilterCount} />}
+          title="筛选诊断"
+          description="即时生效 · 按服务池、实例、GPU 和 code 过滤。"
+          align="start"
+          footer={
+            <div className="flex justify-end">
+              <Button size="sm" onClick={() => setFiltersOpen(false)}>
+                完成
+              </Button>
+            </div>
+          }
+        >
+          <div className="grid gap-3">
+            <DiagnosticFilterSelect
+              label="服务池"
+              value={filter.pool_id ?? ""}
+              options={poolIds}
+              onChange={(v) => setFilter((f) => ({ ...f, pool_id: v || undefined }))}
+            />
+            <DiagnosticFilterSelect
+              label="实例"
+              value={filter.instance_id ?? ""}
+              options={instanceIds}
+              onChange={(v) => setFilter((f) => ({ ...f, instance_id: v || undefined }))}
+            />
+            <DiagnosticFilterSelect
+              label="GPU"
+              value={filter.gpu_resource_id ?? ""}
+              options={gpuIds}
+              onChange={(v) => setFilter((f) => ({ ...f, gpu_resource_id: v || undefined }))}
+            />
+            <DiagnosticFilterSelect
+              label="code"
+              value={filter.code ?? ""}
+              options={codes}
+              onChange={(v) => setFilter((f) => ({ ...f, code: v || undefined }))}
+            />
+          </div>
+        </FilterPanel>
         {(filter.pool_id ||
           filter.instance_id ||
           filter.gpu_resource_id ||
@@ -125,6 +155,29 @@ export function IssueCenter({ scope }: { scope: RegistryScope }): ReactNode {
           </button>
         )}
       </div>
+
+      {activeFilterCount > 0 && (
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="已应用的诊断筛选">
+          {(
+            [
+              ["pool_id", "服务池"],
+              ["instance_id", "实例"],
+              ["gpu_resource_id", "GPU"],
+              ["code", "code"],
+            ] as const
+          ).map(([key, label]) =>
+            filter[key] ? (
+              <ActiveFilterChip
+                key={key}
+                label={label}
+                value={filter[key]}
+                onClick={() => setFiltersOpen(true)}
+                onRemove={() => setFilter((previous) => ({ ...previous, [key]: undefined }))}
+              />
+            ) : null,
+          )}
+        </div>
+      )}
 
       {/* Diagnostic list */}
       {filtered.length === 0 ? (
@@ -234,7 +287,7 @@ function SummaryBadge({
   );
 }
 
-function FilterSelect({
+function DiagnosticFilterSelect({
   label,
   value,
   options,
@@ -246,12 +299,12 @@ function FilterSelect({
   onChange: (v: string) => void;
 }): ReactNode {
   return (
-    <label className="inline-flex items-center gap-1 text-2xs text-muted-foreground">
+    <label className="flex flex-col gap-1.5 text-xs text-muted-foreground">
       {label}
-      <select
+      <FilterSelect
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="h-8 rounded-md border border-border bg-card px-2 text-xs text-foreground outline-none [font-family:inherit]"
+        className="w-full"
         aria-label={`按 ${label} 筛选`}
       >
         <option value="">全部</option>
@@ -260,7 +313,7 @@ function FilterSelect({
             {o}
           </option>
         ))}
-      </select>
+      </FilterSelect>
     </label>
   );
 }

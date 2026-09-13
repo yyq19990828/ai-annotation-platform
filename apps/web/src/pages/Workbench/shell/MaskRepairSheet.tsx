@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import type { MaskRepairAction } from "@/api/maskQc";
+import type { MaskRepairAction, MaskRepairBatch, MaskRepairDryRun } from "@/api/maskQc";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/shadcn/ui/alert";
@@ -63,6 +63,8 @@ interface MaskRepairSheetProps {
   open: boolean;
   projectId: string;
   actions: MaskRepairAction[];
+  /** Parent owner/scope identity; changing it retires pending dry-run results. */
+  ownerKey?: string;
   onOpenChange: (open: boolean) => void;
   onFinished: () => void;
 }
@@ -71,6 +73,7 @@ export function MaskRepairSheet({
   open,
   projectId,
   actions,
+  ownerKey = projectId,
   onOpenChange,
   onFinished,
 }: MaskRepairSheetProps) {
@@ -80,10 +83,18 @@ export function MaskRepairSheet({
   const resume = useResumeMaskRepairs();
   const [repairId, setRepairId] = useState<string | null>(null);
   const batch = useMaskRepairBatch(projectId, repairId);
-  const requestedKeyRef = useRef<string | null>(null);
-  const finishedKeyRef = useRef<string | null>(null);
   const actionKey = actions.map((action) => `${action.issue_id}:${action.kind}`).join("|");
-  const currentBatch = batch.data ?? execute.data ?? null;
+  const requestKey = `${ownerKey}\u001f${actionKey}`;
+  const requestedKeyRef = useRef<string | null>(null);
+  const ownerKeyRef = useRef(ownerKey);
+  const requestGenerationRef = useRef(0);
+  const executeKeyRef = useRef<string | null>(null);
+  const [dryRunResult, setDryRunResult] = useState<MaskRepairDryRun | null>(null);
+  const finishedKeyRef = useRef<string | null>(null);
+  const currentBatch: MaskRepairBatch | null =
+    requestedKeyRef.current === requestKey
+      ? (batch.data ?? (executeKeyRef.current === requestKey ? execute.data : null) ?? null)
+      : null;
   const isTerminal = currentBatch ? TERMINAL.has(currentBatch.status) : false;
   const canRollback = Boolean(
     currentBatch &&
@@ -94,15 +105,54 @@ export function MaskRepairSheet({
   const rollbackReport = currentBatch ? rollbackFailure(currentBatch.result) : null;
 
   useEffect(() => {
-    if (!open || !actions.length || requestedKeyRef.current === actionKey) return;
-    requestedKeyRef.current = actionKey;
+    if (ownerKeyRef.current !== ownerKey) {
+      ownerKeyRef.current = ownerKey;
+      requestedKeyRef.current = null;
+      requestGenerationRef.current += 1;
+      executeKeyRef.current = null;
+      setDryRunResult(null);
+      setRepairId(null);
+      execute.reset();
+      dryRun.reset();
+      rollback.reset();
+      resume.reset();
+      finishedKeyRef.current = null;
+    }
+    if (!open || !actions.length) {
+      if (requestedKeyRef.current === null) {
+        return;
+      }
+      requestedKeyRef.current = null;
+      requestGenerationRef.current += 1;
+      executeKeyRef.current = null;
+      setDryRunResult(null);
+      setRepairId(null);
+      execute.reset();
+      dryRun.reset();
+      rollback.reset();
+      resume.reset();
+      finishedKeyRef.current = null;
+      return;
+    }
+    if (requestedKeyRef.current === requestKey) return;
+    requestedKeyRef.current = requestKey;
+    const generation = ++requestGenerationRef.current;
+    executeKeyRef.current = null;
+    setDryRunResult(null);
     setRepairId(null);
     execute.reset();
+    dryRun.reset();
     rollback.reset();
     resume.reset();
     finishedKeyRef.current = null;
-    dryRun.mutate(actions);
-  }, [actionKey, actions, dryRun, execute, open, resume, rollback]);
+    dryRun.mutate(actions, {
+      onSuccess: (result) => {
+        if (requestGenerationRef.current === generation && requestedKeyRef.current === requestKey) {
+          setDryRunResult(result);
+        }
+      },
+    });
+  }, [actionKey, actions, dryRun, execute, open, ownerKey, requestKey, resume, rollback]);
 
   useEffect(() => {
     if (!currentBatch || !isTerminal) return;
@@ -114,14 +164,33 @@ export function MaskRepairSheet({
 
   const close = () => {
     requestedKeyRef.current = null;
+    requestGenerationRef.current += 1;
+    executeKeyRef.current = null;
+    setDryRunResult(null);
+    setRepairId(null);
+    dryRun.reset();
+    execute.reset();
+    rollback.reset();
+    resume.reset();
     onOpenChange(false);
   };
 
   const submit = () => {
-    if (!dryRun.data) return;
+    if (!dryRunResult || requestedKeyRef.current !== requestKey || !actions.length) return;
+    const executeGeneration = requestGenerationRef.current;
+    executeKeyRef.current = requestKey;
     execute.mutate(
-      { receipt: dryRun.data.receipt, planDigest: dryRun.data.plan_digest },
-      { onSuccess: (value) => setRepairId(value.id) },
+      { receipt: dryRunResult.receipt, planDigest: dryRunResult.plan_digest },
+      {
+        onSuccess: (value) => {
+          if (
+            requestGenerationRef.current === executeGeneration &&
+            requestedKeyRef.current === requestKey
+          ) {
+            setRepairId(value.id);
+          }
+        },
+      },
     );
   };
 
@@ -168,37 +237,37 @@ export function MaskRepairSheet({
             </Alert>
           )}
 
-          {dryRun.data && !currentBatch && (
+          {dryRunResult && !currentBatch && (
             <>
               <div className="grid grid-cols-2 gap-2">
                 <div className="rounded-lg border border-border bg-card p-3">
                   <div className="text-xs text-muted-foreground">实际修复对象</div>
                   <div className="mt-1 text-lg font-semibold text-foreground">
-                    {dryRun.data.summary.mutation_count}
+                    {dryRunResult.summary.mutation_count}
                   </div>
                 </div>
                 <div className="rounded-lg border border-border bg-card p-3">
                   <div className="text-xs text-muted-foreground">变更像素</div>
                   <div className="mt-1 text-lg font-semibold text-foreground">
-                    {dryRun.data.summary.changed_pixels.toLocaleString()}
+                    {dryRunResult.summary.changed_pixels.toLocaleString()}
                   </div>
                 </div>
                 <div className="rounded-lg border border-border bg-card p-3">
                   <div className="text-xs text-muted-foreground">原子分片</div>
                   <div className="mt-1 text-lg font-semibold text-foreground">
-                    {dryRun.data.summary.shard_count}
+                    {dryRunResult.summary.shard_count}
                   </div>
                 </div>
                 <div className="rounded-lg border border-border bg-card p-3">
                   <div className="text-xs text-muted-foreground">跳过项</div>
                   <div className="mt-1 text-lg font-semibold text-foreground">
-                    {dryRun.data.summary.skipped_count}
+                    {dryRunResult.summary.skipped_count}
                   </div>
                 </div>
               </div>
 
               <div className="flex flex-col gap-2">
-                {dryRun.data.items.map((item) => (
+                {dryRunResult.items.map((item) => (
                   <div key={item.issue_id} className="rounded-lg border border-border bg-card p-3">
                     <div className="flex items-center gap-2">
                       <Badge variant={item.skip_code ? "warning" : "success"}>
@@ -227,7 +296,7 @@ export function MaskRepairSheet({
               </div>
 
               <div className="font-mono text-xs text-muted-foreground">
-                计划摘要 {dryRun.data.plan_digest.slice(0, 16)} · 收据 15 分钟有效
+                计划摘要 {dryRunResult.plan_digest.slice(0, 16)} · 收据 15 分钟有效
               </div>
             </>
           )}
@@ -263,12 +332,12 @@ export function MaskRepairSheet({
             <Button
               variant="primary"
               disabled={
-                !dryRun.data || dryRun.data.summary.executable_count === 0 || execute.isPending
+                !dryRunResult || dryRunResult.summary.executable_count === 0 || execute.isPending
               }
               onClick={submit}
             >
               {execute.isPending && <Spinner data-icon="inline-start" />}
-              确认修复 {dryRun.data ? `(${dryRun.data.summary.mutation_count})` : ""}
+              确认修复 {dryRunResult ? `(${dryRunResult.summary.mutation_count})` : ""}
             </Button>
           )}
           {canRollback && (

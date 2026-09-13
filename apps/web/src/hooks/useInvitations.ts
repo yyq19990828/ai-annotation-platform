@@ -4,28 +4,32 @@ import {
   type InvitationPageParams,
   type InvitationStatus,
 } from "@/api/invitations";
+import { useAuthStore } from "@/stores/authStore";
 
 export function useInvitations(params?: {
   status?: InvitationStatus | "all";
   scope?: "me" | "all";
 }) {
+  const ownerId = useAuthStore((state) => state.user?.id);
   return useQuery({
-    queryKey: ["invitations", params ?? {}],
-    queryFn: () => invitationsApi.list(params),
+    queryKey: ["invitations", ownerId, params ?? {}],
+    queryFn: ({ signal }) => invitationsApi.list(params, signal),
   });
 }
 
 export function useInvitationPage(params: InvitationPageParams) {
+  const ownerId = useAuthStore((state) => state.user?.id);
   return useQuery({
-    queryKey: ["invitations", "page", params],
-    queryFn: () => invitationsApi.page(params),
+    queryKey: ["invitations", "page", ownerId, params],
+    queryFn: ({ signal }) => invitationsApi.page(params, signal),
   });
 }
 
 export function useInvitationStats(params: Omit<InvitationPageParams, "page" | "page_size">) {
+  const ownerId = useAuthStore((state) => state.user?.id);
   return useQuery({
-    queryKey: ["invitations", "stats", params],
-    queryFn: () => invitationsApi.stats(params),
+    queryKey: ["invitations", "stats", ownerId, params],
+    queryFn: ({ signal }) => invitationsApi.stats(params, signal),
   });
 }
 

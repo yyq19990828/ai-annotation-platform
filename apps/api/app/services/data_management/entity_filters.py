@@ -12,12 +12,19 @@ from app.db.models.annotation_feedback import AnnotationFeedback
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.user import User
+from app.services.data_management.filter_tree import (
+    iter_filter_rules,
+    validate_filter_tree,
+    validate_in_value,
+)
 from app.services.data_management.schema import build_data_manager_schema
 from app.services.project_kind import project_kind
 from app.services.data_management.task_filters import (
     _compile_annotation_object_condition,
     _compare_column,
     _is_annotation_object_rule,
+    _MAX_IN_VALUES,
+    _validate_rule_value,
     compile_filter,
     visible_tasks_stmt,
 )
@@ -45,6 +52,17 @@ def compile_entity_filter(
     EXISTS predicates. This preserves the same-object invariant for object rows and
     for the member that makes a logical track match.
     """
+    validate_filter_tree(filter_json)
+    return _compile_entity_node(filter_json, annotation, project=project, user=user)
+
+
+def _compile_entity_node(
+    filter_json: dict[str, Any],
+    annotation,
+    *,
+    project: Project,
+    user: User | None = None,
+) -> ColumnElement[bool]:
     if not filter_json:
         return literal(True)
     if "rules" in filter_json:
@@ -59,9 +77,8 @@ def compile_entity_filter(
                 status_code=422, detail="Filter group rules must be a list"
             )
         clauses = [
-            compile_entity_filter(child, annotation, project=project, user=user)
+            _compile_entity_node(child, annotation, project=project, user=user)
             for child in rules
-            if isinstance(child, dict)
         ]
         if not clauses:
             return literal(True)
@@ -72,6 +89,7 @@ def compile_entity_filter(
     value = filter_json.get("value")
     if not isinstance(field, str) or not isinstance(op, str):
         raise HTTPException(status_code=422, detail="Filter rule needs field and op")
+    _validate_rule_value(field, op, value, project)
     if _is_annotation_object_rule(filter_json):
         return _compile_annotation_object_condition(
             annotation, field, op, value, project
@@ -101,6 +119,7 @@ def compile_entity_filter(
             return exists().where(clause, AnnotationFeedback.status == value)
         if not isinstance(value, list):
             raise HTTPException(status_code=422, detail="in value must be a list")
+        validate_in_value(value, max_values=_MAX_IN_VALUES)
         return exists().where(clause, AnnotationFeedback.status.in_(value))
     return compile_filter(filter_json, project=project, user=user)
 
@@ -115,35 +134,17 @@ def validate_entity_view(
 ) -> None:
     if entity_scope not in {"objects", "tracks"}:
         raise HTTPException(status_code=422, detail="Unsupported entity scope")
+    validate_filter_tree(filter_json)
     schema = build_data_manager_schema(project, entity_scope)  # type: ignore[arg-type]
     allowed_fields = {field.key for field in schema.filter_fields}
 
-    def visit(node: dict[str, Any]) -> None:
-        if not node:
-            return
-        if "rules" in node:
-            if node.get("op", "and") not in {"and", "or"}:
-                raise HTTPException(
-                    status_code=422, detail="Filter group op must be and/or"
-                )
-            rules = node.get("rules")
-            if not isinstance(rules, list):
-                raise HTTPException(
-                    status_code=422, detail="Filter group rules must be a list"
-                )
-            for child in rules:
-                if not isinstance(child, dict):
-                    raise HTTPException(status_code=422, detail="Invalid filter rule")
-                visit(child)
-            return
+    for node in iter_filter_rules(filter_json):
         field = node.get("field")
         if field not in allowed_fields:
             raise HTTPException(
                 status_code=422, detail=f"Unsupported filter field: {field}"
             )
         compile_entity_filter(node, Annotation, project=project)
-
-    visit(filter_json or {})
     allowed_sorts = {item.value for item in schema.sort_fields}
     for item in sort_json or []:
         if item.get("field") not in allowed_sorts:
@@ -168,29 +169,24 @@ def validate_entity_view(
 def invalid_entity_filter_fields(
     filter_json: dict[str, Any], entity_scope: str, project: Project
 ) -> list[str]:
-    invalid: list[str] = []
+    try:
+        validate_filter_tree(filter_json)
+    except HTTPException:
+        return ["__filter__"]
 
-    def visit(node: dict[str, Any]) -> None:
-        if not node:
-            return
-        if "rules" in node:
-            for child in node.get("rules") or []:
-                if isinstance(child, dict):
-                    visit(child)
-            return
+    schema = build_data_manager_schema(project, entity_scope)  # type: ignore[arg-type]
+    allowed_fields = {field.key for field in schema.filter_fields}
+    invalid: list[str] = []
+    for node in iter_filter_rules(filter_json):
         field = node.get("field")
         try:
-            validate_entity_view(
-                entity_scope=entity_scope,
-                filter_json=node,
-                sort_json=[],
-                columns_json=[],
-                project=project,
-            )
+            if field not in allowed_fields:
+                raise HTTPException(
+                    status_code=422, detail=f"Unsupported filter field: {field}"
+                )
+            compile_entity_filter(node, Annotation, project=project)
         except HTTPException:
             invalid.append(str(field or "__filter__"))
-
-    visit(filter_json or {})
     return list(dict.fromkeys(invalid))
 
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deriveVideoFrameViews } from "./videoFrameViews";
+import { deriveVideoFrameViews, visibleInReviewMode } from "./videoFrameViews";
 import { DEFAULT_ANNOTATION_VISUAL } from "./annotationVisual";
 import type { AnnotationResponse, VideoTrackOutsideRange } from "@/types";
 
@@ -340,6 +340,44 @@ describe("deriveVideoFrameViews", () => {
     });
     expect(v.entries).toHaveLength(0);
     expect(v.previews).toHaveLength(0);
+  });
+
+  it.each(["diff", "raw", "final"] as const)("persisted hidden annotation 不渲染 (%s)", (mode) => {
+    const ann = { ...bboxAnn("hidden", 0), is_hidden: true };
+    const v = deriveVideoFrameViews({
+      ...base,
+      annotations: [ann],
+      frameIndex: 0,
+      reviewDisplayMode: mode,
+    });
+    expect(v.entries).toHaveLength(0);
+  });
+
+  it("persisted hidden track excludes entries, previews, ghost, and carry-over", () => {
+    const ann = {
+      ...trackAnn("hidden-track", "hidden-track", [
+        { frame_index: 0, bbox: { x: 0.1, y: 0.1, w: 0.2, h: 0.2 } },
+      ]),
+      is_hidden: true,
+    };
+    const v = deriveVideoFrameViews({
+      ...base,
+      annotations: [ann],
+      frameIndex: 1,
+      selectedId: ann.id,
+    });
+    expect(v.entries).toHaveLength(0);
+    expect(v.previews).toHaveLength(0);
+    expect(v.ghost).toBeNull();
+    expect(v.carryOverGhosts).toHaveLength(0);
+  });
+
+  it("shares raw/diff/final source visibility with the roster", () => {
+    expect(visibleInReviewMode("prediction", "raw")).toBe(true);
+    expect(visibleInReviewMode("manual", "raw")).toBe(false);
+    expect(visibleInReviewMode("prediction", "final")).toBe(false);
+    expect(visibleInReviewMode("manual", "final")).toBe(true);
+    expect(visibleInReviewMode("interpolated", "diff")).toBe(true);
   });
 
   it("选中态标记 + 预览线只在选中时给关键帧圆点", () => {

@@ -1,4 +1,8 @@
-import { useMemo, useState } from "react";
+import { FilterGroup, FilterSelect } from "@/components/filters/FilterControls";
+import { FilterPanel } from "@/components/filters/FilterPanel";
+import { FilterTrigger } from "@/components/filters/FilterTrigger";
+import { ActiveFilterChip } from "@/components/filters/ActiveFilterChip";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
@@ -34,6 +38,9 @@ import { usersApi, type UserResponse } from "@/api/users";
 import { ApiError } from "@/api/client";
 import type { UserRole } from "@/types";
 import { PageContainer } from "@/components/layout/PageContainer";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { useUrlFilterState } from "@/hooks/useUrlFilterState";
+import { USERS_URL_DEFAULTS, USERS_URL_KEYS, usersUrlCodec } from "./usersUrlState";
 
 // actor.role × target.role → 可点"编辑"（即可改角色或可删）
 const EDITABLE_TARGET_ROLES_BY_ACTOR: Record<UserRole, UserRole[]> = {
@@ -105,18 +112,29 @@ export function UsersPage() {
 }
 
 function UsersPageContent() {
-  const [tab, setTab] = useState<"members" | "roles" | "groups" | "invitations">("members");
-  const [userStatus, setUserStatus] = useState<"active" | "inactive" | "all">("active");
-  const [selectedRole, setSelectedRole] = useState("全部");
-  const [query, setQuery] = useState("");
+  const urlState = useUrlFilterState({
+    codec: usersUrlCodec,
+    defaults: USERS_URL_DEFAULTS,
+    ownedKeys: USERS_URL_KEYS,
+  });
+  const { state: filters, issues, patch } = urlState;
+  const [queryDraft, setQueryDraft] = useState(filters.q);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const syncingQueryDraft = useRef(false);
+  const lastUrlQuery = useRef(filters.q);
+  const debouncedQuery = useDebouncedValue(queryDraft, 250);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [bulkInviteOpen, setBulkInviteOpen] = useState(false);
   const [bulkGroupOpen, setBulkGroupOpen] = useState(false);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [selectedUsersById, setSelectedUsersById] = useState<Record<string, UserResponse>>({});
-  const [projectFilter, setProjectFilter] = useState("");
-  const [groupFilter, setGroupFilter] = useState("");
-  const [page, setPage] = useState(1);
+  const lastMemberFilters = useRef({
+    q: filters.q,
+    status: filters.status,
+    role: filters.role,
+    projectId: filters.projectId,
+    groupId: filters.groupId,
+  });
   const pageSize = 25;
   const [editing, setEditing] = useState<UserResponse | null>(null);
   const [deleting, setDeleting] = useState<UserResponse | null>(null);
@@ -137,10 +155,66 @@ function UsersPageContent() {
   const [reactivatingUser, setReactivatingUser] = useState<UserResponse | null>(null);
   const [manageGroupsOpen, setManageGroupsOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const clearSelection = () => {
+  const clearSelection = useCallback(() => {
     setSelectedUserIds([]);
     setSelectedUsersById({});
-  };
+  }, []);
+  const tab = filters.tab;
+  const userStatus = filters.status;
+  const selectedRole = filters.role || "全部";
+  const projectFilter = filters.projectId;
+  const groupFilter = filters.groupId;
+  const page = filters.page;
+
+  useEffect(() => {
+    const previous = lastMemberFilters.current;
+    const changed =
+      previous.q !== filters.q ||
+      previous.status !== filters.status ||
+      previous.role !== filters.role ||
+      previous.projectId !== filters.projectId ||
+      previous.groupId !== filters.groupId;
+    lastMemberFilters.current = {
+      q: filters.q,
+      status: filters.status,
+      role: filters.role,
+      projectId: filters.projectId,
+      groupId: filters.groupId,
+    };
+    if (changed) clearSelection();
+  }, [clearSelection, filters.groupId, filters.projectId, filters.q, filters.role, filters.status]);
+
+  useEffect(() => {
+    if (lastUrlQuery.current === filters.q) return;
+    lastUrlQuery.current = filters.q;
+    if (queryDraft !== filters.q) {
+      syncingQueryDraft.current = true;
+      setQueryDraft(filters.q);
+    }
+  }, [filters.q, queryDraft]);
+
+  useEffect(() => {
+    if (syncingQueryDraft.current) {
+      if (debouncedQuery === filters.q) syncingQueryDraft.current = false;
+      return;
+    }
+    const nextQuery = debouncedQuery.trim();
+    if (nextQuery !== queryDraft.trim()) return;
+    if (nextQuery === filters.q) return;
+    clearSelection();
+    patch({ q: nextQuery, page: 1 }, { replace: true });
+  }, [clearSelection, debouncedQuery, filters.q, patch, queryDraft]);
+
+  const memberParams = useMemo(
+    () => ({
+      status: userStatus,
+      role: filters.role || undefined,
+      project_id: projectFilter || undefined,
+      group_id: groupFilter || undefined,
+      search: filters.q || undefined,
+    }),
+    [filters.q, filters.role, groupFilter, projectFilter, userStatus],
+  );
   const pushToast = useToastStore((s) => s.push);
   const deleteUser = useDeleteUser();
   const navigate = useNavigate();
@@ -159,22 +233,12 @@ function UsersPageContent() {
     isFetching: usersFetching,
     fetchStatus: usersFetchStatus,
   } = useUserPage({
-    status: userStatus,
-    role: selectedRole === "全部" ? undefined : selectedRole,
-    project_id: projectFilter || undefined,
-    group_id: groupFilter || undefined,
-    search: query.trim() || undefined,
+    ...memberParams,
     page,
     page_size: pageSize,
   });
   const { data: groupsData = [] } = useGroups();
-  const { data: usersStats } = useUsersStats({
-    status: userStatus,
-    role: selectedRole === "全部" ? undefined : selectedRole,
-    project_id: projectFilter || undefined,
-    group_id: groupFilter || undefined,
-    search: query.trim() || undefined,
-  });
+  const { data: usersStats } = useUsersStats(memberParams);
   const usersPaused = usersFetchStatus === "paused";
 
   const allUsers = pageData?.items ?? [];
@@ -215,13 +279,7 @@ function UsersPageContent() {
     if (exporting) return;
     setExporting(true);
     try {
-      await usersApi.exportUsers("csv", {
-        role: selectedRole === "全部" ? undefined : selectedRole,
-        project_id: projectFilter || undefined,
-        group_id: groupFilter || undefined,
-        status: userStatus,
-        search: query.trim() || undefined,
-      });
+      await usersApi.exportUsers("csv", memberParams);
       pushToast({ msg: "已导出名单 CSV", kind: "success" });
     } catch (err) {
       pushToast({
@@ -250,6 +308,11 @@ function UsersPageContent() {
         <div>
           <h1 className="mb-1 text-xl font-semibold">用户与权限</h1>
           <p className="text-sm text-muted-foreground">管理团队成员、角色权限与数据组分配</p>
+          {!!issues.length && (
+            <div role="alert" className="mt-1 text-xs text-status-caution">
+              URL 用户筛选无法完整恢复，已使用安全默认值。
+            </div>
+          )}
         </div>
         <div className="flex gap-2">
           <Can permission="user.export">
@@ -297,88 +360,135 @@ function UsersPageContent() {
             active={activeLabel}
             onChange={(t) => {
               const found = tabLabels.find(([, l]) => l === t);
-              if (found) setTab(found[0]);
+              if (found) patch({ tab: found[0] }, { replace: false });
             }}
           />
           {tab === "members" && (
-            <div className="flex flex-wrap justify-end gap-2">
-              <select
-                aria-label="项目筛选"
-                value={projectFilter}
-                onChange={(event) => {
-                  setProjectFilter(event.target.value);
-                  setPage(1);
-                  clearSelection();
-                }}
-                className={`${SELECT_BASE} max-w-48 px-2 py-1.5 text-sm`}
-              >
-                <option value="">全部项目</option>
-                {projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </select>
-              <select
-                aria-label="账号状态"
-                value={userStatus}
-                onChange={(e) => {
-                  setUserStatus(e.target.value as "active" | "inactive" | "all");
-                  setPage(1);
-                  clearSelection();
-                }}
-                className={`${SELECT_BASE} px-2 py-1.5 text-sm`}
-              >
-                {Object.entries(USER_STATUS_FILTER_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-              <select
-                aria-label="角色筛选"
-                value={selectedRole}
-                onChange={(e) => {
-                  setSelectedRole(e.target.value);
-                  setPage(1);
-                  clearSelection();
-                }}
-                className={`${SELECT_BASE} px-2 py-1.5 text-sm`}
-              >
-                <option>全部</option>
-                {roleKeys.map((r) => (
-                  <option key={r} value={r}>
-                    {ROLE_LABELS[r] ?? r}
-                  </option>
-                ))}
-              </select>
-              <select
-                aria-label="数据组筛选"
-                value={groupFilter}
-                onChange={(event) => {
-                  setGroupFilter(event.target.value);
-                  setPage(1);
-                  clearSelection();
-                }}
-                className={`${SELECT_BASE} px-2 py-1.5 text-sm`}
-              >
-                <option value="">全部数据组</option>
-                {groupsData.map((group) => (
-                  <option key={group.id} value={group.id}>
-                    {group.name}
-                  </option>
-                ))}
-              </select>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <FilterGroup label="账号" compact>
+                <FilterSelect
+                  aria-label="账号状态"
+                  value={userStatus}
+                  onChange={(e) => {
+                    clearSelection();
+                    patch(
+                      { status: e.target.value as "active" | "inactive" | "all", page: 1 },
+                      { replace: false },
+                    );
+                  }}
+                  className="w-full"
+                >
+                  {Object.entries(USER_STATUS_FILTER_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </FilterSelect>
+              </FilterGroup>
               <SearchInput
                 placeholder="搜索姓名或邮箱..."
-                value={query}
+                value={queryDraft}
                 onChange={(value) => {
-                  setQuery(value);
-                  setPage(1);
-                  clearSelection();
+                  syncingQueryDraft.current = false;
+                  setQueryDraft(value);
                 }}
                 width={240}
               />
+              <FilterPanel
+                open={filtersOpen}
+                onOpenChange={setFiltersOpen}
+                trigger={
+                  <FilterTrigger
+                    count={[projectFilter, filters.role, groupFilter].filter(Boolean).length}
+                    countLabel="附加筛选条件（不含账号状态）"
+                  />
+                }
+                title="成员筛选"
+                description="即时生效 · 按项目、角色和数据组筛选成员。"
+                footer={
+                  <div className="flex items-center justify-between gap-2">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        clearSelection();
+                        patch(
+                          { projectId: "", role: "", groupId: "", page: 1 },
+                          { replace: false },
+                        );
+                      }}
+                    >
+                      清除附加条件
+                    </Button>
+                    <Button size="sm" onClick={() => setFiltersOpen(false)}>
+                      完成
+                    </Button>
+                  </div>
+                }
+              >
+                <div className="grid gap-3">
+                  <label className="flex flex-col gap-1.5 text-xs text-muted-foreground">
+                    项目
+                    <FilterSelect
+                      aria-label="项目筛选"
+                      value={projectFilter}
+                      onChange={(event) => {
+                        clearSelection();
+                        patch({ projectId: event.target.value, page: 1 }, { replace: false });
+                      }}
+                      className="w-full"
+                    >
+                      <option value="">全部项目</option>
+                      {projects.map((project) => (
+                        <option key={project.id} value={project.id}>
+                          {project.name}
+                        </option>
+                      ))}
+                    </FilterSelect>
+                  </label>
+                  <label className="flex flex-col gap-1.5 text-xs text-muted-foreground">
+                    角色
+                    <FilterSelect
+                      aria-label="角色筛选"
+                      value={selectedRole}
+                      onChange={(e) => {
+                        clearSelection();
+                        patch(
+                          { role: e.target.value === "全部" ? "" : e.target.value, page: 1 },
+                          { replace: false },
+                        );
+                      }}
+                      className="w-full"
+                    >
+                      <option>全部</option>
+                      {roleKeys.map((r) => (
+                        <option key={r} value={r}>
+                          {ROLE_LABELS[r] ?? r}
+                        </option>
+                      ))}
+                    </FilterSelect>
+                  </label>
+                  <label className="flex flex-col gap-1.5 text-xs text-muted-foreground">
+                    数据组
+                    <FilterSelect
+                      aria-label="数据组筛选"
+                      value={groupFilter}
+                      onChange={(event) => {
+                        clearSelection();
+                        patch({ groupId: event.target.value, page: 1 }, { replace: false });
+                      }}
+                      className="w-full"
+                    >
+                      <option value="">全部数据组</option>
+                      {groupsData.map((group) => (
+                        <option key={group.id} value={group.id}>
+                          {group.name}
+                        </option>
+                      ))}
+                    </FilterSelect>
+                  </label>
+                </div>
+              </FilterPanel>
             </div>
           )}
           {tab === "groups" && (
@@ -389,6 +499,48 @@ function UsersPageContent() {
             </Can>
           )}
         </div>
+
+        {tab === "members" && (projectFilter || filters.role || groupFilter) && (
+          <div
+            className="flex flex-wrap gap-1.5 border-b border-border px-4 py-2"
+            role="group"
+            aria-label="已应用的成员筛选"
+          >
+            {projectFilter && (
+              <ActiveFilterChip
+                label="项目"
+                value={projects.find((project) => project.id === projectFilter)?.name ?? "指定项目"}
+                onClick={() => setFiltersOpen(true)}
+                onRemove={() => {
+                  clearSelection();
+                  patch({ projectId: "", page: 1 }, { replace: false });
+                }}
+              />
+            )}
+            {filters.role && (
+              <ActiveFilterChip
+                label="角色"
+                value={ROLE_LABELS[filters.role as UserRole] ?? filters.role}
+                onClick={() => setFiltersOpen(true)}
+                onRemove={() => {
+                  clearSelection();
+                  patch({ role: "", page: 1 }, { replace: false });
+                }}
+              />
+            )}
+            {groupFilter && (
+              <ActiveFilterChip
+                label="数据组"
+                value={groupsData.find((group) => group.id === groupFilter)?.name ?? "指定数据组"}
+                onClick={() => setFiltersOpen(true)}
+                onRemove={() => {
+                  clearSelection();
+                  patch({ groupId: "", page: 1 }, { replace: false });
+                }}
+              />
+            )}
+          </div>
+        )}
 
         {tab === "members" && (
           <div>
@@ -505,7 +657,7 @@ function UsersPageContent() {
                   {!isLoading && !usersError && !usersPaused && filtered.length === 0 && (
                     <tr>
                       <td colSpan={9} className="p-10 text-center text-sm text-muted-foreground">
-                        {query || selectedRole !== "全部" || groupFilter
+                        {queryDraft || selectedRole !== "全部" || groupFilter
                           ? "没有匹配的账号。"
                           : `暂无${USER_STATUS_FILTER_LABELS[userStatus]}。`}
                       </td>
@@ -695,14 +847,14 @@ function UsersPageContent() {
                   <Button
                     size="sm"
                     disabled={page <= 1}
-                    onClick={() => setPage((value) => value - 1)}
+                    onClick={() => patch({ page: Math.max(1, page - 1) }, { replace: false })}
                   >
                     上一页
                   </Button>
                   <Button
                     size="sm"
                     disabled={page >= pageMeta.pages}
-                    onClick={() => setPage((value) => value + 1)}
+                    onClick={() => patch({ page: page + 1 }, { replace: false })}
                   >
                     下一页
                   </Button>
@@ -791,10 +943,8 @@ function UsersPageContent() {
                     size="sm"
                     variant="ghost"
                     onClick={() => {
-                      setGroupFilter(g.id);
-                      setPage(1);
                       clearSelection();
-                      setTab("members");
+                      patch({ groupId: g.id, page: 1, tab: "members" }, { replace: false });
                     }}
                   >
                     查看成员

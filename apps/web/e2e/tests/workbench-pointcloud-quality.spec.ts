@@ -181,6 +181,56 @@ async function installQualityRoutes(
 }
 
 test.describe("workbench point-cloud quality", () => {
+  test("quality filters query the current Scene without scanning or changing annotations", async ({
+    page,
+    request,
+    seed,
+  }) => {
+    await seed.reset();
+    const lidar = await seed.seedLidar();
+    const token = await seed.accessToken("admin@e2e.test");
+    const taskId = lidar.lidar_task_ids[0];
+    const context = await fixtureContext(request, taskId, token);
+    const headers = { Authorization: `Bearer ${token}` };
+    const annotationUrl = `${API_BASE}/api/v1/tasks/${taskId}/annotations`;
+    const beforeResponse = await request.get(annotationUrl, { headers });
+    expect(beforeResponse.ok()).toBe(true);
+    const before = await beforeResponse.json();
+    const writes: string[] = [];
+    page.on("request", (req) => {
+      if (req.url().includes("/point-cloud-quality/") && req.method() !== "GET")
+        writes.push(req.url());
+    });
+    await seed.injectToken(page, "admin@e2e.test");
+    await page.goto(`/projects/${lidar.lidar_project_id}/annotate?task=${taskId}`);
+    await expect(page.getByTestId("pointcloud-stats")).toBeVisible({ timeout: 20_000 });
+    await page.getByTestId("scene-timeline-toggle").click();
+    await page.getByTestId("scene-quality-open").click();
+    const panel = page.getByTestId("point-cloud-quality-panel");
+    await expect(panel).toBeVisible();
+    const filtered = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return (
+        url.pathname.endsWith("/point-cloud-quality/issues") &&
+        url.searchParams.get("status") === "resolved" &&
+        url.searchParams.get("severity") === "warning" &&
+        url.searchParams.get("code") === "projection_residual"
+      );
+    });
+    await panel.getByLabel("质量问题状态").selectOption("resolved");
+    await panel.getByLabel("质量问题严重级别").selectOption("warning");
+    await panel.getByLabel("质量问题规则").selectOption("projection_residual");
+    const response = await filtered;
+    expect(response.ok(), await response.text()).toBe(true);
+    expect(new URL(response.url()).searchParams.get("scene_id")).toBe(context.sceneId);
+    expect(new URL(response.url()).searchParams.has("task_id")).toBe(false);
+    await expect(panel).toContainText("已加载警告 0");
+    expect(writes).toEqual([]);
+    const afterResponse = await request.get(annotationUrl, { headers });
+    expect(afterResponse.ok()).toBe(true);
+    expect(await afterResponse.json()).toEqual(before);
+  });
+
   test("nuScenes 时间轴标记、定位、处置与 3D 讨论锚点形成闭环", async ({ page, request, seed }) => {
     await seed.reset();
     const lidar = await seed.seedLidar();

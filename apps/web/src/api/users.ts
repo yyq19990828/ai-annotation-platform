@@ -269,25 +269,35 @@ function queryString(params: object) {
 }
 
 export const usersApi = {
-  list: (params?: { role?: string; project_id?: string; status?: UserStatusFilter }) => {
+  list: (
+    params?: { role?: string; project_id?: string; status?: UserStatusFilter },
+    signal?: AbortSignal,
+  ) => {
     const q = new URLSearchParams(
       Object.fromEntries(Object.entries(params ?? {}).filter(([, v]) => v !== undefined)) as Record<
         string,
         string
       >,
     ).toString();
-    return apiClient.get<UserResponse[]>(`/users${q ? `?${q}` : ""}`);
+    const path = `/users${q ? `?${q}` : ""}`;
+    return signal
+      ? apiClient.get<UserResponse[]>(path, { signal })
+      : apiClient.get<UserResponse[]>(path);
   },
 
   // v0.8.3 · UsersPage 顶部 4 卡之「本周活跃」聚合（last_seen_at >= now-7d）
-  page: (params: UserPageParams = {}) => {
+  page: (params: UserPageParams = {}, signal?: AbortSignal) => {
     const q = queryString(params);
-    return apiClient.get<UserPageResponse>(`/users/query${q ? `?${q}` : ""}`);
+    const path = `/users/query${q ? `?${q}` : ""}`;
+    return signal
+      ? apiClient.get<UserPageResponse>(path, { signal })
+      : apiClient.get<UserPageResponse>(path);
   },
 
-  stats: (params: UserStatsParams = {}) => {
+  stats: (params: UserStatsParams = {}, signal?: AbortSignal) => {
     const q = queryString(params);
-    return apiClient.get<UsersStats>(`/users/stats${q ? `?${q}` : ""}`);
+    const path = `/users/stats${q ? `?${q}` : ""}`;
+    return signal ? apiClient.get<UsersStats>(path, { signal }) : apiClient.get<UsersStats>(path);
   },
 
   invite: (payload: InvitePayload) => apiClient.post<InvitationCreated>("/users/invite", payload),

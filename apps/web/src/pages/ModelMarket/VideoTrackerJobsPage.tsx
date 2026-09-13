@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { FilterGroup, FilterSelect } from "@/components/filters/FilterControls";
+import { useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
 import { videoTrackerJobsApi } from "@/api/videoTrackerJobs";
@@ -14,6 +15,8 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
+import { useAuthStore } from "@/stores/authStore";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 
 const FIELD_CLASS =
   "appearance-none rounded-sm border border-border bg-muted px-2.5 py-1 text-xs text-foreground outline-none";
@@ -71,34 +74,108 @@ const EMPTY_COUNTS: VideoTrackerJobCounts = {
 export function VideoTrackerJobsPanel({ projectId }: { projectId?: string }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const [selectedProjectId, setSelectedProjectId] = useState(projectId ?? "");
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>("");
-  const [modelKey, setModelKey] = useState("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const userId = useAuthStore((state) => state.user?.id ?? null);
+  const token = useAuthStore((state) => state.token);
+  const authOwnerKey = `${userId ?? "anonymous"}:${token ?? "none"}`;
+  const selectedProjectId = searchParams.get("project_id") ?? projectId ?? "";
+  const rawStatus = searchParams.get("video_status");
+  const statusFilter = STATUS_ORDER.includes(rawStatus as VideoTrackerJobStatus)
+    ? (rawStatus as VideoTrackerJobStatus)
+    : ("" as StatusFilter);
+  const rawModelKey = searchParams.get("video_model_key");
+  const modelKey = (rawModelKey ?? "").trim();
+  const [modelDraft, setModelDraft] = useState(modelKey);
+  const lastUrlModelKey = useRef(modelKey);
+  const syncingModelDraft = useRef(false);
+  const debouncedModelKey = useDebouncedValue(modelDraft, 250);
   const [cursor, setCursor] = useState<string | null>(null);
   const [previousCursors, setPreviousCursors] = useState<Array<string | null>>([]);
+  const filterKey = `${authOwnerKey}|${selectedProjectId}|${statusFilter}|${modelKey}`;
+  const previousFilterKey = useRef(filterKey);
+  const effectiveCursor = previousFilterKey.current === filterKey ? cursor : null;
 
   useEffect(() => {
-    setSelectedProjectId(projectId ?? "");
+    if (lastUrlModelKey.current === modelKey) return;
+    lastUrlModelKey.current = modelKey;
+    if (debouncedModelKey.trim() !== modelKey) syncingModelDraft.current = true;
+    if (modelDraft !== modelKey) {
+      setModelDraft(modelKey);
+    }
+  }, [debouncedModelKey, modelDraft, modelKey]);
+
+  useEffect(() => {
+    if (syncingModelDraft.current) {
+      if (debouncedModelKey.trim() === modelKey && debouncedModelKey.trim() === modelDraft.trim()) {
+        syncingModelDraft.current = false;
+      }
+      return;
+    }
+    const nextModelKey = debouncedModelKey.trim();
+    if (nextModelKey !== modelDraft.trim()) return;
+    if (nextModelKey === modelKey) return;
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        if (nextModelKey) next.set("video_model_key", nextModelKey);
+        else next.delete("video_model_key");
+        return next;
+      },
+      { replace: true },
+    );
     setCursor(null);
     setPreviousCursors([]);
-  }, [projectId]);
+  }, [debouncedModelKey, modelDraft, modelKey, setSearchParams]);
+
+  useEffect(() => {
+    const next = new URLSearchParams(searchParams);
+    let changed = false;
+    const normalizedStatus = statusFilter || null;
+    if (rawStatus !== null && rawStatus !== normalizedStatus) {
+      if (normalizedStatus) next.set("video_status", normalizedStatus);
+      else next.delete("video_status");
+      changed = true;
+    }
+    if (rawModelKey !== null && rawModelKey !== modelKey) {
+      if (modelKey) next.set("video_model_key", modelKey);
+      else next.delete("video_model_key");
+      changed = true;
+    }
+    if (changed) setSearchParams(next, { replace: true });
+  }, [modelKey, rawModelKey, rawStatus, searchParams, setSearchParams, statusFilter]);
+
+  useEffect(() => {
+    setCursor(null);
+    setPreviousCursors([]);
+    previousFilterKey.current = filterKey;
+  }, [filterKey]);
 
   const projectsQ = useQuery({
-    queryKey: ["projects", "video-tracker-job-filter"],
-    queryFn: () => projectsApi.list({ data_type: ["video"] }),
+    queryKey: ["projects", "video-tracker-job-filter", authOwnerKey],
+    queryFn: ({ signal }) => projectsApi.list({ data_type: ["video"] }, { signal }),
     staleTime: 1000 * 60,
   });
 
   const jobsQ = useQuery({
-    queryKey: ["video-tracker-jobs", selectedProjectId, statusFilter, modelKey, cursor],
-    queryFn: () =>
-      videoTrackerJobsApi.list({
-        project_id: selectedProjectId || undefined,
-        status: statusFilter || undefined,
-        model_key: modelKey.trim() || undefined,
-        cursor: cursor || undefined,
-        limit: PAGE_SIZE,
-      }),
+    queryKey: [
+      "video-tracker-jobs",
+      authOwnerKey,
+      selectedProjectId,
+      statusFilter,
+      modelKey,
+      effectiveCursor,
+    ],
+    queryFn: ({ signal }) =>
+      videoTrackerJobsApi.list(
+        {
+          project_id: selectedProjectId || undefined,
+          status: statusFilter || undefined,
+          model_key: modelKey || undefined,
+          cursor: effectiveCursor || undefined,
+          limit: PAGE_SIZE,
+        },
+        { signal },
+      ),
     staleTime: 1000 * 30,
   });
 
@@ -109,6 +186,36 @@ export function VideoTrackerJobsPanel({ projectId }: { projectId?: string }) {
   const resetPagination = () => {
     setCursor(null);
     setPreviousCursors([]);
+  };
+  const updateVideoUrl = (
+    patch: {
+      project_id?: string;
+      video_status?: StatusFilter;
+      video_model_key?: string;
+    },
+    options: { replace?: boolean; resetPagination?: boolean } = {},
+  ) => {
+    setSearchParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        if (patch.project_id !== undefined) {
+          if (patch.project_id) next.set("project_id", patch.project_id);
+          else next.delete("project_id");
+        }
+        if (patch.video_status !== undefined) {
+          if (patch.video_status) next.set("video_status", patch.video_status);
+          else next.delete("video_status");
+        }
+        if (patch.video_model_key !== undefined) {
+          const value = patch.video_model_key.trim();
+          if (value) next.set("video_model_key", value);
+          else next.delete("video_model_key");
+        }
+        return next;
+      },
+      { replace: options.replace ?? true },
+    );
+    if (options.resetPagination) resetPagination();
   };
 
   return (
@@ -131,15 +238,17 @@ export function VideoTrackerJobsPanel({ projectId }: { projectId?: string }) {
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3">
-          <div className="inline-flex flex-wrap gap-2">
-            <select
+          <FilterGroup label="筛选" compact>
+            <FilterSelect
               aria-label="筛选视频项目"
               value={selectedProjectId}
               onChange={(event) => {
-                setSelectedProjectId(event.target.value);
-                resetPagination();
+                updateVideoUrl(
+                  { project_id: event.target.value },
+                  { replace: false, resetPagination: true },
+                );
               }}
-              className={`${FIELD_CLASS} max-w-[240px]`}
+              className="max-w-[240px]"
             >
               <option value="">全部视频项目</option>
               {(projectsQ.data ?? []).map((project) => (
@@ -148,15 +257,18 @@ export function VideoTrackerJobsPanel({ projectId }: { projectId?: string }) {
                   {project.display_id ? ` (${project.display_id})` : ""}
                 </option>
               ))}
-            </select>
-            <select
+            </FilterSelect>
+            <FilterSelect
               aria-label="筛选视频任务状态"
               value={statusFilter}
               onChange={(event) => {
-                setStatusFilter(event.target.value as StatusFilter);
-                resetPagination();
+                updateVideoUrl(
+                  {
+                    video_status: event.target.value as StatusFilter,
+                  },
+                  { replace: false, resetPagination: true },
+                );
               }}
-              className={FIELD_CLASS}
             >
               <option value="">全部状态</option>
               {STATUS_ORDER.map((status) => (
@@ -164,28 +276,33 @@ export function VideoTrackerJobsPanel({ projectId }: { projectId?: string }) {
                   {STATUS_LABEL[status]}
                 </option>
               ))}
-            </select>
+            </FilterSelect>
             <input
               aria-label="筛选追踪模型"
               type="text"
-              value={modelKey}
+              value={modelDraft}
               onChange={(event) => {
-                setModelKey(event.target.value);
-                resetPagination();
+                syncingModelDraft.current = false;
+                setModelDraft(event.target.value);
               }}
               placeholder="按 model_key 精确过滤..."
               className={`${FIELD_CLASS} w-[210px]`}
             />
-          </div>
+          </FilterGroup>
           {(selectedProjectId || statusFilter || modelKey) && (
             <Button
               size="xs"
               variant="ghost"
               onClick={() => {
-                setSelectedProjectId("");
-                setStatusFilter("");
-                setModelKey("");
-                resetPagination();
+                setModelDraft("");
+                updateVideoUrl(
+                  {
+                    project_id: "",
+                    video_status: "",
+                    video_model_key: "",
+                  },
+                  { replace: false, resetPagination: true },
+                );
               }}
             >
               清除筛选

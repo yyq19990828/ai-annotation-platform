@@ -1,5 +1,6 @@
 import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import type { useAcceptPrediction, useRejectPrediction } from "@/hooks/usePredictions";
+import { isCurrentAuthOwner } from "@/stores/authStore";
 import { aiBoxOnFrame } from "../../stage/aiBoxFrames";
 import type { AiBox } from "../../state/transforms";
 import type { useAnnotationHistory } from "../../state/useAnnotationHistory";
@@ -11,7 +12,9 @@ export type PredictionDecisionResult = {
 
 interface Args {
   taskId: string | undefined;
+  projectId?: string | undefined;
   videoSegmentId?: string | null;
+  meUserId?: string | null;
   s: ReturnType<typeof useWorkbenchState>;
   aiBoxes: AiBox[];
   acceptedShapeKeys: ReadonlySet<string>;
@@ -38,17 +41,24 @@ interface Decision {
 
 /** Own ordinary prediction writes, class retries and the selection they may advance. */
 export function usePredictionDecisions(args: Args) {
-  const { taskId, videoSegmentId, s } = args;
-  // A task may be revisited before its write or canonical query finishes.
-  const taskDecisions = useRef(new Map<string | undefined, Map<string, Decision>>());
+  const { taskId, projectId, videoSegmentId, meUserId, s } = args;
+  // A task may be revisited before its write or canonical query finishes. Include the
+  // project and account so a retained task id cannot reuse another owner's decisions.
+  const taskDecisions = useRef(new Map<string, Map<string, Decision>>());
+  const ownerKey = JSON.stringify([
+    taskId ?? null,
+    projectId ?? null,
+    videoSegmentId ?? null,
+    meUserId ?? null,
+  ]);
   const owner = useMemo(() => {
-    let decisions = taskDecisions.current.get(taskId);
+    let decisions = taskDecisions.current.get(ownerKey);
     if (!decisions) {
       decisions = new Map<string, Decision>();
-      taskDecisions.current.set(taskId, decisions);
+      taskDecisions.current.set(ownerKey, decisions);
     }
-    return { taskId, videoSegmentId, active: true, decisions };
-  }, [taskId, videoSegmentId]);
+    return { taskId, projectId, videoSegmentId, meUserId, active: true, decisions };
+  }, [meUserId, ownerKey, projectId, taskId, videoSegmentId]);
   // Identity changes even when the user leaves and returns to the same selection/frame/task.
   const selection = useMemo(
     () => ({ owner, id: s.selectedId, frame: s.videoFrameIndex }),
@@ -106,13 +116,21 @@ export function usePredictionDecisions(args: Args) {
     };
   }, [owner]);
 
+  const isCurrentOwner = useCallback(
+    () =>
+      owner.active &&
+      latest.current.owner === owner &&
+      (!owner.meUserId || isCurrentAuthOwner(owner.meUserId)),
+    [owner],
+  );
+
   const run = useCallback(
     async (
       decision: Decision,
       kind: "accept" | "reject",
       overrideClassName?: string,
     ): Promise<PredictionDecisionResult> => {
-      const currentTask = () => owner.active && latest.current.owner === owner;
+      const currentTask = isCurrentOwner;
       const currentSelection = () =>
         currentTask() && latest.current.selection === decision.selection;
       const { box } = decision;
@@ -202,7 +220,7 @@ export function usePredictionDecisions(args: Args) {
         return { status: "failed" };
       }
     },
-    [args, owner, s],
+    [args, isCurrentOwner, owner, s],
   );
 
   const decide = useCallback(
@@ -221,13 +239,7 @@ export function usePredictionDecisions(args: Args) {
             status: existing.status === "awaiting-class" ? "awaiting-class" : "ignored",
           })
         );
-      if (
-        !owner.active ||
-        latest.current.owner !== owner ||
-        !taskId ||
-        args.isLocked ||
-        !box.predictionId
-      )
+      if (!isCurrentOwner() || !taskId || args.isLocked || !box.predictionId)
         return Promise.resolve({ status: "ignored" });
       const scoped = args.aiBoxes.filter((b) => bulk || aiBoxOnFrame(b, s.videoFrameIndex));
       const index = scoped.findIndex((b) => b.id === box.id);
@@ -249,7 +261,7 @@ export function usePredictionDecisions(args: Args) {
       decision.promise = run(decision, kind);
       return decision.promise;
     },
-    [args, owner, run, s.videoFrameIndex, selection, taskId],
+    [args, isCurrentOwner, owner, run, s.videoFrameIndex, selection, taskId],
   );
 
   const acceptPrediction = useCallback(
@@ -259,10 +271,11 @@ export function usePredictionDecisions(args: Args) {
   const rejectPrediction = useCallback((box: AiBox) => decide(box, "reject"), [decide]);
   const acceptAll = useCallback(
     async (boxes: AiBox[]) => {
+      if (!isCurrentOwner()) return null;
       const results = await Promise.all(boxes.map((box) => decide(box, "accept", undefined, true)));
-      return owner.active && latest.current.owner === owner ? results : null;
+      return isCurrentOwner() ? results : null;
     },
-    [decide, owner],
+    [decide, isCurrentOwner],
   );
   const commitClass = useCallback(
     (cls: string): Promise<PredictionDecisionResult> => {
@@ -275,6 +288,7 @@ export function usePredictionDecisions(args: Args) {
       if (
         !decision ||
         decision.status !== "awaiting-class" ||
+        !isCurrentOwner() ||
         latest.current.selection !== decision.selection ||
         args.isLocked
       ) {
@@ -287,7 +301,7 @@ export function usePredictionDecisions(args: Args) {
       decision.promise = run(decision, "accept", cls);
       return decision.promise;
     },
-    [args, owner, run, s],
+    [args, isCurrentOwner, owner, run, s],
   );
   const cancelClass = useCallback(() => {
     const editing = s.editingClass?.accept;

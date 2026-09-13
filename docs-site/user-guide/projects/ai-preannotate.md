@@ -8,6 +8,8 @@ last_reviewed: 2026-08-16
 
 # AI 预标
 
+历史任务的项目、状态和模型筛选使用统一紧凑控件，保留即时生效、搜索等待输入与原有分页规则。 [筛选操作说明](/user-guide/reference/filtering)。
+
 <!-- history: merged the v0.9.5-v0.10.58 incremental AI pre-annotation notes into the current workflow. -->
 
 AI 预标把模型输出写成候选预测，让标注员从 AI 结果接管而不是从空白开始。图像项目支持按批次批量预标；视频项目既能在编排画布里批量预标——按输入节点的**执行单位**分「整段序列」（跨帧追踪，落轨迹）或「逐帧」（图像检测逐帧跑，每帧落框），也能在工作台内对单条轨迹发起追踪。
@@ -152,6 +154,8 @@ OCR 识别原子（`task=ocr`、`composition=atom`、吃 `crop` 输入,如 rapid
 取消、部分结果、失败项重试与升级给运维的边界统一见[AI 任务与失败恢复](../workflows/failed-prediction-recovery)。
 
 ![预标注历史搜索](../images/projects/ai-pre-history-search.png)
+
+历史队列的搜索或排序变化会回到首页，结果缩减后页码会自动落回有效范围。已明确勾选的条目跨搜索和翻页保留，批量操作前可核对显示的已选数量。
 
 ## 人工接管
 

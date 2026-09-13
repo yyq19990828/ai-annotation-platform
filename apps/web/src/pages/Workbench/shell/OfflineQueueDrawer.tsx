@@ -1,3 +1,4 @@
+import { FilterGroup, FilterToggle } from "@/components/filters/FilterControls";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { Icon } from "@/components/ui/Icon";
@@ -106,7 +107,9 @@ export function OfflineQueueDrawer({
   // 应用筛选
   const filtered = useMemo(() => {
     return items.filter((op) => {
-      if (taskFilter === "current" && currentTaskId && op.taskId !== currentTaskId) return false;
+      // A current-task filter with no current task must remain empty. Treating
+      // that state as "all" could retry or discard another task's work.
+      if (taskFilter === "current" && (!currentTaskId || op.taskId !== currentTaskId)) return false;
       if (retryFilter === "failed" && (op.retry_count ?? 0) < 3) return false;
       return true;
     });
@@ -218,31 +221,43 @@ export function OfflineQueueDrawer({
 
         {/* v0.6.4：筛选 chip */}
         {items.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 px-4 py-2 border-b border-border text-muted-foreground text-xs">
+          <FilterGroup
+            label="筛选"
+            compact
+            className="border-b border-border px-4 py-2 text-xs text-muted-foreground"
+          >
             <span className="mr-1">范围：</span>
-            <FilterChip
-              label="全部"
+            <FilterToggle
+              compact
               active={taskFilter === "all"}
               onClick={() => setTaskFilter("all")}
-            />
-            <FilterChip
-              label="当前题"
+            >
+              全部
+            </FilterToggle>
+            <FilterToggle
+              compact
               active={taskFilter === "current"}
               disabled={!currentTaskId}
               onClick={() => setTaskFilter("current")}
-            />
+            >
+              当前题
+            </FilterToggle>
             <span className="mr-1 ml-2">状态：</span>
-            <FilterChip
-              label="全部"
+            <FilterToggle
+              compact
               active={retryFilter === "all"}
               onClick={() => setRetryFilter("all")}
-            />
-            <FilterChip
-              label="失败 ≥ 3"
+            >
+              全部
+            </FilterToggle>
+            <FilterToggle
+              compact
               active={retryFilter === "failed"}
               onClick={() => setRetryFilter("failed")}
-            />
-          </div>
+            >
+              失败 ≥ 3
+            </FilterToggle>
+          </FilterGroup>
         )}
 
         <div className="flex-1 overflow-y-auto py-2 px-0">
@@ -376,33 +391,5 @@ export function OfflineQueueDrawer({
       </aside>
     </>,
     document.body,
-  );
-}
-
-function FilterChip({
-  label,
-  active,
-  disabled,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  disabled?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className={cn(
-        "px-2 py-0.5 appearance-none rounded-[12px] cursor-pointer text-xs disabled:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
-        active
-          ? "border border-brand bg-brand text-white"
-          : "border border-border bg-transparent text-foreground",
-      )}
-    >
-      {label}
-    </button>
   );
 }
