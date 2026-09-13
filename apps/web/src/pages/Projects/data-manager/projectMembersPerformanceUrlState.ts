@@ -98,6 +98,18 @@ function validDate(valueToCheck: string) {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === valueToCheck;
 }
 
+export function validateProjectMembersDateRange(from: string, to: string, maximumDate?: string) {
+  if (!from || !to) return "自定义范围需要开始和结束日期";
+  if (!validDate(from)) return "开始日期格式无效";
+  if (!validDate(to)) return "结束日期格式无效";
+  if (from >= to) return "开始日期必须早于结束日期";
+  if (maximumDate && to > maximumDate) return "结束日期不能晚于今天；查看今天请使用“今天”范围";
+  const days = (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000;
+  return days > PROJECT_MEMBERS_MAX_CUSTOM_DAYS
+    ? `自定义范围最多 ${PROJECT_MEMBERS_MAX_CUSTOM_DAYS} 天`
+    : null;
+}
+
 export function parseProjectMembersPerformanceUrl(search: string | URLSearchParams): {
   state: ProjectMembersPerformanceUrlState;
   issues: UrlStateIssue[];
@@ -117,22 +129,18 @@ export function parseProjectMembersPerformanceUrl(search: string | URLSearchPara
   const direction = parseEnum(params, "members_direction", DIRECTIONS, "asc", issues);
   const from = value(params, "members_from");
   const to = value(params, "members_to");
-  if (from && !validDate(from)) issues.push({ key: "members_from", message: "开始日期格式无效" });
-  if (to && !validDate(to)) issues.push({ key: "members_to", message: "结束日期格式无效" });
-  if ((preset === "custom" || from || to) && (!from || !to)) {
-    issues.push({ key: "members_range", message: "自定义范围需要开始和结束日期" });
-  }
-  if (from && to && validDate(from) && validDate(to) && from >= to) {
-    issues.push({ key: "members_range", message: "开始日期必须早于结束日期" });
-  }
-  if (from && to && validDate(from) && validDate(to) && from < to) {
-    const days = (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000;
-    if (days > PROJECT_MEMBERS_MAX_CUSTOM_DAYS) {
+  if (preset === "custom" || from || to) {
+    const message = validateProjectMembersDateRange(from, to);
+    if (message)
       issues.push({
-        key: "members_range",
-        message: `自定义范围最多 ${PROJECT_MEMBERS_MAX_CUSTOM_DAYS} 天`,
+        key:
+          from && !validDate(from)
+            ? "members_from"
+            : to && !validDate(to)
+              ? "members_to"
+              : "members_range",
+        message,
       });
-    }
   }
   const historical = value(params, "members_historical");
   if (historical && historical !== "1" && historical !== "0") {

@@ -104,8 +104,18 @@ export interface ProjectPerformanceTrendPoint {
 export interface ProjectPerformanceBreakdown {
   reason_type?: string;
   class_name?: string;
-  source?: string;
-  annotation_type?: string;
+  count: number;
+  pct?: number | null;
+}
+
+export interface ProjectPerformanceSourceBreakdown {
+  source: string;
+  count: number;
+  pct?: number | null;
+}
+
+export interface ProjectPerformanceGeometryBreakdown {
+  annotation_type: string;
   count: number;
   pct?: number | null;
 }
@@ -127,8 +137,8 @@ export interface ProjectMemberPerformanceDetail {
   trend: ProjectPerformanceTrendPoint[];
   reject_reasons: ProjectPerformanceBreakdown[];
   class_distribution: ProjectPerformanceBreakdown[];
-  source_distribution: ProjectPerformanceBreakdown[];
-  geometry_distribution: ProjectPerformanceBreakdown[];
+  source_distribution: ProjectPerformanceSourceBreakdown[];
+  geometry_distribution: ProjectPerformanceGeometryBreakdown[];
   evidence: ProjectPerformanceEvidenceItem[];
   evidence_next_cursor?: string | null;
 }

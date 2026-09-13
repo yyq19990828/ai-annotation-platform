@@ -45,8 +45,8 @@ const ROLE_OPTS = [
 ];
 const PERIOD_OPTS = [
   { v: "today", label: "今日" },
-  { v: "7d", label: "本周" },
-  { v: "1m", label: "本月" },
+  { v: "7d", label: "最近 7 天" },
+  { v: "1m", label: "最近 30 天" },
 ];
 const SORT_OPTS = [
   { v: "throughput", label: "产能↓" },
@@ -175,6 +175,11 @@ export function AdminPeoplePage() {
           )}
         </div>
         <div className="flex gap-2">
+          {project && (
+            <Button onClick={() => navigate(`/projects/${project}/data-manager?section=members`)}>
+              项目成员看板
+            </Button>
+          )}
           <Button variant="ghost" onClick={handleExport} disabled={exporting}>
             <Icon name="download" size={13} />
             {exporting ? "导出中…" : "导出 CSV"}
@@ -272,8 +277,10 @@ export function AdminPeoplePage() {
 
       {activeUserId && (
         <PersonDrawer
+          key={`${authOwnerId}:${project}:${period}:${activeUserId}`}
           userId={activeUserId}
           project={project || undefined}
+          period={period}
           onClose={() => setActiveUserId(null)}
         />
       )}
@@ -413,14 +420,16 @@ function PercentBarFill({ value }: { value: number }) {
 function PersonDrawer({
   userId,
   project,
+  period,
   onClose,
 }: {
   userId: string;
   project?: string;
+  period: PeoplePeriod;
   onClose: () => void;
 }) {
   const navigate = useNavigate();
-  const { data, isLoading } = useAdminPersonDetail(userId, "4w", project);
+  const { data, isLoading } = useAdminPersonDetail(userId, period, project);
 
   // v0.12.6 (A3) · reject/类别维度下钻:仅项目模式可下钻(tasks 查询需 project_id)。
   // 选中一个维度值 → 内联展开该项目内本人匹配任务列表。
@@ -485,7 +494,9 @@ function PersonDrawer({
               </div>
 
               <Card>
-                <div className={SECTION_TITLE_CLASS}>4 周趋势</div>
+                <div className={SECTION_TITLE_CLASS}>
+                  {PERIOD_OPTS.find((option) => option.v === period)?.label ?? period}趋势
+                </div>
                 <div className="p-3.5">
                   <div className="mb-1.5 text-xs text-muted-foreground">产能</div>
                   <Sparkline

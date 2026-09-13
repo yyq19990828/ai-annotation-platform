@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 
 import type { DataManagerFilterField, DataManagerSummary } from "@/api/taskViews";
 import { Skeleton } from "@/components/shadcn/ui/skeleton";
@@ -291,10 +291,12 @@ export function DataManagerProjectOverview({
   projectId,
   summaryFilter = {},
   onDrill,
+  children,
 }: {
   projectId: string;
   summaryFilter?: Record<string, unknown>;
   onDrill?: (rule: { field: string; op: "eq" | "gt"; value: string }) => void;
+  children?: ReactNode;
 }) {
   const summaryQ = useDataManagerSummary(projectId, summaryFilter);
   const summary = summaryQ.data;
@@ -488,6 +490,7 @@ export function DataManagerProjectOverview({
           </section>
         </div>
       )}
+      {children}
     </div>
   );
 }

@@ -1,13 +1,13 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   ProjectMemberPerformance,
   ProjectMembersPerformanceResponse,
   ProjectMemberPerformanceDetail,
   ProjectMemberPerformanceEventsResponse,
 } from "@/api/projectPerformance";
-import { ProjectMembersPerformance } from "./ProjectMembersPerformance";
+import { formatPerformanceDate, ProjectMembersPerformance } from "./ProjectMembersPerformance";
 
 const mocks = vi.hoisted(() => ({
   list: vi.fn(),
@@ -142,16 +142,38 @@ const eventsData: ProjectMemberPerformanceEventsResponse = {
   next_cursor: null,
 };
 
+function NavigationProbe() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  return (
+    <>
+      <output data-testid="location">
+        {location.pathname}
+        {location.search}
+      </output>
+      <button data-testid="history-back" onClick={() => navigate(-1)}>
+        Back
+      </button>
+      <button data-testid="history-forward" onClick={() => navigate(1)}>
+        Forward
+      </button>
+    </>
+  );
+}
+
 function renderPage(initial = "/projects/p1/data-manager?section=members") {
   return render(
     <MemoryRouter initialEntries={[initial]}>
       <ProjectMembersPerformance projectId="p1" />
+      <NavigationProbe />
     </MemoryRouter>,
   );
 }
 
 describe("ProjectMembersPerformance", () => {
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-09-14T12:00:00Z"));
     mocks.list.mockReturnValue({
       data: listData,
       isLoading: false,
@@ -163,12 +185,64 @@ describe("ProjectMembersPerformance", () => {
     mocks.events.mockReturnValue({ data: eventsData, isLoading: false, isError: false });
     mocks.exportMembers.mockResolvedValue({ blob: new Blob(["ok"]), filename: "members.csv" });
   });
+  afterEach(() => vi.useRealTimers());
+
+  it("preserves calendar trend dates in negative-offset timezones", () => {
+    expect(formatPerformanceDate("2026-09-08", "America/Los_Angeles")).toBe("09/08");
+    expect(formatPerformanceDate("2026-09-08T00:00:00Z", "America/Los_Angeles")).toBe("09/07");
+  });
+
+  it("restores discrete member scope changes through browser history", () => {
+    renderPage();
+    fireEvent.change(screen.getByRole("combobox", { name: "工作类型" }), {
+      target: { value: "review" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Ada Lovelace/ }));
+    expect(screen.getByRole("heading", { name: "Ada Lovelace" })).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("history-back"));
+    expect(screen.queryByRole("heading", { name: "Ada Lovelace" })).not.toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "工作类型" })).toHaveValue("review");
+    fireEvent.click(screen.getByTestId("history-back"));
+    expect(screen.getByRole("combobox", { name: "工作类型" })).toHaveValue("annotation");
+    fireEvent.click(screen.getByTestId("history-forward"));
+    expect(screen.getByRole("combobox", { name: "工作类型" })).toHaveValue("review");
+  });
+
+  it("blocks future custom ranges from queries and export", () => {
+    renderPage(
+      "/projects/p1/data-manager?section=members&members_preset=custom&members_from=2026-09-13&members_to=2026-09-16&members_timezone=Asia%2FShanghai",
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("结束日期不能晚于今天");
+    expect(screen.getByRole("button", { name: "导出 CSV" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "应用范围" })).toBeDisabled();
+    expect(mocks.list.mock.calls[mocks.list.mock.calls.length - 1]?.[2]).toBe(false);
+  });
+
+  it("opens evidence in the existing Workbench route with a return link", () => {
+    const response = {
+      ...eventsData,
+      items: [{ id: "event-1", at: "2026-09-08T12:00:00Z", action: "提交任务", task_id: "task-1" }],
+    };
+    mocks.events.mockImplementation((_projectId: string, memberId: string | null) => ({
+      data: memberId ? response : undefined,
+      isLoading: false,
+      isError: false,
+    }));
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: /Ada Lovelace/ }));
+    fireEvent.click(screen.getByRole("button", { name: "查看任务" }));
+    const location = new URL(screen.getByTestId("location").textContent!, "https://test.invalid");
+    expect(location.pathname).toBe("/projects/p1/annotate");
+    expect(location.searchParams.get("task")).toBe("task-1");
+    expect(location.searchParams.get("returnTo")).toContain("section=members");
+    expect(location.searchParams.get("returnTo")).toContain("members_selected=u1");
+  });
 
   it("keeps zero activity separate from unavailable history", () => {
     renderPage();
     expect(screen.getByText("Ada Lovelace")).toBeInTheDocument();
     expect(screen.getByText("Grace Hopper")).toBeInTheDocument();
-    expect(screen.getAllByText("0 tasks").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("0 个任务").length).toBeGreaterThan(0);
     expect(screen.getAllByText("不可用").length).toBeGreaterThan(0);
     expect(screen.getByText("历史贡献者")).toBeInTheDocument();
     expect(screen.getByText("停用")).toBeInTheDocument();

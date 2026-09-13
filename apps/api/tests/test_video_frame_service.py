@@ -1,6 +1,6 @@
 import uuid
 import pytest
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from app.db.models.dataset import (
     Dataset,
@@ -11,6 +11,7 @@ from app.db.models.dataset import (
     VideoSegment,
 )
 from app.db.models.annotation import Annotation
+from app.db.models.audit_log import AuditLog
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
@@ -220,6 +221,50 @@ async def test_submitted_video_segment_stays_completed_after_refresh_and_release
     assert submitted.json()["status"] == "completed"
     assert refreshed.json()["segments"][0]["status"] == "completed"
     assert released.json()["status"] == "completed"
+
+
+async def test_video_submit_does_not_credit_shared_item_segment_assignees(
+    db_session, httpx_client_bound, super_admin, annotator, monkeypatch
+):
+    owner, token = super_admin
+    foreign_user, _ = annotator
+    task, item = await _make_video_task(db_session, owner.id)
+    project = await db_session.get(Project, task.project_id)
+    project.video_collaboration = {"enabled": True, "overlap_frames": 2}
+    monkeypatch.setattr(
+        "app.services.video_segment_service.settings.video_segment_size_frames", 45
+    )
+    headers = {"Authorization": f"Bearer {token}"}
+    listed = await httpx_client_bound.get(
+        f"/api/v1/tasks/{task.id}/video/segments", headers=headers
+    )
+    segment_ids = [uuid.UUID(row["id"]) for row in listed.json()["segments"]]
+    assert len(segment_ids) == 2
+    first = await db_session.get(VideoSegment, segment_ids[0])
+    # Segment identity is global to the dataset item; this assignee does not
+    # establish any contribution to this project's task.
+    first.status = "completed"
+    first.assignee_id = foreign_user.id
+    await db_session.flush()
+    claimed = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/video/segments/{segment_ids[1]}:claim",
+        headers=headers,
+    )
+    assert claimed.status_code == 200, claimed.text
+    submitted = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/video/segments/{segment_ids[1]}:submit",
+        headers=headers,
+    )
+    assert submitted.status_code == 200, submitted.text
+    audit = await db_session.scalar(
+        select(AuditLog).where(
+            AuditLog.target_id == str(task.id), AuditLog.action == "task.submit"
+        )
+    )
+    assert audit is not None
+    assert audit.detail_json["project_id"] == str(project.id)
+    assert str(owner.id) in audit.detail_json["contributor_ids"]
+    assert str(foreign_user.id) not in audit.detail_json["contributor_ids"]
 
 
 async def test_video_collaboration_derives_overlap_work_ranges(

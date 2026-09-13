@@ -172,17 +172,21 @@ function assignmentChanges(
 function ActionJobStatus({
   label,
   jobId,
+  taskIds,
   query,
 }: {
   label: string;
   jobId: string;
+  taskIds: readonly string[];
   query: ReturnType<typeof useAsyncJob>;
 }) {
   const status = query.data?.status ?? "pending";
   const detail = query.data?.error_message;
   return (
     <span className={status === "failed" ? "text-status-danger" : undefined}>
-      {label} <span className="mono">{jobId}</span> · {jobStatusLabel(status)}
+      {label} <span className="mono">{jobId}</span> ·{" "}
+      <span title={taskIds.join("\n")}>提交时选定 {taskIds.length} 个任务</span> ·{" "}
+      {jobStatusLabel(status)}
       {query.data?.progress_pct !== undefined && ` · ${query.data.progress_pct}%`}
       {detail && ` · ${detail}`}
       {query.isError && (
@@ -235,6 +239,8 @@ export function DataManagerTaskActions({
   const [busy, setBusy] = useState<"preview" | "apply" | "export" | "preannotate" | null>(null);
   const [exportJobId, setExportJobId] = useState<string | null>(null);
   const [preannotateJobId, setPreannotateJobId] = useState<string | null>(null);
+  const exportJobTasksRef = useRef<readonly string[]>([]);
+  const preannotateJobTasksRef = useRef<readonly string[]>([]);
   const exportKeyRef = useRef<{ fingerprint: string; key: string } | null>(null);
   const preannotateKeyRef = useRef<{ fingerprint: string; key: string } | null>(null);
   const scopeRef = useRef<string>(projectId);
@@ -272,8 +278,9 @@ export function DataManagerTaskActions({
     if (!newCompletedJobs.length) return;
     newCompletedJobs.forEach((jobId) => invalidatedJobIdsRef.current.add(jobId));
     void Promise.all([
-      queryClient.invalidateQueries({ queryKey: ["tasks", projectId] }),
+      queryClient.invalidateQueries({ queryKey: ["project-task-query", projectId] }),
       queryClient.invalidateQueries({ queryKey: ["data-manager-summary", projectId] }),
+      queryClient.invalidateQueries({ queryKey: ["data-manager-matches", projectId] }),
       queryClient.invalidateQueries({ queryKey: ["data-manager-objects", projectId] }),
       queryClient.invalidateQueries({ queryKey: ["data-manager-tracks", projectId] }),
       queryClient.invalidateQueries({ queryKey: ["task-views", projectId] }),
@@ -385,12 +392,20 @@ export function DataManagerTaskActions({
       const result = await dataManagerTaskActionsApi.preannotate(projectId, payload, actionOptions);
       if (scopeRef.current !== requestScope) return;
       preannotateKeyRef.current = null;
+      preannotateJobTasksRef.current = [...ids];
       setPreannotateJobId(result.job_id);
       setPreannotateOpen(false);
       onCompleted?.();
-    } catch {
+    } catch (error) {
       if (scopeRef.current !== requestScope) return;
-      setActionError("无法创建预标注任务，请检查任务状态和模型能力");
+      const message = error instanceof Error ? error.message : "";
+      setActionError(
+        message.includes("must belong to active batches")
+          ? "所选任务的批次已进入标注或审核，不能运行预标。请改选活动批次中的待标注任务。"
+          : message
+            ? `无法创建预标注任务：${message}`
+            : "无法创建预标注任务，请检查任务状态和模型能力",
+      );
     } finally {
       if (scopeRef.current === requestScope) setBusy(null);
     }
@@ -466,6 +481,7 @@ export function DataManagerTaskActions({
       const result = await dataManagerTaskActionsApi.exportTasks(projectId, payload, actionOptions);
       if (scopeRef.current !== requestScope) return;
       exportKeyRef.current = null;
+      exportJobTasksRef.current = [...ids];
       setExportJobId(result.job_id);
       setExportOpen(false);
       onCompleted?.();
@@ -532,10 +548,20 @@ export function DataManagerTaskActions({
         {(exportJobId || preannotateJobId) && (
           <div className="basis-full flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
             {exportJobId && (
-              <ActionJobStatus label="导出作业" jobId={exportJobId} query={exportJobQ} />
+              <ActionJobStatus
+                label="导出作业"
+                jobId={exportJobId}
+                taskIds={exportJobTasksRef.current}
+                query={exportJobQ}
+              />
             )}
             {preannotateJobId && (
-              <ActionJobStatus label="预标作业" jobId={preannotateJobId} query={preannotateJobQ} />
+              <ActionJobStatus
+                label="预标作业"
+                jobId={preannotateJobId}
+                taskIds={preannotateJobTasksRef.current}
+                query={preannotateJobQ}
+              />
             )}
           </div>
         )}

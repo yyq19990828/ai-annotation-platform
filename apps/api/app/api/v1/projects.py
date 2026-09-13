@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import Response
-from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, text, or_, and_, update
 from app.deps import (
@@ -1740,7 +1740,7 @@ class PipelineStage(BaseModel):
 
 class PreannotateRequest(BaseModel):
     ml_backend_id: uuid.UUID | None = None
-    task_ids: list[uuid.UUID] | None = None
+    task_ids: list[uuid.UUID] | None = Field(default=None, min_length=1, max_length=200)
     # v0.9.5 · 文本批量预标可选参数
     prompt: str | None = None
     output_mode: Literal["box", "mask", "both"] = "mask"

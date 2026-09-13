@@ -19,7 +19,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import HTTPException
-from sqlalchemy import String, case, cast, func, literal, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.enums import UserRole
@@ -494,21 +494,10 @@ async def _annotation_activity(
         Annotation.created_at >= scope.start,
         Annotation.created_at < scope.end,
     )
-    object_key = case(
-        (
-            Annotation.scene_track_id.is_not(None),
-            literal("scene:") + cast(Annotation.scene_track_id, String),
-        ),
-        (
-            Annotation.track_id.is_not(None),
-            literal("track:") + Annotation.track_id,
-        ),
-        else_=literal("annotation:") + cast(Annotation.id, String),
-    )
     totals = await db.execute(
         select(
             Annotation.user_id,
-            func.count(func.distinct(object_key)),
+            func.count(Annotation.id),
             func.count(func.distinct(Annotation.task_id)),
         )
         .where(*base)
@@ -1104,8 +1093,8 @@ async def _aggregate(
     )
     coverage_detail = (
         "workflow audits are project scoped; legacy review rounds without a submit snapshot "
-        f"are excluded from member attribution; retained_objects uses logical track/scene "
-        f"identity where present; source_distribution counts retained annotation records; "
+        f"are excluded from member attribution; retained_objects and distributions count "
+        f"retained annotation records (compact tracks once, scene instances individually); "
         f"{work_type} session coverage is {time_coverage}"
     )
     coverage = PerformanceCoverage(

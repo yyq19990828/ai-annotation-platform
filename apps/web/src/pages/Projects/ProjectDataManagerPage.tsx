@@ -63,6 +63,11 @@ import {
   DataManagerSummaryStrip,
 } from "./data-manager/DataManagerOverview";
 import { DataManagerFrame } from "./data-manager/DataManagerFrame";
+import { DataManagerTaskActions } from "./data-manager/DataManagerTaskActions";
+import {
+  ProjectMembersPerformance,
+  ProjectPerformanceSummary,
+} from "./data-manager/ProjectMembersPerformance";
 import { DataManagerLensTabs } from "./data-manager/DataManagerLensTabs";
 import { EntityDataManagerLens } from "./data-manager/EntityDataManagerLens";
 import { TaskMatchesSheet } from "./data-manager/TaskMatchesSheet";
@@ -276,6 +281,11 @@ export function ProjectDataManagerPage() {
     if (section !== "data" && dataDirty) setDataDirty(false);
   }, [dataDirty, section]);
 
+  useEffect(() => {
+    setPendingSection(null);
+    setDataDirty(false);
+  }, [id, user?.id]);
+
   if (isLoading || schemaQ.isLoading) {
     return <div className="p-15 text-center text-muted-foreground">加载中...</div>;
   }
@@ -317,10 +327,12 @@ export function ProjectDataManagerPage() {
     setSearchParams(next);
   };
 
-  // Parent integration seam: render ProjectMembersPerformance({ projectId: id }) for members.
-  // The sibling module is intentionally not imported here until it is available in this worktree.
   const content =
-    section === "overview" ? (
+    section === "members" ? (
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <ProjectMembersPerformance key={`${id}:${user?.id}`} projectId={id} />
+      </div>
+    ) : section === "overview" ? (
       <DataManagerProjectOverview
         projectId={id}
         summaryFilter={{}}
@@ -339,7 +351,15 @@ export function ProjectDataManagerPage() {
           });
           setSearchParams(next);
         }}
-      />
+      >
+        {canViewMembers && (
+          <ProjectPerformanceSummary
+            key={`${id}:${user?.id}`}
+            projectId={id}
+            onOpenMembers={() => changeSection("members")}
+          />
+        )}
+      </DataManagerProjectOverview>
     ) : scope === "objects" || scope === "tracks" ? (
       <EntityDataManagerLens
         projectId={id}
@@ -376,9 +396,9 @@ export function ProjectDataManagerPage() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>放弃未保存的视图修改？</AlertDialogTitle>
+            <AlertDialogTitle>离开数据浏览？</AlertDialogTitle>
             <AlertDialogDescription>
-              当前搜索、筛选、排序或显示列尚未保存。离开数据浏览会丢弃这些修改。
+              当前修改尚未保存到视图。已应用的条件会保留在链接中，未完成的输入和任务选择将被清除。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -397,7 +417,7 @@ export function ProjectDataManagerPage() {
                 setSearchParams(next);
               }}
             >
-              放弃并切换
+              继续切换
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -1434,7 +1454,21 @@ function TaskDataManagerPage({
                   {!filterReady && (
                     <span className="text-status-danger">完成筛选条件后才能执行批量操作</span>
                   )}
-                  {/* Parent integration seam: render DataManagerTaskActions here with projectId, taskIds and onCompleted. */}
+                  {canManageProject && (
+                    <div className="basis-full">
+                      <DataManagerTaskActions
+                        key={`${id}:${user?.id ?? "anonymous"}`}
+                        projectId={id}
+                        taskIds={filterReady ? effectiveSelectedTaskIds : []}
+                        onCompleted={() => {
+                          setSelectedTaskIds([]);
+                          void tasksQ.refetch();
+                          void summaryQ.refetch();
+                          void viewsQ.refetch();
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
               </section>
 

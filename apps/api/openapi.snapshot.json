@@ -9984,6 +9984,379 @@
         "title": "DataManagerSummaryResponse",
         "type": "object"
       },
+      "DataManagerTaskAssignmentApplyRequest": {
+        "properties": {
+          "annotator_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotator Id"
+          },
+          "preview_version": {
+            "maxLength": 64,
+            "minLength": 64,
+            "title": "Preview Version",
+            "type": "string"
+          },
+          "reviewer_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer Id"
+          },
+          "task_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Task Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "task_ids",
+          "preview_version"
+        ],
+        "title": "DataManagerTaskAssignmentApplyRequest",
+        "type": "object"
+      },
+      "DataManagerTaskAssignmentItem": {
+        "properties": {
+          "after_annotator_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After Annotator Id"
+          },
+          "after_reviewer_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After Reviewer Id"
+          },
+          "batch_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
+          "before_annotator_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before Annotator Id"
+          },
+          "before_reviewer_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before Reviewer Id"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status"
+          },
+          "task_display_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Display Id"
+          },
+          "task_id": {
+            "format": "uuid",
+            "title": "Task Id",
+            "type": "string"
+          },
+          "task_updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Task Updated At"
+          },
+          "will_change": {
+            "default": false,
+            "title": "Will Change",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "title": "DataManagerTaskAssignmentItem",
+        "type": "object"
+      },
+      "DataManagerTaskAssignmentRequest": {
+        "properties": {
+          "annotator_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Annotator Id"
+          },
+          "reviewer_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer Id"
+          },
+          "task_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Task Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "task_ids"
+        ],
+        "title": "DataManagerTaskAssignmentRequest",
+        "type": "object"
+      },
+      "DataManagerTaskAssignmentResponse": {
+        "properties": {
+          "eligible_count": {
+            "default": 0,
+            "title": "Eligible Count",
+            "type": "integer"
+          },
+          "failed_count": {
+            "default": 0,
+            "title": "Failed Count",
+            "type": "integer"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DataManagerTaskAssignmentItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "preview_version": {
+            "title": "Preview Version",
+            "type": "string"
+          },
+          "skipped_count": {
+            "default": 0,
+            "title": "Skipped Count",
+            "type": "integer"
+          },
+          "succeeded": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Succeeded",
+            "type": "array"
+          },
+          "task_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "title": "Task Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "task_ids",
+          "preview_version"
+        ],
+        "title": "DataManagerTaskAssignmentResponse",
+        "type": "object"
+      },
+      "DataManagerTaskExportRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "axis_frame": {
+            "default": "iso",
+            "enum": [
+              "iso",
+              "source"
+            ],
+            "title": "Axis Frame",
+            "type": "string"
+          },
+          "include_attributes": {
+            "default": true,
+            "title": "Include Attributes",
+            "type": "boolean"
+          },
+          "indexed_overlap_policy": {
+            "default": "error",
+            "enum": [
+              "error",
+              "z_order",
+              "larger_area",
+              "smaller_area"
+            ],
+            "title": "Indexed Overlap Policy",
+            "type": "string"
+          },
+          "lidar": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LidarExportOptions"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mots_frame_base": {
+            "default": 0,
+            "enum": [
+              0,
+              1
+            ],
+            "title": "Mots Frame Base",
+            "type": "integer"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VideoExportScopeRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "targets": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Targets",
+            "type": "array"
+          },
+          "task_ids": {
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "maxItems": 200,
+            "minItems": 1,
+            "title": "Task Ids",
+            "type": "array"
+          },
+          "video_frame_mode": {
+            "default": "keyframes",
+            "enum": [
+              "keyframes",
+              "all_frames"
+            ],
+            "title": "Video Frame Mode",
+            "type": "string"
+          },
+          "video_overlap_policy": {
+            "default": "error",
+            "enum": [
+              "error",
+              "z_order",
+              "larger_area",
+              "smaller_area"
+            ],
+            "title": "Video Overlap Policy",
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_ids",
+          "targets"
+        ],
+        "title": "DataManagerTaskExportRequest",
+        "type": "object"
+      },
       "DataManagerTaskOut": {
         "properties": {
           "annotation_count": {
@@ -23943,6 +24316,8 @@
                   "format": "uuid",
                   "type": "string"
                 },
+                "maxItems": 200,
+                "minItems": 1,
                 "type": "array"
               },
               {
@@ -51888,6 +52263,196 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/data-manager/tasks/assignment-apply": {
+      "post": {
+        "operationId": "apply_data_manager_task_assignment_api_v1_projects__project_id__data_manager_tasks_assignment_apply_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DataManagerTaskAssignmentApplyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataManagerTaskAssignmentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Apply Data Manager Task Assignment",
+        "tags": [
+          "data-manager"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/data-manager/tasks/assignment-preview": {
+      "post": {
+        "operationId": "preview_data_manager_task_assignment_api_v1_projects__project_id__data_manager_tasks_assignment_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DataManagerTaskAssignmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataManagerTaskAssignmentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preview Data Manager Task Assignment",
+        "tags": [
+          "data-manager"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/data-manager/tasks/export": {
+      "post": {
+        "operationId": "export_data_manager_tasks_api_v1_projects__project_id__data_manager_tasks_export_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Optional durable identity for retrying this scoped export.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional durable identity for retrying this scoped export.",
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DataManagerTaskExportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Export Data Manager Tasks",
+        "tags": [
+          "data-manager"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/data-manager/tracks/query": {
       "post": {
         "operationId": "query_data_manager_tracks_api_v1_projects__project_id__data_manager_tracks_query_post",
@@ -56187,6 +56752,24 @@
               "format": "uuid",
               "title": "Project Id",
               "type": "string"
+            }
+          },
+          {
+            "description": "Optional durable identity for retrying a scoped preannotation request.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional durable identity for retrying a scoped preannotation request.",
+              "title": "Idempotency-Key"
             }
           }
         ],

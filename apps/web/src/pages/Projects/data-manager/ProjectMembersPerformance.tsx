@@ -10,7 +10,8 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
+import { buildWorkbenchUrl } from "@/utils/workbenchNavigation";
 import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
@@ -53,6 +54,7 @@ import {
   type ProjectMembersWorkType,
   PROJECT_MEMBERS_MAX_CUSTOM_DAYS,
   PROJECT_MEMBERS_PERFORMANCE_URL_KEYS,
+  validateProjectMembersDateRange,
 } from "./projectMembersPerformanceUrlState";
 import { REJECT_REASON_TYPE_LABELS } from "@/pages/Review/rejectReasonTypes";
 
@@ -160,7 +162,14 @@ function numberValue(value: number | null | undefined) {
 function metricText(metric: ProjectPerformanceMetric | undefined, unit?: string) {
   const value = metricValue(metric);
   if (value === null) return "不可用";
-  const suffix = unit ?? metric?.unit;
+  const labels: Record<string, string> = {
+    tasks: "个任务",
+    objects: "条标注",
+    decisions: "次",
+    minutes: "分钟",
+    percent: "%",
+  };
+  const suffix = unit ?? (metric?.unit ? (labels[metric.unit] ?? metric.unit) : "");
   return suffix ? `${numberValue(value)} ${suffix}` : numberValue(value);
 }
 
@@ -188,6 +197,7 @@ function initial(name: string) {
 
 function roleLabel(role: string | null) {
   if (!role) return "未记录角色";
+  if (role === "owner") return "项目负责人";
   if (role === "project_admin") return "项目管理员";
   if (role === "reviewer") return "审核员";
   if (role === "annotator") return "标注员";
@@ -195,7 +205,9 @@ function roleLabel(role: string | null) {
   return role;
 }
 
-function shortDate(value: string, timezone: string) {
+export function formatPerformanceDate(value: string, timezone: string) {
+  // Trend keys already represent a local calendar date, not a UTC instant.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return `${value.slice(5, 7)}/${value.slice(8, 10)}`;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return new Intl.DateTimeFormat("zh-CN", {
@@ -218,7 +230,14 @@ function dateTime(value: string, timezone: string) {
 }
 
 function boundaryLabel(value: string, timezone: string) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : dateInTimeZone(new Date(value), timezone);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const date = new Date(value);
+  return `${dateInTimeZone(date, timezone)} ${new Intl.DateTimeFormat("zh-CN", {
+    timeZone: timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(date)}`;
 }
 
 function labelReason(value: string | undefined) {
@@ -247,7 +266,12 @@ function isAbortError(error: unknown) {
 }
 
 export function ProjectMembersPerformance({ projectId }: { projectId: string }) {
-  const { state, issues, patch, reset } = useUrlFilterState({
+  const {
+    state,
+    issues: urlIssues,
+    patch,
+    reset,
+  } = useUrlFilterState({
     codec: projectMembersPerformanceUrlCodec,
     defaults: PROJECT_MEMBERS_PERFORMANCE_URL_DEFAULTS,
     ownedKeys: PROJECT_MEMBERS_PERFORMANCE_URL_KEYS,
@@ -260,6 +284,21 @@ export function ProjectMembersPerformance({ projectId }: { projectId: string }) 
   const viewAsOf = useRef(new Date()).current;
   const range = useMemo(() => resolvedDateRange(state, viewAsOf), [state, viewAsOf]);
   const query = useMemo(() => queryFromState(state, viewAsOf), [state, viewAsOf]);
+  const maximumDate = dateInTimeZone(viewAsOf, range.timezone);
+  const rangeIssue =
+    state.preset === "custom"
+      ? validateProjectMembersDateRange(state.from, state.to, maximumDate)
+      : null;
+  const issues = useMemo(
+    () =>
+      rangeIssue &&
+      !urlIssues.some((issue) =>
+        ["members_range", "members_from", "members_to"].includes(issue.key),
+      )
+        ? [...urlIssues, { key: "members_range", message: rangeIssue }]
+        : urlIssues,
+    [rangeIssue, urlIssues],
+  );
   const pushToast = useToastStore((store) => store.push);
   const authOwnerId = useAuthStore((store) => store.user?.id);
   const invalidState = issues.length > 0;
@@ -367,13 +406,13 @@ export function ProjectMembersPerformance({ projectId }: { projectId: string }) 
   const updateState = useCallback(
     (update: Partial<ProjectMembersPerformanceUrlState>) => {
       setCursorStack([]);
-      patch({ ...update, cursor: null });
+      patch({ ...update, cursor: null }, { replace: false });
     },
     [patch],
   );
 
   const selectMember = useCallback(
-    (memberId: string | null) => patch({ selected: memberId }),
+    (memberId: string | null) => patch({ selected: memberId }, { replace: false }),
     [patch],
   );
 
@@ -455,6 +494,7 @@ export function ProjectMembersPerformance({ projectId }: { projectId: string }) 
       <MembersToolbar
         state={state}
         range={range}
+        maximumDate={maximumDate}
         queryDraft={queryDraft}
         issues={issues}
         onQueryChange={(value) => {
@@ -468,7 +508,7 @@ export function ProjectMembersPerformance({ projectId }: { projectId: string }) 
           patch({ q: value.trim(), cursor: null }, { replace: true });
         }}
         onUpdate={updateState}
-        onReset={reset}
+        onReset={() => reset({ replace: false })}
       />
 
       {invalidState ? (
@@ -557,6 +597,7 @@ export function ProjectMembersPerformance({ projectId }: { projectId: string }) 
 function MembersToolbar({
   state,
   range,
+  maximumDate,
   queryDraft,
   issues,
   onQueryChange,
@@ -566,6 +607,7 @@ function MembersToolbar({
 }: {
   state: ProjectMembersPerformanceUrlState;
   range: { from: string; to: string; timezone: string };
+  maximumDate: string;
   queryDraft: string;
   issues: Array<{ key: string; message: string }>;
   onQueryChange: (value: string) => void;
@@ -576,7 +618,7 @@ function MembersToolbar({
   const [customOpen, setCustomOpen] = useState(state.preset === "custom");
   const [customFrom, setCustomFrom] = useState(state.from);
   const [customTo, setCustomTo] = useState(state.to);
-  const customRangeIssue = issues.find((issue) => issue.key === "members_range");
+  const customRangeIssue = validateProjectMembersDateRange(customFrom, customTo, maximumDate);
 
   useEffect(() => {
     setCustomFrom(state.from);
@@ -585,11 +627,7 @@ function MembersToolbar({
   }, [state.from, state.preset, state.to]);
 
   const applyCustom = () => {
-    if (!customFrom || !customTo || customFrom >= customTo) return;
-    const start = new Date(`${customFrom}T00:00:00Z`);
-    const end = new Date(`${customTo}T00:00:00Z`);
-    const days = Math.ceil((end.getTime() - start.getTime()) / 86_400_000);
-    if (!Number.isFinite(days) || days > MAX_CUSTOM_DAYS) return;
+    if (customRangeIssue) return;
     onUpdate({ preset: "custom", from: customFrom, to: customTo });
   };
 
@@ -710,6 +748,7 @@ function MembersToolbar({
             <Input
               type="date"
               value={customFrom}
+              max={maximumDate}
               onChange={(event) => setCustomFrom(event.target.value)}
               className="h-8 w-36 text-sm"
               aria-label="自定义开始日期"
@@ -720,19 +759,26 @@ function MembersToolbar({
             <Input
               type="date"
               value={customTo}
+              max={maximumDate}
               onChange={(event) => setCustomTo(event.target.value)}
               className="h-8 w-36 text-sm"
               aria-label="自定义结束日期"
             />
           </label>
-          <Button type="button" size="sm" variant="default" onClick={applyCustom}>
+          <Button
+            type="button"
+            size="sm"
+            variant="default"
+            onClick={applyCustom}
+            disabled={Boolean(customRangeIssue)}
+          >
             应用范围
           </Button>
           <span className="text-xs text-muted-foreground">
             最多 {MAX_CUSTOM_DAYS} 天 · 使用 {range.timezone}
           </span>
           {customRangeIssue && (
-            <span className="text-xs text-status-danger">{customRangeIssue.message}</span>
+            <span className="text-xs text-status-danger">{customRangeIssue}</span>
           )}
         </div>
       )}
@@ -802,7 +848,7 @@ function MembersSummary({
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-3 py-2">
         <span className="text-xs text-muted-foreground">
           {scope
-            ? `${shortDate(scope.from, scope.timezone)} — ${shortDate(scope.to, scope.timezone)}`
+            ? `${formatPerformanceDate(scope.from, scope.timezone)} — ${formatPerformanceDate(scope.to, scope.timezone)}`
             : "应用范围"}
         </span>
         {coverage && <CoverageBadge state={coverage.state} />}
@@ -819,7 +865,11 @@ function MembersSummary({
               </strong>
             )}
             <div className="mt-1 text-2xs text-muted-foreground">
-              {label === "当前待办" || label === "当前待审" ? "当前快照" : "按成员与任务范围统计"}
+              {label === "当前待办" || label === "当前待审"
+                ? "当前快照"
+                : metric?.coverage === "partial"
+                  ? "仅统计有完整记录的部分"
+                  : "按成员与任务范围统计"}
             </div>
           </div>
         ))}
@@ -1016,7 +1066,9 @@ function MetricCell({
       >
         {rate ? rateText(metric) : metricText(metric, unit)}
       </span>
-      {availability === "partial" && <span className="sr-only">数据覆盖不完整</span>}
+      {availability === "partial" && (
+        <span className="block text-2xs text-status-caution">覆盖不完整</span>
+      )}
     </td>
   );
 }
@@ -1060,9 +1112,9 @@ function MemberDetail({
           detail?: string | null;
           contributor_name?: string | null;
         }>;
-        source_distribution: Array<{ source?: string; count: number; pct?: number | null }>;
+        source_distribution: Array<{ source: string; count: number; pct?: number | null }>;
         geometry_distribution: Array<{
-          annotation_type?: string;
+          annotation_type: string;
           count: number;
           pct?: number | null;
         }>;
@@ -1105,10 +1157,10 @@ function MemberDetail({
   const chartColor = resolved === "dark" ? "#60a5fa" : "#2563eb";
   const gridColor = resolved === "dark" ? "#2f2f36" : "#e4e4e7";
   const trendData = trend.map((point) => ({
-    date: shortDate(point.date, timezone),
-    提交任务: point.submitted_tasks ?? 0,
-    审核通过: point.approved_task_outcomes ?? 0,
-    审核决策: point.review_decisions ?? 0,
+    date: formatPerformanceDate(point.date, timezone),
+    提交任务: point.submitted_tasks,
+    审核通过: point.approved_task_outcomes,
+    审核决策: point.review_decisions,
   }));
   const reasonData = (detail?.reject_reasons ?? []).map((item) => ({
     name: labelReason(item.reason_type),
@@ -1376,8 +1428,8 @@ function RetainedContent({
   geometryDistribution,
 }: {
   member: ProjectMemberPerformance;
-  sourceDistribution: Array<{ source?: string; count: number; pct?: number | null }>;
-  geometryDistribution: Array<{ annotation_type?: string; count: number; pct?: number | null }>;
+  sourceDistribution: Array<{ source: string; count: number; pct?: number | null }>;
+  geometryDistribution: Array<{ annotation_type: string; count: number; pct?: number | null }>;
 }) {
   return (
     <section aria-label="保留内容" className="rounded-md border border-border p-3">
@@ -1385,7 +1437,7 @@ function RetainedContent({
         <div>
           <h3 className="text-sm font-semibold text-foreground">保留内容</h3>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            当前仍有效、未取消的标注内容；不作为绩效评分。
+            区间内创建且仍有效的标注记录。视频轨迹计一条，Scene 跨帧实例分别计数。
           </p>
         </div>
         <div className="flex gap-3 text-right">
@@ -1396,9 +1448,9 @@ function RetainedContent({
             </strong>
           </div>
           <div>
-            <div className="text-2xs text-muted-foreground">保留对象</div>
+            <div className="text-2xs text-muted-foreground">保留标注记录</div>
             <strong className="font-mono text-sm text-foreground">
-              {metricText(member.metrics.retained_objects, "个")}
+              {metricText(member.metrics.retained_objects, "条")}
             </strong>
           </div>
         </div>
@@ -1533,6 +1585,7 @@ function EvidenceCard({
   projectId: string;
 }) {
   const navigate = useNavigate();
+  const location = useLocation();
   return (
     <section aria-label="成员活动依据" className="rounded-md border border-border">
       <div className="border-b border-border px-3 py-2.5">
@@ -1574,7 +1627,10 @@ function EvidenceCard({
                     variant="ghost"
                     onClick={() =>
                       navigate(
-                        `/projects/${encodeURIComponent(projectId)}/workbench?task=${encodeURIComponent(event.task_id!)}`,
+                        buildWorkbenchUrl(projectId, {
+                          taskId: event.task_id,
+                          returnTo: `${location.pathname}${location.search}`,
+                        }),
                       )
                     }
                   >
@@ -1606,8 +1662,7 @@ function EvidenceCard({
 }
 
 function CoverageBadge({ state }: { state: string }) {
-  const label =
-    state === "complete" ? "覆盖完整" : state === "partial" ? "覆盖不完整" : "历史不可用";
+  const label = state === "complete" ? "覆盖完整" : state === "partial" ? "覆盖不完整" : "覆盖未知";
   return (
     <Badge variant={state === "complete" ? "success" : state === "partial" ? "warning" : "outline"}>
       {label}
@@ -1672,7 +1727,13 @@ function DetailError({ onRetry }: { onRetry: () => void }) {
   );
 }
 
-export function ProjectPerformanceSummary({ projectId }: { projectId: string }) {
+export function ProjectPerformanceSummary({
+  projectId,
+  onOpenMembers,
+}: {
+  projectId: string;
+  onOpenMembers?: () => void;
+}) {
   const asOf = useRef(new Date()).current;
   const timezone = currentTimeZone();
   const today = dateInTimeZone(asOf, timezone);
@@ -1687,6 +1748,9 @@ export function ProjectPerformanceSummary({ projectId }: { projectId: string }) 
   };
   const summaryQ = useProjectMembersPerformance(projectId, query);
   const totals = summaryQ.data?.project_totals;
+  if (summaryQ.isError) {
+    return <ErrorState onRetry={() => void summaryQ.refetch()} />;
+  }
   return (
     <section aria-label="成员产出摘要" className="rounded-md border border-border bg-card p-3">
       <div className="flex items-center justify-between gap-2">
@@ -1694,7 +1758,13 @@ export function ProjectPerformanceSummary({ projectId }: { projectId: string }) 
           <h3 className="text-sm font-semibold text-foreground">成员产出</h3>
           <p className="mt-0.5 text-xs text-muted-foreground">最近 7 天 · {timezone}</p>
         </div>
-        <Badge variant="outline">{summaryQ.isLoading ? "加载中" : "项目范围"}</Badge>
+        {onOpenMembers ? (
+          <Button variant="ghost" size="sm" onClick={onOpenMembers}>
+            成员看板 <Icon name="chevRight" size={12} />
+          </Button>
+        ) : (
+          <Badge variant="outline">{summaryQ.isLoading ? "加载中" : "项目范围"}</Badge>
+        )}
       </div>
       <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
         <div>

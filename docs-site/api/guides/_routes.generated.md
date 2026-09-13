@@ -215,6 +215,9 @@
 
 | Method | Path |
 |---|---|
+| POST | `/projects/{project_id}/data-manager/tasks/assignment-preview` |
+| POST | `/projects/{project_id}/data-manager/tasks/assignment-apply` |
+| POST | `/projects/{project_id}/data-manager/tasks/export` |
 | GET | `/projects/{project_id}/data-manager/schema` |
 | POST | `/projects/{project_id}/data-manager/summary` |
 | POST | `/projects/{project_id}/tasks/{task_id}/data-manager/matches` |
@@ -731,4 +734,4 @@
 
 ---
 
-_共 67 模块 / 419 路由_
+_共 67 模块 / 422 路由_

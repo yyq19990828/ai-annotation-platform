@@ -1,0 +1,53 @@
+---
+audience: [developer]
+type: concept
+status: stable
+last_reviewed: 2026-09-14
+---
+
+# 项目成员绩效数据
+
+Data Manager 成员区域由 `services/project_performance.py` 提供统一的列表、详情、依据和 CSV 计算。它用于项目负责人了解成员贡献与工作瓶颈，不提供综合分数。旧的个人绩效字段保留原有契约，新页面使用明确命名的指标。
+
+## 权限与范围
+
+团队接口仅允许项目负责人和超级管理员访问。普通项目成员继续通过 `/me/performance` 查看自己的数据；前端隐藏入口不能代替服务端鉴权。
+
+当前成员列表包含负责人、零活动成员和停用账号。`include_historical` 可加入存在项目活动但没有当前成员关系的用户，并标记 `is_current_member=false`。活动记录不能证明历史成员角色或加入日期。
+
+所有接口解析相同的 `from`、`to`、IANA `timezone`、`work_type`、账号状态和成员搜索范围。区间为 `from <= timestamp < to`，最多 90 天；日期字符串按指定时区午夜解析，带时区的时间戳按实际瞬间解析。响应回显 UTC 边界、时区和 `as_of`。对比期与当前区间等长；当前待处理量始终是查询时刻的存量。
+
+成员筛选和 Data Manager 的任务/对象 DSL 分开，不能只把任务筛选应用到成员名单而保留全项目指标。列表分页不改变项目总数；项目任务数按项目去重，不能把多人的贡献任务直接求和。
+
+## 产出、归属与首审
+
+提交按成功工作流事件的实际操作人归属；批准结果使用该轮审核记录的贡献人快照。任务重新指派后，当前 assignee 不能覆盖历史提交人的贡献。重提单独计数，多轮批准中的同一任务在去重通过任务数中仅出现一次。
+
+任务送审记录审核轮次。首次完成审核时，在持有任务锁的同一事务中写入 `first_reviewed_at`、`first_review_result` 和 `first_review_contributor_ids`；后续审核不得覆盖。这些事实用于首审通过率，避免审计保留期清理后把“第一条剩余审核记录”误当真正首审。
+
+已有任务的 `first_review_eligible` 保持未知，新建任务才默认可记录完整首审事实。缺少明确历史的任务不自动补成已通过，不使用 `reopened_count == 0` 作为通过证据。待审任务不进入首审分母；每个比例携带 numerator、denominator 和覆盖状态。
+
+保留标注按区间内创建、当前 active 且非 cancelled 的记录计算，并按创建人、类别、来源与几何类型展开。导入标记优先于普通 source 分类，不能把导入或 AI 内容当成人工工作量。该指标随当前标注状态变化，不是历史账本；compact track 记录与单帧对象应结合几何分布解读。
+
+## 计时采集
+
+`useSessionStats` 同时服务工作台 ETA 和项目已记录时长，捕获任务、项目、账号及标注/审核类型。切题或离开时关闭当前区间，隐藏页面暂停，超过 5 分钟无输入停止累计；连续区间每 30 分钟拆分。拆分仅影响上传粒度，ETA 仍按一次任务的累计时长采样。
+
+上传队列每批最多 200 条，暂存最多 1,000 个区间，并做有限重试。页面关闭时使用 keepalive 尽力提交；网络中断、进程终止或队列上限可能造成缺失，因此该值称为“已记录时长”。
+
+API 和 Celery 持久化任务共用 `services/task_event_ingestion.py`：
+
+- 账号来自认证上下文，项目来自已授权任务；客户端项目冲突、不可见任务、错误工作类型和非法区间被拒绝。
+- 校验时间顺序、时区、未来时间、时长与区间长度的一致性。
+- 客户端事件 UUID 用于幂等入库；同 ID 的冲突内容不能改写原记录。
+- 新采集器使用 `collector_version=session-v2`，记录 `collection_source=session` 与 `collection_coverage=qualified`。旧事件保留 `legacy / unverified_collection`，不冒充可信新采集。
+
+聚合仅计算合格区间，与请求边界求交；同一成员、同一工作类型的重叠区间取并集，避免多个浏览器页重复累计。标注和审核分别计算；项目时长求成员并集时长之和。没有合格采集证据时返回 null 和未知覆盖，不从旧时长推导效率或每小时产量。
+
+## 接口与客户端状态
+
+接口位于 `/projects/{project_id}/performance`：`members`、`members/{user_id}`、`members/{user_id}/events` 和 `export`。指标返回 value、unit、可选分子分母及 coverage；单位包括 tasks、decisions、objects、minutes 和 percent。CSV 与列表复用范围和计算，并转义可能被电子表格执行的单元格值。
+
+成员查询缓存包含认证账号和完整范围。URL 使用 `members_*` 参数保存成员筛选，切换账号/项目或浏览器历史时丢弃过期请求结果。详情趋势、依据分页和导出继承已应用范围，无效日期草稿不会触发新查询。
+
+实现入口：`apps/api/app/api/v1/project_performance.py`、`apps/api/app/services/project_performance.py`、`apps/web/src/pages/Projects/data-manager/ProjectMembersPerformance.tsx`。

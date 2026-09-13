@@ -188,9 +188,19 @@ describe("DataManagerTaskActions", () => {
     );
     await waitFor(() => expect(screen.getByText(/导出作业/)).toHaveTextContent("已完成"));
     expect(mocks.invalidate).toHaveBeenCalledWith({
-      queryKey: ["tasks", "project-1"],
+      queryKey: ["project-task-query", "project-1"],
     });
-    expect(mocks.invalidate).toHaveBeenCalledTimes(6);
+    expect(screen.getByText("提交时选定 1 个任务")).toHaveAttribute("title", "task-1");
+    const invalidationsAfterCompletion = mocks.invalidate.mock.calls.length;
+    view.rerender(
+      <DataManagerTaskActions
+        projectId="project-1"
+        taskIds={["task-2"]}
+        onCompleted={onCompleted}
+      />,
+    );
+    expect(mocks.invalidate).toHaveBeenCalledTimes(invalidationsAfterCompletion);
+    expect(screen.getByText("提交时选定 1 个任务")).toHaveAttribute("title", "task-1");
     expect(mocks.actions.exportTasks).toHaveBeenCalledOnce();
   });
 

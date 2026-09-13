@@ -293,7 +293,9 @@ async def test_members_http_roster_metrics_empty_search_and_safe_csv(
     assert metrics["first_review_pass_rate"]["value"] == 0.0
     assert metrics["first_review_pass_rate"]["denominator"] == 1
     assert metrics["first_review_pass_rate"]["coverage"] == "complete"
-    assert metrics["retained_objects"]["value"] == 1
+    # Reused track IDs do not collapse retained annotation records. This count
+    # uses the same grain as the source, class and geometry distributions.
+    assert metrics["retained_objects"]["value"] == 2
     assert metrics["contributed_tasks"]["value"] == 1
     assert items[str(reviewer_user.id)]["account_status"] == "inactive"
     assert items[str(owner.id)]["metrics"]["submitted_tasks"]["value"] == 0

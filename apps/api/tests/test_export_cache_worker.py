@@ -136,7 +136,15 @@ async def test_export_worker_cache_hit_skips_packaging(
     monkeypatch: pytest.MonkeyPatch,
     targets: list[str],
 ) -> None:
-    db = SimpleNamespace(commit=AsyncMock(), rollback=AsyncMock())
+    db = SimpleNamespace(
+        commit=AsyncMock(),
+        rollback=AsyncMock(),
+        execute=AsyncMock(
+            return_value=_ScalarResult(
+                SimpleNamespace(status="pending", celery_task_id=None)
+            )
+        ),
+    )
 
     class _SessionContext:
         async def __aenter__(self):
@@ -251,7 +259,15 @@ async def test_export_worker_cache_hit_skips_packaging(
 async def test_export_worker_cache_miss_contender_retries_without_packaging(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    db = SimpleNamespace(commit=AsyncMock(), rollback=AsyncMock())
+    db = SimpleNamespace(
+        commit=AsyncMock(),
+        rollback=AsyncMock(),
+        execute=AsyncMock(
+            return_value=_ScalarResult(
+                SimpleNamespace(status="pending", celery_task_id=None)
+            )
+        ),
+    )
 
     class _SessionContext:
         async def __aenter__(self):
@@ -320,7 +336,15 @@ async def test_export_worker_cache_miss_contender_retries_without_packaging(
 async def test_export_worker_rechecks_cache_after_winning_singleflight_lock(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    db = SimpleNamespace(commit=AsyncMock(), rollback=AsyncMock())
+    db = SimpleNamespace(
+        commit=AsyncMock(),
+        rollback=AsyncMock(),
+        execute=AsyncMock(
+            return_value=_ScalarResult(
+                SimpleNamespace(status="pending", celery_task_id=None)
+            )
+        ),
+    )
 
     class _SessionContext:
         async def __aenter__(self):
@@ -403,7 +427,15 @@ async def test_export_worker_removes_uploaded_object_when_cache_record_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
-    db = SimpleNamespace(commit=AsyncMock(), rollback=AsyncMock())
+    db = SimpleNamespace(
+        commit=AsyncMock(),
+        rollback=AsyncMock(),
+        execute=AsyncMock(
+            return_value=_ScalarResult(
+                SimpleNamespace(status="pending", celery_task_id=None)
+            )
+        ),
+    )
 
     class _SessionContext:
         async def __aenter__(self):

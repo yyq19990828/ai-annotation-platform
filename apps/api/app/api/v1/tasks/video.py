@@ -690,16 +690,6 @@ async def submit_video_segment(
             dispatches.append((run.id, job.id))
     if task.status == "review":
         if not was_in_review:
-            segment_user_rows = await db.execute(
-                select(VideoSegment.assignee_id)
-                .where(
-                    VideoSegment.dataset_item_id == ctx.item.id,
-                    VideoSegment.status == "completed",
-                    VideoSegment.assignee_id.is_not(None),
-                )
-                .distinct()
-            )
-            segment_user_ids = [row[0] for row in segment_user_rows]
             await AuditService.log(
                 db,
                 actor=current_user,
@@ -712,7 +702,12 @@ async def submit_video_segment(
                     "project_id": str(task.project_id),
                     "assignee_id": str(task.assignee_id) if task.assignee_id else None,
                     "contributor_ids": await _task_contributor_snapshot(
-                        db, task, extra_user_ids=segment_user_ids
+                        # Segments belong to dataset items shared by projects.
+                        # Only this task's authors and actual submitter establish
+                        # project contribution; global segment assignees do not.
+                        db,
+                        task,
+                        extra_user_ids=(current_user.id,),
                     ),
                     "review_round_id": str(task.review_round_id)
                     if task.review_round_id

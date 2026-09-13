@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { updateDataManagerUrl } from "./data-manager/dataManagerUrlState";
@@ -72,6 +72,31 @@ vi.mock("@/stores/authStore", () => ({
 vi.mock("@/components/ui/Toast", () => ({
   useToastStore: (selector: (value: { push: () => void }) => unknown) =>
     selector({ push: vi.fn() }),
+}));
+
+vi.mock("./data-manager/ProjectMembersPerformance", () => ({
+  ProjectMembersPerformance: ({ projectId }: { projectId: string }) => (
+    <div data-testid="project-members">Members for {projectId}</div>
+  ),
+  ProjectPerformanceSummary: ({ onOpenMembers }: { onOpenMembers: () => void }) => (
+    <button type="button" onClick={onOpenMembers}>
+      成员看板
+    </button>
+  ),
+}));
+
+vi.mock("./data-manager/DataManagerTaskActions", () => ({
+  DataManagerTaskActions: ({
+    taskIds,
+    onCompleted,
+  }: {
+    taskIds: string[];
+    onCompleted: () => void;
+  }) => (
+    <button data-testid="task-actions" onClick={onCompleted} disabled={!taskIds.length}>
+      Operate {taskIds.join(",")}
+    </button>
+  ),
 }));
 
 vi.mock("@/hooks/useTaskViews", () => {
@@ -221,6 +246,33 @@ beforeEach(() => {
 });
 
 describe("ProjectDataManagerPage filter hydration", () => {
+  it("opens project members without mounting a task query that rewrites the section", async () => {
+    render(
+      <MemoryRouter initialEntries={["/projects/p1/data-manager?section=members&keep=yes"]}>
+        <LocationProbe />
+        <Routes>
+          <Route path="/projects/:id/data-manager" element={<ProjectDataManagerPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByTestId("project-members")).toHaveTextContent("Members for p1");
+    expect(screen.getByTestId("location")).toHaveTextContent("section=members");
+    expect(screen.getByTestId("location")).toHaveTextContent("keep=yes");
+    expect(state.calls).toEqual([]);
+  });
+
+  it("opens the project members from the period summary in overview", async () => {
+    render(
+      <MemoryRouter initialEntries={["/projects/p1/data-manager?section=overview"]}>
+        <Routes>
+          <Route path="/projects/:id/data-manager" element={<ProjectDataManagerPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "成员看板" }));
+    expect(await screen.findByTestId("project-members")).toHaveTextContent("Members for p1");
+  });
+
   it("adds a typed quick conjunct without removing the same condition from OR", async () => {
     state.calls.length = 0;
     const condition = { field: "ai.low_confidence_prediction_shape_count", op: "gt", value: 0 };
