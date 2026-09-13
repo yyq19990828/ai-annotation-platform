@@ -39,7 +39,12 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
     prepare: async (page) => {
       await page.waitForSelector('[data-testid="workbench-stage"]', { timeout: 5000 });
       await page.getByTestId("tool-btn-mask").click();
-      await page.waitForSelector('[data-testid="mask-toolbar"]', { timeout: 3000 });
+      // v0.18.25+ ContextToolbar：激活后先是胶囊，需展开常用工具并点「更多设置」
+      // 才会挂载完整 MaskToolbar（testid=mask-toolbar 的弹层）。
+      await page.getByTestId("mask-tool-capsule").waitFor({ state: "visible", timeout: 5000 });
+      await page.getByTestId("mask-settings-trigger").click();
+      await page.getByLabel("更多 Mask 工具").click();
+      await page.waitForSelector('[data-testid="mask-toolbar"]', { timeout: 5000 });
       for (const name of ["笔刷", "橡皮"]) {
         const button = page.getByTestId("mask-toolbar").locator(`[aria-label="${name}"]`);
         await button.waitFor({ state: "visible" });
