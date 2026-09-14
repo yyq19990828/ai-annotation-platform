@@ -96,6 +96,65 @@ def test_cache_key_is_target_order_independent_and_contract_sensitive() -> None:
     assert front != left
 
 
+def test_task_scope_content_digest_invalidates_new_prediction() -> None:
+    task_id = uuid.UUID("11111111-1111-1111-1111-111111111111")
+    task = {
+        "id": task_id,
+        "display_id": "T-1",
+        "file_name": "image.jpg",
+        "file_path": "images/image.jpg",
+        "file_type": "image",
+        "batch_id": None,
+        "dataset_item_id": None,
+        "sequence_order": 1,
+        "updated_at": datetime(2026, 7, 17, tzinfo=timezone.utc),
+    }
+    before = export_worker._task_scope_content_digest_payload(
+        tasks=[task],
+        predictions=[],
+        dataset_items=[],
+    )
+    prediction = {
+        "id": uuid.UUID("22222222-2222-2222-2222-222222222222"),
+        "task_id": task_id,
+        "model_version": "model-v1",
+        "score": 0.9,
+        "tool_unit_id": "bbox",
+        "result": [{"type": "rectanglelabels", "value": {"x": 1}}],
+        "source": "ml_backend",
+        "created_at": datetime(2026, 7, 17, 0, 1, tzinfo=timezone.utc),
+    }
+    after = export_worker._task_scope_content_digest_payload(
+        tasks=[task],
+        predictions=[prediction],
+        dataset_items=[],
+    )
+
+    assert before != after
+    scope_id = uuid.UUID("44444444-4444-4444-4444-444444444444")
+    common = {
+        "scope_id": scope_id,
+        "targets": ["aap_json"],
+        "include_attributes": True,
+        "video_frame_mode": "keyframes",
+        "max_updated_at": task["updated_at"],
+        "active_count": 0,
+    }
+    before_key = cache.compute_cache_key(
+        **common,
+        options_digest=export_worker.canonical_digest(
+            {"task_scope_content_digest": before}
+        ),
+    )
+    after_key = cache.compute_cache_key(
+        **common,
+        options_digest=export_worker.canonical_digest(
+            {"task_scope_content_digest": after}
+        ),
+    )
+    assert before_key != after_key
+
+
 @pytest.mark.asyncio
 async def test_cache_lookup_deletes_stale_row_when_object_is_missing(
     monkeypatch: pytest.MonkeyPatch,

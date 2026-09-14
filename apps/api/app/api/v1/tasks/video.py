@@ -99,6 +99,7 @@ from app.api.v1.tasks._shared import (
     _attach_dimensions,
     _ANNOTATORS,
     _REVIEWERS,
+    _capture_first_review_contributor_snapshot,
     _task_contributor_snapshot,
     VIDEO_MANIFEST_URL_EXPIRES_IN,
     logger,
@@ -690,6 +691,15 @@ async def submit_video_segment(
             dispatches.append((run.id, job.id))
     if task.status == "review":
         if not was_in_review:
+            contributor_ids = await _task_contributor_snapshot(
+                # Segments belong to dataset items shared by projects.
+                # Only this task's authors and actual submitter establish
+                # project contribution; global segment assignees do not.
+                db,
+                task,
+                extra_user_ids=(current_user.id,),
+            )
+            _capture_first_review_contributor_snapshot(task, contributor_ids)
             await AuditService.log(
                 db,
                 actor=current_user,
@@ -701,14 +711,7 @@ async def submit_video_segment(
                 detail={
                     "project_id": str(task.project_id),
                     "assignee_id": str(task.assignee_id) if task.assignee_id else None,
-                    "contributor_ids": await _task_contributor_snapshot(
-                        # Segments belong to dataset items shared by projects.
-                        # Only this task's authors and actual submitter establish
-                        # project contribution; global segment assignees do not.
-                        db,
-                        task,
-                        extra_user_ids=(current_user.id,),
-                    ),
+                    "contributor_ids": contributor_ids,
                     "review_round_id": str(task.review_round_id)
                     if task.review_round_id
                     else None,

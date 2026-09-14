@@ -105,9 +105,10 @@ class Task(Base):
         UUID(as_uuid=True), nullable=True, index=True
     )
     # First-review facts are written once for tasks created after the
-    # attribution rollout.  NULL eligibility keeps pre-rollout history
-    # explicitly unknown rather than allowing an audit-retention gap to look
-    # like a clean first pass.
+    # attribution rollout. The contributor snapshot is captured at the first
+    # submit/skip and finalized with the first decision. NULL eligibility keeps
+    # pre-rollout history explicitly unknown rather than allowing an
+    # audit-retention gap to look like a clean first pass.
     first_review_eligible: Mapped[bool | None] = mapped_column(
         Boolean, nullable=True, default=True, server_default="true"
     )

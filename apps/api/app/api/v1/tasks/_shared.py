@@ -81,8 +81,21 @@ async def _task_contributor_snapshot(
     return sorted(str(value) for value in ids)
 
 
+def _capture_first_review_contributor_snapshot(
+    task: Task,
+    contributor_ids: Iterable[str],
+) -> None:
+    """Persist the first-round contributors before audit retention can run."""
+
+    if task.first_review_eligible is not True or task.first_reviewed_at is not None:
+        return
+    task.first_review_contributor_ids = sorted(
+        {str(value) for value in contributor_ids if value}
+    )
+
+
 async def _review_round_contributor_snapshot(db: AsyncSession, task: Task) -> list[str]:
-    """Load the contributor snapshot captured by this task's submit audit.
+    """Load the contributor snapshot captured by this task's submit audit or row.
 
     Approval happens in a later request, after annotations or assignment may
     have changed.  Re-reading those mutable rows would credit the wrong
@@ -105,9 +118,13 @@ async def _review_round_contributor_snapshot(db: AsyncSession, task: Task) -> li
             .limit(1)
         )
     ).scalar_one_or_none()
-    if not isinstance(row, dict):
-        return []
-    values = row.get("contributor_ids")
+    values = row.get("contributor_ids") if isinstance(row, dict) else None
+    if not isinstance(values, list):
+        # The submit audit is intentionally retained as an audit trail, but it
+        # may already have been archived when a long-running review reaches a
+        # decision. New tasks carry the same snapshot on the task row so the
+        # first-review fact remains attributable after that retention boundary.
+        values = task.first_review_contributor_ids
     if not isinstance(values, list):
         return []
     return sorted({str(value) for value in values if value})

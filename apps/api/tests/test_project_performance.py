@@ -15,7 +15,11 @@ from app.services.project_performance import (
     ResolvedScope,
     resolve_scope,
 )
-from app.api.v1.tasks._shared import _record_first_review_fact
+from app.api.v1.tasks._shared import (
+    _capture_first_review_contributor_snapshot,
+    _record_first_review_fact,
+    _review_round_contributor_snapshot,
+)
 
 
 def test_date_only_to_is_an_exclusive_local_midnight():
@@ -154,6 +158,29 @@ def test_first_review_fact_is_write_once_and_legacy_rows_stay_unknown():
         contributor_ids=["u1"],
     )
     assert legacy.first_reviewed_at is None
+
+
+@pytest.mark.asyncio
+async def test_first_review_contributors_survive_missing_online_submit_audit():
+    task = SimpleNamespace(
+        id=uuid4(),
+        project_id=uuid4(),
+        review_round_id=uuid4(),
+        first_review_eligible=True,
+        first_reviewed_at=None,
+        first_review_contributor_ids=None,
+    )
+    contributors = [str(uuid4()), str(uuid4())]
+
+    _capture_first_review_contributor_snapshot(task, contributors)
+
+    class MissingAudit:
+        async def execute(self, _statement):
+            return SimpleNamespace(scalar_one_or_none=lambda: None)
+
+    assert await _review_round_contributor_snapshot(MissingAudit(), task) == sorted(
+        contributors
+    )
 
 
 def test_qualified_time_clips_crossing_sessions_and_unions_overlaps():

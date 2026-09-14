@@ -22,6 +22,7 @@ from app.api.v1.tasks._shared import (
     _assert_task_editable,
     _start_review_round,
     _ensure_review_round,
+    _capture_first_review_contributor_snapshot,
     _task_contributor_snapshot,
 )
 
@@ -127,6 +128,8 @@ async def submit_task(
         else:
             mask_qc_status = mask_qc_run.status
 
+    contributor_ids = await _task_contributor_snapshot(db, task)
+    _capture_first_review_contributor_snapshot(task, contributor_ids)
     await AuditService.log(
         db,
         actor=current_user,
@@ -138,7 +141,7 @@ async def submit_task(
         detail={
             "project_id": str(task.project_id),
             "assignee_id": str(task.assignee_id) if task.assignee_id else None,
-            "contributor_ids": await _task_contributor_snapshot(db, task),
+            "contributor_ids": contributor_ids,
             "review_round_id": str(review_round_id),
             "result": "submitted",
             "mask_qc_run_id": str(mask_qc_run.id) if mask_qc_run else None,
@@ -248,6 +251,8 @@ async def skip_task(
     if task.batch_id:
         await batch_svc.recalculate_counters(task.batch_id)
 
+    contributor_ids = await _task_contributor_snapshot(db, task)
+    _capture_first_review_contributor_snapshot(task, contributor_ids)
     await AuditService.log(
         db,
         actor=current_user,
@@ -261,7 +266,7 @@ async def skip_task(
             "skip_reason": body.reason,
             "note": body.note,
             "assignee_id": str(task.assignee_id) if task.assignee_id else None,
-            "contributor_ids": await _task_contributor_snapshot(db, task),
+            "contributor_ids": contributor_ids,
             "review_round_id": str(review_round_id),
             "result": "skipped",
         },
