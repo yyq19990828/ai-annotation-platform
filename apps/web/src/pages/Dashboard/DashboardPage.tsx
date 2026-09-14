@@ -1,5 +1,5 @@
 import { FilterGroup, FilterToggle } from "@/components/filters/FilterControls";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
@@ -20,7 +20,7 @@ import { useAuditLogs } from "@/hooks/useAudit";
 import { auditActionLabel } from "@/utils/auditLabels";
 import { ProjectFilterControl } from "./ProjectFilterControl";
 import { ProjectFilterSummary } from "./ProjectFilterSummary";
-import type { DashboardFilters, DashboardUrlState } from "./dashboardUrlState";
+import type { DashboardFilters } from "./dashboardUrlState";
 import {
   DASHBOARD_FILTER_KEYS,
   dashboardUrlCodec,
@@ -34,8 +34,8 @@ import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNa
 import { projectDisplayType } from "@/utils/projectDisplay";
 import { statSeriesHint, statSparkValues, statTrendFromSeries } from "@/utils/projectStatsSeries";
 import { PageContainer } from "@/components/layout/PageContainer";
-import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useUrlFilterState } from "@/hooks/useUrlFilterState";
+import { useDashboardQuerySync } from "./useDashboardQuerySync";
 
 // v0.10.28 · 列表图标改读媒体维度 data_type (image / video / lidar).
 const DATA_TYPE_ICONS: Record<string, IconName> = {
@@ -218,47 +218,19 @@ export function DashboardPage() {
   const pushToast = useToastStore((s) => s.push);
   const navigate = useNavigate();
   const location = useLocation();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const urlState = useUrlFilterState({
     codec: dashboardUrlCodec,
     defaults: EMPTY_DASHBOARD_URL_STATE,
     ownedKeys: DASHBOARD_FILTER_KEYS,
   });
-  const { state: currentUrl, patch: patchState } = urlState;
-  const [query, setQuery] = useState(currentUrl.query);
-  const lastLocationKey = useRef(location.key);
-  const localUrlWrites = useRef(0);
-  const syncingQuery = useRef(false);
-  const debouncedQuery = useDebouncedValue(query, 250);
-  // 本组件发起的 URL 写入(向导、翻页、视图切换、筛选应用)先计入 localUrlWrites,
-  // location 变化时不回填输入框,保留防抖中的搜索草稿;只有外部/历史导航
-  // 才按链接恢复搜索词(即使 q 未变也覆盖未生效的草稿)。
-  useEffect(() => {
-    if (lastLocationKey.current === location.key) return;
-    lastLocationKey.current = location.key;
-    if (localUrlWrites.current > 0) {
-      localUrlWrites.current = 0;
-      return;
-    }
-    syncingQuery.current = true;
-    setQuery(currentUrl.query);
-  }, [currentUrl.query, location.key]);
-  const patchUrl = useCallback(
-    (update: Partial<DashboardUrlState>, options?: { replace?: boolean }) => {
-      localUrlWrites.current += 1;
-      patchState(update, options);
-    },
-    [patchState],
-  );
-  useEffect(() => {
-    if (syncingQuery.current) {
-      if (debouncedQuery === currentUrl.query) syncingQuery.current = false;
-      return;
-    }
-    const nextQuery = debouncedQuery.trim();
-    if (nextQuery !== query.trim() || nextQuery === currentUrl.query) return;
-    patchUrl({ query: nextQuery, page: 1 });
-  }, [currentUrl.query, debouncedQuery, query, patchUrl]);
+  const {
+    currentUrl,
+    query,
+    setQuery: updateQuery,
+    patchUrl,
+    writeSearchParams,
+  } = useDashboardQuerySync(urlState);
   const filter =
     currentUrl.status === "in_progress"
       ? "进行中"
@@ -296,8 +268,7 @@ export function DashboardPage() {
     });
     if (mode === "grid") next.set("layout", "grid");
     else next.delete("layout");
-    localUrlWrites.current += 1;
-    setSearchParams(next, { replace: true });
+    writeSearchParams(next, { replace: true });
   };
   const [importOpen, setImportOpen] = useState(false);
   const currentUser = useAuthStore((s) => s.user);
@@ -325,15 +296,13 @@ export function DashboardPage() {
   const openWizard = () => {
     const next = new URLSearchParams(searchParams);
     next.set("new", "1");
-    localUrlWrites.current += 1;
-    setSearchParams(next);
+    writeSearchParams(next);
   };
   const closeWizard = () => {
     const next = new URLSearchParams(searchParams);
     next.delete("new");
     next.delete("from");
-    localUrlWrites.current += 1;
-    setSearchParams(next, { replace: true });
+    writeSearchParams(next, { replace: true });
   };
 
   const {
@@ -383,10 +352,6 @@ export function DashboardPage() {
       },
       { replace: false },
     );
-  };
-  const updateQuery = (next: string) => {
-    setQuery(next);
-    syncingQuery.current = false;
   };
   const updateFilterTab = (next: string) => {
     patchUrl({ status: FILTER_STATUS_MAP[next], query: query.trim(), page: 1 }, { replace: false });
