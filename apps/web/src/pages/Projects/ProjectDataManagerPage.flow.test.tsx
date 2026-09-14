@@ -429,6 +429,40 @@ describe("ProjectDataManagerPage filter hydration", () => {
     expect(await screen.findByRole("heading", { name: "T-deep" })).toBeInTheDocument();
   });
 
+  it("clears the selected task deep link when the detail sheet closes", async () => {
+    state.taskLookup = {
+      id: "task-selected",
+      project_id: "p1",
+      display_id: "T-selected",
+      file_name: "selected.png",
+    };
+    const search = updateDataManagerUrl("", {
+      lens: "tasks",
+      view: "builtin:all",
+      query: "",
+      filter: null,
+      sort: null,
+      columns: ["display_id"],
+      selected: "task-selected",
+    }).toString();
+    render(
+      <MemoryRouter initialEntries={[`/projects/p1/data-manager?${search}`]}>
+        <LocationProbe />
+        <Routes>
+          <Route path="/projects/:id/data-manager" element={<ProjectDataManagerPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("heading", { name: "T-selected" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => {
+      expect(
+        new URLSearchParams(screen.getByTestId("location").textContent ?? "").get("selected"),
+      ).toBeNull();
+    });
+  });
+
   it("does not open task detail when the gallery checkbox label is clicked", async () => {
     state.taskItems = [
       {

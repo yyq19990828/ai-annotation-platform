@@ -11,7 +11,7 @@ import {
   YAxis,
 } from "recharts";
 import { useLocation, useNavigate } from "react-router-dom";
-import { buildWorkbenchUrl } from "@/utils/workbenchNavigation";
+import { buildReviewWorkbenchUrl, buildWorkbenchUrl } from "@/utils/workbenchNavigation";
 import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
 import { Button } from "@/components/ui/Button";
@@ -391,6 +391,7 @@ export function ProjectMembersPerformance({ projectId }: { projectId: string }) 
     query.account_status,
     query.include_historical,
     query.q,
+    query.sort,
   ]);
 
   useEffect(() => {
@@ -1310,6 +1311,7 @@ function MemberDetail({
               onLoadMore={onLoadMoreEvents}
               timezone={timezone}
               projectId={projectId}
+              workType={workType}
             />
           </>
         ) : (
@@ -1565,6 +1567,7 @@ function EvidenceCard({
   onLoadMore,
   timezone,
   projectId,
+  workType,
 }: {
   events: Array<{
     id: string;
@@ -1583,6 +1586,7 @@ function EvidenceCard({
   onLoadMore: () => void;
   timezone: string;
   projectId: string;
+  workType: ProjectMembersWorkType;
 }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -1627,10 +1631,15 @@ function EvidenceCard({
                     variant="ghost"
                     onClick={() =>
                       navigate(
-                        buildWorkbenchUrl(projectId, {
-                          taskId: event.task_id,
-                          returnTo: `${location.pathname}${location.search}`,
-                        }),
+                        workType === "review"
+                          ? buildReviewWorkbenchUrl(projectId, {
+                              taskId: event.task_id,
+                              returnTo: `${location.pathname}${location.search}`,
+                            })
+                          : buildWorkbenchUrl(projectId, {
+                              taskId: event.task_id,
+                              returnTo: `${location.pathname}${location.search}`,
+                            }),
                       )
                     }
                   >

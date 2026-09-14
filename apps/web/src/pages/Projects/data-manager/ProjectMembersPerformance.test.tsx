@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -161,6 +161,22 @@ function NavigationProbe() {
   );
 }
 
+function SortNavigationProbe() {
+  const navigate = useNavigate();
+  return (
+    <button
+      data-testid="sort-navigation"
+      onClick={() =>
+        navigate(
+          "/projects/p1/data-manager?section=members&members_sort=submitted_tasks&members_direction=desc&members_selected=u1",
+        )
+      }
+    >
+      Sort through URL
+    </button>
+  );
+}
+
 function renderPage(initial = "/projects/p1/data-manager?section=members") {
   return render(
     <MemoryRouter initialEntries={[initial]}>
@@ -236,6 +252,24 @@ describe("ProjectMembersPerformance", () => {
     expect(location.searchParams.get("task")).toBe("task-1");
     expect(location.searchParams.get("returnTo")).toContain("section=members");
     expect(location.searchParams.get("returnTo")).toContain("members_selected=u1");
+  });
+
+  it("opens review evidence in the review Workbench route", () => {
+    const response = {
+      ...eventsData,
+      items: [{ id: "event-1", at: "2026-09-08T12:00:00Z", action: "审核通过", task_id: "task-1" }],
+    };
+    mocks.events.mockImplementation((_projectId: string, memberId: string | null) => ({
+      data: memberId ? response : undefined,
+      isLoading: false,
+      isError: false,
+    }));
+    renderPage("/projects/p1/data-manager?section=members&members_work_type=review");
+    fireEvent.click(screen.getByRole("button", { name: /Ada Lovelace/ }));
+    fireEvent.click(screen.getByRole("button", { name: "查看任务" }));
+    const location = new URL(screen.getByTestId("location").textContent!, "https://test.invalid");
+    expect(location.pathname).toBe("/projects/p1/review");
+    expect(location.searchParams.get("task")).toBe("task-1");
   });
 
   it("keeps zero activity separate from unavailable history", () => {
@@ -332,5 +366,67 @@ describe("ProjectMembersPerformance", () => {
     expect(screen.getByText("first")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "加载更多依据" }));
     expect(screen.getByText("second")).toBeInTheDocument();
+  });
+
+  it("starts evidence pagination over when the member sort changes", async () => {
+    const first = {
+      id: "event-first",
+      at: "2026-09-09T01:00:00Z",
+      action: "提交任务",
+      task_id: null,
+      task_display_id: "T-first",
+      detail: "first sort",
+    };
+    const second = {
+      id: "event-second",
+      at: "2026-09-10T01:00:00Z",
+      action: "审核通过",
+      task_id: null,
+      task_display_id: "T-second",
+      detail: "second sort",
+    };
+    const sortedFirst = {
+      id: "event-sorted-first",
+      at: "2026-09-11T01:00:00Z",
+      action: "审核通过",
+      task_id: null,
+      task_display_id: "T-sorted",
+      detail: "sorted first",
+    };
+    mocks.events.mockImplementation(
+      (
+        _projectId: string,
+        _userId: string | null,
+        query: { cursor: string | null; sort?: string },
+      ) => ({
+        data: query.cursor
+          ? { ...eventsData, items: [second], next_cursor: null }
+          : {
+              ...eventsData,
+              items: [query.sort === "-submitted_tasks" ? sortedFirst : first],
+              next_cursor: "next-events",
+            },
+        isLoading: false,
+        isFetching: false,
+        isError: false,
+        refetch: vi.fn(),
+      }),
+    );
+    render(
+      <MemoryRouter initialEntries={["/projects/p1/data-manager?section=members"]}>
+        <ProjectMembersPerformance projectId="p1" />
+        <NavigationProbe />
+        <SortNavigationProbe />
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Ada Lovelace/ }));
+    expect(screen.getByText("first sort")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "加载更多依据" }));
+    expect(screen.getByText("second sort")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("sort-navigation"));
+    await waitFor(() => expect(screen.getByText("sorted first")).toBeInTheDocument());
+    expect(screen.queryByText("first sort")).not.toBeInTheDocument();
+    expect(screen.queryByText("second sort")).not.toBeInTheDocument();
   });
 });

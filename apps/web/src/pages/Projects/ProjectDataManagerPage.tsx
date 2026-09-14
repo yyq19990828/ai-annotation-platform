@@ -1820,7 +1820,13 @@ function TaskDataManagerPage({
           task={selectedTaskDetails}
           filterJson={filterJson as Record<string, unknown>}
           open={Boolean(selectedTaskDetails)}
-          onOpenChange={(open) => !open && setSelectedTask(null)}
+          onOpenChange={(open) => {
+            if (open) return;
+            setSelectedTask(null);
+            setSearchParams(updateDataManagerUrl(searchParams, { ...currentUrl, selected: null }), {
+              replace: true,
+            });
+          }}
         />
         <AlertDialog
           open={Boolean(pendingViewKey || pendingScope)}
