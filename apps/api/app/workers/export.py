@@ -32,7 +32,6 @@ from app.db.models.async_job import AsyncJob
 from app.db.models.export_artifact import ExportArtifact
 from app.db.models.dataset import DatasetItem, Scene, SensorCalibrationRevision
 from app.db.models.project import Project
-from app.db.models.prediction import Prediction
 from app.db.models.scene_pose import SceneFramePose
 from app.db.models.task import Task
 from app.db.models.task_dataset_item_link import TaskDatasetItemLink
@@ -193,115 +192,6 @@ async def _scope_fingerprint(
     ).scalar_one_or_none()
     timestamps = [ts for ts in (row[0], project_updated_at) if ts is not None]
     return (max(timestamps) if timestamps else None), int(row[1] or 0)
-
-
-def _task_scope_content_digest_payload(
-    *,
-    tasks: list[dict],
-    predictions: list[dict],
-    dataset_items: list[dict],
-) -> str:
-    """Fingerprint task-scope rows whose content is serialized by exports."""
-
-    def ordered(rows: list[dict]) -> list[dict]:
-        return sorted(rows, key=lambda row: str(row.get("id", "")))
-
-    return canonical_digest(
-        {
-            "tasks": ordered(tasks),
-            "predictions": ordered(predictions),
-            "dataset_items": ordered(dataset_items),
-        }
-    )
-
-
-async def _task_scope_content_digest(
-    db: AsyncSession,
-    project_id: uuid.UUID,
-    task_ids: list[uuid.UUID],
-) -> str:
-    """Load task, prediction, and media rows used by a selected-task export."""
-
-    ordered_task_ids = sorted(set(task_ids), key=str)
-    if not ordered_task_ids:
-        return _task_scope_content_digest_payload(
-            tasks=[], predictions=[], dataset_items=[]
-        )
-
-    tasks = [
-        dict(row)
-        for row in (
-            await db.execute(
-                select(
-                    Task.id,
-                    Task.display_id,
-                    Task.file_name,
-                    Task.file_path,
-                    Task.file_type,
-                    Task.batch_id,
-                    Task.dataset_item_id,
-                    Task.sequence_order,
-                    Task.updated_at,
-                ).where(
-                    Task.project_id == project_id,
-                    Task.id.in_(ordered_task_ids),
-                )
-            )
-        ).mappings()
-    ]
-    predictions = [
-        dict(row)
-        for row in (
-            await db.execute(
-                select(
-                    Prediction.id,
-                    Prediction.task_id,
-                    Prediction.model_version,
-                    Prediction.score,
-                    Prediction.tool_unit_id,
-                    Prediction.result,
-                    Prediction.source,
-                    Prediction.created_at,
-                ).where(
-                    Prediction.project_id == project_id,
-                    Prediction.task_id.in_(ordered_task_ids),
-                )
-            )
-        ).mappings()
-    ]
-    item_ids = {
-        row["dataset_item_id"] for row in tasks if row["dataset_item_id"] is not None
-    }
-    dataset_items = (
-        [
-            dict(row)
-            for row in (
-                await db.execute(
-                    select(
-                        DatasetItem.id,
-                        DatasetItem.file_name,
-                        DatasetItem.file_path,
-                        DatasetItem.file_type,
-                        DatasetItem.file_size,
-                        DatasetItem.content_hash,
-                        DatasetItem.width,
-                        DatasetItem.height,
-                        DatasetItem.metadata_,
-                        DatasetItem.scene_id,
-                        DatasetItem.frame_index,
-                        DatasetItem.updated_at,
-                    ).where(DatasetItem.id.in_(sorted(item_ids, key=str)))
-                )
-            ).mappings()
-        ]
-        if item_ids
-        else []
-    )
-    return _task_scope_content_digest_payload(
-        tasks=tasks,
-        predictions=predictions,
-        dataset_items=dataset_items,
-    )
 
 
 async def _nuscenes_scope_digest(
@@ -735,11 +625,10 @@ async def _run_export(
                     scope_digests["task_ids"] = [
                         str(task_id) for task_id in selected_task_ids
                     ]
-                    scope_digests[
-                        "task_scope_content_digest"
-                    ] = await _task_scope_content_digest(
-                        db, proj_uuid, selected_task_ids
-                    )
+                    # ponytail: share only retries of this durable job. A new
+                    # selected export must see fresh predictions/media/tracks;
+                    # cross-job reuse needs a complete content revision first.
+                    scope_digests["task_export_job_id"] = async_job_id
                 if {"kitti", "nuscenes"} & set(targets):
                     scope_digests[
                         "nuscenes_scope_digest"

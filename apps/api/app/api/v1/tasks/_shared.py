@@ -124,7 +124,11 @@ async def _review_round_contributor_snapshot(db: AsyncSession, task: Task) -> li
         # may already have been archived when a long-running review reaches a
         # decision. New tasks carry the same snapshot on the task row so the
         # first-review fact remains attributable after that retention boundary.
-        values = task.first_review_contributor_ids
+        values = (
+            task.first_review_contributor_ids
+            if task.first_reviewed_at is None
+            else None
+        )
     if not isinstance(values, list):
         return []
     return sorted({str(value) for value in values if value})

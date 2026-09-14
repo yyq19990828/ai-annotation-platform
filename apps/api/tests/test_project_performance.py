@@ -181,6 +181,9 @@ async def test_first_review_contributors_survive_missing_online_submit_audit():
     assert await _review_round_contributor_snapshot(MissingAudit(), task) == sorted(
         contributors
     )
+    task.first_reviewed_at = datetime.now(timezone.utc)
+    task.review_round_id = uuid4()
+    assert await _review_round_contributor_snapshot(MissingAudit(), task) == []
 
 
 def test_qualified_time_clips_crossing_sessions_and_unions_overlaps():

@@ -96,65 +96,6 @@ def test_cache_key_is_target_order_independent_and_contract_sensitive() -> None:
     assert front != left
 
 
-def test_task_scope_content_digest_invalidates_new_prediction() -> None:
-    task_id = uuid.UUID("11111111-1111-1111-1111-111111111111")
-    task = {
-        "id": task_id,
-        "display_id": "T-1",
-        "file_name": "image.jpg",
-        "file_path": "images/image.jpg",
-        "file_type": "image",
-        "batch_id": None,
-        "dataset_item_id": None,
-        "sequence_order": 1,
-        "updated_at": datetime(2026, 7, 17, tzinfo=timezone.utc),
-    }
-    before = export_worker._task_scope_content_digest_payload(
-        tasks=[task],
-        predictions=[],
-        dataset_items=[],
-    )
-    prediction = {
-        "id": uuid.UUID("22222222-2222-2222-2222-222222222222"),
-        "task_id": task_id,
-        "model_version": "model-v1",
-        "score": 0.9,
-        "tool_unit_id": "bbox",
-        "result": [{"type": "rectanglelabels", "value": {"x": 1}}],
-        "source": "ml_backend",
-        "created_at": datetime(2026, 7, 17, 0, 1, tzinfo=timezone.utc),
-    }
-    after = export_worker._task_scope_content_digest_payload(
-        tasks=[task],
-        predictions=[prediction],
-        dataset_items=[],
-    )
-
-    assert before != after
-    scope_id = uuid.UUID("44444444-4444-4444-4444-444444444444")
-    common = {
-        "scope_id": scope_id,
-        "targets": ["aap_json"],
-        "include_attributes": True,
-        "video_frame_mode": "keyframes",
-        "max_updated_at": task["updated_at"],
-        "active_count": 0,
-    }
-    before_key = cache.compute_cache_key(
-        **common,
-        options_digest=export_worker.canonical_digest(
-            {"task_scope_content_digest": before}
-        ),
-    )
-    after_key = cache.compute_cache_key(
-        **common,
-        options_digest=export_worker.canonical_digest(
-            {"task_scope_content_digest": after}
-        ),
-    )
-    assert before_key != after_key
-
-
 @pytest.mark.asyncio
 async def test_cache_lookup_deletes_stale_row_when_object_is_missing(
     monkeypatch: pytest.MonkeyPatch,
@@ -189,7 +130,7 @@ def test_export_worker_registration_and_route_are_stable() -> None:
     assert celery_app.conf.task_routes[task_name] == {"queue": "export"}
 
 
-@pytest.mark.parametrize("targets", [["davis", "mots"], ["kitti"]])
+@pytest.mark.parametrize("targets", [["davis", "mots"], ["kitti"], ["aap_json"]])
 @pytest.mark.asyncio
 async def test_export_worker_cache_hit_skips_packaging(
     monkeypatch: pytest.MonkeyPatch,
@@ -277,10 +218,15 @@ async def test_export_worker_cache_hit_skips_packaging(
 
     project_id = "11111111-1111-1111-1111-111111111111"
     job_id = "22222222-2222-2222-2222-222222222222"
+    task_ids = (
+        ["33333333-3333-3333-3333-333333333333"] if targets == ["aap_json"] else None
+    )
+    monkeypatch.setattr(export_worker, "_assert_export_task_scope", AsyncMock())
     opts = {"video_overlap_policy": "z_order", "mots_frame_base": 1}
     await export_worker._run_export(
         project_id=project_id,
         batch_id=None,
+        task_ids=task_ids,
         targets=targets,
         opts=opts,
         async_job_id=job_id,
@@ -297,6 +243,12 @@ async def test_export_worker_cache_hit_skips_packaging(
         lidar_scope_digest.assert_awaited_once()
     else:
         lidar_scope_digest.assert_not_awaited()
+    if task_ids:
+        expected_options = {
+            "request": opts,
+            "task_ids": task_ids,
+            "task_export_job_id": job_id,
+        }
     assert compute_cache_key.call_args.kwargs[
         "options_digest"
     ] == export_worker.canonical_digest(expected_options)
@@ -312,6 +264,20 @@ async def test_export_worker_cache_hit_skips_packaging(
     build_export_zip.assert_not_awaited()
     record.assert_not_awaited()
     engine.dispose.assert_awaited_once()
+    if task_ids:
+        first_digest = compute_cache_key.call_args.kwargs["options_digest"]
+        await export_worker._run_export(
+            project_id=project_id,
+            batch_id=None,
+            task_ids=task_ids,
+            targets=targets,
+            opts=opts,
+            async_job_id=str(uuid.uuid4()),
+            celery_task_id="celery-2",
+        )
+        # Even if annotation timestamps are unchanged, a new export cannot hit
+        # an earlier job's artifact after predictions or scene metadata change.
+        assert compute_cache_key.call_args.kwargs["options_digest"] != first_digest
 
 
 @pytest.mark.asyncio
