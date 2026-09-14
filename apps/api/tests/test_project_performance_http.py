@@ -868,6 +868,104 @@ async def test_member_performance_work_type_filters_actor_actions(
 
 
 @pytest.mark.asyncio
+async def test_member_performance_dual_role_rejection_is_attributed_once(
+    httpx_client, db_session, project_admin, annotator
+):
+    owner, token = project_admin
+    worker, _ = annotator
+    project = _project(owner.id)
+    db_session.add(project)
+    await db_session.flush()
+    await _member(db_session, project.id, worker, "annotator", owner.id)
+    task = _task(project.id, status="rejected", assignee_id=worker.id)
+    db_session.add(task)
+    await db_session.flush()
+    start = datetime(2026, 9, 10, tzinfo=timezone.utc)
+    round_id = uuid.uuid4()
+    db_session.add_all(
+        [
+            _audit(
+                project_id=project.id,
+                task_id=task.id,
+                actor_id=worker.id,
+                action="task.submit",
+                at=start + timedelta(hours=1),
+                round_id=round_id,
+                contributors=[worker.id],
+            ),
+            _audit(
+                project_id=project.id,
+                task_id=task.id,
+                actor_id=worker.id,
+                action="task.reject",
+                at=start + timedelta(hours=2),
+                round_id=round_id,
+                contributors=[worker.id],
+                reason_type="wrong_label",
+                result="rejected",
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    params = {
+        "from": start.isoformat(),
+        "to": (start + timedelta(days=1)).isoformat(),
+        "timezone": "UTC",
+        "account_status": "all",
+        "include_historical": "false",
+    }
+    annotation = await httpx_client.get(
+        f"/api/v1/projects/{project.id}/performance/members",
+        params={**params, "work_type": "annotation"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert annotation.status_code == 200, annotation.text
+    annotation_body = annotation.json()
+    annotation_item = next(
+        item for item in annotation_body["items"] if item["user_id"] == str(worker.id)
+    )
+    assert annotation_item["metrics"]["review_decisions"]["value"] == 0
+    assert annotation_item["metrics"]["rejections"]["value"] == 0
+    assert annotation_body["project_totals"]["review_decisions"]["value"] == 0
+    assert annotation_body["project_totals"]["approvals"]["value"] == 0
+    assert annotation_body["project_totals"]["rejections"]["value"] == 0
+    assert annotation_body["project_totals"]["submitted_tasks"]["value"] == 1
+
+    annotation_detail = await httpx_client.get(
+        f"/api/v1/projects/{project.id}/performance/members/{worker.id}",
+        params={**params, "work_type": "annotation"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert annotation_detail.status_code == 200, annotation_detail.text
+    assert annotation_detail.json()["reject_reasons"] == [
+        {
+            "reason_type": "wrong_label",
+            "class_name": None,
+            "count": 1,
+            "pct": 100.0,
+        }
+    ]
+
+    review = await httpx_client.get(
+        f"/api/v1/projects/{project.id}/performance/members",
+        params={**params, "work_type": "review"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert review.status_code == 200, review.text
+    review_body = review.json()
+    review_item = next(
+        item for item in review_body["items"] if item["user_id"] == str(worker.id)
+    )
+    assert review_item["metrics"]["review_decisions"]["value"] == 1
+    assert review_item["metrics"]["rejections"]["value"] == 1
+    assert review_body["project_totals"]["review_decisions"]["value"] == 1
+    assert review_body["project_totals"]["rejections"]["value"] == 1
+    assert review_body["project_totals"]["submitted_tasks"]["value"] == 0
+    assert review_body["project_totals"]["approved_task_outcomes"]["value"] == 0
+
+
+@pytest.mark.asyncio
 async def test_member_performance_skips_are_not_submissions(
     httpx_client, db_session, project_admin, annotator
 ):

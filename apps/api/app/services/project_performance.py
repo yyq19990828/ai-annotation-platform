@@ -1214,28 +1214,29 @@ async def _aggregate(
                     acc.resubmissions += 1
                 trend[log.actor_id][day][0] += 1
         elif log.action in _DECISION_ACTIONS:
-            interval_decisions += 1
-            if log.action == AuditAction.TASK_APPROVE.value:
-                if target_id:
-                    interval_approved_tasks.add(target_id)
-                interval_approvals += 1
-            else:
-                interval_rejections += 1
-            if log.actor_id in accumulators:
-                acc = accumulators[log.actor_id]
-                if target_id:
-                    acc.reviewed_tasks.add(target_id)
-                acc.review_decisions.add(str(log.id))
+            if work_type == "review":
+                interval_decisions += 1
                 if log.action == AuditAction.TASK_APPROVE.value:
-                    acc.approvals.add(str(log.id))
+                    interval_approvals += 1
                 else:
-                    acc.rejections.add(str(log.id))
-                trend[log.actor_id][day][2] += 1
-                reason = detail.get("reason_type") or "unknown"
-                if log.action == AuditAction.TASK_REJECT.value:
-                    reject_reasons[log.actor_id][str(reason)] += 1
+                    interval_rejections += 1
+                if log.actor_id in accumulators:
+                    acc = accumulators[log.actor_id]
+                    if target_id:
+                        acc.reviewed_tasks.add(target_id)
+                    acc.review_decisions.add(str(log.id))
+                    if log.action == AuditAction.TASK_APPROVE.value:
+                        acc.approvals.add(str(log.id))
+                    else:
+                        acc.rejections.add(str(log.id))
+                    trend[log.actor_id][day][2] += 1
+                    reason = detail.get("reason_type") or "unknown"
+                    if log.action == AuditAction.TASK_REJECT.value:
+                        reject_reasons[log.actor_id][str(reason)] += 1
 
             if work_type == "annotation":
+                if log.action == AuditAction.TASK_APPROVE.value and target_id:
+                    interval_approved_tasks.add(target_id)
                 contributors = _decision_snapshot(log, snapshots)
                 if log.action == AuditAction.TASK_REJECT.value:
                     reason = str(detail.get("reason_type") or "unknown")
