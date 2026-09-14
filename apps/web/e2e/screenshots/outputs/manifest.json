@@ -499,7 +499,6 @@
       "height": 900
     },
     "docs-site/user-guide/images/projects/data-manager-filter-rules.png": {
-      "auto": true,
       "target": "docs-site/user-guide/images/projects/data-manager-filter-rules.png",
       "scene": "projects/data-manager-filter-rules",
       "source": "apps/web/e2e/screenshots/scenes/projects.ts",
@@ -510,30 +509,96 @@
         "project": "image_demo",
         "task": "predicted"
       },
-      "seed_profile": "screenshots",
       "seed_revision": "screenshots-2026-08-g",
-      "source_commit": "59216f75a8043fe76a4bec3b95a7aa3655c8f8ca",
-      "browser": {
-        "name": "chromium",
-        "version": "147.0.7727.15"
-      },
       "project": "desktop-light",
       "viewport": {
         "width": 1440,
         "height": 900
       },
       "theme": "light",
-      "locale": "zh-CN",
-      "generated_at": "2026-09-12T08:15:53.902091+00:00",
-      "provenance": "current-run",
-      "sha256": "16d11dc1aa76d1a8146138b0adcebe6dc17f9a0db00aad6da0be2dd1d1b662b7",
-      "width": 1440,
-      "height": 900,
       "clock": "fixed",
-      "source_worktree_dirty": false
+      "locale": "zh-CN",
+      "browser": {
+        "name": "chromium",
+        "version": "147.0.7727.15"
+      },
+      "auto": true,
+      "seed_profile": "screenshots",
+      "source_commit": "bd6e7dcc52151115a144ea426d3b186e186d68f9",
+      "source_worktree_dirty": true,
+      "generated_at": "2026-09-14T01:04:48.660Z",
+      "provenance": "current-run",
+      "sha256": "e6c1c2106ac17961aa52d52990732a175b6b115ead14d79e4a5fcb51caa9fd69",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/projects/data-manager-members.dark.png": {
+      "target": "docs-site/user-guide/images/projects/data-manager-members.dark.png",
+      "scene": "projects/data-manager-members",
+      "source": "apps/web/e2e/screenshots/scenes/projects.ts",
+      "capture": {
+        "kind": "fullPage"
+      },
+      "fixture": {
+        "project": "image_demo"
+      },
+      "seed_revision": "screenshots-2026-08-g",
+      "project": "desktop-dark",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "dark",
+      "clock": "live",
+      "locale": "zh-CN",
+      "browser": {
+        "name": "chromium",
+        "version": "147.0.7727.15"
+      },
+      "auto": true,
+      "seed_profile": "screenshots",
+      "source_commit": "bd6e7dcc52151115a144ea426d3b186e186d68f9",
+      "source_worktree_dirty": true,
+      "generated_at": "2026-09-14T01:04:48.661Z",
+      "provenance": "current-run",
+      "sha256": "ec216e4db7ea1cfe74270f3379508949d2a86d64b1cb074fe41027919d61f135",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/projects/data-manager-members.png": {
+      "target": "docs-site/user-guide/images/projects/data-manager-members.png",
+      "scene": "projects/data-manager-members",
+      "source": "apps/web/e2e/screenshots/scenes/projects.ts",
+      "capture": {
+        "kind": "fullPage"
+      },
+      "fixture": {
+        "project": "image_demo"
+      },
+      "seed_revision": "screenshots-2026-08-g",
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "clock": "live",
+      "locale": "zh-CN",
+      "browser": {
+        "name": "chromium",
+        "version": "147.0.7727.15"
+      },
+      "auto": true,
+      "seed_profile": "screenshots",
+      "source_commit": "bd6e7dcc52151115a144ea426d3b186e186d68f9",
+      "source_worktree_dirty": true,
+      "generated_at": "2026-09-14T01:04:48.660Z",
+      "provenance": "current-run",
+      "sha256": "88835f4f0e6de8f13288bf6cfedceb72951560f52ca1d45d8c496979d507378d",
+      "width": 1440,
+      "height": 900
     },
     "docs-site/user-guide/images/projects/data-manager-overview.png": {
-      "auto": true,
       "target": "docs-site/user-guide/images/projects/data-manager-overview.png",
       "scene": "projects/data-manager-overview",
       "source": "apps/web/e2e/screenshots/scenes/projects.ts",
@@ -544,27 +609,28 @@
         "project": "image_demo",
         "task": "predicted"
       },
-      "seed_profile": "screenshots",
       "seed_revision": "screenshots-2026-08-g",
-      "source_commit": "59216f75a8043fe76a4bec3b95a7aa3655c8f8ca",
-      "browser": {
-        "name": "chromium",
-        "version": "147.0.7727.15"
-      },
       "project": "desktop-light",
       "viewport": {
         "width": 1440,
         "height": 900
       },
       "theme": "light",
-      "locale": "zh-CN",
-      "generated_at": "2026-09-12T08:15:53.901707+00:00",
-      "provenance": "current-run",
-      "sha256": "ff723a42341d7e5646e71905516d30ecac42a2dcd84ae36d37c833f153fce128",
-      "width": 1440,
-      "height": 900,
       "clock": "fixed",
-      "source_worktree_dirty": false
+      "locale": "zh-CN",
+      "browser": {
+        "name": "chromium",
+        "version": "147.0.7727.15"
+      },
+      "auto": true,
+      "seed_profile": "screenshots",
+      "source_commit": "bd6e7dcc52151115a144ea426d3b186e186d68f9",
+      "source_worktree_dirty": true,
+      "generated_at": "2026-09-14T01:04:48.660Z",
+      "provenance": "current-run",
+      "sha256": "1bd9e499e691533b6a9490eefad35dce708e98ab7be0053d47b53121e528a3e6",
+      "width": 1440,
+      "height": 900
     },
     "docs-site/user-guide/images/projects/empty-state.png": {
       "auto": true,
