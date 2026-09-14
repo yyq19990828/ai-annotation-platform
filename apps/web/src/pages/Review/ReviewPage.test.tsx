@@ -207,6 +207,27 @@ describe("ReviewPage", () => {
   it("无任务空态 → 显示「暂无待审核任务」", () => {
     renderUI();
     expect(screen.getByText("暂无待审核任务")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "返回全部批次" })).not.toBeInTheDocument();
+  });
+
+  it.each(["project=p1", "batch=b1", "assignee=u1"])(
+    "空队列有 %s 选择时仍可返回全部批次",
+    (selection) => {
+      renderUI(`/review?${selection}`);
+      fireEvent.click(screen.getByRole("button", { name: "返回全部批次" }));
+      expect(screen.getByText("暂无待审核任务")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "返回全部批次" })).not.toBeInTheDocument();
+      expect(mockUseTaskList).toHaveBeenLastCalledWith(undefined, { status: "review" });
+    },
+  );
+
+  it.each([
+    { data: undefined, isLoading: true },
+    { data: undefined, isError: true, error: new Error("暂时不可用"), refetch: vi.fn() },
+  ])("无选择的审核批次加载或失败状态不显示返回入口", (queryState) => {
+    mockUseReviewerStats.mockReturnValue(queryState);
+    renderUI();
+    expect(screen.queryByRole("button", { name: "返回全部批次" })).not.toBeInTheDocument();
   });
 
   it("有任务 → 渲染任务行 + 全选 checkbox", () => {

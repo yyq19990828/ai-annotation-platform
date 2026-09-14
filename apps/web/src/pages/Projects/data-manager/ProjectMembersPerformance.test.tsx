@@ -378,11 +378,15 @@ describe("ProjectMembersPerformance", () => {
           "members_selected",
         ),
       ).toBeNull();
-      expect(mocks.events).toHaveBeenLastCalledWith(
-        "p1",
-        null,
-        expect.objectContaining({ cursor: null }),
-        false,
+      // 关闭详情的渲染与 setEventsCursor(null) 的重渲染可能不在同一次 act 内
+      // 完成;等待最终调用收敛到重置后的参数,避免断言落在中间渲染上。
+      await waitFor(() =>
+        expect(mocks.events).toHaveBeenLastCalledWith(
+          "p1",
+          null,
+          expect.objectContaining({ cursor: null }),
+          false,
+        ),
       );
     },
   );

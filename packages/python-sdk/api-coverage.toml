@@ -41,6 +41,7 @@ watched_tags = ["projects", "datasets", "batches", "tasks", "annotations", "anno
 "GET /api/v1/datasets/{dataset_id}/link/{project_id}/preview-unlink" = { status = "covered" }
 "GET /api/v1/datasets/{dataset_id}/projects" = { status = "covered" }
 "GET /api/v1/projects" = { status = "covered" }
+"GET /api/v1/projects/query" = { status = "excluded", reason = "web-only" }
 "GET /api/v1/projects/stats" = { status = "covered" }
 "GET /api/v1/projects/{project_id}" = { status = "covered" }
 "GET /api/v1/projects/{project_id}/batches" = { status = "covered" }
