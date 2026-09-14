@@ -20,6 +20,7 @@ from app.schemas.user import (
     UserPreferences,
     UserPreferencesRead,
     WorkbenchShortcutPreferences,
+    shortcut_command_domain,
 )
 from app.schemas.workbench_workspace import (
     MAX_NAMED_PRESETS,
@@ -498,6 +499,37 @@ def _strip_removed_workbench_keys(prefs: dict) -> dict:
     return {**prefs, "workbench": {**workbench, "layout": clean_layout}}
 
 
+def _strip_unknown_shortcut_resets(prefs: dict) -> dict:
+    """删除指向已注销命令的 null 重置条目。
+
+    客户端用 ``null`` 清除损坏 / 历史遗留的快捷键覆盖；深合并只会把该键的值写成
+    ``null``，命令 ID 仍在，读路径会继续报 unknown-command。这里直接移除这些键，
+    让「重置」真正生效。带绑定值的未知条目仍然保留，供客户端识别与修正。
+    """
+    workbench = prefs.get("workbench")
+    if not isinstance(workbench, dict):
+        return prefs
+    shortcuts = workbench.get("shortcuts")
+    if not isinstance(shortcuts, dict):
+        return prefs
+    changed = False
+    cleaned: dict[str, object] = {}
+    for domain, bucket in shortcuts.items():
+        if not isinstance(bucket, dict):
+            cleaned[domain] = bucket
+            continue
+        kept = {
+            command_id: value
+            for command_id, value in bucket.items()
+            if not (value is None and shortcut_command_domain(command_id) is None)
+        }
+        changed = changed or len(kept) != len(bucket)
+        cleaned[domain] = kept
+    if not changed:
+        return prefs
+    return {**prefs, "workbench": {**workbench, "shortcuts": cleaned}}
+
+
 def _preferences_response(prefs: dict) -> JSONResponse:
     """Keep stored workspace envelopes and shortcut subtrees intact for client recovery.
 
@@ -507,6 +539,7 @@ def _preferences_response(prefs: dict) -> JSONResponse:
     existing validation.
     """
     prefs = _strip_removed_workbench_keys(prefs)
+    prefs = _strip_unknown_shortcut_resets(prefs)
     workbench = prefs.get("workbench", {})
     layout = workbench.get("layout", {}) if isinstance(workbench, dict) else {}
     has_workspace = isinstance(layout, dict) and "workspace" in layout
@@ -668,6 +701,7 @@ async def update_preferences(
             raise HTTPException(status_code=409, detail="layout_schema_downgrade")
     merged = _deep_merge_preferences(existing, incoming)
     merged = _strip_removed_workbench_keys(merged)
+    merged = _strip_unknown_shortcut_resets(merged)
     if named_presets_supplied:
         merged[_NAMED_PRESETS_REVISION_KEY] = uuid4().hex
     response = _preferences_response(merged)

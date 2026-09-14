@@ -2287,6 +2287,7 @@ async def test_shortcut_validation_preserves_omitted_buckets(
     [
         ({"schemaVersion": "invalid"}, "schemaVersion"),
         ({"schemaVersion": None}, "schemaVersion"),
+        ({"schemaVersion": 2}, "schemaVersion"),
         ({"unexpected": True}, "unexpected"),
         ({"common": None}, "common"),
         ({"image": None}, "image"),
@@ -2355,11 +2356,29 @@ async def test_shortcut_validation_resets_invalid_entry_explicitly(
     existing = {"workbench": {"shortcuts": {"image": {"legacy.command": stored_value}}}}
     write, user, _ = shortcut_preferences_writer(existing)
 
-    await write({"image": {"legacy.command": None}})
+    response = await write({"image": {"legacy.command": None}})
 
-    assert user.preferences["workbench"]["shortcuts"] == {
-        "image": {"legacy.command": None}
+    # 未知命令的 null 重置会被真正移除：键不再落库，读路径不会继续报
+    # unknown-command（已知命令的 null 仍保留「恢复默认」语义）。
+    assert user.preferences["workbench"]["shortcuts"] == {"image": {}}
+    assert json.loads(response.body)["workbench"]["shortcuts"]["image"] == {}
+
+
+async def test_shortcut_validation_rejects_command_from_another_domain(
+    shortcut_preferences_writer,
+):
+    from fastapi.exceptions import RequestValidationError
+
+    write, user, session = shortcut_preferences_writer({})
+
+    with pytest.raises(RequestValidationError) as caught:
+        await write({"image": {"video.frame.next": [{"key": "j"}]}})
+
+    assert ("body", "workbench", "shortcuts", "image") in {
+        error["loc"] for error in caught.value.errors()
     }
+    assert user.preferences == {}
+    session.commit.assert_not_awaited()
 
 
 async def test_shortcut_validation_resets_entire_subtree_explicitly(
@@ -2521,7 +2540,7 @@ async def test_preferences_get_tolerates_corrupt_shortcut_subtree(
 async def test_shortcut_patch_preserves_untouched_invalid_entries(
     httpx_client, annotator, db_session
 ):
-    """同桶内改一条合法条目：未触碰的非法存量条目保留原值；显式重置该条目为 null 仍可用。"""
+    """同桶内改一条合法条目：未触碰的非法存量条目保留原值；显式重置该条目为 null 会清除。"""
     user, token = annotator
     user.preferences = {
         "workbench": {
@@ -2536,20 +2555,20 @@ async def test_shortcut_patch_preserves_untouched_invalid_entries(
     }
     await db_session.flush()
 
-    # 只改 image.tool.box（与存量一致 → untouched；值合法 → 正常走严格校验）
+    # 同桶内改一条合法命令：未触碰的非法存量条目原样保留。
     resp = await httpx_client.patch(
         PREFS_URL,
         json={
-            "workbench": {"shortcuts": {"image": {"video.frame.next": [{"key": "n"}]}}}
+            "workbench": {"shortcuts": {"image": {"image.tool.select": [{"key": "n"}]}}}
         },
         headers=_bearer(token),
     )
     assert resp.status_code == 200
     shortcuts = resp.json()["workbench"]["shortcuts"]
-    assert shortcuts["image"]["video.frame.next"] == [{"key": "n", "modifiers": []}]
+    assert shortcuts["image"]["image.tool.select"] == [{"key": "n", "modifiers": []}]
     assert shortcuts["image"]["legacy.command"] == [{"key": "k", "modifiers": []}]
 
-    # 显式把非法条目重置为 null：通过严格校验并落库清除
+    # 显式把非法条目重置为 null：通过严格校验并从存量中清除。
     resp = await httpx_client.patch(
         PREFS_URL,
         json={
@@ -2561,5 +2580,5 @@ async def test_shortcut_patch_preserves_untouched_invalid_entries(
     )
     assert resp.status_code == 200
     shortcuts = resp.json()["workbench"]["shortcuts"]
-    assert shortcuts["image"]["legacy.command"] is None
-    assert shortcuts["image"]["video.frame.next"] == [{"key": "n", "modifiers": []}]
+    assert "legacy.command" not in shortcuts["image"]
+    assert shortcuts["image"]["image.tool.select"] == [{"key": "n", "modifiers": []}]

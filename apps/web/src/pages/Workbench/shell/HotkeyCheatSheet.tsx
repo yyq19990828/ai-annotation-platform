@@ -90,14 +90,23 @@ function rowStages(h: HotkeyDef): HotkeyStage[] {
   return h.stages ?? ["image", "video", "threed"];
 }
 
+/** keys 数组里的修饰键标签（与 bindingKeyLabels / modLabel 一致）。 */
+const MODIFIER_KEY_LABELS = new Set(["Ctrl", "Cmd", "⌘", "Shift", "Alt"]);
+
 /** keys 数组的展示键帽（最后一个元素为「或」候选项时按 keysAlt 拆分）。 */
 function staticKeyGroups(h: HotkeyDef): string[][] {
   if (h.keysLabel) return [[h.keysLabel]];
   if (h.keysAlt && h.keys.length > 1) {
     const head = h.keys.slice(0, -1);
     const alts = h.keys[-1 + h.keys.length];
-    // 组合步骤 + 候选项：如 [Ctrl, Delete, Backspace] → Ctrl + (Delete 或 Backspace)
-    return [head, [alts]];
+    // 共享的前导修饰键要在候选项上重复，否则 [Ctrl, Delete, Backspace] 会写成
+    // 「Ctrl+Delete 或 Backspace」，把 Ctrl+Backspace 误述成裸 Backspace。
+    const shared: string[] = [];
+    for (const key of head) {
+      if (!MODIFIER_KEY_LABELS.has(key)) break;
+      shared.push(key);
+    }
+    return [head, [...shared, alts]];
   }
   return [h.keys];
 }
@@ -150,6 +159,7 @@ const RECORDER_REASON_TEXT: Record<string, string> = {
   browser: "该组合由浏览器 / 系统保留，无法被工作台接管",
   physical: "该键位是物理键位例外（如反引号 / Tab / Enter），保持固定",
   altgr: "AltGr 字符输入不参与快捷键",
+  unsupported: "只支持单字符或方向键 / 删除键 / F1–F11 等命名键",
 };
 
 export function HotkeyCheatSheet({

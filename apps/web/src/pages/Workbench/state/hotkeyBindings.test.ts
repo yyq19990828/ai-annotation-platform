@@ -160,6 +160,8 @@ describe("生效绑定解析", () => {
     const matcher = createCommandEventMatcher(ev({ key: "b" }), effective, "image");
     expect(matcher.match("image.tool.box")).toBe(false);
     expect(matcher.match("image.tool.keypoint")).toBe(false);
+    // 冲突仍要被识别并上报：两条覆盖互撞时不能静默丢弃事件。
+    expect(matcher.conflict).toBe(true);
   });
 });
 
@@ -226,6 +228,16 @@ describe("录制规范化", () => {
       "browser",
     );
   });
+
+  it("拒绝无法持久化的命名键，与存量解析保持一致", () => {
+    // 录制若接受 F13 / Dead，写入会被保存却在重新解析时判为非法并回退默认。
+    expect(normalizeRecordedEvent(ev({ key: "F13" })).reason).toBe("unsupported");
+    expect(normalizeRecordedEvent(ev({ key: "Dead" })).reason).toBe("unsupported");
+    expect(normalizeRecordedEvent(ev({ key: "F5" })).binding).toEqual({
+      key: "f5",
+      modifiers: [],
+    });
+  });
 });
 
 describe("存量偏好宽容解析", () => {
@@ -252,6 +264,16 @@ describe("存量偏好宽容解析", () => {
     expect(parsed.opaque).toBe(false);
     expect(parsed.issues.map((i) => i.reason)).toEqual(["unknown-command", "invalid-binding"]);
     expect(parsed.overrides.image["image.tool.box"]).toBeUndefined();
+  });
+
+  it("未知命令的 null 视为已清除，不再报 unknown-command", () => {
+    const parsed = parseStoredShortcutOverrides({
+      schemaVersion: 1,
+      image: { "legacy.command": null, "image.tool.box": null },
+    });
+    expect(parsed.issues).toEqual([]);
+    expect(parsed.overrides.image["legacy.command"]).toBeUndefined();
+    expect(parsed.overrides.image["image.tool.box"]).toBeNull();
   });
 
   it("缺失 / 更新版本 / 非对象子树整体视为 opaque", () => {

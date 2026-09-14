@@ -88,6 +88,16 @@ describe("HotkeyCheatSheet", () => {
     expect(document.querySelectorAll("mark").length).toBeGreaterThan(0);
   });
 
+  it("repeats the shared modifier for alternate fixed keys", async () => {
+    const user = userEvent.setup();
+    mount({ shortcuts: makeShortcuts(), stageKind: "video" });
+    await user.click(screen.getByRole("tab", { name: "选择与编辑" }));
+    // [Ctrl, Delete, Backspace] 应展示为 Ctrl+Delete 或 Ctrl+Backspace，
+    // 而不是把 Ctrl+Backspace 误写成裸 Backspace。
+    const row = document.querySelector('[data-hotkey-command="video.delete.track"]');
+    expect(row?.textContent).toContain("Ctrl+Backspace");
+  });
+
   it("colors each stage chip by workbench stage in the all-types view", async () => {
     const user = userEvent.setup();
     mount({ shortcuts: makeShortcuts() });

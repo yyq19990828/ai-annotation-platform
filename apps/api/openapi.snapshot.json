@@ -39429,6 +39429,7 @@
             "type": "object"
           },
           "schemaVersion": {
+            "const": 1,
             "default": 1,
             "title": "Schemaversion",
             "type": "integer"

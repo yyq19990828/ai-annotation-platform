@@ -1,5 +1,11 @@
 from typing import Annotated, Any, Literal
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 from uuid import UUID
 from datetime import datetime
 
@@ -48,47 +54,51 @@ class ShortcutBinding(BaseModel):
         return sorted(seen)
 
 
-# 可编辑命令的稳定 ID；与前端 state/hotkeyBindings.ts 的注册表一一对应。
-# 本增量之外的新命令需先在前端注册再在此处放行（写路径严格校验命令 ID）。
-_SHORTCUT_COMMAND_IDS = frozenset(
-    {
-        "common.task.next",
-        "common.task.prev",
-        "image.tool.select",
-        "image.tool.box",
-        "image.tool.rotatedBox",
-        "image.tool.polygon",
-        "image.tool.polyline",
-        "image.tool.keypoint",
-        "image.tool.mask",
-        "image.tool.aiCycle",
-        "image.tool.magicBox",
-        "image.selection.lock",
-        "image.selection.hide",
-        "video.tool.select",
-        "video.tool.box",
-        "video.tool.rotatedBox",
-        "video.tool.keypoint",
-        "video.tool.track",
-        "video.tool.mask",
-        "video.tool.smartPoint",
-        "video.tool.smartBox",
-        "video.tool.exemplar",
-        "video.tool.magicBox",
-        "video.tool.polygon",
-        "video.track.locked",
-        "video.track.hidden",
-        "video.track.outside",
-        "video.track.occluded",
-        "video.track.bookmark",
-        "video.frame.next",
-        "video.frame.prev",
-        "video.frame.micro.next",
-        "video.frame.micro.prev",
-        "video.track.keyframe.next",
-        "video.track.keyframe.prev",
-    }
-)
+# 可编辑命令的稳定 ID 及其所属域；与前端 state/hotkeyBindings.ts 的注册表一一对应。
+# 本增量之外的新命令需先在前端注册再在此处放行（写路径按「域 + 命令 ID」严格校验）。
+_SHORTCUT_COMMAND_DOMAINS: dict[str, str] = {
+    "common.task.next": "common",
+    "common.task.prev": "common",
+    "image.tool.select": "image",
+    "image.tool.box": "image",
+    "image.tool.rotatedBox": "image",
+    "image.tool.polygon": "image",
+    "image.tool.polyline": "image",
+    "image.tool.keypoint": "image",
+    "image.tool.mask": "image",
+    "image.tool.aiCycle": "image",
+    "image.tool.magicBox": "image",
+    "image.selection.lock": "image",
+    "image.selection.hide": "image",
+    "video.tool.select": "video",
+    "video.tool.box": "video",
+    "video.tool.rotatedBox": "video",
+    "video.tool.keypoint": "video",
+    "video.tool.track": "video",
+    "video.tool.mask": "video",
+    "video.tool.smartPoint": "video",
+    "video.tool.smartBox": "video",
+    "video.tool.exemplar": "video",
+    "video.tool.magicBox": "video",
+    "video.tool.polygon": "video",
+    "video.track.locked": "video",
+    "video.track.hidden": "video",
+    "video.track.outside": "video",
+    "video.track.occluded": "video",
+    "video.track.bookmark": "video",
+    "video.frame.next": "video",
+    "video.frame.prev": "video",
+    "video.frame.micro.next": "video",
+    "video.frame.micro.prev": "video",
+    "video.track.keyframe.next": "video",
+    "video.track.keyframe.prev": "video",
+}
+
+
+def shortcut_command_domain(command_id: str) -> str | None:
+    """返回命令所属的覆盖域（common / image / video）；未注册命令返回 None。"""
+    return _SHORTCUT_COMMAND_DOMAINS.get(command_id)
+
 
 _ShortcutOverrideBucket = dict[str, list[ShortcutBinding] | None]
 
@@ -103,20 +113,32 @@ class WorkbenchShortcutPreferences(BaseModel):
 
     model_config = {"extra": "forbid"}
 
-    schemaVersion: int = 1
+    # 只接受当前受支持的 schema 版本；更高版本由客户端保留为 opaque 子树，
+    # 写路径不能用一个「看起来合法」的版本来静默停用全部覆盖。
+    schemaVersion: Literal[1] = 1
     common: _ShortcutOverrideBucket = Field(default_factory=dict)
     image: _ShortcutOverrideBucket = Field(default_factory=dict)
     video: _ShortcutOverrideBucket = Field(default_factory=dict)
 
     @field_validator("common", "image", "video")
     @classmethod
-    def _validate_bucket(cls, v: _ShortcutOverrideBucket) -> _ShortcutOverrideBucket:
+    def _validate_bucket(
+        cls, v: _ShortcutOverrideBucket, info: ValidationInfo
+    ) -> _ShortcutOverrideBucket:
+        domain = info.field_name
         for command_id, value in v.items():
             if value is None:
                 # 显式恢复默认（重置）对未知 ID 也放行：客户端据此清除损坏存量条目。
                 continue
-            if command_id not in _SHORTCUT_COMMAND_IDS:
+            expected = shortcut_command_domain(command_id)
+            if expected is None:
                 raise ValueError(f"unknown shortcut command id: {command_id}")
+            if expected != domain:
+                # 命令 ID 必须落在自己的域桶；否则写入会通过校验却被生效表忽略。
+                raise ValueError(
+                    f"shortcut command {command_id} does not belong to the "
+                    f"{domain} bucket"
+                )
             if len(value) > 2:
                 raise ValueError(
                     f"shortcut command {command_id} allows at most 2 bindings"

@@ -878,6 +878,9 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         }
 
         case "setTool": {
+          // 工具命令可被改绑到 F1/F5/Home/PageDown 等带浏览器默认行为的键，
+          // 命中后必须吞掉事件，避免同时切工具又刷新 / 滚动页面。
+          e.preventDefault();
           if (action.tool === "mask" && maskToolDisabledReason) {
             pushToast({ msg: maskToolDisabledReason, kind: "warning" });
             return;
@@ -938,6 +941,8 @@ export function useWorkbenchHotkeys(args: UseWorkbenchHotkeysArgs): UseWorkbench
         }
 
         case "setVideoTool":
+          // 同 setTool：改绑到 F1/F5/Home 等键时不要让浏览器默认行为同时生效。
+          e.preventDefault();
           if (aiInteractiveEnabled === false && AI_TOOL_HOTKEY_IDS.has(action.tool)) {
             return;
           }

@@ -879,6 +879,36 @@ const BROWSER_RESERVED: ReadonlySet<string> = new Set([
 /** 物理键位例外：产出字符随布局漂移，保持 Fixed，不开放改绑。 */
 const PHYSICAL_EXCEPTION_KEYS = new Set(["`", "~", "tab", "enter", "escape"]);
 
+/**
+ * 可持久化的多字符命名键。必须与存量解析 (isValidBindingValue) 和后端
+ * ShortcutBinding 契约一致：录制只接受单字符或这里的命名键，否则能确认保存
+ * 却在重新加载时被判非法（如 F13 / Dead）。
+ */
+const NAMED_KEYS = new Set([
+  "arrowup",
+  "arrowdown",
+  "arrowleft",
+  "arrowright",
+  "home",
+  "end",
+  "pageup",
+  "pagedown",
+  "delete",
+  "backspace",
+  "insert",
+  "f1",
+  "f2",
+  "f3",
+  "f4",
+  "f5",
+  "f6",
+  "f7",
+  "f8",
+  "f9",
+  "f10",
+  "f11",
+]);
+
 export interface BindingToken {
   key: string;
   modifiers: ShortcutModifier[];
@@ -891,7 +921,7 @@ export function bindingToken(b: BindingToken): string {
 
 interface NormalizedEvent {
   binding: ShortcutBinding | null;
-  reason?: "ime" | "modifier-only" | "browser" | "physical" | "altgr";
+  reason?: "ime" | "modifier-only" | "browser" | "physical" | "altgr" | "unsupported";
 }
 
 /** 把 keydown 事件规范化为候选绑定；不满足契约时给出原因。 */
@@ -906,8 +936,11 @@ export function normalizeRecordedEvent(e: KeyboardEvent): NormalizedEvent {
   if (MODIFIER_ONLY_KEYS.has(key)) return { binding: null, reason: "modifier-only" };
   if (key === "altgraph") return { binding: null, reason: "altgr" };
   const binding: ShortcutBinding = { key, modifiers: modifiers.sort() };
+  // 保留 / 物理例外的判定优先，再拒绝无法持久化的命名键（多字符键必须可解析，
+  // 否则录制与存量解析会给出不同结论，如 F13 / Dead）。
   if (BROWSER_RESERVED.has(bindingToken(binding))) return { binding, reason: "browser" };
   if (PHYSICAL_EXCEPTION_KEYS.has(key)) return { binding, reason: "physical" };
+  if (key.length > 1 && !NAMED_KEYS.has(key)) return { binding: null, reason: "unsupported" };
   return { binding };
 }
 
@@ -1119,12 +1152,16 @@ export function createCommandEventMatcher(
   stage: HotkeyStage,
 ): CommandEventMatcher {
   const claimed = new Set<string>();
+  // 存量冲突命令仍计入 claimed 以便识别重叠并提示，但绝不进入 executable。
+  const executable = new Set<string>();
   let conflict = false;
   for (const state of effective.values()) {
-    if (state.disabled || state.conflictsWith.length > 0) continue;
+    if (state.disabled) continue;
     const domain = commandDomain(state.id);
     if (domain !== "common" && domain !== stage) continue;
-    if (state.bindings.some((b) => eventMatchesBinding(e, b))) claimed.add(state.id);
+    if (!state.bindings.some((b) => eventMatchesBinding(e, b))) continue;
+    claimed.add(state.id);
+    if (state.conflictsWith.length === 0) executable.add(state.id);
   }
   if (claimed.size > 1) {
     const ids = [...claimed];
@@ -1143,37 +1180,12 @@ export function createCommandEventMatcher(
     }
   }
   return {
-    match: (id) => !conflict && claimed.has(id),
+    match: (id) => !conflict && executable.has(id),
     conflict,
   };
 }
 
 // ── 存量偏好解析（严格写 + 宽容读）──────────────────────────────────────────
-
-const NAMED_KEYS = new Set([
-  "arrowup",
-  "arrowdown",
-  "arrowleft",
-  "arrowright",
-  "home",
-  "end",
-  "pageup",
-  "pagedown",
-  "delete",
-  "backspace",
-  "insert",
-  "f1",
-  "f2",
-  "f3",
-  "f4",
-  "f5",
-  "f6",
-  "f7",
-  "f8",
-  "f9",
-  "f10",
-  "f11",
-]);
 
 function isValidBindingValue(value: unknown): value is ShortcutBinding[] {
   if (!Array.isArray(value) || value.length > 2) return false;
@@ -1217,12 +1229,14 @@ export function parseStoredShortcutOverrides(raw: unknown): {
       continue;
     }
     for (const [commandId, value] of Object.entries(bucket as Record<string, unknown>)) {
-      if (!EDITABLE_COMMAND_IDS.has(commandId)) {
-        issues.push({ domain, commandId, reason: "unknown-command" });
+      if (value === null) {
+        // 显式重置：已知命令恢复默认；未知 / 历史条目视为已清除，不再报
+        // unknown-command（服务端合并后也会移除这类键）。
+        if (EDITABLE_COMMAND_IDS.has(commandId)) result[domain][commandId] = null;
         continue;
       }
-      if (value === null) {
-        result[domain][commandId] = null; // 显式恢复默认
+      if (!EDITABLE_COMMAND_IDS.has(commandId)) {
+        issues.push({ domain, commandId, reason: "unknown-command" });
         continue;
       }
       if (!isValidBindingValue(value)) {
