@@ -66,7 +66,14 @@ export function DataManagerFrame({
                   onClick={() => onSectionChange(item.key)}
                 >
                   <span className="block text-sm font-medium">{item.label}</span>
-                  <span className="mt-0.5 block text-2xs text-muted-foreground">{item.hint}</span>
+                  <span
+                    className={cn(
+                      "mt-0.5 block text-2xs",
+                      active ? "text-foreground" : "text-muted-foreground",
+                    )}
+                  >
+                    {item.hint}
+                  </span>
                 </button>
               );
             })}

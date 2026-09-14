@@ -497,9 +497,13 @@ describe("ProjectDataManagerPage filter hydration", () => {
     const checkbox = await screen.findByRole("checkbox", { name: "选择任务 T-gallery" });
     expect(screen.getByLabelText("任务画廊").parentElement).toHaveClass("max-sm:min-h-[280px]");
     fireEvent.click(checkbox.parentElement!);
+    fireEvent.keyDown(checkbox, { key: " " });
+    fireEvent.keyDown(checkbox, { key: "Enter" });
     expect(screen.queryByRole("heading", { name: "T-gallery" })).not.toBeInTheDocument();
     expect(screen.getByRole("img", { name: "点云数据" })).toHaveTextContent("点云");
     fireEvent.click(screen.getByRole("button", { name: "列表视图" }));
+    fireEvent.keyDown(screen.getByRole("checkbox", { name: "选择任务 T-gallery" }), { key: " " });
+    expect(screen.queryByRole("heading", { name: "T-gallery" })).not.toBeInTheDocument();
     expect(screen.getByRole("img", { name: "点云数据" })).toHaveTextContent("点云");
   });
 

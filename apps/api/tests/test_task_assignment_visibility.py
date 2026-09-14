@@ -348,6 +348,7 @@ async def test_removed_member_cannot_reuse_assigned_task_url_or_write(
         task_ids=[task.id],
         annotator_id=member.id,
     )
+    await db_session.refresh(task)
     member_headers = _bearer(member_token)
     assert (
         await httpx_client_bound.get(f"/api/v1/tasks/{task.id}", headers=member_headers)

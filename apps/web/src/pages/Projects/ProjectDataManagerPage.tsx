@@ -1527,6 +1527,7 @@ function TaskDataManagerPage({
               <div className="min-h-0 flex-1 overflow-auto rounded-md border border-border bg-card shadow-sm max-sm:min-h-[280px]">
                 {layout === "gallery" ? (
                   <div
+                    role="region"
                     aria-label="任务画廊"
                     className="grid gap-3 p-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
                   >
@@ -1553,13 +1554,13 @@ function TaskDataManagerPage({
                         <article
                           key={task.id}
                           tabIndex={0}
-                          aria-selected={taskSelected}
                           className={cn(
-                            "group cursor-pointer overflow-hidden rounded-md border border-border bg-card transition-colors hover:border-ring hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                            taskSelected && "border-primary bg-muted",
+                            "group cursor-pointer overflow-hidden rounded-md border border-border bg-card transition-colors hover:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            taskSelected && "border-primary",
                           )}
                           onClick={() => setSelectedTask(task)}
                           onKeyDown={(event) => {
+                            if (event.target !== event.currentTarget) return;
                             if (event.key === "Enter" || event.key === " ") {
                               event.preventDefault();
                               setSelectedTask(task);
@@ -1605,7 +1606,7 @@ function TaskDataManagerPage({
                                   ? "success"
                                   : task.status === "review"
                                     ? "warning"
-                                    : "default"
+                                    : "outline"
                               }
                             >
                               {statusLabel(task.status)}
@@ -1625,7 +1626,7 @@ function TaskDataManagerPage({
                     })}
                   </div>
                 ) : (
-                  <table className="w-full min-w-[1040px] table-fixed border-collapse [&_td]:overflow-hidden [&_td]:border-b [&_td]:border-border [&_td]:px-3 [&_td]:py-2.5 [&_td]:text-left [&_td]:align-middle [&_td]:text-ellipsis [&_td]:whitespace-nowrap [&_th]:overflow-hidden [&_th]:border-b [&_th]:border-border [&_th]:bg-muted [&_th]:px-3 [&_th]:py-2.5 [&_th]:text-left [&_th]:align-middle [&_th]:text-xs [&_th]:font-semibold [&_th]:text-ellipsis [&_th]:whitespace-nowrap [&_th]:text-muted-foreground [&_th:first-child]:w-[58px] [&_td:first-child]:w-[58px] [&_tbody_tr:hover]:bg-muted [&_tr:last-child_td]:border-b-0">
+                  <table className="w-full min-w-[1040px] table-fixed border-collapse [&_td]:overflow-hidden [&_td]:border-b [&_td]:border-border [&_td]:px-3 [&_td]:py-2.5 [&_td]:text-left [&_td]:align-middle [&_td]:text-ellipsis [&_td]:whitespace-nowrap [&_th]:overflow-hidden [&_th]:border-b [&_th]:border-border [&_th]:bg-muted [&_th]:px-3 [&_th]:py-2.5 [&_th]:text-left [&_th]:align-middle [&_th]:text-xs [&_th]:font-semibold [&_th]:text-ellipsis [&_th]:whitespace-nowrap [&_th]:text-foreground [&_th:first-child]:w-[58px] [&_td:first-child]:w-[58px] [&_tbody_tr:hover]:bg-muted [&_tr:last-child_td]:border-b-0">
                     <thead className="sticky top-0 z-base">
                       <tr>
                         <th>
@@ -1667,6 +1668,7 @@ function TaskDataManagerPage({
                             )}
                             onClick={() => setSelectedTask(task)}
                             onKeyDown={(event) => {
+                              if (event.target !== event.currentTarget) return;
                               if (event.key === "Enter" || event.key === " ") {
                                 event.preventDefault();
                                 setSelectedTask(task);
@@ -1900,7 +1902,7 @@ function TaskPreview({
         role="img"
         aria-label="点云数据"
         className={cn(
-          "flex items-center justify-center rounded-md bg-muted text-2xs text-muted-foreground",
+          "flex items-center justify-center rounded-md bg-muted text-2xs text-foreground",
           width === 44 ? "h-9 w-11" : "h-32 w-40",
         )}
       >
@@ -1933,7 +1935,7 @@ function renderCell(task: DataManagerTask, column: string) {
               ? "success"
               : task.status === "review"
                 ? "warning"
-                : "default"
+                : "outline"
           }
         >
           {statusLabel(task.status)}

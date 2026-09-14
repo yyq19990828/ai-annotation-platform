@@ -142,6 +142,7 @@ async def test_removed_project_member_cannot_read_or_list_export_result(
     await db_session.commit()
 
     member_headers = _bearer(member_token)
+    await db_session.refresh(job)
     visible = await httpx_client_bound.get(
         f"/api/v1/async-jobs/{job.id}", headers=member_headers
     )
