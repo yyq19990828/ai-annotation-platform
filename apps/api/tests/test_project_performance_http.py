@@ -762,3 +762,260 @@ async def test_members_http_volume_uses_bounded_grouped_queries(
     assert {item["id"] for item in first_body["items"]}.isdisjoint(
         {item["id"] for item in second_page.json()["items"]}
     )
+
+
+@pytest.mark.asyncio
+async def test_member_performance_work_type_filters_actor_actions(
+    httpx_client, db_session, project_admin, annotator, reviewer
+):
+    owner, token = project_admin
+    worker, _ = annotator
+    checker, _ = reviewer
+    project = _project(owner.id)
+    db_session.add(project)
+    await db_session.flush()
+    await _member(db_session, project.id, worker, "annotator", owner.id)
+    await _member(db_session, project.id, checker, "reviewer", owner.id)
+
+    annotation_task = _task(project.id, status="completed", assignee_id=worker.id)
+    review_task = _task(project.id, status="rejected", assignee_id=checker.id)
+    db_session.add_all([annotation_task, review_task])
+    await db_session.flush()
+    start = datetime(2026, 9, 10, tzinfo=timezone.utc)
+    annotation_round = uuid.uuid4()
+    review_round = uuid.uuid4()
+    db_session.add_all(
+        [
+            _audit(
+                project_id=project.id,
+                task_id=annotation_task.id,
+                actor_id=worker.id,
+                action="task.submit",
+                at=start + timedelta(hours=1),
+                round_id=annotation_round,
+                contributors=[worker.id],
+            ),
+            _audit(
+                project_id=project.id,
+                task_id=annotation_task.id,
+                actor_id=checker.id,
+                action="task.approve",
+                at=start + timedelta(hours=2),
+                round_id=annotation_round,
+                contributors=[worker.id],
+                result="approved",
+            ),
+            _audit(
+                project_id=project.id,
+                task_id=review_task.id,
+                actor_id=worker.id,
+                action="task.submit",
+                at=start + timedelta(hours=3),
+                round_id=review_round,
+                contributors=[worker.id],
+            ),
+            _audit(
+                project_id=project.id,
+                task_id=review_task.id,
+                actor_id=worker.id,
+                action="task.reject",
+                at=start + timedelta(hours=4),
+                round_id=review_round,
+                contributors=[checker.id],
+                reason_type="wrong_label",
+                result="rejected",
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    params = {
+        "from": start.isoformat(),
+        "to": (start + timedelta(days=1)).isoformat(),
+        "timezone": "UTC",
+        "account_status": "all",
+        "include_historical": "false",
+    }
+    annotation_detail = await httpx_client.get(
+        f"/api/v1/projects/{project.id}/performance/members/{worker.id}",
+        params={**params, "work_type": "annotation"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert annotation_detail.status_code == 200, annotation_detail.text
+    annotation_body = annotation_detail.json()
+    annotation_metrics = annotation_body["member"]["metrics"]
+    assert annotation_metrics["review_decisions"]["value"] == 0
+    assert annotation_metrics["rejections"]["value"] == 0
+    assert all(
+        not (
+            event["task_id"] == str(review_task.id)
+            and event["action"] in {"task.approve", "task.reject"}
+        )
+        for event in annotation_body["evidence"]
+    )
+
+    review_detail = await httpx_client.get(
+        f"/api/v1/projects/{project.id}/performance/members/{worker.id}",
+        params={**params, "work_type": "review"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert review_detail.status_code == 200, review_detail.text
+    review_body = review_detail.json()
+    review_metrics = review_body["member"]["metrics"]
+    assert review_metrics["submitted_tasks"]["value"] == 0
+    assert review_metrics["review_decisions"]["value"] == 1
+    assert {event["action"] for event in review_body["evidence"]} == {"task.reject"}
+
+
+@pytest.mark.asyncio
+async def test_member_performance_skips_are_not_submissions(
+    httpx_client, db_session, project_admin, annotator
+):
+    owner, token = project_admin
+    worker, _ = annotator
+    project = _project(owner.id)
+    db_session.add(project)
+    await db_session.flush()
+    await _member(db_session, project.id, worker, "annotator", owner.id)
+    task = _task(project.id, status="review", assignee_id=worker.id)
+    db_session.add(task)
+    await db_session.flush()
+    start = datetime(2026, 9, 10, tzinfo=timezone.utc)
+    db_session.add(
+        _audit(
+            project_id=project.id,
+            task_id=task.id,
+            actor_id=worker.id,
+            action="task.skip",
+            at=start + timedelta(hours=1),
+            round_id=uuid.uuid4(),
+            contributors=[worker.id],
+            result="skipped",
+        )
+    )
+    await db_session.commit()
+
+    response = await httpx_client.get(
+        f"/api/v1/projects/{project.id}/performance/members",
+        params={
+            "from": start.isoformat(),
+            "to": (start + timedelta(days=1)).isoformat(),
+            "timezone": "UTC",
+            "work_type": "annotation",
+            "account_status": "all",
+            "include_historical": "false",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    metrics = next(
+        item["metrics"] for item in body["items"] if item["user_id"] == str(worker.id)
+    )
+    assert metrics["submitted_tasks"]["value"] == 0
+    assert metrics["resubmissions"]["value"] == 0
+    assert body["project_totals"]["submitted_tasks"]["value"] == 0
+
+
+@pytest.mark.asyncio
+async def test_legacy_video_submission_gap_is_partial_not_fabricated(
+    httpx_client, db_session, project_admin, annotator
+):
+    owner, token = project_admin
+    worker, _ = annotator
+    project = _project(owner.id)
+    project.data_type = "video"
+    db_session.add(project)
+    await db_session.flush()
+    await _member(db_session, project.id, worker, "annotator", owner.id)
+    start = datetime(2026, 9, 10, tzinfo=timezone.utc)
+    task = _task(project.id, status="review", assignee_id=worker.id)
+    task.file_type = "video"
+    task.submitted_at = start + timedelta(hours=1)
+    db_session.add(task)
+    await db_session.commit()
+
+    response = await httpx_client.get(
+        f"/api/v1/projects/{project.id}/performance/members",
+        params={
+            "from": start.isoformat(),
+            "to": (start + timedelta(days=1)).isoformat(),
+            "timezone": "UTC",
+            "work_type": "annotation",
+            "account_status": "all",
+            "include_historical": "false",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    worker_metrics = next(
+        item["metrics"] for item in body["items"] if item["user_id"] == str(worker.id)
+    )
+    assert worker_metrics["submitted_tasks"] == {
+        "value": 0,
+        "unit": "tasks",
+        "numerator": 0,
+        "denominator": None,
+        "coverage": "partial",
+    }
+    assert body["coverage"]["state"] == "partial"
+
+
+@pytest.mark.asyncio
+async def test_historical_contributor_detail_reuses_snapshot_roster(
+    httpx_client, db_session, project_admin, annotator, reviewer
+):
+    owner, token = project_admin
+    historical, _ = annotator
+    submitter, _ = reviewer
+    project = _project(owner.id)
+    db_session.add(project)
+    await db_session.flush()
+    task = _task(project.id, status="review")
+    db_session.add(task)
+    await db_session.flush()
+    start = datetime(2026, 9, 10, tzinfo=timezone.utc)
+    db_session.add(
+        _audit(
+            project_id=project.id,
+            task_id=task.id,
+            actor_id=submitter.id,
+            action="task.submit",
+            at=start + timedelta(hours=1),
+            round_id=uuid.uuid4(),
+            contributors=[historical.id],
+        )
+    )
+    await db_session.commit()
+
+    params = {
+        "from": start.isoformat(),
+        "to": (start + timedelta(days=1)).isoformat(),
+        "timezone": "UTC",
+        "work_type": "annotation",
+        "account_status": "all",
+        "include_historical": "true",
+    }
+    listing = await httpx_client.get(
+        f"/api/v1/projects/{project.id}/performance/members",
+        params=params,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert listing.status_code == 200, listing.text
+    listed = next(
+        item
+        for item in listing.json()["items"]
+        if item["user_id"] == str(historical.id)
+    )
+    assert listed["is_current_member"] is False
+
+    detail = await httpx_client.get(
+        f"/api/v1/projects/{project.id}/performance/members/{historical.id}",
+        params=params,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert detail.status_code == 200, detail.text
+    detail_body = detail.json()
+    assert detail_body["member"]["user_id"] == str(historical.id)
+    assert detail_body["member"]["is_current_member"] is False
