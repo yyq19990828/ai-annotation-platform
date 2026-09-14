@@ -8,6 +8,8 @@
 from __future__ import annotations
 
 import uuid
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 from sqlalchemy import select, func
@@ -20,12 +22,94 @@ from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.db.models.annotation import Annotation
 from app.db.models.prediction import Prediction
+from app.db.models.async_job import AsyncJob
 from app.services.batch import BatchService
 from tests.conftest import create_registry_with_pool
 
 
 def _bearer(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.mark.asyncio
+async def test_explicit_preannotation_retries_reuse_job_and_reject_changed_scope(
+    httpx_client_bound, super_admin, db_session, monkeypatch
+):
+    from app.workers.tasks import batch_predict
+
+    owner, token = super_admin
+    project, backend, _batch, tasks = await _seed(db_session, owner.id)
+    dispatch = Mock(
+        side_effect=lambda **kwargs: SimpleNamespace(
+            id=kwargs.get("task_id", str(uuid.uuid4()))
+        )
+    )
+    monkeypatch.setattr(batch_predict, "apply_async", dispatch)
+    headers = {**_bearer(token), "Idempotency-Key": f"predict-{uuid.uuid4()}"}
+    body = {"ml_backend_id": str(backend.id), "task_ids": [str(tasks[0].id)]}
+    endpoint = f"/api/v1/projects/{project.id}/preannotate"
+    first = await httpx_client_bound.post(endpoint, headers=headers, json=body)
+    assert first.status_code == 200, first.text
+    job_id = uuid.UUID(first.json()["job_id"])
+    job = await db_session.get(AsyncJob, job_id)
+    assert job.payload["scope"] == {"task_ids": [str(tasks[0].id)]}
+    assert dispatch.call_args.kwargs["args"][2] == [str(tasks[0].id)]
+    assert dispatch.call_args.kwargs["kwargs"]["async_job_id"] == str(job_id)
+    assert dispatch.call_args.kwargs["task_id"] == str(job_id)
+    retried = await httpx_client_bound.post(endpoint, headers=headers, json=body)
+    assert retried.json()["job_id"] == str(job_id)
+    assert dispatch.call_count == 2
+    job.status = "running"
+    await db_session.commit()
+    running = await httpx_client_bound.post(endpoint, headers=headers, json=body)
+    assert running.json()["job_id"] == str(job_id)
+    assert dispatch.call_count == 2
+    conflict = await httpx_client_bound.post(
+        endpoint, headers=headers, json={**body, "task_ids": [str(tasks[1].id)]}
+    )
+    assert conflict.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_explicit_preannotation_rechecks_task_and_batch_scope_before_dispatch(
+    httpx_client_bound, super_admin, db_session, monkeypatch
+):
+    from app.workers.tasks import batch_predict
+
+    owner, token = super_admin
+    project, backend, batch, tasks = await _seed(db_session, owner.id)
+    foreign_project, _other_backend, _other_batch, foreign_tasks = await _seed(
+        db_session, owner.id
+    )
+    assert foreign_project.id != project.id
+    dispatch = Mock()
+    monkeypatch.setattr(batch_predict, "apply_async", dispatch)
+    endpoint = f"/api/v1/projects/{project.id}/preannotate"
+    body = {"ml_backend_id": str(backend.id), "task_ids": [str(tasks[0].id)]}
+    foreign = await httpx_client_bound.post(
+        endpoint,
+        headers=_bearer(token),
+        json={**body, "task_ids": [str(foreign_tasks[0].id)]},
+    )
+    assert foreign.status_code == 422
+    for ids in ([], [str(uuid.uuid4()) for _ in range(201)]):
+        invalid_selection = await httpx_client_bound.post(
+            endpoint, headers=_bearer(token), json={**body, "task_ids": ids}
+        )
+        assert invalid_selection.status_code == 422, invalid_selection.text
+    for state in ["review", "completed"]:
+        tasks[0].status = state
+        await db_session.commit()
+        response = await httpx_client_bound.post(
+            endpoint, headers=_bearer(token), json=body
+        )
+        assert response.status_code == 409, response.text
+    tasks[0].status = "pending"
+    batch.admin_locked = True
+    await db_session.commit()
+    locked = await httpx_client_bound.post(endpoint, headers=_bearer(token), json=body)
+    assert locked.status_code == 409, locked.text
+    dispatch.assert_not_called()
 
 
 async def _seed(db: AsyncSession, owner_id: uuid.UUID):

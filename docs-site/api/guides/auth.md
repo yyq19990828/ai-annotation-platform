@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-09-12
+last_reviewed: 2026-09-14
 ---
 
 # 认证
@@ -34,6 +34,12 @@ Content-Type: application/json
 GET /api/v1/auth/me
 Authorization: Bearer <access_token>
 ```
+
+## 工作台时长上报
+
+`POST /api/v1/auth/me/task-events:batch` 接收当前账号的 1–200 条任务区间，包含 `task_id`、`project_id`、`kind=annotate|review`、带时区的起止时间、`duration_ms` 和幂等 `client_id`。新采集器使用 `collector_version=session-v2`；本地队列丢失区间时附带 `collection_coverage=partial`，普通合格区间可省略该字段。
+
+服务端校验账号、任务可见性、项目和时间区间。混合批次返回 `accepted`、`queued_async` 及 `discarded`（原索引、`client_id`、原因）；永久失效的一条记录不阻塞其他有效记录。单事件请求保留错误 HTTP 状态。同一客户端 ID 的冲突内容不会覆盖已有记录；异步 worker 再次校验并去重。时长仅用于项目管理参考，采集与覆盖含义见[项目成员绩效数据](../../dev/concepts/project-performance.md)。
 
 ## 账号偏好与命名布局预设
 

@@ -6,7 +6,12 @@ export interface UrlStateIssue {
   message: string;
 }
 
+export type DataManagerSection = "overview" | "data" | "members";
+export type DataManagerLayout = "list" | "gallery";
+
 export interface DataManagerUrlState {
+  /** The project section. Missing on legacy URLs, which intentionally open Data. */
+  section?: DataManagerSection;
   lens: DataManagerEntityScope;
   view: string | null;
   query: string;
@@ -14,9 +19,13 @@ export interface DataManagerUrlState {
   sort: TaskSortItem[] | null;
   columns: string[] | null;
   selected: string | null;
+  /** Explicit task IDs selected for task operations; never more than 200. */
+  selectedTasks?: string[] | null;
+  layout?: DataManagerLayout;
 }
 
 export const DATA_MANAGER_FILTER_KEYS = [
+  "section",
   "lens",
   "view",
   "q",
@@ -24,6 +33,8 @@ export const DATA_MANAGER_FILTER_KEYS = [
   "sort",
   "columns",
   "selected",
+  "selected_tasks",
+  "layout",
 ] as const;
 
 interface VersionedValue<T> {
@@ -69,12 +80,20 @@ export function parseDataManagerUrlWithIssues(search: string | URLSearchParams):
     typeof search === "string" ? new URLSearchParams(search) : new URLSearchParams(search);
   const issues: UrlStateIssue[] = [];
   const rawLens = params.get("lens");
+  const rawSection = params.get("section");
+  const section: DataManagerSection =
+    rawSection === "overview" || rawSection === "members" || rawSection === "data"
+      ? rawSection
+      : "data";
+  if (rawSection && rawSection !== section)
+    issues.push({ key: "section", message: "未知的项目区域" });
   const lens: DataManagerEntityScope =
     rawLens === "objects" || rawLens === "tracks" || rawLens === "tasks" ? rawLens : "tasks";
   if (rawLens && rawLens !== lens) issues.push({ key: "lens", message: "未知的数据视图" });
   const rawFilter = decode<unknown>(params, "filter", issues);
   const rawSort = decode<unknown>(params, "sort", issues);
   const rawColumns = decode<unknown>(params, "columns", issues);
+  const rawSelectedTasks = decode<unknown>(params, "selected_tasks", issues);
   const filter =
     rawFilter && typeof rawFilter === "object" && !Array.isArray(rawFilter)
       ? (rawFilter as Record<string, unknown>)
@@ -93,23 +112,46 @@ export function parseDataManagerUrlWithIssues(search: string | URLSearchParams):
       : Array.isArray(rawColumns) && rawColumns.every((item) => typeof item === "string")
         ? rawColumns
         : (issues.push({ key: "columns", message: "列配置格式无效" }), null);
+  const selectedTasks =
+    rawSelectedTasks === null
+      ? null
+      : Array.isArray(rawSelectedTasks) &&
+          rawSelectedTasks.every((item) => typeof item === "string")
+        ? (rawSelectedTasks.length > 200 &&
+            issues.push({ key: "selected_tasks", message: "任务选择超过 200 个，已截取前 200 个" }),
+          rawSelectedTasks.slice(0, 200))
+        : (issues.push({ key: "selected_tasks", message: "任务选择格式无效" }), null);
+  if (
+    Array.isArray(rawSelectedTasks) &&
+    rawSelectedTasks.some((item) => typeof item !== "string" || !item.trim())
+  ) {
+    issues.push({ key: "selected_tasks", message: "任务选择包含无效任务 ID" });
+  }
+  const rawLayout = params.get("layout");
+  const layout: DataManagerLayout = rawLayout === "gallery" ? "gallery" : "list";
+  const state: DataManagerUrlState = {
+    lens,
+    view: params.get("view"),
+    query: params.get("q")?.trim() ?? "",
+    filter,
+    sort,
+    columns,
+    selected: params.get("selected"),
+  };
+  if (rawSection !== null) state.section = section;
+  if (rawSelectedTasks !== null) state.selectedTasks = selectedTasks;
+  if (rawLayout === "gallery" || rawLayout === "list") state.layout = layout;
   return {
-    state: {
-      lens,
-      view: params.get("view"),
-      query: params.get("q")?.trim() ?? "",
-      filter,
-      sort,
-      columns,
-      selected: params.get("selected"),
-    },
+    state,
     issues,
   };
 }
 
 export function hasFilterUrlOverrides(search: string | URLSearchParams) {
   const params = typeof search === "string" ? new URLSearchParams(search) : search;
-  return ["q", "filter", "sort", "columns"].some((key) => params.has(key));
+  return ["q", "filter", "sort", "columns", "selected_tasks", "layout"].some((key) =>
+    params.has(key),
+  );
 }
 
 export const dataManagerUrlCodec: UrlStateCodec<DataManagerUrlState> = {
@@ -147,6 +189,10 @@ export function updateDataManagerUrl(
   state: DataManagerUrlState,
 ): URLSearchParams {
   const params = new URLSearchParams(typeof current === "string" ? current : current.toString());
+  if (state.section) {
+    if (state.section === "data") params.delete("section");
+    else params.set("section", state.section);
+  }
   params.set("lens", state.lens);
   if (state.view) params.set("view", state.view);
   else params.delete("view");
@@ -157,6 +203,13 @@ export function updateDataManagerUrl(
   encode(params, "columns", state.columns);
   if (state.selected) params.set("selected", state.selected);
   else params.delete("selected");
+  if (state.selectedTasks !== undefined) {
+    encode(params, "selected_tasks", state.selectedTasks?.length ? state.selectedTasks : null);
+  }
+  if (state.layout) {
+    if (state.layout === "list") params.delete("layout");
+    else params.set("layout", state.layout);
+  }
   return params;
 }
 

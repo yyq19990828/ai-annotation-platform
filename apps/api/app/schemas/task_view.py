@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.schemas.data_manager import DataManagerEntityScope
 from app.schemas.task import TaskOut
+from app.schemas.user import UserBrief
 
 
 TaskViewVisibility = Literal["private", "project"]
@@ -100,6 +101,8 @@ class ProjectTaskQueryRequest(BaseModel):
 
 
 class DataManagerTaskOut(TaskOut):
+    effective_assignee: UserBrief | None = None
+    effective_reviewer: UserBrief | None = None
     annotation_count: int = 0
     prediction_count: int = 0
     avg_prediction_confidence: float | None = None

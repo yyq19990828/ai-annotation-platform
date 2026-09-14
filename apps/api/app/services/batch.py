@@ -311,13 +311,19 @@ class BatchService:
         batch_id: uuid.UUID,
         user_id: uuid.UUID | None,
     ) -> None:
-        """v0.7.2：batch 改 annotator → 该 batch 下所有 task.assignee_id 跟随。
-        v0.8.4：同步写 assigned_at = now()（user_id 非空时）/ 清空（user_id 为空时）。
-        """
-        values: dict[str, Any] = {"assignee_id": user_id}
+        """Update inherited assignments without overwriting selected tasks."""
+        values: dict[str, Any] = {
+            "assignee_id": user_id,
+            "assignee_is_override": False,
+        }
         values["assigned_at"] = func.now() if user_id is not None else None
         await self.db.execute(
-            update(Task).where(Task.batch_id == batch_id).values(**values)
+            update(Task)
+            .where(
+                Task.batch_id == batch_id,
+                or_(Task.assignee_is_override.is_(False), Task.assignee_id.is_(None)),
+            )
+            .values(**values)
         )
 
     async def _cascade_task_reviewer(
@@ -325,9 +331,14 @@ class BatchService:
         batch_id: uuid.UUID,
         user_id: uuid.UUID | None,
     ) -> None:
-        """v0.7.2：batch 改 reviewer → 该 batch 下所有 task.reviewer_id 跟随。"""
+        """Update inherited reviewers without overwriting selected tasks."""
         await self.db.execute(
-            update(Task).where(Task.batch_id == batch_id).values(reviewer_id=user_id)
+            update(Task)
+            .where(
+                Task.batch_id == batch_id,
+                or_(Task.reviewer_is_override.is_(False), Task.reviewer_id.is_(None)),
+            )
+            .values(reviewer_id=user_id, reviewer_is_override=False)
         )
 
     async def transition(

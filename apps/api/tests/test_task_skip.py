@@ -68,6 +68,7 @@ async def test_skip_task_success_transitions_to_review(
     assert task.skip_reason == "image_corrupt"
     assert task.skipped_at is not None
     assert task.assignee_id == user.id
+    assert task.first_review_contributor_ids == [str(user.id)]
 
 
 @pytest.mark.asyncio

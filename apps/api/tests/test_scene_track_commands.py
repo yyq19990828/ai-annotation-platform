@@ -8,6 +8,7 @@ import uuid
 from sqlalchemy import select
 
 from app.db.models.annotation import Annotation
+from app.db.models.project_member import ProjectMember
 from app.db.models.scene_track import (
     SceneTrack,
     SceneTrackInterval,
@@ -362,6 +363,14 @@ async def test_scene_track_reads_do_not_cross_hidden_scene_tasks(
     )
     assert execute.status_code == 200, execute.text
 
+    db_session.add(
+        ProjectMember(
+            project_id=project.id,
+            user_id=annotator_user.id,
+            role="annotator",
+            assigned_by=owner.id,
+        )
+    )
     own_batch = TaskBatch(
         project_id=project.id,
         display_id="B-TRACK-OWN",

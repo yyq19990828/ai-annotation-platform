@@ -52,7 +52,7 @@ from app.services.data_management.task_metrics import (  # noqa: F401
     pending_tracker_jobs_expr,
 )
 from app.services.project_kind import project_kind
-from app.services.scheduler import batch_visibility_clause, is_privileged_for_project
+from app.services.scheduler import is_privileged_for_project, task_visibility_clause
 
 _STRING_OPS = {"eq", "ne", "in"}
 
@@ -68,8 +68,21 @@ _EXISTS_OPS = {"exists", "eq", "in"}
 
 _TASK_FIELD_MAP = {
     "task.status": Task.status,
-    "task.assignee": Task.assignee_id,
-    "task.reviewer": Task.reviewer_id,
+    # Filters also run in privileged queries without a TaskBatch join.
+    "task.assignee": func.coalesce(
+        Task.assignee_id,
+        select(TaskBatch.annotator_id)
+        .where(TaskBatch.id == Task.batch_id)
+        .correlate(Task)
+        .scalar_subquery(),
+    ),
+    "task.reviewer": func.coalesce(
+        Task.reviewer_id,
+        select(TaskBatch.reviewer_id)
+        .where(TaskBatch.id == Task.batch_id)
+        .correlate(Task)
+        .scalar_subquery(),
+    ),
     "task.batch_id": Task.batch_id,
     "task.created_at": Task.created_at,
     "task.updated_at": Task.updated_at,
@@ -1064,8 +1077,8 @@ def _unresolved_feedback_count_sq() -> ColumnElement[int]:
 def apply_task_visibility(stmt: Select, user: User, project: Project) -> Select:
     """Apply the canonical project task visibility scope to an arbitrary Task query."""
     if not is_privileged_for_project(user, project):
-        stmt = stmt.join(TaskBatch, Task.batch_id == TaskBatch.id).where(
-            batch_visibility_clause(user)
+        stmt = stmt.outerjoin(TaskBatch, Task.batch_id == TaskBatch.id).where(
+            task_visibility_clause(user)
         )
     return stmt
 

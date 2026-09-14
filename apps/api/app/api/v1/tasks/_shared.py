@@ -1,14 +1,17 @@
 import base64
 import logging
 import uuid
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.enums import UserRole
 from app.db.models.user import User
 from app.db.models.task import Task
+from app.db.models.annotation import Annotation
+from app.db.models.audit_log import AuditLog
 from app.db.models.dataset import DatasetItem
 from app.schemas.task import (
     TaskOut,
@@ -16,6 +19,7 @@ from app.schemas.task import (
 )
 from app.schemas.image_pyramid import ImagePyramidSummary
 from app.services.scheduler import (
+    effective_task_assignee_id,
     is_privileged_for_project,
     visible_batch_statuses_for,
     annotator_can_rework_task,
@@ -35,6 +39,118 @@ _ANNOTATORS = (
 )
 _REVIEWERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.REVIEWER)
 _LOCKED_STATUSES = {"review", "completed"}
+
+
+def _start_review_round(task: Task) -> uuid.UUID:
+    """Create the stable identifier shared by one submit and its review."""
+    task.review_round_id = uuid.uuid4()
+    return task.review_round_id
+
+
+def _ensure_review_round(task: Task) -> uuid.UUID:
+    """Return a round id, assigning one for legacy tasks when needed."""
+    if task.review_round_id is None:
+        task.review_round_id = uuid.uuid4()
+    return task.review_round_id
+
+
+async def _task_contributor_snapshot(
+    db: AsyncSession,
+    task: Task,
+    extra_user_ids: Iterable[uuid.UUID | None] = (),
+) -> list[str]:
+    """Return stable annotator contributors for workflow audit evidence.
+
+    The task assignee is retained even when no annotation remains.  Active
+    annotation authors cover collaborative video/scene tasks and imported
+    histories where the task's mutable assignee is no longer sufficient.
+    """
+    ids = {value for value in extra_user_ids if value is not None}
+    if task.assignee_id is not None:
+        ids.add(task.assignee_id)
+    rows = await db.execute(
+        select(Annotation.user_id)
+        .where(
+            Annotation.task_id == task.id,
+            Annotation.user_id.is_not(None),
+            Annotation.is_active.is_(True),
+            Annotation.was_cancelled.is_(False),
+        )
+        .distinct()
+    )
+    ids.update(value for (value,) in rows if value is not None)
+    return sorted(str(value) for value in ids)
+
+
+def _capture_first_review_contributor_snapshot(
+    task: Task,
+    contributor_ids: Iterable[str],
+) -> None:
+    """Persist the first-round contributors before audit retention can run."""
+
+    if task.first_review_eligible is not True or task.first_reviewed_at is not None:
+        return
+    task.first_review_contributor_ids = sorted(
+        {str(value) for value in contributor_ids if value}
+    )
+
+
+async def _review_round_contributor_snapshot(db: AsyncSession, task: Task) -> list[str]:
+    """Load the contributor snapshot captured by this task's submit audit or row.
+
+    Approval happens in a later request, after annotations or assignment may
+    have changed.  Re-reading those mutable rows would credit the wrong
+    people, so a round without a matching submit snapshot stays unknown.
+    """
+    if task.review_round_id is None:
+        return []
+    row = (
+        await db.execute(
+            select(AuditLog.detail_json)
+            .where(
+                AuditLog.action.in_(("task.submit", "task.skip")),
+                AuditLog.target_id == str(task.id),
+                AuditLog.status_code == 200,
+                AuditLog.detail_json["project_id"].astext == str(task.project_id),
+                AuditLog.detail_json["review_round_id"].astext
+                == str(task.review_round_id),
+            )
+            .order_by(AuditLog.created_at.desc(), AuditLog.id.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    values = row.get("contributor_ids") if isinstance(row, dict) else None
+    if not isinstance(values, list):
+        # The submit audit is intentionally retained as an audit trail, but it
+        # may already have been archived when a long-running review reaches a
+        # decision. New tasks carry the same snapshot on the task row so the
+        # first-review fact remains attributable after that retention boundary.
+        values = (
+            task.first_review_contributor_ids
+            if task.first_reviewed_at is None
+            else None
+        )
+    if not isinstance(values, list):
+        return []
+    return sorted({str(value) for value in values if value})
+
+
+def _record_first_review_fact(
+    task: Task,
+    *,
+    reviewed_at: datetime,
+    result: str,
+    contributor_ids: Iterable[str],
+) -> bool:
+    """Write the first completed review fact once for eligible new tasks."""
+    if task.first_review_eligible is not True or task.first_reviewed_at is not None:
+        return False
+    task.first_reviewed_at = reviewed_at
+    task.first_review_result = result
+    task.first_review_contributor_ids = sorted(
+        {str(value) for value in contributor_ids if value}
+    )
+    return True
 
 
 def _assert_task_editable(task: Task, user: User | None = None) -> None:
@@ -65,11 +181,61 @@ async def _load_task_or_404(db: AsyncSession, task_id: uuid.UUID) -> Task:
     return task
 
 
+async def _has_current_project_membership(
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    user_id: uuid.UUID,
+    *,
+    lock: bool = False,
+) -> bool:
+    stmt = (
+        select(ProjectMember.id)
+        .where(
+            ProjectMember.project_id == project_id,
+            ProjectMember.user_id == user_id,
+        )
+        .limit(1)
+    )
+    if lock:
+        stmt = stmt.with_for_update(read=True)
+    return (await db.scalar(stmt)) is not None
+
+
+async def _assert_current_project_member(db: AsyncSession, project, user: User) -> None:
+    if is_privileged_for_project(user, project):
+        return
+    if not await _has_current_project_membership(db, project.id, user.id, lock=True):
+        raise HTTPException(status_code=404, detail="Task not found")
+
+
+async def _effective_task_assignee_id(db: AsyncSession, task: Task) -> uuid.UUID | None:
+    batch = await db.get(TaskBatch, task.batch_id) if task.batch_id else None
+    return effective_task_assignee_id(task, batch)
+
+
+def _assert_effective_task_assignee(
+    user: User,
+    effective_assignee_id: uuid.UUID | None,
+    *,
+    action: str,
+    allow_open_pool: bool = False,
+) -> None:
+    if user.role in (UserRole.SUPER_ADMIN.value, UserRole.PROJECT_ADMIN.value):
+        return
+    if user.role == UserRole.ANNOTATOR.value and (
+        effective_assignee_id == user.id
+        or (allow_open_pool and effective_assignee_id is None)
+    ):
+        return
+    raise HTTPException(status_code=403, detail=f"only effective assignee can {action}")
+
+
 async def _assert_task_visible(db: AsyncSession, task: Task, user: User) -> None:
     """B-16 + v0.7.0：服务端强制 batch 可见性，按角色分支。
     super_admin / 项目 owner 越权放行；reviewer 见 active/annotating/reviewing；
     annotator 见 active/annotating（assigned）+ rejected（assigned 特例）。
-    无 batch 的孤儿任务对非特权用户不可见。
+    无 batch 的任务仅对显式分派的标注员可见；批次任务优先使用 task
+    级 assignee_id，NULL 时回退到 batch.annotator_id。
     """
     from app.db.models.project import Project
 
@@ -78,20 +244,16 @@ async def _assert_task_visible(db: AsyncSession, task: Task, user: User) -> None
         raise HTTPException(status_code=404, detail="Task not found")
     if is_privileged_for_project(user, project):
         return
+    await _assert_current_project_member(db, project, user)
     if task.file_type == "video" and bool(
         (project.video_collaboration or {}).get("enabled")
     ):
-        membership = await db.scalar(
-            select(func.count())
-            .select_from(ProjectMember)
-            .where(
-                ProjectMember.project_id == project.id,
-                ProjectMember.user_id == user.id,
-            )
-        )
-        if membership:
-            return
+        return
     if task.batch_id is None:
+        if (user.role == UserRole.ANNOTATOR and task.assignee_id == user.id) or (
+            user.role == UserRole.REVIEWER and task.reviewer_id == user.id
+        ):
+            return
         raise HTTPException(status_code=404, detail="Task not found")
     batch = await db.get(TaskBatch, task.batch_id)
     if batch is None:
@@ -99,7 +261,7 @@ async def _assert_task_visible(db: AsyncSession, task: Task, user: User) -> None
 
     visible_statuses = visible_batch_statuses_for(user)
     if batch.status not in visible_statuses and not annotator_can_rework_task(
-        user, batch, task.status
+        user, batch, task.status, task.assignee_id
     ):
         raise HTTPException(status_code=404, detail="Task not found")
 
@@ -107,10 +269,14 @@ async def _assert_task_visible(db: AsyncSession, task: Task, user: User) -> None
     if user.role == UserRole.REVIEWER:
         return
 
-    # v0.7.2：annotator 路径 — 一 batch 一标注员，按 batch.annotator_id 单值校验
-    is_assigned = batch.annotator_id is not None and batch.annotator_id == user.id
+    # Task-level assignment takes precedence over the legacy batch assignment.
+    is_task_assigned = task.assignee_id is not None and task.assignee_id == user.id
+    is_batch_assigned = task.assignee_id is None and batch.annotator_id == user.id
+    is_assigned = is_task_assigned or is_batch_assigned
     # rejected 状态特例：仅对被分派的标注员放行
     if batch.status == "rejected" and not is_assigned:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.assignee_id is not None and not is_task_assigned:
         raise HTTPException(status_code=404, detail="Task not found")
     if batch.annotator_id is not None and not is_assigned:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -133,14 +299,28 @@ async def _visible_task_ids(
     if not task_ids:
         return set()
     if is_privileged_for_project(user, project):
-        return set(task_ids)
+        result = await db.execute(
+            select(Task.id).where(
+                Task.project_id == project.id,
+                Task.id.in_(task_ids),
+            )
+        )
+        return set(result.scalars().all())
+    if not await _has_current_project_membership(db, project.id, user.id):
+        return set()
 
     rows = (
         await db.execute(
-            select(Task.id, Task.batch_id, Task.status).where(Task.id.in_(task_ids))
+            select(
+                Task.id,
+                Task.batch_id,
+                Task.status,
+                Task.assignee_id,
+                Task.reviewer_id,
+            ).where(Task.project_id == project.id, Task.id.in_(task_ids))
         )
     ).all()
-    batch_ids = {bid for _, bid, _ in rows if bid is not None}
+    batch_ids = {bid for _, bid, _, _, _ in rows if bid is not None}
     batches: dict[uuid.UUID, TaskBatch] = {}
     if batch_ids:
         result = await db.execute(select(TaskBatch).where(TaskBatch.id.in_(batch_ids)))
@@ -149,20 +329,30 @@ async def _visible_task_ids(
     visible_statuses = visible_batch_statuses_for(user)
     is_reviewer = user.role == UserRole.REVIEWER
     visible: set[uuid.UUID] = set()
-    for tid, bid, task_status in rows:
+    for tid, bid, task_status, task_assignee_id, task_reviewer_id in rows:
         if bid is None:
+            if (user.role == UserRole.ANNOTATOR and task_assignee_id == user.id) or (
+                user.role == UserRole.REVIEWER and task_reviewer_id == user.id
+            ):
+                visible.add(tid)
             continue
         batch = batches.get(bid)
         if batch is None or (
             batch.status not in visible_statuses
-            and not annotator_can_rework_task(user, batch, task_status)
+            and not annotator_can_rework_task(
+                user, batch, task_status, task_assignee_id
+            )
         ):
             continue
         if is_reviewer:
             visible.add(tid)
             continue
-        is_assigned = batch.annotator_id is not None and batch.annotator_id == user.id
+        is_task_assigned = task_assignee_id is not None and task_assignee_id == user.id
+        is_batch_assigned = task_assignee_id is None and batch.annotator_id == user.id
+        is_assigned = is_task_assigned or is_batch_assigned
         if batch.status == "rejected" and not is_assigned:
+            continue
+        if task_assignee_id is not None and not is_task_assigned:
             continue
         if batch.annotator_id is not None and not is_assigned:
             continue

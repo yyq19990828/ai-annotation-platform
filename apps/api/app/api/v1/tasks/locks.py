@@ -16,6 +16,8 @@ from app.services.user_brief import resolve_briefs
 
 from app.api.v1.tasks._shared import (
     _load_task_or_404,
+    _assert_task_visible,
+    _effective_task_assignee_id,
     _ANNOTATORS,
 )
 
@@ -31,7 +33,8 @@ async def acquire_lock(
     # B-21：任务的当前 assignee 重进时强制接管残留锁，
     # 否则上一个会话残留的他人 lock 会让本人误判"他人正在编辑"。
     task = await _load_task_or_404(db, task_id)
-    is_assignee = task.assignee_id is not None and task.assignee_id == current_user.id
+    await _assert_task_visible(db, task, current_user)
+    is_assignee = (await _effective_task_assignee_id(db, task)) == current_user.id
     svc = TaskLockService(db)
     lock = await svc.acquire(task_id, current_user.id, force_takeover=is_assignee)
     if not lock:
@@ -61,6 +64,8 @@ async def heartbeat_lock(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
     svc = TaskLockService(db)
     ok = await svc.heartbeat(task_id, current_user.id)
     if not ok:
@@ -75,6 +80,8 @@ async def release_lock(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
     svc = TaskLockService(db)
     await svc.release(task_id, current_user.id)
     await db.commit()

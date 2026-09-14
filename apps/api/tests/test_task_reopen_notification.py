@@ -16,6 +16,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.project import Project
+from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 
@@ -75,6 +76,14 @@ async def test_reopen_notifies_original_reviewer(
     rev_user, rev_token = reviewer
     _, task = await _seed_project_and_task(
         db_session, owner_id=ann_user.id, assignee_id=ann_user.id
+    )
+    db_session.add(
+        ProjectMember(
+            project_id=task.project_id,
+            user_id=rev_user.id,
+            role="reviewer",
+            assigned_by=ann_user.id,
+        )
     )
     tid = str(task.id)
     await db_session.commit()

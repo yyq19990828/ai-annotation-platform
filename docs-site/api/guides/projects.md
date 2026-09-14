@@ -129,9 +129,43 @@ GET    /api/v1/projects/:id/data-manager/tracks/:track_ref/detail
 }
 ```
 
-对象查询使用 annotation grain 的 keyset cursor；轨迹查询按 compact annotation 或 Scene 共享 track ID 的逻辑 grain 返回。两者的 total、facet、详情和定位都先与当前用户的 visible-task scope 连接，不返回 raw geometry。过滤字段是白名单，未知字段或不允许的操作符返回 422。Data Manager 查询只读，不提供批量写操作。
+对象查询使用 annotation grain 的 keyset cursor；轨迹查询按 compact annotation 或 Scene 共享 track ID 的逻辑 grain 返回。两者的 total、facet、详情和定位都先与当前用户的 visible-task scope 连接，不返回 raw geometry。过滤字段是白名单，未知字段或不允许的操作符返回 422。Data Manager 的查询 read model 保持只读，任务操作使用独立命令入口。
+
+任务查询另返回 `effective_assignee` / `effective_reviewer`，供表格和画廊展示实际指派：任务覆盖值优先，空值回退批次默认。`task.assignee` / `task.reviewer` 筛选、排序使用同一口径；原有 `assignee_id`、`assignee` 和 `reviewer` 保留任务行自身的值。
 
 过滤树最多 32 层、4096 个节点（根计为 1），`in` 最多 200 项。子节点结构、数字、ISO 日期和 UUID 在查询前校验，错误返回 422；无时区日期按 UTC 解释。可空任务字段仍支持 `eq` / `ne` 与 JSON `null`。保存的无效条件保留在视图中并通过 `invalid_fields` 报告，结构错误使用 `__filter__` 标记。
+
+## Data Manager 任务操作
+
+```http
+POST /api/v1/projects/:id/data-manager/tasks/assignment-preview
+POST /api/v1/projects/:id/data-manager/tasks/assignment-apply
+POST /api/v1/projects/:id/data-manager/tasks/export
+POST /api/v1/projects/:id/preannotate
+```
+
+分派和选定任务导出使用 `task_ids`（1–200 个 UUID），服务端去重并稳定排序。分派须项目负责人权限；`annotator_id`、`reviewer_id` 未传表示保留，null 清除任务单独指派并恢复批次默认（未分批则为未分派），至少传其中一个。非空审核员仅可分派到 review 状态任务。预览返回原始前后字段与 `effective_before_*` / `effective_after_*` 实际生效字段、状态、可更新/跳过/失败数量及 `preview_version`；apply 必须携带此版本，状态或指派已变化返回 409。
+
+导出按调用人的可见任务范围校验，接受 `targets` 和已有导出选项，返回 202 与持久化 `job_id`。暂不支持 `voc`、`coco-multicamera`、`kitti`、`nuscenes`、`pointmask` 的局部任务范围，也不能混用视频局部范围参数。
+
+预标注保留原项目/批次入口；显式 `task_ids` 必须非空且最多 200 项，不能用空数组表示整个项目。所选任务必须属于项目、满足给定批次、处于 pending，批次为 active 且未被管理锁定，任务没有编辑锁。
+
+导出与预标注可携带 `Idempotency-Key`（1–128 字符）。相同调用人、项目、动作及 key 复用作业；相同 key 配不同请求返回 409。工作进程再次检查作业、项目、任务范围与调用人权限；按 task ID 加载，不将局部选择扩大为整批。
+
+任务范围导出的缓存仅在同一持久化作业的重试间复用；新建导出作业重新生成文件，包含更新后的预测、媒体和轨迹内容。
+
+## 项目成员绩效
+
+```http
+GET /api/v1/projects/:id/performance/members
+GET /api/v1/projects/:id/performance/members/:user_id
+GET /api/v1/projects/:id/performance/members/:user_id/events
+GET /api/v1/projects/:id/performance/export
+```
+
+仅项目负责人和超级管理员可调用。共同查询参数为 `from`、`to`、`timezone`、`work_type=annotation|review`、`account_status=all|active|inactive`、`include_historical`、`q`、`sort`、`cursor` 和 `limit`（默认 50、最多 100）。日期按指定 IANA 时区解析，带时区时间戳按实际瞬间解析；区间左闭右开，最多 90 天。`sort` 使用允许字段和 `+`/`-` 前缀，URL 中的 `+` 应编码为 `%2B`。
+
+列表返回 scope、coverage、project_totals、items 和 next_cursor。指标包含 value、unit、coverage，比例同时携带 numerator/denominator；未知值为 null。详情包括成员、趋势、类别/来源/几何分布、驳回原因和依据；依据独立分页。CSV 复用同一范围，不受列表当前页限制。具体归属和采集规则见[项目成员绩效数据](../../dev/concepts/project-performance.md)。
 
 ## Alias 频率
 
