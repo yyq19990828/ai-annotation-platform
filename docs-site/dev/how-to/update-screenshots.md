@@ -475,7 +475,9 @@ pnpm docs:media:derive -- --run /absolute/path/to/run --article 06-video-track -
 
 ## 视觉回归基线更新
 
-`Visual regression` 工作流会在截图 seed 前安装 `ffmpeg`，用于准备视频素材。定时运行失败时，工作流使用 job 级别的 `issues: write` 权限创建通知 Issue，区分视觉测试失败、未完成，以及测试通过后的检查或清理失败。先检查失败步骤和日志；依赖或数据初始化失败不代表截图差异，不应通过更新基线处理。
+`Browser checks` 工作流（`.github/workflows/visual-regression.yml`）会在截图 seed 前安装 `ffmpeg`，用于准备视频素材，并在 MinIO 就绪后调用 `storage_service.ensure_all_buckets()` 初始化存储桶。seed 会先于 API 启动上传媒体，因此必须提前创建存储桶；MinIO 健康检查通过只表示服务可用。
+
+定时运行失败时，工作流使用 job 级别的 `issues: write` 权限创建通知 Issue，区分视觉测试失败、未完成，以及测试通过后的检查或清理失败。先检查失败步骤和日志；依赖或数据初始化失败不代表截图差异，不应通过更新基线处理。
 
 当 UI 有意改变导致 regression 失败时：
 
