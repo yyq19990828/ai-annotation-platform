@@ -130,7 +130,7 @@ export function StatusBar({
                 work {activeVideoSegment.work_start_frame}-{activeVideoSegment.work_end_frame}
               </span>
               {segmentRemainingMs > 0 && (
-                <span className="mono text-status-caution">
+                <span data-testid="segment-lease-countdown" className="mono text-status-caution">
                   租约 {formatLockTime(segmentRemainingMs)}
                 </span>
               )}
@@ -150,7 +150,9 @@ export function StatusBar({
           <>
             <span className={cn(inlineItem, lockRemainingMs < 60_000 && "text-status-caution")}>
               <Icon name="lock" size={11} /> 锁剩余{" "}
-              <span className="mono font-medium">{formatLockTime(lockRemainingMs)}</span>
+              <span data-testid="task-lock-countdown" className="mono font-medium">
+                {formatLockTime(lockRemainingMs)}
+              </span>
             </span>
             <Sep />
           </>

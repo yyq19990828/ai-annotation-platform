@@ -30,7 +30,9 @@ from seed_screenshot_assets import (  # noqa: E402
     ensure_screenshot_assets,
 )
 from seed_screenshot_profile import (  # noqa: E402
+    finalize_screenshot_seed_timestamps,
     prepare_screenshot_seed,
+    prepare_screenshot_seed_media,
     reconcile_screenshot_seed,
 )
 
@@ -319,21 +321,29 @@ async def seed(
         if strict:
             if preparation is None or generated_assets is None:
                 raise RuntimeError("screenshots profile preparation is missing")
+            screenshot_digests = {
+                "image_demo": generated_assets.content_sha256,
+                "video_demo": generated_assets.content_sha256,
+                "pointcloud_demo": generated_assets.content_sha256,
+                "pointcloud_multicam_demo": generated_assets.content_sha256,
+                "ocr_demo": assets["rapidocr-image"].asset.sha256,
+            }
             report = await reconcile_screenshot_seed(
                 db,
                 preparation=preparation,
-                asset_sha256={
-                    "image_demo": generated_assets.content_sha256,
-                    "video_demo": generated_assets.content_sha256,
-                    "pointcloud_demo": generated_assets.content_sha256,
-                    "pointcloud_multicam_demo": generated_assets.content_sha256,
-                    "ocr_demo": assets["rapidocr-image"].asset.sha256,
-                },
+                asset_sha256=screenshot_digests,
             )
             print(
                 "  ready screenshots desired-state "
                 f"projects={report['projects']} tasks={report['tasks']} "
                 f"batches={report['batches']}"
+            )
+            media_report = await prepare_screenshot_seed_media(
+                db, asset_sha256=screenshot_digests
+            )
+            print(
+                "  ready screenshots media "
+                f"datasets={media_report['datasets']} items={media_report['items']}"
             )
             backend_report = await reconcile_screenshot_backends(
                 db,
@@ -348,6 +358,9 @@ async def seed(
             print(
                 f"  ready screenshots ML binding mode={ml_backend_mode} {binding_names}"
             )
+            await finalize_screenshot_seed_timestamps(
+                db, asset_sha256=screenshot_digests
+            )
             try:
                 await build_screenshot_seed_catalog(
                     db, backend_requirements=backend_requirements
@@ -358,26 +371,21 @@ async def seed(
                 ) from exc
             print("  ready screenshots catalog preflight")
 
-    # 缩略图回填:seed 直接写 DatasetItem,绕过了上传路径的 enqueue_media_for_items,
-    # 故图片/视频的 thumbnail_path / blurhash 一直为 NULL(视频还缺 poster)。这里按
-    # data_type 选出全部图片/视频数据集派发 backfill_media,由 media worker 异步生成。
-    # 按 data_type 动态筛选而非硬编码 display_id 列表 → 后续新增图片/视频夹具自动纳入、
-    # 不会漏回填。点云数据集(data_type=point_cloud)虽含相机图(file_type=image)也不在
-    # 此列,保持原行为不回填其相机缩略图(backfill_media 内部本就只处理 image/video item)。
-    # 幂等(只补缺失的),且无条件执行 → 既补新建,也修复历史已存在但缺缩略图的 seed 数据。
-    # 依赖 media worker 在跑;无匹配数据集则查询为空、静默跳过。
-    from app.db.models.dataset import Dataset
-    from app.workers.media import backfill_media
+    if not strict:
+        # Demo keeps asynchronous backfill for all image/video datasets. The
+        # screenshots profile has already verified its owned media synchronously.
+        from app.db.models.dataset import Dataset
+        from app.workers.media import backfill_media
 
-    async with Session() as db:
-        ds_rows = await db.execute(
-            select(Dataset.id, Dataset.display_id).where(
-                Dataset.data_type.in_(["image", "video"])
+        async with Session() as db:
+            ds_rows = await db.execute(
+                select(Dataset.id, Dataset.display_id).where(
+                    Dataset.data_type.in_(["image", "video"])
+                )
             )
-        )
-        for ds_id, disp in ds_rows.all():
-            backfill_media.delay(str(ds_id))
-            print(f"  media  enqueue 缩略图回填 → {disp}")
+            for ds_id, disp in ds_rows.all():
+                backfill_media.delay(str(ds_id))
+                print(f"  media  enqueue 缩略图回填 → {disp}")
 
     await engine.dispose()
 

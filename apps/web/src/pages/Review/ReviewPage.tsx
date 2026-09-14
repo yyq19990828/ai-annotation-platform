@@ -473,8 +473,8 @@ export function ReviewPage() {
   const approvedPct = totalTasks ? Math.round((approvedDone / totalTasks) * 1000) / 10 : 0;
 
   // 纯落地态（无 batch / project / assignee 选择）展示批次卡片网格；其余维持任务列表。
-  const showOverview =
-    !selectedBatchId && !selectedProjectId && !assigneeFilter && sidebarBatches.length > 0;
+  const hasQueueSelection = Boolean(selectedBatchId || selectedProjectId || assigneeFilter);
+  const showOverview = !hasQueueSelection && sidebarBatches.length > 0;
 
   return (
     <div className="mx-auto box-border grid h-full max-w-[1480px] grid-cols-[300px_1fr] gap-4 px-6 py-5 text-foreground max-[900px]:h-auto max-[900px]:grid-cols-1 max-[900px]:p-4">
@@ -506,7 +506,7 @@ export function ReviewPage() {
       <section className="max-h-[calc(100vh-80px)] min-w-0 overflow-auto max-[900px]:max-h-none">
         <div className="mb-4 flex items-start justify-between gap-4">
           <div className="min-w-0">
-            {!showOverview && (
+            {hasQueueSelection && (
               <button
                 type="button"
                 className="mb-1.5 inline-flex cursor-pointer appearance-none items-center gap-1 border-none bg-transparent p-0 text-xs text-muted-foreground hover:text-brand"

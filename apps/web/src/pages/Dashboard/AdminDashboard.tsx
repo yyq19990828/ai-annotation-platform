@@ -1,5 +1,5 @@
 import { useState, type CSSProperties } from "react";
-import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -48,6 +48,8 @@ export function AdminDashboard() {
   const [importOpen, setImportOpen] = useState(false);
 
   const recentActivity = audit?.items ?? [];
+  // The projects endpoint returns newest-created projects first.
+  const recentProjects = projects.slice(0, 5);
 
   const openWizard = () => {
     const next = new URLSearchParams(searchParams);
@@ -277,8 +279,21 @@ export function AdminDashboard() {
           <div className="min-w-0">
             <Card>
               <div className={CARD_HEADER_SPLIT_CLASS}>
-                <h3 className={CARD_TITLE_CLASS}>全平台项目</h3>
-                <span className="text-xs text-muted-foreground">共 {projects.length} 个</span>
+                <h3 className={CARD_TITLE_CLASS}>最近项目</h3>
+                <div className="flex flex-wrap items-center gap-3">
+                  {!projectsLoading && recentProjects.length > 0 && (
+                    <span className="text-xs text-muted-foreground">
+                      最近创建的 {recentProjects.length} 个
+                    </span>
+                  )}
+                  <Link
+                    to="/dashboard"
+                    className="inline-flex items-center gap-1 rounded-sm text-xs text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                  >
+                    查看全部项目
+                    <Icon name="chevRight" size={11} />
+                  </Link>
+                </div>
               </div>
               {projectsLoading && (
                 <div className="p-8 text-center text-sm text-muted-foreground">加载中...</div>
@@ -310,7 +325,7 @@ export function AdminDashboard() {
                       </tr>
                     </thead>
                     <tbody>
-                      {projects.map((p) => (
+                      {recentProjects.map((p) => (
                         <tr
                           key={p.id}
                           className="cursor-pointer hover:bg-muted/40"
@@ -361,19 +376,6 @@ export function AdminDashboard() {
                             className={`${TABLE_CELL_CLASS} py-2.5 pr-4 text-right whitespace-nowrap`}
                           >
                             <div className="inline-flex items-center gap-1 whitespace-nowrap">
-                              {/* v0.10.11 · 「复制项目配置」入口 — 跳 Wizard 复制流, 用源项目配置预填. */}
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  navigate(`/dashboard?new=1&from=${p.id}`);
-                                }}
-                                title="复制项目配置（不复制数据集 / 任务 / 成员）"
-                              >
-                                <Icon name="copy" size={13} />
-                                复制
-                              </Button>
                               <Button
                                 size="sm"
                                 variant="ghost"

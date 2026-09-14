@@ -35,10 +35,10 @@ test("project popover and status controls share one applied state and cancel kee
   page,
   filtering,
 }) => {
-  const initial = getResponse(page, "/projects", { search: "Filter Ops" });
+  const initial = getResponse(page, "/projects/query", { search: "Filter Ops" });
   await page.goto("/dashboard?q=Filter+Ops&layout=grid&keep=filter-test");
   const projects = await checked(await initial);
-  expect(projects.map((project: { id: string }) => project.id).sort()).toEqual(
+  expect(projects.items.map((project: { id: string }) => project.id).sort()).toEqual(
     [...filtering.operations.project_ids].sort(),
   );
   await page.getByRole("button", { name: "筛选", exact: true }).click();
@@ -50,12 +50,12 @@ test("project popover and status controls share one applied state and cancel kee
 
   await page.getByRole("button", { name: "筛选", exact: true }).click();
   await drawer.getByRole("button", { name: "已完成", exact: true }).click();
-  const completed = getResponse(page, "/projects", { status: "completed" });
+  const completed = getResponse(page, "/projects/query", { status: "completed" });
   await drawer.getByRole("button", { name: "应用", exact: true }).click();
   await expect(drawer).not.toBeVisible();
   await checked(await completed);
   await expect.poll(() => new URL(page.url()).searchParams.get("status")).toBe("completed");
-  const inProgress = getResponse(page, "/projects", { status: "in_progress" });
+  const inProgress = getResponse(page, "/projects/query", { status: "in_progress" });
   await page.getByRole("button", { name: "进行中", exact: true }).click();
   await checked(await inProgress);
   await page.getByRole("button", { name: "筛选", exact: true }).click();
@@ -271,14 +271,14 @@ test("project filter stays attached, keeps its draft on resize, and cancels with
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  const initial = getResponse(page, "/projects", { search: "Filter Ops" });
+  const initial = getResponse(page, "/projects/query", { search: "Filter Ops" });
   await page.goto("/dashboard?q=Filter+Ops&keep=filter-geometry");
   await checked(await initial);
   const trigger = page.getByRole("button", { name: "筛选", exact: true });
   const dialog = page.getByRole("dialog", { name: "高级筛选" });
   const queries: string[] = [];
   page.on("request", (request) => {
-    if (new URL(request.url()).pathname === "/api/v1/projects") queries.push(request.url());
+    if (new URL(request.url()).pathname === "/api/v1/projects/query") queries.push(request.url());
   });
   await trigger.click();
   await expect(dialog).toHaveAttribute("data-filter-panel", "popover");
