@@ -1,4 +1,5 @@
 import { openContextToolbar } from "../../fixtures/context-toolbar";
+import { waitForScreenshotImage } from "../environment";
 import type { ScreenshotScene } from "./_types";
 
 const DARK_WORKBENCH_MATRIX: NonNullable<ScreenshotScene["matrix"]> = {
@@ -20,12 +21,12 @@ const imageTaskRoute = (catalog: Parameters<ScreenshotScene["route"]>[0], task: 
 export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
   {
     name: "workbench/layout-overview",
+    clock: "live",
     role: "annotator",
     fixture: { project: "image_demo", task: "annotating" },
     route: (catalog) => imageTaskRoute(catalog, "annotating"),
     prepare: async (page) => {
-      await page.waitForSelector('[data-testid="workbench-stage"]', { timeout: 5000 });
-      await page.waitForTimeout(500);
+      await waitForScreenshotImage(page);
     },
     // 四区全貌用视口截图（不设 capture）
     matrix: DARK_WORKBENCH_MATRIX,
@@ -95,6 +96,7 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
   },
   {
     name: "sam/interactive-toolbar",
+    clock: "live",
     role: "annotator",
     fixture: {
       project: "image_demo",
@@ -104,13 +106,13 @@ export const WORKBENCH_AI_SCENES: ScreenshotScene[] = [
     },
     route: (catalog) => imageTaskRoute(catalog, "annotating"),
     prepare: async (page) => {
-      await page.getByTestId("workbench-stage").waitFor({ timeout: 10_000 });
+      await waitForScreenshotImage(page);
       const button = page.getByTestId("tool-btn-smart-box");
       await button.waitFor({ state: "visible" });
       if (!(await button.isEnabled())) throw new Error("sam/interactive-toolbar: smart-box 被禁用");
       await button.click();
       await openContextToolbar(page, "interactive");
-      await page.waitForTimeout(200);
+      await page.getByTestId("interactive-toolbar").waitFor({ state: "visible" });
     },
     capture: { kind: "locator", selector: '[data-testid="interactive-toolbar"]', padding: 8 },
     matrix: DARK_WORKBENCH_MATRIX,
