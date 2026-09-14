@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ApiError } from "../../../api/client";
 import { meApi, type TaskEventIn } from "../../../api/me";
 
 export const RING_SIZE = 20;
@@ -15,6 +16,11 @@ export const MAX_PENDING_EVENTS = 1_000;
 export const SESSION_COLLECTOR_VERSION = "session-v2";
 const MAX_FLUSH_RETRIES = 2;
 const RETRY_DELAYS_MS = [1_000, 2_000] as const;
+const PERMANENT_TASK_EVENT_STATUS_CODES = new Set([400, 403, 404, 409, 410, 422]);
+
+function isPermanentTaskEventError(error: unknown): error is ApiError {
+  return error instanceof ApiError && PERMANENT_TASK_EVENT_STATUS_CODES.has(error.status);
+}
 
 type SessionContext = {
   taskId: string;
@@ -80,6 +86,7 @@ export function useSessionStats(
   const activeRef = useRef<SessionContext | null>(null);
   const pendingRef = useRef<TaskEventIn[]>([]);
   const pendingAccountRef = useRef<string | null>(null);
+  const pendingCoverageRef = useRef(false);
   const ownerRef = useRef<SessionOwner | null>(null);
   const queueGenerationRef = useRef(0);
   const accountRef = useRef<string | null>(accountId ?? null);
@@ -100,6 +107,7 @@ export function useSessionStats(
     queueGenerationRef.current += 1;
     pendingRef.current = [];
     pendingAccountRef.current = null;
+    pendingCoverageRef.current = false;
     flushInFlightRef.current = null;
     retryAttemptRef.current = 0;
     if (retryTimerRef.current !== null) {
@@ -136,20 +144,57 @@ export function useSessionStats(
 
       const request = (async () => {
         let hasMore = false;
+        const coverageMarker = pendingCoverageRef.current ? batch[0] : undefined;
+        if (coverageMarker) coverageMarker.collection_coverage = "partial";
         try {
-          await meApi.submitTaskEvents(batch, keepalive ? { keepalive: true } : undefined);
-          if (queueGenerationRef.current !== generation) return;
-          const ids = new Set(batch.map((event) => event.client_id));
-          pendingRef.current = pendingRef.current.filter(
-            (event) => !event.client_id || !ids.has(event.client_id),
+          const response = await meApi.submitTaskEvents(
+            batch,
+            keepalive ? { keepalive: true } : undefined,
           );
-          if (pendingRef.current.length === 0) pendingAccountRef.current = null;
+          if (queueGenerationRef.current !== generation) return;
+          const markerDiscarded = Boolean(
+            coverageMarker &&
+            response.discarded?.some(
+              (item) =>
+                item.index === 0 &&
+                (!coverageMarker.client_id || item.client_id === coverageMarker.client_id),
+            ),
+          );
+          const ids = new Set(batch.map((event) => event.client_id));
+          const batchRefs = new Set(batch);
+          pendingRef.current = pendingRef.current.filter((event) =>
+            event.client_id ? !ids.has(event.client_id) : !batchRefs.has(event),
+          );
+          if (pendingRef.current.length === 0) {
+            pendingAccountRef.current = null;
+            pendingCoverageRef.current = false;
+          } else if (coverageMarker && !markerDiscarded) {
+            pendingCoverageRef.current = false;
+          }
           retryAttemptRef.current = 0;
           hasMore = pendingRef.current.length > 0;
-        } catch {
-          // Keep the batch for a bounded retry. A later account switch clears it
-          // so one account can never be submitted using another account's token.
-          if (queueGenerationRef.current === generation) scheduleRetry(generation);
+        } catch (error) {
+          if (queueGenerationRef.current === generation) {
+            // A closed interval can become permanently invalid after a task is
+            // deleted or reassigned. Drop only a single such row; mixed batches
+            // receive per-row discard details from the API and resolve here.
+            if (batch.length === 1 && isPermanentTaskEventError(error)) {
+              const rejected = batch[0];
+              pendingRef.current = pendingRef.current.filter((event) =>
+                rejected?.client_id ? event.client_id !== rejected.client_id : event !== rejected,
+              );
+              if (pendingRef.current.length === 0) {
+                pendingAccountRef.current = null;
+                pendingCoverageRef.current = false;
+              }
+              retryAttemptRef.current = 0;
+              hasMore = pendingRef.current.length > 0;
+            } else {
+              // Network, auth, throttling and server failures stay queued for
+              // a bounded retry. A later account switch clears the old queue.
+              scheduleRetry(generation);
+            }
+          }
         } finally {
           if (queueGenerationRef.current === generation) {
             flushInFlightRef.current = null;
@@ -221,6 +266,7 @@ export function useSessionStats(
       pendingRef.current.push(...events);
       if (pendingRef.current.length > MAX_PENDING_EVENTS) {
         pendingRef.current.splice(0, pendingRef.current.length - MAX_PENDING_EVENTS);
+        pendingCoverageRef.current = true;
       }
       if (pendingRef.current.length >= FLUSH_THRESHOLD) void flushPending();
     },

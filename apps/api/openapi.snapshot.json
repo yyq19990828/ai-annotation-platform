@@ -32457,6 +32457,13 @@
             "title": "Accepted",
             "type": "integer"
           },
+          "discarded": {
+            "items": {
+              "$ref": "#/components/schemas/TaskEventDiscarded"
+            },
+            "title": "Discarded",
+            "type": "array"
+          },
           "queued_async": {
             "title": "Queued Async",
             "type": "boolean"
@@ -32467,6 +32474,40 @@
           "queued_async"
         ],
         "title": "TaskEventBatchOut",
+        "type": "object"
+      },
+      "TaskEventDiscarded": {
+        "description": "One permanently invalid event from an otherwise usable batch.",
+        "properties": {
+          "client_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "index": {
+            "minimum": 0.0,
+            "title": "Index",
+            "type": "integer"
+          },
+          "reason": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "index",
+          "reason"
+        ],
+        "title": "TaskEventDiscarded",
         "type": "object"
       },
       "TaskEventIn": {
@@ -32490,6 +32531,15 @@
               }
             ],
             "title": "Client Id"
+          },
+          "collection_coverage": {
+            "default": "qualified",
+            "enum": [
+              "qualified",
+              "partial"
+            ],
+            "title": "Collection Coverage",
+            "type": "string"
           },
           "collector_version": {
             "anyOf": [

@@ -11,6 +11,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { StrictMode } from "react";
+import { ApiError } from "../../../api/client";
+import type { TaskEventIn } from "../../../api/me";
 import { useSessionStats, formatDuration } from "./useSessionStats";
 
 const submitTaskEvents = vi.hoisted(() => vi.fn().mockResolvedValue({ accepted: 1 }));
@@ -314,6 +316,64 @@ describe("useSessionStats", () => {
       await Promise.resolve();
     });
     expect(submitTaskEvents).toHaveBeenCalledTimes(3);
+    unmount();
+  });
+
+  it("永久无效的单条事件只丢弃该条，后续有效事件仍会上报", async () => {
+    submitTaskEvents
+      .mockRejectedValueOnce(new ApiError(404, "Task not found", { reason: "task_not_found" }))
+      .mockResolvedValue({ accepted: 1, queued_async: false });
+    const { rerender, unmount } = renderHook(
+      ({ id }: { id: string }) => useSessionStats(id, "project-1", "annotate", "user-1"),
+      { initialProps: { id: "stale-task" } },
+    );
+
+    advance(2_000);
+    act(() => window.dispatchEvent(new Event("pagehide")));
+    await act(async () => {
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+    });
+    expect(submitTaskEvents).toHaveBeenCalledTimes(1);
+
+    rerender({ id: "valid-task" });
+    advance(2_000);
+    act(() => window.dispatchEvent(new Event("pagehide")));
+    await act(async () => {
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+    });
+
+    expect(submitTaskEvents).toHaveBeenCalledTimes(2);
+    expect((submitTaskEvents.mock.calls[1]?.[0] as Array<{ task_id: string }>)[0]).toEqual(
+      expect.objectContaining({ task_id: "valid-task" }),
+    );
+    unmount();
+  });
+
+  it("本地队列溢出后给保留事件标记 partial 覆盖", async () => {
+    let resolveFirst!: (value: { accepted: number; queued_async: boolean }) => void;
+    submitTaskEvents
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveFirst = resolve)))
+      .mockResolvedValue({ accepted: 1, queued_async: false });
+    const { rerender, unmount } = renderHook(
+      ({ id }: { id: string }) => useSessionStats(id, "project-1", "annotate", "user-1"),
+      { initialProps: { id: "t0" } },
+    );
+
+    for (let i = 1; i <= 1_020; i++) {
+      act(() => vi.advanceTimersByTime(2_000));
+      act(() => document.dispatchEvent(new Event("pointermove")));
+      rerender({ id: `t${i}` });
+    }
+    act(() => vi.advanceTimersByTime(2_000));
+    act(() => window.dispatchEvent(new Event("pagehide")));
+    act(() => resolveFirst({ accepted: 20, queued_async: false }));
+    await act(async () => {
+      for (let i = 0; i < 20; i++) await Promise.resolve();
+    });
+
+    const batches = submitTaskEvents.mock.calls.map(([batch]) => batch as Array<TaskEventIn>);
+    expect(batches.length).toBeGreaterThan(1);
+    expect(batches[1]?.[0]).toEqual(expect.objectContaining({ collection_coverage: "partial" }));
     unmount();
   });
 

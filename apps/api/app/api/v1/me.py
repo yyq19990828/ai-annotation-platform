@@ -581,9 +581,14 @@ async def cancel_self_deactivation(
 
 # Workbench task-event ingestion
 from app.config import settings  # noqa: E402
-from app.schemas.task_event import TaskEventBatchIn, TaskEventBatchOut  # noqa: E402
+from app.schemas.task_event import (  # noqa: E402
+    TaskEventBatchIn,
+    TaskEventBatchOut,
+    TaskEventDiscarded,
+)
 from app.services.task_event_ingestion import (  # noqa: E402
     insert_task_events,
+    task_event_rejection_reason,
     validate_api_events,
 )
 
@@ -611,7 +616,12 @@ async def submit_task_events(
     rows are also rechecked by the worker after an async handoff.
     """
 
-    rows = await validate_api_events(db, user=user, events=payload.events)
+    rows, rejected = await validate_api_events(db, user=user, events=payload.events)
+    # Preserve the single-event HTTP contract for direct callers. The browser
+    # collector drops this one permanently invalid event; mixed batches use the
+    # per-row response below so valid events continue through the same request.
+    if len(payload.events) == 1 and rejected:
+        raise rejected[0].error
     payload_list = [
         {
             **row,
@@ -632,4 +642,15 @@ async def submit_task_events(
     if not queued:
         await insert_task_events(db, rows)
 
-    return TaskEventBatchOut(accepted=len(rows), queued_async=queued)
+    return TaskEventBatchOut(
+        accepted=len(rows),
+        queued_async=queued,
+        discarded=[
+            TaskEventDiscarded(
+                index=item.index,
+                client_id=item.client_id,
+                reason=task_event_rejection_reason(item.error),
+            )
+            for item in rejected
+        ],
+    )

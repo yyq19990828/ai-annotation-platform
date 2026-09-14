@@ -7,6 +7,7 @@ queued event is held to the same rules when it is finally persisted.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Iterable
 from uuid import UUID, uuid4
@@ -41,6 +42,36 @@ _REVIEW_ROLES = {
     UserRole.PROJECT_ADMIN.value,
     UserRole.REVIEWER.value,
 }
+_RETRYABLE_EVENT_STATUS_CODES = {401, 408, 425, 429}
+
+
+@dataclass(frozen=True, slots=True)
+class TaskEventRejection:
+    """A permanently rejected input row and its original API error."""
+
+    index: int
+    client_id: UUID | None
+    error: HTTPException
+
+
+def task_event_rejection_reason(error: HTTPException) -> str:
+    """Return the stable, short reason exposed for a rejected input row."""
+
+    detail = error.detail
+    if isinstance(detail, dict):
+        reason = detail.get("reason")
+        if isinstance(reason, str) and reason:
+            return reason[:64]
+    if isinstance(detail, str) and detail:
+        return detail[:64]
+    return "task_event_rejected"
+
+
+def _is_permanent_event_error(error: HTTPException) -> bool:
+    return (
+        error.status_code < 500
+        and error.status_code not in _RETRYABLE_EVENT_STATUS_CODES
+    )
 
 
 def _reject(reason: str, *, status_code: int = 422) -> HTTPException:
@@ -167,6 +198,7 @@ def _fingerprint(payload: dict[str, Any]) -> tuple[Any, ...]:
         canonical(payload.get("annotation_count", 0)),
         canonical(payload.get("was_rejected", False)),
         canonical(payload.get("collector_version")),
+        canonical(payload.get("collection_coverage", "qualified")),
     )
 
 
@@ -176,8 +208,13 @@ async def validate_api_events(
     user: User,
     events: Iterable[TaskEventIn],
     now: datetime | None = None,
-) -> list[dict[str, Any]]:
-    """Validate browser payloads and return authoritative DB-ready rows."""
+) -> tuple[list[dict[str, Any]], list[TaskEventRejection]]:
+    """Validate browser payloads without letting one stale row block a batch.
+
+    Per-event HTTP validation failures are permanent for a closed interval and
+    are returned to the API as discard details. Database and other transient
+    failures still raise so the caller retains the whole batch for retry.
+    """
 
     event_list = list(events)
     task_ids = {event.task_id for event in event_list}
@@ -189,64 +226,77 @@ async def validate_api_events(
     tasks = {task.id: task for task in task_rows.scalars()} if task_rows else {}
     seen: dict[UUID, tuple[Any, ...]] = {}
     rows: list[dict[str, Any]] = []
-    for event in event_list:
-        task = tasks.get(event.task_id)
-        if task is None:
-            raise _reject("task_not_found", status_code=404)
-        if task.project_id != event.project_id:
-            raise _reject("task_project_mismatch")
-        started, ended = validate_interval(
-            started_at=event.started_at,
-            ended_at=event.ended_at,
-            duration_ms=event.duration_ms,
-            now=now,
-        )
-        await assert_task_event_access(
-            db, task=task, user=user, kind=event.kind, ended_at=ended
-        )
-
-        event_id = event.client_id or uuid4()
-        row = {
-            "id": event_id,
-            "task_id": task.id,
-            "user_id": user.id,
-            "project_id": task.project_id,
-            "kind": event.kind,
-            "started_at": started,
-            "ended_at": ended,
-            "duration_ms": event.duration_ms,
-            "annotation_count": event.annotation_count,
-            "was_rejected": event.was_rejected,
-            "collector_version": event.collector_version,
-            "collection_source": (
-                "session"
-                if event.collector_version == SESSION_COLLECTOR_VERSION
-                else "legacy"
-            ),
-            "collection_coverage": (
-                "qualified"
-                if event.collector_version == SESSION_COLLECTOR_VERSION
-                else "unverified_collection"
-            ),
-        }
-        if event.client_id is not None:
-            fingerprint = _fingerprint(
-                {
-                    **row,
-                    "task_id": str(row["task_id"]),
-                    "user_id": str(row["user_id"]),
-                    "project_id": str(row["project_id"]),
-                    "started_at": started.isoformat(),
-                    "ended_at": ended.isoformat(),
-                }
+    row_indexes: dict[UUID, int] = {}
+    rejections: list[TaskEventRejection] = []
+    for index, event in enumerate(event_list):
+        try:
+            task = tasks.get(event.task_id)
+            if task is None:
+                raise _reject("task_not_found", status_code=404)
+            if task.project_id != event.project_id:
+                raise _reject("task_project_mismatch")
+            started, ended = validate_interval(
+                started_at=event.started_at,
+                ended_at=event.ended_at,
+                duration_ms=event.duration_ms,
+                now=now,
             )
-            previous = seen.get(event.client_id)
-            if previous is not None and previous != fingerprint:
-                raise _reject("duplicate_client_event_conflict", status_code=409)
-            if previous is not None:
-                continue
-            seen[event.client_id] = fingerprint
-        rows.append(row)
+            await assert_task_event_access(
+                db, task=task, user=user, kind=event.kind, ended_at=ended
+            )
+
+            event_id = event.client_id or uuid4()
+            row = {
+                "id": event_id,
+                "task_id": task.id,
+                "user_id": user.id,
+                "project_id": task.project_id,
+                "kind": event.kind,
+                "started_at": started,
+                "ended_at": ended,
+                "duration_ms": event.duration_ms,
+                "annotation_count": event.annotation_count,
+                "was_rejected": event.was_rejected,
+                "collector_version": event.collector_version,
+                "collection_source": (
+                    "session"
+                    if event.collector_version == SESSION_COLLECTOR_VERSION
+                    else "legacy"
+                ),
+                "collection_coverage": (
+                    "qualified"
+                    if (
+                        event.collector_version == SESSION_COLLECTOR_VERSION
+                        and event.collection_coverage == "qualified"
+                    )
+                    else "unverified_collection"
+                ),
+            }
+            if event.client_id is not None:
+                fingerprint = _fingerprint(
+                    {
+                        **row,
+                        "task_id": str(row["task_id"]),
+                        "user_id": str(row["user_id"]),
+                        "project_id": str(row["project_id"]),
+                        "started_at": started.isoformat(),
+                        "ended_at": ended.isoformat(),
+                    }
+                )
+                previous = seen.get(event.client_id)
+                if previous is not None and previous != fingerprint:
+                    raise _reject("duplicate_client_event_conflict", status_code=409)
+                if previous is not None:
+                    continue
+                seen[event.client_id] = fingerprint
+                row_indexes[event_id] = index
+            rows.append(row)
+        except HTTPException as exc:
+            if not _is_permanent_event_error(exc):
+                raise
+            rejections.append(
+                TaskEventRejection(index=index, client_id=event.client_id, error=exc)
+            )
 
     client_ids = {
         event.client_id for event in event_list if event.client_id is not None
@@ -256,9 +306,11 @@ async def validate_api_events(
             await db.execute(select(TaskEvent).where(TaskEvent.id.in_(client_ids)))
         ).scalars()
         existing_by_id = {row.id: row for row in existing}
+        accepted_rows: list[dict[str, Any]] = []
         for row in rows:
             stored = existing_by_id.get(row["id"])
             if stored is None:
+                accepted_rows.append(row)
                 continue
             stored_fingerprint = _fingerprint(
                 {
@@ -272,11 +324,23 @@ async def validate_api_events(
                     "annotation_count": stored.annotation_count,
                     "was_rejected": stored.was_rejected,
                     "collector_version": stored.collector_version,
+                    "collection_coverage": stored.collection_coverage,
                 }
             )
             if _fingerprint(row) != stored_fingerprint:
-                raise _reject("duplicate_client_event_conflict", status_code=409)
-    return rows
+                rejections.append(
+                    TaskEventRejection(
+                        index=row_indexes[row["id"]],
+                        client_id=row["id"],
+                        error=_reject(
+                            "duplicate_client_event_conflict", status_code=409
+                        ),
+                    )
+                )
+                continue
+            accepted_rows.append(row)
+        rows = accepted_rows
+    return rows, rejections
 
 
 async def validate_worker_event(
@@ -299,6 +363,7 @@ async def validate_worker_event(
         annotation_count = int(payload.get("annotation_count", 0))
         was_rejected = bool(payload.get("was_rejected", False))
         collector_version = payload.get("collector_version")
+        collection_coverage = payload.get("collection_coverage", "qualified")
     except (KeyError, TypeError, ValueError):
         return None
 
@@ -309,6 +374,7 @@ async def validate_worker_event(
             collector_version is not None
             and (not isinstance(collector_version, str) or len(collector_version) > 32)
         )
+        or collection_coverage not in {"qualified", "partial"}
     ):
         return None
     try:
@@ -351,7 +417,10 @@ async def validate_worker_event(
         ),
         "collection_coverage": (
             "qualified"
-            if collector_version == SESSION_COLLECTOR_VERSION
+            if (
+                collector_version == SESSION_COLLECTOR_VERSION
+                and collection_coverage == "qualified"
+            )
             else "unverified_collection"
         ),
     }

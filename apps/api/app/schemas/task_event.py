@@ -24,6 +24,7 @@ class TaskEventIn(BaseModel):
     was_rejected: bool = False
     client_id: UUID | None = None
     collector_version: str | None = Field(default=None, max_length=32)
+    collection_coverage: Literal["qualified", "partial"] = "qualified"
 
     @field_validator("started_at", "ended_at")
     @classmethod
@@ -46,6 +47,15 @@ class TaskEventBatchIn(BaseModel):
     events: list[TaskEventIn] = Field(min_length=1, max_length=200)
 
 
+class TaskEventDiscarded(BaseModel):
+    """One permanently invalid event from an otherwise usable batch."""
+
+    index: int = Field(ge=0)
+    client_id: UUID | None = None
+    reason: str = Field(min_length=1, max_length=64)
+
+
 class TaskEventBatchOut(BaseModel):
     accepted: int
     queued_async: bool
+    discarded: list[TaskEventDiscarded] = Field(default_factory=list)

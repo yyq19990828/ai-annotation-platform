@@ -22,11 +22,20 @@ export interface TaskEventIn {
   annotation_count?: number;
   was_rejected?: boolean;
   collector_version?: "session-v2";
+  /** Set by the bounded client queue after local events were evicted. */
+  collection_coverage?: "qualified" | "partial";
+}
+
+export interface TaskEventDiscarded {
+  index: number;
+  client_id?: string | null;
+  reason: string;
 }
 
 export interface TaskEventBatchOut {
   accepted: number;
   queued_async: boolean;
+  discarded?: TaskEventDiscarded[];
 }
 
 export const meApi = {

@@ -115,6 +115,67 @@ async def test_task_event_derives_project_and_is_idempotent(
 
 
 @pytest.mark.asyncio
+async def test_task_event_batch_discards_stale_row_without_blocking_valid_row(
+    httpx_client, annotator, db_session, monkeypatch
+):
+    """A deleted task must not strand newer valid intervals behind it."""
+
+    from app.config import settings
+    from app.db.models.task_event import TaskEvent
+
+    user, token = annotator
+    project = _project(user.id, "P-TE-PARTIAL")
+    task = _task(project.id, "T-TE-PARTIAL")
+    db_session.add_all([project, task])
+    await db_session.flush()
+    monkeypatch.setattr(settings, "task_events_async", False)
+
+    stale_id = uuid.uuid4()
+    valid_id = uuid.uuid4()
+    response = await httpx_client.post(
+        "/api/v1/auth/me/task-events:batch",
+        json={
+            "events": [
+                _event(uuid.uuid4(), project.id, stale_id),
+                _event(task.id, project.id, valid_id),
+            ]
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["accepted"] == 1
+    assert body["discarded"] == [
+        {"index": 0, "client_id": str(stale_id), "reason": "task_not_found"}
+    ]
+    assert (
+        await db_session.scalar(
+            select(func.count()).select_from(TaskEvent).where(TaskEvent.id == valid_id)
+        )
+    ) == 1
+    assert (
+        await db_session.scalar(
+            select(func.count()).select_from(TaskEvent).where(TaskEvent.id == stale_id)
+        )
+    ) == 0
+
+    partial_id = uuid.uuid4()
+    partial = _event(task.id, project.id, partial_id)
+    partial["collection_coverage"] = "partial"
+    response = await httpx_client.post(
+        "/api/v1/auth/me/task-events:batch",
+        json={"events": [partial]},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200, response.text
+    partial_row = await db_session.get(TaskEvent, partial_id)
+    assert partial_row is not None
+    assert partial_row.collection_source == "session"
+    assert partial_row.collection_coverage == "unverified_collection"
+
+
+@pytest.mark.asyncio
 async def test_task_event_rejects_conflicting_project_and_future_interval(
     httpx_client, annotator, db_session, monkeypatch
 ):
@@ -250,3 +311,11 @@ async def test_worker_revalidates_payload_and_deduplicates(
             select(func.count()).select_from(TaskEvent).where(TaskEvent.id == event_id)
         )
     ) == 1
+
+    partial_id = uuid.uuid4()
+    partial = {**payload, "id": str(partial_id), "collection_coverage": "partial"}
+    assert await _async_persist([partial]) == 1
+    partial_row = await db_session.get(TaskEvent, partial_id)
+    assert partial_row is not None
+    assert partial_row.collection_source == "session"
+    assert partial_row.collection_coverage == "unverified_collection"
