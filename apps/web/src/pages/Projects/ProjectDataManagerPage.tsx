@@ -1567,13 +1567,7 @@ function TaskDataManagerPage({
                           }}
                         >
                           <div className="relative flex h-32 items-center justify-center overflow-hidden bg-muted">
-                            <Thumbnail
-                              src={task.thumbnail_url}
-                              blurhash={task.blurhash}
-                              alt={task.file_name}
-                              width={160}
-                              height={128}
-                            />
+                            <TaskPreview task={task} width={160} height={128} />
                             <label
                               className="absolute top-2 left-2 rounded-sm bg-background/85 p-1.5 shadow-sm"
                               onClick={(event) => event.stopPropagation()}
@@ -1692,13 +1686,7 @@ function TaskDataManagerPage({
                               />
                             </td>
                             <td>
-                              <Thumbnail
-                                src={task.thumbnail_url}
-                                blurhash={task.blurhash}
-                                alt={task.file_name}
-                                width={44}
-                                height={36}
-                              />
+                              <TaskPreview task={task} width={44} height={36} />
                             </td>
                             {columns.map((column) => (
                               <td
@@ -1888,6 +1876,40 @@ function TaskDataManagerPage({
         </AlertDialog>
       </DataManagerLensTabs>
     </div>
+  );
+}
+
+function TaskPreview({
+  task,
+  width,
+  height,
+}: {
+  task: DataManagerTask;
+  width: number;
+  height: number;
+}) {
+  if (task.file_type === "point_cloud") {
+    return (
+      <div
+        role="img"
+        aria-label="点云数据"
+        className={cn(
+          "flex items-center justify-center rounded-md bg-muted text-2xs text-muted-foreground",
+          width === 44 ? "h-9 w-11" : "h-32 w-40",
+        )}
+      >
+        点云
+      </div>
+    );
+  }
+  return (
+    <Thumbnail
+      src={task.thumbnail_url}
+      blurhash={task.blurhash}
+      alt={task.file_name}
+      width={width}
+      height={height}
+    />
   );
 }
 

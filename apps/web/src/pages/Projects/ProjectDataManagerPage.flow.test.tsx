@@ -435,7 +435,8 @@ describe("ProjectDataManagerPage filter hydration", () => {
         id: "task-gallery",
         project_id: "p1",
         display_id: "T-gallery",
-        file_name: "gallery.png",
+        file_name: "gallery.bin",
+        file_type: "point_cloud",
         status: "pending",
         annotation_count: 0,
         unresolved_feedback_count: 0,
@@ -463,6 +464,9 @@ describe("ProjectDataManagerPage filter hydration", () => {
     expect(screen.getByLabelText("任务画廊").parentElement).toHaveClass("max-sm:min-h-[280px]");
     fireEvent.click(checkbox.parentElement!);
     expect(screen.queryByRole("heading", { name: "T-gallery" })).not.toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "点云数据" })).toHaveTextContent("点云");
+    fireEvent.click(screen.getByRole("button", { name: "列表视图" }));
+    expect(screen.getByRole("img", { name: "点云数据" })).toHaveTextContent("点云");
   });
 
   it("offers a retry action when the task schema request fails", () => {
