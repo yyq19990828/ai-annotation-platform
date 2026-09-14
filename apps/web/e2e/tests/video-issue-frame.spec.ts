@@ -1,5 +1,13 @@
 import { isVideoLifecycleCancellation } from "../helpers/video-request-errors";
-import type { APIRequestContext, APIResponse, Browser, Page, Route } from "@playwright/test";
+import type {
+  APIRequestContext,
+  APIResponse,
+  Browser,
+  Page,
+  Request,
+  Response,
+  Route,
+} from "@playwright/test";
 import { randomUUID } from "node:crypto";
 
 import { expect, test as base, type SeedData } from "../fixtures/seed";
@@ -54,6 +62,41 @@ function expectedRequestAbort(error: EvidenceError, fixture: IssueCase) {
     return fixture.mediaLatency && /^\/api\/v1\/tasks\/[0-9a-f-]{36}\/lock$/.test(error.path);
   if (error.method !== "GET") return false;
   return fixture.mediaLatency && isFixtureMedia(new URL(error.path, API_BASE), fixture.fixtureName);
+}
+
+/**
+ * 等待工作台 300ms 防抖的偏好 PATCH 全部落定再刷新。
+ *
+ * 保存 Issue 后面板/停靠状态可能再排一次防抖写入;被 reload 中断的在途 PATCH
+ * 按 video-request-errors 的约定属于错误(evidence),因此刷新前需确认无在途
+ * 请求且静默窗口超过防抖周期,保证后续 reload 不会切断任何写入。
+ */
+async function settlePreferenceWrites(page: Page) {
+  let inFlight = 0;
+  let lastActivity = Date.now();
+  const isPreferencePatch = (method: string, url: string) =>
+    method === "PATCH" && pathOf(url) === "/api/v1/auth/me/preferences";
+  const onRequest = (request: Request) => {
+    if (!isPreferencePatch(request.method(), request.url())) return;
+    inFlight += 1;
+    lastActivity = Date.now();
+  };
+  const onResponse = (response: Response) => {
+    if (!isPreferencePatch(response.request().method(), response.url())) return;
+    inFlight -= 1;
+    lastActivity = Date.now();
+    expect(response.ok()).toBe(true);
+  };
+  page.on("request", onRequest);
+  page.on("response", onResponse);
+  try {
+    await expect
+      .poll(() => inFlight === 0 && Date.now() - lastActivity > 450, { timeout: 10_000 })
+      .toBe(true);
+  } finally {
+    page.off("request", onRequest);
+    page.off("response", onResponse);
+  }
 }
 
 async function json<T>(response: APIResponse): Promise<T> {
@@ -659,6 +702,7 @@ test.describe("video Issue source-frame ownership", () => {
     expect(issue).toMatchObject({ anchor_type: "task", anchor_position: null });
     // Direct task creation can finish before the debounced layout write; preserve it on reload.
     expect((await layoutSaved).ok()).toBe(true);
+    await settlePreferenceWrites(page);
     await page.reload();
     await expect(stage(page)).toBeVisible({ timeout: 25_000 });
     await seek(page, 8);
