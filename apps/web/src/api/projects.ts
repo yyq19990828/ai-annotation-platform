@@ -1,6 +1,7 @@
 import { apiClient } from "./client";
 import type {
   ProjectOut,
+  ProjectPage as GenProjectPage,
   ProjectCreate,
   ProjectUpdate,
   ProjectStats,
@@ -239,23 +240,39 @@ export interface ProjectListParams {
   created_to?: string;
 }
 
+export interface ProjectPageParams extends ProjectListParams {
+  page: number;
+  page_size: number;
+}
+
+export type ProjectPage = Omit<GenProjectPage, "items"> & {
+  items: ProjectResponse[];
+};
+
+function projectQueryString(params?: ProjectListParams | ProjectPageParams) {
+  const q = new URLSearchParams();
+  Object.entries(params ?? {}).forEach(([k, v]) => {
+    if (v === undefined || v === null) return;
+    if (Array.isArray(v)) {
+      v.forEach((vi) => q.append(k, String(vi)));
+    } else {
+      q.append(k, String(v));
+    }
+  });
+  return q.toString();
+}
+
 export const projectsApi = {
   list: (params?: ProjectListParams, init?: RequestInit) => {
-    const q = new URLSearchParams();
-    Object.entries(params ?? {}).forEach(([k, v]) => {
-      if (v === undefined || v === null) return;
-      if (Array.isArray(v)) {
-        v.forEach((vi) => q.append(k, String(vi)));
-      } else {
-        q.append(k, String(v));
-      }
-    });
-    const qs = q.toString();
+    const qs = projectQueryString(params);
     const path = `/projects${qs ? `?${qs}` : ""}`;
     return init
       ? apiClient.get<ProjectResponse[]>(path, init)
       : apiClient.get<ProjectResponse[]>(path);
   },
+
+  page: (params: ProjectPageParams, init?: RequestInit) =>
+    apiClient.get<ProjectPage>(`/projects/query?${projectQueryString(params)}`, init),
 
   stats: () => apiClient.get<ProjectStatsResponse>("/projects/stats"),
 

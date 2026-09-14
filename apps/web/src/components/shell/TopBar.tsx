@@ -22,6 +22,7 @@ import { PreannotateJobsBadge } from "./PreannotateJobsBadge";
 import { JobsBell } from "./JobsBell";
 import { CommandPalette } from "@/components/CommandPalette";
 import { usePerfHudStore } from "@/components/PerfHud";
+import { version as appVersion } from "../../../package.json";
 
 const NotificationsPopover = lazy(() =>
   import("./NotificationsPopover").then((module) => ({ default: module.NotificationsPopover })),
@@ -99,7 +100,7 @@ export function TopBar({
               className="size-[22px] shrink-0 rounded-md"
             />
             <span>标注中心</span>
-            <span className="ml-1 text-xs font-normal text-muted-foreground">v2.5</span>
+            <span className="ml-1 text-xs font-normal text-muted-foreground">v{appVersion}</span>
           </div>
           <div
             onClick={onWorkspaceChange}
