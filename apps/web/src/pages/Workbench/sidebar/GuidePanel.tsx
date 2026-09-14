@@ -16,7 +16,7 @@ import {
 import { annotationGuideVersion, isGuideSeen, markGuideSeen } from "@/utils/annotationGuide";
 import {
   WORKBENCH_DIALOG_CONTENT_CLASS,
-  WORKBENCH_DIALOG_OVERLAY_CLASS,
+  workbenchDialogOverlayClass,
 } from "../shell/workbenchDialogClasses";
 
 export interface GuidePanelProps {
@@ -27,6 +27,8 @@ export interface GuidePanelProps {
   content: string | null | undefined;
   /** 顶栏提供的当前项目名称，用于对话框上下文。 */
   projectName?: string;
+  /** 关闭遮罩背景模糊(3D / 点云工作台,见 workbenchDialogClasses)。 */
+  backdropBlur?: boolean;
 }
 
 export function guidePanelScopeKey({
@@ -51,6 +53,7 @@ export function GuidePanel({
   guideVersion,
   content,
   projectName,
+  backdropBlur = true,
 }: GuidePanelProps) {
   const trimmed = (content ?? "").trim();
   const version = guideVersion ?? annotationGuideVersion(content);
@@ -145,7 +148,7 @@ export function GuidePanel({
         data-workbench-guide=""
         className={WORKBENCH_DIALOG_CONTENT_CLASS}
         overlayProps={{
-          className: WORKBENCH_DIALOG_OVERLAY_CLASS,
+          className: workbenchDialogOverlayClass(backdropBlur),
           "data-testid": "wb-guide-overlay",
           "data-workbench-guide": "",
           onPointerDown: (event) => {

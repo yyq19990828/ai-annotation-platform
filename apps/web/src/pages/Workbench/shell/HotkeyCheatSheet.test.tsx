@@ -98,6 +98,15 @@ describe("HotkeyCheatSheet", () => {
     expect(row?.textContent).toContain("Ctrl+Backspace");
   });
 
+  it("keeps the overlay unblurred on the 3D stage only", () => {
+    const view = mount({ stageKind: "3d" });
+    expect(screen.getByTestId("workbench-hotkeys-overlay")).not.toHaveClass(
+      "backdrop-blur-overlay",
+    );
+    view.rerender(<HotkeyCheatSheet open onClose={vi.fn()} stageKind="image" />);
+    expect(screen.getByTestId("workbench-hotkeys-overlay")).toHaveClass("backdrop-blur-overlay");
+  });
+
   it("colors each stage chip by workbench stage in the all-types view", async () => {
     const user = userEvent.setup();
     mount({ shortcuts: makeShortcuts() });

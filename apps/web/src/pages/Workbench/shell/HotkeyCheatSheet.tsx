@@ -39,7 +39,7 @@ import {
 } from "../state/hotkeys";
 import {
   WORKBENCH_DIALOG_CONTENT_CLASS,
-  WORKBENCH_DIALOG_OVERLAY_CLASS,
+  workbenchDialogOverlayClass,
 } from "./workbenchDialogClasses";
 
 const KBD_CLASS =
@@ -728,7 +728,8 @@ export function HotkeyCheatSheet({
         data-workbench-hotkeys=""
         className={WORKBENCH_DIALOG_CONTENT_CLASS}
         overlayProps={{
-          className: WORKBENCH_DIALOG_OVERLAY_CLASS,
+          // 点云(3D)画布不模糊遮罩,避免软件渲染下拖慢合成清理。
+          className: workbenchDialogOverlayClass(stageKind !== "3d"),
           "data-testid": "workbench-hotkeys-overlay",
           "data-workbench-hotkeys": "",
           onPointerDown: (event) => {

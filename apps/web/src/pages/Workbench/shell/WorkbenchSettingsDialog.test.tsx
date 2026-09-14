@@ -110,6 +110,19 @@ describe("WorkbenchSettingsDialog", () => {
     expect(screen.getByText("没有找到相关设置")).toBeVisible();
   });
 
+  it("keeps the overlay blurred by default and unblurred on a live 3D canvas", () => {
+    const view = mount();
+    expect(screen.getByTestId("workbench-settings-overlay")).toHaveClass("backdrop-blur-overlay");
+    view.rerender(
+      <MemoryRouter>
+        <WorkbenchSettingsDialog open onClose={vi.fn()} backdropBlur={false} />
+      </MemoryRouter>,
+    );
+    const overlay = screen.getByTestId("workbench-settings-overlay");
+    expect(overlay).not.toHaveClass("backdrop-blur-overlay");
+    expect(overlay).toHaveClass("bg-black/25");
+  });
+
   it("highlights matched terms and keeps section legends above field labels", async () => {
     mount();
     const user = userEvent.setup();

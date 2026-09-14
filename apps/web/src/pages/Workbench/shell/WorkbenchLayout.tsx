@@ -160,6 +160,9 @@ export function WorkbenchLayout({
     [floatingSelection, linkedFloatingSelection, setPetPosition],
   );
 
+  // 3D / 点云画布在软件渲染下用 backdrop-filter 会拖慢合成清理，这类工作台只压暗。
+  const dialogBackdropBlur = stageHost.common.stageKind !== "3d";
+
   return (
     <div ref={rootRef} className="relative flex h-full flex-col overflow-hidden bg-muted">
       <WorkbenchDockWorkspace
@@ -175,6 +178,7 @@ export function WorkbenchLayout({
                     key={guidePanelScopeKey(guidePanel)}
                     {...guidePanel}
                     projectName={topbar.projectName}
+                    backdropBlur={dialogBackdropBlur}
                   />
                 ) : undefined
               }
@@ -182,7 +186,11 @@ export function WorkbenchLayout({
               layoutDisabled={state.disabled}
               sides={state.sides}
             />
-            <WorkbenchSettingsDialog {...workbenchSettings} layoutSettings={layoutSettings} />
+            <WorkbenchSettingsDialog
+              {...workbenchSettings}
+              layoutSettings={layoutSettings}
+              backdropBlur={dialogBackdropBlur}
+            />
           </>
         )}
         slots={{

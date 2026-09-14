@@ -33,7 +33,7 @@ import styles from "./WorkbenchSettingsDialog.module.css";
 import { useWorkbenchConfig } from "../state/useWorkbenchConfig";
 import {
   WORKBENCH_DIALOG_CONTENT_CLASS,
-  WORKBENCH_DIALOG_OVERLAY_CLASS,
+  workbenchDialogOverlayClass,
 } from "./workbenchDialogClasses";
 
 interface WorkbenchSettingsDialogProps {
@@ -45,6 +45,8 @@ interface WorkbenchSettingsDialogProps {
   onToggleHideOrphans?: () => void;
   secondaryBarHidden?: boolean;
   onToggleSecondaryBar?: () => void;
+  /** 关闭遮罩背景模糊(3D / 点云工作台,见 workbenchDialogClasses)。 */
+  backdropBlur?: boolean;
 }
 
 interface SettingsEntry extends SettingsControlField {
@@ -66,6 +68,7 @@ export function WorkbenchSettingsDialog({
   onToggleHideOrphans,
   secondaryBarHidden,
   onToggleSecondaryBar,
+  backdropBlur = true,
 }: WorkbenchSettingsDialogProps) {
   // 保持 hook 挂载，关闭窗口不取消待发送的防抖保存。
   const { config, loaded, loadError, retryLoad, lockedFields, setFields } =
@@ -171,7 +174,7 @@ export function WorkbenchSettingsDialog({
         data-previewing={previewField ? "true" : undefined}
         className={`${styles.dialog} ${WORKBENCH_DIALOG_CONTENT_CLASS}`}
         overlayProps={{
-          className: `${WORKBENCH_DIALOG_OVERLAY_CLASS} ${previewField ? "opacity-0" : ""}`,
+          className: `${workbenchDialogOverlayClass(backdropBlur)} ${previewField ? "opacity-0" : ""}`,
           "data-testid": "workbench-settings-overlay",
           "data-workbench-settings": "",
           onPointerDown: (event) => {

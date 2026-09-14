@@ -56,7 +56,7 @@ Neutral UI should stay neutral. Use color only for meaning:
 
 Status chips should use the semantic soft background, the matching status text utility, and a small `bg-current` dot when a quick scan cue helps. Do not write paired hue classes such as `text-rose-600 dark:text-rose-400`; the status utilities read theme tokens from `shadcn.css`.
 
-Search hits in list panels use `bg-mark text-mark-foreground` (solid warm background with dark text) so they stay legible on both themes. The stage colors (`image` / `video` / `threed`) are a separate meaning from status: they only distinguish which workbench the pending commands apply to when a view mixes stages (for example the shortcut panel's "all types" filter). Do not reuse them for state. Every centered overlay uses the single `backdrop-blur-overlay` utility so the workbench's floating panels and app modals blur the backdrop to the same degree.
+Search hits in list panels use `bg-mark text-mark-foreground` (solid warm background with dark text) so they stay legible on both themes. The stage colors (`image` / `video` / `threed`) are a separate meaning from status: they only distinguish which workbench the pending commands apply to when a view mixes stages (for example the shortcut panel's "all types" filter). Do not reuse them for state. Every centered overlay uses the single `backdrop-blur-overlay` utility so the workbench's floating panels and app modals blur the backdrop to the same degree. The 3D/point-cloud workbench keeps the dim without the blur: backdrop-filtering a live software-rendered canvas stalls compositor cleanup, so those panels use the no-blur overlay variant.
 
 ## Type Scale
 
