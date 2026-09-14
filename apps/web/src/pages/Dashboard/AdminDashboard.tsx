@@ -376,19 +376,6 @@ export function AdminDashboard() {
                             className={`${TABLE_CELL_CLASS} py-2.5 pr-4 text-right whitespace-nowrap`}
                           >
                             <div className="inline-flex items-center gap-1 whitespace-nowrap">
-                              {/* v0.10.11 · 「复制项目配置」入口 — 跳 Wizard 复制流, 用源项目配置预填. */}
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  navigate(`/dashboard?new=1&from=${p.id}`);
-                                }}
-                                title="复制项目配置（不复制数据集 / 任务 / 成员）"
-                              >
-                                <Icon name="copy" size={13} />
-                                复制
-                              </Button>
                               <Button
                                 size="sm"
                                 variant="ghost"
