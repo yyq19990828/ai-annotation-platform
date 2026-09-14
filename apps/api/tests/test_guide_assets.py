@@ -2,12 +2,12 @@
 
 覆盖:
 - upload-init 成功签发 URL + key 形如 projects/{id}/guide/{uuid}-{filename}
-- 非 owner / 非 super_admin 访问 → 403
+- 非 owner / 非 super_admin 写入 → 403
 - 不支持的 content_type → 400
 - upload-complete 成功 append entry 到 project.guide_assets
 - upload-complete 校验 storage 上文件存在 (head_object), 不存在 → 400
 - DELETE 同步移除 entry + 调 storage.delete_object
-- sign-url 返回签名 URL
+- sign-url 对项目可见用户返回签名 URL，非成员或已移除成员 → 404
 - key 不属于当前项目 → 404 (防越权)
 """
 
@@ -15,9 +15,11 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.project import Project
+from app.db.models.project_member import ProjectMember
 
 
 async def _seed_project(db: AsyncSession, owner_id: uuid.UUID) -> Project:
@@ -32,6 +34,33 @@ async def _seed_project(db: AsyncSession, owner_id: uuid.UUID) -> Project:
     db.add(proj)
     await db.flush()
     return proj
+
+
+def _add_guide_asset(proj: Project) -> str:
+    key = f"projects/{proj.id}/guide/{uuid.uuid4()}-show.png"
+    proj.guide_assets = [
+        {
+            "key": key,
+            "original_name": "show.png",
+            "content_type": "image/png",
+            "size": 100,
+            "uploaded_at": "2026-05-18T00:00:00+00:00",
+        }
+    ]
+    return key
+
+
+def _add_member(
+    db: AsyncSession, proj: Project, user_id: uuid.UUID, role: str
+) -> ProjectMember:
+    member = ProjectMember(
+        project_id=proj.id,
+        user_id=user_id,
+        role=role,
+        assigned_by=proj.owner_id,
+    )
+    db.add(member)
+    return member
 
 
 def _patch_storage(monkeypatch, *, upload_present=True, content_length=1024):
@@ -230,25 +259,23 @@ async def test_delete_asset_removes_entry_and_calls_storage(
     assert detail.json()["guide_assets"] == []
 
 
+@pytest.mark.parametrize("as_super_admin", [False, True])
 async def test_sign_url_returns_short_lived_url(
-    httpx_client_bound, super_admin, db_session, monkeypatch
+    httpx_client_bound,
+    super_admin,
+    project_admin,
+    db_session,
+    monkeypatch,
+    as_super_admin,
 ):
     _patch_storage(monkeypatch)
-    user, token = super_admin
+    user, token = project_admin
     proj = await _seed_project(db_session, user.id)
-
-    key = f"projects/{proj.id}/guide/{uuid.uuid4()}-show.png"
-    proj.guide_assets = [
-        {
-            "key": key,
-            "original_name": "show.png",
-            "content_type": "image/png",
-            "size": 100,
-            "uploaded_at": "2026-05-18T00:00:00+00:00",
-        }
-    ]
+    key = _add_guide_asset(proj)
     await db_session.commit()
 
+    if as_super_admin:
+        _, token = super_admin
     headers = {"Authorization": f"Bearer {token}"}
     resp = await httpx_client_bound.get(
         f"/api/v1/projects/{proj.id}/guide-assets/sign-url",
@@ -259,6 +286,144 @@ async def test_sign_url_returns_short_lived_url(
     data = resp.json()
     assert data["url"].startswith("http://storage.local/get/")
     assert data["expires_in"] == 3600
+
+
+@pytest.mark.parametrize("role", ["annotator", "reviewer", "viewer"])
+async def test_project_members_can_read_guide_images(
+    httpx_client_bound,
+    project_admin,
+    annotator,
+    reviewer,
+    db_session,
+    monkeypatch,
+    role,
+):
+    _patch_storage(monkeypatch)
+    owner, _ = project_admin
+    user, token = reviewer if role == "reviewer" else annotator
+    proj = await _seed_project(db_session, owner.id)
+    key = _add_guide_asset(proj)
+    _add_member(db_session, proj, user.id, role)
+    await db_session.commit()
+
+    resp = await httpx_client_bound.get(
+        f"/api/v1/projects/{proj.id}/guide-assets/sign-url",
+        params={"key": key},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json() == {"url": f"http://storage.local/get/{key}", "expires_in": 3600}
+
+
+async def test_removed_member_cannot_request_new_guide_image_urls(
+    httpx_client_bound, project_admin, annotator, db_session, monkeypatch
+):
+    _patch_storage(monkeypatch)
+    owner, _ = project_admin
+    user, token = annotator
+    proj = await _seed_project(db_session, owner.id)
+    key = _add_guide_asset(proj)
+    member = _add_member(db_session, proj, user.id, "annotator")
+    await db_session.commit()
+    endpoint = f"/api/v1/projects/{proj.id}/guide-assets/sign-url"
+    kwargs = {"params": {"key": key}, "headers": {"Authorization": f"Bearer {token}"}}
+
+    allowed = await httpx_client_bound.get(endpoint, **kwargs)
+    assert allowed.status_code == 200, allowed.text
+    await db_session.delete(member)
+    await db_session.commit()
+    denied = await httpx_client_bound.get(endpoint, **kwargs)
+    assert denied.status_code == 404, denied.text
+
+
+@pytest.mark.parametrize("as_project_admin", [False, True])
+async def test_non_member_cannot_read_guide_images(
+    httpx_client_bound,
+    super_admin,
+    project_admin,
+    annotator,
+    db_session,
+    monkeypatch,
+    as_project_admin,
+):
+    _patch_storage(monkeypatch)
+    owner, _ = super_admin
+    _, token = project_admin if as_project_admin else annotator
+    proj = await _seed_project(db_session, owner.id)
+    key = _add_guide_asset(proj)
+    await db_session.commit()
+
+    resp = await httpx_client_bound.get(
+        f"/api/v1/projects/{proj.id}/guide-assets/sign-url",
+        params={"key": key},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 404, resp.text
+
+
+@pytest.mark.parametrize("foreign_project", [False, True])
+async def test_member_cannot_sign_unregistered_or_foreign_guide_keys(
+    httpx_client_bound,
+    project_admin,
+    annotator,
+    db_session,
+    monkeypatch,
+    foreign_project,
+):
+    _patch_storage(monkeypatch)
+    owner, _ = project_admin
+    user, token = annotator
+    proj = await _seed_project(db_session, owner.id)
+    _add_guide_asset(proj)
+    _add_member(db_session, proj, user.id, "annotator")
+    key_project_id = uuid.uuid4() if foreign_project else proj.id
+    key = f"projects/{key_project_id}/guide/{uuid.uuid4()}-unknown.png"
+    if foreign_project:
+        proj.guide_assets = [{**proj.guide_assets[0], "key": key}]
+    await db_session.commit()
+
+    resp = await httpx_client_bound.get(
+        f"/api/v1/projects/{proj.id}/guide-assets/sign-url",
+        params={"key": key},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code == 404, resp.text
+
+
+@pytest.mark.parametrize("operation", ["upload-init", "upload-complete", "delete"])
+async def test_project_member_cannot_modify_guide_assets(
+    httpx_client_bound, project_admin, annotator, db_session, monkeypatch, operation
+):
+    deleted = _patch_storage(monkeypatch)
+    owner, _ = project_admin
+    user, token = annotator
+    proj = await _seed_project(db_session, owner.id)
+    key = _add_guide_asset(proj)
+    _add_member(db_session, proj, user.id, "annotator")
+    await db_session.commit()
+    await db_session.refresh(proj)
+    endpoint = f"/api/v1/projects/{proj.id}/guide-assets"
+    headers = {"Authorization": f"Bearer {token}"}
+    if operation == "delete":
+        resp = await httpx_client_bound.delete(
+            endpoint, params={"key": key}, headers=headers
+        )
+    else:
+        payload = (
+            {"filename": "new.png", "content_type": "image/png", "size": 100}
+            if operation == "upload-init"
+            else {"key": key, "original_name": "show.png", "content_type": "image/png"}
+        )
+        resp = await httpx_client_bound.post(
+            f"{endpoint}/{operation}", json=payload, headers=headers
+        )
+    assert resp.status_code == 403, resp.text
+    assert deleted == []
+    detail = await httpx_client_bound.get(
+        f"/api/v1/projects/{proj.id}", headers=headers
+    )
+    assert detail.status_code == 200, detail.text
+    assert [asset["key"] for asset in detail.json()["guide_assets"]] == [key]
 
 
 async def test_patch_project_annotation_guide(

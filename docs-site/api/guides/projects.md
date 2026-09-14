@@ -66,6 +66,19 @@ POST /api/v1/projects/:id/cleanup-orphans
 - `class-usage` 返回 `{ classes: {name: count}, attributes: {key: count} }`，用于删除确认。
 - `cleanup-orphans` 默认 `dry_run=true`，返回 `{ orphan_annotations, orphan_attribute_keys }`；`dry_run=false` 时软删孤儿类别标注，并移除有效类别标注中不在当前 attribute schema 内的用户属性 key。
 
+## 标注指引图片
+
+```http
+GET    /api/v1/projects/:id/guide-assets/sign-url?key=<resource-key>
+POST   /api/v1/projects/:id/guide-assets/upload-init
+POST   /api/v1/projects/:id/guide-assets/upload-complete
+DELETE /api/v1/projects/:id/guide-assets?key=<resource-key>
+```
+
+图片读取沿用项目可见性规则：超级管理员、项目负责人及项目成员可申请短期签名链接，响应的 `expires_in` 为 3600 秒，实际签名到期时间会向下一个 10 分钟缓存窗口边界对齐。非成员或已移出的成员返回 404。资源 key 必须属于当前项目且已登记在该项目的 `guide_assets` 中，未登记或跨项目的 key 返回 404。已签发链接在到期前仍可使用。
+
+上传与删除仅限项目负责人或超级管理员；普通项目成员写入返回 403。正文通过项目的 `annotation_guide` 字段读取和保存。
+
 ## 成员管理
 
 ```http
