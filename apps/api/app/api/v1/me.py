@@ -15,9 +15,11 @@ from app.db.models.user import User
 from app.schemas.me import PasswordChange, ProfileUpdate
 from app.schemas.user import (
     NamedPresetsRevision,
+    ShortcutBinding,
     UserOut,
     UserPreferences,
     UserPreferencesRead,
+    WorkbenchShortcutPreferences,
 )
 from app.schemas.workbench_workspace import (
     MAX_NAMED_PRESETS,
@@ -185,6 +187,86 @@ _NAMED_PRESETS_REVISION_KEY = "namedPresetsRevision"
 _INITIAL_NAMED_PRESETS_REVISION = "0"
 _NAMED_PRESET_ADAPTER = TypeAdapter(dict[PresetId, NamedWorkspacePreset])
 _NAMED_PRESETS_REVISION_ADAPTER = TypeAdapter(NamedPresetsRevision)
+
+# v0.24 · 快捷键覆盖：按命令条目深合并；GET 对损坏 / 更新版本子树走 opaque 兜底。
+_SHORTCUTS_PATH = ("workbench", "shortcuts")
+_SHORTCUTS_DOMAINS = ("common", "image", "video")
+_SHORTCUT_ENTRY_ADAPTER = TypeAdapter(list[ShortcutBinding] | None)
+
+
+def _shortcuts_value(prefs: dict) -> dict | None:
+    value = prefs
+    for key in _SHORTCUTS_PATH:
+        if not isinstance(value, dict) or key not in value:
+            return None
+        value = value[key]
+    return value if isinstance(value, dict) else None
+
+
+def _with_shortcuts(prefs: dict, shortcuts: dict) -> dict:
+    workbench = dict(prefs.get("workbench") or {})
+    workbench["shortcuts"] = shortcuts
+    return {**prefs, "workbench": workbench}
+
+
+def _prepare_shortcuts_validation(payload: dict, existing: dict) -> tuple[dict, dict]:
+    """Strictly validate changed shortcut entries; untouched stored entries stay opaque.
+
+    Mirrors the workspace-envelope contract: an unrelated preference PATCH never
+    revalidates the stored subtree as a new shortcut write, an unchanged entry
+    that no longer validates keeps its stored value verbatim, and explicitly
+    resetting an affected entry to null still passes strict validation.
+    """
+    incoming = _shortcuts_value(payload)
+    if incoming is None:
+        return payload, {}
+    stored = _shortcuts_value(existing) or {}
+    opaque: dict[str, dict[str, object]] = {}
+    # Preserve submitted metadata and field presence: omitted buckets must not
+    # become writes, and malformed metadata / explicit null buckets must still
+    # reach the normal model validation below.
+    validation = dict(incoming)
+    for domain in _SHORTCUTS_DOMAINS:
+        if domain not in incoming:
+            continue
+        incoming_bucket = incoming[domain]
+        if not isinstance(incoming_bucket, dict):
+            # Leave malformed buckets in the payload so Pydantic reports the normal 422.
+            continue
+        stored_bucket = (
+            stored.get(domain) if isinstance(stored.get(domain), dict) else {}
+        )
+        strict_bucket: dict[str, object] = {}
+        for command_id, value in incoming_bucket.items():
+            stored_value = stored_bucket.get(command_id)
+            if (
+                value is not None
+                and command_id in stored_bucket
+                and _same_json_value(value, stored_value)
+            ):
+                try:
+                    # Include command IDs and per-command binding limits in the
+                    # compatibility decision, not just the binding shape.
+                    WorkbenchShortcutPreferences.model_validate(
+                        {domain: {command_id: value}}
+                    )
+                except ValidationError:
+                    opaque.setdefault(domain, {})[command_id] = stored_value
+                    continue
+            # 预归一化：defaulted 字段（如缺省 modifiers）在此补全，避免 exclude_unset
+            # 把半截绑定写进 JSONB。校验失败时保留原值，让整模型给出常规 422。
+            try:
+                normalized = _SHORTCUT_ENTRY_ADAPTER.validate_python(value)
+            except ValidationError:
+                strict_bucket[command_id] = value
+            else:
+                strict_bucket[command_id] = (
+                    [b.model_dump(mode="json", by_alias=True) for b in normalized]
+                    if normalized is not None
+                    else None
+                )
+        validation[domain] = strict_bucket
+    return _with_shortcuts(payload, validation), opaque
 
 
 def _becomes_null_in_javascript(value) -> bool:
@@ -417,16 +499,19 @@ def _strip_removed_workbench_keys(prefs: dict) -> dict:
 
 
 def _preferences_response(prefs: dict) -> JSONResponse:
-    """Keep stored workspace envelopes intact for client recovery/version detection.
+    """Keep stored workspace envelopes and shortcut subtrees intact for client recovery.
 
-    Incoming workspace writes are strict. Reading must also tolerate corrupt or
-    future layouts without failing the whole workbench or silently overwriting
-    them with today's defaults. Other preferences keep their existing validation.
+    Incoming workspace / shortcut writes are strict. Reading must also tolerate
+    corrupt or future subtrees without failing the whole workbench or silently
+    overwriting them with today's defaults. Other preferences keep their
+    existing validation.
     """
     prefs = _strip_removed_workbench_keys(prefs)
     workbench = prefs.get("workbench", {})
     layout = workbench.get("layout", {}) if isinstance(workbench, dict) else {}
     has_workspace = isinstance(layout, dict) and "workspace" in layout
+    shortcuts_raw = workbench.get("shortcuts") if isinstance(workbench, dict) else None
+    has_shortcuts = shortcuts_raw is not None
     if has_workspace:
         prefs = {
             **prefs,
@@ -437,6 +522,8 @@ def _preferences_response(prefs: dict) -> JSONResponse:
                 },
             },
         }
+    if has_shortcuts:
+        prefs = _with_shortcuts(prefs, {})
     content = UserPreferences.model_validate(prefs).model_dump(
         mode="json", by_alias=True
     )
@@ -444,6 +531,17 @@ def _preferences_response(prefs: dict) -> JSONResponse:
         content["workbench"]["layout"]["workspace"] = layout["workspace"]
     else:
         content["workbench"]["layout"].pop("workspace", None)
+    if has_shortcuts:
+        try:
+            content["workbench"]["shortcuts"] = (
+                WorkbenchShortcutPreferences.model_validate(shortcuts_raw).model_dump(
+                    mode="json", by_alias=True
+                )
+            )
+        except ValidationError:
+            # Corrupt or newer shortcut subtree: pass it through verbatim so the
+            # client can identify the affected overrides instead of losing them.
+            content["workbench"]["shortcuts"] = shortcuts_raw
     return JSONResponse(content)
 
 
@@ -513,6 +611,9 @@ async def update_preferences(
     validation_payload, opaque_presets, engine_supplied, had_stored_workspace = (
         _prepare_workspace_validation(promoted, existing)
     )
+    validation_payload, opaque_shortcuts = _prepare_shortcuts_validation(
+        validation_payload, existing
+    )
     try:
         validated = UserPreferences.model_validate(validation_payload)
     except ValidationError as exc:
@@ -544,6 +645,15 @@ async def update_preferences(
                 **opaque_presets,
             }
         incoming = _with_workspace(incoming, incoming_workspace)
+    # v0.24 · 快捷键：把未变更但不再通过校验的存量条目原样放回，保证深合并后
+    # 存量值不被默认值静默覆盖（保留给客户端识别与修正）。
+    if opaque_shortcuts:
+        incoming_shortcuts = dict(_shortcuts_value(incoming) or {})
+        for domain, entries in opaque_shortcuts.items():
+            bucket = dict(incoming_shortcuts.get(domain) or {})
+            bucket.update(entries)
+            incoming_shortcuts[domain] = bucket
+        incoming = _with_shortcuts(incoming, incoming_shortcuts)
     # 通用深度合并: dict 递归合并子键, 其它类型 (list/scalar) 直接覆盖。
     # 覆盖历史上按需增加的两层浅合并 (ai.* / ui.*): 现在 workbench 子树 (layout / common /
     # image / video / pointcloud) 与 ai.secondary_by_model (深度 2) 都能守住"单键 PATCH

@@ -11,6 +11,119 @@ NamedPresetsRevision = Annotated[
 ]
 
 
+_SHORTCUT_MODIFIER_KEY_NAMES = frozenset(
+    {"shift", "control", "alt", "altgraph", "meta", "capslock", "numlock", "fn"}
+)
+
+
+class ShortcutBinding(BaseModel):
+    """v0.24 · 单条结构化快捷键绑定。
+
+    ``key`` 是规范化的 ``KeyboardEvent.key``：单个字符（任意字符，如 ``/``）或
+    小写命名键（如 ``arrowright``）。``modifiers`` 是显式修饰键集合，匹配时要求
+    完全一致（``mod`` = 平台主修饰键，Ctrl/⌘）。
+    """
+
+    model_config = {"extra": "forbid"}
+
+    key: str = Field(
+        min_length=1, max_length=32, pattern=r"^(?:.{1}|[a-z][a-z0-9]{0,31})$"
+    )
+    modifiers: list[Literal["mod", "alt", "shift"]] = Field(default_factory=list)
+
+    @field_validator("key")
+    @classmethod
+    def _key_not_modifier(cls, v: str) -> str:
+        if v.lower() in _SHORTCUT_MODIFIER_KEY_NAMES:
+            raise ValueError("key must not be a modifier key name")
+        return v
+
+    @field_validator("modifiers")
+    @classmethod
+    def _dedupe_sort(cls, v: list[str]) -> list[str]:
+        seen: list[str] = []
+        for item in v:
+            if item not in seen:
+                seen.append(item)
+        return sorted(seen)
+
+
+# 可编辑命令的稳定 ID；与前端 state/hotkeyBindings.ts 的注册表一一对应。
+# 本增量之外的新命令需先在前端注册再在此处放行（写路径严格校验命令 ID）。
+_SHORTCUT_COMMAND_IDS = frozenset(
+    {
+        "common.task.next",
+        "common.task.prev",
+        "image.tool.select",
+        "image.tool.box",
+        "image.tool.rotatedBox",
+        "image.tool.polygon",
+        "image.tool.polyline",
+        "image.tool.keypoint",
+        "image.tool.mask",
+        "image.tool.aiCycle",
+        "image.tool.magicBox",
+        "image.selection.lock",
+        "image.selection.hide",
+        "video.tool.select",
+        "video.tool.box",
+        "video.tool.rotatedBox",
+        "video.tool.keypoint",
+        "video.tool.track",
+        "video.tool.mask",
+        "video.tool.smartPoint",
+        "video.tool.smartBox",
+        "video.tool.exemplar",
+        "video.tool.magicBox",
+        "video.tool.polygon",
+        "video.track.locked",
+        "video.track.hidden",
+        "video.track.outside",
+        "video.track.occluded",
+        "video.track.bookmark",
+        "video.frame.next",
+        "video.frame.prev",
+        "video.frame.micro.next",
+        "video.frame.micro.prev",
+        "video.track.keyframe.next",
+        "video.track.keyframe.prev",
+    }
+)
+
+_ShortcutOverrideBucket = dict[str, list[ShortcutBinding] | None]
+
+
+class WorkbenchShortcutPreferences(BaseModel):
+    """v0.24 · 账号级快捷键覆盖。
+
+    每个桶（common / image / video）将命令 ID 映射到该命令的完整组合列表：
+    缺失或 ``null`` = 用默认组合；空列表 = 停用；非空列表（≤2 条，一主一备）=
+    整体替换默认组合。PATCH 只提交变更的命令条目（深合并按命令生效）。
+    """
+
+    model_config = {"extra": "forbid"}
+
+    schemaVersion: int = 1
+    common: _ShortcutOverrideBucket = Field(default_factory=dict)
+    image: _ShortcutOverrideBucket = Field(default_factory=dict)
+    video: _ShortcutOverrideBucket = Field(default_factory=dict)
+
+    @field_validator("common", "image", "video")
+    @classmethod
+    def _validate_bucket(cls, v: _ShortcutOverrideBucket) -> _ShortcutOverrideBucket:
+        for command_id, value in v.items():
+            if value is None:
+                # 显式恢复默认（重置）对未知 ID 也放行：客户端据此清除损坏存量条目。
+                continue
+            if command_id not in _SHORTCUT_COMMAND_IDS:
+                raise ValueError(f"unknown shortcut command id: {command_id}")
+            if len(value) > 2:
+                raise ValueError(
+                    f"shortcut command {command_id} allows at most 2 bindings"
+                )
+        return v
+
+
 class FloatingPanelState(BaseModel):
     """v0.13.10 · 工作台浮窗状态。像素默认由前端按窗口计算。"""
 
@@ -292,7 +405,8 @@ class WorkbenchPointcloudPreferences(BaseModel):
 class WorkbenchPreferences(BaseModel):
     """v0.9.41 · 标注工作台渲染偏好（I17 Configuration）。
     v0.13.10 · 增加 layout 子树承载跨设备布局偏好。
-    v0.15.3 · 平铺字段拆为 common/image/video/pointcloud 四子树；layout 保持顶层。"""
+    v0.15.3 · 平铺字段拆为 common/image/video/pointcloud 四子树；layout 保持顶层。
+    v0.24 · 增加 shortcuts 子树承载账号级快捷键覆盖（写路径严格校验）。"""
 
     model_config = {"extra": "forbid"}
 
@@ -307,6 +421,7 @@ class WorkbenchPreferences(BaseModel):
     layout: WorkbenchLayoutPreferences = Field(
         default_factory=WorkbenchLayoutPreferences
     )
+    shortcuts: WorkbenchShortcutPreferences | None = None
 
 
 class AIToolPreferences(BaseModel):
@@ -399,9 +514,17 @@ class WorkbenchLayoutPreferencesRead(WorkbenchLayoutPreferences):
 
 
 class WorkbenchPreferencesRead(WorkbenchPreferences):
+    """Read shape with opaque fallbacks for rolling upgrades.
+
+    ``workspace`` keeps stored layout envelopes verbatim; ``shortcuts`` tolerates
+    corrupt or newer shortcut subtrees so one bad bucket cannot fail the whole
+    preference GET. The route strips and re-inserts both around validation.
+    """
+
     layout: WorkbenchLayoutPreferencesRead = Field(
         default_factory=WorkbenchLayoutPreferencesRead
     )
+    shortcuts: WorkbenchShortcutPreferences | dict[str, Any] | None = None
 
 
 class UserPreferencesRead(UserPreferences):

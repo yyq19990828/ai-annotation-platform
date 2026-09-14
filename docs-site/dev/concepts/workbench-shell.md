@@ -101,7 +101,7 @@ Shell 持有当前会话的 `scenePlaybackActive`，将预览状态接到 `useTa
 2. **操作对象在组件内**：W/E/R 直接调 `sceneRef.current?.setTransformMode()`（three.js TransformControls），Q 系列调点云专属的 autofit 几何算法——壳层的快捷键 hook 拿不到这些引用。
 3. **一键多变体**：如 Q / Shift+Q / Alt+Q 是三种不同拟合，←/→ 只在放大浮层状态下才是切相机，超出 dispatchKey「一键一 action」的表达力。
 
-代价：这些键不在 `HOTKEYS` 派发表里，只作为**纯展示条目**（无 `actionType`）登记进 `?` 帮助面板的「3D / 点云」分组——因此能在面板查到，但不计入「按使用频率排」的统计。
+代价：这些键不在 `HOTKEYS` 派发表里，只作为**纯展示条目**（无 `actionType`）登记进 `?` 帮助面板的「3D / 点云」分组。它们同时登记在 `hotkeyBindings.ts` 的 Fixed 清单中，参与账号级改绑的冲突检查。
 
 ## Overlay 边界
 
@@ -142,6 +142,8 @@ Inspector 的候选属性按候选自身的工具单位读取 schema，由原候
 设置窗口内容与遮罩带 `data-workbench-settings`，工具溢出菜单带 `data-workbench-tool-menu`，入口单独标记为 `data-workbench-tool-menu-trigger`，打开时 `data-state="open"`。独立的背景键盘和全局滚轮监听先调用 `workbenchInteractionGuards.ts` 的 `isWorkbenchInteractionBlocked(event)`；有打开的标记，或事件的 `composedPath()` 包含标记时直接返回，不阻止传播，让浮层自身的键盘、焦点与滚动行为继续工作。事件路径判断保留已卸载的标记，防止关闭菜单的同一次事件落到背景。类别选择器的外部点击也遵循此边界，打开工具菜单不取消待选类别的草稿。关闭后的入口只接管 Enter、Space、向下方向键等打开菜单的输入，其余画布快捷键恢复；菜单的 React portal 冒泡事件不触发布局保存。
 
 主快捷键还通过 `disabled` 暂停，开窗时清空空格平移与视频按住状态，并提交此前已有的方向键微移。`keyup`、`pointerup`、`mouseup` 中的释放和拖拽收尾继续执行。视频入口调用 `pausePlayback({ snapToGrid: false })`，暂停但不对齐采样网格、不切换帧；关闭设置后保持暂停。这一边界只负责设置窗口，不改变其它弹窗或后台任务的生命周期。
+
+快捷键面板（`HotkeyCheatSheet`）遵循同一契约：内容与遮罩带 `data-workbench-hotkeys` 并进入共享事件卫兵，主快捷键 dispatch 在面板打开期间整体 `disabled`（与设置窗口同款开窗清held-key语义）；Escape 在录制改绑时先取消录制、面板保持打开，外部点击先取消未确认录制再关闭。
 
 ### 工具坞容量
 
@@ -332,7 +334,8 @@ workbench
 ├── image       # 图像渲染与交互（smoothImage / cssImageFilter / controlPointsSize / autoFitOnResize / ...）
 ├── video       # 视频播放与步进（defaultPlaybackRate / largeFrameStep）
 ├── pointcloud  # 点云渲染、导航、上色与深度（pointSize / persistCameraView / colorize* / showDepthHint / ...）
-└── layout      # 壳层布局，保持顶层不动（见上节）
+├── layout      # 壳层布局，保持顶层不动（见上节）
+└── shortcuts   # 账号级快捷键覆盖（schemaVersion + common / image / video 命令桶；见下节）
 ```
 
 - **后端**：`apps/api/app/schemas/user.py` 四个子树 Model 均 `extra="forbid"`；存量 JSONB 由 alembic `0103` 数据迁移就地改写（up/down 可逆、幂等）。`update_preferences` 入口保留一层 legacy 平铺键提升器兼容旧 tab。
@@ -341,8 +344,29 @@ workbench
 - **设置窗口**：`shell/WorkbenchSettingsDialog.tsx` 复用 Radix Dialog / Tabs。桌面居中双栏，窄屏全屏；固定显示界面布局、标注显示、编辑与辅助、画布与视角、播放与轨迹、性能与实验六类，搜索匹配名称、说明、分组与选项，并保留命中子项的父开关。`WORKBENCH_SETTING_GROUPS` / `WORKBENCH_SETTING_SECTIONS` 和 `groupWorkbenchSettings()` 统一窗口、搜索与个人页的展示顺序，`category` 仍只表示原有偏好子树。窗口不接收 Stage 类型，不做模态可见性过滤。`SettingsFieldControl` 的 `settings` 布局显示说明，个人页保留默认 `compact` 布局。
 - **关闭与焦点**：`DialogContent.overlayProps` 为当前窗口配置遮罩层级和事件。仅从遮罩开始的完整点击触发关闭，避免滑块拖出窗口误关闭；关闭与切换分类前 blur 活跃字段。Dialog 接管焦点陷阱与恢复，组合输入期间不响应 Esc，背景输入按上文统一隔离。
 - **保存**：写路径仍走 `useWorkbenchConfig.setFields()`（本地立即生效、300ms 防抖 PATCH、卸载 flush）；各实例经模块广播同步，滑块提交后画布更新。hook 不随窗口关闭卸载；初次加载失败提供 `loadError` / `retryLoad` 并禁止写入，保存失败通过 toast 告知未同步。二次推理面板显隐沿用 `useSecondaryBarHiddenPref`，各任务均可调整但仅影响图片工具条；隐藏孤儿标注仍是会话回调。
+- **shortcuts 子树**：`workbench.shortcuts` 承载账号级快捷键覆盖（`schemaVersion` + `common` / `image` / `video` 三个命令桶）。它不进 `useWorkbenchConfig` 的整树 PATCH；唯一的写方是 `state/useWorkbenchShortcutPreferences.ts` 的定向 PATCH（只提交变更的命令条目，不带 `schemaVersion` 以免把更新版本存量树降级）。后端对变更条目严格校验（命令 ID、键格式、修饰键、每命令 ≤2 条），未触碰的存量条目按 opaque 原样保留；GET 对损坏 / 更新版本子树整体透出，不 422、不用默认值覆盖。
 
-<!-- history: DiscussionPanel and the split right rail shipped through the v0.11 workbench slices. FloatingPanelShell + layout preferences shipped in v0.13.10. The four-subtree preferences split + settings window shipped in v0.15.3. -->
+## 快捷键生效绑定与账号级改绑
+
+快捷键系统分四层，单一真值链路如下：
+
+```
+HOTKEYS 目录（state/hotkeys.ts，稳定 id + 展示元数据）
+      │
+hotkeyBindings.ts（可编辑命令注册表 + Fixed 清单 + 规范化 + 冲突引擎）
+      │
+useWorkbenchShortcutPreferences（共享 preferences query + 定向 PATCH 写路径）
+      │
+dispatchKey(ctx.matchCommand) → 既有 action 处理器
+```
+
+- **稳定命令 ID**：`HOTKEYS` 每条目带 `id`（如 `image.tool.box`、`video.frame.next`），另带用途分类（`category`）、工作台类型（`stages`）、生效条件（`applies`）与精选标记（`common`）。`dispatchKey` 中可编辑命令的按键匹配改经 `matchCommand`（按生效绑定表），Fixed 命令保留显式分支；两条路径都要求修饰键完全一致，Shift/Alt 变体不再顺延命中已记录的组合。IME 组合期与 AltGr 字符不参与任何 Workbench 命令。
+- **可编辑范围**：本增量只开放图片 / 视频工具选择、通用切题、图片选中态锁定 / 隐藏、视频选中轨迹状态与书签、视频帧 / 网格 / 源帧微调 / 关键帧导航。其余全部是 Fixed：`hotkeyBindings.ts` 的 `FIXED_SHORTCUTS` 登记 Fixed 命令的默认键与生效上下文（含项目类别数字键、3D 本地键、播放手势、剪贴板 / 历史键），参与冲突检查但不可改绑。审核 A/R、方向键微调、视频首尾帧和 SAM/Mask 的修饰键变体同样登记；固定动作按互斥上下文判断，保留明确的默认工具重叠。派发显式接收图片、视频或 3D 类型，并在原有编辑保护通过后按生效命令匹配，不再依赖默认物理键分支。启用和恢复默认先验证整份目标组合。Backquote / Enter / Esc / Tab 等物理键位例外不可录制。
+- **冲突模型**：域（common ∩ image/video/threed）与谓词（选中态、预测态、轨迹态、采样态）可证明互斥时允许共用按键（如 L 键的「锁定选中」与「折线工具」互补共存）；否则按绑定 token 精确相等判定冲突。改绑在面板内即时预览冲突并拒绝确认，给出对方名称、生效上下文和跳转入口；不提供自动「顶掉对方」。加载与项目 / 上下文变化时复查全部生效组合，互相争用的覆盖成对停用（保留存量值供修正，运行期都不执行）。
+- **项目类别数字键**：类别直选只有十个数字槽 1-9 加 0，按工具绑定单元的配置顺序取前十个；槽位不随搜索、选择或最近使用重排。字母不再切类别（画布字母全部是工具 / 动作键），类别弹层的直选同步收窄到数字槽，并新增 ↑/↓ 移动高亮、Enter 确认高亮项（查询为空时维持默认类别）、组合输入不确认。视频 `0`（实际尺寸）与 3D 三视图 `0`（聚焦视图缩放重置）让位改绑为 `Shift+物理 Digit0`；`Mod+0` 视图重置要求修饰键完全一致。图片属性数字键只在选中卡「属性快捷键」区域显式聚焦后生效（`AttributeForm.shortcutRegion`，仅图片选中卡两个消费者 opt-in），区域失焦立即交还画布类别键。
+- **偏好契约**：`useWorkbenchShortcutPreferences` 以账号为 key 读写共享 preferences query；同命令重复编辑按命令串行合并（旧完成不覆盖新值），面板通过 `previewEffective` 合并待保存编辑并预检冲突，画布仅使用 `effective` 中的已确认值。成功响应只回填对应命令，避免覆盖其他偏好；失败保留待写编辑供重试 / 放弃。每次派发和完成均检查账号与挂载归属，退出工作台后取消尚未发送的请求；旧请求不能删除新请求的队列。偏好加载失败禁止写入默认值。工具坞角标与 tooltip 按生效组合展示（`toolHotkeys`），停用命令清空角标。
+
+<!-- history: DiscussionPanel and the split right rail shipped through the v0.11 workbench slices. FloatingPanelShell + layout preferences shipped in v0.13.10. The four-subtree preferences split + settings window shipped in v0.15.3. The shortcut reference dialog + account-level customization shipped in v0.24. -->
 
 Mask 切割复用 `MaskToolbar`、`useMaskEditor` 的实例预览和 D 的主动作解析器。画布只持有两点直线的拖动状态；切题、来源 / 工具 / buffer 变化或取消时清理。`slice_mask` 预览计算只分区本地 alpha；确认才沿 `mask-mutations:commit` 上传两个结果并提交固定请求。收到 `slice_restore` 即向原任务入栈同一种受限 slice 命令；客户端不创建独立的 Mask 回滚栈。服务端恢复通过 `MaskAnnotationRevision` 解析前后版本，先锁定并校验内容，再锁对象，并在触发器捕获旧版本后保护引用期限，保持现有 GC 合同。
 

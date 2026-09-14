@@ -47,6 +47,8 @@ Authorization: Bearer <access_token>
 
 `GET /api/v1/auth/me/preferences` 读取当前账号偏好，`PATCH /api/v1/auth/me/preferences` 只提交要修改的子树。工作台布局位于 `workbench.layout.workspace`：`contexts` 是可选 map，每个 key 是 `annotate|review × image|video|3d` 中的一项，只提交某个 context 时会原子替换该快照，不会删除其他 context。写入 `contexts` 必须同时携带当前 `engine`；只有下述预设专用 PATCH 可以省略它。
 
+`workbench.shortcuts` 承载账号级快捷键覆盖：`schemaVersion: 1` 加 `common` / `image` / `video` 三个命令桶，每桶把命令 ID 映射到该命令的完整组合列表（`null` = 恢复默认，`[]` = 停用，非空列表 = 一主一备整体替换）。PATCH 只提交变更的命令条目（按命令深合并），不要携带 `schemaVersion`。写路径对变更条目严格校验：命令 ID 必须在可编辑集合内、键为单字符或小写命名键且不能是修饰键名、修饰键只能是 `mod|alt|shift`、每条命令最多 2 条组合。未触碰的存量条目（包括损坏或来自更新版本的条目）原样保留，不会被默认值覆盖；GET 对无法识别的 shortcuts 子树原样透出，由客户端宽容解析并把受影响覆盖排除出执行。 未提交的命令桶保持原值；显式提交 `null` 命令桶、未知信封字段或类型错误的 `schemaVersion` 返回 `422`。恢复默认应提交命令条目的 `null`，不能用 `null` 替代整个命令桶。
+
 `namedPresets` 与 `contexts` 并列，是最多 5 条的命名布局 map。每条值在布局快照信封上增加 `name`（1–40 个字符）和 `context`，名称在账号内唯一。该 map 与 `contexts` 的合并规则不同：只要 PATCH 中出现 `namedPresets`，服务端就用它整份替换存量 map，省略某个 ID 即删除该预设。因此客户端增加、重命名或删除一条时，必须带上所有需保留的条目，但不带 `contexts`，也不需要重写 `engine`。
 
 响应根部的 `namedPresetsRevision` 是该完整 map 的 opaque compare-and-swap token。预设写入必须把最近一次 GET 或成功 PATCH 返回的 token 原样放在请求根部；服务端在用户偏好行锁内比较 token，成功替换后生成新 token。若另一设备已经更新，陈旧请求返回 `409`，`detail.code` 为 `named_presets_conflict`。客户端必须重新 GET、在最新 map 上重做用户本次操作，不得把错误响应中的 `currentRevision` 填入原陈旧整图后直接重试：

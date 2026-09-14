@@ -31209,6 +31209,36 @@
         "title": "ServicePoolPatchRequest",
         "type": "object"
       },
+      "ShortcutBinding": {
+        "additionalProperties": false,
+        "description": "v0.24 · 单条结构化快捷键绑定。\n\n``key`` 是规范化的 ``KeyboardEvent.key``：单个字符（任意字符，如 ``/``）或\n小写命名键（如 ``arrowright``）。``modifiers`` 是显式修饰键集合，匹配时要求\n完全一致（``mod`` = 平台主修饰键，Ctrl/⌘）。",
+        "properties": {
+          "key": {
+            "maxLength": 32,
+            "minLength": 1,
+            "pattern": "^(?:.{1}|[a-z][a-z0-9]{0,31})$",
+            "title": "Key",
+            "type": "string"
+          },
+          "modifiers": {
+            "items": {
+              "enum": [
+                "mod",
+                "alt",
+                "shift"
+              ],
+              "type": "string"
+            },
+            "title": "Modifiers",
+            "type": "array"
+          }
+        },
+        "required": [
+          "key"
+        ],
+        "title": "ShortcutBinding",
+        "type": "object"
+      },
       "SkipTaskRequest": {
         "properties": {
           "note": {
@@ -39288,6 +39318,7 @@
       },
       "WorkbenchPreferencesRead": {
         "additionalProperties": false,
+        "description": "Read shape with opaque fallbacks for rolling upgrades.\n\n``workspace`` keeps stored layout envelopes verbatim; ``shortcuts`` tolerates\ncorrupt or newer shortcut subtrees so one bad bucket cannot fail the whole\npreference GET. The route strips and re-inserts both around validation.",
         "properties": {
           "common": {
             "$ref": "#/components/schemas/WorkbenchCommonPreferences"
@@ -39301,11 +39332,90 @@
           "pointcloud": {
             "$ref": "#/components/schemas/WorkbenchPointcloudPreferences"
           },
+          "shortcuts": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkbenchShortcutPreferences"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shortcuts"
+          },
           "video": {
             "$ref": "#/components/schemas/WorkbenchVideoPreferences"
           }
         },
         "title": "WorkbenchPreferencesRead",
+        "type": "object"
+      },
+      "WorkbenchShortcutPreferences": {
+        "additionalProperties": false,
+        "description": "v0.24 · 账号级快捷键覆盖。\n\n每个桶（common / image / video）将命令 ID 映射到该命令的完整组合列表：\n缺失或 ``null`` = 用默认组合；空列表 = 停用；非空列表（≤2 条，一主一备）=\n整体替换默认组合。PATCH 只提交变更的命令条目（深合并按命令生效）。",
+        "properties": {
+          "common": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/ShortcutBinding"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Common",
+            "type": "object"
+          },
+          "image": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/ShortcutBinding"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Image",
+            "type": "object"
+          },
+          "schemaVersion": {
+            "default": 1,
+            "title": "Schemaversion",
+            "type": "integer"
+          },
+          "video": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "items": {
+                    "$ref": "#/components/schemas/ShortcutBinding"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "title": "Video",
+            "type": "object"
+          }
+        },
+        "title": "WorkbenchShortcutPreferences",
         "type": "object"
       },
       "WorkbenchVideoPreferences": {
