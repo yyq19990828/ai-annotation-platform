@@ -11,7 +11,7 @@ import { SearchInput } from "@/components/ui/SearchInput";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useToastStore } from "@/components/ui/Toast";
 import { Can } from "@/components/guards/Can";
-import { useProjects, useProjectStats } from "@/hooks/useProjects";
+import { useProjectPage, useProjectStats } from "@/hooks/useProjects";
 import { type ProjectResponse } from "@/api/projects";
 import { CreateProjectWizard } from "@/components/projects/CreateProjectWizard";
 import { ImportDatasetWizard } from "@/components/datasets/ImportDatasetWizard";
@@ -28,6 +28,7 @@ import {
   type DashboardStatus,
 } from "./dashboardUrlState";
 import { ProjectGrid } from "./ProjectGrid";
+import { ProjectPagination } from "./ProjectPagination";
 import { ProjectActionsMenu } from "./ProjectActionsMenu";
 import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import { projectDisplayType } from "@/utils/projectDisplay";
@@ -223,23 +224,26 @@ export function DashboardPage() {
     defaults: EMPTY_DASHBOARD_URL_STATE,
     ownedKeys: DASHBOARD_FILTER_KEYS,
   });
-  const currentUrl = urlState.state;
+  const { state: currentUrl, patch: patchUrl } = urlState;
   const [query, setQuery] = useState(currentUrl.query);
-  const [queryFlushKey, setQueryFlushKey] = useState(0);
-  const localQueryWriteRef = useRef<string | null>(null);
+  const lastLocationKey = useRef(location.key);
+  const syncingQuery = useRef(false);
+  const debouncedQuery = useDebouncedValue(query, 250);
   useEffect(() => {
-    if (localQueryWriteRef.current === currentUrl.query) {
-      localQueryWriteRef.current = null;
+    if (lastLocationKey.current === location.key) return;
+    lastLocationKey.current = location.key;
+    syncingQuery.current = true;
+    setQuery(currentUrl.query);
+  }, [currentUrl.query, location.key]);
+  useEffect(() => {
+    if (syncingQuery.current) {
+      if (debouncedQuery === currentUrl.query) syncingQuery.current = false;
       return;
     }
-    setQuery(currentUrl.query);
-    setQueryFlushKey((value) => value + 1);
-  }, [currentUrl.query]);
-  const debouncedQuery = useDebouncedValue(query, 250, queryFlushKey);
-  const queryForRequest =
-    localQueryWriteRef.current === null && query.trim() !== currentUrl.query
-      ? currentUrl.query
-      : debouncedQuery;
+    const nextQuery = debouncedQuery.trim();
+    if (nextQuery !== query.trim() || nextQuery === currentUrl.query) return;
+    patchUrl({ query: nextQuery, page: 1 });
+  }, [currentUrl.query, debouncedQuery, query, patchUrl]);
   const filter =
     currentUrl.status === "in_progress"
       ? "进行中"
@@ -270,7 +274,11 @@ export function DashboardPage() {
   // B-35 · list/grid 切换使用独立的 layout 参数，避免占用页面级 view 参数。
   const viewMode: "list" | "grid" = searchParams.get("layout") === "grid" ? "grid" : "list";
   const setViewMode = (mode: "list" | "grid") => {
-    const next = new URLSearchParams(searchParams);
+    const next = dashboardUrlCodec.encode(searchParams, {
+      ...currentUrl,
+      query: query.trim(),
+      page: query.trim() === currentUrl.query ? currentUrl.page : 1,
+    });
     if (mode === "grid") next.set("layout", "grid");
     else next.delete("layout");
     setSearchParams(next, { replace: true });
@@ -310,14 +318,31 @@ export function DashboardPage() {
     setSearchParams(next, { replace: true });
   };
 
-  const { data: projects = [], isLoading } = useProjects({
+  const {
+    data: projectPage,
+    isLoading: pageLoading,
+    isError,
+    isFetching,
+    refetch,
+  } = useProjectPage({
+    page: currentUrl.page,
+    page_size: currentUrl.page_size,
     status: currentUrl.status,
-    search: queryForRequest.trim() || undefined,
+    search: currentUrl.query || undefined,
     data_type: currentUrl.data_type.length > 0 ? currentUrl.data_type : undefined,
     member_id: currentUrl.member_id,
     created_from: currentUrl.created_from,
     created_to: currentUrl.created_to,
   });
+  const projects = projectPage?.items ?? [];
+  const lastPage = Math.max(1, projectPage?.pages ?? 1);
+  const pageOutOfRange = !isError && projectPage !== undefined && currentUrl.page > lastPage;
+  const isLoading = pageLoading || pageOutOfRange;
+  useEffect(() => {
+    if (pageOutOfRange && !isFetching && query.trim() === currentUrl.query) {
+      patchUrl({ page: lastPage });
+    }
+  }, [currentUrl.query, isFetching, lastPage, pageOutOfRange, query, patchUrl]);
 
   const advancedActiveCount = useMemo(() => {
     let n = 0;
@@ -328,8 +353,10 @@ export function DashboardPage() {
   }, [advanced]);
 
   const applyFilters = (next: DashboardFilters) => {
-    urlState.patch(
+    patchUrl(
       {
+        query: query.trim(),
+        page: 1,
         status: next.status,
         data_type: next.data_type,
         member_id: next.member_id,
@@ -341,11 +368,10 @@ export function DashboardPage() {
   };
   const updateQuery = (next: string) => {
     setQuery(next);
-    localQueryWriteRef.current = next.trim();
-    urlState.patch({ query: next });
+    syncingQuery.current = false;
   };
   const updateFilterTab = (next: string) => {
-    urlState.patch({ status: FILTER_STATUS_MAP[next] }, { replace: false });
+    patchUrl({ status: FILTER_STATUS_MAP[next], query: query.trim(), page: 1 }, { replace: false });
   };
 
   const { data: stats } = useProjectStats();
@@ -468,7 +494,28 @@ export function DashboardPage() {
           onChange={applyFilters}
           onEdit={() => setFilterOpen(true)}
         />
-        {viewMode === "grid" ? (
+        {isError && projectPage && (
+          <div
+            role="alert"
+            className="flex flex-wrap items-center gap-3 border-b border-border bg-status-caution-soft px-4 py-2 text-xs"
+          >
+            刷新失败，当前显示上次成功加载的项目
+            <Button size="xs" onClick={() => void refetch()}>
+              重新加载
+            </Button>
+          </div>
+        )}
+        {isError && !projectPage ? (
+          <div
+            role="alert"
+            className="flex items-center justify-center gap-3 p-10 text-sm text-muted-foreground"
+          >
+            项目列表暂时无法加载
+            <Button size="xs" onClick={() => void refetch()}>
+              重新加载
+            </Button>
+          </div>
+        ) : viewMode === "grid" ? (
           isLoading ? (
             <div className="p-10 text-center text-muted-foreground">加载中...</div>
           ) : (
@@ -519,6 +566,16 @@ export function DashboardPage() {
               </tbody>
             </table>
           </div>
+        )}
+        {(!isError || projectPage) && (
+          <ProjectPagination
+            page={currentUrl.page}
+            pageSize={currentUrl.page_size}
+            total={projectPage?.total ?? 0}
+            loading={isLoading || query.trim() !== currentUrl.query}
+            onPageChange={(page) => patchUrl({ page }, { replace: false })}
+            onPageSizeChange={(page_size) => patchUrl({ page_size, page: 1 }, { replace: false })}
+          />
         )}
       </Card>
 

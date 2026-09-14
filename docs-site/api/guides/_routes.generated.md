@@ -429,6 +429,7 @@
 
 | Method | Path |
 |---|---|
+| GET | `/query` |
 | GET | `/stats` |
 | GET | `/{project_id}` |
 | GET | `/{project_id}/readiness` |
@@ -722,4 +723,4 @@
 
 ---
 
-_共 66 模块 / 415 路由_
+_共 66 模块 / 416 路由_

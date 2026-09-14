@@ -8,6 +8,20 @@ last_reviewed: 2026-05-27
 
 # 项目
 
+## 列表与分页
+
+```http
+GET /api/v1/projects/query?page=1&page_size=20
+```
+
+返回 `{ items, total, page, page_size, pages }`，`items` 中每项与项目详情的字段一致。`page` 从 1 开始，`page_size` 默认 20，范围为 1–100。空结果的 `total`、`pages` 为 0；超出末页时保留请求页码、返回空 `items` 和实际总数，调用方可据此回到有效页。
+
+支持 `status`、`search`、可重复的 `type_key` / `data_type`、`member_id`、`created_from` / `created_to`。总数和项目行均先应用相同的权限与筛选：超级管理员可见所有项目，项目管理员可见自己负责的项目，其他成员可见自己加入的项目。按创建时间倒序排列，同一时间以项目 ID 倒序稳定排序。
+
+创建时间条件接受 ISO 日期或时间；无时区值按 UTC 解释，仅填写日期时结束日期包含全天。非法日期、倒置日期范围及非法分页参数返回 422。
+
+`GET /api/v1/projects` 继续返回全部匹配项目的数组，供现有 SDK、CLI 和项目选择器使用；筛选与排序规则和分页接口一致。
+
 ## 创建项目
 
 ```http
