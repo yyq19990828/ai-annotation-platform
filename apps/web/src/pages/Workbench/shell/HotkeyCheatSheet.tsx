@@ -10,6 +10,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertTriangle, RotateCcw, Search, X } from "lucide-react";
 import type { AttributeSchema } from "@/api/projects";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
+import { HighlightText } from "@/components/ui/HighlightText";
 import { Button } from "@/components/shadcn/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/shadcn/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/shadcn/ui/tabs";
@@ -36,11 +37,35 @@ import {
   type HotkeyDef,
   type HotkeyStage,
 } from "../state/hotkeys";
+import {
+  WORKBENCH_DIALOG_CONTENT_CLASS,
+  WORKBENCH_DIALOG_OVERLAY_CLASS,
+} from "./workbenchDialogClasses";
 
 const KBD_CLASS =
   "whitespace-nowrap rounded-[3px] border border-b-2 border-border bg-muted px-1.5 py-px font-mono text-xs leading-normal text-foreground";
+// 每行固定为「主行 + 说明/操作行」两级内容槽，说明行即使为空也占位，
+// 且两级统一 min-h-5 / leading-5，使所有命令的行高与分隔线间距完全一致。
 const ROW_CLASS = "flex items-start justify-between gap-3 border-b border-border py-2 text-sm";
-const NAME_CLASS = "min-w-0 leading-[1.35] text-foreground [overflow-wrap:anywhere]";
+const PRIMARY_STACK_CLASS = "flex min-h-12 min-w-0 flex-col gap-1";
+const PRIMARY_LINE_CLASS =
+  "flex min-h-5 min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 leading-5 text-foreground [overflow-wrap:anywhere]";
+const NOTE_LINE_CLASS =
+  "flex min-h-5 min-w-0 flex-wrap items-center gap-x-1.5 text-xs leading-5 text-muted-foreground";
+const KEYS_LINE_CLASS = "flex min-h-5 min-w-0 flex-wrap items-center justify-end gap-1";
+const ACTIONS_LINE_CLASS = "flex min-h-5 items-center justify-end gap-1";
+const NAME_CLASS = "min-w-0 leading-5 text-foreground [overflow-wrap:anywhere]";
+// 跨阶段视图(全部类型 / 搜索)按图片 / 视频 / 点云着色,便于快速区分适用范围。
+const STAGE_CHIP_CLASS: Record<HotkeyStage, string> = {
+  image: "bg-stage-image-soft text-stage-image",
+  video: "bg-stage-video-soft text-stage-video",
+  threed: "bg-stage-threed-soft text-stage-threed",
+};
+const STAGE_TEXT_CLASS: Record<HotkeyStage, string> = {
+  image: "text-stage-image",
+  video: "text-stage-video",
+  threed: "text-stage-threed",
+};
 const SECTION_TITLE_CLASS =
   "sticky top-0 z-local-1 mb-2 border-b border-border bg-card py-1.5 text-xs font-bold uppercase tracking-[0.04em] text-foreground";
 
@@ -401,12 +426,14 @@ export function HotkeyCheatSheet({
     const isRecordingRow = recording?.commandId === h.id;
     const stageChips =
       stageFilter === "all" && h.stages ? (
-        <span className="mt-0.5 inline-flex gap-1">
+        <span className="inline-flex gap-1">
           {h.stages.map((s) => (
             <span
               key={s}
-              className="rounded-full bg-muted px-1.5 py-px text-2xs text-muted-foreground"
+              data-hotkey-stage={s}
+              className={`inline-flex items-center gap-1 rounded-full px-1.5 py-px text-2xs ${STAGE_CHIP_CLASS[s]}`}
             >
+              <span aria-hidden="true" className="size-1 rounded-full bg-current" />
               {HOTKEY_STAGE_LABEL[s]}
             </span>
           ))}
@@ -415,22 +442,22 @@ export function HotkeyCheatSheet({
 
     return (
       <div key={h.id} id={`hotkey-row-${h.id}`} className={ROW_CLASS} data-hotkey-command={h.id}>
-        <div className={NAME_CLASS}>
-          <span>
-            {h.desc}
+        <div className={PRIMARY_STACK_CLASS}>
+          <span className={PRIMARY_LINE_CLASS}>
+            <HighlightText text={h.desc} query={query} />
             {state?.customized && (
-              <span className="ml-1.5 rounded-full bg-brand/10 px-1.5 py-px text-2xs font-medium text-brand">
+              <span className="rounded-full bg-brand/10 px-1.5 py-px text-2xs font-medium text-brand">
                 已自定义
               </span>
             )}
             {disabled && (
-              <span className="ml-1.5 rounded-full bg-muted px-1.5 py-px text-2xs text-muted-foreground">
+              <span className="rounded-full bg-muted px-1.5 py-px text-2xs text-muted-foreground">
                 已停用
               </span>
             )}
             {!editable && (
               <span
-                className="ml-1.5 text-2xs text-muted-foreground"
+                className="text-2xs text-muted-foreground"
                 title="该命令由对应监听方固定，暂不支持改绑"
               >
                 固定
@@ -438,37 +465,43 @@ export function HotkeyCheatSheet({
             )}
             {state && state.conflictsWith.length > 0 && (
               <span
-                className="ml-1.5 inline-flex items-center gap-0.5 rounded-full bg-status-danger-soft px-1.5 py-px text-2xs text-status-danger"
+                className="inline-flex items-center gap-0.5 rounded-full bg-status-danger-soft px-1.5 py-px text-2xs text-status-danger"
                 title="与其他命令争用同一按键，已暂停执行；请在面板中修正"
               >
                 <AlertTriangle aria-hidden="true" className="size-3" />
                 冲突
               </span>
             )}
-            {h.applies && <span className="ml-2 text-xs text-muted-foreground">{h.applies}</span>}
+            {h.applies && (
+              <span className="text-xs text-muted-foreground">
+                <HighlightText text={h.applies} query={query} />
+              </span>
+            )}
           </span>
-          {stageChips}
-          {h.note && <span className="mt-0.5 block text-xs text-muted-foreground">{h.note}</span>}
-          {pending && <span className="mt-0.5 block text-xs text-muted-foreground">正在保存…</span>}
-          {failed && (
-            <span className="mt-0.5 block text-xs text-status-danger">
-              保存失败
-              <button
-                type="button"
-                className="ml-1 underline hover:text-foreground"
-                onClick={() => shortcuts?.retrySave(commandDomain(h.id), h.id)}
-              >
-                重试
-              </button>
-              <button
-                type="button"
-                className="ml-1 underline hover:text-foreground"
-                onClick={() => shortcuts?.discardPending(commandDomain(h.id), h.id)}
-              >
-                放弃
-              </button>
-            </span>
-          )}
+          <span className={NOTE_LINE_CLASS} data-hotkey-note="">
+            {stageChips}
+            {h.note && <HighlightText text={h.note} query={query} />}
+            {pending && <span>正在保存…</span>}
+            {failed && (
+              <span className="inline-flex items-center gap-1 text-status-danger">
+                保存失败
+                <button
+                  type="button"
+                  className="underline hover:text-foreground"
+                  onClick={() => shortcuts?.retrySave(commandDomain(h.id), h.id)}
+                >
+                  重试
+                </button>
+                <button
+                  type="button"
+                  className="underline hover:text-foreground"
+                  onClick={() => shortcuts?.discardPending(commandDomain(h.id), h.id)}
+                >
+                  放弃
+                </button>
+              </span>
+            )}
+          </span>
         </div>
         <div className="flex max-w-[46%] flex-none flex-col items-end gap-1">
           {editable && state && def ? (
@@ -520,16 +553,18 @@ export function HotkeyCheatSheet({
               </div>
             ) : (
               <div className="flex flex-col items-end gap-1">
-                <button
-                  type="button"
-                  className="inline-flex flex-wrap items-center justify-end gap-1 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  title={`点击修改主组合（${modKey} 为平台主修饰键）`}
-                  onClick={() => startRecording(h.id, 0)}
-                  disabled={!editing}
-                >
-                  <BindingCell bindings={state.bindings.slice(0, 1)} disabled={disabled} />
-                </button>
-                <div className="flex items-center gap-1">
+                <span className={KEYS_LINE_CLASS}>
+                  <button
+                    type="button"
+                    className="inline-flex flex-wrap items-center justify-end gap-1 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    title={`点击修改主组合（${modKey} 为平台主修饰键）`}
+                    onClick={() => startRecording(h.id, 0)}
+                    disabled={!editing}
+                  >
+                    <BindingCell bindings={state.bindings.slice(0, 1)} disabled={disabled} />
+                  </button>
+                </span>
+                <div className={ACTIONS_LINE_CLASS}>
                   {state.bindings.length > 1 ? (
                     <button
                       type="button"
@@ -577,7 +612,7 @@ export function HotkeyCheatSheet({
               </div>
             )
           ) : (
-            <span className="inline-flex max-w-[220px] flex-wrap items-center justify-end gap-1">
+            <span className={`${KEYS_LINE_CLASS} max-w-[220px]`}>
               {h.keysLabel ? (
                 <kbd className={KBD_CLASS}>{h.keysLabel}</kbd>
               ) : h.keysAlt ? (
@@ -640,7 +675,9 @@ export function HotkeyCheatSheet({
                 <div key={f.key} className={ROW_CLASS}>
                   <span className={NAME_CLASS}>
                     {f.type === "boolean" ? "切换 " : "循环 "}
-                    <span className="font-medium">{f.label}</span>
+                    <span className="font-medium">
+                      <HighlightText text={f.label} query={query} />
+                    </span>
                     <span className="ml-2 text-xs text-muted-foreground">属性快捷键区域聚焦时</span>
                   </span>
                   <kbd className={KBD_CLASS}>{f.hotkey}</kbd>
@@ -679,9 +716,9 @@ export function HotkeyCheatSheet({
         aria-describedby={undefined}
         data-testid="workbench-hotkeys-dialog"
         data-workbench-hotkeys=""
-        className="flex h-dvh max-h-dvh w-screen max-w-none flex-col gap-0 overflow-hidden rounded-none border-border bg-card p-0 text-foreground z-app-drawer sm:max-w-none md:h-[min(820px,85dvh)] md:max-h-[calc(100dvh-64px)] md:w-[min(1120px,calc(100vw-64px))] md:rounded-xl motion-reduce:animate-none"
+        className={WORKBENCH_DIALOG_CONTENT_CLASS}
         overlayProps={{
-          className: "z-app-drawer-backdrop bg-black/25 motion-reduce:animate-none",
+          className: WORKBENCH_DIALOG_OVERLAY_CLASS,
           "data-testid": "workbench-hotkeys-overlay",
           "data-workbench-hotkeys": "",
           onPointerDown: (event) => {
@@ -807,6 +844,11 @@ export function HotkeyCheatSheet({
                   key={value}
                   type="button"
                   role="radio"
+                  aria-label={
+                    value === "current"
+                      ? `当前工作台（${HOTKEY_STAGE_LABEL[currentStage]}）`
+                      : label
+                  }
                   aria-checked={stageFilter === value}
                   onClick={() => setStageFilter(value)}
                   className={`flex-1 rounded-[4px] px-2 py-1 transition-none ${
@@ -815,7 +857,17 @@ export function HotkeyCheatSheet({
                       : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
-                  {label}
+                  {value === "current" ? (
+                    <>
+                      {"当前工作台（"}
+                      <span className={`font-medium ${STAGE_TEXT_CLASS[currentStage]}`}>
+                        {HOTKEY_STAGE_LABEL[currentStage]}
+                      </span>
+                      {"）"}
+                    </>
+                  ) : (
+                    label
+                  )}
                 </button>
               ))}
             </div>
@@ -921,7 +973,9 @@ export function HotkeyCheatSheet({
                     if (rows.length === 0) return [];
                     return [
                       <section key={cat} className="mb-4">
-                        <div className={SECTION_TITLE_CLASS}>{HOTKEY_CATEGORY_LABEL[cat]}</div>
+                        <div className={SECTION_TITLE_CLASS}>
+                          <HighlightText text={HOTKEY_CATEGORY_LABEL[cat]} query={query} />
+                        </div>
                         {rows.map(renderRow)}
                       </section>,
                     ];

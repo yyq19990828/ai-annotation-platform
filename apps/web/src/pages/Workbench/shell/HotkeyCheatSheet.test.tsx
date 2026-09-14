@@ -60,6 +60,56 @@ describe("HotkeyCheatSheet", () => {
     expect(screen.getByRole("radio", { name: "全部类型" }));
   });
 
+  it("reserves a secondary tier on both fixed and editable rows to keep row rhythm uniform", () => {
+    mount({ shortcuts: makeShortcuts() });
+    const rows = [...document.querySelectorAll("[data-hotkey-command]")];
+    expect(rows.length).toBeGreaterThan(0);
+    // 每一行都预留说明行，行高不会随备注/备用组合的有无而跳变。
+    for (const row of rows) {
+      expect(row.querySelector("[data-hotkey-note]")).toBeTruthy();
+    }
+    expect(
+      document.querySelector('[data-hotkey-command="image.undo"] [data-hotkey-note]'),
+    ).toBeTruthy();
+    expect(
+      document.querySelector('[data-hotkey-command="image.tool.box"] [data-hotkey-note]'),
+    ).toBeTruthy();
+  });
+
+  it("highlights the matched term in command names and notes", async () => {
+    const user = userEvent.setup();
+    mount({ shortcuts: makeShortcuts() });
+    const search = screen.getByRole("textbox", { name: "搜索快捷键" });
+    await user.type(search, "撤销");
+    await waitFor(() =>
+      expect(screen.getAllByText("撤销", { selector: "mark" }).length).toBeGreaterThan(0),
+    );
+    // 未命中搜索词的行不带高亮标记
+    expect(document.querySelectorAll("mark").length).toBeGreaterThan(0);
+  });
+
+  it("colors each stage chip by workbench stage in the all-types view", async () => {
+    const user = userEvent.setup();
+    mount({ shortcuts: makeShortcuts() });
+    await user.click(screen.getByRole("radio", { name: "全部类型" }));
+    const classByStage: Record<string, string> = {
+      image: "bg-stage-image-soft",
+      video: "bg-stage-video-soft",
+      threed: "bg-stage-threed-soft",
+    };
+    const chips = [...document.querySelectorAll("[data-hotkey-stage]")];
+    expect(chips.length).toBeGreaterThan(0);
+    for (const chip of chips) {
+      const stage = chip.getAttribute("data-hotkey-stage") ?? "";
+      expect(chip).toHaveClass(classByStage[stage]);
+    }
+    // 同屏内不同阶段使用不同底色
+    const used = new Set(
+      chips.map((chip) => classByStage[chip.getAttribute("data-hotkey-stage") ?? ""]),
+    );
+    expect(used.size).toBeGreaterThan(1);
+  });
+
   it("shows corrected reference content: image Tab flows within category and backquote rows exist", async () => {
     const user = userEvent.setup();
     mount();
@@ -73,9 +123,11 @@ describe("HotkeyCheatSheet", () => {
     const user = userEvent.setup();
     mount();
     const search = screen.getByRole("textbox", { name: "搜索快捷键" });
-    // 搜索命中鼠标操作分类的手势
+    // 搜索命中鼠标操作分类的手势，命中词以 <mark> 高亮
     await user.type(search, "笔刷半径");
-    await waitFor(() => expect(screen.getByText(/Mask 笔刷半径/)).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getAllByText("笔刷半径", { selector: "mark" }).length).toBeGreaterThan(0),
+    );
     // 空结果状态
     await user.clear(search);
     await user.type(search, "不存在的快捷键xyz");

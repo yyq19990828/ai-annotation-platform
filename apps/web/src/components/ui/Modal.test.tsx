@@ -48,13 +48,13 @@ describe("<Modal />", () => {
         <p>canvas dialog</p>
       </Modal>,
     );
-    expect(screen.getByTestId("modal-overlay")).toHaveClass("backdrop-blur-[2px]");
+    expect(screen.getByTestId("modal-overlay")).toHaveClass("backdrop-blur-overlay");
     rerender(
       <Modal open onClose={() => {}} backdropBlur={false}>
         <p>canvas dialog</p>
       </Modal>,
     );
-    expect(screen.getByTestId("modal-overlay")).not.toHaveClass("backdrop-blur-[2px]");
+    expect(screen.getByTestId("modal-overlay")).not.toHaveClass("backdrop-blur-overlay");
     expect(screen.getByTestId("modal-overlay")).toHaveAttribute("data-state", "open");
     expect(screen.getByTestId("modal-overlay")).toHaveClass("bg-black/40");
     expect(screen.getByRole("dialog")).toBeInTheDocument();

@@ -110,6 +110,16 @@ describe("WorkbenchSettingsDialog", () => {
     expect(screen.getByText("没有找到相关设置")).toBeVisible();
   });
 
+  it("highlights matched terms and keeps section legends above field labels", async () => {
+    mount();
+    const user = userEvent.setup();
+    const legend = document.querySelector('[data-slot="field-legend"]');
+    expect(legend).toHaveAttribute("data-variant", "legend");
+    expect(legend?.className).toContain("data-[variant=legend]:text-md");
+    await user.type(screen.getByRole("textbox", { name: "搜索设置" }), "Gamma");
+    expect(screen.getAllByText("Gamma", { selector: "mark" }).length).toBeGreaterThan(0);
+  });
+
   it("writes every local experiment and both special settings without a modality filter", async () => {
     const onToggleHideOrphans = vi.fn();
     const onToggleSecondaryBar = vi.fn();
