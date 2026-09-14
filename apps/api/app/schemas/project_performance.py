@@ -66,6 +66,7 @@ class PerformanceMember(BaseModel):
     is_owner: bool
     is_current_member: bool
     member_since: datetime | None
+    avatar_ref: str | None = None
     metrics: PerformanceMemberMetrics
 
 

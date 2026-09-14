@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { Badge } from "@/components/ui/Badge";
-import { Avatar } from "@/components/ui/Avatar";
+import { UserAvatar } from "@/components/ui/UserAvatar";
 import { Modal } from "@/components/ui/Modal";
 import { useToastStore } from "@/components/ui/Toast";
 import { useProjectMembers, useRemoveProjectMember } from "@/hooks/useProjects";
@@ -68,7 +68,14 @@ export function MembersSection({ project }: { project: ProjectResponse }) {
                   <tr key={m.id}>
                     <td className="w-[42%] border-b border-border py-2.5 pr-3 pl-4">
                       <div className="flex min-w-0 items-center gap-2.5">
-                        <Avatar initial={m.user_name.slice(0, 1)} size="sm" />
+                        <UserAvatar
+                          size="sm"
+                          user={{
+                            name: m.user_name,
+                            email: m.user_email,
+                            avatar_ref: m.avatar_ref,
+                          }}
+                        />
                         <div className="min-w-0">
                           <div className="truncate text-sm font-medium" title={m.user_name}>
                             {m.user_name}

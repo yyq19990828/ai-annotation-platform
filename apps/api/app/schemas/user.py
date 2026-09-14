@@ -444,6 +444,8 @@ class UserOut(BaseModel):
     deactivation_scheduled_at: datetime | None = None
     # v0.9.41 · 标注偏好（workbench 渲染配置等）。空对象 = 用客户端默认。
     preferences: dict = Field(default_factory=dict)
+    # 头像引用（preset:<slug> / upload:<token>）；None = 首字母回退。
+    avatar_ref: str | None = None
     created_at: datetime
 
     class Config:
@@ -557,6 +559,8 @@ class UserBrief(BaseModel):
     email: str
     role: str | None = None
     avatar_initial: str
+    # 头像引用（preset:<slug> / upload:<token>）；None = 前端回退 avatar_initial。
+    avatar_ref: str | None = None
 
     class Config:
         from_attributes = True

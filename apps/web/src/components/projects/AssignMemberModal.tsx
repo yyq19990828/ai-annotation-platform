@@ -3,7 +3,7 @@ import { clsx } from "clsx";
 import { useQuery } from "@tanstack/react-query";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
-import { Avatar } from "@/components/ui/Avatar";
+import { UserAvatar } from "@/components/ui/UserAvatar";
 import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
 import { useAddProjectMember } from "@/hooks/useProjects";
@@ -128,7 +128,7 @@ export function AssignMemberModal({ open, projectId, existing, onClose }: Props)
                 >
                   {active && <Icon name="check" size={12} />}
                 </span>
-                <Avatar initial={u.name.slice(0, 1)} size="sm" />
+                <UserAvatar user={u} size="sm" />
                 <div className={styles.userBody}>
                   <div className={styles.userName}>{u.name}</div>
                   <div className={styles.userMeta}>

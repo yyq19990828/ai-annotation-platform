@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { clsx } from "clsx";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
@@ -11,7 +11,12 @@ import {
   useUpdateProfile,
   useRequestDeactivation,
   useCancelDeactivation,
+  useSetAvatarRef,
+  useClearAvatar,
+  useUploadAvatar,
 } from "@/hooks/useMe";
+import { UserAvatar } from "@/components/ui/UserAvatar";
+import { AvatarPickerDialog } from "@/components/users/AvatarPickerDialog";
 import { ROLE_LABELS } from "@/constants/roles";
 import { bugReportsApi, type BugReportResponse } from "@/api/bug-reports";
 import { notificationsApi, type NotificationPreferenceItem } from "@/api/notifications";
@@ -141,7 +146,6 @@ function ProfileSection() {
   const [oldPwd, setOldPwd] = useState("");
   const [newPwd, setNewPwd] = useState("");
   const [newPwd2, setNewPwd2] = useState("");
-
   if (!user) return null;
 
   const submitName = (e: React.FormEvent) => {
@@ -185,6 +189,9 @@ function ProfileSection() {
     <div className="flex flex-col gap-4">
       <Card>
         <SectionHeader title="基本资料" />
+        <div className={FORM_CLASS}>
+          <AvatarField />
+        </div>
         <form onSubmit={submitName} className={FORM_CLASS}>
           <ReadOnly label="邮箱" value={user.email} mono />
           <ReadOnly label="角色" value={ROLE_LABELS[user.role as UserRole] ?? user.role} />
@@ -666,6 +673,131 @@ function ReadOnly({
         {hint}
       </div>
     </div>
+  );
+}
+
+/** 头像可通过的 MIME 与上限，与后端 services/avatar_image.py 保持一致。 */
+const AVATAR_ACCEPT = "image/png,image/jpeg,image/webp";
+const AVATAR_MAX_BYTES = 2 * 1024 * 1024;
+
+/**
+ * 头像：预览 + 上传 / 选择内置像素头像 / 恢复默认。
+ *
+ * 客户端只做「格式与大小」的早退提示，真正的校验与方形裁剪在服务端完成；三个动作共用
+ * hooks 里的成功处理（写回 auth store），因此顶栏与预览会一起更新。
+ */
+function AvatarField() {
+  const user = useAuthStore((s) => s.user);
+  const pushToast = useToastStore((s) => s.push);
+  const setAvatarRef = useSetAvatarRef();
+  const clearAvatar = useClearAvatar();
+  const uploadAvatar = useUploadAvatar();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
+
+  if (!user) return null;
+
+  const pending = uploadAvatar.isPending || setAvatarRef.isPending || clearAvatar.isPending;
+  const failed = uploadAvatar.isError || setAvatarRef.isError || clearAvatar.isError;
+  const failureMessage = (
+    (uploadAvatar.error ?? setAvatarRef.error ?? clearAvatar.error) as Error | null
+  )?.message;
+
+  const handleFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    // 清空 value，否则连续选择同一个文件不会触发 change。
+    event.target.value = "";
+    if (!file) return;
+    if (!AVATAR_ACCEPT.split(",").includes(file.type)) {
+      pushToast({ msg: "仅支持 PNG / JPEG / WebP 图片", kind: "warning" });
+      return;
+    }
+    if (file.size > AVATAR_MAX_BYTES) {
+      pushToast({ msg: "图片不能超过 2 MB", kind: "warning" });
+      return;
+    }
+    setProgress(0);
+    uploadAvatar.mutate(
+      { file, onProgress: setProgress },
+      {
+        onSuccess: () => pushToast({ msg: "头像已更新", kind: "success" }),
+        onSettled: () => setProgress(null),
+      },
+    );
+  };
+
+  const selectPreset = (ref: string) => {
+    setAvatarRef.mutate(ref, {
+      onSuccess: () => {
+        pushToast({ msg: "头像已更新", kind: "success" });
+        setPickerOpen(false);
+      },
+    });
+  };
+
+  const restoreDefault = () => {
+    clearAvatar.mutate(undefined, {
+      onSuccess: () => {
+        pushToast({ msg: "已恢复默认头像", kind: "success" });
+        setPickerOpen(false);
+      },
+    });
+  };
+
+  return (
+    <>
+      <div className="flex items-center gap-4">
+        <UserAvatar user={user} size="lg" className="size-14 text-lg" />
+        <div className="flex min-w-0 flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className={INPUT_BUTTON_CLASS}
+              disabled={pending}
+              onClick={() => inputRef.current?.click()}
+            >
+              {progress === null ? "上传图片" : `上传中 ${Math.round(progress)}%`}
+            </button>
+            <button
+              type="button"
+              className={INPUT_BUTTON_CLASS}
+              disabled={pending}
+              onClick={() => setPickerOpen(true)}
+            >
+              选择内置头像
+            </button>
+            <button
+              type="button"
+              className={INPUT_BUTTON_CLASS}
+              disabled={pending || !user.avatar_ref}
+              onClick={restoreDefault}
+            >
+              恢复默认
+            </button>
+          </div>
+          <p className="m-0 text-xs text-muted-foreground">
+            PNG / JPEG / WebP，不超过 2 MB；上传后自动居中裁成方形。未设置头像时显示姓名首字母。
+          </p>
+        </div>
+        <input
+          ref={inputRef}
+          type="file"
+          accept={AVATAR_ACCEPT}
+          className="hidden"
+          onChange={handleFile}
+        />
+      </div>
+      {failed && failureMessage && <ErrorBanner msg={failureMessage} />}
+      <AvatarPickerDialog
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        currentRef={user.avatar_ref}
+        pending={pending}
+        onSelect={selectPreset}
+        onClear={restoreDefault}
+      />
+    </>
   );
 }
 

@@ -13,7 +13,7 @@ import {
 import { useLocation, useNavigate } from "react-router-dom";
 import { buildReviewWorkbenchUrl, buildWorkbenchUrl } from "@/utils/workbenchNavigation";
 import { Badge } from "@/components/ui/Badge";
-import { Avatar } from "@/components/ui/Avatar";
+import { UserAvatar } from "@/components/ui/UserAvatar";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
@@ -1008,7 +1008,10 @@ function MemberRow({
           onClick={() => onSelect(member.user_id)}
           className="flex min-w-48 items-center gap-2 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <Avatar initial={initial(member.name)} size="sm" />
+          <UserAvatar
+            size="sm"
+            user={{ name: member.name, email: member.email, avatar_ref: member.avatar_ref }}
+          />
           <span className="min-w-0">
             <span className="flex items-center gap-1.5 truncate font-medium text-foreground">
               {member.name}

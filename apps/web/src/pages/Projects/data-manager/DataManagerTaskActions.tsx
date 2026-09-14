@@ -12,7 +12,7 @@ import { useAsyncJob } from "@/hooks/useAsyncJob";
 import { useMLBackends } from "@/hooks/useMLBackends";
 import type { TriggerPreannotationPayload } from "@/hooks/usePreannotation";
 import { useProject, useProjectMembers } from "@/hooks/useProjects";
-import { Avatar } from "@/components/ui/Avatar";
+import { UserAvatar } from "@/components/ui/UserAvatar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
@@ -787,7 +787,13 @@ function AssignmentSelect({
 }: {
   label: string;
   value: AssignmentChoice;
-  members: Array<{ user_id: string; user_name: string; user_email: string }>;
+  members: Array<{
+    user_id: string;
+    user_name: string;
+    user_email: string;
+    /** 头像引用；结构上是 ProjectMemberResponse 的子集，缺省 = 回退首字母。 */
+    avatar_ref?: string | null;
+  }>;
   loading: boolean;
   onChange: (value: AssignmentChoice) => void;
 }) {
@@ -810,10 +816,13 @@ function AssignmentSelect({
       </select>
       {value !== KEEP && value !== CLEAR && (
         <span className="flex items-center gap-1 text-xs text-muted-foreground">
-          <Avatar
-            initial={
-              members.find((member) => member.user_id === value)?.user_name.slice(0, 1) ?? "?"
-            }
+          <UserAvatar
+            size="sm"
+            user={{
+              name: members.find((member) => member.user_id === value)?.user_name,
+              email: members.find((member) => member.user_id === value)?.user_email,
+              avatar_ref: members.find((member) => member.user_id === value)?.avatar_ref,
+            }}
           />
           目标成员将在应用前再次校验
         </span>

@@ -432,6 +432,7 @@ async def admin_people_list(
                 role=u.role,
                 status=u.status,
                 project_count=pm_count_map.get(u.id, 0),
+                avatar_ref=u.avatar_ref,
                 main_metric=main_metric,
                 main_metric_label=main_label,
                 weekly_compare_pct=wcp,

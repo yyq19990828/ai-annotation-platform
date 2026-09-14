@@ -71,6 +71,8 @@ export interface ProjectMemberPerformance {
   is_owner: boolean;
   is_current_member: boolean;
   member_since: string | null;
+  /** 头像引用(`preset:<slug>` / `upload:<token>`);空 = 回退首字母。 */
+  avatar_ref?: string | null;
   metrics: ProjectMemberPerformanceMetrics;
 }
 

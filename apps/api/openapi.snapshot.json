@@ -423,6 +423,17 @@
             "title": "Alerts",
             "type": "array"
           },
+          "avatar_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Ref"
+          },
           "email": {
             "title": "Email",
             "type": "string"
@@ -4603,6 +4614,25 @@
         "title": "AuditSummaryTotals",
         "type": "object"
       },
+      "AvatarRefUpdate": {
+        "additionalProperties": false,
+        "description": "头像引用写入契约（``PATCH /auth/me/avatar``）。\n\n``avatar_ref`` 只接受 ``preset:<slug>`` 或 null（= 恢复首字母）；``upload:`` 由上传\n端点独占写入，客户端提交会被拒。省略字段等价于清空。",
+        "properties": {
+          "avatar_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Ref"
+          }
+        },
+        "title": "AvatarRefUpdate",
+        "type": "object"
+      },
       "BackendCapabilities": {
         "description": "v0.10.37 · backend `/setup` 能力快照 (epic 阶段 1).\n\n由 services/ml_backend.check_health 探 `/setup` 后落进 health_meta[\"capabilities\"];\n`modalities` 为派生视图 (image / video / lidar), 见 services/ml_capabilities.derive_modalities.\n\nv0.14.9 · 能力声明协议 v2: 新增 `infra` (backend 默认基础设施) + `models` (多模型目录);\n其余顶层字段为各 model 的「扁平并集」, 供未迁移消费方继续读 (向后兼容)。",
         "properties": {
@@ -5864,6 +5894,20 @@
           "frame_index"
         ],
         "title": "Body_predict_frame_api_v1_projects__project_id__ml_backends__backend_id__predict_frame_post",
+        "type": "object"
+      },
+      "Body_upload_avatar_api_v1_auth_me_avatar_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_upload_avatar_api_v1_auth_me_avatar_post",
         "type": "object"
       },
       "Body_upload_zip_api_v1_datasets__dataset_id__items_upload_zip_post": {
@@ -21778,6 +21822,17 @@
             "title": "Account Status",
             "type": "string"
           },
+          "avatar_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Ref"
+          },
           "email": {
             "title": "Email",
             "type": "string"
@@ -25473,6 +25528,17 @@
             "title": "Assigned At",
             "type": "string"
           },
+          "avatar_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Ref"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -25698,6 +25764,17 @@
               }
             ],
             "title": "Organization Id"
+          },
+          "owner_avatar_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Avatar Ref"
           },
           "owner_id": {
             "format": "uuid",
@@ -34309,6 +34386,17 @@
             "title": "Avatar Initial",
             "type": "string"
           },
+          "avatar_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Ref"
+          },
           "email": {
             "title": "Email",
             "type": "string"
@@ -34345,6 +34433,17 @@
       },
       "UserOut": {
         "properties": {
+          "avatar_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Ref"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -43637,6 +43736,123 @@
         ]
       }
     },
+    "/api/v1/auth/me/avatar": {
+      "delete": {
+        "description": "恢复默认头像（= 回退首字母圆片）。",
+        "operationId": "clear_avatar_api_v1_auth_me_avatar_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Clear Avatar",
+        "tags": [
+          "me"
+        ]
+      },
+      "patch": {
+        "description": "选择内置头像（``preset:<slug>``）或清除头像（``avatar_ref: null``）。\n\n``upload:`` 前缀一律拒绝,否则用户可以把别人的 token 挂到自己名下。",
+        "operationId": "set_avatar_ref_api_v1_auth_me_avatar_patch",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AvatarRefUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Set Avatar Ref",
+        "tags": [
+          "me"
+        ]
+      },
+      "post": {
+        "description": "上传自定义头像。\n\n服务端是唯一可信方:客户端声明的 MIME 只作早退,真实格式 / 像素规模由 Pillow 判定,\n产物统一为 256×256 方形 WebP 后写入 ``avatars`` 桶。请求体另有中间件级上限\n(``middleware/upload_body_limits``),此处再按文件字节复核一次。",
+        "operationId": "upload_avatar_api_v1_auth_me_avatar_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_upload_avatar_api_v1_auth_me_avatar_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Upload Avatar",
+        "tags": [
+          "me"
+        ]
+      }
+    },
     "/api/v1/auth/me/deactivation-request": {
       "delete": {
         "description": "v0.8.1 · 冷静期内撤销自助注销申请。",
@@ -44136,6 +44352,46 @@
         "summary": "Verify Email",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/v1/avatars/{token}": {
+      "get": {
+        "operationId": "get_avatar_api_v1_avatars__token__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "token",
+            "required": true,
+            "schema": {
+              "title": "Token",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Avatar",
+        "tags": [
+          "avatars"
         ]
       }
     },

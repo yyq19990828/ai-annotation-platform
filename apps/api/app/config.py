@@ -185,6 +185,9 @@ class Settings(BaseSettings):
     # v0.10.27 · 导入预标注 / 导出标注产物的短生命周期独立桶,各挂整桶 7 天 lifecycle。
     minio_import_bucket: str = "import"
     minio_export_bucket: str = "export"
+    # 用户头像独立桶。头像不可重生、需备份、需长期保留,故不挂任何 lifecycle 规则,
+    # 与任务数据/派生缓存的生命周期彻底解耦。
+    minio_avatars_bucket: str = "avatars"
     minio_use_ssl: bool = False
     # 浏览器可达的签名 URL 根地址：可为绝对 URL，也可为 DEV 同源前缀
     # (/minio，由 Vite 代理到对象存储)。

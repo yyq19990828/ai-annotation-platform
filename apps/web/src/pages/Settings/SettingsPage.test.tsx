@@ -3,6 +3,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { DEFAULT_WORKBENCH_PREFERENCES } from "@/api/auth";
 
@@ -48,11 +49,17 @@ const mockUpdateProfile = { mutate: vi.fn(), isPending: false, isError: false };
 const mockChangePassword = { mutate: vi.fn(), isPending: false, isError: false };
 const mockRequestDeactivation = { mutate: vi.fn(), isPending: false, isError: false };
 const mockCancelDeactivation = { mutate: vi.fn(), isPending: false, isError: false };
+const mockSetAvatarRef = { mutate: vi.fn(), isPending: false, isError: false };
+const mockClearAvatar = { mutate: vi.fn(), isPending: false, isError: false };
+const mockUploadAvatar = { mutate: vi.fn(), isPending: false, isError: false };
 vi.mock("@/hooks/useMe", () => ({
   useUpdateProfile: () => mockUpdateProfile,
   useChangePassword: () => mockChangePassword,
   useRequestDeactivation: () => mockRequestDeactivation,
   useCancelDeactivation: () => mockCancelDeactivation,
+  useSetAvatarRef: () => mockSetAvatarRef,
+  useClearAvatar: () => mockClearAvatar,
+  useUploadAvatar: () => mockUploadAvatar,
 }));
 
 // --- session control ---
@@ -141,10 +148,15 @@ vi.mock("@/components/connections/ConnectorAllowlistSettings", () => ({
 import { SettingsPage } from "./SettingsPage";
 
 function renderUI() {
+  // 头像选择器读取内置头像目录（react-query），因此页面必须有 QueryClientProvider；
+  // 线上由 App 根提供，这里补上同一层。
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
-    <MemoryRouter>
-      <SettingsPage />
-    </MemoryRouter>,
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <SettingsPage />
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 
@@ -192,20 +204,20 @@ describe("SettingsPage", () => {
 
   it("修改密码：两次密码不一致时显示错误提示", () => {
     renderUI();
-    fireEvent.change(screen.getAllByDisplayValue("")[0], { target: { value: "oldpass" } });
-    const pwdInputs = screen.getAllByDisplayValue("");
-    // 填入新密码
-    fireEvent.change(pwdInputs[0], { target: { value: "newpass1" } });
-    fireEvent.change(pwdInputs[1], { target: { value: "different2" } });
+    // 按 label 定位（页面里还有头像的文件选择框，不能用「空值 input」的下标选择）。
+    fireEvent.change(screen.getByLabelText("原密码"), { target: { value: "oldpass" } });
+    fireEvent.change(screen.getByLabelText(/^新密码/), { target: { value: "newpass1" } });
+    fireEvent.change(screen.getByLabelText("再次输入新密码"), {
+      target: { value: "different2" },
+    });
     expect(screen.getByText("两次密码不一致")).toBeInTheDocument();
   });
 
   it("修改密码：与服务端规则不一致时禁用提交", () => {
     renderUI();
-    const pwdInputs = screen.getAllByDisplayValue("");
-    fireEvent.change(pwdInputs[0], { target: { value: "oldpass" } });
-    fireEvent.change(pwdInputs[1], { target: { value: "abc12345" } });
-    fireEvent.change(pwdInputs[2], { target: { value: "abc12345" } });
+    fireEvent.change(screen.getByLabelText("原密码"), { target: { value: "oldpass" } });
+    fireEvent.change(screen.getByLabelText(/^新密码/), { target: { value: "abc12345" } });
+    fireEvent.change(screen.getByLabelText("再次输入新密码"), { target: { value: "abc12345" } });
     expect(screen.getByText(/还需：.*含大写字母/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "修改密码" })).toBeDisabled();
     expect(mockChangePassword.mutate).not.toHaveBeenCalled();

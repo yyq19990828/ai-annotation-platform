@@ -14,7 +14,7 @@ import { Icon } from "@/components/ui/Icon";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
-import { Avatar } from "@/components/ui/Avatar";
+import { UserAvatar } from "@/components/ui/UserAvatar";
 import { Sparkline } from "@/components/ui/Sparkline";
 import { Histogram } from "@/components/ui/Histogram";
 import { RadialProgress } from "@/components/ui/RadialProgress";
@@ -328,7 +328,10 @@ function PersonCard({ item, onClick }: { item: AdminPersonItem; onClick: () => v
     <Card onClick={onClick} className="cursor-pointer">
       <div className="flex flex-col gap-2.5 p-3.5">
         <div className="flex items-center gap-2.5">
-          <Avatar initial={item.name?.charAt(0) || "?"} size="md" />
+          <UserAvatar
+            user={{ name: item.name, email: item.email, avatar_ref: item.avatar_ref }}
+            size="md"
+          />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 text-sm font-semibold">
               <span className="truncate">{item.name}</span>

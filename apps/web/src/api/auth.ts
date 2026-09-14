@@ -485,6 +485,8 @@ export interface MeResponse {
   deactivation_scheduled_at?: string | null;
   // v0.9.41 · 标注偏好（workbench 渲染配置等）。空对象表示未设置，按客户端默认。
   preferences?: Partial<UserPreferences>;
+  /** 头像引用(`preset:<slug>` / `upload:<token>`);空 = 首字母回退。 */
+  avatar_ref?: string | null;
 }
 
 export const authApi = {
