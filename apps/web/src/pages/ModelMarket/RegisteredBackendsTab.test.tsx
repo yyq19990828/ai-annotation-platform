@@ -401,6 +401,17 @@ describe("RegisteredBackendsTab (v0.23.4 P3)", () => {
       renderUI();
       expect(await screen.findByText("尚无服务池")).toBeInTheDocument();
     });
+
+    it("实例列表查询失败且无缓存 → 实例 tab 计数显示 ? 而不是 0", async () => {
+      // 回归（PR #103 Codex P2）：/all 失败时旧代码回落 0，把失败的列表
+      // 冒充成空注册表；应与 GPU / 项目计数一致地显示未知。
+      mockListAll.mockRejectedValue(new Error("all 503"));
+      renderUI();
+      const instancesTab = await screen.findByRole("tab", { name: /实例/ });
+      await waitFor(() => {
+        expect(instancesTab.textContent).toContain("?");
+      });
+    });
   });
 
   describe("Super Admin", () => {

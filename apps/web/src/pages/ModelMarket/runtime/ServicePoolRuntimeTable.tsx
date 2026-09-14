@@ -5,7 +5,9 @@
  * 第一行身份（展开按钮 + 名称 + 短 ID/策略 + 健康、路由、新鲜度分开显示），
  * 第二行带标签的字段（可路由/总实例、并发、驻留、CPU 回退、流量）。去掉旧版
  * 四个内层小卡与悬浮位移动画；无流量指标的池只显示一条「暂无路由指标」，
- * 缺失字段不在首层冒充数值，仍保留下钻处的未知语义。正常池保持 topology 稳定
+ * 缺失字段不在首层冒充数值，仍保留下钻处的未知语义；驻留已知性同样取自
+ * 「可信且可解析」的状态——`{state:"unknown"}`、畸形载荷或未核实来源都显示
+ * 「未知」，不把显式未知的数据折算成确定的 0。正常池保持 topology 稳定
  * 顺序，不因轮询数值重排；展开成员时跨两列，成员与维护动作沿用既有组件。
  */
 import { useState, type ReactNode } from "react";
@@ -34,7 +36,12 @@ import { RuntimeStatusBadge } from "./RuntimeStatusBadge";
 import { TrafficDistributionBar, type TrafficSegment } from "./TrafficDistributionBar";
 import { BackendInstanceRow } from "./BackendInstanceRow";
 import type { VariantWarmTarget } from "../VariantPanel";
-import { isActiveResidency, isFreshCachedHealth } from "./parseResidency";
+import {
+  isActiveResidency,
+  isFreshCachedHealth,
+  parseResidency,
+  residencyStateToAxis,
+} from "./parseResidency";
 import { formatShortId } from "../registry/registryShared";
 
 /** Per-member lookups the orchestrator pre-computes from /all + /observe. */
@@ -93,19 +100,16 @@ export function ServicePoolRuntimeTable({
       {topology.pools.map((pool) => {
         const isOpen = expanded.has(pool.id);
         const residentCount = pool.members.filter((member) => {
-          const { backend, observe } = lookup(member.registry_id);
-          const hasDirectResidency = observe?.residency != null;
-          const residency = hasDirectResidency
-            ? observe.residency
-            : backend?.health_meta?.residency;
-          const trusted = hasDirectResidency
-            ? observe?.ok === true
-            : backend != null && isFreshCachedHealth(backend.state, backend.last_checked_at);
+          const { residency, trusted } = resolveMemberResidency(lookup(member.registry_id));
           return isActiveResidency(residency, trusted);
         }).length;
+        // 已知 = 至少一个成员给出可信且可解析的驻留状态；`{state:"unknown"}`、
+        // 畸形载荷或未核实来源都不能把「未知」折算成确定的 0（plan §4.2 / ADR-0051）。
         const residencyKnown = pool.members.some((member) => {
-          const { backend, observe } = lookup(member.registry_id);
-          return observe?.residency != null || backend?.health_meta?.residency != null;
+          const { residency, trusted } = resolveMemberResidency(lookup(member.registry_id));
+          if (!trusted) return false;
+          const parsed = parseResidency(residency);
+          return parsed != null && residencyStateToAxis(parsed.state) !== "unknown";
         });
         const cpuFallbackCount = pool.members.filter((member) => {
           const { backend, observe } = lookup(member.registry_id);
@@ -148,6 +152,26 @@ export function ServicePoolRuntimeTable({
       })}
     </section>
   );
+}
+
+/**
+ * Resolve one member's residency payload and whether its source is trusted
+ * (fresh direct probe / fresh cached health). This is the same resolution the
+ * instance rows render, so pool-level counts and row-level states can never
+ * disagree about what "known" means.
+ */
+function resolveMemberResidency({ backend, observe }: MemberLookups): {
+  residency: unknown;
+  trusted: boolean;
+} {
+  const hasDirectResidency = observe?.residency != null;
+  const residency: unknown = hasDirectResidency
+    ? observe.residency
+    : backend?.health_meta?.residency;
+  const trusted = hasDirectResidency
+    ? observe?.ok === true
+    : backend != null && isFreshCachedHealth(backend.state, backend.last_checked_at);
+  return { residency, trusted };
 }
 
 function PoolRuntimeCard({

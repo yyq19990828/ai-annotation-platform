@@ -193,6 +193,8 @@ export function RegisteredBackendsTab(): ReactNode {
   const routableInstances = narrowedVm.pools.reduce((sum, p) => sum + p.availability.routable, 0);
   const totalInstances = narrowedVm.pools.reduce((sum, p) => sum + p.availability.total, 0);
   const instanceCountPending = allQ.isLoading;
+  // 查询失败且无缓存时如实显示未知（?），不把失败的列表冒充成空注册表。
+  const instanceCountError = allQ.isError;
   const instanceCount = allQ.data?.items.length ?? 0;
   const gpuCountPending = isSuperAdmin && gpuQ.isLoading;
   const gpuCount = gpuQ.data?.resources.length ?? 0;
@@ -332,7 +334,9 @@ export function RegisteredBackendsTab(): ReactNode {
             <TabsTrigger value="instances">
               <Icon name="bot" size={12} />
               实例
-              <TabCount value={instanceCountPending ? "…" : instanceCount} />
+              <TabCount
+                value={instanceCountPending ? "…" : instanceCountError ? "?" : instanceCount}
+              />
             </TabsTrigger>
             {isSuperAdmin && gpuTab}
             {isSuperAdmin && projectsTab}

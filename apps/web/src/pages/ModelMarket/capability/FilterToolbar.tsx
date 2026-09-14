@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/Button";
 //   第 2 行 —— 任务 / 模态快捷筛选 + 更多筛选（模型族 / 推理框架）;
 //   第 3 行 —— 结果计数（匹配 N / 总计 M，协议分组附能力类别数）+ 已应用条件标签。
 // 搜索 / 分组 / 视图在第 1 行，由面板渲染；清除条件只清多选轴，保留搜索/分组/视图。
+// 无效的目录 URL 条件以 chip 提示并提供移除入口（回落默认枚举，plan §5）。
 import type { UrlStateIssue } from "@/hooks/useUrlFilterState";
 
 import { infraLabel, modalityLabel, taskLabel } from "./labels";
@@ -26,6 +27,8 @@ interface FilterToolbarProps {
   onClear: () => void;
   /** URL 条件 issue（无效的 catalog_group / catalog_view 枚举）。 */
   issues?: UrlStateIssue[];
+  /** 移除一个无效 URL 条件（回落默认枚举并把非法参数从 URL 清掉）。 */
+  onDismissIssue: (key: string) => void;
   /** 当前实际渲染集合的计数（plan §4.1：匹配 N / 总计 M）。 */
   matchedCount: number;
   totalCount: number;
@@ -144,7 +147,12 @@ export function FilterToolbar(p: FilterToolbarProps) {
             aria-label="无效的目录条件"
           >
             {p.issues.map((issue) => (
-              <ActiveFilterChip key={issue.key} label={issue.message} invalid />
+              <ActiveFilterChip
+                key={issue.key}
+                label={issue.message}
+                invalid
+                onRemove={() => p.onDismissIssue(issue.key)}
+              />
             ))}
           </div>
         )}

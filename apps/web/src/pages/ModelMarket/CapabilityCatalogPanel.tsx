@@ -40,7 +40,7 @@ import {
   groupModels,
   toggle,
 } from "./capability/catalogModel";
-import { CATALOG_URL_DEFAULTS, catalogUrlCodec } from "./marketUrlState";
+import { CATALOG_URL_DEFAULTS, MARKET_URL_KEYS, catalogUrlCodec } from "./marketUrlState";
 import { FilterToolbar } from "./capability/FilterToolbar";
 import { ModelListTable } from "./capability/ModelListTable";
 import { ModelCard } from "./capability/ModelCard";
@@ -607,6 +607,15 @@ export function CapabilityCatalogPanel() {
               hasActiveFilter={hasActiveFilter}
               onClear={clearFilters}
               issues={catalogIssues}
+              onDismissIssue={(key) => {
+                // 移除无效目录条件 = 回落默认枚举；encode 会把非法参数从 URL
+                // 清掉（默认值删除键），issue 随之消失（plan §5 可见提示 + 移除入口）。
+                if (key === MARKET_URL_KEYS.catalogGroup) {
+                  patchCatalog({ catalogGroup: CATALOG_URL_DEFAULTS.catalogGroup });
+                } else if (key === MARKET_URL_KEYS.catalogView) {
+                  patchCatalog({ catalogView: CATALOG_URL_DEFAULTS.catalogView });
+                }
+              }}
               matchedCount={renderedModelCount}
               totalCount={flatModels.length}
               categoryCount={groupBy === "task" && protocolView ? renderedCategoryCount : null}
