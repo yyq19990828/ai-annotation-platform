@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ComponentProps } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -37,6 +37,36 @@ import { UnbatchedTasksModal } from "./UnbatchedTasksModal";
 import type { ProjectResponse } from "@/api/projects";
 import type { BatchResponse, BulkBatchActionResponse } from "@/api/batches";
 import { cn } from "@/lib/utils";
+import styles from "./BatchesSection.module.css";
+
+function BatchActionButton({
+  icon,
+  label,
+  className,
+  ...props
+}: Omit<ComponentProps<typeof Button>, "children"> & {
+  icon: ComponentProps<typeof Icon>["name"];
+  label: string;
+}) {
+  return (
+    <Button
+      {...props}
+      aria-label={label}
+      className={cn(
+        "gap-0 px-[9px] hover:translate-y-0 disabled:pointer-events-auto has-[>svg]:px-[9px] motion-reduce:transition-none",
+        styles.actionButton,
+        className,
+      )}
+    >
+      <Icon name={icon} size={12} />
+      <span className={styles.actionLabel} aria-hidden="true">
+        <span className={styles.actionLabelClip}>
+          <span className="pl-1.5">{label}</span>
+        </span>
+      </span>
+    </Button>
+  );
+}
 
 // success-colored Button 覆盖类(Button 无 success variant) — 对齐 Button danger/ai variant 风格
 const SUCCESS_BTN =
@@ -400,6 +430,8 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
               ))}
             </div>
             <Button
+              size="xs"
+              className="h-auto py-1 font-normal"
               onClick={() => setDistributeOpen(true)}
               disabled={batches.length === 0}
               title="把项目下所有批次圆周分派给所选成员（一 batch 一标注员 + 一审核员）"
@@ -409,6 +441,8 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
             </Button>
             {/* scene 模式项目分包只能 by scene：头部入口也走 by_scene，不开 random modal。 */}
             <Button
+              size="xs"
+              className="h-auto py-1 font-normal"
               onClick={project.scene_mode ? handleCreateByScene : () => setShowCreate(true)}
               disabled={project.scene_mode && splitBatches.isPending}
             >
@@ -679,7 +713,9 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                     <td className="px-3 py-2.5 align-middle">
                       <div className="flex flex-nowrap gap-1 whitespace-nowrap">
                         {b.status === "draft" && (
-                          <Button
+                          <BatchActionButton
+                            icon="play"
+                            label="激活"
                             onClick={() => handleTransition(b, "active")}
                             disabled={!b.annotator_id || b.total_tasks === 0}
                             title={
@@ -689,111 +725,121 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                                   ? "批次内无任务，无法激活"
                                   : "激活"
                             }
-                          >
-                            <Icon name="play" size={12} />
-                          </Button>
+                          />
                         )}
                         {b.status === "annotating" && (
-                          <Button
+                          <BatchActionButton
+                            icon="check"
+                            label="提交质检"
                             onClick={() => handleTransition(b, "reviewing")}
                             title="整批提交质检（owner / 被分派标注员）"
-                          >
-                            <Icon name="check" size={12} /> 提交质检
-                          </Button>
+                          />
                         )}
                         {b.status === "reviewing" && (
                           <>
-                            <Button
+                            <BatchActionButton
+                              icon="check"
+                              label="通过"
                               onClick={() => handleTransition(b, "approved")}
                               title="批次通过审核（reviewer / owner）"
                               className={SUCCESS_BTN}
-                            >
-                              <Icon name="check" size={12} /> 通过
-                            </Button>
-                            <Button
+                            />
+                            <BatchActionButton
+                              icon="x"
+                              label="驳回"
                               variant="danger"
                               onClick={() => setRejectTarget(b)}
                               title="批次驳回（reviewer / owner）"
-                            >
-                              <Icon name="x" size={12} /> 驳回
-                            </Button>
+                            />
                           </>
                         )}
                         {b.status === "rejected" && (
-                          <Button onClick={() => handleTransition(b, "active")} title="重新激活">
-                            <Icon name="refresh" size={12} />
-                          </Button>
+                          <BatchActionButton
+                            icon="refresh"
+                            label="重新激活"
+                            onClick={() => handleTransition(b, "active")}
+                            title="重新激活"
+                          />
                         )}
                         {/* v0.7.3 · owner 专属逆向迁移按钮 */}
                         {isOwner && b.status === "rejected" && (
-                          <Button
+                          <BatchActionButton
+                            icon="refresh"
+                            label="直接复审"
                             onClick={() =>
                               setReverseTarget({ batch: b, kind: "reopen_from_rejected" })
                             }
                             title="跳过重标，直接复审"
-                          >
-                            <Icon name="refresh" size={12} /> 直接复审
-                          </Button>
+                          />
                         )}
                         {isOwner && b.status === "approved" && (
-                          <Button
+                          <BatchActionButton
+                            icon="refresh"
+                            label="重开审核"
                             onClick={() =>
                               setReverseTarget({ batch: b, kind: "reopen_from_approved" })
                             }
                             title="重开审核"
-                          >
-                            <Icon name="refresh" size={12} /> 重开审核
-                          </Button>
+                          />
                         )}
                         {isOwner && b.status === "archived" && (
-                          <Button
+                          <BatchActionButton
+                            icon="refresh"
+                            label="撤销归档"
                             onClick={() => setReverseTarget({ batch: b, kind: "unarchive" })}
                             title="撤销归档"
-                          >
-                            <Icon name="refresh" size={12} /> 撤销归档
-                          </Button>
+                          />
                         )}
                         {/* v0.7.6 · owner 终极重置到 draft（任意非 draft 状态） */}
                         {isOwner && b.status !== "draft" && (
-                          <Button
+                          <BatchActionButton
+                            icon="refresh"
+                            label="重置"
                             onClick={() => setResetTarget(b)}
                             title="重置到草稿（owner 兜底）"
-                          >
-                            <Icon name="refresh" size={12} /> 重置
-                          </Button>
+                          />
                         )}
                         {!["archived", "approved"].includes(b.status) && (
-                          <Button onClick={() => handleTransition(b, "archived")} title="归档">
-                            <Icon name="inbox" size={12} />
-                          </Button>
+                          <BatchActionButton
+                            icon="inbox"
+                            label="归档"
+                            onClick={() => handleTransition(b, "archived")}
+                            title="归档"
+                          />
                         )}
                         {b.display_id !== "B-DEFAULT" && (
-                          <Button onClick={() => setConfirmDelete(b)} title="删除">
-                            <Icon name="trash" size={12} />
-                          </Button>
+                          <BatchActionButton
+                            icon="trash"
+                            label="删除"
+                            onClick={() => setConfirmDelete(b)}
+                            title="删除"
+                          />
                         )}
                         {/* v0.7.3 · 操作历史抽屉 */}
-                        <Button onClick={() => setAuditTarget(b)} title="操作历史">
-                          <Icon name="clock" size={12} />
-                        </Button>
+                        <BatchActionButton
+                          icon="clock"
+                          label="操作历史"
+                          onClick={() => setAuditTarget(b)}
+                          title="操作历史"
+                        />
                         {/* v0.9.15 · ADR-0008 admin-lock */}
                         {isOwner && !b.admin_locked && (
-                          <Button
+                          <BatchActionButton
+                            icon="lock"
+                            label="锁定批次"
                             onClick={() => setLockTarget(b)}
                             title="锁定批次（冻结自动推进，阻止新派单）"
                             className="text-status-caution"
-                          >
-                            <Icon name="lock" size={12} />
-                          </Button>
+                          />
                         )}
                         {isOwner && b.admin_locked && (
-                          <Button
+                          <BatchActionButton
+                            icon="unlock"
+                            label="解锁批次"
                             onClick={() => handleAdminUnlock(b)}
                             title="解锁批次"
                             className="text-status-positive"
-                          >
-                            <Icon name="unlock" size={12} />
-                          </Button>
+                          />
                         )}
                       </div>
                       {b.status === "rejected" && b.review_feedback && (

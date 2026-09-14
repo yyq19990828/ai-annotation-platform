@@ -475,7 +475,17 @@ pnpm docs:media:derive -- --run /absolute/path/to/run --article 06-video-track -
 
 ## 视觉回归基线更新
 
-`Visual regression` 工作流会在截图 seed 前安装 `ffmpeg`，用于准备视频素材。定时运行失败时，工作流使用 job 级别的 `issues: write` 权限创建通知 Issue，区分视觉测试失败、未完成，以及测试通过后的检查或清理失败。先检查失败步骤和日志；依赖或数据初始化失败不代表截图差异，不应通过更新基线处理。
+`Browser checks` 工作流（`.github/workflows/visual-regression.yml`）会在截图 seed 前安装 `ffmpeg`，用于准备视频素材，并在 MinIO 就绪后调用 `storage_service.ensure_all_buckets()` 初始化存储桶。seed 会先于 API 启动上传媒体，因此必须提前创建存储桶；MinIO 健康检查通过只表示服务可用。
+
+该环境使用 ML protocol stub，不启动 Celery worker。API 启动后通过 `/health/db` 检查就绪；聚合 `/health` 还会检查 Celery，在这个环境中会因没有 worker 返回 503。
+
+截图 profile 会同步准备它所管理的图片缩略图、视频海报和视频元数据，并校验存储对象，失败时终止 seed。普通 demo profile 仍使用异步媒体任务。截图任务使用稳定展示编号，项目、数据集和任务时间戳在所有种子写入完成后统一固定；保留的种子预测也固定创建时间，并保持导入元数据关联，避免数据库自增序列、更新时间和“最近活动”影响比较。
+
+前端构建完成后使用 `pnpm preview --host 127.0.0.1 --port 3000 --strictPort`，保留 Vite 的 API、WebSocket 和 MinIO 代理。图片、视频场景等待画布可见与媒体就绪状态，避免开发服务器冷编译或固定休眠造成超时、空画布基线。
+
+工作台租约使用真实浏览器时间；回归仅遮罩任务锁与分段租约的倒计时数值，保留锁状态和错误信息。预标配置回归显式选择 catalog 中协议 stub 的 `yolo-detect` 模型，缺失时失败。文档正式截图继续使用各自的真实 backend，因此不要混用文档图与 protocol stub 回归基线。
+
+定时运行失败时，工作流使用 job 级别的 `issues: write` 权限创建通知 Issue，区分视觉测试失败、未完成，以及测试通过后的检查或清理失败。先检查失败步骤和日志；依赖或数据初始化失败不代表截图差异，不应通过更新基线处理。
 
 当 UI 有意改变导致 regression 失败时：
 
@@ -492,6 +502,8 @@ pnpm screenshots:regression
 git add e2e/screenshots/regression/__screenshots__/
 git commit -m "chore(screenshots): 更新视觉回归基线 — <变更原因>"
 ```
+
+也可手动运行工作流并设置 `update_snapshots=true`，下载 `regression-baseline-<run-id>` artifact，逐张确认 9 个场景的媒体、布局和控件完整后提交到上述目录。随后以 `update_snapshots=false` 再运行一次；更新模式通过本身不代表基线比较通过。保持既有 1% 像素差异阈值，不用扩大遮罩或放宽阈值处理实际 UI 变化。
 
 ## 手动维护的图
 

@@ -4,6 +4,7 @@ import {
   type ProjectCreatePayload,
   type ProjectUpdatePayload,
   type ProjectListParams,
+  type ProjectPageParams,
 } from "../api/projects";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -13,6 +14,17 @@ export function useProjects(params?: ProjectListParams) {
   return useQuery({
     queryKey: ["projects", params, userId, tokenEpoch],
     queryFn: ({ signal }) => projectsApi.list(params, { signal }),
+    enabled: Boolean(userId),
+  });
+}
+
+export function useProjectPage(params: ProjectPageParams) {
+  const userId = useAuthStore((state) => state.user?.id ?? null);
+  const tokenEpoch = useAuthStore((state) => state.token);
+  return useQuery({
+    queryKey: ["projects", "page", params, userId, tokenEpoch],
+    queryFn: ({ signal }) => projectsApi.page(params, { signal }),
+    staleTime: 0,
     enabled: Boolean(userId),
   });
 }

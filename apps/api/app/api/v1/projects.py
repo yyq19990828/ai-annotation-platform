@@ -27,6 +27,7 @@ from app.db.models.task_batch import TaskBatch
 from app.db.models.async_job import AsyncJob
 from app.schemas.project import (
     ProjectOut,
+    ProjectPage,
     ProjectCreate,
     ProjectUpdate,
     ProjectStats,
@@ -303,19 +304,32 @@ async def _assert_project_kind_update_allowed(
             )
 
 
-@router.get("", response_model=list[ProjectOut])
-async def list_projects(
+def _project_filter_datetime(value: str | None, *, end_of_day: bool = False):
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422, detail="创建日期须为 ISO 日期或时间"
+        ) from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    if end_of_day and len(value) == 10:
+        parsed = parsed.replace(hour=23, minute=59, second=59, microsecond=999999)
+    return parsed
+
+
+def _project_list_query(
+    user: User,
+    *,
     status: str | None = None,
     search: str | None = None,
-    # v0.7.2 · 高级筛选维度（FilterDrawer 对接）
-    type_key: list[str] | None = Query(None),
-    # v0.10.28 · 媒体维度筛选 (image / video / lidar)
-    data_type: list[str] | None = Query(None),
+    type_key: list[str] | None = None,
+    data_type: list[str] | None = None,
     member_id: uuid.UUID | None = None,
-    created_from: str | None = None,  # ISO date "2026-01-01"
+    created_from: str | None = None,
     created_to: str | None = None,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
 ):
     q = select(Project)
     cond = _visible_project_filter(user)
@@ -337,13 +351,20 @@ async def list_projects(
                 )
             )
         )
-    if created_from:
-        q = q.where(Project.created_at >= created_from)
-    if created_to:
-        q = q.where(Project.created_at <= created_to)
-    result = await db.execute(q.order_by(Project.created_at.desc()))
-    projects = result.scalars().all()
+    start = _project_filter_datetime(created_from)
+    end = _project_filter_datetime(created_to, end_of_day=True)
+    if start is not None and end is not None and start > end:
+        raise HTTPException(status_code=422, detail="创建开始日期不能晚于结束日期")
+    if start is not None:
+        q = q.where(Project.created_at >= start)
+    if end is not None:
+        q = q.where(Project.created_at <= end)
+    return q.order_by(Project.created_at.desc(), Project.id.desc())
 
+
+async def _serialize_project_list(
+    db: AsyncSession, projects: list[Project]
+) -> list[dict]:
     # v0.7.0：批量预查 ai_completed_tasks 避免 N+1 — 单 GROUP BY 查询
     from app.db.models.annotation import Annotation
 
@@ -380,6 +401,73 @@ async def list_projects(
         )
         for p in projects
     ]
+
+
+@router.get("", response_model=list[ProjectOut])
+async def list_projects(
+    status: str | None = None,
+    search: str | None = None,
+    # v0.7.2 · 高级筛选维度（FilterDrawer 对接）
+    type_key: list[str] | None = Query(None),
+    # v0.10.28 · 媒体维度筛选 (image / video / lidar)
+    data_type: list[str] | None = Query(None),
+    member_id: uuid.UUID | None = None,
+    created_from: str | None = None,  # ISO date "2026-01-01"
+    created_to: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    q = _project_list_query(
+        user,
+        status=status,
+        search=search,
+        type_key=type_key,
+        data_type=data_type,
+        member_id=member_id,
+        created_from=created_from,
+        created_to=created_to,
+    )
+    result = await db.execute(q)
+    return await _serialize_project_list(db, list(result.scalars().all()))
+
+
+@router.get("/query", response_model=ProjectPage)
+async def query_projects(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    status: str | None = None,
+    search: str | None = None,
+    type_key: list[str] | None = Query(None),
+    data_type: list[str] | None = Query(None),
+    member_id: uuid.UUID | None = None,
+    created_from: str | None = None,
+    created_to: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    q = _project_list_query(
+        user,
+        status=status,
+        search=search,
+        type_key=type_key,
+        data_type=data_type,
+        member_id=member_id,
+        created_from=created_from,
+        created_to=created_to,
+    )
+    total = int(
+        await db.scalar(select(func.count()).select_from(q.order_by(None).subquery()))
+        or 0
+    )
+    result = await db.execute(q.offset((page - 1) * page_size).limit(page_size))
+    items = await _serialize_project_list(db, list(result.scalars().all()))
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "pages": (total + page_size - 1) // page_size,
+    }
 
 
 @router.get("/stats", response_model=ProjectStats)

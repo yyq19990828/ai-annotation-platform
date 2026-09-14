@@ -328,6 +328,14 @@ class ProjectOut(BaseModel):
         from_attributes = True
 
 
+class ProjectPage(BaseModel):
+    items: list[ProjectOut]
+    total: int
+    page: int
+    page_size: int
+    pages: int
+
+
 class ProjectStats(BaseModel):
     total_data: int
     completed: int
