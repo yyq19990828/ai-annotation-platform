@@ -130,12 +130,91 @@ def test_export_worker_registration_and_route_are_stable() -> None:
     assert celery_app.conf.task_routes[task_name] == {"queue": "export"}
 
 
+@pytest.mark.asyncio
+async def test_export_worker_rejects_removed_member_before_cache_or_build(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project_id = uuid.UUID("11111111-1111-1111-1111-111111111111")
+    job_id = uuid.UUID("22222222-2222-2222-2222-222222222222")
+    task_id = uuid.UUID("33333333-3333-3333-3333-333333333333")
+    actor_id = uuid.UUID("44444444-4444-4444-4444-444444444444")
+    project = SimpleNamespace(id=project_id, owner_id=uuid.uuid4())
+    job = SimpleNamespace(
+        id=job_id,
+        status="pending",
+        celery_task_id=None,
+        project_id=project_id,
+        user_id=actor_id,
+        payload={"scope": {"task_ids": [str(task_id)]}},
+    )
+    actor = SimpleNamespace(id=actor_id, is_active=True, role="annotator")
+    db = SimpleNamespace(
+        commit=AsyncMock(),
+        rollback=AsyncMock(),
+        scalar=AsyncMock(return_value=None),
+        execute=AsyncMock(return_value=_ScalarResult(job)),
+    )
+
+    async def get(model: object, object_id: uuid.UUID) -> object | None:
+        if model is export_worker.Project:
+            return project
+        if model is export_worker.AsyncJob:
+            return job
+        if model is export_worker.User:
+            return actor
+        return None
+
+    db.get = AsyncMock(side_effect=get)
+
+    class _SessionContext:
+        async def __aenter__(self):
+            return db
+
+        async def __aexit__(self, *_args):
+            return False
+
+    class _SessionFactory:
+        def __call__(self):
+            return _SessionContext()
+
+    engine = SimpleNamespace(dispose=AsyncMock())
+    monkeypatch.setattr(export_worker, "create_async_engine", lambda *a, **kw: engine)
+    monkeypatch.setattr(
+        export_worker, "async_sessionmaker", lambda *a, **kw: _SessionFactory()
+    )
+    monkeypatch.setattr(export_worker.async_job_svc, "mark_running", AsyncMock())
+    mark_failed = AsyncMock()
+    monkeypatch.setattr(export_worker.async_job_svc, "mark_failed", mark_failed)
+    monkeypatch.setattr(export_worker, "_emit_export_notification", AsyncMock())
+    lookup = AsyncMock()
+    monkeypatch.setattr(export_worker.export_cache, "lookup", lookup)
+    build_export_zip = AsyncMock()
+    monkeypatch.setattr(export_worker, "build_export_zip", build_export_zip)
+
+    with pytest.raises(ValueError, match="project access"):
+        await export_worker._run_export(
+            project_id=str(project_id),
+            batch_id=None,
+            task_ids=[str(task_id)],
+            targets=["aap_json"],
+            opts={},
+            async_job_id=str(job_id),
+            celery_task_id="celery-revoked-member",
+        )
+
+    lookup.assert_not_awaited()
+    build_export_zip.assert_not_awaited()
+    mark_failed.assert_awaited_once()
+    engine.dispose.assert_awaited_once()
+
+
 @pytest.mark.parametrize("targets", [["davis", "mots"], ["kitti"], ["aap_json"]])
 @pytest.mark.asyncio
 async def test_export_worker_cache_hit_skips_packaging(
     monkeypatch: pytest.MonkeyPatch,
     targets: list[str],
 ) -> None:
+    monkeypatch.setattr(export_worker, "_assert_export_task_scope", AsyncMock())
     db = SimpleNamespace(
         commit=AsyncMock(),
         rollback=AsyncMock(),
@@ -284,6 +363,7 @@ async def test_export_worker_cache_hit_skips_packaging(
 async def test_export_worker_cache_miss_contender_retries_without_packaging(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(export_worker, "_assert_export_task_scope", AsyncMock())
     db = SimpleNamespace(
         commit=AsyncMock(),
         rollback=AsyncMock(),
@@ -361,6 +441,7 @@ async def test_export_worker_cache_miss_contender_retries_without_packaging(
 async def test_export_worker_rechecks_cache_after_winning_singleflight_lock(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setattr(export_worker, "_assert_export_task_scope", AsyncMock())
     db = SimpleNamespace(
         commit=AsyncMock(),
         rollback=AsyncMock(),
@@ -452,6 +533,7 @@ async def test_export_worker_removes_uploaded_object_when_cache_record_fails(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
+    monkeypatch.setattr(export_worker, "_assert_export_task_scope", AsyncMock())
     db = SimpleNamespace(
         commit=AsyncMock(),
         rollback=AsyncMock(),

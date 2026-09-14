@@ -32,6 +32,7 @@ from app.db.models.async_job import AsyncJob
 from app.db.models.export_artifact import ExportArtifact
 from app.db.models.dataset import DatasetItem, Scene, SensorCalibrationRevision
 from app.db.models.project import Project
+from app.db.models.project_member import ProjectMember
 from app.db.models.scene_pose import SceneFramePose
 from app.db.models.task import Task
 from app.db.models.task_dataset_item_link import TaskDatasetItemLink
@@ -480,13 +481,11 @@ async def _assert_export_task_scope(
     db: AsyncSession,
     *,
     project_id: uuid.UUID,
-    task_ids: list[uuid.UUID],
+    task_ids: list[uuid.UUID] | None,
     job_uuid: uuid.UUID,
 ) -> None:
-    """Recheck an explicit export scope after the async job starts."""
+    """Recheck export project access and any explicit task scope."""
 
-    if not task_ids:
-        raise ValueError("export task scope must not be empty")
     project = await db.get(Project, project_id)
     job = await db.get(AsyncJob, job_uuid)
     if project is None or job is None or job.project_id != project_id:
@@ -494,6 +493,20 @@ async def _assert_export_task_scope(
     actor = await db.get(User, job.user_id) if job.user_id is not None else None
     if actor is None or not actor.is_active:
         raise ValueError("export scope owner is unavailable")
+    if not is_privileged_for_project(actor, project):
+        member_id = await db.scalar(
+            select(ProjectMember.id).where(
+                ProjectMember.project_id == project_id,
+                ProjectMember.user_id == actor.id,
+            )
+        )
+        if member_id is None:
+            raise ValueError("export project access is no longer valid")
+
+    if task_ids is None:
+        return
+    if not task_ids:
+        raise ValueError("export task scope must not be empty")
 
     stored_scope = ((job.payload or {}).get("scope") or {}).get("task_ids")
     if stored_scope is None:
@@ -579,22 +592,21 @@ async def _run_export(
                 )
                 await db.commit()
 
-                if selected_task_ids is not None:
-                    await _assert_export_task_scope(
-                        db,
-                        project_id=proj_uuid,
-                        task_ids=selected_task_ids,
-                        job_uuid=job_uuid,
+                await _assert_export_task_scope(
+                    db,
+                    project_id=proj_uuid,
+                    task_ids=selected_task_ids,
+                    job_uuid=job_uuid,
+                )
+                if selected_task_ids is not None and {
+                    "coco-multicamera",
+                    "kitti",
+                    "nuscenes",
+                    "pointmask",
+                } & set(targets):
+                    raise ValueError(
+                        "task-scoped export does not support scene-level lidar formats"
                     )
-                    if {
-                        "coco-multicamera",
-                        "kitti",
-                        "nuscenes",
-                        "pointmask",
-                    } & set(targets):
-                        raise ValueError(
-                            "task-scoped export does not support scene-level lidar formats"
-                        )
 
                 if {"coco-multicamera", "kitti", "nuscenes"} & set(targets):
                     from app.services.exporting.lidar_preflight import (

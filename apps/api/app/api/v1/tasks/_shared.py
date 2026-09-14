@@ -4,7 +4,7 @@ import uuid
 from collections.abc import Iterable
 from datetime import datetime, timezone
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.enums import UserRole
@@ -19,6 +19,7 @@ from app.schemas.task import (
 )
 from app.schemas.image_pyramid import ImagePyramidSummary
 from app.services.scheduler import (
+    effective_task_assignee_id,
     is_privileged_for_project,
     visible_batch_statuses_for,
     annotator_can_rework_task,
@@ -180,6 +181,55 @@ async def _load_task_or_404(db: AsyncSession, task_id: uuid.UUID) -> Task:
     return task
 
 
+async def _has_current_project_membership(
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    user_id: uuid.UUID,
+    *,
+    lock: bool = False,
+) -> bool:
+    stmt = (
+        select(ProjectMember.id)
+        .where(
+            ProjectMember.project_id == project_id,
+            ProjectMember.user_id == user_id,
+        )
+        .limit(1)
+    )
+    if lock:
+        stmt = stmt.with_for_update(read=True)
+    return (await db.scalar(stmt)) is not None
+
+
+async def _assert_current_project_member(db: AsyncSession, project, user: User) -> None:
+    if is_privileged_for_project(user, project):
+        return
+    if not await _has_current_project_membership(db, project.id, user.id, lock=True):
+        raise HTTPException(status_code=404, detail="Task not found")
+
+
+async def _effective_task_assignee_id(db: AsyncSession, task: Task) -> uuid.UUID | None:
+    batch = await db.get(TaskBatch, task.batch_id) if task.batch_id else None
+    return effective_task_assignee_id(task, batch)
+
+
+def _assert_effective_task_assignee(
+    user: User,
+    effective_assignee_id: uuid.UUID | None,
+    *,
+    action: str,
+    allow_open_pool: bool = False,
+) -> None:
+    if user.role in (UserRole.SUPER_ADMIN.value, UserRole.PROJECT_ADMIN.value):
+        return
+    if user.role == UserRole.ANNOTATOR.value and (
+        effective_assignee_id == user.id
+        or (allow_open_pool and effective_assignee_id is None)
+    ):
+        return
+    raise HTTPException(status_code=403, detail=f"only effective assignee can {action}")
+
+
 async def _assert_task_visible(db: AsyncSession, task: Task, user: User) -> None:
     """B-16 + v0.7.0：服务端强制 batch 可见性，按角色分支。
     super_admin / 项目 owner 越权放行；reviewer 见 active/annotating/reviewing；
@@ -194,19 +244,11 @@ async def _assert_task_visible(db: AsyncSession, task: Task, user: User) -> None
         raise HTTPException(status_code=404, detail="Task not found")
     if is_privileged_for_project(user, project):
         return
+    await _assert_current_project_member(db, project, user)
     if task.file_type == "video" and bool(
         (project.video_collaboration or {}).get("enabled")
     ):
-        membership = await db.scalar(
-            select(func.count())
-            .select_from(ProjectMember)
-            .where(
-                ProjectMember.project_id == project.id,
-                ProjectMember.user_id == user.id,
-            )
-        )
-        if membership:
-            return
+        return
     if task.batch_id is None:
         if (user.role == UserRole.ANNOTATOR and task.assignee_id == user.id) or (
             user.role == UserRole.REVIEWER and task.reviewer_id == user.id
@@ -257,7 +299,15 @@ async def _visible_task_ids(
     if not task_ids:
         return set()
     if is_privileged_for_project(user, project):
-        return set(task_ids)
+        result = await db.execute(
+            select(Task.id).where(
+                Task.project_id == project.id,
+                Task.id.in_(task_ids),
+            )
+        )
+        return set(result.scalars().all())
+    if not await _has_current_project_membership(db, project.id, user.id):
+        return set()
 
     rows = (
         await db.execute(
@@ -267,7 +317,7 @@ async def _visible_task_ids(
                 Task.status,
                 Task.assignee_id,
                 Task.reviewer_id,
-            ).where(Task.id.in_(task_ids))
+            ).where(Task.project_id == project.id, Task.id.in_(task_ids))
         )
     ).all()
     batch_ids = {bid for _, bid, _, _, _ in rows if bid is not None}

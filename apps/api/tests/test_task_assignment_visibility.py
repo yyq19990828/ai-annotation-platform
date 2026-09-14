@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import pytest
+from sqlalchemy import select
 
 from app.core.security import create_access_token
 from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
+from app.db.models.task_lock import TaskLock
 from tests.factory import create_project, create_user
 
 
@@ -315,6 +318,212 @@ async def test_explicitly_assigned_unbatched_task_is_visible_and_claimable(
     )
     assert old_assignee_next.status_code == 200, old_assignee_next.text
     assert old_assignee_next.json() is None
+
+
+@pytest.mark.asyncio
+async def test_removed_member_cannot_reuse_assigned_task_url_or_write(
+    httpx_client_bound, db_session, super_admin, annotator
+):
+    owner, owner_token = super_admin
+    member, member_token = annotator
+    project = await create_project(db_session, owner_id=owner.id)
+    membership = ProjectMember(
+        project_id=project.id,
+        user_id=member.id,
+        role="annotator",
+        assigned_by=owner.id,
+    )
+    db_session.add(membership)
+    task = await _task(
+        db_session,
+        project_id=project.id,
+        display_id=f"T-REMOVED-MEMBER-{uuid.uuid4().hex[:8]}",
+    )
+    await db_session.commit()
+
+    await _apply_annotator_assignment(
+        httpx_client_bound,
+        project_id=project.id,
+        owner_token=owner_token,
+        task_ids=[task.id],
+        annotator_id=member.id,
+    )
+    member_headers = _bearer(member_token)
+    assert (
+        await httpx_client_bound.get(f"/api/v1/tasks/{task.id}", headers=member_headers)
+    ).status_code == 200
+
+    removed = await httpx_client_bound.delete(
+        f"/api/v1/projects/{project.id}/members/{membership.id}",
+        headers=_bearer(owner_token),
+    )
+    assert removed.status_code == 204, removed.text
+    await db_session.refresh(task)
+    assert task.assignee_id == member.id
+
+    assert (
+        await httpx_client_bound.get(f"/api/v1/tasks/{task.id}", headers=member_headers)
+    ).status_code == 404
+    denied_write = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/annotations",
+        headers=member_headers,
+        json={
+            "annotation_type": "bbox",
+            "class_name": "car",
+            "geometry": {"type": "bbox", "x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2},
+        },
+    )
+    assert denied_write.status_code == 404, denied_write.text
+
+
+@pytest.mark.parametrize(
+    ("endpoint", "status"),
+    [("withdraw", "review"), ("reopen", "completed"), ("accept-rejection", "rejected")],
+)
+@pytest.mark.asyncio
+async def test_batch_fallback_controls_lifecycle_ownership(
+    endpoint, status, httpx_client_bound, db_session, super_admin, annotator
+):
+    owner, _ = super_admin
+    member, member_token = annotator
+    project = await create_project(db_session, owner_id=owner.id)
+    db_session.add(
+        ProjectMember(
+            project_id=project.id,
+            user_id=member.id,
+            role="annotator",
+            assigned_by=owner.id,
+        )
+    )
+    batch = TaskBatch(
+        project_id=project.id,
+        display_id=f"B-FALLBACK-{uuid.uuid4().hex[:8]}",
+        name="effective assignment fallback",
+        status="active",
+        annotator_id=member.id,
+    )
+    db_session.add(batch)
+    await db_session.flush()
+    task = await _task(
+        db_session,
+        project_id=project.id,
+        display_id=f"T-FALLBACK-{uuid.uuid4().hex[:8]}",
+        batch_id=batch.id,
+    )
+    task.status = status
+    await db_session.commit()
+
+    response = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/{endpoint}", headers=_bearer(member_token)
+    )
+    assert response.status_code == 200, response.text
+
+
+@pytest.mark.asyncio
+async def test_batch_fallback_prevents_reviewer_from_submitting_for_annotator(
+    httpx_client_bound, db_session, super_admin, annotator, reviewer
+):
+    owner, _ = super_admin
+    member, member_token = annotator
+    review_user, review_token = reviewer
+    project = await create_project(db_session, owner_id=owner.id)
+    db_session.add_all(
+        [
+            ProjectMember(
+                project_id=project.id,
+                user_id=member.id,
+                role="annotator",
+                assigned_by=owner.id,
+            ),
+            ProjectMember(
+                project_id=project.id,
+                user_id=review_user.id,
+                role="reviewer",
+                assigned_by=owner.id,
+            ),
+        ]
+    )
+    batch = TaskBatch(
+        project_id=project.id,
+        display_id=f"B-SUBMIT-FALLBACK-{uuid.uuid4().hex[:8]}",
+        name="submit fallback",
+        status="active",
+        annotator_id=member.id,
+    )
+    db_session.add(batch)
+    await db_session.flush()
+    task = await _task(
+        db_session,
+        project_id=project.id,
+        display_id=f"T-SUBMIT-FALLBACK-{uuid.uuid4().hex[:8]}",
+        batch_id=batch.id,
+    )
+    task.status = "in_progress"
+    await db_session.commit()
+
+    reviewer_submit = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/submit", headers=_bearer(review_token)
+    )
+    assert reviewer_submit.status_code == 403, reviewer_submit.text
+    await db_session.refresh(task)
+    assert task.status == "in_progress"
+
+    annotator_submit = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/submit", headers=_bearer(member_token)
+    )
+    assert annotator_submit.status_code == 200, annotator_submit.text
+
+
+@pytest.mark.asyncio
+async def test_batch_fallback_assignee_can_take_over_task_lock(
+    httpx_client_bound, db_session, super_admin, annotator, reviewer
+):
+    owner, _ = super_admin
+    member, member_token = annotator
+    other, _ = reviewer
+    project = await create_project(db_session, owner_id=owner.id)
+    db_session.add(
+        ProjectMember(
+            project_id=project.id,
+            user_id=member.id,
+            role="annotator",
+            assigned_by=owner.id,
+        )
+    )
+    batch = TaskBatch(
+        project_id=project.id,
+        display_id=f"B-LOCK-FALLBACK-{uuid.uuid4().hex[:8]}",
+        name="lock fallback",
+        status="active",
+        annotator_id=member.id,
+    )
+    db_session.add(batch)
+    await db_session.flush()
+    task = await _task(
+        db_session,
+        project_id=project.id,
+        display_id=f"T-LOCK-FALLBACK-{uuid.uuid4().hex[:8]}",
+        batch_id=batch.id,
+    )
+    db_session.add(
+        TaskLock(
+            task_id=task.id,
+            user_id=other.id,
+            expire_at=datetime.now(timezone.utc) + timedelta(hours=1),
+        )
+    )
+    await db_session.commit()
+
+    response = await httpx_client_bound.post(
+        f"/api/v1/tasks/{task.id}/lock", headers=_bearer(member_token)
+    )
+    assert response.status_code == 200, response.text
+    locks = list(
+        (await db_session.execute(select(TaskLock).where(TaskLock.task_id == task.id)))
+        .scalars()
+        .all()
+    )
+    assert [lock.user_id for lock in locks] == [member.id]
 
 
 @pytest.mark.asyncio

@@ -15,8 +15,10 @@ from app.db.models.notification import Notification
 from app.db.models.async_job import AsyncJobStatus
 from app.db.models.prediction import FailedPrediction
 from app.db.models.project import Project
+from app.db.models.project_member import ProjectMember
 from app.services import async_job as async_job_svc
 from app.services.async_job_notify import notify_job_terminal
+from tests.factory import create_project
 
 
 def _bearer(token: str) -> dict:
@@ -110,6 +112,62 @@ class TestAsyncJobService:
         await db_session.refresh(aj)
         assert aj.status == AsyncJobStatus.FAILED.value
         assert "bad" in (aj.error_message or "")
+
+
+async def test_removed_project_member_cannot_read_or_list_export_result(
+    httpx_client_bound, db_session, super_admin, annotator
+):
+    owner, owner_token = super_admin
+    member, member_token = annotator
+    project = await create_project(db_session, owner_id=owner.id)
+    membership = ProjectMember(
+        project_id=project.id,
+        user_id=member.id,
+        role="annotator",
+        assigned_by=owner.id,
+    )
+    db_session.add(membership)
+    job = await async_job_svc.create_job(
+        db_session,
+        kind="export",
+        user_id=member.id,
+        project_id=project.id,
+        payload={"targets": ["aap_json"]},
+    )
+    await async_job_svc.mark_complete(
+        db_session,
+        job.id,
+        result={"download_url": "https://download.invalid/export.zip"},
+    )
+    await db_session.commit()
+
+    member_headers = _bearer(member_token)
+    visible = await httpx_client_bound.get(
+        f"/api/v1/async-jobs/{job.id}", headers=member_headers
+    )
+    assert visible.status_code == 200, visible.text
+    listed = await httpx_client_bound.get(
+        f"/api/v1/async-jobs?project_id={project.id}", headers=member_headers
+    )
+    assert listed.status_code == 200, listed.text
+    assert listed.json()["total"] == 1
+
+    removed = await httpx_client_bound.delete(
+        f"/api/v1/projects/{project.id}/members/{membership.id}",
+        headers=_bearer(owner_token),
+    )
+    assert removed.status_code == 204, removed.text
+
+    denied = await httpx_client_bound.get(
+        f"/api/v1/async-jobs/{job.id}", headers=member_headers
+    )
+    assert denied.status_code == 403, denied.text
+    listed_after = await httpx_client_bound.get(
+        f"/api/v1/async-jobs?project_id={project.id}", headers=member_headers
+    )
+    assert listed_after.status_code == 200, listed_after.text
+    assert listed_after.json()["items"] == []
+    assert listed_after.json()["total"] == 0
 
 
 class TestAsyncJobTerminalNotifications:
