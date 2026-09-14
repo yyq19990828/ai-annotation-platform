@@ -69,6 +69,7 @@ import {
   ProjectPerformanceSummary,
 } from "./data-manager/ProjectMembersPerformance";
 import { DataManagerLensTabs } from "./data-manager/DataManagerLensTabs";
+import { DataManagerViewActions } from "./data-manager/DataManagerViewActions";
 import { EntityDataManagerLens } from "./data-manager/EntityDataManagerLens";
 import { TaskMatchesSheet } from "./data-manager/TaskMatchesSheet";
 import {
@@ -1163,32 +1164,21 @@ function TaskDataManagerPage({
               <span aria-hidden="true">·</span>
               <span>{views.length.toLocaleString()} 个视图</span>
             </div>
-            <div className="flex shrink-0 items-center justify-end gap-2">
-              <Button variant={analyticsOpen ? "primary" : undefined} onClick={toggleAnalytics}>
-                <Icon name="activity" size={12} />
-                统计
-              </Button>
-              <Button
-                onClick={() => {
-                  if (!queryReady || !filterReady) return;
-                  tasksQ.refetch();
-                  summaryQ.refetch();
-                  viewsQ.refetch();
-                }}
-                disabled={!queryReady || !filterReady || tasksQ.isFetching || summaryQ.isFetching}
-              >
-                <Icon name="refresh" size={12} />
-                刷新
-              </Button>
-              <Button
-                variant="primary"
-                onClick={saveCurrent}
-                disabled={!filterReady || createView.isPending || updateView.isPending}
-              >
-                <Icon name="save" size={12} />
-                保存视图
-              </Button>
-            </div>
+            <DataManagerViewActions
+              analyticsOpen={analyticsOpen}
+              onToggleAnalytics={toggleAnalytics}
+              onRefresh={() => {
+                if (!queryReady || !filterReady) return;
+                tasksQ.refetch();
+                summaryQ.refetch();
+                viewsQ.refetch();
+              }}
+              refreshDisabled={
+                !queryReady || !filterReady || tasksQ.isFetching || summaryQ.isFetching
+              }
+              onSave={saveCurrent}
+              saveDisabled={!filterReady || createView.isPending || updateView.isPending}
+            />
           </header>
 
           <DataManagerSummaryStrip

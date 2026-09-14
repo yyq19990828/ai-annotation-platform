@@ -78,6 +78,7 @@ import { DataManagerExpressionEditor } from "./DataManagerExpressionEditor";
 import { DataManagerAnalyticsPanel } from "./DataManagerAnalyticsPanel";
 import { DataManagerFilterBar, type DataManagerFilterChip } from "./DataManagerFilterBar";
 import { DataManagerLensTabs } from "./DataManagerLensTabs";
+import { DataManagerViewActions } from "./DataManagerViewActions";
 import { EntityDetailSheet } from "./EntityDetailSheet";
 import styles from "./EntityDataManagerLens.module.css";
 import {
@@ -796,30 +797,17 @@ export function EntityDataManagerLens({
                 {total} 条{scope === "objects" ? "对象" : "轨迹"}
               </span>
             </div>
-            <div className="flex shrink-0 justify-end gap-2">
-              <Button variant={analyticsOpen ? "primary" : undefined} onClick={toggleAnalytics}>
-                <Icon name="activity" size={12} />
-                统计
-              </Button>
-              <Button
-                onClick={() => {
-                  if (!queryReady || !filterReady) return;
-                  activeQ.refetch();
-                }}
-                disabled={!queryReady || !filterReady || activeQ.isFetching}
-              >
-                <Icon name="refresh" size={12} />
-                刷新
-              </Button>
-              <Button
-                variant="primary"
-                onClick={saveCurrent}
-                disabled={!filterReady || createView.isPending || updateView.isPending}
-              >
-                <Icon name="save" size={12} />
-                保存视图
-              </Button>
-            </div>
+            <DataManagerViewActions
+              analyticsOpen={analyticsOpen}
+              onToggleAnalytics={toggleAnalytics}
+              onRefresh={() => {
+                if (!queryReady || !filterReady) return;
+                activeQ.refetch();
+              }}
+              refreshDisabled={!queryReady || !filterReady || activeQ.isFetching}
+              onSave={saveCurrent}
+              saveDisabled={!filterReady || createView.isPending || updateView.isPending}
+            />
           </header>
 
           {analyticsOpen && (

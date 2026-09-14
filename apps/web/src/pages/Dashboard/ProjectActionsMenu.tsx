@@ -121,7 +121,7 @@ export function ProjectActionsMenu({
           navigate(`/projects/${project.id}/data-manager?section=overview`);
         }}
       >
-        <Icon name="filter" size={12} />
+        <Icon name="dataManager" size={12} />
         数据管理
       </Button>
       <DropdownMenu
