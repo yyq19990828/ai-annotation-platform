@@ -669,6 +669,23 @@ async def _reconcile_predictions(
         raise ScreenshotSeedReconcileError(
             "image_demo contains non-seed predictions; rerun with --repair"
         )
+    prediction = keep[0]
+    if prediction.created_at != FIXED_TIME:
+        # created_at is a partition key referenced by PredictionMeta. Move this
+        # owned fixture within the same transaction, temporarily clearing the
+        # nullable FK component, then restoring it without losing import metadata.
+        await db.execute(
+            update(PredictionMeta)
+            .where(PredictionMeta.prediction_id == prediction.id)
+            .values(prediction_created_at=None)
+        )
+        prediction.created_at = FIXED_TIME
+        await db.flush()
+        await db.execute(
+            update(PredictionMeta)
+            .where(PredictionMeta.prediction_id == prediction.id)
+            .values(prediction_created_at=FIXED_TIME, created_at=FIXED_TIME)
+        )
     for key, task in tasks.items():
         task.total_predictions = 1 if key == "predicted" else 0
 

@@ -479,7 +479,7 @@ pnpm docs:media:derive -- --run /absolute/path/to/run --article 06-video-track -
 
 该环境使用 ML protocol stub，不启动 Celery worker。API 启动后通过 `/health/db` 检查就绪；聚合 `/health` 还会检查 Celery，在这个环境中会因没有 worker 返回 503。
 
-截图 profile 会同步准备它所管理的图片缩略图、视频海报和视频元数据，并校验存储对象，失败时终止 seed。普通 demo profile 仍使用异步媒体任务。截图任务使用稳定展示编号，项目、数据集和任务时间戳在所有种子写入完成后统一固定，避免数据库自增序列和更新时间影响比较。
+截图 profile 会同步准备它所管理的图片缩略图、视频海报和视频元数据，并校验存储对象，失败时终止 seed。普通 demo profile 仍使用异步媒体任务。截图任务使用稳定展示编号，项目、数据集和任务时间戳在所有种子写入完成后统一固定；保留的种子预测也固定创建时间，并保持导入元数据关联，避免数据库自增序列、更新时间和“最近活动”影响比较。
 
 前端构建完成后使用 `pnpm preview --host 127.0.0.1 --port 3000 --strictPort`，保留 Vite 的 API、WebSocket 和 MinIO 代理。图片、视频场景等待画布可见与媒体就绪状态，避免开发服务器冷编译或固定休眠造成超时、空画布基线。
 

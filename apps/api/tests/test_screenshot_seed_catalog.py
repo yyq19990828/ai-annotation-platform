@@ -11,7 +11,7 @@ from app.db.models.annotation import Annotation
 from app.db.models.dataset import Dataset, DatasetItem, ProjectDataset
 from app.db.models.image_pyramid import ImagePyramidAsset, ImagePyramidGeneration
 from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackendPool
-from app.db.models.prediction import Prediction
+from app.db.models.prediction import Prediction, PredictionMeta
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
@@ -24,6 +24,7 @@ from app.services.screenshot_seed_spec import (
     SEED_REVISION,
 )
 from app.services.storage import storage_service
+from app.services.data_management.views import TaskViewService
 from scripts.seed_screenshot_profile import (
     ANNOTATION_NAMESPACE,
     FIXED_TIME as SEED_FIXED_TIME,
@@ -751,6 +752,55 @@ async def test_desired_state_reconcile_is_idempotent_and_preserves_user_project(
     assert projects["image_demo"].total_tasks == 8
     assert projects["image_demo"].completed_tasks == 1
     assert projects["image_demo"].raster_mask_native_editing_enabled is True
+
+
+async def test_screenshot_activity_time_preserves_prediction_metadata(db_session):
+    projects, tasks = await _ready_profile(db_session)
+    project = projects["image_demo"]
+    task = tasks["image_demo"]["predicted"]
+    prediction = await db_session.scalar(
+        select(Prediction).where(Prediction.task_id == task.id)
+    )
+    prediction.created_at = datetime.now(UTC)
+    await db_session.flush()
+    prediction_id = prediction.id
+    original_result = prediction.result
+    meta = PredictionMeta(
+        prediction_id=prediction.id,
+        prediction_created_at=prediction.created_at,
+        inference_time_ms=123,
+        extra={"import_format": "yolo"},
+    )
+    db_session.add(meta)
+    await db_session.commit()
+    admin = await db_session.scalar(select(User).where(User.email == "admin"))
+
+    for _ in range(2):
+        await reconcile_screenshot_seed(
+            db_session,
+            preparation=ScreenshotSeedPreparation(adopt_keys=frozenset()),
+            asset_sha256={key: "a" * 64 for key in PROJECT_SPECS},
+        )
+        rows, total = await TaskViewService(db_session).query_tasks(
+            project_id=project.id,
+            filter_json={"op": "and", "rules": []},
+            sort_json=[],
+            columns_json=["last_activity_at"],
+            limit=20,
+            offset=0,
+            user=admin,
+            project=project,
+        )
+        assert total == len(tasks["image_demo"])
+        row = next(row for row in rows if row.Task.id == task.id)
+        assert row.last_activity_at == SEED_FIXED_TIME + timedelta(minutes=1)
+        await db_session.refresh(prediction)
+        await db_session.refresh(meta)
+        assert prediction.id == meta.prediction_id == prediction_id
+        assert prediction.created_at == meta.prediction_created_at == SEED_FIXED_TIME
+        assert prediction.result == original_result
+        assert meta.inference_time_ms == 123
+        assert meta.extra == {"import_format": "yolo"}
 
 
 async def test_screenshot_timestamps_are_finalized_after_later_seed_updates(db_session):
