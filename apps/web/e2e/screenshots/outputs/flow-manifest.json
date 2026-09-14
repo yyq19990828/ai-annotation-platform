@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated_at": "2026-09-14T01:05:29.750Z",
+  "updated_at": "2026-09-14T02:06:28.390Z",
   "entries": {
     "docs-site/.vitepress/theme/assets/home/hero/pointcloud.webp": {
       "asset_id": "home-hero/pointcloud",
@@ -6636,10 +6636,10 @@
     "docs-site/.vitepress/theme/assets/home/hero/data-manager.webp": {
       "asset_id": "home-hero/data-manager",
       "role": "hero-image",
-      "generated_at": "2026-09-14T01:05:29.749Z",
-      "captured_commit": "bd6e7dcc52151115a144ea426d3b186e186d68f9",
-      "source_worktree_dirty": true,
-      "derived_commit": "bd6e7dcc52151115a144ea426d3b186e186d68f9",
+      "generated_at": "2026-09-14T02:06:28.389Z",
+      "captured_commit": "8f4d6dbffc64fe8b250c64255022d36813331085",
+      "source_worktree_dirty": false,
+      "derived_commit": "8f4d6dbffc64fe8b250c64255022d36813331085",
       "derivation_worktree_dirty": true,
       "seed_revision": "screenshots-2026-08-g",
       "source": "docs-site/scripts/generate-home-hero-media.mjs",
@@ -6649,8 +6649,8 @@
         "docs-site/scripts/generate-home-hero-media.mjs",
         "docs-site/.vitepress/theme/components/home/DataAtlasHero.vue"
       ],
-      "sha256": "83cbc84ec3b19f9937f3c902da4c05e5926584301a1d18c6b02e8ded0689c781",
-      "bytes": 52246,
+      "sha256": "f44c7144ef9f9e91b14fcced41b93ff725d456f74ef0e0a2d057cd5e4ddc02b6",
+      "bytes": 52738,
       "media": {
         "codec": "webp",
         "width": 1440,
@@ -6662,8 +6662,8 @@
       },
       "source_asset": {
         "path": "docs-site/user-guide/images/projects/data-manager-overview.png",
-        "sha256": "1bd9e499e691533b6a9490eefad35dce708e98ab7be0053d47b53121e528a3e6",
-        "captured_commit": "bd6e7dcc52151115a144ea426d3b186e186d68f9"
+        "sha256": "a7657a3f51d8e59a0ca1f3ea397dba111f4c755c991ec34e7eda21ddd453c1a2",
+        "captured_commit": "8f4d6dbffc64fe8b250c64255022d36813331085"
       }
     }
   }

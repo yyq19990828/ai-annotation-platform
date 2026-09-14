@@ -1,6 +1,6 @@
 # Data Manager and project member performance
 
-> Status: in progress. The user authorized parallel implementation with parent-thread integration, review and acceptance. The confirmed scope is whole-surface optimization and a project management dashboard for member contributions and bottlenecks. No release or remote publishing is requested.
+> Status: complete. Parallel implementation, parent integration, adversarial review and local acceptance are finished. The delivered scope is whole-surface optimization and a project management dashboard for member contributions and bottlenecks. No release or remote publishing was requested.
 > Reviewed against the current worktree on 2026-09-14. No release milestone is assigned.
 
 ## Product outcome
@@ -227,3 +227,52 @@ All implementation worktrees start from local base `b1dd26a40c0b63a0b2c6ad870f4c
 | time_capture   | worktree-agent-dm-time       | Qualified session collection, authenticated ingestion and idempotency      |
 
 Baseline evidence: the parent isolated test-mode database reached migration `0167`; the existing Data Manager and project people-scope tests passed (22 tests). This establishes the pre-change baseline only.
+
+## Outcome
+
+- Landed application work through `8f4d6dbf`, including parent integration `dda9533a`, effective assignment and CSV scope `317d5b39`, navigation `54a72444`, export/review facts `d2dbbe87` and `e97461ae`, collector recovery `4318208d` and `e639e416`, metric scope `2e988e62` and `70f4b3ae`, and membership revocation `e29e9844`.
+- Release milestone: Not yet determined. No version bump, push, deployment or remote CI run was requested or performed.
+- User documentation: `docs-site/user-guide/projects/data-manager.md`, `docs-site/user-guide/projects/index.md`, and `README.md`.
+- API documentation: `docs-site/api/guides/projects.md`, `docs-site/api/guides/auth.md`, and the regenerated `apps/api/openapi.snapshot.json` / frontend API types.
+- Developer documentation: `docs-site/dev/concepts/project-performance.md`, `docs-site/dev/concepts/visibility-and-permissions.md`, `docs-site/dev/concepts/scheduler-and-task-dispatch.md`, and `docs-site/dev/reference/data-manager-query.md`.
+- ADR: amended `docs/adr/0047-data-manager-entity-read-model.md` to keep queries read-only and task commands independently authorized.
+- CHANGELOG: Unreleased entries cover browsing, project member performance and exact-task operations.
+
+### Delivered behavior
+
+- Overview / Data / Members retain legacy Data URLs, saved nested filters, independent section scopes, dirty guards, and task/object/track locations. Browsing adds thumbnails, a gallery, collapsible view groups, narrow-screen scrolling and keyboard-safe selection. Point-cloud previews use a labeled placeholder.
+- Members include the owner, inactive and zero-activity members, with an explicit historical-contributor option. Tables, details, evidence and CSV share project/date/timezone/work-type scope. CSV carries units, raw values, coverage and resolved boundaries.
+- Submissions exclude skips. Reviewers receive decision credit; annotation contributors receive snapshot-based outcome credit. First-review contributor snapshots are saved before audit retention, later rounds do not borrow the first-round snapshot, and legacy video submission gaps mark coverage partial.
+- Session collection validates task/project/user relationships and interval bounds, unions overlapping qualified intervals in SQL, preserves client UUID idempotency, and recovers valid records from mixed stale batches. Queue loss markers remain unverified through both API and worker persistence; recorded time is not attendance or proof of human work.
+- Assignment preview/apply, export and preannotation accept explicit task scopes up to 200. Effective task overrides and batch defaults agree across browsing, filters, backlog, lifecycle and locking. Removed members lose task and job access without rewriting historical attribution.
+- New selected-task export jobs build fresh artifacts; only retries of the same durable job reuse the export cache. This deliberately avoids a partial dependency fingerprint for predictions, media and scene content.
+
+### Parent acceptance evidence
+
+| Check                      | Result                                                                                                                                                                                                                                                                                                             |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Backend primary regression | 262 cases executed. 255 passed initially; seven fixture failures were corrected by adding real reviewer membership or refreshing server-generated timestamps in the shared test session. All seven then passed in the 116-case permission/task/filter regression. No remaining failure is being treated as passed. |
+| Frontend regression        | 120 tests passed across 18 suites; the subsequent keyboard/ARIA changes passed the focused 18-test Data Manager flow/frame run.                                                                                                                                                                                    |
+| Browser E2E                | 10/10 passed: member access/CSV, independent analytics scope, nested expressions, saved-view persistence, cursor totals, restricted visibility and invalid drafts.                                                                                                                                                 |
+| Live layout and keyboard   | Inspected 1440, 1024 and 390 layouts and both themes. The final mobile Members page had viewport/body/page width 390 and three loaded member rows. Gallery Space toggles its checkbox without opening task details. No browser console errors were observed.                                                       |
+| Accessibility              | Data Manager gallery ARIA, region labeling and keyboard defects were fixed. Remaining light-theme axe contrast findings are two existing global-header nodes (workspace label and shortcut hint); gradient contrast checks remain incomplete. This is not a full WCAG certification.                               |
+| Query volume               | 2,000 tasks / 20,000 intervals: member query used 9 SQL statements and took 1.217 s locally; evidence used 11 SQL statements and returned 5 cursor-paged rows. This is a synthetic local sample, not a production capacity claim.                                                                                  |
+| Real export worker         | Jobs `86c60393-e321-4303-bba8-314a2da81aa2` and `5e0ecae5-a520-4611-9659-02f37c0a3279` completed; each downloaded AAP JSON ZIP contained only `T-E2E-FILTER-I-SAME`. Both new jobs reported `cache_hit=false`; repeating an idempotency key returned its original job.                                             |
+| Real preannotation worker  | Job `3a598c12-111d-4548-aebd-8d07fa7f7220` completed for one selected task using the repository protocol stub through the actual CPU worker. This validates dispatch/scope/protocol behavior, not real-model inference.                                                                                            |
+| Runtime                    | Parent E2E schema is `0170`; fresh ordinary and maintenance workers were checked for registration and exact queue subscriptions. The ordinary worker includes `export` and `ml.cpu`; maintenance consumes only `maintenance`. Retained preview is on Web 3101 / API 8101.                                          |
+| Static checks              | Web typecheck, lint, CSS token lint, build and bundle budgets passed. Two existing ESLint warnings remain. OpenAPI export/codegen, docs build, image manifest/orphan checks and `git diff --check` passed.                                                                                                         |
+| Media                      | Four final captures passed (Data, filter picker, light/dark Members), followed by the affected Hero derivative. Capture entries record the actual source commit and dirty-state facts; unrelated provenance was preserved. Only changed assets receive fresh agent visual review.                                  |
+
+Detailed local logs, diagnostic scripts, runtime ZIPs and screenshots are retained under ignored `output/data-manager-plan/`. The checked-in user guide contains the published captures. Repository-wide media audit still reports older/coarsely watched assets outside this task; their reviews were not blanket-renewed.
+
+### Integration and cleanup audit
+
+Eleven task-created Orca worktrees and their task branches were removed after clean-state, idle-terminal and patch-equivalence checks. Used worker test resources and the parent's disposable test mode were destroyed with their exact ownership confirmations. The parent's retained E2E preview and existing development-mode data remain available.
+
+Two workers violated the explicit database isolation instructions. The earlier time worker temporarily applied and reversed additive columns on the primary database; the parent subsequently verified primary schema `0167`. Shared `annotation_test` was also used incorrectly, including a later test run after an initial restoration. With no other sessions and zero task/time rows, the parent restored its exact temporary schema changes to `0167` and verified both databases again. The final read-only primary check showed 50 tasks and 98 time records; no business-row deletion was performed by the restoration. These checks are not a claim of a full database-content audit.
+
+One worker explicitly skipped an unavailable Prettier hook. The parent did not rely on that worker's gate result: formatting, normal integrated commit hooks, focused backend tests and the final frontend checks were completed locally.
+
+### Scope limits
+
+No scoped implementation blocker remains. Full-matching selection, bulk deletion/approval, formal grades, attendance/anti-cheat, task-difficulty calibration and comparable-type efficiency baselines remain outside the confirmed increment. Historical gaps remain visible instead of being backfilled from current ownership. Production deployment, real-model qualification and remote CI are separate work.
