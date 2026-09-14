@@ -273,6 +273,16 @@
     box-sizing: border-box;
   }
 
+  /* Tailwind v4 leaves an unset border color at `currentColor`, so a bare
+     `border` / `border-t` / `divide-*` inherits the text color: near-white on
+     the dark theme, near-black on light. Restore the semantic border token as
+     the global default; explicit `border-*` color utilities still win. */
+  *,
+  ::before,
+  ::after {
+    border-color: var(--sc-border);
+  }
+
   html,
   body {
     margin: 0;
