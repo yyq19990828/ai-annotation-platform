@@ -333,6 +333,91 @@ describe("ProjectMembersPerformance", () => {
     expect(refetch).toHaveBeenCalled();
   });
 
+  it.each(["account status", "historical roster", "search enter", "search debounce"])(
+    "closes selected details and resets evidence when changing %s",
+    async (filter) => {
+      mocks.events.mockImplementation(
+        (_projectId: string, memberId: string | null, query: { cursor: string | null }) => ({
+          data: memberId
+            ? {
+                ...eventsData,
+                items: [
+                  {
+                    id: query.cursor ?? "first",
+                    at: "2026-09-09T01:00:00Z",
+                    action: "提交任务",
+                    detail: query.cursor ?? "first evidence",
+                  },
+                ],
+                next_cursor: query.cursor ? null : "next-events",
+              }
+            : undefined,
+          isLoading: false,
+          isFetching: false,
+          isError: false,
+        }),
+      );
+      renderPage();
+      fireEvent.click(screen.getByRole("button", { name: /Ada Lovelace/ }));
+      fireEvent.click(screen.getByRole("button", { name: "加载更多依据" }));
+      expect(screen.getByText("next-events")).toBeInTheDocument();
+      if (filter === "account status") {
+        fireEvent.change(screen.getByLabelText("账号状态"), { target: { value: "inactive" } });
+      } else if (filter === "historical roster") {
+        fireEvent.click(screen.getByLabelText("包含历史贡献者"));
+      } else {
+        const search = screen.getByPlaceholderText("姓名或邮箱");
+        fireEvent.change(search, { target: { value: "Grace" } });
+        if (filter === "search enter") fireEvent.keyDown(search, { key: "Enter" });
+      }
+      await waitFor(() =>
+        expect(screen.queryByRole("heading", { name: "Ada Lovelace" })).not.toBeInTheDocument(),
+      );
+      expect(
+        new URLSearchParams(screen.getByTestId("location").textContent!.split("?")[1]).get(
+          "members_selected",
+        ),
+      ).toBeNull();
+      expect(mocks.events).toHaveBeenLastCalledWith(
+        "p1",
+        null,
+        expect.objectContaining({ cursor: null }),
+        false,
+      );
+    },
+  );
+
+  it("keeps accumulated evidence and shows progress while the next page is loading", () => {
+    mocks.events.mockImplementation(
+      (_projectId: string, memberId: string | null, query: { cursor: string | null }) => ({
+        data:
+          memberId && !query.cursor
+            ? {
+                ...eventsData,
+                items: [
+                  {
+                    id: "first",
+                    at: "2026-09-09T01:00:00Z",
+                    action: "提交任务",
+                    detail: "visible evidence",
+                  },
+                ],
+                next_cursor: "next-events",
+              }
+            : undefined,
+        isLoading: Boolean(query.cursor),
+        isFetching: Boolean(query.cursor),
+        isError: false,
+      }),
+    );
+    renderPage();
+    fireEvent.click(screen.getByRole("button", { name: /Ada Lovelace/ }));
+    expect(screen.getByText("visible evidence")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "加载更多依据" }));
+    expect(screen.getByText("visible evidence")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "加载中…" })).toBeDisabled();
+  });
+
   it("appends paginated evidence instead of widening its scope", () => {
     const first = {
       id: "event-1",

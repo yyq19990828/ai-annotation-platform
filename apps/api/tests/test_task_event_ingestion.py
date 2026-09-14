@@ -385,3 +385,366 @@ async def test_worker_revalidates_payload_and_deduplicates(
     assert partial_row is not None
     assert partial_row.collection_source == "session"
     assert partial_row.collection_coverage == "unverified_collection"
+
+
+def _buffered_events(task, *, started_at, kind="annotate"):
+    events = []
+    for chunk in range(2):
+        started = started_at + timedelta(minutes=30 * chunk)
+        events.append(
+            {
+                **_event(task.id, task.project_id, uuid.uuid4()),
+                "kind": kind,
+                "started_at": started.isoformat(),
+                "ended_at": (started + timedelta(minutes=30)).isoformat(),
+                "duration_ms": 30 * 60 * 1000,
+            }
+        )
+    return events
+
+
+def _worker_payload(event, user_id):
+    return {
+        **event,
+        "id": event["client_id"],
+        "user_id": str(user_id),
+    }
+
+
+@pytest.mark.parametrize("endpoint", ["submit", "skip"])
+@pytest.mark.parametrize("assignment", ["batch", "open_pool", "unbatched"])
+async def test_buffered_chunks_survive_submit_and_skip(
+    httpx_client,
+    super_admin,
+    annotator,
+    db_session,
+    monkeypatch,
+    endpoint,
+    assignment,
+):
+    """Real submission preserves a work start even when assignment is inherited."""
+
+    from app.config import settings
+    from app.db.models.project_member import ProjectMember
+    from app.db.models.task_event import TaskEvent
+    from app.db.models.task_batch import TaskBatch
+    from app.db.models.task_lock import TaskLock
+    from app.workers.task_events import _async_persist
+
+    owner, _ = super_admin
+    user, token = annotator
+    project = _project(owner.id, "P-TE-BUFFERED-SUBMIT")
+    task = _task(project.id, "T-TE-BUFFERED-SUBMIT")
+    started = datetime.now(timezone.utc) - timedelta(minutes=70)
+    db_session.add(project)
+    await db_session.flush()
+    db_session.add(
+        ProjectMember(project_id=project.id, user_id=user.id, role="annotator")
+    )
+    batch = None
+    if assignment == "unbatched":
+        task.assignee_id = user.id
+        task.assigned_at = started
+    else:
+        batch = TaskBatch(
+            project_id=project.id,
+            display_id="B-TE-BUFFERED-SUBMIT",
+            name="Buffered task",
+            status="annotating",
+            annotator_id=user.id if assignment == "batch" else None,
+        )
+        db_session.add(batch)
+        await db_session.flush()
+        task.batch_id = batch.id
+    db_session.add(task)
+    await db_session.flush()
+    headers = {"Authorization": f"Bearer {token}"}
+    locked = await httpx_client.post(f"/api/v1/tasks/{task.id}/lock", headers=headers)
+    assert locked.status_code == 200, locked.text
+    lock = (
+        await db_session.execute(select(TaskLock).where(TaskLock.task_id == task.id))
+    ).scalar_one()
+    # Advance the elapsed work time without waiting an hour. The lifecycle must
+    # preserve this server-side lock timestamp before deleting the actual lock.
+    lock.created_at = started
+    await db_session.flush()
+    response = await httpx_client.post(
+        f"/api/v1/tasks/{task.id}/{endpoint}",
+        headers=headers,
+        **({"json": {"reason": "no_target"}} if endpoint == "skip" else {}),
+    )
+    assert response.status_code == 200, response.text
+    await db_session.refresh(task)
+    assert task.assignee_id == user.id
+    assert task.assigned_at == started
+    assert (
+        await db_session.scalar(select(TaskLock.id).where(TaskLock.task_id == task.id))
+        is None
+    )
+    if batch is not None:
+        await db_session.refresh(batch)
+        assert batch.status == "reviewing"
+
+    # The collector starts when the task renders, just before lock admission.
+    events = _buffered_events(task, started_at=started - timedelta(seconds=1))
+
+    @asynccontextmanager
+    async def fake_task_session():
+        yield db_session
+
+    monkeypatch.setattr("app.workers._db.task_session", fake_task_session)
+    assert (
+        await _async_persist([_worker_payload(event, user.id) for event in events]) == 2
+    )
+    # Broker failure uses the same persisted-event comparison and access policy.
+    monkeypatch.setattr(settings, "task_events_async", True)
+    monkeypatch.setattr("app.api.v1.me._enqueue_task_events", lambda _: False)
+    response = await httpx_client.post(
+        "/api/v1/auth/me/task-events:batch", json={"events": events}, headers=headers
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {"accepted": 2, "queued_async": False, "discarded": []}
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(TaskEvent)
+            .where(TaskEvent.task_id == task.id)
+        )
+        == 2
+    )
+
+
+@pytest.mark.parametrize("endpoint", ["approve", "reject"])
+async def test_buffered_review_chunks_survive_real_claim_and_decision(
+    httpx_client,
+    super_admin,
+    reviewer,
+    db_session,
+    monkeypatch,
+    endpoint,
+):
+    from app.config import settings
+    from app.db.models.project_member import ProjectMember
+    from app.db.models.task_batch import TaskBatch
+    from app.workers.task_events import _async_persist
+
+    owner, _ = super_admin
+    user, token = reviewer
+    project = _project(owner.id, "P-TE-BUFFERED-REVIEW")
+    task = _task(project.id, "T-TE-BUFFERED-REVIEW")
+    task.status = "review"
+    db_session.add(project)
+    await db_session.flush()
+    batch = TaskBatch(
+        project_id=project.id,
+        display_id="B-TE-BUFFERED-REVIEW",
+        name="Review",
+        status="reviewing",
+    )
+    db_session.add(batch)
+    await db_session.flush()
+    task.batch_id = batch.id
+    db_session.add_all(
+        [task, ProjectMember(project_id=project.id, user_id=user.id, role="reviewer")]
+    )
+    await db_session.flush()
+    headers = {"Authorization": f"Bearer {token}"}
+    started = datetime.now(timezone.utc) - timedelta(minutes=70)
+
+    class ClaimClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return started.astimezone(tz)
+
+    with monkeypatch.context() as clock_patch:
+        clock_patch.setattr("app.api.v1.tasks.review.datetime", ClaimClock)
+        claimed = await httpx_client.post(
+            f"/api/v1/tasks/{task.id}/review/claim", headers=headers
+        )
+    assert claimed.status_code == 200, claimed.text
+    response = await httpx_client.post(
+        f"/api/v1/tasks/{task.id}/review/{endpoint}",
+        headers=headers,
+        **({"json": {"reason_type": "missing"}} if endpoint == "reject" else {}),
+    )
+    assert response.status_code == 200, response.text
+    transition = await httpx_client.post(
+        f"/api/v1/projects/{project.id}/batches/{batch.id}/transition",
+        json={"target_status": "approved" if endpoint == "approve" else "rejected"},
+        headers=headers,
+    )
+    assert transition.status_code == 200, transition.text
+    await db_session.refresh(task)
+    await db_session.refresh(batch)
+    assert task.reviewer_id == user.id
+    assert task.reviewer_claimed_at == started
+    assert batch.status == ("approved" if endpoint == "approve" else "rejected")
+    events = _buffered_events(
+        task, started_at=started - timedelta(seconds=1), kind="review"
+    )
+    monkeypatch.setattr(settings, "task_events_async", False)
+    response = await httpx_client.post(
+        "/api/v1/auth/me/task-events:batch", json={"events": events}, headers=headers
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["accepted"] == 2
+    assert response.json()["discarded"] == []
+
+    @asynccontextmanager
+    async def fake_task_session():
+        yield db_session
+
+    monkeypatch.setattr("app.workers._db.task_session", fake_task_session)
+    assert (
+        await _async_persist([_worker_payload(event, user.id) for event in events]) == 0
+    )
+
+
+@pytest.mark.parametrize("kind", ["annotate", "review"])
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        "before_actor_start",
+        "missing_actor_start",
+        "different_actor",
+        "removed_member",
+        "wrong_role",
+        "after_transition",
+    ],
+)
+async def test_buffered_chunks_keep_actor_and_time_boundaries(
+    db_session,
+    super_admin,
+    annotator,
+    reviewer,
+    kind,
+    invalid,
+):
+    from app.db.models.project_member import ProjectMember
+    from app.db.models.task_batch import TaskBatch
+    from app.schemas.task_event import TaskEventIn
+    from app.services.task_event_ingestion import (
+        validate_api_events,
+        validate_worker_event,
+    )
+
+    owner, _ = super_admin
+    user, _ = reviewer if kind == "review" else annotator
+    project = _project(owner.id, "P-TE-BUFFERED-GUARD")
+    task = _task(project.id, "T-TE-BUFFERED-GUARD")
+    started = datetime.now(timezone.utc) - timedelta(hours=2)
+    transition = started + timedelta(minutes=70)
+    task.status = "completed"
+    task.assignee_id = user.id
+    task.assigned_at = started
+    task.submitted_at = transition
+    task.reviewer_id = user.id
+    task.reviewer_claimed_at = started
+    task.reviewed_at = transition
+    db_session.add(project)
+    await db_session.flush()
+    batch = TaskBatch(
+        project_id=project.id,
+        display_id="B-TE-BUFFERED-GUARD",
+        name="Closed batch",
+        status="approved",
+    )
+    db_session.add(batch)
+    await db_session.flush()
+    task.batch_id = batch.id
+    db_session.add(task)
+    if invalid != "removed_member":
+        db_session.add(
+            ProjectMember(project_id=project.id, user_id=user.id, role=user.role)
+        )
+    event_start = started
+    if invalid == "before_actor_start":
+        event_start -= timedelta(minutes=31)
+    elif invalid == "after_transition":
+        event_start = transition + timedelta(minutes=6)
+    elif invalid == "missing_actor_start":
+        task.assigned_at = task.reviewer_claimed_at = None
+    elif invalid == "different_actor":
+        task.assignee_id = task.reviewer_id = owner.id
+    elif invalid == "wrong_role":
+        user.role = "annotator" if kind == "review" else "reviewer"
+    await db_session.flush()
+    event = _buffered_events(task, started_at=event_start, kind=kind)[0]
+    rows, rejected = await validate_api_events(
+        db_session, user=user, events=[TaskEventIn.model_validate(event)]
+    )
+    assert rows == []
+    assert len(rejected) == 1
+    assert rejected[0].error.status_code == (403 if invalid == "wrong_role" else 404)
+    assert (
+        await validate_worker_event(db_session, _worker_payload(event, user.id)) is None
+    )
+
+
+@pytest.mark.parametrize("lock_state", ["missing", "foreign", "expired"])
+async def test_submit_does_not_backdate_assignment_from_unowned_or_expired_lock(
+    httpx_client,
+    super_admin,
+    annotator,
+    db_session,
+    monkeypatch,
+    lock_state,
+):
+    from app.config import settings
+    from app.db.models.project_member import ProjectMember
+    from app.db.models.task_batch import TaskBatch
+    from app.db.models.task_lock import TaskLock
+
+    owner, owner_token = super_admin
+    user, token = annotator
+    project = _project(owner.id, "P-TE-LOCK-BOUNDARY")
+    task = _task(project.id, "T-TE-LOCK-BOUNDARY")
+    db_session.add(project)
+    await db_session.flush()
+    batch = TaskBatch(
+        project_id=project.id,
+        display_id="B-TE-LOCK-BOUNDARY",
+        name="Inherited assignment",
+        status="annotating",
+        annotator_id=user.id,
+    )
+    db_session.add(batch)
+    await db_session.flush()
+    task.batch_id = batch.id
+    db_session.add_all(
+        [task, ProjectMember(project_id=project.id, user_id=user.id, role="annotator")]
+    )
+    await db_session.flush()
+    started = datetime.now(timezone.utc) - timedelta(minutes=70)
+    headers = {"Authorization": f"Bearer {token}"}
+    if lock_state != "missing":
+        locked = await httpx_client.post(
+            f"/api/v1/tasks/{task.id}/lock",
+            headers={"Authorization": f"Bearer {owner_token}"}
+            if lock_state == "foreign"
+            else headers,
+        )
+        assert locked.status_code == 200, locked.text
+        lock = (
+            await db_session.execute(
+                select(TaskLock).where(TaskLock.task_id == task.id)
+            )
+        ).scalar_one()
+        lock.created_at = started
+        if lock_state == "expired":
+            lock.expire_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        await db_session.flush()
+    before_submit = datetime.now(timezone.utc)
+    submitted = await httpx_client.post(
+        f"/api/v1/tasks/{task.id}/submit", headers=headers
+    )
+    assert submitted.status_code == 200, submitted.text
+    await db_session.refresh(task)
+    assert before_submit <= task.assigned_at <= task.submitted_at
+    monkeypatch.setattr(settings, "task_events_async", False)
+    response = await httpx_client.post(
+        "/api/v1/auth/me/task-events:batch",
+        json={"events": [_buffered_events(task, started_at=started)[0]]},
+        headers=headers,
+    )
+    assert response.status_code == 404, response.text

@@ -8,12 +8,12 @@ queued event is held to the same rules when it is finally persisted.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Iterable
+from datetime import datetime, timedelta, timezone
+from typing import Any, Iterable, Mapping
 from uuid import UUID, uuid4
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -52,6 +52,12 @@ class TaskEventRejection:
     index: int
     client_id: UUID | None
     error: HTTPException
+
+
+@dataclass(frozen=True, slots=True)
+class TaskEventInsertResult:
+    inserted: int
+    conflicts: frozenset[UUID] = frozenset()
 
 
 def task_event_rejection_reason(error: HTTPException) -> str:
@@ -123,20 +129,48 @@ def _within_final_close_grace(
     return abs((ended - transition).total_seconds() * 1000) <= FINAL_CLOSE_GRACE_MS
 
 
+def _within_actor_work_interval(
+    *,
+    started_at: datetime | None,
+    ended_at: datetime | None,
+    actor_started_at: datetime | None,
+    transition_at: datetime | None,
+) -> bool:
+    """Bound buffered chunks by the server actor span and admission clock grace."""
+
+    if any(
+        value is None
+        for value in (started_at, ended_at, actor_started_at, transition_at)
+    ):
+        return False
+    try:
+        return (
+            _utc(actor_started_at) - timedelta(milliseconds=FINAL_CLOSE_GRACE_MS)
+            <= _utc(started_at)
+            <= _utc(ended_at)
+            <= _utc(transition_at)
+        )
+    except HTTPException:
+        return False
+
+
 async def assert_task_event_access(
     db: AsyncSession,
     *,
     task: Task,
     user: User,
     kind: str,
+    started_at: datetime | None = None,
     ended_at: datetime | None = None,
 ) -> None:
     """Apply the normal project/task visibility policy with final-close grace.
 
     A task can transition to review/completed between the last visible render
     and the next task switch. The task's own actor binding is enough to close
-    that actor's interval when its end is within the five-minute transition
-    window, while a foreign or stale task still fails the normal policy.
+    that actor's final interval within the five-minute transition window.
+    Earlier buffered chunks must fit between the same actor's server-recorded
+    assignment/claim and transition; a foreign or unbounded historical interval
+    still fails the normal policy.
     """
 
     allowed_roles = _REVIEW_ROLES if kind == "review" else _ANNOTATE_ROLES
@@ -164,8 +198,16 @@ async def assert_task_event_access(
             and task.assignee_id == user.id
             and task.submitted_at is not None
             and task.status in {"review", "rejected", "completed"}
-            and _within_final_close_grace(
-                ended_at=ended_at, transition_at=task.submitted_at
+            and (
+                _within_final_close_grace(
+                    ended_at=ended_at, transition_at=task.submitted_at
+                )
+                or _within_actor_work_interval(
+                    started_at=started_at,
+                    ended_at=ended_at,
+                    actor_started_at=task.assigned_at,
+                    transition_at=task.submitted_at,
+                )
             )
         )
         can_close_reviewed = (
@@ -173,15 +215,23 @@ async def assert_task_event_access(
             and task.reviewer_id == user.id
             and task.reviewed_at is not None
             and task.status in {"rejected", "completed"}
-            and _within_final_close_grace(
-                ended_at=ended_at, transition_at=task.reviewed_at
+            and (
+                _within_final_close_grace(
+                    ended_at=ended_at, transition_at=task.reviewed_at
+                )
+                or _within_actor_work_interval(
+                    started_at=started_at,
+                    ended_at=ended_at,
+                    actor_started_at=task.reviewer_claimed_at,
+                    transition_at=task.reviewed_at,
+                )
             )
         )
         if exc.status_code != 404 or not (can_close_submitted or can_close_reviewed):
             raise
 
 
-def _fingerprint(payload: dict[str, Any]) -> tuple[Any, ...]:
+def _fingerprint(payload: Mapping[str, Any]) -> tuple[Any, ...]:
     def canonical(value: Any) -> str:
         if isinstance(value, datetime):
             return _utc(value).isoformat()
@@ -242,7 +292,12 @@ async def validate_api_events(
                 now=now,
             )
             await assert_task_event_access(
-                db, task=task, user=user, kind=event.kind, ended_at=ended
+                db,
+                task=task,
+                user=user,
+                kind=event.kind,
+                started_at=started,
+                ended_at=ended,
             )
 
             event_id = event.client_id or uuid4()
@@ -303,8 +358,10 @@ async def validate_api_events(
     }
     if client_ids:
         existing = (
-            await db.execute(select(TaskEvent).where(TaskEvent.id.in_(client_ids)))
-        ).scalars()
+            await db.execute(
+                select(TaskEvent.__table__).where(TaskEvent.id.in_(client_ids))
+            )
+        ).mappings()
         existing_by_id = {row.id: row for row in existing}
         accepted_rows: list[dict[str, Any]] = []
         for row in rows:
@@ -312,22 +369,7 @@ async def validate_api_events(
             if stored is None:
                 accepted_rows.append(row)
                 continue
-            stored_fingerprint = _fingerprint(
-                {
-                    "task_id": stored.task_id,
-                    "user_id": stored.user_id,
-                    "project_id": stored.project_id,
-                    "kind": stored.kind,
-                    "started_at": stored.started_at,
-                    "ended_at": stored.ended_at,
-                    "duration_ms": stored.duration_ms,
-                    "annotation_count": stored.annotation_count,
-                    "was_rejected": stored.was_rejected,
-                    "collector_version": stored.collector_version,
-                    "collection_coverage": stored.collection_coverage,
-                }
-            )
-            if _fingerprint(row) != stored_fingerprint:
+            if _fingerprint(row) != _fingerprint(stored):
                 rejections.append(
                     TaskEventRejection(
                         index=row_indexes[row["id"]],
@@ -395,7 +437,12 @@ async def validate_worker_event(
         return None
     try:
         await assert_task_event_access(
-            db, task=task, user=user, kind=kind, ended_at=ended
+            db,
+            task=task,
+            user=user,
+            kind=kind,
+            started_at=started,
+            ended_at=ended,
         )
     except HTTPException:
         return None
@@ -429,15 +476,45 @@ async def validate_worker_event(
 async def insert_task_events(
     db: AsyncSession,
     rows: list[dict[str, Any]],
-) -> int:
-    """Insert idempotently by event ID and return newly inserted row count."""
+) -> TaskEventInsertResult:
+    """Serialize ID comparison and insertion for API and worker deliveries.
+
+    A preflight read cannot distinguish identical retries from conflicting
+    concurrent payloads. Transaction-scoped ID locks keep that comparison
+    authoritative until commit, including when the event does not exist yet.
+    Sorted acquisition also lets overlapping batches arrive in any order.
+    """
 
     if not rows:
-        return 0
-    result = await db.execute(
-        pg_insert(TaskEvent)
-        .values(rows)
-        .on_conflict_do_nothing(index_elements=[TaskEvent.id])
-    )
+        return TaskEventInsertResult(inserted=0)
+    by_id: dict[UUID, dict[str, Any]] = {}
+    conflicts: set[UUID] = set()
+    for row in rows:
+        event_id = row["id"]
+        previous = by_id.get(event_id)
+        if previous is not None and _fingerprint(previous) != _fingerprint(row):
+            conflicts.add(event_id)
+        by_id[event_id] = row
+
+    for event_id in sorted(by_id):
+        await db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+            {"key": f"aap:task-event:{event_id}"},
+        )
+    existing = (
+        await db.execute(select(TaskEvent.__table__).where(TaskEvent.id.in_(by_id)))
+    ).mappings()
+    stored_ids: set[UUID] = set()
+    for stored in existing:
+        stored_ids.add(stored.id)
+        if _fingerprint(by_id[stored.id]) != _fingerprint(stored):
+            conflicts.add(stored.id)
+    new_rows = [
+        by_id[event_id]
+        for event_id in sorted(by_id)
+        if event_id not in stored_ids and event_id not in conflicts
+    ]
+    if new_rows:
+        await db.execute(pg_insert(TaskEvent).values(new_rows))
     await db.commit()
-    return max(0, int(result.rowcount or 0))
+    return TaskEventInsertResult(inserted=len(new_rows), conflicts=frozenset(conflicts))

@@ -471,13 +471,15 @@ async def get_next_task(
             .scalar_subquery()
         )
         candidates = candidates.order_by(
-            TaskBatch.priority.desc(), min_pred_score.asc().nullslast()
+            TaskBatch.priority.desc().nullslast(), min_pred_score.asc().nullslast()
         )
     elif project.sampling == "uniform":
-        candidates = candidates.order_by(TaskBatch.priority.desc(), func.random())
+        candidates = candidates.order_by(
+            TaskBatch.priority.desc().nullslast(), func.random()
+        )
     else:
         candidates = candidates.order_by(
-            TaskBatch.priority.desc(),
+            TaskBatch.priority.desc().nullslast(),
             Task.sequence_order.asc().nullslast(),
             Task.created_at,
         )

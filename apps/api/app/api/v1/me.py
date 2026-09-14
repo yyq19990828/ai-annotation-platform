@@ -587,6 +587,7 @@ from app.schemas.task_event import (  # noqa: E402
     TaskEventDiscarded,
 )
 from app.services.task_event_ingestion import (  # noqa: E402
+    TaskEventRejection,
     insert_task_events,
     task_event_rejection_reason,
     validate_api_events,
@@ -640,7 +641,27 @@ async def submit_task_events(
         queued = _enqueue_task_events(payload_list)
 
     if not queued:
-        await insert_task_events(db, rows)
+        result = await insert_task_events(db, rows)
+        if result.conflicts:
+            rejected_indexes = {item.index for item in rejected}
+            for index, event in enumerate(payload.events):
+                if (
+                    event.client_id in result.conflicts
+                    and index not in rejected_indexes
+                ):
+                    rejected.append(
+                        TaskEventRejection(
+                            index=index,
+                            client_id=event.client_id,
+                            error=HTTPException(
+                                status_code=409,
+                                detail={"reason": "duplicate_client_event_conflict"},
+                            ),
+                        )
+                    )
+            rows = [row for row in rows if row["id"] not in result.conflicts]
+            if len(payload.events) == 1:
+                raise rejected[0].error
 
     return TaskEventBatchOut(
         accepted=len(rows),

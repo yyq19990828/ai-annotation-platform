@@ -494,9 +494,7 @@ function PersonDrawer({
               </div>
 
               <Card>
-                <div className={SECTION_TITLE_CLASS}>
-                  {PERIOD_OPTS.find((option) => option.v === period)?.label ?? period}趋势
-                </div>
+                <div className={SECTION_TITLE_CLASS}>4 周趋势</div>
                 <div className="p-3.5">
                   <div className="mb-1.5 text-xs text-muted-foreground">产能</div>
                   <Sparkline

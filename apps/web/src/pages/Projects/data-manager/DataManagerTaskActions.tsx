@@ -180,11 +180,15 @@ function ActionJobStatus({
   jobId,
   taskIds,
   query,
+  onRerun,
+  busy,
 }: {
   label: string;
   jobId: string;
   taskIds: readonly string[];
   query: ReturnType<typeof useAsyncJob>;
+  onRerun: () => void;
+  busy: boolean;
 }) {
   const status = query.data?.status ?? "pending";
   const detail = query.data?.error_message;
@@ -195,6 +199,11 @@ function ActionJobStatus({
       {jobStatusLabel(status)}
       {query.data?.progress_pct !== undefined && ` · ${query.data.progress_pct}%`}
       {detail && ` · ${detail}`}
+      {status === "failed" && (
+        <Button size="xs" className="ml-1" disabled={busy} onClick={onRerun}>
+          重新运行
+        </Button>
+      )}
       {query.isError && (
         <>
           {` · 查询失败`}
@@ -245,8 +254,10 @@ export function DataManagerTaskActions({
   const [busy, setBusy] = useState<"preview" | "apply" | "export" | "preannotate" | null>(null);
   const [exportJobId, setExportJobId] = useState<string | null>(null);
   const [preannotateJobId, setPreannotateJobId] = useState<string | null>(null);
-  const exportJobTasksRef = useRef<readonly string[]>([]);
-  const preannotateJobTasksRef = useRef<readonly string[]>([]);
+  const exportJobRequestRef = useRef<DataManagerTaskExportPayload | null>(null);
+  const preannotateJobRequestRef = useRef<
+    (Omit<TriggerPreannotationPayload, "task_ids" | "batch_id"> & { task_ids: string[] }) | null
+  >(null);
   const exportKeyRef = useRef<{ fingerprint: string; key: string } | null>(null);
   const preannotateKeyRef = useRef<{ fingerprint: string; key: string } | null>(null);
   const scopeRef = useRef<string>(projectId);
@@ -321,6 +332,8 @@ export function DataManagerTaskActions({
     setPreannotateJobId(null);
     exportKeyRef.current = null;
     preannotateKeyRef.current = null;
+    exportJobRequestRef.current = null;
+    preannotateJobRequestRef.current = null;
   }, [projectId]);
   const memberById = useMemo(
     () =>
@@ -378,13 +391,14 @@ export function DataManagerTaskActions({
 
   const runPreannotate = async (
     configured: Omit<TriggerPreannotationPayload, "task_ids" | "batch_id">,
+    capturedTaskIds?: string[],
   ) => {
     const requestScope = scopeRef.current;
-    const payload = {
+    const payload = structuredClone({
       ...configured,
-      task_ids: ids,
+      task_ids: capturedTaskIds ?? ids,
       predict_mode: configured.predict_mode ?? "skip_predicted",
-    };
+    });
     setBusy("preannotate");
     setActionError(null);
     const actionOptions: DataManagerActionRequestOptions = {
@@ -398,10 +412,10 @@ export function DataManagerTaskActions({
       const result = await dataManagerTaskActionsApi.preannotate(projectId, payload, actionOptions);
       if (scopeRef.current !== requestScope) return;
       preannotateKeyRef.current = null;
-      preannotateJobTasksRef.current = [...ids];
+      preannotateJobRequestRef.current = payload;
       setPreannotateJobId(result.job_id);
       setPreannotateOpen(false);
-      onCompleted?.();
+      if (!capturedTaskIds) onCompleted?.();
     } catch (error) {
       if (scopeRef.current !== requestScope) return;
       const message = error instanceof Error ? error.message : "";
@@ -470,8 +484,8 @@ export function DataManagerTaskActions({
     }
   };
 
-  const runExport = async () => {
-    if (!selectedExportTargets.length) return;
+  const runExport = async (capturedPayload?: DataManagerTaskExportPayload) => {
+    if (!capturedPayload && !selectedExportTargets.length) return;
     const requestScope = scopeRef.current;
     setBusy("export");
     setActionError(null);
@@ -479,7 +493,7 @@ export function DataManagerTaskActions({
       ...exportOptions,
       targets: selectedExportTargets,
     };
-    const payload = toExportPayload(ids, options);
+    const payload = structuredClone(capturedPayload ?? toExportPayload(ids, options));
     const actionOptions: DataManagerActionRequestOptions = {
       idempotencyKey: actionKeyFor(exportKeyRef, "data-manager-export", JSON.stringify(payload)),
     };
@@ -487,10 +501,10 @@ export function DataManagerTaskActions({
       const result = await dataManagerTaskActionsApi.exportTasks(projectId, payload, actionOptions);
       if (scopeRef.current !== requestScope) return;
       exportKeyRef.current = null;
-      exportJobTasksRef.current = [...ids];
+      exportJobRequestRef.current = payload;
       setExportJobId(result.job_id);
       setExportOpen(false);
-      onCompleted?.();
+      if (!capturedPayload) onCompleted?.();
     } catch {
       if (scopeRef.current !== requestScope) return;
       setActionError("无法创建导出任务，请检查所选格式和任务范围");
@@ -557,16 +571,25 @@ export function DataManagerTaskActions({
               <ActionJobStatus
                 label="导出作业"
                 jobId={exportJobId}
-                taskIds={exportJobTasksRef.current}
+                taskIds={exportJobRequestRef.current?.task_ids ?? []}
                 query={exportJobQ}
+                busy={busy !== null}
+                onRerun={() => {
+                  if (exportJobRequestRef.current) void runExport(exportJobRequestRef.current);
+                }}
               />
             )}
             {preannotateJobId && (
               <ActionJobStatus
                 label="预标作业"
                 jobId={preannotateJobId}
-                taskIds={preannotateJobTasksRef.current}
+                taskIds={preannotateJobRequestRef.current?.task_ids ?? []}
                 query={preannotateJobQ}
+                busy={busy !== null}
+                onRerun={() => {
+                  const request = preannotateJobRequestRef.current;
+                  if (request) void runPreannotate(request, request.task_ids);
+                }}
               />
             )}
           </div>
@@ -706,7 +729,7 @@ export function DataManagerTaskActions({
             <Button
               variant="primary"
               disabled={!selectedExportTargets.length || busy !== null}
-              onClick={runExport}
+              onClick={() => void runExport()}
             >
               {busy === "export" ? "创建导出…" : "创建导出作业"}
             </Button>

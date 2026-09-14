@@ -252,7 +252,7 @@ describe("AdminPeoplePage", () => {
     await waitFor(() => {
       expect(screen.getAllByText("产能").length).toBeGreaterThan(0);
       expect(screen.getAllByText("质量").length).toBeGreaterThan(0);
-      expect(screen.getByText("最近 7 天趋势")).toBeInTheDocument();
+      expect(screen.getByText("4 周趋势")).toBeInTheDocument();
     });
   });
 
@@ -261,11 +261,14 @@ describe("AdminPeoplePage", () => {
       data: { items: [basePerson], total: 1, period: "1m" },
       isLoading: false,
     });
+    mockUseAdminPersonDetail.mockReturnValue({ data: baseDetail, isLoading: false });
     renderUI("/admin/people?project=p1&period=1m");
     fireEvent.click(screen.getByText("Alice").closest("[class]")!);
     expect(mockUseAdminPersonDetail).toHaveBeenLastCalledWith("u1", "1m", "p1");
+    expect(screen.getByText("4 周趋势")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "今日" }));
     expect(mockUseAdminPersonDetail).toHaveBeenLastCalledWith("u1", "today", "p1");
+    expect(screen.getByText("4 周趋势")).toBeInTheDocument();
   });
 
   it("点击抽屉关闭按钮关闭抽屉", async () => {

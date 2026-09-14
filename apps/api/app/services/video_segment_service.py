@@ -357,6 +357,7 @@ async def submit_segment(
             ctx.task.status = "review"
             ctx.task.submitted_at = now
             ctx.task.reviewer_id = None
+            ctx.task.reviewer_is_override = False
             ctx.task.reviewer_claimed_at = None
             ctx.task.reviewed_at = None
     await db.flush()

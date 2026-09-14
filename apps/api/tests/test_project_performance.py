@@ -8,10 +8,8 @@ from fastapi import HTTPException
 from app.schemas.project_performance import PerformanceScope
 from app.services.project_performance import (
     _annotation_source_label,
-    _decision_snapshot,
     _first_rate_metric,
     _qualified_time,
-    _round_snapshots,
     ResolvedScope,
     resolve_scope,
 )
@@ -65,39 +63,6 @@ def test_scope_rejects_more_than_ninety_complete_local_days():
         )
 
     assert exc_info.value.status_code == 422
-
-
-def test_decision_uses_the_matching_submit_round_snapshot():
-    task_id = uuid4()
-    contributor = uuid4()
-    other_contributor = uuid4()
-    submit = SimpleNamespace(
-        target_id=str(task_id),
-        detail_json={
-            "review_round_id": str(uuid4()),
-            "contributor_ids": [str(contributor)],
-        },
-    )
-    matching_decision = SimpleNamespace(
-        target_id=str(task_id),
-        detail_json={"review_round_id": submit.detail_json["review_round_id"]},
-    )
-    other_round = SimpleNamespace(
-        target_id=str(task_id),
-        detail_json={
-            "review_round_id": str(uuid4()),
-            "contributor_ids": [str(other_contributor)],
-        },
-    )
-    other_decision = SimpleNamespace(
-        target_id=str(task_id),
-        detail_json={"review_round_id": str(uuid4())},
-    )
-
-    snapshots = _round_snapshots([submit, other_round])
-
-    assert _decision_snapshot(matching_decision, snapshots) == {contributor}
-    assert _decision_snapshot(other_decision, snapshots) == set()
 
 
 def test_first_review_rate_is_percent_with_raw_cohort_counts():
@@ -242,3 +207,28 @@ def test_scope_serializes_the_frozen_api_keys():
     payload = PerformanceScope.model_validate(scope.output()).model_dump(by_alias=True)
 
     assert set(payload) == {"from", "to", "timezone", "as_of"}
+
+
+@pytest.mark.parametrize("sort", ["+recorded_time_minutes", "-recorded_time_minutes"])
+def test_null_metric_order_is_stable_across_roster_order_and_pages(sort):
+    from app.services.project_performance import _sort_items
+
+    ids = sorted([uuid4() for _ in range(5)])
+    members = [
+        SimpleNamespace(
+            user_id=user_id,
+            metrics=SimpleNamespace(recorded_time_minutes=SimpleNamespace(value=None)),
+        )
+        for user_id in ids
+    ]
+    timed = SimpleNamespace(
+        user_id=uuid4(),
+        metrics=SimpleNamespace(recorded_time_minutes=SimpleNamespace(value=3)),
+    )
+    first = _sort_items(
+        [members[3], members[1], timed, members[4], members[0], members[2]], sort
+    )
+    second = _sort_items(
+        [members[2], members[4], members[0], timed, members[1], members[3]], sort
+    )
+    assert [row.user_id for row in first[:3] + second[3:]] == [timed.user_id, *ids]

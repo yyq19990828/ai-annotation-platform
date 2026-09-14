@@ -31,6 +31,24 @@ from app.api.v1.tasks._shared import (
 router = APIRouter()
 
 
+async def _submission_assignment_start(
+    db: AsyncSession, task_id: uuid.UUID, user_id: uuid.UUID, now: datetime
+) -> datetime:
+    """Preserve the actor's current work start before submit/skip releases it."""
+
+    from app.db.models.task_lock import TaskLock
+
+    started_at = await db.scalar(
+        select(TaskLock.created_at).where(
+            TaskLock.task_id == task_id,
+            TaskLock.user_id == user_id,
+            TaskLock.expire_at > now,
+            TaskLock.created_at <= now,
+        )
+    )
+    return started_at or now
+
+
 @router.post("/{task_id}/submit")
 async def submit_task(
     task_id: uuid.UUID,
@@ -67,16 +85,19 @@ async def submit_task(
 
     # v0.6.6: 提交者即 assignee。任务初始 assignee_id 为 NULL（创建时未指派），
     # 否则后续 withdraw/reopen 会因 assignee 校验失败而拒绝（"only assignee can withdraw"）。
+    now = datetime.now(timezone.utc)
     if task.assignee_id is None:
         task.assignee_id = current_user.id
-        # v0.8.4：未预派任务由提交者兜底分派；assigned_at 同步写
-        task.assigned_at = datetime.now(timezone.utc)
+        task.assigned_at = await _submission_assignment_start(
+            db, task_id, current_user.id, now
+        )
 
     review_round_id = _start_review_round(task)
     task.status = "review"
-    task.submitted_at = datetime.now(timezone.utc)
+    task.submitted_at = now
     # 清空上一轮 review 痕迹（reopen → 再次 submit 场景）
     task.reviewer_id = None
+    task.reviewer_is_override = False
     task.reviewer_claimed_at = None
     task.reviewed_at = None
     task.reject_reason = None
@@ -241,7 +262,9 @@ async def skip_task(
     now = datetime.now(timezone.utc)
     if task.assignee_id is None:
         task.assignee_id = current_user.id
-        task.assigned_at = now
+        task.assigned_at = await _submission_assignment_start(
+            db, task_id, current_user.id, now
+        )
 
     review_round_id = _start_review_round(task)
     task.status = "review"
@@ -250,6 +273,7 @@ async def skip_task(
     task.submitted_at = now
     # 清空上一轮 review 痕迹
     task.reviewer_id = None
+    task.reviewer_is_override = False
     task.reviewer_claimed_at = None
     task.reviewed_at = None
     task.reject_reason = None
@@ -393,6 +417,7 @@ async def reopen_task(
     task.reopened_count = (task.reopened_count or 0) + 1
     task.last_reopened_at = datetime.now(timezone.utc)
     task.reviewer_id = None
+    task.reviewer_is_override = False
     task.reviewer_claimed_at = None
     task.reviewed_at = None
     task.reject_reason = None

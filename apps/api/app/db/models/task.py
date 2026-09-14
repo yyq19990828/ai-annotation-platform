@@ -66,6 +66,11 @@ class Task(Base):
     assignee_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id")
     )
+    # Batch assignment also populates assignee_id. Preserve the intent of a
+    # selected-task assignment even when it equals the current batch default.
+    assignee_is_override: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     # v0.8.4 · 分派时间戳（效率看板「平均单题耗时」分母 = submitted_at - assigned_at）
     assigned_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
@@ -94,6 +99,9 @@ class Task(Base):
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
+    )
+    reviewer_is_override: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
     )
     reviewer_claimed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

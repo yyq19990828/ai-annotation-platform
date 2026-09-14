@@ -190,6 +190,8 @@ async def test_submitted_video_segment_stays_completed_after_refresh_and_release
 ):
     user, token = super_admin
     task, _ = await _make_video_task(db_session, user.id)
+    task.reviewer_id = user.id
+    task.reviewer_is_override = True
     project = await db_session.get(Project, task.project_id)
     project.video_collaboration = {"enabled": True, "overlap_frames": 2}
     monkeypatch.setattr(
@@ -221,6 +223,19 @@ async def test_submitted_video_segment_stays_completed_after_refresh_and_release
     assert submitted.json()["status"] == "completed"
     assert refreshed.json()["segments"][0]["status"] == "completed"
     assert released.json()["status"] == "completed"
+
+    # Completing the remaining segments starts a fresh review round; a prior
+    # round's selected reviewer must not pin subsequent batch assignments.
+    for segment in listed.json()["segments"][1:]:
+        submitted = await httpx_client_bound.post(
+            f"/api/v1/tasks/{task.id}/video/segments/{segment['id']}:submit",
+            headers=headers,
+        )
+        assert submitted.status_code == 200, submitted.text
+    await db_session.refresh(task)
+    assert task.status == "review"
+    assert task.reviewer_id is None
+    assert task.reviewer_is_override is False
 
 
 async def test_video_submit_does_not_credit_shared_item_segment_assignees(

@@ -131,6 +131,7 @@ beforeEach(() => {
     eligible_count: 1,
     succeeded: ["task-1"],
   });
+  mocks.actions.preannotate.mockResolvedValue({ job_id: "job-preannotate", status: "queued" });
   mocks.actions.exportTasks.mockResolvedValue({
     job_id: "job-export",
     status: "queued",
@@ -203,6 +204,51 @@ describe("DataManagerTaskActions", () => {
     expect(screen.getByText("提交时选定 1 个任务")).toHaveAttribute("title", "task-1");
     expect(mocks.actions.exportTasks).toHaveBeenCalledOnce();
   });
+
+  it.each(["export", "preannotate"] as const)(
+    "reruns failed %s jobs with the captured request after selection and options change",
+    async (action) => {
+      const user = userEvent.setup();
+      const onCompleted = vi.fn();
+      const props = {
+        projectId: "project-1",
+        taskIds: ["task-1", "task-2"],
+        exportOptions: { targets: ["yolo-det"] as Array<"yolo-det">, include_attributes: true },
+        preannotation: { ml_backend_id: "backend-1", params: { threshold: 0.4 } },
+        onCompleted,
+      };
+      const view = render(<DataManagerTaskActions {...props} />);
+      await user.click(screen.getByTestId(`data-manager-${action}`));
+      if (action === "export") {
+        await user.click(screen.getByRole("button", { name: "创建导出作业" }));
+      }
+      const api = action === "export" ? mocks.actions.exportTasks : mocks.actions.preannotate;
+      await waitFor(() => expect(api).toHaveBeenCalledOnce());
+      const [projectId, payload, options] = api.mock.calls[0];
+      mocks.jobs.set(`job-${action}`, {
+        status: "failed",
+        progress_pct: 0,
+        error_message: "worker failed",
+      });
+      view.rerender(
+        <DataManagerTaskActions
+          {...props}
+          taskIds={[]}
+          exportOptions={{ targets: ["coco"] }}
+          preannotation={{ ml_backend_id: "backend-2", params: { threshold: 0.9 } }}
+        />,
+      );
+      expect(screen.getByText(/worker failed/)).toBeInTheDocument();
+      expect(screen.getByTestId(`data-manager-${action}`)).toBeDisabled();
+      await user.click(screen.getByRole("button", { name: "重新运行" }));
+      await waitFor(() => expect(api).toHaveBeenCalledTimes(2));
+      expect(api.mock.calls[1][0]).toBe(projectId);
+      expect(api.mock.calls[1][1]).toEqual(payload);
+      expect(api.mock.calls[1][1].task_ids).toEqual(["task-1", "task-2"]);
+      expect(api.mock.calls[1][2].idempotencyKey).not.toBe(options.idempotencyKey);
+      expect(onCompleted).toHaveBeenCalledOnce();
+    },
+  );
 
   it("keeps a single dispatch while an export request is pending", async () => {
     const user = userEvent.setup();

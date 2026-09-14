@@ -7,6 +7,7 @@ import { updateDataManagerUrl } from "./data-manager/dataManagerUrlState";
 import { ProjectDataManagerPage } from "./ProjectDataManagerPage";
 
 const state = vi.hoisted(() => ({
+  navigationSelections: [] as Array<string | null>,
   calls: [] as Array<{ enabled: boolean; payload: unknown }>,
   extraViews: [] as Array<Record<string, unknown>>,
   taskItems: [] as Array<Record<string, unknown>>,
@@ -16,6 +17,11 @@ const state = vi.hoisted(() => ({
     display_id: string;
     file_name: string;
   } | null,
+  pendingTaskLookups: new Set<string>(),
+  taskLookups: new Map<
+    string,
+    { id: string; project_id: string; display_id: string; file_name: string }
+  >(),
   schemaError: false,
   schemaRefetch: vi.fn(),
   viewsRefetch: vi.fn(),
@@ -25,6 +31,7 @@ const state = vi.hoisted(() => ({
 
 function LocationProbe() {
   const location = useLocation();
+  state.navigationSelections.push(new URLSearchParams(location.search).get("selected"));
   return <output data-testid="location">{location.search}</output>;
 }
 
@@ -70,7 +77,11 @@ vi.mock("@/hooks/useProjects", () => ({
 }));
 
 vi.mock("@/hooks/useTasks", () => ({
-  useTask: () => ({ data: state.taskLookup, isLoading: false, isError: false }),
+  useTask: (id: string) => ({
+    data: state.taskLookups.get(id) ?? state.taskLookup,
+    isLoading: state.pendingTaskLookups.has(id),
+    isError: false,
+  }),
 }));
 
 vi.mock("@/hooks/usePermissions", () => ({
@@ -260,6 +271,9 @@ beforeEach(() => {
   state.extraViews = [];
   state.taskItems = [];
   state.taskLookup = null;
+  state.taskLookups.clear();
+  state.pendingTaskLookups.clear();
+  state.navigationSelections.length = 0;
   state.schemaError = false;
   state.schemaRefetch.mockReset();
   state.viewsRefetch.mockReset().mockResolvedValue(undefined);
@@ -428,6 +442,80 @@ describe("ProjectDataManagerPage filter hydration", () => {
     );
     expect(await screen.findByRole("heading", { name: "T-deep" })).toBeInTheDocument();
   });
+
+  it.each(["cached", "pending"])(
+    "keeps same-route external task selections authoritative with a %s lookup",
+    async (lookup) => {
+      for (const suffix of ["a", "b"]) {
+        state.taskLookups.set(`task-${suffix}`, {
+          id: `task-${suffix}`,
+          project_id: "p1",
+          display_id: `T-${suffix}`,
+          file_name: `${suffix}.png`,
+        });
+      }
+      function ExternalSelectionProbe() {
+        const location = useLocation();
+        const navigate = useNavigate();
+        const select = (id: string | null) => {
+          const next = new URLSearchParams(location.search);
+          if (id) next.set("selected", id);
+          else next.delete("selected");
+          navigate(`${location.pathname}?${next}`);
+        };
+        return (
+          <>
+            <button onClick={() => select("task-b")}>Select B through URL</button>
+            <button onClick={() => select(null)}>Clear selection through URL</button>
+          </>
+        );
+      }
+      const ui = () => (
+        <MemoryRouter
+          initialEntries={["/projects/p1/data-manager?lens=tasks&view=builtin:all&selected=task-a"]}
+        >
+          <LocationProbe />
+          <HistoryProbe />
+          <ExternalSelectionProbe />
+          <Routes>
+            <Route path="/projects/:id/data-manager" element={<ProjectDataManagerPage />} />
+          </Routes>
+        </MemoryRouter>
+      );
+      const view = render(ui());
+      expect(await screen.findByRole("heading", { name: "T-a" })).toBeInTheDocument();
+      const taskB = state.taskLookups.get("task-b")!;
+      if (lookup === "pending") {
+        state.taskLookups.delete("task-b");
+        state.pendingTaskLookups.add("task-b");
+      }
+      state.navigationSelections.length = 0;
+      fireEvent.click(screen.getByText("Select B through URL"));
+      expect(state.navigationSelections).toEqual(["task-b"]);
+      if (lookup === "pending") {
+        expect(screen.queryByRole("heading", { name: "T-a" })).not.toBeInTheDocument();
+        state.taskLookups.set("task-b", taskB);
+        state.pendingTaskLookups.clear();
+        view.rerender(ui());
+      }
+      expect(await screen.findByRole("heading", { name: "T-b" })).toBeInTheDocument();
+      expect(new URLSearchParams(screen.getByTestId("location").textContent!).get("selected")).toBe(
+        "task-b",
+      );
+      state.navigationSelections.length = 0;
+      fireEvent.click(screen.getByText("back"));
+      expect(state.navigationSelections).toEqual(["task-a"]);
+      expect(await screen.findByRole("heading", { name: "T-a" })).toBeInTheDocument();
+      state.navigationSelections.length = 0;
+      fireEvent.click(screen.getByText("forward"));
+      expect(state.navigationSelections).toEqual(["task-b"]);
+      expect(await screen.findByRole("heading", { name: "T-b" })).toBeInTheDocument();
+      state.navigationSelections.length = 0;
+      fireEvent.click(screen.getByText("Clear selection through URL"));
+      expect(state.navigationSelections).toEqual([null]);
+      expect(screen.queryByRole("heading", { name: "T-b" })).not.toBeInTheDocument();
+    },
+  );
 
   it("clears the selected task deep link when the detail sheet closes", async () => {
     state.taskLookup = {

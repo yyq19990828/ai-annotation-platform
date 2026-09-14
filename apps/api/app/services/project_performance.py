@@ -84,9 +84,6 @@ _ROUND_START_ACTIONS = {
     AuditAction.TASK_SUBMIT.value,
     AuditAction.TASK_SKIP.value,
 }
-_SUBMISSION_ACTIONS = {
-    AuditAction.TASK_SUBMIT.value,
-}
 _ANNOTATION_ACTIONS = {
     AuditAction.TASK_SUBMIT.value,
     AuditAction.TASK_REOPEN.value,
@@ -229,10 +226,6 @@ def _annotation_source_label(source: Any, imported: Any) -> str:
     return str(source or "manual")
 
 
-def _detail(log: AuditLog) -> dict[str, Any]:
-    return log.detail_json if isinstance(log.detail_json, dict) else {}
-
-
 def _project_audit_filter(project_id: UUID):
     # ``contains`` works on PostgreSQL JSONB and is also understood by the
     # SQLite test dialect used by the API unit suite.
@@ -255,103 +248,147 @@ async def resolve_performance_access(
     )
 
 
-async def _load_workflow(
+async def _load_workflow_metrics(
     db: AsyncSession,
     project_id: UUID,
-    *,
-    start: datetime,
-    end: datetime,
-    task_ids: set[str] | None = None,
-    actions: tuple[str, ...] = _WORKFLOW_ACTIONS,
-    member_id: UUID | None = None,
-    work_type: str | None = None,
-) -> list[AuditLog]:
-    stmt = (
-        select(AuditLog)
-        .where(
-            AuditLog.action.in_(actions),
-            AuditLog.status_code == 200,
-            _project_audit_filter(project_id),
-            AuditLog.created_at < end,
-            AuditLog.created_at >= start,
-        )
-        .order_by(AuditLog.created_at.asc(), AuditLog.id.asc())
+    scope: ResolvedScope,
+    work_type: str,
+):
+    """Return grouped counts, never workflow rows or per-task ID collections.
+
+    PostgreSQL owns deduplication and round joins. The result grows with members,
+    calendar days and rejection categories, independently of event volume.
+    """
+    return await db.execute(
+        text(
+            """
+            WITH interval_events AS MATERIALIZED (
+                SELECT id, actor_id, action, target_id, created_at, detail_json
+                FROM audit_logs
+                WHERE status_code = 200
+                  AND detail_json @> CAST(:project_filter AS jsonb)
+                  AND created_at >= :start_at AND created_at < :end_at
+                  AND action IN ('task.submit', 'task.approve', 'task.reject')
+            ), submission_events AS (
+                SELECT actor_id, target_id, created_at,
+                       row_number() OVER (
+                           PARTITION BY target_id ORDER BY created_at, id
+                       ) AS submission_number
+                FROM interval_events
+                WHERE action = 'task.submit' AND target_id IS NOT NULL
+            ), prior_submissions AS (
+                SELECT DISTINCT target_id FROM audit_logs
+                WHERE status_code = 200 AND action = 'task.submit'
+                  AND detail_json @> CAST(:project_filter AS jsonb)
+                  AND created_at < :start_at
+            ), member_submissions AS (
+                SELECT actor_id, target_id, min(created_at) AS first_at,
+                       count(*) AS attempts,
+                       count(*) FILTER (
+                           WHERE submission_number > 1
+                              OR target_id IN (SELECT target_id FROM prior_submissions)
+                       ) AS resubmissions
+                FROM submission_events
+                GROUP BY actor_id, target_id
+            ), decision_rounds AS (
+                SELECT DISTINCT target_id, detail_json ->> 'review_round_id' AS round_id
+                FROM interval_events WHERE action IN ('task.approve', 'task.reject')
+            ), round_snapshots AS (
+                SELECT DISTINCT ON (s.target_id, r.round_id)
+                       s.target_id, r.round_id, s.id,
+                       s.detail_json -> 'contributor_ids' AS contributors
+                FROM audit_logs s JOIN decision_rounds r
+                  ON s.target_id = r.target_id
+                 AND s.detail_json ->> 'review_round_id' = r.round_id
+                WHERE :work_type = 'annotation'
+                  AND s.action IN ('task.submit', 'task.skip')
+                  AND s.status_code = 200
+                  AND s.detail_json @> CAST(:project_filter AS jsonb)
+                  AND jsonb_typeof(s.detail_json -> 'contributor_ids') = 'array'
+                  AND s.created_at < :end_at
+                ORDER BY s.target_id, r.round_id, s.created_at, s.id
+            ), decisions AS MATERIALIZED (
+                SELECT e.*, snapshot.id AS snapshot_id, snapshot.contributors
+                FROM interval_events e
+                LEFT JOIN round_snapshots snapshot
+                  ON snapshot.target_id = e.target_id
+                 AND snapshot.round_id = e.detail_json ->> 'review_round_id'
+                WHERE e.action IN ('task.approve', 'task.reject')
+            ), attributed_decisions AS MATERIALIZED (
+                SELECT DISTINCT d.id, lower(c.user_id) AS user_id, d.target_id, d.created_at,
+                       d.action, d.detail_json ->> 'reason_type' AS reason_type
+                FROM decisions d
+                CROSS JOIN LATERAL jsonb_array_elements_text(
+                    COALESCE(d.contributors, '[]'::jsonb)
+                ) c(user_id)
+                WHERE c.user_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+            ), member_approvals AS (
+                SELECT user_id, target_id, min(created_at) AS first_at
+                FROM attributed_decisions WHERE action = 'task.approve'
+                GROUP BY user_id, target_id
+            ), reasons AS (
+                SELECT actor_id::text AS user_id,
+                       detail_json ->> 'reason_type' AS reason_type
+                FROM decisions WHERE action = 'task.reject' AND :work_type = 'review'
+                UNION ALL
+                SELECT user_id, reason_type FROM attributed_decisions
+                WHERE action = 'task.reject' AND :work_type = 'annotation'
+            )
+            SELECT 'totals' AS kind, NULL::text AS user_id, NULL::text AS bucket,
+                   (SELECT count(DISTINCT target_id) FROM submission_events) AS n1,
+                   count(DISTINCT target_id) FILTER (WHERE action = 'task.approve') AS n2,
+                   count(*) AS n3,
+                   count(*) FILTER (WHERE action = 'task.approve') AS n4,
+                   count(*) FILTER (WHERE action = 'task.reject') AS n5,
+                   count(*) FILTER (
+                       WHERE id NOT IN (SELECT id FROM attributed_decisions)
+                   ) AS n6
+            FROM decisions
+            UNION ALL
+            SELECT 'submit', actor_id::text, NULL, count(*), sum(attempts),
+                   sum(resubmissions), 0, 0, 0
+            FROM member_submissions WHERE :work_type = 'annotation' GROUP BY actor_id
+            UNION ALL
+            SELECT 'review', actor_id::text, NULL, count(*),
+                   count(*) FILTER (WHERE action = 'task.approve'),
+                   count(*) FILTER (WHERE action = 'task.reject'),
+                   count(DISTINCT target_id), 0, 0
+            FROM decisions WHERE :work_type = 'review' GROUP BY actor_id
+            UNION ALL
+            SELECT 'approve', user_id, NULL, count(*), 0, 0, 0, 0, 0
+            FROM member_approvals GROUP BY user_id
+            UNION ALL
+            SELECT 'trend_submit', actor_id::text,
+                   (first_at AT TIME ZONE :timezone)::date::text,
+                   count(*), 0, 0, 0, 0, 0
+            FROM member_submissions WHERE :work_type = 'annotation'
+            GROUP BY actor_id, (first_at AT TIME ZONE :timezone)::date
+            UNION ALL
+            SELECT 'trend_approve', user_id,
+                   (first_at AT TIME ZONE :timezone)::date::text,
+                   count(*), 0, 0, 0, 0, 0
+            FROM member_approvals
+            GROUP BY user_id, (first_at AT TIME ZONE :timezone)::date
+            UNION ALL
+            SELECT 'trend_review', actor_id::text,
+                   (created_at AT TIME ZONE :timezone)::date::text,
+                   count(*), 0, 0, 0, 0, 0
+            FROM decisions WHERE :work_type = 'review'
+            GROUP BY actor_id, (created_at AT TIME ZONE :timezone)::date
+            UNION ALL
+            SELECT 'reason', user_id, COALESCE(reason_type, 'unknown'),
+                   count(*), 0, 0, 0, 0, 0
+            FROM reasons GROUP BY user_id, COALESCE(reason_type, 'unknown')
+            """
+        ),
+        {
+            "project_filter": json.dumps({"project_id": str(project_id)}),
+            "start_at": scope.start,
+            "end_at": scope.end,
+            "timezone": scope.timezone_name,
+            "work_type": work_type,
+        },
     )
-    if task_ids:
-        stmt = stmt.where(AuditLog.target_id.in_(task_ids))
-    if member_id is not None:
-        if work_type == "review":
-            stmt = stmt.where(
-                AuditLog.actor_id == member_id,
-                AuditLog.action.in_(_REVIEW_ACTIONS),
-            )
-        else:
-            stmt = stmt.where(
-                or_(
-                    and_(
-                        AuditLog.actor_id == member_id,
-                        AuditLog.action.in_(_ANNOTATION_ACTIONS),
-                    ),
-                    and_(
-                        AuditLog.action.in_(_DECISION_ACTIONS),
-                        AuditLog.detail_json.contains(
-                            {"contributor_ids": [str(member_id)]}
-                        ),
-                    ),
-                )
-            )
-    return list((await db.execute(stmt)).scalars().all())
-
-
-async def _load_submission_history(
-    db: AsyncSession,
-    project_id: UUID,
-    *,
-    start: datetime,
-    end: datetime,
-    task_ids: set[str],
-    decision_round_ids: set[str],
-    interval_submit_task_ids: set[str],
-) -> tuple[list[AuditLog], set[str]]:
-    """Load only snapshots needed by in-range decisions and resubmission flags."""
-    if not task_ids:
-        return [], set()
-
-    snapshots: list[AuditLog] = []
-    if decision_round_ids:
-        snapshot_stmt = (
-            select(AuditLog)
-            .where(
-                AuditLog.action.in_(_ROUND_START_ACTIONS),
-                AuditLog.status_code == 200,
-                _project_audit_filter(project_id),
-                AuditLog.target_id.in_(task_ids),
-                AuditLog.detail_json["review_round_id"].astext.in_(decision_round_ids),
-                AuditLog.created_at < end,
-            )
-            .order_by(AuditLog.created_at.asc(), AuditLog.id.asc())
-        )
-        snapshots = list((await db.execute(snapshot_stmt)).scalars().all())
-
-    prior_submission_task_ids: set[str] = set()
-    if interval_submit_task_ids:
-        prior_stmt = (
-            select(AuditLog.target_id)
-            .where(
-                AuditLog.action.in_(_SUBMISSION_ACTIONS),
-                AuditLog.status_code == 200,
-                _project_audit_filter(project_id),
-                AuditLog.target_id.in_(interval_submit_task_ids),
-                AuditLog.created_at < start,
-            )
-            .distinct()
-        )
-        prior_submission_task_ids = {
-            str(target_id)
-            for (target_id,) in (await db.execute(prior_stmt)).all()
-            if target_id is not None
-        }
-    return snapshots, prior_submission_task_ids
 
 
 async def _load_submission_coverage(
@@ -377,8 +414,18 @@ async def _load_submission_coverage(
         select(func.count(Task.id)).where(
             Task.project_id == project_id,
             Task.file_type == "video",
-            Task.submitted_at >= scope.start,
-            Task.submitted_at < scope.end,
+            or_(
+                and_(Task.submitted_at >= scope.start, Task.submitted_at < scope.end),
+                # Legacy rounds have no durable submission timestamp. Once
+                # withdraw/reopen clears it, their history cannot prove that
+                # this interval is complete, even if the transition audit was
+                # archived too. Do not guess a count or use mutable ownership.
+                and_(
+                    Task.submitted_at.is_(None),
+                    Task.first_review_eligible.is_(None),
+                    Task.created_at < scope.end,
+                ),
+            ),
             ~submit_exists,
         )
     )
@@ -625,9 +672,7 @@ async def _build_roster(
     include_historical: bool,
     account_status: str,
     query: str | None,
-    history: list[AuditLog],
     scope: ResolvedScope,
-    target_user_id: UUID | None = None,
 ) -> list[RosterEntry]:
     rows = (
         await db.execute(
@@ -659,34 +704,48 @@ async def _build_roster(
             )
 
     if include_historical:
-        historical_ids: set[UUID] = set()
-        for log in history:
-            historical_ids.add(log.actor_id) if log.actor_id else None
-            values = _detail(log).get("contributor_ids")
-            if isinstance(values, list):
-                historical_ids.update(
-                    value for value in (_as_uuid(item) for item in values) if value
+        history_ids = await db.execute(
+            text(
+                """
+                WITH activity AS (
+                    SELECT actor_id, detail_json
+                    FROM audit_logs
+                    WHERE status_code = 200
+                      AND action = ANY(:actions)
+                      AND detail_json @> CAST(:project_filter AS jsonb)
+                      AND created_at >= :start_at AND created_at < :end_at
                 )
-        if target_user_id is not None:
-            target_activity = await db.scalar(
-                select(AuditLog.id)
-                .where(
-                    AuditLog.action.in_(_WORKFLOW_ACTIONS),
-                    AuditLog.status_code == 200,
-                    _project_audit_filter(project.id),
-                    AuditLog.created_at >= scope.start,
-                    AuditLog.created_at < scope.end,
-                    or_(
-                        AuditLog.actor_id == target_user_id,
-                        AuditLog.detail_json.contains(
-                            {"contributor_ids": [str(target_user_id)]}
-                        ),
-                    ),
-                )
-                .limit(1)
-            )
-            if target_activity is not None:
-                historical_ids.add(target_user_id)
+                SELECT actor_id::text FROM activity WHERE actor_id IS NOT NULL
+                UNION
+                SELECT c.user_id FROM activity a
+                CROSS JOIN LATERAL jsonb_array_elements_text(
+                    CASE WHEN jsonb_typeof(a.detail_json -> 'contributor_ids') = 'array'
+                         THEN a.detail_json -> 'contributor_ids' ELSE '[]'::jsonb END
+                ) c(user_id)
+                UNION
+                SELECT c.user_id FROM tasks t
+                CROSS JOIN LATERAL jsonb_array_elements_text(
+                    CASE WHEN jsonb_typeof(t.first_review_contributor_ids) = 'array'
+                         THEN t.first_review_contributor_ids ELSE '[]'::jsonb END
+                ) c(user_id)
+                WHERE t.project_id = :project_id
+                  AND t.first_reviewed_at >= :start_at
+                  AND t.first_reviewed_at < :end_at
+                """
+            ),
+            {
+                "actions": list(_WORKFLOW_ACTIONS),
+                "project_filter": json.dumps({"project_id": str(project.id)}),
+                "project_id": project.id,
+                "start_at": scope.start,
+                "end_at": scope.end,
+            },
+        )
+        historical_ids = {
+            user_id
+            for (value,) in history_ids
+            if (user_id := _as_uuid(value)) is not None
+        }
         annotation_ids = await db.execute(
             select(Annotation.user_id)
             .where(
@@ -852,33 +911,60 @@ async def _load_backlog_counts(
     )
 
 
-async def _load_first_review_facts(
-    db: AsyncSession,
-    project_id: UUID,
-    scope: ResolvedScope,
-    decision_task_ids: set[str],
-) -> list[tuple[UUID, bool | None, datetime | None, str | None, list[str] | None]]:
-    """Load only facts in the requested cohort plus legacy decision targets."""
-    first_in_scope = (
-        Task.first_reviewed_at >= scope.start,
-        Task.first_reviewed_at < scope.end,
+async def _load_first_review_metrics(
+    db: AsyncSession, project_id: UUID, scope: ResolvedScope
+):
+    """Aggregate retention-safe facts and detect legacy decisions in SQL."""
+    return await db.execute(
+        text(
+            """
+            WITH facts AS MATERIALIZED (
+                SELECT first_review_eligible IS TRUE
+                           AND first_review_result IN ('approved', 'rejected') AS valid,
+                       first_review_result = 'approved' AS passed,
+                       CASE WHEN jsonb_typeof(first_review_contributor_ids) = 'array'
+                            THEN first_review_contributor_ids ELSE '[]'::jsonb END AS contributors
+                FROM tasks
+                WHERE project_id = :project_id
+                  AND first_reviewed_at >= :start_at AND first_reviewed_at < :end_at
+            ), attributed AS (
+                SELECT f.valid, f.passed, c.user_id FROM facts f
+                CROSS JOIN LATERAL (
+                    SELECT DISTINCT lower(value) AS user_id
+                    FROM jsonb_array_elements_text(f.contributors)
+                ) c
+                WHERE c.user_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+            )
+            SELECT NULL::text AS user_id,
+                   count(*) FILTER (WHERE valid) AS total,
+                   count(*) FILTER (WHERE valid AND passed) AS passed,
+                   COALESCE(bool_or(valid IS NOT TRUE OR NOT EXISTS (
+                       SELECT 1 FROM jsonb_array_elements_text(contributors) c
+                       WHERE c.value ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+                   )), false) OR EXISTS (
+                       SELECT 1 FROM audit_logs a
+                       LEFT JOIN tasks t ON t.project_id = :project_id
+                           AND t.id::text = a.target_id
+                       WHERE a.status_code = 200
+                         AND a.action IN ('task.approve', 'task.reject')
+                         AND a.detail_json @> CAST(:project_filter AS jsonb)
+                         AND a.created_at >= :start_at AND a.created_at < :end_at
+                         AND t.first_reviewed_at IS NULL
+                   ) AS partial
+            FROM facts
+            UNION ALL
+            SELECT user_id, count(*) FILTER (WHERE valid),
+                   count(*) FILTER (WHERE valid AND passed), bool_or(valid IS NOT TRUE)
+            FROM attributed GROUP BY user_id
+            """
+        ),
+        {
+            "project_id": project_id,
+            "project_filter": json.dumps({"project_id": str(project_id)}),
+            "start_at": scope.start,
+            "end_at": scope.end,
+        },
     )
-    stmt = select(
-        Task.id,
-        Task.first_review_eligible,
-        Task.first_reviewed_at,
-        Task.first_review_result,
-        Task.first_review_contributor_ids,
-    ).where(Task.project_id == project_id)
-    if decision_task_ids:
-        stmt = stmt.where(
-            (Task.id.in_(decision_task_ids))
-            | (Task.first_reviewed_at >= scope.start)
-            & (Task.first_reviewed_at < scope.end)
-        )
-    else:
-        stmt = stmt.where(*first_in_scope)
-    return list((await db.execute(stmt)).all())
 
 
 async def _load_task_display_ids(
@@ -896,19 +982,19 @@ async def _load_task_display_ids(
 
 @dataclass
 class MemberAccumulator:
-    submitted: set[str]
+    submitted: int
     submit_attempts: int
     resubmissions: int
     contributed_tasks: int
     retained_objects: int
-    approved_outcomes: set[str]
+    approved_outcomes: int
     first_review_passed: int
     first_review_total: int
     first_review_partial: bool
-    review_decisions: set[str]
-    approvals: set[str]
-    rejections: set[str]
-    reviewed_tasks: set[str]
+    review_decisions: int
+    approvals: int
+    rejections: int
+    reviewed_tasks: int
     current_backlog: int
     review_backlog: int
     recorded_time_minutes: float | None
@@ -919,19 +1005,19 @@ class MemberAccumulator:
     @classmethod
     def new(cls) -> MemberAccumulator:
         return cls(
-            submitted=set(),
+            submitted=0,
             submit_attempts=0,
             resubmissions=0,
             contributed_tasks=0,
             retained_objects=0,
-            approved_outcomes=set(),
+            approved_outcomes=0,
             first_review_passed=0,
             first_review_total=0,
             first_review_partial=False,
-            review_decisions=set(),
-            approvals=set(),
-            rejections=set(),
-            reviewed_tasks=set(),
+            review_decisions=0,
+            approvals=0,
+            rejections=0,
+            reviewed_tasks=0,
             current_backlog=0,
             review_backlog=0,
             recorded_time_minutes=None,
@@ -958,36 +1044,11 @@ def _metric(
     )
 
 
-def _round_snapshots(submits: list[AuditLog]) -> dict[tuple[str, str], set[UUID]]:
-    snapshots: dict[tuple[str, str], set[UUID]] = {}
-    for log in submits:
-        round_id = _as_uuid(_detail(log).get("review_round_id"))
-        if round_id is None or log.target_id is None:
-            continue
-        values = _detail(log).get("contributor_ids")
-        if not isinstance(values, list):
-            continue
-        contributor_ids = {
-            value for value in (_as_uuid(item) for item in values) if value is not None
-        }
-        if contributor_ids:
-            snapshots.setdefault((str(log.target_id), str(round_id)), contributor_ids)
-    return snapshots
-
-
-def _decision_snapshot(
-    log: AuditLog, snapshots: dict[tuple[str, str], set[UUID]]
-) -> set[UUID]:
-    round_id = _as_uuid(_detail(log).get("review_round_id"))
-    if round_id is None or log.target_id is None:
-        return set()
-    return snapshots.get((str(log.target_id), str(round_id)), set())
-
-
 def _member_metrics(
     acc: MemberAccumulator,
     *,
     submission_coverage: str = "complete",
+    attribution_coverage: str = "complete",
 ) -> PerformanceMemberMetrics:
     first_rate = (
         round(acc.first_review_passed / acc.first_review_total * 100, 1)
@@ -996,9 +1057,9 @@ def _member_metrics(
     )
     return PerformanceMemberMetrics(
         submitted_tasks=_metric(
-            len(acc.submitted),
+            acc.submitted,
             "tasks",
-            numerator=len(acc.submitted),
+            numerator=acc.submitted,
             coverage=submission_coverage,
         ),
         resubmissions=_metric(
@@ -1019,9 +1080,10 @@ def _member_metrics(
             numerator=acc.retained_objects,
         ),
         approved_task_outcomes=_metric(
-            len(acc.approved_outcomes),
+            acc.approved_outcomes,
             "tasks",
-            numerator=len(acc.approved_outcomes),
+            numerator=acc.approved_outcomes,
+            coverage=attribution_coverage,
         ),
         first_review_pass_rate=_metric(
             first_rate,
@@ -1041,18 +1103,14 @@ def _member_metrics(
             acc.current_backlog, "tasks", numerator=acc.current_backlog
         ),
         review_decisions=_metric(
-            len(acc.review_decisions),
+            acc.review_decisions,
             "decisions",
-            numerator=len(acc.review_decisions),
+            numerator=acc.review_decisions,
         ),
-        approvals=_metric(
-            len(acc.approvals), "decisions", numerator=len(acc.approvals)
-        ),
-        rejections=_metric(
-            len(acc.rejections), "decisions", numerator=len(acc.rejections)
-        ),
+        approvals=_metric(acc.approvals, "decisions", numerator=acc.approvals),
+        rejections=_metric(acc.rejections, "decisions", numerator=acc.rejections),
         reviewed_tasks=_metric(
-            len(acc.reviewed_tasks), "tasks", numerator=len(acc.reviewed_tasks)
+            acc.reviewed_tasks, "tasks", numerator=acc.reviewed_tasks
         ),
         recorded_review_minutes=_metric(
             acc.recorded_review_minutes,
@@ -1070,6 +1128,7 @@ def _member_out(
     acc: MemberAccumulator,
     *,
     submission_coverage: str = "complete",
+    attribution_coverage: str = "complete",
 ) -> PerformanceMember:
     return PerformanceMember(
         user_id=entry.user.id,
@@ -1080,7 +1139,11 @@ def _member_out(
         is_owner=entry.is_owner,
         is_current_member=entry.is_current_member,
         member_since=entry.member_since,
-        metrics=_member_metrics(acc, submission_coverage=submission_coverage),
+        metrics=_member_metrics(
+            acc,
+            submission_coverage=submission_coverage,
+            attribution_coverage=attribution_coverage,
+        ),
     )
 
 
@@ -1149,9 +1212,6 @@ class AggregatedPerformance:
     classes: dict[UUID, Counter[str]]
     sources: dict[UUID, Counter[str]]
     geometries: dict[UUID, Counter[str]]
-    snapshots: dict[tuple[str, str], set[UUID]]
-    workflow: list[AuditLog]
-    users: dict[UUID, User]
 
 
 async def _aggregate(
@@ -1162,174 +1222,66 @@ async def _aggregate(
     *,
     work_type: str = "annotation",
     time_user_ids: set[UUID] | None = None,
-    history: list[AuditLog] | None = None,
-    prior_submission_task_ids: set[str] | None = None,
     submission_coverage: str = "complete",
 ) -> AggregatedPerformance:
-    if history is None:
-        history = await _load_workflow(db, project.id, start=scope.start, end=scope.end)
-    interval = [log for log in history if log.created_at >= scope.start]
-    round_history = [log for log in history if log.action in _ROUND_START_ACTIONS]
-    snapshots = _round_snapshots(round_history)
     user_ids = {entry.user.id for entry in entries}
     accumulators = {user_id: MemberAccumulator.new() for user_id in user_ids}
     trend: dict[UUID, dict[str, list[int]]] = defaultdict(
         lambda: defaultdict(lambda: [0, 0, 0])
     )
-    approved_trend_seen: set[tuple[UUID, str, str]] = set()
     reject_reasons: dict[UUID, Counter[str]] = defaultdict(Counter)
-    interval_submitted: set[str] = set()
-    interval_approved_tasks: set[str] = set()
-    seen_submission_tasks = set(prior_submission_task_ids or ())
-    interval_decisions = 0
-    interval_approvals = 0
-    interval_rejections = 0
-    first_by_task: dict[str, AuditLog] = {}
-    for log in history:
-        if log.action in _DECISION_ACTIONS and log.target_id:
-            first_by_task.setdefault(str(log.target_id), log)
-
-    first_total = 0
-    first_passed = 0
-    first_partial = False
-    for log in interval:
-        target_id = str(log.target_id) if log.target_id is not None else None
-        day = (
-            log.created_at.astimezone(ZoneInfo(scope.timezone_name)).date().isoformat()
-        )
-        detail = _detail(log)
-        if log.action in _SUBMISSION_ACTIONS and work_type == "annotation":
-            is_resubmission = (
-                target_id is not None and target_id in seen_submission_tasks
-            )
-            if target_id is not None:
-                seen_submission_tasks.add(target_id)
-            if target_id:
-                interval_submitted.add(target_id)
-            if log.actor_id in accumulators and target_id:
-                acc = accumulators[log.actor_id]
-                acc.submitted.add(target_id)
-                acc.submit_attempts += 1
-                if is_resubmission:
-                    acc.resubmissions += 1
-                trend[log.actor_id][day][0] += 1
-        elif log.action in _DECISION_ACTIONS:
-            if work_type == "review":
-                interval_decisions += 1
-                if log.action == AuditAction.TASK_APPROVE.value:
-                    interval_approvals += 1
-                else:
-                    interval_rejections += 1
-                if log.actor_id in accumulators:
-                    acc = accumulators[log.actor_id]
-                    if target_id:
-                        acc.reviewed_tasks.add(target_id)
-                    acc.review_decisions.add(str(log.id))
-                    if log.action == AuditAction.TASK_APPROVE.value:
-                        acc.approvals.add(str(log.id))
-                    else:
-                        acc.rejections.add(str(log.id))
-                    trend[log.actor_id][day][2] += 1
-                    reason = detail.get("reason_type") or "unknown"
-                    if log.action == AuditAction.TASK_REJECT.value:
-                        reject_reasons[log.actor_id][str(reason)] += 1
-
+    submitted = approved = decisions = approvals = rejections = unattributed = 0
+    workflow_rows = await _load_workflow_metrics(db, project.id, scope, work_type)
+    for row in workflow_rows:
+        if row.kind == "totals":
             if work_type == "annotation":
-                if log.action == AuditAction.TASK_APPROVE.value and target_id:
-                    interval_approved_tasks.add(target_id)
-                contributors = _decision_snapshot(log, snapshots)
-                if log.action == AuditAction.TASK_REJECT.value:
-                    reason = str(detail.get("reason_type") or "unknown")
-                    for user_id in contributors.intersection(user_ids):
-                        reject_reasons[user_id][reason] += 1
-                for user_id in contributors.intersection(user_ids):
-                    acc = accumulators[user_id]
-                    if log.action == AuditAction.TASK_APPROVE.value:
-                        if target_id:
-                            acc.approved_outcomes.add(target_id)
-                            trend_key = (user_id, day, target_id)
-                            if trend_key not in approved_trend_seen:
-                                approved_trend_seen.add(trend_key)
-                                trend[user_id][day][1] += 1
-        elif log.action in _ANNOTATION_ACTIONS and log.actor_id in accumulators:
-            # Reopen/accept-rejection are useful evidence but do not count as
-            # another submitted task until a subsequent submit audit exists.
-            if log.action == AuditAction.TASK_REJECT.value:
-                reason = detail.get("reason_type") or "unknown"
-                reject_reasons[log.actor_id][str(reason)] += 1
-
-    decision_task_ids = {
-        str(log.target_id)
-        for log in interval
-        if log.action in _DECISION_ACTIONS and log.target_id is not None
-    }
-    first_facts = await _load_first_review_facts(
-        db, project.id, scope, decision_task_ids
-    )
-    task_meta: dict[
-        str, tuple[datetime, bool | None, datetime | None, str | None, list[str] | None]
-    ] = {}
-    for (
-        task_id,
-        first_eligible,
-        first_reviewed_at,
-        first_result,
-        first_contributor_ids,
-    ) in first_facts:
-        task_meta[str(task_id)] = (
-            first_reviewed_at or scope.end,
-            first_eligible,
-            first_reviewed_at,
-            first_result,
-            first_contributor_ids,
-        )
-
-    # First-review facts are written once in the locked approve/reject
-    # transaction.  They remain trustworthy when old audit rows are archived.
-    for task_id, (
-        _,
-        first_eligible,
-        first_reviewed_at,
-        first_result,
-        first_contributor_ids,
-    ) in task_meta.items():
-        if (
-            first_reviewed_at is not None
-            and scope.start <= first_reviewed_at < scope.end
-        ):
-            contributors = {
-                value
-                for value in (_as_uuid(item) for item in (first_contributor_ids or []))
-                if value is not None
-            }
-            if first_eligible is not True or first_result not in {
-                "approved",
-                "rejected",
-            }:
-                first_partial = True
-                for user_id in contributors.intersection(user_ids):
-                    accumulators[user_id].first_review_partial = True
-                continue
-            first_total += 1
-            if first_result == "approved":
-                first_passed += 1
-            if not contributors:
-                first_partial = True
-            for user_id in contributors.intersection(user_ids):
-                acc = accumulators[user_id]
-                acc.first_review_total += 1
-                if first_result == "approved":
-                    acc.first_review_passed += 1
-
-    # A legacy decision in the requested interval has no retention-safe fact.
-    # Keep it out of the rate and surface partial coverage instead of replaying
-    # a potentially truncated audit history as a first pass.
-    for task_id, log in first_by_task.items():
-        if not (scope.start <= log.created_at < scope.end):
+                submitted, approved, unattributed = (
+                    int(row.n1),
+                    int(row.n2),
+                    int(row.n6),
+                )
+            else:
+                decisions, approvals, rejections = int(row.n3), int(row.n4), int(row.n5)
             continue
-        metadata = task_meta.get(task_id)
-        if metadata is None or metadata[2] is None:
-            first_partial = True
+        user_id = _as_uuid(row.user_id)
+        if user_id not in accumulators:
+            continue
+        acc = accumulators[user_id]
+        if row.kind == "submit":
+            acc.submitted, acc.submit_attempts, acc.resubmissions = (
+                int(row.n1),
+                int(row.n2),
+                int(row.n3),
+            )
+        elif row.kind == "review":
+            acc.review_decisions, acc.approvals, acc.rejections, acc.reviewed_tasks = (
+                int(row.n1),
+                int(row.n2),
+                int(row.n3),
+                int(row.n4),
+            )
+        elif row.kind == "approve":
+            acc.approved_outcomes = int(row.n1)
+        elif row.kind == "reason":
+            reject_reasons[user_id][row.bucket] = int(row.n1)
+        elif row.kind.startswith("trend_"):
+            index = {"trend_submit": 0, "trend_approve": 1, "trend_review": 2}[row.kind]
+            trend[user_id][row.bucket][index] = int(row.n1)
+
+    first_total = first_passed = 0
+    first_partial = False
+    for row in await _load_first_review_metrics(db, project.id, scope):
+        if row.user_id is None:
+            first_total, first_passed, first_partial = (
+                int(row.total),
+                int(row.passed),
+                row.partial,
+            )
+        elif (user_id := _as_uuid(row.user_id)) in accumulators:
+            acc = accumulators[user_id]
+            acc.first_review_total = int(row.total)
+            acc.first_review_passed = int(row.passed)
+            acc.first_review_partial = row.partial
 
     backlog_by_member, current_backlog, review_backlog = await _load_backlog_counts(
         db, project.id, user_ids
@@ -1360,30 +1312,27 @@ async def _aggregate(
         acc.recorded_review_coverage = qualified_time.coverage.get(user_id, {}).get(
             "review", "unknown"
         )
-    users = {entry.user.id: entry.user for entry in entries}
     time_kind = "annotate" if work_type == "annotation" else "review"
     time_coverage = qualified_time.total_coverage.get(time_kind, "unknown")
+    annotation_partial = work_type == "annotation" and (
+        first_partial or submission_coverage != "complete" or unattributed > 0
+    )
     coverage_state = (
         "complete"
-        if (
-            time_coverage == "complete"
-            and not first_partial
-            and submission_coverage == "complete"
-        )
+        if (time_coverage == "complete" and not annotation_partial)
         else "partial"
-        if (
-            time_coverage in {"complete", "partial"}
-            or first_partial
-            or submission_coverage == "partial"
-        )
+        if (time_coverage in {"complete", "partial"} or annotation_partial)
         else "unknown"
     )
     coverage_detail = (
         "workflow audits are project scoped; legacy review rounds without a submit snapshot "
-        f"are excluded from member attribution; retained_objects and distributions count "
-        f"retained annotation records (compact tracks once, scene instances individually); "
-        f"{work_type} session coverage is {time_coverage}; submission coverage is "
-        f"{submission_coverage}"
+        "are excluded from member attribution; retained_objects and distributions count "
+        "retained annotation records (compact tracks once, scene instances individually); "
+        f"annotation session coverage is {time_coverage}; submission coverage is "
+        f"{submission_coverage}; unattributed review decisions: {unattributed}"
+        if work_type == "annotation"
+        else "review decisions are attributed to their project-scoped audit actors; "
+        f"review session coverage is {time_coverage}"
     )
     coverage = PerformanceCoverage(
         state=coverage_state,
@@ -1395,22 +1344,23 @@ async def _aggregate(
             entry,
             accumulators[entry.user.id],
             submission_coverage=submission_coverage,
+            attribution_coverage="partial" if unattributed else "complete",
         )
         for entry in entries
         if entry.user.id in accumulators
     ]
     totals = _totals(
-        submitted=len(interval_submitted),
-        approved=len(interval_approved_tasks),
+        submitted=submitted,
+        approved=approved,
         first_passed=first_passed,
         first_total=first_total,
         first_partial=first_partial,
         recorded_time_minutes=qualified_time.total_minutes.get(time_kind),
         recorded_time_coverage=time_coverage,
         current_backlog=current_backlog,
-        review_decisions=interval_decisions,
-        approvals=interval_approvals,
-        rejections=interval_rejections,
+        review_decisions=decisions,
+        approvals=approvals,
+        rejections=rejections,
         review_backlog=review_backlog,
         submission_coverage=submission_coverage,
     )
@@ -1424,9 +1374,6 @@ async def _aggregate(
         classes=classes,
         sources=sources,
         geometries=geometries,
-        snapshots=snapshots,
-        workflow=interval,
-        users=users,
     )
 
 
@@ -1458,6 +1405,7 @@ def _sort_items(
         key=lambda item: (key_fn(item), str(item.user_id)),
         reverse=direction == "-",
     )
+    nulls.sort(key=lambda item: str(item.user_id))
     return non_null + nulls
 
 
@@ -1651,54 +1599,13 @@ async def _prepare_aggregate(
     query: str | None,
 ) -> AggregatedPerformance:
     project = await resolve_performance_access(db, project_id, user)
-    workflow = await _load_workflow(
-        db,
-        project_id,
-        start=scope.start,
-        end=scope.end,
-        member_id=target_user_id,
-        work_type=work_type,
-    )
-    task_ids = {str(log.target_id) for log in workflow if log.target_id is not None}
-    decision_round_ids = (
-        {
-            str(round_id)
-            for log in workflow
-            if log.action in _DECISION_ACTIONS
-            and (round_id := _detail(log).get("review_round_id"))
-        }
-        if work_type == "annotation"
-        else set()
-    )
-    interval_submit_task_ids = (
-        {
-            str(log.target_id)
-            for log in workflow
-            if log.action in _SUBMISSION_ACTIONS and log.target_id is not None
-        }
-        if work_type == "annotation"
-        else set()
-    )
-    submission_history, prior_submission_task_ids = await _load_submission_history(
-        db,
-        project_id,
-        start=scope.start,
-        end=scope.end,
-        task_ids=task_ids,
-        decision_round_ids=decision_round_ids,
-        interval_submit_task_ids=interval_submit_task_ids,
-    )
-    history_by_id = {log.id: log for log in [*workflow, *submission_history]}
-    history = sorted(history_by_id.values(), key=lambda log: (log.created_at, log.id))
     entries = await _build_roster(
         db,
         project,
         include_historical=include_historical,
         account_status=account_status,
         query=query,
-        history=workflow,
         scope=scope,
-        target_user_id=target_user_id,
     )
     if target_user_id is not None:
         entries = [entry for entry in entries if entry.user.id == target_user_id]
@@ -1711,11 +1618,9 @@ async def _prepare_aggregate(
         scope,
         work_type=work_type,
         time_user_ids={target_user_id} if target_user_id is not None else None,
-        history=history,
-        prior_submission_task_ids=prior_submission_task_ids,
         submission_coverage=(
             await _load_submission_coverage(db, project.id, scope)
-            if project.data_type == "video"
+            if project.data_type == "video" and work_type == "annotation"
             else "complete"
         ),
     )

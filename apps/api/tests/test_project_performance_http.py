@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import event
+from sqlalchemy import event, text
 
 from app.db.models.annotation import Annotation
 from app.db.models.audit_log import AuditLog
@@ -617,7 +617,7 @@ async def test_members_http_qualified_time_clips_and_unions_sessions(
 
 @pytest.mark.asyncio
 async def test_members_http_volume_uses_bounded_grouped_queries(
-    httpx_client, db_session, test_engine, project_admin, annotator
+    httpx_client, db_session, test_engine, project_admin, annotator, monkeypatch
 ):
     owner, token = project_admin
     worker, _ = annotator
@@ -649,6 +649,59 @@ async def test_members_http_volume_uses_bounded_grouped_queries(
     )
     await db_session.flush()
 
+    # Every task has ten submits. Counts and daily trends must be aggregated
+    # before Python receives rows, including for a one-member page or CSV.
+    rounds = {task.id: [uuid.uuid4() for _ in range(10)] for task in tasks}
+    db_session.add_all(
+        [
+            _audit(
+                project_id=project.id,
+                task_id=task.id,
+                actor_id=worker.id if attempt % 2 == 0 else owner.id,
+                action="task.submit",
+                at=event_start + timedelta(seconds=attempt),
+                round_id=rounds[task.id][attempt],
+                contributors=[worker.id, owner.id],
+            )
+            for task in tasks
+            for attempt in range(10)
+        ]
+        + [
+            _audit(
+                project_id=project.id,
+                task_id=task.id,
+                actor_id=owner.id,
+                action="task.approve",
+                at=event_start + timedelta(hours=1, seconds=attempt),
+                round_id=rounds[task.id][attempt],
+                contributors=[worker.id, owner.id],
+            )
+            for task in tasks
+            for attempt in [8, 9]
+        ]
+    )
+    await db_session.flush()
+    # Bulk fixture inserts are still uncommitted, so autovacuum cannot collect
+    # the statistics a deployed project normally has before this request.
+    await db_session.execute(text("ANALYZE tasks, task_events, audit_logs"))
+    from app.services import project_performance
+
+    load_workflow_metrics = project_performance._load_workflow_metrics
+    aggregate_row_counts = []
+
+    async def record_aggregate_size(*args, **kwargs):
+        rows = (await load_workflow_metrics(*args, **kwargs)).all()
+        aggregate_row_counts.append(len(rows))
+        return rows
+
+    monkeypatch.setattr(
+        project_performance, "_load_workflow_metrics", record_aggregate_size
+    )
+    loaded_audits = []
+
+    def audit_loaded(instance, context):
+        loaded_audits.append(instance.id)
+
     statements: list[str] = []
 
     def before_cursor_execute(
@@ -659,6 +712,7 @@ async def test_members_http_volume_uses_bounded_grouped_queries(
     event.listen(
         test_engine.sync_engine, "before_cursor_execute", before_cursor_execute
     )
+    event.listen(AuditLog, "load", audit_loaded)
     started = time.perf_counter()
     try:
         response = await httpx_client.get(
@@ -677,14 +731,29 @@ async def test_members_http_volume_uses_bounded_grouped_queries(
         event.remove(
             test_engine.sync_engine, "before_cursor_execute", before_cursor_execute
         )
+        event.remove(AuditLog, "load", audit_loaded)
     elapsed = time.perf_counter() - started
     print(
         f"project performance volume: {len(statements)} SQL statements, "
-        f"{elapsed:.3f}s for 2,000 tasks"
+        f"{elapsed:.3f}s for 2,000 tasks and 24,000 audit events; "
+        f"{aggregate_row_counts[0]} aggregate rows"
     )
     assert response.status_code == 200, response.text
     assert response.json()["project_totals"]["current_backlog"]["value"] == 2_000
     assert response.json()["project_totals"]["recorded_time_minutes"]["value"] == 333.3
+    assert response.json()["project_totals"]["submitted_tasks"]["value"] == 2_000
+    worker_metrics = next(
+        row["metrics"]
+        for row in response.json()["items"]
+        if row["user_id"] == str(worker.id)
+    )
+    assert worker_metrics["resubmissions"]["value"] == 8_000
+    assert worker_metrics["resubmissions"]["denominator"] == 10_000
+    assert worker_metrics["approved_task_outcomes"]["value"] == 2_000
+    assert response.json()["project_totals"]["approved_task_outcomes"]["value"] == 2_000
+    assert len(aggregate_row_counts) == 1
+    assert aggregate_row_counts[0] <= 12
+    assert loaded_audits == []
     assert elapsed < 5.0
     task_selects = [
         statement.lower()
@@ -1117,3 +1186,363 @@ async def test_historical_contributor_detail_reuses_snapshot_roster(
     detail_body = detail.json()
     assert detail_body["member"]["user_id"] == str(historical.id)
     assert detail_body["member"]["is_current_member"] is False
+
+
+@pytest.mark.asyncio
+async def test_historical_roster_retains_archived_first_review_contributors(
+    httpx_client, db_session, project_admin, annotator
+):
+    owner, token = project_admin
+    former_member, _ = annotator
+    project = _project(owner.id)
+    db_session.add(project)
+    await db_session.flush()
+    start = datetime(2026, 9, 10, tzinfo=timezone.utc)
+    task = _task(project.id, status="completed")
+    task.first_review_eligible = True
+    task.first_reviewed_at = start + timedelta(hours=1)
+    task.first_review_result = "approved"
+    task.first_review_contributor_ids = [
+        str(former_member.id),
+        str(former_member.id).upper(),
+        None,
+        "invalid-id",
+    ]
+    db_session.add(task)
+    await db_session.commit()
+    params = {
+        "from": start.isoformat(),
+        "to": (start + timedelta(days=1)).isoformat(),
+        "timezone": "UTC",
+        "include_historical": "true",
+    }
+    headers = {"Authorization": f"Bearer {token}"}
+    url = f"/api/v1/projects/{project.id}/performance/members"
+    response = await httpx_client.get(url, params=params, headers=headers)
+    assert response.status_code == 200, response.text
+    former = next(
+        row
+        for row in response.json()["items"]
+        if row["user_id"] == str(former_member.id)
+    )
+    assert former["is_current_member"] is False
+    assert former["metrics"]["first_review_pass_rate"]["value"] == 100
+    detail = await httpx_client.get(
+        f"{url}/{former_member.id}", params=params, headers=headers
+    )
+    assert detail.status_code == 200, detail.text
+    assert (
+        detail.json()["member"]["metrics"]["first_review_pass_rate"]["denominator"] == 1
+    )
+    excluded = await httpx_client.get(
+        f"{url}/{former_member.id}",
+        params={**params, "include_historical": "false"},
+        headers=headers,
+    )
+    assert excluded.status_code == 404
+    outside_scope = await httpx_client.get(
+        url,
+        params={
+            **params,
+            "from": (start + timedelta(days=1)).isoformat(),
+            "to": (start + timedelta(days=2)).isoformat(),
+        },
+        headers=headers,
+    )
+    assert all(
+        row["user_id"] != str(former_member.id) for row in outside_scope.json()["items"]
+    )
+
+
+@pytest.mark.asyncio
+async def test_member_task_trends_deduplicate_cross_day_resubmissions_and_approvals(
+    httpx_client, db_session, project_admin, annotator
+):
+    owner, token = project_admin
+    worker, _ = annotator
+    project = _project(owner.id)
+    db_session.add(project)
+    await db_session.flush()
+    await _member(db_session, project.id, worker, "annotator", owner.id)
+    task = _task(project.id, status="completed")
+    db_session.add(task)
+    await db_session.flush()
+    start = datetime(2026, 9, 10, tzinfo=timezone.utc)
+    for day in range(2):
+        round_id = uuid.uuid4()
+        db_session.add_all(
+            [
+                _audit(
+                    project_id=project.id,
+                    task_id=task.id,
+                    actor_id=worker.id,
+                    action="task.submit",
+                    at=start + timedelta(days=day, hours=1),
+                    round_id=round_id,
+                    contributors=[worker.id],
+                ),
+                _audit(
+                    project_id=project.id,
+                    task_id=task.id,
+                    actor_id=owner.id,
+                    action="task.approve",
+                    at=start + timedelta(days=day, hours=2),
+                    round_id=round_id,
+                    contributors=[worker.id],
+                ),
+            ]
+        )
+    await db_session.commit()
+    params = {
+        "from": start.isoformat(),
+        "to": (start + timedelta(days=2)).isoformat(),
+        "timezone": "UTC",
+    }
+    headers = {"Authorization": f"Bearer {token}"}
+    url = f"/api/v1/projects/{project.id}/performance/members"
+    detail = await httpx_client.get(
+        f"{url}/{worker.id}", params=params, headers=headers
+    )
+    assert detail.status_code == 200, detail.text
+    body = detail.json()
+    metrics = body["member"]["metrics"]
+    assert metrics["submitted_tasks"]["value"] == 1
+    assert metrics["resubmissions"]["value"] == 1
+    assert metrics["resubmissions"]["denominator"] == 2
+    assert [point["submitted_tasks"] for point in body["trend"]] == [1, 0]
+    assert metrics["approved_task_outcomes"]["value"] == 1
+    assert [point["approved_task_outcomes"] for point in body["trend"]] == [1, 0]
+    listing = await httpx_client.get(url, params=params, headers=headers)
+    listed = next(
+        row for row in listing.json()["items"] if row["user_id"] == str(worker.id)
+    )
+    assert listed["metrics"] == metrics
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("transition", ["withdraw", "reopen"])
+async def test_legacy_video_coverage_survives_cleared_submission_timestamp(
+    httpx_client, db_session, project_admin, annotator, transition
+):
+    owner, owner_token = project_admin
+    worker, worker_token = annotator
+    project = _project(owner.id)
+    project.data_type = "video"
+    db_session.add(project)
+    await db_session.flush()
+    await _member(db_session, project.id, worker, "annotator", owner.id)
+    start = datetime(2026, 9, 10, tzinfo=timezone.utc)
+    task = _task(
+        project.id,
+        status="review" if transition == "withdraw" else "completed",
+        assignee_id=worker.id,
+    )
+    task.file_type = "video"
+    task.first_review_eligible = None
+    task.created_at = start - timedelta(days=1)
+    task.submitted_at = start + timedelta(hours=1)
+    db_session.add(task)
+    await db_session.flush()
+    # Explicitly persist the pre-rollout NULL after INSERT's new-task default.
+    task.first_review_eligible = None
+    await db_session.commit()
+    params = {
+        "from": start.isoformat(),
+        "to": (start + timedelta(days=1)).isoformat(),
+        "timezone": "UTC",
+    }
+    url = f"/api/v1/projects/{project.id}/performance/members"
+    headers = {"Authorization": f"Bearer {owner_token}"}
+    before = await httpx_client.get(url, params=params, headers=headers)
+    assert before.status_code == 200, before.text
+    assert before.json()["project_totals"]["submitted_tasks"]["coverage"] == "partial"
+    transition_response = await httpx_client.post(
+        f"/api/v1/tasks/{task.id}/{transition}",
+        headers={"Authorization": f"Bearer {worker_token}"},
+    )
+    assert transition_response.status_code == 200, transition_response.text
+    await db_session.refresh(task)
+    assert task.submitted_at is None
+    after = await httpx_client.get(url, params=params, headers=headers)
+    assert after.status_code == 200, after.text
+    assert after.json()["project_totals"]["submitted_tasks"]["coverage"] == "partial"
+    assert after.json()["project_totals"]["submitted_tasks"]["value"] == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("snapshot_contributors", [None, [], ["invalid-user-id"]])
+async def test_missing_later_round_snapshot_marks_annotation_but_not_review_coverage(
+    httpx_client, db_session, project_admin, annotator, reviewer, snapshot_contributors
+):
+    owner, token = project_admin
+    worker, _ = annotator
+    checker, _ = reviewer
+    project = _project(owner.id)
+    project.data_type = "video"
+    db_session.add(project)
+    await db_session.flush()
+    await _member(db_session, project.id, worker, "annotator", owner.id)
+    await _member(db_session, project.id, checker, "reviewer", owner.id)
+    start = datetime(2026, 9, 10, tzinfo=timezone.utc)
+    task = _task(project.id, status="completed")
+    task.first_review_eligible = True
+    task.first_reviewed_at = start - timedelta(days=1)
+    task.first_review_result = "approved"
+    task.first_review_contributor_ids = [str(worker.id)]
+    legacy = _task(project.id, status="review")
+    legacy.file_type = "video"
+    legacy.submitted_at = start + timedelta(hours=1)
+    db_session.add_all([task, legacy])
+    await db_session.flush()
+    decision_round = uuid.uuid4()
+    if snapshot_contributors is not None:
+        db_session.add(
+            _audit(
+                project_id=project.id,
+                task_id=task.id,
+                actor_id=worker.id,
+                action="task.submit",
+                at=start - timedelta(hours=1),
+                round_id=decision_round,
+                contributors=snapshot_contributors,
+            )
+        )
+    db_session.add(
+        _audit(
+            project_id=project.id,
+            task_id=task.id,
+            actor_id=checker.id,
+            action="task.approve",
+            at=start + timedelta(hours=2),
+            round_id=decision_round,
+            contributors=[worker.id],
+        )
+    )
+    for member_id, kind in [(worker.id, "annotate"), (checker.id, "review")]:
+        db_session.add(
+            TaskEvent(
+                task_id=task.id,
+                project_id=project.id,
+                user_id=member_id,
+                kind=kind,
+                started_at=start,
+                ended_at=start + timedelta(minutes=10),
+                duration_ms=600_000,
+                collection_source="session",
+                collection_coverage="qualified",
+            )
+        )
+    await db_session.commit()
+    params = {
+        "from": start.isoformat(),
+        "to": (start + timedelta(days=1)).isoformat(),
+        "timezone": "UTC",
+    }
+    headers = {"Authorization": f"Bearer {token}"}
+    url = f"/api/v1/projects/{project.id}/performance/members"
+    annotation = await httpx_client.get(url, params=params, headers=headers)
+    assert annotation.status_code == 200, annotation.text
+    body = annotation.json()
+    assert body["coverage"]["state"] == "partial"
+    assert "unattributed review decisions: 1" in body["coverage"]["detail"]
+    assert body["project_totals"]["approved_task_outcomes"]["value"] == 1
+    assert body["project_totals"]["first_review_pass_rate"]["coverage"] == "complete"
+    metric = next(row for row in body["items"] if row["user_id"] == str(worker.id))[
+        "metrics"
+    ]["approved_task_outcomes"]
+    assert metric["value"] == 0
+    assert metric["coverage"] == "partial"
+    # A review-only view still has complete reviewer decision and time evidence,
+    # independently of the missing annotation round and legacy video submit.
+    review = await httpx_client.get(
+        url, params={**params, "work_type": "review"}, headers=headers
+    )
+    assert review.status_code == 200, review.text
+    assert review.json()["coverage"]["state"] == "complete"
+    assert review.json()["project_totals"]["review_decisions"]["value"] == 1
+
+
+@pytest.mark.asyncio
+async def test_decision_aggregation_matches_project_task_and_submission_round(
+    httpx_client, db_session, project_admin, annotator, reviewer
+):
+    owner, token = project_admin
+    worker, _ = annotator
+    checker, _ = reviewer
+    project, foreign_project = _project(owner.id), _project(owner.id)
+    db_session.add_all([project, foreign_project])
+    await db_session.flush()
+    await _member(db_session, project.id, worker, "annotator", owner.id)
+    task, other_task = (
+        _task(project.id, status="completed"),
+        _task(project.id, status="completed"),
+    )
+    db_session.add_all([task, other_task])
+    await db_session.flush()
+    start = datetime(2026, 9, 10, tzinfo=timezone.utc)
+    matching_round = uuid.uuid4()
+    db_session.add_all(
+        [
+            # Earlier retained rows cannot provide a snapshot for a different
+            # project, task, or review round even when another key is identical.
+            _audit(
+                project_id=foreign_project.id,
+                task_id=task.id,
+                actor_id=owner.id,
+                action="task.submit",
+                at=start - timedelta(days=2),
+                round_id=matching_round,
+                contributors=[owner.id],
+            ),
+            _audit(
+                project_id=project.id,
+                task_id=other_task.id,
+                actor_id=owner.id,
+                action="task.submit",
+                at=start - timedelta(days=2),
+                round_id=matching_round,
+                contributors=[owner.id],
+            ),
+            _audit(
+                project_id=project.id,
+                task_id=task.id,
+                actor_id=owner.id,
+                action="task.submit",
+                at=start - timedelta(days=2),
+                round_id=uuid.uuid4(),
+                contributors=[owner.id],
+            ),
+            _audit(
+                project_id=project.id,
+                task_id=task.id,
+                actor_id=worker.id,
+                action="task.submit",
+                at=start - timedelta(hours=1),
+                round_id=matching_round,
+                contributors=[worker.id],
+            ),
+            _audit(
+                project_id=project.id,
+                task_id=task.id,
+                actor_id=checker.id,
+                action="task.approve",
+                at=start + timedelta(hours=1),
+                round_id=matching_round,
+                contributors=[worker.id],
+            ),
+        ]
+    )
+    await db_session.commit()
+    response = await httpx_client.get(
+        f"/api/v1/projects/{project.id}/performance/members",
+        params={
+            "from": start.isoformat(),
+            "to": (start + timedelta(days=1)).isoformat(),
+            "timezone": "UTC",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200, response.text
+    metrics = {row["user_id"]: row["metrics"] for row in response.json()["items"]}
+    assert metrics[str(worker.id)]["approved_task_outcomes"]["value"] == 1
+    assert metrics[str(owner.id)]["approved_task_outcomes"]["value"] == 0

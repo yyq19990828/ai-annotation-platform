@@ -355,7 +355,7 @@ export function ProjectMembersPerformance({ projectId }: { projectId: string }) 
     const nextQuery = debouncedQuery.trim();
     if (nextQuery !== queryDraft.trim() || nextQuery === state.q) return;
     setCursorStack([]);
-    patch({ q: nextQuery, cursor: null });
+    patch({ q: nextQuery, cursor: null, selected: null });
   }, [debouncedQuery, patch, queryDraft, state.q]);
 
   useEffect(() => {
@@ -407,7 +407,7 @@ export function ProjectMembersPerformance({ projectId }: { projectId: string }) 
   const updateState = useCallback(
     (update: Partial<ProjectMembersPerformanceUrlState>) => {
       setCursorStack([]);
-      patch({ ...update, cursor: null }, { replace: false });
+      patch({ ...update, cursor: null, selected: null }, { replace: false });
     },
     [patch],
   );
@@ -506,7 +506,7 @@ export function ProjectMembersPerformance({ projectId }: { projectId: string }) 
           syncingQueryDraft.current = false;
           lastUrlQuery.current = value.trim();
           setCursorStack([]);
-          patch({ q: value.trim(), cursor: null }, { replace: true });
+          patch({ q: value.trim(), cursor: null, selected: null }, { replace: true });
         }}
         onUpdate={updateState}
         onReset={() => reset({ replace: false })}
@@ -579,11 +579,13 @@ export function ProjectMembersPerformance({ projectId }: { projectId: string }) 
               previousLoading={previousDetailQ.isLoading}
               previousError={previousDetailQ.isError}
               onRetryPrevious={() => void previousDetailQ.refetch()}
-              eventsLoading={eventsQ.isLoading}
+              eventsLoading={eventsQ.isLoading && !eventItems.length}
               eventsError={eventsQ.isError}
               onRetryEvents={() => void eventsQ.refetch()}
-              hasMoreEvents={Boolean(eventsQ.data?.next_cursor)}
-              loadingMoreEvents={eventsQ.isFetching && !eventsQ.isLoading}
+              hasMoreEvents={Boolean(
+                eventsQ.data?.next_cursor || (eventsCursor && eventsQ.isFetching),
+              )}
+              loadingMoreEvents={eventsQ.isFetching && eventItems.length > 0}
               onLoadMoreEvents={() => setEventsCursor(eventsQ.data?.next_cursor ?? null)}
               timezone={membersQ.data?.scope.timezone ?? range.timezone}
               projectId={projectId}

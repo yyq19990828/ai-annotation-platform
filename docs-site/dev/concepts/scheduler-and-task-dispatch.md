@@ -89,17 +89,19 @@ last_reviewed: 2026-09-14
 
 这意味着“列表里可见”不等于“scheduler 可派”；派题同时依赖 task 投影、batch 状态、管理锁和分派关系。
 
-未分批任务使用外连接保留，由显式任务标注员或审核员取得访问范围；未指派的未分批任务不会进入普通用户的候选池。Data Manager 改派不改变同批其他任务，清除任务覆盖值会恢复批次默认。
+未分批任务使用外连接保留，由显式任务标注员或审核员取得访问范围；未指派的未分批任务不会进入普通用户的候选池。Data Manager 改派不改变同批其他任务，显式指派在批次后续改派时保留，清除任务覆盖值会恢复批次默认。
 
 ### 5. 按项目采样策略排序
 
 调度顺序由 `Project.sampling` 决定。**`TaskBatch.priority` 始终是主排序键**，sampling 策略只决定同 priority 内的二级顺序——这点对“为什么我创建的紧急批次没立即出现”很关键：
 
-| sampling      | 排序键（从主到次）                                                                   |
-| ------------- | ------------------------------------------------------------------------------------ |
-| `sequence`    | `TaskBatch.priority DESC` → `Task.sequence_order ASC NULLS LAST` → `Task.created_at` |
-| `uniform`     | `TaskBatch.priority DESC` → `random()`                                               |
-| `uncertainty` | `TaskBatch.priority DESC` → 每题最低 `Prediction.score ASC NULLS LAST`（低分优先）   |
+| sampling      | 排序键（从主到次）                                                                              |
+| ------------- | ----------------------------------------------------------------------------------------------- |
+| `sequence`    | `TaskBatch.priority DESC NULLS LAST` → `Task.sequence_order ASC NULLS LAST` → `Task.created_at` |
+| `uniform`     | `TaskBatch.priority DESC NULLS LAST` → `random()`                                               |
+| `uncertainty` | `TaskBatch.priority DESC NULLS LAST` → 每题最低 `Prediction.score ASC NULLS LAST`（低分优先）   |
+
+未分批任务的批次优先级为空，在三种采样策略下均排在可派发的批次任务之后。
 
 因此，"下一题为什么是这题"很多时候不是 bug，而是 batch priority + 项目级 sampling 配置共同在起作用：调高某批次的 `priority` 可以让它在所有 sampling 策略下都被优先派出。
 

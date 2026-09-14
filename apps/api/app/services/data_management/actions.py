@@ -309,6 +309,16 @@ class DataManagerTaskActionService:
                 elif (
                     before_annotator == after_annotator
                     and before_reviewer == after_reviewer
+                    and (
+                        not annotator_set
+                        or task.assignee_is_override
+                        == (payload.annotator_id is not None)
+                    )
+                    and (
+                        not reviewer_set
+                        or task.reviewer_is_override
+                        == (payload.reviewer_id is not None)
+                    )
                 ):
                     item.reason = "assignment_unchanged"
                 else:
@@ -389,6 +399,7 @@ class DataManagerTaskActionService:
                 continue
             if annotator_set:
                 task.assignee_id = payload.annotator_id
+                task.assignee_is_override = payload.annotator_id is not None
                 task.assigned_at = (
                     datetime.now(timezone.utc)
                     if payload.annotator_id is not None
@@ -396,6 +407,7 @@ class DataManagerTaskActionService:
                 )
             if reviewer_set:
                 task.reviewer_id = payload.reviewer_id
+                task.reviewer_is_override = payload.reviewer_id is not None
                 if item.before_reviewer_id != payload.reviewer_id:
                     task.reviewer_claimed_at = None
             succeeded.append(task.id)

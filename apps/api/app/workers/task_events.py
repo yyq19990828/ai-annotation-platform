@@ -65,7 +65,14 @@ async def _async_persist(payload_list: list[dict[str, Any]]) -> int:
         if discarded:
             logger.info("discarded %d invalid task-event payload(s)", discarded)
         try:
-            return await insert_task_events(session, rows)
+            result = await insert_task_events(session, rows)
+            if result.conflicts:
+                logger.warning(
+                    "discarded %d task-event payload(s): duplicate_client_event_conflict ids=%s",
+                    len(result.conflicts),
+                    sorted(str(event_id) for event_id in result.conflicts),
+                )
+            return result.inserted
         except Exception:
             await session.rollback()
             logger.warning("persist_task_events_batch commit failed n=%d", len(rows))

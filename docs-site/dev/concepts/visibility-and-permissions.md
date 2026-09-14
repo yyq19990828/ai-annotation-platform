@@ -52,7 +52,7 @@ last_reviewed: 2026-09-14
 
 关键点：
 
-- `Task.assignee_id` 非空时优先于 `TaskBatch.annotator_id`；空值恢复批次默认。Data Manager 单题改派只影响选中任务，同批兄弟任务保留原范围。
+- `Task.assignee_id` 非空时优先于 `TaskBatch.annotator_id`；空值恢复批次默认。Data Manager 单题改派只影响选中任务，同批兄弟任务保留原范围。内部 `assignee_is_override` / `reviewer_is_override` 区分显式任务指派与批次回填值，批次改派只更新继承指派；恢复默认会清除对应覆盖标记。
 - 无 batch 的任务只对显式指定的标注员或审核员开放；未指派任务仍仅特权用户可见。
 - reviewer 的批次读取不受 annotator 约束；领取审核使用 `Task.reviewer_id`，为空时回退批次 `reviewer_id`。有预留审核员时其他审核员不能领取。
 - annotator 对 `rejected` 批次，以及审核中批次内可返工的任务，只向实际被指派者开放。
