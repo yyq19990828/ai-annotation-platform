@@ -110,10 +110,10 @@ jobs:
         working-directory: apps/web
         run: pnpm build
 
-      - name: Start web dev server
+      - name: Start built web preview
         working-directory: apps/web
         run: |
-          nohup pnpm dev --host 127.0.0.1 >/tmp/visual-web.log 2>&1 &
+          nohup pnpm preview --host 127.0.0.1 --port 3000 --strictPort >/tmp/visual-web.log 2>&1 &
           for attempt in {1..30}; do
             curl -fsS http://127.0.0.1:3000/login && exit 0
             sleep 1
@@ -150,6 +150,8 @@ jobs:
           path: |
             apps/web/test-results/
             apps/web/e2e/screenshots/regression/__screenshots__/
+            /tmp/visual-api.log
+            /tmp/visual-web.log
           retention-days: 14
 
       - name: Check image manifest
