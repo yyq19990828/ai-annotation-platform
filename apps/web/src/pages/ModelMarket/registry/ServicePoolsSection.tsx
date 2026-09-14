@@ -311,7 +311,7 @@ export function ServicePoolsSection({
           </Button>
         </div>
       )}
-      <Table>
+      <Table containerClassName="overflow-hidden rounded-lg border border-border bg-card">
         <TableHeader>
           <TableRow>
             <TableHead className="w-8" />

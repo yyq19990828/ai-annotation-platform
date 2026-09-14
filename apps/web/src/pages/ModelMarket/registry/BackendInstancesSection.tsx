@@ -151,8 +151,11 @@ export function BackendInstancesSection({
     );
   }
 
+  // Other registry sections wrap their toolbar/conditions/table in `gap-3`;
+  // the instances view used a bare fragment, so its toolbar sat flush against
+  // the table instead of matching the sibling tabs (plan §4.3).
   return (
-    <>
+    <div className="flex flex-col gap-3">
       <InstanceToolbar
         scope={scope}
         url={url}
@@ -184,7 +187,7 @@ export function BackendInstancesSection({
           </Button>
         </div>
       )}
-      <Table>
+      <Table containerClassName="overflow-hidden rounded-lg border border-border bg-card">
         <TableHeader>
           <TableRow>
             <TableHead>实例</TableHead>
@@ -232,7 +235,7 @@ export function BackendInstancesSection({
         backend={editTarget}
         onClose={() => setEditOpen(false)}
       />
-    </>
+    </div>
   );
 }
 

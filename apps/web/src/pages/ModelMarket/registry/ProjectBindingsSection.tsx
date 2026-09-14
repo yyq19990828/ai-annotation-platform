@@ -162,7 +162,7 @@ export function ProjectBindingsSection({
       />
 
       {isByProject ? (
-        <Table>
+        <Table containerClassName="overflow-hidden rounded-lg border border-border bg-card">
           <TableHeader>
             <TableRow>
               <TableHead>项目</TableHead>
@@ -188,7 +188,7 @@ export function ProjectBindingsSection({
           </TableBody>
         </Table>
       ) : (
-        <Table>
+        <Table containerClassName="overflow-hidden rounded-lg border border-border bg-card">
           <TableHeader>
             <TableRow>
               <TableHead>服务池</TableHead>

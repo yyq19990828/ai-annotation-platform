@@ -155,7 +155,7 @@ export function GPUResourcesSection({
       {resources.length === 0 ? (
         <EmptyState icon="activity" message="尚未配置 GPU_ARBITER_RESOURCES_JSON" />
       ) : (
-        <Table>
+        <Table containerClassName="overflow-hidden rounded-lg border border-border bg-card">
           <TableHeader>
             <TableRow>
               <TableHead className="w-8" />

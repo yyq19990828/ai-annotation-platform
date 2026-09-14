@@ -310,6 +310,7 @@ web lint 已包含 `lint:css-tokens`；分阶段调整样式时可先单独运�
   - 池卡精简为两行字段带：身份 + 健康/路由（独立轴）+ 新鲜度；可路由/并发/驻留/CPU 回退/流量带标签字段；无流量指标只显示一条「暂无路由指标」，驻留与 CPU 回退未知时不冒充数值；移除悬浮位移动画，正常池保持稳定顺序。
   - 成员首层补充并发与驻留独立字段（未知如实显示）；成员展开、详情 Sheet、未注册容器折叠区与维护门禁全部保留，`derivePoolEffectiveRouting` 上移到 `runtimeTopology.ts` 供注册与运行时共用。
   - 测试：新增 `marketUrlState.test.ts`（主 TAB/注册/目录三套 codec）、`ModelMarketPage.test.tsx`，更新 `ModelCard.test.tsx`、`ProtocolCapabilityCard.test.tsx`、`CapabilityCatalogPanel.test.tsx`、`RuntimeObservePanel.test.tsx`、`RegisteredBackendsTab.test.tsx`、`IssueCenter.test.tsx`；`filterCoverage.test.ts` 门禁改指 ServicePoolsSection。
+- 人工验收期间（表面对齐阶段一～三）：注册管理四张主表统一为卡片式圆角表框、浅色表头标签带与更宽松行内边距；修复 `apps/web/src/components/shadcn/ui/table.tsx` 行分隔线继承 `currentColor`（Tailwind v4 默认边框色）导致的深色亮白 / 浅色深黑网格，改为语义 `border-border`；「实例」子页补回统一的 `gap-3` 区块容器，工具栏与主表间距与其他子页一致。
 - Review fixes: 六项已修复；搜索在匹配时去首尾空白，详情由 URL 与当前数据派生，定位清目标页冲突条件，问题筛选「完成」只关闭面板，驻留复用防御性解析，非协议分组保留任务徽标。
 - Verification: 定向 Vitest 共 13 个文件、190 项通过；新增回归用例在未修代码上复现失败后通过。web typecheck、lint（含 CSS token 检查）通过，lint 仅报告两条无关既有 warning。当前工作树前端在本地 3427 端口代理既有 API，浏览器核对搜索空格、详情后退/前进、筛选完成、冲突条件下问题定位；驻留畸形响应通过浏览器局部 mock 验证显示未知且无渲染错误，不写入后端数据。
 - User documentation: `docs-site/user-guide/superadmin/model-market.md`（页面骨架、目录/运行时/注册三个主视图与注册子视图 URL 键表、布局与交互更新）。
