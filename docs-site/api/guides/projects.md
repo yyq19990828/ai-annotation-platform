@@ -118,6 +118,8 @@ GET    /api/v1/projects/:id/data-manager/tracks/:track_ref/detail
 
 对象查询使用 annotation grain 的 keyset cursor；轨迹查询按 compact annotation 或 Scene 共享 track ID 的逻辑 grain 返回。两者的 total、facet、详情和定位都先与当前用户的 visible-task scope 连接，不返回 raw geometry。过滤字段是白名单，未知字段或不允许的操作符返回 422。Data Manager 的查询 read model 保持只读，任务操作使用独立命令入口。
 
+任务查询另返回 `effective_assignee` / `effective_reviewer`，供表格和画廊展示实际指派：任务覆盖值优先，空值回退批次默认。`task.assignee` / `task.reviewer` 筛选、排序使用同一口径；原有 `assignee_id`、`assignee` 和 `reviewer` 保留任务行自身的值。
+
 过滤树最多 32 层、4096 个节点（根计为 1），`in` 最多 200 项。子节点结构、数字、ISO 日期和 UUID 在查询前校验，错误返回 422；无时区日期按 UTC 解释。可空任务字段仍支持 `eq` / `ne` 与 JSON `null`。保存的无效条件保留在视图中并通过 `invalid_fields` 报告，结构错误使用 `__filter__` 标记。
 
 ## Data Manager 任务操作

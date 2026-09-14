@@ -400,6 +400,26 @@ async def test_members_http_roster_metrics_empty_search_and_safe_csv(
     assert csv_text.startswith("\ufeff# Scope from:")
     assert f"# Scope to: {(start + timedelta(days=1)).isoformat()}" in csv_text
     assert "submitted_tasks.value" in csv_text
+    assert f"# Scope project: {project.id}" in csv_text
+    assert "# Scope work type: annotation" in csv_text
+    assert "# Scope as of:" in csv_text
+    import csv
+    import io
+
+    rows = list(
+        csv.DictReader(
+            io.StringIO(
+                "\n".join(
+                    line
+                    for line in csv_text.lstrip("\ufeff").splitlines()
+                    if not line.startswith("#")
+                )
+            )
+        )
+    )
+    assert rows
+    assert all(row["submitted_tasks.unit"] == "tasks" for row in rows)
+    assert all(row["recorded_time_minutes.unit"] == "minutes" for row in rows)
     assert "'=Annotator" in csv_text
 
 

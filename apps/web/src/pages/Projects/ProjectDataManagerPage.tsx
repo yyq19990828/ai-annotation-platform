@@ -1620,8 +1620,10 @@ function TaskDataManagerPage({
                           <div className="flex items-center gap-3 border-t border-border px-3 py-2 text-2xs text-muted-foreground">
                             <span>{task.annotation_count.toLocaleString()} 标注</span>
                             <span>{task.unresolved_feedback_count.toLocaleString()} 反馈</span>
-                            {task.assignee?.name && (
-                              <span className="truncate">{task.assignee.name}</span>
+                            {(task.effective_assignee ?? task.assignee)?.name && (
+                              <span className="truncate">
+                                {(task.effective_assignee ?? task.assignee)?.name}
+                              </span>
                             )}
                           </div>
                         </article>
@@ -1955,9 +1957,9 @@ function renderCell(task: DataManagerTask, column: string) {
     case "last_activity_at":
       return formatDate(task.last_activity_at);
     case "assignee":
-      return task.assignee?.name ?? "—";
+      return (task.effective_assignee ?? task.assignee)?.name ?? "—";
     case "reviewer":
-      return task.reviewer?.name ?? "—";
+      return (task.effective_reviewer ?? task.reviewer)?.name ?? "—";
     case "duration":
       return task.video_metadata?.duration_ms === null ||
         task.video_metadata?.duration_ms === undefined

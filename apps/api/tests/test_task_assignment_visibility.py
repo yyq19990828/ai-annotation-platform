@@ -180,6 +180,27 @@ async def test_task_assignment_scopes_batch_query_get_and_next(
     assert target_query.status_code == 200, target_query.text
     assert {item["id"] for item in target_query.json()["items"]} == {str(selected.id)}
     assert target_query.json()["total"] == 1
+    assert target_query.json()["items"][0]["effective_assignee"]["id"] == str(target.id)
+
+    # The owner sees batch defaults in both the table projection and filters,
+    # while the physical task override remains null for untouched siblings.
+    batch_scope = await httpx_client_bound.post(
+        f"/api/v1/projects/{project.id}/tasks/query",
+        headers=_bearer(owner_token),
+        json={
+            "filter_json": {
+                "field": "task.assignee",
+                "op": "eq",
+                "value": str(batch_assignee.id),
+            }
+        },
+    )
+    assert batch_scope.status_code == 200, batch_scope.text
+    assert batch_scope.json()["total"] == 1
+    projected = batch_scope.json()["items"][0]
+    assert projected["id"] == str(sibling.id)
+    assert projected["assignee_id"] is None
+    assert projected["effective_assignee"]["id"] == str(batch_assignee.id)
 
     assert (
         await httpx_client_bound.get(

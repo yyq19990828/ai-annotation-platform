@@ -68,8 +68,21 @@ _EXISTS_OPS = {"exists", "eq", "in"}
 
 _TASK_FIELD_MAP = {
     "task.status": Task.status,
-    "task.assignee": Task.assignee_id,
-    "task.reviewer": Task.reviewer_id,
+    # Filters also run in privileged queries without a TaskBatch join.
+    "task.assignee": func.coalesce(
+        Task.assignee_id,
+        select(TaskBatch.annotator_id)
+        .where(TaskBatch.id == Task.batch_id)
+        .correlate(Task)
+        .scalar_subquery(),
+    ),
+    "task.reviewer": func.coalesce(
+        Task.reviewer_id,
+        select(TaskBatch.reviewer_id)
+        .where(TaskBatch.id == Task.batch_id)
+        .correlate(Task)
+        .scalar_subquery(),
+    ),
     "task.batch_id": Task.batch_id,
     "task.created_at": Task.created_at,
     "task.updated_at": Task.updated_at,

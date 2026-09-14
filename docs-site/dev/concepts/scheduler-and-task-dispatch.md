@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-07-29
+last_reviewed: 2026-09-14
 ---
 
 # Scheduler 与派题
@@ -70,24 +70,26 @@ last_reviewed: 2026-07-29
 - 属于当前 `project_id`
 - `is_labeled == False`（候选查询不另外按 `Task.status` 过滤）
 - 当前用户还没有对它留下 `is_active=true` 的 annotation
-- 所在 batch 为 `active / annotating`
-- 所在 batch 未被 `admin_locked`
+- 有 batch 时，其状态为 `active / annotating` 且未被 `admin_locked`
+- 无 batch 时仍需满足角色和任务显式指派范围
 - 多人重叠项目里 `total_annotations < maximum_annotations`
 
 项目 owner 与 superadmin 可越过角色 / 分派过滤，但仍受上述基础候选条件约束。
 
 ### 4. 叠加角色与可见性过滤
 
-如果不是 `super_admin` 或项目 owner，还要叠加 `batch_visibility_clause(user)`。这个 helper 的通用“可见范围”比 scheduler 的基础候选更宽，但在 `/tasks/next` 中会与 `active / annotating` 取交集：
+如果不是 `super_admin` 或项目 owner，还要叠加 `task_visibility_clause(user)`。这个 helper 的通用“可见范围”比 scheduler 的基础候选更宽，有批次的任务在 `/tasks/next` 中会与 `active / annotating` 取交集：
 
 当前规则：
 
 - reviewer：helper 可见 `active / annotating / reviewing`，实际可派仍只有 `active / annotating`
 - annotator：
-  - `active / annotating` 且 `annotator_id == self` 或 batch 未分派
+  - `active / annotating` 且实际标注员为本人或未指派；`Task.assignee_id` 优先，空值回退批次标注员
   - helper 还允许本人被分派的 `rejected`，但基础候选会把它排除，因此不会由 `/tasks/next` 派出
 
 这意味着“列表里可见”不等于“scheduler 可派”；派题同时依赖 task 投影、batch 状态、管理锁和分派关系。
+
+未分批任务使用外连接保留，由显式任务标注员或审核员取得访问范围；未指派的未分批任务不会进入普通用户的候选池。Data Manager 改派不改变同批其他任务，清除任务覆盖值会恢复批次默认。
 
 ### 5. 按项目采样策略排序
 

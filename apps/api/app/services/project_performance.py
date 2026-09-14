@@ -1752,6 +1752,7 @@ async def export_members_csv(
         headers.extend(
             [
                 f"{metric_name}.value",
+                f"{metric_name}.unit",
                 f"{metric_name}.numerator",
                 f"{metric_name}.denominator",
                 f"{metric_name}.coverage",
@@ -1761,6 +1762,9 @@ async def export_members_csv(
     output.write(f"# Scope from: {response.scope.from_.isoformat()}\n")
     output.write(f"# Scope to: {response.scope.to.isoformat()}\n")
     output.write(f"# Scope timezone: {response.scope.timezone}\n")
+    output.write(f"# Scope project: {project_id}\n")
+    output.write(f"# Scope work type: {kwargs.get('work_type', 'annotation')}\n")
+    output.write(f"# Scope as of: {response.scope.as_of.isoformat()}\n")
     writer = csv.writer(output, lineterminator="\n")
     writer.writerow(headers)
     for item in response.items:
@@ -1779,6 +1783,7 @@ async def export_members_csv(
             row.extend(
                 [
                     "" if metric.value is None else str(metric.value),
+                    metric.unit,
                     "" if metric.numerator is None else str(metric.numerator),
                     "" if metric.denominator is None else str(metric.denominator),
                     metric.coverage or "",

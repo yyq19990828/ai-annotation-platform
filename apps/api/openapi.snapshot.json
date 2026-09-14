@@ -10494,6 +10494,26 @@
             "title": "Display Id",
             "type": "string"
           },
+          "effective_assignee": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserBrief"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effective_reviewer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UserBrief"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "file_name": {
             "title": "File Name",
             "type": "string"

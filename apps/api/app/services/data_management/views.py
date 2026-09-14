@@ -736,7 +736,11 @@ class TaskViewService:
                 "frame_index",
             }
         requested.update(item.get("field", "") for item in sort_json or [])
-        projection: list[Any] = [Task]
+        projection: list[Any] = [
+            Task,
+            _TASK_FIELD_MAP["task.assignee"].label("effective_assignee_id"),
+            _TASK_FIELD_MAP["task.reviewer"].label("effective_reviewer_id"),
+        ]
         if "avg_prediction_confidence" in requested:
             projection.append(
                 _avg_prediction_confidence_sq().label("avg_prediction_confidence")
