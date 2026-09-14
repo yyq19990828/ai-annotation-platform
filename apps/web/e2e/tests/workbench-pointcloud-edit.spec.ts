@@ -1314,6 +1314,11 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
       await layoutCommand(page, "框体精修");
 
       const settings = await openLayoutSettings(page);
+      // Blurring the live point-cloud canvas stalls SwiftShader cleanup and the next context creation.
+      await expect(page.getByTestId("workbench-settings-overlay")).toHaveCSS(
+        "backdrop-filter",
+        "none",
+      );
       await settings.locator("summary").filter({ hasText: "面板与高级布局" }).click();
       for (const name of ["框体精修", "传感器融合", "点级分割"]) {
         const command = settings.getByRole("button", { name, exact: true });

@@ -407,6 +407,7 @@ export function Topbar({
               size="sm"
               onClick={onShowHotkeys}
               title="快捷键 (?)"
+              aria-label="快捷键"
               className="mono px-1 py-1 text-muted-foreground"
             >
               ?

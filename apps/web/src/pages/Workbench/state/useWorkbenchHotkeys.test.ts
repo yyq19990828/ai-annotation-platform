@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { isWorkbenchInputFocused, useWorkbenchHotkeys } from "./useWorkbenchHotkeys";
 import type { UseMaskEditorReturn } from "./useMaskEditor";
 import { isSamCandidateHotkeyBlocked } from "./hotkeys";
+import { resolveEffectiveCommands } from "./hotkeyBindings";
 
 function makeArgs(overrides: Partial<Parameters<typeof useWorkbenchHotkeys>[0]> = {}) {
   return {
@@ -671,5 +672,29 @@ describe("useWorkbenchHotkeys module", () => {
     settings.remove();
     act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" })));
     expect(args.submitPolygon).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("3D 命令域隔离", () => {
+  it("图片隐藏键不修改 3D 选中对象，common 改绑仍可切题", () => {
+    const args = makeArgs({
+      stage: "threed",
+      shortcutsEffective: resolveEffectiveCommands({
+        common: { "common.task.next": [{ key: "x", modifiers: [] }] },
+        image: { "image.selection.hide": [{ key: "i", modifiers: [] }] },
+        video: {},
+      }),
+      handlePatchShapeFlag: vi.fn(),
+    });
+    args.s.selectedId = "box-3d";
+    args.annotationsRef.current = [
+      { id: "box-3d", is_hidden: false },
+    ] as typeof args.annotationsRef.current;
+    const view = renderHook(() => useWorkbenchHotkeys(args));
+    act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "i", bubbles: true })));
+    expect(args.handlePatchShapeFlag).not.toHaveBeenCalled();
+    act(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "x", bubbles: true })));
+    expect(args.navigateTask).toHaveBeenCalledWith("next");
+    view.unmount();
   });
 });
