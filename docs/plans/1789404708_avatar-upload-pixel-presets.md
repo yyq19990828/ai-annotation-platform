@@ -444,7 +444,7 @@ P1 与 P2 无依赖，可并行；P3 依赖 P1、P2；P4 依赖 P3。
 
 ## Outcome
 
-- Landed commits: 见紧随本文件的同名提交（`feat/user_opt260915` 分支）
+- Landed commits: `1d0fc8ee`（`feat/user_opt260915` 分支）
 - Release milestone: Not yet determined
 - User documentation: `docs-site/user-guide/reference/settings.md`（个人资料「头像」）
 - Developer documentation: `docs-site/dev/reference/storage-buckets.md`（`avatars` 桶 + 可见性边界）、`docs-site/dev/reference/generated-artifacts.md`（像素头像生成物）、`docs-site/ops/deploy/{docker-compose,lan-production}.md`
