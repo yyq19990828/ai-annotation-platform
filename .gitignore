@@ -28,6 +28,7 @@ test-results/
 /apps/web/e2e-results.json
 /apps/web/e2e-api.log
 .artifacts/marketing/
+.artifacts/media-refresh/
 .artifacts/recordings/
 .pytest_cache/
 .ruff_cache/
