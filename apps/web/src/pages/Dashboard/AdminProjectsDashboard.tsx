@@ -1,5 +1,5 @@
 import { FilterGroup, FilterToggle } from "@/components/filters/FilterControls";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
@@ -19,7 +19,7 @@ import { ProjectGrid } from "./ProjectGrid";
 import { ProjectPagination } from "./ProjectPagination";
 import { ProjectFilterControl } from "./ProjectFilterControl";
 import { ProjectFilterSummary } from "./ProjectFilterSummary";
-import type { DashboardFilters } from "./dashboardUrlState";
+import type { DashboardFilters, DashboardUrlState } from "./dashboardUrlState";
 import {
   DASHBOARD_FILTER_KEYS,
   dashboardUrlCodec,
@@ -207,17 +207,32 @@ export function AdminProjectsDashboard() {
     defaults: EMPTY_DASHBOARD_URL_STATE,
     ownedKeys: DASHBOARD_FILTER_KEYS,
   });
-  const { state: currentUrl, patch: patchUrl } = urlState;
+  const { state: currentUrl, patch: patchState } = urlState;
   const [query, setQuery] = useState(currentUrl.query);
   const lastLocationKey = useRef(location.key);
+  const localUrlWrites = useRef(0);
   const syncingQuery = useRef(false);
   const debouncedQuery = useDebouncedValue(query, 250);
+  // 本组件发起的 URL 写入(向导、翻页、视图切换、筛选应用)先计入 localUrlWrites,
+  // location 变化时不回填输入框,保留防抖中的搜索草稿;只有外部/历史导航
+  // 才按链接恢复搜索词(即使 q 未变也覆盖未生效的草稿)。
   useEffect(() => {
     if (lastLocationKey.current === location.key) return;
     lastLocationKey.current = location.key;
+    if (localUrlWrites.current > 0) {
+      localUrlWrites.current = 0;
+      return;
+    }
     syncingQuery.current = true;
     setQuery(currentUrl.query);
   }, [currentUrl.query, location.key]);
+  const patchUrl = useCallback(
+    (update: Partial<DashboardUrlState>, options?: { replace?: boolean }) => {
+      localUrlWrites.current += 1;
+      patchState(update, options);
+    },
+    [patchState],
+  );
   useEffect(() => {
     if (syncingQuery.current) {
       if (debouncedQuery === currentUrl.query) syncingQuery.current = false;
@@ -263,6 +278,7 @@ export function AdminProjectsDashboard() {
     });
     if (mode === "grid") next.set("layout", "grid");
     else next.delete("layout");
+    localUrlWrites.current += 1;
     setSearchParams(next, { replace: true });
   };
 
@@ -327,6 +343,7 @@ export function AdminProjectsDashboard() {
   const openWizard = () => {
     const next = new URLSearchParams(searchParams);
     next.set("new", "1");
+    localUrlWrites.current += 1;
     setSearchParams(next);
   };
 
@@ -334,6 +351,7 @@ export function AdminProjectsDashboard() {
     const next = new URLSearchParams(searchParams);
     next.delete("new");
     next.delete("from");
+    localUrlWrites.current += 1;
     setSearchParams(next, { replace: true });
   };
 

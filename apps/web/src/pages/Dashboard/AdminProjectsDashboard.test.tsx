@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import { useEffect } from "react";
 
@@ -167,5 +167,25 @@ describe("AdminProjectsDashboard", () => {
         ([params]) => params.status === "pending_review" && params.search === "old",
       ),
     ).toBe(false);
+  });
+
+  it("keeps the pending search draft when the wizard opens before debounce", async () => {
+    vi.useFakeTimers();
+    renderUI();
+    const input = screen.getByPlaceholderText("搜索项目...");
+    fireEvent.change(input, { target: { value: "car" } });
+    fireEvent.click(screen.getByTestId("new-project-btn"));
+    expect(screen.getByTestId("cp-wizard")).toBeInTheDocument();
+    expect(input).toHaveValue("car");
+    expect(screen.getByTestId("location-search").textContent).toContain("new=1");
+
+    await act(async () => {
+      vi.advanceTimersByTime(250);
+    });
+    expect(input).toHaveValue("car");
+    expect(mockUseProjectPage).toHaveBeenLastCalledWith(expect.objectContaining({ search: "car" }));
+    const search = screen.getByTestId("location-search").textContent ?? "";
+    expect(search).toContain("q=car");
+    expect(search).toContain("new=1");
   });
 });

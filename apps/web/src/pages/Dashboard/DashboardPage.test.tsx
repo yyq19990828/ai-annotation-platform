@@ -326,6 +326,26 @@ describe("DashboardPage", () => {
     expect(mockUseProjectPage).toHaveBeenLastCalledWith(expect.objectContaining({ search: "car" }));
   });
 
+  it("keeps the pending search draft when the wizard opens before debounce", async () => {
+    vi.useFakeTimers();
+    renderUI();
+    const input = screen.getByPlaceholderText("搜索项目...");
+    fireEvent.change(input, { target: { value: "car" } });
+    fireEvent.click(screen.getByRole("button", { name: /新建项目/ }));
+    expect(screen.getByTestId("cp-wizard")).toBeInTheDocument();
+    expect(input).toHaveValue("car");
+    expect(screen.getByTestId("location-search").textContent).toContain("new=1");
+
+    await act(async () => {
+      vi.advanceTimersByTime(250);
+    });
+    expect(input).toHaveValue("car");
+    expect(mockUseProjectPage).toHaveBeenLastCalledWith(expect.objectContaining({ search: "car" }));
+    const search = screen.getByTestId("location-search").textContent ?? "";
+    expect(search).toContain("q=car");
+    expect(search).toContain("new=1");
+  });
+
   it("applies q and status together after external URL navigation", async () => {
     renderUI("/dashboard?q=old&status=in_progress", "/dashboard?q=new&status=pending_review");
     await waitFor(() => {
