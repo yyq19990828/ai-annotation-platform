@@ -2924,7 +2924,12 @@ export function useWorkbenchShellModel({
     history,
   });
 
-  const { avgMs } = useSessionStats(taskId ?? null, projectId ?? null, "annotate");
+  const { avgMs } = useSessionStats(
+    taskId ?? null,
+    projectId ?? null,
+    mode === "review" ? "review" : "annotate",
+    meUserId ?? null,
+  );
   const remainingTaskCount = useMemo(() => {
     if (!tasks.length) return 0;
     return tasks.filter((t) => t.status !== "completed" && t.id !== taskId).length;

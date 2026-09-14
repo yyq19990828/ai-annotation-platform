@@ -249,7 +249,8 @@ async def accept_prediction(
     current_user: User = Depends(require_roles(*_ANNOTATORS)),
 ):
     task = await _load_task_or_404(db, task_id)
-    _assert_task_editable(task)
+    await _assert_task_visible(db, task, current_user)
+    _assert_task_editable(task, current_user)
     await assert_video_annotation_write_scope(
         db,
         task=task,
@@ -307,7 +308,9 @@ async def reject_prediction(
     后续 GET /tasks/{id}/predictions 会跳过这些下标, 刷新页面后 AI 待审框不会重现.
     驳回是软操作: prediction 行仍在库中, 仅在该数组追加被拒下标 (去重).
     """
-    _assert_task_editable(await _load_task_or_404(db, task_id))
+    task = await _load_task_or_404(db, task_id)
+    await _assert_task_visible(db, task, current_user)
+    _assert_task_editable(task, current_user)
     # v0.10.25 · predictions 复合 PK (id, created_at) 后不能用 db.get(单值)，改按 id 查。
     pred = (
         await db.execute(select(Prediction).where(Prediction.id == prediction_id))

@@ -3,9 +3,9 @@ import uuid
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Literal
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import Response
-from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, text, or_, and_, update
 from app.deps import (
@@ -1828,7 +1828,7 @@ class PipelineStage(BaseModel):
 
 class PreannotateRequest(BaseModel):
     ml_backend_id: uuid.UUID | None = None
-    task_ids: list[uuid.UUID] | None = None
+    task_ids: list[uuid.UUID] | None = Field(default=None, min_length=1, max_length=200)
     # v0.9.5 · 文本批量预标可选参数
     prompt: str | None = None
     output_mode: Literal["box", "mask", "both"] = "mask"
@@ -2123,6 +2123,60 @@ async def _compute_pipeline_capability_warnings(db, stages) -> list[str]:
     return warnings
 
 
+async def _validate_preannotate_task_scope(
+    db: AsyncSession,
+    *,
+    project: Project,
+    task_ids: list[uuid.UUID],
+    batch_id: uuid.UUID | None,
+) -> list[uuid.UUID]:
+    """Validate and canonicalize an explicit preannotation task scope."""
+
+    requested = sorted(set(task_ids), key=str)
+    rows = (
+        await db.execute(
+            select(Task, TaskBatch)
+            .outerjoin(TaskBatch, TaskBatch.id == Task.batch_id)
+            .where(Task.project_id == project.id, Task.id.in_(requested))
+        )
+    ).all()
+    if len(rows) != len(requested):
+        raise HTTPException(
+            status_code=422,
+            detail="task_ids must belong to the selected project",
+        )
+    if batch_id is not None and any(task.batch_id != batch_id for task, _ in rows):
+        raise HTTPException(
+            status_code=422,
+            detail="task_ids must belong to batch_id",
+        )
+    if any(batch is not None and batch.admin_locked for _, batch in rows):
+        raise HTTPException(
+            status_code=409,
+            detail="one or more selected batches are admin-locked",
+        )
+    if any(task.status != "pending" for task, _ in rows):
+        raise HTTPException(
+            status_code=409,
+            detail="explicit preannotation tasks must be pending",
+        )
+    if any(batch is not None and batch.status != "active" for _, batch in rows):
+        raise HTTPException(
+            status_code=409,
+            detail="explicit preannotation tasks must belong to active batches",
+        )
+    from app.services.task_lock import TaskLockService
+
+    lock_service = TaskLockService(db)
+    for task, _ in rows:
+        if await lock_service.active_lock(task.id) is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="one or more selected tasks are locked for editing",
+            )
+    return requested
+
+
 @router.post("/{project_id}/preannotate")
 async def trigger_preannotation(
     body: PreannotateRequest,
@@ -2130,6 +2184,11 @@ async def trigger_preannotation(
     project: Project = Depends(require_project_owner),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    idempotency_key: str | None = Header(
+        default=None,
+        alias="Idempotency-Key",
+        description="Optional durable identity for retrying a scoped preannotation request.",
+    ),
 ):
     from app.services.ml_backend import MLBackendService
     from app.services.audit import AuditService
@@ -2260,6 +2319,15 @@ async def trigger_preannotation(
                 raise HTTPException(status_code=422, detail=geo_violations[0].detail)
         pipeline_stages_payload = norm
 
+    explicit_task_ids: list[uuid.UUID] | None = None
+    if body.task_ids:
+        explicit_task_ids = await _validate_preannotate_task_scope(
+            db,
+            project=project,
+            task_ids=body.task_ids,
+            batch_id=body.batch_id,
+        )
+
     # v0.9.5 · 指定 batch 时校验归属本项目 + 状态在 active
     total_tasks_hint: int | None = None
     if body.batch_id:
@@ -2276,6 +2344,8 @@ async def trigger_preannotation(
                 status_code=400,
                 detail=f"batch.status must be 'active' to preannotate, got {batch.status!r}",
             )
+        if batch.admin_locked:
+            raise HTTPException(status_code=409, detail="batch is admin-locked")
         hint_conds = [
             TaskModel.batch_id == body.batch_id,
             TaskModel.status == "pending",
@@ -2311,35 +2381,141 @@ async def trigger_preannotation(
         )
         if src_stage is not None and src_stage.source:
             execution_unit = (src_stage.source or {}).get("execution_unit")
+
+    # Data Manager retries can carry a durable key. Create the async job before
+    # dispatch so the client can poll the same job and a concurrent retry can
+    # return it without enqueueing another prediction run. Calls from the
+    # existing Workbench omit the key and retain their historical Celery id.
+    from app.services import async_job as async_job_svc
+    from app.services.data_management.actions import (
+        assert_idempotent_request_matches,
+        find_idempotent_job,
+        lock_idempotency_key,
+        normalize_idempotency_key,
+        request_digest as data_manager_request_digest,
+    )
+
+    idempotency_key = normalize_idempotency_key(idempotency_key)
+    idempotent_job: AsyncJob | None = None
+    if idempotency_key is not None:
+        canonical_body = body.model_dump(mode="json")
+        canonical_body["task_ids"] = (
+            [str(task_id) for task_id in explicit_task_ids]
+            if explicit_task_ids is not None
+            else None
+        )
+        request_digest_value = data_manager_request_digest(canonical_body)
+        await lock_idempotency_key(
+            db,
+            action="preannotate",
+            project_id=project.id,
+            actor_id=current_user.id,
+            key=idempotency_key,
+        )
+        existing = await find_idempotent_job(
+            db,
+            kind="batch_predict",
+            project_id=project.id,
+            actor_id=current_user.id,
+            key=idempotency_key,
+        )
+        if existing is not None:
+            assert_idempotent_request_matches(existing, digest=request_digest_value)
+            if existing.status != "pending":
+                return {
+                    "job_id": str(existing.id),
+                    "status": existing.status,
+                    "total_tasks": (existing.payload or {}).get("total_tasks"),
+                    "channel": f"project:{project.id}:preannotate",
+                    "celery_task_id": existing.celery_task_id,
+                }
+            # A request may have crashed after committing this pending row but
+            # before publishing to Celery. Reuse the row and safely republish;
+            # the worker's row lock makes a duplicate delivery a no-op.
+            idempotent_job = existing
+        else:
+            scoped_ids = (
+                [str(task_id) for task_id in explicit_task_ids]
+                if explicit_task_ids is not None
+                else None
+            )
+            precreated_payload: dict = {
+                "batch_id": str(body.batch_id) if body.batch_id else None,
+                "ml_backend_id": str(source_backend_id),
+                "total_tasks": (
+                    len(scoped_ids) if scoped_ids is not None else total_tasks_hint
+                ),
+                "project_display_id": project.display_id,
+                "project_name": project.name,
+                "data_manager_idempotency_key": idempotency_key,
+                "data_manager_request_digest": request_digest_value,
+            }
+            if scoped_ids is not None:
+                precreated_payload["scope"] = {"task_ids": scoped_ids}
+                precreated_payload["task_ids"] = scoped_ids
+            idempotent_job = await async_job_svc.create_job(
+                db,
+                kind="batch_predict",
+                user_id=current_user.id,
+                project_id=project.id,
+                payload=precreated_payload,
+            )
+        # Use the durable async job id as the Celery task id. The failure hook
+        # can therefore resolve a job even if the worker fails before the API
+        # request reaches its post-dispatch commit.
+        idempotent_job.celery_task_id = str(idempotent_job.id)
+        await db.commit()
+
     apply_opts: dict = {"queue": queue}
     if has_tracker_stage:
         apply_opts["soft_time_limit"] = settings.tracker_soft_time_limit_seconds
-    job = batch_predict.apply_async(
-        args=[
-            str(project.id),
-            str(source_backend_id),
-            [str(tid) for tid in body.task_ids] if body.task_ids else None,
-        ],
-        kwargs={
-            "prompt": body.prompt,
-            "output_mode": body.output_mode,
-            "batch_id": str(body.batch_id) if body.batch_id else None,
-            "user_id": str(current_user.id),
-            "params": body.params or None,
-            "predict_mode": body.predict_mode,
-            # v0.14.9 · 协议 v2: 多模型路由 + task 别名透传到 /predict context
-            "model_id": body.model_id,
-            "task_type": body.task_type,
-            # v0.14.17 · 协议 v2 结构化 variant 路径 (YOLO) + 类别白名单
-            "model_variants": body.model_variants,
-            "class_filter": body.class_filter,
-            # v0.18.1 · 多阶段预标注: 非空时 worker 走阶段化编排 (detect→ROI→classify)
-            "pipeline_stages": pipeline_stages_payload,
-            # v0.21.7 · 执行单位 (video/frame/scene): frame → 逐帧 fan-out。缺省=整段/逐题。
-            "execution_unit": execution_unit,
-        },
-        **apply_opts,
-    )
+    if idempotent_job is not None:
+        apply_opts["task_id"] = str(idempotent_job.id)
+    try:
+        job = batch_predict.apply_async(
+            args=[
+                str(project.id),
+                str(source_backend_id),
+                [str(tid) for tid in explicit_task_ids] if explicit_task_ids else None,
+            ],
+            kwargs={
+                "prompt": body.prompt,
+                "output_mode": body.output_mode,
+                "batch_id": str(body.batch_id) if body.batch_id else None,
+                "user_id": str(current_user.id),
+                "params": body.params or None,
+                "predict_mode": body.predict_mode,
+                # v0.14.9 · 协议 v2: 多模型路由 + task 别名透传到 /predict context
+                "model_id": body.model_id,
+                "task_type": body.task_type,
+                # v0.14.17 · 协议 v2 结构化 variant 路径 (YOLO) + 类别白名单
+                "model_variants": body.model_variants,
+                "class_filter": body.class_filter,
+                # v0.18.1 · 多阶段预标注: 非空时 worker 走阶段化编排 (detect→ROI→classify)
+                "pipeline_stages": pipeline_stages_payload,
+                # v0.21.7 · 执行单位 (video/frame/scene): frame → 逐帧 fan-out。缺省=整段/逐题。
+                "execution_unit": execution_unit,
+                **(
+                    {"async_job_id": str(idempotent_job.id)}
+                    if idempotent_job is not None
+                    else {}
+                ),
+            },
+            **apply_opts,
+        )
+    except Exception as exc:
+        if idempotent_job is not None:
+            await async_job_svc.mark_failed(
+                db,
+                idempotent_job.id,
+                error=f"dispatch failed: {type(exc).__name__}: {exc}",
+            )
+            await db.commit()
+        raise
+    if idempotent_job is not None:
+        # ``task_id`` above is the durable async job id; keep that identity even
+        # if a test broker returns a different result wrapper id.
+        idempotent_job.celery_task_id = str(idempotent_job.id)
     # B-5 · AI 预标注触发审计 — 让超管在 /audit 看到 谁/何时/对哪个 batch 跑了 AI
     await AuditService.log(
         db,
@@ -2350,10 +2526,12 @@ async def trigger_preannotation(
         request=request,
         status_code=200,
         detail={
-            "job_id": job.id,
+            "job_id": str(idempotent_job.id) if idempotent_job else job.id,
             "ml_backend_id": str(source_backend_id),
             "batch_id": str(body.batch_id) if body.batch_id else None,
-            "task_count": len(body.task_ids) if body.task_ids else total_tasks_hint,
+            "task_count": (
+                len(explicit_task_ids) if explicit_task_ids else total_tasks_hint
+            ),
             "prompt": (body.prompt or "")[:200],
             # output_mode 仅文本 prompt 路径生效; 几何路径不读它, 留 None 免误导 (与 job payload 一致)
             "output_mode": body.output_mode if body.prompt else None,
@@ -2377,10 +2555,11 @@ async def trigger_preannotation(
         warnings.append(msg)
         logger.warning("[ai-pre] %s", msg)
     return {
-        "job_id": job.id,
+        "job_id": str(idempotent_job.id) if idempotent_job else job.id,
         "status": "queued",
         "total_tasks": total_tasks_hint,
         "channel": f"project:{project.id}:preannotate",
+        **({"celery_task_id": job.id} if idempotent_job else {}),
         "warnings": warnings,
     }
 

@@ -66,6 +66,16 @@ Data Manager 最初以 task 为唯一结果 grain。它可以回答“哪些任�
 
 ## Notes
 
+### Amendment — 2026-09-14
+
+Data Manager 扩展为概览、数据、成员三个区域。实体 read model 的只读边界继续有效；页面新增的任务分派、导出和预标注通过独立命令入口，分别复用 BatchService 的成员验证、TaskLockService、现有导出器及预标注 worker。
+
+首批操作限定显式选择的 1–200 个 task ID，不把任务集合转换成 batch 集合，不提供全匹配选择、批量审核或删除。分派先预览，再在锁内验证版本并应用；异步作业持久化原始范围和幂等标识，执行时复核范围与权限。
+
+成员统计使用独立的项目绩效服务和查询范围，仅项目负责人及超级管理员可读。首审事实与审核轮次在任务工作流事务内记录，已记录时长通过校验后的 TaskEvent 采集；这些事实不复制 annotation 权威写模型。技术口径见[项目成员绩效数据](../../docs-site/dev/concepts/project-performance.md)。
+
+原有不带 `section` 的链接继续打开数据区域；任务/对象/轨迹仍是数据内部的 grain。新增操作不改变 Filter DSL、实体分页或 visible-task scope。
+
 - 实现代码：`apps/api/app/services/data_management/entities.py`、`data_management/tracks.py`、`data_management/entity_filters.py`、`data_management/cursor.py`、`apps/web/src/pages/Projects/data-manager/`
 - 迁移：`0119_project_task_view_entity_scope.py`、`0120_data_manager_entity_indexes.py`
 - 基准：`apps/api/scripts/benchmark_data_manager_entities.sql`

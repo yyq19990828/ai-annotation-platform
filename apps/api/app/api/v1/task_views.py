@@ -410,6 +410,12 @@ async def query_project_tasks(
     user_ids = {t.assignee_id for t in tasks if t.assignee_id} | {
         t.reviewer_id for t in tasks if t.reviewer_id
     }
+    user_ids.update(
+        user_id
+        for row in rows
+        for key in ("effective_assignee_id", "effective_reviewer_id")
+        if (user_id := _row_value(row, key)) is not None
+    )
     briefs = await resolve_briefs(db, user_ids) if user_ids else {}
     items: list[DataManagerTaskOut] = []
     for row in rows:
@@ -422,6 +428,12 @@ async def query_project_tasks(
         ).model_dump()
         base.update(
             {
+                "effective_assignee": briefs.get(
+                    str(_row_value(row, "effective_assignee_id"))
+                ),
+                "effective_reviewer": briefs.get(
+                    str(_row_value(row, "effective_reviewer_id"))
+                ),
                 "annotation_count": task.total_annotations,
                 "prediction_count": task.total_predictions,
                 "avg_prediction_confidence": _row_value(

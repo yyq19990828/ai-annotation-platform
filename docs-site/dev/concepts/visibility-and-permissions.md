@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-09-14
 ---
 
 # 可见性与权限
@@ -23,7 +23,7 @@ last_reviewed: 2026-07-11
 
 1. **项目层**：用户是否看得见这个 project
 2. **批次层**：这个 batch 当前状态是否对该角色开放
-3. **任务层**：这个 task 是否挂在可见 batch 上，并满足分派约束
+3. **任务层**：任务是否满足批次状态与实际指派约束；未分批任务需要显式指派
 
 ## 项目层
 
@@ -48,13 +48,16 @@ last_reviewed: 2026-07-11
 
 ## 任务层
 
-`GET /tasks` 和 `GET /tasks/{id}` 会继续把 batch 可见性规则压到 task 上。
+任务查询使用 `scheduler.task_visibility_clause()`；单题读取与上锁沿用相同的实际指派口径。批次列表仍使用批次自身的可见性，不能用整批权限代替单题判定。
 
 关键点：
 
-- 无 batch 的 orphan task 对非特权用户不可见
-- reviewer 不受 annotator 约束
-- annotator 对 `rejected` 是特例放行
+- `Task.assignee_id` 非空时优先于 `TaskBatch.annotator_id`；空值恢复批次默认。Data Manager 单题改派只影响选中任务，同批兄弟任务保留原范围。内部 `assignee_is_override` / `reviewer_is_override` 区分显式任务指派与批次回填值，批次改派只更新继承指派；恢复默认会清除对应覆盖标记。
+- 无 batch 的任务只对显式指定的标注员或审核员开放；未指派任务仍仅特权用户可见。
+- reviewer 的批次读取不受 annotator 约束；领取审核使用 `Task.reviewer_id`，为空时回退批次 `reviewer_id`。有预留审核员时其他审核员不能领取。
+- annotator 对 `rejected` 批次，以及审核中批次内可返工的任务，只向实际被指派者开放。
+- 实际指派只决定当前访问与待办；历史提交、审核绩效归属来自当时的事件，不随改派重写。
+- 移除项目成员后，旧任务指派不能继续授权：单题读取、批量可见性、工作流操作及作业结果都重新检查当前成员关系。导出 worker 在读取缓存或生成文件前复核项目权限；历史贡献记录仍可由负责人查看。
 
 ## 操作权限不等于可见性
 
@@ -79,7 +82,7 @@ last_reviewed: 2026-07-11
 ## 项目级范围收敛（成员绩效端点）
 
 除了「看不看得见某条数据」，还有一类是「聚合数字按哪个项目口径切分」。
-成员绩效端点 `GET /dashboard/admin/people` 及其详情 / 导出从 v0.12.6（A3）起遵循统一的范围解析（`dashboard._resolve_people_scope`）：
+成员绩效端点 `GET /dashboard/admin/people` 及其详情 / 导出遵循统一的范围解析（`dashboard._resolve_people_scope`）：
 
 - `super_admin`：`project` 可选；给定则走 `assert_project_visible` 校验存在（对 super_admin 恒可见），缺省则全局聚合。
 - `project_admin`：`project` **必填**，且必须是其 **owner** 的项目；
@@ -95,6 +98,8 @@ last_reviewed: 2026-07-11
 同一原则也适用于视频追踪任务聚合：`GET /video-tracker-jobs` 的 role 门只决定谁能进入管理列表；`project_admin` 的 items、counts 和显式 `project_id` 过滤还必须与 `Project.owner_id == current_user.id` 求交集。工作台恢复候选使用任务级 reviewable 端点：先校验 task 可见性，普通用户再按 `created_by` 收窄，项目 owner / 超级管理员才可恢复该 task 的全部候选。
 
 ## 现阶段最该注意的坑
+
+项目内 `GET /projects/{project_id}/performance/*` 的列表、详情、依据和 CSV 仅对项目负责人及超级管理员开放，所有指标固定在该项目。普通成员保留 `/me/performance` 自查入口。历史贡献者可在负责人明确启用后显示，但活动记录不代表当前成员资格。
 
 - 不要把 task lock 当成权限系统
 - 不要把 reviewer 和 project owner 的权限混为一谈

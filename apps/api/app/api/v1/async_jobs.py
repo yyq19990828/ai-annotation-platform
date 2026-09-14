@@ -13,12 +13,13 @@ from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, or_, select
+from sqlalchemy import exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.enums import UserRole
 from app.db.models.async_job import AsyncJob, AsyncJobStatus
 from app.db.models.project import Project
+from app.db.models.project_member import ProjectMember
 from app.db.models.mask_qc import MaskQCRun
 from app.db.models.point_cloud_quality import PointCloudQualityRun
 from app.db.models.mask_repair_batch import MaskRepairBatch
@@ -63,7 +64,22 @@ def _build_async_job_query(
     query = select(AsyncJob)
 
     if current_user.role != UserRole.SUPER_ADMIN.value:
-        query = query.where(AsyncJob.user_id == current_user.id)
+        current_member = exists().where(
+            ProjectMember.project_id == AsyncJob.project_id,
+            ProjectMember.user_id == current_user.id,
+        )
+        current_owner = exists().where(
+            Project.id == AsyncJob.project_id,
+            Project.owner_id == current_user.id,
+        )
+        query = query.where(
+            AsyncJob.user_id == current_user.id,
+            or_(
+                AsyncJob.project_id.is_(None),
+                current_member,
+                current_owner,
+            ),
+        )
     if status:
         query = query.where(AsyncJob.status.in_(status))
     if kind:
@@ -88,10 +104,10 @@ def _build_async_job_query(
 
 
 async def _can_access_job(db: AsyncSession, *, job: AsyncJob, user: User) -> bool:
-    if user.role == UserRole.SUPER_ADMIN.value or job.user_id == user.id:
+    if user.role == UserRole.SUPER_ADMIN.value:
         return True
-    if job.kind not in {"mask_qc", "point_cloud_quality"} or job.project_id is None:
-        return False
+    if job.project_id is None:
+        return job.user_id == user.id
     project = await db.get(Project, job.project_id)
     if project is None:
         return False
@@ -99,6 +115,18 @@ async def _can_access_job(db: AsyncSession, *, job: AsyncJob, user: User) -> boo
 
     if is_privileged_for_project(user, project):
         return True
+    member_id = await db.scalar(
+        select(ProjectMember.id).where(
+            ProjectMember.project_id == project.id,
+            ProjectMember.user_id == user.id,
+        )
+    )
+    if member_id is None:
+        return False
+    if job.user_id == user.id:
+        return True
+    if job.kind not in {"mask_qc", "point_cloud_quality"}:
+        return False
     if user.role != UserRole.REVIEWER.value:
         return False
     raw_task_ids = ((job.payload or {}).get("scope") or {}).get("task_ids") or []

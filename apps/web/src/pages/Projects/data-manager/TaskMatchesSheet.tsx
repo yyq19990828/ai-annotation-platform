@@ -18,7 +18,7 @@ import { buildWorkbenchUrl } from "@/utils/workbenchNavigation";
 
 interface TaskMatchesSheetProps {
   projectId: string;
-  task: DataManagerTask | null;
+  task: Pick<DataManagerTask, "id" | "display_id" | "file_name"> | null;
   filterJson: Record<string, unknown>;
   open: boolean;
   onOpenChange: (open: boolean) => void;

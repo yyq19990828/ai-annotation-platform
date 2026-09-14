@@ -513,7 +513,6 @@
       "height": 900
     },
     "docs-site/user-guide/images/projects/data-manager-filter-rules.png": {
-      "auto": true,
       "target": "docs-site/user-guide/images/projects/data-manager-filter-rules.png",
       "scene": "projects/data-manager-filter-rules",
       "source": "apps/web/e2e/screenshots/scenes/projects.ts",
@@ -524,13 +523,7 @@
         "project": "image_demo",
         "task": "predicted"
       },
-      "seed_profile": "screenshots",
       "seed_revision": "screenshots-2026-08-g",
-      "source_commit": "7a805d2a8d5e915ace4bb439b639fb07ba98b618",
-      "browser": {
-        "name": "chromium",
-        "version": "147.0.7727.15"
-      },
       "project": "desktop-light",
       "viewport": {
         "width": 1440,
@@ -539,14 +532,87 @@
       "theme": "light",
       "clock": "fixed",
       "locale": "zh-CN",
-      "generated_at": "2026-09-13T18:32:35.253Z",
+      "browser": {
+        "name": "chromium",
+        "version": "147.0.7727.15"
+      },
+      "auto": true,
+      "seed_profile": "screenshots",
+      "source_commit": "8f4d6dbffc64fe8b250c64255022d36813331085",
+      "source_worktree_dirty": false,
+      "generated_at": "2026-09-14T02:03:28.515Z",
       "provenance": "current-run",
-      "sha256": "d2f076cded952a0dffef8e5c49e70f8fa584e228b047a3da9ab6c997ba8b63a9",
+      "sha256": "c1505216edd45e9f68a7b0dcd8e139dc2f066f314b428431e4c8f2839bb13568",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/projects/data-manager-members.dark.png": {
+      "target": "docs-site/user-guide/images/projects/data-manager-members.dark.png",
+      "scene": "projects/data-manager-members",
+      "source": "apps/web/e2e/screenshots/scenes/projects.ts",
+      "capture": {
+        "kind": "fullPage"
+      },
+      "fixture": {
+        "project": "image_demo"
+      },
+      "seed_revision": "screenshots-2026-08-g",
+      "project": "desktop-dark",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "dark",
+      "clock": "live",
+      "locale": "zh-CN",
+      "browser": {
+        "name": "chromium",
+        "version": "147.0.7727.15"
+      },
+      "auto": true,
+      "seed_profile": "screenshots",
+      "source_commit": "8f4d6dbffc64fe8b250c64255022d36813331085",
+      "source_worktree_dirty": false,
+      "generated_at": "2026-09-14T02:03:28.516Z",
+      "provenance": "current-run",
+      "sha256": "37a1834f5ed6b90f848718fb590129ef2674903de2ea1d3db2efc7b6b23effda",
+      "width": 1440,
+      "height": 900
+    },
+    "docs-site/user-guide/images/projects/data-manager-members.png": {
+      "target": "docs-site/user-guide/images/projects/data-manager-members.png",
+      "scene": "projects/data-manager-members",
+      "source": "apps/web/e2e/screenshots/scenes/projects.ts",
+      "capture": {
+        "kind": "fullPage"
+      },
+      "fixture": {
+        "project": "image_demo"
+      },
+      "seed_revision": "screenshots-2026-08-g",
+      "project": "desktop-light",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "clock": "live",
+      "locale": "zh-CN",
+      "browser": {
+        "name": "chromium",
+        "version": "147.0.7727.15"
+      },
+      "auto": true,
+      "seed_profile": "screenshots",
+      "source_commit": "8f4d6dbffc64fe8b250c64255022d36813331085",
+      "source_worktree_dirty": false,
+      "generated_at": "2026-09-14T02:03:28.515Z",
+      "provenance": "current-run",
+      "sha256": "cdd9fe2f6de740266d418ed5469c637bb3c900ea5e93892cd1987ec3dfd5cc67",
       "width": 1440,
       "height": 900
     },
     "docs-site/user-guide/images/projects/data-manager-overview.png": {
-      "auto": true,
       "target": "docs-site/user-guide/images/projects/data-manager-overview.png",
       "scene": "projects/data-manager-overview",
       "source": "apps/web/e2e/screenshots/scenes/projects.ts",
@@ -557,13 +623,7 @@
         "project": "image_demo",
         "task": "predicted"
       },
-      "seed_profile": "screenshots",
       "seed_revision": "screenshots-2026-08-g",
-      "source_commit": "7a805d2a8d5e915ace4bb439b639fb07ba98b618",
-      "browser": {
-        "name": "chromium",
-        "version": "147.0.7727.15"
-      },
       "project": "desktop-light",
       "viewport": {
         "width": 1440,
@@ -572,9 +632,17 @@
       "theme": "light",
       "clock": "fixed",
       "locale": "zh-CN",
-      "generated_at": "2026-09-13T18:32:35.253Z",
+      "browser": {
+        "name": "chromium",
+        "version": "147.0.7727.15"
+      },
+      "auto": true,
+      "seed_profile": "screenshots",
+      "source_commit": "8f4d6dbffc64fe8b250c64255022d36813331085",
+      "source_worktree_dirty": false,
+      "generated_at": "2026-09-14T02:03:28.515Z",
       "provenance": "current-run",
-      "sha256": "0a6365a32b1cfab8889ab8fbfa10d169d46c51d86a2c2362f22d518231e4703c",
+      "sha256": "a7657a3f51d8e59a0ca1f3ea397dba111f4c755c991ec34e7eda21ddd453c1a2",
       "width": 1440,
       "height": 900
     },

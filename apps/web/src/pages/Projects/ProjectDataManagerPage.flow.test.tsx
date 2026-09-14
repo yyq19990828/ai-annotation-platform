@@ -1,14 +1,29 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { updateDataManagerUrl } from "./data-manager/dataManagerUrlState";
 import { ProjectDataManagerPage } from "./ProjectDataManagerPage";
 
 const state = vi.hoisted(() => ({
+  navigationSelections: [] as Array<string | null>,
   calls: [] as Array<{ enabled: boolean; payload: unknown }>,
   extraViews: [] as Array<Record<string, unknown>>,
+  taskItems: [] as Array<Record<string, unknown>>,
+  taskLookup: null as {
+    id: string;
+    project_id: string;
+    display_id: string;
+    file_name: string;
+  } | null,
+  pendingTaskLookups: new Set<string>(),
+  taskLookups: new Map<
+    string,
+    { id: string; project_id: string; display_id: string; file_name: string }
+  >(),
+  schemaError: false,
+  schemaRefetch: vi.fn(),
   viewsRefetch: vi.fn(),
   createView: vi.fn(),
   updateView: vi.fn(),
@@ -16,6 +31,7 @@ const state = vi.hoisted(() => ({
 
 function LocationProbe() {
   const location = useLocation();
+  state.navigationSelections.push(new URLSearchParams(location.search).get("selected"));
   return <output data-testid="location">{location.search}</output>;
 }
 
@@ -60,6 +76,14 @@ vi.mock("@/hooks/useProjects", () => ({
   }),
 }));
 
+vi.mock("@/hooks/useTasks", () => ({
+  useTask: (id: string) => ({
+    data: state.taskLookups.get(id) ?? state.taskLookup,
+    isLoading: state.pendingTaskLookups.has(id),
+    isError: false,
+  }),
+}));
+
 vi.mock("@/hooks/usePermissions", () => ({
   usePermissions: () => ({ role: "annotator" }),
 }));
@@ -72,6 +96,31 @@ vi.mock("@/stores/authStore", () => ({
 vi.mock("@/components/ui/Toast", () => ({
   useToastStore: (selector: (value: { push: () => void }) => unknown) =>
     selector({ push: vi.fn() }),
+}));
+
+vi.mock("./data-manager/ProjectMembersPerformance", () => ({
+  ProjectMembersPerformance: ({ projectId }: { projectId: string }) => (
+    <div data-testid="project-members">Members for {projectId}</div>
+  ),
+  ProjectPerformanceSummary: ({ onOpenMembers }: { onOpenMembers: () => void }) => (
+    <button type="button" onClick={onOpenMembers}>
+      成员看板
+    </button>
+  ),
+}));
+
+vi.mock("./data-manager/DataManagerTaskActions", () => ({
+  DataManagerTaskActions: ({
+    taskIds,
+    onCompleted,
+  }: {
+    taskIds: string[];
+    onCompleted: () => void;
+  }) => (
+    <button data-testid="task-actions" onClick={onCompleted} disabled={!taskIds.length}>
+      Operate {taskIds.join(",")}
+    </button>
+  ),
 }));
 
 vi.mock("@/hooks/useTaskViews", () => {
@@ -187,7 +236,7 @@ vi.mock("@/hooks/useTaskViews", () => {
   const taskQuery = (projectId: string, payload: unknown, enabled: boolean) => {
     state.calls.push({ enabled, payload });
     return {
-      data: { items: [], total: 0, limit: 50, offset: 0 },
+      data: { items: state.taskItems, total: state.taskItems.length, limit: 50, offset: 0 },
       isLoading: false,
       isError: false,
       isFetching: false,
@@ -200,7 +249,12 @@ vi.mock("@/hooks/useTaskViews", () => {
       isLoading: false,
       refetch: state.viewsRefetch,
     }),
-    useDataManagerSchema: () => ({ data: schema, isLoading: false, isError: false }),
+    useDataManagerSchema: () => ({
+      data: schema,
+      isLoading: false,
+      isError: state.schemaError,
+      refetch: state.schemaRefetch,
+    }),
     useProjectTaskQuery: taskQuery,
     useDataManagerSummary: () => ({ data: undefined, isLoading: false, isFetching: false }),
     useCreateTaskView: () => ({ mutateAsync: state.createView, isPending: false }),
@@ -215,12 +269,46 @@ vi.mock("@/hooks/useTaskViews", () => {
 beforeEach(() => {
   state.calls.length = 0;
   state.extraViews = [];
+  state.taskItems = [];
+  state.taskLookup = null;
+  state.taskLookups.clear();
+  state.pendingTaskLookups.clear();
+  state.navigationSelections.length = 0;
+  state.schemaError = false;
+  state.schemaRefetch.mockReset();
   state.viewsRefetch.mockReset().mockResolvedValue(undefined);
   state.createView.mockReset();
   state.updateView.mockReset();
 });
 
 describe("ProjectDataManagerPage filter hydration", () => {
+  it("opens project members without mounting a task query that rewrites the section", async () => {
+    render(
+      <MemoryRouter initialEntries={["/projects/p1/data-manager?section=members&keep=yes"]}>
+        <LocationProbe />
+        <Routes>
+          <Route path="/projects/:id/data-manager" element={<ProjectDataManagerPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    expect(await screen.findByTestId("project-members")).toHaveTextContent("Members for p1");
+    expect(screen.getByTestId("location")).toHaveTextContent("section=members");
+    expect(screen.getByTestId("location")).toHaveTextContent("keep=yes");
+    expect(state.calls).toEqual([]);
+  });
+
+  it("opens the project members from the period summary in overview", async () => {
+    render(
+      <MemoryRouter initialEntries={["/projects/p1/data-manager?section=overview"]}>
+        <Routes>
+          <Route path="/projects/:id/data-manager" element={<ProjectDataManagerPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "成员看板" }));
+    expect(await screen.findByTestId("project-members")).toHaveTextContent("Members for p1");
+  });
+
   it("adds a typed quick conjunct without removing the same condition from OR", async () => {
     state.calls.length = 0;
     const condition = { field: "ai.low_confidence_prediction_shape_count", op: "gt", value: 0 };
@@ -284,6 +372,272 @@ describe("ProjectDataManagerPage filter hydration", () => {
       filter_json: unknown;
     };
     expect(applied.filter_json).toEqual(filter);
+  });
+
+  it("preserves a saved keyword when layout or sort is overridden in the URL", async () => {
+    state.extraViews = [
+      {
+        id: "keyword-view",
+        key: null,
+        project_id: "p1",
+        owner_id: "u1",
+        name: "关键字视图",
+        visibility: "private",
+        entity_scope: "tasks",
+        filter_json: { field: "task.keyword", op: "contains", value: "needle" },
+        sort_json: [{ field: "task.created_at", direction: "asc" }],
+        columns_json: ["display_id"],
+        builtin: false,
+        task_count: 1,
+        result_count: 1,
+        created_at: null,
+        updated_at: null,
+        invalid_fields: [],
+      },
+    ];
+    const search = updateDataManagerUrl("", {
+      lens: "tasks",
+      view: "saved:keyword-view",
+      query: "",
+      filter: null,
+      sort: [{ field: "task.created_at", direction: "desc" }],
+      columns: null,
+      selected: null,
+      layout: "gallery",
+    }).toString();
+    render(
+      <MemoryRouter initialEntries={[`/projects/p1/data-manager?${search}`]}>
+        <ProjectDataManagerPage />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(state.calls.some((call) => call.enabled)).toBe(true));
+    const enabled = state.calls.filter((call) => call.enabled);
+    expect((enabled[enabled.length - 1]?.payload as { filter_json: unknown }).filter_json).toEqual({
+      field: "task.keyword",
+      op: "contains",
+      value: "needle",
+    });
+  });
+
+  it("hydrates a selected task outside the first page through the task API", async () => {
+    state.taskLookup = {
+      id: "task-deep",
+      project_id: "p1",
+      display_id: "T-deep",
+      file_name: "deep.png",
+    };
+    const search = updateDataManagerUrl("", {
+      lens: "tasks",
+      view: "builtin:all",
+      query: "",
+      filter: null,
+      sort: null,
+      columns: null,
+      selected: "task-deep",
+    }).toString();
+    render(
+      <MemoryRouter initialEntries={[`/projects/p1/data-manager?${search}`]}>
+        <ProjectDataManagerPage />
+      </MemoryRouter>,
+    );
+    expect(await screen.findByRole("heading", { name: "T-deep" })).toBeInTheDocument();
+  });
+
+  it.each(["cached", "pending"])(
+    "keeps same-route external task selections authoritative with a %s lookup",
+    async (lookup) => {
+      for (const suffix of ["a", "b"]) {
+        state.taskLookups.set(`task-${suffix}`, {
+          id: `task-${suffix}`,
+          project_id: "p1",
+          display_id: `T-${suffix}`,
+          file_name: `${suffix}.png`,
+        });
+      }
+      function ExternalSelectionProbe() {
+        const location = useLocation();
+        const navigate = useNavigate();
+        const select = (id: string | null) => {
+          const next = new URLSearchParams(location.search);
+          if (id) next.set("selected", id);
+          else next.delete("selected");
+          navigate(`${location.pathname}?${next}`);
+        };
+        return (
+          <>
+            <button onClick={() => select("task-b")}>Select B through URL</button>
+            <button onClick={() => select(null)}>Clear selection through URL</button>
+          </>
+        );
+      }
+      const ui = () => (
+        <MemoryRouter
+          initialEntries={["/projects/p1/data-manager?lens=tasks&view=builtin:all&selected=task-a"]}
+        >
+          <LocationProbe />
+          <HistoryProbe />
+          <ExternalSelectionProbe />
+          <Routes>
+            <Route path="/projects/:id/data-manager" element={<ProjectDataManagerPage />} />
+          </Routes>
+        </MemoryRouter>
+      );
+      const view = render(ui());
+      expect(await screen.findByRole("heading", { name: "T-a" })).toBeInTheDocument();
+      const taskB = state.taskLookups.get("task-b")!;
+      if (lookup === "pending") {
+        state.taskLookups.delete("task-b");
+        state.pendingTaskLookups.add("task-b");
+      }
+      state.navigationSelections.length = 0;
+      fireEvent.click(screen.getByText("Select B through URL"));
+      expect(state.navigationSelections).toEqual(["task-b"]);
+      if (lookup === "pending") {
+        expect(screen.queryByRole("heading", { name: "T-a" })).not.toBeInTheDocument();
+        state.taskLookups.set("task-b", taskB);
+        state.pendingTaskLookups.clear();
+        view.rerender(ui());
+      }
+      expect(await screen.findByRole("heading", { name: "T-b" })).toBeInTheDocument();
+      expect(new URLSearchParams(screen.getByTestId("location").textContent!).get("selected")).toBe(
+        "task-b",
+      );
+      state.navigationSelections.length = 0;
+      fireEvent.click(screen.getByText("back"));
+      expect(state.navigationSelections).toEqual(["task-a"]);
+      expect(await screen.findByRole("heading", { name: "T-a" })).toBeInTheDocument();
+      state.navigationSelections.length = 0;
+      fireEvent.click(screen.getByText("forward"));
+      expect(state.navigationSelections).toEqual(["task-b"]);
+      expect(await screen.findByRole("heading", { name: "T-b" })).toBeInTheDocument();
+      state.navigationSelections.length = 0;
+      fireEvent.click(screen.getByText("Clear selection through URL"));
+      expect(state.navigationSelections).toEqual([null]);
+      expect(screen.queryByRole("heading", { name: "T-b" })).not.toBeInTheDocument();
+    },
+  );
+
+  it("clears the selected task deep link when the detail sheet closes", async () => {
+    state.taskLookup = {
+      id: "task-selected",
+      project_id: "p1",
+      display_id: "T-selected",
+      file_name: "selected.png",
+    };
+    const search = updateDataManagerUrl("", {
+      lens: "tasks",
+      view: "builtin:all",
+      query: "",
+      filter: null,
+      sort: null,
+      columns: ["display_id"],
+      selected: "task-selected",
+    }).toString();
+    render(
+      <MemoryRouter initialEntries={[`/projects/p1/data-manager?${search}`]}>
+        <LocationProbe />
+        <Routes>
+          <Route path="/projects/:id/data-manager" element={<ProjectDataManagerPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByRole("heading", { name: "T-selected" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    await waitFor(() => {
+      expect(
+        new URLSearchParams(screen.getByTestId("location").textContent ?? "").get("selected"),
+      ).toBeNull();
+    });
+  });
+
+  it("does not open task detail when the gallery checkbox label is clicked", async () => {
+    state.taskItems = [
+      {
+        id: "task-gallery",
+        project_id: "p1",
+        display_id: "T-gallery",
+        file_name: "gallery.bin",
+        file_type: "point_cloud",
+        status: "pending",
+        annotation_count: 0,
+        unresolved_feedback_count: 0,
+        assignee: null,
+        thumbnail_url: null,
+        blurhash: null,
+      },
+    ];
+    const search = updateDataManagerUrl("", {
+      lens: "tasks",
+      view: "builtin:all",
+      query: "",
+      filter: null,
+      sort: null,
+      columns: ["display_id"],
+      selected: null,
+      layout: "gallery",
+    }).toString();
+    render(
+      <MemoryRouter initialEntries={[`/projects/p1/data-manager?${search}`]}>
+        <ProjectDataManagerPage />
+      </MemoryRouter>,
+    );
+    const checkbox = await screen.findByRole("checkbox", { name: "选择任务 T-gallery" });
+    expect(screen.getByLabelText("任务画廊").parentElement).toHaveClass("max-sm:min-h-[280px]");
+    fireEvent.click(checkbox.parentElement!);
+    fireEvent.keyDown(checkbox, { key: " " });
+    fireEvent.keyDown(checkbox, { key: "Enter" });
+    expect(screen.queryByRole("heading", { name: "T-gallery" })).not.toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "点云数据" })).toHaveTextContent("点云");
+    fireEvent.click(screen.getByRole("button", { name: "列表视图" }));
+    fireEvent.keyDown(screen.getByRole("checkbox", { name: "选择任务 T-gallery" }), { key: " " });
+    expect(screen.queryByRole("heading", { name: "T-gallery" })).not.toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "点云数据" })).toHaveTextContent("点云");
+  });
+
+  it("offers a retry action when the task schema request fails", () => {
+    state.schemaError = true;
+    render(
+      <MemoryRouter initialEntries={["/projects/p1/data-manager?lens=tasks"]}>
+        <ProjectDataManagerPage />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("无法加载 Data Manager 筛选字段");
+    fireEvent.click(screen.getByRole("button", { name: "重试" }));
+    expect(state.schemaRefetch).toHaveBeenCalledOnce();
+  });
+
+  it("falls back from an invalid saved task sort before querying", async () => {
+    state.extraViews = [
+      {
+        id: "stale-sort",
+        key: null,
+        project_id: "p1",
+        owner_id: "u1",
+        name: "失效排序视图",
+        visibility: "private",
+        entity_scope: "tasks",
+        filter_json: {},
+        sort_json: [{ field: "removed.sort", direction: "desc" }],
+        columns_json: ["display_id"],
+        builtin: false,
+        task_count: 1,
+        result_count: 1,
+        created_at: null,
+        updated_at: null,
+        invalid_fields: [],
+      },
+    ];
+    render(
+      <MemoryRouter initialEntries={["/projects/p1/data-manager?lens=tasks&view=saved:stale-sort"]}>
+        <ProjectDataManagerPage />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(state.calls.some((call) => call.enabled)).toBe(true));
+    const enabled = state.calls.filter((call) => call.enabled);
+    expect((enabled[enabled.length - 1]?.payload as { sort_json: unknown }).sort_json).toEqual([
+      { field: "task.created_at", direction: "asc" },
+    ]);
   });
 
   it("falls back from an unknown saved view without issuing a request loop", async () => {

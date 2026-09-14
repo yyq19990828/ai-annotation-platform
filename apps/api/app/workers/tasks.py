@@ -533,6 +533,7 @@ async def _run_batch(
     class_filter: list[int] | None = None,
     pipeline_stages: list[dict] | None = None,
     execution_unit: str | None = None,
+    async_job_id: str | None = None,
 ):
     """v0.9.5 · 批量预标 worker.
 
@@ -562,6 +563,7 @@ async def _run_batch(
     from app.db.models.project import Project
     from app.db.models.task import Task
     from app.db.models.task_batch import TaskBatch
+    from app.db.models.user import User
     from app.services import async_job as async_job_svc
     from app.services.async_job_notify import notify_job_terminal
     from app.services.gpu_arbitration.dispatch import (
@@ -574,6 +576,8 @@ async def _run_batch(
     from app.services.ml_backend import MLBackendService
     from app.services.ml_routing.client import RoutedMLBackendClient
     from app.services.prediction import PredictionService
+    from app.services.scheduler import is_privileged_for_project
+    from app.services.task_lock import TaskLockService
 
     engine = create_async_engine(settings.database_url, echo=False)
     SessionLocal = async_sessionmaker(
@@ -593,6 +597,17 @@ async def _run_batch(
     async with SessionLocal() as db:
         backend = await db.get(MLBackend, uuid.UUID(ml_backend_id))
         if not backend:
+            if async_job_id is not None:
+                try:
+                    failed_job_id = uuid.UUID(async_job_id)
+                except (TypeError, ValueError):
+                    failed_job_id = None
+                if failed_job_id is not None:
+                    await async_job_svc.mark_failed(
+                        db, failed_job_id, error="ML Backend not found"
+                    )
+                    await notify_job_terminal(db, job_id=failed_job_id)
+                    await db.commit()
             _publish_progress(
                 project_id, 0, 0, status="error", error="ML Backend not found"
             )
@@ -606,6 +621,96 @@ async def _run_batch(
         project = await db.get(Project, uuid.UUID(project_id))
         if project is not None:
             project_name = project.name
+        project_uuid = uuid.UUID(project_id)
+        actor: User | None = None
+        if user_id:
+            actor = await db.get(User, uuid.UUID(user_id))
+            if (
+                actor is None
+                or not actor.is_active
+                or project is None
+                or not is_privileged_for_project(actor, project)
+            ):
+                raise ValueError("preannotation actor is unavailable")
+        elif async_job_id is not None:
+            raise ValueError("preannotation actor is required for a scoped job")
+
+        requested_task_ids = (
+            sorted({uuid.UUID(task_id) for task_id in task_ids}, key=str)
+            if task_ids is not None
+            else None
+        )
+        precreated_job: AsyncJob | None = None
+        if async_job_id is not None:
+            try:
+                precreated_job_id = uuid.UUID(async_job_id)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("preannotation async job id is invalid") from exc
+            precreated_job = (
+                await db.execute(
+                    select(AsyncJob)
+                    .where(AsyncJob.id == precreated_job_id)
+                    .with_for_update()
+                )
+            ).scalar_one_or_none()
+            if (
+                precreated_job is None
+                or precreated_job.project_id != project_uuid
+                or (
+                    user_id is not None and precreated_job.user_id != uuid.UUID(user_id)
+                )
+            ):
+                raise ValueError("preannotation async job scope is unavailable")
+            # A redelivery/retry for a job that already started must not run the
+            # selected tasks a second time. The row lock serializes this check.
+            if precreated_job.status != AsyncJobStatus.PENDING.value:
+                return
+            precreated_job.celery_task_id = celery_task_id
+            await async_job_svc.mark_running(
+                db, precreated_job.id, celery_task_id=celery_task_id
+            )
+            await db.commit()
+        if batch_id:
+            selected_batch = await db.get(TaskBatch, uuid.UUID(batch_id))
+            if (
+                selected_batch is None
+                or selected_batch.project_id != project_uuid
+                or selected_batch.status != BatchStatus.ACTIVE
+                or selected_batch.admin_locked
+            ):
+                raise ValueError("preannotation batch scope is unavailable")
+        if requested_task_ids is not None:
+            scope_rows = (
+                await db.execute(
+                    select(Task, TaskBatch)
+                    .outerjoin(TaskBatch, TaskBatch.id == Task.batch_id)
+                    .where(
+                        Task.project_id == project_uuid,
+                        Task.id.in_(requested_task_ids),
+                    )
+                )
+            ).all()
+            if len(scope_rows) != len(requested_task_ids):
+                raise ValueError("preannotation task scope is unavailable")
+            if batch_id and any(
+                task.batch_id != uuid.UUID(batch_id) for task, _ in scope_rows
+            ):
+                raise ValueError("preannotation task scope does not match batch")
+            if any(task.status != "pending" for task, _ in scope_rows):
+                raise ValueError("preannotation task scope is no longer pending")
+            if any(batch is not None and batch.admin_locked for _, batch in scope_rows):
+                raise ValueError("preannotation task scope is admin-locked")
+            if any(
+                batch is not None and batch.status != BatchStatus.ACTIVE
+                for _, batch in scope_rows
+            ):
+                raise ValueError(
+                    "preannotation task scope does not belong to active batches"
+                )
+            lock_service = TaskLockService(db)
+            for task, _ in scope_rows:
+                if await lock_service.active_lock(task.id) is not None:
+                    raise ValueError("preannotation task scope is locked for editing")
         context = _build_predict_context(
             prompt=prompt,
             output_mode=output_mode,
@@ -623,8 +728,12 @@ async def _run_batch(
         # v0.11.24 · 幂等：skip_predicted 排除已预标 task；append/overwrite 不排除。
         skip_predicted = predict_mode == "skip_predicted"
         # base_conds 不含预标过滤, 供 total==0 时回数候选区分「批次本就空」vs「全已预标被跳过」。
-        if task_ids:
-            base_conds = [Task.id.in_([uuid.UUID(tid) for tid in task_ids])]
+        if requested_task_ids is not None:
+            base_conds = [
+                Task.project_id == project_uuid,
+                Task.id.in_(requested_task_ids),
+                Task.status == "pending",
+            ]
         elif batch_id:
             # v0.9.5 · 指定 batch 时仅捞 batch 内 pending tasks
             base_conds = [
@@ -680,15 +789,24 @@ async def _run_batch(
                 job_payload["model_label"] = label
         if prompt:
             job_payload["output_mode"] = output_mode
-        aj = await async_job_svc.create_job(
-            db,
-            kind="batch_predict",
-            user_id=uuid.UUID(user_id) if user_id else None,
-            project_id=uuid.UUID(project_id),
-            payload=job_payload,
-            celery_task_id=celery_task_id,
-        )
-        await async_job_svc.mark_running(db, aj.id, celery_task_id=celery_task_id)
+        if requested_task_ids is not None:
+            job_payload["scope"] = {
+                "task_ids": [str(task_id) for task_id in requested_task_ids]
+            }
+            job_payload["task_ids"] = [str(task_id) for task_id in requested_task_ids]
+        if precreated_job is None:
+            aj = await async_job_svc.create_job(
+                db,
+                kind="batch_predict",
+                user_id=uuid.UUID(user_id) if user_id else None,
+                project_id=uuid.UUID(project_id),
+                payload=job_payload,
+                celery_task_id=celery_task_id,
+            )
+            await async_job_svc.mark_running(db, aj.id, celery_task_id=celery_task_id)
+        else:
+            aj = precreated_job
+            aj.payload = {**(aj.payload or {}), **job_payload}
         await db.commit()
         async_job_id = aj.id
 
@@ -1189,6 +1307,7 @@ def batch_predict(
     class_filter: list[int] | None = None,
     pipeline_stages: list[dict] | None = None,
     execution_unit: str | None = None,
+    async_job_id: str | None = None,
 ):
     asyncio.run(
         _run_batch(
@@ -1208,5 +1327,6 @@ def batch_predict(
             class_filter=class_filter,
             pipeline_stages=pipeline_stages,
             execution_unit=execution_unit,
+            async_job_id=async_job_id,
         )
     )

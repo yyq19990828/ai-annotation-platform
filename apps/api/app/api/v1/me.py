@@ -579,9 +579,19 @@ async def cancel_self_deactivation(
     return user
 
 
-# v0.8.4 · 工作台 task_events 批量写入
+# Workbench task-event ingestion
 from app.config import settings  # noqa: E402
-from app.schemas.task_event import TaskEventBatchIn, TaskEventBatchOut  # noqa: E402
+from app.schemas.task_event import (  # noqa: E402
+    TaskEventBatchIn,
+    TaskEventBatchOut,
+    TaskEventDiscarded,
+)
+from app.services.task_event_ingestion import (  # noqa: E402
+    TaskEventRejection,
+    insert_task_events,
+    task_event_rejection_reason,
+    validate_api_events,
+)
 
 
 def _enqueue_task_events(payload_list: list[dict]) -> bool:
@@ -601,49 +611,67 @@ async def submit_task_events(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """v0.8.4 · 工作台 useSessionStats 每 N 条 flush 此端点。
-    user_id 强制设为当前登录用户（即使前端误传也覆盖）。"""
-    import uuid as _uuid
+    """Accept only closed intervals for tasks the current account can access.
 
-    payload_list: list[dict] = []
-    for ev in payload.events:
-        payload_list.append(
-            {
-                "id": str(ev.client_id or _uuid.uuid4()),
-                "task_id": str(ev.task_id),
-                "user_id": str(user.id),
-                "project_id": str(ev.project_id),
-                "kind": ev.kind,
-                "started_at": ev.started_at.isoformat(),
-                "ended_at": ev.ended_at.isoformat(),
-                "duration_ms": ev.duration_ms,
-                "annotation_count": ev.annotation_count,
-                "was_rejected": ev.was_rejected,
-            }
-        )
+    The task relation is authoritative for project attribution.  The validated
+    rows are also rechecked by the worker after an async handoff.
+    """
+
+    rows, rejected = await validate_api_events(db, user=user, events=payload.events)
+    # Preserve the single-event HTTP contract for direct callers. The browser
+    # collector drops this one permanently invalid event; mixed batches use the
+    # per-row response below so valid events continue through the same request.
+    if len(payload.events) == 1 and rejected:
+        raise rejected[0].error
+    payload_list = [
+        {
+            **row,
+            "id": str(row["id"]),
+            "task_id": str(row["task_id"]),
+            "user_id": str(row["user_id"]),
+            "project_id": str(row["project_id"]),
+            "started_at": row["started_at"].isoformat(),
+            "ended_at": row["ended_at"].isoformat(),
+        }
+        for row in rows
+    ]
 
     queued = False
     if settings.task_events_async:
         queued = _enqueue_task_events(payload_list)
 
     if not queued:
-        from app.db.models.task_event import TaskEvent
+        result = await insert_task_events(db, rows)
+        if result.conflicts:
+            rejected_indexes = {item.index for item in rejected}
+            for index, event in enumerate(payload.events):
+                if (
+                    event.client_id in result.conflicts
+                    and index not in rejected_indexes
+                ):
+                    rejected.append(
+                        TaskEventRejection(
+                            index=index,
+                            client_id=event.client_id,
+                            error=HTTPException(
+                                status_code=409,
+                                detail={"reason": "duplicate_client_event_conflict"},
+                            ),
+                        )
+                    )
+            rows = [row for row in rows if row["id"] not in result.conflicts]
+            if len(payload.events) == 1:
+                raise rejected[0].error
 
-        for ev in payload.events:
-            db.add(
-                TaskEvent(
-                    id=ev.client_id or _uuid.uuid4(),
-                    task_id=ev.task_id,
-                    user_id=user.id,
-                    project_id=ev.project_id,
-                    kind=ev.kind,
-                    started_at=ev.started_at,
-                    ended_at=ev.ended_at,
-                    duration_ms=ev.duration_ms,
-                    annotation_count=ev.annotation_count,
-                    was_rejected=ev.was_rejected,
-                )
+    return TaskEventBatchOut(
+        accepted=len(rows),
+        queued_async=queued,
+        discarded=[
+            TaskEventDiscarded(
+                index=item.index,
+                client_id=item.client_id,
+                reason=task_event_rejection_reason(item.error),
             )
-        await db.commit()
-
-    return TaskEventBatchOut(accepted=len(payload_list), queued_async=queued)
+            for item in rejected
+        ],
+    )

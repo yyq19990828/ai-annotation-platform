@@ -284,6 +284,9 @@ test("grouped saved views persist creation and edits, cancel navigation, and cop
   await page.getByRole("button", { name: "保存视图", exact: true }).click();
   const updated = await checked(await updatedResponse);
   expect(updated.filter_json).toEqual({ ...expression, op: "and" });
+  // Saving refetches the current query. Finish that response before registering
+  // a reload listener, which must only observe the new document's request.
+  await page.waitForLoadState("networkidle");
   const reload = queryResponse(page, projectId, "tasks");
   await page.reload();
   const reloaded = await reload;

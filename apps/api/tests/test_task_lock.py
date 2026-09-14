@@ -22,12 +22,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.annotation import Annotation
 from app.db.models.audit_log import AuditLog
 from app.db.models.project import Project
+from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 
 
 async def _seed_project_and_task(
-    db: AsyncSession, owner_id: uuid.UUID, assignee_id: uuid.UUID
+    db: AsyncSession,
+    owner_id: uuid.UUID,
+    assignee_id: uuid.UUID,
+    reviewer_id: uuid.UUID | None = None,
 ) -> tuple[Project, Task]:
     suffix = uuid.uuid4().hex[:8]
     project = Project(
@@ -43,6 +47,16 @@ async def _seed_project_and_task(
     )
     db.add(project)
     await db.flush()
+
+    if reviewer_id is not None:
+        db.add(
+            ProjectMember(
+                project_id=project.id,
+                user_id=reviewer_id,
+                role="reviewer",
+                assigned_by=owner_id,
+            )
+        )
 
     batch = TaskBatch(
         project_id=project.id,
@@ -103,7 +117,10 @@ class TestTaskLockFlow:
         ann_user, ann_token = annotator
         rev_user, rev_token = reviewer
         _, task = await _seed_project_and_task(
-            db_session, owner_id=ann_user.id, assignee_id=ann_user.id
+            db_session,
+            owner_id=ann_user.id,
+            assignee_id=ann_user.id,
+            reviewer_id=rev_user.id,
         )
         tid = str(task.id)
 
@@ -220,9 +237,12 @@ class TestTaskLockFlow:
         self, httpx_client_bound, db_session, annotator, reviewer
     ):
         ann_user, ann_token = annotator
-        _, rev_token = reviewer
+        rev_user, rev_token = reviewer
         _, task = await _seed_project_and_task(
-            db_session, owner_id=ann_user.id, assignee_id=ann_user.id
+            db_session,
+            owner_id=ann_user.id,
+            assignee_id=ann_user.id,
+            reviewer_id=rev_user.id,
         )
         tid = str(task.id)
 
@@ -242,9 +262,12 @@ class TestTaskLockFlow:
         """v0.10.16: reject 必传 reason_type ∈ {missing, extra, wrong_label,
         wrong_geometry}，reason 自由文本变可空补充。"""
         ann_user, ann_token = annotator
-        _, rev_token = reviewer
+        rev_user, rev_token = reviewer
         _, task = await _seed_project_and_task(
-            db_session, owner_id=ann_user.id, assignee_id=ann_user.id
+            db_session,
+            owner_id=ann_user.id,
+            assignee_id=ann_user.id,
+            reviewer_id=rev_user.id,
         )
         tid = str(task.id)
 
@@ -292,9 +315,12 @@ class TestTaskLockFlow:
         self, httpx_client_bound, db_session, annotator, reviewer
     ):
         ann_user, ann_token = annotator
-        _, rev_token = reviewer
+        rev_user, rev_token = reviewer
         _, task = await _seed_project_and_task(
-            db_session, owner_id=ann_user.id, assignee_id=ann_user.id
+            db_session,
+            owner_id=ann_user.id,
+            assignee_id=ann_user.id,
+            reviewer_id=rev_user.id,
         )
         tid = str(task.id)
 

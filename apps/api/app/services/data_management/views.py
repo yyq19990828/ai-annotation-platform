@@ -663,8 +663,8 @@ class TaskViewService:
         project: Project,
     ) -> Select:
         # 与 tasks.list_tasks 对齐: 非特权用户 (annotator/reviewer) 通过 Data Manager
-        # 查询时只能看自己 batch 可见性范围内的任务, 不能看到全项目任务。无 batch 的
-        # 孤儿任务对非特权用户不可见 (inner join 自然过滤)。
+        # 查询时只能看自己任务级/批次级可见性范围内的任务, 不能看到全项目任务。
+        # 显式分派的 unbatched task 也必须保留在这个授权关系中。
         return apply_task_visibility(stmt, user, project)
 
     async def count_for_filter(
@@ -736,7 +736,11 @@ class TaskViewService:
                 "frame_index",
             }
         requested.update(item.get("field", "") for item in sort_json or [])
-        projection: list[Any] = [Task]
+        projection: list[Any] = [
+            Task,
+            _TASK_FIELD_MAP["task.assignee"].label("effective_assignee_id"),
+            _TASK_FIELD_MAP["task.reviewer"].label("effective_reviewer_id"),
+        ]
         if "avg_prediction_confidence" in requested:
             projection.append(
                 _avg_prediction_confidence_sq().label("avg_prediction_confidence")

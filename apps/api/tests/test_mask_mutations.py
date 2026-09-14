@@ -18,6 +18,7 @@ from app.db.models.annotation_operation import (
 )
 from app.db.models.dataset import Dataset, DatasetItem, VideoSegment
 from app.db.models.project import Project
+from app.db.models.project_member import ProjectMember
 from app.db.models.raster_mask_upload import RasterMaskUpload
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
@@ -613,6 +614,14 @@ async def test_video_segment_lease_must_belong_to_non_privileged_actor(
     owner, _ = super_admin
     actor, token = annotator
     task, segment = await _seed_video_task(db_session, owner.id)
+    db_session.add(
+        ProjectMember(
+            project_id=task.project_id,
+            user_id=actor.id,
+            role="annotator",
+            assigned_by=owner.id,
+        )
+    )
     batch = TaskBatch(
         project_id=task.project_id,
         display_id=f"B-MMV-{uuid.uuid4().hex[:8]}",

@@ -4,11 +4,11 @@
   "review_profile": "visual-content-v1",
   "entries": {
     "docs-site/.vitepress/theme/assets/home/hero/data-manager.webp": {
-      "last_verified_commit": "1b523dda2ea29fe602c8eb807df6ded88c180463",
-      "verified_at": "2026-09-13T18:36:37.388Z",
-      "reviewer": "Codex primary thread (user-delegated)",
+      "last_verified_commit": "9b711d65fad1af0cd5add04fdd4c9389c71254eb",
+      "verified_at": "2026-09-14T02:22:03.693Z",
+      "reviewer": "codex",
       "review_profile": "visual-content-v1",
-      "sha256": "3f43252eeca41284408a427f527ec7a36beea973ba244426954bf8f1d6549689",
+      "sha256": "f44c7144ef9f9e91b14fcced41b93ff725d456f74ef0e0a2d057cd5e4ddc02b6",
       "watch_paths": [
         "apps/web/e2e/screenshots/scenes/projects.ts",
         "docs-site/.vitepress/theme/assets/home/hero/data-manager.webp",
@@ -3319,23 +3319,47 @@
       ]
     },
     "docs-site/user-guide/images/projects/data-manager-filter-rules.png": {
-      "last_verified_commit": "23ce6efea480ce88514c0ca23308d19f48b1d9ac",
-      "verified_at": "2026-09-13T18:34:54.855Z",
-      "reviewer": "Codex primary thread (user-delegated)",
+      "last_verified_commit": "9b711d65fad1af0cd5add04fdd4c9389c71254eb",
+      "verified_at": "2026-09-14T02:22:03.693Z",
+      "reviewer": "codex",
       "review_profile": "visual-content-v1",
-      "sha256": "d2f076cded952a0dffef8e5c49e70f8fa584e228b047a3da9ab6c997ba8b63a9",
+      "sha256": "c1505216edd45e9f68a7b0dcd8e139dc2f066f314b428431e4c8f2839bb13568",
       "watch_paths": [
         "apps/web/e2e/screenshots/scenes/projects.ts",
         "docs-site/user-guide/images/projects/data-manager-filter-rules.png",
         "docs-site/user-guide/projects/data-manager.md"
       ]
     },
-    "docs-site/user-guide/images/projects/data-manager-overview.png": {
-      "last_verified_commit": "23ce6efea480ce88514c0ca23308d19f48b1d9ac",
-      "verified_at": "2026-09-13T18:34:54.855Z",
-      "reviewer": "Codex primary thread (user-delegated)",
+    "docs-site/user-guide/images/projects/data-manager-members.dark.png": {
+      "last_verified_commit": "9b711d65fad1af0cd5add04fdd4c9389c71254eb",
+      "verified_at": "2026-09-14T02:22:03.693Z",
+      "reviewer": "codex",
       "review_profile": "visual-content-v1",
-      "sha256": "0a6365a32b1cfab8889ab8fbfa10d169d46c51d86a2c2362f22d518231e4703c",
+      "sha256": "37a1834f5ed6b90f848718fb590129ef2674903de2ea1d3db2efc7b6b23effda",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/scenes/projects.ts",
+        "docs-site/user-guide/images/projects/data-manager-members.dark.png",
+        "docs-site/user-guide/projects/data-manager.md"
+      ]
+    },
+    "docs-site/user-guide/images/projects/data-manager-members.png": {
+      "last_verified_commit": "9b711d65fad1af0cd5add04fdd4c9389c71254eb",
+      "verified_at": "2026-09-14T02:22:03.693Z",
+      "reviewer": "codex",
+      "review_profile": "visual-content-v1",
+      "sha256": "cdd9fe2f6de740266d418ed5469c637bb3c900ea5e93892cd1987ec3dfd5cc67",
+      "watch_paths": [
+        "apps/web/e2e/screenshots/scenes/projects.ts",
+        "docs-site/user-guide/images/projects/data-manager-members.png",
+        "docs-site/user-guide/projects/data-manager.md"
+      ]
+    },
+    "docs-site/user-guide/images/projects/data-manager-overview.png": {
+      "last_verified_commit": "9b711d65fad1af0cd5add04fdd4c9389c71254eb",
+      "verified_at": "2026-09-14T02:22:03.693Z",
+      "reviewer": "codex",
+      "review_profile": "visual-content-v1",
+      "sha256": "a7657a3f51d8e59a0ca1f3ea397dba111f4c755c991ec34e7eda21ddd453c1a2",
       "watch_paths": [
         "apps/web/e2e/screenshots/scenes/projects.ts",
         "docs-site/user-guide/images/projects/data-manager-overview.png",

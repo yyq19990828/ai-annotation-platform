@@ -215,6 +215,9 @@
 
 | Method | Path |
 |---|---|
+| POST | `/projects/{project_id}/data-manager/tasks/assignment-preview` |
+| POST | `/projects/{project_id}/data-manager/tasks/assignment-apply` |
+| POST | `/projects/{project_id}/data-manager/tasks/export` |
 | GET | `/projects/{project_id}/data-manager/schema` |
 | POST | `/projects/{project_id}/data-manager/summary` |
 | POST | `/projects/{project_id}/tasks/{task_id}/data-manager/matches` |
@@ -407,6 +410,15 @@
 | POST | `/admin/failed-predictions/{failed_id}/restore` |
 | POST | `/projects/{project_id}/predictions/import` |
 | POST | `/projects/{project_id}/predictions/purge` |
+
+## `project_performance.py`
+
+| Method | Path |
+|---|---|
+| GET | `/projects/{project_id}/performance/members` |
+| GET | `/projects/{project_id}/performance/members/{member_id}/events` |
+| GET | `/projects/{project_id}/performance/members/{member_id}` |
+| GET | `/projects/{project_id}/performance/export` |
 
 ## `project_pipelines.py`
 
@@ -723,4 +735,4 @@
 
 ---
 
-_共 66 模块 / 416 路由_
+_共 67 模块 / 423 路由_
