@@ -374,7 +374,7 @@ async def validate_worker_event(
             collector_version is not None
             and (not isinstance(collector_version, str) or len(collector_version) > 32)
         )
-        or collection_coverage not in {"qualified", "partial"}
+        or collection_coverage not in {"qualified", "partial", "unverified_collection"}
     ):
         return None
     try:

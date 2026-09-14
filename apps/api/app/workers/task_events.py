@@ -32,7 +32,7 @@ def persist_task_events_batch(payload_list: list[dict[str, Any]]) -> int:
         annotation_count: int,
         was_rejected: bool,
         collector_version: str | None,
-        collection_coverage: str (qualified or partial),
+        collection_coverage: str (qualified, partial, or unverified_collection),
       }
     """
     return asyncio.run(_async_persist(payload_list))

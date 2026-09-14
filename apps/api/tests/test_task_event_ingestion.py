@@ -176,6 +176,72 @@ async def test_task_event_batch_discards_stale_row_without_blocking_valid_row(
 
 
 @pytest.mark.asyncio
+async def test_async_payload_coverage_survives_worker_revalidation(
+    httpx_client, annotator, db_session, monkeypatch
+):
+    """API-normalized coverage values remain valid through the Celery path."""
+
+    from app.config import settings
+    from app.db.models.task_event import TaskEvent
+    from app.workers.task_events import _async_persist
+
+    user, token = annotator
+    project = _project(user.id, "P-TE-ASYNC-COVERAGE")
+    task = _task(project.id, "T-TE-ASYNC-COVERAGE")
+    db_session.add_all([project, task])
+    await db_session.flush()
+
+    captured: list[dict] = []
+    monkeypatch.setattr(settings, "task_events_async", True)
+    monkeypatch.setattr(
+        "app.api.v1.me._enqueue_task_events",
+        lambda payload: captured.extend(payload) or True,
+    )
+    partial_id = uuid.uuid4()
+    legacy_id = uuid.uuid4()
+    partial = _event(task.id, project.id, partial_id)
+    partial["collection_coverage"] = "partial"
+    legacy = _event(task.id, project.id, legacy_id)
+    legacy.pop("collector_version")
+    response = await httpx_client.post(
+        "/api/v1/auth/me/task-events:batch",
+        json={"events": [partial, legacy]},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "accepted": 2,
+        "queued_async": True,
+        "discarded": [],
+    }
+    assert [payload["collection_coverage"] for payload in captured] == [
+        "unverified_collection",
+        "unverified_collection",
+    ]
+
+    @asynccontextmanager
+    async def fake_task_session():
+        yield db_session
+
+    monkeypatch.setattr("app.workers._db.task_session", fake_task_session)
+    assert await _async_persist(captured) == 2
+    assert await _async_persist(captured) == 0
+    rows = (
+        (
+            await db_session.execute(
+                select(TaskEvent).where(TaskEvent.id.in_({partial_id, legacy_id}))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert {row.id for row in rows} == {partial_id, legacy_id}
+    assert all(row.collection_coverage == "unverified_collection" for row in rows)
+    assert {row.collection_source for row in rows} == {"session", "legacy"}
+
+
+@pytest.mark.asyncio
 async def test_task_event_rejects_conflicting_project_and_future_interval(
     httpx_client, annotator, db_session, monkeypatch
 ):
