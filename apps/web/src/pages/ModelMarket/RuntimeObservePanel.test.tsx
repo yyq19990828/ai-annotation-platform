@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 // Radix Tooltip / ScrollArea read ResizeObserver; jsdom doesn't ship it.
@@ -299,6 +299,49 @@ describe("RuntimeObservePanel · service-pool tree (P4)", () => {
     await waitFor(() => expect(screen.queryByText("grounded-sam2-a")).not.toBeInTheDocument());
   });
 
+  it.each([
+    ["direct", { status: "resident" }, true, "未知"],
+    ["cached", { status: "resident" }, true, "未知"],
+    ["direct", "unsupported", true, "未知"],
+    ["direct", "resident", true, "resident"],
+    ["direct", "resident", false, "resident（未核实）"],
+  ] as const)("%s 驻留 state=%j、ok=%s 时安全显示 %s", async (source, state, ok, label) => {
+    mockTopology.mockResolvedValue({
+      generated_at: "2026-07-20T10:00:00Z",
+      router_mode: "enforce",
+      schema_version: "topology.v1",
+      pools: [makePool()],
+    });
+    mockRuntimeSnapshot.mockResolvedValue(
+      makeSnapshot({
+        pools: [{ id: "pool-1", name: "图像分割池", members: [makeMember()] }],
+      }),
+    );
+    mockObserve.mockResolvedValue({
+      configured_count: 1,
+      targets: source === "direct" ? [makeObserveTarget({ residency: { state }, ok })] : [],
+    });
+    mockListAll.mockResolvedValue({
+      items: [
+        makeBackend(
+          source === "cached"
+            ? {
+                health_meta: { residency: { state } },
+                last_checked_at: new Date().toISOString(),
+              }
+            : {},
+        ),
+      ],
+    });
+    renderPanel();
+    fireEvent.click(await screen.findByRole("button", { name: /展开服务池成员/ }));
+    const member = await screen.findByText("grounded-sam2-a");
+    expect(member).toBeInTheDocument();
+    expect(within(member.closest("article")!).getByText("驻留", { exact: true })).toHaveTextContent(
+      `驻留${label}`,
+    );
+  });
+
   it("unloaded 驻留数据不计入服务池驻留实例数", async () => {
     mockTopology.mockResolvedValue({
       generated_at: "2026-07-20T10:00:00Z",
@@ -330,7 +373,7 @@ describe("RuntimeObservePanel · service-pool tree (P4)", () => {
 
     renderPanel();
 
-    expect(await screen.findByText("0 个驻留")).toBeInTheDocument();
+    expect(await screen.findByText("0 个")).toBeInTheDocument();
   });
 
   it("缺少实时探活时将新鲜 connected 缓存标为非实时", async () => {
