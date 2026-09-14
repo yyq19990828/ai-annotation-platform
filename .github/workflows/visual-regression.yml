@@ -98,8 +98,9 @@ jobs:
           MINIO_PUBLIC_URL: /minio
         run: |
           nohup uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 >/tmp/visual-api.log 2>&1 &
+          # This screenshot stack has no Celery workers; /health checks them too.
           for attempt in {1..30}; do
-            curl -fsS http://127.0.0.1:8000/health && exit 0
+            curl -fsS http://127.0.0.1:8000/health/db && exit 0
             sleep 1
           done
           cat /tmp/visual-api.log
