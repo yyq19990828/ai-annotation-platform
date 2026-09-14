@@ -1,5 +1,12 @@
 import { isVideoLifecycleCancellation } from "../helpers/video-request-errors";
-import type { APIRequestContext, APIResponse, Browser, Page, Route } from "@playwright/test";
+import type {
+  APIRequestContext,
+  APIResponse,
+  Browser,
+  Page,
+  Request,
+  Route,
+} from "@playwright/test";
 import { randomUUID } from "node:crypto";
 
 import { expect, test as base, type SeedData } from "../fixtures/seed";
@@ -642,10 +649,21 @@ test.describe("video Issue source-frame ownership", () => {
     request,
     issueCase: fixture,
   }) => {
-    const layoutSaved = page.waitForResponse(
-      (response) =>
-        pathOf(response.url()) === "/api/v1/auth/me/preferences" &&
-        response.request().method() === "PATCH",
+    const isDiscussionLayoutWrite = (request: Request) =>
+      request.method() === "PATCH" &&
+      pathOf(request.url()) === "/api/v1/auth/me/preferences" &&
+      request.postDataJSON()?.workbench?.layout?.workspace?.contexts?.["annotate:video"]?.snapshot
+        ?.layout?.activeGroup === "discussion";
+    const finalLayoutWrite = page.waitForRequest(isDiscussionLayoutWrite);
+    // A prior successful save must not authorize reload while the final save is in flight.
+    await page.route("**/api/v1/auth/me/preferences", async (route) => {
+      if (!isDiscussionLayoutWrite(route.request())) return route.continue();
+      const response = await route.fetch();
+      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      await route.fulfill({ response });
+    });
+    const layoutSaved = page.waitForResponse((response) =>
+      isDiscussionLayoutWrite(response.request()),
     );
     await open(page, fixture);
     await seek(page, 3);
@@ -657,8 +675,12 @@ test.describe("video Issue source-frame ownership", () => {
     await expect(page.getByTestId("issue-create-frame")).toBeHidden();
     const issue = await saveIssue(page, fixture);
     expect(issue).toMatchObject({ anchor_type: "task", anchor_position: null });
-    // Direct task creation can finish before the debounced layout write; preserve it on reload.
-    expect((await layoutSaved).ok()).toBe(true);
+    await finalLayoutWrite;
+    // Opening Issues saves a later active group than initialization or the preset change.
+    // Consume that response completely before reload can cancel its transport.
+    const layoutResponse = await layoutSaved;
+    expect(layoutResponse.ok()).toBe(true);
+    expect(await layoutResponse.finished()).toBeNull();
     await page.reload();
     await expect(stage(page)).toBeVisible({ timeout: 25_000 });
     await seek(page, 8);

@@ -101,6 +101,8 @@ PLAYWRIGHT_AI_REQUEST_WORKER=1 pnpm test:e2e \
 
 视频 Issue 的 180 帧夹具按测试 API 的 `VIDEO_CHUNK_SIZE_FRAMES` 生成完整真实分片，默认三块，每块 60 帧。测试开始前核对正式 manifest 与分片范围、就绪状态；不能依赖未启动的媒体 worker 补齐缺失分片。像素身份仍从实际编码视频验证。两个 Issue 套件共用 `helpers/video-request-errors.ts`，只允许明确端点的 `net::ERR_ABORTED` 生命周期取消（心跳、会话统计、帧预览及分片元数据/样本）；标注、Issue 写入失败、其他网络错误与 HTTP 错误仍须报告。`pnpm --filter @anno/web test scripts/video-request-errors.test.ts` 验证这些边界，CI 的前端单元测试同步执行。
 
+刷新前的布局保存等待必须匹配当前交互产生的 workspace 快照，并等响应接收完成。初始化、切换预设和激活讨论面板会分别发送偏好 PATCH，首条成功响应不能代表后续保存完成。任务级 Issue 用例延迟最终讨论布局响应，验证刷新不会抢先取消偏好写入；偏好 PATCH 的取消仍按错误处理。
+
 `e2e/tests/video-webcodecs-precise-frame.spec.ts` 用 `seed/video-webcodecs`
 造确定性 H.264 fixture（baseline / 主 profile B 帧 / 短 GOP / VFR），验证精确帧
 pipeline 的开关边界、精确解码或安全回退、pending→ready 切换。视频舞台容器暴露
