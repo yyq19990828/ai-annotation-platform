@@ -112,11 +112,14 @@ const test = base.extend<{ boundaryCase: Case }>({
     let passed = false;
     try {
       await provideFixture(fixture);
+      // Reload can report keepalive session telemetry as aborted after the API accepts it.
       const expectedAborts = errors.filter(
         (error) =>
           error.kind === "request" &&
           error.message === "net::ERR_ABORTED" &&
-          ((error.method === "POST" && error.path === "/api/v1/auth/me/heartbeat") ||
+          ((error.method === "POST" &&
+            (error.path === "/api/v1/auth/me/heartbeat" ||
+              error.path === "/api/v1/auth/me/task-events:batch")) ||
             (error.method === "GET" &&
               ([
                 "/api/v1/auth/me",
@@ -126,7 +129,9 @@ const test = base.extend<{ boundaryCase: Case }>({
                 "/api/v1/tasks",
                 "/api/v1/audit-logs",
               ].includes(error.path!) ||
-                /^\/api\/v1\/tasks\/[0-9a-f-]{36}(\/annotations)?$/.test(error.path!)))),
+                /^\/api\/v1\/tasks\/[0-9a-f-]{36}(\/(annotations|discussion\/page))?$/.test(
+                  error.path!,
+                )))),
       );
       const unexpected = errors.filter((error) => !expectedAborts.includes(error));
       fixture.evidence.push({ expectedAborts, unexpectedErrors: unexpected });

@@ -533,6 +533,14 @@ async def test_non_privileged_reviewer_must_claim_before_approve(
     project, task, _annotation, _rle_payload = await _seed_mask(
         db_session, owner_id=owner.id, status="review"
     )
+    db_session.add(
+        ProjectMember(
+            project_id=project.id,
+            user_id=review_user.id,
+            role="reviewer",
+            assigned_by=owner.id,
+        )
+    )
     batch = TaskBatch(
         project_id=project.id,
         display_id=f"B-QC-{uuid.uuid4().hex[:8]}",
