@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-09-14
+last_reviewed: 2026-09-15
 ---
 
 # 认证
@@ -42,6 +42,8 @@ Authorization: Bearer <access_token>
 服务端校验账号、任务可见性、项目和时间区间。混合批次返回 `accepted`、`queued_async` 及 `discarded`（原索引、`client_id`、原因）；永久失效的一条记录不阻塞其他有效记录。单事件请求保留错误 HTTP 状态。同一客户端 ID 的冲突内容不会覆盖已有记录；异步 worker 再次校验并去重。时长仅用于项目管理参考，采集与覆盖含义见[项目成员绩效数据](../../dev/concepts/project-performance.md)。
 
 ## 账号偏好与命名布局预设
+
+`ui` 子树保存工作台之外的全局界面偏好，随账号跨设备同步：`theme`（`light|dark|system`，`system` 跟随操作系统 `prefers-color-scheme`）、`secondary_bar_hidden`（二次推理工具条显隐）与 `changelog_seen_version`（登录后「本次更新」提醒已确认的版本）。`changelog_seen_version` 为空串表示从未确认；客户端按 `x.y.z` 比较，仅在当前构建版本更高时提醒一次，点「知道了」写回本键，跨设备与跨浏览器去重。
 
 `workbench.common.showAnnotationComments` 控制图片和视频画布的标注评论提示，默认 `true`。通过下面的账号偏好接口提交 `{ "workbench": { "common": { "showAnnotationComments": false } } }` 可关闭；显式 `false` 会保留，历史偏好缺少字段时按开启处理。该设置不影响评论读取、写入或通知。
 

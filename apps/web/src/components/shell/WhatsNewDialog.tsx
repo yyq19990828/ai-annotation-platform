@@ -3,9 +3,11 @@
  * 版本时,弹一次「本次更新」窗口,展示 CHANGELOG 中当前版本的要点。刷新恢复
  * 会话不自动弹出,未确认版本留到下次真正登录再提醒。
  *
- * 顶栏版本号(TopBar)可随时手动打开本窗口查看更新内容。已确认版本存在服务端
- * 偏好(ui.changelog_seen_version),跨设备去重;点「知道了」写回并关闭。直接
- * 关闭(X / Esc / 遮罩)不写库,本次登录不再弹,下次登录时若仍未确认会再弹。
+ * 顶栏版本号(主界面 TopBar 与全屏工作台 Topbar)可随时手动打开本窗口查看更新
+ * 内容。已确认版本存在服务端偏好(ui.changelog_seen_version),跨设备去重;点
+ * 「知道了」仅在当前版本更高时单调写回并关闭,已确认更高版本的旧前端不会把
+ * 跨设备标记改小。直接关闭(X / Esc / 遮罩)不写库,本次登录不再弹,下次登录
+ * 时若仍未确认会再弹;账号退出会清空本次已弹登记,同一账号不刷新重登仍会提醒。
  * 挂载在 App 级,登录后无论落在主界面还是全屏工作台都能弹出(Radix 传送门)。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -24,6 +26,7 @@ import { authApi } from "@/api/auth";
 import { isCurrentAuthOwner, useAuthStore } from "@/stores/authStore";
 import {
   appVersion,
+  compareSemver,
   loadCurrentReleaseNotes,
   shouldShowReleaseNotes,
   type ReleaseNotes,
@@ -64,7 +67,13 @@ export function WhatsNewDialog() {
   useEffect(() => {
     const prevUserId = prevUserIdRef.current;
     prevUserIdRef.current = user?.id ?? null;
-    if (!user || !due) return;
+    if (!user) {
+      // 账号退出(会话结束):清掉已弹登记,同一账号再次登录时仍会提醒——
+      // 否则「关闭弹窗 → 登出 → 不刷新直接重登」会被同一 user+版本键吞掉。
+      shownRef.current = null;
+      return;
+    }
+    if (!due) return;
     // 仅登录瞬间提醒;prevUserId 为 undefined(挂载时已带会话)或已有账号
     // (user 对象被重取替换)都跳过,未确认版本留到下次真正登录。
     if (prevUserId !== null) return;
@@ -106,17 +115,31 @@ export function WhatsNewDialog() {
   const acknowledge = useCallback(async () => {
     const ownerId = user?.id;
     if (!ownerId || !isCurrentAuthOwner(ownerId)) return;
+    const currentUser = useAuthStore.getState().user;
+    if (!currentUser || currentUser.id !== ownerId) return;
+    // 单调保护:账号已确认过更新(或更高)的版本时不再回写。回滚或缓存了旧前端的
+    // 设备手动点「知道了」不能把跨设备已读版本改小,否则较新版本会重新提醒。
+    if (compareSemver(appVersion, currentUser.preferences?.ui?.changelog_seen_version ?? "") <= 0) {
+      return;
+    }
     try {
       const preferences = await authApi.updatePreferences({
         ui: { changelog_seen_version: appVersion },
       });
       if (!isCurrentAuthOwner(ownerId)) return;
-      const currentUser = useAuthStore.getState().user;
-      if (!currentUser || currentUser.id !== ownerId) return;
-      // 只替换 ui 子树,保留其它并发 writer 的偏好(同 useOnboardingProjectState)。
+      const latest = useAuthStore.getState().user;
+      if (!latest || latest.id !== ownerId) return;
+      // 只并入已确认版本,保留其它并发 writer(主题/面板显隐)更新的 ui 状态:
+      // 延迟到达的响应若整块替换 ui,会把用户新选择回退到旧快照。
       setUser({
-        ...currentUser,
-        preferences: { ...currentUser.preferences, ui: preferences.ui },
+        ...latest,
+        preferences: {
+          ...latest.preferences,
+          ui: {
+            ...latest.preferences?.ui,
+            changelog_seen_version: preferences.ui?.changelog_seen_version ?? appVersion,
+          },
+        },
       });
     } catch {
       // 写入失败保持未读:下次登录再提醒一次,不打断当前操作。

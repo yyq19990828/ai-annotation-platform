@@ -26,7 +26,14 @@ export function releaseNotesPlugin(): Plugin {
       const webRoot = resolve(__dirname, "..");
       const version = JSON.parse(readFileSync(resolve(webRoot, "package.json"), "utf8"))
         .version as string;
-      const markdown = readFileSync(resolve(webRoot, "../../CHANGELOG.md"), "utf8");
+      // 打包上下文未携带仓库根 CHANGELOG.md(如精简镜像)时不阻断构建,注入空串,
+      // 前端回落为简短提示——与「版本已 bump 但段落缺失」同一降级路径。
+      let markdown = "";
+      try {
+        markdown = readFileSync(resolve(webRoot, "../../CHANGELOG.md"), "utf8");
+      } catch {
+        markdown = "";
+      }
       return `export const sectionMarkdown = ${JSON.stringify(
         extractChangelogSection(markdown, version),
       )};`;
