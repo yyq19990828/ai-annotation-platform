@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { NotificationPreferenceItem } from "@/api/notifications";
 import {
   useNotificationPreferences,
   useUpdateNotificationPreference,
 } from "@/hooks/useNotificationPreferences";
-import { useAuthStore } from "@/stores/authStore";
+import { isCurrentAuthOwner, useAuthStore } from "@/stores/authStore";
 
 /**
  * 通知偏好共享面板：个人设置页「通知偏好」与工作台设置「通知」分类共用。
@@ -68,14 +68,18 @@ const PREFERENCE_GROUPS: { key: string; label: string; match: (type: string) => 
 
 type PreferencePatch = { in_app?: boolean; toast?: boolean };
 
-/** 供设置搜索使用：任一类型标签/类型 ID 命中查询词即返回 true。 */
+function notificationCategoryMatchesQuery(query: string): boolean {
+  return !!query && ("通知".includes(query) || "通知偏好".includes(query));
+}
+
+/** 供设置搜索使用：分类名称、类型标签或类型 ID 命中查询词即返回 true。 */
 export function notificationPreferencesMatchQuery(
   items: { type: string }[] | undefined,
   query: string,
 ): boolean {
   const q = query.trim().toLowerCase();
   if (!q) return false;
-  if ("通知".includes(q) || "通知偏好".includes(q)) return true;
+  if (notificationCategoryMatchesQuery(q)) return true;
   return (items ?? []).some(
     (item) =>
       item.type.toLowerCase().includes(q) ||
@@ -166,15 +170,23 @@ export function NotificationPreferencesPanel({ filterQuery }: { filterQuery?: st
   const updatePref = useUpdateNotificationPreference();
   const [pendingByType, setPendingByType] = useState<Record<string, PreferencePatch>>({});
   const [failureByType, setFailureByType] = useState<Record<string, PreferencePatch>>({});
+  const sessionRef = useRef(0);
 
   useEffect(() => {
     // 账号替换：待保存/失败状态属于旧账号，全部丢弃。
     setPendingByType({});
     setFailureByType({});
+    return () => {
+      // 迟到的请求属于退出的账号/面板会话，即使重新登录同一账号也不能写回。
+      sessionRef.current += 1;
+    };
   }, [userId]);
 
   const change = useCallback(
-    (item: NotificationPreferenceItem, patch: PreferencePatch) => {
+    async (item: NotificationPreferenceItem, patch: PreferencePatch) => {
+      const session = sessionRef.current;
+      const ownsRequest = () =>
+        sessionRef.current === session && !!userId && isCurrentAuthOwner(userId);
       setPendingByType((prev) => ({ ...prev, [item.type]: patch }));
       setFailureByType((prev) => {
         if (!prev[item.type]) return prev;
@@ -182,30 +194,24 @@ export function NotificationPreferencesPanel({ filterQuery }: { filterQuery?: st
         delete next[item.type];
         return next;
       });
-      updatePref.mutate(
-        // owner 在点击时同步捕获：mutationFn 延迟执行时账号可能已切换
-        { type: item.type, owner: userId ?? undefined, ...patch },
-        {
-          onSuccess: () => {
-            setPendingByType((prev) => {
-              if (!prev[item.type]) return prev;
-              const next = { ...prev };
-              delete next[item.type];
-              return next;
-            });
-          },
-          onError: () => {
-            setPendingByType((prev) => {
-              if (!prev[item.type]) return prev;
-              const next = { ...prev };
-              delete next[item.type];
-              return next;
-            });
-            // 恢复为查询中最后确认的值；失败信息留本行供重试。
-            setFailureByType((prev) => ({ ...prev, [item.type]: patch }));
-          },
-        },
-      );
+      try {
+        // 每笔 Promise 独立结算；连续 mutate 的调用级回调只跟随最后一笔。
+        await updatePref.mutateAsync({ type: item.type, owner: userId ?? undefined, ...patch });
+      } catch {
+        if (ownsRequest()) {
+          // 恢复为查询中最后确认的值；失败信息留本行供重试。
+          setFailureByType((prev) => ({ ...prev, [item.type]: patch }));
+        }
+      } finally {
+        if (ownsRequest()) {
+          setPendingByType((prev) => {
+            if (prev[item.type] !== patch) return prev;
+            const next = { ...prev };
+            delete next[item.type];
+            return next;
+          });
+        }
+      }
     },
     [updatePref, userId],
   );
@@ -213,9 +219,9 @@ export function NotificationPreferencesPanel({ filterQuery }: { filterQuery?: st
   const query = filterQuery?.trim().toLowerCase() ?? "";
   const matched = useMemo(() => {
     const all = prefsQ.data?.items ?? [];
+    if (!query || notificationCategoryMatchesQuery(query)) return all;
     return all.filter(
       (item) =>
-        !query ||
         item.type.toLowerCase().includes(query) ||
         notificationTypeLabel(item.type).toLowerCase().includes(query),
     );
@@ -271,7 +277,7 @@ export function NotificationPreferencesPanel({ filterQuery }: { filterQuery?: st
                     item={item}
                     pending={pendingByType[item.type]}
                     failure={failureByType[item.type]}
-                    saving={updatePref.isPending && !!pendingByType[item.type]}
+                    saving={!!pendingByType[item.type]}
                     onChange={change}
                   />
                 ))}

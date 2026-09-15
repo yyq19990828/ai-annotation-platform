@@ -1,5 +1,8 @@
 const LAST_TASK_BY_BATCH_KEY = "anno.workbench.lastTaskByBatch.v1";
 
+/** Returning false keeps a navigation source open after a cancelled leave check. */
+export type GuardedNavigate = (to: string) => void | boolean | Promise<void | boolean>;
+
 type StorageLike = Pick<Storage, "getItem" | "setItem">;
 type RememberedTaskValue = string | { taskId: string; lastOpenedAt: number };
 

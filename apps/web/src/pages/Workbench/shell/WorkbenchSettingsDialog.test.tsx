@@ -34,7 +34,7 @@ vi.mock("../state/useWorkbenchConfig", async (importOriginal) => ({
 }));
 vi.mock("@/hooks/useNotificationPreferences", () => ({
   useNotificationPreferences: () => preferencesMock,
-  useUpdateNotificationPreference: () => ({ mutate: vi.fn(), isPending: false }),
+  useUpdateNotificationPreference: () => ({ mutateAsync: vi.fn().mockResolvedValue({ ok: true }) }),
 }));
 
 function withProviders(ui: React.ReactElement) {
@@ -315,6 +315,15 @@ describe("WorkbenchSettingsDialog · 通知分类", () => {
     await user.type(screen.getByRole("textbox", { name: "搜索设置" }), "任务被退回");
     expect(await screen.findByTestId("notification-preferences-panel")).toBeVisible();
     expect(screen.getAllByText("通知偏好").length).toBeGreaterThan(0);
+  });
+
+  it.each(["通知", "通知偏好"])("全局搜索分类「%s」时展示分类内的设置项", async (query) => {
+    mount();
+    const user = userEvent.setup();
+    await user.type(screen.getByRole("textbox", { name: "搜索设置" }), query);
+    expect(screen.getByTestId("notification-preference-task.rejected")).toBeVisible();
+    expect(screen.getByTestId("notification-preference-task.approved")).toBeVisible();
+    expect(screen.queryByText("没有匹配的通知类型。")).toBeNull();
   });
 
   it("搜索无命中且通知也不匹配时仍显示空态", async () => {

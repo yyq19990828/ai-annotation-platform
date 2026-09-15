@@ -30,6 +30,7 @@ import {
   buildReviewWorkbenchUrl,
   buildWorkbenchUrl,
   currentWorkbenchReturnTo,
+  type GuardedNavigate,
 } from "@/utils/workbenchNavigation";
 import {
   FILTERS,
@@ -344,7 +345,7 @@ function NotifRow({ item, onClick, onDelete, deletePending }: NotifRowProps) {
 export function NotificationsPopover({
   navigate: navigateExternal,
 }: {
-  navigate?: (to: string) => void;
+  navigate?: GuardedNavigate;
 }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -503,6 +504,7 @@ export function NotificationsPopover({
         <AsyncJobDetailModal
           key={selectedJobId}
           jobId={selectedJobId}
+          navigate={go}
           onClose={() => setSelectedJobId(null)}
         />
       )}

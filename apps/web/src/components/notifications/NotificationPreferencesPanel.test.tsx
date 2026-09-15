@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MeResponse } from "@/api/auth";
@@ -29,15 +29,27 @@ const items = [
 
 function mountPanel(filterQuery?: string) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const view = render(
     <QueryClientProvider client={client}>
       <NotificationPreferencesPanel filterQuery={filterQuery} />
     </QueryClientProvider>,
   );
+  return { ...view, client };
+}
+
+function deferredSave() {
+  let resolve!: (value: { ok: boolean }) => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<{ ok: boolean }>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  api.updatePreference.mockReset().mockResolvedValue({ ok: true });
   api.getPreferences.mockResolvedValue({ items });
   useAuthStore.getState().setAuth("t", { id: "u1", role: "annotator" } as MeResponse);
 });
@@ -111,6 +123,72 @@ describe("NotificationPreferencesPanel", () => {
     await waitFor(() => expect(api.updatePreference).toHaveBeenCalledTimes(2));
   });
 
+  it("连续修改不同类型时，每行等待自己的保存完成，并接受后续服务端值", async () => {
+    const first = deferredSave();
+    const second = deferredSave();
+    api.updatePreference.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const { client } = mountPanel();
+    await screen.findByTestId("notification-preference-task.rejected");
+    const firstReceipt = screen.getByRole("checkbox", { name: "任务被退回 接收通知" });
+    const secondReceipt = screen.getByRole("checkbox", { name: "任务审核通过 接收通知" });
+    fireEvent.click(firstReceipt);
+    fireEvent.click(secondReceipt);
+    await waitFor(() => expect(api.updatePreference).toHaveBeenCalledTimes(2));
+    expect(screen.getAllByText("保存中…")).toHaveLength(2);
+
+    await act(async () => second.resolve({ ok: true }));
+    await waitFor(() => expect(secondReceipt).toBeEnabled());
+    expect(firstReceipt).toBeDisabled();
+    expect(screen.getByText("保存中…")).toBeVisible();
+
+    api.getPreferences.mockResolvedValue({
+      items: items.map((item) =>
+        item.type.startsWith("task.") ? { ...item, in_app: false } : item,
+      ),
+    });
+    await act(async () => first.resolve({ ok: true }));
+    await waitFor(() => expect(firstReceipt).toBeEnabled());
+    expect(firstReceipt).not.toBeChecked();
+
+    api.getPreferences.mockResolvedValue({ items });
+    await act(async () => {
+      await client.refetchQueries({ queryKey: ["notification-preferences", "u1"] });
+    });
+    await waitFor(() => {
+      expect(firstReceipt).toBeChecked();
+      expect(secondReceipt).toBeChecked();
+    });
+  });
+
+  it("连续保存时第一行失败仍独立回滚和重试，不影响另一行", async () => {
+    const first = deferredSave();
+    const second = deferredSave();
+    api.updatePreference.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    mountPanel();
+    const firstRow = await screen.findByTestId("notification-preference-task.rejected");
+    const secondRow = screen.getByTestId("notification-preference-task.approved");
+    const firstReceipt = within(firstRow).getByRole("checkbox", { name: /接收通知/ });
+    const secondReceipt = within(secondRow).getByRole("checkbox", { name: /接收通知/ });
+    fireEvent.click(firstReceipt);
+    fireEvent.click(secondReceipt);
+    await waitFor(() => expect(api.updatePreference).toHaveBeenCalledTimes(2));
+
+    await act(async () => first.reject(new Error("first save failed")));
+    expect(within(firstRow).getByRole("alert")).toHaveTextContent("保存失败");
+    expect(firstReceipt).toBeChecked();
+    expect(firstReceipt).toBeEnabled();
+    expect(secondReceipt).toBeDisabled();
+    expect(within(secondRow).getByText("保存中…")).toBeVisible();
+
+    await act(async () => second.resolve({ ok: true }));
+    await waitFor(() => expect(secondReceipt).toBeEnabled());
+    expect(within(secondRow).queryByRole("alert")).toBeNull();
+    fireEvent.click(within(firstRow).getByRole("button", { name: "重试" }));
+    await waitFor(() => expect(api.updatePreference).toHaveBeenCalledTimes(3));
+    expect(api.updatePreference).toHaveBeenLastCalledWith("task.rejected", { in_app: false });
+    await waitFor(() => expect(within(firstRow).queryByRole("alert")).toBeNull());
+  });
+
   it("初始加载失败禁用写入并显示重试", async () => {
     api.getPreferences.mockRejectedValue(new Error("down"));
     mountPanel();
@@ -128,6 +206,15 @@ describe("NotificationPreferencesPanel", () => {
     expect(screen.queryByTestId("notification-preference-bug_report.commented")).toBeNull();
   });
 
+  it.each(["通知", "通知偏好", " 通知 "])("分类搜索「%s」保留全部通知类型", async (query) => {
+    mountPanel(query);
+    await screen.findByTestId("notification-preferences-panel");
+    for (const item of items) {
+      expect(screen.getByTestId(`notification-preference-${item.type}`)).toBeVisible();
+    }
+    expect(screen.queryByText("没有匹配的通知类型。")).toBeNull();
+  });
+
   it("账号切换后丢弃旧账号的待保存/失败状态", async () => {
     api.updatePreference.mockReturnValue(new Promise(() => {}));
     mountPanel();
@@ -139,6 +226,56 @@ describe("NotificationPreferencesPanel", () => {
       useAuthStore.getState().setAuth("t2", { id: "u2", role: "annotator" } as MeResponse);
     });
     await waitFor(() => expect(screen.queryByText("保存中…")).toBeNull());
+  });
+
+  it("旧账号迟到的保存失败不能重新写入新账号的错误状态", async () => {
+    const oldSave = deferredSave();
+    api.updatePreference.mockReturnValueOnce(oldSave.promise);
+    mountPanel();
+    await screen.findByTestId("notification-preference-task.rejected");
+    fireEvent.click(screen.getByRole("checkbox", { name: "任务被退回 接收通知" }));
+    await screen.findByText("保存中…");
+    act(() => {
+      useAuthStore.getState().setAuth("t2", { id: "u2", role: "annotator" } as MeResponse);
+    });
+    await waitFor(() => expect(screen.queryByText("保存中…")).toBeNull());
+
+    await act(async () => oldSave.reject(new Error("retired owner failed")));
+    const receipt = screen.getByRole("checkbox", { name: "任务被退回 接收通知" });
+    expect(receipt).toBeEnabled();
+    expect(receipt).toBeChecked();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it.each(["success", "failure"])("旧账号迟到的 %s 不得结束新账号同类型的保存", async (outcome) => {
+    const oldSave = deferredSave();
+    const newSave = deferredSave();
+    api.updatePreference.mockReturnValueOnce(oldSave.promise).mockReturnValueOnce(newSave.promise);
+    mountPanel();
+    await screen.findByTestId("notification-preference-task.rejected");
+    fireEvent.click(screen.getByRole("checkbox", { name: "任务被退回 接收通知" }));
+    await screen.findByText("保存中…");
+    act(() => {
+      useAuthStore.getState().setAuth("t2", { id: "u2", role: "annotator" } as MeResponse);
+    });
+    const popup = await screen.findByRole("checkbox", { name: "任务被退回 弹出提示" });
+    await waitFor(() => expect(popup).toBeEnabled());
+    fireEvent.click(popup);
+    await waitFor(() => expect(api.updatePreference).toHaveBeenCalledTimes(2));
+
+    await act(async () => {
+      if (outcome === "success") oldSave.resolve({ ok: true });
+      else oldSave.reject(new Error("retired owner failed"));
+    });
+    expect(popup).toBeDisabled();
+    expect(popup).not.toBeChecked();
+    expect(screen.getByText("保存中…")).toBeVisible();
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    await act(async () => newSave.reject(new Error("current owner failed")));
+    expect(await screen.findByRole("alert")).toHaveTextContent("保存失败");
+    expect(popup).toBeEnabled();
+    expect(popup).toBeChecked();
   });
 
   it("notificationPreferencesMatchQuery 命中标签与「通知」关键词", () => {

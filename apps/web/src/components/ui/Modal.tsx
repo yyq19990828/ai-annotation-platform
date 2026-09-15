@@ -51,6 +51,7 @@ export function Modal({
     >
       <DialogPrimitive.Portal container={portalContainer}>
         <DialogPrimitive.Overlay
+          data-modal=""
           data-testid="modal-overlay"
           className={cn(
             "fixed inset-0 z-modal bg-black/40 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
@@ -58,6 +59,7 @@ export function Modal({
           )}
         />
         <DialogPrimitive.Content
+          data-modal=""
           ref={contentRef}
           aria-describedby={undefined}
           onEscapeKeyDown={(event) => {

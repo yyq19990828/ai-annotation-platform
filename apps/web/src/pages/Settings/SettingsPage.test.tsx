@@ -135,7 +135,7 @@ const preferencesMock = vi.hoisted(() => ({
 }));
 vi.mock("@/hooks/useNotificationPreferences", () => ({
   useNotificationPreferences: () => preferencesMock,
-  useUpdateNotificationPreference: () => ({ mutate: vi.fn(), isPending: false }),
+  useUpdateNotificationPreference: () => ({ mutateAsync: vi.fn().mockResolvedValue({ ok: true }) }),
 }));
 
 // --- toast ---

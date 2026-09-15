@@ -9,6 +9,7 @@ import { useTheme } from "@/hooks/useTheme";
 import { useBugDrawerStore } from "@/stores/bugDrawerStore";
 import type { TaskResponse } from "@/types";
 import type { VideoSegment } from "@/api/videoTracker";
+import type { GuardedNavigate } from "@/utils/workbenchNavigation";
 import type { WorkspaceSide, WorkspaceSideState } from "../layout/workbenchLayoutExecutor";
 
 // 与主界面 TopBar 共用同一懒加载通知入口；工作台传入自己的导航回调。
@@ -80,7 +81,7 @@ interface TopbarProps {
    * 通知面板导航回调：工作台在真正改路由前跑视频/Mask 离开检查。
    * 缺省时不渲染通知入口（测试/故事用 Topbar 时保持原行为）。
    */
-  onNotificationNavigate?: (to: string) => void;
+  onNotificationNavigate?: GuardedNavigate;
 }
 
 function cn(...xs: Array<string | false | null | undefined>): string {

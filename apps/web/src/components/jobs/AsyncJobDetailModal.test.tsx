@@ -49,7 +49,12 @@ function Location() {
 function renderModal({
   jobId = "j1",
   onRetryQueued,
-}: { jobId?: string; onRetryQueued?: (queued: number) => void } = {}) {
+  navigate,
+}: {
+  jobId?: string;
+  onRetryQueued?: (queued: number) => void;
+  navigate?: (to: string) => Promise<boolean> | boolean;
+} = {}) {
   const onClose = vi.fn();
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -58,7 +63,12 @@ function renderModal({
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
         <Location />
-        <AsyncJobDetailModal jobId={jobId} onClose={onClose} onRetryQueued={onRetryQueued} />
+        <AsyncJobDetailModal
+          jobId={jobId}
+          onClose={onClose}
+          onRetryQueued={onRetryQueued}
+          navigate={navigate}
+        />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -79,6 +89,38 @@ describe("共享后台任务详情", () => {
   afterEach(() => {
     act(() => useAuthStore.getState().logout());
   });
+
+  it.each([
+    ["查看数据集", "/datasets?dataset=d1"],
+    ["查看项目数据", "/projects/p1/data-manager"],
+    ["返回项目列表", "/dashboard"],
+  ])(
+    "%s awaits Workbench admission and keeps the detail open on cancellation",
+    async (label, url) => {
+      mocks.project.mockResolvedValue({ id: "p1" });
+      if (label === "返回项目列表") {
+        mocks.get.mockResolvedValue({ ...job, kind: "export", result: {} });
+      }
+      let finish!: (allowed: boolean) => void;
+      const navigate = vi.fn(
+        () =>
+          new Promise<boolean>((resolve) => {
+            finish = resolve;
+          }),
+      );
+      const { onClose } = renderModal({ navigate });
+      fireEvent.click(await screen.findByRole("button", { name: label }));
+      await waitFor(() => expect(navigate).toHaveBeenCalledWith(url));
+      expect(screen.getByTestId("location").textContent).toBe("/");
+      expect(onClose).not.toHaveBeenCalled();
+      await act(async () => finish(false));
+      expect(onClose).not.toHaveBeenCalled();
+      expect(screen.getByRole("button", { name: label })).toBeEnabled();
+      navigate.mockResolvedValueOnce(true);
+      fireEvent.click(screen.getByRole("button", { name: label }));
+      await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    },
+  );
 
   it("读回指定作业结果并直接打开通过权限检查的数据集", async () => {
     const { onClose } = renderModal();

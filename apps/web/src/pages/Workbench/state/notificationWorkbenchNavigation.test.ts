@@ -7,7 +7,15 @@ describe("planNotificationNavigation", () => {
   it("同项目同模式任务直达走 selectTask", () => {
     expect(
       planNotificationNavigation("/projects/p1/annotate?task=t9&batch=b2&returnTo=/x", ctx),
-    ).toEqual({ kind: "task", taskId: "t9" });
+    ).toEqual({ kind: "task", taskId: "t9", batchId: "b2" });
+  });
+
+  it("a task without a batch does not inherit the current batch", () => {
+    expect(planNotificationNavigation("/projects/p1/annotate?task=t9", ctx)).toEqual({
+      kind: "task",
+      taskId: "t9",
+      batchId: null,
+    });
   });
 
   it("同项目同模式仅切换批次走现有批次准入", () => {

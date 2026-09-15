@@ -54,6 +54,16 @@ export async function commitAfterNavigationGuard(
   return true;
 }
 
+/** All task, batch and external-route entry points use the same leave checks. */
+export async function runWorkbenchLeaveGuards(
+  videoGuard: (isCurrent: () => boolean) => Promise<boolean>,
+  maskGuard: () => Promise<boolean>,
+  isCurrent: () => boolean,
+): Promise<boolean> {
+  if (!isCurrent() || !(await videoGuard(isCurrent)) || !isCurrent()) return false;
+  return (await maskGuard()) && isCurrent();
+}
+
 type LatestTaskNavigationRun = (signal: AbortSignal) => Promise<boolean>;
 
 interface PendingTaskNavigation {

@@ -441,4 +441,36 @@ describe("通知入口角标与工作台导航回调", () => {
     fireEvent.click(await screen.findByRole("button", { name: "查看当前任务" }));
     expect(navigateExternal).toHaveBeenCalledWith("/annotate");
   });
+
+  it("a derived export detail forwards navigation and remains open when leave is cancelled", async () => {
+    mocks.notifications = [
+      {
+        ...notification,
+        type: "export.ready",
+        target_type: "export",
+        target_id: "j1",
+        payload: {},
+      },
+    ];
+    mocks.job.mockResolvedValue({
+      id: "j1",
+      kind: "export",
+      status: "completed",
+      progress_pct: 100,
+      project_id: "p1",
+      payload: {},
+      result: {},
+      created_at: "2026-09-09T00:00:00Z",
+      started_at: null,
+      completed_at: null,
+    });
+    const navigate = vi.fn(async () => false);
+    renderUI(navigate);
+    fireEvent.click(screen.getByTitle("通知，1 条未读"));
+    fireEvent.click(await screen.findByRole("button", { name: "打开通知：导出完成" }));
+    fireEvent.click(await screen.findByRole("button", { name: "返回项目列表" }));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/dashboard"));
+    expect(screen.getByRole("dialog", { name: "后台任务详情" })).toBeVisible();
+    expect(screen.getByTestId("location").textContent).toBe("/dashboard");
+  });
 });
