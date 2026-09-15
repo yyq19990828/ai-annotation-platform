@@ -223,6 +223,7 @@ export function OfflineQueueDrawer({
         {items.length > 0 && (
           <FilterGroup
             label="筛选"
+            hideLabel
             compact
             className="border-b border-border px-4 py-2 text-xs text-muted-foreground"
           >
