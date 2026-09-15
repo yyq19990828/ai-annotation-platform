@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { Modal } from "@/components/ui/Modal";
-import { Avatar } from "@/components/ui/Avatar";
+import { UserAvatar } from "@/components/ui/UserAvatar";
 import { StatCard } from "@/components/ui/StatCard";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { TabRow } from "@/components/ui/TabRow";
@@ -693,7 +693,7 @@ function UsersPageContent() {
                         </td>
                         <td className={`${TD_CLASS} pl-4`}>
                           <div className="flex items-center gap-2.5">
-                            <Avatar initial={u.name[0]} size="md" />
+                            <UserAvatar user={u} size="md" />
                             <div className="min-w-0">
                               <div className="max-w-[240px] truncate text-sm font-medium">
                                 {u.name}
@@ -995,7 +995,7 @@ function UsersPageContent() {
               并提醒首次登录后立即修改密码。
             </div>
             <div className={SUMMARY_CARD_CLASS}>
-              <Avatar initial={resettingPwd.name[0]} size="md" />
+              <UserAvatar user={resettingPwd} size="md" />
               <div>
                 <div className="text-sm font-medium">{resettingPwd.name}</div>
                 <div className="mono text-xs text-muted-foreground">{resettingPwd.email}</div>
@@ -1090,7 +1090,7 @@ function UsersPageContent() {
                 : "确认删除以下账号？该用户将无法登录，但历史标注与审计记录仍会保留。"}
             </div>
             <div className={SUMMARY_CARD_CLASS}>
-              <Avatar initial={deleting.name[0]} size="md" />
+              <UserAvatar user={deleting} size="md" />
               <div>
                 <div className="text-sm font-medium">{deleting.name}</div>
                 <div className="mono text-xs text-muted-foreground">{deleting.email}</div>

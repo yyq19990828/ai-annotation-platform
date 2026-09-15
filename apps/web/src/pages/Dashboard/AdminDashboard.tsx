@@ -5,6 +5,7 @@ import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Avatar } from "@/components/ui/Avatar";
+import { UserAvatar } from "@/components/ui/UserAvatar";
 import { StatCard } from "@/components/ui/StatCard";
 import { ProgressBar } from "@/components/ui/ProgressBar";
 import { useElementStyle } from "@/components/ui/useElementStyle";
@@ -341,7 +342,10 @@ export function AdminDashboard() {
                           </td>
                           <td className={TABLE_CELL_CLASS}>
                             <div className="flex min-w-0 items-center gap-2">
-                              <Avatar initial={p.owner_name?.slice(0, 1) ?? "?"} size="sm" />
+                              <UserAvatar
+                                size="sm"
+                                user={{ name: p.owner_name, avatar_ref: p.owner_avatar_ref }}
+                              />
                               <span className="max-w-[160px] overflow-hidden text-ellipsis whitespace-nowrap text-sm">
                                 {p.owner_name ?? "—"}
                               </span>

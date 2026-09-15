@@ -609,9 +609,9 @@ function NotificationsPanel({
       </div>
 
       <FilterGroup
-        label="通知筛选"
+        label="通知类型筛选"
+        hideLabel
         compact
-        aria-label="通知类型筛选"
         className="shrink-0 border-b border-border px-3.5 py-2.5"
       >
         <div className="grid min-w-0 flex-1 grid-cols-3 gap-1.5 sm:grid-cols-6">

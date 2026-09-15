@@ -6,6 +6,7 @@ import type {
   ProjectUpdate,
   ProjectStats,
   ProjectMemberOut,
+  MentionCandidateOut,
   AttributeField as GenAttributeField,
   AttributeFieldOption as GenAttributeFieldOption,
   AttributeSchema as GenAttributeSchema,
@@ -67,6 +68,9 @@ export type ProjectResponse = Omit<ProjectOut, "preannotate_pipeline"> & {
 };
 export type ProjectStatsResponse = ProjectStats;
 export type ProjectMemberResponse = ProjectMemberOut;
+
+/** @ 提及候选：项目负责人 / 平台超管 / 项目成员，`kind` 用于输入区展示标签。 */
+export type MentionCandidateResponse = MentionCandidateOut;
 
 export interface ProjectReadinessSummary {
   project_id: string;
@@ -305,6 +309,10 @@ export const projectsApi = {
     }),
 
   listMembers: (id: string) => apiClient.get<ProjectMemberResponse[]>(`/projects/${id}/members`),
+
+  /** 讨论区 @ 候选：项目负责人 + 平台超管 + 项目成员（按 user_id 去重）。 */
+  mentionCandidates: (id: string) =>
+    apiClient.get<MentionCandidateResponse[]>(`/projects/${id}/mention-candidates`),
 
   addMember: (id: string, payload: { user_id: string; role: "annotator" | "reviewer" }) =>
     apiClient.post<ProjectMemberResponse>(`/projects/${id}/members`, payload),

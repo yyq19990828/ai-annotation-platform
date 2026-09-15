@@ -552,6 +552,9 @@ class UserBrief(_AAPModel):
     email: str | None = None
     role: str | None = None
     avatar_initial: str | None = None
+    # 头像引用: `preset:<slug>` (内置像素头像) / `upload:<32位hex>` (上传);
+    # None = 客户端回退 avatar_initial。URL 由前端/调用方按引用自行解析。
+    avatar_ref: str | None = None
 
 
 class Batch(_AAPModel):

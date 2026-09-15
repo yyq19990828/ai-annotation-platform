@@ -3,7 +3,7 @@ import { useQueryClient, useIsFetching } from "@tanstack/react-query";
 import { clsx } from "clsx";
 import { Icon } from "@/components/ui/Icon";
 import { SearchInput } from "@/components/ui/SearchInput";
-import { Avatar } from "@/components/ui/Avatar";
+import { UserAvatar } from "@/components/ui/UserAvatar";
 import { useAuthStore } from "@/stores/authStore";
 import { useLogout } from "@/hooks/useAuth";
 import { useTheme } from "@/hooks/useTheme";
@@ -181,7 +181,7 @@ export function TopBar({
           </Suspense>
 
           <div className="flex cursor-pointer items-center gap-2 rounded-lg py-1 pl-1 pr-2.5 transition-[background-color,transform] duration-200 hover:-translate-y-px hover:bg-accent active:translate-y-0 active:scale-[0.98]">
-            <Avatar initial={user?.name?.[0] ?? "?"} size="sm" />
+            <UserAvatar user={user ?? { name: "?" }} size="sm" />
             <div
               className={clsx(
                 "flex flex-col items-start leading-[1.2] whitespace-nowrap",

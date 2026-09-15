@@ -38,6 +38,7 @@ from app.schemas.project import (
     ProjectMemberCreate,
     ProjectTransferRequest,
     ProjectReadinessSummary,
+    MentionCandidateOut,
 )
 from app.schemas.project_pipeline import ProjectPipelineApplyRequest, ProjectPipelineOut
 from app.schemas.export import (
@@ -199,11 +200,14 @@ async def _serialize_project(
     通过 ai_completed_lookup 批量提供（list_projects 路径）或 fallback 单独查询。
     """
     owner_name = None
+    owner_avatar_ref = None
     if project.owner_id:
         owner_row = await db.execute(
-            select(User.name).where(User.id == project.owner_id)
+            select(User.name, User.avatar_ref).where(User.id == project.owner_id)
         )
-        owner_name = owner_row.scalar_one_or_none()
+        owner_row = owner_row.first()
+        if owner_row is not None:
+            owner_name, owner_avatar_ref = owner_row
     count_row = await db.execute(
         select(func.count())
         .select_from(ProjectMember)
@@ -251,6 +255,7 @@ async def _serialize_project(
         )
     data["ml_backend_id"] = ml_backend_id_for_response
     data["owner_name"] = owner_name
+    data["owner_avatar_ref"] = owner_avatar_ref
     data["member_count"] = member_count
     data["ai_completed_tasks"] = ai_completed
     data["batch_summary"] = batch_summary
@@ -1442,13 +1447,13 @@ async def list_members(
     db: AsyncSession = Depends(get_db),
 ):
     rows = await db.execute(
-        select(ProjectMember, User.name, User.email)
+        select(ProjectMember, User.name, User.email, User.avatar_ref)
         .join(User, User.id == ProjectMember.user_id)
         .where(ProjectMember.project_id == project.id)
         .order_by(ProjectMember.assigned_at.desc())
     )
     out = []
-    for member, user_name, user_email in rows.all():
+    for member, user_name, user_email, avatar_ref in rows.all():
         out.append(
             ProjectMemberOut(
                 id=member.id,
@@ -1457,8 +1462,71 @@ async def list_members(
                 user_email=user_email,
                 role=member.role,
                 assigned_at=member.assigned_at,
+                avatar_ref=avatar_ref,
             )
         )
+    return out
+
+
+@router.get(
+    "/{project_id}/mention-candidates", response_model=list[MentionCandidateOut]
+)
+async def list_mention_candidates(
+    project: Project = Depends(require_project_visible),
+    db: AsyncSession = Depends(get_db),
+):
+    """讨论区 @ 提及候选：项目负责人、启用的平台超管、项目成员，按 user_id 去重。
+
+    顺序固定为 负责人 → 超管 → 成员，前端据此展示「项目负责人 / 超级管理员」标签。
+    """
+    seen: set[uuid.UUID] = set()
+    out: list[MentionCandidateOut] = []
+
+    def add(user_id: uuid.UUID, name: str, email: str | None, kind: str) -> None:
+        if user_id in seen:
+            return
+        seen.add(user_id)
+        out.append(
+            MentionCandidateOut(
+                user_id=user_id, user_name=name, user_email=email, kind=kind
+            )
+        )
+
+    if project.owner_id is not None:
+        owner = (
+            await db.execute(
+                select(User.name, User.email, User.is_active).where(
+                    User.id == project.owner_id
+                )
+            )
+        ).first()
+        if owner is not None and owner.is_active:
+            add(project.owner_id, owner.name, owner.email, "owner")
+
+    super_admins = (
+        await db.execute(
+            select(User.id, User.name, User.email)
+            .where(
+                User.role == UserRole.SUPER_ADMIN.value,
+                User.is_active.is_(True),
+            )
+            .order_by(User.name)
+        )
+    ).all()
+    for user_id, name, email in super_admins:
+        add(user_id, name, email, "super_admin")
+
+    members = (
+        await db.execute(
+            select(ProjectMember, User.name, User.email)
+            .join(User, User.id == ProjectMember.user_id)
+            .where(ProjectMember.project_id == project.id)
+            .order_by(ProjectMember.assigned_at.desc())
+        )
+    ).all()
+    for member, user_name, user_email in members:
+        add(member.user_id, user_name, user_email, "member")
+
     return out
 
 
@@ -1510,6 +1578,7 @@ async def add_member(
         user_email=target.email,
         role=member.role,
         assigned_at=member.assigned_at,
+        avatar_ref=target.avatar_ref,
     )
 
 
