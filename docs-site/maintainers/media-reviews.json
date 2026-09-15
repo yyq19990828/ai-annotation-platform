@@ -3629,11 +3629,11 @@
       ]
     },
     "docs-site/user-guide/images/settings/profile.png": {
-      "last_verified_commit": "23ce6efea480ce88514c0ca23308d19f48b1d9ac",
-      "verified_at": "2026-09-13T18:34:54.855Z",
-      "reviewer": "Codex primary thread (user-delegated)",
+      "last_verified_commit": "632686c33ac631e88b00ed29cb23d5bd9393154a",
+      "verified_at": "2026-09-15T01:00:04.205Z",
+      "reviewer": "OpenCode (user-delegated agent review)",
       "review_profile": "visual-content-v1",
-      "sha256": "96e1b7efb510feb8a2cee64935bbcfc048903e1cadfd03f2ba1e2c20d3294d9a",
+      "sha256": "b037741774ae0b24491cc0ed77a2cec12dcbd3e66863635b4d205a0cadbc892a",
       "watch_paths": [
         "apps/web/e2e/screenshots/scenes/settings.ts",
         "docs-site/user-guide/images/settings/profile.png",
