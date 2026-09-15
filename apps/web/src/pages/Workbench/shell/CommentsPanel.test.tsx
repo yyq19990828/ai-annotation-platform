@@ -50,9 +50,13 @@ const mocks = vi.hoisted(() => {
       error: null,
       refetch: vi.fn(),
     },
-    members: { data: [] as Array<{ user_id: string; user_name: string; user_email: string }> },
-    project: {
-      data: undefined as { owner_id?: string | null; owner_name?: string | null } | undefined,
+    mentionCandidates: {
+      data: [] as Array<{
+        user_id: string;
+        user_name: string;
+        user_email?: string | null;
+        kind: "member" | "owner" | "super_admin";
+      }>,
     },
     store: null as DiscussionDraftStore | null,
     snapshot: null,
@@ -77,8 +81,7 @@ vi.mock("@/hooks/useFeedbacks", () => ({
   useDeleteFeedback: () => mocks.deleteFeedback,
 }));
 vi.mock("@/hooks/useProjects", () => ({
-  useProjectMembers: () => mocks.members,
-  useProject: () => mocks.project,
+  useProjectMentionCandidates: () => mocks.mentionCandidates,
 }));
 vi.mock("@/api/comments", () => ({
   commentsApi: { attachmentDownloadUrl: mocks.attachmentDownloadUrl },
@@ -137,7 +140,7 @@ vi.mock("./CommentInput", () => ({
     backgroundUrl?: string | null;
     liveCanvas?: unknown;
     onReturnToTask?: () => void;
-    members?: Array<{ id: string; name: string }>;
+    members?: Array<{ id: string; name: string; hint?: string }>;
   }) => (
     <div
       data-testid="mock-composer"
@@ -151,6 +154,9 @@ vi.mock("./CommentInput", () => ({
       data-background={backgroundUrl ?? ""}
       data-has-return={onReturnToTask ? "true" : "false"}
       data-members={(members ?? []).map((member) => member.id).join(",")}
+      data-member-hints={(members ?? [])
+        .map((member) => `${member.id}:${member.hint ?? ""}`)
+        .join(",")}
     />
   ),
   renderCommentBody: (body: string) => body,
@@ -286,8 +292,7 @@ beforeEach(() => {
   mocks.taskQuery.error = null;
   mocks.taskQuery.hasNextPage = false;
   mocks.legacyQuery.data = undefined;
-  mocks.members = { data: [] };
-  mocks.project = { data: undefined };
+  mocks.mentionCandidates = { data: [] };
   mocks.store = null;
   mocks.snapshot = null;
   mocks.useTaskDiscussion.mockClear();
@@ -349,27 +354,37 @@ describe("CommentsPanel discussion feed", () => {
     expect(screen.getByTestId("drawing-preview")).toBeInTheDocument();
   });
 
-  it("includes the project owner in the @ mention candidates alongside project members", () => {
-    mocks.members = {
-      data: [{ user_id: "user-b", user_name: "Priya Mehta", user_email: "priya@example.com" }],
+  it("labels owner, super admin and member @ mention candidates", () => {
+    mocks.mentionCandidates = {
+      data: [
+        {
+          user_id: "user-owner",
+          user_name: "Owner Name",
+          user_email: "owner@example.com",
+          kind: "owner",
+        },
+        {
+          user_id: "user-root",
+          user_name: "Root Admin",
+          user_email: "root@example.com",
+          kind: "super_admin",
+        },
+        {
+          user_id: "user-b",
+          user_name: "Priya Mehta",
+          user_email: "priya@example.com",
+          kind: "member",
+        },
+      ],
     };
-    mocks.project = { data: { owner_id: "user-owner", owner_name: "Owner Name" } };
     renderPanel();
 
-    expect(screen.getByTestId("mock-composer")).toHaveAttribute(
-      "data-members",
-      "user-owner,user-b",
+    const composer = screen.getByTestId("mock-composer");
+    expect(composer).toHaveAttribute("data-members", "user-owner,user-root,user-b");
+    expect(composer).toHaveAttribute(
+      "data-member-hints",
+      "user-owner:项目负责人,user-root:超级管理员,user-b:",
     );
-  });
-
-  it("does not duplicate the owner when they are already a project member", () => {
-    mocks.members = {
-      data: [{ user_id: "user-owner", user_name: "Owner Name", user_email: "owner@example.com" }],
-    };
-    mocks.project = { data: { owner_id: "user-owner", owner_name: "Owner Name" } };
-    renderPanel();
-
-    expect(screen.getByTestId("mock-composer")).toHaveAttribute("data-members", "user-owner");
   });
 
   it("admits a new verified comment focus before falling back from a cleared selection", () => {

@@ -127,6 +127,15 @@ export function useProjectMembers(id: string) {
   });
 }
 
+/** 讨论区 @ 候选：负责人 + 超管 + 成员；仅需项目可见权限。 */
+export function useProjectMentionCandidates(id: string) {
+  return useQuery({
+    queryKey: ["project-mention-candidates", id],
+    queryFn: () => projectsApi.mentionCandidates(id),
+    enabled: !!id,
+  });
+}
+
 export function useAddProjectMember(id: string) {
   const qc = useQueryClient();
   return useMutation({

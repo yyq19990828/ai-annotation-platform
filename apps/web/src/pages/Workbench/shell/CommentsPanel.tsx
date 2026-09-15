@@ -11,7 +11,7 @@ import {
 } from "react";
 import { useNavigate } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
-import { useProject, useProjectMembers } from "@/hooks/useProjects";
+import { useProjectMentionCandidates } from "@/hooks/useProjects";
 import { CanvasDrawingPreview } from "@/components/CanvasDrawingEditor";
 import { useHoveredCommentStore } from "../state/useHoveredCommentStore";
 import {
@@ -470,22 +470,23 @@ export function CommentsPanel({
   ]);
   const total = taskContext ? taskDiscussionQuery.data?.pages[0]?.total : discussionItems.length;
 
-  const { data: members } = useProjectMembers(projectId ?? "");
-  const { data: project } = useProject(projectId ?? "");
-  // 项目负责人也是项目一员，但通常不在 project_members 表里，故单独并入 @ 候选。
-  const memberOptions = useMemo<UserPickerOption[]>(() => {
-    const options: UserPickerOption[] = (members ?? []).map((member) => ({
-      id: member.user_id,
-      name: member.user_name,
-      email: member.user_email,
-    }));
-    const ownerId = project?.owner_id;
-    const ownerName = project?.owner_name;
-    if (ownerId && ownerName && !options.some((option) => option.id === ownerId)) {
-      options.unshift({ id: ownerId, name: ownerName, hint: "项目负责人" });
-    }
-    return options;
-  }, [members, project?.owner_id, project?.owner_name]);
+  // 后端按 owner → super_admin → member 去重返回，前端只负责展示标签。
+  const { data: mentionCandidates } = useProjectMentionCandidates(projectId ?? "");
+  const memberOptions = useMemo<UserPickerOption[]>(
+    () =>
+      (mentionCandidates ?? []).map((candidate) => ({
+        id: candidate.user_id,
+        name: candidate.user_name,
+        email: candidate.user_email ?? null,
+        hint:
+          candidate.kind === "owner"
+            ? "项目负责人"
+            : candidate.kind === "super_admin"
+              ? "超级管理员"
+              : undefined,
+      })),
+    [mentionCandidates],
+  );
 
   const feedbackParams = useMemo(
     () => ({
