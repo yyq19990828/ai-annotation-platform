@@ -105,3 +105,18 @@ test("replacing an Issue detail permits only its exact aborted GET thread read",
   for (const path of [`${root}/replies`, `${root}/thread/export`, root])
     assert.equal(isVideoLifecycleCancellation({ ...request, path }), false);
 });
+
+test("retiring a video task permits only exact aborted GET manifest reads", () => {
+  for (const path of [`${task}/video/manifest`, `${task}/video/manifest-v2`]) {
+    const request = { ...abort, method: "GET", path };
+    assert.equal(isVideoLifecycleCancellation(request), true, path);
+    for (const method of ["POST", "PATCH", "DELETE"])
+      assert.equal(isVideoLifecycleCancellation({ ...request, method }), false);
+    assert.equal(isVideoLifecycleCancellation({ ...request, kind: "http" }), false);
+    assert.equal(
+      isVideoLifecycleCancellation({ ...request, message: "net::ERR_CONNECTION_RESET" }),
+      false,
+    );
+    assert.equal(isVideoLifecycleCancellation({ ...request, path: `${path}/retry` }), false);
+  }
+});

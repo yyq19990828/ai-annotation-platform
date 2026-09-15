@@ -16,6 +16,8 @@ export function isVideoLifecycleCancellation(error: VideoRequestError): boolean 
     error.path === "/api/v1/feedbacks" ||
     error.path === "/api/v1/tasks" ||
     /^\/api\/v1\/tasks\/[0-9a-f-]{36}$/.test(error.path) ||
+    // Switching tasks retires both standard and precise video manifest queries.
+    /^\/api\/v1\/tasks\/[0-9a-f-]{36}\/video\/manifest(?:-v2)?$/.test(error.path) ||
     // Leaving the comments tab retires its abortable task-discussion query.
     /^\/api\/v1\/tasks\/[0-9a-f-]{36}\/discussion\/page$/.test(error.path) ||
     // Retiring the task also cancels its annotation comment badge query.
