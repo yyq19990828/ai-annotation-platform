@@ -11,7 +11,7 @@ import {
 } from "react";
 import { useNavigate } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
-import { useProjectMembers } from "@/hooks/useProjects";
+import { useProject, useProjectMembers } from "@/hooks/useProjects";
 import { CanvasDrawingPreview } from "@/components/CanvasDrawingEditor";
 import { useHoveredCommentStore } from "../state/useHoveredCommentStore";
 import {
@@ -23,6 +23,7 @@ import {
 import { useAnnotationAuditHistory, useTaskAuditHistory } from "@/hooks/useAnnotationAuditHistory";
 import { AnnotationHistoryTimeline } from "@/components/AnnotationHistoryTimeline";
 import { CommentInput, renderCommentBody } from "./CommentInput";
+import type { UserPickerOption } from "@/components/UserPicker";
 import {
   commentsApi,
   type AnnotationCommentAnchor,
@@ -470,11 +471,21 @@ export function CommentsPanel({
   const total = taskContext ? taskDiscussionQuery.data?.pages[0]?.total : discussionItems.length;
 
   const { data: members } = useProjectMembers(projectId ?? "");
-  const memberOptions = (members ?? []).map((member) => ({
-    id: member.user_id,
-    name: member.user_name,
-    email: member.user_email,
-  }));
+  const { data: project } = useProject(projectId ?? "");
+  // 项目负责人也是项目一员，但通常不在 project_members 表里，故单独并入 @ 候选。
+  const memberOptions = useMemo<UserPickerOption[]>(() => {
+    const options: UserPickerOption[] = (members ?? []).map((member) => ({
+      id: member.user_id,
+      name: member.user_name,
+      email: member.user_email,
+    }));
+    const ownerId = project?.owner_id;
+    const ownerName = project?.owner_name;
+    if (ownerId && ownerName && !options.some((option) => option.id === ownerId)) {
+      options.unshift({ id: ownerId, name: ownerName, hint: "项目负责人" });
+    }
+    return options;
+  }, [members, project?.owner_id, project?.owner_name]);
 
   const feedbackParams = useMemo(
     () => ({

@@ -92,7 +92,8 @@ export interface CommentInputProps {
 
 interface PickerState {
   open: boolean;
-  anchor: { left: number; top: number };
+  /** 光标矩形（top/bottom 用于 UserPicker 判断向上/向下展开）。 */
+  anchor: { left: number; top: number; bottom: number };
   /** @ 后的过滤 query。 */
   query: string;
   /** @ 起始 Range（用于替换为 chip）。 */
@@ -196,7 +197,7 @@ function insertMentionChip(triggerRange: { node: Node; offset: number }, opt: Us
 }
 
 function blankPicker(): PickerState {
-  return { open: false, anchor: { left: 0, top: 0 }, query: "", triggerRange: null };
+  return { open: false, anchor: { left: 0, top: 0, bottom: 0 }, query: "", triggerRange: null };
 }
 
 function cloneAnchor(
@@ -577,7 +578,7 @@ export function CommentInput({
     const rect = tmpRange.getBoundingClientRect();
     setPicker({
       open: true,
-      anchor: { left: rect.left, top: rect.bottom + 4 },
+      anchor: { left: rect.left, top: rect.top, bottom: rect.bottom },
       query,
       triggerRange: { node, offset: at },
     });

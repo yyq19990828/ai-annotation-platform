@@ -7,7 +7,7 @@
  *  - 普通文本 + chip 混合：base 路径
  *  - 仅文本（无 chip）：mentions 为空
  */
-import { act, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { afterEach, describe, it, expect, vi } from "vitest";
 import { renderCommentBody, serialize } from "../CommentInput";
@@ -183,6 +183,7 @@ afterEach(() => {
   canvasHarness.onSave = null;
   canvasHarness.onDraftChange = null;
   canvasHarness.initial = null;
+  delete (Range.prototype as unknown as { getBoundingClientRect?: unknown }).getBoundingClientRect;
   vi.restoreAllMocks();
 });
 
@@ -259,6 +260,48 @@ describe("CommentInput session composer", () => {
       }),
       expect.anything(),
     );
+  });
+
+  it("picking a mention with Enter inserts the chip without submitting the comment", () => {
+    // jsdom 不实现 Range.getBoundingClientRect；@ 触发需要光标矩形。
+    Object.defineProperty(Range.prototype, "getBoundingClientRect", {
+      configurable: true,
+      value: () => ({
+        left: 10,
+        top: 200,
+        right: 20,
+        bottom: 214,
+        width: 10,
+        height: 14,
+        x: 10,
+        y: 200,
+        toJSON: () => ({}),
+      }),
+    });
+    const onSubmit = vi.fn();
+    const view = renderComposer(textTask, onSubmit, {
+      members: [{ id: "u1", name: "Alice" }],
+    });
+    const input = editor(view.container);
+    input.textContent = "hi @";
+    const textNode = input.firstChild as Text;
+    const range = document.createRange();
+    range.setStart(textNode, textNode.length);
+    range.collapse(true);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+    fireEvent.input(input);
+
+    expect(screen.getByRole("listbox")).toBeInTheDocument();
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(input.querySelector('[data-mention-uid="u1"]')).not.toBeNull();
+
+    // 再次 Enter 才算真正发送。
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onSubmit).toHaveBeenCalledTimes(1);
   });
 
   it("offers popup drawing for an explicitly enabled task target", () => {
