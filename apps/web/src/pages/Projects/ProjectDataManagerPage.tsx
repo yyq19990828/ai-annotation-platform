@@ -39,6 +39,7 @@ import {
 import { FilterValueEditor } from "@/components/filters/FilterValueEditor";
 import { useFilterDraftValidity } from "@/components/filters/useFilterDraftValidity";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { usePageTableHeader } from "./data-manager/usePageTableHeader";
 import { useUrlFilterState } from "@/hooks/useUrlFilterState";
 import { formatFilterDraft, parseFilterValue } from "@/lib/filters/filterValues";
 import { filterOperatorLabel } from "@/lib/filters/types";
@@ -490,6 +491,10 @@ function TaskDataManagerPage({
   const selectedTaskRef = useRef<SelectedTask | null>(null);
   selectedTaskRef.current = selectedTask;
   const resultsStartRef = useRef<HTMLDivElement>(null);
+  const stickyHeaderRef = usePageTableHeader<HTMLTableSectionElement>(
+    scrollContainerRef,
+    resultsStartRef,
+  );
   const [baselineSignature, setBaselineSignature] = useState("");
   const [pendingViewKey, setPendingViewKey] = useState<string | null>(null);
   const [pendingScope, setPendingScope] = useState<DataManagerEntityScope | null>(null);
@@ -1330,7 +1335,7 @@ function TaskDataManagerPage({
               </Button>
             </aside>
 
-            <div className="flex flex-col gap-2">
+            <div className="flex min-w-0 flex-col gap-2">
               <section className="flex shrink-0 flex-col gap-2 rounded-md border border-border bg-card p-2.5">
                 <div className="flex items-center justify-between gap-3 px-0.5 pb-0.5">
                   <div>
@@ -1551,10 +1556,8 @@ function TaskDataManagerPage({
 
               <div
                 ref={resultsStartRef}
-                // The card hugs a wide table instead of scrolling vertically by
-                // itself; the Data page scroll owner handles page scrolling and
-                // keeps the sticky table header aligned while results are visible.
-                className="w-fit min-w-full min-h-[280px] rounded-md border border-border bg-card shadow-sm"
+                // Contain wide columns without creating a short vertical scroller.
+                className="w-full min-w-0 max-w-full min-h-[280px] overflow-x-auto rounded-md border border-border bg-card shadow-sm"
               >
                 {layout === "gallery" ? (
                   <div
@@ -1659,7 +1662,7 @@ function TaskDataManagerPage({
                   </div>
                 ) : (
                   <table className="w-full min-w-[1040px] table-fixed border-collapse [&_td]:overflow-hidden [&_td]:border-b [&_td]:border-border [&_td]:px-3 [&_td]:py-2.5 [&_td]:text-left [&_td]:align-middle [&_td]:text-ellipsis [&_td]:whitespace-nowrap [&_th]:overflow-hidden [&_th]:border-b [&_th]:border-border [&_th]:bg-muted [&_th]:px-3 [&_th]:py-2.5 [&_th]:text-left [&_th]:align-middle [&_th]:text-xs [&_th]:font-semibold [&_th]:text-ellipsis [&_th]:whitespace-nowrap [&_th]:text-foreground [&_th:first-child]:w-[58px] [&_td:first-child]:w-[58px] [&_tbody_tr:hover]:bg-muted [&_tr:last-child_td]:border-b-0">
-                    <thead className="sticky top-0 z-base">
+                    <thead ref={stickyHeaderRef} className="relative z-base">
                       <tr>
                         <th>
                           <input

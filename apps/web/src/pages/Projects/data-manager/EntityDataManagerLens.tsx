@@ -59,6 +59,7 @@ import {
 } from "@/hooks/useTaskViews";
 import { cn } from "@/lib/utils";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { usePageTableHeader } from "./usePageTableHeader";
 import { filterOperatorLabel } from "@/lib/filters/types";
 import {
   combineKeyword,
@@ -304,6 +305,7 @@ export function EntityDataManagerLens({
   const skipUrlSyncRef = useRef(false);
   const previousUrlRef = useRef(searchParams.toString());
   const resultsStartRef = useRef<HTMLDivElement>(null);
+  const stickyHeaderRef = usePageTableHeader(scrollContainerRef, resultsStartRef);
   const canvasRef = useRef<HTMLDivElement>(null);
   const identityRef = useRef(`${projectId}:${user?.id ?? "anonymous"}:${scope}`);
 
@@ -944,7 +946,7 @@ export function EntityDataManagerLens({
               </Button>
             </aside>
 
-            <div className="flex flex-col gap-2">
+            <div className="flex min-w-0 flex-col gap-2">
               <section className="flex shrink-0 flex-col gap-2 rounded-md border border-border bg-card p-2.5">
                 <div className="flex items-center justify-between gap-3">
                   <div>
@@ -1093,16 +1095,16 @@ export function EntityDataManagerLens({
                 ref={resultsStartRef}
                 role="table"
                 aria-rowcount={total}
-                // The table hugs its wide rows instead of scrolling vertically by
-                // itself; the Data page scroll owner provides page scrolling and
-                // keeps the sticky header row aligned while results are visible.
-                className="relative w-fit min-w-full min-h-[280px] rounded-md border border-border bg-card"
+                // Horizontal overflow stays here; natural height leaves vertical
+                // scrolling and virtualizer ownership with the Data page.
+                className="relative w-full min-w-0 max-w-full min-h-[280px] overflow-x-auto rounded-md border border-border bg-card"
               >
                 <div
+                  ref={stickyHeaderRef}
                   role="row"
                   className={cn(
                     styles.entityGrid,
-                    "sticky top-0 z-base min-w-max border-b border-border bg-muted",
+                    "relative z-base min-w-max border-b border-border bg-muted",
                   )}
                   // eslint-disable-next-line no-restricted-syntax -- schema columns determine the grid at runtime.
                   style={{ "--dm-grid-columns": gridTemplate } as CSSProperties}
