@@ -375,6 +375,21 @@ class ProjectMemberOut(BaseModel):
         from_attributes = True
 
 
+class MentionCandidateOut(BaseModel):
+    """讨论区 @ 提及候选：项目成员 + 项目负责人 + 启用的平台超管。
+
+    后端提及校验本就放行 owner / project_admin / super_admin，这里只补齐可发现性。
+    """
+
+    user_id: UUID
+    user_name: str
+    user_email: str | None = None
+    kind: Literal["member", "owner", "super_admin"] = "member"
+
+    class Config:
+        from_attributes = True
+
+
 class ProjectMemberCreate(BaseModel):
     user_id: UUID
     role: Literal["annotator", "reviewer", "viewer"]

@@ -38,6 +38,7 @@ from app.schemas.project import (
     ProjectMemberCreate,
     ProjectTransferRequest,
     ProjectReadinessSummary,
+    MentionCandidateOut,
 )
 from app.schemas.project_pipeline import ProjectPipelineApplyRequest, ProjectPipelineOut
 from app.schemas.export import (
@@ -1459,6 +1460,68 @@ async def list_members(
                 assigned_at=member.assigned_at,
             )
         )
+    return out
+
+
+@router.get(
+    "/{project_id}/mention-candidates", response_model=list[MentionCandidateOut]
+)
+async def list_mention_candidates(
+    project: Project = Depends(require_project_visible),
+    db: AsyncSession = Depends(get_db),
+):
+    """讨论区 @ 提及候选：项目负责人、启用的平台超管、项目成员，按 user_id 去重。
+
+    顺序固定为 负责人 → 超管 → 成员，前端据此展示「项目负责人 / 超级管理员」标签。
+    """
+    seen: set[uuid.UUID] = set()
+    out: list[MentionCandidateOut] = []
+
+    def add(user_id: uuid.UUID, name: str, email: str | None, kind: str) -> None:
+        if user_id in seen:
+            return
+        seen.add(user_id)
+        out.append(
+            MentionCandidateOut(
+                user_id=user_id, user_name=name, user_email=email, kind=kind
+            )
+        )
+
+    if project.owner_id is not None:
+        owner = (
+            await db.execute(
+                select(User.name, User.email, User.is_active).where(
+                    User.id == project.owner_id
+                )
+            )
+        ).first()
+        if owner is not None and owner.is_active:
+            add(project.owner_id, owner.name, owner.email, "owner")
+
+    super_admins = (
+        await db.execute(
+            select(User.id, User.name, User.email)
+            .where(
+                User.role == UserRole.SUPER_ADMIN.value,
+                User.is_active.is_(True),
+            )
+            .order_by(User.name)
+        )
+    ).all()
+    for user_id, name, email in super_admins:
+        add(user_id, name, email, "super_admin")
+
+    members = (
+        await db.execute(
+            select(ProjectMember, User.name, User.email)
+            .join(User, User.id == ProjectMember.user_id)
+            .where(ProjectMember.project_id == project.id)
+            .order_by(ProjectMember.assigned_at.desc())
+        )
+    ).all()
+    for member, user_name, user_email in members:
+        add(member.user_id, user_name, user_email, "member")
+
     return out
 
 
