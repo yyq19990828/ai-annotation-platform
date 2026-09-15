@@ -241,6 +241,22 @@ describe("CommentInput session composer", () => {
     expect(editor(view.container).textContent).toBe("");
   });
 
+  it("defers editor sync until IME composition ends", async () => {
+    const store = createDiscussionDraftStore({ owner: { userId: "u1", sessionId: "s1" } });
+    const view = render(
+      <CommentInput target={textTask} draftStore={store} members={[]} onSubmit={vi.fn()} />,
+    );
+    const input = editor(view.container);
+    // 组合中：不同步草稿，避免 React/store 更新打断输入法。
+    fireEvent.compositionStart(input);
+    input.textContent = "中";
+    fireEvent.input(input);
+    expect(store.getDraft(textTask)?.body ?? "").toBe("");
+    // 组合结束：补一次同步，拿到最终文本。
+    fireEvent.compositionEnd(input);
+    await waitFor(() => expect(store.getDraft(textTask)?.body).toBe("中"));
+  });
+
   it("allows task mentions while keeping attachments and drawing disabled", () => {
     const onSubmit = vi.fn();
     const view = renderComposer(textTask, onSubmit);

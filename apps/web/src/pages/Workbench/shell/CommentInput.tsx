@@ -185,12 +185,13 @@ function insertMentionChip(triggerRange: { node: Node; offset: number }, opt: Us
   r.insertNode(chip);
 
   // 在 chip 之后追加一个空格（让用户继续输入更自然）
-  const space = document.createTextNode(" ");
+  const space = document.createTextNode("\u00A0");
   chip.after(space);
 
-  // 把光标放到 space 之后
+  // 光标放在空格文本节点内（而不是父节点子边界上）：贴着 contenteditable=false
+  // chip 的边界位置会让部分中文输入法无法起组合，首个字母被直接提交为字面量。
   const newRange = document.createRange();
-  newRange.setStartAfter(space);
+  newRange.setStart(space, space.length);
   newRange.collapse(true);
   sel.removeAllRanges();
   sel.addRange(newRange);
@@ -545,8 +546,8 @@ export function CommentInput({
     return patchDraft({ body: payload.body, mentions: payload.mentions });
   }, [effectiveAnchor, maybeCaptureAnchor, patchDraft]);
 
-  /** 监听 input：检测 @ 触发；维护光标处的 query 用于 picker 过滤。 */
-  const handleInput = useCallback(() => {
+  /** 同步草稿并维护光标处的 @ query（非组合期调用）。 */
+  const processEditorInput = useCallback(() => {
     if (syncEditorDraft() === false) return;
     const sel = window.getSelection();
     if (!sel || sel.rangeCount === 0) return;
@@ -583,6 +584,19 @@ export function CommentInput({
       triggerRange: { node, offset: at },
     });
   }, [syncEditorDraft, targetCapabilities.mentions]);
+
+  /** 监听 input：中文输入法组合期不做同步/状态更新，避免打断组合。 */
+  const handleInput = useCallback(() => {
+    if (composingRef.current) return;
+    processEditorInput();
+  }, [processEditorInput]);
+
+  const handleCompositionEnd = useCallback(() => {
+    composingRef.current = false;
+    // Chrome 通常会在 compositionend 后再补一次 input；这里显式同步，保证
+    // 浏览器不补事件时草稿与 @ query 也拿到最终文本。
+    processEditorInput();
+  }, [processEditorInput]);
 
   const handlePick = useCallback(
     (opt: UserPickerOption) => {
@@ -1059,9 +1073,7 @@ export function CommentInput({
         onCompositionStart={() => {
           composingRef.current = true;
         }}
-        onCompositionEnd={() => {
-          composingRef.current = false;
-        }}
+        onCompositionEnd={handleCompositionEnd}
         onKeyDown={(e) => {
           // Enter 提交（Shift+Enter 换行）
           if (
