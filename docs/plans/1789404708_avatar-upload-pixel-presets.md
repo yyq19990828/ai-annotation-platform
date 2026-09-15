@@ -474,15 +474,27 @@ P1 与 P2 无依赖，可并行；P3 依赖 P1、P2；P4 依赖 P3。
 | 协作面            | 用户与权限列表出现带图片的头像行，同表其余用户仍为首字母（混排不错位）；项目负责人无头像时回退首字母                                                            |
 | 恢复默认          | 无头像时按钮禁用；有头像动作后可用（组件测试覆盖清除路径）                                                                                                      |
 
+### 14.4 文档截图：已捕获复核但**回退**（清单不变量）
+
+个人资料页截图确实按 §2 的隔离环境重截并复核过，但**不能**随本 PR 落地，原因是截图清单的不变量：
+
+- `apps/web/e2e/screenshots/outputs/manifest.json` 是**受版本控制**的（仅该目录内的临时产物被忽略；`git add <目录>` 会被拒绝，必须显式 `git add <文件>`——本次就是这么漏掉的）。
+- `manifest-reporter` 只在**完整矩阵**（全部 matrix project + 全部 scene target）跑完后才重写清单；单场景 / 单 project 运行**故意不更新**，因此 `docs-site/scripts/check-image-manifest.mjs --strict` 会因「SHA-256 与磁盘文件不一致」失败。
+- 用本机跑完整 `desktop-light` 矩阵验证可重复性：**65 张里 38 张字节不同、还有 3 个 scene 失败**（本机 fixture/stub 与既有基线机器不一致）。也就是说，想让清单被工具合法更新，就必须连带重写 38 张无关截图并逐一重新复核。
+
+因此本 PR 回退该截图（连同 `media-reviews.json` 的复核记录），把「个人资料页截图加入头像行」列为后续工作：需要一次完整的截图矩阵运行 + 38 张图的复核，或由维护者明确同意后做单条目的清单修补。
+
 ## Outcome
 
-- Landed commits: `1d0fc8ee`（主体）、`e695f6db`（计划记录）、`8557ee5f`（工作树桶隔离）、`7db7f197`（头像组测试）、`632686c3`（截图重截）、`7b52ecc0`（截图复核）
+- Landed commits: `1d0fc8ee`（主体）、`e695f6db`（计划记录）、`8557ee5f`（工作树桶隔离）、`7db7f197`（头像组测试）、`fada5ffd`（合并 main 解冲突）、`8608f174`（入口包削减 + 预算上调）；`632686c3` / `7b52ecc0` 的截图重截与复核**已回退**（§14.4）
 - Release milestone: Not yet determined
 - User documentation: `docs-site/user-guide/reference/settings.md`（个人资料「头像」）
 - Developer documentation: `docs-site/dev/reference/storage-buckets.md`（`avatars` 桶 + 可见性边界）、`docs-site/dev/reference/generated-artifacts.md`（像素头像生成物）、`docs-site/ops/deploy/{docker-compose,lan-production}.md、`docs-site/dev/how-to/worktree-environments.md`与`docs-site/dev/concepts/runtime-environments.md`（桶数）
 - ADR: 无（分桶与免鉴权读取的取舍记入 `storage-buckets.md` 与 `apps/api/app/api/v1/avatars.py` 模块注释，未达到 ADR 门槛）
 - CHANGELOG: Unreleased / Added 已加条目
 - Remaining work:
-  1. 评论 / Issue / 通知 / 审计日志的头像仍为文字或首字母（§12），需要为那 6+ 个 payload 单独扩展。
-  2. Playwright e2e 未新增；选择器与头像组由 vitest 组件测试覆盖（含图片/首字母混排）。
-  3. 本机 ffmpeg 缺 `libwebp`、Docker Hub 受限两条环境问题建议补进截图排障文档（§14.1）。
+  1. **个人资料页文档截图**加入头像行：需要一次完整截图矩阵运行 + 连带变化图片的复核，或维护者同意后做单条目清单修补（§14.4）。
+  2. 评论 / Issue / 通知 / 审计日志的头像仍为文字或首字母（§12），需要为那 6+ 个 payload 单独扩展。
+  3. Playwright e2e 未新增；选择器与头像组由 vitest 组件测试覆盖（含图片/首字母混排）。
+  4. 本机 ffmpeg 缺 `libwebp`、Docker Hub 受限两条环境问题建议补进截图排障文档（§14.1）。
+  5. CI 观察：`Frontend verification / vitest with coverage` 曾在 `ProjectDetailPanel.test.tsx` 的 OCR 用例上超时失败——即 `vitest.setup.ts` 注释里记录的已知 CI 满载抖动，与本改动无关；本地该文件通过。
