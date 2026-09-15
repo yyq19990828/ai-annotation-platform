@@ -60,10 +60,9 @@ describe("内置像素头像产物", () => {
   it("每个条目都显式固定了形象，不依赖随机种子", async () => {
     const manifest = await loadManifest();
     for (const item of manifest.items) {
-      const options = item.options as Record<string, string[]>;
-      expect(options.hair?.[0]).toBeTruthy();
-      expect(options.clothing?.[0]).toBeTruthy();
-      expect(options.skinColor?.[0]).toBeTruthy();
+      expect(item.options.hairVariant).toBeTruthy();
+      expect(item.options.clothesVariant).toBeTruthy();
+      expect(item.options.skinColor).toBeTruthy();
       expect(item.label).toContain("像素头像");
     }
   });

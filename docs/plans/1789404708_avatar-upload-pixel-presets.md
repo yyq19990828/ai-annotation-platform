@@ -205,7 +205,7 @@ is_avatar = path == "/api/v1/auth/me/avatar"
 
 ### 5.2 生成方式
 
-- 生成脚本：`apps/web/scripts/gen-pixel-avatars.mjs`，`@dicebear/core` + `@dicebear/pixel-art`（v9 线，声明支持 Node 20）作为 **devDependency**（仅生成期需要，不进产物）。
+- 生成脚本：`apps/web/scripts/gen-pixel-avatars.mjs`，`@dicebear/core` + `@dicebear/styles` 作为 **devDependency**（仅生成期需要，不进产物）。
 - 命令：`pnpm --filter @anno/web gen:avatars`（新增 npm script）。
 - 产物**提交进仓库**：运行期零依赖、可离线、不新增 CSP/网络来源、可 code review、构建期不需要网络。
 - 脚本用 `--check` 模式供人工复核（重跑后 diff 为空），**manifest 不写生成时间戳**，保证重复执行是无差异的 no-op。
@@ -225,7 +225,7 @@ apps/web/public/avatars/pixel/
 ```json
 {
   "style": "dicebear/pixel-art",
-  "generator": "@dicebear/core + @dicebear/pixel-art",
+  "generator": "@dicebear/core + @dicebear/styles",
   "sourceUrl": "https://www.dicebear.com/styles/pixel-art/",
   "creator": "DiceBear",
   "license": "CC0 1.0",
@@ -235,13 +235,13 @@ apps/web/public/avatars/pixel/
     {
       "id": "pixel-01",
       "label": "像素头像 01",
-      "options": { "hair": ["short04"], "skinColor": ["f4c7a1"] }
+      "options": { "hairVariant": "short04", "skinColor": "f4c7a1" }
     }
   ]
 }
 ```
 
-`options` 里显式固定每个头像的 `hair` / `clothing` / `eyes` / `mouth` 变体与 `skinColor` / `hairColor` / `clothingColor`，不依赖 seed 撞运气：32 张全部可预测、可复核、可单独手改。配色从三张小调色板（6 种肤色、8 种发色、8 种衣色）按索引组合，帽子/眼镜/胡须按约 1/3、1/4、1/5 的比例分配，保证形象多样而不怪诞。
+`options` 里显式固定每个头像的 `hairVariant` / `clothesVariant` / `eyesVariant` / `mouthVariant` 与 `skinColor` / `hairColor` / `clothingColor`，不依赖 seed 撞运气：32 张全部可预测、可复核、可单独手改。配色从三张小调色板（6 种肤色、8 种发色、8 种衣色）按索引组合，帽子/眼镜/胡须按约 1/3、1/4、1/5 的比例分配，保证形象多样而不怪诞。
 
 数量取 32（本期固定，后续按 §5.4 只追加）：8 列 × 4 行的选择网格刚好一屏，单张 SVG 约 2–4 KB，总体约 100 KB，无缩略图生成成本（浏览器直接缩放同一份 SVG）。
 
@@ -251,11 +251,11 @@ apps/web/public/avatars/pixel/
 
 ### 5.5 被否方案
 
-| 方案                                                | 否掉的原因                                                                                                             |
-| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| 运行期调 DiceBear HTTP API                          | 引入外部依赖与隐私外泄（每次渲染都会把用户标识发给第三方）、离线/内网部署不可用、CSP `img-src https:` 虽允许但不该依赖 |
-| 运行期打包 `@dicebear/core` + `@dicebear/pixel-art` | 为 32 张固定图片引入数百 KB 运行期依赖与首帧 JS 开销，收益只是省下提交 100 KB 静态产物                                 |
-| 手绘 32 个形象（对齐桌宠 `PixelHumanSprite` 风格）  | 零许可负担，但美术工作量最大且质量不可控；`PixelHumanSprite` 只有 1 个形象，撑不起「供选择」的多样性                   |
+| 方案                                               | 否掉的原因                                                                                                             |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| 运行期调 DiceBear HTTP API                         | 引入外部依赖与隐私外泄（每次渲染都会把用户标识发给第三方）、离线/内网部署不可用、CSP `img-src https:` 虽允许但不该依赖 |
+| 运行期打包 `@dicebear/core` + `@dicebear/styles`   | 为 32 张固定图片引入数百 KB 运行期依赖与首帧 JS 开销，收益只是省下提交 100 KB 静态产物                                 |
+| 手绘 32 个形象（对齐桌宠 `PixelHumanSprite` 风格） | 零许可负担，但美术工作量最大且质量不可控；`PixelHumanSprite` 只有 1 个形象，撑不起「供选择」的多样性                   |
 
 ### 5.6 主题对比度
 
@@ -484,9 +484,9 @@ P1 与 P2 无依赖，可并行；P3 依赖 P1、P2；P4 依赖 P3。
 
 因此本 PR 回退该截图（连同 `media-reviews.json` 的复核记录），把「个人资料页截图加入头像行」列为后续工作：需要一次完整的截图矩阵运行 + 38 张图的复核，或由维护者明确同意后做单条目的清单修补。
 
-### 14.5 PR review 反馈：内置头像改用 Node 20 兼容的 DiceBear v9
+### 14.5 PR review 反馈：头像依赖随 Node 基线一起收口
 
-Codex review 指出 `@dicebear/core@10.7.0` 声明 `node>=22`，与仓库 `DEV.md` / `README.md` / CI 的 Node 20 基线矛盾，Node 20 开发者无法按文档重跑 `gen:avatars`。处理：改用声明 `node>=18` 的 **DiceBear v9**（`@dicebear/core@^9.4.3` + `@dicebear/pixel-art@^9.4.3`），按 v9 选项形态（变体写成单元素数组）重写脚本并重新生成 32 张 SVG + manifest。形象骨架（发型 / 衣着 / 五官路径）与 v10 一致，仅配件默认配色有差异，已重新目视。
+Codex review 指出 `@dicebear/core@10` 声明 `node>=22`，与仓库当时的 Node 20 基线矛盾。最初的处理是把生成链降到声明 `node>=18` 的 DiceBear v9 并重生成 32 张产物；随后独立的基础设施改动把仓库/CI 基线升到 **Node 22**（与生产镜像 `node:22-alpine` 一致，见 `docs/plans/1789454560_node-baseline-22.md`）。基线落地后，本 PR **回退到 DiceBear v10 + `@dicebear/styles`**，恢复原 32 张头像外观；`gen:avatars --check` 在 v10 下仍字节一致。
 
 ## Outcome
 

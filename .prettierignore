@@ -24,7 +24,6 @@
 
 # Generated sources and documentation
 apps/web/src/api/generated/
-apps/web/public/avatars/pixel/manifest.json
 apps/api/openapi.snapshot.json
 apps/api/capability-registry.snapshot.json
 docs-site/dev/adr/
