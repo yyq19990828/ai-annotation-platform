@@ -27,7 +27,7 @@ import { useProject } from "@/hooks/useProjects";
 import { tasksApi } from "@/api/tasks";
 import { rasterMasksApi } from "@/api/rasterMasks";
 import { useAuthStore } from "@/stores/authStore";
-import type { ClassesConfig } from "@/api/projects";
+import type { AttributeField, ClassesConfig } from "@/api/projects";
 import type { AnnotationResponse, KeypointSchema, RotatedBboxGeometry } from "@/types";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/Button";
@@ -50,7 +50,7 @@ import {
   workbenchImagePreviewUrl,
 } from "@/pages/Workbench/stage/useWorkbenchImageSource";
 import { fitToCanvas } from "@/pages/Workbench/stage/shared/viewport/fit";
-import { annotationToBox } from "@/pages/Workbench/state/transforms";
+import { annotationToBox, collectOccludedKeys } from "@/pages/Workbench/state/transforms";
 import { toolUnitForGeometryType } from "@/pages/Workbench/stage/tools/toolUnits";
 
 const ANNOTATION_PAGE_LIMIT = 200;
@@ -76,6 +76,9 @@ function previewToolUnit(annotation: AnnotationResponse) {
 function previewProjectConfig(toolBindings: Record<string, unknown> | null | undefined) {
   const configs: Record<string, ClassesConfig> = {};
   const schemas: Record<string, KeypointSchema> = {};
+  // v0.11.27 · 遮挡样式 key 跨工具单位并集（含禁用单位），与工作台/复核
+  // annotationToBox 的输入一致，保证预览的虚线+半透遮挡视觉与工作台相同。
+  const occludedKeys = new Set<string>();
   for (const [unit, raw] of Object.entries(toolBindings ?? {})) {
     if (!raw || typeof raw !== "object") continue;
     const binding = raw as {
@@ -87,7 +90,11 @@ function previewProjectConfig(toolBindings: Record<string, unknown> | null | und
         alias?: string | null;
       }>;
       keypoint_schema?: KeypointSchema | null;
+      attribute_schema?: { fields?: AttributeField[] | null } | null;
     };
+    for (const key of collectOccludedKeys(binding.attribute_schema?.fields ?? [])) {
+      occludedKeys.add(key);
+    }
     if (binding.enabled === false) continue;
     if (binding.keypoint_schema) schemas[unit] = binding.keypoint_schema;
     const config: ClassesConfig = {};
@@ -101,7 +108,7 @@ function previewProjectConfig(toolBindings: Record<string, unknown> | null | und
     }
     configs[unit] = config;
   }
-  return { configs, schemas };
+  return { configs, schemas, occludedKeys };
 }
 
 export default function DataManagerAnnotationPreview({
@@ -178,7 +185,11 @@ export default function DataManagerAnnotationPreview({
     !hasNextPage &&
     !annotations.some((item) => item.id === highlightAnnotationId);
 
-  const { configs: toolClassesConfigs, schemas: keypointSchemas } = useMemo(
+  const {
+    configs: toolClassesConfigs,
+    schemas: keypointSchemas,
+    occludedKeys,
+  } = useMemo(
     () => previewProjectConfig(projectQ.data?.tool_bindings),
     [projectQ.data?.tool_bindings],
   );
@@ -239,9 +250,9 @@ export default function DataManagerAnnotationPreview({
   const boxes = useMemo(
     () =>
       visibleAnnotations
-        .map((item) => annotationToBox(item))
+        .map((item) => annotationToBox(item, occludedKeys))
         .sort((a, b) => (a.z_order ?? 0) - (b.z_order ?? 0) || a.id.localeCompare(b.id)),
-    [visibleAnnotations],
+    [visibleAnnotations, occludedKeys],
   );
 
   // Mask content fetches are owned by this preview and cancelled when the

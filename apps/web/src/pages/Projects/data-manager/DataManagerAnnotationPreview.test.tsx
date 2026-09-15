@@ -328,6 +328,47 @@ describe("DataManagerAnnotationPreview", () => {
     );
   });
 
+  it("renders style_occluded annotations dashed and translucent like the Workbench", async () => {
+    state.toolBindings.bbox = {
+      enabled: true,
+      classes: [{ name: "car", color: "#ff0000", order: 0 }],
+      attribute_schema: {
+        fields: [
+          { key: "occluded", label: "遮挡", type: "boolean", style_occluded: true },
+          { key: "unrelated", label: "其他", type: "boolean", style_occluded: false },
+        ],
+      },
+    };
+    state.getAnnotationsPage.mockResolvedValue(
+      pageResponse({
+        items: [
+          { id: "box-solid" },
+          { id: "box-occluded", attributes: { occluded: true } },
+          { id: "box-flag-off", attributes: { occluded: false } },
+        ],
+        next_cursor: null,
+      }),
+    );
+
+    renderPreview();
+    await screen.findByText("已保存标注 3 条");
+    const section = screen.getByLabelText("标注预览");
+    const solid = section.querySelector("[data-id='box-solid'] [data-konva='Rect']");
+    const occluded = section.querySelector("[data-id='box-occluded'] [data-konva='Rect']");
+    const flagOff = section.querySelector("[data-id='box-flag-off'] [data-konva='Rect']");
+    expect(solid).not.toBeNull();
+    expect(occluded).not.toBeNull();
+    expect(flagOff).not.toBeNull();
+    // Occluded matches the Workbench visual: dashed stroke + half opacity.
+    expect(occluded!.hasAttribute("data-dash")).toBe(true);
+    expect(Number(occluded!.getAttribute("data-opacity"))).toBeCloseTo(0.5);
+    // Without the occluding attribute (or with it false) boxes stay solid.
+    expect(solid!.hasAttribute("data-dash")).toBe(false);
+    expect(solid!.getAttribute("data-opacity")).toBe("1");
+    expect(flagOff!.hasAttribute("data-dash")).toBe(false);
+    expect(flagOff!.getAttribute("data-opacity")).toBe("1");
+  });
+
   it("revalidates saved annotations immediately when a cached preview reopens", async () => {
     const client = createClient();
     state.getAnnotationsPage.mockResolvedValueOnce({
