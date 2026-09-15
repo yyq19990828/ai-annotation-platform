@@ -217,7 +217,7 @@ docker compose -f docker-compose.yml -f docker-compose.ml.yml --profile gpu-rapi
 docker compose --profile monitoring up -d prometheus grafana
 ```
 
-修改 `apps/api/**` 下的 worker 业务代码后，Celery 不会热重载，重启 worker 即可；修改依赖、Dockerfile 或 compose build 配置才需要 rebuild。
+修改 `apps/api/**` 下的 worker 业务代码后，Celery 不会热重载，重启 worker 即可；修改依赖、Dockerfile 或 compose build 配置才需要 rebuild。开发 worker 不自动迁移数据库；更新包含迁移时，应先按上面的初始化命令显式迁移，再启动 worker。
 
 ## 开发工作流
 

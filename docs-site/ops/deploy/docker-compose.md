@@ -47,12 +47,12 @@ last_reviewed: 2026-08-14
 | `DATABASE_URL` **必填**                               | dev 连本机                     | API/Celery 运行连接。格式为 `postgresql+asyncpg://用户名:密码@主机:端口/库`；托管库走 SSL 用 `?ssl=require`。密码含特殊字符要 URL 编码。可使用无 schema DDL 权限的普通应用角色。 |
 | `MIGRATION_DATABASE_URL`                              | 空 → `DATABASE_URL`            | Alembic 与专用维护 worker 的 owner 连接；API/普通 worker 使用运行账号。维护 worker 在启动时将此连接绑定为自己的 `DATABASE_URL`。                                                 |
 | `DATABASE_URL_DOCKER`                                 | dev 连 `postgres` service      | 仅供开发态 Compose 内的 Celery worker 使用；可独立切换到非 owner、非超级用户的普通应用角色。生产叠加文件继续统一读取 `DATABASE_URL`。                                            |
-| `MIGRATION_DATABASE_URL_DOCKER`                       | 空 → Worker 运行连接           | 开发态 `celery-worker-maintenance` 使用此连接执行启动迁移及维护任务，地址通常为 `postgres:5432`；普通 worker 不自动迁移、不接收 DDL 凭据。                                       |
+| `MIGRATION_DATABASE_URL_DOCKER`                       | 空 → Worker 运行连接           | 开发态 `celery-worker-maintenance` 使用此连接执行维护任务，地址通常为 `postgres:5432`；普通 worker 不自动迁移、不接收 DDL 凭据。                                                 |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | `user` / `pass` / `annotation` | 仅 `docker-compose.yml` 的 postgres 容器初始化用。分离角色时对应 schema owner / `MIGRATION_DATABASE_URL`，不要求与普通运行连接同角色；用托管 RDS/Cloud SQL 时忽略。              |
 
 容器化生产由 api 镜像 entrypoint（`apps/api/scripts/entrypoint.sh`）使用迁移连接自动执行
 `alembic upgrade head`，随后清除 owner 连接再启动应用；生产 Worker 禁止重复自动迁移。
-开发态 Compose 的启动迁移由 `celery-worker-maintenance` 执行，普通 worker 等待其健康后启动。标准生产部署中维护 worker 等待 API 完成迁移，使用 owner 连接消费 `maintenance`，不重复迁移。局域网生产保持其限定维护对象的授权方式，见[局域网生产部署](./lan-production)。
+开发态在启动 worker 前显式执行 `uv run alembic upgrade head`，或使用会先迁移的 `pnpm dev:api`；所有 worker 均禁用启动迁移，普通 worker 仍等待维护 worker 健康后启动。标准生产部署中维护 worker 等待 API 完成迁移，使用 owner 连接消费 `maintenance`，不重复迁移。局域网生产保持其限定维护对象的授权方式，见[局域网生产部署](./lan-production)。
 进程式部署需在启动 API 前执行同一命令（见 §4.5）。
 
 ### 2.2 缓存 / 消息队列 (Redis)

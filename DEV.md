@@ -6,6 +6,29 @@
 > 本地预览 `pnpm docs:dev`，部署版 [GitHub Pages](https://yyq19990828.github.io/ai-annotation-platform/dev/)。
 > 本文件仅保留快速参考。
 
+## 本机开发服务定时重启
+
+主 checkout 的 Web/API 可由用户 systemd 的 `aap-development-web.service`（3000）与 `aap-development-api.service`（8000）管理。单元模板位于 `infra/systemd/aap-development-{api,web}.service.in`；安装到 `~/.config/systemd/user/` 前替换 `@PROJECT_DIR@` 和 `@NODE_BIN_DIR@` 为实际绝对路径。API 直接使用本 checkout 的 Python 虚拟环境，Web 使用固定 Node 路径；Web 端口被占用时会失败，不自动换端口。首次接管已有进程需核对其 PID、会话和工作目录，不得按端口杀未知进程。
+
+将 `scripts/development-restart.py` 复制到 `~/.local/lib/ai-annotation-platform/`，通过 `~/.local/bin/ai-annotation-platform-dev-restart` 调用，传入 `--project-dir` 主 checkout 绝对路径、`--state-dir ~/.local/state/ai-annotation-platform/development-restart`，并透传手动参数。定时器和恢复 service 使用 `infra/systemd/aap-development-restart.{service,timer}`。
+
+`aap-development-restart.timer` 每天北京时间 04:00 重启开发 Web/API，以及开发 Compose 的七类 Celery worker 和 beat。每次先核验容器项目、服务、Compose 来源及 `ALEMBIC_AUTO_UPGRADE=false`，再重启现有容器并等待健康检查；worker 的优雅退出上限为 120 秒，长任务应提前避开维护窗口。它不重建镜像、不自动迁移，也不重启生产容器、共享 PostgreSQL/MinIO/模型服务或其他基础设施。生产 3030/8080 仍由独立的 `aap-production-health.timer` 维护。
+
+```bash
+# 立即重启并等待开发服务就绪
+systemctl --user start aap-development-restart.service
+# 安装单元后启用每日定时重启（用户需已启用 linger）
+systemctl --user enable --now aap-development-restart.timer
+systemctl --user list-timers aap-development-restart.timer
+journalctl --user -u aap-development-restart.service -n 30 --no-pager
+# 仅检查开发容器身份，不重启
+~/.local/bin/ai-annotation-platform-dev-restart --check
+```
+
+定时器关闭错过时刻的补执行，避免登录或开机时补做一次意外重启。API/Web 单元可单独启用开机启动和进程退出恢复。开发日志写入用户 journal，旧脚本的 PID 文件不再作为管理依据。
+
+临时跳过每日重启可创建 `~/.local/state/ai-annotation-platform/development-restart/maintenance`，恢复时删除；完全停用定时器使用 `systemctl --user disable --now aap-development-restart.timer`。开始部署前，创建维护标记后执行 `flock ~/.local/state/ai-annotation-platform/development-restart/restart.lock true`，等待已运行的重启结束；标记会阻止新一轮及后续 API/Web 重启阶段。开发 worker 关闭自动迁移，升级时应先显式运行 Alembic；修改 Compose 后需要重建旧 maintenance 容器使该设置生效。生产维护定时器独立运行。独立 worktree 仍使用 `pnpm dev:worktree`，不接入主 checkout 的定时器。
+
 ## 项目结构
 
 ```

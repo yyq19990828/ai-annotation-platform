@@ -70,7 +70,8 @@ services:
   #   docker compose --env-file .env.production -f docker-compose.yml -f docker-compose.prod.yml up -d
   # 拉起。区别详见 docs-site/dev/concepts/runtime-environments.md。
 
-  # Development migrations and owner-only tasks run outside ordinary workers.
+  # Run development migrations explicitly before starting workers.
+  # Only this worker consumes owner-only maintenance tasks.
   celery-worker-maintenance:
     build:
       context: .
@@ -81,7 +82,7 @@ services:
       MIGRATION_DATABASE_URL: ""
       TEST_DATABASE_URL: ""
       PLAYWRIGHT_E2E_DATABASE_URL: ""
-      ALEMBIC_AUTO_UPGRADE: "true"
+      ALEMBIC_AUTO_UPGRADE: "false"
       REDIS_URL: redis://redis:6379/0
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
