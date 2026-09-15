@@ -10529,6 +10529,11 @@
             "title": "Camera Count",
             "type": "integer"
           },
+          "comment_count": {
+            "default": 0,
+            "title": "Comment Count",
+            "type": "integer"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -10881,6 +10886,11 @@
           "unresolved_feedback_count": {
             "default": 0,
             "title": "Unresolved Feedback Count",
+            "type": "integer"
+          },
+          "unresolved_issue_count": {
+            "default": 0,
+            "title": "Unresolved Issue Count",
             "type": "integer"
           },
           "updated_at": {
@@ -22039,6 +22049,9 @@
       },
       "PerformanceMemberMetrics": {
         "properties": {
+          "annotated_images": {
+            "$ref": "#/components/schemas/PerformanceMetric"
+          },
           "approvals": {
             "$ref": "#/components/schemas/PerformanceMetric"
           },
@@ -22086,6 +22099,7 @@
           "submitted_tasks",
           "resubmissions",
           "contributed_tasks",
+          "annotated_images",
           "retained_objects",
           "approved_task_outcomes",
           "first_review_pass_rate",
@@ -22184,6 +22198,7 @@
             "enum": [
               "tasks",
               "objects",
+              "images",
               "decisions",
               "minutes",
               "percent"
@@ -22275,6 +22290,9 @@
       },
       "PerformanceTotals": {
         "properties": {
+          "annotated_images": {
+            "$ref": "#/components/schemas/PerformanceMetric"
+          },
           "approvals": {
             "$ref": "#/components/schemas/PerformanceMetric"
           },
@@ -22291,6 +22309,9 @@
             "$ref": "#/components/schemas/PerformanceMetric"
           },
           "rejections": {
+            "$ref": "#/components/schemas/PerformanceMetric"
+          },
+          "retained_objects": {
             "$ref": "#/components/schemas/PerformanceMetric"
           },
           "review_backlog": {
@@ -22312,7 +22333,9 @@
           "review_decisions",
           "approvals",
           "rejections",
-          "review_backlog"
+          "review_backlog",
+          "annotated_images",
+          "retained_objects"
         ],
         "title": "PerformanceTotals",
         "type": "object"

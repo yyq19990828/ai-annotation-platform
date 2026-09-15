@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.db.models.annotation import Annotation
-from app.db.models.annotation_feedback import AnnotationFeedback
 from app.db.models.dataset import DatasetItem, Scene
 from app.db.models.project import Project
 from app.db.models.task import Task
@@ -32,6 +31,7 @@ from app.services.data_management.cursor import (
 )
 from app.services.data_management.entity_filters import compile_entity_filter
 from app.services.data_management.task_filters import visible_tasks_stmt
+from app.services.feedback import annotation_unresolved_issue_count_sq
 
 
 COMPACT_TRACK_TYPES = {
@@ -60,16 +60,9 @@ def task_dataset_item_id_expr():
 
 
 def _feedback_count_sq(annotation):
-    return (
-        select(func.count(AnnotationFeedback.id))
-        .where(
-            AnnotationFeedback.annotation_id == annotation.id,
-            AnnotationFeedback.is_active.is_(True),
-            AnnotationFeedback.status == "open",
-        )
-        .correlate(annotation)
-        .scalar_subquery()
-    )
+    # Corrected to the Workbench root-issue definition restricted to the
+    # annotation: replies and non-issue feedback never count.
+    return annotation_unresolved_issue_count_sq(annotation)
 
 
 def _clean_attributes(attributes: dict[str, Any] | None) -> dict[str, Any]:

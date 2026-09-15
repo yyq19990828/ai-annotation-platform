@@ -2,8 +2,11 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { RefObject } from "react";
 
 import { EntityDataManagerLens } from "./EntityDataManagerLens";
+
+const scrollRef: RefObject<HTMLDivElement | null> = { current: null };
 
 const state = vi.hoisted(() => ({
   schemaError: false,
@@ -209,6 +212,7 @@ describe("EntityDataManagerLens", () => {
           scope="objects"
           availableScopes={["tasks", "objects"]}
           onScopeChange={vi.fn()}
+          scrollContainerRef={scrollRef}
         />
       </MemoryRouter>,
     );
@@ -238,6 +242,7 @@ describe("EntityDataManagerLens", () => {
           scope="objects"
           availableScopes={["tasks", "objects"]}
           onScopeChange={vi.fn()}
+          scrollContainerRef={scrollRef}
         />
         <LocationProbe />
       </MemoryRouter>,
@@ -263,6 +268,7 @@ describe("EntityDataManagerLens", () => {
           scope="objects"
           availableScopes={["tasks", "objects"]}
           onScopeChange={vi.fn()}
+          scrollContainerRef={scrollRef}
         />
         <LocationProbe />
       </MemoryRouter>,
@@ -288,6 +294,7 @@ describe("EntityDataManagerLens", () => {
           scope="objects"
           availableScopes={["tasks", "objects"]}
           onScopeChange={vi.fn()}
+          scrollContainerRef={scrollRef}
         />
       </MemoryRouter>,
     );
@@ -303,6 +310,7 @@ describe("EntityDataManagerLens", () => {
           scope="objects"
           availableScopes={["tasks", "objects"]}
           onScopeChange={vi.fn()}
+          scrollContainerRef={scrollRef}
         />
       </MemoryRouter>,
     );
@@ -321,6 +329,7 @@ describe("EntityDataManagerLens", () => {
           scope="objects"
           availableScopes={["tasks", "objects"]}
           onScopeChange={vi.fn()}
+          scrollContainerRef={scrollRef}
         />
       </MemoryRouter>,
     );
@@ -343,6 +352,7 @@ describe("EntityDataManagerLens", () => {
           scope="objects"
           availableScopes={["tasks", "objects"]}
           onScopeChange={vi.fn()}
+          scrollContainerRef={scrollRef}
         />
       </MemoryRouter>,
     );

@@ -6,6 +6,8 @@ export type ProjectMembersAccountStatus = "all" | "active" | "inactive";
 export type ProjectMembersSort =
   | "name"
   | "submitted_tasks"
+  | "annotated_images"
+  | "retained_objects"
   | "approved_task_outcomes"
   | "first_review_pass_rate"
   | "recorded_time_minutes"
@@ -66,6 +68,8 @@ const ACCOUNT_STATUSES = new Set<ProjectMembersAccountStatus>(["all", "active", 
 const SORTS = new Set<ProjectMembersSort>([
   "name",
   "submitted_tasks",
+  "annotated_images",
+  "retained_objects",
   "approved_task_outcomes",
   "first_review_pass_rate",
   "recorded_time_minutes",

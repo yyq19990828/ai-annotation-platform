@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -170,6 +170,24 @@ vi.mock("@/hooks/useTaskViews", () => {
         expensive: false,
         sortable: false,
         sort_field: null,
+      },
+      {
+        key: "unresolved_issue_count",
+        label: "未解决问题",
+        group: "质量",
+        default: true,
+        expensive: true,
+        sortable: true,
+        sort_field: "unresolved_issue_count",
+      },
+      {
+        key: "comment_count",
+        label: "评论",
+        group: "讨论",
+        default: true,
+        expensive: true,
+        sortable: true,
+        sort_field: "comment_count",
       },
     ],
     default_columns: ["display_id"],
@@ -562,6 +580,8 @@ describe("ProjectDataManagerPage filter hydration", () => {
         status: "pending",
         annotation_count: 0,
         unresolved_feedback_count: 0,
+        unresolved_issue_count: 0,
+        comment_count: 0,
         assignee: null,
         thumbnail_url: null,
         blurhash: null,
@@ -583,16 +603,84 @@ describe("ProjectDataManagerPage filter hydration", () => {
       </MemoryRouter>,
     );
     const checkbox = await screen.findByRole("checkbox", { name: "选择任务 T-gallery" });
-    expect(screen.getByLabelText("任务画廊").parentElement).toHaveClass("max-sm:min-h-[280px]");
+    const galleryCalls = state.calls.filter((call) => call.enabled);
+    expect(galleryCalls[galleryCalls.length - 1]?.payload).toMatchObject({
+      columns_json: ["display_id", "annotation_count", "unresolved_issue_count", "comment_count"],
+    });
+    expect(screen.getByLabelText("任务画廊").parentElement).toHaveClass("min-h-[280px]");
     fireEvent.click(checkbox.parentElement!);
     fireEvent.keyDown(checkbox, { key: " " });
     fireEvent.keyDown(checkbox, { key: "Enter" });
     expect(screen.queryByRole("heading", { name: "T-gallery" })).not.toBeInTheDocument();
     expect(screen.getByRole("img", { name: "点云数据" })).toHaveTextContent("点云");
     fireEvent.click(screen.getByRole("button", { name: "列表视图" }));
+    const listCalls = state.calls.filter((call) => call.enabled);
+    expect(listCalls[listCalls.length - 1]?.payload).toMatchObject({
+      columns_json: ["display_id"],
+    });
     fireEvent.keyDown(screen.getByRole("checkbox", { name: "选择任务 T-gallery" }), { key: " " });
     expect(screen.queryByRole("heading", { name: "T-gallery" })).not.toBeInTheDocument();
     expect(screen.getByRole("img", { name: "点云数据" })).toHaveTextContent("点云");
+  });
+
+  it("normalizes a legacy feedback column and renders issue and comment columns", async () => {
+    state.taskItems = [
+      {
+        id: "task-cols",
+        project_id: "p1",
+        display_id: "T-cols",
+        file_name: "cols.png",
+        file_type: "image",
+        status: "pending",
+        annotation_count: 0,
+        unresolved_feedback_count: 1,
+        unresolved_issue_count: 1,
+        comment_count: 4,
+        annotation_source_counts: {
+          manual: 0,
+          prediction_based: 0,
+          ai_tracker: 0,
+          interpolated: 0,
+        },
+        track_count: 0,
+        pending_prediction_shape_count: 0,
+        low_confidence_prediction_shape_count: 0,
+        pending_tracker_job_count: 0,
+        last_activity_at: null,
+        assignee: null,
+        thumbnail_url: null,
+        blurhash: null,
+      },
+    ];
+    const search = updateDataManagerUrl("", {
+      lens: "tasks",
+      view: "builtin:all",
+      query: "",
+      filter: null,
+      sort: null,
+      columns: ["display_id", "unresolved_feedback_count", "comment_count"],
+      selected: null,
+    }).toString();
+    render(
+      <MemoryRouter initialEntries={[`/projects/p1/data-manager?${search}`]}>
+        <ProjectDataManagerPage />
+      </MemoryRouter>,
+    );
+    await waitFor(() => expect(state.calls.some((call) => call.enabled)).toBe(true));
+    // The legacy feedback column is normalized onto the issue column once.
+    expect(screen.getAllByRole("columnheader", { name: "未解决问题" })).toHaveLength(1);
+    expect(screen.getByRole("columnheader", { name: "评论" })).toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "反馈" })).not.toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "任务" })).toBeInTheDocument();
+    // The plan example: 未解决问题 1 / 评论 4.
+    const row = screen.getByRole("row", { name: /T-cols/ });
+    expect(within(row).getByText("4")).toBeInTheDocument();
+    expect(within(row).getByText("1")).toBeInTheDocument();
+    // The query requests the normalized column set.
+    const enabled = state.calls.filter((call) => call.enabled);
+    expect(
+      (enabled[enabled.length - 1]?.payload as { columns_json: string[] }).columns_json,
+    ).toEqual(["display_id", "unresolved_issue_count", "comment_count"]);
   });
 
   it("offers a retry action when the task schema request fails", () => {

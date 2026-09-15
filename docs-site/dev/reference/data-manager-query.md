@@ -75,7 +75,7 @@ summary 同时返回：
 - single-frame、tracked annotation 与 distinct track；
 - AI 检测候选待审、低置信候选待审、AI 追踪结果待审；
 - 当前待审检测候选的模型版本与置信度区间分布；
-- 未解决 feedback；
+- 未解决问题（有效、开放的问题主题，对齐工作台问题口径；兼容字段名 `unresolved_feedback`）；
 - 项目 schema 中属性的 eligible/present/missing 与有限枚举值分布。
 - capability 驱动的 image 分辨率、video 时长/帧/关键帧、lidar 相机/标定与 Scene 摘要。
 

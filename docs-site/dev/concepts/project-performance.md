@@ -37,6 +37,16 @@ Data Manager 成员区域由 `services/project_performance.py` 提供统一的�
 
 保留标注按区间内创建、当前 active 且非 cancelled 的记录计算，并按创建人、类别、来源与几何类型展开。导入标记优先于普通 source 分类，不能把导入或 AI 内容当成人工工作量。该指标随当前标注状态变化，不是历史账本；compact track 记录与单帧对象应结合几何分布解读。
 
+## 已标注图片与独立项目总数
+
+`annotated_images` 统计“区间内创建且仍保留标注的不同任务数”，并把范围限制为任务实际 `file_type == image`：项目标签可以是图片项目但仍包含视频任务，因此不能按 `Project.data_type` 圈定范围；视频与点云任务只进入 `contributed_tasks`（全模态）和 `retained_objects`，不抬高图片数。Scene 图片帧任务按任务计一次；同一物理媒体被关联成不同任务时按任务计数，不按文件校验和合并。
+
+保存内容指标不需要任务提交或审核：它们回答“这段时间保存了什么”。同一图片上的多个对象计为一张图片和多条对象记录；重复保存和编辑不增加计数；没有保留标注的空图片计为零，即使任务已完成（其工作流结果仍由提交/审核指标表达）。未保存的本地编辑和 `AnnotationDraft` 不参与计数。
+
+归属跟随记录的创建者/接受者/导入者（`Annotation.user_id`）。任务改派或他人编辑已有对象不转移原计数；导入记录可保留原始创建时间。把昨天的框移动到今天不产生今天的产出——所选日期区间始终是权威口径，这些指标不会被静默放大为全时累计。
+
+项目总数（`PerformanceTotals.annotated_images` / `retained_objects`）按相同资格谓词独立聚合成 distinct 任务/记录数，不求和成员行：两名成员在同一图片上各保存一个对象时，各自 `annotated_images=1`，项目 `annotated_images=1`、`retained_objects=2`。实现位于 `_annotation_activity()`（成员分组）与 `_annotation_totals()`（项目聚合），全部在 SQL 内完成，不在 Python 物化标注 ID。
+
 ## 计时采集
 
 `useSessionStats` 同时服务工作台 ETA 和项目已记录时长，捕获任务、项目、账号及标注/审核类型。切题或离开时关闭当前区间，隐藏页面暂停，超过 5 分钟无输入停止累计；连续区间每 30 分钟拆分。拆分仅影响上传粒度，ETA 仍按一次任务的累计时长采样。
@@ -61,7 +71,7 @@ API 和 Celery 持久化任务共用 `services/task_event_ingestion.py`：
 
 ## 接口与客户端状态
 
-接口位于 `/projects/{project_id}/performance`：`members`、`members/{user_id}`、`members/{user_id}/events` 和 `export`。指标返回 value、unit、可选分子分母及 coverage；单位包括 tasks、decisions、objects、minutes 和 percent。CSV 与列表复用范围和计算，并转义可能被电子表格执行的单元格值。
+接口位于 `/projects/{project_id}/performance`：`members`、`members/{user_id}`、`members/{user_id}/events` 和 `export`。指标返回 value、unit、可选分子分母及 coverage；单位包括 tasks、objects、images、decisions、minutes 和 percent。成员指标新增 `annotated_images`，项目总数新增 `annotated_images` 与 `retained_objects`；排序支持 `annotated_images` 和 `retained_objects`，成员行按 UUID 稳定去重。CSV 与列表复用范围和计算，并转义可能被电子表格执行的单元格值。
 
 成员查询缓存包含认证账号和完整范围。URL 使用 `members_*` 参数保存成员筛选，切换账号/项目或浏览器历史时丢弃过期请求结果。成员条件变化清空已选详情；依据翻页期间保留已加载记录。详情趋势、依据分页和导出继承已应用范围，无效日期草稿不会触发新查询。
 
