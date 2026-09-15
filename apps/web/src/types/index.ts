@@ -585,6 +585,12 @@ export interface AnnotationResponse {
   render_key?: string;
 }
 
+/** `/tasks/{id}/annotations/page` keyset-paged saved annotations (limit ≤ 1000, default 200)。 */
+export interface AnnotationPageResponse {
+  items: AnnotationResponse[];
+  next_cursor: string | null;
+}
+
 // ── Prediction ──────────────────────────────────────────────────────────────
 
 // v0.9.11 · PredictionShape / PredictionResponse 切换为 codegen 派生 (api-schema-boundary.md).

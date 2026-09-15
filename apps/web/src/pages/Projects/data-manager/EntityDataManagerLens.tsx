@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useVirtualizer } from "@tanstack/react-virtual";
 
@@ -236,6 +236,7 @@ export function EntityDataManagerLens({
   availableScopes,
   onScopeChange,
   onDirtyChange,
+  scrollContainerRef,
 }: {
   projectId: string;
   projectName: string;
@@ -245,6 +246,7 @@ export function EntityDataManagerLens({
   availableScopes: DataManagerEntityScope[];
   onScopeChange: (scope: DataManagerEntityScope) => void;
   onDirtyChange?: (dirty: boolean) => void;
+  scrollContainerRef: RefObject<HTMLDivElement | null>;
 }) {
   const [searchParams, setSearchParams] = useSearchParams();
   const urlState = useUrlFilterState({
@@ -301,7 +303,8 @@ export function EntityDataManagerLens({
   const mountedRef = useRef(false);
   const skipUrlSyncRef = useRef(false);
   const previousUrlRef = useRef(searchParams.toString());
-  const tableRef = useRef<HTMLDivElement>(null);
+  const resultsStartRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
   const identityRef = useRef(`${projectId}:${user?.id ?? "anonymous"}:${scope}`);
 
   useEffect(() => {
@@ -512,13 +515,46 @@ export function EntityDataManagerLens({
   const total = activeQ.data?.pages[0]?.total ?? 0;
   const facets = activeQ.data?.pages[0]?.facets;
 
+  // The virtual rows follow the Data page scroll owner instead of a table-local
+  // scroller. `scrollMargin` maps the virtual list onto the canvas position
+  // below the sticky header, query controls and summaries; it is remeasured
+  // whenever content above the canvas changes height.
+  const [scrollMargin, setScrollMargin] = useState(0);
   const virtualizer = useVirtualizer({
     count: rows.length,
-    getScrollElement: () => tableRef.current,
+    getScrollElement: () => scrollContainerRef.current,
     estimateSize: () => 46,
     overscan: 10,
     getItemKey: (index) => rows[index]?.entity_key ?? index,
+    scrollMargin,
   });
+  const hasRows = rows.length > 0;
+  useEffect(() => {
+    const scroller = scrollContainerRef.current;
+    const canvas = canvasRef.current;
+    if (!scroller || !canvas || !hasRows || typeof ResizeObserver === "undefined") return;
+    let frame = 0;
+    const measure = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const next =
+          canvas.getBoundingClientRect().top -
+          scroller.getBoundingClientRect().top +
+          scroller.scrollTop;
+        setScrollMargin((current) => (Math.abs(current - next) < 1 ? current : next));
+      });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(canvas);
+    for (const child of scroller.children) {
+      if (child instanceof HTMLElement) observer.observe(child);
+    }
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [hasRows, scrollContainerRef]);
   const virtualRows = virtualizer.getVirtualItems();
   const lastVirtualIndex = virtualRows[virtualRows.length - 1]?.index ?? -1;
   const hasNextPage = activeQ.hasNextPage;
@@ -529,10 +565,21 @@ export function EntityDataManagerLens({
       void fetchNextPage();
     }
   }, [fetchNextPage, hasNextPage, isFetchingNextPage, lastVirtualIndex, rows.length]);
+  // Query, sort or column changes return the reader to the result start on the
+  // page scroll owner; loading another cursor page keeps the viewport position.
   useEffect(() => {
-    const table = tableRef.current;
-    if (table && typeof table.scrollTo === "function") table.scrollTo({ top: 0 });
-  }, [filterJson, sort, columns]);
+    const scroller = scrollContainerRef.current;
+    const target = resultsStartRef.current;
+    if (!scroller || !target) return;
+    const top = Math.max(
+      0,
+      target.getBoundingClientRect().top -
+        scroller.getBoundingClientRect().top +
+        scroller.scrollTop -
+        8,
+    );
+    if (scroller.scrollTop > top) scroller.scrollTo({ top });
+  }, [filterJson, sort, columns, scrollContainerRef]);
 
   useEffect(() => {
     if (!hydrationRef.current || skipUrlSyncRef.current || !filterReady) {
@@ -770,7 +817,7 @@ export function EntityDataManagerLens({
   }
 
   return (
-    <div className="h-full min-h-0 overflow-hidden text-foreground">
+    <div className="text-foreground">
       <DataManagerLensTabs
         scope={scope}
         availableScopes={availableScopes}
@@ -780,7 +827,7 @@ export function EntityDataManagerLens({
           else onScopeChange(nextScope);
         }}
       >
-        <div className="flex h-full min-h-0 flex-col gap-2">
+        <div className="flex flex-col gap-2">
           <header className="flex shrink-0 items-center justify-end gap-4 max-md:flex-col max-md:items-stretch">
             <div
               className="flex items-center justify-between gap-3 text-xs text-muted-foreground max-sm:flex-wrap"
@@ -819,7 +866,7 @@ export function EntityDataManagerLens({
             />
           )}
 
-          <div className="grid min-h-0 flex-1 grid-cols-[auto_minmax(0,1fr)] gap-3 max-lg:grid-cols-1">
+          <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-3 max-lg:grid-cols-1">
             <aside
               className={cn(
                 "min-h-0 w-[210px] overflow-y-auto rounded-md border border-border bg-card p-2 max-lg:hidden",
@@ -897,7 +944,7 @@ export function EntityDataManagerLens({
               </Button>
             </aside>
 
-            <div className="flex min-h-0 min-w-0 flex-col gap-2">
+            <div className="flex flex-col gap-2">
               <section className="flex shrink-0 flex-col gap-2 rounded-md border border-border bg-card p-2.5">
                 <div className="flex items-center justify-between gap-3">
                   <div>
@@ -1043,10 +1090,13 @@ export function EntityDataManagerLens({
               </section>
 
               <div
-                ref={tableRef}
+                ref={resultsStartRef}
                 role="table"
                 aria-rowcount={total}
-                className="relative min-h-0 flex-1 overflow-auto rounded-md border border-border bg-card"
+                // The table hugs its wide rows instead of scrolling vertically by
+                // itself; the Data page scroll owner provides page scrolling and
+                // keeps the sticky header row aligned while results are visible.
+                className="relative w-fit min-w-full min-h-[280px] rounded-md border border-border bg-card"
               >
                 <div
                   role="row"
@@ -1114,6 +1164,7 @@ export function EntityDataManagerLens({
                 )}
                 {!!rows.length && (
                   <div
+                    ref={canvasRef}
                     className={cn(styles.virtualCanvas, "relative min-w-max")}
                     // eslint-disable-next-line no-restricted-syntax -- virtualizer computes the scroll canvas height.
                     style={
@@ -1142,7 +1193,9 @@ export function EntityDataManagerLens({
                           style={
                             {
                               "--dm-grid-columns": gridTemplate,
-                              "--dm-row-offset": `${virtualRow.start}px`,
+                              // `scrollMargin` compensates for the page content
+                              // above the canvas; rows position within the canvas.
+                              "--dm-row-offset": `${virtualRow.start - scrollMargin}px`,
                             } as CSSProperties
                           }
                           onClick={() =>

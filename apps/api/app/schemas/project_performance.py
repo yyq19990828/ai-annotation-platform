@@ -14,7 +14,9 @@ from pydantic import BaseModel, ConfigDict, Field
 PerformanceWorkType = Literal["annotation", "review"]
 PerformanceAccountStatus = Literal["all", "active", "inactive"]
 PerformanceCoverageState = Literal["complete", "partial", "unknown"]
-PerformanceMetricUnit = Literal["tasks", "objects", "decisions", "minutes", "percent"]
+PerformanceMetricUnit = Literal[
+    "tasks", "objects", "images", "decisions", "minutes", "percent"
+]
 
 
 class PerformanceScope(BaseModel):
@@ -44,6 +46,7 @@ class PerformanceMemberMetrics(BaseModel):
     submitted_tasks: PerformanceMetric
     resubmissions: PerformanceMetric
     contributed_tasks: PerformanceMetric
+    annotated_images: PerformanceMetric
     retained_objects: PerformanceMetric
     approved_task_outcomes: PerformanceMetric
     first_review_pass_rate: PerformanceMetric
@@ -79,6 +82,8 @@ class PerformanceTotals(BaseModel):
     approvals: PerformanceMetric
     rejections: PerformanceMetric
     review_backlog: PerformanceMetric
+    annotated_images: PerformanceMetric
+    retained_objects: PerformanceMetric
 
 
 class PerformanceTrendPoint(BaseModel):

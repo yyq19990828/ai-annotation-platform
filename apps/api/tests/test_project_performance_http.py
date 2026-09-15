@@ -29,15 +29,21 @@ def _project(owner_id: uuid.UUID) -> Project:
 
 
 def _task(
-    project_id: uuid.UUID, *, status: str, assignee_id=None, reviewer_id=None
+    project_id: uuid.UUID,
+    *,
+    status: str,
+    assignee_id=None,
+    reviewer_id=None,
+    file_type: str = "image",
 ) -> Task:
     suffix = uuid.uuid4().hex[:8]
     return Task(
         id=uuid.uuid4(),
         project_id=project_id,
         display_id=f"T-PP-{suffix}",
-        file_name="image.jpg",
-        file_path="image.jpg",
+        file_name=f"media-{suffix}.{file_type}",
+        file_path=f"media-{suffix}.{file_type}",
+        file_type=file_type,
         status=status,
         assignee_id=assignee_id,
         reviewer_id=reviewer_id,
@@ -1546,3 +1552,190 @@ async def test_decision_aggregation_matches_project_task_and_submission_round(
     metrics = {row["user_id"]: row["metrics"] for row in response.json()["items"]}
     assert metrics[str(worker.id)]["approved_task_outcomes"]["value"] == 1
     assert metrics[str(owner.id)]["approved_task_outcomes"]["value"] == 0
+
+
+@pytest.mark.asyncio
+async def test_members_http_saved_content_counts_distinct_image_tasks(
+    httpx_client, db_session, project_admin, annotator, reviewer
+):
+    """Saved-but-unsubmitted content: images / objects / independent totals.
+
+    Two objects on one image count one image and two objects without any
+    submission; a video task inside the image-labelled project never inflates
+    image counts; project image totals aggregate independently of members.
+    """
+    from tests.conftest import _create_user
+
+    owner, token = project_admin
+    worker_a, _ = annotator
+    worker_b, _ = await _create_user(
+        db_session,
+        "annotator",
+        f"worker-b-{uuid.uuid4().hex[:8]}@test.local",
+        "Worker B",
+    )
+    project = _project(owner.id)
+    db_session.add(project)
+    await db_session.flush()
+    await _member(db_session, project.id, worker_a, "annotator", owner.id)
+    await _member(db_session, project.id, worker_b, "annotator", owner.id)
+
+    start = datetime(2026, 9, 10, tzinfo=timezone.utc)
+    image_one = _task(project.id, status="pending", assignee_id=worker_a.id)
+    image_two = _task(project.id, status="pending", assignee_id=worker_b.id)
+    video_task = _task(
+        project.id, status="pending", assignee_id=worker_a.id, file_type="video"
+    )
+    db_session.add_all([image_one, image_two, video_task])
+    await db_session.flush()
+
+    def _annotation(task_id, user_id, *, at=None, **kwargs):
+        return Annotation(
+            task_id=task_id,
+            project_id=project.id,
+            user_id=user_id,
+            class_name="car",
+            annotation_type="bbox",
+            geometry={"type": "bbox"},
+            source="manual",
+            attributes={},
+            created_at=at or (start + timedelta(hours=1)),
+            **kwargs,
+        )
+
+    a_box_one = _annotation(image_one.id, worker_a.id)
+    a_box_two = _annotation(image_one.id, worker_a.id)
+    b_box_one = _annotation(image_one.id, worker_b.id)
+    b_box_two = _annotation(image_two.id, worker_b.id)
+    # Saved outside the selected interval: today's metrics never absorb it.
+    a_stale_box = _annotation(image_two.id, worker_a.id, at=start - timedelta(days=2))
+    db_session.add_all([a_box_one, a_box_two, b_box_one, b_box_two, a_stale_box])
+    await db_session.flush()
+
+    headers = {"Authorization": f"Bearer {token}"}
+    params = {
+        "from": start.isoformat(),
+        "to": (start + timedelta(days=1)).isoformat(),
+        "timezone": "UTC",
+        "work_type": "annotation",
+        "account_status": "all",
+        "include_historical": "false",
+        "limit": "100",
+    }
+
+    response = await httpx_client.get(
+        f"/api/v1/projects/{project.id}/performance/members",
+        params=params,
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    metrics = {row["user_id"]: row["metrics"] for row in body["items"]}
+    # Saved without submission: images 1 / objects 2 / submitted 0.
+    assert metrics[str(worker_a.id)]["annotated_images"]["value"] == 1
+    assert metrics[str(worker_a.id)]["retained_objects"]["value"] == 2
+    assert metrics[str(worker_a.id)]["submitted_tasks"]["value"] == 0
+    assert metrics[str(worker_a.id)]["annotated_images"]["unit"] == "images"
+    assert metrics[str(worker_a.id)]["contributed_tasks"]["value"] == 1
+    assert metrics[str(worker_b.id)]["annotated_images"]["value"] == 2
+    assert metrics[str(worker_b.id)]["retained_objects"]["value"] == 2
+    # Independent project totals: two distinct image tasks, four retained records.
+    assert body["project_totals"]["annotated_images"]["value"] == 2
+    assert body["project_totals"]["retained_objects"]["value"] == 4
+
+    # A video task in the image-labelled project adds a retained record and a
+    # contributed task, but never an annotated image.
+    db_session.add(_annotation(video_task.id, worker_a.id))
+    await db_session.flush()
+    video_body = (
+        await httpx_client.get(
+            f"/api/v1/projects/{project.id}/performance/members",
+            params=params,
+            headers=headers,
+        )
+    ).json()
+    video_metrics = {row["user_id"]: row["metrics"] for row in video_body["items"]}
+    assert video_metrics[str(worker_a.id)]["annotated_images"]["value"] == 1
+    assert video_metrics[str(worker_a.id)]["retained_objects"]["value"] == 3
+    # contributed_tasks stays all-modality (image + video), unlike the image count.
+    assert video_metrics[str(worker_a.id)]["contributed_tasks"]["value"] == 2
+    assert video_body["project_totals"]["annotated_images"]["value"] == 2
+    assert video_body["project_totals"]["retained_objects"]["value"] == 5
+
+    # Sorting by the new saved-content fields with stable UUID tie-breaking.
+    sorted_response = await httpx_client.get(
+        f"/api/v1/projects/{project.id}/performance/members",
+        params={**params, "sort": "-annotated_images"},
+        headers=headers,
+    )
+    assert sorted_response.status_code == 200, sorted_response.text
+    assert sorted_response.json()["items"][0]["user_id"] == str(worker_b.id)
+    objects_sorted = await httpx_client.get(
+        f"/api/v1/projects/{project.id}/performance/members",
+        params={**params, "sort": "-retained_objects"},
+        headers=headers,
+    )
+    assert objects_sorted.status_code == 200, objects_sorted.text
+
+    # Member detail exposes the image count alongside retained content.
+    detail = await httpx_client.get(
+        f"/api/v1/projects/{project.id}/performance/members/{worker_a.id}",
+        params=params,
+        headers=headers,
+    )
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["member"]["metrics"]["annotated_images"]["value"] == 1
+
+    # CSV gains annotated_images next to the existing retained object count.
+    csv_response = await httpx_client.get(
+        f"/api/v1/projects/{project.id}/performance/export",
+        params=params,
+        headers=headers,
+    )
+    assert csv_response.status_code == 200, csv_response.text
+    csv_text = csv_response.text
+    assert "annotated_images.value" in csv_text
+    a_row = next(
+        line
+        for line in csv_text.splitlines()
+        if line.startswith(str(worker_a.id) + ",")
+    )
+    a_columns = a_row.split(",")
+    header_line = next(
+        line for line in csv_text.splitlines() if line.startswith("user_id,")
+    )
+    header_columns = header_line.split(",")
+    images_index = header_columns.index("annotated_images.value")
+    objects_index = header_columns.index("retained_objects.value")
+    assert a_columns[images_index] == "1"
+    # Two image objects plus the retained video record.
+    assert a_columns[objects_index] == "3"
+
+    # Deleting or cancelling retained content reduces the saved counts.
+    a_box_one.is_active = False
+    await db_session.flush()
+    reduced = await httpx_client.get(
+        f"/api/v1/projects/{project.id}/performance/members",
+        params=params,
+        headers=headers,
+    )
+    reduced_metrics = {
+        row["user_id"]: row["metrics"] for row in reduced.json()["items"]
+    }
+    assert reduced_metrics[str(worker_a.id)]["annotated_images"]["value"] == 1
+    assert reduced_metrics[str(worker_a.id)]["retained_objects"]["value"] == 2
+
+    a_box_two.was_cancelled = True
+    await db_session.flush()
+    emptied = await httpx_client.get(
+        f"/api/v1/projects/{project.id}/performance/members",
+        params=params,
+        headers=headers,
+    )
+    emptied_metrics = {
+        row["user_id"]: row["metrics"] for row in emptied.json()["items"]
+    }
+    assert emptied_metrics[str(worker_a.id)]["annotated_images"]["value"] == 0
+    assert emptied_metrics[str(worker_a.id)]["retained_objects"]["value"] == 1
+    # Project image totals remain independent of member attribution.
+    assert emptied.json()["project_totals"]["annotated_images"]["value"] == 2

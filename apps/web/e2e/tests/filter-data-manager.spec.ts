@@ -28,6 +28,14 @@ async function checked(response: Response) {
   return response.json();
 }
 
+// The Data section scrolls the whole page (the frame root scroll owner), not a
+// table-local container; scroll it far enough to trigger cursor loading.
+async function scrollDataPageToBottom(page: Page) {
+  await page.locator("[data-dm-scroll-owner='data']").evaluate((element) => {
+    element.scrollTop = element.scrollHeight;
+  });
+}
+
 function url(projectId: string, state: Record<string, string> = {}) {
   return "/projects/" + projectId + "/data-manager?" + new URLSearchParams(state).toString();
 }
@@ -139,9 +147,7 @@ test("object and logical-track totals retain full scope across cursor pages", as
   );
   await expect(page.getByRole("table")).toHaveAttribute("aria-rowcount", "101");
   const moreObjects = queryResponse(page, filtering.paging.project_id, "objects");
-  await page.getByRole("table").evaluate((element) => {
-    element.scrollTop = element.scrollHeight;
-  });
+  await scrollDataPageToBottom(page);
   const next = await checked(await moreObjects);
   expect(next.total).toBe(101);
   expect(next.items.map((item: { annotation_id: string }) => item.annotation_id)).toEqual(
@@ -158,9 +164,7 @@ test("object and logical-track totals retain full scope across cursor pages", as
     String(filtering.lidar.track_refs.length),
   );
   const moreTracks = queryResponse(page, filtering.lidar.project_id, "tracks");
-  await page.getByRole("table").evaluate((element) => {
-    element.scrollTop = element.scrollHeight;
-  });
+  await scrollDataPageToBottom(page);
   const trackNext = await checked(await moreTracks);
   const refs = [...tracks.items, ...trackNext.items].map(
     (item: { track_id: string }) => item.track_id,

@@ -72,6 +72,23 @@ function isSortItem(value: unknown): value is TaskSortItem {
   );
 }
 
+/**
+ * Normalize restored Data Manager task columns.
+ *
+ * The legacy `unresolved_feedback_count` column is a server-side alias of the
+ * corrected `unresolved_issue_count` count, so an explicitly saved old column
+ * list is normalized to the new column at restore time. Saved views in the
+ * database are never rewritten.
+ */
+export function normalizeDataManagerColumns(columns: readonly string[]): string[] {
+  const normalized: string[] = [];
+  for (const column of columns) {
+    const key = column === "unresolved_feedback_count" ? "unresolved_issue_count" : column;
+    if (!normalized.includes(key)) normalized.push(key);
+  }
+  return normalized;
+}
+
 export function parseDataManagerUrlWithIssues(search: string | URLSearchParams): {
   state: DataManagerUrlState;
   issues: UrlStateIssue[];

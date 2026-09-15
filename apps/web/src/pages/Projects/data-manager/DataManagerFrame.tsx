@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { Ref, ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 
 import type { DataManagerSection } from "./dataManagerUrlState";
@@ -18,6 +18,7 @@ export function DataManagerFrame({
   section,
   onSectionChange,
   canViewMembers = false,
+  dataScrollRef,
   children,
 }: {
   projectId: string;
@@ -26,12 +27,24 @@ export function DataManagerFrame({
   section: DataManagerSection;
   onSectionChange: (section: DataManagerSection) => void;
   canViewMembers?: boolean;
+  dataScrollRef?: Ref<HTMLDivElement>;
   children: ReactNode;
 }) {
   const navigate = useNavigate();
+  // The Data section uses the frame root as the page-level scroll owner so the
+  // natural-height task/entity results can flow past the viewport. Overview and
+  // Members keep their own constrained scroll containers.
+  const pageScrolling = section === "data";
 
   return (
-    <div className="mx-auto flex h-full min-h-0 max-w-[1800px] flex-col overflow-hidden px-4 pt-2 pb-3 text-foreground md:px-6">
+    <div
+      ref={pageScrolling ? dataScrollRef : undefined}
+      data-dm-scroll-owner={pageScrolling ? "data" : undefined}
+      className={cn(
+        "mx-auto flex h-full min-h-0 max-w-[1800px] flex-col px-4 pt-2 pb-3 text-foreground md:px-6",
+        pageScrolling ? "overflow-y-auto" : "overflow-hidden",
+      )}
+    >
       <header className="shrink-0 border-b border-border pb-2">
         <div className="flex items-start justify-between gap-4 max-md:flex-col">
           <div className="min-w-0">
@@ -80,7 +93,7 @@ export function DataManagerFrame({
           </nav>
         </div>
       </header>
-      <div className="flex min-h-0 flex-1 flex-col pt-3">{children}</div>
+      <div className={cn("flex flex-col pt-3", !pageScrolling && "min-h-0 flex-1")}>{children}</div>
     </div>
   );
 }

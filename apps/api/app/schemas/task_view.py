@@ -106,7 +106,10 @@ class DataManagerTaskOut(TaskOut):
     annotation_count: int = 0
     prediction_count: int = 0
     avg_prediction_confidence: float | None = None
+    unresolved_issue_count: int = 0
+    # Legacy alias of ``unresolved_issue_count`` kept for older clients.
     unresolved_feedback_count: int = 0
+    comment_count: int = 0
     model_versions: list[str] = Field(default_factory=list)
     scene_name: str | None = None
     frame_index: int | None = None

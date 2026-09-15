@@ -132,16 +132,18 @@ GET    /api/v1/projects/:id/data-manager/tracks/:track_ref/detail
   "filter_json": {
     "op": "and",
     "rules": [
-      { "field": "feedback.unresolved_count", "op": "gt", "value": 0 },
+      { "field": "issue.unresolved_count", "op": "gt", "value": 0 },
       { "field": "prediction.model_version", "op": "eq", "value": "sam3-v1" }
     ]
   },
   "sort_json": [{ "field": "last_activity_at", "direction": "desc" }],
-  "columns_json": ["display_id", "status", "unresolved_feedback_count"],
+  "columns_json": ["display_id", "status", "unresolved_issue_count", "comment_count"],
   "limit": 50,
   "offset": 0
 }
 ```
+
+任务行包含 `unresolved_issue_count`（有效、开放的问题主题数）和 `comment_count`（完整评论源总数：原生任务评论 + 标注评论）。旧列 `unresolved_feedback_count`、排序键与 `feedback.unresolved_count` 筛选保留为兼容别名，语义已对齐未解决问题计数；数值筛选 `issue.unresolved_count` 和 `discussion.comment_count` 使用相同谓词。
 
 对象查询使用 annotation grain 的 keyset cursor；轨迹查询按 compact annotation 或 Scene 共享 track ID 的逻辑 grain 返回。两者的 total、facet、详情和定位都先与当前用户的 visible-task scope 连接，不返回 raw geometry。过滤字段是白名单，未知字段或不允许的操作符返回 422。Data Manager 的查询 read model 保持只读，任务操作使用独立命令入口。
 
@@ -179,7 +181,7 @@ GET /api/v1/projects/:id/performance/export
 
 仅项目负责人和超级管理员可调用。共同查询参数为 `from`、`to`、`timezone`、`work_type=annotation|review`、`account_status=all|active|inactive`、`include_historical`、`q`、`sort`、`cursor` 和 `limit`（默认 50、最多 100）。日期按指定 IANA 时区解析，带时区时间戳按实际瞬间解析；区间左闭右开，最多 90 天。`sort` 使用允许字段和 `+`/`-` 前缀，URL 中的 `+` 应编码为 `%2B`。
 
-列表返回 scope、coverage、project_totals、items 和 next_cursor。指标包含 value、unit、coverage，比例同时携带 numerator/denominator；未知值为 null。详情包括成员、趋势、类别/来源/几何分布、驳回原因和依据；依据独立分页。CSV 复用同一范围，不受列表当前页限制。具体归属和采集规则见[项目成员绩效数据](../../dev/concepts/project-performance.md)。
+列表返回 scope、coverage、project_totals、items 和 next_cursor。指标包含 value、unit、coverage，比例同时携带 numerator/denominator；未知值为 null。成员指标包含 `annotated_images`（区间内创建且仍保留标注的不同图片任务数，单位 images），项目总数额外包含 `annotated_images` 与 `retained_objects`，二者按相同资格谓词独立聚合，不求和成员行。`sort` 允许 `annotated_images` 与 `retained_objects`。详情包括成员、趋势、类别/来源/几何分布、驳回原因和依据；依据独立分页。CSV 复用同一范围，不受列表当前页限制。具体归属和采集规则见[项目成员绩效数据](../../dev/concepts/project-performance.md)。
 
 ## Alias 频率
 
