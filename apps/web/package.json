@@ -91,8 +91,8 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
-    "@dicebear/core": "^10.7.0",
-    "@dicebear/styles": "^10.6.0",
+    "@dicebear/core": "^9.4.3",
+    "@dicebear/pixel-art": "^9.4.3",
     "@eslint/js": "^9.16.0",
     "@hey-api/openapi-ts": "^0.55.0",
     "@playwright/test": "^1.49.0",

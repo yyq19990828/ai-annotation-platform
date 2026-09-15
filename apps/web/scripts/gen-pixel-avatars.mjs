@@ -6,7 +6,8 @@
  * 因此重复执行是无差异的 no-op（`--check` 只比对、不写入）。
  *
  * 产物提交进仓库而不是运行期生成，理由：运行期零依赖、可离线、不新增外部网络来源、
- * 生成结果能被 code review。`@dicebear/core` / `@dicebear/styles` 只作为 devDependency。
+ * 生成结果能被 code review。`@dicebear/core` / `@dicebear/pixel-art` 只作为 devDependency，
+ * 且都声明支持 Node 20（v10 需要 Node 22，与仓库基线不符）。
  *
  * 素材来源与许可（CC0 1.0，可商用、无署名义务）:
  *   https://www.dicebear.com/styles/pixel-art/
@@ -20,8 +21,8 @@ import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { Avatar, Style } from "@dicebear/core";
-import pixelArtDefinition from "@dicebear/styles/pixel-art.json" with { type: "json" };
+import { createAvatar } from "@dicebear/core";
+import * as pixelArt from "@dicebear/pixel-art";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const OUT_DIR = path.resolve(HERE, "../public/avatars/pixel");
@@ -64,30 +65,30 @@ const BEARD_VARIANTS = Array.from({ length: 8 }, (_, index) => `variant0${index 
 /**
  * 第 index 张头像的**完整**渲染选项。全部显式指定，不依赖 seed 随机，
  * 因此任何一次生成、任何一台机器上的结果都逐字节一致。
+ *
+ * 选项名是 DiceBear v9（`@dicebear/pixel-art`）的形态：单值变体写成单元素数组，
+ * 概率固定为 0/100 以固定取舍。
  */
 function optionsFor(index) {
-  const options = {
-    hairVariant: HAIR_VARIANTS[(index * 7) % HAIR_VARIANTS.length],
-    hairColor: HAIR[(index * 3) % HAIR.length],
+  return {
+    hair: [HAIR_VARIANTS[(index * 7) % HAIR_VARIANTS.length]],
+    hairColor: [HAIR[(index * 3) % HAIR.length]],
     hairProbability: 100,
-    clothesVariant: CLOTHES_VARIANTS[(index * 5) % CLOTHES_VARIANTS.length],
-    clothingColor: CLOTHES[(index * 5) % CLOTHES.length],
-    eyesVariant: EYES_VARIANTS[(index * 5) % EYES_VARIANTS.length],
-    mouthVariant: MOUTH_VARIANTS[index % MOUTH_VARIANTS.length],
-    skinColor: SKIN[index % SKIN.length],
+    clothing: [CLOTHES_VARIANTS[(index * 5) % CLOTHES_VARIANTS.length]],
+    clothingColor: [CLOTHES[(index * 5) % CLOTHES.length]],
+    eyes: [EYES_VARIANTS[(index * 5) % EYES_VARIANTS.length]],
+    mouth: [MOUTH_VARIANTS[index % MOUTH_VARIANTS.length]],
+    skinColor: [SKIN[index % SKIN.length]],
     // 帽子 / 眼镜 / 胡须按错开的相位分配（约 1/3、1/4、1/5），避免同一张同时戴三样而显得拥挤。
     glassesProbability: index % 4 === 1 ? 100 : 0,
-    glassesVariant: GLASSES_VARIANTS[(index * 3) % GLASSES_VARIANTS.length],
+    glasses: [GLASSES_VARIANTS[(index * 3) % GLASSES_VARIANTS.length]],
     hatProbability: index % 3 === 0 ? 100 : 0,
-    hatVariant: HAT_VARIANTS[(index * 3) % HAT_VARIANTS.length],
+    hat: [HAT_VARIANTS[(index * 3) % HAT_VARIANTS.length]],
     beardProbability: index % 5 === 2 ? 100 : 0,
-    beardVariant: BEARD_VARIANTS[(index * 3) % BEARD_VARIANTS.length],
-    // 无背景：中性圆片底由前端提供，深浅主题共用一套素材。
-    backgroundColor: undefined,
+    beard: [BEARD_VARIANTS[(index * 3) % BEARD_VARIANTS.length]],
+    // 无背景 / 无配件：中性圆片底由前端提供，深浅主题共用一套素材。
     accessoriesProbability: 0,
-    flip: "none",
   };
-  return Object.fromEntries(Object.entries(options).filter(([, value]) => value !== undefined));
 }
 
 function idFor(index) {
@@ -103,7 +104,7 @@ function buildManifest(items) {
     JSON.stringify(
       {
         style: "dicebear/pixel-art",
-        generator: "@dicebear/core + @dicebear/styles",
+        generator: "@dicebear/core + @dicebear/pixel-art",
         sourceUrl: "https://www.dicebear.com/styles/pixel-art/",
         creator: "DiceBear",
         license: "CC0 1.0",
@@ -119,14 +120,13 @@ function buildManifest(items) {
 }
 
 async function render() {
-  const style = new Style(pixelArtDefinition);
   const items = [];
   const files = new Map();
 
   for (let index = 0; index < COUNT; index += 1) {
     const id = idFor(index);
     const options = optionsFor(index);
-    const avatar = new Avatar(style, options);
+    const avatar = createAvatar(pixelArt, options);
     const svg = `${avatar.toString()}\n`;
     files.set(`${id}.svg`, svg);
     items.push({ id, label: labelFor(index), options });
