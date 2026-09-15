@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { meApi, type PasswordChangePayload, type ProfileUpdatePayload } from "../api/me";
 import type { MeResponse } from "../api/auth";
-import { useAuthStore } from "../stores/authStore";
+import { isCurrentAuthOwner, useAuthStore } from "../stores/authStore";
 
 export function useUpdateProfile() {
   const qc = useQueryClient();
@@ -57,11 +57,17 @@ export function useCancelDeactivation() {
 function useAvatarMutation<TArgs>(mutationFn: (args: TArgs) => Promise<MeResponse>) {
   const qc = useQueryClient();
   const setAuth = useAuthStore((s) => s.setAuth);
-  const token = useAuthStore((s) => s.token);
-  return useMutation({
+  return useMutation<MeResponse, Error, TArgs, { ownerId: string | null }>({
     mutationFn,
-    onSuccess: (user) => {
-      if (token) setAuth(token, user);
+    // 在**请求发起时**快照发起账号。不能在渲染期捕获：账号变化会让 hooks 重新渲染，
+    // `onSuccess` 会被换成最新的闭包，从而把「发起者」错认成当前账号。
+    onMutate: () => ({ ownerId: useAuthStore.getState().user?.id ?? null }),
+    onSuccess: (user, _args, context) => {
+      // 完成的请求可能是「迟到者」：发起后用户已登出，或另一个标签页换成了别的账号。
+      // 此时写回会把旧凭据/旧用户覆盖回 store 与 localStorage，等于撤销登出或污染新账号。
+      const token = useAuthStore.getState().token;
+      if (!context?.ownerId || !token || !isCurrentAuthOwner(context.ownerId)) return;
+      setAuth(token, user);
       qc.invalidateQueries({ queryKey: ["me"] });
     },
   });

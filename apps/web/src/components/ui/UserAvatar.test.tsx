@@ -55,6 +55,18 @@ describe("UserAvatar", () => {
     expect(screen.getByText("甲")).toBeInTheDocument();
   });
 
+  it("avatar_ref 变化后重新尝试加载(失败状态只针对旧 URL)", () => {
+    const { container, rerender } = render(
+      <UserAvatar user={{ name: "Ann", avatar_ref: "preset:pixel-03" }} />,
+    );
+    fireEvent.error(container.querySelector("img")!);
+    expect(container.querySelector("img")).toBeNull();
+
+    // 同一挂载实例内保存了新头像:必须重新渲染 img,而不是沿用旧的失败状态。
+    rerender(<UserAvatar user={{ name: "Ann", avatar_ref: "preset:pixel-04" }} />);
+    expect(container.querySelector("img")).toHaveAttribute("src", "/avatars/pixel/pixel-04.svg");
+  });
+
   it("畸形引用不产生 img(不把任意字符串拼进 src)", () => {
     const { container } = render(
       <UserAvatar user={{ name: "Ann", avatar_ref: "preset:../../evil" }} />,

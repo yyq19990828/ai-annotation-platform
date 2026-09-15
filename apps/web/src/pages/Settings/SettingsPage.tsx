@@ -685,6 +685,17 @@ function ReadOnly({
 /** 头像可通过的 MIME 与上限，与后端 services/avatar_image.py 保持一致。 */
 const AVATAR_ACCEPT = "image/png,image/jpeg,image/webp";
 const AVATAR_MAX_BYTES = 2 * 1024 * 1024;
+/**
+ * 客户端声明的类型白名单。空串 / `application/octet-stream` 表示浏览器无从判断，
+ * 后端会按字节真实格式校验，因此这里放行而不是把合法图片挡在门前。
+ */
+const AVATAR_DECLARED_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "",
+  "application/octet-stream",
+]);
 
 /**
  * 头像：预览 + 上传 / 选择内置像素头像 / 恢复默认。
@@ -715,7 +726,7 @@ function AvatarField() {
     // 清空 value，否则连续选择同一个文件不会触发 change。
     event.target.value = "";
     if (!file) return;
-    if (!AVATAR_ACCEPT.split(",").includes(file.type)) {
+    if (!AVATAR_DECLARED_TYPES.has(file.type)) {
       pushToast({ msg: "仅支持 PNG / JPEG / WebP 图片", kind: "warning" });
       return;
     }
@@ -723,6 +734,9 @@ function AvatarField() {
       pushToast({ msg: "图片不能超过 2 MB", kind: "warning" });
       return;
     }
+    // 三个动作共享同一处错误横幅，开始新一轮前清掉旧动作的陈旧报错。
+    setAvatarRef.reset();
+    clearAvatar.reset();
     setProgress(0);
     uploadAvatar.mutate(
       { file, onProgress: setProgress },
@@ -734,6 +748,8 @@ function AvatarField() {
   };
 
   const selectPreset = (ref: string) => {
+    uploadAvatar.reset();
+    clearAvatar.reset();
     setAvatarRef.mutate(ref, {
       onSuccess: () => {
         pushToast({ msg: "头像已更新", kind: "success" });
@@ -743,6 +759,8 @@ function AvatarField() {
   };
 
   const restoreDefault = () => {
+    uploadAvatar.reset();
+    setAvatarRef.reset();
     clearAvatar.mutate(undefined, {
       onSuccess: () => {
         pushToast({ msg: "已恢复默认头像", kind: "success" });

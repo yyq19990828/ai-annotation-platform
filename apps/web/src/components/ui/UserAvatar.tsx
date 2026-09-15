@@ -33,9 +33,11 @@ interface UserAvatarProps {
 
 export function UserAvatar({ user, size = "sm", className }: UserAvatarProps) {
   const url = resolveAvatarUrl(user.avatar_ref);
-  const [broken, setBroken] = useState(false);
+  // 记录**失败的那个 URL**而不是布尔值：`avatar_ref` 在同一挂载实例内变化（如设置页
+  // 保存新头像）时,新 URL 必须重新尝试加载,只有同一 URL 再次失败才继续回退首字母。
+  const [brokenUrl, setBrokenUrl] = useState<string | null>(null);
   const initial = avatarInitial(user.name, user.email, user.avatar_initial);
-  const showImage = url !== null && !broken;
+  const showImage = url !== null && url !== brokenUrl;
 
   return (
     <span
@@ -57,7 +59,7 @@ export function UserAvatar({ user, size = "sm", className }: UserAvatarProps) {
           loading="lazy"
           decoding="async"
           className="relative size-full object-cover"
-          onError={() => setBroken(true)}
+          onError={() => setBrokenUrl(url)}
         />
       )}
     </span>

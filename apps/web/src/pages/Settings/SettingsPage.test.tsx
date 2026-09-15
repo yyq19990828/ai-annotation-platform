@@ -16,6 +16,7 @@ const mockSettingsUser = vi.hoisted(() => ({
   email: "alice@example.com",
   role: "super_admin",
   group_name: null,
+  avatar_ref: null as string | null,
   password_admin_reset_at: null as string | null,
   deactivation_scheduled_at: null,
   deactivation_requested_at: null,
@@ -49,9 +50,9 @@ const mockUpdateProfile = { mutate: vi.fn(), isPending: false, isError: false };
 const mockChangePassword = { mutate: vi.fn(), isPending: false, isError: false };
 const mockRequestDeactivation = { mutate: vi.fn(), isPending: false, isError: false };
 const mockCancelDeactivation = { mutate: vi.fn(), isPending: false, isError: false };
-const mockSetAvatarRef = { mutate: vi.fn(), isPending: false, isError: false };
-const mockClearAvatar = { mutate: vi.fn(), isPending: false, isError: false };
-const mockUploadAvatar = { mutate: vi.fn(), isPending: false, isError: false };
+const mockSetAvatarRef = { mutate: vi.fn(), reset: vi.fn(), isPending: false, isError: false };
+const mockClearAvatar = { mutate: vi.fn(), reset: vi.fn(), isPending: false, isError: false };
+const mockUploadAvatar = { mutate: vi.fn(), reset: vi.fn(), isPending: false, isError: false };
 vi.mock("@/hooks/useMe", () => ({
   useUpdateProfile: () => mockUpdateProfile,
   useChangePassword: () => mockChangePassword,
@@ -163,10 +164,17 @@ function renderUI() {
 describe("SettingsPage", () => {
   beforeEach(() => {
     mockSettingsUser.password_admin_reset_at = null;
+    mockSettingsUser.avatar_ref = null;
     mockPushToast.mockReset();
     mockUpdateProfile.mutate.mockReset();
     mockLogoutAll.mutate.mockReset();
     mockChangePassword.mutate.mockReset();
+    mockSetAvatarRef.mutate.mockReset();
+    mockSetAvatarRef.reset.mockReset();
+    mockClearAvatar.mutate.mockReset();
+    mockClearAvatar.reset.mockReset();
+    mockUploadAvatar.mutate.mockReset();
+    mockUploadAvatar.reset.mockReset();
     mockUpdateSystemSettings.mutate.mockReset();
     mockResetSystemSettings.mutate.mockReset();
     mockTestSmtp.mutate.mockReset();
@@ -200,6 +208,34 @@ describe("SettingsPage", () => {
     fireEvent.click(btn);
     expect(mockUpdateProfile.mutate).toHaveBeenCalledTimes(1);
     expect(mockUpdateProfile.mutate.mock.calls[0][0]).toEqual({ name: "Alice New" });
+  });
+
+  it("头像：浏览器无法判断 MIME（空字符串）时仍允许上传，交给服务端校验", () => {
+    renderUI();
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, {
+      target: { files: [new File(["x"], "a.png", { type: "" })] },
+    });
+    expect(mockUploadAvatar.mutate).toHaveBeenCalledTimes(1);
+  });
+
+  it("头像：明确不支持的 MIME 直接拒绝，不发起上传", () => {
+    renderUI();
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, {
+      target: { files: [new File(["x"], "a.gif", { type: "image/gif" })] },
+    });
+    expect(mockUploadAvatar.mutate).not.toHaveBeenCalled();
+    expect(mockPushToast).toHaveBeenCalledWith(expect.objectContaining({ kind: "warning" }));
+  });
+
+  it("头像：发起另一个动作前清除旧动作的错误状态", () => {
+    mockSettingsUser.avatar_ref = "preset:pixel-01";
+    renderUI();
+    fireEvent.click(screen.getByRole("button", { name: "恢复默认" }));
+    expect(mockUploadAvatar.reset).toHaveBeenCalled();
+    expect(mockSetAvatarRef.reset).toHaveBeenCalled();
+    expect(mockClearAvatar.mutate).toHaveBeenCalled();
   });
 
   it("修改密码：两次密码不一致时显示错误提示", () => {
