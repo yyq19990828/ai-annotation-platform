@@ -67,7 +67,7 @@ git push origin your-branch
 | -------------------------- | ------------------------------------ |
 | `pnpm test` 报 import 错误 | `pnpm install` 后重试                |
 | TypeScript 类型报错        | `pnpm type-check` 查看完整错误       |
-| CI 失败但本地通过          | 检查 Node 版本（需 ≥20）；查 CI 日志 |
+| CI 失败但本地通过          | 检查 Node 版本（需 ≥22）；查 CI 日志 |
 
 ## 下一步
 

@@ -167,7 +167,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
       - uses: pnpm/action-setup@v4
       - name: pnpm install
         working-directory: apps/web
@@ -206,7 +206,7 @@ jobs:
         run: pip install uv
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
       - uses: pnpm/action-setup@v4
       - name: pnpm install
         run: pnpm install --frozen-lockfile
@@ -242,7 +242,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
       - uses: pnpm/action-setup@v4
       - name: pnpm install
         run: pnpm install --frozen-lockfile
@@ -262,7 +262,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
       - name: Fetch PR base
         if: github.event_name == 'pull_request'
         env:
