@@ -430,28 +430,48 @@ P1 与 P2 无依赖，可并行；P3 依赖 P1、P2；P4 依赖 P3。
 
 ## 14. 实施记录（与计划的差异）
 
-计划已按 P1–P4 全部落地。实施中发现并修正了几处计划假设，记录如下，避免后来者按原假设返工：
+计划已按 P1–P4 全部落地，并在真实浏览器与隔离截图环境完成验收。实施中发现并修正了几处计划假设与仓库接线缺口：
 
 | 计划假设                                           | 实际情况                                                                                                          | 处理                                                                                |
 | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
 | 账号硬删除时清理头像对象                           | `DELETE /users/{id}` 是**软删除**（`is_active=False`），全仓没有硬删除路径                                        | 删除该改动项；账号删除保留头像，写入 §4.4 与开发文档                                |
 | 需要提交 `apps/web/src/api/generated/types.gen.ts` | 该目录被 `apps/web/.gitignore` 忽略，唯一版本化契约是 `apps/api/openapi.snapshot.json`                            | 只提交 snapshot；`pnpm codegen` 本地生成即可                                        |
+| §4.3.2 接线清单**漏了工作树启动器**                | `scripts/worktree_env.py::BUCKETS` 只覆盖 7 个桶 → 新桶不隔离、`destroy` 不清理，违反「按模式隔离 bucket」契约    | 补 `MINIO_AVATARS_BUCKET`；桶数断言 7 → 8；工作树文档同步（`8557ee5f`）             |
 | 可能需要在 docker-compose 中显式声明新桶变量       | 生产叠加文件用 `env_file: .env.production`（由 `.env.example` 复制）注入全部 `MINIO_*`；dev 走 `config.py` 默认值 | compose 文件无需改动；`docker-compose.md` 变量表与 `lan-production.md` 桶清单已同步 |
 | `test_audit_logs.py::test_pagination` 是稳定测试   | 该用例传 `limit=5`，但列表端点分页契约是 `page` / `page_size`（`limit` 只属于导出端点），审计行超过 5 条即失败    | 修正为 `page_size=5`（既有陈旧用例，与本功能无关但会被本功能的审计行触发）          |
 | —                                                  | `SettingsPage.test.tsx` 依赖「空值 input 下标」选密码框，新增头像文件选择框后命中错误元素                         | 改为按 label 查询；补 `useMe` 新 hooks 的 mock 与 `QueryClientProvider`             |
 
-另外把 `UploadBodyLimitMiddleware` 的上限选择从五层嵌套三元改为表驱动（本次新增一条分支后嵌套已不可读），行为逐字不变。
+另外把 `UploadBodyLimitMiddleware` 的上限选择从五层嵌套三元改为表驱动（本次新增一条分支后嵌套已不可读），行为逐字不变。另外 `e2e/screenshots/outputs/` 同样被 gitignore：截图登记表只在本地生成，不随截图提交。
+
+### 14.1 本机验收环境的两处既有工具链限制
+
+截图环境在本机绕开了两个与本次改动无关的环境问题，均用非侵入方式解决（不改系统安装、不改仓库默认配置）：
+
+1. **本机 Homebrew ffmpeg 9.0.1 没有 WebP 编码器**（`ffmpeg -encoders` 无 `libwebp`），而截图 seed 的视频 poster 生成依赖它：报错 `Default encoder for format webp (codec webp) is probably disabled`。解决：`x env use ffmpeg` 取到带 `libwebp` 的 ffmpeg v6.0.0，仅在 seed 与 worker 进程的 `PATH` 前置，`ffprobe` 仍用本机版本。
+2. **Docker Hub 不可达**（`python:3.11-slim` 拉取 EOF），`screenshot-ml-stub` 无法构建。解决：该 stub 只依赖 fastapi/uvicorn/pydantic，直接用 API venv 在宿主机 `127.0.0.1:9100` 运行 `docs-site/dev/examples/mock-v2-backend/main.py`，seed 传 `--ml-backend-mode stub --ml-backend-url http://127.0.0.1:9100`。
+
+这两条值得补进截图环境排障文档（本机无 GPU + Docker Hub 受限时的替代路径）。
+
+### 14.2 浏览器验收结果（开发栈 API 8100 / Web 3100，admin/123456）
+
+| 验收项            | 结果                                                                                                                                                            |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 上传竖图 600×1200 | 存为 **256×256 WebP**（1346 B）；取像素验证顶部仍为红、中部绿、底部蓝 → 居中方形裁剪、方向未丢、无拉伸                                                          |
+| 头像读取（匿名）  | `GET /api/v1/avatars/{token}` 无 `Authorization` 返回 200 + `image/webp` + `Cache-Control: public, max-age=86400`；带 ETag 复取 304；非法/超长/非 hex token 404 |
+| 内置头像          | `/avatars/pixel/pixel-07.svg` 由前端静态服务返回 `image/svg+xml`；选择后顶栏与预览立即更新                                                                      |
+| 选择器            | 深色与浅色两套主题各 32 张全部渲染、无破图、选中项有明确描边；版权与「立即生效」说明可见                                                                        |
+| 协作面            | 用户与权限列表出现带图片的头像行，同表其余用户仍为首字母（混排不错位）；项目负责人无头像时回退首字母                                                            |
+| 恢复默认          | 无头像时按钮禁用；有头像动作后可用（组件测试覆盖清除路径）                                                                                                      |
 
 ## Outcome
 
-- Landed commits: `1d0fc8ee`（`feat/user_opt260915` 分支）
+- Landed commits: `1d0fc8ee`（主体）、`e695f6db`（计划记录）、`8557ee5f`（工作树桶隔离）、`7db7f197`（头像组测试）、`632686c3`（截图重截）、`7b52ecc0`（截图复核）
 - Release milestone: Not yet determined
 - User documentation: `docs-site/user-guide/reference/settings.md`（个人资料「头像」）
-- Developer documentation: `docs-site/dev/reference/storage-buckets.md`（`avatars` 桶 + 可见性边界）、`docs-site/dev/reference/generated-artifacts.md`（像素头像生成物）、`docs-site/ops/deploy/{docker-compose,lan-production}.md`
+- Developer documentation: `docs-site/dev/reference/storage-buckets.md`（`avatars` 桶 + 可见性边界）、`docs-site/dev/reference/generated-artifacts.md`（像素头像生成物）、`docs-site/ops/deploy/{docker-compose,lan-production}.md、`docs-site/dev/how-to/worktree-environments.md`与`docs-site/dev/concepts/runtime-environments.md`（桶数）
 - ADR: 无（分桶与免鉴权读取的取舍记入 `storage-buckets.md` 与 `apps/api/app/api/v1/avatars.py` 模块注释，未达到 ADR 门槛）
 - CHANGELOG: Unreleased / Added 已加条目
 - Remaining work:
-  1. **浏览器端到端验收**：本 worktree 没有运行中的开发栈（现有 3000/8000 与 3001/8010 属于其他 checkout），因此「上传竖图 → 方裁 256×256」「选择内置头像 → 顶栏与成员列表同步」「深浅两套主题对比度」这三项只在单测与静态预览中验证过，需在跑起来的栈上确认。
-  2. **个人资料页文档截图重截**：`docs-site/user-guide/images/settings/profile.png` 已因新增头像行而过期，需在栈上跑 `pnpm --filter @anno/web screenshots` 并走 `pnpm docs:media:approve` 人工复核。
-  3. e2e 用例（Playwright）未新增：选择器的交互覆盖目前由 vitest 组件测试承担。
-  4. 评论 / Issue / 通知 / 审计日志的头像仍为文字或首字母（§12），需要为那 6+ 个 payload 单独扩展。
+  1. 评论 / Issue / 通知 / 审计日志的头像仍为文字或首字母（§12），需要为那 6+ 个 payload 单独扩展。
+  2. Playwright e2e 未新增；选择器与头像组由 vitest 组件测试覆盖（含图片/首字母混排）。
+  3. 本机 ffmpeg 缺 `libwebp`、Docker Hub 受限两条环境问题建议补进截图排障文档（§14.1）。
