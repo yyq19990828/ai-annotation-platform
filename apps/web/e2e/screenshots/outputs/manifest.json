@@ -1281,7 +1281,7 @@
       "fixture": null,
       "seed_profile": "screenshots",
       "seed_revision": "screenshots-2026-08-g",
-      "source_commit": "7a805d2a8d5e915ace4bb439b639fb07ba98b618",
+      "source_commit": "5af65a4a7f4898bcc2c94795d53f220d6ca8e907",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -1294,9 +1294,10 @@
       "theme": "light",
       "clock": "fixed",
       "locale": "zh-CN",
-      "generated_at": "2026-09-13T18:32:35.253Z",
+      "generated_at": "2026-09-15T09:30:35.323Z",
       "provenance": "current-run",
-      "sha256": "272239d3ba5e8ead7bf98fbcbda24ccee020ced6ffca078e9e9c78c093bca2e3",
+      "source_worktree_dirty": true,
+      "sha256": "363a92fd424ad782c42fd412f7545a7250e41f6a7258204f5ee0de52abb56d3a",
       "width": 1440,
       "height": 900
     },

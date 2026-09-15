@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, lazy, Suspense } from "react";
 import { Button } from "@/components/ui/Button";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { DropdownMenu, type DropdownItem } from "@/components/ui/DropdownMenu";
@@ -9,7 +9,15 @@ import { useTheme } from "@/hooks/useTheme";
 import { useBugDrawerStore } from "@/stores/bugDrawerStore";
 import type { TaskResponse } from "@/types";
 import type { VideoSegment } from "@/api/videoTracker";
+import type { GuardedNavigate } from "@/utils/workbenchNavigation";
 import type { WorkspaceSide, WorkspaceSideState } from "../layout/workbenchLayoutExecutor";
+
+// 与主界面 TopBar 共用同一懒加载通知入口；工作台传入自己的导航回调。
+const NotificationsPopover = lazy(() =>
+  import("@/components/shell/NotificationsPopover").then((m) => ({
+    default: m.NotificationsPopover,
+  })),
+);
 
 interface TopbarProps {
   /** 项目名 + 展示 ID（如 P-0001）；显示在左侧 task id 前作为项目上下文。 */
@@ -69,6 +77,11 @@ interface TopbarProps {
   activeVideoSegmentId?: string | null;
   onSelectVideoSegment?: (segmentId: string | null) => void;
   submitLabel?: string;
+  /**
+   * 通知面板导航回调：工作台在真正改路由前跑视频/Mask 离开检查。
+   * 缺省时不渲染通知入口（测试/故事用 Topbar 时保持原行为）。
+   */
+  onNotificationNavigate?: GuardedNavigate;
 }
 
 function cn(...xs: Array<string | false | null | undefined>): string {
@@ -131,6 +144,7 @@ export function Topbar({
   activeVideoSegmentId,
   onSelectVideoSegment,
   submitLabel = "提交",
+  onNotificationNavigate,
 }: TopbarProps) {
   const { resolved, setTheme } = useTheme();
   const openBugDrawer = useBugDrawerStore((state) => state.openDrawer);
@@ -479,6 +493,11 @@ export function Topbar({
             </>
           )}
           {guideSlot && <div className="flex shrink-0 items-center">{guideSlot}</div>}
+          {onNotificationNavigate && (
+            <Suspense fallback={null}>
+              <NotificationsPopover navigate={onNotificationNavigate} />
+            </Suspense>
+          )}
           <div className="flex items-center gap-1.5 @max-[700px]:hidden">
             <Button
               variant="ghost"

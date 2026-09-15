@@ -4,6 +4,7 @@ import {
   LatestTaskNavigationScheduler,
   annotationsForTask,
   commitAfterNavigationGuard,
+  runWorkbenchLeaveGuards,
   resolveMaskEditorSize,
   resolvePinViewport,
   resolveSamCandidateClass,
@@ -71,6 +72,82 @@ describe("commitAfterNavigationGuard", () => {
     releaseFirst?.(true);
     await expect(first).resolves.toBe(false);
     expect(commits).toEqual(["second"]);
+  });
+});
+
+describe("Workbench leave admission for task, batch and detail routes", () => {
+  it("video cancellation preserves the current owner before Mask or state writes", async () => {
+    const mask = vi.fn(async () => true);
+    const commit = vi.fn();
+    const allowed = await commitAfterNavigationGuard(
+      () =>
+        runWorkbenchLeaveGuards(
+          async () => false,
+          mask,
+          () => true,
+        ),
+      undefined,
+      commit,
+    );
+    expect(allowed).toBe(false);
+    expect(mask).not.toHaveBeenCalled();
+    expect(commit).not.toHaveBeenCalled();
+  });
+
+  it("awaits both owners before committing the target batch and task together", async () => {
+    let confirmVideo!: (allowed: boolean) => void;
+    let confirmMask!: (allowed: boolean) => void;
+    const video = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          confirmVideo = resolve;
+        }),
+    );
+    const mask = vi.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          confirmMask = resolve;
+        }),
+    );
+    let context = { taskId: "t1", batchId: "b1" };
+    const pending = commitAfterNavigationGuard(
+      () => runWorkbenchLeaveGuards(video, mask, () => true),
+      undefined,
+      () => {
+        context = { taskId: "t9", batchId: "b2" };
+      },
+    );
+    expect(context).toEqual({ taskId: "t1", batchId: "b1" });
+    expect(mask).not.toHaveBeenCalled();
+    confirmVideo(true);
+    await Promise.resolve();
+    expect(mask).toHaveBeenCalledOnce();
+    expect(context).toEqual({ taskId: "t1", batchId: "b1" });
+    confirmMask(true);
+    await expect(pending).resolves.toBe(true);
+    expect(context).toEqual({ taskId: "t9", batchId: "b2" });
+  });
+
+  it.each(["video", "mask"])("rejects an obsolete owner after waiting for %s", async (stage) => {
+    let current = true;
+    const video = vi.fn(async () => {
+      if (stage === "video") current = false;
+      return true;
+    });
+    const mask = vi.fn(async () => {
+      current = false;
+      return true;
+    });
+    const commit = vi.fn();
+    await expect(
+      commitAfterNavigationGuard(
+        () => runWorkbenchLeaveGuards(video, mask, () => current),
+        undefined,
+        commit,
+      ),
+    ).resolves.toBe(false);
+    expect(commit).not.toHaveBeenCalled();
+    expect(mask).toHaveBeenCalledTimes(stage === "video" ? 0 : 1);
   });
 });
 

@@ -238,6 +238,7 @@ import {
   parseWorkbenchDiscussionRequest,
 } from "@/utils/workbenchNavigation";
 import { useDiscussionNavigation } from "./useDiscussionNavigation";
+import { planNotificationNavigation } from "./notificationWorkbenchNavigation";
 import { useAnnotationCommentCounts } from "@/hooks/useAnnotationCommentCounts";
 import {
   ensurePointCloudNavigationGeneration,
@@ -283,6 +284,7 @@ import {
   buildPipelineRunPayload,
   annotationsForTask,
   commitAfterNavigationGuard,
+  runWorkbenchLeaveGuards,
   missingBackendIdsForStages,
   selectProjectPipelineStages,
   buildPredictParams,
@@ -515,10 +517,18 @@ export function useWorkbenchShellModel({
   );
   const onBack = useCallback(() => {
     cancelVideoIssueNavigationRef.current();
-    void maskNavigationGuardRef.current().then((allowed) => {
-      if (allowed) navigate(backTarget);
+    const owner = useAuthStore.getState().user?.id;
+    void taskNavigationScheduler.schedule(backTarget, async (signal) => {
+      const allowed = await runWorkbenchLeaveGuards(
+        videoLeaveGuardRef.current,
+        () => maskNavigationGuardRef.current(),
+        () => !signal.aborted && !!owner && isCurrentAuthOwner(owner),
+      );
+      if (!allowed) return false;
+      navigate(backTarget);
+      return true;
     });
-  }, [navigate, backTarget]);
+  }, [navigate, backTarget, taskNavigationScheduler]);
   const updateUrl = useCallback(
     (opts: {
       batchId?: string | null;
@@ -812,8 +822,12 @@ export function useWorkbenchShellModel({
         issueRestore?: boolean;
         /** The requested URL is already visible; preserve its validated target. */
         fromUrl?: boolean;
+        /** A resolved notification can target a task outside the current batch. */
+        batchId?: string | null;
       } = {},
     ): Promise<boolean> => {
+      const owner = useAuthStore.getState().user?.id;
+      const targetBatchId = opts.batchId === undefined ? selectedBatchId : opts.batchId;
       if (!opts.issueRestore) cancelVideoIssueNavigationRef.current();
       if (!opts.scenePreview) setScenePlayback(false);
       const generation = ensurePointCloudNavigationGeneration(id, "shell");
@@ -830,14 +844,17 @@ export function useWorkbenchShellModel({
         pending: true,
       });
       return taskNavigationScheduler.schedule(id, async (navigationSignal) => {
-        if (
-          !(await videoLeaveGuardRef.current(
-            () => !navigationSignal.aborted && !opts.signal?.aborted,
-          ))
-        )
-          return false;
         const allowed = await commitAfterNavigationGuard(
-          maskNavigationGuardRef.current,
+          () =>
+            runWorkbenchLeaveGuards(
+              videoLeaveGuardRef.current,
+              () => maskNavigationGuardRef.current(),
+              () =>
+                !navigationSignal.aborted &&
+                !opts.signal?.aborted &&
+                !!owner &&
+                isCurrentAuthOwner(owner),
+            ),
           [navigationSignal, opts.signal],
           () => {
             const current = navigationIdentityRef.current;
@@ -853,11 +870,12 @@ export function useWorkbenchShellModel({
               pending: true,
             });
             pendingLocalTaskIdRef.current = current.requestedTaskId === id ? null : id;
+            if (opts.batchId !== undefined) setSelectedBatchId(targetBatchId);
             setCurrentTaskId(id);
             setSelectedId(null);
             if (!opts.fromUrl)
               updateUrl({
-                batchId: selectedBatchId,
+                batchId: targetBatchId,
                 taskId: id,
                 replace: opts.replace,
                 maskGuardApproved: true,
@@ -1472,16 +1490,71 @@ export function useWorkbenchShellModel({
   const handleSelectBatch = useCallback(
     (batchId: string | null) => {
       cancelVideoIssueNavigationRef.current();
-      void maskNavigationGuardRef.current().then((allowed) => {
-        if (!allowed) return;
+      const owner = useAuthStore.getState().user?.id;
+      return taskNavigationScheduler.schedule(`batch:${batchId ?? ""}`, async (signal) => {
+        const allowed = await runWorkbenchLeaveGuards(
+          videoLeaveGuardRef.current,
+          () => maskNavigationGuardRef.current(),
+          () => !signal.aborted && !!owner && isCurrentAuthOwner(owner),
+        );
+        if (!allowed) return false;
         pendingLocalTaskIdRef.current = null;
         setSelectedBatchId(batchId);
         setCurrentTaskId(null);
         setSelectedId(null);
         updateUrl({ batchId, taskId: null, maskGuardApproved: true });
+        return true;
       });
     },
-    [setCurrentTaskId, setSelectedId, updateUrl],
+    [setCurrentTaskId, setSelectedId, updateUrl, taskNavigationScheduler],
+  );
+
+  // ── 通知入口导航：NotificationsPopover 的守卫回调 ─────────────────────
+  // 决策逻辑见 notificationWorkbenchNavigation（纯函数，含单测）：
+  // 同项目任务/批次切换复用现有准入（selectTask/handleSelectBatch），讨论
+  // URL 水合自带单次准入；跨项目或非工作台目标先过视频 + Mask 离开检查。
+  // 每次 await 之后重新校验账号所有权，迟到的结果不能影响后续会话。
+  const navigateFromNotification = useCallback(
+    async (url: string): Promise<boolean> => {
+      const ownerId = useAuthStore.getState().user?.id;
+      if (!ownerId) return false;
+      const isCurrentOwner = () => isCurrentAuthOwner(ownerId);
+      const decision = planNotificationNavigation(url, {
+        projectId,
+        mode,
+        selectedBatchId,
+      });
+      if (!decision) return false;
+      if (decision.kind === "task") {
+        return selectTask(decision.taskId, { batchId: decision.batchId });
+      }
+      if (decision.kind === "batch") {
+        return handleSelectBatch(decision.batchId);
+      }
+      if (decision.kind === "direct-url") {
+        navigate(url);
+        return true;
+      }
+      return taskNavigationScheduler.schedule(url, async (signal) => {
+        const allowed = await runWorkbenchLeaveGuards(
+          videoLeaveGuardRef.current,
+          () => maskNavigationGuardRef.current(),
+          () => !signal.aborted && isCurrentOwner(),
+        );
+        if (!allowed) return false;
+        navigate(url);
+        return true;
+      });
+    },
+    [
+      projectId,
+      mode,
+      selectedBatchId,
+      selectTask,
+      handleSelectBatch,
+      navigate,
+      taskNavigationScheduler,
+    ],
   );
 
   useEffect(() => {
@@ -7640,6 +7713,7 @@ export function useWorkbenchShellModel({
           ? (segmentId) => void switchVideoSegment(segmentId)
           : undefined,
       submitLabel: videoCollaborationEnabled ? "提交分段" : undefined,
+      onNotificationNavigate: navigateFromNotification,
     },
     stageHost: {
       common: {

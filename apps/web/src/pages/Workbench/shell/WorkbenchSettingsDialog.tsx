@@ -12,6 +12,11 @@ import { Separator } from "@/components/shadcn/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/shadcn/ui/tabs";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
 import {
+  NotificationPreferencesPanel,
+  notificationPreferencesMatchQuery,
+} from "@/components/notifications/NotificationPreferencesPanel";
+import { useNotificationPreferences } from "@/hooks/useNotificationPreferences";
+import {
   SettingsFieldControl,
   type SettingsControlField,
 } from "../components/SettingsFieldControl";
@@ -85,6 +90,8 @@ export function WorkbenchSettingsDialog({
   const desktop = useMediaQuery("(min-width: 768px)");
   const visibleFields = getVisibleWorkbenchSettingFields();
   const categories = Object.keys(WORKBENCH_SETTING_GROUPS) as WorkbenchSettingGroup[];
+  // 通知偏好与渲染配置互相独立：搜索时只读共享缓存判断是否命中。
+  const preferencesQ = useNotificationPreferences();
 
   useEffect(() => {
     if (!open) {
@@ -154,6 +161,8 @@ export function WorkbenchSettingsDialog({
       onCommit: onToggleSecondaryBar,
     });
   const searching = query.trim().length > 0;
+  const notificationSearchMatch =
+    searching && notificationPreferencesMatchQuery(preferencesQ.data?.items, query);
   const resultGroups = groupWorkbenchSettings(
     searching ? filterWorkbenchSettings(entries, query) : entries,
   ).filter((group) => searching || group.key === category);
@@ -323,7 +332,10 @@ export function WorkbenchSettingsDialog({
               className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-2 md:px-8 md:py-4"
             >
               {loaded && !loadError && category === "layout" && !searching && layoutSettings}
-              {!loaded ? (
+              {category === "notifications" && !searching ? (
+                // 通知偏好有独立的加载/重试状态；渲染配置加载失败不影响此处。
+                <NotificationPreferencesPanel />
+              ) : !loaded ? (
                 <p role="status" className="py-8 text-sm text-muted-foreground">
                   正在加载设置…
                 </p>
@@ -336,7 +348,7 @@ export function WorkbenchSettingsDialog({
                     重试
                   </Button>
                 </Empty>
-              ) : !resultGroups.length ? (
+              ) : !resultGroups.length && !notificationSearchMatch ? (
                 <Empty>
                   <EmptyHeader>
                     <EmptyTitle>没有找到相关设置</EmptyTitle>
@@ -346,41 +358,61 @@ export function WorkbenchSettingsDialog({
                   </Button>
                 </Empty>
               ) : (
-                resultGroups.flatMap((group) =>
-                  group.sections.map(({ key, label, fields }, index) => (
-                    <FieldSet key={key} className="gap-0 py-3">
+                <>
+                  {resultGroups.flatMap((group) =>
+                    group.sections.map(({ key, label, fields }, index) => (
+                      <FieldSet key={key} className="gap-0 py-3">
+                        <FieldLegend
+                          variant="legend"
+                          className="data-[variant=legend]:text-md mb-3 w-full border-b border-border pb-2 font-semibold"
+                        >
+                          {searching && (
+                            <span className="mr-1 text-xs font-normal text-muted-foreground">
+                              <HighlightText text={group.label} query={query} /> /
+                            </span>
+                          )}
+                          <HighlightText text={label} query={searching ? query : ""} />
+                        </FieldLegend>
+                        <FieldGroup className="gap-0">
+                          {fields.map((entry) => (
+                            <SettingsFieldControl
+                              key={entry.key}
+                              layout="settings"
+                              field={entry}
+                              value={entry.value}
+                              highlightQuery={searching ? query : ""}
+                              locked={entry.locked}
+                              disabled={entry.disabled}
+                              nested={!!entry.parentKey}
+                              previewing={previewField === entry.key}
+                              onPreviewChange={(active) =>
+                                setPreviewField(active ? entry.key : null)
+                              }
+                              onCommit={entry.onCommit}
+                            />
+                          ))}
+                        </FieldGroup>
+                        {index < group.sections.length - 1 && <Separator className="mt-3" />}
+                      </FieldSet>
+                    )),
+                  )}
+                  {notificationSearchMatch ? (
+                    <FieldSet className="gap-0 py-3">
                       <FieldLegend
                         variant="legend"
                         className="data-[variant=legend]:text-md mb-3 w-full border-b border-border pb-2 font-semibold"
                       >
-                        {searching && (
-                          <span className="mr-1 text-xs font-normal text-muted-foreground">
-                            <HighlightText text={group.label} query={query} /> /
-                          </span>
-                        )}
-                        <HighlightText text={label} query={searching ? query : ""} />
+                        <span className="mr-1 text-xs font-normal text-muted-foreground">
+                          通知 /
+                        </span>
+                        <HighlightText text="通知偏好" query={query} />
                       </FieldLegend>
                       <FieldGroup className="gap-0">
-                        {fields.map((entry) => (
-                          <SettingsFieldControl
-                            key={entry.key}
-                            layout="settings"
-                            field={entry}
-                            value={entry.value}
-                            highlightQuery={searching ? query : ""}
-                            locked={entry.locked}
-                            disabled={entry.disabled}
-                            nested={!!entry.parentKey}
-                            previewing={previewField === entry.key}
-                            onPreviewChange={(active) => setPreviewField(active ? entry.key : null)}
-                            onCommit={entry.onCommit}
-                          />
-                        ))}
+                        <NotificationPreferencesPanel filterQuery={query} />
                       </FieldGroup>
-                      {index < group.sections.length - 1 && <Separator className="mt-3" />}
                     </FieldSet>
-                  )),
-                )
+                  ) : null}
+                </>
               )}
             </div>
             <footer className="flex shrink-0 justify-between border-t border-border px-4 py-3 pb-[max(12px,env(safe-area-inset-bottom))] text-xs text-muted-foreground md:hidden">

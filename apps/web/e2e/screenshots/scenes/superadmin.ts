@@ -231,8 +231,8 @@ export const SUPERADMIN_SCENES: ScreenshotScene[] = [
           }),
       );
       await page.waitForLoadState("networkidle");
-      // 顶栏铃铛按钮（title="通知"）→ 展开 NotificationsPopover
-      const bell = page.getByRole("button", { name: "通知", exact: true }).first();
+      // 顶栏铃铛按钮（data-testid）→ 展开 NotificationsPopover；读屏标签随未读数变化。
+      const bell = page.getByTestId("notifications-trigger").first();
       await bell.click();
       await page.getByRole("dialog").waitFor({ timeout: 3000 });
       await page.getByText("通过了任务").waitFor({ timeout: 3000 });

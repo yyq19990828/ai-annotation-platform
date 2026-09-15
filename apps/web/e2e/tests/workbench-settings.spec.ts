@@ -26,6 +26,7 @@ test("图像设置：外部关闭保存、搜索、焦点隔离及响应式布�
     "画布与视角",
     "播放与轨迹",
     "性能与实验",
+    "通知",
   ]);
   await dialog.getByRole("tab", { name: "标注显示", exact: true }).click();
   const labelTabs = dialog.getByRole("tablist", { name: "标签类型" });

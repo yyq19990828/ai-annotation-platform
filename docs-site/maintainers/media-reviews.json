@@ -3617,11 +3617,11 @@
       ]
     },
     "docs-site/user-guide/images/settings/notification-prefs.png": {
-      "last_verified_commit": "23ce6efea480ce88514c0ca23308d19f48b1d9ac",
-      "verified_at": "2026-09-13T18:34:54.855Z",
-      "reviewer": "Codex primary thread (user-delegated)",
+      "last_verified_commit": "e9ac266338782cbc0c602783e16e25619748822a",
+      "verified_at": "2026-09-15T09:37:02.729Z",
+      "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
-      "sha256": "272239d3ba5e8ead7bf98fbcbda24ccee020ced6ffca078e9e9c78c093bca2e3",
+      "sha256": "363a92fd424ad782c42fd412f7545a7250e41f6a7258204f5ee0de52abb56d3a",
       "watch_paths": [
         "apps/web/e2e/screenshots/scenes/settings.ts",
         "docs-site/user-guide/images/settings/notification-prefs.png",

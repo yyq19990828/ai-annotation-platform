@@ -117,7 +117,7 @@ test("讨论通知通过实时推送打开五十条之后的旧回复，并刷�
     });
     await page.goto("/projects");
     await socketReady;
-    await expect(page.getByRole("button", { name: "通知", exact: true })).toBeVisible();
+    await expect(page.getByTestId("notifications-trigger")).toBeVisible();
     const oldReply = await replyToIssue(page, reviewerToken, root.id, "通知中的最早回复");
     await expect
       .poll(() =>
@@ -135,7 +135,7 @@ test("讨论通知通过实时推送打开五十条之后的旧回复，并刷�
       read_at: null,
       payload: { reply_id: oldReply.id, source: "feedback" },
     });
-    await page.getByRole("button", { name: "通知", exact: true }).click();
+    await page.getByTestId("notifications-trigger").click();
     await page.getByRole("button", { name: /^打开通知：回复了问题/ }).click();
     await expect(page).toHaveURL(new RegExp(`reply=${oldReply.id}`));
     await expect(page.getByTestId("discussion-issue-detail")).toHaveAttribute(
@@ -154,9 +154,9 @@ test("讨论通知通过实时推送打开五十条之后的旧回复，并刷�
     // Browser back retains the authenticated query cache; the new reply must
     // still be fetched when a later notification opens this same conversation.
     await page.goBack();
-    await expect(page.getByRole("button", { name: "通知", exact: true })).toBeVisible();
+    await expect(page.getByTestId("notifications-trigger")).toBeVisible();
     const freshReply = await replyToIssue(page, reviewerToken, root.id, "缓存建立后才发布的新回复");
-    await page.getByRole("button", { name: "通知", exact: true }).click();
+    await page.getByTestId("notifications-trigger").click();
     await expect(page.getByRole("button", { name: /^打开通知：回复了问题/ })).toHaveCount(2);
     await page
       .getByRole("button", { name: /^打开通知：回复了问题/ })
@@ -221,7 +221,7 @@ test("标注提及通知定位原评论，发送目标跟随标注，支持静�
       payload: { source: "annotation_comment", annotation_id: annotation.id },
     });
     await page.goto("/projects");
-    await page.getByRole("button", { name: "通知", exact: true }).click();
+    await page.getByTestId("notifications-trigger").click();
     await page.getByRole("button", { name: /^打开通知：在标注评论中提到了你/ }).click();
     await expect(page).toHaveURL(new RegExp(`comment=${original.id}`));
     const row = discussion(page).locator(`[data-comment-key="annotation_comment:${original.id}"]`);
@@ -247,10 +247,10 @@ test("标注提及通知定位原评论，发送目标跟随标注，支持静�
     await mention();
     expect((await notifications(page, data.token)).items).toHaveLength(1);
     await page.goBack();
-    await expect(page.getByRole("button", { name: "通知", exact: true })).toBeVisible();
+    await expect(page.getByTestId("notifications-trigger")).toBeVisible();
     const sourceUrl = page.url();
     await seed.deleteTaskAnnotation(data.task_ids[0], annotation.id, data.admin_email);
-    await page.getByRole("button", { name: "通知", exact: true }).click();
+    await page.getByTestId("notifications-trigger").click();
     await page.getByRole("button", { name: /^打开通知：在标注评论中提到了你/ }).click();
     await expect(page.getByRole("dialog", { name: "打开通知目标" })).toContainText(
       "标注已删除或当前账号不可见",
@@ -283,7 +283,7 @@ test("问题状态通知为审核员打开对应审核工作台并保留字段�
     });
     await seed.injectToken(page, data.reviewer_email);
     await page.goto("/review");
-    await page.getByRole("button", { name: "通知", exact: true }).click();
+    await page.getByTestId("notifications-trigger").click();
     await page.getByRole("button", { name: /^打开通知：状态 / }).click();
     await expect(page).toHaveURL(new RegExp(`/projects/${data.project_id}/review\\?`));
     const detail = page.getByTestId("discussion-issue-detail");

@@ -30,6 +30,7 @@ import {
   buildReviewWorkbenchUrl,
   buildWorkbenchUrl,
   currentWorkbenchReturnTo,
+  type GuardedNavigate,
 } from "@/utils/workbenchNavigation";
 import {
   FILTERS,
@@ -336,15 +337,28 @@ function NotifRow({ item, onClick, onDelete, deletePending }: NotifRowProps) {
 
 /**
  * Notification trigger and list share the top-bar panel's geometry and dismissal.
+ *
+ * `navigate` 可选：默认走 React Router；全屏工作台传入自己的导航回调，
+ * 在真正改路由前跑视频/Mask 离开检查。所有会换路由的动作（含 Bug 导航、
+ * 错误恢复链接）都必须经过它。
  */
-export function NotificationsPopover() {
+export function NotificationsPopover({
+  navigate: navigateExternal,
+}: {
+  navigate?: GuardedNavigate;
+}) {
   const navigate = useNavigate();
   const location = useLocation();
   const role = useAuthStore((s) => s.user?.role);
   const openBugDrawer = useBugDrawerStore((s) => s.openDrawer);
-  const { data: unreadData } = useUnreadCount();
-  const unread = unreadData?.unread ?? 0;
+  const unreadQ = useUnreadCount();
+  const unread = unreadQ.data?.unread ?? null;
   const [open, setOpen] = useState(false);
+  // 工作台传 navigateExternal 时，所有换路由动作都先过它的离开检查。
+  const go = useCallback(
+    (to: string) => (navigateExternal ? navigateExternal(to) : navigate(to)),
+    [navigateExternal, navigate],
+  );
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
   const [target, setTarget] = useState<NotificationTargetState | null>(null);
   const navigationRequest = useRef(0);
@@ -403,8 +417,15 @@ export function NotificationsPopover() {
         url = buildUrl(batch.project_id, { batchId: batch.id, returnTo });
       }
       if (!current()) return;
+      // 守卫导航可能在视频 / Mask 离开检查中被取消并返回 false；确认成功前
+      // 保留目标弹窗，取消时给出可重试的说明而不是静默关闭来源。
+      const navigated = await go(url);
+      if (!current()) return;
+      if (navigated === false) {
+        setTarget({ item, error: "跳转已取消，可重新打开或查看当前任务。" });
+        return;
+      }
       setTarget(null);
-      navigate(url);
     } catch (error) {
       if (
         !current() ||
@@ -429,16 +450,20 @@ export function NotificationsPopover() {
     }
   };
 
+  const badgeText = unread === null || unread <= 0 ? null : unread > 99 ? "99+" : String(unread);
+  const triggerLabel = unread === null ? "通知，未读数暂不可用" : `通知，${unread} 条未读`;
+
   return (
     <>
       <button
         type="button"
-        title="通知"
-        aria-label="通知"
+        title={triggerLabel}
+        aria-label={triggerLabel}
         aria-haspopup="dialog"
         aria-expanded={open}
         aria-controls={open ? "shell-popover-notifications" : undefined}
         data-shell-popover-trigger="notifications"
+        data-testid="notifications-trigger"
         onClick={() => setOpen((value) => !value)}
         className={clsx(
           "relative inline-flex h-[30px] w-[30px] cursor-pointer appearance-none items-center justify-center rounded-md border border-transparent bg-transparent text-muted-foreground",
@@ -446,18 +471,24 @@ export function NotificationsPopover() {
         )}
       >
         <Icon name="bell" size={15} />
-        {unread > 0 && (
-          <span className="absolute right-[5px] top-1.5 h-[7px] w-[7px] rounded-full border-[1.5px] border-card bg-status-danger" />
+        {badgeText !== null && (
+          <span
+            data-testid="notifications-unread-badge"
+            aria-hidden="true"
+            className="absolute right-[-3px] top-[-3px] inline-flex h-[15px] min-w-[15px] items-center justify-center rounded-full border border-card bg-status-danger px-[3px] text-center text-2xs font-semibold leading-[13px] text-primary-foreground"
+          >
+            {badgeText}
+          </span>
         )}
       </button>
       {open && (
         <ShellPopover id="notifications" label="通知" onClose={() => setOpen(false)}>
           <NotificationsPanel
-            unread={unread}
+            unread={unread ?? 0}
             onItemClick={(item) => {
               if (item.target_type === "bug_report") {
                 if (role === "super_admin" || role === "project_admin") {
-                  navigate("/bugs");
+                  go("/bugs");
                 } else {
                   openBugDrawer(item.target_id);
                 }
@@ -480,6 +511,7 @@ export function NotificationsPopover() {
         <AsyncJobDetailModal
           key={selectedJobId}
           jobId={selectedJobId}
+          navigate={go}
           onClose={() => setSelectedJobId(null)}
         />
       )}
@@ -501,7 +533,7 @@ export function NotificationsPopover() {
                   onClick={() => {
                     cancelNavigation();
                     setTarget(null);
-                    navigate(role === "reviewer" ? "/review" : "/annotate");
+                    go(role === "reviewer" ? "/review" : "/annotate");
                   }}
                 >
                   查看当前任务
@@ -606,7 +638,23 @@ function NotificationsPanel({
       </FilterGroup>
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {isEmpty || isFilteredEmpty ? (
+        {notificationsQ.isPending ? (
+          <div className="flex h-full items-center justify-center px-3.5 py-6 text-center text-sm text-muted-foreground">
+            正在加载通知…
+          </div>
+        ) : notificationsQ.isError ? (
+          <div className="flex h-full flex-col items-center justify-center gap-2 px-3.5 py-6 text-center text-sm text-muted-foreground">
+            <Icon name="bell" size={22} className="mb-1.5 opacity-25" />
+            <div role="alert">通知加载失败，请检查网络后重试</div>
+            <button
+              type="button"
+              onClick={() => void notificationsQ.refetch()}
+              className="cursor-pointer appearance-none rounded-sm border border-border bg-muted px-2.5 py-1.5 text-xs text-brand"
+            >
+              重试
+            </button>
+          </div>
+        ) : isEmpty || isFilteredEmpty ? (
           <div className="flex h-full flex-col items-center justify-center px-3.5 py-6 text-center text-sm text-muted-foreground">
             <Icon name="bell" size={22} className="mb-1.5 opacity-25" />
             <div>{isFilteredEmpty ? "暂无此类型通知" : "暂无通知"}</div>

@@ -20767,6 +20767,11 @@
             "title": "In App",
             "type": "boolean"
           },
+          "toast": {
+            "default": false,
+            "title": "Toast",
+            "type": "boolean"
+          },
           "type": {
             "title": "Type",
             "type": "string"
@@ -20781,8 +20786,26 @@
       "NotificationPreferenceUpdate": {
         "properties": {
           "in_app": {
-            "title": "In App",
-            "type": "boolean"
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "In App"
+          },
+          "toast": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Toast"
           },
           "type": {
             "title": "Type",
@@ -20790,8 +20813,7 @@
           }
         },
         "required": [
-          "type",
-          "in_app"
+          "type"
         ],
         "title": "NotificationPreferenceUpdate",
         "type": "object"
@@ -49232,7 +49254,7 @@
     },
     "/api/v1/notification-preferences": {
       "get": {
-        "description": "v0.7.0：返回所有已知 type 的偏好；无记录默认 in_app=True / email=False。",
+        "description": "v0.7.0：返回所有已知 type 的偏好；无记录默认 in_app=True / email=False。\n\ntoast 是 v0.15 计划新增的有效弹出选择：显式存储值优先，未存储时按类型的\n默认重要程度（services/notification_preferences.py）。",
         "operationId": "get_preferences_api_v1_notification_preferences_get",
         "responses": {
           "200": {
@@ -49257,7 +49279,7 @@
         ]
       },
       "put": {
-        "description": "v0.7.0：upsert 单条偏好。channels.email 字段保留但 v0.7.0 不消费。",
+        "description": "Upsert 单条偏好；v0.7.0 起 in_app/toast 至少提供一个。\n\n只合并请求中出现的键（JSONB ``channels || patch``），保留未提供的\nin_app/toast/email 及其它字段；并发标签页写不同键互不覆盖。\nchannels.email 字段保留但当前不消费。提交成功后发布\n``notifications.sync reason=preferences``，让其它会话刷新偏好而不产生通知。",
         "operationId": "update_preference_api_v1_notification_preferences_put",
         "requestBody": {
           "content": {

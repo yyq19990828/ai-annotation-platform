@@ -217,7 +217,7 @@ last_reviewed: 2026-09-12
 
 ### 已知通知类型
 
-`apps/api/app/api/v1/notifications.py:29` 中的 `KNOWN_NOTIFICATION_TYPES` 是「**用户可在设置页静音**」的全部类型；新增类型时必须同步两侧：
+`apps/api/app/services/notification_preferences.py` 中的 `KNOWN_NOTIFICATION_TYPES` 是「**用户可在设置页配置**」的全部类型，`DEFAULT_TOAST_TYPES` 是无显式选择时默认弹出提示的重要类型；设置页 API 从这里读取，前端不维护第二份名单。新增类型时同步该文件与前端设置页标签：
 
 - `bug_report.commented`
 - `bug_report.reopened`
@@ -251,6 +251,29 @@ last_reviewed: 2026-09-12
 
 新增可配置通知类型时要同步更新后端 `KNOWN_NOTIFICATION_TYPES` 与前端设置页标签；
 不可配置的运维类通知则刻意不进 `KNOWN`，避免被错误静音。
+
+### 偏好存储与弹出门控
+
+偏好按 `(user_id, type)` 存在 `notification_preferences.channels` JSONB：
+
+- `in_app`：接收开关；关闭时整个通知链不写不推。
+- `toast`：弹出提示选择；键缺省表示「未选择」，GET 返回按类型默认值
+  （`DEFAULT_TOAST_TYPES`）计算的有效值。关闭接收只禁用弹出、不重置该选择，
+  重新开启接收时恢复。
+- `email`：保留键，当前不消费。
+
+PUT `/notification-preferences` 只合并请求出现的键（JSONB `channels || patch`），
+未提供的键与并发标签页写的其它键互不覆盖；提交成功后发布
+`notifications.sync reason=preferences`（不产生通知、不改未读数），其它会话据此
+刷新偏好查询。
+
+### 读/删除同步的提交顺序
+
+`mark_read` / `mark_all_read` / `delete_for_user` / `clear_read` 只在事务内改行，
+`notifications.sync`（`reason=read` / `reason=deleted`）由 API handler 在
+`db.commit()` 成功且确有行变化后发布。收到事件的会话读到的必然是已提交状态；
+发布失败只记日志，不影响已提交的请求。历史创建路径（`notify` 默认立即 publish）
+仍可能在事务提交前发出，客户端继续把 push 视为「可以刷新了」并用 REST 读真值。
 
 ### async_jobs 终态通知
 
