@@ -26,19 +26,19 @@
 
 ## 2. 现状证据（代码事实）
 
-| 现状                                                                                                                                          | 影响                                                   | 处理方向                                                |
-| --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------- |
-| `apps/web/src/components/ui/Avatar.tsx` 只渲染首字母圆片，注释明确「纯首字母，无图片加载」                                                    | 没有任何图片头像能力                                   | 保留为首字母回退原语，另加图片头像组件（§6.1）          |
-| `apps/web/src/components/shadcn/ui/avatar.tsx` 已存在（Radix Root/Image/Fallback）但全仓无人 import                                           | 死代码                                                 | 正好用于图片头像的加载失败回退，不新造轮子（§6.1）      |
-| `apps/api/app/schemas/user.py` 中只有 `UserBrief` 带 `avatar_initial`；`UserOut` / `MeResponse` / `ProjectMemberOut` 无头像字段               | 头像只能靠名字首字母，同一人多处显示不一致             | 新增 `avatar_ref` 并扩展到读取契约（§3.3）              |
-| `apps/api/app/db/models/user.py` 无头像列；`users.preferences` JSONB 是「偏好」而非身份                                                       | 无存储位置                                             | 新增独立列，不复用 preferences（§3.1）                  |
-| `apps/web/src/components/shell/TopBar.tsx:184` 用 `user?.name?.[0]`，其余 20+ 处前端各自算首字母                                              | 逻辑重复、无图片头像、无法跨设备一致                   | 统一到 `UserAvatar` + `resolveAvatarUrl`（§6）          |
-| `apps/api/app/api/v1/me.py` 的 `PATCH /auth/me` 只改姓名，`/auth/me` 返回 `UserOut`（`auth.py:230`）                                          | 头像需要独立端点，避免把 `ProfileUpdate.name` 改成可选 | 独立 `POST/PATCH/DELETE /auth/me/avatar`（§4.1）        |
-| 现有上传全部走「presigned PUT 直传对象存储」（评论附件 `annotation_comments.py:505`、Bug 截图 `bug_reports.py:95`）                           | 服务端拿不到字节，无法校验/裁剪内容                    | 本次改为 API 承载字节；预签名路径仍保留给大附件（§4.2） |
-| `apps/api/app/middleware/upload_body_limits.py` 只对 frame / mask 路径做预解析体量上限                                                        | 普通端点没有上传体量上限                               | 为新端点补一条预解析上限（§4.5）                        |
-| `apps/api/app/services/storage.py` 的 `annotations` 桶已混装任务源文件、`comment-attachments/`、`projects/*/guide/`，lifecycle 规则按前缀限定 | 桶名称与实际职责已不匹配                               | 头像以独立 `avatars` 桶隔离（§4.3）                     |
-| CSP 两处均为 `img-src 'self' data: blob: https:`（`infra/docker/nginx.conf:41`、`apps/api/app/middleware/security_headers.py:29`）            | 同源静态 SVG 与同源 API 图片均可直接使用               | 无需改 CSP                                              |
-| 仓库已有手绘像素风先例：`apps/web/src/pages/Workbench/shell/pet/PixelHumanSprite.tsx`（整型坐标 SVG + `shapeRendering="crispEdges"`）         | 像素风与产品调性一致                                   | 内置头像采样同一视觉取向（见 §5.6 的取舍）              |
+| 现状                                                                                                                                          | 影响                                                   | 处理方向                                                                                                           |
+| --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `apps/web/src/components/ui/Avatar.tsx` 只渲染首字母圆片，注释明确「纯首字母，无图片加载」                                                    | 没有任何图片头像能力                                   | 保留为首字母回退原语，另加图片头像组件（§6.1）                                                                     |
+| `apps/web/src/components/shadcn/ui/avatar.tsx` 已存在（Radix Root/Image/Fallback）但全仓无人 import                                           | 死代码                                                 | 曾计划复用；实测入口包预算已满（700 KB 用掉 699.8 KB），Radix 原语约 +3 KB 会超预算，改为自实现回退（§6.1、§14.3） |
+| `apps/api/app/schemas/user.py` 中只有 `UserBrief` 带 `avatar_initial`；`UserOut` / `MeResponse` / `ProjectMemberOut` 无头像字段               | 头像只能靠名字首字母，同一人多处显示不一致             | 新增 `avatar_ref` 并扩展到读取契约（§3.3）                                                                         |
+| `apps/api/app/db/models/user.py` 无头像列；`users.preferences` JSONB 是「偏好」而非身份                                                       | 无存储位置                                             | 新增独立列，不复用 preferences（§3.1）                                                                             |
+| `apps/web/src/components/shell/TopBar.tsx:184` 用 `user?.name?.[0]`，其余 20+ 处前端各自算首字母                                              | 逻辑重复、无图片头像、无法跨设备一致                   | 统一到 `UserAvatar` + `resolveAvatarUrl`（§6）                                                                     |
+| `apps/api/app/api/v1/me.py` 的 `PATCH /auth/me` 只改姓名，`/auth/me` 返回 `UserOut`（`auth.py:230`）                                          | 头像需要独立端点，避免把 `ProfileUpdate.name` 改成可选 | 独立 `POST/PATCH/DELETE /auth/me/avatar`（§4.1）                                                                   |
+| 现有上传全部走「presigned PUT 直传对象存储」（评论附件 `annotation_comments.py:505`、Bug 截图 `bug_reports.py:95`）                           | 服务端拿不到字节，无法校验/裁剪内容                    | 本次改为 API 承载字节；预签名路径仍保留给大附件（§4.2）                                                            |
+| `apps/api/app/middleware/upload_body_limits.py` 只对 frame / mask 路径做预解析体量上限                                                        | 普通端点没有上传体量上限                               | 为新端点补一条预解析上限（§4.5）                                                                                   |
+| `apps/api/app/services/storage.py` 的 `annotations` 桶已混装任务源文件、`comment-attachments/`、`projects/*/guide/`，lifecycle 规则按前缀限定 | 桶名称与实际职责已不匹配                               | 头像以独立 `avatars` 桶隔离（§4.3）                                                                                |
+| CSP 两处均为 `img-src 'self' data: blob: https:`（`infra/docker/nginx.conf:41`、`apps/api/app/middleware/security_headers.py:29`）            | 同源静态 SVG 与同源 API 图片均可直接使用               | 无需改 CSP                                                                                                         |
+| 仓库已有手绘像素风先例：`apps/web/src/pages/Workbench/shell/pet/PixelHumanSprite.tsx`（整型坐标 SVG + `shapeRendering="crispEdges"`）         | 像素风与产品调性一致                                   | 内置头像采样同一视觉取向（见 §5.6 的取舍）                                                                         |
 
 未在真实浏览器中验证本方案；§10 的验收要求实施者在深浅两套主题下逐项确认。
 
@@ -265,13 +265,13 @@ apps/web/public/avatars/pixel/
 
 ### 6.1 组件
 
-| 文件                                              | 作用                                                                                                                                                                                        |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/web/src/utils/avatar.ts`（新）              | `resolveAvatarUrl(ref)`：`preset:` → `/avatars/pixel/<slug>.svg`；`upload:` → `/api/v1/avatars/<token>`；非法/空 → `null`                                                                   |
-| `apps/web/src/components/ui/UserAvatar.tsx`（新） | 图片优先、失败回退首字母：内部用 `components/shadcn/ui/avatar.tsx` 的 `Avatar/AvatarImage/AvatarFallback`，复用其加载失败回退机制；props = `{ id, name, avatarRef?, avatarInitial?, size }` |
-| `apps/web/src/components/ui/Avatar.tsx`           | 保持首字母原语不变（纯文字场景与审计 actor 等无 ref 的位置继续使用）                                                                                                                        |
+| 文件                                              | 作用                                                                                                                                                                                         |
+| ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/web/src/utils/avatar.ts`（新）              | `resolveAvatarUrl(ref)`：`preset:` → `/avatars/pixel/<slug>.svg`；`upload:` → `/api/v1/avatars/<token>`；非法/空 → `null`                                                                    |
+| `apps/web/src/components/ui/UserAvatar.tsx`（新） | 图片优先、失败回退首字母：`<img onError>` + 常驻首字母底层（不引入 Radix Avatar 原语，见 §14.3）；props = `{ user: { id?, name?, email?, avatar_initial?, avatar_ref? }, size, className? }` |
+| `apps/web/src/components/ui/Avatar.tsx`           | 保持首字母原语不变（纯文字场景与审计 actor 等无 ref 的位置继续使用）                                                                                                                         |
 
-`UserAvatar` 的尺寸档位沿用现有 `sm/md/lg` 类名表，视觉与 `Avatar` 完全一致，唯一差别是当 `resolveAvatarUrl` 返回 URL 时渲染 `<img>`（`alt=""`，`aria-hidden`，因为它与旁边或 tooltip 中的姓名重复）。
+`UserAvatar` 的尺寸档位沿用现有 `sm/md/lg` 类名表（`avatarSizes.ts` 单一来源），视觉与 `Avatar` 完全一致，唯一差别是 `resolveAvatarUrl` 返回 URL 时叠加 `<img>`（`alt=""`，`aria-hidden`，因为它与旁边或 tooltip 中的姓名重复）。首字母常驻底层，因此图片加载中/失败都能自然回退，无需额外状态。
 
 手写的 TS 类型同步补 `avatar_ref?: string | null`：`apps/web/src/api/auth.ts::MeResponse`、`apps/web/src/types/index.ts::UserBrief`（+ `AssigneeAvatarStack` 内的 `AssigneeBrief`）；其余 payload 类型由 `pnpm codegen` 从 OpenAPI 快照生成，不手改。
 
@@ -451,6 +451,17 @@ P1 与 P2 无依赖，可并行；P3 依赖 P1、P2；P4 依赖 P3。
 2. **Docker Hub 不可达**（`python:3.11-slim` 拉取 EOF），`screenshot-ml-stub` 无法构建。解决：该 stub 只依赖 fastapi/uvicorn/pydantic，直接用 API venv 在宿主机 `127.0.0.1:9100` 运行 `docs-site/dev/examples/mock-v2-backend/main.py`，seed 传 `--ml-backend-mode stub --ml-backend-url http://127.0.0.1:9100`。
 
 这两条值得补进截图环境排障文档（本机无 GPU + Docker Hub 受限时的替代路径）。
+
+### 14.3 入口包预算触发的实现调整（CI 反馈）
+
+首次 PR CI 的 `Frontend verification / Bundle size check` 失败：入口 chunk **703.2 KB / 700.0 KB**，而 `origin/main` 当时是 **699.8 KB / 700.0 KB**——预算只剩 0.2 KB 余量，任何新增入口代码都会超。
+
+两处不损失行为的削减（共约 2.2 KB）：
+
+1. `UserAvatar` 不再引入 Radix Avatar 原语（约 +3 KB），改为 `<img onError>` + 常驻首字母底层。代价：不再复用 `components/shadcn/ui/avatar.tsx`（该文件此前也是死代码），回退逻辑自持约 10 行。
+2. 内置头像选择器改为 `React.lazy` + 按需挂载（仅 `pickerOpen` 时渲染），把选择器与目录请求移出入口 chunk（与 `TopBar` 懒加载 `NotificationsPopover` 同一写法）。
+
+削减后仍需 **+1.6 KB**（15 处展示点接入 + 引用解析 + 展示组件），因此按仓库既有做法上调主包预算 `700 → 712 KB`（历史先例：`600→620`、`660→700`、dockview `300→400`，均随功能提交一起上调）。
 
 ### 14.2 浏览器验收结果（开发栈 API 8100 / Web 3100，admin/123456）
 

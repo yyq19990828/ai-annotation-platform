@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, lazy, Suspense } from "react";
 import { clsx } from "clsx";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
@@ -16,7 +16,13 @@ import {
   useUploadAvatar,
 } from "@/hooks/useMe";
 import { UserAvatar } from "@/components/ui/UserAvatar";
-import { AvatarPickerDialog } from "@/components/users/AvatarPickerDialog";
+
+// 选择器(含内置头像目录请求)只在用户点开时按需加载,避免给入口 chunk 增加预算压力。
+const AvatarPickerDialog = lazy(() =>
+  import("@/components/users/AvatarPickerDialog").then((module) => ({
+    default: module.AvatarPickerDialog,
+  })),
+);
 import { ROLE_LABELS } from "@/constants/roles";
 import { bugReportsApi, type BugReportResponse } from "@/api/bug-reports";
 import { notificationsApi, type NotificationPreferenceItem } from "@/api/notifications";
@@ -789,14 +795,18 @@ function AvatarField() {
         />
       </div>
       {failed && failureMessage && <ErrorBanner msg={failureMessage} />}
-      <AvatarPickerDialog
-        open={pickerOpen}
-        onOpenChange={setPickerOpen}
-        currentRef={user.avatar_ref}
-        pending={pending}
-        onSelect={selectPreset}
-        onClear={restoreDefault}
-      />
+      {pickerOpen && (
+        <Suspense fallback={null}>
+          <AvatarPickerDialog
+            open
+            onOpenChange={setPickerOpen}
+            currentRef={user.avatar_ref}
+            pending={pending}
+            onSelect={selectPreset}
+            onClear={restoreDefault}
+          />
+        </Suspense>
+      )}
     </>
   );
 }

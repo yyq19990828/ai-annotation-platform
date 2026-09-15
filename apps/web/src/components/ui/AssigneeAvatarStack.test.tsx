@@ -1,31 +1,12 @@
 import { render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { AssigneeAvatarStack } from "./AssigneeAvatarStack";
-
-/** 与 UserAvatar 测试同一套替身:把 Radix 的 window.Image 探测推到 "loaded"。 */
-function stubImage() {
-  class FakeImage {
-    complete = true;
-    naturalWidth = 64;
-    crossOrigin: string | null = null;
-    referrerPolicy = "";
-    src = "";
-    addEventListener() {}
-    removeEventListener() {}
-  }
-  vi.stubGlobal("Image", FakeImage);
-}
 
 const UPLOAD_TOKEN = "0123456789abcdef0123456789abcdef";
 
 describe("AssigneeAvatarStack", () => {
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
-
   it("有头像引用时渲染图片,无引用时回退首字母(同一组内混排)", () => {
-    stubImage();
     const { container } = render(
       <AssigneeAvatarStack
         users={[
@@ -43,7 +24,6 @@ describe("AssigneeAvatarStack", () => {
   });
 
   it("上传头像沿用后端能力 URL", () => {
-    stubImage();
     const { container } = render(
       <AssigneeAvatarStack
         users={[{ id: "u1", name: "王芳", avatar_ref: `upload:${UPLOAD_TOKEN}` }]}
@@ -56,7 +36,6 @@ describe("AssigneeAvatarStack", () => {
   });
 
   it("无头像时不产生 img(保持既有首字母行为)", () => {
-    stubImage();
     const { container } = render(
       <AssigneeAvatarStack users={[{ id: "u1", name: "王芳", avatar_initial: "王" }]} />,
     );
