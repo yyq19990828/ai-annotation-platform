@@ -44483,11 +44483,17 @@
         "responses": {
           "200": {
             "content": {
-              "application/json": {
-                "schema": {}
+              "image/webp": {
+                "schema": {
+                  "format": "binary",
+                  "type": "string"
+                }
               }
             },
-            "description": "Successful Response"
+            "description": "头像 WebP 字节。"
+          },
+          "304": {
+            "description": "`If-None-Match` 命中，客户端缓存仍然新鲜。"
           },
           "422": {
             "content": {

@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import re
 
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -23,12 +24,26 @@ router = APIRouter()
 _TOKEN_RE = re.compile(r"[0-9a-f]{32}")
 
 
-@router.get("/{token}")
-async def get_avatar(token: str, request: Request):
+@router.get(
+    "/{token}",
+    response_class=Response,
+    responses={
+        200: {
+            "description": "头像 WebP 字节。",
+            "content": {
+                "image/webp": {"schema": {"type": "string", "format": "binary"}}
+            },
+        },
+        304: {"description": "`If-None-Match` 命中，客户端缓存仍然新鲜。"},
+    },
+)
+async def get_avatar(token: str, request: Request) -> Response:
     if not _TOKEN_RE.fullmatch(token):
         raise HTTPException(status_code=404, detail="头像不存在")
 
-    stored = avatar_service.read_avatar_object(token)
+    # ``read_avatar_object`` 用 boto3 同步 HEAD + GET；直接调用会阻塞事件循环，
+    # 令单 worker 上的其它请求在冷列表场景下排队。放进线程池执行。
+    stored = await asyncio.to_thread(avatar_service.read_avatar_object, token)
     if stored is None:
         raise HTTPException(status_code=404, detail="头像不存在")
     data, etag = stored

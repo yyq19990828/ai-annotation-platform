@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 from math import isfinite
 from uuid import uuid4
@@ -123,7 +124,7 @@ async def _apply_avatar_ref(
     )
     await db.commit()
     await db.refresh(user)
-    avatar_service.delete_ref_object(previous_ref)
+    await asyncio.to_thread(avatar_service.delete_ref_object, previous_ref)
     return user
 
 
@@ -149,13 +150,16 @@ async def upload_avatar(
         raise HTTPException(status_code=415, detail="仅支持 PNG / JPEG / WebP 格式")
 
     raw = await file.read(MAX_AVATAR_FILE_BYTES + 1)
+    # ``normalize_avatar`` 同步解码 / 裁剪 / 重编码，最坏可处理 4000 万像素的压缩图；
+    # ``write_avatar_object`` 是同步 boto3 PUT。都放进线程池，避免单 worker 生产配置下
+    # 一次上传阻塞整个事件循环。
     try:
-        normalized = normalize_avatar(raw)
+        normalized = await asyncio.to_thread(normalize_avatar, raw)
     except AvatarImageError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     token = avatar_service.new_upload_token()
-    avatar_service.write_avatar_object(token, normalized)
+    await asyncio.to_thread(avatar_service.write_avatar_object, token, normalized)
     return await _apply_avatar_ref(
         db,
         user,
