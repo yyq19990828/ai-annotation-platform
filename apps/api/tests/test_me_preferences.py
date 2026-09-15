@@ -370,6 +370,43 @@ async def test_patch_ui_subtree_deep_merges_theme_and_secondary_bar(
     assert ui["secondary_bar_hidden"] is True
 
 
+async def test_patch_ui_changelog_seen_version_roundtrip(httpx_client, annotator):
+    """登录后版本更新提醒: changelog_seen_version 默认空串(从未确认), 单键 PATCH
+    不冲掉同子树其它键, 可独立更新(换设备各确认一次的场景)。"""
+    _, token = annotator
+
+    # 1) 未写过 ui 时默认空串 = 从未确认过任何版本。
+    resp = await httpx_client.get(PREFS_URL, headers=_bearer(token))
+    assert resp.status_code == 200
+    assert resp.json()["ui"]["changelog_seen_version"] == ""
+
+    # 2) 先写主题 (模拟 useTheme), 再确认版本 — 不冲掉主题。
+    resp = await httpx_client.patch(
+        PREFS_URL, json={"ui": {"theme": "dark"}}, headers=_bearer(token)
+    )
+    assert resp.status_code == 200
+    resp = await httpx_client.patch(
+        PREFS_URL,
+        json={"ui": {"changelog_seen_version": "9.9.9"}},
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 200
+    ui = resp.json()["ui"]
+    assert ui["theme"] == "dark"
+    assert ui["changelog_seen_version"] == "9.9.9"
+
+    # 3) 再确认更高版本 — 版本键独立更新, 主题仍在。
+    resp = await httpx_client.patch(
+        PREFS_URL,
+        json={"ui": {"changelog_seen_version": "10.0.0"}},
+        headers=_bearer(token),
+    )
+    assert resp.status_code == 200
+    ui = resp.json()["ui"]
+    assert ui["changelog_seen_version"] == "10.0.0"
+    assert ui["theme"] == "dark"
+
+
 async def test_patch_ai_interactive_backend_independent(httpx_client, annotator):
     """v0.18.31 · 第三个 ai 子键 interactive_backend_by_project (交互后端选择, 按 project)
     与 params/model 独立深合并, 三键互不覆盖。"""

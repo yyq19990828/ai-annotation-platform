@@ -5,7 +5,33 @@ import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
 import { Topbar } from "./Topbar";
+import { useWhatsNewStore } from "@/components/shell/WhatsNewDialog";
 import { useBugDrawerStore } from "@/stores/bugDrawerStore";
+
+it("opens the release-notes dialog from the version chip", () => {
+  act(() => useWhatsNewStore.setState({ manualOpen: false }));
+  render(
+    <Topbar
+      projectName="测试"
+      projectDisplayId="P-1"
+      task={undefined}
+      taskIdx={0}
+      taskTotal={1}
+      aiRunning={false}
+      isSubmitting={false}
+      onShowHotkeys={vi.fn()}
+      onPrev={vi.fn()}
+      onNext={vi.fn()}
+      onSubmit={vi.fn()}
+    />,
+  );
+
+  const version = screen.getByTestId("workbench-whats-new");
+  expect(version).toHaveTextContent(/^v\d/);
+  fireEvent.click(version);
+  expect(useWhatsNewStore.getState().manualOpen).toBe(true);
+  act(() => useWhatsNewStore.setState({ manualOpen: false }));
+});
 
 it("opens the shared bug drawer from the workbench header", () => {
   act(() => useBugDrawerStore.getState().close());

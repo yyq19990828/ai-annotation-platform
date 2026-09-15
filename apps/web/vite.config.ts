@@ -4,6 +4,7 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { resolve } from "path";
 import { cspNoncePlugin } from "./vite-plugins/csp-nonce";
+import { releaseNotesPlugin } from "./vite-plugins/release-notes";
 
 // v0.13.2 · dev proxy 目标可配：多 worktree 并行时各分支后端跑在不同端口
 // （如点云分支隔离栈 8010），用 API_PROXY_TARGET 覆盖，默认仍指 8000。
@@ -14,7 +15,7 @@ const minioTarget = process.env.MINIO_PROXY_TARGET || "http://127.0.0.1:9000";
 // vitest 字段在 vite 6 的 UserConfig 类型里未直接合并，用类型断言放过。
 // `/// <reference types="vitest" />` 已注入运行时 schema。
 const config: Parameters<typeof defineConfig>[0] = {
-  plugins: [react(), tailwindcss(), cspNoncePlugin()],
+  plugins: [react(), tailwindcss(), cspNoncePlugin(), releaseNotesPlugin()],
   // Worktrees may share node_modules, but Vite's optimizer cache is tied to one
   // running module graph. Keep it in the checkout so parallel dev servers cannot
   // overwrite each other's pre-bundled dependencies.
