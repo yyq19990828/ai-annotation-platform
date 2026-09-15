@@ -98,6 +98,8 @@ export function useTransferProject(id: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["projects"] });
       qc.invalidateQueries({ queryKey: ["project", id] });
+      // 负责人是 @ 提及候选之一，转移后必须重取候选。
+      qc.invalidateQueries({ queryKey: ["project-mention-candidates", id] });
     },
   });
 }
@@ -145,6 +147,7 @@ export function useAddProjectMember(id: string) {
       qc.invalidateQueries({ queryKey: ["project-members", id] });
       qc.invalidateQueries({ queryKey: ["project", id] });
       qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["project-mention-candidates", id] });
     },
   });
 }
@@ -157,6 +160,7 @@ export function useRemoveProjectMember(id: string) {
       qc.invalidateQueries({ queryKey: ["project-members", id] });
       qc.invalidateQueries({ queryKey: ["project", id] });
       qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["project-mention-candidates", id] });
     },
   });
 }

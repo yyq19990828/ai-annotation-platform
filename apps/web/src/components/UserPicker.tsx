@@ -148,8 +148,11 @@ export function UserPicker({ anchor, options, query, onPick, onClose }: UserPick
             }}
             className={clsx(styles.option, i === active && styles.optionActive)}
           >
-            <span className={styles.name}>{o.name}</span>
-            {(o.email || o.hint) && <span className={styles.hint}>{o.email ?? o.hint}</span>}
+            <span className={styles.name}>
+              {o.name}
+              {o.hint && <span className={styles.role}>{o.hint}</span>}
+            </span>
+            {o.email && <span className={styles.hint}>{o.email}</span>}
           </div>
         ))
       )}

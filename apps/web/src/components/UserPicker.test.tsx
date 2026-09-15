@@ -38,6 +38,21 @@ describe("UserPicker", () => {
     document.removeEventListener("keydown", editorKeydown);
   });
 
+  it("shows the role hint and the email as separate lines", () => {
+    render(
+      <UserPicker
+        anchor={{ left: 10, top: 200, bottom: 220 }}
+        options={[{ id: "u1", name: "Alice", email: "alice@example.com", hint: "超级管理员" }]}
+        query=""
+        onPick={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("超级管理员")).toBeInTheDocument();
+    expect(screen.getByText("alice@example.com")).toBeInTheDocument();
+  });
+
   it("ignores keys during IME composition and lets them reach the input method", () => {
     const onPick = vi.fn();
     render(
