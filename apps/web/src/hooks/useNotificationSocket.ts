@@ -131,6 +131,9 @@ export function useNotificationSocket() {
       const batch = pendingAlerts;
       pendingAlerts = [];
       if (batch.length === 0) return;
+      // 批量窗口内标签页可能已切到后台：此时丢弃这批提醒，避免回到前台
+      // 才看到不合时宜的 toast，与「隐藏标签页不弹」保持一致。
+      if (typeof document !== "undefined" && document.visibilityState !== "visible") return;
       if (batch.length === 1) {
         pushToast({
           kind: alertKind(batch[0].type),

@@ -367,6 +367,35 @@ describe("useNotificationSocket", () => {
     expect(toastCallCount()).toBe(0);
   });
 
+  it("批量窗口内切到后台时丢弃已排队提醒", async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    seedPreferences(qc, "u1", [{ type: "task.rejected", toast: true }]);
+    mount(qc);
+
+    // 入队时标签页可见，两条事件合并进同一批。
+    act(() => {
+      MockWebSocket.instances[0].triggerMessage({
+        id: "n1",
+        type: "task.rejected",
+        payload: { task_display_id: "T-1" },
+      });
+      MockWebSocket.instances[0].triggerMessage({
+        id: "n2",
+        type: "task.rejected",
+        payload: { task_display_id: "T-2" },
+      });
+    });
+    // flush 前切到后台：重新检查可见性后丢弃整批，不产生回到前台才看到的 toast。
+    Object.defineProperty(document, "visibilityState", {
+      value: "hidden",
+      configurable: true,
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
+    expect(toastCallCount()).toBe(0);
+  });
+
   it("默认重要类型（接收+弹出开启）单条弹出短文案", async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     seedPreferences(qc, "u1", [{ type: "task.rejected", toast: true }]);

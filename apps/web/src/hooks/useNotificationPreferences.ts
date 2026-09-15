@@ -45,9 +45,29 @@ export function useUpdateNotificationPreference() {
         owner,
       }));
     },
-    onSuccess: ({ owner }) => {
+    onSuccess: ({ owner }, variables) => {
       // 账号已切换：不要为新账号触碰旧 key（缓存已被 authQueryCache 清空）
       if (!owner || !isCurrentAuthOwner(owner)) return;
+      // 先把已提交值写入缓存再失效重拉：请求完成与重拉落地之间不暴露旧值，
+      // 避免刚保存成功的开关短暂回跳并被再次点击写回旧偏好。
+      qc.setQueryData<NotificationPreferencesResponse>(
+        notificationPreferencesKey(owner),
+        (previous) => {
+          if (!previous) return previous;
+          return {
+            ...previous,
+            items: previous.items.map((item) =>
+              item.type === variables.type
+                ? {
+                    ...item,
+                    ...(variables.in_app !== undefined ? { in_app: variables.in_app } : {}),
+                    ...(variables.toast !== undefined ? { toast: variables.toast } : {}),
+                  }
+                : item,
+            ),
+          };
+        },
+      );
       void qc.invalidateQueries({ queryKey: notificationPreferencesKey(owner) });
     },
   });

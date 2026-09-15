@@ -413,6 +413,17 @@ describe("通知入口角标与工作台导航回调", () => {
     expect(screen.getByTestId("location")).toHaveTextContent("/dashboard");
   });
 
+  it("守卫导航被离开检查取消时保留目标与重试说明", async () => {
+    const navigateExternal = vi.fn(async () => false);
+    renderUI(navigateExternal);
+    await clickTaskNotification();
+    await waitFor(() => expect(navigateExternal).toHaveBeenCalledTimes(1));
+    // 取消后不静默关闭：保留弹窗并给出可重试说明。
+    expect(await screen.findByRole("alert")).toHaveTextContent("跳转已取消");
+    expect(screen.getByRole("dialog", { name: "打开通知目标" })).toBeVisible();
+    expect(screen.getByTestId("location")).toHaveTextContent("/dashboard");
+  });
+
   it("管理员打开 Bug 反馈通知时，/bugs 也交给导航回调", async () => {
     useAuthStore.getState().setAuth("t", { id: "a1", role: "super_admin" } as MeResponse);
     mocks.notifications = [

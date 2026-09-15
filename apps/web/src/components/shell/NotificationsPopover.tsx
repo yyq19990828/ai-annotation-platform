@@ -417,8 +417,15 @@ export function NotificationsPopover({
         url = buildUrl(batch.project_id, { batchId: batch.id, returnTo });
       }
       if (!current()) return;
+      // 守卫导航可能在视频 / Mask 离开检查中被取消并返回 false；确认成功前
+      // 保留目标弹窗，取消时给出可重试的说明而不是静默关闭来源。
+      const navigated = await go(url);
+      if (!current()) return;
+      if (navigated === false) {
+        setTarget({ item, error: "跳转已取消，可重新打开或查看当前任务。" });
+        return;
+      }
       setTarget(null);
-      go(url);
     } catch (error) {
       if (
         !current() ||
@@ -468,7 +475,7 @@ export function NotificationsPopover({
           <span
             data-testid="notifications-unread-badge"
             aria-hidden="true"
-            className="absolute right-[-3px] top-[-3px] inline-flex h-[15px] min-w-[15px] items-center justify-center rounded-full border border-card bg-status-danger px-[3px] text-center text-2xs font-semibold leading-[13px] text-white"
+            className="absolute right-[-3px] top-[-3px] inline-flex h-[15px] min-w-[15px] items-center justify-center rounded-full border border-card bg-status-danger px-[3px] text-center text-2xs font-semibold leading-[13px] text-primary-foreground"
           >
             {badgeText}
           </span>

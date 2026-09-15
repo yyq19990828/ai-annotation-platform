@@ -78,6 +78,32 @@ describe("useNotificationPreferences", () => {
     });
   });
 
+  it("保存成功后先把已提交值写入缓存再失效重拉", async () => {
+    const client = makeClient();
+    client.setQueryData(["notification-preferences", "u1"], {
+      items: [
+        { type: "task.rejected", in_app: true, email: false, toast: false },
+        { type: "task.approved", in_app: true, email: false, toast: false },
+      ],
+    });
+    // 重拉悬而未决：缓存仍应是本次提交值，而不是回跳到旧值。
+    api.getPreferences.mockReturnValue(new Promise(() => {}));
+    const { result } = renderHook(() => useUpdateNotificationPreference(), {
+      wrapper: wrapper(client),
+    });
+    await act(async () => {
+      await result.current.mutateAsync({ type: "task.rejected", toast: true });
+    });
+    const cached = client.getQueryData<{
+      items: { type: string; toast: boolean; in_app: boolean }[];
+    }>(["notification-preferences", "u1"]);
+    expect(cached?.items.find((item) => item.type === "task.rejected")).toMatchObject({
+      toast: true,
+      in_app: true,
+    });
+    expect(cached?.items.find((item) => item.type === "task.approved")?.toast).toBe(false);
+  });
+
   it("迟到的旧账号响应不能失效新账号的查询", async () => {
     let resolveSave!: (value: { ok: boolean }) => void;
     api.updatePreference.mockReturnValue(new Promise((r) => (resolveSave = r)));
