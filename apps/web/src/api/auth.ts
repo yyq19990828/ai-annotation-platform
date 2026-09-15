@@ -344,6 +344,9 @@ export interface UIPreferences {
   theme?: ThemePref;
   /** v0.20.19 · 二次推理面板显隐(跨设备);true=隐藏。缺省 false=显示。 */
   secondary_bar_hidden?: boolean;
+  /** 登录后「版本更新提醒」已确认的版本(跨设备)。空/缺省 = 从未确认;前端按 semver
+   *  比较,仅当构建版本更新时弹一次「本次更新」,确认后写回本键。 */
+  changelog_seen_version?: string;
 }
 
 /** v0.10.14 · 员工开工清单按账号、项目和指南版本持久化。 */

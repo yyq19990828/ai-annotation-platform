@@ -1,6 +1,7 @@
 import { useState, useEffect, lazy, Suspense } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { TopBar } from "@/components/shell/TopBar";
+import { WhatsNewDialog } from "@/components/shell/WhatsNewDialog";
 import { PerfHud, usePerfHudStore } from "@/components/PerfHud";
 import { useNotificationSocket } from "@/hooks/useNotificationSocket";
 import { useHeartbeat } from "@/hooks/useHeartbeat";
@@ -280,6 +281,8 @@ export function App() {
   useNotificationSocket();
   return (
     <DiscussionDraftProvider {...discussionSession}>
+      {/* 版本更新提醒:登录/会话恢复后每版本弹一次,内部按账号已读版本(服务端)gate。 */}
+      <WhatsNewDialog />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />

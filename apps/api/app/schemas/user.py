@@ -495,7 +495,7 @@ class OnboardingPreferences(BaseModel):
 
 
 class UIPreferences(BaseModel):
-    """v0.15.25 · 全局 UI 偏好（工作台之外）。当前仅主题；跟随账号跨设备。
+    """v0.15.25 · 全局 UI 偏好（工作台之外）；跟随账号跨设备。
 
     主题原先只存 localStorage（仅本机），升级到服务端偏好后换设备登录即保持。
     'system' = 跟随操作系统 prefers-color-scheme。"""
@@ -505,6 +505,9 @@ class UIPreferences(BaseModel):
     theme: Literal["light", "dark", "system"] = "system"
     # v0.20.19 · 二次推理面板显隐 (跨设备): true=隐藏工具条。默认 false=显示 (不回归现状)。
     secondary_bar_hidden: bool = False
+    # 登录后「版本更新提醒」已确认的版本。空串 = 从未确认；前端按语义化版本比较，
+    # 仅当构建版本更新时弹一次「本次更新」，点「知道了」写回本键，跨设备去重。
+    changelog_seen_version: str = ""
 
 
 class UserPreferences(BaseModel):

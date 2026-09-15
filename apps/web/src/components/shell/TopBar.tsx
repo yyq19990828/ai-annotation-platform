@@ -20,9 +20,10 @@ import {
 } from "@/components/shadcn/ui/alert-dialog";
 import { PreannotateJobsBadge } from "./PreannotateJobsBadge";
 import { JobsBell } from "./JobsBell";
+import { useWhatsNewStore } from "./WhatsNewDialog";
 import { CommandPalette } from "@/components/CommandPalette";
 import { usePerfHudStore } from "@/components/PerfHud";
-import { version as appVersion } from "../../../package.json";
+import { appVersion } from "@/utils/releaseNotes";
 
 const NotificationsPopover = lazy(() =>
   import("./NotificationsPopover").then((module) => ({ default: module.NotificationsPopover })),
@@ -100,7 +101,16 @@ export function TopBar({
               className="size-[22px] shrink-0 rounded-md"
             />
             <span>标注中心</span>
-            <span className="ml-1 text-xs font-normal text-muted-foreground">v{appVersion}</span>
+            {/* 版本号与登录后「本次更新」窗口联动:点击随时查看当前版本更新内容。 */}
+            <button
+              type="button"
+              title="查看本次更新内容"
+              aria-label={`查看 v${appVersion} 更新内容`}
+              onClick={() => useWhatsNewStore.getState().openManually()}
+              className="ml-1 cursor-pointer rounded-xs text-xs font-normal text-muted-foreground transition-colors duration-200 hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              v{appVersion}
+            </button>
           </div>
           <div
             onClick={onWorkspaceChange}
