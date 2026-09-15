@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   hasFilterUrlOverrides,
+  normalizeDataManagerColumns,
   parseDataManagerUrl,
   parseDataManagerUrlWithIssues,
   resolveDataManagerSort,
@@ -9,6 +10,17 @@ import {
 } from "./dataManagerUrlState";
 
 describe("Data Manager URL state", () => {
+  it("normalizes the legacy feedback column to the unresolved-issue column", () => {
+    expect(
+      normalizeDataManagerColumns([
+        "display_id",
+        "unresolved_feedback_count",
+        "comment_count",
+        "unresolved_issue_count",
+      ]),
+    ).toEqual(["display_id", "unresolved_issue_count", "comment_count"]);
+  });
+
   it("round-trips all three lens states while preserving unrelated params", () => {
     for (const lens of ["tasks", "objects", "tracks"] as const) {
       const params = updateDataManagerUrl("keep=1", {

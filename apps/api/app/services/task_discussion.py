@@ -15,11 +15,12 @@ import json
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import HTTPException
 from sqlalchemy import and_, func, literal, or_, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.api.v1.tasks._shared import _assert_task_visible
 from app.deps import assert_project_visible
@@ -284,10 +285,10 @@ def _actions_for(*, source: DiscussionSource, author_id: uuid.UUID, user: User):
 
 def _identifier_selects(
     *,
-    task_id: uuid.UUID,
+    task_id: uuid.UUID | ColumnElement[Any],
     scope: DiscussionScope,
-    annotation_id: uuid.UUID | None,
-    project_id: uuid.UUID,
+    annotation_id: uuid.UUID | ColumnElement[Any] | None,
+    project_id: uuid.UUID | ColumnElement[Any],
 ):
     """Return the source identifier SELECTs used by the single read model query."""
 
@@ -328,6 +329,30 @@ def _identifier_selects(
             )
         )
     return selects
+
+
+def task_comment_count_sq() -> ColumnElement[int]:
+    """Correlated count of the complete Workbench comment feed per ``Task`` row.
+
+    Reuses ``_identifier_selects`` so Data Manager task counts always agree with
+    the discussion panel total: active annotation comments (including comments
+    on soft-deleted annotations) plus active native task comments. Issue posts,
+    issue replies and mirrored annotation comments never count.
+    """
+
+    # The union hides the Task references from auto-correlation, so correlate
+    # each source select explicitly to keep the count attached to the outer
+    # task row instead of counting the whole table.
+    source_selects = _identifier_selects(
+        task_id=Task.id,
+        scope="all",
+        annotation_id=None,
+        project_id=Task.project_id,
+    )
+    identifiers = union_all(
+        *(item.correlate(Task) for item in source_selects)
+    ).subquery()
+    return select(func.count()).select_from(identifiers).scalar_subquery()
 
 
 async def list_task_discussion(

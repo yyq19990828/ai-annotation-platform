@@ -31,6 +31,8 @@ from app.services.data_management.task_filters import (  # noqa: F401
     _dataset_file_type_sq,
     _avg_prediction_confidence_sq,
     _unresolved_feedback_count_sq,
+    _unresolved_issue_count_sq,
+    _comment_count_sq,
     apply_task_visibility,
     visible_tasks_stmt,
 )
@@ -77,7 +79,8 @@ DEFAULT_COLUMNS = [
     "pending_prediction_shape_count",
     "low_confidence_prediction_shape_count",
     "pending_tracker_job_count",
-    "unresolved_feedback_count",
+    "unresolved_issue_count",
+    "comment_count",
     "annotation_source_counts",
     "track_count",
     "last_activity_at",
@@ -113,7 +116,7 @@ DEFAULT_VIEWS: list[dict[str, Any]] = [
     },
     {
         "key": "feedback-open",
-        "name": "有未解决反馈",
+        "name": "有未解决问题",
         "filter_json": {
             "op": "and",
             "rules": [{"field": "feedback.unresolved_count", "op": "gt", "value": 0}],
@@ -332,6 +335,8 @@ def validate_sort(sort_json: list[dict[str, Any]] | None) -> None:
         if field not in _SORT_FIELD_MAP and field not in {
             "avg_prediction_confidence",
             "unresolved_feedback_count",
+            "unresolved_issue_count",
+            "comment_count",
             "model_versions",
             "scene_name",
             "scene.frame_index",
@@ -349,6 +354,9 @@ def validate_sort(sort_json: list[dict[str, Any]] | None) -> None:
 
 def validate_columns(columns_json: list[str] | None) -> None:
     allowed = set(DEFAULT_COLUMNS) | {
+        # Legacy feedback column kept as a compatibility alias of the corrected
+        # unresolved-issue count for saved views that still reference it.
+        "unresolved_feedback_count",
         "assignee",
         "reviewer",
         "batch_id",
@@ -530,6 +538,10 @@ def _sort_expr(field: str) -> ColumnElement[Any]:
         return _avg_prediction_confidence_sq()
     if field == "unresolved_feedback_count":
         return _unresolved_feedback_count_sq()
+    if field == "unresolved_issue_count":
+        return _unresolved_issue_count_sq()
+    if field == "comment_count":
+        return _comment_count_sq()
     if field in {"scene_name", "scene.scene_name"}:
         return _scene_name_sq()
     if field in {"frame_index", "scene.frame_index"}:
@@ -745,10 +757,17 @@ class TaskViewService:
             projection.append(
                 _avg_prediction_confidence_sq().label("avg_prediction_confidence")
             )
-        if "unresolved_feedback_count" in requested:
+        if (
+            "unresolved_issue_count" in requested
+            or "unresolved_feedback_count" in requested
+        ):
+            # The legacy feedback column is a compatibility alias of the
+            # corrected issue count; serialize both from one projection.
             projection.append(
-                _unresolved_feedback_count_sq().label("unresolved_feedback_count")
+                _unresolved_issue_count_sq().label("unresolved_issue_count")
             )
+        if "comment_count" in requested:
+            projection.append(_comment_count_sq().label("comment_count"))
         if "model_versions" in requested:
             projection.append(_model_versions_sq().label("model_versions"))
         if "scene_name" in requested or "scene.scene_name" in requested:

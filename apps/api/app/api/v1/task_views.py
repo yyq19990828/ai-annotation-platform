@@ -439,10 +439,14 @@ async def query_project_tasks(
                 "avg_prediction_confidence": _row_value(
                     row, "avg_prediction_confidence"
                 ),
-                "unresolved_feedback_count": _row_value(
-                    row, "unresolved_feedback_count", 0
-                )
-                or 0,
+                "unresolved_issue_count": int(
+                    _row_value(row, "unresolved_issue_count", 0) or 0
+                ),
+                # Legacy alias of the corrected unresolved-issue count.
+                "unresolved_feedback_count": int(
+                    _row_value(row, "unresolved_issue_count", 0) or 0
+                ),
+                "comment_count": int(_row_value(row, "comment_count", 0) or 0),
                 "model_versions": list(_row_value(row, "model_versions", []) or []),
                 "scene_name": _row_value(row, "scene_name"),
                 "frame_index": _row_value(row, "frame_index"),

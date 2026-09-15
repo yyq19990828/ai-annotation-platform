@@ -22,6 +22,7 @@ from fastapi import HTTPException
 from sqlalchemy import (
     String,
     and_,
+    case,
     cast,
     func,
     literal,
@@ -807,12 +808,17 @@ async def _annotation_activity(
     scope: ResolvedScope,
     user_ids: set[UUID],
 ) -> tuple[
-    dict[UUID, tuple[int, int]],
+    dict[UUID, tuple[int, int, int]],
     dict[UUID, Counter[str]],
     dict[UUID, Counter[str]],
     dict[UUID, Counter[str]],
 ]:
-    """Return retained object/task counts and source/geometry breakdowns."""
+    """Return retained object/task/image counts and source/geometry breakdowns.
+
+    ``annotated_images`` counts distinct tasks whose actual ``file_type`` is
+    ``image``; the project label is never trusted because an image-labelled
+    project can contain video tasks.
+    """
     if not user_ids:
         return {}, {}, {}, {}
     base = (
@@ -823,18 +829,21 @@ async def _annotation_activity(
         Annotation.created_at >= scope.start,
         Annotation.created_at < scope.end,
     )
+    image_task = func.distinct(case((Task.file_type == "image", Annotation.task_id)))
     totals = await db.execute(
         select(
             Annotation.user_id,
             func.count(Annotation.id),
             func.count(func.distinct(Annotation.task_id)),
+            func.count(image_task),
         )
+        .join(Task, Task.id == Annotation.task_id)
         .where(*base)
         .group_by(Annotation.user_id)
     )
     count_map = {
-        user_id: (int(objects or 0), int(tasks or 0))
-        for user_id, objects, tasks in totals
+        user_id: (int(objects or 0), int(tasks or 0), int(images or 0))
+        for user_id, objects, tasks, images in totals
         if user_id is not None
     }
     imported_expr = Annotation.attributes["_imported"].astext
@@ -987,6 +996,7 @@ class MemberAccumulator:
     resubmissions: int
     contributed_tasks: int
     retained_objects: int
+    annotated_images: int
     approved_outcomes: int
     first_review_passed: int
     first_review_total: int
@@ -1010,6 +1020,7 @@ class MemberAccumulator:
             resubmissions=0,
             contributed_tasks=0,
             retained_objects=0,
+            annotated_images=0,
             approved_outcomes=0,
             first_review_passed=0,
             first_review_total=0,
@@ -1073,6 +1084,11 @@ def _member_metrics(
             acc.contributed_tasks,
             "tasks",
             numerator=acc.contributed_tasks,
+        ),
+        annotated_images=_metric(
+            acc.annotated_images,
+            "images",
+            numerator=acc.annotated_images,
         ),
         retained_objects=_metric(
             acc.retained_objects,
@@ -1174,6 +1190,8 @@ def _totals(
     approvals: int,
     rejections: int,
     review_backlog: int,
+    annotated_images: int = 0,
+    retained_objects: int = 0,
     submission_coverage: str = "complete",
 ) -> PerformanceTotals:
     return PerformanceTotals(
@@ -1199,7 +1217,44 @@ def _totals(
         approvals=_metric(approvals, "decisions", numerator=approvals),
         rejections=_metric(rejections, "decisions", numerator=rejections),
         review_backlog=_metric(review_backlog, "tasks", numerator=review_backlog),
+        annotated_images=_metric(
+            annotated_images, "images", numerator=annotated_images
+        ),
+        retained_objects=_metric(
+            retained_objects, "objects", numerator=retained_objects
+        ),
     )
+
+
+async def _annotation_totals(
+    db: AsyncSession, project_id: UUID, scope: ResolvedScope
+) -> tuple[int, int]:
+    """Aggregate project-wide retained records and distinct image tasks.
+
+    Computed independently of member attribution so overlapping members cannot
+    double-count one image, and restricted to tasks whose actual file type is
+    ``image`` regardless of the project label.
+    """
+    base = (
+        Annotation.project_id == project_id,
+        Annotation.is_active.is_(True),
+        Annotation.was_cancelled.is_(False),
+        Annotation.created_at >= scope.start,
+        Annotation.created_at < scope.end,
+    )
+    row = (
+        await db.execute(
+            select(
+                func.count(Annotation.id),
+                func.count(
+                    func.distinct(case((Task.file_type == "image", Annotation.task_id)))
+                ),
+            )
+            .join(Task, Task.id == Annotation.task_id)
+            .where(*base)
+        )
+    ).one()
+    return int(row[0] or 0), int(row[1] or 0)
 
 
 @dataclass
@@ -1294,9 +1349,19 @@ async def _aggregate(
     annotation_counts, sources, geometries, classes = await _annotation_activity(
         db, project.id, scope, user_ids
     )
-    for user_id, (retained_objects, contributed_tasks) in annotation_counts.items():
+    for user_id, (
+        retained_objects,
+        contributed_tasks,
+        annotated_images,
+    ) in annotation_counts.items():
         accumulators[user_id].retained_objects = retained_objects
         accumulators[user_id].contributed_tasks = contributed_tasks
+        accumulators[user_id].annotated_images = annotated_images
+    # Project totals aggregate independently instead of summing member rows:
+    # several members may have saved objects on the same image.
+    total_retained_objects, total_annotated_images = await _annotation_totals(
+        db, project.id, scope
+    )
     qualified_time = await _load_qualified_time(
         db, project.id, scope, user_ids=time_user_ids
     )
@@ -1329,6 +1394,8 @@ async def _aggregate(
         "workflow audits are project scoped; legacy review rounds without a submit snapshot "
         "are excluded from member attribution; retained_objects and distributions count "
         "retained annotation records (compact tracks once, scene instances individually); "
+        "annotated_images counts distinct tasks whose actual file type is image with "
+        "retained records; project totals aggregate independently of member attribution; "
         f"annotation session coverage is {time_coverage}; submission coverage is "
         f"{submission_coverage}; unattributed review decisions: {unattributed}"
         if work_type == "annotation"
@@ -1363,6 +1430,8 @@ async def _aggregate(
         approvals=approvals,
         rejections=rejections,
         review_backlog=review_backlog,
+        annotated_images=total_annotated_images,
+        retained_objects=total_retained_objects,
         submission_coverage=submission_coverage,
     )
     return AggregatedPerformance(
@@ -1381,6 +1450,8 @@ async def _aggregate(
 _SORT_FIELDS = {
     "name": lambda item: item.name.casefold(),
     "submitted_tasks": lambda item: item.metrics.submitted_tasks.value,
+    "annotated_images": lambda item: item.metrics.annotated_images.value,
+    "retained_objects": lambda item: item.metrics.retained_objects.value,
     "approved_task_outcomes": lambda item: item.metrics.approved_task_outcomes.value,
     "first_review_pass_rate": lambda item: item.metrics.first_review_pass_rate.value,
     "recorded_time_minutes": lambda item: item.metrics.recorded_time_minutes.value,
@@ -1784,6 +1855,7 @@ _CSV_METRICS = (
     "submitted_tasks",
     "resubmissions",
     "contributed_tasks",
+    "annotated_images",
     "retained_objects",
     "approved_task_outcomes",
     "first_review_pass_rate",

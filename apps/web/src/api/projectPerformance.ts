@@ -7,6 +7,7 @@ export type ProjectPerformanceCoverageState = "complete" | "partial" | "unknown"
 export type ProjectPerformanceMetricUnit =
   | "tasks"
   | "objects"
+  | "images"
   | "decisions"
   | "minutes"
   | "percent";
@@ -59,6 +60,7 @@ export interface ProjectMemberPerformanceMetrics {
   recorded_review_minutes: ProjectPerformanceMetric;
   review_backlog: ProjectPerformanceMetric;
   contributed_tasks: ProjectPerformanceMetric;
+  annotated_images: ProjectPerformanceMetric;
   retained_objects: ProjectPerformanceMetric;
 }
 
@@ -86,6 +88,8 @@ export interface ProjectPerformanceTotals {
   approvals: ProjectPerformanceMetric;
   rejections: ProjectPerformanceMetric;
   review_backlog: ProjectPerformanceMetric;
+  annotated_images: ProjectPerformanceMetric;
+  retained_objects: ProjectPerformanceMetric;
 }
 
 export interface ProjectMembersPerformanceResponse {

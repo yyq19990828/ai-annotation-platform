@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Navigate, useParams, useSearchParams } from "react-router-dom";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -39,6 +39,7 @@ import {
 import { FilterValueEditor } from "@/components/filters/FilterValueEditor";
 import { useFilterDraftValidity } from "@/components/filters/useFilterDraftValidity";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { usePageTableHeader } from "./data-manager/usePageTableHeader";
 import { useUrlFilterState } from "@/hooks/useUrlFilterState";
 import { formatFilterDraft, parseFilterValue } from "@/lib/filters/filterValues";
 import { filterOperatorLabel } from "@/lib/filters/types";
@@ -76,6 +77,7 @@ import {
   DATA_MANAGER_FILTER_KEYS,
   dataManagerUrlCodec,
   hasFilterUrlOverrides,
+  normalizeDataManagerColumns,
   parseDataManagerUrl,
   resolveDataManagerSort,
   type DataManagerLayout,
@@ -174,7 +176,8 @@ const COLUMN_OPTIONS = [
   { key: "pending_prediction_shape_count", label: "AI 检测待审" },
   { key: "low_confidence_prediction_shape_count", label: "低置信 AI 待审 (<50%)" },
   { key: "pending_tracker_job_count", label: "AI 追踪待审" },
-  { key: "unresolved_feedback_count", label: "反馈" },
+  { key: "unresolved_issue_count", label: "未解决问题" },
+  { key: "comment_count", label: "评论" },
   { key: "annotation_source_counts", label: "来源" },
   { key: "track_count", label: "轨迹" },
   { key: "last_activity_at", label: "最近活动" },
@@ -182,7 +185,7 @@ const COLUMN_OPTIONS = [
   { key: "reviewer", label: "审核员" },
 ] as const;
 
-const DEFAULT_COLUMNS = COLUMN_OPTIONS.slice(0, 11).map((item) => item.key);
+const DEFAULT_COLUMNS = COLUMN_OPTIONS.slice(0, 12).map((item) => item.key);
 type SelectedTask = Pick<DataManagerTask, "id" | "project_id" | "display_id" | "file_name">;
 
 interface RuleChipDraft {
@@ -235,6 +238,7 @@ export function ProjectDataManagerPage() {
   const { id = "" } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const { data: project, isLoading, error } = useProject(id);
+  const dataScrollRef = useRef<HTMLDivElement>(null);
   const schemaQ = useDataManagerSchema(id, "tasks");
   const { role } = usePermissions();
   const user = useAuthStore((state) => state.user);
@@ -370,6 +374,7 @@ export function ProjectDataManagerPage() {
         availableScopes={availableScopes}
         onScopeChange={changeScope}
         onDirtyChange={setDataDirty}
+        scrollContainerRef={dataScrollRef}
       />
     ) : (
       <TaskDataManagerPage
@@ -377,6 +382,7 @@ export function ProjectDataManagerPage() {
         availableScopes={availableScopes}
         onScopeChange={changeScope}
         onDirtyChange={setDataDirty}
+        scrollContainerRef={dataScrollRef}
       />
     );
 
@@ -388,6 +394,7 @@ export function ProjectDataManagerPage() {
       section={section}
       onSectionChange={changeSection}
       canViewMembers={canViewMembers}
+      dataScrollRef={dataScrollRef}
     >
       {content}
       <AlertDialog
@@ -431,11 +438,13 @@ function TaskDataManagerPage({
   availableScopes,
   onScopeChange,
   onDirtyChange,
+  scrollContainerRef,
 }: {
   project: ProjectResponse;
   availableScopes: DataManagerEntityScope[];
   onScopeChange: (scope: DataManagerEntityScope) => void;
   onDirtyChange?: (dirty: boolean) => void;
+  scrollContainerRef: RefObject<HTMLDivElement | null>;
 }) {
   const { id = "" } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -481,6 +490,11 @@ function TaskDataManagerPage({
   const [selectedTask, setSelectedTask] = useState<SelectedTask | null>(null);
   const selectedTaskRef = useRef<SelectedTask | null>(null);
   selectedTaskRef.current = selectedTask;
+  const resultsStartRef = useRef<HTMLDivElement>(null);
+  const stickyHeaderRef = usePageTableHeader<HTMLTableSectionElement>(
+    scrollContainerRef,
+    resultsStartRef,
+  );
   const [baselineSignature, setBaselineSignature] = useState("");
   const [pendingViewKey, setPendingViewKey] = useState<string | null>(null);
   const [pendingScope, setPendingScope] = useState<DataManagerEntityScope | null>(null);
@@ -618,12 +632,12 @@ function TaskDataManagerPage({
     setFilterExpression(split.filter);
     setAppliedFilterExpression(split.filter);
     const allowedColumns = new Set(columnOptions.map((column) => column.key));
-    const restoredColumns = (
+    const restoredColumns = normalizeDataManagerColumns(
       useUrl && url.columns?.length
         ? url.columns
         : selectedView.columns_json?.length
           ? selectedView.columns_json
-          : defaultColumns
+          : defaultColumns,
     ).filter((column) => allowedColumns.has(column));
     const nextColumns = restoredColumns.length ? restoredColumns : defaultColumns;
     const nextSort = resolveDataManagerSort(
@@ -715,15 +729,41 @@ function TaskDataManagerPage({
     pageSignatureRef.current = queryStateSignature;
     setPage(0);
   }, [queryStateSignature]);
+  // Query, sort, saved view or task page changes return the reader to the start
+  // of the results on the Data page scroll owner. Loading more of the same page
+  // keeps the current viewport position.
+  useEffect(() => {
+    const scroller = scrollContainerRef.current;
+    const target = resultsStartRef.current;
+    if (!scroller || !target) return;
+    const top = Math.max(
+      0,
+      target.getBoundingClientRect().top -
+        scroller.getBoundingClientRect().top +
+        scroller.scrollTop -
+        8,
+    );
+    if (scroller.scrollTop > top) scroller.scrollTo({ top });
+  }, [queryStateSignature, page, scrollContainerRef]);
   const queryPayload = useMemo(
     () => ({
       filter_json: filterJson as Record<string, unknown>,
       sort_json: sort,
-      columns_json: columns,
+      columns_json:
+        layout === "gallery"
+          ? [
+              ...new Set([
+                ...columns,
+                "annotation_count",
+                "unresolved_issue_count",
+                "comment_count",
+              ]),
+            ]
+          : columns,
       limit: PAGE_SIZE,
       offset: pageForQuery * PAGE_SIZE,
     }),
-    [columns, filterJson, pageForQuery, sort],
+    [columns, filterJson, layout, pageForQuery, sort],
   );
   const queryReady = Boolean(
     selectedView &&
@@ -1013,7 +1053,7 @@ function TaskDataManagerPage({
     },
     {
       key: "feedback",
-      label: "有反馈",
+      label: "有未解决问题",
       active: conjunctEntries.some(
         ({ rule }) =>
           rule.field === "feedback.unresolved_count" &&
@@ -1140,7 +1180,7 @@ function TaskDataManagerPage({
   ].filter((group) => group.items.length);
 
   return (
-    <div className="h-full min-h-0 overflow-hidden text-foreground">
+    <div className="text-foreground">
       <DataManagerLensTabs
         scope="tasks"
         availableScopes={availableScopes}
@@ -1150,7 +1190,7 @@ function TaskDataManagerPage({
           else onScopeChange(nextScope);
         }}
       >
-        <div className="flex h-full min-h-0 flex-col gap-2 max-sm:overflow-y-auto max-sm:pb-2">
+        <div className="flex flex-col gap-2">
           <header className="flex shrink-0 items-center justify-end gap-4 max-md:flex-col max-md:items-stretch">
             <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground max-sm:flex-wrap">
               {!!urlState.issues.length && (
@@ -1207,7 +1247,7 @@ function TaskDataManagerPage({
             />
           )}
 
-          <div className="grid min-h-0 flex-1 grid-cols-[auto_minmax(0,1fr)] gap-3 max-lg:grid-cols-1 max-sm:min-h-[280px]">
+          <div className="grid grid-cols-[auto_minmax(0,1fr)] gap-3 max-lg:grid-cols-1">
             <aside
               className={cn(
                 "min-h-0 w-[210px] overflow-y-auto rounded-md border border-border bg-card p-2 max-lg:hidden",
@@ -1295,7 +1335,7 @@ function TaskDataManagerPage({
               </Button>
             </aside>
 
-            <div className="flex min-h-0 min-w-0 flex-col gap-2">
+            <div className="flex min-w-0 flex-col gap-2">
               <section className="flex shrink-0 flex-col gap-2 rounded-md border border-border bg-card p-2.5">
                 <div className="flex items-center justify-between gap-3 px-0.5 pb-0.5">
                   <div>
@@ -1514,7 +1554,11 @@ function TaskDataManagerPage({
                 </div>
               </section>
 
-              <div className="min-h-0 flex-1 overflow-auto rounded-md border border-border bg-card shadow-sm max-sm:min-h-[280px]">
+              <div
+                ref={resultsStartRef}
+                // Contain wide columns without creating a short vertical scroller.
+                className="w-full min-w-0 max-w-full min-h-[280px] overflow-x-auto rounded-md border border-border bg-card shadow-sm"
+              >
                 {layout === "gallery" ? (
                   <div
                     role="region"
@@ -1604,7 +1648,8 @@ function TaskDataManagerPage({
                           </div>
                           <div className="flex items-center gap-3 border-t border-border px-3 py-2 text-2xs text-muted-foreground">
                             <span>{task.annotation_count.toLocaleString()} 标注</span>
-                            <span>{task.unresolved_feedback_count.toLocaleString()} 反馈</span>
+                            <span>{task.unresolved_issue_count.toLocaleString()} 未解决问题</span>
+                            <span>{task.comment_count.toLocaleString()} 评论</span>
                             {(task.effective_assignee ?? task.assignee)?.name && (
                               <span className="truncate">
                                 {(task.effective_assignee ?? task.assignee)?.name}
@@ -1617,7 +1662,7 @@ function TaskDataManagerPage({
                   </div>
                 ) : (
                   <table className="w-full min-w-[1040px] table-fixed border-collapse [&_td]:overflow-hidden [&_td]:border-b [&_td]:border-border [&_td]:px-3 [&_td]:py-2.5 [&_td]:text-left [&_td]:align-middle [&_td]:text-ellipsis [&_td]:whitespace-nowrap [&_th]:overflow-hidden [&_th]:border-b [&_th]:border-border [&_th]:bg-muted [&_th]:px-3 [&_th]:py-2.5 [&_th]:text-left [&_th]:align-middle [&_th]:text-xs [&_th]:font-semibold [&_th]:text-ellipsis [&_th]:whitespace-nowrap [&_th]:text-foreground [&_th:first-child]:w-[58px] [&_td:first-child]:w-[58px] [&_tbody_tr:hover]:bg-muted [&_tr:last-child_td]:border-b-0">
-                    <thead className="sticky top-0 z-base">
+                    <thead ref={stickyHeaderRef} className="relative z-base">
                       <tr>
                         <th>
                           <input
@@ -1709,7 +1754,7 @@ function TaskDataManagerPage({
                         <tr>
                           <td
                             colSpan={Math.max(2, columns.length + 2)}
-                            className="text-center text-destructive"
+                            className="py-16 text-center text-destructive"
                           >
                             无法加载任务，请刷新重试
                           </td>
@@ -1719,7 +1764,7 @@ function TaskDataManagerPage({
                         <tr>
                           <td
                             colSpan={Math.max(2, columns.length + 2)}
-                            className="text-center text-muted-foreground"
+                            className="py-16 text-center text-muted-foreground"
                           >
                             无匹配任务
                           </td>
@@ -1964,12 +2009,15 @@ function renderCell(task: DataManagerTask, column: string) {
       return task.track_count.toLocaleString();
     case "prediction_count":
       return task.prediction_count.toLocaleString();
+    case "unresolved_issue_count":
     case "unresolved_feedback_count":
-      return task.unresolved_feedback_count ? (
-        <Badge variant="warning">{task.unresolved_feedback_count}</Badge>
+      return task.unresolved_issue_count ? (
+        <Badge variant="warning">{task.unresolved_issue_count}</Badge>
       ) : (
         "0"
       );
+    case "comment_count":
+      return task.comment_count.toLocaleString();
     case "scene_name":
       return task.scene_name ?? "—";
     case "frame_index":

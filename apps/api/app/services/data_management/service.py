@@ -48,7 +48,6 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.annotation import Annotation
-from app.db.models.annotation_feedback import AnnotationFeedback
 from app.db.models.dataset import DatasetItem
 from app.db.models.project import Project
 from app.db.models.task import Task
@@ -67,6 +66,7 @@ from app.schemas.data_manager import (
 from app.services.project_kind import project_kind
 from app.services.prediction import to_internal_shape
 from app.services.scheduler import is_privileged_for_project
+from app.services.feedback import unresolved_issue_count_sq
 from app.services.data_management.views import (
     compile_filter,
     visible_tasks_stmt,
@@ -247,11 +247,9 @@ class DataManagerService:
         )
         unresolved_feedback = int(
             await self.db.scalar(
-                select(func.count(AnnotationFeedback.id)).where(
-                    AnnotationFeedback.task_id.in_(select(matched_ids.c.id)),
-                    AnnotationFeedback.is_active.is_(True),
-                    AnnotationFeedback.status == "open",
-                )
+                select(func.sum(unresolved_issue_count_sq()))
+                .select_from(Task)
+                .join(matched_ids, matched_ids.c.id == Task.id)
             )
             or 0
         )

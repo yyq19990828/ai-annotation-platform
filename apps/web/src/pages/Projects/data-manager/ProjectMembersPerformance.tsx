@@ -12,6 +12,7 @@ import {
 } from "recharts";
 import { useLocation, useNavigate } from "react-router-dom";
 import { buildReviewWorkbenchUrl, buildWorkbenchUrl } from "@/utils/workbenchNavigation";
+import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/Badge";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { Button } from "@/components/ui/Button";
@@ -64,6 +65,8 @@ const MAX_CUSTOM_DAYS = PROJECT_MEMBERS_MAX_CUSTOM_DAYS;
 const SORT_LABELS: Record<ProjectMembersSort, string> = {
   name: "成员名称",
   submitted_tasks: "提交任务",
+  annotated_images: "已标注图片",
+  retained_objects: "保留标注",
   approved_task_outcomes: "审核通过",
   first_review_pass_rate: "首审通过率",
   recorded_time_minutes: "记录时长",
@@ -165,6 +168,7 @@ function metricText(metric: ProjectPerformanceMetric | undefined, unit?: string)
   const labels: Record<string, string> = {
     tasks: "个任务",
     objects: "条标注",
+    images: "张图片",
     decisions: "次",
     minutes: "分钟",
     percent: "%",
@@ -823,6 +827,8 @@ function MembersSummary({
         approvals: ProjectPerformanceMetric;
         rejections: ProjectPerformanceMetric;
         review_backlog: ProjectPerformanceMetric;
+        annotated_images: ProjectPerformanceMetric;
+        retained_objects: ProjectPerformanceMetric;
       }
     | undefined;
   loading: boolean;
@@ -832,6 +838,8 @@ function MembersSummary({
   const items =
     workType === "annotation"
       ? ([
+          ["已标注图片", totals?.annotated_images, "张图片"],
+          ["保留标注", totals?.retained_objects, "条标注"],
           ["周期内提交", totals?.submitted_tasks, "个任务"],
           ["审核通过结果", totals?.approved_task_outcomes, "个任务"],
           ["首审通过率", totals?.first_review_pass_rate, ""],
@@ -856,7 +864,12 @@ function MembersSummary({
         </span>
         {coverage && <CoverageBadge state={coverage.state} />}
       </div>
-      <div className="grid grid-cols-2 gap-px bg-border md:grid-cols-4">
+      <div
+        className={cn(
+          "grid grid-cols-2 gap-px bg-border",
+          workType === "annotation" ? "md:grid-cols-3 xl:grid-cols-6" : "md:grid-cols-4",
+        )}
+      >
         {items.map(([label, metric, unit]) => (
           <div key={label} className="min-w-0 bg-card px-3 py-2.5">
             <div className="text-xs text-muted-foreground">{label}</div>
@@ -870,9 +883,11 @@ function MembersSummary({
             <div className="mt-1 text-2xs text-muted-foreground">
               {label === "当前待办" || label === "当前待审"
                 ? "当前快照"
-                : metric?.coverage === "partial"
-                  ? "仅统计有完整记录的部分"
-                  : "按成员与任务范围统计"}
+                : label === "已标注图片" || label === "保留标注"
+                  ? "区间内创建且仍保留"
+                  : metric?.coverage === "partial"
+                    ? "仅统计有完整记录的部分"
+                    : "按成员与任务范围统计"}
             </div>
           </div>
         ))}
@@ -901,7 +916,7 @@ function MembersTable({
         </span>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px] border-collapse text-sm">
+        <table className="w-full min-w-[980px] border-collapse text-sm">
           <caption className="sr-only">项目成员绩效表</caption>
           <thead className="bg-muted text-xs text-muted-foreground">
             <tr>
@@ -910,6 +925,20 @@ function MembersTable({
               </th>
               {workType === "annotation" ? (
                 <>
+                  <th
+                    scope="col"
+                    className="px-3 py-2 text-right font-medium"
+                    title="区间内创建且仍保留标注的不同图片任务数（按任务实际媒体类型统计，不含视频/点云）。多人标注同一图片时项目汇总按图片去重。"
+                  >
+                    已标注图片
+                  </th>
+                  <th
+                    scope="col"
+                    className="px-3 py-2 text-right font-medium"
+                    title="区间内创建且仍保留的标注记录数，无需提交或审核。视频轨迹计一条，Scene 跨帧实例分别计数；删除或取消会减少计数。"
+                  >
+                    保留标注
+                  </th>
                   <th scope="col" className="px-3 py-2 text-right font-medium">
                     提交任务
                   </th>
@@ -963,7 +992,10 @@ function MembersTable({
               ))
             ) : (
               <tr>
-                <td colSpan={6} className="px-3 py-10 text-center text-sm text-muted-foreground">
+                <td
+                  colSpan={workType === "annotation" ? 8 : 6}
+                  className="px-3 py-10 text-center text-sm text-muted-foreground"
+                >
                   没有符合条件的成员
                 </td>
               </tr>
@@ -981,7 +1013,7 @@ function MemberSkeletonRow({ workType }: { workType: ProjectMembersWorkType }) {
       <td className="px-3 py-3">
         <Skeleton className="h-5 w-36" />
       </td>
-      {Array.from({ length: workType === "annotation" ? 5 : 5 }, (_, index) => (
+      {Array.from({ length: workType === "annotation" ? 7 : 5 }, (_, index) => (
         <td key={index} className="px-3 py-3 text-right">
           <Skeleton className="ml-auto h-5 w-16" />
         </td>
@@ -1027,6 +1059,8 @@ function MemberRow({
       </td>
       {workType === "annotation" ? (
         <>
+          <MetricCell metric={metrics.annotated_images} />
+          <MetricCell metric={metrics.retained_objects} />
           <MetricCell metric={metrics.submitted_tasks} />
           <MetricCell metric={metrics.approved_task_outcomes} />
           <MetricCell metric={metrics.first_review_pass_rate} rate />
@@ -1444,10 +1478,17 @@ function RetainedContent({
         <div>
           <h3 className="text-sm font-semibold text-foreground">保留内容</h3>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            区间内创建且仍有效的标注记录。视频轨迹计一条，Scene 跨帧实例分别计数。
+            区间内创建且仍有效的标注记录，无需提交或审核。视频轨迹计一条，Scene
+            跨帧实例分别计数；删除或取消会减少计数。已标注图片按任务实际媒体类型统计，不含视频与点云。
           </p>
         </div>
         <div className="flex gap-3 text-right">
+          <div>
+            <div className="text-2xs text-muted-foreground">已标注图片</div>
+            <strong className="font-mono text-sm text-foreground">
+              {metricText(member.metrics.annotated_images, "张")}
+            </strong>
+          </div>
           <div>
             <div className="text-2xs text-muted-foreground">贡献任务</div>
             <strong className="font-mono text-sm text-foreground">

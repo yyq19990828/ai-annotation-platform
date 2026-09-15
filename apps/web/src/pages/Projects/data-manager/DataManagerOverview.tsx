@@ -96,9 +96,9 @@ function overviewItems(summary: DataManagerSummary | undefined): OverviewItem[] 
       detail: `轨迹标注 ${metric(summary?.annotations.tracked)}`,
     },
     {
-      label: "未解决反馈",
+      label: "未解决问题",
       value: summary?.unresolved_feedback,
-      detail: summary?.unresolved_feedback ? "需要处理" : "当前无反馈",
+      detail: summary?.unresolved_feedback ? "需要处理" : "当前无问题",
       drill: { field: "feedback.unresolved_count", op: "gt", value: "0" },
     },
   ];
@@ -377,7 +377,7 @@ export function DataManagerProjectOverview({
                 }
               />
               <OverviewMetric
-                label="未解决反馈"
+                label="未解决问题"
                 value={feedback.toLocaleString()}
                 detail={feedback ? "需要处理" : "当前无反馈"}
                 onClick={
@@ -480,11 +480,11 @@ export function DataManagerProjectOverview({
                   onDrill?.({ field: "feedback.unresolved_count", op: "gt", value: "0" })
                 }
               >
-                <div className="text-xs text-muted-foreground">反馈积压</div>
+                <div className="text-xs text-muted-foreground">问题积压</div>
                 <div className="mt-1 font-mono text-xl tabular-nums">
                   {feedback.toLocaleString()}
                 </div>
-                <div className="mt-1 text-2xs text-muted-foreground">按任务查看未解决反馈</div>
+                <div className="mt-1 text-2xs text-muted-foreground">按任务查看未解决问题</div>
               </button>
             </div>
           </section>

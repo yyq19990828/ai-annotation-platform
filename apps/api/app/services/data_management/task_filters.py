@@ -53,6 +53,8 @@ from app.services.data_management.task_metrics import (  # noqa: F401
 )
 from app.services.project_kind import project_kind
 from app.services.scheduler import is_privileged_for_project, task_visibility_clause
+from app.services.feedback import unresolved_issue_count_sq
+from app.services.task_discussion import task_comment_count_sq
 
 _STRING_OPS = {"eq", "ne", "in"}
 
@@ -238,7 +240,12 @@ def _compile_rule(
     if field == "prediction.avg_confidence":
         return _compare_scalar(_avg_prediction_confidence_sq(), op, value, _NUMERIC_OPS)
     if field == "feedback.unresolved_count":
+        # Compatibility alias: corrected to count unresolved root issues.
         return _compare_scalar(_unresolved_feedback_count_sq(), op, value, _NUMERIC_OPS)
+    if field == "issue.unresolved_count":
+        return _compare_scalar(_unresolved_issue_count_sq(), op, value, _NUMERIC_OPS)
+    if field == "discussion.comment_count":
+        return _compare_scalar(_comment_count_sq(), op, value, _NUMERIC_OPS)
     if field == "feedback.kind":
         return _compare_feedback_field(AnnotationFeedback.kind, op, value)
     if field == "feedback.severity":
@@ -463,6 +470,8 @@ def _validate_rule_value(
         "prediction.prediction_count",
         "prediction.avg_confidence",
         "feedback.unresolved_count",
+        "issue.unresolved_count",
+        "discussion.comment_count",
         "ai.pending_prediction_shape_count",
         "ai.low_confidence_prediction_shape_count",
         "ai.pending_tracker_job_count",
@@ -1062,16 +1071,21 @@ def _avg_prediction_confidence_sq() -> ColumnElement[float | None]:
     )
 
 
+def _unresolved_issue_count_sq() -> ColumnElement[int]:
+    # Owned by ``FeedbackService``'s root relation so Data Manager counts match
+    # the Workbench issue totals (root issues only; replies never count).
+    return unresolved_issue_count_sq()
+
+
 def _unresolved_feedback_count_sq() -> ColumnElement[int]:
-    return (
-        select(func.count(AnnotationFeedback.id))
-        .where(
-            AnnotationFeedback.task_id == Task.id,
-            AnnotationFeedback.is_active.is_(True),
-            AnnotationFeedback.status == "open",
-        )
-        .scalar_subquery()
-    )
+    """Compatibility alias: the legacy feedback column counts unresolved issues."""
+    return unresolved_issue_count_sq()
+
+
+def _comment_count_sq() -> ColumnElement[int]:
+    # Owned by the task discussion read model so counts match the Workbench
+    # comment-feed total (annotation comments + native task comments).
+    return task_comment_count_sq()
 
 
 def apply_task_visibility(stmt: Select, user: User, project: Project) -> Select:

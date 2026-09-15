@@ -34,7 +34,7 @@ vi.mock("@/api/projectPerformance", async () => {
 
 const metric = (
   value: number | null,
-  unit: "tasks" | "objects" | "decisions" | "minutes" | "percent",
+  unit: "tasks" | "objects" | "images" | "decisions" | "minutes" | "percent",
   extra: Record<string, number> = {},
 ) => ({
   value,
@@ -66,6 +66,7 @@ function member(overrides: Partial<ProjectMemberPerformance> = {}): ProjectMembe
       recorded_review_minutes: metric(30, "minutes"),
       review_backlog: metric(2, "tasks"),
       contributed_tasks: metric(12, "tasks"),
+      annotated_images: metric(9, "images"),
       retained_objects: metric(42, "objects"),
     },
     ...overrides,
@@ -90,6 +91,8 @@ const listData: ProjectMembersPerformanceResponse = {
     approvals: metric(3, "decisions"),
     rejections: metric(1, "decisions"),
     review_backlog: metric(2, "tasks"),
+    annotated_images: metric(15, "images"),
+    retained_objects: metric(60, "objects"),
   },
   items: [
     member(),
@@ -114,6 +117,7 @@ const listData: ProjectMembersPerformanceResponse = {
         recorded_review_minutes: metric(null, "minutes"),
         review_backlog: metric(0, "tasks"),
         contributed_tasks: metric(0, "tasks"),
+        annotated_images: metric(0, "images"),
         retained_objects: metric(0, "objects"),
       },
     }),
@@ -310,6 +314,29 @@ describe("ProjectMembersPerformance", () => {
     expect(screen.getByRole("columnheader", { name: "审核决策" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "当前待审" })).toBeInTheDocument();
     expect(mocks.list).toHaveBeenCalled();
+  });
+
+  it("shows saved content before submission counts in the annotation view", () => {
+    renderPage();
+    // Project summary exposes the two saved-content totals.
+    expect(screen.getAllByText("已标注图片").length).toBeGreaterThan(1);
+    expect(screen.getAllByText("保留标注").length).toBeGreaterThan(1);
+    expect(screen.getByText("15 张图片")).toBeInTheDocument();
+    expect(screen.getByText("60 条标注")).toBeInTheDocument();
+    // Member rows place the image/object columns before submission counts.
+    const headerCells = screen.getAllByRole("columnheader").map((cell) => cell.textContent);
+    expect(headerCells.indexOf("已标注图片")).toBeGreaterThan(0);
+    expect(headerCells.indexOf("已标注图片")).toBeLessThan(headerCells.indexOf("提交任务"));
+    expect(headerCells.indexOf("保留标注")).toBeLessThan(headerCells.indexOf("提交任务"));
+    const adaRow = screen.getByRole("button", { name: /Ada Lovelace/ }).closest("tr");
+    expect(adaRow).toHaveTextContent("9");
+    expect(adaRow).toHaveTextContent("42");
+    // Member detail shows the image count alongside retained content.
+    fireEvent.click(screen.getByRole("button", { name: /Ada Lovelace/ }));
+    const retained = screen.getByLabelText("保留内容");
+    expect(retained).toHaveTextContent("9 张");
+    expect(retained).toHaveTextContent("12 个");
+    expect(retained).toHaveTextContent("42 条");
   });
 
   it("opens the selected member detail sheet with evidence sections", () => {
