@@ -91,6 +91,13 @@ export function UserPicker({ anchor, options, query, onPick, onClose }: UserPick
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // IME 组合中的按键永不确认提及：否则 Enter / 方向键会被当成选人，
+      // 既抢走输入法的定字/翻页，又在组合中途改 DOM，导致下一个拼音首字母
+      // 直接定格成第一个候选字。
+      // IME 组合中的按键永不确认提及：否则 Enter / 方向键会被当成选人，
+      // 既抢走输入法的定字/翻页，又在组合中途改 DOM，导致下一个拼音首字母
+      // 直接定格成第一个候选字。
+      if (e.isComposing || e.keyCode === 229) return;
       // capture 阶段先于编辑器/React 处理；处理完必须阻止继续冒泡，
       // 否则 Enter 会被 input 的 onKeyDown 当成提交，选择 @ 对象即发送消息。
       const stop = () => {

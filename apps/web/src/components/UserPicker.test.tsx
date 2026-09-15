@@ -38,6 +38,38 @@ describe("UserPicker", () => {
     document.removeEventListener("keydown", editorKeydown);
   });
 
+  it("ignores keys during IME composition and lets them reach the input method", () => {
+    const onPick = vi.fn();
+    render(
+      <UserPicker
+        anchor={{ left: 10, top: 200, bottom: 220 }}
+        options={options}
+        query=""
+        onPick={onPick}
+        onClose={vi.fn()}
+      />,
+    );
+    // 代表编辑器 / 输入法：组合中的按键必须继续传播，不能被浮层吞掉。
+    const downstream = vi.fn();
+    document.addEventListener("keydown", downstream);
+
+    const composingEnter = fireEvent.keyDown(document.body, {
+      key: "Enter",
+      isComposing: true,
+    });
+    const legacyImeKey = fireEvent.keyDown(document.body, {
+      key: "Process",
+      keyCode: 229,
+    });
+
+    expect(onPick).not.toHaveBeenCalled();
+    expect(composingEnter).toBe(true); // 未 preventDefault
+    expect(legacyImeKey).toBe(true);
+    expect(downstream).toHaveBeenCalledTimes(2);
+
+    document.removeEventListener("keydown", downstream);
+  });
+
   it("opens downward when there is enough room below the caret", () => {
     Object.defineProperty(window, "innerHeight", { value: 1000, configurable: true });
     render(
