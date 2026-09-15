@@ -103,6 +103,14 @@ PATCH  /api/v1/projects/:id/members/:uid   # 改角色
 
 角色：`viewer` / `annotator` / `reviewer` / `project_admin`。
 
+### @ 提及候选
+
+```http
+GET /api/v1/projects/:id/mention-candidates
+```
+
+返回讨论区输入 `@` 时可选择的用户，仅要求项目可见权限（成员 / 负责人 / 超管都可调用，不需要管理权限）。列表按 `user_id` 去重，顺序为项目负责人（`kind=owner`）→ 启用的平台超级管理员（`kind=super_admin`）→ 项目成员（`kind=member`）。提及校验本就放行 owner / project_admin / super_admin，本端点只补齐候选发现，避免普通成员依赖受管理员限制的 `GET /users`。
+
 ## Task Views / Data Manager
 
 ```http

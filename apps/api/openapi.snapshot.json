@@ -19738,6 +19738,47 @@
         "title": "Mention",
         "type": "object"
       },
+      "MentionCandidateOut": {
+        "description": "讨论区 @ 提及候选：项目成员 + 项目负责人 + 启用的平台超管。\n\n后端提及校验本就放行 owner / project_admin / super_admin，这里只补齐可发现性。",
+        "properties": {
+          "kind": {
+            "default": "member",
+            "enum": [
+              "member",
+              "owner",
+              "super_admin"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "user_email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Email"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          },
+          "user_name": {
+            "title": "User Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "user_name"
+        ],
+        "title": "MentionCandidateOut",
+        "type": "object"
+      },
       "ModelCapability": {
         "additionalProperties": true,
         "description": "v0.14.9 · 能力声明协议 v2 — 单个 model 条目 (一个 backend 暴露 N 个).\n\n由 services/ml_capabilities._normalize_model 规范化后存入\nBackendCapabilities.models; `task` 是条目边界 (决定输出几何与项目兼容性),\n`infra` 缺省继承 backend 默认, `modality` 为派生视图。",
@@ -54443,6 +54484,59 @@
           }
         ],
         "summary": "Remove Member",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/mention-candidates": {
+      "get": {
+        "description": "讨论区 @ 提及候选：项目负责人、启用的平台超管、项目成员，按 user_id 去重。\n\n顺序固定为 负责人 → 超管 → 成员，前端据此展示「项目负责人 / 超级管理员」标签。",
+        "operationId": "list_mention_candidates_api_v1_projects__project_id__mention_candidates_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MentionCandidateOut"
+                  },
+                  "title": "Response List Mention Candidates Api V1 Projects  Project Id  Mention Candidates Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List Mention Candidates",
         "tags": [
           "projects"
         ]
