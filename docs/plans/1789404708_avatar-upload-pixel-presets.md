@@ -352,7 +352,7 @@ apps/web/public/avatars/pixel/
 | 运维手册   | `docs-site/ops/deploy/docker-compose.md` 变量表加 `MINIO_AVATARS_BUCKET`；`docs-site/ops/deploy/lan-production.md` 的「七个桶」全部改为八个并加 `prod-avatars` 行（预建桶、备份范围、边缘代理说明同步）  |
 | 生成物登记 | `docs-site/dev/reference/generated-artifacts.md`：登记 `apps/web/public/avatars/pixel/**`（真值源 = 生成脚本 + manifest，Git 跟踪）                                                                      |
 | 变更日志   | `CHANGELOG.md` 的 `## [Unreleased] / ### Added` 增条目（用户可感知：可上传头像、可选用内置像素头像）                                                                                                     |
-| 文档截图   | 个人资料页新增头像行会影响 `docs-site/user-guide/images/settings/profile.png`，需重新截图并走 `pnpm docs:media:approve` 人工复核（`docs-site/maintainers/media-reviews.json`）                           |
+| 文档截图   | 个人资料页新增头像行会影响 `docs-site/user-guide/images/settings/profile.png`。已按 §2 环境重截并复核，但因截图清单要求完整矩阵运行而回退，转为后续工作（§14.4）                                         |
 
 ## 9. 分阶段实施
 
