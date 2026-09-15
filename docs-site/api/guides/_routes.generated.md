@@ -462,6 +462,7 @@
 | POST | `/{project_id}/cleanup-orphans` |
 | POST | `/{project_id}/transfer` |
 | GET | `/{project_id}/members` |
+| GET | `/{project_id}/mention-candidates` |
 | POST | `/{project_id}/members` |
 | DELETE | `/{project_id}/members/{member_id}` |
 | POST | `/{project_id}/exports/lidar:preflight` |
@@ -744,4 +745,4 @@
 
 ---
 
-_共 68 模块 / 427 路由_
+_共 68 模块 / 428 路由_

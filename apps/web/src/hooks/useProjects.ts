@@ -127,6 +127,16 @@ export function useProjectMembers(id: string) {
   });
 }
 
+/** 讨论区 @ 候选：负责人 + 超管 + 成员；仅需项目可见权限。
+ *  挂在 `["project", id]` 下，成员增删 / 负责人转移已有的项目失效会自动带上它。 */
+export function useProjectMentionCandidates(id: string) {
+  return useQuery({
+    queryKey: ["project", id, "mention-candidates"],
+    queryFn: () => projectsApi.mentionCandidates(id),
+    enabled: !!id,
+  });
+}
+
 export function useAddProjectMember(id: string) {
   const qc = useQueryClient();
   return useMutation({
