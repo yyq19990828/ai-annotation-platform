@@ -1945,8 +1945,11 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
           fitViewport();
           return;
         }
-        if (e.key === "0" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        // v0.24 · 0 让位给第十个类别键；实际尺寸改为 Shift+物理 Digit0
+        // （Shift+0 的产出字符随布局变化，故按 e.code 判定，与 Backquote 反向键同一先例）。
+        if (e.code === "Digit0" && e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
           e.preventDefault();
+          e.stopImmediatePropagation();
           setActualSize();
           return;
         }

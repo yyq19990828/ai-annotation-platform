@@ -110,6 +110,29 @@ describe("WorkbenchSettingsDialog", () => {
     expect(screen.getByText("没有找到相关设置")).toBeVisible();
   });
 
+  it("keeps the overlay blurred by default and unblurred on a live 3D canvas", () => {
+    const view = mount();
+    expect(screen.getByTestId("workbench-settings-overlay")).toHaveClass("backdrop-blur-overlay");
+    view.rerender(
+      <MemoryRouter>
+        <WorkbenchSettingsDialog open onClose={vi.fn()} backdropBlur={false} />
+      </MemoryRouter>,
+    );
+    const overlay = screen.getByTestId("workbench-settings-overlay");
+    expect(overlay).not.toHaveClass("backdrop-blur-overlay");
+    expect(overlay).toHaveClass("bg-black/25");
+  });
+
+  it("highlights matched terms and keeps section legends above field labels", async () => {
+    mount();
+    const user = userEvent.setup();
+    const legend = document.querySelector('[data-slot="field-legend"]');
+    expect(legend).toHaveAttribute("data-variant", "legend");
+    expect(legend?.className).toContain("data-[variant=legend]:text-md");
+    await user.type(screen.getByRole("textbox", { name: "搜索设置" }), "Gamma");
+    expect(screen.getAllByText("Gamma", { selector: "mark" }).length).toBeGreaterThan(0);
+  });
+
   it("writes every local experiment and both special settings without a modality filter", async () => {
     const onToggleHideOrphans = vi.fn();
     const onToggleSecondaryBar = vi.fn();

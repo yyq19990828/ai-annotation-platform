@@ -108,6 +108,8 @@ import { useAnnotationHistory, type VideoMaskFrameState } from "./useAnnotationH
 import { useRecentClasses } from "./useRecentClasses";
 import { useSessionStats } from "./useSessionStats";
 import { useWorkbenchHotkeys } from "./useWorkbenchHotkeys";
+import { useWorkbenchShortcutPreferences } from "./useWorkbenchShortcutPreferences";
+import { bindingKeyLabels } from "./hotkeyBindings";
 import { isSamCandidateHotkeyBlocked } from "./hotkeys";
 import { useCanvasDraftPersistence } from "./useCanvasDraftPersistence";
 import { useDiscussionDraftStore } from "./DiscussionDraftProvider";
@@ -6376,6 +6378,26 @@ export function useWorkbenchShellModel({
   };
   const discussionCanvasEditable = canEditDiscussionCanvas();
 
+  // Increment B · 账号级快捷键偏好单一读写所有方（写入在面板关闭后仍存活）。
+  const shortcutPrefs = useWorkbenchShortcutPreferences();
+
+  // 工具栏角标 / tooltip 的生效组合（仅可编辑工具命令；停用命令角标清空）。
+  const toolHotkeyHints = useMemo(() => {
+    const out: Record<string, { label: string; alt?: string } | null> = {};
+    for (const [id, state] of shortcutPrefs.effective) {
+      if (!id.startsWith("image.tool.") && !id.startsWith("video.tool.")) continue;
+      if (state.disabled || state.bindings.length === 0) {
+        out[id] = null;
+        continue;
+      }
+      out[id] = {
+        label: bindingKeyLabels(state.bindings[0]).join("+"),
+        alt: state.bindings.length > 1 ? bindingKeyLabels(state.bindings[1]).join("+") : undefined,
+      };
+    }
+    return out;
+  }, [shortcutPrefs.effective]);
+
   // v0.13.4 · 3D 工作台自管这些字母键(V/B 选/放、W/E/R gizmo 模式),交给它的本地
   // keydown 处理;否则全局 2D 热键会抢 —— 尤其 E=「提交质检」(dispatchKey → submit)会被
   // 误触发:用户按 E 想转 gizmo,却把任务直接提交了。Ctrl+方向(切题)/?/Esc 等全局键仍保留。
@@ -6444,13 +6466,15 @@ export function useWorkbenchShellModel({
     submitPolyline,
     updateMutation: { mutate: (vars) => updateAnnotationMut.mutate(vars) },
     taskId,
-    disabled: workbenchSettingsOpen,
+    disabled: workbenchSettingsOpen || showHotkeys,
     classPickerActive: !!samPendingGeom || !!videoSamPendingAccept,
     ignoredKeys: stageKind === "3d" ? threeDOwnedKeys : undefined,
+    stage: stageKind === "3d" ? "threed" : stageKind,
     videoMode: isVideoTask,
     requestVideoTool,
     samplingActive,
     videoControlsRef,
+    shortcutsEffective: shortcutPrefs.effective,
     isPromptSupported: routing.isPromptSupported,
     aiInteractiveEnabled: currentProject?.ai_interactive_enabled,
     maskToolDisabledReason: imageMaskSizeDisabledReason,
@@ -7518,6 +7542,7 @@ export function useWorkbenchShellModel({
       videoToolScope: s.videoToolScope,
       onSetVideoToolScope: requestVideoToolScope,
       isPromptSupported: routing.isPromptSupported,
+      toolHotkeys: toolHotkeyHints,
       toolDisabledReasons: {
         mask: imageMaskSizeDisabledReason,
         "smart-point":
@@ -8401,6 +8426,8 @@ export function useWorkbenchShellModel({
       open: showHotkeys,
       onClose: () => setShowHotkeys(false),
       attributeSchema: toolView.attributeSchema,
+      stageKind,
+      shortcuts: shortcutPrefs,
     },
     offlineQueue: {
       open: offlineDrawerOpen,

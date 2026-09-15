@@ -388,7 +388,7 @@ GET /api/v1/projects/{project_id}/batches/{batch_id}/export?format=coco&video_fr
 - `Ctrl+Delete` / `Ctrl+Backspace` 删除整条选中轨迹
 - `Tab` / `Shift+Tab` 循环轨迹
 - `Esc` 取消选择
-- `1-9` 有选中视频对象时改其 `class_name`；无选中时切 active class
+- `1-9`、`0` 有选中视频对象时改其 `class_name`；无选中时切 active class（按项目类别顺序取前十个）
 
 视频任务使用自己的 polygon / polyline 与交互式 AI 工具入口：智能点、智能框、Exemplar 在当前帧生成 `video_polygon`，Magic Box 生成 `video_bbox`；切帧会清理帧绑定的瞬态候选。图片专用 canvas 工具不会直接挂进视频 Stage。视频 AI 追踪配置面板与 job 审阅条由 `WorkbenchShell` 经 `stageOverlay` 渲染；配置面板以中间 stage 为局部定位容器，使拖动、缩放和边界夹取始终限定在画布内。左侧队列、顶部提交/审核、右侧属性面板、评论、任务锁和离线队列继续复用同一个 Workbench 外壳。
 

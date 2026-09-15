@@ -181,6 +181,28 @@ export interface WorkbenchPreferences {
   video: WorkbenchVideoPreferences;
   pointcloud: WorkbenchPointcloudPreferences;
   layout: WorkbenchLayoutPreferences;
+  /**
+   * Increment B · 快捷键覆盖（账号级，跟随账号跨项目）。
+   * 只由 useWorkbenchShortcutPreferences 的定向 PATCH 维护；其余 workbench 写路径
+   * （布局 flush 等）不得携带该子树，后端深合并保持存量值不动。
+   */
+  shortcuts?: WorkbenchShortcutPreferences;
+}
+
+/** Increment B · 单条结构化绑定：规范化 key + 显式修饰键（Mod = 平台主修饰键）。 */
+export interface ShortcutBindingPayload {
+  key: string;
+  modifiers: Array<"mod" | "alt" | "shift">;
+}
+
+/** commandId → 组合列表；null = 恢复默认，[] = 停用，缺失 = 用默认。 */
+export type ShortcutOverrideBucket = Record<string, ShortcutBindingPayload[] | null>;
+
+export interface WorkbenchShortcutPreferences {
+  schemaVersion: 1;
+  common?: ShortcutOverrideBucket;
+  image?: ShortcutOverrideBucket;
+  video?: ShortcutOverrideBucket;
 }
 
 export interface FloatingPanelState {
@@ -352,10 +374,15 @@ export type UserPreferencesPatch = Omit<
   Partial<UserPreferences>,
   "workbench" | "onboarding" | "namedPresetsRevision"
 > & {
-  workbench?: Omit<Partial<WorkbenchPreferences>, "layout"> & {
+  workbench?: Omit<Partial<WorkbenchPreferences>, "layout" | "shortcuts"> & {
     layout?: Omit<Partial<WorkbenchLayoutPreferences>, "workspace"> & {
       workspace?: WorkspacePreferencesPatch;
     };
+    /**
+     * 快捷键覆盖的定向 PATCH：只携带变更的命令条目，且刻意省略 schemaVersion
+     * （显式写 1 会经深合并把更新版本的存量树降级；缺省键由后端 exclude_unset 丢弃）。
+     */
+    shortcuts?: Partial<WorkbenchShortcutPreferences>;
   };
   onboarding?: OnboardingPreferencesPatch;
 };

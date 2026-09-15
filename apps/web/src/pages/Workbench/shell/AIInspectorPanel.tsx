@@ -43,6 +43,8 @@ interface AIInspectorPanelProps {
   /** 受控宽度（仅 open=true 生效；列宽 handle 实际由 WorkbenchLayout 渲染）。 */
   width: number;
   onResize: (w: number) => void;
+  /** Increment B · 视频工作台不启用属性快捷键区域（属性数字键仅图片流支持）。 */
+  isVideoTask?: boolean;
   /** v0.20.19 · 属性区折叠态 (受控, 走 workbench.layout 持久); 缺省回落组件内会话态。 */
   attrCollapsed?: boolean;
   onToggleAttrCollapsed?: () => void;
@@ -173,6 +175,7 @@ export function AIInspectorPanel({
   onFillAttribute,
   attrCollapsed: attrCollapsedProp,
   onToggleAttrCollapsed,
+  isVideoTask,
   aiSectionCollapsed = false,
   onToggleAiSection,
   manualSectionCollapsed = false,
@@ -409,6 +412,8 @@ export function AIInspectorPanel({
                 batchCount={multiCount > 1 ? multiCount : undefined}
                 readOnly={readOnly}
                 hideHeading
+                // Increment B · 图片选中标注的数字属性键改为显式区域 opt-in。
+                shortcutRegion={!isVideoTask}
               />
             </div>
           )}

@@ -236,6 +236,7 @@ import {
   SEED_FALLBACK_RANGE_M,
   boxGeometryFromPsr,
   frontCameraForward,
+  enlargedCameraNavigationDirection,
   geometryConvention,
   isPsrFieldBad,
   loadCameraSample,
@@ -2211,12 +2212,11 @@ export function ThreeDWorkbench({
       if (e.key === "Escape") {
         if (seedMode) setSeedMode(false);
         else setEnlargedRole(null);
-      } else if (e.key === "ArrowLeft") {
+      } else {
+        const direction = enlargedCameraNavigationDirection(e);
+        if (direction === null) return;
         e.preventDefault();
-        cycleEnlargedCamera(-1);
-      } else if (e.key === "ArrowRight") {
-        e.preventDefault();
-        cycleEnlargedCamera(1);
+        cycleEnlargedCamera(direction);
       }
     };
     window.addEventListener("keydown", onKey);
