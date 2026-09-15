@@ -1,4 +1,7 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import type { ComponentProps } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
 import { Topbar } from "./Topbar";
@@ -200,4 +203,65 @@ it("labels physical sides, exposes expanded state, and disables an empty side", 
   expect(right).toHaveAttribute("title", "展开画布右侧所有面板");
   fireEvent.click(right);
   expect(toggle).toHaveBeenCalledWith("right");
+});
+
+describe("Topbar · 通知入口", () => {
+  vi.mock("@/hooks/useNotifications", () => ({
+    useNotifications: () => ({ data: { pages: [{ items: [] }] }, hasNextPage: false }),
+    useUnreadCount: () => ({ data: { unread: 3 } }),
+    useMarkRead: () => ({ mutate: vi.fn() }),
+    useMarkAllRead: () => ({ mutate: vi.fn() }),
+    useClearReadNotifications: () => ({ mutate: vi.fn() }),
+    useDeleteNotification: () => ({ mutate: vi.fn() }),
+  }));
+
+  const baseProps = {
+    projectName: "测试",
+    projectDisplayId: "P-1",
+    task: undefined,
+    taskIdx: 0,
+    taskTotal: 1,
+    aiRunning: false,
+    isSubmitting: false,
+    onShowHotkeys: vi.fn(),
+    onPrev: vi.fn(),
+    onNext: vi.fn(),
+    onSubmit: vi.fn(),
+  };
+
+  function renderTopbar(props: Partial<ComponentProps<typeof Topbar>> = {}) {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <Topbar {...baseProps} {...props} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  }
+
+  it("缺省不渲染通知入口，传入回调后渲染带未读数的铃铛", async () => {
+    const { unmount } = renderTopbar();
+    expect(screen.queryByTestId("notifications-trigger")).not.toBeInTheDocument();
+    unmount();
+
+    renderTopbar({ onNotificationNavigate: vi.fn() });
+    const bell = await screen.findByRole("button", { name: "通知，3 条未读" });
+    expect(screen.getByTestId("notifications-unread-badge")).toHaveTextContent("3");
+    // 位于 Bug/主题/设置组之外，不随窄屏隐藏组折叠
+    expect(bell.parentElement).not.toHaveClass(/hidden/);
+  });
+
+  it("面板可打开关闭，Escape 后焦点回到触发器", async () => {
+    const onNotificationNavigate = vi.fn();
+    renderTopbar({ onNotificationNavigate });
+    fireEvent.click(await screen.findByRole("button", { name: "通知，3 条未读" }));
+    expect(await screen.findByRole("dialog", { name: "通知" })).toBeInTheDocument();
+    // 面板打开后画布守卫可识别（data-shell-popover 存在）
+    expect(document.querySelector('[data-shell-popover="notifications"]')).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "通知" }), { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "通知" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "通知，3 条未读" })).toHaveFocus();
+    expect(onNotificationNavigate).not.toHaveBeenCalled();
+  });
 });

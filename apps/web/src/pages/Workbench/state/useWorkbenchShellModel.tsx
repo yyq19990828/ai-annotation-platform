@@ -238,6 +238,7 @@ import {
   parseWorkbenchDiscussionRequest,
 } from "@/utils/workbenchNavigation";
 import { useDiscussionNavigation } from "./useDiscussionNavigation";
+import { planNotificationNavigation } from "./notificationWorkbenchNavigation";
 import { useAnnotationCommentCounts } from "@/hooks/useAnnotationCommentCounts";
 import {
   ensurePointCloudNavigationGeneration,
@@ -1482,6 +1483,45 @@ export function useWorkbenchShellModel({
       });
     },
     [setCurrentTaskId, setSelectedId, updateUrl],
+  );
+
+  // ── 通知入口导航：NotificationsPopover 的守卫回调 ─────────────────────
+  // 决策逻辑见 notificationWorkbenchNavigation（纯函数，含单测）：
+  // 同项目任务/批次切换复用现有准入（selectTask/handleSelectBatch），讨论
+  // URL 水合自带单次准入；跨项目或非工作台目标先过视频 + Mask 离开检查。
+  // 每次 await 之后重新校验账号所有权，迟到的结果不能影响后续会话。
+  const navigateFromNotification = useCallback(
+    (url: string) => {
+      const ownerId = useAuthStore.getState().user?.id;
+      if (!ownerId) return;
+      const isCurrentOwner = () => isCurrentAuthOwner(ownerId);
+      const decision = planNotificationNavigation(url, {
+        projectId,
+        mode,
+        selectedBatchId,
+      });
+      if (!decision) return;
+      if (decision.kind === "task") {
+        void selectTask(decision.taskId);
+        return;
+      }
+      if (decision.kind === "batch") {
+        handleSelectBatch(decision.batchId);
+        return;
+      }
+      if (decision.kind === "direct-url") {
+        navigate(url);
+        return;
+      }
+      void (async () => {
+        const videoAllowed = await videoLeaveGuardRef.current(() => isCurrentOwner());
+        if (!videoAllowed || !isCurrentOwner()) return;
+        const maskAllowed = await maskNavigationGuardRef.current();
+        if (!maskAllowed || !isCurrentOwner()) return;
+        navigate(url);
+      })();
+    },
+    [projectId, mode, selectedBatchId, selectTask, handleSelectBatch, navigate],
   );
 
   useEffect(() => {
@@ -7640,6 +7680,7 @@ export function useWorkbenchShellModel({
           ? (segmentId) => void switchVideoSegment(segmentId)
           : undefined,
       submitLabel: videoCollaborationEnabled ? "提交分段" : undefined,
+      onNotificationNavigate: navigateFromNotification,
     },
     stageHost: {
       common: {

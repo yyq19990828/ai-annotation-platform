@@ -80,7 +80,23 @@ ws://api.example.com/ws/notifications?token=eyJhbGciOi...
 { "type": "ping" }
 ```
 
-客户端**不需要**响应，只用来保活——防止反向代理（nginx 默认 60s `proxy_read_timeout`、AWS ALB 默认 60s idle）主动断连。前端 `useNotificationSocket` 收到 `type=="ping"` 时直接忽略，不触发 `invalidateQueries`（`useNotificationSocket.ts:38-39`）。
+客户端**不需要**响应，只用来保活——防止反向代理（nginx 默认 60s `proxy_read_timeout`、AWS ALB 默认 60s idle）主动断连。前端 `useNotificationSocket` 收到 `type=="ping"` 时直接忽略，不触发 `invalidateQueries`。
+
+#### 同步控制事件（`notifications.sync`）
+
+同一账号在另一会话完成已读 / 删除 / 清空或修改通知偏好后，服务端在**业务事务提交成功后**发布：
+
+```json
+{ "type": "notifications.sync", "reason": "read" | "deleted" | "preferences" }
+```
+
+客户端处理：`read` / `deleted` 只失效通知查询（`["notifications"]`）；`reason=preferences` 额外失效 `["notification-preferences", userId]`，并在新一轮偏好数据落地前抑制瞬时提醒。`notifications.sync` 永远不产生 toast，也绝不会由它创建通知或改变未读数。
+
+#### 连接生命周期与瞬时提醒
+
+`useNotificationSocket` 挂在应用根组件（`App.tsx`），主界面与全屏标注 / 审核工作台共用一条连接，路由切换不拆链；登出、替换账号或刷新 token 时由 hook 清理并重连。连接打开 / 重开都会先失效通知查询，补拉断线期间的持久化状态。
+
+业务消息除失效查询外，还按偏好决定是否在**可见标签页**弹出瞬时提醒：该类型的接收（`in_app`）与弹出（`toast`）都开启才弹，1 秒内的多条重要事件合并为一条 toast，按通知 ID 去重（最多 200 条）。偏好查询不可用或刚被 `reason=preferences` 标记失效时抑制提醒，只更新计数与列表。
 
 ### 2.3 可靠性 — 断线兜底
 
@@ -93,9 +109,12 @@ WS 不保证 at-least-once，当前也没有 transactional outbox。`Notificatio
 
 这产生两个非事务窗口：publish 失败而事务提交时，在线提示缺失但 REST 能补齐；publish 已成功而事务后续回滚时，客户端可能短暂收到数据库中不存在的提示。因此客户端应把 push 视为「可以刷新了」，再通过 `GET /api/v1/notifications` 读已提交真值：
 
-- 默认前端 30s 一次轮询（即使 WS 在线）
+- 默认前端 30s 一次轮询（即使 WS 在线），回前台或网络重连时立即补拉一次。
 - 收到业务 push 时 `invalidateQueries(["notifications"])`。
-- 当前通知 socket 重连打开时只重置退避，没有额外的 on-open invalidate；30s REST 轮询仍是断线补齐保障。
+- 通知 socket 连接打开 / 重开时也会失效通知查询；30s REST 轮询仍是断线补齐保障。
+
+读 / 删除 / 清空与偏好修改不经过这条快路径：它们的 `notifications.sync` 事件
+由 API handler 在 `db.commit()` 成功后发布（见上），不再有提交前发布的窗口。
 
 如果新业务要求「只在提交后推送」或可重试投递，需引入 after-commit hook / transactional outbox，不能把现有 publish 当作这类保证。
 

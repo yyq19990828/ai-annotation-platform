@@ -142,3 +142,51 @@ it.each([
     expect(check).toHaveBeenCalledOnce();
   },
 );
+
+describe("shell notification popover interaction boundary", () => {
+  it("panel events are fully shielded while open (presence means open)", () => {
+    const panel = document.createElement("div");
+    panel.dataset.shellPopover = "notifications";
+    const button = document.createElement("button");
+    panel.append(button);
+    document.body.append(panel);
+    const check = vi.fn((event: Event) => {
+      expect(isWorkbenchInteractionBlocked(event)).toBe(true);
+      expect(event.defaultPrevented).toBe(false);
+    });
+    button.addEventListener("keydown", check);
+    button.addEventListener("pointerdown", check);
+    button.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    button.dispatchEvent(new KeyboardEvent("keydown", { key: "b", bubbles: true }));
+    button.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    expect(check).toHaveBeenCalledTimes(3);
+  });
+
+  it("background canvas events stay blocked while the panel is mounted, then resume", () => {
+    const panel = document.createElement("div");
+    panel.dataset.shellPopover = "notifications";
+    document.body.append(panel);
+    const event = new KeyboardEvent("keydown", { key: "Delete" });
+    expect(isWorkbenchInteractionBlocked(event)).toBe(true);
+    panel.remove();
+    expect(isWorkbenchInteractionBlocked(event)).toBe(false);
+  });
+
+  it.each([
+    ["Enter", true],
+    [" ", true],
+    ["ArrowDown", true],
+    ["b", false],
+    ["Delete", false],
+  ])("notification trigger handles %s without swallowing canvas shortcuts", (key, blocked) => {
+    const trigger = document.createElement("button");
+    trigger.dataset.shellPopoverTrigger = "notifications";
+    document.body.append(trigger);
+    const check = vi.fn((event: Event) =>
+      expect(isWorkbenchInteractionBlocked(event)).toBe(blocked),
+    );
+    trigger.addEventListener("keydown", check);
+    trigger.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+    expect(check).toHaveBeenCalledOnce();
+  });
+});

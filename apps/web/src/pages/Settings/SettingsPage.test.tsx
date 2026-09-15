@@ -112,17 +112,30 @@ vi.mock("@/api/notifications", () => ({
   notificationsApi: {
     getPreferences: vi.fn().mockResolvedValue({
       items: [
-        { type: "batch.rejected", in_app: true },
-        { type: "bug_report.status_changed", in_app: false },
-        { type: "feedback.reply_created", in_app: true },
-        { type: "feedback.status_changed", in_app: true },
-        { type: "feedback.comment_mentioned", in_app: true },
-        { type: "annotation.comment_mentioned", in_app: true },
-        { type: "job.completed", in_app: true },
+        { type: "batch.rejected", in_app: true, email: false, toast: true },
+        { type: "bug_report.status_changed", in_app: false, email: false, toast: false },
+        { type: "feedback.reply_created", in_app: true, email: false, toast: true },
+        { type: "feedback.status_changed", in_app: true, email: false, toast: false },
+        { type: "feedback.comment_mentioned", in_app: true, email: false, toast: true },
+        { type: "annotation.comment_mentioned", in_app: true, email: false, toast: true },
+        { type: "job.completed", in_app: true, email: false, toast: false },
       ],
     }),
     updatePreference: vi.fn().mockResolvedValue(undefined),
   },
+}));
+
+// --- 通知偏好共享面板（真实组件在 NotificationPreferencesPanel.test 覆盖）---
+const preferencesMock = vi.hoisted(() => ({
+  data: null as { items: { type: string; in_app: boolean; email: false; toast: boolean }[] } | null,
+  isPending: false,
+  isError: false,
+  isSuccess: true,
+  refetch: vi.fn(),
+}));
+vi.mock("@/hooks/useNotificationPreferences", () => ({
+  useNotificationPreferences: () => preferencesMock,
+  useUpdateNotificationPreference: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 // --- toast ---
@@ -272,15 +285,30 @@ describe("SettingsPage", () => {
     expect(screen.queryAllByTestId(/^setting-field-experiment\./)).toHaveLength(0);
   });
 
-  it("点击「通知偏好」tab → 异步加载后显示通知类型", async () => {
+  it("点击「通知偏好」tab → 显示共享偏好面板（每类接收+弹出两开关）", async () => {
+    preferencesMock.data = {
+      items: [
+        { type: "batch.rejected", in_app: true, email: false, toast: true },
+        { type: "bug_report.status_changed", in_app: false, email: false, toast: false },
+        { type: "feedback.reply_created", in_app: true, email: false, toast: true },
+        { type: "annotation.comment_mentioned", in_app: true, email: false, toast: true },
+        { type: "job.completed", in_app: true, email: false, toast: false },
+      ],
+    };
     renderUI();
     fireEvent.click(screen.getByRole("button", { name: /通知偏好/ }));
-    await waitFor(() => expect(screen.getByText("batch.rejected")).toBeInTheDocument());
+    await waitFor(() =>
+      expect(screen.getByTestId("notification-preferences-panel")).toBeInTheDocument(),
+    );
+    expect(screen.getByText("批次被驳回")).toBeInTheDocument();
     expect(screen.getByText("问题收到新回复")).toBeInTheDocument();
-    expect(screen.getByText("问题状态变更")).toBeInTheDocument();
-    expect(screen.getByText("任务留言提到了你")).toBeInTheDocument();
     expect(screen.getByText("标注评论提到了你")).toBeInTheDocument();
     expect(screen.getByText("后台任务完成")).toBeInTheDocument();
+    // 两开关 + 接收关闭时弹出禁用
+    expect(screen.getByRole("checkbox", { name: "批次被驳回 接收通知" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "批次被驳回 弹出提示" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "BUG 反馈：状态变更 接收通知" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "BUG 反馈：状态变更 弹出提示" })).toBeDisabled();
   });
 
   it("点击「我的反馈」tab → 显示空态提示", async () => {

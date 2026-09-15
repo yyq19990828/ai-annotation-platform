@@ -145,7 +145,14 @@ class NotificationService:
                     e,
                 )
 
-    async def _publish_sync(self, user_id: uuid.UUID, *, reason: str) -> None:
+    async def publish_sync(self, user_id: uuid.UUID, *, reason: str) -> None:
+        """Best-effort ``notifications.sync`` publication for a committed change.
+
+        Handlers call this only after their business transaction committed and
+        only when the operation changed rows, so another session that receives
+        the event always observes committed state. Publication failures are
+        logged and never turn the already committed request into a failure.
+        """
         try:
             await _publish(
                 user_id=user_id,
@@ -192,6 +199,7 @@ class NotificationService:
         return int((await self.db.execute(q)).scalar() or 0)
 
     async def mark_read(self, user_id: uuid.UUID, notification_id: uuid.UUID) -> bool:
+        """Mark one row read. The handler publishes ``reason=read`` after commit."""
         result = await self.db.execute(
             update(Notification)
             .where(
@@ -201,12 +209,10 @@ class NotificationService:
             )
             .values(read_at=datetime.now(timezone.utc))
         )
-        updated = (result.rowcount or 0) > 0
-        if updated:
-            await self._publish_sync(user_id, reason="read")
-        return updated
+        return (result.rowcount or 0) > 0
 
     async def mark_all_read(self, user_id: uuid.UUID) -> int:
+        """Mark all rows read. The handler publishes ``reason=read`` after commit."""
         result = await self.db.execute(
             update(Notification)
             .where(
@@ -215,36 +221,29 @@ class NotificationService:
             )
             .values(read_at=datetime.now(timezone.utc))
         )
-        updated = int(result.rowcount or 0)
-        if updated > 0:
-            await self._publish_sync(user_id, reason="read")
-        return updated
+        return int(result.rowcount or 0)
 
     async def delete_for_user(
         self, user_id: uuid.UUID, notification_id: uuid.UUID
     ) -> bool:
+        """Delete one row. The handler publishes ``reason=deleted`` after commit."""
         result = await self.db.execute(
             delete(Notification).where(
                 Notification.id == notification_id,
                 Notification.user_id == user_id,
             )
         )
-        deleted = (result.rowcount or 0) > 0
-        if deleted:
-            await self._publish_sync(user_id, reason="deleted")
-        return deleted
+        return (result.rowcount or 0) > 0
 
     async def clear_read(self, user_id: uuid.UUID) -> int:
+        """Delete all read rows. The handler publishes ``reason=deleted`` after commit."""
         result = await self.db.execute(
             delete(Notification).where(
                 Notification.user_id == user_id,
                 Notification.read_at.is_not(None),
             )
         )
-        deleted = int(result.rowcount or 0)
-        if deleted > 0:
-            await self._publish_sync(user_id, reason="deleted")
-        return deleted
+        return int(result.rowcount or 0)
 
 
 async def _publish(*, user_id: uuid.UUID, message: dict) -> None:

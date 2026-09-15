@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   read: vi.fn(),
   delete: vi.fn(),
   notifications: [] as NotificationItem[],
+  unread: 1 as number | null,
 }));
 vi.mock("@/api/tasks", () => ({ tasksApi: { get: mocks.task } }));
 vi.mock("@/api/batches", () => ({ batchesApi: { get: mocks.batch } }));
@@ -31,7 +32,10 @@ vi.mock("@/hooks/useNotifications", () => ({
     data: { pages: [{ items: mocks.notifications }] },
     hasNextPage: false,
   }),
-  useUnreadCount: () => ({ data: { unread: 1 } }),
+  useUnreadCount: () => ({
+    data: mocks.unread === null ? undefined : { unread: mocks.unread },
+    isError: mocks.unread === null,
+  }),
   useMarkRead: () => ({ mutate: mocks.read }),
   useMarkAllRead: () => ({ mutate: vi.fn() }),
   useClearReadNotifications: () => ({ mutate: vi.fn() }),
@@ -115,19 +119,19 @@ function Location() {
     </output>
   );
 }
-function renderUI() {
+function renderUI(navigateExternal?: (to: string) => void) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={["/dashboard"]}>
         <Location />
-        <NotificationsPopover />
+        <NotificationsPopover navigate={navigateExternal} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
 }
 async function clickTaskNotification() {
-  fireEvent.click(screen.getByTitle("通知"));
+  fireEvent.click(screen.getByTitle("通知，1 条未读"));
   fireEvent.click(await screen.findByRole("button", { name: "打开通知：退回了任务 T-1" }));
 }
 
@@ -135,6 +139,7 @@ describe("通知直达当前目标", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.notifications = [notification];
+    mocks.unread = 1;
     useAuthStore.getState().setAuth("test-token", { id: "u1", role: "annotator" } as MeResponse);
     mocks.task.mockResolvedValue({
       id: "t1",
@@ -150,7 +155,7 @@ describe("通知直达当前目标", () => {
 
   it("一次点击按服务端当前任务项目导航，包含具体任务、批次与返回入口", async () => {
     renderUI();
-    fireEvent.click(screen.getByTitle("通知"));
+    fireEvent.click(screen.getByTitle("通知，1 条未读"));
     expect(await screen.findByText("仅显示已加载通知")).toBeInTheDocument();
     expect(await screen.findByText('"请修正边框"')).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "打开通知：退回了任务 T-1" }));
@@ -165,7 +170,7 @@ describe("通知直达当前目标", () => {
 
   it("deletes a notification without opening or marking its target read", async () => {
     renderUI();
-    fireEvent.click(screen.getByTitle("通知"));
+    fireEvent.click(screen.getByTitle("通知，1 条未读"));
     const open = await screen.findByRole("button", { name: "打开通知：退回了任务 T-1" });
     const remove = screen.getByRole("button", { name: "删除通知" });
     expect(open.contains(remove)).toBe(false);
@@ -237,7 +242,7 @@ describe("通知直达当前目标", () => {
       completed_at: null,
     });
     renderUI();
-    fireEvent.click(screen.getByTitle("通知"));
+    fireEvent.click(screen.getByTitle("通知，1 条未读"));
     fireEvent.click(await screen.findByRole("button", { name: "打开通知：数据集导入完成" }));
     expect(await screen.findByText("导入 3 / 跳过 0 / 错误 0")).toBeInTheDocument();
     expect(mocks.job).toHaveBeenCalledWith("j1");
@@ -254,7 +259,7 @@ describe("通知直达当前目标", () => {
       target: { kind: "issue", issueId: discussionIds.issue, replyId: discussionIds.reply },
     });
     renderUI();
-    fireEvent.click(screen.getByTitle("通知"));
+    fireEvent.click(screen.getByTitle("通知，1 条未读"));
     fireEvent.click(await screen.findByRole("button", { name: "打开通知：回复了问题" }));
     await waitFor(() =>
       expect(screen.getByTestId("location")).toHaveTextContent(
@@ -284,7 +289,7 @@ describe("通知直达当前目标", () => {
       },
     });
     renderUI();
-    fireEvent.click(screen.getByTitle("通知"));
+    fireEvent.click(screen.getByTitle("通知，1 条未读"));
     fireEvent.click(await screen.findByRole("button", { name: "打开通知：在标注评论中提到了你" }));
     await waitFor(() =>
       expect(screen.getByTestId("location")).toHaveTextContent(
@@ -302,7 +307,7 @@ describe("通知直达当前目标", () => {
       target: { kind: "task_comment", commentId: discussionIds.taskComment },
     });
     renderUI();
-    fireEvent.click(screen.getByTitle("通知"));
+    fireEvent.click(screen.getByTitle("通知，1 条未读"));
     fireEvent.click(await screen.findByRole("button", { name: "打开通知：在任务留言中提到了你" }));
     await waitFor(() =>
       expect(screen.getByTestId("location")).toHaveTextContent(
@@ -335,11 +340,11 @@ describe("通知直达当前目标", () => {
       });
     });
     renderUI();
-    fireEvent.click(screen.getByTitle("通知"));
+    fireEvent.click(screen.getByTitle("通知，1 条未读"));
     fireEvent.click(await screen.findByRole("button", { name: "打开通知：回复了问题" }));
     expect(await screen.findByRole("status")).toHaveTextContent("正在核对任务和访问权限");
 
-    fireEvent.click(screen.getByTitle("通知"));
+    fireEvent.click(screen.getByTitle("通知，1 条未读"));
     fireEvent.click(await screen.findByRole("button", { name: "打开通知：在标注评论中提到了你" }));
     await waitFor(() =>
       expect(screen.getByTestId("location")).toHaveTextContent(
@@ -348,5 +353,92 @@ describe("通知直达当前目标", () => {
     );
     expect(firstSignal.aborted).toBe(true);
     finishFirst();
+  });
+});
+
+describe("通知入口角标与工作台导航回调", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.notifications = [notification];
+    mocks.unread = 1;
+    useAuthStore.getState().setAuth("test-token", { id: "u1", role: "annotator" } as MeResponse);
+    mocks.task.mockResolvedValue({
+      id: "t1",
+      project_id: "p1",
+      batch_id: "b1",
+      status: "rejected",
+    });
+  });
+  afterEach(() => {
+    act(() => useAuthStore.getState().logout());
+  });
+
+  it.each([
+    [0, null, "通知，0 条未读"],
+    [1, "1", "通知，1 条未读"],
+    [99, "99", "通知，99 条未读"],
+    [100, "99+", "通知，100 条未读"],
+    [128, "99+", "通知，128 条未读"],
+  ])("未读 %i 显示 %s 且暴露精确标签", (unread, badge, label) => {
+    mocks.unread = unread;
+    renderUI();
+    const trigger = screen.getByRole("button", { name: label });
+    expect(trigger).toHaveAttribute("title", label);
+    const badgeNode = screen.queryByTestId("notifications-unread-badge");
+    if (badge === null) {
+      expect(badgeNode).not.toBeInTheDocument();
+    } else {
+      expect(badgeNode).toHaveTextContent(badge);
+    }
+  });
+
+  it("初始加载失败不显示确认的 0，而提示未读数不可用", () => {
+    mocks.unread = null;
+    renderUI();
+    const trigger = screen.getByRole("button", { name: "通知，未读数暂不可用" });
+    expect(screen.queryByTestId("notifications-unread-badge")).not.toBeInTheDocument();
+    expect(trigger).toHaveAttribute("title", "通知，未读数暂不可用");
+  });
+
+  it("提供导航回调时，任务直达 URL 交给回调而不是路由", async () => {
+    const navigateExternal = vi.fn();
+    renderUI(navigateExternal);
+    fireEvent.click(screen.getByTitle("通知，1 条未读"));
+    fireEvent.click(await screen.findByRole("button", { name: "打开通知：退回了任务 T-1" }));
+    await waitFor(() => expect(navigateExternal).toHaveBeenCalledTimes(1));
+    expect(navigateExternal).toHaveBeenCalledWith(
+      "/projects/p1/annotate?batch=b1&task=t1&returnTo=%2Fdashboard",
+    );
+    // 回调路径不改路由
+    expect(screen.getByTestId("location")).toHaveTextContent("/dashboard");
+  });
+
+  it("管理员打开 Bug 反馈通知时，/bugs 也交给导航回调", async () => {
+    useAuthStore.getState().setAuth("t", { id: "a1", role: "super_admin" } as MeResponse);
+    mocks.notifications = [
+      {
+        ...notification,
+        type: "bug_report.commented",
+        target_type: "bug_report",
+        target_id: "b-1",
+        payload: {},
+      },
+    ];
+    const navigateExternal = vi.fn();
+    renderUI(navigateExternal);
+    fireEvent.click(screen.getByTitle("通知，1 条未读"));
+    fireEvent.click(await screen.findByRole("button", { name: "打开通知：评论了反馈" }));
+    expect(navigateExternal).toHaveBeenCalledWith("/bugs");
+    expect(screen.getByTestId("location")).toHaveTextContent("/dashboard");
+  });
+
+  it("错误恢复的「查看当前任务」链接也走导航回调", async () => {
+    mocks.task.mockRejectedValue(new ApiError(503, "down"));
+    const navigateExternal = vi.fn();
+    renderUI(navigateExternal);
+    fireEvent.click(screen.getByTitle("通知，1 条未读"));
+    fireEvent.click(await screen.findByRole("button", { name: "打开通知：退回了任务 T-1" }));
+    fireEvent.click(await screen.findByRole("button", { name: "查看当前任务" }));
+    expect(navigateExternal).toHaveBeenCalledWith("/annotate");
   });
 });

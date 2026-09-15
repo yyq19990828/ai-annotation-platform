@@ -158,7 +158,6 @@ function AppShell() {
     initBugReportCapture();
   }, []);
 
-  useNotificationSocket();
   useHeartbeat();
   // v0.9.11 PerfHud · 全局快捷键 Ctrl+Shift+P 切换性能监控浮窗 (super_admin/project_admin only).
   // 权限 gating 在 PerfHud 组件内做; 此 listener 只负责 toggle store.
@@ -276,6 +275,9 @@ function MobileWorkbenchBlock() {
 
 export function App() {
   const discussionSession = useAuthenticatedDiscussionSession();
+  // v0.9 · 通知 WS 挂在 App 生命周期：主界面与全屏标注/审核工作台共用一条
+  // 个人通知连接，路由切换不拆链；登出/换账号由 hook 清理（token/userId 依赖）。
+  useNotificationSocket();
   return (
     <DiscussionDraftProvider {...discussionSession}>
       <Routes>

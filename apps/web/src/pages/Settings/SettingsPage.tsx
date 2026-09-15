@@ -14,7 +14,7 @@ import {
 } from "@/hooks/useMe";
 import { ROLE_LABELS } from "@/constants/roles";
 import { bugReportsApi, type BugReportResponse } from "@/api/bug-reports";
-import { notificationsApi, type NotificationPreferenceItem } from "@/api/notifications";
+import { NotificationPreferencesPanel } from "@/components/notifications/NotificationPreferencesPanel";
 import { useWorkbenchConfig } from "@/pages/Workbench/state/useWorkbenchConfig";
 import { SettingsFieldControl } from "@/pages/Workbench/components/SettingsFieldControl";
 import { ApiKeysPanel } from "@/components/users/ApiKeysPanel";
@@ -700,103 +700,12 @@ function severityClassName(severity: string) {
   }
 }
 
-const NOTIF_TYPE_LABELS: Record<string, string> = {
-  "bug_report.commented": "BUG 反馈：有新评论",
-  "bug_report.reopened": "BUG 反馈：被重新打开",
-  "bug_report.status_changed": "BUG 反馈：状态变更",
-  "feedback.reply_created": "问题收到新回复",
-  "feedback.status_changed": "问题状态变更",
-  "feedback.comment_mentioned": "任务留言提到了你",
-  "annotation.comment_mentioned": "标注评论提到了你",
-  "batch.rejected": "批次被驳回",
-  "batch.review_reopened": "批次重新进入审核",
-  "batch.admin_locked": "批次被管理员锁定",
-  "batch.admin_unlocked": "批次解除管理员锁定",
-  "batch.unarchived": "批次取消归档",
-  "task.approved": "任务审核通过",
-  "task.rejected": "任务被退回",
-  "task.reopened": "任务被重新打开",
-  "failed_prediction.retry.started": "失败预测：开始重试",
-  "failed_prediction.retry.succeeded": "失败预测：重试成功",
-  "failed_prediction.retry.failed": "失败预测：重试失败",
-  "export.ready": "导出完成",
-  "export.failed": "导出失败",
-  "job.completed": "后台任务完成",
-  "job.failed": "后台任务失败",
-  "job.cancelled": "后台任务取消",
-  "user.deactivation_requested": "账号注销申请",
-  "user.deactivation_completed": "账号注销完成",
-};
-
 function NotificationPreferencesSection() {
-  const pushToast = useToastStore((s) => s.push);
-  const [items, setItems] = useState<NotificationPreferenceItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [savingType, setSavingType] = useState<string | null>(null);
-
-  useEffect(() => {
-    let mounted = true;
-    notificationsApi
-      .getPreferences()
-      .then((r) => {
-        if (mounted) setItems(r.items);
-      })
-      .catch(() => {
-        if (mounted) pushToast({ msg: "加载偏好失败", kind: "warning" });
-      })
-      .finally(() => {
-        if (mounted) setLoading(false);
-      });
-    return () => {
-      mounted = false;
-    };
-  }, [pushToast]);
-
-  const toggle = async (type: string, next: boolean) => {
-    setSavingType(type);
-    setItems((prev) => prev.map((it) => (it.type === type ? { ...it, in_app: next } : it)));
-    try {
-      await notificationsApi.updatePreference(type, next);
-    } catch (e) {
-      // 回滚 UI
-      setItems((prev) => prev.map((it) => (it.type === type ? { ...it, in_app: !next } : it)));
-      pushToast({ msg: "保存失败", sub: (e as Error).message, kind: "warning" });
-    } finally {
-      setSavingType(null);
-    }
-  };
-
   return (
     <Card>
       <SectionHeader title="通知偏好" />
       <div className="px-4 pb-4 pt-3">
-        <p className="mb-2.5 text-xs text-muted-foreground">
-          关闭某类通知后，新事件不会进入站内通知中心；已存档通知不受影响。邮件 digest 暂未开启。
-        </p>
-        {loading && <div className="text-xs text-muted-foreground">加载中…</div>}
-        {!loading &&
-          items.map((it) => (
-            <div
-              key={it.type}
-              className="flex items-center justify-between border-b border-border py-2.5 text-sm"
-            >
-              <div>
-                <div className="font-medium">{NOTIF_TYPE_LABELS[it.type] ?? it.type}</div>
-                <div className="mono text-xs text-muted-foreground">{it.type}</div>
-              </div>
-              <label className="inline-flex cursor-pointer items-center gap-1.5">
-                <input
-                  type="checkbox"
-                  checked={it.in_app}
-                  disabled={savingType === it.type}
-                  onChange={(e) => toggle(it.type, e.target.checked)}
-                />
-                <span className="text-xs text-muted-foreground">
-                  站内通知 {it.in_app ? "已开启" : "已静音"}
-                </span>
-              </label>
-            </div>
-          ))}
+        <NotificationPreferencesPanel />
       </div>
     </Card>
   );
