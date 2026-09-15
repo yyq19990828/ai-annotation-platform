@@ -98,8 +98,6 @@ export function useTransferProject(id: string) {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["projects"] });
       qc.invalidateQueries({ queryKey: ["project", id] });
-      // 负责人是 @ 提及候选之一，转移后必须重取候选。
-      qc.invalidateQueries({ queryKey: ["project-mention-candidates", id] });
     },
   });
 }
@@ -129,10 +127,11 @@ export function useProjectMembers(id: string) {
   });
 }
 
-/** 讨论区 @ 候选：负责人 + 超管 + 成员；仅需项目可见权限。 */
+/** 讨论区 @ 候选：负责人 + 超管 + 成员；仅需项目可见权限。
+ *  挂在 `["project", id]` 下，成员增删 / 负责人转移已有的项目失效会自动带上它。 */
 export function useProjectMentionCandidates(id: string) {
   return useQuery({
-    queryKey: ["project-mention-candidates", id],
+    queryKey: ["project", id, "mention-candidates"],
     queryFn: () => projectsApi.mentionCandidates(id),
     enabled: !!id,
   });
@@ -147,7 +146,6 @@ export function useAddProjectMember(id: string) {
       qc.invalidateQueries({ queryKey: ["project-members", id] });
       qc.invalidateQueries({ queryKey: ["project", id] });
       qc.invalidateQueries({ queryKey: ["projects"] });
-      qc.invalidateQueries({ queryKey: ["project-mention-candidates", id] });
     },
   });
 }
@@ -160,7 +158,6 @@ export function useRemoveProjectMember(id: string) {
       qc.invalidateQueries({ queryKey: ["project-members", id] });
       qc.invalidateQueries({ queryKey: ["project", id] });
       qc.invalidateQueries({ queryKey: ["projects"] });
-      qc.invalidateQueries({ queryKey: ["project-mention-candidates", id] });
     },
   });
 }
