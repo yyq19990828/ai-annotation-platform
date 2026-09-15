@@ -3,7 +3,7 @@
 
 import { useState } from "react";
 import { clsx } from "clsx";
-import { Avatar } from "@/components/ui/Avatar";
+import { UserAvatar } from "@/components/ui/UserAvatar";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -96,7 +96,7 @@ export function Step6Members({
                 <span className={clsx(styles.checkMark, checked && styles.checkMarkChecked)}>
                   {checked && <Icon name="check" size={10} />}
                 </span>
-                <Avatar initial={(u.name || u.email).slice(0, 1).toUpperCase()} size="sm" />
+                <UserAvatar user={u} size="sm" />
                 <span className={styles.choiceBody}>
                   <div className={styles.choiceTitle}>{u.name || u.email}</div>
                   <div className={styles.choiceMeta}>{u.email}</div>

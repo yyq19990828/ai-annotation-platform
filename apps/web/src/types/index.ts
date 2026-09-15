@@ -66,6 +66,8 @@ export interface UserBrief {
   email: string;
   role: string | null;
   avatar_initial: string;
+  /** 头像引用(`preset:<slug>` / `upload:<token>`);空 = 前端回退 avatar_initial。 */
+  avatar_ref?: string | null;
 }
 
 export interface TaskResponse {

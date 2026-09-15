@@ -167,7 +167,7 @@ pnpm dev:web        # http://localhost:3000
 pnpm dev:worktree   # 独立数据库/Redis/bucket，自动选择端口并配置代理
 ```
 
-`dev:worktree` 为每个工作树的 `dev/test/e2e` 模式管理独立数据库、Redis、七个 bucket
+`dev:worktree` 为每个工作树的 `dev/test/e2e` 模式管理独立数据库、Redis、八个 bucket
 及本地文件；共享本机 PostgreSQL/MinIO 实例，不修改共享数据库。默认从 API `8100`
 和 Web `3100` 寻找空闲端口，可用 `--with-worker` 启动本工作树的后台任务消费者。
 `doctor` 诊断、`stop` 停止、带精确确认值的 `reset/destroy` 重建或清理环境。

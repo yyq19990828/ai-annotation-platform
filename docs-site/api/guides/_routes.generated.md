@@ -140,6 +140,12 @@
 | POST | `/refresh` |
 | POST | `/logout-all` |
 
+## `avatars.py`
+
+| Method | Path |
+|---|---|
+| GET | `/{token}` |
+
 ## `batches.py`
 
 | Method | Path |
@@ -336,6 +342,9 @@
 | Method | Path |
 |---|---|
 | POST | `/heartbeat` |
+| POST | `/avatar` |
+| PATCH | `/avatar` |
+| DELETE | `/avatar` |
 | POST | `/password` |
 | POST | `/deactivation-request` |
 | GET | `/preferences` |
@@ -736,4 +745,4 @@
 
 ---
 
-_共 67 模块 / 424 路由_
+_共 68 模块 / 428 路由_

@@ -5,7 +5,7 @@ import { Icon, type IconName } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
-import { Avatar } from "@/components/ui/Avatar";
+import { UserAvatar } from "@/components/ui/UserAvatar";
 import { StatCard } from "@/components/ui/StatCard";
 import { SearchInput } from "@/components/ui/SearchInput";
 import { ProgressBar } from "@/components/ui/ProgressBar";
@@ -73,7 +73,6 @@ function AdminProjectRow({
   );
   const due = p.due_date ?? "—";
   const updated = p.updated_at ? new Date(p.updated_at).toLocaleDateString("zh-CN") : "—";
-  const ownerInitial = p.owner_name?.slice(0, 1) ?? "?";
 
   return (
     <tr>
@@ -96,7 +95,7 @@ function AdminProjectRow({
       </td>
       <td className={TD_CLASS}>
         <div className="flex items-center gap-2">
-          <Avatar initial={ownerInitial} size="sm" />
+          <UserAvatar size="sm" user={{ name: p.owner_name, avatar_ref: p.owner_avatar_ref }} />
           <div>
             <div className="whitespace-nowrap text-sm">{p.owner_name ?? "—"}</div>
             <div className="text-xs text-muted-foreground">

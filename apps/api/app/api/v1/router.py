@@ -8,6 +8,7 @@ from app.api.v1 import (
     api_keys,
     async_jobs,
     auth,
+    avatars,
     internal,
     audit_logs,
     annotation_comments,
@@ -56,6 +57,8 @@ api_router.include_router(
 )
 api_router.include_router(me.router, prefix="/auth/me", tags=["me"])
 api_router.include_router(api_keys.router, prefix="/me/api-keys", tags=["api-keys"])
+# 头像图片读取。免鉴权(浏览器 <img> 不带 Authorization 头),详见 avatars.py 模块注释。
+api_router.include_router(avatars.router, prefix="/avatars", tags=["avatars"])
 api_router.include_router(
     admin_ml_integrations.router,
     prefix="/admin/ml-integrations",

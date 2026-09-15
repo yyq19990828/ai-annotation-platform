@@ -245,6 +245,7 @@ class ProjectOut(BaseModel):
     data_type: str = "image"
     owner_id: UUID
     owner_name: str | None = None
+    owner_avatar_ref: str | None = None
     member_count: int = 0
     status: str
     ai_enabled: bool
@@ -370,6 +371,8 @@ class ProjectMemberOut(BaseModel):
     user_email: str
     role: str
     assigned_at: datetime
+    # 头像引用（preset:<slug> / upload:<token>）；None = 前端回退姓名首字母。
+    avatar_ref: str | None = None
 
     class Config:
         from_attributes = True

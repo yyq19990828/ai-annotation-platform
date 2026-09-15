@@ -1139,6 +1139,7 @@ def _member_out(
         is_owner=entry.is_owner,
         is_current_member=entry.is_current_member,
         member_since=entry.member_since,
+        avatar_ref=entry.user.avatar_ref,
         metrics=_member_metrics(
             acc,
             submission_coverage=submission_coverage,

@@ -74,6 +74,7 @@ last_reviewed: 2026-08-14
 | `MINIO_BUCKET`                      | `annotations`    | 主标注文件桶（图像 / 视频帧）。                                                                                                                                                                 |
 | `MINIO_DATASETS_BUCKET`             | `datasets`       | 上传 dataset 桶。                                                                                                                                                                               |
 | `MINIO_BUG_REPORTS_BUCKET`          | `bug-reports`    | bug 反馈附件桶。                                                                                                                                                                                |
+| `MINIO_AVATARS_BUCKET`              | `avatars`        | 用户头像桶（上传后规范化的 256×256 WebP；永久保留、纳入备份、不挂 lifecycle）。                                                                                                                 |
 | `MINIO_DATA_DIR`                    | `miniodata`      | Compose 的 MinIO `/data` 来源；可设宿主机绝对路径改为 bind mount。切换只改变挂载位置，不会自动迁移旧卷数据，切换前先停服务并复制 / 校验数据。                                                   |
 | `MINIO_PUBLIC_URL`                  | 空               | 客户端拿 presigned URL 时走的外网地址；与 `MINIO_ENDPOINT` 不同时必填（容器内/外网络两层视角）。                                                                                                |
 | `MINIO_USE_SSL`                     | `false`          | 决定 API / worker 连 `MINIO_ENDPOINT` 以 HTTP 还是 HTTPS；只有该 endpoint 本身提供 TLS 时才设 `true`。公网预签名 URL 是否 HTTPS 由 `MINIO_PUBLIC_URL` 决定，不要因外层 LB 终结 TLS 而误改本项。 |
@@ -402,9 +403,11 @@ pg_restore -U user -d annotation_new -j 4 /backup/anno-2026-05-06.pgdump
 # 用 mc client（或 aws s3 sync）按桶同步到异地
 mc mirror anno/annotations s3-backup/anno/annotations
 mc mirror anno/datasets    s3-backup/anno/datasets
+# 头像是不可重生的持久身份数据，必须随库一起备份，否则恢复后全部 avatar_ref 指向缺失对象。
+mc mirror anno/avatars     s3-backup/anno/avatars
 ```
 
-桶名见 `MINIO_BUCKET` / `MINIO_DATASETS_BUCKET`（默认 `annotations` / `datasets`）。
+桶名见 `MINIO_BUCKET` / `MINIO_DATASETS_BUCKET` / `MINIO_AVATARS_BUCKET`（默认 `annotations` / `datasets` / `avatars`）。恢复时先恢复数据库再回灌这三个桶，确保 `users.avatar_ref` 指向的对象已就位。
 
 ### 5.3 Redis
 

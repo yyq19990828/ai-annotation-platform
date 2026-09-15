@@ -1,18 +1,20 @@
+import asyncio
 from datetime import datetime, timezone
 from math import isfinite
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, TypeAdapter, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.ratelimit import limiter
 from app.core.security import hash_password, verify_password
 from app.deps import get_current_user, get_db
 from app.db.models.user import User
-from app.schemas.me import PasswordChange, ProfileUpdate
+from app.schemas.me import AvatarRefUpdate, PasswordChange, ProfileUpdate
 from app.schemas.user import (
     NamedPresetsRevision,
     ShortcutBinding,
@@ -26,6 +28,13 @@ from app.schemas.workbench_workspace import (
     MAX_NAMED_PRESETS,
     NamedWorkspacePreset,
     PresetId,
+)
+from app.services import avatar as avatar_service
+from app.services.avatar_image import (
+    ALLOWED_CONTENT_TYPES as ALLOWED_IMAGE_CONTENT_TYPES,
+    MAX_AVATAR_FILE_BYTES,
+    AvatarImageError,
+    normalize_avatar,
 )
 from app.services.audit import AuditAction, AuditService
 from app.services.deactivation_service import DeactivationService
@@ -83,6 +92,113 @@ async def update_profile(
     await db.commit()
     await db.refresh(user)
     return user
+
+
+async def _apply_avatar_ref(
+    db: AsyncSession,
+    user: User,
+    new_ref: str | None,
+    request: Request,
+    *,
+    detail: dict,
+) -> User:
+    """写入新头像引用、提交、再清理旧上传对象。
+
+    顺序有意如此:先提交 DB 再删对象。反过来的话,一旦提交失败就会出现「DB 仍指向已删
+    对象」的破图;本顺序最坏只留下一个无引用的几十 KB 孤儿对象。
+    """
+    previous_ref = user.avatar_ref
+    if previous_ref == new_ref:
+        return user
+
+    user.avatar_ref = new_ref
+    await AuditService.log(
+        db,
+        actor=user,
+        action=AuditAction.USER_PROFILE_UPDATE,
+        target_type="user",
+        target_id=str(user.id),
+        request=request,
+        status_code=200,
+        detail={"field": "avatar", "avatar_ref": new_ref, **detail},
+    )
+    await db.commit()
+    await db.refresh(user)
+    await asyncio.to_thread(avatar_service.delete_ref_object, previous_ref)
+    return user
+
+
+@router.post("/avatar", response_model=UserOut)
+@limiter.limit("10/minute")
+async def upload_avatar(
+    request: Request,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """上传自定义头像。
+
+    服务端是唯一可信方:客户端声明的 MIME 只作早退,真实格式 / 像素规模由 Pillow 判定,
+    产物统一为 256×256 方形 WebP 后写入 ``avatars`` 桶。请求体另有中间件级上限
+    (``middleware/upload_body_limits``),此处再按文件字节复核一次。
+    """
+    declared = (file.content_type or "").lower()
+    if declared and declared not in {
+        "application/octet-stream",
+        *ALLOWED_IMAGE_CONTENT_TYPES,
+    }:
+        raise HTTPException(status_code=415, detail="仅支持 PNG / JPEG / WebP 格式")
+
+    raw = await file.read(MAX_AVATAR_FILE_BYTES + 1)
+    # ``normalize_avatar`` 同步解码 / 裁剪 / 重编码，最坏可处理 4000 万像素的压缩图；
+    # ``write_avatar_object`` 是同步 boto3 PUT。都放进线程池，避免单 worker 生产配置下
+    # 一次上传阻塞整个事件循环。
+    try:
+        normalized = await asyncio.to_thread(normalize_avatar, raw)
+    except AvatarImageError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    token = avatar_service.new_upload_token()
+    await asyncio.to_thread(avatar_service.write_avatar_object, token, normalized)
+    return await _apply_avatar_ref(
+        db,
+        user,
+        avatar_service.build_upload_ref(token),
+        request,
+        detail={"kind": "upload", "bytes": len(normalized)},
+    )
+
+
+@router.patch("/avatar", response_model=UserOut)
+async def set_avatar_ref(
+    payload: AvatarRefUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """选择内置头像（``preset:<slug>``）或清除头像（``avatar_ref: null``）。
+
+    ``upload:`` 前缀一律拒绝,否则用户可以把别人的 token 挂到自己名下。
+    """
+    try:
+        new_ref = avatar_service.validate_client_ref(payload.avatar_ref)
+    except avatar_service.InvalidAvatarRef as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return await _apply_avatar_ref(
+        db, user, new_ref, request, detail={"kind": "preset_or_clear"}
+    )
+
+
+@router.delete("/avatar", response_model=UserOut)
+async def clear_avatar(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """恢复默认头像（= 回退首字母圆片）。"""
+    return await _apply_avatar_ref(
+        db, user, None, request, detail={"kind": "preset_or_clear"}
+    )
 
 
 @router.post("/password", status_code=status.HTTP_204_NO_CONTENT)

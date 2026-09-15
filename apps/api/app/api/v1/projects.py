@@ -200,11 +200,14 @@ async def _serialize_project(
     通过 ai_completed_lookup 批量提供（list_projects 路径）或 fallback 单独查询。
     """
     owner_name = None
+    owner_avatar_ref = None
     if project.owner_id:
         owner_row = await db.execute(
-            select(User.name).where(User.id == project.owner_id)
+            select(User.name, User.avatar_ref).where(User.id == project.owner_id)
         )
-        owner_name = owner_row.scalar_one_or_none()
+        owner_row = owner_row.first()
+        if owner_row is not None:
+            owner_name, owner_avatar_ref = owner_row
     count_row = await db.execute(
         select(func.count())
         .select_from(ProjectMember)
@@ -252,6 +255,7 @@ async def _serialize_project(
         )
     data["ml_backend_id"] = ml_backend_id_for_response
     data["owner_name"] = owner_name
+    data["owner_avatar_ref"] = owner_avatar_ref
     data["member_count"] = member_count
     data["ai_completed_tasks"] = ai_completed
     data["batch_summary"] = batch_summary
@@ -1443,13 +1447,13 @@ async def list_members(
     db: AsyncSession = Depends(get_db),
 ):
     rows = await db.execute(
-        select(ProjectMember, User.name, User.email)
+        select(ProjectMember, User.name, User.email, User.avatar_ref)
         .join(User, User.id == ProjectMember.user_id)
         .where(ProjectMember.project_id == project.id)
         .order_by(ProjectMember.assigned_at.desc())
     )
     out = []
-    for member, user_name, user_email in rows.all():
+    for member, user_name, user_email, avatar_ref in rows.all():
         out.append(
             ProjectMemberOut(
                 id=member.id,
@@ -1458,6 +1462,7 @@ async def list_members(
                 user_email=user_email,
                 role=member.role,
                 assigned_at=member.assigned_at,
+                avatar_ref=avatar_ref,
             )
         )
     return out
@@ -1573,6 +1578,7 @@ async def add_member(
         user_email=target.email,
         role=member.role,
         assigned_at=member.assigned_at,
+        avatar_ref=target.avatar_ref,
     )
 
 
