@@ -403,9 +403,11 @@ pg_restore -U user -d annotation_new -j 4 /backup/anno-2026-05-06.pgdump
 # 用 mc client（或 aws s3 sync）按桶同步到异地
 mc mirror anno/annotations s3-backup/anno/annotations
 mc mirror anno/datasets    s3-backup/anno/datasets
+# 头像是不可重生的持久身份数据，必须随库一起备份，否则恢复后全部 avatar_ref 指向缺失对象。
+mc mirror anno/avatars     s3-backup/anno/avatars
 ```
 
-桶名见 `MINIO_BUCKET` / `MINIO_DATASETS_BUCKET`（默认 `annotations` / `datasets`）。
+桶名见 `MINIO_BUCKET` / `MINIO_DATASETS_BUCKET` / `MINIO_AVATARS_BUCKET`（默认 `annotations` / `datasets` / `avatars`）。恢复时先恢复数据库再回灌这三个桶，确保 `users.avatar_ref` 指向的对象已就位。
 
 ### 5.3 Redis
 
