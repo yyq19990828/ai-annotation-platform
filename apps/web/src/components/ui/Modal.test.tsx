@@ -99,4 +99,23 @@ describe("<Modal />", () => {
     fireEvent.click(screen.getByLabelText("关闭"));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it("does not treat another dialog's action as a backdrop click", async () => {
+    const onClose = vi.fn();
+    render(
+      <>
+        <Modal open onClose={onClose} title="任务详情">
+          <p>Keep the detail available after cancellation.</p>
+        </Modal>
+        <div role="alertdialog" aria-label="离开确认">
+          <button>继续绘制</button>
+        </div>
+      </>,
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const cancel = screen.getByRole("button", { name: "继续绘制", hidden: true });
+    fireEvent.pointerDown(cancel);
+    fireEvent.click(cancel);
+    expect(onClose).not.toHaveBeenCalled();
+  });
 });
