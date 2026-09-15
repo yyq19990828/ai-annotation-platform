@@ -57,7 +57,7 @@ ai-annotation-platform/
 
 ## 前置要求
 
-- Node.js >= 20
+- Node.js >= 22
 - pnpm >= 10
 - Python >= 3.11
 - uv (Python 包管理)

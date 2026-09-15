@@ -135,7 +135,7 @@ AI Annotation Platform 把项目管理、Data Manager、多模态标注工作台
 
 | 依赖           | 版本                       |
 | -------------- | -------------------------- |
-| Node.js        | `>= 20`                    |
+| Node.js        | `>= 22`                    |
 | pnpm           | `>= 10`                    |
 | Python         | `>= 3.11`                  |
 | uv             | Python 包管理              |

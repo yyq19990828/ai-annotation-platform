@@ -96,7 +96,7 @@ export function FilterToolbar(p: FilterToolbarProps) {
   return (
     <div className="space-y-2 border-b border-border px-4 py-3">
       {/* 第 2 行：任务 / 模态快捷筛选 + 更多筛选。 */}
-      <FilterGroup label="筛选">
+      <FilterGroup label="筛选" hideLabel>
         {groups
           .filter((group) => group.label === "任务" || group.label === "模态")
           .filter((group) => group.values.length > 0)
