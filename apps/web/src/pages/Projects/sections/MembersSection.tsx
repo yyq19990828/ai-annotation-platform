@@ -34,11 +34,11 @@ export function MembersSection({ project }: { project: ProjectResponse }) {
   return (
     <>
       <Card>
-        <div className="flex items-center justify-between border-b border-border px-4 py-3.5">
+        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3.5">
           <h3 className="text-sm font-semibold">项目成员</h3>
-          <div className="flex gap-2">
-            <Button onClick={() => setAssignOpen(true)}>
-              <Icon name="plus" size={12} />
+          <div className="flex items-center gap-1.5 whitespace-nowrap">
+            <Button size="sm" variant="ghost" onClick={() => setAssignOpen(true)}>
+              <Icon name="plus" />
               添加成员
             </Button>
           </div>

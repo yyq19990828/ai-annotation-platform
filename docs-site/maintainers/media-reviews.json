@@ -3439,11 +3439,11 @@
       ]
     },
     "docs-site/user-guide/images/projects/tool-units-panel.png": {
-      "last_verified_commit": "df2752a1644160120de9c99249a757b64cb32202",
-      "verified_at": "2026-09-13T07:02:56.721Z",
-      "reviewer": "Codex primary thread (user-delegated)",
+      "last_verified_commit": "f8a73ede6d9bff7d568f94c588ffa31e5f1a2df6",
+      "verified_at": "2026-09-16T12:46:22.202Z",
+      "reviewer": "yyq08228",
       "review_profile": "visual-content-v1",
-      "sha256": "77653e58b5cf57346737130d504d446d8765eea3af7abfa7d9bc77bee734c335",
+      "sha256": "b82c4eb309f8024cd4947cff4ea8845f4e1d6b1de0894a50193ea401b47ec3b4",
       "watch_paths": [
         "apps/web/e2e/screenshots/scenes/projects.ts",
         "docs-site/user-guide/images/projects/tool-units-panel.png",
