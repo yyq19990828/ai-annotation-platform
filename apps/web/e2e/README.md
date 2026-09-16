@@ -108,9 +108,10 @@ PLAYWRIGHT_AI_REQUEST_WORKER=1 pnpm test:e2e \
 pipeline 的开关边界、精确解码或安全回退、pending→ready 切换。视频舞台容器暴露
 `data-video-frame-source` / `data-video-precise-state` / `data-video-frame-index`
 三个可观察属性供 spec 读取；`data-video-painted-frame-index`（精确绘制完成的帧号，
-非 webcodecs 源恒为 `-1`）用于等待绘制就绪——时间轴点击触发的异步取帧在负载下可能
-迟到并回写旧帧号，spec 应等它与 `data-video-frame-index` 一致后再继续步进或断言
-（见 `video-issue-context.spec.ts` 的 `expectPaintSettled`）。
+非 webcodecs 源恒为 `-1`）用于等待绘制就绪。时间轴点击触发的异步取帧在负载下可能
+迟到：应用层已在播放控制器的帧号写入处加单调栅栏，迟到的旧帧回报不会再覆盖键盘
+步进后的帧号（Issue #114），`video-issue-context.spec.ts` 的 `expectPaintSettled`
+保留为冗余防护——等它与 `data-video-frame-index` 一致后再继续步进或断言仍最稳妥。
 
 **能力门**：WebCodecs `VideoDecoder` 需 secure context。localhost 下 Chromium 暴露
 构造器，但 headless 软解下 `isConfigSupported` / 实际 decode 可能不通过，精确帧会
