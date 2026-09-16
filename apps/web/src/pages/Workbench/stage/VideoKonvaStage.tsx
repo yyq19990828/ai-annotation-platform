@@ -2922,7 +2922,9 @@ export const VideoKonvaStage = forwardRef<VideoStageControls, VideoKonvaStagePro
           highlightAction={highlightAction}
           onSeek={(frame) => {
             showPlaybackOverlay();
-            pausePlayback();
+            // snapToGrid: false —— 点击本身携带明确目标帧，默认 snap 会先发起一次
+            // 网格 seek 再被目标 seek 取消，高负载下徒增一次竞态窗口（Issue #114）。
+            pausePlayback({ snapToGrid: false });
             seekToFrame(frame, { recordHistory: true });
           }}
           onSeekByFrames={seekOverlayByFrames}

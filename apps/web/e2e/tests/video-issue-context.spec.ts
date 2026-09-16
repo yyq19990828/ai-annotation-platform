@@ -403,7 +403,8 @@ async function seek(page: Page, frame: number) {
   const rect = (await input.boundingBox())!;
   const ratio = Math.max(0, Math.min(1, (frame - window.from) / (window.to - window.from)));
   await page.mouse.click(rect.x + 1 + ratio * (rect.width - 2), rect.y + rect.height / 2);
-  // 等点击触发的异步取帧落地，避免迟到的解析结果回写旧行号。
+  // 应用层已在帧号写入处加单调栅栏（Issue #114），迟到的取帧结果不会再覆盖步进帧号；
+  // 此处串行化保留为冗余防护，等绘制帧号追上再继续仍最稳妥。
   await expectPaintSettled(page);
   let current = Number(await stage(page).getAttribute("data-video-frame-index"));
   for (let steps = 0; current !== frame && steps < 10; steps += 1) {

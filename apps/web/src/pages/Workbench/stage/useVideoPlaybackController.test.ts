@@ -645,4 +645,33 @@ describe("useVideoPlaybackController", () => {
     });
     expect((await current).status).toBe("ready");
   });
+
+  it("paused frame-clock writes only land on the latest navigation target or its echo (Issue #114)", () => {
+    const video = mockVideo(HTMLMediaElement.HAVE_METADATA);
+    const { result } = setup({ current: video });
+
+    // 时间轴点击 seek：导航目标 = 17，乐观写落地。
+    act(() => result.current.controls.seekToFrame(17));
+    expect(result.current.frameIndex).toBe(17);
+
+    // 高负载交错下迟到的旧帧回报（时间轴点击量化帧、被步进超越）：必须被栅栏丢弃。
+    act(() => videoHookMocks.onFrameChange?.(9));
+    expect(result.current.frameIndex).toBe(17);
+    // 非导航来源的任意新帧同样不允许改写暂停态选中帧。
+    act(() => videoHookMocks.onFrameChange?.(18));
+    expect(result.current.frameIndex).toBe(17);
+    // 导航目标回声照常接受（幂等）。
+    act(() => videoHookMocks.onFrameChange?.(17));
+    expect(result.current.frameIndex).toBe(17);
+
+    // 新的显式导航（键盘步进）正常推进。
+    act(() => result.current.controls.seekToFrame(18));
+    expect(result.current.frameIndex).toBe(18);
+
+    // 播放态逐帧推进不受栅栏限制。
+    act(() => result.current.controls.togglePlayback());
+    expect(result.current.isPlaybackActive).toBe(true);
+    act(() => videoHookMocks.onFrameChange?.(25));
+    expect(result.current.frameIndex).toBe(25);
+  });
 });

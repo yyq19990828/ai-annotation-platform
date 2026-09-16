@@ -95,6 +95,8 @@ Timeout: 30000ms
 - `rememberCanvas` 先等 stage 宿主（挂载即代表 manifest 就绪）再等画布，`@stress` 场景预算放宽到 90s；
 - 压力套件允许 1 次重试（见 `apps/web/playwright.stress.config.ts`）。
 
+同一次取证还确认了 `video-issue-context` 的 stale seek 竞态：同一冻结窗口内，时间轴点击的异步精确取帧迟到后会把键盘步进已达的帧号拽回点击时刻的旧帧（G2-1 实测 F120→F105，两次重试稳定复现）。测试侧先以 `expectPaintSettled` 串行化规避（PR #113）；应用层随后在播放控制器的帧号写入汇聚点加了单调栅栏——暂停态只接受最新导航目标帧或其回声，迟到旧帧回报直接丢弃（Issue #114）。`expectPaintSettled` 因此是冗余防护而非唯一防线，可按需保留。
+
 ## 教训
 
 - **GitHub Actions `services:` 块不能传 args**，需要传命令的服务必须用 `docker run`。
