@@ -173,11 +173,19 @@ export function DropdownMenu(props: DropdownMenuProps) {
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const prevHostStyleRef = useRef<CSSProperties | undefined>(undefined);
   const prevPanelStyleRef = useRef<CSSProperties | undefined>(undefined);
-  const [focusIdx, setFocusIdx] = useState(-1);
+  // 焦点用 item id 跟踪而非裸索引：items 动态插入 / 删除时（如后台实例菜单在
+  // 拓扑刷新后插入「审核能力变更」行）索引会漂移，裸索引会让 Enter 触发漂移后
+  // 位置上的错误项（PR #117 评审 P2）。focusIdx 由 id 实时派生，自动跟随新位置。
+  const [focusId, setFocusId] = useState<string | null>(null);
 
   const selectableIdx = items
     ? items.map((it, i) => (!it.divider && !it.disabled ? i : -1)).filter((i) => i >= 0)
     : [];
+
+  const focusIdx =
+    items && focusId
+      ? items.findIndex((it) => it.id === focusId && !it.divider && !it.disabled)
+      : -1;
 
   // 点外面 / Esc 关闭
   useEffect(() => {
@@ -206,28 +214,34 @@ export function DropdownMenu(props: DropdownMenuProps) {
   useEffect(() => {
     if (!items) return;
     if (!open) {
-      setFocusIdx(-1);
+      setFocusId(null);
       return;
     }
-    const activePos = items.findIndex((it) => it.active && !it.divider && !it.disabled);
-    setFocusIdx(activePos >= 0 ? activePos : (selectableIdx[0] ?? -1));
+    const active =
+      items.find((it) => it.active && !it.divider && !it.disabled) ??
+      items.find((it) => !it.divider && !it.disabled);
+    setFocusId(active?.id ?? null);
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const moveFocus = (dir: 1 | -1) => {
-    if (selectableIdx.length === 0) return;
+    if (!items || selectableIdx.length === 0) return;
     const cur = selectableIdx.indexOf(focusIdx);
     const next = cur < 0 ? 0 : (cur + dir + selectableIdx.length) % selectableIdx.length;
-    setFocusIdx(selectableIdx[next]);
+    setFocusId(items[selectableIdx[next]]?.id ?? null);
   };
 
   // 焦点实移（roving focus）：打开时焦点进入面板 / 首个可选中项，之后随 focusIdx 移动。
   // 面板 portal 在 body 末尾且 tabIndex=-1，若只改 focusIdx 视觉高亮、不移真实焦点，
   // 键盘用户 Tab 需穿过整页控件才能到菜单项，↑↓/Enter 也无从触发（PR #116 评审 P2）。
+  // 仅 items 模式生效：content 模式的焦点由内容自管（如布局快捷菜单的预设名
+  // 输入框 autoFocus），打开面板时覆盖焦点会把它拽回面板（PR #117 评审 P2）。
+  // 依赖只留 focusIdx / open：items 结构变化经 focusIdx 派生值体现，父组件
+  // 普通重渲染（数组引用变化）不重跑，避免把 footer 控件的焦点拽回菜单项。
   useEffect(() => {
-    if (!open) return;
+    if (!open || !items) return;
     const target = focusIdx >= 0 ? itemRefs.current[focusIdx] : menuRef.current;
     target?.focus();
-  }, [focusIdx, open]);
+  }, [focusIdx, open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const onMenuKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (!items) return; // content 模式不处理列表导航
@@ -239,10 +253,10 @@ export function DropdownMenu(props: DropdownMenuProps) {
       moveFocus(-1);
     } else if (e.key === "Home") {
       e.preventDefault();
-      setFocusIdx(selectableIdx[0] ?? -1);
+      setFocusId(items[selectableIdx[0] ?? -1]?.id ?? null);
     } else if (e.key === "End") {
       e.preventDefault();
-      setFocusIdx(selectableIdx[selectableIdx.length - 1] ?? -1);
+      setFocusId(items[selectableIdx[selectableIdx.length - 1] ?? -1]?.id ?? null);
     } else if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
       const it = items[focusIdx];
@@ -251,6 +265,13 @@ export function DropdownMenu(props: DropdownMenuProps) {
         setOpen(false);
         triggerRef.current?.focus();
       }
+    } else if (e.key === "Tab") {
+      // Tab / Shift+Tab：关闭菜单并把焦点归还触发器，让页面遍历从触发器继续。
+      // portal 面板挂在 body 末尾，放行 Tab 会把焦点带出菜单（或跳到无关尾部
+      // 控件）而菜单仍开着；Radix 菜单同样以 Tab 为关闭语义（PR #117 评审 P2）。
+      e.preventDefault();
+      setOpen(false);
+      triggerRef.current?.focus();
     }
   };
 
@@ -338,7 +359,7 @@ export function DropdownMenu(props: DropdownMenuProps) {
                 <div key={it.id || `div-${i}`} role="separator" className="my-1 h-px bg-border" />
               );
             }
-            const focused = focusIdx === i;
+            const focused = it.id === focusId;
             return (
               <button
                 key={it.id}
@@ -355,7 +376,12 @@ export function DropdownMenu(props: DropdownMenuProps) {
                   setOpen(false);
                   triggerRef.current?.focus();
                 }}
-                onMouseEnter={() => setFocusIdx(i)}
+                onMouseEnter={() => {
+                  // 悬停 disabled 行不接管 roving 焦点：浏览器拒绝聚焦 disabled
+                  // 按钮，会让 DOM 焦点与 roving 状态错位、Enter 失灵（PR #117 评审 P2）
+                  if (it.disabled) return;
+                  setFocusId(it.id);
+                }}
                 className={cn(
                   "flex w-full appearance-none items-center gap-2 rounded-sm border-0 bg-transparent px-2.5 py-2 text-left text-sm font-normal text-muted-foreground",
                   (it.active || focused) && "bg-accent",
