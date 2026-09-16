@@ -15,7 +15,6 @@ import {
   useApproveTask,
   useRejectTask,
 } from "@/hooks/useTasks";
-import { useRejectBatch } from "@/hooks/useBatches";
 import { useReviewerStats } from "@/hooks/useDashboard";
 import { ApiError } from "@/api/client";
 import type { TaskResponse } from "@/types";
@@ -23,6 +22,7 @@ import type { ReviewingBatchItem } from "@/api/dashboard";
 import { buildReviewWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import { useAuthStore } from "@/stores/authStore";
 import { RejectReasonModal } from "./RejectReasonModal";
+import { RejectBatchModal } from "@/pages/Projects/sections/RejectBatchModal";
 import { ReviewSidebar } from "./ReviewSidebar";
 import { ReviewBatchCardGrid } from "./ReviewBatchCardGrid";
 import {
@@ -211,7 +211,6 @@ export function ReviewPage() {
   );
   // 选中批次后 projectId 跟随；未选中走 selectedProjectId 兜底（用于「全部待审」筛选）。
   const projectId = selectedBatch?.project_id || selectedProjectId || undefined;
-  const rejectBatchMut = useRejectBatch(projectId ?? "");
 
   // v0.12.5 · 绩效页项目下钻带入的 assignee 过滤(后端 tasks 已支持 assignee_id)。
   const assigneeFilter = searchParams.get("assignee") || "";
@@ -247,6 +246,9 @@ export function ReviewPage() {
 
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [rejectingIds, setRejectingIds] = useState<string[] | null>(null);
+  // Snapshot the batch identity when opening the reject dialog so a URL change
+  // while it is open cannot retarget the submission to a different batch.
+  const [rejectTarget, setRejectTarget] = useState<{ id: string; display_id: string } | null>(null);
   const queueUrlRef = useRef({
     project: searchParams.get("project") ?? "",
     batch: searchParams.get("batch") ?? "",
@@ -286,6 +288,7 @@ export function ReviewPage() {
     ) {
       setCheckedIds(new Set());
       setRejectingIds(null);
+      setRejectTarget(null);
       rejectingActionRef.current = null;
     }
   }, [authOwnerKey, queueSearch]);
@@ -311,6 +314,7 @@ export function ReviewPage() {
     setSearchParams(next);
     setCheckedIds(new Set());
     setRejectingIds(null);
+    setRejectTarget(null);
     rejectingActionRef.current = null;
   };
 
@@ -320,6 +324,7 @@ export function ReviewPage() {
     setSearchParams(next);
     setCheckedIds(new Set());
     setRejectingIds(null);
+    setRejectTarget(null);
     rejectingActionRef.current = null;
   };
 
@@ -332,6 +337,7 @@ export function ReviewPage() {
     setSearchParams(next);
     setCheckedIds(new Set());
     setRejectingIds(null);
+    setRejectTarget(null);
     rejectingActionRef.current = null;
   };
 
@@ -535,7 +541,7 @@ export function ReviewPage() {
               )}
             </p>
             {assigneeFilter && (
-              <FilterGroup compact label="指派范围" className="mt-2">
+              <FilterGroup compact label="指派范围" hideLabel className="mt-2">
                 <ActiveFilterChip label="仅看指派标注员" onRemove={clearAssigneeFilter} />
               </FilterGroup>
             )}
@@ -553,18 +559,12 @@ export function ReviewPage() {
               <Button
                 size="sm"
                 variant="danger"
-                onClick={() => {
-                  const feedback = window.prompt("整批退回原因（必填，最大 500 字）：");
-                  if (!feedback || !feedback.trim()) return;
-                  rejectBatchMut.mutate(
-                    { batchId: selectedBatchId, feedback: feedback.trim() },
-                    {
-                      onSuccess: () =>
-                        pushToast({ msg: "整批已退回，已通知被分派标注员", kind: "success" }),
-                      onError: (e) => pushToast({ msg: "退回失败", sub: (e as Error).message }),
-                    },
-                  );
-                }}
+                onClick={() =>
+                  setRejectTarget({
+                    id: selectedBatchId,
+                    display_id: selectedBatch?.batch_display_id ?? selectedBatchId,
+                  })
+                }
               >
                 <Icon name="x" size={11} />
                 整批退回
@@ -736,6 +736,14 @@ export function ReviewPage() {
           </>
         )}
       </section>
+
+      {rejectTarget && (
+        <RejectBatchModal
+          projectId={projectId ?? ""}
+          batch={rejectTarget}
+          onClose={() => setRejectTarget(null)}
+        />
+      )}
 
       <RejectReasonModal
         open={!!rejectingIds}

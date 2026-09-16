@@ -102,6 +102,19 @@ def assert_can_transition(
             detail=f"{user.role} cannot transition annotating -> reviewing",
         )
 
+    # active / annotating → rejected：整批退回（reviewer / owner）。批次尚未整批送审
+    # （review_tasks > 0 但状态仍是 active/annotating）时，审核页同样提供整批退回入口。
+    # 通用 /transition 仍受 VALID_TRANSITIONS 限制，只有专用 /reject 端点会执行该迁移。
+    if dst == BatchStatus.REJECTED and src in (
+        BatchStatus.ACTIVE,
+        BatchStatus.ANNOTATING,
+    ):
+        if _is_reviewer(user, project):
+            return
+        raise HTTPException(
+            status_code=403, detail=f"{user.role} cannot reject batch from {src}"
+        )
+
     # reviewing → approved / rejected：reviewer
     if src == BatchStatus.REVIEWING and dst in (
         BatchStatus.APPROVED,

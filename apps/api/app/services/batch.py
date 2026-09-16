@@ -1023,8 +1023,15 @@ class BatchService:
         if not batch:
             raise HTTPException(status_code=404, detail="Batch not found")
 
-        allowed = VALID_TRANSITIONS.get(batch.status, set())
-        if BatchStatus.REJECTED not in allowed:
+        # v0.24.x：整批退回允许从 active / annotating / reviewing 发起——审核页会列出
+        # 部分送审（review_tasks > 0）但批次状态尚未推进到 reviewing 的批次，此时也应
+        # 能把整批打回重做。语义仍是软重置：review/completed → pending，写反馈并置 rejected。
+        rejectable = {
+            BatchStatus.ACTIVE,
+            BatchStatus.ANNOTATING,
+            BatchStatus.REVIEWING,
+        }
+        if batch.status not in rejectable:
             raise HTTPException(
                 status_code=400,
                 detail=f"Cannot reject batch in status '{batch.status}'",

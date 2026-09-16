@@ -16,7 +16,7 @@ export function isVideoLifecycleCancellation(error: VideoRequestError): boolean 
     error.path === "/api/v1/feedbacks" ||
     error.path === "/api/v1/tasks" ||
     /^\/api\/v1\/tasks\/[0-9a-f-]{36}$/.test(error.path) ||
-    // Switching tasks retires both standard and precise video manifest queries.
+    // Switching tasks or reloading retires both standard and precise video manifest queries.
     /^\/api\/v1\/tasks\/[0-9a-f-]{36}\/video\/manifest(?:-v2)?$/.test(error.path) ||
     // Leaving the comments tab retires its abortable task-discussion query.
     /^\/api\/v1\/tasks\/[0-9a-f-]{36}\/discussion\/page$/.test(error.path) ||
@@ -25,6 +25,11 @@ export function isVideoLifecycleCancellation(error: VideoRequestError): boolean 
     // Closing/replacing an Issue detail retires its root-bound thread query.
     /^\/api\/v1\/feedbacks\/[0-9a-f-]{36}\/thread$/.test(error.path) ||
     /^\/api\/v1\/tasks\/[0-9a-f-]{36}\/video\/frames\/\d+$/.test(error.path) ||
-    /^\/api\/v1\/videos\/[0-9a-f-]{36}\/chunks\/\d+(?:\/samples)?$/.test(error.path)
+    /^\/api\/v1\/videos\/[0-9a-f-]{36}\/chunks\/\d+(?:\/samples)?$/.test(error.path) ||
+    // Task retirement / reload also aborts its read-only context queries.
+    /^\/api\/v1\/tasks\/[0-9a-f-]{36}\/(?:annotations|predictions)$/.test(error.path) ||
+    /^\/api\/v1\/tasks\/[0-9a-f-]{36}\/video\/(?:segments|frame-timetable)$/.test(error.path) ||
+    /^\/api\/v1\/videos\/[0-9a-f-]{36}\/chapters$/.test(error.path) ||
+    /^\/api\/v1\/projects\/[0-9a-f-]{36}\/mention-candidates$/.test(error.path)
   );
 }

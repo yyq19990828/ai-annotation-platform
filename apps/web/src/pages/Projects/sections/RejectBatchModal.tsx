@@ -3,7 +3,6 @@ import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { useToastStore } from "@/components/ui/Toast";
 import { useRejectBatch } from "@/hooks/useBatches";
-import type { BatchResponse } from "@/api/batches";
 
 const FEEDBACK_MAX = 500;
 
@@ -16,7 +15,8 @@ export function RejectBatchModal({
   onClose,
 }: {
   projectId: string;
-  batch: BatchResponse;
+  /** Minimal batch identity: projects table passes a full BatchResponse, ReviewPage a summary. */
+  batch: { id: string; display_id: string };
   onClose: () => void;
 }) {
   const pushToast = useToastStore((s) => s.push);

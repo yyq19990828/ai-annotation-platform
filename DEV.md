@@ -480,7 +480,7 @@ CI E2E 每个 PR 保留 4 个功能分片，以及 readonly Mask、native Mask�
 每个任务通过可复用的 `e2e-run.yml` 拥有独立 PostgreSQL、Redis 和 MinIO；同一数据库
 只用一个 Playwright worker，因为 seed/reset 和 teardown 会清理共享数据。
 默认、视觉和压力套件使用构建产物，Mask 任务由 Playwright 启动隔离 API 和 Vite dev。
-功能用例最多重试一次，扩展用例不重试；进程/步骤/job 保留 15/20/30 分钟限时。
+功能用例最多重试一次；扩展用例中视觉基线不重试、压力用例最多重试一次；进程/步骤/job 保留 15/20/30 分钟限时。
 `Frontend E2E` 汇总门禁同时要求路由和全部已选任务成功。每个套件的 HTML、JSON、
 失败截图和 trace 分别上传到 `playwright-report-<suite>`，Actions 摘要展示结果与耗时，
 并区分失败、flaky、跳过及全局错误。详见 [E2E 运行说明](apps/web/e2e/README.md)。

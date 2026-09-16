@@ -173,7 +173,7 @@ export function ProjectTemplatesPage() {
       </div>
 
       <div className={styles.toolbar}>
-        <FilterGroup label="范围">
+        <FilterGroup label="范围" hideLabel aria-label="模板范围">
           {TABS.map((option) => (
             <FilterToggle
               key={option}
