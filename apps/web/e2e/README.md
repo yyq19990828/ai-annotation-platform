@@ -27,13 +27,13 @@ pnpm test:e2e:stress                     # 完整布局压力矩阵
 
 首次运行需要 `pnpm exec playwright install chromium` 装浏览器。
 
-CI 使用 `line` reporter 显示正在执行的用例及重试，同时保留 GitHub annotations、HTML 和 `e2e-results.json` 报告。Actions 摘要分别列出每个套件通过、失败、重试后通过（flaky）、跳过数量及执行时间。每次失败尝试都保留截图和 trace，包括禁用重试的扩展套件；报告缺失会明确提示检查启动或超时日志。分片内按单 worker 串行运行；排查长时间执行时先查看当前用例和超时信息，不能只凭 WebSocket 断连日志判断测试卡死。
+CI 使用 `line` reporter 显示正在执行的用例及重试，同时保留 GitHub annotations、HTML 和 `e2e-results.json` 报告。Actions 摘要分别列出每个套件通过、失败、重试后通过（flaky）、跳过数量及执行时间。每次失败尝试都保留截图和 trace，包括零重试的视觉基线套件；报告缺失会明确提示检查启动或超时日志。分片内按单 worker 串行运行；排查长时间执行时先查看当前用例和超时信息，不能只凭 WebSocket 断连日志判断测试卡死。
 
-CI 功能用例最多重试一次；视觉和压力用例不重试。首个用例最终失败后终止当前分片，其他分片继续完成各自诊断。每个 Playwright 测试进程总限时 15 分钟，测试步骤限时 20 分钟，整个 E2E job（含安装和构建）限时 30 分钟。分层限时为清理和报告上传保留余量，并在测试进程无法自行退出时由 Actions 兜底。本地运行不启用这些 CI 早退限制。
+CI 功能用例最多重试一次；视觉基线不重试，压力用例最多重试一次。首个用例最终失败后终止当前分片，其他分片继续完成各自诊断。每个 Playwright 测试进程总限时 15 分钟，测试步骤限时 20 分钟，整个 E2E job（含安装和构建）限时 30 分钟。分层限时为清理和报告上传保留余量，并在测试进程无法自行退出时由 Actions 兜底。本地运行不启用这些 CI 早退限制。
 
 ## 功能、视觉与压力测试
 
-默认 `playwright.config.ts` 排除 `@visual`、`@stress`；`playwright.extended.config.ts` 复用相同项目、服务和数据隔离配置，只选择扩展标签。不要在功能测试中混入整页或整个工作区的截图断言。给视觉测试添加 `{ tag: "@visual" }`，保持其标题、文件位置和项目名以复用既有基线；有意的外观变化经人工核对差异后，用 `pnpm test:e2e:visual --update-snapshots` 更新并提交基线，不能自动接受差异。
+默认 `playwright.config.ts` 排除 `@visual`、`@stress`；扩展配置拆成两个入口，均复用相同项目、服务和数据隔离配置：`playwright.extended.config.ts` 只选择 `@visual`（零重试），`playwright.stress.config.ts` 选择 `@stress`（最多重试一次，用于区分确定性损坏与 runner 资源饥饿，重试通过仍标记 flaky）。不要在功能测试中混入整页或整个工作区的截图断言。给视觉测试添加 `{ tag: "@visual" }`，保持其标题、文件位置和项目名以复用既有基线；有意的外观变化经人工核对差异后，用 `pnpm test:e2e:visual --update-snapshots` 更新并提交基线，不能自动接受差异。
 
 布局矩阵在图片/视频/点云 × 标注/审核六种上下文中都保留真实拖动、画布身份、上下文隔离、紧凑模式、保存与刷新恢复断言。功能集执行 14 次重排，`@stress` 执行完整 54 次；新增长循环必须放入压力集，并在功能集中保留覆盖关键状态转换的短流程。
 
