@@ -415,7 +415,7 @@ export function AnnotatePage() {
           </div>
         )}
 
-        <FilterGroup label="任务状态" aria-label="任务状态筛选" className="mb-3">
+        <FilterGroup label="任务状态" hideLabel aria-label="任务状态筛选" className="mb-3">
           <FilterToggle
             active={!rejectedOnly}
             onClick={() =>

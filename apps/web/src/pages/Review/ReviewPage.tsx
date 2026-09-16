@@ -535,7 +535,7 @@ export function ReviewPage() {
               )}
             </p>
             {assigneeFilter && (
-              <FilterGroup compact label="指派范围" className="mt-2">
+              <FilterGroup compact label="指派范围" hideLabel className="mt-2">
                 <ActiveFilterChip label="仅看指派标注员" onRemove={clearAssigneeFilter} />
               </FilterGroup>
             )}
