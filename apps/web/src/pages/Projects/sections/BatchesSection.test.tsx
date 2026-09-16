@@ -19,6 +19,7 @@ vi.mock("@/hooks/useBatches", () => ({
   useCreateBatch: () => mutationStub(),
   useDeleteBatch: () => mutationStub(),
   useTransitionBatch: () => mutationStub(),
+  useSubmitBatch: () => mutationStub(),
   useSplitBatches: () => mutationStub(),
   useBulkArchiveBatches: () => mutationStub(),
   useBulkDeleteBatches: () => mutationStub(),

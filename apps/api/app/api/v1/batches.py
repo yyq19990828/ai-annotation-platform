@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +22,7 @@ from app.schemas.batch import (
     BatchOut,
     BatchTransition,
     BatchReject,
+    BatchSubmitResult,
     BatchReset,
     BatchSplitRequest,
     ProjectDistributeBatches,
@@ -39,17 +41,31 @@ from app.schemas.export import (
     LidarExportPreflightRequest,
     LidarExportPreflightResponse,
 )
-from app.services.batch import BatchService, assert_can_transition, REVERSE_TRANSITIONS
+from app.services.batch import (
+    BatchService,
+    assert_can_transition,
+    REVERSE_TRANSITIONS,
+    _is_owner,
+    _is_annotator_assigned,
+)
 from app.services.management import preview_batch_distribution
 from app.services.audit import AuditService, AuditAction
 from app.services.notification import NotificationService
 from app.services.user_brief import resolve_briefs_with_project_role
 from app.db.models.audit_log import AuditLog
+from sqlalchemy import func
 from sqlalchemy import select as sa_select
 
 router = APIRouter()
 
 _REVIEWERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.REVIEWER)
+# 整批送审：被分派标注员 + owner/管理员（与 annotating→reviewing 鉴权一致）
+_BATCH_SUBMITTERS = (
+    UserRole.SUPER_ADMIN,
+    UserRole.PROJECT_ADMIN,
+    UserRole.REVIEWER,
+    UserRole.ANNOTATOR,
+)
 
 
 def _batch_to_out(batch, briefs: dict | None = None) -> BatchOut:
@@ -348,6 +364,137 @@ async def transition_batch(
     await db.refresh(batch)
     briefs = await _briefs_for_batches(db, project_id, [batch])
     return _batch_to_out(batch, briefs)
+
+
+@router.post("/{batch_id}/submit-review", response_model=BatchSubmitResult)
+async def submit_batch_review(
+    project_id: uuid.UUID,
+    batch_id: uuid.UUID,
+    request: Request,
+    project: Project = Depends(require_project_visible),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_roles(*_BATCH_SUBMITTERS)),
+):
+    """整批送审：把批次内所有未送审任务（pending / in_progress）提交质检。
+
+    与单任务提交共用 `perform_task_submit`，因此审核轮次、任务锁释放、Mask QC
+    自动运行与 contributor 快照语义完全一致；结束后由 `check_auto_transitions`
+    把批次推进到 reviewing。`rejected` 任务需先 accept-rejection 重做，不在此
+    批量集合内（会通过 remaining_tasks 暴露）。
+    """
+    from app.db.models.task import Task
+    from app.api.v1.tasks._shared import perform_task_submit
+
+    svc = BatchService(db)
+    batch = await svc.get(batch_id)
+    if not batch or batch.project_id != project_id:
+        raise HTTPException(status_code=404, detail="Batch not found")
+
+    actor_is_owner = _is_owner(current_user, project)
+    if not (actor_is_owner or _is_annotator_assigned(current_user, batch)):
+        raise HTTPException(
+            status_code=403,
+            detail="only the assigned annotator or a project owner can submit the batch",
+        )
+
+    tasks = (
+        (
+            await db.execute(
+                sa_select(Task)
+                .where(
+                    Task.batch_id == batch_id,
+                    Task.status.in_(("pending", "in_progress")),
+                )
+                .order_by(Task.created_at, Task.id)
+                .with_for_update()
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    now = datetime.now(timezone.utc)
+    submitted = 0
+    mask_qc_dispatches: list[tuple[uuid.UUID, uuid.UUID]] = []
+    for task in tasks:
+        if (
+            not actor_is_owner
+            and task.assignee_id is not None
+            and task.assignee_id != current_user.id
+        ):
+            continue
+
+        result = await perform_task_submit(db, task, actor=current_user, now=now)
+        mask_qc_run = result["mask_qc_run"]
+        await AuditService.log(
+            db,
+            actor=current_user,
+            action=AuditAction.TASK_SUBMIT,
+            target_type="task",
+            target_id=str(task.id),
+            request=request,
+            status_code=200,
+            detail={
+                "project_id": str(task.project_id),
+                "batch_id": str(batch_id),
+                "assignee_id": str(task.assignee_id) if task.assignee_id else None,
+                "contributor_ids": result["contributor_ids"],
+                "review_round_id": str(result["review_round_id"]),
+                "result": "submitted",
+                "trigger": "batch_submit_review",
+                "mask_qc_run_id": str(mask_qc_run.id) if mask_qc_run else None,
+                "mask_qc_status": result["mask_qc_status"],
+            },
+        )
+        submitted += 1
+        if (
+            result["mask_qc_created"]
+            and mask_qc_run is not None
+            and result["mask_qc_job"] is not None
+        ):
+            mask_qc_dispatches.append((mask_qc_run.id, result["mask_qc_job"].id))
+
+    await svc.check_auto_transitions(batch_id)
+    await svc.recalculate_counters(batch_id)
+    await AuditService.log(
+        db,
+        actor=current_user,
+        action=AuditAction.BATCH_STATUS_CHANGED,
+        target_type="batch",
+        target_id=str(batch_id),
+        request=request,
+        status_code=200,
+        detail={"submitted_tasks": submitted, "trigger": "batch_submit_review"},
+    )
+    await db.commit()
+    await db.refresh(batch)
+
+    if mask_qc_dispatches:
+        from app.services.mask_qc.service import MaskQCError, dispatch_mask_qc_run
+
+        for run_id, job_id in mask_qc_dispatches:
+            try:
+                await dispatch_mask_qc_run(db, run_id=run_id, async_job_id=job_id)
+            except MaskQCError:
+                continue
+
+    remaining = (
+        await db.scalar(
+            sa_select(func.count())
+            .select_from(Task)
+            .where(
+                Task.batch_id == batch_id,
+                Task.status.in_(("pending", "in_progress")),
+            )
+        )
+    ) or 0
+    return BatchSubmitResult(
+        batch_id=batch_id,
+        status=batch.status,
+        submitted_tasks=submitted,
+        skipped_tasks=len(tasks) - submitted,
+        remaining_tasks=int(remaining),
+    )
 
 
 @router.post("/split")

@@ -12,6 +12,7 @@ import {
   useBatches,
   useDeleteBatch,
   useTransitionBatch,
+  useSubmitBatch,
   useSplitBatches,
   useBulkArchiveBatches,
   useBulkDeleteBatches,
@@ -114,6 +115,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
   const { data: batches = [], isLoading } = useBatches(project.id);
   const deleteBatch = useDeleteBatch(project.id);
   const transitionBatch = useTransitionBatch(project.id);
+  const submitBatchReview = useSubmitBatch(project.id);
   const splitBatches = useSplitBatches(project.id);
   const bulkArchive = useBulkArchiveBatches(project.id);
   const bulkDelete = useBulkDeleteBatches(project.id);
@@ -369,6 +371,20 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
         onError: (e) => pushToast({ msg: "状态转移失败", sub: (e as Error).message }),
       },
     );
+  };
+
+  // 整批送审与标注页共用同一端点：提交批次内所有未送审任务，而不是只改批次状态。
+  const handleSubmitReview = (batch: BatchResponse) => {
+    submitBatchReview.mutate(batch.id, {
+      onSuccess: (result) =>
+        pushToast({
+          msg: `已提交 ${result.submitted_tasks} 个任务质检`,
+          sub:
+            result.remaining_tasks > 0 ? `仍有 ${result.remaining_tasks} 个任务未送审` : undefined,
+          kind: "success",
+        }),
+      onError: (e) => pushToast({ msg: "提交质检失败", sub: (e as Error).message }),
+    });
   };
 
   const handleDelete = (batch: BatchResponse, force = false) => {
@@ -731,7 +747,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                           <BatchActionButton
                             icon="check"
                             label="提交质检"
-                            onClick={() => handleTransition(b, "reviewing")}
+                            onClick={() => handleSubmitReview(b)}
                             title="整批提交质检（owner / 被分派标注员）"
                           />
                         )}

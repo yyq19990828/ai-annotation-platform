@@ -542,6 +542,117 @@ async def _attach_dimensions_batch(
     return result
 
 
+async def _submission_assignment_start(
+    db: AsyncSession, task_id: uuid.UUID, user_id: uuid.UUID, now: datetime
+) -> datetime:
+    """Preserve the actor's current work start before submit/skip releases it."""
+
+    from app.db.models.task_lock import TaskLock
+
+    started_at = await db.scalar(
+        select(TaskLock.created_at).where(
+            TaskLock.task_id == task_id,
+            TaskLock.user_id == user_id,
+            TaskLock.expire_at > now,
+            TaskLock.created_at <= now,
+        )
+    )
+    return started_at or now
+
+
+async def perform_task_submit(
+    db: AsyncSession,
+    task: Task,
+    *,
+    actor: User,
+    now: datetime | None = None,
+) -> dict:
+    """Apply the pending/in_progress → review transition for one task.
+
+    Shared by the single-task submit endpoint and the batch submit endpoint so a
+    bulk send reuses the same review-round, lock, mask-QC and contributor
+    semantics as submitting a task from the Workbench. The caller owns task
+    validation, the submit audit row, commit and mask-QC dispatch.
+    """
+    from app.services.task_lock import TaskLockService
+
+    now = now or datetime.now(timezone.utc)
+    if task.assignee_id is None:
+        task.assignee_id = actor.id
+        task.assigned_at = await _submission_assignment_start(
+            db, task.id, actor.id, now
+        )
+
+    review_round_id = _start_review_round(task)
+    task.status = "review"
+    task.submitted_at = now
+    task.reviewer_id = None
+    task.reviewer_is_override = False
+    task.reviewer_claimed_at = None
+    task.reviewed_at = None
+    task.reject_reason = None
+    task.reject_reason_type = None
+
+    await TaskLockService(db).release(task.id, actor.id)
+
+    mask_qc_run = None
+    mask_qc_job = None
+    mask_qc_created = False
+    mask_qc_status: str | None = None
+    has_mask = False
+    from app.db.models.project import Project
+    from app.services.mask_qc.config import load_mask_qc_config
+    from app.services.mask_qc.service import MaskQCError, create_mask_qc_run
+    from app.schemas.mask_qc import MaskQCRunRequest
+
+    project = await db.get(Project, task.project_id)
+    config = load_mask_qc_config(project.mask_qc_config if project else None)
+    has_mask = (
+        await db.execute(
+            select(Annotation.id)
+            .where(
+                Annotation.task_id == task.id,
+                Annotation.is_active.is_(True),
+                Annotation.was_cancelled.is_(False),
+                Annotation.geometry["type"].astext.in_(
+                    ("raster_mask", "video_track_mask")
+                ),
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none() is not None
+    if (
+        project is not None
+        and has_mask
+        and config.enabled
+        and config.auto_run == "on_review_submit"
+    ):
+        try:
+            mask_qc_run, mask_qc_job, mask_qc_created = await create_mask_qc_run(
+                db,
+                project=project,
+                actor_id=actor.id,
+                request=MaskQCRunRequest(scope="task_ids", task_ids=[task.id]),
+            )
+        except MaskQCError as exc:
+            mask_qc_status = str(exc.detail.get("reason") or "enqueue_failed")
+        else:
+            mask_qc_status = mask_qc_run.status
+
+    contributor_ids = await _task_contributor_snapshot(db, task)
+    _capture_first_review_contributor_snapshot(task, contributor_ids)
+
+    return {
+        "review_round_id": review_round_id,
+        "contributor_ids": contributor_ids,
+        "mask_qc_run": mask_qc_run,
+        "mask_qc_job": mask_qc_job,
+        "mask_qc_created": mask_qc_created,
+        "mask_qc_status": mask_qc_status,
+        "has_mask": has_mask,
+    }
+
+
 async def _attach_image_pyramids_batch(
     db: AsyncSession,
     tasks: list[Task],
