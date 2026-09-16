@@ -814,7 +814,7 @@ export function DatasetsPage() {
             <div className="flex items-center justify-between border-b border-border px-4 py-3.5">
               <div className="flex items-center gap-3">
                 <h3 className="m-0 text-sm font-semibold">全部数据集</h3>
-                <FilterGroup label="数据类型">
+                <FilterGroup label="数据类型" hideLabel>
                   {TYPE_FILTERS.map((option) => (
                     <FilterToggle
                       key={option}

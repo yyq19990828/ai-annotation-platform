@@ -365,7 +365,7 @@ function UsersPageContent() {
           />
           {tab === "members" && (
             <div className="flex flex-wrap items-center justify-end gap-2">
-              <FilterGroup label="账号" compact>
+              <FilterGroup label="账号" hideLabel compact>
                 <FilterSelect
                   aria-label="账号状态"
                   value={userStatus}
@@ -376,7 +376,6 @@ function UsersPageContent() {
                       { replace: false },
                     );
                   }}
-                  className="w-full"
                 >
                   {Object.entries(USER_STATUS_FILTER_LABELS).map(([value, label]) => (
                     <option key={value} value={value}>

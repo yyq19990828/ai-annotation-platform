@@ -142,6 +142,7 @@ watched_tags = ["projects", "datasets", "batches", "tasks", "annotations", "anno
 "POST /api/v1/projects/{project_id}/batches/{batch_id}/exports/lidar:preflight" = { status = "excluded", reason = "no-external-demand" }
 "POST /api/v1/projects/{project_id}/batches/{batch_id}/reject" = { status = "covered" }
 "POST /api/v1/projects/{project_id}/batches/{batch_id}/reset" = { status = "covered" }
+"POST /api/v1/projects/{project_id}/batches/{batch_id}/submit-review" = { status = "excluded", reason = "web-only" }
 "POST /api/v1/projects/{project_id}/batches/{batch_id}/transition" = { status = "covered" }
 "POST /api/v1/projects/{project_id}/classes/rename" = { status = "excluded", reason = "no-external-demand" }
 "POST /api/v1/projects/{project_id}/cleanup-orphans" = { status = "excluded", reason = "maintenance-risk" }
