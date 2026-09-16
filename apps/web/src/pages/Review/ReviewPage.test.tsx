@@ -258,6 +258,85 @@ describe("ReviewPage", () => {
     expect(screen.getByText(/共 1 个待审核任务/)).toBeInTheDocument();
   });
 
+  it("整批退回走应用内弹窗填原因（不再依赖 window.prompt）", () => {
+    const mutate = vi.fn();
+    mockUseRejectBatch.mockReturnValue({ mutate, isPending: false });
+    mockUseReviewerStats.mockReturnValue({
+      data: {
+        reviewing_batches: [
+          {
+            batch_id: "b1",
+            batch_name: "批次A",
+            batch_display_id: "B-1",
+            project_id: "p1",
+            project_name: "项目X",
+            total_tasks: 5,
+            review_tasks: 2,
+            completed_tasks: 1,
+          },
+        ],
+      },
+    });
+    mockUseTaskList.mockReturnValue({
+      data: { pages: [{ items: [sampleTask] }] },
+      isLoading: false,
+    });
+    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue(null);
+    renderUI("/review?project=p1&batch=b1");
+
+    fireEvent.click(screen.getByRole("button", { name: "整批退回" }));
+    const textarea = screen.getByPlaceholderText(/请说明需要标注员重做的具体问题/);
+    fireEvent.change(textarea, { target: { value: "重新标注车辆框" } });
+    fireEvent.click(screen.getByRole("button", { name: "确认驳回" }));
+
+    expect(mutate).toHaveBeenCalledWith(
+      { batchId: "b1", feedback: "重新标注车辆框" },
+      expect.objectContaining({ onSuccess: expect.any(Function) }),
+    );
+    expect(promptSpy).not.toHaveBeenCalled();
+    promptSpy.mockRestore();
+  });
+
+  it("打开整批退回弹窗后切换批次作用域会关闭弹窗，避免误退回新批次", () => {
+    mockUseReviewerStats.mockReturnValue({
+      data: {
+        reviewing_batches: [
+          {
+            batch_id: "b1",
+            batch_name: "批次A",
+            batch_display_id: "B-1",
+            project_id: "p1",
+            project_name: "项目X",
+            total_tasks: 5,
+            review_tasks: 2,
+            completed_tasks: 1,
+          },
+          {
+            batch_id: "b2",
+            batch_name: "批次B",
+            batch_display_id: "B-2",
+            project_id: "p1",
+            project_name: "项目X",
+            total_tasks: 4,
+            review_tasks: 2,
+            completed_tasks: 0,
+          },
+        ],
+      },
+    });
+    mockUseTaskList.mockReturnValue({
+      data: { pages: [{ items: [sampleTask] }] },
+      isLoading: false,
+    });
+    renderUI("/review?project=p1&batch=b1");
+
+    fireEvent.click(screen.getByRole("button", { name: "整批退回" }));
+    expect(screen.getByPlaceholderText(/请说明需要标注员重做的具体问题/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("batch-b2"));
+    expect(screen.queryByPlaceholderText(/请说明需要标注员重做的具体问题/)).not.toBeInTheDocument();
+  });
+
   it("全选 checkbox → 已选 N/N 文案出现 + 批量操作按钮显示", () => {
     mockUseReviewerStats.mockReturnValue({
       data: {

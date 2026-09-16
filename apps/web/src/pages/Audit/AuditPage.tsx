@@ -351,14 +351,14 @@ export function AuditPage() {
 
       <Card>
         <div className={styles.filters}>
-          <FilterGroup label="事件范围" compact>
+          {/* 标签自解释（选项即范围），hideLabel 避免纯装饰文案把下拉挤到第二行导致面板错位。 */}
+          <FilterGroup label="事件范围" hideLabel compact>
             <FilterSelect
               aria-label="审计事件范围"
               value={scope}
               onChange={(e) => {
                 patch({ scope: e.target.value as "business" | "all", page: 1 }, { replace: false });
               }}
-              className="w-full"
             >
               <option value="business">仅业务事件</option>
               <option value="all">全部（含 HTTP 元数据）</option>
@@ -517,7 +517,7 @@ export function AuditPage() {
 
         {focused && (
           <div className={styles.focusBar}>
-            <FilterGroup label="追溯模式" compact className={styles.focusTags}>
+            <FilterGroup label="追溯模式" hideLabel compact className={styles.focusTags}>
               {actorId && (
                 <ActiveFilterChip
                   label="操作人"

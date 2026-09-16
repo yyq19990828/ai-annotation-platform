@@ -157,6 +157,7 @@
 | POST | `/{batch_id}/assignment-apply` |
 | DELETE | `/{batch_id}` |
 | POST | `/{batch_id}/transition` |
+| POST | `/{batch_id}/submit-review` |
 | POST | `/split` |
 | POST | `/distribute-batches` |
 | POST | `/distribution-preview` |
@@ -745,4 +746,4 @@
 
 ---
 
-_共 68 模块 / 428 路由_
+_共 68 模块 / 429 路由_

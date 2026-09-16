@@ -83,7 +83,7 @@ export function ViewerDashboard() {
         <div className="flex items-center justify-between border-b border-border px-4 py-3.5">
           <div className="flex items-center gap-3">
             <h3 className="text-sm font-semibold">项目列表</h3>
-            <FilterGroup label="状态">
+            <FilterGroup label="状态" hideLabel>
               {FILTERS.map((option) => (
                 <FilterToggle
                   key={option}

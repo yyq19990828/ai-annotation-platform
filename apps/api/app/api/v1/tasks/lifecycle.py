@@ -26,27 +26,11 @@ from app.api.v1.tasks._shared import (
     _ensure_review_round,
     _capture_first_review_contributor_snapshot,
     _task_contributor_snapshot,
+    _submission_assignment_start,
+    perform_task_submit,
 )
 
 router = APIRouter()
-
-
-async def _submission_assignment_start(
-    db: AsyncSession, task_id: uuid.UUID, user_id: uuid.UUID, now: datetime
-) -> datetime:
-    """Preserve the actor's current work start before submit/skip releases it."""
-
-    from app.db.models.task_lock import TaskLock
-
-    started_at = await db.scalar(
-        select(TaskLock.created_at).where(
-            TaskLock.task_id == task_id,
-            TaskLock.user_id == user_id,
-            TaskLock.expire_at > now,
-            TaskLock.created_at <= now,
-        )
-    )
-    return started_at or now
 
 
 @router.post("/{task_id}/submit")
@@ -83,28 +67,8 @@ async def submit_task(
 
     _assert_task_editable(task, current_user)
 
-    # v0.6.6: 提交者即 assignee。任务初始 assignee_id 为 NULL（创建时未指派），
-    # 否则后续 withdraw/reopen 会因 assignee 校验失败而拒绝（"only assignee can withdraw"）。
     now = datetime.now(timezone.utc)
-    if task.assignee_id is None:
-        task.assignee_id = current_user.id
-        task.assigned_at = await _submission_assignment_start(
-            db, task_id, current_user.id, now
-        )
-
-    review_round_id = _start_review_round(task)
-    task.status = "review"
-    task.submitted_at = now
-    # 清空上一轮 review 痕迹（reopen → 再次 submit 场景）
-    task.reviewer_id = None
-    task.reviewer_is_override = False
-    task.reviewer_claimed_at = None
-    task.reviewed_at = None
-    task.reject_reason = None
-    task.reject_reason_type = None
-
-    lock_svc = TaskLockService(db)
-    await lock_svc.release(task_id, current_user.id)
+    result = await perform_task_submit(db, task, actor=current_user, now=now)
 
     from app.services.batch import BatchService
 
@@ -113,52 +77,8 @@ async def submit_task(
     if task.batch_id:
         await batch_svc.recalculate_counters(task.batch_id)
 
-    mask_qc_run = None
-    mask_qc_job = None
-    mask_qc_created = False
-    mask_qc_status = None
-    from app.db.models.annotation import Annotation
-    from app.db.models.project import Project
-    from app.services.mask_qc.config import load_mask_qc_config
-    from app.services.mask_qc.service import MaskQCError, create_mask_qc_run
-    from app.schemas.mask_qc import MaskQCRunRequest
-
-    project = await db.get(Project, task.project_id)
-    config = load_mask_qc_config(project.mask_qc_config if project else None)
-    has_mask = (
-        await db.execute(
-            select(Annotation.id)
-            .where(
-                Annotation.task_id == task.id,
-                Annotation.is_active.is_(True),
-                Annotation.was_cancelled.is_(False),
-                Annotation.geometry["type"].astext.in_(
-                    ("raster_mask", "video_track_mask")
-                ),
-            )
-            .limit(1)
-        )
-    ).scalar_one_or_none()
-    if (
-        project is not None
-        and has_mask is not None
-        and config.enabled
-        and config.auto_run == "on_review_submit"
-    ):
-        try:
-            mask_qc_run, mask_qc_job, mask_qc_created = await create_mask_qc_run(
-                db,
-                project=project,
-                actor_id=current_user.id,
-                request=MaskQCRunRequest(scope="task_ids", task_ids=[task.id]),
-            )
-        except MaskQCError as exc:
-            mask_qc_status = str(exc.detail.get("reason") or "enqueue_failed")
-        else:
-            mask_qc_status = mask_qc_run.status
-
-    contributor_ids = await _task_contributor_snapshot(db, task)
-    _capture_first_review_contributor_snapshot(task, contributor_ids)
+    mask_qc_run = result["mask_qc_run"]
+    mask_qc_job = result["mask_qc_job"]
     await AuditService.log(
         db,
         actor=current_user,
@@ -170,18 +90,22 @@ async def submit_task(
         detail={
             "project_id": str(task.project_id),
             "assignee_id": str(task.assignee_id) if task.assignee_id else None,
-            "contributor_ids": contributor_ids,
-            "review_round_id": str(review_round_id),
+            "contributor_ids": result["contributor_ids"],
+            "review_round_id": str(result["review_round_id"]),
             "result": "submitted",
             "mask_qc_run_id": str(mask_qc_run.id) if mask_qc_run else None,
-            "mask_qc_status": mask_qc_status,
+            "mask_qc_status": result["mask_qc_status"],
         },
     )
 
     await db.commit()
-    mask_qc_status = mask_qc_status if has_mask is not None else None
-    if mask_qc_created and mask_qc_run is not None and mask_qc_job is not None:
-        from app.services.mask_qc.service import dispatch_mask_qc_run
+    mask_qc_status = result["mask_qc_status"] if result["has_mask"] else None
+    if (
+        result["mask_qc_created"]
+        and mask_qc_run is not None
+        and mask_qc_job is not None
+    ):
+        from app.services.mask_qc.service import MaskQCError, dispatch_mask_qc_run
 
         try:
             await dispatch_mask_qc_run(

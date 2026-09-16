@@ -237,7 +237,7 @@ export function ServicePoolsSection({
           className="h-8 w-56 pl-7 text-xs"
         />
       </div>
-      <FilterGroup label="健康" compact>
+      <FilterGroup label="健康" hideLabel compact>
         <FilterSelect
           aria-label="按健康状态筛选服务池"
           value={url.poolHealth}

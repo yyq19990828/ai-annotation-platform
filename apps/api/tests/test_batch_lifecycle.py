@@ -1567,3 +1567,281 @@ class TestBulkApproveReject:
             .all()
         )
         assert len(logs) == 1
+
+
+# ── 11. 整批送审（submit-review）────────────────────────────────────────────
+
+
+class TestBatchSubmitReview:
+    @pytest.mark.asyncio
+    async def test_assigned_annotator_submits_all_pending(
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
+    ):
+        """整批送审把 pending / in_progress 任务全部提交并推进到 reviewing。"""
+        owner, _ = super_admin
+        user, token = annotator
+        p, batch, tasks = await _seed(
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="annotating",
+            n_tasks=3,
+            task_status="pending",
+        )
+        tasks[0].status = "in_progress"
+        await db_session.commit()
+
+        resp = await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/{batch.id}/submit-review",
+            headers=_bearer(token),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["submitted_tasks"] == 3
+        assert body["status"] == "reviewing"
+
+        for t in tasks:
+            await db_session.refresh(t)
+            assert t.status == "review"
+        await db_session.refresh(batch)
+        assert batch.status == "reviewing"
+        assert batch.review_tasks == 3
+
+    @pytest.mark.asyncio
+    async def test_rejected_tasks_are_skipped(
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
+    ):
+        """rejected 任务需先重做，不进入整批送审集合，批次保持 annotating。"""
+        owner, _ = super_admin
+        user, token = annotator
+        p, batch, tasks = await _seed(
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="annotating",
+            n_tasks=3,
+            task_status="pending",
+        )
+        tasks[0].status = "in_progress"
+        tasks[1].status = "rejected"
+        await db_session.commit()
+
+        resp = await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/{batch.id}/submit-review",
+            headers=_bearer(token),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["submitted_tasks"] == 2
+        assert body["remaining_tasks"] == 0
+
+        await db_session.refresh(tasks[1])
+        assert tasks[1].status == "rejected"
+        await db_session.refresh(tasks[0])
+        assert tasks[0].status == "review"
+        await db_session.refresh(batch)
+        # rejected 仍是 blocker，批次保持 annotating
+        assert batch.status == "annotating"
+
+    @pytest.mark.asyncio
+    async def test_unassigned_annotator_cannot_submit_batch(
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
+    ):
+        owner, _ = super_admin
+        user, token = annotator
+        p, batch, _ = await _seed(
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="annotating",
+            n_tasks=2,
+            task_status="pending",
+        )
+        batch.annotator_id = None
+        batch.assigned_user_ids = []
+        await db_session.commit()
+
+        resp = await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/{batch.id}/submit-review",
+            headers=_bearer(token),
+        )
+        assert resp.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_rejects_batch_in_incompatible_status(
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
+    ):
+        """draft / rejected 等无法归一化的状态拒绝整批送审，且不改任务。"""
+        owner, owner_token = super_admin
+        user, _ = annotator
+        p, batch, tasks = await _seed(
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="draft",
+            n_tasks=2,
+            task_status="pending",
+        )
+        await db_session.commit()
+
+        resp = await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/{batch.id}/submit-review",
+            headers=_bearer(owner_token),
+        )
+        assert resp.status_code == 409, resp.text
+        for t in tasks:
+            await db_session.refresh(t)
+            assert t.status == "pending"
+
+    @pytest.mark.asyncio
+    async def test_owner_submission_preserves_effective_assignee(
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
+    ):
+        """owner 整批送审时，task.assignee_id 为空应按批次标注员归属，而不是 owner。"""
+        owner, owner_token = super_admin
+        user, _ = annotator
+        p, batch, tasks = await _seed(
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="annotating",
+            n_tasks=2,
+            task_status="pending",
+        )
+        for t in tasks:
+            assert t.assignee_id is None
+        await db_session.commit()
+
+        resp = await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/{batch.id}/submit-review",
+            headers=_bearer(owner_token),
+        )
+        assert resp.status_code == 200, resp.text
+        for t in tasks:
+            await db_session.refresh(t)
+            assert t.status == "review"
+            assert t.assignee_id == user.id
+            assert t.assignee_id != owner.id
+
+    @pytest.mark.asyncio
+    async def test_owner_can_submit_partial_reviewing_batch(
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
+    ):
+        """批次已 reviewing 但仍有未送审任务时，owner 仍可整批提交剩余任务。"""
+        owner, owner_token = super_admin
+        user, _ = annotator
+        p, batch, tasks = await _seed(
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="reviewing",
+            n_tasks=3,
+            task_status="pending",
+        )
+        tasks[0].status = "review"
+        batch.review_tasks = 1
+        await db_session.commit()
+
+        resp = await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/{batch.id}/submit-review",
+            headers=_bearer(owner_token),
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["submitted_tasks"] == 2
+        assert body["status"] == "reviewing"
+
+        for t in tasks:
+            await db_session.refresh(t)
+            assert t.status == "review"
+
+
+class TestRejectPartialBatch:
+    @pytest.mark.asyncio
+    async def test_owner_can_reject_annotating_batch(
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
+    ):
+        """部分送审（annotating + review_tasks > 0）的批次也能整批退回。"""
+        owner, owner_token = super_admin
+        user, _ = annotator
+        p, batch, tasks = await _seed(
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="annotating",
+            n_tasks=3,
+            task_status="pending",
+        )
+        tasks[0].status = "review"
+        tasks[1].status = "completed"
+        batch.review_tasks = 1
+        batch.completed_tasks = 1
+        await db_session.commit()
+
+        resp = await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/{batch.id}/reject",
+            json={"feedback": "整批打回重做"},
+            headers=_bearer(owner_token),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["status"] == "rejected"
+
+        for t in tasks:
+            await db_session.refresh(t)
+            assert t.status == "pending"
+
+    @pytest.mark.asyncio
+    async def test_reviewer_can_reject_annotating_batch(
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        reviewer,
+    ):
+        owner, _ = super_admin
+        rev, rev_token = reviewer
+        p, batch, _ = await _seed(
+            db_session,
+            owner.id,
+            rev.id,
+            batch_status="annotating",
+            n_tasks=2,
+            task_status="review",
+        )
+        await db_session.commit()
+
+        resp = await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/{batch.id}/reject",
+            json={"feedback": "请修正后重新送审"},
+            headers=_bearer(rev_token),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["status"] == "rejected"
