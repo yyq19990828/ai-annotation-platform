@@ -17,8 +17,22 @@ from app.schemas.invitation import InvitationOut
 from app.schemas.user import UserOut
 
 
+class UserPageItem(UserOut):
+    """User row plus a request-relative manageability flag.
+
+    ``is_managed`` tells the frontend whether the current actor may run
+    account-management actions on the row (role change, deactivate, delete,
+    password reset, group assignment).  Read visibility can be wider than the
+    manage scope (project admins see enabled annotators/reviewers incl.
+    unassigned ones, and read-only super admins), so visible rows are not
+    necessarily manageable.
+    """
+
+    is_managed: bool = True
+
+
 class UserPage(BaseModel):
-    items: list[UserOut]
+    items: list[UserPageItem]
     total: int
     page: int
     page_size: int

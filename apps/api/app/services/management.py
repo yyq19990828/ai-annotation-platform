@@ -36,6 +36,15 @@ from app.schemas.management import (
 USER_STATUS = Literal["active", "inactive", "all"]
 INVITATION_STATUS = Literal["pending", "accepted", "expired", "revoked", "all"]
 
+# Roles a project admin may *see* platform-wide when enabled.  Mirrors the
+# member-assignment candidate list (annotator / reviewer) plus read-only
+# super-admin lookup; excludes other project admins and viewers.
+_PA_VISIBLE_ROLES = (
+    UserRole.ANNOTATOR.value,
+    UserRole.REVIEWER.value,
+    UserRole.SUPER_ADMIN.value,
+)
+
 
 def _managed_user_ids(actor: User):
     """Return a correlated-independent subquery of a project admin's users."""
@@ -47,23 +56,69 @@ def _managed_user_ids(actor: User):
     )
 
 
+async def fetch_managed_user_ids(db: AsyncSession, actor: User) -> set[UUID]:
+    """Project-admin manage scope as a concrete id set (for per-row flags)."""
+
+    rows = (await db.execute(_managed_user_ids(actor))).scalars().all()
+    return set(rows)
+
+
 def user_scope_clause(
     actor: User,
     *,
     project_id: UUID | None = None,
 ):
-    """Scope management queries to the actor's visible user set.
+    """Scope **write/management** guards to the actor's managed user set.
 
-    The legacy picker endpoint intentionally has a wider candidate list.  E
-    management endpoints use this stricter rule consistently for list, stats,
-    export and bulk operations: super admins see all users; project admins see
-    themselves and users belonging to projects they own.
+    Management *writes* (bulk group assignment, and previews that must not
+    disclose out-of-scope accounts) use this strict rule: super admins manage
+    all users; project admins manage themselves and users belonging to
+    projects they own.  Read-only listing uses the wider
+    ``user_visibility_clause`` instead — visibility never grants management.
     """
 
     if actor.role == UserRole.SUPER_ADMIN.value:
         clause = true()
     else:
         clause = or_(User.id == actor.id, User.id.in_(_managed_user_ids(actor)))
+
+    if project_id is not None:
+        project_users = select(ProjectMember.user_id).where(
+            ProjectMember.project_id == project_id
+        )
+        clause = and_(clause, User.id.in_(project_users))
+    return clause
+
+
+def user_visibility_clause(
+    actor: User,
+    *,
+    project_id: UUID | None = None,
+):
+    """Scope read-only management queries (list / stats / export).
+
+    Super admins see all users.  Project admins see themselves, members of
+    projects they own, plus every *enabled* annotator / reviewer (the same
+    population the member-assignment picker exposes, incl. users not yet
+    assigned to any project) and every *enabled* super admin (read-only
+    contact/lookup; never manageable).  Deactivated accounts outside the
+    admin's projects, other project admins, and viewers stay hidden.
+
+    When ``project_id`` is given the clause stays project-bounded exactly like
+    ``user_scope_clause``: a foreign project yields nothing, so the wider
+    platform-wide arm cannot disclose cross-project membership.
+    """
+
+    if actor.role == UserRole.SUPER_ADMIN.value:
+        clause = true()
+    elif project_id is not None:
+        clause = user_scope_clause(actor)
+    else:
+        clause = or_(
+            User.id == actor.id,
+            User.id.in_(_managed_user_ids(actor)),
+            and_(User.is_active.is_(True), User.role.in_(_PA_VISIBLE_ROLES)),
+        )
 
     if project_id is not None:
         project_users = select(ProjectMember.user_id).where(
@@ -82,7 +137,7 @@ def build_user_query(
     status_filter: USER_STATUS = "active",
     search: str | None = None,
 ):
-    query = select(User).where(user_scope_clause(actor, project_id=project_id))
+    query = select(User).where(user_visibility_clause(actor, project_id=project_id))
     if status_filter == "active":
         query = query.where(User.is_active.is_(True))
     elif status_filter == "inactive":

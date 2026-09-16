@@ -53,23 +53,20 @@ vi.mock("@/hooks/useGroups", () => ({
 }));
 
 // --- usePermissions ---
+const mockUsePermissions = vi.fn();
 vi.mock("@/hooks/usePermissions", () => ({
-  usePermissions: () => ({
-    role: "super_admin",
-    hasPermission: () => true,
-    hasAnyPermission: () => true,
-    canAccessPage: () => true,
-    allowedPages: [],
-  }),
+  usePermissions: () => mockUsePermissions(),
 }));
 
 // --- authStore ---
+const mockAuthUser = {
+  id: "me-id",
+  name: "Admin",
+  email: "admin@example.com",
+  role: "super_admin",
+};
 vi.mock("@/stores/authStore", () => ({
-  useAuthStore: (sel: (s: any) => any) =>
-    sel({
-      token: "tok",
-      user: { id: "me-id", name: "Admin", email: "admin@example.com", role: "super_admin" },
-    }),
+  useAuthStore: (sel: (s: any) => any) => sel({ token: "tok", user: mockAuthUser }),
 }));
 
 // --- usersApi (for exportUsers, adminResetPassword) ---
@@ -215,6 +212,14 @@ describe("UsersPage", () => {
     mockUseUsersStats.mockReturnValue({ data: { weekly_active: 5, online: 2 } });
     mockUseGroups.mockReturnValue({ data: [] });
     mockUseUsers.mockReturnValue({ data: SAMPLE_USERS, isLoading: false });
+    mockAuthUser.role = "super_admin";
+    mockUsePermissions.mockReturnValue({
+      role: "super_admin",
+      hasPermission: () => true,
+      hasAnyPermission: () => true,
+      canAccessPage: () => true,
+      allowedPages: [],
+    });
   });
 
   it("渲染页面标题与成员表格", () => {
@@ -344,6 +349,63 @@ describe("UsersPage", () => {
     expect(screen.getByTitle("继续交接")).toBeInTheDocument();
     expect(screen.getByTitle("恢复账号")).toBeInTheDocument();
     expect(screen.queryByTitle("删除账号")).not.toBeInTheDocument();
+  });
+
+  it("project_admin 可见未分配成员与超管，但行操作禁用并说明原因", () => {
+    mockAuthUser.role = "project_admin";
+    mockUsePermissions.mockReturnValue({
+      role: "project_admin",
+      hasPermission: () => true,
+      hasAnyPermission: () => true,
+      canAccessPage: () => true,
+      allowedPages: [],
+    });
+    mockUseUsers.mockReturnValue({
+      data: [
+        ...SAMPLE_USERS.map((u) => ({ ...u, is_managed: true })),
+        {
+          id: "u4",
+          name: "Free Annotator",
+          email: "free@example.com",
+          role: "annotator",
+          is_active: true,
+          status: "offline",
+          group_id: null,
+          group_name: null,
+          created_at: "2026-04-01T00:00:00Z",
+          is_managed: false,
+        },
+        {
+          id: "u5",
+          name: "Root",
+          email: "root@example.com",
+          role: "super_admin",
+          is_active: true,
+          status: "online",
+          group_id: null,
+          group_name: null,
+          created_at: "2026-05-01T00:00:00Z",
+          is_managed: false,
+        },
+      ],
+      isLoading: false,
+    });
+    renderUI();
+
+    // 可见：未分配标注员与超管都出现在列表中
+    expect(screen.getByText("Free Annotator")).toBeInTheDocument();
+    expect(screen.getByText("Root")).toBeInTheDocument();
+
+    // 所管项目内成员（Alice / Bob）保留完整操作
+    expect(screen.getAllByTitle("编辑成员")).toHaveLength(2);
+    expect(screen.getAllByTitle("删除账号")).toHaveLength(2);
+
+    // 未分配标注员：唯一操作按钮禁用并说明原因，不出现写操作
+    const unmanagedBtn = screen.getByTitle("该用户不在你管理的项目内，仅可查看");
+    expect(unmanagedBtn).toBeDisabled();
+
+    // 超管：只读提示
+    expect(screen.getByTitle("仅可查看：超级管理员账号")).toBeDisabled();
   });
 
   it("初次离线且没有用户数据时显示等待网络恢复，而不是空列表", () => {

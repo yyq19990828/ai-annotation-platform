@@ -39,11 +39,13 @@ from app.schemas.management import (
     GroupAssignmentPreviewItem,
     RoleImpactPreview,
     UserPage,
+    UserPageItem,
 )
 from app.services.invitation import InvitationService
 from app.services.csv_export import csv_literal
 from app.services.management import (
     build_user_query,
+    fetch_managed_user_ids,
     fetch_user_page,
     role_impact_preview,
     user_scope_clause,
@@ -184,9 +186,26 @@ async def query_users(
         status_filter=status_filter,
         search=search,
     )
+    # Read visibility can exceed the manage scope; flag each row so the UI can
+    # render visible-but-not-manageable accounts (unassigned workers, super
+    # admins) with disabled actions instead of failing on the first write.
+    managed_ids: set[UUID] | None = None
+    if actor.role == UserRole.PROJECT_ADMIN.value:
+        managed_ids = await fetch_managed_user_ids(db, actor)
+
+    def _page_item(user: User) -> UserPageItem:
+        item = UserPageItem.model_validate(user)
+        item.is_managed = (
+            True
+            if managed_ids is None or user.id == actor.id
+            else user.id in managed_ids
+        )
+        return item
+
+    items = [_page_item(user) for user in rows]
     pages = (total + page_size - 1) // page_size if total else 0
     return UserPage(
-        items=[UserOut.model_validate(user) for user in rows],
+        items=items,
         total=total,
         page=page,
         page_size=page_size,

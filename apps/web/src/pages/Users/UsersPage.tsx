@@ -746,7 +746,9 @@ function UsersPageContent() {
                                 <Icon name="activity" size={11} />
                               </Button>
                             )}
-                            {me?.id !== u.id && editableTargets.includes(u.role as UserRole) ? (
+                            {me?.id !== u.id &&
+                            editableTargets.includes(u.role as UserRole) &&
+                            u.is_managed !== false ? (
                               <>
                                 <Button
                                   variant="ghost"
@@ -824,7 +826,15 @@ function UsersPageContent() {
                                 variant="ghost"
                                 size="sm"
                                 disabled
-                                title={me?.id === u.id ? "不能修改自己" : "无权修改该用户"}
+                                title={
+                                  me?.id === u.id
+                                    ? "不能修改自己"
+                                    : u.is_managed === false
+                                      ? u.role === "super_admin"
+                                        ? "仅可查看：超级管理员账号"
+                                        : "该用户不在你管理的项目内，仅可查看"
+                                      : "无权修改该用户"
+                                }
                               >
                                 <Icon name="edit" size={11} className="opacity-40" />
                               </Button>

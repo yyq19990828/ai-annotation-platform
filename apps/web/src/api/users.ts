@@ -8,6 +8,8 @@ export type UserResponse = UserOut & {
   disabled_at?: string | null;
   disabled_by?: string | null;
   disabled_reason?: string | null;
+  /** Whether the current actor may run account-management actions on this row. */
+  is_managed?: boolean;
 };
 
 export type UserStatusFilter = "active" | "inactive" | "all";
