@@ -92,8 +92,10 @@ it("preserves native segment selector keys without activating overflow menu acti
   }
   fireEvent.change(select, { target: { value: "" } });
   expect(onSelectVideoSegment).toHaveBeenCalledWith(null);
-  expect(fireEvent.keyDown(select, { key: "Tab" })).toBe(true);
-  fireEvent.keyDown(select, { key: "Escape" });
+  // Tab 在 items 菜单内（含 footer 原生 select）统一为关闭语义：关闭并归还
+  // 触发器，页面遍历从触发器继续；否则 portal 面板在 body 末尾，放行 Tab 会把
+  // 焦点带出文档而菜单仍开着（PR #117 评审 P2）
+  fireEvent.keyDown(select, { key: "Tab" });
   expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   expect(trigger).toHaveFocus();
 
