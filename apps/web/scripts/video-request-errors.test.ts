@@ -120,3 +120,30 @@ test("retiring a video task permits only exact aborted GET manifest reads", () =
     assert.equal(isVideoLifecycleCancellation({ ...request, path: `${path}/retry` }), false);
   }
 });
+
+test("task retirement or reload may cancel read-only context queries", () => {
+  const paths = [
+    `${task}/annotations`,
+    `${task}/predictions`,
+    `${task}/video/segments`,
+    `${task}/video/frame-timetable`,
+    `${video}/chapters`,
+    "/api/v1/projects/00000000-0000-0000-0000-000000000000/mention-candidates",
+  ];
+  for (const path of paths) {
+    const request = { ...abort, method: "GET", path };
+    assert.equal(isVideoLifecycleCancellation(request), true, path);
+    for (const method of ["POST", "PATCH", "DELETE"])
+      assert.equal(
+        isVideoLifecycleCancellation({ ...request, method }),
+        false,
+        `${method} ${path}`,
+      );
+    assert.equal(isVideoLifecycleCancellation({ ...request, kind: "http" }), false);
+    assert.equal(
+      isVideoLifecycleCancellation({ ...request, message: "net::ERR_CONNECTION_RESET" }),
+      false,
+    );
+    assert.equal(isVideoLifecycleCancellation({ ...request, path: `${path}/export` }), false);
+  }
+});

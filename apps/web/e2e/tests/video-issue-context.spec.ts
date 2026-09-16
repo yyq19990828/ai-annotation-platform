@@ -371,6 +371,25 @@ async function key(page: Page, value: string) {
   await page.keyboard.press(value);
 }
 
+async function expectPaintSettled(page: Page) {
+  // 时间轴点击触发的精确取帧是异步完成的：负载高时会迟到，并盖掉随后键盘
+  // 步进已到达的帧号（实测把 F120 拽回 F105）。等绘制帧号追上选中帧号再继
+  // 续；原生 <video> 回退不经精确管线，无需等待。
+  await expect
+    .poll(
+      () =>
+        stage(page).evaluate((node) => {
+          if (node.getAttribute("data-video-frame-source") !== "webcodecs") return true;
+          return (
+            node.getAttribute("data-video-painted-frame-index") ===
+            node.getAttribute("data-video-frame-index")
+          );
+        }),
+      { timeout: 30_000 },
+    )
+    .toBe(true);
+}
+
 async function seek(page: Page, frame: number) {
   await key(page, "k");
   let window = await readTimeline(page);
@@ -384,6 +403,8 @@ async function seek(page: Page, frame: number) {
   const rect = (await input.boundingBox())!;
   const ratio = Math.max(0, Math.min(1, (frame - window.from) / (window.to - window.from)));
   await page.mouse.click(rect.x + 1 + ratio * (rect.width - 2), rect.y + rect.height / 2);
+  // 等点击触发的异步取帧落地，避免迟到的解析结果回写旧行号。
+  await expectPaintSettled(page);
   let current = Number(await stage(page).getAttribute("data-video-frame-index"));
   for (let steps = 0; current !== frame && steps < 10; steps += 1) {
     const forward = frame > current;
@@ -391,6 +412,7 @@ async function seek(page: Page, frame: number) {
     await key(page, forward ? "Shift+ArrowRight" : "Shift+ArrowLeft");
     await expect(stage(page)).toHaveAttribute("data-video-frame-index", String(current));
   }
+  await expectPaintSettled(page);
   await expect(stage(page)).toHaveAttribute("data-video-frame-index", String(frame));
 }
 
@@ -1022,6 +1044,7 @@ test.describe("video Issue persisted context", () => {
     expect(await annotations(request, fixture)).toEqual([]);
     await page.reload();
     await expect(stage(page)).toBeVisible({ timeout: 25_000 });
+    await expectPaintSettled(page);
     await openIssues(page);
     const range = issues.find((issue) => issue.anchor_position?.frame === 120)!;
     await expect(page.getByTestId(`discussion-issue-card-${range.id}`)).toContainText("F120–F160");
@@ -1068,6 +1091,7 @@ test.describe("video Issue persisted context", () => {
     await page.setViewportSize({ width: 1180, height: 820 });
     await page.reload();
     await expect(stage(page)).toBeVisible({ timeout: 25_000 });
+    await expectPaintSettled(page);
     await page
       .getByTestId("ai-inspector-panel")
       .getByRole("button", { name: "全部", exact: true })
@@ -1125,6 +1149,7 @@ test.describe("video Issue persisted context", () => {
     expect(updated.version).toBeGreaterThan(original.version);
     await page.reload();
     await expect(stage(page)).toBeVisible({ timeout: 25_000 });
+    await expectPaintSettled(page);
     await locate(page, fixture, issue, true);
     await expect(navigation(page)).toContainText("对象已变化");
     expect((await listIssues(request, fixture)).find((entry) => entry.id === issue.id)).toEqual(
@@ -1137,6 +1162,7 @@ test.describe("video Issue persisted context", () => {
     expect(removed.status(), await removed.text()).toBe(204);
     await page.reload();
     await expect(stage(page)).toBeVisible({ timeout: 25_000 });
+    await expectPaintSettled(page);
     await locate(page, fixture, issue, true);
     await expect(navigation(page)).toContainText("对象已变化");
     await expect(trackRow(page, original.id)).toHaveCount(0);
@@ -1438,6 +1464,7 @@ test.describe("video Issue persisted context", () => {
     expect(visible.items.some((entry) => entry.id === issue.id)).toBe(false);
     await page.reload();
     await expect(stage(page)).toBeVisible({ timeout: 25_000 });
+    await expectPaintSettled(page);
     await openIssues(page);
     await page.getByTestId("issue-list-scope").selectOption("project");
     await expect(card).toHaveCount(0);

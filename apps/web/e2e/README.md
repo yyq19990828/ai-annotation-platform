@@ -107,7 +107,10 @@ PLAYWRIGHT_AI_REQUEST_WORKER=1 pnpm test:e2e \
 造确定性 H.264 fixture（baseline / 主 profile B 帧 / 短 GOP / VFR），验证精确帧
 pipeline 的开关边界、精确解码或安全回退、pending→ready 切换。视频舞台容器暴露
 `data-video-frame-source` / `data-video-precise-state` / `data-video-frame-index`
-三个可观察属性供 spec 读取。
+三个可观察属性供 spec 读取；`data-video-painted-frame-index`（精确绘制完成的帧号，
+非 webcodecs 源恒为 `-1`）用于等待绘制就绪——时间轴点击触发的异步取帧在负载下可能
+迟到并回写旧帧号，spec 应等它与 `data-video-frame-index` 一致后再继续步进或断言
+（见 `video-issue-context.spec.ts` 的 `expectPaintSettled`）。
 
 **能力门**：WebCodecs `VideoDecoder` 需 secure context。localhost 下 Chromium 暴露
 构造器，但 headless 软解下 `isConfigSupported` / 实际 decode 可能不通过，精确帧会
