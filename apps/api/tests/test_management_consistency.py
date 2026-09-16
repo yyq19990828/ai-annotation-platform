@@ -168,8 +168,10 @@ async def test_management_previews_do_not_reveal_out_of_scope_users(
 ):
     _, token = project_admin
     headers = {"Authorization": f"Bearer {token}"}
+    # Viewers stay outside a project admin's visibility and manage scope
+    # (enabled annotators/reviewers are operable since the #115 revision).
     outside = await create_user(
-        db_session, "annotator", "secret-member@e.test", "Hidden Person"
+        db_session, "viewer", "secret-member@e.test", "Hidden Person"
     )
     group = await httpx_client.post(
         "/api/v1/users/groups/bulk/preview",

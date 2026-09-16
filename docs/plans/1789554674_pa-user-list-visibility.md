@@ -6,6 +6,8 @@
 > Requested outcome: a project admin finds the same enabled, not-yet-assigned annotators/reviewers in **both** the member-assignment entry points and the **Users & Permissions** list, and can also **see enabled super admins there (read-only)**, while every account-management write (role change, deactivate, delete, password reset, group assignment) stays bounded to the admin's own projects and stays fully denied against super-admin accounts.
 > Motivation: two entry points return different populations for the same actor, so admins conclude an account does not exist and cannot look people up before assigning them; super admins are also invisible, so admins cannot even find who to contact about cross-project accounts (role-impact copy already tells them to "请联系超级管理员核对").
 > Non-goals: changing who can **manage** accounts; widening visibility of other project admins, viewers, or disabled accounts (incl. deactivated super admins); touching project member lists / performance / task data scopes; changing invitation flows.
+>
+> **Revision 2 (maintainer, 2026-09-16, after live acceptance):** read-only rows for unassigned workers were rejected — the disabled "仅可查看" state is wrong product-wise. Until annotator/reviewer identity becomes project-driven (planned follow-up), project admins **manage every enabled annotator/reviewer account** (unassigned or in other projects' memberships) for account-level writes: role switch (annotator ↔ reviewer), password reset, group assignment, edit. Lifecycle writes that hand over work (offboarding / deactivate / delete) additionally require the target's projects to be owned by the actor — unassigned accounts pass, straddling/foreign members stay gated on a super admin. Enabled super admins remain strictly read-only; deactivated accounts, other project admins, and viewers remain out of scope. Project-filtered queries stay project-bounded. The rest of this document describes Revision 1 as implemented; the Revision 2 deltas are marked inline and the code/tests/docs now encode Revision 2.
 
 ## Root cause (verified in this checkout)
 
@@ -62,6 +64,8 @@ Replace `useUsers()` + client-side role filter with two role-scoped queries (`us
 
 ## Resulting visibility matrix (project admin actor)
 
+Visibility (all rows below as of Revision 1; unchanged in Revision 2):
+
 | Population                                             | Before | After | Rationale                                                                    |
 | ------------------------------------------------------ | ------ | ----- | ---------------------------------------------------------------------------- |
 | Self                                                   | ✅     | ✅    | unchanged                                                                    |
@@ -74,7 +78,17 @@ Replace `useUsers()` + client-side role filter with two role-scoped queries (`us
 | Other project admins / viewers                         | ❌     | ❌    | issue: no expansion to admins/viewers                                        |
 | Any of the above, filtered by a **foreign** project id | ❌     | ❌    | project member lists stay project-bounded                                    |
 
-Write permissions (role change / deactivate / delete / reset / group assign) for rows outside own projects — including super-admin rows — denied before, denied after.
+Manage scope (Revision 2):
+
+| Target                                                | Account writes (role switch / reset / group / edit) | Lifecycle writes (offboarding / deactivate / delete) |
+| ----------------------------------------------------- | --------------------------------------------------- | ---------------------------------------------------- |
+| Own-project members (incl. straddling)                | ✅                                                  | straddling → 403 (super admin handles), else ✅      |
+| Enabled annotator/reviewer, unassigned                | ✅ (**Revision 2**, was 👁 in Revision 1)           | ✅ (**Revision 2**)                                  |
+| Enabled annotator/reviewer in foreign project(s) only | ✅ (**Revision 2**)                                 | 403 — handover needs the project owner / super admin |
+| Enabled super admin                                   | ❌ (role matrix + level checks)                     | ❌                                                   |
+| Viewer / other project admin / deactivated accounts   | ❌ (invisible)                                      | ❌                                                   |
+
+Direct API writes cannot escalate: per-operation role matrix (annotator ↔ reviewer only, lower-level password reset, assignable-role deactivate/delete) still applies on top of the manage scope.
 
 ## Work breakdown
 
@@ -139,11 +153,11 @@ Verification commands (after implementation):
 
 ## Outcome
 
-- Landed commits: `feat(issue-115): unify project-admin user visibility across member assignment and Users & Permissions` (see `git log` on `feat/issue-115`)
+- Landed commits: `fix(users): unify project-admin person visibility across entry points (#115)` plus the Revision 2 manage-scope patch on `feat/issue-115` (see `git log`)
 - Release milestone: Not yet determined
-- User documentation: `docs-site/user-guide/superadmin/user-management.md` (可见范围 + 只读行操作说明)
+- User documentation: `docs-site/user-guide/superadmin/user-management.md` (可见范围 + 标注员/质检员可操作说明)
 - Developer documentation: schema/contract change captured in `apps/api/openapi.snapshot.json` (`UserPageItem.is_managed`); no ADR needed (no architectural decision beyond the documented read/manage scope split in `app/services/management.py` docstrings)
-- CHANGELOG: Unreleased `Fixed` entry added
-- Tests: `apps/api/tests/test_users_visibility_scope.py` (11 cases), reworked `test_management_filter_contract.py`, `UsersPage.test.tsx` project-admin case, new `Step6Members.test.tsx`
-- Verification: backend pytest subset green (incl. `test_openapi_contract.py`); web lint/typecheck/vitest green; live browser validation on the isolated worktree dev stack (`pnpm dev:worktree`, API 8102 / Web 3101) confirmed wizard step 6, assign modal, Users & Permissions search, disabled read-only actions, and 403/404 on direct writes against both an unassigned annotator and a super admin
-- Remaining work: none for this issue; remote CI will run the full suites
+- CHANGELOG: Unreleased `Fixed` entry (updated for Revision 2)
+- Tests: `apps/api/tests/test_users_visibility_scope.py` (visibility matrix, is_managed flags incl. foreign rows, account writes allowed on unassigned + foreign targets, lifecycle gates, offboarding on unassigned worker, super-admin guards), reworked `test_management_filter_contract.py`, `test_management_consistency.py` (out-of-scope population switched to viewer), `UsersPage.test.tsx` project-admin case, new `Step6Members.test.tsx`
+- Verification (Revision 2): backend pytest green on the worktree test DB (visibility scope, filter contract, consistency, role matrix, management api, lifecycle, delete transfer, GDPR, OpenAPI contract); web vitest / lint / typecheck green; live browser re-acceptance on the worktree dev stack confirmed operable rows and working writes end-to-end
+- Remaining work: none for this issue; the project-driven identity refactor for annotator/reviewer is a planned follow-up by the maintainer

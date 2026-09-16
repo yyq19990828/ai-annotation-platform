@@ -87,7 +87,15 @@ async def _count_active_super_admins(db: AsyncSession) -> int:
 async def _project_admin_manages_target(
     db: AsyncSession, *, actor: User, target: User
 ) -> bool:
-    """project_admin 是否在他所管的项目里 (project.owner_id == actor) 见过 target。"""
+    """project_admin 能否管理 target。
+
+    项目内 (project.owner_id == actor) 成员，以及所有「启用」的标注员/审核员
+    账号（含未分配与其他项目的成员；标注/质检身份转为项目驱动前的过渡规则）。
+    停用账号、其他项目管理员、观察员、超管均不可管理。
+    """
+    if target.is_active and target.role in _PA_ASSIGNABLE_ROLES:
+        return True
+
     from app.db.models.project import Project
     from app.db.models.project_member import ProjectMember
 
@@ -186,9 +194,11 @@ async def query_users(
         status_filter=status_filter,
         search=search,
     )
-    # Read visibility can exceed the manage scope; flag each row so the UI can
-    # render visible-but-not-manageable accounts (unassigned workers, super
-    # admins) with disabled actions instead of failing on the first write.
+    # Rows outside the project-bounded manage scope are still listed for
+    # lookup; flag manageability per row so the UI can disable actions only
+    # where writes would truly be denied. Manage scope = own-project members
+    # plus every enabled annotator/reviewer (interim platform-wide arm);
+    # enabled super admins stay visible but read-only.
     managed_ids: set[UUID] | None = None
     if actor.role == UserRole.PROJECT_ADMIN.value:
         managed_ids = await fetch_managed_user_ids(db, actor)
@@ -198,7 +208,10 @@ async def query_users(
         item.is_managed = (
             True
             if managed_ids is None or user.id == actor.id
-            else user.id in managed_ids
+            else (
+                user.id in managed_ids
+                or (user.is_active and user.role in _PA_ASSIGNABLE_ROLES)
+            )
         )
         return item
 
@@ -802,7 +815,8 @@ async def change_user_role(
     if old_role == new_role:
         return user
 
-    # —— project_admin 子集合：仅可在 reviewer / annotator / viewer 间切换，且 target 必须在其管的项目里 ——
+    # —— project_admin 子集合：仅可在 reviewer / annotator 间切换；目标须启用
+    #    且为标注员/审核员（未分配亦可，身份项目驱动化前的过渡规则） ——
     if actor.role == UserRole.PROJECT_ADMIN.value:
         if old_role not in _PA_ASSIGNABLE_ROLES or new_role not in _PA_ASSIGNABLE_ROLES:
             raise HTTPException(
@@ -898,7 +912,7 @@ async def admin_reset_password(
         raise HTTPException(status_code=403, detail="只能重置等级低于你的用户的密码")
 
     if actor.role == UserRole.PROJECT_ADMIN.value:
-        # project_admin 仅可重置其管理项目内的 reviewer / annotator / viewer
+        # project_admin 可重置启用标注员/审核员（含未分配）的密码；同级与超管除外
         if target.role == UserRole.PROJECT_ADMIN.value:
             raise HTTPException(status_code=403, detail="项目管理员之间不可互重置")
         if not await _project_admin_manages_target(db, actor=actor, target=target):
@@ -1008,7 +1022,8 @@ async def delete_user(
     actor: User = Depends(require_roles(*_MANAGERS)),
 ):
     """软删除（is_active=False）。super_admin 可删任意（除自己/最后一名超管）；
-    project_admin 仅可删其项目内、且仅在其项目里出现的 annotator / reviewer / viewer。
+    project_admin 可删启用的标注员/审核员，但目标若出现在其他人的项目里
+    （跨项目交接需上级处理）则拒绝；未分配账号无项目归属，可直接删除。
 
     若 target 仍持有未完成任务（assignee_id + status in pending/in_progress/review）或 task_lock，
     返回 409，要求传入 `transfer_to_user_id`；前端弹"先转交"二次 Modal。
@@ -1027,7 +1042,7 @@ async def delete_user(
     if actor.role == UserRole.PROJECT_ADMIN.value:
         if user.role not in _PA_ASSIGNABLE_ROLES:
             raise HTTPException(
-                status_code=403, detail="项目管理员仅能删除其项目内的标注员/审核员"
+                status_code=403, detail="项目管理员仅能删除标注员/审核员账号"
             )
         if not await _project_admin_manages_target(db, actor=actor, target=user):
             raise HTTPException(status_code=403, detail="该用户不在你管理的项目内")
@@ -1163,7 +1178,7 @@ async def deactivate_user(
     if actor.role == UserRole.PROJECT_ADMIN.value:
         if user.role not in _PA_ASSIGNABLE_ROLES:
             raise HTTPException(
-                status_code=403, detail="项目管理员仅能停用其项目内的标注员/审核员"
+                status_code=403, detail="项目管理员仅能停用标注员/审核员账号"
             )
         if not await _project_admin_manages_target(db, actor=actor, target=user):
             raise HTTPException(status_code=403, detail="该用户不在你管理的项目内")

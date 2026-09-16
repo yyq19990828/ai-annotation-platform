@@ -1,10 +1,18 @@
 """Project-admin read visibility vs manage scope for user management endpoints.
 
 Issue #115: 项目管理员在成员分配中可见未分配标注员，但在用户与权限列表中不可见。
-Read scope (list / stats / export via ``build_user_query``) now includes enabled
+Read scope (list / stats / export via ``build_user_query``) includes enabled
 annotators/reviewers (incl. unassigned ones, matching the member-assignment
-candidate picker) and enabled super admins (read-only lookup).  Every write and
-write-preview keeps the strict manage scope: self + members of own projects.
+candidate picker) and enabled super admins (read-only lookup).
+
+Manage scope (maintainer revision, 2026-09-16): project admins manage every
+*enabled* annotator/reviewer account (unassigned or in other projects'
+memberships) for account-level writes — role switch, password reset, group
+assignment.  Lifecycle writes that hand over work (deactivate / delete /
+offboarding) additionally require the target's projects to be owned by the
+actor, so unassigned accounts pass while straddling/foreign members stay
+gated on a superior.  Super admins, other project admins and viewers are
+never manageable by a project admin; deactivated accounts are out of scope.
 """
 
 from __future__ import annotations
@@ -283,9 +291,12 @@ async def test_pa_query_flags_is_managed(
 
     assert flags[str(world.manager.id)] is True  # self
     assert flags[str(world.member.id)] is True  # own project member
-    assert flags[str(world.unassigned_annotator.id)] is False
-    assert flags[str(world.unassigned_reviewer.id)] is False
-    assert flags[str(world.admin.id)] is False  # super admin: visible, not manageable
+    # Enabled annotator/reviewer accounts are operable, incl. unassigned and
+    # foreign-project members (maintainer revision).
+    assert flags[str(world.unassigned_annotator.id)] is True
+    assert flags[str(world.unassigned_reviewer.id)] is True
+    assert flags[str(world.foreign_member.id)] is True
+    assert flags[str(world.admin.id)] is False  # super admin: visible, read-only
 
     # Super-admin actor: everything is manageable.
     sa_response = await httpx_client.get(
@@ -297,38 +308,38 @@ async def test_pa_query_flags_is_managed(
     assert all(row["is_managed"] for row in sa_response.json()["items"])
 
 
-async def test_pa_writes_blocked_on_unassigned_annotator(
+async def test_pa_writes_allowed_on_unassigned_annotator(
     httpx_client: httpx.AsyncClient, project_admin, super_admin, db_session
 ):
+    """Account-level writes now succeed on unassigned enabled workers.
+
+    Order matters: the read-only preview comes first, then role switch /
+    password reset / group preview, then the lifecycle writes (deactivate,
+    delete) that each flip the target inactive.
+    """
+
     world = await _seed_scope_world(db_session, project_admin, super_admin)
     target = world.unassigned_annotator
     headers = _headers(project_admin)
+
+    preview = await httpx_client.get(
+        f"/api/v1/users/{target.id}/role/preview?role=reviewer", headers=headers
+    )
+    assert preview.status_code == 200, preview.text
+    assert "该用户不在你管理的项目内" not in preview.text
 
     role = await httpx_client.patch(
         f"/api/v1/users/{target.id}/role",
         json={"role": "reviewer"},
         headers=headers,
     )
-    assert role.status_code == 403, role.text
+    assert role.status_code == 200, role.text
+    assert role.json()["role"] == "reviewer"
 
     reset = await httpx_client.post(
         f"/api/v1/users/{target.id}/admin-reset-password", headers=headers
     )
-    assert reset.status_code == 403, reset.text
-
-    deactivate = await httpx_client.post(
-        f"/api/v1/users/{target.id}/deactivate", headers=headers
-    )
-    assert deactivate.status_code == 403, deactivate.text
-
-    delete = await httpx_client.delete(f"/api/v1/users/{target.id}", headers=headers)
-    assert delete.status_code == 403, delete.text
-
-    preview = await httpx_client.get(
-        f"/api/v1/users/{target.id}/role/preview?role=reviewer", headers=headers
-    )
-    assert preview.status_code == 404, preview.text
-    assert target.email not in preview.text and target.name not in preview.text
+    assert reset.status_code == 200, reset.text
 
     group = await httpx_client.post(
         "/api/v1/users/groups/bulk/preview",
@@ -337,8 +348,77 @@ async def test_pa_writes_blocked_on_unassigned_annotator(
     )
     assert group.status_code == 200, group.text
     item = group.json()["items"][0]
-    assert item["ok"] is False
-    assert item["email"] is None and item["name"] is None
+    assert item["ok"] is True, item
+    assert item["email"] == target.email
+
+    deactivate = await httpx_client.post(
+        f"/api/v1/users/{target.id}/deactivate", headers=headers
+    )
+    assert deactivate.status_code == 200, deactivate.text
+    assert deactivate.json()["is_active"] is False
+
+    delete = await httpx_client.delete(f"/api/v1/users/{target.id}", headers=headers)
+    assert delete.status_code == 200, delete.text
+
+
+async def test_pa_offboarding_allowed_on_unassigned_worker(
+    httpx_client: httpx.AsyncClient, project_admin, super_admin, db_session
+):
+    """Offboarding an unassigned worker has no handover map and succeeds."""
+
+    world = await _seed_scope_world(db_session, project_admin, super_admin)
+    target = world.unassigned_reviewer
+    headers = _headers(project_admin)
+
+    preview = await httpx_client.get(
+        f"/api/v1/users/{target.id}/offboarding-preview", headers=headers
+    )
+    assert preview.status_code == 200, preview.text
+    body = preview.json()
+    assert body["can_commit"] is True, body
+    assert body["blockers"] == []
+
+    commit = await httpx_client.post(
+        f"/api/v1/users/{target.id}/offboarding",
+        json={"preview_version": body["preview_version"], "reason": "验收离职"},
+        headers=headers,
+    )
+    assert commit.status_code == 200, commit.text
+
+
+async def test_pa_account_writes_on_foreign_member_but_lifecycle_gated(
+    httpx_client: httpx.AsyncClient, project_admin, super_admin, db_session
+):
+    """Foreign-project annotator: account writes open, lifecycle writes gated."""
+
+    world = await _seed_scope_world(db_session, project_admin, super_admin)
+    target = world.foreign_member
+    headers = _headers(project_admin)
+
+    role = await httpx_client.patch(
+        f"/api/v1/users/{target.id}/role",
+        json={"role": "reviewer"},
+        headers=headers,
+    )
+    assert role.status_code == 200, role.text
+
+    reset = await httpx_client.post(
+        f"/api/v1/users/{target.id}/admin-reset-password", headers=headers
+    )
+    assert reset.status_code == 200, reset.text
+
+    offboard = await httpx_client.get(
+        f"/api/v1/users/{target.id}/offboarding-preview", headers=headers
+    )
+    assert offboard.status_code == 403, offboard.text
+
+    deactivate = await httpx_client.post(
+        f"/api/v1/users/{target.id}/deactivate", headers=headers
+    )
+    assert deactivate.status_code == 403, deactivate.text
+
+    delete = await httpx_client.delete(f"/api/v1/users/{target.id}", headers=headers)
+    assert delete.status_code == 403, delete.text
 
 
 async def test_pa_writes_blocked_on_super_admin(

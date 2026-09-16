@@ -351,7 +351,7 @@ describe("UsersPage", () => {
     expect(screen.queryByTitle("删除账号")).not.toBeInTheDocument();
   });
 
-  it("project_admin 可见未分配成员与超管，但行操作禁用并说明原因", () => {
+  it("project_admin 可见并直接操作未分配标注员，超管行只读", () => {
     mockAuthUser.role = "project_admin";
     mockUsePermissions.mockReturnValue({
       role: "project_admin",
@@ -373,7 +373,7 @@ describe("UsersPage", () => {
           group_id: null,
           group_name: null,
           created_at: "2026-04-01T00:00:00Z",
-          is_managed: false,
+          is_managed: true,
         },
         {
           id: "u5",
@@ -396,16 +396,13 @@ describe("UsersPage", () => {
     expect(screen.getByText("Free Annotator")).toBeInTheDocument();
     expect(screen.getByText("Root")).toBeInTheDocument();
 
-    // 所管项目内成员（Alice / Bob）保留完整操作
-    expect(screen.getAllByTitle("编辑成员")).toHaveLength(2);
-    expect(screen.getAllByTitle("删除账号")).toHaveLength(2);
+    // 所管项目内成员与未分配标注员（is_managed=true）保留完整操作
+    expect(screen.getAllByTitle("编辑成员")).toHaveLength(3);
+    expect(screen.getAllByTitle("删除账号")).toHaveLength(3);
 
-    // 未分配标注员：唯一操作按钮禁用并说明原因，不出现写操作
-    const unmanagedBtn = screen.getByTitle("该用户不在你管理的项目内，仅可查看");
-    expect(unmanagedBtn).toBeDisabled();
-
-    // 超管：只读提示
+    // 超管：只读提示，不出现写操作
     expect(screen.getByTitle("仅可查看：超级管理员账号")).toBeDisabled();
+    expect(screen.getAllByTitle(/编辑成员|仅可查看/)).toHaveLength(4);
   });
 
   it("初次离线且没有用户数据时显示等待网络恢复，而不是空列表", () => {

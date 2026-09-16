@@ -659,10 +659,12 @@ class UserLifecycleService:
         if target.role not in MANAGED_PROJECT_ROLES:
             raise HTTPException(
                 status_code=403,
-                detail="项目管理员仅能处理其项目内的标注员/审核员",
+                detail="项目管理员仅能处理标注员/审核员账号",
             )
+        # 启用的标注员/审核员账号可由项目管理员处理（未分配账号没有项目归属，
+        # 直接放行）；但目标一旦出现在他人项目里，交接须由上级/项目属主处理。
         projects: list[Project] = snapshot["projects"]
-        if not projects or any(project.owner_id != actor.id for project in projects):
+        if any(project.owner_id != actor.id for project in projects):
             raise HTTPException(
                 status_code=403, detail="该用户存在不在你管理范围内的项目"
             )
