@@ -9,7 +9,7 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import and_, func, or_, select, true
+from sqlalchemy import and_, func, or_, select, true, union
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.enums import UserRole
@@ -18,6 +18,7 @@ from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
+from app.db.models.task_lock import TaskLock
 from app.db.models.user import User
 from app.db.models.user_invitation import UserInvitation
 from app.schemas.group import GroupOut
@@ -68,6 +69,58 @@ async def fetch_managed_user_ids(db: AsyncSession, actor: User) -> set[UUID]:
 
     rows = (await db.execute(_managed_user_ids(actor))).scalars().all()
     return set(rows)
+
+
+async def fetch_lifecycle_blocked_ids(
+    db: AsyncSession, *, actor: User, user_ids: list[UUID]
+) -> set[UUID]:
+    """Ids among ``user_ids`` whose derived projects leave the actor's scope.
+
+    Mirrors the project arms of ``UserLifecycleService._project_ids_for_target``
+    (owned projects, memberships, batch assignments, tasks/locks) and keeps
+    the users touching at least one project NOT owned by ``actor``. The
+    lifecycle endpoints reject exactly these targets for project admins even
+    though account-level writes use the wider manage scope, so the users page
+    can hide offboarding / delete / reactivate up front instead of surfacing
+    buttons that always end in 403.
+    """
+
+    if not user_ids:
+        return set()
+
+    ids = sorted(set(user_ids))
+    foreign_arms = (
+        # Projects the user owns.
+        select(Project.owner_id.label("user_id")).where(
+            Project.owner_id.in_(ids),
+            Project.owner_id != actor.id,
+        ),
+        # Project memberships.
+        select(ProjectMember.user_id.label("user_id"))
+        .join(Project, Project.id == ProjectMember.project_id)
+        .where(ProjectMember.user_id.in_(ids), Project.owner_id != actor.id),
+        # Batch assignments (annotator / reviewer).
+        select(TaskBatch.annotator_id.label("user_id"))
+        .join(Project, Project.id == TaskBatch.project_id)
+        .where(TaskBatch.annotator_id.in_(ids), Project.owner_id != actor.id),
+        select(TaskBatch.reviewer_id.label("user_id"))
+        .join(Project, Project.id == TaskBatch.project_id)
+        .where(TaskBatch.reviewer_id.in_(ids), Project.owner_id != actor.id),
+        # Task assignments (assignee / reviewer).
+        select(Task.assignee_id.label("user_id"))
+        .join(Project, Project.id == Task.project_id)
+        .where(Task.assignee_id.in_(ids), Project.owner_id != actor.id),
+        select(Task.reviewer_id.label("user_id"))
+        .join(Project, Project.id == Task.project_id)
+        .where(Task.reviewer_id.in_(ids), Project.owner_id != actor.id),
+        # Task locks.
+        select(TaskLock.user_id.label("user_id"))
+        .join(Task, Task.id == TaskLock.task_id)
+        .join(Project, Project.id == Task.project_id)
+        .where(TaskLock.user_id.in_(ids), Project.owner_id != actor.id),
+    )
+    rows = (await db.execute(union(*foreign_arms))).scalars().all()
+    return {row for row in rows if row is not None}
 
 
 def user_scope_clause(

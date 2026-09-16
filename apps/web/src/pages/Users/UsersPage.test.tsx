@@ -405,6 +405,43 @@ describe("UsersPage", () => {
     expect(screen.getAllByTitle(/编辑成员|仅可查看/)).toHaveLength(4);
   });
 
+  it("跨项目行 is_lifecycle_managed=false：保留账号操作，隐藏离职/删除入口", () => {
+    mockAuthUser.role = "project_admin";
+    mockUsePermissions.mockReturnValue({
+      role: "project_admin",
+      hasPermission: () => true,
+      hasAnyPermission: () => true,
+      canAccessPage: () => true,
+      allowedPages: [],
+    });
+    mockUseUsers.mockReturnValue({
+      data: [
+        {
+          id: "u6",
+          name: "Cross Project",
+          email: "cross@example.com",
+          role: "annotator",
+          is_active: true,
+          status: "offline",
+          group_id: null,
+          group_name: null,
+          created_at: "2026-06-01T00:00:00Z",
+          is_managed: true,
+          is_lifecycle_managed: false,
+        },
+      ],
+      isLoading: false,
+    });
+    renderUI();
+
+    // 账号级操作保留
+    expect(screen.getByTitle("编辑成员")).toBeInTheDocument();
+    expect(screen.getByTitle("重置密码")).toBeInTheDocument();
+    // 生命周期写入被隐藏，避免点击后必然 403
+    expect(screen.queryByTitle("离职处理")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("删除账号")).not.toBeInTheDocument();
+  });
+
   it("初次离线且没有用户数据时显示等待网络恢复，而不是空列表", () => {
     mockUseUsers.mockReturnValue({
       data: [],

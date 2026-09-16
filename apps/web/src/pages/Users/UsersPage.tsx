@@ -768,7 +768,10 @@ function UsersPageContent() {
                                     <Icon name="key" size={11} />
                                   </Button>
                                 )}
-                                {isActive && (
+                                {/* 生命周期写入（离职/删除/恢复）需要目标的派生项目
+                                    全部在自己的管理范围内；跨项目行仅开放账号级操作，
+                                    否则按钮点开必然 403。 */}
+                                {isActive && u.is_lifecycle_managed !== false && (
                                   <Button
                                     variant="ghost"
                                     size="sm"
@@ -782,7 +785,7 @@ function UsersPageContent() {
                                     />
                                   </Button>
                                 )}
-                                {isActive && (
+                                {isActive && u.is_lifecycle_managed !== false && (
                                   <Button
                                     variant="ghost"
                                     size="sm"
@@ -792,34 +795,36 @@ function UsersPageContent() {
                                     <Icon name="trash" size={11} className="text-status-danger" />
                                   </Button>
                                 )}
-                                {!isActive && REACTIVATABLE_KINDS.has(u.disabled_kind ?? "") && (
-                                  <>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => setOffboardingUser(u)}
-                                      title="继续交接"
-                                    >
-                                      <Icon
-                                        name="arrowRight"
-                                        size={11}
-                                        className="text-status-caution"
-                                      />
-                                    </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => setReactivatingUser(u)}
-                                      title="恢复账号"
-                                    >
-                                      <Icon
-                                        name="rotate-ccw"
-                                        size={11}
-                                        className="text-status-positive"
-                                      />
-                                    </Button>
-                                  </>
-                                )}
+                                {!isActive &&
+                                  u.is_lifecycle_managed !== false &&
+                                  REACTIVATABLE_KINDS.has(u.disabled_kind ?? "") && (
+                                    <>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => setOffboardingUser(u)}
+                                        title="继续交接"
+                                      >
+                                        <Icon
+                                          name="arrowRight"
+                                          size={11}
+                                          className="text-status-caution"
+                                        />
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => setReactivatingUser(u)}
+                                        title="恢复账号"
+                                      >
+                                        <Icon
+                                          name="rotate-ccw"
+                                          size={11}
+                                          className="text-status-positive"
+                                        />
+                                      </Button>
+                                    </>
+                                  )}
                               </>
                             ) : (
                               <Button

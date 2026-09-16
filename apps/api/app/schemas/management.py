@@ -18,17 +18,26 @@ from app.schemas.user import UserOut
 
 
 class UserPageItem(UserOut):
-    """User row plus a request-relative manageability flag.
+    """User row plus request-relative capability flags.
 
     ``is_managed`` tells the frontend whether the current actor may run
-    account-management actions on the row (role change, deactivate, delete,
-    password reset, group assignment).  Read visibility can be wider than the
-    manage scope (project admins see enabled annotators/reviewers incl.
-    unassigned ones, and read-only super admins), so visible rows are not
-    necessarily manageable.
+    account-management actions on the row (role change, password reset,
+    group assignment).  Read visibility can be wider than the manage scope
+    (project admins see enabled annotators/reviewers incl. unassigned ones,
+    and read-only super admins), so visible rows are not necessarily
+    manageable.
+
+    ``is_lifecycle_managed`` further gates the work-handover writes
+    (offboarding, deactivate, delete, reactivate): project admins may only
+    hand over users whose derived projects (memberships, batches, tasks,
+    locks, owned projects) all sit inside projects they own.  A foreign
+    enabled annotator therefore lists ``is_managed=true`` but
+    ``is_lifecycle_managed=false``; lifecycle buttons must be hidden so
+    they cannot surface actions the API rejects with 403.
     """
 
     is_managed: bool = True
+    is_lifecycle_managed: bool = True
 
 
 class UserPage(BaseModel):

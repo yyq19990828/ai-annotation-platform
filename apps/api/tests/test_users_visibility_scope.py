@@ -421,6 +421,202 @@ async def test_pa_account_writes_on_foreign_member_but_lifecycle_gated(
     assert delete.status_code == 403, delete.text
 
 
+async def test_pa_query_flags_is_lifecycle_managed(
+    httpx_client: httpx.AsyncClient, project_admin, super_admin, db_session
+):
+    """Lifecycle capability is narrower than account manageability.
+
+    Codex review (PR #119): a single ``is_managed`` flag made the users page
+    render offboarding/delete buttons for cross-project rows whose lifecycle
+    writes the API rejects with 403. ``is_lifecycle_managed`` stays true only
+    for rows whose derived projects all sit inside the actor's own projects.
+    """
+
+    world = await _seed_scope_world(db_session, project_admin, super_admin)
+    response = await httpx_client.get(
+        "/api/v1/users/query",
+        params={"page": 1, "page_size": 200, "status": "active"},
+        headers=_headers(project_admin),
+    )
+    assert response.status_code == 200, response.text
+    flags = {
+        row["id"]: (row["is_managed"], row["is_lifecycle_managed"])
+        for row in response.json()["items"]
+    }
+
+    assert flags[str(world.manager.id)] == (True, True)  # self
+    assert flags[str(world.member.id)] == (True, True)  # own project member
+    # Unassigned enabled workers: no derived projects, lifecycle allowed.
+    assert flags[str(world.unassigned_annotator.id)] == (True, True)
+    # Foreign-project member: manageable, but lifecycle gated.
+    assert flags[str(world.foreign_member.id)] == (True, False)
+    # Super admin stays read-only on both axes.
+    assert flags[str(world.admin.id)] == (False, False)
+
+    # Super-admin actor: everything stays fully manageable.
+    sa_response = await httpx_client.get(
+        "/api/v1/users/query",
+        params={"page": 1, "page_size": 200, "status": "all"},
+        headers=_headers(super_admin),
+    )
+    assert sa_response.status_code == 200, sa_response.text
+    assert all(row["is_lifecycle_managed"] for row in sa_response.json()["items"])
+
+
+async def test_pa_lifecycle_blocked_for_task_straddling_annotator(
+    httpx_client: httpx.AsyncClient, project_admin, super_admin, db_session
+):
+    """Membership-free annotator holding a foreign task is lifecycle-gated.
+
+    Codex review (PR #119): ``remove_member`` does not clear task/batch
+    assignments, so a membership-only guard let project admins deactivate or
+    delete workers still holding work in other admins' projects.
+    """
+
+    from app.db.models.task import Task
+
+    world = await _seed_scope_world(db_session, project_admin, super_admin)
+    straddler = await create_user(
+        db_session, "annotator", "straddler@e.test", "Task Straddler"
+    )
+    db_session.add(
+        Task(
+            project_id=world.foreign_project.id,
+            display_id=f"T-{straddler.id.hex[:8]}",
+            file_name="straddle.jpg",
+            file_path="straddle.jpg",
+            status="in_progress",
+            assignee_id=straddler.id,
+        )
+    )
+    await db_session.flush()
+
+    headers = _headers(project_admin)
+
+    # Account-level writes stay open on the enabled annotator.
+    reset = await httpx_client.post(
+        f"/api/v1/users/{straddler.id}/admin-reset-password", headers=headers
+    )
+    assert reset.status_code == 200, reset.text
+
+    # Lifecycle writes must stay gated even without any ProjectMember row.
+    deactivate = await httpx_client.post(
+        f"/api/v1/users/{straddler.id}/deactivate", headers=headers
+    )
+    assert deactivate.status_code == 403, deactivate.text
+
+    delete = await httpx_client.delete(f"/api/v1/users/{straddler.id}", headers=headers)
+    assert delete.status_code == 403, delete.text
+
+
+async def test_pa_delete_transfer_receiver_must_cover_task_projects(
+    httpx_client: httpx.AsyncClient, project_admin, super_admin, db_session
+):
+    """Delete-transfer receivers stay project-bounded.
+
+    Codex review (PR #119): the platform-wide manage arm accepted any enabled
+    annotator as ``transfer_to_user_id``, so pending tasks could be reassigned
+    to someone with no membership in the affected project.
+    """
+
+    from app.db.models.task import Task
+
+    world = await _seed_scope_world(db_session, project_admin, super_admin)
+    headers = _headers(project_admin)
+
+    target = await create_user(
+        db_session, "annotator", "leaving-member@e.test", "Leaving Member"
+    )
+    receiver = await create_user(
+        db_session, "annotator", "covering-member@e.test", "Covering Member"
+    )
+    outsider = await create_user(
+        db_session, "annotator", "outside-receiver@e.test", "Outside Receiver"
+    )
+    db_session.add_all(
+        [
+            ProjectMember(
+                project_id=world.own_project.id,
+                user_id=target.id,
+                role="annotator",
+                assigned_by=world.manager.id,
+            ),
+            ProjectMember(
+                project_id=world.own_project.id,
+                user_id=receiver.id,
+                role="annotator",
+                assigned_by=world.manager.id,
+            ),
+            Task(
+                project_id=world.own_project.id,
+                display_id=f"T-{target.id.hex[:8]}",
+                file_name="handover.jpg",
+                file_path="handover.jpg",
+                status="in_progress",
+                assignee_id=target.id,
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    # The enabled outsider would pass the account-level manage arm but has no
+    # membership in the project holding the pending task.
+    blocked = await httpx_client.request(
+        "DELETE",
+        f"/api/v1/users/{target.id}",
+        json={"transfer_to_user_id": str(outsider.id)},
+        headers=headers,
+    )
+    assert blocked.status_code == 403, blocked.text
+
+    # A member of the affected project is a valid receiver.
+    ok = await httpx_client.request(
+        "DELETE",
+        f"/api/v1/users/{target.id}",
+        json={"transfer_to_user_id": str(receiver.id)},
+        headers=headers,
+    )
+    assert ok.status_code == 200, ok.text
+
+
+async def test_pa_offboarding_blocked_on_disabled_unassigned_account(
+    httpx_client: httpx.AsyncClient, project_admin, super_admin, db_session
+):
+    """Offboarding keeps its empty-project exception limited to active targets.
+
+    Codex review (PR #119): preview/commit accept suspended accounts, so a
+    project admin who knew a suspended unassigned account's id could offboard
+    it although disabled accounts stay outside the widened manage scope.
+    """
+
+    suspended = await create_user(
+        db_session, "annotator", "suspended-free@e.test", "Suspended Free"
+    )
+    suspended.is_active = False
+    suspended.disabled_kind = "suspended"
+    await db_session.flush()
+
+    headers = _headers(project_admin)
+    preview = await httpx_client.get(
+        f"/api/v1/users/{suspended.id}/offboarding-preview", headers=headers
+    )
+    assert preview.status_code == 403, preview.text
+
+    commit = await httpx_client.post(
+        f"/api/v1/users/{suspended.id}/offboarding",
+        json={"preview_version": "0", "reason": "越权尝试"},
+        headers=headers,
+    )
+    assert commit.status_code == 403, commit.text
+
+    # Super admins keep full offboarding access to the same account.
+    sa_preview = await httpx_client.get(
+        f"/api/v1/users/{suspended.id}/offboarding-preview",
+        headers=_headers(super_admin),
+    )
+    assert sa_preview.status_code == 200, sa_preview.text
+
+
 async def test_pa_writes_blocked_on_super_admin(
     httpx_client: httpx.AsyncClient, project_admin, super_admin, db_session
 ):
