@@ -855,7 +855,7 @@
       },
       "seed_profile": "screenshots",
       "seed_revision": "screenshots-2026-08-g",
-      "source_commit": "7a805d2a8d5e915ace4bb439b639fb07ba98b618",
+      "source_commit": "b3f05c845fdce7d4edbc7df73c8d8ee39e8df974",
       "browser": {
         "name": "chromium",
         "version": "147.0.7727.15"
@@ -868,9 +868,10 @@
       "theme": "light",
       "clock": "fixed",
       "locale": "zh-CN",
-      "generated_at": "2026-09-13T18:32:35.253Z",
-      "provenance": "current-run",
-      "sha256": "77653e58b5cf57346737130d504d446d8765eea3af7abfa7d9bc77bee734c335",
+      "generated_at": "2026-09-16T11:35:39.706Z",
+      "provenance": "single-scene",
+      "note": "单场景重拍（隔离截图栈 + ml stub），非完整矩阵运行；manifest 由人工如实补录，待下次完整矩阵统一重建",
+      "sha256": "b82c4eb309f8024cd4947cff4ea8845f4e1d6b1de0894a50193ea401b47ec3b4",
       "width": 1440,
       "height": 900
     },
