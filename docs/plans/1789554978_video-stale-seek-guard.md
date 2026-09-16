@@ -101,7 +101,7 @@ Late results remain cache-writable (per the issue's suggested pattern: "过期�
   - 新增 `useVideoPlaybackController.stale-seek.test.ts`（真实 `useFrameClock` × 真实控制器集成 harness，三个迟到媒体事件交错场景）；`useVideoPlaybackController.test.ts` 新增汇聚点栅栏对抗测试（未修复代码上验证为红，修复后绿）。
 - 验证：
   - 单测：`apps/web` 全量 5448/5448 通过；typecheck / eslint / lint:css-tokens / prettier 通过。
-  - E2E（本地 `dev:worktree --mode e2e` 隔离栈）：临时移除 `seek()` 内 `expectPaintSettled` 串行化后，`video-issue-context.spec.ts` 全部 13 个用例通过（含 G2-1）；spec 恢复保留该 helper 作为冗余防护。
+  - E2E（本地 `dev:worktree --mode e2e` 隔离栈）：临时移除 `seek()` 内 `expectPaintSettled` 串行化后，`video-issue-context.spec.ts` 全部 11 个用例通过（含 G2-1）；spec 恢复保留该 helper 作为冗余防护。
   - Phase 0 复现结论：jsdom 可模拟的三类迟到交错（pending 超时后的迟到 seeked/rVFC、pending 存活期的不匹配回报、点击帧迟于首步呈现）在 HEAD 上均被既有 pending 身份校验拦下；CI 观测到的帧号回退依赖浏览器内部 seek 中止/回退语义与受控态提交交错的组合，无法在 jsdom 复刻。因此修复落在帧号写入汇聚点的单调栅栏——对任意来源的迟到旧帧回报一律生效，并以注入式对抗测试锁定该合同。
 - User documentation: `docs-site/user-guide/` 无需更新（无可感知 UI 变化；行为修复即「不再跳回旧帧」）。
 - Developer documentation: `docs-site/dev/troubleshooting/ci-flaky-services.md`（症状 4 补充应用层修复与 `expectPaintSettled` 定位）、`apps/web/e2e/README.md`（WebCodecs 精确帧 E2E 一节）。
