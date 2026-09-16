@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Icon } from "@/components/ui/Icon";
@@ -53,6 +53,7 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
   const [renameAllUnits, setRenameAllUnits] = useState(false);
   // v0.18.0 起「从 ML Backend 预填配置」对话框开关 (v0.20.3 由「导入属性」升级为类别+属性)。
   const [prefillOpen, setPrefillOpen] = useState(false);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   useUnsavedWarning(dirty);
 
@@ -366,26 +367,27 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
     <Card>
       <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3.5">
         <h3 className="text-sm font-semibold">类别与属性</h3>
-        <div className="flex gap-1.5 whitespace-nowrap">
+        <div className="flex items-center gap-1.5 whitespace-nowrap">
           <Button size="sm" variant="ghost" onClick={() => setPrefillOpen(true)}>
-            <Icon name="sparkles" size={11} />从 ML Backend 预填
+            <Icon name="sparkles" />从 ML Backend 预填
           </Button>
           <Button size="sm" variant="ghost" onClick={onExportJson}>
-            <Icon name="download" size={11} />
+            <Icon name="download" />
             导出属性 JSON
           </Button>
-          <label className="cursor-pointer">
-            <input
-              type="file"
-              accept="application/json"
-              onChange={onImportJson}
-              className="hidden"
-            />
-            <span className="inline-flex h-8 items-center gap-1 rounded-md px-2.5 text-sm text-foreground hover:bg-muted">
-              <Icon name="plus" size={11} />
-              导入属性
-            </span>
-          </label>
+          {/* label 包交互元素不会触发文件选择，这里用 ref 直呼 input.click()，
+              让「导入属性」与其余头部按钮共用同一 Button ghost sm 样式。 */}
+          <input
+            ref={importInputRef}
+            type="file"
+            accept="application/json"
+            onChange={onImportJson}
+            className="hidden"
+          />
+          <Button size="sm" variant="ghost" onClick={() => importInputRef.current?.click()}>
+            <Icon name="plus" />
+            导入属性
+          </Button>
         </div>
       </div>
       <div className="flex flex-col gap-2.5 p-4">

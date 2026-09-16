@@ -402,9 +402,9 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
   return (
     <>
       <Card>
-        <div className="flex items-center justify-between border-b border-border px-4 py-3.5">
-          <h3 className="m-0 text-sm font-semibold">批次管理</h3>
-          <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3.5">
+          <h3 className="text-sm font-semibold">批次管理</h3>
+          <div className="flex items-center gap-1.5 whitespace-nowrap">
             {/* v0.7.6 · view toggle */}
             <div
               role="tablist"
@@ -418,7 +418,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                   aria-selected={view === v}
                   onClick={() => setView(v)}
                   className={cn(
-                    "inline-flex cursor-pointer items-center gap-1 appearance-none border-0 bg-transparent px-2.5 py-1 text-xs text-muted-foreground",
+                    "inline-flex h-8 cursor-pointer items-center gap-1.5 appearance-none border-0 bg-transparent px-3 text-xs text-muted-foreground",
                     view === v && "bg-card text-foreground",
                     v === "list" && "border-r border-border",
                   )}
@@ -430,23 +430,23 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
               ))}
             </div>
             <Button
-              size="xs"
-              className="h-auto py-1 font-normal"
+              size="sm"
+              variant="ghost"
               onClick={() => setDistributeOpen(true)}
               disabled={batches.length === 0}
               title="把项目下所有批次圆周分派给所选成员（一 batch 一标注员 + 一审核员）"
             >
-              <Icon name="users" size={12} />
+              <Icon name="users" />
               按项目分派批次
             </Button>
             {/* scene 模式项目分包只能 by scene：头部入口也走 by_scene，不开 random modal。 */}
             <Button
-              size="xs"
-              className="h-auto py-1 font-normal"
+              size="sm"
+              variant="ghost"
               onClick={project.scene_mode ? handleCreateByScene : () => setShowCreate(true)}
               disabled={project.scene_mode && splitBatches.isPending}
             >
-              <Icon name="plus" size={12} />
+              <Icon name="plus" />
               创建批次
             </Button>
           </div>
