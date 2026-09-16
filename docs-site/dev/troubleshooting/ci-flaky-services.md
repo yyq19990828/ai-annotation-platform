@@ -71,11 +71,36 @@ env:
   API_BASE_URL: http://127.0.0.1:8000
 ```
 
+## 症状 4：layout-stress 视频用例 reload 后画布 30s 超时
+
+```
+Error: expect(locator).toBeVisible() failed
+Locator: getByTestId('video-konva-stage').locator('.konvajs-content > canvas').first()
+Timeout: 30000ms
+```
+
+夜间 / PR 的 `layout-stress` 套件间歇红，API 日志里同时出现大量 `S3 ListObjectsV2` 重试和 `ml-backends` 502，容易被误判成存储抖动。
+
+### 根因
+
+对时 trace 网络流（`0-trace.network`）可见：`page.reload()` 的文档请求毫秒级返回，第一波启动 API 全部秒回；随后页面**约 28 秒零网络活动、零 screencast 帧**，`manifest-v2` 直到 30s 预算最后 2 秒才发出。即渲染主线程被布局恢复 + Konva 多层 + SwiftShader 软渲染冻结，`S3 重试` 来自测试间隙的 seed 清理、502 是 CI 无 ML backend 的预期探测，都是伴生噪音。API 全程响应正常。
+
+### 判别方法
+
+下载失败 run 的 `playwright-report-layout-stress` 工件，对齐 reload 文档请求与 `manifest-v2` 请求的时间差：差值接近超时预算、且期间页面无任何请求即为此症；API 侧请求一旦发出就快速返回可排除后端。
+
+### 修复
+
+- 图片 / 视频布局矩阵迁出 pointcloud 项目，不再使用 SwiftShader；
+- `rememberCanvas` 先等 stage 宿主（挂载即代表 manifest 就绪）再等画布，`@stress` 场景预算放宽到 90s；
+- 压力套件允许 1 次重试（见 `apps/web/playwright.stress.config.ts`）。
+
 ## 教训
 
 - **GitHub Actions `services:` 块不能传 args**，需要传命令的服务必须用 `docker run`。
 - **lifespan 阻塞会拖垮 health check**。如果某依赖在 CI 里不强制必须，给它加超时 + 降级。
 - **`localhost` 在不同环境不等价**，CI 里始终写 `127.0.0.1`。
+- **API 日志噪音会误导归因**：断言画布 / 就绪类超时先对时 trace 网络流，再决定是否怀疑后端；不需要 WebGL 的用例别放进 SwiftShader 项目。
 
 ## 相关
 
