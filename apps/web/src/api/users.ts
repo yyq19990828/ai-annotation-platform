@@ -8,6 +8,14 @@ export type UserResponse = UserOut & {
   disabled_at?: string | null;
   disabled_by?: string | null;
   disabled_reason?: string | null;
+  /** Whether the current actor may run account-management actions on this row. */
+  is_managed?: boolean;
+  /**
+   * Whether the current actor may run lifecycle writes (offboarding,
+   * deactivate, delete, reactivate). False for cross-project rows whose
+   * work-handover the API rejects with 403.
+   */
+  is_lifecycle_managed?: boolean;
 };
 
 export type UserStatusFilter = "active" | "inactive" | "all";

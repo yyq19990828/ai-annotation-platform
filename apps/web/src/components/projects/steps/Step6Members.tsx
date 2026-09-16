@@ -1,7 +1,7 @@
 // v0.10.18 · CreateProjectWizard 第 6 步: 项目成员选择 (annotator / reviewer).
 // 从 CreateProjectWizard.tsx 抽出.
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { clsx } from "clsx";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { Badge } from "@/components/ui/Badge";
@@ -10,6 +10,7 @@ import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
 import { useAddProjectMember } from "@/hooks/useProjects";
 import { useUsers } from "@/hooks/useUsers";
+import type { UserResponse } from "@/api/users";
 import type { ProjectResponse } from "@/api/projects";
 import type { FormState } from "../CreateProjectWizard";
 import styles from "../CreateProjectWizard.module.css";
@@ -27,11 +28,20 @@ export function Step6Members({
 }) {
   const pushToast = useToastStore((s) => s.push);
   const addMember = useAddProjectMember(project.id);
-  const { data: users = [], isLoading } = useUsers();
+  // 与 AssignMemberModal 一致按角色取候选人：后端对 project_admin 放开
+  // role=annotator/reviewers 的全量候选（含未加入项目的人），保证成员分配
+  // 入口与「用户与权限」可见范围一致；super_admin 行为不变。
+  const annotatorsQuery = useUsers({ role: "annotator" });
+  const reviewersQuery = useUsers({ role: "reviewer" });
+  const isLoading = annotatorsQuery.isLoading || reviewersQuery.isLoading;
+  const users = useMemo(() => {
+    const byId = new Map<string, UserResponse>();
+    for (const list of [annotatorsQuery.data ?? [], reviewersQuery.data ?? []]) {
+      for (const u of list) byId.set(u.id, u);
+    }
+    return [...byId.values()].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  }, [annotatorsQuery.data, reviewersQuery.data]);
   const [adding, setAdding] = useState(false);
-
-  // 仅展示 annotator / reviewer 角色用户（项目成员只能这两个角色）
-  const eligible = users.filter((u) => u.role === "annotator" || u.role === "reviewer");
 
   const toggle = (userId: string, role: "annotator" | "reviewer") => {
     setForm((s) => {
@@ -73,15 +83,15 @@ export function Step6Members({
 
       {isLoading && <div className={styles.inlineLoading}>加载用户…</div>}
 
-      {!isLoading && eligible.length === 0 && (
+      {!isLoading && users.length === 0 && (
         <div className={styles.emptyPanel}>
           暂无 annotator / reviewer 角色的用户，可跳过此步骤。
         </div>
       )}
 
-      {!isLoading && eligible.length > 0 && (
+      {!isLoading && users.length > 0 && (
         <div className={styles.memberList}>
-          {eligible.map((u) => {
+          {users.map((u) => {
             const checked = form.members.some((m) => m.userId === u.id);
             const role = (u.role === "reviewer" ? "reviewer" : "annotator") as
               | "annotator"

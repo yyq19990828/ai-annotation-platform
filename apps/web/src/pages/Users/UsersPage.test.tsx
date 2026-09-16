@@ -53,23 +53,20 @@ vi.mock("@/hooks/useGroups", () => ({
 }));
 
 // --- usePermissions ---
+const mockUsePermissions = vi.fn();
 vi.mock("@/hooks/usePermissions", () => ({
-  usePermissions: () => ({
-    role: "super_admin",
-    hasPermission: () => true,
-    hasAnyPermission: () => true,
-    canAccessPage: () => true,
-    allowedPages: [],
-  }),
+  usePermissions: () => mockUsePermissions(),
 }));
 
 // --- authStore ---
+const mockAuthUser = {
+  id: "me-id",
+  name: "Admin",
+  email: "admin@example.com",
+  role: "super_admin",
+};
 vi.mock("@/stores/authStore", () => ({
-  useAuthStore: (sel: (s: any) => any) =>
-    sel({
-      token: "tok",
-      user: { id: "me-id", name: "Admin", email: "admin@example.com", role: "super_admin" },
-    }),
+  useAuthStore: (sel: (s: any) => any) => sel({ token: "tok", user: mockAuthUser }),
 }));
 
 // --- usersApi (for exportUsers, adminResetPassword) ---
@@ -215,6 +212,14 @@ describe("UsersPage", () => {
     mockUseUsersStats.mockReturnValue({ data: { weekly_active: 5, online: 2 } });
     mockUseGroups.mockReturnValue({ data: [] });
     mockUseUsers.mockReturnValue({ data: SAMPLE_USERS, isLoading: false });
+    mockAuthUser.role = "super_admin";
+    mockUsePermissions.mockReturnValue({
+      role: "super_admin",
+      hasPermission: () => true,
+      hasAnyPermission: () => true,
+      canAccessPage: () => true,
+      allowedPages: [],
+    });
   });
 
   it("渲染页面标题与成员表格", () => {
@@ -343,6 +348,97 @@ describe("UsersPage", () => {
     expect(screen.getByText("紧急停用")).toBeInTheDocument();
     expect(screen.getByTitle("继续交接")).toBeInTheDocument();
     expect(screen.getByTitle("恢复账号")).toBeInTheDocument();
+    expect(screen.queryByTitle("删除账号")).not.toBeInTheDocument();
+  });
+
+  it("project_admin 可见并直接操作未分配标注员，超管行只读", () => {
+    mockAuthUser.role = "project_admin";
+    mockUsePermissions.mockReturnValue({
+      role: "project_admin",
+      hasPermission: () => true,
+      hasAnyPermission: () => true,
+      canAccessPage: () => true,
+      allowedPages: [],
+    });
+    mockUseUsers.mockReturnValue({
+      data: [
+        ...SAMPLE_USERS.map((u) => ({ ...u, is_managed: true })),
+        {
+          id: "u4",
+          name: "Free Annotator",
+          email: "free@example.com",
+          role: "annotator",
+          is_active: true,
+          status: "offline",
+          group_id: null,
+          group_name: null,
+          created_at: "2026-04-01T00:00:00Z",
+          is_managed: true,
+        },
+        {
+          id: "u5",
+          name: "Root",
+          email: "root@example.com",
+          role: "super_admin",
+          is_active: true,
+          status: "online",
+          group_id: null,
+          group_name: null,
+          created_at: "2026-05-01T00:00:00Z",
+          is_managed: false,
+        },
+      ],
+      isLoading: false,
+    });
+    renderUI();
+
+    // 可见：未分配标注员与超管都出现在列表中
+    expect(screen.getByText("Free Annotator")).toBeInTheDocument();
+    expect(screen.getByText("Root")).toBeInTheDocument();
+
+    // 所管项目内成员与未分配标注员（is_managed=true）保留完整操作
+    expect(screen.getAllByTitle("编辑成员")).toHaveLength(3);
+    expect(screen.getAllByTitle("删除账号")).toHaveLength(3);
+
+    // 超管：只读提示，不出现写操作
+    expect(screen.getByTitle("仅可查看：超级管理员账号")).toBeDisabled();
+    expect(screen.getAllByTitle(/编辑成员|仅可查看/)).toHaveLength(4);
+  });
+
+  it("跨项目行 is_lifecycle_managed=false：保留账号操作，隐藏离职/删除入口", () => {
+    mockAuthUser.role = "project_admin";
+    mockUsePermissions.mockReturnValue({
+      role: "project_admin",
+      hasPermission: () => true,
+      hasAnyPermission: () => true,
+      canAccessPage: () => true,
+      allowedPages: [],
+    });
+    mockUseUsers.mockReturnValue({
+      data: [
+        {
+          id: "u6",
+          name: "Cross Project",
+          email: "cross@example.com",
+          role: "annotator",
+          is_active: true,
+          status: "offline",
+          group_id: null,
+          group_name: null,
+          created_at: "2026-06-01T00:00:00Z",
+          is_managed: true,
+          is_lifecycle_managed: false,
+        },
+      ],
+      isLoading: false,
+    });
+    renderUI();
+
+    // 账号级操作保留
+    expect(screen.getByTitle("编辑成员")).toBeInTheDocument();
+    expect(screen.getByTitle("重置密码")).toBeInTheDocument();
+    // 生命周期写入被隐藏，避免点击后必然 403
+    expect(screen.queryByTitle("离职处理")).not.toBeInTheDocument();
     expect(screen.queryByTitle("删除账号")).not.toBeInTheDocument();
   });
 

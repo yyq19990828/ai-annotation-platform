@@ -34794,7 +34794,7 @@
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/UserOut"
+              "$ref": "#/components/schemas/UserPageItem"
             },
             "title": "Items",
             "type": "array"
@@ -34824,6 +34824,220 @@
           "pages"
         ],
         "title": "UserPage",
+        "type": "object"
+      },
+      "UserPageItem": {
+        "description": "User row plus request-relative capability flags.\n\n``is_managed`` tells the frontend whether the current actor may run\naccount-management actions on the row (role change, password reset,\ngroup assignment).  Read visibility can be wider than the manage scope\n(project admins see enabled annotators/reviewers incl. unassigned ones,\nand read-only super admins), so visible rows are not necessarily\nmanageable.\n\n``is_lifecycle_managed`` further gates the work-handover writes\n(offboarding, deactivate, delete, reactivate): project admins may only\nhand over users whose derived projects (memberships, batches, tasks,\nlocks, owned projects) all sit inside projects they own.  A foreign\nenabled annotator therefore lists ``is_managed=true`` but\n``is_lifecycle_managed=false``; lifecycle buttons must be hidden so\nthey cannot surface actions the API rejects with 403.",
+        "properties": {
+          "avatar_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Ref"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "deactivation_requested_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deactivation Requested At"
+          },
+          "deactivation_scheduled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deactivation Scheduled At"
+          },
+          "disabled_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled At"
+          },
+          "disabled_by": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled By"
+          },
+          "disabled_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled Kind"
+          },
+          "disabled_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled Reason"
+          },
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "email_verified_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Verified At"
+          },
+          "group_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Id"
+          },
+          "group_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Group Name"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_active": {
+            "default": true,
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "is_lifecycle_managed": {
+            "default": true,
+            "title": "Is Lifecycle Managed",
+            "type": "boolean"
+          },
+          "is_managed": {
+            "default": true,
+            "title": "Is Managed",
+            "type": "boolean"
+          },
+          "last_login_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Login At"
+          },
+          "last_seen_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen At"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "password_admin_reset_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password Admin Reset At"
+          },
+          "preferences": {
+            "additionalProperties": true,
+            "title": "Preferences",
+            "type": "object"
+          },
+          "role": {
+            "title": "Role",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "name",
+          "role",
+          "group_name",
+          "status",
+          "created_at"
+        ],
+        "title": "UserPageItem",
         "type": "object"
       },
       "UserPreferencesRead": {
@@ -66280,7 +66494,7 @@
     },
     "/api/v1/users/{user_id}": {
       "delete": {
-        "description": "软删除（is_active=False）。super_admin 可删任意（除自己/最后一名超管）；\nproject_admin 仅可删其项目内、且仅在其项目里出现的 annotator / reviewer / viewer。\n\n若 target 仍持有未完成任务（assignee_id + status in pending/in_progress/review）或 task_lock，\n返回 409，要求传入 `transfer_to_user_id`；前端弹\"先转交\"二次 Modal。",
+        "description": "软删除（is_active=False）。super_admin 可删任意（除自己/最后一名超管）；\nproject_admin 可删启用的标注员/审核员，但目标的派生项目（成员、批次、\n任务、锁、名下项目）一旦出现在其他人的项目里（跨项目交接需上级处理）\n则拒绝；未分配账号无项目归属，可直接删除。\n\n若 target 仍持有未完成任务（assignee_id + status in pending/in_progress/review）或 task_lock，\n返回 409，要求传入 `transfer_to_user_id`；前端弹\"先转交\"二次 Modal。\nproject_admin 的转交接收人必须是每个待转交任务所在项目的成员。",
         "operationId": "delete_user_api_v1_users__user_id__delete",
         "parameters": [
           {

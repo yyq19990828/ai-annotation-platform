@@ -176,6 +176,19 @@ class UserLifecycleService:
             Task.id.in_(select(TaskLock.task_id).where(TaskLock.user_id == target_id)),
         )
 
+    @classmethod
+    async def derived_project_ids(
+        cls, db: AsyncSession, target_id: uuid.UUID
+    ) -> set[uuid.UUID]:
+        """Public read-only view of ``_project_ids_for_target``.
+
+        API-layer lifecycle guards must authorize against exactly the scope
+        the handoff acts on (owned projects ∪ memberships ∪ batch
+        assignments ∪ tasks/locks), so both paths share this helper.
+        """
+
+        return await cls._project_ids_for_target(db, target_id)
+
     @staticmethod
     async def _lock_task_scope(db: AsyncSession, task_id: uuid.UUID) -> None:
         # Keep this after the Task row lock. Annotation writes already use
@@ -659,10 +672,19 @@ class UserLifecycleService:
         if target.role not in MANAGED_PROJECT_ROLES:
             raise HTTPException(
                 status_code=403,
-                detail="项目管理员仅能处理其项目内的标注员/审核员",
+                detail="项目管理员仅能处理标注员/审核员账号",
             )
+        # 启用的标注员/审核员账号可由项目管理员处理；未分配账号（无项目归属）
+        # 仅在账号仍启用时直接放行——已停用账号不在放宽后的管理范围内，仍由
+        # 超级管理员处理，避免覆盖其停用记录或产生越权生命周期审计。
         projects: list[Project] = snapshot["projects"]
-        if not projects or any(project.owner_id != actor.id for project in projects):
+        if not projects:
+            if not target.is_active:
+                raise HTTPException(
+                    status_code=403,
+                    detail="该用户已停用且不在你管理的项目内，须由超级管理员处理",
+                )
+        elif any(project.owner_id != actor.id for project in projects):
             raise HTTPException(
                 status_code=403, detail="该用户存在不在你管理范围内的项目"
             )
