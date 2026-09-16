@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { DropdownMenu, type DropdownItem } from "@/components/ui/DropdownMenu";
 import { Icon } from "@/components/ui/Icon";
 import { Switch } from "@/components/ui/Switch";
 import { useToastStore } from "@/components/ui/Toast";
@@ -371,12 +372,9 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
           <Button size="sm" variant="ghost" onClick={() => setPrefillOpen(true)}>
             <Icon name="sparkles" />从 ML Backend 预填
           </Button>
-          <Button size="sm" variant="ghost" onClick={onExportJson}>
-            <Icon name="download" />
-            导出属性 JSON
-          </Button>
-          {/* label 包交互元素不会触发文件选择，这里用 ref 直呼 input.click()，
-              让「导入属性」与其余头部按钮共用同一 Button ghost sm 样式。 */}
+          {/* 导入 / 导出只覆盖属性 schema（类别无法经 JSON 导入导出，只能 ML Backend 预填
+              或手动维护），收进下拉避免头部按钮横向堆叠。隐藏 input 留在头部，
+              菜单 onSelect 处于点击手势内，可直接唤起系统文件选择。 */}
           <input
             ref={importInputRef}
             type="file"
@@ -384,10 +382,44 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
             onChange={onImportJson}
             className="hidden"
           />
-          <Button size="sm" variant="ghost" onClick={() => importInputRef.current?.click()}>
-            <Icon name="plus" />
-            导入属性
-          </Button>
+          <DropdownMenu
+            panelAriaLabel="属性 JSON 导入导出"
+            minWidth={228}
+            items={
+              [
+                {
+                  id: "export-attributes",
+                  icon: "download",
+                  label: "导出属性 schema (JSON)",
+                  onSelect: onExportJson,
+                },
+                {
+                  id: "import-attributes",
+                  icon: "upload",
+                  label: "导入属性 schema (JSON)",
+                  onSelect: () => importInputRef.current?.click(),
+                },
+              ] satisfies DropdownItem[]
+            }
+            footer={
+              <div className="text-2xs leading-snug text-muted-foreground">
+                仅含当前工具单位的属性 schema；类别不能经 JSON 导入 / 导出。
+              </div>
+            }
+            trigger={({ open, toggle, ref }) => (
+              <Button
+                ref={ref}
+                size="sm"
+                variant="ghost"
+                onClick={toggle}
+                aria-haspopup="menu"
+                aria-expanded={open}
+              >
+                属性 JSON
+                <Icon name="chevDown" size={12} />
+              </Button>
+            )}
+          />
         </div>
       </div>
       <div className="flex flex-col gap-2.5 p-4">
