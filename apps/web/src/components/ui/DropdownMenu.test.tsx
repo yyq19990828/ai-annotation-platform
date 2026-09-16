@@ -63,6 +63,25 @@ describe("<DropdownMenu />", () => {
     expect(screen.queryByText("Option A")).toBeNull();
   });
 
+  // PR #116 评审 P2：打开时焦点必须真实移入菜单（面板 portal 在 body 末尾，
+  // 只改视觉高亮会让键盘用户无法触达菜单项）
+  it("打开后焦点移入首个可选中项，ArrowDown 移到下一项", () => {
+    render(<Wrapper />);
+    fireEvent.click(screen.getByText("打开"));
+    expect(screen.getByRole("menuitem", { name: "Option A" })).toHaveFocus();
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "ArrowDown" });
+    expect(screen.getByRole("menuitem", { name: "Option B" })).toHaveFocus();
+  });
+
+  it("Escape 关闭后焦点回到 trigger", () => {
+    render(<Wrapper />);
+    fireEvent.click(screen.getByText("打开"));
+    expect(screen.getByRole("menuitem", { name: "Option A" })).toHaveFocus();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByText("Option A")).toBeNull();
+    expect(screen.getByText("打开")).toHaveFocus();
+  });
+
   it("disabled item 点击不触发 onSelect", () => {
     const onSelect = vi.fn();
     render(<Wrapper items={[{ id: "x", label: "Disabled", disabled: true, onSelect }]} />);

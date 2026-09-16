@@ -170,6 +170,7 @@ export function DropdownMenu(props: DropdownMenuProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const prevHostStyleRef = useRef<CSSProperties | undefined>(undefined);
   const prevPanelStyleRef = useRef<CSSProperties | undefined>(undefined);
   const [focusIdx, setFocusIdx] = useState(-1);
@@ -218,6 +219,15 @@ export function DropdownMenu(props: DropdownMenuProps) {
     const next = cur < 0 ? 0 : (cur + dir + selectableIdx.length) % selectableIdx.length;
     setFocusIdx(selectableIdx[next]);
   };
+
+  // 焦点实移（roving focus）：打开时焦点进入面板 / 首个可选中项，之后随 focusIdx 移动。
+  // 面板 portal 在 body 末尾且 tabIndex=-1，若只改 focusIdx 视觉高亮、不移真实焦点，
+  // 键盘用户 Tab 需穿过整页控件才能到菜单项，↑↓/Enter 也无从触发（PR #116 评审 P2）。
+  useEffect(() => {
+    if (!open) return;
+    const target = focusIdx >= 0 ? itemRefs.current[focusIdx] : menuRef.current;
+    target?.focus();
+  }, [focusIdx, open]);
 
   const onMenuKey = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (!items) return; // content 模式不处理列表导航
@@ -332,8 +342,12 @@ export function DropdownMenu(props: DropdownMenuProps) {
             return (
               <button
                 key={it.id}
+                ref={(el) => {
+                  itemRefs.current[i] = el;
+                }}
                 type="button"
                 role="menuitem"
+                tabIndex={focused ? 0 : -1}
                 disabled={it.disabled}
                 onClick={() => {
                   if (it.disabled) return;
@@ -368,7 +382,11 @@ export function DropdownMenu(props: DropdownMenuProps) {
     <div ref={hostRef} className="inline-flex">
       {trigger({
         open,
-        toggle: () => setOpen((v) => !v),
+        toggle: () => {
+          // 打开时焦点已移入面板，关闭需归还触发器（Esc / 选中项已有同款处理）
+          if (open) triggerRef.current?.focus();
+          setOpen(!open);
+        },
         close,
         ref: triggerRef,
       })}
